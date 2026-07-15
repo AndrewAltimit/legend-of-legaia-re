@@ -375,47 +375,80 @@ fn probe_dump_bank_names() {
     }
 }
 
-/// The Tactical-Arts VOICE join: the battle overlay plays one XA30.XA channel
-/// per character (`FUN_8003D53C(0x1D, chan, dur)` -> CdlSetfilter: Vahn ch0 /
-/// Noa ch4 / Gala ch6; Terra has no case). Assert the WASM surface demuxes a
-/// real, non-silent mono clip for the three heroes and none for Terra.
+/// The Tactical-Arts VOICE bank: the per-art arts shouts live in the
+/// 16-channel short-mono XA files identified by ear - Vahn + Noa in `XA2.XA`
+/// (an 8-channel slice each), Gala in `XA4.XA` (`XA30.XA` is the *normal-move*
+/// grunt bank, not arts). Assert the WASM surface demuxes a bank of real,
+/// non-silent mono clips per hero, maps arts to channels, and gives Terra none.
 #[test]
-fn arts_voice_channels_demux_per_character() {
+fn arts_voice_bank_demuxes_per_character() {
     let Some((mut arts, _)) = loaded() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    let expect: [Option<u64>; 4] = [Some(0), Some(4), Some(6), None];
-    for (cslot, want_ch) in expect.iter().enumerate() {
+    // (expected voice file, expected channel base) per character; Terra = none.
+    let expect: [Option<(&str, u64)>; 4] = [
+        Some(("XA2.XA", 0)),
+        Some(("XA2.XA", 8)),
+        Some(("XA4.XA", 0)),
+        None,
+    ];
+    for (cslot, want) in expect.iter().enumerate() {
         let st: serde_json::Value =
             serde_json::from_str(&arts.set_character(cslot as u32)).unwrap();
         assert_eq!(st["ok"], true, "char {cslot} assembles");
         let name = st["character"].as_str().unwrap().to_string();
-        match want_ch {
-            Some(ch) => {
+        match want {
+            Some((file, base)) => {
                 let v = &st["voice"];
                 assert!(v.is_object(), "{name}: voice metadata present");
-                assert_eq!(v["file"], "XA30.XA", "{name}: voice file");
-                assert_eq!(v["channel"].as_u64(), Some(*ch), "{name}: channel");
-                assert_eq!(v["rate"].as_u64(), Some(37_800), "{name}: XA rate");
-                assert_eq!(v["stereo"], false, "{name}: voice is mono");
-                let pcm = arts.art_voice_pcm_i16();
-                assert!(!pcm.is_empty(), "{name}: voice PCM decodes");
-                assert_eq!(
-                    pcm.len() as u64,
-                    v["samples"].as_u64().unwrap(),
-                    "{name}: sample count matches metadata"
-                );
-                // A real shout, not digital silence: peak above 10% of scale
-                // and between half a second and five seconds long.
-                let peak = pcm.iter().map(|s| s.unsigned_abs()).max().unwrap();
-                assert!(peak > 3200, "{name}: voice peak {peak}");
-                let secs = pcm.len() as f64 / 37_800.0;
-                assert!((0.5..5.0).contains(&secs), "{name}: duration {secs}s");
+                assert_eq!(v["file"], *file, "{name}: voice file");
+                assert_eq!(v["base"].as_u64(), Some(*base), "{name}: channel base");
+                let count = v["count"].as_u64().unwrap() as usize;
+                assert!(count > 0, "{name}: voice bank non-empty");
+                let channels = v["channels"].as_array().unwrap();
+                assert_eq!(channels.len(), count, "{name}: channel metadata count");
+                // Every channel: a real shout (not silence), mono 37.8 kHz,
+                // trimmed to ~0.3-1.8 s (shout without the long silent tail).
+                for (local, ch) in channels.iter().enumerate() {
+                    assert_eq!(ch["rate"].as_u64(), Some(37_800), "{name}[{local}]: rate");
+                    assert_eq!(ch["stereo"], false, "{name}[{local}]: mono");
+                    assert_eq!(
+                        ch["channel"].as_u64(),
+                        Some(*base + local as u64),
+                        "{name}[{local}]: channel index"
+                    );
+                    let pcm = arts.voice_channel_pcm_i16(local as u32);
+                    assert_eq!(
+                        pcm.len() as u64,
+                        ch["samples"].as_u64().unwrap(),
+                        "{name}[{local}]: sample count matches metadata"
+                    );
+                    let peak = pcm.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0);
+                    assert!(peak > 3200, "{name}[{local}]: voice peak {peak}");
+                    // Shout trimmed of its silent tail: ~0.4-1.5 s for a single
+                    // cry, up to ~2.5 s for the longer two-burst (combo/Rondo)
+                    // channels; the ceiling catches a regression to the full
+                    // ~1.6-3.4 s raw channel (silence not trimmed).
+                    let secs = pcm.len() as f64 / 37_800.0;
+                    assert!((0.2..2.8).contains(&secs), "{name}[{local}]: {secs}s");
+                }
+                // Per-art mapping: bank index i -> local channel i % count.
+                let bank_len = st["arts"].as_array().unwrap().len();
+                for i in [0usize, 1, count, bank_len.saturating_sub(1)] {
+                    let per_art = arts.art_voice_pcm_i16(i as u32);
+                    let expect_local = i % count;
+                    assert_eq!(
+                        per_art,
+                        arts.voice_channel_pcm_i16(expect_local as u32),
+                        "{name}: art {i} -> local {expect_local}"
+                    );
+                }
             }
             None => {
-                assert!(st["voice"].is_null(), "{name}: no retail voice case");
-                assert!(arts.art_voice_pcm_i16().is_empty(), "{name}: empty PCM");
+                assert!(st["voice"].is_null(), "{name}: no voice bank");
+                assert!(arts.art_voice_pcm_i16(0).is_empty(), "{name}: empty PCM");
+                assert!(arts.voice_channel_pcm_i16(0).is_empty(), "{name}: empty ch");
             }
         }
     }

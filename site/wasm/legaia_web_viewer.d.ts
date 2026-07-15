@@ -28,13 +28,15 @@ export class LegaiaArts {
      */
     art_strike_frames(index: number): Uint32Array;
     /**
-     * The current character's arts-voice PCM: mono i16 at the rate reported
-     * in `set_character`'s `voice.rate` (37 800 Hz on retail). This is the
-     * XA channel the battle overlay plays for the character's Tactical Arts
-     * (see [`VOICE_XA_FILE`] / [`VOICE_CHANNEL`]). Empty when the character
-     * has no voice (raw `PROT.DAT` load, Terra, or demux failure).
+     * The arts-voice PCM for the art at bank index `art_index`: mono i16 at
+     * the rate reported in `set_character`'s `voice.channels[..].rate`
+     * (37 800 Hz). The clip is the character's voice-slice local channel
+     * `art_index % count` (see [`VOICE_XA_FILE`] / [`VOICE_CHANNEL_BASE`]) -
+     * a curated per-art mapping, trimmed of its trailing silence. Empty when
+     * the character has no voice bank (raw `PROT.DAT` load, Terra, or demux
+     * failure). Also exposed positionally via [`Self::voice_channel_pcm_i16`].
      */
-    art_voice_pcm_i16(): Int16Array;
+    art_voice_pcm_i16(art_index: number): Int16Array;
     /**
      * The idle loop's pose frames (see [`flatten_pose_frames`] layout).
      * Empty when the character has no decodable idle stream.
@@ -43,8 +45,8 @@ export class LegaiaArts {
     /**
      * Load a full Mode2/2352 disc image (or a raw `PROT.DAT`) and parse the
      * TOC. Returns `{"entries": N}` JSON; errors throw. On a full disc the
-     * arts-voice bank ([`VOICE_XA_FILE`]) is sliced out alongside `PROT.DAT`;
-     * a raw `PROT.DAT` load simply has no voice audio.
+     * arts-voice banks ([`VOICE_XA_FILE`] = `XA2.XA` / `XA4.XA`) are sliced out
+     * alongside `PROT.DAT`; a raw `PROT.DAT` load simply has no voice audio.
      */
     load_disc(bytes: Uint8Array): string;
     /**
@@ -93,6 +95,13 @@ export class LegaiaArts {
      * both. `{"ok":false,"why":...}` when the character doesn't assemble.
      */
     set_character(cslot: number): string;
+    /**
+     * The arts-voice PCM of the current character's voice-slice **local**
+     * channel `local` (`0..count`), regardless of any art mapping. Lets the
+     * page (and the listening aid) address a specific voice clip directly.
+     * Empty when out of range or the character has no voice bank.
+     */
+    voice_channel_pcm_i16(local: number): Int16Array;
     /**
      * The 1 MB PSX VRAM for the current character: band-0 texture pixels at
      * the pinned retail placement + the character's decoded battle palette.
@@ -2776,7 +2785,7 @@ export interface InitOutput {
     readonly legaiaarts_art_pose_frames: (a: number, b: number) => [number, number];
     readonly legaiaarts_art_strike_cue: (a: number) => number;
     readonly legaiaarts_art_strike_frames: (a: number, b: number) => [number, number];
-    readonly legaiaarts_art_voice_pcm_i16: (a: number) => [number, number];
+    readonly legaiaarts_art_voice_pcm_i16: (a: number, b: number) => [number, number];
     readonly legaiaarts_idle_pose_frames: (a: number) => [number, number];
     readonly legaiaarts_load_disc: (a: number, b: number, c: number) => [number, number, number, number];
     readonly legaiaarts_mesh_bounds: (a: number) => [number, number];
@@ -2787,6 +2796,7 @@ export interface InitOutput {
     readonly legaiaarts_mesh_uvs: (a: number) => [number, number];
     readonly legaiaarts_new: () => number;
     readonly legaiaarts_set_character: (a: number, b: number) => [number, number];
+    readonly legaiaarts_voice_channel_pcm_i16: (a: number, b: number) => [number, number];
     readonly legaiaarts_vram_bytes: (a: number) => [number, number];
     readonly legaiaaudio_bgm_device_rate: (a: number) => number;
     readonly legaiaaudio_bgm_render_rate: (a: number) => number;

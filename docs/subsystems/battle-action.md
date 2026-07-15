@@ -7,7 +7,7 @@ A two-level finite state machine that drives the per-actor execution of a chosen
 - [One-paragraph overview](#one-paragraph-overview)
 - [Outer dispatch - `ctx[7]` action-state cursor](#outer-dispatch---ctx7-action-state-cursor) · [state table](#state-table)
 - [Inner dispatch - actor action category](#inner-dispatch---actor-action-category) · [per-actor sub-state surface](#per-actor-sub-state-surface)
-- [Cross-references with other battle helpers](#cross-references-with-other-battle-helpers) - [range/LOS](#fun_8004e2f0---battle-range--line-of-sight) · [stat aggregator](#fun_80042558---per-frame-stat-aggregator) · [effect spawn API](#fun_801dfdf8---effect-bundle-public-spawn-api) · [summon-overlay dispatch](#seru-magic-summon-overlay-dispatch) · [pose driver](#fun_801d5854---per-actor-pose-driver) · [party/monster setup](#fun_801eed1c--fun_801e7320---party--monster-setup-hooks) · [camera bounds](#fun_801efe44---battle-camera-bounds) · [escape roll](#the-escape-roll-fun_801e791c) · [arts voice cue](#the-tactical-arts-voice-cue---xa30xa-one-channel-per-character) · [helper functions](#battle-helper-functions)
+- [Cross-references with other battle helpers](#cross-references-with-other-battle-helpers) - [range/LOS](#fun_8004e2f0---battle-range--line-of-sight) · [stat aggregator](#fun_80042558---per-frame-stat-aggregator) · [effect spawn API](#fun_801dfdf8---effect-bundle-public-spawn-api) · [summon-overlay dispatch](#seru-magic-summon-overlay-dispatch) · [pose driver](#fun_801d5854---per-actor-pose-driver) · [party/monster setup](#fun_801eed1c--fun_801e7320---party--monster-setup-hooks) · [camera bounds](#fun_801efe44---battle-camera-bounds) · [escape roll](#the-escape-roll-fun_801e791c) · [battle voice cues](#battle-voice-cues---xa30-normal-move-grunts-vs-the-xa2xa4-arts-shouts) · [helper functions](#battle-helper-functions)
 - [Notes for the engine port](#notes-for-the-engine-port) · [decompile quirks](#decompile-quirks-worth-knowing) · [engine port](#engine-port)
 - [Action validator (`FUN_8003FB10`)](#action-validator-fun_8003fb10) · [action queue + Tactical Arts trigger ordering](#action-queue-and-tactical-arts-trigger-ordering) · [Miracle / Super in the live Arts submenu](#miracle--super-in-the-live-player-driven-arts-submenu) · [open work](#open-work)
 
@@ -525,36 +525,52 @@ state-`0x64` floor), and the camera move fires via `FUN_801D829C`. Ported:
 `EscapeFlags`), rolled live by `engine-core::World::roll_battle_escape` when the command
 menu resolves Run.
 
-### The Tactical-Arts voice cue - XA30.XA, one channel per character
+### Battle voice cues - XA30 normal-move grunts vs the XA2/XA4 arts shouts
 
-The arts shout is an **XA stream cue, not an SPU sample**. During arts execution the
-battle-action overlay (the arts-input handler region around `0x801EEB44`, `see
-ghidra/scripts/funcs/overlay_battle_action_801ec3e4.txt`) reads the acting slot's 1-based
-character id from `DAT_8007BD10[slot]` and fires the SCUS XA-clip player
-`FUN_8003D53C(0x1D, chan, dur)` with a per-character channel + duration:
+Legaia's battle voices are **XA stream cues, not SPU samples**. The battle-action overlay's
+input handler around `0x801EEB44` (`see ghidra/scripts/funcs/overlay_battle_action_801ec3e4.txt`)
+reads the acting slot's 1-based character id from `DAT_8007BD10[slot]` and fires the SCUS
+XA-clip player `FUN_8003D53C(0x1D, chan, dur)` (clip slot `0x1D` = `XA/XA30.XA`; the runtime
+clip table at `0x801C6ED8` follows `slot i` = `XA<i+1>`, see [cutscene.md](cutscene.md)) with
+a per-character channel + read length:
 
-| character id | hero | XA channel | duration (sectors) |
+| character id | hero | XA30 channel | `dur` |
 |---|---|---|---|
 | 1 | Vahn | 0 | `0x26` |
 | 2 | Noa  | 4 | `0x2E` |
 | 3 | Gala | 6 | `0x1A` |
 
-Clip-table slot `0x1D` resolves to `XA/XA30.XA` (the runtime clip table at `0x801C6ED8`
-follows `slot i` = `XA<i+1>`, see [cutscene.md](cutscene.md)); the player's sequencer
-`FUN_8003D764` runs `CdlSetloc` + `CdlSetfilter{file 1, chan}` + `CdlReadS`, so the audible
-clip is that one channel of the file - a mono 37.8 kHz shout per hero. The cue is **keyed on
-the character, not the individual art** (every art of a hero fires the same clip), fires
-only for party slots 0..2, and character id 4 (Terra) has no case - she plays no arts
-voice. There is **no per-art voice field** in the art record ([art-data](../formats/art-data.md));
-its Hit Effect Cue `0x1A` low half is an SPU SFX-descriptor id
-([sfx-table](../formats/sfx-table.md)), a separate subsystem. Sibling cue in the same
-overlay: SM state `0x6E` of `FUN_801E295C` plays a whole-file XA stream via
-`FUN_8003EAE4(0, slot)` with the slot looked up from the SCUS byte table at `0x800787AF`
-(heroes → slot `0x08` = `XA9.XA`, no channel filter - a shared stereo stream, not a voice).
+The sequencer `FUN_8003D764` runs `CdlSetloc` + `CdlSetfilter{file 1, chan}` + `CdlReadS`;
+`dur` is a read length, not a channel-sector count - `FUN_8003D53C` (`see
+ghidra/scripts/funcs/8003d53c.txt`) converts it to an absolute CD stop position
+`end = start + (dur * 0x96 + 0x95) / 0x3c` (`+0x974`), a physical span of `~dur * 2.5`
+sectors. But **`XA30.XA` is the normal battle-*move* grunt bank, not the arts voice**: these
+are the short per-character grunts an ordinary directional attack plays, confirmed by ear.
+Each XA30 hero channel is a single clean ~0.4-0.7 s vocalization followed by silence.
 
-The site's arts page mirrors the voice cue: `crates/web-viewer/src/arts_view.rs` demuxes the
-character's XA30 channel off the visitor's disc and `site/js/arts-viewer.js` fires it as the
-art starts.
+The **Tactical-Arts shouts** are a separate, richer set of clips in the 16-channel short-mono
+files **`XA2.XA` (Vahn + Noa) and `XA4.XA` (Gala)** - one shout per art rather than one grunt
+per character. This is an ear-confirmed identification, not a traced cue: no dumped overlay
+plays clip slot 1 (`XA2`) or slot 3 (`XA4`) through `FUN_8003D53C`, and no `CdlSetfilter`
+targets their LBAs, so USA has **no live trigger** for them - they are (likely JP-origin)
+arts-voice clips the retail USA build leaves unwired. Each of `XA2` / `XA4`'s 16 channels is a
+distinct short shout (content ~0.4-1.5 s, then digital silence; a few longer two-burst
+channels read as combo/Rondo cries). The Vahn/Noa split within `XA2`'s 16 channels and the
+exact art→channel order are **not determinable from structure alone** and are the owner's
+by-ear call.
+
+There is no per-art voice field in the art record ([art-data](../formats/art-data.md)); its
+Hit Effect Cue `0x1A` low half is an SPU SFX-descriptor id ([sfx-table](../formats/sfx-table.md)),
+a separate subsystem. The stereo long-clip banks (`XA1` / `XA3` / `XA9`, 2.3-10 s) are not the
+short mono per-art shouts. Sibling cue in the same overlay: SM state `0x6E` of `FUN_801E295C`
+plays a whole-file XA stream via `FUN_8003EAE4(0, slot)` with the slot from the SCUS byte
+table at `0x800787AF` (heroes → slot `0x08` = `XA9.XA`, no channel filter).
+
+The site's arts page sources each art's voice from this bank:
+`crates/web-viewer/src/arts_view.rs` demuxes the character's `XA2` / `XA4` channel slice off
+the visitor's disc (`VOICE_XA_FILE` / `VOICE_CHANNEL_BASE`), trims each clip's trailing
+silence, and `site/js/arts-viewer.js` plays the art's channel (`bank_index % count`) as the
+art starts - a curated per-art mapping the owner can refine by ear.
 
 ### Battle helper functions
 
