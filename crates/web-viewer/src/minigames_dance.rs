@@ -1080,12 +1080,8 @@ impl LegaiaMinigames {
     pub fn dance_bgm_ready_json(&self) -> String {
         let probe = |idx: usize| {
             entry_bytes(&self.prot, &self.entries, idx as u32)
-                .and_then(|buf| {
-                    let vab = buf.windows(4).position(|w| w == b"pBAV")?;
-                    buf[vab..].windows(4).position(|w| w == b"pQES")?;
-                    Some(())
-                })
-                .is_some()
+                .map(super::music01_pair_ok)
+                .unwrap_or(false)
         };
         format!(
             r#"{{"ok":{},"prot":{},"alt":{}}}"#,
@@ -1107,30 +1103,7 @@ impl LegaiaMinigames {
         let Some(buf) = entry_bytes(&self.prot, &self.entries, idx as u32) else {
             return Vec::new();
         };
-        let Some(vab_off) = buf.windows(4).position(|w| w == b"pBAV") else {
-            return Vec::new();
-        };
-        let Some(seq_rel) = buf[vab_off..].windows(4).position(|w| w == b"pQES") else {
-            return Vec::new();
-        };
-        let Ok(vab_report) = legaia_vab::parse(buf, vab_off) else {
-            return Vec::new();
-        };
-        let Ok(seq) = legaia_seq::Seq::parse(&buf[vab_off + seq_rel..]) else {
-            return Vec::new();
-        };
-        let mut spu = legaia_engine_audio::Spu::new();
-        let mut alloc = legaia_engine_audio::spu::ram::SpuAllocator::new(0x1000, 0x40_000);
-        let bank = legaia_engine_audio::VabBank::upload(
-            &mut spu,
-            &mut alloc,
-            &vab_report,
-            &buf[vab_off..],
-        );
-        let mut sequencer = legaia_engine_audio::sequencer::Sequencer::new(seq, bank);
-        let samples =
-            (seconds.clamp(1.0, 120.0) * legaia_engine_audio::SPU_INTERNAL_RATE as f32) as usize;
-        legaia_engine_audio::render_bgm_to_pcm(&mut sequencer, &mut spu, samples)
+        super::render_music01_bgm(buf, seconds)
     }
 
     /// Sample rate of [`Self::dance_bgm_pcm_i16`] (the SPU's 44.1 kHz).

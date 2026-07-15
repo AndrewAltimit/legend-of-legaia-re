@@ -781,6 +781,21 @@ export class LegaiaMinigames {
      * the others.
      */
     load_disc(bytes: Uint8Array): string;
+    /**
+     * Render `seconds` of `game`'s BGM to interleaved-stereo i16 PCM at
+     * [`Self::minigame_bgm_rate`]. Empty when the entry didn't decode.
+     */
+    minigame_bgm_pcm_i16(game: string, seconds: number): Int16Array;
+    /**
+     * Sample rate of [`Self::minigame_bgm_pcm_i16`] (the SPU's 44.1 kHz).
+     */
+    minigame_bgm_rate(): number;
+    /**
+     * Whether `game`'s BGM (`"slot"` / `"baka"`) resolves on this disc:
+     * `{"ok":true,"prot":1043,"why":"..."}`. The dance's two-song check is
+     * [`Self::dance_bgm_ready_json`].
+     */
+    minigame_bgm_ready_json(game: string): string;
     constructor();
     /**
      * One of the three retail 16x16 **save-file portrait** TIMs as a 1024-byte
@@ -1019,6 +1034,18 @@ export class LegaiaMinigames {
      * the balance is under the 3-coin gate.
      */
     slot_spin(): boolean;
+    /**
+     * The reel-spin motor **loop**, mono i16. Not a ring cue: the reel SM
+     * keys class-2 VAB program 1 / tone 0 at note `0x3C` directly
+     * (`FUN_801CF0D8` -> `func_0x80065034(0x13, 2, 1, 0, 0x3C, ...)`) and
+     * releases the voice on all-reels-stop - the page loops this buffer for
+     * as long as the reels turn. Empty when the VAB didn't decode.
+     */
+    slot_spin_pcm(): Int16Array;
+    /**
+     * Playback rate for [`Self::slot_spin_pcm`] (`0` when absent).
+     */
+    slot_spin_rate(): number;
     /**
      * Start a slot session on the disc's payout table with `balance` coins in
      * the machine. Returns `false` when the payout table didn't decode.
@@ -2711,6 +2738,8 @@ export interface InitOutput {
     readonly legaiaminigames_dance_tick: (a: number, b: number) => void;
     readonly legaiaminigames_dance_widgets_json: (a: number) => [number, number];
     readonly legaiaminigames_load_disc: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly legaiaminigames_minigame_bgm_pcm_i16: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly legaiaminigames_minigame_bgm_ready_json: (a: number, b: number, c: number) => [number, number];
     readonly legaiaminigames_new: () => number;
     readonly legaiaminigames_save_portrait_rgba: (a: number, b: number) => [number, number];
     readonly legaiaminigames_slot_art_ready: (a: number) => number;
@@ -2733,6 +2762,8 @@ export interface InitOutput {
     readonly legaiaminigames_slot_sfx_pcm: (a: number, b: number) => [number, number];
     readonly legaiaminigames_slot_sfx_rate: (a: number, b: number) => number;
     readonly legaiaminigames_slot_spin: (a: number) => number;
+    readonly legaiaminigames_slot_spin_pcm: (a: number) => [number, number];
+    readonly legaiaminigames_slot_spin_rate: (a: number) => number;
     readonly legaiaminigames_slot_start: (a: number, b: number, c: number) => number;
     readonly legaiaminigames_slot_state_json: (a: number) => [number, number];
     readonly legaiaminigames_slot_stop: (a: number) => number;
@@ -2963,6 +2994,7 @@ export interface InitOutput {
     readonly save_summary_json: (a: number, b: number) => [number, number, number, number];
     readonly validate_lang_pack: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly legaiaminigames_dance_bgm_rate: (a: number) => number;
+    readonly legaiaminigames_minigame_bgm_rate: (a: number) => number;
     readonly legaiasfx_sample_rate: (a: number) => number;
     readonly wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

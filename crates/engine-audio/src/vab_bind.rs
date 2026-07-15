@@ -227,7 +227,8 @@ fn compute_pitch(note: u8, tone: &VagAtr, src_rate: u32, dst_rate: u32) -> u16 {
     let ratio = 2f64.powf(semitones / 12.0);
     let base = (PITCH_UNITY as f64) * (src_rate as f64) / (dst_rate as f64);
     let pitch = (base * ratio).round() as i64;
-    pitch.clamp(1, 0x3FFF) as u16
+    // Hardware clamps the pitch-counter step at 0x4000 (4.0x / 176.4 kHz).
+    pitch.clamp(1, 0x4000) as u16
 }
 
 /// Split a combined volume into (left, right) based on a 0..=127 pan value

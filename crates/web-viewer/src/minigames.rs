@@ -1475,6 +1475,22 @@ impl LegaiaMinigames {
             .unwrap_or(0)
     }
 
+    /// The reel-spin motor **loop**, mono i16. Not a ring cue: the reel SM
+    /// keys class-2 VAB program 1 / tone 0 at note `0x3C` directly
+    /// (`FUN_801CF0D8` -> `func_0x80065034(0x13, 2, 1, 0, 0x3C, ...)`) and
+    /// releases the voice on all-reels-stop - the page loops this buffer for
+    /// as long as the reels turn. Empty when the VAB didn't decode.
+    pub fn slot_spin_pcm(&self) -> Vec<i16> {
+        self.slot_spin_tone()
+            .map(|(pcm, _)| pcm)
+            .unwrap_or_default()
+    }
+
+    /// Playback rate for [`Self::slot_spin_pcm`] (`0` when absent).
+    pub fn slot_spin_rate(&self) -> u32 {
+        self.slot_spin_tone().map(|(_, r)| r).unwrap_or(0)
+    }
+
     /// The retail cue ids, so the page never has to hard-code a number:
     /// `{"reel_stop":522,"payout_tick":521,"reach":512,"reach1":513,"reach2":514}`.
     pub fn slot_sfx_cue_ids(&self) -> String {
@@ -1534,6 +1550,18 @@ impl LegaiaMinigames {
     fn dance_chart(&self) -> Option<legaia_asset::dance_chart::DanceChart> {
         legaia_asset::dance_chart::parse(&self.dance_overlay()?)
     }
+
+    /// Decode the reel-spin motor tone (see [`Self::slot_spin_pcm`]).
+    fn slot_spin_tone(&self) -> Option<(Vec<i16>, u32)> {
+        self.slot_sfx.as_ref().and_then(|b| {
+            b.decode_tone(
+                minigame_sfx::SLOT_SPIN_PROGRAM,
+                minigame_sfx::SLOT_SPIN_TONE,
+                minigame_sfx::SLOT_SPIN_NOTE,
+            )
+            .ok()
+        })
+    }
 }
 
 // ---------------------------------------------------------------- save bar
@@ -1567,5 +1595,101 @@ impl LegaiaMinigames {
             return Vec::new();
         };
         legaia_tim::decode_rgba8(&parsed, 0).unwrap_or_default()
+    }
+}
+
+// ------------------------------------------------------------- minigame BGM
+
+/// True when a `music_01` entry carries the wrapped `[VAB][SEQ]` pair the
+/// retail BGM path streams (chunk header, `pBAV` body, `pQES` score).
+pub(crate) fn music01_pair_ok(buf: &[u8]) -> bool {
+    let Some(vab) = buf.windows(4).position(|w| w == b"pBAV") else {
+        return false;
+    };
+    buf[vab..].windows(4).any(|w| w == b"pQES")
+}
+
+/// Render one `music_01` entry's `[VAB][SEQ]` pair to `seconds` of
+/// interleaved-stereo i16 PCM at the SPU's 44.1 kHz, through the clean-room
+/// SPU + sequencer - the exact path the engine's BGM director takes. Empty
+/// when the pair doesn't decode.
+pub(crate) fn render_music01_bgm(buf: &[u8], seconds: f32) -> Vec<i16> {
+    let Some(vab_off) = buf.windows(4).position(|w| w == b"pBAV") else {
+        return Vec::new();
+    };
+    let Some(seq_rel) = buf[vab_off..].windows(4).position(|w| w == b"pQES") else {
+        return Vec::new();
+    };
+    let Ok(vab_report) = legaia_vab::parse(buf, vab_off) else {
+        return Vec::new();
+    };
+    let Ok(seq) = legaia_seq::Seq::parse(&buf[vab_off + seq_rel..]) else {
+        return Vec::new();
+    };
+    let mut spu = legaia_engine_audio::Spu::new();
+    let mut alloc = legaia_engine_audio::spu::ram::SpuAllocator::new(0x1000, 0x40_000);
+    let bank =
+        legaia_engine_audio::VabBank::upload(&mut spu, &mut alloc, &vab_report, &buf[vab_off..]);
+    let mut sequencer = legaia_engine_audio::sequencer::Sequencer::new(seq, bank);
+    let samples =
+        (seconds.clamp(1.0, 120.0) * legaia_engine_audio::SPU_INTERNAL_RATE as f32) as usize;
+    legaia_engine_audio::render_bgm_to_pcm(&mut sequencer, &mut spu, samples)
+}
+
+/// The disc-pinned BGM source for one browser minigame: `(prot_index, why)`.
+///
+/// - `baka`: the duel overlay starts its own track - `FUN_801CF00C` loads raw
+///   index `0x415` = extraction 1043 (`music_01` slot 53, the boss-overture
+///   theme). See `docs/subsystems/minigame-baka-fighter.md`.
+/// - `slot`: the overlay starts **no** track (it inherits the host scene's);
+///   the casino floor `0543_koin1` starts BGM id 2018 via field-VM op `0x35`
+///   = `music_01` slot 18, "Sol casino". See
+///   `docs/subsystems/minigame-slot-machine.md`.
+/// - `dance` is served by its own pair of methods (the overlay picks one of
+///   two songs by mode; see `minigames_dance.rs`).
+fn minigame_bgm_source(game: &str) -> Option<(u32, &'static str)> {
+    match game {
+        "baka" => Some((
+            legaia_asset::baka_opponents::BAKA_BGM_PROT_INDEX as u32,
+            "overlay init FUN_801CF00C loads music_01 slot 53 (boss overture)",
+        )),
+        "slot" => Some((
+            legaia_asset::slot_payout::SLOT_HOST_BGM_PROT_INDEX as u32,
+            "host scene 0543_koin1 op-0x35 BGM 2018 = music_01 slot 18 (Sol casino)",
+        )),
+        _ => None,
+    }
+}
+
+#[wasm_bindgen]
+impl LegaiaMinigames {
+    /// Whether `game`'s BGM (`"slot"` / `"baka"`) resolves on this disc:
+    /// `{"ok":true,"prot":1043,"why":"..."}`. The dance's two-song check is
+    /// [`Self::dance_bgm_ready_json`].
+    pub fn minigame_bgm_ready_json(&self, game: &str) -> String {
+        let Some((idx, why)) = minigame_bgm_source(game) else {
+            return r#"{"ok":false}"#.to_string();
+        };
+        let ok = entry_bytes(&self.prot, &self.entries, idx)
+            .map(music01_pair_ok)
+            .unwrap_or(false);
+        format!(r#"{{"ok":{ok},"prot":{idx},"why":{}}}"#, jstr(why))
+    }
+
+    /// Render `seconds` of `game`'s BGM to interleaved-stereo i16 PCM at
+    /// [`Self::minigame_bgm_rate`]. Empty when the entry didn't decode.
+    pub fn minigame_bgm_pcm_i16(&self, game: &str, seconds: f32) -> Vec<i16> {
+        let Some((idx, _)) = minigame_bgm_source(game) else {
+            return Vec::new();
+        };
+        let Some(buf) = entry_bytes(&self.prot, &self.entries, idx) else {
+            return Vec::new();
+        };
+        render_music01_bgm(buf, seconds)
+    }
+
+    /// Sample rate of [`Self::minigame_bgm_pcm_i16`] (the SPU's 44.1 kHz).
+    pub fn minigame_bgm_rate(&self) -> u32 {
+        legaia_engine_audio::SPU_INTERNAL_RATE
     }
 }

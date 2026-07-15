@@ -73,6 +73,15 @@ pub const CUE_SLOT_REACH: u16 = 0x200;
 pub const CUE_SLOT_REACH_1: u16 = 0x201;
 pub const CUE_SLOT_REACH_2: u16 = 0x202;
 
+/// The reel-spin motor loop is **not** a ring cue: the reel SM keys the voice
+/// directly - `FUN_801CF0D8` calls `func_0x80065034(0x13, 2, 1, 0, 0x3C, 0x40,
+/// 0x28, 0x28)` (voice `0x13`, class-2 VAB, program 1, tone 0, note `0x3C`,
+/// volume `0x28`) as the reels start, and releases the voice on
+/// all-reels-stop. Decode it with [`SfxCueBank::decode_tone`].
+pub const SLOT_SPIN_PROGRAM: u8 = 1;
+pub const SLOT_SPIN_TONE: u8 = 0;
+pub const SLOT_SPIN_NOTE: u8 = 0x3C;
+
 /// One runtime cue: which VAB voice to key, and at what pitch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SfxCue {
@@ -180,15 +189,23 @@ impl SfxCueBank {
     /// carries the pitch.
     pub fn decode(&self, id: u16) -> Result<(Vec<i16>, u32)> {
         let cue = self.cue(id).with_context(|| format!("no cue 0x{id:X}"))?;
+        self.decode_tone(cue.program, cue.tone, cue.note)
+    }
+
+    /// Decode one **direct-keyed** tone - a voice an overlay drives through
+    /// `FUN_80065034` without a cue-ring descriptor (the reel-spin motor
+    /// loop, the dance's hit stings). Same note-vs-centre pitch fold as
+    /// [`Self::decode`].
+    pub fn decode_tone(&self, program: u8, tone: u8, note: u8) -> Result<(Vec<i16>, u32)> {
         let atr = self
             .vab
             .tones
-            .get(cue.program as usize)
-            .and_then(|t| t.get(cue.tone as usize))
-            .context("cue names a voice the VAB does not have")?;
+            .get(program as usize)
+            .and_then(|t| t.get(tone as usize))
+            .context("tone the VAB does not have")?;
         // The VAG index in a tone is 1-based; 0 means "no sample".
         if atr.vag <= 0 {
-            bail!("cue 0x{id:X} names an empty VAG slot");
+            bail!("program {program} tone {tone} names an empty VAG slot");
         }
         let span = self
             .vab
@@ -200,7 +217,7 @@ impl SfxCueBank {
             .get(span.byte_offset..span.byte_offset + span.size)
             .context("VAG sample span past the entry")?;
         let pcm = legaia_vab::decode_vag_aligned(body).context("decoding the VAG")?;
-        let semitones = cue.note as f64 - atr.center as f64;
+        let semitones = note as f64 - atr.center as f64;
         let rate = (VAG_BASE_RATE * 2f64.powf(semitones / 12.0)).round();
         Ok((pcm, rate.clamp(4000.0, 96_000.0) as u32))
     }

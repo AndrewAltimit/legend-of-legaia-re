@@ -1663,6 +1663,50 @@ export class LegaiaMinigames {
             wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
         }
     }
+    /**
+     * Render `seconds` of `game`'s BGM to interleaved-stereo i16 PCM at
+     * [`Self::minigame_bgm_rate`]. Empty when the entry didn't decode.
+     * @param {string} game
+     * @param {number} seconds
+     * @returns {Int16Array}
+     */
+    minigame_bgm_pcm_i16(game, seconds) {
+        const ptr0 = passStringToWasm0(game, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.legaiaminigames_minigame_bgm_pcm_i16(this.__wbg_ptr, ptr0, len0, seconds);
+        var v2 = getArrayI16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v2;
+    }
+    /**
+     * Sample rate of [`Self::minigame_bgm_pcm_i16`] (the SPU's 44.1 kHz).
+     * @returns {number}
+     */
+    minigame_bgm_rate() {
+        const ret = wasm.legaiaminigames_minigame_bgm_rate(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Whether `game`'s BGM (`"slot"` / `"baka"`) resolves on this disc:
+     * `{"ok":true,"prot":1043,"why":"..."}`. The dance's two-song check is
+     * [`Self::dance_bgm_ready_json`].
+     * @param {string} game
+     * @returns {string}
+     */
+    minigame_bgm_ready_json(game) {
+        let deferred2_0;
+        let deferred2_1;
+        try {
+            const ptr0 = passStringToWasm0(game, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len0 = WASM_VECTOR_LEN;
+            const ret = wasm.legaiaminigames_minigame_bgm_ready_json(this.__wbg_ptr, ptr0, len0);
+            deferred2_0 = ret[0];
+            deferred2_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+        }
+    }
     constructor() {
         const ret = wasm.legaiaminigames_new();
         this.__wbg_ptr = ret;
@@ -2069,6 +2113,28 @@ export class LegaiaMinigames {
     slot_spin() {
         const ret = wasm.legaiaminigames_slot_spin(this.__wbg_ptr);
         return ret !== 0;
+    }
+    /**
+     * The reel-spin motor **loop**, mono i16. Not a ring cue: the reel SM
+     * keys class-2 VAB program 1 / tone 0 at note `0x3C` directly
+     * (`FUN_801CF0D8` -> `func_0x80065034(0x13, 2, 1, 0, 0x3C, ...)`) and
+     * releases the voice on all-reels-stop - the page loops this buffer for
+     * as long as the reels turn. Empty when the VAB didn't decode.
+     * @returns {Int16Array}
+     */
+    slot_spin_pcm() {
+        const ret = wasm.legaiaminigames_slot_spin_pcm(this.__wbg_ptr);
+        var v1 = getArrayI16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * Playback rate for [`Self::slot_spin_pcm`] (`0` when absent).
+     * @returns {number}
+     */
+    slot_spin_rate() {
+        const ret = wasm.legaiaminigames_slot_spin_rate(this.__wbg_ptr);
+        return ret >>> 0;
     }
     /**
      * Start a slot session on the disc's payout table with `balance` coins in

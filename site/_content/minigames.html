@@ -459,10 +459,14 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           victory flourish&rsquo;s swings) is inferred from
           the action-id fold in <code>FUN_801d3f44</code>; the coin-digit strip&rsquo;s
           <code>u = 88 + digit&times;16</code> stepping is inferred from the sheet layout
-          the way the traced digit widgets step; and the minigame&rsquo;s
-          <b>sound</b> stays silent here because its cues are <em>static-bank</em> ids
-          resolved through <code>SCUS_942.54</code>&rsquo;s descriptor table, which this
-          PROT-only page doesn&rsquo;t load. When the presentation assets don&rsquo;t decode,
+          the way the traced digit widgets step. The <b>sound</b> is the cabinet&rsquo;s
+          own: the four cue ids the overlay writes into the cue ring
+          (<code>_DAT_8007B6D8</code>) &mdash; the exchange hit, the menu blips, the tally
+          tick &mdash; resolve through <code>SCUS_942.54</code>&rsquo;s static descriptor
+          table into the class-2 sound bank and render through the clean-room SPU; the
+          <b>music</b> is the boss-overture <code>music_01</code> track the overlay init
+          itself loads (<code>FUN_801CF00C</code>), mixed off your disc and looped for the
+          run. When the presentation assets don&rsquo;t decode,
           the duel falls back to the stat panel above and says so &mdash; no stand-in art.
         </p>
       </section>
@@ -662,6 +666,12 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       p.classList.toggle('is-active', p.dataset.game === game));
     /* Leaving the dance stops its BGM loop. */
     if (game !== 'dance' && typeof danceR !== 'undefined' && danceR) danceR.stopAll();
+    /* Leaving the slot machine / duel stops their track (and the slot's
+     * spin-motor loop); entering one pre-mixes its track off the tab click
+     * so the first spin doesn't hitch. */
+    if (MgBgm.playing() && MgBgm.playing() !== game) MgBgm.stop();
+    if (game !== 'slot' && typeof slotSpinStop === 'function') slotSpinStop();
+    if (api) MgBgm.prerender(game);
   }
   tabsEl.addEventListener('click', (e) => {
     const b = e.target.closest('.mg-tab');
@@ -676,6 +686,88 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     el.textContent = text;
     el.className = 'mg-verdict' + (cls ? ' is-' + cls : '');
   }
+
+  /* ---- minigame BGM (slot machine + Baka Fighter) ----
+   *
+   * The dance renders its own two-song BGM inside js/minigame-dance.js;
+   * these two come off the shared WASM surface (minigame_bgm_*), each track
+   * disc-pinned: the duel overlay starts music_01 slot 53 (the boss
+   * overture) itself via FUN_801CF00C, and the slot machine starts nothing -
+   * it inherits the casino floor's "Sol casino" track (koin1's op-0x35 BGM
+   * 2018). Both render once per game through the clean-room SPU + sequencer
+   * off the visitor's disc, then loop as a WebAudio buffer (the render
+   * window is shorter than either song). Muting or leaving the game's tab
+   * stops the loop. */
+  const MgBgm = (() => {
+    let ctx = null;
+    let cur = null;                /* { game, src } while sounding */
+    const bufs = {};               /* game -> AudioBuffer | null */
+    const RENDER_SECONDS = 45;     /* dance-sized loop window */
+
+    function audio() {
+      if (!ctx) {
+        const Ctor = window.AudioContext || window.webkitAudioContext;
+        if (!Ctor) return null;
+        ctx = new Ctor();
+      }
+      if (ctx.state === 'suspended' && ctx.resume) ctx.resume();
+      return ctx;
+    }
+    function soundOn() {
+      return !window.LegaiaSound || LegaiaSound.isSoundOn();
+    }
+    /* Render (once) one game's track into an AudioBuffer. Rendering ~45 s
+     * of SPU output blocks the thread for a moment, which is why prerender()
+     * schedules it off the tab click instead of the first spin. */
+    function buffer(game) {
+      if (bufs[game] !== undefined) return bufs[game];
+      if (!api || typeof api.minigame_bgm_ready_json !== 'function') return null;
+      const ready = JSON.parse(api.minigame_bgm_ready_json(game));
+      if (!ready.ok) { bufs[game] = null; return null; }
+      const pcm = api.minigame_bgm_pcm_i16(game, RENDER_SECONDS);
+      const rate = api.minigame_bgm_rate();
+      const a = audio();
+      if (!a || !pcm.length || !rate) { bufs[game] = null; return null; }
+      const frames = pcm.length / 2;
+      const buf = a.createBuffer(2, frames, rate);
+      const L = buf.getChannelData(0), R = buf.getChannelData(1);
+      for (let i = 0; i < frames; i++) {
+        L[i] = pcm[i * 2] / 32768;
+        R[i] = pcm[i * 2 + 1] / 32768;
+      }
+      bufs[game] = buf;
+      return buf;
+    }
+    const prerendered = {};
+    function prerender(game) {
+      if (prerendered[game] || (game !== 'slot' && game !== 'baka')) return;
+      prerendered[game] = true;
+      setTimeout(() => { try { buffer(game); } catch (e) { bufs[game] = null; } }, 400);
+    }
+    function start(game) {
+      if (cur && cur.game === game) return true;
+      stop();
+      if (!soundOn()) return false;
+      const a = audio();
+      const buf = buffer(game);
+      if (!a || !buf) return false;
+      const src = a.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      const gn = a.createGain();
+      gn.gain.value = 0.5;
+      src.connect(gn).connect(a.destination);
+      src.start();
+      cur = { game: game, src: src };
+      return true;
+    }
+    function stop() {
+      if (cur && cur.src) { try { cur.src.stop(); } catch (e) { /* done */ } }
+      cur = null;
+    }
+    if (window.LegaiaSound) LegaiaSound.onChange((on) => { if (!on) stop(); });
+    return { start, stop, prerender, playing: () => (cur ? cur.game : null) };
+  })();
 
   /* One rAF loop drives whichever game is on screen. Each engine is
    * frame-stepped exactly as the retail 60 Hz overlay steps it. */
@@ -1080,6 +1172,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     bakaSfxKey = '';
     bakaSfxRound = -1;
     bakaSfxOver = false;
+    /* The duel overlay starts its own BGM at init (FUN_801CF00C loads the
+     * boss-overture music_01 entry) - so the track runs from the first fight
+     * through the tally menu, and stops when the run ends. */
+    MgBgm.start('baka');
     $('baka-choice-row').hidden = true;
     const total = bakaLadder.length;
     const label = rung >= 0 ? `Stage ${rung + 1}/${total}` : 'Spar';
@@ -1277,6 +1373,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     $('baka-start').textContent = 'Start run';
     bakaRunLive = false;
     bakaMode = 'idle';
+    if (MgBgm.playing() === 'baka') MgBgm.stop();
   }
 
   function bakaChoiceCommit() {
@@ -1348,7 +1445,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     }
     if (st.phase === 'match_over' && !bakaSfxOver) {
       bakaSfxOver = true;
-      if (st.winner !== 0) bakaSfx('match_lose');
+      if (st.winner !== 0) {
+        bakaSfx('match_lose');
+        /* A loss ends the run - the mode (and its BGM) is over. */
+        if (MgBgm.playing() === 'baka') MgBgm.stop();
+      }
     }
 
     if (bakaLive && st.last) {
@@ -1495,15 +1596,20 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       if (!Ctx) return null;
       const ctx = new Ctx();
       const buffers = {};
-      for (const [name, id] of Object.entries(slotSfxIds)) {
-        const pcm = api.slot_sfx_pcm(id);
-        const rate = api.slot_sfx_rate(id);
-        if (!pcm.length || !rate) continue;
+      const stash = (name, pcm, rate) => {
+        if (!pcm.length || !rate) return;
         const buf = ctx.createBuffer(1, pcm.length, rate);
         const ch = buf.getChannelData(0);
         for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
         buffers[name] = buf;
+      };
+      for (const [name, id] of Object.entries(slotSfxIds)) {
+        stash(name, api.slot_sfx_pcm(id), api.slot_sfx_rate(id));
       }
+      /* The reel-spin motor is not a ring cue - the reel SM keys the VAB
+       * voice directly (program 1 / tone 0 at note 0x3C) and releases it
+       * on all-reels-stop, so the page loops it for as long as reels turn. */
+      stash('spin_loop', api.slot_spin_pcm(), api.slot_spin_rate());
       slotAudio = { ctx, buffers };
     }
     if (slotAudio.ctx.state === 'suspended') slotAudio.ctx.resume();
@@ -1521,6 +1627,31 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     src.connect(g).connect(a.ctx.destination);
     src.start();
   }
+
+  /* The looping spin-motor voice: keyed as the reels start, released on
+   * all-reels-stop - the retail voice lifecycle (FUN_801CF0D8, voice 0x13). */
+  let slotSpinSrc = null;
+  function slotSpinStart() {
+    if (slotSpinSrc) return;
+    if (window.LegaiaSound && !LegaiaSound.isSoundOn()) return;
+    const a = slotAudioReady();
+    if (!a || !a.buffers.spin_loop) return;
+    const src = a.ctx.createBufferSource();
+    src.buffer = a.buffers.spin_loop;
+    src.loop = true;
+    const g = a.ctx.createGain();
+    /* Retail keys it at volume 0x28 of 0x7F - noticeably under the cues. */
+    g.gain.value = 0.3;
+    src.connect(g).connect(a.ctx.destination);
+    src.start();
+    slotSpinSrc = src;
+  }
+  function slotSpinStop() {
+    if (!slotSpinSrc) return;
+    try { slotSpinSrc.stop(); } catch (e) { /* done */ }
+    slotSpinSrc = null;
+  }
+  if (window.LegaiaSound) LegaiaSound.onChange((on) => { if (!on) slotSpinStop(); });
 
   /* Wrap an RGBA8 buffer from the WASM API in an offscreen canvas. */
   function rgbaCanvas(bytes, w, h) {
@@ -1608,6 +1739,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           '<code>0x209</code>, reach sting <code>0x200</code>–<code>0x202</code>. '
         : 'The machine’s <b>sound did not decode</b> from this image, so the page is silent ' +
           'rather than beeping at you. ') +
+      'The <b>music</b> is the casino floor’s: the slot overlay starts no track of its own, ' +
+      'so retail hears the host scene’s — and the Sol casino floor (<code>koin1</code>) starts ' +
+      'BGM&nbsp;2018, “Sol casino”. The page mixes that SEQ+VAB pair through the clean-room ' +
+      'SPU off your disc and loops it from the first spin. ' +
       '<br><br><b>What is measured rather than read, and why.</b> The <b>cabinet</b> — the grey ' +
       'body, the dark-red face the reels sit in, the navy marquee backing, the lit floor ramp — ' +
       'is drawn by retail every frame, but its emitter is still unpinned. The earlier “it’s the ' +
@@ -2274,6 +2409,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     } else if (did === 'spinup') {
       slotPendingStop = true;                    /* taken as soon as stops open */
     }
+    /* The casino floor's own track ("Sol casino" - the slot overlay starts
+     * none, so retail hears the host scene's) starts with the first spin. */
+    if (did === 'spin' || did === 'spinup') MgBgm.start('slot');
   }
 
   function slotFrame() {
@@ -2311,13 +2449,37 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     slotRender(st, bonus);
 
     /* Cue the machine's own sounds off the state transitions the retail SM
-     * fires them on: one click per reel as its stop is taken, the reach sting
-     * when a feature mode opens, and the payout tick as the credits tally. */
-    if (st.stopped > slotPrev.stopped) slotPlay('reel_stop', 0.55);
+     * fires them on: the spin-motor loop while reels turn, one click per reel
+     * as its stop is taken, the "reach" sting when the second jackpot symbol
+     * lands on a live line (FUN_801D1AF4), the escalating anticipation cues
+     * when a feature mode opens, and the payout tick per coin tallied. */
+    const spinning = st.phase === 'spinning' || (st.phase === 'stopping' && st.stopped < 3);
+    if (spinning) slotSpinStart(); else slotSpinStop();
+    if (st.stopped > slotPrev.stopped) {
+      slotPlay('reel_stop', 0.55);
+      /* Two reels down: scan the five lines through them for a matching
+       * jackpot pair (symbols 8 / 9) - retail's second-symbol-sighted cue. */
+      if (st.stopped === 2 && slotPrev.stopped < 2 && st.window) {
+        const LINE = [[0, 0], [1, 1], [2, 2], [0, 1], [2, 1]]; /* rows on reels 0,1 */
+        const reach = LINE.some(([a, b]) => {
+          const s0 = st.window[0][a], s1 = st.window[1][b];
+          return s0 === s1 && s0 >= 8;
+        });
+        if (reach) slotPlay('reach', 0.5);
+      }
+    }
     if (st.feature_mode !== slotPrev.feature && st.feature_mode > 0) {
       slotPlay(st.feature_mode === 2 ? 'reach2' : 'reach1', 0.5);
     }
-    if (credited > 0) slotPlay('payout_tick', 0.5);
+    if (credited > 0) {
+      /* The retail tally counts the coins in one at a time, ticking each -
+       * run the tick at counter cadence, capped so a jackpot doesn't rattle
+       * for half a minute. */
+      const ticks = Math.max(1, Math.min(10, Math.round(credited / 3)));
+      for (let i = 0; i < ticks; i++) {
+        setTimeout(() => slotPlay('payout_tick', 0.5), i * 90);
+      }
+    }
     /* The spin resolved on this frame: the last reel's stop evaluated it and the
      * tally put the machine back at idle (a press can beat the tally by a frame,
      * so 'payout' is a legal predecessor too). */
@@ -2466,6 +2628,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       if (ok.dance) danceLoadArt();
       if (ok.baka) bakaFillRoster();
       if (ok.slot) { slotLoadArt(); slotLoadSfx(); slotReset(); }
+      /* Pre-mix the on-screen game's BGM now so the first spin / first
+       * fight starts its track without a render hitch. */
+      MgBgm.prerender(active);
       /* The save bar harvests the portrait TIMs off the freshly-loaded disc. */
       window.dispatchEvent(new CustomEvent('mg-disc-loaded'));
       mainEl.style.display = '';

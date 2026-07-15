@@ -677,9 +677,16 @@ exactly 2 programs and 11 tones: the agreement is what pins the table offset.
 | confirm / cursor / cancel | `0x20` / `0x21` / `0x37` | static table, class-0 VAB (PROT 0868) |
 
 The reel-spin *loop* is not a ring cue: it is a voice driven straight through
-`FUN_80065034` (voice `0x13`, program 1) and released on all-reels-stop.
+`FUN_80065034` - the reel SM calls `func_0x80065034(0x13, 2, 1, 0, 0x3C, 0x40,
+0x28, 0x28)` (voice `0x13`, class-2 VAB, program 1, tone 0, note `0x3C`,
+volume `0x28`) as the reels start, and releases the voice on all-reels-stop.
+Decode it with `SfxCueBank::decode_tone` (constants
+`minigame_sfx::SLOT_SPIN_*`).
 
-The slot machine starts **no BGM** - it inherits the host scene's. Parser
+The slot machine starts **no BGM** - it inherits the host scene's: the casino
+floor `0543_koin1` starts BGM id `2018` via field-VM op `0x35` = `music_01`
+bank slot 18 ("Sol casino", extraction 1008,
+`legaia_asset::slot_payout::SLOT_HOST_BGM_PROT_INDEX`). Parser
 [`legaia_asset::minigame_sfx`].
 
 ## Open

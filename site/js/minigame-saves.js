@@ -281,12 +281,19 @@
 
   /* ---------------- actions ---------------- */
 
+  /* The retail menu confirm blip (static cue 0x20), when the shared cue
+   * player has it rendered off the visitor's disc. Silent otherwise. */
+  function confirmBlip() {
+    if (window.LegaiaSfx && LegaiaSfx.ready()) LegaiaSfx.playCue(0x20, 'saves.confirm');
+  }
+
   function loadSave(meta) {
     if (meta.kind !== 'card' || meta.coins == null) return;
     /* Coins won before any save was loaded ride along into the session. */
     var pending = LegaiaSaves.takeCoinsWon();
     var coins = Math.min(COIN_CAP, (meta.coins || 0) + pending);
     LegaiaSaves.setCoinSession(meta.id, coins);
+    confirmBlip();
     setStatus('Loaded "' + (meta.name || meta.id) + '" - ' + coins + ' coins in the session'
       + (pending ? ' (' + pending + ' pending winnings absorbed)' : '') + '.', 'good');
     if (window.MgSession && typeof MgSession.onSaveLoaded === 'function') {
@@ -313,6 +320,7 @@
         return;
       }
       delete iconCache[meta.id];
+      confirmBlip();
       setStatus('Wrote ' + coins + ' coins into "' + (meta.name || meta.id)
         + '" - use its download button for the emulator file.', 'good');
       render();

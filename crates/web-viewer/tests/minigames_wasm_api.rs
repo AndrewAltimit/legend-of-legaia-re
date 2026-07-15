@@ -560,3 +560,40 @@ fn save_bar_portraits_decode_from_a_real_disc() {
     // Out-of-range char ids report empty rather than panicking.
     assert!(mg.save_portrait_rgba(3).is_empty());
 }
+
+/// The slot machine's and the duel's disc-pinned BGM resolve and render
+/// non-silent stereo PCM, and the reel-spin motor tone (the direct-keyed
+/// voice, not a ring cue) decodes with a real playback rate.
+#[test]
+fn slot_and_baka_bgm_and_the_spin_motor_decode_off_the_disc() {
+    let Some((mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+
+    assert_eq!(mg.minigame_bgm_rate(), 44_100);
+    for game in ["slot", "baka"] {
+        let ready: serde_json::Value =
+            serde_json::from_str(&mg.minigame_bgm_ready_json(game)).unwrap();
+        assert_eq!(ready["ok"], true, "{game} BGM ready: {ready}");
+        let pcm = mg.minigame_bgm_pcm_i16(game, 2.0);
+        assert_eq!(pcm.len(), 2 * 2 * 44_100, "{game}: 2 s of stereo PCM");
+        assert!(pcm.iter().any(|&s| s != 0), "{game} BGM rendered silent");
+    }
+    // The two games are different tracks (the casino floor's vs the duel's).
+    let slot: serde_json::Value =
+        serde_json::from_str(&mg.minigame_bgm_ready_json("slot")).unwrap();
+    let baka: serde_json::Value =
+        serde_json::from_str(&mg.minigame_bgm_ready_json("baka")).unwrap();
+    assert_ne!(slot["prot"], baka["prot"]);
+    // An unknown game is a clean not-ok, not a panic.
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&mg.minigame_bgm_ready_json("nope")).unwrap()["ok"],
+        false
+    );
+
+    // The reel-spin motor loop: program 1 / tone 0 keyed at 0x3C.
+    let spin = mg.slot_spin_pcm();
+    assert!(!spin.is_empty(), "spin-motor tone decoded");
+    assert!(mg.slot_spin_rate() > 0);
+}
