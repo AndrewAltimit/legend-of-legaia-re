@@ -77,9 +77,50 @@ fixups (all offsets per [`man_section`](../../crates/asset/src/man_section.rs)):
   the big overworld hubs, whose next asset is flush after the MAN - is skipped
   and reported rather than relocating the whole bundle.
 
+## Generalized interior-text growth
+
+The same relocation machinery generalizes from a door's destination *name* to an
+arbitrary interior byte run - the dialog-segment text a localization grows or
+shrinks. `man_edit::apply_text_edits` takes a set of `TextEdit { offset, old_len,
+new_bytes }` (replace the `old_len` bytes at `offset` with `new_bytes` of any
+length) and rebuilds the MAN through the identical `rebuild_man` path: partition
+record-offset tables, `u24_at_28`, and straddling intra-record relative jumps are
+all fixed, and the external descriptor decompressed-size word is the caller's to
+rewrite after recompressing.
+
+A dialog segment is a field-VM `0x49 0x00` message op whose text run is framed
+`0x1F <text> 0x00`; the decoder recovers the op's width by walking the message
+bytes to the `<= 0x1E` terminator, so a grown run keeps the fall-through decode
+in sync and every relative jump after it is still found + relocated.
+
+Two invariants keep this safe:
+
+1. **Record-region gate.** Every edit must lie strictly before section 0 (the
+   record region) inside a partition record with no absolute-reference op. Dialog
+   is field-VM script = partition records, never a data section, so an edit that
+   would touch the section chain (whose length prefixes this pass does not fix)
+   or an abs-jump / camera-apply target is refused.
+2. **Round-trip backstop.** `man_edit::text_edits_preserve_scripts(original,
+   rebuilt)` re-walks every record in both buffers and requires an identical
+   instruction stream - same opcodes in order, every control-flow target
+   resolving to the same instruction ordinal. A mis-relocated jump diverges the
+   ordinal and is caught; the caller drops the growth and falls back to same-size
+   abbreviation for that scene.
+
+**Budget = the MAN's on-disc footprint.** The recompressed grown MAN must still
+fit the gap from its compressed stream to the next asset descriptor (same LBA, no
+disc relayout). Across the retail USA disc the scene-bundle PROT entries are
+**sector-aligned with zero padding**, and each compressed MAN already fills its
+footprint, so in-place growth fits a wordier localization only when the rewritten
+MAN recompresses no larger than the original - a small fraction of scenes. The
+rest are residual sector-crossers whose deficit is under one 2048-byte sector;
+supplying that sector is a disc-level relayout (what the PAL discs did at
+mastering - see [pal-localizations.md](../tooling/pal-localizations.md)).
+
 ## See also
 
 - [Randomizer](../tooling/randomizer.md) - the door feature this enables.
+- [PAL localizations](../tooling/pal-localizations.md) - the dialog-growth consumer + fit rate.
 - [encounter.md](encounter.md) - the MAN multi-section layout.
 - [`field_disasm`](../subsystems/script-vm.md) - the field-VM opcode decoder the
   jump fixup uses.

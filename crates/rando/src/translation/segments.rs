@@ -78,6 +78,18 @@ fn is_prose_punct(b: u8) -> bool {
 /// Tokenize `text` (the bytes between `0x1F` and the terminator) and judge
 /// whether it reads as retail dialog. See module docs for the rationale.
 pub fn qualifies(text: &[u8]) -> bool {
+    qualifies_ext(text, false)
+}
+
+/// [`qualifies`] with an `allow_high` flag. When `true`, single-byte glyphs in
+/// the high range `0x7F..=0xFF` (that are not 2-byte opcodes) are accepted as
+/// printable and counted as word-like - the shape of the PAL localizations,
+/// whose accented Latin glyphs (CP437-style: `é`=`0x82`, `ü`=`0x81`, `ê`=`0x88`,
+/// ...) live above `0x7E`. The retail NTSC (USA) build never uses high glyph
+/// tiles, so scanning it with `allow_high` on is a no-op; scanning a PAL build
+/// with it off drops every accented line. Cross-region alignment must use the
+/// same flag on both discs (see [`super::diff`]).
+pub fn qualifies_ext(text: &[u8], allow_high: bool) -> bool {
     if text.is_empty() {
         return false;
     }
@@ -95,19 +107,23 @@ pub fn qualifies(text: &[u8]) -> bool {
         glyphs.push(b);
         i += 1;
     }
-    // Every 1-byte glyph must be printable ASCII: retail Latin dialog never
-    // uses the high glyph tiles, and their presence marks binary data.
-    if glyphs.iter().any(|&g| !(0x20..=0x7E).contains(&g)) {
+    // A glyph is legal if it is printable ASCII, or (when `allow_high`) a
+    // high-range glyph tile. Retail Latin dialog never uses high tiles, and
+    // their presence marks binary data - except in a PAL build, where they are
+    // the accented letters.
+    let is_glyph = |g: u8| (0x20..=0x7E).contains(&g) || (allow_high && g >= 0x7F);
+    if glyphs.iter().any(|&g| !is_glyph(g)) {
         return false;
     }
     let n = glyphs.len();
-    let letters = glyphs.iter().filter(|g| g.is_ascii_alphabetic()).count();
+    let is_letter = |g: u8| g.is_ascii_alphabetic() || (allow_high && g >= 0x7F);
+    let letters = glyphs.iter().filter(|&&g| is_letter(g)).count();
     if letters == 0 {
         return false;
     }
     let good = glyphs
         .iter()
-        .filter(|&&g| g == b' ' || g.is_ascii_alphanumeric() || is_prose_punct(g))
+        .filter(|&&g| g == b' ' || g.is_ascii_alphanumeric() || is_prose_punct(g) || is_letter(g))
         .count();
     if glyphs.contains(&b' ') {
         // Prose: at least three letters and >= 90% word-like glyphs.
@@ -194,6 +210,12 @@ pub fn is_dialog_carrier(buf: &[u8]) -> bool {
 /// hit the cursor resumes past the terminator; otherwise it advances one
 /// byte, so overlapping candidates are still found.
 pub fn scan(buf: &[u8]) -> Vec<Segment> {
+    scan_ext(buf, false)
+}
+
+/// [`scan`] with the [`qualifies_ext`] `allow_high` flag, so a PAL build's
+/// accented dialog qualifies. See [`super::diff`].
+pub fn scan_ext(buf: &[u8], allow_high: bool) -> Vec<Segment> {
     let mut segs = Vec::new();
     let mut i = 0;
     while i < buf.len() {
@@ -202,7 +224,7 @@ pub fn scan(buf: &[u8]) -> Vec<Segment> {
             continue;
         }
         match walk_to_terminator(buf, i + 1) {
-            Some(term) if buf[term] == 0x00 && qualifies(&buf[i + 1..term]) => {
+            Some(term) if buf[term] == 0x00 && qualifies_ext(&buf[i + 1..term], allow_high) => {
                 segs.push(Segment {
                     text_off: i + 1,
                     len: term - (i + 1),

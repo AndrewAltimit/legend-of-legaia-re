@@ -20,6 +20,8 @@
 //! [`DiscPatcher`] owns a mutable copy of the user's disc; it reads and writes
 //! that copy and is serialized by the caller. It embeds no game bytes.
 
+use std::collections::BTreeMap;
+
 use anyhow::{Context, Result, bail};
 use legaia_asset::monster_archive::SLOT_STRIDE;
 use legaia_iso::iso9660::find_file_in_image;
@@ -43,6 +45,8 @@ pub struct DiscPatcher {
     image: Vec<u8>,
     /// Disc sector where `PROT.DAT` begins (ISO 9660 directory record).
     prot_lba: u32,
+    /// `PROT.DAT`'s logical size in whole 2048-byte sectors.
+    prot_sectors: u32,
     /// Per-PROT-entry placement.
     entries: Vec<EntrySpan>,
 }
@@ -82,6 +86,7 @@ impl DiscPatcher {
         Ok(Self {
             image,
             prot_lba,
+            prot_sectors: sectors as u32,
             entries,
         })
     }
@@ -115,6 +120,126 @@ impl DiscPatcher {
         let mut out = read_user_data(&self.image, self.prot_lba + span.start_lba, sectors)?;
         out.truncate(span.size_bytes as usize);
         Ok(out)
+    }
+
+    /// PROT entry `index`'s **true on-disc footprint** in bytes: the span to the
+    /// next entry (`next_start - start`), which is the real size a scene bundle
+    /// occupies. This differs from [`Self::entry_footprint`] /
+    /// [`Self::read_entry`], which return `max(indexed, footprint)` and can
+    /// over-read into later entries. `None` if `index` is out of range.
+    pub fn entry_true_footprint_sectors(&self, index: usize) -> Option<u32> {
+        let start = self.entries.get(index)?.start_lba;
+        let next = self
+            .entries
+            .get(index + 1)
+            .map(|e| e.start_lba)
+            .unwrap_or(self.prot_sectors);
+        Some(next.saturating_sub(start))
+    }
+
+    /// Read PROT entry `index`'s true-footprint bytes (`next_start - start`
+    /// sectors) from the current image. This is the payload a relayout grows.
+    pub fn read_entry_footprint(&self, index: usize) -> Result<Vec<u8>> {
+        let span = self
+            .entries
+            .get(index)
+            .with_context(|| format!("PROT entry {index} out of range"))?;
+        let sectors = self
+            .entry_true_footprint_sectors(index)
+            .with_context(|| format!("PROT entry {index} footprint"))?;
+        read_user_data(
+            &self.image,
+            self.prot_lba + span.start_lba,
+            sectors as usize,
+        )
+    }
+
+    /// Grow a set of PROT entries by whole sectors, cascading every downstream
+    /// disc LBA reference (a **full-ISO relayout**; see
+    /// [`legaia_iso::relayout`]).
+    ///
+    /// `new_payloads[index]` is entry `index`'s new full-footprint payload; its
+    /// length must be a whole 2048-byte-sector multiple `>=` the entry's current
+    /// true footprint. The caller builds each payload (e.g. a scene bundle whose
+    /// MAN grew + shifted sub-assets + rewritten descriptor offsets). This method
+    /// rewrites `PROT.DAT`'s **PROT-relative** internal TOC so every entry after a
+    /// grown one shifts, rebuilds `PROT.DAT`, and fixes the ISO9660 directory /
+    /// path-table / PVD references + re-encodes every touched sector.
+    ///
+    /// The PROT entry **index space is preserved** (no entries added/removed), so
+    /// later same-size in-place edits keyed by index still resolve. After this
+    /// call the patcher is re-opened against the grown image, so entry LBAs are
+    /// current.
+    pub fn grow_prot_entries(&mut self, new_payloads: &BTreeMap<usize, Vec<u8>>) -> Result<()> {
+        if new_payloads.is_empty() {
+            return Ok(());
+        }
+        // The current PROT.DAT logical payload.
+        let old_prot = read_user_data(&self.image, self.prot_lba, self.prot_sectors as usize)?;
+        let sector = USER_DATA_SIZE;
+
+        // Per-entry growth (in sectors) + validation.
+        let n = self.entries.len();
+        let mut growth = vec![0u32; n];
+        for (&idx, payload) in new_payloads {
+            if idx >= n {
+                bail!("PROT entry {idx} out of range for growth");
+            }
+            if !payload.len().is_multiple_of(sector) {
+                bail!("grown PROT entry {idx} payload is not a whole number of sectors");
+            }
+            let new_sectors = (payload.len() / sector) as u32;
+            let old_sectors = self
+                .entry_true_footprint_sectors(idx)
+                .with_context(|| format!("PROT entry {idx} footprint"))?;
+            if new_sectors < old_sectors {
+                bail!(
+                    "grown PROT entry {idx} shrank ({new_sectors} < {old_sectors} sectors); relayout only grows"
+                );
+            }
+            growth[idx] = new_sectors - old_sectors;
+        }
+
+        // Cumulative shift applied to entry j = sum of growth of entries < j.
+        let start0 = self.entries[0].start_lba as usize * sector;
+        let mut new_prot = Vec::with_capacity(old_prot.len());
+        new_prot.extend_from_slice(&old_prot[..start0]);
+        for e in 0..n {
+            let start = self.entries[e].start_lba as usize * sector;
+            let foot_sectors = self.entry_true_footprint_sectors(e).unwrap() as usize;
+            let end = start + foot_sectors * sector;
+            match new_payloads.get(&e) {
+                Some(p) => new_prot.extend_from_slice(p),
+                None => new_prot.extend_from_slice(&old_prot[start..end]),
+            }
+        }
+        debug_assert_eq!(new_prot.len() % sector, 0);
+
+        // Rewrite the internal TOC: entry j's start LBA word sits at PROT byte
+        // `8 + (j+2)*4` (PROT-relative; see docs/formats/prot.md). Shift by the
+        // cumulative growth of every earlier entry.
+        let mut cum = 0u32;
+        for (j, span) in self.entries.iter().enumerate() {
+            let new_start = span.start_lba + cum;
+            let off = 8 + (j + 2) * 4;
+            if off + 4 <= start0 {
+                new_prot[off..off + 4].copy_from_slice(&new_start.to_le_bytes());
+            }
+            cum += growth[j];
+        }
+
+        // Disc-level relayout: grow PROT.DAT + cascade every LBA reference.
+        let new_image = legaia_iso::relayout::grow_prot_dat(
+            &self.image,
+            self.prot_lba,
+            self.prot_sectors,
+            &new_prot,
+        )?;
+
+        // Re-open against the grown image so entry LBAs / prot_sectors are current
+        // and later index-keyed same-size edits resolve.
+        *self = Self::open(new_image)?;
+        Ok(())
     }
 
     /// Overwrite `bytes` at `offset_in_entry` bytes into PROT entry `index`,
