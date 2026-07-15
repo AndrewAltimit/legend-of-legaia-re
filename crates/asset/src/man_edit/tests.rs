@@ -376,3 +376,135 @@ fn scene_destinations_p2_pass_rejects_text_desync_name() {
     let mf = man_section::parse(&man).unwrap();
     assert!(scene_destinations(&mf, &man).is_empty());
 }
+
+/// A field-VM dialog op: `0x49 0x00 0x00 | 0x1F <text> 0x00 | <trailing>`. Its
+/// width is `6 + text.len` (header 3 + `0x1F` + text + terminator + 1 trailing),
+/// which `field_disasm` recovers by walking the mes bytes to the `0x00`, so a
+/// grown `text` keeps the fall-through decode in sync.
+fn mes_run(text: &[u8]) -> Vec<u8> {
+    let mut v = vec![0x49, 0x00, 0x00, 0x1F];
+    v.extend_from_slice(text);
+    v.push(0x00); // segment terminator
+    v.push(0x00); // trailing byte the op width consumes
+    v
+}
+
+/// A `0x26 JMP_REL` with a raw delta (target = `pc + 1 + delta`).
+fn jmp_rel(delta: u16) -> Vec<u8> {
+    let mut v = vec![0x26];
+    v.extend_from_slice(&delta.to_le_bytes());
+    v
+}
+
+#[test]
+fn text_edit_grows_dialog_and_relocates_a_straddling_jump() {
+    // Record script (pc0 = 6): a forward JMP over the dialog to the trailing
+    // halt, then the dialog op, then the halt. Growing the dialog text shifts
+    // the halt but not the jump - the classic straddling relative jump.
+    let mut rec = p2_prefix(); // pc0 = 6
+    // Lay out to learn the halt offset, then set the jump delta to reach it.
+    let jmp = jmp_rel(0); // patched below
+    let mes = mes_run(b"hi");
+    let halt_rel = 6 + jmp.len() + mes.len(); // record-relative offset of 0x21
+    // JMP target = jmp_pc + 1 + delta; jmp_pc(rel) = 6. delta = halt_rel - 7.
+    let jmp = jmp_rel((halt_rel - 7) as u16);
+    rec.extend_from_slice(&jmp);
+    rec.extend_from_slice(&mes);
+    rec.push(0x21); // halt (jump target)
+
+    let man = build_man(&[rec]);
+    let mf = man_section::parse(&man).unwrap();
+    let d = mf.data_region_offset;
+    let old_sec0 = mf.sections[0].offset;
+
+    // Locate the 0x1F segment's text and length by scanning the record.
+    let seg_1f = man[d..].iter().position(|&b| b == 0x1F).unwrap() + d;
+    let text_off = seg_1f + 1;
+    let term = man[text_off..].iter().position(|&b| b == 0x00).unwrap() + text_off;
+    let old_len = term - text_off;
+    assert_eq!(&man[text_off..term], b"hi");
+
+    // The jump decodes to the halt before the edit.
+    let jmp_insn = field_disasm::decode(&man, d + 6).unwrap();
+    let orig_target = match jmp_insn.info {
+        field_disasm::InsnInfo::JmpRel { target, .. } => target,
+        _ => panic!("expected JmpRel"),
+    };
+
+    let edit = TextEdit {
+        offset: text_off,
+        old_len,
+        new_bytes: b"hello there".to_vec(), // +9 bytes
+    };
+    let out = apply_text_edits(&man, &[edit]).unwrap();
+    assert_eq!(out.len(), man.len() + (11 - old_len));
+
+    // Structure relocated: section 0 shifted by the growth; the record start
+    // (before the edit) did not move.
+    let mf2 = man_section::parse(&out).unwrap();
+    assert_eq!(mf2.sections[0].offset, old_sec0 + (11 - old_len));
+    assert_eq!(mf2.partitions[2][0], mf.partitions[2][0]);
+
+    // The grown text is present, still `0x1F`-framed and `0x00`-terminated.
+    let seg2 = out[d..].iter().position(|&b| b == 0x1F).unwrap() + d;
+    let term2 = out[seg2 + 1..].iter().position(|&b| b == 0x00).unwrap() + seg2 + 1;
+    assert_eq!(&out[seg2 + 1..term2], b"hello there");
+
+    // The straddling jump's delta was recomputed: it still targets the halt,
+    // now shifted by the growth.
+    let jmp2 = field_disasm::decode(&out, d + 6).unwrap();
+    let new_target = match jmp2.info {
+        field_disasm::InsnInfo::JmpRel { target, .. } => target,
+        _ => panic!("expected JmpRel"),
+    };
+    assert_eq!(new_target, orig_target + (11 - old_len));
+
+    // Round-trip backstop: same program, relocated.
+    assert!(text_edits_preserve_scripts(&man, &out));
+}
+
+#[test]
+fn text_edit_shrinks_dialog_too() {
+    let mut rec = p2_prefix();
+    rec.extend_from_slice(&mes_run(b"a longer line"));
+    rec.push(0x21);
+    let man = build_man(&[rec]);
+    let d = man_section::parse(&man).unwrap().data_region_offset;
+    let seg = man[d..].iter().position(|&b| b == 0x1F).unwrap() + d;
+    let text_off = seg + 1;
+    let term = man[text_off..].iter().position(|&b| b == 0x00).unwrap() + text_off;
+    let old_len = term - text_off;
+
+    let out = apply_text_edits(
+        &man,
+        &[TextEdit {
+            offset: text_off,
+            old_len,
+            new_bytes: b"hi".to_vec(),
+        }],
+    )
+    .unwrap();
+    assert_eq!(out.len(), man.len() - (old_len - 2));
+    assert!(text_edits_preserve_scripts(&man, &out));
+}
+
+#[test]
+fn text_edit_refuses_section_region_offset() {
+    let mut rec = p2_prefix();
+    rec.extend_from_slice(&mes_run(b"hi"));
+    rec.push(0x21);
+    let man = build_man(&[rec]);
+    let mf = man_section::parse(&man).unwrap();
+    // Section 0 lives past the record region; editing there is out of scope.
+    let bad = mf.sections[0].offset + 1;
+    let err = apply_text_edits(
+        &man,
+        &[TextEdit {
+            offset: bad,
+            old_len: 0,
+            new_bytes: vec![0x41],
+        }],
+    )
+    .unwrap_err();
+    assert!(matches!(err, ManEditError::RecordNotFound { .. }));
+}
