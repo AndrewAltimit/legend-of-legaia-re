@@ -93,6 +93,20 @@ plus the Status and Options sub-screens run their live `legaia-engine-core`
 sessions (`StatusScreenSession` / `OptionsSession`); the remaining rows open the
 generic framed window the native shell also uses for its not-yet-pinned screens.
 
+## Boot title screen (`boot_title`)
+
+The front of the native `--boot-ui` chain (publisher logos -> title ->
+save-select -> field). "New game" boots the retail title card off the disc's own
+art: `LegaiaRuntime::boot_title_*` drives the engine's `TitleSession` (FadeIn ->
+PressStart -> MainMenu) and serves the title-TIM bands (wordmark, Press Start,
+NEW GAME / CONTINUE, copyright) as sprite quads off `title_screen_atlas`
+(PROT 0888), blitted onto the same overlay canvas the pause menu uses, over
+black. `site/js/play-app.js` exposes the `AtlasBlitter`; the page's small boot
+controller runs before any scene exists, feeds the title edge-triggered pad
+words, and on the New Game outcome seeds the retail defaults + enters the
+opening scene (the existing `enter_field_scene` path). Publisher logos and the
+Continue save-slot grid are not yet wired.
+
 ## Assembled full-scene maps (`field_scene`)
 
 `LegaiaViewer::set_scene_field(name)` loads a CDNAME field/town scene

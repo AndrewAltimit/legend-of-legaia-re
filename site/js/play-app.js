@@ -1065,4 +1065,7 @@
   }
 
   window.PlayView = PlayView;
+  /* Shared by the boot-title controller in play.html, which renders the retail
+   * title card onto the same overlay canvas before a scene exists. */
+  window.LegaiaAtlasBlitter = AtlasBlitter;
 })();

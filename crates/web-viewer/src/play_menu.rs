@@ -77,6 +77,12 @@ pub struct PlayMenuAssets {
 }
 
 impl PlayMenuAssets {
+    /// Shared dialog-font atlas (reused by the boot title screen's text
+    /// fallback).
+    pub(crate) fn font_ref(&self) -> &legaia_font::Font {
+        &self.font
+    }
+
     fn window_rect(&self, id: usize) -> (i32, i32, i32, i32) {
         if let Some(d) = self.windows.as_ref().and_then(|t| t.window(id)) {
             return d.rect();
@@ -156,8 +162,9 @@ fn quad_json(d: &TextDraw) -> serde_json::Value {
 impl LegaiaRuntime {
     /// Build the menu assets on demand (font is always available; chrome +
     /// window table need the loaded PROT). Returns `false` when there is no
-    /// disc loaded yet.
-    fn ensure_menu_assets(&mut self) -> bool {
+    /// disc loaded yet. Crate-visible so the boot title screen can share the
+    /// font atlas.
+    pub(crate) fn ensure_menu_assets(&mut self) -> bool {
         if self.menu_assets.is_some() {
             return true;
         }

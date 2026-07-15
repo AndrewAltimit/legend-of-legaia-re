@@ -1115,6 +1115,43 @@ export class LegaiaRuntime {
      */
     audio_init(): boolean;
     /**
+     * `[width, height]` of the title atlas; `[0, 0]` when none.
+     */
+    boot_title_atlas_dims(): Uint32Array;
+    /**
+     * The title art atlas (RGBA8) the sprite bands sample. Empty when none.
+     */
+    boot_title_atlas_rgba(): Uint8Array;
+    /**
+     * Abort the title flow (page navigated away / cancelled).
+     */
+    boot_title_close(): void;
+    /**
+     * Draw lists for the current title state, in surface pixels:
+     * `{ "active": true, "sprites": [...title-atlas quads...],
+     *    "texts": [...font quads...] }`. Rendered over black by the page.
+     */
+    boot_title_draws_json(surface_w: number, surface_h: number): string;
+    /**
+     * `true` once the disc title art resolved (else the card renders text-only).
+     */
+    boot_title_has_atlas(): boolean;
+    boot_title_is_active(): boolean;
+    /**
+     * Start the boot title screen. No-op with no disc loaded. Continue is left
+     * disabled (the browser boot does not preload an engine save); the fade-in
+     * is skipped so the card shows immediately.
+     */
+    boot_title_start(): void;
+    /**
+     * Advance the title one frame with an edge-triggered PSX pad word. Returns
+     * `""` while the title runs, or the chosen outcome once the player
+     * confirms: `"new_game"`, `"continue"`, or `"options"`. The caller acts on
+     * the outcome (seed + enter the opening scene for New Game) and the title
+     * clears itself.
+     */
+    boot_title_step(edge: number): string;
+    /**
      * `true` if a disc has been loaded.
      */
     disc_loaded(): boolean;
@@ -2878,6 +2915,14 @@ export interface InitOutput {
     readonly legaiaminigames_slot_symbol_rgba: (a: number, b: number) => [number, number];
     readonly legaiaminigames_slot_tick: (a: number) => number;
     readonly legaiaruntime_audio_init: (a: number) => number;
+    readonly legaiaruntime_boot_title_atlas_dims: (a: number) => [number, number];
+    readonly legaiaruntime_boot_title_atlas_rgba: (a: number) => [number, number];
+    readonly legaiaruntime_boot_title_close: (a: number) => void;
+    readonly legaiaruntime_boot_title_draws_json: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaruntime_boot_title_has_atlas: (a: number) => number;
+    readonly legaiaruntime_boot_title_is_active: (a: number) => number;
+    readonly legaiaruntime_boot_title_start: (a: number) => void;
+    readonly legaiaruntime_boot_title_step: (a: number, b: number) => [number, number];
     readonly legaiaruntime_disc_loaded: (a: number) => number;
     readonly legaiaruntime_enter_field: (a: number, b: number, c: number) => [number, number, number, number];
     readonly legaiaruntime_export_save: (a: number) => [number, number];

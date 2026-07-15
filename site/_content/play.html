@@ -190,9 +190,10 @@
       <button class="play-mode" type="button" data-mode="newgame">
         <span class="play-mode-tag">boot</span>
         <span class="play-mode-name">New game</span>
-        <span class="play-mode-desc">Start where a new game starts: Rim Elm, the scene the disc's
-          own new-game table names as the opening. The pre-title FMV, the title screen, and the
-          prologue cutscene chain are native-only for now - this drops you straight into the town.</span>
+        <span class="play-mode-desc">Boots the retail title card off your disc's own art - Press Start,
+          then New Game - and drops you where a new game starts: Rim Elm, the scene the disc's
+          new-game table names as the opening. The pre-title FMV, the Continue save-slot grid, and the
+          prologue cutscene chain are native-only for now.</span>
       </button>
       <button class="play-mode" type="button" data-mode="scene">
         <span class="play-mode-tag">explore</span>
@@ -292,9 +293,10 @@
     <li><strong>Battles.</strong> The battle state machine and its formulas are ported and tested,
       but the battle stage's render path lives in the native window. Random encounters are therefore
       left disarmed in the browser rather than dropping you into a black screen.</li>
-    <li><strong>The title screen and the opening prologue.</strong> The boot chain, the narration
-      crawl, and the cutscene camera all run natively; their draw path is the native one. "New game"
-      here starts you at the scene the disc's new-game table names, not at the title card.</li>
+    <li><strong>The pre-title FMV and the opening prologue.</strong> The title card now renders in the
+      browser off your disc's art (New game boots into it), but the pre-title movie, the narration
+      crawl, and the prologue cutscene chain still run only in the native window. Publisher logos and
+      the Continue save-slot grid are not wired here yet either.</li>
     <li><strong>Shops and the inn.</strong> The runtime state is all there, but their menu screens
       are not surfaced on this page yet.</li>
     <li><strong>Audio.</strong> The sequencer and the SPU are ported and the WebAudio backend exists,
@@ -433,7 +435,11 @@
     for (const el of modesEl.querySelectorAll('.play-mode')) el.classList.remove('is-active');
     b.classList.add('is-active');
     if (b.dataset.mode === 'newgame') {
-      enter(OPENING_SCENE);
+      /* Boot chain: show the retail title card (New Game / Continue) off the
+       * disc's own title art, then drop into the opening scene the seed names.
+       * Continue has no browser save-slot grid yet, so every confirmed outcome
+       * proceeds to New Game. */
+      runBootTitle(() => enter(OPENING_SCENE));
     } else {
       /* The scene list lives inside #play-stage, which starts hidden. Reveal
        * the stage so the picker is visible and selectable without first
@@ -517,6 +523,71 @@
       console.warn(err);
     }
   }
+
+  /* ---------------- boot title screen (the --boot-ui chain) ---------------- */
+
+  /* Run the retail title card over the overlay canvas, then call `then(outcome)`
+   * once the player confirms. The engine's TitleSession drives it; the page
+   * blits the disc's title-TIM bands (title atlas) + font glyphs onto the
+   * black overlay and feeds it edge-triggered pad words. This runs BEFORE any
+   * scene / PlayView exists, so it owns a tiny self-contained RAF + key loop. */
+  let bootTitleRAF = 0;
+  const BOOT_PAD = { ArrowUp: 0x0010, ArrowDown: 0x0040, KeyW: 0x0010, KeyS: 0x0040,
+    KeyZ: 0x4000, Space: 0x4000, KeyX: 0x2000, Enter: 0x0008 };
+  function runBootTitle(then) {
+    if (!runtime) { then('new_game'); return; }
+    try { runtime.boot_title_start(); } catch (e) { console.warn('boot title', e); then('new_game'); return; }
+    if (!runtime.boot_title_is_active()) { then('new_game'); return; }   /* no disc art path */
+    stageEl.style.display = 'grid';
+    statusEl.textContent = 'Press Start (Enter). Up/Down to choose, Z to confirm.';
+    const ctx = menuCanvas.getContext('2d');
+    /* Blitters: title art for the bands, the dialog font for any text stand-in. */
+    let titleBlit = null, fontBlit = null;
+    try {
+      const td = runtime.boot_title_atlas_dims();
+      if (runtime.boot_title_has_atlas() && td[0] > 0)
+        titleBlit = new window.LegaiaAtlasBlitter(runtime.boot_title_atlas_rgba(), td[0], td[1]);
+      const fd = runtime.play_menu_font_dims();
+      if (fd[0] > 0) fontBlit = new window.LegaiaAtlasBlitter(runtime.play_menu_font_rgba(), fd[0], fd[1]);
+    } catch (e) { console.warn('boot title atlas', e); }
+    const pulse = new Set();
+    const onKey = (e) => {
+      if (BOOT_PAD[e.code] === undefined) return;
+      e.preventDefault();
+      pulse.add(e.code);
+    };
+    window.addEventListener('keydown', onKey);
+    canvas.focus();
+    const finish = (outcome) => {
+      if (bootTitleRAF) cancelAnimationFrame(bootTitleRAF);
+      bootTitleRAF = 0;
+      window.removeEventListener('keydown', onKey);
+      ctx.clearRect(0, 0, menuCanvas.width, menuCanvas.height);
+      try { then(outcome); } catch (e) { console.warn('boot title -> then', e); }
+    };
+    const frame = () => {
+      bootTitleRAF = requestAnimationFrame(frame);
+      let edge = 0;
+      for (const k of pulse) edge |= (BOOT_PAD[k] || 0);
+      pulse.clear();
+      let outcome = '';
+      try { outcome = runtime.boot_title_step(edge); } catch (e) { return finish('new_game'); }
+      /* Draw the card: black backdrop, title bands, then any text stand-in. */
+      let draws;
+      try { draws = JSON.parse(runtime.boot_title_draws_json(menuCanvas.width, menuCanvas.height)); }
+      catch (e) { draws = null; }
+      ctx.clearRect(0, 0, menuCanvas.width, menuCanvas.height);
+      if (draws && draws.active) {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, menuCanvas.width, menuCanvas.height);
+        if (titleBlit) titleBlit.blit(ctx, draws.sprites);
+        if (fontBlit) fontBlit.blit(ctx, draws.texts);
+      }
+      if (outcome) finish(outcome);   /* new_game / continue / options */
+    };
+    bootTitleRAF = requestAnimationFrame(frame);
+  }
+  window.__bootTitle = runBootTitle;
 
   /* Rebuild a fresh engine after a WASM trap and re-enter the current scene,
    * reusing the existing renderer/canvas and the cached disc bytes (no

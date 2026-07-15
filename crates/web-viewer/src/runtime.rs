@@ -60,6 +60,11 @@ pub struct LegaiaRuntime {
     pub(crate) menu_assets: Option<crate::play_menu::PlayMenuAssets>,
     /// Live pause-menu navigation state; `Some` while the menu is up.
     pub(crate) play_menu: Option<crate::play_menu::PlayMenu>,
+    /// Boot-chain title-screen session; `Some` while the title runs before a
+    /// scene is entered ([`crate::boot_title`]).
+    pub(crate) boot_title: Option<legaia_engine_core::title::TitleSession>,
+    /// Disc-sourced title-screen art (PROT 0888), built with the title flow.
+    pub(crate) title_atlas: Option<legaia_engine_core::title_screen_atlas::TitleScreenAtlas>,
     #[cfg(target_arch = "wasm32")]
     audio_out: Option<WebAudioOut>,
 }
@@ -85,6 +90,8 @@ impl LegaiaRuntime {
             item_names: None,
             menu_assets: None,
             play_menu: None,
+            boot_title: None,
+            title_atlas: None,
             #[cfg(target_arch = "wasm32")]
             audio_out: None,
         }
@@ -142,9 +149,12 @@ impl LegaiaRuntime {
         self.field = None;
         self.player = None;
         self.npcs = None;
-        // A new disc means a new PROT: drop any cached menu chrome / open menu.
+        // A new disc means a new PROT: drop any cached menu chrome / open menu /
+        // title art.
         self.menu_assets = None;
         self.play_menu = None;
+        self.boot_title = None;
+        self.title_atlas = None;
         Ok(count)
     }
 

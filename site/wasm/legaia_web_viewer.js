@@ -2258,6 +2258,96 @@ export class LegaiaRuntime {
         return ret !== 0;
     }
     /**
+     * `[width, height]` of the title atlas; `[0, 0]` when none.
+     * @returns {Uint32Array}
+     */
+    boot_title_atlas_dims() {
+        const ret = wasm.legaiaruntime_boot_title_atlas_dims(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * The title art atlas (RGBA8) the sprite bands sample. Empty when none.
+     * @returns {Uint8Array}
+     */
+    boot_title_atlas_rgba() {
+        const ret = wasm.legaiaruntime_boot_title_atlas_rgba(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Abort the title flow (page navigated away / cancelled).
+     */
+    boot_title_close() {
+        wasm.legaiaruntime_boot_title_close(this.__wbg_ptr);
+    }
+    /**
+     * Draw lists for the current title state, in surface pixels:
+     * `{ "active": true, "sprites": [...title-atlas quads...],
+     *    "texts": [...font quads...] }`. Rendered over black by the page.
+     * @param {number} surface_w
+     * @param {number} surface_h
+     * @returns {string}
+     */
+    boot_title_draws_json(surface_w, surface_h) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_boot_title_draws_json(this.__wbg_ptr, surface_w, surface_h);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * `true` once the disc title art resolved (else the card renders text-only).
+     * @returns {boolean}
+     */
+    boot_title_has_atlas() {
+        const ret = wasm.legaiaruntime_boot_title_has_atlas(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @returns {boolean}
+     */
+    boot_title_is_active() {
+        const ret = wasm.legaiaruntime_boot_title_is_active(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Start the boot title screen. No-op with no disc loaded. Continue is left
+     * disabled (the browser boot does not preload an engine save); the fade-in
+     * is skipped so the card shows immediately.
+     */
+    boot_title_start() {
+        wasm.legaiaruntime_boot_title_start(this.__wbg_ptr);
+    }
+    /**
+     * Advance the title one frame with an edge-triggered PSX pad word. Returns
+     * `""` while the title runs, or the chosen outcome once the player
+     * confirms: `"new_game"`, `"continue"`, or `"options"`. The caller acts on
+     * the outcome (seed + enter the opening scene for New Game) and the title
+     * clears itself.
+     * @param {number} edge
+     * @returns {string}
+     */
+    boot_title_step(edge) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_boot_title_step(this.__wbg_ptr, edge);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * `true` if a disc has been loaded.
      * @returns {boolean}
      */
