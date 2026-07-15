@@ -9,9 +9,13 @@
  * unused_enemies, unused_items, equipment_drops, monster_stats, move_power,
  * element_affinity, spell_cost, equip_bonus, weapon_specialty, starting_level,
  * solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru)
- * -> { data, summary, seed }`, `resolve_seed(str)`,
- * `validate_lang_pack(image, yaml) -> { ok, language, applied, skipped, message }`,
- * and `export_lang_pack(image, language) -> yaml_string`.
+ * -> { data, summary, seed, lang }`, `resolve_seed(str)`,
+ * `validate_lang_pack(image, yaml) -> { ok, language, applied, skipped, message, report }`,
+ * and `export_lang_pack(image, language) -> yaml_string`. `lang` / `report`
+ * carry the per-section language-patch coverage: `{ language, applied,
+ * already_applied, skipped, untranslated, sections: [{name, total, filled,
+ * applied, already_applied, skipped}], reasons: [{reason, count}] }` (null
+ * when no language pack was chosen).
  * Imports resolve relative to THIS file (site/js/), so the package at
  * site/wasm/ is `../wasm/...`. Shipped language packs are static assets under
  * site/lang/<lang>.yaml, fetched on demand (nothing is bundled into the WASM).
@@ -86,6 +90,28 @@ function triggerDownload(bytes, filename) {
 function patchedName(original, seed) {
   const base = (original || 'disc.bin').replace(/\.bin$/i, '');
   return `${base}.legaia-rando-${seed}.bin`;
+}
+
+// Render the per-section language coverage block from patch_rom's `lang`
+// report (or validate_lang_pack's `report`): how much of the pack landed,
+// per section, and why the rest was skipped. '' when no language was chosen.
+function langCoverageText(lang) {
+  if (!lang) return '';
+  const done = lang.applied + lang.already_applied;
+  const lines = [
+    '',
+    `language coverage (${lang.language}): ${done} line(s) patched, ` +
+    `${lang.skipped} skipped, ${lang.untranslated} not in the pack (stay English)`,
+  ];
+  for (const s of (lang.sections || [])) {
+    if (!s.filled) continue;
+    const ok = s.applied + s.already_applied;
+    lines.push(`  ${s.name}: ${ok}/${s.filled} applied` + (s.skipped ? ` (${s.skipped} skipped)` : ''));
+  }
+  for (const r of (lang.reasons || [])) {
+    lines.push(`  ${r.count} skipped: ${r.reason}`);
+  }
+  return lines.join('\n') + '\n';
 }
 
 // A .cue for the patched .bin. Legend of Legaia (USA) is a single-track
@@ -240,6 +266,9 @@ function init() {
       const buf = await discBytes();
       const r = mod.validate_lang_pack(buf, yaml);
       setLangStatus(`${langSel.options[langSel.selectedIndex].text}: ${r.message}`, 'ok');
+      // Per-section dry-run coverage in the summary panel (same shape as the
+      // post-patch report).
+      if (r.report) summaryEl.textContent = langCoverageText(r.report).trim();
     } catch (e) {
       setLangStatus('Error: ' + (e && e.message ? e.message : e), 'err');
     }
@@ -433,6 +462,7 @@ function init() {
       setStatus('Done. Downloaded ' + name + ' + ' + cueName, 'ok');
       summaryEl.textContent =
         'seed: ' + usedSeed + '\n' + (result.summary || '') +
+        langCoverageText(result.lang) +
         '\nLoad the .cue in your emulator (it points at the .bin); keep both files together.';
     } catch (e) {
       setStatus('Error: ' + (e && e.message ? e.message : e), 'err');
