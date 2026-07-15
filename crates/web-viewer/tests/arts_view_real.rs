@@ -18,6 +18,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
+use legaia_art::arts_voice::{self, ArtsVoiceTable};
 use legaia_art::{Character, arts_table};
 use legaia_web_viewer::arts_view::LegaiaArts;
 
@@ -375,75 +376,66 @@ fn probe_dump_bank_names() {
     }
 }
 
-/// The Tactical-Arts VOICE bank: the per-art arts shouts live in the
-/// 16-channel short-mono XA files identified by ear - Vahn + Noa in `XA2.XA`
-/// (an 8-channel slice each), Gala in `XA4.XA` (`XA30.XA` is the *normal-move*
-/// grunt bank, not arts). Assert the WASM surface demuxes a bank of real,
-/// non-silent mono clips per hero, maps arts to channels, and gives Terra none.
+/// The Tactical-Arts VOICE bank: each hero's own arts-shout file (Vahn=`XA2`,
+/// Noa=`XA4`, Gala=`XA6`, the RE'd `FUN_8004C140` cue; `XA30.XA` is the
+/// normal-move grunt, `XA3`/`XA5` the stereo fanfares). Assert the WASM surface
+/// demuxes a bank of real, non-silent mono clips per hero keyed by their own XA
+/// channel, resolves each voiced art to a decodable channel, and gives Terra none.
 #[test]
 fn arts_voice_bank_demuxes_per_character() {
     let Some((mut arts, _)) = loaded() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    // (expected voice file, expected channel base) per character; Terra = none.
-    let expect: [Option<(&str, u64)>; 4] = [
-        Some(("XA2.XA", 0)),
-        Some(("XA2.XA", 8)),
-        Some(("XA4.XA", 0)),
-        None,
-    ];
+    // Expected voice file per character; Terra = none.
+    let expect: [Option<&str>; 4] = [Some("XA2.XA"), Some("XA4.XA"), Some("XA6.XA"), None];
     for (cslot, want) in expect.iter().enumerate() {
         let st: serde_json::Value =
             serde_json::from_str(&arts.set_character(cslot as u32)).unwrap();
         assert_eq!(st["ok"], true, "char {cslot} assembles");
         let name = st["character"].as_str().unwrap().to_string();
         match want {
-            Some((file, base)) => {
+            Some(file) => {
                 let v = &st["voice"];
                 assert!(v.is_object(), "{name}: voice metadata present");
                 assert_eq!(v["file"], *file, "{name}: voice file");
-                assert_eq!(v["base"].as_u64(), Some(*base), "{name}: channel base");
                 let count = v["count"].as_u64().unwrap() as usize;
                 assert!(count > 0, "{name}: voice bank non-empty");
                 let channels = v["channels"].as_array().unwrap();
                 assert_eq!(channels.len(), count, "{name}: channel metadata count");
                 // Every channel: a real shout (not silence), mono 37.8 kHz,
-                // trimmed to ~0.3-1.8 s (shout without the long silent tail).
-                for (local, ch) in channels.iter().enumerate() {
-                    assert_eq!(ch["rate"].as_u64(), Some(37_800), "{name}[{local}]: rate");
-                    assert_eq!(ch["stereo"], false, "{name}[{local}]: mono");
-                    assert_eq!(
-                        ch["channel"].as_u64(),
-                        Some(*base + local as u64),
-                        "{name}[{local}]: channel index"
-                    );
-                    let pcm = arts.voice_channel_pcm_i16(local as u32);
+                // trimmed of its silent tail, addressable by its own ch_no.
+                for ch in channels {
+                    let ch_no = ch["channel"].as_u64().unwrap();
+                    assert_eq!(ch["rate"].as_u64(), Some(37_800), "{name} ch{ch_no}: rate");
+                    assert_eq!(ch["stereo"], false, "{name} ch{ch_no}: mono");
+                    let pcm = arts.voice_channel_pcm_i16(ch_no as u32);
                     assert_eq!(
                         pcm.len() as u64,
                         ch["samples"].as_u64().unwrap(),
-                        "{name}[{local}]: sample count matches metadata"
+                        "{name} ch{ch_no}: sample count matches metadata"
                     );
                     let peak = pcm.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0);
-                    assert!(peak > 3200, "{name}[{local}]: voice peak {peak}");
-                    // Shout trimmed of its silent tail: ~0.4-1.5 s for a single
-                    // cry, up to ~2.5 s for the longer two-burst (combo/Rondo)
-                    // channels; the ceiling catches a regression to the full
-                    // ~1.6-3.4 s raw channel (silence not trimmed).
+                    assert!(peak > 3200, "{name} ch{ch_no}: voice peak {peak}");
                     let secs = pcm.len() as f64 / 37_800.0;
-                    assert!((0.2..2.8).contains(&secs), "{name}[{local}]: {secs}s");
+                    assert!((0.2..2.8).contains(&secs), "{name} ch{ch_no}: {secs}s");
                 }
-                // Per-art mapping: bank index i -> local channel i % count.
-                let bank_len = st["arts"].as_array().unwrap().len();
-                for i in [0usize, 1, count, bank_len.saturating_sub(1)] {
-                    let per_art = arts.art_voice_pcm_i16(i as u32);
-                    let expect_local = i % count;
+                // Per-art mapping: a voiced art returns exactly its channel's clip.
+                let bank = st["arts"].as_array().unwrap();
+                let mut checked = 0;
+                for a in bank {
+                    let Some(vc) = a["voice_channel"].as_u64() else {
+                        continue;
+                    };
+                    let i = a["index"].as_u64().unwrap() as u32;
                     assert_eq!(
-                        per_art,
-                        arts.voice_channel_pcm_i16(expect_local as u32),
-                        "{name}: art {i} -> local {expect_local}"
+                        arts.art_voice_pcm_i16(i),
+                        arts.voice_channel_pcm_i16(vc as u32),
+                        "{name}: art {i} -> channel {vc}"
                     );
+                    checked += 1;
                 }
+                assert!(checked > 0, "{name}: at least one voiced art");
             }
             None => {
                 assert!(st["voice"].is_null(), "{name}: no voice bank");
@@ -451,5 +443,80 @@ fn arts_voice_bank_demuxes_per_character() {
                 assert!(arts.voice_channel_pcm_i16(0).is_empty(), "{name}: empty ch");
             }
         }
+    }
+}
+
+/// The arts-voice cue (`FUN_8004C140`) parsed from the disc's `SCUS_942.54`:
+/// the per-character clip file must be XA2 / XA4 / XA6, and the per-art channel
+/// each character's bank record plays must be a real member of that art's
+/// candidate pool - not a modulo guess. Anchored to the live PCSX-Redux capture
+/// (Vahn's Somersault, action constant 0x27, fired channels 0 and 6).
+#[test]
+fn arts_voice_is_the_retail_cue_not_a_guess() {
+    let Some((mut arts, disc_bytes)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let scus =
+        legaia_web_viewer::disc::extract_scus(&disc_bytes).expect("SCUS_942.54 in disc image");
+    let table = ArtsVoiceTable::parse_from_scus(&scus).expect("arts-voice table parses");
+
+    // Clip file per character = XA<(char*2+1)+1>.XA.
+    assert_eq!(arts_voice::clip_file(0), Some("XA2.XA"), "Vahn = XA2");
+    assert_eq!(arts_voice::clip_file(1), Some("XA4.XA"), "Noa = XA4");
+    assert_eq!(arts_voice::clip_file(2), Some("XA6.XA"), "Gala = XA6");
+    assert_eq!(arts_voice::clip_slot(0), Some(1));
+    assert_eq!(arts_voice::clip_slot(2), Some(5));
+
+    // Capture anchor: Vahn's Somersault (action constant 0x27) fired channels
+    // 0 and 6 through FUN_8004C140 - both must be in its candidate pool.
+    let vahn_27 = table.channels(0, 0x27).expect("Vahn 0x27 has a voice pool");
+    assert!(
+        vahn_27.contains(&0) && vahn_27.contains(&6),
+        "Vahn 0x27 pool {vahn_27:?} must contain the captured channels 0 and 6"
+    );
+    // The dur formula is verified against the capture (chan 0 -> 0x2D).
+    assert_eq!(table.duration(0, 0), Some(0x2D), "Vahn ch0 dur");
+    assert_eq!(table.duration(0, 6), Some(0x3D), "Vahn ch6 dur");
+
+    // Through the site surface: every art with a voice_channel plays a real
+    // pool member of its own action constant, and that channel is a non-silent
+    // decoded clip of the right file.
+    for cslot in 0..3u32 {
+        let st: serde_json::Value = serde_json::from_str(&arts.set_character(cslot)).unwrap();
+        assert_eq!(st["ok"], true);
+        let voice = &st["voice"];
+        assert!(
+            !voice.is_null(),
+            "char {cslot} has a voice bank off a full disc"
+        );
+        assert_eq!(
+            voice["file"].as_str(),
+            arts_voice::clip_file(cslot as usize),
+            "char {cslot} voice file"
+        );
+        let mut voiced = 0usize;
+        for a in st["arts"].as_array().unwrap() {
+            let idx = a["index"].as_u64().unwrap() as u32;
+            let anim_id = a["anim_id"].as_u64().unwrap() as u8;
+            let Some(ch) = a["voice_channel"].as_u64() else {
+                continue;
+            };
+            let ch = ch as u8;
+            let pool = table.channels(cslot as usize, anim_id).unwrap_or_else(|| {
+                panic!("char {cslot} art 0x{anim_id:02X}: voice_channel set but no pool")
+            });
+            assert!(
+                pool.contains(&ch),
+                "char {cslot} art 0x{anim_id:02X}: channel {ch} not in real pool {pool:?}"
+            );
+            let pcm = arts.art_voice_pcm_i16(idx);
+            assert!(
+                !pcm.is_empty() && pcm.iter().any(|&s| s.unsigned_abs() > 256),
+                "char {cslot} art 0x{anim_id:02X} ch{ch}: voice clip decoded non-silent"
+            );
+            voiced += 1;
+        }
+        assert!(voiced > 0, "char {cslot} has at least one voiced art");
     }
 }

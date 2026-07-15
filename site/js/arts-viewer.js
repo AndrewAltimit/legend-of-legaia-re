@@ -21,13 +21,13 @@
  * mesh-view.js first; rom-cache.js + load-progress.js for the disc input.
  *
  * Playback extras:
- *   - VOICE (per-art): the arts shouts live in the 16-channel short-mono XA
- *     files identified by ear - Vahn/Noa in XA2.XA, Gala in XA4.XA (each an
- *     8-channel slice; Terra none). Clicking an art plays its channel
- *     (bank_index % count); XA30.XA - the file this page used before - is the
- *     normal battle-MOVE grunt bank, not the arts voice. The Vahn/Noa split
- *     and per-art order are the owner's by-ear call. Demuxed + trimmed by the
- *     WASM side, fired at art start.
+ *   - VOICE (per-art): the arts shouts are the RE'd retail cue (FUN_8004C140,
+ *     capture-verified) - each character's own 16-channel short-mono XA file
+ *     (Vahn=XA2, Noa=XA4, Gala=XA6; Terra none), and each art plays a real
+ *     member of its action constant's candidate channel pool (the record's
+ *     voice_channel). XA30.XA is the ordinary directional-attack grunt (not
+ *     the arts voice); XA3/XA5 are the stereo Miracle fanfares. Demuxed +
+ *     trimmed by the WASM side, fired at art start.
  *   - TRAIL: the tinted after-image (Vahn red / Noa green / Gala blue) -
  *     delayed poses of the same mesh re-drawn additively via
  *     MeshView.setTrail (the PSX ABE semi-transparency trick).
@@ -185,12 +185,13 @@
         this.els.now.textContent = `${name}: ${this.charState.why || 'did not assemble'}`;
         return false;
       }
-      /* Arts VOICE: the character's per-art shout bank, identified by ear -
-       * Vahn/Noa in XA2.XA, Gala in XA4.XA (16-channel short-mono XA), each an
-       * 8-channel slice. An art plays local channel `bankIndex % count`; the
-       * WASM side demuxes + trims the clips off the loaded disc. Registered
-       * lazily per (character, channel) in playArt. Null on a raw PROT.DAT
-       * load or for Terra. */
+      /* Arts VOICE: the character's per-art shout bank - the RE'd retail cue
+       * (FUN_8004C140), not an ear guess. Vahn=XA2, Noa=XA4, Gala=XA6 (16-channel
+       * short-mono XA). Each art's channel is a real member of its action
+       * constant's candidate pool, carried in the bank record's `voice_channel`;
+       * the WASM side demuxes + trims each channel off the loaded disc. Registered
+       * lazily per (character, channel) in playArt. Null on a raw PROT.DAT load,
+       * for Terra, or an art the retail build plays silent. */
       this.voice = (this.charState.voice && window.LegaiaSfx
         && this.api.art_voice_pcm_i16) ? this.charState.voice : null;
       if (!this.view) {
@@ -303,17 +304,17 @@
       }
       this._armCues(cues);
       this.currentArt = art.name;
-      /* VOICE: play THIS art's shout as the art begins executing. The clip is
-       * the character's voice-slice local channel `first % count` (WASM maps
-       * the bank index internally); registered lazily per (character, channel)
-       * so each distinct clip is decoded once. Fired once per activation, not
-       * per loop. */
-      if (this.voice && window.LegaiaSfx) {
-        const local = first % this.voice.count;
-        const key = `arts-voice:${this.charName}:${local}`;
+      /* VOICE: play THIS art's shout as the art begins executing. The channel
+       * is the real FUN_8004C140 pool member the WASM resolved for this record
+       * (`voice_channel`); registered lazily per (character, channel) so each
+       * distinct clip is decoded once. Fired once per activation, not per loop.
+       * Some arts have no arts-voice entry (retail plays them silent). */
+      const voiceCh = this.voice ? bank[first].voice_channel : null;
+      if (this.voice && voiceCh != null && window.LegaiaSfx) {
+        const key = `arts-voice:${this.charName}:${voiceCh}`;
         if (!LegaiaSfx.hasPcm(key)) {
           const pcm = this.api.art_voice_pcm_i16(first);
-          const meta = (this.voice.channels || [])[local] || {};
+          const meta = (this.voice.channels || []).find((c) => c.channel === voiceCh) || {};
           if (pcm && pcm.length) {
             LegaiaSfx.registerPcm(key, pcm, meta.rate || 37800, !!meta.stereo);
           }
@@ -340,8 +341,8 @@
       /* Sound note: only the VOICE shout is surfaced. The strike/impact SFX is
        * not played (see _armCues) - the placeholder punch cue is not yet a
        * faithful recreation - so the page no longer claims a strike cue fires. */
-      const voiceNote = this.voice
-        ? `; voice ${this.voice.file} ch${this.voice.base + (first % this.voice.count)}`
+      const voiceNote = this.voice && bank[first].voice_channel != null
+        ? `; voice ${this.voice.file} ch${bank[first].voice_channel}`
         : '';
       this.els.now.textContent =
         `${this.charName} - ${art.name}${dev}`;

@@ -31,6 +31,7 @@
 
 use super::*;
 
+use legaia_art::arts_voice::ArtsVoiceTable;
 use legaia_asset::battle_char_assembly as bca;
 use legaia_asset::monster_archive::MonsterAnimation;
 
@@ -46,31 +47,23 @@ fn arts_log(s: &str) {
 /// Player battle files (`data\battle\PLAYER1..4`) start at extraction PROT
 /// entry 863 (Vahn), one per character slot.
 const PLAYER_FILE_BASE: u32 = 863;
-/// The Tactical-Arts VOICE banks, identified **by ear** (the repo owner
-/// listened to every extracted XA channel): the per-art arts shouts live in
-/// the 16-channel short-mono XA files `XA/XA2.XA` (Vahn + Noa) and `XA/XA4.XA`
-/// (Gala). Each character owns an 8-channel slice ([`VOICE_CHANNEL_BASE`] /
-/// [`VOICE_CHANNEL_COUNT`]); an art selects a channel within that slice.
+/// The Tactical-Arts VOICE banks - the per-character arts **shout** files, as
+/// selected by the retail arts-voice cue `FUN_8004C140` (the RE'd linkage, not
+/// a guess): when the staged-anim materialiser runs a party art, it fires
+/// `FUN_8003D53C(clip_slot = (char)*2 + 1, channel, dur)`, and clip slot `i` =
+/// file `XA<i+1>.XA`. So Vahn = `XA2.XA` (slot 1), Noa = `XA4.XA` (slot 3),
+/// Gala = `XA6.XA` (slot 5) - all 16-channel short-mono shout banks; Terra has
+/// no arts. Capture-verified live: Vahn's Tri-Somersault fires
+/// `FUN_8003D53C(0x01=XA2, ...)`, Noa's Miracle fires `(0x03=XA4, ...)`.
 ///
-/// This is a **curated mapping, not a retail-timed cue**. `XA30.XA` - the file
-/// this page used before - is the NORMAL battle-move grunt bank (`XA30` plays
-/// on ordinary directional attacks via `FUN_8003D53C(0x1D, ...)`, the cue the
-/// owner confirmed is *not* the arts voice). No dumped overlay plays clip slot
-/// 1 (`XA2`) or slot 3 (`XA4`) through the SCUS clip player, and no
-/// `CdlSetfilter` targets their LBAs, so USA has no live trigger for these -
-/// they are (likely JP-origin) arts-voice clips the site surfaces as a curated
-/// per-art voice. See `docs/subsystems/battle-action.md`.
-const VOICE_XA_FILE: [Option<&str>; 4] = [Some("XA2.XA"), Some("XA2.XA"), Some("XA4.XA"), None];
-/// First XA channel of the character's slice inside its [`VOICE_XA_FILE`].
-/// XA2 is split Vahn `0..8` / Noa `8..16`; Gala takes XA4 `0..8` (XA4 `8..15`
-/// is unclaimed - possibly Terra, unverified). **The exact split and per-art
-/// channel order are the owner's by-ear call**; the listening aid exports every
-/// channel so the owner can correct specific slots.
-const VOICE_CHANNEL_BASE: [u8; 4] = [0, 8, 0, 0];
-/// Channel count of the character's slice. Arts wrap over it (art bank index
-/// `% count`), so every art gets a deterministic voice even though a character
-/// has more arts than voice channels.
-const VOICE_CHANNEL_COUNT: [u8; 4] = [8, 8, 8, 0];
+/// The per-art **channel** is not fixed: retail picks a random member of the
+/// art's candidate pool (keyed by the art's action constant) from the SCUS
+/// tables parsed by [`legaia_art::arts_voice`]. This page maps each art to a
+/// stable member of its real pool. `XA30.XA` is the ordinary directional-attack
+/// grunt (different cue); `XA3`/`XA5` are the stereo Miracle/summon fanfares
+/// (the `FUN_8004FCC8` jingle path), not the per-art shout. See
+/// `docs/subsystems/battle-action.md`.
+const VOICE_XA_FILE: [Option<&str>; 4] = [Some("XA2.XA"), Some("XA4.XA"), Some("XA6.XA"), None];
 /// `readef.DAT` (extraction PROT 894) - the battle side-band file carrying
 /// the per-character art `"ME"` stream archives.
 const READEF_PROT_INDEX: u32 = 894;
@@ -88,6 +81,11 @@ struct ArtSlot {
     anim: Option<MonsterAnimation>,
     /// Present when the record's stream failed to resolve/decode.
     why: Option<String>,
+    /// The arts-voice XA channel this art plays (a stable member of the art's
+    /// real `FUN_8004C140` candidate pool, keyed on the record's `anim_id` =
+    /// action constant). `None` when the disc has no voice bank or the art has
+    /// no arts-voice entry (retail plays it silent).
+    voice_channel: Option<u8>,
 }
 
 /// One character's fully-decoded view bundle, cached on the host so the
@@ -102,12 +100,19 @@ struct LoadedCharacter {
     /// Idle loop (record[0] slot 0), expanded per object.
     idle: Option<MonsterAnimation>,
     arts: Vec<ArtSlot>,
-    /// The character's decoded arts-voice channels (its [`VOICE_XA_FILE`]
-    /// slice, in local order `0..count` = XA channel `base + local`), each
-    /// trimmed of its trailing silence. Empty on a raw `PROT.DAT` load (no XA
-    /// files to read), for Terra, or when the file didn't demux. An art at
-    /// bank index `i` plays local channel `i % voice.len()`.
+    /// The character's decoded arts-voice channels (every decoded channel of
+    /// its [`VOICE_XA_FILE`], keyed by `DecodedXa::ch_no`), each trimmed of its
+    /// trailing silence. Empty on a raw `PROT.DAT` load (no XA files to read),
+    /// for Terra, or when the file didn't demux. An art plays the channel in
+    /// its [`ArtSlot::voice_channel`].
     voice: Vec<audio::DecodedXa>,
+}
+
+impl LoadedCharacter {
+    /// The decoded voice clip for XA channel `ch`, if it demuxed.
+    fn voice_clip(&self, ch: u8) -> Option<&audio::DecodedXa> {
+        self.voice.iter().find(|v| v.ch_no == ch)
+    }
 }
 
 /// The site's Tactical-Arts animation host: a disc, plus one character's
@@ -119,10 +124,14 @@ pub struct LegaiaArts {
     /// PROT TOC.
     entries: Vec<disc::EntryMeta>,
     /// Raw 2352-byte sectors of each distinct arts-voice file ([`VOICE_XA_FILE`]
-    /// = `XA2.XA` / `XA4.XA`), keyed by upper-case file name. The XA demuxer
+    /// = `XA2.XA` / `XA4.XA` / `XA6.XA`), keyed by upper-case file name. The XA demuxer
     /// needs the CD-XA subheaders, which a 2048-byte ISO file view drops. Empty
     /// when the page was fed a raw `PROT.DAT` instead of a full disc image.
     voice_files: Vec<(String, Vec<u8>)>,
+    /// The decoded arts-voice cue tables (`FUN_8004C140`, parsed from
+    /// `SCUS_942.54`): art action constant -> candidate voice channel. `None`
+    /// on a raw `PROT.DAT` load (no SCUS to read).
+    voice_table: Option<ArtsVoiceTable>,
     /// The character currently on the canvas.
     current: Option<LoadedCharacter>,
 }
@@ -260,7 +269,7 @@ fn extract_named_xa_raw(disc_bytes: &[u8], file_name: &str) -> Option<Vec<u8>> {
 }
 
 /// Slice out every distinct arts-voice file referenced by [`VOICE_XA_FILE`]
-/// (`XA2.XA`, `XA4.XA`), keyed by upper-case name for [`decode_voice_bank`].
+/// (`XA2.XA`, `XA4.XA`, `XA6.XA`), keyed by upper-case name for [`decode_voice_bank`].
 fn extract_voice_files(disc_bytes: &[u8]) -> Vec<(String, Vec<u8>)> {
     let mut out: Vec<(String, Vec<u8>)> = Vec::new();
     for name in VOICE_XA_FILE.into_iter().flatten() {
@@ -299,38 +308,28 @@ fn trim_trailing_silence(pcm: &mut Vec<i16>) {
     pcm.truncate(keep);
 }
 
-/// Demux + decode character `cslot`'s arts-voice channel slice
-/// ([`VOICE_XA_FILE`] / [`VOICE_CHANNEL_BASE`] / [`VOICE_CHANNEL_COUNT`]) out
-/// of the pre-sliced voice files, in local order (index `local` = XA channel
-/// `base + local`). Each clip is trimmed of its trailing silence.
+/// Demux + decode every channel of character `cslot`'s arts-voice file
+/// ([`VOICE_XA_FILE`]) out of the pre-sliced voice files. Each clip is trimmed
+/// of its trailing silence and keyed by its own `ch_no`, so an art can address
+/// the exact channel its `FUN_8004C140` pool selects.
 fn decode_voice_bank(voice_files: &[(String, Vec<u8>)], cslot: usize) -> Vec<audio::DecodedXa> {
     let Some(Some(file_name)) = VOICE_XA_FILE.get(cslot) else {
         return Vec::new();
     };
-    let base = VOICE_CHANNEL_BASE[cslot];
-    let count = VOICE_CHANNEL_COUNT[cslot];
-    if count == 0 {
-        return Vec::new();
-    }
     let key = file_name.to_ascii_uppercase();
     let Some((_, raw)) = voice_files.iter().find(|(k, _)| *k == key) else {
         return Vec::new();
     };
     let sectors = (raw.len() / 2352) as u32;
-    let decoded = audio::decode_xa_in_memory(raw, 0, sectors * 2048);
-    let mut bank = Vec::with_capacity(count as usize);
-    for local in 0..count {
-        let ch = base + local;
-        if let Some(mut s) = decoded
-            .iter()
-            .find(|s| s.ch_no == ch && !s.pcm.is_empty())
-            .cloned()
-        {
-            trim_trailing_silence(&mut s.pcm);
-            bank.push(s);
-        }
+    let mut decoded: Vec<audio::DecodedXa> = audio::decode_xa_in_memory(raw, 0, sectors * 2048)
+        .into_iter()
+        .filter(|s| !s.pcm.is_empty())
+        .collect();
+    decoded.sort_by_key(|s| s.ch_no);
+    for s in &mut decoded {
+        trim_trailing_silence(&mut s.pcm);
     }
-    bank
+    decoded
 }
 
 /// Build one character's full bundle off the PROT bytes. `Err(reason)` names
@@ -340,6 +339,7 @@ fn build_character(
     prot: &[u8],
     entries: &[disc::EntryMeta],
     voice_files: &[(String, Vec<u8>)],
+    voice_table: Option<&ArtsVoiceTable>,
     cslot: usize,
 ) -> Result<LoadedCharacter, String> {
     let prot_index = PLAYER_FILE_BASE + cslot as u32;
@@ -434,6 +434,7 @@ fn build_character(
                     },
                     None => (None, Some("ME archive did not decode".to_string())),
                 };
+                let voice_channel = voice_table.and_then(|t| t.pick_channel(cslot, rec.anim_id));
                 arts.push(ArtSlot {
                     anim_id: rec.anim_id,
                     name: rec.name.clone(),
@@ -442,6 +443,7 @@ fn build_character(
                     uses_base_archive: rec.uses_base_archive(),
                     anim,
                     why,
+                    voice_channel,
                 });
             }
         }
@@ -470,18 +472,25 @@ impl LegaiaArts {
             prot: Vec::new(),
             entries: Vec::new(),
             voice_files: Vec::new(),
+            voice_table: None,
             current: None,
         }
     }
 
     /// Load a full Mode2/2352 disc image (or a raw `PROT.DAT`) and parse the
     /// TOC. Returns `{"entries": N}` JSON; errors throw. On a full disc the
-    /// arts-voice banks ([`VOICE_XA_FILE`] = `XA2.XA` / `XA4.XA`) are sliced out
+    /// arts-voice banks ([`VOICE_XA_FILE`] = `XA2.XA` / `XA4.XA` / `XA6.XA`) are sliced out
     /// alongside `PROT.DAT`; a raw `PROT.DAT` load simply has no voice audio.
     pub fn load_disc(&mut self, bytes: Vec<u8>) -> Result<String, JsValue> {
         let mut voice_files = Vec::new();
+        let mut voice_table = None;
         let prot = if disc::is_mode2_2352_disc(&bytes) {
             voice_files = extract_voice_files(&bytes);
+            // Arts-voice cue tables (art action constant -> voice channel) live
+            // in SCUS_942.54; parse them so each art maps to its real channel.
+            voice_table = disc::extract_scus(&bytes)
+                .as_deref()
+                .and_then(ArtsVoiceTable::parse_from_scus);
             disc::extract_prot_dat(&bytes)
                 .ok_or_else(|| JsValue::from_str("arts: PROT.DAT not found in this disc image"))?
         } else {
@@ -497,6 +506,7 @@ impl LegaiaArts {
         self.prot = prot;
         self.entries = entries;
         self.voice_files = voice_files;
+        self.voice_table = voice_table;
         self.current = None;
         Ok(format!("{{\"entries\":{}}}", self.entries.len()))
     }
@@ -522,7 +532,13 @@ impl LegaiaArts {
             self.current = None;
             return r#"{"ok":false,"why":"character slot out of range"}"#.to_string();
         }
-        match build_character(&self.prot, &self.entries, &self.voice_files, cslot) {
+        match build_character(
+            &self.prot,
+            &self.entries,
+            &self.voice_files,
+            self.voice_table.as_ref(),
+            cslot,
+        ) {
             Ok(c) => {
                 let arts: Vec<serde_json::Value> = c
                     .arts
@@ -539,6 +555,9 @@ impl LegaiaArts {
                             "ok": a.anim.is_some(),
                             "frames": a.anim.as_ref().map(|x| x.frame_count).unwrap_or(0),
                             "why": a.why,
+                            // The arts-voice XA channel this art plays (its
+                            // real FUN_8004C140 pool member), or null.
+                            "voice_channel": a.voice_channel,
                         })
                     })
                     .collect();
@@ -551,17 +570,15 @@ impl LegaiaArts {
                         "rate": i.rate,
                     })),
                     "arts": arts,
-                    // The character's curated arts-voice bank (null on a raw
-                    // PROT.DAT load, for Terra, or if the file didn't demux):
-                    // its XA file + channel slice, plus per-local-channel
-                    // metadata. An art at bank index `i` plays local channel
-                    // `i % count` (see `art_voice_pcm_i16`).
+                    // The character's arts-voice bank (null on a raw PROT.DAT
+                    // load, for Terra, or if the file didn't demux): its XA
+                    // file + every decoded channel's metadata, keyed by the
+                    // real XA `channel`. Each art's channel is in its `arts[]`
+                    // entry's `voice_channel` (see `art_voice_pcm_i16`).
                     "voice": (!c.voice.is_empty()).then(|| serde_json::json!({
                         "file": VOICE_XA_FILE[c.cslot],
-                        "base": VOICE_CHANNEL_BASE[c.cslot],
                         "count": c.voice.len(),
-                        "channels": c.voice.iter().enumerate().map(|(local, v)| serde_json::json!({
-                            "local": local,
+                        "channels": c.voice.iter().map(|v| serde_json::json!({
                             "channel": v.ch_no,
                             "rate": v.sample_rate,
                             "stereo": v.stereo,
@@ -699,27 +716,30 @@ impl LegaiaArts {
 
     /// The arts-voice PCM for the art at bank index `art_index`: mono i16 at
     /// the rate reported in `set_character`'s `voice.channels[..].rate`
-    /// (37 800 Hz). The clip is the character's voice-slice local channel
-    /// `art_index % count` (see [`VOICE_XA_FILE`] / [`VOICE_CHANNEL_BASE`]) -
-    /// a curated per-art mapping, trimmed of its trailing silence. Empty when
-    /// the character has no voice bank (raw `PROT.DAT` load, Terra, or demux
-    /// failure). Also exposed positionally via [`Self::voice_channel_pcm_i16`].
+    /// (37 800 Hz). The clip is the XA channel the art's `FUN_8004C140`
+    /// candidate pool selects (the art's `voice_channel`), trimmed of its
+    /// trailing silence. Empty when the character has no voice bank (raw
+    /// `PROT.DAT` load, Terra, demux failure) or the art has no voice entry.
+    /// Also exposed by-channel via [`Self::voice_channel_pcm_i16`].
     pub fn art_voice_pcm_i16(&self, art_index: u32) -> Vec<i16> {
         self.current
             .as_ref()
-            .filter(|c| !c.voice.is_empty())
-            .map(|c| c.voice[art_index as usize % c.voice.len()].pcm.clone())
+            .and_then(|c| {
+                let a = c.arts.get(art_index as usize)?;
+                let ch = a.voice_channel?;
+                Some(c.voice_clip(ch)?.pcm.clone())
+            })
             .unwrap_or_default()
     }
 
-    /// The arts-voice PCM of the current character's voice-slice **local**
-    /// channel `local` (`0..count`), regardless of any art mapping. Lets the
-    /// page (and the listening aid) address a specific voice clip directly.
-    /// Empty when out of range or the character has no voice bank.
-    pub fn voice_channel_pcm_i16(&self, local: u32) -> Vec<i16> {
+    /// The arts-voice PCM of the current character's XA channel `channel`,
+    /// regardless of any art mapping. Lets the page (and the listening aid)
+    /// address a specific voice clip directly. Empty when out of range or the
+    /// character has no voice bank.
+    pub fn voice_channel_pcm_i16(&self, channel: u32) -> Vec<i16> {
         self.current
             .as_ref()
-            .and_then(|c| c.voice.get(local as usize))
+            .and_then(|c| c.voice_clip(channel as u8))
             .map(|v| v.pcm.clone())
             .unwrap_or_default()
     }
