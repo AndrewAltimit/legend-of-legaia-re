@@ -39,6 +39,7 @@ use super::export::SceneManText;
 use super::markup::{self, Target};
 use super::pack::{Entry, LanguagePack};
 use super::segments;
+use super::ui;
 
 /// Import outcome counters + per-entry diagnostics.
 #[derive(Debug, Default)]
@@ -140,7 +141,9 @@ pub enum ImportPhase {
     All,
     /// Only `man:` / `raw:` dialog-segment entries.
     DialogOnly,
-    /// Only `scus:` string / party-name entries.
+    /// Only `scus:` string / party-name / `ui:` overlay entries. Overlay UI
+    /// strings ride with the names phase: nothing in the randomizer relocates
+    /// or classifies an overlay string, so writing them last is always safe.
     NamesOnly,
 }
 
@@ -150,6 +153,7 @@ enum Key {
     ScusParty { slot: usize },
     Man { entry: usize, off: usize },
     Raw { entry: usize, off: usize },
+    Ui { prot: usize, va: u32 },
 }
 
 fn parse_key(key: &str) -> Option<Key> {
@@ -175,6 +179,11 @@ fn parse_key(key: &str) -> Option<Key> {
             } else {
                 Key::Raw { entry, off }
             })
+        }
+        "ui" => {
+            let prot = it.next()?.parse().ok()?;
+            let va = u32::from_str_radix(it.next()?.strip_prefix("0x")?, 16).ok()?;
+            Some(Key::Ui { prot, va })
         }
         _ => None,
     }
@@ -394,6 +403,71 @@ fn plan_scus_party(
     Some((off, bytes))
 }
 
+/// Plan one overlay UI-string write into a PROT overlay entry buffer:
+/// `(file_offset, bytes)`, or `None` when resolved without a write. Same
+/// mechanism as [`plan_scus_str`] (NUL-terminated, span + zero-padding budget,
+/// wrong-disc guard) but keyed by VA into the overlay at `va - base_va`. The
+/// returned bytes fully cover the old string's span so a shorter translation
+/// leaves no stale tail behind for the pool scanner to pick up.
+fn plan_ui(
+    entry: &[u8],
+    base_va: u32,
+    e: &Entry,
+    va: u32,
+    report: &mut ImportReport,
+) -> Option<(usize, Vec<u8>)> {
+    let source = encode_source(e, Target::CString, report).ok()?;
+    let translated = encode_translation(e, Target::CString, report)?;
+    let Some(off) = va.checked_sub(base_va).map(|d| d as usize) else {
+        report.issue(&e.key, "VA is before the overlay load base");
+        return None;
+    };
+    let Some(tail) = entry.get(off..) else {
+        report.issue(&e.key, "VA past end of the overlay entry");
+        return None;
+    };
+    let Some(cur_len) = tail
+        .iter()
+        .take(MAX_SCUS_STRLEN)
+        .position(|&b| b == 0)
+        .filter(|&l| l > 0)
+    else {
+        report.issue(&e.key, "no NUL-terminated string at this VA - skipped");
+        return None;
+    };
+    let cur = &tail[..cur_len];
+    if cur == translated.as_slice() {
+        report.already_applied += 1;
+        report.already_keys.push(e.key.clone());
+        return None;
+    }
+    let writable = ui::writable_span(entry, off, cur_len);
+    if let Some(src) = &source
+        && cur != src.as_slice()
+    {
+        report.issue(
+            &e.key,
+            "disc bytes don't match the pack source (different disc revision or \
+             a conflicting patch) - skipped",
+        );
+        return None;
+    }
+    if source.is_none() && !hint_agrees(e, writable, report) {
+        return None;
+    }
+    if !fits(e, &translated, e.budget.min(writable), report) {
+        return None;
+    }
+    // Cover the whole old string span (its bytes + terminator) so a shorter
+    // translation zero-fills the leftover instead of leaving a printable tail.
+    let mut bytes = translated;
+    bytes.push(0);
+    if bytes.len() < cur_len + 1 {
+        bytes.resize(cur_len + 1, 0);
+    }
+    Some((off, bytes))
+}
+
 /// One segment edit in the domain the key addresses (a decompressed MAN, or a
 /// raw PROT entry), measured and verified against the bytes actually there.
 ///
@@ -472,6 +546,7 @@ pub fn import_pack_phase(
     let mut scus_work: Vec<&Entry> = Vec::new();
     let mut man_work: BTreeMap<usize, Vec<(usize, &Entry)>> = BTreeMap::new();
     let mut raw_work: BTreeMap<usize, Vec<(usize, &Entry)>> = BTreeMap::new();
+    let mut ui_work: BTreeMap<usize, Vec<(u32, &Entry)>> = BTreeMap::new();
     for (_, entries) in pack.sections.iter() {
         for e in entries {
             let key = parse_key(&e.key);
@@ -479,7 +554,7 @@ pub fn import_pack_phase(
                 (_, ImportPhase::All) => true,
                 (Some(Key::Man { .. }) | Some(Key::Raw { .. }), ImportPhase::DialogOnly) => true,
                 (
-                    Some(Key::ScusStr { .. }) | Some(Key::ScusParty { .. }),
+                    Some(Key::ScusStr { .. }) | Some(Key::ScusParty { .. }) | Some(Key::Ui { .. }),
                     ImportPhase::NamesOnly,
                 ) => true,
                 // Unrecognized keys are diagnosed once, in the names (last)
@@ -501,6 +576,9 @@ pub fn import_pack_phase(
                 }
                 Some(Key::Raw { entry, off }) => {
                     raw_work.entry(entry).or_default().push((off, e));
+                }
+                Some(Key::Ui { prot, va }) => {
+                    ui_work.entry(prot).or_default().push((va, e));
                 }
                 None => report.issue(&e.key, "unrecognized key shape - skipped"),
             }
@@ -659,6 +737,35 @@ pub fn import_pack_phase(
                 &mut report,
             ) {
                 patcher.patch_prot_entry(entry_idx, off as u64, &window[off..off + len])?;
+                report.applied += 1;
+                report.applied_keys.push(en.key.clone());
+            }
+        }
+    }
+
+    // Overlay UI menu strings: same-size NUL-terminated writes into the menu /
+    // battle overlay PROT entries. One read per overlay entry; each write is
+    // mirrored into the local copy so later verifications stay coherent.
+    for (prot, edits) in ui_work {
+        let Some(base_va) = ui::overlay_base_va(prot) else {
+            for (_, en) in &edits {
+                report.issue(&en.key, "PROT entry is not a mapped UI overlay - skipped");
+            }
+            continue;
+        };
+        let mut buf = match patcher.read_entry(prot) {
+            Ok(b) => b,
+            Err(e) => {
+                for (_, en) in &edits {
+                    report.issue(&en.key, format!("PROT entry unreadable: {e}"));
+                }
+                continue;
+            }
+        };
+        for (va, en) in edits {
+            if let Some((off, bytes)) = plan_ui(&buf, base_va, en, va, &mut report) {
+                patcher.patch_prot_entry(prot, off as u64, &bytes)?;
+                buf[off..off + bytes.len()].copy_from_slice(&bytes);
                 report.applied += 1;
                 report.applied_keys.push(en.key.clone());
             }

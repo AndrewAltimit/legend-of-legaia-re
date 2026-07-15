@@ -47,7 +47,10 @@ pub struct Entry {
     ///   inside PROT entry `entry`'s **decompressed** scene MAN;
     /// - `raw:<entry>:0x<off>` - `0x1F`-lead text segment at byte `off`
     ///   inside PROT entry `entry`'s raw bytes (event-script prescripts,
-    ///   streaming MAN carriers).
+    ///   streaming MAN carriers);
+    /// - `ui:<entry>:0x<va>` - NUL-terminated UI string at virtual address
+    ///   `va` inside PROT overlay entry `entry` (menu / battle labels; the
+    ///   file offset is `va - base_va`, see [`super::ui`]).
     pub key: String,
     /// Human context (scene name, table ids, neighbours). Not machine-read.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -107,6 +110,10 @@ pub struct Sections {
     /// event-script prescripts and the streaming-MAN dungeon scenes.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub inline_text: Vec<Entry>,
+    /// Overlay-resident UI menu strings (pause-menu / options / shop / equip /
+    /// status command labels + in-battle system messages). See [`super::ui`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ui_menu: Vec<Entry>,
 }
 
 impl Sections {
@@ -121,12 +128,13 @@ impl Sections {
             ("party_names", self.party_names.as_slice()),
             ("scene_dialog", self.scene_dialog.as_slice()),
             ("inline_text", self.inline_text.as_slice()),
+            ("ui_menu", self.ui_menu.as_slice()),
         ]
         .into_iter()
     }
 
     /// Mutable view of every section, in serialization order.
-    pub fn each_mut(&mut self) -> [&mut Vec<Entry>; 8] {
+    pub fn each_mut(&mut self) -> [&mut Vec<Entry>; 9] {
         [
             &mut self.items,
             &mut self.item_types,
@@ -136,6 +144,7 @@ impl Sections {
             &mut self.party_names,
             &mut self.scene_dialog,
             &mut self.inline_text,
+            &mut self.ui_menu,
         ]
     }
 
@@ -335,6 +344,7 @@ impl LanguagePack {
             "party_names" => &mut self.sections.party_names,
             "scene_dialog" => &mut self.sections.scene_dialog,
             "inline_text" => &mut self.sections.inline_text,
+            "ui_menu" => &mut self.sections.ui_menu,
             other => unreachable!("unknown section {other}"),
         }
     }

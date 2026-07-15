@@ -118,7 +118,9 @@ Combined with the randomizer, a pack is applied in two phases
   table already translated its pool comes back empty and the pass aborts.
   Nothing in the randomizer relocates a SCUS string, so translating the name
   tables after every pass is always safe - and every other name-keyed pass
-  tests only whether a name is non-empty, which a translation preserves.
+  tests only whether a name is non-empty, which a translation preserves. The
+  overlay `ui_menu` strings ride with this phase for the same reason: no
+  randomizer pass relocates or classifies an overlay string.
 
 The randomizer otherwise reads structure - records, tables, item **ids** -
 never text, so translated strings never perturb it. A standalone
@@ -166,6 +168,7 @@ Sections and their patch mechanisms:
 | `party_names` | new-game roster names (Vahn/Noa/Gala/Terra) | `scus:party:<n>` | fixed 10-byte NUL-padded field (9-byte budget) |
 | `scene_dialog` | NPC/event dialog in the scene-bundle MANs | `man:<prot>:0x<off>` | edit the `0x1F`-segment inside the LZS-decompressed MAN (space-padded to its exact length), recompress, must fit the original compressed footprint |
 | `inline_text` | dialog/narration in raw carriers (v12 event-script prescripts, streaming-MAN dungeon scenes) | `raw:<prot>:0x<off>` | space-padded same-size overwrite directly in the PROT entry |
+| `ui_menu` | overlay-resident UI strings: pause-menu / options / shop / equip / status command labels + in-battle system messages | `ui:<prot>:0x<va>` | overwrite the NUL-terminated string in the PROT **overlay** entry in place at `file offset = va - base_va`, re-terminate (short writes zero-fill the old span) |
 
 Strings pointer-shared by several table slots export once (the `context`
 lists the referencing ids); interior pointers clamp the `budget`. Duplicate
@@ -260,14 +263,23 @@ targets are structurally addressed, not scanned.
 ## Coverage + limitations
 
 Covered: the SCUS name tables (items, item types, spells, Tactical Arts,
-accessory passives, party names) and the `0x1F`-segment dialog corpus (scene
+accessory passives, party names), the `0x1F`-segment dialog corpus (scene
 bundles + raw event-script carriers) - NPC dialog, cutscene dialog and
-narration, picker labels, chest flavor text.
+narration, picker labels, chest flavor text - and the overlay-resident UI menu
+strings (`ui_menu`): the pause-menu / options / shop / equip / status command
+labels and the in-battle system messages, which are NUL-terminated C strings in
+the menu (PROT 0899) and battle (PROT 0898) overlay data segments rather than in
+any table or dialog segment. These are pinned by disc-coordinate VA windows in
+`legaia_rando::translation::ui` (menu pool `0x801CE81C..`, battle pool
+`0x801F4B98..`, both load base `0x801CE818`; see
+[`field-menu.md`](../subsystems/field-menu.md)). They are tight: the pool is
+4-byte aligned with little slack, so a same-size translation of a short label
+(`@Items` is six bytes) can be shorter than English but rarely much longer - the
+in-battle `Attack` / `Arts` / `Magic` / `Item` command ring is drawn as
+UI-icon sprites (no text string to translate).
 
 Not covered (out of scope for this pipeline):
 
-- overlay-resident UI strings (battle/menu labels referenced by pointer from
-  code in the PROT overlays);
 - textures with baked-in text (title screen, the prologue caption TIM);
 - the segment scanner is conservative by design - a dialog line that fails
   its quality gate is simply not exported and stays English. Junk entries the

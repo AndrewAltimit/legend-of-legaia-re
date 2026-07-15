@@ -18,7 +18,8 @@
 //!   export and import.
 //! - [`pack`] - the YAML schema ([`pack::LanguagePack`]) + coverage stats.
 //! - [`export`] - disc -> pack (SCUS name tables, scene-bundle MAN dialog,
-//!   raw event-script text).
+//!   raw event-script text, overlay UI menu strings).
+//! - [`ui`] - the pinned menu / battle overlay UI-string pools + their scanner.
 //! - [`import`] - pack -> patched disc via [`crate::disc::DiscPatcher`],
 //!   with per-entry encodability / budget / provenance diagnostics.
 //!
@@ -31,6 +32,7 @@ pub mod import;
 pub mod markup;
 pub mod pack;
 pub mod segments;
+pub mod ui;
 
 pub use export::export_pack;
 pub use import::{ImportPhase, ImportReport, SectionCounts, import_pack, import_pack_phase};
