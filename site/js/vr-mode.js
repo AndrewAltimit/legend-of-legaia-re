@@ -204,6 +204,13 @@
 .legaia-vr-btn:hover { color: var(--accent, #7f9cff); }
 .legaia-vr-btn[disabled] { opacity: 0.45; cursor: not-allowed; }
 .legaia-vr-btn.is-active { background: var(--accent, #7f9cff); color: #0d0f1c; }
+.legaia-vr-mode-btn {
+  background: var(--bg-card, #1a1c2c); color: var(--text, #dfe3ff);
+  border: 1px solid var(--accent, #7f9cff); border-radius: 3px;
+  padding: 0.28rem 0.6rem; margin-left: 0.4rem;
+  font-family: var(--font-mono, monospace); font-size: 0.74rem; cursor: pointer;
+}
+.legaia-vr-mode-btn:hover { color: var(--accent, #7f9cff); }
 `;
     document.head.appendChild(st);
   }
@@ -237,12 +244,42 @@
       this.home = null;
       this.snapLatch = false;
       this.btn = null;
+      this.modeBtn = null;
+      /* Optional viewing modes (e.g. diorama vs first-person). Each mode may
+       * override unitsPerMeter (number or function), eyeHeightHint, start(),
+       * and add anchor() / groundHeight() / drive() - see `_mode`. When absent
+       * the handle behaves exactly as before modes existed. */
+      this.modes = Array.isArray(cfg.modes) && cfg.modes.length ? cfg.modes : null;
+      this.modeIdx = 0;
       this.onEndBound = () => this._teardown();
       this._buildButton();
+      this._buildModeButton();
       supported().then((ok) => {
         this.supportedFlag = ok;
         this._sync();
       });
+    }
+
+    /* The active mode record ({} when the host configured no modes). */
+    _mode() { return this.modes ? this.modes[this.modeIdx] : {}; }
+
+    /* Select a viewing mode by index or id. Live sessions are re-placed in
+     * the scene at the new mode's scale/anchor immediately. */
+    setMode(sel) {
+      if (!this.modes) return;
+      const idx = typeof sel === 'number'
+        ? sel : this.modes.findIndex(m => m.id === sel);
+      if (idx < 0 || idx >= this.modes.length) return;
+      this.modeIdx = idx;
+      if (this.modeBtn) {
+        const m = this.modes[idx];
+        this.modeBtn.textContent = 'VR: ' + (m.label || m.id);
+      }
+      if (this.cfg.onMode) this.cfg.onMode(this.modes[idx].id);
+      if (this.session) {
+        this._placeStart();
+        this._pushDepthRange();
+      }
     }
 
     _buildButton() {
@@ -268,6 +305,29 @@
       this.btn = b;
     }
 
+    /* Mode toggle - only when the host offers more than one viewing mode.
+     * Sits next to the Enter VR button, cycles through the mode list, and is
+     * usable both before entry and while a session is live. */
+    _buildModeButton() {
+      const mount = this.cfg.mount;
+      if (!mount || !this.modes || this.modes.length < 2) return;
+      ensureStyle();
+      const stale = mount.querySelector('.legaia-vr-mode-btn');
+      if (stale) stale.remove();
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'legaia-vr-mode-btn';
+      b.hidden = true;
+      const m0 = this.modes[this.modeIdx];
+      b.textContent = 'VR: ' + (m0.label || m0.id);
+      b.title = 'Toggle the VR viewing mode (diorama / first-person).';
+      b.addEventListener('click', () => {
+        this.setMode((this.modeIdx + 1) % this.modes.length);
+      });
+      mount.appendChild(b);
+      this.modeBtn = b;
+    }
+
     /* The host tells us when there is actually something to look at. */
     setReady(on) {
       this.ready = !!on;
@@ -284,9 +344,11 @@
 
     _sync() {
       if (!this.btn) return;
-      this.btn.hidden = !(this.supportedFlag && this.ready);
+      const show = !!(this.supportedFlag && this.ready);
+      this.btn.hidden = !show;
       this.btn.textContent = this.session ? 'Exit VR' : 'Enter VR';
       this.btn.classList.toggle('is-active', !!this.session);
+      if (this.modeBtn) this.modeBtn.hidden = !show;
     }
 
     _fail(err) {
@@ -359,6 +421,10 @@
 
       session.addEventListener('end', this.onEndBound);
       if (this.cfg.onEnter) this.cfg.onEnter();
+      /* Tell the host which viewing mode the session opened in, so its
+       * per-mode state (first-person flags, engine input routing) is armed
+       * before the first XR frame. */
+      if (this.cfg.onMode && this.modes) this.cfg.onMode(this._mode().id);
       this.lastT = 0;
       session.requestAnimationFrame((t, f) => this._frame(t, f));
       this._sync();
@@ -370,21 +436,32 @@
       }
     }
 
-    /* Spawn pose. The host may hand us one; otherwise stand at the flat
-     * camera's look-at target, facing the way the flat camera faces (the orbit
-     * camera at yaw psi looks along (-sin psi, cos psi), and our yaw 0 faces
-     * world -Z, hence `PI - psi`). */
+    /* Spawn pose. The active mode (or the host) may hand us one; otherwise
+     * stand at the flat camera's look-at target, facing the way the flat
+     * camera faces (the orbit camera at yaw psi looks along (-sin psi,
+     * cos psi), and our yaw 0 faces world -Z, hence `PI - psi`). */
     _placeStart() {
+      const mode = this._mode();
       const cam = this.cfg.cam ? this.cfg.cam() : null;
-      const start = this.cfg.start ? this.cfg.start() : null;
+      const startFn = mode.start || this.cfg.start;
+      const start = startFn ? startFn() : null;
       const px = start ? start.x : (cam ? cam.centerX : 0);
       const pz = start ? start.z : (cam ? cam.centerZ : 0);
-      const py = start ? start.y : 0;
+      let py = start ? start.y : 0;
       const yaw = start && start.yaw != null
         ? start.yaw
         : Math.PI - ((cam && cam.yaw) || 0);
-      this.upm = this.cfg.unitsPerMeter;
-      this.pos = [px, py + (this.floorRelative ? 0 : this.cfg.eyeHeightHint * this.upm), pz];
+      /* Per-mode world scale; a function lets the host derive it live (e.g.
+       * from the measured player-mesh height). */
+      const upmRaw = mode.unitsPerMeter != null
+        ? mode.unitsPerMeter : this.cfg.unitsPerMeter;
+      this.upm = Math.max(1e-6,
+        typeof upmRaw === 'function' ? upmRaw() : upmRaw);
+      /* Ground-locked modes stand on the terrain surface under the spawn. */
+      if (typeof mode.groundHeight === 'function') py = mode.groundHeight(px, pz);
+      const eyeHint = mode.eyeHeightHint != null
+        ? mode.eyeHeightHint : this.cfg.eyeHeightHint;
+      this.pos = [px, py + (this.floorRelative ? 0 : eyeHint * this.upm), pz];
       this.yaw = yaw;
       this.home = { pos: this.pos.slice(), yaw, upm: this.upm };
     }
@@ -440,6 +517,15 @@
       this._locomote(session, pose, dt);
       if (this.cfg.update) this.cfg.update(dt);
 
+      /* An anchored mode (first-person) pins the rig's floor origin to a live
+       * game entity every frame - read AFTER cfg.update so the rig tracks the
+       * post-tick position (the engine, not the headset, owns the walk). */
+      const anchorFn = this._mode().anchor;
+      if (anchorFn) {
+        const a = anchorFn();
+        if (a) { this.pos[0] = a.x; this.pos[1] = a.y; this.pos[2] = a.z; }
+      }
+
       /* Keep the ocean backdrop quad and the fog origin centred on the viewer -
        * both read cam.center{X,Z} inside renderAssembled. The play page opts
        * out (its follow camera owns the record). */
@@ -481,7 +567,9 @@
      * grips = scale the world, A/X = respawn at the entry pose. */
     _locomote(session, pose, dt) {
       if (this.cfg.locomotion === 'none' || dt <= 0) return;
+      const mode = this._mode();
       let mx = 0, mz = 0, turn = 0, lift = 0, boost = 1, scale = 0, reset = false;
+      let trig = false, aBtn = false, bBtn = false;
       for (const src of session.inputSources) {
         const gp = src.gamepad;
         if (!gp) continue;
@@ -490,22 +578,18 @@
           turn += sx;
           lift += -sy;
           if (pressed(gp, 1)) scale += 1;
-          if (pressed(gp, 4)) reset = true;
+          if (pressed(gp, 4)) { reset = true; aBtn = true; }
+          if (pressed(gp, 5)) bBtn = true;
         } else {
           mx += sx;
           mz += -sy;
           if (pressed(gp, 1)) scale -= 1;
         }
-        if (pressed(gp, 0)) boost = 4;
-      }
-      if (reset && this.home) {
-        this.pos = this.home.pos.slice();
-        this.yaw = this.home.yaw;
-        if (this.upm !== this.home.upm) { this.upm = this.home.upm; this._pushDepthRange(); }
-        return;
+        if (pressed(gp, 0)) { boost = 4; trig = true; }
       }
 
-      /* Snap turn (latched): comfort default, no continuous rotation. */
+      /* Snap turn (latched): comfort default, no continuous rotation. Shared
+       * by every mode - in first-person it turns the rig around the anchor. */
       if (Math.abs(turn) > 0.7) {
         if (!this.snapLatch) {
           this.yaw += Math.sign(turn) * this.cfg.snapDeg * Math.PI / 180;
@@ -517,17 +601,42 @@
 
       const q = pose.transform.orientation;
       const f = headForward(q);
+
+      /* First-person drive mode: the rig is anchored to a game entity and the
+       * PAGE moves that entity through the engine (so collision / walkability
+       * still applies). Hand it the stick, the gaze's world-space forward and
+       * the button states; no free-fly integration happens here. */
+      if (typeof mode.drive === 'function') {
+        const fw = xrDirToWorld(f, this.yaw, 1);
+        mode.drive({
+          x: mx, z: mz, dt,
+          forward: [fw[0], fw[2]],
+          buttons: { trigger: trig, a: aBtn, b: bBtn },
+        });
+        return;
+      }
+
+      if (reset && this.home) {
+        this.pos = this.home.pos.slice();
+        this.yaw = this.home.yaw;
+        if (this.upm !== this.home.upm) { this.upm = this.home.upm; this._pushDepthRange(); }
+        return;
+      }
+
+      const grounded = typeof mode.groundHeight === 'function';
       const r = [-f[2], 0, f[0]];
       const spd = this.cfg.moveSpeed * boost * dt;
       const dxr = [
         (f[0] * mz + r[0] * mx) * spd,
-        lift * this.cfg.flySpeed * boost * dt,
+        /* Ground-locked modes walk the surface: no free-fly altitude. */
+        grounded ? 0 : lift * this.cfg.flySpeed * boost * dt,
         (f[2] * mz + r[2] * mx) * spd,
       ];
       const dw = xrDirToWorld(dxr, this.yaw, this.upm);
       this.pos[0] += dw[0];
       this.pos[1] += dw[1];
       this.pos[2] += dw[2];
+      if (grounded) this.pos[1] = mode.groundHeight(this.pos[0], this.pos[2]);
 
       /* Scale the world around the head, not the feet, so growing/shrinking
        * doesn't shove the scene through the viewer. */
@@ -556,6 +665,7 @@
     destroy() {
       this.end();
       if (this.btn) { this.btn.remove(); this.btn = null; }
+      if (this.modeBtn) { this.modeBtn.remove(); this.modeBtn = null; }
     }
   }
 
@@ -566,7 +676,21 @@
      * the headless mock-XR harness reads the live session's pose and the pure
      * transform kernels through these. Not used by page code. */
     active: () => current,
+    /* One-call debug snapshot of the live session's rig, for the mock-XR
+     * verification harness (`window.__vrDebug()`). */
+    debug: () => {
+      const h = current;
+      if (!h || !h.session) return null;
+      return {
+        mode: h.modes ? h._mode().id : 'default',
+        pos: Array.from(h.pos),
+        yaw: h.yaw,
+        upm: h.upm,
+        floorRelative: h.floorRelative,
+      };
+    },
     _worldToXr: worldToXr,
     _xrDirToWorld: xrDirToWorld,
   };
+  window.__vrDebug = window.LegaiaVr.debug;
 })();

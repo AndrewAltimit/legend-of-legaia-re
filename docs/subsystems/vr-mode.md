@@ -19,6 +19,7 @@ per-page hooks in `world-overview-app.js`, `field-scene-view.js` and
 - [Where the render path forks](#where-the-render-path-forks)
 - [The world -> XR transform](#the-world---xr-transform) · [why the world is mirrored](#why-the-world-is-mirrored)
 - [World scale, and what it means to "be there"](#world-scale-and-what-it-means-to-be-there)
+- [Viewing modes: first-person](#viewing-modes-first-person)
 - [Spawn placement](#spawn-placement)
 - [Locomotion + controls](#locomotion--controls)
 - [Session lifecycle](#session-lifecycle)
@@ -124,6 +125,55 @@ walks you onto the world map at human height; squeezing a town up turns it
 into a model on a table. The XR depth range (`depthNear` / `depthFar`) is
 re-derived from the world extent at the current scale on every change.
 
+## Viewing modes: first-person
+
+The play page and the world-overview page each offer two viewing modes,
+cycled by a `VR: <mode>` button next to `Enter VR` (usable before entry and
+mid-session - a live session is re-placed at the new mode's scale on the
+spot). A page attaches them as a `modes` list on the shared handle; each
+mode may override the world scale, the spawn, and the locomotion contract.
+Pages with a single framing (the viewer / game-world full-map view) attach
+no modes and behave exactly as before modes existed.
+
+**Play page: `Spectator` / `First-person`.** Spectator is the free-flying
+camera in the running world, spawned where the follow camera sits.
+First-person is *what Vahn sees*: the rig's floor origin is pinned to the
+player actor's feet every XR frame (read back *after* the engine tick, so
+the engine - not the headset - owns the walk), and the world scale is
+derived live from the player mesh instead of the 76-unit rule of thumb:
+`units/metre = measured standing height of the posed player mesh / 1.7 m`
+(~132 units tall in the field, so ~78 units/m; the measurement is taken at
+placement time because at scene build the not-yet-posed mesh is an
+object-local vertex pile about half the standing height, and anything
+under 90 units falls back to the 130-unit anchor). The eye height itself
+comes from the physical headset on a `local-floor` device; the `local`
+fallback lifts the anchor by a 1.6 m hint.
+
+First-person locomotion drives the **actual player through the engine**,
+not a free-fly ghost: each XR frame the left stick is routed into the
+engine's free-movement controller - the same collision-checked path the
+keyboard uses - by pointing the engine's camera azimuth along the gaze
+(rig yaw + head yaw, so "stick forward" walks where you look) and feeding
+the stick as the analog axes of the engine's precise-locomotion decode
+(`set_precise_movement` / `set_left_stick` on the WASM runtime; a stale
+cached WASM without those falls back to quantised 8-way d-pad bits).
+Walkability and wall collision therefore apply exactly as on foot, and the
+rig follows whatever the engine actually let the player do. The player
+mesh is dropped from the eye draws (the viewer is inside it) and the
+third-person occluder cull is disabled (there is no lens-to-player segment
+to occlude). Trigger or A maps to Cross (talk / confirm), B to Circle, so
+NPC dialogue works from inside the world.
+
+**World overview: `Diorama` / `On the ground`.** Diorama is the 2000
+units/m tabletop continent. On the ground is human scale (76 units/m, the
+same character-height anchor as the towns) standing **on** the continent
+terrain: a bilinear sampler over the walk heightfield (vertices on the
+128-unit cell grid, world-up Y = the negated stored Y) snaps the rig's
+floor origin to the surface under it every frame, the spawn drops onto the
+terrain under the framing centre, and the right stick's altitude axis is
+disabled - locomotion walks the surface, up hills and down to the coast.
+Off-terrain samples fall back to the sea plane (`y = 0`).
+
 ## Spawn placement
 
 The world overview spawns at the framing centre on the sea plane (`y = 0`),
@@ -148,20 +198,28 @@ yaw is `PI - psi`.
 ## Locomotion + controls
 
 Smooth locomotion on the left stick, comfort-first turning on the right.
-There is no teleport arc: the browser pages carry no collision or
-ground-height query (the walkability grid lives in the engine, not in the
-viewer's assembled draw list), so a teleport marker could not be validated
-against the floor - free flight is both honest about that and the right
-tool for a diorama.
+There is no teleport arc: outside the play page's first-person mode the
+browser pages carry no collision query (the walkability grid lives in the
+engine, not in the viewer's assembled draw list), so a teleport marker
+could not be validated against the floor - free flight is honest about
+that and the right tool for a diorama, while first-person routes movement
+through the engine's real collision instead.
+
+Free-fly modes (spectator / diorama / the full-map view):
 
 | Input | Effect |
 |---|---|
 | Left stick | Walk / fly horizontally, relative to where you are looking. |
 | Right stick X | Snap turn, 30 degrees per flick (latched - no continuous rotation). |
-| Right stick Y | Altitude. |
+| Right stick Y | Altitude (disabled in the ground-locked world-overview mode). |
 | Trigger (either hand) | 4x speed. |
 | Grip, left / right | Shrink / grow the world (rescale around the head). |
 | A / X (right hand) | Return to the entry pose (position, heading and scale). |
+
+Play-page first-person swaps the contract: left stick = drive the player
+through the engine (gaze-relative), right stick X = snap turn, trigger or
+A = Cross (talk / confirm), B = Circle (cancel); altitude, rescale and the
+home reset are inert (the rig is anchored to the player).
 
 Axes are read `xr-standard`-first (thumbstick on axes 2/3), falling back to
 axes 0/1 for simpler mappings, with a dead zone.
@@ -211,6 +269,15 @@ from inside the frame callback. That pins:
   90 degrees;
 - the snap turn is exactly 30 degrees;
 - the engine keeps ticking under the XR frame loop on the play page;
+- first-person on the play page: the rig's floor origin sits exactly at
+  the player actor's feet, the scale equals the measured mesh height over
+  1.7 m, a stick push moves the *engine's* player (and the commanded
+  heading matches the gaze even when wall collision deflects the realized
+  path), the rig tracks the player while walking, and the mode toggle
+  swaps scales live (read back through `window.__vrDebug()`);
+- ground mode on the world overview: the rig's Y equals the terrain
+  sampler's height under it at spawn, after locomotion, and under an
+  attempted altitude push (no free-fly), at 76 units/m;
 - and, with no `navigator.xr` at all, every page loads with zero console
   errors and no VR affordance.
 

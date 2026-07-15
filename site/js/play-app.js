@@ -30,6 +30,15 @@
    * mesh is a 1.7 m human, so a metre is ~76 world units and the headset stands
    * in the town at human height. See docs/subsystems/vr-mode.md. */
   const VR_UNITS_PER_METER = 76;
+  /* First-person mode derives its scale from the LIVE player mesh instead of
+   * the 130-unit rule of thumb: Vahn is an adult-human ~1.7 m, so
+   * units/metre = measured mesh height / 1.7. Eyes sit a little below the top
+   * of the head (~94% of standing height) - that is what the `local`
+   * reference-space fallback lifts the rig by; a `local-floor` device takes
+   * the real headset height instead. */
+  const VAHN_HEIGHT_M = 1.7;
+  const VR_FP_EYE_HEIGHT_M = 1.6;
+  const VR_FP_FALLBACK_MESH_HEIGHT = 130;
 
   /* Keyboard -> PSX pad bits (`legaia_engine_core::input::PadButton`). */
   const PAD = {
@@ -206,9 +215,26 @@
       this._ext = [16384, 16384];
       this._attachInput();
 
+      /* Measured standing height of the player mesh (world units), refreshed
+       * per scene in `_rebuild`; drives the first-person world scale. */
+      this.playerHeight = VR_FP_FALLBACK_MESH_HEIGHT;
+      /* While the VR first-person mode is live: `_vrFp` filters the player
+       * mesh out of the eye draws (you are inside it) and disables the
+       * occluder cull (there is no third-person lens to occlude); `_vrDrive`
+       * carries this frame's VR-stick pad word + gaze azimuth into the engine
+       * tick. */
+      this._vrFp = false;
+      this._vrDrive = null;
+      this._vrPrecise = false;
+
       /* VR: walk the live scene in a headset. The engine keeps ticking (the XR
        * frame loop drives it), so NPCs move and the keyboard still steers the
-       * character; the headset is a free-flying camera in the running world.
+       * character. Two viewing modes (toggle button next to Enter VR):
+       *   - Spectator: the headset is a free-flying camera in the running
+       *     world, spawned where the follow camera sits.
+       *   - First-person: the rig is anchored at the player's position at eye
+       *     height ("what Vahn sees"); the left stick drives the REAL player
+       *     through the engine's collision / walkability grid.
        * Button stays hidden unless an immersive-vr device is reported. */
       this.vr = window.LegaiaVr ? window.LegaiaVr.attach({
         mount: (this.opts.vrMount || document.querySelector('.play-btn-row')
@@ -220,20 +246,130 @@
         /* The follow camera owns cam.center* every frame - don't fight it. */
         syncCamCenter: false,
         update: () => this._frame(true),
-        draw: () => this.renderer.renderAssembled(this._draws, this._ext, this.cam),
-        /* Spawn where the third-person camera sits (behind the character,
-         * looking at them), feet on the character's floor. */
-        start: () => {
-          const eye = this._eye();
-          const pt = this.rt.player_transform();
-          return {
-            x: eye[0], y: -pt[1], z: eye[2],
-            yaw: Math.PI - this.cam.yaw,
-          };
+        draw: () => {
+          const draws = this._vrFp
+            ? this._draws.filter(d => d.meshId !== PLAYER_MESH_ID)
+            : this._draws;
+          this.renderer.renderAssembled(draws, this._ext, this.cam);
         },
+        modes: [
+          /* Spawn where the third-person camera sits (behind the character,
+           * looking at them), feet on the character's floor. */
+          {
+            id: 'spectator', label: 'Spectator',
+            unitsPerMeter: VR_UNITS_PER_METER,
+            start: () => {
+              const eye = this._eye();
+              const pt = this.rt.player_transform();
+              return {
+                x: eye[0], y: -pt[1], z: eye[2],
+                yaw: Math.PI - this.cam.yaw,
+              };
+            },
+          },
+          /* First-person: floor origin pinned to the player's feet, world
+           * scaled so the measured mesh height reads as a 1.7 m adult. The
+           * spawn faces the player's current heading (engine heading 0 =
+           * travelling +Z = world dir (sin, cos); the rig's yaw 0 faces -Z
+           * through the mirrored world transform, hence the half-turn). */
+          {
+            id: 'first-person', label: 'First-person',
+            unitsPerMeter: () => this._measurePlayerHeight() / VAHN_HEIGHT_M,
+            eyeHeightHint: VR_FP_EYE_HEIGHT_M,
+            start: () => {
+              const pt = this.rt.player_transform();
+              return {
+                x: pt[0], y: -pt[1], z: pt[2],
+                yaw: Math.PI + pt[3] * A2R,
+              };
+            },
+            anchor: () => {
+              const pt = this.rt.player_transform();
+              return { x: pt[0], y: -pt[1], z: pt[2] };
+            },
+            drive: (d) => this._vrDriveInput(d),
+          },
+        ],
+        onMode: (id) => this._setVrMode(id),
         onEnter: () => this.stop(),
-        onExit: () => this.start(),
+        onExit: () => { this._setVrMode(null); this.start(); },
       }) : null;
+    }
+
+    /* Standing height of the LIVE posed player mesh (world Y extent), the
+     * first-person scale anchor. Measured lazily at VR placement time - at
+     * `_rebuild` the just-uploaded geometry is still the unposed object-local
+     * vertex pile (parts relative to their own joints, ~half the standing
+     * height); once the engine has posed a frame the extent is the real
+     * standing figure (~130 units). Cached on the instance for the harness. */
+    _measurePlayerHeight() {
+      let h = 0;
+      try {
+        const pos = this.rt.player_mesh_positions();
+        let yMin = Infinity, yMax = -Infinity;
+        for (let i = 1; i < pos.length; i += 3) {
+          if (pos[i] < yMin) yMin = pos[i];
+          if (pos[i] > yMax) yMax = pos[i];
+        }
+        h = yMax - yMin;
+      } catch (e) { /* fall through to the anchor constant */ }
+      /* Guard well above the ~64-unit unposed pile: a not-yet-posed mesh (or
+       * a failed accessor) falls back to the 130-unit standing anchor. */
+      this.playerHeight = (Number.isFinite(h) && h > 90)
+        ? h : VR_FP_FALLBACK_MESH_HEIGHT;
+      return this.playerHeight;
+    }
+
+    /* The VR mode toggled (or the session ended, id = null). Arm / disarm the
+     * first-person state and hand the engine's input path back to the
+     * keyboard when leaving first-person. */
+    _setVrMode(id) {
+      this._vrFp = (id === 'first-person');
+      if (!this._vrFp) {
+        this._vrDrive = null;
+        if (this._vrPrecise) {
+          this._vrPrecise = false;
+          if (typeof this.rt.set_precise_movement === 'function') {
+            this.rt.set_precise_movement(false);
+            this.rt.set_left_stick(0, 0);
+          }
+        }
+      }
+    }
+
+    /* One VR first-person input sample (called once per XR frame by the VR
+     * module's drive hook). Routes the left stick into the ENGINE's
+     * free-movement controller - the same collision-checked path the keyboard
+     * uses - by (a) pointing the engine's camera azimuth along the gaze so
+     * "stick forward" walks where the user looks, and (b) feeding the stick
+     * as the analog axes of the engine's precise-locomotion decode (falling
+     * back to 8-way d-pad bits on a stale cached WASM without that API).
+     * Trigger / A = Cross (talk / confirm), B = Circle (cancel). */
+    _vrDriveInput(d) {
+      /* Azimuth a makes screen-up walk along world (sin a, cos a). */
+      const azRad = Math.atan2(d.forward[0], d.forward[1]);
+      const azimuth = ((Math.round(azRad / (Math.PI * 2) * 4096) % 4096) + 4096) % 4096;
+      let pad = 0;
+      if (d.buttons.trigger || d.buttons.a) pad |= 0x4000;  /* Cross */
+      if (d.buttons.b) pad |= 0x2000;                       /* Circle */
+      const hasPrecise = typeof this.rt.set_precise_movement === 'function'
+        && typeof this.rt.set_left_stick === 'function';
+      if (hasPrecise) {
+        if (!this._vrPrecise) {
+          this.rt.set_precise_movement(true);
+          this._vrPrecise = true;
+        }
+        const clamp = (v) => Math.max(-127, Math.min(127, Math.round(v * 127)));
+        /* PSX stick: +Y is DOWN; our z is forward(+). */
+        this.rt.set_left_stick(clamp(d.x), clamp(-d.z));
+      } else if (Math.hypot(d.x, d.z) > 0.3) {
+        const ang = Math.atan2(d.x, d.z);   /* 0 = forward, + = right */
+        const oct = ((Math.round(ang / (Math.PI / 4)) % 8) + 8) % 8;
+        const DIR = [0x0010, 0x0030, 0x0020, 0x0060,
+          0x0040, 0x00C0, 0x0080, 0x0090];
+        pad |= DIR[oct];
+      }
+      this._vrDrive = { pad, azimuth };
     }
 
     /* ---------- scene ---------- */
@@ -463,8 +599,15 @@
       this.stepOnce = false;
 
       if (advance) {
-        rt.set_camera_azimuth(azimuthUnits(this.cam.yaw));
-        rt.set_pad(this.pad);
+        /* VR first-person owns the azimuth (the gaze) and merges its stick
+         * pad word over the keyboard's; otherwise the follow camera rules. */
+        if (this._vrDrive) {
+          rt.set_camera_azimuth(this._vrDrive.azimuth);
+          rt.set_pad(this.pad | this._vrDrive.pad);
+        } else {
+          rt.set_camera_azimuth(azimuthUnits(this.cam.yaw));
+          rt.set_pad(this.pad);
+        }
         /* The latched press edges have now been seen by exactly one tick. */
         this.pulse.clear();
         this._repack();
@@ -511,7 +654,10 @@
        * always. */
       const pt = rt.player_transform();
       let draws;
-      if (OCCLUDER_CULL) {
+      /* In VR first-person there is no third-person lens: the eye IS the
+       * player, so nothing can "sit between" them - draw everything. */
+      const fpLive = this._vrFp && this.vr && this.vr.isActive();
+      if (OCCLUDER_CULL && !fpLive) {
         const eye = this._eye();
         const px = pt[0], py = -pt[1] + 90, pz = pt[2];
         const ex = eye[0] - px, ey = eye[1] - py, ez = eye[2] - pz;

@@ -182,6 +182,30 @@ impl LegaiaRuntime {
         }
     }
 
+    /// Opt in / out of the engine's continuous locomotion decode
+    /// ([`legaia_engine_core::world::World::precise_movement`]): the camera
+    /// azimuth rotates the movement vector at full angular resolution and the
+    /// left analog stick ([`Self::set_left_stick`]) supplies an arbitrary
+    /// screen angle. The play page's VR first-person mode drives this so
+    /// "stick forward" walks exactly where the headset looks; the keyboard
+    /// path keeps the retail quantised 8-way remap.
+    pub fn set_precise_movement(&mut self, on: bool) {
+        match self.scene_host.as_mut() {
+            Some(h) => h.world.precise_movement = on,
+            None => self.world.precise_movement = on,
+        }
+    }
+
+    /// Route this frame's left analog stick into the engine. PSX convention:
+    /// signed bytes, X right-positive, Y **down**-positive; only read by the
+    /// precise-locomotion decode ([`Self::set_precise_movement`]).
+    pub fn set_left_stick(&mut self, x: i8, y: i8) {
+        match self.scene_host.as_mut() {
+            Some(h) => h.world.input.set_lstick((x, y)),
+            None => self.world.input.set_lstick((x, y)),
+        }
+    }
+
     /// Tell the engine where the camera is looking, so the free-movement
     /// controller remaps the d-pad camera-relative ("up" walks away from the
     /// camera). PSX 12-bit angle units (`4096` = a full turn); the field

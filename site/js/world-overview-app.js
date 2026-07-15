@@ -148,9 +148,58 @@
    * grips rescale it live, so 1:1 "stand on the world map" is a squeeze away.
    * See docs/subsystems/vr-mode.md. */
   const VR_UNITS_PER_METER = 2000;
+  /* "On the ground" first-person mode: human scale, standing on the continent
+   * terrain. 76 world units per metre is the character-height anchor every
+   * human-scale page shares (the ~130-unit player mesh as a 1.7 m adult), so a
+   * metre here means the same thing it means in a town. */
+  const VR_GROUND_UNITS_PER_METER = 76;
   let vr = null;             /* LegaiaVr handle (null before DOM wiring) */
   let worldTick = null;      /* the flat render loop, so VR can pause/resume it */
   let worldDrawState = null; /* { draws, ext } of the assembled kingdom */
+  let groundSampler = null;  /* (x, z) -> terrain surface Y (world up), or null */
+
+  /* Bilinear terrain-height sampler over the walk heightfield the kingdom
+   * load uploaded: vertices sit on the 128-unit cell grid at
+   * `(col*128, -lut, row*128)` (pre-Y-flip frame - world-up Y is the
+   * negation), so bucketing by grid node and lerping the enclosing four
+   * reproduces the surface the GPU rasterises. Cells outside the visible
+   * continent fall back to the sea plane (y = 0). This is what lets the VR
+   * ground mode STAND on the map: the rig's floor origin snaps to this
+   * height every frame. */
+  function buildGroundSampler() {
+    if (!viewer || typeof viewer.walk_ground_positions !== 'function') return null;
+    let pos;
+    try { pos = viewer.walk_ground_positions(); } catch (e) { return null; }
+    if (!pos || pos.length < 12) return null;
+    const TILE = 128;
+    const nodes = new Map();
+    for (let i = 0; i + 2 < pos.length; i += 3) {
+      const key = Math.round(pos[i] / TILE) * 4096 + Math.round(pos[i + 2] / TILE);
+      const y = -pos[i + 1];
+      const cur = nodes.get(key);
+      if (cur === undefined || y > cur) nodes.set(key, y);
+    }
+    return (x, z) => {
+      const gx = x / TILE, gz = z / TILE;
+      const x0 = Math.floor(gx), z0 = Math.floor(gz);
+      const fx = gx - x0, fz = gz - z0;
+      let sum = 0, wsum = 0;
+      for (let dx = 0; dx <= 1; dx++) {
+        for (let dz = 0; dz <= 1; dz++) {
+          const v = nodes.get((x0 + dx) * 4096 + (z0 + dz));
+          if (v === undefined) continue;
+          const w = (dx ? fx : 1 - fx) * (dz ? fz : 1 - fz);
+          sum += v * w;
+          wsum += w;
+        }
+      }
+      return wsum > 1e-6 ? sum / wsum : 0;
+    };
+  }
+  /* Headless-verification hook (same spirit as `__woCam`): the mock-XR
+   * harness asserts the VR ground mode stands ON this surface. Not used by
+   * page code. */
+  window.__woGround = (x, z) => (groundSampler ? groundSampler(x, z) : null);
 
   /* ---------- Placement JSON (always available) ----------- */
   try {
@@ -322,9 +371,24 @@
       extent: () => (worldDrawState ? worldDrawState.ext : [16320, 16320]),
       draw: () => glRenderer.renderAssembled(
         worldDrawState.draws, worldDrawState.ext, worldCam),
-      /* Stand on the sea plane at the continent's framing centre: at the
-       * diorama scale that is 3.2 m above it, looking down. */
-      start: () => ({ x: worldCam.centerX, y: 0, z: worldCam.centerZ }),
+      modes: [
+        /* Diorama: stand on the sea plane at the continent's framing centre -
+         * at 2000 units/m that is 3.2 m above an ~8 m tabletop continent. */
+        {
+          id: 'diorama', label: 'Diorama',
+          unitsPerMeter: VR_UNITS_PER_METER,
+          start: () => ({ x: worldCam.centerX, y: 0, z: worldCam.centerZ }),
+        },
+        /* On the ground: human scale, feet snapped to the terrain surface
+         * under the viewer every frame (walk the continent; no free-fly
+         * altitude). Spawns on the terrain under the framing centre. */
+        {
+          id: 'ground', label: 'On the ground',
+          unitsPerMeter: VR_GROUND_UNITS_PER_METER,
+          start: () => ({ x: worldCam.centerX, y: 0, z: worldCam.centerZ }),
+          groundHeight: (x, z) => (groundSampler ? groundSampler(x, z) : 0),
+        },
+      ],
       onEnter: () => {
         if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
       },
@@ -694,6 +758,7 @@
     if (vr) { vr.end(); vr.setReady(false); }
     worldTick = null;
     worldDrawState = null;
+    groundSampler = null;
     if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
     if (glRenderer) { glRenderer.dispose(); glRenderer = null; }
     const old = document.getElementById('wo-canvas3d');
@@ -762,6 +827,8 @@
       glRenderer.uploadGround(new Float32Array(0), null, null, new Uint32Array(0));
     }
     glRenderer.setGroundEnable(!$showTerrain || $showTerrain.checked);
+    /* Terrain-height sampler for the VR "on the ground" mode. */
+    groundSampler = groundQuads > 0 ? buildGroundSampler() : null;
     /* Upload a single pack mesh on demand; return true if its mesh data
      * is renderable (some slots have non-textured flat-shaded prims that
      * the WebGL path skips). */
