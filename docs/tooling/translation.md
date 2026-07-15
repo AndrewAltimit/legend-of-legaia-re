@@ -212,20 +212,27 @@ capped by `budget`:
 
 - SCUS strings: the original string's byte span (shorter is fine - the string
   is re-terminated; bytes past the NUL are never read).
-- Dialog segments: the original segment's exact byte length. Shorter
-  translations are padded with spaces so the `0x1F ... 0x00` framing (and
-  every script offset around it) never moves. There is **no record resize**
-  for dialog: segment pools interleave with script bytecode whose relative
-  jumps assume fixed offsets, so in-place is the safe contract.
+- Dialog segments: same-size in place is the fast default - shorter
+  translations are space-padded so the `0x1F ... 0x00` framing (and every
+  script offset around it) never moves. When a line overflows its own span,
+  the importer tries the **generalized rewriter** escape hatch: it grows every
+  filled segment in that scene MAN to full length and relocates all crossing
+  references (partition tables, `u24_at_28`, straddling relative jumps -
+  `man_edit::apply_text_edits`), verified as the same program by re-walking
+  both buffers (`text_edits_preserve_scripts`). The budget then becomes the
+  MAN's own footprint, not each string. See
+  [`man-relocation.md`](../formats/man-relocation.md).
 - A whole scene's edits must additionally recompress into the MAN's original
-  LZS footprint. Text compresses well, and the repack falls back to an
-  optimal-parse LZS encoder (`legaia_lzs::compress_optimal` - exact
+  LZS footprint at the same LBA. Text compresses well, and the repack falls
+  back to an optimal-parse LZS encoder (`legaia_lzs::compress_optimal` - exact
   shortest-encoding DP, incl. back-references into the decoder's initial zero
-  window) when the fast greedy parse just misses the budget, so even the
-  couple of retail MANs with zero compressed slack stay editable. If a scene
-  still overflows, the import rolls back its longest lines one at a time
-  (each with a per-key diagnostic) rather than dropping the whole scene -
-  shorten the reported lines and re-run.
+  window) when the fast greedy parse just misses the budget. The retail scene
+  entries are sector-aligned with **zero compressed slack**, though, so an
+  in-place grow only fits when the rewritten MAN recompresses no larger than
+  the original; a scene that still overflows falls back to same-size and rolls
+  back its longest lines one at a time (each with a per-key diagnostic) - shorten
+  the reported lines and re-run, or land the disc-level +1-sector relayout the
+  [PAL fit report](pal-localizations.md) motivates.
 
 `translate stats` checks all of this offline. On import each target is also
 verified against the pack's `source`; a mismatch (wrong disc revision, or a
@@ -323,9 +330,11 @@ that would lift the printable-ASCII-only limitation for accented Latin / other
 scripts across *all* text, not just these textures; it is out of scope here.
 The official PAL discs already carry such an atlas: see
 [`pal-localizations.md`](pal-localizations.md) for the CP437-aligned accent
-byte→glyph map, the enumerated font-patch cell set, and how the official
+byte→glyph map, the enumerated font-patch cell set, how the official
 French/German/Italian text aligns id-/order-for-order to the USA disc
-(`legaia-rando translate diff-disc`).
+(`legaia-rando translate diff-disc`), how to lift it onto USA coordinates
+(`translate lift-official`), and the per-string vs per-MAN fit rate
+(`translate fit-report`).
 
 ## AI example packs
 

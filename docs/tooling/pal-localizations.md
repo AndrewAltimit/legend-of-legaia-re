@@ -130,36 +130,70 @@ new cell's width byte in the font width table (`SCUS 0x80074050`). This is the
 concrete form of the "accented scripts need a font patch" caveat in
 [`translation.md`](translation.md).
 
-## Same-size fit against the USA target
+## Lifting an official translation
 
-The importer enforces same-size in place against the USA disc. Official PAL
-strings are frequently wordier:
+`legaia-rando translate lift-official --from <PAL.bin> --target <USA.bin>
+-o <pack.yaml>` re-keys the official localized text onto the USA coordinate space
+the importer patches (`legaia_rando::translation::lift`):
 
-- **Dialog** (budget = exact USA segment byte length): ~half of order-paired
-  lines fit; the rest overflow by ~8 bytes on average (max ~40). Dialog has no
-  per-line resize (segment pools interleave with script bytecode whose relative
-  jumps assume fixed offsets), and `man_edit::apply_insertions` is scoped to
-  partition-2 door records - it does **not** generalize to arbitrary interior
-  dialog growth. The practical path is abbreviating the flagged overflow lines
-  (the importer already rolls back a scene's longest lines one at a time with a
-  per-key diagnostic).
-- **Name tables** (budget = USA string span + 0..3 alignment padding, which the
-  pack reclaims): French/German names fit ~70-76%; Italian names (wordiest) ~48%;
-  accessory descriptions are worst (15-27%).
+1. Detect the source region from `SYSTEM.CNF`'s `BOOT` line (SCES_019.44/.45/.46
+   = FR/DE/IT).
+2. *Locate* each of the five name-table bases in the SCES exe, verified against
+   the **USA-populated id set** (a candidate base is accepted when the same ids
+   the USA table names also resolve to name-shaped strings on the PAL exe - a
+   count-agnostic, language-independent check with a windowed-search fallback).
+3. Re-key positionally: name tables id-for-id (`usa_string_va -> pal_string`),
+   dialog by the `diff-disc` Nth-segment-per-entry pairing, party names by fixed
+   field.
 
-## Lifting an official translation (recommended path)
+It emits a **filled working pack** (source = USA text, translation = official
+localized text, USA byte budgets) - Sony text, kept local, never committed.
+Across FR/DE/IT all four pooled tables locate at 100% valid fraction with zero
+unmapped strings, and the dialog corpus pairs at **98.5-99.8%** per PROT entry.
+Accents decode to single-byte `{xx}` markup escapes the codec round-trips
+exactly; they still need a font patch to render.
 
-1. Export region-agnostically: accept a non-`SCUS`-named boot exe, *locate* the
-   five name-table bases per exe, and use the PAL-tolerant dialog scan. Produces
-   a working pack keyed by the PAL disc's own coordinates (Sony text - keep it
-   local, never commit).
-2. Re-key to USA coordinates using the `diff-disc` positional pairing (id-for-id
-   for names, Nth-segment-per-entry for dialog) + USA budgets.
-3. Budget pass (`translate stats --input USA.bin`); abbreviate the ~50% of
-   over-budget lines.
+## Fit rate against the USA target
+
+`legaia-rando translate fit-report --from <PAL.bin> --target <USA.bin>` measures
+fit under two budgets (counts only, no text):
+
+- **per-string** (the old same-size constraint): a line fits iff its encoded
+  bytes are `<=` its own USA segment span. ~48-51% of MAN dialog lines fit; name
+  tables fit 36-60% (Italian, the wordiest, lowest).
+- **per-MAN** (the generalized rewriter): a whole scene MAN fits iff *all* its
+  official lines, grown to full length, relocate + validate + recompress within
+  the MAN's on-disc compressed footprint at the same LBA (no disc relayout - see
+  [man-relocation.md](../formats/man-relocation.md)).
+
+**The decisive constraint is sector alignment, not string length.** The USA
+scene-bundle PROT entries are sector-aligned with **zero** compressed slack, and
+each compressed MAN already fills its footprint, so growing *any* line overflows
+and whole-MAN in-place growth fits only a small fraction (3.5-7.1% of MAN lines,
+9-13 of 79 MAN entries). The residual is **not** a few long lines to abbreviate:
+it is ~65-70 large scene MANs (holding most of the corpus) that each need a
+**sub-sector** amount of extra compressed room - **every residual deficit is
+under one 2048-byte sector** (max ~1.4 KB across all three languages). This is
+exactly the **+1-sector-per-entry** growth the PAL discs applied at mastering.
+
+### Residual handling
+
+The importer ships the in-place rewriter (Part 2 above) plus a same-size +
+longest-first-abbreviation fallback for residual sector-crossers, which it
+reports per key. Closing the residual entirely needs a disc-level entry-growth
+relayout: because the entries are packed with zero slack, that is a **full-ISO
++1-sector rebuild** (grow `PROT.DAT`, shift every subsequent PROT-TOC LBA + every
+ISO file after `PROT.DAT`, rewrite PVD / path tables / directory records). The
+rewriter is the correct building block - once an entry's footprint is enlarged by
+one sector, the same growth path fits it - so the disc relayout is the clear next
+step toward shippable DE/FR/IT packs.
+
+### Recommended path to a distributable pack
+
+1. `translate lift-official` -> working pack (scratchpad only).
+2. `translate fit-report` -> the residual budget picture.
+3. Abbreviate the flagged residual lines, or land the +1-sector disc relayout to
+   avoid abbreviation.
 4. Font patch (separate deliverable) so accents render instead of folding to
    ASCII.
-5. `translate strip` → a source-free distributable `site/lang/{de,fr,it}.yaml`.
-
-Steps 1-2 are the bulk of new code and are a natural follow-up
-`translate lift-official` subcommand built on the `diff-disc` pairing.
+5. `translate strip` -> a source-free distributable `site/lang/{de,fr,it}.yaml`.
