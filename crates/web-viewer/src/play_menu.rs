@@ -13,20 +13,28 @@
 //!
 //! The page drives it exactly like the field: hand it edge-triggered pad words,
 //! then blit the two draw lists (sprites off the chrome atlas, texts off the
-//! font atlas) over the frozen scene. The top-level command list + the Status
-//! and Options sub-screens run their real `legaia-engine-core` sessions
-//! ([`StatusScreenSession`] / [`OptionsSession`]); the remaining rows open the
-//! generic framed window the native shell also uses for its not-yet-capture-
-//! pinned screens.
+//! font atlas) over the frozen scene. The top-level command list plus the
+//! Items / Magic / Equip / Status / Options sub-screens all run the real
+//! [`FieldMenuSubsession`] the native `play-window` builds, and render through
+//! the identical `legaia-engine-ui` draw builders - the site is just a
+//! different framebuffer over the same menu. Load / Save keep the generic
+//! framed window: the play page routes disc-backed saving through its own DOM
+//! save-loader, so the in-canvas save-select screen is intentionally not wired.
 
 use super::*;
 use crate::runtime::LegaiaRuntime;
+use legaia_engine_core::equip_session::{EquipSession, EquipState};
 use legaia_engine_core::field_menu::FieldMenuRow;
-use legaia_engine_core::field_menu_dispatch::status_snapshots;
+use legaia_engine_core::field_menu_dispatch::{
+    self, FieldMenuSubsession, apply_equip_outcome, apply_inventory_outcome, apply_spell_outcome,
+    status_snapshots,
+};
 use legaia_engine_core::input::PadButton;
-use legaia_engine_core::options::{OptionsInput, OptionsSession, OptionsState};
+use legaia_engine_core::inventory_use::{InventoryUseSession, InventoryUseState};
+use legaia_engine_core::options::{OptionsSession, OptionsState};
 use legaia_engine_core::save_menu_atlas::{SaveMenuAtlas, build_atlas};
-use legaia_engine_core::status_screen::{StatusInput, StatusScreenSession};
+use legaia_engine_core::spell_menu::{SpellMenuPhase, SpellMenuSession};
+use legaia_engine_core::status_screen::StatusScreenSession;
 use legaia_engine_ui::{
     self as ui, FieldMenuPartyView, FieldMenuRowView, SaveMenuAtlasRects, SpriteDraw,
     StatusPanelView, StatusSatelliteView, StatusStatRow, TextDraw,
@@ -37,9 +45,11 @@ use legaia_engine_ui::{
 const STAGE_W: u32 = ui::BOOT_UI_STAGE_W;
 const STAGE_H: u32 = ui::BOOT_UI_STAGE_H;
 
-/// Near-fullscreen content rect for the rows whose retail window set is not
-/// capture-pinned (Items / Magic / Equip / Save / Load) - mirrors the native
-/// window's `MENU_SUBWINDOW_CONTENT`.
+/// Near-fullscreen content rect for the screens the native shell frames with a
+/// single window rather than a capture-pinned window set: Items / Magic (the
+/// generic frame behind `inventory_use_draws_for` / `spell_menu_draws_for`) and
+/// the Load / Save placeholder. Mirrors the native window's
+/// `MENU_SUBWINDOW_CONTENT`.
 const SUBWINDOW_CONTENT: (i32, i32, i32, i32) = (18, 18, 284, 200);
 
 /// Pinned content rects mirroring the disc descriptor table, used when the
@@ -113,12 +123,15 @@ pub struct PlayMenu {
     sub: Option<PlaySub>,
 }
 
-/// The open sub-screen. Status + Options run their real engine-core sessions;
-/// `Placeholder` is the generic framed window for the rows not yet wired to
-/// their retail multi-window layout.
+/// The open sub-screen. Items / Magic / Equip / Status / Options run the real
+/// [`FieldMenuSubsession`] the native `play-window` builds - and render through
+/// the exact same `legaia-engine-ui` draw builders. `Placeholder` is the
+/// generic framed window kept for Load / Save, whose disc-backed save-slot grid
+/// is served by the play page's own DOM save-loader rather than the in-canvas
+/// save-select screen.
 enum PlaySub {
-    Status(StatusScreenSession),
-    Config(OptionsSession),
+    // Boxed: the sub-session enum is far larger than the `Placeholder` row.
+    Session(Box<FieldMenuSubsession>),
     Placeholder(FieldMenuRow),
 }
 
@@ -308,35 +321,54 @@ impl LegaiaRuntime {
             .map(|m| m.sub.is_some())
             .unwrap_or(false);
         if has_sub {
-            let mut close_sub = false;
-            let mut back_row = FieldMenuRow::Items;
+            // Placeholder rows (Load / Save) close on Circle; the real
+            // sub-sessions tick their edge and self-report `is_done`.
+            let mut close_placeholder: Option<FieldMenuRow> = None;
+            let mut session_done = false;
             if let Some(sub) = self.play_menu.as_mut().and_then(|m| m.sub.as_mut()) {
                 match sub {
-                    PlaySub::Status(s) => {
-                        let _ = s.tick(StatusInput::from_pad_edge(edge));
-                        if s.is_done() {
-                            close_sub = true;
-                            back_row = FieldMenuRow::Status;
-                        }
-                    }
-                    PlaySub::Config(s) => {
-                        let _ = s.tick(OptionsInput::from_pad_edge(edge));
-                        if s.is_done() {
-                            close_sub = true;
-                            back_row = FieldMenuRow::Options;
-                        }
+                    PlaySub::Session(session) => {
+                        session.tick_pad_edge(edge);
+                        session_done = session.is_done();
                     }
                     PlaySub::Placeholder(row) => {
                         if pressed(edge, PadButton::Circle) {
-                            close_sub = true;
-                            back_row = *row;
+                            close_placeholder = Some(*row);
                         }
                     }
                 }
             }
-            if close_sub && let Some(m) = self.play_menu.as_mut() {
+            if let Some(row) = close_placeholder
+                && let Some(m) = self.play_menu.as_mut()
+            {
                 m.sub = None;
-                m.cursor = back_row.index();
+                m.cursor = row.index();
+            } else if session_done {
+                // Fold the finished session's result into the live world
+                // (equip swap / item use / spell cast) exactly as the native
+                // shell does, then drop back to the top-level list on the row
+                // that opened it.
+                let sub = self.play_menu.as_mut().and_then(|m| m.sub.take());
+                if let Some(PlaySub::Session(session)) = sub {
+                    let session = *session;
+                    let back = session.row();
+                    if let Some(host) = self.scene_host.as_mut() {
+                        let world = &mut host.world;
+                        match session {
+                            FieldMenuSubsession::Equip { session, char_slot } => {
+                                apply_equip_outcome(&session, char_slot, world);
+                            }
+                            FieldMenuSubsession::Items(s) => apply_inventory_outcome(&s, world),
+                            FieldMenuSubsession::Spells(s) => apply_spell_outcome(&s, world),
+                            // Status / Options / Save / Arts carry no
+                            // world-mutating outcome on close.
+                            _ => {}
+                        }
+                    }
+                    if let Some(m) = self.play_menu.as_mut() {
+                        m.cursor = back.index();
+                    }
+                }
             }
             return;
         }
@@ -361,16 +393,30 @@ impl LegaiaRuntime {
             let cursor = self.play_menu.as_ref().map(|m| m.cursor).unwrap_or(0);
             let row = FieldMenuRow::from_index(cursor).unwrap_or(FieldMenuRow::Items);
             let sub = match row {
-                FieldMenuRow::Status => {
-                    let snaps = self.menu_world().map(status_snapshots).unwrap_or_default();
-                    PlaySub::Status(StatusScreenSession::new(snaps))
-                }
-                FieldMenuRow::Options => {
-                    PlaySub::Config(OptionsSession::new(OptionsState::default()))
-                }
-                other => PlaySub::Placeholder(other),
+                // Load / Save keep the generic frame (the play page's own
+                // save-loader owns the disc-backed slot grid).
+                FieldMenuRow::Load | FieldMenuRow::Save => Some(PlaySub::Placeholder(row)),
+                // Every other row builds the real retail sub-session from the
+                // disc catalogs installed on the host world at `load_disc`
+                // (spell / equipment / item), matching the native shell's
+                // `FieldMenuSubsession::build`.
+                other => self.scene_host.as_ref().map(|host| {
+                    let world = &host.world;
+                    let chain = world.chain_library();
+                    PlaySub::Session(Box::new(FieldMenuSubsession::build(
+                        other,
+                        world,
+                        &OptionsState::default(),
+                        &[],
+                        &chain,
+                        &world.spell_catalog,
+                        &world.equipment_table,
+                    )))
+                }),
             };
-            if let Some(m) = self.play_menu.as_mut() {
+            if let Some(sub) = sub
+                && let Some(m) = self.play_menu.as_mut()
+            {
                 m.sub = Some(sub);
             }
         }
@@ -393,35 +439,39 @@ impl LegaiaRuntime {
         let (origin, scale) = stage_transform(surface_w.max(1), surface_h.max(1));
         let mut sprites: Vec<SpriteDraw> = Vec::new();
         let mut texts: Vec<TextDraw> = Vec::new();
-        let font = &assets.font;
 
         match &menu.sub {
             None => self.build_top_level(assets, menu, &mut sprites, &mut texts, origin, scale),
-            Some(PlaySub::Status(s)) => {
-                self.build_status(assets, s, &mut sprites, &mut texts, origin, scale)
-            }
-            Some(PlaySub::Config(s)) => {
-                self.build_config(assets, s, &mut sprites, &mut texts, origin, scale)
-            }
-            Some(PlaySub::Placeholder(row)) => {
-                // Generic near-fullscreen frame + a centred label, exactly the
-                // native window's treatment of a not-yet-pinned screen.
-                if let Some((_, rects)) = assets.chrome.as_ref() {
-                    let (x, y, w, h) = SUBWINDOW_CONTENT;
-                    sprites.extend(ui::menu_window_chrome_draws_for(
-                        rects,
-                        (x - 8, y - 8, w + 16, h + 16),
-                        origin,
-                        scale,
-                    ));
+            Some(PlaySub::Session(sub)) => match sub.as_ref() {
+                FieldMenuSubsession::Status(s) => {
+                    self.build_status(assets, s, &mut sprites, &mut texts, origin, scale)
                 }
-                let mut d = ui::text_draws_for(
-                    &font.layout_ascii(row.label()),
-                    (140, 108),
-                    ui::MENU_TEXT_WHITE,
-                );
-                ui::scale_stage_text_draws(&mut d, origin, scale);
-                texts.extend(d);
+                FieldMenuSubsession::Config(s) => {
+                    self.build_config(assets, s, &mut sprites, &mut texts, origin, scale)
+                }
+                FieldMenuSubsession::Items(s) => {
+                    self.build_items(assets, s, &mut sprites, &mut texts, origin, scale)
+                }
+                FieldMenuSubsession::Spells(s) => {
+                    self.build_spells(assets, s, &mut sprites, &mut texts, origin, scale)
+                }
+                FieldMenuSubsession::Equip { session, char_slot } => self.build_equip(
+                    assets,
+                    session,
+                    *char_slot,
+                    &mut sprites,
+                    &mut texts,
+                    origin,
+                    scale,
+                ),
+                // Save / Arts are never built from a pause-menu row on the
+                // site (Load / Save use `Placeholder`; Arts has no retail
+                // row), but keep an exhaustive fallback.
+                FieldMenuSubsession::Save(_) | FieldMenuSubsession::Arts(_) => self
+                    .build_placeholder(assets, sub.row(), &mut sprites, &mut texts, origin, scale),
+            },
+            Some(PlaySub::Placeholder(row)) => {
+                self.build_placeholder(assets, *row, &mut sprites, &mut texts, origin, scale)
             }
         }
 
@@ -726,6 +776,425 @@ impl LegaiaRuntime {
                 scale,
             ));
         }
+    }
+
+    /// Generic near-fullscreen frame + a centred label. Used for Load / Save
+    /// (whose disc-backed slot grid is served by the page's DOM save-loader) -
+    /// byte-identical to the native window's treatment of an unpinned screen.
+    fn build_placeholder(
+        &self,
+        assets: &PlayMenuAssets,
+        row: FieldMenuRow,
+        sprites: &mut Vec<SpriteDraw>,
+        texts: &mut Vec<TextDraw>,
+        origin: (i32, i32),
+        scale: u32,
+    ) {
+        if let Some((_, rects)) = assets.chrome.as_ref() {
+            let (x, y, w, h) = SUBWINDOW_CONTENT;
+            sprites.extend(ui::menu_window_chrome_draws_for(
+                rects,
+                (x - 8, y - 8, w + 16, h + 16),
+                origin,
+                scale,
+            ));
+        }
+        let mut d = ui::text_draws_for(
+            &assets.font.layout_ascii(row.label()),
+            (140, 108),
+            ui::MENU_TEXT_WHITE,
+        );
+        ui::scale_stage_text_draws(&mut d, origin, scale);
+        texts.extend(d);
+    }
+
+    /// Items sub-screen: the inventory-use overlay + the generic frame chrome.
+    /// Mirrors the native window's `FieldMenuSubsession::Items` path
+    /// (`items_session_draws` -> `inventory_use_draws_for`).
+    fn build_items(
+        &self,
+        assets: &PlayMenuAssets,
+        s: &InventoryUseSession,
+        sprites: &mut Vec<SpriteDraw>,
+        texts: &mut Vec<TextDraw>,
+        origin: (i32, i32),
+        scale: u32,
+    ) {
+        let mut d = self.items_session_draws(assets, s);
+        ui::scale_stage_text_draws(&mut d, origin, scale);
+        texts.extend(d);
+        if let Some((_, rects)) = assets.chrome.as_ref() {
+            let (x, y, w, h) = SUBWINDOW_CONTENT;
+            sprites.extend(ui::menu_window_chrome_draws_for(
+                rects,
+                (x - 8, y - 8, w + 16, h + 16),
+                origin,
+                scale,
+            ));
+        }
+    }
+
+    /// Magic sub-screen: the caster/spell/target list + the generic frame.
+    /// Mirrors the native window's `FieldMenuSubsession::Spells` path
+    /// (`spell_menu_draws_for`).
+    fn build_spells(
+        &self,
+        assets: &PlayMenuAssets,
+        s: &SpellMenuSession,
+        sprites: &mut Vec<SpriteDraw>,
+        texts: &mut Vec<TextDraw>,
+        origin: (i32, i32),
+        scale: u32,
+    ) {
+        let font = &assets.font;
+        let names: Vec<&str> = s.party().iter().map(|c| c.name.as_str()).collect();
+        let hp: Vec<(u16, u16)> = s.party().iter().map(|c| (c.hp, c.hp)).collect();
+        let mp: Vec<(u16, u16)> = s.party().iter().map(|c| (c.mp, c.mp)).collect();
+        let spell_rows = s.current_spell_rows();
+        let spell_views: Vec<ui::SpellRowView<'_>> = spell_rows
+            .iter()
+            .map(|sr| ui::SpellRowView {
+                name: sr.name.as_str(),
+                mp_cost: sr.mp_cost,
+                admissible: sr.admissible,
+            })
+            .collect();
+        let target_views: Vec<ui::SpellTargetView<'_>> = s
+            .targets()
+            .iter()
+            .map(|t| ui::SpellTargetView {
+                name: t.name.as_str(),
+                hp: t.hp,
+                hp_max: t.hp_max,
+                alive: t.alive(),
+            })
+            .collect();
+        let (selected_caster, selected_spell, phase, cursor) = match s.phase() {
+            SpellMenuPhase::CharSelect { cursor } => (None, None, 0u8, *cursor),
+            SpellMenuPhase::SpellSelect { caster, cursor } => (Some(*caster), None, 1u8, *cursor),
+            SpellMenuPhase::TargetSelect {
+                caster,
+                spell_id,
+                cursor,
+            } => (Some(*caster), Some(*spell_id), 2u8, *cursor),
+            SpellMenuPhase::Done(_) => return,
+        };
+        let args = ui::SpellMenuDrawArgs {
+            party_names: &names,
+            party_hp: &hp,
+            party_mp: &mp,
+            selected_caster,
+            spells: &spell_views,
+            selected_spell,
+            targets: &target_views,
+            selected_target: None,
+            cursor,
+            phase,
+        };
+        let mut d = ui::spell_menu_draws_for(font, args, (32, 32));
+        ui::scale_stage_text_draws(&mut d, origin, scale);
+        texts.extend(d);
+        if let Some((_, rects)) = assets.chrome.as_ref() {
+            let (x, y, w, h) = SUBWINDOW_CONTENT;
+            sprites.extend(ui::menu_window_chrome_draws_for(
+                rects,
+                (x - 8, y - 8, w + 16, h + 16),
+                origin,
+                scale,
+            ));
+        }
+    }
+
+    /// Equip sub-screen: the retail multi-window layout (party / item-list /
+    /// main window + the Equip tab) + the slot pictogram column and hand
+    /// cursors. Mirrors the native window's `FieldMenuSubsession::Equip` path
+    /// (`equip_session_draws` -> `equip_screen_draws_for` +
+    /// `equip_screen_sprites_for`).
+    #[allow(clippy::too_many_arguments)]
+    fn build_equip(
+        &self,
+        assets: &PlayMenuAssets,
+        session: &EquipSession,
+        char_slot: u8,
+        sprites: &mut Vec<SpriteDraw>,
+        texts: &mut Vec<TextDraw>,
+        origin: (i32, i32),
+        scale: u32,
+    ) {
+        use legaia_asset::menu_windows::window_ids;
+        let mut d = self.equip_session_draws(assets, session, char_slot);
+        ui::scale_stage_text_draws(&mut d, origin, scale);
+        texts.extend(d);
+
+        let Some((_, rects)) = assets.chrome.as_ref() else {
+            return;
+        };
+        for &id in &legaia_asset::menu_windows::EQUIP_SCREEN_WINDOWS {
+            if id <= window_ids::TAB_OPTIONS {
+                let (_, _, w, _) = assets.window_rect(id);
+                sprites.extend(ui::tab_banner_draws(
+                    rects,
+                    assets.pen(id),
+                    w,
+                    origin,
+                    scale,
+                ));
+            } else {
+                sprites.extend(ui::menu_window_chrome_draws_for(
+                    rects,
+                    assets.frame_rect(id),
+                    origin,
+                    scale,
+                ));
+            }
+        }
+        let slot_cursor = match session.state() {
+            EquipState::SlotPicker { cursor } => Some(cursor as u16),
+            _ => None,
+        };
+        // Retail draws 7 pictogram rows (the 8th slot stays navigable but
+        // icon-less), matching `field_menu_chrome_sprite_draws`.
+        let n_rows = session.record().equip.len().min(7);
+        sprites.extend(ui::equip_screen_sprites_for(
+            rects,
+            n_rows,
+            assets.pen(window_ids::EQUIP_MAIN),
+            assets.pen(window_ids::EQUIP_PARTY),
+            char_slot as usize,
+            slot_cursor,
+            origin,
+            scale,
+        ));
+    }
+
+    /// Build the inventory item-use overlay text draws. Ported verbatim from
+    /// the native shell's `items_session_draws` so the site emits the identical
+    /// draw list.
+    fn items_session_draws(
+        &self,
+        assets: &PlayMenuAssets,
+        s: &InventoryUseSession,
+    ) -> Vec<TextDraw> {
+        let font = &assets.font;
+        let filter_set: std::collections::HashSet<usize> =
+            s.filtered_items.iter().copied().collect();
+        let mut counts: std::collections::HashMap<u8, u8> = std::collections::HashMap::new();
+        for id in &s.items {
+            *counts.entry(*id).or_insert(0) =
+                counts.get(id).copied().unwrap_or(0).saturating_add(1);
+        }
+        let mut seen: std::collections::HashSet<u8> = std::collections::HashSet::new();
+        let mut row_data: Vec<(String, u8, bool)> = Vec::new();
+        for (i, id) in s.items.iter().enumerate() {
+            if !seen.insert(*id) {
+                continue;
+            }
+            let entry = s.catalog.get(*id);
+            let name = entry
+                .map(|e| e.name.to_string())
+                .unwrap_or_else(|| format!("Item {id:02X}"));
+            let count = counts.get(id).copied().unwrap_or(1);
+            let admissible = filter_set.contains(&i);
+            row_data.push((name, count, admissible));
+        }
+        let item_rows: Vec<ui::InventoryItemRow<'_>> = row_data
+            .iter()
+            .map(|(n, c, a)| ui::InventoryItemRow {
+                name: n,
+                count: *c,
+                admissible: *a,
+            })
+            .collect();
+        let target_rows: Vec<ui::InventoryTargetRow<'_>> = s
+            .targets
+            .iter()
+            .map(|t| ui::InventoryTargetRow {
+                name: &t.name,
+                hp: t.hp,
+                hp_max: t.hp_max,
+                mp: t.mp,
+                mp_max: t.mp_max,
+                alive: t.alive,
+            })
+            .collect();
+        let (phase, cursor) = match s.state {
+            InventoryUseState::Browsing { cursor } => (0u8, cursor as u8),
+            InventoryUseState::TargetSelect { cursor, .. } => (1u8, cursor as u8),
+            _ => (0u8, 0),
+        };
+        let selected_item_name = s.current_item().map(|e| e.name);
+        let in_battle = matches!(
+            s.context,
+            legaia_engine_core::inventory_use::InventoryContext::Battle
+        );
+        let args = ui::InventoryUseDrawArgs {
+            items: &item_rows,
+            targets: &target_rows,
+            in_battle,
+            cursor,
+            phase,
+            selected_item_name,
+        };
+        ui::inventory_use_draws_for(font, args, (16, 32))
+    }
+
+    /// Build the equip-screen text draws. Ported from the native shell's
+    /// `equip_session_draws`; resolves the same three retail stat-compare rows
+    /// off `compute_battle_stats`.
+    fn equip_session_draws(
+        &self,
+        assets: &PlayMenuAssets,
+        session: &EquipSession,
+        char_slot: u8,
+    ) -> Vec<TextDraw> {
+        use legaia_asset::menu_windows::window_ids;
+        use legaia_engine_core::equipment::EquipSlot;
+        let font = &assets.font;
+
+        let names = self
+            .menu_world()
+            .map(field_menu_dispatch::roster_names)
+            .unwrap_or_default();
+        let party_names: Vec<&str> = names.iter().map(String::as_str).collect();
+
+        let record = session.record();
+        let mut slot_label_buf: Vec<String> = Vec::with_capacity(8);
+        for i in 0..8u8 {
+            let label = EquipSlot::from_index(i)
+                .map(|s| s.label().to_string())
+                .unwrap_or_else(|| format!("Slot {i}"));
+            slot_label_buf.push(label);
+        }
+        let mut slot_item_buf: Vec<String> = Vec::with_capacity(8);
+        for &id in record.equip.iter() {
+            slot_item_buf.push(if id == 0 {
+                String::new()
+            } else {
+                format!("Item {id:02X}")
+            });
+        }
+        let slot_rows: Vec<ui::EquipSlotRow<'_>> = (0..8usize)
+            .map(|i| ui::EquipSlotRow {
+                label: &slot_label_buf[i],
+                current_name: &slot_item_buf[i],
+            })
+            .collect();
+
+        let (phase, cursor, active_slot, confirm_label_owned) = match session.state() {
+            EquipState::SlotPicker { cursor } => {
+                (ui::EquipDrawPhase::SlotPicker, cursor as u16, cursor, None)
+            }
+            EquipState::ItemPicker { slot, cursor } => {
+                (ui::EquipDrawPhase::ItemPicker, cursor, slot, None)
+            }
+            EquipState::Confirm {
+                slot,
+                item_id,
+                cursor,
+            } => {
+                let label = format!("Equip Item {item_id:02X}?");
+                (
+                    ui::EquipDrawPhase::Confirm,
+                    cursor as u16,
+                    slot,
+                    Some(label),
+                )
+            }
+            EquipState::Done(_) => (ui::EquipDrawPhase::SlotPicker, 0, 0, None),
+        };
+
+        let (candidate_names, candidate_counts, considered_id): (Vec<String>, Vec<u8>, Option<u8>) =
+            if phase == ui::EquipDrawPhase::SlotPicker {
+                (Vec::new(), Vec::new(), None)
+            } else {
+                let items = session.items_for_slot(active_slot);
+                let names: Vec<String> = items
+                    .iter()
+                    .map(|it| format!("Item {:02X}", it.id))
+                    .collect();
+                let counts: Vec<u8> = items
+                    .iter()
+                    .map(|it| session.inventory().get(&it.id).copied().unwrap_or(0))
+                    .collect();
+                let considered = match session.state() {
+                    EquipState::Confirm { item_id, .. } => Some(item_id),
+                    _ => items.get(cursor as usize).map(|it| it.id),
+                };
+                (names, counts, considered)
+            };
+        let candidate_rows: Vec<ui::EquipCandidateRow<'_>> = candidate_names
+            .iter()
+            .zip(candidate_counts.iter())
+            .map(|(name, count)| ui::EquipCandidateRow {
+                name,
+                count: *count,
+            })
+            .collect();
+
+        let stat_compare: Vec<ui::EquipStatRow<'_>> = match considered_id {
+            Some(id) => {
+                let neutral = legaia_engine_core::battle_stats::StatusModifiers::default();
+                let cur = legaia_engine_core::battle_stats::compute_battle_stats(
+                    record,
+                    session.equipment(),
+                    &[],
+                    &neutral,
+                );
+                let mut copy = *record;
+                copy.equip[active_slot as usize] = id;
+                let new = legaia_engine_core::battle_stats::compute_battle_stats(
+                    &copy,
+                    session.equipment(),
+                    &[],
+                    &neutral,
+                );
+                vec![
+                    ui::EquipStatRow {
+                        label: "ATK",
+                        current: cur.atk,
+                        preview: new.atk,
+                    },
+                    ui::EquipStatRow {
+                        label: "UDF",
+                        current: cur.udf,
+                        preview: new.udf,
+                    },
+                    ui::EquipStatRow {
+                        label: "LDF",
+                        current: cur.ldf,
+                        preview: new.ldf,
+                    },
+                ]
+            }
+            None => Vec::new(),
+        };
+
+        let view = ui::EquipScreenView {
+            party_names: &party_names,
+            party_cursor: char_slot as usize,
+            slots: &slot_rows,
+            candidates: &candidate_rows,
+            stat_compare: &stat_compare,
+            phase,
+            cursor,
+            active_slot,
+            confirm_label: confirm_label_owned.as_deref(),
+            // Hand-cursor sprites come from the chrome atlas when resident.
+            text_cursor: assets.chrome.is_none(),
+        };
+        let mut d = ui::equip_screen_draws_for(
+            font,
+            &view,
+            assets.pen(window_ids::EQUIP_PARTY),
+            assets.pen(window_ids::EQUIP_LIST),
+            assets.pen(window_ids::EQUIP_MAIN),
+        );
+        d.extend(ui::text_draws_for(
+            &font.layout_ascii("Equip"),
+            assets.pen(window_ids::TAB_EQUIP),
+            ui::MENU_TEXT_WHITE,
+        ));
+        d
     }
 
     /// The options value popup's per-open content rect (its y/h are stamped
