@@ -103,7 +103,19 @@ fn battle_and_baka_hit_cues_sound_against_the_class2_bank() {
         "strike cue voice is playing (not silence)"
     );
 
-    // Fire the Baka Fighter exchange-hit cue on a clean SPU: same guarantee.
+    // Fire the Baka Fighter exchange-hit cue on a clean SPU: it must sound.
+    //
+    // Ground truth (verified against PROT 0869 + the ring drainer FUN_80016B6C,
+    // which keys region `tone + i` for i in 0..voice_count):
+    //   - 0x09 = program 0, tone 9, voice_count 2.
+    //   - Program 0 has 10 populated tone regions (0..=9); tone 9 is the last.
+    //   - So the 2nd voice targets region tone+1 = 10, which is an UNUSED slot
+    //     (all zero: vag 0, vol 0). Retail programs that voice too, but with a
+    //     zero VAG/volume it is silent. `play_one_shot` skips the empty region
+    //     (its `vag <= 0` guard), so the cue keys exactly ONE audible voice.
+    // The cue therefore *sounds* (its first region is resident) - which is the
+    // authenticity guarantee - even though its nominal voice count over-counts
+    // the regions this bank actually populates.
     let mut spu2 = Spu::new();
     let mut alloc2 = SpuAllocator::new(0x1000, 0x40_000);
     let vab2 = VabBank::upload(&mut spu2, &mut alloc2, &report, body);
@@ -114,15 +126,31 @@ fn battle_and_baka_hit_cues_sound_against_the_class2_bank() {
         !spu2.voices[vhit as usize].is_off(),
         "Baka hit cue voice is playing (not silence)"
     );
-    // 0x09 is a 2-voice cue: the second consecutive region keys the next voice.
+
+    // Multi-voice fan-out against the real bank: cue 0x4E (program 7, tone 0,
+    // voice_count 3) is a cue whose three consecutive regions (0/1/2) are ALL
+    // populated in this bank, so all three voices key on - proving the
+    // `tone + i` fan-out (not the same tone layered) drives multiple voices.
+    const CUE_MULTI: u8 = 0x4E;
+    let m = table.get(CUE_MULTI).expect("0x4E descriptor");
+    assert_eq!(
+        (m.program, m.tone, m.voice_count()),
+        (7, 0, 3),
+        "0x4E = p7 t0 3-voice"
+    );
+    let mut spu3 = Spu::new();
+    let mut alloc3 = SpuAllocator::new(0x1000, 0x40_000);
+    let vab3 = VabBank::upload(&mut spu3, &mut alloc3, &report, body);
+    bank.play_one_shot(CUE_MULTI, &mut spu3, &vab3)
+        .expect("3-voice cue 0x4E keys a voice");
     assert!(
-        spu2.voices.iter().filter(|v| !v.is_off()).count() >= 2,
-        "the 2-voice Baka hit cue keyed both of its voices"
+        spu3.voices.iter().filter(|v| !v.is_off()).count() >= 3,
+        "the 3-voice cue 0x4E keyed all three consecutive regions"
     );
 
     eprintln!(
-        "[ok] strike 0x1A + Baka 0x09 sound against class-2 bank PROT 0869 \
-         ({} programs, {} samples)",
+        "[ok] strike 0x1A + Baka 0x09 + 3-voice 0x4E sound against class-2 bank \
+         PROT 0869 ({} programs, {} samples)",
         report.tones.len(),
         report.vag_samples.len()
     );
