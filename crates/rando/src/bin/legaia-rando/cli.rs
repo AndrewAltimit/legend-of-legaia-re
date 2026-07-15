@@ -267,6 +267,22 @@ pub(crate) enum TranslateCmd {
         #[arg(long)]
         input: Option<PathBuf>,
     },
+    /// Cross-region corpus alignment report: compare a **target** disc (the
+    /// one the importer would patch, e.g. the retail NTSC/USA build) against an
+    /// **official localization** disc (a PAL SCES build) and quantify how well
+    /// the dialog corpus aligns id-/order-for-order and how much of the
+    /// official text fits the target's same-size budget. Emits counts and byte
+    /// values only - no game text - so it is safe to run and log. Use it to
+    /// judge whether an official translation can be lifted into a distributable
+    /// pack for the target disc.
+    DiffDisc {
+        /// The target disc the importer patches (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+        /// The other (official-localization) disc to align against.
+        #[arg(long)]
+        other: PathBuf,
+    },
     /// Apply a filled pack to a copy of a disc. Untranslated entries are
     /// left byte-identical; every write is same-size in place and each
     /// touched sector's EDC/ECC is re-encoded.

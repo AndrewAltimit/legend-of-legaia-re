@@ -27,6 +27,7 @@
 //! own disc, and exported packs (which contain game text) must not be
 //! committed - see `docs/tooling/translation.md`.
 
+pub mod diff;
 pub mod export;
 pub mod import;
 pub mod markup;

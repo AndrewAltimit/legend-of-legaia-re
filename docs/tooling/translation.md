@@ -321,6 +321,11 @@ A font patch (new glyph tiles + width table in the menu glyph atlas at
 [`dialog-font.md`](../formats/dialog-font.md)) is the separate, larger effort
 that would lift the printable-ASCII-only limitation for accented Latin / other
 scripts across *all* text, not just these textures; it is out of scope here.
+The official PAL discs already carry such an atlas: see
+[`pal-localizations.md`](pal-localizations.md) for the CP437-aligned accent
+byte→glyph map, the enumerated font-patch cell set, and how the official
+French/German/Italian text aligns id-/order-for-order to the USA disc
+(`legaia-rando translate diff-disc`).
 
 ## AI example packs
 

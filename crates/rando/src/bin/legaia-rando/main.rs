@@ -85,6 +85,9 @@ fn main() -> Result<()> {
                 output,
                 patch,
             } => translate::cmd_import(&input, &pack, output.as_deref(), patch.as_deref()),
+            cli::TranslateCmd::DiffDisc { input, other } => {
+                translate::cmd_diff_disc(&input, &other)
+            }
         },
     }
 }

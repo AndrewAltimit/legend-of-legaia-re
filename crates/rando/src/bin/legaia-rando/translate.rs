@@ -6,7 +6,7 @@ use anyhow::{Context, Result, bail};
 
 use legaia_rando::disc::DiscPatcher;
 use legaia_rando::translation::{
-    LanguagePack, export_pack, import_pack,
+    LanguagePack, diff, export_pack, import_pack,
     markup::{self, Target},
 };
 use legaia_rando::{apply, ppf};
@@ -209,6 +209,77 @@ pub(crate) fn cmd_stats(pack_path: &Path, input: Option<&Path>) -> Result<()> {
             "{problems} entr{} need fixing",
             if problems == 1 { "y" } else { "ies" }
         );
+    }
+    Ok(())
+}
+
+pub(crate) fn cmd_diff_disc(input: &Path, other: &Path) -> Result<()> {
+    let a = DiscPatcher::open(load_image(input)?).context("parse target disc image")?;
+    let b = DiscPatcher::open(load_image(other)?).context("parse other disc image")?;
+    let rep = diff::diff_disc(&a, &b);
+
+    println!("target: {}", input.display());
+    println!("other:  {}", other.display());
+    println!(
+        "PROT entries: target={} other={} (LBA-aligned by index: {} / {})",
+        rep.entries_a,
+        rep.entries_b,
+        rep.entries_lba_aligned,
+        rep.entries_a.min(rep.entries_b),
+    );
+
+    let dump = |name: &str, d: &diff::DomainStats| {
+        println!("=== {name} ===");
+        println!(
+            "  entries with segments: target={} other={} both={}",
+            d.entries_a, d.entries_b, d.entries_both
+        );
+        println!(
+            "  total qualifying segments: target={} other={}",
+            d.total_segs_a, d.total_segs_b
+        );
+        println!(
+            "  order-pairable (sum min per entry): {} = {:.1}% of corpus (needs reconcile: {} lines)",
+            d.order_pairable,
+            d.order_pairable_pct(),
+            d.order_delta,
+        );
+        println!(
+            "  order-paired fit: {} = {:.1}% fit target budget, {} overflow",
+            d.order_fit,
+            d.order_fit_pct(),
+            d.order_overflow,
+        );
+        if d.order_overflow > 0 {
+            println!(
+                "    order overflow bytes: total={} avg={:.1} max={}",
+                d.order_overflow_bytes_total,
+                d.order_overflow_bytes_total as f64 / d.order_overflow as f64,
+                d.order_overflow_bytes_max
+            );
+        }
+        println!(
+            "  strict count-match (lower bound): {} / {} entries ({:.1}%), {} paired, {:.1}% fit",
+            d.count_matched_entries,
+            d.entries_both,
+            d.count_match_pct(),
+            d.paired_segments,
+            d.fit_pct(),
+        );
+    };
+    dump("scene MAN dialog", &rep.man);
+    dump("raw event-script carriers", &rep.raw);
+
+    println!("=== other-disc high glyph bytes (0x7F..; accented-Latin tiles) ===");
+    println!("  distinct high bytes: {}", rep.high_byte_census.len());
+    let mut rows: Vec<(u8, u64)> = rep.high_byte_census.iter().map(|(&b, &c)| (b, c)).collect();
+    rows.sort_by_key(|y| std::cmp::Reverse(y.1));
+    for chunk in rows.chunks(6) {
+        let line: Vec<String> = chunk
+            .iter()
+            .map(|(b, c)| format!("0x{b:02x}={c}"))
+            .collect();
+        println!("  {}", line.join("  "));
     }
     Ok(())
 }
