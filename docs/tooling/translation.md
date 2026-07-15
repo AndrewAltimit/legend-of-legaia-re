@@ -88,23 +88,41 @@ a time rather than dropping the whole scene.
 The in-browser ROM patcher ([`site/js/rom-patcher-app.js`](../../site/js/rom-patcher-app.js))
 offers the shipped packs directly (a language dropdown, default **None**), plus
 an *import my own pack* path and an *export a starter pack from my disc* button.
-It applies the language pack **before** any randomizer pass (see the ordering
-note below) via `patch_rom`'s `lang_pack` argument, and validates a chosen pack
-against the user's disc with `validate_lang_pack` before patching. Nothing is
-uploaded; the packs are static assets fetched from `site/lang/`.
+It applies the language pack in **two phases around** the randomizer passes
+(see the ordering note below) via `patch_rom`'s `lang_pack` argument, and
+validates a chosen pack against the user's disc with `validate_lang_pack`
+before patching. After a patch (and on validate) the page shows the
+**per-section coverage report** - applied / skipped counts per section plus a
+skip-reason breakdown (over budget, scene does not recompress, not on this
+disc, not encodable) - from the `lang` / `report` object `patch_rom` /
+`validate_lang_pack` return. Nothing is uploaded; the packs are static assets
+fetched from `site/lang/`.
 
-## Ordering: translate before randomize
+## Ordering: dialog before the randomizer, names after
 
-Language and randomizer edits overlap only in the scene MANs. A translation edit
-is same-size *inside the decompressed MAN*, keyed by a byte offset into it,
-whereas the door and starting-bag passes **relocate** records (variable-length
-insertion) - moving every byte after the splice. So a language pack must be
-applied first: `apply::import_language_pack` then the randomizer. The reverse
-order is not corrupting (the framing/source check skips a moved key) but it
-silently loses the relocated scenes' lines. The randomizer only ever reads
-structure - records, tables, item **ids** - never text, so translated strings
-never perturb it; the name-keyed passes test only whether a name is non-empty,
-which a translation preserves.
+Combined with the randomizer, a pack is applied in two phases
+(`translation::import_pack_phase`, `ImportPhase::DialogOnly` /
+`ImportPhase::NamesOnly`; a phase pair reports identically to one
+`import_pack` run):
+
+- **Dialog sections (`man:` / `raw:` keys) go first.** A dialog edit is
+  same-size *inside the decompressed MAN*, keyed by a byte offset into it,
+  whereas the door and starting-bag passes **relocate** records
+  (variable-length insertion) - moving every byte after the splice. Applied
+  first, the translated text simply rides along with any later relocation.
+  The reverse order is not corrupting (the framing/source check skips a
+  moved key) but it silently loses the relocated scenes' lines.
+- **SCUS name sections (`scus:` keys) go last.** The equipment-bonus-drop
+  pass classifies gear by matching the disc's item names against curated
+  English names (`legaia_rando::equipment::equipment_pool`); with the item
+  table already translated its pool comes back empty and the pass aborts.
+  Nothing in the randomizer relocates a SCUS string, so translating the name
+  tables after every pass is always safe - and every other name-keyed pass
+  tests only whether a name is non-empty, which a translation preserves.
+
+The randomizer otherwise reads structure - records, tables, item **ids** -
+never text, so translated strings never perturb it. A standalone
+`translate import` (no randomizer) applies everything in one pass.
 
 ## YAML schema
 
@@ -197,9 +215,14 @@ capped by `budget`:
   for dialog: segment pools interleave with script bytecode whose relative
   jumps assume fixed offsets, so in-place is the safe contract.
 - A whole scene's edits must additionally recompress into the MAN's original
-  LZS footprint. Text compresses well; if a scene ever overflows, the import
-  reports it per scene and skips only that scene - shorten its longest lines
-  and re-run.
+  LZS footprint. Text compresses well, and the repack falls back to an
+  optimal-parse LZS encoder (`legaia_lzs::compress_optimal` - exact
+  shortest-encoding DP, incl. back-references into the decoder's initial zero
+  window) when the fast greedy parse just misses the budget, so even the
+  couple of retail MANs with zero compressed slack stay editable. If a scene
+  still overflows, the import rolls back its longest lines one at a time
+  (each with a per-key diagnostic) rather than dropping the whole scene -
+  shorten the reported lines and re-run.
 
 `translate stats` checks all of this offline. On import each target is also
 verified against the pack's `source`; a mismatch (wrong disc revision, or a
