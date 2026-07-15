@@ -46,6 +46,13 @@ fn vab_tones_have_no_vibrato_or_portamento_but_real_pitch_bend_ranges() {
     let mut vibrato_or_porta = 0u64;
     let mut tones_with_bend_range = 0u64;
     let mut max_bend_semitones = 0u8;
+    // ADSR-mode census: the release/sustain-decrease step *sign* fix
+    // (`compute_delta_linear(.., true)`) only matters if retail tones actually
+    // use the *linear* variant of those decreasing phases. Count them so the
+    // fix stays disc-relevant, not a speculative micro-optimisation.
+    let mut linear_release = 0u64;
+    let mut exp_release = 0u64;
+    let mut linear_sustain_decrease = 0u64;
 
     let entries = archive.entries.clone();
     for entry in &entries {
@@ -69,6 +76,18 @@ fn vab_tones_have_no_vibrato_or_portamento_but_real_pitch_bend_ranges() {
                             tones_with_bend_range += 1;
                         }
                         max_bend_semitones = max_bend_semitones.max(t.pbmin).max(t.pbmax);
+
+                        // Decode the tone's ADSR the same way the engine voice
+                        // does and bucket the decreasing-phase modes.
+                        let cfg = legaia_engine_audio::AdsrConfig::from_words(t.adsr1, t.adsr2);
+                        if cfg.release_exp {
+                            exp_release += 1;
+                        } else {
+                            linear_release += 1;
+                        }
+                        if cfg.sustain_decrease && !cfg.sustain_exp {
+                            linear_sustain_decrease += 1;
+                        }
                     }
                 }
             }
@@ -80,7 +99,9 @@ fn vab_tones_have_no_vibrato_or_portamento_but_real_pitch_bend_ranges() {
         "[vab-tones] banks={banks} tones={tones} \
          vibrato/portamento={vibrato_or_porta} \
          tones_with_bend_range={tones_with_bend_range} \
-         max_bend_semitones={max_bend_semitones}"
+         max_bend_semitones={max_bend_semitones} \
+         linear_release={linear_release} exp_release={exp_release} \
+         linear_sustain_decrease={linear_sustain_decrease}"
     );
 
     assert!(tones > 1000, "expected a large VAB tone corpus");
@@ -102,5 +123,13 @@ fn vab_tones_have_no_vibrato_or_portamento_but_real_pitch_bend_ranges() {
     assert!(
         (1..=48).contains(&max_bend_semitones),
         "pitch-bend range looks wrong: max {max_bend_semitones} semitones"
+    );
+
+    // The retail corpus DOES use linear-release tones, so the release-phase
+    // step-sign fix (linear release fades by the `-8` decrease StepValue, not
+    // the `+7` increase one) is load-bearing on real data, not speculative.
+    assert!(
+        linear_release > 0,
+        "no linear-release tone in the corpus - the linear-decrease step fix would be inert"
     );
 }
