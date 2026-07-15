@@ -1,24 +1,18 @@
 [package]
-name = "legaia-engine-render"
+name = "legaia-engine-ui"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [lib]
-name = "legaia_engine_render"
+name = "legaia_engine_ui"
 path = "src/lib.rs"
 
 [dependencies]
-anyhow.workspace = true
 bytemuck = { version = "1", features = ["derive"] }
 glam.workspace = true
 legaia-asset = { path = "../asset" }
-legaia-engine-ui = { path = "../engine-ui" }
 legaia-font = { path = "../font" }
 legaia-tim = { path = "../tim" }
-log = "0.4"
-pollster = "0.3"
 serde.workspace = true
 serde_json.workspace = true
-wgpu = "26"
-winit = "0.30"
