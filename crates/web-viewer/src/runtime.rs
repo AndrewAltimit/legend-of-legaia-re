@@ -55,6 +55,12 @@ pub struct LegaiaRuntime {
     /// SCUS item-name table, parsed once at `load_disc` - the labels the field
     /// menu's Item screen shows. `None` on a PROT.DAT-only load (no executable).
     pub(crate) item_names: Option<legaia_asset::item_names::ItemNameTable>,
+    /// The real proportional retail dialog font, decoded straight from the disc
+    /// (`PROT.DAT` font TIM + the SCUS width table) at `load_disc` - the same
+    /// glyphs + advances the native pause menu draws. `None` (built-in
+    /// placeholder used instead) on a PROT.DAT-only load or if the font TIM
+    /// doesn't resolve.
+    pub(crate) menu_font: Option<legaia_font::Font>,
     /// Disc-sourced pause-menu chrome + font + window table, built lazily the
     /// first time the retail pause menu opens ([`crate::play_menu`]).
     pub(crate) menu_assets: Option<crate::play_menu::PlayMenuAssets>,
@@ -88,6 +94,7 @@ impl LegaiaRuntime {
             scene_anm: None,
             locomotion_anm: None,
             item_names: None,
+            menu_font: None,
             menu_assets: None,
             play_menu: None,
             boot_title: None,
@@ -135,6 +142,23 @@ impl LegaiaRuntime {
         self.item_names = scus
             .as_ref()
             .and_then(|s| legaia_asset::item_names::ItemNameTable::from_scus(s));
+        // The real retail proportional dialog font, decoded straight from the
+        // disc (no save state): the 4bpp font TIM in PROT.DAT + the SCUS width
+        // table. This is the exact font the native pause menu draws; without it
+        // the menu falls back to the built-in placeholder (fixed-width blocks).
+        self.menu_font = host
+            .index
+            .prot_dat_raw_bytes(
+                legaia_font::FONT_TIM_PROT_DAT_OFFSET,
+                legaia_font::FONT_TIM_LEN,
+            )
+            .ok()
+            .zip(scus.as_ref())
+            .and_then(|(tim, scus)| {
+                legaia_font::Font::from_disc_tim_and_scus(&tim, scus)
+                    .map_err(|e| crate::console_log(&format!("dialog font decode failed: {e}")))
+                    .ok()
+            });
         if let Some(scus) = scus.as_ref()
             && let Some(party) = legaia_asset::new_game::StartingParty::from_scus(scus)
         {
