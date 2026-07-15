@@ -443,6 +443,395 @@
     containerEl.appendChild(box);
   }
 
+  /* ================= shared rich save bar =================
+   *
+   * The polished, always-visible memory-card bar used by BOTH the play page
+   * and the minigames page. Each stored save is a retail-style tile: the SC
+   * block's own baked lead-face icon (or the lead's disc portrait for engine
+   * sessions), the party's faces stacked beside it, and identifying stats off
+   * the save block (lead + displayed level, gold, location, and - on the
+   * minigames page - casino coins). The two pages differ only in the primary
+   * per-tile action (Resume into the engine vs. Load the coin bank) and in the
+   * session line; everything visual lives here so the two bars stay identical.
+   *
+   * Portrait pixels are cached once per browser (PORTRAIT_KEY) so faces survive
+   * visits that never touch a disc. Each page harvests the three 16x16
+   * load-screen portrait TIMs off its own WASM surface (the play page's
+   * `disc_portrait_rgba`, the minigames page's `LegaiaMinigames.save_portrait_
+   * rgba`) and hands the raw RGBA to `cachePortraits`. */
+
+  var PORTRAIT_KEY = 'legaia.portraits.v1';
+  var PORTRAIT_NAMES = { vahn: 0, noa: 1, gala: 2 };
+  var RICH_CHIP_COLORS = ['#7798d4', '#df74a6', '#2dcca7', '#d8b34b'];
+  var portraitCanvasCache = null;   /* [canvas x3] | null (in-memory) */
+
+  function rgbaCanvas(bytes, w, h) {
+    if (!bytes || bytes.length !== w * h * 4) return null;
+    var c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    c.getContext('2d').putImageData(
+      new ImageData(new Uint8ClampedArray(bytes), w, h), 0, 0);
+    return c;
+  }
+
+  /* The three party portraits as 16x16 canvases, from the in-memory cache or
+   * localStorage; null until a disc has been harvested at least once. */
+  function portraitCanvases() {
+    if (portraitCanvasCache) return portraitCanvasCache;
+    var rec = readJson(PORTRAIT_KEY, null);
+    if (!rec || rec.v !== 1 || !Array.isArray(rec.p) || rec.p.length !== 3) return null;
+    try {
+      var out = rec.p.map(function (b64) { return rgbaCanvas(b64decode(b64), 16, 16); });
+      if (out.every(Boolean)) { portraitCanvasCache = out; return out; }
+    } catch (e) { /* fall through */ }
+    return null;
+  }
+
+  /* Persist harvested portrait pixels. `rgbaList` = three 1024-byte RGBA8
+   * buffers (Vahn/Noa/Gala). Returns the canvases, or null if any is missing. */
+  function cachePortraits(rgbaList) {
+    if (!Array.isArray(rgbaList) || rgbaList.length !== 3) return null;
+    var faces = [], b64 = [];
+    for (var i = 0; i < 3; i++) {
+      var c = rgbaCanvas(rgbaList[i], 16, 16);
+      if (!c) return null;
+      faces.push(c);
+      b64.push(b64encode(rgbaList[i]));
+    }
+    portraitCanvasCache = faces;
+    writeRaw(PORTRAIT_KEY, JSON.stringify({ v: 1, p: b64 }));
+    return faces;
+  }
+
+  function portraitForName(name) {
+    var faces = portraitCanvases();
+    if (!faces || !name) return null;
+    var idx = PORTRAIT_NAMES[String(name).toLowerCase()];
+    return idx != null ? faces[idx] : null;
+  }
+
+  function ensureRichStyle() {
+    if (document.getElementById('lg-richbar-css')) return;
+    var s = document.createElement('style');
+    s.id = 'lg-richbar-css';
+    s.textContent = [
+      '.lgrb{border:1px solid var(--border,#334);background:var(--bg-card,#12141c);',
+      'border-radius:4px;padding:.5rem .65rem;font-family:var(--font-mono,monospace);}',
+      '.lgrb-head{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;',
+      'font-size:.68rem;color:var(--text-dim,#778);text-transform:uppercase;',
+      'letter-spacing:.06em;padding-bottom:.4rem;}',
+      '.lgrb-title{color:var(--text,#dde);font-weight:700;}',
+      '.lgrb-session{color:var(--accent,#6cf);text-transform:none;letter-spacing:0;}',
+      '.lgrb-status{text-transform:none;letter-spacing:0;color:var(--text-muted,#9aa);}',
+      '.lgrb-status.is-good{color:#6ec896;}',
+      '.lgrb-status.is-bad{color:#d84b4b;}',
+      '.lgrb-spacer{flex:1;min-width:.5rem;}',
+      '.lgrb-row{display:flex;gap:.5rem;overflow-x:auto;padding-bottom:.15rem;',
+      'align-items:stretch;}',
+      '.lgrb-tile{flex:0 0 auto;display:flex;align-items:center;gap:.5rem;',
+      'border:1px solid var(--border,#334);border-radius:4px;',
+      'background:var(--bg-code,#0c0e12);padding:.4rem .55rem;max-width:22rem;}',
+      '.lgrb-tile.is-loaded{border-color:var(--accent,#6cf);',
+      'box-shadow:inset 0 0 0 1px var(--accent,#6cf);}',
+      '.lgrb-icon{flex:0 0 auto;display:flex;align-items:center;gap:2px;',
+      'background:#1a1d26;border:1px solid var(--border,#334);border-radius:3px;',
+      'padding:3px;}',
+      '.lgrb-icon canvas{width:34px;height:34px;display:block;',
+      'image-rendering:pixelated;image-rendering:crisp-edges;}',
+      '.lgrb-faces{display:flex;flex-direction:column;gap:2px;}',
+      '.lgrb-faces canvas{width:15px;height:15px;display:block;',
+      'image-rendering:pixelated;image-rendering:crisp-edges;}',
+      '.lgrb-chip{width:15px;height:15px;border-radius:2px;display:flex;',
+      'align-items:center;justify-content:center;font-size:9px;font-weight:700;',
+      'color:#0c0e12;}',
+      '.lgrb-info{font-size:.72rem;line-height:1.45;color:var(--text-muted,#9aa);',
+      'min-width:0;}',
+      '.lgrb-name{color:var(--text,#dde);font-weight:600;white-space:nowrap;',
+      'overflow:hidden;text-overflow:ellipsis;max-width:12rem;}',
+      '.lgrb-stats{white-space:nowrap;}',
+      '.lgrb-stats b{color:var(--text,#dde);font-weight:600;}',
+      '.lgrb-loc{color:var(--text-dim,#778);white-space:nowrap;overflow:hidden;',
+      'text-overflow:ellipsis;max-width:12rem;}',
+      '.lgrb-when{color:var(--text-dim,#778);font-size:.66rem;}',
+      '.lgrb-btns{display:flex;flex-direction:column;gap:.2rem;flex:0 0 auto;}',
+      '.lgrb-btnrow{display:flex;gap:.2rem;}',
+      '.lgrb-btn{background:var(--bg-card,#12141c);color:var(--text,#dde);',
+      'border:1px solid var(--border,#334);border-radius:3px;cursor:pointer;',
+      'font-family:var(--font-mono,monospace);font-size:.66rem;',
+      'padding:.16rem .45rem;text-decoration:none;display:inline-block;text-align:center;}',
+      '.lgrb-btn:hover:not([disabled]){border-color:var(--accent,#6cf);}',
+      '.lgrb-btn[disabled]{opacity:.4;cursor:not-allowed;}',
+      '.lgrb-btn.lgrb-primary{background:var(--accent,#6cf);',
+      'border-color:var(--accent,#6cf);color:var(--bg,#0c0e12);font-weight:700;}',
+      '.lgrb-empty{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;',
+      'font-size:.76rem;color:var(--text-muted,#9aa);line-height:1.5;',
+      'border:1px dashed var(--border,#334);border-radius:4px;padding:.55rem .7rem;}',
+      '.lgrb-empty .lgrb-empty-text{flex:1;min-width:12rem;}',
+      '.lgrb-empty b{color:var(--text,#dde);}',
+    ].join('');
+    document.head.appendChild(s);
+  }
+
+  function initialChip(name, i) {
+    var chip = el('span', 'lgrb-chip', (name || '?').charAt(0).toUpperCase());
+    chip.style.background = RICH_CHIP_COLORS[i % RICH_CHIP_COLORS.length];
+    chip.title = name || '';
+    return chip;
+  }
+
+  function scaledFace(src, name) {
+    var c = document.createElement('canvas');
+    c.width = 16; c.height = 16;
+    var g = c.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.drawImage(src, 0, 0);
+    if (name) c.title = name;
+    return c;
+  }
+
+  /* createRichBar(containerEl, opts) -> { render, renderSessionLine, setStatus,
+   *   promptAdd }.
+   *
+   * opts:
+   *   heading        bar title (default "Saves")
+   *   wasm()         -> Promise<module> with card_icon_rgba + save_summary_json
+   *                    (used for the baked icon + one-shot meta enrichment)
+   *   harvest()      called once per render; the page decodes portraits off its
+   *                  own disc/WASM and calls LegaiaSaves.cachePortraits. Return
+   *                  true if faces became newly available (triggers a re-render).
+   *   sessionLine()  -> string | null shown beside the heading (coin session)
+   *   showCoins      include a coin stat in the tile (minigames)
+   *   emptyText      HTML for the empty state's prose
+   *   acceptExts     file-picker accept list
+   *   onAdd(file)    -> Promise, import a picked save file; the bar re-renders
+   *   primaryButton(meta, ctx)  -> { text, cls, title, disabled, onClick } | null
+   *   loadedId()     -> id of the currently-loaded tile (highlight), or null
+   */
+  function createRichBar(containerEl, opts) {
+    opts = opts || {};
+    var statusMsg = '', statusCls = '';
+    var iconCache = {};   /* save id -> canvas */
+    var enriched = {};    /* save id -> true (summary re-derived once) */
+
+    function wasm() {
+      return (typeof opts.wasm === 'function') ? opts.wasm() : Promise.reject('no wasm');
+    }
+
+    function setStatus(msg, cls) {
+      statusMsg = msg || '';
+      statusCls = cls || '';
+      var s = containerEl && containerEl.querySelector('.lgrb-status');
+      if (s) {
+        s.textContent = statusMsg;
+        s.className = 'lgrb-status' + (statusCls ? ' is-' + statusCls : '');
+      }
+    }
+
+    /* The main 34px icon: the SC block's own baked memory-card icon for card
+     * saves; the lead's disc portrait for engine sessions; an initial chip at
+     * icon size as the last resort. */
+    function iconCanvasFor(meta, done) {
+      if (iconCache[meta.id]) { done(iconCache[meta.id]); return; }
+      var lead = (meta.party && meta.party[0]) || meta.name || '?';
+      var fallback = function () {
+        var c = document.createElement('canvas');
+        c.width = 16; c.height = 16;
+        var g = c.getContext('2d');
+        var pf = portraitForName(lead);
+        if (pf) { g.drawImage(pf, 0, 0); }
+        else {
+          g.fillStyle = RICH_CHIP_COLORS[0];
+          g.fillRect(0, 0, 16, 16);
+          g.fillStyle = '#0c0e12';
+          g.font = 'bold 11px monospace';
+          g.textAlign = 'center';
+          g.textBaseline = 'middle';
+          g.fillText(String(lead).charAt(0).toUpperCase(), 8, 9);
+        }
+        done(c);
+      };
+      if (meta.kind !== 'card' || meta.block == null) { fallback(); return; }
+      var stored = getSession(meta.id);
+      if (!stored) { fallback(); return; }
+      wasm().then(function (mod) {
+        var c = rgbaCanvas(mod.card_icon_rgba(stored.bytes, meta.block), 16, 16);
+        if (!c) { fallback(); return; }
+        iconCache[meta.id] = c;
+        done(c);
+      }).catch(fallback);
+    }
+
+    /* Re-derive level / location / party for sessions stored before those
+     * fields existed. One shot per save per page load. */
+    function enrichMeta(meta) {
+      if (enriched[meta.id] || meta.level != null) return;
+      enriched[meta.id] = true;
+      var stored = getSession(meta.id);
+      if (!stored) return;
+      wasm().then(function (mod) {
+        var sum = JSON.parse(mod.save_summary_json(stored.bytes));
+        var s = sum.kind === 'lgsf'
+          ? sum
+          : (sum.saves || []).filter(function (x) { return x.block === meta.block; })[0];
+        if (!s) return;
+        patchSessionMeta(meta.id, {
+          level: s.level != null ? s.level : null,
+          location: s.location || meta.location || '',
+          party: (s.party && s.party.length) ? s.party : meta.party,
+          money: s.money != null ? s.money : meta.money,
+          coins: s.coins != null ? s.coins : meta.coins,
+        });
+      }).catch(function () { /* keep whatever meta already has */ });
+    }
+
+    function tileFor(meta, loadedId) {
+      var tile = el('div', 'lgrb-tile' + (meta.id === loadedId ? ' is-loaded' : ''));
+      tile.dataset.saveId = meta.id;
+
+      var iconBox = el('span', 'lgrb-icon');
+      var main = document.createElement('canvas');
+      main.width = 16; main.height = 16;
+      iconBox.appendChild(main);
+      iconCanvasFor(meta, function (c) {
+        var g = main.getContext('2d');
+        g.clearRect(0, 0, 16, 16);
+        g.drawImage(c, 0, 0);
+      });
+      var facesBox = el('span', 'lgrb-faces');
+      (meta.party || []).slice(0, 3).forEach(function (name, i) {
+        var pf = portraitForName(name);
+        facesBox.appendChild(pf ? scaledFace(pf, name) : initialChip(name, i));
+      });
+      iconBox.appendChild(facesBox);
+      tile.appendChild(iconBox);
+
+      var info = el('div', 'lgrb-info');
+      var lead = (meta.party && meta.party[0]) || '';
+      info.appendChild(el('div', 'lgrb-name',
+        (meta.name || meta.id) + (meta.kind === 'card' ? '' : ' (engine)')));
+      var stats = el('div', 'lgrb-stats');
+      var bits = [];
+      if (lead) bits.push(lead + (meta.level != null ? ' Lv <b>' + meta.level + '</b>' : ''));
+      if (meta.money != null) bits.push('<b>' + meta.money + '</b> G');
+      if (opts.showCoins && meta.coins != null) bits.push('<b>' + meta.coins + '</b> coins');
+      stats.innerHTML = bits.join(' · ') || '&mdash;';
+      info.appendChild(stats);
+      var loc = meta.location || meta.scene || '';
+      if (loc) info.appendChild(el('div', 'lgrb-loc', loc));
+      if (meta.updated) info.appendChild(el('div', 'lgrb-when', relTime(meta.updated)));
+      tile.appendChild(info);
+
+      var btns = el('div', 'lgrb-btns');
+      var primary = typeof opts.primaryButton === 'function'
+        ? opts.primaryButton(meta, { loadedId: loadedId }) : null;
+      if (primary) {
+        var pb = el('button', 'lgrb-btn ' + (primary.cls || 'lgrb-primary'), primary.text);
+        pb.type = 'button';
+        if (primary.title) pb.title = primary.title;
+        if (primary.disabled) pb.disabled = true;
+        else if (typeof primary.onClick === 'function') {
+          pb.addEventListener('click', function () { primary.onClick(meta); });
+        }
+        btns.appendChild(pb);
+      }
+      var row2 = el('div', 'lgrb-btnrow');
+      var dl = el('button', 'lgrb-btn', '↓');
+      dl.type = 'button';
+      dl.title = 'Download this save as a file';
+      dl.addEventListener('click', function () {
+        var stored = getSession(meta.id);
+        if (!stored) { setStatus('The bytes for that save are gone from this browser.', 'bad'); return; }
+        triggerDownload(stored.bytes, downloadName(meta));
+      });
+      row2.appendChild(dl);
+      var del = el('button', 'lgrb-btn', '×');
+      del.type = 'button';
+      del.title = 'Remove this save from the browser';
+      del.addEventListener('click', function () {
+        if (typeof opts.onDelete === 'function') opts.onDelete(meta);
+        deleteSession(meta.id);
+        delete iconCache[meta.id];
+        setStatus('Deleted "' + (meta.name || meta.id) + '".');
+        render();
+      });
+      row2.appendChild(del);
+      btns.appendChild(row2);
+      tile.appendChild(btns);
+
+      enrichMeta(meta);
+      return tile;
+    }
+
+    function addPicker(head) {
+      if (typeof opts.onAdd !== 'function') return;
+      var add = el('button', 'lgrb-btn lgrb-primary', '+ Add save file');
+      add.type = 'button';
+      add.title = 'Import a memory-card save (.mcr / .mcd / .gme / .mcs) or an engine .lgsf';
+      var picker = document.createElement('input');
+      picker.type = 'file';
+      picker.accept = opts.acceptExts || '.mcr,.mcd,.gme,.mcs,.lgsf';
+      picker.style.display = 'none';
+      picker.addEventListener('change', function () {
+        if (picker.files && picker.files[0]) {
+          Promise.resolve(opts.onAdd(picker.files[0])).then(function () {
+            picker.value = ''; render();
+          });
+        }
+      });
+      add.addEventListener('click', function () { picker.click(); });
+      head.appendChild(add);
+      head.appendChild(picker);
+    }
+
+    function render() {
+      if (!containerEl) return;
+      ensureRichStyle();
+      if (typeof opts.harvest === 'function') { try { opts.harvest(); } catch (e) { /* ignore */ } }
+
+      containerEl.textContent = '';
+      containerEl.style.display = '';
+      var box = el('div', 'lgrb');
+
+      var head = el('div', 'lgrb-head');
+      head.appendChild(el('span', 'lgrb-title', opts.heading || 'Saves'));
+      if (typeof opts.sessionLine === 'function') {
+        var sl = opts.sessionLine();
+        head.appendChild(el('span', 'lgrb-session', sl || ''));
+      }
+      head.appendChild(el('span', 'lgrb-status' + (statusCls ? ' is-' + statusCls : ''), statusMsg));
+      head.appendChild(el('span', 'lgrb-spacer'));
+      addPicker(head);
+      box.appendChild(head);
+
+      var sessions = listSessions();
+      var loadedId = typeof opts.loadedId === 'function' ? opts.loadedId() : null;
+      if (!sessions.length) {
+        var empty = el('div', 'lgrb-empty');
+        empty.appendChild(el('div', 'lgrb-empty-text', null)).innerHTML =
+          opts.emptyText || 'No saves in this browser yet. Nothing is uploaded - saves stay here.';
+        box.appendChild(empty);
+      } else {
+        var row = el('div', 'lgrb-row');
+        sessions.forEach(function (meta) { row.appendChild(tileFor(meta, loadedId)); });
+        box.appendChild(row);
+      }
+      containerEl.appendChild(box);
+    }
+
+    function renderSessionLine() {
+      if (typeof opts.sessionLine !== 'function') return;
+      var s = containerEl && containerEl.querySelector('.lgrb-session');
+      if (s) s.textContent = opts.sessionLine() || '';
+    }
+
+    return {
+      render: render,
+      renderSessionLine: renderSessionLine,
+      setStatus: setStatus,
+      invalidateIcon: function (id) { delete iconCache[id]; },
+    };
+  }
+
   window.LegaiaSaves = {
     listSessions: listSessions,
     getSession: getSession,
@@ -460,5 +849,10 @@
     b64encode: b64encode,
     b64decode: b64decode,
     renderStrip: renderStrip,
+    /* shared rich bar + portrait cache (play + minigames) */
+    createRichBar: createRichBar,
+    portraitCanvases: portraitCanvases,
+    cachePortraits: cachePortraits,
+    portraitForName: portraitForName,
   };
 })();

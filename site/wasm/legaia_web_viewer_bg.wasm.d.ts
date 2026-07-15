@@ -11,6 +11,7 @@ export const card_icon_rgba: (a: number, b: number, c: number) => [number, numbe
 export const card_patch_coins: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const card_read_coins: (a: number, b: number, c: number) => [number, number, number];
 export const card_saves_json: (a: number, b: number) => [number, number, number, number];
+export const disc_portrait_rgba: (a: number, b: number, c: number) => [number, number];
 export const export_lang_pack: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const legaiaarts_art_pose_frames: (a: number, b: number) => [number, number];
 export const legaiaarts_art_strike_cue: (a: number) => number;

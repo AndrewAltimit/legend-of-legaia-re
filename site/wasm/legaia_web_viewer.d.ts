@@ -2506,6 +2506,21 @@ export function card_read_coins(bytes: Uint8Array, block: number): number;
 export function card_saves_json(bytes: Uint8Array): string;
 
 /**
+ * One of the three retail 16x16 **save-file portrait** TIMs decoded to a
+ * 1024-byte RGBA8 buffer: `0` = Vahn, `1` = Noa, `2` = Gala. Accepts either
+ * a full Mode2/2352 disc image or raw `PROT.DAT` bytes - the same input
+ * [`LegaiaRuntime::load_disc`] takes - so the play page can draw the party
+ * roster faces beside each save tile from the disc it already loaded, exactly
+ * as the minigames save bar does from its `LegaiaMinigames`
+ * (`save_portrait_rgba`). These are the load-screen slot-grid portraits
+ * pinned in the pre-`init_data` gap of `PROT.DAT` (offset `0x1AC90`, 192-byte
+ * stride); retail bakes the lead's copy into every SC block, so they are the
+ * exact faces a retail save carries. Empty when no PROT is found or the TIM
+ * doesn't parse - the bar falls back to initial chips.
+ */
+export function disc_portrait_rgba(bytes: Uint8Array, char_id: number): Uint8Array;
+
+/**
  * Export a **working** language pack (source-bearing, all `translation:`
  * fields empty) from the user's own disc, as YAML text they can download and
  * fill in. This is the authoring on-ramp - the community can produce their own
@@ -2628,6 +2643,7 @@ export interface InitOutput {
     readonly card_patch_coins: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly card_read_coins: (a: number, b: number, c: number) => [number, number, number];
     readonly card_saves_json: (a: number, b: number) => [number, number, number, number];
+    readonly disc_portrait_rgba: (a: number, b: number, c: number) => [number, number];
     readonly export_lang_pack: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly legaiaarts_art_pose_frames: (a: number, b: number) => [number, number];
     readonly legaiaarts_art_strike_cue: (a: number) => number;

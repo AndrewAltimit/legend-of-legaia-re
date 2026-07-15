@@ -13,6 +13,11 @@
   flex: 1; min-width: 14rem;
 }
 
+/* The rich save bar sits directly under the disc chooser, above the boot
+   modes, so importing/resuming a save is the first thing offered next to the
+   playable content. The component styles itself (js/legaia-saves.js). */
+.play-saves-strip { display: block; }
+
 /* Boot-mode presets. */
 .play-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 0.6rem; }
 .play-mode {
@@ -136,7 +141,7 @@
 </style>
 <script src="js/rom-cache.js"></script>
 <script src="js/load-progress.js"></script>
-<script src="js/legaia-saves.js?v=saves-1"></script>
+<script src="js/legaia-saves.js?v=saves-3"></script>
 -->
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> &middot; play</div>
@@ -163,9 +168,14 @@
       </span>
     </div>
 
-    <!-- "Your games" resume strip (js/legaia-saves.js). Hidden until a
-         session or minigame progress exists in this browser. -->
-    <div id="play-saves-strip" style="display: none;"></div>
+    <!-- Rich save bar (LegaiaSaves.createRichBar, js/legaia-saves.js) - the
+         SAME polished memory-card tiles the minigames page shows: the SC
+         block's baked lead-face icon, the party's disc portraits, and
+         lead / displayed level / gold / location off the save block. Always
+         visible so "load your save here" can't be missed; its own empty state
+         invites the first import. Resume drops a stored save straight into the
+         running engine. Nothing is uploaded. -->
+    <div id="play-saves-strip" class="play-saves-strip"></div>
 
     <div class="play-modes" id="play-modes" style="display: none;">
       <button class="play-mode" type="button" data-mode="newgame">
@@ -441,6 +451,9 @@
       modesEl.style.display = 'grid';
       window.__playRuntime = runtime;
       setSaveUi(true);
+      /* The disc is up: re-render the save bar so it decodes the party
+       * portrait faces + card icons now that WASM + disc bytes are available. */
+      renderSavesStrip();
       /* ?resume=<id>: auto-resume a stored session once the disc is up. */
       if (resumePending) {
         const entry = LegaiaSaves.listSessions().find(s => s.id === resumePending);
@@ -732,8 +745,77 @@
     });
   }
 
+  /* The WASM save tools (card_icon_rgba / save_summary_json / disc_portrait_rgba)
+   * are stateless free functions. Reuse the engine module once the disc is up;
+   * before that, lazily import it (ESM caching dedupes with the engine load, so
+   * this never pulls a second copy of the bundle). */
+  let saveToolsPromise = null;
+  function saveTools() {
+    if (wasm) return Promise.resolve(wasm);
+    if (!saveToolsPromise) {
+      saveToolsPromise = import('./wasm/legaia_web_viewer.js')
+        .then(m => m.default().then(() => m));
+    }
+    return saveToolsPromise;
+  }
+
+  /* Decode the three load-screen portrait TIMs (Vahn / Noa / Gala) off the
+   * loaded disc so the bar can draw the party roster faces beside each tile,
+   * exactly as the minigames bar does. Async (needs WASM + disc bytes); the
+   * rich bar's synchronous harvest() only kicks this off once and re-renders
+   * when the cached faces land. */
+  let portraitHarvestBusy = false;
+  function harvestPortraits() {
+    if (LegaiaSaves.portraitCanvases()) return false;
+    if (portraitHarvestBusy || !discBytes) return false;
+    portraitHarvestBusy = true;
+    saveTools().then(mod => {
+      if (typeof mod.disc_portrait_rgba !== 'function') return;
+      const rgba = [];
+      for (let i = 0; i < 3; i++) {
+        const buf = mod.disc_portrait_rgba(discBytes, i);
+        if (!buf || buf.length !== 16 * 16 * 4) { portraitHarvestBusy = false; return; }
+        rgba.push(buf);
+      }
+      if (LegaiaSaves.cachePortraits(rgba)) renderSavesStrip();
+    }).catch(() => { portraitHarvestBusy = false; });
+    return false;
+  }
+
+  /* Import a picked save file straight into the running engine (and persist
+   * it), the same path the rail's file input takes. */
+  function addSaveFile(file) {
+    return file.arrayBuffer().then(buf => {
+      importSaveBytes(new Uint8Array(buf), {
+        name: file.name.replace(/\.[^.]+$/, ''),
+        format: (file.name.match(/\.(mcr|mcd|gme|mcs)$/i) || [])[1] || null,
+      });
+    }).catch(err => {
+      saveMsg(`Could not read ${file.name}: ${err.message || err}`, true);
+    });
+  }
+
+  let savesBar = null;
   function renderSavesStrip() {
-    LegaiaSaves.renderStrip(savesStripEl, { onResume: resumeSession });
+    if (!savesBar) {
+      savesBar = LegaiaSaves.createRichBar(savesStripEl, {
+        heading: 'Your saves',
+        wasm: saveTools,
+        harvest: harvestPortraits,
+        acceptExts: '.lgsf,.mcr,.mcd,.gme,.mcs',
+        onAdd: addSaveFile,
+        primaryButton: (meta) => ({
+          text: 'Resume', cls: 'lgrb-primary',
+          title: 'Load this save into the running engine',
+          onClick: resumeSession,
+        }),
+        emptyText:
+          'No saves in this browser yet. Import an engine <b>.lgsf</b> or an emulator '
+          + 'memory-card save (<b>.mcr / .gme / .mcs</b>) to pick up your party - it persists '
+          + 'here and resumes straight into the running engine. Nothing is uploaded.',
+      });
+    }
+    savesBar.render();
   }
 
   saveExportBtn.addEventListener('click', exportSession);
