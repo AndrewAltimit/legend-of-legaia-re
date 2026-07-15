@@ -1535,3 +1535,37 @@ impl LegaiaMinigames {
         legaia_asset::dance_chart::parse(&self.dance_overlay()?)
     }
 }
+
+// ---------------------------------------------------------------- save bar
+
+#[wasm_bindgen]
+impl LegaiaMinigames {
+    /// One of the three retail 16x16 **save-file portrait** TIMs as a 1024-byte
+    /// RGBA8 buffer: `0` = Vahn, `1` = Noa, `2` = Gala.
+    ///
+    /// These are the load-screen slot-grid portraits, pinned in the unindexed
+    /// pre-`init_data` gap of `PROT.DAT` (offset `0x1AC90`, 192-byte stride;
+    /// `legaia_asset::title_pak::extract_overlay_load_portrait_tim`). Retail
+    /// bakes the lead's copy into every SC save block as the memory-card icon,
+    /// so these are exactly the faces a retail save carries. The site's save
+    /// bar decodes them once from the visitor's own disc and caches the pixels
+    /// locally - no art ships with the page. Empty when no disc is loaded or
+    /// the TIM doesn't parse.
+    pub fn save_portrait_rgba(&self, char_id: usize) -> Vec<u8> {
+        use legaia_asset::title_pak::{
+            OVERLAY_LOAD_PORTRAIT_COUNT, OVERLAY_LOAD_PORTRAIT_STRIDE,
+            OVERLAY_LOAD_PORTRAIT_TIM_OFFSET,
+        };
+        if char_id >= OVERLAY_LOAD_PORTRAIT_COUNT {
+            return Vec::new();
+        }
+        let off = OVERLAY_LOAD_PORTRAIT_TIM_OFFSET + char_id * OVERLAY_LOAD_PORTRAIT_STRIDE;
+        let Some(tim_bytes) = self.prot.get(off..off + OVERLAY_LOAD_PORTRAIT_STRIDE) else {
+            return Vec::new();
+        };
+        let Ok(parsed) = legaia_tim::parse(tim_bytes) else {
+            return Vec::new();
+        };
+        legaia_tim::decode_rgba8(&parsed, 0).unwrap_or_default()
+    }
+}

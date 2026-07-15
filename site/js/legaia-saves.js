@@ -28,8 +28,12 @@
  *       { dance: { bestScore, plays, lastScore, updated },
  *         baka:  { bestBank, totalBanked, updated },
  *         slot:  { coinsWon, bestPayout, updated },
- *         coinsWon }   integer: total casino coins won across games that
- *                      have not yet been exported into a card save.
+ *         coinsWon,    integer: casino coins won with NO save loaded, not
+ *                      yet banked anywhere (absorbed when a save is loaded)
+ *         coinSession }  { saveId, coins }: the save the minigames page has
+ *                      loaded + the session's live coin balance (see the
+ *                      coinSession/setCoinSession/updateCoinSessionCoins API;
+ *                      the save bar on minigames.html drives it).
  *
  * Every write is wrapped in try/catch: on QuotaExceededError (or a disabled
  * localStorage) the write is dropped with a console.warn and the mutator
@@ -149,8 +153,10 @@
       block: meta.block != null ? meta.block : null,
       format: meta.format || null,
       party: Array.isArray(meta.party) ? meta.party : [],
+      level: meta.level != null ? meta.level : null,
       money: meta.money != null ? meta.money : null,
       coins: meta.coins != null ? meta.coins : null,
+      location: meta.location || '',
       updated: Date.now(),
     };
     /* Bytes first: an index entry without a slot is worse than no entry. */
@@ -194,6 +200,61 @@
     if (writeRaw(MINIGAMES_KEY, JSON.stringify(mg)) === null) return null;
     changed();
     return rec;
+  }
+
+  /* ---------------- the loaded-save coin session ----------------
+   *
+   * The minigames page's save bar loads one stored save into the session:
+   * its casino coin bank becomes the session's coin balance (the slot
+   * machine racks from it, Baka payouts add to it), and "Export" writes the
+   * live balance back into that save slot. Stored inside the minigames
+   * object as `coinSession: { saveId, coins }`. Coin-only updates fire the
+   * lighter `legaia-coin-session-change` event so per-spin balance syncs
+   * don't force full strip/bar re-renders. */
+
+  function coinSession() {
+    var cs = getMinigames().coinSession;
+    return (cs && typeof cs === 'object' && cs.saveId) ? cs : null;
+  }
+
+  function coinChanged() {
+    try { window.dispatchEvent(new CustomEvent('legaia-coin-session-change')); }
+    catch (e) { /* ignore */ }
+  }
+
+  function setCoinSession(saveId, coins) {
+    var mg = getMinigames();
+    if (saveId == null) delete mg.coinSession;
+    else mg.coinSession = { saveId: saveId, coins: Math.max(0, Math.floor(coins) || 0) };
+    if (writeRaw(MINIGAMES_KEY, JSON.stringify(mg)) === null) return null;
+    changed();
+    return mg.coinSession || null;
+  }
+
+  function updateCoinSessionCoins(coins) {
+    var mg = getMinigames();
+    var cs = mg.coinSession;
+    if (!cs || !cs.saveId) return null;
+    cs.coins = Math.max(0, Math.floor(coins) || 0);
+    if (writeRaw(MINIGAMES_KEY, JSON.stringify(mg)) === null) return null;
+    coinChanged();
+    return cs;
+  }
+
+  /* Patch a stored session's index entry in place (no byte rewrite, no
+   * reorder) - e.g. refresh `coins` after an export. */
+  function patchSessionMeta(id, patch) {
+    var idx = listSessions();
+    for (var i = 0; i < idx.length; i++) {
+      if (idx[i].id !== id) continue;
+      for (var k in patch) {
+        if (Object.prototype.hasOwnProperty.call(patch, k)) idx[i][k] = patch[k];
+      }
+      if (writeRaw(INDEX_KEY, JSON.stringify(idx)) === null) return null;
+      changed();
+      return idx[i];
+    }
+    return null;
   }
 
   function coinsWon() {
@@ -387,11 +448,15 @@
     getSession: getSession,
     putSession: putSession,
     deleteSession: deleteSession,
+    patchSessionMeta: patchSessionMeta,
     getMinigames: getMinigames,
     putMinigame: putMinigame,
     addCoinsWon: addCoinsWon,
     takeCoinsWon: takeCoinsWon,
     coinsWon: coinsWon,
+    coinSession: coinSession,
+    setCoinSession: setCoinSession,
+    updateCoinSessionCoins: updateCoinSessionCoins,
     b64encode: b64encode,
     b64decode: b64decode,
     renderStrip: renderStrip,

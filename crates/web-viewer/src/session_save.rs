@@ -38,10 +38,14 @@ fn lgsf_summary(sf: &SaveFile) -> serde_json::Value {
             if n.is_empty() { "?".to_string() } else { n }
         })
         .collect();
+    // The retail displayed level lives at record `+0x130` (`magic_rank`);
+    // the save bar shows the lead's.
+    let level = sf.party.members.first().map(|m| m.magic_rank());
     serde_json::json!({
         "kind": "lgsf",
         "party": names,
         "party_count": sf.party.members.len(),
+        "level": level,
         "money": sf.ext.money,
         "play_time_seconds": sf.ext_v2.play_time_seconds,
         "items": sf.ext.inventory.len(),
@@ -74,12 +78,18 @@ fn card_save_summary(block: &[u8], save: &emu::SaveRef) -> serde_json::Value {
         .as_ref()
         .map(|sf| sf.party.members.iter().map(|m| m.name()).collect())
         .unwrap_or_default();
+    // The lead's retail displayed level (record `+0x130`, `magic_rank`).
+    let level = parsed
+        .as_ref()
+        .and_then(|sf| sf.party.members.first())
+        .map(|m| m.magic_rank());
     serde_json::json!({
         "kind": "card",
         "block": save.block,
         "product_code": save.product_code,
         "valid": parsed.is_some() && save.has_sc_magic,
         "party": names,
+        "level": level,
         "money": legaia_save::read_retail_gold(block),
         "coins": legaia_save::read_retail_coins(block),
         "location": sc_ascii(block, legaia_save::card::RETAIL_LOCATION_NAME_OFFSET, 0x40),
@@ -134,6 +144,46 @@ fn save_summary_json_core(bytes: &[u8]) -> Result<String, String> {
     card_saves_json_core(bytes)
 }
 
+/// Byte offset of the SC block's 16-colour icon palette (16 x u16 LE
+/// PSX 15-bit colours).
+const SC_ICON_CLUT_OFFSET: usize = 0x60;
+
+/// Byte offset of the SC block's 16x16 4bpp icon pixels (128 bytes,
+/// low nibble = left pixel).
+const SC_ICON_PIXELS_OFFSET: usize = 0x80;
+
+/// Decode the SC block's own 16x16 memory-card icon to RGBA8 (1024 bytes).
+///
+/// This is the icon the PSX memory-card browser shows for the save - and for
+/// Legaia it is a **character portrait**: the save writer bakes the lead
+/// character's 16x16 load-screen portrait TIM into the block (palette at
+/// `+0x60`, 4bpp pixels at `+0x80`), so the icon *is* the lead's face.
+/// Palette entry 0 decodes transparent (PSX colour 0 == not drawn).
+fn sc_icon_rgba_core(bytes: &[u8], block: u8) -> Result<Vec<u8>, String> {
+    let view = emu::detect(bytes).map_err(|e| format!("{e}"))?;
+    let sc = view
+        .sc_block(bytes, block)
+        .ok_or_else(|| format!("sc_icon: no block {block}"))?;
+    if sc.len() < SC_ICON_PIXELS_OFFSET + 128 {
+        return Err("sc_icon: block too small".into());
+    }
+    let clut: Vec<[u8; 4]> = (0..16)
+        .map(|i| {
+            let p = SC_ICON_CLUT_OFFSET + i * 2;
+            let v = u16::from_le_bytes([sc[p], sc[p + 1]]);
+            let scale5 = |c: u16| ((c & 0x1F) * 255 / 31) as u8;
+            let a = if v == 0 { 0 } else { 255 };
+            [scale5(v), scale5(v >> 5), scale5(v >> 10), a]
+        })
+        .collect();
+    let mut out = Vec::with_capacity(16 * 16 * 4);
+    for byte in &sc[SC_ICON_PIXELS_OFFSET..SC_ICON_PIXELS_OFFSET + 128] {
+        out.extend_from_slice(&clut[(byte & 0x0F) as usize]);
+        out.extend_from_slice(&clut[(byte >> 4) as usize]);
+    }
+    Ok(out)
+}
+
 // ---------------------------------------------------------------------------
 // wasm exports
 // ---------------------------------------------------------------------------
@@ -171,6 +221,16 @@ pub fn card_patch_coins(bytes: Vec<u8>, block: u8, coins: u32) -> Result<Vec<u8>
 #[wasm_bindgen]
 pub fn save_summary_json(bytes: Vec<u8>) -> Result<String, JsValue> {
     save_summary_json_core(&bytes).map_err(|e| JsValue::from_str(&e))
+}
+
+/// The 16x16 memory-card icon baked into save block `block` of a card
+/// container, as 1024 RGBA8 bytes. For Legaia saves this is the lead
+/// character's portrait - the retail save writer copies the load-screen
+/// portrait TIM into the SC block (palette `+0x60`, 4bpp pixels `+0x80`).
+/// The site's save bar draws it as the slot's face.
+#[wasm_bindgen]
+pub fn card_icon_rgba(bytes: Vec<u8>, block: u8) -> Result<Vec<u8>, JsValue> {
+    sc_icon_rgba_core(&bytes, block).map_err(|e| JsValue::from_str(&e))
 }
 
 impl LegaiaRuntime {
@@ -341,6 +401,43 @@ mod tests {
         assert!(summary.contains("\"coins\":1234"), "{summary}");
         assert_eq!(rt.world_mut().money, 900);
         assert_eq!(rt.world_mut().roster.members.len(), 1);
+    }
+
+    #[test]
+    fn sc_icon_decodes_and_summary_carries_level() {
+        // Synthesise a one-save card with an icon + a levelled lead.
+        let mut card = vec![0u8; legaia_save::CARD_SIZE];
+        card[..2].copy_from_slice(&legaia_save::CARD_MAGIC);
+        let f = 0x80;
+        card[f..f + 4].copy_from_slice(&0x51u32.to_le_bytes());
+        card[f + 8..f + 10].copy_from_slice(&0xFFFFu16.to_le_bytes());
+        card[f + 10..f + 22].copy_from_slice(b"BASCUS-94254");
+        let b = legaia_save::BLOCK_SIZE;
+        card[b..b + 2].copy_from_slice(&legaia_save::SAVE_BLOCK_MAGIC);
+        // Icon: palette slot 1 = pure red (PSX 15-bit, R in the low 5 bits),
+        // pixels alternate colour 0 / colour 1 (low nibble = left pixel).
+        let clut = b + SC_ICON_CLUT_OFFSET;
+        card[clut + 2..clut + 4].copy_from_slice(&0x001Fu16.to_le_bytes());
+        for px in 0..128 {
+            card[b + SC_ICON_PIXELS_OFFSET + px] = 0x10; // left px colour 0, right colour 1
+        }
+        let mut rec = legaia_save::CharacterRecord::zeroed();
+        rec.set_name("Vahn");
+        rec.set_magic_rank(7);
+        legaia_save::write_retail_char_records(
+            &mut card[b..b + legaia_save::BLOCK_SIZE],
+            std::slice::from_ref(&rec.raw),
+        )
+        .unwrap();
+
+        let rgba = sc_icon_rgba_core(&card, 1).expect("icon decode");
+        assert_eq!(rgba.len(), 16 * 16 * 4);
+        // Left pixel of each pair: colour 0 = transparent; right: opaque red.
+        assert_eq!(&rgba[0..4], &[0, 0, 0, 0]);
+        assert_eq!(&rgba[4..8], &[255, 0, 0, 255]);
+
+        let listing = card_saves_json_core(&card).expect("list");
+        assert!(listing.contains("\"level\":7"), "{listing}");
     }
 
     #[test]

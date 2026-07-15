@@ -222,9 +222,16 @@ winnings into the pinned retail coin slot (SC `+0x464`, RAM
 `0x800845A4`) **in place** - the container comes back in the format it
 arrived in with only those 4 bytes changed, so an untouched export is
 byte-identical and the patched save still loads in the emulator. PS3
-`.psv` is rejected (signed container). Persistence (localStorage,
-base64) lives in `site/js/legaia-saves.js`; this module is
-serialization only.
+`.psv` is rejected (signed container). The minigames page's **save bar**
+draws on two more exports: `card_icon_rgba(bytes, block)` decodes the SC
+block's own 16x16 memory-card icon (palette `+0x60`, 4bpp pixels
+`+0x80` - for Legaia that is the lead character's baked portrait), and
+`LegaiaMinigames.save_portrait_rgba(char_id)` decodes the three 16x16
+load-screen portrait TIMs (Vahn / Noa / Gala) from the pre-`init_data`
+gap of `PROT.DAT`, the faces the bar's tiles show; save summaries carry
+the lead's displayed level (record `+0x130`). Persistence (localStorage,
+base64) lives in `site/js/legaia-saves.js`; the bar itself is
+`site/js/minigame-saves.js`; this module is serialization only.
 
 ## Scene `.glb` export (`scene_export`)
 

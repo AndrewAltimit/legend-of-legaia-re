@@ -535,3 +535,28 @@ fn the_slot_machines_3d_scene_decodes_and_projects_onto_the_retail_frame() {
         "the dot grid ({dx0}..{dx1}, {dy0}..{dy1}) sits inside the marquee panel"
     );
 }
+
+#[test]
+fn save_bar_portraits_decode_from_a_real_disc() {
+    let Some((mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    // The three load-screen portrait TIMs (Vahn / Noa / Gala) - the faces the
+    // site's save bar draws. 16x16 RGBA8, non-blank, and pairwise distinct
+    // (three different characters, not one repeated cell).
+    let mut faces = Vec::new();
+    for char_id in 0..3usize {
+        let rgba = mg.save_portrait_rgba(char_id);
+        assert_eq!(rgba.len(), 16 * 16 * 4, "portrait {char_id} size");
+        assert!(
+            rgba.iter().any(|&b| b != 0),
+            "portrait {char_id} is all-zero"
+        );
+        faces.push(rgba);
+    }
+    assert_ne!(faces[0], faces[1]);
+    assert_ne!(faces[1], faces[2]);
+    // Out-of-range char ids report empty rather than panicking.
+    assert!(mg.save_portrait_rgba(3).is_empty());
+}
