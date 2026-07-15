@@ -53,15 +53,18 @@ export class LegaiaArts {
         return v1;
     }
     /**
-     * The current character's arts-voice PCM: mono i16 at the rate reported
-     * in `set_character`'s `voice.rate` (37 800 Hz on retail). This is the
-     * XA channel the battle overlay plays for the character's Tactical Arts
-     * (see [`VOICE_XA_FILE`] / [`VOICE_CHANNEL`]). Empty when the character
-     * has no voice (raw `PROT.DAT` load, Terra, or demux failure).
+     * The arts-voice PCM for the art at bank index `art_index`: mono i16 at
+     * the rate reported in `set_character`'s `voice.channels[..].rate`
+     * (37 800 Hz). The clip is the character's voice-slice local channel
+     * `art_index % count` (see [`VOICE_XA_FILE`] / [`VOICE_CHANNEL_BASE`]) -
+     * a curated per-art mapping, trimmed of its trailing silence. Empty when
+     * the character has no voice bank (raw `PROT.DAT` load, Terra, or demux
+     * failure). Also exposed positionally via [`Self::voice_channel_pcm_i16`].
+     * @param {number} art_index
      * @returns {Int16Array}
      */
-    art_voice_pcm_i16() {
-        const ret = wasm.legaiaarts_art_voice_pcm_i16(this.__wbg_ptr);
+    art_voice_pcm_i16(art_index) {
+        const ret = wasm.legaiaarts_art_voice_pcm_i16(this.__wbg_ptr, art_index);
         var v1 = getArrayI16FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
         return v1;
@@ -80,8 +83,8 @@ export class LegaiaArts {
     /**
      * Load a full Mode2/2352 disc image (or a raw `PROT.DAT`) and parse the
      * TOC. Returns `{"entries": N}` JSON; errors throw. On a full disc the
-     * arts-voice bank ([`VOICE_XA_FILE`]) is sliced out alongside `PROT.DAT`;
-     * a raw `PROT.DAT` load simply has no voice audio.
+     * arts-voice banks ([`VOICE_XA_FILE`] = `XA2.XA` / `XA4.XA`) are sliced out
+     * alongside `PROT.DAT`; a raw `PROT.DAT` load simply has no voice audio.
      * @param {Uint8Array} bytes
      * @returns {string}
      */
@@ -204,6 +207,20 @@ export class LegaiaArts {
         } finally {
             wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
         }
+    }
+    /**
+     * The arts-voice PCM of the current character's voice-slice **local**
+     * channel `local` (`0..count`), regardless of any art mapping. Lets the
+     * page (and the listening aid) address a specific voice clip directly.
+     * Empty when out of range or the character has no voice bank.
+     * @param {number} local
+     * @returns {Int16Array}
+     */
+    voice_channel_pcm_i16(local) {
+        const ret = wasm.legaiaarts_voice_channel_pcm_i16(this.__wbg_ptr, local);
+        var v1 = getArrayI16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
     }
     /**
      * The 1 MB PSX VRAM for the current character: band-0 texture pixels at
