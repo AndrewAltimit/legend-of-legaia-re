@@ -177,6 +177,11 @@ impl PlayWindowApp {
             // anim tick `FUN_800204F8`, driven by the body-contact script
             // resume `FUN_801D5B5C`).
             self.tick_field_prop_anims();
+            // Baka Fighter duel: drain the exchange-hit SFX cue the rules
+            // kernel queued this tick and enqueue it into the SFX scheduler
+            // (the per-frame `tick_sfx_frame` below fires it against the
+            // resident class-2 sound bank).
+            self.drain_baka_sfx_cues();
             // Opt-in synthetic tile board (`LEGAIA_TILE_BOARD_DEMO=1`): no
             // retail scene script installs one, so this is the visual
             // trigger for the per-cell tile-actor draw pass.

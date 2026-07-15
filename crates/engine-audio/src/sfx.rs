@@ -39,40 +39,84 @@ use crate::vab_bind::VabBank;
 /// Per-cue descriptor. Engines populate one entry per cue id, then look
 /// the entry up to drive the actual SPU note-on parameters.
 ///
-/// `vag_index` references the [`VabBank::samples`] entry that holds the
-/// sample's start address + ADPCM-coded loop point in SPU RAM.
-/// `program_index` references the bank's program table entry that supplies
-/// envelope + pitch shape. `key` / `vel` follow MIDI conventions
-/// (0..=127). `voice_pref` lets the engine pin a cue to a specific SPU
-/// voice - `None` means "first available."
+/// The fields mirror the retail static SFX descriptor
+/// (`legaia_asset::sfx_table::SfxDescriptor`): `program_index` is the
+/// descriptor `+0` program, `tone` is the descriptor `+1` **region index**
+/// (NOT a key-range window), `key` is the `+2` note-level attribute, and
+/// `voices` is the `+3 & 0x1F` voice count. The retail SFX path
+/// (`FUN_80016B6C` → `FUN_80065034`) names a cue's tone by explicit region
+/// index and fans a multi-voice cue across consecutive regions `tone + i`,
+/// so [`SfxBank::play_one_shot`] resolves through [`VabBank::play_tone`],
+/// not the sequencer's key-range [`VabBank::play_note`]. `voice_pref` pins
+/// the first voice slot - `None` means "first available."
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SfxEntry {
     /// Cue id this entry handles. The art-record `HitCue::kind` byte for
     /// strike-fired cues; engines extend the namespace for menu blips,
     /// footstep cues, etc.
     pub id: u8,
-    /// Index into [`VabBank::programs`].
+    /// Index into [`VabBank::programs`] (descriptor `+0` `p`).
     pub program_index: u8,
-    /// MIDI-style note number (0..=127). Determines pitch via the
-    /// VAB's per-program tone table.
+    /// Explicit tone / ADSR-region base index (descriptor `+1` `t`). Voice
+    /// `i` of a multi-voice cue plays region `tone + i`. This is an index,
+    /// not a key-range window - see [`VabBank::play_tone`].
+    pub tone: u8,
+    /// Note-level attribute (descriptor `+2` `l`, MIDI-ish 0..=127). Feeds
+    /// the tone's pitch math; does NOT select the tone.
     pub key: u8,
+    /// Voice count (descriptor `+3 & 0x1F`): how many consecutive regions
+    /// `tone..tone+voices` the cue keys on. Clamped to at least 1 at fire
+    /// time.
+    pub voices: u8,
     /// MIDI-style velocity (0..=127). Engines map this to the SPU's
     /// voice volume.
     pub vel: u8,
-    /// Optional preferred voice slot (0..=23). `None` = round-robin.
+    /// Optional preferred first voice slot (0..=23). `None` = round-robin;
+    /// a multi-voice cue keys on `voice_pref + i` when pinned.
     pub voice_pref: Option<u8>,
 }
 
 impl SfxEntry {
-    /// Construct an entry with the canonical "use first available voice"
-    /// preference and unity velocity.
+    /// Construct a single-voice entry (tone 0) with the canonical "use first
+    /// available voice" preference and unity velocity. Prefer
+    /// [`SfxEntry::from_descriptor`] when the disc descriptor's tone /
+    /// voice-count are known.
     pub fn new(id: u8, program_index: u8, key: u8) -> Self {
         Self {
             id,
             program_index,
+            tone: 0,
             key,
+            voices: 1,
             vel: 100,
             voice_pref: None,
+        }
+    }
+
+    /// Construct from the full retail descriptor fields (program, tone,
+    /// note, voice count) - the shape [`SfxBank::from_descriptors`] carries.
+    pub fn from_descriptor(id: u8, program_index: u8, tone: u8, key: u8, voices: u8) -> Self {
+        Self {
+            id,
+            program_index,
+            tone,
+            key,
+            voices: voices.max(1),
+            vel: 100,
+            voice_pref: None,
+        }
+    }
+
+    /// With explicit tone / region index.
+    pub fn with_tone(self, tone: u8) -> Self {
+        Self { tone, ..self }
+    }
+
+    /// With explicit voice count.
+    pub fn with_voices(self, voices: u8) -> Self {
+        Self {
+            voices: voices.max(1),
+            ..self
         }
     }
 
@@ -81,7 +125,7 @@ impl SfxEntry {
         Self { vel, ..self }
     }
 
-    /// With pinned voice.
+    /// With pinned first voice.
     pub fn with_voice(self, voice: u8) -> Self {
         Self {
             voice_pref: Some(voice),
@@ -113,16 +157,28 @@ impl SfxBank {
         s
     }
 
-    /// Build a bank from decoded SFX descriptors - the `(id, program, key)`
-    /// triples [`legaia_asset::sfx_table::SfxTable::active`] yields (program =
-    /// `SfxDescriptor::program`, key = `SfxDescriptor::note`). Keeping the
-    /// argument a plain tuple iterator avoids a dependency on the asset crate
-    /// from the audio layer; the host (engine-core) wires the disc-decoded
-    /// table in. Later triples overwrite earlier ones with the same id.
-    pub fn from_descriptors<I: IntoIterator<Item = (u8, u8, u8)>>(descriptors: I) -> Self {
+    /// Build a bank from decoded SFX descriptors - the
+    /// `(id, program, tone, note, voice_count)` tuples the disc
+    /// `legaia_asset::sfx_table::SfxTable::active` iterator yields (program =
+    /// `SfxDescriptor::program`, tone = `SfxDescriptor::tone`, note =
+    /// `SfxDescriptor::note`, voice_count = `SfxDescriptor::voice_count()`).
+    /// Keeping the argument a plain tuple iterator avoids a dependency on the
+    /// asset crate from the audio layer; the host (engine-shell) wires the
+    /// disc-decoded table in. Carrying the tone + voice count is required:
+    /// the SFX path names its tone by explicit region index, and several
+    /// retail cues (e.g. the strike cue `0x1A`) place `note` outside the
+    /// tone's key window, so a key-range resolve would render silence. Later
+    /// tuples overwrite earlier ones with the same id.
+    pub fn from_descriptors<I: IntoIterator<Item = (u8, u8, u8, u8, u8)>>(descriptors: I) -> Self {
         let mut bank = Self::new();
-        for (id, program_index, key) in descriptors {
-            bank.insert(SfxEntry::new(id, program_index, key));
+        for (id, program_index, tone, note, voices) in descriptors {
+            bank.insert(SfxEntry::from_descriptor(
+                id,
+                program_index,
+                tone,
+                note,
+                voices,
+            ));
         }
         bank
     }
@@ -153,28 +209,45 @@ impl SfxBank {
         self.entries.iter()
     }
 
-    /// Fire one shot. Resolves the cue id, picks a target voice, and
-    /// delegates to [`VabBank::play_note`] which handles tone lookup,
-    /// pitch math, and ADSR setup. Returns the voice index used (or
-    /// `None` if the cue isn't in the bank, or no free voice was
-    /// available, or the bank's program / tone / sample is missing).
+    /// Fire one shot. Resolves the cue id and keys the descriptor's
+    /// `voices` consecutive tone regions (`tone + i`) on `voices` idle SPU
+    /// voices, delegating to [`VabBank::play_tone`] - the retail SFX shape
+    /// (`FUN_80016B6C` → `FUN_80065034`): a cue names its tone by an explicit
+    /// region **index**, not by a key-range window. This differs from the
+    /// sequencer's [`VabBank::play_note`]; several retail cues place `note`
+    /// outside the tone's authored `min..=max` window (the generic strike cue
+    /// `0x1A` = program 3 / tone 8 / note 67 is one), so the old key-range
+    /// resolve rendered silence for them.
+    ///
+    /// Returns the FIRST voice keyed on, or `None` if the cue isn't in the
+    /// bank or nothing sounded (no free voice, or the bank's program / tone /
+    /// sample is missing - e.g. the cue's program isn't resident in this
+    /// bank). Mirrors `crates/web-viewer/src/sfx_view.rs::render_cue`.
     pub fn play_one_shot(&self, id: u8, spu: &mut Spu, vab: &VabBank) -> Option<u8> {
         let entry = self.get(id)?;
-        let voice_idx = match entry.voice_pref {
-            Some(v) => v.min(23),
-            None => first_idle_voice(spu)?,
-        };
-        if vab.play_note(
-            spu,
-            voice_idx as usize,
-            entry.program_index as usize,
-            entry.key,
-            entry.vel,
-        ) {
-            Some(voice_idx)
-        } else {
-            None
+        let voices = entry.voices.max(1);
+        let mut first_voice: Option<u8> = None;
+        for i in 0..voices {
+            let voice_idx = match entry.voice_pref {
+                Some(v) => (v as usize + i as usize).min(23),
+                None => match first_idle_voice(spu) {
+                    Some(v) => v as usize,
+                    // No idle voice left - keep whatever already sounded.
+                    None => break,
+                },
+            };
+            if vab.play_tone(
+                spu,
+                voice_idx,
+                entry.program_index as usize,
+                entry.tone as usize + i as usize,
+                entry.key,
+                entry.vel,
+            ) {
+                first_voice.get_or_insert(voice_idx as u8);
+            }
         }
+        first_voice
     }
 }
 
@@ -430,19 +503,23 @@ mod tests {
     }
 
     #[test]
-    fn bank_from_descriptors_maps_program_and_key() {
-        // Mirrors the retail descriptors for ids 0x1A (p3 note67) and 0x4C
-        // (p3 note64) decoded from DAT_8006F198.
-        let bank = SfxBank::from_descriptors([(0x1A, 3, 67), (0x4C, 3, 64)]);
+    fn bank_from_descriptors_maps_program_tone_and_key() {
+        // Mirrors the retail descriptors for ids 0x1A (p3 tone8 note67 v1) and
+        // 0x4C (p3 tone8 note64 v2) decoded from DAT_8006F198.
+        let bank = SfxBank::from_descriptors([(0x1A, 3, 8, 67, 1), (0x4C, 3, 8, 64, 2)]);
         assert_eq!(bank.len(), 2);
         let a = bank.get(0x1A).unwrap();
-        assert_eq!((a.program_index, a.key), (3, 67));
+        assert_eq!((a.program_index, a.tone, a.key, a.voices), (3, 8, 67, 1));
         let b = bank.get(0x4C).unwrap();
-        assert_eq!((b.program_index, b.key), (3, 64));
-        // Later triple overwrites an earlier same-id one.
-        let over = SfxBank::from_descriptors([(0x1A, 1, 10), (0x1A, 9, 90)]);
+        assert_eq!((b.program_index, b.tone, b.key, b.voices), (3, 8, 64, 2));
+        // A zero voice-count clamps to 1 (still fires one voice).
+        let clamped = SfxBank::from_descriptors([(0x10, 0, 0, 60, 0)]);
+        assert_eq!(clamped.get(0x10).unwrap().voices, 1);
+        // Later tuple overwrites an earlier same-id one.
+        let over = SfxBank::from_descriptors([(0x1A, 1, 0, 10, 1), (0x1A, 9, 2, 90, 1)]);
         assert_eq!(over.len(), 1);
         assert_eq!(over.get(0x1A).unwrap().program_index, 9);
+        assert_eq!(over.get(0x1A).unwrap().tone, 2);
     }
 
     #[test]
@@ -688,15 +765,126 @@ mod tests {
         };
         let mut spu = Spu::new();
 
-        // Bank maps cue 0x1A -> program 0, key 60 (the tone above). Firing it
-        // claims the first idle voice and keys it on.
-        let bank = SfxBank::from_descriptors([(0x1A, 0, 60)]);
+        // Bank maps cue 0x1A -> program 0, tone 0, note 60, 1 voice. Firing
+        // it claims the first idle voice and keys it on.
+        let bank = SfxBank::from_descriptors([(0x1A, 0, 0, 60, 1)]);
         let voice = bank.play_one_shot(0x1A, &mut spu, &vab);
         assert_eq!(voice, Some(0), "first idle voice keyed on");
         assert!(!spu.voices[0].is_off(), "voice 0 is now playing");
 
         // A cue id not in the bank is a no-op and never touches the SPU.
         assert_eq!(bank.play_one_shot(0x4C, &mut spu, &vab), None);
+    }
+
+    /// The core regression this fix targets: a cue whose descriptor `note`
+    /// falls OUTSIDE the target tone's authored `min..=max` key window still
+    /// sounds, because the SFX path resolves the tone by explicit **index**
+    /// (`play_tone`), not by the sequencer's key-range window (`play_note`).
+    /// This mirrors the retail strike cue `0x1A` (program 3 / tone 8 / note
+    /// 67), whose tone's window excludes 67.
+    #[test]
+    fn play_one_shot_resolves_tone_by_index_not_key_range() {
+        use crate::spu::Spu;
+        use crate::vab_bind::{UploadedVag, VabBank};
+        use legaia_vab::VagAtr;
+
+        let mk = |center: u8, min: u8, max: u8| VagAtr {
+            prior: 0,
+            mode: 0,
+            vol: 127,
+            pan: 64,
+            center,
+            shift: 0,
+            min,
+            max,
+            vibw: 0,
+            vibt: 0,
+            porw: 0,
+            port: 0,
+            pbmin: 0,
+            pbmax: 0,
+            reserved1: 0,
+            reserved2: 0,
+            adsr1: 0,
+            adsr2: 0,
+            prog: 0,
+            vag: 1,
+            reserved3: [0; 4],
+        };
+        // Program 0 has two tones. The cue targets tone index 1, whose key
+        // window is 0..=40 - which does NOT contain the descriptor note 67.
+        let vab = VabBank {
+            master_vol: 127,
+            samples: vec![Some(UploadedVag {
+                addr: 0x1010,
+                size: 0x20,
+            })],
+            programs: vec![vec![mk(60, 50, 60), mk(30, 0, 40)]],
+        };
+        let bank = SfxBank::from_descriptors([(0x1A, 0, 1, 67, 1)]);
+
+        // Key-range lookup would miss tone 1 (67 outside 0..=40) -> silence.
+        let mut spu_kr = Spu::new();
+        assert!(
+            !vab.play_note(&mut spu_kr, 0, 0, 67, 100),
+            "key-range resolve finds no tone for note 67 (the silence bug)"
+        );
+
+        // The one-shot path resolves tone index 1 directly and sounds.
+        let mut spu = Spu::new();
+        let voice = bank.play_one_shot(0x1A, &mut spu, &vab);
+        assert_eq!(voice, Some(0), "tone-index resolve keys on a voice");
+        assert!(!spu.voices[0].is_off(), "voice 0 plays");
+    }
+
+    /// A multi-voice cue keys `voices` consecutive regions on consecutive
+    /// idle voices (`FUN_80016B6C`'s `tone + i` fan-out).
+    #[test]
+    fn play_one_shot_multi_voice_keys_consecutive_regions() {
+        use crate::spu::Spu;
+        use crate::vab_bind::{UploadedVag, VabBank};
+        use legaia_vab::VagAtr;
+
+        let tone = |center: u8| VagAtr {
+            prior: 0,
+            mode: 0,
+            vol: 127,
+            pan: 64,
+            center,
+            shift: 0,
+            min: 0,
+            max: 127,
+            vibw: 0,
+            vibt: 0,
+            porw: 0,
+            port: 0,
+            pbmin: 0,
+            pbmax: 0,
+            reserved1: 0,
+            reserved2: 0,
+            adsr1: 0,
+            adsr2: 0,
+            prog: 0,
+            vag: 1,
+            reserved3: [0; 4],
+        };
+        let vab = VabBank {
+            master_vol: 127,
+            samples: vec![Some(UploadedVag {
+                addr: 0x1010,
+                size: 0x20,
+            })],
+            programs: vec![vec![tone(60), tone(48), tone(72)]],
+        };
+        let mut spu = Spu::new();
+        // Cue 0x4C: program 0, tone base 0, note 64, 2 voices -> regions 0 & 1
+        // key on voices 0 & 1.
+        let bank = SfxBank::from_descriptors([(0x4C, 0, 0, 64, 2)]);
+        let voice = bank.play_one_shot(0x4C, &mut spu, &vab);
+        assert_eq!(voice, Some(0), "first voice returned");
+        assert!(!spu.voices[0].is_off(), "voice 0 playing");
+        assert!(!spu.voices[1].is_off(), "voice 1 playing (2nd of the cue)");
+        assert!(spu.voices[2].is_off(), "only two voices keyed");
     }
 
     #[test]

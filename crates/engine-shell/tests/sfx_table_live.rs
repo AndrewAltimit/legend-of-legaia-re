@@ -83,12 +83,20 @@ fn live_ram_table_matches_the_parser_and_feeds_the_sfx_bank() {
     let e4c = table.get(0x4C).expect("0x4C present");
     assert_eq!((e4c.program, e4c.tone), (3, 8));
 
-    // Drive the descriptors into the engine bank (program -> program_index,
-    // note -> key) and confirm the cues resolve.
-    let bank = SfxBank::from_descriptors(table.active().map(|(id, d)| (id, d.program, d.note)));
+    // Drive the descriptors into the engine bank (program / tone / note /
+    // voice-count) and confirm the cues resolve with the full descriptor.
+    let bank = SfxBank::from_descriptors(
+        table
+            .active()
+            .map(|(id, d)| (id, d.program, d.tone, d.note, d.voice_count())),
+    );
     assert_eq!(bank.len(), SFX_TABLE_ENTRIES);
     let cue = bank.get(0x1A).expect("0x1A in bank");
-    assert_eq!((cue.program_index, cue.key), (3, 67));
+    // The strike cue: program 3, tone 0 (named by index), note 67, 1 voice.
+    assert_eq!(
+        (cue.program_index, cue.tone, cue.key, cue.voices),
+        (3, 0, 67, 1)
+    );
 
     // If the disc SCUS is also extracted, the live table must equal the disc
     // parse byte-for-byte (proves static residency + parser offset end to end).
