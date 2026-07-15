@@ -25,10 +25,6 @@
   const A2R = Math.PI * 2 / 4096;     /* PSX 12-bit angle -> radians */
   const PLAYER_MESH_ID = 900000;      /* scene-mesh id space above any env slot */
   const NPC_MESH_BASE  = 910000;
-  /* Retail field pause-menu top-level rows (Start opens it). Item + Status open
-   * a real sub-panel off the engine's live party / inventory; the rest are the
-   * retail entries, listed for parity but without a browser panel yet. */
-  const FIELD_MENU_ROWS = ['Item', 'Magic', 'Arts', 'Equip', 'Status', 'Config'];
   const NPC_CLIP_FPS   = 15;          /* the field anim cadence (30 Hz tick, 2 ticks/frame) */
   /* VR world scale - same anchor as the full-map view: the ~130-unit character
    * mesh is a 1.7 m human, so a metre is ~76 world units and the headset stands
@@ -59,6 +55,60 @@
   /* Keys the canvas swallows so the page doesn't scroll under the player. */
   const SWALLOW = new Set(Object.keys(PAD).concat(['Space', 'ArrowUp', 'ArrowDown',
     'ArrowLeft', 'ArrowRight']));
+
+  /* Blits sub-rects of a source atlas (font glyphs or the menu-chrome sheet)
+   * with a per-quad RGBA multiply tint, over a 2D canvas. The retail pause menu
+   * emits its geometry as `{ dst, src, color }` quads (the shipped
+   * `legaia-engine-ui` draw builders); this is the browser twin of the native
+   * window's textured-quad overlay pass.
+   *
+   * The tint is a colour MULTIPLY that preserves the source alpha - identity for
+   * white (`(1,1,1)`), so plain chrome blits straight through, while the
+   * whitewashed font atlas takes the ink colour and the navy filigree takes its
+   * darkening tint. Multiplied full-atlas copies are cached per colour, so the
+   * per-quad cost is a single `drawImage`. */
+  class AtlasBlitter {
+    constructor(rgba, w, h) {
+      this.w = w; this.h = h;
+      this.base = document.createElement('canvas');
+      this.base.width = w; this.base.height = h;
+      const bctx = this.base.getContext('2d');
+      bctx.putImageData(new ImageData(new Uint8ClampedArray(rgba), w, h), 0, 0);
+      this.cache = new Map();
+    }
+    _tinted(col) {
+      const r = Math.round(col[0] * 255), g = Math.round(col[1] * 255), b = Math.round(col[2] * 255);
+      if (r === 255 && g === 255 && b === 255) return this.base;   /* identity multiply */
+      const key = (r << 16) | (g << 8) | b;
+      let cv = this.cache.get(key);
+      if (cv) return cv;
+      cv = document.createElement('canvas');
+      cv.width = this.w; cv.height = this.h;
+      const cx = cv.getContext('2d');
+      cx.drawImage(this.base, 0, 0);
+      cx.globalCompositeOperation = 'multiply';
+      cx.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
+      cx.fillRect(0, 0, this.w, this.h);
+      /* Restore the source alpha the flat fill just clobbered on the transparent
+       * texels, so only the glyph / sprite footprint remains. */
+      cx.globalCompositeOperation = 'destination-in';
+      cx.drawImage(this.base, 0, 0);
+      cx.globalCompositeOperation = 'source-over';
+      this.cache.set(key, cv);
+      return cv;
+    }
+    blit(ctx, draws) {
+      if (!draws) return;
+      for (const d of draws) {
+        const s = d.src, dst = d.dst, col = d.color;
+        if (!s || !dst || s[2] <= 0 || s[3] <= 0 || dst[2] <= 0 || dst[3] <= 0) continue;
+        ctx.globalAlpha = col ? col[3] : 1;
+        ctx.drawImage(this._tinted(col || [1, 1, 1, 1]),
+          s[0], s[1], s[2], s[3], dst[0], dst[1], dst[2], dst[3]);
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
 
   /* The engine takes the camera's azimuth and quantises it to a quarter turn to
    * remap the d-pad ("up" walks away from the camera, "right" walks screen-right).
@@ -209,11 +259,16 @@
        * mesh instance so its clip advances independently; re-posed per frame
        * from the engine's live prop-bank cursor. See `_frame`. */
       this.animProps = [];   /* [{ meshId, i, slot, anim, lastFrame }] */
-      /* Field pause menu (Start): `null` when closed, else
-       * `{ screen: 'top'|'items'|'status', cursor, itemCursor, statusCursor,
-       *    model }`. While open the field freezes and the overlay renders off
-       * `model` (the engine's live party / inventory / gold). */
-      this.fieldMenu = null;
+      /* Retail pause menu (Start): the state + navigation live in the engine
+       * (`LegaiaRuntime::play_menu_*`), which serves the byte-pinned window
+       * chrome + font glyphs as `{ dst, src, color }` quads. This page owns only
+       * the two atlas textures + a 2D overlay canvas the quads blit onto; the
+       * field freezes while the menu is up (retail's `SceneMode::Menu`). */
+      this.menuOverlay = (opts && opts.menuOverlay) || null;   /* <canvas> over the GL view */
+      this._menuCtx = null;
+      this._menuFont = null;      /* AtlasBlitter for the dialog-font atlas */
+      this._menuChrome = undefined;  /* AtlasBlitter | null (null once resolved to "no chrome") */
+      this._menuWasOpen = false;
       /* Last engine state handed to the HUD - lets the menu gate on Field
        * mode / no-dialog before opening. */
       this._hudState = null;
@@ -648,34 +703,43 @@
     /* Held-key state, for the on-screen control legend. */
     heldKeys() { return Array.from(this.held); }
 
-    /* ---------- field pause menu (Bug 1) ---------- */
+    /* ---------- retail pause menu (engine-driven) ---------- */
 
-    /* Drive the field pause menu from this frame's just-pressed edges (the
-     * `pulse` set, read before the engine tick consumes it). Returns `true`
-     * when the menu is up, so `_frame` freezes the field while it is - the
-     * retail pause menu holds the world in SceneMode::Menu. */
+    /* Drive the retail pause menu from this frame's just-pressed edges (the
+     * `pulse` set, read before the engine tick consumes it). The state machine
+     * + navigation live in the engine (`play_menu_input`); this only opens it on
+     * Start, closes it on Start, and forwards the remaining edges. Returns `true`
+     * while the menu is up, so `_frame` freezes the field - retail holds the
+     * world in SceneMode::Menu. */
     _updateFieldMenu() {
+      const rt = this.rt;
       const p = this.pulse;
       const startEdge = p.has('Enter');
-      if (!this.fieldMenu) {
+      let open;
+      try { open = rt.play_menu_is_open(); } catch (e) { return false; }
+      if (!open) {
         if (startEdge && this._canOpenFieldMenu()) {
-          this._openFieldMenu();
+          try { rt.play_menu_open(); } catch (e) { return false; }
+          this._ensureMenuBlitters();
           p.clear();
           this._repack();
-          return true;
+          return rt.play_menu_is_open();
         }
         return false;
       }
-      const up = p.has('ArrowUp') || p.has('KeyW');
-      const down = p.has('ArrowDown') || p.has('KeyS');
-      const cross = p.has('KeyZ') || p.has('Space');
-      const circle = p.has('KeyX');
-      this._menuInput({ up, down, cross, circle, start: startEdge });
+      /* Menu up: Start toggles it shut; every other edge is the engine's. */
+      if (startEdge) {
+        try { rt.play_menu_close(); } catch (e) {}
+      } else {
+        let edge = 0;
+        for (const k of p) edge |= (PAD[k] || 0);
+        if (edge) { try { rt.play_menu_input(edge); } catch (e) {} }
+      }
       /* The menu owns every edge while it is up - clear them so none leak into
        * the frozen field on the next tick. */
       p.clear();
       this._repack();
-      return true;
+      try { return rt.play_menu_is_open(); } catch (e) { return false; }
     }
 
     /* Start only opens the menu in ordinary field play - not on the world map,
@@ -689,41 +753,56 @@
       return true;
     }
 
-    _openFieldMenu() {
-      let model = null;
-      try { model = JSON.parse(this.rt.field_menu_model_json() || 'null'); }
-      catch (e) { model = null; }
-      this.fieldMenu = { screen: 'top', cursor: 0, itemCursor: 0, statusCursor: 0, model };
+    /* Upload the pause-menu atlases (font glyphs + the disc's menu-chrome sheet)
+     * as `AtlasBlitter`s the first time the menu opens. Idempotent; the chrome
+     * blitter stays `null` on a PROT.DAT-only load (glyphs only, no gold frame). */
+    _ensureMenuBlitters() {
+      if (this._menuFont && this._menuChrome !== undefined) return;
+      const rt = this.rt;
+      try {
+        const fd = rt.play_menu_font_dims();
+        if (!this._menuFont && fd && fd.length === 2 && fd[0] > 0 && fd[1] > 0) {
+          const rgba = rt.play_menu_font_rgba();
+          if (rgba && rgba.length) this._menuFont = new AtlasBlitter(rgba, fd[0], fd[1]);
+        }
+        if (this._menuChrome === undefined) {
+          if (rt.play_menu_has_chrome()) {
+            const cd = rt.play_menu_chrome_dims();
+            const rgba = rt.play_menu_chrome_rgba();
+            if (cd && cd.length === 2 && cd[0] > 0 && rgba && rgba.length) {
+              this._menuChrome = new AtlasBlitter(rgba, cd[0], cd[1]);
+            } else {
+              this._menuChrome = null;
+            }
+          } else {
+            this._menuChrome = null;
+          }
+        }
+      } catch (e) { console.warn('play menu: atlas upload', e); this._menuChrome = null; }
     }
 
-    /* One frame of menu navigation. Start closes from anywhere; at the top
-     * level Cross opens the Item / Status sub-panel and Circle closes; in a
-     * sub-panel Circle backs out and Up/Down scroll the list. */
-    _menuInput({ up, down, cross, circle, start }) {
-      const m = this.fieldMenu;
-      if (start) { this.fieldMenu = null; return; }
-      if (m.screen === 'top') {
-        const n = FIELD_MENU_ROWS.length;
-        if (up) m.cursor = (m.cursor + n - 1) % n;
-        if (down) m.cursor = (m.cursor + 1) % n;
-        if (circle) { this.fieldMenu = null; return; }
-        if (cross) {
-          const row = FIELD_MENU_ROWS[m.cursor];
-          if (row === 'Item') m.screen = 'items';
-          else if (row === 'Status') m.screen = 'status';
-          /* Magic / Arts / Equip / Config have no browser panel yet. */
-        }
+    /* Blit the current pause-menu draw lists onto the 2D overlay canvas: the
+     * gold 9-slice / filigree chrome from the menu sheet, then the font glyphs.
+     * A no-op (and a one-shot clear) when the menu is closed. */
+    _drawMenu() {
+      const ov = this.menuOverlay;
+      if (!ov) return;
+      const ctx = this._menuCtx || (this._menuCtx = ov.getContext('2d'));
+      let open = false;
+      try { open = this.rt.play_menu_is_open(); } catch (e) {}
+      if (!open) {
+        if (this._menuWasOpen) { ctx.clearRect(0, 0, ov.width, ov.height); this._menuWasOpen = false; }
         return;
       }
-      if (circle) { m.screen = 'top'; return; }
-      const list = m.screen === 'items'
-        ? (m.model && m.model.items) || []
-        : (m.model && m.model.party) || [];
-      const key = m.screen === 'items' ? 'itemCursor' : 'statusCursor';
-      if (list.length) {
-        if (up) m[key] = (m[key] + list.length - 1) % list.length;
-        if (down) m[key] = (m[key] + 1) % list.length;
-      }
+      this._menuWasOpen = true;
+      this._ensureMenuBlitters();
+      let draws;
+      try { draws = JSON.parse(this.rt.play_menu_draws_json(ov.width, ov.height)); }
+      catch (e) { return; }
+      if (!draws || !draws.open) return;
+      ctx.clearRect(0, 0, ov.width, ov.height);
+      if (this._menuChrome) this._menuChrome.blit(ctx, draws.sprites);
+      if (this._menuFont) this._menuFont.blit(ctx, draws.texts);
     }
 
     /* ---------- loop ---------- */
@@ -941,12 +1020,13 @@
         try {
           const st = JSON.parse(rt.state_json());
           this._hudState = st;
-          /* Hand the field-menu model to the HUD so the page renders the
-           * overlay (the menu is JS-owned; the engine state carries the rest). */
-          st.menu = this.fieldMenu;
           this.opts.onState(st, this.fps);
         } catch (e) { /* a malformed frame must not kill the loop */ }
       }
+
+      /* The retail pause menu overlay: engine-driven, blitted onto the 2D
+       * overlay canvas over the (frozen) GL view. Skipped while VR presents. */
+      if (!skipDraw) this._drawMenu();
     }
 
     /* Where the shared orbit projection puts the eye for the current camera

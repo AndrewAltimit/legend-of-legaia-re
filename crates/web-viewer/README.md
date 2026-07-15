@@ -76,6 +76,23 @@ Two things the browser host has to do that the native one gets for free:
   so `site/js/play-app.js` culls any mesh straddling the camera-to-player line -
   without it a cave roof or a house's upper storey fills the screen.
 
+## Retail pause menu (`play_menu`)
+
+Start (Enter) opens the real retail field menu, drawn from the same wgpu-free
+`legaia-engine-ui` builders the native `play-window` uses - not a DOM stand-in.
+`LegaiaRuntime::play_menu_*` owns the state + navigation and serves two draw
+lists (`play_menu_draws_json`): the gold 9-slice + navy-filigree window chrome
+as sprite quads off the disc's menu-UI atlas (`save_menu_atlas::build_atlas`
+over PROT 0899 + the PROT.DAT system-UI sheet), and the labels as font-glyph
+quads. Window geometry is the disc-parsed descriptor table
+(`legaia_asset::menu_windows`) with the native window's pinned fallback. The two
+atlases upload once (`play_menu_font_rgba` / `play_menu_chrome_rgba`); the page's
+`AtlasBlitter` (an `image-rendering: pixelated` overlay `<canvas>` over the GL
+view) blits the quads with a per-quad multiply tint. The top-level command list
+plus the Status and Options sub-screens run their live `legaia-engine-core`
+sessions (`StatusScreenSession` / `OptionsSession`); the remaining rows open the
+generic framed window the native shell also uses for its not-yet-pinned screens.
+
 ## Assembled full-scene maps (`field_scene`)
 
 `LegaiaViewer::set_scene_field(name)` loads a CDNAME field/town scene

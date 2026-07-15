@@ -2731,6 +2731,114 @@ export class LegaiaRuntime {
         wasm.legaiaruntime_open_menu(this.__wbg_ptr);
     }
     /**
+     * `[width, height]` of the chrome atlas; `[0, 0]` when none.
+     * @returns {Uint32Array}
+     */
+    play_menu_chrome_dims() {
+        const ret = wasm.legaiaruntime_play_menu_chrome_dims(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * The assembled menu-chrome atlas (RGBA8) the sprite draws sample. Empty
+     * when no chrome resolved.
+     * @returns {Uint8Array}
+     */
+    play_menu_chrome_rgba() {
+        const ret = wasm.legaiaruntime_play_menu_chrome_rgba(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Close the menu (and any open sub-screen).
+     */
+    play_menu_close() {
+        wasm.legaiaruntime_play_menu_close(this.__wbg_ptr);
+    }
+    /**
+     * Build the two draw lists for the current menu state, in surface pixels.
+     * Shape:
+     * ```text
+     * { "open": true,
+     *   "sprites": [ { "dst":[x,y,w,h], "src":[x,y,w,h], "color":[r,g,b,a] } ],
+     *   "texts":   [ ... ] }
+     * ```
+     * `sprites` sample the chrome atlas, `texts` the font atlas. `open` is
+     * `false` (and the lists empty) when no menu is up.
+     * @param {number} surface_w
+     * @param {number} surface_h
+     * @returns {string}
+     */
+    play_menu_draws_json(surface_w, surface_h) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_play_menu_draws_json(this.__wbg_ptr, surface_w, surface_h);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * `[width, height]` of the font atlas.
+     * @returns {Uint32Array}
+     */
+    play_menu_font_dims() {
+        const ret = wasm.legaiaruntime_play_menu_font_dims(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * The whitewashed font atlas (RGBA8) the text draws sample. Stable across
+     * the session; the page uploads it once.
+     * @returns {Uint8Array}
+     */
+    play_menu_font_rgba() {
+        const ret = wasm.legaiaruntime_play_menu_font_rgba(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * `true` once the gold chrome atlas resolved from the disc; `false` means
+     * the menu renders glyphs only (PROT.DAT-only load).
+     * @returns {boolean}
+     */
+    play_menu_has_chrome() {
+        const ret = wasm.legaiaruntime_play_menu_has_chrome(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Drive the menu one frame from an edge-triggered PSX pad word (same bit
+     * layout as [`Self::set_pad`]). Navigation:
+     * - top-level: Up/Down move the cursor, Cross opens the row, Circle closes.
+     * - a sub-screen: routes the edges to its session; Circle (or the session
+     *   finishing) drops back to the top-level list.
+     * @param {number} edge
+     */
+    play_menu_input(edge) {
+        wasm.legaiaruntime_play_menu_input(this.__wbg_ptr, edge);
+    }
+    /**
+     * @returns {boolean}
+     */
+    play_menu_is_open() {
+        const ret = wasm.legaiaruntime_play_menu_is_open(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Open the retail pause menu. No-op with no disc loaded. The field is
+     * frozen by the page while [`Self::play_menu_is_open`] is true.
+     */
+    play_menu_open() {
+        wasm.legaiaruntime_play_menu_open(this.__wbg_ptr);
+    }
+    /**
      * The scene's NPC / actor catalog. Shape:
      * `{"anm_prot": 4, "npcs": [{"i", "slot", "model", "anim", "nobj",
      * "kind", "target_map", "dialog", "conditional", "x", "z"}, ...]}`.

@@ -1,0 +1,793 @@
+//! Browser **pause menu**: the real retail field-menu, rendered from the same
+//! `legaia-engine-ui` draw builders the native `play-window` uses.
+//!
+//! The play page's original pause menu was a lightweight DOM overlay. This
+//! module replaces it with the byte-pinned retail chrome: the gold 9-slice
+//! window frames + navy filigree come from the disc's menu-UI atlas (PROT 0899
+//! plus the PROT.DAT system-UI sheet, assembled by
+//! [`legaia_engine_core::save_menu_atlas::build_atlas`]), the glyphs from the
+//! proportional dialog font, and every rectangle from the shipped
+//! `*_draws_for` functions in `legaia-engine-ui`. The window geometry is the
+//! disc-parsed descriptor table ([`legaia_asset::menu_windows`]), with the
+//! same pinned fallback the native window keeps.
+//!
+//! The page drives it exactly like the field: hand it edge-triggered pad words,
+//! then blit the two draw lists (sprites off the chrome atlas, texts off the
+//! font atlas) over the frozen scene. The top-level command list + the Status
+//! and Options sub-screens run their real `legaia-engine-core` sessions
+//! ([`StatusScreenSession`] / [`OptionsSession`]); the remaining rows open the
+//! generic framed window the native shell also uses for its not-yet-capture-
+//! pinned screens.
+
+use super::*;
+use crate::runtime::LegaiaRuntime;
+use legaia_engine_core::field_menu::FieldMenuRow;
+use legaia_engine_core::field_menu_dispatch::status_snapshots;
+use legaia_engine_core::input::PadButton;
+use legaia_engine_core::options::{OptionsInput, OptionsSession, OptionsState};
+use legaia_engine_core::save_menu_atlas::{SaveMenuAtlas, build_atlas};
+use legaia_engine_core::status_screen::{StatusInput, StatusScreenSession};
+use legaia_engine_ui::{
+    self as ui, FieldMenuPartyView, FieldMenuRowView, SaveMenuAtlasRects, SpriteDraw,
+    StatusPanelView, StatusSatelliteView, StatusStatRow, TextDraw,
+};
+
+/// Boot-UI stage the retail menu lays glyphs out in (320x240), upscaled +
+/// centred onto the play surface exactly like the native window.
+const STAGE_W: u32 = ui::BOOT_UI_STAGE_W;
+const STAGE_H: u32 = ui::BOOT_UI_STAGE_H;
+
+/// Near-fullscreen content rect for the rows whose retail window set is not
+/// capture-pinned (Items / Magic / Equip / Save / Load) - mirrors the native
+/// window's `MENU_SUBWINDOW_CONTENT`.
+const SUBWINDOW_CONTENT: (i32, i32, i32, i32) = (18, 18, 284, 200);
+
+/// Pinned content rects mirroring the disc descriptor table, used when the
+/// parsed table is unavailable - byte-identical to the native window's
+/// `MENU_WINDOW_FALLBACK`.
+#[rustfmt::skip]
+const WINDOW_FALLBACK: [(usize, (i32, i32, i32, i32)); 15] = {
+    use legaia_asset::menu_windows::window_ids as w;
+    [
+        (w::TAB_EQUIP, (16, 12, 60, 12)),
+        (w::TAB_STATUS, (12, 12, 60, 12)),
+        (w::TAB_OPTIONS, (16, 12, 60, 12)),
+        (w::EQUIP_PARTY, (14, 42, 80, 38)),
+        (w::EQUIP_MAIN, (14, 96, 292, 108)),
+        (w::EQUIP_LIST, (174, 22, 132, 182)),
+        (w::STATUS_PARTY_LIST, (14, 38, 60, 38)),
+        (w::STATUS_CONDITION, (14, 92, 60, 10)),
+        (w::STATUS_MAIN, (90, 16, 218, 188)),
+        (w::STATUS_SUMMARY, (14, 134, 60, 70)),
+        (w::OPTIONS_MAIN, (24, 40, 256, 148)),
+        (w::OPTIONS_POPUP, (170, 132, 128, 36)),
+        (w::TOP_MONEY_TIME, (24, 178, 104, 24)),
+        (w::TOP_COMMAND_LIST, (24, 24, 104, 94)),
+        (w::TOP_INFO_PANEL, (144, 24, 152, 180)),
+    ]
+};
+
+/// The disc-sourced menu chrome (assembled atlas + its band rects) plus the
+/// disc-parsed window-descriptor table. Built once, lazily, the first time the
+/// menu opens (needs the loaded PROT for the atlas).
+pub struct PlayMenuAssets {
+    font: legaia_font::Font,
+    chrome: Option<(SaveMenuAtlas, SaveMenuAtlasRects)>,
+    windows: Option<legaia_asset::menu_windows::MenuWindowTable>,
+}
+
+impl PlayMenuAssets {
+    fn window_rect(&self, id: usize) -> (i32, i32, i32, i32) {
+        if let Some(d) = self.windows.as_ref().and_then(|t| t.window(id)) {
+            return d.rect();
+        }
+        WINDOW_FALLBACK
+            .iter()
+            .find(|(i, _)| *i == id)
+            .map(|(_, r)| *r)
+            .unwrap_or(SUBWINDOW_CONTENT)
+    }
+
+    fn pen(&self, id: usize) -> (i32, i32) {
+        let (x, y, _, _) = self.window_rect(id);
+        (x, y)
+    }
+
+    /// Frame rect (9-slice chrome box): 8 px past the content rect on each side.
+    fn frame_rect(&self, id: usize) -> (i32, i32, i32, i32) {
+        let (x, y, w, h) = self.window_rect(id);
+        (x - 8, y - 8, w + 16, h + 16)
+    }
+}
+
+/// Active pause-menu state: cursor over the top-level command list plus the
+/// open sub-screen, if any.
+pub struct PlayMenu {
+    cursor: u8,
+    sub: Option<PlaySub>,
+}
+
+/// The open sub-screen. Status + Options run their real engine-core sessions;
+/// `Placeholder` is the generic framed window for the rows not yet wired to
+/// their retail multi-window layout.
+enum PlaySub {
+    Status(StatusScreenSession),
+    Config(OptionsSession),
+    Placeholder(FieldMenuRow),
+}
+
+impl PlayMenu {
+    fn new() -> Self {
+        PlayMenu {
+            cursor: 0,
+            sub: None,
+        }
+    }
+}
+
+/// Stage origin + integer scale that upscales the 320x240 boot-UI stage to fill
+/// the play surface, centred - identical math to the native window's
+/// `save_select_stage`.
+fn stage_transform(surface_w: u32, surface_h: u32) -> ((i32, i32), u32) {
+    let scale = (surface_w / STAGE_W).min(surface_h / STAGE_H).clamp(1, 4);
+    let sw = STAGE_W * scale;
+    let sh = STAGE_H * scale;
+    let x0 = (surface_w as i32 - sw as i32) / 2;
+    let y0 = (surface_h as i32 - sh as i32) / 2;
+    ((x0, y0), scale)
+}
+
+/// `(edge & button)` test on a PSX-encoded pad-edge word.
+fn pressed(edge: u16, b: PadButton) -> bool {
+    edge & b.mask() != 0
+}
+
+/// Serialize one draw quad to JSON. `TextDraw` and `SpriteDraw` are the same
+/// shape (`dst` / `src` rect + RGBA tint); the page samples the font atlas for
+/// quads in the `texts` list and the chrome atlas for the `sprites` list.
+fn quad_json(d: &TextDraw) -> serde_json::Value {
+    serde_json::json!({
+        "dst": [d.dst.0, d.dst.1, d.dst.2, d.dst.3],
+        "src": [d.src.0, d.src.1, d.src.2, d.src.3],
+        "color": [d.color[0], d.color[1], d.color[2], d.color[3]],
+    })
+}
+
+impl LegaiaRuntime {
+    /// Build the menu assets on demand (font is always available; chrome +
+    /// window table need the loaded PROT). Returns `false` when there is no
+    /// disc loaded yet.
+    fn ensure_menu_assets(&mut self) -> bool {
+        if self.menu_assets.is_some() {
+            return true;
+        }
+        let font = legaia_font::Font::placeholder();
+        // Chrome atlas + window table off the loaded PROT, best-effort: a
+        // PROT.DAT-only load may lack the overlay slices, in which case the
+        // menu still renders its glyphs (no gold frame).
+        let (chrome, windows) = match self.scene_host.as_ref() {
+            Some(host) => {
+                let idx = &host.index;
+                let panel = {
+                    let base = legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET as u64;
+                    let end = (legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
+                        + legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE)
+                        as u64;
+                    idx.prot_dat_raw_bytes(base, (end - base) as usize)
+                };
+                let pill =
+                    idx.entry_bytes_extended(legaia_asset::title_pak::PROT_INDEX_OVERLAY as u32);
+                let chrome = match (panel, pill) {
+                    (Ok(panel_bytes), Ok(pill_bytes)) => {
+                        match build_atlas(&panel_bytes, &pill_bytes) {
+                            Ok(a) => {
+                                let rects = save_menu_rects(&a);
+                                Some((a, rects))
+                            }
+                            Err(e) => {
+                                crate::console_log(&format!("play menu: chrome atlas failed: {e}"));
+                                None
+                            }
+                        }
+                    }
+                    _ => None,
+                };
+                let windows = idx
+                    .entry_bytes_extended(
+                        legaia_asset::menu_windows::MENU_OVERLAY_PROT_INDEX as u32,
+                    )
+                    .ok()
+                    .and_then(|b| legaia_asset::menu_windows::parse(&b).ok());
+                (chrome, windows)
+            }
+            None => (None, None),
+        };
+        self.menu_assets = Some(PlayMenuAssets {
+            font,
+            chrome,
+            windows,
+        });
+        true
+    }
+
+    fn menu_world(&self) -> Option<&legaia_engine_core::world::World> {
+        self.scene_host.as_ref().map(|h| &h.world)
+    }
+}
+
+#[wasm_bindgen]
+impl LegaiaRuntime {
+    /// Open the retail pause menu. No-op with no disc loaded. The field is
+    /// frozen by the page while [`Self::play_menu_is_open`] is true.
+    pub fn play_menu_open(&mut self) {
+        if !self.ensure_menu_assets() {
+            return;
+        }
+        if self.play_menu.is_none() {
+            self.play_menu = Some(PlayMenu::new());
+        }
+    }
+
+    /// Close the menu (and any open sub-screen).
+    pub fn play_menu_close(&mut self) {
+        self.play_menu = None;
+    }
+
+    pub fn play_menu_is_open(&self) -> bool {
+        self.play_menu.is_some()
+    }
+
+    /// `true` once the gold chrome atlas resolved from the disc; `false` means
+    /// the menu renders glyphs only (PROT.DAT-only load).
+    pub fn play_menu_has_chrome(&self) -> bool {
+        self.menu_assets
+            .as_ref()
+            .map(|a| a.chrome.is_some())
+            .unwrap_or(false)
+    }
+
+    /// The whitewashed font atlas (RGBA8) the text draws sample. Stable across
+    /// the session; the page uploads it once.
+    pub fn play_menu_font_rgba(&self) -> Vec<u8> {
+        self.menu_assets
+            .as_ref()
+            .map(|a| a.font.atlas_rgba().to_vec())
+            .unwrap_or_default()
+    }
+
+    /// `[width, height]` of the font atlas.
+    pub fn play_menu_font_dims(&self) -> Vec<u32> {
+        self.menu_assets
+            .as_ref()
+            .map(|a| {
+                let (w, h) = a.font.atlas_dimensions();
+                vec![w, h]
+            })
+            .unwrap_or_else(|| vec![0, 0])
+    }
+
+    /// The assembled menu-chrome atlas (RGBA8) the sprite draws sample. Empty
+    /// when no chrome resolved.
+    pub fn play_menu_chrome_rgba(&self) -> Vec<u8> {
+        self.menu_assets
+            .as_ref()
+            .and_then(|a| a.chrome.as_ref())
+            .map(|(atlas, _)| atlas.rgba.clone())
+            .unwrap_or_default()
+    }
+
+    /// `[width, height]` of the chrome atlas; `[0, 0]` when none.
+    pub fn play_menu_chrome_dims(&self) -> Vec<u32> {
+        self.menu_assets
+            .as_ref()
+            .and_then(|a| a.chrome.as_ref())
+            .map(|(atlas, _)| vec![atlas.width, atlas.height])
+            .unwrap_or_else(|| vec![0, 0])
+    }
+
+    /// Drive the menu one frame from an edge-triggered PSX pad word (same bit
+    /// layout as [`Self::set_pad`]). Navigation:
+    /// - top-level: Up/Down move the cursor, Cross opens the row, Circle closes.
+    /// - a sub-screen: routes the edges to its session; Circle (or the session
+    ///   finishing) drops back to the top-level list.
+    pub fn play_menu_input(&mut self, edge: u16) {
+        if self.play_menu.is_none() {
+            return;
+        }
+        // Sub-screen active: route to its session, then check for exit.
+        let has_sub = self
+            .play_menu
+            .as_ref()
+            .map(|m| m.sub.is_some())
+            .unwrap_or(false);
+        if has_sub {
+            let mut close_sub = false;
+            let mut back_row = FieldMenuRow::Items;
+            if let Some(sub) = self.play_menu.as_mut().and_then(|m| m.sub.as_mut()) {
+                match sub {
+                    PlaySub::Status(s) => {
+                        let _ = s.tick(StatusInput::from_pad_edge(edge));
+                        if s.is_done() {
+                            close_sub = true;
+                            back_row = FieldMenuRow::Status;
+                        }
+                    }
+                    PlaySub::Config(s) => {
+                        let _ = s.tick(OptionsInput::from_pad_edge(edge));
+                        if s.is_done() {
+                            close_sub = true;
+                            back_row = FieldMenuRow::Options;
+                        }
+                    }
+                    PlaySub::Placeholder(row) => {
+                        if pressed(edge, PadButton::Circle) {
+                            close_sub = true;
+                            back_row = *row;
+                        }
+                    }
+                }
+            }
+            if close_sub && let Some(m) = self.play_menu.as_mut() {
+                m.sub = None;
+                m.cursor = back_row.index();
+            }
+            return;
+        }
+
+        // Top-level command list.
+        let n = FieldMenuRow::ALL.len() as u8;
+        if pressed(edge, PadButton::Up)
+            && let Some(m) = self.play_menu.as_mut()
+        {
+            m.cursor = (m.cursor + n - 1) % n;
+        }
+        if pressed(edge, PadButton::Down)
+            && let Some(m) = self.play_menu.as_mut()
+        {
+            m.cursor = (m.cursor + 1) % n;
+        }
+        if pressed(edge, PadButton::Circle) {
+            self.play_menu = None;
+            return;
+        }
+        if pressed(edge, PadButton::Cross) {
+            let cursor = self.play_menu.as_ref().map(|m| m.cursor).unwrap_or(0);
+            let row = FieldMenuRow::from_index(cursor).unwrap_or(FieldMenuRow::Items);
+            let sub = match row {
+                FieldMenuRow::Status => {
+                    let snaps = self.menu_world().map(status_snapshots).unwrap_or_default();
+                    PlaySub::Status(StatusScreenSession::new(snaps))
+                }
+                FieldMenuRow::Options => {
+                    PlaySub::Config(OptionsSession::new(OptionsState::default()))
+                }
+                other => PlaySub::Placeholder(other),
+            };
+            if let Some(m) = self.play_menu.as_mut() {
+                m.sub = Some(sub);
+            }
+        }
+    }
+
+    /// Build the two draw lists for the current menu state, in surface pixels.
+    /// Shape:
+    /// ```text
+    /// { "open": true,
+    ///   "sprites": [ { "dst":[x,y,w,h], "src":[x,y,w,h], "color":[r,g,b,a] } ],
+    ///   "texts":   [ ... ] }
+    /// ```
+    /// `sprites` sample the chrome atlas, `texts` the font atlas. `open` is
+    /// `false` (and the lists empty) when no menu is up.
+    pub fn play_menu_draws_json(&self, surface_w: u32, surface_h: u32) -> String {
+        let (Some(menu), Some(assets)) = (self.play_menu.as_ref(), self.menu_assets.as_ref())
+        else {
+            return r#"{"open":false,"sprites":[],"texts":[]}"#.to_string();
+        };
+        let (origin, scale) = stage_transform(surface_w.max(1), surface_h.max(1));
+        let mut sprites: Vec<SpriteDraw> = Vec::new();
+        let mut texts: Vec<TextDraw> = Vec::new();
+        let font = &assets.font;
+
+        match &menu.sub {
+            None => self.build_top_level(assets, menu, &mut sprites, &mut texts, origin, scale),
+            Some(PlaySub::Status(s)) => {
+                self.build_status(assets, s, &mut sprites, &mut texts, origin, scale)
+            }
+            Some(PlaySub::Config(s)) => {
+                self.build_config(assets, s, &mut sprites, &mut texts, origin, scale)
+            }
+            Some(PlaySub::Placeholder(row)) => {
+                // Generic near-fullscreen frame + a centred label, exactly the
+                // native window's treatment of a not-yet-pinned screen.
+                if let Some((_, rects)) = assets.chrome.as_ref() {
+                    let (x, y, w, h) = SUBWINDOW_CONTENT;
+                    sprites.extend(ui::menu_window_chrome_draws_for(
+                        rects,
+                        (x - 8, y - 8, w + 16, h + 16),
+                        origin,
+                        scale,
+                    ));
+                }
+                let mut d = ui::text_draws_for(
+                    &font.layout_ascii(row.label()),
+                    (140, 108),
+                    ui::MENU_TEXT_WHITE,
+                );
+                ui::scale_stage_text_draws(&mut d, origin, scale);
+                texts.extend(d);
+            }
+        }
+
+        serde_json::json!({
+            "open": true,
+            "sprites": sprites.iter().map(quad_json).collect::<Vec<_>>(),
+            "texts": texts.iter().map(quad_json).collect::<Vec<_>>(),
+        })
+        .to_string()
+    }
+}
+
+impl LegaiaRuntime {
+    /// Top-level command list + money/time box + party info panel, with gold
+    /// window chrome + the cursor / icon sprites. Mirrors the native window's
+    /// `BootUiState::FieldMenu { sub: None }` path.
+    fn build_top_level(
+        &self,
+        assets: &PlayMenuAssets,
+        menu: &PlayMenu,
+        sprites: &mut Vec<SpriteDraw>,
+        texts: &mut Vec<TextDraw>,
+        origin: (i32, i32),
+        scale: u32,
+    ) {
+        use legaia_asset::menu_windows::window_ids;
+        let Some(world) = self.menu_world() else {
+            return;
+        };
+        let font = &assets.font;
+        let money = world.money.max(0) as u32;
+        // The play page tracks no wall-clock play timer; surface the engine
+        // frame count as a seconds proxy so the H:MM:SS box reads live.
+        let play_time = (world.frame / 60) as u32;
+
+        let rows: Vec<FieldMenuRowView<'_>> = FieldMenuRow::ALL
+            .iter()
+            .map(|r| FieldMenuRowView {
+                label: r.label(),
+                enabled: true,
+            })
+            .collect();
+        let mut d = ui::field_menu_draws_for(
+            font,
+            &rows,
+            menu.cursor,
+            money,
+            play_time,
+            assets.pen(window_ids::TOP_COMMAND_LIST),
+            assets.pen(window_ids::TOP_MONEY_TIME),
+        );
+        let snaps = status_snapshots(world);
+        let party: Vec<FieldMenuPartyView<'_>> = snaps
+            .iter()
+            .map(|s| FieldMenuPartyView {
+                name: &s.name,
+                level: s.level,
+                hp: s.hp,
+                hp_max: s.hp_max,
+                mp: s.mp,
+                mp_max: s.mp_max,
+                ap: s.ap as u16,
+            })
+            .collect();
+        d.extend(ui::field_menu_info_draws_for(
+            font,
+            &party,
+            assets.pen(window_ids::TOP_INFO_PANEL),
+        ));
+        ui::scale_stage_text_draws(&mut d, origin, scale);
+        texts.extend(d);
+
+        if let Some((_, rects)) = assets.chrome.as_ref() {
+            for &id in &legaia_asset::menu_windows::TOP_LEVEL_WINDOWS {
+                sprites.extend(ui::menu_window_chrome_draws_for(
+                    rects,
+                    assets.frame_rect(id),
+                    origin,
+                    scale,
+                ));
+            }
+            let party_ap: Vec<u16> = snaps.iter().map(|s| s.ap as u16).collect();
+            sprites.extend(ui::field_menu_icon_sprites_for(
+                rects,
+                menu.cursor,
+                &party_ap,
+                assets.pen(window_ids::TOP_COMMAND_LIST),
+                assets.pen(window_ids::TOP_MONEY_TIME),
+                assets.pen(window_ids::TOP_INFO_PANEL),
+                origin,
+                scale,
+            ));
+        }
+    }
+
+    /// Status sub-screen: the main panel + the three satellite windows + the
+    /// Status tab, with the LV/HP/MP + AP-gauge + element icon sprites.
+    /// Mirrors the native window's `FieldMenuSubsession::Status` path.
+    fn build_status(
+        &self,
+        assets: &PlayMenuAssets,
+        s: &StatusScreenSession,
+        sprites: &mut Vec<SpriteDraw>,
+        texts: &mut Vec<TextDraw>,
+        origin: (i32, i32),
+        scale: u32,
+    ) {
+        use legaia_asset::menu_windows::window_ids;
+        let font = &assets.font;
+        let has_chrome = assets.chrome.is_some();
+        let Some(snap) = s.current() else {
+            return;
+        };
+        let stat_rows: Vec<StatusStatRow<'_>> = snap
+            .stats
+            .iter()
+            .zip(snap.stat_labels.iter())
+            .map(|((live, growth), l)| StatusStatRow {
+                label: l,
+                value: *live as u32,
+                growth: *growth as u32,
+            })
+            .collect();
+        let equip_rows: Vec<(&str, &str)> = snap
+            .equip
+            .iter()
+            .map(|e| (e.label, e.item_name.as_str()))
+            .collect();
+        let view = StatusPanelView {
+            name: &snap.name,
+            level: snap.level,
+            xp: snap.xp,
+            xp_to_next: snap.xp_to_next,
+            hp: snap.hp,
+            hp_max: snap.hp_max,
+            mp: snap.mp,
+            mp_max: snap.mp_max,
+            ap: snap.ap,
+            ap_max: snap.ap_max,
+            stat_rows: &stat_rows,
+            equip_rows: &equip_rows,
+        };
+        let mut d = ui::status_screen_draws_for(
+            font,
+            &view,
+            None,
+            assets.pen(window_ids::STATUS_MAIN),
+            has_chrome,
+        );
+        let names: Vec<&str> = s.snapshots().iter().map(|m| m.name.as_str()).collect();
+        let sat = StatusSatelliteView {
+            party_names: &names,
+            cursor: s.cursor() as usize,
+            name: &snap.name,
+            level: snap.level,
+        };
+        d.extend(ui::status_satellite_draws_for(
+            font,
+            &sat,
+            assets.pen(window_ids::STATUS_PARTY_LIST),
+            assets.pen(window_ids::STATUS_CONDITION),
+            assets.pen(window_ids::STATUS_SUMMARY),
+            has_chrome,
+        ));
+        d.extend(ui::text_draws_for(
+            &font.layout_ascii("Status"),
+            assets.pen(window_ids::TAB_STATUS),
+            ui::MENU_TEXT_WHITE,
+        ));
+        ui::scale_stage_text_draws(&mut d, origin, scale);
+        texts.extend(d);
+
+        if let Some((_, rects)) = assets.chrome.as_ref() {
+            for &id in &legaia_asset::menu_windows::STATUS_SCREEN_WINDOWS {
+                if id <= window_ids::TAB_OPTIONS {
+                    let (_, _, w, _) = assets.window_rect(id);
+                    sprites.extend(ui::tab_banner_draws(
+                        rects,
+                        assets.pen(id),
+                        w,
+                        origin,
+                        scale,
+                    ));
+                } else {
+                    sprites.extend(ui::menu_window_chrome_draws_for(
+                        rects,
+                        assets.frame_rect(id),
+                        origin,
+                        scale,
+                    ));
+                }
+            }
+            let ap = snap.ap as u16;
+            sprites.extend(ui::status_icon_sprites_for(
+                rects,
+                assets.pen(window_ids::STATUS_MAIN),
+                ap,
+                origin,
+                scale,
+            ));
+            let atr_char = snap.slot as usize;
+            sprites.extend(ui::status_satellite_icon_sprites_for(
+                rects,
+                s.cursor() as usize,
+                atr_char,
+                assets.pen(window_ids::STATUS_PARTY_LIST),
+                assets.pen(window_ids::STATUS_CONDITION),
+                assets.pen(window_ids::STATUS_SUMMARY),
+                origin,
+                scale,
+            ));
+        }
+    }
+
+    /// Options sub-screen: the settings rows + value popup + the hand cursor,
+    /// with the options window frame + tab. Mirrors the native window's
+    /// `FieldMenuSubsession::Config` path.
+    fn build_config(
+        &self,
+        assets: &PlayMenuAssets,
+        s: &OptionsSession,
+        sprites: &mut Vec<SpriteDraw>,
+        texts: &mut Vec<TextDraw>,
+        origin: (i32, i32),
+        scale: u32,
+    ) {
+        use legaia_asset::menu_windows::window_ids;
+        let font = &assets.font;
+        let rows = s.state().rows();
+        let row_views: Vec<ui::OptionsRowView<'_>> = rows
+            .iter()
+            .map(|r| ui::OptionsRowView {
+                label: r.label,
+                value: r.value,
+                teal: r.teal,
+                advance: r.advance,
+            })
+            .collect();
+        let popup_rect = s.popup().map(|p| self.options_popup_rect(assets, &p));
+        let popup = s
+            .popup()
+            .zip(popup_rect)
+            .map(|(p, rect)| ui::OptionsPopupDraw {
+                rect,
+                choices: p.choices,
+                cursor: p.cursor,
+            });
+        let mut d = ui::options_draws_for(
+            font,
+            &row_views,
+            s.cursor(),
+            popup.as_ref(),
+            assets.pen(window_ids::OPTIONS_MAIN),
+        );
+        d.extend(ui::text_draws_for(
+            &font.layout_ascii("Options"),
+            assets.pen(window_ids::TAB_OPTIONS),
+            ui::MENU_TEXT_WHITE,
+        ));
+        ui::scale_stage_text_draws(&mut d, origin, scale);
+        texts.extend(d);
+
+        if let Some((_, rects)) = assets.chrome.as_ref() {
+            for &id in &legaia_asset::menu_windows::OPTIONS_SCREEN_WINDOWS {
+                if id <= window_ids::TAB_OPTIONS {
+                    let (_, _, w, _) = assets.window_rect(id);
+                    sprites.extend(ui::tab_banner_draws(
+                        rects,
+                        assets.pen(id),
+                        w,
+                        origin,
+                        scale,
+                    ));
+                } else {
+                    sprites.extend(ui::menu_window_chrome_draws_for(
+                        rects,
+                        assets.frame_rect(id),
+                        origin,
+                        scale,
+                    ));
+                }
+            }
+            if let Some(p) = s.popup() {
+                let (x, y, w, h) = self.options_popup_rect(assets, &p);
+                sprites.extend(ui::menu_window_chrome_draws_for(
+                    rects,
+                    (x - 6, y - 2, w + 12, h + 12),
+                    origin,
+                    scale,
+                ));
+            }
+            let row_y_off: i32 = rows
+                .iter()
+                .take(s.cursor() as usize)
+                .map(|r| r.advance)
+                .sum();
+            sprites.push(ui::options_hand_cursor_sprite(
+                rects,
+                assets.pen(window_ids::OPTIONS_MAIN),
+                row_y_off,
+                origin,
+                scale,
+            ));
+        }
+    }
+
+    /// The options value popup's per-open content rect (its y/h are stamped
+    /// from the hovered row) - same helper the native window uses.
+    fn options_popup_rect(
+        &self,
+        assets: &PlayMenuAssets,
+        popup: &legaia_engine_core::options::OptionsPopup,
+    ) -> (i32, i32, i32, i32) {
+        use legaia_asset::menu_windows::window_ids;
+        let (px, _, pw, _) = assets.window_rect(window_ids::OPTIONS_POPUP);
+        let (_, sy, _, _) = assets.window_rect(window_ids::OPTIONS_MAIN);
+        legaia_engine_core::options::options_popup_content_rect(
+            sy,
+            px,
+            pw,
+            popup.row,
+            popup.choices.len(),
+        )
+    }
+}
+
+/// Assemble the `SaveMenuAtlasRects` band table from a built [`SaveMenuAtlas`] -
+/// the same field-by-field mapping the native window does at atlas upload.
+fn save_menu_rects(a: &SaveMenuAtlas) -> SaveMenuAtlasRects {
+    SaveMenuAtlasRects {
+        panel_tl: a.band_panel_tl(),
+        panel_tr: a.band_panel_tr(),
+        panel_bl: a.band_panel_bl(),
+        panel_br: a.band_panel_br(),
+        panel_top: a.band_panel_top(),
+        panel_bot: a.band_panel_bot(),
+        panel_left: a.band_panel_left(),
+        panel_right: a.band_panel_right(),
+        slot1: a.band_slot1(),
+        slot2: a.band_slot2(),
+        cursor: a.band_cursor(),
+        panel_interior: a.band_panel_interior(),
+        panel_filigree: a.band_panel_filigree(),
+        label_lv: a.band_label_lv(),
+        label_hp: a.band_label_hp(),
+        label_mp: a.band_label_mp(),
+        icon_money: a.band_icon_money(),
+        label_time: a.band_label_time(),
+        label_coin: a.band_label_coin(),
+        gauge_cap: a.band_gauge_cap(),
+        gauge_trough: a.band_gauge_trough(),
+        gauge_box: a.band_gauge_box(),
+        gauge_tip: a.band_gauge_tip(),
+        gauge_digits: a.band_gauge_digits(),
+        gauge_100: a.band_gauge_100(),
+        gauge_fill: a.band_gauge_fill(),
+        dialog_fill: a.band_dialog_fill(),
+        icon_weapon: a.band_icon_weapon(),
+        icon_helmet: a.band_icon_helmet(),
+        icon_armor: a.band_icon_armor(),
+        icon_boot: a.band_icon_boot(),
+        icon_goods: a.band_icon_goods(),
+        pager_left: a.band_pager_left(),
+        pager_right: a.band_pager_right(),
+        tab_cap_l: a.band_tab_cap_l(),
+        tab_body: a.band_tab_body(),
+        tab_cap_r: a.band_tab_cap_r(),
+        atr_icons: a.band_atr_icons(),
+        load_empty_frame: Some(a.band_load_empty_frame()),
+        load_portrait_by_char: [
+            a.band_load_portrait(0),
+            a.band_load_portrait(1),
+            a.band_load_portrait(2),
+        ],
+    }
+}

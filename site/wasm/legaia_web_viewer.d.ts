@@ -1273,6 +1273,59 @@ export class LegaiaRuntime {
      */
     open_menu(): void;
     /**
+     * `[width, height]` of the chrome atlas; `[0, 0]` when none.
+     */
+    play_menu_chrome_dims(): Uint32Array;
+    /**
+     * The assembled menu-chrome atlas (RGBA8) the sprite draws sample. Empty
+     * when no chrome resolved.
+     */
+    play_menu_chrome_rgba(): Uint8Array;
+    /**
+     * Close the menu (and any open sub-screen).
+     */
+    play_menu_close(): void;
+    /**
+     * Build the two draw lists for the current menu state, in surface pixels.
+     * Shape:
+     * ```text
+     * { "open": true,
+     *   "sprites": [ { "dst":[x,y,w,h], "src":[x,y,w,h], "color":[r,g,b,a] } ],
+     *   "texts":   [ ... ] }
+     * ```
+     * `sprites` sample the chrome atlas, `texts` the font atlas. `open` is
+     * `false` (and the lists empty) when no menu is up.
+     */
+    play_menu_draws_json(surface_w: number, surface_h: number): string;
+    /**
+     * `[width, height]` of the font atlas.
+     */
+    play_menu_font_dims(): Uint32Array;
+    /**
+     * The whitewashed font atlas (RGBA8) the text draws sample. Stable across
+     * the session; the page uploads it once.
+     */
+    play_menu_font_rgba(): Uint8Array;
+    /**
+     * `true` once the gold chrome atlas resolved from the disc; `false` means
+     * the menu renders glyphs only (PROT.DAT-only load).
+     */
+    play_menu_has_chrome(): boolean;
+    /**
+     * Drive the menu one frame from an edge-triggered PSX pad word (same bit
+     * layout as [`Self::set_pad`]). Navigation:
+     * - top-level: Up/Down move the cursor, Cross opens the row, Circle closes.
+     * - a sub-screen: routes the edges to its session; Circle (or the session
+     *   finishing) drops back to the top-level list.
+     */
+    play_menu_input(edge: number): void;
+    play_menu_is_open(): boolean;
+    /**
+     * Open the retail pause menu. No-op with no disc loaded. The field is
+     * frozen by the page while [`Self::play_menu_is_open`] is true.
+     */
+    play_menu_open(): void;
+    /**
      * The scene's NPC / actor catalog. Shape:
      * `{"anm_prot": 4, "npcs": [{"i", "slot", "model", "anim", "nobj",
      * "kind", "target_map", "dialog", "conditional", "x", "z"}, ...]}`.
@@ -2861,6 +2914,16 @@ export interface InitOutput {
     readonly legaiaruntime_menu_tick: (a: number, b: number) => any;
     readonly legaiaruntime_new: () => number;
     readonly legaiaruntime_open_menu: (a: number) => void;
+    readonly legaiaruntime_play_menu_chrome_dims: (a: number) => [number, number];
+    readonly legaiaruntime_play_menu_chrome_rgba: (a: number) => [number, number];
+    readonly legaiaruntime_play_menu_close: (a: number) => void;
+    readonly legaiaruntime_play_menu_draws_json: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaruntime_play_menu_font_dims: (a: number) => [number, number];
+    readonly legaiaruntime_play_menu_font_rgba: (a: number) => [number, number];
+    readonly legaiaruntime_play_menu_has_chrome: (a: number) => number;
+    readonly legaiaruntime_play_menu_input: (a: number, b: number) => void;
+    readonly legaiaruntime_play_menu_is_open: (a: number) => number;
+    readonly legaiaruntime_play_menu_open: (a: number) => void;
     readonly legaiaruntime_play_npc_catalog_json: (a: number) => [number, number];
     readonly legaiaruntime_play_npc_mesh: (a: number, b: number) => [number, number, number];
     readonly legaiaruntime_play_npc_mesh_cba_tsb: (a: number) => [number, number];

@@ -55,6 +55,11 @@ pub struct LegaiaRuntime {
     /// SCUS item-name table, parsed once at `load_disc` - the labels the field
     /// menu's Item screen shows. `None` on a PROT.DAT-only load (no executable).
     pub(crate) item_names: Option<legaia_asset::item_names::ItemNameTable>,
+    /// Disc-sourced pause-menu chrome + font + window table, built lazily the
+    /// first time the retail pause menu opens ([`crate::play_menu`]).
+    pub(crate) menu_assets: Option<crate::play_menu::PlayMenuAssets>,
+    /// Live pause-menu navigation state; `Some` while the menu is up.
+    pub(crate) play_menu: Option<crate::play_menu::PlayMenu>,
     #[cfg(target_arch = "wasm32")]
     audio_out: Option<WebAudioOut>,
 }
@@ -78,6 +83,8 @@ impl LegaiaRuntime {
             scene_anm: None,
             locomotion_anm: None,
             item_names: None,
+            menu_assets: None,
+            play_menu: None,
             #[cfg(target_arch = "wasm32")]
             audio_out: None,
         }
@@ -135,6 +142,9 @@ impl LegaiaRuntime {
         self.field = None;
         self.player = None;
         self.npcs = None;
+        // A new disc means a new PROT: drop any cached menu chrome / open menu.
+        self.menu_assets = None;
+        self.play_menu = None;
         Ok(count)
     }
 
