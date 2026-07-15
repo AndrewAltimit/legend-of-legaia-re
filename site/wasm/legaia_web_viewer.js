@@ -2354,6 +2354,34 @@ export class LegaiaRuntime {
         return v1;
     }
     /**
+     * Field pause-menu model: the party (battle order) + inventory + gold the
+     * page's menu overlay renders when the player presses Start. Shape:
+     * ```text
+     * { "gold": 240,
+     *   "party": [{ "name": "Vahn", "level": 1, "hp": 60, "hp_max": 60,
+     *               "mp": 8, "mp_max": 8 }, ...],
+     *   "items": [{ "id": 32, "name": "Healing Leaf", "count": 3 }, ...] }
+     * ```
+     * `null` before a disc scene is entered. Item labels come from the SCUS
+     * item-name table ([`Self::load_disc`]); a PROT.DAT-only load falls back to
+     * the raw id. The retail pause menu is a native-only draw path (glyph atlas
+     * + window-descriptor table); this feeds the browser's HTML overlay
+     * equivalent so Start still surfaces the party / items on the play page.
+     * @returns {string}
+     */
+    field_menu_model_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_field_menu_model_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * Select + build environment-pack slot `slot`; subsequent `field_mesh_*`
      * reads return that mesh.
      * @param {number} slot
@@ -2415,6 +2443,26 @@ export class LegaiaRuntime {
         return ret[0] >>> 0;
     }
     /**
+     * Positions of environment-pack slot `slot` **posed at clip frame
+     * `frame`** of scene ANM record `anim_id - 1` - the per-frame re-pose the
+     * draw walker (`FUN_8001B964`) does off a placed prop's live cursor.
+     * Same vertex order as [`Self::field_mesh_posed`]'s frame-0 build (the two
+     * differ only in the per-object transform), so the page can upload the
+     * mesh once and rewrite just its positions each frame. Empty when the pose
+     * can't resolve (no bundle / bone-count mismatch) - the caller then leaves
+     * the prop at its rest pose.
+     * @param {number} slot
+     * @param {number} anim_id
+     * @param {number} frame
+     * @returns {Float32Array}
+     */
+    field_mesh_posed_frame_positions(slot, anim_id, frame) {
+        const ret = wasm.legaiaruntime_field_mesh_posed_frame_positions(this.__wbg_ptr, slot, anim_id, frame);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
      * @returns {Float32Array}
      */
     field_mesh_positions() {
@@ -2442,6 +2490,23 @@ export class LegaiaRuntime {
     field_placement_anim_ids() {
         const ret = wasm.legaiaruntime_field_placement_anim_ids(this.__wbg_ptr);
         var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Live clip frame of each placement (parallel to
+     * [`Self::field_placement_slots`]): `-1` for a static prop (no anim, or
+     * no live prop-bank entry), else the prop's current cursor frame
+     * (`PropAnimBank::frame`, the `actor+0x68 >> 4` the draw walker poses
+     * from). The world advances every prop's cursor each field tick
+     * (`tick_prop_interactions` -> `PropAnimBank::tick_anims`, retail's
+     * `FUN_800204F8`), so an animated prop - the windmill sails, a swinging
+     * door mid-swing - reports a changing frame, and the page re-poses it.
+     * @returns {Int32Array}
+     */
+    field_placement_frames() {
+        const ret = wasm.legaiaruntime_field_placement_frames(this.__wbg_ptr);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
     }
@@ -5968,7 +6033,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 110, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 111, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23);
             return ret;
         },

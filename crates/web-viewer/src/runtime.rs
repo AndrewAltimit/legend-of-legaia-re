@@ -52,6 +52,9 @@ pub struct LegaiaRuntime {
     /// The PROT 0874 §1 party locomotion bundle - the pose source for the
     /// global-pool specials (save point / party heads).
     pub(crate) locomotion_anm: Option<legaia_asset::player_anm::PlayerAnmBundle>,
+    /// SCUS item-name table, parsed once at `load_disc` - the labels the field
+    /// menu's Item screen shows. `None` on a PROT.DAT-only load (no executable).
+    pub(crate) item_names: Option<legaia_asset::item_names::ItemNameTable>,
     #[cfg(target_arch = "wasm32")]
     audio_out: Option<WebAudioOut>,
 }
@@ -74,6 +77,7 @@ impl LegaiaRuntime {
             npcs: None,
             scene_anm: None,
             locomotion_anm: None,
+            item_names: None,
             #[cfg(target_arch = "wasm32")]
             audio_out: None,
         }
@@ -112,6 +116,11 @@ impl LegaiaRuntime {
         // template party + starting bag, so the engine never runs a zeroed
         // scaffold roster. Best-effort - a PROT.DAT-only load has no SCUS and
         // keeps the old behaviour.
+        // Item-name labels for the field menu's Item screen (executable-only;
+        // a PROT.DAT load has no SCUS and the menu shows raw ids instead).
+        self.item_names = scus
+            .as_ref()
+            .and_then(|s| legaia_asset::item_names::ItemNameTable::from_scus(s));
         if let Some(scus) = scus
             && let Some(party) = legaia_asset::new_game::StartingParty::from_scus(&scus)
         {
@@ -280,6 +289,63 @@ impl LegaiaRuntime {
             "dialog": self.dialog_value(),
         })
         .to_string()
+    }
+
+    /// Field pause-menu model: the party (battle order) + inventory + gold the
+    /// page's menu overlay renders when the player presses Start. Shape:
+    /// ```text
+    /// { "gold": 240,
+    ///   "party": [{ "name": "Vahn", "level": 1, "hp": 60, "hp_max": 60,
+    ///               "mp": 8, "mp_max": 8 }, ...],
+    ///   "items": [{ "id": 32, "name": "Healing Leaf", "count": 3 }, ...] }
+    /// ```
+    /// `null` before a disc scene is entered. Item labels come from the SCUS
+    /// item-name table ([`Self::load_disc`]); a PROT.DAT-only load falls back to
+    /// the raw id. The retail pause menu is a native-only draw path (glyph atlas
+    /// + window-descriptor table); this feeds the browser's HTML overlay
+    /// equivalent so Start still surfaces the party / items on the play page.
+    pub fn field_menu_model_json(&self) -> String {
+        let Some(h) = self.scene_host.as_ref() else {
+            return "null".to_string();
+        };
+        let w = &h.world;
+        let order: Vec<usize> = if w.active_party.is_empty() {
+            (0..w.roster.members.len()).collect()
+        } else {
+            w.active_party.iter().map(|&s| s as usize).collect()
+        };
+        let party: Vec<serde_json::Value> = order
+            .iter()
+            .filter_map(|&slot| {
+                let m = w.roster.members.get(slot)?;
+                // A never-populated roster slot decodes to an all-zero record
+                // (empty name) - skip it so the menu shows only real members.
+                let name = m.name();
+                if name.trim().is_empty() {
+                    return None;
+                }
+                let hms = m.hp_mp_sp();
+                Some(serde_json::json!({
+                    "name": name,
+                    "level": m.level(),
+                    "hp": hms.hp_cur, "hp_max": hms.hp_max,
+                    "mp": hms.mp_cur, "mp_max": hms.mp_max,
+                }))
+            })
+            .collect();
+        let items: Vec<serde_json::Value> = MenuRuntime::inventory_items(w)
+            .into_iter()
+            .map(|(id, count)| {
+                let name = self
+                    .item_names
+                    .as_ref()
+                    .and_then(|t| t.name(id))
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| format!("Item {id:#04x}"));
+                serde_json::json!({ "id": id, "name": name, "count": count })
+            })
+            .collect();
+        serde_json::json!({ "gold": w.money, "party": party, "items": items }).to_string()
     }
 
     /// Attempt to start the WebAudio backend. Must be called from a user-gesture

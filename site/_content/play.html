@@ -72,6 +72,31 @@
 .play-dialog-opt { color: #b9c6ff; }
 .play-dialog-opt.is-sel { color: #fff2a8; }
 
+/* Field pause menu (Start). Same gold-framed panel language as the dialog
+   box; a compact top-level column with an optional Item / Status sub-panel. */
+.play-menu {
+  position: absolute; top: 6%; right: 6%; min-width: 220px; max-width: 62%;
+  max-height: 82%; overflow-y: auto;
+  background: linear-gradient(to bottom, rgba(24, 24, 40, 0.86), rgba(40, 40, 110, 0.86));
+  border: 2px solid #c9a24a;
+  box-shadow: inset 0 0 0 2px #241a08, inset 0 0 0 3px #8a6d2f;
+  padding: 0.6rem 0.8rem; color: #eef2ff;
+  font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.5;
+}
+.play-menu.is-hidden { display: none; }
+.play-menu-title {
+  color: #fff2a8; font-size: 0.72rem; text-transform: uppercase;
+  letter-spacing: 0.08em; margin-bottom: 0.4rem;
+}
+.play-menu-row { color: #b9c6ff; white-space: pre; }
+.play-menu-row.is-sel { color: #fff2a8; }
+.play-menu-row.is-inert { color: #6b76a0; }
+.play-menu-foot {
+  margin-top: 0.5rem; font-size: 0.68rem; color: #8894c0;
+  border-top: 1px solid rgba(138, 109, 47, 0.5); padding-top: 0.35rem;
+}
+.play-menu-gold { color: #ffe08a; }
+
 .play-hud {
   display: flex; gap: 0.9rem; flex-wrap: wrap;
   font-family: var(--font-mono); font-size: 0.76rem; color: var(--text-muted);
@@ -199,6 +224,7 @@
           <canvas id="play-canvas" class="play-canvas" width="960" height="720" tabindex="0"></canvas>
           <div class="play-focus-veil" id="play-veil">Click to take the controls</div>
           <div class="play-dialog is-hidden" id="play-dialog"></div>
+          <div class="play-menu is-hidden" id="play-menu"></div>
         </div>
         <div class="play-hud">
           <span><b>Scene</b> <span id="hud-scene">-</span></span>
@@ -343,6 +369,7 @@
   const canvas    = document.getElementById('play-canvas');
   const veil      = document.getElementById('play-veil');
   const dialogEl  = document.getElementById('play-dialog');
+  const menuEl    = document.getElementById('play-menu');
   const listEl    = document.getElementById('play-scene-list');
   const searchEl  = document.getElementById('play-scene-search');
   const keysEl    = document.getElementById('play-keys');
@@ -544,6 +571,49 @@
     }
   }
 
+  /* ---------------- field pause menu overlay (Bug 1) ---------------- */
+
+  const MENU_ROWS = ['Item', 'Magic', 'Arts', 'Equip', 'Status', 'Config'];
+  const escHtml = s => String(s).replace(/[<>&]/g,
+    c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+
+  /* Render the JS-owned field menu model the view hands through `st.menu`.
+   * Item + Status show the engine's live inventory / party; the other rows
+   * are the retail entries, listed but without a browser panel yet. */
+  function renderFieldMenu(m) {
+    if (!m) { menuEl.classList.add('is-hidden'); return; }
+    const parts = [];
+    const row = (sel, cls, text) =>
+      `<div class="play-menu-row${sel ? ' is-sel' : ''}${cls ? ' ' + cls : ''}">` +
+      `${sel ? '▸ ' : '  '}${escHtml(text)}</div>`;
+    if (m.screen === 'status') {
+      parts.push('<div class="play-menu-title">Status</div>');
+      const party = (m.model && m.model.party) || [];
+      if (!party.length) parts.push(row(false, 'is-inert', '(no party)'));
+      party.forEach((c, i) => parts.push(row(i === m.statusCursor, '',
+        `${c.name}  Lv ${c.level}  HP ${c.hp}/${c.hp_max}  MP ${c.mp}/${c.mp_max}`)));
+      parts.push('<div class="play-menu-foot">X back · Enter close</div>');
+    } else if (m.screen === 'items') {
+      parts.push('<div class="play-menu-title">Item</div>');
+      const items = (m.model && m.model.items) || [];
+      if (!items.length) parts.push(row(false, 'is-inert', '(empty)'));
+      items.forEach((it, i) => parts.push(row(i === m.itemCursor, '',
+        `${it.name}  x${it.count}`)));
+      parts.push('<div class="play-menu-foot">X back · Enter close</div>');
+    } else {
+      parts.push('<div class="play-menu-title">Menu</div>');
+      MENU_ROWS.forEach((label, i) => {
+        const inert = (label !== 'Item' && label !== 'Status');
+        parts.push(row(i === m.cursor, inert ? 'is-inert' : '', label));
+      });
+      const gold = (m.model && typeof m.model.gold === 'number') ? m.model.gold : 0;
+      parts.push('<div class="play-menu-foot"><span class="play-menu-gold">' +
+        `${gold} G</span> · Up/Down move · Z select · X / Enter close</div>`);
+    }
+    menuEl.innerHTML = parts.join('');
+    menuEl.classList.remove('is-hidden');
+  }
+
   /* ---------------- per-frame HUD ---------------- */
 
   function onState(st, fps) {
@@ -570,6 +640,8 @@
     } else {
       dialogEl.classList.add('is-hidden');
     }
+
+    renderFieldMenu(st.menu);
 
     /* Light up the keys that are actually held - the legend doubles as an input
      * monitor, which is the fastest way to see the canvas has focus. */

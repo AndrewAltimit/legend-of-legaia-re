@@ -25,6 +25,10 @@
   const A2R = Math.PI * 2 / 4096;     /* PSX 12-bit angle -> radians */
   const PLAYER_MESH_ID = 900000;      /* scene-mesh id space above any env slot */
   const NPC_MESH_BASE  = 910000;
+  /* Retail field pause-menu top-level rows (Start opens it). Item + Status open
+   * a real sub-panel off the engine's live party / inventory; the rest are the
+   * retail entries, listed for parity but without a browser panel yet. */
+  const FIELD_MENU_ROWS = ['Item', 'Magic', 'Arts', 'Equip', 'Status', 'Config'];
   const NPC_CLIP_FPS   = 15;          /* the field anim cadence (30 Hz tick, 2 ticks/frame) */
   /* VR world scale - same anchor as the full-map view: the ~130-unit character
    * mesh is a 1.7 m human, so a metre is ~76 world units and the headset stands
@@ -200,6 +204,19 @@
       this.staticDraws = [];
       this.player = null;    /* { basePositions } */
       this.npcs = [];        /* [{ meshId, base, objectIds, frames, partCount, frameCount, out }] */
+      /* Animated environment props (a placement whose object bind names a
+       * clip: the Rim Elm windmill, swinging house doors). Each gets its own
+       * mesh instance so its clip advances independently; re-posed per frame
+       * from the engine's live prop-bank cursor. See `_frame`. */
+      this.animProps = [];   /* [{ meshId, i, slot, anim, lastFrame }] */
+      /* Field pause menu (Start): `null` when closed, else
+       * `{ screen: 'top'|'items'|'status', cursor, itemCursor, statusCursor,
+       *    model }`. While open the field freezes and the overlay renders off
+       * `model` (the engine's live party / inventory / gold). */
+      this.fieldMenu = null;
+      /* Last engine state handed to the HUD - lets the menu gate on Field
+       * mode / no-dialog before opening. */
+      this._hudState = null;
       /* Follow camera. `halfWidth` is the ortho-equivalent half-window the shared
        * orbit projection consumes (smaller = closer); 520 frames a ~130-unit
        * character at roughly the on-screen height retail's follow camera gives
@@ -213,6 +230,16 @@
       this._fpsAccum = 0;
       this._fpsFrames = 0;
       this._fpsLast = performance.now();
+      /* Fixed-timestep sim clock. The engine's field / motion VMs are authored
+       * for a fixed 60 Hz tick (retail's vsync-locked field loop; the native
+       * window drives it off a wall-clock accumulator, `Window::drain_ticks`,
+       * `TICK_DT = 1/60`). requestAnimationFrame fires at the DISPLAY refresh -
+       * 120/144 Hz on a high-refresh monitor - so ticking once per rAF ran the
+       * whole world (NPC walkers included) at 2-2.4x speed, which is the "NPCs
+       * zip around" symptom. Accumulate real elapsed time and run only as many
+       * 1/60 s ticks as have actually elapsed (capped so a stall can't spiral). */
+      this._simAccum = 0;
+      this._simLast = performance.now();
       /* Last frame's draw list + world extent, kept on the instance so the VR
        * loop can re-issue the same draw once per eye without re-ticking the
        * engine. */
@@ -418,6 +445,7 @@
       this.staticDraws = [];
       this.player = null;
       this.npcs = [];
+      this.animProps = [];
 
       this.renderer.uploadVram(rt.field_vram_bytes());
 
@@ -454,12 +482,38 @@
         used.add(key);
         return meshId;
       };
+      /* Per-animated-placement mesh id space (above the shared env-slot ids and
+       * the posed frame-0 variants, below the player / NPC ids). One mesh per
+       * animated placement so two props sharing an env slot can sit on
+       * different clip frames. */
+      const ANIM_PROP_BASE = 800000;
+      const uploadPosedInstance = (meshId, slot, anim) => {
+        try { rt.field_mesh_posed(slot, anim); }
+        catch (e) { return false; }
+        const pos = rt.field_mesh_positions();
+        const idx = rt.field_mesh_indices();
+        if (!pos.length || !idx.length) return false;
+        const flat = rt.field_mesh_flat_rgba();
+        this.renderer.uploadSceneMesh(meshId, pos, rt.field_mesh_uvs(),
+          rt.field_mesh_cba_tsb(), idx, flat.length ? flat : null);
+        return true;
+      };
       const isSky = (window.FieldSceneView && window.FieldSceneView.isSkyMesh)
         || (() => false);
       const push = (slots, pos, rots, anims) => {
         for (let i = 0; i < slots.length; i++) {
-          const meshId = ensure(slots[i], anims ? anims[i] : 0);
-          if (meshId < 0) continue;
+          const anim = anims ? anims[i] : 0;
+          let meshId, animRec = null;
+          if (anim) {
+            /* Animated prop: its own instance, uploaded at the rest pose
+             * (frame 0) and re-posed per frame from the engine's live cursor. */
+            meshId = ANIM_PROP_BASE + i;
+            if (!uploadPosedInstance(meshId, slots[i], anim)) continue;
+            animRec = { meshId, i, slot: slots[i], anim, lastFrame: 0 };
+          } else {
+            meshId = ensure(slots[i], 0);
+            if (meshId < 0) continue;
+          }
           /* Sky domes and kilometre-wide horizon planes read as sky only from
            * the retail in-world camera; from a follow camera inside them they
            * are a wall in front of the lens. Same classifier the full-map view
@@ -475,6 +529,7 @@
           /* World box for the occluder test, baked once (see `_frame`). */
           draw.box = placementWorldBox(aabb, draw);
           this.staticDraws.push(draw);
+          if (animRec) this.animProps.push(animRec);
         }
       };
       push(rt.field_terrain_slots(), rt.field_terrain_positions(), rt.field_terrain_rot_y(), null);
@@ -593,6 +648,84 @@
     /* Held-key state, for the on-screen control legend. */
     heldKeys() { return Array.from(this.held); }
 
+    /* ---------- field pause menu (Bug 1) ---------- */
+
+    /* Drive the field pause menu from this frame's just-pressed edges (the
+     * `pulse` set, read before the engine tick consumes it). Returns `true`
+     * when the menu is up, so `_frame` freezes the field while it is - the
+     * retail pause menu holds the world in SceneMode::Menu. */
+    _updateFieldMenu() {
+      const p = this.pulse;
+      const startEdge = p.has('Enter');
+      if (!this.fieldMenu) {
+        if (startEdge && this._canOpenFieldMenu()) {
+          this._openFieldMenu();
+          p.clear();
+          this._repack();
+          return true;
+        }
+        return false;
+      }
+      const up = p.has('ArrowUp') || p.has('KeyW');
+      const down = p.has('ArrowDown') || p.has('KeyS');
+      const cross = p.has('KeyZ') || p.has('Space');
+      const circle = p.has('KeyX');
+      this._menuInput({ up, down, cross, circle, start: startEdge });
+      /* The menu owns every edge while it is up - clear them so none leak into
+       * the frozen field on the next tick. */
+      p.clear();
+      this._repack();
+      return true;
+    }
+
+    /* Start only opens the menu in ordinary field play - not on the world map,
+     * in battle, or while a dialogue box is up (Start is inert there in
+     * retail). */
+    _canOpenFieldMenu() {
+      let mode = '';
+      try { mode = this.rt.scene_mode(); } catch (e) { return false; }
+      if (mode !== 'Field') return false;
+      if (this._hudState && this._hudState.dialog) return false;
+      return true;
+    }
+
+    _openFieldMenu() {
+      let model = null;
+      try { model = JSON.parse(this.rt.field_menu_model_json() || 'null'); }
+      catch (e) { model = null; }
+      this.fieldMenu = { screen: 'top', cursor: 0, itemCursor: 0, statusCursor: 0, model };
+    }
+
+    /* One frame of menu navigation. Start closes from anywhere; at the top
+     * level Cross opens the Item / Status sub-panel and Circle closes; in a
+     * sub-panel Circle backs out and Up/Down scroll the list. */
+    _menuInput({ up, down, cross, circle, start }) {
+      const m = this.fieldMenu;
+      if (start) { this.fieldMenu = null; return; }
+      if (m.screen === 'top') {
+        const n = FIELD_MENU_ROWS.length;
+        if (up) m.cursor = (m.cursor + n - 1) % n;
+        if (down) m.cursor = (m.cursor + 1) % n;
+        if (circle) { this.fieldMenu = null; return; }
+        if (cross) {
+          const row = FIELD_MENU_ROWS[m.cursor];
+          if (row === 'Item') m.screen = 'items';
+          else if (row === 'Status') m.screen = 'status';
+          /* Magic / Arts / Equip / Config have no browser panel yet. */
+        }
+        return;
+      }
+      if (circle) { m.screen = 'top'; return; }
+      const list = m.screen === 'items'
+        ? (m.model && m.model.items) || []
+        : (m.model && m.model.party) || [];
+      const key = m.screen === 'items' ? 'itemCursor' : 'statusCursor';
+      if (list.length) {
+        if (up) m[key] = (m[key] + list.length - 1) % list.length;
+        if (down) m[key] = (m[key] + 1) % list.length;
+      }
+    }
+
     /* ---------- loop ---------- */
 
     start() {
@@ -628,42 +761,78 @@
     /* One engine frame + one draw (the draw is skipped while VR presents). */
     _frame(skipDraw) {
       const rt = this.rt;
-      const advance = !this.paused || this.stepOnce;
+      const stepping = this.stepOnce;
+      const advance = !this.paused || stepping;
       this.stepOnce = false;
 
-      if (advance) {
-        /* VR first-person owns the azimuth (the gaze) and merges its stick
-         * pad word over the keyboard's; otherwise the follow camera rules. */
-        if (this._vrDrive) {
-          rt.set_camera_azimuth(this._vrDrive.azimuth);
-          rt.set_pad(this.pad | this._vrDrive.pad);
+      /* Field pause menu (Start): consumes this frame's edges and, while up,
+       * freezes the field. Must run before the tick reads the pad. */
+      const menuOpen = this._updateFieldMenu();
+
+      if (advance && !menuOpen) {
+        /* Run the engine at a fixed 60 Hz regardless of the display refresh
+         * (see the `_simAccum` note in the constructor). `Step 1 frame` forces
+         * exactly one tick; free play consumes the real elapsed time. */
+        const TICK_DT = 1000 / 60;
+        let steps;
+        if (stepping) {
+          steps = 1;
+          this._simAccum = 0;
+          this._simLast = performance.now();
         } else {
-          rt.set_camera_azimuth(azimuthUnits(this.cam.yaw));
-          rt.set_pad(this.pad);
+          const now = performance.now();
+          this._simAccum += now - this._simLast;
+          this._simLast = now;
+          /* Cap the backlog so a long stall (hidden tab, GC pause) can't
+           * unleash a burst of catch-up ticks - the native window caps at
+           * 4 ticks/frame the same way. */
+          if (this._simAccum > TICK_DT * 4) this._simAccum = TICK_DT * 4;
+          steps = Math.floor(this._simAccum / TICK_DT);
+          this._simAccum -= steps * TICK_DT;
         }
-        /* The latched press edges have now been seen by exactly one tick. */
-        this.pulse.clear();
-        this._repack();
-        let entered = '';
-        try { entered = rt.tick_frame(); } catch (e) {
-          this._onEngineTrap('engine tick', e);
-          return;
-        }
-        if (entered) {
-          /* The engine walked through a door: its scene swapped under us, so the
-           * geometry has to swap too. A trap while rebuilding the new scene's
-           * geometry is just as fatal as one in the tick, so route it through
-           * recovery too. */
-          try {
-            this.scene = entered;
-            this._rebuild();
-            if (this.vr) this.vr.respawn();
-            if (this.opts.onScene) this.opts.onScene(entered);
-          } catch (e) {
-            this._onEngineTrap('scene rebuild', e);
+        for (let s = 0; s < steps; s++) {
+          /* VR first-person owns the azimuth (the gaze) and merges its stick
+           * pad word over the keyboard's; otherwise the follow camera rules. */
+          if (this._vrDrive) {
+            rt.set_camera_azimuth(this._vrDrive.azimuth);
+            rt.set_pad(this.pad | this._vrDrive.pad);
+          } else {
+            rt.set_camera_azimuth(azimuthUnits(this.cam.yaw));
+            rt.set_pad(this.pad);
+          }
+          /* A tap's just-pressed edge fires on the first tick of this frame
+           * only; later catch-up ticks see the held set, so a one-frame tap
+           * lands as exactly one edge however many ticks the frame runs. */
+          this.pulse.clear();
+          this._repack();
+          let entered = '';
+          try { entered = rt.tick_frame(); } catch (e) {
+            this._onEngineTrap('engine tick', e);
             return;
           }
+          if (entered) {
+            /* The engine walked through a door: its scene swapped under us, so
+             * the geometry has to swap too. A trap while rebuilding the new
+             * scene's geometry is just as fatal as one in the tick, so route it
+             * through recovery too. */
+            try {
+              this.scene = entered;
+              this._rebuild();
+              if (this.vr) this.vr.respawn();
+              if (this.opts.onScene) this.opts.onScene(entered);
+            } catch (e) {
+              this._onEngineTrap('scene rebuild', e);
+              return;
+            }
+            /* Don't keep feeding this frame's input into the freshly-loaded
+             * scene - resume ticking it next frame. */
+            break;
+          }
         }
+      } else {
+        /* Keep the sim clock current while paused so unpausing doesn't dump the
+         * accumulated wall-clock gap as a burst of catch-up ticks. */
+        this._simLast = performance.now();
       }
 
       /* The per-frame READ of the engine's live pose + NPC transforms runs the
@@ -709,6 +878,24 @@
         });
       }
 
+      /* Animated environment props: advance each to the engine's live prop-bank
+       * cursor. The windmill's sails spin continuously; a house door swings on
+       * contact. A prop resting on frame 0 is left as its uploaded rest pose,
+       * and one whose cursor has moved is re-posed - only when the frame
+       * actually changed, not once per rendered frame. */
+      if (advance && this.animProps.length) {
+        const pf = rt.field_placement_frames();
+        for (const p of this.animProps) {
+          const f = (p.i < pf.length) ? pf[p.i] : -1;
+          if (f < 0 || f === p.lastFrame) continue;
+          const posed = rt.field_mesh_posed_frame_positions(p.slot, p.anim, f);
+          if (posed.length) {
+            this.renderer.updateSceneMeshPositions(p.meshId, posed);
+            p.lastFrame = f;
+          }
+        }
+      }
+
       /* NPCs: advance each clip and draw at the world's live position. A clip is
        * a short loop, so the pose only rebuilds when the playhead actually moves
        * to a new keyframe - not once per rendered frame. */
@@ -751,8 +938,14 @@
         this._fpsLast = now;
       }
       if (this.opts.onState) {
-        try { this.opts.onState(JSON.parse(rt.state_json()), this.fps); }
-        catch (e) { /* a malformed frame must not kill the loop */ }
+        try {
+          const st = JSON.parse(rt.state_json());
+          this._hudState = st;
+          /* Hand the field-menu model to the HUD so the page renders the
+           * overlay (the menu is JS-owned; the engine state carries the rest). */
+          st.menu = this.fieldMenu;
+          this.opts.onState(st, this.fps);
+        } catch (e) { /* a malformed frame must not kill the loop */ }
       }
     }
 

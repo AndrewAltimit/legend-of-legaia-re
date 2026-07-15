@@ -1142,6 +1142,22 @@ export class LegaiaRuntime {
     field_ground_quad_count(): number;
     field_ground_uvs(): Uint8Array;
     /**
+     * Field pause-menu model: the party (battle order) + inventory + gold the
+     * page's menu overlay renders when the player presses Start. Shape:
+     * ```text
+     * { "gold": 240,
+     *   "party": [{ "name": "Vahn", "level": 1, "hp": 60, "hp_max": 60,
+     *               "mp": 8, "mp_max": 8 }, ...],
+     *   "items": [{ "id": 32, "name": "Healing Leaf", "count": 3 }, ...] }
+     * ```
+     * `null` before a disc scene is entered. Item labels come from the SCUS
+     * item-name table ([`Self::load_disc`]); a PROT.DAT-only load falls back to
+     * the raw id. The retail pause menu is a native-only draw path (glyph atlas
+     * + window-descriptor table); this feeds the browser's HTML overlay
+     * equivalent so Start still surfaces the party / items on the play page.
+     */
+    field_menu_model_json(): string;
+    /**
      * Select + build environment-pack slot `slot`; subsequent `field_mesh_*`
      * reads return that mesh.
      */
@@ -1161,6 +1177,17 @@ export class LegaiaRuntime {
      * plain unposed build ([`Self::field_mesh`]).
      */
     field_mesh_posed(slot: number, anim_id: number): number;
+    /**
+     * Positions of environment-pack slot `slot` **posed at clip frame
+     * `frame`** of scene ANM record `anim_id - 1` - the per-frame re-pose the
+     * draw walker (`FUN_8001B964`) does off a placed prop's live cursor.
+     * Same vertex order as [`Self::field_mesh_posed`]'s frame-0 build (the two
+     * differ only in the per-object transform), so the page can upload the
+     * mesh once and rewrite just its positions each frame. Empty when the pose
+     * can't resolve (no bundle / bone-count mismatch) - the caller then leaves
+     * the prop at its rest pose.
+     */
+    field_mesh_posed_frame_positions(slot: number, anim_id: number, frame: number): Float32Array;
     field_mesh_positions(): Float32Array;
     field_mesh_uvs(): Uint8Array;
     /**
@@ -1170,6 +1197,17 @@ export class LegaiaRuntime {
      * prop's multi-object parts heap on the origin.
      */
     field_placement_anim_ids(): Uint32Array;
+    /**
+     * Live clip frame of each placement (parallel to
+     * [`Self::field_placement_slots`]): `-1` for a static prop (no anim, or
+     * no live prop-bank entry), else the prop's current cursor frame
+     * (`PropAnimBank::frame`, the `actor+0x68 >> 4` the draw walker poses
+     * from). The world advances every prop's cursor each field tick
+     * (`tick_prop_interactions` -> `PropAnimBank::tick_anims`, retail's
+     * `FUN_800204F8`), so an animated prop - the windmill sails, a swinging
+     * door mid-swing - reports a changing frame, and the page re-poses it.
+     */
+    field_placement_frames(): Int32Array;
     field_placement_positions(): Float32Array;
     field_placement_rot_y(): Uint16Array;
     /**
@@ -2795,14 +2833,17 @@ export interface InitOutput {
     readonly legaiaruntime_field_ground_positions: (a: number) => [number, number];
     readonly legaiaruntime_field_ground_quad_count: (a: number) => number;
     readonly legaiaruntime_field_ground_uvs: (a: number) => [number, number];
+    readonly legaiaruntime_field_menu_model_json: (a: number) => [number, number];
     readonly legaiaruntime_field_mesh: (a: number, b: number) => [number, number, number];
     readonly legaiaruntime_field_mesh_cba_tsb: (a: number) => [number, number];
     readonly legaiaruntime_field_mesh_flat_rgba: (a: number) => [number, number];
     readonly legaiaruntime_field_mesh_indices: (a: number) => [number, number];
     readonly legaiaruntime_field_mesh_posed: (a: number, b: number, c: number) => [number, number, number];
+    readonly legaiaruntime_field_mesh_posed_frame_positions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly legaiaruntime_field_mesh_positions: (a: number) => [number, number];
     readonly legaiaruntime_field_mesh_uvs: (a: number) => [number, number];
     readonly legaiaruntime_field_placement_anim_ids: (a: number) => [number, number];
+    readonly legaiaruntime_field_placement_frames: (a: number) => [number, number];
     readonly legaiaruntime_field_placement_positions: (a: number) => [number, number];
     readonly legaiaruntime_field_placement_rot_y: (a: number) => [number, number];
     readonly legaiaruntime_field_placement_slots: (a: number) => [number, number];
