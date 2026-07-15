@@ -85,6 +85,11 @@ fn main() -> Result<()> {
                 output,
                 patch,
             } => translate::cmd_import(&input, &pack, output.as_deref(), patch.as_deref()),
+            cli::TranslateCmd::LiftOfficial {
+                from,
+                target,
+                output,
+            } => translate::cmd_lift_official(&from, &target, &output),
             cli::TranslateCmd::DiffDisc { input, other } => {
                 translate::cmd_diff_disc(&input, &other)
             }

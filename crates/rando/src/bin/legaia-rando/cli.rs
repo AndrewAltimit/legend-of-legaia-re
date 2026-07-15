@@ -283,6 +283,25 @@ pub(crate) enum TranslateCmd {
         #[arg(long)]
         other: PathBuf,
     },
+    /// Lift an **official PAL localization** (FR/DE/IT SCES disc) into a
+    /// USA-keyed working pack: name tables id-for-id, dialog by positional
+    /// segment pairing. Emits a filled pack (source = USA text, translation =
+    /// official localized text) to `-o`.
+    ///
+    /// The output carries the game's copyrighted text - keep it local, never
+    /// commit it. Only `translate strip`-ed distributable packs are shareable.
+    LiftOfficial {
+        /// The official-localization disc to lift from (`.bin`, a PAL SCES
+        /// build - SCES_019.44 FR / .45 DE / .46 IT).
+        #[arg(long)]
+        from: PathBuf,
+        /// The USA target disc whose coordinate space the pack is keyed to.
+        #[arg(long)]
+        target: PathBuf,
+        /// Where to write the filled working pack (YAML). Scratchpad only.
+        #[arg(long, short)]
+        output: PathBuf,
+    },
     /// Apply a filled pack to a copy of a disc. Untranslated entries are
     /// left byte-identical; every write is same-size in place and each
     /// touched sector's EDC/ECC is re-encoded.

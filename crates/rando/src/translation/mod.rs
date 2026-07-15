@@ -30,6 +30,7 @@
 pub mod diff;
 pub mod export;
 pub mod import;
+pub mod lift;
 pub mod markup;
 pub mod pack;
 pub mod segments;

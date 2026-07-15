@@ -6,7 +6,7 @@ use anyhow::{Context, Result, bail};
 
 use legaia_rando::disc::DiscPatcher;
 use legaia_rando::translation::{
-    LanguagePack, diff, export_pack, import_pack,
+    LanguagePack, diff, export_pack, import_pack, lift,
     markup::{self, Target},
 };
 use legaia_rando::{apply, ppf};
@@ -281,6 +281,63 @@ pub(crate) fn cmd_diff_disc(input: &Path, other: &Path) -> Result<()> {
             .collect();
         println!("  {}", line.join("  "));
     }
+    Ok(())
+}
+
+pub(crate) fn cmd_lift_official(from: &Path, target: &Path, output: &Path) -> Result<()> {
+    let source = DiscPatcher::open(load_image(from)?).context("parse source (PAL) disc image")?;
+    let usa = DiscPatcher::open(load_image(target)?).context("parse target (USA) disc image")?;
+    let (pack, rep) = lift::lift_official(&usa, &source)?;
+    write_pack(&pack, output)?;
+
+    println!("lifted {} localization from {}", rep.language, rep.exe_name);
+    println!("name tables:");
+    for t in &rep.tables {
+        if t.located {
+            println!(
+                "  {:<20} located @ 0x{:08x} ({:.0}% valid), {} strings paired",
+                t.name,
+                t.pal_base,
+                t.valid_fraction * 100.0,
+                t.paired
+            );
+        } else {
+            println!(
+                "  {:<20} NOT located (pinned base failed validation)",
+                t.name
+            );
+        }
+    }
+    println!(
+        "  scus strings: {} filled, {} unmapped; party names: {} / {} filled",
+        rep.names_filled, rep.names_unmapped, rep.party_filled, rep.party_total
+    );
+    let pct = |n: usize, d: usize| {
+        if d == 0 {
+            100.0
+        } else {
+            100.0 * n as f64 / d as f64
+        }
+    };
+    println!(
+        "dialog (MAN): {} / {} paired ({:.1}%), {} unpaired",
+        rep.man_paired,
+        rep.man_total,
+        pct(rep.man_paired, rep.man_total),
+        rep.man_unpaired(),
+    );
+    println!(
+        "dialog (raw): {} / {} paired ({:.1}%), {} unpaired",
+        rep.raw_paired,
+        rep.raw_total,
+        pct(rep.raw_paired, rep.raw_total),
+        rep.raw_unpaired(),
+    );
+    println!("wrote {}", output.display());
+    println!(
+        "NB: this pack contains the game's text - keep it out of version control / \
+         redistribution."
+    );
     Ok(())
 }
 
