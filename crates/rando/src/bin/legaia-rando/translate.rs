@@ -234,6 +234,22 @@ pub(crate) fn cmd_import(
         report.already_applied,
         report.untranslated
     );
+    for s in report.section_counts(&pack) {
+        if s.filled == 0 {
+            continue;
+        }
+        println!(
+            "  {:20} {:5} of {:5} applied{}",
+            s.name,
+            s.applied + s.already_applied,
+            s.filled,
+            if s.skipped > 0 {
+                format!(" ({} skipped)", s.skipped)
+            } else {
+                String::new()
+            }
+        );
+    }
     for (key, msg) in &report.issues {
         println!("  [skip] {key}: {msg}");
     }

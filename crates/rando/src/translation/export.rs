@@ -84,9 +84,16 @@ impl SceneManText {
     }
 
     /// Recompress the (mutated) MAN; `None` if it would overflow the
-    /// original compressed footprint.
+    /// original compressed footprint. Falls back to the optimal-parse
+    /// encoder when the fast greedy parse just misses the budget (a couple
+    /// of retail MANs have zero compressed slack, and translated text is
+    /// less repetitive than the source).
     pub fn repack(&self) -> Option<Vec<u8>> {
         let stream = legaia_lzs::compress(&self.decoded);
+        if stream.len() <= self.compressed_budget {
+            return Some(stream);
+        }
+        let stream = legaia_lzs::compress_optimal(&self.decoded);
         (stream.len() <= self.compressed_budget).then_some(stream)
     }
 }

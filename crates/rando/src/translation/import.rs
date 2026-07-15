@@ -52,12 +52,96 @@ pub struct ImportReport {
     /// Per-entry problems: `(key, message)`. Errors never abort the whole
     /// import - the entry is skipped and the rest proceeds.
     pub issues: Vec<(String, String)>,
+    /// Keys of the entries counted in [`Self::applied`].
+    pub applied_keys: Vec<String>,
+    /// Keys of the entries counted in [`Self::already_applied`].
+    pub already_keys: Vec<String>,
+}
+
+/// Per-section outcome row (see [`ImportReport::section_counts`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SectionCounts {
+    /// Section name (the pack serialization name, e.g. `scene_dialog`).
+    pub name: &'static str,
+    /// Entries in the pack's section.
+    pub total: usize,
+    /// Entries a translator filled in (the ones import acts on).
+    pub filled: usize,
+    /// Filled entries written to the image.
+    pub applied: usize,
+    /// Filled entries whose translation was already on the disc.
+    pub already_applied: usize,
+    /// Filled entries skipped with a diagnostic (see the issues list).
+    pub skipped: usize,
 }
 
 impl ImportReport {
     fn issue(&mut self, key: &str, msg: impl Into<String>) {
         self.issues.push((key.to_string(), msg.into()));
     }
+
+    /// Absorb another report's counters + diagnostics (used to combine the
+    /// two-phase dialog / name imports into one user-facing report).
+    pub fn merge(&mut self, other: ImportReport) {
+        self.applied += other.applied;
+        self.already_applied += other.already_applied;
+        self.untranslated += other.untranslated;
+        self.issues.extend(other.issues);
+        self.applied_keys.extend(other.applied_keys);
+        self.already_keys.extend(other.already_keys);
+    }
+
+    /// Fold this report against the pack it came from into per-section
+    /// applied / already-applied / skipped counts. `skipped` counts filled
+    /// entries that produced a diagnostic; a filled entry the report never
+    /// saw (e.g. a phase import that excluded its section) counts in none of
+    /// the outcome columns.
+    pub fn section_counts(&self, pack: &LanguagePack) -> Vec<SectionCounts> {
+        use std::collections::HashSet;
+        let applied: HashSet<&str> = self.applied_keys.iter().map(String::as_str).collect();
+        let already: HashSet<&str> = self.already_keys.iter().map(String::as_str).collect();
+        let skipped: HashSet<&str> = self.issues.iter().map(|(k, _)| k.as_str()).collect();
+        pack.sections
+            .iter()
+            .map(|(name, entries)| {
+                let mut row = SectionCounts {
+                    name,
+                    total: entries.len(),
+                    ..Default::default()
+                };
+                for e in entries {
+                    if !e.is_filled() {
+                        continue;
+                    }
+                    row.filled += 1;
+                    if applied.contains(e.key.as_str()) {
+                        row.applied += 1;
+                    } else if already.contains(e.key.as_str()) {
+                        row.already_applied += 1;
+                    } else if skipped.contains(e.key.as_str()) {
+                        row.skipped += 1;
+                    }
+                }
+                row
+            })
+            .collect()
+    }
+}
+
+/// Which key population an import pass touches. The site patcher splits a
+/// pack in two: dialog first (its `man:` offsets predate any record
+/// relocation by the door / starting-bag randomizers), SCUS name tables last
+/// (so randomizer passes that classify items by their **English** names -
+/// the equipment-drop gear pool - still see the retail names). See
+/// `docs/tooling/translation.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportPhase {
+    /// Every entry (the CLI single-shot import).
+    All,
+    /// Only `man:` / `raw:` dialog-segment entries.
+    DialogOnly,
+    /// Only `scus:` string / party-name entries.
+    NamesOnly,
 }
 
 /// Parsed provenance key.
@@ -230,6 +314,7 @@ fn plan_scus_str(
     let cur = &tail[..cur_len];
     if cur == translated.as_slice() {
         report.already_applied += 1;
+        report.already_keys.push(entry.key.clone());
         return None;
     }
     // The write may never leave the string's own dead span on THIS disc: its
@@ -290,6 +375,7 @@ fn plan_scus_party(
     let cur_len = field.iter().position(|&b| b == 0).unwrap_or(field.len());
     if &field[..cur_len] == translated.as_slice() {
         report.already_applied += 1;
+        report.already_keys.push(entry.key.clone());
         return None;
     }
     // Fixed-width field: the write is bounded by the field itself, so a
@@ -341,6 +427,7 @@ fn apply_segment_edit(
     let padded = pad_segment(translated, len);
     if &buf[off..term] == padded.as_slice() {
         report.already_applied += 1;
+        report.already_keys.push(entry.key.clone());
         return None;
     }
     match source {
@@ -366,6 +453,19 @@ fn apply_segment_edit(
 
 /// Apply `pack` to the patcher's image. Untranslated entries are untouched.
 pub fn import_pack(patcher: &mut DiscPatcher, pack: &LanguagePack) -> Result<ImportReport> {
+    import_pack_phase(patcher, pack, ImportPhase::All)
+}
+
+/// [`import_pack`] restricted to one key population (see [`ImportPhase`]).
+/// Entries outside the phase are ignored entirely - they appear in none of
+/// the report's counters - so running `DialogOnly` then `NamesOnly` and
+/// [`ImportReport::merge`]-ing the two reports counts every entry exactly
+/// once, identically to a single `All` run.
+pub fn import_pack_phase(
+    patcher: &mut DiscPatcher,
+    pack: &LanguagePack,
+    phase: ImportPhase,
+) -> Result<ImportReport> {
     let mut report = ImportReport::default();
 
     // Group the work by write mechanism.
@@ -374,11 +474,27 @@ pub fn import_pack(patcher: &mut DiscPatcher, pack: &LanguagePack) -> Result<Imp
     let mut raw_work: Vec<(usize, usize, &Entry)> = Vec::new();
     for (_, entries) in pack.sections.iter() {
         for e in entries {
+            let key = parse_key(&e.key);
+            let in_phase = match (&key, phase) {
+                (_, ImportPhase::All) => true,
+                (Some(Key::Man { .. }) | Some(Key::Raw { .. }), ImportPhase::DialogOnly) => true,
+                (
+                    Some(Key::ScusStr { .. }) | Some(Key::ScusParty { .. }),
+                    ImportPhase::NamesOnly,
+                ) => true,
+                // Unrecognized keys are diagnosed once, in the names (last)
+                // phase, so a dialog+names pair reports them exactly once.
+                (None, ImportPhase::NamesOnly) => true,
+                _ => false,
+            };
+            if !in_phase {
+                continue;
+            }
             if e.translation.trim().is_empty() {
                 report.untranslated += 1;
                 continue;
             }
-            match parse_key(&e.key) {
+            match key {
                 Some(Key::ScusStr { .. }) | Some(Key::ScusParty { .. }) => scus_work.push(e),
                 Some(Key::Man { entry, off }) => {
                     man_work.entry(entry).or_default().push((off, e));
@@ -405,6 +521,7 @@ pub fn import_pack(patcher: &mut DiscPatcher, pack: &LanguagePack) -> Result<Imp
                 patcher.patch_named_file("SCUS_942.54", off as u64, &bytes)?;
                 scus[off..off + bytes.len()].copy_from_slice(&bytes);
                 report.applied += 1;
+                report.applied_keys.push(e.key.clone());
             }
         }
     }
@@ -460,10 +577,11 @@ pub fn import_pack(patcher: &mut DiscPatcher, pack: &LanguagePack) -> Result<Imp
         // The MAN must recompress into its original footprint. Translated text
         // is less repetitive than the source, so a scene can overflow by a few
         // bytes; roll back the costliest lines (longest first) one at a time
-        // rather than losing the whole scene's dialog.
+        // rather than losing the whole scene's dialog. `pop()` takes from the
+        // vector's tail, so an ASCENDING sort puts the longest line there.
         let mut stream = man.repack();
         if stream.is_none() {
-            applied.sort_by_key(|(_, before, _)| std::cmp::Reverse(before.len()));
+            applied.sort_by_key(|(_, before, _)| before.len());
             while stream.is_none()
                 && let Some((off, before, en)) = applied.pop()
             {
@@ -486,6 +604,9 @@ pub fn import_pack(patcher: &mut DiscPatcher, pack: &LanguagePack) -> Result<Imp
             Some(stream) if !applied.is_empty() => {
                 patcher.patch_prot_entry(entry_idx, man.man_offset as u64, &stream)?;
                 report.applied += applied.len();
+                report
+                    .applied_keys
+                    .extend(applied.iter().map(|(_, _, en)| en.key.clone()));
             }
             _ => {}
         }
@@ -516,6 +637,7 @@ pub fn import_pack(patcher: &mut DiscPatcher, pack: &LanguagePack) -> Result<Imp
         ) {
             patcher.patch_prot_entry(entry_idx, off as u64, &window[off..off + len])?;
             report.applied += 1;
+            report.applied_keys.push(en.key.clone());
         }
     }
 

@@ -33,5 +33,5 @@ pub mod pack;
 pub mod segments;
 
 pub use export::export_pack;
-pub use import::{ImportReport, import_pack};
+pub use import::{ImportPhase, ImportReport, SectionCounts, import_pack, import_pack_phase};
 pub use pack::{Entry, LanguagePack, PACK_FORMAT};
