@@ -74293,3 +74293,325 @@ sections:
   - key: 'raw:648:0x1a45'
     translation: 'debe estar derretido.'
     budget: 22
+  ui_menu:
+  - key: 'ui:899:0x801ce81c'
+    translation: 'No mostrar'
+    budget: 11
+  - key: 'ui:899:0x801ce828'
+    translation: 'Gradual'
+    budget: 7
+  - key: 'ui:899:0x801ce830'
+    translation: 'Inmediato'
+    budget: 11
+  - key: 'ui:899:0x801ce83c'
+    translation: 'Mostrar HP'
+    budget: 19
+  - key: 'ui:899:0x801ce850'
+    translation: '  Encuentros'
+    budget: 15
+  - key: 'ui:899:0x801ce860'
+    translation: '  Combates'
+    budget: 11
+  - key: 'ui:899:0x801ce86c'
+    translation: 'Vibrac. no'
+    budget: 15
+  - key: 'ui:899:0x801ce87c'
+    translation: 'Vibrac. si'
+    budget: 15
+  - key: 'ui:899:0x801ce88c'
+    translation: '  Eventos'
+    budget: 11
+  - key: 'ui:899:0x801ce898'
+    translation: 'Dual Shock'
+    budget: 11
+  - key: 'ui:899:0x801ce8a4'
+    translation: 'Voces no'
+    budget: 11
+  - key: 'ui:899:0x801ce8b0'
+    translation: 'Voces si'
+    budget: 11
+  - key: 'ui:899:0x801ce8bc'
+    translation: 'Voces bat.'
+    budget: 15
+  - key: 'ui:899:0x801ce8cc'
+    translation: 'Cor'
+    budget: 3
+  - key: 'ui:899:0x801ce8d0'
+    translation: 'Andar'
+    budget: 7
+  - key: 'ui:899:0x801ce8d8'
+    translation: 'Mov. campo'
+    budget: 11
+  - key: 'ui:899:0x801ce8e6'
+    translation: ' boton'
+    budget: 9
+  - key: 'ui:899:0x801ce8f0'
+    translation: 'Cruceta'
+    budget: 19
+  - key: 'ui:899:0x801ce904'
+    translation: 'Orden bat.'
+    budget: 15
+  - key: 'ui:899:0x801ce914'
+    translation: 'Orden'
+    budget: 7
+  - key: 'ui:899:0x801ce91c'
+    translation: 'Automat.'
+    budget: 11
+  - key: 'ui:899:0x801ce928'
+    translation: 'Elegir'
+    budget: 7
+  - key: 'ui:899:0x801ce930'
+    translation: 'Elegir ataque bat.'
+    budget: 23
+  - key: 'ui:899:0x801ce948'
+    translation: 'Lej'
+    budget: 3
+  - key: 'ui:899:0x801ce94c'
+    translation: 'Normal'
+    budget: 7
+  - key: 'ui:899:0x801ce954'
+    translation: 'Cerca'
+    budget: 7
+  - key: 'ui:899:0x801ce95c'
+    translation: 'Camara bat.'
+    budget: 15
+  - key: 'ui:899:0x801ce96c'
+    translation: 'Mono'
+    budget: 11
+  - key: 'ui:899:0x801ce978'
+    translation: 'Stereo'
+    budget: 7
+  - key: 'ui:899:0x801ce980'
+    translation: 'Sonido'
+    budget: 7
+  - key: 'ui:899:0x801ce988'
+    translation: 'Ozma'
+    budget: 7
+  - key: 'ui:899:0x801ce990'
+    translation: 'Terra'
+    budget: 7
+  - key: 'ui:899:0x801ce998'
+    translation: 'Meta'
+    budget: 7
+  - key: 'ui:899:0x801ce9a0'
+    translation: 'ATK'
+    budget: 3
+  - key: 'ui:899:0x801ce9a4'
+    translation: 'UDF'
+    budget: 3
+  - key: 'ui:899:0x801ce9a8'
+    translation: 'LDF'
+    budget: 3
+  - key: 'ui:899:0x801ce9ac'
+    translation: 'SPD'
+    budget: 3
+  - key: 'ui:899:0x801ce9b0'
+    translation: 'INT'
+    budget: 3
+  - key: 'ui:899:0x801ce9b4'
+    translation: 'AGL'
+    budget: 3
+  - key: 'ui:899:0x801ce9b8'
+    translation: 'Exp.'
+    budget: 11
+  - key: 'ui:899:0x801ce9c4'
+    translation: 'Sig. nivel'
+    budget: 11
+  - key: 'ui:899:0x801ce9d0'
+    translation: '@Objet.'
+    budget: 7
+  - key: 'ui:899:0x801ce9d8'
+    translation: '@Magia'
+    budget: 7
+  - key: 'ui:899:0x801ce9e0'
+    translation: '@Equipo'
+    budget: 7
+  - key: 'ui:899:0x801ce9e8'
+    translation: '@Estado'
+    budget: 7
+  - key: 'ui:899:0x801ce9f4'
+    translation: '@Opciones'
+    budget: 11
+  - key: 'ui:899:0x801cea00'
+    translation: '@Cargar'
+    budget: 7
+  - key: 'ui:899:0x801cea08'
+    translation: '@Guard.'
+    budget: 7
+  - key: 'ui:899:0x801cea10'
+    translation: '@Usar'
+    budget: 7
+  - key: 'ui:899:0x801cea18'
+    translation: '@Tirar'
+    budget: 11
+  - key: 'ui:899:0x801cea24'
+    translation: '@Ordenar'
+    budget: 11
+  - key: 'ui:899:0x801cea30'
+    translation: '@Ptos rest.'
+    budget: 15
+  - key: 'ui:899:0x801cea40'
+    translation: '@{c2:fe} gano'
+    budget: 15
+  - key: 'ui:899:0x801cea50'
+    translation: '@ punto(s).'
+    budget: 11
+  - key: 'ui:899:0x801cea60'
+    translation: '@Estas a punto'
+    budget: 19
+  - key: 'ui:899:0x801cea74'
+    translation: '@Tirar?'
+    budget: 11
+  - key: 'ui:899:0x801cea84'
+    translation: '@Si'
+    budget: 7
+  - key: 'ui:899:0x801cea8c'
+    translation: '@No'
+    budget: 3
+  - key: 'ui:899:0x801cea94'
+    translation: '@Salir afuera?'
+    budget: 27
+  - key: 'ui:899:0x801ceab4'
+    translation: '@Usar {c2:8a}.'
+    budget: 19
+  - key: 'ui:899:0x801ceac8'
+    translation: '@Correcto?'
+    budget: 15
+  - key: 'ui:899:0x801cead8'
+    translation: '@Mejor equipo'
+    budget: 15
+  - key: 'ui:899:0x801ceaec'
+    translation: '@MP usado'
+    budget: 11
+  - key: 'ui:899:0x801ceaf8'
+    translation: '@Estado'
+    budget: 11
+  - key: 'ui:899:0x801ceb04'
+    translation: '@ Habilid'
+    budget: 11
+  - key: 'ui:899:0x801ceb10'
+    translation: '@Golpes'
+    budget: 7
+  - key: 'ui:899:0x801ceb18'
+    translation: '@ATR:'
+    budget: 7
+  - key: 'ui:899:0x801ceb20'
+    translation: '@No tienes habilid.'
+    budget: 31
+  - key: 'ui:899:0x801ceb40'
+    translation: '@   Sin magia.'
+    budget: 23
+  - key: 'ui:899:0x801ceb58'
+    translation: '@AP usado'
+    budget: 11
+  - key: 'ui:899:0x801ceb64'
+    translation: '@Orden:'
+    budget: 11
+  - key: 'ui:899:0x801ceb70'
+    translation: '@No has aprendido golpes.'
+    budget: 35
+  - key: 'ui:899:0x801ceb94'
+    translation: '@Compr.'
+    budget: 7
+  - key: 'ui:899:0x801ceb9c'
+    translation: '@Vender'
+    budget: 7
+  - key: 'ui:899:0x801ceba4'
+    translation: '@Salir'
+    budget: 7
+  - key: 'ui:899:0x801cebac'
+    translation: '@Equipado'
+    budget: 11
+  - key: 'ui:899:0x801cebb8'
+    translation: '@No equipar'
+    budget: 15
+  - key: 'ui:899:0x801cebc8'
+    translation: '@Tienes'
+    budget: 7
+  - key: 'ui:899:0x801cebd4'
+    translation: '@Ningun'
+    budget: 7
+  - key: 'ui:899:0x801cebdc'
+    translation: '@Cuantas comprar?'
+    budget: 23
+  - key: 'ui:899:0x801cebf8'
+    translation: '@A objetos'
+    budget: 15
+  - key: 'ui:899:0x801cec0b'
+    translation: ' equipa'
+    budget: 12
+  - key: 'ui:899:0x801cec18'
+    translation: '@{c1:01} equipa'
+    budget: 15
+  - key: 'ui:899:0x801cec28'
+    translation: '@{c1:02} equipa'
+    budget: 15
+  - key: 'ui:899:0x801cec38'
+    translation: '@Cuantas vender?'
+    budget: 27
+  - key: 'ui:899:0x801cec54'
+    translation: '@Precio'
+    budget: 7
+  - key: 'ui:899:0x801cec5c'
+    translation: '@No vender'
+    budget: 15
+  - key: 'ui:899:0x801cec6c'
+    translation: '@Canjear'
+    budget: 11
+  - key: 'ui:898:0x801f4b98'
+    translation: 'Espir.'
+    budget: 7
+  - key: 'ui:898:0x801f4ba0'
+    translation: 'Defensa'
+    budget: 7
+  - key: 'ui:898:0x801f4ba8'
+    translation: 'Meta'
+    budget: 7
+  - key: 'ui:898:0x801f4bb2'
+    translation: 'Terra'
+    budget: 5
+  - key: 'ui:898:0x801f4bbc'
+    translation: 'Ozma'
+    budget: 7
+  - key: 'ui:898:0x801f4bd0'
+    translation: 'Meta obtuvo el poder de '
+    budget: 27
+  - key: 'ui:898:0x801f4bec'
+    translation: 'Terra obtuvo el poder de '
+    budget: 31
+  - key: 'ui:898:0x801f4c0c'
+    translation: 'Ozma obtuvo el poder de '
+    budget: 27
+  - key: 'ui:898:0x801f4c2c'
+    translation: 'Equipo {c1:01}'
+    budget: 11
+  - key: 'ui:898:0x801f4c38'
+    translation: ' gano la batalla!|Gana           Exp. y           G.'
+    budget: 63
+  - key: 'ui:898:0x801f4c78'
+    translation: 'Equipo {c1:01} aniquilado.'
+    budget: 27
+  - key: 'ui:898:0x801f4c94'
+    translation: ' se queda sin fuerza.'
+    budget: 23
+  - key: 'ui:898:0x801f4cac'
+    translation: ' escapo con exito.'
+    budget: 23
+  - key: 'ui:898:0x801f4cc4'
+    translation: ' no pudo escapar.'
+    budget: 19
+  - key: 'ui:898:0x801f4cd8'
+    translation: 'Equipo {c1:01} sorprendio.'
+    budget: 31
+  - key: 'ui:898:0x801f4cf8'
+    translation: '{c1:01} sorprendio.'
+    budget: 23
+  - key: 'ui:898:0x801f4d10'
+    translation: 'Emboscada!'
+    budget: 11
+  - key: 'ui:898:0x801f4d1c'
+    translation: 'Empezar'
+    budget: 7
+  - key: 'ui:898:0x801f4d24'
+    translation: 'Huir'
+    budget: 7

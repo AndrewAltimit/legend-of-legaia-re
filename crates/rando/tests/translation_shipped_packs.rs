@@ -105,7 +105,10 @@ fn shipped_pack_translations_encode_within_budget() {
                     "{name}.yaml: duplicate key {}",
                     e.key
                 );
-                let target = if e.key.starts_with("scus:") {
+                // `scus:` name-table and `ui:` overlay strings are
+                // NUL-terminated C strings (import encodes them with
+                // `CString`); the dialog sections are `0x1F`-lead segments.
+                let target = if e.key.starts_with("scus:") || e.key.starts_with("ui:") {
                     Target::CString
                 } else {
                     Target::Segment
@@ -138,6 +141,47 @@ fn shipped_pack_translations_encode_within_budget() {
     }
 }
 
+/// Every shipped pack fills the overlay UI-menu corpus (`ui:` keys): the
+/// pause-menu / options / shop / equip / status command labels and the
+/// in-battle system messages. Locks the multi-language UI-menu fill in place so
+/// a regression (a pack shipped without it) fails the build. Keyed by disc
+/// coordinate, so this asserts nothing about the game's own text.
+#[test]
+fn shipped_packs_cover_ui_menu() {
+    // A representative spread of menu (0899) + battle (0898) command labels
+    // every pack must translate. Coordinates, not text.
+    const REQUIRED: &[&str] = &[
+        "ui:899:0x801ce9d0", // @Items
+        "ui:899:0x801ce9d8", // @Magic
+        "ui:899:0x801ce9e0", // @Equip
+        "ui:899:0x801ce9e8", // @Status
+        "ui:899:0x801cea08", // @Save
+        "ui:899:0x801ceb94", // @Buy
+        "ui:899:0x801ceb9c", // @Sell
+        "ui:898:0x801f4d24", // Escape
+    ];
+    for (name, pack) in shipped_packs() {
+        let keys: std::collections::BTreeSet<&str> = pack
+            .sections
+            .ui_menu
+            .iter()
+            .map(|e| e.key.as_str())
+            .collect();
+        assert!(
+            pack.sections.ui_menu.len() >= 90,
+            "{name}.yaml ships only {} ui_menu entries - the overlay UI corpus \
+             should be filled",
+            pack.sections.ui_menu.len()
+        );
+        for want in REQUIRED {
+            assert!(
+                keys.contains(want),
+                "{name}.yaml is missing UI-menu key {want}"
+            );
+        }
+    }
+}
+
 /// Key shapes are the four disc coordinates the importer understands.
 #[test]
 fn shipped_pack_keys_are_disc_coordinates() {
@@ -151,6 +195,15 @@ fn shipped_pack_keys_are_disc_coordinates() {
                         .and_then(|h| u32::from_str_radix(h, 16).ok())
                         .is_some(),
                     ["scus", "party", n] => n.parse::<usize>().is_ok(),
+                    // `ui:<prot>:0x<va>` - overlay UI string at a virtual
+                    // address inside PROT overlay entry `prot`.
+                    ["ui", entry, va] => {
+                        entry.parse::<usize>().is_ok()
+                            && va
+                                .strip_prefix("0x")
+                                .and_then(|h| u32::from_str_radix(h, 16).ok())
+                                .is_some()
+                    }
                     [kind @ ("man" | "raw"), entry, off] => {
                         let _ = kind;
                         entry.parse::<usize>().is_ok()

@@ -67159,3 +67159,325 @@ sections:
   - key: 'raw:648:0x1a45'
     translation: 'deve sciolto ormai.'
     budget: 22
+  ui_menu:
+  - key: 'ui:899:0x801ce81c'
+    translation: 'Nascondi'
+    budget: 11
+  - key: 'ui:899:0x801ce828'
+    translation: 'Lento'
+    budget: 7
+  - key: 'ui:899:0x801ce830'
+    translation: 'Subito'
+    budget: 11
+  - key: 'ui:899:0x801ce83c'
+    translation: 'Mostra HP'
+    budget: 19
+  - key: 'ui:899:0x801ce850'
+    translation: '  Incontri'
+    budget: 15
+  - key: 'ui:899:0x801ce860'
+    translation: '  Lotte'
+    budget: 11
+  - key: 'ui:899:0x801ce86c'
+    translation: 'Vibraz. no'
+    budget: 15
+  - key: 'ui:899:0x801ce87c'
+    translation: 'Vibraz. si'
+    budget: 15
+  - key: 'ui:899:0x801ce88c'
+    translation: '  Eventi'
+    budget: 11
+  - key: 'ui:899:0x801ce898'
+    translation: 'Dual Shock'
+    budget: 11
+  - key: 'ui:899:0x801ce8a4'
+    translation: 'Voci no'
+    budget: 11
+  - key: 'ui:899:0x801ce8b0'
+    translation: 'Voci si'
+    budget: 11
+  - key: 'ui:899:0x801ce8bc'
+    translation: 'Voci lotta'
+    budget: 15
+  - key: 'ui:899:0x801ce8cc'
+    translation: 'Cor'
+    budget: 3
+  - key: 'ui:899:0x801ce8d0'
+    translation: 'Cammin.'
+    budget: 7
+  - key: 'ui:899:0x801ce8d8'
+    translation: 'Mov. campo'
+    budget: 11
+  - key: 'ui:899:0x801ce8e6'
+    translation: ' tasto'
+    budget: 9
+  - key: 'ui:899:0x801ce8f0'
+    translation: 'Freccette'
+    budget: 19
+  - key: 'ui:899:0x801ce904'
+    translation: 'Cmd lotta'
+    budget: 15
+  - key: 'ui:899:0x801ce914'
+    translation: 'Comando'
+    budget: 7
+  - key: 'ui:899:0x801ce91c'
+    translation: 'Auto'
+    budget: 11
+  - key: 'ui:899:0x801ce928'
+    translation: 'Scegli'
+    budget: 7
+  - key: 'ui:899:0x801ce930'
+    translation: 'Scelta attacco'
+    budget: 23
+  - key: 'ui:899:0x801ce948'
+    translation: 'Lon'
+    budget: 3
+  - key: 'ui:899:0x801ce94c'
+    translation: 'Normale'
+    budget: 7
+  - key: 'ui:899:0x801ce954'
+    translation: 'Vicino'
+    budget: 7
+  - key: 'ui:899:0x801ce95c'
+    translation: 'Cam lotta'
+    budget: 15
+  - key: 'ui:899:0x801ce96c'
+    translation: 'Mono'
+    budget: 11
+  - key: 'ui:899:0x801ce978'
+    translation: 'Stereo'
+    budget: 7
+  - key: 'ui:899:0x801ce980'
+    translation: 'Suono'
+    budget: 7
+  - key: 'ui:899:0x801ce988'
+    translation: 'Ozma'
+    budget: 7
+  - key: 'ui:899:0x801ce990'
+    translation: 'Terra'
+    budget: 7
+  - key: 'ui:899:0x801ce998'
+    translation: 'Meta'
+    budget: 7
+  - key: 'ui:899:0x801ce9a0'
+    translation: 'ATK'
+    budget: 3
+  - key: 'ui:899:0x801ce9a4'
+    translation: 'UDF'
+    budget: 3
+  - key: 'ui:899:0x801ce9a8'
+    translation: 'LDF'
+    budget: 3
+  - key: 'ui:899:0x801ce9ac'
+    translation: 'SPD'
+    budget: 3
+  - key: 'ui:899:0x801ce9b0'
+    translation: 'INT'
+    budget: 3
+  - key: 'ui:899:0x801ce9b4'
+    translation: 'AGL'
+    budget: 3
+  - key: 'ui:899:0x801ce9b8'
+    translation: 'Esp.'
+    budget: 11
+  - key: 'ui:899:0x801ce9c4'
+    translation: 'Liv. succ.'
+    budget: 11
+  - key: 'ui:899:0x801ce9d0'
+    translation: '@Oggett'
+    budget: 7
+  - key: 'ui:899:0x801ce9d8'
+    translation: '@Magia'
+    budget: 7
+  - key: 'ui:899:0x801ce9e0'
+    translation: '@Equip.'
+    budget: 7
+  - key: 'ui:899:0x801ce9e8'
+    translation: '@Stato'
+    budget: 7
+  - key: 'ui:899:0x801ce9f4'
+    translation: '@Opzioni'
+    budget: 11
+  - key: 'ui:899:0x801cea00'
+    translation: '@Carica'
+    budget: 7
+  - key: 'ui:899:0x801cea08'
+    translation: '@Salva'
+    budget: 7
+  - key: 'ui:899:0x801cea10'
+    translation: '@Usa'
+    budget: 7
+  - key: 'ui:899:0x801cea18'
+    translation: '@Getta'
+    budget: 11
+  - key: 'ui:899:0x801cea24'
+    translation: '@Ordina'
+    budget: 11
+  - key: 'ui:899:0x801cea30'
+    translation: '@Punti rim.'
+    budget: 15
+  - key: 'ui:899:0x801cea40'
+    translation: '@{c2:fe} ha'
+    budget: 15
+  - key: 'ui:899:0x801cea50'
+    translation: '@ punto(i).'
+    budget: 11
+  - key: 'ui:899:0x801cea60'
+    translation: '@Stai per'
+    budget: 19
+  - key: 'ui:899:0x801cea74'
+    translation: '@Gettare?'
+    budget: 11
+  - key: 'ui:899:0x801cea84'
+    translation: '@Si'
+    budget: 7
+  - key: 'ui:899:0x801cea8c'
+    translation: '@No'
+    budget: 3
+  - key: 'ui:899:0x801cea94'
+    translation: '@Uscire fuori?'
+    budget: 27
+  - key: 'ui:899:0x801ceab4'
+    translation: '@Usare {c2:8a}.'
+    budget: 19
+  - key: 'ui:899:0x801ceac8'
+    translation: '@Va bene?'
+    budget: 15
+  - key: 'ui:899:0x801cead8'
+    translation: '@Migl. equip'
+    budget: 15
+  - key: 'ui:899:0x801ceaec'
+    translation: '@MP usati'
+    budget: 11
+  - key: 'ui:899:0x801ceaf8'
+    translation: '@Stato'
+    budget: 11
+  - key: 'ui:899:0x801ceb04'
+    translation: '@ Abilita'
+    budget: 11
+  - key: 'ui:899:0x801ceb10'
+    translation: '@Mosse'
+    budget: 7
+  - key: 'ui:899:0x801ceb18'
+    translation: '@ATR:'
+    budget: 7
+  - key: 'ui:899:0x801ceb20'
+    translation: '@Nessuna abilita.'
+    budget: 31
+  - key: 'ui:899:0x801ceb40'
+    translation: '@   Niente magia.'
+    budget: 23
+  - key: 'ui:899:0x801ceb58'
+    translation: '@AP usati'
+    budget: 11
+  - key: 'ui:899:0x801ceb64'
+    translation: '@Comando:'
+    budget: 11
+  - key: 'ui:899:0x801ceb70'
+    translation: '@Nessuna mossa appresa.'
+    budget: 35
+  - key: 'ui:899:0x801ceb94'
+    translation: '@Compra'
+    budget: 7
+  - key: 'ui:899:0x801ceb9c'
+    translation: '@Vendi'
+    budget: 7
+  - key: 'ui:899:0x801ceba4'
+    translation: '@Esci'
+    budget: 7
+  - key: 'ui:899:0x801cebac'
+    translation: '@Equip.'
+    budget: 11
+  - key: 'ui:899:0x801cebb8'
+    translation: '@Non equip.'
+    budget: 15
+  - key: 'ui:899:0x801cebc8'
+    translation: '@Hai'
+    budget: 7
+  - key: 'ui:899:0x801cebd4'
+    translation: '@Nessun'
+    budget: 7
+  - key: 'ui:899:0x801cebdc'
+    translation: '@Quante comprare?'
+    budget: 23
+  - key: 'ui:899:0x801cebf8'
+    translation: '@Agli ogg.'
+    budget: 15
+  - key: 'ui:899:0x801cec0b'
+    translation: ' equipag'
+    budget: 12
+  - key: 'ui:899:0x801cec18'
+    translation: '@{c1:01} equip'
+    budget: 15
+  - key: 'ui:899:0x801cec28'
+    translation: '@{c1:02} equip'
+    budget: 15
+  - key: 'ui:899:0x801cec38'
+    translation: '@Quante vendere?'
+    budget: 27
+  - key: 'ui:899:0x801cec54'
+    translation: '@Prezzo'
+    budget: 7
+  - key: 'ui:899:0x801cec5c'
+    translation: '@Non vend.'
+    budget: 15
+  - key: 'ui:899:0x801cec6c'
+    translation: '@Scambia'
+    budget: 11
+  - key: 'ui:898:0x801f4b98'
+    translation: 'Spirito'
+    budget: 7
+  - key: 'ui:898:0x801f4ba0'
+    translation: 'Difesa'
+    budget: 7
+  - key: 'ui:898:0x801f4ba8'
+    translation: 'Meta'
+    budget: 7
+  - key: 'ui:898:0x801f4bb2'
+    translation: 'Terra'
+    budget: 5
+  - key: 'ui:898:0x801f4bbc'
+    translation: 'Ozma'
+    budget: 7
+  - key: 'ui:898:0x801f4bd0'
+    translation: 'Meta ottiene il potere di '
+    budget: 27
+  - key: 'ui:898:0x801f4bec'
+    translation: 'Terra ottiene il potere di '
+    budget: 31
+  - key: 'ui:898:0x801f4c0c'
+    translation: 'Ozma ottiene il potere di '
+    budget: 27
+  - key: 'ui:898:0x801f4c2c'
+    translation: 'Team {c1:01}'
+    budget: 11
+  - key: 'ui:898:0x801f4c38'
+    translation: ' ha vinto la lotta!|Ottieni           Exp. e           G.'
+    budget: 63
+  - key: 'ui:898:0x801f4c78'
+    translation: 'Team {c1:01} annientato.'
+    budget: 27
+  - key: 'ui:898:0x801f4c94'
+    translation: ' e senza forze.'
+    budget: 23
+  - key: 'ui:898:0x801f4cac'
+    translation: ' fugge con successo.'
+    budget: 23
+  - key: 'ui:898:0x801f4cc4'
+    translation: ' non e fuggito.'
+    budget: 19
+  - key: 'ui:898:0x801f4cd8'
+    translation: 'Team {c1:01} sorprende.'
+    budget: 31
+  - key: 'ui:898:0x801f4cf8'
+    translation: '{c1:01} sorprende il nemico.'
+    budget: 23
+  - key: 'ui:898:0x801f4d10'
+    translation: 'Imboscata!'
+    budget: 11
+  - key: 'ui:898:0x801f4d1c'
+    translation: 'Inizio'
+    budget: 7
+  - key: 'ui:898:0x801f4d24'
+    translation: 'Fuga'
+    budget: 7

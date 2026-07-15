@@ -62071,3 +62071,322 @@ sections:
   - key: 'raw:648:0x1a45'
     translation: 'musi byc stopiona.'
     budget: 22
+  ui_menu:
+  - key: 'ui:899:0x801ce81c'
+    translation: 'Ukryj'
+    budget: 11
+  - key: 'ui:899:0x801ce828'
+    translation: 'Powoli'
+    budget: 7
+  - key: 'ui:899:0x801ce830'
+    translation: 'Od razu'
+    budget: 11
+  - key: 'ui:899:0x801ce83c'
+    translation: 'Pokaz HP'
+    budget: 19
+  - key: 'ui:899:0x801ce850'
+    translation: '  Spotkania'
+    budget: 15
+  - key: 'ui:899:0x801ce860'
+    translation: '  Walki'
+    budget: 11
+  - key: 'ui:899:0x801ce86c'
+    translation: 'Wibrac. nie'
+    budget: 15
+  - key: 'ui:899:0x801ce87c'
+    translation: 'Wibrac. tak'
+    budget: 15
+  - key: 'ui:899:0x801ce88c'
+    translation: '  Zdarzen.'
+    budget: 11
+  - key: 'ui:899:0x801ce898'
+    translation: 'Dual Shock'
+    budget: 11
+  - key: 'ui:899:0x801ce8a4'
+    translation: 'Glosy nie'
+    budget: 11
+  - key: 'ui:899:0x801ce8b0'
+    translation: 'Glosy tak'
+    budget: 11
+  - key: 'ui:899:0x801ce8bc'
+    translation: 'Glosy walk'
+    budget: 15
+  - key: 'ui:899:0x801ce8cc'
+    translation: 'Bie'
+    budget: 3
+  - key: 'ui:899:0x801ce8d0'
+    translation: 'Chodz'
+    budget: 7
+  - key: 'ui:899:0x801ce8d8'
+    translation: 'Ruch pole'
+    budget: 11
+  - key: 'ui:899:0x801ce8e6'
+    translation: ' przycisk'
+    budget: 9
+  - key: 'ui:899:0x801ce8f0'
+    translation: 'Krzyzak'
+    budget: 19
+  - key: 'ui:899:0x801ce904'
+    translation: 'Rozkaz'
+    budget: 15
+  - key: 'ui:899:0x801ce914'
+    translation: 'Rozkaz'
+    budget: 7
+  - key: 'ui:899:0x801ce91c'
+    translation: 'Auto'
+    budget: 11
+  - key: 'ui:899:0x801ce928'
+    translation: 'Wybor'
+    budget: 7
+  - key: 'ui:899:0x801ce930'
+    translation: 'Wybor ataku'
+    budget: 23
+  - key: 'ui:899:0x801ce948'
+    translation: 'Dal'
+    budget: 3
+  - key: 'ui:899:0x801ce94c'
+    translation: 'Normal'
+    budget: 7
+  - key: 'ui:899:0x801ce954'
+    translation: 'Blisko'
+    budget: 7
+  - key: 'ui:899:0x801ce95c'
+    translation: 'Kam walki'
+    budget: 15
+  - key: 'ui:899:0x801ce96c'
+    translation: 'Mono'
+    budget: 11
+  - key: 'ui:899:0x801ce978'
+    translation: 'Stereo'
+    budget: 7
+  - key: 'ui:899:0x801ce980'
+    translation: 'Dzwiek'
+    budget: 7
+  - key: 'ui:899:0x801ce988'
+    translation: 'Ozma'
+    budget: 7
+  - key: 'ui:899:0x801ce990'
+    translation: 'Terra'
+    budget: 7
+  - key: 'ui:899:0x801ce998'
+    translation: 'Meta'
+    budget: 7
+  - key: 'ui:899:0x801ce9a0'
+    translation: 'ATK'
+    budget: 3
+  - key: 'ui:899:0x801ce9a4'
+    translation: 'UDF'
+    budget: 3
+  - key: 'ui:899:0x801ce9a8'
+    translation: 'LDF'
+    budget: 3
+  - key: 'ui:899:0x801ce9ac'
+    translation: 'SPD'
+    budget: 3
+  - key: 'ui:899:0x801ce9b0'
+    translation: 'INT'
+    budget: 3
+  - key: 'ui:899:0x801ce9b4'
+    translation: 'AGL'
+    budget: 3
+  - key: 'ui:899:0x801ce9b8'
+    translation: 'Dosw.'
+    budget: 11
+  - key: 'ui:899:0x801ce9c4'
+    translation: 'Nast. poz.'
+    budget: 11
+  - key: 'ui:899:0x801ce9d0'
+    translation: '@Rzeczy'
+    budget: 7
+  - key: 'ui:899:0x801ce9d8'
+    translation: '@Magia'
+    budget: 7
+  - key: 'ui:899:0x801ce9e0'
+    translation: '@Ekwip.'
+    budget: 7
+  - key: 'ui:899:0x801ce9e8'
+    translation: '@Status'
+    budget: 7
+  - key: 'ui:899:0x801ce9f4'
+    translation: '@Opcje'
+    budget: 11
+  - key: 'ui:899:0x801cea00'
+    translation: '@Wczyt.'
+    budget: 7
+  - key: 'ui:899:0x801cea08'
+    translation: '@Zapisz'
+    budget: 7
+  - key: 'ui:899:0x801cea10'
+    translation: '@Uzyj'
+    budget: 7
+  - key: 'ui:899:0x801cea18'
+    translation: '@Wyrzuc'
+    budget: 11
+  - key: 'ui:899:0x801cea24'
+    translation: '@Uloz'
+    budget: 11
+  - key: 'ui:899:0x801cea30'
+    translation: '@Pkt pozost.'
+    budget: 15
+  - key: 'ui:899:0x801cea40'
+    translation: '@{c2:fe} zdob.'
+    budget: 15
+  - key: 'ui:899:0x801cea50'
+    translation: '@ punkt(y).'
+    budget: 11
+  - key: 'ui:899:0x801cea60'
+    translation: '@Zaraz'
+    budget: 19
+  - key: 'ui:899:0x801cea74'
+    translation: '@Wyrzucic?'
+    budget: 11
+  - key: 'ui:899:0x801cea84'
+    translation: '@Tak'
+    budget: 7
+  - key: 'ui:899:0x801cea94'
+    translation: '@Wyjsc na zewnatrz?'
+    budget: 27
+  - key: 'ui:899:0x801ceab4'
+    translation: '@Uzyj {c2:8a}.'
+    budget: 19
+  - key: 'ui:899:0x801ceac8'
+    translation: '@Dobrze?'
+    budget: 15
+  - key: 'ui:899:0x801cead8'
+    translation: '@Najl. ekwip'
+    budget: 15
+  - key: 'ui:899:0x801ceaec'
+    translation: '@Zuzyte MP'
+    budget: 11
+  - key: 'ui:899:0x801ceaf8'
+    translation: '@Stan'
+    budget: 11
+  - key: 'ui:899:0x801ceb04'
+    translation: '@ Zdolno.'
+    budget: 11
+  - key: 'ui:899:0x801ceb10'
+    translation: '@Ruchy'
+    budget: 7
+  - key: 'ui:899:0x801ceb18'
+    translation: '@ATR:'
+    budget: 7
+  - key: 'ui:899:0x801ceb20'
+    translation: '@Brak zdolnosci.'
+    budget: 31
+  - key: 'ui:899:0x801ceb40'
+    translation: '@   Brak magii.'
+    budget: 23
+  - key: 'ui:899:0x801ceb58'
+    translation: '@Zuzyte AP'
+    budget: 11
+  - key: 'ui:899:0x801ceb64'
+    translation: '@Rozkaz:'
+    budget: 11
+  - key: 'ui:899:0x801ceb70'
+    translation: '@Brak wyuczonych ruchow.'
+    budget: 35
+  - key: 'ui:899:0x801ceb94'
+    translation: '@Kup'
+    budget: 7
+  - key: 'ui:899:0x801ceb9c'
+    translation: '@Sprz.'
+    budget: 7
+  - key: 'ui:899:0x801ceba4'
+    translation: '@Wyjdz'
+    budget: 7
+  - key: 'ui:899:0x801cebac'
+    translation: '@Zalozone'
+    budget: 11
+  - key: 'ui:899:0x801cebb8'
+    translation: '@Nie mozna'
+    budget: 15
+  - key: 'ui:899:0x801cebc8'
+    translation: '@Masz'
+    budget: 7
+  - key: 'ui:899:0x801cebd4'
+    translation: '@Brak'
+    budget: 7
+  - key: 'ui:899:0x801cebdc'
+    translation: '@Ile kupic?'
+    budget: 23
+  - key: 'ui:899:0x801cebf8'
+    translation: '@Do rzeczy'
+    budget: 15
+  - key: 'ui:899:0x801cec0b'
+    translation: ' zaklada'
+    budget: 12
+  - key: 'ui:899:0x801cec18'
+    translation: '@{c1:01} zaklada'
+    budget: 15
+  - key: 'ui:899:0x801cec28'
+    translation: '@{c1:02} zaklada'
+    budget: 15
+  - key: 'ui:899:0x801cec38'
+    translation: '@Ile sprzedac?'
+    budget: 27
+  - key: 'ui:899:0x801cec54'
+    translation: '@Cena'
+    budget: 7
+  - key: 'ui:899:0x801cec5c'
+    translation: '@Nie sprzed.'
+    budget: 15
+  - key: 'ui:899:0x801cec6c'
+    translation: '@Wymiana'
+    budget: 11
+  - key: 'ui:898:0x801f4b98'
+    translation: 'Duch'
+    budget: 7
+  - key: 'ui:898:0x801f4ba0'
+    translation: 'Obrona'
+    budget: 7
+  - key: 'ui:898:0x801f4ba8'
+    translation: 'Meta'
+    budget: 7
+  - key: 'ui:898:0x801f4bb2'
+    translation: 'Terra'
+    budget: 5
+  - key: 'ui:898:0x801f4bbc'
+    translation: 'Ozma'
+    budget: 7
+  - key: 'ui:898:0x801f4bd0'
+    translation: 'Meta zdobyl moc '
+    budget: 27
+  - key: 'ui:898:0x801f4bec'
+    translation: 'Terra zdobyl moc '
+    budget: 31
+  - key: 'ui:898:0x801f4c0c'
+    translation: 'Ozma zdobyl moc '
+    budget: 27
+  - key: 'ui:898:0x801f4c2c'
+    translation: '{c1:01}-druzyna'
+    budget: 11
+  - key: 'ui:898:0x801f4c38'
+    translation: ' wygral walke!|Zdobyto           Exp. i           G.'
+    budget: 63
+  - key: 'ui:898:0x801f4c78'
+    translation: '{c1:01}-druzyne pokonano.'
+    budget: 27
+  - key: 'ui:898:0x801f4c94'
+    translation: ' stracil sily.'
+    budget: 23
+  - key: 'ui:898:0x801f4cac'
+    translation: ' pomyslnie uciekl.'
+    budget: 23
+  - key: 'ui:898:0x801f4cc4'
+    translation: ' nie mogl uciec.'
+    budget: 19
+  - key: 'ui:898:0x801f4cd8'
+    translation: '{c1:01}-druzyna zaskoczyla.'
+    budget: 31
+  - key: 'ui:898:0x801f4cf8'
+    translation: '{c1:01} zaskoczyl wroga.'
+    budget: 23
+  - key: 'ui:898:0x801f4d10'
+    translation: 'Zasadzka!'
+    budget: 11
+  - key: 'ui:898:0x801f4d1c'
+    translation: 'Start'
+    budget: 7
+  - key: 'ui:898:0x801f4d24'
+    translation: 'Uciekaj'
+    budget: 7

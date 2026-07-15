@@ -280,7 +280,10 @@ UI-icon sprites (no text string to translate).
 
 Not covered (out of scope for this pipeline):
 
-- textures with baked-in text (title screen, the prologue caption TIM);
+- textures with baked-in text (title screen, save/load UI, boot logos, the
+  in-battle command ring); these are enumerated with their footprint
+  constraints under [Textures with baked-in text](#textures-with-baked-in-text)
+  below;
 - the segment scanner is conservative by design - a dialog line that fails
   its quality gate is simply not exported and stays English. Junk entries the
   scanner does export (dev-debug strings, the odd data run that reads as
@@ -289,6 +292,35 @@ Not covered (out of scope for this pipeline):
 The dialog exports the raw source lines including substitution escapes;
 translations must keep grammatical agreement working around them (the
 substituted names come from the tables you also translate).
+
+## Textures with baked-in text
+
+Some UI text is not a string at all - it is pixels in a TIM. Those are outside
+the string/dialog/`ui_menu` scope: replacing one means authoring new glyph art
+at the **exact same TIM footprint** (identical width / height / bpp / CLUT
+layout) so the same-size in-place `DiscPatcher` write applies. The `tim` crate
+can encode a PNG back to a TIM, so a byte-identical-footprint swap is
+mechanically possible; the blocker is art authoring (and, for logos, rights),
+not the pipeline. None are patched here - each is a scoped follow-up. Legally,
+the boot / publisher logos must be left untouched regardless.
+
+The text-bearing textures on the retail disc:
+
+| Texture | Where | Baked text | Footprint / notes |
+|---|---|---|---|
+| Title wordmark | PROT 0888 (dup 0889 / 0890), `legaia_asset::title_pak` | "Legend of Legaia" logo, `PRESS START BUTTON`, TM / (C) copyright bands; an unused `<DEMO>` band retail never samples | Bands are sub-rects of one 256x256 TIM (`TITLE_BAND_*`). The logo is title art (a proper noun); `PRESS START BUTTON` is a candidate for a same-footprint band swap. Copyright bands must stay. |
+| Title menu `NEW GAME` / `CONTINUE` | title overlay (unindexed `PROT.DAT` gap between TOC 899 and 900) | rendered at runtime from the **dialog-font glyph atlas**, not a baked band (retail ignores the embedded footer band) | So this is *text*, but it lives in the title overlay code region the pipeline does not address by coordinate. Follow-up: pin the two label strings' VA window like a `ui_menu` pool. |
+| Save/Load UI | PROT 0899 `+0x16908` (`SLOT n` pill) + the pre-`init_data` `PROT.DAT` gap (`Load` panel TIM) + the title-overlay memcard atlas `0x801E5120` | baked `SLOT 1..` pill label, the `Load` panel wordmark, and Japanese memcard strings in the atlas | Small 4bpp TIMs at fixed offsets; a same-footprint pill/panel swap is feasible. See [`save-screen.md`](../subsystems/save-screen.md). |
+| Config-screen TIMs | PROT 0899 `+0x169DC` / `+0x1F91C` | small option-screen chrome TIMs that sit after the config **string** pool (the strings are the `ui_menu` menu labels, already translatable) | Chrome art; only replace if a label is baked rather than drawn from the string pool. |
+| In-battle command ring | battle overlay UI-icon sprites | `Attack` / `Arts` / `Magic` / `Item` are drawn as **icon sprites**, not text | No string exists; a worded localization would need new icon art. This is why the `ui_menu` battle pool covers `Spirit` / `Defense` / `Escape` / `Begin` (real strings) but not the four ring commands. |
+| Boot / publisher logos | PROT 0895 `init.pak` (`legaia_asset::init_pak`) - PROKION, SCEA / Sony | brand logos ("licensed by", studio marks) | **Do not alter** - trademark art, not localizable text. Listed only so a sweep does not mistake them for translatable UI. |
+| Opening prologue caption | opening-sequence baked caption TIM (the narration **crawl** itself is `0x1F`-framed text and *is* covered via the dialog corpus) | a baked caption still shows English under the crawl | The crawl narration translates through `scene_dialog` / `inline_text`; only the baked caption TIM would need an art swap. |
+
+A font patch (new glyph tiles + width table in the menu glyph atlas at
+`PROT.DAT` offset `0x11218`, see [`boot.md`](../subsystems/boot.md) and
+[`dialog-font.md`](../formats/dialog-font.md)) is the separate, larger effort
+that would lift the printable-ASCII-only limitation for accented Latin / other
+scripts across *all* text, not just these textures; it is out of scope here.
 
 ## AI example packs
 
