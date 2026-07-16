@@ -21,10 +21,15 @@
 //!   that was never saved into exports byte-identical.
 //! - A `dirty` flag per slot so the page knows a card has unexported writes.
 //!
+//! Card-format knowledge lives in [`legaia_save`], not here: block and
+//! directory-frame addressing come from [`CardView`], and claiming a block
+//! for a save is [`CardView::claim_block`]. This module only decides *which*
+//! block and *when*.
+//!
 //! Nothing here is uploaded; the bytes live in the tab for the session.
 
 use legaia_engine_core::save_select::SlotSnapshot;
-use legaia_save::emu::{self, CardView, Format};
+use legaia_save::emu::{self, CardView};
 use legaia_save::{SaveFile, card};
 use wasm_bindgen::prelude::*;
 
@@ -61,72 +66,6 @@ pub struct InsertedCard {
 impl InsertedCard {
     fn view(&self) -> Option<CardView> {
         emu::detect(&self.bytes).ok()
-    }
-}
-
-/// Byte offset of save block `block`'s **directory frame** inside a
-/// container.
-///
-/// [`legaia_save::emu::CardView`] exposes the SC block but keeps its card
-/// base private, and `legaia_save::card::write_block` only ever claims the
-/// *lowest* free block - neither is enough to claim one specific block the
-/// player picked out of the grid. Deriving the frame offset here re-reads
-/// the same public container magics [`emu::detect`] does.
-///
-/// A `.mcs` carries its single frame at offset 0 and has no other blocks.
-fn dir_frame_range(bytes: &[u8], format: Format, block: u8) -> Option<(usize, usize)> {
-    let card_base = match format {
-        Format::RawCard => 0,
-        Format::DexDrive => emu::DEXDRIVE_HEADER_SIZE,
-        // Single-save container: one frame, always describing block 1.
-        Format::Mcs => return (block == 1).then_some((0, card::DIR_FRAME_SIZE)),
-    };
-    let i = block as usize;
-    if i == 0 || i > card::DIR_FRAMES {
-        return None;
-    }
-    let start = card_base + card::DIR_FRAME_SIZE * i;
-    let end = start + card::DIR_FRAME_SIZE;
-    (end <= bytes.len()).then_some((start, end))
-}
-
-/// Stamp a directory frame so `block` reads as the first (and only) frame
-/// of an active single-block Legaia save.
-///
-/// Mirrors `legaia_save::card::write_block`'s frame encoding - state
-/// `FIRST_BLOCK`, `next_block = 0xFFFF`, product code, and the XOR checksum
-/// over bytes `0x00..0x7E` at `0x7F` (the only checksum a card image
-/// carries; the SC payload itself has none, see
-/// `docs/subsystems/save-screen.md`).
-fn claim_dir_frame(bytes: &mut [u8], format: Format, block: u8) -> Result<(), String> {
-    let (start, end) = dir_frame_range(bytes, format, block)
-        .ok_or_else(|| format!("no directory frame for block {block}"))?;
-    let frame = &mut bytes[start..end];
-    frame.fill(0);
-    frame[..4].copy_from_slice(&card::state::FIRST_BLOCK.to_le_bytes());
-    frame[4..8].copy_from_slice(&(card::BLOCK_SIZE as u32).to_le_bytes());
-    frame[8..10].copy_from_slice(&0xFFFFu16.to_le_bytes());
-    let pc = LEGAIA_PRODUCT_CODE.as_bytes();
-    let n = pc.len().min(20);
-    frame[10..10 + n].copy_from_slice(&pc[..n]);
-    let checksum = frame[..0x7F].iter().fold(0u8, |acc, &b| acc ^ b);
-    frame[0x7F] = checksum;
-    Ok(())
-}
-
-/// `true` when `block`'s directory frame marks it as the start of an active
-/// save. Blocks that are free (or mid-chain continuations of another save)
-/// are not save starts.
-fn block_is_active(bytes: &[u8], format: Format, block: u8) -> bool {
-    match format {
-        Format::Mcs => block == 1,
-        _ => dir_frame_range(bytes, format, block)
-            .map(|(s, _)| {
-                let state =
-                    u32::from_le_bytes([bytes[s], bytes[s + 1], bytes[s + 2], bytes[s + 3]]);
-                state == card::state::FIRST_BLOCK
-            })
-            .unwrap_or(false),
     }
 }
 
@@ -195,7 +134,7 @@ impl LegaiaRuntime {
             .map(|cell| {
                 let block = cell + 1;
                 let empty = SlotSnapshot::empty(cell);
-                if !block_is_active(&cardslot.bytes, view.format, block) {
+                if !view.block_is_save_start(&cardslot.bytes, block) {
                     return empty;
                 }
                 let Some(sc) = view.sc_block(&cardslot.bytes, block) else {
@@ -249,14 +188,15 @@ impl LegaiaRuntime {
             .and_then(|c| c.as_mut())
             .ok_or_else(|| format!("no memory card in slot {}", slot + 1))?;
         let view = emu::detect(&card_slot.bytes).map_err(|e| format!("{e}"))?;
-        let was_active = block_is_active(&card_slot.bytes, view.format, block);
+        let was_active = view.block_is_save_start(&card_slot.bytes, block);
         let sc = view
             .sc_block_mut(&mut card_slot.bytes, block)
             .ok_or_else(|| format!("card has no block {block}"))?;
         sf.write_into_retail_sc_block(sc)
             .map_err(|e| format!("save: {e}"))?;
         if !was_active {
-            claim_dir_frame(&mut card_slot.bytes, view.format, block)?;
+            view.claim_block(&mut card_slot.bytes, block, LEGAIA_PRODUCT_CODE)
+                .map_err(|e| format!("{e}"))?;
         }
         card_slot.dirty = true;
         Ok(())

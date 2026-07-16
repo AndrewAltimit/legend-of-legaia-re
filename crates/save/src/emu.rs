@@ -196,6 +196,88 @@ impl CardView {
         let (s, e) = self.block_range(bytes.len(), block)?;
         Some(&mut bytes[s..e])
     }
+
+    /// Byte range of save block `block`'s 128-byte **directory frame** inside
+    /// the container. The frame describes the block; the block holds the save.
+    ///
+    /// A `.mcs` is a single-save container: one frame at offset 0, always
+    /// describing block 1.
+    fn dir_frame_range(&self, len: usize, block: u8) -> Option<(usize, usize)> {
+        let start = match self.format {
+            Format::RawCard | Format::DexDrive => {
+                let i = block as usize;
+                if i == 0 || i > card::DIR_FRAMES {
+                    return None;
+                }
+                self.card_base + DIR_FRAME_SIZE * i
+            }
+            Format::Mcs => {
+                if block != 1 {
+                    return None;
+                }
+                0
+            }
+        };
+        let end = start + DIR_FRAME_SIZE;
+        (end <= len).then_some((start, end))
+    }
+
+    /// Borrow save block `block`'s directory frame.
+    pub fn dir_frame<'a>(&self, bytes: &'a [u8], block: u8) -> Option<&'a [u8]> {
+        let (s, e) = self.dir_frame_range(bytes.len(), block)?;
+        Some(&bytes[s..e])
+    }
+
+    /// Mutably borrow save block `block`'s directory frame.
+    ///
+    /// Prefer [`Self::claim_block`] for the common case of marking a block as
+    /// a save; reach for this only to read or patch a frame field directly.
+    pub fn dir_frame_mut<'a>(&self, bytes: &'a mut [u8], block: u8) -> Option<&'a mut [u8]> {
+        let (s, e) = self.dir_frame_range(bytes.len(), block)?;
+        Some(&mut bytes[s..e])
+    }
+
+    /// `true` when `block`'s directory frame marks it as the **start** of an
+    /// active save. Free blocks and mid-chain continuations of another save
+    /// are not save starts.
+    pub fn block_is_save_start(&self, bytes: &[u8], block: u8) -> bool {
+        match self.format {
+            // A .mcs holds exactly one save, and it starts at block 1.
+            Format::Mcs => block == 1,
+            Format::RawCard | Format::DexDrive => self
+                .dir_frame(bytes, block)
+                .map(|f| u32::from_le_bytes([f[0], f[1], f[2], f[3]]) == card::state::FIRST_BLOCK)
+                .unwrap_or(false),
+        }
+    }
+
+    /// Claim `block` as a complete single-block save, stamping its directory
+    /// frame so a card browser lists it under `product_code`.
+    ///
+    /// Writes the frame only - the caller owns the block payload (see
+    /// [`Self::sc_block_mut`]). This is the targeted counterpart to
+    /// [`card::write_block`], which allocates the *lowest* free block rather
+    /// than a chosen one, and unlike that path it works on any container
+    /// format rather than a bare card image.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the container has no frame for `block`.
+    pub fn claim_block(&self, bytes: &mut [u8], block: u8, product_code: &str) -> Result<()> {
+        let Some(frame) = self.dir_frame_mut(bytes, block) else {
+            bail!("container has no directory frame for block {block}");
+        };
+        card::encode_dir_frame(
+            frame,
+            card::state::FIRST_BLOCK,
+            // A single 8 KiB block: the size a real card records for a
+            // one-block save, and the chain ends here.
+            Some(BLOCK_SIZE as u32),
+            0xFFFF,
+            product_code,
+        );
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -254,6 +336,89 @@ mod tests {
         assert_eq!(saves[0].block, 1);
         assert!(saves[0].has_sc_magic);
         assert!(view.sc_block(&mcs, 2).is_none());
+    }
+
+    #[test]
+    fn dir_frame_addresses_the_frame_not_the_block() {
+        let card = raw_card();
+        let view = detect(&card).unwrap();
+        let frame = view.dir_frame(&card, 1).unwrap();
+        assert_eq!(frame.len(), DIR_FRAME_SIZE);
+        // Block 1's frame is the SECOND frame: frame 0 is the header.
+        assert_eq!(
+            u32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]),
+            card::state::FIRST_BLOCK
+        );
+        // Frame 0 is not addressable as a block, and 15 is the last.
+        assert!(view.dir_frame(&card, 0).is_none());
+        assert!(view.dir_frame(&card, 15).is_some());
+        assert!(view.dir_frame(&card, 16).is_none());
+    }
+
+    #[test]
+    fn dir_frame_honours_the_dexdrive_header_offset() {
+        let mut gme = vec![0u8; DEXDRIVE_HEADER_SIZE];
+        gme[..DEXDRIVE_MAGIC.len()].copy_from_slice(DEXDRIVE_MAGIC);
+        gme.extend_from_slice(&raw_card());
+        let view = detect(&gme).unwrap();
+        // The frame must be found past the wrapper, not at the file start -
+        // this is the offset a caller re-deriving the layout would miss.
+        let (start, _) = view.dir_frame_range(gme.len(), 1).unwrap();
+        assert_eq!(start, DEXDRIVE_HEADER_SIZE + DIR_FRAME_SIZE);
+        assert!(view.block_is_save_start(&gme, 1));
+    }
+
+    #[test]
+    fn block_is_save_start_only_for_chain_starts() {
+        let mut card = raw_card();
+        let view = detect(&card).unwrap();
+        assert!(view.block_is_save_start(&card, 1));
+        // A free block is not a save.
+        let f = DIR_FRAME_SIZE * 2;
+        card[f..f + 4].copy_from_slice(&card::state::FREE.to_le_bytes());
+        assert!(!view.block_is_save_start(&card, 2));
+        // Nor is a mid-chain continuation of someone else's save.
+        card[f..f + 4].copy_from_slice(&card::state::MID_BLOCK.to_le_bytes());
+        assert!(!view.block_is_save_start(&card, 2));
+    }
+
+    #[test]
+    fn claim_block_marks_a_free_block_as_a_save() {
+        let mut card = raw_card();
+        let view = detect(&card).unwrap();
+        // Block 7 starts free, and parse_card must not see it.
+        assert!(!view.block_is_save_start(&card, 7));
+        view.claim_block(&mut card, 7, "BASCUS-94254PRO_00")
+            .unwrap();
+        assert!(view.block_is_save_start(&card, 7));
+
+        let frame = view.dir_frame(&card, 7).unwrap();
+        assert_eq!(
+            u32::from_le_bytes([frame[4], frame[5], frame[6], frame[7]]),
+            BLOCK_SIZE as u32,
+            "a single-block save records one block's worth of bytes"
+        );
+        assert_eq!(u16::from_le_bytes([frame[8], frame[9]]), 0xFFFF);
+        // The XOR checksum is the only one a card image carries; a card
+        // browser rejects the frame without it.
+        let want = frame[..0x7F].iter().fold(0u8, |acc, &b| acc ^ b);
+        assert_eq!(frame[0x7F], want);
+
+        // And the claim is visible through the real directory walker.
+        assert!(
+            card::parse_card(&card)
+                .unwrap()
+                .iter()
+                .any(|s| s.block == 7)
+        );
+    }
+
+    #[test]
+    fn claim_block_rejects_a_block_the_container_lacks() {
+        let mut card = raw_card();
+        let view = detect(&card).unwrap();
+        assert!(view.claim_block(&mut card, 0, "X").is_err());
+        assert!(view.claim_block(&mut card, 16, "X").is_err());
     }
 
     #[test]

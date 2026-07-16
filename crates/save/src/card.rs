@@ -206,6 +206,38 @@ pub fn read_block(buf: &[u8], block: u8) -> Option<&[u8]> {
     Some(&buf[off..end])
 }
 
+/// Encode one directory frame in place.
+///
+/// The single place this crate knows a frame's layout: state at `+0`, total
+/// save size at `+4` (first frame of a chain only, hence `total_size:
+/// Option`), next-block pointer at `+8` (`0xFFFF` ends the chain), 20-byte
+/// product code at `+10`, and the XOR checksum of bytes `0x00..0x7E` at
+/// `0x7F` - the only checksum a card image carries (the SC payload itself has
+/// none; see `docs/subsystems/save-screen.md`).
+///
+/// `frame` must be exactly [`DIR_FRAME_SIZE`] bytes. Shared by
+/// [`write_block`] and [`crate::emu::CardView::claim_block`] so the two
+/// cannot drift.
+pub(crate) fn encode_dir_frame(
+    frame: &mut [u8],
+    block_state: u32,
+    total_size: Option<u32>,
+    next_block: u16,
+    product_code: &str,
+) {
+    debug_assert_eq!(frame.len(), DIR_FRAME_SIZE);
+    frame.fill(0);
+    frame[..4].copy_from_slice(&block_state.to_le_bytes());
+    if let Some(size) = total_size {
+        frame[4..8].copy_from_slice(&size.to_le_bytes());
+    }
+    frame[8..10].copy_from_slice(&next_block.to_le_bytes());
+    let src = product_code.as_bytes();
+    let n = src.len().min(20);
+    frame[10..10 + n].copy_from_slice(&src[..n]);
+    frame[0x7F] = frame[..0x7F].iter().fold(0u8, |acc, &b| acc ^ b);
+}
+
 /// Write `save_data` into a free block chain on a PSX memory-card image.
 ///
 /// Finds enough free blocks (state `0xA0`) starting from the lowest-indexed
@@ -260,12 +292,6 @@ pub fn write_block(card_buf: &mut [u8], save_data: &[u8], product_code: &str) ->
     }
 
     let total_size = save_data.len() as u32;
-    let mut pc = [0u8; 20];
-    {
-        let src = product_code.as_bytes();
-        let n = src.len().min(20);
-        pc[..n].copy_from_slice(&src[..n]);
-    }
 
     for (idx, &blk) in free.iter().enumerate() {
         let blk_state = if idx == 0 {
@@ -283,16 +309,13 @@ pub fn write_block(card_buf: &mut [u8], save_data: &[u8], product_code: &str) ->
 
         // Rewrite directory frame
         let frame_off = DIR_FRAME_SIZE * blk as usize;
-        let frame = &mut card_buf[frame_off..frame_off + DIR_FRAME_SIZE];
-        frame.fill(0);
-        frame[..4].copy_from_slice(&blk_state.to_le_bytes());
-        if idx == 0 {
-            frame[4..8].copy_from_slice(&total_size.to_le_bytes());
-        }
-        frame[8..10].copy_from_slice(&next.to_le_bytes());
-        frame[10..30].copy_from_slice(&pc);
-        let checksum = frame[..0x7F].iter().fold(0u8, |acc, &b| acc ^ b);
-        frame[0x7F] = checksum;
+        encode_dir_frame(
+            &mut card_buf[frame_off..frame_off + DIR_FRAME_SIZE],
+            blk_state,
+            (idx == 0).then_some(total_size),
+            next,
+            product_code,
+        );
 
         // Write block: SC magic + payload chunk
         let chunk_start = idx * DATA_PER_BLOCK;
