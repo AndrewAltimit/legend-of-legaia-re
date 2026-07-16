@@ -100,9 +100,23 @@ the host world at `load_disc`), and render through the exact same
 `legaia-engine-ui` draw builders (`inventory_use_draws_for` /
 `spell_menu_draws_for` / `equip_screen_draws_for` / `status_screen_draws_for` /
 `options_draws_for`) - the site is just a different framebuffer over the same
-menu. Only Load / Save keep the generic framed window: the play page's own DOM
-save-loader owns disc-backed saving, so the in-canvas save-select screen is not
-wired. Parity is asserted by the disc-gated `tests/menu_parity.rs` oracle.
+menu.
+
+**Load / Save** run the retail save-select screen against the memory-card rack
+(`cards`, below): the `SLOT 1` / `SLOT 2` pills are the console's two card
+ports, confirming one plays the "Now checking. Do not remove MEMORY CARD"
+card-read beat, and the card's fifteen blocks then come up as retail's 5x3
+portrait grid with the focused block's info panel sliding up beneath it. Load
+lifts that block into the live world (`play_menu_take_load_scene` hands the page
+the save's scene so it can resume where it was written); Save raises the
+overwrite prompt and writes the session into the card image. The block-grid
+cursor is this crate's, not the session's - `SelectPhase::SlotPreview` ignores
+directions by design (see `docs/subsystems/save-screen.md`).
+
+The menu is **not purely input-driven**: its timers count 60 Hz frames, so the
+page clocks `play_menu_input` on its own fixed step rather than once per
+animation frame. Parity is asserted by the disc-gated `tests/menu_parity.rs`
+oracle, which walks the whole card flow.
 
 ## Boot title screen (`boot_title`)
 
@@ -274,6 +288,28 @@ gap of `PROT.DAT`, the faces the bar's tiles show; save summaries carry
 the lead's displayed level (record `+0x130`). Persistence (localStorage,
 base64) lives in `site/js/legaia-saves.js`; the bar itself is
 `site/js/minigame-saves.js`; this module is serialization only.
+
+## Memory-card rack (`cards`)
+
+The two card ports the in-canvas Load / Save screens read and write - the
+console has two, which is why retail's save screen has exactly two SLOT pills.
+The page fills them from the card images the player already imported
+(`insert_card(slot, bytes, label)` / `eject_card` / `card_slots_json`), and
+`export_card(slot)` hands the image back for download.
+
+Container bytes are kept **verbatim** in whatever container they arrived in
+(`.mcr` / `.mcd` / `.gme` / `.mcs`, normalised by `legaia_save::emu`) and saves
+are stamped in place through `SaveFile::write_into_retail_sc_block`, so a card
+that was never saved into exports byte-identical, a card that was keeps every
+other save and its container header untouched, and either still loads in the
+player's emulator. Saving into a block that was free also claims its directory
+frame (state + product code + XOR checksum) so the emulator's card browser sees
+the new save. A `dirty` flag per port tells the page there are unexported
+writes.
+
+`card_block_snapshots` lifts each block through `SaveFile::from_retail_sc_block`
+to feed the preview grid's portraits and the info panel's name / level / HP /
+MP / location rows - the same fields retail reads into its per-slot buffer.
 
 ## Scene `.glb` export (`scene_export`)
 

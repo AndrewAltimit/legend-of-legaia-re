@@ -261,6 +261,36 @@ when `prop[id*12].byte_0 == 1` reads a 5-byte stat-bonus block from
 `DAT_801EF09C..DAT_801EF098` (5 stat totals - HP/MP/Atk/Def/Spd or
 similar). This is **not** a memory-card write primitive.
 
+## Slot list: memory-card slots, not save blocks
+
+Retail's save UI is **two-stage**, and the two stages live in different id
+spaces - conflating them is the easy mistake:
+
+| Stage | What the player picks | Count | Retail anchor |
+|---|---|---|---|
+| Pill row (`SLOT 1` / `SLOT 2`) | a **memory-card port** | 2 | the libcd channel's `port` (`chan = port * 16 + sub_op`, `FUN_801E3294`) |
+| 5x3 preview grid | a **save block** on the chosen card | 15 | the directory walk `FUN_801E1208`; per-slot buffer `0x801EF1B8 + N * 0x100` |
+
+Between them sits the card read - the "Now checking. Do not remove MEMORY
+CARD" dialog - which is why that beat exists at all.
+
+`SaveSelectSession` is renderer-agnostic and models the phases, not the id
+space, so a host picks which reading its slot list carries:
+
+- **Flat** (default): the slot list *is* the save blocks; the pills show the
+  first two and Save picks a block straight off the pill row. The native
+  shell drives this against its on-disk LGSF slots.
+- **Card slots** (`set_card_slots_mode(true)`): the slot list is the two
+  ports. Save then crosses the same `NowChecking` beat Load does and raises
+  its overwrite prompt from the preview rather than from the pill row, and
+  `present` on a pill means "a card is inserted", not "this holds a save".
+  The browser play page (`legaia_web_viewer::cards` + `play_menu`) drives
+  this against the player's own card images.
+
+The **grid cursor** is the host's, not the session's: `SlotPreview` ignores
+directions, so which of the fifteen blocks is focused - and therefore which
+block a confirm commits - is host state.
+
 ## Relationship to `legaia_save`
 
 The memory-card write calls through `_DAT_8007B44C` (PSX LibC card handle set
@@ -500,6 +530,17 @@ animations:
 
 - Slot composite pill: `(136, 96) → (24, 40)` (matches retail mode-2 with the inlined `-24` x-shift applied to the start).
 - NowChecking dialog: panel + text both interpolate `x ∈ {416 → 160}` via `now_checking_{panel,text}_draws_for`'s new `slide_offset` parameter.
+- Confirm dialog ("Do you wish to save?"): `confirm_dialog_{panel,text}_draws_for` interpolate `y ∈ {344 → 88}` (mode 3). Only the slide endpoints are traced; the dialog's **panel rect is inferred** from the framebuffer-scanned NowChecking box (same messagebox family) and is marked as such at the constants.
+
+**Tick rate is load-bearing.** Every timer here - the NowChecking countdown,
+each slide - counts 60 Hz frames, so a host must tick the session on a real
+60 Hz clock rather than once per rendered frame. Retail makes the same
+correction from the other side, scaling each per-tick increment by the
+adaptive frame-skip factor `DAT_1f800393` to hold a slide's *real-time* speed
+constant. A host that ticks only on input never finishes the card read at
+all; one that ticks per rendered frame stretches the ~2 s beat by however far
+below 60 fps it runs (the browser play page clocks the menu independently for
+exactly this reason).
 
 ## Bottom info panel renderer (`FUN_801E08D8`)
 
