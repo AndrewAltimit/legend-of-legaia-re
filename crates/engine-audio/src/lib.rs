@@ -76,6 +76,83 @@ pub fn render_bgm_to_pcm(
     out
 }
 
+/// One seamless-loop slice of a sequenced track, rendered through the SPU.
+///
+/// The site plays minigame BGM as a looping `AudioBufferSourceNode`, and a
+/// naive "render N seconds then hard-loop the whole buffer" seams audibly
+/// because N is almost never a whole number of the SEQ's own loop periods.
+/// This renders the track and reports the exact loop region so the browser
+/// can set `loopStart` / `loopEnd` to one true period: play the lead-in once,
+/// then repeat `[loop_start_sample, loop_end_sample)` - which is exactly one
+/// SEQ loop iteration - forever.
+pub struct BgmLoopRender {
+    /// Interleaved i16 PCM (`[l0, r0, l1, r1, ...]`), length
+    /// `loop_end_sample * 2` (trimmed to the end of the first full loop
+    /// period when one was found, else the whole render).
+    pub pcm: Vec<i16>,
+    /// Frame index of the first loop rewind (start of the repeatable body,
+    /// i.e. end of the one-shot lead-in). `0` when no loop was detected.
+    pub loop_start_sample: usize,
+    /// Frame index of the second loop rewind (one period after
+    /// `loop_start_sample`). Equals `pcm.len() / 2`. `0` when no loop was
+    /// detected within the render budget (treat as a one-shot).
+    pub loop_end_sample: usize,
+}
+
+/// Render a sequenced track and locate one seamless loop period.
+///
+/// The sequencer must already be loop-configured (an in-stream loop marker or
+/// a `set_loop_to` fallback) so it rewinds rather than finishing. Loop rewinds
+/// are detected from outside via [`Sequencer::loop_count`] (a robust monotonic
+/// counter - the playhead tick can peak and reset inside a single sample on a
+/// zero-delta EOT and so hide the boundary). The returned [`BgmLoopRender`] is
+/// trimmed to the end of the first full loop period (the span between the
+/// first and second rewind), which is exactly one repeatable iteration.
+pub fn render_bgm_loop_region(
+    sequencer: &mut Sequencer,
+    spu: &mut Spu,
+    max_samples: usize,
+) -> BgmLoopRender {
+    let mut out = Vec::with_capacity(max_samples * 2);
+    let base_loops = sequencer.loop_count();
+    let mut first_rewind: Option<usize> = None;
+    let mut second_rewind: Option<usize> = None;
+    for i in 0..max_samples {
+        sequencer.tick_sample(spu);
+        let (l, r) = spu.tick();
+        out.push(l);
+        out.push(r);
+        // `i + 1` because this sample has just been emitted.
+        let loops = sequencer.loop_count().wrapping_sub(base_loops);
+        if loops >= 1 && first_rewind.is_none() {
+            first_rewind = Some(i + 1);
+        } else if loops >= 2 && second_rewind.is_none() {
+            second_rewind = Some(i + 1);
+            break;
+        }
+    }
+    match (first_rewind, second_rewind) {
+        (Some(start), Some(end)) => {
+            out.truncate(end * 2);
+            BgmLoopRender {
+                pcm: out,
+                loop_start_sample: start,
+                loop_end_sample: end,
+            }
+        }
+        // Fewer than two rewinds fit the budget: hand back the whole render
+        // with no loop region (the browser hard-loops the buffer, as before).
+        _ => {
+            let end = out.len() / 2;
+            BgmLoopRender {
+                pcm: out,
+                loop_start_sample: 0,
+                loop_end_sample: end,
+            }
+        }
+    }
+}
+
 /// Decoded XA-ADPCM stream parked in the audio output for direct cpal-side
 /// mixing. Bypasses the SPU voice mixer (mirrors retail PSX hardware: XA
 /// audio is summed with the SPU output by the SPU's CD-input path, not by
@@ -785,6 +862,73 @@ fn pcm_to_silence_padded_adpcm(pcm: &[i16]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Empty stub bank (no programs / samples) - the loop-detector tests care
+    /// only about the sequencer's tick timing, not audible output.
+    fn empty_bank() -> VabBank {
+        VabBank {
+            master_vol: 127,
+            samples: Vec::new(),
+            programs: Vec::new(),
+        }
+    }
+
+    /// A one-quarter-note SEQ (ppqn 480, 120 BPM) that ends with an
+    /// end-of-track: a `set_loop_to(0)` sequencer rewinds there every 480
+    /// ticks = one quarter = 0.5 s = 22 050 SPU samples.
+    fn one_quarter_seq() -> legaia_seq::Seq {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&legaia_seq::SEQ_MAGIC);
+        buf.extend_from_slice(&[0x00, 0x01]); // version
+        buf.extend_from_slice(&[0x01, 0xE0]); // ppqn 480
+        buf.extend_from_slice(&[0x07, 0xA1, 0x20]); // tempo 500000 us/qn
+        buf.push(0x04);
+        buf.push(0x02);
+        buf.extend_from_slice(&[0x00, 0xC0, 0x00]); // prog change
+        buf.extend_from_slice(&[0x00, 0x90, 60, 100]); // note on
+        buf.extend_from_slice(&[0x83, 0x60, 60, 0]); // +480: note off
+        buf.extend_from_slice(&[0x00, 0xFF, 0x2F, 0x00]); // end of track
+        legaia_seq::Seq::parse(&buf).unwrap()
+    }
+
+    /// The loop-region detector reports one true SEQ period: the span between
+    /// the first and second rewind, trimmed to end exactly on the second
+    /// rewind so the browser's `[loopStart, loopEnd)` is one repeatable
+    /// iteration. For the 480-tick track that period is ~22 050 samples.
+    #[test]
+    fn render_bgm_loop_region_finds_one_period() {
+        let mut seq = Sequencer::new(one_quarter_seq(), empty_bank());
+        seq.set_loop_to(0);
+        let mut spu = Spu::new();
+        // Budget three periods so two rewinds comfortably fit.
+        let render = render_bgm_loop_region(&mut seq, &mut spu, 22_050 * 3);
+        assert!(render.loop_start_sample > 0, "no first rewind detected");
+        assert!(
+            render.loop_end_sample > render.loop_start_sample,
+            "no second rewind detected"
+        );
+        // The trimmed PCM ends exactly on the second rewind.
+        assert_eq!(render.pcm.len(), render.loop_end_sample * 2);
+        // One period is ~22 050 samples (allow a few for event-boundary rounding).
+        let period = render.loop_end_sample - render.loop_start_sample;
+        assert!(
+            (22_040..=22_060).contains(&period),
+            "loop period {period} not ~22050 samples"
+        );
+    }
+
+    /// A non-looping render (budget shorter than one period, no rewind) hands
+    /// back the whole buffer with no loop region so the caller hard-loops it.
+    #[test]
+    fn render_bgm_loop_region_without_rewind_reports_no_region() {
+        let mut seq = Sequencer::new(one_quarter_seq(), empty_bank());
+        // No loop fallback + a budget under one period: never rewinds.
+        let mut spu = Spu::new();
+        let render = render_bgm_loop_region(&mut seq, &mut spu, 1000);
+        assert_eq!(render.loop_start_sample, 0);
+        assert_eq!(render.loop_end_sample, 1000);
+        assert_eq!(render.pcm.len(), 2000);
+    }
 
     /// `pcm_to_silence_padded_adpcm` produces a stream that, when fed back
     /// through the streaming decoder, yields a low-resolution version of

@@ -48,6 +48,12 @@ See [`subsystems/script-vm.md`](script-vm.md) → "BGM lookup table" for the res
 
 The engine port reuses this same dispatch for the **Battle↔Field music swap**: `World::set_battle_bgm` configures a battle track id, and the live gameplay loop queues an ordinary `FieldEvent::Bgm{sub_op: 1}` start for it on encounter (`swap_to_battle_bgm`) and resumes the stashed field track on battle end (`restore_field_bgm`). The host's `AudioBgmDirector` cross-fades both transitions over ~0.5 s through its existing `start_inner` path - no separate battle-audio code path. The battle id must resolve in the current scene's BGM table since the live loop doesn't load a distinct battle audio bundle.
 
+### Global-pool BGM: the `music_01` bank
+
+Every real music track on the disc lives in the **`music_01` bank** (extraction PROT `990..=1071`), not in scene-local slots - scenes carry no SEQ of their own (see [`reference/music-tracks.md`](../reference/music-tracks.md) for the sound-test join). A global-pool id (`>= 2000`) is `2000 + slot`, and each bank entry is one self-contained `[VAB][SEQ]` pair (a chunk-header, a `pBAV` VAB body, then a `pQES` score). Playing one means uploading **that entry's own VAB** into SPU RAM and driving the sequencer against it, rather than the scene VAB the field path stages.
+
+The site's minigame pages take exactly this path per game (`crates/web-viewer/src/minigames.rs`): `render_music01_bgm` / `render_music01_loop` split the pair, `VabBank::upload` the VAB, and render through the clean-room `Spu` + `Sequencer` - the same components the live `AudioBgmDirector` uses. Minigame BGM sources are disc-pinned constants: the Baka Fighter overlay init loads `music_01` slot 53 (boss overture, extraction 1043); the dance overlay loads slots 58/64 (extraction 1048/1054, mode-selected - short chart-sized loops, see [`minigame-dance.md`](minigame-dance.md)); the slot machine and fishing/Muscle Dome start **no** track and inherit their host scene's op-`0x35` BGM. The `music01_bgm_render` WASM surface renders any bank slot for the dance's Sol-disco jukebox.
+
 ## SsAPI sequencer (`0x80061-0x80067` cluster)
 
 Legaia statically links Sony's PsyQ **libsnd / SsAPI** sequencer for `.SEQ`-driven music. The cluster lives in SCUS at `0x80061B18..0x800681D8` and uses the standard SsAPI globals.
@@ -303,6 +309,16 @@ so looped BGM repeats from the correct bar instead of restarting the whole
 track. The rewind resets the integer sample-clock, so the looped body re-fires
 on the same sample offset every pass. `set_loop_to` is the fallback for the
 four retail tracks with no markers.
+
+`Sequencer::loop_count` exposes a monotonic rewind counter (bumped on every
+`rewind_to`), and `render_bgm_loop_region` (in `legaia-engine-audio`) uses it
+to render one **seamless loop period** off-line: it renders until the second
+rewind and returns the PCM trimmed to that boundary plus the
+`[loop_start, loop_end)` sample offsets. The playhead tick alone can't mark the
+boundary - on a zero-delta EOT the tick peaks and resets inside a single sample
+- which is why the counter exists. The site plays this as an
+`AudioBufferSourceNode` with `loopStart`/`loopEnd` set to one true period, so
+minigame BGM repeats without the seam a fixed-window hard-loop leaves.
 
 **Controller census.** A disc-wide sweep of every SEQ-bearing PROT entry
 (`engine-audio/tests/real_seq_expressive_events.rs`) fixes which control

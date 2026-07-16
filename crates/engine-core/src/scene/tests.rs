@@ -522,6 +522,14 @@ impl BgmDirector for RecordingBgm {
     fn stop(&mut self) {
         self.log.push("stop".into());
     }
+    fn start_owned_vab(&mut self, id: u16, bytes: &[u8]) {
+        self.log
+            .push(format!("start_owned_vab({id},{})", bytes.len()));
+    }
+    fn queue_owned_vab(&mut self, id: u16, bytes: &[u8]) {
+        self.log
+            .push(format!("queue_owned_vab({id},{})", bytes.len()));
+    }
 }
 
 /// Pause / resume / stop sub-ops fire even without a loaded scene

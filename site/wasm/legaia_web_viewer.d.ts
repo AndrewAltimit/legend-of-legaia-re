@@ -655,6 +655,16 @@ export class LegaiaMinigames {
      */
     dance_hud_page_rgba(palette: number): Uint8Array;
     /**
+     * The dance's disco jukebox as JSON: one row per selectable track that
+     * decodes on this disc -
+     * `{"tracks":[{"bgm":2058,"label":"M114 - ...","role":"Dance stage (overlay track A)"},...]}`.
+     * The first two rows are the tracks the dance overlay actually loads
+     * (mode-selected, extraction 1048/1054); the rest are the Sol-disco
+     * floor family in the same bank. Rows whose `[VAB][SEQ]` pair is absent
+     * (e.g. a track dropped from the NA disc) are omitted.
+     */
+    dance_jukebox_json(): string;
+    /**
      * The traced HUD geometry, so the page draws at retail positions rather
      * than invented ones. Everything here is an immediate in a traced
      * emitter (`FUN_801d231c` / `FUN_801d2524` / `FUN_801d32f8` /
@@ -805,6 +815,15 @@ export class LegaiaMinigames {
      * [`Self::dance_bgm_ready_json`].
      */
     minigame_bgm_ready_json(game: string): string;
+    /**
+     * Render a global-pool BGM id (`2000 + sound-test slot`) to a **seamless
+     * loop** render: PCM plus the loop region the browser drives
+     * `loopStart`/`loopEnd` from. This is the jukebox / minigame playback
+     * path, superseding the fixed-window [`Self::minigame_bgm_pcm_i16`] hard
+     * loop. Bounds the render at `max_seconds`. Returns an empty render when
+     * the id isn't a bank slot or its `[VAB][SEQ]` pair doesn't decode.
+     */
+    music01_bgm_render(bgm_id: number, max_seconds: number): Music01Render;
     constructor();
     /**
      * One of the three retail 16x16 **save-file portrait** TIMs as a 1024-byte
@@ -2610,6 +2629,39 @@ export class LegaiaViewer {
 }
 
 /**
+ * One rendered `music_01` track handed to the site jukebox: seamless-loop PCM
+ * plus the loop region and sample rate. Getters copy into JS typed arrays; a
+ * consumer calls `pcm` once. `ok` is false when the entry didn't decode.
+ */
+export class Music01Render {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Frame index where the loop body ends (`loopEnd`); one SEQ period after
+     * [`Self::loop_start`]. Equals the frame length of [`Self::pcm`].
+     */
+    readonly loop_end: number;
+    /**
+     * Frame index where the repeatable loop body starts (`AudioBufferSourceNode.loopStart`
+     * = `loop_start / rate`). `0` when no loop region was found.
+     */
+    readonly loop_start: number;
+    /**
+     * Whether the track decoded (non-empty PCM).
+     */
+    readonly ok: boolean;
+    /**
+     * Interleaved-stereo i16 PCM (`[l0, r0, l1, r1, ...]`) at [`Self::rate`].
+     */
+    readonly pcm: Int16Array;
+    /**
+     * PCM sample rate (the SPU's 44.1 kHz).
+     */
+    readonly rate: number;
+}
+
+/**
  * The 16x16 memory-card icon baked into save block `block` of a card
  * container, as 1024 RGBA8 bytes. For Legaia saves this is the lead
  * character's portrait - the retail save writer copies the load-screen
@@ -2776,6 +2828,7 @@ export interface InitOutput {
     readonly __wbg_legaiaruntime_free: (a: number, b: number) => void;
     readonly __wbg_legaiasfx_free: (a: number, b: number) => void;
     readonly __wbg_legaiaviewer_free: (a: number, b: number) => void;
+    readonly __wbg_music01render_free: (a: number, b: number) => void;
     readonly card_icon_rgba: (a: number, b: number, c: number) => [number, number, number, number];
     readonly card_patch_coins: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly card_read_coins: (a: number, b: number, c: number) => [number, number, number];
@@ -2879,6 +2932,7 @@ export interface InitOutput {
     readonly legaiaminigames_dance_face_meta_json: (a: number) => [number, number];
     readonly legaiaminigames_dance_face_rgba: (a: number, b: number, c: number) => [number, number];
     readonly legaiaminigames_dance_hud_page_rgba: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_dance_jukebox_json: (a: number) => [number, number];
     readonly legaiaminigames_dance_layout_json: (a: number) => [number, number];
     readonly legaiaminigames_dance_press: (a: number, b: number) => [number, number];
     readonly legaiaminigames_dance_sfx_cue_ids: (a: number) => [number, number];
@@ -2894,6 +2948,7 @@ export interface InitOutput {
     readonly legaiaminigames_load_disc: (a: number, b: number, c: number) => [number, number, number, number];
     readonly legaiaminigames_minigame_bgm_pcm_i16: (a: number, b: number, c: number, d: number) => [number, number];
     readonly legaiaminigames_minigame_bgm_ready_json: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaminigames_music01_bgm_render: (a: number, b: number, c: number) => number;
     readonly legaiaminigames_new: () => number;
     readonly legaiaminigames_save_portrait_rgba: (a: number, b: number) => [number, number];
     readonly legaiaminigames_slot_art_ready: (a: number) => number;
@@ -3164,10 +3219,15 @@ export interface InitOutput {
     readonly legaiaviewer_walk_placement_rot_y: (a: number) => [number, number];
     readonly legaiaviewer_walk_placement_slots: (a: number) => [number, number];
     readonly legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
+    readonly music01render_loop_end: (a: number) => number;
+    readonly music01render_ok: (a: number) => number;
+    readonly music01render_pcm: (a: number) => [number, number];
+    readonly music01render_rate: (a: number) => number;
     readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number, l1: number, m1: number, n1: number, o1: number, p1: number, q1: number, r1: number, s1: number, t1: number, u1: number, v1: number, w1: number, x1: number, y1: number, z1: number, a2: number, b2: number, c2: number) => [number, number, number];
     readonly resolve_seed: (a: number, b: number) => [number, number];
     readonly save_summary_json: (a: number, b: number) => [number, number, number, number];
     readonly validate_lang_pack: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly music01render_loop_start: (a: number) => number;
     readonly legaiaminigames_dance_bgm_rate: (a: number) => number;
     readonly legaiaminigames_minigame_bgm_rate: (a: number) => number;
     readonly legaiasfx_sample_rate: (a: number) => number;

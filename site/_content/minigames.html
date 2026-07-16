@@ -185,6 +185,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 <script src="js/webgl-shaders.js"></script>
 <script src="js/webgl-tmd.js"></script>
 <script src="js/audio-toggle.js"></script>
+<script src="js/minigame-bgm.js"></script>
 <script src="js/minigame-baka.js"></script>
 <script src="js/minigame-dance.js"></script>
 <script src="js/legaia-sfx.js"></script>
@@ -289,6 +290,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           <button class="mg-btn mg-throw" type="button" data-dance="2"><svg class="mg-psbtn"><use href="#btn-circle"/></svg>Circle<span class="mg-key">S</span></button>
           <button class="mg-btn mg-throw" type="button" data-dance="3"><svg class="mg-psbtn"><use href="#btn-triangle"/></svg>Triangle<span class="mg-key">D</span></button>
           <button class="mg-btn mg-primary" type="button" id="dance-start">Start</button>
+        </div>
+        <div class="mg-row" id="dance-jukebox-row" hidden>
+          <label for="dance-track"><strong>Track:</strong></label>
+          <select id="dance-track" class="mg-select"></select>
         </div>
         <div class="mg-hud">
           <span>Score <b class="mg-big" id="dance-score">0</b> / 999</span>
@@ -702,8 +707,16 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   const MgBgm = (() => {
     let ctx = null;
     let cur = null;                /* { game, src } while sounding */
-    const bufs = {};               /* game -> AudioBuffer | null */
-    const RENDER_SECONDS = 45;     /* dance-sized loop window */
+    const RENDER_SECONDS = 45;     /* loop-detection budget */
+
+    /* Each game's disc-pinned global BGM id (2000 + music_01 sound-test slot):
+     *  - baka: the duel overlay init (FUN_801CF00C) loads slot 53, the boss
+     *    overture (extraction 1043).
+     *  - slot: the overlay starts nothing; it inherits the casino floor
+     *    (0543_koin1 op-0x35 BGM 2018 = slot 18, "Sol casino").
+     * Both render through the clean-room SPU and loop seamlessly (MgBgm2). The
+     * dance carries its own jukebox inside js/minigame-dance.js. */
+    const GAME_BGM = { baka: 2053, slot: 2018 };
 
     function audio() {
       if (!ctx) {
@@ -717,48 +730,25 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     function soundOn() {
       return !window.LegaiaSound || LegaiaSound.isSoundOn();
     }
-    /* Render (once) one game's track into an AudioBuffer. Rendering ~45 s
-     * of SPU output blocks the thread for a moment, which is why prerender()
-     * schedules it off the tab click instead of the first spin. */
-    function buffer(game) {
-      if (bufs[game] !== undefined) return bufs[game];
-      if (!api || typeof api.minigame_bgm_ready_json !== 'function') return null;
-      const ready = JSON.parse(api.minigame_bgm_ready_json(game));
-      if (!ready.ok) { bufs[game] = null; return null; }
-      const pcm = api.minigame_bgm_pcm_i16(game, RENDER_SECONDS);
-      const rate = api.minigame_bgm_rate();
-      const a = audio();
-      if (!a || !pcm.length || !rate) { bufs[game] = null; return null; }
-      const frames = pcm.length / 2;
-      const buf = a.createBuffer(2, frames, rate);
-      const L = buf.getChannelData(0), R = buf.getChannelData(1);
-      for (let i = 0; i < frames; i++) {
-        L[i] = pcm[i * 2] / 32768;
-        R[i] = pcm[i * 2 + 1] / 32768;
-      }
-      bufs[game] = buf;
-      return buf;
-    }
     const prerendered = {};
     function prerender(game) {
-      if (prerendered[game] || (game !== 'slot' && game !== 'baka')) return;
+      const bgm = GAME_BGM[game];
+      if (!bgm || prerendered[game] || !window.MgBgm2) return;
       prerendered[game] = true;
-      setTimeout(() => { try { buffer(game); } catch (e) { bufs[game] = null; } }, 400);
+      const a = audio();
+      if (!a) return;
+      setTimeout(() => { try { MgBgm2.render(api, a, bgm, RENDER_SECONDS); } catch (e) { /* skip */ } }, 400);
     }
     function start(game) {
       if (cur && cur.game === game) return true;
       stop();
-      if (!soundOn()) return false;
+      if (!soundOn() || !window.MgBgm2) return false;
       const a = audio();
-      const buf = buffer(game);
-      if (!a || !buf) return false;
-      const src = a.createBufferSource();
-      src.buffer = buf;
-      src.loop = true;
-      const gn = a.createGain();
-      gn.gain.value = 0.5;
-      src.connect(gn).connect(a.destination);
-      src.start();
+      const bgm = GAME_BGM[game];
+      if (!a || !bgm) return false;
+      const entry = MgBgm2.render(api, a, bgm, RENDER_SECONDS);
+      const src = MgBgm2.start(a, entry, 0.5);
+      if (!src) return false;
       cur = { game: game, src: src };
       return true;
     }
@@ -837,7 +827,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           'than beeping at you. ') +
       (danceR.bgmOk()
         ? 'The <b>music</b> is the real thing too: the overlay’s own BGM entry ' +
-          '(extraction 1048, SEQ+VAB) rendered through the clean-room SPU when you press Start. '
+          '(extraction 1048/1054, SEQ+VAB) rendered through the clean-room SPU, looped ' +
+          'seamlessly on one true SEQ period. The <b>Track</b> selector is a jukebox over ' +
+          'the same <code>music_01</code> bank - the two tracks the overlay actually loads ' +
+          'plus the Sol-disco floor family that plays around it. '
         : 'The BGM entry did not decode from this image, so the run plays without music. ') +
       (danceR.bodyOk()
         ? '<br><br><b>The dancers are the retail cast, and they dance.</b> The dance ' +
@@ -892,6 +885,32 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       '<code>0x80&nbsp;+&nbsp;lane&nbsp;&times;&nbsp;0x20</code> per frame = 32/51/64 ' +
       'frames) rather than off the move clip’s own length, which retail reads from the ' +
       'choreography bundle.';
+    danceLoadJukebox();
+  }
+
+  /* Populate the dance track selector from dance_jukebox_json() (the two
+   * overlay tracks + the Sol-disco floor family, each a music_01 slot that
+   * decodes on this disc). Hidden when the jukebox is empty or the WASM
+   * surface predates it. */
+  function danceLoadJukebox() {
+    const row = $('dance-jukebox-row'), sel = $('dance-track');
+    if (!row || !sel || !danceR || typeof api.dance_jukebox_json !== 'function') {
+      if (row) row.hidden = true;
+      return;
+    }
+    let tracks = [];
+    try { tracks = (JSON.parse(api.dance_jukebox_json()).tracks) || []; } catch (e) { tracks = []; }
+    if (!tracks.length) { row.hidden = true; return; }
+    sel.innerHTML = '';
+    for (const t of tracks) {
+      const o = document.createElement('option');
+      o.value = String(t.bgm);
+      o.textContent = t.role + ' - ' + t.label;
+      sel.appendChild(o);
+    }
+    row.hidden = false;
+    danceR.setBgmTrack(parseInt(sel.value, 10));
+    sel.onchange = () => { if (danceR) danceR.setBgmTrack(parseInt(sel.value, 10)); };
   }
 
   function danceStart() {

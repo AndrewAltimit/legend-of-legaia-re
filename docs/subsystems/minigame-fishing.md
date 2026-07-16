@@ -4,6 +4,8 @@ The fishing minigame is one mode of the shared minigame-hub overlay (the same bi
 
 The per-frame driver is `FUN_801cf3bc` (`overlay_fishing_801cf3bc.txt`). It is dispatched indirectly as the active mode handler (no static caller inside the overlay dump), in the same "mode handler reached by an indirect dispatch table" pattern as the other minigame and field modes.
 
+**BGM.** Fishing loads **no BGM track of its own** - the overlay has no streaming-loader call (`8001fc00`). The `func_0x80026478(&DAT_8007056c)` calls in the fishing state machine are the **actor sound-source attach / re-pan** primitive (`FUN_80026478` in [`functions.md`](../reference/functions.md)) - the positional reel / water / cast **SFX** voice, not a BGM stream. So the music is whatever the **field / town scene the fishing spot lives in** was already playing (its op-`0x35` BGM), inherited unchanged - a spot in one town sounds different from a spot in another. This is the same host-scene-inherited shape as the [slot machine](minigame-slot-machine.md); there is no single "fishing theme" to pin.
+
 ## State machine
 
 `FUN_801cf3bc` switches on the mode-state word `DAT_801d926c` through a jump table, then runs a shared tail (`LAB_801d01a4`) that drives auxiliary animation timers, the HUD, and the global "press confirm to leave" check. The state values are sparse (the designers left gaps), and many states `+1` to advance to the next. Confirmed states:

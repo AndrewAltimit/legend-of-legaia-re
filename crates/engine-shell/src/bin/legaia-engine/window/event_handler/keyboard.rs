@@ -324,6 +324,7 @@ impl PlayWindowApp {
                         g.score(),
                         g.passed()
                     );
+                    self.session.restore_field_bgm();
                 }
             } else if self.start_dance_minigame(false) {
                 log::info!("dance: started - Left/Right/Up are the arrows, K to quit");
@@ -460,6 +461,7 @@ impl PlayWindowApp {
                         MusclePhase::Lost => log::info!("muscle: contest lost"),
                         _ => log::info!("muscle: contest aborted"),
                     }
+                    self.session.restore_field_bgm();
                 }
             } else if self.start_muscle_minigame() {
                 log::info!(
@@ -488,6 +490,7 @@ impl PlayWindowApp {
                         Some(_) => log::info!("baka: match lost"),
                         None => log::info!("baka: match aborted"),
                     }
+                    self.session.restore_field_bgm();
                 }
             } else if self.start_baka_minigame() {
                 log::info!("baka: started - Left/Right/Up attack, Down special, B to leave");

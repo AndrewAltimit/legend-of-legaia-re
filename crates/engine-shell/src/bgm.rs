@@ -184,6 +184,33 @@ impl AudioBgmDirector {
         Ok(true)
     }
 
+    /// Split a raw `music_01` bank entry (`[chunk][pBAV VAB][pQES SEQ]`),
+    /// upload the entry's **own** VAB into the SPU BGM region (capped below
+    /// the resident SFX bank, exactly like `stage_scene_vab`), stash it as the
+    /// active bank, and return the SEQ bytes. `None` when the pair is absent
+    /// or the VAB header doesn't parse. This is the global-pool half of BGM
+    /// playback - the track brings its own instruments, unlike the scene-local
+    /// path that reuses the pre-staged scene VAB.
+    fn stage_owned_vab(&mut self, entry_bytes: &[u8]) -> Option<Vec<u8>> {
+        let vab_off = entry_bytes.windows(4).position(|w| w == b"pBAV")?;
+        let seq_rel = entry_bytes[vab_off..]
+            .windows(4)
+            .position(|w| w == b"pQES")?;
+        let report = legaia_vab::parse(entry_bytes, vab_off).ok()?;
+        let body = &entry_bytes[vab_off..];
+        let bank = self.audio.with_spu(|spu| {
+            let mut alloc = legaia_engine_audio::SpuAllocator::new(
+                crate::boot::SPU_RESERVED_BYTES,
+                crate::boot::SPU_RAM_BYTES
+                    - crate::boot::SPU_RESERVED_BYTES
+                    - crate::boot::SFX_BANK_SPU_BYTES,
+            );
+            VabBank::upload(spu, &mut alloc, &report, body)
+        });
+        self.bank = Some(bank);
+        Some(entry_bytes[vab_off + seq_rel..].to_vec())
+    }
+
     fn start_inner(&mut self, bgm_id: u16, seq_bytes: &[u8]) -> Result<()> {
         let Some(bank) = self.bank.clone() else {
             log::warn!("AudioBgmDirector::start({bgm_id}) ignored - no VAB bank loaded for scene");
@@ -227,6 +254,33 @@ impl BgmDirector for AudioBgmDirector {
 
     fn queue(&mut self, bgm_id: u16, seq_bytes: &[u8]) {
         self.pending = Some((bgm_id, seq_bytes.to_vec()));
+    }
+
+    fn start_owned_vab(&mut self, bgm_id: u16, entry_bytes: &[u8]) {
+        // Suppress a redundant re-emit of the same global track (the field VM
+        // occasionally re-fires op 0x35): re-uploading the VAB + restarting
+        // would drop the playhead.
+        if self.last_started == Some(bgm_id)
+            && !self.paused
+            && self.audio.sequencer_progress().is_some()
+        {
+            return;
+        }
+        let Some(seq) = self.stage_owned_vab(entry_bytes) else {
+            log::warn!("AudioBgmDirector::start_owned_vab({bgm_id}) - no [VAB][SEQ] pair in entry");
+            return;
+        };
+        if let Err(e) = self.start_inner(bgm_id, &seq) {
+            log::warn!("AudioBgmDirector::start_owned_vab({bgm_id}) failed: {e:#}");
+        }
+    }
+
+    fn queue_owned_vab(&mut self, bgm_id: u16, entry_bytes: &[u8]) {
+        // Upload the VAB now (so the bank is ready) and defer the SEQ start to
+        // the next `flush_queue`.
+        if let Some(seq) = self.stage_owned_vab(entry_bytes) {
+            self.pending = Some((bgm_id, seq));
+        }
     }
 
     fn pause(&mut self) {

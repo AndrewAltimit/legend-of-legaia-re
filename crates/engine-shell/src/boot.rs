@@ -23,7 +23,7 @@ use legaia_engine_audio::{AudioOut, Spu, SpuAllocator, VabBank};
 use legaia_engine_core::camera::Camera;
 use legaia_engine_core::field_menu::{FieldMenuInput, FieldMenuSession};
 use legaia_engine_core::input::PadButton;
-use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost, SceneTickEvent};
+use legaia_engine_core::scene::{BgmDirector, DefaultMapIdResolver, SceneHost, SceneTickEvent};
 use legaia_engine_core::world::SceneMode;
 
 use crate::bgm::AudioBgmDirector;
@@ -50,17 +50,17 @@ pub struct FieldLiveOpts {
 pub const DEFAULT_BOOT_SCENE: &str = "town01";
 
 /// Total SPU RAM in bytes (PSX hardware constant).
-const SPU_RAM_BYTES: u32 = 512 * 1024;
+pub(crate) const SPU_RAM_BYTES: u32 = 512 * 1024;
 /// Byte offset reserved for voice-0 / scratchpad - banks are allocated
 /// above this. Mirrors the asset-viewer SEQ playback path.
-const SPU_RESERVED_BYTES: u32 = 0x1000;
+pub(crate) const SPU_RESERVED_BYTES: u32 = 0x1000;
 /// SPU RAM reserved at the TOP of the map for the resident class-2 SFX bank
 /// (PROT 0869). Its VAG bodies total ~184 KiB, so a 192 KiB window holds it
 /// with headroom. On real hardware the SFX bank and the BGM VAB coexist in
 /// the 512 KiB SPU RAM; carving a dedicated top region models that so a
 /// scene-BGM upload can't stomp the SFX samples. The BGM region is capped
 /// below it (staged scene VABs run well under the remaining ~316 KiB).
-const SFX_BANK_SPU_BYTES: u32 = 0x30000;
+pub(crate) const SFX_BANK_SPU_BYTES: u32 = 0x30000;
 /// The class-2 SFX program bank the battle scene loader (`FUN_800520F0`,
 /// `a1 = 2`) and the Baka Fighter init (`FUN_801CF00C`) load explicitly -
 /// extraction PROT 0869 (raw loader index `0x367`). Its low programs carry
@@ -630,6 +630,38 @@ impl BootSession {
     /// is [`SceneMode::Menu`] while `true`).
     pub fn field_menu_is_open(&self) -> bool {
         self.field_menu.is_some()
+    }
+
+    /// Start a **global-pool** `music_01` track (`bgm_id >= 2000`) through the
+    /// BGM director: resolve the bank entry, upload its own VAB, and play its
+    /// SEQ. This is how a minigame (or any caller with a disc-pinned track id)
+    /// starts music that doesn't live in the current scene's sound bank -
+    /// the dance overlay's chart loops, the Baka Fighter overture, the Muscle
+    /// Dome battle theme. Returns `false` when audio is off, the id isn't a
+    /// bank slot, or the entry doesn't decode. The slot machine + fishing
+    /// deliberately don't call this: retail inherits the host scene's BGM.
+    pub fn start_global_bgm(&mut self, bgm_id: u16) -> bool {
+        let Ok(Some(entry)) = self.host.music_bank_entry_bytes(bgm_id) else {
+            return false;
+        };
+        let Some(bgm) = self.bgm.as_mut() else {
+            return false;
+        };
+        bgm.start_owned_vab(bgm_id, &entry);
+        true
+    }
+
+    /// Restart the field scene's BGM after a minigame that took over the
+    /// director with its own global track (dance / Baka Fighter / Muscle
+    /// Dome). Re-plays whatever op-`0x35` track the scene had running
+    /// ([`World::current_bgm`](legaia_engine_core::world::World::current_bgm)),
+    /// re-uploading its VAB. No-op when the scene had no track or it isn't a
+    /// global-pool id. The slot machine + fishing don't need this: they never
+    /// replaced the director's bank.
+    pub fn restore_field_bgm(&mut self) {
+        if let Some(id) = self.host.world.current_bgm {
+            self.start_global_bgm(id);
+        }
     }
 
     /// One per-frame step: tick the world, route field-VM camera + BGM

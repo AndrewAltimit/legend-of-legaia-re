@@ -1417,6 +1417,28 @@ export class LegaiaMinigames {
         return v1;
     }
     /**
+     * The dance's disco jukebox as JSON: one row per selectable track that
+     * decodes on this disc -
+     * `{"tracks":[{"bgm":2058,"label":"M114 - ...","role":"Dance stage (overlay track A)"},...]}`.
+     * The first two rows are the tracks the dance overlay actually loads
+     * (mode-selected, extraction 1048/1054); the rest are the Sol-disco
+     * floor family in the same bank. Rows whose `[VAB][SEQ]` pair is absent
+     * (e.g. a track dropped from the NA disc) are omitted.
+     * @returns {string}
+     */
+    dance_jukebox_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_dance_jukebox_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * The traced HUD geometry, so the page draws at retail positions rather
      * than invented ones. Everything here is an immediate in a traced
      * emitter (`FUN_801d231c` / `FUN_801d2524` / `FUN_801d32f8` /
@@ -1723,6 +1745,21 @@ export class LegaiaMinigames {
         } finally {
             wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
         }
+    }
+    /**
+     * Render a global-pool BGM id (`2000 + sound-test slot`) to a **seamless
+     * loop** render: PCM plus the loop region the browser drives
+     * `loopStart`/`loopEnd` from. This is the jukebox / minigame playback
+     * path, superseding the fixed-window [`Self::minigame_bgm_pcm_i16`] hard
+     * loop. Bounds the render at `max_seconds`. Returns an empty render when
+     * the id isn't a bank slot or its `[VAB][SEQ]` pair doesn't decode.
+     * @param {number} bgm_id
+     * @param {number} max_seconds
+     * @returns {Music01Render}
+     */
+    music01_bgm_render(bgm_id, max_seconds) {
+        const ret = wasm.legaiaminigames_music01_bgm_render(this.__wbg_ptr, bgm_id, max_seconds);
+        return Music01Render.__wrap(ret);
     }
     constructor() {
         const ret = wasm.legaiaminigames_new();
@@ -5658,6 +5695,75 @@ export class LegaiaViewer {
 if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.prototype.free;
 
 /**
+ * One rendered `music_01` track handed to the site jukebox: seamless-loop PCM
+ * plus the loop region and sample rate. Getters copy into JS typed arrays; a
+ * consumer calls `pcm` once. `ok` is false when the entry didn't decode.
+ */
+export class Music01Render {
+    static __wrap(ptr) {
+        const obj = Object.create(Music01Render.prototype);
+        obj.__wbg_ptr = ptr;
+        Music01RenderFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        Music01RenderFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_music01render_free(ptr, 0);
+    }
+    /**
+     * Frame index where the loop body ends (`loopEnd`); one SEQ period after
+     * [`Self::loop_start`]. Equals the frame length of [`Self::pcm`].
+     * @returns {number}
+     */
+    get loop_end() {
+        const ret = wasm.music01render_loop_end(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Frame index where the repeatable loop body starts (`AudioBufferSourceNode.loopStart`
+     * = `loop_start / rate`). `0` when no loop region was found.
+     * @returns {number}
+     */
+    get loop_start() {
+        const ret = wasm.music01render_loop_start(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Whether the track decoded (non-empty PCM).
+     * @returns {boolean}
+     */
+    get ok() {
+        const ret = wasm.music01render_ok(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Interleaved-stereo i16 PCM (`[l0, r0, l1, r1, ...]`) at [`Self::rate`].
+     * @returns {Int16Array}
+     */
+    get pcm() {
+        const ret = wasm.music01render_pcm(this.__wbg_ptr);
+        var v1 = getArrayI16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * PCM sample rate (the SPU's 44.1 kHz).
+     * @returns {number}
+     */
+    get rate() {
+        const ret = wasm.music01render_rate(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) Music01Render.prototype[Symbol.dispose] = Music01Render.prototype.free;
+
+/**
  * The 16x16 memory-card icon baked into save block `block` of a card
  * container, as 1024 RGBA8 bytes. For Legaia saves this is the lead
  * character's portrait - the retail save writer copies the load-screen
@@ -6301,6 +6407,9 @@ const LegaiaSfxFinalization = (typeof FinalizationRegistry === 'undefined')
 const LegaiaViewerFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_legaiaviewer_free(ptr, 1));
+const Music01RenderFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_music01render_free(ptr, 1));
 
 function addToExternrefTable0(obj) {
     const idx = wasm.__externref_table_alloc();

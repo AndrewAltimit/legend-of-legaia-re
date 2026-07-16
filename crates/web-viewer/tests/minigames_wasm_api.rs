@@ -55,6 +55,51 @@ fn all_three_minigame_tables_decode_from_a_real_disc() {
 }
 
 #[test]
+fn dance_jukebox_and_seamless_loop_render_from_a_real_disc() {
+    let Some((mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    // The jukebox always carries the two tracks the dance overlay actually
+    // loads (global BGM 2058/2064 = extraction 1048/1054); the Sol-disco
+    // floor family (2055/2059/2060/...) is present when those slots decode.
+    let jb: serde_json::Value = serde_json::from_str(&mg.dance_jukebox_json()).unwrap();
+    let tracks = jb["tracks"].as_array().unwrap();
+    let bgms: Vec<u64> = tracks.iter().map(|t| t["bgm"].as_u64().unwrap()).collect();
+    assert!(
+        bgms.contains(&2058) && bgms.contains(&2064),
+        "jukebox has both overlay tracks: {jb:?}"
+    );
+    assert!(
+        tracks.len() >= 3,
+        "the disco floor family should add tracks: {jb:?}"
+    );
+    for t in tracks {
+        assert!(
+            t["label"].as_str().unwrap().starts_with('M'),
+            "labelled: {t}"
+        );
+    }
+
+    // Each jukebox track renders to a seamless-loop slice: non-empty PCM
+    // trimmed exactly to the loop end, with a well-ordered loop region.
+    for &bgm in &bgms {
+        let r = mg.music01_bgm_render(bgm as u16, 20.0);
+        assert!(r.ok(), "bgm {bgm} rendered");
+        assert!(r.loop_end() >= r.loop_start(), "loop region ordered: {bgm}");
+        assert_eq!(
+            r.pcm().len() as u32,
+            r.loop_end() * 2,
+            "pcm trimmed to loop end for {bgm}"
+        );
+        assert_eq!(r.rate(), 44_100);
+    }
+    // A non-bank id yields an empty render.
+    let miss = mg.music01_bgm_render(9999, 20.0);
+    assert!(!miss.ok() && miss.pcm().is_empty());
+}
+
+#[test]
 fn slot_machine_art_decodes_off_the_disc() {
     let Some((mg, status)) = loaded() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");

@@ -41,6 +41,23 @@ pub trait BgmDirector {
     fn queue(&mut self, bgm_id: u16, seq_bytes: &[u8]) {
         let _ = (bgm_id, seq_bytes);
     }
+    /// Start a **global-pool** track (`bgm_id >= 2000`) that carries its own
+    /// VAB: `entry_bytes` is the whole `music_01` bank entry (a chunk-header,
+    /// a `pBAV` VAB body, then a `pQES` score - see
+    /// [`SceneHost::music_bank_entry_bytes`]). Unlike [`BgmDirector::start`],
+    /// which reuses the pre-staged scene VAB, the director must upload this
+    /// entry's own VAB before playing its SEQ, because global tracks (every
+    /// real music cue - field, battle, minigame) don't live in the scene's
+    /// sound bank. The default is a no-op so stub directors that only model
+    /// scene-local BGM stay valid. Sub-op 9 counterpart:
+    /// [`BgmDirector::queue_owned_vab`].
+    fn start_owned_vab(&mut self, bgm_id: u16, entry_bytes: &[u8]) {
+        let _ = (bgm_id, entry_bytes);
+    }
+    /// Sub-op 9 queue counterpart of [`BgmDirector::start_owned_vab`].
+    fn queue_owned_vab(&mut self, bgm_id: u16, entry_bytes: &[u8]) {
+        let _ = (bgm_id, entry_bytes);
+    }
 }
 
 /// Discards every BGM event. Useful for tests + engines that haven't wired
