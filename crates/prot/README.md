@@ -27,10 +27,19 @@ random blobs).
 - `cdname` - parser for `CDNAME.TXT`, the human-readable symbol map.
   `#define name N` lines mark **block starts**: every entry from index
   `N` up to (but not including) the next `#define` inherits the same
-  name. Don't trust labels alone - `vab_01` doesn't actually contain
-  VAB headers, and `move_program_no` doesn't match the consumer-derived
-  move-table layout. The label is a hint; verify with the loader-call
-  constant or the file's magic bytes.
+  name.
+
+  **The define numbers are raw in-RAM TOC indices, not extraction
+  indices.** The boot loader copies `PROT.DAT` verbatim (8-byte header
+  included) into `0x801C70F0`, so `raw index = extraction index + 2`, and
+  the content `#define name N` names lives at extraction entry `N − 2`.
+  `block_for_extraction_index` resolves the retail-space name for an
+  extraction index. This shift is what the old "CDNAME labels lie"
+  reports (`vab_01` seemingly without VAB headers, `move_program_no` not
+  matching the move-table layout) actually were - the labels are sound;
+  the two index spaces were being crossed. Say which space you mean, and
+  still confirm an attribution with the loader-call constant or the
+  file's magic bytes.
 
 - `timpack` - the standalone TIM-pack subformat used by some PROT
   entries (notably `tim.dat`). Header is

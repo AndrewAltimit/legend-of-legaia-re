@@ -4,9 +4,15 @@ Sony VAB instrument-bank parser and VAG sample extractor.
 
 VAB ("VAGbank") is the PsyQ format that ships SPU-ADPCM samples bundled
 with per-program tone metadata. Legaia's banks live inside `battle_data`
-and `level_up` PROT blocks, plus the `vab_01` cluster (1072–1194). The
-CDNAME label `vab_01` is misleading - verify by checking for the
-`VABp` magic at offset 0.
+and `level_up` PROT blocks, plus the `vab_01` cluster.
+
+If a `vab_01`-labelled entry appears to hold no VAB header, that's the CDNAME
+index shift, not a bad label: `#define` numbers are raw in-RAM TOC indices, so
+the content a define names sits at **extraction entry `N − 2`**
+(`legaia_prot::cdname::block_for_extraction_index`; see
+[`docs/formats/cdname.md` § Numbering space](../../docs/formats/cdname.md#numbering-space)).
+Either way, confirm an entry by its `VABp` magic rather than by its filename -
+`vab list` scans for the magic and reports every hit.
 
 ## Header layout (Sony PsyQ docs, version 7)
 
@@ -56,11 +62,26 @@ is identical to XA-ADPCM, only the block packaging differs.
 
 ## CLI
 
+Both subcommands scan `<file>` for every embedded `VABp` header, so you can
+point them at a raw PROT entry rather than a pre-sliced bank.
+
 ```bash
-vab list           <file>                           # tones + samples
-vab extract        <file> <out_dir>                 # per-sample WAV
-vab vag-sample-span <file> <sample_index>           # offsets + size
+# Find + describe every VAB in a file: programs, tones, sample count, offsets
+vab list extracted/PROT/<entry>_vab_01.BIN
+
+# Extract the raw VAG sample bodies (--out is required)
+vab extract extracted/PROT/<entry>_vab_01.BIN --out vags/
+
+# Also decode each VAG to WAV for audition. VAGs carry no sample rate, so the
+# rate is an assumption - override it when a sample sounds pitched wrong.
+vab extract extracted/PROT/<entry>_vab_01.BIN --out vags/ --wav
+vab extract extracted/PROT/<entry>_vab_01.BIN --out vags/ --wav --sample-rate 44100
 ```
+
+To hear a bank driven by its sequence rather than sample-by-sample, pair it with
+a SEQ through the viewer: `asset-viewer seq <file.seq> <file.vab>` (see
+[`crates/asset-viewer`](../asset-viewer/README.md); `--vab-offset` picks a bank
+embedded inside a PROT entry).
 
 ## See also
 

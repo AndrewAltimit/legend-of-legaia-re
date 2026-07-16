@@ -17,63 +17,54 @@ https://github.com/user-attachments/assets/aff19b4f-312c-44e2-bd44-3e6d99de2b03
 
 The clean-room engine booting a real scene, plus the asset viewers. ([direct link](site/assets/legend-of-legaia-re-demo.mp4) · [on the project site](https://andrewaltimit.github.io/legend-of-legaia-re/))
 
-**Status:** local research project. Don't expect API stability.
+## You bring the disc
 
-**License:** dual-licensed at your option under either the [Unlicense](LICENSE) (public-domain dedication) or the [MIT License](LICENSE-MIT). Apache-2.0 is intentionally not offered - this project is meant to be as close to public domain as the law in your jurisdiction allows, with no patent-retaliation strings attached: copy it, fork it, sell it, patent improvements on it, just don't stop anyone else from doing the same. These licenses apply *only* to the code and documentation in this repository. **Sony's IP - game executable, asset data, ROM contents - is not redistributed and is not covered by these licenses.** You bring your own disc image. The `extracted/` and `ghidra/projects/` directories are gitignored. CI runs without disc data.
+**This project ships no Sony-owned bytes, ever.** There is no game executable, no asset data, and no ROM content in this repository or in any release archive. Everything here is code and documentation that operates on a disc image *you already own and supply yourself*.
 
-## Documentation
+Concretely, and non-negotiably:
 
-The committed docs under `docs/` are organised topic-first as a technical reference:
+- **You supply the disc image.** Every tool takes a path to your own `.bin`. Nothing is bundled and nothing is downloaded for you.
+- **`extracted/` and `ghidra/projects/` are gitignored.** Extraction output is Sony-derived, so it stays on your machine. The same applies to per-function Ghidra dumps under `ghidra/scripts/funcs/` and to exported translation packs.
+- **Disc-gated tests skip when `LEGAIA_DISC_BIN` is unset.** Tests that need real disc bytes skip *and pass* without it, so CI runs green with no disc data present. This gating is deliberate - don't remove it.
+- **The licenses below cover this repository's code and docs only.** They do not, and cannot, grant you any rights to Sony's IP.
 
-- **[`docs/overview.md`](docs/overview.md)** - elevator pitch + how the layers stack.
-- **[`docs/formats/`](docs/formats/overview.md)** - per-format byte-level specs (PROT, LZS, TIM, TMD, VAB, MES, ANM, MDT, scene bundles, effect, overlays, …).
-- **[`docs/subsystems/`](docs/subsystems/)** - how the engine works:
-  - Boot + assets: [boot](docs/subsystems/boot.md), [asset loader](docs/subsystems/asset-loader.md).
-  - VMs: [script](docs/subsystems/script-vm.md), [actor](docs/subsystems/actor-vm.md), [effect](docs/subsystems/effect-vm.md), [move](docs/subsystems/move-vm.md), [motion](docs/subsystems/motion-vm.md).
-  - Render + audio: [renderer](docs/subsystems/renderer.md), [audio](docs/subsystems/audio.md), [cutscene](docs/subsystems/cutscene.md).
-  - Battle: [battle](docs/subsystems/battle.md), [battle action SM](docs/subsystems/battle-action.md), [battle formulas](docs/subsystems/battle-formulas.md).
-  - World + field: [world map](docs/subsystems/world-map.md), [field locomotion](docs/subsystems/field-locomotion.md).
-  - Minigames: [fishing](docs/subsystems/minigame-fishing.md), [slot machine](docs/subsystems/minigame-slot-machine.md), [Baka Fighter](docs/subsystems/minigame-baka-fighter.md), [dance](docs/subsystems/minigame-dance.md), [Muscle Dome](docs/subsystems/minigame-muscle-dome.md).
-  - [engine reimplementation](docs/subsystems/engine.md).
-- **[`docs/tooling/`](docs/tooling/)** - how to use the repo: [extraction CLIs](docs/tooling/extraction.md), [Ghidra setup](docs/tooling/ghidra.md), [overlay capture](docs/tooling/overlay-capture.md), [mednafen automation](docs/tooling/mednafen-automation.md), [PCSX-Redux automation](docs/tooling/pcsx-redux-automation.md), [port catalog](docs/tooling/port-catalog.md) (per-function dumped × documented × ported × ignored status with BFS-from-roots feature views).
-- **[`docs/reference/`](docs/reference/)** - [key Ghidra-traced functions](docs/reference/functions.md), [RAM map + globals](docs/reference/memory-map.md), [TCRF region data](docs/reference/builds.md), [open RE threads](docs/reference/open-rev-eng-threads.md) (still-open hunts + falsified hypotheses worth not re-walking).
+If you are adding code here, treat "no Sony bytes get committed" as the one hard constraint that outranks everything else - including decompiled C that carries literal asset data or text strings.
 
-For workspace conventions and format gotchas (especially MIPS LUI+ADDIU pairs), read [`CLAUDE.md`](CLAUDE.md) first.
+## Getting started
 
-## Quick start
+### Install a prebuilt release
 
-### Prerequisites
+Tagged releases publish prebuilt command-line binaries for **Linux x86_64** and **Windows x86_64** on the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases). This is the fastest path if you just want to extract assets or run the viewers - no Rust toolchain required.
 
-- Rust toolchain (`cargo`, edition 2024).
-- The Legend of Legaia (USA) disc image as `.bin` + `.cue` (Mode2/2352).
-- (Optional) Docker + docker-compose for headless Ghidra runs.
-- (Optional) mednafen + a save state at the target scene, for runtime overlay capture.
+Download the archive for your platform, unpack it, and run the binaries out of the unpacked directory:
 
-### Build
+```bash
+# Linux x86_64 - substitute the archive name from the Releases page
+tar -xzf <linux-archive>.tar.gz
+cd <unpacked-dir>
+./legaia-extract --help
+```
+
+On Windows, unpack the zip and run the `.exe`s from a terminal in the unpacked directory. Every binary supports `--help`, and every subcommand supports `<binary> help <subcommand>` for its flags.
+
+See [`docs/tooling/releases.md`](docs/tooling/releases.md) for what each archive contains and how releases are built.
+
+### Build from source
+
+Requires a Rust toolchain (`cargo`, edition 2024).
 
 ```bash
 cargo build --release
 ```
 
-Binaries land in `target/release/`. Run `<binary> --help` for full subcommand listings. (Note: `legaia-engine` is the binary name; the *package* is `legaia-engine-shell`, so `cargo build -p legaia-engine-shell` builds just that crate.)
+Binaries land in `target/release/`. Note that `legaia-engine` is the *binary* name while the *package* is `legaia-engine-shell`, so `cargo build -p legaia-engine-shell` builds just that crate.
 
-If you plan to commit, run the hook installer once - it points `core.hooksPath` at `scripts/git-hooks/` so `cargo fmt --check` and `cargo clippy -D warnings` run before each commit (matching CI). The hook auto-skips when no Rust files are staged.
+Optional extras, only needed for the reverse-engineering workflows:
 
-```bash
-scripts/ci/install-hooks.sh
-```
+- Docker + docker-compose, for headless Ghidra runs.
+- mednafen or PCSX-Redux plus a save state at the scene you care about, for runtime overlay capture.
 
-### Run the whole pipeline
-
-```bash
-./target/release/legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted
-```
-
-Verify → disc → PROT → categorize → streaming sub-asset extract → TIM → PNG. Use `--skip-png` to skip the slowest step or `--skip-verify` to skip the SHA-256 hash. Pass `-v` for per-file output.
-
-### Per-stage CLIs
-
-For driving each stage individually, see [`docs/tooling/extraction.md`](docs/tooling/extraction.md). Verifying the disc image:
+### Verify your disc image
 
 ```bash
 ./target/release/disc-extract verify "/path/to/Legend of Legaia (USA).bin"
@@ -83,122 +74,99 @@ For driving each stage individually, see [`docs/tooling/extraction.md`](docs/too
 |---|---|
 | Legend of Legaia (USA), SCUS-94254 | `e6120a5d70716dd2f026a2da32d0171d52651971b52c4347a68541299f75258c` |
 
-For canonical per-track verification, cross-check against [Redump](http://redump.org/disc/425/).
+This hash is a sanity check against the project author's dump; different dumping tools can produce a different whole-image hash for the same disc. For canonical per-track verification, cross-check against [Redump](http://redump.org/disc/425/).
 
-### Browse the assets
-
-After running the pipeline:
+### Extract everything
 
 ```bash
-# 3D mesh + textures
-./target/release/asset-viewer tmd extracted/tmd_scan/0866_battle_data \
-    --shape character --sort-by-size --bundle battle
+./target/release/legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted
+```
 
-# A VAB sample
-./target/release/asset-viewer vab extracted/PROT/0865_battle_data.BIN --offset 0x... --sample 0
+Runs verify → disc → PROT → categorize → streaming sub-asset extract → TIM → PNG. Skip the slow stages with `--skip-png` (PNG conversion), `--skip-xa` (CD-XA demux), `--skip-catalog` (TIM-catalog TSVs), or `--skip-verify` (input SHA-256). Pass `-v` for per-file output.
 
+Per-stage invocations - `disc-extract`, `prot-extract`, `lzs-decode`, and friends - are in [`docs/tooling/extraction.md`](docs/tooling/extraction.md).
+
+## Using the tools
+
+Each crate's `README.md` documents its own CLI in full; the highlights:
+
+```bash
+# What did the scene host actually resolve for a scene? TIMs uploaded to VRAM,
+# TMDs parsed, MES presence, SEQ / VAB / event-script counts.
+# `--disc` reads PROT.DAT + CDNAME.TXT straight off the image, so this works
+# with no `extracted/` directory at all.
+./target/release/legaia-engine info --disc "/path/to/game.bin" --scene town01
+./target/release/legaia-engine list-scenes --disc "/path/to/game.bin"
+
+# Tick the engine headlessly against a scene: drives the World, the camera, and
+# the BGM director; logs scene transitions. Boot-loop smoke check.
+./target/release/legaia-engine play --scene town01 --frames 600 --no-audio
+
+# Windowed wgpu session: renders scene TMDs + HUD, accepts keyboard input.
+# 60 Hz fixed tick, uncapped render.
+./target/release/legaia-engine play-window --scene town01
+
+# Decode a PSX STR file (MDEC video) and play it back with synced XA audio.
+./target/release/legaia-engine play-str /path/to/cutscene.str
+
+# Persist input bindings to TOML (engine-core::input::Mapping).
+./target/release/legaia-engine config set --binding cross=Z
+```
+
+Asset inspection, after `legaia-extract` has populated `extracted/`:
+
+```bash
 # PROT entry browser
 ./target/release/asset-viewer prot extracted/PROT.DAT --cdname extracted/CDNAME.TXT
 
-# Headless engine driver - boots a CDNAME scene straight off PROT bytes
-# (no `tim_scan/` or `tmd_scan/` filesystem intermediate). Prints what the
-# scene-host resolved: TIMs uploaded to VRAM, TMDs parsed, MES presence,
-# SEQ / VAB / event-script counts.
-./target/release/legaia-engine info --scene town01
-./target/release/legaia-engine list-scenes
-
-# Run the engine for N frames against a scene - ticks the World, drives
-# the camera, drains BGM events into the audio director (if available),
-# logs scene transitions. Headless smoke check that the boot-loop wiring
-# (engine-shell::BootSession) actually moves state forward.
-./target/release/legaia-engine play --scene town01 --frames 600 --no-audio
-
-# Open a windowed wgpu session rendering scene TMDs + HUD; accepts keyboard
-# input; exits cleanly on window close. 60 Hz fixed tick, uncapped render.
-./target/release/legaia-engine play-window --scene town01
-
-# Decode a raw PSX STR file (MDEC video) and play it back in a window with
-# synced XA audio.
-./target/release/legaia-engine play-str /path/to/cutscene.str
-
-# Edit input key bindings (persisted to TOML via engine-core::input::Mapping)
-./target/release/legaia-engine config set --binding cross=Z
-
-# Save / load the world's empty default party to a slot file. Engines
-# drive the same flow at runtime through `engine-core::menu_runtime`.
-./target/release/legaia-engine save --slot 0 --save-dir saves
-./target/release/legaia-engine load --slot 0 --save-dir saves
-
-# Field scene runner - drives the field-VM against a real CDNAME scene's
-# event-script records, with dialog rendering wired into the same window
+# Field scene runner - drives the field VM against a real scene's event-script
+# records, with dialog rendering in the same window
 ./target/release/asset-viewer field town01
 
-# Battle scene driver - boots the battle bundle, ticks the battle-action
-# state machine, shows action state + per-slot liveness in the HUD
+# Battle scene driver - boots the battle bundle, ticks the battle-action SM
 ./target/release/asset-viewer battle-scene --queued-action 3
 
-# SEQ playback - drives the SsAPI-shape sequencer + a VAB through cpal,
-# producing live audio
+# SEQ playback - the SsAPI-shape sequencer + a VAB through cpal, live audio
 ./target/release/asset-viewer seq path/to.seq path/to.vab
 
-# Standalone MES dialog viewer - typewriter-paced text rendering through
-# the extracted dialog font
-./target/release/asset-viewer dialog path/to.mes
+# Texture → PNG, mesh → OBJ
+./target/release/tim convert extracted/tim_scan/<entry>/000.tim -o out.png
+./target/release/tmd dump-obj extracted/tmd_scan/<entry>/000.tmd --out mesh.obj
 
-# ANM keyframe inspector - per-record header + per-bone keyframe table
-./target/release/anm keyframes path/to.anm --record 0
-
-# Field-pack slot clusters - group the 97 schema slots by size to surface
-# semantic record kinds (5 × 0x2088 = the scene's TIM blobs, 21 × 0x218 =
-# the NPC-slot array, etc.)
+# Group a field-pack's 97 schema slots by size to surface record kinds
 ./target/release/asset field-pack extracted/PROT/0005_town01.BIN --groups
 
-# PSX memory-card reader - list active save blocks, parse a character
-# record, JSON-dump a five-slot party
+# PSX memory-card reader
 ./target/release/save-tool dir ~/.mednafen/sav/Legend*.0.mcr
-./target/release/save-tool roundtrip /path/to/character.bin
 ```
 
-### Static analysis (Ghidra in Docker)
+## Documentation
 
-```bash
-docker compose build ghidra        # one-time, sets UID/GID matching the host user
-docker compose up -d ghidra
-docker compose exec ghidra /ghidra/support/analyzeHeadless \
-    /projects legaia -process SCUS_942.54 \
-    -noanalysis -postScript find_streaming_consumers.py
-```
+Start at **[`docs/overview.md`](docs/overview.md)** - the elevator pitch plus how the layers stack from disc down to sub-asset. From there the docs are organised topic-first:
 
-Per-function decompile + disassembly dumps land in `ghidra/scripts/funcs/<addr>.txt`. See [`docs/tooling/ghidra.md`](docs/tooling/ghidra.md) for the full script catalogue and gotchas.
+- **[`docs/formats/`](docs/formats/overview.md)** - per-format byte-level specs (PROT, LZS, TIM, TMD, VAB, MES, ANM, MDT, scene bundles, effect bundles, overlays, …), each with a confidence level and Ghidra provenance. Read the relevant page before writing a parser.
+- **[`docs/subsystems/`](docs/subsystems/)** - how the runtime engine works:
+  - Boot + assets: [boot](docs/subsystems/boot.md), [asset loader](docs/subsystems/asset-loader.md).
+  - VMs: [script](docs/subsystems/script-vm.md), [actor](docs/subsystems/actor-vm.md), [effect](docs/subsystems/effect-vm.md), [move](docs/subsystems/move-vm.md), [motion](docs/subsystems/motion-vm.md).
+  - Render + audio: [renderer](docs/subsystems/renderer.md), [audio](docs/subsystems/audio.md), [cutscene](docs/subsystems/cutscene.md), [VR mode](docs/subsystems/vr-mode.md).
+  - Battle: [battle](docs/subsystems/battle.md), [battle action SM](docs/subsystems/battle-action.md), [battle formulas](docs/subsystems/battle-formulas.md).
+  - World + field: [world map](docs/subsystems/world-map.md), [field locomotion](docs/subsystems/field-locomotion.md), [field menu](docs/subsystems/field-menu.md).
+  - Minigames: [fishing](docs/subsystems/minigame-fishing.md), [slot machine](docs/subsystems/minigame-slot-machine.md), [Baka Fighter](docs/subsystems/minigame-baka-fighter.md), [dance](docs/subsystems/minigame-dance.md), [Muscle Dome](docs/subsystems/minigame-muscle-dome.md).
+  - [Engine reimplementation](docs/subsystems/engine.md) - the clean-room boundaries.
+- **[`docs/tooling/`](docs/tooling/)** - how to drive the repo: [extraction CLIs](docs/tooling/extraction.md), [Ghidra setup](docs/tooling/ghidra.md), [overlay capture](docs/tooling/overlay-capture.md), [mednafen automation](docs/tooling/mednafen-automation.md), [PCSX-Redux automation](docs/tooling/pcsx-redux-automation.md), [randomizer](docs/tooling/randomizer.md), [translation](docs/tooling/translation.md), [port catalog](docs/tooling/port-catalog.md).
+- **[`docs/reference/`](docs/reference/)** - [key Ghidra-traced functions](docs/reference/functions.md), [RAM map + globals](docs/reference/memory-map.md), [TCRF region data](docs/reference/builds.md), [curated game-data tables](docs/reference/gamedata.md), [open RE threads](docs/reference/open-rev-eng-threads.md) (still-open hunts + falsified hypotheses worth not re-walking).
 
-### Capture & analyze a runtime overlay
+Contributing? Read [`CONTRIBUTING.md`](CONTRIBUTING.md), then [`CLAUDE.md`](CLAUDE.md) - the latter is the full repository map and the catalogue of format gotchas that bite repeatedly (especially the MIPS LUI+ADDIU pair problem).
 
-Most game logic (field/battle/menu state machines, dialog renderer, debug-flag writers) lives in RAM overlays loaded at `0x801C0000+`, **not** in `SCUS_942.54`. Save state at the target scene in mednafen and run:
-
-```bash
-scripts/ghidra-analysis/analyze-overlay.sh \
-    ~/.mednafen/mcs/Legend*Legaia*.mcN \
-    --label level_up
-```
-
-The pipeline decompresses the gzipped save state, slices out the overlay window, re-imports it into Ghidra, and emits a CSV of every `jal` to a known SCUS asset loader with the const-tracked argument. See [`docs/tooling/overlay-capture.md`](docs/tooling/overlay-capture.md).
-
-### Disc-gated tests
+## Disc-gated tests
 
 ```bash
 LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test --workspace --release
 ```
 
-Several integration tests touch a real disc / extracted directory:
+Many integration tests touch a real disc or extracted directory - the full-pipeline validation suite, the per-scene asset-chain walk, the SEQ+VAB audio chain, the randomizer round-trip oracles, and the memory-card save round-trip. Find them with `grep -rl LEGAIA_DISC_BIN crates/*/tests`; each is named for what it covers.
 
-- `crates/iso/tests/disc_pipeline.rs` - disc walk, file count, key file SHA-256s.
-- `crates/extract/tests/validation_suite.rs` - full pipeline assertions.
-- `crates/engine-core/tests/scene_chain_e2e.rs` - load every CDNAME scene, walk MES + SEQ + TMD assets, validate the BGM resolver against the per-scene `block_start + 6 + id` math.
-- `crates/engine-core/tests/battle_real_data_chain.rs` - locate the retail effect bundle and drive the battle SM against it.
-- `crates/engine-audio/tests/real_bgm_chain.rs` - pull a real `music_01` SEQ + VAB pair through the sequencer and SPU mixer.
-- `crates/save/tests/real_card_roundtrip.rs` - walk a real PSX memory-card image (mednafen `.mcr`) and verify the save-block layout.
-
-If `LEGAIA_DISC_BIN` is unset, every disc-gated test skips and passes - that's intentional, so CI works without redistributing Sony data.
+With `LEGAIA_DISC_BIN` unset, every one of them skips and passes. That's intentional - it's what lets CI run without redistributing Sony data.
 
 ## Repository layout
 
@@ -208,41 +176,56 @@ legend-of-legaia-re/
 ├── docker-compose.yml            # ghidra service (UID/GID-matched user)
 ├── docker/ghidra.Dockerfile      # wraps blacktop/ghidra:latest with host-UID mapping
 ├── crates/
-│   ├── iso/                      # PSX disc reader + ISO9660 walker
+│   │   # Track 1 - preservation (disc → PNG / WAV / OBJ / JSON)
+│   ├── bytes/                    # Checked little-endian readers; leaf dep of every parser
+│   ├── iso/                      # PSX disc reader + ISO9660 walker + sector write-back
 │   ├── prot/                     # PROT.DAT TOC + CDNAME + standalone TIM-pack
-│   ├── lzs/                      # Legaia LZS decoder (FUN_8001a55c)
-│   ├── asset/                    # Asset dispatcher, streaming, scene-bundle + format detectors, per-entry categorize classifier
-│   ├── tim/                      # PSX TIM parser + PNG exporter
+│   ├── lzs/                      # Legaia LZS decoder (FUN_8001a55c) + re-packer
+│   ├── asset/                    # Asset dispatcher, streaming, bundle detectors, categorize
+│   ├── tim/                      # PSX TIM parser + PNG exporter + software VRAM model
 │   ├── tmd/                      # Legaia TMD parser + primitive walker + OBJ export
 │   ├── vab/                      # VAB sound bank extractor + SPU-ADPCM decoder
-│   ├── xa/                       # XA-ADPCM decoder + WAV exporter
+│   ├── xa/                       # XA-ADPCM decoder + CD-XA demux + WAV exporter
+│   ├── seq/                      # PsyQ SEQ parser + CLI inspector
 │   ├── mdt/                      # Move table (Tactical Arts) parser
-│   ├── art/                      # Tactical Arts data: action constants, per-character art tables, SCUS arts-name table
+│   ├── art/                      # Tactical Arts data + arts-name / arts-voice tables
 │   ├── mes/                      # MES dialog container parser
 │   ├── anm/                      # ANM animation container parser
-│   ├── seq/                      # PsyQ SEQ parser + CLI inspector
-│   ├── save/                     # Per-character record + PSX memory-card walker + LGSF v2 engine save round-trip
+│   ├── save/                     # Character record + memory-card walker + engine saves
 │   ├── font/                     # Dialog font extraction + atlas / layout API
+│   ├── mdec/                     # PSX MDEC clean-room decoder (Iki bitstream → RGBA8)
 │   ├── extract/                  # Top-level pipeline driver
-│   ├── mdec/                     # PSX MDEC clean-room decoder (Iki bitstream → RGBA8); STR sector assembler
-│   ├── mednafen/                 # Mednafen save-state parser + watchpoint automation; VRAM + SPU parity oracles
-│   ├── gamedata/                 # Curated walkthrough-mined game-data tables (ground-truth labels)
+│   ├── mednafen/                 # Mednafen save-state parser + VRAM / SPU parity oracles
+│   ├── pcsxr/                    # PCSX-Redux save-state main-RAM reader
+│   ├── gamedata/                 # Curated walkthrough-mined tables (ground-truth labels)
 │   ├── cheats/                   # GameShark / Mednafen cheat-database parser + classifier
-│   ├── engine-core/              # World, scene host, scene resources (VRAM pre-pass), camera, menu runtime, save round-trip
+│   ├── rando/                    # Randomizer / disc patcher for a user-supplied .bin
+│   │   # Track 2 - engine reimplementation (clean-room Rust)
+│   ├── engine-core/              # World, scene host, camera, menu runtime, save round-trip
+│   ├── engine-ui/                # Renderer-agnostic UI draw-list builders
 │   ├── engine-render/            # winit + wgpu, software PSX VRAM emulation, text overlay
 │   ├── engine-audio/             # cpal mixer + clean-room SPU + SEQ sequencer
-│   ├── engine-vm/                # Actor / field / effect / move / motion VMs + battle SM + world-map SM + action validator + formulas
-│   ├── engine-shell/             # `legaia-engine` top-level driver + BootSession + AudioBgmDirector; play-window renders shop + inn + level-up overlays
-│   ├── asset-viewer/             # Combined viewer: TIM, TMD, stage, VAB, SEQ, dialog, field, battle, PROT
-│   └── web-viewer/               # WASM target - disc browser running in the browser
+│   ├── engine-vm/                # Actor / field / effect / move / motion VMs + battle SM
+│   ├── engine-shell/             # `legaia-engine` driver + BootSession + BGM director
+│   ├── asset-viewer/             # Combined viewer: TIM, TMD, stage, VAB, SEQ, field, battle
+│   └── web-viewer/               # WASM target - disc browser + viewers in the browser
+├── data/                         # Curated non-Sony reference data (gamedata, cheats)
 ├── docs/                         # Topic-first technical reference (see "Documentation")
 ├── ghidra/
 │   ├── projects/                 # Ghidra project DB (gitignored)
-│   └── scripts/                  # Jython analysis scripts + per-function dumps
-├── scripts/                      # Host-side helpers (function-coverage, overlay capture)
-├── site/                         # Project landing site (mirrors docs/)
-└── extracted/                    # Disc-extracted assets - Sony bytes, never committed (gitignored)
+│   └── scripts/                  # Jython analysis scripts + per-function dumps (gitignored)
+├── scripts/                      # Host-side helpers (CI gates, capture automation)
+├── site/                         # Project landing site
+└── extracted/                    # Your disc's assets - Sony bytes, never committed (gitignored)
 ```
+
+## Status and license
+
+**Status:** an active research project. Expect no API stability.
+
+**License:** dual-licensed at your option under either the [Unlicense](LICENSE) (public-domain dedication) or the [MIT License](LICENSE-MIT). Apache-2.0 is intentionally not offered - this project is meant to be as close to public domain as the law in your jurisdiction allows, with no patent-retaliation strings attached: copy it, fork it, sell it, patent improvements on it, just don't stop anyone else from doing the same.
+
+These licenses apply *only* to the code and documentation in this repository. **Sony's IP - game executable, asset data, ROM contents - is not redistributed here and is not covered by them.** See [You bring the disc](#you-bring-the-disc) above.
 
 ## Acknowledgments
 

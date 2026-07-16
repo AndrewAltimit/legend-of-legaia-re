@@ -1,10 +1,12 @@
 # Format Reference
 
-Every format documented here has a clean-room Rust parser somewhere in the workspace, an Ghidra-traced provenance, and a byte-level layout. Confidence levels:
+Every format documented here has a clean-room Rust parser somewhere in the workspace, Ghidra-traced provenance, and a byte-level layout. Each page states its own confidence level:
 
 - **Confirmed** - verified end-to-end against real on-disc data, with passing tests.
 - **Inferred** - deduced empirically from byte patterns; structurally consistent but not yet exhaustively validated.
 - **Unknown** - known to exist but not yet decoded.
+
+Read the page for a format before writing a parser against it - several of these look like their standard PSX counterparts and are not (the TMD variant, the SEQ meta-event encoding, the three distinct pack formats). New here? Start at [`../overview.md`](../overview.md) for how the layers stack from disc down to sub-asset.
 
 ## Disc + container layer
 
@@ -61,8 +63,8 @@ Every format documented here has a clean-room Rust parser somewhere in the works
 | [Per-scene primitive scratch buffer](navmesh.md) | Documented negative finding - `0x80108EA4..0x80109550` is per-scene rendering scratch, not navmesh data. Reproduction commands included. |
 | [Encounter record](encounter.md) | Layout `[3 reserved][count: u8][monster_ids: u8[count]]`. Pointer installed at `actor[+0x94]` by the script-VM, read by `FUN_801DA51C` to populate the formation cell at `0x8007BD0C`. |
 | [MAN relocation](man-relocation.md) | Variable-length editing of a decompressed MAN. Scene-transition (`0x3F` door) destinations are partition-2 records reached via the partition-2 record-offset table; resizing a destination name fixes the partition tables + section-0 offset + intra-record jump deltas + the external descriptor size. Powers the door randomizer. |
-| [STR FMV table](str-fmv-table.md) | In-RAM compact table the cutscene / MDEC overlay uses to look up `MV*.STR` files. Six 24-byte entries at `0x801CAE40`: filename + libcd BCD MSF + size. |
-| [World-map slot-4 records](world-map-overlay.md) | Slot 4 of each kingdom bundle (PROT 0085 / 0244 / 0391, type byte `0x05`). Outer pack of 15 sub-bodies each holding a `count_a × count_b` grid of 8-byte records, byte-verified against live RAM at `0x8011A624`. Record interpretation is **open** - the "world-map outlines / wireframe" reading was falsified. Most likely a runtime library of small object-local 3D meshes; consumer not yet pinned in Ghidra (steady-state Read-breakpoint capture across the slot returned zero hits). Slot 4 is **not** the bulk continent terrain source - that mechanism is pinned at [world-map § bulk continent terrain emit](../subsystems/world-map.md#top-view-bulk-terrain-render-path-overlay-replaced-per-prim-renderers). |
+| [STR FMV table](str-fmv-table.md) | FMV dispatch table at `0x801D0A6C` - 23 × 32-byte slots (`[path_ptr, depth, start_frame, end_frame, fb_x, fb_y, w, h]`), of which nine are the retail `fmv_id 0..=8`. Static overlay data, so it decodes straight from the disc. The `0x801CAE08` window nearby is the generic libcd directory-record cache, **not** an FMV table. |
+| [World-map slot-4 records](world-map-overlay.md) | Slot 4 of each kingdom bundle (PROT 0085 / 0244 / 0391, type byte `0x05`). A per-kingdom library of small object-local 3D meshes: each 8-byte record is a GTE vertex `(i16 x, y, z, attr)` that `FUN_80044c14` loads and `RTPT`-transforms; `attr` is not a coordinate and is render-unused. Container byte-verified against live RAM; the renderer reads the pool in place. The "coastline wireframe" reading is falsified, and slot 4 is **not** the bulk continent terrain source - that mechanism is pinned at [world-map § bulk continent terrain emit](../subsystems/world-map.md#top-view-bulk-terrain-render-path-overlay-replaced-per-prim-renderers). |
 
 ## Runtime overlay carriers
 
@@ -92,6 +94,6 @@ Every format documented here has a clean-room Rust parser somewhere in the works
 
 ## Video / pre-rendered
 
-`MOV/MV*.STR` files are PSX MDEC video streams. Public decoders exist (jPSXdec, PSX-MDEC docs); the engine track delegates to those rather than re-implementing.
+`MOV/MV*.STR` files are PSX MDEC video streams. Legaia's are the **Iki** bitstream (LZSS-compressed per-block qscale/DC table + an AC-only entropy stream, 16-bit-LE MSB-first, column-major macroblocks) rather than STRv2. [`crates/mdec`](../../crates/mdec/README.md) is a clean-room decoder for it - `mdec decode-str` writes frames to disk, and `legaia-engine play-str` plays a movie back in a window with synced XA audio. See [`subsystems/cutscene.md`](../subsystems/cutscene.md) for the decode algorithm and the A/V sync path.
 
 `XA/XA*.XA` files are XA-ADPCM audio streams in standard CD-XA Mode 2 Form 2. The decoder in `crates/xa` is spec-correct, and the [`xa demux-disc`](../../crates/xa/src/bin/xa.rs) subcommand reads raw 2352-byte sectors directly off the `.bin`, parses each `(file_no, ch_no)` subheader, and emits one WAV per channel. See [`xa.md`](xa.md) - the earlier "non-standard interleave" framing was Form-1-truncation damage, not a bespoke Legaia muxing scheme.

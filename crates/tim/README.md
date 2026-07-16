@@ -57,9 +57,20 @@ Pixel widths in real pixels:
 ## CLI
 
 ```bash
-tim info        <file>                 # header dump
-tim convert     <file> <output.png>
-tim convert-dir <dir>  <out_dir>       # batch convert
+# Header dump: pmode, CLUT block, image dims, framebuffer position
+tim info extracted/tim_scan/0005_town01/000.tim
+
+# Single TIM → PNG. Without -o, writes `<path>.png` next to the input.
+tim convert extracted/tim_scan/0005_town01/000.tim -o town01_000.png
+
+# Pick a palette row on a CLUT-bearing TIM (default row 0), or emit every row
+# as `<path>_clut<N>.png` - the fast way to find which CLUT a mesh expects.
+tim convert extracted/tim_scan/0005_town01/000.tim --clut 3 -o row3.png
+tim convert extracted/tim_scan/0005_town01/000.tim --all-cluts
+
+# Batch: recursively convert every .tim under a directory.
+# Without -o, mirrors the input layout next to it.
+tim convert-dir extracted/tim_scan -o png_out
 ```
 
 ## See also
