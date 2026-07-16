@@ -15,14 +15,16 @@
 #     on: (a) manual workflow_dispatch, or (b) a PR that has the `disc-test`
 #     label added. Set the `LEGAIA_DISC_BIN` repository variable (Settings >
 #     Variables > Actions) to the disc image path on the self-hosted runner.
+#   - Tag pushes are NOT handled here. release.yml owns the `v*` tag event
+#     and re-runs these same fmt/clippy/test gates as its own `verify` job,
+#     so a release stays test-gated without two workflows contending for the
+#     single self-hosted runner on one commit. See docs/tooling/releases.md.
 
 name: Main CI
 
 on:
   push:
     branches: [main]
-    tags:
-      - 'v*'
   pull_request:
     types: [labeled]
   workflow_dispatch:
