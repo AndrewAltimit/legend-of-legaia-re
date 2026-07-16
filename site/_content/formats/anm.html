@@ -1,7 +1,8 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; anm animation container</div>
   <h1>ANM animation container <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">Asset type <code>0x06</code> from the <a href="asset-type.html">asset-type dispatcher</a>. Implementation: <code>crates/anm</code>.</p>
+  <p class="lede">The keyframe animation container for <strong>player characters and field actors</strong> - the walk cycles, idle loops, and scripted motion the field engine plays back. Asset type <code>0x06</code> from the <a href="asset-type.html">asset-type dispatcher</a>. Implementation: <code>crates/anm</code>.</p>
+  <p>It is not the only animation format on the disc, and picking the wrong one is the usual mistake. Battle monsters use a separate per-object keyframe stream inside the monster archive (<a href="monster-animation.html">monster animation</a>), and the party's <em>battle</em> poses come from the player battle files' own streams rather than from here (<a href="character-mesh.html">character mesh</a>). ANM data itself reaches you from two distinct bundles - the party locomotion bank and the per-scene NPC bank; see <a href="#disc-sources">disc sources</a>.</p>
 </header>
 
 <section class="doc-section" id="layout">

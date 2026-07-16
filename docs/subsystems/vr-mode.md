@@ -6,12 +6,24 @@ The static site's three WebGL2 scene pages - the [world overview](world-overview
 scene to a VR headset over WebXR: stereo rendering through the
 `XRWebGLLayer`, head tracking, and thumbstick locomotion through the world.
 
+**VR is an enhancement retail never had, and it is opt-in.** The 1998 game has no
+stereo path; this is a presentation mode the port adds on top of the same geometry,
+entered only when a reader presses the `VR:` button on a page. It sits alongside the
+engine's other explicit, default-off enhancement toggles (dynamic lighting,
+free-angle movement, the debug orbit camera) rather than claiming to reproduce
+anything on the disc. Behavioural fidelity to retail remains the baseline for game
+logic; nothing here changes simulation, and parity oracles and replays are
+unaffected.
+
 Nothing about the flat path changes. A browser that reports no
 `immersive-vr` device runs exactly the render code it ran before: no
 global is shadowed, no GL context attribute is altered. The VR button
 still renders - as a `VR unavailable` affordance whose hover/click text
 names the specific reason - so the feature is never silently absent (see
 [Availability + diagnostics](#availability--diagnostics)).
+
+The flat renderer stays the geometry source: only the framebuffer (per-eye
+`XRWebGLLayer` + scissor) and the view-projection (per-eye XRFrame matrices) fork.
 
 Implementation: [`site/js/vr-mode.js`](../../site/js/vr-mode.js), plus
 per-page hooks in `world-overview-app.js`, `field-scene-view.js` and

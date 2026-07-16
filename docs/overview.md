@@ -67,4 +67,4 @@ Run `cargo build --release` for all binaries, `cargo test --workspace --release`
 
 ## Public docs vs operational state
 
-The documents under `docs/` and the contents of `site/index.html` are **technical reference**. They describe what the formats and subsystems *are*, not what work has happened recently. Operational state (work-in-progress, session notes, "what to do next") lives in git log, PR descriptions, and the agent-only memory files under `~/.claude/projects/`.
+The documents under `docs/` and the pages under `site/` are **technical reference**. They describe what the formats and subsystems *are*, not what work has happened recently - no roadmaps, no status tables, no session notes. Operational state (work-in-progress, "what to do next") lives in git log and PR descriptions.

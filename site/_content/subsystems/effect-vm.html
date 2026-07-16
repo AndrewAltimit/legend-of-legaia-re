@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; effect VM</div>
   <h1>Effect VM (battle effect cluster)</h1>
-  <p class="lede">The runtime that drives battle-spawn effects - spell casts, item-use animations, hit sparks. Implemented as a per-slot state machine rather than a clean bytecode dispatcher: there's no central switch on a per-slot opcode byte, and state transitions are inlined throughout 600+ instructions of the per-frame walker.</p>
+  <p class="lede">The runtime that drives battle-spawn effects - spell casts, item-use animations, hit sparks. Lives in the battle overlay (<code>0898_xxx_dat</code>); the per-frame walker is <code>FUN_801E0088</code>. The odd one out of Legaia's <a href="move-vm.html#vm-family">five runtime VMs</a>: it is a per-slot <strong>state machine</strong>, not a bytecode dispatcher - there's no central switch on a per-slot opcode byte, and state transitions are inlined throughout 600+ instructions of the walker.</p>
 </header>
 
 <section class="doc-section" id="how-it-works">

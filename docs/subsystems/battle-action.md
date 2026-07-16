@@ -7,7 +7,7 @@ A two-level finite state machine that drives the per-actor execution of a chosen
 - [One-paragraph overview](#one-paragraph-overview)
 - [Outer dispatch - `ctx[7]` action-state cursor](#outer-dispatch---ctx7-action-state-cursor) · [state table](#state-table)
 - [Inner dispatch - actor action category](#inner-dispatch---actor-action-category) · [per-actor sub-state surface](#per-actor-sub-state-surface)
-- [Cross-references with other battle helpers](#cross-references-with-other-battle-helpers) - [range/LOS](#fun_8004e2f0---battle-range--line-of-sight) · [stat aggregator](#fun_80042558---per-frame-stat-aggregator) · [effect spawn API](#fun_801dfdf8---effect-bundle-public-spawn-api) · [summon-overlay dispatch](#seru-magic-summon-overlay-dispatch) · [pose driver](#fun_801d5854---per-actor-pose-driver) · [party/monster setup](#fun_801eed1c--fun_801e7320---party--monster-setup-hooks) · [camera bounds](#fun_801efe44---battle-camera-bounds) · [escape roll](#the-escape-roll-fun_801e791c) · [battle voice cues](#battle-voice-cues---xa30-normal-move-grunts-vs-the-xa2xa4-arts-shouts) · [helper functions](#battle-helper-functions)
+- [Cross-references with other battle helpers](#cross-references-with-other-battle-helpers) - [range/LOS](#fun_8004e2f0---battle-range--line-of-sight) · [stat aggregator](#fun_80042558---per-frame-stat-aggregator) · [effect spawn API](#fun_801dfdf8---effect-bundle-public-spawn-api) · [summon-overlay dispatch](#seru-magic-summon-overlay-dispatch) · [pose driver](#fun_801d5854---per-actor-pose-driver) · [party/monster setup](#fun_801eed1c--fun_801e7320---party--monster-setup-hooks) · [camera bounds](#fun_801efe44---battle-camera-bounds) · [escape roll](#the-escape-roll-fun_801e791c) · [battle voice cues](#battle-voice-cues---the-xa30-grunt-vs-the-xa2xa4xa6-arts-shout) · [helper functions](#battle-helper-functions)
 - [Notes for the engine port](#notes-for-the-engine-port) · [decompile quirks](#decompile-quirks-worth-knowing) · [engine port](#engine-port)
 - [Action validator (`FUN_8003FB10`)](#action-validator-fun_8003fb10) · [action queue + Tactical Arts trigger ordering](#action-queue-and-tactical-arts-trigger-ordering) · [Miracle / Super in the live Arts submenu](#miracle--super-in-the-live-player-driven-arts-submenu) · [open work](#open-work)
 
@@ -451,6 +451,8 @@ parts but holds only `-1` nodes. Pinning the `0x4000`/`0x4001` draw behaviour
 therefore needs a frame-stepped capture inside an *enemy* stager-spawn window
 whose stager carries a `0x4000` record - not reachable from the catalogued
 states (`crates/mednafen/tests/summon_render_mode_node.rs`).
+
+### `FUN_801D5854` - per-actor pose driver
 
 The single most-cited helper inside `FUN_801E295C` (~30 call sites). Signature `FUN_801D5854(actor_id, pose_id)`. Pose IDs surfaced:
 - `6` = idle / breathing

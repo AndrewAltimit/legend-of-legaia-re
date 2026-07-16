@@ -195,16 +195,34 @@
   <div class="breadcrumb"><a href="index.html">home</a> &middot; play</div>
   <h1>Play the port</h1>
   <p class="lede">
-    The clean-room engine, running in your browser, on your own disc. This is not a video and it is not an emulator: it is the actual Rust port compiled to WebAssembly - the <a href="subsystems/script-vm.html">field VM</a>, the <a href="subsystems/field-locomotion.html">free-movement controller</a> with its per-scene walkability grid, the floor-height sampler, the NPC motion VMs, the interaction probe - stepping once per frame while WebGL draws the world it is simulating. Pick a disc, pick a place, and walk around inside it. Nothing is uploaded; the image never leaves your machine.
-    Have a VR headset? The <strong>VR</strong> button under the canvas presents the running scene over WebXR
-    (spectator or first-person) - use Chrome or Edge with SteamVR as the active OpenXR runtime, and reach this
-    page via <code>http://localhost</code> or https (WebXR needs a secure context; if it can't start, the
-    button says exactly what is missing).
+    Walk around inside <em>Legend of Legaia</em>, in this browser, on your own copy of the game.
+  </p>
+  <p>
+    This is not a video, and it is not an emulator. It is the project's clean-room
+    reimplementation of the game's engine - written from scratch in Rust, compiled to
+    WebAssembly - actually running. The parts doing the work are the same ones the native
+    build uses: the <a href="subsystems/script-vm.html">field VM</a> that interprets each
+    scene's scripts, the <a href="subsystems/field-locomotion.html">movement controller</a>
+    and its per-scene walkability grid, the floor-height sampler, the NPC motion VMs, and the
+    probe that decides what you are standing in front of when you press talk. They step once
+    per frame; WebGL draws the world they are simulating.
+  </p>
+  <p>
+    <strong>You supply the game.</strong> The site ships no game data of any kind. Pick a
+    <code>.bin</code> disc image of your own copy below and it is read locally, in your
+    browser - nothing is uploaded, and the image never leaves your machine.
   </p>
 </header>
 
 <section class="doc-section" id="run">
   <h2>Run it</h2>
+  <p class="hint">
+    Have a VR headset? The <strong>VR</strong> button under the canvas presents the running scene
+    over WebXR, either as a diorama you look into or first-person from Vahn's own eyes. It needs
+    Chrome or Edge with SteamVR as the active OpenXR runtime, and this page reached over
+    <code>http://localhost</code> or https - WebXR only starts in a secure context. If it can't
+    start, the button says exactly what is missing.
+  </p>
 
   <div class="play-shell">
     <div class="play-load">
@@ -315,27 +333,34 @@
     in the browser today:
   </p>
   <ul>
-    <li><strong>Field and town scenes.</strong> The map assembles from the scene's environment mesh
-      pack, its <code>.MAP</code> object grid, the floor-height table, and the walk-ground
-      heightfield, textured from the real PSX VRAM the engine builds. You walk with the ported
-      free-movement controller: the same 2-unit stepping, the same per-axis collision against the
-      per-scene walkability grid, the same terrain follow.</li>
-    <li><strong>The player character.</strong> The lead's field mesh out of the global TMD pool,
-      posed every frame from the real locomotion clips - idle while standing, the walk cycle while
-      moving.</li>
-    <li><strong>NPCs.</strong> Every actor the scene's MAN places, on its own animation clip, at the
-      position the engine's motion VMs put it. Walk up to one and press Z: the interaction probe
-      runs and the field VM plays out their dialogue, branches and all.</li>
+    <li><strong>Field and town scenes.</strong> The map assembles out of the pieces the game itself
+      assembles it from: the scene's set of environment models, the <code>.MAP</code> grid saying
+      which object stands on which tile, the floor-height table, and the walkable ground surface -
+      all textured from the real PlayStation video memory the engine builds up in your browser. You
+      walk with the ported movement controller, so you get the game's own 2-unit stepping, its
+      per-axis collision against the scene's walkability grid, and its terrain follow.</li>
+    <li><strong>The player character.</strong> The lead's field model, taken from the pool of meshes
+      the game keeps loaded everywhere, and re-posed every frame from the real animation clips -
+      the idle while you stand still, the walk cycle while you move.</li>
+    <li><strong>NPCs.</strong> Every character the scene's placement script puts down, each on its own
+      animation clip, standing where the engine's motion VMs put it. Walk up to one and press
+      <kbd>Z</kbd>: the interaction probe fires and the field VM plays out their dialogue, branches
+      and all.</li>
     <li><strong>Doors.</strong> Walk into one and the engine loads the destination scene under you;
       the page rebuilds the geometry around the transition.</li>
-    <li><strong>The pause menu.</strong> Press <kbd>Enter</kbd> in the field for the real retail menu:
-      the gold 9-slice window chrome + navy filigree come straight off your disc's menu-UI atlas and
-      the glyphs off the dialog font, drawn by the same window-descriptor code the native engine uses.
-      Up/Down move the cursor, <kbd>Z</kbd> opens a row, <kbd>X</kbd> backs out. Items, Magic, Equip,
-      Status and Options all run their live engine sub-sessions and render through the exact same draw
-      builders the native <code>play-window</code> uses &mdash; it is the same menu, just a different
-      framebuffer. Only Load and Save keep a plain frame here, since the page's own save-loader owns
-      disc-backed saving.</li>
+    <li><strong>The pause menu.</strong> Press <kbd>Enter</kbd> in the field for the real retail menu.
+      The gold window chrome and navy filigree come straight off your disc's menu art, the glyphs off
+      its dialog font, and every rectangle is placed by the same window-descriptor code the native
+      engine uses. Up/Down move the cursor, <kbd>Z</kbd> opens a row, <kbd>X</kbd> backs out.</li>
+    <li><strong>Every menu screen behind it.</strong> Items, Magic, Equip, Status, Options, Load and
+      Save each run their live engine sub-session and draw through the exact same builders the native
+      <code>play-window</code> uses &mdash; it is the same menu, just painted into a different
+      framebuffer.</li>
+    <li><strong>Saving to a real memory card.</strong> The rack above the canvas is the console's two
+      card ports: drop in a card image from your emulator and the in-game Load and Save screens read
+      and write <em>that</em> card, through retail's own save-select flow - the &ldquo;Now checking&rdquo;
+      prompt, the 5&times;3 block grid, the overwrite confirm. Saving edits the block in place, so
+      <em>Export</em> hands you back a card your emulator still loads.</li>
   </ul>
   <p>What does <em>not</em> run here yet, and why:</p>
   <ul>
@@ -355,15 +380,19 @@
       the continents today.</li>
   </ul>
   <p class="hint">
-    Some scenes frame better than others, and the reason is a real gap rather than a page bug. Retail
-    authors a camera per scene; this page runs one generic follow camera, so it drops the bodies the
-    lens-to-player segment actually passes through - an exact test against each body's world box, which
-    is what keeps a cave roof or a monastery ceiling from filling the screen without taking the floor
-    under your feet with it. Caves also expose a deeper disagreement: for scenes whose floor
-    is not in the floor-height table, the engine's floor sampler reports height 0 while the drawn
-    walk-ground sits below it, so the character can appear to stand above or inside the rock. That is
-    an engine-level thread, tracked with the
-    <a href="reference/open-rev-eng-threads.html">others</a>, not a mystery.
+    Some scenes frame better than others. That is a real gap rather than a page bug, and it is worth
+    knowing what you are looking at. The original game hand-authors a camera for every scene; this
+    page runs a single generic one. To stop a cave roof or a monastery ceiling from simply filling
+    the screen, it hides whatever the line from the lens to your character actually passes through,
+    tested exactly against each object's bounding box - which keeps the ceiling out of shot without
+    also taking away the floor under your feet.
+  </p>
+  <p class="hint">
+    Caves expose a deeper disagreement. When a scene's floor isn't listed in the floor-height table,
+    the engine's floor sampler reports height 0 while the ground you can see is drawn below that - so
+    your character can appear to stand above the rock, or inside it. That one is an engine-level
+    thread, tracked openly with the <a href="reference/open-rev-eng-threads.html">other open
+    questions</a>, not a mystery.
   </p>
 </section>
 

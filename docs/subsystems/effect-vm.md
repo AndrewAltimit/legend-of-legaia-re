@@ -1,10 +1,26 @@
 # Effect VM (battle effect cluster)
 
-The runtime that drives battle-spawn effects (spell casts, item-use animations, hit sparks). Implemented as a per-slot state machine rather than a clean bytecode dispatcher - there's no central switch on a per-slot opcode byte; state transitions are inlined throughout 600+ instructions of the per-frame walker.
+The runtime that drives battle-spawn effects: spell casts, item-use animations, hit
+sparks. It lives in the battle overlay (`0898_xxx_dat`); the per-frame walker is
+`FUN_801E0088`. Port:
+[`legaia_engine_vm::effect_vm`](../../crates/engine-vm/src/effect_vm.rs).
 
-The Rust port lives at `crates/engine-vm/src/effect_vm.rs`. It models the slot pool (`Pool`), the `MasterSlot` / `ChildSlot` / `EffectScript` data structures, ports the init (`Pool::init`) and spawn (`Pool::spawn`) APIs faithfully, and exposes a state-machine frame (`Pool::tick`) that delegates per-state transitions to the host through the `EffectHost::advance_state` callback. Engines wire the renderer, RNG, and any per-effect transition logic through `EffectHost`.
+**What catches people out: this is the one member of
+[the runtime VM family](move-vm.md#the-runtime-vm-family) that is not a bytecode
+VM at all.** There is no central switch on a per-slot opcode byte; state
+transitions are inlined throughout 600+ instructions of the walker. It is named a
+"VM" for symmetry with its four siblings, but it is a per-slot **state machine**,
+and looking for its opcode table is a dead end - see
+[How it dispatches](#how-it-dispatches).
 
-Lives in the battle overlay (`0898_xxx_dat`). Three functions:
+The port models the slot pool (`Pool`), the `MasterSlot` / `ChildSlot` /
+`EffectScript` data structures, ports the init (`Pool::init`) and spawn
+(`Pool::spawn`) APIs faithfully, and exposes a state-machine frame (`Pool::tick`)
+that delegates per-state transitions to the host through the
+`EffectHost::advance_state` callback. Engines wire the renderer, RNG, and any
+per-effect transition logic through `EffectHost`.
+
+Three functions:
 
 | Function | Span | Role |
 |---|---|---|

@@ -79,28 +79,36 @@ Two things the browser host has to do that the native one gets for free:
 ## Retail pause menu (`play_menu`)
 
 Start (Enter) opens the real retail field menu, drawn from the same wgpu-free
-`legaia-engine-ui` builders the native `play-window` uses - not a DOM stand-in.
+`legaia-engine-ui` builders the native `play-window` uses - **not a DOM
+stand-in**. The site is just a different framebuffer over the same menu.
+
 `LegaiaRuntime::play_menu_*` owns the state + navigation and serves two draw
-lists (`play_menu_draws_json`): the gold 9-slice + navy-filigree window chrome
-as sprite quads off the disc's menu-UI atlas (`save_menu_atlas::build_atlas`
-over PROT 0899 + the PROT.DAT system-UI sheet), and the labels as font-glyph
-quads sampling the **real retail proportional dialog font** decoded straight
-from the disc (`legaia_font::Font::from_disc_tim_and_scus` over the PROT.DAT font
-TIM at `0x7F40` + the SCUS width table - byte-identical to the save-state
-extraction, no `extracted/` artifacts needed). Window geometry is the disc-parsed
-descriptor table
-(`legaia_asset::menu_windows`) with the native window's pinned fallback. The two
-atlases upload once (`play_menu_font_rgba` / `play_menu_chrome_rgba`); the page's
-`AtlasBlitter` (an `image-rendering: pixelated` overlay `<canvas>` over the GL
-view) blits the quads with a per-quad multiply tint. The top-level command list
-plus the Items / Magic / Equip / Status / Options sub-screens all run the real
+lists (`play_menu_draws_json`):
+
+- **Window chrome** - the gold 9-slice + navy filigree as sprite quads off the
+  disc's menu-UI atlas (`save_menu_atlas::build_atlas` over PROT 0899 + the
+  PROT.DAT system-UI sheet).
+- **Labels** - font-glyph quads sampling the **real retail proportional dialog
+  font**, decoded straight from the disc
+  (`legaia_font::Font::from_disc_tim_and_scus` over the PROT.DAT font TIM at
+  `0x7F40` + the SCUS width table). Byte-identical to the save-state
+  extraction, with no `extracted/` artifacts needed.
+
+Window geometry is the disc-parsed descriptor table
+(`legaia_asset::menu_windows`) with the native window's pinned fallback.
+
+The two atlases upload once (`play_menu_font_rgba` / `play_menu_chrome_rgba`);
+the page's `AtlasBlitter` (an `image-rendering: pixelated` overlay `<canvas>`
+over the GL view) blits the quads with a per-quad multiply tint.
+
+The top-level command list plus the Items / Magic / Equip / Status / Options
+sub-screens all run the real
 `legaia_engine_core::field_menu_dispatch::FieldMenuSubsession` the native
-`play-window` builds (the disc equipment / spell / item catalogs are installed on
-the host world at `load_disc`), and render through the exact same
+`play-window` builds - the disc equipment / spell / item catalogs are installed
+on the host world at `load_disc` - and render through the exact same
 `legaia-engine-ui` draw builders (`inventory_use_draws_for` /
 `spell_menu_draws_for` / `equip_screen_draws_for` / `status_screen_draws_for` /
-`options_draws_for`) - the site is just a different framebuffer over the same
-menu.
+`options_draws_for`).
 
 **Load / Save** run the retail save-select screen against the memory-card rack
 (`cards`, below): the `SLOT 1` / `SLOT 2` pills are the console's two card
@@ -264,30 +272,38 @@ Disc-gated oracle: `tests/minigames_dance_api.rs`.
 
 ## Session saves + retail cards (`session_save`)
 
-The play page's save boundary. Engine sessions round-trip as **LGSF**
-(`LegaiaRuntime.export_save` / `import_save` = `World::save_full` /
-`load_full` with magic + version validation - a corrupt upload throws a
-readable message and leaves the session untouched). Retail **emulator
-saves** are first-class: `card_saves_json(bytes)` lists the Legaia saves
-inside a raw `.mcr`/`.mcd` card image, DexDrive `.gme`, or single-save
-`.mcs` (party names, gold, coins, location, the CDNAME scene label);
-`LegaiaRuntime.import_card_save(bytes, block)` lifts one into the live
-world via `legaia_save::SaveFile::from_retail_sc_block`; and
-`card_patch_coins(bytes, block, coins)` banks browser-minigame coin
-winnings into the pinned retail coin slot (SC `+0x464`, RAM
-`0x800845A4`) **in place** - the container comes back in the format it
-arrived in with only those 4 bytes changed, so an untouched export is
-byte-identical and the patched save still loads in the emulator. PS3
-`.psv` is rejected (signed container). The minigames page's **save bar**
-draws on two more exports: `card_icon_rgba(bytes, block)` decodes the SC
-block's own 16x16 memory-card icon (palette `+0x60`, 4bpp pixels
-`+0x80` - for Legaia that is the lead character's baked portrait), and
-`LegaiaMinigames.save_portrait_rgba(char_id)` decodes the three 16x16
-load-screen portrait TIMs (Vahn / Noa / Gala) from the pre-`init_data`
-gap of `PROT.DAT`, the faces the bar's tiles show; save summaries carry
-the lead's displayed level (record `+0x130`). Persistence (localStorage,
-base64) lives in `site/js/legaia-saves.js`; the bar itself is
-`site/js/minigame-saves.js`; this module is serialization only.
+The play page's save boundary. This module is **serialization only** -
+persistence (localStorage, base64) lives in `site/js/legaia-saves.js`, and the
+save bar itself is `site/js/minigame-saves.js`.
+
+**Engine sessions** round-trip as **LGSF**: `LegaiaRuntime.export_save` /
+`import_save` are `World::save_full` / `load_full` with magic + version
+validation, so a corrupt upload throws a readable message and leaves the
+session untouched.
+
+**Retail emulator saves are first-class.** `card_saves_json(bytes)` lists the
+Legaia saves inside a raw `.mcr`/`.mcd` card image, DexDrive `.gme`, or
+single-save `.mcs` (party names, gold, coins, location, the CDNAME scene
+label). `LegaiaRuntime.import_card_save(bytes, block)` lifts one into the live
+world via `legaia_save::SaveFile::from_retail_sc_block`. PS3 `.psv` is rejected
+(signed container).
+
+`card_patch_coins(bytes, block, coins)` banks browser-minigame coin winnings
+into the pinned retail coin slot (SC `+0x464`, RAM `0x800845A4`) **in place**:
+the container comes back in the format it arrived in with only those 4 bytes
+changed, so an untouched export is byte-identical and the patched save still
+loads in the emulator.
+
+The minigames page's **save bar** draws on two more exports:
+
+- `card_icon_rgba(bytes, block)` decodes the SC block's own 16x16 memory-card
+  icon (palette `+0x60`, 4bpp pixels `+0x80`) - for Legaia that is the lead
+  character's baked portrait.
+- `LegaiaMinigames.save_portrait_rgba(char_id)` decodes the three 16x16
+  load-screen portrait TIMs (Vahn / Noa / Gala) from the pre-`init_data` gap of
+  `PROT.DAT` - the faces the bar's tiles show.
+
+Save summaries carry the lead's displayed level (record `+0x130`).
 
 ## Memory-card rack (`cards`)
 

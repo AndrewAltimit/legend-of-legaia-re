@@ -2,7 +2,27 @@
 
 The player free-movement controller for normal towns, dungeons, and walkable field areas is **`FUN_801d01b0`** in the field overlay (`overlay_0897`). Each frame it reads the held pad, turns it into a camera-relative direction, advances the player actor's world position a fixed step per sub-frame with per-axis collision, and updates the player's facing angle. This is the general locomotion path - **not** the [tile-board grid mode](tile-board.md) (a puzzle / board minigame that happens to live in the same overlay).
 
-`FUN_801d01b0` was pinned with a runtime write-watchpoint on the player position fields (`scripts/pcsx-redux/autorun_player_pos_watch.lua`): walking in a field scene fires write hits at the four `sh` stores `0x801D0684 / 06E4 / 0744 / 07B4` (player Z± / X±), all inside `FUN_801d01b0`. Static analysis alone never surfaced it because the writes are buried in a 1964-byte function and the field overlay only loads at runtime.
+**Port counterpart.** `World::step_field_locomotion` in `engine-core`
+(`decode_field_direction`), against the per-scene walkability grid.
+
+**The thing that catches people out:** static analysis will not find this
+function. It was pinned with a runtime write-watchpoint on the player position
+fields (`scripts/pcsx-redux/autorun_player_pos_watch.lua`): walking in a field
+scene fires write hits at the four `sh` stores `0x801D0684 / 06E4 / 0744 / 07B4`
+(player Z± / X±), all inside `FUN_801d01b0`. The writes are buried in a
+1964-byte function, and the field overlay only loads at runtime - so there is no
+static call site to follow. See [Provenance](#provenance).
+
+## Contents
+
+- [Player actor fields used](#player-actor-fields-used) · [spawn position](#spawn-position-on-scene-entry) · [per-frame flow](#per-frame-flow)
+- [Collision - `FUN_801cfe4c`](#collision---fun_801cfe4c) · [where the grid comes from](#where-the-collision-grid-comes-from) · [collision byte](#collision-byte-walls--floor-height) · [floor height](#floor-height-two-models) · [trigger block](#trigger-block-0x10000---four-kind-sub-tables) · [object records](#object-record-format-0x0000-0x20-byte-stride) · [the object bind](#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose) · [the door swing](#the-door-swing-how-a-bind-script-drives-the-clip)
+- [Provenance](#provenance) · [Town / field parity](#town--field-parity)
+- [Engine port](#engine-port) - [environment geometry](#environment-geometry) · [scene-entry script](#scene-entry-script) · [encounter table](#scene-encounter-table) · [per-step encounter roll](#per-step-encounter-roll-in-the-live-loop) · [input lock during cutscenes](#input-is-locked-during-an-opening-cutscene-timeline)
+- [Field-buffer load chain](#field-buffer-load-chain)
+- [Intra-scene doorways](#intra-scene-doorways---the-walk-touch-teleport-family) - [the three player-move op forms](#the-three-player-move-op-forms) · [the record is a branch](#the-record-is-a-branch-not-a-constant) · [pairing convention](#the-pairing-convention) · [geometry](#geometry) · [landing records](#landing-records) · [Rim Elm](#rim-elm) · [engine port](#engine-port-1)
+- [Open](#open) · [NPC initial facing](#npc-initial-facing) · [NPC glide speed](#npc-glide-speed)
+- [Engine port: movement compass + opt-in precise movement](#engine-port-movement-compass--opt-in-precise-movement)
 
 ## Player actor fields used
 
@@ -536,7 +556,7 @@ Towns carry random encounters too: `town01`'s MAN encounter section declares **7
 
 ### Per-step encounter roll in the live loop
 
-When `World::live_gameplay_loop` is set, locomotion feeds the encounter system directly: `World::live_field_tick` treats the player crossing into a new 128-unit collision tile (`pos >> 7`) as one *step* and drives a single `World::on_field_step` roll, mirroring the retail per-step counter rather than rolling every frame. A successful roll transitions `Field → Battle`; on victory the field actor table is restored and the player resumes where they stood. See the [live gameplay loop](battle.md#live-gameplay-loop--field--battle-in-tick) section in `battle.md` for the full round trip.
+When `World::live_gameplay_loop` is set, locomotion feeds the encounter system directly: `World::live_field_tick` treats the player crossing into a new 128-unit collision tile (`pos >> 7`) as one *step* and drives a single `World::on_field_step` roll, mirroring the retail per-step counter rather than rolling every frame. A successful roll transitions `Field → Battle`; on victory the field actor table is restored and the player resumes where they stood. See the [live gameplay loop](battle.md#live-gameplay-loop---field--battle-in-tick) section in `battle.md` for the full round trip.
 
 ### Input is locked during an opening-cutscene timeline
 
@@ -757,7 +777,7 @@ Note the facing pin also fixes what `0x4C 0x51` operand byte +3 **is**: bit 7 to
 An NPC's per-frame glide is NOT the player's `+0x72` walk step (that premise is falsified: `FUN_8003774C` never reads `+0x72`). Both walk kernels encode the base step **in the walk op's own operands**, on the shared ladder `numerator >> (2 + bits)` units per frame (base steps 32 / 16 / 8 / 4 / 2 / 1 for `bits` 0..5 at numerator `0x80`, floored at 1):
 
 - **Field-VM yield ops** (`FUN_8003774C` - scripted glide legs): per-frame magnitude `_DAT_1f800393 × numerator / (4 << bits)`. `bits = (op0>>5 & 4)|(op1>>6)` for the axis-glide ops 0x37/0x41, `b2 & 7` (high nibble = approach-mode selector) for the walk-to-tile op 0x47. The numerator is `0x80` for 0x37/0x47 but **`0x40` for 0x41** - half speed, the `li a1,0x40`/`li a1,0x80` split at `0x80037908`. `_DAT_1f800393` is taken at its cold-field value 1.
-- **Tail-section-1 motion streams** (`FUN_80038158` - the ambient town-NPC wander; see [motion-vm.md](motion-vm.md#the-second-motion-vm-fun_80038158)): the directional steps 0x03/0x19/0x20 carry `bits` in operand byte 1's low nibble; the pad-echo step 0x06 and the AABB wander 0x18 scatter a 4-bit selector over their four operand bytes' high bits (`(b1&0x80)>>4 | (b2&0x80)>>5 | (b3&0x80)>>6 | b4>>7`). All step `0x80 >> (2 + bits)`.
+- **Tail-section-1 motion streams** (`FUN_80038158` - the ambient town-NPC wander; see [motion-vm.md](motion-vm.md#the-second-motion-vm---fun_80038158)): the directional steps 0x03/0x19/0x20 carry `bits` in operand byte 1's low nibble; the pad-echo step 0x06 and the AABB wander 0x18 scatter a 4-bit selector over their four operand bytes' high bits (`(b1&0x80)>>4 | (b2&0x80)>>5 | (b3&0x80)>>6 | b4>>7`). All step `0x80 >> (2 + bits)`.
 
 There is **no synthesised motion bytecode** for the yield ops: 0x37/0x41/0x47 are the field VM's own yield-class opcodes. The dispatcher parks the op's instruction pointer at actor `+0x94` (progress cursor `+0x54`, HALT flag `0x400`) and `FUN_8003774C` interprets the record bytes in place each frame, resolving the same `0x80` extended-target convention as the field VM ([script-vm.md](script-vm.md) § 0x37-0x42).
 

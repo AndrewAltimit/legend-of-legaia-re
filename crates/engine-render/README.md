@@ -2,6 +2,15 @@
 
 Minimal `wgpu` renderer for the engine reimplementation track.
 
+This crate is where the hard `wgpu` link lives, which is why the
+renderer-agnostic UI draw-list builders (`status_screen_draws_for`,
+`options_draws_for`, `battle_hud_draws_for` and friends) are **defined in
+[`legaia-engine-ui`](../engine-ui/README.md)**, not here - the browser
+play page needs them without pulling in wgpu. `engine-render`
+re-exports that crate wholesale (`pub use legaia_engine_ui::*`), so
+`engine_render::status_screen_draws_for` still resolves; edit them in
+`engine-ui`.
+
 Owns a `wgpu` device + surface plus two render pipelines, sharing the
 same surface and depth attachment:
 
@@ -83,53 +92,61 @@ The 3D mesh pipelines support PSX-faithful rasterisation via
   no synthetic Lambert on any path that has real colour data to draw.
 
 - **Semi-transparency blend modes.** Per-prim PSX blending on the
-  VRAM-mesh and colour-mesh paths (see the `psx_blend` module). The TMD
-  mode byte's ABE bit travels in bit 15 of the per-vertex TSB attribute
-  (packed by the `legaia_tmd::mesh` builders); the blend equation is the
-  texpage ABR field (TSB bits 5..=6): mode 0 `0.5*B + 0.5*F`, 1 `B + F`,
-  2 `B - F`, 3 `B + 0.25*F`. Because the STP decision is *per texel* (a
-  texel's BGR555 bit 15 picks blend-vs-opaque inside one semi-transparent
-  prim), the renderer draws two passes: the opaque pass draws everything
-  but discards STP texels of semi-transparent prims, then a blend pass
-  re-draws only the semi-transparent triangles (a per-ABR-mode index
-  tail appended at upload time by `psx_blend::append_semi_tail`) keeping
-  only STP texels, with one fixed-function blend pipeline per mode
-  (mode 0 uses a 0.5 blend constant; mode 2 is reverse-subtract; mode 3
-  pre-scales F by 0.25 in its fragment entry point). Blend draws depth-
-  test (`LessEqual`) but don't write depth, and run after all opaque
-  scene draws. `blend_apply` is the CPU mirror the blend-state mapping
-  is unit-tested against.
-  Untextured (`F*`/`G*`) ABE prims have no per-texel STP gate - they
-  blend *all* their pixels. `upload_color_mesh_blended` carries that
-  state in a per-vertex blend word (same ABE/ABR bit positions,
-  `psx_blend::pack_blend_word`); in PSX mode the opaque colour pass
-  discards ABE prims and the colour-mesh blend pipelines re-draw their
-  per-ABR-mode index tail (`psx_blend::append_semi_tail_words`) with
-  the prim colour as `F`. Untextured TMD prims carry no texpage, so the
-  caller resolves ABR from draw-env state (mode 0 = the PSX default);
-  plain `upload_color_mesh` keeps every prim opaque.
-  Blend-draw *ordering* mirrors the retail ordering table at
-  per-PRIMITIVE granularity: every semi prim of every semi-carrying
-  draw (textured + untextured in one shared sequence) is keyed by its
-  model-space centroid's clip-space `w` under the draw's MVP
-  (`psx_blend::prim_depth_key` - by linearity of the MVP this equals
-  the average of the prim's vertices' clip `w`, the GTE avg-Z the OT
-  bins on; the model origin's key is `mvp.w_axis.w`, the renderer's
-  standing depth convention) and the whole list blends far-to-near
-  regardless of draw boundaries, so prims that interleave in depth
-  across overlapping draws blend in correct global order
-  (`psx_blend::sort_blend_list`). Equal keys form one OT bucket and
-  draw later-submitted-first - the retail LIFO bucket order (`AddPrim`
-  prepends to a bucket's list, `DrawOTag` walks it head-first). The
-  per-prim metadata (`psx_blend::SemiPrim`: centroid + ABR mode + tail
-  location) is recorded once at upload time by the tail builders; the
-  per-frame list lives in a reused buffer and contiguous same-draw,
-  same-mode runs coalesce into single indexed draws
-  (`psx_blend::coalesce_sorted`). Dither
-  parity in the blend pass follows retail's rule that only shading
-  arithmetic is dithered: the untextured blend entries dither `F` (a
-  gouraud result) before the blend; the textured blend pass draws raw
-  texels and stays undithered.
+  VRAM-mesh and colour-mesh paths - see [Semi-transparency](#semi-transparency)
+  below, which is the one part of PSX mode with real structure to it.
+
+### Semi-transparency
+
+Lives in the `psx_blend` module. The TMD mode byte's ABE bit travels in
+bit 15 of the per-vertex TSB attribute (packed by the `legaia_tmd::mesh`
+builders); the blend equation is the texpage ABR field (TSB bits 5..=6):
+mode 0 `0.5*B + 0.5*F`, 1 `B + F`, 2 `B - F`, 3 `B + 0.25*F`.
+
+**Why two passes.** The STP decision is *per texel* - a texel's BGR555
+bit 15 picks blend-vs-opaque inside a single semi-transparent prim. So
+the opaque pass draws everything but discards the STP texels of
+semi-transparent prims, then a blend pass re-draws only the
+semi-transparent triangles keeping only STP texels - a per-ABR-mode index
+tail appended at upload time by `psx_blend::append_semi_tail`. The blend pass uses
+one fixed-function pipeline per mode (mode 0 uses a 0.5 blend constant,
+mode 2 is reverse-subtract, mode 3 pre-scales F by 0.25 in its fragment
+entry point). Blend draws depth-test (`LessEqual`) but don't write
+depth, and run after all opaque scene draws. `blend_apply` is the CPU
+mirror the blend-state mapping is unit-tested against.
+
+**Untextured prims are the exception.** Untextured (`F*`/`G*`) ABE prims
+have no per-texel STP gate - they blend *all* their pixels.
+`upload_color_mesh_blended` carries that state in a per-vertex blend
+word (same ABE/ABR bit positions, `psx_blend::pack_blend_word`); in PSX
+mode the opaque colour pass discards ABE prims and the colour-mesh blend
+pipelines re-draw their per-ABR-mode index tail
+(`psx_blend::append_semi_tail_words`) with the prim colour as
+`F`. Untextured TMD prims carry no texpage, so the caller resolves ABR
+from draw-env state (mode 0 = the PSX default); plain
+`upload_color_mesh` keeps every prim opaque.
+
+**Ordering mirrors the retail ordering table, at per-primitive
+granularity.** Every semi prim of every semi-carrying draw (textured and
+untextured in one shared sequence) is keyed by its model-space
+centroid's clip-space `w` under the draw's MVP
+(`psx_blend::prim_depth_key`). By linearity of the MVP that equals the
+average of the prim's vertices' clip `w` - the GTE avg-Z the OT bins on.
+The whole list blends far-to-near *regardless of draw boundaries*, so
+prims that interleave in depth across overlapping draws still blend in
+correct global order (`psx_blend::sort_blend_list`).
+
+Equal keys form one OT bucket and draw later-submitted-first - the
+retail LIFO bucket order (`AddPrim` prepends to a bucket's list,
+`DrawOTag` walks it head-first). The per-prim metadata
+(`psx_blend::SemiPrim`: centroid + ABR mode + tail location) is recorded
+once at upload time by the tail builders; the per-frame list lives in a
+reused buffer, and contiguous same-draw, same-mode runs coalesce into
+single indexed draws (`psx_blend::coalesce_sorted`).
+
+**Dither parity** follows retail's rule that only shading arithmetic is
+dithered: the untextured blend entries dither `F` (a gouraud result)
+before the blend; the textured blend pass draws raw texels and stays
+undithered.
 
 In the `legaia-engine play-window` binary this whole mode is opt-in via
 the `LEGAIA_PSX_RENDER=1` environment variable.
@@ -228,9 +245,9 @@ live in [`gte`](src/gte.rs); production rendering still uses f32 wgpu
 math, but the module is the single citation point for retail-correct
 fixed-point arithmetic when re-targeting captured GTE traces.
 
-## GTE Phase 6 - register-transfer + memory ops
+## GTE register-transfer + memory ops
 
-Beyond the cop2 instruction set the [`gte`](src/gte.rs) module now ships
+Beyond the cop2 instruction set the [`gte`](src/gte.rs) module ships
 the four MIPS register-transfer ops (`MFC2` / `MTC2` / `CFC2` / `CTC2`)
 and the two memory ops (`LWC2` / `SWC2`) so engines can replay a captured
 GTE trace without re-deriving the cop2 register layout. `read_data` /
@@ -312,11 +329,11 @@ populated town. `LEGAIA_POSE_CACHE_VERIFY=1` re-checks the memo against the
 live pose on every cache hit and logs any mismatch, which is what pins the
 `(slot, frame)` key as non-aliasing.
 
-## Future phases
+## Current limitations
 
-Batched draws and reverse-engineered TSB / CBA per-mode descriptor
-overrides are deferred. The per-menu content offsets can be tightened to
-the byte-pinned `FUN_801D33D8` layout (see field-menu.md) as a refinement.
+Draws are not batched, and the TSB / CBA per-mode descriptor overrides
+are not applied - the renderer uses the per-prim TSB / CBA values as
+uploaded.
 
 ## See also
 

@@ -1,10 +1,13 @@
 # legaia-engine-core
 
-Engine-agnostic primitives for the clean-room engine reimplementation:
-virtual filesystem, asset cache, frame timing.
+The simulation half of the clean-room engine: virtual filesystem, asset
+cache, frame timing, world state, and the rules engines. Everything here
+is renderer-agnostic.
 
 No `wgpu` / windowing / audio dependencies - the asset crates (Track 1)
-talk to this layer, and the render and audio crates read from it.
+talk to this layer, and the render and audio crates read from it. That
+constraint is what lets the browser play page share this code with the
+native window.
 
 ## Contents
 
@@ -13,20 +16,26 @@ talk to this layer, and the render and audio crates read from it.
 - [Frame timing](#frame-timing)
 - [Composite `World`](#composite-world)
 - [Battle helpers](#battle-helpers) - `art_strike`, `ap_gauge`, `battle_stats`, `items`, `battle_round`, `battle_runner`, `battle_session`, `battle_input`, `battle_hud`, `inventory_use`, `tactical_arts_editor`, `man_field_scripts`, field-resident carrier SM, `cutscene`
+- [Scene resources + VRAM](#scene-resources--vram)
+- [Dialogue, save/load, and loot](#dialogue-saveload-and-loot)
+- [Minigame rules engines](#minigame-rules-engines)
+- [Smaller modules worth knowing](#smaller-modules-worth-knowing)
 - [See also](#see-also)
 
 ## What it provides
 
 ### `Vfs` trait
 
-Source of asset bytes. Two backends:
+Source of asset bytes. Three backends:
 
 - `DirVfs` - filesystem-backed, rooted at a directory. Used in
   development against the output of `legaia-extract`.
-- (Planned) `DiscVfs` - reads directly from a disc image, so end users
-  don't need to extract anything ahead of time.
+- `DiscVfs` - reads directly from a disc image, so end users don't need
+  to extract anything ahead of time. This is the backend behind the
+  shipped end-user model (`legaia-engine` pointed straight at a `.bin`).
+- `MemoryVfs` - in-memory bytes, for tests and the WASM build.
 
-Both yield raw bytes addressed by a logical name (e.g.
+All three yield raw bytes addressed by a logical name (e.g.
 `"prot/0123_some_entry.bin"`). The asset crates above this layer turn
 bytes into typed structures.
 
@@ -52,66 +61,81 @@ struct. `World::tick` runs:
 1. Effect pool tick (every frame, every mode).
 2. Per-actor move-VM tick - only for active actors with bytecode loaded
    via `set_move_bytecode`.
-3. Mode-specific top-level VM:
-   - `SceneMode::Battle` → battle-action state machine step, preceded by
-     the staged-anim commit (`commit_staged_battle_anims`, the
-     `FUN_8004AD80` ladder): anim ids the SM stages into
-     `actor.queued_anim` play on the battle actors - equipment weapon
-     swings (`0xC..0xF`) directly, ids `>= 0x10` through the per-character
-     art bank installed via `set_actor_battle_art_bank` (with the retail
-     `0x10`/`0x1A` → dynamic-slot-`0x11` rewrite). The clip's finish
-     clears `ADVANCE_DONE` (the attack chain's strike-pacing gate) and
-     idle resumes. See
-     `docs/subsystems/battle-action.md#staged-anim-playback-the-attack-band-plays-in-engine`.
-     `World::enter_battle` seats combatants at the retail stage seats
-     (`battle_seats` - the SCUS placement tables `0x800775C8` /
-     `0x80077608` stamped by `FUN_800513F0`; party at negative Z facing
-     the monsters at positive Z).
-   - `SceneMode::Field` / `SceneMode::Cutscene` → field-VM step, preceded by
-     `step_cutscene_timeline` when a cutscene timeline is installed (the
-     `opdeene` opening prologue): a *second* spawned `FieldCtx`
-     (`cutscene_timeline::CutsceneTimeline`) runs the scene MAN's partition-2
-     cutscene record through the same field VM, so its camera path + actor
-     moves play and the Rim Elm hand-off `GFLAG_SET 26` fires by execution.
-     Alongside the timeline, `step_field_channels` runs the scene's per-actor
-     script channels (`field_channels::FieldChannel`, one per MAN partition-1
-     placement, port of `FUN_8003A1E4`/`FUN_8003AEB0`): the vignette actors the
-     timeline halt-acquires and pokes beat by beat (animate cues into
-     `field_npc_anim_cues` - drained by the windowed render to re-target
-     each NPC's clip player - scripted moves into `field_npc_positions`). The
-     opening white flash (op `0x34` sub-0) drives `fade::ColorFade` on
-     `World::color_fade`, drawn as a full-screen wash.
-     See [`docs/subsystems/cutscene.md`](../../docs/subsystems/cutscene.md).
-     In `Field` the field-VM step is followed by `step_field_locomotion` - the free-movement
-     player controller (port of `FUN_801d01b0`): the held d-pad becomes a
-     camera-relative direction (remapped by `field_camera_azimuth`,
-     quantised to the nearest 90° like retail; the opt-in
-     `World::precise_movement` swaps in a continuous decode - true key
-     diagonals + analog-stick angles - through the same collision), the
-     player actor advances in 2-unit steps with per-axis collision against
-     the per-scene `field_collision_grid`, and facing is updated. Hosts
-     feed the azimuth from `Camera::compass_azimuth_units()` (scripted yaw
-     + user drag-orbit + the renderer's framing bias); `Camera::distance`
-     is the discrete follow-camera distance preset (retail / far /
-     farther - render framing only). The grid
-     (one byte per 128-unit tile, high nibble = 4 sub-cell wall bits) is
-     zeroed at field entry and painted by the field-VM `0x4C` outer-nibble-7
-     op as the prescript runs. The same tick walks field NPCs through the
-     motion VM (`tick_field_npc_motions`: MAN-authored `0x4C 0x51` patrol
-     routes + interaction-prologue runs, live positions feeding the
-     collision / interact probes) and runs the prop walk-touch dispatch
-     (`check_field_walk_touch`: door-warp / player-teleport placements post
-     on body contact through the interact path). After the locomotion step
-     the player's field animation advances (`field_anim::FieldPlayerAnim`,
-     installed via `set_field_player_anim`): the PROT 0874 §1 locomotion
-     bundle's idle / walk clip pair, switched on the movement edge and
-     folded into the player actor's `pose_frame` for the host's posed-mesh
-     rebuild. See
-     [`docs/subsystems/field-locomotion.md`](../../docs/subsystems/field-locomotion.md).
-   - `SceneMode::Title` → no further VM.
+3. The mode-specific top-level VM - `Battle`, `Field` / `Cutscene`, or
+   `Title` (which runs no further VM). The first two are detailed below.
 
 Engines that want a different storage layout (ECS, custom parallelism)
 implement the per-VM `Host` traits themselves; `World` is the default.
+
+#### `SceneMode::Battle`
+
+The battle-action state machine step, preceded by the staged-anim commit
+(`commit_staged_battle_anims`, the `FUN_8004AD80` ladder). Anim ids the
+SM stages into `actor.queued_anim` play on the battle actors: equipment
+weapon swings (`0xC..0xF`) directly, ids `>= 0x10` through the
+per-character art bank installed via `set_actor_battle_art_bank` (with
+the retail `0x10`/`0x1A` → dynamic-slot-`0x11` rewrite).
+
+The clip's finish clears `ADVANCE_DONE` - the attack chain's
+strike-pacing gate - and idle resumes. See
+`docs/subsystems/battle-action.md#staged-anim-playback-the-attack-band-plays-in-engine`.
+
+`World::enter_battle` seats combatants at the retail stage seats
+(`battle_seats` - the SCUS placement tables `0x800775C8` / `0x80077608`
+stamped by `FUN_800513F0`; party at negative Z facing the monsters at
+positive Z).
+
+#### `SceneMode::Field` / `SceneMode::Cutscene`
+
+A field-VM step, preceded by `step_cutscene_timeline` when a cutscene
+timeline is installed (the `opdeene` opening prologue). That spawns a
+*second* `FieldCtx` (`cutscene_timeline::CutsceneTimeline`) to run the
+scene MAN's partition-2 cutscene record through the same field VM, so
+its camera path and actor moves play and the Rim Elm hand-off
+`GFLAG_SET 26` fires by execution rather than by a hard-coded cue.
+
+Alongside the timeline, `step_field_channels` runs the scene's per-actor
+script channels (`field_channels::FieldChannel`, one per MAN partition-1
+placement, port of `FUN_8003A1E4`/`FUN_8003AEB0`) - the vignette actors
+the timeline halt-acquires and pokes beat by beat. Animate cues go into
+`field_npc_anim_cues` (drained by the windowed render to re-target each
+NPC's clip player); scripted moves go into `field_npc_positions`. The
+opening white flash (op `0x34` sub-0) drives `fade::ColorFade` on
+`World::color_fade`, drawn as a full-screen wash. See
+[`docs/subsystems/cutscene.md`](../../docs/subsystems/cutscene.md).
+
+**Locomotion.** In `Field` the field-VM step is followed by
+`step_field_locomotion`, the free-movement player controller (port of
+`FUN_801d01b0`). The held d-pad becomes a camera-relative direction
+(remapped by `field_camera_azimuth`, quantised to the nearest 90° like
+retail); the player actor advances in 2-unit steps with per-axis
+collision against the per-scene `field_collision_grid`, and facing is
+updated. The opt-in `World::precise_movement` swaps in a continuous
+decode - true key diagonals + analog-stick angles - through the *same*
+collision, so it changes input feel without forking the physics.
+
+Hosts feed the azimuth from `Camera::compass_azimuth_units()` (scripted
+yaw + user drag-orbit + the renderer's framing bias). `Camera::distance`
+is the discrete follow-camera distance preset (retail / far / farther) -
+render framing only.
+
+The collision grid (one byte per 128-unit tile, high nibble = 4 sub-cell
+wall bits) is zeroed at field entry and painted by the field-VM `0x4C`
+outer-nibble-7 op as the prescript runs.
+
+**NPCs and props.** The same tick walks field NPCs through the motion VM
+(`tick_field_npc_motions`: MAN-authored `0x4C 0x51` patrol routes +
+interaction-prologue runs, live positions feeding the collision /
+interact probes), and runs the prop walk-touch dispatch
+(`check_field_walk_touch`: door-warp / player-teleport placements post on
+body contact through the interact path).
+
+**Player animation.** After the locomotion step
+`field_anim::FieldPlayerAnim` (installed via `set_field_player_anim`)
+advances the PROT 0874 §1 locomotion bundle's idle / walk clip pair,
+switched on the movement edge and folded into the player actor's
+`pose_frame` for the host's posed-mesh rebuild. See
+[`docs/subsystems/field-locomotion.md`](../../docs/subsystems/field-locomotion.md).
 
 `World::active_party` holds the present-party composition - the engine
 mirror of retail's present-party list at `0x8007BD10`: `active_party[i]`
@@ -261,6 +285,64 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   VM) exposing the FMV via `World::active_fmv()`; the host plays the
   resolved STR and calls `World::finish_cutscene()` to return to the
   field. Cut/missing slots drain as a no-op.
+
+## Scene resources + VRAM
+
+`scene_resources` turns a scene's PROT bundle into the resources a host
+needs. `build_targeted` is the runtime VRAM pre-pass: it resolves what
+each scene actually uploads, rather than blanket-loading the block.
+
+`FIELD_SHARED_BLOCKS` names the blocks that stay resident across a scene
+transition - the player TMD lives here, which is why the party mesh
+survives a door without a reload.
+
+## Dialogue, save/load, and loot
+
+`inline_dialogue` is the opt-in dialogue runner: `step_inline_dialogue`
+ports the retail dialog state machine `FUN_80039B7C` through the *real*
+field VM, so dialogue advances by script execution rather than by a
+reimplemented approximation. Hosts that want the simpler path can leave
+it off and drive the dialog panel directly.
+
+`save_full` / `load_full` are the disk save round-trip (LGSF): party,
+story flags, money, inventory, per-character ext, saved chains.
+
+`apply_battle_loot` is the post-battle grant kernel - XP, gold, and the
+resulting level-ups. It is the runtime side the randomizer's disc-gated
+oracles drive to prove a patched drop actually reaches the player.
+
+`move_power::request_move_fx_spawn` raises the battle move-FX request for
+non-summon casts and specials, off the parsed `move_power` table.
+
+## Minigame rules engines
+
+Each is a headless rules engine driven by disc-parsed tables, with the
+presentation left to the host:
+
+- `dance` - Noa's dance rhythm minigame, driven by the parsed step chart.
+- `baka_fighter` - the Baka Fighter duel, driven by the parsed roster +
+  action tables.
+- `muscle_dome` - the Muscle Dome card battle: deck command ids +
+  swing-record costs, with a budget-gated queue commit.
+
+## Smaller modules worth knowing
+
+- `music_labels` - resolves a global BGM id / `music_01` bank slot to its
+  curated sound-test track label. See
+  [`docs/reference/music-tracks.md`](../../docs/reference/music-tracks.md).
+- `battle_seats` - the retail stage-seat tables, consumed by
+  `World::enter_battle`.
+- `fishing::PrizeExchange` + `World::fishing_exchange_buy` - the
+  point-exchange prize shop over the persistent fishing-points pool and
+  its one-time bitmask.
+- `region_encounter::EncounterRateModifiers` - statically pinned
+  accessory / status encounter-rate shifts, refreshed per step.
+- `options` - the engine mirror of the retail options screen, plus the
+  engine-only opt-in toggles (e.g. `precise_movement`, default off).
+- `world_map::WorldMapController` - drives `SceneMode::WorldMap`.
+- `EffectCatalog`, `input::Mapping`, `DefaultMapIdResolver` - effect
+  lookup, host-agnostic input binding, and scene-name → map-id
+  resolution.
 
 ## See also
 

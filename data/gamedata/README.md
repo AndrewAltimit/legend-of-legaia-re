@@ -10,13 +10,13 @@ from third-party walkthroughs:
    moveset / rewards layer, the Seru-magic `absorb_lv1`/`lv2`/`lv3`
    fields, and the magic-leveling tables in `legaia_gamedata::magic_leveling`.
 
-Both are public GameFAQs guides; we keep the *factual* data only (item
-names, prices, art command sequences, MP costs, monster locations). No
-prose passages from either guide are committed; that would be a
-copyright issue. Only the tables are mined and cross-validated between
-the two sources, with the table.rs canonical names from
-[`crates/art`](../../crates/art) used as the authority for arts where
-they overlap.
+Walkthroughs 1 and 2 are public GameFAQs guides. We keep the *factual*
+data only (item names, prices, art command sequences, MP costs, monster
+locations). No prose passages from any of the guides are committed; that
+would be a copyright issue. Only the tables are mined, and they are
+cross-validated against each other, with the `table.rs` canonical names
+from [`crates/art`](../../crates/art) used as the authority for arts
+where they overlap.
 
 Why this exists: the existing reverse-engineering work has the raw
 record bytes (PROT entry `0x05C4` for Arts, RAM `0x80160EFC+` etc.)
@@ -48,8 +48,10 @@ exposes typed accessors.
 | `enemies.toml` | Enemies with location, drop / steal, and full per-enemy stat columns (HP / MP / EXP / Gold / ATK / SPD / UDF / LDF / INT / AGL / element) |
 | `bosses.toml` | Per-fight boss summaries: named attacks + MP cost, XP / gold / item rewards, recommended party level (18 main-story bosses + Lapis + Muscle Dome rounds) |
 | `shops.toml` | Per-town shop inventories (Rim Elm through Conkram); each entry references an item key |
-| `casino.toml` | Sol/Vidna slot prizes + Muscle Dome courses |
+| `casino.toml` | Sol/Vidna slot prizes + Muscle Dome courses + Baka Fighter |
+| `sol_tower.toml` | Sol Tower (CDNAME `town0d`) floor map + the named side-quest chains that don't fit any other table. Read by the site's minigames + world pages |
 | `fishing.toml` | Vidna/Buma fishing pond prizes |
+| `characters.toml` | Player-character profiles: elemental affinity (the 8 elements partitioned into strong / weak) + favorite-weapon class names |
 | `music.toml` | Music-track disambiguation: every BGM cue across its four naming spaces (debug sound-test id + title / in-game context / official OST title / proposed relocalization). Contributed by Stann0x; see [`docs/reference/music-tracks.md`](../../docs/reference/music-tracks.md) |
 
 ## Cross-validation invariants
@@ -60,11 +62,14 @@ enforce:
 - Every `arts.toml` entry's name resolves to an action constant
   through `legaia_art::tables` (or is annotated as a non-action-table
   art, e.g. some Hyper Arts that share an action constant).
-- Every `weapons.toml` / `armor.toml` / `accessories.toml` `equip`
-  field is one of `Vahn`, `Noa`, `Gala`, `Any`, or `None`.
+- Every `weapons.toml` `equip_best` / `equip_others` names one of
+  `Vahn`, `Noa`, or `Gala`; every `armor.toml` `equip` is one of those
+  or `None`, and its `slot` is `armor`, `helmet`, or `shoes`.
 - Every shop inventory item key matches a row in `items.toml`,
-  `weapons.toml`, `armor.toml`, or `accessories.toml`.
-- Magic table covers exactly 21 Seru + 8 Ra-Seru entries.
+  `weapons.toml`, `armor.toml`, or `accessories.toml`. The casino,
+  fishing, and enemy drop / steal keys resolve the same way.
+- Magic table covers exactly 21 Seru + 8 Ra-Seru entries, and each Seru
+  spell carries its per-level absorb chances.
 
 Run with `cargo test -p legaia-gamedata`.
 

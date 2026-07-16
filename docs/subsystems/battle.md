@@ -9,7 +9,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 
 **Retail scene + render**
 - [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0)
-- [Battle background](#battle-background) - [ground grid](#backdrop-ground--a-procedural-flat-grid-func_0x801d02c0) · [dome](#backdrop-dome--sky--distant-mountains-prot-88-for-map01) · [camera](#battle-camera-exact) · [party meshes](#battle-party-meshes-assembled)
+- [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [dome](#backdrop-dome---sky--distant-mountains-prot-88-for-map01) · [camera](#battle-camera-exact) · [party meshes](#battle-party-meshes-assembled)
 
 **Retail battle logic + data**
 - [Battle action state machine (`FUN_801E295C`)](#battle-action-state-machine-fun_801e295c)
@@ -27,7 +27,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 - [Battle round lifecycle](#battle-round-lifecycle) · [command runner](#battle-command-runner) · [BattleSession Resolve driver](#battlesession-resolve-driver) · [HUD model](#battle-hud-model) · [SFX bank](#sfx-bank--scheduler)
 - [Inventory item-use session](#inventory-item-use-session) · [Encounter system](#encounter-system) · [target picker](#battle-target-picker)
 - [Equipment catalog](#equipment-catalog) · [Seru capture + spell learning](#seru-capture--spell-learning) · [Tactical Arts chain editor](#tactical-arts-chain-editor) · [rewards composite](#battle-rewards-composite)
-- [Live gameplay loop - Field ↔ Battle](#live-gameplay-loop--field--battle-in-tick) - [auto vs player-driven](#auto-resolve-vs-player-driven) · [post-battle Seru learning](#post-battle-seru-learning)
+- [Live gameplay loop - Field ↔ Battle](#live-gameplay-loop---field--battle-in-tick) - [auto vs player-driven](#auto-resolve-vs-player-driven) · [post-battle Seru learning](#post-battle-seru-learning)
 
 **Runtime-memory captures + tests**
 - [Encounter trigger memory layout](#encounter-trigger---runtime-memory-layout) · [scene-init residency](#battle-scene-init-residency-window) · [item-use residency](#item-use-battle-event-residency) · [stat-growth observations](#captured-stat-growth-observations)
@@ -59,7 +59,7 @@ loader (`_DAT_8007b8c2`) chooses between PROT-TOC indices (dev) and
   to those `[0..=2]` entries. The installed meshes are **assembled per
   character from the player battle files** (equipment-id-selected sections,
   spliced by `FUN_80052FA0`/`FUN_800536BC`; byte-verified against the live
-  party vertex pools - [character-mesh.md § Battle form](../formats/character-mesh.md#battle-form--assembled-from-the-player-files)).
+  party vertex pools - [character-mesh.md § Battle form](../formats/character-mesh.md#battle-form---assembled-from-the-player-files)).
   The field pack 0874 §0 is field-only; PROT 1204 is the Baka Fighter
   default-equipment sibling pack.
 - **State `0xE`** - initialises the runtime [effect 2-pack wrapper](../formats/effect.md) via `FUN_801DE914`. Also fires for the field-VM op `0x3E` warp/interact path on the system context.

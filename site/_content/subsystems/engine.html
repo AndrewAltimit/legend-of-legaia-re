@@ -12,13 +12,41 @@
 
 <section class="doc-section" id="goal-non-goals">
   <h2>Goal &amp; non-goals</h2>
-  <p><strong>Goal:</strong> a playable port of Legend of Legaia (NA SCUS-94254) on modern systems via Rust + wgpu, with optional WASM/web target. JP/EU regions land after NA is solid.</p>
+  <p><strong>Goal:</strong> a playable port of Legend of Legaia (NA SCUS-94254) on modern systems via Rust + wgpu, with an optional WASM/web target. JP/EU regions land after NA is solid.</p>
+  <p>"Playable port" is a claim about the <em>simulation</em>, not about the pixels. What the game does - damage arithmetic, RNG, script pacing, save-record layout - reproduces retail. How it is presented is a separate question, answered under <a href="#fidelity">fidelity &amp; enhancements</a>.</p>
   <p><strong>Non-goals:</strong></p>
   <ul class="bullets">
-    <li>Improving the game (no HD remaster, no balance changes, no QoL beyond what the original supported).</li>
-    <li>Modding kit (useful as a side-effect, not as a designed deliverable).</li>
-    <li>Translation work.</li>
-    <li>Static recompilation of <code>SCUS_942.54</code>. The engine is clean-room from documented specs and decompile-then-rewrite logic - <em>not</em> auto-translated MIPS.</li>
+    <li><strong>Static recompilation of <code>SCUS_942.54</code>.</strong> The engine is clean-room from documented specs and decompile-then-rewrite logic - <em>not</em> auto-translated MIPS. This is the boundary the whole legal posture rests on.</li>
+    <li><strong>Redesigning the game.</strong> Retail's balance, damage rounding, encounter rates and script timing are reproduced, not tuned. A quirk is behaviour to replicate, not a bug to fix.</li>
+    <li><strong>Re-authoring the game's assets.</strong> Every texture, mesh, sample and sequence comes off your own disc at runtime. Nothing is upscaled, redrawn, or bundled.</li>
+  </ul>
+  <p>Modding and translation are <em>not</em> on that list: the <a href="../tooling/randomizer.html">randomizer</a> (playable in-browser via the <a href="../tooling/rom-patcher.html">ROM patcher</a>) and the <code>legaia-rando translate</code> language packs are shipped, deliberately-designed parts of this project. Both are disc patchers that operate on a user-supplied <code>.bin</code> rather than engine features - the randomizer does not touch the clean-room engine at all.</p>
+</section>
+
+<section class="doc-section" id="fidelity">
+  <h2>Fidelity &amp; enhancements</h2>
+  <p class="lede">The port draws a hard line between the simulation and the presentation, so that "faithful" stays a testable claim rather than a mood.</p>
+
+  <p><strong>Simulation is faithful, with no opt-out.</strong> No toggle changes damage, drop rolls, AP costs, encounter rates or story-flag behaviour - because the parity oracles depend on there not being one. The engine scenarios hash the resulting save bytes against a blessed baseline, the <a href="#vram-diff">VRAM diff harness</a> diffs engine uploads against runtime blobs captured from save states, and record / replay requires the same input file to produce bit-identical state traces twice.</p>
+
+  <p><strong>Presentation is where the knobs live.</strong> Every enhancement is renderer or host state with no path into the world, so flipping one leaves replays and every oracle above untouched. The ones that depart from retail default off; the two that do not are called out below.</p>
+
+  <table>
+    <thead><tr><th>Knob</th><th>Default</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>set_dynamic_lighting</code> (<code>--dynamic-lighting</code>, <code>I</code>)</td><td>off</td><td>Soft warm directional light + screen-centred light pool over the baked shading.</td></tr>
+      <tr><td><code>World::precise_movement</code> (<code>R</code>)</td><td>off</td><td>Free-angle locomotion instead of retail's 4/8-way quantisation.</td></tr>
+      <tr><td><code>set_psx_mode</code> (<code>LEGAIA_PSX_RENDER=1</code>)</td><td>off</td><td>Strict-PS1 rasterisation artefacts - see below.</td></tr>
+      <tr><td><code>set_semi_blend</code></td><td><strong>on</strong></td><td>Retail ABE semi-transparency blending. On because it <em>is</em> retail.</td></tr>
+      <tr><td>Camera distance (<code>T</code>) / debug orbit (<code>C</code>)</td><td><code>Far</code> / off</td><td>Framing only; never feeds the simulation.</td></tr>
+      <tr><td><a href="vr-mode.html">WebXR VR mode</a></td><td>off</td><td>Stereo presentation on the site's WebGL pages, not the wgpu path.</td></tr>
+    </tbody>
+  </table>
+
+  <p>Two details are worth having straight, because the direction is not uniform:</p>
+  <ul class="bullets">
+    <li><strong>Shading defaults to retail.</strong> The field path has no runtime light source at all - both retail TMD renderers issue exactly one GTE colour op (<code>DPCS</code>, the depth cue) and never an <code>NC*</code> op, so shading is baked into the TMD colour words and applied as <code>texel * colour / 128</code>. The engine's field pipelines draw exactly that. The dynamic light is layered <em>over</em> it and is an exact identity when disabled, which is what keeps the render oracles honest.</li>
+    <li><strong>Rasterisation defaults to clean.</strong> <code>psx_mode</code> is off, so the default image is sharper than a PlayStation's: no sub-pixel vertex snap and no 15-bit ordered dither. Here faithfulness is the mode you opt into, not the default.</li>
   </ul>
 </section>
 
@@ -28,8 +56,8 @@
     <li><strong>Asset crates stay engine-agnostic.</strong> <code>crates/tim</code>, <code>crates/tmd</code>, etc. don't depend on wgpu / SDL3 / cpal. They produce typed in-memory representations; the engine layer turns those into GPU resources / audio buffers.</li>
     <li><strong>Mockable I/O for tests.</strong> The disc read path is abstracted via <code>crates/iso::RawDisc</code>; the same pattern extends to file-system extraction so tests can run without a disc.</li>
     <li><strong>Deterministic gameplay.</strong> RNG seeded from a known value; physics tick on a fixed timestep. Required for any future TAS / verification work.</li>
-    <li><strong>No "fix the bug" temptation.</strong> If the original game has quirky damage rounding or oddly-timed cutscenes, replicate them. Behavioural fidelity is in scope; QoL is not.</li>
-    <li><strong>Behaviour tests against runtime traces.</strong> Long-term, capture inputs + RNG + frame outputs from the original game, replay through the engine, diff. The asset-viewer phase landed enough infrastructure to make this possible later.</li>
+    <li><strong>No "fix the bug" temptation.</strong> If the original game has quirky damage rounding or oddly-timed cutscenes, replicate them. Simulation fidelity is the baseline; the <a href="#fidelity">enhancements</a> ride on top of it as opt-in presentation state and never edit it.</li>
+    <li><strong>Behaviour tests against runtime traces.</strong> Inputs, RNG and frame outputs captured from the original game replay through the engine and diff against it - the <a href="#vram-diff">VRAM diff harness</a> and the <a href="../tooling/determinism-replay.html">record / replay</a> oracles are where that lands.</li>
   </ul>
 </section>
 
@@ -48,20 +76,21 @@ mes          &larr; (none)
 anm          &larr; (none)
 extract      &rarr; all of the above
 
-engine-vm     &rarr; asset, prot, art, anm    (VM layer; no GPU / audio deps)
+engine-vm     &rarr; asset, prot, art, anm       (VM layer; no GPU / audio deps)
 engine-core   &rarr; engine-vm + the parser crates
-engine-render &rarr; asset, tim, font         (wgpu; no engine-core dep)
-engine-audio  &rarr; xa, vab, seq, prot       (cpal + SPU model; no engine-core dep)
+engine-ui     &rarr; asset, tim, font            (draw-list builders; no wgpu)
+engine-render &rarr; engine-ui, asset, tim, font (wgpu; no engine-core dep)
+engine-audio  &rarr; xa, vab, seq, prot          (cpal + SPU model; no engine-core dep)
 engine-shell  &rarr; engine-core, engine-vm, engine-render, engine-audio
 asset-viewer  &rarr; engine-*, all parser crates</code></pre>
   <p><code>engine-core</code> sits <em>above</em> <code>engine-vm</code> - it implements the per-VM <code>Host</code> traits on <code>World</code> - while <code>engine-render</code> and <code>engine-audio</code> are leaf presentation crates that never depend on <code>engine-core</code>; the <code>engine-shell</code> binary composes all four. Sequenced music is covered by <code>crates/seq</code> (the SEQ parser) plus the <code>engine-audio</code> <code>Sequencer</code>; battle / menu modules live inside <code>engine-vm</code> / <code>engine-core</code> next to the actor + field VMs rather than as separate crates.</p>
+  <p><code>engine-ui</code> is the wgpu-free leaf under <code>engine-render</code>: it builds the renderer-agnostic UI draw lists (<code>TextDraw</code> / <code>SpriteDraw</code>), which is what lets the browser target consume them without linking wgpu. <code>engine-render</code> re-exports its items at their historical crate-root paths, so native callers see no difference.</p>
 </section>
 
-<section class="doc-section" id="phase1">
-  <h2>Phase 1 - asset viewer (de-risks integration)</h2>
-  <p>A standalone binary that loads the disc, lets the user navigate PROT entries, and renders / plays them. Render API: <strong>winit + wgpu</strong> (Vulkan / Metal / DX12 / WebGPU backends). Audio: cpal-backed mixer.</p>
+<section class="doc-section" id="foundation">
+  <h2>Foundation: core, render, audio + the asset viewer</h2>
+  <p>The asset viewer is a standalone binary that loads the disc, lets you navigate PROT entries, and renders / plays them. It de-risks the engine's integration surface: everything it draws goes through the same crates the engine does. Render API: <strong>winit + wgpu</strong> (Vulkan / Metal / DX12 / WebGPU backends). Audio: cpal-backed mixer over a clean-room SPU model.</p>
 
-  <h3>Implemented</h3>
   <table>
     <thead><tr><th>Crate</th><th>What's there</th></tr></thead>
     <tbody>
@@ -74,18 +103,15 @@ asset-viewer  &rarr; engine-*, all parser crates</code></pre>
 
   <p>The PROT browser dispatch handles <code>tim_passthrough</code>, <code>tim_pack</code>, <code>data_field_streaming</code>, <code>scene_tmd_stream</code>, <code>scene_vab_stream</code>, and a VAB byte-search fallback for any class with embedded banks.</p>
 
-  <p><strong>Smooth shading:</strong> <code>legaia_tmd::mesh::tmd_to_vram_mesh</code> emits a per-vertex normal stream by accumulating area-weighted face normals into per-position bins, so connected geometry shades smoothly; the VRAM-mesh shader falls back to screen-space derivatives only for unbinned positions. The SPU side is a full 24-voice mixer with ADSR (see <a href="audio.html">audio</a>).</p>
-  <h3>Open Phase 1 milestones</h3>
-  <ul class="bullets">
-    <li>XA stream playback (streaming voice in <code>engine-audio</code>; <code>play-str</code> already plays STR + XA in a window).</li>
-  </ul>
+  <p><strong>Smooth shading:</strong> <code>legaia_tmd::mesh::tmd_to_vram_mesh</code> emits a per-vertex normal stream by accumulating area-weighted face normals into per-position bins, so connected geometry shades smoothly; the VRAM-mesh shader falls back to screen-space derivatives only for unbinned positions. Those normals are what the opt-in <a href="#fidelity">dynamic light</a> reads - retail's own render uses none of them. The SPU side is a full 24-voice mixer with ADSR (see <a href="audio.html">audio</a>).</p>
+
+  <p><strong>Cutscene audio:</strong> <code>legaia-engine play-str</code> decodes a PSX STR's interleaved XA track off the disc and plays it through <code>AudioOut</code> in sync with the MDEC video. The track decodes up front rather than through an incremental streaming voice in <code>engine-audio</code>. See <a href="cutscene.html">cutscene</a>.</p>
 </section>
 
-<section class="doc-section" id="phase2">
-  <h2>Phase 2 - runtime port</h2>
-  <p>Port the script VM, field-loader chain, and effect VM. Handler-by-handler translation: dump each opcode handler from Ghidra, hand-port to Rust, unit-test against captured runtime traces. Aim for behavioural fidelity per opcode, not byte-exactness of the VM internals.</p>
+<section class="doc-section" id="ported-vms">
+  <h2>The ported VMs</h2>
+  <p>Every VM is a handler-by-handler translation: the opcode handler is dumped from Ghidra, hand-ported to Rust, and unit-tested against captured runtime traces. The target is behavioural fidelity per opcode, not byte-exactness of the VM's internals. Each abstracts its SCUS callbacks behind a <code>Host</code> trait, so the VM crate stays free of GPU and audio dependencies.</p>
 
-  <h3>Implemented</h3>
   <ul class="bullets">
     <li><strong><a href="actor-vm.html">Actor VM</a></strong> - <code>crates/engine-vm/src/lib.rs</code>. All 13 opcodes ported, full unit-test coverage. Drives the title screen sprite cluster.</li>
     <li><strong><a href="script-vm.html">Field VM</a></strong> - <code>crates/engine-vm/src/field.rs</code>. All 43 explicit opcodes of <code>FUN_801DE840</code> are ported with a <code>FieldHost</code> trait abstracting every SCUS callback. Cross-context dispatch (extended-bit prefix), YIELD caller-propagation, <code>Op49State</code> tristate (with the inline-MES walker for sub-0), the <code>0x4C</code> outer-nibble dispatcher, the <code>0x38</code> halt-acquire path, and the <code>0x5x/0x6x/0x7x</code> default-route fourth-flag-bank dispatchers are all wired.</li>
@@ -100,9 +126,11 @@ asset-viewer  &rarr; engine-*, all parser crates</code></pre>
   </ul>
 </section>
 
+<!-- id="phase3" is a stable inbound anchor (linked from battle.html); the
+     heading text is present-tense, the id is kept so the link still lands. -->
 <section class="doc-section" id="phase3">
-  <h2>Phase 3 - gameplay assembly</h2>
-  <p>All major gameplay systems are wired into <code>engine-core::World</code> and driven from <code>engine-shell::BootSession</code>.</p>
+  <h2>Gameplay systems</h2>
+  <p>All major gameplay systems are wired into <code>engine-core::World</code> and driven from <code>engine-shell::BootSession</code>. The shell loop closes: title &rarr; save-select &rarr; field / encounter &rarr; battle &rarr; save.</p>
 
   <h3>Battle</h3>
   <ul class="bullets">

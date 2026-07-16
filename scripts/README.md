@@ -20,9 +20,9 @@ referenced by code, not analysis one-offs:
 | [`ci/`](#ci) | Repo-maintenance gates and build/install helpers the pre-commit hook and CI run. |
 | [`ghidra-analysis/`](#ghidra-analysis) | Static analysis: overlay extraction + import into Ghidra, MIPS/GTE disassembly, GPU-packet and call-graph tooling. |
 | [`asset-investigation/`](#asset-investigation) | One-off RE probes over disc assets: TIM/TMD review + render, slot-4 / world-map decode, scene/font/CDNAME/save-format hunts. |
-| `pcsx-redux/` | PCSX-Redux Lua probe library (`lib/probe`) + `autorun_*.lua` capture scripts + Python decoders. See [`docs/tooling/pcsx-redux-automation.md`](../docs/tooling/pcsx-redux-automation.md). |
+| `pcsx-redux/` | PCSX-Redux Lua probe library (`lib/probe`) + `autorun_*.lua` capture scripts + Python decoders, driven by `run_probe.sh` (`run_probe.ps1` on Windows). See [`docs/tooling/pcsx-redux-automation.md`](../docs/tooling/pcsx-redux-automation.md); [`COMMUNITY-CAPTURE.md`](pcsx-redux/COMMUNITY-CAPTURE.md) is the hand-out guide for volunteer playthrough captures. |
 | [`vrc-diorama/`](#vrc-diorama) | Clean-room MIDI transport for the VRChat live battle-diorama: register schema + codegen, the Lua encoder/sink riding the battle-state probe, and the UdonSharp decoder scaffold. No Sony bytes. |
-| `mednafen/` | Mednafen save-state automation: capture, diff, bisect, bulk-terrain resolve. See [`docs/tooling/mednafen-automation.md`](../docs/tooling/mednafen-automation.md). |
+| `mednafen/` | Mednafen save-state automation: capture, diff, bisect, bulk-terrain resolve, plus `movies/` for optional `.mcm` input recordings. See [`docs/tooling/mednafen-automation.md`](../docs/tooling/mednafen-automation.md). |
 | `git-hooks/` | The shipped `pre-commit` hook (installed via `ci/install-hooks.sh`). |
 | `engine/` | Engine-side `scenarios.toml` for the determinism replay harness (distinct from the capture manifest above). |
 | `replays/` | `j-replay-v1` record/replay fixtures for the determinism tests. |
@@ -35,6 +35,7 @@ invoke them by `scripts/ci/<name>` path.
 - `install-hooks.sh` - point `core.hooksPath` at `git-hooks/` (run once per clone).
 - `install-tools.sh` - install the local toolchain (Ghidra container, capstone, emulators).
 - `check-doc-density.py` - doc legibility-density gate (long lines / over-budget table cells).
+- `check-md-links.py` - Markdown intra-repo link + heading-anchor gate (the docs-side sibling of `check-site-links.py`).
 - `check-site-links.py` - static-site internal-link + anchor gate.
 - `check-port-tags.py` - `// PORT:` / `// REF:` tag drift checker (warn-only in the hook).
 - `port-catalog.py` (+ `port-catalog-ignore.toml`, `features.toml`) - per-function port worklist + `--dashboard`.

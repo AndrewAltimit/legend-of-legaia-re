@@ -1,8 +1,26 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; randomizer</div>
   <h1>Randomizer / disc patcher</h1>
-  <p class="lede">Track-1-adjacent tooling that edits gameplay data on a <em>user-supplied</em> retail disc image - monster item drops (optionally turned into rare equipment), random-encounter formations, treasure-chest contents, what town stores sell (and the casino prize exchange), per-monster steal items, scene-transition doors/exits, intra-town (house/interior) doors, the new game's starting items and starting level, arts button combos, each character's favored weapon class, a set of <strong>battle-tuning</strong> tables (monster combat stats, special-attack power, the element-affinity matrix, spell MP costs, and equipment stat bonuses), and a family of <strong>injected code features</strong> (bonus equipment drops, run-away EXP, an enemy-ally charm, shiny Seru, and an in-shop Seru-trading vendor) - and writes the result back into the <code>.bin</code>. The <code>legaia-rando</code> CLI turns a disc + seed into a portable PPF patch (the shareable deliverable) plus an optional patched image for local play. It does not touch the clean-room engine. The crate ships only code; every test that needs real data is disc-gated, so CI runs without a disc.</p>
+  <p class="lede">Turns a <em>user-supplied</em> retail disc image into a re-rolled one: give it a <code>.bin</code> and a seed, and it rewrites the gameplay data - what monsters drop, what lives in the chests, which door goes where, how hard the enemies hit - then hands back a patch you can share.</p>
 </header>
+
+<section class="doc-section" id="what">
+  <h2>What this is</h2>
+  <p>A designed, shipped deliverable of the project, not a by-product of the reverse engineering. It is also the practical proof that the format work is right: you cannot re-pack a monster's LZS record and have the retail game boot it unless the format doc is correct down to the byte.</p>
+  <p><strong>Reach for it when</strong> you want a fresh playthrough of a game you have finished, or when you want to check that a format the docs claim to understand really is understood.</p>
+  <p><strong>It does not touch the clean-room engine</strong> - it edits the disc, and the retail game (or the port) plays the result. The one exception is the Seru-trading vendor, which embeds a config the engine reads because retail has no trade UI to hook.</p>
+  <p>The <code>legaia-rando</code> CLI turns a disc + seed into a portable PPF patch (the shareable deliverable) plus an optional patched image for local play. There is also a <a href="rom-patcher.html">browser build</a> that never uploads your disc. The crate ships only code; every test that needs real data is disc-gated, so CI runs without a disc.</p>
+
+  <h3>What it can re-roll</h3>
+  <ul class="bullets">
+    <li><strong>Loot</strong> - monster item drops, treasure-chest contents, per-monster steal items, and an optional low-chance bonus equipment drop.</li>
+    <li><strong>Fights</strong> - random-encounter formations, monster combat stats, special-attack power, the element-affinity matrix, and spell MP costs.</li>
+    <li><strong>Economy</strong> - what town stores sell, and the casino prize exchange.</li>
+    <li><strong>Navigation</strong> - scene-transition doors/exits, intra-town (house / interior) doors, and <code>.MAP</code> intra-scene teleports.</li>
+    <li><strong>The party</strong> - Tactical-Arts button combos, equipment stat bonuses, each character's favored weapon class, and the new game's starting items and level.</li>
+    <li><strong>Additions retail has no table for</strong>, added as machine-code hooks: experience for running away, charming an enemy onto your side, shiny Seru, and Seru trading.</li>
+  </ul>
+</section>
 
 <section class="doc-section" id="why">
   <h2>Why this needs three new capabilities</h2>

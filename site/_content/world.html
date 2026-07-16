@@ -81,13 +81,30 @@ canvas.world-canvas {
   <div class="breadcrumb"><a href="index.html">home</a> &middot; game world</div>
   <h1>Game world</h1>
   <p class="lede">
-    Every town, dungeon, and battlefield in the game - rendered here, in 3D, from your own disc image. Pick a location from the navigator and its full map assembles in the browser: the terrain, the buildings, the props, all textured from the real PSX VRAM. Each location also carries its enemy roster, bosses, and shops. Under the hood, every one ties back to a scene label on the disc via the <a href="formats/cdname.html">CDNAME map</a>. Nothing leaves your machine.
-    With a VR headset, the <strong>VR</strong> button next to the assembled map steps inside it over WebXR - Chrome/Edge with SteamVR as the active OpenXR runtime, served from <code>http://localhost</code> or https (WebXR needs a secure context; the button explains what's missing if it can't start).
+    Every town, dungeon, and battlefield in the game, rebuilt in 3D from your own copy of it.
+  </p>
+  <p>
+    Pick a location from the navigator and its full map assembles in your browser - the terrain, the
+    buildings, the props, all textured from the real PlayStation video memory the tools reconstruct.
+    Each location also carries its enemy roster, bosses, and shops. Nothing is uploaded; your disc
+    image never leaves your machine.
+  </p>
+  <p>
+    Every location here ties back to a short scene label the disc uses internally, like
+    <code>town0d</code>. Those labels come from a name map on the disc called
+    <a href="formats/cdname.html">CDNAME</a>, which is what lets a walkthrough's &ldquo;Sol Tower&rdquo;
+    be matched up with the bytes that actually build it.
   </p>
 </header>
 
 <section class="doc-section" id="map">
   <h2>Explore the maps</h2>
+  <p class="hint">
+    With a VR headset, the <strong>VR</strong> button next to the assembled map lets you step inside it
+    over WebXR. It needs Chrome or Edge with SteamVR as the active OpenXR runtime, and this page
+    reached over <code>http://localhost</code> or https, since WebXR only starts in a secure context.
+    If it can't start, the button explains what's missing.
+  </p>
   <div class="world-shell">
     <div class="file-input-group">
       <label for="world-file"><strong>Choose file:</strong></label>

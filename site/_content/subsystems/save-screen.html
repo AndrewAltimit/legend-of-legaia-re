@@ -68,6 +68,33 @@
   <p>The actual BIOS card-write thunk is <code>FUN_8006EE34</code>: it calls <code>FUN_8006EE7C</code> (BIOS-B(0x50)) then <code>FUN_8006EE6C</code> (BIOS-B(0x4E)) with channel argument <code>(port, 0x3F, 0)</code>. The channel encoding is <code>chan = port * 16 + sub_op</code>.</p>
 </section>
 
+<section class="doc-section" id="slot-list-id-spaces">
+  <h2>Slot list: memory-card slots, not save blocks</h2>
+  <p>Retail's save UI is <strong>two-stage</strong>, and the two stages live in different id spaces - conflating them is the easy mistake.</p>
+  <table>
+    <thead><tr><th>Stage</th><th>What the player picks</th><th>Count</th><th>Retail anchor</th></tr></thead>
+    <tbody>
+      <tr><td>Pill row (<code>SLOT 1</code> / <code>SLOT 2</code>)</td><td>a <strong>memory-card port</strong></td><td>2</td><td>the libcd channel's <code>port</code> (<code>chan = port * 16 + sub_op</code>, <code>FUN_801E3294</code>)</td></tr>
+      <tr><td>5x3 preview grid</td><td>a <strong>save block</strong> on the chosen card</td><td>15</td><td>the directory walk <code>FUN_801E1208</code>; per-slot buffer <code>0x801EF1B8 + N * 0x100</code></td></tr>
+    </tbody>
+  </table>
+  <p>Between them sits the card read - the "Now checking. Do not remove MEMORY CARD" dialog - which is why that beat exists at all.</p>
+  <p><code>SaveSelectSession</code> is renderer-agnostic and models the phases, not the id space, so a host picks which reading its slot list carries:</p>
+  <ul class="bullets">
+    <li><strong>Flat</strong> (default): the slot list <em>is</em> the save blocks; the pills show the first two and Save picks a block straight off the pill row. The native shell drives this against its on-disk LGSF slots.</li>
+    <li><strong>Card slots</strong> (<code>set_card_slots_mode(true)</code>): the slot list is the two ports. Save then crosses the same <code>NowChecking</code> beat Load does and raises its overwrite prompt from the preview rather than from the pill row, and <code>present</code> on a pill means "a card is inserted", not "this holds a save". The browser play page drives this against the player's own card images.</li>
+  </ul>
+  <p>The <strong>grid cursor</strong> is the host's, not the session's: <code>SlotPreview</code> ignores directions, so which of the fifteen blocks is focused - and therefore which block a confirm commits - is host state.</p>
+</section>
+
+<section class="doc-section" id="messagebox-geometry">
+  <h2>Messagebox panel geometry (<code>FUN_801E36C4</code>)</h2>
+  <p>Every save-UI panel rect flows through one drawer. Its <code>x</code> is a <strong>centre</strong>, not a left edge, and the visible gold-bordered box is a uniform 7px larger than the <code>w x h</code> asked for:</p>
+  <pre><code>visible = (center_x - w/2 - 9,  y - 1,  w + 14,  h + 14)</code></pre>
+  <p>The <code>+14</code> sizes are measured off captured retail frames and are independent of where a box sits, which is what makes them safe to generalise; the <code>-9</code> / <code>-1</code> then predict each panel's pixels exactly. Verified against three panels: the header tab <code>(48, 6, 65, 13)</code> &rarr; rows 5..31; the "Now checking" dialog mid-slide at <code>center_x = 240</code> &rarr; left 147 (matching the older capture that pinned that dialog, taken long before this model); and both confirm-dialog panels.</p>
+  <p>The confirm prompt is <strong>two</strong> panels plus stacked options - not one box with Yes/No side by side.</p>
+</section>
+
 <section class="doc-section" id="engine-port">
   <h2>Engine port</h2>
   <p><code>legaia_save::SaveFile</code> (with <code>SaveExt</code>) is the clean-room counterpart: the <code>LGSF v2</code> container (party records, story flags, money, inventory, play-time, per-character ext) with backward-compatible <code>v3</code> (full 512-byte story-flag bitmap) and <code>v4</code> (<code>LGX4</code> shiny-Seru block) extensions. It round-trips via <code>engine-core</code>'s <code>save_full</code> / <code>load_full</code> calls; the <code>legaia-engine save</code> / <code>load</code> subcommands exercise this path end-to-end.</p>

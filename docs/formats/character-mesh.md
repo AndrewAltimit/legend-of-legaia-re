@@ -13,7 +13,7 @@ The player characters have **two distinct mesh packs**, one per game form:
   **builds** each party member's higher-detail TMD by splicing together the
   five equipment-selected sections of that character's file, and installs
   the result into `DAT_8007C018[0..=2]` (see
-  [§ Battle form](#battle-form--assembled-from-the-player-files)).
+  [§ Battle form](#battle-form---assembled-from-the-player-files)).
   **PROT 1204** (`other5`) is a sibling pack carrying pre-assembled copies of
   the same characters with default equipment - it is what the **Baka
   Fighter** fist-fight minigame loads, and most default-section geometry is
@@ -34,8 +34,8 @@ share.)
 - [Textures (field form)](#textures-field-form)
   - [CLUT upload semantic (`FUN_800198e0`)](#clut-upload-semantic-fun_800198e0)
   - [Hybrid render (textured + untextured prims)](#hybrid-render-textured--untextured-prims)
-- [Battle form - assembled from the player files](#battle-form--assembled-from-the-player-files)
-  - [Assembly - object-local pieces posed by the character's own battle streams](#assembly--object-local-pieces-posed-by-the-characters-own-battle-streams)
+- [Battle form - assembled from the player files](#battle-form---assembled-from-the-player-files)
+  - [Assembly - object-local pieces posed by the character's own battle streams](#assembly---object-local-pieces-posed-by-the-characters-own-battle-streams)
   - [Battle render: load-time TSB/CBA relocation](#battle-render-load-time-tsbcba-relocation)
   - [Equipment groups (battle only)](#equipment-groups-battle-only)
   - [On-disc layout (PROT 1204)](#on-disc-layout-prot-1204)
@@ -420,7 +420,7 @@ files, raw indices → extraction entries: `etim.dat` `0x368` → 0870,
 
 At battle entry the party setup does three things to each party character:
 registers the assembled mesh (`flags` 0→1, object-table pointers fixed to
-absolute RAM - see [§ Battle form](#battle-form--assembled-from-the-player-files)
+absolute RAM - see [§ Battle form](#battle-form---assembled-from-the-player-files)
 for the assembly that produces it, including the two equipment extras), and -
 crucially - **rewrites every primitive's TSB (texpage) and CBA (CLUT)
 fields** to a packed per-party-slot runtime VRAM band. The TSB/CBA stored on disc are an **authoring
@@ -680,7 +680,7 @@ and the Baka Fighter form (a fist-fight, which keeps the unarmed mesh). The
 equipped-weapon/gear geometry behind that `+2` is **not present in the 1204
 TMD** - it is the per-equipment-id section of the character's player battle
 file, spliced in by the assembler (resolved; see
-[§ Battle form](#battle-form--assembled-from-the-player-files)).
+[§ Battle form](#battle-form---assembled-from-the-player-files)).
 
 `FUN_8001EBEC` is **not** that loader, and it does **not** grow `nobj`. The
 decomp ([`8001ebec.txt`](../../ghidra/scripts/funcs/8001ebec.txt); see also
@@ -694,7 +694,7 @@ words (`puVar1[0..6]`) and **never touches the object/group count** - a binary
 pose toggle on geometry already in the field mesh, not an object add and not
 an external-mesh upload. The mechanism that actually raises the battle object
 count is the player-file section splice `FUN_800536BC` (see
-[§ Battle form](#battle-form--assembled-from-the-player-files)); the earlier
+[§ Battle form](#battle-form---assembled-from-the-player-files)); the earlier
 "the equipment swap `FUN_8001EBEC` sources it / adds the groups" framing
 conflated the two.
 
@@ -744,7 +744,7 @@ state offsets.
 | Function | Role |
 |---|---|
 | `FUN_80020224` → `FUN_8001F05C` case 2 → `FUN_80026B4C` | Single descriptor-walk that installs PROT 0874 §0's 5 **field-form** TMDs into `DAT_8007C018[0..=4]` (the engine routes this through [`seed_global_tmd_pool_from_befect_data`](../../crates/engine-core/src/scene.rs)). The field caller is `FUN_801D6704` → `FUN_80020118` → `FUN_8001E890`. |
-| `FUN_800513F0` → `FUN_80026B4C` | **Battle-form party install (lead/active actors).** Battle scene-loader state handler; `while (i<3)` loop registering `*(actor+0x50)+0x18` (`actor = *(0x801C9360 + i*4)`) into `DAT_8007C018[0..]`, after the party-palette decode `FUN_80052FA0`. Pinned by a `DAT_8007C018[0..2]` write-watchpoint at battle entry - full trace in [§ Battle form, Loader provenance](#assembly--object-local-pieces-posed-by-the-characters-own-battle-streams). |
+| `FUN_800513F0` → `FUN_80026B4C` | **Battle-form party install (lead/active actors).** Battle scene-loader state handler; `while (i<3)` loop registering `*(actor+0x50)+0x18` (`actor = *(0x801C9360 + i*4)`) into `DAT_8007C018[0..]`, after the party-palette decode `FUN_80052FA0`. Pinned by a `DAT_8007C018[0..2]` write-watchpoint at battle entry - full trace in [§ Battle form, Loader provenance](#assembly---object-local-pieces-posed-by-the-characters-own-battle-streams). |
 | `FUN_800542C8` → `FUN_80026B4C` | **Battle-form party install (additional members).** Battle archive loader; per-member loop bounded by `*(rec+0x4a)`, registering `*(*rec+4)`. Dispatched indirectly (no static `0x8007C018` xref). `FUN_800520F0` state `0xc` separately `tmd_register`s PROT `0x36a` into the *effect* window `[3..]`, not the party. |
 | `FUN_8001E890` | "DATA_FIELD player loader" - post-install, caps `entry[+0x08] = 10` for the three active-party slots at `DAT_8007C018[DAT_8007B824 + 0..2]`, then dispatches the per-character equipment-conditional patch to `FUN_8001EBEC`. |
 | `FUN_8001EBEC` | Per-frame group-descriptor patch. Reads the equipment toggle byte and copies one of the two templates over the visible group descriptor. The full asm trace is decoded in [`ghidra/scripts/funcs/8001ebec.txt`](../../ghidra/scripts/funcs/8001ebec.txt). |

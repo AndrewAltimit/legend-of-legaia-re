@@ -2,7 +2,20 @@
   <div class="breadcrumb"><a href="index.html">home</a> &middot; shops &amp; vendors</div>
   <h1>Shops &amp; vendors</h1>
   <p class="lede">
-    Every merchant in the game, joined to the priced inventory tables. Driven by <code>data/gamedata/shops.toml</code> + <code>items.toml</code> + <code>weapons.toml</code> + <code>armor.toml</code> + <code>accessories.toml</code> - the same curated tables the <a href="reference/gamedata.html">curated game-data</a> reference exposes through the <code>gamedata-tool</code> CLI. Click an item for its effect, category, and the data anchor that drives the reverse-engineering of the on-disc record.
+    Every merchant in the game and everything they sell - browsable by town, with each item's price, category, and what it actually does.
+  </p>
+  <p>
+    Unlike most pages here, this one needs no disc image: it runs off the project's
+    <a href="reference/gamedata.html">curated game-data tables</a>, mined from public walkthroughs and
+    also available offline through the <code>gamedata-tool</code> command line. Click any item to see
+    its detail panel.
+  </p>
+  <p>
+    These tables earn their keep as <strong>ground truth</strong>. A shop's inventory on the disc is
+    just numbers - item ids and prices, with no names attached to them. Having a trustworthy
+    human-readable table to check a decoded record against is what turns a plausible guess into a
+    confirmed reading of the binary, which is why each item's panel names the data anchor it
+    validates.
   </p>
 </header>
 

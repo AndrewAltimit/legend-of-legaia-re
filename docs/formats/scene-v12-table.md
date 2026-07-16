@@ -225,7 +225,7 @@ The formerly un-analyzed `_DAT_8007B85C` reader near `~0x800219xx` is
 prologue; `see ghidra/scripts/funcs/80021940.txt`): the **scene-transition
 streaming actor**, a 5-state SM (state at `actor+0x1A`, jump table
 `0x80010760`) that pre-streams the *next* scene's
-[`scene_asset_table`](scene-bundles.md#scene_asset_table---the-canonical-7-asset-bundle)
+[`scene_asset_table`](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle)
 bundle during the transition fade:
 
 - It is **not** a game-mode handler: its only corpus reference is the
@@ -320,7 +320,7 @@ for (i, s) in t.scripts.iter().enumerate() {
 ## The "embedded MAN at `0x1000`" is an extended-footprint over-read
 
 Extraction entries `0076` and `0164` show a canonical 7-asset
-[`scene_asset_table`](scene-bundles.md#scene_asset_table---the-canonical-7-asset-bundle)
+[`scene_asset_table`](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle)
 at file offset `0x1000`, which was read as the v12 "embedding" its scene's
 bundle. Byte comparison falsifies the embedding: `0076 + 0x1000` onward is
 **byte-identical to extraction `0078`** (suimon's ordinary base+3 bundle)

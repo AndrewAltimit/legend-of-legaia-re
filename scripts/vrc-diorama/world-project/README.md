@@ -65,10 +65,14 @@ client run happen on a **Windows PC**; this scaffold is the hand-off.
 The encoder/relay run where PCSX runs; MIDI is **local to the VRChat client**.
 Pick one:
 
-- **A. PCSX on the same Windows PC.** Simplest. The relay needs a *Windows* MIDI
-  sink (winmm `midiOutShortMsg` via LuaJIT FFI) writing to the loopMIDI port —
-  the sibling of the Linux ALSA sink, not yet written. Ask for it when you go
-  this route.
+- **A. PCSX on the same Windows PC.** Simplest, and the pieces exist: the
+  `winmm` sink in `../midi_sink.lua` (`midiOutShortMsg` via LuaJIT FFI, the
+  sibling of the Linux ALSA sink) pushes CCs to a Windows MIDI port, matched by
+  case-insensitive name substring from `LEGAIA_MIDI_WINPORT`. The Windows-native
+  runner `../../pcsx-redux/run_probe.ps1` sets that for you (`-MidiPort`,
+  default `"LegaiaDiorama (B)"`; `-NoMidi` for a dry run). Note its warning that
+  loopback pairs **cross over** — the relay writes to `(B)` while VRChat listens
+  on `--midi="LegaiaDiorama (A)"`.
 - **B. PCSX on the Linux box, VRChat on Windows (network MIDI).** Use **rtpMIDI**
   (Tobias Erichsen) on Windows + an RTP-MIDI endpoint on Linux (`rtpmidid` /
   `raveloxmidi`) that appears as an ALSA seq port. Connect the verified

@@ -17,7 +17,7 @@ off the [port catalog](port-catalog.md).
 - [The gap-set](#the-gap-set)
 - [The harness](#the-harness)
 - [Attribution: SCUS vs overlay](#attribution-scus-vs-overlay)
-- [The latency loop](#the-latency-loop)
+- [The capture + triage loop](#the-capture--triage-loop)
 - [Segment ledger](#segment-ledger)
 - [Gap-burndown](#gap-burndown)
 

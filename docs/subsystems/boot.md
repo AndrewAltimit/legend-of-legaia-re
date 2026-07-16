@@ -1,6 +1,35 @@
 # Boot path
 
-The boot sequence does three things before anything else: read the PROT.DAT TOC into RAM, populate the asset-type dispatcher, and hand control to the title-screen overlay.
+Everything that happens between power-on and the player standing in a field
+scene: reading the disc's table of contents, wiring the asset dispatcher, the
+mode state machine that drives every screen thereafter, and the title / name-entry
+/ opening-cutscene chain that hands off to gameplay.
+
+**Where it lives.** Boot proper is SCUS-resident - the TOC loader
+(`FUN_8003E4E8`), the asset-type dispatcher (`FUN_8001F05C`), and the mode
+dispatch table at `0x8007078C`. The title screen itself is *not*; it lives in an
+overlay, which is why it has no row in the mode table.
+
+**Port counterpart.** `engine-core`'s `BootSession` + the mode/menu dispatch;
+`legaia_asset::mode_table` reads the mode table straight off the disc.
+
+**The three things that catch people out:**
+
+- **The title screen is not in the mode table.** Looking for its mode row is a
+  dead end - see [Title screen is not in the mode table](#title-screen-is-not-in-the-mode-table).
+- **The TOC has different strides on disc and in RAM.** They are not the same
+  structure; see [`formats/prot.md`](../formats/prot.md).
+- **The pad mask is not the layout you expect.** See
+  [Pad-mask layout](#pad-mask-layout-important) before reading any input code.
+
+## Contents
+
+- [TOC loader (`FUN_8003E4E8`)](#toc-loader-fun_8003e4e8)
+- [Asset-type dispatcher (`FUN_8001F05C`)](#asset-type-dispatcher-fun_8001f05c)
+- [Game-mode state machine](#game-mode-state-machine) - [full handler map](#full-handler-map-recovered-from-the-disc) · [New Game boot chain](#new-game-boot-chain-title--field) · [title is not in the table](#title-screen-is-not-in-the-mode-table) · [CD-read API stack](#cd-read-api-stack) · [system-UI gap](#pre-init_data-system-ui-gap-menu-glyph-atlas--boot-cursors) · [title-overlay source](#title-overlay-source-on-disc)
+- [Title-screen overlay state](#title-screen-overlay-state) - [tick](#tick-function) · [sub-mode dispatcher](#sub-mode-dispatcher) · [opening scene chain + intro skip](#the-opening-scene-chain--the-fun_801d1344-intro-skip) · [name-entry overlay](#name-entry-overlay) · [sprite-emit helpers](#sprite-emit-helpers) · [state struct](#state-struct-extended) · [pad-mask layout](#pad-mask-layout-important)
+- [Boot init.pak (PROT 0895)](#boot-initpak-prot-0895) · [strip-grid unfolding](#strip-grid-unfolding)
+- [Debug flags](#debug-flags)
 
 ## TOC loader (`FUN_8003E4E8`)
 

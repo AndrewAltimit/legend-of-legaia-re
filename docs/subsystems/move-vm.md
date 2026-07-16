@@ -1,16 +1,40 @@
 # Move-table opcode VM
 
-A bytecode VM dedicated to per-actor animation, motion, and state. Distinct from the [field/event script VM](script-vm.md) and the [actor / sprite VM](actor-vm.md): the move VM lives in `SCUS_942.54`, runs on the per-actor "move buffer" set up by `FUN_800204F8`, and is invoked every frame from the actor tick. The opcode space is **71 instructions** (`0x00..0x46`); opcode `0x2F` escapes to an overlay-resident extension dispatcher (`FUN_801D362C`, **61 sub-opcodes** `0x00..0x3C`) that is loaded by many overlays (town, world-map, dialog, cutscene, ...) at the same RAM address; each overlay supplies its own JT contents.
+The move VM is a tiny per-actor animation engine. Every actor - a party member, an
+enemy, an NPC - owns a "move buffer" and a program counter into it, and every frame
+the actor tick runs opcodes out of that buffer until one of them stops the loop. It
+is what turns a move-table record into world-space motion, animation-bank selection,
+tween setup, and per-actor flag writes; it is the bytecode behind Tactical Arts
+execution.
 
-## Three-VM picture
+It lives in `SCUS_942.54` at **`FUN_80023070`**, runs on the buffer set up by
+`FUN_800204F8`, and has **71 opcodes** (`0x00..0x46`). Opcode `0x2F` escapes to an
+overlay-resident extension dispatcher (`FUN_801D362C`, **61 sub-opcodes**
+`0x00..0x3C`), documented in
+[`move-vm-overlay-ext.md`](move-vm-overlay-ext.md). Port:
+[`legaia_engine_vm::move_vm`](../../crates/engine-vm/src/move_vm.rs).
+
+**What catches people out: operands are 16-bit, not 8-bit.** The PC counts in u16
+units and each handler returns its size in u16 units too. The actor VM and the field
+VM are both byte-stream VMs, so a reader arriving from either one tends to misread
+the move VM's operand widths by a factor of two.
+
+## The runtime VM family
+
+Legaia runs **five** distinct bytecode/state VMs. Confusing them is the classic
+mistake in this corpus, so each page states plainly which one it is. This table is
+the shared orientation; the per-VM pages carry the detail.
 
 | VM | Driver fn | Where | Opcode count | Operand width |
 |---|---|---|---|---|
-| Actor / sprite VM | `FUN_801D6628` | Title-screen overlay (unindexed PROT.DAT gap after entry 899; PROT 0971 is the debug-menu overlay) | 13 (`docs/subsystems/actor-vm.md`) | byte stream |
-| **Move VM** | `FUN_80023070` | `SCUS_942.54` | 71 (`0x00..0x46`) | u16 stream |
-| Field / event VM | `FUN_801DE840` | Town overlay (0897) | 43 (`0x21..0x4F`, with gaps) + 0x5x/6x/7x default-route | byte stream |
+| [Actor / sprite VM](actor-vm.md) | `FUN_801D6628` | Title-screen overlay (unindexed PROT.DAT gap after entry 899; PROT 0971 is the debug-menu overlay) | 13 | byte stream |
+| **Move VM** (this page) | `FUN_80023070` | `SCUS_942.54` | 71 (`0x00..0x46`) + 61 sub-ops via `0x2F` | u16 stream |
+| [Motion VMs](motion-vm.md) | `FUN_8003774C` (pursue / patrol / face-target) and `FUN_80038158` (scripted motion + flag writes) | `SCUS_942.54` | see page | byte stream, high bit = "select target" |
+| [Field / event VM](script-vm.md) | `FUN_801DE840` | Town / field overlay (0897) | 43 (`0x21..0x4F`, with gaps) + 0x5x/6x/7x default-route | byte stream |
+| [Effect VM](effect-vm.md) | `FUN_801E0088` (per-frame walker) | Battle overlay (0898) | per-slot state machine, no opcode table | inline state tokens |
 
-The three are wired:
+How the move VM wires to the others:
+
 - Field VM op `0x22` `EXEC_MOVE` calls `FUN_800204F8`, which finds the move record for `move_id` and stages it into the actor at `actor[+0x48]` (buffer base) / `actor[+0x70]` (PC).
 - Actor tick (`FUN_80021DF4`, per frame) and actor spawn (`FUN_80021B04`, one-shot) both call `FUN_80023070(actor)` to step the move buffer.
 - Move-VM opcode `0x2F` calls `FUN_801D362C(actor, opcode_ptr)` for **overlay-defined extension opcodes**. The dispatcher exists in many overlays (town, world-map and its variants, dialog, cutscene); each overlay carries its own copy with its own JT contents.

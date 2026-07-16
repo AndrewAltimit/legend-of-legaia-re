@@ -244,6 +244,17 @@ else if (dir &amp; 0x8000) and collide(player, scene, 1) == clear:  player.X -= 
   <p><code>FUN_801d01b0</code> was found with a runtime write-watchpoint on the player position fields (<code>scripts/pcsx-redux/autorun_player_pos_watch.lua</code>): walking in a field scene fires write hits at the four <code>sh</code> stores <code>0x801D0684 / 06E4 / 0744 / 07B4</code> (player Z&plusmn; / X&plusmn;), all inside <code>FUN_801d01b0</code>. Static analysis alone never surfaced it because the writes are buried in a 1964-byte function and the field overlay only loads at runtime. The cluster previously suspected to be locomotion (<code>801db81c..801dbf9c</code>) turned out to be the field <em>camera</em> system, which only <em>reads</em> the player position.</p>
 </section>
 
+<section class="doc-section" id="engine-port">
+  <h2>Engine port: movement compass + opt-in precise movement</h2>
+  <p>The engine mirrors retail's camera-remapped pad in <code>World::step_field_locomotion</code> (<code>decode_field_direction</code>): the held d-pad is rotated by <code>World::field_camera_azimuth</code> <strong>quantised to the nearest 90&deg;</strong> - the same job <code>func_0x800467e8</code> does - and stepped through the per-axis collision above.</p>
+  <p>The azimuth feed is <code>Camera::compass_azimuth_units()</code> (engine-core): scripted yaw, plus the user's <code>manual_orbit</code> (the play-window's left-mouse drag-orbit), plus the host renderer's <code>render_yaw_bias</code> (the follow camera's fixed base yaw, compass sense = the negated PSX render yaw), pushed into the world each <code>BootSession::tick</code>. All three terms default to 0, so headless hosts keep the identity remap.</p>
+  <p>Two <strong>non-retail, opt-in</strong> knobs layer on top - play-window keybinds, persisted in <code>legaia-options.toml</code>:</p>
+  <ul class="bullets">
+    <li><strong>Camera distance</strong> (<code>Camera::distance</code>; presets retail / far / farther, <code>T</code> cycles) - a pure framing scale on the follow camera's eye-back depth. It never feeds the simulation; the engine-core default stays <code>retail</code> so oracle / replay paths are bit-identical, while the windowed host defaults to <code>far</code>.</li>
+    <li><strong>Precise movement</strong> (<code>World::precise_movement</code>; <code>R</code> toggles, <strong>default off</strong>) - swaps the quantised remap for a continuous decode (<code>decode_field_direction_precise</code>). The azimuth rotates the screen vector at full angular resolution, key diagonals walk true 45&deg; vectors at normalised speed (no &times;0.75 cut - the vector itself is unit length), and a deflected analog stick (<code>InputState::lstick</code>) passes its angle through. The step still routes through the same 2-unit per-axis collision probes (<code>advance_with_collision_vector</code>, Z before X per sub-step), with a sub-step remainder carried across frames so shallow angles keep their exact slope.</li>
+  </ul>
+</section>
+
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">

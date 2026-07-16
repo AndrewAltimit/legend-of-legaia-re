@@ -1,18 +1,22 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">reference</a> &middot; open RE threads</div>
   <h1>Open reverse-engineering threads</h1>
-  <p class="lede">An index of still-open hunts and the negative findings worth not re-walking. Rows are <em>questions</em>, not progress markers - each states the current answer and links to the format or subsystem page holding the detail.</p>
+  <p class="lede">An index of reverse-engineering <em>questions</em> about Legaia's runtime, and where each one stands - open, answered, or already disproved. Rows are questions, not progress markers.</p>
 </header>
 
 <section class="doc-section" id="overview">
   <h2>How to use this page</h2>
-  <p>Use this page to find what's worth digging into next. Each row carries a one-line <em>current answer</em>; byte-level detail lives on the linked page, and the full working notes live in <code>docs/reference/open-rev-eng-threads.md</code>.</p>
+  <p>Before starting a hunt, look for it here. A question about this game is usually in one of three states, and this page tells you which: it is <strong>open</strong> and the row names the next step; it is <strong>answered</strong> and the row points at the doc or parser that owns the fact; or it has a tempting wrong answer that was already <strong>falsified</strong>, and the row records why.</p>
+  <p>That third case is the point of the page. Most rows here are closed, not open. A falsified row is kept forever with its reasoning intact, because the reasoning <em>is</em> the deliverable - "the world-map slot-4 bodies are coastline wireframes" is a very plausible reading of those bytes, and knowing why it is wrong is worth more than the row it occupies. The instructive dead ends are collected in the <a href="#do-not-re-walk">do-not-re-walk register</a>.</p>
+  <p>Each row carries a one-line <em>current answer</em>; byte-level detail lives on the linked page, and the full working notes live in <code>docs/reference/open-rev-eng-threads.md</code>.</p>
   <p>Status badges:</p>
   <ul class="bullets">
     <li><strong>open</strong> (plain text) - active hunt; a concrete next step exists.</li>
     <li><span class="tag tag-partial">partial</span> - main result pinned; a residual sub-question remains (see the details block below each table).</li>
-    <li><span class="tag tag-done">resolved</span> / <span class="tag tag-done">falsified</span> - answered or disproved; the row is kept so the path isn't re-walked. Instructive dead ends are collected in the <a href="#do-not-re-walk">do-not-re-walk register</a>.</li>
+    <li><span class="tag tag-done">resolved</span> - answered; the row cites the evidence and the page that now owns the fact.</li>
+    <li><span class="tag tag-done">falsified</span> - hypothesis disproved; the row is kept so the path isn't re-walked.</li>
   </ul>
+  <p>Many statuses are qualified in parentheses - <code>resolved (structural)</code>, <code>resolved + ported</code>, <code>falsified (VA-aliasing artifact)</code> - naming <em>how</em> the thread was settled. Read the parenthetical: <code>resolved (static)</code> and <code>resolved (RAM-verified)</code> are different strengths of evidence.</p>
 </section>
 
 <section class="doc-section" id="world-map">

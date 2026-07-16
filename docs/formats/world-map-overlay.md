@@ -12,7 +12,7 @@
 > The slot-4 records are read **in place, per-frame**, by the
 > world-map renderer (`0x801F78D4`) + the SCUS cluster-A GTE prim path
 > - there is **no record → working-buffer transcode** (see
-> [Slot-4 is read in place](#slot-4-is-read-in-place--there-is-no-transcode-drake-capture)).
+> [Slot-4 is read in place](#slot-4-is-read-in-place---there-is-no-transcode-drake-capture)).
 > The historical "world-map wireframe / coastline" reading is
 > falsified.
 >
@@ -38,12 +38,12 @@
 - [Falsified hypotheses](#falsified-hypotheses)
 - [Current working hypothesis](#current-working-hypothesis)
 - [Tooling](#tooling)
-- [`DAT_8007C018` - global TMD pointer table](#dat_8007c018--global-tmd-pointer-table-the-actual-cluster-a-source)
+- [`DAT_8007C018` - global TMD pointer table](#dat_8007c018---global-tmd-pointer-table-the-actual-cluster-a-source)
   - [Live snapshot (settled field scene)](#live-snapshot-settled-field-scene)
   - [Disc-side source of `[0..4]`](#disc-side-source-of-04)
-  - [Loader chain - partly open](#loader-chain--partly-open)
+  - [Loader chain - resolved](#loader-chain---resolved)
   - [Live snapshot (Sebucus mid-warp)](#live-snapshot-sebucus-mid-warp)
-  - [Implication for slot 4 - partly resolved](#implication-for-slot-4--partly-resolved)
+  - [Implication for slot 4 - resolved](#implication-for-slot-4---resolved)
 - [Open work](#open-work)
 - [See also](#see-also)
 
@@ -476,7 +476,7 @@ world-map TMD objects. It is a **separate** path from the slot-4
 render: the kingdom slot-4 body (`type = 0x05` = MOVE) is read **in
 place** at its per-kingdom resident base by the world-map renderer
 (`ra 0x801F78D4`), not routed through `DAT_8007C018` - see
-[Slot-4 is read in place](#slot-4-is-read-in-place--there-is-no-transcode-drake-capture).
+[Slot-4 is read in place](#slot-4-is-read-in-place---there-is-no-transcode-drake-capture).
 (An earlier reading held that the slot-4 buffer was overwritten by
 later TMD-pack installs and that cluster A read TMDs at addresses that
 had once held slot-4 bytes; that was a wrong-base sampling artifact
@@ -653,7 +653,7 @@ re-read from a cache: the warp Read-watchpoint shows the renderer
 reading the records in place, every frame, transforming each through
 the GTE and emitting GP0 primitive packets into the scene's primitive
 pool (see
-[Slot-4 is read in place](#slot-4-is-read-in-place--there-is-no-transcode-drake-capture)).
+[Slot-4 is read in place](#slot-4-is-read-in-place---there-is-no-transcode-drake-capture)).
 
 ## Tooling
 
@@ -856,7 +856,7 @@ belong to the *per-actor* renderer path (`FUN_8001ada4` walking
 `actor+0x44` mesh tables over the procedurally-built working buffer) -
 a **separate, non-slot-4 stream**. The slot-4 records themselves are
 read in place at their resident base (see
-[Slot-4 is read in place](#slot-4-is-read-in-place--there-is-no-transcode-drake-capture));
+[Slot-4 is read in place](#slot-4-is-read-in-place---there-is-no-transcode-drake-capture));
 the "slot 4 is transcoded into working-buffer mesh structs" reading
 these snapshots once supported is superseded.
 
@@ -1045,7 +1045,7 @@ slots picks either `TMD+0x124` (= group 10) or `TMD+0x140` (= group
 11) and overwrites the indexed live group descriptor with that
 pre-built 0x1C-byte template. This is the equipment-conditional mesh
 swap (weapon variant, etc.) - see the
-[`dat-8007c018-global-tmd-pointer-table`](#dat_8007c018--global-tmd-pointer-table-the-actual-cluster-a-source)
+[`dat-8007c018-global-tmd-pointer-table`](#dat_8007c018---global-tmd-pointer-table-the-actual-cluster-a-source)
 section's `FUN_8001EBEC` row in the readers table for the matching
 asm trace.
 
@@ -1117,7 +1117,7 @@ per-kingdom resident base by the world-map renderer (`ra
 overwritten by TMD-pack installs (the "overwritten slot-4 buffer"
 reading was the field-scene-snapshot conflation noted above plus a
 wrong-base sampling artifact). See
-[Slot-4 is read in place](#slot-4-is-read-in-place--there-is-no-transcode-drake-capture).
+[Slot-4 is read in place](#slot-4-is-read-in-place---there-is-no-transcode-drake-capture).
 
 ## Open work
 

@@ -1,6 +1,28 @@
 # Renderer (Legaia TMD)
 
-The renderer is `FUN_8002735C` - 60 GTE ops, per-mode descriptor table at `DAT_8007326C`. Drives the `crates/tmd::legaia_prims` walker and the engine-render port.
+How the game draws its 3D meshes, and how the clean-room port reproduces that.
+
+**Retail side.** The renderer is `FUN_8002735C` - 60 GTE ops, driven by a
+per-mode descriptor table at `DAT_8007326C` that says how each primitive group
+is laid out and which GP0 packet shape to emit. `SCUS_942.54` also carries a
+light-source sibling, `FUN_80029888`.
+
+**Port side.** `crates/tmd::legaia_prims` walks the primitives;
+`crates/engine-render` draws them, emulating a 1024x512 PSX VRAM page so the
+per-primitive texture-page / CLUT selectors decode in a fragment shader.
+
+**The thing that catches people out:** retail runs **no light source** on the
+field path - shading is baked into the TMD's per-primitive colour words, and the
+GPU modulates the texel by them. The port does the same by default, so the
+shading you get out of the box *is* retail's. What is not on by default is the
+strict-PS1 rasterisation: vertex snap and 15-bit dither sit behind
+[`psx_mode`](#rendering-knobs-what-is-faithful-what-is-a-choice). Summary:
+**simulation is faithful with no opt-out; shading defaults to retail;
+rasterisation defaults to clean.** See [Lighting](#lighting).
+
+A second surprise, deliberate: the port draws **every** mesh a scene loads,
+every frame - no frustum cull, no draw distance, no LOD. See
+[No distance culling](#no-distance-culling-every-loaded-body-is-drawn).
 
 ## Per-mode descriptor table
 
@@ -84,81 +106,280 @@ colour and `IR0` are set with `Renderer::set_depth_cue` (default `IR0 = 0`).
 - `FUN_80021B04` - actor-spawn helper, builds per-actor OBJECT pointer table.
 - `FUN_80024D78` - per-actor OBJECT-table rebuild.
 - `FUN_8001EBEC` - per-frame OBJECT[10/11] swap (pose select for player TMDs).
-- `FUN_8001E890` - "DATA_FIELD player loader". The retail-PROT branch targets PROT 876 (`player_data`), which is a streaming-format VAB+TIM_LIST+SEQ payload - not a TMD pack. The dev string `data\field\player.lzs` maps to that same PROT 876 entry. The `DAT_8007C018[0..4]` character TMDs actually come from PROT 0874 (`befect_data`) section 0; see [`docs/formats/world-map-overlay.md` § Disc-side source of `[0..4]`](../formats/world-map-overlay.md#disc-side-source-of-04). What `FUN_8001E890` does end up writing into `DAT_8007C018[0..2]` is the post-install group-count cap (`entry[+0x08] = 10`) and the equipment-conditional patch dispatch into `FUN_8001EBEC`.
+- `FUN_8001E890` - the "DATA_FIELD player loader"; see below, its name misleads.
 
 The per-actor `OBJECT[i]` is a 28-byte struct copied into `actor[0x44][i+1]` from `tmd + 12 + i*28` - `sizeof(OBJECT) = 28`.
+
+### `FUN_8001E890` does not load the player meshes
+
+The name is inherited from the dev string `data\field\player.lzs`, and it is a
+trap. That string maps to PROT 876 (`player_data`), which is what the loader's
+retail-PROT branch targets - and PROT 876 is a streaming-format VAB + TIM_LIST +
+SEQ payload, **not** a TMD pack.
+
+The `DAT_8007C018[0..4]` character TMDs actually come from PROT 0874
+(`befect_data`) section 0. See
+[`docs/formats/world-map-overlay.md` § Disc-side source of `[0..4]`](../formats/world-map-overlay.md#disc-side-source-of-04).
+
+What `FUN_8001E890` does write into `DAT_8007C018[0..2]` is the post-install
+group-count cap (`entry[+0x08] = 10`) and the equipment-conditional patch
+dispatch into `FUN_8001EBEC`.
 
 ## VRAM emulation in the engine port
 
 `crates/engine-render` emulates a 1024×512 R16Uint VRAM page so the per-prim CBA/TSB selectors plus 4/8/15bpp + CLUT decoding can happen in a fragment shader. The viewer uploads every sibling TIM into VRAM so multi-page meshes render correctly.
 
-CLUT data scatters across PROT entries - many character meshes reference CLUT rows that live in *different* PROT entries from their TMD source. The viewer's `--vram-extra-dir` is the workaround until the runtime asset chain is fully traced. Battle is fully traced (the bundle loader handles this); field / town / level-up still rely on the workaround.
+CLUT data scatters across PROT entries - many character meshes reference CLUT
+rows that live in *different* PROT entries from their TMD source. This is the
+problem the rest of this section is about.
+
+Engine-side scene loads resolve it from the disc: `SceneResources::build_targeted`
+walks the scene's own entries plus the shared and boot-resident blocks (see
+[Engine-side targeted upload + shared blocks](#engine-side-targeted-upload--shared-blocks)),
+with no hand-supplied directory.
+
+The asset-viewer's `--vram-extra-dir` is a *viewer* flag for browsing extracted
+`tim_scan/` dirs that are not tied to a CDNAME scene; it is not on the engine's
+scene-load path (`engine-core` never reads it). See
+[`asset-loader.md`](asset-loader.md#clut-data-scattering).
 
 ### Targeted VRAM upload
 
-The TIM corpus on a single PROT entry can run into the hundreds. Uploading every TIM into the 1MB VRAM clobbers regions a different mesh references as its CLUT row, and the paletted decode reads image pixels as palette entries (rainbow noise). The asset viewer and the `tmd` CLI both go through `legaia_tmd::vram_targeted::build_vram_targeted`: for every TIM, the image block and CLUT block are decided *independently* against the prim-target rectangles for the current TMD - a TIM can contribute one block, both, or neither.
-`legaia_tim::vram::Vram::prim_texture_status` then classifies each prim's `(cba, tsb, uv)` lookup as `Ok` / `MissingClut` / `ClutDepthMismatch { populated_width, expected_width }` / `MissingTexturePage` so the viewer can drop bad prims at mesh-build time and the CLI can explain *why* a prim was dropped (the most common case is a 4bpp prim referencing a CLUT row that's been populated as a 256-entry 8bpp palette by a different TIM).
+The TIM corpus on a single PROT entry can run into the hundreds. Uploading every
+one of them into the 1MB VRAM clobbers regions a different mesh references as its
+CLUT row, and the paletted decode then reads image pixels as palette entries -
+the rainbow noise.
+
+The asset viewer and the `tmd` CLI both go through
+`legaia_tmd::vram_targeted::build_vram_targeted`. For every TIM, the image block
+and the CLUT block are decided *independently* against the prim-target rectangles
+for the current TMD, so a TIM can contribute one block, both, or neither.
+
+`legaia_tim::vram::Vram::prim_texture_status` then classifies each prim's
+`(cba, tsb, uv)` lookup as `Ok` / `MissingClut` /
+`ClutDepthMismatch { populated_width, expected_width }` / `MissingTexturePage`.
+The viewer drops bad prims at mesh-build time; the CLI can explain *why* a prim
+was dropped. The most common case is a 4bpp prim referencing a CLUT row that a
+different TIM has populated as a 256-entry 8bpp palette.
 
 The same filter is wired into engine-side scene loads through `ResolvedTmd::build_filtered_vram_mesh`, so battle / field actor meshes inherit the same cleanup the asset viewer has.
 
 ### Engine-side targeted upload + shared blocks
 
-`SceneResources::build_targeted` is the engine-side mirror of the asset-viewer's targeted-upload path: it parses every TMD in a scene, collects the union of all prim-target rectangles (CLUT rows + texture-page UV bboxes), then walks every TIM and decides per-block whether to write it. This matches what the retail field loader does - DMA only the texture bytes the current scene's meshes need - and avoids the CLUT-row collisions that drop 80%+ of textured prims under the naive "upload every TIM" path.
+`SceneResources::build_targeted` is the engine-side mirror of the asset-viewer's
+targeted-upload path. It parses every TMD in a scene, collects the union of all
+prim-target rectangles (CLUT rows + texture-page UV bboxes), then walks every TIM
+and decides per-block whether to write it.
 
-`build_targeted` also accepts a list of *shared* CDNAME blocks via the [`FIELD_SHARED_BLOCKS`](../../crates/engine-core/src/scene_resources.rs) constant (`init_data` + `player_data`). These are the blocks the retail engine keeps resident across field-scene transitions - `player_data` (PROT 876) is a streaming-format file whose `0x01` (TIM_LIST) chunk carries the 256x256 player atlas at VRAM `fb=(768, 0)` with CLUT at `(0, 500)` (the other chunks are a VAB header and a small SEQ-magic trailer; the file carries **no TMDs** - character meshes come from PROT 0874, see [`docs/formats/world-map-overlay.md` § Disc-side source of `[0..4]`](../formats/world-map-overlay.md#disc-side-source-of-04)); `init_data` (PROT 0) holds shared UI / sprite tiles. The shared blocks are uploaded *first*,
-so scene-local TIMs win any slot collision (mirrors the retail boot-then-scene order).
+This matches what the retail field loader does - DMA only the texture bytes the
+current scene's meshes need - and avoids the CLUT-row collisions that drop 80%+
+of textured prims under the naive "upload every TIM" path.
+
+**Shared blocks.** `build_targeted` also accepts a list of *shared* CDNAME blocks
+via the [`FIELD_SHARED_BLOCKS`](../../crates/engine-core/src/scene_resources.rs)
+constant (`init_data` + `player_data`) - the blocks the retail engine keeps
+resident across field-scene transitions.
+
+`player_data` (PROT 876) is a streaming file - VAB + an empty `TIM_LIST` + a SEQ
+trailer - and carries **neither** the character meshes nor the player textures.
+Both come from **PROT 0874** instead: §0 is the 5-TMD character mesh pack that
+populates `DAT_8007C018[0..4]`, and §2 is the field-character texture pack whose
+entries 1/2/3 are the Vahn/Noa/Gala atlas pages at texpage `(832, 256)` with
+per-character CLUTs on row 478. See
+[`character-mesh.md` § Textures (field form)](../formats/character-mesh.md#textures-field-form)
+and [`world-map-overlay.md` § Disc-side source of `[0..4]`](../formats/world-map-overlay.md#disc-side-source-of-04).
+
+(An earlier reading placed the player atlas in PROT 876 at `fb=(768, 0)` with
+CLUT `(0, 500)`. That is **falsified** - don't re-derive it.)
+
+`init_data` (PROT 0) holds shared UI / sprite tiles.
+
+The shared blocks are uploaded *first*, so scene-local TIMs win any slot
+collision - mirroring the retail boot-then-scene order.
 
 `SceneHost::enter_field_scene` calls `build_targeted` with the field shared blocks by default; the legacy `SceneResources::build` / `build_with_shared` paths remain for tests and engines that want the unfiltered upload for diagnostic purposes.
 
-**Render vs parity: targeted vs DMA-every-TIM.** The targeted upload is a *render* optimisation - it writes only the texture bytes the current meshes sample, so the prim filter and the uploaded set stay consistent and CLUT-row collisions don't drop prims. The *retail field loader*, by contrast, DMAs **every** scene TIM to VRAM regardless of which prim samples it. For the VRAM **parity oracle** (which reproduces the live VRAM, not the minimal render set) `BuildOptions { upload_all_tims: true }` switches `build_targeted` to `build_vram_full_from_buffers`: every parseable collected TIM is written to its header destination (images first as sequential DMA, then CLUTs with merge-zeros to preserve the row-479 palette split).
-On town01 this lifts oracle coverage from ~4% (targeted) to ~38% of the runtime texture region, with wrong (engine-only) texels dropping from ~11.5k to ~250. The flag defaults `false`, so the render path is unchanged.
+**Render vs parity: targeted vs DMA-every-TIM.** The two paths want different
+things, so both exist.
+
+The targeted upload is a *render* optimisation: it writes only the texture bytes
+the current meshes sample, so the prim filter and the uploaded set stay
+consistent and CLUT-row collisions don't drop prims. The *retail field loader*,
+by contrast, DMAs **every** scene TIM to VRAM regardless of which prim samples
+it.
+
+The VRAM **parity oracle** reproduces the live VRAM, not the minimal render set,
+so it needs retail's behaviour. `BuildOptions { upload_all_tims: true }` switches
+`build_targeted` to `build_vram_full_from_buffers`: every parseable collected TIM
+is written to its header destination - images first as sequential DMA, then CLUTs
+with merge-zeros to preserve the row-479 palette split.
+
+On town01 this lifts oracle coverage from ~4% (targeted) to ~38% of the runtime
+texture region, with wrong (engine-only) texels dropping from ~11.5k to ~250. The
+flag defaults `false`, so the render path is unchanged.
 
 The TIM scan walks both raw entry bytes and any LZS-decompressed sections (via `legaia_asset::tim_scan::scan_entry`), so battle / level-up bundles that pack their character TIMs inside an LZS container don't need a raw-byte fallback path.
 
-`legaia-engine info --scene <name> --tmd-stats` reports per-TMD `kept / miss_clut / depth_mm / miss_page` counts so future regressions in the targeted-upload pipeline are visible without firing up the windowed viewer. `--vram-png` / `--vram-bin` write the engine VRAM as a 1024x512 PNG / raw BGR555 blob; `--runtime-vram <bin>` (paired with `mednafen-state vram-dump --out-bin`) reports per-region pixel-coverage statistics against the runtime ground truth, and `--vram-diff-png` writes a colour-coded diff (red = runtime has, engine missing; green = engine extras; blue = both populated but different).
+**Diagnostics.** `legaia-engine info --scene <name> --tmd-stats` reports per-TMD
+`kept / miss_clut / depth_mm / miss_page` counts, so regressions in the
+targeted-upload pipeline are visible without firing up the windowed viewer.
+
+`--vram-png` / `--vram-bin` write the engine VRAM as a 1024x512 PNG / raw BGR555
+blob. `--runtime-vram <bin>` (paired with `mednafen-state vram-dump --out-bin`)
+reports per-region pixel-coverage statistics against the runtime ground truth,
+and `--vram-diff-png` writes a colour-coded diff: red = runtime has, engine
+missing; green = engine extras; blue = both populated but different.
 
 #### Two-pass upload ordering
 
-Inside `build_vram_targeted_from_buffers` the targeted upload now runs in two passes:
+Inside `build_vram_targeted_from_buffers` the targeted upload runs in two passes:
 
 1. **Image pass** writes every useful TIM image block (image overlaps a mesh's tex page region AND does NOT overlap another mesh's CLUT row).
 2. **CLUT pass** writes every useful TIM CLUT block (CLUT overlaps a mesh's CLUT row), unconditionally with respect to image-page collisions.
 
-Earlier versions filtered CLUT uploads with a `clut_collides_page` suppression that dropped legitimate palette rows whenever *any* mesh's UV bbox happened to brush the CLUT row's y-coordinate. The town01 character TMDs hit this: their 256-pixel-wide palette at y=479 overlapped a separate scene mesh's texture-page rectangle, so the CLUT upload was suppressed and 388 prims dropped as `MissingClut`. Splitting into image-then-CLUT order keeps the palette rows that PSX games place on the bottom of texture pages coherent without the per-prim heuristic.
+The ordering matters because of a trap an earlier design fell into. That version
+filtered CLUT uploads with a `clut_collides_page` suppression, which dropped
+legitimate palette rows whenever *any* mesh's UV bbox happened to brush the CLUT
+row's y-coordinate.
 
-#### Field static-object placement render gap (town01)
+The town01 character TMDs hit exactly that: their 256-pixel-wide palette at y=479
+overlapped a separate scene mesh's texture-page rectangle, so the CLUT upload was
+suppressed and 388 prims dropped as `MissingClut`.
 
-The field static-object table (`FUN_8003A55C`, `legaia_asset::field_objects`) places 46 environment-pack meshes in town01; the field render now draws **40** and **6 drop** (all one pack mesh), pinned by `field_object_placement_disc::town01_dropped_placements_split_untextured_vs_missing_clut`. The historical 8-drop set splits into two distinct root causes - neither was a render-filter tweak:
+PSX games routinely place palette rows on the bottom of texture pages, so the
+collision is normal, not a bug to detect. Image-then-CLUT ordering keeps those
+rows coherent with no per-prim heuristic at all.
 
-- **2 untextured props** (pack 31 / obj 315, pack 109 / obj 114) - **now rendered**: their prims carry no UVs (flat / gouraud per-vertex-colour primitives), so the VRAM-textured mesh builder skips them. The per-prim **colour block** is now reversed (F4/G3/G4 layouts + the `00 01 03 02` quad winding remap + the negative "no per-prim normal" result; see [`formats/tmd.md`](../formats/tmd.md#per-prim-color--texture-block)), `legaia_tmd::mesh::tmd_to_color_mesh` builds a `ColorMesh` from those prims, and the renderer's **vertex-colour pipeline** (`scene_color_mesh_pipeline`, `Renderer::upload_color_mesh`, `Scene::color_draws` - flat face-shaded, no VRAM lookup) draws them.
-  `play-window` builds a colour mesh whenever the textured build comes back empty and resolves its placement transforms the same way as the textured props.
-- **6 placements of one mesh** (pack 74 / obj 347) - **now rendered**: all four of its prims sample the **same** texture page `(960, 256)` + CLUT `(64, 510)`, which the `Field` pre-pass's band exclusion + `upload_all_tims: true` never filled.
-  The source is now resolved - it is **not** a runtime targeted upload but the **boot-resident system-UI TIM bundle** (`prot::timpack` at raw PROT TOC entry 0 = CDNAME `init_data`, the pre-extraction head "gap"; see [`formats/npc-palette.md`](../formats/npc-palette.md#boot-resident-strip-band-rows-510511) for the row layout and evidence).
-  The atlas TIM at `PROT.DAT[0x11218]` supplies both the `(960,256)` page and, via the flat-strip CLUT semantics of the per-TIM uploader `FUN_800198E0`, the 256-entry strip on row 510; CBA `(64, 510)` selects strip entries 64..79 (the declared CLUT bank's sub-row 4).
-  The same reference pattern recurs in other scenes' env packs (e.g. `rikuroa` env slots 50/51/63 alongside town01 slots 21/26/74 - all CBA `(64,510)` / tpage `(960,256)` 4bpp), and the prims' UVs sample a small constant mid-grey texel patch (u `0..2`, v `240..242` → VRAM rows 496..498 of the page): a flat-material trick that modulates the prim colour through the textured pipeline.
-  The pre-pass now uploads the whole bundle: `legaia_asset::system_ui_bundle` parses raw TOC entries 0/1 (20 + 1 members, incl. the six bare `(960, 456..462, 256, 1)` row-patch members that overlay the atlas image) with the flat-strip CLUT semantics, `SceneResources::build_targeted` underlays it beneath the scene uploads (boot-then-scene order; scene words win), and the web-viewer full-map path + VRAM oracles ride the same source - the `play-window`-only `interior_page` hack is gone.
+#### Field static-object placement (town01)
 
-So the colour-block follow-up and the bundle upload are both done; `vram_oracle_e1` stays byte-exact on the static masks (the row patches are what the "runtime-overwritten atlas rows" actually were - disc content from the same pack).
-The placement test pins the recovered split (untextured props build a non-empty `ColorMesh`; the row-510 samplers build non-empty VRAM meshes - town01 21/26/74 and rikuroa 50/51/63 all draw) as a regression guard.
-A *mixed* mesh (some textured + some untextured prims) renders **both** halves: the colour mesh is built unconditionally and is disjoint from the VRAM mesh (`tmd_to_color_mesh` skips textured groups), so the textured prims go to the VRAM pipeline and the untextured prims to the colour pipeline at the same placement. (The town props are fully untextured, so they were already recovered; this also covers props that mix the two.)
+The field static-object table (`FUN_8003A55C`, `legaia_asset::field_objects`)
+places 46 environment-pack meshes in town01. Of those, **45 draw** on the
+VRAM-textured path and **1 drops** (pack 31 / obj 315) - it is untextured, and
+the colour pipeline below picks it up. No placement drops for a missing CLUT.
+Pinned by `field_object_placement_disc::town01_dropped_placements_split_untextured_vs_missing_clut`.
+
+Getting there meant resolving two separate root causes. Neither was a
+render-filter tweak, and both are worth knowing because the same shapes recur in
+other scenes.
+
+**Untextured props take a different pipeline.** A prop whose prims carry no UVs
+(flat / gouraud per-vertex-colour primitives) is skipped by the VRAM-textured
+mesh builder - correctly, there is nothing to sample.
+
+The per-prim **colour block** is reversed (F4/G3/G4 layouts, the `00 01 03 02`
+quad winding remap, and the negative "no per-prim normal" result; see
+[`formats/tmd.md`](../formats/tmd.md#per-prim-color--texture-block)), so
+`legaia_tmd::mesh::tmd_to_color_mesh` builds a `ColorMesh` from those prims and
+the renderer's **vertex-colour pipeline** draws them: `scene_color_mesh_pipeline`,
+`Renderer::upload_color_mesh`, `Scene::color_draws` - flat face-shaded, no VRAM
+lookup. `play-window` builds a colour mesh whenever the textured build comes back
+empty, resolving placement transforms exactly as it does for textured props.
+
+A *mixed* mesh (some textured + some untextured prims) renders **both** halves at
+the same placement. The colour mesh is built unconditionally and is disjoint from
+the VRAM mesh, because `tmd_to_color_mesh` skips textured groups.
+
+**Some env prims sample a boot-resident page, not a scene TIM.** Pack 74 /
+obj 347 is the example: all four of its prims sample the same texture page
+`(960, 256)` + CLUT `(64, 510)`, which the `Field` pre-pass's band exclusion plus
+`upload_all_tims: true` never fills.
+
+The source is not a runtime targeted upload at all. It is the **boot-resident
+system-UI TIM bundle** - `prot::timpack` at raw PROT TOC entry 0 = CDNAME
+`init_data`, the pre-extraction head "gap". See
+[`formats/npc-palette.md`](../formats/npc-palette.md#boot-resident-strip-band-rows-510511)
+for the row layout and evidence.
+
+The atlas TIM at `PROT.DAT[0x11218]` supplies both the `(960,256)` page and, via
+the flat-strip CLUT semantics of the per-TIM uploader `FUN_800198E0`, the
+256-entry strip on row 510. CBA `(64, 510)` selects strip entries 64..79 - the
+declared CLUT bank's sub-row 4.
+
+The same reference pattern recurs in other scenes' env packs: `rikuroa` env slots
+50/51/63 alongside town01 slots 21/26/74, all CBA `(64,510)` / tpage `(960,256)`
+4bpp. Their UVs sample a small constant mid-grey texel patch (u `0..2`,
+v `240..242` → VRAM rows 496..498 of the page) - a flat-material trick that
+modulates the prim colour through the textured pipeline.
+
+So the pre-pass uploads the whole bundle. `legaia_asset::system_ui_bundle` parses
+raw TOC entries 0/1 (20 + 1 members, including the six bare
+`(960, 456..462, 256, 1)` row-patch members that overlay the atlas image) with the
+flat-strip CLUT semantics; `SceneResources::build_targeted` underlays it beneath
+the scene uploads (boot-then-scene order, scene words win); the web-viewer
+full-map path and the VRAM oracles ride the same source.
+
+`vram_oracle_e1` stays byte-exact on the static masks - the row patches are what
+the "runtime-overwritten atlas rows" actually were: disc content from the same
+pack.
+
+**A falsified rule worth not re-deriving.** An object's mesh id is the placement
+record's `+0x10` field (retail `FUN_80020f88`), *not* its position in the pack.
+The positional rule `pack = obj_idx - 5` is wrong: it maps obj 114 to the
+untextured pack 109, when the record resolves it to the textured pack 84 -
+which is what the live battle-scene actor list shows, and why obj 114 draws.
 
 #### CLUT-trace + VRAM-oracle diagnostics
 
 Two `legaia-engine` subcommands surface where the engine's loader still has gaps against a captured runtime VRAM:
 
-- `legaia-engine clut-trace --scene <name> --disc <bin> [--runtime-vram <bin>]` walks every dropping `MissingClut` prim, groups by `(cba, depth)`, and reports which PROT entries on the disc carry a TIM whose CLUT block covers each missing row (by rectangle containment - the standard PSX pattern packs 16 distinct 16-entry palettes into one 256-wide row, so a CBA's 16-pixel slot sits inside a wider supplier block). The `--runtime-vram` cross-check distinguishes "row absent from engine but present at runtime" (engine loader gap) from "row absent from runtime too" (mesh references unreachable CLUT - likely a parser-side issue, or a CLUT loaded by an unported sub-pack walker).
-- `legaia-engine vram-oracle --scene <name> --disc <bin> --runtime-vram <bin> [--diff-png <path>] [--tiles]` rebuilds the scene's engine VRAM and reports per-band overlap counts plus an optional 64x64-tile breakdown. The `--diff-png` is a 1024x512 colour-coded diff (greyscale = exact match, blue = both non-zero but different, red = runtime-only, green = engine-only) - same encoding as the `info --vram-diff-png` output, exposed as a dedicated comparison surface. The oracle's standalone VRAM build picks its load kind via `oracle_load_kind`, mirroring the live `enter_field_scene` choice: world-map scenes (`map\d\d`) build with `SceneLoadKind::WorldMap` so the kingdom bundle's slot-0 terrain atlas (opaque to the generic TIM scanner) lands in VRAM.
-  Without it the oracle reported the grass/water terrain pages as a phantom gap the engine doesn't actually have; the alignment roughly doubles `map01` texpage residency (`world_map_vram_alignment.rs`).
+**`legaia-engine clut-trace --scene <name> --disc <bin> [--runtime-vram <bin>]`**
+walks every dropping `MissingClut` prim, groups by `(cba, depth)`, and reports
+which PROT entries on the disc carry a TIM whose CLUT block covers each missing
+row.
 
-These work without any pre-extracted `tim_scan/` tree - they operate straight off `PROT.DAT` + `CDNAME.TXT` (extracted-root or in-place disc image).
+Coverage is by rectangle containment, because the standard PSX pattern packs 16
+distinct 16-entry palettes into one 256-wide row - so a CBA's 16-pixel slot sits
+*inside* a wider supplier block.
+
+The `--runtime-vram` cross-check tells the two failure modes apart. "Row absent
+from engine but present at runtime" is an engine loader gap. "Row absent from
+runtime too" means the mesh references an unreachable CLUT - likely a parser-side
+issue, or a CLUT loaded by an unported sub-pack walker.
+
+**`legaia-engine vram-oracle --scene <name> --disc <bin> --runtime-vram <bin> [--diff-png <path>] [--tiles]`**
+rebuilds the scene's engine VRAM and reports per-band overlap counts plus an
+optional 64x64-tile breakdown.
+
+`--diff-png` writes a 1024x512 colour-coded diff - greyscale = exact match, blue =
+both non-zero but different, red = runtime-only, green = engine-only. Same
+encoding as `info --vram-diff-png`, exposed as a dedicated comparison surface.
+
+The oracle's standalone VRAM build picks its load kind via `oracle_load_kind`,
+mirroring the live `enter_field_scene` choice: world-map scenes (`map\d\d`) build
+with `SceneLoadKind::WorldMap` so the kingdom bundle's slot-0 terrain atlas
+(opaque to the generic TIM scanner) lands in VRAM. Without that, the oracle
+reports the grass/water terrain pages as a phantom gap the engine does not
+actually have; the alignment roughly doubles `map01` texpage residency
+(`world_map_vram_alignment.rs`).
+
+Both work without any pre-extracted `tim_scan/` tree - they operate straight off `PROT.DAT` + `CDNAME.TXT` (extracted-root or in-place disc image).
 
 ### CLUT-depth-mismatch threshold
 
-`Vram::prim_texture_status` flags `ClutDepthMismatch` when a CLUT row is populated past what the prim's color depth could legitimately fill: for 4bpp prims the threshold is `16 * 16 = 256` entries (16 distinct 16-entry palettes packed in one row, picked by the prim's `CBA` low 6 bits - the standard Legaia character-TIM layout); for 8bpp it's `2 * 256` (one palette plus slack for stray pixels). Anything past that indicates another TIM's image bytes have spilled onto the CLUT row, and the paletted decode would index into pixel data. The targeted-upload path in `build_targeted` prevents this spillage, so engine-side scenes hit the mismatch threshold only when a regression breaks the per-TIM block-arbitration.
+`Vram::prim_texture_status` flags `ClutDepthMismatch` when a CLUT row is
+populated past what the prim's colour depth could legitimately fill.
+
+For 4bpp prims the threshold is `16 * 16 = 256` entries - 16 distinct 16-entry
+palettes packed in one row, picked by the prim's `CBA` low 6 bits, which is the
+standard Legaia character-TIM layout. For 8bpp it is `2 * 256`: one palette plus
+slack for stray pixels.
+
+Anything past that means another TIM's image bytes have spilled onto the CLUT
+row, and the paletted decode would index into pixel data. The targeted-upload
+path in `build_targeted` prevents the spillage, so engine-side scenes hit the
+mismatch threshold only when a regression breaks the per-TIM block arbitration.
 
 ### Texture-window register
 
-`Renderer::set_texture_window(mask_x, mask_y, off_x, off_y)` maps to GP0(0xE2) "Texture Window setting": four 5-bit values in 8-pixel steps that clamp / wrap texture-coordinate sampling to a smaller window inside the texture page. Default is all-zero (no-op). Retail Legaia leaves the register at zero almost everywhere; the API is wired primarily so future runtime LoadImage / DMA-to-VRAM trace work can replay the register state faithfully. The fragment shader applies the per-pixel `coord = (coord & ~(mask*8)) | ((offset & mask)*8)` transformation before texture-page lookup.
+`Renderer::set_texture_window(mask_x, mask_y, off_x, off_y)` maps to GP0(0xE2)
+"Texture Window setting": four 5-bit values in 8-pixel steps that clamp / wrap
+texture-coordinate sampling to a smaller window inside the texture page. The
+fragment shader applies `coord = (coord & ~(mask*8)) | ((offset & mask)*8)`
+per pixel, before the texture-page lookup.
+
+Default is all-zero (a no-op), and retail Legaia leaves the register at zero
+almost everywhere. The API exists so that runtime LoadImage / DMA-to-VRAM trace
+work can replay the register state faithfully.
 
 ### Full-scene colour grade
 
@@ -248,26 +469,169 @@ buildings, so as the camera orbited or the player walked, the lens-to-player
 segment swept through a *neighbour's* box and blinked it out. The cull code is
 kept for reference but the branch is never taken.
 
-## PSX-faithful rendering knobs
+## Rendering knobs: what is faithful, what is a choice
 
-`Renderer::set_psx_mode(true)` enables a set of retail-faithful rasterisation modes on the 3D mesh pipelines (in `legaia-engine play-window`, opt in with `LEGAIA_PSX_RENDER=1`):
+**Simulation is faithful, with no opt-out. Shading defaults to retail;
+rasterisation defaults to clean.**
 
-- **Affine UV interpolation.** Per-vertex UVs interpolate linearly in screen space (no perspective-correct division). This reproduces the texture warping you see on retail surfaces with steep depth gradients - the GP0(0x24)-class triangle commands transmit only `(u, v)` per vertex, the rasteriser does not divide by `1/w`. WGSL `@interpolate(linear)` gives the same behaviour.
+That is the whole story, and it is worth being precise, because "faithful" and
+"default" are not the same axis. Three render toggles exist, each with a
+different default:
+
+| Knob | Default | Off/on is retail? | Gates |
+|---|---|---|---|
+| `Renderer::set_psx_mode` | **off** | *on* is retail | vertex snap + 15-bit dither, and nothing else |
+| `Renderer::set_semi_blend` | **on** | *on* is retail | ABE semi-transparency. Independent of `psx_mode` |
+| `Renderer::set_dynamic_lighting` | **off** | *off* is retail, pixel-identical to the faithful render | the opt-in soft-light enhancement |
+
+Two things routinely get mis-stated about this table, so they are worth saying
+plainly:
+
+**Lighting is not a `psx_mode` knob, and the default is already faithful.** The
+game's field/town meshes go through the VRAM-mesh and vertex-colour pipelines,
+which draw the TMD's baked colour words with no light source at all - exactly
+what retail does (see [Lighting](#lighting)). There is no synthetic Lambert on
+those paths. The only non-retail light is
+[dynamic lighting](#dynamic-lighting-opt-in-enhancement), which is off by
+default.
+
+**Affine UVs are not gated either - they are always on.** `@interpolate(linear)`
+is a static qualifier on the vertex-output struct, not a uniform-driven branch,
+so every path interpolates UVs affinely on every frame. `psx_mode` produces
+exactly one value, `snap`, which drives the vertex snap and is shared as the
+dither enable.
+
+### `set_psx_mode` - vertex snap + dither
+
+`Renderer::set_psx_mode(true)` enables the two strict-PS1 rasterisation artefacts
+that are *not* on by default. Default is off; in `legaia-engine play-window`, opt
+in with `LEGAIA_PSX_RENDER=1`.
+
 - **Sub-pixel vertex snap ("vertex jitter").** Clip-space `x` / `y` are snapped to integer pixel positions inside the vertex shader (NDC → pixel grid → NDC round-trip). Reproduces the GTE's per-vertex sub-pixel-truncation jitter that gives PSX rendering its characteristic shimmer on slowly-moving geometry.
 - **15-bit ordered dithering.** When packing the 24-bit shaded colour into the 15-bit (BGR555) framebuffer, the PSX GPU adds a signed 4x4 ordered-dither offset per pixel before truncating each channel to 5 bits. The shader helper `PSX_DITHER_WGSL` (prepended to every shaded 3D shader) reproduces it and mirrors the unit-tested CPU `psx_dither` module; the composed shader sources are naga-validated in the engine-render test suite (the GPU-free guard that the WGSL stays well-formed).
-- **No synthetic lighting.** Outside `psx_mode` the textured / VRAM / colour mesh shaders multiply the texel or vertex colour by a per-frame directional Lambert (`0.45 + 0.55·max(dot(n,l),0)` with a fixed engine light) purely so untextured silhouettes read. That is not what retail does - the GTE bakes its lighting into the per-vertex colours and texels, then the GPU just interpolates. `psx_mode` therefore drops the synthetic Lambert (`shade = 1.0`) and shows the source data unlit. The default keeps the readable shade.
-- **Semi-transparency blend modes.** PSX per-prim blending on the VRAM-mesh (textured) and colour-mesh (untextured) paths. **This is independent of `psx_mode`** - it is a separate toggle, `Renderer::set_semi_blend` (staged into `MeshUniforms.flags[1]`), **on by default**. Retail's GPU always blends ABE prims, so field water (e.g. the Hunter's Spring fountain), glass and additive effects composite correctly in the clean "enhanced" render too; only the strict-PS1 artefacts (vertex jitter / affine UVs / 15-bit dither) ride `psx_mode`. Turning it off draws every ABE prim fully opaque (the harsh-edged "solid water" look).
-  - A prim is semi-transparent when its packet ABE bit is set (the TMD group mode byte's bit 1). The `legaia_tmd::mesh` builders pack that bit into bit 15 of the per-vertex TSB attribute (unused by the TMD TSB encoding), so it reaches the shader with no new vertex format. The blend equation comes from texpage ABR (TSB bits 5..=6): mode 0 `0.5*B + 0.5*F`, 1 `B + F`, 2 `B - F`, 3 `B + 0.25*F` (`B` = framebuffer, `F` = texel / prim colour).
-  - For textured prims the choice is per *texel*: BGR555 bit 15 (STP) set blends, clear draws opaque, `0x0000` never draws, `0x8000` blends black. With one fixed blend state per pipeline that per-texel split needs two passes: the opaque pass draws every triangle and discards STP texels of semi-transparent prims; a blend pass then re-draws only the semi-transparent triangles (a per-ABR-mode index tail appended at upload time) discarding everything except STP texels.
-  - For untextured (`F*`/`G*`) prims there is no per-texel STP gate: an ABE prim blends **all** its pixels. The colour-mesh vertex format carries a per-vertex blend word (ABE bit 15 + ABR bits 5..=6, `psx_blend::pack_blend_word` - the same packing the textured path rides on TSB) via `Renderer::upload_color_mesh_blended`; with semi-blend on the opaque colour pass discards ABE prims entirely and a per-ABR-mode blend pass (same index-tail scheme, `psx_blend::append_semi_tail_words`) re-draws them with the prim colour as `F`. Untextured TMD prims carry no texpage of their own, so ABR comes from whatever draw-env state the caller resolves (mode 0 is the PSX draw-env default); `upload_color_mesh` without blend words keeps every prim opaque.
-  - One blend pipeline per mode (per path): mode 0 via blend constant 0.5, mode 2 via reverse-subtract, mode 3 pre-scales `F` by 0.25 in its fragment entry point. Blend draws depth-test `LessEqual` without writing depth and run after all opaque scene draws. The `psx_blend` module holds the pure mapping (ABR extraction, blend-word packing, blend-state selection, index partition, ordering list, CPU reference `blend_apply`) and is unit-tested against the PSX equations. The blend pass skips the dither stage - retail dithers the post-blend value during the VRAM write, which a fixed-function blend can't reproduce without a destination read-back.
-  - Blend ordering is per *primitive*, mirroring the retail ordering table: each semi prim's depth key is its model-space centroid's clip-space `w` under the draw MVP (`psx_blend::prim_depth_key` - equal, by MVP linearity, to the average of its vertices' clip `w`, the GTE avg-Z the OT bins on), and all semi prims across all of a scene's draws (textured + untextured in one list) blend far-to-near regardless of draw boundaries, so depth-interleaved prims from overlapping draws blend in correct global order.
-  - Equal keys form one OT bucket and draw later-submitted-first, the retail LIFO bucket order (`AddPrim` prepends to a bucket's linked list, `DrawOTag` walks it head-first). Per-prim metadata (`psx_blend::SemiPrim`) is recorded once at mesh upload; the per-frame ordering list reuses one renderer-owned buffer and contiguous same-draw, same-mode tail runs coalesce into single indexed draws (`psx_blend::coalesce_sorted`).
 
-Texture page (`tsb`) and CLUT base address (`cba`) remain `@interpolate(flat)` - they are per-primitive in retail because GP0(0x24) sets them once per draw call, not per vertex.
+### Affine UV interpolation (always on)
 
-A fixed-point GTE math module at `crates/engine-render/src/gte.rs` mirrors the retail accumulator shape: q3.12 rotation matrices, q19.12 translation vectors, i64-widened multiply-add to absorb three-term sums without overflow. The module also exposes the GTE's higher-level primitives - a `Camera` bundle that runs `RTPT` (rotate-translate-perspective) end-to-end with PSX-correct saturation on behind-camera vertices, `nclip` for back-face rejection, `avsz3` / `avsz4` for OT-bucket selection, and a small CPU rasterizer scaffold (`raster::rasterize_triangle`, top-left fill rule, integer-pixel bounding-box iterator) downstream tooling uses to validate captured traces. Production rendering still uses f32 wgpu math; this module is the single citation point for code (effect spawners,
-hit-detection, animation re-targeting, offline regression checks) that needs to reproduce per-vertex GTE behaviour.
+Per-vertex UVs interpolate linearly in screen space, with no perspective-correct
+division, on every path in every mode. This reproduces the texture warping you
+see on retail surfaces with steep depth gradients: the GP0(0x24)-class triangle
+commands transmit only `(u, v)` per vertex, and the rasteriser does not divide by
+`1/w`. WGSL `@interpolate(linear)` gives the same behaviour.
+
+The baked per-prim colour carries the same qualifier, for the same reason - PSX
+gouraud interpolation is affine in screen space too.
+
+Texture page (`tsb`) and CLUT base address (`cba`) stay `@interpolate(flat)` - they are per-primitive in retail because GP0(0x24) sets them once per draw call, not per vertex.
+
+### Dynamic lighting (opt-in enhancement)
+
+`Renderer::set_dynamic_lighting` is the one lighting knob, staged into
+`MeshUniforms.light_dir[3]`. It is **off by default, and off is retail**: the
+disabled path is pixel-identical to the faithful baked-shading render, so the
+parity oracles are unaffected.
+
+Enabled, the VRAM / colour mesh shaders layer a soft warm directional light (off
+the smoothed per-vertex normals, with a screen-space-derivative fallback for the
+normal-less colour-mesh prims) plus a screen-centred light pool over the baked
+colours, with the gain capped at ~1.3x. This is explicitly a non-retail
+enhancement - retail's field path has no light source. See
+`crates/engine-render/src/dyn_light.rs` and the `DYN_*` tunables in
+`renderer/state.rs`.
+
+**The viewer-only exception, so nobody re-derives the wrong conclusion.** There
+*is* a fixed directional light with a `max(dot(n, l), 0.0)` diffuse term in the
+shader set - but it lives only in `MESH_SHADER_SRC`, the bare-geometry **preview**
+pipeline behind the asset-viewer's raw-TMD view. Those meshes carry neither
+texture nor colour, so there is nothing of the game's own shading to show; the
+light is a viewer aid, not a claim about retail, and no game path uses it.
+
+### `set_semi_blend` - semi-transparency blend modes
+
+PSX per-prim blending on the VRAM-mesh (textured) and colour-mesh (untextured)
+paths, staged into `MeshUniforms.flags[1]`.
+
+**This is independent of `psx_mode`, and it is on by default.** Retail's GPU
+always blends ABE prims, so field water (e.g. the Hunter's Spring fountain),
+glass and additive effects composite correctly in the clean "enhanced" render
+too; only the strict-PS1 artefacts (vertex jitter / affine UVs / 15-bit dither)
+ride `psx_mode`. Turning it off draws every ABE prim fully opaque - the
+harsh-edged "solid water" look.
+
+**Which prims blend, and how.** A prim is semi-transparent when its packet ABE
+bit is set (the TMD group mode byte's bit 1). The `legaia_tmd::mesh` builders
+pack that bit into bit 15 of the per-vertex TSB attribute (unused by the TMD TSB
+encoding), so it reaches the shader with no new vertex format.
+
+The blend equation comes from texpage ABR (TSB bits 5..=6): mode 0
+`0.5*B + 0.5*F`, 1 `B + F`, 2 `B - F`, 3 `B + 0.25*F` (`B` = framebuffer,
+`F` = texel / prim colour).
+
+**Textured prims: the choice is per *texel*.** BGR555 bit 15 (STP) set blends,
+clear draws opaque, `0x0000` never draws, `0x8000` blends black.
+
+With one fixed blend state per pipeline, that per-texel split needs two passes:
+the opaque pass draws every triangle and discards STP texels of semi-transparent
+prims; a blend pass then re-draws only the semi-transparent triangles (a
+per-ABR-mode index tail appended at upload time), discarding everything except
+STP texels.
+
+**Untextured (`F*`/`G*`) prims have no per-texel STP gate** - an ABE prim blends
+**all** its pixels. The colour-mesh vertex format carries a per-vertex blend word
+(ABE bit 15 + ABR bits 5..=6, `psx_blend::pack_blend_word` - the same packing the
+textured path rides on TSB) via `Renderer::upload_color_mesh_blended`.
+
+With semi-blend on, the opaque colour pass discards ABE prims entirely and a
+per-ABR-mode blend pass (same index-tail scheme,
+`psx_blend::append_semi_tail_words`) re-draws them with the prim colour as `F`.
+Untextured TMD prims carry no texpage of their own, so ABR comes from whatever
+draw-env state the caller resolves - mode 0 is the PSX draw-env default.
+`upload_color_mesh` without blend words keeps every prim opaque.
+
+**Pipelines.** One blend pipeline per mode, per path: mode 0 via blend constant
+0.5, mode 2 via reverse-subtract, mode 3 pre-scales `F` by 0.25 in its fragment
+entry point. Blend draws depth-test `LessEqual` without writing depth, and run
+after all opaque scene draws.
+
+The blend pass skips the dither stage. Retail dithers the post-blend value during
+the VRAM write, which a fixed-function blend cannot reproduce without a
+destination read-back.
+
+The `psx_blend` module holds the pure mapping - ABR extraction, blend-word
+packing, blend-state selection, index partition, ordering list, and the CPU
+reference `blend_apply` - unit-tested against the PSX equations.
+
+**Ordering is per *primitive*, mirroring the retail ordering table.** Each semi
+prim's depth key is its model-space centroid's clip-space `w` under the draw MVP
+(`psx_blend::prim_depth_key`) - equal, by MVP linearity, to the average of its
+vertices' clip `w`, which is the GTE avg-Z the OT bins on.
+
+All semi prims across all of a scene's draws (textured + untextured in one list)
+blend far-to-near regardless of draw boundaries, so depth-interleaved prims from
+overlapping draws blend in correct global order.
+
+Equal keys form one OT bucket and draw later-submitted-first - the retail LIFO
+bucket order (`AddPrim` prepends to a bucket's linked list, `DrawOTag` walks it
+head-first). Per-prim metadata (`psx_blend::SemiPrim`) is recorded once at mesh
+upload; the per-frame ordering list reuses one renderer-owned buffer, and
+contiguous same-draw, same-mode tail runs coalesce into single indexed draws
+(`psx_blend::coalesce_sorted`).
+
+## GTE math module
+
+A fixed-point GTE math module at `crates/engine-render/src/gte.rs` mirrors the
+retail accumulator shape: q3.12 rotation matrices, q19.12 translation vectors,
+i64-widened multiply-add to absorb three-term sums without overflow.
+
+It also exposes the GTE's higher-level primitives: a `Camera` bundle that runs
+`RTPT` (rotate-translate-perspective) end-to-end with PSX-correct saturation on
+behind-camera vertices, `nclip` for back-face rejection, `avsz3` / `avsz4` for
+OT-bucket selection, and a small CPU rasterizer scaffold
+(`raster::rasterize_triangle`, top-left fill rule, integer-pixel bounding-box
+iterator) that downstream tooling uses to validate captured traces.
+
+Production rendering still uses f32 wgpu math. This module is the single citation
+point for code that needs to reproduce per-vertex GTE behaviour: effect spawners,
+hit-detection, animation re-targeting, offline regression checks.
 
 ### GTE register-state emulator
 

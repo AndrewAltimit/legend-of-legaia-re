@@ -1,18 +1,43 @@
 # Randomizer / disc patcher
 
-Track-1-adjacent tooling that edits gameplay data on a **user-supplied** retail
-disc image: it shuffles monster item drops (optionally turning them into rare
-equipment), random-encounter formations, treasure-chest contents, what town
-stores sell (and the casino prize exchange), per-monster steal items,
-scene-transition doors/exits, intra-town (house / interior) doors, the new
-game's starting items, equipment passive stat bonuses, and a set of
-**battle-tuning** tables - monster combat stats, special-attack power, the
-element-affinity matrix, and spell MP costs - and writes the result back into the
-`.bin`. It does not touch the clean-room engine.
+Turns a **user-supplied** retail disc image into a re-rolled one: give it a
+`.bin` and a seed, and it rewrites the gameplay data - what monsters drop, what
+lives in the chests, which door goes where, how hard the enemies hit - then hands
+back a patch you can share.
+
+This is a designed, shipped deliverable of the project, not a by-product of the
+reverse engineering. It is also the practical proof that the format work is
+right: you cannot re-pack a monster's LZS record and have the retail game boot it
+unless the format doc is correct down to the byte.
+
+**Reach for it when** you want a fresh playthrough of a game you have finished,
+or when you want to check that a format the docs claim to understand really is
+understood.
+
+**It does not touch the clean-room engine** - it edits the disc, and the retail
+game (or the port) plays the result. The one exception is
+[Seru trading](#seru-trading), which embeds a config the engine reads because
+retail has no trade UI to hook.
 
 Crate: [`crates/rando`](../../crates/rando/README.md) (`legaia-rando`). It ships
-only code - no game bytes - and every test that needs real data is disc-gated,
-so CI runs without a disc.
+only code - no game bytes - and every test that needs real data is disc-gated, so
+CI runs without a disc. There is also a
+[browser build](#in-the-browser) that never uploads your disc.
+
+## What it can re-roll
+
+- **Loot** - monster item drops, treasure-chest contents, per-monster steal
+  items, and an optional low-chance bonus equipment drop.
+- **Fights** - random-encounter formations, monster combat stats, special-attack
+  power, the element-affinity matrix, and spell MP costs.
+- **Economy** - what town stores sell, and the casino prize exchange.
+- **Navigation** - scene-transition doors/exits, intra-town (house / interior)
+  doors, and `.MAP` intra-scene teleports.
+- **The party** - Tactical-Arts button combos, equipment stat bonuses, each
+  character's favored weapon class, and the new game's starting items and level.
+- **Additions retail has no table for**, added as machine-code hooks: experience
+  for running away, charming an enemy onto your side, shiny Seru, and Seru
+  trading.
 
 ## Contents
 
@@ -24,6 +49,9 @@ so CI runs without a disc.
   - [Keep-static items](#keep-static-items)
   - [Equipment drops](#equipment-drops)
   - [Random encounters](#random-encounters)
+  - [Run-away EXP](#run-away-exp)
+  - [Enemy ally (charm)](#enemy-ally-charm)
+  - [Shiny Seru](#shiny-seru)
   - [Seru trading](#seru-trading)
   - [Treasure chests](#treasure-chests)
   - [Town shops (what stores sell)](#town-shops-what-stores-sell)
@@ -34,12 +62,14 @@ so CI runs without a disc.
   - [Element-affinity matrix](#element-affinity-matrix)
   - [Spell MP costs](#spell-mp-costs)
   - [Equipment stat bonuses](#equipment-stat-bonuses)
+  - [Weapon specialty](#weapon-specialty)
   - [Arts button combos](#arts-button-combos)
   - [Doors (scene transitions)](#doors-scene-transitions)
   - [House doors (intra-town)](#house-doors-intra-town)
   - [Map doors (`.MAP` kind-0 intra-scene teleports)](#map-doors-map-kind-0-intra-scene-teleports)
   - [Starting items](#starting-items)
   - [Starting-bag convenience toggles](#starting-bag-convenience-toggles)
+  - [Starting level](#starting-level)
   - [Unused content](#unused-content)
   - [Re-pack slack](#re-pack-slack)
 - [The patch chain](#the-patch-chain)
@@ -142,75 +172,109 @@ legaia-rando randomize --input DISC.bin --seed chaos --encounters random \
 legaia-rando verify    --input DISC.bin --patch run.ppf       # apply + sanity-check
 ```
 
-`randomize` plans the run, applies it to an in-memory copy of the disc, diffs
-the result against the original, and writes the changes as a **PPF 3.0** patch
-(default `<input>.ppf`). `--output` also writes a full patched `.bin` for local
-play, plus a matching single-track Mode 2/2352 `.cue` beside it (so emulators
-that reject a bare BIN - e.g. mednafen on a >64 MiB image - can open it
-directly). The seed is resolved from a number or a hashed string and always printed,
-so a run reproduces exactly; the same seed yields a byte-identical patched image
-and PPF. `--drops`, `--encounters`, `--chests`, `--shops`, `--casino`,
-`--steals`, `--arts`, `--doors`, `--monster-stats`, `--move-power`,
-`--element-affinity`, `--spell-cost`, and `--equip-bonus` each take `shuffle` / `random` / `none`
-(`--arts` reassigns Tactical-Arts button combos - see [Arts button combos](#arts-button-combos);
-the four battle-tuning passes are described under
-[Monster combat stats](#monster-combat-stats) and the three sections after it);
-`--equipment-drops` injects a code hook into the battle-end reward routine that
-grants one extra random equipment piece on a low per-battle chance
-(`--equipment-drop-chance N`, default 5) on top of `--drops`, never disturbing it
-(see [Equipment drops](#equipment-drops)); `--flee-exp` injects a code hook into
-the battle-action escape teardown so a successful run banks `--flee-exp-pct`%
-(default 5) of the fled fight's experience into the party (see
-[Run-away EXP](#run-away-exp)); `--enemy-ally` injects a code hook into battle
-setup so that, with `--enemy-ally-pct`% chance (default 20), a random enemy is
-charmed onto the party's side as an uncontrolled ally, in multi-enemy fights (see
-[Enemy ally (charm)](#enemy-ally-charm)); `--shiny-seru` injects code hooks so
-that, with `--shiny-pct`% chance (default 2), a capturable enemy spawns as a rare
-shiny variant (+35% stats) whose captured Seru deals +35% damage forever (see
-[Shiny Seru](#shiny-seru)); `--seru-trade` embeds a config so the clean-room
-engine lets vendors swap one of a character's seru for another, reseeding every
-two in-game hours (`--seru-trade-offers N` caps offers per vendor; see
-[Seru trading](#seru-trading));
-`--door-coupling` is `coupled` (default, bidirectional) or `decoupled`
-(one-way); `--encounter-scope` widens the monster pool an encounter roll draws
-from to `scene` (default), `kingdom`, or `world`; the **solo-strong** pass
-(cut-off `--solo-strong-threshold N`, default 200%) forces an over-strong
-randomized fight down to a lone enemy and is **on by default whenever
-`--encounters` is set** (`--no-solo-strong-encounters` opts out - see
-[Random encounters](#random-encounters)); `--starting-items N` seeds the new game with `N` random consumables
-(0 = vanilla; the random fill shares a seven-slot capacity - five with
-`--all-warps` - with the convenience toggles, additively). `--door-of-wind [N]` adds
-`N` Door of Wind (the warp consumable; default 10) to the starting bag,
-`--incense [N]` adds `N` Incense (the encounter-rate consumable; default 10)
-likewise, `--speed-chain [N]` / `--chicken-heart [N]` / `--good-luck-bell [N]`
-add those accessories (default 1 each), `--start-with id[:count],…` seeds
-explicit item(s) on top (any id - consumable, equipment, or accessory), and
-`--all-warps` unlocks every Door-of-Wind destination from the start (see
-[Starting-bag convenience toggles](#starting-bag-convenience-toggles)).
-`--starting-level N` begins the new game with the starting party at level `N`
-instead of 1 (0/1 = vanilla; range 2..=14, see [Starting level](#starting-level)).
-`--unused-enemies` and `--unused-items` re-introduce
-content the game ships but never surfaces (see
-[Unused content](#unused-content) below).
-`--weapon-specialty` (a toggle) reassigns which weapon class each character
-favors (see [Weapon specialty](#weapon-specialty)).
-`--dry-run` reports the plan without writing; `--manifest` writes a small TOML
-record of the seed + options + change counts (no game bytes, safe to share). The
-`verify` subcommand applies a PPF to a copy of the user's disc and confirms the
-result still parses end to end - a recipient's check that a shared patch + seed
-match their own disc.
+### What `randomize` does
 
-The read-only `drops`, `chests`, `shops`, `casino`, `steals`, `arts`, `doors`,
+`randomize` plans the run, applies it to an in-memory copy of the disc, diffs the
+result against the original, and writes the changes as a **PPF 3.0** patch
+(default `<input>.ppf`).
+
+`--output` also writes a full patched `.bin` for local play, plus a matching
+single-track Mode 2/2352 `.cue` beside it - some emulators reject a bare BIN
+(mednafen does, on a >64 MiB image) and need the cue sheet to open it.
+
+The seed is resolved from a number or a hashed string, and is always printed so a
+run reproduces exactly. The same seed yields a byte-identical patched image and
+PPF.
+
+`--dry-run` reports the plan without writing. `--manifest` writes a small TOML
+record of the seed, options, and change counts - it embeds no game bytes, so it
+is safe to share.
+
+### `randomize` options
+
+Thirteen passes take a **mode**: `shuffle` (permute the existing population -
+the multiset is preserved), `random` (draw each slot from the valid pool), or
+`none`.
+
+| Mode option | Reassigns | Detail |
+|---|---|---|
+| `--drops` | monster item drops | [Equipment drops](#equipment-drops) |
+| `--encounters` | random-encounter formations | [Random encounters](#random-encounters) |
+| `--chests` | treasure-chest contents | [Treasure chests](#treasure-chests) |
+| `--shops` | what town stores sell | [Town shops](#town-shops-what-stores-sell) |
+| `--casino` | the casino prize exchange | [Casino prize exchange](#casino-prize-exchange) |
+| `--steals` | per-monster steal items | [Steal items](#steal-items-evil-god-icon) |
+| `--arts` | Tactical-Arts button combos | [Arts button combos](#arts-button-combos) |
+| `--doors` | scene-transition exits | [Doors](#doors-scene-transitions) |
+| `--monster-stats` | enemy combat stats | [Monster combat stats](#monster-combat-stats) |
+| `--move-power` | special-attack power | [Special-attack power](#special-attack-power) |
+| `--element-affinity` | the element-affinity matrix | [Element-affinity matrix](#element-affinity-matrix) |
+| `--spell-cost` | spell MP costs | [Spell MP costs](#spell-mp-costs) |
+| `--equip-bonus` | equipment stat bonuses | [Equipment stat bonuses](#equipment-stat-bonuses) |
+
+The last four are the **battle-tuning** group.
+
+**Code-hook features.** Each of these injects a same-size machine-code hook into
+the retail executable to add behaviour the game has no table for. They are off
+unless asked for:
+
+| Option | Effect | Chance option | Detail |
+|---|---|---|---|
+| `--equipment-drops` | one extra random equipment piece per battle, on top of `--drops` and never disturbing it | `--equipment-drop-chance N` (default 5) | [Equipment drops](#equipment-drops) |
+| `--flee-exp` | a successful escape banks a slice of the fled fight's experience | `--flee-exp-pct N` (default 5) | [Run-away EXP](#run-away-exp) |
+| `--enemy-ally` | a random enemy is charmed onto the party's side as an uncontrolled ally (multi-enemy fights only) | `--enemy-ally-pct N` (default 20) | [Enemy ally (charm)](#enemy-ally-charm) |
+| `--shiny-seru` | a capturable enemy spawns shiny: +35% stats, and its captured Seru deals +35% damage forever | `--shiny-pct N` (default 2) | [Shiny Seru](#shiny-seru) |
+| `--seru-trade` | vendors swap one of a character's seru for another, reseeding every two in-game hours | `--seru-trade-offers N` caps offers per vendor | [Seru trading](#seru-trading) |
+
+**Tuning the encounter and door passes:**
+
+| Option | Meaning |
+|---|---|
+| `--encounter-scope` | Pool an encounter roll draws from: `scene` (default), `kingdom`, or `world`. |
+| `--no-solo-strong-encounters` | Opt out of the solo-strong pass, which is **on by default whenever `--encounters` is set**: it forces an over-strong randomized fight down to a lone enemy. See [Random encounters](#random-encounters). |
+| `--solo-strong-threshold N` | Cut-off for "over-strong", as a percent of the area's native average (default 200). |
+| `--door-coupling` | `coupled` (default, bidirectional) or `decoupled` (one-way). |
+
+**Seeding the new game.** `--starting-items N` seeds `N` random consumables
+(0 = vanilla). The random fill shares a **seven-slot capacity** with the
+convenience toggles below, additively - five slots with `--all-warps`. See
+[Starting-bag convenience toggles](#starting-bag-convenience-toggles).
+
+| Option | Meaning |
+|---|---|
+| `--door-of-wind [N]` | Add `N` Door of Wind, the warp consumable (default 10). |
+| `--incense [N]` | Add `N` Incense, the encounter-rate consumable (default 10). |
+| `--speed-chain [N]` / `--chicken-heart [N]` / `--good-luck-bell [N]` | Add those accessories (default 1 each). |
+| `--start-with id[:count],…` | Seed explicit item(s) on top - any id, consumable / equipment / accessory. |
+| `--all-warps` | Unlock every Door-of-Wind destination from the start. |
+| `--starting-level N` | Begin at level `N` instead of 1 (0/1 = vanilla; range 2..=14). See [Starting level](#starting-level). |
+
+**Toggles:**
+
+| Option | Meaning |
+|---|---|
+| `--unused-enemies` / `--unused-items` | Re-introduce content the game ships but never surfaces. See [Unused content](#unused-content). |
+| `--weapon-specialty` | Reassign which weapon class each character favors. See [Weapon specialty](#weapon-specialty). |
+
+### Reading the disc without patching it
+
+`verify` applies a PPF to a copy of the user's disc and confirms the result still
+parses end to end. It is the recipient's check that a shared patch + seed match
+their own disc.
+
+The `drops`, `chests`, `shops`, `casino`, `steals`, `arts`, `doors`,
 `starting-items`, `monster-stats`, `move-powers`, `affinity`, `spell-costs`,
-`equip-bonuses`, and `weapon-specialty` subcommands write nothing
-- they decode the randomizable populations off the user's disc and print them
-(item ids + names resolved from the disc's own SCUS table; chests + doors grouped
-by scene via CDNAME). `chests` lists the exact 275-site treasure population the
-chest randomizer reassigns, which is the natural place to audit for quest / key
-items a run might want to keep static. `doors` lists every scene-transition exit
-(home scene → destination + entry tile) with its shuffle class - walk-door
-(the pool) vs excluded script/cutscene-invoked or world-map transition (see
-[Doors](#doors-scene-transitions)).
+`equip-bonuses`, and `weapon-specialty` subcommands **write nothing**. They
+decode the randomizable populations off the user's disc and print them, with item
+ids and names resolved from the disc's own SCUS table, and chests and doors
+grouped by scene via CDNAME.
+
+Two are worth knowing about specifically. `chests` lists the exact 275-site
+treasure population the chest randomizer reassigns - the natural place to audit
+for quest / key items a run might want to keep static. `doors` lists every
+scene-transition exit (home scene → destination + entry tile) with its shuffle
+class: walk-door (the pool) versus excluded script/cutscene-invoked or world-map
+transition (see [Doors](#doors-scene-transitions)).
 
 ### Keep-static items
 
@@ -275,7 +339,7 @@ injected routine:
 
 The join is reached once per battle, so the roll fires once per battle. The
 routine + id table are written into the 1028-byte preserved rodata gap at
-`0x8007AB38` (the same loaded-and-preserved padding the [name injection](#name-injection)
+`0x8007AB38` (the same loaded-and-preserved padding the [name injection](#unused-content)
 uses, at a non-overlapping offset clear of the Seru-Bell string) - on PSX all
 resident RAM is executable, so a routine placed there runs when jumped to.
 Everything is a same-size, in-place `SCUS_942.54` edit; the planner guards on the
@@ -450,7 +514,7 @@ cumulative-XP cell (it never calls the level processor), so the experience shows
 in the status screen at once and the character levels up the next time a won
 battle tallies the accumulated total - small and side-effect-free during the
 escape fade (no stray level-up screen). The routine lives in the same preserved
-rodata gap as the [equipment-drop](#equipment-drops) and [name](#name-injection)
+rodata gap as the [equipment-drop](#equipment-drops) and [name](#unused-content)
 injections (`0x8007AB38`), at `0x8007AD00` - clear of the equipment routine + its
 id table, so both battle hooks coexist. The planner guards on the detour-site
 words matching the known US build and on the routine region being all-zero dead
@@ -671,7 +735,7 @@ reference-free dead region** (a ~3.8 KB all-zero run inside the resident overlay
 image), reached by `j` from the in-overlay detours. Because nothing lands in the
 SCUS rodata gap, seru trading **composes with every gap-based feature**
 ([equipment drops](#equipment-drops), [flee-EXP](#run-away-exp), the Seru-Bell
-[name](#name-injection)). The injector writes the handler + stubs + strings + the
+[name](#unused-content)). The injector writes the handler + stubs + strings + the
 seed-derived bucket table via `patch_prot_entry(899, …)`, each guarded as
 all-zero dead space. The swap rewrites the chosen owner's spell list in place
 (id at `+0x13D`, level at `+0x161`), mirroring `engine_core::seru_trade::apply_trade`.

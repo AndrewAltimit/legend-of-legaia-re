@@ -19,6 +19,7 @@ This page documents the pattern, the harness, and the catalogue.
 - [Setup](#setup)
 - [The harness](#the-harness)
 - [The probe pattern](#the-probe-pattern)
+- [Fast whole-playthrough capture (two-tier model)](#fast-whole-playthrough-capture-two-tier-model)
 - [Catalogue](#catalogue)
   - [Runtime probes (Lua autorun)](#runtime-probes-lua-autorun)
   - [Save-state to Python (offline analysis)](#save-state-to-python-offline-analysis)
@@ -721,7 +722,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | `autorun_slot4_consumer_pcs.lua` | Kingdom-agnostic slot-4 consumer PCs. → [detail](#autorun_slot4_consumer_pcslua) |
 | `autorun_slot4_dispatcher_args.lua` | Captures the original cluster-A dispatcher call args before the kind handlers clobber them. → [detail](#autorun_slot4_dispatcher_argslua) |
 | `autorun_dump_slot4.lua` | Dumps the slot-4 RAM region directly. Produces the ground-truth byte buffer for `verify_slot4_in_ram.py`. |
-| `autorun_slot4_source_map.lua` | Read bps tiled across the slot-4 RAM window + an Exec bp on the `FUN_8001E54C` streaming dispatcher, driving the held-direction warp itself. Each read records the full GPR set, so the destination (if any) is recoverable. Showed slot-4 is read **in place** by the world-map renderer - no transcode; see [`world-map-overlay.md`](../formats/world-map-overlay.md#slot-4-is-read-in-place--there-is-no-transcode-drake-capture). NB: tile the read bps at the **per-kingdom** slot-4 base (it varies) - locate it first with the pair below. |
+| `autorun_slot4_source_map.lua` | Read bps tiled across the slot-4 RAM window + an Exec bp on the `FUN_8001E54C` streaming dispatcher, driving the held-direction warp itself. Each read records the full GPR set, so the destination (if any) is recoverable. Showed slot-4 is read **in place** by the world-map renderer - no transcode; see [`world-map-overlay.md`](../formats/world-map-overlay.md#slot-4-is-read-in-place---there-is-no-transcode-drake-capture). NB: tile the read bps at the **per-kingdom** slot-4 base (it varies) - locate it first with the pair below. |
 | `autorun_dump_full_ram_hold.lua` | Holds a pad direction for `LEGAIA_HOLD` vsyncs (so a pre-transition save drives its warp), then dumps the full 2 MiB main RAM post-warp. Paired with `locate_slot4_base.py`. |
 | `locate_slot4_base.py` | Byte-locates a kingdom's slot-4 resident base by searching the post-warp RAM dump for the disc-decoded payload (unanimous body vote). Pins Drake `0x8011A624` / Sebucus `0x80119CE4` / Karisto `0x80108D84`. |
 | `autorun_xp_table_reader.lua` | Tiled read-bp scan over `0x8007123C..0x80071300`; **superseded** by the `DAT_80076AF4` XP curve. → [detail](#autorun_xp_table_readerlua) |
@@ -879,7 +880,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 
 - **Probes:** [`autorun_battle_party_mesh_install.lua`](../../scripts/pcsx-redux/autorun_battle_party_mesh_install.lua) write-watchpoints the three party TMD-pointer slots `DAT_8007C018[0..2]` plus an exec-bp on `tmd_register` (`FUN_80026B4C`) filtered to party indices (`DAT_8007B774 ∈ {0,1,2}`) and one on the battle loader `FUN_800520F0`. Loads a field save that auto-starts a battle (`--scenario rim_elm_queen_bee_battle`) so the field→battle transition is captured live; logs the installed pointer (`a0`), the **real caller** `ra` (from `tmd_register` entry, before its prologue saves `ra`), and a call-context snapshot.
 - **What it answered: Pins the battle-form party-mesh install callsite** - long mis-assumed to live in an uncaptured overlay. The party meshes are registered through the generic `tmd_register` from two **static SCUS** state-handlers: `FUN_800513F0` (lead/active actors, `tmd_register(*(actor+0x50)+0x18)` in a `while<3` loop, alongside the `FUN_80052FA0` palette decode; caller `ra=0x8005148C`) and `FUN_800542C8` (additional members, per-member loop `tmd_register(*(*rec+4))`; caller `ra=0x80054804`). Both are dispatched indirectly, so a static `0x8007C018` xref finds no writer. Installed pointers byte-match the battle form (Vahn → `0x80165F48`, the value a battle save holds).
-  **Caveat:** the write-watchpoint's `value` column shows the *pre-write* (old field) pointer because PCSX-Redux fires Write BPs pre-commit; the `tmd_register`-entry `a0` is the authoritative new value. See [`formats/character-mesh.md` § Battle form](../formats/character-mesh.md#assembly--object-local-pieces-posed-by-the-characters-own-battle-streams).
+  **Caveat:** the write-watchpoint's `value` column shows the *pre-write* (old field) pointer because PCSX-Redux fires Write BPs pre-commit; the `tmd_register`-entry `a0` is the authoritative new value. See [`formats/character-mesh.md` § Battle form](../formats/character-mesh.md#assembly---object-local-pieces-posed-by-the-characters-own-battle-streams).
 
 ##### `autorun_battle_render_capture.lua`
 

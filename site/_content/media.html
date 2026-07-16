@@ -91,7 +91,14 @@
   <div class="breadcrumb"><a href="index.html">home</a> &middot; media</div>
   <h1>Media browser</h1>
   <p class="lede">
-    Play every sound - and watch every cutscene - on the disc straight from your browser. Pick your <code>.bin</code> Mode2/2352 image once, then flip between three categories: <strong>BGM</strong> sequenced music (VAB + SEQ), the <strong>FMV</strong> movies (<code>MV*.STR</code>, decoded and played with synced MDEC video), and the <strong>SE</strong> sound banks (<code>XA*.XA</code>, each holding several interleaved voices). The same WASM build that powers the asset viewer parses, decodes, and plays everything locally - nothing leaves your machine. Your disc is cached locally in the browser and shared across pages, so it auto-loads on reload (use <em>Forget</em> to clear).
+    Hear every sound in <em>Legend of Legaia</em>, and watch every cutscene, straight from your own copy of the game.
+  </p>
+  <p>
+    Load a <code>.bin</code> disc image once and flip between three categories: <strong>BGM</strong>
+    music, the <strong>FMV</strong> cutscenes, and the <strong>SE</strong> sound-effect and voice banks.
+    The same WebAssembly build that powers the <a href="viewer.html">asset viewer</a> parses, decodes,
+    and plays all of it locally. Nothing is uploaded. Your disc is cached in your browser and shared
+    across pages, so it auto-loads on reload - use <em>Forget</em> to clear it.
   </p>
 </header>
 
@@ -109,8 +116,19 @@
   </div>
 </section>
 
-<section class="doc-section" id="browse" style="display: none;" id="audio-browse-section">
+<section class="doc-section" id="browse" style="display: none;">
   <h2>Browse</h2>
+  <p>What each tab holds, and why it isn't just a folder of audio files:</p>
+  <ul class="bullets">
+    <li><strong>BGM</strong> - the music, which isn't recorded audio at all. It ships as a score plus a
+      bank of instrument samples (<a href="formats/seq.html">SEQ</a> +
+      <a href="formats/vab.html">VAB</a>), and is <em>performed</em> here by the project's clean-room
+      recreation of the PlayStation's sound chip.</li>
+    <li><strong>FMV</strong> - the full-motion cutscenes (<code>MV*.STR</code>), decoded and played
+      with video and audio kept in sync.</li>
+    <li><strong>SE</strong> - the sound-effect and voice banks (<code>XA*.XA</code>). Each file holds
+      not one track but several voices interleaved together, so clicking one lists what's inside.</li>
+  </ul>
 
   <div class="audio-tabs" role="tablist">
     <button class="audio-tab is-active" data-tab="bgm" role="tab">BGM (VAB + SEQ)</button>

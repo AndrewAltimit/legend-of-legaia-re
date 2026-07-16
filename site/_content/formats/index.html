@@ -6,11 +6,12 @@
 
 <section class="doc-section" id="confidence">
   <h2>Confidence levels</h2>
-  <p>Each format below carries a badge for how solid its decode is:</p>
+  <p>Each format below carries a badge for how solid its decode is. The badge is a claim about <em>evidence</em>, not about how complete the page looks - trust it accordingly.</p>
   <ul class="bullets">
     <li><span class="tag tag-done">Confirmed</span> - verified end-to-end against real on-disc data, with passing tests.</li>
     <li><span class="tag tag-partial">Inferred</span> - deduced empirically from byte patterns; structurally consistent but not yet exhaustively validated.</li>
   </ul>
+  <p>A format can mix the two, and the better pages rate it per-field rather than per-page - the encounter record's shape and reader are Confirmed while the encoding within scripts stays Inferred. Where a page has its own confidence section, that section is authoritative over the badge here.</p>
 </section>
 
 <section class="doc-section" id="disc-layer">
@@ -126,7 +127,7 @@
       <div class="card-body">Battle-action per-move power + behaviour records (26-byte stride, VA <code>0x801F4F5C</code>, PROT 0898). Damage roll, homing, hit reaction, sound cue and spawned-effect lists; resolved via the id&rarr;index map at <code>0x801F4E63</code> (the same id space as the spell table).</div>
     </a>
     <a class="card" id="art-data" href="art-data.html">
-      <div class="card-title"><span>Art data - Tactical Arts records</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-title"><span>Art data - Tactical Arts records</span> <span class="tag tag-partial">Inferred</span></div>
       <div class="card-body">Per-character art records (Vahn / Noa / Gala; PROT entry <code>0x05C4</code>). 40-field schema: command sequence, action constant, power bytes, hit timing, special / hit effect cues, status effects, repeat-frame replay.</div>
     </a>
     <a class="card" id="save-record" href="save-record.html">
@@ -211,7 +212,7 @@
       <div class="card-body">Variable-length editing of a decompressed MAN. Scene-transition (<code>0x3F</code> door) destinations are partition-2 records reached via the partition-2 record-offset table (runtime-pinned); resizing a destination name fixes the partition tables, section-0 offset, intra-record jump deltas, and the external descriptor size. Powers the door randomizer.</div>
     </a>
     <a class="card" href="str-fmv-table.html">
-      <div class="card-title"><span>STR FMV table</span> <span class="tag tag-partial">Inferred</span></div>
+      <div class="card-title"><span>STR FMV table</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">The cutscene / MDEC overlay's STR lookup tables: libcd's <code>CdlFILE</code> directory cache at <code>0x801CAE08</code> and the 23-slot FMV dispatch table at <code>0x801D0A6C</code> (32-byte stride) the play loop reads - nine retail slots covering every movie on the disc; per-scene <code>fmv_id</code> triggers are disc-pinned as literal operands in the scene MAN scripts.</div>
     </a>
   </div>

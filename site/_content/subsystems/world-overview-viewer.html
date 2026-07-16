@@ -139,6 +139,13 @@
 .overview-steps li { margin: 0.35rem 0; }
 </style>
 
+<section class="doc-section" id="glb-export">
+  <h2>Continent <code>.glb</code> export</h2>
+  <p>The page's &ldquo;Download .glb&rdquo; button bakes the assembled world view - the continent ground heightfield plus every walk-frame landmark / decoration stamp on screen - into a single binary glTF, via the WASM <code>scene_export_*</code> session (<code>legaia_web_viewer::scene_export</code>, bake in <code>legaia_asset::scene_gltf</code>).</p>
+  <p>The page hands the exporter the same mesh buffers it uploads to WebGL and the same per-draw <code>(translation, rotY, scale)</code> triples it builds model matrices from, so the file matches the render. The PSX VRAM+CLUT texture indirection is baked out into one RGBA atlas: one 256x256 tile per distinct <code>(cba, tsb-page)</code> pair the vertices sample, NEAREST-sampled, with <code>MASK</code> alpha for the PSX word-0 cutout rule.</p>
+  <p>The animated ocean backdrop is a screen effect, not geometry, and is excluded. The asset-viewer page's full-map (town) and single-TMD exports ride the same session; the enemy table's monster export is the sibling <code>monster_gltf::export_glb</code>, which additionally carries action animations.</p>
+</section>
+
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">

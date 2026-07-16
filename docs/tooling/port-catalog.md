@@ -1,9 +1,27 @@
 # Port catalog
 
-A per-function status catalog that unifies three independent signals across the
-decompilation and engine-port tracks, plus a fourth axis for scope-excluded
-addresses (statically-linked PsyQ library code that the engine maps to native
-equivalents rather than porting line-by-line):
+Answers "what is left to do?" for one function, or for the whole project, from
+evidence rather than from a hand-maintained checklist.
+
+**Reach for it when** you are picking up work and want a real worklist: which
+functions are understood but not ported, which are ported but undocumented,
+which nobody has looked at. Run `--dashboard` and it prints the open work as a
+single page.
+
+The trick is that it **derives** status instead of tracking it. Each column below
+is measured live from the tree, so the catalog cannot rot the way a status table
+in a doc does - if you port a function and tag it, the catalog knows on the next
+run.
+
+```bash
+python3 scripts/ci/port-catalog.py --dashboard
+```
+
+## The four columns
+
+Three independent signals across the decompilation and engine-port tracks, plus a
+fourth axis for scope-excluded addresses (statically-linked PsyQ library code the
+engine maps to native equivalents rather than porting line-by-line):
 
 | Column | Source of truth |
 |---|---|

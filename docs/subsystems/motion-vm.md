@@ -4,13 +4,24 @@
 `FUN_8003BC08`: the pursue / patrol / face-target VM at `FUN_8003774C`
 (dispatched when actor `+0x10 & 0x400`) and the scripted-motion / flag VM at
 `FUN_80038158` (dispatched when `+0x10 & 0x80`, bytecode carried in MAN
-tail-section 1 - [below](#the-second-motion-vm-fun_80038158)). Both are
-distinct from:
+tail-section 1 - [below](#the-second-motion-vm---fun_80038158)). Both live in
+`SCUS_942.54`.
 
-- [Actor VM](actor-vm.md) (`FUN_801D6628`) - sprite spawn / despawn, 13 ops.
-- [Move VM](move-vm.md) (`FUN_80023070`) - Tactical Arts / battle-action animation, 71 + 61 ops.
+The first drives **per-actor pursue / patrol / face-target** logic - NPC movement on
+the field, camera follow paths, and "face the speaker" cinematic posing during
+dialog. The second drives scripted actor choreography and writes story flags.
 
-The motion VM drives **per-actor pursue / patrol / face-target** logic used for NPC movement on the field, camera follow paths, and "face the speaker" cinematic posing during dialog.
+Both are distinct from the other three members of
+[the runtime VM family](move-vm.md#the-runtime-vm-family) - the
+[actor VM](actor-vm.md), the [move VM](move-vm.md), and the
+[field VM](script-vm.md).
+
+**What catches people out: the two motion VMs are ported in two different crates.**
+`FUN_8003774C` is [`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs);
+`FUN_80038158` is
+[`legaia_engine_core::man_field_scripts::npc_motion`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs),
+because its bytecode arrives as MAN tail-section data rather than through the actor
+tick's own buffer.
 
 ## Bytecode layout
 
@@ -174,7 +185,7 @@ are field-VM script bytes in the streaming variant MAN carriers
 (`0x142`/`0x482`/`0x1BE`; see
 [`script-vm.md`](script-vm.md#a-second-script-byte-carrier-the-streaming-variant-man))
 or, for the town01 opening one-shot `549`, a direct code path (see
-[`world-map.md`](world-map.md#gate-flag-setters-that-are-not-man-field-vm-ops)).
+[`world-map.md`](world-map.md), "Gate-flag setters beyond a scene's bundle MAN").
 Disc-gated anchor test: `crates/engine-core/tests/motion_flag_census_disc.rs`.
 
 ## Provenance

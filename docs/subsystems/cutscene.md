@@ -1,8 +1,39 @@
 # Cutscene
 
-Pre-rendered cutscene playback combines PSX STR video (MDEC hardware decoder) with the
-XA-ADPCM audio interleaved in the same CD-XA sectors. The engine drives it through game modes 26 and 27
-(`StrInit` / `StrMode`), which map to `SceneMode::Cutscene` in the clean-room port.
+Pre-rendered cutscene playback combines PSX STR video (MDEC hardware decoder)
+with the XA-ADPCM audio interleaved in the same CD-XA sectors. The engine drives
+it through game modes 26 and 27 (`StrInit` / `StrMode`), which map to
+`SceneMode::Cutscene` in the clean-room port.
+
+**Where it lives.** The playback engine is split: an STR overlay (master dispatch
+`FUN_801CEA3C`, play loop `FUN_801CF098`) over the SCUS-resident `St` streaming
+library. The FMV dispatch table is at `0x801D0A6C`.
+
+**Port counterpart.** `crates/mdec` (the clean-room decoder) plus the
+`legaia-engine play-str` loop; `legaia_asset::fmv_dispatch` reads the table.
+
+**The two things that catch people out:**
+
+- **Legaia movies are not STRv2.** They are the **Iki** bitstream - an
+  LZSS-compressed per-block qscale/DC table plus an AC-only entropy stream. A
+  standard STRv2 decoder will not decode them. See
+  [MDEC decoder (Iki bitstream)](#mdec-decoder-iki-bitstream).
+- **"The opening cutscene" is mostly not a movie.** The five-scene New-Game
+  opening is rendered **in-engine in 3D**, not played back as FMV; only some legs
+  are STR. See
+  [In-engine 3D opening](#in-engine-3d-opening-the-five-scene-new-game-chain).
+
+## Contents
+
+- [Game modes](#game-modes) · [STR sector format](#str-sector-format)
+- [Retail playback engine](#retail-playback-engine-str-overlay--scus-st-streaming-library) - [master dispatch](#master-dispatch---fun_801cea3c-overlay) · [play loop](#play-loop---fun_801cf098-overlay) · [frame-demux SM](#frame-demux-state-machine-scus-st-library) · [bitstream decode + MDEC feed](#bitstream-decode--mdec-feed-overlay)
+- [XA channel selection](#xa-channel-selection) · [XA audio](#xa-audio) · [A/V sync](#interleaved-cutscene-audio-av-sync)
+- [MDEC decoder (Iki bitstream)](#mdec-decoder-iki-bitstream) - [frame header](#1-frame-header-10-bytes) · [LZSS qscale/DC table](#2-lzss-qscaledc-table) · [AC bitstream](#3-ac-bitstream) · [dequantize + IDCT](#4-dequantize--idct) · [macroblock layout](#5-macroblock-layout) · [upsampling + colour](#6-420-upsampling--bt601-colour-conversion)
+- [Playback loop (`play-str`)](#playback-loop-play-str) · [frame-rate detection](#frame-rate-detection) · [CLI reference](#cli-reference)
+- [CDNAME → STR override map](#cdname--str-override-map) · [overlay residency](#strmdec-fmv-overlay-residency) · [directory-record cache](#directory-record-cache) · [post-FMV return scenes](#post-fmv-return-scenes)
+- [Field-VM FMV-trigger op](#field-vm-fmv-trigger-op) - [static trigger sites](#static-fmv-trigger-sites---exhaustive) · [trigger assignment is disc-sourced](#the-per-scene-trigger-assignment-is-disc-sourced-the-runtime-reconstructed-reading-is-falsified) · [per-STR trigger corpus](#per-str-fmv-trigger-corpus)
+- [In-engine 3D opening](#in-engine-3d-opening-the-five-scene-new-game-chain) - [the five-scene chain](#the-five-scene-chain) · [record spawn](#record-spawn-mechanisms-live-probe-pinned) · [`opdeene` timeline record](#the-opdeene-timeline-record) · [inline narration](#inline-narration-format) · [crawl roller](#narration-playback---the-crawl-roller-fun_80037174) · [timeline execution](#timeline-execution-model-ghidra-traced) · [engine port](#timeline-execution-engine-port) · [vignette actors](#per-actor-channels---the-vignette-actors) · [colour fade](#colour-fade-op-0x34-sub-0) · [sepia grade](#full-scene-sepia-grade-the-gold-prologue-look)
+- [Open items](#open-items) · [Provenance](#provenance)
 
 ## Game modes
 

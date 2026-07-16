@@ -7,6 +7,8 @@ Two coordinated tracks under one Cargo workspace:
 1. **Asset preservation + format docs.** Extract every asset on the disc, document every format with provenance back to a Ghidra function, build round-trip parsers (`.bin` → PNG / WAV / OBJ / JSON).
 2. **Engine reimplementation.** Clean-room Rust port of the engine - render via wgpu, audio via the existing XA + VAB decoders, optional WASM target. Same legal model as [ScummVM](https://www.scummvm.org/), [OpenRCT2](https://github.com/openrct2/OpenRCT2), [OpenMW](https://github.com/OpenMW/openmw), [OpenLara](https://github.com/XProger/OpenLara) - bring your own disc image; the toolkit handles the rest.
 
+Retail behaviour is the baseline: the simulation reproduces the original's arithmetic and quirks, and the parity oracles enforce it. But the port is not a museum piece - enhancements the original never had, like dynamic lighting, free-angle movement and [VR](docs/subsystems/vr-mode.md), ride on top as opt-in toggles that default off and never touch the simulation. See [`docs/subsystems/engine.md`](docs/subsystems/engine.md#fidelity-and-enhancements).
+
 The repo name `-re` is in both senses: **r**everse-**e**ngineering and **r**e-implementation.
 
 **Project site:** [andrewaltimit.github.io/legend-of-legaia-re](https://andrewaltimit.github.io/legend-of-legaia-re/) - interactive viewers (run client-side off your own disc image), the full technical reference, and the demo video below.

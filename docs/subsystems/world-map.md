@@ -16,7 +16,7 @@ below to jump within this page.
 - [Key functions](#key-functions) - [controller `FUN_801E76D4`](#fun_801e76d4---world-map-controller-9320-bytes) · [debug-menu renderer `FUN_801EAD98`](#fun_801ead98---world-map-debug-menu-renderer-7280-bytes) · [entity tick `FUN_801DA51C`](#fun_801da51c---world-map-entity-tick-260-bytes)
 
 **Entity / encounter SM**
-- [Encounter-record installation](#encounter-record-installation) · [clean-room port](#clean-room-port--both-overworld-and-field) · [NPC dialogue text source](#npc-dialogue-text-source)
+- [Encounter-record installation](#encounter-record-installation) · [clean-room port](#clean-room-port---both-overworld-and-field) · [NPC dialogue text source](#npc-dialogue-text-source)
 
 **Overworld player + scenes**
 - [Player movement + region-keyed encounters](#overworld-player-movement--region-keyed-encounters) · [collision / walkability](#overworld-collision--walkability) · [camera-relative movement remap](#camera-relative-movement-remap) · [boot-path seeding](#boot-path-seeding)
@@ -579,7 +579,7 @@ distinguishing opcodes:
   (PROT `0x4d + map_id`), **not** a unique scene - the destination scene *name*
   is set separately by the pre-WARP handler / scene-change packet, which lives in
   an uncaptured overlay, so the id is reported raw (see
-  [`asset-loader.md` → WARP opcode flow](asset-loader.md#warp-opcode--scene-transition-flow-map_id));
+  [`asset-loader.md` → WARP opcode flow](asset-loader.md#warp-opcode--minigame-door-warp-flow-sub_id));
 - an inline `0x1F`-lead **dialog-text block** or a **field interact** (`0x3E`
   with `op0 < 100`) and no warp → an **NPC** (sign / talk-to / event trigger).
   (The dialog signal is the *structural* `0x1F` text scan, not an opcode - see
@@ -1321,7 +1321,7 @@ display SM over the still-resident 0897 body (it reads `0x801D5334`, beyond its
 `0x4000` swap window); on mode exit `FUN_80025DA0` restores 0897's head and
 re-enters it (`0x801CE8CC`). So MAPDSIP is the world-map *display* head, while
 the controller proper (`FUN_801E76D4`) stays in the co-resident 0897 body. See
-[`boot.md`](boot.md#per-frame-dispatch-scus-resident) mode-12 row.
+[`boot.md`](boot.md#game-mode-state-machine) mode-12 row.
 
 The `a0` arg controls whether `FUN_80016444` skips its early
 `FUN_8005FB84` block (Mode 13 skips it; the default handler runs

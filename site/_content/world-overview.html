@@ -2,8 +2,20 @@
   <div class="breadcrumb"><a href="index.html">home</a> &middot; world overview (3D)</div>
   <h1>World overview</h1>
   <p class="lede">
-    Each kingdom's overworld in real-time WebGL 3D, straight from your disc image - no save state, no emulator. Load a <code>.bin</code> below and the assembled scene renders immediately. Your disc is cached locally in the browser (shared with the viewer, audio, and monster pages), so it auto-loads on reload - use <em>Forget</em> on the chip to clear. The <strong>&#11015; Download .glb</strong> button under the canvas exports the assembled continent - terrain heightfield, placed landmarks and trees, textures baked from VRAM - as a single binary <a href="https://www.khronos.org/gltf/">glTF</a> that drops straight into Blender, three.js, or any glTF viewer (same format as the enemy-table model export).
-    With a VR headset, the <strong>VR</strong> button in the canvas bar presents the continent over WebXR - as a diorama or standing on the terrain - in Chrome/Edge with SteamVR as the active OpenXR runtime, served from <code>http://localhost</code> or https (WebXR needs a secure context; the button explains what's missing if it can't start).
+    Fly over Legaia's three continents in real-time 3D - no save state, no emulator, just your own copy of the game.
+  </p>
+  <p>
+    Each kingdom's overworld is assembled and rendered in the browser with WebGL. Load a
+    <code>.bin</code> disc image below and the scene appears immediately. Nothing is uploaded; your
+    disc is cached locally in your browser and shared with the viewer, audio, and monster pages, so it
+    auto-loads next time - use <em>Forget</em> on the chip to clear it.
+  </p>
+  <p>
+    <strong>You can take the continent with you.</strong> The <strong>&#11015; Download .glb</strong>
+    button under the canvas exports the whole assembled thing - terrain, placed landmarks and trees,
+    with the textures baked in - as one <a href="https://www.khronos.org/gltf/">glTF</a> file. It
+    opens in Blender, three.js, or any glTF viewer. (Same format as the enemy-model export on the
+    <a href="monsters.html">enemy table</a>.)
   </p>
 </header>
 
@@ -22,6 +34,13 @@
 
 <section class="doc-section" id="viewer">
   <h2>Viewer</h2>
+  <p class="hint">
+    With a VR headset, the <strong>VR</strong> button in the canvas bar presents the continent over
+    WebXR - either as a diorama you lean over, or standing on the terrain at human scale. It needs
+    Chrome or Edge with SteamVR as the active OpenXR runtime, and this page reached over
+    <code>http://localhost</code> or https, since WebXR only starts in a secure context. If it can't
+    start, the button explains what's missing.
+  </p>
   <div class="wo-tabs" role="tablist">
     <button class="wo-tab is-active" data-k="drake"   role="tab">Drake Kingdom</button>
     <button class="wo-tab"           data-k="sebucus" role="tab">Sebucus Islands</button>
@@ -105,7 +124,19 @@
 <section class="doc-section" id="about-this-view">
   <h2>About this view</h2>
   <p>
-    Each kingdom's overworld ships as one <strong>bundle</strong> on the disc, made of a few numbered <strong>slots</strong> - the ocean texture, the landmark mesh pack, the placement data, and so on; &ldquo;slot 1&rdquo; is the bundle's landmark mesh pack. The <strong>assembled scene</strong> mode loads a kingdom's bundle and walks that pack (<strong>40 / 36 / 56 meshes</strong> for Drake / Sebucus / Karisto), drawing each placement from the bundle's &ldquo;MAN&rdquo; placement slot at its world coordinate. The MAN table only pins a handful of slots per kingdom; the <em>show unplaced slot-1 TMDs</em> toggle drops the rest onto a layout grid, classified into landmark / decoration / ground_tile / npc_token / unknown.
+    Each kingdom's overworld ships as one <strong>bundle</strong> on the disc, made of a few numbered
+    <strong>slots</strong>: the ocean texture, the landmark mesh pack, the placement data, and so on.
+    Slot&nbsp;1 is the landmark mesh pack - the 3D models themselves.
+  </p>
+  <p>
+    <strong>Assembled scene</strong> mode loads a kingdom's bundle and walks that pack
+    (<strong>40 / 36 / 56 meshes</strong> for Drake / Sebucus / Karisto), drawing each one at the world
+    coordinate the bundle's placement slot - its &ldquo;MAN&rdquo; data - gives it.
+  </p>
+  <p>
+    That placement table only pins down a handful of the meshes per kingdom, though. The <em>show
+    unplaced slot-1 TMDs</em> toggle drops everything it doesn't place onto a layout grid instead,
+    sorted into best-guess classes: landmark, decoration, ground_tile, npc_token, or unknown.
   </p>
   <p>
     The <strong>mesh inspector</strong> browses the kingdom TMD pack one mesh at a time. The <strong>top-down placement map</strong> visualises the parsed MAN actor positions; Drake additionally surfaces 12 live-RAM-resolved actor placements (gates, bridge towers, the small castle) overlaid on the MAN entities.

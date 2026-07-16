@@ -250,7 +250,7 @@ These records are not just authored data: a live capture seats one. The enemy
 Gimard "Fire Tail" mid-cast holds a live part-actor whose `+0x48` record pointer
 is `0x801F5484` - proto entries `0`/`0x30`/`0x31` (`model_sel` 5), the same
 record `move_fx_records_real` pins statically (disc + library gated
-`firetail_movefx_liveness`; [battle-action.md § Enemy "Fire Tail"](../subsystems/battle-action.md#enemy-fire-tail--move-vm-part-not-the-widget-path)).
+`firetail_movefx_liveness`; [battle-action.md § Enemy "Fire Tail"](../subsystems/battle-action.md#enemy-fire-tail---move-vm-part-not-the-widget-path)).
 
 ## Open
 
