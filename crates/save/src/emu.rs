@@ -270,8 +270,9 @@ impl CardView {
         card::encode_dir_frame(
             frame,
             card::state::FIRST_BLOCK,
-            // A single 8 KiB block: the size a real card records for a
-            // one-block save, and the chain ends here.
+            // One block's worth of bytes - the frame's size field is
+            // block-aligned, same as [`card::write_block`] records for a
+            // one-block chain. The chain ends here.
             Some(BLOCK_SIZE as u32),
             0xFFFF,
             product_code,

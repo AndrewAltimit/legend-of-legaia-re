@@ -82,7 +82,9 @@ pub struct DirEntry {
     /// Raw state byte (`0x51` = first, `0x52` = mid, `0x53` = last,
     /// `0xA0` = free).
     pub state: u32,
-    /// File size in bytes the directory frame declares.
+    /// File size in bytes the directory frame declares. Block-aligned on a
+    /// real card (`blocks * BLOCK_SIZE`), so it is the save's footprint, not
+    /// its payload length.
     pub file_size: u32,
     /// Next block index (`0xFFFF` for terminal).
     pub next_block: u16,
@@ -215,6 +217,9 @@ pub fn read_block(buf: &[u8], block: u8) -> Option<&[u8]> {
 /// `0x7F` - the only checksum a card image carries (the SC payload itself has
 /// none; see `docs/subsystems/save-screen.md`).
 ///
+/// `total_size` is **block-aligned** - `blocks * BLOCK_SIZE`, the byte count
+/// a real card records, never the payload length.
+///
 /// `frame` must be exactly [`DIR_FRAME_SIZE`] bytes. Shared by
 /// [`write_block`] and [`crate::emu::CardView::claim_block`] so the two
 /// cannot drift.
@@ -248,7 +253,9 @@ pub(crate) fn encode_dir_frame(
 /// `FIRST_BLOCK` with `next_block = 0xFFFF`.
 ///
 /// Directory frames are rewritten with XOR checksums (XOR of bytes
-/// `0x00..0x7E`, stored at `0x7F`). Returns the first block index written.
+/// `0x00..0x7E`, stored at `0x7F`), and the first frame records the save's
+/// **block-aligned** size (`blocks * BLOCK_SIZE`), matching what a real card
+/// declares. Returns the first block index written.
 ///
 /// # Errors
 ///
@@ -291,7 +298,11 @@ pub fn write_block(card_buf: &mut [u8], save_data: &[u8], product_code: &str) ->
         );
     }
 
-    let total_size = save_data.len() as u32;
+    // The frame's size field is a byte count of the blocks the save occupies,
+    // not of its payload: a real card always records a multiple of BLOCK_SIZE
+    // (a one-block save reads 8192, never 8190). Card browsers derive the
+    // block count from it, so an unaligned value misreports the save.
+    let total_size = (n_needed * BLOCK_SIZE) as u32;
 
     for (idx, &blk) in free.iter().enumerate() {
         let blk_state = if idx == 0 {
@@ -756,6 +767,43 @@ mod tests {
         let blk_off = BLOCK_SIZE;
         assert_eq!(&card[blk_off..blk_off + 2], &SAVE_BLOCK_MAGIC);
         assert_eq!(&card[blk_off + 2..blk_off + 2 + payload.len()], payload);
+    }
+
+    #[test]
+    fn write_block_records_block_aligned_size() {
+        let mut card = free_card();
+        // An 18-byte payload still occupies a whole 8 KiB block, and that is
+        // what the frame must declare - not 18, and not BLOCK_SIZE - 2.
+        write_block(&mut card, b"Hello Legaia save!", "BASCUS-94254TEST").unwrap();
+        let f = DIR_FRAME_SIZE;
+        let size = u32::from_le_bytes(card[f + 4..f + 8].try_into().unwrap());
+        assert_eq!(size, BLOCK_SIZE as u32);
+        assert_eq!(size % BLOCK_SIZE as u32, 0, "size must be block-aligned");
+        // And it reads back through the directory walker.
+        assert_eq!(parse_card(&card).unwrap()[0].file_size, BLOCK_SIZE as u32);
+    }
+
+    #[test]
+    fn write_block_size_covers_every_block_of_a_chain() {
+        let mut card = free_card();
+        // Two blocks' worth of payload: one byte past what a single block
+        // holds, so the chain spans two and the frame must say so.
+        let payload = vec![0xABu8; BLOCK_SIZE - 1];
+        write_block(&mut card, &payload, "BASCUS-94254TEST").unwrap();
+
+        let saves = parse_card(&card).unwrap();
+        assert_eq!(saves[0].block_chain.len(), 2);
+        assert_eq!(
+            saves[0].file_size,
+            (2 * BLOCK_SIZE) as u32,
+            "a two-block chain declares two blocks of bytes"
+        );
+        // The size lives on the first frame only; continuations leave it 0.
+        let f2 = DIR_FRAME_SIZE * saves[0].block_chain[1] as usize;
+        assert_eq!(
+            u32::from_le_bytes(card[f2 + 4..f2 + 8].try_into().unwrap()),
+            0
+        );
     }
 
     #[test]
