@@ -55,16 +55,25 @@ completes, the fade-out advances states 3 → 4 → 5. The four save-coordinate
 words `DAT_801E46BC/C0/C4/C8` are zeroed on init and maintained across the
 sub-screen lifetime.
 
-### `FUN_801DAEF4` - save-slot selector (224 bytes, sub-screen 0x2 / 0x1)
+### `FUN_801DAEF4` - load-from-slot driver (224 bytes, sub-screen 0x19)
+
+The load half of the `0x18` / `0x19` card-driver pair - `0x18` writes the card,
+this one reads it. It is *not* the slot selector; that is sub-screen `0x01`
+(`FUN_801D6B20`), which this screen returns to.
+
+The op selector is what distinguishes the two: both install the same card handle
+and both drive `FUN_801DD35C`, but `0x18` calls it `(1, 2)` to save and `0x19`
+calls it `(1, 1)` to load (see
+[Load/save dispatch](#loadsave-dispatch-fun_801dd35c)).
 
 Internal step counter in `DAT_801E46AC`:
 
 | Step | Action |
 |---|---|
-| 0 | Set `_DAT_8007B44C = DAT_801C6EA0` (memory-card handle from overlay init); run actor VM with `&DAT_801E4E30` (slot-select menu bytecode). |
-| 1 | Wait on `_DAT_8007BB80 != 0` (menu-active flag); advance to step 2. |
-| 2 | Call `FUN_801DD35C(1, 1)` (confirm selection); advance to step 3 on success. |
-| 3 | Clear `DAT_801E46A4 = 0` when `_DAT_8007B450 != 0` (return to previous screen). |
+| 0 | Set `_DAT_8007B44C = DAT_801C6EA0` (memory-card handle from overlay init); run actor VM (`FUN_801D6628`) with `&DAT_801E4E30` (the load-slot menu bytecode). |
+| 1 | Wait while `_DAT_8007BB80 != 0` (menu-active flag); advance to step 2 once it reads zero. |
+| 2 | Call `FUN_801DD35C(1, 1)` - the load (card → RAM) direction; advance to step 3 on success. |
+| 3 | Write `DAT_801E46A4 = 1` unconditionally, returning to the `0x01` slot selector; then, only when `_DAT_8007B450 != 0`, overwrite it with `0` (the `0x00` final-exit screen). The unconditional write sits in the branch's delay slot, so the `0x01` return is the default and the exit is the override.
 
 Each step calls `func_0x80031D00()` (text-actor tick / MES advance) before
 returning.

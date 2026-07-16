@@ -6,10 +6,14 @@ unexplained functions matter, we play a scripted segment of the start of the
 game under PCSX-Redux with a breakpoint armed on every not-yet-understood
 function entry, and let the hits tell us what to document next.
 
-This page is the program's **instrument**: the segment ledger, the gap-burndown
-tracker, and the run/triage loop. The probe harness it drives lives in
+This page is the program's **instrument**: the segments, what their traces
+resolved, and the run/triage loop. The probe harness it drives lives in
 [`pcsx-redux-automation.md`](pcsx-redux-automation.md); the gap-set is defined
 off the [port catalog](port-catalog.md).
+
+The live gap-set size is not recorded here - it is derived from the tree, so
+`scripts/ci/port-catalog.py --dashboard` always has the current number and this
+page cannot go stale against it.
 
 ## Contents
 
@@ -19,7 +23,7 @@ off the [port catalog](port-catalog.md).
 - [Attribution: SCUS vs overlay](#attribution-scus-vs-overlay)
 - [The capture + triage loop](#the-capture--triage-loop)
 - [Segment ledger](#segment-ledger)
-- [Gap-burndown](#gap-burndown)
+- [What the traces resolve](#what-the-traces-resolve)
 
 ## Why trace-driven
 
@@ -249,20 +253,21 @@ spawn) is where the operator helps. Each segment is one turn of the loop:
 
 ## Segment ledger
 
-Each segment anchors on a start save state and produces an end save state that
-becomes the next segment's start. Save states are gitignored Sony RAM - cite the
-`backup_fingerprint` from `scripts/scenarios.toml`, never raw bytes. Status:
-PENDING (authored, not yet run), CAPTURED (artifact in hand), DOCUMENTED (residue
-triaged).
+The segments chain: each anchors on a start save state and produces an end state
+that becomes the next segment's start. Every one below is captured and cataloged
+in `scripts/scenarios.toml` + `saves/library`, addressed by its label.
 
-| Seg | Span | Start anchor | Status | New hits | Documented |
-|---|---|---|---|---:|---:|
-| S1 | cold boot -> title -> NEW GAME -> opening prologue (`opdeene`) | cold boot (`-fastboot`) | CAPTURED + CATALOGED (`s1_newgame_field`) | - | - |
-| S2 | opening prologue -> Rim Elm (`town01`) | S1 checkpoint | CAPTURED + CATALOGED (`s2_rimelm_town01`) | - | - |
-| S3 | first free walk (Rim Elm) | S2 checkpoint | CAPTURED + CATALOGED (`s3_rimelm_freeroam`); was [name entry](#s3-captured-the-town01-opening-is-the-name-entry-screen) | - | - |
-| S4 | first scene transition / house door | S3 checkpoint | CAPTURED + CATALOGED (`s4_rimelm_door_transition`); [grid-BFS door-nav out of Vahn's house](#s4-captured-the-grid-bfs-door-nav-walks-out-of-vahns-house) | - | - |
-| S5 | first battle (scripted Tetsu spar) | S4 end state | CAPTURED + CATALOGED (`s5_tetsu_battle`); [the scripted Tetsu spar, reached by record-then-replay of a human playthrough](#s5-the-first-battle-is-the-scripted-tetsu-spar-not-a-random-encounter) | 103 (11 SCUS + 92 overlay) | 24 (12 SCUS + 8 new 0898 + 4 in the co-resident tutorial overlay PROT 0967) - [details ↓](#s5-battle-trace-the-on-screen-element-family--new-0898-draw-functions) |
-| S6 | first non-tutorial boss (Queen Bee ambush, `town01`) | `rim_elm_queen_bee_battle` (field mode 0x3, fight auto-starts into the trace) | CAPTURED + CATALOGED (`rim_elm_queen_bee_battle`); the ambush's [field->battle transition + real command-menu battle](#s6-first-non-tutorial-battle-command-menu-persistence--the-context-multiplexed-effect-overlay-slot) | 50 (5 SCUS + 45 overlay) | 3 new 0898 (command-block persistence + target-menu builder) + the field->battle transition SM `FUN_801CF5BC` + the co-resident-slot resolution - [details ↓](#s6-first-non-tutorial-battle-command-menu-persistence--the-context-multiplexed-effect-overlay-slot) |
+Save states are gitignored Sony RAM - cite the `backup_fingerprint` from
+`scripts/scenarios.toml`, never raw bytes.
+
+| Seg | Span | Anchor label | What it settled |
+|---|---|---|---|
+| S1 | cold boot -> title -> NEW GAME -> opening prologue (`opdeene`) | `s1_newgame_field` (from cold boot, `-fastboot`) | [Driving from boot](#driving-from-boot-segment-s1) |
+| S2 | opening prologue -> Rim Elm (`town01`) | `s2_rimelm_town01` (from the S1 checkpoint) | The town scene-load callees |
+| S3 | first free walk (Rim Elm) | `s3_rimelm_freeroam` (from the S2 checkpoint) | [The town01 opening is the name-entry screen](#s3-captured-the-town01-opening-is-the-name-entry-screen) |
+| S4 | first scene transition / house door | `s4_rimelm_door_transition` (from the S3 checkpoint) | [Grid-BFS door-nav out of Vahn's house](#s4-captured-the-grid-bfs-door-nav-walks-out-of-vahns-house) |
+| S5 | first battle | `s5_tetsu_battle` (from the S4 end state) | [It is the scripted Tetsu spar, not a random encounter](#s5-the-first-battle-is-the-scripted-tetsu-spar-not-a-random-encounter) - reached by record-then-replay of a human playthrough. [Trace ↓](#s5-battle-trace-the-on-screen-element-family--new-0898-draw-functions) |
+| S6 | first non-tutorial boss (Queen Bee ambush, `town01`) | `rim_elm_queen_bee_battle` (field mode `0x3`; the fight auto-starts into the trace) | [Command-menu persistence + the field->battle transition](#s6-first-non-tutorial-battle-command-menu-persistence--the-context-multiplexed-effect-overlay-slot) |
 
 Both anchors are cataloged in `scripts/scenarios.toml` + `saves/library` by
 `backup_fingerprint`, resolvable via `run_probe.sh --scenario <label>`.
@@ -478,25 +483,61 @@ How S5 was reached:
   battle capture must run off the **field-tick clock** (the `FUN_8001698C` BP keeps
   firing through this battle while a Vsync-only capture missed it).
 
-## Gap-burndown
+## What the traces resolve
 
-The headline metric. Snapshot the global gap-set size after each documentation
-pass so the trend is visible. Regenerate with the worklist generator (the count
-is printed) or `scripts/ci/port-catalog.py --dashboard`.
+A documented function leaves the gap-set on the next regenerate, so the live
+size is derived, not tracked here - read it off the worklist generator (it
+prints the count) or `scripts/ci/port-catalog.py --dashboard`. What follows is
+what the traces *settled*, which is the part a reader cannot regenerate.
 
-| Checkpoint | Gap-set size | SCUS | Overlay | Notes |
-|---|---:|---:|---:|---|
-| program start | 780 | 167 | 613 | - |
-| field/mode-24 trace | 780 | 167 | 613 | 42 SCUS + 60 overlay functions confirmed live; SCUS-low mostly infra; overlay hits attribution-pending. Checkpoint records *what executes*. |
-| dance-cluster deep-dive | 762 | 161 | 601 | Mode-24 pinned = Noa dance overlay 0980 (resident slot-A help text + sub-id 0x06). Documented the dance-floor render cluster (`FUN_801d2a10`/`801d3f54`/`801d3ec0`/`801d3a2c` + interior PCs) in [`minigame-dance.md`](../subsystems/minigame-dance.md); identified the SCUS-low infra hits (SPU queue drain, heap allocator, angle-lerp). -18 from the gap-set. |
-| field-0897 deep-dive | 762 | 161 | 601 | No net burndown - the hot field matches resolve to the already-documented per-actor tick path (validation that the trace surfaces the central per-frame actor loop). Promoted the per-actor dispatcher `FUN_8003BC08` to the canonical `functions.md`; surfaced the `FUN_801D79E8` mesh-vs-glyph open thread. |
-| S1/S2 anchor SCUS trace | 739 | 138 | 601 | First trace against the **reproducible** cataloged anchors (`s1_newgame_field` + `s2_rimelm_town01`), not an ephemeral save. 43 SCUS gap-set functions hit (union). Resolved the 23 always-resident S1 hits: **18 -> ignore-set** (PsyQ libgte/libcd/libc + libgpu prim composers + dev-profiler HUD + a noop stub), **4 -> `functions.md`** (field footstep/ambient + timed audio-cue ticks, a guarded sub-dispatch), 1 already documented (`8005A5FC` = the `FUN_8005A4A0` flusher interior). -23 from the gap-set (all SCUS). |
-| S2 scene-load characterization | 719 | 118 | 601 | Characterized the 20 S2-only town scene-load callees (callees of the per-stage loader `FUN_8001E1B4` / boot mode-init `FUN_8001DCF8` / field init `FUN_801D6704`). **14 -> `functions.md`** (new "Scene / stage init" section: overlay-slot teardown, tile visibility/adjacency build, actor node-pool init/pop, field-camera reset, scene-script-ref binding, overlay-sprite pair, GTE projection-scale), **6 -> ignore-set** (2 retail-stripped noop tile emitters, libc InitHeap + coalescing-free, libgte SetTrans-vector + SetColorMatrix). -20, all SCUS. |
-| S5 battle (Tetsu spar) trace | 697 | 106 | 591 | First **battle** segment trace. 103 gap-set functions hit (11 SCUS + 92 overlay). SCUS 11/11 documented = the always-resident **on-screen-element family** (party status HUD, 2D floating-element animator, per-actor overlay markers); `0x800212C4` dropped as an interior label. Overlay: 74/92 attributed by containment to `0898` functions (aliased stems are VA mismatches), most already-documented; **7 new** documented incl. the render-tail `FUN_801E0080`. The `0x801F` render tail resolved: `< 0x801F69D8` = `0898` (`FUN_801F0450`), `>= 0x801F69D8` = the co-resident sparring-tutorial overlay PROT 0967 (pinned by resident-RAM fingerprint). Full breakdown: [S5 section ↓](#s5-battle-trace-the-on-screen-element-family--new-0898-draw-functions). |
-| S6 battle (Queen Bee ambush) trace | 677 | 103 | 574 | First **non-tutorial** battle + the captured field->battle transition (field-mode anchor; the fight auto-starts into the trace). 50 gap-set hits (5 SCUS + 45 overlay). **3 new `0898`** = the Arts command-block persistence pair (`FUN_801DA34C`/`801DA59C`, actor `+0x1DF` <-> record `+0x1B7`) + the enemy target-menu builder `FUN_801D9D3C`. Plus the **field->battle transition SM** `FUN_801CF5BC` (+ intro FX `FUN_801CFBB4`): the `0x801CFxxx` cluster is NOT `0898` head (those VAs are a data table there) but the partial-0897 battle-intro overlay, pinned by resident-capture. Full breakdown: [S6 section ↓](#s6-first-non-tutorial-battle-command-menu-persistence--the-context-multiplexed-effect-overlay-slot). |
+**Attribution is the recurring win.** The trace's raw output is a set of live
+addresses; turning those into functions means deciding which overlay a VA
+belongs to, and that is where the corpus was wrong most often:
 
-Each documented function moves an address out of the gap-set on the next
-regenerate; the table above grows one row per triage pass.
+- **The `0x801F` render tail is split between two overlays.** Below
+  `0x801F69D8` is `0898` (`FUN_801F0450`); at or above it is the co-resident
+  sparring-tutorial overlay PROT 0967. Pinned by resident-RAM fingerprint.
+- **The `0x801CFxxx` cluster is not the `0898` head.** Those VAs hold a data
+  table in `0898`; the executing code is the partial-`0897` battle-intro
+  overlay - the field->battle transition SM `FUN_801CF5BC` and its intro FX
+  `FUN_801CFBB4`. Pinned by resident-capture.
+- Aliased stems across overlays are VA mismatches, not new functions.
+  Attribution goes by **containment**, and an interior label (`0x800212C4`) is
+  not a function at all.
+
+**Mode 24 is the Noa dance overlay 0980** (resident slot-A help text, sub-id
+`0x06`) - its dance-floor render cluster (`FUN_801d2a10` / `801d3f54` /
+`801d3ec0` / `801d3a2c` plus interior PCs) is documented in
+[`minigame-dance.md`](../subsystems/minigame-dance.md).
+
+**A trace that surfaces nothing new is still a result.** The hot field/`0897`
+matches resolve to the already-documented per-actor tick path, which is
+positive evidence that the harness reaches the central per-frame actor loop
+rather than a side path. That pass promoted the per-actor dispatcher
+`FUN_8003BC08` into [`functions.md`](../reference/functions.md) and surfaced the
+`FUN_801D79E8` mesh-vs-glyph question, which is still open.
+
+**Most always-resident SCUS hits are infrastructure, not game logic** - PsyQ
+libgte / libcd / libc, libgpu prim composers, a dev-profiler HUD, noop stubs,
+the SPU queue drain, the heap allocator, angle-lerp. They belong in the
+ignore-set, and the ones that do not are small: field footstep / ambient and
+timed audio-cue ticks, a guarded sub-dispatch, and `8005A5FC` (an interior of
+the `FUN_8005A4A0` flusher). The town scene-load callees - reached from the
+per-stage loader `FUN_8001E1B4`, boot mode-init `FUN_8001DCF8` and field init
+`FUN_801D6704` - gave `functions.md` its "Scene / stage init" section (overlay-slot
+teardown, tile visibility/adjacency build, actor node-pool init/pop,
+field-camera reset, scene-script-ref binding, an overlay-sprite pair, GTE
+projection-scale), with two retail-stripped noop tile emitters and the libc /
+libgte entries going to the ignore-set.
+
+**Battle traces are where the new functions are.** The always-resident
+on-screen-element family (party status HUD, 2D floating-element animator,
+per-actor overlay markers), the render tail `FUN_801E0080`, the Arts
+command-block persistence pair `FUN_801DA34C` / `FUN_801DA59C` (actor `+0x1DF`
+<-> record `+0x1B7`), and the enemy target-menu builder `FUN_801D9D3C` all came
+out of the two battle segments. Full breakdowns:
+[S5 ↓](#s5-battle-trace-the-on-screen-element-family--new-0898-draw-functions) and
+[S6 ↓](#s6-first-non-tutorial-battle-command-menu-persistence--the-context-multiplexed-effect-overlay-slot).
 
 ### First-capture finding (SCUS-167, field/mode-24 state)
 

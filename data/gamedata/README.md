@@ -10,7 +10,8 @@ from third-party walkthroughs:
    moveset / rewards layer, the Seru-magic `absorb_lv1`/`lv2`/`lv3`
    fields, and the magic-leveling tables in `legaia_gamedata::magic_leveling`.
 
-Walkthroughs 1 and 2 are public GameFAQs guides. We keep the *factual*
+All three are public GameFAQs guides (Meth962's is FAQ 53721 - the URL
+is recorded in [`enemies.toml`](enemies.toml)). We keep the *factual*
 data only (item names, prices, art command sequences, MP costs, monster
 locations). No prose passages from any of the guides are committed; that
 would be a copyright issue. Only the tables are mined, and they are
