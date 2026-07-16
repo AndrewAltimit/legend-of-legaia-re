@@ -106,12 +106,26 @@ pub(crate) fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_sel
         // mismatch (`slot_N.lgsf`) made every save invisible at boot,
         // greying out Continue even with valid saves on disk.
         let path = save_dir.join(format!("slot_{slot:02}.{SAVE_EXT}"));
-        let snap = match std::fs::read(&path).ok().and_then(|b| {
-            legaia_save::SaveFile::parse(&b)
-                .ok()
-                .map(|sf| (b.len(), sf))
-        }) {
-            Some((_, sf)) => {
+        // Only a missing file proves the slot is free. Every other
+        // outcome - an unreadable file, or one whose bytes don't parse -
+        // means the slot is occupied by something we can't load, which
+        // the info panel captions differently ("Not a Legend of Legaia
+        // save." vs "Able to save."). Folding the two into one `None`
+        // invites the Save screen to offer a slot whose write would then
+        // clobber or fail.
+        let bytes = match std::fs::read(&path) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                out.push(SlotSnapshot::empty(slot));
+                continue;
+            }
+            Err(_) => {
+                out.push(SlotSnapshot::foreign(slot));
+                continue;
+            }
+        };
+        let snap = match legaia_save::SaveFile::parse(&bytes) {
+            Ok(sf) => {
                 // Prefer the record's retail displayed-level byte (+0x130);
                 // fall back to inferring from the cumulative XP word (+0x0)
                 // against the retail base curve.
@@ -159,9 +173,102 @@ pub(crate) fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_sel
                     leader_mp,
                 }
             }
-            None => SlotSnapshot::empty(slot),
+            Err(_) => SlotSnapshot::foreign(slot),
         };
         out.push(snap);
     }
     out
+}
+
+#[cfg(test)]
+mod save_scan_tests {
+    use super::scan_save_dir;
+    use legaia_engine_core::menu_runtime::SAVE_EXT;
+    use legaia_engine_core::save_select::{SaveSelectMode, SlotContent, SlotInfoMode};
+    use legaia_save::{CharacterRecord, Party, SaveExt, SaveFile};
+
+    fn slot_path(dir: &std::path::Path, slot: u8) -> std::path::PathBuf {
+        dir.join(format!("slot_{slot:02}.{SAVE_EXT}"))
+    }
+
+    fn a_save() -> Vec<u8> {
+        SaveFile {
+            party: Party {
+                members: vec![CharacterRecord::zeroed()],
+            },
+            ext: SaveExt {
+                money: 100,
+                ..SaveExt::default()
+            },
+            ..SaveFile::default()
+        }
+        .write()
+    }
+
+    /// The whole point of the split: an absent file and an unparseable one
+    /// must not land in the same class. A corrupt save is not a free block,
+    /// and offering it as one is how a Save overwrites what it never read.
+    #[test]
+    fn corrupt_save_is_foreign_missing_save_is_free() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(slot_path(dir.path(), 0), a_save()).unwrap();
+        // Right extension, wrong bytes - fails the LGSF magic check.
+        std::fs::write(slot_path(dir.path(), 1), b"not a save at all").unwrap();
+        // A real save truncated mid-body: passes the magic, fails the parse.
+        let mut torn = a_save();
+        torn.truncate(6);
+        std::fs::write(slot_path(dir.path(), 2), torn).unwrap();
+        // Slot 3 is left absent.
+
+        let slots = scan_save_dir(dir.path());
+
+        assert_eq!(slots[0].content, SlotContent::LegaiaSave);
+        assert!(slots[0].present);
+        for slot in [1, 2] {
+            assert_eq!(
+                slots[slot].content,
+                SlotContent::Foreign,
+                "slot {slot}: an unparseable file occupies the block"
+            );
+            assert!(!slots[slot].present, "slot {slot} must not be loadable");
+        }
+        assert_eq!(slots[3].content, SlotContent::Free);
+        assert!(!slots[3].present);
+    }
+
+    /// A path that exists but cannot be read is occupied, not free -
+    /// the `Err(_)` arm that is not `NotFound`.
+    #[test]
+    fn unreadable_path_is_foreign() {
+        let dir = tempfile::tempdir().unwrap();
+        // A directory where a save file belongs: `read` fails with
+        // IsADirectory, not NotFound.
+        std::fs::create_dir(slot_path(dir.path(), 0)).unwrap();
+
+        let slots = scan_save_dir(dir.path());
+
+        assert_eq!(slots[0].content, SlotContent::Foreign);
+        assert!(!slots[0].present);
+    }
+
+    /// The classification only matters because it picks the caption -
+    /// pin the end-to-end mapping the player actually sees.
+    #[test]
+    fn corrupt_and_missing_caption_differently() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(slot_path(dir.path(), 0), b"junk").unwrap();
+
+        let slots = scan_save_dir(dir.path());
+        let corrupt = SlotInfoMode::for_slot(&slots[0]);
+        let missing = SlotInfoMode::for_slot(&slots[1]);
+
+        assert_eq!(corrupt, SlotInfoMode::NotLegaiaSave);
+        assert_eq!(missing, SlotInfoMode::FreeBlock);
+        for mode in [SaveSelectMode::Save, SaveSelectMode::Load] {
+            assert_eq!(corrupt.caption(mode), Some("Not a Legend of Legaia save."));
+            assert_ne!(missing.caption(mode), corrupt.caption(mode));
+        }
+        assert_eq!(missing.caption(SaveSelectMode::Save), Some("Able to save."));
+        assert_eq!(missing.caption(SaveSelectMode::Load), Some("No data"));
+    }
 }

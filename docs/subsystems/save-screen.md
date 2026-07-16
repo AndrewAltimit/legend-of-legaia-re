@@ -624,6 +624,15 @@ Ported as `engine-core::save_select::{SlotContent, SlotInfoMode}` +
 `engine-ui::slot_info_caption_draws_for`. The port has no mode `4` (its block
 grid has no Return cell) and models mode `100` as a phase that skips the panel.
 
+The class byte's job falls to whichever scanner builds the `SlotSnapshot`, and
+both answer it the same way: **only positive evidence of absence yields
+`SlotContent::Free`** - a directory frame no save claims (card path,
+`web-viewer::cards`), or a `NotFound` on the slot file (disk path,
+`scan_save_dir`). Every other failure to read a slot means something occupies
+it, so it classifies `SlotContent::Foreign` and captions as mode `2` rather
+than inviting a save into a block whose contents were never read. Both build
+foreign slots through `SlotSnapshot::foreign` so the two paths cannot drift.
+
 ### Title row layout (mode 1, valid save)
 
 All emit at y = `local_34 + 4` (= 142 fully-landed). Pinned via the

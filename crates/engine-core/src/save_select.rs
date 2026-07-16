@@ -117,6 +117,18 @@ impl SlotSnapshot {
         }
     }
 
+    /// A slot occupied by something this game cannot read. Carries no
+    /// preview data (there is none to read), so it differs from
+    /// [`Self::empty`] only in [`SlotContent`] and the label - but that
+    /// difference is what picks the info panel's caption.
+    pub fn foreign(slot: u8) -> Self {
+        Self {
+            content: SlotContent::Foreign,
+            label: format!("Slot {slot}: <unreadable>"),
+            ..Self::empty(slot)
+        }
+    }
+
     /// Format play time as `HH:MM:SS`.
     pub fn play_time_string(&self) -> String {
         let secs = self.play_time_seconds;

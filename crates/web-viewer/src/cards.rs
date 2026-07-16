@@ -140,18 +140,14 @@ impl LegaiaRuntime {
                 // Past here the block IS claimed, so every way of failing to
                 // read it is someone else's save rather than a free block -
                 // a distinction retail captions differently.
-                let foreign = || SlotSnapshot {
-                    content: SlotContent::Foreign,
-                    ..SlotSnapshot::empty(cell)
-                };
                 let Some(sc) = view.sc_block(&cardslot.bytes, block) else {
-                    return foreign();
+                    return SlotSnapshot::foreign(cell);
                 };
                 let Ok(sf) = SaveFile::from_retail_sc_block(sc, 4) else {
-                    return foreign();
+                    return SlotSnapshot::foreign(cell);
                 };
                 let Some(leader) = sf.party.members.first() else {
-                    return foreign();
+                    return SlotSnapshot::foreign(cell);
                 };
                 let hp = leader.hp_mp_sp();
                 let name = leader.name();
