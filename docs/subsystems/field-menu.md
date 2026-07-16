@@ -99,7 +99,7 @@ sprites (RAM prim scan over the `menu_status_town` capture, all CLUT row
 The tab's content renderer (`FUN_801DCAD8` for Status; siblings
 `FUN_801DCA94` / `FUN_801DCB1C`) draws only the label string at the
 content origin `(WX, WY)` with staged text CLUT 7. Engine primitive:
-`engine-render::tab_banner_draws`.
+`engine-ui::tab_banner_draws`.
 
 ## Status satellite windows
 
@@ -361,7 +361,7 @@ Y+0x29)` fed from the persistent AP `+0x10E`. HP / MP value ink comes
 from per-member health-tier color fns (`FUN_800349EC` /
 `FUN_80035EA8`); the full-health tier is the plain CLUT-7 white.
 
-Engine port: `engine-render::field_menu_draws_for` +
+Engine port: `engine-ui::field_menu_draws_for` +
 `field_menu_info_draws_for` (text) and `field_menu_icon_sprites_for`
 (hand cursor, money/time pictograms, LV/HP/MP labels, per-member AP
 gauges via the shared `ap_gauge_sprites` widget). The engine shows the
@@ -430,7 +430,7 @@ Second pass only when the submenu id is settled on the equip screen
 the descriptor table (frame-only container); its picker content is drawn by
 the equip flow outside these window renderers.
 
-Engine port: `engine-render::equip_screen_draws_for` (window contents at
+Engine port: `engine-ui::equip_screen_draws_for` (window contents at
 the offsets above; the candidate list fills the id-23 rect at the shared
 `0xD` list pitch) + `equip_screen_sprites_for` (pictogram column + hand
 cursors from the system-UI atlas), pens disc-parsed from the descriptor
@@ -506,7 +506,7 @@ bottom would pass y = `0xB0`). `FUN_801D2B44` lists the choices at a
 
 Engine port: `engine-core::options` (`OPTIONS_DISPLAY_ROWS`,
 `OptionsSession` Browsing→Editing SM, `options_popup_content_rect`) +
-`engine-render::options_draws_for`; the Sound row drives the audio
+`engine-ui::options_draws_for`; the Sound row drives the audio
 mixer's monaural downmix (`engine-audio AudioOut::set_mono`), the other
 settings persist in the engine's options config file.
 
@@ -557,12 +557,19 @@ the per-format pages.
 
 ## Engine port
 
+Every draw builder named on this page lives in **`legaia-engine-ui`**, not in
+`legaia-engine-render`. `engine-render` re-exports the whole crate
+(`pub use legaia_engine_ui::*`), so an `engine-render::` path still compiles -
+but the code is in `engine-ui`, and the distinction is the point of the split:
+`engine-ui` is the renderer-agnostic, wgpu-free leaf, which is what lets the
+browser play page build these same menus without linking wgpu.
+
 The clean-room engine parses the window-descriptor table from the user's
 disc at boot (`legaia_asset::menu_windows`; the play-window falls back to a
 pinned mirror of the same rects) and frames each screen's window set with
-the reusable 9-slice primitive `engine-render::menu_window_chrome_draws_for`
+the reusable 9-slice primitive `engine-ui::menu_window_chrome_draws_for`
 (the caller-drawn window frame), placed on the shared 320x240 boot-UI stage
-via `engine-render::scale_stage_text_draws`. The frame chrome and the navy
+via `engine-ui::scale_stage_text_draws`. The frame chrome and the navy
 **filigree interior** both come from the system-UI TIM at `PROT.DAT[0x018E0]`
 CLUT row 2 (the same sheet as the save-screen chrome and the UI-icon atlas):
 the gold-bronze 9-slice tiles plus the marbled-blue interior region
@@ -574,7 +581,7 @@ non-streaking approximation. (The save/load screen keeps the gradient-baked
 `panel_interior` variant stretched to its panel height; only the pause-menu
 windows pass `tile_filigree = true` to `nine_slice_panel_into`.) The status
 main panel renders
-through `engine-render::status_screen_draws_for` at the byte-pinned offsets
+through `engine-ui::status_screen_draws_for` at the byte-pinned offsets
 above, hung off the id-28 content origin; the satellite windows through
 `status_satellite_draws_for`; the top-level list / money box / party panel
 through `field_menu_draws_for` + `field_menu_info_draws_for`. The
@@ -587,7 +594,7 @@ are the `0x800732a4` icon-table records verbatim (labels = codes
 the `DAT_801e43f4` slot codes, CLUT row 8; gauge pieces + red digit strip,
 CLUT row 4 - every rect and placement pixel-verified against the golden
 `menu_status_town` capture), staged into the atlas and emitted by
-`engine-render::status_icon_sprites_for` at the pinned status offsets while
+`engine-ui::status_icon_sprites_for` at the pinned status offsets while
 `status_screen_draws_for(.., label_icons = true)` suppresses the ASCII
 stand-ins (the AP text readout and empty-slot equipment text included; an
 occupied slot's item name lands at the retail `+0x10` name offset).
@@ -603,7 +610,7 @@ the party-list pointing hand + Condition-pager triangles
 `0x80073d18` cursor table), the summary LV label and the per-character
 ATR element icons (extension-strip TIM `PROT.DAT[0x10178]` decoded with
 the `PROT.DAT[0x10028]` row-500 palettes). The title tabs wear the
-carved plaque via the shared `engine-render::tab_banner_draws` (cap /
+carved plaque via the shared `engine-ui::tab_banner_draws` (cap /
 tiled body / cap, CLUT row 12) with the label in CLUT-7 white; tab
 windows draw no 9-slice frame. Number fields lay out on the retail
 fixed 8-px digit cells (`num_field_draws`), and the parenthesised
