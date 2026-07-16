@@ -257,6 +257,20 @@ fn load_screen_walks_the_retail_card_flow_off_an_inserted_card() {
         "an empty block must not print save details (got {empty_cell_texts})"
     );
 
+    // Confirming an EMPTY block must do nothing: the session only knows the
+    // phase, so without a host gate this reports Loaded and then fails to
+    // parse a block that holds no save - closing the screen for nothing.
+    rt.play_menu_input(CROSS);
+    let (_, still_texts) = draw_counts(&rt);
+    assert_eq!(
+        still_texts, empty_cell_texts,
+        "X on an empty block must leave the preview up, not load"
+    );
+    assert!(
+        rt.play_menu_take_load_scene().is_empty(),
+        "an empty block must not load anything"
+    );
+
     // Walk the cursor onto the real save in block 3 (= cell 2): the info
     // panel is bound to the focused cell, so its rows appear now.
     let before = rt.play_menu_draws_json(320, 240);

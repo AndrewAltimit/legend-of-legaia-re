@@ -152,6 +152,14 @@ pub struct PlayMenu {
     /// Retail resumes the save in the scene it was written in; the page owns
     /// scene entry, so the menu parks the label here.
     pending_load_scene: Option<String>,
+    /// `(card_slot, blocks)` - the result of the card read, held for as long
+    /// as its grid is up.
+    ///
+    /// This is what the "Now checking" beat is *for*: lifting fifteen SC
+    /// blocks through `SaveFile::from_retail_sc_block` copies the better part
+    /// of a card, so it happens once per read rather than once per frame in
+    /// the draw path.
+    save_grid_cache: Option<(u8, Vec<legaia_engine_core::save_select::SlotSnapshot>)>,
 }
 
 /// The open sub-screen. Every row runs the real [`FieldMenuSubsession`] the
@@ -169,6 +177,7 @@ impl PlayMenu {
             sub: None,
             save_grid_cursor: 0,
             pending_load_scene: None,
+            save_grid_cache: None,
         }
     }
 }
@@ -412,6 +421,12 @@ impl LegaiaRuntime {
             .map(|m| m.sub.is_some())
             .unwrap_or(false);
         if has_sub {
+            // Anything the save screen needs off `&self` (reading the inserted
+            // card) has to happen before the `&mut` borrow below.
+            let save_ctx = self.save_screen_context();
+            self.refresh_card_read_cache(save_ctx);
+            let edge = self.gate_save_screen_edge(save_ctx, edge);
+
             let mut session_done = false;
             if let Some(m) = self.play_menu.as_mut()
                 && let Some(PlaySub::Session(session)) = m.sub.as_mut()
@@ -426,9 +441,14 @@ impl LegaiaRuntime {
                             m.save_grid_cursor = step_grid_cursor(m.save_grid_cursor, edge);
                         }
                         // The grid is not up yet: park the cursor on the first
-                        // cell so each card read starts at the top-left block.
+                        // cell so each card read starts at the top-left block,
+                        // and drop the previous read - the player may be about
+                        // to pick the other port.
                         SelectPhase::Browsing { .. } | SelectPhase::NowChecking { .. } => {
                             m.save_grid_cursor = 0;
+                            if matches!(s.phase(), SelectPhase::Browsing { .. }) {
+                                m.save_grid_cache = None;
+                            }
                         }
                         _ => {}
                     }
@@ -531,6 +551,7 @@ impl LegaiaRuntime {
             {
                 m.sub = Some(sub);
                 m.save_grid_cursor = 0;
+                m.save_grid_cache = None;
             }
         }
     }
@@ -926,6 +947,85 @@ impl LegaiaRuntime {
         texts.extend(d);
     }
 
+    /// `(phase, mode, card_slot)` of an open Load / Save sub-screen, if one is
+    /// up. Read once per input so the card-reading work below can happen
+    /// before the menu's `&mut` borrow.
+    fn save_screen_context(&self) -> Option<(SelectPhase, SaveSelectMode, u8)> {
+        let m = self.play_menu.as_ref()?;
+        let PlaySub::Session(session) = m.sub.as_ref()?;
+        match session.as_ref() {
+            FieldMenuSubsession::Save(s) => Some((s.phase(), s.mode(), s.current_slot())),
+            _ => None,
+        }
+    }
+
+    /// Lift the chosen card's blocks into the menu's cache, once per card
+    /// read. Rebuilds only when the cache is missing or holds a different
+    /// port, so the grid's draw path never re-parses the card.
+    fn refresh_card_read_cache(&mut self, ctx: Option<(SelectPhase, SaveSelectMode, u8)>) {
+        let Some((phase, _, card)) = ctx else { return };
+        if !matches!(
+            phase,
+            SelectPhase::NowChecking { .. }
+                | SelectPhase::SlotPreview { .. }
+                | SelectPhase::ConfirmOverwrite { .. }
+                | SelectPhase::ConfirmDelete { .. }
+        ) {
+            return;
+        }
+        let stale = self
+            .play_menu
+            .as_ref()
+            .map(|m| m.save_grid_cache.as_ref().map(|(c, _)| *c) != Some(card))
+            .unwrap_or(false);
+        if !stale {
+            return;
+        }
+        let blocks = self.card_block_snapshots(card as usize);
+        if let Some(m) = self.play_menu.as_mut() {
+            m.save_grid_cache = Some((card, blocks));
+        }
+    }
+
+    /// Suppress a confirm on an **empty** block while Loading.
+    ///
+    /// The session has no idea what is in the grid - it only knows the phase -
+    /// so a Cross on an empty cell would report `Loaded` and leave the host to
+    /// fail parsing a block that holds no save, closing the screen with
+    /// nothing to show for it. Retail simply refuses. Saving into an empty
+    /// block is legitimate (that is how a new save is made), so this gates
+    /// Load only.
+    fn gate_save_screen_edge(
+        &self,
+        ctx: Option<(SelectPhase, SaveSelectMode, u8)>,
+        edge: u16,
+    ) -> u16 {
+        let Some((SelectPhase::SlotPreview { .. }, SaveSelectMode::Load, _)) = ctx else {
+            return edge;
+        };
+        if !pressed(edge, PadButton::Cross) {
+            return edge;
+        }
+        let focused_has_save = self
+            .play_menu
+            .as_ref()
+            .and_then(|m| {
+                let (_, blocks) = m.save_grid_cache.as_ref()?;
+                Some(
+                    blocks
+                        .get(m.save_grid_cursor as usize)
+                        .map(|b| b.present)
+                        .unwrap_or(false),
+                )
+            })
+            .unwrap_or(false);
+        if focused_has_save {
+            edge
+        } else {
+            edge & !PadButton::Cross.mask()
+        }
+    }
+
     /// Commit a finished Load / Save session against the memory-card rack.
     ///
     /// The session's outcome slot is the **card port** the player picked off
@@ -1076,8 +1176,17 @@ impl LegaiaRuntime {
             | SelectPhase::ConfirmOverwrite { .. }
             | SelectPhase::ConfirmDelete { .. } => {
                 // The picked card's fifteen blocks as retail's 5x3 grid, plus
-                // the focused block's info panel sliding up underneath.
-                let blocks = self.card_block_snapshots(card as usize);
+                // the focused block's info panel sliding up underneath. The
+                // blocks come off the card read's cache - see
+                // `refresh_card_read_cache`; an unread card draws an empty
+                // grid rather than re-parsing here every frame.
+                let empty: Vec<legaia_engine_core::save_select::SlotSnapshot> = Vec::new();
+                let blocks = menu
+                    .save_grid_cache
+                    .as_ref()
+                    .filter(|(c, _)| *c == card)
+                    .map(|(_, b)| b.as_slice())
+                    .unwrap_or(&empty);
                 let cells: Vec<SlotGridCell> = blocks
                     .iter()
                     .map(|b| SlotGridCell {
