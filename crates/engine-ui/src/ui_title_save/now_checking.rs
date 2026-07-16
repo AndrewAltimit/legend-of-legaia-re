@@ -1,13 +1,23 @@
 use crate::*;
 
-/// Retail PSX framebuffer placement of the "Now checking" dialog panel.
-/// Pinned via gold-border pixel scan on
-/// `captures/slot_info_dump/2026-05-18T09-04-46Z/slot_info_fb.png`:
-/// dialog gold borders at fb-y rows 97 (top) and 135 (bottom), spanning
-/// fb-x 70..249 (width 180, height 39). The dialog is horizontally
-/// centered on the 320-wide stage (`(320 - 180) / 2 = 70`).
-pub const NOW_CHECKING_PANEL_POS: (i32, i32) = (70, 97);
-pub const NOW_CHECKING_PANEL_SIZE: (u32, u32) = (180, 39);
+/// Retail PSX framebuffer placement of the "Now checking" dialog panel,
+/// parked. Retail draws it with `FUN_801E36C4(160, 97, 169, 26)` (args traced
+/// live; the `169` is the text-derived width retail computes for
+/// "Do not remove MEMORY CARD"), which lands at `(67, 96, 183, 40)` - see
+/// [`messagebox_rect`].
+///
+/// Cross-checked against the gold-border scan of
+/// `captures/slot_info_dump/.../now_checking_fb`: that capture caught the
+/// dialog **mid-slide** at `center_x = 240`, where the same math predicts
+/// left 147 / rows 96..135 - exactly the box the capture contains.
+///
+/// The slide start / target are `center_x` values, so a caller drives the
+/// slide by passing `slide_offset.0 = center_x - 160` (see
+/// [`now_checking_panel_draws_for`]).
+pub const NOW_CHECKING_PANEL_POS: (i32, i32) = (67, 96);
+/// Companion to [`NOW_CHECKING_PANEL_POS`]. `169 + 14` x `26 + 14`: the panel
+/// drawer adds a uniform 7px border to the size it is asked for.
+pub const NOW_CHECKING_PANEL_SIZE: (u32, u32) = (183, 40);
 
 /// Retail slide-in start position for the "Now checking" dialog's
 /// **center x** before it has slid into place. From Ghidra trace
@@ -134,43 +144,63 @@ pub const CONFIRM_DIALOG_SLIDE_START_Y: i32 = 344;
 /// The y the dialog parks at (retail mode-3 target).
 pub const CONFIRM_DIALOG_SLIDE_TARGET_Y: i32 = 88;
 
-/// Panel size of the confirm dialog.
+/// Geometry of retail's messagebox panel drawer
+/// `FUN_801E36C4(center_x, y, w, h)`: it lands the visible gold-bordered box
+/// at `(center_x - w/2 - 9, y - 1, w + 14, h + 14)` - centred on `center_x`
+/// (including the drawer's own `-2` x shift, see
+/// `ghidra/scripts/funcs/overlay_save_ui_select_801e36c4.txt`) with a uniform
+/// 7px border around the `w x h` it is asked for.
 ///
-/// **Inferred, not independently pinned.** Only the mode-3 slide endpoints
-/// are traced; the dialog is drawn as the same messagebox the "Now checking"
-/// panel is (that one's rect came from a framebuffer scan), so it reuses
-/// [`NOW_CHECKING_PANEL_SIZE`] and the same "panel sits `PANEL_TEXT_RISE`
-/// above the mode's y" relationship. Replace with a scanned rect when a
-/// capture parked on the prompt is available.
-pub const CONFIRM_DIALOG_SIZE: (u32, u32) = NOW_CHECKING_PANEL_SIZE;
-
-/// Offset from a messagebox's mode y to its panel top. Derived from the
-/// "Now checking" pins: mode-0's y is `0x70 = 112` and its scanned panel top
-/// is 97.
-const PANEL_TEXT_RISE: i32 = 15;
-/// First text line's offset from the mode y, from the same pins (line 1 at
-/// 103 vs mode y 112).
-const DIALOG_LINE1_DY: i32 = -9;
-/// Second text line's offset from the mode y (line 2 at 119 vs 112).
-const DIALOG_LINE2_DY: i32 = 7;
-/// Half-width of the gap between the `Yes` and `No` options on the prompt's
-/// second row.
-const CONFIRM_OPTION_GAP: i32 = 28;
-
-/// Panel top-left of the confirm dialog for a given slide `y` (the live
-/// interpolation of [`CONFIRM_DIALOG_SLIDE_START_Y`] ->
-/// [`CONFIRM_DIALOG_SLIDE_TARGET_Y`]).
-fn confirm_dialog_rect(slide_y: i32) -> (i32, i32, i32, i32) {
-    let (w, h) = CONFIRM_DIALOG_SIZE;
-    (
-        CONFIRM_DIALOG_CENTER_X - (w as i32) / 2,
-        slide_y - PANEL_TEXT_RISE,
-        w as i32,
-        h as i32,
-    )
+/// Measured, not modelled: the `+14` sizes are read off captured retail
+/// frames and hold for every save-UI panel (they are independent of where the
+/// box sits), and the `-9` / `-1` were then confirmed by predicting each
+/// panel's pixels and matching them exactly.
+fn messagebox_rect(center_x: i32, y: i32, w: i32, h: i32) -> (i32, i32, i32, i32) {
+    (center_x - w / 2 - 9, y - 1, w + 14, h + 14)
 }
 
-/// Build the [`SpriteDraw`]s for the confirm dialog's 9-slice panel.
+/// The confirm dialog is **two** panels, not one: a near-full-width prompt bar
+/// and a small box below it holding the stacked `Yes` / `No` rows. Both come
+/// from `FUN_801E1C1C` mode 3, whose panel calls were traced live on a parked
+/// prompt as `FUN_801E36C4(160, y, 284, 13)` and
+/// `FUN_801E36C4(160, y + 32, 42, 26)`.
+const CONFIRM_PROMPT_PANEL: (i32, i32) = (284, 13);
+/// Companion to [`CONFIRM_PROMPT_PANEL`]: the `Yes`/`No` box below it.
+const CONFIRM_OPTIONS_PANEL: (i32, i32) = (42, 26);
+/// Offset from the dialog's slide y to the options box's y (mode 3's
+/// `param_4 + 0x20`).
+const CONFIRM_OPTIONS_DY: i32 = 32;
+/// Retail's centring text emitter `FUN_801E3EE0(text, x, y)` draws glyphs at
+/// `(x - width/2, y + 7)`; the `+7` is baked into the emitter.
+const DIALOG_TEXT_BASELINE_DY: i32 = 7;
+/// The prompt is centred at `param_3 + 0x1a`, right of the dialog's centre -
+/// the left of the bar carries the `No.NN` block badge.
+const CONFIRM_PROMPT_CENTER_DX: i32 = 26;
+/// Both option rows are centred at `param_3 + 4` (they are stacked, not
+/// flanking), at `param_4 + 0x20` and `param_4 + 0x30`.
+const CONFIRM_OPTION_CENTER_DX: i32 = 4;
+/// `Yes` row offset from the slide y (mode 3's `param_4 + 0x20`).
+const CONFIRM_OPTION_YES_DY: i32 = 32;
+/// `No` row offset from the slide y (mode 3's `param_4 + 0x30`).
+const CONFIRM_OPTION_NO_DY: i32 = 48;
+
+/// Prompt-bar rect of the confirm dialog for a given slide `y`.
+/// At the parked `y = 88` this is `(9, 87, 298, 27)` - matching a scan of the
+/// retail framebuffer with the prompt parked.
+fn confirm_prompt_rect(slide_y: i32) -> (i32, i32, i32, i32) {
+    let (w, h) = CONFIRM_PROMPT_PANEL;
+    messagebox_rect(CONFIRM_DIALOG_CENTER_X, slide_y, w, h)
+}
+
+/// `Yes`/`No` box rect of the confirm dialog for a given slide `y`.
+/// At the parked `y = 88` this is `(130, 119, 56, 40)` - matching the same
+/// scan.
+fn confirm_options_rect(slide_y: i32) -> (i32, i32, i32, i32) {
+    let (w, h) = CONFIRM_OPTIONS_PANEL;
+    messagebox_rect(CONFIRM_DIALOG_CENTER_X, slide_y + CONFIRM_OPTIONS_DY, w, h)
+}
+
+/// Build the [`SpriteDraw`]s for the confirm dialog's two 9-slice panels.
 /// `slide_y` is the dialog's live y (interpolate
 /// [`CONFIRM_DIALOG_SLIDE_START_Y`] -> [`CONFIRM_DIALOG_SLIDE_TARGET_Y`]
 /// against the session's slide timer; pass the target for the static case).
@@ -180,23 +210,18 @@ pub fn confirm_dialog_panel_draws_for(
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
-    let mut out = Vec::with_capacity(16);
-    nine_slice_panel_into(
-        &mut out,
-        rects,
-        confirm_dialog_rect(slide_y),
-        stage_origin,
-        stage_scale,
-        false,
-    );
+    let mut out = Vec::with_capacity(32);
+    for rect in [confirm_prompt_rect(slide_y), confirm_options_rect(slide_y)] {
+        nine_slice_panel_into(&mut out, rects, rect, stage_origin, stage_scale, false);
+    }
     out
 }
 
-/// Build the [`TextDraw`]s for the confirm dialog: the `prompt` on the first
-/// line and a `Yes` / `No` row on the second, both horizontally centred on
-/// [`CONFIRM_DIALOG_CENTER_X`] the way retail's `FUN_801E3EE0` centres every
-/// messagebox line. `cursor` selects the highlighted option (0 = Yes,
-/// 1 = No).
+/// Build the [`TextDraw`]s for the confirm dialog: the `prompt` across the
+/// bar, then `Yes` and `No` **stacked** in the box below it. Retail centres
+/// each line with `FUN_801E3EE0(text, x, y)` (glyphs at `x - width/2`,
+/// `y + 7`), the prompt at the dialog's centre `+26` and both option rows at
+/// centre `+4`. `cursor` selects the highlighted option (0 = Yes, 1 = No).
 pub fn confirm_dialog_text_draws_for(
     font: &legaia_font::Font,
     prompt: &str,
@@ -224,38 +249,164 @@ pub fn confirm_dialog_text_draws_for(
         }
     };
 
-    let centered = |font: &legaia_font::Font, text: &str| {
-        CONFIRM_DIALOG_CENTER_X - (font.layout_ascii(text).advance_x as i32 / 2)
+    // Retail's emitter centres on the passed x and drops the glyphs 7px:
+    // (x - width/2, y + 7).
+    let centered_at = |font: &legaia_font::Font, text: &str, center_x: i32| {
+        center_x - (font.layout_ascii(text).advance_x as i32 / 2)
     };
     emit(
         prompt,
-        centered(font, prompt),
-        slide_y + DIALOG_LINE1_DY,
+        centered_at(
+            font,
+            prompt,
+            CONFIRM_DIALOG_CENTER_X + CONFIRM_PROMPT_CENTER_DX,
+        ),
+        slide_y + DIALOG_TEXT_BASELINE_DY,
         SAVE_SELECT_TITLE_COLOR,
     );
 
-    // Yes / No, flanking the centre; the picked one takes the bright menu
-    // ink, the other stays dim.
-    let row_y = slide_y + DIALOG_LINE2_DY;
+    // Yes over No, both centred on the same x inside the small box; the
+    // picked one takes the bright menu ink, the other stays dim.
     let dim: [f32; 4] = [
         SAVE_SELECT_TITLE_COLOR[0] * 0.55,
         SAVE_SELECT_TITLE_COLOR[1] * 0.55,
         SAVE_SELECT_TITLE_COLOR[2] * 0.55,
         1.0,
     ];
-    for (i, opt) in ["Yes", "No"].iter().enumerate() {
-        let w = font.layout_ascii(opt).advance_x as i32;
-        let x = if i == 0 {
-            CONFIRM_DIALOG_CENTER_X - CONFIRM_OPTION_GAP - w
-        } else {
-            CONFIRM_DIALOG_CENTER_X + CONFIRM_OPTION_GAP
-        };
+    let option_center_x = CONFIRM_DIALOG_CENTER_X + CONFIRM_OPTION_CENTER_DX;
+    for (i, (opt, dy)) in [("Yes", CONFIRM_OPTION_YES_DY), ("No", CONFIRM_OPTION_NO_DY)]
+        .iter()
+        .enumerate()
+    {
         let color = if i as u8 == cursor {
             SAVE_SELECT_TITLE_COLOR
         } else {
             dim
         };
-        emit(opt, x, row_y, color);
+        emit(
+            opt,
+            centered_at(font, opt, option_center_x),
+            slide_y + dy + DIALOG_TEXT_BASELINE_DY,
+            color,
+        );
     }
     out
+}
+
+#[cfg(test)]
+mod messagebox_geometry_tests {
+    use super::*;
+
+    /// The panel drawer's geometry, checked against retail pixels from three
+    /// independent panels on captured frames. Each case is
+    /// `FUN_801E36C4(center_x, y, w, h)` args traced live off the running
+    /// game, paired with the gold-border box measured in the same frame.
+    #[test]
+    fn messagebox_rect_matches_retail_captures() {
+        // The Load/Save header tab (slide mode 1, held at (48, 6)).
+        // Measured: border rows 5..31.
+        assert_eq!(messagebox_rect(48, 6, 65, 13), (7, 5, 79, 27));
+
+        // "Now checking" (mode 0) mid-slide, center_x = 240. The archived
+        // capture that pinned this dialog caught it part-way in, and its box
+        // measured left = 147, rows 96..135 - which is exactly what the model
+        // predicts, from a capture taken long before the model existed.
+        assert_eq!(messagebox_rect(240, 97, 169, 26), (147, 96, 183, 40));
+
+        // The same dialog parked (center_x = 160).
+        assert_eq!(messagebox_rect(160, 97, 169, 26), (67, 96, 183, 40));
+    }
+
+    /// The published NowChecking constants must BE the parked rect, and the
+    /// slide-offset path must reproduce the mid-slide capture: the caller
+    /// passes `center_x - 160` as the x offset, so `center_x = 240` has to
+    /// land on the left 147 that capture actually contains.
+    #[test]
+    fn now_checking_constants_match_the_capture() {
+        assert_eq!(
+            (
+                NOW_CHECKING_PANEL_POS,
+                (
+                    NOW_CHECKING_PANEL_SIZE.0 as i32,
+                    NOW_CHECKING_PANEL_SIZE.1 as i32
+                )
+            ),
+            ((67, 96), (183, 40))
+        );
+        let mid_slide_center_x = 240;
+        let slide_offset_x = mid_slide_center_x - NOW_CHECKING_SLIDE_TARGET_X;
+        assert_eq!(NOW_CHECKING_PANEL_POS.0 + slide_offset_x, 147);
+    }
+
+    /// The confirm dialog is two panels. Both rects are measured off a
+    /// framebuffer captured with the prompt parked at its retail rest
+    /// position (slide target y = 88): the prompt bar's gold border spans
+    /// rows 87..113 / cols 9..306, and the Yes/No box rows 119..158 /
+    /// cols 130..185.
+    #[test]
+    fn confirm_dialog_panels_match_parked_capture() {
+        let y = CONFIRM_DIALOG_SLIDE_TARGET_Y;
+        assert_eq!(confirm_prompt_rect(y), (9, 87, 298, 27));
+        assert_eq!(confirm_options_rect(y), (130, 119, 56, 40));
+    }
+
+    /// Both panels ride the slide together: at the start of the slide the
+    /// dialog is below the 240-line stage, which is what makes it slide *up*
+    /// into view.
+    #[test]
+    fn confirm_dialog_panels_start_offstage() {
+        let y = CONFIRM_DIALOG_SLIDE_START_Y;
+        let (_, prompt_top, _, _) = confirm_prompt_rect(y);
+        let (_, options_top, _, _) = confirm_options_rect(y);
+        assert!(prompt_top >= 240, "prompt starts below the stage");
+        assert!(options_top > prompt_top, "options box rides below the bar");
+    }
+
+    /// Retail stacks Yes over No at a single centre inside the small box -
+    /// it does not flank the dialog centre. Pinning this because the box is
+    /// only 42px wide: any flanking layout would sit outside its own panel.
+    #[test]
+    fn confirm_options_are_stacked_at_one_centre() {
+        let font = legaia_font::synthetic_for_tests();
+        let draws = confirm_dialog_text_draws_for(
+            &font,
+            "Do you wish to save?",
+            0,
+            CONFIRM_DIALOG_SLIDE_TARGET_Y,
+            (0, 0),
+            1,
+        );
+        assert!(!draws.is_empty());
+
+        // Group glyph rows by y; the two option rows must be 16px apart (mode
+        // 3's +0x20 / +0x30) and share a horizontal span.
+        let row_of = |dy: i32| -> Vec<&TextDraw> {
+            let want = CONFIRM_DIALOG_SLIDE_TARGET_Y + dy + DIALOG_TEXT_BASELINE_DY;
+            draws.iter().filter(|d| d.dst.1 == want).collect()
+        };
+        let yes = row_of(CONFIRM_OPTION_YES_DY);
+        let no = row_of(CONFIRM_OPTION_NO_DY);
+        assert!(!yes.is_empty(), "Yes row present at slide_y+32+7");
+        assert!(!no.is_empty(), "No row present at slide_y+48+7");
+
+        let left = |row: &[&TextDraw]| row.iter().map(|d| d.dst.0).min().unwrap();
+        // Both rows centre on the same x, so their left edges differ only by
+        // the two words' width difference - they never straddle the centre.
+        let (yes_l, no_l) = (left(&yes), left(&no));
+        assert!(
+            (yes_l - no_l).abs() < 12,
+            "Yes/No are stacked at one centre, got left x {yes_l} vs {no_l}"
+        );
+
+        // And both sit inside the options panel they are drawn in.
+        let (px, _, pw, _) = confirm_options_rect(CONFIRM_DIALOG_SLIDE_TARGET_Y);
+        for d in yes.iter().chain(no.iter()) {
+            assert!(
+                d.dst.0 >= px && d.dst.0 < px + pw,
+                "option glyph at x={} escapes the options panel {px}..{}",
+                d.dst.0,
+                px + pw
+            );
+        }
+    }
 }

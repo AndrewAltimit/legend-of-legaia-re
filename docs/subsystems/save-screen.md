@@ -15,7 +15,7 @@ both confirmed as the menu overlay by function-address identity; decompiled func
 - [Sub-screen function pointer table](#sub-screen-function-pointer-table) - [load/save dispatch](#loadsave-dispatch-fun_801dd35c) · [libcd I/O state machine](#libcd-io-state-machine-fun_801e3294) · [save-block directory enumeration](#save-block-directory-enumeration-fun_801e1208) · [per-character status preview](#per-character-status-preview-fun_801d9c14-sub-screen-0x14)
 - [Relationship to `legaia_save`](#relationship-to-legaia_save) · [story-flag persistence vs. scratchpad word](#story-flag-persistence-vs-scratchpad-word) · [retail SC block layout](#retail-sc-block-layout)
 - [Sprite asset sources (Continue → Load screen)](#sprite-asset-sources-continue--load-screen) - [9-slice tile rects](#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2) · [how the panel TIM was pinned](#how-the-panel-tim-was-pinned)
-- [Slide-in UI primitive (`FUN_801E1C1C`)](#slide-in-ui-primitive-fun_801e1c1c) · [bottom info panel renderer (`FUN_801E08D8`)](#bottom-info-panel-renderer-fun_801e08d8)
+- [Slide-in UI primitive (`FUN_801E1C1C`)](#slide-in-ui-primitive-fun_801e1c1c) · [messagebox panel geometry (`FUN_801E36C4`)](#messagebox-panel-geometry-fun_801e36c4) · [bottom info panel renderer (`FUN_801E08D8`)](#bottom-info-panel-renderer-fun_801e08d8)
 
 ## Overlay structure
 
@@ -530,7 +530,69 @@ animations:
 
 - Slot composite pill: `(136, 96) → (24, 40)` (matches retail mode-2 with the inlined `-24` x-shift applied to the start).
 - NowChecking dialog: panel + text both interpolate `x ∈ {416 → 160}` via `now_checking_{panel,text}_draws_for`'s new `slide_offset` parameter.
-- Confirm dialog ("Do you wish to save?"): `confirm_dialog_{panel,text}_draws_for` interpolate `y ∈ {344 → 88}` (mode 3). Only the slide endpoints are traced; the dialog's **panel rect is inferred** from the framebuffer-scanned NowChecking box (same messagebox family) and is marked as such at the constants.
+- Confirm dialog ("Do you wish to save?"): `confirm_dialog_{panel,text}_draws_for` interpolate `y ∈ {344 → 88}` (mode 3), drawing **two** panels - see [Messagebox panel geometry](#messagebox-panel-geometry-fun_801e36c4).
+
+## Messagebox panel geometry (`FUN_801E36C4`)
+
+Every save-UI panel rect flows through one drawer:
+
+```c
+void FUN_801E36C4(int center_x, int y, int w, int h) {
+  if (y < 0xf1) {                       // off-stage panels are skipped
+    func_0x80034b6c(0x44);              // box style
+    func_0x8002c69c((center_x - w / 2) + -2, y + 6, w, h);
+  }
+}
+```
+
+Its `x` is a **centre**, not a left edge, and the visible gold-bordered box is
+a uniform 7px larger than the `w x h` asked for:
+
+```
+visible = (center_x - w/2 - 9,  y - 1,  w + 14,  h + 14)
+```
+
+The `+14` sizes are measured off captured retail frames and are independent of
+where a box sits, which is what makes them safe to generalise; the `-9` / `-1`
+then predict each panel's pixels exactly. Verified against three panels: the
+header tab `(48, 6, 65, 13)` → rows 5..31; the "Now checking" dialog mid-slide
+at `center_x = 240` → left 147 (matching the older capture that pinned that
+dialog, taken long before this model); and both confirm-dialog panels below.
+
+### Confirm dialog panels (mode 3)
+
+The confirm prompt is **two** panels plus stacked options - not one box with
+Yes/No side by side. Mode 3 draws, at slide y `param_4`:
+
+| Element | Retail call | Parked rect (`y = 88`) |
+|---|---|---|
+| Prompt bar | `FUN_801E36C4(160, y, 284, 13)` | `(9, 87, 298, 27)` |
+| Prompt text | `FUN_801E3EE0(msg, 160 + 0x1a, y)` | centred x=186, glyph top y=95 |
+| `Yes` row | `FUN_801E3EE0(.., 160 + 4, y + 0x20)` | centred x=164, glyph top y=127 |
+| `No` row | `FUN_801E3EE0(.., 160 + 4, y + 0x30)` | centred x=164, glyph top y=143 |
+| Options box | `FUN_801E36C4(160, y + 0x20, 42, 26)` | `(130, 119, 56, 40)` |
+| Row cursor | `func_0x8002c488(160 - 0x1a, y + ((_DAT_801f01fc + 1) & 1) * 0x10 + 0x24, 0x4e)` | x=134, y=124 (Yes) / 140 (No) |
+
+The prompt bar spans nearly the full stage because its left end carries the
+`No.NN` block badge; the message is centred in the remaining space, hence the
+`+0x1a` shift. The options box is only 42px wide, so the two rows share one
+centre - any flanking layout would fall outside the panel it belongs to.
+
+Both rects are measured from a framebuffer captured with the prompt parked
+(`scripts/pcsx-redux/autorun_confirm_dialog_dump.lua` walks a field state to
+the prompt and grabs the frame; `scan_panel_rects.py` measures the borders).
+Two traps that capture has to clear, both of which silently produce a
+confident wrong answer:
+
+- **The mode-3 slide timer `DAT_801ef1a4` is uninitialised** until the confirm
+  sub-screen first runs, so polling it as "is the dialog up?" reads stale
+  overlay bytes that compare `>= 0x1000` and capture the wrong screen. Trigger
+  on a breakpoint at `FUN_801E1C1C` with `a0 == 3` instead.
+- **`takeScreenShot` returns the displayed buffer**, which lags the draw (a
+  tick spans several vsyncs at 30fps). Capturing on the first parked vsync
+  yields a *last-slide-step* frame whose panels sit one 16px step low per
+  frame of lag - a plausible-looking rect that is simply wrong. The dialog is
+  static once parked, so settle for a dozen vsyncs first.
 
 **Tick rate is load-bearing.** Every timer here - the NowChecking countdown,
 each slide - counts 60 Hz frames, so a host must tick the session on a real

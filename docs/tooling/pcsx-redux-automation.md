@@ -338,6 +338,25 @@ typo'd symbol fails CI rather than the probe run.
 
 ### Things that catch people out
 
+- **A framebuffer capture shows the *displayed* buffer, which lags the draw.**
+  `PCSX.GPU.takeScreenShot()` returns what is on screen, and a game tick spans
+  several vsyncs at 30fps, so grabbing on the first vsync after the frame you
+  want yields an *earlier* frame. Mid-animation this is silent and dangerous:
+  the capture looks right and measures wrong (the confirm-dialog panels came
+  out one 16px slide step low per frame of lag). Capture something static, or
+  let the state settle for a dozen vsyncs and confirm it stopped moving.
+- **An uninitialised global is not a state flag.** Overlay-resident animation
+  timers and their kin hold stale bytes from whatever last used that address
+  until their screen first runs, so polling one as "is this UI up?" happily
+  compares against garbage and captures the wrong screen with full confidence
+  (`DAT_801ef1a4` reads `0x8e45b450` on the field). Trigger on an exec
+  breakpoint at the code that draws the thing instead - it cannot fire unless
+  the thing is really being drawn, and it hands you the live arguments too.
+- **Verify a save state's identity before blaming the probe.** Slots get
+  overwritten, so a filename or an old comment ("sstate9 = the load screen")
+  rots silently; the symptom is a breakpoint that never fires.
+  `autorun_identify_state.lua` answers it in one run. Prefer the fingerprinted
+  [library](#save-state-library-immutable-backups) over live slots.
 - **Breakpoint width matters.** `lbu` from a watched word triggers
   only when the width-1 byte falls inside the breakpoint's range.
   Arming a width-4 probe at an LW target works; arming a width-1
@@ -691,6 +710,9 @@ the longer ones (`Probes` + `What it answered`) are written out as
 
 | Script | What it answered |
 |---|---|
+| `autorun_pad_walk.lua` | Drives a scripted pad sequence (`LEGAIA_PAD_SCRIPT="<vsync>:<BUTTON>[:<hold>]"` list) and traces where it lands: every `game_mode` transition, optional exec-BP watches (`LEGAIA_WATCH_FN`), player position, and the distinct pad words seen. The way to reach a screen no save state is parked on. The pad-word census is the load-bearing part: >1 distinct word proves the presses reached the game, so a walk that does nothing can be told apart from one whose buttons never arrived. |
+| `autorun_identify_state.lua` | Says what a save state actually **is** - `game_mode`, CDNAME scene, and which overlay entry points tick. First aid for "my breakpoint never fired", which usually means the state is not on the screen its filename implies (states get overwritten; see [the save-state library](#save-state-library-immutable-backups)). |
+| `autorun_confirm_dialog_dump.lua` | Captures the save screen's confirm prompt ("Do you wish to load?") parked at its retail rest position, and logs the panel drawer's live args. Pinned both `FUN_801E1C1C` mode-3 panels - see [`save-screen.md`](../subsystems/save-screen.md#messagebox-panel-geometry-fun_801e36c4). Walks field → pause menu (**SELECT**) → Save/Load row → block, since no state is parked on that screen. Pairs with `scan_panel_rects.py` (gold-border rect measurement) and `decode_load_screen.py --stem`. |
 | `autorun_world_map_probe.lua` | Pins the world-map POLY_FT4 emitter's one-shot gate flag + the three-param block driving it. Reads at `_DAT_8007BCD0..D8` (gate-arm params), gate flag `_DAT_801F351C` writes, and four `FUN_801D7EA0` entries. |
 | `autorun_ocean_moveimage.lua` | Exec-BP trace on the three libgpu transfer wrappers (`MoveImage FUN_80058490` / `LoadImage` / `StoreImage`) logging vsync tick + source RECT (read from scratchpad `0x1F8000xx`) + destination per call, plus a per-vsync `dt` (`0x1F800393`) column and in-capture save-state snapshots for offline VRAM ground truth. Confirmed the kingdom-slot-5 CLUT-walk cadence on all three kingdoms: constant `ceil(hold/dt)*dt` intervals, reset-to-zero accumulators, shared spawn epoch (see [`world-map.md`](../subsystems/world-map.md)). Interpreter mode only (no `--fast`). |
 | `autorun_world_map_fog_probe.lua` | Captures the per-Z fog-tint LUT the overlay leaves at `0x801F7644..0x801F8690` consult on every vertex. Reads at five fog fields (GP-relative `-0x2E0 / -0x2DC / -0x2D1 / -0x2BC / +0x90`) + 1 KiB LUT dump. |

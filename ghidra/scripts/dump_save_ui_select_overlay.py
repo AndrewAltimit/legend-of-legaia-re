@@ -52,6 +52,13 @@ TARGETS = [
                  # view_mode. Decides which caption an empty / foreign slot
                  # gets. NB the same VA in overlay_battle_action.bin is an
                  # unrelated function - dump it from THIS overlay.
+    "801e36c4",  # messagebox panel drawer, FUN_801E36C4(x, y, w, h). Every
+                 # save-UI panel rect flows through it: the "Now checking"
+                 # box (mode 0), the Load/Save tabs (mode 1) and both of the
+                 # confirm dialog's panels (mode 3). Pins what w/h mean.
+    "801e3ee0",  # centring text emitter the panel calls sit next to; dumped
+                 # from THIS overlay to pin its return value (the mode-0
+                 # panel width is computed from it).
 ]
 
 OUT_DIR = "/scripts/funcs"
