@@ -18,7 +18,7 @@ The per-frame controller is `FUN_801cf470` (the overlay's dance tick). It is a `
 | `3` | Reset per-dancer run state: the three **triangle-stock** counters `DAT_801d534c`/`+4`/`+8` are set to `3`, the triangle-schedule cursors `DAT_801d574c` cleared, a start voice cue is queued. **Confirmed** |
 | `4` | Intro-in: ramps the fade/curtain accumulator `DAT_801d515c` up to `0x3c`. **Confirmed** |
 | `5` | Intro-out: ramps `DAT_801d515c` back to 0, then calls the actor-start helper and advances. **Confirmed** |
-| `6` | Start BGM (`func_0x80026478` on a sequence id), zero the beat counters `DAT_801d581c` / `DAT_801d5820` / `DAT_801d5824`, set the lead-in countdown `DAT_801d513c = 4`. **Confirmed** |
+| `6` | Start BGM, zero the beat counters `DAT_801d581c` / `DAT_801d5820` / `DAT_801d5824`, set the lead-in countdown `DAT_801d513c = 4`. **Confirmed** (the `func_0x80026478` call in this state is the **actor sound-source attach / re-pan** primitive, `FUN_80026478` in [`functions.md`](../reference/functions.md) - it enables the dancer's positional voice, not the BGM stream; the SEQ itself is the pre-staged `music_01` entry loaded by the mode-24 entry path below). |
 | `7` | Lead-in countdown: decrement `DAT_801d513c`; when it reaches 0 jump straight to the play state `10`. **Confirmed** |
 | `10` (`0xa`) | **Main play loop.** Per-frame the beat counters advance and `FUN_801d231c` draws the HUD; the song-end test runs here. Judging happens in `FUN_801d1af4`, called once per frame **for every dancer** from the actor handler `FUN_801d1358`. **Confirmed** |
 | `11` (`0xb`) | "Finish" banner: pushes four banner sprite primitives, advances. **Confirmed** |
@@ -251,8 +251,24 @@ exactly three PROT loads, all sound:
 | raw | extraction | role |
 |---|---|---|
 | `0x4D1` | **1231** | the dance's SFX sample bank (`VABp`) |
-| `0x41A` | **1048** | BGM (`music_01`) |
-| `0x420` | **1054** | the alternate BGM (a branch on `DAT_801D514C` picks the song) |
+| `0x41A` | **1048** | BGM (`music_01` slot 58) |
+| `0x420` | **1054** | the alternate BGM (`music_01` slot 64; a branch on `DAT_801D514C` picks the song) |
+
+Both BGM entries are genuine `music_01` slots (the raw-loader `-2` skew is the
+same one that resolves the Baka Fighter overture correctly: raw `0x415` = slot
+53). By the sound-test join their slots (58 / 64) label as `M114` / `M119`,
+whose debug working titles ("ordinary town 2" / "opening character act 2")
+read oddly for a disco - but that join is confirmed contiguous through the
+`pochi` slots, and the disc bytes settle it: **both entries are short ~33-beat
+loops** (extraction 1048 = 291 notes over 15 840 ticks, 1054 = 266 over
+15 860; both at 480 ppqn ≈ one 32-beat step-chart cycle), unlike the
+full-length Sol-disco tracks in the same bank (`M115` slot 59 = 2987 notes /
+281 beats, `M116` slot 60 = 733 / 121). So these two are purpose-built dance
+loops sized to the chart, whatever their sound-test working title - the
+overlay loads exactly them, and the engine/site play exactly them. The
+Sol-disco *floor* tracks (`M112`/`M115`/`M116`/`M120`) are the host casino
+scene's op-`0x35` BGM around the minigame, not overlay loads; the site's dance
+page offers all of them as a jukebox on top of these two.
 
 The art it draws with is nevertheless dance-specific: the mode-24 entry path
 stages **extraction PROT 1230** (`other7`, a `prot::timpack` of **31 TIMs** -
@@ -475,7 +491,8 @@ each pick keys VAB **program 1, tones `2r` and `2r + 1` together**, at note
   is on its idle / dance loop), and the port times the window off the dancer's
   spin instead - see [the wildcard](#the-triangle-wildcard-the-groovy-move).
 - Which of `DAT_801D514C`'s modes picks BGM 1048 vs 1054 (the branch is
-  pinned, the arm-to-song mapping is not).
+  pinned, the arm-to-song mapping is not; both are short chart-sized loops -
+  see the PROT-load table above).
 
 ## See also
 

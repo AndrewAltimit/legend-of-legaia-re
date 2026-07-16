@@ -8,6 +8,8 @@ This matches the design - the arena reuses the battle engine wholesale (its figh
 
 The whole contest runs on a shared context block at `_DAT_8007bd24` (referred to below as **ctx**). The fighters are ordinary battle actors reached through the global actor pointer table `&DAT_801c9370` (the same table the main battle system uses), so a "card play" ultimately resolves through the battle action machinery against actor records.
 
+**BGM.** The arena loads **no BGM track of its own** - a full sweep of the muscle-dome function dumps finds no streaming-loader call (`8001fc00`) and no BGM-id write. It inherits the **battle theme** its entry set, exactly as it reuses the battle engine wholesale: the music is whichever `music_01` battle track the mode-24 sub-id-5 arena setup (the `0977` door/init slot) had playing when the contest starts. There is no dedicated muscle-dome cue to pin; this is the same "host-scene-inherited BGM" shape as the [slot machine](minigame-slot-machine.md), one class up (battle rather than field). The engine/site can represent it with the standard battle theme (`M26B1`, global BGM `2026`).
+
 ## Match state machine
 
 The per-frame controller is `FUN_801d0748` (`overlay_muscle_dome_801d0748.txt`). It is the largest function in the overlay and drives the entire contest:

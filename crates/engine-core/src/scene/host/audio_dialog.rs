@@ -38,6 +38,24 @@ impl SceneHost {
         }
     }
 
+    /// Raw `music_01` bank entry bytes for a **global-pool** BGM id
+    /// (`>= 2000`): the whole `[VAB][SEQ]` pair the director uploads + plays
+    /// itself (via [`BgmDirector::start_owned_vab`]). Global ids are
+    /// `2000 + sound-test slot`, and each slot is extraction PROT
+    /// `MUSIC_BANK_EXTRACTION_BASE + slot` (see
+    /// [`crate::music_labels`]). Returns `None` for scene-local ids, ids past
+    /// the bank, or when the entry can't be read. This is the global half of
+    /// the retail `FUN_800243F0` resolver that [`Self::bgm_seq_bytes`] left
+    /// unmodeled - every real music cue (field, battle, minigame) is a global
+    /// track, so this is the path most BGM actually takes.
+    pub fn music_bank_entry_bytes(&self, bgm_id: u16) -> Result<Option<Arc<Vec<u8>>>> {
+        let Some(slot) = crate::music_labels::sound_test_index_for_bgm_id(bgm_id) else {
+            return Ok(None);
+        };
+        let entry = crate::music_labels::MUSIC_BANK_EXTRACTION_BASE + slot;
+        Ok(self.index.entry_bytes(entry).ok())
+    }
+
     /// First VAB-bearing entry in the scene, ready for parsing as a sound
     /// bank. Mirrors the asset chain's "load the scene's bank before the
     /// first sound plays" pre-pass. Returns `None` when no VAB-tagged
@@ -106,11 +124,18 @@ impl SceneHost {
                         if let Some(bytes) = self.bgm_seq_bytes(text_id)? {
                             director.start(text_id, &bytes);
                             acted += 1;
+                        } else if let Some(entry) = self.music_bank_entry_bytes(text_id)? {
+                            // Global-pool track: it brings its own VAB.
+                            director.start_owned_vab(text_id, &entry);
+                            acted += 1;
                         }
                     }
                     9 => {
                         if let Some(bytes) = self.bgm_seq_bytes(text_id)? {
                             director.queue(text_id, &bytes);
+                            acted += 1;
+                        } else if let Some(entry) = self.music_bank_entry_bytes(text_id)? {
+                            director.queue_owned_vab(text_id, &entry);
                             acted += 1;
                         }
                     }

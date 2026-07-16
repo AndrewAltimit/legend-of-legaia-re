@@ -208,6 +208,11 @@ pub struct Sequencer {
     active: Vec<ActiveNote>,
     /// Master sequencer volume (libsnd `mvol`), 0..=127.
     master_vol: u8,
+    /// Monotonic count of loop rewinds. Bumped on every [`Self::rewind_to`],
+    /// so an outside observer can detect a loop-back even when the playhead
+    /// tick peaks and resets within a single sample (a marker-less EOT whose
+    /// last event is zero-delta). Read via [`Self::loop_count`].
+    loop_count: u64,
 }
 
 impl Sequencer {
@@ -236,6 +241,7 @@ impl Sequencer {
             channels: [ChannelState::default(); CHANNELS],
             active: Vec::new(),
             master_vol: 127,
+            loop_count: 0,
         }
     }
 
@@ -276,6 +282,15 @@ impl Sequencer {
     /// rewind).
     pub fn playhead_ticks(&self) -> u64 {
         self.abs_tick
+    }
+
+    /// Monotonic count of loop rewinds so far. Increments each time the
+    /// sequencer loops back (an in-stream marker, an EOT with a loop target,
+    /// or an external [`Self::rewind_to`]). Lets a caller detect loop-backs
+    /// robustly - unlike [`Self::playhead_ticks`], which can peak and reset
+    /// within one sample on a zero-delta EOT and so hide the boundary.
+    pub fn loop_count(&self) -> u64 {
+        self.loop_count
     }
 
     /// Current tempo in BPM.
@@ -394,6 +409,7 @@ impl Sequencer {
         self.accum = 0;
         self.sample_carry = 0.0;
         self.finished = false;
+        self.loop_count = self.loop_count.wrapping_add(1);
         // Recompute abs_tick from the rewound position.
         self.abs_tick = self.seq.events[..to.min(self.seq.events.len())]
             .iter()

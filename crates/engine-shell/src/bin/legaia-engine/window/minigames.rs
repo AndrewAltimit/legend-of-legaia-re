@@ -95,6 +95,11 @@ impl PlayWindowApp {
         match legaia_engine_core::dance::DanceGame::from_overlay(&loaded, long_song) {
             Some(game) => {
                 self.session.host.world.enter_dance(game);
+                // The dance overlay loads one of two mode-selected chart loops
+                // (global BGM 2058/2064 = extraction 1048/1054). The exact
+                // mode->song arm is unpinned; approximate it by song length.
+                self.session
+                    .start_global_bgm(if long_song { 2064 } else { 2058 });
                 true
             }
             None => {
@@ -282,6 +287,9 @@ impl PlayWindowApp {
             fight.gold_reward()
         );
         self.session.host.world.enter_baka_fighter(fight);
+        // The duel overlay init (FUN_801CF00C) loads its own track: global
+        // BGM 2053 = music_01 slot 53, the boss overture.
+        self.session.start_global_bgm(2053);
         true
     }
 
@@ -348,6 +356,11 @@ impl PlayWindowApp {
             "muscle: contest started - hand commands {commands:02x?}, player costs {player_costs:?}"
         );
         self.session.host.world.enter_muscle_dome(session);
+        // The arena loads no track of its own - it reuses the battle engine,
+        // so it plays a battle theme. Use the standard random-battle theme
+        // (global BGM 2026 = music_01 slot 26, M26B1); see
+        // docs/subsystems/minigame-muscle-dome.md.
+        self.session.start_global_bgm(2026);
         true
     }
 }

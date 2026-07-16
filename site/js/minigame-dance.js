@@ -77,7 +77,6 @@ window.MgDance = (function () {
     let body = null;         /* the 3D dancer-body scene (null = HUD only) */
     let sfx = null;          /* { ctx, buffers, stings } */
     let sfxIds = null;
-    let bgm = null;          /* { buffer, src } */
     let bgmInfo = null;
 
     /* ---- run-local presentation state ---- */
@@ -500,40 +499,38 @@ window.MgDance = (function () {
       }
     }
 
-    /* Render + start the real BGM (SEQ+VAB through the clean-room SPU).
-     * Rendering ~40 s of SPU output blocks for a moment, so the caller
-     * shows a status line first and calls this from a timeout. */
+    /* The disco jukebox track the dance plays. The dance overlay itself loads
+     * one of two mode-selected tracks (extraction 1048/1054 = global BGM
+     * 2058/2064); the page can swap in any Sol-disco-floor track from the same
+     * bank via setBgmTrack(). Default = overlay track A. */
+    let bgmTrack = 2058;
+    let bgmSrc = null;
+
+    /* Render + start the selected BGM as a seamless loop (SEQ+VAB through the
+     * clean-room SPU, one true loop period repeated). Rendering ~40 s of SPU
+     * output blocks for a moment, so the caller shows a status line first and
+     * calls this from a timeout. */
     function startBgm(seconds) {
       stopBgm();
       const a = audioReady();
-      if (!a || !bgmInfo || !bgmInfo.ok) return false;
-      if (!bgm || bgm.seconds < Math.min(seconds, 45)) {
-        const want = Math.min(seconds, 45);
-        const pcm = api.dance_bgm_pcm_i16(false, want);
-        const rate = api.dance_bgm_rate();
-        if (!pcm.length || !rate) return false;
-        const frames = pcm.length / 2;
-        const buf = a.ctx.createBuffer(2, frames, rate);
-        const L = buf.getChannelData(0), R = buf.getChannelData(1);
-        for (let i = 0; i < frames; i++) {
-          L[i] = pcm[i * 2] / 32768;
-          R[i] = pcm[i * 2 + 1] / 32768;
-        }
-        bgm = { buffer: buf, seconds: want, src: null };
-      }
-      const src = a.ctx.createBufferSource();
-      src.buffer = bgm.buffer;
-      src.loop = true;         /* the render window is shorter than the song */
-      const gn = a.ctx.createGain();
-      gn.gain.value = 0.55;
-      src.connect(gn).connect(a.ctx.destination);
-      src.start();
-      bgm.src = src;
-      return true;
+      if (!a || !window.MgBgm2) return false;
+      const entry = MgBgm2.render(api, a.ctx, bgmTrack, Math.min(seconds || 45, 45));
+      if (!entry) return false;
+      bgmSrc = MgBgm2.start(a.ctx, entry, 0.55);
+      return !!bgmSrc;
     }
 
     function stopBgm() {
-      if (bgm && bgm.src) { try { bgm.src.stop(); } catch (e) { /* done */ } bgm.src = null; }
+      if (bgmSrc) { try { bgmSrc.stop(); } catch (e) { /* done */ } bgmSrc = null; }
+    }
+
+    /* Pick the jukebox track (a global BGM id from dance_jukebox_json). If the
+     * dance is already sounding, swap to it immediately. */
+    function setBgmTrack(bgm) {
+      bgm = bgm | 0;
+      if (bgm === bgmTrack) return;
+      bgmTrack = bgm;
+      if (bgmSrc) startBgm(45);
     }
 
     /* Muting mid-song also stops the already-started BGM buffer (one-shot
@@ -890,7 +887,7 @@ window.MgDance = (function () {
     }
 
     return {
-      loadAssets, startRun, stopRun, onPress, draw, introActive,
+      loadAssets, startRun, stopRun, onPress, draw, introActive, setBgmTrack,
       get introGate() { return intro !== null && !intro.go; },
       sfxCount() { return sfxIds ? Object.keys(sfxIds).length : 0; },
       bgmOk() { return !!(bgmInfo && bgmInfo.ok); },

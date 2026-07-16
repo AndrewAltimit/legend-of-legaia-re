@@ -199,6 +199,7 @@ impl PlayWindowApp {
                     g.score(),
                     g.passed()
                 );
+                self.session.restore_field_bgm();
             }
             // A field-VM shop op (`0x49` sub-0 inline shop record) opened
             // a priced gold shop this tick: hand the player into its buy
