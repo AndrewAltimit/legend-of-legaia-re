@@ -15,7 +15,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Decode a raw MDEC BS payload file into a PNG.
+    /// Decode a raw MDEC BS payload file into a PPM.
     DecodeFrame {
         /// Path to a raw BS payload file (no STR sector headers).
         #[arg()]
@@ -26,7 +26,7 @@ enum Cmd {
         /// Frame height in pixels (must be a multiple of 16).
         #[arg(long, default_value = "240")]
         height: u32,
-        /// Output PNG path.
+        /// Output PPM path.
         #[arg(long, default_value = "frame.ppm")]
         out: PathBuf,
     },
