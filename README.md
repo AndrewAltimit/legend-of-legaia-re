@@ -34,16 +34,29 @@ If you are adding code here, treat "no Sony bytes get committed" as the one hard
 
 ### Install a prebuilt release
 
-Tagged releases publish prebuilt command-line binaries for **Linux x86_64** and **Windows x86_64** on the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases). This is the fastest path if you just want to extract assets or run the viewers - no Rust toolchain required.
+Tagged releases publish prebuilt binaries on the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases). This is the fastest path if you just want to extract assets or run the viewers - no Rust toolchain required. Every archive carries every tool, the engine and the asset viewer included.
+
+| Platform | Archive |
+|---|---|
+| Linux x86_64 | `legaia-tools-<version>-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux arm64 | `legaia-tools-<version>-aarch64-unknown-linux-gnu.tar.gz` |
+| Windows x86_64 | `legaia-tools-<version>-x86_64-pc-windows-gnu.zip` |
 
 Download the archive for your platform, unpack it, and run the binaries out of the unpacked directory:
 
 ```bash
-# Linux x86_64 - substitute the archive name from the Releases page
-tar -xzf <linux-archive>.tar.gz
-cd <unpacked-dir>
+tar -xzf legaia-tools-<version>-x86_64-unknown-linux-gnu.tar.gz
+cd legaia-tools-<version>-x86_64-unknown-linux-gnu
 ./legaia-extract --help
 ```
+
+Each release also publishes a `SHA256SUMS` manifest, so you can verify what you downloaded:
+
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
+```
+
+The Linux builds need glibc 2.28 or newer (Debian 10 / RHEL 8 / Ubuntu 18.10 and up). `legaia-engine` and `asset-viewer` additionally want a GPU and, on Linux, ALSA - both standard on a desktop install.
 
 On Windows, unpack the zip and run the `.exe`s from a terminal in the unpacked directory. Every binary supports `--help`, and every subcommand supports `<binary> help <subcommand>` for its flags.
 

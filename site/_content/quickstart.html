@@ -10,7 +10,17 @@
 </section>
 
 <section class="doc-section" id="build">
-  <h2>1 · Build the workspace</h2>
+  <h2>1 · Get the tools</h2>
+  <p>Two ways in. Take the prebuilt binaries if you just want to run the tools; build from source if you intend to change them.</p>
+
+  <h3>Download a release</h3>
+  <p>Every tagged release publishes an archive per platform on the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/releases">Releases page</a>, each carrying the whole toolset - the engine and asset viewer included. No Rust toolchain needed.</p>
+<pre><code>tar -xzf legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu.tar.gz
+cd legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu
+./legaia-extract --help</code></pre>
+  <p>Archives are <code>legaia-tools-&lt;version&gt;-&lt;target&gt;</code> over <code>x86_64-unknown-linux-gnu</code>, <code>aarch64-unknown-linux-gnu</code> (<code>.tar.gz</code>) and <code>x86_64-pc-windows-gnu</code> (<code>.zip</code>), alongside a <code>SHA256SUMS</code> manifest to check them against. The Linux builds want glibc 2.28 or newer. See <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/releases.md"><code>tooling/releases.md</code></a> for how they are produced.</p>
+
+  <h3>Build from source</h3>
   <p>The repo is a Cargo workspace with edition 2024. One library + binary per crate.</p>
 <pre><code>git clone https://github.com/AndrewAltimit/legend-of-legaia-re
 cd legend-of-legaia-re

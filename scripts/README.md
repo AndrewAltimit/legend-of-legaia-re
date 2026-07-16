@@ -40,6 +40,8 @@ invoke them by `scripts/ci/<name>` path.
 - `port-catalog.py` (+ `port-catalog-ignore.toml`, `features.toml`) - per-function port worklist + `--dashboard`.
 - `function-coverage.py` - Ghidra-dump citation coverage report.
 - `build-wasm.sh` / `check-wasm.sh` - web-viewer WASM build + CI smoke.
+- `setup-cross-toolchain.sh` - provision one release target's cross toolchain (rustup std, zig + `cargo-zigbuild`, the amd64 ALSA sysroot); idempotent, root-free except mingw-w64, which it only checks for. See [`docs/tooling/releases.md`](../docs/tooling/releases.md).
+- `release-build.sh` - build + package one release target into `target/dist` (archive + `.sha256`). Driven per target by `.github/workflows/release.yml`.
 
 ### ghidra-analysis/
 

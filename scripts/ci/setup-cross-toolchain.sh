@@ -29,6 +29,19 @@
 #                                  bundled glibc stubs, and both it and
 #                                  cargo-zigbuild install without root.
 #
+#                                  The GUI binaries additionally reach cpal ->
+#                                  alsa-sys, which resolves libasound through
+#                                  pkg-config at build time, so the link needs
+#                                  an *x86_64* libasound. apt can't supply one
+#                                  here: an arm64 Ubuntu serves from
+#                                  ports.ubuntu.com, which publishes no amd64,
+#                                  so `dpkg --add-architecture amd64` fails to
+#                                  fetch. Instead the amd64 .debs are pulled
+#                                  straight from archive.ubuntu.com and
+#                                  unpacked into a private sysroot -- no root,
+#                                  no apt sources rewritten, nothing installed
+#                                  system-wide.
+#
 # Everything root-free lands under $LEGAIA_RELEASE_CACHE (default
 # ~/.cache/legaia-release) and is exposed by prepending its bin/ to PATH --
 # see release-build.sh, which sources this script's PATH additions via
@@ -107,6 +120,77 @@ if [[ "$TARGET" == "x86_64-unknown-linux-gnu" ]]; then
         cargo install cargo-zigbuild --root "$CACHE" --quiet
     fi
     log "cargo-zigbuild: present"
+
+    # --- amd64 ALSA sysroot, for cpal/alsa-sys in the GUI binaries ---------
+    #
+    # Pinned to `noble` rather than tracking the host release: any recent
+    # libasound exports the symbols cpal needs, and linking against an OLDER
+    # one is the safe direction (a binary linked against a newer libasound can
+    # reference a symbol the user's older runtime lacks; the reverse is fine).
+    # `noble` stays in the archive indefinitely, so this does not rot.
+    #
+    # Versions are resolved from the suite index instead of hardcoded: Ubuntu
+    # drops superseded .debs from the pool, so a literal filename 404s the
+    # first time a security update lands.
+    ALSA_SUITE="noble"
+    ALSA_MIRROR="http://archive.ubuntu.com/ubuntu"
+    ALSA_SYSROOT="$CACHE/sysroot-amd64"
+    ALSA_PC="$ALSA_SYSROOT/usr/lib/x86_64-linux-gnu/pkgconfig/alsa.pc"
+
+    if [[ -f "$ALSA_PC" ]]; then
+        log "amd64 ALSA sysroot already present: $ALSA_SYSROOT"
+        exit 0
+    fi
+
+    for tool in curl gunzip dpkg; do
+        if ! command -v "$tool" >/dev/null 2>&1; then
+            printf '[setup-cross] ERROR: %s is required to build the ALSA sysroot\n' \
+                "$tool" >&2
+            exit 1
+        fi
+    done
+
+    log "building amd64 ALSA sysroot in $ALSA_SYSROOT"
+    tmp="$(mktemp -d)"
+    # shellcheck disable=SC2064  # expand $tmp now, not at trap time
+    trap "rm -rf '$tmp'" EXIT
+
+    # -updates first so its stanza wins the "first match" below; plain noble
+    # is the fallback for a package that has never been updated.
+    idx="$tmp/Packages"
+    : > "$idx"
+    for suite in "${ALSA_SUITE}-updates" "$ALSA_SUITE"; do
+        curl -fsSL "$ALSA_MIRROR/dists/$suite/main/binary-amd64/Packages.gz" \
+            | gunzip -c >> "$idx" || true
+    done
+    if [[ ! -s "$idx" ]]; then
+        printf '[setup-cross] ERROR: could not fetch the %s amd64 package index\n' \
+            "$ALSA_SUITE" >&2
+        exit 1
+    fi
+
+    for pkg in libasound2-dev libasound2t64; do
+        fn="$(awk -v p="$pkg" '
+            /^Package: /   { cur = $2 }
+            /^Filename: /  { if (cur == p) { print $2; exit } }
+        ' "$idx")"
+        if [[ -z "$fn" ]]; then
+            printf '[setup-cross] ERROR: %s not found in the %s amd64 index\n' \
+                "$pkg" "$ALSA_SUITE" >&2
+            exit 1
+        fi
+        log "fetching $(basename "$fn")"
+        curl -fsSL -o "$tmp/$(basename "$fn")" "$ALSA_MIRROR/$fn"
+    done
+
+    mkdir -p "$ALSA_SYSROOT"
+    for d in "$tmp"/*.deb; do dpkg -x "$d" "$ALSA_SYSROOT"; done
+
+    if [[ ! -f "$ALSA_PC" ]]; then
+        printf '[setup-cross] ERROR: sysroot built but %s is missing\n' "$ALSA_PC" >&2
+        exit 1
+    fi
+    log "amd64 ALSA sysroot ready: $ALSA_SYSROOT"
     exit 0
 fi
 

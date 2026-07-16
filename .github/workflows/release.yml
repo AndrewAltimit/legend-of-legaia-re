@@ -153,8 +153,7 @@ jobs:
               echo "| \`$(basename "$f")\` | $(du -h "$f" | cut -f1) |"
             done
             echo ""
-            echo '`x86_64-unknown-linux-gnu` is CLI-only: the GUI binaries'
-            echo '(`legaia-engine`, `asset-viewer`) are excluded there.'
+            echo 'Every archive carries every workspace binary.'
             echo 'See docs/tooling/releases.md.'
           } >> "$GITHUB_STEP_SUMMARY"
 

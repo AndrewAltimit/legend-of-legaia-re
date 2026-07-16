@@ -42,10 +42,10 @@ log() { printf '[release-build] %s\n' "$*"; }
 
 # --- The binary matrix -----------------------------------------------------
 #
-# CLI_BINS build for every target. GUI_BINS (wgpu + winit + cpal) are opt-in
-# per target, because cpal's alsa-sys needs an x86_64 libasound to link
-# against and the arm64 runner only has the arm64 one -- see
-# docs/tooling/releases.md for the full reasoning and the fix.
+# Every target ships every binary. GUI_BINS (wgpu + winit + cpal) are listed
+# separately only because their cpal -> alsa-sys dependency is what makes the
+# x86_64 Linux row need an amd64 ALSA sysroot; setup-cross-toolchain.sh builds
+# one. See docs/tooling/releases.md.
 
 CLI_BINS=(
     anm art asset cheat-tool disc-extract field-disasm font-extract
@@ -53,16 +53,6 @@ CLI_BINS=(
     mednafen-state mes prot-extract save-tool seq tim tmd vab xa
 )
 GUI_BINS=(legaia-engine asset-viewer)
-
-# Cargo packages owning CLI_BINS, for the -p selection used when a target
-# cannot take the whole workspace.
-CLI_PKGS=(
-    legaia-anm legaia-art legaia-asset legaia-cheats legaia-engine-vm
-    legaia-extract legaia-font legaia-gamedata legaia-iso legaia-lzs
-    legaia-mdec legaia-mdt legaia-mednafen legaia-mes legaia-prot
-    legaia-rando legaia-save legaia-seq legaia-tim legaia-tmd
-    legaia-vab legaia-xa
-)
 
 # Oldest glibc the cross-built x86_64 Linux binaries must run against.
 # 2.28 == Debian 10 / RHEL 8 / Ubuntu 18.10 and newer.
@@ -82,11 +72,10 @@ case "$TARGET" in
         BUILD_MODE="workspace"
         ;;
     x86_64-unknown-linux-gnu)
-        # CLI only: see the alsa-sys note above.
-        BINS=("${CLI_BINS[@]}")
+        BINS=("${CLI_BINS[@]}" "${GUI_BINS[@]}")
         BIN_EXT=""
         ARCHIVE_KIND="tar.gz"
-        BUILD_MODE="cli-zigbuild"
+        BUILD_MODE="zigbuild"
         ;;
     *)
         printf '[release-build] ERROR: %s is not in the release matrix\n' "$TARGET" >&2
@@ -104,11 +93,32 @@ case "$BUILD_MODE" in
     workspace)
         cargo build --release --locked --target "$TARGET" --workspace
         ;;
-    cli-zigbuild)
-        pkg_args=()
-        for p in "${CLI_PKGS[@]}"; do pkg_args+=(-p "$p"); done
+    zigbuild)
+        # alsa-sys shells out to pkg-config, which refuses a cross lookup
+        # unless told to allow it and pointed at the target's own .pc tree.
+        ALSA_SYSROOT="$CACHE/sysroot-amd64"
+        ALSA_LIBDIR="$ALSA_SYSROOT/usr/lib/x86_64-linux-gnu"
+        if [[ ! -f "$ALSA_LIBDIR/pkgconfig/alsa.pc" ]]; then
+            printf '[release-build] ERROR: amd64 ALSA sysroot missing at %s\n' \
+                "$ALSA_SYSROOT" >&2
+            printf '[release-build] run: scripts/ci/setup-cross-toolchain.sh %s\n' \
+                "$TARGET" >&2
+            exit 1
+        fi
+        export PKG_CONFIG_ALLOW_CROSS=1
+        export PKG_CONFIG_SYSROOT_DIR="$ALSA_SYSROOT"
+        export PKG_CONFIG_LIBDIR="$ALSA_LIBDIR/pkgconfig"
+        # --allow-shlib-undefined: libasound.so is built against a newer glibc
+        # than GLIBC_PIN, so its own internal references (pow@GLIBC_2.29,
+        # dlclose@GLIBC_2.34, ...) are unresolvable in this link. They don't
+        # need resolving here -- libasound is a *shared* dependency, satisfied
+        # at runtime by the user's own copy and their glibc. This relaxes the
+        # check only for symbols undefined inside shared libraries; undefined
+        # references from our own objects still fail the link, and the built
+        # binaries stay pinned at GLIBC_PIN (asserted below).
+        export RUSTFLAGS="${RUSTFLAGS:-} -L native=$ALSA_LIBDIR -C link-arg=-Wl,--allow-shlib-undefined"
         cargo zigbuild --release --locked \
-            --target "${TARGET}.${GLIBC_PIN}" "${pkg_args[@]}"
+            --target "${TARGET}.${GLIBC_PIN}" --workspace --bins
         ;;
 esac
 
@@ -129,6 +139,22 @@ for b in "${BINS[@]}"; do
     cp "$src" "$STAGE/"
 done
 
+# The glibc pin is a promise to users on older distros, and the ALSA sysroot
+# link is exactly the kind of change that could quietly break it. Verify the
+# real symbol table rather than trusting the target suffix.
+if [[ "$BUILD_MODE" == "zigbuild" ]] && command -v objdump >/dev/null 2>&1; then
+    max_glibc="$(objdump -T "$STAGE"/* 2>/dev/null \
+        | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)"
+    want="GLIBC_${GLIBC_PIN}"
+    highest="$(printf '%s\n%s\n' "$max_glibc" "$want" | sort -V | tail -1)"
+    if [[ "$highest" != "$want" ]]; then
+        printf '[release-build] ERROR: glibc pin broken: needs %s, pinned %s\n' \
+            "$max_glibc" "$want" >&2
+        exit 1
+    fi
+    log "glibc pin holds: highest requirement is ${max_glibc:-none} (pin $want)"
+fi
+
 cp LICENSE "$STAGE/LICENSE"
 cp LICENSE-MIT "$STAGE/LICENSE-MIT"
 
@@ -144,13 +170,13 @@ cp LICENSE-MIT "$STAGE/LICENSE-MIT"
     printf '    ./legaia-extract "/path/to/your/disc.bin" --out extracted\n\n'
     printf 'Licensed MIT OR Unlicense - see LICENSE and LICENSE-MIT.\n'
     printf 'Docs and source: https://github.com/%s\n\n' \
-        "${GITHUB_REPOSITORY:-altimit-mii/legend-of-legaia-re}"
+        "${GITHUB_REPOSITORY:-AndrewAltimit/legend-of-legaia-re}"
     printf 'Binaries in this archive (%d):\n\n' "${#BINS[@]}"
     for b in "${BINS[@]}"; do printf '    %s%s\n' "$b" "$BIN_EXT"; done
     if [[ "$TARGET" == "x86_64-unknown-linux-gnu" ]]; then
-        printf '\nNote: the GUI binaries (legaia-engine, asset-viewer) are not in\n'
-        printf 'this x86_64 Linux archive. See docs/tooling/releases.md.\n'
-        printf 'Requires glibc %s or newer.\n' "$GLIBC_PIN"
+        printf '\nRequires glibc %s or newer.\n' "$GLIBC_PIN"
+        printf 'legaia-engine and asset-viewer need ALSA (libasound.so.2) at\n'
+        printf 'runtime; every mainstream desktop Linux already ships it.\n'
     fi
 } > "$STAGE/README.txt"
 
