@@ -91,7 +91,7 @@
   <h2>Messagebox panel geometry (<code>FUN_801E36C4</code>)</h2>
   <p>Every save-UI panel rect flows through one drawer. Its <code>x</code> is a <strong>centre</strong>, not a left edge, and the visible gold-bordered box is a uniform 7px larger than the <code>w x h</code> asked for:</p>
   <pre><code>visible = (center_x - w/2 - 9,  y - 1,  w + 14,  h + 14)</code></pre>
-  <p>The <code>+14</code> sizes are measured off captured retail frames and are independent of where a box sits, which is what makes them safe to generalise; the <code>-9</code> / <code>-1</code> then predict each panel's pixels exactly. Verified against three panels: the header tab <code>(48, 6, 65, 13)</code> &rarr; rows 5..31; the "Now checking" dialog mid-slide at <code>center_x = 240</code> &rarr; left 147 (matching the older capture that pinned that dialog, taken long before this model); and both confirm-dialog panels.</p>
+  <p>The <code>+14</code> sizes are measured off captured retail frames and are independent of where a box sits, which is what makes them safe to generalise; the <code>-9</code> / <code>-1</code> then predict each panel's pixels exactly. Verified against three panels: the header tab <code>(48, 6, 65, 13)</code> &rarr; rows 5..31; the "Now checking" dialog mid-slide at <code>center_x = 240</code> &rarr; left 147 (matching an independent capture of that dialog); and both confirm-dialog panels.</p>
   <p>The confirm prompt is <strong>two</strong> panels plus stacked options - not one box with Yes/No side by side.</p>
 </section>
 

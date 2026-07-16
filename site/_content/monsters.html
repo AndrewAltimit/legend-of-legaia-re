@@ -83,7 +83,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
 <header>
   <div class="breadcrumb"><a href="index.html">home</a> · enemy table</div>
   <h1>Enemy table</h1>
-  <p class="lede">Decode every enemy's stat record <em>and 3D battle model</em> straight from your own disc image. The full archive - names, HP, MP, combat stats, and the embedded mesh for the whole roster - is LZS-decompressed in your browser via WebAssembly. Click any row to spin its model. No game data ships with this site; bring your own <code>.bin</code> and nothing leaves your machine.</p>
+  <p class="lede">Every enemy's stat record and 3D battle model, decoded from your own disc image in the browser - click any row to spin its model. No game data ships with this site; your <code>.bin</code> never leaves your machine.</p>
 </header>
 
 <section class="doc-section">
@@ -97,7 +97,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
 
     <div class="enemy-table-toolbar" id="enemy-table-toolbar" style="display: none;">
       <input type="search" id="enemy-table-filter" placeholder="Filter by name or id…">
-      <label class="enemy-table-statmode" title="The international (US/PAL) release boosts enemy combat stats when a battle loads: ATK ×5/4, UDF/LDF ×2, AGL ×9/8 over the raw on-disc record. Toggle off to see the raw record bytes.">
+      <label class="enemy-table-statmode" title="The international (US/PAL) release boosts enemy combat stats when a battle loads: ATK ×5/4, UDF/LDF ×2, INT ×9/8 over the raw on-disc record. Toggle off to see the raw record bytes.">
         <input type="checkbox" id="enemy-table-inbattle" checked>
         Show international release stats
       </label>
@@ -136,30 +136,29 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   <h3>Reading the columns</h3>
   <dl class="kv">
     <dt><strong>ATK</strong></dt>
-    <dd>The enemy's physical offense.</dd>
+    <dd>Physical offense.</dd>
     <dt><strong>UDF / LDF</strong></dt>
-    <dd>Upper and lower defense - two facets; which one applies depends on the attack.</dd>
+    <dd>Upper and lower defense - which one applies depends on the attack.</dd>
     <dt><strong>INT</strong></dt>
-    <dd>Governs magical damage and defense against magic, and also seeds the hit / evade roll - the column fan bestiaries call INT.</dd>
+    <dd>Magical damage and magic defense; also seeds the hit / evade roll.</dd>
     <dt><strong>SPD</strong></dt>
-    <dd>Sets battle turn order.</dd>
+    <dd>Battle turn order.</dd>
     <dt><strong>AGL</strong></dt>
-    <dd>The agility / action gauge the AI spends to act each round (the in-game "Power Up" buff raises it - "agility increased!").</dd>
+    <dd>The action gauge the AI spends to act each round (the in-game "Power Up" buff raises it).</dd>
     <dt><strong>Elem</strong></dt>
-    <dd>The monster's element. The affinity scale nudges an attacker's damage by the (attacker element, defender element) pair - a small ±4% effect in retail: same-element 96%, opposite-element 104%, otherwise 100%.</dd>
+    <dd>The monster's element - a small ±4% damage effect in retail: same-element 96%, opposite-element 104%, otherwise 100%.</dd>
     <dt><strong>EXP / Gold / Drop</strong></dt>
-    <dd>The victory spoils - base values the game scales and splits at the end of a fight.</dd>
+    <dd>Victory spoils - base values the game scales and splits at the end of a fight.</dd>
     <dt><strong>Steal</strong></dt>
-    <dd>What the player takes with the Evil God Icon equipped (item + chance). Steals come from a separate table in the executable, not from the monster record - which is why a monster's steal and drop usually differ.</dd>
+    <dd>What the Evil God Icon takes (item + chance). Steals come from a separate table in the executable, not the monster record - which is why a monster's steal and drop usually differ.</dd>
     <dt><strong>Magic attacks</strong></dt>
     <dd>The enemy's named spells and their MP cost.</dd>
   </dl>
-  <p class="hint">Names for spells, drops, and steals resolve from a full disc image; load only a raw <code>PROT.DAT</code> and the raw id shows instead (the steal table lives in the executable, so a raw <code>PROT.DAT</code> shows no steal).</p>
+  <p class="hint">Names for spells, drops, and steals resolve from a full disc image; a raw <code>PROT.DAT</code> shows raw ids instead (and no steal - that table lives in the executable).</p>
 
   <div class="notice">
     <div class="notice-title">International release stats vs. the raw record</div>
-    <p>The four combat columns (<strong>ATK</strong>, <strong>UDF</strong>, <strong>LDF</strong>, <strong>INT</strong>) default to the <em>in-battle</em> values - what the player actually fights - because the raw on-disc record is <em>not</em> what gets installed into the enemy. When the battle loader copies a record into the live actor it boosts those four stats: ATK ×5/4, UDF ×2, LDF ×2, INT ×9/8. HP, MP, AGL and SPD are copied unchanged. Untick <strong>Show international release stats</strong> in the toolbar to see the raw record bytes instead.</p>
-    <p>This boost is why retail enemies hit harder than the raw record (or older bestiaries built from it) suggest - a difference across regions first surfaced by <strong>Zetopheonix</strong>. The loader carries two boost profiles picked by a per-battle flag; the table shows the profile that a live international-retail capture reproduces byte-for-byte. EXP and gold are a separate story: the record holds a <em>pre-reduction</em> base that the victory-spoils routine scales down (EXP ×¾ then split among the party; gold roughly ×¼-⅓) at the end of a fight - the <strong>EXP / Gold</strong> columns show those base values.</p>
+    <p>The <strong>ATK / UDF / LDF / INT</strong> columns default to the <em>in-battle</em> values, because the raw on-disc record is not what the player fights: the international (US/PAL) battle loader boosts those four stats as it installs the enemy - ATK ×5/4, UDF ×2, LDF ×2, INT ×9/8 (HP, MP, AGL, SPD unchanged). This cross-region difficulty difference was first surfaced by <strong>Zetopheonix</strong>. Untick <strong>Show international release stats</strong> for the raw record bytes; EXP / Gold show the record's pre-reduction base, which the victory routine scales down (EXP ×¾ then split among the party; gold roughly ×¼-⅓). Full formulas: <a href="subsystems/battle-formulas.html">battle formulas</a>.</p>
   </div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -172,8 +171,8 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
 
 <section class="doc-section">
   <h2>How it works</h2>
-  <p>The whole roster lives in one archive on the disc. Each enemy id maps to a fixed slot that LZS-decompresses to a stat record followed by the enemy's 3D model and its animations. The same parser the native tools and the engine use runs here, compiled to WebAssembly - so what you see is exactly what the game reads off the disc. The combat columns then apply the battle loader's stat boost so the numbers match what the player <em>fights</em> (see the note above); untick <strong>Show international release stats</strong> for the raw record bytes.</p>
-  <p class="caption">Files are read with the browser's <code>FileReader</code> straight into WebAssembly memory. Nothing is uploaded; the project ships zero Sony bytes (bring your own disc). Your disc is cached locally and shared across pages, so it auto-loads on reload - use <em>Forget</em> to clear.</p>
+  <p>The whole roster lives in one LZS-compressed archive on the disc; each enemy id maps to a fixed slot holding a stat record, the 3D model, and its animations - decoded here by the same parser the native tools use, compiled to WebAssembly. Full layout: <a href="formats/battle-data-pack.html">battle-data pack</a>.</p>
+  <p class="caption">Nothing is uploaded; the project ships zero Sony bytes (bring your own disc). Your disc is cached locally and shared across pages, so it auto-loads on reload - use <em>Forget</em> to clear.</p>
   <div class="cli"><code>asset monster-archive extracted/PROT/0867_battle_data.BIN</code></div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -182,7 +181,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   </div>
 
   <h2>The 3D model</h2>
-  <p>Click any row to spin its <strong>battle model</strong> - rendered textured and directional-lit straight from your disc, the same model the battle camera shows. 186 of the 194 enemies carry one (the rest are filler ids).</p>
+  <p>Click any row to spin its <strong>battle model</strong> - textured and lit straight from your disc, the model the battle camera shows. 186 of the 194 enemies carry one (the rest are filler ids).</p>
   <div class="cli"><code>asset monster-archive … --id N --obj enemy.obj --texture-png enemy.png</code></div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -192,7 +191,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   </div>
 
   <h2>Animations</h2>
-  <p>The model isn't static. Every action an enemy can play - its <strong>idle</strong> resting loop, its <strong>move</strong> cycle (the approach it plays advancing on a target - a walk for grounded enemies, a flight cycle for fliers), and each <strong>spell / special</strong> - ships as its own transform-keyframe stream in the same archive. The viewer opens on the idle loop; when a monster carries more than one animation, a row of toggle buttons appears beside the model so you can switch between them. Each one re-poses the body parts frame to frame exactly as the battle renderer does.</p>
+  <p>Every action an enemy can play - idle, move cycle, and each spell / special - ships as its own keyframe stream in the same archive; when a monster carries more than one, toggle buttons appear beside the model. Encoding: <a href="formats/monster-animation.html">monster animation</a>.</p>
   <div class="cli"><code>asset monster-archive … --id N --anim</code></div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -200,7 +199,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   </div>
 
   <h2>Download</h2>
-  <p>The <strong>⬇ Download .glb</strong> button packs the selected enemy - mesh, baked texture, and <em>all</em> of its action animations - into a single binary <a href="https://www.khronos.org/gltf/">glTF</a> file. glTF is the universal 3D interchange format, so the model drops straight into Blender, three.js, the Windows 3D Viewer, or any glTF tool, animations and all. Each TMD body part becomes an animated node; the per-part palettes are baked into one texture atlas. The same export is available offline from the CLI.</p>
+  <p>The <strong>⬇ Download .glb</strong> button packs the selected enemy - mesh, baked texture, and all of its animations - into a single binary <a href="https://www.khronos.org/gltf/">glTF</a> file that drops straight into Blender, three.js, or any glTF tool. The same export is available offline from the CLI.</p>
   <div class="cli"><code>asset monster-archive … --id N --glb enemy.glb</code></div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -234,11 +233,11 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   // wasm builds that predate the JSON's `battle_stats` field.
   function boostStats(s) {
     return [
-      s[0],                  // SP  - unchanged
+      s[0],                  // AGL - unchanged
       s[1] + (s[1] >> 2),    // ATK + ATK>>2  (×5/4)
       s[2] * 2,              // UDF ×2
       s[3] * 2,              // LDF ×2
-      s[4] + (s[4] >> 3),    // AGL + AGL>>3  (×9/8)
+      s[4] + (s[4] >> 3),    // INT + INT>>3  (×9/8)
       s[5],                  // SPD - unchanged
     ];
   }

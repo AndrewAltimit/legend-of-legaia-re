@@ -6,7 +6,7 @@
 
 <section class="doc-section" id="identity-note">
   <h2>Identity note</h2>
-  <p><strong>Supersedes the earlier &ldquo;battle_data pack&rdquo; reading.</strong> This page previously described a &ldquo;custom 16 MB container at PROT 0865&rdquo;. The 16 MB figure was extraction 0865's TOC-<em>indexed</em> window (7811 sectors), which over-reads across 0866 into the <a href="#not-the-monster-archive">monster archive</a>'s sectors; every structure documented here actually sits inside each player file's own footprint (0865 = Gala, 222 sectors). The monster archive is a <strong>different container</strong> at extraction 0867.</p>
+  <p><strong>Not a &ldquo;16 MB container at PROT 0865&rdquo;.</strong> That figure is extraction 0865's TOC-<em>indexed</em> window (7811 sectors), which over-reads across 0866 into the <a href="#not-the-monster-archive">monster archive</a>'s sectors; every structure documented here sits inside each player file's own footprint (0865 = Gala, 222 sectors). The monster archive is a <strong>different container</strong> at extraction 0867.</p>
   <p>This format is distinct from:</p>
   <ul>
     <li>the <a href="#not-the-monster-archive">monster stat archive</a> (extraction 0867, retail <code>monster_data</code>),</li>
@@ -186,12 +186,8 @@ mednafen-state clut-trace \
 </section>
 
 <section class="doc-section" id="open-layout-questions">
-  <h2>Open questions</h2>
-  <ul>
-    <li><strong><code>data_base</code> derivation</strong> <em>(resolved)</em>: <code>0x8000</code> is not header-derived - <code>FUN_80052770</code>'s fixed 16-sector prologue read (<code>FUN_800559EC(&hellip;, 0x8000)</code> &rarr; <code>FUN_8003E800(dst, 0x10, 1)</code>) hardcodes it.</li>
-    <li><strong><code>record[0] +0x5C</code> consumer</strong> <em>(reframed - vestigial)</em>: the word is rebased self-relative&rarr;absolute at load by <code>FUN_80052FA0</code> (<code>:561</code>) <strong>alongside</strong> the <code>+0x58</code> art-bank pointer (<code>:558</code>), but unlike <code>+0x58</code> (read by <code>FUN_8004AD80</code>) it has <strong>no traced reader</strong> - an exhaustive corpus sweep finds none, and the word (slot <code>0x17</code>) sits outside every action-table consumer's range. Target is <code>clut_a_off &minus; 4</code> (zero on disc); the CLUT upload uses <code>file+0x04</code>/<code>+0x08</code>, not this field. So it is a rebased-at-load paired-relocation field, not untraced-dead - a watchpoint would only confirm the deadness. The art <code>"ME"</code>-archive hypothesis is separately refuted (the archives are in <code>readef.DAT</code>).</li>
-  </ul>
-  <p>Resolved elsewhere on this page: the texture-pool placement (static rect table <code>0x800775B8</code> + party-ordinal band), the slot-id &harr; equipment-id mapping (<code>FUN_80052770</code> case-4 picker), the <code>+0x04</code>/<code>+0x08</code> words (swing action records, not sub-object end offsets), the <code>FUN_8004CCD4</code> sibling pass (the equipment-variant swap), and the main-vs-base <code>"ME"</code>-archive pick (per battle phase - turn staging vs the battle-end win-pose staging).</p>
+  <h2>Vestigial field</h2>
+  <p><strong><code>record[0] +0x5C</code> has no consumer.</strong> The word is rebased self-relative&rarr;absolute at load by <code>FUN_80052FA0</code> (<code>:561</code>) <strong>alongside</strong> the <code>+0x58</code> art-bank pointer (<code>:558</code>), but unlike <code>+0x58</code> (read by <code>FUN_8004AD80</code>) it has <strong>no traced reader</strong> - an exhaustive corpus sweep finds none, and the word (slot <code>0x17</code>) sits outside every action-table consumer's range. Its target is <code>clut_a_off &minus; 4</code> (zero on disc); the CLUT upload uses <code>file+0x04</code>/<code>+0x08</code>, not this field. A rebased-at-load paired-relocation field the runtime never reads. (The art <code>"ME"</code> archives it was once suspected of pointing at live in <code>readef.DAT</code>.)</p>
 </section>
 
 <section class="doc-section" id="see-also">

@@ -58,14 +58,11 @@
 <section class="doc-section" id="open-items">
   <h2>Open items</h2>
   <ul>
-    <li><span class="tag tag-done">Resolved</span> <strong>Per-scene costs - wired.</strong> The old &ldquo;menu overlay DATA segment&rdquo;
-    reading is falsified: no cost table exists anywhere. Each cost is a field-VM script literal in the scene MAN (gate
-    <code>0x4E</code> sub-3 + debit <code>0x3A</code>), parsed by <code>legaia_asset::inn_costs</code> and swept disc-wide by
-    <code>crates/asset/tests/inn_costs_disc.rs</code> (see <em>Retail cost source</em> above). Production wiring:
-    <code>SceneHost::load_scene</code> scans the cached MAN into <code>scene_gold_charges</code>
-    (<code>scene_inn_cost()</code> = the first sub-3 charge), and <code>MenuRuntime::open_scene_inn(&amp;SceneHost)</code> opens
-    <code>InnConfirm</code> with that scanned cost - <code>open_inn(cost)</code> stays as the direct test / tooling entry.
-    Disc-gated oracle: <code>crates/engine-core/tests/inn_cost_scene_disc.rs</code> (<code>retock</code>'s 240 G stay resolves;
+    <li><strong>No cost table exists.</strong> A per-scene cost table in the menu overlay's DATA segment looks plausible; there is none -
+    every cost is a field-VM script literal in the scene MAN (gate <code>0x4E</code> sub-3 + debit <code>0x3A</code>, see
+    <em>Retail cost source</em> above). In the port, <code>SceneHost::load_scene</code> scans the cached MAN into
+    <code>scene_gold_charges</code> (<code>scene_inn_cost()</code> = the first sub-3 charge). Disc-gated oracle:
+    <code>crates/engine-core/tests/inn_cost_scene_disc.rs</code> (<code>retock</code>'s 240 G stay resolves;
     free-rest <code>town01</code> opens nothing).</li>
     <li><strong>Render layout + trigger.</strong> Retail renders the prompt as ordinary field dialogue (MES text + option picker), not a
     dedicated cost window; the port's <code>InnConfirm</code> panel is an engine-side presentation choice, and the innkeeper

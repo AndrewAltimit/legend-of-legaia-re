@@ -87,7 +87,7 @@ The play loop opens the file at `path_ptr`, seeks `(start_frame - 1) * 10` secto
 
 This table is **static initialised data** in the cutscene overlay (PROT 0970), not a runtime-built structure, so it decodes straight from the disc: `legaia_asset::fmv_dispatch::FmvTable::from_str_overlay` reads it (per-`fmv_id` path + frame range + dimensions), pinned by the disc-gated `fmv_dispatch_real` test. The windowed-cutscene player uses the frame range to seek to the right segment (`cutscene_av::fmv_segment_window`).
 
-An earlier reading used a 64-byte stride (a `sll v0,v0,6` transcription error), pairing wrong slot halves - it concluded `MV2`/`MV5` were never referenced and slots 5..11 pointed at cut files. The disc bytes and the resident RAM capture both encode `sll v0,v0,0x5`; under the 32-byte stride every movie on the disc is dispatched. That reading is **superseded**; `legaia_engine_core::cutscene::fmv_index_to_str_filename` still hard-codes the superseded 5-slot map, so the disc-parsed `FmvTable` is the authoritative resolver.
+An earlier reading used a 64-byte stride (a `sll v0,v0,6` transcription error), pairing wrong slot halves - it concluded `MV2`/`MV5` were never referenced and slots 5..11 pointed at cut files. The disc bytes and the resident RAM capture both encode `sll v0,v0,0x5`; under the 32-byte stride every movie on the disc is dispatched. That reading is **superseded**. The engine resolver `legaia_engine_core::cutscene::fmv_index_to_str_filename` mirrors the corrected nine-slot map; the disc-parsed `FmvTable` remains the authoritative source.
 
 `_DAT_8007BA78` is a `s16` written by the field-VM FMV-trigger op (`0x4C 0xE2 lo hi …`); see [`cutscene.md`](../subsystems/cutscene.md#field-vm-fmv-trigger-op) for the full opcode trace.
 

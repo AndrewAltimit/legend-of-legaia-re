@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; battle</div>
   <h1>Battle subsystem</h1>
-  <p class="lede">The battle overlay carries the battle scene loader, the per-actor action state machine, and the <a href="effect-vm.html">effect VM cluster</a>. Loaded at RAM <code>0x801CE818</code> - the same load slot as the town overlay, so battle and town never coexist in memory.</p>
+  <p class="lede">How Legaia runs a fight, from encounter trigger to victory screen. The battle overlay carries the battle scene loader, the per-actor action state machine, and the <a href="effect-vm.html">effect VM cluster</a>. Loaded at RAM <code>0x801CE818</code> - the same load slot as the town overlay, so battle and town never coexist in memory.</p>
   <p class="hint">This page is the RE-side reference: scene loader, action SM keys, ctx struct, actor table, and the per-frame helpers. For the clean-room engine port (BattleSession, HUD, runner, SFX, equipment), see <a href="engine.html">engine reimplementation</a>.</p>
 </header>
 
@@ -490,7 +490,7 @@ spells spell-entry blobs       ; each carries its own attack-effect geometry
     <li><strong>Rewards</strong> - call <code>World::apply_battle_loot</code> to credit the per-character XP / gold split, fire drop rolls, and trigger per-character level-ups; assert at least one party slot crossed a threshold.</li>
     <li><strong>Save round-trip</strong> - <code>world.save_full().write() &rarr; SaveFile::parse() &rarr; load_full()</code> into a fresh <code>World</code>; assert HP/MP, level, money, story flags, and inventory survived intact.</li>
   </ol>
-  <p>The crate ships four test variants:</p>
+  <p>The crate ships several test variants:</p>
   <table>
     <thead><tr><th>Test</th><th>Purpose</th></tr></thead>
     <tbody>

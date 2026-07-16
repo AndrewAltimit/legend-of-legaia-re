@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; sound-driver path-string cluster</div>
   <h1>Sound-driver path-string cluster <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">The SCUS string cluster at RAM <code>0x8007B380</code> (file offset <code>0x6BB80</code>) holds the file extensions the sound subsystem appends to scene-asset paths. The dispatch chain <em>into</em> these formats is fully traced, and the retail <code>.dpk</code> / <code>sound_data2</code> payload is pinned as a chunked VAB + SEQ bundle (see the <a href="#what-s-left-to-format-spec">final section</a>); the <code>.MAP</code> / <code>.PCH</code> PsyQ intermediates are dev-side inputs the retail disc does not carry.</p>
+  <p class="lede">The SCUS string cluster at RAM <code>0x8007B380</code> (file offset <code>0x6BB80</code>) holds the file extensions the sound subsystem appends to scene-asset paths. The retail <code>.dpk</code> / <code>sound_data2</code> payload is a chunked VAB + SEQ bundle (see the <a href="#what-s-left-to-format-spec">final section</a>); the <code>.MAP</code> / <code>.PCH</code> PsyQ intermediates are dev-side inputs the retail disc does not carry.</p>
 </header>
 
 <section class="doc-section" id="cluster-layout">
@@ -79,7 +79,7 @@
 
 <section class="doc-section" id="consumers">
   <h2>Consumers</h2>
-  <p>Two SCUS functions touch the cluster (located via <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/ghidra/scripts/find_sound_path_builders.py"><code>ghidra/scripts/find_sound_path_builders.py</code></a>; a third candidate the locator flagged, <code>FUN_8001EBEC</code>, turned out not to be a sound consumer - see the correction below):</p>
+  <p>Two SCUS functions touch the cluster (located via <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/ghidra/scripts/find_sound_path_builders.py"><code>ghidra/scripts/find_sound_path_builders.py</code></a>):</p>
 <table>
 <thead><tr>
 <th>Function</th>
@@ -99,7 +99,7 @@
 </tr>
 </tbody>
 </table>
-<p class="hint"><strong>Correction:</strong> <code>FUN_8001EBEC</code> was previously listed here as a "mode-aware extension dispatcher" reading <code>_DAT_8007B824</code> + tables at <code>0x8007B3A4</code>/<code>0x8007B3A8</code>. The decomp shows it is <strong>not</strong> a sound function at all - it is the character-TMD equipment-conditional group-transform swap (it reads the loaded battle-character TMD pointers from <code>DAT_8007C018[_DAT_8007B824 + 0..2]</code>, where <code>_DAT_8007B824</code> is the party base index, and copies group transforms). The <code>0x8007B3A4</code>/<code>0x8007B3A8</code> bytes are its per-character selector tables, not sound-extension descriptors. See <a href="character-mesh.html">character-mesh</a>.</p>
+<p class="hint"><strong>Trap:</strong> <code>FUN_8001EBEC</code> looks like a third consumer (it reads <code>_DAT_8007B824</code> + the tables at <code>0x8007B3A4</code>/<code>0x8007B3A8</code>) but is <strong>not</strong> a sound function - it is the character-TMD equipment-conditional group-transform swap (it reads the loaded battle-character TMD pointers from <code>DAT_8007C018[_DAT_8007B824 + 0..2]</code>, where <code>_DAT_8007B824</code> is the party base index, and copies group transforms). The <code>0x8007B3A4</code>/<code>0x8007B3A8</code> bytes are its per-character selector tables, not sound-extension descriptors. See <a href="character-mesh.html">character-mesh</a>.</p>
 </section>
 
 <section class="doc-section" id="dev-build-vs-retail-build-paths">
@@ -114,7 +114,7 @@
 
 <section class="doc-section" id="what-s-left-to-format-spec">
   <h2>The <code>.dpk</code> / <code>sound_data2</code> payload is a VAB + SEQ bundle</h2>
-  <p>The sound-side chunk payloads are now pinned from the disc - the pack is a <strong>VAB followed by a SEQ</strong>, not a novel <code>.MAP</code>/<code>.PCH</code>/<code>.spk</code> layout:</p>
+  <p>The sound-side chunk payload is a <strong>VAB followed by a SEQ</strong>, not a novel <code>.MAP</code>/<code>.PCH</code>/<code>.spk</code> layout:</p>
   <table>
     <thead><tr><th>Chunk type</th><th>Payload</th><th>Magic</th></tr></thead>
     <tbody>
@@ -124,8 +124,8 @@
     </tbody>
   </table>
   <p>The decisive invariant: <strong>type-0 + type-1 reconstitute one contiguous VAB</strong> whose header <code>total_size</code> (<code>+0x0C</code>) equals <code>chunk[0].size + chunk[1].size</code>. Byte-verified across <code>0877</code>&ndash;<code>0885</code> (e.g. <code>0877</code>: <code>0x2820 + 0x1BA90 == 0x1E2B0</code>); the reconstituted VAB parses with <code>legaia_vab</code> and the terminator SEQ with <code>legaia_seq</code>.</p>
-  <p>This settles the earlier open question about the <strong>type-1 chunk payload</strong>. On the <em>graphics</em> battle-init walk, <code>FUN_8001FE70</code>'s type-1 handler is the TIM/CLUT upload (<code>FUN_800198E0</code>), so a sound pack's type-1 could not be a TIM - and it isn't: it is the VAB's sample pool. The content shape matches the <a href="scene-bundles.html">scene_vab_stream</a> BGM wrapper (VAB + SEQ); only the container differs. Decoder: <code>legaia_asset::sound_pack</code> (<code>extract</code> returns the reconstituted VAB + SEQ); disc-gated <code>sound_pack_vab_seq_real</code> test.</p>
-  <p>Residual: the <code>.MAP</code> / <code>.PCH</code> PsyQ SoundArtist intermediates are the dev-side inputs that <em>produce</em> this VAB, not separate on-disc retail chunks; a <code>crates/sound</code> companion is only warranted if those turn up in a build, which the retail disc does not carry.</p>
+  <p>The <strong>type-1 chunk payload</strong> depends on the consumer: on the <em>graphics</em> battle-init walk, <code>FUN_8001FE70</code>'s type-1 handler is the TIM/CLUT upload (<code>FUN_800198E0</code>); a sound pack's type-1 is the VAB's sample pool. The content shape matches the <a href="scene-bundles.html">scene_vab_stream</a> BGM wrapper (VAB + SEQ); only the container differs. Decoder: <code>legaia_asset::sound_pack</code> (<code>extract</code> returns the reconstituted VAB + SEQ); disc-gated <code>sound_pack_vab_seq_real</code> test.</p>
+  <p>The <code>.MAP</code> / <code>.PCH</code> PsyQ SoundArtist intermediates are the dev-side inputs that <em>produce</em> this VAB, not separate on-disc retail chunks - the retail disc does not carry them.</p>
 </section>
 
 <section class="doc-section" id="see-also">

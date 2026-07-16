@@ -5,7 +5,7 @@
 </header>
 
 <section class="doc-section" id="corrected">
-  <div class="callout"><strong>Corrected from disc (raw PROT scan).</strong> The earlier reading - &ldquo;124 PROT entries share the schema, the preamble fills the slots per-scene&rdquo; - does not survive a byte scan. The magic appears <strong>raw in exactly four PROT entries</strong> (<code>0002_gameover_data</code>, <code>0003</code>/<code>0004</code>/<code>0005_town01</code>); the 97-entry schema <em>signature</em> appears in <strong>eight</strong> (the other four - <code>0020_town0b</code>, <code>0021</code>/<code>0022</code>/<code>0023_town0c</code> - carry it <strong>without</strong> the magic). And the ≈ 91 KB schema-indexed region is a <strong>global constant</strong>: byte-identical (FNV/SHA <code>c85d6a44d742…</code>) across town01 <strong>and</strong> town0c. So the slots are <strong>not</strong> filled per-scene - they are a shared template; the per-scene payload is the <strong>preamble</strong> (a count + <code>u16</code> offset table + records, the same shape the magic-less town0b/town0c field files open with). The long-open &ldquo;preamble → schema-slot mapping&rdquo; question rests on a false premise. Pinned by <code>crates/asset/tests/field_pack_real.rs</code>.</div>
+  <div class="callout"><strong>Scope (raw PROT scan; pinned by <code>crates/asset/tests/field_pack_real.rs</code>).</strong> The magic appears <strong>raw in exactly four PROT entries</strong> (<code>0002_gameover_data</code>, <code>0003</code>/<code>0004</code>/<code>0005_town01</code>); the 97-entry schema <em>signature</em> appears in <strong>eight</strong> (the other four - <code>0020_town0b</code>, <code>0021</code>/<code>0022</code>/<code>0023_town0c</code> - carry it <strong>without</strong> the magic). The ≈ 91 KB schema-indexed region is a <strong>global constant</strong>: byte-identical (FNV/SHA <code>c85d6a44d742…</code>) across town01 <strong>and</strong> town0c. So the slots are a shared template, <strong>not</strong> filled per-scene; the per-scene payload is the <strong>preamble</strong> (a count + <code>u16</code> offset table + records, the same shape the magic-less town0b/town0c field files open with). A &ldquo;preamble → schema-slot mapping&rdquo; does not exist to find - that question rests on a false premise.</div>
 </section>
 
 <section class="doc-section" id="layout">
@@ -19,7 +19,7 @@
 </section>
 
 <section class="doc-section" id="what-the-four-entries-look-like">
-  <h2>Corrected structure</h2>
+  <h2>The eight schema carriers</h2>
   <p>The eight schema-bearing entries (4 magic-stamped, 4 not) and their preamble / region split:</p>
 <table>
 <thead><tr>
@@ -225,7 +225,7 @@ _clear a3</code></pre>
 
 <section class="doc-section" id="runtime-vs-on-disc">
   <h2>Runtime layout differs from on-disc schema</h2>
-  <div class="callout"><strong>Re-check needed (see <a href="#corrected">Corrected structure</a>).</strong> This section concluded the loader <em>transforms</em> per-scene preamble bytes into the runtime slots. That premise is doubtful: the schema-indexed region is a <strong>disc-side global constant</strong>, so there is nothing per-scene to project into it. Also <code>base</code> here is <code>_DAT_8007B8D0 − 0x12800</code> = the <strong>field-file buffer base</strong>, but the loader places the field-asset region at <code>buffer + 0x12000</code> (efect.dat at <code>+0x12800</code>), so <code>base + 0x60</code> is the field file's <code>+0x0000</code> object/primitive region, <strong>not</strong> field-pack schema slot 0. Treat the runtime-projection claim as open.</div>
+  <div class="callout"><strong>Open question - treat the runtime-projection reading below as unresolved</strong> (see <a href="#corrected">Scope</a>). The schema-indexed region is a <strong>disc-side global constant</strong>, so there is nothing per-scene to project into it. And <code>base</code> here is <code>_DAT_8007B8D0 − 0x12800</code> = the <strong>field-file buffer base</strong>, but the loader places the field-asset region at <code>buffer + 0x12000</code> (efect.dat at <code>+0x12800</code>), so <code>base + 0x60</code> is the field file's <code>+0x0000</code> object/primitive region, <strong>not</strong> field-pack schema slot 0.</div>
   <p>Reading the town capture at <code>base + 0x60</code> (where slot 0 was <em>assumed</em> to sit) yields <strong>post-processed GP0 GPU primitive packets</strong>, not the raw NPC / event-trigger / collision records the disc bytes encode. The 91 KB schema describes a fixed <strong>on-disc</strong> logical layout; the observed runtime structure mixes:</p>
 <ul>
 <li>GP0-shaped primitive packets (visible at <code>base + 0x60</code>)</li>
@@ -260,7 +260,7 @@ if let Some((label, stale_base)) =
 
 <section class="doc-section" id="mednafen-state-diff-observations">
   <h2>Mednafen-state diff observations</h2>
-  <p>A prior diff over the engine RAM range <code>0x801C0000..0x80200000</code> lit up a 9 KB region at <code>0x801F69D8..0x801F8F02</code> that toggled between two different MIPS-code overlays - different scenes load different per-area code into the same slot. The first 16 bytes match the standard PSX function-prologue shape (<code>addiu sp,sp,-N</code>, <code>sw s1,N(sp)</code>, <code>lui s1,0x801F</code>, <code>ori s1,s1,...</code>), confirming the slot is an MIPS overlay rather than a data buffer.</p>
+  <p>A save-state diff over the engine RAM range <code>0x801C0000..0x80200000</code> lights up a 9 KB region at <code>0x801F69D8..0x801F8F02</code> that toggles between two different MIPS-code overlays - different scenes load different per-area code into the same slot. The first 16 bytes match the standard PSX function-prologue shape (<code>addiu sp,sp,-N</code>, <code>sw s1,N(sp)</code>, <code>lui s1,0x801F</code>, <code>ori s1,s1,...</code>), confirming the slot is an MIPS overlay rather than a data buffer.</p>
   <h3>Town01 vs town0c diff (two field captures, full main RAM)</h3>
 <table>
 <thead><tr>
@@ -322,7 +322,7 @@ for (i, _kind, off, _size) in legaia_asset::field_pack::iter_canonical_slots() {
     let abs = base + off;
     /* ... */
 }</code></pre>
-  <p>The detector is reliable for classification today; per-slot interpretation beyond size-clustering is bracketed by the cluster table above and pending a per-scene loader trace for the final on-disc → RAM projection.</p>
+  <p>The detector is reliable for classification; per-slot interpretation beyond size-clustering is bracketed by the cluster table above and pending a per-scene loader trace for the final on-disc → RAM projection.</p>
 </section>
 
 

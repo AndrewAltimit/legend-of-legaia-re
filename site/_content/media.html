@@ -94,11 +94,10 @@
     Hear every sound in <em>Legend of Legaia</em>, and watch every cutscene, straight from your own copy of the game.
   </p>
   <p>
-    Load a <code>.bin</code> disc image once and flip between three categories: <strong>BGM</strong>
-    music, the <strong>FMV</strong> cutscenes, and the <strong>SE</strong> sound-effect and voice banks.
-    The same WebAssembly build that powers the <a href="viewer.html">asset viewer</a> parses, decodes,
-    and plays all of it locally. Nothing is uploaded. Your disc is cached in your browser and shared
-    across pages, so it auto-loads on reload - use <em>Forget</em> to clear it.
+    Load a <code>.bin</code> disc image once and flip between <strong>BGM</strong> music,
+    <strong>FMV</strong> cutscenes, and the <strong>SE</strong> sound-effect and voice banks - all
+    parsed, decoded, and played locally in WebAssembly. Nothing is uploaded; your disc is cached in
+    the browser and shared across pages (<em>Forget</em> clears it).
   </p>
 </header>
 
@@ -118,16 +117,14 @@
 
 <section class="doc-section" id="browse" style="display: none;">
   <h2>Browse</h2>
-  <p>What each tab holds, and why it isn't just a folder of audio files:</p>
   <ul class="bullets">
-    <li><strong>BGM</strong> - the music, which isn't recorded audio at all. It ships as a score plus a
-      bank of instrument samples (<a href="formats/seq.html">SEQ</a> +
-      <a href="formats/vab.html">VAB</a>), and is <em>performed</em> here by the project's clean-room
-      recreation of the PlayStation's sound chip.</li>
-    <li><strong>FMV</strong> - the full-motion cutscenes (<code>MV*.STR</code>), decoded and played
-      with video and audio kept in sync.</li>
-    <li><strong>SE</strong> - the sound-effect and voice banks (<code>XA*.XA</code>). Each file holds
-      not one track but several voices interleaved together, so clicking one lists what's inside.</li>
+    <li><strong>BGM</strong> - not recorded audio but a score plus instrument bank
+      (<a href="formats/seq.html">SEQ</a> + <a href="formats/vab.html">VAB</a>), performed here by
+      the clean-room <a href="subsystems/audio.html">SPU recreation</a>.</li>
+    <li><strong>FMV</strong> - the <code>MV*.STR</code> cutscenes, decoded with video and audio in
+      sync (<a href="subsystems/cutscene.html">cutscene pipeline</a>).</li>
+    <li><strong>SE</strong> - the <code>XA*.XA</code> banks; each file holds several interleaved
+      voices, so clicking one lists what's inside.</li>
   </ul>
 
   <div class="audio-tabs" role="tablist">
@@ -152,7 +149,7 @@
     </div>
     <ul class="audio-list" id="bgm-list"></ul>
     <p class="hint" style="margin-top: 0.5rem; font-size: 0.78rem;">
-      BGM playback drives the same clean-room SPU + SEQ stack the engine port uses (<code>legaia_engine_audio::Sequencer</code> + <code>WebAudioOut</code> through a <code>ScriptProcessorNode</code>).
+      BGM playback drives the same clean-room SPU + SEQ stack the engine port uses - see <a href="subsystems/audio.html">audio</a>.
     </p>
   </div>
 
@@ -168,7 +165,7 @@
     </div>
     <ul class="audio-list" id="fmv-list"></ul>
     <p class="hint" style="margin-top: 0.5rem; font-size: 0.78rem;">
-      <code>MV*.STR</code> files carry interleaved MDEC video + XA audio. Playing one decodes the <a href="formats/xa.html">XA audio</a> and drives the <a href="subsystems/cutscene.html">MDEC video</a> off the audio clock, frame by frame - the same clean-room decoders the engine port uses (<code>legaia-mdec</code> + <code>legaia-xa</code>). Decode can take a few seconds for the longer streams; the button stays in &ldquo;decoding…&rdquo; while it works.
+      Playing a movie decodes its <a href="formats/xa.html">XA audio</a> and drives the <a href="subsystems/cutscene.html">MDEC video</a> off the audio clock; longer streams take a few seconds to decode.
     </p>
   </div>
 
@@ -180,7 +177,7 @@
     </div>
     <ul class="audio-list" id="se-list"></ul>
     <p class="hint" style="margin-top: 0.5rem; font-size: 0.78rem;">
-      Each <code>XA*.XA</code> file is a CD-XA bank holding <strong>several interleaved voices</strong> - one per <code>(file_no, ch_no)</code> sub-stream - not a single track. Click a file to demux it and list the voices it contains; each one decodes to <a href="formats/xa.html">XA-ADPCM</a> audio independently (<code>legaia-xa::demux</code> + <code>decode</code>). Demuxing a bank decodes every voice in it, so the first click can take a moment.
+      Each bank demuxes into its per-<code>(file_no, ch_no)</code> voices on first click (which can take a moment); every voice decodes independently to <a href="formats/xa.html">XA-ADPCM</a> audio.
     </p>
   </div>
 </section>
@@ -188,10 +185,16 @@
 <section class="doc-section" id="legal">
   <h2>Notes</h2>
   <p>
-    All decoded media stays in your browser. Decoders live in <code>crates/web-viewer</code>: <a href="formats/vab.html">VAB</a> via <code>legaia-vab::decode_vag</code>, <a href="formats/seq.html">SEQ</a> via <code>legaia_engine_audio::Sequencer</code>, <a href="formats/xa.html">XA-ADPCM</a> via <code>legaia-xa::decode</code>, and the <a href="subsystems/cutscene.html">Iki MDEC</a> cutscene video via <code>legaia-mdec</code> (frames assembled off the disc, then decoded one at a time as the movie plays). The clean-room <abbr title="Sound Processing Unit">SPU</abbr> behind BGM is documented at <a href="subsystems/audio.html">subsystems / audio</a>.
+    All decoded media stays in your browser. The decoders are the project's own:
+    <a href="formats/vab.html">VAB</a>, <a href="formats/seq.html">SEQ</a>,
+    <a href="formats/xa.html">XA-ADPCM</a>, and the <a href="subsystems/cutscene.html">Iki MDEC</a>
+    cutscene video; the clean-room <abbr title="Sound Processing Unit">SPU</abbr> behind BGM is
+    documented at <a href="subsystems/audio.html">subsystems / audio</a>.
   </p>
   <p>
-    Browser playback sounding wrong? Hit the <code>.wav</code> button to download a raw PCM dump and play it in <code>VLC</code> / <code>ffplay</code>. The dumped bytes are byte-equal to <code>./target/release/xa demux-disc</code> output (proven by <code>audio_parity.rs</code>) - that's the canonical ground-truth reference. If the downloaded <code>.wav</code> sounds correct but in-browser playback doesn't, the disconnect is on the WebAudio side rather than in the decoder.
+    Playback sounding wrong? The <code>.wav</code> button downloads a raw PCM dump, byte-equal to
+    the native <code>xa demux-disc</code> output. If that file sounds correct but the browser
+    doesn't, the disconnect is on the WebAudio side, not in the decoder.
   </p>
 </section>
 

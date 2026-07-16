@@ -1,13 +1,8 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; art data - tactical arts records</div>
   <h1>Art Data - Tactical Arts records <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">Each playable character (Vahn, Noa, Gala) has a per-character table of <em>art records</em> describing damage, animation, hit timing, status effects, and Super/Miracle Art trigger metadata. These records drive the battle action system.</p>
+  <p class="lede">Each playable character (Vahn, Noa, Gala) has a per-character table of <em>art records</em> describing damage, animation, hit timing, status effects, and Super/Miracle Art trigger metadata. These records drive the battle action system. Implementation: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/art/README.md"><code>crates/art</code></a>.</p>
 </header>
-
-<section class="doc-section" id="overview">
-  <h2>Overview</h2>
-  <p>Implementation: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/art/README.md"><code>crates/art</code></a>.</p>
-</section>
 
 <section class="doc-section" id="where-the-data-lives">
   <h2>Where the data lives</h2>
@@ -151,7 +146,7 @@
 
 <section class="doc-section" id="art-record-layout">
   <h2>Art record layout</h2>
-  <p>The layout is <strong>schema-then-walk</strong>: each record begins with a fixed prefix (commands, action constant, anim index), and the remainder is a sequence of variable-width fields whose presence depends on the art. The researcher captured field positions but did not pin every byte - this page documents the schema; <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/art"><code>crates/art</code></a> ships a strict parser for the prefix and surfaces the unparsed tail for downstream tooling.</p>
+  <p>The layout is <strong>schema-then-walk</strong>: each record begins with a fixed prefix (commands, action constant, anim index), and the remainder is a sequence of variable-width fields whose presence depends on the art. The external RE work this schema derives from captured field positions but did not pin every byte - this page documents the schema; <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/art"><code>crates/art</code></a> ships a strict parser for the prefix and surfaces the unparsed tail for downstream tooling.</p>
   <h3>Fixed prefix</h3>
 <pre><code>+0x00  u8[]   command sequence - values 1=L, 2=R, 3=D, 4=U; terminated by 0x00
        u8     action constant (0x1B..=0x32)
@@ -606,7 +601,7 @@ Replace: 19 27 0F 19 1F 0E 1A 2B 2B 2B
   <p>Because the glyph string is byte-exact ground truth, it serves as the validation oracle for the two derived command sources:</p>
   <ul class="bullets">
     <li><strong>The best-effort PROT <code>0x05C4</code> parser</strong> (<code>legaia_art::parse_record</code>). <code>legaia_art::ArtsOracle::by_command(character, &amp;commands)</code> resolves a decoded command sequence back to a named art; the disc-gated contract test <code>crates/art/tests/arts_table_real.rs</code> runs every art's canonical record bytes through <code>parse_record</code> and asserts the decode round-trips through the oracle. This pins the parser's <code>1=L,2=R,3=D,4=U</code> command-byte decode against the executable without needing the (still-unpinned) full record stride.</li>
-    <li><strong>The curated <code>legaia-gamedata</code> <code>arts.toml</code> <code>ap</code> + <code>directions</code> columns.</strong> The disc-gated test <code>crates/gamedata/tests/arts_scus_oracle.rs</code> matches each curated art to its SCUS row by name and asserts AP + directions agree, with a small explicit allowlist for documented walkthrough errors (currently only <em>Hyper Elbow</em>). A new undocumented divergence fails the test.</li>
+    <li><strong>The curated <code>legaia-gamedata</code> <code>arts.toml</code> <code>ap</code> + <code>directions</code> columns.</strong> The disc-gated test <code>crates/gamedata/tests/arts_scus_oracle.rs</code> matches each curated art to its SCUS row by name and asserts AP + directions agree, with a small explicit allowlist for documented walkthrough errors (only <em>Hyper Elbow</em>). A new undocumented divergence fails the test.</li>
   </ul>
 </section>
 

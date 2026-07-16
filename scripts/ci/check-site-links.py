@@ -98,6 +98,13 @@ def main() -> int:
             resolved = (page.parent / path_part).resolve()
             if resolved.is_dir():
                 resolved = resolved / "index.html"
+            if not resolved.is_relative_to(SITE):
+                # Resolves to a repo file outside site/ - exists locally, but
+                # the deployed site serves only site/, so it 404s in production.
+                violations.append(
+                    f"{rel_page}:{line}: link escapes the site root '{raw}'"
+                )
+                continue
             if not resolved.exists():
                 violations.append(f"{rel_page}:{line}: broken link '{raw}'")
                 continue
