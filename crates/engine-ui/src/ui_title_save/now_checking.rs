@@ -118,3 +118,144 @@ pub fn now_checking_text_draws_for(
     );
     out
 }
+
+// ---------------------------------------------------------------------------
+// Confirm dialog ("Do you wish to save?" / "load?" / "overwrite?")
+// ---------------------------------------------------------------------------
+
+/// Retail slide endpoints of the save screen's **confirm dialog** - the
+/// "Do you wish to load? / save? / overwrite?" messagebox. Pinned from
+/// `FUN_801E1C1C` mode 3 (timer `DAT_801ef1a4`), which slides it from
+/// `(160, 344)` - below the stage - up to `(160, 88)`. Same 12-bit
+/// fixed-point interpolation as every other save-UI slide.
+pub const CONFIRM_DIALOG_CENTER_X: i32 = 160;
+/// Companion to [`CONFIRM_DIALOG_CENTER_X`]: the y the dialog slides from.
+pub const CONFIRM_DIALOG_SLIDE_START_Y: i32 = 344;
+/// The y the dialog parks at (retail mode-3 target).
+pub const CONFIRM_DIALOG_SLIDE_TARGET_Y: i32 = 88;
+
+/// Panel size of the confirm dialog.
+///
+/// **Inferred, not independently pinned.** Only the mode-3 slide endpoints
+/// are traced; the dialog is drawn as the same messagebox the "Now checking"
+/// panel is (that one's rect came from a framebuffer scan), so it reuses
+/// [`NOW_CHECKING_PANEL_SIZE`] and the same "panel sits `PANEL_TEXT_RISE`
+/// above the mode's y" relationship. Replace with a scanned rect when a
+/// capture parked on the prompt is available.
+pub const CONFIRM_DIALOG_SIZE: (u32, u32) = NOW_CHECKING_PANEL_SIZE;
+
+/// Offset from a messagebox's mode y to its panel top. Derived from the
+/// "Now checking" pins: mode-0's y is `0x70 = 112` and its scanned panel top
+/// is 97.
+const PANEL_TEXT_RISE: i32 = 15;
+/// First text line's offset from the mode y, from the same pins (line 1 at
+/// 103 vs mode y 112).
+const DIALOG_LINE1_DY: i32 = -9;
+/// Second text line's offset from the mode y (line 2 at 119 vs 112).
+const DIALOG_LINE2_DY: i32 = 7;
+/// Half-width of the gap between the `Yes` and `No` options on the prompt's
+/// second row.
+const CONFIRM_OPTION_GAP: i32 = 28;
+
+/// Panel top-left of the confirm dialog for a given slide `y` (the live
+/// interpolation of [`CONFIRM_DIALOG_SLIDE_START_Y`] ->
+/// [`CONFIRM_DIALOG_SLIDE_TARGET_Y`]).
+fn confirm_dialog_rect(slide_y: i32) -> (i32, i32, i32, i32) {
+    let (w, h) = CONFIRM_DIALOG_SIZE;
+    (
+        CONFIRM_DIALOG_CENTER_X - (w as i32) / 2,
+        slide_y - PANEL_TEXT_RISE,
+        w as i32,
+        h as i32,
+    )
+}
+
+/// Build the [`SpriteDraw`]s for the confirm dialog's 9-slice panel.
+/// `slide_y` is the dialog's live y (interpolate
+/// [`CONFIRM_DIALOG_SLIDE_START_Y`] -> [`CONFIRM_DIALOG_SLIDE_TARGET_Y`]
+/// against the session's slide timer; pass the target for the static case).
+pub fn confirm_dialog_panel_draws_for(
+    rects: &SaveMenuAtlasRects,
+    slide_y: i32,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let mut out = Vec::with_capacity(16);
+    nine_slice_panel_into(
+        &mut out,
+        rects,
+        confirm_dialog_rect(slide_y),
+        stage_origin,
+        stage_scale,
+        false,
+    );
+    out
+}
+
+/// Build the [`TextDraw`]s for the confirm dialog: the `prompt` on the first
+/// line and a `Yes` / `No` row on the second, both horizontally centred on
+/// [`CONFIRM_DIALOG_CENTER_X`] the way retail's `FUN_801E3EE0` centres every
+/// messagebox line. `cursor` selects the highlighted option (0 = Yes,
+/// 1 = No).
+pub fn confirm_dialog_text_draws_for(
+    font: &legaia_font::Font,
+    prompt: &str,
+    cursor: u8,
+    slide_y: i32,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<TextDraw> {
+    let scale = stage_scale.max(1);
+    let mut out = Vec::with_capacity(48);
+
+    let mut emit = |text: &str, left_x: i32, top_y: i32, color: [f32; 4]| {
+        let layout = font.layout_ascii(text);
+        for g in &layout.glyphs {
+            out.push(TextDraw {
+                dst: (
+                    stage_origin.0 + (left_x + g.dst_x) * scale as i32,
+                    stage_origin.1 + (top_y + g.dst_y) * scale as i32,
+                    g.width * scale,
+                    g.height * scale,
+                ),
+                src: (g.atlas_x, g.atlas_y, g.width, g.height),
+                color,
+            });
+        }
+    };
+
+    let centered = |font: &legaia_font::Font, text: &str| {
+        CONFIRM_DIALOG_CENTER_X - (font.layout_ascii(text).advance_x as i32 / 2)
+    };
+    emit(
+        prompt,
+        centered(font, prompt),
+        slide_y + DIALOG_LINE1_DY,
+        SAVE_SELECT_TITLE_COLOR,
+    );
+
+    // Yes / No, flanking the centre; the picked one takes the bright menu
+    // ink, the other stays dim.
+    let row_y = slide_y + DIALOG_LINE2_DY;
+    let dim: [f32; 4] = [
+        SAVE_SELECT_TITLE_COLOR[0] * 0.55,
+        SAVE_SELECT_TITLE_COLOR[1] * 0.55,
+        SAVE_SELECT_TITLE_COLOR[2] * 0.55,
+        1.0,
+    ];
+    for (i, opt) in ["Yes", "No"].iter().enumerate() {
+        let w = font.layout_ascii(opt).advance_x as i32;
+        let x = if i == 0 {
+            CONFIRM_DIALOG_CENTER_X - CONFIRM_OPTION_GAP - w
+        } else {
+            CONFIRM_DIALOG_CENTER_X + CONFIRM_OPTION_GAP
+        };
+        let color = if i as u8 == cursor {
+            SAVE_SELECT_TITLE_COLOR
+        } else {
+            dim
+        };
+        emit(opt, x, row_y, color);
+    }
+    out
+}

@@ -18,6 +18,45 @@
    playable content. The component styles itself (js/legaia-saves.js). */
 .play-saves-strip { display: block; }
 
+/* Memory-card rack: the two card ports the in-game Load / Save screens read
+   and write. Sits under the save bar it draws its cards from. */
+.play-card-rack {
+  border: 1px solid var(--border); background: var(--bg-card);
+  border-radius: 4px; padding: 0.5rem 0.65rem; font-family: var(--font-mono);
+}
+.play-card-rack-head {
+  font-size: 0.68rem; color: var(--text-dim); text-transform: uppercase;
+  letter-spacing: 0.06em; padding-bottom: 0.4rem;
+}
+.play-card-rack-head b { color: var(--text); }
+.play-card-ports { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.play-card-port {
+  flex: 1 1 16rem; display: flex; align-items: center; gap: 0.5rem;
+  border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg-code); padding: 0.4rem 0.55rem;
+}
+.play-card-port.is-filled { border-color: var(--accent); }
+.play-card-port-name {
+  flex: none; font-size: 0.66rem; color: var(--accent);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.play-card-port select {
+  flex: 1; min-width: 0; background: var(--bg-card); color: var(--text);
+  border: 1px solid var(--border); border-radius: 3px;
+  font-family: var(--font-mono); font-size: 0.7rem; padding: 0.16rem 0.3rem;
+}
+.play-card-port-dirty { flex: none; font-size: 0.66rem; color: #d8b34b; }
+.play-card-btn {
+  flex: none; background: var(--bg-card); color: var(--text);
+  border: 1px solid var(--border); border-radius: 3px; cursor: pointer;
+  font-family: var(--font-mono); font-size: 0.66rem; padding: 0.16rem 0.45rem;
+}
+.play-card-btn:hover:not([disabled]) { border-color: var(--accent); }
+.play-card-btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+.play-card-note {
+  font-size: 0.7rem; color: var(--text-dim); padding-top: 0.4rem; line-height: 1.5;
+}
+
 /* Boot-mode presets. */
 .play-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 0.6rem; }
 .play-mode {
@@ -185,6 +224,14 @@
          invites the first import. Resume drops a stored save straight into the
          running engine. Nothing is uploaded. -->
     <div id="play-saves-strip" class="play-saves-strip"></div>
+
+    <!-- Memory-card rack: the console's two card ports. Picking a card image
+         here "inserts" it, and the in-game Load / Save screens then read and
+         write THAT card - saving updates the image in place, so Export hands
+         back a card your emulator still loads. Page chrome, not an in-game
+         screen: retail's own save screen only ever picks between the two
+         ports, which is what the SLOT 1 / SLOT 2 pills are. -->
+    <div id="play-card-rack" class="play-card-rack" style="display: none;"></div>
 
     <div class="play-modes" id="play-modes" style="display: none;">
       <button class="play-mode" type="button" data-mode="newgame">
@@ -504,6 +551,14 @@
           onState: onState,
           menuOverlay: menuCanvas,
           onScene: (name) => { active = name; renderList(searchEl.value); },
+          /* The in-game Load screen read a save off an inserted memory card:
+           * the party is already in the world, so all that is left is to walk
+           * into the scene it was saved in - retail resumes there. */
+          onCardLoad: (scene) => {
+            try { runtime.play_menu_close(); } catch (e) {}
+            saveMsg(`Loaded from memory card${scene ? ` - ${scene}` : ''}.`);
+            if (sceneKnown(scene) && scene !== active) enter(scene);
+          },
           onError: (msg) => {
             /* A WASM trap poisons the engine instance; rebuild it from the
              * cached disc bytes and re-enter, so a single bad frame doesn't
@@ -808,7 +863,7 @@
   function finishCardImport(bytes, block, opts, format) {
     try {
       const sum = JSON.parse(runtime.import_card_save(bytes, block));
-      LegaiaSaves.putSession({
+      const cardId = LegaiaSaves.putSession({
         id: opts.id, kind: 'card',
         name: opts.name || `Card block ${block}`,
         scene: sum.scene || '',
@@ -819,6 +874,9 @@
         coins: sum.coins != null ? sum.coins : null,
       }, bytes);
       saveMsg(`Imported card block ${block}${sum.location ? ` (${sum.location})` : ''}.`);
+      /* The card the player just handed us is almost certainly the one they
+       * want in a slot - put it in a free port so in-game Save works now. */
+      autoInsertCard(cardId);
       enterAfterImport(sum.scene || '');
     } catch (err) {
       saveMsg(`Import failed: ${err.message || err}`, true);
@@ -915,6 +973,183 @@
     savesBar.render();
   }
 
+  /* ---------------- memory-card rack ----------------
+   *
+   * The console has two card ports, which is why retail's save screen shows
+   * exactly two SLOT pills - picking one is the whole of its card choice. So
+   * choosing WHICH card image sits in each port is page chrome, and lives
+   * here; the in-game Load / Save screens then read and write whatever is
+   * inserted (`runtime.insert_card` / `card_slots_json` / `export_card`).
+   *
+   * Cards come from the save bar above: any stored `card` session is
+   * insertable. Saving in-game writes into the card image in place and marks
+   * the port dirty; Export downloads it (and re-stores it) so the player can
+   * carry the save back to their emulator. */
+
+  const cardRackEl = document.getElementById('play-card-rack');
+  const CARD_PORTS = 2;
+  /* Which stored save id is in each port, so a re-render keeps the picks. */
+  const portSaveIds = [null, null];
+
+  function cardSessions() {
+    return LegaiaSaves.listSessions().filter(s => s.kind === 'card');
+  }
+
+  function rackSlots() {
+    if (!runtime) return null;
+    try { return JSON.parse(runtime.card_slots_json()); }
+    catch (e) { return null; }
+  }
+
+  /* Insert the stored save `id` into `port` (or eject when id is falsy). */
+  function insertCard(port, id) {
+    if (!runtime) return;
+    if (!id) {
+      runtime.eject_card(port);
+      portSaveIds[port] = null;
+      renderCardRack();
+      return;
+    }
+    const stored = LegaiaSaves.getSession(id);
+    if (!stored) { saveMsg('That card is no longer stored in this browser.', true); return; }
+    try {
+      runtime.insert_card(port, stored.bytes, stored.meta.name || id);
+      portSaveIds[port] = id;
+      saveMsg(`"${stored.meta.name || id}" is in MEMORY CARD SLOT ${port + 1} - `
+            + 'the in-game Load and Save screens use it now.');
+    } catch (err) {
+      saveMsg(`Could not insert that card: ${err.message || err}`, true);
+    }
+    renderCardRack();
+  }
+
+  /* Pull the (possibly saved-into) card image back out of the engine, store
+   * it over the session it came from, and download it. */
+  function exportCard(port) {
+    if (!runtime) return;
+    let bytes;
+    try { bytes = runtime.export_card(port); }
+    catch (err) { saveMsg(`Export failed: ${err.message || err}`, true); return; }
+    if (!bytes || !bytes.length) return;
+    const id = portSaveIds[port];
+    const meta = id ? (LegaiaSaves.listSessions().find(s => s.id === id) || {}) : {};
+    const name = meta.name || `card-slot-${port + 1}`;
+    /* Re-store so the browser copy carries the in-game saves too, and the
+     * tile's stats/icon re-derive off the new bytes. */
+    if (id) {
+      let party = meta.party, money = meta.money, location = meta.location, level = meta.level;
+      try {
+        const listing = JSON.parse(wasm.card_saves_json(bytes));
+        const s = (listing.saves || []).find(x => x.block === meta.block);
+        if (s) { party = s.party; money = s.money; location = s.location; level = s.level; }
+      } catch (e) { /* keep the old meta; the bytes are what matter */ }
+      LegaiaSaves.putSession({
+        id, kind: 'card', name, scene: meta.scene || '', block: meta.block,
+        format: meta.format || 'mcr', party, level, money, location,
+      }, bytes);
+      if (savesBar) savesBar.invalidateIcon(id);
+    }
+    downloadBytes(bytes, `${name.replace(/[^\w.-]+/g, '-')}.${meta.format || 'mcr'}`);
+    saveMsg(`Exported MEMORY CARD SLOT ${port + 1} - load it in your emulator to carry on there.`);
+    renderCardRack();
+  }
+
+  function cardPortEl(port, slot, sessions) {
+    const box = document.createElement('div');
+    box.className = 'play-card-port' + (slot && slot.inserted ? ' is-filled' : '');
+
+    const name = document.createElement('span');
+    name.className = 'play-card-port-name';
+    name.textContent = `Slot ${port + 1}`;
+    box.appendChild(name);
+
+    const sel = document.createElement('select');
+    sel.title = `Which card image is in memory card slot ${port + 1}`;
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = '(empty)';
+    sel.appendChild(none);
+    for (const s of sessions) {
+      const o = document.createElement('option');
+      o.value = s.id;
+      /* A card can only be in one port at a time, as on the console. */
+      const otherPort = portSaveIds.indexOf(s.id);
+      o.disabled = otherPort !== -1 && otherPort !== port;
+      o.textContent = (s.name || s.id) + (o.disabled ? ` (in slot ${otherPort + 1})` : '');
+      sel.appendChild(o);
+    }
+    sel.value = portSaveIds[port] || '';
+    sel.addEventListener('change', () => insertCard(port, sel.value));
+    box.appendChild(sel);
+
+    if (slot && slot.dirty) {
+      const d = document.createElement('span');
+      d.className = 'play-card-port-dirty';
+      d.textContent = '● unsaved';
+      d.title = 'This card has in-game saves you have not exported yet';
+      box.appendChild(d);
+    }
+
+    const ex = document.createElement('button');
+    ex.type = 'button';
+    ex.className = 'play-card-btn';
+    ex.textContent = 'Export';
+    ex.title = 'Download this card image, with your in-game saves written into it';
+    ex.disabled = !(slot && slot.inserted);
+    ex.addEventListener('click', () => exportCard(port));
+    box.appendChild(ex);
+
+    return box;
+  }
+
+  function renderCardRack() {
+    if (!cardRackEl) return;
+    const slots = rackSlots();
+    if (!slots) { cardRackEl.style.display = 'none'; return; }
+    const sessions = cardSessions();
+    cardRackEl.style.display = '';
+    cardRackEl.textContent = '';
+
+    const head = document.createElement('div');
+    head.className = 'play-card-rack-head';
+    head.innerHTML = '<b>Memory cards</b> - what the in-game Load / Save screens use';
+    cardRackEl.appendChild(head);
+
+    const ports = document.createElement('div');
+    ports.className = 'play-card-ports';
+    for (let p = 0; p < CARD_PORTS; p++) {
+      ports.appendChild(cardPortEl(p, slots[p], sessions));
+    }
+    cardRackEl.appendChild(ports);
+
+    const note = document.createElement('div');
+    note.className = 'play-card-note';
+    note.innerHTML = sessions.length
+      ? 'Open the pause menu (Start) and pick <b>Save</b> to write into the inserted card, '
+        + 'or <b>Load</b> to read a save off it. Export when you want to carry it back to '
+        + 'your emulator.'
+      : 'Import a memory-card save above (<b>.mcr / .gme / .mcs</b>) to put one in a slot.';
+    cardRackEl.appendChild(note);
+  }
+
+  /* A card ejected out from under the engine must not stay "inserted". */
+  function dropEjectedCards() {
+    const live = new Set(cardSessions().map(s => s.id));
+    for (let p = 0; p < CARD_PORTS; p++) {
+      if (portSaveIds[p] && !live.has(portSaveIds[p])) insertCard(p, null);
+    }
+  }
+
+  /* Auto-insert a freshly imported card into the first free port: the player
+   * just said "this is my card", so having to also pick it out of a dropdown
+   * is a step for nothing. */
+  function autoInsertCard(id) {
+    if (!runtime || !id) return;
+    if (portSaveIds.indexOf(id) !== -1) return;
+    const free = portSaveIds.indexOf(null);
+    if (free !== -1) insertCard(free, id);
+  }
+
   saveExportBtn.addEventListener('click', exportSession);
   saveImportEl.addEventListener('change', async () => {
     const f = saveImportEl.files && saveImportEl.files[0];
@@ -935,7 +1170,13 @@
   });
 
   renderSavesStrip();
-  window.addEventListener('legaia-saves-change', renderSavesStrip);
+  renderCardRack();
+  window.addEventListener('legaia-saves-change', () => {
+    renderSavesStrip();
+    /* A deleted card must not stay in a port. */
+    dropEjectedCards();
+    renderCardRack();
+  });
   window.__legaiaSaves = window.LegaiaSaves;
 
   /* ---------------- focus + buttons ---------------- */

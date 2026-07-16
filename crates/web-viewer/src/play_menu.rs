@@ -983,12 +983,12 @@ impl LegaiaRuntime {
         let phase = s.phase();
         let card = s.current_slot();
 
-        // --- text: the panel title, plus the confirm prompt when it is up ---
-        let confirm: Option<(&str, u8)> = match phase {
-            SelectPhase::ConfirmOverwrite { cursor, .. } => Some(("Do you wish to save?", cursor)),
-            SelectPhase::ConfirmDelete { cursor, .. } => Some(("Delete this save?", cursor)),
-            _ => None,
-        };
+        // --- text: the panel title ---
+        // The confirm prompt is deliberately NOT handed to
+        // `save_select_draws_for`: its inline Yes/No is the flat model's
+        // layout, which lands on top of this screen's info panel. Retail
+        // raises the prompt as its own centred messagebox (FUN_801E1C1C
+        // mode 3) - emitted at the end of this function.
         let rows: Vec<ui::SaveSelectRow<'_>> = s
             .slots()
             .iter()
@@ -1006,7 +1006,7 @@ impl LegaiaRuntime {
             title,
             &rows,
             card as usize,
-            confirm,
+            None,
             origin,
             scale,
             // The chrome atlas supplies the pointing-finger cursor sprite;
@@ -1118,6 +1118,26 @@ impl LegaiaRuntime {
                 ));
             }
             _ => {}
+        }
+
+        // The confirm prompt rides on top of everything, sliding up from
+        // below the stage (retail mode 3, (160, 344) -> (160, 88)).
+        let confirm: Option<(&str, u8)> = match phase {
+            SelectPhase::ConfirmOverwrite { cursor, .. } => Some(("Do you wish to save?", cursor)),
+            SelectPhase::ConfirmDelete { cursor, .. } => Some(("Delete this save?", cursor)),
+            _ => None,
+        };
+        if let Some((prompt, cursor)) = confirm {
+            let y = legaia_engine_core::save_select::interpolate_anim(
+                (0, ui::CONFIRM_DIALOG_SLIDE_START_Y),
+                (0, ui::CONFIRM_DIALOG_SLIDE_TARGET_Y),
+                s.info_panel_slide_anim_t(),
+            )
+            .1;
+            sprites.extend(ui::confirm_dialog_panel_draws_for(rects, y, origin, scale));
+            d.extend(ui::confirm_dialog_text_draws_for(
+                font, prompt, cursor, y, origin, scale,
+            ));
         }
         texts.extend(d);
     }

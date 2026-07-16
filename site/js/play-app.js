@@ -52,6 +52,15 @@
     Space: 0x4000,  /* Cross (second binding - the natural "talk" key) */
   };
 
+  /* The retail menu's own clock. Its timers (the save screen's "Now checking"
+   * beat, every slide-in) are counted in 60 Hz frames, so the menu ticks on
+   * this fixed step rather than once per animation frame - the page's own
+   * frame rate is well below 60 on a heavy scene. */
+  const MENU_TICK_MS = 1000 / 60;
+  /* Most catch-up ticks one frame may replay (a backgrounded tab can hand us
+   * an arbitrarily large gap). */
+  const MENU_TICK_MAX_CATCHUP = 8;
+
   /* Keys the canvas swallows so the page doesn't scroll under the player. */
   const SWALLOW = new Set(Object.keys(PAD).concat(['Space', 'ArrowUp', 'ArrowDown',
     'ArrowLeft', 'ArrowRight']));
@@ -721,6 +730,9 @@
         if (startEdge && this._canOpenFieldMenu()) {
           try { rt.play_menu_open(); } catch (e) { return false; }
           this._ensureMenuBlitters();
+          /* Start the menu clock now: whatever wall-clock gap preceded the
+           * open is not menu time. */
+          this._menuClock = performance.now();
           p.clear();
           this._repack();
           return rt.play_menu_is_open();
@@ -733,7 +745,44 @@
       } else {
         let edge = 0;
         for (const k of p) edge |= (PAD[k] || 0);
-        if (edge) { try { rt.play_menu_input(edge); } catch (e) {} }
+        /* Tick EVERY frame, edge or not, and tick at 60 Hz.
+         *
+         * The menu is not purely input-driven: the save screen's "Now
+         * checking" dialog counts down a retail frame timer and its slide-ins
+         * ramp per tick. Gating the tick on a keypress freezes the card read
+         * forever; ticking once per rAF stretches a ~2 s beat to ~12 s when
+         * the page is running at 10 fps. So run the menu on its own 60 Hz
+         * clock and catch up whole ticks - the same reason retail scales its
+         * slide increments by the frame-skip factor `DAT_1f800393` (see
+         * docs/subsystems/save-screen.md), keeping the animation's real-time
+         * speed constant however slow the frame is.
+         *
+         * The edge is delivered on the first tick only; the catch-up ticks
+         * pass 0 so one keypress can never register twice. */
+        const now = performance.now();
+        if (!this._menuClock) this._menuClock = now;
+        let ticks = Math.floor((now - this._menuClock) / MENU_TICK_MS);
+        /* Cap the catch-up so a backgrounded tab can't spend a whole second
+         * of wall clock replaying menu frames on return. */
+        if (ticks > MENU_TICK_MAX_CATCHUP) {
+          ticks = MENU_TICK_MAX_CATCHUP;
+          this._menuClock = now;
+        } else {
+          this._menuClock += ticks * MENU_TICK_MS;
+        }
+        /* Always at least one tick, so an edge is never dropped. */
+        for (let i = 0, n = Math.max(1, ticks); i < n; i++) {
+          try { rt.play_menu_input(i === 0 ? edge : 0); } catch (e) {}
+        }
+        /* An in-canvas Load off a memory card lands the save's party in the
+         * world, but the scene it was written in is the page's to enter
+         * (`enter()` owns scene assembly). The engine parks the label; hand
+         * it over the frame it appears. */
+        let scene = '';
+        try { scene = rt.play_menu_take_load_scene(); } catch (e) {}
+        if (scene && typeof this.opts.onCardLoad === 'function') {
+          this.opts.onCardLoad(scene);
+        }
       }
       /* The menu owns every edge while it is up - clear them so none leak into
        * the frozen field on the next tick. */
