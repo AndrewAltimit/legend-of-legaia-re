@@ -367,7 +367,7 @@ is neither the byte map above nor anywhere in the dumped corpus.
 
 A player Seru-magic *damage* summon does **not** go through `FUN_800402F4`'s
 selector dispatch and has no static per-spell power scalar (see
-[spell-table.md](../formats/spell-table.md#per-spell-damage-power-is-not-static-data--it-is-caster-state-derived)).
+[spell-table.md](../formats/spell-table.md#per-spell-damage-power-is-not-static-data---it-is-caster-state-derived)).
 Its HP delta is built from live battle stats in three stages - all byte-traced
 from `overlay_battle_action_801dd0ac.txt` and the two helpers it calls. In the
 pseudocode below `INT` is the actor's `+0x168` stat (for monsters that is

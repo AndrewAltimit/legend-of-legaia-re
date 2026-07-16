@@ -1,5 +1,16 @@
 # RAM map + key globals
 
+What lives where in Legaia's RAM. A lookup table: **grep it for your address**, or scan the region map below to work out which section an address falls in.
+
+Two things to know before you use it:
+
+- **An address in the overlay window `0x801C0000+` is ambiguous on its own.** Several overlays share that window and only one is resident at a time, so the same address means different things in field, battle, and menu mode. Rows in that range say which overlay they belong to. See [Overlay window](#overlay-window-0x801c0000).
+- **`0x1F800000` is not main RAM.** It is the 1 KB PSX scratchpad, and Legaia keeps global story flags there - so the flag bank a script writes is not in the 2 MB map at all. See [PSX scratchpad](#psx-scratchpad-0x1f800000-0x1f8003ff).
+
+Rows carry their provenance: a `FUN_` address, a `ghidra/scripts/funcs/` dump path, or the cheat code that pinned them. Where a global's semantics are only partly understood the row says so - "exact semantics **open**" is a real value here, not an omission.
+
+## Region map
+
 PSX RAM is 2 MB total at KSEG0 base `0x80000000`. Legaia's runtime layout:
 
 ```
@@ -55,7 +66,7 @@ citation table.
 | `0x8008459C` | u32 | Party gold. | `Infinite Gold (Never Glitchy)`. |
 | `0x800845A4` | u32 | Casino coin bank. | `Infinite Coins`. |
 | `0x80085600..0x80085800` | u8[512] | Story-flag bitmap window (Door of Wind, town visited markers). | `Access All Towns` writes `0xF77F` / `0xF8FF`. |
-| `0x80085958` | u8[] | **Item inventory** array (= SC `+0x1818`), 2-byte stride `(id, count)`. - [details ↓](#0x80085958--item-inventory) | `Have 99 Items` and `Item Modifier`. |
+| `0x80085958` | u8[] | **Item inventory** array (= SC `+0x1818`), 2-byte stride `(id, count)`. - [details ↓](#0x80085958---item-inventory) | `Have 99 Items` and `Item Modifier`. |
 | `0x800EC9E8` | u8[0x2D4] × N | Battle actor pool, party-slot stride `0x2D4`. | `Infinite HP/MP (Vahn/Noa/Gala)` cheats target slots 0..2. |
 | `0x8007A6BC` | u16 | Shared "currently-acting character" HP/MP scratch. | Every "Infinite HP/MP" cheat hits this first. |
 | `0x8007A894` | u16 | Frame-pacing logic timer. | `Slow Motion` writes `0x68FB`. |
@@ -175,7 +186,7 @@ map, but the table layout is scene-independent.)
 
 | Address | Type | Purpose |
 |---|---|---|
-| `0x8007C018` | `void *[N]` | **Global TMD pointer table.** Installer `FUN_80026B4C @ 0x80026BA8` is the *sole* writer. - [details ↓](#0x8007c018--global-tmd-pointer-table) |
+| `0x8007C018` | `void *[N]` | **Global TMD pointer table.** Installer `FUN_80026B4C @ 0x80026BA8` is the *sole* writer. - [details ↓](#0x8007c018---global-tmd-pointer-table) |
 | `0x8007B774` | u32 | Install counter for `DAT_8007C018`. Bumped by `FUN_80026B4C` on each install. `dolk` field-scene snapshot = `0x8F` (143 entries installed). |
 | `0x8007BB38` | u32 | **Walker counter** (last installed index). Also written by `FUN_80026B4C` via `gp[+0x820]`; the `addu` between the gp-relative `lui+addiu` materialiser and the `sw` is what hides this store from Ghidra's xref database. Used by `FUN_801D8280` to bound the table walk. `dolk` snapshot = `0x8E` (= install counter − 1). |
 | `0x8007B824` | u32 | Per-pack start index into `DAT_8007C018`. Set when a new pack begins, read by `FUN_8001E928` / `FUN_8001E890` post-install to update `DAT_8007B6F8`. `dolk` field-scene snapshot = `0`. |

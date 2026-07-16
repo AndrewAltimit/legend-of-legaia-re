@@ -1,6 +1,10 @@
 # Scene-prefixed asset bundles
 
-Four related shapes account for the dominant per-scene asset layouts on the disc. All of them lead with a 4-byte chunk0 header in the form `(type << 24) | size`, with `type = 0x00` - the same encoding as a [DATA_FIELD streaming](data-field.md) chunk header. The standard streaming walker would interpret `type=0x00` as the TIM dispatcher slot; specialised loaders in the runtime know to dispatch chunk0 differently based on the *content* magic at offset +4.
+Four related shapes account for the dominant per-scene asset layouts on the disc - the wrappers that hold a scene's meshes, textures, sound bank, MAN, and event scripts.
+
+All four lead with the same 4-byte chunk0 header, in the form `(type << 24) | size` with `type = 0x00`. That is the identical encoding a [DATA_FIELD streaming](data-field.md) chunk header uses.
+
+**This is the thing that catches people out.** The standard streaming walker reads `type = 0x00` as the TIM dispatcher slot, so pointing it at a scene bundle produces confident nonsense. The runtime's specialised loaders instead dispatch chunk0 on the *content* magic at offset `+4`. Identify the shape before you pick a walker.
 
 ## Contents
 
@@ -62,8 +66,13 @@ Some entries (e.g. `0006_town01.BIN`) carry **two (or more) complete sub-streams
 +0x2706c  terminator                      ]
 ```
 
-`FUN_8001FE70` walks one sub-stream and **returns `param_1 + 1`** (past the terminator) - the next sub-stream's region - so a sector/slot-indexed caller can walk the rest. The single static caller `FUN_800513F0` (battle init) calls it **once**, so battle uploads only sub-stream 0; the multi-sub-stream caller is the per-scene field/town dispatch (`FUN_8001F7C0` → `FUN_80020224` → `FUN_8001F05C`, overlay-resident, capture-blocked). Enumerate the blocks with [`scene_tmd_stream::sub_streams`](../../crates/asset/src/scene_tmd_stream.rs) (each a full sub-stream with its own TMD); [`scene_tmd_stream::battle_tim_chunks`](../../crates/asset/src/scene_tmd_stream.rs) reports sub-stream 0's TIMs as `WalkSource::Tail` and the later ones as `WalkSource::Continuation`.
-The engine's field-mode loader uses both to **skip** these battle-only TIMs (the row-479 NPC palettes aren't field-resident - matching retail).
+`FUN_8001FE70` walks **one** sub-stream and returns `param_1 + 1` - the address just past the terminator, which is where the next sub-stream begins. A sector- or slot-indexed caller uses that return value to walk the rest.
+
+Who calls it decides how much of the entry gets read. The single static caller `FUN_800513F0` (battle init) calls it exactly once, so battle uploads only sub-stream 0. The multi-sub-stream caller is the per-scene field/town dispatch (`FUN_8001F7C0` → `FUN_80020224` → `FUN_8001F05C`), which is overlay-resident and capture-blocked.
+
+Two parser entry points cover both readings. [`scene_tmd_stream::sub_streams`](../../crates/asset/src/scene_tmd_stream.rs) enumerates the blocks, each a full sub-stream with its own TMD. [`scene_tmd_stream::battle_tim_chunks`](../../crates/asset/src/scene_tmd_stream.rs) reports sub-stream 0's TIMs as `WalkSource::Tail` and the later ones as `WalkSource::Continuation`.
+
+The engine's field-mode loader uses both to **skip** these battle-only TIMs - the row-479 NPC palettes are not field-resident, matching retail.
 
 Reading:
 
@@ -220,7 +229,11 @@ locates them).
 
 ### Slot→asset mapping (the runtime walk)
 
-The mapping is **positional + offset-based** - there is no separate indirection table; the descriptor's `data_offset` field *is* the indirection. The runtime walker `FUN_80020224` reads `count = *base`, then for each `slot` dispatches `asset_type_dispatch(base + descriptor[slot].data_offset, type_size, …)` with descriptors at `base + 8 + slot*8` (stride 8 bytes). So slot `i` is the `i`-th 8-byte descriptor; its payload starts at `base + data_offset` and its handler is keyed by `type_size >> 24`. The full three-function chain (buffer allocation at `FUN_8001E1B4` → file load at `FUN_8001F7C0` → walk at `FUN_80020224` → dispatch at `FUN_8001F05C`) is pinned under the [asset-loader subsystem](../subsystems/asset-loader.md#asset-descriptor-walker-fun_80020224--the-slotasset-mapping).
+The mapping is **positional + offset-based**. There is no separate indirection table - the descriptor's own `data_offset` field *is* the indirection.
+
+The runtime walker `FUN_80020224` reads `count = *base`, then for each `slot` dispatches `asset_type_dispatch(base + descriptor[slot].data_offset, type_size, …)`, with descriptors at `base + 8 + slot*8` (stride 8 bytes). So slot `i` is simply the `i`-th 8-byte descriptor: its payload starts at `base + data_offset`, and its handler is keyed by `type_size >> 24`.
+
+The full chain - buffer allocation at `FUN_8001E1B4`, file load at `FUN_8001F7C0`, walk at `FUN_80020224`, dispatch at `FUN_8001F05C` - is pinned under the [asset-loader subsystem](../subsystems/asset-loader.md#asset-descriptor-walker-fun_80020224---the-slotasset-mapping).
 
 `scene_asset_table::resolve` returns the table plus the base it is relative to, covering **both** the bare variant (base 0) and the prescript-prefixed `scene_scripted_asset_table` variant (base at the post-prescript 0x800-aligned offset); `SceneAssetTable::slots` reproduces the positional walk and `payload_range(slot, base)` resolves a slot's payload span:
 
@@ -315,7 +328,11 @@ Strict structural detection:
 
 The frame-opener rate is what makes this detector zero-false-positive on its own. Random `[count][offsets]`-shaped data carries no `0xFFFF` opener at the record positions; real scene-event-script bundles carry it on the majority of records (50–92 %).
 
-**These records are NOT field-VM (`FUN_801DE840`) bytecode** (the long-standing assumption). Running the field-VM disassembler over them yields a 65–88 % decode-error rate; the bytes are 16-bit **word-aligned** (low byte = opcode, high byte 0 on ~83 % of body words), framed records terminate with a `0x0008` word, and the opcodes sit mostly below the field VM's `0x22` opcode floor - a record like `FF FF 00 00 25 00 29 00 25 00 2A 00 08 00` reads cleanly word-aligned (`cmd(0x25,0x29) cmd(0x25,0x2A) term(0x08)`) but is garbage byte-by-byte. So `0xFFFF 0x0000` is a per-record header sentinel, not a field-VM frame divider.
+**These records are NOT field-VM (`FUN_801DE840`) bytecode.** That was the long-standing assumption, and it is falsified - don't re-walk it.
+
+Four pieces of evidence say so. Running the field-VM disassembler over them yields a 65–88 % decode-error rate. The bytes are 16-bit **word-aligned** (low byte = opcode, high byte 0 on ~83 % of body words). Framed records terminate with a `0x0008` word. And the opcodes sit mostly below the field VM's `0x22` opcode floor.
+
+The alignment is the tell: a record reads cleanly word-aligned as `cmd(0x25,0x29) cmd(0x25,0x2A) term(0x08)` but is garbage byte-by-byte. So `0xFFFF 0x0000` is a per-record **header sentinel**, not a field-VM frame divider.
 Record 0 on towns is a fixed 768-byte run of 8-byte spawn rows - the scene's
 master ambient stager (see the consumer census below).
 The records still encode per-scene structure (actor/NPC placement, event triggers,

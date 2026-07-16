@@ -2,8 +2,17 @@
   <div class="breadcrumb"><a href="index.html">home</a> &middot; world overview (3D)</div>
   <h1>World overview</h1>
   <p class="lede">
-    Each kingdom's overworld in real-time WebGL 3D, straight from your disc image - no save state, no emulator. Load a <code>.bin</code> below and the assembled scene renders immediately. Your disc is cached locally in the browser (shared with the viewer, audio, and monster pages), so it auto-loads on reload - use <em>Forget</em> on the chip to clear. The <strong>&#11015; Download .glb</strong> button under the canvas exports the assembled continent - terrain heightfield, placed landmarks and trees, textures baked from VRAM - as a single binary <a href="https://www.khronos.org/gltf/">glTF</a> that drops straight into Blender, three.js, or any glTF viewer (same format as the enemy-table model export).
-    With a VR headset, the <strong>VR</strong> button in the canvas bar presents the continent over WebXR - as a diorama or standing on the terrain - in Chrome/Edge with SteamVR as the active OpenXR runtime, served from <code>http://localhost</code> or https (WebXR needs a secure context; the button explains what's missing if it can't start).
+    Fly over Legaia's three continents in real-time 3D - no save state, no emulator, just your own copy of the game.
+  </p>
+  <p>
+    Load a <code>.bin</code> disc image below and each kingdom's overworld is assembled and rendered
+    in WebGL. Nothing is uploaded; the disc is cached locally in your browser and shared across
+    pages - use <em>Forget</em> on the chip to clear it.
+  </p>
+  <p>
+    The <strong>&#11015; Download .glb</strong> button under the canvas exports the assembled
+    continent - terrain, landmarks, trees, textures baked in - as one
+    <a href="https://www.khronos.org/gltf/">glTF</a> file for Blender, three.js, or any glTF viewer.
   </p>
 </header>
 
@@ -22,6 +31,12 @@
 
 <section class="doc-section" id="viewer">
   <h2>Viewer</h2>
+  <p class="hint">
+    With a VR headset, the <strong>VR</strong> button in the canvas bar presents the continent over
+    WebXR - a diorama you lean over, or standing on the terrain at human scale
+    (<a href="subsystems/vr-mode.html">VR mode</a>). It needs Chrome or Edge with SteamVR as the
+    active OpenXR runtime and a secure context; if it can't start, the button explains what's missing.
+  </p>
   <div class="wo-tabs" role="tablist">
     <button class="wo-tab is-active" data-k="drake"   role="tab">Drake Kingdom</button>
     <button class="wo-tab"           data-k="sebucus" role="tab">Sebucus Islands</button>
@@ -105,13 +120,19 @@
 <section class="doc-section" id="about-this-view">
   <h2>About this view</h2>
   <p>
-    Each kingdom's overworld ships as one <strong>bundle</strong> on the disc, made of a few numbered <strong>slots</strong> - the ocean texture, the landmark mesh pack, the placement data, and so on; &ldquo;slot 1&rdquo; is the bundle's landmark mesh pack. The <strong>assembled scene</strong> mode loads a kingdom's bundle and walks that pack (<strong>40 / 36 / 56 meshes</strong> for Drake / Sebucus / Karisto), drawing each placement from the bundle's &ldquo;MAN&rdquo; placement slot at its world coordinate. The MAN table only pins a handful of slots per kingdom; the <em>show unplaced slot-1 TMDs</em> toggle drops the rest onto a layout grid, classified into landmark / decoration / ground_tile / npc_token / unknown.
+    Each kingdom's overworld ships as one bundle of numbered slots on the disc - ocean texture,
+    landmark mesh pack (slot&nbsp;1), placement data. <strong>Assembled scene</strong> mode draws
+    the mesh pack at the world coordinates the bundle's &ldquo;MAN&rdquo; placement data gives it;
+    the <em>show unplaced slot-1 TMDs</em> toggle lays out everything the table doesn't place,
+    sorted into best-guess classes.
   </p>
   <p>
-    The <strong>mesh inspector</strong> browses the kingdom TMD pack one mesh at a time. The <strong>top-down placement map</strong> visualises the parsed MAN actor positions; Drake additionally surfaces 12 live-RAM-resolved actor placements (gates, bridge towers, the small castle) overlaid on the MAN entities.
-  </p>
-  <p>
-    The <strong>ocean</strong> toggle samples the disc-side 4bpp tile + 13-frame CLUT animation pulled from slot 0 of the kingdom bundle. The <strong>fog</strong> toggle approximates the retail world-map distance-cue post-process via a 2048-entry LUT auto-extracted from <code>SCUS_942.54</code> on disc load.
+    The <strong>mesh inspector</strong> browses the pack one mesh at a time, and the
+    <strong>top-down placement map</strong> plots the parsed MAN actor positions (Drake adds
+    live-RAM-resolved actor placements). The <strong>ocean</strong> toggle plays the disc's tile +
+    CLUT wave animation; <strong>fog</strong> approximates the retail distance-cue pass from a LUT
+    auto-extracted from <code>SCUS_942.54</code>. How each reconstruction works is on the
+    <a href="subsystems/world-overview-viewer.html">world-overview viewer</a> page.
   </p>
 </section>
 

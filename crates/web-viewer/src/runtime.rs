@@ -71,6 +71,10 @@ pub struct LegaiaRuntime {
     pub(crate) boot_title: Option<legaia_engine_core::title::TitleSession>,
     /// Disc-sourced title-screen art (PROT 0888), built with the title flow.
     pub(crate) title_atlas: Option<legaia_engine_core::title_screen_atlas::TitleScreenAtlas>,
+    /// The **memory-card rack**: the player's own card images occupying the
+    /// console's two ports ([`crate::cards`]). The in-canvas Load / Save
+    /// screens read and write these, and the page exports them back out.
+    pub(crate) cards: [Option<crate::cards::InsertedCard>; crate::cards::CARD_SLOTS],
     #[cfg(target_arch = "wasm32")]
     audio_out: Option<WebAudioOut>,
 }
@@ -99,6 +103,7 @@ impl LegaiaRuntime {
             play_menu: None,
             boot_title: None,
             title_atlas: None,
+            cards: [const { None }; crate::cards::CARD_SLOTS],
             #[cfg(target_arch = "wasm32")]
             audio_out: None,
         }

@@ -103,7 +103,7 @@ pub(crate) enum Cmd {
         input: PathBuf,
     },
     /// Read-only: list every monster's current combat stats (HP / MP / ATK /
-    /// UDF / LDF / AGL / SPD) from the `battle_data` archive - the population
+    /// UDF / LDF / INT / SPD) from the `battle_data` archive - the population
     /// the `--monster-stats` randomizer redistributes.
     MonsterStats {
         /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
@@ -451,12 +451,13 @@ pub(crate) struct RandomizeArgs {
     /// casino spends coins, not gold.
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     pub(crate) casino: DropArg,
-    /// How monster combat stats are reassigned (HP / MP / ATK / DEF / AGL / SPD
-    /// from the `battle_data` archive). `shuffle` permutes each stat column
-    /// across the roster (each stat's multiset preserved, so the overall
+    /// How monster combat stats are reassigned (HP / MP / ATK / UDF / LDF /
+    /// INT / SPD from the `battle_data` archive). `shuffle` permutes each stat
+    /// column across the roster (each stat's multiset preserved, so the overall
     /// difficulty budget is kept); `random` draws each stat from that column's
-    /// pool. Spirit/SP is left untouched. `legaia-rando monster-stats` lists the
-    /// current stats.
+    /// pool. AGL is left untouched - it gates the enemy AI's action economy
+    /// rather than player-facing difficulty. `legaia-rando monster-stats` lists
+    /// the current stats.
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     pub(crate) monster_stats: DropArg,
     /// How special-attack power is reassigned (the battle-action move-power

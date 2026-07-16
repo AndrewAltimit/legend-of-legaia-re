@@ -14,20 +14,34 @@ This page documents:
 
 ## Source attribution
 
-Two GameFAQs walkthroughs supply the raw values:
+Three GameFAQs walkthroughs supply the raw values:
 
 - Tan Yong Hua, "Legend of Legaia Walkthrough" v6.6 (1999).
 - Psycho Penguin (mcfaddendaman), "Legend of Legaia Walkthrough"
   (2001) - the more complete table dump (PSM Magazine attribution
   for the enemy drop / steal table).
+- Meth962, "Legend of Legaia 100% Walkthrough" v1.11 (2015, FAQ
+  53721) - the [`enemies.toml`](../../data/gamedata/enemies.toml)
+  per-enemy stat columns, the [`bosses.toml`](../../data/gamedata/bosses.toml)
+  per-fight moveset / rewards layer, the Seru-magic
+  `absorb_lv1`/`lv2`/`lv3` fields, and the magic-leveling tables in
+  `legaia_gamedata::magic_leveling`.
+
+The music-track table is contributed directly by Stann0x rather than
+mined; see [`music-tracks.md`](music-tracks.md).
 
 Only the *factual* columns are committed (item names, prices, art
-command sequences, MP costs, monster locations, drop tables). No
-prose passages from either guide are reproduced in the repo -
-lawyer-friendly, since prices and stats are not independently
-copyrightable but the prose is. Walkthrough 2 is the primary
-source; walkthrough 1 fills in gaps and contributes the boss-HP
-estimates from its Master Course commentary.
+command sequences, MP costs, monster locations, drop tables). No prose
+passages from any guide are reproduced in the repo - lawyer-friendly,
+since prices and stats are not independently copyrightable but the prose
+is.
+
+Psycho Penguin's guide is the primary source for the item / art / shop
+columns; Tan Yong Hua fills in gaps and contributes the boss-HP
+estimates from its Master Course commentary. Meth962's stat columns
+carry more weight than either where they overlap: they were extracted
+from in-RAM memory dumps rather than estimated from play, which is why
+they are the ones the binary records get cross-validated against.
 
 Sony-owned bytes (asset data, executable, raw ROM bytes) remain
 out of the repo entirely.

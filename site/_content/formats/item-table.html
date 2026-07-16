@@ -19,9 +19,7 @@
   <thead><tr><th>Offset</th><th>Type</th><th>Field</th></tr></thead>
   <tbody>
     <tr><td><code>+0</code></td><td>u8</td><td>kind (<code>1</code> = equipment, <code>2</code> = item / consumable / key)</td></tr>
-    <tr><td><code>+1</code></td><td>u8</td><td>per-kind index byte - equipment: index into the <a href="item-effect-table.html">Item-effect table</a>
-    <a href="accessory-passive-table.html">Accessory passives</a>
-    <a href="equipment-table.html">stat-bonus table</a>; consumables: effect subtype</td></tr>
+    <tr><td><code>+1</code></td><td>u8</td><td>per-kind index byte - equipment (kind <code>1</code>): index into the <a href="equipment-table.html">stat-bonus table</a>; items (kind <code>2</code>): effect subtype into the <a href="item-effect-table.html">item-effect table</a>, which also carries the <a href="accessory-passive-table.html">accessory-passive</a> index</td></tr>
     <tr><td><code>+2</code></td><td>u16</td><td><strong>shop price</strong> in gold - what the buy/sell UI charges; <code>0</code> = quest / found-only item the shop never prices</td></tr>
     <tr><td><code>+4</code></td><td>u32</td><td><code>name_ptr</code> - pointer to the NUL-terminated display name</td></tr>
     <tr><td><code>+8</code></td><td>u32</td><td>secondary pointer (a shared "type" / description string for some classes)</td></tr>

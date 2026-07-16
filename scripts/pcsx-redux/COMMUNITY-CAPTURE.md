@@ -36,6 +36,10 @@ timeout --kill-after=15s 14400s \
 - `--fast` is required — it's what keeps the emulator at full speed.
 - The `timeout` wraps a 4-hour session (`14400s`); raise it if you play longer.
   The script never quits on its own.
+- **On Windows**, `run_probe.ps1` is the PowerShell counterpart of
+  `run_probe.sh` and takes the same shape (`-Fast -Lua <path> -Sstate <path>`).
+  Ask the maintainer if you hit anything odd — the bash path is the one that
+  gets the most mileage.
 - If you'd rather load a memory-card save by hand inside the emulator, add
   `LEGAIA_NO_SSTATE=1` before `bash` and skip `--sstate`.
 - **Your existing PCSX-Redux settings are left untouched.** Under `--fast` the
@@ -121,25 +125,30 @@ bug). The script autosaves every ~30s, so you lose almost nothing:
 You can also just play in chunks — stop whenever, send what you have, and pick
 up later. Partial captures are still useful.
 
-## For the maintainer — locking the version guard before handoff
+## For the maintainer — the version guard
 
-The guard ships **unlocked** (warn-only) so you can test on your own box. Lock
-it so volunteers on the wrong disc get a hard refusal:
+The guard ships **locked**: `M.USA_FINGERPRINT` in
+`scripts/pcsx-redux/lib/probe/version.lua` holds the fingerprint recorded off
+the USA `SCUS_942.54` build, so no handoff step is needed. A JP/EU/PAL or
+wrong-revision disc trips `FATAL version guard: MISMATCH` and never records a
+byte; a good disc logs `version guard: OK`.
 
-1. On your known-good USA disc, run any poll session with `LEGAIA_FP_RECORD=1`:
+The guard fingerprints a few words of always-resident SCUS code at the function
+entries the probes depend on, so a match confirms both "this is Legaia" and
+"this is the USA layout my hard-coded addresses assume". A missing fingerprint
+during boot is treated as "wait, not booted yet", not as a wrong disc.
+
+Re-recording it (only needed for a different build, or to re-verify the value):
+
+1. On your known-good disc, run any poll session with `LEGAIA_FP_RECORD=1`:
    ```bash
    LEGAIA_FP_RECORD=1 bash scripts/pcsx-redux/run_probe.sh --fast \
      --lua scripts/pcsx-redux/autorun_state_poll.lua --sstate <your save>
    ```
    It logs `[state_poll] fingerprint = <hex>` and refuses to arm.
-2. Paste that hex into `M.USA_FINGERPRINT` in
-   `scripts/pcsx-redux/lib/probe/version.lua` (or have volunteers export
-   `LEGAIA_FP_EXPECTED=<hex>`).
-3. Re-run once without `LEGAIA_FP_RECORD` to confirm `version guard: OK`, then
-   hand off.
-
-After that, a JP/EU/PAL or wrong-revision disc trips `FATAL version guard:
-MISMATCH` and never records a byte.
+2. Paste that hex into `M.USA_FINGERPRINT` (or have volunteers export
+   `LEGAIA_FP_EXPECTED=<hex>` to override without editing the file).
+3. Re-run once without `LEGAIA_FP_RECORD` to confirm `version guard: OK`.
 
 ## The two-tier model (why this exists)
 

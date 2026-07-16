@@ -1,6 +1,6 @@
 # PROT.DAT / DMY.DAT TOC
 
-`PROT.DAT` is the main asset archive - 1232 numbered entries containing every TIM, TMD, VAB, MES, ANM, MDT, DATA_FIELD streaming buffer, scene asset table, and runtime overlay. `DMY.DAT` is a sibling archive that turns out to be developer fixtures (memory-bus test pattern + paired random blobs); see [DMY.DAT](dmy.md).
+`PROT.DAT` is the main asset archive - 1233 numbered entries (extraction indices `0..=1232`) containing every TIM, TMD, VAB, MES, ANM, MDT, DATA_FIELD streaming buffer, scene asset table, and runtime overlay. `DMY.DAT` is a sibling archive that turns out to be developer fixtures (memory-bus test pattern + paired random blobs); see [DMY.DAT](dmy.md).
 
 Implementation: `crates/prot/src/archive.rs`.
 

@@ -12,9 +12,15 @@ are byte-pair edits keyed by RAM address, not extracted asset data.
 | `legaia-ntsc-u.gs.txt` | GameShark text dump | "R I 2 L 0 ADDR VALUE NAME" lines (one effect per write). |
 | `legaia-ntsc-u.cht` | Mednafen `.cht` (TOML-like) | `cheatN_desc / cheatN_code / cheatN_enable` triplets; multi-write effects use `+` separators. |
 
-Both files describe the **same** effects in two different on-disk
-encodings. The `crates/cheats` parser ingests either; round-trip
-between formats is part of the test suite.
+The two files are two on-disk encodings of an overlapping cheat set.
+They are not identical: the Mednafen file is hand-curated and may be a
+strict subset of the GameShark dump (which repeats every code for each
+character).
+
+The `crates/cheats` parser ingests either. Its test suite asserts both
+corpora parse cleanly, that the classifier accounts for most corpus
+addresses, and that the per-character record offsets in the `.cht` are a
+subset of the GameShark ones - so the two views agree on what's true.
 
 ## Why these are useful for RE
 
@@ -27,8 +33,8 @@ otherwise unannotated RAM cells, which we can cross-reference
 against the runtime layout traced from `SCUS_942.54` and the
 overlays.
 
-The `crates/cheats classify` CLI groups codes by address range and
-labels them against:
+The crate's `cheat-tool classify <path>` command groups codes by address
+range and labels them against:
 
 - per-character record offsets (`0x80084708 + n*0x414`),
 - inventory slots (`0x80085958` + 2-byte stride),

@@ -1,6 +1,30 @@
 # Asset loader
 
-How the runtime stitches per-scene assets together. Each scene-type has its own loader function with the same dev/retail split: dev branch loads via PROT indices, retail branch resolves dev paths through `FUN_8003E6BC` (the path-based opener) into the same indices via [CDNAME.TXT](../formats/cdname.md).
+How the runtime stitches per-scene assets together: given a scene name, which
+files get pulled off the disc, in what order, and how the meshes, textures and
+palettes end up wired to each other in RAM and VRAM.
+
+**Where it lives.** There is no single loader. Each scene *type* has its own
+entry point, all sharing one dev/retail split: the dev branch loads via PROT
+indices; the retail branch resolves the same dev path strings through
+`FUN_8003E6BC` (the path-based opener) into those same indices via
+[CDNAME.TXT](../formats/cdname.md). The main ones are the battle bundle
+(`FUN_800520F0`), the field / town chain (`FUN_8001F7C0` + `FUN_800255B8`), and
+the descriptor walker they both feed (`FUN_80020224` → `FUN_8001F05C`).
+
+**Port counterpart.** `engine-core`'s `SceneResources::build_targeted` (see
+[CLUT-data scattering](#clut-data-scattering)) plus the `legaia_asset` parsers -
+`scene_asset_table`, `scene_tmd_stream`, `battle_data_pack`.
+
+**The thing that catches people out:** the slot→asset mapping is **positional**.
+There is no slot→asset indirection table anywhere; the descriptor's own
+`data_offset` field *is* the indirection, and slot `i` is simply the `i`-th
+8-byte descriptor. People go looking for a lookup table that does not exist.
+
+**A second one:** a scene's descriptor offsets are relative to the *extended*
+on-disc footprint, so they routinely point past what the per-PROT TOC crops off.
+An offset that looks out-of-bounds usually is not. See
+[Field / town scene loader](#field--town-scene-loader-fun_8001f7c0--fun_800255b8).
 
 ## Battle bundle (`FUN_800520F0`)
 

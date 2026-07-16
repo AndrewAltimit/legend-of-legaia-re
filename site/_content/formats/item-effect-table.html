@@ -20,8 +20,7 @@
     <tr><td><code>+0</code></td><td>u8</td><td>effect <strong>class</strong> (action-validator arm)</td></tr>
     <tr><td><code>+1</code></td><td>u8</td><td><strong>tier</strong> / sub-case (per-class selector; e.g. heal-HP <code>0/1/2</code> = <code>200/800/max</code>)</td></tr>
     <tr><td><code>+2</code></td><td>u8</td><td><strong>flags</strong>: <code>0x80</code> populated, <code>0x20</code> whole-party target, <code>0x04</code> battle-usable, <code>0x02</code> field-usable</td></tr>
-    <tr><td><code>+3</code></td><td>u8</td><td><strong>passive-effect index</strong> (<code>0x00..=0x3F</code>) for accessory / quest-item rows; <code>0x41</code> = no-passive sentinel on consumable rows (see <a href="item-table.html">Item-name table</a>
-    <a href="accessory-passive-table.html">accessory-passive table</a>)</td></tr>
+    <tr><td><code>+3</code></td><td>u8</td><td><strong>passive-effect index</strong> (<code>0x00..=0x3F</code>) for accessory / quest-item rows; <code>0x41</code> = no-passive sentinel on consumable rows (see the <a href="accessory-passive-table.html">accessory-passive table</a>; ids resolve through the <a href="item-table.html">item-name table</a>)</td></tr>
   </tbody>
   </table>
   <p>Healers carry <code>0x04 | 0x02</code> (field + battle); permanent stat-ups and field-utility items carry <code>0x02</code> only; status-cures and revive carry <code>0x04</code> only. Key items resolve to a descriptor with <strong>neither</strong> usability bit set, which is how the item menu greys them out. The class byte is meaningful only together with the usability flags - many key items funnel to class <code>0</code> with no usability bit, so "class 0" alone is not "an HP potion".</p>

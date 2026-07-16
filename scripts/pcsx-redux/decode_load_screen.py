@@ -118,13 +118,22 @@ def main() -> int:
         "--out",
         type=Path,
         default=None,
-        help="Output PNG path (default: <capture_dir>/load_screen_fb.png)",
+        help="Output PNG path (default: <capture_dir>/<stem>.png)",
+    )
+    p.add_argument(
+        "--stem",
+        default="load_screen_fb",
+        help=(
+            "Basename of the .raw/.meta pair to decode (default: "
+            "load_screen_fb). Other probes write their own stems, e.g. "
+            "confirm_dialog_fb."
+        ),
     )
     args = p.parse_args()
 
-    raw_path = args.capture_dir / "load_screen_fb.raw"
-    meta_path = args.capture_dir / "load_screen_fb.meta"
-    out_path = args.out or (args.capture_dir / "load_screen_fb.png")
+    raw_path = args.capture_dir / f"{args.stem}.raw"
+    meta_path = args.capture_dir / f"{args.stem}.meta"
+    out_path = args.out or (args.capture_dir / f"{args.stem}.png")
     if not raw_path.exists():
         raise SystemExit(f"missing {raw_path}")
     if not meta_path.exists():

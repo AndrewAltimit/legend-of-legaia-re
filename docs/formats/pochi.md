@@ -1,6 +1,13 @@
 # Pochi-filler placeholder slots
 
-265 of 1232 PROT entries are placeholder slots filled with a developer fill pattern. Detection class: `pochi_filler`. Detector + class: `crates/asset/src/categorize.rs`.
+265 of 1232 PROT entries are placeholder slots filled with a developer fill pattern - reserved-but-unused asset slots the game never loads. Detection class: `pochi_filler`. Detector + class: `crates/asset/src/categorize.rs`.
+
+> **These slots are a trap, not just dead weight.** The bytes behind the
+> `pochipochi…` prefix are **not zeros** - they are stale mastering scratch, and
+> in most scene blocks that scratch parses as a *complete, valid* TIM. Any
+> "scan the block for TIMs" sweep that does not skip `pochi_filler` will upload
+> a stale texture page over one the scene is actively using. See
+> [the scratch tail is live-looking data](#the-scratch-tail-is-live-looking-data---never-load-it).
 
 ## Layout
 

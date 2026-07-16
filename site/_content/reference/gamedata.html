@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">reference</a> &middot; curated game-data</div>
   <h1>Curated game-data tables</h1>
-  <p class="lede">Arts, magic, items, weapons, armor, accessories, enemies, shops, casino, and fishing tables mined from two public walkthroughs and exposed as typed Rust accessors. Acts as ground-truth labels for the binary records being reverse-engineered.</p>
+  <p class="lede">Arts, magic, items, weapons, armor, accessories, enemies, shops, casino, and fishing tables mined from three public walkthroughs and exposed as typed Rust accessors. Acts as ground-truth labels for the binary records being reverse-engineered.</p>
 </header>
 
 <section class="doc-section" id="why">
@@ -18,12 +18,15 @@
 
 <section class="doc-section" id="sources">
   <h2>Source attribution</h2>
-  <p>Two GameFAQs walkthroughs supply the raw values:</p>
+  <p>Three GameFAQs walkthroughs supply the raw values:</p>
   <ul class="bullets">
     <li>Tan Yong Hua, <em>Legend of Legaia Walkthrough</em> v6.6 (1999).</li>
     <li>Psycho Penguin (mcfaddendaman), <em>Legend of Legaia Walkthrough</em> (2001) - the more complete table dump (PSM Magazine attribution for the enemy drop / steal table).</li>
+    <li>Meth962, <em>Legend of Legaia 100% Walkthrough</em> v1.11 (2015, FAQ 53721) - the per-enemy stat columns, the per-fight boss moveset / rewards layer, the Seru-magic absorb fields, and the magic-leveling tables.</li>
   </ul>
-  <p>Only the <em>factual</em> columns are committed (item names, prices, art command sequences, MP costs, monster locations, drop tables). Prose passages from either guide are NOT reproduced - prices and stats are not independently copyrightable, but the prose is. Walkthrough 2 is the primary source; walkthrough 1 fills in gaps and contributes the boss-HP estimates from its Master Course commentary. Sony-owned bytes (asset data, executable, raw ROM bytes) remain out of the repo entirely.</p>
+  <p>The music-track table is contributed directly by Stann0x rather than mined from a guide; see <a href="music-tracks.html">Music-track disambiguation</a>.</p>
+  <p>Only the <em>factual</em> columns are committed (item names, prices, art command sequences, MP costs, monster locations, drop tables). Prose passages from the guides are NOT reproduced - prices and stats are not independently copyrightable, but the prose is. Sony-owned bytes (asset data, executable, raw ROM bytes) remain out of the repo entirely.</p>
+  <p>Psycho Penguin's guide is the primary source for the item / art / shop columns, and Tan Yong Hua fills gaps and contributes the boss-HP estimates from its Master Course commentary. Meth962's stat columns outrank both where they overlap: they were extracted from in-RAM memory dumps rather than estimated from play, which is why they are what the binary records get cross-validated against.</p>
 </section>
 
 <section class="doc-section" id="files">

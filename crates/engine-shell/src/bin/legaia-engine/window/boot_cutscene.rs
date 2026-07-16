@@ -447,7 +447,7 @@ impl PlayWindowApp {
                 )
             }
             BootUiState::SaveSelect(s) => {
-                use legaia_engine_core::save_select::SelectPhase;
+                use legaia_engine_core::save_select::{SelectPhase, SlotInfoMode};
                 let rows: Vec<legaia_engine_render::SaveSelectRow<'_>> = s
                     .slots()
                     .iter()
@@ -524,6 +524,20 @@ impl PlayWindowApp {
                             stage_origin,
                             stage_scale,
                         ));
+                        // Nothing loadable here: retail captions the panel
+                        // rather than leaving it empty.
+                        if view.is_none()
+                            && let Some(snap) = s.slots().get(slot as usize)
+                            && let Some(caption) = SlotInfoMode::for_slot(snap).caption(s.mode())
+                        {
+                            out.extend(legaia_engine_render::slot_info_caption_draws_for(
+                                &self.font,
+                                caption,
+                                panel_y_offset,
+                                stage_origin,
+                                stage_scale,
+                            ));
+                        }
                     }
                     _ => {}
                 }

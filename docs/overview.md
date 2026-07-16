@@ -5,9 +5,9 @@ Legend of Legaia is a 1998 PlayStation 1 RPG by Contrail / Prokion / SCEI. This 
 The work runs on two coordinated tracks under one repo (`-re` = both *reverse-engineering* and *reimplementation*):
 
 1. **Asset preservation + format docs.** Extract every asset on the disc, document every format with Ghidra-traced provenance, build round-trip parsers.
-2. **Engine reimplementation.** Clean-room Rust port of the engine - render via wgpu/SDL3, audio via the existing XA + VAB decoders, optional WASM target. End-user model: ship the engine binary, the user supplies the disc image, the engine extracts and runs.
+2. **Engine reimplementation.** Clean-room Rust port of the engine - render via winit + wgpu, audio via the existing XA + VAB decoders, optional WASM target. End-user model: ship the engine binary, the user supplies the disc image, the engine extracts and runs.
 
-The reimplementation is **clean-room from documented specs and decompile-then-rewrite logic** - not a static recompilation of `SCUS_942.54`. Sony IP (the executable, ROM contents, asset bytes) is **never** committed to this repo.
+The reimplementation is **clean-room from documented specs and decompile-then-rewrite logic** - not a static recompilation of `SCUS_942.54`. Sony IP (the executable, ROM contents, asset bytes) is **never** committed to this repo; `extracted/` is gitignored and disc-gated tests skip when `LEGAIA_DISC_BIN` is unset. See the root [`README.md`](../README.md#you-bring-the-disc) for the full legal position.
 
 ## How the layers stack
 
@@ -43,25 +43,28 @@ Choose by what you're trying to do:
 
 | You want to… | Read |
 |---|---|
+| Install prebuilt binaries or build from source | Root [`README.md`](../README.md#getting-started) |
+| Get assets off your disc | [`tooling/extraction.md`](tooling/extraction.md) |
 | Understand a specific file format | [`formats/overview.md`](formats/overview.md) → per-format page |
 | Understand how a runtime subsystem works | [`subsystems/`](subsystems/) - boot, asset loader, script VM, move VM, renderer, audio, battle, minigames |
-| Use the extraction tooling | [`tooling/extraction.md`](tooling/extraction.md) |
+| Understand the Rust engine port | [`subsystems/engine.md`](subsystems/engine.md) |
 | Reverse a new function in Ghidra | [`tooling/ghidra.md`](tooling/ghidra.md) |
 | Capture a runtime overlay | [`tooling/overlay-capture.md`](tooling/overlay-capture.md) |
 | Look up a key function or RAM address | [`reference/functions.md`](reference/functions.md), [`reference/memory-map.md`](reference/memory-map.md) |
 | Cross-reference against a different region's build | [`reference/builds.md`](reference/builds.md) |
-| Understand the Rust engine port plan | [`subsystems/engine.md`](subsystems/engine.md) |
+| Patch your own disc (randomizer / translation) | [`tooling/randomizer.md`](tooling/randomizer.md), [`tooling/translation.md`](tooling/translation.md) |
+| Find an open question to work on | [`reference/open-rev-eng-threads.md`](reference/open-rev-eng-threads.md) |
 
 ## Workspace
 
-The repo is a Cargo workspace. Crate naming: package `legaia-foo`, lib `legaia_foo`. One library + binary per crate where applicable.
+The repo is a Cargo workspace. Crate naming: package `legaia-foo`, lib `legaia_foo`; one library plus an optional binary per crate. Each crate's `README.md` documents its own scope and CLI.
 
-**Track 1 - preservation:** `iso`, `prot`, `lzs`, `asset`, `tim`, `tmd`, `vab`, `xa`, `mes`, `anm`, `mdt`, `extract`.
+**Track 1 - preservation.** `bytes` (shared checked readers) and the container layer `iso`, `prot`, `lzs`, `asset`; the per-format parsers `tim`, `tmd`, `vab`, `xa`, `seq`, `mes`, `anm`, `mdt`, `art`, `font`, `mdec`, `save`; the pipeline driver `extract`; the emulator-state bridges `mednafen` and `pcsxr`; the curated label sets `gamedata` and `cheats`; and the disc patcher `rando`.
 
-**Track 2 - engine:** `engine-core`, `engine-render`, `engine-audio`, `engine-vm`, `asset-viewer`.
+**Track 2 - engine.** `engine-core` (world + scene host), `engine-vm` (the ported VMs and battle SM), `engine-render` (winit + wgpu), `engine-audio` (SPU + sequencer), `engine-ui` (renderer-agnostic draw lists), `engine-shell` (the `legaia-engine` binary), plus `asset-viewer` and the `web-viewer` WASM target.
 
 Run `cargo build --release` for all binaries, `cargo test --workspace --release` for all tests. Disc-gated tests skip when `LEGAIA_DISC_BIN` is unset - see [`tooling/extraction.md`](tooling/extraction.md).
 
 ## Public docs vs operational state
 
-The documents under `docs/` and the contents of `site/index.html` are **technical reference**. They describe what the formats and subsystems *are*, not what work has happened recently. Operational state (work-in-progress, session notes, "what to do next") lives in git log, PR descriptions, and the agent-only memory files under `~/.claude/projects/`.
+The documents under `docs/` and the pages under `site/` are **technical reference**. They describe what the formats and subsystems *are*, not what work has happened recently - no roadmaps, no status tables, no session notes. Operational state (work-in-progress, "what to do next") lives in git log and PR descriptions.

@@ -1180,9 +1180,30 @@ export class LegaiaRuntime {
      */
     boot_title_step(edge: number): string;
     /**
+     * `true` when the card in `slot` holds in-game writes the page has not
+     * exported yet.
+     */
+    card_slot_dirty(slot: number): boolean;
+    /**
+     * The whole rack as JSON - what the page's card picker renders:
+     * ```text
+     * [ { "slot": 0, "inserted": true, "label": "my card", "format": "mcr",
+     *     "dirty": false,
+     *     "blocks": [ { "block": 1, "present": true, "name": "Vahn",
+     *                   "level": 12, "location": "Rim Elm", "money": 900 }, ... ] },
+     *   { "slot": 1, "inserted": false, ... } ]
+     * ```
+     */
+    card_slots_json(): string;
+    /**
      * `true` if a disc has been loaded.
      */
     disc_loaded(): boolean;
+    /**
+     * Remove the card from rack slot `slot`. Unexported writes are lost -
+     * the page warns before calling this.
+     */
+    eject_card(slot: number): void;
     /**
      * Boot a named CDNAME scene (e.g. `"town01"`) and assemble everything the
      * page draws. This is the real field entry: the scene's assets, the
@@ -1195,6 +1216,14 @@ export class LegaiaRuntime {
      * loaded or the label is unknown.
      */
     enter_field(name: string): string;
+    /**
+     * The card in rack slot `slot`, as container bytes ready to download.
+     *
+     * Byte-identical to what was inserted apart from the SC blocks the
+     * player saved into, so the player's emulator loads it straight back.
+     * Empty when no card is in that slot. Clears the slot's dirty flag.
+     */
+    export_card(slot: number): Uint8Array;
     /**
      * Export the current engine session as LGSF bytes
      * (`World::save_full().write()`). The page offers this as a `.lgsf`
@@ -1313,6 +1342,17 @@ export class LegaiaRuntime {
      */
     import_save(bytes: Uint8Array): string;
     /**
+     * Insert a memory-card image into rack slot `slot` (0 or 1 - the
+     * console's two ports).
+     *
+     * `bytes` is the container exactly as the player exported it from their
+     * emulator (`.mcr` / `.mcd` / `.gme` / `.mcs`); it is validated here and
+     * then kept verbatim, so [`Self::export_card`] can hand it back in the
+     * same shape. Returns the slot's JSON (same shape as one entry of
+     * [`Self::card_slots_json`]); throws on an unrecognised container.
+     */
+    insert_card(slot: number, bytes: Uint8Array, label: string): string;
+    /**
      * Load a disc image from raw in-memory bytes.
      *
      * `raw_bytes` may be either a Mode2/2352 full disc image (`.bin`) - PROT.DAT
@@ -1390,6 +1430,13 @@ export class LegaiaRuntime {
      * frozen by the page while [`Self::play_menu_is_open`] is true.
      */
     play_menu_open(): void;
+    /**
+     * Take the CDNAME scene label an in-canvas card **Load** landed in, if
+     * one is waiting; `""` otherwise. The page polls this after driving the
+     * menu and, when it is a scene it can walk, enters it - retail resumes a
+     * save in the scene it was written in. Consuming clears it.
+     */
+    play_menu_take_load_scene(): string;
     /**
      * The scene's NPC / actor catalog. Shape:
      * `{"anm_prot": 4, "npcs": [{"i", "slot", "model", "anim", "nobj",
@@ -2988,8 +3035,12 @@ export interface InitOutput {
     readonly legaiaruntime_boot_title_is_active: (a: number) => number;
     readonly legaiaruntime_boot_title_start: (a: number) => void;
     readonly legaiaruntime_boot_title_step: (a: number, b: number) => [number, number];
+    readonly legaiaruntime_card_slot_dirty: (a: number, b: number) => number;
+    readonly legaiaruntime_card_slots_json: (a: number) => [number, number];
     readonly legaiaruntime_disc_loaded: (a: number) => number;
+    readonly legaiaruntime_eject_card: (a: number, b: number) => void;
     readonly legaiaruntime_enter_field: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly legaiaruntime_export_card: (a: number, b: number) => [number, number];
     readonly legaiaruntime_export_save: (a: number) => [number, number];
     readonly legaiaruntime_field_ground_cba_tsb: (a: number) => [number, number];
     readonly legaiaruntime_field_ground_indices: (a: number) => [number, number];
@@ -3018,6 +3069,7 @@ export interface InitOutput {
     readonly legaiaruntime_frame: (a: number) => bigint;
     readonly legaiaruntime_import_card_save: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly legaiaruntime_import_save: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly legaiaruntime_insert_card: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly legaiaruntime_load_disc: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly legaiaruntime_menu_is_open: (a: number) => number;
     readonly legaiaruntime_menu_label: (a: number) => [number, number];
@@ -3034,6 +3086,7 @@ export interface InitOutput {
     readonly legaiaruntime_play_menu_input: (a: number, b: number) => void;
     readonly legaiaruntime_play_menu_is_open: (a: number) => number;
     readonly legaiaruntime_play_menu_open: (a: number) => void;
+    readonly legaiaruntime_play_menu_take_load_scene: (a: number) => [number, number];
     readonly legaiaruntime_play_npc_catalog_json: (a: number) => [number, number];
     readonly legaiaruntime_play_npc_mesh: (a: number, b: number) => [number, number, number];
     readonly legaiaruntime_play_npc_mesh_cba_tsb: (a: number) => [number, number];

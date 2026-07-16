@@ -375,6 +375,12 @@ label = "save_select_idle"
 description = "Save-slot select screen open (CONTINUE pressed). Menu overlay 0896 paged in; FUN_801DC6B4 driving the save-screen SM."
 phase = "menu"
 # pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate5"   # uncomment after capture
+# Not captured - but no state is needed to reach this screen any more: from any
+# field state, SELECT opens the pause menu and the command list (Items / Magic /
+# Equip / Status / Options / Load / Save) puts Load 5 DOWNs away and Save 6.
+# scripts/pcsx-redux/autorun_pad_walk.lua drives it; autorun_confirm_dialog_dump.lua
+# walks it end-to-end to the confirm prompt. Capturing a state here would still
+# save ~700 vsyncs per probe run.
 topics = ["save screen", "menu overlay"]
 
 # ----------------------------------------------------------------------

@@ -17,14 +17,15 @@
 
 <section class="doc-section" id="vm-family">
   <h2>The runtime VM family</h2>
+  <p>Legaia runs <strong>five</strong> distinct bytecode / state VMs. Confusing them is the classic mistake in this corpus, so each page states plainly which one it is. This table is the shared orientation; the per-VM pages carry the detail.</p>
   <table>
     <thead><tr><th>VM</th><th>Driver</th><th>Where</th><th>Opcodes</th><th>Operand width</th></tr></thead>
     <tbody>
       <tr><td><a href="actor-vm.html">Actor / sprite VM</a></td><td><code>FUN_801D6628</code></td><td>Title-screen overlay (unindexed <code>PROT.DAT</code> gap after entry 0899; PROT 0971 is the debug-menu overlay)</td><td>13</td><td>byte stream</td></tr>
       <tr><td><strong>Move VM</strong></td><td><code>FUN_80023070</code></td><td><code>SCUS_942.54</code></td><td>71 (<code>0x00..0x46</code>) + 61 sub-ops via <code>0x2F</code></td><td>u16 stream</td></tr>
-      <tr><td><a href="motion-vm.html">Motion VM</a></td><td><code>FUN_8003774C</code></td><td><code>SCUS_942.54</code></td><td>per-actor pursue / patrol / face-target</td><td>byte stream w/ high-bit target</td></tr>
-      <tr><td><a href="script-vm.html">Field / event VM</a></td><td><code>FUN_801DE840</code></td><td>Town overlay (0897)</td><td>43 (<code>0x21..0x4F</code> with gaps) + <code>0x5x/6x/7x</code> default-route</td><td>byte stream</td></tr>
-      <tr><td><a href="effect-vm.html">Effect VM</a></td><td>per-slot state walker</td><td>Battle overlay</td><td>per-slot SM (no opcode table)</td><td>inline state tokens</td></tr>
+      <tr><td><a href="motion-vm.html">Motion VMs</a> (two)</td><td><code>FUN_8003774C</code> (pursue / patrol / face-target) and <code>FUN_80038158</code> (scripted motion + flag writes)</td><td><code>SCUS_942.54</code></td><td>see page</td><td>byte stream w/ high-bit target</td></tr>
+      <tr><td><a href="script-vm.html">Field / event VM</a></td><td><code>FUN_801DE840</code></td><td>Town / field overlay (0897)</td><td>43 (<code>0x21..0x4F</code> with gaps) + <code>0x5x/6x/7x</code> default-route</td><td>byte stream</td></tr>
+      <tr><td><a href="effect-vm.html">Effect VM</a></td><td><code>FUN_801E0088</code> (per-frame walker)</td><td>Battle overlay (0898)</td><td>per-slot SM (no opcode table)</td><td>inline state tokens</td></tr>
     </tbody>
   </table>
   <p>How the move VM wires to the others:</p>

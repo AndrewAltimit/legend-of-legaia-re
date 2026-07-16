@@ -1,6 +1,12 @@
 # ANM animation container
 
-Asset type `0x06` from the [asset-type dispatcher](asset-type.md). Implementation: `crates/anm`.
+The keyframe animation container for **player characters and field actors** - the walk cycles, idle loops, and scripted motion the field engine plays back. Asset type `0x06` from the [asset-type dispatcher](asset-type.md).
+
+It is not the only animation format on the disc, and picking the wrong one is the usual mistake. Battle monsters use a separate per-object keyframe stream inside the monster archive; see [monster animation](monster-animation.md). The party's *battle* poses come from the player battle files' own streams, not from here - see [character mesh](character-mesh.md).
+
+ANM data reaches you from two distinct bundles: the [party locomotion bank](#disc-source---the-party-locomotion-bundle-prot-0874-1) and the [per-scene NPC/scene-actor bank](#disc-source---per-scene-anm-bundle).
+
+Implementation: `crates/anm`; parser `legaia_asset::player_anm`.
 
 ## Layout
 
@@ -409,7 +415,7 @@ The field-form bundles all have 69-72 records (the full player-locomotion
 animation set **for the PROT 1204 pack's own object order** (its banks'
 bone counts match the player skeletons, bone `i` driving 1204 object `i` -
 the Baka Fighter / viewer configuration). It is **not** what a real battle
-poses the [assembled battle meshes](character-mesh.md#battle-form--assembled-from-the-player-files)
+poses the [assembled battle meshes](character-mesh.md#battle-form---assembled-from-the-player-files)
 with: 1204's object order differs from the assembled blob's sorted bone-tag
 order per character, and the in-battle pose source is the character's own
 TRS streams in `record[0]` of their player file

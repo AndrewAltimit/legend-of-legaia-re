@@ -120,7 +120,7 @@ table.arts-list .cmd-tag {
 <header>
   <div class="breadcrumb"><a href="index.html">home</a> · characters</div>
   <h1>Characters</h1>
-  <p class="lede"><strong>Vahn</strong>, <strong>Noa</strong>, and <strong>Gala</strong> in 3D, straight from your own disc image - the low-poly field models the game keeps loaded in every town and dungeon, and the higher-detail battle models, both textured and playing their real in-game animations. Click any character to spin its model, swap forms, and try the equipment toggle. Nothing leaves your machine.</p>
+  <p class="lede"><strong>Vahn</strong>, <strong>Noa</strong>, and <strong>Gala</strong> in 3D from your own disc image - field and battle models, textured and playing their real in-game animations. Click a character to spin it, swap forms, and try the equipment toggle; nothing is uploaded, the disc never leaves your machine.</p>
 </header>
 
 <section class="doc-section">
@@ -160,13 +160,13 @@ table.arts-list .cmd-tag {
         <div class="char-section-label">Form</div>
         <div class="char-equip-toggle" id="char-form-toggle"></div>
         <div class="char-info-note" id="char-form-note">
-          Three forms, all from your own disc. <strong>Field form</strong> is the smaller low-poly model the game keeps loaded across every town and dungeon. <strong>Battle form</strong> is the higher-detail model a real battle assembles from the character's equipment data, shown here with the true in-battle colours decoded from the disc - blue-haired Vahn, pink-haired Noa, brown-haired Gala. <strong>Baka Fighter</strong> is the same battle model in the colours the fist-fight minigame uses. See the <a href="formats/character-mesh.html">character-mesh format page</a> for the full story.
+          <strong>Field form</strong> is the low-poly model loaded in every town and dungeon; <strong>battle form</strong> is the higher-detail model a real battle assembles from the character's equipment data, shown with the true in-battle colours; <strong>Baka Fighter</strong> is the same battle model in the fist-fight minigame's colours. Full story: <a href="formats/character-mesh.html">character-mesh format</a>.
         </div>
 
         <div class="char-section-label">Equipment swap</div>
         <div class="char-equip-toggle" id="char-equip-toggle"></div>
         <div class="char-info-note" id="char-equip-note">
-          Each active-party character has a single weapon-bearing mesh group that retail flips between two pre-baked variants based on a byte in the character record. The change is binary - different swords don't get their own meshes; the texture atlas conveys item identity.
+          Retail flips each character's weapon-bearing mesh group between two pre-baked variants based on one byte in the character record; specific weapons are conveyed by texture, not new geometry.
         </div>
 
         <div class="char-section-label">View</div>
@@ -194,7 +194,7 @@ table.arts-list .cmd-tag {
             <span id="char-anm-frame-label" class="char-anm-readout">-</span>
           </div>
           <div class="char-info-note" id="char-anm-info">
-            These are the real animation clips shipped on the disc - one bundle per scene, each record one clip. Pick a bundle and a record, then press play: the viewer poses the model's parts frame by frame exactly as the game does, with frame 0 of an idle clip being the rest pose. See the <a href="formats/anm.html">ANM format page</a> for how the clips are encoded.
+            The real animation clips shipped on the disc - one bundle per scene, each record one clip. Pick a bundle and a record, then press play; encoding: <a href="formats/anm.html">ANM format</a>.
           </div>
         </div>
       </div>
@@ -210,7 +210,7 @@ table.arts-list .cmd-tag {
 
 <section class="doc-section">
   <h2 id="baka-fighter-meshes">Field form vs battle form</h2>
-  <p>The game keeps two versions of each hero. The <strong>field form</strong> is a small, low-poly model that stays loaded across every town and dungeon, so walking through a door never has to re-fetch the party. The <strong>battle form</strong> is a higher-detail model that a real battle <em>builds on the fly</em>: the engine reads each character's battle file from the disc and assembles the model piece by piece from whatever gear the character has equipped - body, weapon, and Ra-Seru pieces are each picked by the equipped item. The disc also ships a pre-assembled default-gear copy of the battle models (what the Baka Fighter minigame uses, and what this viewer shows), and the viewer overlays the true in-battle colours decoded from each character's battle file.</p>
+  <p>The game keeps two versions of each hero: a low-poly <strong>field form</strong> that stays loaded everywhere, and a higher-detail <strong>battle form</strong> a real battle assembles piece by piece from the character's equipped gear. The disc also ships a pre-assembled default-gear copy of the battle models (used by the Baka Fighter minigame, and what this viewer shows), overlaid here with the true in-battle colours. Assembly chain + provenance: <a href="formats/character-mesh.html">character-mesh format</a>.</p>
   <div class="cli"><code>asset character-pack extracted/PROT/0874_befect_data.BIN</code></div>
   <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN --slot 0 --out-tmd vahn_battle.tmd</code></div>
   <div class="see-also">
@@ -220,7 +220,7 @@ table.arts-list .cmd-tag {
   </div>
 
   <h2>The one-byte equipment swap</h2>
-  <p>On the field, equipment barely changes the model at all. Each hero's field model carries two spare, pre-baked variants of its weapon-holding part, and the game flips between them based on a single byte in the character's save record - equipped or not. That one bit is the entire field-side equipment mechanism; which <em>specific</em> weapon you carry is conveyed through the texture, not new geometry. The toggle in the viewer above performs exactly that swap.</p>
+  <p>Each hero's field model carries two pre-baked variants of its weapon-holding part, flipped by a single byte in the save record - that is the entire field-side equipment mechanism, and the toggle above performs exactly that swap. Details: <a href="formats/character-mesh.html#10-group-cap--equipment-conditional-swap">equipment-conditional swap</a>.</p>
   <div class="cli"><code>asset character-pack &hellip; --slot 0 --equip 1 --out vahn_equipped.tmd</code></div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -228,7 +228,7 @@ table.arts-list .cmd-tag {
   </div>
 
   <h2>The animations are the real in-game clips</h2>
-  <p>Every clip in the Animation panel comes off your disc: the walk and idle cycles the party plays on the field, the per-scene NPC clip pools, and the battle-stance clips. A character is stored as separate body pieces that the animation data assembles - each frame places every piece at its joint, exactly as the game's renderer does - so playback here matches what you see in-game, and frame 0 of an idle clip is the rest pose. The battle form is posed from the real battle animation data the same way.</p>
+  <p>Every clip in the Animation panel comes off your disc - field walk/idle cycles, per-scene NPC pools, and battle-stance clips. The animation data assembles the character's separate body pieces each frame exactly as the game's renderer does, so playback matches what you see in-game. Encoding: <a href="formats/anm.html">ANM format</a>.</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="formats/anm.html">ANM animation format</a>
@@ -773,13 +773,11 @@ table.arts-list .cmd-tag {
     const canvasEl = document.getElementById('char-viewer-canvas');
     if (isBattlePackForm(curForm)) {
       // Battle / Baka Fighter forms - the SAME PROT 1204 meshes, rendered with
-      // TmdRenderer against a virtual 1024×512 PSX VRAM, both with the bundled
-      // (authoring) palette + nominal CBA. A real turn-based battle relocates
-      // the mesh into a packed VRAM band (rows 481..483) and recolours it with a
-      // separate, battle-allocated per-battle palette that is NOT recoverable
-      // from the disc (open thread - see docs/formats/character-mesh.md); so the
-      // Battle form here is the bundled-palette render, visually identical to
-      // Baka, until that palette's disc source is pinned.
+      // TmdRenderer against a virtual 1024×512 PSX VRAM. A real turn-based
+      // battle relocates the mesh into a packed VRAM band (rows 481..483) and
+      // recolours it with the per-battle palette decoded from the player
+      // battle file (extraction PROT 0863); the 'battle' form overlays that
+      // palette below, 'baka' keeps the pack's bundled (authoring) palette.
       const positions = viewer.battle_char_mesh_positions(slot);
       const uvsI32   = viewer.battle_char_mesh_uvs(slot);
       const cbaTsb   = viewer.battle_char_mesh_cba_tsb(slot);

@@ -82,7 +82,9 @@ pub struct DirEntry {
     /// Raw state byte (`0x51` = first, `0x52` = mid, `0x53` = last,
     /// `0xA0` = free).
     pub state: u32,
-    /// File size in bytes the directory frame declares.
+    /// File size in bytes the directory frame declares. Block-aligned on a
+    /// real card (`blocks * BLOCK_SIZE`), so it is the save's footprint, not
+    /// its payload length.
     pub file_size: u32,
     /// Next block index (`0xFFFF` for terminal).
     pub next_block: u16,
@@ -206,6 +208,41 @@ pub fn read_block(buf: &[u8], block: u8) -> Option<&[u8]> {
     Some(&buf[off..end])
 }
 
+/// Encode one directory frame in place.
+///
+/// The single place this crate knows a frame's layout: state at `+0`, total
+/// save size at `+4` (first frame of a chain only, hence `total_size:
+/// Option`), next-block pointer at `+8` (`0xFFFF` ends the chain), 20-byte
+/// product code at `+10`, and the XOR checksum of bytes `0x00..0x7E` at
+/// `0x7F` - the only checksum a card image carries (the SC payload itself has
+/// none; see `docs/subsystems/save-screen.md`).
+///
+/// `total_size` is **block-aligned** - `blocks * BLOCK_SIZE`, the byte count
+/// a real card records, never the payload length.
+///
+/// `frame` must be exactly [`DIR_FRAME_SIZE`] bytes. Shared by
+/// [`write_block`] and [`crate::emu::CardView::claim_block`] so the two
+/// cannot drift.
+pub(crate) fn encode_dir_frame(
+    frame: &mut [u8],
+    block_state: u32,
+    total_size: Option<u32>,
+    next_block: u16,
+    product_code: &str,
+) {
+    debug_assert_eq!(frame.len(), DIR_FRAME_SIZE);
+    frame.fill(0);
+    frame[..4].copy_from_slice(&block_state.to_le_bytes());
+    if let Some(size) = total_size {
+        frame[4..8].copy_from_slice(&size.to_le_bytes());
+    }
+    frame[8..10].copy_from_slice(&next_block.to_le_bytes());
+    let src = product_code.as_bytes();
+    let n = src.len().min(20);
+    frame[10..10 + n].copy_from_slice(&src[..n]);
+    frame[0x7F] = frame[..0x7F].iter().fold(0u8, |acc, &b| acc ^ b);
+}
+
 /// Write `save_data` into a free block chain on a PSX memory-card image.
 ///
 /// Finds enough free blocks (state `0xA0`) starting from the lowest-indexed
@@ -216,7 +253,9 @@ pub fn read_block(buf: &[u8], block: u8) -> Option<&[u8]> {
 /// `FIRST_BLOCK` with `next_block = 0xFFFF`.
 ///
 /// Directory frames are rewritten with XOR checksums (XOR of bytes
-/// `0x00..0x7E`, stored at `0x7F`). Returns the first block index written.
+/// `0x00..0x7E`, stored at `0x7F`), and the first frame records the save's
+/// **block-aligned** size (`blocks * BLOCK_SIZE`), matching what a real card
+/// declares. Returns the first block index written.
 ///
 /// # Errors
 ///
@@ -259,13 +298,11 @@ pub fn write_block(card_buf: &mut [u8], save_data: &[u8], product_code: &str) ->
         );
     }
 
-    let total_size = save_data.len() as u32;
-    let mut pc = [0u8; 20];
-    {
-        let src = product_code.as_bytes();
-        let n = src.len().min(20);
-        pc[..n].copy_from_slice(&src[..n]);
-    }
+    // The frame's size field is a byte count of the blocks the save occupies,
+    // not of its payload: a real card always records a multiple of BLOCK_SIZE
+    // (a one-block save reads 8192, never 8190). Card browsers derive the
+    // block count from it, so an unaligned value misreports the save.
+    let total_size = (n_needed * BLOCK_SIZE) as u32;
 
     for (idx, &blk) in free.iter().enumerate() {
         let blk_state = if idx == 0 {
@@ -283,16 +320,13 @@ pub fn write_block(card_buf: &mut [u8], save_data: &[u8], product_code: &str) ->
 
         // Rewrite directory frame
         let frame_off = DIR_FRAME_SIZE * blk as usize;
-        let frame = &mut card_buf[frame_off..frame_off + DIR_FRAME_SIZE];
-        frame.fill(0);
-        frame[..4].copy_from_slice(&blk_state.to_le_bytes());
-        if idx == 0 {
-            frame[4..8].copy_from_slice(&total_size.to_le_bytes());
-        }
-        frame[8..10].copy_from_slice(&next.to_le_bytes());
-        frame[10..30].copy_from_slice(&pc);
-        let checksum = frame[..0x7F].iter().fold(0u8, |acc, &b| acc ^ b);
-        frame[0x7F] = checksum;
+        encode_dir_frame(
+            &mut card_buf[frame_off..frame_off + DIR_FRAME_SIZE],
+            blk_state,
+            (idx == 0).then_some(total_size),
+            next,
+            product_code,
+        );
 
         // Write block: SC magic + payload chunk
         let chunk_start = idx * DATA_PER_BLOCK;
@@ -733,6 +767,43 @@ mod tests {
         let blk_off = BLOCK_SIZE;
         assert_eq!(&card[blk_off..blk_off + 2], &SAVE_BLOCK_MAGIC);
         assert_eq!(&card[blk_off + 2..blk_off + 2 + payload.len()], payload);
+    }
+
+    #[test]
+    fn write_block_records_block_aligned_size() {
+        let mut card = free_card();
+        // An 18-byte payload still occupies a whole 8 KiB block, and that is
+        // what the frame must declare - not 18, and not BLOCK_SIZE - 2.
+        write_block(&mut card, b"Hello Legaia save!", "BASCUS-94254TEST").unwrap();
+        let f = DIR_FRAME_SIZE;
+        let size = u32::from_le_bytes(card[f + 4..f + 8].try_into().unwrap());
+        assert_eq!(size, BLOCK_SIZE as u32);
+        assert_eq!(size % BLOCK_SIZE as u32, 0, "size must be block-aligned");
+        // And it reads back through the directory walker.
+        assert_eq!(parse_card(&card).unwrap()[0].file_size, BLOCK_SIZE as u32);
+    }
+
+    #[test]
+    fn write_block_size_covers_every_block_of_a_chain() {
+        let mut card = free_card();
+        // Two blocks' worth of payload: one byte past what a single block
+        // holds, so the chain spans two and the frame must say so.
+        let payload = vec![0xABu8; BLOCK_SIZE - 1];
+        write_block(&mut card, &payload, "BASCUS-94254TEST").unwrap();
+
+        let saves = parse_card(&card).unwrap();
+        assert_eq!(saves[0].block_chain.len(), 2);
+        assert_eq!(
+            saves[0].file_size,
+            (2 * BLOCK_SIZE) as u32,
+            "a two-block chain declares two blocks of bytes"
+        );
+        // The size lives on the first frame only; continuations leave it 0.
+        let f2 = DIR_FRAME_SIZE * saves[0].block_chain[1] as usize;
+        assert_eq!(
+            u32::from_le_bytes(card[f2 + 4..f2 + 8].try_into().unwrap()),
+            0
+        );
     }
 
     #[test]

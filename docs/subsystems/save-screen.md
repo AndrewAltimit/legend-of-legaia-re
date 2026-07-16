@@ -15,7 +15,7 @@ both confirmed as the menu overlay by function-address identity; decompiled func
 - [Sub-screen function pointer table](#sub-screen-function-pointer-table) - [load/save dispatch](#loadsave-dispatch-fun_801dd35c) · [libcd I/O state machine](#libcd-io-state-machine-fun_801e3294) · [save-block directory enumeration](#save-block-directory-enumeration-fun_801e1208) · [per-character status preview](#per-character-status-preview-fun_801d9c14-sub-screen-0x14)
 - [Relationship to `legaia_save`](#relationship-to-legaia_save) · [story-flag persistence vs. scratchpad word](#story-flag-persistence-vs-scratchpad-word) · [retail SC block layout](#retail-sc-block-layout)
 - [Sprite asset sources (Continue → Load screen)](#sprite-asset-sources-continue--load-screen) - [9-slice tile rects](#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2) · [how the panel TIM was pinned](#how-the-panel-tim-was-pinned)
-- [Slide-in UI primitive (`FUN_801E1C1C`)](#slide-in-ui-primitive-fun_801e1c1c) · [bottom info panel renderer (`FUN_801E08D8`)](#bottom-info-panel-renderer-fun_801e08d8)
+- [Slide-in UI primitive (`FUN_801E1C1C`)](#slide-in-ui-primitive-fun_801e1c1c) · [messagebox panel geometry (`FUN_801E36C4`)](#messagebox-panel-geometry-fun_801e36c4) · [bottom info panel renderer (`FUN_801E08D8`)](#bottom-info-panel-renderer-fun_801e08d8)
 
 ## Overlay structure
 
@@ -55,16 +55,25 @@ completes, the fade-out advances states 3 → 4 → 5. The four save-coordinate
 words `DAT_801E46BC/C0/C4/C8` are zeroed on init and maintained across the
 sub-screen lifetime.
 
-### `FUN_801DAEF4` - save-slot selector (224 bytes, sub-screen 0x2 / 0x1)
+### `FUN_801DAEF4` - load-from-slot driver (224 bytes, sub-screen 0x19)
+
+The load half of the `0x18` / `0x19` card-driver pair - `0x18` writes the card,
+this one reads it. It is *not* the slot selector; that is sub-screen `0x01`
+(`FUN_801D6B20`), which this screen returns to.
+
+The op selector is what distinguishes the two: both install the same card handle
+and both drive `FUN_801DD35C`, but `0x18` calls it `(1, 2)` to save and `0x19`
+calls it `(1, 1)` to load (see
+[Load/save dispatch](#loadsave-dispatch-fun_801dd35c)).
 
 Internal step counter in `DAT_801E46AC`:
 
 | Step | Action |
 |---|---|
-| 0 | Set `_DAT_8007B44C = DAT_801C6EA0` (memory-card handle from overlay init); run actor VM with `&DAT_801E4E30` (slot-select menu bytecode). |
-| 1 | Wait on `_DAT_8007BB80 != 0` (menu-active flag); advance to step 2. |
-| 2 | Call `FUN_801DD35C(1, 1)` (confirm selection); advance to step 3 on success. |
-| 3 | Clear `DAT_801E46A4 = 0` when `_DAT_8007B450 != 0` (return to previous screen). |
+| 0 | Set `_DAT_8007B44C = DAT_801C6EA0` (memory-card handle from overlay init); run actor VM (`FUN_801D6628`) with `&DAT_801E4E30` (the load-slot menu bytecode). |
+| 1 | Wait while `_DAT_8007BB80 != 0` (menu-active flag); advance to step 2 once it reads zero. |
+| 2 | Call `FUN_801DD35C(1, 1)` - the load (card → RAM) direction; advance to step 3 on success. |
+| 3 | Write `DAT_801E46A4 = 1` unconditionally, returning to the `0x01` slot selector; then, only when `_DAT_8007B450 != 0`, overwrite it with `0` (the `0x00` final-exit screen). The unconditional write sits in the branch's delay slot, so the `0x01` return is the default and the exit is the override.
 
 Each step calls `func_0x80031D00()` (text-actor tick / MES advance) before
 returning.
@@ -260,6 +269,36 @@ when `prop[id*12].byte_0 == 1` reads a 5-byte stat-bonus block from
 `0x80074F68 + prop[id*12].byte_1 * 8`, summing the bonuses into
 `DAT_801EF09C..DAT_801EF098` (5 stat totals - HP/MP/Atk/Def/Spd or
 similar). This is **not** a memory-card write primitive.
+
+## Slot list: memory-card slots, not save blocks
+
+Retail's save UI is **two-stage**, and the two stages live in different id
+spaces - conflating them is the easy mistake:
+
+| Stage | What the player picks | Count | Retail anchor |
+|---|---|---|---|
+| Pill row (`SLOT 1` / `SLOT 2`) | a **memory-card port** | 2 | the libcd channel's `port` (`chan = port * 16 + sub_op`, `FUN_801E3294`) |
+| 5x3 preview grid | a **save block** on the chosen card | 15 | the directory walk `FUN_801E1208`; per-slot buffer `0x801EF1B8 + N * 0x100` |
+
+Between them sits the card read - the "Now checking. Do not remove MEMORY
+CARD" dialog - which is why that beat exists at all.
+
+`SaveSelectSession` is renderer-agnostic and models the phases, not the id
+space, so a host picks which reading its slot list carries:
+
+- **Flat** (default): the slot list *is* the save blocks; the pills show the
+  first two and Save picks a block straight off the pill row. The native
+  shell drives this against its on-disk LGSF slots.
+- **Card slots** (`set_card_slots_mode(true)`): the slot list is the two
+  ports. Save then crosses the same `NowChecking` beat Load does and raises
+  its overwrite prompt from the preview rather than from the pill row, and
+  `present` on a pill means "a card is inserted", not "this holds a save".
+  The browser play page (`legaia_web_viewer::cards` + `play_menu`) drives
+  this against the player's own card images.
+
+The **grid cursor** is the host's, not the session's: `SlotPreview` ignores
+directions, so which of the fifteen blocks is focused - and therefore which
+block a confirm commits - is host state.
 
 ## Relationship to `legaia_save`
 
@@ -500,6 +539,79 @@ animations:
 
 - Slot composite pill: `(136, 96) → (24, 40)` (matches retail mode-2 with the inlined `-24` x-shift applied to the start).
 - NowChecking dialog: panel + text both interpolate `x ∈ {416 → 160}` via `now_checking_{panel,text}_draws_for`'s new `slide_offset` parameter.
+- Confirm dialog ("Do you wish to save?"): `confirm_dialog_{panel,text}_draws_for` interpolate `y ∈ {344 → 88}` (mode 3), drawing **two** panels - see [Messagebox panel geometry](#messagebox-panel-geometry-fun_801e36c4).
+
+## Messagebox panel geometry (`FUN_801E36C4`)
+
+Every save-UI panel rect flows through one drawer:
+
+```c
+void FUN_801E36C4(int center_x, int y, int w, int h) {
+  if (y < 0xf1) {                       // off-stage panels are skipped
+    func_0x80034b6c(0x44);              // box style
+    func_0x8002c69c((center_x - w / 2) + -2, y + 6, w, h);
+  }
+}
+```
+
+Its `x` is a **centre**, not a left edge, and the visible gold-bordered box is
+a uniform 7px larger than the `w x h` asked for:
+
+```
+visible = (center_x - w/2 - 9,  y - 1,  w + 14,  h + 14)
+```
+
+The `+14` sizes are measured off captured retail frames and are independent of
+where a box sits, which is what makes them safe to generalise; the `-9` / `-1`
+then predict each panel's pixels exactly. Verified against three panels: the
+header tab `(48, 6, 65, 13)` → rows 5..31; the "Now checking" dialog mid-slide
+at `center_x = 240` → left 147 (matching the older capture that pinned that
+dialog, taken long before this model); and both confirm-dialog panels below.
+
+### Confirm dialog panels (mode 3)
+
+The confirm prompt is **two** panels plus stacked options - not one box with
+Yes/No side by side. Mode 3 draws, at slide y `param_4`:
+
+| Element | Retail call | Parked rect (`y = 88`) |
+|---|---|---|
+| Prompt bar | `FUN_801E36C4(160, y, 284, 13)` | `(9, 87, 298, 27)` |
+| Prompt text | `FUN_801E3EE0(msg, 160 + 0x1a, y)` | centred x=186, glyph top y=95 |
+| `Yes` row | `FUN_801E3EE0(.., 160 + 4, y + 0x20)` | centred x=164, glyph top y=127 |
+| `No` row | `FUN_801E3EE0(.., 160 + 4, y + 0x30)` | centred x=164, glyph top y=143 |
+| Options box | `FUN_801E36C4(160, y + 0x20, 42, 26)` | `(130, 119, 56, 40)` |
+| Row cursor | `func_0x8002c488(160 - 0x1a, y + ((_DAT_801f01fc + 1) & 1) * 0x10 + 0x24, 0x4e)` | x=134, y=124 (Yes) / 140 (No) |
+
+The prompt bar spans nearly the full stage because its left end carries the
+`No.NN` block badge; the message is centred in the remaining space, hence the
+`+0x1a` shift. The options box is only 42px wide, so the two rows share one
+centre - any flanking layout would fall outside the panel it belongs to.
+
+Both rects are measured from a framebuffer captured with the prompt parked
+(`scripts/pcsx-redux/autorun_confirm_dialog_dump.lua` walks a field state to
+the prompt and grabs the frame; `scan_panel_rects.py` measures the borders).
+Two traps that capture has to clear, both of which silently produce a
+confident wrong answer:
+
+- **The mode-3 slide timer `DAT_801ef1a4` is uninitialised** until the confirm
+  sub-screen first runs, so polling it as "is the dialog up?" reads stale
+  overlay bytes that compare `>= 0x1000` and capture the wrong screen. Trigger
+  on a breakpoint at `FUN_801E1C1C` with `a0 == 3` instead.
+- **`takeScreenShot` returns the displayed buffer**, which lags the draw (a
+  tick spans several vsyncs at 30fps). Capturing on the first parked vsync
+  yields a *last-slide-step* frame whose panels sit one 16px step low per
+  frame of lag - a plausible-looking rect that is simply wrong. The dialog is
+  static once parked, so settle for a dozen vsyncs first.
+
+**Tick rate is load-bearing.** Every timer here - the NowChecking countdown,
+each slide - counts 60 Hz frames, so a host must tick the session on a real
+60 Hz clock rather than once per rendered frame. Retail makes the same
+correction from the other side, scaling each per-tick increment by the
+adaptive frame-skip factor `DAT_1f800393` to hold a slide's *real-time* speed
+constant. A host that ticks only on input never finishes the card read at
+all; one that ticks per rendered frame stretches the ~2 s beat by however far
+below 60 fps it runs (the browser play page clocks the menu independently for
+exactly this reason).
 
 ## Bottom info panel renderer (`FUN_801E08D8`)
 
@@ -542,10 +654,55 @@ NowChecking dialog has retracted.
 | Mode | Content |
 |---|---|
 | `1` | Normal slot preview (kingdom + time + per-character stats). |
-| `2` | "Not a Legend of Legaia save." (invalid save in this slot). |
-| `3` | "Able to save." / "No data" (save mode). |
+| `2` | "Not a Legend of Legaia save." - the block holds something unreadable. |
+| `3` | "Able to save." (Save) / "No data" (Load) - the block is free. |
 | `4` | "Return" prompt. |
 | `100` | Blank panel - forced when `DAT_801ef160 != 0` (NowChecking dialog up) or `_DAT_801f0204 - 0xC < 2`. |
+
+Modes `2`/`3`/`4` all render as **one centred line** through
+`FUN_801E3EE0(caption, 0xA0, local_34 + 0x18)`; only mode `1` fills the panel
+with rows. `FUN_801E3EE0(text, x, y)` measures the string and hands the raw
+emitter `x - width/2` at `y + 7`, so a caption's drawn position is
+centre-x 160, y = `local_34 + 31`. Every other element on this panel goes
+straight to the raw emitter, so the caption is the only one carrying that
+`+ 7`.
+
+### Which mode a slot gets (`FUN_801E3F74`)
+
+The grid wrapper `FUN_801E06C0` calls `FUN_801E3F74(slot)` per cell and passes
+the result to the panel as `view_mode`. Branch order:
+
+| Test | Mode |
+|---|---|
+| `slot == 0xF` | `4` - the sixteenth cell is the Return row, not a block. |
+| `0x801F2A68[slot] == 0` | `2` - the slot has not been read off the card yet. |
+| `0x801F2A48[slot] == 1` | `1` - a readable Legaia save. |
+| `0x801F2A48[slot] == 0` | `2` - occupied by a save the game cannot read. |
+| otherwise (class `>= 2`) | `3` - a free block. |
+
+Two per-slot arrays, easily conflated: **`0x801F2A68` is a scanned flag**,
+written `1` per slot as the card read walks the directory (and all sixteen at
+once on completion), while **`0x801F2A48` is the class byte** that says what
+the block holds. Only the latter distinguishes a free block from a foreign
+save.
+
+`_DAT_801f0200` gates mode 3's wording, and is `0` on the **Save** path: it is
+the branch that goes on to stamp `BASCUS-94254PRO_00` into the chosen free
+block (`FUN_801DD35C` case `0xE`), which is save-creation, and it is set from
+`FUN_801DD35C`'s second parameter (`1` → `0`, `2` → `1`).
+
+Ported as `engine-core::save_select::{SlotContent, SlotInfoMode}` +
+`engine-ui::slot_info_caption_draws_for`. The port has no mode `4` (its block
+grid has no Return cell) and models mode `100` as a phase that skips the panel.
+
+The class byte's job falls to whichever scanner builds the `SlotSnapshot`, and
+both answer it the same way: **only positive evidence of absence yields
+`SlotContent::Free`** - a directory frame no save claims (card path,
+`web-viewer::cards`), or a `NotFound` on the slot file (disk path,
+`scan_save_dir`). Every other failure to read a slot means something occupies
+it, so it classifies `SlotContent::Foreign` and captions as mode `2` rather
+than inviting a save into a block whose contents were never read. Both build
+foreign slots through `SlotSnapshot::foreign` so the two paths cannot drift.
 
 ### Title row layout (mode 1, valid save)
 

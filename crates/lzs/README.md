@@ -47,11 +47,31 @@ decode to plausibly-sized zero-padded output. Always magic-check the
 ## CLI
 
 ```bash
-lzs-decode raw       <input> <output> --size <expected_size>
-lzs-decode container <input> <out_dir>
-lzs-decode probe     <input>             # heuristic: looks like an LZS?
-lzs-decode scan      <dir>               # walk a directory
-lzs-decode audit     <input>             # strict-real LZS detection
+# Decompress a raw stream whose output size you already know. There is no
+# length prefix on the wire, so --size is required; --skip starts the stream
+# partway into the file.
+lzs-decode raw extracted/PROT/0863_battle_data.BIN --size 32768 -o out.bin
+lzs-decode raw extracted/PROT/0863_battle_data.BIN --size 32768 --skip 32 -o out.bin
+
+# Parse an `.lzs` container and write one file per section
+lzs-decode container extracted/PROT/<entry>.BIN sections/
+
+# Is this file an LZS container? (heuristic - see the caveat above)
+lzs-decode probe extracted/PROT/<entry>.BIN
+
+# Walk a directory and list everything that looks like a valid container
+lzs-decode scan extracted/PROT
+
+# Decode every container in a directory and cluster the results by
+# (total decoded size, first 24 decoded bytes) to group like with like.
+# --tsv writes one summary row per file for offline analysis.
+lzs-decode audit extracted/PROT --tsv audit.tsv
+
+# Brute-search for an embedded stream whose DECOMPRESSED output contains a
+# needle. Tries every byte offset as a stream start, so it finds
+# non-container streams at arbitrary offsets that `scan` misses - e.g. the
+# in-battle party palette buried inside a scene bundle.
+lzs-decode find extracted/PROT --needle 409d709079be16b6 --max-out 8192
 ```
 
 ## See also

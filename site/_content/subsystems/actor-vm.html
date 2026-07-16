@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; actor / sprite VM</div>
   <h1>Actor / sprite VM</h1>
-  <p class="lede">A small fixed-width bytecode VM driving the title screen's animated sprite cluster. The simplest of Legaia's runtime VMs - 13 opcodes, byte-stream operands, no cross-context targeting. <span class="tag tag-done">Fully ported</span></p>
+  <p class="lede">A small fixed-width bytecode VM driving the title screen's animated sprite cluster. Lives in the title-screen overlay at <code>FUN_801D6628</code>. The simplest of Legaia's <a href="move-vm.html#vm-family">five runtime VMs</a> - 13 opcodes, byte-stream operands, no cross-context targeting. <span class="tag tag-done">Fully ported</span></p>
 </header>
 
 <section class="doc-section" id="how-it-works">
@@ -10,7 +10,7 @@
 
   <p>The whole VM has 13 opcodes - the minimum you need for a sprite-animation system: spawn / despawn, position writes, motion, animation triggers, flag set / clear / test, wait, and a terminator. Operands are simple: typically zero or one byte after the opcode. There is no "switch context to a different actor" or "call this other script as a subroutine"; an actor's bytecode runs against itself only.</p>
 
-  <p>Because everything is fixed-width and self-contained, the actor VM was the first VM ported in the clean-room engine, and it's used as the reference implementation pattern (a <code>Host</code> trait abstracts the platform-side hooks; the dispatcher is a plain match statement over opcode bytes).</p>
+  <p>Because everything is fixed-width and self-contained, the actor VM serves as the reference implementation pattern for the clean-room engine's VM ports (a <code>Host</code> trait abstracts the platform-side hooks; the dispatcher is a plain match statement over opcode bytes).</p>
 </section>
 
 <section class="doc-section" id="placement">
@@ -72,7 +72,7 @@
       <tr><td><code>0x07</code></td><td><code>Spline</code></td><td>Spline / curve-driven variant.</td></tr>
     </tbody>
   </table>
-  <p><code>crates/engine-vm</code>'s <code>DispatchByte</code> enum exposes those values as a typed dispatch and reports <code>handled_natively()</code> for the cases the keyframe pose decoder can drive on its own (currently only <code>Keyframe</code>). The per-actor <em>physics</em> arms - the position / velocity / acceleration math common to every dispatch byte - are ported in <code>crates/engine-vm/src/actor_tick.rs</code>.</p>
+  <p><code>crates/engine-vm</code>'s <code>DispatchByte</code> enum exposes those values as a typed dispatch and reports <code>handled_natively()</code> for the cases the keyframe pose decoder can drive on its own (<code>Keyframe</code>). The per-actor <em>physics</em> arms - the position / velocity / acceleration math common to every dispatch byte - are ported in <code>crates/engine-vm/src/actor_tick.rs</code>.</p>
   <p>The function is best modelled as a <b>layered pipeline</b> rather than a per-opcode jump table - each dispatch byte selects which subset of side-effects fires in a fixed order. <code>actor_tick.rs</code> ports the full pipeline: a typed <code>ActorPhysics</code> struct mirrors the retail actor record's tick-relevant fields (<code>+0x10</code> through <code>+0xD0</code>, with offset annotations on every field); <code>tick_actor(physics, scalars, listener) -&gt; TickResult</code> is the entry point. The arithmetic mirrors the retail decompilation field-for-field; the only intentional simplifications are an <code>i64</code> multiply-shift in place of the MIPS <code>MULT</code>&nbsp;+&nbsp;<code>MFLO</code> pair (functionally equivalent) and a saturation-clamp helper in place of the explicit <code>if (val &lt; 0)</code> / <code>if (val &gt; N)</code> pairs the compiler emitted.</p>
   <h3 id="per-arm-physics-tick">Per-arm physics</h3>
   <ul>

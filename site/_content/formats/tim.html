@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; psx tim (texture)</div>
   <h1>PSX TIM (texture) <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">A standard PlayStation texture format. The format is well-documented externally; we don't reimplement the parser. Magic check: first u32 == <code>0x00000010</code>.</p>
+  <p class="lede">A standard PlayStation texture format, well-documented externally - this page covers how Legaia uses it. Magic check: first u32 == <code>0x00000010</code>.</p>
 </header>
 
 <section class="doc-section" id="overview">
@@ -18,7 +18,7 @@ u32  flags       // bits 0..2 = pixel mode (0=4bit, 1=8bit, 2=16bit, 3=24bit)
 <section class="doc-section" id="vram-emulation-in-the-engine-port">
   <h2>VRAM emulation in the engine port</h2>
   <p><code>crates/engine-render</code> emulates a 1024×512 R16Uint VRAM page so per-prim CBA/TSB selectors plus 4/8/15bpp + CLUT decoding can be done in a fragment shader. The viewer uploads every sibling TIM into VRAM so multi-page meshes render with the correct CLUT bindings.</p>
-  <p>Some character meshes reference CLUT rows that live in <strong>different PROT entries</strong> from their TMD source (the runtime asset chain stitches them together). The viewer's <code>--vram-extra-dir</code> flag is the workaround until the chain is fully traced for every scene type.</p>
+  <p>Some character meshes reference CLUT rows that live in <strong>different PROT entries</strong> from their TMD source (the runtime asset chain stitches them together). The viewer's <code>--vram-extra-dir</code> flag covers the scene types whose chain is not yet traced.</p>
 </section>
 
 <section class="doc-section" id="multi-row-clut">
@@ -79,7 +79,7 @@ asset tim-deep-catalog extracted/PROT.DAT --rollup                 # count + dig
   <h3>Semantic labels</h3>
   <p>The catalog records <em>where</em> each texture lives, not <em>what</em> it is. <code>legaia_asset::tim_labels</code> is a curated label table that answers the &ldquo;what&rdquo;. It is keyed by <strong>content fingerprint</strong> (the FNV-1a-64 the catalogs already record), so a single label propagates to every catalog id sharing those bytes - duplicates and textures aliased across overlapping PROT entries - and one table serves both the raw and the deep tier. Labels show as a <code>label</code> column in the reference TSVs and beside each identified texture in the viewer.</p>
   <p>A label is either a <strong>coarse visual category</strong> assigned by inspecting the decoded thumbnail (<code>environment</code>, <code>terrain</code>, <code>foliage</code>, <code>character</code>, <code>ui-text</code>, <code>effect</code>, <code>other</code>) or a <strong>precise reverse-engineered role</strong> for a texture whose loader site is pinned (the menu-glyph atlas, the main-title sprite sheet, the four <code>init.pak</code> publisher / warning logos, and the load-screen UI sheet + party portraits + empty-slot frame). Both are our own observations - not asset strings or pixel data - so the table ships in the repo, like the ground-truth gamedata tables.</p>
-  <p class="hint">An earlier revision tried to derive an &ldquo;NPC palette&rdquo; label <em>structurally</em> from the CLUT load position <code>fb=(0,&nbsp;479)</code>. That is unsound: nearly every 256&times;256 4bpp scene/field texture page parks its CLUT in that same bottom VRAM band (see <a href="npc-palette.html">NPC palettes</a>), so the rule conflated floors / walls / terrain with NPC colour tables. Labels are now content-keyed observations, not a CLUT heuristic.</p>
+  <p class="hint">Deriving an &ldquo;NPC palette&rdquo; label <em>structurally</em> from the CLUT load position <code>fb=(0,&nbsp;479)</code> is unsound: nearly every 256&times;256 4bpp scene/field texture page parks its CLUT in that same bottom VRAM band (see <a href="npc-palette.html">NPC palettes</a>), so the rule conflates floors / walls / terrain with NPC colour tables. Labels are content-keyed observations, not a CLUT heuristic.</p>
 </section>
 
 <section class="doc-section" id="see-also">

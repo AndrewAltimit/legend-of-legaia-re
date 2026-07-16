@@ -16,7 +16,7 @@
     <li>Underneath that is Sony's PsyQ <strong>SsAPI sequencer</strong> (libsnd, statically linked) for SEQ playback, plus the PsyQ <strong>libspu</strong> primitives that actually move bytes into SPU RAM.</li>
   </ul>
 
-  <p>The fully-documented formats on disc are the VAB sound bank (Sony's standard <code>VABp</code>-magic instrument bank) and the SEQ sequence. The per-scene <code>.dpk</code> / <code>sound_data2</code> pack is now decoded as a <a href="../formats/sound-driver.html">VAB + SEQ bundle</a> (type-0 VAB header + type-1 VAB samples + type-2 SEQ); the <code>.MAP / .PCH / .spk / .pac</code> PsyQ intermediates are dev-side inputs, not separate retail chunks here.</p>
+  <p>The fully-documented formats on disc are the VAB sound bank (Sony's standard <code>VABp</code>-magic instrument bank) and the SEQ sequence. The per-scene <code>.dpk</code> / <code>sound_data2</code> pack is decoded as a <a href="../formats/sound-driver.html">VAB + SEQ bundle</a> (type-0 VAB header + type-1 VAB samples + type-2 SEQ); the <code>.MAP / .PCH / .spk / .pac</code> PsyQ intermediates are dev-side inputs, not separate retail chunks here.</p>
 
   <p>BGM dispatch is genuinely surprising: there's no literal "BGM ID &rarr; file" table. A field-VM script writes a BGM ID, and a per-frame poller resolves it to a PROT index using the current scene's CDNAME block layout. So "the table" isn't in the executable - it's in the on-disc filesystem layout itself.</p>
 </section>
@@ -35,7 +35,7 @@
       <tr><td><code>FUN_8001FC00</code></td><td><strong>Streaming-asset loader.</strong> Builds paths under the <code>sound\</code> prefix; the XA / <code>.pac</code> / <code>STR</code> consumer.</td></tr>
     </tbody>
   </table>
-  <p><code>FUN_8001EBEC</code> was previously listed here as a third "mode-aware extension dispatcher" - a misread. The decomp shows it is the graphics-side character-TMD equipment-conditional group-transform swap (it reads <code>DAT_8007C018[_DAT_8007B824 + 0..2]</code>, the loaded battle-character TMD pointers), not a sound consumer. See <a href="../formats/character-mesh.html">character-mesh</a>.</p>
+  <p><code>FUN_8001EBEC</code> looks like a third "mode-aware extension dispatcher" but is not a sound consumer: the decomp shows it is the graphics-side character-TMD equipment-conditional group-transform swap (it reads <code>DAT_8007C018[_DAT_8007B824 + 0..2]</code>, the loaded battle-character TMD pointers). See <a href="../formats/character-mesh.html">character-mesh</a>.</p>
   <p>Both <code>FUN_8001FA88</code> and <code>FUN_8001FC00</code> carry a dev/retail split via <code>_DAT_8007B8C2</code>. The dev branch loads via PROT indices directly; the retail branch uses dev-style paths through <code>FUN_8003E6BC</code> (the path-based opener) which resolves <code>h:\main\bg\domepack\&hellip;</code> into the appropriate PROT entry through the <a href="../formats/index.html">CDNAME-driven name map</a>. Both paths land at the same files.</p>
 </section>
 
@@ -62,7 +62,7 @@
     <li><strong>Dev path</strong> (<code>_DAT_8007B8C2 != 0</code>) - uses the standard library file API: <code>FUN_800608F0</code> (fopen) &rarr; <code>FUN_80060920</code> (fseek to <code>record &times; 0x800</code>) &rarr; <code>FUN_80060944</code> (fread) &rarr; <code>FUN_80060910</code> (fclose). Path string: <code>h:\mpack\monster.snd</code>.</li>
     <li><strong>Retail path</strong> - stages <code>(size, dst)</code> into the gp window at <code>+0x97c / +0x894</code>, kicks the async CD read via <code>FUN_8003F128</code>. Sets a 120-frame timeout at <code>+0x91c</code>.</li>
   </ul>
-  <p class="hint">The same pattern (<code>h:\mpack\&hellip;</code> paths + per-record TOC at a small data structure) is the shape we expect for the rest of the still-TBD audio formats - read the <code>FUN_8003E104</code> dump as the canonical example.</p>
+  <p class="hint">The same pattern (<code>h:\mpack\&hellip;</code> paths + per-record TOC at a small data structure) recurs across the audio loaders - the <code>FUN_8003E104</code> dump is the canonical example.</p>
 </section>
 
 <section class="doc-section" id="bgm-dispatch">
@@ -146,7 +146,7 @@
   </table>
   </details>
 
-  <p class="hint">The cluster previously appeared in the renderer / GPU primitives inventory; that was a citation artefact (battle / field code triggers SFX cues during render passes). None of these functions is libgpu / libgs - they're all libsnd. The "renderer / GPU primitives" inventory in <code>functions.md</code> previously listed <code>FUN_80061EDC / FUN_80067E9C / FUN_80066E50 / FUN_80067550</code> under the renderer; they belong here.</p>
+  <p class="hint">None of these functions is libgpu / libgs - they are all libsnd. Battle / field code triggers SFX cues during render passes, which makes the cluster (<code>FUN_80061EDC / FUN_80067E9C / FUN_80066E50 / FUN_80067550</code>) look renderer-adjacent in call graphs; don't file it under the renderer.</p>
 
   <p>Interpretation: <code>_DAT_8007BAC8 = bgm_id</code> written by field-VM <code>0x35</code> is consumed by <code>FUN_800243F0</code> to load a <code>.SEQ</code> payload via the streaming-asset path, and that payload is then handed to <code>FUN_80062340</code> for sequencer playback.</p>
 
@@ -269,10 +269,7 @@
     <li><strong>Per-voice reverb-send (<code>EON</code>) is broad</strong> - typically 15&ndash;22 of 24 voices, BGM + SFX alike. Reverb is the default routing, not a per-cue effect.</li>
   </ul>
   <p>There is no per-cue reverb-enable source: the live engine matches retail by calling <code>Spu::set_retail_reverb()</code> once at SPU init - <code>ReverbMode::StudioC</code> + every voice routed. Pinned by a pure-Rust sweep of the save-state corpus (SPU register shadow via <code>PsxSpu::reverb_registers</code> / <code>voice_reverb_mask</code> / <code>reverb_master_enabled</code>; CLI <code>mednafen-state spu</code>).</p>
-  <details class="disclosure">
-    <summary>Superseded reading</summary>
-    <p>An earlier reading held that Spirit-Arts / echo cues selectively opted into reverb while everything else played dry, implying a per-cue reverb-enable source to trace. The corpus sweep falsifies it: reverb is master-on with the Studio C preset in every captured state, and the EON mask covers most voices. Relatedly, the SEQ controller census finds no CC91 (reverb depth) events - the stream encodes no per-cue reverb at all.</p>
-  </details>
+  <p class="note">A "Spirit-Arts / echo cues selectively opt into reverb" reading (which would imply a per-cue reverb-enable source to trace) is falsified by the corpus sweep; the SEQ controller census also finds no CC91 (reverb depth) events, so the stream encodes no per-cue reverb at all.</p>
 
   <p>Boundaries: mode selection via <code>Spu::write_reverb_mode_byte(raw)</code> matches the libspu byte API (1=Room, 2=StudioA, &hellip;, 9=Pipe; out-of-range falls back to <code>Off</code>) - the engine half of <code>SpuSetReverbModeParam</code> (<code>FUN_8006B1B4</code>). The hardware's 39-tap FIR input/output resampler (44.1 kHz &harr; 22.05 kHz) is approximated by decimation + zero-order hold, and output volume (<code>vLOUT</code>/<code>vROUT</code>, not part of the mode preset) uses a fixed depth overridable via <code>Reverb::set_output_volume</code>.</p>
 </section>
@@ -297,7 +294,7 @@
   <p><strong>Controller census.</strong> A disc-wide sweep of every SEQ-bearing PROT entry fixes what the retail score emits: CC7 (volume) and CC10 (pan) carry the bulk; CC99 carries only the two loop-marker values; CC11 (expression) and CC91 (reverb depth) are absent - consistent with reverb being a fixed global.</p>
   <p><strong>WASM output.</strong> The <code>audio-webaudio</code> feature adds <code>WebAudioOut</code> (<code>ScriptProcessorNode</code>-based) so the same SPU + sequencer stack drives browser targets.</p>
   <p><strong>Loop points</strong> are read from the stream: the NRPN-style control changes on <code>0xB0</code> (controller 99 value 20 = Loop Start, value 30 = Loop Forever). A Loop Start records the position immediately after the marker; a later Loop Forever - or an end-of-track that follows a Loop Start - rewinds there rather than to event 0, so looped BGM repeats from the correct bar instead of restarting the whole track. The rewind resets the integer sample-clock, so the looped body re-fires on the same sample offset every pass. <code>set_loop_to</code> is the fallback for the four retail tracks with no markers.</p>
-  <p class="callout"><strong>Timebase.</strong> The production playback path ticks the sequencer once per SPU sample (<code>tick_sample</code>), so the music clock is locked to the audio clock. Timing is computed with an <strong>exact integer accumulator</strong> (units of <code>sample &times; ppqn &times; 1_000_000</code>; an event of delta <code>d</code> fires when the accumulator reaches <code>d &times; tempo_us &times; 44100</code>) - no per-tick float, no long-track drift, and bit-deterministic for the replay oracle. Note the SEQ tempo gotcha: the header tempo is a 240 BPM placeholder, immediately overridden by the first body <code>0xFF 0x51</code> (which, in PSX SEQ, carries its 3 tempo bytes with <strong>no</strong> MIDI length prefix). Mis-parsing that override pinned playback at the placeholder rate (~3x too fast).</p>
+  <p class="callout"><strong>Timebase.</strong> The production playback path ticks the sequencer once per SPU sample (<code>tick_sample</code>), so the music clock is locked to the audio clock. Timing is computed with an <strong>exact integer accumulator</strong> (units of <code>sample &times; ppqn &times; 1_000_000</code>; an event of delta <code>d</code> fires when the accumulator reaches <code>d &times; tempo_us &times; 44100</code>) - no per-tick float, no long-track drift, and bit-deterministic for the replay oracle. Note the SEQ tempo gotcha: the header tempo is a 240 BPM placeholder, immediately overridden by the first body <code>0xFF 0x51</code> (which, in PSX SEQ, carries its 3 tempo bytes with <strong>no</strong> MIDI length prefix). Mis-parsing that override pins playback at the placeholder rate (~3x too fast).</p>
 </section>
 
 <section class="doc-section" id="sfx-bank">

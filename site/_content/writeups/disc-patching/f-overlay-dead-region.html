@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../../index.html">home</a> &middot; <a href="../index.html">write-ups</a> &middot; <a href="index.html">disc patching</a> &middot; Tier F</div>
   <h1>Tier F - overlay dead-region injection</h1>
-  <p class="lede">The top of the <a href="index.html#ladder">ladder</a>. Park hand-assembled MIPS inside a <strong>resident overlay's reference-free dead space</strong> - not the executable's contended rodata gap (<a href="index.html">tier E</a>) - so a whole new screen or system runs on real hardware, costs nothing, reloads with the overlay, and composes with every other feature. The worked example is the randomizer's <strong>Seru-trading vendor</strong>: a fourth <em>Buy / Sell / Trade / Quit</em> row whose entire trade screen lives in dead bytes inside the menu overlay.</p>
+  <p class="lede">The top of the <a href="index.html#ladder">ladder</a>. Park hand-assembled MIPS inside a <strong>resident overlay's reference-free dead space</strong> - not the executable's contended rodata gap (<a href="e-rodata-gap-code.html">tier E</a>) - so a whole new screen or system runs on real hardware, costs nothing, reloads with the overlay, and composes with every other feature. The worked example is the randomizer's <strong>Seru-trading vendor</strong>: a fourth <em>Buy / Sell / Trade / Quit</em> row whose entire trade screen lives in dead bytes inside the menu overlay.</p>
 </header>
 
 <div class="notice">
@@ -38,7 +38,7 @@
   <ul>
     <li><strong>The cursor's row count is a literal immediate.</strong> The picker clamps to three rows with <code>addiu a1, zero, 3</code> (<code>0x24050003</code>) at <code>0x801DB098</code> - file offset <code>0x2880</code>. Bumping it to <code>4</code> lets the cursor reach a fourth line.</li>
     <li><strong>The window box is a sprite def with a height byte.</strong> The frame height at <code>+0xa</code> of a sprite def (<code>0x801E49E2</code>) encodes rows&times;<code>0x0e</code> plus margins; three rows is <code>0x26</code>, four needs <code>0x34</code> (<code>+14</code>px), or the new row renders outside its box.</li>
-    <li><strong>Draw order is text-first, box-last.</strong> The renderer (<code>FUN_801D4868</code>) emits each label's text before the opaque window box, so the box lands behind the glyphs. The fourth row's label draw has to obey the same order or the text vanishes - a bug found and fixed once, by matching the native sequence.</li>
+    <li><strong>Draw order is text-first, box-last.</strong> The renderer (<code>FUN_801D4868</code>) emits each label's text before the opaque window box, so the box lands behind the glyphs. The fourth row's label draw has to obey the same order or the text vanishes behind the box.</li>
   </ul>
   <p>These are the load-bearing details. They look trivial written down; recovering them meant identifying the renderer and its dispatcher (<code>FUN_801DAFD4</code>) in a symbol-free overlay, reading the primitive emission to learn the draw order, and confirming the constants against the live menu. That's the gap between &ldquo;patch a byte&rdquo; and &ldquo;understand the screen.&rdquo;</p>
 </section>

@@ -177,6 +177,16 @@ asset overlay generate extracted/PROT.DAT --index 897 --index 898</code></pre>
   <p>The extracted <code>.bin</code>s are Sony overlay code (gitignored); only the map (PROT index &rarr; base &rarr; label + sha256 hashes) and the docs are committed. A statically-extracted-and-disassembled overlay reproduces the same functions at the same addresses as the captured <code>overlay_&lt;label&gt;_&lt;addr&gt;.txt</code> dumps - asserted against the disc bytes and against live RAM in disc-gated tests.</p>
 </section>
 
+<section class="doc-section" id="scope-limits">
+  <h2>Scope + limits</h2>
+  <p>This is a complement to the dynamic captures, not a replacement. Three limits define where it stops:</p>
+  <ul class="bullets">
+    <li><strong>Only clean-copy overlays qualify.</strong> The byte-match catches the exceptions: an overlay whose on-disc bytes do not match the resident image is runtime-relocated or runtime-constructed. Mark it <code>ineligible</code> and keep it on the dynamic path - don't force it static.</li>
+    <li><strong>The fingerprint covers the <code>read_entry</code> footprint.</strong> For a few entries that footprint over-reads adjacent shared sectors past the real overlay, because the on-disc entries overlap. The over-read tail is harmless noise in the disassembly; the real functions still land at their real addresses.</li>
+    <li><strong>It does not address runtime values.</strong> For <code>gp</code>-relative globals, watchpoint results, and anything the overlay constructs at run time, the <a href="overlay-capture.html">dynamic-capture workflow</a> and the <a href="pcsx-redux-automation.html">PCSX-Redux probes</a> remain essential and authoritative.</li>
+  </ul>
+</section>
+
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">

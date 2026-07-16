@@ -17,12 +17,50 @@
 //!
 //! `Browsing → ConfirmLoad / ConfirmOverwrite / ConfirmDelete → Done`
 //!
+//! ## Slot list = save blocks, or memory-card slots
+//!
+//! By default the slot list is the **save blocks** themselves: the pills
+//! show the first two, the preview grid shows all fifteen, and Save mode
+//! picks a block straight off the pill row. That is the flat model the
+//! native shell drives against its on-disk LGSF slots.
+//!
+//! Retail is two-stage: the pills are the console's **two memory-card
+//! slots** (the libcd channel's `port`, see
+//! `docs/subsystems/save-screen.md`), and the 5x3 preview grid is the
+//! chosen card's fifteen blocks. Hosts that model it that way opt in via
+//! [`SaveSelectSession::set_card_slots_mode`], which routes Save-mode
+//! confirmation through the same `NowChecking` card-read beat Load mode
+//! already uses and lands the overwrite prompt after the grid rather than
+//! before it. The flag is off by default, so the flat model is unchanged.
+//!
 //! Engines call [`SaveSelectSession::tick`] each frame and react to
 //! returned [`SelectEvent`]s. The session never reads the save data
 //! itself - engines pre-load slot metadata into [`SlotSnapshot`] entries
 //! and feed them through `set_slots`.
 
 use crate::menu_input::{CURSOR_INDEX_MASK, CursorNav, NavButtons, menu_cursor_nav};
+
+/// What occupies a card block, in the terms retail's info panel branches
+/// on - its per-slot class byte at `0x801F2A48`.
+///
+/// `present` answers "can this be loaded"; this answers "why not", which is
+/// what decides the caption an unloadable block shows.
+///
+/// REF: FUN_801E3F74 (the class byte is the `-0x7fe0d5b8` array it reads).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SlotContent {
+    /// A readable Legend of Legaia save. Retail class `1`.
+    LegaiaSave,
+    /// A free block. Retail class `>= 2`.
+    ///
+    /// The default: a session over disk saves (rather than a card) has no
+    /// foreign saves, so every absent slot is simply free.
+    #[default]
+    Free,
+    /// Occupied by a save this game cannot read - another game's, or a
+    /// Legaia block whose payload does not parse. Retail class `0`.
+    Foreign,
+}
 
 /// Per-slot metadata. Engines build these from disc/disk save scans
 /// (the `legaia-save` crate provides the parsers). Pure data - the
@@ -31,6 +69,10 @@ use crate::menu_input::{CURSOR_INDEX_MASK, CursorNav, NavButtons, menu_cursor_na
 pub struct SlotSnapshot {
     pub slot: u8,
     pub present: bool,
+    /// What occupies the block. `present == true` implies
+    /// [`SlotContent::LegaiaSave`]; the other variants distinguish the two
+    /// ways a slot can be unloadable.
+    pub content: SlotContent,
     /// Display label engines render. `"<empty>"` for empty slots.
     pub label: String,
     /// Game time in seconds (for the "Play time: 12:34:56" line).
@@ -62,6 +104,7 @@ impl SlotSnapshot {
         Self {
             slot,
             present: false,
+            content: SlotContent::Free,
             label: format!("Slot {slot}: <empty>"),
             play_time_seconds: 0,
             party_lv: 0,
@@ -71,6 +114,18 @@ impl SlotSnapshot {
             leader_name: String::new(),
             leader_hp: (0, 0),
             leader_mp: (0, 0),
+        }
+    }
+
+    /// A slot occupied by something this game cannot read. Carries no
+    /// preview data (there is none to read), so it differs from
+    /// [`Self::empty`] only in [`SlotContent`] and the label - but that
+    /// difference is what picks the info panel's caption.
+    pub fn foreign(slot: u8) -> Self {
+        Self {
+            content: SlotContent::Foreign,
+            label: format!("Slot {slot}: <unreadable>"),
+            ..Self::empty(slot)
         }
     }
 
@@ -89,6 +144,58 @@ impl SlotSnapshot {
 pub enum SaveSelectMode {
     Load,
     Save,
+}
+
+/// What the bottom info panel shows for the focused grid cell.
+///
+/// Retail passes this to the panel renderer as a `view_mode` int; the
+/// variants below carry the retail numbers. Two retail modes have no port
+/// equivalent and are deliberately absent: `4` ("Return") belongs to a
+/// sixteenth cell the 5x3 block grid does not have, and `100` (blank) is
+/// forced while the "Now checking" dialog is up, which the port models as a
+/// separate [`SelectPhase`] that does not draw the panel at all.
+///
+/// PORT: FUN_801E3F74 (selector) + FUN_801E08D8 (`view_mode` param).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SlotInfoMode {
+    /// Retail `1`: kingdom name, play time, and the party's stats.
+    Preview,
+    /// Retail `2`: the block holds something this game cannot read.
+    NotLegaiaSave,
+    /// Retail `3`: the block is free.
+    FreeBlock,
+}
+
+impl SlotInfoMode {
+    /// Pick the mode for a slot. Mirrors FUN_801E3F74's branch order.
+    pub fn for_slot(snap: &SlotSnapshot) -> Self {
+        match snap.content {
+            SlotContent::LegaiaSave => Self::Preview,
+            // Retail reaches this via class `0`, and returns 2 from both
+            // arms of its Save/Load branch - the distinction only matters
+            // for a free block.
+            SlotContent::Foreign => Self::NotLegaiaSave,
+            SlotContent::Free => Self::FreeBlock,
+        }
+    }
+
+    /// The panel's centred caption, or `None` for [`Self::Preview`], which
+    /// fills the panel with the save's stats instead.
+    ///
+    /// Only a free block's caption depends on `mode`: retail gates it on
+    /// `_DAT_801f0200`, which is `0` on the Save path (the branch that goes
+    /// on to stamp a product code into the chosen free block) and non-zero
+    /// on the Load path.
+    pub fn caption(self, mode: SaveSelectMode) -> Option<&'static str> {
+        match self {
+            Self::Preview => None,
+            Self::NotLegaiaSave => Some("Not a Legend of Legaia save."),
+            Self::FreeBlock => Some(match mode {
+                SaveSelectMode::Save => "Able to save.",
+                SaveSelectMode::Load => "No data",
+            }),
+        }
+    }
 }
 
 /// Phase of the SM.
@@ -260,6 +367,12 @@ pub struct SaveSelectSession {
     /// completes. Holds at 0 during Browsing / NowChecking / Done;
     /// ramps during SlotPreview / ConfirmOverwrite / ConfirmDelete.
     info_panel_slide_anim_t: u16,
+    /// Opt-in retail two-stage flow: the slot list is the console's two
+    /// **memory-card slots** rather than the save blocks themselves, so
+    /// Save mode must cross the same `NowChecking` card-read beat Load
+    /// mode does before the host can show the card's block grid. See the
+    /// module docs. Default `false` = the flat block-list model.
+    card_slots_mode: bool,
 }
 
 impl SaveSelectSession {
@@ -276,7 +389,24 @@ impl SaveSelectSession {
             now_checking_frames: DEFAULT_NOW_CHECKING_FRAMES,
             slide_anim_t: 0,
             info_panel_slide_anim_t: 0,
+            card_slots_mode: false,
         }
+    }
+
+    /// Opt into the retail two-stage memory-card flow (see the module
+    /// docs). Set this when the slot list models the console's two
+    /// **memory-card slots** instead of individual save blocks: Save mode
+    /// then crosses the `NowChecking` card-read beat and lands in
+    /// [`SelectPhase::SlotPreview`], where the host renders the chosen
+    /// card's block grid, and the overwrite prompt fires from the preview
+    /// rather than from the pill row.
+    pub fn set_card_slots_mode(&mut self, on: bool) {
+        self.card_slots_mode = on;
+    }
+
+    /// `true` when the two-stage memory-card flow is enabled.
+    pub fn card_slots_mode(&self) -> bool {
+        self.card_slots_mode
     }
 
     /// Current slide-in animation t (12-bit fixed-point 0..=4096).
@@ -459,6 +589,21 @@ impl SaveSelectSession {
                     };
                     events.push(SelectEvent::EnteredNowChecking { slot: cursor });
                 }
+                // Card-slots mode: a Save picks a *card*, not a block, so
+                // it crosses the same "Now checking" card-read beat Load
+                // does and lands in SlotPreview for the host to draw the
+                // card's block grid. `present` here means "a card is in
+                // this slot" - an empty slot is nothing to save into.
+                (SaveSelectMode::Save, true) if self.card_slots_mode => {
+                    self.phase = SelectPhase::NowChecking {
+                        slot: cursor,
+                        frames_remaining: self.now_checking_frames,
+                    };
+                    events.push(SelectEvent::EnteredNowChecking { slot: cursor });
+                }
+                (SaveSelectMode::Save, false) if self.card_slots_mode => {
+                    events.push(SelectEvent::InvalidConfirm);
+                }
                 (SaveSelectMode::Save, true) => {
                     self.phase = SelectPhase::ConfirmOverwrite {
                         slot: cursor,
@@ -522,6 +667,21 @@ impl SaveSelectSession {
             return;
         }
         if input.cross {
+            // Save mode reaches the preview only in card-slots mode (the
+            // host is showing the card's block grid). Confirming there is
+            // a destructive write, so it lands on the overwrite prompt
+            // rather than committing - retail's "Do you wish to save?".
+            if self.mode == SaveSelectMode::Save {
+                self.phase = SelectPhase::ConfirmOverwrite {
+                    slot,
+                    cursor: 1, // default to "No" for safety
+                };
+                events.push(SelectEvent::EnteredConfirm {
+                    slot,
+                    kind: ConfirmKind::Overwrite,
+                });
+                return;
+            }
             self.phase = SelectPhase::Done(SelectOutcome::Loaded(slot));
             events.push(SelectEvent::LoadConfirmed { slot });
         }
@@ -551,9 +711,18 @@ impl SaveSelectSession {
             left: input.left || input.up,
             right: input.right || input.down,
         };
+        // Backing out of the prompt returns where it was opened from: the
+        // pill row in the flat model, but the card's block grid in
+        // card-slots mode (the overwrite prompt is raised from the
+        // preview there, so "No" must not eject the player to the pills).
+        let back = if self.card_slots_mode && kind == ConfirmKind::Overwrite {
+            SelectPhase::SlotPreview { slot }
+        } else {
+            SelectPhase::Browsing { cursor: slot }
+        };
         match menu_cursor_nav(&mut cell, 2, true, buttons) {
             CursorNav::Cancel => {
-                self.phase = SelectPhase::Browsing { cursor: slot };
+                self.phase = back;
                 events.push(SelectEvent::ConfirmCancelled { slot, kind });
             }
             CursorNav::Moved => {
@@ -580,8 +749,8 @@ impl SaveSelectSession {
                     self.phase = SelectPhase::Done(outcome);
                     events.push(SelectEvent::Confirmed { slot, kind });
                 } else {
-                    // No → back to browsing.
-                    self.phase = SelectPhase::Browsing { cursor: slot };
+                    // No → back where the prompt was opened from.
+                    self.phase = back;
                     events.push(SelectEvent::ConfirmCancelled { slot, kind });
                 }
             }
@@ -623,6 +792,7 @@ mod tests {
                     SlotSnapshot {
                         slot: i as u8,
                         present: true,
+                        content: SlotContent::LegaiaSave,
                         label: format!("Slot {i}"),
                         play_time_seconds: 1234,
                         party_lv: 5,
@@ -645,6 +815,63 @@ mod tests {
         let s = SaveSelectSession::new(SaveSelectMode::Load, vec![]);
         assert!(s.is_done());
         assert_eq!(s.outcome(), Some(SelectOutcome::Cancelled));
+    }
+
+    #[test]
+    fn slot_info_mode_follows_what_occupies_the_block() {
+        let mut snap = SlotSnapshot::empty(0);
+        // A free block, which is what `empty` means.
+        assert_eq!(SlotInfoMode::for_slot(&snap), SlotInfoMode::FreeBlock);
+
+        snap.content = SlotContent::Foreign;
+        assert_eq!(SlotInfoMode::for_slot(&snap), SlotInfoMode::NotLegaiaSave);
+
+        snap.content = SlotContent::LegaiaSave;
+        assert_eq!(SlotInfoMode::for_slot(&snap), SlotInfoMode::Preview);
+    }
+
+    #[test]
+    fn only_a_free_block_captions_differently_per_mode() {
+        // A readable save fills the panel with stats, not a caption.
+        assert_eq!(SlotInfoMode::Preview.caption(SaveSelectMode::Load), None);
+        assert_eq!(SlotInfoMode::Preview.caption(SaveSelectMode::Save), None);
+
+        // A foreign save reads the same either way.
+        for m in [SaveSelectMode::Load, SaveSelectMode::Save] {
+            assert_eq!(
+                SlotInfoMode::NotLegaiaSave.caption(m),
+                Some("Not a Legend of Legaia save.")
+            );
+        }
+
+        // A free block is the one case that depends on why we're here.
+        assert_eq!(
+            SlotInfoMode::FreeBlock.caption(SaveSelectMode::Save),
+            Some("Able to save.")
+        );
+        assert_eq!(
+            SlotInfoMode::FreeBlock.caption(SaveSelectMode::Load),
+            Some("No data")
+        );
+    }
+
+    #[test]
+    fn every_unloadable_slot_gets_a_caption() {
+        // The bug this guards: an unreadable slot drew an empty panel.
+        // Whatever a slot holds, if it has no preview it must have words.
+        for content in [SlotContent::Free, SlotContent::Foreign] {
+            let snap = SlotSnapshot {
+                content,
+                ..SlotSnapshot::empty(3)
+            };
+            for m in [SaveSelectMode::Load, SaveSelectMode::Save] {
+                let caption = SlotInfoMode::for_slot(&snap).caption(m);
+                assert!(
+                    caption.is_some_and(|c| !c.is_empty()),
+                    "{content:?} in {m:?} mode left the panel blank"
+                );
+            }
+        }
     }
 
     #[test]
@@ -860,6 +1087,134 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(s.outcome(), Some(SelectOutcome::Deleted(0)));
+    }
+
+    // --- card-slots mode (opt-in retail two-stage flow) ---
+
+    #[test]
+    fn card_slots_mode_is_off_by_default() {
+        let s = SaveSelectSession::new(SaveSelectMode::Save, slots(&[true]));
+        assert!(
+            !s.card_slots_mode(),
+            "the flat block-list model must stay the default so the native \
+             shell's save flow is unchanged"
+        );
+    }
+
+    #[test]
+    fn card_slots_save_crosses_now_checking_then_previews() {
+        let mut s = SaveSelectSession::new(SaveSelectMode::Save, slots(&[true, false]));
+        s.set_card_slots_mode(true);
+        s.set_now_checking_frames(1);
+        // X on a slot holding a card reads it, exactly like Load mode -
+        // NOT the flat model's straight-to-ConfirmOverwrite.
+        let events = s.tick(SelectInput {
+            cross: true,
+            ..Default::default()
+        });
+        assert!(events.contains(&SelectEvent::EnteredNowChecking { slot: 0 }));
+        s.tick(SelectInput::default());
+        let events = s.tick(SelectInput::default());
+        assert!(matches!(s.phase(), SelectPhase::SlotPreview { slot: 0 }));
+        assert!(events.contains(&SelectEvent::EnteredSlotPreview { slot: 0 }));
+    }
+
+    #[test]
+    fn card_slots_save_on_empty_slot_is_an_invalid_blip() {
+        // `present == false` means "no card in this slot" here - there is
+        // nothing to save into, so it must blip rather than report Saved
+        // (the flat model's empty-slot behaviour).
+        let mut s = SaveSelectSession::new(SaveSelectMode::Save, slots(&[false, false]));
+        s.set_card_slots_mode(true);
+        let events = s.tick(SelectInput {
+            cross: true,
+            ..Default::default()
+        });
+        assert!(events.contains(&SelectEvent::InvalidConfirm));
+        assert!(matches!(s.phase(), SelectPhase::Browsing { .. }));
+        assert!(s.outcome().is_none(), "must not commit a save");
+    }
+
+    #[test]
+    fn card_slots_save_confirms_overwrite_from_the_preview() {
+        let mut s = SaveSelectSession::new(SaveSelectMode::Save, slots(&[true]));
+        s.set_card_slots_mode(true);
+        s.set_now_checking_frames(0);
+        s.tick(SelectInput {
+            cross: true,
+            ..Default::default()
+        });
+        s.tick(SelectInput::default());
+        assert!(matches!(s.phase(), SelectPhase::SlotPreview { .. }));
+        // X on the preview raises the destructive prompt (defaulting to
+        // "No"), it does not commit.
+        s.tick(SelectInput {
+            cross: true,
+            ..Default::default()
+        });
+        match s.phase() {
+            SelectPhase::ConfirmOverwrite { slot: 0, cursor: 1 } => {}
+            other => panic!("expected ConfirmOverwrite defaulting to No, got {other:?}"),
+        }
+        // "No" returns to the grid, not to the pill row.
+        s.tick(SelectInput {
+            circle: true,
+            ..Default::default()
+        });
+        assert!(
+            matches!(s.phase(), SelectPhase::SlotPreview { slot: 0 }),
+            "cancelling the overwrite must return to the card's block grid"
+        );
+        // Yes commits.
+        s.tick(SelectInput {
+            cross: true,
+            ..Default::default()
+        });
+        s.tick(SelectInput {
+            left: true,
+            ..Default::default()
+        });
+        s.tick(SelectInput {
+            cross: true,
+            ..Default::default()
+        });
+        assert_eq!(s.outcome(), Some(SelectOutcome::Saved(0)));
+    }
+
+    #[test]
+    fn card_slots_load_still_loads_from_the_preview() {
+        let mut s = SaveSelectSession::new(SaveSelectMode::Load, slots(&[true]));
+        s.set_card_slots_mode(true);
+        s.set_now_checking_frames(0);
+        s.tick(SelectInput {
+            cross: true,
+            ..Default::default()
+        });
+        s.tick(SelectInput::default());
+        s.tick(SelectInput {
+            cross: true,
+            ..Default::default()
+        });
+        assert_eq!(s.outcome(), Some(SelectOutcome::Loaded(0)));
+    }
+
+    #[test]
+    fn flat_save_mode_unchanged_when_card_slots_mode_is_off() {
+        // Regression guard for the native shell: with the flag off, Save
+        // mode must still go straight from the pill row to the overwrite
+        // prompt / Saved outcome.
+        let mut s = SaveSelectSession::new(SaveSelectMode::Save, slots(&[true, false]));
+        s.tick(SelectInput {
+            cross: true,
+            ..Default::default()
+        });
+        assert!(matches!(s.phase(), SelectPhase::ConfirmOverwrite { .. }));
+        let mut s = SaveSelectSession::new(SaveSelectMode::Save, slots(&[false]));
+        s.tick(SelectInput {
+            cross: true,
+            ..Default::default()
+        });
+        assert_eq!(s.outcome(), Some(SelectOutcome::Saved(0)));
     }
 
     #[test]

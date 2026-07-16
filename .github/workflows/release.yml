@@ -1,0 +1,174 @@
+# Tagged-release binary pipeline for legend-of-legaia-re.
+#
+# Pushing a v* tag builds every workspace binary for the release target
+# matrix, packages one archive per target, and attaches the archives plus a
+# SHA256SUMS file to that tag's GitHub release (creating the release if it
+# does not exist yet).
+#
+# Runs entirely on the self-hosted runner, which is arm64 Linux. That makes
+# *both* non-native targets cross-compiles:
+#
+#   aarch64-unknown-linux-gnu   native            every workspace binary
+#   x86_64-pc-windows-gnu       mingw-w64 cross   every workspace binary
+#   x86_64-unknown-linux-gnu    zig cross         CLI binaries only
+#
+# The x86_64 Linux archive omits the two GUI binaries because cpal's
+# alsa-sys needs an x86_64 libasound to link against and the runner only
+# carries the arm64 one. docs/tooling/releases.md covers the reasoning, the
+# runner provisioning, and how to lift that restriction.
+#
+# The tag event is owned by this workflow alone: main-ci.yml deliberately
+# does not trigger on tags, so a release does not race a duplicate full-CI
+# run for the same commit on the same single runner. The verify job below
+# reproduces main-ci's gates (fmt + clippy + test) so the release is still
+# test-gated.
+#
+# Artifacts are our own compiled binaries and our own text files only. No
+# step reads a disc image and no game data is packaged -- this repo ships no
+# Sony-owned bytes.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build, e.g. v0.1.0'
+        required: true
+        type: string
+      publish:
+        description: 'Attach the artifacts to the GitHub release. Leave unchecked to build only.'
+        required: false
+        default: false
+        type: boolean
+
+# One release at a time, and never cancel one midway through uploading.
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+jobs:
+  # -- Test gate --------------------------------------------------------------
+  # Mirrors main-ci.yml's `ci` job. A tag is normally cut from an already-green
+  # main, so this is belt-and-braces -- but a release is exactly where you want
+  # the braces. Disc-gated tests skip here (no LEGAIA_DISC_BIN), as everywhere.
+  verify:
+    name: Verify
+    runs-on: self-hosted
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          clean: true
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --workspace -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --release
+
+  # -- Build, package, publish ------------------------------------------------
+  # Deliberately one job rather than a per-target matrix: the three builds
+  # share a checkout and a cargo target dir on the single self-hosted runner,
+  # and a single job produces one aggregate SHA256SUMS and performs exactly one
+  # release-edit -- a matrix would race on creating the same release.
+  release:
+    name: Build + Release
+    needs: [verify]
+    runs-on: self-hosted
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          clean: true
+
+      - name: Derive version
+        id: version
+        run: |
+          tag="${RELEASE_TAG}"
+          version="${tag#v}"
+          if [ -z "$version" ]; then
+            echo "ERROR: could not derive a version from tag '$tag'" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Tag $tag -> version $version"
+
+      - name: Provision cross toolchains
+        run: |
+          for t in aarch64-unknown-linux-gnu \
+                   x86_64-pc-windows-gnu \
+                   x86_64-unknown-linux-gnu; do
+            scripts/ci/setup-cross-toolchain.sh "$t"
+          done
+
+      - name: Build + package all targets
+        run: |
+          rm -rf target/dist
+          for t in aarch64-unknown-linux-gnu \
+                   x86_64-pc-windows-gnu \
+                   x86_64-unknown-linux-gnu; do
+            scripts/ci/release-build.sh \
+              "${{ steps.version.outputs.version }}" "$t" target/dist
+          done
+
+      - name: Aggregate SHA256SUMS
+        working-directory: target/dist
+        run: |
+          rm -f SHA256SUMS
+          # Fold the per-archive .sha256 files into one manifest, then drop them.
+          cat ./*.sha256 > SHA256SUMS
+          rm -f ./*.sha256
+          sha256sum -c SHA256SUMS
+          echo "--- SHA256SUMS ---"
+          cat SHA256SUMS
+
+      - name: Summary
+        run: |
+          {
+            echo "## Release ${RELEASE_TAG}"
+            echo ""
+            echo "| Artifact | Size |"
+            echo "|---|---|"
+            for f in target/dist/*.tar.gz target/dist/*.zip; do
+              [ -f "$f" ] || continue
+              echo "| \`$(basename "$f")\` | $(du -h "$f" | cut -f1) |"
+            done
+            echo ""
+            echo 'Every archive carries every workspace binary.'
+            echo 'See docs/tooling/releases.md.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attach to GitHub release
+        # Tag pushes always publish. workflow_dispatch publishes only when
+        # explicitly asked, so the dispatch path is a safe dry run by default.
+        if: github.event_name == 'push' || inputs.publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
+          draft: false
+          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
+          fail_on_unmatched_files: true
+          files: |
+            target/dist/*.tar.gz
+            target/dist/*.zip
+            target/dist/SHA256SUMS

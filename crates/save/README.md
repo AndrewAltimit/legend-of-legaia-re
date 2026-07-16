@@ -74,6 +74,16 @@ every other byte, so an untouched export round-trips byte-identical.
 This is what the site's "import your emulator save, win casino coins in
 the browser minigames, export it back" flow is built on.
 
+`CardView` addresses both halves of a card, per container format, so
+callers never re-derive the layout: `sc_block` / `sc_block_mut` for a
+block's 8 KiB payload, `dir_frame` / `dir_frame_mut` for the 128-byte
+directory frame describing it, `block_is_save_start` to tell a save's
+first block from a free block or a mid-chain continuation, and
+`claim_block` to stamp a chosen block's frame as a single-block save.
+`claim_block` is the targeted counterpart to [`card::write_block`], which
+allocates the *lowest* free block - use it when the player picked the
+block (the retail save screen's 5x3 grid does exactly that).
+
 Story-flag rendering is the wide 512-byte
 bitmap mirroring RAM `0x80085600..0x80085800` - the engine carries it in
 [`SaveExt::story_flag_bits`] alongside the narrower 32-bit scratchpad

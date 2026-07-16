@@ -1,6 +1,8 @@
 # Legaia LZS compression
 
-Reverse-engineered byte-for-byte from `FUN_8001A55C`. Implementation: `crates/lzs/src/lib.rs`.
+The compression wrapped around most of the disc's bulk assets - meshes, textures, scene MANs, the monster archive. Reverse-engineered byte-for-byte from `FUN_8001A55C`. Implementation: `crates/lzs/src/lib.rs`.
+
+> **Before you trust a decode: [a clean decompress is not a validity signal](#decompresses-without-error-is-not-a-validity-signal).** The ring buffer is zero-initialised, so most random inputs decode "successfully" into plausible-looking output. Magic-check the decoded bytes, always.
 
 A standard LZSS variant with three Legaia-specific choices:
 - **4096-byte sliding ring buffer**, initialised to zero.
@@ -57,7 +59,9 @@ The retail game ships only the *decoder*; there is no Sony encoder to reverse. `
 - Its correctness criterion is `decompress(compress(x)) == x`, validated by a disc-gated round-trip over the real PROT corpus.
 - The lazy step matters for in-place editing: it packs tightly enough that a re-packed asset fits its original footprint even where that footprint has no compressed slack (every scene MAN but one fits its exact original span; a purely greedy parse overshot each by a handful of bytes).
 
-A linear-history match at distance `d` maps onto the ring-buffer back-reference base `(0xFEE + i - d) & 0xFFF`; capping the emitted distance at `4096 - MAX_MATCH` keeps every in-copy read (including the self-overlapping RLE case where `d < len`) unambiguous, so a plain linear match decodes byte-for-byte. It does real compression (not literal-only), so re-packed streams fit the slack in fixed-size slots like the monster archive's `0x14000`-byte records.
+A linear-history match at distance `d` maps onto the ring-buffer back-reference base `(0xFEE + i - d) & 0xFFF`. Capping the emitted distance at `4096 - MAX_MATCH` keeps every in-copy read unambiguous - including the self-overlapping RLE case where `d < len` - so a plain linear match decodes byte-for-byte.
+
+It does real compression rather than emitting literals only, so re-packed streams fit the slack in fixed-size slots like the monster archive's `0x14000`-byte records.
 
 ## "Decompresses without error" is not a validity signal
 

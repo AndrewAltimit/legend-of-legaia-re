@@ -2,7 +2,12 @@
 
 A discrete tile-board mode used by puzzle rooms / board minigames inside the field overlay. The board is a `width × height` array of byte cells, the player occupies one `(col, row)` cell, and each accepted d-pad press advances the player exactly one cell. The cell array *is* the collision data - a destination cell value of `2` is a wall. Each cell value also indexes a tile-actor table that the board renderer draws as a tile sprite at the cell's world position.
 
-**This is not general town/field locomotion.** Legaia towns use free movement; that path is separate and still being reverse-engineered (see [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)). The tile-board system was initially mistaken for town walking because it lives in the field overlay (`0897`) and reads the pad to move the player; the giveaways that it is a special board mode are the per-cell tile-actor rendering and the procedural board fill below.
+**This is not general town/field locomotion.** Legaia towns use free movement, which
+is a separate path with its own controller (`FUN_801d01b0`) - see
+[`field-locomotion.md`](field-locomotion.md). The tile-board system was initially
+mistaken for town walking because it lives in the same field overlay (`0897`) and
+also reads the pad to move the player; the giveaways that it is a special board mode
+are the per-cell tile-actor rendering and the procedural board fill below.
 
 ## Where the board comes from
 

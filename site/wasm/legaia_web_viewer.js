@@ -2402,12 +2402,53 @@ export class LegaiaRuntime {
         }
     }
     /**
+     * `true` when the card in `slot` holds in-game writes the page has not
+     * exported yet.
+     * @param {number} slot
+     * @returns {boolean}
+     */
+    card_slot_dirty(slot) {
+        const ret = wasm.legaiaruntime_card_slot_dirty(this.__wbg_ptr, slot);
+        return ret !== 0;
+    }
+    /**
+     * The whole rack as JSON - what the page's card picker renders:
+     * ```text
+     * [ { "slot": 0, "inserted": true, "label": "my card", "format": "mcr",
+     *     "dirty": false,
+     *     "blocks": [ { "block": 1, "present": true, "name": "Vahn",
+     *                   "level": 12, "location": "Rim Elm", "money": 900 }, ... ] },
+     *   { "slot": 1, "inserted": false, ... } ]
+     * ```
+     * @returns {string}
+     */
+    card_slots_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_card_slots_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * `true` if a disc has been loaded.
      * @returns {boolean}
      */
     disc_loaded() {
         const ret = wasm.legaiaruntime_disc_loaded(this.__wbg_ptr);
         return ret !== 0;
+    }
+    /**
+     * Remove the card from rack slot `slot`. Unexported writes are lost -
+     * the page warns before calling this.
+     * @param {number} slot
+     */
+    eject_card(slot) {
+        wasm.legaiaruntime_eject_card(this.__wbg_ptr, slot);
     }
     /**
      * Boot a named CDNAME scene (e.g. `"town01"`) and assemble everything the
@@ -2441,6 +2482,21 @@ export class LegaiaRuntime {
         } finally {
             wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
         }
+    }
+    /**
+     * The card in rack slot `slot`, as container bytes ready to download.
+     *
+     * Byte-identical to what was inserted apart from the SC blocks the
+     * player saved into, so the player's emulator loads it straight back.
+     * Empty when no card is in that slot. Clears the slot's dirty flag.
+     * @param {number} slot
+     * @returns {Uint8Array}
+     */
+    export_card(slot) {
+        const ret = wasm.legaiaruntime_export_card(this.__wbg_ptr, slot);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
     }
     /**
      * Export the current engine session as LGSF bytes
@@ -2805,6 +2861,42 @@ export class LegaiaRuntime {
         }
     }
     /**
+     * Insert a memory-card image into rack slot `slot` (0 or 1 - the
+     * console's two ports).
+     *
+     * `bytes` is the container exactly as the player exported it from their
+     * emulator (`.mcr` / `.mcd` / `.gme` / `.mcs`); it is validated here and
+     * then kept verbatim, so [`Self::export_card`] can hand it back in the
+     * same shape. Returns the slot's JSON (same shape as one entry of
+     * [`Self::card_slots_json`]); throws on an unrecognised container.
+     * @param {number} slot
+     * @param {Uint8Array} bytes
+     * @param {string} label
+     * @returns {string}
+     */
+    insert_card(slot, bytes, label) {
+        let deferred4_0;
+        let deferred4_1;
+        try {
+            const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+            const len0 = WASM_VECTOR_LEN;
+            const ptr1 = passStringToWasm0(label, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len1 = WASM_VECTOR_LEN;
+            const ret = wasm.legaiaruntime_insert_card(this.__wbg_ptr, slot, ptr0, len0, ptr1, len1);
+            var ptr3 = ret[0];
+            var len3 = ret[1];
+            if (ret[3]) {
+                ptr3 = 0; len3 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred4_0 = ptr3;
+            deferred4_1 = len3;
+            return getStringFromWasm0(ptr3, len3);
+        } finally {
+            wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+        }
+    }
+    /**
      * Load a disc image from raw in-memory bytes.
      *
      * `raw_bytes` may be either a Mode2/2352 full disc image (`.bin`) - PROT.DAT
@@ -2981,6 +3073,25 @@ export class LegaiaRuntime {
      */
     play_menu_open() {
         wasm.legaiaruntime_play_menu_open(this.__wbg_ptr);
+    }
+    /**
+     * Take the CDNAME scene label an in-canvas card **Load** landed in, if
+     * one is waiting; `""` otherwise. The page polls this after driving the
+     * menu and, when it is a scene it can walk, enters it - retail resumes a
+     * save in the scene it was written in. Consuming clears it.
+     * @returns {string}
+     */
+    play_menu_take_load_scene() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_play_menu_take_load_scene(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
     }
     /**
      * The scene's NPC / actor catalog. Shape:

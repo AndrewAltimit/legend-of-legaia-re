@@ -1,6 +1,24 @@
 # Actor / sprite VM
 
-A small fixed-width VM driving the title screen's animated sprite cluster. Distinct from the much larger [field/event VM](script-vm.md). Lives in the title-screen overlay at `FUN_801D6628`; 13-opcode dispatch table at `0x801CED70`.
+The simplest of Legaia's five runtime VMs: a small fixed-width bytecode VM driving
+the title screen's animated sprite cluster. It is a sprite-walk loop and nothing
+more - there is no cross-context targeting and no subroutine call, so an actor's
+bytecode only ever runs against itself.
+
+It lives in the title-screen overlay at **`FUN_801D6628`**, with a **13-opcode**
+dispatch table at `0x801CED70`. Port:
+[`legaia_engine_vm`](../../crates/engine-vm/src/lib.rs) (this was the first VM
+ported, and its `Host`-trait shape is the pattern the other VM ports follow).
+
+**What catches people out: this page covers two different things.** The actor VM
+proper is one of them; the other is the per-actor *anim tick* `FUN_80021DF4`, a
+separate `SCUS_942.54` function documented [below](#per-actor-anim-tick---fun_80021df4).
+They are related only in that both touch actor records. In particular the actor VM
+does **not** consume `actor[+0x4C]` - see
+[Spawn-record consumption](#spawn-record-consumption-actor0x4c-is-overloaded).
+
+For how this VM relates to the other four, see
+[the runtime VM family](move-vm.md#the-runtime-vm-family).
 
 ## Overview
 

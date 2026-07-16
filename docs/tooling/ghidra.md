@@ -1,6 +1,30 @@
 # Ghidra setup
 
-The static-analysis path. Ghidra is run headlessly inside the `blacktop/ghidra:latest` Docker image, wrapped by `docker/ghidra.Dockerfile` to map the container user to the host's UID/GID so files written into the bind-mounted `/projects` and `/scripts` directories come back as the host user.
+The static-analysis path: how this project disassembles `SCUS_942.54`, and how the per-function dumps the rest of the docs cite are produced.
+
+**Reach for it when** you want to know what a function *is* - its disassembly, its decompiled C, who calls it. Ghidra runs headlessly in Docker and is driven by scripts, not by a GUI: you ask a question, a Jython script answers it into a file on the host.
+
+**Two things to know before you start.**
+
+*You need extracted disc files first.* The container mounts `./extracted` read-only, so run the [extraction pipeline](extraction.md) before importing anything.
+
+*Static analysis alone will hit a wall.* Most of Legaia's game logic - the field/event VM, the dialog renderer, the actor / battle / menu VMs - is not in `SCUS_942.54` at all. It lives in RAM overlays paged in at `0x801C0000+`, so a function can be heavily used at runtime and have **zero static callers**. When that happens the answer is not here; it is in [overlay capture](overlay-capture.md) or the [static overlay pipeline](static-overlay-pipeline.md).
+
+The container itself is `blacktop/ghidra:latest`, wrapped by `docker/ghidra.Dockerfile` to map the container user to the host's UID/GID, so files written into the bind-mounted `/projects` and `/scripts` come back owned by you.
+
+## The short version
+
+```bash
+docker compose up -d ghidra          # once - leave it running
+
+docker compose exec ghidra /ghidra/support/analyzeHeadless \
+    /projects legaia -process SCUS_942.54 -noanalysis \
+    -postScript /scripts/dump_funcs.py
+```
+
+Bring the service up **once** and issue one `exec` per query - don't restart it per command. Dumps land in `ghidra/scripts/funcs/<addr>.txt` on the host (gitignored: they are Sony-derived).
+
+The rest of this page is the detail: [setup](#bringing-the-service-up), [importing](#importing-scus_94254), the [investigation patterns](#investigation-patterns), the [script catalogue](#script-catalogue), and the [LUI+ADDIU gotcha](#the-luiaddiu-gotcha) you will need the first time a cross-reference search comes back empty.
 
 ## Toolchain
 

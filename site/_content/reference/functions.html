@@ -1,8 +1,13 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> · <a href="index.html">reference</a> · functions</div>
   <h1>Key functions</h1>
-  <p class="lede">A directory of the Ghidra-traced anchor functions across the codebase. The full per-function reference (with descriptions) is in the markdown doc on GitHub. This page is a quick orientation that groups them by subsystem.</p>
+  <p class="lede">A directory of the Ghidra-traced anchor functions across the codebase, grouped by subsystem. This page is the quick orientation; the full per-function reference lives in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/functions.md"><code>docs/reference/functions.md</code></a>, which is a lookup table you grep for an address.</p>
 </header>
+
+<section class="doc-section" id="how-to-read">
+  <h2>The one thing that catches people out</h2>
+  <p>Functions at <code>0x801C0000+</code> are <strong>RAM-loaded overlays</strong>, and several overlays share that address window. One address can therefore name a <em>different function</em> depending on which overlay was resident when the dump was taken. If an entry does not match the code you are reading, check which overlay you have before concluding the entry is wrong - see <a href="../tooling/overlay-capture.html">overlay capture</a>.</p>
+</section>
 
 <section class="doc-section">
   <h2>By subsystem</h2>
@@ -25,7 +30,7 @@
         family <code>0x800705FC..0x80070763</code>, NOT a mode-table row). Streams the destination scene's
         <code>DATA_FIELD\&lt;scene&gt;.LZS</code> bundle (raw <code>scene_base+3</code>) into <code>_DAT_8007B85C</code> - by PROT
         index in dev (state 2), by built filename in retail (state 4) - then hands off with <code>_DAT_8007B83C = 2</code>
-        (MAIN INIT). Closes the <code>_DAT_8007B85C</code> staging question in
+        (MAIN INIT). This is the <code>_DAT_8007B85C</code> staging path described in
         <a href="../subsystems/asset-loader.html">asset loader</a>. See <code>ghidra/scripts/funcs/80021940.txt</code>.</li>
       </ul>
     </div>
@@ -125,7 +130,7 @@
         <li><code>FUN_80042558</code> - per-frame stat aggregator</li>
         <li><code>FUN_8003FB10</code> - action validator</li>
         <li><code>FUN_800431D0</code> - ability bitmask read</li>
-        <li><code>FUN_8002CDD0</code> / <code>FUN_8002C2E4</code> / <code>FUN_8002C488</code> - battle status-HUD panel / per-member row / icon sprite drawer (the SCUS on-screen-element cluster the S5 trace surfaced; <code>FUN_8002C2E4</code> pins the status-bitfield bit layout at char record <code>+0x12E</code>)</li>
+        <li><code>FUN_8002CDD0</code> / <code>FUN_8002C2E4</code> / <code>FUN_8002C488</code> - battle status-HUD panel / per-member row / icon sprite drawer (the SCUS on-screen-element cluster; <code>FUN_8002C2E4</code> pins the status-bitfield bit layout at char record <code>+0x12E</code>)</li>
         <li>PROT <code>0967</code> - battle <strong>sparring-tutorial overlay</strong>, co-resident at <code>0x801F69D8</code> during the Tetsu fight (overlapping overlay 0898's rodata tail); drives the how-to-fight tutorial prompts</li>
         <li><code>0x801C9370</code> - 8-actor pointer table (party 0&ndash;2, monsters 3&ndash;7); actor HP at <code>+0x14C</code></li>
       </ul>

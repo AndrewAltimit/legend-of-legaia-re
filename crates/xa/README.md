@@ -67,12 +67,25 @@ skip ~90% of Legaia's audio.
 
 ## CLI
 
+**Prefer the demux path.** `demux-disc-all` reads raw 2352-byte sectors straight
+off your `.bin` and recovers each track's true sample rate and channel mode from
+the CD-XA subheaders. `convert` / `convert-dir` operate on subheader-stripped
+Form-1 dumps, where that metadata is already gone and the rate has to be guessed.
+
 ```bash
-xa info           <file>
-xa convert        <file> <output.wav>
-xa convert-dir    <dir>  <out_dir>
-xa demux-disc-all <DISC.bin> --out <OUT_DIR>
-xa demux-disc     <DISC.bin> --lba <LBA> --size <SIZE> --out <OUT_DIR>
+# Demux every *.XA on the disc: one WAV per (file_no, ch_no), each at its own
+# real sample rate. This is the correct-pacing path - no --sample-rate guess.
+xa demux-disc-all "/path/to/Legend of Legaia (USA).bin" --out extracted/xa_demux
+
+# Demux one stream by disc location. Read --lba / --size out of the ISO9660
+# directory entry (`disc-extract list`); on the NA disc XA1.XA is at LBA 59449.
+xa demux-disc "/path/to/Legend of Legaia (USA).bin" \
+    --lba 59449 --size <size-from-listing> --out extracted/xa_demux
+
+# Form-1 dump paths: the rate is an assumption you supply
+xa info extracted/XA/XA1.XA --sample-rate 37800 --channels stereo
+xa convert extracted/XA/XA1.XA -o out.wav --sample-rate 37800
+xa convert-dir extracted/XA -o wav_out --sample-rate 37800
 ```
 
 `demux-disc-all` is the production audio path: it walks the disc's

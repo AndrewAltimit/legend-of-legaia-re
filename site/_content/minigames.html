@@ -153,6 +153,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 }
 
 .mg-note { color: var(--text-dim); font-size: 0.76rem; line-height: 1.6; margin-top: 0.7rem; }
+/* The long notes are `<div class="mg-note">` wrapping one `<p>` per idea rather
+ * than a single <br><br>-separated wall. The id-bearing div stays one element
+ * because the JS captures its innerHTML as a restorable block. */
+.mg-note > p { margin: 0 0 0.6rem; font-size: inherit; line-height: inherit; color: inherit; }
+.mg-note > p:last-child { margin-bottom: 0; }
 
 /* Baka duel viewport: WebGL fighters below, retail-HUD 2D canvas on top.
  * The retail frame is 320x240 (4:3). */
@@ -224,20 +229,24 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   <div class="breadcrumb"><a href="index.html">home</a> &middot; minigames</div>
   <h1>Minigames &amp; Sol Tower</h1>
   <p class="lede">
-    Coin-economy minigames, prize-exchange counters, and the side-quest chains layered through Sol Tower (CDNAME <code>town0d</code>). Three of them - <strong>the casino slot machine, Noa's dance and Baka Fighter</strong> - are <a href="#play">playable right here in your browser</a>, run by the clean-room rules engines against the tables read out of your own disc image. Your emulator saves live in the bar below: load one and its <strong>casino coin bank funds the session</strong> across every game; export writes the balance back into the save.
+    Three of Legaia's minigames - <strong>the casino slot machine, Noa's dance, and Baka
+    Fighter</strong> - are <a href="#play">playable right here in your browser</a>, each one the
+    game's own reverse-engineered logic playing against the real tables on your disc.
+  </p>
+  <p>
+    You supply the disc image; it is read locally and nothing is uploaded. Load an emulator save
+    into the bar below and its <strong>casino coin bank funds the session</strong> across all three
+    games (export writes the balance back). The rest of the page is reference: prize ladders,
+    Muscle Dome courses, and the Sol Tower side-quests (scene <code>town0d</code>).
   </p>
 </header>
 
 <section class="doc-section" id="play">
   <h2>Play them</h2>
   <p>
-    These aren't re-creations from a walkthrough. Each one is the reverse-engineered
-    state machine - the beat clock and its accuracy-weighted judge, the duel's
-    rock-paper-scissors resolver and damage tiers, the slot machine's twin
-    random-number generators - compiled to WebAssembly and fed the game's own
-    tables: the step chart, the fighter roster, the payout table, each lifted out
-    of its runtime overlay in the disc image you load below. Nothing is uploaded;
-    the disc stays in your browser.
+    Each game below is the retail machinery - beat clock, duel resolver, reel RNGs - rewritten in
+    Rust, and the step chart, fighter roster and payout table are read out of the disc image you
+    load here. The odds you're beating are the odds the cabinet shipped with.
   </p>
 
   <!-- The save bar (js/minigame-saves.js): the ALWAYS-VISIBLE rich strip of
@@ -270,15 +279,12 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       <section class="mg-panel" data-game="dance">
         <h3>Sol Fever Disco &mdash; Noa's dance</h3>
         <p class="mg-blurb">
-          Hit the step on the beat. The notes are the game's own step chart, baked
-          into the dance overlay; the groove gauge is the difficulty lane &mdash;
-          every closed step chain fills it, and each thousand promotes you to a
-          denser row of the chart worth more points. <b>Triangle is the wildcard</b>:
-          three &ldquo;groovy moves&rdquo; a song, good on any beat, but only worth the
-          big multiplier when you spend one <em>on</em> a 4-beat combo slot &mdash;
-          and it spins Noa for up to a second, during which nothing you press is
-          judged. So save them for the end of your longest combos. The two dancers
-          beside you are running the same chart for real: <b>beat them.</b>
+          Hit the step on the beat &mdash; the notes are the game's own step chart, and every
+          closed step chain fills the groove gauge, promoting you to a denser, higher-scoring
+          lane. <b>Triangle is the wildcard</b>: three &ldquo;groovy moves&rdquo; a song, worth
+          the big multiplier only when spent <em>on</em> a 4-beat combo slot, and it spins Noa
+          for up to a second during which nothing you press is judged. The two dancers beside
+          you are running the same chart for real: <b>beat them.</b>
         </p>
         <div class="dance-duel" id="dance-duel">
           <canvas id="dance-gl" width="640" height="480"></canvas>
@@ -303,47 +309,30 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           <span>Lane <b id="dance-lane">0</b></span>
           <span>Song <b id="dance-song">0%</b></span>
         </div>
-        <p class="mg-note" id="dance-art-note">
-          Retail splits the chart lookup in two: the hit judge matches your press
-          against the raw chart cell, while the display half substitutes the
-          held-sequence symbol on every fourth beat. The lane-0 chart puts <em>every</em>
-          note on a fourth beat, so the notes above are the cells the judge
-          actually scores &mdash; the ones you can hit. Auto-play off the
-          <em>displayed</em> cell and you score zero.
-          <br><br>
-          The chart's symbols aren't abstract notes: <code>FUN_801d4040</code> maps each
-          one straight to a pad-button mask, so a symbol <em>is</em> a button &mdash;
-          <b>1&nbsp;=&nbsp;Square</b> (<code>0x80</code>), <b>2&nbsp;=&nbsp;Circle</b>
-          (<code>0x20</code>), <b>3&nbsp;=&nbsp;Triangle</b> (<code>0x10</code>), the
-          three-times-only &ldquo;groovy move&rdquo; wildcard.
-          <br><br>
-          <b>The Triangle is not a direction.</b> Its branch in the award routine
-          (<code>FUN_801d1af4</code>, pad <code>0x10</code>) matches no chart cell at
-          all: it gates on a stock counter (<code>DAT_801d534c</code>, set to
-          <b>3</b> at run start and never refilled), scores
-          <code>(lane+1)&nbsp;&times;&nbsp;3</code> wherever you spend it but
-          <code>(lane+1)&nbsp;&times;&nbsp;0x19</code> when it lands on the 4-beat
-          combo slot &mdash; where it <em>also</em> steps the groove gauge a full
-          <code>+1000</code>, promoting the lane &mdash; and then throws the dancer
-          into a <code>lane&nbsp;+&nbsp;1</code> turn spin
-          (<code>DAT_801d564c</code>) during which the actor handler stops calling
-          the judge at all. That is the input disruption. The game's own how-to
-          script says it in words: press it together with the last command of a
-          combo, and you only get three.
-        </p>
+        <div class="mg-note" id="dance-art-note">
+          <p>
+            The judge scores the <em>raw</em> chart cell, not the held-sequence symbol the display
+            substitutes on every fourth beat &mdash; and each chart symbol is literally a
+            pad-button mask (1&nbsp;=&nbsp;Square, 2&nbsp;=&nbsp;Circle, 3&nbsp;=&nbsp;Triangle).
+          </p>
+          <p>
+            Triangle matches no chart cell: it spends a stock of three, scores small anywhere but
+            big (plus a full groove-gauge step) on the 4-beat combo slot, and the spin it triggers
+            suspends judging entirely. Full trace, addresses and scoring constants:
+            <code>docs/subsystems/minigame-dance.md</code>.
+          </p>
+        </div>
       </section>
 
       <!-- ---------------- baka fighter ---------------- -->
       <section class="mg-panel" data-game="baka">
         <h3>Baka Fighter &mdash; the duel</h3>
         <p class="mg-blurb">
-          Rock-paper-scissors with life meters, best of three. <b>2 beats 1, 3 beats 2,
-          1 beats 3.</b> Your opponent throws from a scripted pattern on the disc, so
-          it can be read. Take a hit and your combo counter feeds the <em>next</em> hit
-          you take &mdash; get behind and it snowballs. Drop under a sliver of HP and a
-          comeback critical can fire. The Special is unbeatable but slow: it wins
-          the exchange the moment they commit, and the whole <em>round</em> if you let
-          it charge to full first.
+          Rock-paper-scissors with life meters, best of three: <b>2 beats 1, 3 beats 2,
+          1 beats 3</b>, and the opponent throws from a scripted pattern on the disc, so it can
+          be read. Each hit you take feeds the combo counter behind the <em>next</em> one, and a
+          comeback critical can fire at a sliver of HP. The Special is unbeatable but slow: it
+          wins the exchange outright, or the whole <em>round</em> if it charges to full.
         </p>
         <div class="mg-row">
           <label for="baka-char"><strong>Fight as:</strong></label>
@@ -357,14 +346,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           <button class="mg-btn mg-primary" type="button" id="baka-start">Start run</button>
         </div>
         <p class="mg-blurb" style="margin-top:0.25rem;">
-          Start a run and the cabinet opens on its <b>PLAYER SELECT</b> screen &mdash;
-          the three party fighters' battle models under the sheet's own banner;
-          arrow keys (or a click) pick one, <kbd>Enter</kbd> confirms. Then climb the
-          ladder: each stage is best-of-three, and <b>after every win the retail
-          tally menu asks NEXT GAME or PAY OUT</b>. Fight on and the accumulated
-          prize pot rides on the next match &mdash; <b>lose and it's forfeit</b>.
-          Pay out and it banks. Clear all fourteen rungs and the whole pot pays,
-          460 coins from rung one. "Start at" lets you drop in at any rung.
+          Start a run and pick a fighter on the cabinet's own <b>PLAYER SELECT</b> screen
+          (arrows or a click, <kbd>Enter</kbd> confirms). After every stage win the retail tally
+          menu asks <b>NEXT GAME or PAY OUT</b> &mdash; fight on and the pot rides
+          (<b>lose and it's forfeit</b>), pay out and it banks. Clear all fourteen rungs and the
+          whole pot pays, 460 coins from rung one; "Start at" lets you drop in at any rung.
         </p>
         <div class="baka-duel" id="baka-duel" hidden>
           <canvas id="baka-gl" width="640" height="480"></canvas>
@@ -402,95 +388,44 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           <span>Pot at risk <b id="baka-pot">0</b> G</span>
           <span>Banked <b id="baka-bank">0</b> G</span>
         </div>
-        <p class="mg-note">
-          <b>The fighters are named on the disc.</b> Each roster record opens with a
-          32-byte ASCII name at <code>+0x00</code> &mdash; in the bytes just ahead of the
-          stat block, which is why a parser that starts at the stats never sees them.
-          The names above are read off <em>your</em> image, not a lookup table here.
-          <br><br>
-          The ladder order is the disc's too, and it resolves an oddity: read the roster
-          straight down and the prize gold looks jumbled. It isn't. The cabinet seeds its
-          stage counter to <b>2</b> and picks <code>roster = stage + 3</code>, so the twelve
-          rungs it actually serves are records 5&ndash;16 &mdash; across which the prize is
-          <b>strictly increasing</b>, and sums to <b id="baka-total">&mdash;</b> coins.
-          Records 3 and 4 pay out of turn because you only meet them on the
-          <b>second lap</b>, after the all-clear wraps the counter to 0. They're the
-          post-clear opponents the victory screen promises when it says the game isn't
-          over yet.
-          <br><br>
-          <b>The duel above is drawn with the cabinet's own assets</b>, decoded from your
-          disc at runtime. The fighters are the real 3D meshes &mdash; your side from the
-          battle-form party pack (PROT&nbsp;1204, the same models the turn-based battles
-          use), the opponent from its own per-rung pack (PROT&nbsp;1206&hellip;1219: a
-          <code>[TIM][TMD][anim]</code> chain, one per ladder fighter) &mdash; posed every
-          frame from their real animation banks (the party&rsquo;s from the PROT&nbsp;1203
-          battle-form bank, the opponent&rsquo;s from its own pack; idle loops, the
-          exchange winner&rsquo;s swing / loser&rsquo;s knockdown play as they land, and the
-          match winner throws a short victory flourish from the same attack slots). The
-          <b>arena</b> is the stage TMD out of PROT&nbsp;1203&rsquo;s second descriptor:
-          the tall patterned backdrop wall with its lattice fences and ceiling lamps, standing
-          at its authored base on the fighters&rsquo; floor plane. The HUD &mdash; the
-          <em>VITAL</em> bars with their traced gradient
-          (<code>FUN_801d2afc</code>: right-anchored at x&nbsp;<code>0x89</code>, one pixel
-          per 32&nbsp;HP), the round-win pips, the combo counter, the attack-icon columns,
-          the <em>ROUND&nbsp;/ FIGHT!&nbsp;/ YOU&nbsp;WIN!</em> banners, the
-          <em>PLAYER&nbsp;SELECT</em> screen&rsquo;s banner + cursor arrows, and the
-          between-match <em>NEXT&nbsp;GAME&nbsp;/ PAY&nbsp;OUT&nbsp;/ GET&nbsp;COIN</em>
-          tally menu &mdash; comes from the overlay&rsquo;s own 51-record widget table
-          (<code>DAT_801d7160</code>, read by the quad emitter <code>FUN_801d5ed0</code>)
-          over the 9-TIM art pack in PROT&nbsp;1203, byte-checked against a retail VRAM dump.
-          <br><br>
-          <b>The cash-out is the retail mechanic.</b> The art pack&rsquo;s tally sheet
-          carries the whole menu as widget cells &mdash; <em>NEXT GAME</em>,
-          <em>PAY OUT</em>, <em>GET COIN</em> with its own coin-digit strip, and the
-          <em>VICTORY! / ALL STAGE CLEAR! / IT&rsquo;S NOT OVER YET.</em> block &mdash; so
-          the after-every-win choice is the cabinet&rsquo;s own. Two rules here are stated
-          readings rather than overlay-pinned constants: a mid-run loss forfeits the whole
-          pot, and the final rung pays out automatically. The per-rung prizes are the
-          roster records&rsquo; own gold column (the strictly-increasing ladder that sums
-          to the 460-coin full clear).
-          <br><br>
-          <b>Traced vs fitted, stated plainly.</b> Every sprite cell, palette and HUD screen
-          position above is read off the disc or the disassembly. The 3D <em>camera</em>,
-          the fighters&rsquo; floor spacing, and the tally-menu / select-screen layout are
-          <em>fitted by eye</em> &mdash; the duel&rsquo;s GTE matrices live in COP2 and no
-          mid-duel capture exists yet (the parked save state sits at the title screen). The
-          stage set carries <b>no floor mesh</b>, so the floor is tiled from the backdrop
-          wall&rsquo;s own dominant textured face &mdash; its exact texture cell and palette,
-          repeated; the tiling itself is a fit, and the wall&rsquo;s three prop meshes
-          (which need untraced placement transforms) stay out rather than being guessed.
-          The HP-bar <em>frame</em> cells come from a runtime-built
-          table (<code>DAT_801dbc34</code>) a static page can&rsquo;t read, so a plain outline
-          stands in; the attack/knockdown slot order within each anim bank (and so the
-          victory flourish&rsquo;s swings) is inferred from
-          the action-id fold in <code>FUN_801d3f44</code>; the coin-digit strip&rsquo;s
-          <code>u = 88 + digit&times;16</code> stepping is inferred from the sheet layout
-          the way the traced digit widgets step. The <b>sound</b> is the cabinet&rsquo;s
-          own: the four cue ids the overlay writes into the cue ring
-          (<code>_DAT_8007B6D8</code>) &mdash; the exchange hit, the menu blips, the tally
-          tick &mdash; resolve through <code>SCUS_942.54</code>&rsquo;s static descriptor
-          table into the class-2 sound bank and render through the clean-room SPU; the
-          <b>music</b> is the boss-overture <code>music_01</code> track the overlay init
-          itself loads (<code>FUN_801CF00C</code>), mixed off your disc and looped for the
-          run. When the presentation assets don&rsquo;t decode,
-          the duel falls back to the stat panel above and says so &mdash; no stand-in art.
-        </p>
+        <div class="mg-note">
+          <p>
+            <b>The names, ladder and prizes are read off your image.</b> Each roster record opens
+            with a 32-byte ASCII name, and the cabinet serves records 5&ndash;16 in order &mdash;
+            across which the prize gold is strictly increasing and sums to
+            <b id="baka-total">&mdash;</b> coins. Records 3 and 4 are the post-clear second-lap
+            opponents, which is why the raw roster's gold column looks jumbled.
+          </p>
+          <p>
+            <b>The duel is drawn with the cabinet's own assets</b>, decoded from your disc as it
+            runs: your fighter from the battle-form party pack (PROT&nbsp;1204), the opponent from
+            its per-rung pack (PROT&nbsp;1206&hellip;1219), both posed from their real animation
+            banks, plus the arena, the retail HUD/tally-menu widgets, the overlay's own sound cues
+            and its boss-overture music. Full trace:
+            <code>docs/subsystems/minigame-baka-fighter.md</code>.
+          </p>
+          <p>
+            <b>Fitted rather than traced:</b> the 3D camera, fighter spacing and menu layout (the
+            duel's GTE matrices aren't in a save state), the tiled floor (the stage set carries no
+            floor mesh), the HP-bar frame, and the animation slot order. Two rules are <em>stated
+            readings</em> rather than overlay-pinned constants: the mid-run pot forfeit and the
+            final rung's automatic payout. When the presentation assets don't decode, the duel
+            falls back to the stat panel above and says so &mdash; no stand-in art is drawn.
+          </p>
+        </div>
       </section>
 
       <!-- ---------------- slot machine ---------------- -->
       <section class="mg-panel is-active" data-game="slot">
         <h3>Vidna casino &mdash; slot machine</h3>
         <p class="mg-blurb">
-          Three coins a spin, all <b>five</b> paylines always live &mdash; three straight and two diagonal. Stop each reel yourself.
-          The machine keeps a hidden <b>net-take</b> counter &mdash; the more it has taken
-          off you, the better the odds it rolls &mdash; and a big bonus win knocks that
-          counter back down. Land <b>three blue kicks</b> and you earn <b>1 bonus round</b>;
-          <b>three red punches</b>, <b>3</b>. A bonus round <b>rotates the reels onto the
-          machine&rsquo;s other strip</b> &mdash; the numerals <b>1&ndash;10</b>, one row per
-          frame as the reels turn &mdash; and the marquee across the top counts your stops:
-          <code>0 x 0 x 0</code>, filling in each column as you claim it. Stop all three and it
-          pays their <em>product</em>, 1 to 1000 coins. Nothing steers those reels; the numbers
-          are your timing.
+          Three coins a spin, all <b>five</b> paylines always live &mdash; three straight, two
+          diagonal &mdash; and you stop each reel yourself. A hidden <b>net-take</b> counter
+          brackets the odds: the more the machine has taken off you, the more generous it rolls,
+          and a big bonus win knocks the counter back down. <b>Three blue kicks</b> earn
+          <b>1 bonus round</b>, <b>three red punches</b> earn <b>3</b>: the reels rotate onto the
+          numeral strip (<b>1&ndash;10</b>) and stopping all three pays their <em>product</em>,
+          1 to 1000 coins &mdash; nothing steers those reels but your timing.
         </p>
         <canvas id="slot-canvas" class="mg-cabinet" width="640" height="240"
                 tabindex="0" role="button" aria-label="Slot machine - press space to spin, then once per reel to stop it"></canvas>
@@ -522,7 +457,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   <div class="card-grid">
     <a class="card" href="#play">
       <div class="card-title">Play three of them</div>
-      <div class="card-body">Noa's dance, Baka Fighter and the casino slot machine, running in the browser off the clean-room rules engines and your own disc's step chart / fighter roster / payout table. The slot machine and the Baka duel draw with the game's own art - the 3D fighters, stage and retail HUD included.</div>
+      <div class="card-body">Noa's dance, Baka Fighter and the casino slot machine, running in the browser off the clean-room rules engines, your own disc's tables, and the game's own art.</div>
     </a>
     <a class="card" href="#sol-tower">
       <div class="card-title">Sol Tower map</div>
@@ -538,7 +473,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     </a>
     <a class="card" href="#baka-fighter">
       <div class="card-title">Baka Fighter</div>
-      <div class="card-body">Rock-paper-scissors with life meters: 14 rounds of escalating button sequences. Round 5 is Xain, Round 14 is Songi. Full-clear pays 460 coins.</div>
+      <div class="card-body">Rock-paper-scissors with life meters across a 14-round ladder. Round 5 is Xain, Round 14 is Songi. Full-clear pays 460 coins.</div>
     </a>
   </div>
 </section>
@@ -573,13 +508,13 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     machine only pays out coins. The same coin pool funds Muscle Dome entry
     fees, Baka Fighter games, and counter purchases.
   </div>
-  <div id="slot-machines"></div>
+  <div id="slot-machine-tables"></div>
 </section>
 
 <section class="doc-section" id="muscle-dome">
   <h2>Muscle Dome courses</h2>
   <p>Three fixed-progression arenas. Entry fee is a flat 100 coins. Restrictions are enforced at course entry - Beginner and Expert disable equipment and items but allow magic; Master adds a magic ban. Accessories are always permitted.</p>
-  <div id="muscle-dome"></div>
+  <div id="muscle-dome-courses"></div>
 
   <h3 id="muscle-paradise-secrets">Muscle Paradise secrets</h3>
   <div id="muscle-secrets"></div>
@@ -587,12 +522,19 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 
 <section class="doc-section" id="baka-fighter">
   <h2>Baka Fighter</h2>
-  <p>Rock-paper-scissors variant with life meters. Each round shows a button sequence the player must reproduce. Completing all 14 rounds pays out coins.</p>
+  <p>A rock-paper-scissors variant with life meters, played across a 14-round ladder that pays out coins on a full clear.</p>
+  <p class="hint">
+    The round table below is the <a href="reference/gamedata.html">curated walkthrough data</a>, which
+    describes each round as a button sequence to reproduce. It is kept as a cross-check against the
+    binary rather than as the primary source: the <a href="#play">playable duel</a> higher up the page
+    is driven instead by the roster the cabinet's own overlay carries, read out of your disc. Where the
+    two disagree, the disc wins.
+  </p>
   <div id="baka-fighter-meta" class="notice"></div>
   <div id="baka-fighter-rounds"></div>
 
   <h3 id="baka-fighter-meshes">The fighters (3D meshes)</h3>
-  <p>The minigame's fighters <strong>reuse the party's battle character models</strong>: Baka Fighter lets you play <em>as</em> Vahn/Noa/Gala, so it loads the same higher-detail meshes and texture atlases the engine uses for turn-based battles (the pre-assembled default-gear pack). The PLAYER SELECT roster - the red-gi fighter, the red-haired fighter in the blue/orange vest, the green-trousered fighter - is exactly these models.</p>
+  <p>The minigame's fighters <strong>reuse the party's battle character models</strong>: playing as Vahn/Noa/Gala loads the same higher-detail meshes and texture atlases the turn-based battles use (the pre-assembled default-gear pack). The PLAYER SELECT roster is exactly these models.</p>
   <div class="notice">
     <strong>View them in 3D.</strong> These models render textured + animated in the interactive viewer on the <a href="characters.html#baka-fighter-meshes">characters page</a> - open your disc image, pick a slot, and toggle <em>battle form</em> or <em>Baka Fighter</em> to orbit and play each fighter's animation.
   </div>
@@ -606,17 +548,15 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 <section class="doc-section" id="internals">
   <h2>Internals (reverse-engineered)</h2>
   <p>
-    The tables above are the player-facing prize / roster data. Each minigame's
-    <strong>runtime</strong> is reverse-engineered too - its per-frame state
-    machine, scoring math, and data tables, traced from the captured overlay
-    code:
+    Each minigame's runtime - per-frame state machine, scoring math, data tables - is traced from
+    the captured overlay code and written up in the linked repo docs:
   </p>
   <ul class="bullets">
-    <li><strong>Fishing</strong> - a reel tug-of-war against a tension gauge, with the 10 fish species driven by a per-species parameter table decoded from the disc. The point-exchange counter is decoded too: two per-venue 6-row prize tables (<code>[limit, price, item id]</code>) whose row 0 hides until strictly affordable - which is how Buma's 20,000-point Water Egg "appears", and how a <strong>hidden 50,000-point War God Icon at Vidna</strong> stayed off the walkthrough prize lists. One-time prizes latch a persistent bitmask; the same venue select pages the rod-by-cast-band species-spawn table.</li>
-    <li><strong>Slot machine</strong> - a reel state machine with two random-number generators (one for the reels, one for the feature odds, which bracket on a hidden net-take counter: the machine gets <em>more</em> generous the more it has taken from you, and big bonus wins knock the counter back down) and a per-symbol payout table; your per-spin balance only commits to the shared casino coin bank when you cash out at the counter - which is why an "Infinite Coins" cheat reads full at the cage but doesn't make spins free.</li>
+    <li><strong>Fishing</strong> - a reel tug-of-war against a tension gauge, with per-species parameter tables and two per-venue prize counters decoded from the disc - including a <strong>hidden 50,000-point War God Icon at Vidna</strong> the walkthrough prize lists miss.</li>
+    <li><strong>Slot machine</strong> - a reel state machine with two RNGs and a per-symbol payout table; the feature odds bracket on a hidden net-take counter, and the per-spin balance only commits to the shared coin bank at the cash-out counter.</li>
     <li><strong>Baka Fighter</strong> - rock-paper-scissors, best of 3, against 17 scripted opponents each with their own prize and attack pattern.</li>
     <li><strong>Dance</strong> - a beat clock with an accuracy-weighted timing judge, a baked step chart selected by difficulty, and per-tier score multipliers.</li>
-    <li><strong>Muscle Dome</strong> - a card battle: deal a hand, commit cards into the fighter's action queue under a point budget, and resolve through the game's regular battle engine (it lives inside the battle code, not its own minigame module).</li>
+    <li><strong>Muscle Dome</strong> - a card battle: commit cards into the fighter's action queue under a point budget, resolved through the game's regular battle engine.</li>
   </ul>
   <div class="see-also">
     <span class="see-also-label">Runtime write-ups (repo docs)</span>
@@ -627,7 +567,12 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-muscle-dome.md">Muscle Dome</a>
   </div>
   <p style="margin-top: 1rem;">
-    <strong>All five are playable in the clean-room engine</strong> - and three of them (<a href="#play">dance, Baka Fighter, the slot machine</a>) run right here in the browser, off the same rules engines compiled to WebAssembly. The two that don't are the ones whose rules aren't self-contained: <strong>fishing</strong> pulls its species table from the fishing overlay but its venue and rod state come from the save file, and the <strong>Muscle Dome</strong> resolves its committed cards through the full turn-based battle engine rather than any minigame code of its own. In the engine's <code>play-window</code>, dance (<code>K</code>), fishing (<code>L</code>), the slot machine (<code>O</code>), Baka Fighter (<code>B</code>), and the Muscle Dome (<code>M</code>) all run as suspending scene modes driven by ported rules engines that decode their tables from your disc at runtime. In Baka Fighter you counter the opponent's scripted pattern in a best-of-3 duel (a match win banks the ladder opponent's gold prize); in the Muscle Dome you commit strike-command cards under a point budget - the cards' costs are the same per-weapon bytes that size the battle Arts gauge. While fishing, <code>P</code> opens the decoded point-exchange counter: caught-fish points bank into a persistent pool and trade for the real per-venue prize rows.
+    <strong>All five are playable in the clean-room engine's</strong> native
+    <code>play-window</code> (dance <code>K</code>, fishing <code>L</code>, slot machine
+    <code>O</code>, Baka Fighter <code>B</code>, Muscle Dome <code>M</code>), and three of them
+    (<a href="#play">the dance, Baka Fighter, the slot machine</a>) run right here in the browser,
+    compiled to WebAssembly. Fishing needs venue and rod state from the save file, and the Muscle
+    Dome resolves through the full turn-based battle engine, so those two stay native-only.
   </p>
 </section>
 
@@ -803,88 +748,36 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     }
     const sfxN = JSON.parse(api.dance_sfx_json()).length;
     note.innerHTML = stock +
-      '<br><br><b>Everything on the stage is the game’s own art</b>, decoded from ' +
-      'your disc at runtime. The dance overlay (PROT&nbsp;0980) issues no texture load ' +
-      'of its own - the art is staged by the minigame entry path as PROT&nbsp;1230, a ' +
-      '31-TIM pack whose blocks are byte-identical to a retail VRAM capture parked in ' +
-      'the minigame (the only diffs are the face-strip windows the pose blit had been ' +
-      'rewriting - the mechanism, confirmed in pixels). The score boxes, blue digits, ' +
-      'beat track, scrolling notes, <em>READY&hellip;&nbsp;GO!</em> count-in, and the ' +
-      '<em>Miss! / Good! / Cool! / Great!! / Fever!!!</em> banners are cells of the ' +
-      'HUD page named by the overlay’s own 34-record widget table ' +
-      '(<code>0x801D46CC</code>, emitter <code>FUN_801d2f38</code>), drawn at the traced ' +
-      'emitter positions - the every-4th-beat track flash and the note tint are pure ' +
-      'palette swaps (<code>0x7D0D</code>/<code>0x7D0E</code>) of the same texels, ' +
-      'exactly as <code>FUN_801d2524</code> patches them. ' +
+      '<br><br><b>Everything on the stage is the game’s own art</b>, decoded from your disc at ' +
+      'runtime: the HUD boxes, notes, count-in and banners are cells of the 31-TIM pack ' +
+      '(PROT&nbsp;1230) drawn at the overlay’s own traced widget positions. ' +
       (sfxN
-        ? 'The <b>sound</b> is the overlay’s own: miss <code>0x210</code>, combo ' +
-          'stings <code>0x202</code>/<code>0x203</code>/<code>0x205</code> and the run-start ' +
-          'cue from its efect.dat bank (PROT&nbsp;1228) + sample VAB (PROT&nbsp;1231 - an ' +
-          'entry that sits in the PROT TOC’s zeroed tail and needed a TOC-parser fix to ' +
-          'reach at all), plus the good-step stings retail keys directly ' +
-          '(<code>FUN_801d3d78</code>: a random pick of three paired voices). '
+        ? 'The <b>sound</b> is the overlay’s own cue bank (PROT&nbsp;1228/1231). '
         : 'The <b>sound did not decode</b> from this image, so the stage is silent rather ' +
           'than beeping at you. ') +
       (danceR.bgmOk()
-        ? 'The <b>music</b> is the real thing too: the overlay’s own BGM entry ' +
-          '(extraction 1048/1054, SEQ+VAB) rendered through the clean-room SPU, looped ' +
-          'seamlessly on one true SEQ period. The <b>Track</b> selector is a jukebox over ' +
-          'the same <code>music_01</code> bank - the two tracks the overlay actually loads ' +
-          'plus the Sol-disco floor family that plays around it. '
+        ? 'The <b>music</b> is the overlay’s own SEQ+VAB entry, rendered through the ' +
+          'clean-room SPU and looped; the <b>Track</b> selector is a jukebox over the same ' +
+          '<code>music_01</code> bank. '
         : 'The BGM entry did not decode from this image, so the run plays without music. ') +
       (danceR.bodyOk()
-        ? '<br><br><b>The dancers are the retail cast, and they dance.</b> The dance ' +
-          'overlay loads no mesh of its own - its spawner (<code>FUN_801d0190</code>) ' +
-          'names each floor slot’s dancer <em>kind</em> in a baked 5-record descriptor ' +
-          'table: the centre dancer is <b>Noa’s own field-view model</b> (resident ' +
-          'global pool slot 1 = PROT&nbsp;0874&nbsp;&sect;0) and the two AI dancers are ' +
-          'the <b>dedicated dancer NPCs of the dance-hall scene module</b> ' +
-          '(CDNAME&nbsp;<code>other7</code>) - the same figures the koin3 town scene ' +
-          'places on its dance floor, with their own face strips in the art pack. ' +
-          'Every clip they play is a record of that scene’s <b>60-record choreography ' +
-          'ANM bundle</b> (PROT&nbsp;1229), exactly as the descriptor names it: the ' +
-          'pre-game idle, the dance-groove loop during play, and the judge-triggered ' +
-          'move clips (<code>FUN_801d1358</code>/<code>FUN_801d1af4</code> - miss ' +
-          'reactions, per-lane sequence moves, the on-beat step). Noa plays the move ' +
-          'your judged press earns; the AI dancers demonstrate the chart’s step on ' +
-          'each beat, since their scoring runs aren’t simulated. ' +
+        ? '<br><br><b>The dancers are the retail cast, and they dance</b>: Noa’s own field ' +
+          'model beside the dance hall’s dedicated dancer NPCs, playing clips from the ' +
+          'scene’s 60-record choreography bundle (PROT&nbsp;1229). ' +
           (danceR.hallOk()
-            ? 'And the <b>dance hall around them is the real one</b>: retail hosts the ' +
-              'minigame inside the dance-hall field scene, so the raised stage, the ' +
-              'yellow/black checkered dance floor, the portrait banners on the walls, ' +
-              'the spotlight cones and the speaker fixtures here are that scene’s own ' +
-              'environment mesh pack, instanced by its <code>.MAP</code> placement and ' +
-              'terrain layers and textured by the same scene VRAM the dancers sample ' +
-              '(bound props baked at frame&nbsp;0 of their clip, the play page’s ' +
-              'rest-state rule). '
+            ? 'The <b>hall around them is the real one</b> - the host field scene’s own ' +
+              'environment mesh pack and textures. '
             : 'The hall geometry itself did not resolve from this image, so the cast ' +
               'dances on a neutral ground. ') +
           'Drag to orbit, double-click to re-frame. '
-        : '<br><br>The dancer <b>cast</b> did not decode from this image (the overlay ' +
-          'tables, the dance-hall scene module, or PROT&nbsp;0874), so the HUD sits on ' +
-          'a neutral ground rather than a faked floor, and the three faces under the ' +
-          'score boxes replay the real <b>face-stamp windows</b> retail MoveImage-blits ' +
-          'onto its dancers’ head textures (<code>FUN_801d03c4</code>; the centre ' +
-          'dancer is Noa’s own field atlas, PROT&nbsp;0874&nbsp;&sect;2). ') +
-      '<br><br><b>The two competitors are running for real.</b> Retail does not put ' +
-      'them on a scripted score curve: the per-dancer actor handler ' +
-      '(<code>FUN_801d1358</code>) calls the <em>same</em> award routine ' +
-      '(<code>FUN_801d1af4</code>) for every dancer on the floor, and for a CPU dancer ' +
-      'the pad word is synthesised from the same chart ' +
-      '(<code>FUN_801d4040</code>&nbsp;&rarr;&nbsp;<code>FUN_801d1820</code>). They ' +
-      'differ from you only by their <em>kind</em> row in two overlay tables: the ' +
-      'sequence-bonus values (<code>DAT_801d41a4</code>) and the schedule ' +
-      '(<code>DAT_801d41e4</code>) that says how many 4-beat combo slots they bank ' +
-      'before spending each of their three triangles. The rules engine runs all of it, ' +
-      'so their score boxes climb, their groove gauges promote them, and they throw ' +
-      'their own groovy move when the schedule fires. Hands off the pad and they will ' +
-      'beat you. ' +
-      '<br><br><b>What is approximated.</b> Banner rise/fade curves (retail drives them ' +
-      'through per-banner actor scripts), and the input lockout after a groovy move is ' +
-      'timed off the dancer’s spin (<code>lane&nbsp;+&nbsp;1</code> turns at ' +
-      '<code>0x80&nbsp;+&nbsp;lane&nbsp;&times;&nbsp;0x20</code> per frame = 32/51/64 ' +
-      'frames) rather than off the move clip’s own length, which retail reads from the ' +
-      'choreography bundle.';
+        : '<br><br>The dancer <b>cast</b> did not decode from this image, so the HUD sits ' +
+          'on a neutral ground rather than a faked floor; the three faces under the score ' +
+          'boxes are the real face-stamp windows off the dancers’ head textures. ') +
+      '<br><br><b>The two competitors are running for real</b> - retail judges every dancer ' +
+      'through the same award routine, feeding the CPU dancers a pad word synthesised from ' +
+      'the same chart - so hands off the pad and they will beat you. Approximated here: the ' +
+      'banner motion curves and the post-spin input-lockout timing. Full trace: ' +
+      '<code>docs/subsystems/minigame-dance.md</code>.';
     danceLoadJukebox();
   }
 
@@ -1734,48 +1627,26 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     const sfxN = JSON.parse(api.slot_sfx_json()).length;
     $('slot-art-note').innerHTML =
       'This is the retail machine’s <b>3D scene</b>, rebuilt from your own disc at runtime — ' +
-      'nothing is shipped with the page. It is not a sprite collage and never was: the reels ' +
-      'are textured <b>cylinders</b> (<code>FUN_801d0fa8</code> — the symbols curl away from ' +
-      'the payline because the cylinder does, and darken because the quad’s gouraud shade is ' +
-      'depth-cued off <code>z</code>), the five paylines are 3D line segments ' +
-      '(<code>FUN_801d3380</code>), the medallions / lamps / reel-stop pedestals / marquee / ' +
-      'mascots are billboards (<code>FUN_801d08e4</code>), and the marquee legend is a ' +
-      '<b>78×13 dot-matrix display</b> — 1014 individually projected 2×2 sprites ' +
-      '(<code>FUN_801d0e1c</code>) scrolling a bitmap out of a 21-message bank. Every ' +
-      'position, size, cell and palette above is read out of four contiguous tables in the ' +
-      'overlay’s own rodata; the art is PROT&nbsp;1200, byte-identical to a retail VRAM dump. ' +
-      'The <b>bonus round</b> is the same machine, not a second one: the reels rotate onto the ' +
-      'init’s <em>other</em> strip (<code>DAT_801d3fd0</code> = <code>slot/2&nbsp;+&nbsp;0x10</code>) ' +
-      'one row per frame, and a row whose value clears <code>0x10</code> draws its numeral off ' +
-      'art page&nbsp;1 through its own palette column — which is why each digit is a different ' +
-      'colour. The <code>0&nbsp;x&nbsp;0&nbsp;x&nbsp;0</code> strip that fills in as you claim ' +
-      'each column is <b>that same dot matrix</b>, running the message bank’s numeral glyphs ' +
-      '(<code>FUN_801cfff0</code>) over the machine’s claimed-value latch — the very rows the ' +
-      'payout multiplies, so the strip cannot show a line the spin did not pay. ' +
+      'nothing is shipped with the page. The reels are textured <b>cylinders</b>, the paylines ' +
+      'are projected 3D segments, and the marquee is a <b>78×13 dot-matrix display</b> of 1014 ' +
+      'projected sprites; every position, cell and palette is read out of the overlay’s own ' +
+      'rodata and its art pack (PROT&nbsp;1200). In a bonus round the reels rotate onto the ' +
+      'machine’s other strip, and the marquee tally reads the same latch the payout ' +
+      'multiplies — it cannot show a line the spin did not pay. ' +
       (sfxN
         ? `The <b>sound</b> is the machine’s own: ${sfxN} cues out of the overlay’s ` +
-          '<code>efect.dat</code> descriptor block (PROT&nbsp;1199), sampled from the VAB it ' +
-          'loads beside it (PROT&nbsp;1198) — reel-stop click <code>0x20A</code>, payout tick ' +
-          '<code>0x209</code>, reach sting <code>0x200</code>–<code>0x202</code>. '
+          '<code>efect.dat</code> descriptor block (PROT&nbsp;1199) and the VAB beside it ' +
+          '(PROT&nbsp;1198). '
         : 'The machine’s <b>sound did not decode</b> from this image, so the page is silent ' +
           'rather than beeping at you. ') +
-      'The <b>music</b> is the casino floor’s: the slot overlay starts no track of its own, ' +
-      'so retail hears the host scene’s — and the Sol casino floor (<code>koin1</code>) starts ' +
-      'BGM&nbsp;2018, “Sol casino”. The page mixes that SEQ+VAB pair through the clean-room ' +
-      'SPU off your disc and loops it from the first spin. ' +
-      '<br><br><b>What is measured rather than read, and why.</b> The <b>cabinet</b> — the grey ' +
-      'body, the dark-red face the reels sit in, the navy marquee backing, the lit floor ramp — ' +
-      'is drawn by retail every frame, but its emitter is still unpinned. The earlier “it’s the ' +
-      'casino room’s geometry” reading is <b>falsified</b>: the reference capture reaches the ' +
-      'machine by a debug warp from <code>town01</code> — a RAM census finds Rim Elm’s meshes ' +
-      'resident and none of the <code>koin*</code> casino bundles’ — and the cabinet still ' +
-      'draws. Until its table is found, the page paints the same composition from edges and ' +
-      'colours <em>measured off the retail capture’s framebuffer</em>, the same epistemic ' +
-      'status as the <b>projection</b> (the four scalars that map model space onto the retail ' +
-      '640×240 frame), which is <em>fitted</em> rather than read because the GTE control words ' +
-      'are not in main RAM — solved on the five payline lamps alone, it then predicted every ' +
-      'other element’s rect to about a pixel. The machine’s <b>in-game BGM is still ' +
-      'unpinned</b>: the overlay starts no track, and every capture reaches it by a debug warp.';
+      'The <b>music</b> is the casino floor’s own track, mixed through the clean-room SPU off ' +
+      'your disc and looped from the first spin. ' +
+      '<br><br><b>Measured rather than read:</b> the cabinet body (its emitter is still ' +
+      'unpinned — it is <em>not</em> the casino room’s geometry — so its edges and colours are ' +
+      'measured off a retail framebuffer capture) and the projection (the GTE control words ' +
+      'are not in main RAM, so the four scalars are fitted — and then predicted every other ' +
+      'element’s rect to about a pixel). Full trace: ' +
+      '<code>docs/subsystems/minigame-slot-machine.md</code>.';
   }
 
   function slotDrawPaytable() {
@@ -1817,11 +1688,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       '<b>Bonus game.</b> ' +
       chip(b.kick_symbol, 'blue kicks', b.kick_rounds) +
       chip(b.punch_symbol, 'red punches', b.punch_rounds) +
-      `<span class="mg-bonus-note">A bonus round rotates the reels onto the machine’s ` +
-      `<b>other strip</b> — the numerals <b>1–10</b>, their own artwork on art page 1 — and ` +
-      `the marquee counts them: <code>0 x 0 x 0</code>, filling in as you claim each column. ` +
-      `Stop all three and it pays their <b>product</b> (${b.min}–${b.max} coins). Nothing ` +
-      `steers those reels: the bonus stop plan has no target at all.</span>` +
+      `<span class="mg-bonus-note">A bonus round rotates the reels onto the numeral strip ` +
+      `(<b>1–10</b>) and the marquee counts your stops. Stop all three and it pays their ` +
+      `<b>product</b> (${b.min}–${b.max} coins); nothing steers those reels.</span>` +
       (slotArt ? `<span class="mg-bonus-nums" id="slot-bonus-nums"></span>` : '');
     if (slotArt) {
       el.querySelectorAll('.mg-glyph-sym').forEach(c => {
@@ -2787,8 +2656,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     }).join('');
   }
 
-  /* ---- Slot machines ---- */
-  const $slots = document.getElementById('slot-machines');
+  /* ---- Slot machines ----
+   * Target the inner tables div, NOT the enclosing slot-machines section the
+   * TOC anchors at - writing innerHTML to the section would blow away its own
+   * heading and hint. */
+  const $slots = document.getElementById('slot-machine-tables');
   if ($slots && p.slot_machines) {
     $slots.innerHTML = p.slot_machines.map(s => {
       const rows = s.prizes.map(pr => {
@@ -2897,7 +2769,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       </div>`;
   }
 
-  const $md = document.getElementById('muscle-dome');
+  /* Target the inner courses div, NOT the enclosing section the TOC anchors
+   * at - writing innerHTML to the section would destroy its own heading and
+   * the muscle-secrets div this file populates further down. */
+  const $md = document.getElementById('muscle-dome-courses');
   if ($md && p.muscle_dome) {
     $md.innerHTML = p.muscle_dome.map(c => {
       const rows = (c.roster || []).map(r => {

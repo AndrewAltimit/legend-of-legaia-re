@@ -69,7 +69,7 @@ stub on this build, so the load always resolves through `FUN_8003E8A8` with the
 | Terra | `0x364` | `0x3897800` |  47 sectors (`0x17800`) | 0866 |
 
 The offsets are the live-traced `FUN_800558FC` reads (see
-[`character-mesh.md` § Battle form](character-mesh.md#battle-form--assembled-from-the-player-files))
+[`character-mesh.md` § Battle form](character-mesh.md#battle-form---assembled-from-the-player-files))
 and equal the TOC `start_lba × 0x800` of extraction 863..866 exactly. The
 historical "Vahn = PROT 0861" attribution matched the same bytes through the
 1-sector stub entries 0859..0862 that precede the true file - entry 0861's
@@ -80,7 +80,7 @@ historical "Vahn = PROT 0861" attribution matched the same bytes through the
 *and* decodes the five equipment-selected sections, then builds each
 character's merged battle TMD from them (`FUN_800536BC` splice ×5 +
 `FUN_80053898` post-pass; `FUN_800513F0` registers the result). Full chain:
-[`character-mesh.md` § Battle form](character-mesh.md#battle-form--assembled-from-the-player-files);
+[`character-mesh.md` § Battle form](character-mesh.md#battle-form---assembled-from-the-player-files);
 palette half: [`character-mesh.md` § Battle render](character-mesh.md#battle-render-load-time-tsbcba-relocation).
 
 ## TOC geometry (the 16 MB misreading)
@@ -192,7 +192,7 @@ its `id = 0` fallback. Live proof: in a full-party battle save with Vahn
 wearing Hunter Clothes / Survival Knife / Ra-Seru Meta, the assembled battle
 mesh's vertex pools byte-match exactly the `id = 0x43`, `0x22`, and `0x01`
 sections (and the defaults for the unequipped slots) - see
-[`character-mesh.md` § Battle form](character-mesh.md#battle-form--assembled-from-the-player-files).
+[`character-mesh.md` § Battle form](character-mesh.md#battle-form---assembled-from-the-player-files).
 
 ## Slot region
 
@@ -251,7 +251,7 @@ The assembler `FUN_800536BC` reads the section through the **loader frame**
 at `decoded + frame_off`: one bone-id byte per object while
 `obj_index < attach_count`, then `0xFF` / `0xFE` tags for the surplus
 objects (the equipment's visual meshes - see
-[`character-mesh.md` § Battle form](character-mesh.md#battle-form--assembled-from-the-player-files);
+[`character-mesh.md` § Battle form](character-mesh.md#battle-form---assembled-from-the-player-files);
 `0xFF` = the per-clip swap variant, `0xFE` = an extra animated part - see
 [Equipment-variant track](#equipment-variant-track-entry-0xa4--fun_8004ccd4)).
 The byte runs the earlier byte-match corpus read as "texture format tags" at
@@ -494,7 +494,7 @@ stream byte-matches the disc decode
 ANM bundle is not the battle pose source** - no 1203 record is resident in
 battle RAM, and its banks are authored against PROT 1204's own object
 order (see
-[`character-mesh.md` § Assembly](character-mesh.md#assembly--object-local-pieces-posed-by-the-characters-own-battle-streams)).
+[`character-mesh.md` § Assembly](character-mesh.md#assembly---object-local-pieces-posed-by-the-characters-own-battle-streams)).
 
 **Populated slots** (disc census, asserted by the disc-gated
 `player_action_table_real` test): all four characters carry entries `0..0xB`
@@ -888,7 +888,7 @@ on the player files.)
   the character record's equipped-item bytes (see
   [Descriptor table](#descriptor-table)). The battle `nobj +2` weapon
   objects source from these sections too - byte-verified, see
-  [`character-mesh.md` § Battle form](character-mesh.md#battle-form--assembled-from-the-player-files).
+  [`character-mesh.md` § Battle form](character-mesh.md#battle-form---assembled-from-the-player-files).
 - ~~**`data_base` derivation**~~ **resolved**: `0x8000` is not header-derived -
   `FUN_80052770`'s fixed 16-sector prologue read (`FUN_800559EC(…, 0x8000)` →
   `FUN_8003E800(dst, 0x10, 1)`) hardcodes it. See

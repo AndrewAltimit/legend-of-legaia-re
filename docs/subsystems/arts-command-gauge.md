@@ -12,6 +12,8 @@ The popular description is "an off-class weapon **doubles** the arm command." Th
 - [Status limb gating](#status-limb-gating)
 - [Weapon classes and favored mapping](#weapon-classes-and-favored-mapping)
 - [Execution path](#execution-path)
+- [Who writes the cost](#who-writes-the-cost)
+- [Disc location](#disc-location)
 - [Confidence and open threads](#confidence-and-open-threads)
 - [See also](#see-also)
 

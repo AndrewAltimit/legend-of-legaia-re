@@ -122,7 +122,18 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> · asset viewer</div>
   <h1>Asset viewer</h1>
-  <p class="lede">Browse Legend of Legaia assets directly in this browser. Provide your own disc image (<code>.bin</code> Mode2/2352) and the WASM build parses it client-side. The top viewer renders every 3D mesh (Legaia TMD) in <code>PROT.DAT</code>; below it, two texture grids show every 2D TIM - the raw catalog and a deep tier that recovers textures from inside LZS-compressed sections. Nothing leaves your machine.</p>
+  <p class="lede">Open up <em>Legend of Legaia</em> and look at every 3D model and every texture on the disc, without installing a thing.</p>
+  <p>
+    <strong>You supply the game.</strong> This site ships no game data. Point it at a
+    <code>.bin</code> disc image of your own copy and it is parsed locally in the browser by the
+    project's parsers compiled to WebAssembly - nothing is uploaded.
+  </p>
+  <p>
+    The page opens the disc's main archive, <code>PROT.DAT</code>, three ways: a
+    <strong>3D browser</strong> for every model, a <a href="#tim-catalog">texture catalog</a> for
+    plain-bytes images, and a <a href="#compressed-textures">compressed textures</a> grid for the
+    rest. <a href="#using-the-viewer">How to drive it &rarr;</a>
+  </p>
 </header>
 
 <section class="doc-section">
@@ -157,7 +168,7 @@
           <h3>Bring your own disc</h3>
           <p>This viewer doesn't ship any Sony bytes. Provide a <code>.bin</code> Mode2/2352 image of <em>Legend of Legaia</em> (NA SCUS-94254). A single <code>.tim</code> file also works for one-off image previews.</p>
           <p style="margin-top: 0.75rem; color: var(--text-dim); font-size: 0.85rem;">
-            Files are read with the browser's <code>FileReader</code> API. Nothing is uploaded; everything happens locally in WebAssembly. Your disc is cached locally in the browser (IndexedDB) and shared across the viewer, audio, monster, and world-overview pages, so it auto-loads on reload - hit <em>Forget</em> on the chip to clear it.
+            Files are read locally; nothing is uploaded. The disc is cached in the browser (IndexedDB) and shared across pages, so it auto-loads on reload - hit <em>Forget</em> on the chip to clear it.
           </p>
         </div>
       </div>
@@ -228,7 +239,13 @@
     }
   </style>
   <h2>PROT.DAT TIM catalog</h2>
-  <p class="lede">Every standard PSX TIM in <code>PROT.DAT</code>, flat-scanned with strict validation and keyed by a stable id. This set matches <a href="https://github.com/m35/jpsxdec" target="_blank" rel="noopener">jPSXdec</a>'s TIM index exactly - same offsets, dimensions, and palette counts - and includes TIMs in the unindexed system-UI gap (e.g. the menu-glyph atlas) that the 3D browser above can't reach. Click a thumbnail to load it full-size and switch CLUT variants.</p>
+  <p class="lede">Every texture in <code>PROT.DAT</code> stored as plain, uncompressed bytes, each with a stable id you can link back to.</p>
+  <p>
+    The set matches <a href="https://github.com/m35/jpsxdec" target="_blank" rel="noopener">jPSXdec</a>'s
+    TIM index exactly (same offsets, dimensions, palette counts) - a useful outside check - and also
+    reaches the archive's unindexed system-UI gap, such as the menu-glyph sheet.
+  </p>
+  <p class="hint">Click any thumbnail to load it full-size; the <strong>CLUT</strong> dropdown switches between an image's palette (<abbr title="Colour Look-Up Table">CLUT</abbr>) variants.</p>
   <div id="catalog-pane" style="display: none;">
     <div id="catalog-grid"></div>
     <div id="catalog-detail" style="display: none; margin-top: 0.75rem;">
@@ -252,7 +269,13 @@
 
 <section class="doc-section" id="compressed-textures">
   <h2>Compressed textures (LZS-embedded)</h2>
-  <p class="lede">Most character and scene textures aren't stored as raw bytes - they live inside <strong>LZS-compressed</strong> <code>PROT.DAT</code> sections, invisible to the flat scan above (which reads only raw bytes). This grid is the <em>deep</em> tier: every entry is LZS-decompressed and the standard PSX TIMs inside each decoded section are recovered, keyed by <code>(entry, section, offset)</code>. Every decode is validated by checking the <em>output</em> - a hit is admitted only when the decompressed bytes strict-parse and decode to RGBA (see <a href="formats/lzs.html">Legaia LZS</a> for why &ldquo;decompresses without error&rdquo; alone proves nothing). Click a thumbnail to load it full-size and switch CLUT variants.</p>
+  <p class="lede">The character and scene textures the catalog above can't see: LZS-compressed inside <code>PROT.DAT</code>, recovered by decompressing every entry and keyed by <code>entry, section, offset</code>.</p>
+  <p>
+    Every hit is validated on the <em>output</em> - the decoded bytes must strictly parse as a
+    texture and decode to real pixels, because &ldquo;it decompressed without error&rdquo; proves
+    nothing on its own (<a href="formats/lzs.html">Legaia LZS</a>).
+  </p>
+  <p class="hint">Click any thumbnail to load it full-size and switch CLUT variants, as in the catalog above.</p>
   <div id="deep-catalog-pane" style="display: none;">
     <div id="deep-catalog-grid"></div>
     <div id="deep-catalog-detail" style="display: none; margin-top: 0.75rem;">
@@ -276,8 +299,21 @@
 
 <section class="doc-section" id="using-the-viewer">
   <h2>Using the viewer</h2>
-  <p>The top viewer lists every PROT entry that carries a Legaia TMD; pick one from the sidebar or jump by PROT index. By default it renders textured (WebGL2; the same paletted fragment shader the native engine uses); toggle "textured" off for a flat-shaded fallback. Below it, the <strong>PROT.DAT TIM catalog</strong> grid shows every raw 2D texture and the <strong>compressed textures</strong> grid shows the LZS-embedded ones - click a thumbnail in either to load it full-size and switch CLUT (palette) variants.</p>
-  <p>Everything on this page exports. The <strong>&#11015; .glb</strong> button downloads the current 3D view - the single mesh, or the whole assembled town in full-map mode - as a binary <a href="https://www.khronos.org/gltf/">glTF</a> with the textures baked from VRAM into one atlas, ready for Blender, three.js, or any glTF viewer (the same format as the enemy-table model export). The <strong>&#11015; PNG</strong> buttons in the two texture grids download the selected texture in its current palette. In full-map mode a <strong>VR</strong> button also appears: it presents the assembled town over WebXR - Chrome/Edge with SteamVR as the active OpenXR runtime, served from <code>http://localhost</code> or https (WebXR needs a secure context; the button explains what's missing if it can't start).</p>
+  <p>
+    <a href="formats/prot.html"><code>PROT.DAT</code></a> is a numbered list of <em>entries</em>;
+    the 3D browser lists every entry holding a model - Legaia's house variant of the PlayStation
+    <a href="formats/tmd.html">TMD</a> mesh format, textured with standard
+    <a href="formats/tim.html">TIM</a> images through the same paletted shader the native engine
+    uses (switch <em>textured</em> off for flat shading). Pick from the sidebar or jump to an
+    entry by number.
+  </p>
+  <p>Everything exports. <strong>&#11015; .glb</strong> downloads the current 3D view - single mesh,
+    or the whole assembled town in full-map mode - as a binary
+    <a href="https://www.khronos.org/gltf/">glTF</a> with textures baked from VRAM;
+    <strong>&#11015; PNG</strong> downloads the selected texture in its current palette. In full-map
+    mode a <strong>VR</strong> button presents the town over WebXR
+    (<a href="subsystems/vr-mode.html">VR mode</a>; needs Chrome/Edge with SteamVR and a secure
+    context).</p>
   <p class="hint">Sound and cutscene video on disc live on the <a href="media.html">media browser</a>. The native build adds stage geometry and cross-PROT-entry CLUT chains (via <code>--vram-extra-dir</code>):</p>
   <div class="cli"><code>./target/release/asset-viewer prot extracted/PROT.DAT</code></div>
 </section>
@@ -287,7 +323,7 @@
   <p>Loaded disc data never leaves your browser - <code>FileReader</code> reads straight into WebAssembly memory, with no network calls for the disc bytes. The project ships zero Sony bytes (bring your own disc).</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
-    <a href="subsystems/engine.html">Engine port plan</a>
+    <a href="subsystems/engine.html">Engine reimplementation</a>
     <a href="subsystems/asset-loader.html">Asset loader</a>
     <a href="formats/prot.html">PROT.DAT TOC</a>
   </div>
@@ -1117,11 +1153,10 @@
 
 <section class="doc-section">
   <h2>Run the engine on this scene</h2>
-  <p>Everything above is the disc at rest: entries, meshes, palettes, bytes. To see the engine
-    <em>run</em> - the field VM stepping, the free-movement controller walking a character across the
-    scene's walkability grid, NPCs on their own clips, dialogue playing out - head to
-    <a href="play.html">Play the port</a>. It boots the same disc (already cached in your browser, so
-    there is nothing to re-pick) into any town or field map and hands you the controls.</p>
+  <p>Everything above is the disc at rest. To see the engine <em>run</em> - the field VM stepping,
+    NPCs moving, dialogue playing out - head to <a href="play.html">Play the port</a>; it boots the
+    same disc (already cached in your browser) into any town or field map and hands you the
+    controls.</p>
   <div class="see-also">
     <span class="see-also-label">Go to</span>
     <a href="play.html">Play the port</a>

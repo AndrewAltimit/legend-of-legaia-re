@@ -2,11 +2,16 @@
 
 Loader and layout helper for the proportional dialog font.
 
-The font itself is documented in [`docs/formats/dialog-font.md`](../../docs/formats/dialog-font.md). This crate consumes the artifacts produced by the extraction pipeline at `extracted/font/`:
+The font itself is documented in [`docs/formats/dialog-font.md`](../../docs/formats/dialog-font.md). This crate consumes the artifacts produced by `font-extract` (below) at `extracted/font/`:
 
 - `dialog_font_atlas.png` - 224×210 RGBA atlas (16 cols × 14 rows of 14×15-pixel glyph cells, packed without inter-cell padding). Glyph cell `c` (for `c in 0x20..=0xFF`) lives at column `c & 0x0F`, row `(c - 0x20) >> 4`.
 - `dialog_font_widths.csv` - per-character pixel advance.
 - `dialog_font_metadata.json` - VRAM provenance + escape-sequence table (informational).
+
+`font-extract` writes two further files that the loader doesn't read:
+`dialog_font_sheet.png` (the raw 256×256 tile page as it sits in VRAM, before
+atlas packing) and `dialog_font_vram_4bpp.bin` (the literal packed 4bpp pixels,
+for tooling that hunts the on-disc carrier of the font).
 
 ## API surface
 
@@ -29,14 +34,22 @@ The crate does **not** depend on a renderer - it only produces glyph rectangles 
 
 ## `font-extract` binary
 
-The crate ships a `font-extract` binary that produces the four `extracted/font/` artifacts directly from a disc-extracted `SCUS_942.54` plus a mednafen save state with the dialog font live in VRAM:
+The crate ships a `font-extract` binary that writes the `extracted/font/` artifacts from a disc-extracted `SCUS_942.54` plus a mednafen save state with the dialog font live in VRAM. Only `--save` is required; `--scus` defaults to `extracted/SCUS_942.54` and `--out` to `extracted/font`:
 
-```
-cargo run -p legaia-font --bin font-extract -- \
+```bash
+# Defaults are the extraction-pipeline layout, so this is usually enough
+font-extract --save "$HOME/.mednafen/mcs/Legend of Legaia (USA).<hash>.mc0"
+
+# Explicit form
+font-extract \
     --scus extracted/SCUS_942.54 \
-    --save "$HOME/.mednafen/mcs/Legend of Legaia (USA).<hash>.mcN" \
+    --save "$HOME/.mednafen/mcs/Legend of Legaia (USA).<hash>.mc0" \
     --out extracted/font
 ```
+
+If you only need the font for rendering and would rather not deal with a save
+state at all, use `Font::from_disc_tim_and_scus` instead - it builds a
+byte-identical atlas straight from the disc (see below).
 
 Pipeline:
 

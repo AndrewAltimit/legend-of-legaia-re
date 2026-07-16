@@ -26,13 +26,14 @@ extraction and transport separate so neither delivery target forks the probe.
 | `generated/registers.lua` | Generated register map consumed by the encoder. **Do not edit.** |
 | `world-project/Assets/LegaiaDiorama/Registers.cs` | Generated UdonSharp constants (Unity-side home). **Do not edit.** |
 | `midi_encoder.lua` | `BattleState` → MIDI CC messages. Stateful per instance (tracks last-sent values for delta emission); pure, no PCSX dependency. |
-| `midi_sink.lua` | Pluggable byte sinks: `rawmidi` (ALSA snd-virmidi device write) and `null` (dry run). Chosen from `LEGAIA_MIDI_DEVICE`. |
+| `midi_sink.lua` | Pluggable byte sinks: `rawmidi` (ALSA snd-virmidi device write, `LEGAIA_MIDI_DEVICE`), `winmm` (Windows MIDI port via LuaJIT FFI, `LEGAIA_MIDI_WINPORT`), and `null` (dry run, when neither is set). `WINPORT` wins if both are set; a sink that fails to open falls back to `null` rather than aborting the run. |
 | `setup-virmidi.sh` | One-time `snd-virmidi` setup; discovers + prints the device path and `--midi=` port name (PRD M0, Linux). |
 | `verify-virmidi.sh` | End-to-end Linux check (no VRChat): sink → virmidi → `aseqdump`. |
 | `test_midi_encoder.lua` / `test_midi_sink.lua` / `test_roundtrip.lua` | Offline validation (run with `luajit`). `test_roundtrip.lua` proves encode→decode is lossless. |
 | `_send_test.lua` | Helper used by `verify-virmidi.sh` to emit known CCs through the encoder + sink. |
 | `world-project/` | Drop-in VRChat world assets (`Assets/LegaiaDiorama/`): the UdonSharp `MidiDebugMonitor.cs` (M0 raw monitor) + `BattleStateDecoder.cs` (schema-driven decoder) + generated `Registers.cs`, with `.meta` GUIDs, a VPM manifest reference, and the Windows VCC setup guide. See `world-project/README.md`. |
 | `../pcsx-redux/autorun_battle_midi_stream.lua` | The live relay: probe → encoder → sink, driven per VSync. |
+| `../pcsx-redux/run_probe.ps1` | Windows-native runner for the relay (defaults to the `autorun_battle_midi_stream.lua` Lua); sets `LEGAIA_MIDI_WINPORT` so the `winmm` sink drives a Windows MIDI port. |
 
 ## Protocol (summary)
 
@@ -67,8 +68,9 @@ luajit scripts/vrc-diorama/test_midi_encoder.lua
 luajit scripts/vrc-diorama/test_midi_sink.lua
 
 # 3. Run the live relay against a battle (interpreter mode -- the recompiler
-#    diverges on interpreter-authored save states). Without LEGAIA_MIDI_DEVICE
-#    it is a dry run (null sink) that still writes the CC text log:
+#    diverges on interpreter-authored save states). With neither
+#    LEGAIA_MIDI_DEVICE nor LEGAIA_MIDI_WINPORT set it is a dry run (null
+#    sink) that still writes the CC text log:
 bash scripts/pcsx-redux/run_probe.sh \
   --scenario party_basic_attack_vs_gobu_gobu \
   --lua scripts/pcsx-redux/autorun_battle_midi_stream.lua
@@ -104,24 +106,27 @@ without root) and `alsa-utils` (`amidi`/`aconnect`/`aseqdump`). If MIDI-under-
 Proton turns out flaky, the fallback is the pixel-strip transport (PRD M7),
 which reuses this same encoder output.
 
-## Status / next steps
+## What is proven, and what isn't
 
-- **Done:** schema, codegen (Lua + C#), encoder (delta + full sweep, MSB/commit
-  latching), offline tests, live relay wiring, the ALSA `snd-virmidi` sink +
-  setup/verify scripts, and the UdonSharp decoder + drop-in world scaffold (`world-project/`).
-- **Linux transport VERIFIED:** `verify-virmidi.sh` passes end-to-end — the Lua
-  encoder + sink emit CCs that arrive on the ALSA seq port (`aseqdump` shows
-  `Control change Ch 0, controller 4, value 100`). The rawmidi node must be
-  opened `"wb"` (not `"ab"`: `O_APPEND` is `EINVAL` on the char device).
-- **Protocol VERIFIED lossless:** `test_roundtrip.lua` encodes synthetic
-  BattleStates and decodes them with a mirror of the UdonSharp decoder (14-bit
-  wide values + late-joiner full-sweep reconstruction included).
-- **M0 remaining (the only unproven hop):** build the test world from `world-project/`
-  and confirm VRChat under Proton receives the virmidi port via
-  `--midi="Virtual Raw MIDI"`. If flaky, fall back to the pixel-strip transport
-  (M7), which reuses this same encoder output.
-- **Decoder home:** when the Unity world project exists (`legaia-vrc-world`,
-  PRD Q1), the `world-project/` tree moves into it.
-- **Open register TODOs** (encoder emits a safe default today): party
-  character-id (vs enemy monster-id), the per-actor `targeted` flag +
-  `target_slot`, a fuller status-bit decode, and `region_id` sourcing.
+The Linux half of the transport is verified end-to-end: `verify-virmidi.sh`
+passes, with the Lua encoder + sink emitting CCs that arrive on the ALSA
+sequencer port (`aseqdump` shows `Control change Ch 0, controller 4, value
+100`). One trap that cost real time: the rawmidi node must be opened `"wb"`,
+not `"ab"` — `O_APPEND` is `EINVAL` on the char device.
+
+The protocol is verified lossless. `test_roundtrip.lua` encodes synthetic
+`BattleState`s and decodes them through a mirror of the UdonSharp decoder,
+covering 14-bit wide values and late-joiner full-sweep reconstruction.
+
+**The unproven hop is VRChat itself** (PRD M0): building the test world from
+`world-project/` and confirming VRChat under Proton receives the virmidi port
+via `--midi="Virtual Raw MIDI"`. Nothing here demonstrates that MIDI survives
+Proton. If it turns out flaky, the fallback is the pixel-strip transport (PRD
+M7), which reuses this same encoder output unchanged.
+
+Some registers are not sourced yet, and the encoder emits a safe default for
+them: party character-id (as opposed to enemy monster-id), the per-actor
+`targeted` flag + `target_slot`, a fuller status-bit decode, and `region_id`.
+
+The `world-project/` tree is a temporary home — it moves into the standalone
+Unity world project (`legaia-vrc-world`, PRD Q1) once that exists.

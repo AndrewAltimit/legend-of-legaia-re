@@ -2,7 +2,20 @@
 
 The bytecode interpreter that drives Legaia's overworld scripting - NPC movement, dialog triggers, cutscene sequencing, story-flag manipulation. Lives in PROT entry **`0897_xxx_dat`** (the town/field overlay), at `FUN_801DE840`. ~17.5 KB / 4099 instructions / 357 outgoing calls - the largest function in the corpus.
 
+It has **43 opcodes** (`0x21..0x4F`, with gaps) over a byte stream, plus a
+`0x5x`/`0x6x`/`0x7x` default route. Port:
+[`legaia_engine_vm::field`](../../crates/engine-vm/src/field.rs). This is the
+biggest of Legaia's five runtime VMs - see
+[the runtime VM family](move-vm.md#the-runtime-vm-family) for how it relates to the
+other four, and don't confuse it with the [move VM](move-vm.md), which it *invokes*
+via op `0x22` `EXEC_MOVE`.
+
 > **Why "field/event"?** Each running script has its own context (a struct passed around as `ctx_ptr`); contexts can target the player, NPCs, the camera, or "system" channels. The same VM drives both the per-frame field tick and event/cutscene sequences.
+
+**What catches people out:** the on-disc carrier is the **scene MAN**, not
+`scene_event_scripts` - see [the next section](#on-disc-form-the-scene-man---not-scene_event_scripts).
+The VM's longest-tail opcode, `0x4C` `MENU_CTRL`, is large enough to have its own
+page: [`script-vm-menuctrl.md`](script-vm-menuctrl.md).
 
 The decompiled source is at `ghidra/scripts/funcs/overlay_0897_801de840.txt`. References to `func_0x80xxxxxx` are calls into `SCUS_942.54`; `FUN_801xxxxx` are sister functions inside the 0897 overlay.
 
@@ -262,7 +275,7 @@ PC += 4.
 
 | Op | Mnemonic | Encoding | Effect |
 |---|---|---|---|
-| 0x37 / 0x41 / 0x47 | `YIELD` family (**motion ops**) | `[op, b0, b1]` (resume pc+3); `[47, xb, zb, b2]` (pc+4) | Save the op's own PC into `ctx[+0x94]`, clear cursor `ctx[+0x54]`, set `ctx[+0x10]` bit 0x400 (HALT); player ctx propagates to the caller. The parked op is interpreted **in place each frame by the walk kernel `FUN_8003774C`** (which resolves the `0x80` ext-target convention): 0x37/0x41 = glide-step - axis `DAT_80073F14[b0 & 7]`, base step `4 << ((b0>>5 & 4) \| (b1>>6))`, distance `(b1 & 0x3F) * base`; 0x47 = walk-to-tile at base step `4 << (b2 & 7)`, approach mode `b2 >> 4`. No "synthesised motion bytecode" exists - the record bytes are the stream. |
+| 0x37 / 0x41 / 0x47 | `YIELD` family (**motion ops**) | `[op, b0, b1]` (resume pc+3); `[47, xb, zb, b2]` (pc+4) | Park the script and hand the op to the walk kernel. [Detail](#0x37--0x41--0x47-yield-family-motion-ops). |
 | 0x38 | `CAM_CFG` | `[38, op0, op1]` | Camera/visual register write. If `op1 & 0x7F == 0`: simple path - copy `*(short*)(0x80073F04 + (op0 & 0xF) * 2)` into `ctx[+0x26]`. Else: halt-acquire path - same predicate as op 0x43 sub-0/1/A/B (`saved_pc != 0 \|\| ctx==player`) AND (`!(flags & 0x400) \|\| scene_busy`); on success set HALT + saved_pc + wait_accum=0 (mirror to caller when ctx is player), yield with `resume_pc = pc + 3`; on fail fall through to dispatcher default. |
 | 0x39 | `GIVE_ITEM` | `[39, item_id]` | Adds one inline item `item_id` to the inventory; the **treasure-chest item-give** path (the granted item is this single operand byte, **not** a per-scene table). Full behaviour in [§ 0x39 GIVE_ITEM](#0x39-give_item) below. |
 | 0x3A | `ADD_MONEY` | `[3A, b0, b1, b2]` | 24-bit signed delta: `_DAT_8008459C += sext24(operand)`. Clamp to `[0, 9999999]`. |
@@ -273,6 +286,22 @@ PC += 4.
 | 0x3F | `SCENE_CHANGE` (named warp) | `[3F, idx_lo, idx_hi, name_len, [name_len name bytes], entry_x, entry_z, dir]` | **Named scene-change ("warp by name"), NOT a dialog op.** Full encoding + behaviour in [§ 0x3F SCENE_CHANGE](#0x3f-scene_change-named-warp) below. |
 | 0x40 | `DATA_BLOCK` | `[40, len, ...len bytes]` | Skips `len` bytes after header - embeds raw inline data. PC += 2 + len. |
 | 0x42 | `COND_JMP` | `[42, mode, op1, op2, op3]` | Multi-mode conditional. `mode == 0`: test `_DAT_8007B8F4 & (1 << (op1 & 0x1F))` - if clear, return `pc + 5` (skip). `mode == 1`: test screen-mode (`_DAT_8007B850`) against `_DAT_801F28D0[op1*4]` (8-entry table) for `op1 < 8`, bit 0x20 for `op1 == 8`, 0x40 for 9, 0x80 for 10, 0x10 for 11; **`op1 >= 0xC` falls through to the unconditional take-jump path** (no test). `mode >= 2` hits the dispatcher's default arm - halts at PC. Successful jump target = `pc + 3 + LE_u16(op2,op3)`; skip target = `pc + 5`. |
+
+#### 0x37 / 0x41 / 0x47 YIELD family (motion ops)
+
+All three park the running script: they save the op's own PC into `ctx[+0x94]`,
+clear the cursor `ctx[+0x54]`, and set `ctx[+0x10]` bit 0x400 (HALT). A player
+context propagates the halt to the caller.
+
+The parked op is then interpreted **in place, each frame, by the walk kernel
+`FUN_8003774C`** (which resolves the `0x80` ext-target convention). The operand
+decode differs per op:
+
+- **0x37 / 0x41** - glide-step. Axis `DAT_80073F14[b0 & 7]`, base step `4 << ((b0>>5 & 4) | (b1>>6))`, distance `(b1 & 0x3F) * base`.
+- **0x47** - walk-to-tile. Base step `4 << (b2 & 7)`, approach mode `b2 >> 4`.
+
+**No "synthesised motion bytecode" exists** - the record bytes *are* the stream the
+walk kernel reads. See [`motion-vm.md`](motion-vm.md).
 
 #### 0x39 GIVE_ITEM
 
@@ -407,16 +436,67 @@ func_0x800468a4(6, signed16(operand[1..3]), signed16(operand[3..5]),
 
 | Op | Mnemonic | Notes |
 |---|---|---|
-| 0x44 | `SPAWN_RECORD` | `[44, global_index]`, 2 bytes. Spawns a MAN partition-2 record as a new field-VM context: unpacks a packed triple via `func_0x8003D064` then calls `func_0x8003BDE0` (ra `0x801DF098`) with the gate forced to 1; the operand is a **GLOBAL** record index, re-based into partition 2 (`- N0 - N1`). Live-probe-pinned: the opening chain's `opdeene`/`opstati`/`opurud` entry scripts launch their prologue timelines this way (`44 23` / `44 21` / `44 32`). The record's own C1/C2 story-flag gates still apply. The earlier `COUNTER` reading is superseded. See [`cutscene.md`](cutscene.md#record-spawn-mechanisms-live-probe-pinned). |
+| 0x44 | `SPAWN_RECORD` | `[44, global_index]`, 2 bytes. Spawns a MAN partition-2 record as a new field-VM context. [Detail](#0x44-spawn_record). |
 | 0x45 | `CAMERA` | Sub-dispatch on `op0 & 0xC0`: `0x00` = configure 10 sub-words, `0x40` = LOAD (`FUN_801DBC20`), `0x80` = SAVE (`FUN_801DE004`), `0xC0` = APPLY (`FUN_801DAB90` + `FUN_801DAA50` then absolute jump). |
 | 0x46 | `RENDER_CFG` | Fog/render params. `op0 == 0x24` writes 4 bytes (DAT_1F8003E8-EB); else short 2-byte form. |
-| 0x49 | `STATE_RESUME` | Tristate state machine on `_DAT_8007B450`, sub-cases 0..0xD. **Idle** (`==0`): arms it - spawns an effect-actor `func_0x80020DE0(0x8007065C,…)` + sets `_DAT_8007B450 = operand_ptr`. **Armed** (`!=0,!=1`): `return param_2` - re-enters the SAME PC each frame until the actor writes `_DAT_8007B450 = 1` (Done writer = field-overlay `FUN_801F159C`-class). **Done** (`==1`): clears it + advances PC. Done sub-6/8/9/C/D jump through `LAB_801df898` (PC += 5); Done sub-0 walks an inline MES-shape payload via `func_0x8003CA38` (`length = pbVar47[2]`, PC += `5 + length + walked`). The Armed park is the town01 name-entry hand-off (P2[3] `+0x02C6`); see [`playthrough-coverage.md`](../tooling/playthrough-coverage.md#s3-captured-the-town01-opening-is-the-name-entry-screen). |
+| 0x49 | `STATE_RESUME` | Tristate state machine on `_DAT_8007B450`, sub-cases 0..0xD. [Detail](#0x49-state_resume). |
 | 0x4A | `WAIT_FRAMES` | `ctx[+0x54] += scratch_delta; if (sum < operand) return; else PC += default`. Frame timer. |
 | 0x4B | `ANIMATE` | Multi-keyframe setup. Writes `ctx[+0xB0+N] / +0xB8 / +0xC8`, sets `+0x10` bit 0x1000 (animation flag). PC += 3 + count*4. |
-| 0x4C | `MENU_CTRL` | Outer-nibble-dispatched (16 sub-dispatchers). See below. |
+| 0x4C | `MENU_CTRL` | Outer-nibble-dispatched (16 sub-dispatchers). See [`script-vm-menuctrl.md`](script-vm-menuctrl.md). |
 | 0x4D | `BBOX_TEST` | Inside-box advances PC by 7; outside-box jumps to `pc + header_size + 4 + LE_u16(operand[4..6])` via `FUN_801E3614`. |
-| 0x4E | `INVENTORY_CMP` | Compare-and-jump on party state. **Every sub-op 0..9 is the 7-byte compare-and-skip** (raw jump table `0x801CEE30`, value loaders joining a shared compare): 0/1 = char HP/MP `(cur, max)` pair (the only `max * arg >> 8`-scaled form), 2 = level byte `+0x130`, 3 = gold vs u16 (the inn gold gate, `legaia_asset::inn_costs`), 4 = **BIOS `Rand() & 0xFF`** (random-chance branch), 5..8 = **slot table `0x801C6460[sub - 5]`** (read side of the `4C CA/CB/CC` writes), 9 = coins vs u16. 10/11 = gold/coin u32 compare (9 bytes); 12..=15 fall through. The old "5..8 absolute jump" / "4 rand = next PC" readings were the collapsed decomp switch ([threads doc](../reference/open-rev-eng-threads.md), op-0x4E details). Ported: `field_disasm::decode_subops` + `engine-vm` `flow::op_4e`. |
+| 0x4E | `INVENTORY_CMP` | Compare-and-jump on party state; every sub-op 0..9 is the 7-byte compare-and-skip. [Detail](#0x4e-inventory_cmp). |
 | 0x4F | `SCENE_REGISTER_WRITE` | Writes three `u16` values to `_DAT_801C6EA4 + 0x10/+0x12/+0x14`. |
+
+#### `0x44` SPAWN_RECORD
+
+Spawns a MAN partition-2 record as a new field-VM context. It unpacks a packed
+triple via `func_0x8003D064`, then calls `func_0x8003BDE0` (ra `0x801DF098`) with
+the gate forced to 1.
+
+The operand is a **GLOBAL** record index, re-based into partition 2 (`- N0 - N1`) by
+the dispatcher itself. The record's own C1/C2 story-flag gates still apply.
+
+Live-probe-pinned: the opening chain's `opdeene` / `opstati` / `opurud` entry
+scripts launch their prologue timelines this way (`44 23` / `44 21` / `44 32`). See
+[`cutscene.md`](cutscene.md#record-spawn-mechanisms-live-probe-pinned).
+
+The earlier `COUNTER` reading of this opcode is superseded.
+
+#### `0x49` STATE_RESUME
+
+A tristate state machine on `_DAT_8007B450`, with sub-cases 0..0xD:
+
+- **Idle** (`== 0`): arms it - spawns an effect-actor `func_0x80020DE0(0x8007065C,…)` and sets `_DAT_8007B450 = operand_ptr`.
+- **Armed** (`!= 0, != 1`): `return param_2` - re-enters the SAME PC each frame until the actor writes `_DAT_8007B450 = 1` (the Done writer is field-overlay `FUN_801F159C`-class).
+- **Done** (`== 1`): clears it and advances the PC.
+
+Done sub-6/8/9/C/D jump through `LAB_801df898` (PC += 5). Done sub-0 walks an inline
+MES-shape payload via `func_0x8003CA38` (`length = pbVar47[2]`, PC +=
+`5 + length + walked`).
+
+The Armed park is the town01 name-entry hand-off (P2[3] `+0x02C6`); see
+[`playthrough-coverage.md`](../tooling/playthrough-coverage.md#s3-captured-the-town01-opening-is-the-name-entry-screen).
+
+#### `0x4E` INVENTORY_CMP
+
+Compare-and-jump on party state. **Every sub-op 0..9 is the 7-byte
+compare-and-skip** - a raw jump table at `0x801CEE30` whose value loaders all join a
+shared compare:
+
+| Sub-op | Compares |
+|---|---|
+| 0 / 1 | char HP / MP `(cur, max)` pair - the only `max * arg >> 8`-scaled form |
+| 2 | level byte `+0x130` |
+| 3 | gold vs u16 (the inn gold gate, `legaia_asset::inn_costs`) |
+| 4 | **BIOS `Rand() & 0xFF`** (random-chance branch) |
+| 5..8 | **slot table `0x801C6460[sub - 5]`** (read side of the `4C CA/CB/CC` writes) |
+| 9 | coins vs u16 |
+| 10 / 11 | gold / coin u32 compare (9 bytes) |
+| 12..=15 | fall through |
+
+The old "5..8 absolute jump" and "4 rand = next PC" readings were the collapsed
+decomp switch ([threads doc](../reference/open-rev-eng-threads.md), op-0x4E
+details). Ported: `field_disasm::decode_subops` + `engine-vm` `flow::op_4e`.
 
 ### 0x4C MENU_CTRL - outer-nibble dispatch
 

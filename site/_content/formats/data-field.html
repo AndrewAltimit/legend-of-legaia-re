@@ -40,7 +40,7 @@ terminator</code></pre>
 
 <section class="doc-section" id="trailer-data">
   <h2>Trailer data</h2>
-  <p>Some entries contain bytes past the streaming terminator. <code>asset extract</code> preserves these as <code>_trailer.bin</code> next to the extracted chunks. The function that consumes the trailer hasn't been located; tracing the caller of <code>FUN_8002541C</code> in the field/town overlay is the next move if a specific entry's trailer looks structured.</p>
+  <p>Some entries contain bytes past the streaming terminator. <code>asset extract</code> preserves these as <code>_trailer.bin</code> next to the extracted chunks. The function that consumes the trailer has not been located.</p>
 </section>
 
 <section class="doc-section" id="related-shapes">
@@ -103,10 +103,10 @@ terminator</code></pre>
   <p>What's <strong>NOT</strong> modelled yet:</p>
   <ul class="bullets">
     <li>Cross-entry pointers (NPC references that point into other PROT entries - the asset chain in <a href="../subsystems/asset-loader.html">asset-loader.md</a> is best-effort).</li>
-    <li>The runtime-reconstructed slot-to-asset mapping inside <code>field-pack</code> containers (magic <code>0x01059B84</code>, 124 entries) - known shape, unknown slot semantics.</li>
+    <li>The per-slot semantics of the <code>field-pack</code> shared-template block (magic <code>0x01059B84</code>; see <a href="field-pack.html">field-pack</a>) - known shape, consumer unlocated.</li>
     <li>The retail engine's per-scene "asset table" indirection (<code>SceneAssetTable</code> and <code>SceneScriptedAssetTable</code> detectors fire on a small fraction of entries; full reverse needs an overlay capture of <code>FUN_8001f7c0</code> at scene-load time).</li>
   </ul>
-  <p>The categorize sweep covers the bulk of bytes - every PROT entry classifies to <em>something</em>, and ~95% of bytes fall into known classes. Refining the residual classes is the work tracked under "Reverse-engineer DATA_FIELD per-scene layout" in <a href="../subsystems/engine.html"><code>docs/subsystems/engine.md</code></a>.</p>
+  <p>The categorize sweep classifies every PROT entry to <em>something</em>; the items above are the residual edge. See <a href="../subsystems/engine.html">the engine page</a> for how scene loading consumes these shapes.</p>
 </section>
 
 

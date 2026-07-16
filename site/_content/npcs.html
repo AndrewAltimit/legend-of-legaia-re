@@ -99,7 +99,7 @@ canvas.npc-canvas:active { cursor: grabbing; }
   <div class="breadcrumb"><a href="index.html">home</a> &middot; npcs</div>
   <h1>NPCs</h1>
   <p class="lede">
-    Every character the game places in a town or dungeon - the villagers, shopkeepers, guards, and story figures you walk up to and talk to - in 3D, from your own disc image. Pick a location and its whole cast appears; click any of them to spin the model and play its real idle animation. These are the <strong>field</strong> models, the ones the game uses while you're walking around. Nothing leaves your machine.
+    Every character the game places in a town or dungeon, in 3D from your own disc image: pick a location, click anyone in its cast to spin the field model and play its real idle animation. Nothing is uploaded; the disc never leaves your machine.
   </p>
 </header>
 
@@ -157,13 +157,10 @@ canvas.npc-canvas:active { cursor: grabbing; }
 <section class="doc-section">
   <h2>How an NPC is put together</h2>
   <p>
-    There is no "NPC file" on the disc. An NPC is an entry in the scene's placement list: one byte naming a model in the scene's own mesh pool, one byte naming an animation clip, and two bytes for the tile it stands on - followed by the script it runs when you talk to it. So the cast of a town is simply that list, resolved against the meshes the town already loads. That's why an NPC's only real "name" is the first line it says to you, which is what this page labels them with.
+    There is no "NPC file" on the disc: an NPC is an entry in the scene's placement list - a model in the scene's own mesh pool, an animation clip, a tile, and the script it runs when you talk to it (see the <a href="subsystems/script-vm.html">field script VM</a>). Its only real "name" is the first line it says to you, which is what this page labels them with.
   </p>
   <p>
-    The models are stored in pieces - a head, a torso, arms - each with its coordinates measured from its own joint rather than from the character's centre. On their own they'd collapse into a heap. What assembles them is the animation clip: every frame carries a position and rotation for each piece, and frame&nbsp;0 is the character's resting stance. This page composes that pose in the browser, the same way the game composes it on the console, which is why the figures stand up straight and can be played back.
-  </p>
-  <p>
-    A few actors in each scene are held back. The party members (Vahn, Noa, Gala) and the save crystal are drawn from a global pool shared by every scene rather than the scene's own - they live on the <a href="characters.html">characters page</a>. And a handful of story actors in some dungeons ship no clip to pose them with, so they're counted in the status line rather than shown as a pile of parts.
+    The models ship in joint-local pieces that the animation clip assembles - frame&nbsp;0 is the resting stance - exactly as on the console (see the <a href="formats/anm.html">ANM format</a>). Two casts are held back: party members and the save crystal come from a global pool (see the <a href="characters.html">characters page</a>), and a handful of story actors ship no clip to pose them with, so they're counted in the status line rather than shown as a pile of parts.
   </p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>

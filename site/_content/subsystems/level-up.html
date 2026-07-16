@@ -112,28 +112,18 @@
     <p><strong>Fire Book I.</strong> A pre/post save pair (Fire Book I used on Vahn in battle) pins exactly one record-internal write region at <code>+0x185..+0x188</code>: a count-prefixed list <code>[u8 count at +0x185][u8 ids[N] at +0x186..]</code> growing by a head-insert. The only reader is a menu-overlay cluster at <code>0x801D4440..0x801D44A4</code> (inside <code>0x801D33D8</code>) that matches the ids against the menu spell table at <code>0x801E472C</code> (stride <code>0x14</code>) - so the values are skill-table indices (the menu's displayed-skill roster), not action-queue constants. Typed accessor: <code>legaia_save::character::CharacterRecord::displayed_skills</code>. No <code>sb</code>/<code>sh</code> writer to <code>+0x185</code> exists in any captured overlay - the learn-write path is in an undumped overlay. Disc-gated test: <code>fire_book_use_diff_pins_vahn_record_write</code>.</p>
     <p><strong>Negative finding.</strong> A grep across <code>PROT.DAT</code> for u8 sequences matching the observed stat-delta tuples surfaces only per-effect animation curves (ramp-up-peak-ramp-down byte runs at offset <code>0x033E9000</code>) - the grant tables are not in PROT.DAT at all; they are the static-SCUS pair <code>DAT_800769CC</code> / <code>DAT_80076918</code> above.</p>
   </details>
-  <details class="disclosure">
-    <summary>Superseded readings</summary>
-    <ul>
-      <li>A 98-entry slice of the GTE sin LUT at <code>0x80070A2C</code> was mistaken for the XP table after an off-by-<code>0x800</code> address confusion; that slice is sin data (consumed by <code>RotMatrixX/Y/Z</code>), and it is refuted by retail display - a New Game Status capture shows &ldquo;Next Level 121&rdquo; (the real L2 threshold), not the slice's 50. <code>retail_xp_table()</code> now ships the derived real curve.</li>
-      <li>&ldquo;<code>+0x130</code> = magic-rank counter, level derived from cumulative XP&rdquo; - superseded: <code>+0x130</code> is the displayed character level (boot-confirmed via the starting-level randomizer).</li>
-      <li>The &ldquo;Seru struct <code>+0x74</code> growth grant&rdquo; hypothesis - falsified; those reads are a <code>0x80808080</code> battle-state flag written by <code>FUN_800480D8</code>.</li>
-      <li>The &ldquo;~4.8&times; gain overshoot&rdquo; - an artifact of unreliable multi-level corpus observations, not the formula.</li>
-      <li>Early writer searches scanned the <code>magic_level_up</code> <em>display</em> overlay (UI strings + animation tables at <code>0x801F4B8C+</code>); the applier is the victory-path <code>FUN_801E9504</code>, and no increment table lives in the display overlay.</li>
-    </ul>
-  </details>
+  <p class="note">Two look-alikes to avoid: the 98-entry slice at <code>0x80070A2C</code> looks like an XP table but is GTE sin-LUT data (the applier samples it only as the correction divisor above) - the real L2 threshold is 121, as a New Game Status screen shows; and the Seru-struct <code>+0x74</code> reads are a <code>0x80808080</code> battle-state flag written by <code>FUN_800480D8</code>, not a growth grant. Full history: <code>docs/subsystems/level-up.md</code>.</p>
 </section>
 
 <section class="doc-section" id="open-items">
   <h2>Open items</h2>
   <ul>
-    <li><span class="tag tag-done">Resolved</span> <strong><code>+0x120</code> stat-cap accessor.</strong> Captures pin the per-stat cap
-      constant 100 at <code>+0x120</code> (u16 LE), and the cheat-derived layout labels the offset <code>stat_cap_constant_100(+0x120)</code>
-      while <code>+0x11A</code> is the live INT stat (mutated by level-up, typed as <code>LiveStats::int</code>). The
-      <code>legaia_save::character::CharacterRecord::stat_cap</code> accessor now reads/writes <code>+0x120</code> - the same field as
-      <code>RecordStats::cap_constant</code> - so name and offset agree; the aliasing (and the non-collision with live INT) is pinned by
-      <code>character::tests::stat_cap_aliases_record_cap_constant</code>. The runtime <code>999</code> clamp in <code>FUN_80042558</code> is a
-      code constant (<code>legaia_save::STAT_CAP</code>), not this record field.</li>
+    <li><strong><code>+0x120</code> stat-cap field.</strong> Captures pin the per-stat cap constant 100 at <code>+0x120</code> (u16 LE);
+      <code>+0x11A</code> is the live INT stat (mutated by level-up, typed as <code>LiveStats::int</code>). The
+      <code>legaia_save::character::CharacterRecord::stat_cap</code> accessor reads/writes <code>+0x120</code> - the same field as
+      <code>RecordStats::cap_constant</code> (aliasing pinned by <code>character::tests::stat_cap_aliases_record_cap_constant</code>).
+      The runtime <code>999</code> clamp in <code>FUN_80042558</code> is a code constant (<code>legaia_save::STAT_CAP</code>), not this
+      record field.</li>
     <li><strong>Overlay display.</strong> Retail shows per-stat increments (STR, INT, VIT, &hellip;) with animated counters; the port renders only the HP/MP banner lines.</li>
   </ul>
 </section>

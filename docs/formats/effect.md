@@ -226,13 +226,23 @@ The per-entry PROT extractor over-reads here (neighbouring entries' extended foo
 
 ### Consumer cluster
 
-The runtime consumer lives in the battle overlay (`0898_xxx_dat`):
+The runtime consumer lives in the battle overlay (`0898_xxx_dat`) and is three functions - init, spawn, and the per-frame walker.
 
 | Function | Span | Role |
 |---|---|---|
-| `0x801DE914` | 0x138 | **Init / pack-fixup.** Called by `FUN_800520F0` case `0xE` with `(id=0x1000, param=0xA00)`. Zeros the 5008-byte runtime pool at `_DAT_8007BD30`, treats `_DAT_8007BD5C` as the 2-pack wrapper, walks both packs converting offsets→pointers (fixup gated by `byte[3] == 0`). Stores post-fixup state in the table-head 16-byte record `(u16 id, u16 param, u32 buf+8, u32 pack0_data+4, u32 pack1_data+4)`. Sets the init flag `_DAT_8007BD58 = 1`. |
-| `0x801DFDF8` | 0x290 | **Public spawn-effect API.** Signature: `(byte effect_id, short* world_pos, ushort angle)`. Reads `pack1[effect_id]` from the head record to find the effect's script. Allocates the first free slot in the 32-entry × 28-byte master pool, writes pos/angle, copies script header bytes, sets script cursor to `entry + 4`. Special-cases `effect_id = 4 → 0x801F5D90` and `effect_id = 0x13 → 0x801F5CF8`. |
-| `0x801E0088` | 0x970 | **Per-frame walker (update + render).** Two passes. Pass 1 (32 master slots): for each active slot, decrement state byte; if zero, fetch next 14-byte script instruction (byte 0 indexes pack0 → an anim batch; the rest provides angle/dir/lifetime). Spawns into the 128 child slots; applies sin/cos via lookup tables at `_DAT_8007B7F8` and `_DAT_8007B81C`. Pass 2 (128 child slots): builds a PSX GPU sprite primitive (`0x9000000` opcode + `0x2E000000` RGB), pulls UV/size/page from the inline sprite atlas via the child's anim cursor, submits via `func_0x8003D2C4`. |
+| `0x801DE914` | 0x138 | Init / pack-fixup |
+| `0x801DFDF8` | 0x290 | Public spawn-effect API |
+| `0x801E0088` | 0x970 | Per-frame walker (update + render) |
+
+**`0x801DE914` - init / pack-fixup.** Called by `FUN_800520F0` case `0xE` with `(id=0x1000, param=0xA00)`. It zeros the 5008-byte runtime pool at `_DAT_8007BD30`, treats `_DAT_8007BD5C` as the 2-pack wrapper, and walks both packs converting offsets to pointers (the fixup is gated by `byte[3] == 0`). Post-fixup state goes in the table-head 16-byte record `(u16 id, u16 param, u32 buf+8, u32 pack0_data+4, u32 pack1_data+4)`, and the init flag `_DAT_8007BD58` is set to `1`.
+
+**`0x801DFDF8` - public spawn-effect API.** Signature `(byte effect_id, short* world_pos, ushort angle)`. It reads `pack1[effect_id]` from the head record to find the effect's script, allocates the first free slot in the 32-entry × 28-byte master pool, writes pos/angle, copies the script header bytes, and sets the script cursor to `entry + 4`. Two ids are special-cased: `effect_id = 4 → 0x801F5D90` and `effect_id = 0x13 → 0x801F5CF8`.
+
+**`0x801E0088` - per-frame walker.** Runs two passes over the pools.
+
+Pass 1 covers the 32 master slots. For each active slot it decrements the state byte; on zero it fetches the next 14-byte script instruction, where byte 0 indexes `pack0` to select an anim batch and the rest supplies angle, direction, and lifetime. It spawns into the 128 child slots, applying sin/cos through the lookup tables at `_DAT_8007B7F8` and `_DAT_8007B81C`.
+
+Pass 2 covers the 128 child slots. For each it builds a PSX GPU sprite primitive (`0x9000000` opcode + `0x2E000000` RGB), pulls UV / size / page from the inline sprite atlas via the child's anim cursor, and submits through `func_0x8003D2C4`.
 
 Decompiled output: `ghidra/scripts/funcs/overlay_battle_*.txt`.
 

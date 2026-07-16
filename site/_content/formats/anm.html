@@ -1,7 +1,8 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; anm animation container</div>
   <h1>ANM animation container <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">Asset type <code>0x06</code> from the <a href="asset-type.html">asset-type dispatcher</a>. Implementation: <code>crates/anm</code>.</p>
+  <p class="lede">The keyframe animation container for <strong>player characters and field actors</strong> - the walk cycles, idle loops, and scripted motion the field engine plays back. Asset type <code>0x06</code> from the <a href="asset-type.html">asset-type dispatcher</a>. Implementation: <code>crates/anm</code>.</p>
+  <p>It is not the only animation format on the disc, and picking the wrong one is the usual mistake. Battle monsters use a separate per-object keyframe stream inside the monster archive (<a href="monster-animation.html">monster animation</a>), and the party's <em>battle</em> poses come from the player battle files' own streams rather than from here (<a href="character-mesh.html">character mesh</a>). ANM data itself reaches you from two distinct bundles - the party locomotion bank and the per-scene NPC bank; see <a href="#disc-sources">disc sources</a>.</p>
 </header>
 
 <section class="doc-section" id="layout">
@@ -39,7 +40,7 @@ u16 marker_2       // = 0x0002 (78%) or 0x0004 (22%)</code></pre>
     <li>Stores <code>(anm_base + record_offset)</code> in <code>actor[+0x4C]</code> (the per-actor anim record pointer).</li>
     <li>Writes <code>0xB</code> to <code>actor[+0x56]</code> (animation state byte) and <code>100</code> to <code>actor[+0x68]</code> (frame counter).</li>
   </ol>
-  <p>The actor tick <code>FUN_80021DF4</code> then reads <code>actor[+0x4C]</code> whenever <code>actor[+0x5A]</code> is <code>2</code> or <code>6</code> and runs the keyframe interpolation pass described above. Other animation opcodes (set in <code>actor[+0x5A]</code>) gate different per-record body layouts; only opcode <code>6</code> is fully traced today.</p>
+  <p>The actor tick <code>FUN_80021DF4</code> then reads <code>actor[+0x4C]</code> whenever <code>actor[+0x5A]</code> is <code>2</code> or <code>6</code> and runs the keyframe interpolation pass described above. Other animation opcodes (set in <code>actor[+0x5A]</code>) gate different per-record body layouts; only opcode <code>6</code> is fully traced.</p>
 </section>
 
 <section class="doc-section" id="connection-to-other-systems">
@@ -119,7 +120,7 @@ u16 marker_2       // = 0x0002 (78%) or 0x0004 (22%)</code></pre>
 </tr>
 </tbody>
 </table>
-  <p>The <code>crates/engine-vm</code> <code>DispatchByte</code> enum exposes those values as a typed dispatch - <code>DispatchByte::from_byte(actor[+0x5A])</code> and <code>DispatchByte::handled_natively()</code> for the cases the keyframe pose decoder can drive on its own (currently only <code>Keyframe</code>).</p>
+  <p>The <code>crates/engine-vm</code> <code>DispatchByte</code> enum exposes those values as a typed dispatch - <code>DispatchByte::from_byte(actor[+0x5A])</code> and <code>DispatchByte::handled_natively()</code> for the cases the keyframe pose decoder can drive on its own (only <code>Keyframe</code>).</p>
   <p>The per-arm physics tick (the part that <em>isn't</em> per-record bytecode - i.e. position / velocity / acceleration math, the SFX emitter at dispatch <code>0x05</code>, and the per-arm render submissions for <code>0x04</code> and <code>0x07</code>) is fully ported in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-vm/src/actor_tick.rs"><code>crates/engine-vm/src/actor_tick.rs</code></a>. Cross-cutting effects surface via <code>TickEvent</code> so engines can fold them into their own audio mixer / scene graph / move-VM driver. See <a href="../subsystems/actor-vm.html#per-arm-physics-tick">the actor-VM doc</a> for the per-arm breakdown.</p>
   <p>The per-frame interpreter for non-opcode-6 records is <strong>partially overlay-resident</strong>. <code>FUN_80024CFC</code> only primes the actor (<code>actor[+0x4C]</code> = record pointer, <code>actor[+0x56] = 0xB</code>); a handler in the town overlay (<code>FUN_801DE840</code>, overlay 0897) reads <code>actor[+0x4C]</code> at <code>801e260c</code> via a sub-dispatch table at <code>0x801CEF88</code> (routes by <code>opcode &amp; 0xF</code>, 16 entries):</p>
   <ol class="bullets">
@@ -127,10 +128,10 @@ u16 marker_2       // = 0x0002 (78%) or 0x0004 (22%)</code></pre>
     <li>Calls <code>FUN_800204f8</code> (<code>a0 = actor</code>) - actor advance / move tick.</li>
     <li>Loads <code>s6 = actor[+0x4C]</code> - the ANM record pointer.</li>
     <li>Calls <code>FUN_80056798</code> (BIOS vector <code>0xa0/0x2F</code>) while advancing the field VM PC by 2 in the delay slot.</li>
-    <li>The 40-byte body at <code>801e2630..801e2670</code> uses <code>s6</code> and the return value to complete the frame-selection logic; this segment is in the overlay dump but not extracted in the current function-coverage pass.</li>
+    <li>The 40-byte body at <code>801e2630..801e2670</code> uses <code>s6</code> and the return value to complete the frame-selection logic; this segment is not yet traced.</li>
   </ol>
   <p>This path is gated on <code>actor[+0x5C]</code> and is distinct from the opcode-6 keyframe path in <code>FUN_80021DF4</code> (which gates on <code>actor[+0x5A] == 6</code>).</p>
-  <p>See <code>ghidra/scripts/funcs/overlay_0897_801de840.txt</code> line ~3389 for the disassembly. The full handler body requires a targeted dump of <code>0x801e2630..0x801e2670</code> within <code>overlay_0897.bin</code>.</p>
+  <p>See <code>ghidra/scripts/funcs/overlay_0897_801de840.txt</code> line ~3389 for the disassembly.</p>
 </section>
 
 <section class="doc-section" id="per-actor-anim-state-offsets">

@@ -1,6 +1,43 @@
 # Audio
 
-Three layers: the path-string cluster that builds audio file paths, the SCUS dispatchers that consume them, and the actual audio formats (VAB sound banks + SEQ sequences; the per-scene `.dpk` / `sound_data2` pack is now decoded as a [VAB + SEQ bundle](../formats/sound-driver.md#the-dpk--sound_data2-payload-is-a-vab--seq-bundle), with the `.MAP` / `.PCH` / `.spk` / `.pac` PsyQ intermediates not present as separate retail chunks).
+Everything that makes sound: music, sound effects, character voice, and the
+streamed CD audio under cutscenes - plus the PsyQ sound stack the game drives it
+all through.
+
+**The stack, top to bottom.** The path-string cluster builds audio file paths;
+the SCUS dispatchers consume them; underneath sit the actual formats, VAB sound
+banks and SEQ sequences. The per-scene `.dpk` / `sound_data2` pack decodes as a
+[VAB + SEQ bundle](../formats/sound-driver.md#the-dpk--sound_data2-payload-is-a-vab--seq-bundle);
+the `.MAP` / `.PCH` / `.spk` / `.pac` PsyQ intermediates are **not** present as
+separate retail chunks.
+
+**Where it lives.** All SCUS-resident: the SsAPI sequencer at the
+`0x80061-0x80067` cluster, libspu / SPU control at `0x80068-0x8006D`.
+
+**Port counterpart.** `crates/engine-audio` - a clean-room SPU plus an
+SsAPI-shaped `Sequencer`, mixed through cpal. `crates/vab`, `crates/seq` and
+`crates/xa` parse the formats; `mednafen-state spu` is the parity oracle.
+
+**The thing that catches people out:** Legaia's SEQ is **not** stock PsyQ SEQ.
+The version field is u32 BE (not u16), and its meta events carry **no** MIDI
+variable-length `length` byte - `0xFF 0x51` is followed directly by three tempo
+bytes. Reading a phantom length byte swallows the first-body tempo override and
+pins playback ~3x fast against the 240 BPM placeholder header. See
+[`formats/seq.md`](../formats/seq.md).
+
+**A second one:** most retail BGM lives at a **non-zero offset** inside its
+entry - `[u32 chunk_header][VAB][chunk1_header][SEQ]`. Slice past the wrapper
+with `SceneAssets::seq_in_stream_entries` / `bgm_seq_offset`.
+
+## Contents
+
+- [Path-string cluster](#path-string-cluster) · [SCUS consumers](#scus-consumers) · [File-API leaf cluster](#file-api-leaf-cluster)
+- [VAB sound banks](#vab-sound-banks) · [per-actor SFX](#per-actor-sound-effects) · [monster sound bank](#monster-sound-bank---hmpackmonstersnd)
+- [BGM dispatch](#bgm-dispatch) · [global-pool BGM (`music_01`)](#global-pool-bgm-the-music_01-bank)
+- [SsAPI sequencer](#ssapi-sequencer-0x80061-0x80067-cluster) - [globals](#globals) · [public SEQ API](#public-seq-api) · [SEQ internals](#seq-internals) · [voice / mixer](#voice--mixer-audible-output-critical-path) · [SPU command shims](#spu-command-shims-0x81-scaling--0127--016383) · [renderer-citation correction](#renderer-citation-correction)
+- [libspu / SPU control](#libspu--spu-control-0x80068-0x8006d-cluster) - [SPU globals](#spu-globals) · [primitives](#libspu-primitives) · [DMA transfer engine](#spu-dma-transfer-engine) · [reverb model](#reverb-model-engine-audio) · [Gaussian resampler](#voice-resampler---4-point-gaussian-interpolation-engine-audio) · [SsApi seq-management layer](#ssapi-seq-management-layer-above-libspu)
+- [Engine-audio: Sequencer port](#engine-audio-model---sequencer-port) · [clean-room SPU port](#engine-audio-model---clean-room-spu-port) · [SFX bank + scheduler](#sfx-bank--scheduler) · [XA-ADPCM](#xa-adpcm)
+- [Audio-trace parity oracle](#audio-trace-parity-oracle) · [What's left](#whats-left)
 
 ## Path-string cluster
 

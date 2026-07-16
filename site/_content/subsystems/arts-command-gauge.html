@@ -58,7 +58,7 @@ ctx[0x6DC] -= ctx[slot + 0x14];                             // consume the comma
       <tr><td><code>0x1000</code> (<strong>Curse</strong>)</td><td>the whole MAGIC command (<code>FUN_801dbec4(0xf8, 0x42)</code>)</td><td>Magic</td></tr>
     </tbody>
   </table>
-  <p>With all three limb bits set (<code>0x38</code>) the whole Arm command is skipped and Attack is unusable. This pinned map <strong>replaces</strong> the engine's earlier reconstructed Left/Right/Down arrow-gray: the retail assignment is Left = <code>0x08</code>, Right = <code>0x10</code>, and Up + Down together = <code>0x20</code> (a single bit grays two arrows), not one bit per arrow. Rot rolls exactly one of these three bits (<code>1 &lt;&lt; (rand%3 + 3)</code>); see <a href="battle-formulas.html">battle formulas &sect; status application</a>.</p>
+  <p>With all three limb bits set (<code>0x38</code>) the whole Arm command is skipped and Attack is unusable. Note the retail assignment: Left = <code>0x08</code>, Right = <code>0x10</code>, and Up + Down together = <code>0x20</code> (a single bit grays two arrows) - not one bit per arrow. Rot rolls exactly one of these three bits (<code>1 &lt;&lt; (rand%3 + 3)</code>); see <a href="battle-formulas.html">battle formulas &sect; status application</a>.</p>
 </section>
 
 <section class="doc-section" id="weapon-classes">

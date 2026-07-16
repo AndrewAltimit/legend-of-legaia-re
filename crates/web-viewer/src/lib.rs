@@ -9,6 +9,7 @@ pub mod arts_view;
 pub mod audio;
 mod audio_api;
 pub mod boot_title;
+pub mod cards;
 mod catalog;
 mod character;
 pub mod disc;

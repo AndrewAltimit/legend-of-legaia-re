@@ -81,13 +81,26 @@ canvas.world-canvas {
   <div class="breadcrumb"><a href="index.html">home</a> &middot; game world</div>
   <h1>Game world</h1>
   <p class="lede">
-    Every town, dungeon, and battlefield in the game - rendered here, in 3D, from your own disc image. Pick a location from the navigator and its full map assembles in the browser: the terrain, the buildings, the props, all textured from the real PSX VRAM. Each location also carries its enemy roster, bosses, and shops. Under the hood, every one ties back to a scene label on the disc via the <a href="formats/cdname.html">CDNAME map</a>. Nothing leaves your machine.
-    With a VR headset, the <strong>VR</strong> button next to the assembled map steps inside it over WebXR - Chrome/Edge with SteamVR as the active OpenXR runtime, served from <code>http://localhost</code> or https (WebXR needs a secure context; the button explains what's missing if it can't start).
+    Every town, dungeon, and battlefield in the game, rebuilt in 3D from your own copy of it.
+  </p>
+  <p>
+    Pick a location from the navigator and its full map assembles in your browser, textured from
+    reconstructed PlayStation video memory, alongside its enemy roster, bosses, and shops. Nothing is
+    uploaded; your disc image never leaves your machine.
+  </p>
+  <p>
+    Each location ties back to the short scene label the disc uses internally (like
+    <code>town0d</code>) via the <a href="formats/cdname.html">CDNAME name map</a>.
   </p>
 </header>
 
 <section class="doc-section" id="map">
   <h2>Explore the maps</h2>
+  <p class="hint">
+    With a VR headset, the <strong>VR</strong> button lets you step inside the assembled map over
+    WebXR (Chrome/Edge with SteamVR as the OpenXR runtime, page served over
+    <code>http://localhost</code> or https). If it can't start, the button explains what's missing.
+  </p>
   <div class="world-shell">
     <div class="file-input-group">
       <label for="world-file"><strong>Choose file:</strong></label>
@@ -120,7 +133,7 @@ canvas.world-canvas {
     </div>
   </div>
   <p class="char-info-note" style="color: var(--text-dim); font-size: 0.78rem; line-height: 1.55;">
-    The map is assembled the way the game assembles it: the scene's environment mesh pack, its <code>.MAP</code> object grid, the floor-height table, and the walk-ground heightfield, all decoded in the browser. Sky domes and horizon backdrops are hidden - under this camera they'd sit on top of the map and hide it. Drag to pan, right-drag to pivot, wheel to zoom.
+    The map is assembled the way the game assembles it, from the scene's mesh pack, object grid, and heightfields - see <a href="formats/scene-bundles.html">scene bundles</a>. Sky domes are hidden (under this camera they'd cover the map). Drag to pan, right-drag to pivot, wheel to zoom.
   </p>
 </section>
 
@@ -143,7 +156,7 @@ canvas.world-canvas {
 <section class="doc-section" id="related">
   <h2>Related</h2>
   <p>
-    Cards pull from <code>data/gamedata/*.toml</code> (curated enemy / boss / shop tables - see <a href="reference/gamedata.html">game-data reference</a>) joined against the <a href="formats/cdname.html">CDNAME map</a>. Walkthrough name &harr; CDNAME label isn't always 1:1 (<code>balden</code> = Vidna, <code>geremi</code> = Jeremi), and a handful of field-pack labels still have no walkthrough mapping.
+    Cards join the <a href="reference/gamedata.html">curated game-data tables</a> against the <a href="formats/cdname.html">CDNAME map</a>. Walkthrough name &harr; CDNAME label isn't always 1:1 (<code>balden</code> = Vidna, <code>geremi</code> = Jeremi), and a handful of field-pack labels have no walkthrough mapping.
   </p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>

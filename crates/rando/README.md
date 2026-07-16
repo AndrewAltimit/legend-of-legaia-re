@@ -291,20 +291,32 @@ insert-at-front shift. The "+35% DMG!" caption is dropped to Y `0x1E` so it sits
 one line below the native "Magic effect:" box instead of overlapping it. Applies
 to Seru captured **after** patching.
 
-**Region placement - "zero is not dead" (three times).** A zero run is usable only
-if **no code reads it**. Earlier layouts squatted in the zero padding of live
-indexed tables three times, each passing `assert_zero` because the bytes *are*
-zero: (1) the victory mouth-override table (`ART_MOUTH_VA 0x80077E80`, rows
-`0x800781B0..`) -> **corrupted victory mouth**; (2) the move-power table
-(`0x801F4FC4`) -> six move ids read garbage; (3) the **`0x80079xxx` SsAPI
-sound/effect tables** - the item-use sound engine indexes `0x800794F0` into the
-old bitmap, so a Healing Leaf read our bytes as garbage and the item banner never
-dismissed (**the Tetsu-tutorial Healing-Leaf freeze**). The fix relocates
-everything to regions verified all-zero **and** constant-zero across battle states
-**and** outside every known table (a structural `assert_not_in_tables` guard over
-`SCUS_TABLE_RANGES` / `OVERLAY_TABLE_RANGES`, now incl. the SsAPI sound ranges)
-**and** - the part static checks can't prove - **read-watch-verified unreferenced
-on a live battle** (item use, victory, summon cast).
+### Region placement - "zero is not dead" (three times)
+
+**A zero run is usable only if no code reads it.** Being all-zero proves
+nothing: live indexed tables are full of zero padding that the game still
+indexes at runtime.
+
+Earlier layouts squatted in exactly that padding three separate times, and each
+one passed `assert_zero` because the bytes *are* zero:
+
+1. The **victory mouth-override table** (`ART_MOUTH_VA 0x80077E80`, rows
+   `0x800781B0..`). The victory face animator read our routines as facial
+   keyframes → **corrupted victory mouth**.
+2. The **move-power table** (`0x801F4FC4`). Six move ids read our bytes as
+   move-power records → garbage damage / texpage.
+3. The **`0x80079xxx` SsAPI sound/effect tables**. The item-use sound engine
+   indexes `0x800794F0` straight into the old bitmap, so using a Healing Leaf
+   read our bytes as garbage table entries and the item banner never dismissed
+   - **the Tetsu-tutorial Healing-Leaf freeze**.
+
+The fix relocates everything to regions that clear four bars: verified
+all-zero, **and** constant-zero across battle states, **and** outside every
+known table (a structural `assert_not_in_tables` guard over
+`SCUS_TABLE_RANGES` / `OVERLAY_TABLE_RANGES`, now including the SsAPI sound
+ranges), **and** - the part no static check can prove -
+**read-watch-verified unreferenced on a live battle** (item use, victory,
+summon cast).
 
 `apply::inject_shiny_seru` performs **nine** same-size detours; all routines/data
 are SCUS-resident, in four read-watch-verified-dead regions: gap 1 `0x80077728`

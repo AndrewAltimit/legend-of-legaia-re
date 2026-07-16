@@ -77,13 +77,13 @@ prev2   = prev1;  prev1 = value     // history is the UNCLAMPED, UNROUNDED value
 
 <section class="doc-section" id="non-standard-interleave-what-it-is-and-isn-t">
   <h2>"Non-standard interleave" - what it is and isn't</h2>
-  <p>The earliest extracted-XA tooling truncated each on-disc sector to 2048 bytes (Form 1 mode), which silently:</p>
+  <p>Truncating each on-disc sector to 2048 bytes (Form 1 mode) - what a naive extractor does - silently:</p>
   <ol class="bullets">
     <li><strong>Dropped 276 bytes per sector</strong> of audio (Form 2 user data is 2324 B vs Form 1's 2048 B).</li>
     <li><strong>Collapsed every channel of the multiplexed stream into a single shuffled byte sequence</strong>, because the per-sector <code>(file_no, ch_no)</code> subheader was discarded.</li>
   </ol>
-  <p>The result was a stream where only ~10 % of 128-byte sound groups passed the standard XA validation rule <code>bytes 8..16 == bytes 0..8</code>. That's the "non-standard interleave" shorthand from earlier doc revisions - <strong>not</strong> a bespoke Legaia muxing scheme, just Form-1-truncation damage.</p>
-  <p>The fix lives in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/demux.rs"><code>crates/xa/src/demux.rs</code></a> (function <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/demux.rs"><code>demux_disc_range</code></a>). It reads raw 2352-byte sectors, parses each subheader, filters to <code>AUDIO + FORM2</code>, and splits the audio data into one buffer per <code>(file_no, ch_no)</code> tuple. After that step the per-channel buffer is a clean concatenation of standard 128-byte sound groups that the 4-bit ADPCM decoder handles directly.</p>
+  <p>The result is a stream where only ~10 % of 128-byte sound groups pass the standard XA validation rule <code>bytes 8..16 == bytes 0..8</code>. That is all a "non-standard interleave" reading of these files amounts to - <strong>not</strong> a bespoke Legaia muxing scheme, just Form-1-truncation damage.</p>
+  <p>The correct path lives in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/demux.rs"><code>crates/xa/src/demux.rs</code></a> (function <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/demux.rs"><code>demux_disc_range</code></a>). It reads raw 2352-byte sectors, parses each subheader, filters to <code>AUDIO + FORM2</code>, and splits the audio data into one buffer per <code>(file_no, ch_no)</code> tuple. After that step the per-channel buffer is a clean concatenation of standard 128-byte sound groups that the 4-bit ADPCM decoder handles directly.</p>
   <p>The <code>xa demux-disc-all</code> subcommand drives this across the whole disc - it walks the ISO9660 tree, finds every <code>*.XA</code>, and demuxes each at its own per-sector sample rate / channel mode read from the subheaders (no guessed global rate):</p>
 <pre><code>./target/release/xa demux-disc-all \
     "/path/to/Legend of Legaia (USA).bin" \
@@ -100,7 +100,7 @@ prev2   = prev1;  prev1 = value     // history is the UNCLAMPED, UNROUNDED value
 <section class="doc-section" id="what-s-still-open">
   <h2>What's still open</h2>
   <ul class="bullets">
-    <li><strong>8-bit ADPCM mode - now decoded.</strong> The 8-bit path (4 sound units of 28 full-byte samples per group, params at bytes 0..4 mirrored four times) is implemented behind <code>DecodeOptions { bits: BitsPerSample::Eight }</code> / <code>--bits 8</code>; the demux / cutscene / extract consumers map each channel's reported <code>bits_per_sample</code> automatically. The NA corpus is <strong>entirely 4-bit, 37.8 kHz</strong> (<code>demux-disc-all</code> reports <code>bits_per_sample = 4</code> for all 316 channels across 34 <code>*.XA</code> files), so nothing on the NA disc exercises 8-bit - it is covered by synthetic unit tests, <strong>not</strong> yet verified bit-exact against a real 8-bit source.</li>
+    <li><strong>8-bit ADPCM verification.</strong> The 8-bit path (4 sound units of 28 full-byte samples per group, params at bytes 0..4 mirrored four times) is implemented behind <code>DecodeOptions { bits: BitsPerSample::Eight }</code> / <code>--bits 8</code>, and the demux / cutscene / extract consumers map each channel's reported <code>bits_per_sample</code> automatically. But the NA corpus is <strong>entirely 4-bit, 37.8 kHz</strong> (<code>demux-disc-all</code> reports <code>bits_per_sample = 4</code> for all 316 channels across 34 <code>*.XA</code> files), so nothing on the NA disc exercises 8-bit - it is covered by synthetic unit tests, <strong>not</strong> verified bit-exact against a real 8-bit source.</li>
     <li><strong>Per-cutscene file-no / ch-no map.</strong> <code>demux-disc</code> emits one WAV per channel keyed by <code>(file_no, ch_no)</code>. The mapping from cutscene name → expected channel pair lives inside the cutscene-overlay's mode driver, which is <a href="../tooling/overlay-capture.html">not yet captured</a>. Until that's reversed, the WAV → cutscene assignment is manual.</li>
   </ul>
 </section>
@@ -133,7 +133,7 @@ prev2   = prev1;  prev1 = value     // history is the UNCLAMPED, UNROUNDED value
 </tr>
 <tr>
 <td>Form-1-truncation diagnosis</td>
-<td>direct comparison: 90 % of 128-byte groups in <code>extracted/XA/*.XA</code> failed the <code>bytes 8..16 == bytes 0..8</code> invariant before the demuxer was added.</td>
+<td>direct comparison: 90 % of 128-byte groups in the Form-1-truncated <code>extracted/XA/*.XA</code> bytes fail the <code>bytes 8..16 == bytes 0..8</code> invariant.</td>
 </tr>
 </tbody>
 </table>
