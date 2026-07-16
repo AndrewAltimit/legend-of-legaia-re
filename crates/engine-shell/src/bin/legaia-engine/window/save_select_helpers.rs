@@ -93,7 +93,7 @@ impl SlotInfoOwned {
 
 pub(crate) fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_select::SlotSnapshot> {
     use legaia_engine_core::menu_runtime::SAVE_EXT;
-    use legaia_engine_core::save_select::SlotSnapshot;
+    use legaia_engine_core::save_select::{SlotContent, SlotSnapshot};
     // Scan up to 15 slots (one per retail PSX memory-card block) so
     // the load-screen 5×3 grid can render every potential slot.
     const MAX_SLOTS: u8 = 15;
@@ -144,6 +144,7 @@ pub(crate) fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_sel
                 SlotSnapshot {
                     slot,
                     present: true,
+                    content: SlotContent::LegaiaSave,
                     label: format!("Slot {slot}"),
                     play_time_seconds: sf.ext_v2.play_time_seconds,
                     party_lv: lv,

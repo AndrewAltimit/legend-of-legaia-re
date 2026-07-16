@@ -616,6 +616,53 @@ fn slot_info_panel_skips_chrome_portrait_when_no_save() {
 }
 
 #[test]
+fn slot_info_caption_is_centred_at_the_retail_position() {
+    let font = legaia_font::synthetic_for_tests();
+    let draws = slot_info_caption_draws_for(&font, "No data", 0, (0, 0), 1);
+    assert!(!draws.is_empty(), "the caption must draw something");
+
+    // Retail hands its text emitter `x - width/2`, so the glyph run
+    // straddles x=160. Bound the right edge by the last glyph's x rather
+    // than its advance, which is all a TextDraw exposes.
+    let left = draws.iter().map(|d| d.dst.0).min().unwrap();
+    let right = draws
+        .iter()
+        .map(|d| d.dst.0 + d.dst.2 as i32)
+        .max()
+        .unwrap();
+    let mid = (left + right) / 2;
+    assert!(
+        (mid - SLOT_INFO_CAPTION_CENTER_X).abs() <= 2,
+        "caption centred at {mid}, want ~{SLOT_INFO_CAPTION_CENTER_X}"
+    );
+
+    // And it sits inside the panel, not at the panel's own origin.
+    let top = draws.iter().map(|d| d.dst.1).min().unwrap();
+    assert!(
+        top >= SLOT_INFO_PANEL_PARKED_Y,
+        "caption at y={top} floated above the panel top {SLOT_INFO_PANEL_PARKED_Y}"
+    );
+    assert!(
+        top < SLOT_INFO_PANEL_PARKED_Y + SLOT_INFO_PANEL_SIZE.1 as i32,
+        "caption at y={top} fell out the bottom of the panel"
+    );
+}
+
+#[test]
+fn slot_info_caption_rides_the_panel_slide() {
+    let font = legaia_font::synthetic_for_tests();
+    let landed = slot_info_caption_draws_for(&font, "Able to save.", 0, (0, 0), 1);
+    let sliding = slot_info_caption_draws_for(&font, "Able to save.", 40, (0, 0), 1);
+    let y_landed = landed.iter().map(|d| d.dst.1).min().unwrap();
+    let y_sliding = sliding.iter().map(|d| d.dst.1).min().unwrap();
+    assert_eq!(
+        y_sliding - y_landed,
+        40,
+        "the caption must travel with the panel it sits in"
+    );
+}
+
+#[test]
 fn slot_info_panel_text_emits_all_six_lines() {
     let font = legaia_font::synthetic_for_tests();
     let info = SlotInfoView {

@@ -15,7 +15,7 @@ use legaia_engine_core::encounter::{
 use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
 use legaia_engine_core::save_select::{
-    SaveSelectMode, SaveSelectSession, SelectInput, SelectOutcome, SlotSnapshot,
+    SaveSelectMode, SaveSelectSession, SelectInput, SelectOutcome, SlotContent, SlotSnapshot,
 };
 use legaia_engine_core::target_picker::TargetKind;
 use legaia_engine_core::title::{TitleInput, TitleOutcome, TitleSession};
@@ -64,6 +64,7 @@ fn save_select_load_outcome_round_trips() {
         SlotSnapshot {
             slot: 0,
             present: true,
+            content: SlotContent::LegaiaSave,
             label: "Slot 0".into(),
             play_time_seconds: 1234,
             party_lv: 5,

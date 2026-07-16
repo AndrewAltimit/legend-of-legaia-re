@@ -53,7 +53,7 @@ use legaia_engine_core::inventory_use::{InventoryUseSession, InventoryUseState};
 use legaia_engine_core::options::{OptionsSession, OptionsState};
 use legaia_engine_core::save_menu_atlas::{SaveMenuAtlas, build_atlas};
 use legaia_engine_core::save_select::{
-    SaveSelectMode, SaveSelectSession, SelectOutcome, SelectPhase,
+    SaveSelectMode, SaveSelectSession, SelectOutcome, SelectPhase, SlotInfoMode,
 };
 use legaia_engine_core::spell_menu::{SpellMenuPhase, SpellMenuSession};
 use legaia_engine_core::status_screen::StatusScreenSession;
@@ -1225,6 +1225,17 @@ impl LegaiaRuntime {
                     origin,
                     scale,
                 ));
+                // No preview means the block holds nothing loadable; retail
+                // fills the panel with a caption saying which kind of
+                // nothing rather than leaving it blank.
+                if view.is_none()
+                    && let Some(b) = blocks.get(cell as usize)
+                    && let Some(caption) = SlotInfoMode::for_slot(b).caption(s.mode())
+                {
+                    d.extend(ui::slot_info_caption_draws_for(
+                        font, caption, y_off, origin, scale,
+                    ));
+                }
             }
             _ => {}
         }

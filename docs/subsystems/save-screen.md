@@ -583,10 +583,46 @@ NowChecking dialog has retracted.
 | Mode | Content |
 |---|---|
 | `1` | Normal slot preview (kingdom + time + per-character stats). |
-| `2` | "Not a Legend of Legaia save." (invalid save in this slot). |
-| `3` | "Able to save." / "No data" (save mode). |
+| `2` | "Not a Legend of Legaia save." - the block holds something unreadable. |
+| `3` | "Able to save." (Save) / "No data" (Load) - the block is free. |
 | `4` | "Return" prompt. |
 | `100` | Blank panel - forced when `DAT_801ef160 != 0` (NowChecking dialog up) or `_DAT_801f0204 - 0xC < 2`. |
+
+Modes `2`/`3`/`4` all render as **one centred line** through
+`FUN_801E3EE0(caption, 0xA0, local_34 + 0x18)`; only mode `1` fills the panel
+with rows. `FUN_801E3EE0(text, x, y)` measures the string and hands the raw
+emitter `x - width/2` at `y + 7`, so a caption's drawn position is
+centre-x 160, y = `local_34 + 31`. Every other element on this panel goes
+straight to the raw emitter, so the caption is the only one carrying that
+`+ 7`.
+
+### Which mode a slot gets (`FUN_801E3F74`)
+
+The grid wrapper `FUN_801E06C0` calls `FUN_801E3F74(slot)` per cell and passes
+the result to the panel as `view_mode`. Branch order:
+
+| Test | Mode |
+|---|---|
+| `slot == 0xF` | `4` - the sixteenth cell is the Return row, not a block. |
+| `0x801F2A68[slot] == 0` | `2` - the slot has not been read off the card yet. |
+| `0x801F2A48[slot] == 1` | `1` - a readable Legaia save. |
+| `0x801F2A48[slot] == 0` | `2` - occupied by a save the game cannot read. |
+| otherwise (class `>= 2`) | `3` - a free block. |
+
+Two per-slot arrays, easily conflated: **`0x801F2A68` is a scanned flag**,
+written `1` per slot as the card read walks the directory (and all sixteen at
+once on completion), while **`0x801F2A48` is the class byte** that says what
+the block holds. Only the latter distinguishes a free block from a foreign
+save.
+
+`_DAT_801f0200` gates mode 3's wording, and is `0` on the **Save** path: it is
+the branch that goes on to stamp `BASCUS-94254PRO_00` into the chosen free
+block (`FUN_801DD35C` case `0xE`), which is save-creation, and it is set from
+`FUN_801DD35C`'s second parameter (`1` → `0`, `2` → `1`).
+
+Ported as `engine-core::save_select::{SlotContent, SlotInfoMode}` +
+`engine-ui::slot_info_caption_draws_for`. The port has no mode `4` (its block
+grid has no Return cell) and models mode `100` as a phase that skips the panel.
 
 ### Title row layout (mode 1, valid save)
 

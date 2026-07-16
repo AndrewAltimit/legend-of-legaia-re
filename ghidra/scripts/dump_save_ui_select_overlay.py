@@ -47,6 +47,11 @@ TARGETS = [
     "801cfd68",  # 992 bytes
     "801d6628",  # 612 bytes   -- actor VM entry (FUN_801D6628)
     "801d688c",  # 456 bytes
+    "801e3f74",  # info-panel view-mode selector; FUN_801E06C0 calls it per
+                 # grid cell and passes the result to FUN_801E08D8 as
+                 # view_mode. Decides which caption an empty / foreign slot
+                 # gets. NB the same VA in overlay_battle_action.bin is an
+                 # unrelated function - dump it from THIS overlay.
 ]
 
 OUT_DIR = "/scripts/funcs"

@@ -37,6 +37,19 @@ pub const SLOT_INFO_TIME_VALUE_OFFSET: (i32, i32) = (236, 4);
 /// state) only column 0 renders. Y offsets relative to the panel y
 /// origin via the retail `s3 = local_34 + 0x14` (= 158) per-character
 /// base, then `s3 + N` for each row.
+/// Centre-x and y-offset of the panel's single-line caption - what fills
+/// the panel instead of a preview when the slot holds no loadable save
+/// (retail view modes 2/3/4).
+///
+/// Retail emits it through the centring wrapper
+/// `FUN_801E3EE0(text, 0xA0, local_34 + 0x18)`, which measures the string
+/// and hands the raw text emitter `x - width/2` at `y + 7`. So the centre
+/// is screen x=160 and the drawn y is `panel_y + 24 + 7`. The `+ 7` is
+/// folded in here: unlike every other offset on this panel, which retail
+/// passes straight to the raw emitter, this one goes through the wrapper.
+pub const SLOT_INFO_CAPTION_CENTER_X: i32 = 160;
+pub const SLOT_INFO_CAPTION_Y_OFFSET: i32 = 31;
+
 pub const SLOT_INFO_PORTRAIT_OFFSET: (i32, i32) = (16, 16);
 pub const SLOT_INFO_NAME_OFFSET: (i32, i32) = (40, 20);
 pub const SLOT_INFO_LV_LABEL_OFFSET: (i32, i32) = (16, 33);
@@ -240,4 +253,47 @@ pub fn slot_info_panel_text_draws_for(
         ),
     );
     out
+}
+
+/// Build the [`TextDraw`]s for the info panel's centred caption - the body
+/// of the panel when the focused slot holds no loadable save.
+///
+/// The counterpart to [`slot_info_panel_text_draws_for`]: exactly one of the
+/// two fills the panel, mirroring retail, where a single `view_mode` picks
+/// between the stats preview and one centred line. Callers get the string
+/// from `SlotInfoMode::caption`; pass the same `panel_y_offset` as the
+/// chrome.
+///
+/// PORT: FUN_801E08D8's `FUN_801E3EE0(caption, 0xA0, local_34 + 0x18)` tail.
+pub fn slot_info_caption_draws_for(
+    font: &legaia_font::Font,
+    caption: &str,
+    panel_y_offset: i32,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<TextDraw> {
+    if caption.is_empty() {
+        return Vec::new();
+    }
+    let scale = stage_scale.max(1);
+    let layout = font.layout_ascii(caption);
+    // Retail measures the string and draws from `x - width/2`, truncating
+    // toward zero exactly as this does.
+    let base_x = SLOT_INFO_CAPTION_CENTER_X - layout.advance_x as i32 / 2;
+    let base_y = SLOT_INFO_PANEL_PARKED_Y + panel_y_offset + SLOT_INFO_CAPTION_Y_OFFSET;
+
+    layout
+        .glyphs
+        .iter()
+        .map(|g| TextDraw {
+            dst: (
+                stage_origin.0 + (base_x + g.dst_x) * scale as i32,
+                stage_origin.1 + (base_y + g.dst_y) * scale as i32,
+                g.width * scale,
+                g.height * scale,
+            ),
+            src: (g.atlas_x, g.atlas_y, g.width, g.height),
+            color: SAVE_SELECT_TITLE_COLOR,
+        })
+        .collect()
 }

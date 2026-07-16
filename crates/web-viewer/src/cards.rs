@@ -28,7 +28,7 @@
 //!
 //! Nothing here is uploaded; the bytes live in the tab for the session.
 
-use legaia_engine_core::save_select::SlotSnapshot;
+use legaia_engine_core::save_select::{SlotContent, SlotSnapshot};
 use legaia_save::emu::{self, CardView};
 use legaia_save::{SaveFile, card};
 use wasm_bindgen::prelude::*;
@@ -133,18 +133,25 @@ impl LegaiaRuntime {
         (0..CARD_BLOCKS)
             .map(|cell| {
                 let block = cell + 1;
-                let empty = SlotSnapshot::empty(cell);
+                // A block nothing claims is free; the info panel says so.
                 if !view.block_is_save_start(&cardslot.bytes, block) {
-                    return empty;
+                    return SlotSnapshot::empty(cell);
                 }
+                // Past here the block IS claimed, so every way of failing to
+                // read it is someone else's save rather than a free block -
+                // a distinction retail captions differently.
+                let foreign = || SlotSnapshot {
+                    content: SlotContent::Foreign,
+                    ..SlotSnapshot::empty(cell)
+                };
                 let Some(sc) = view.sc_block(&cardslot.bytes, block) else {
-                    return empty;
+                    return foreign();
                 };
                 let Ok(sf) = SaveFile::from_retail_sc_block(sc, 4) else {
-                    return empty;
+                    return foreign();
                 };
                 let Some(leader) = sf.party.members.first() else {
-                    return empty;
+                    return foreign();
                 };
                 let hp = leader.hp_mp_sp();
                 let name = leader.name();
@@ -152,6 +159,7 @@ impl LegaiaRuntime {
                 SlotSnapshot {
                     slot: cell,
                     present: true,
+                    content: SlotContent::LegaiaSave,
                     label: if name.is_empty() {
                         format!("Block {block}")
                     } else {

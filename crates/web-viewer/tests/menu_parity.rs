@@ -250,11 +250,16 @@ fn load_screen_walks_the_retail_card_flow_off_an_inserted_card() {
         grid_sprites > 15,
         "SlotPreview draws the 5x3 block grid + info panel (got {grid_sprites})"
     );
-    // The cursor starts on cell 0 = block 1, which is free on this card, so
-    // the info panel has nothing to print beyond the screen's own title.
+    // The cursor starts on cell 0 = block 1, which is free on this card.
+    // Retail does not leave that panel blank: a free block gets a centred
+    // caption ("No data" on the Load path). Title-only would be ~4 glyphs,
+    // so anything at/above this floor means the caption rendered. That the
+    // panel prints the caption and NOT the save's stat rows is pinned by the
+    // comparison against the occupied cell further down.
     assert!(
-        empty_cell_texts < 8,
-        "an empty block must not print save details (got {empty_cell_texts})"
+        empty_cell_texts >= 8,
+        "a free block must caption the info panel, not leave it blank \
+         (got {empty_cell_texts})"
     );
 
     // Confirming an EMPTY block must do nothing: the session only knows the

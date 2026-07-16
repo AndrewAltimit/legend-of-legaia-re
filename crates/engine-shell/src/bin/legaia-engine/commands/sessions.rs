@@ -361,7 +361,7 @@ fn select_input_for(c: char) -> legaia_engine_core::save_select::SelectInput {
 
 pub(crate) fn cmd_save_select(mode: &str, slots: &str, script: &str) -> Result<()> {
     use legaia_engine_core::save_select::{
-        SaveSelectMode, SaveSelectSession, SelectEvent, SlotSnapshot,
+        SaveSelectMode, SaveSelectSession, SelectEvent, SlotContent, SlotSnapshot,
     };
     let mode = match mode.to_ascii_lowercase().as_str() {
         "load" => SaveSelectMode::Load,
@@ -377,6 +377,7 @@ pub(crate) fn cmd_save_select(mode: &str, slots: &str, script: &str) -> Result<(
                 SlotSnapshot {
                     slot: i as u8,
                     present: true,
+                    content: SlotContent::LegaiaSave,
                     label: format!("Slot {i}: Vahn  Lv 5"),
                     play_time_seconds: 1234,
                     party_lv: 5,

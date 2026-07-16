@@ -40,6 +40,28 @@
 
 use crate::menu_input::{CURSOR_INDEX_MASK, CursorNav, NavButtons, menu_cursor_nav};
 
+/// What occupies a card block, in the terms retail's info panel branches
+/// on - its per-slot class byte at `0x801F2A48`.
+///
+/// `present` answers "can this be loaded"; this answers "why not", which is
+/// what decides the caption an unloadable block shows.
+///
+/// REF: FUN_801E3F74 (the class byte is the `-0x7fe0d5b8` array it reads).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SlotContent {
+    /// A readable Legend of Legaia save. Retail class `1`.
+    LegaiaSave,
+    /// A free block. Retail class `>= 2`.
+    ///
+    /// The default: a session over disk saves (rather than a card) has no
+    /// foreign saves, so every absent slot is simply free.
+    #[default]
+    Free,
+    /// Occupied by a save this game cannot read - another game's, or a
+    /// Legaia block whose payload does not parse. Retail class `0`.
+    Foreign,
+}
+
 /// Per-slot metadata. Engines build these from disc/disk save scans
 /// (the `legaia-save` crate provides the parsers). Pure data - the
 /// session never touches the filesystem.
@@ -47,6 +69,10 @@ use crate::menu_input::{CURSOR_INDEX_MASK, CursorNav, NavButtons, menu_cursor_na
 pub struct SlotSnapshot {
     pub slot: u8,
     pub present: bool,
+    /// What occupies the block. `present == true` implies
+    /// [`SlotContent::LegaiaSave`]; the other variants distinguish the two
+    /// ways a slot can be unloadable.
+    pub content: SlotContent,
     /// Display label engines render. `"<empty>"` for empty slots.
     pub label: String,
     /// Game time in seconds (for the "Play time: 12:34:56" line).
@@ -78,6 +104,7 @@ impl SlotSnapshot {
         Self {
             slot,
             present: false,
+            content: SlotContent::Free,
             label: format!("Slot {slot}: <empty>"),
             play_time_seconds: 0,
             party_lv: 0,
@@ -105,6 +132,58 @@ impl SlotSnapshot {
 pub enum SaveSelectMode {
     Load,
     Save,
+}
+
+/// What the bottom info panel shows for the focused grid cell.
+///
+/// Retail passes this to the panel renderer as a `view_mode` int; the
+/// variants below carry the retail numbers. Two retail modes have no port
+/// equivalent and are deliberately absent: `4` ("Return") belongs to a
+/// sixteenth cell the 5x3 block grid does not have, and `100` (blank) is
+/// forced while the "Now checking" dialog is up, which the port models as a
+/// separate [`SelectPhase`] that does not draw the panel at all.
+///
+/// PORT: FUN_801E3F74 (selector) + FUN_801E08D8 (`view_mode` param).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SlotInfoMode {
+    /// Retail `1`: kingdom name, play time, and the party's stats.
+    Preview,
+    /// Retail `2`: the block holds something this game cannot read.
+    NotLegaiaSave,
+    /// Retail `3`: the block is free.
+    FreeBlock,
+}
+
+impl SlotInfoMode {
+    /// Pick the mode for a slot. Mirrors FUN_801E3F74's branch order.
+    pub fn for_slot(snap: &SlotSnapshot) -> Self {
+        match snap.content {
+            SlotContent::LegaiaSave => Self::Preview,
+            // Retail reaches this via class `0`, and returns 2 from both
+            // arms of its Save/Load branch - the distinction only matters
+            // for a free block.
+            SlotContent::Foreign => Self::NotLegaiaSave,
+            SlotContent::Free => Self::FreeBlock,
+        }
+    }
+
+    /// The panel's centred caption, or `None` for [`Self::Preview`], which
+    /// fills the panel with the save's stats instead.
+    ///
+    /// Only a free block's caption depends on `mode`: retail gates it on
+    /// `_DAT_801f0200`, which is `0` on the Save path (the branch that goes
+    /// on to stamp a product code into the chosen free block) and non-zero
+    /// on the Load path.
+    pub fn caption(self, mode: SaveSelectMode) -> Option<&'static str> {
+        match self {
+            Self::Preview => None,
+            Self::NotLegaiaSave => Some("Not a Legend of Legaia save."),
+            Self::FreeBlock => Some(match mode {
+                SaveSelectMode::Save => "Able to save.",
+                SaveSelectMode::Load => "No data",
+            }),
+        }
+    }
 }
 
 /// Phase of the SM.
@@ -701,6 +780,7 @@ mod tests {
                     SlotSnapshot {
                         slot: i as u8,
                         present: true,
+                        content: SlotContent::LegaiaSave,
                         label: format!("Slot {i}"),
                         play_time_seconds: 1234,
                         party_lv: 5,
@@ -723,6 +803,63 @@ mod tests {
         let s = SaveSelectSession::new(SaveSelectMode::Load, vec![]);
         assert!(s.is_done());
         assert_eq!(s.outcome(), Some(SelectOutcome::Cancelled));
+    }
+
+    #[test]
+    fn slot_info_mode_follows_what_occupies_the_block() {
+        let mut snap = SlotSnapshot::empty(0);
+        // A free block, which is what `empty` means.
+        assert_eq!(SlotInfoMode::for_slot(&snap), SlotInfoMode::FreeBlock);
+
+        snap.content = SlotContent::Foreign;
+        assert_eq!(SlotInfoMode::for_slot(&snap), SlotInfoMode::NotLegaiaSave);
+
+        snap.content = SlotContent::LegaiaSave;
+        assert_eq!(SlotInfoMode::for_slot(&snap), SlotInfoMode::Preview);
+    }
+
+    #[test]
+    fn only_a_free_block_captions_differently_per_mode() {
+        // A readable save fills the panel with stats, not a caption.
+        assert_eq!(SlotInfoMode::Preview.caption(SaveSelectMode::Load), None);
+        assert_eq!(SlotInfoMode::Preview.caption(SaveSelectMode::Save), None);
+
+        // A foreign save reads the same either way.
+        for m in [SaveSelectMode::Load, SaveSelectMode::Save] {
+            assert_eq!(
+                SlotInfoMode::NotLegaiaSave.caption(m),
+                Some("Not a Legend of Legaia save.")
+            );
+        }
+
+        // A free block is the one case that depends on why we're here.
+        assert_eq!(
+            SlotInfoMode::FreeBlock.caption(SaveSelectMode::Save),
+            Some("Able to save.")
+        );
+        assert_eq!(
+            SlotInfoMode::FreeBlock.caption(SaveSelectMode::Load),
+            Some("No data")
+        );
+    }
+
+    #[test]
+    fn every_unloadable_slot_gets_a_caption() {
+        // The bug this guards: an unreadable slot drew an empty panel.
+        // Whatever a slot holds, if it has no preview it must have words.
+        for content in [SlotContent::Free, SlotContent::Foreign] {
+            let snap = SlotSnapshot {
+                content,
+                ..SlotSnapshot::empty(3)
+            };
+            for m in [SaveSelectMode::Load, SaveSelectMode::Save] {
+                let caption = SlotInfoMode::for_slot(&snap).caption(m);
+                assert!(
+                    caption.is_some_and(|c| !c.is_empty()),
+                    "{content:?} in {m:?} mode left the panel blank"
+                );
+            }
+        }
     }
 
     #[test]
