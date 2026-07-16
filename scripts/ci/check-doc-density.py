@@ -11,9 +11,16 @@ long-lived documentation:
     into a dedicated section (same page) or a sub-page and leave a one-line
     summary + link in the cell.
 
-Scope: every `docs/**/*.md` plus every `crates/*/README.md`. The generated
+Scope: every `docs/**/*.md`, every `crates/*/README.md`, and every top-level
+`*.md` (CLAUDE.md / README.md / CONTRIBUTING.md). The generated
 `crates/web-viewer/pkg/README.md` is skipped. Lines inside fenced code blocks
 (```...```) are skipped -- CLI examples and code are allowed to be wide.
+
+A caveat on what this measures. It is a floor, not a definition of readable: a
+line under the cap can still be an unreadable run-on, and a lookup table's rows
+are *supposed* to be dense. Treat a passing run as "nothing is egregious", not
+as "this reads well" -- and do not write up to the cap. Prose that lands at 799
+characters was written to satisfy this script rather than a reader.
 
 The checker **exits non-zero when it finds violations**. The pre-commit hook
 runs it on the staged doc set and aborts the commit on a violation (unlike the
@@ -37,13 +44,23 @@ import sys
 
 
 def in_scope(path):
-    """True if path is a doc we lint: docs/**/*.md or crates/<name>/README.md."""
+    """True if path is a doc we lint: docs/**/*.md, crates/<name>/README.md, or a
+    top-level *.md (CLAUDE.md / README.md / CONTRIBUTING.md).
+
+    The top-level files are in scope deliberately. They were exempt for a long
+    time, and CLAUDE.md - the map every contributor and agent reads first - decayed
+    the furthest of any file in the repo precisely because nothing measured it: it
+    reached a single 5,814-char line and table cells holding whole specs. An
+    unlinted doc is where density goes to hide."""
     p = path.replace("\\", "/")
     if not p.endswith(".md"):
         return False
     if p == "crates/web-viewer/pkg/README.md":
         return False
     if p.startswith("docs/"):
+        return True
+    # A top-level doc: no directory component at all.
+    if "/" not in p:
         return True
     # crates/<name>/README.md exactly (not a nested README in a subdir)
     parts = p.split("/")
@@ -55,6 +72,7 @@ def in_scope(path):
 def corpus_files():
     files = list(glob.glob("docs/**/*.md", recursive=True))
     files += glob.glob("crates/*/README.md")
+    files += glob.glob("*.md")
     return sorted(f for f in files if in_scope(f))
 
 
