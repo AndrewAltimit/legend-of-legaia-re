@@ -1,23 +1,36 @@
 # legend-of-legaia-re
 
-Reverse engineering for the PSX game **Legend of Legaia** (1998, Sony, NA SCUS-94254): Ghidra-traced format documentation, Rust extractors for every asset on the disc, and a clean-room engine reimplementation targeting wgpu with optional WASM.
+Reverse engineering and reimplementation of the PSX game **Legend of Legaia** (1998, Sony, NA SCUS-94254). The disc's formats are documented byte-by-byte with provenance back to Ghidra-traced functions, Rust parsers extract every asset, and a clean-room engine runs the game's own scenes, scripts and menus - natively on wgpu, and in your browser via WebAssembly. On top of that sit a disc randomizer, a translation toolchain, and a project site full of interactive viewers that run entirely off your own disc image.
 
-Two coordinated tracks under one Cargo workspace:
-
-1. **Asset preservation + format docs.** Extract every asset on the disc, document every format with provenance back to a Ghidra function, build round-trip parsers (`.bin` → PNG / WAV / OBJ / JSON).
-2. **Engine reimplementation.** Clean-room Rust port of the engine - render via wgpu, audio via the existing XA + VAB decoders, optional WASM target. Same legal model as [ScummVM](https://www.scummvm.org/), [OpenRCT2](https://github.com/openrct2/OpenRCT2), [OpenMW](https://github.com/OpenMW/openmw), [OpenLara](https://github.com/XProger/OpenLara) - bring your own disc image; the toolkit handles the rest.
+The repo name `-re` is in both senses: **r**everse-**e**ngineering and **r**e-implementation. Same legal model as [ScummVM](https://www.scummvm.org/), [OpenRCT2](https://github.com/openrct2/OpenRCT2), [OpenMW](https://github.com/OpenMW/openmw), [OpenLara](https://github.com/XProger/OpenLara): this repo is code and documentation only - you bring your own disc image, and nothing Sony owns is ever committed or distributed.
 
 Retail behaviour is the baseline: the simulation reproduces the original's arithmetic and quirks, and the parity oracles enforce it. But the port is not a museum piece - enhancements the original never had, like dynamic lighting, free-angle movement and [VR](docs/subsystems/vr-mode.md), ride on top as opt-in toggles that default off and never touch the simulation. See [`docs/subsystems/engine.md`](docs/subsystems/engine.md#fidelity-and-enhancements).
 
-The repo name `-re` is in both senses: **r**everse-**e**ngineering and **r**e-implementation.
-
-**Project site:** [andrewaltimit.github.io/legend-of-legaia-re](https://andrewaltimit.github.io/legend-of-legaia-re/) - interactive viewers (run client-side off your own disc image), the full technical reference, and the demo video below.
+**Project site:** [andrewaltimit.github.io/legend-of-legaia-re](https://andrewaltimit.github.io/legend-of-legaia-re/)
 
 ## Demo
 
 https://github.com/user-attachments/assets/aff19b4f-312c-44e2-bd44-3e6d99de2b03
 
 The clean-room engine booting a real scene, plus the asset viewers. ([direct link](site/assets/legend-of-legaia-re-demo.mp4) · [on the project site](https://andrewaltimit.github.io/legend-of-legaia-re/))
+
+## What's here
+
+Four things, all usable today. Everything browser-side reads your disc image locally in the tab - nothing is uploaded, and the image never leaves your machine.
+
+**Play and explore in your browser.**
+
+- [**Play the port**](https://andrewaltimit.github.io/legend-of-legaia-re/play.html) - walk real towns and fields with retail movement and collision, talk to NPCs (the field VM plays their actual dialogue, branches and all), pass through doors, open the retail pause menu and every screen behind it, and load/save against a real memory-card image your emulator still accepts. Works flat or in VR over WebXR. Battles and the opening cutscenes are native-only for now.
+- [**Minigames**](https://andrewaltimit.github.io/legend-of-legaia-re/minigames.html) - the casino slot machine, Noa's dance, and Baka Fighter, playable against the real step charts, rosters and payout tables read from your disc. The odds you're beating are the odds the cabinet shipped with.
+- [**ROM patcher**](https://andrewaltimit.github.io/legend-of-legaia-re/tooling/rom-patcher.html) - the disc randomizer running client-side, with a spoiler-safe change report.
+- [**Asset viewer**](https://andrewaltimit.github.io/legend-of-legaia-re/viewer.html) and [**media browser**](https://andrewaltimit.github.io/legend-of-legaia-re/media.html) - textures, 3D models, dialog, music, sound banks, and the FMVs, decoded in the tab.
+- **Data tables with 3D model views** for [enemies](https://andrewaltimit.github.io/legend-of-legaia-re/monsters.html), [characters](https://andrewaltimit.github.io/legend-of-legaia-re/characters.html) and [NPCs](https://andrewaltimit.github.io/legend-of-legaia-re/npcs.html), plus [shops](https://andrewaltimit.github.io/legend-of-legaia-re/shops.html), [Tactical Arts](https://andrewaltimit.github.io/legend-of-legaia-re/arts.html), and the [whole world in 3D](https://andrewaltimit.github.io/legend-of-legaia-re/world-overview.html).
+
+**Native tools and engine.** Prebuilt binaries for Linux and Windows on the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases), or `cargo build --release`. `legaia-extract` turns a disc into PNG / WAV / OBJ / JSON; `legaia-engine play-window` is the windowed engine (field scenes, the full menu stack, shops, level-ups, a battle harness, and MDEC cutscene playback with synced XA audio); `asset-viewer` browses every format interactively; plus `save-tool`, `legaia-rando`, and a CLI per format.
+
+**Modding and translation.** [`legaia-rando`](docs/tooling/randomizer.md) patches your own `.bin` in place or emits a PPF: it shuffles drops, encounters, chests, steals, arts, doors, shops, casino prizes, prices, equipment, starting items and level, and battle tuning - several features are hand-assembled MIPS hooks injected into dead space. Its [`translate`](docs/tooling/translation.md) subcommands export the game's dialog and UI text to editable YAML and reimport it in place, the basis for community language packs; [`translate lift-official`](docs/tooling/pal-localizations.md) re-keys the official PAL French / German / Italian text onto the USA disc where it fits.
+
+**The research itself.** Byte-level [format specs](docs/formats/overview.md) with confidence levels and Ghidra provenance, [subsystem documentation](docs/subsystems/) of how the engine actually works (VMs, battle formulas, audio, renderer, minigames), and the [tooling](docs/tooling/) that produced it all - reproducible from a retail disc.
 
 ## You bring the disc
 
