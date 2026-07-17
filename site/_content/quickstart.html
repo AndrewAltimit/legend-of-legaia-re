@@ -32,21 +32,19 @@ cargo test --workspace --release</code></pre>
 <section class="doc-section" id="extract">
   <h2>2 · Extract assets from a disc image</h2>
   <p>This repo ships zero Sony bytes. You need a <code>.bin</code> Mode2/2352 image of <em>Legend of Legaia</em> (the NA SCUS-94254 build). Anything else (PAL, JP, Demo) won't match the embedded SHA-256 fingerprints.</p>
-<pre><code>./target/release/legaia-extract \
-    "/path/to/Legend of Legaia (USA).bin" \
-    --out extracted</code></pre>
-  <p>This runs the full pipeline: verify → ISO walk → PROT.DAT → categorize → streaming-format extract → TIM → PNG.</p>
-  <p class="hint"><code>--skip-png</code> and <code>--skip-verify</code> available if you want to iterate faster on the in-RAM dispatch logic without re-rendering thousands of textures.</p>
+<pre><code>./legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted</code></pre>
+  <p>This runs the full pipeline: verify → ISO walk → PROT.DAT split → categorize → streaming-format extract → TIM/PNG → XA audio → dialog font. A <code>.cue</code> path also works - the tool follows it to the <code>.bin</code>. Commands here use the release-archive form (<code>./legaia-extract</code>); if you built from source, the same binaries live under <code>target/release/</code>.</p>
+  <p class="hint"><code>--skip-verify</code>, <code>--skip-xa</code>, and <code>--skip-font</code> skip individual stages. Most texture PNGs come from running <code>tim convert-dir</code> over the extracted <code>tim_scan/</code> tree - see the <a href="guides/extracting-assets.html">extracting-assets guide</a>.</p>
 </section>
 
 <section class="doc-section" id="browse">
   <h2>3 · Browse the extracted assets</h2>
   <p>The <code>asset-viewer</code> binary is a winit + wgpu app with subcommands for each asset class - <code>prot</code> (archive browser), <code>tim</code>, <code>tmd</code>, <code>stage</code>, <code>vab</code>, <code>seq</code>, <code>field</code> (field-VM scene runner), <code>dialog</code>, <code>battle-scene</code>, and <code>world</code>. <a href="viewer.html">A WASM build of the viewer also runs in this browser</a>.</p>
-<pre><code>./target/release/asset-viewer prot extracted/PROT.DAT
-./target/release/asset-viewer tmd extracted/.../foo.tmd
-./target/release/asset-viewer tim extracted/.../bar.tim
-./target/release/asset-viewer stage extracted/.../stage_geom_0123
-./target/release/asset-viewer vab extracted/.../bank.vab</code></pre>
+<pre><code>./asset-viewer prot extracted/PROT.DAT
+./asset-viewer tmd extracted/.../foo.tmd
+./asset-viewer tim extracted/.../bar.tim
+./asset-viewer stage extracted/.../stage_geom_0123
+./asset-viewer vab extracted/.../bank.vab</code></pre>
   <p>Inside the PROT browser: <kbd>N</kbd> / <kbd>P</kbd> = next/prev entry; <kbd>PgDn</kbd> / <kbd>PgUp</kbd> = jump 10; <kbd>Esc</kbd> = quit. Auto-detects format and shows the first viewable sub-asset.</p>
 </section>
 
@@ -71,6 +69,7 @@ docker compose exec ghidra /ghidra/support/analyzeHeadless \
 <section class="doc-section" id="next">
   <h2>What to read next</h2>
   <ul class="next-list">
+    <li><a href="guides/getting-started.html">User guides</a> - step-by-step walkthroughs of the release CLI tools: extraction scenarios, playing via the engine, modding + translation.</li>
     <li><a href="architecture.html">How the layers stack</a> - the conceptual map of the project.</li>
     <li><a href="writeups/index.html">Technical write-ups</a> - the narrative track: how the disc-patching techniques were built, in reading order.</li>
     <li><a href="subsystems/index.html">Subsystems</a> - pick a subsystem and dive into how it works.</li>

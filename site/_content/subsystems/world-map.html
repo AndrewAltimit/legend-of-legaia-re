@@ -1,8 +1,14 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; world map</div>
   <h1>World Map</h1>
-  <p class="lede">The overworld traversal mode. Two overlay variants share a code window at <code>0x801C0000..0x801EFFFF</code>: the normal walk view and a debug top-down camera. The main controller is <code>FUN_801E76D4</code> (9320 bytes); the per-entity tick is <code>FUN_801DA51C</code> (260 bytes). Sources: <code>overlay_world_map.bin</code> (walk-view) and <code>overlay_world_map_top.bin</code> (top-view debug) mednafen captures.</p>
+  <p class="lede">The overworld traversal mode - the view where you walk the party across a kingdom between towns and dungeons, and where random encounters fire. This page traces how the retail code drives it: the walk controller, the per-entity state machine that turns a step into a battle, the render pipeline, and the developers' own top-down debug camera and dev menu, both still present in the shipped game.</p>
 </header>
+
+<section class="doc-section" id="what-is-this">
+  <h2>How it works</h2>
+  <p>The world-map code is not in the game's main executable - it lives in <em>overlays</em>, chunks of MIPS code the game streams from the disc into RAM on demand. We traced them with a disassembler (Ghidra) over live RAM captures; the <code>FUN_80xxxxxx</code> names below are the RAM addresses of functions in that trace. The main controller is <code>FUN_801E76D4</code> (9320 bytes); the per-entity tick is <code>FUN_801DA51C</code> (260 bytes). Sources: <code>overlay_world_map.bin</code> (walk-view) and <code>overlay_world_map_top.bin</code> (top-view debug) mednafen captures.</p>
+  <p>Two things worth knowing up front. First, the shipped game still carries the developers' tooling: a top-down debug camera (a pad-combo toggle, gated on a debug flag) and a scrolling dev menu with entries like <code>MAP_CHANGE</code> and <code>ENCOUNT</code> - both documented below. Second, encounters are not a separate subsystem: a 5-state per-entity state machine drives them, and the monster-formation install and the battle launch both happen <em>in the same tick</em> the carrier entity reaches its activating state.</p>
+</section>
 
 <section class="doc-section" id="overlays">
   <h2>Overlay structure</h2>
@@ -114,7 +120,7 @@ sw   $tmp,         0x10(&lt;actor&gt;)</code></pre>
     } while (iVar11 &lt; 0xE4);              // 224 iterations
 }</code></pre>
   <p><code>_DAT_8007B81C</code> is the cos lookup table (see the <a href="../reference/memory-map.html">memory map</a>). The function emits ~670 prims per call (2 POLY_FT4 + 1 small per iter across 224 iters). Vertex coordinates project via the cos table, so the rendered output rotates with the camera angle - consistent with a horizon / sky / animated-background plane, not a fixed continent mesh.</p>
-  <p>The case-5 path of the per-actor render dispatcher <code>FUN_8001ADA4</code> draws every <strong>landmark</strong> TMD (castle, towers, bridges, gates) - each world-map actor&apos;s <code>actor[+0x44]</code> mesh chain points into Drake&apos;s 40-TMD landmark pack at PROT entry 0085 slot 1, which the dispatcher walks once per frame through <code>FUN_8002735C</code> (the 60-GTE Legaia TMD renderer). That accounts for the landmark prims in the GPU pool.</p>
+  <p>The case-5 path of the per-actor render dispatcher <code>FUN_8001ADA4</code> draws every <strong>landmark</strong> TMD (castle, towers, bridges, gates) - each world-map actor&apos;s <code>actor[+0x44]</code> mesh chain points into Drake&apos;s 40-TMD landmark pack (TMD is the game's 3D-mesh format) at PROT entry 0085 slot 1, which the dispatcher walks once per frame through <code>FUN_8002735C</code> (the Legaia TMD renderer - 60 ops on the GTE, the PS1's geometry coprocessor). That accounts for the landmark prims in the GPU pool.</p>
   <h3 id="bulk-continent-terrain-emit-mechanism-pinned">Top-view bulk-terrain render path (overlay-replaced per-prim renderers)</h3>
   <p>This is the <strong>top-view / overview</strong> render path (game mode 0x0D), distinct from the walk-view continent (a heightfield, see the engine port). The top-view's bulk terrain prims are not produced by a procedural emitter sibling of <code>FUN_801D7EA0</code>; they come out of ordinary case-5 TMD rendering (of the overview-pool meshes placed per cell) whose per-prim dispatch is <strong>mode-switched</strong> to overlay-resident renderers when the top-view overlay is paged in. <code>FUN_80043390</code> (the SCUS-side per-prim TMD renderer at the leaf of the actor-mesh-chain walk) selects one of two function-pointer tables based on <code>_DAT_1F800394 &amp; 1</code>:</p>
   <table>

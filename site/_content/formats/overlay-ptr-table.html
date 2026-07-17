@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; overlay pointer-table code</div>
   <h1>Overlay pointer-table code <span class="tag tag-partial">Inferred</span></h1>
-  <p class="lede">Sister format to <a href="mips-overlay.html">MIPS overlay code</a>. Same family of disc-resident overlay code blobs, but the first chunk is a function/jump-table header instead of an <code>addiu sp, sp, -X</code> prologue.</p>
+  <p class="lede">Sister format to <a href="mips-overlay.html">MIPS overlay code</a>: the same family of on-disc code blobs (overlays - chunks of MIPS code the game loads into RAM on demand), but instead of starting with a function prologue, these start with a table of function pointers, then the code those pointers reference. 42 PROT entries (entries of <code>PROT.DAT</code>, the disc's main asset archive) match. A few of them open with an ASCII title like <code>Hell's Music</code> - which reads like a song name but is actually the battle special attack the overlay implements.</p>
 </header>
 
 <section class="doc-section" id="overview">
@@ -17,7 +17,7 @@
 +N*4    u32  ptr_{N-1}  ; last pointer (still in range)
 +(N+1)*4 ...            ; first non-pointer u32 (typically MIPS code, sometimes
                         ; a `jr ra; nop` stub or a leading ASCII string)</code></pre>
-  <p>The pointer-table length <code>N</code> ranges from 4 to 64. Tables come in three shapes:</p>
+  <p>The overlay window <code>0x801C0000..0x801FFFFF</code> is the RAM region reserved for swappable code - a valid pointer into it is a strong sign the blob expects to live there. The pointer-table length <code>N</code> ranges from 4 to 64. Tables come in three shapes:</p>
   <ul class="bullets">
     <li><strong>Function entry-point tables</strong> - small, monotonic; one slot per public function.</li>
     <li><strong>Switch dispatch tables</strong> - larger, repeating; emitted by the C compiler for <code>switch(x)</code> over a dense integer range.</li>
@@ -59,7 +59,7 @@ if let Some(t) = overlay_ptr_table::detect(buf) {
     println!("Overlay pointer table: {} entries, first=0x{:08x}, last=0x{:08x}",
              t.count, t.first_ptr, t.last_ptr);
 }</code></pre>
-  <p>Each entry can be Ghidra-imported via <a href="../tooling/overlay-capture.html"><code>scripts/ghidra-analysis/bulk-import-overlays.sh</code></a> once the load address is determined; the pointer values bound the load address from above (<code>&lt;= min_ptr</code>).</p>
+  <p>Each entry can be imported into Ghidra (the disassembler this project uses) via <a href="../tooling/overlay-capture.html"><code>scripts/ghidra-analysis/bulk-import-overlays.sh</code></a> once the load address is determined; the pointer values bound the load address from above (<code>&lt;= min_ptr</code>).</p>
 </section>
 
 <section class="doc-section" id="see-also">

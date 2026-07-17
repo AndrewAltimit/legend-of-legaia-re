@@ -1,12 +1,29 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; xa-adpcm streams</div>
   <h1>XA-ADPCM streams <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">CD-XA Mode 2 Form 2 audio sectors carrying the cutscene voice / BGM tracks. On-disc filenames are <code>XA1.XA</code> / <code>XA2.XA</code> / etc. (one or more per release).</p>
+  <p class="lede">XA is the PlayStation's streamed CD audio: compressed sound (ADPCM - adaptive differential PCM, a 4-bits-per-sample codec) read straight off the disc sector by sector, used in Legaia for cutscene voices and streamed BGM tracks. On-disc filenames are <code>XA1.XA</code> / <code>XA2.XA</code> / etc. (one or more per release). This page covers the sector format, the bit-exact decoder, and how to demux every track into WAV files.</p>
 </header>
+
+<section class="doc-section" id="non-standard-interleave-what-it-is-and-isn-t">
+  <h2>The trap first: "non-standard interleave" is a myth</h2>
+  <p>Each <code>.XA</code> file is really <em>many</em> audio channels multiplexed together, one channel per sector, tagged by a per-sector <code>(file_no, ch_no)</code> subheader. Truncating each on-disc sector to 2048 bytes (Form 1 mode) - what a naive extractor does - silently:</p>
+  <ol class="bullets">
+    <li><strong>Dropped 276 bytes per sector</strong> of audio (Form 2 user data is 2324 B vs Form 1's 2048 B).</li>
+    <li><strong>Collapsed every channel of the multiplexed stream into a single shuffled byte sequence</strong>, because the per-sector <code>(file_no, ch_no)</code> subheader was discarded.</li>
+  </ol>
+  <p>The result is a stream where only ~10 % of 128-byte sound groups pass the standard XA validation rule <code>bytes 8..16 == bytes 0..8</code>. That is all a "non-standard interleave" reading of these files amounts to - <strong>not</strong> a bespoke Legaia muxing scheme, just Form-1-truncation damage.</p>
+  <p>The correct path lives in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/demux.rs"><code>crates/xa/src/demux.rs</code></a> (function <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/demux.rs"><code>demux_disc_range</code></a>). It reads raw 2352-byte sectors, parses each subheader, filters to <code>AUDIO + FORM2</code>, and splits the audio data into one buffer per <code>(file_no, ch_no)</code> tuple. After that step the per-channel buffer is a clean concatenation of standard 128-byte sound groups that the 4-bit ADPCM decoder handles directly.</p>
+  <p>The <code>xa demux-disc-all</code> subcommand drives this across the whole disc - it walks the ISO9660 tree, finds every <code>*.XA</code>, and demuxes each at its own per-sector sample rate / channel mode read from the subheaders (no guessed global rate). This is the &ldquo;get the voices and streamed music out&rdquo; command:</p>
+<pre><code>./target/release/xa demux-disc-all \
+    "/path/to/Legend of Legaia (USA).bin" \
+    --out extracted/xa_demux</code></pre>
+  <p>One WAV lands per <code>(file_no, ch_no)</code> channel under <code>extracted/xa_demux/</code>, named <code>&lt;xa-stem&gt;_fileN_chM.wav</code>. The single-file <code>xa demux-disc --lba --size</code> variant remains for targeting one entry by directory offset.</p>
+  <p>Pacing is therefore <strong>data-driven per track</strong> - the whole point. A track that varies channel mode (the NA disc has 16-channel mono voice files like <code>XA4</code>/<code>XA6</code> alongside 8-channel stereo music like <code>XA5</code>/<code>XA7</code>/<code>XA8</code>/<code>XA9</code>) decodes each channel at its real width: the Form-1 <code>convert</code> path read a stereo track as mono and played it at 2&times; speed; the demux path reads <code>coding_info</code> and gets it right. The decoder handles both 4-bit and 8-bit sample widths (the whole NA corpus is 4-bit); any other, unexpected width is skipped with a warning rather than mis-decoded.</p>
+</section>
 
 <section class="doc-section" id="sector-layout">
   <h2>Sector layout</h2>
-  <p>Each on-disc XA sector is the standard PSX 2352-byte raw layout:</p>
+  <p>Each on-disc XA sector is the standard PSX 2352-byte raw layout (a raw CD sector: sync pattern, address header, then the CD-XA extras):</p>
 <pre><code>+0x000  12 B  sync (00 + 10x FF + 00)
 +0x00C   4 B  header (MM SS FF mode)
 +0x010   8 B  CD-XA subheader (4 fields + duplicated copy):
@@ -73,23 +90,6 @@ output  = clip16(round_half_away_from_zero(value))
 prev2   = prev1;  prev1 = value     // history is the UNCLAMPED, UNROUNDED value</code></pre>
   <p>The predictor history is the full-precision reconstructed <code>value</code>, <strong>not</strong> the rounded+clamped 16-bit output. Re-feeding the clamped output instead is audible only at high volume - the prediction drifts on loud sound-units and rails to the opposite extreme - which is exactly the symptom that bit-exact history feedback removes.</p>
   <p><strong>Stereo de-interleave.</strong> The LEFT channel is the even units (0,2,4,6) and the RIGHT channel is the odd units (1,3,5,7); output is L,R interleaved, pairing <code>(0,1),(2,3),(4,5),(6,7)</code>. Each channel keeps its own <code>(prev1, prev2)</code> history.</p>
-</section>
-
-<section class="doc-section" id="non-standard-interleave-what-it-is-and-isn-t">
-  <h2>"Non-standard interleave" - what it is and isn't</h2>
-  <p>Truncating each on-disc sector to 2048 bytes (Form 1 mode) - what a naive extractor does - silently:</p>
-  <ol class="bullets">
-    <li><strong>Dropped 276 bytes per sector</strong> of audio (Form 2 user data is 2324 B vs Form 1's 2048 B).</li>
-    <li><strong>Collapsed every channel of the multiplexed stream into a single shuffled byte sequence</strong>, because the per-sector <code>(file_no, ch_no)</code> subheader was discarded.</li>
-  </ol>
-  <p>The result is a stream where only ~10 % of 128-byte sound groups pass the standard XA validation rule <code>bytes 8..16 == bytes 0..8</code>. That is all a "non-standard interleave" reading of these files amounts to - <strong>not</strong> a bespoke Legaia muxing scheme, just Form-1-truncation damage.</p>
-  <p>The correct path lives in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/demux.rs"><code>crates/xa/src/demux.rs</code></a> (function <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/demux.rs"><code>demux_disc_range</code></a>). It reads raw 2352-byte sectors, parses each subheader, filters to <code>AUDIO + FORM2</code>, and splits the audio data into one buffer per <code>(file_no, ch_no)</code> tuple. After that step the per-channel buffer is a clean concatenation of standard 128-byte sound groups that the 4-bit ADPCM decoder handles directly.</p>
-  <p>The <code>xa demux-disc-all</code> subcommand drives this across the whole disc - it walks the ISO9660 tree, finds every <code>*.XA</code>, and demuxes each at its own per-sector sample rate / channel mode read from the subheaders (no guessed global rate):</p>
-<pre><code>./target/release/xa demux-disc-all \
-    "/path/to/Legend of Legaia (USA).bin" \
-    --out extracted/xa_demux</code></pre>
-  <p>One WAV lands per <code>(file_no, ch_no)</code> channel under <code>extracted/xa_demux/</code>, named <code>&lt;xa-stem&gt;_fileN_chM.wav</code>. The single-file <code>xa demux-disc --lba --size</code> variant remains for targeting one entry by directory offset.</p>
-  <p>Pacing is therefore <strong>data-driven per track</strong> - the whole point. A track that varies channel mode (the NA disc has 16-channel mono voice files like <code>XA4</code>/<code>XA6</code> alongside 8-channel stereo music like <code>XA5</code>/<code>XA7</code>/<code>XA8</code>/<code>XA9</code>) decodes each channel at its real width: the Form-1 <code>convert</code> path read a stereo track as mono and played it at 2&times; speed; the demux path reads <code>coding_info</code> and gets it right. Channels reporting a non-4-bit width are skipped with a warning rather than mis-decoded.</p>
 </section>
 
 <section class="doc-section" id="what-the-older-extracted-xa-xa-files-contain">

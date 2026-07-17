@@ -1,24 +1,24 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; audio</div>
   <h1>Audio</h1>
-  <p class="lede">Three layers: the path-string cluster that builds audio file paths, the SCUS dispatchers that consume them, and the actual audio formats. The SsAPI sequencer (statically-linked PsyQ libsnd) and libspu DMA engine sit underneath, talking directly to the SPU.</p>
+  <p class="lede">How Legaia makes sound: how music, sound effects, and streamed voice get from the disc to the SPU (the PS1's dedicated sound chip), and how the clean-room engine reimplements the whole stack. Three layers: the path strings that name the audio files, the executable-side loaders that fetch them, and the actual audio formats - with Sony's PsyQ sequencer and SPU libraries underneath, statically linked into the game and traceable like any other code.</p>
 </header>
 
 <section class="doc-section" id="how-it-works">
   <h2>How it works</h2>
-  <p>The PSX has a dedicated sound chip (the SPU, Sound Processing Unit) with its own 512&nbsp;KB of memory. Games can't talk to the SPU directly from main RAM - they use Sony's PsyQ libraries (<strong>libsnd</strong> for sequencer playback, <strong>libspu</strong> for low-level voice control) which speak the SPU's wire protocol. Legaia links both statically, so the libraries are part of the game binary and can be inspected like any other code.</p>
+  <p>The PSX has a dedicated sound chip (the SPU, Sound Processing Unit) with its own 512&nbsp;KB of memory. Games can't talk to the SPU directly from main RAM - they use Sony's PsyQ libraries (<strong>libsnd</strong> for sequencer playback, <strong>libspu</strong> for low-level voice control) which speak the SPU's wire protocol. Legaia links both statically, so the libraries are part of the game binary and can be inspected like any other code. That inspection is how this page was written: we traced the original code with a disassembler (Ghidra), and the <code>FUN_80xxxxxx</code> names throughout are the RAM addresses of functions in that trace.</p>
 
-  <p>PSX games typically split audio into three concerns: <strong>sound effects</strong> (short one-shot samples), <strong>BGM / music</strong> (sequence-driven, longer), and <strong>streaming audio</strong> (XA / .pac voice). Legaia is no exception, but its plumbing is layered:</p>
+  <p>PSX games typically split audio into three concerns: <strong>sound effects</strong> (short one-shot samples), <strong>BGM / music</strong> (sequence-driven, longer - a SEQ is a MIDI-like note stream played through a VAB instrument bank), and <strong>streaming audio</strong> (XA - compressed audio the drive plays straight off the disc - and .pac voice). Legaia is no exception, but its plumbing is layered:</p>
 
   <ul class="bullets">
     <li>A <strong>path-string cluster</strong> at <code>0x8007B380</code> holds the file extensions the sound subsystem appends to scene-asset paths: <code>.spk</code>, <code>.LZS</code>, <code>.dpk</code>, <code>.MAP</code>, <code>.PCH</code>, <code>.pac</code>, <code>STR</code>, plus the master file <code>bse.dat</code>.</li>
-    <li>Two <strong>SCUS-side consumers</strong> turn those paths into actual loads: a sound-init / <code>.dpk</code> loader and a streaming-asset loader for XA-family files.</li>
+    <li>Two consumers in <strong><code>SCUS_942.54</code></strong> (the game's main executable) turn those paths into actual loads: a sound-init / <code>.dpk</code> loader and a streaming-asset loader for XA-family files.</li>
     <li>Underneath that is Sony's PsyQ <strong>SsAPI sequencer</strong> (libsnd, statically linked) for SEQ playback, plus the PsyQ <strong>libspu</strong> primitives that actually move bytes into SPU RAM.</li>
   </ul>
 
   <p>The fully-documented formats on disc are the VAB sound bank (Sony's standard <code>VABp</code>-magic instrument bank) and the SEQ sequence. The per-scene <code>.dpk</code> / <code>sound_data2</code> pack is decoded as a <a href="../formats/sound-driver.html">VAB + SEQ bundle</a> (type-0 VAB header + type-1 VAB samples + type-2 SEQ); the <code>.MAP / .PCH / .spk / .pac</code> PsyQ intermediates are dev-side inputs, not separate retail chunks here.</p>
 
-  <p>BGM dispatch is genuinely surprising: there's no literal "BGM ID &rarr; file" table. A field-VM script writes a BGM ID, and a per-frame poller resolves it to a PROT index using the current scene's CDNAME block layout. So "the table" isn't in the executable - it's in the on-disc filesystem layout itself.</p>
+  <p>BGM dispatch is genuinely surprising: there's no literal "BGM ID &rarr; file" table. A field-VM script writes a BGM ID, and a per-frame poller resolves it to an entry number in PROT.DAT (the disc's single big archive) using the current scene's CDNAME block layout. So "the table" isn't in the executable - it's in the on-disc archive layout itself.</p>
 </section>
 
 <section class="doc-section" id="path-cluster">

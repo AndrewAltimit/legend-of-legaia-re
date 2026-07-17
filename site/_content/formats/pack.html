@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; pack format (inside tim_list and tmd chunks)</div>
   <h1>Pack format (inside TIM_LIST and TMD chunks) <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">A simple <code>(count, offset_table, data)</code> layout used as the data payload of a TIM_LIST or TMD chunk inside a <a href="data-field.html">DATA_FIELD streaming</a> container.</p>
+  <p class="lede">The simplest way Legaia bundles several assets into one blob: a count, a table of offsets, then the assets packed back-to-back. This shape appears as the data payload of a TIM_LIST or TMD chunk inside a <a href="data-field.html">DATA_FIELD streaming</a> container (the game's typed-chunk multi-asset file format). Beware: it is one of <em>three</em> similar-looking pack layouts on the disc, each with different header math - the distinction section below tells them apart.</p>
 </header>
 
 <section class="doc-section" id="overview">
@@ -14,12 +14,12 @@
 <pre><code>u32 count
 u32 word_offset[count]   // each is in 4-byte words from the start of THIS pack data
 ... sub-asset bytes, packed back-to-back ...</code></pre>
-  <p>Sub-asset <code>i</code> lives at byte range <code>[word_offset[i] * 4 .. word_offset[i+1] * 4)</code>, with the last sub-asset ending at the chunk's end.</p>
+  <p>Sub-asset <code>i</code> lives at byte range <code>[word_offset[i] * 4 .. word_offset[i+1] * 4)</code>, with the last sub-asset ending at the chunk's end. Note the offsets count 4-byte <em>words</em>, not bytes.</p>
 </section>
 
 <section class="doc-section" id="example">
   <h2>Example</h2>
-  <p>A TIM_LIST chunk header followed by a 2-TIM pack:</p>
+  <p>A TIM_LIST chunk header followed by a 2-TIM pack (a TIM is the PlayStation's standard texture format):</p>
 <pre><code>chunk header:    6c 02 01 01    type=0x01 (TIM_LIST), size=0x01026C
 pack count:      02 00 00 00    count = 2
 offset[0]:       03 00 00 00    word offset 3 → byte 12 (= start of TIM 0)
@@ -29,7 +29,7 @@ offset[1]:       8b 20 00 00    word offset 0x208B → byte 0x822C (= start of T
 
 <section class="doc-section" id="distinction-from-the-standalone-tim-pack">
   <h2>Distinction from the standalone TIM-pack</h2>
-  <p>The <a href="tim-pack.html">standalone TIM-pack</a> form is structurally similar but uses an 8-byte header (a <code>byte[3] == 0x01</code> / <code>byte[2] &lt; 0x10</code> discriminator pair, then a <code>u32</code> count at <code>+4</code>) and adds a constant <code>+4</code> to each word offset. The pack-inside-streaming-chunks form here lacks the discriminator prefix and its word offsets are taken straight from the pack-data start - use the right format for the source.</p>
+  <p>The <a href="tim-pack.html">standalone TIM-pack</a> form - used for whole archive entries rather than chunks inside a stream - is structurally similar but uses an 8-byte header (a <code>byte[3] == 0x01</code> / <code>byte[2] &lt; 0x10</code> discriminator pair, then a <code>u32</code> count at <code>+4</code>) and adds a constant <code>+4</code> to each word offset. The pack-inside-streaming-chunks form here lacks the discriminator prefix and its word offsets are taken straight from the pack-data start - use the right format for the source. (The third sibling, <a href="field-pack.html">field-pack</a>, is a magic-prefixed scene bundle with its own page.)</p>
 </section>
 
 

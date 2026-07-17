@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; effect bundles</div>
   <h1>Effect bundles <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">Two distinct formats share the "effect" name - the on-disc bundle (magic <code>0x02018B0C</code>) and the runtime 2-pack wrapper used by <code>data\battle\efect.dat</code>. Only one PROT entry uses the on-disc form; the runtime wrapper is what battle code actually consumes.</p>
+  <p class="lede">The data behind Legaia's battle visual effects - the hit sparks, spell flames, and summon flourishes. An &ldquo;effect&rdquo; here is a small script that spawns child sprites (each a rectangle cut from a shared texture atlas) and animates them frame by frame. Two distinct formats share the &ldquo;effect&rdquo; name: an on-disc bundle (magic <code>0x02018B0C</code>) found in exactly one PROT entry (an entry of <code>PROT.DAT</code>, the disc's single big archive), and the runtime 2-pack wrapper used by <code>data\battle\efect.dat</code> - the latter is what battle code actually consumes, and where most of this page lives.</p>
 </header>
 
 <section class="doc-section" id="on-disc-effect-bundle-magic-0x02018b0c">
@@ -36,7 +36,7 @@ if let Some(eb) = effect_bundle::detect(&amp;buf) {
 
 <section class="doc-section" id="runtime-effect-format-2-pack-wrapper">
   <h2>Runtime effect format - 2-pack wrapper</h2>
-  <p>The format <code>data\battle\efect.dat</code> (PROT entry 873) actually uses at runtime. Cross-validated against a live battle save state - the post-init buffer at RAM <code>_DAT_8007BD5C = 0x800E425C</code> is byte-identical to PROT.DAT bytes at sector <code>0x9086</code>.</p>
+  <p>The format <code>data\battle\efect.dat</code> (PROT entry 873) actually uses at runtime: two offset-table &ldquo;packs&rdquo; behind a small header - pack0 holds sprite-frame animation batches, pack1 holds the effect scripts that spawn them. Cross-validated against a live battle save state - the post-init buffer at RAM <code>_DAT_8007BD5C = 0x800E425C</code> is byte-identical to PROT.DAT bytes at sector <code>0x9086</code>.</p>
   <h3>Buffer layout</h3>
 <pre><code>+0    u32   pack0_offset    ← fixed up to absolute pointer on first init
 +4    u32   pack1_offset    ← fixed up to absolute pointer on first init

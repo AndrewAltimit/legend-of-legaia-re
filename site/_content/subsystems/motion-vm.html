@@ -1,12 +1,17 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; motion VM</div>
   <h1>Per-actor motion VMs</h1>
-  <p class="lede"><strong>Two</strong> per-actor bytecode VMs live under the field actor tick <code>FUN_8003BC08</code>: the pursue / patrol / face-target VM at <code>FUN_8003774C</code> (dispatched on <code>+0x10 &amp; 0x400</code>) and the scripted-motion / story-flag VM at <code>FUN_80038158</code> (dispatched on <code>+0x10 &amp; 0x80</code>, bytecode carried in MAN tail-section 1). Distinct from the <a href="actor-vm.html">actor / sprite VM</a> (sprite spawn / despawn) and the <a href="move-vm.html">move-table VM</a> (Tactical Arts / battle animation): these drive <strong>NPC pathing</strong>, <strong>camera follow</strong>, <strong>"face the speaker"</strong> posing, and scripted actor choreography. Both sit in the <a href="move-vm.html#vm-family">five-VM family</a>.</p>
+  <p class="lede">The interpreters that walk NPCs around. When a villager paces their patrol route, turns to face you as you talk, or plays a scripted walk during a cutscene - and when the camera glides
+    to follow someone - one of these <strong>two</strong> small bytecode VMs is stepping them, one instruction per frame. Both run per actor (an actor is the engine's record for one on-screen entity)
+    under the field actor tick <code>FUN_8003BC08</code> (function names like this are Ghidra's labels for traced routines at their RAM addresses): the <strong>pursue / patrol / face-target VM</strong> at
+    <code>FUN_8003774C</code> (dispatched on actor flag <code>+0x10 &amp; 0x400</code>) and the <strong>scripted-motion / story-flag VM</strong> at <code>FUN_80038158</code> (dispatched on <code>+0x10
+    &amp; 0x80</code>, its bytecode shipped in tail-section 1 of the scene's MAN - the per-scene script + data container). Distinct from the <a href="actor-vm.html">actor / sprite VM</a> (sprite spawn /
+    despawn) and the <a href="move-vm.html">move-table VM</a> (Tactical Arts / battle animation). Both sit in the <a href="move-vm.html#vm-family">five-VM family</a>.</p>
 </header>
 
 <section class="doc-section" id="how-it-works">
   <h2>How it works</h2>
-  <p>Each script entry is <code>1 + N</code> bytes:</p>
+  <p>A motion script is a stream of small instructions - "walk along Y", "rotate to this angle", "move toward your target" - each addressed at an actor. Each script entry is <code>1 + N</code> bytes:</p>
   <pre><code>+0  u8 op_byte         ; bit 0x7F = opcode, bit 0x80 = "select target"
 +1  u8 target_id       ; only present if bit 0x80 set in op_byte
 +N  u8 operand[...]    ; opcode-specific operands</code></pre>

@@ -1,12 +1,13 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> · <a href="index.html">reference</a> · functions</div>
   <h1>Key functions</h1>
-  <p class="lede">A directory of the Ghidra-traced anchor functions across the codebase, grouped by subsystem. This page is the quick orientation; the full per-function reference lives in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/functions.md"><code>docs/reference/functions.md</code></a>, which is a lookup table you grep for an address.</p>
+  <p class="lede">A directory of the game's traced functions, grouped by subsystem - the who's-who of the code the reverse-engineering has mapped. Each entry names a function and says in one line what it does. This page is the quick orientation; the full per-function reference lives in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/functions.md"><code>docs/reference/functions.md</code></a>, which is a lookup table you grep for an address.</p>
 </header>
 
 <section class="doc-section" id="how-to-read">
-  <h2>The one thing that catches people out</h2>
-  <p>Functions at <code>0x801C0000+</code> are <strong>RAM-loaded overlays</strong>, and several overlays share that address window. One address can therefore name a <em>different function</em> depending on which overlay was resident when the dump was taken. If an entry does not match the code you are reading, check which overlay you have before concluding the entry is wrong - see <a href="../tooling/overlay-capture.html">overlay capture</a>.</p>
+  <h2>How to read an entry</h2>
+  <p>A name like <code>FUN_8003E4E8</code> is Ghidra's (the disassembler's) automatic label for the function whose code starts at RAM address <code>0x8003E4E8</code> - the game shipped no symbol names, so the address <em>is</em> the name, and it is stable across every doc and probe in this project. <code>DAT_</code>/<code>PTR_</code> prefixes mark data and pointer-table addresses the same way; "JT" is a jump table (the array of handler addresses behind a <code>switch</code>).</p>
+  <p><strong>The one thing that catches people out:</strong> functions at <code>0x801C0000+</code> are <strong>RAM-loaded overlays</strong> (code the game pages into RAM per game mode), and several overlays share that address window. One address can therefore name a <em>different function</em> depending on which overlay was resident when the dump was taken. If an entry does not match the code you are reading, check which overlay you have before concluding the entry is wrong - see <a href="../tooling/overlay-capture.html">overlay capture</a>.</p>
 </section>
 
 <section class="doc-section">

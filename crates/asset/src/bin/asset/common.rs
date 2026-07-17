@@ -1,7 +1,15 @@
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use legaia_prot::cdname;
+
+/// Read a whole input file, attaching the path to any error so a missing
+/// file reports `reading input <path>: No such file or directory` instead of
+/// a bare os error with no clue which argument was wrong.
+pub(crate) fn read_input(path: impl AsRef<Path>) -> Result<Vec<u8>> {
+    let path = path.as_ref();
+    std::fs::read(path).with_context(|| format!("reading input {}", path.display()))
+}
 
 /// LZS-decode the MAN sub-asset out of a scene_asset_table bundle entry.
 ///

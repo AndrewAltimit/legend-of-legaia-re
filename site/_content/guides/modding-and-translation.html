@@ -1,0 +1,112 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; modding + translation</div>
+  <h1>Modding and translation</h1>
+  <p class="lede"><code>legaia-rando</code> patches a disc image you supply: randomizer features, code-hook extras, and a full community-translation toolchain. Everything is built on same-size in-place sector edits with the EDC/ECC re-encoded, so patched images stay valid discs.</p>
+</header>
+
+<section class="doc-section" id="safety">
+  <h2>Two safety properties to rely on</h2>
+  <ul class="bullets">
+    <li><strong>The tool never writes to <code>--input</code>.</strong> The original image is opened read-only; output goes to the PPF patch and (optionally) a separate patched copy. Keep your original dump pristine anyway - it is your only source.</li>
+    <li><strong>Nothing shareable contains Sony bytes.</strong> The PPF patch and the manifest are safe to share; a patched <code>.bin</code> (<code>--output</code>) is for local play only, never redistribute it.</li>
+  </ul>
+  <p>Commands use the bare <code>./tool</code> form (source builds live at <code>target/release/</code>).</p>
+</section>
+
+<section class="doc-section" id="randomize">
+  <h2>1 &middot; Randomize (onto a scratch copy)</h2>
+<pre><code>./legaia-rando randomize \
+    --input "/path/to/Legend of Legaia (USA).bin" \
+    --seed 12345 \
+    --patch legaia-12345.ppf \
+    --output legaia-12345.bin \
+    --manifest legaia-12345.toml</code></pre>
+  <p>A few seconds on a modern machine. The run prints a <code>disc: &lt;label&gt;</code> line identifying the input build, the resolved numeric seed (so any run can be reproduced), and a spoiler-safe change summary. The same seed + options over the same disc is byte-deterministic: you and a friend get identical patches. <code>--output</code> also writes a <code>.cue</code> beside the <code>.bin</code> so emulators can open it directly. <code>--dry-run</code> plans without writing.</p>
+  <p>The default <code>--drops shuffle</code> re-rolls monster item drops; dozens of flags cover encounters, chests, steals, arts combos, doors, shops, monster stats, spell costs, equipment, and code-hook extras (<code>--equipment-drops</code>, <code>--flee-exp</code>, <code>--enemy-ally</code>, <code>--shiny-seru</code>, ...). Read-only preview subcommands - <code>drops</code>, <code>chests</code>, <code>steals</code>, <code>arts</code>, <code>doors</code>, <code>shops</code>, <code>monster-stats</code>, <code>spell-costs</code>, and more - list what a feature would touch before you commit. Full feature reference: <a href="../tooling/randomizer.html">randomizer / disc patcher</a>; the browser version is the <a href="../tooling/rom-patcher.html">ROM patcher</a>.</p>
+</section>
+
+<section class="doc-section" id="region-guard">
+  <h2>2 &middot; The region guard</h2>
+  <p>The randomizer's offsets and injected code target the USA build (<code>SCUS-94254</code>). Running <code>randomize</code> or <code>verify</code> against any other disc - the PAL <code>SCES</code> builds included - stops with a region error, because a USA-built patch "applies" to a PAL disc yet produces a corrupt hybrid. <code>--allow-region-mismatch</code> overrides the guard; only pass it when you know the patch was built for that exact disc. The PAL discs themselves are documented in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/pal-localizations.md" target="_blank" rel="noopener"><code>tooling/pal-localizations.md</code></a>.</p>
+</section>
+
+<section class="doc-section" id="share-verify">
+  <h2>3 &middot; Share and verify a patch</h2>
+  <p>Share the <code>.ppf</code> (and the manifest). The recipient applies and checks it against their own dump in one step:</p>
+<pre><code>./legaia-rando verify \
+    --input "/path/to/their Legend of Legaia (USA).bin" \
+    --patch legaia-12345.ppf \
+    --output legaia-12345.bin</code></pre>
+  <p><code>verify</code> applies the patch to a copy, confirms every record applied cleanly, and re-parses the result. The same region guard applies here - that is what catches "this patch was built against a different disc" before anyone plays a corrupt hybrid.</p>
+</section>
+
+<section class="doc-section" id="translate">
+  <h2>4 &middot; Translate the game</h2>
+  <p>The <code>translate</code> family exports the disc's text as an editable YAML <strong>language pack</strong> and imports a filled pack back as a same-size in-place patch (<a href="../tooling/translation.html">translation / language packs</a> is the full reference):</p>
+<pre><code># 1. Export the text (working pack - contains game text, keep it private).
+./legaia-rando translate export --input "/path/to/disc.bin" -o legaia_en.yaml
+
+# 2. Make a skeleton for your language and fill the `translation:` fields.
+./legaia-rando translate init --lang fr --from legaia_en.yaml \
+    --contributor "you" -o legaia_fr.yaml
+
+# 3. Check coverage, encodability, and byte budgets as you go.
+./legaia-rando translate stats --pack legaia_fr.yaml --input "/path/to/disc.bin"
+
+# 4. Apply to a copy (and emit a shareable PPF).
+./legaia-rando translate import --input "/path/to/disc.bin" \
+    --pack legaia_fr.yaml --output legaia_fr.bin --patch legaia_fr.ppf</code></pre>
+  <p>The constraint that shapes every entry: <strong>same-size in place</strong>. Each string's <code>budget:</code> is its maximum encoded byte length; <code>stats</code> and <code>import</code> re-measure every target on the disc and skip anything that does not fit, summarizing skips per reason (<code>--verbose</code> for the full per-key list). Partially filled packs are always playable - untranslated entries stay byte-identical. The retail font is printable-ASCII-only, so accented text must be written unaccented (<code>Epee</code>, not <code>Épée</code>).</p>
+  <p>Before sharing a filled pack, <code>translate strip</code> removes every <code>source:</code> field, leaving only your translations keyed by disc coordinates - the only shape that is safe to publish. <code>merge</code> recombines chunked packs.</p>
+  <p>Owners of an official PAL disc can lift its French / German / Italian text onto USA coordinates instead of translating from scratch:</p>
+<pre><code>./legaia-rando translate lift-official --from "/path/to/SCES-disc.bin" \
+    --target "/path/to/USA.bin" -o legaia_de.yaml</code></pre>
+  <p><code>diff-disc</code> and <code>fit-report</code> are the text-free measurements behind this - how well the two discs align and how much official text fits the USA budgets. See <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/pal-localizations.md" target="_blank" rel="noopener"><code>tooling/pal-localizations.md</code></a>.</p>
+</section>
+
+<section class="doc-section" id="save-tool">
+  <h2>5 &middot; Inspect saves</h2>
+  <p><code>save-tool</code> reads PSX memory-card images (<code>.mcr</code> and friends, e.g. from an emulator's card directory):</p>
+<pre><code>./save-tool dir   card.mcr                 # directory entries (magic-checked)
+./save-tool saves card.mcr                 # active save blocks + product codes
+./save-tool character card.mcr --block 1 --offset 0x5C8
+./save-tool party     card.mcr --block 1 --offset 0x5C8 --count 3</code></pre>
+  <p>In a retail Legaia save block the character-record array starts at block offset <code>0x5C8</code> with a <code>0x414</code>-byte stride: <code>0x5C8</code> is the first character, <code>0x9DC</code> the second, and so on. Each record's display name sits at record-relative <code>+0x2A7</code>. <code>--offset</code> / <code>--block</code> accept <code>0x</code>-hex or decimal. <code>sc-diff</code> diffs the save block of two cards to pin what a gameplay change wrote. Record layout: <a href="../formats/save-record.html">per-character save record</a>.</p>
+</section>
+
+<section class="doc-section" id="gamedata">
+  <h2>6 &middot; Look things up without a disc</h2>
+  <p><code>gamedata-tool</code> bakes in the curated game-data tables (arts, magic, items, weapons, armor, accessories, enemies, shops, casino, fishing) - handy as ground truth beside the randomizer's read-only listings:</p>
+<pre><code>./gamedata-tool find "Healing Leaf"
+./gamedata-tool list arts --character Vahn
+./gamedata-tool arts-by-command Vahn "Arms,Ra-Seru,High"
+./gamedata-tool shop "Rim Elm"
+./gamedata-tool dump-json enemies</code></pre>
+  <p>Sources and caveats: <a href="../reference/gamedata.html">curated game-data tables</a>.</p>
+</section>
+
+<section class="doc-section" id="cheats">
+  <h2>7 &middot; Cheat databases</h2>
+  <p><code>cheat-tool</code> parses GameShark / Pro-Action-Replay cheat collections and classifies each code by the RAM region it targets. The community Legaia NTSC-U databases are embedded, so no input file is needed:</p>
+<pre><code>./cheat-tool list                    # built-in databases
+./cheat-tool classify                # per-category roll-up
+./cheat-tool extract-offsets         # codes that land in the character record
+./cheat-tool parse my-cheats.cht     # or point it at your own file</code></pre>
+  <p>A file that parses to zero entries warns on stderr rather than silently printing <code>[]</code>. Background + pinned offsets: <a href="../reference/cheats.html">cheat databases</a>.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Guides</span>
+    <a href="getting-started.html">Getting started</a>
+    <a href="extracting-assets.html">Extracting assets</a>
+    <a href="playing-and-viewing.html">Playing + viewing</a>
+  </div>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../tooling/randomizer.html">Randomizer / disc patcher</a>
+    <a href="../tooling/translation.html">Translation / language packs</a>
+    <a href="../formats/save-record.html">Save record layout</a>
+  </div>
+</section>

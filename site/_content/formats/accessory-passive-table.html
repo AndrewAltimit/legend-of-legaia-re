@@ -1,12 +1,20 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; accessory-passive table</div>
   <h1>Accessory passive-effect table <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">The static data behind every accessory's ("Goods") passive effect - max-HP/MP percent boosts, stat percent boosts, status-nullify guards, elemental guards, AP / encounter / loot / escape modifiers. There is <strong>no separate per-accessory effect record</strong>: the static side is a 64-slot <strong>passive-effect index space</strong> (<code>0x00..=0x3F</code>), one index = one effect, and an equipped item's index becomes a <strong>bit position</strong> in the per-character ability bitfield at char record <code>+0xF4</code>.</p>
+  <p class="lede">Accessories - the game calls them "Goods" - grant passive effects: max-HP/MP percent boosts,
+  stat boosts, status-nullify guards, elemental guards, AP / encounter / loot / escape modifiers. This page is
+  the static data in <code>SCUS_942.54</code> (the game's main executable) behind those effects, and its shape
+  is the surprise: there is <strong>no separate per-accessory effect record</strong>. The executable defines a
+  64-slot <strong>passive-effect index space</strong> (<code>0x00..=0x3F</code>) - one index = one effect - and
+  equipping an item simply sets bit <code>index</code> in a per-character <em>ability bitfield</em> at character
+  record <code>+0xF4</code>. Every mechanic that honours a passive just tests its bit at the point of use. A
+  side effect of the shared index space: quest items alias their purchasable twins (Mei's Pendant literally
+  <em>is</em> a Life Ring, effect-wise).</p>
 </header>
 
 <section class="doc-section" id="indexing">
   <h2>Indexing (Ghidra-traced)</h2>
-  <p>From the per-frame stat aggregator <code>FUN_80042558</code> (static <code>SCUS_942.54</code>), which walks each active party member's eight equipment-slot bytes at char record <code>+0x196</code>:</p>
+  <p>(<code>FUN_80xxxxxx</code> / <code>DAT_80xxxxxx</code> are Ghidra names - the disassembler's labels for traced functions and fixed RAM addresses.) From the per-frame stat aggregator <code>FUN_80042558</code> (static <code>SCUS_942.54</code>), which walks each active party member's eight equipment-slot bytes at char record <code>+0x196</code>:</p>
   <pre><code>kind = item_table[id].byte(+0)                  ; DAT_80074368[id*0xC]
 if kind == 1: index = equip_bonus[sub].byte(+5) ; DAT_80074F6D[sub*8]
 if kind == 2: index = descriptor[sub].byte(+3)  ; DAT_800752C3[sub*4]

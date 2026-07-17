@@ -6,13 +6,15 @@
 
 <section class="doc-section" id="how-it-works">
   <h2>How it works</h2>
+  <p>Everything below comes from tracing the game's code with a disassembler (Ghidra); the game shipped without symbols, so functions are named <code>FUN_80xxxxxx</code> after their RAM addresses in that trace.</p>
+
   <p>Almost every PSX game has a built-in archive that bundles the small files together so the disc can stream them efficiently. Legaia's archive is <code>PROT.DAT</code>, and it has its own table of contents (TOC) - a list saying "entry N starts at sector S and is L bytes long". Before the game can do <em>anything</em>, it has to read that table into RAM. That's job one.</p>
 
   <p>Job two is wiring up a small <em>asset-type dispatcher</em>. The PROT entries don't all hold the same kind of data - some are textures, some are 3D meshes, some are dialog blobs, some are animation containers. Each entry's first byte is a type tag, and there's a single function that reads that tag and routes the bytes to the right per-format parser. Once the dispatcher's helper tables are populated, every later "load this entry" call works.</p>
 
   <p>Job three: the boot code reaches a top-level <strong>game-mode state machine</strong>. This is a 28-entry table where each slot is a function pointer for one major mode of the game - boot, title, field, battle, world map, menu, cutscene, etc. The mode pointer changes whenever the game transitions; the per-frame loop just calls "whatever the current mode's handler says". The title-screen overlay is loaded next, and the actor VM inside it starts ticking the splash animation.</p>
 
-  <p>One important quirk: the script that drives every running script - the <em>field VM</em> - is <strong>not</strong> in the main executable. It lives in a RAM overlay loaded from the disc when you enter a town or field map. That's why the boot path here is so short: most of the gameplay code isn't in <code>SCUS_942.54</code> at all.</p>
+  <p>One important quirk: the interpreter that drives every running script - the <em>field VM</em> - is <strong>not</strong> in the main executable. It lives in a RAM overlay (a chunk of MIPS code the game streams from the disc into RAM on demand) loaded when you enter a town or field map. That's why the boot path here is so short: most of the gameplay code isn't in <code>SCUS_942.54</code> (the game's main executable on the disc) at all.</p>
 </section>
 
 <section class="doc-section" id="toc-loader">
@@ -102,7 +104,7 @@
 
 <section class="doc-section" id="init-pak-publisher-logos">
   <h2>Publisher-logo boot screens (PROT 0895 <code>init.pak</code>)</h2>
-  <p>PROT entry <code>0895</code> (filename label <code>bat_back_dat</code>) is the boot-time <code>init.pak</code> bundle. The label is the <a href="../formats/cdname.html#numbering-space">+2 filename shift</a>, not dev mislabeling: in the define map, raw 897 (= extraction 0895) is the first <code>xxx_dat</code> slot, while <code>bat_back_dat</code> truly names the battle side-band <code>summon.dat</code>/<code>readef.DAT</code> files at extraction 893/894. The bundle contains four uncompressed PSX TIMs that the boot sequence uploads to VRAM and fades through before the title screen appears:</p>
+  <p>PROT entry <code>0895</code> (filename label <code>bat_back_dat</code>) is the boot-time <code>init.pak</code> bundle. The label is the <a href="../formats/cdname.html#numbering-space">+2 filename shift</a>, not dev mislabeling: in the define map, raw 897 (= extraction 0895) is the first <code>xxx_dat</code> slot, while <code>bat_back_dat</code> truly names the battle side-band <code>summon.dat</code>/<code>readef.DAT</code> files at extraction 893/894. The bundle contains four uncompressed PSX TIMs (the PS1's standard texture-image format) that the boot sequence uploads to VRAM (the console's video memory) and fades through before the title screen appears:</p>
   <table>
     <thead><tr><th>Offset</th><th>Logo</th><th>Mode</th><th>Decoded size</th></tr></thead>
     <tbody>
@@ -131,7 +133,7 @@
 
 <section class="doc-section" id="system-ui-gap">
   <h2>Pre-<code>init_data</code> system-UI gap (menu-glyph atlas + boot cursors)</h2>
-  <p>A separate 236&nbsp;KB / 118-sector unindexed region sits <strong>between the TOC and the first indexed entry</strong> (<code>init_data</code> at LBA&nbsp;121). The TOC ends at PROT.DAT offset <code>0x1800</code> (3 sectors); the first indexed payload starts at <code>0x3C800</code> (sector&nbsp;121). The gap is a packed bundle of system-UI TIMs - boot-time cursors, the menu-glyph small-caps font retail samples for the title menu rows ("NEW GAME" / "CONTINUE" / "OPTIONS"), and a handful of ornamental sprite strips. All TIMs are 4bpp + CLUT and target the bottom-right corner of PSX VRAM (<code>fb_x &gt;= 640</code>).</p>
+  <p>A separate 236&nbsp;KB / 118-sector unindexed region sits <strong>between the TOC and the first indexed entry</strong> (<code>init_data</code> at LBA&nbsp;121). The TOC ends at PROT.DAT offset <code>0x1800</code> (3 sectors); the first indexed payload starts at <code>0x3C800</code> (sector&nbsp;121). The gap is a packed bundle of system-UI TIMs - boot-time cursors, the menu-glyph small-caps font retail samples for the title menu rows ("NEW GAME" / "CONTINUE" / "OPTIONS"), and a handful of ornamental sprite strips. All TIMs are 4bpp + CLUT (a CLUT is a 16- or 256-colour palette stored as a row of framebuffer pixels) and target the bottom-right corner of PSX VRAM (<code>fb_x &gt;= 640</code>).</p>
   <table>
     <thead><tr><th>PROT.DAT offset</th><th>TIM dims</th><th>VRAM target</th><th>Purpose</th></tr></thead>
     <tbody>
@@ -211,7 +213,7 @@ _sw   v0, -0xe94(a0)    ; &lt;-- captured pc: store decremented value
   <p>Confirming <strong>NEW GAME</strong> is what crosses from the title overlay into the 28-mode table. The menu handler reads the live cursor (<code>state[+0x1FC]</code>), and on <code>L1|Cross</code> (<code>pad &amp; 0x44</code>) stashes the chosen row at <code>state[+0x200]</code> and advances to sub-mode <code>0x14</code>; NEW GAME is row 0 (a non-zero row, CONTINUE, routes to the save/card load path). The row-0 sub-phases reach the launch write above:</p>
   <ol class="bullets">
     <li><strong>Mode 2 (field INIT).</strong> <code>_DAT_8007B83C = 2</code> &rarr; the dispatcher runs <code>FUN_80025B64</code>, which loads the field overlay (<code>FUN_8003EBE4(2)</code>, PROT 897) and calls the per-scene initializer <code>FUN_801D6704</code>.</li>
-    <li><strong>Field scene init.</strong> <code>FUN_801D6704</code> reads the resident map id and loads geometry + MAN (<code>FUN_8003AEB0</code>) + camera + fog + BGM through the field loader <code>FUN_8001F7C0</code>, allocates the game-mode work buffer, then writes <code>_DAT_8007B83C = 3</code>.</li>
+    <li><strong>Field scene init.</strong> <code>FUN_801D6704</code> reads the resident map id and loads geometry + the scene's MAN (its script/event-data container) via <code>FUN_8003AEB0</code> + camera + fog + BGM through the field loader <code>FUN_8001F7C0</code>, allocates the game-mode work buffer, then writes <code>_DAT_8007B83C = 3</code>.</li>
     <li><strong>Mode 3 (field RUN).</strong> The field per-frame loop ("MAIN MODE", <code>game_mode 0x03</code>) takes over. So modes 2/3 are the field/town gameplay INIT/RUN pair - <em>not</em> an options screen, despite the dev label.</li>
   </ol>
   <p>The mode-transition control flow is mirrored in <code>legaia_engine_vm::title_overlay</code> (<code>MASTER_GAME_MODE_FIELD_RUN</code>, <code>FIELD_SCENE_INIT_PC</code>, <code>MENU_INDEX_NEW_GAME</code>) and <code>World::begin_new_game</code> in <code>engine-core</code>. The <em>fresh-state seed</em> a new game establishes is the new-game data-init <code>FUN_80034A6C</code> (reached via the boot mode initializer <code>FUN_8001DCF8</code>):</p>

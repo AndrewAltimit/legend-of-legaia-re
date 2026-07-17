@@ -6,6 +6,7 @@ use legaia_gamedata::{ArtKind, Character, Database};
 
 #[derive(Parser, Debug)]
 #[command(
+    version,
     about = "Inspect Legend of Legaia game-data tables (arts, magic, items, shops, etc.).",
     long_about = "All data is baked in via include_str!; nothing on disc is required.\n\
                   See data/gamedata/README.md for the source attribution."
@@ -63,7 +64,17 @@ enum Cmd {
     },
 }
 
+/// Restore the default SIGPIPE disposition so piping into `head` etc.
+/// terminates the process quietly instead of panicking on a broken pipe.
+fn reset_sigpipe() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> Result<()> {
+    reset_sigpipe();
     let cli = Cli::parse();
     let db = Database::load();
     match cli.command {

@@ -23,6 +23,62 @@ fn write_pack(pack: &LanguagePack, path: &Path) -> Result<()> {
     std::fs::write(path, pack.to_yaml()?).with_context(|| format!("write pack {}", path.display()))
 }
 
+/// Collapse an issue message to a per-reason group key by normalising digit
+/// runs (so "needs 41 bytes but the budget is 39" and "needs 52 bytes but the
+/// budget is 40" fall into the same bucket).
+fn reason_key(msg: &str) -> String {
+    let mut out = String::with_capacity(msg.len());
+    let mut in_digits = false;
+    for c in msg.chars() {
+        if c.is_ascii_digit() {
+            if !in_digits {
+                out.push('N');
+                in_digits = true;
+            }
+        } else {
+            in_digits = false;
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Print per-entry issues. Default: a per-reason summary (count + a few
+/// example keys per reason) so tens of thousands of skip lines don't drown
+/// the totals; `verbose` streams every entry like before.
+fn print_issues(label: &str, issues: &[(String, String)], verbose: bool) {
+    if issues.is_empty() {
+        return;
+    }
+    if verbose {
+        for (key, msg) in issues {
+            println!("  [{label}] {key}: {msg}");
+        }
+        return;
+    }
+    const EXAMPLES: usize = 3;
+    let mut groups: std::collections::BTreeMap<String, Vec<&(String, String)>> =
+        std::collections::BTreeMap::new();
+    for issue in issues {
+        groups.entry(reason_key(&issue.1)).or_default().push(issue);
+    }
+    println!(
+        "  {} [{label}] entr{} across {} reason(s) - pass --verbose to list every one:",
+        issues.len(),
+        if issues.len() == 1 { "y" } else { "ies" },
+        groups.len()
+    );
+    for (reason, items) in &groups {
+        println!("    {:>6}x  {reason}", items.len());
+        for (key, _) in items.iter().take(EXAMPLES) {
+            println!("             e.g. {key}");
+        }
+        if items.len() > EXAMPLES {
+            println!("             ... and {} more", items.len() - EXAMPLES);
+        }
+    }
+}
+
 fn print_coverage(pack: &LanguagePack) {
     println!("language: {}", pack.language);
     let mut ttot = 0usize;
@@ -140,8 +196,8 @@ pub(crate) fn cmd_merge(base: &Path, packs: &[std::path::PathBuf], output: &Path
 /// Offline validation: encodability + the pack's own budget. For a
 /// distributable (source-less) pack the budget is only a hint, so this is a
 /// pre-check - `--input` runs the real thing.
-fn offline_check(pack: &LanguagePack) -> usize {
-    let mut problems = 0usize;
+fn offline_check(pack: &LanguagePack) -> Vec<(String, String)> {
+    let mut problems = Vec::new();
     for (section, entries) in pack.sections.iter() {
         for e in entries {
             if !e.is_filled() {
@@ -154,21 +210,22 @@ fn offline_check(pack: &LanguagePack) -> usize {
             };
             match markup::encode(&e.translation, target) {
                 Err(issues) => {
-                    problems += 1;
-                    println!("[{section}] {}:", e.key);
-                    for i in issues {
-                        println!("    {i}");
-                    }
+                    let detail: Vec<String> = issues.iter().map(ToString::to_string).collect();
+                    problems.push((
+                        format!("[{section}] {}", e.key),
+                        format!("not encodable: {}", detail.join("; ")),
+                    ));
                 }
                 Ok(bytes) if bytes.len() > e.budget => {
-                    problems += 1;
-                    println!(
-                        "[{section}] {}: {} bytes over budget ({} > {})",
-                        e.key,
-                        bytes.len() - e.budget,
-                        bytes.len(),
-                        e.budget
-                    );
+                    problems.push((
+                        format!("[{section}] {}", e.key),
+                        format!(
+                            "{} bytes over budget ({} > {})",
+                            bytes.len() - e.budget,
+                            bytes.len(),
+                            e.budget
+                        ),
+                    ));
                 }
                 Ok(_) => {}
             }
@@ -177,10 +234,12 @@ fn offline_check(pack: &LanguagePack) -> usize {
     problems
 }
 
-pub(crate) fn cmd_stats(pack_path: &Path, input: Option<&Path>) -> Result<()> {
+pub(crate) fn cmd_stats(pack_path: &Path, input: Option<&Path>, verbose: bool) -> Result<()> {
     let pack = read_pack(pack_path)?;
     print_coverage(&pack);
-    let mut problems = offline_check(&pack);
+    let offline_problems = offline_check(&pack);
+    print_issues("over-budget", &offline_problems, verbose);
+    let mut problems = offline_problems.len();
 
     // With a disc: plan every entry exactly as `import` would, in memory. This
     // measures each target's real byte budget on the disc, which is the only
@@ -196,9 +255,7 @@ pub(crate) fn cmd_stats(pack_path: &Path, input: Option<&Path>) -> Result<()> {
             report.already_applied,
             report.issues.len()
         );
-        for (key, msg) in &report.issues {
-            println!("  [skip] {key}: {msg}");
-        }
+        print_issues("skip", &report.issues, verbose);
         problems += report.issues.len();
     }
 
@@ -405,6 +462,7 @@ pub(crate) fn cmd_import(
     output: Option<&Path>,
     patch: Option<&Path>,
     allow_relayout: bool,
+    verbose: bool,
 ) -> Result<()> {
     if output.is_none() && patch.is_none() {
         bail!("pass --output <patched.bin> and/or --patch <out.ppf>");
@@ -459,19 +517,19 @@ pub(crate) fn cmd_import(
             }
         );
     }
-    for (key, msg) in &report.issues {
-        println!("  [skip] {key}: {msg}");
-    }
+    print_issues("skip", &report.issues, verbose);
 
     let patched = patcher.into_image();
     if let Some(ppf_path) = patch {
         let runs = ppf::diff_runs(&original, &patched);
         let desc = format!("Legaia translation pack ({})", pack.language);
+        crate::util::note_overwrite(ppf_path);
         std::fs::write(ppf_path, ppf::write_ppf3(&desc, &runs))
             .with_context(|| format!("write PPF {}", ppf_path.display()))?;
         println!("wrote {} ({} change runs)", ppf_path.display(), runs.len());
     }
     if let Some(out) = output {
+        crate::util::note_overwrite(out);
         std::fs::write(out, &patched)
             .with_context(|| format!("write patched image {}", out.display()))?;
         let cue = out.with_extension("cue");

@@ -23,3 +23,6 @@ legaia-art = { path = "../art" }
 
 [dev-dependencies]
 legaia-asset = { path = "../asset" }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

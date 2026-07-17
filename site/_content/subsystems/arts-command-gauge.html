@@ -1,7 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; arts command gauge</div>
   <h1>Arts command gauge - weapon-specialty arm width</h1>
-  <p class="lede">When a character's turn opens the Arts command input, the battle UI draws an <strong>action gauge</strong>: a fixed AP pool the player spends by inputting directional commands (High / Low / the two <strong>arm</strong> swings). Each command costs AP, and the cost of the <strong>arm</strong> command depends on the equipped weapon's class versus the character's favored class. Equip off-class and the arm command costs more - the "longer arm input" players see. The Astral Sword costs the most of all.</p>
+  <p class="lede">When a character's turn opens the Arts command input, the battle UI draws an <strong>action gauge</strong>: a fixed AP pool the player spends by inputting directional commands (High /
+    Low / the two <strong>arm</strong> swings). Each command costs AP, and the cost of the <strong>arm</strong> command depends on the equipped weapon's class versus the character's favored class. Equip
+    off-class and the arm command costs more - the "longer arm input" players see. Two myths fall on this page: the off-class penalty is <strong>not the flat &times;2</strong> the community wisdom says
+    (it escalates - off-class is &times;1.4 over base, and only the Astral Sword pays the full double penalty), and the cost is <strong>not computed at runtime at all</strong> - it is per-(character,
+    weapon) data baked into each character's battle file on the disc, copied verbatim at battle load. That makes it a data table you can edit, which is exactly what the randomizer's weapon-specialty
+    shuffle does.</p>
 </header>
 
 <section class="doc-section" id="not-a-flat-double">
@@ -20,7 +25,7 @@
 
 <section class="doc-section" id="where-the-cost-lives">
   <h2>Where the cost lives</h2>
-  <p>The per-command cost is a runtime field, not a static table row:</p>
+  <p>The per-command cost is a runtime field, not a static table row. (Names like <code>DAT_801C9360</code> / <code>FUN_801D388C</code> are Ghidra's labels for traced data and functions at those RAM addresses; the battle code lives in overlay <code>0898</code>, a chunk of code the game loads into RAM for battles.)</p>
   <ul class="bullets">
     <li><code>DAT_801C9360</code> - per-character <strong>command-data pointer table</strong> (one pointer per active party member), in battle bss. Each entry points into the <strong>loaded player battle data</strong> (the <a href="../formats/battle-data-pack.html"><code>battle_data</code> block</a>, extraction 863..866).</li>
     <li><code>DAT_801C9360[char]</code> - that character's array of per-command struct pointers, indexed by <strong>command code</strong> (<code>cmd * 4</code>).</li>

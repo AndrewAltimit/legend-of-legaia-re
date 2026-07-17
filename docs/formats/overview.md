@@ -21,7 +21,7 @@ A page may mix levels, and the good ones say so per-field rather than per-page: 
 | Page | Confidence | What it covers |
 |---|---|---|
 | [PSX disc geometry](disc.md) | Confirmed | Mode2/2352 sector layout, ISO9660 walk |
-| [PROT.DAT / DMY.DAT TOC](prot.md) | Confirmed | Top-level archive: 1232 numbered entries, TOC math, in-RAM TOC at `0x801C70F0` |
+| [PROT.DAT / DMY.DAT TOC](prot.md) | Confirmed | Top-level archive: 1233 numbered entries, TOC math, in-RAM TOC at `0x801C70F0` |
 | [CDNAME.TXT name map](cdname.md) | Confirmed | The `#define`-driven naming for PROT entries. **Numbers are raw in-RAM TOC indices - extraction labels are shifted +2.** |
 | [DMY.DAT (dev fixtures)](dmy.md) | Confirmed | Memory-bus test pattern + paired random blobs. Not real game data. |
 

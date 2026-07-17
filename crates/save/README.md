@@ -40,7 +40,11 @@ assert_eq!(r.hp_mp_sp(), r2.hp_mp_sp());
 ## Retail SC-block bridges
 
 The retail save block stores party records, the 512-byte story-flag
-bitmap, and the 72-slot inventory at fixed offsets. `SaveFile` round-trips
+bitmap, and the 72-slot inventory at fixed offsets. The character-record
+array anchors at **SC block offset `0x5C8`** with the `0x414` stride
+(record `n` at `block + 0x5C8 + n*0x414`); the display name sits at
+record offset `+0x2A7`, so slot 0's name surfaces at SC `+0x86F` -
+`0x86F` is the *name field*, not the record start. `SaveFile` round-trips
 through both directions:
 
 ```rust
@@ -94,6 +98,21 @@ memory-safe RE model of the retail fixed-window item-inventory accessors
 (find / consume / compact / add), faithfully reproducing the full-bag
 out-of-bounds add primitive (`FUN_800421D4`) as data without performing
 any unsafe write.
+
+## `save-tool` CLI
+
+The crate ships the `save-tool` binary for inspecting cards and saves.
+Numeric flags (`--offset`, `--block`) accept decimal or `0x`-hex; `dir`
+magic-checks the card image before printing.
+
+```bash
+save-tool dir <card.mcr>                 # directory entries of a memory card
+save-tool saves <card.mcr>               # active save blocks + product codes
+# First character record: SC anchor 0x5C8, stride 0x414 (2nd char: 0x9DC, ...)
+save-tool character <card.mcr> --block N --offset 0x5C8
+save-tool party <card.mcr> --block N --offset 0x5C8 --count 3   # records as JSON
+save-tool sc-diff <a.mcr> <b.mcr>        # byte diff of two saves' SC blocks
+```
 
 ## What this is NOT
 

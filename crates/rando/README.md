@@ -762,8 +762,8 @@ always-zero region, which can be boot-cleared) and repoint only `0xFD`'s
 ## Translation packs
 
 `translation` module + the `legaia-rando translate` subcommands
-(`export` / `init` / `strip` / `merge` / `stats` / `import`): community
-language packs. Exports every cataloged user-facing string into an editable YAML
+(`export` / `init` / `strip` / `merge` / `stats` / `diff-disc` /
+`lift-official` / `fit-report` / `import`): community language packs. Exports every cataloged user-facing string into an editable YAML
 pack - the SCUS name pools (items, item types, spells, Tactical Arts, accessory
 passives, new-game party names) and the `0x1F`-segment dialog corpus
 (scene-bundle MANs, LZS-decompressed; plus raw carriers - v12 event-script
@@ -851,6 +851,20 @@ The top-level binary reads a user-supplied disc, plans a randomization from a
 seed, and emits a portable **PPF 3.0** patch plus (optionally) a full patched
 `.bin` for local play. The shareable artifacts are the patcher and the seed; a
 patched `.bin` contains Sony bytes and must never be redistributed.
+
+Input handling, uniform across subcommands:
+
+- Every disc argument takes a raw Mode 2/2352 `.bin`, or a `.cue` sheet
+  (resolved to the `.bin` it references).
+- `randomize` and `verify` **refuse a non-USA disc**: the offsets and code
+  hooks target the USA build (SCUS-94254), and a USA-built patch "applies" to
+  a PAL disc but produces a corrupt hybrid. `verify` prints the detected
+  `disc:` label; `--allow-region-mismatch` overrides the guard when you know
+  the patch was built for that exact disc.
+- Writing over an existing output file prints a one-line `overwriting PATH`
+  notice.
+- `translate stats` / `translate import` summarize skipped entries per reason;
+  `--verbose` prints every skip individually.
 
 ```bash
 # Read-only: list every monster's current drop (with item names from the disc).

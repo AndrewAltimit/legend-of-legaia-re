@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 
 /// Parse the battle-action per-move power table and print its records.
 pub(crate) fn mode_table_cmd(input: &Path, json: bool) -> Result<()> {
-    let bytes = std::fs::read(input)?;
+    let bytes = crate::common::read_input(input)?;
     let Some(table) = legaia_asset::mode_table::ModeTable::from_scus(&bytes) else {
         anyhow::bail!(
             "no game-mode table at VA {:#x} in {} - is this SCUS_942.54?",
@@ -64,7 +64,7 @@ pub(crate) fn mode_table_cmd(input: &Path, json: bool) -> Result<()> {
 }
 
 pub(crate) fn move_power_cmd(input: &Path, json: bool) -> Result<()> {
-    let bytes = std::fs::read(input)?;
+    let bytes = crate::common::read_input(input)?;
     let Some(table) = legaia_asset::move_power::parse(&bytes) else {
         anyhow::bail!(
             "no move-power table at the pinned offset {:#x} in {} ({} bytes) - \
@@ -193,7 +193,7 @@ pub(crate) fn move_power_cmd(input: &Path, json: bool) -> Result<()> {
 pub(crate) fn move_power_effect_index_cmd(input: &Path, json: bool) -> Result<()> {
     use legaia_asset::move_power::{self, EffectFired, EffectKey};
 
-    let bytes = std::fs::read(input)?;
+    let bytes = crate::common::read_input(input)?;
     let Some(table) = move_power::parse(&bytes) else {
         anyhow::bail!(
             "no move-power table at the pinned offset {:#x} in {} ({} bytes) - \
@@ -313,7 +313,7 @@ pub(crate) fn move_power_effect_index_cmd(input: &Path, json: bool) -> Result<()
 /// Parse + print the battle element-affinity matrix and per-character table.
 pub(crate) fn element_affinity_cmd(input: &Path, json: bool) -> Result<()> {
     use legaia_asset::element_affinity::{self, Element};
-    let bytes = std::fs::read(input)?;
+    let bytes = crate::common::read_input(input)?;
     let Some(aff) = element_affinity::parse(&bytes) else {
         anyhow::bail!(
             "no element-affinity tables at the pinned offsets (matrix {:#x}, \
@@ -404,7 +404,7 @@ pub(crate) fn item_tables_cmd(
 ) -> Result<()> {
     use legaia_asset::{equip_stats, item_effect, item_names};
 
-    let bytes = std::fs::read(scus)?;
+    let bytes = crate::common::read_input(scus)?;
     let names = item_names::ItemNameTable::from_scus(&bytes).context("parse item-name table")?;
     let effects =
         item_effect::ItemEffectTable::from_scus(&bytes).context("parse item-effect table")?;
@@ -464,7 +464,7 @@ pub(crate) fn item_tables_cmd(
 pub(crate) fn spell_names_cmd(scus: &Path, json: bool) -> Result<()> {
     use legaia_asset::spell_names::SpellNameTable;
 
-    let bytes = std::fs::read(scus)?;
+    let bytes = crate::common::read_input(scus)?;
     let table = SpellNameTable::from_scus(&bytes).context("parse spell-name table")?;
     if json {
         let rows: Vec<_> = (0u8..=u8::MAX)
@@ -503,7 +503,7 @@ pub(crate) fn spell_names_cmd(scus: &Path, json: bool) -> Result<()> {
 pub(crate) fn steal_table_cmd(scus: &Path, all: bool, json: bool) -> Result<()> {
     use legaia_asset::{item_names::ItemNameTable, steal_table::StealTable};
 
-    let bytes = std::fs::read(scus)?;
+    let bytes = crate::common::read_input(scus)?;
     let table = StealTable::from_scus(&bytes).context("parse steal table")?;
     let names = ItemNameTable::from_scus(&bytes);
     if json {
@@ -551,7 +551,7 @@ pub(crate) fn steal_table_cmd(scus: &Path, all: bool, json: bool) -> Result<()> 
 pub(crate) fn accessory_passive_cmd(scus: &Path, json: bool) -> Result<()> {
     use legaia_asset::accessory_passive::{AccessoryPassiveTable, stat_boosts};
 
-    let bytes = std::fs::read(scus)?;
+    let bytes = crate::common::read_input(scus)?;
     let table =
         AccessoryPassiveTable::from_scus(&bytes).context("parse accessory-passive table")?;
     if json {
@@ -602,7 +602,7 @@ pub(crate) fn accessory_passive_cmd(scus: &Path, json: bool) -> Result<()> {
 pub(crate) fn sfx_table_cmd(scus: &Path, json: bool) -> Result<()> {
     use legaia_asset::sfx_table::SfxTable;
 
-    let bytes = std::fs::read(scus)?;
+    let bytes = crate::common::read_input(scus)?;
     let table = SfxTable::from_scus(&bytes).context("parse sfx table")?;
     if json {
         let rows: Vec<_> = table
@@ -650,7 +650,7 @@ pub(crate) fn new_game_cmd(scus: &Path, json: bool) -> Result<()> {
         new_game::{StartingInventory, StartingParty},
     };
 
-    let bytes = std::fs::read(scus)?;
+    let bytes = crate::common::read_input(scus)?;
     let party = StartingParty::from_scus(&bytes).context("parse new-game party template")?;
     if json {
         let names = ItemNameTable::from_scus(&bytes);
@@ -702,7 +702,7 @@ pub(crate) fn level_up_cmd(scus: &Path, json: bool) -> Result<()> {
         GROWTH_CHAR_COUNT, growth_tables_from_scus, xp_thresholds_from_scus,
     };
 
-    let bytes = std::fs::read(scus)?;
+    let bytes = crate::common::read_input(scus)?;
     let gt = growth_tables_from_scus(&bytes).context("parse stat-growth tables")?;
     const CHARS: [&str; GROWTH_CHAR_COUNT] = ["Vahn", "Noa", "Gala"];
     if json {

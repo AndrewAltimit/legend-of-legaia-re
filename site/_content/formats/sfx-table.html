@@ -1,11 +1,13 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; SFX descriptor table</div>
   <h1>Sound-effect descriptor table <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">Every actor / battle sound effect is keyed to an 8-byte descriptor in a static <code>SCUS_942.54</code> rodata table at <code>DAT_8006F198</code> - which VAB program + tone to play, how many SPU voices to fan across, and which mixer channel. The static counterpart of the runtime bank <code>_DAT_8007B8D0</code> (loaded from <code>.dpk</code> / <code>monster.snd</code>) that covers ids <code>&ge; 0x200</code>.</p>
+  <p class="lede">When the game plays a footstep or a sword clash, it looks the sound id up in a 100-entry table baked into <code>SCUS_942.54</code> (the game's main executable): an 8-byte descriptor per effect saying which instrument in the loaded <a href="vab.html">VAB</a> sound bank to trigger, how many SPU voices (hardware sound channels) to fan across, and which mixer channel carries it. The surprise is what bank those instruments come from - not a dedicated SFX bank, but <em>whichever music bank the current scene has open</em>, so a given effect can only sound in scenes whose bank carries its program. This static table covers ids <code>0x00..=0x63</code>;
+a runtime bank at <code>_DAT_8007B8D0</code> (loaded from <code>.dpk</code> / <code>monster.snd</code>) covers ids <code>&ge; 0x200</code>.</p>
 </header>
 
 <section class="doc-section" id="table-layout">
   <h2>Table base + record layout</h2>
+  <p>How to read a row: <code>sound_id</code> indexes the table at an 8-byte stride; the descriptor's five live bytes name a program (instrument), tone, note level, voice count, and mixer category.</p>
   <table>
   <thead><tr><th>Field</th><th>Value</th></tr></thead>
   <tbody>

@@ -1,11 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; psx mode2/2352 disc geometry</div>
   <h1>PSX Mode2/2352 disc geometry <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">The Legend of Legaia disc is a standard PlayStation Mode2/Form1 CD. Sectors are 2352 bytes; only the 2048-byte user-data slice is meaningful for ISO9660 / file content.</p>
+  <p class="lede">How the raw bytes of a Legend of Legaia disc image are organised, before any game-specific format gets involved. The disc is a standard PlayStation Mode2/Form1 CD: it's divided into 2352-byte <em>sectors</em>, but only a 2048-byte slice of each sector is actual file content - the rest is addressing and error-correction overhead. Everything else on this site starts from that 2048-byte view.</p>
 </header>
 
 <section class="doc-section" id="overview">
   <h2>Overview</h2>
+  <p>A CD image (<code>.bin</code>) is a flat run of sectors, addressed by LBA (logical block address - the sector number, counting from the start of the disc). "Mode2/2352" names the sector flavour PlayStation discs use: mode 2 of the CD-ROM XA standard, stored as full 2352-byte raw sectors rather than pre-stripped 2048-byte ones. Reading a file therefore means knowing which LBA it starts at and peeling the 2048 user-data bytes out of each sector.</p>
   <p>Implementation: <code>crates/iso/src/raw.rs</code>.</p>
 </section>
 
@@ -47,8 +48,7 @@ const USER_DATA_SIZE: usize = 2048;</code></pre>
 
 <section class="doc-section" id="iso9660-walk">
   <h2>ISO9660 walk</h2>
-  <p>Implementation: <code>crates/iso/src/iso9660.rs</code>.</p>
-  <p>Standard ISO9660:</p>
+  <p>On top of the sector layer sits ISO9660, the standard CD filesystem - it's what turns "sector 16" into named files and directories. Implementation: <code>crates/iso/src/iso9660.rs</code>. The layout is textbook:</p>
   <ul class="bullets">
     <li>Primary Volume Descriptor at LBA 16.</li>
     <li>Root directory record at PVD offset 156.</li>
@@ -58,7 +58,7 @@ const USER_DATA_SIZE: usize = 2048;</code></pre>
 <pre><code>CDNAME.TXT  DMY.DAT  PROT.DAT  SCUS_942.54  SYSTEM.CNF
 MOV/MV1.STR ... MV6.STR
 XA/XA1.XA  ... XA21.XA</code></pre>
-  <p><code>MOV/MV*.STR</code> are PSX MDEC video streams (delegate to public decoders like jPSXdec). <code>XA/XA*.XA</code> are XA-ADPCM audio; <code>crates/xa</code> decodes the format spec but the on-disc files use a non-standard interleave. <code>PROT.DAT</code> is the main asset archive - see <a href="prot.html">PROT.DAT TOC</a>. <code>SCUS_942.54</code> is the executable. Reverse-engineering instructions: <a href="../tooling/ghidra.html"><code>tooling/ghidra.md</code></a>.</p>
+  <p>Almost everything interesting lives in just a few of these. <code>PROT.DAT</code> is the main asset archive - nearly every texture, model, script, and sound bank in the game is one of its numbered entries; see <a href="prot.html">PROT.DAT TOC</a>. <code>SCUS_942.54</code> is the game's main executable. <code>CDNAME.TXT</code> is a developer-left name map for the archive's entries. <code>MOV/MV*.STR</code> are PSX MDEC video streams (the movies; delegate to public decoders like jPSXdec). <code>XA/XA*.XA</code> are XA-ADPCM streaming audio; <code>crates/xa</code> decodes the format spec but the on-disc files use a non-standard interleave. Reverse-engineering instructions: <a href="../tooling/ghidra.html"><code>tooling/ghidra.md</code></a>.</p>
 </section>
 
 

@@ -1,18 +1,23 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> · tooling</div>
   <h1>Tooling</h1>
-  <p class="lede">The tools the project is built with, and the tools it ships. Each card below is a per-tool page with the full reference.</p>
+  <p class="lede">Two very different kinds of tools live here. Some are for <strong>you</strong>: point them at your own Legend of Legaia disc image and they extract every asset, re-roll the game from a seed, or translate its text - no reverse-engineering knowledge needed. The rest are the project's own <strong>reverse-engineering infrastructure</strong>: you only need those pages if you want to extend the investigation itself.</p>
 </header>
 
 <section class="doc-section" id="orientation">
   <h2>Where to start</h2>
-  <p>These fall into three groups, depending on what you came to do.</p>
+  <p><strong>Tools you can run today</strong> - each takes a user-supplied disc image (the project ships no game data) and does something with it:</p>
   <ul class="bullets">
-    <li><strong>Get the assets off a disc.</strong> Start with the <a href="extraction.html">extraction CLIs</a> - one command takes a disc image to PNGs, meshes, and audio.</li>
-    <li><strong>Do the reverse engineering.</strong> <a href="ghidra.html">Ghidra in Docker</a> is the static path; <a href="overlay-capture.html">overlay capture</a>, the <a href="static-overlay-pipeline.html">static overlay pipeline</a>, and the <a href="pcsx-redux-automation.html">PCSX-Redux</a> / <a href="mednafen-automation.html">mednafen</a> probe harnesses are the runtime path. Most of Legaia's game logic is not in the executable, so you will need both.</li>
-    <li><strong>Change the game.</strong> The <a href="randomizer.html">randomizer</a> re-rolls a disc from a seed, in the <a href="rom-patcher.html">browser</a> or on the CLI. The translation toolchain turns a disc's text into an editable language pack. Both are shipped deliverables in their own right.</li>
+    <li><strong>Get the assets off your disc.</strong> The <a href="extraction.html">extraction CLIs</a> - one command turns a disc image into browsable PNGs, 3D meshes, and audio files.</li>
+    <li><strong>Change the game.</strong> The <a href="randomizer.html">randomizer</a> re-rolls a disc from a seed - loot, encounters, shops, doors, and more - in the <a href="rom-patcher.html">browser</a> or on the CLI. The <a href="translation.html">translation toolchain</a> turns a disc's text into an editable language pack. Both are shipped deliverables in their own right.</li>
+    <li><strong>Record and replay a session.</strong> <a href="determinism-replay.html">Determinism + replay</a> captures your inputs to a small text file and plays them back frame-perfectly in the engine.</li>
   </ul>
-  <p>The rest - <a href="port-catalog.html">port catalog</a>, <a href="determinism-replay.html">determinism + replay</a> - are the instruments that keep the other two tracks honest.</p>
+  <p><strong>Reverse-engineering infrastructure</strong> - the instruments the format docs and the engine port are built with. You only need these if you are extending the reverse-engineering itself:</p>
+  <ul class="bullets">
+    <li><a href="ghidra.html">Ghidra in Docker</a> is the static path: disassemble the game's executable and trace its functions.</li>
+    <li>Most of Legaia's game logic is <em>not</em> in the executable - it lives in overlays, chunks of code the game loads into RAM on demand. <a href="overlay-capture.html">Overlay capture</a>, the <a href="static-overlay-pipeline.html">static overlay pipeline</a>, and the <a href="pcsx-redux-automation.html">PCSX-Redux</a> / <a href="mednafen-automation.html">mednafen</a> probe harnesses recover and observe that code at runtime; the <a href="spine-flag-writers-capture.html">spine flag-writers runbook</a> is a worked example of one such hunt.</li>
+    <li>The <a href="port-catalog.html">port catalog</a> is the bookkeeping: per-function status across the whole decompilation + engine-port effort.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="pages">
@@ -20,7 +25,7 @@
   <div class="card-grid">
     <a class="card" href="extraction.html">
       <div class="card-title">Extraction CLIs</div>
-      <div class="card-body">Per-stage extraction binaries plus the top-level <code>legaia-extract</code> orchestrator. Disc → ISO9660 → PROT.DAT → categorize → sub-asset extract → PNG.</div>
+      <div class="card-body">Turn your disc image into PNGs, meshes, and audio in one command. Per-stage extraction binaries plus the top-level <code>legaia-extract</code> orchestrator: disc → ISO9660 → PROT.DAT (the disc's main archive) → categorize → sub-asset extract → PNG.</div>
     </a>
     <a class="card" href="ghidra.html">
       <div class="card-title">Ghidra in Docker</div>
@@ -32,7 +37,7 @@
     </a>
     <a class="card" href="static-overlay-pipeline.html">
       <div class="card-title">Static overlay pipeline</div>
-      <div class="card-body">The static complement to overlay capture: extract each clean-copy runtime overlay straight from <code>PROT.DAT</code> at its statically-recovered base, identity attached from the source entry. Solves the VA-aliasing identity problem; reproducible from the disc.</div>
+      <div class="card-body">The static complement to overlay capture: extract each runtime overlay straight from <code>PROT.DAT</code> at its recovered load address, so an overlay's identity comes from the disc rather than a guess. Solves the "several overlays share one address" ambiguity; reproducible from any copy of the disc.</div>
     </a>
     <a class="card" href="mednafen-automation.html">
       <div class="card-title">Mednafen automation</div>
@@ -44,7 +49,7 @@
     </a>
     <a class="card" href="spine-flag-writers-capture.html">
       <div class="card-title">Spine flag-writers capture</div>
-      <div class="card-body">Interactive runbook for the chapter-1 story-spine writer hunt: one PCSX-Redux session arms all three spine writes at once (Zeto battle-id + flags <code>0x142</code>/<code>0x482</code>) and logs each writer's caller PC. Card-slot-to-beat mapping + derived watch addresses.</div>
+      <div class="card-body">A worked example of a live writer hunt: one PCSX-Redux session watches the chapter-1 story-progression flags (Zeto battle-id + flags <code>0x142</code>/<code>0x482</code>) and logs which code writes each one. Save-slot-to-story-beat mapping + derived watch addresses.</div>
     </a>
     <a class="card" href="port-catalog.html">
       <div class="card-title">Port catalog</div>
@@ -62,7 +67,7 @@
       <div class="card-title">ROM patcher (in browser)</div>
       <div class="card-body">Run the randomizer client-side: supply your own disc image, toggle the drop / encounter / chest settings, and download a patched image. Nothing is uploaded - the patch runs in WASM in your browser.</div>
     </a>
-    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/translation.md" target="_blank" rel="noopener">
+    <a class="card" href="translation.html">
       <div class="card-title">Translation / language packs</div>
       <div class="card-body"><code>legaia-rando translate</code> exports a disc's user-facing text as an editable YAML language pack and applies a filled pack back as a same-size in-place patch. Built for community translations; packs carry disc coordinates, not the original script.</div>
     </a>
@@ -80,7 +85,6 @@
 <section class="doc-section" id="quick-pipeline">
   <h2>Full extraction pipeline at a glance</h2>
   <p>The recommended end-to-end run:</p>
-<pre><code>./target/release/legaia-extract \
-    "/path/to/Legend of Legaia (USA).bin" --out extracted</code></pre>
-  <p><code>--skip-png</code> / <code>--skip-verify</code> skip the slow steps. Disc-gated tests (everything that touches a real <code>.bin</code>) run when <code>LEGAIA_DISC_BIN</code> is set; CI runs without disc data and the tests skip cleanly.</p>
+<pre><code>./legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted</code></pre>
+  <p><code>--skip-verify</code> / <code>--skip-xa</code> / <code>--skip-font</code> skip individual stages (a <code>.cue</code> path also works). Release-archive users run <code>./legaia-extract</code>; source builds live under <code>target/release/</code>. Disc-gated tests (everything that touches a real <code>.bin</code>) run when <code>LEGAIA_DISC_BIN</code> is set; CI runs without disc data and the tests skip cleanly.</p>
 </section>

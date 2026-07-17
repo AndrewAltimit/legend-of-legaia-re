@@ -14,7 +14,7 @@ pub(crate) fn stage_one(
     verts: usize,
     obj_out: Option<&Path>,
 ) -> Result<()> {
-    let raw = std::fs::read(input)?;
+    let raw = crate::common::read_input(input)?;
     let stage = stage_geom::parse(&raw)
         .ok_or_else(|| anyhow::anyhow!("no stage-geometry tables in {}", input.display()))?;
     println!(

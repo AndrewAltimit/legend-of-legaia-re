@@ -100,7 +100,11 @@ impl<'a> Interpreter<'a> {
     /// for message `index` in a [`Format::Compact`] blob.
     pub fn new_compact(blob: &'a MesBlob, buf: &'a [u8], message_index: usize) -> Result<Self> {
         if blob.format != Format::Compact {
-            bail!("new_compact requires a compact blob, got {:?}", blob.format);
+            bail!(
+                "this operation only supports the Compact MES variant; \
+                 this input parsed as the {} variant (no per-message offset table)",
+                blob.format.name()
+            );
         }
         let table = blob.offset_table.as_ref().ok_or_else(|| {
             anyhow::anyhow!("compact blob has no offset table - was it parsed correctly?")
@@ -223,8 +227,9 @@ pub fn extract_all_messages(buf: &[u8]) -> Result<Vec<Vec<MesEvent>>> {
     let blob = parse(buf)?;
     if blob.format != Format::Compact {
         bail!(
-            "extract_all_messages requires a compact blob, got {:?}",
-            blob.format
+            "this operation only supports the Compact MES variant; \
+             this input parsed as the {} variant (no per-message offset table)",
+            blob.format.name()
         );
     }
     let table_len = blob.offset_table.as_ref().map(|t| t.len()).unwrap_or(0);

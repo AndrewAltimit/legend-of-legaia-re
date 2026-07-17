@@ -182,6 +182,11 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("npcs.html",                  "NPCs (WASM)",                   "npcs",                       "npcs.html"),
     ("world-overview.html",        "World overview (3D)",           "world-overview",             "world-overview.html"),
     # depth = 1
+    # User guides (release-binary walkthroughs, mirrored from docs/guides/)
+    ("guides/getting-started.html", "Getting started (release tools)", "guides/getting-started",     "guides/getting-started.html"),
+    ("guides/extracting-assets.html","Extracting assets",             "guides/extracting-assets",   "guides/extracting-assets.html"),
+    ("guides/playing-and-viewing.html","Playing and viewing",         "guides/playing-and-viewing", "guides/playing-and-viewing.html"),
+    ("guides/modding-and-translation.html","Modding and translation", "guides/modding-and-translation","guides/modding-and-translation.html"),
     # Technical write-ups (narrative deep-dives)
     ("writeups/index.html",        "Technical write-ups",           "writeups/index",             "writeups/index.html"),
     ("writeups/disc-patching/index.html","Patching a sealed disc",   "writeups/disc-patching/index","writeups/disc-patching/index.html"),
@@ -278,6 +283,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("tooling/spine-flag-writers-capture.html","Spine flag-writers capture","tooling/spine-flag-writers-capture","tooling/spine-flag-writers-capture.html"),
     ("tooling/determinism-replay.html","Determinism + replay",      "tooling/determinism-replay", "tooling/determinism-replay.html"),
     ("tooling/randomizer.html",    "Randomizer / disc patcher",     "tooling/randomizer",         "tooling/randomizer.html"),
+    ("tooling/translation.html",   "Translation / language packs",  "tooling/translation",        "tooling/translation.html"),
     ("tooling/port-catalog.html",  "Port catalog",                  "tooling/port-catalog",       "tooling/port-catalog.html"),
     ("tooling/rom-patcher.html",   "ROM patcher (in browser)",      "tooling/rom-patcher",        "tooling/rom-patcher.html"),
     ("reference/index.html",       "Reference",                     "reference/index",            "reference/index.html"),

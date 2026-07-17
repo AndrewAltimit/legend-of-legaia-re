@@ -7,7 +7,29 @@ use std::path::PathBuf;
 #[derive(Parser, Debug)]
 #[command(
     name = "legaia-engine",
-    about = "Top-level driver for the Legaia clean-room engine. Boots a CDNAME scene from extracted PROT bytes."
+    version,
+    about = "Clean-room engine for Legend of Legaia. Bring your own disc: every \
+             subcommand reads a Legend of Legaia (USA) .bin via --disc, or an \
+             extracted/ tree produced by legaia-extract.",
+    long_about = "Clean-room engine for Legend of Legaia.\n\n\
+        Bring your own disc: every subcommand reads a Legend of Legaia (USA) \
+        `.bin` disc image via `--disc <PATH>`, or an `extracted/` tree produced \
+        by `legaia-extract` (the `--extracted-root` default `extracted` resolves \
+        against the current directory).\n\n\
+        Start here:\n  \
+        legaia-engine play-window --disc \"Legend of Legaia (USA).bin\"\n  \
+        legaia-engine list-scenes --disc \"Legend of Legaia (USA).bin\"\n\n\
+        Config and saves (`legaia-input.toml`, `legaia-options.toml`, `saves/`) \
+        also resolve against the current directory - run from the same directory \
+        each time, or pass explicit paths where supported.",
+    after_help = "COMMAND GROUPS:\n  \
+        Playing:      play-window, play-str, config, save, load\n  \
+        Exploring:    list-scenes, info, record, replay\n  \
+        Diagnostics (engine development; not needed to play):\n    \
+        scene / script analysis:  play, clut-trace, man-scripts\n    \
+        parity oracles:           vram-oracle, mode-trace, audio-trace, pcm-trace, gte-replay, scenarios\n    \
+        synthetic state drivers:  battle, inventory, equip, title, save-select, encounter,\n                              \
+        target-pick, chain-editor, seru-capture"
 )]
 pub(crate) struct Cli {
     #[command(subcommand)]
@@ -16,9 +38,11 @@ pub(crate) struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub(crate) enum Cmd {
-    /// Build [`SceneResources`] for one scene and print a summary line. Use
-    /// this to verify the asset chain produces the right state without
-    /// firing up the windowed viewer.
+    /// Load one scene's assets headlessly and print a summary line.
+    /// Use this to verify the asset chain produces the right state without
+    /// firing up the windowed viewer. The optional flags below are VRAM
+    /// diagnostics for engine development.
+    #[command(display_order = 4)]
     Info {
         /// CDNAME scene name (e.g. `town01`, `dolk`, `cave01`).
         #[arg(long)]
@@ -78,6 +102,7 @@ pub(crate) enum Cmd {
     /// against the runtime VRAM ground truth (mednafen-state vram-dump
     /// --out-bin). Rows that are non-zero in the runtime VRAM but
     /// missing in the engine are the actionable gap.
+    #[command(display_order = 21)]
     ClutTrace {
         /// CDNAME scene name (e.g. `town01`, `dolk`, `cave01`).
         #[arg(long)]
@@ -112,6 +137,7 @@ pub(crate) enum Cmd {
     /// false positives (every `0x37`/`0x41` byte in dialog text). For
     /// town01 the survey finds no inline literal - the opening Tetsu fight
     /// installs via the indexed formation table instead.
+    #[command(display_order = 22)]
     ManScripts {
         /// CDNAME scene name (e.g. `town01`, `dolk`, `cave01`).
         #[arg(long)]
@@ -224,6 +250,7 @@ pub(crate) enum Cmd {
     ///     uploads land before the diff. `--strict` asserts byte-exact
     ///     match in the texpage region (y ≥ 256) and fails with the
     ///     first divergent (row, col).
+    #[command(display_order = 23)]
     VramOracle {
         /// CDNAME scene name (e.g. `town01`). Required in explicit mode;
         /// derived from the scenario's `expected_active_scene` in
@@ -284,7 +311,8 @@ pub(crate) enum Cmd {
         #[arg(long, default_value_t = false)]
         clut_regions: bool,
     },
-    /// Phase-E3 mode-trace oracle. Boots a `BootSession` on the
+    /// Mode-trace parity oracle (development diagnostic; Phase E3).
+    /// Boots a `BootSession` on the
     /// resolved scene, ticks it `--frames` times sampling
     /// `(scene_mode, active_scene)` per frame, emits the engine trace
     /// as JSONL, and (in scenario mode) compares the engine's settled
@@ -305,6 +333,7 @@ pub(crate) enum Cmd {
     /// in the JSONL. Retail snapshots fill it from `_DAT_8007B83C`.
     /// See `crates/engine-shell/src/mode_trace_oracle.rs` for the
     /// long-form rationale.
+    #[command(display_order = 24)]
     ModeTrace {
         /// CDNAME scene name (e.g. `town01`). Required in explicit
         /// mode; derived from the scenario's `expected_active_scene`
@@ -372,6 +401,7 @@ pub(crate) enum Cmd {
     /// a headless sequencer, so the engine drives BGM the same way the
     /// retail engine does. `--bgm-id` is a manual boot-time override
     /// for scenes whose prescripts don't kick off audio.
+    #[command(display_order = 25)]
     AudioTrace {
         /// CDNAME scene name (e.g. `town01`). Required in explicit
         /// mode; derived from the scenario's `expected_active_scene`
@@ -442,6 +472,7 @@ pub(crate) enum Cmd {
     /// `--strict` enforces only the conservative bar exercised by the
     /// disc-gated `pcm_oracle` test: retail audible AND engine silent
     /// → exit non-zero. Anything finer is informational.
+    #[command(display_order = 26)]
     PcmTrace {
         /// CDNAME scene name (e.g. `town01`). Required in explicit
         /// mode; derived from the scenario's `expected_active_scene`
@@ -488,17 +519,17 @@ pub(crate) enum Cmd {
         #[arg(long, default_value_t = false)]
         strict: bool,
     },
-    /// Run an engine playthrough headless from a `j-replay-v1`
-    /// replay file (see `legaia_engine_shell::replay`). Drives a
-    /// synthetic [`World`](legaia_engine_core::world::World) for
-    /// `meta.frames` frames, samples per-frame `(scene_mode,
-    /// active_scene)` into JSONL, and (with `--strict`) compares
-    /// against the file's optional `[[expected]]` fixture.
+    /// Play back an input session captured with `record`, headless and
+    /// deterministic. Runs the engine for the recorded number of frames,
+    /// samples per-frame `(scene_mode, active_scene)` into JSONL, and
+    /// (with `--strict`) compares against the file's optional
+    /// `[[expected]]` fixture.
     ///
-    /// No disc required - the replay binds an RNG seed and a
-    /// scenario label, not a CDNAME scene. This is Phase J's
-    /// determinism + scripted-replay entry point; pair with `record`
-    /// to capture human input from a play-window session.
+    /// No disc required - the replay file (`j-replay-v1` TOML, see
+    /// `legaia_engine_shell::replay`) binds an RNG seed and a scenario
+    /// label, not a CDNAME scene. The same input file run twice produces
+    /// bit-identical traces.
+    #[command(display_order = 9)]
     Replay {
         /// Path to the `j-replay-v1` replay file.
         #[arg(long)]
@@ -512,12 +543,19 @@ pub(crate) enum Cmd {
         #[arg(long, default_value_t = false)]
         strict: bool,
     },
-    /// Open a play-window session that captures pad transitions into
-    /// a `j-replay-v1` file on close. Thin shim over `play-window`:
-    /// every flag carries the same meaning, plus `--out` for the
-    /// replay file path.
+    /// Open a play-window session and capture your pad input into a
+    /// replay file for `replay`. Thin shim over `play-window`: every
+    /// flag carries the same meaning, plus `--out` for the replay file
+    /// path.
+    ///
+    /// The replay file is checkpointed to disk about once a second
+    /// during the session and finalized on window close (Esc), so an
+    /// interrupted session (Ctrl-C, kill) still yields a valid file
+    /// with the input captured up to the last checkpoint; only SIGKILL
+    /// can lose the final second.
+    #[command(display_order = 8)]
     Record {
-        /// Where to write the captured replay.
+        /// Where to write the captured replay (`j-replay-v1` TOML).
         #[arg(long)]
         out: PathBuf,
         /// Starting scene name (CDNAME label). Default: `town01`.
@@ -538,7 +576,8 @@ pub(crate) enum Cmd {
         /// Open the world map controller instead of a field scene.
         #[arg(long, default_value_t = false)]
         world_map: bool,
-        /// Save directory the record's save-select reads / writes.
+        /// Save directory the record's save-select reads / writes
+        /// (default resolves against the current directory).
         #[arg(long, default_value = "saves")]
         save_dir: PathBuf,
         /// Optional scenario label to bind into the recorded file's
@@ -552,8 +591,12 @@ pub(crate) enum Cmd {
         #[arg(long, default_value_t = 0xDEAD_C0DE)]
         rng_seed: u32,
     },
-    /// List every distinct scene name the CDNAME map exposes, with the
-    /// PROT entry range each one covers.
+    /// List every distinct scene name the game's file map exposes, with
+    /// the PROT entry range each one covers. Scene names feed the
+    /// `--scene` flag of `play-window` / `info`; a scene's range start is
+    /// also where its files land in `extracted/PROT/` (extraction
+    /// filenames are numbered CDNAME define minus 2).
+    #[command(display_order = 3)]
     ListScenes {
         /// Extracted-root directory containing `CDNAME.TXT`.
         #[arg(long, default_value = "extracted")]
@@ -566,6 +609,7 @@ pub(crate) enum Cmd {
     /// Save the current world's empty/default party to a slot file.
     /// Useful as a smoke test for the disk save path; engines drive this
     /// from menu mode at runtime.
+    #[command(display_order = 6)]
     Save {
         #[arg(long, default_value = "extracted")]
         extracted_root: PathBuf,
@@ -573,6 +617,7 @@ pub(crate) enum Cmd {
         /// `.bin` disc image. When provided, `--extracted-root` is ignored.
         #[arg(long)]
         disc: Option<PathBuf>,
+        /// Save directory (default resolves against the current directory).
         #[arg(long, default_value = "saves")]
         save_dir: PathBuf,
         #[arg(long, default_value_t = 0)]
@@ -583,7 +628,9 @@ pub(crate) enum Cmd {
     },
     /// Load a slot file into a fresh world and print the resulting roster
     /// shape. Mirror of `save` for round-trip testing.
+    #[command(display_order = 7)]
     Load {
+        /// Save directory (default resolves against the current directory).
         #[arg(long, default_value = "saves")]
         save_dir: PathBuf,
         #[arg(long, default_value_t = 0)]
@@ -592,12 +639,13 @@ pub(crate) enum Cmd {
     /// Boot the engine into a scene and tick it for `frames` frames.
     /// Drives the field VM, camera, BGM director, and per-actor move VMs;
     /// logs scene transitions and the per-frame BGM events. No window -
-    /// for that, use `asset-viewer field <scene>`.
+    /// for a windowed, playable session use `play-window` instead.
     ///
     /// When `--str-file` is provided the STR video is pre-decoded headlessly
     /// (frame count logged) before scene ticking begins. The scene label
     /// patterns that identify in-engine cutscenes (as opposed to FMV) are
     /// described by `engine_core::scene::is_cutscene_label`.
+    #[command(display_order = 20)]
     Play {
         /// Starting scene name. Default: `town01`.
         #[arg(long, default_value = "town01")]
@@ -653,6 +701,13 @@ pub(crate) enum Cmd {
     /// When `--str-file` is provided the STR video plays first in a windowed
     /// player (same as `play-str`). After the video window closes the scene
     /// window opens and runs normally.
+    ///
+    /// Config + saves resolve against the current directory: key bindings
+    /// come from `legaia-input.toml` (edit via `config set`), options from
+    /// `legaia-options.toml`, and the default `--save-dir` is `saves/`.
+    /// Run from the same directory each time, or pass explicit paths where
+    /// supported.
+    #[command(display_order = 1)]
     PlayWindow {
         /// Starting scene name. Default: `town01`.
         #[arg(long, default_value = "town01")]
@@ -683,7 +738,8 @@ pub(crate) enum Cmd {
         /// "jump straight to the scene" path.
         #[arg(long, default_value_t = false)]
         boot_ui: bool,
-        /// Save directory used by `--boot-ui` for the save-select pass.
+        /// Save directory used by `--boot-ui` for the save-select pass
+        /// (default resolves against the current directory).
         #[arg(long, default_value = "saves")]
         save_dir: PathBuf,
         /// Optional TOML CDNAME→STR map; same format as `play --cutscene-map`.
@@ -838,6 +894,7 @@ pub(crate) enum Cmd {
     /// `MOV/MV1.STR`); the movie is read as raw 2352-byte sectors so its
     /// interleaved XA audio track plays, with the video clock driven off the
     /// audio cursor for A/V sync.
+    #[command(display_order = 2)]
     PlayStr {
         /// STR file to play. Without `--disc` this is a raw filesystem path
         /// (2048-byte Form-1 sectors, video only - the extracted shape).
@@ -858,7 +915,10 @@ pub(crate) enum Cmd {
         #[arg(long, default_value_t = 480)]
         height: u32,
     },
-    /// Show or update the keyboard-to-pad-button input mapping.
+    /// Show or update the keyboard-to-pad-button input mapping used by
+    /// `play-window`. The config file defaults to `legaia-input.toml` in
+    /// the current directory.
+    #[command(display_order = 5)]
     Config {
         #[command(subcommand)]
         cmd: ConfigCmd,
@@ -866,6 +926,7 @@ pub(crate) enum Cmd {
     /// Drive a synthetic battle round end-to-end: party of 3 vs N
     /// monsters, headless ticking through `BattleSession` phases.
     /// Reports per-phase events for inspection.
+    #[command(display_order = 29)]
     Battle {
         /// Number of monster slots (1..=5). Each is initialised with HP
         /// equal to `--monster-hp`.
@@ -888,6 +949,7 @@ pub(crate) enum Cmd {
     },
     /// Drive an inventory-use session against a synthetic World. Prints
     /// the cursor moves + commit outcome.
+    #[command(display_order = 30)]
     Inventory {
         /// Item id used by the synthetic session (default 0x01 = Healing Leaf).
         #[arg(long, default_value_t = 0x01)]
@@ -901,6 +963,7 @@ pub(crate) enum Cmd {
     },
     /// Drive an equip session for a synthetic character. Reports state
     /// transitions + the final committed equipment row.
+    #[command(display_order = 31)]
     Equip {
         /// Slot to edit (0..=7).
         #[arg(long, default_value_t = 0)]
@@ -913,6 +976,7 @@ pub(crate) enum Cmd {
     /// Replay a recorded GTE (cop2) trace file against a fresh emulator
     /// and report per-step register divergences. Useful for validating
     /// the emulator against captured retail RAM dumps.
+    #[command(display_order = 27)]
     GteReplay {
         /// JSON trace path written by `engine-render::gte_trace::Cop2Trace`.
         #[arg(long)]
@@ -924,6 +988,7 @@ pub(crate) enum Cmd {
     },
     /// Drive a synthetic title screen → main-menu pick session.
     /// Reports per-tick events as the scripted input drives the SM.
+    #[command(display_order = 32)]
     Title {
         /// Pre-seeded input sequence, one character per tick. `s` = start,
         /// `c` = cross, `o` = circle, `U`/`D` = up/down. All other chars
@@ -938,6 +1003,7 @@ pub(crate) enum Cmd {
         fade_frames: u16,
     },
     /// Drive a synthetic save-select session.
+    #[command(display_order = 33)]
     SaveSelect {
         /// Mode: `load` (pick a non-empty slot) or `save` (pick any slot).
         #[arg(long, default_value = "load")]
@@ -951,6 +1017,7 @@ pub(crate) enum Cmd {
     },
     /// Roll a synthetic encounter session against a small table for `steps`
     /// steps. Reports the first triggered encounter (if any).
+    #[command(display_order = 34)]
     Encounter {
         /// Trigger rate in 1/256 (default 64 ≈ 25%).
         #[arg(long, default_value_t = 64)]
@@ -964,6 +1031,7 @@ pub(crate) enum Cmd {
     },
     /// Drive a synthetic battle target picker. Reports cursor moves +
     /// the resulting outcome.
+    #[command(display_order = 35)]
     TargetPick {
         /// Target kind: one of `enemy`, `ally`, `ally-or-self`,
         /// `dead-ally`, `any-ally`, `all-enemies`, `all-allies`, `self`.
@@ -977,6 +1045,7 @@ pub(crate) enum Cmd {
         script: String,
     },
     /// Drive a synthetic Tactical Arts chain editor session.
+    #[command(display_order = 36)]
     ChainEditor {
         /// Character slot (0..=2).
         #[arg(long, default_value_t = 0)]
@@ -989,6 +1058,7 @@ pub(crate) enum Cmd {
     /// Run the full Seru capture flow against the vanilla registry: roll
     /// `count` captures of a given Seru and report the resulting learn
     /// events.
+    #[command(display_order = 37)]
     SeruCapture {
         /// Seru id to capture (default 1 = Spark).
         #[arg(long, default_value_t = 1)]
@@ -1007,6 +1077,7 @@ pub(crate) enum Cmd {
     /// `expected_save_sha256`. Use `--bless` to record observed hashes
     /// into the manifest in place. See
     /// `crates/engine-shell/src/scenarios.rs`.
+    #[command(display_order = 28)]
     Scenarios {
         /// Manifest path. Defaults to `scripts/engine/scenarios.toml`
         /// relative to the cwd.
@@ -1026,7 +1097,9 @@ pub(crate) enum Cmd {
 pub(crate) enum ConfigCmd {
     /// Print the current input mapping to stdout.
     Show {
-        /// Path to the TOML config file (default: `legaia-input.toml`).
+        /// Path to the TOML config file. The default `legaia-input.toml`
+        /// resolves against the current directory - run from the same
+        /// directory as `play-window`, or pass an explicit path.
         #[arg(long, default_value = "legaia-input.toml")]
         config_file: PathBuf,
     },
@@ -1037,7 +1110,9 @@ pub(crate) enum ConfigCmd {
         /// Binding in KEY=BUTTON form, e.g. `--binding Z=Cross`.
         #[arg(long)]
         binding: String,
-        /// Path to the TOML config file (default: `legaia-input.toml`).
+        /// Path to the TOML config file. The default `legaia-input.toml`
+        /// resolves against the current directory - run from the same
+        /// directory as `play-window`, or pass an explicit path.
         #[arg(long, default_value = "legaia-input.toml")]
         config_file: PathBuf,
     },

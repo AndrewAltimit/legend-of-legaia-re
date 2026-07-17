@@ -47,6 +47,8 @@ If you are adding code here, treat "no Sony bytes get committed" as the one hard
 
 ## Getting started
 
+Step-by-step walkthroughs live in [`docs/guides/`](docs/guides/getting-started.md) - getting started, extracting assets, playing and viewing, modding and translation. The short version:
+
 ### Install a prebuilt release
 
 Tagged releases publish prebuilt binaries on the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases). This is the fastest path if you just want to extract assets or run the viewers - no Rust toolchain required. Every archive carries every tool, the engine and the asset viewer included.
@@ -110,13 +112,17 @@ This hash is a sanity check against the project author's dump; different dumping
 ./target/release/legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted
 ```
 
-Runs verify → disc → PROT → categorize → streaming sub-asset extract → TIM → PNG. Skip the slow stages with `--skip-png` (PNG conversion), `--skip-xa` (CD-XA demux), `--skip-catalog` (TIM-catalog TSVs), or `--skip-verify` (input SHA-256). Pass `-v` for per-file output.
+Runs verify → disc → PROT → categorize → streaming sub-asset extract → PNG → CD-XA demux → TIM catalogs → dialog font. A `.cue` sheet works too (its BINARY track is resolved automatically). Skip stages with `--skip-png` (streaming-container PNGs), `--skip-xa` (CD-XA demux), `--skip-catalog` (TIM-catalog TSVs), `--skip-font` (dialog-font artifacts), or `--skip-verify` (input SHA-256). Pass `-v` for per-file output.
 
 Per-stage invocations - `disc-extract`, `prot-extract`, `lzs-decode`, and friends - are in [`docs/tooling/extraction.md`](docs/tooling/extraction.md).
 
 ## Using the tools
 
-Each crate's `README.md` documents its own CLI in full; the highlights:
+Each crate's `README.md` documents its own CLI in full, and the
+[user guides](docs/guides/getting-started.md) walk the common workflows end to
+end. The examples below use the source-build paths (`./target/release/<bin>`);
+with a release archive the same binaries sit in the unpacked directory, so run
+`./<bin>` (or `<bin>.exe` on Windows) instead. The highlights:
 
 ```bash
 # What did the scene host actually resolve for a scene? TIMs uploaded to VRAM,
@@ -157,9 +163,10 @@ Asset inspection, after `legaia-extract` has populated `extracted/`:
 # SEQ playback - the SsAPI-shape sequencer + a VAB through cpal, live audio
 ./target/release/asset-viewer seq path/to.seq path/to.vab
 
-# Texture → PNG, mesh → OBJ
-./target/release/tim convert extracted/tim_scan/<entry>/000.tim -o out.png
-./target/release/tmd dump-obj extracted/tmd_scan/<entry>/000.tmd --out mesh.obj
+# Texture → PNG, mesh → OBJ (tim_scan / tmd_scan hits are named by offset:
+# raw_off<HEX>_<W>x<H>_<bpp>.tim / raw_off<HEX>.tmd)
+./target/release/tim convert extracted/tim_scan/<entry>/raw_off<HEX>_<W>x<H>_<bpp>.tim -o out.png
+./target/release/tmd dump-obj extracted/tmd_scan/<entry>/raw_off<HEX>.tmd --out mesh.obj
 
 # Group a field-pack's 97 schema slots by size to surface record kinds
 ./target/release/asset field-pack extracted/PROT/0005_town01.BIN --groups

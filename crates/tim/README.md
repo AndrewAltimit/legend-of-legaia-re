@@ -56,17 +56,21 @@ Pixel widths in real pixels:
 
 ## CLI
 
+Inputs come from `asset tim-scan extracted/PROT --out extracted/tim_scan`
+(after `legaia-extract`), which names each hit
+`<entry>/raw_off<HEX>_<W>x<H>_<bpp>.tim` by its byte offset in the PROT entry.
+
 ```bash
 # Header dump: pmode, CLUT block, image dims, framebuffer position
-tim info extracted/tim_scan/0005_town01/000.tim
+tim info extracted/tim_scan/0003_town01/raw_off039188_256x256_4bpp.tim
 
 # Single TIM → PNG. Without -o, writes `<path>.png` next to the input.
-tim convert extracted/tim_scan/0005_town01/000.tim -o town01_000.png
+tim convert extracted/tim_scan/0003_town01/raw_off039188_256x256_4bpp.tim -o town01.png
 
 # Pick a palette row on a CLUT-bearing TIM (default row 0), or emit every row
 # as `<path>_clut<N>.png` - the fast way to find which CLUT a mesh expects.
-tim convert extracted/tim_scan/0005_town01/000.tim --clut 3 -o row3.png
-tim convert extracted/tim_scan/0005_town01/000.tim --all-cluts
+tim convert extracted/tim_scan/0003_town01/raw_off039188_256x256_4bpp.tim --clut 3 -o row3.png
+tim convert extracted/tim_scan/0003_town01/raw_off039188_256x256_4bpp.tim --all-cluts
 
 # Batch: recursively convert every .tim under a directory.
 # Without -o, mirrors the input layout next to it.

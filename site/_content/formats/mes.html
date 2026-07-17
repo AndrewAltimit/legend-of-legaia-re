@@ -1,11 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; mes dialog format</div>
   <h1>MES dialog format <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">Container format for Legaia's dialog text. Two on-disc variants share an offset table + bytecode tail. The bytecode encoding is a stream of glyph bytes interleaved with substitution opcodes; the interpreter is statically linked into <code>SCUS_942.54</code> (it is not overlay-resident).</p>
+  <p class="lede">MES is the container format for Legaia's dialog text - every line an NPC speaks lives in one of these. The text is not plain ASCII: it is a bytecode stream of font-tile indices (each byte names a glyph in the dialog font) interleaved with substitution opcodes that splice in live data - the hero's name, an item name, an art name - at display time. Two on-disc variants share an offset table + bytecode tail; the interpreter is statically linked into <code>SCUS_942.54</code> (the game's main executable - unusually, since most game logic lives in RAM-loaded overlays).</p>
 </header>
 
 <section class="doc-section" id="variants">
   <h2>Variants</h2>
+  <p>Two shapes of MES container appear on the disc, told apart by their first bytes:</p>
 <table>
 <thead><tr>
 <th>Variant</th>
@@ -49,7 +50,8 @@
 
 <section class="doc-section" id="bytecode-encoding">
   <h2>Bytecode encoding</h2>
-  <p>Reverse-engineered from the four SCUS <a href="#interpreter-functions">interpreter functions</a> (<code>FUN_8003CA38</code>, <code>FUN_80036044</code>, <code>FUN_80036888</code>, <code>FUN_80036514</code>). The same byte-classification table is used by all four; only the action per byte differs.</p>
+  <p>Most bytes in a message are glyphs - indices into the dialog font's tile atlas, not ASCII codes. A handful of prefix bytes (<code>0xC0..0xCF</code> and two aliases) are opcodes: they take a data byte and either name a wide glyph, insert spacing, or <em>substitute</em> a string from one of the game's name tables (character names, item names, magic names, art names) - which is how a line can mention the hero by whatever name the player typed.</p>
+  <p>Reverse-engineered from the four SCUS <a href="#interpreter-functions">interpreter functions</a> (<code>FUN_8003CA38</code>, <code>FUN_80036044</code>, <code>FUN_80036888</code>, <code>FUN_80036514</code> - Ghidra-traced addresses in the executable). The same byte-classification table is used by all four; only the action per byte differs.</p>
 <table>
 <thead><tr>
 <th>Byte range</th>
@@ -187,7 +189,7 @@
 
 <section class="doc-section" id="dialog-window-pager-fun-801d84d0">
   <h2>Dialog window pager - <code>FUN_801D84D0</code></h2>
-  <p>Lives in the dialog overlay. Distinct from the byte-level interpreter - this is the per-frame state machine that pages text on input. 26 outer states (<code>_DAT_801F2734</code>, range <code>0..0x19</code>) covering load / scroll / drain / wait-for-input / done. Stores per-line bytecode pointers in <code>_DAT_801F3540[line]</code> (16-line buffer at <code>0x801F3580</code>). Test <code>(byte &amp; 0x7F) &lt; 0x20</code> is used to detect line terminators (catches both <code>0x00..0x1F</code> and <code>0x80..0x9F</code>).</p>
+  <p>The layer above the byte-level interpreter: the per-frame state machine that opens the speech box, scrolls lines in, waits for a button press, and turns page. It lives in the dialog overlay (a chunk of MIPS code the game loads into RAM on demand rather than keeping in the executable). 26 outer states (<code>_DAT_801F2734</code>, range <code>0..0x19</code>) covering load / scroll / drain / wait-for-input / done. Stores per-line bytecode pointers in <code>_DAT_801F3540[line]</code> (16-line buffer at <code>0x801F3580</code>). Test <code>(byte &amp; 0x7F) &lt; 0x20</code> is used to detect line terminators (catches both <code>0x00..0x1F</code> and <code>0x80..0x9F</code>).</p>
   <p>The crate-level Rust port of this pager lives in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-vm/README.md"><code>crates/engine-vm</code></a> as the dialog-window state machine.</p>
   <h3>Box geometry</h3>
   <p>Max lines per box is stored at <code>_DAT_801F2740</code>. The overlay's <code>case 6</code> / <code>case 9</code> init arms (the two box-open states) <strong>both pin this to 3</strong> - the standard dialog box scrolls in up to three lines, then state <code>0xD</code> advances to the "page full, wait for input" state <code>0xE</code>. Other consumers (status / quantity panels) reach the pager with different values written in by their own setup.</p>

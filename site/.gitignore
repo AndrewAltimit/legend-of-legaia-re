@@ -56,6 +56,10 @@
 /formats/vab.html
 /formats/world-map-overlay.html
 /formats/xa.html
+/guides/extracting-assets.html
+/guides/getting-started.html
+/guides/modding-and-translation.html
+/guides/playing-and-viewing.html
 /index.html
 /media.html
 /minigames.html
@@ -112,6 +116,7 @@
 /tooling/rom-patcher.html
 /tooling/spine-flag-writers-capture.html
 /tooling/static-overlay-pipeline.html
+/tooling/translation.html
 /viewer.html
 /world-overview.html
 /world.html

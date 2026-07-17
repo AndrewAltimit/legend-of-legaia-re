@@ -10,7 +10,10 @@ Tools for extracting assets from a user-supplied disc image. Per the project's c
 ./target/release/legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted
 ```
 
-The pipeline runs verify → disc → PROT → categorize → streaming-format extract → TIM → PNG → CD-XA demux → WAV → TIM-catalog TSV. Use `--skip-png` to skip the slowest step; `--skip-xa` to skip the CD-XA audio demux; `--skip-catalog` to skip writing the texture-inventory TSVs (`prot_tim_catalog.tsv` + `prot_tim_deep_catalog.tsv`); `--skip-verify` to skip the SHA verification.
+The input is a raw Mode2/2352 `.bin` dump; a `.cue` sheet is also accepted and
+resolved to the BINARY track it references.
+
+The pipeline runs verify → disc → PROT → categorize → streaming-format extract → PNG → CD-XA demux → TIM-catalog TSV → dialog font. Skip flags: `--skip-png` (the streaming-container TIM → PNG conversion - a quick step that emits only the couple of TIMs the streaming containers carry; the bulk texture inventory is the TIM catalogs); `--skip-xa` (the CD-XA audio demux); `--skip-catalog` (the texture-inventory TSVs `prot_tim_catalog.tsv` + `prot_tim_deep_catalog.tsv`); `--skip-font` (the `font/` dialog-font artifacts); `--skip-verify` (the SHA verification).
 
 Output lands in `./extracted/` (gitignored):
 
@@ -19,18 +22,32 @@ extracted/
 ├── PROT.DAT                       - raw archive copy
 ├── CDNAME.TXT                     - entry name map
 ├── SCUS_942.54                    - executable
-├── PROT/                          - per-PROT-entry files (1232 entries, named via CDNAME).
+├── prot_tim_catalog.tsv           - flat TIM inventory (see `asset tim-catalog` below)
+├── prot_tim_deep_catalog.tsv      - TIMs inside LZS-compressed sections
+├── PROT/                          - per-PROT-entry files (1233 entries, named via CDNAME).
 │                                     Includes trailing-overlay sectors for entries
 │                                     whose on-disc footprint extends past their
 │                                     TOC-indexed end (see formats/prot.md).
 │   ├── categorize.json            - per-class breakdown
 │   └── ####_<name>.BIN
-├── streaming/                     - DATA_FIELD streaming sub-assets
-│   └── ####_<name>/chunk##_<TYPE>/####.tim
+├── streaming/                     - DATA_FIELD streaming sub-assets, one dir per container
+│   └── ####_<name>/               - chunk##_<TYPE>/ per chunk, plus _trailer.bin
+│       ├── chunk##_TMD/####.tmd   - TMD/TMD2 chunks split into numbered meshes
+│       ├── chunk##_TIM_LIST/####.tim  (+ .png unless --skip-png)
+│       └── chunk##_<TYPE>/blob.bin    - opaque chunk types (MAN, MES, MOVE, VDF, ...)
+├── font/                          - dialog-font artifacts (atlas/sheet PNGs, widths, metadata)
 ├── XA/                            - raw Form-1 .XA dumps (truncated audio; not listenable)
 └── XA_WAV/                        - correctly-paced per-channel WAVs (one per (file_no, ch_no))
     └── XAn_fileN_chM.wav
 ```
+
+The PNG step covers only the TIMs the streaming containers themselves carry (a
+handful). The full texture set is inventoried by the TIM catalogs; export it
+with `asset tim-scan extracted/PROT --out extracted/tim_scan` and convert with
+`tim convert-dir extracted/tim_scan` (the final pipeline summary prints exactly
+this). The `font/` step is what `legaia-engine`, `asset-viewer field`/`dialog`
+and the site load text from; `font-extract --disc` produces the same files
+standalone.
 
 The CD-XA step reads the raw disc directly and demuxes every `*.XA` file
 into one WAV per `(file_no, ch_no)` channel, each decoded at its true
@@ -59,7 +76,7 @@ Walks ISO9660 and writes every file. See [disc + ISO9660](../formats/disc.md).
 prot-extract extract extracted/PROT.DAT extracted/PROT/ --cdname extracted/CDNAME.TXT
 ```
 
-Splits PROT.DAT into 1232 numbered entries with CDNAME-derived filenames. Each extracted file's size is the entry's full on-disc footprint - `max(indexed_size, next_start - this_start)` - so trailing-overlay sectors past the TOC-indexed end (e.g. PROT 899's title-screen overlay code) are visible. See [PROT TOC](../formats/prot.md).
+Splits PROT.DAT into 1233 numbered entries with CDNAME-derived filenames. Each extracted file's size is the entry's full on-disc footprint - `max(indexed_size, next_start - this_start)` - so trailing-overlay sectors past the TOC-indexed end (e.g. PROT 899's title-screen overlay code) are visible. See [PROT TOC](../formats/prot.md).
 
 ### LZS decode (`lzs-decode`)
 
@@ -117,7 +134,7 @@ The format-aware extractor:
 asset categorize     <DIR> [--out categorize.json]    # per-class breakdown
 asset extract        <file> --out <out_dir>           # streaming-format chunks → individual files
 asset stream         <file>                           # walk DATA_FIELD chunks, no extraction
-asset describe       <file>                           # asset-descriptor walk
+asset describe       <file>                           # container TOC (player.lzs-style descriptor header)
 asset effect-bundle  <file>
 asset tmd-scan       <DIR>                            # bulk byte-search for TMD magic
 asset tim-scan       <DIR>                            # bulk byte-search for TIM magic (per-entry, lenient)
@@ -175,8 +192,8 @@ Without the env var, both tests **skip and pass** - that's intentional, so CI wo
 Once assets are extracted, browse them interactively:
 
 ```bash
-# Single TIM
-asset-viewer tim extracted/PROT/tim/<entry>.TIM
+# Single TIM (a `tim-scan` hit, or a PROT entry starting with a TIM)
+asset-viewer tim extracted/tim_scan/<entry>/raw_off<HEX>_<W>x<H>_<bpp>.tim
 
 # TIM at a non-zero offset within a larger file. Use this for TIMs in
 # the unindexed pre-`init_data` gap of PROT.DAT (system-UI sprite

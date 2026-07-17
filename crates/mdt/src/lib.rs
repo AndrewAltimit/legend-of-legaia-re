@@ -307,6 +307,12 @@ pub struct Classification {
     pub flat_table_non_empty: usize,
     pub flat_table_trailing: usize,
     pub verdict: Verdict,
+    /// True when the verdict rests only on the relaxed predicate while the
+    /// strict fitness score contradicts it (negative). Real per-scene Move
+    /// buffers land here too (the 1024-entry probe over-reads their shorter
+    /// tables), but so does unrelated data such as overlay code - callers
+    /// must not present the verdict as confident when this is set.
+    pub verdict_low_confidence: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -335,6 +341,7 @@ pub fn classify(buf: &[u8]) -> Result<Classification> {
     } else {
         Verdict::Unknown
     };
+    let verdict_low_confidence = verdict == Verdict::OffsetTableLayout && off_fit < 0;
     Ok(Classification {
         size: buf.len(),
         offset_table_fit: off_fit,
@@ -344,6 +351,7 @@ pub fn classify(buf: &[u8]) -> Result<Classification> {
         flat_table_non_empty: rt.non_empty_count(),
         flat_table_trailing: rt.trailing_bytes,
         verdict,
+        verdict_low_confidence,
     })
 }
 
@@ -463,6 +471,38 @@ mod tests {
             let _ = RecordTable::parse(&buf);
             let _ = classify(&buf);
         }
+    }
+
+    /// A buffer that passes only the relaxed predicate while the strict
+    /// fitness score is negative must be flagged low-confidence: the
+    /// verdict alone must never read as a confident "this is a Move
+    /// buffer" (mdt CLI `classify` renders the flag as a qualifier).
+    #[test]
+    fn negative_fitness_offset_verdict_is_low_confidence() {
+        // 8 KiB buffer; table probe covers the first 1024 u32s. 40 slots
+        // point far past EOF (bogus), 70 point at a decodable in-buffer
+        // record: used(110) > bogus(40) => relaxed predicate passes, but
+        // fitness = 110 - 2*40 = 30... make bogus dominate the score:
+        // used=70 valid + 60 bogus => used(130) > bogus(60), fitness = 10.
+        // Need fitness < 0 with used > bogus: used = valid + bogus,
+        // fitness = used - 2*bogus = valid - bogus. So valid < bogus < used
+        // works: valid=30, bogus=40 => used=70 > 40, fitness = -10.
+        let mut buf = vec![0u8; 8192];
+        let rec_off: u32 = 6000;
+        for slot in 0..30usize {
+            buf[slot * 4..slot * 4 + 4].copy_from_slice(&rec_off.to_le_bytes());
+        }
+        for slot in 30..70usize {
+            buf[slot * 4..slot * 4 + 4].copy_from_slice(&0xFFFF_FF00u32.to_le_bytes());
+        }
+        // Decodable record body at rec_off.
+        buf[rec_off as usize + 1] = 0x01;
+        buf[rec_off as usize + 2] = 10;
+        buf[rec_off as usize + 6] = 2;
+        let c = classify(&buf).unwrap();
+        assert_eq!(c.verdict, Verdict::OffsetTableLayout);
+        assert!(c.offset_table_fit < 0);
+        assert!(c.verdict_low_confidence);
     }
 
     /// An offset table whose entries are all `0xFFFFFFFF` (every offset far

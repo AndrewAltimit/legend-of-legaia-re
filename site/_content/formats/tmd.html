@@ -1,8 +1,19 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; legaia tmd (3d mesh)</div>
   <h1>Legaia TMD (3D mesh) <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">Legaia uses a custom variant of Sony's PSX TMD format. Magic is <code>0x80000002</code> instead of the standard <code>0x00000041</code>; pointer fields are byte-relative offsets that the runtime patches to absolute addresses on load. Implementation: <code>crates/tmd/src/lib.rs</code> + <code>crates/tmd/src/legaia_prims.rs</code>. Reverser context: <code>ghidra/scripts/funcs/{80026B4C, 800268DC, 8001F05C, 8002735C}.txt</code>.</p>
+  <p class="lede">TMD is the PlayStation SDK's standard 3D model format - vertices, normals, and drawing primitives. Every 3D mesh in Legend of Legaia (characters, monsters, houses, props) is a TMD, but it is a <strong>custom Legaia variant</strong>, not the stock Sony format: if you point a standard PSX TMD tool at these files it will reject them or produce garbage. This page documents the variant byte-for-byte.</p>
 </header>
+
+<section class="doc-section" id="not-stock-tmd">
+  <h2>Not stock PSX TMD</h2>
+  <p>The tell is the very first word: Legaia's magic is <code>0x80000002</code> instead of the standard <code>0x00000041</code>. Beyond the magic, the differences run deeper:</p>
+  <ul class="bullets">
+    <li><strong>Custom primitive grouping</strong> - primitives are batched into groups behind an 8-byte group header instead of the stock per-primitive packet stream.</li>
+    <li><strong>Offset pointers</strong> - the object table's pointer fields are byte-relative offsets that the runtime patches to absolute RAM addresses on load.</li>
+    <li><strong>A fixed scale word</strong> - the per-object <code>scale</code> field is always <code>0x00808080</code>, a Legaia-custom value where standard PSX TMD stores a signed log2 scale.</li>
+  </ul>
+  <p>Implementation: <code>crates/tmd/src/lib.rs</code> + <code>crates/tmd/src/legaia_prims.rs</code>. Reverser context (decompiled-function dumps from Ghidra, the disassembler this project uses - <code>FUN_80xxxxxx</code> names are addresses of traced functions in <code>SCUS_942.54</code>, the game's main executable): <code>ghidra/scripts/funcs/{80026B4C, 800268DC, 8001F05C, 8002735C}.txt</code>.</p>
+</section>
 
 <section class="doc-section" id="header-12-bytes">
   <h2>Header (12 bytes)</h2>
@@ -16,6 +27,7 @@ u32 nobj      // number of objects</code></pre>
 
 <section class="doc-section" id="object-table-28-bytes-per-object-nobj">
   <h2>Object table (28 bytes per object × nobj)</h2>
+  <p>A TMD holds one or more <em>objects</em> - independent sub-meshes (a character's limbs, a scene's props). Each gets a 28-byte descriptor:</p>
 <pre><code>u32 vert_top      // byte offset from end of header (0x0C)
 u32 n_vert
 u32 normal_top    // byte offset from end of header
@@ -29,13 +41,13 @@ i32 scale         // ALWAYS 0x00808080 in Legaia (Legaia-custom; standard
 
 <section class="doc-section" id="vertex-normal-data">
   <h2>Vertex / normal data</h2>
-  <p>Both are arrays of <code>SVECTOR { i16 x, y, z, pad }</code> = 8 bytes each.</p>
+  <p>Both are arrays of <code>SVECTOR { i16 x, y, z, pad }</code> = 8 bytes each - 16-bit integer coordinates, the native input format of the PSX's GTE (the console's geometry co-processor).</p>
 <pre><code>pub struct Vector { pub x: i16, pub y: i16, pub z: i16, pub _pad: i16 }</code></pre>
 </section>
 
 <section class="doc-section" id="primitive-section">
   <h2>Primitive section</h2>
-  <p>The primitive section is a sequence of <strong>groups</strong>. Each group has an <strong>8-byte header</strong> followed by a fixed-stride array of prim data.</p>
+  <p>This is where Legaia departs furthest from stock TMD. The primitive section is a sequence of <strong>groups</strong>: each group has an <strong>8-byte header</strong> followed by a fixed-stride array of primitives (a &ldquo;prim&rdquo; being one triangle or quad to draw).</p>
 <pre><code>group header (8 bytes):
   +0  u16 count          // how many primitives in this group
   +2  u16 flags          // selects entry in per-mode table (see below)
@@ -47,23 +59,22 @@ i32 scale         // ALWAYS 0x00808080 in Legaia (Legaia-custom; standard
 prim data (count × ilen*4 bytes):
   count × [ilen u32 words]</code></pre>
   <p><code>n_primitive</code> in the OBJECT header is the <strong>sum</strong> of <code>count</code> across all groups in the object's primitive section.</p>
-  <p>The per-prim layout depends on the prim type. The renderer (<code>FUN_8002735C</code>) treats the 8-byte-stride table at <code>0x8007326C</code> as a packed <code>{u32 first; u32 second}</code> per row, selects <code>row = ((flags &gt;&gt; 1) - 8) &gt;&gt; 1</code>, and reads exactly two fields: <strong>byte3 = <code>first &gt;&gt; 24</code></strong> (the shape selector, <code>&amp; 3</code> = <code>F</code>/<code>FT</code>/<code>G</code>/<code>GT</code>) and <strong>byte4 = <code>second &amp; 0xFF</code></strong> (the base vertex-index offset in u16 units):</p>
+  <p>The per-prim layout depends on the prim type, and the runtime resolves it through a lookup table rather than the stock TMD mode byte. The renderer (<code>FUN_8002735C</code>) treats the 8-byte-stride table at <code>0x8007326C</code> as a packed <code>{u32 first; u32 second}</code> per row, selects <code>row = ((flags &gt;&gt; 1) - 8) &gt;&gt; 1</code>, and reads exactly two fields: <strong>byte3 = <code>first &gt;&gt; 24</code></strong> (the shape selector, <code>&amp; 3</code> = <code>F</code>/<code>FT</code>/<code>G</code>/<code>GT</code>) and <strong>byte4 = <code>second &amp; 0xFF</code></strong> (the base vertex-index offset in u16 units):</p>
 <table>
 <thead><tr>
-<th>flags</th>
+<th>flags (tri / quad)</th>
 <th>row</th>
 <th>raw 8 bytes</th>
 <th>byte3 (shape)</th>
 <th>byte4 (vtx off)</th>
 </tr></thead>
 <tbody>
-<tr><td>0x10/11</td><td>0</td><td><code>04 00 00 05 07 00 00 00</code></td><td>0x05</td><td>0x07</td></tr>
-<tr><td>0x12/13</td><td>1</td><td><code>09 00 00 07 06 00 00 00</code></td><td>0x07</td><td>0x06</td></tr>
-<tr><td>0x14/15</td><td>2</td><td><code>04 00 00 00 02 00 00 00</code></td><td>0x00</td><td>0x02</td></tr>
-<tr><td>0x16/17</td><td>3</td><td><code>06 00 00 02 06 00 00 00</code></td><td>0x02</td><td>0x06</td></tr>
-<tr><td>0x18/19</td><td>4</td><td><code>07 03 00 01 07 00 00 00</code></td><td>0x01</td><td>0x07</td></tr>
-<tr><td>0x1A/1B</td><td>5</td><td><code>09 03 00 03 0B 00 00 00</code></td><td>0x03</td><td>0x0B</td></tr>
-<tr><td>0x20-27</td><td colspan="4">re-uses rows 0&ndash;5 via the same <code>(flags&gt;&gt;1)-8</code> math</td></tr>
+<tr><td>0x10,11 / 0x12,13</td><td>0</td><td><code>04 00 00 05 07 00 00 00</code></td><td>0x05</td><td>0x07</td></tr>
+<tr><td>0x14,15 / 0x16,17</td><td>1</td><td><code>09 00 00 07 06 00 00 00</code></td><td>0x07</td><td>0x06</td></tr>
+<tr><td>0x18,19 / 0x1A,1B</td><td>2</td><td><code>04 00 00 00 02 00 00 00</code></td><td>0x00</td><td>0x02</td></tr>
+<tr><td>0x1C,1D / 0x1E,1F</td><td>3</td><td><code>06 00 00 02 06 00 00 00</code></td><td>0x02</td><td>0x06</td></tr>
+<tr><td>0x20,21 / 0x22,23</td><td>4</td><td><code>07 03 00 01 07 00 00 00</code></td><td>0x01</td><td>0x07</td></tr>
+<tr><td>0x24,25 / 0x26,27</td><td>5</td><td><code>09 03 00 03 0B 00 00 00</code></td><td>0x03</td><td>0x0B</td></tr>
 </tbody>
 </table>
   <p><code>byte3 &amp; 3</code> is the shading / texture family (<code>0 = F</code> flat untextured, <code>1 = FT</code> flat textured, <code>2 = G</code> gouraud untextured, <code>3 = GT</code> gouraud textured); the quad bit <code>(flags &gt;&gt; 1) &amp; 1</code> picks tri vs quad. The vertex read offset is <code>byte4</code> with a quad adjustment (<code>+2</code>, overridden to <code>8</code> when byte3==1 and <code>0xE</code> when byte3==3, the <code>+2</code> cancelled when byte3==0; <code>&times; 2</code> for the byte offset). The crate's <code>legaia_tmd::descriptor::TABLE</code> is authoritative.</p>
@@ -71,7 +82,7 @@ prim data (count × ilen*4 bytes):
 
 <section class="doc-section" id="per-prim-colour">
   <h2>Per-prim colour / texture block</h2>
-  <p>The prim's leading bytes hold either a <strong>texture block</strong> (<code>FT*</code>/<code>GT*</code>: <code>[u0, v0, cba][u1, v1, tsb][u2, v2 (, u3, v3)]</code>) or a per-vertex <strong>colour block</strong> (<code>F*</code>/<code>G*</code>), selected by the byte3 shape. For textured prims the block's <strong>start</strong> comes from the table entry's <strong>byte 1</strong> (<code>Descriptor::texture_block_offset</code>):</p>
+  <p>The prim's leading bytes hold either a <strong>texture block</strong> (<code>FT*</code>/<code>GT*</code>: <code>[u0, v0, cba][u1, v1, tsb][u2, v2 (, u3, v3)]</code> - <code>cba</code> is the CLUT-base address naming which palette row in video memory to use, <code>tsb</code> the texture-page selector naming which VRAM region the UVs index into) or a per-vertex <strong>colour block</strong> (<code>F*</code>/<code>G*</code>), selected by the byte3 shape. For textured prims the block's <strong>start</strong> comes from the table entry's <strong>byte 1</strong> (<code>Descriptor::texture_block_offset</code>):</p>
   <ul class="bullets">
     <li><strong>byte1 = 0</strong> (rows 0/1, flags <code>0x10..0x17</code>): the light-source-lit variant - the texture block sits at <strong>offset 0</strong>, ahead of the vertices, with per-vertex data trailing the vertex indices. An earlier walker assumed <code>block_start = vertex_offset - block_len</code> (true only for the baked-colour rows), so these prims read <code>(cba, tsb)</code> from geometry bytes and rendered as rainbow garbage - the Rim Elm decorative-plant props.</li>
     <li><strong>byte1 = 3</strong> (rows 4/5, flags <code>0x20..0x27</code>): baked per-vertex colours precede the block - one colour word for flat <code>FT*</code>, <code>n_vertices</code> words for gouraud <code>GT*</code> - and the block ends at the vertex-index offset.</li>
@@ -82,7 +93,8 @@ prim data (count × ilen*4 bytes):
     <li><strong>G3</strong> (flags 0x1D, 20-byte record): 3 colour words at a 4-byte stride, then 3&times;u16 vertex offsets.</li>
     <li><strong>G4</strong> (flags 0x1F, 24-byte record): 4 colour words read in winding order <code>[0,1,3,2]</code> (table <code>DAT_8007b410 = 00 01 03 02</code>, applied to both colours and vertices), then 4&times;u16 vertex offsets.</li>
   </ul>
-  <p><strong>Neither renderer lights from the normal array</strong> - <code>FUN_8002735c</code> reads only the prim pointer, the vertex base and the loop count, never the object's normal table, and the sibling <code>FUN_80029888</code> that handles the lit rows issues no <code>NC*</code> op either. Between them the two run exactly one GTE colour op, <code>DPCS</code> (the depth cue), so shading is the stored <strong>colour</strong> word modulating the texel on the GPU (<code>texel * colour / 128</code>). <code>legaia_tmd::legaia_prims</code> decodes the colours into <code>Prim::colors</code> for every prim, and they reach the engine as a per-vertex attribute on the VRAM-mesh pipeline (see <a href="../subsystems/renderer.html#lighting">renderer &sect; Lighting</a>).</p>
+  <p>A surprise for anyone expecting PSX-style light sources: <strong>neither renderer lights from the normal array</strong>. <code>FUN_8002735c</code> reads only the prim pointer, the vertex base and the loop count, never the object's normal table, and the sibling <code>FUN_80029888</code> that handles the lit rows issues no <code>NC*</code> op either. Between them the two run exactly one GTE colour op, <code>DPCS</code> (the depth cue), so the normals are authored but never used - shading is the stored <strong>colour</strong> word modulating the texel on the GPU (<code>texel * colour / 128</code>).
+<code>legaia_tmd::legaia_prims</code> decodes the colours into <code>Prim::colors</code> for every prim, and they reach the engine as a per-vertex attribute on the VRAM-mesh pipeline (see <a href="../subsystems/renderer.html#lighting">renderer &sect; Lighting</a>).</p>
 </section>
 
 <section class="doc-section" id="worked-example">
@@ -172,7 +184,7 @@ prim data (count × ilen*4 bytes):
 
 <section class="doc-section" id="tmd-pointer-table">
   <h2>TMD pointer table</h2>
-  <p><code>FUN_80026B4C</code> writes registered TMDs to <code>*(int **)(idx * 4 + 0x8007C018)</code>. Confirmed readers in retail (4 functions, all setup-not-render):</p>
+  <p>At runtime the game keeps a global registry of loaded models. <code>FUN_80026B4C</code> writes registered TMDs to <code>*(int **)(idx * 4 + 0x8007C018)</code>. Confirmed readers in retail (4 functions, all setup-not-render):</p>
 <table>
 <thead><tr>
 <th>Function</th>
@@ -193,7 +205,7 @@ prim data (count × ilen*4 bytes):
 </tr>
 <tr>
 <td><code>FUN_8001E890</code></td>
-<td>&ldquo;DATA_FIELD player loader&rdquo; - calls <code>FUN_8003eb98(0x36C, &hellip;)</code> (PROT 876 = <code>player_data</code>) and the dev paths <code>data\field\player.lzs</code> / <code>h:\prot\all\data\field\player.lz</code>. The retail bytes the loader reads (PROT 876 = streaming-format VAB+TIM_LIST+SEQ; the dev <code>data\field\player.lzs</code> file is absent from the ISO9660 walk) <strong>do not</strong> carry the <code>[0..4]</code> character TMDs. Those come from PROT 0874 (<code>befect_data</code>) section 0 - see <a href="world-map-overlay.html#disc-side-source-of-04">world-map-overlay.html &sect; Disc-side source of [0..4]</a>. What this function <em>does</em> do that&apos;s still consumed at <code>DAT_8007C018[0..2]</code> is the post-install group-count cap (<code>entry[+0x08] = 10</code>) and the equipment-conditional patch dispatch into <code>FUN_8001EBEC</code>.</td>
+<td>&ldquo;DATA_FIELD player loader&rdquo; - calls <code>FUN_8003eb98(0x36C, &hellip;)</code> (PROT 876 = <code>player_data</code>, entry 876 of PROT.DAT, the disc's single big archive) and the dev paths <code>data\field\player.lzs</code> / <code>h:\prot\all\data\field\player.lz</code>. The retail bytes the loader reads (PROT 876 = streaming-format VAB+TIM_LIST+SEQ; the dev <code>data\field\player.lzs</code> file is absent from the ISO9660 walk) <strong>do not</strong> carry the <code>[0..4]</code> character TMDs. Those come from PROT 0874 (<code>befect_data</code>) section 0 - see <a href="world-map-overlay.html#disc-side-source-of-04">world-map-overlay.html &sect; Disc-side source of [0..4]</a>. What this function <em>does</em> do that&apos;s still consumed at <code>DAT_8007C018[0..2]</code> is the post-install group-count cap (<code>entry[+0x08] = 10</code>) and the equipment-conditional patch dispatch into <code>FUN_8001EBEC</code>.</td>
 </tr>
 </tbody>
 </table>

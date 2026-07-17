@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; ghidra setup</div>
   <h1>Ghidra setup</h1>
-  <p class="lede">The static-analysis path. Ghidra is run headlessly inside the <code>blacktop/ghidra:latest</code> Docker image, wrapped by <code>docker/ghidra.Dockerfile</code> to map the container user to the host's UID/GID so files written into the bind-mounted <code>/projects</code> and <code>/scripts</code> directories come back as the host user.</p>
+  <p class="lede">Ghidra is the disassembler this project reads the game's machine code with - every <code>FUN_80xxxxxx</code> name on these pages is Ghidra's automatic label for the function at that RAM address. You only need this page if you want to extend the reverse-engineering itself. It covers the static-analysis path: running Ghidra headlessly inside Docker, importing the game executable (<code>SCUS_942.54</code>) and its RAM overlays, the analysis-script catalogue, and the MIPS-specific traps that make naive queries return misleading answers.</p>
 </header>
 
 <section class="doc-section" id="toolchain">
@@ -15,6 +15,7 @@
 
 <section class="doc-section" id="bringing-the-service-up">
   <h2>Bringing the service up</h2>
+  <p>Ghidra runs headlessly inside the <code>blacktop/ghidra:latest</code> Docker image, wrapped by <code>docker/ghidra.Dockerfile</code> to map the container user to the host's UID/GID - so files written into the bind-mounted <code>/projects</code> and <code>/scripts</code> directories come back owned by the host user.</p>
 <pre><code># Build (auto-uses USER_ID / GROUP_ID from .env or defaults to 1000:1000)
 docker compose build ghidra
 
@@ -69,11 +70,12 @@ docker compose up -d ghidra</code></pre>
 
 <section class="doc-section" id="the-lui-addiu-gotcha">
   <h2>The LUI+ADDIU gotcha</h2>
+  <p>MIPS has no instruction that loads a full 32-bit constant, so compilers build every address from two 16-bit immediates - and Ghidra's cross-reference database does not stitch the pair back together.</p>
   <aside class="notice warn">
     <div class="notice-title">Ghidra's reference manager misses LUI+ADDIU pairs</div>
     Direct xref queries for an address return zero results even when the address is heavily referenced via the standard MIPS two-instruction-form-a-32-bit-constant idiom. Use <code>ghidra/scripts/find_lui_writers.py</code> with narrowed <code>LO</code>/<code>HI</code> any time a static address looks "uncalled".
   </aside>
-  <p>MIPS forms 32-bit constants from two 16-bit immediates:</p>
+  <p>The idiom in question:</p>
 <pre><code>lui   r1, 0x801C       ; r1 = 0x801C0000
 addiu r1, r1, 0x70F0   ; r1 = 0x801C70F0</code></pre>
   <p>Workaround: <code>ghidra/scripts/find_lui_writers.py</code> walks instructions, tracks per-register LUI immediates, and flags <code>addiu</code> / load / store offsets that combine with a tracked LUI to land in a target range.</p>

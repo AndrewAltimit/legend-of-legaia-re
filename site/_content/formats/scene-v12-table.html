@@ -1,12 +1,24 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; scene_v12_table</div>
   <h1>scene_v12_table - the per-scene <code>.PCH</code> walk-on trigger sidecar <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">The scene's <strong>walk-on tile-trigger patch file</strong>: dev filename <code>DATA\FIELD\&lt;scene&gt;.PCH</code> (suffix pool <code>0x8007B3BC/.MAP</code>, <code>0x8007B3C4/.PCH</code>, <code>0x8007B3CC/.LZS</code> in <code>SCUS_942.54</code>). The first <code>0x800</code> bytes are a four-kind sub-table directory + the kind-1 trigger records - the same header shape as the <code>.MAP</code> file's <code>+0x10000</code> trigger block (<a href="../subsystems/field-locomotion.html#grid-source">field locomotion &sect; trigger block</a>) - followed by a full <a href="scene-bundles.html#scene-event-scripts-prescript-only">scene event-scripts</a> prescript at a sector-aligned offset.</p>
+  <p class="lede">"When the player steps on tile (x, z), fire event N" - that is what this file encodes. Every
+  scene (town, dungeon, overworld) can carry one: a small sidecar the developers called
+  <code>DATA\FIELD\&lt;scene&gt;.PCH</code> (the literal path-suffix strings <code>.MAP</code> /
+  <code>.PCH</code> / <code>.LZS</code> survive in <code>SCUS_942.54</code>, the game's main executable, at
+  <code>0x8007B3BC</code> / <code>0x8007B3C4</code> / <code>0x8007B3CC</code>). Story beats, cutscene launches,
+  and area transitions that trigger by walking somewhere all route through these records. The first
+  <code>0x800</code> bytes are a four-kind sub-table directory + the kind-1 trigger records - the same header
+  shape as the <code>.MAP</code> file's <code>+0x10000</code> trigger block (<a
+  href="../subsystems/field-locomotion.html#grid-source">field locomotion &sect; trigger block</a>) - followed
+  by a full <a href="scene-bundles.html#scene-event-scripts-prescript-only">scene event-scripts</a> prescript at
+  a sector-aligned offset. The curious part: that second half is <strong>dead in retail</strong> - the loader
+  overwrites everything past the first <code>0x800</code> bytes at scene load, so only the trigger records ever
+  run (<a href="#runtime-staging">runtime staging</a>).</p>
 </header>
 
 <section class="doc-section" id="overview">
   <h2>Overview</h2>
-  <p>Implementation: <code>crates/asset/src/scene_v12_table.rs</code>. CLI: <code>asset scene-v12 &lt;PROT-entry&gt;</code> (single), <code>asset scene-v12-scan &lt;dir&gt;</code> (bulk). 97 PROT entries match.</p>
+  <p>Implementation: <code>crates/asset/src/scene_v12_table.rs</code>. CLI: <code>asset scene-v12 &lt;PROT-entry&gt;</code> (single), <code>asset scene-v12-scan &lt;dir&gt;</code> (bulk). 97 PROT entries match (PROT.DAT is the disc's single big archive; a "PROT entry" is one of its numbered files, and CDNAME is the name map that groups consecutive entries into per-scene blocks). <code>FUN_80xxxxxx</code> names throughout are Ghidra-traced functions, labelled by their RAM address.</p>
   <p><strong>Position law:</strong> a scene with CDNAME <code>#define &lt;scene&gt; n</code> carries its <code>.PCH</code> at
   <strong>raw TOC index <code>n + 1</code></strong> = extraction entry <code>n &minus; 1</code> (defines are raw indices - see
   <a href="cdname.html">CDNAME &sect; numbering space</a>; disc-gated <code>scene_v12_position_law_and_lzs_sibling</code> in
@@ -87,7 +99,7 @@
 
 <section class="doc-section" id="inline-records">
   <h2>Inline records at +0x14 - kind-1 walk-on tile triggers</h2>
-  <p><code>param</code> records, each 4 bytes, in the trigger-block kind-1 form:</p>
+  <p>A trigger does not contain its event - it points at one: the scene's MAN (its map data file) holds the named event records in partition 2, and each trigger names the partition-2 record to spawn. <code>param</code> records, each 4 bytes, in the trigger-block kind-1 form:</p>
   <table>
     <thead><tr><th>Byte</th><th>Field</th><th>Notes</th></tr></thead>
     <tbody>

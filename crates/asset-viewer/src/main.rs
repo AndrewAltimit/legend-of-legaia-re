@@ -66,7 +66,21 @@ use crate::tmd_view::{TmdViewData, load_tmd_for_view};
 use crate::world_app::run_world;
 
 #[derive(Parser, Debug)]
-#[command(about = "Asset viewer for Legend of Legaia.")]
+#[command(
+    version,
+    about = "Windowed asset viewer for Legend of Legaia: TIM textures, TMD \
+             meshes, VAB/SEQ audio, PROT browsing, and field/battle/dialog \
+             scene demos.",
+    long_about = "Windowed asset viewer for Legend of Legaia: TIM textures, \
+        TMD meshes, VAB/SEQ audio, PROT browsing, and field/battle/dialog \
+        scene demos.\n\n\
+        Pipeline prerequisite: run `legaia-extract \"<disc.bin>\" --out extracted` \
+        first - every subcommand reads files from that output tree (the \
+        `--extracted-root` default `extracted` resolves against the current \
+        directory). The `field` and `dialog` demos additionally need the \
+        dialog font under `extracted/font/`, written by `legaia-extract` or \
+        by `font-extract --disc <bin>`."
+)]
 struct Args {
     #[command(subcommand)]
     cmd: Cmd,
@@ -262,8 +276,8 @@ enum Cmd {
         /// Message index inside the offset table (0-based).
         #[arg(long, default_value_t = 0)]
         message: usize,
-        /// `extracted/` root containing `font/` artifacts produced by
-        /// `font-extract`.
+        /// `extracted/` root containing `font/` artifacts, written by
+        /// `legaia-extract` or by `font-extract --disc <bin>`.
         #[arg(long, default_value = "extracted")]
         extracted_root: PathBuf,
         /// Typewriter pacing: frames per emitted glyph. 1 = fastest
@@ -314,7 +328,17 @@ enum Cmd {
     },
 }
 
+/// Restore the default SIGPIPE disposition so piping log/stdout output into
+/// `head` terminates quietly instead of panicking on a broken pipe.
+fn reset_sigpipe() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> Result<()> {
+    reset_sigpipe();
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let args = Args::parse();
 

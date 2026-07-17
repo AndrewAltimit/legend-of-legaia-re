@@ -1,11 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; steal table</div>
   <h1>Steal-item table <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">What the player steals from an enemy with the <strong>Evil God Icon</strong> equipped is a static per-monster lookup in <code>SCUS_942.54</code> rodata - two bytes per monster id: steal chance (percent) and stolen item id. It lives in the executable, <em>not</em> in the monster archive's battle record, whose reward block carries only gold / exp / drop.</p>
+  <p class="lede">What can you steal from each enemy, and how often does it work? With the <strong>Evil God Icon</strong> accessory equipped, the answer is a static two-byte-per-monster lookup baked into <code>SCUS_942.54</code>, the game's main executable on the disc: steal chance (percent) and stolen item id. The surprise is <em>where</em> it lives - in the executable, <strong>not</strong> in the monster archive alongside the rest of a monster's battle data. The monster record's reward block carries only gold / exp / drop, so every attempt to find the steal item by scanning monster records was structurally doomed. Second trap: the two bytes are stored chance-first, the <em>reverse</em> of the drop pair in the monster record.</p>
 </header>
 
 <section class="doc-section" id="table-layout">
   <h2>Table base + record layout</h2>
+  <p>(<code>DAT_80077828</code> is a Ghidra label - the disassembler's name for the fixed RAM address the table occupies. Static data: the address maps directly to a file offset in <code>SCUS_942.54</code> on the disc.)</p>
   <table>
   <thead><tr><th>Field</th><th>Value</th></tr></thead>
   <tbody>
@@ -29,7 +30,7 @@
   <h2>Provenance</h2>
   <p>Pinned from a live player-steal RAM capture (Evil God Icon equipped): the Skeleton (monster id <code>13</code>) entry at <code>0x80077842</code> is <code>1e 8a</code> = <strong>30% Incense</strong>, exactly the steal the in-battle banner shows. Base, stride, and the <code>[chance, item]</code> order are confirmed byte-exact against the complete published steal table - item <em>and</em> chance columns - across every resolvable monster id, zero mismatches. The table is static rodata, resident in RAM identical to the file bytes.</p>
   <details class="disclosure"><summary>Why the monster record has no steal field</summary>
-    <p>An exhaustive offset scan of the decoded monster record (extraction entry 0867 / raw TOC index <code>0x365</code>, the <code>battle_data</code> monster archive), correlated against ground-truth steal data, finds no steal field there: the reward block at <code>+0x44..+0x49</code> holds only gold / exp / drop. Every record-only search for the steal item was structurally doomed - the data was never in the archive.</p>
+    <p>An exhaustive offset scan of the decoded monster record (extraction entry 0867 / raw TOC index <code>0x365</code> - a numbered entry of PROT.DAT, the disc's single big archive - the <code>battle_data</code> monster archive), correlated against ground-truth steal data, finds no steal field there: the reward block at <code>+0x44..+0x49</code> holds only gold / exp / drop. Every record-only search for the steal item was structurally doomed - the data was never in the archive.</p>
   </details>
 </section>
 

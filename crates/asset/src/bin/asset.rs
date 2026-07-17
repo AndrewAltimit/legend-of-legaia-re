@@ -37,8 +37,42 @@ use tables::*;
 use validation::*;
 use worldmap::*;
 
+/// Grouped index of the subcommand catalogue plus a copy-paste pipeline
+/// example - the flat `--help` list is ~50 entries and unreadable without it.
+const AFTER_HELP: &str = "\
+SUBCOMMAND GROUPS:
+  Pipeline basics (start here):
+    describe, decode, stream, extract, categorize, validate
+  Game-data dumps (readable tables and exports):
+    monster-archive (3D monsters, --glb), character-pack, battle-char-pack,
+    item-tables, spell-names, steal-table, accessory-passive, sfx-table,
+    new-game, level-up, worldmap-menu, summon-creatures, mode-table,
+    move-power, element-affinity
+  RE scanners and bulk sweeps (reverse-engineering aids):
+    scan, scan-stream, tim-scan, tim-catalog, tim-deep-catalog,
+    tim-render-distinct, tmd-scan, clut-finder, stage, stage-scan,
+    field-pack, field-pack-scan, effect-bundle, effect-bundle-scan,
+    battle-data-pack, battle-data-pack-scan, player-anm, player-anm-scan,
+    scene-v12, scene-v12-scan, man, man-scan, kingdom-slot, slot4-png,
+    befect-cluster, find-overlay, summon-overlay, summon-readef, overlay
+
+TYPICAL PIPELINE (from a disc image to per-entry files):
+    disc-extract extract game.bin out/
+    prot-extract extract out/PROT.DAT out/PROT --cdname out/CDNAME.TXT
+    asset categorize out/PROT
+    asset monster-archive out/PROT/0867_battle_data.BIN --id 1 --glb m.glb
+  (or run `legaia-extract game.bin --out out` to do the first three steps
+   plus sub-asset extraction in one shot)
+
+Project docs: https://andrewaltimit.github.io/legend-of-legaia-re/";
+
 #[derive(Parser)]
-#[command(name = "asset", about = "Legaia asset descriptor + dispatcher")]
+#[command(
+    name = "asset",
+    version,
+    about = "Inspect and extract Legend of Legaia game data from extracted PROT entries",
+    after_help = AFTER_HELP
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -46,15 +80,21 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Parse a buffer as a player.lzs-style container header and print.
+    /// Print a container's table of contents (the player.lzs-style
+    /// descriptor header: per-section type, size, and offset).
     Describe {
+        /// Extracted PROT entry `.BIN` (from `prot-extract extract` /
+        /// `legaia-extract`, see `extracted/PROT/`).
         input: PathBuf,
         /// Number of descriptors to read after the 8-byte meta (default 3).
         #[arg(long, default_value_t = 3)]
         count: usize,
     },
-    /// Decode one descriptor's payload (`--type-size 0xTTSSSSSS --offset 0xNN --mode lzs|raw`).
+    /// Decode one section out of a container (`--type-size 0xTTSSSSSS --offset 0xNN --mode lzs|raw`).
+    ///
+    /// Take the values from an `asset describe` row of the same file.
     Decode {
+        /// Extracted PROT entry `.BIN` (see `asset describe`).
         input: PathBuf,
         /// `(type<<24) | size` packed into a single u32, hex-prefixed (e.g. 0x02001000).
         #[arg(long, value_parser = parse_hex_u32)]
@@ -62,30 +102,37 @@ enum Cmd {
         /// Byte offset within the input buffer.
         #[arg(long, value_parser = parse_hex_u32)]
         offset: u32,
+        /// Payload encoding: `lzs` (compressed, the common case) or `raw`.
         #[arg(long, value_enum, default_value_t = ModeArg::Lzs)]
         mode: ModeArg,
+        /// Write the decoded bytes here (default: print a summary only).
         #[arg(short, long)]
         out: Option<PathBuf>,
     },
     /// Scan every PROT entry directory, treating each file as a player.lzs
     /// container and reporting any that fully decode.
     Scan {
+        /// Directory of extracted PROT entries (e.g. `extracted/PROT`).
         dir: PathBuf,
+        /// Number of descriptors to read after the 8-byte meta (default 3).
         #[arg(long, default_value_t = 3)]
         count: usize,
     },
-    /// Parse a buffer as a DATA_FIELD-style streaming container and dump
-    /// each chunk's header + magic.
+    /// Print a streaming-format file's chunk list (the DATA_FIELD-style
+    /// container most scene bundles use): per-chunk type, size, and magic.
     Stream {
+        /// Extracted PROT entry `.BIN` (see `extracted/PROT/`).
         input: PathBuf,
+        /// Stop after this many chunks.
         #[arg(long, default_value_t = 4096)]
         max_chunks: usize,
     },
-    /// Scan PROT entries for the streaming format used by FUN_8002541c 0x14.
-    /// Reports entries that parse cleanly (terminator + all known types +
-    /// all known magics match).
+    /// Scan PROT entries for the streaming container format and report the
+    /// ones that parse cleanly (terminator + all known types + magics match).
     ScanStream {
+        /// Directory of extracted PROT entries (e.g. `extracted/PROT`).
         dir: PathBuf,
+        /// Stop after this many chunks per entry.
         #[arg(long, default_value_t = 4096)]
         max_chunks: usize,
         /// Print only entries that fully validate.
@@ -95,22 +142,34 @@ enum Cmd {
         #[arg(long, default_value_t = 2)]
         min_chunks: usize,
     },
-    /// Extract sub-assets from a streaming-format file. Each TIM_LIST and
-    /// TMD chunk is unpacked using the [count, word_offsets, data] format.
-    /// Each sub-asset is written to `<out>/chunk{i}_{TYPE}/{j}.{ext}`.
+    /// Extract sub-assets (textures, models, ...) from a streaming-format
+    /// file. Each TIM_LIST and TMD chunk is unpacked and each sub-asset is
+    /// written to `<out>/chunk{i}_{TYPE}/{j}.{ext}`.
     Extract {
+        /// Extracted PROT entry `.BIN` that `asset scan-stream` reports as a
+        /// streaming container.
         input: PathBuf,
+        /// Output directory (created if missing).
         #[arg(short, long)]
         out: PathBuf,
-        /// Also dump trailing data past the streaming terminator (if any)
-        /// to `<out>/_trailer.bin` for later analysis.
-        #[arg(long, default_value_t = true)]
+        /// Also dump trailing data past the streaming terminator (if any) to
+        /// `<out>/_trailer.bin` for later analysis. On by default; pass
+        /// `--save-trailer=false` to skip the trailer file.
+        #[arg(
+            long,
+            default_value_t = true,
+            action = clap::ArgAction::Set,
+            num_args = 0..=1,
+            default_missing_value = "true"
+        )]
         save_trailer: bool,
     },
-    /// Bulk format classifier. Walks every file in `dir`, runs each known
-    /// parser, and falls back to entropy/signature features. Emits a JSON
-    /// report (default `<dir>/categorize.json`) plus a per-class summary.
+    /// Classify every extracted PROT entry by format (TIM pack, scene
+    /// bundle, LZS container, overlay code, ...). Runs each known parser and
+    /// falls back to entropy/signature features. Emits a JSON report
+    /// (default `<dir>/categorize.json`) plus a per-class summary.
     Categorize {
+        /// Directory of extracted PROT entries (e.g. `extracted/PROT`).
         dir: PathBuf,
         /// JSON output path. Defaults to `<dir>/categorize.json`.
         #[arg(short, long)]
@@ -440,9 +499,9 @@ enum Cmd {
         #[arg(long, default_value_t = true)]
         only_hits: bool,
     },
-    /// Decode the monster stat archive (PROT entry `0867_battle_data`, the
-    /// EXTENDED footprint). Prints one row per populated monster id with its
-    /// name + HP/MP/stats. Pass `--id N` for a single monster.
+    /// List every monster's name and battle stats, or export one monster's
+    /// 3D mesh / texture / animations (`--id N` with `--obj`, `--texture-png`
+    /// or `--glb`). Reads the monster archive (PROT entry `0867_battle_data`).
     MonsterArchive {
         /// PROT entry 867 bytes (use the extended-footprint extract, e.g.
         /// `extracted/PROT/0867_battle_data.BIN`).
@@ -598,12 +657,13 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         json: bool,
     },
-    /// Dump the static item tables out of a `SCUS_942.54`: per item id the
-    /// name + the consumable effect descriptor (`DAT_800752C0`) or the
-    /// equipment stat-bonus record (`DAT_80074F68`). See
-    /// `docs/formats/item-effect-table.md` and `equipment-table.md`.
+    /// List every item id with its name plus the consumable effect or
+    /// equipment stat bonuses, read from the game executable.
+    /// Format docs:
+    /// https://andrewaltimit.github.io/legend-of-legaia-re/formats/item-effect-table.html
     ItemTables {
-        /// Path to `SCUS_942.54` (typically `extracted/SCUS_942.54`).
+        /// Path to `SCUS_942.54` (extracted from the disc, typically
+        /// `extracted/SCUS_942.54`).
         scus: PathBuf,
         /// Only print equippable items.
         #[arg(long, default_value_t = false)]
@@ -612,22 +672,23 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         consumables_only: bool,
     },
-    /// Dump the static spell name / MP / target table from `SCUS_942.54`
-    /// (`legaia_asset::spell_names`, `DAT_800754C8`). See
-    /// `docs/formats/spell-table.md`.
+    /// List every spell/art with its name, MP cost and target, read from the
+    /// game executable. Format docs:
+    /// https://andrewaltimit.github.io/legend-of-legaia-re/formats/spell-table.html
     SpellNames {
-        /// Path to `SCUS_942.54` (typically `extracted/SCUS_942.54`).
+        /// Path to `SCUS_942.54` (extracted from the disc, typically
+        /// `extracted/SCUS_942.54`).
         scus: PathBuf,
         /// Emit JSON (an array of `{id, name, mp, target}`) instead of text.
         #[arg(long, default_value_t = false)]
         json: bool,
     },
-    /// Dump the static per-monster steal table from `SCUS_942.54`
-    /// (`legaia_asset::steal_table`, `DAT_80077828`) - what the Evil God
-    /// Icon steals - joining each stolen item id to its name. See
-    /// `docs/formats/steal-table.md`.
+    /// List what each monster can have stolen from it (the Evil God Icon
+    /// steal table), joining each stolen item id to its name. Read from the
+    /// game executable. Format docs:
+    /// https://andrewaltimit.github.io/legend-of-legaia-re/formats/steal-table.html
     StealTable {
-        /// Path to `SCUS_942.54`.
+        /// Path to `SCUS_942.54` (extracted from the disc).
         scus: PathBuf,
         /// Print every monster id, including non-stealable rows.
         #[arg(long, default_value_t = false)]
@@ -636,41 +697,41 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         json: bool,
     },
-    /// Dump the 64-slot accessory ("Goods") passive-effect table from
-    /// `SCUS_942.54` (`legaia_asset::accessory_passive`, `0x8007625C`). See
-    /// `docs/formats/accessory-passive-table.md`.
+    /// List the accessory ("Goods") passive effects (64 slots), read from
+    /// the game executable. Format docs:
+    /// https://andrewaltimit.github.io/legend-of-legaia-re/formats/accessory-passive-table.html
     AccessoryPassive {
-        /// Path to `SCUS_942.54`.
+        /// Path to `SCUS_942.54` (extracted from the disc).
         scus: PathBuf,
         /// Emit JSON (an array of `{index, name, party_wide, boosts}`).
         #[arg(long, default_value_t = false)]
         json: bool,
     },
-    /// Dump the sound-effect descriptor table from `SCUS_942.54`
-    /// (`legaia_asset::sfx_table`, `DAT_8006F198`, 100 cues). See
-    /// `docs/formats/sfx-table.md`.
+    /// List the 100 sound-effect cue descriptors (voice program, ADSR,
+    /// mixer channel), read from the game executable. Format docs:
+    /// https://andrewaltimit.github.io/legend-of-legaia-re/formats/sfx-table.html
     SfxTable {
-        /// Path to `SCUS_942.54`.
+        /// Path to `SCUS_942.54` (extracted from the disc).
         scus: PathBuf,
         /// Emit JSON (an array of `{id, ...descriptor}`) instead of text.
         #[arg(long, default_value_t = false)]
         json: bool,
     },
-    /// Dump the new-game starting-party template + starting inventory from
-    /// `SCUS_942.54` (`legaia_asset::new_game`, `0x80078C4C`). See
-    /// `docs/formats/new-game-table.md`.
+    /// Show the new-game starting party (levels, stats, equipment) and
+    /// starting inventory, read from the game executable. Format docs:
+    /// https://andrewaltimit.github.io/legend-of-legaia-re/formats/new-game-table.html
     NewGame {
-        /// Path to `SCUS_942.54`.
+        /// Path to `SCUS_942.54` (extracted from the disc).
         scus: PathBuf,
         /// Emit JSON (`{party: [...], inventory: [...]}`) instead of text.
         #[arg(long, default_value_t = false)]
         json: bool,
     },
-    /// Dump the per-character stat-growth params + XP thresholds from
-    /// `SCUS_942.54` (`legaia_asset::level_up_tables`, `DAT_80076918`). See
-    /// `docs/reference/gamedata.md` and the stat-growth thread.
+    /// Show each character's stat-growth parameters and XP-per-level
+    /// thresholds, read from the game executable. Project docs:
+    /// https://andrewaltimit.github.io/legend-of-legaia-re/
     LevelUp {
-        /// Path to `SCUS_942.54`.
+        /// Path to `SCUS_942.54` (extracted from the disc).
         scus: PathBuf,
         /// Emit JSON (`{growth: [...], xp_thresholds: [...]}`) instead of text.
         #[arg(long, default_value_t = false)]
@@ -843,7 +904,8 @@ enum Cmd {
     /// Static overlay-extraction pipeline: extract each clean-copy runtime
     /// overlay from PROT.DAT in its as-loaded form, with identity attached from
     /// the source entry. Complements (does not replace) the dynamic save-state
-    /// captures. See docs/tooling/static-overlay-pipeline.md.
+    /// captures. Project docs:
+    /// https://andrewaltimit.github.io/legend-of-legaia-re/tooling/static-overlay-pipeline.html
     Overlay {
         #[command(subcommand)]
         cmd: OverlayCmd,
@@ -951,7 +1013,17 @@ enum ModeArg {
     Raw,
 }
 
+/// Restore default SIGPIPE behaviour so piping into `head` etc. exits
+/// quietly instead of panicking on a broken-pipe write.
+fn reset_sigpipe() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> Result<()> {
+    reset_sigpipe();
     match Cli::parse().cmd {
         Cmd::Describe { input, count } => describe(&input, count),
         Cmd::Decode {

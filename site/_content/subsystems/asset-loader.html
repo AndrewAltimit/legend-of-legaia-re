@@ -1,12 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; asset loader</div>
   <h1>Asset loader</h1>
-  <p class="lede">How the runtime stitches per-scene assets together. Battle, field, sound, BGM - each scene type has its own loader, but they all share one idiom: a dev branch that loads by PROT index, and a retail branch that resolves dev-style paths through the CDNAME name map into the same indices.</p>
+  <p class="lede">How the running game gathers everything a scene needs - meshes, textures, palettes, sound banks, scripts - out of PROT.DAT, the disc's single big archive of 1233 numbered entries. Battle, field, sound, BGM: each scene type has its own loader, but they all share one idiom: a dev branch that loads by PROT entry number directly, and a retail branch that resolves dev-style file paths through the CDNAME name map into those same numbers.</p>
 </header>
 
 <section class="doc-section" id="how-it-works">
   <h2>How it works</h2>
-  <p>At runtime, "load this scene" doesn't mean "load one file". A single battle scene needs character meshes, monster meshes, the active CLUTs (palettes), the per-monster sound bank, the visual-effect script archive, plus all the text the battle dialog box might print. They're scattered across dozens of PROT entries.</p>
+  <p>At runtime, "load this scene" doesn't mean "load one file". A single battle scene needs character meshes, monster meshes, the active CLUTs (palettes stored as rows of framebuffer pixels), the per-monster sound bank, the visual-effect script archive, plus all the text the battle dialog box might print. They're scattered across dozens of PROT entries. (The function names on this page - <code>FUN_8001F05C</code> and friends - are RAM addresses in our disassembler trace of the original code; the game shipped without symbols.)</p>
 
   <p>Each scene type has its own loader function whose job is to go fetch all that. They all share the same shape:</p>
   <ul class="bullets">
@@ -17,7 +17,7 @@
 
   <p>There's a <strong>dev/retail</strong> split that runs through nearly every loader. Dev builds load by PROT index directly - the index numbers are baked in. Retail builds resolve dev-style paths (<code>h:\PROT\FIELD\&lt;scene&gt;\name</code>) through <code>FUN_8003E6BC</code>, which uses the <a href="../formats/index.html">CDNAME.TXT</a> name map to find the corresponding PROT index. Both branches end up at the same files; only the lookup mechanism differs. That's why there is no literal "scene N uses PROT entries [a, b, c]" table anywhere in the executable - the table is the CDNAME block layout itself.</p>
 
-  <p>The <strong>asset descriptor walker</strong> (<code>FUN_80020224</code>) is the loop that walks a per-scene asset descriptor and calls the dispatcher per descriptor. It has zero static callers in <code>SCUS_942.54</code>, which would suggest "dead code" - except its sole runtime caller is the town overlay's MAIN_INIT, at the start of every field session. So it <em>is</em> exercised by retail gameplay; the call just lives in RAM.</p>
+  <p>The <strong>asset descriptor walker</strong> (<code>FUN_80020224</code>) is the loop that walks a per-scene asset descriptor and calls the dispatcher per descriptor. It has zero static callers in <code>SCUS_942.54</code> (the game's main executable), which would suggest "dead code" - except its sole runtime caller is in the town <em>overlay</em> (a chunk of code the game streams into RAM on demand), at the start of every field session. So it <em>is</em> exercised by retail gameplay; the call just lives in RAM.</p>
 </section>
 
 <section class="doc-section" id="battle-loader">
@@ -39,7 +39,7 @@
 
   <p>Two cases call <code>FUN_8003E104(monster_idx, slot, dst_buf)</code> to populate slots 7 and 8 with the active battle's monster sound banks - the per-monster body of <code>h:\mpack\monster.snd</code>. Each monster has a <code>(start_lba, end_lba+1)</code> entry pair in the TOC at <code>0x801C8980 - 0x10</code>. See <a href="audio.html">Audio</a> &rarr; "Monster sound bank" for the full loader contract.</p>
 
-  <p class="hint">The asset-viewer's <code>--bundle battle</code> mode overlays the extraction 865&ndash;890 <code>tim_scan</code> window - an empirically-tuned VRAM set spanning the player battle files, the befect cluster, and the <code>sound_data2</code> streams (the directory labels carry the <a href="../formats/cdname.html#numbering-space">+2 filename shift</a>) - so character meshes have the right CLUT bindings.</p>
+  <p class="hint">The asset-viewer's <code>--bundle battle</code> mode overlays the extraction 865&ndash;890 <code>tim_scan</code> window - an empirically-tuned VRAM (PS1 video memory) set spanning the player battle files, the befect cluster, and the <code>sound_data2</code> streams (the directory labels carry the <a href="../formats/cdname.html#numbering-space">+2 filename shift</a>) - so character meshes have the right CLUT bindings.</p>
 
   <h3>Per-PROT walker (<code>FUN_8001FE70</code>)</h3>
   <p>One battle-scene state (in <code>FUN_800513F0</code>, around <code>0x80051A50</code>) calls <code>FUN_8001FA88(scene_base + slot, 0, dst_buf)</code> to load a per-scene PROT entry into the working buffer, then <code>FUN_8001FE70(dst_buf)</code> to walk its chunk list. The walker is the dispatch path for the <a href="../formats/scene-bundles.html">scene_tmd_stream</a> layout - leading TMD body followed by streaming chunks - and is <em>different</em> from the standard <code>FUN_8002541C</code> streaming walker:</p>

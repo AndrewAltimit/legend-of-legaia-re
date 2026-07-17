@@ -124,7 +124,7 @@ impl Font {
         let font_dir = root.join("font");
         if !font_dir.is_dir() {
             bail!(
-                "no `font/` dir under {} - run `legaia-extract` first",
+                "no `font/` dir under {} - run `legaia-extract` (writes extracted/font/) or `font-extract --disc <bin>`",
                 root.display()
             );
         }
@@ -1142,5 +1142,348 @@ mod tests {
                 "advance for byte 0x{c:02X} diverges"
             );
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Disc-only `extracted/font/` export
+// ---------------------------------------------------------------------------
+
+/// SCUS RAM address of the 38-entry runtime escape table (the `0xCE`
+/// substitution table [`EscapeTable`] models). Same table `font-extract`
+/// reads from a save state's companion SCUS; here it feeds the disc-only
+/// export of `dialog_font_metadata.json`.
+const ESCAPE_TABLE_RAM: u32 = 0x8007_4050;
+/// Entry count of the escape table (4 bytes each).
+const ESCAPE_TABLE_ENTRIES: usize = 38;
+
+/// Resolve an SCUS RAM address to a file slice through the PSX-EXE `t_addr`
+/// header (falling back to the retail load address when the header is
+/// absent), mirroring [`read_scus_widths`] for arbitrary tables.
+fn read_scus_ram(scus: &[u8], ram_addr: u32, len: usize) -> Result<&[u8]> {
+    let t_addr = if scus.len() >= 0x40 && &scus[0..8] == b"PS-X EXE" {
+        u32::from_le_bytes(
+            scus[PSX_EXE_T_ADDR_OFFSET..PSX_EXE_T_ADDR_OFFSET + 4]
+                .try_into()
+                .unwrap(),
+        )
+    } else {
+        SCUS_LOAD_ADDR_FALLBACK
+    };
+    let ram_off = ram_addr
+        .checked_sub(t_addr)
+        .ok_or_else(|| anyhow::anyhow!("RAM 0x{ram_addr:08X} below t_addr 0x{t_addr:08X}"))?;
+    let file_off = ram_off
+        .checked_add(PSX_EXE_HEADER)
+        .map(|v| v as usize)
+        .ok_or_else(|| anyhow::anyhow!("RAM 0x{ram_addr:08X} offset overflows"))?;
+    scus.get(file_off..file_off + len)
+        .ok_or_else(|| anyhow::anyhow!("RAM 0x{ram_addr:08X} + {len} past SCUS end"))
+}
+
+/// Walk the dialog-font TIM header and return `(clut, pixel_bytes)`: the
+/// TIM's own 16-entry BGR555 CLUT and the raw 4bpp page bytes (32768 bytes =
+/// 256x256 pixels, two per byte). The pixel bytes are exactly what the
+/// runtime uploads to VRAM `(896, 0)`, so they byte-match the
+/// `dialog_font_vram_4bpp.bin` a save-state extraction produces.
+fn font_tim_clut_and_pixels(font_tim: &[u8]) -> Result<([u16; 16], &[u8])> {
+    let rd_u32 = |o: usize| -> Result<u32> {
+        font_tim
+            .get(o..o + 4)
+            .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+            .ok_or_else(|| anyhow::anyhow!("font TIM truncated at 0x{o:X}"))
+    };
+    if rd_u32(0)? != 0x10 {
+        bail!("not a TIM (bad magic)");
+    }
+    let flags = rd_u32(4)?;
+    if flags & 0x7 != 0 {
+        bail!("font TIM is not 4bpp");
+    }
+    let mut clut = [0u16; 16];
+    let mut p = 8usize;
+    if flags & 0x8 != 0 {
+        let clut_len = rd_u32(p)? as usize;
+        // Entries start after len(4) + destination rect(8).
+        for (i, slot) in clut.iter_mut().enumerate() {
+            let off = p + 12 + i * 2;
+            *slot = font_tim
+                .get(off..off + 2)
+                .map(|b| u16::from_le_bytes(b.try_into().unwrap()))
+                .unwrap_or(0);
+        }
+        p = p
+            .checked_add(clut_len)
+            .filter(|&e| e <= font_tim.len())
+            .ok_or_else(|| anyhow::anyhow!("font TIM CLUT block overruns"))?;
+    }
+    // Image block: `[u32 len][u16 dx][u16 dy][u16 w16][u16 h][pixels]`.
+    let pixels = font_tim
+        .get(p + 12..p + 12 + 256 * 128)
+        .ok_or_else(|| anyhow::anyhow!("font TIM pixel data truncated"))?;
+    Ok((clut, pixels))
+}
+
+/// Stencil colour for a 4bpp palette index: transparent background, the
+/// `(32,32,32)` drop shadow, or pure-white fill (see [`pack_stencil_atlas`]).
+fn stencil_rgba(idx: u8) -> [u8; 4] {
+    match idx {
+        0 => [0, 0, 0, 0],
+        FONT_SHADOW_INDEX => [32, 32, 32, 255],
+        _ => [255, 255, 255, 255],
+    }
+}
+
+/// Encode an RGBA8 buffer as a PNG file.
+fn write_rgba_png(path: &Path, rgba: &[u8], w: u32, h: u32) -> Result<()> {
+    let f = std::io::BufWriter::new(
+        File::create(path).with_context(|| format!("create {}", path.display()))?,
+    );
+    let mut enc = png::Encoder::new(f, w, h);
+    enc.set_color(png::ColorType::Rgba);
+    enc.set_depth(png::BitDepth::Eight);
+    let mut writer = enc.write_header()?;
+    writer.write_image_data(rgba)?;
+    Ok(())
+}
+
+/// Write the full `extracted/font/` artifact set from disc bytes alone - the
+/// same five file names `font-extract` produces from a mednafen save state,
+/// so every existing consumer ([`Font::load_from_extracted`],
+/// [`Font::load_escape_table`], the asset-viewer, the engine) loads the
+/// result unchanged:
+///
+/// - `dialog_font_atlas.png` - 224x210 glyph atlas. Written as the
+///   whitewashed stencil [`Font::from_disc_tim_and_scus`] builds (white
+///   fill / dark shadow / transparent), which [`Font::load_paths`]
+///   normalises to the identical in-memory atlas as the save-state PNG.
+/// - `dialog_font_sheet.png` - the full 256x256 tile page, same stencil
+///   colours (the disc TIM's own CLUT is mastering scratch, not the runtime
+///   dialog palette, so rendering through it would be misleading).
+/// - `dialog_font_widths.csv` - per-character advance table from SCUS;
+///   byte-identical to the save-state extraction.
+/// - `dialog_font_metadata.json` - same schema as `font-extract`; the
+///   escape table (from SCUS) is byte-equivalent, the `clut` section carries
+///   the disc TIM's own CLUT with a note on how it differs from the runtime
+///   dialog CLUT.
+/// - `dialog_font_vram_4bpp.bin` - the raw 4bpp page bytes; byte-identical
+///   to the save-state VRAM dump.
+///
+/// `font_tim` is the slice at [`FONT_TIM_PROT_DAT_OFFSET`] (at least
+/// [`FONT_TIM_LEN`] bytes); `scus` is the whole `SCUS_942.54` image;
+/// `out_dir` is created if missing.
+pub fn export_extracted_font_dir(font_tim: &[u8], scus: &[u8], out_dir: &Path) -> Result<()> {
+    std::fs::create_dir_all(out_dir).with_context(|| format!("create {}", out_dir.display()))?;
+
+    let indexed = decode_font_tim(font_tim).context("decode dialog-font TIM")?;
+    let widths = read_scus_widths(scus).context("read dialog-font width table")?;
+    let escape_bytes = read_scus_ram(scus, ESCAPE_TABLE_RAM, ESCAPE_TABLE_ENTRIES * 4)
+        .context("read dialog escape table")?;
+    let (clut, raw_4bpp) = font_tim_clut_and_pixels(font_tim)?;
+
+    // Atlas (stencil - identical after `load_paths` whitewash to the
+    // save-state atlas).
+    let atlas = pack_stencil_atlas(&indexed);
+    write_rgba_png(
+        &out_dir.join("dialog_font_atlas.png"),
+        &atlas,
+        COLS * GLYPH_W,
+        ROWS * GLYPH_H,
+    )
+    .context("write atlas PNG")?;
+
+    // Sheet (full page, stencil colours).
+    let mut sheet = Vec::with_capacity(256 * 256 * 4);
+    for &idx in &indexed {
+        sheet.extend_from_slice(&stencil_rgba(idx));
+    }
+    write_rgba_png(&out_dir.join("dialog_font_sheet.png"), &sheet, 256, 256)
+        .context("write sheet PNG")?;
+
+    // Widths CSV (byte-identical to font-extract's writer).
+    let mut csv = String::from("char_hex,char_dec,char_repr,width_px\n");
+    for (i, &w) in widths.iter().enumerate() {
+        let c = i as u8;
+        let repr = if c.is_ascii_graphic() {
+            format!("\"{}\"", c as char)
+        } else {
+            format!("\"\\x{c:02X}\"")
+        };
+        csv.push_str(&format!("0x{c:02X},{c},{repr},{w}\n"));
+    }
+    let csv_path = out_dir.join("dialog_font_widths.csv");
+    std::fs::write(&csv_path, csv).with_context(|| format!("write {}", csv_path.display()))?;
+
+    // Metadata JSON (same schema as font-extract).
+    let escape_entries: Vec<serde_json::Value> = escape_bytes
+        .chunks_exact(4)
+        .enumerate()
+        .map(|(i, c)| {
+            let string_id = i16::from_le_bytes([c[0], c[1]]);
+            serde_json::json!({
+                "idx": i,
+                "string_id": string_id,
+                "kind": if string_id == 0 { "variable" } else { "string" },
+                "advance_px": c[2],
+                "y_offset": c[3] as i8,
+            })
+        })
+        .collect();
+    let palette: Vec<String> = clut.iter().map(|c| format!("0x{c:04X}")).collect();
+    let meta = serde_json::json!({
+        "format": "legend-of-legaia-dialog-font",
+        "version": 1,
+        "description": "Proportional dialog font, extracted from the disc alone \
+            (PROT.DAT dialog-font TIM + SCUS_942.54). Width table and escape table \
+            come from the SCUS executable; glyph pixel data comes from the on-disc \
+            font TIM. Glyph PNGs are whitewashed stencils (white fill, dark drop \
+            shadow) - the runtime picks ink colours per draw via CLUT swaps.",
+        "vram_source": {
+            "x_pixels_16bit": 896,
+            "y_pixels": 0,
+            "width_16bit_pixels": 64,
+            "height_pixels": 256,
+            "pixel_format": "4bpp_indexed",
+            "tpage_4bpp_x": 14,
+            "tpage_4bpp_y": 0,
+            "note": "Font lives in VRAM tile-page 14 row 0 (4bpp). 64 VRAM 16-bit \
+                pixels wide x 256 tall = 256x256 source 4bpp pixels. Sourced here \
+                from the on-disc TIM whose upload target is that framebuffer rect."
+        },
+        "clut": {
+            "vram_x_pixels_16bit": 0,
+            "vram_y_pixels": 510,
+            "colors": 16,
+            "index_for_dialog": 0,
+            "note": "The disc TIM's own 16-color BGR555 CLUT (destination (0,510)). \
+                This is mastering scratch, NOT the runtime dialog palette the \
+                renderer swaps in at (96,510); the stencil PNGs deliberately ignore \
+                it. Index 0 = transparent background, index 14 = drop shadow.",
+            "palette_bgr555": palette
+        },
+        "glyph_layout": {
+            "cell_width_px": 16,
+            "cell_height_px": 16,
+            "drawn_width_px": GLYPH_W,
+            "drawn_height_px": GLYPH_H,
+            "columns": COLS,
+            "rows": ROWS,
+            "first_char": FIRST_CHAR,
+            "last_char": 0xFF,
+            "u_formula": "(char & 0x0F) * 16",
+            "v_formula": "(char & 0xF0) - 0x20"
+        },
+        "widths": widths.to_vec(),
+        "escape_table": {
+            "ram_address": format!("0x{ESCAPE_TABLE_RAM:08X}"),
+            "entries": escape_entries
+        },
+        "rendering_pipeline": {
+            "dialog_renderer": "FUN_80036888",
+            "wrapper_with_word_wrap": "FUN_8003CC98",
+            "preprocessor": "FUN_80036514",
+            "gpu_primitive": "GP0 0x64 (variable-size textured rectangle)",
+            "newline_byte": "0x7C",
+            "color_change_byte": "0xCF (operand: u8 clut_index)",
+            "escape_byte": "0xCE (operand: u8 escape_idx)",
+            "string_terminator": "0x00"
+        }
+    });
+    let meta_path = out_dir.join("dialog_font_metadata.json");
+    let mut meta_text = serde_json::to_string_pretty(&meta)?;
+    meta_text.push('\n');
+    std::fs::write(&meta_path, meta_text)
+        .with_context(|| format!("write {}", meta_path.display()))?;
+
+    // Raw 4bpp page bytes.
+    let raw_path = out_dir.join("dialog_font_vram_4bpp.bin");
+    std::fs::write(&raw_path, raw_4bpp).with_context(|| format!("write {}", raw_path.display()))?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod export_tests {
+    use super::*;
+
+    /// Build the same synthetic TIM + SCUS as
+    /// `from_disc_tim_and_scus_stencils_and_reads_widths`, export a font dir,
+    /// and assert the artifact set exists and round-trips through the
+    /// standard extracted-artifact loaders.
+    #[test]
+    fn export_extracted_font_dir_roundtrips_through_loaders() {
+        let stride = 64 * 2;
+        let mut page = vec![0u8; stride * 256];
+        // Paint 'A' fill + shadow like the from_disc test does.
+        page[32 * stride + 16 / 2] = 15; // (16,32) low nibble = fill
+        page[32 * stride + 17 / 2] |= 14 << 4; // (17,32) high nibble = shadow
+
+        let mut tim = Vec::new();
+        tim.extend_from_slice(&0x10u32.to_le_bytes());
+        tim.extend_from_slice(&0x8u32.to_le_bytes());
+        tim.extend_from_slice(&44u32.to_le_bytes());
+        tim.extend_from_slice(&0u16.to_le_bytes());
+        tim.extend_from_slice(&510u16.to_le_bytes());
+        tim.extend_from_slice(&16u16.to_le_bytes());
+        tim.extend_from_slice(&1u16.to_le_bytes());
+        tim.extend_from_slice(&[0u8; 32]);
+        tim.extend_from_slice(&((4 + 8 + page.len()) as u32).to_le_bytes());
+        tim.extend_from_slice(&896u16.to_le_bytes());
+        tim.extend_from_slice(&0u16.to_le_bytes());
+        tim.extend_from_slice(&64u16.to_le_bytes());
+        tim.extend_from_slice(&256u16.to_le_bytes());
+        tim.extend_from_slice(&page);
+
+        // Minimal PSX-EXE covering both the width table and the escape table.
+        let t_addr = SCUS_LOAD_ADDR_FALLBACK;
+        let escape_off = (ESCAPE_TABLE_RAM - t_addr) as usize + PSX_EXE_HEADER as usize;
+        let widths_off = (WIDTH_TABLE_RAM - t_addr) as usize + PSX_EXE_HEADER as usize;
+        let mut scus = vec![0u8; escape_off + ESCAPE_TABLE_ENTRIES * 4];
+        scus[0..8].copy_from_slice(b"PS-X EXE");
+        scus[0x18..0x1C].copy_from_slice(&t_addr.to_le_bytes());
+        scus[widths_off + 0x41] = 12;
+        scus[escape_off] = 55; // entry 0 string_id lo byte
+        scus[escape_off + 2] = 16; // entry 0 advance_px
+
+        let out = std::env::temp_dir().join("legaia-font-export-test");
+        let _ = std::fs::remove_dir_all(&out);
+        export_extracted_font_dir(&tim, &scus, &out).unwrap();
+
+        for name in [
+            "dialog_font_atlas.png",
+            "dialog_font_sheet.png",
+            "dialog_font_widths.csv",
+            "dialog_font_metadata.json",
+            "dialog_font_vram_4bpp.bin",
+        ] {
+            assert!(out.join(name).exists(), "missing artifact {name}");
+        }
+
+        // The exported artifacts must load into the same Font the direct
+        // disc path builds.
+        let direct = Font::from_disc_tim_and_scus(&tim, &scus).unwrap();
+        let loaded = Font::load_paths(
+            &out.join("dialog_font_atlas.png"),
+            &out.join("dialog_font_widths.csv"),
+        )
+        .unwrap();
+        assert_eq!(direct.atlas_rgba(), loaded.atlas_rgba());
+        assert_eq!(direct.advance_of(b'A'), loaded.advance_of(b'A'));
+
+        // Escape table loads through the standard metadata reader.
+        let root = out.parent().unwrap();
+        // load_escape_table expects `<root>/font/...`; check via from_json.
+        let _ = root;
+        let meta = std::fs::read_to_string(out.join("dialog_font_metadata.json")).unwrap();
+        let table = EscapeTable::from_json(&meta).unwrap();
+        assert_eq!(table.entries.len(), ESCAPE_TABLE_ENTRIES);
+        assert_eq!(table.entries[0].string_id, 55);
+        assert_eq!(table.entries[0].advance_px, 16);
+
+        // Raw page bytes round-trip exactly.
+        let raw = std::fs::read(out.join("dialog_font_vram_4bpp.bin")).unwrap();
+        assert_eq!(raw, page);
+
+        let _ = std::fs::remove_dir_all(&out);
     }
 }

@@ -7,7 +7,7 @@
 //!   walk every record body individually. The prescript shape is
 //!   `[u16 count][u16 offsets[count]][record bytecode...]`. Detector lives
 //!   in `legaia_asset::scene_event_scripts`.
-//! - `scan-prot --disc <PATH> [--cdname <PATH>]`: walk every PROT.DAT entry,
+//! - `scan-prot --prot <PATH> [--cdname <PATH>]`: walk every PROT.DAT entry,
 //!   detect scene-event-scripts containers, and print every FMV trigger
 //!   (`0x4C 0xE2`) found, annotated with the CDNAME label of the enclosing
 //!   PROT entry.
@@ -44,7 +44,19 @@ use legaia_prot::cdname;
 #[command(
     author,
     version,
-    about = "Disassemble field-VM bytecode (FUN_801DE840 opcode set)"
+    about = "Disassemble field-VM bytecode (FUN_801DE840 opcode set)",
+    long_about = "Disassemble field-VM bytecode (the FUN_801DE840 opcode set).\n\n\
+        Inputs come from the extraction pipeline: `scan-prot` reads an \
+        `extracted/PROT.DAT` produced by `disc-extract extract <bin> out/` \
+        (or `legaia-extract`), while `file` / `scene-event-scripts` read \
+        individual extracted files.\n\n\
+        For a specific scene's genuine per-scene scripts (which live \
+        LZS-compressed inside the scene's MAN sub-asset, not in the \
+        prescript containers this tool scans), use \
+        `legaia-engine man-scripts --scene NAME --disc <bin>` instead. \
+        To locate a scene's script entry on disk: `legaia-engine list-scenes` \
+        prints each scene's PROT range start, and extraction filenames are \
+        numbered CDNAME define minus 2."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -79,9 +91,13 @@ enum Cmd {
     /// Walk every PROT.DAT entry; for each scene-event-scripts hit, list
     /// the FMV triggers found inside.
     ScanProt {
-        /// Path to a Legaia PROT.DAT file (e.g. extracted/PROT.DAT).
-        #[arg(long)]
-        disc: String,
+        /// Path to a Legaia PROT.DAT file (e.g. `extracted/PROT.DAT`, as
+        /// written by `disc-extract extract <bin> out/` or
+        /// `legaia-extract`). NOT a raw `.bin` disc image - extract
+        /// PROT.DAT from the disc first. (`--disc` is kept as a
+        /// backward-compatible alias.)
+        #[arg(long, alias = "disc")]
+        prot: String,
         /// Path to the CDNAME.TXT name map (optional but recommended).
         #[arg(long)]
         cdname: Option<String>,
@@ -106,7 +122,18 @@ enum Cmd {
     },
 }
 
+/// Restore the default SIGPIPE disposition so piping the (potentially very
+/// long) disassembly into `head` terminates quietly instead of panicking
+/// with "failed printing to stdout: Broken pipe".
+fn reset_sigpipe() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> Result<()> {
+    reset_sigpipe();
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::File {
@@ -121,13 +148,13 @@ fn main() -> Result<()> {
             record,
         } => cmd_scene_event_scripts(&path, fmv_only, summary, record),
         Cmd::ScanProt {
-            disc,
+            prot,
             cdname,
             scene,
             no_filter,
             bytewise,
         } => cmd_scan_prot(
-            &disc,
+            &prot,
             cdname.as_deref(),
             scene.as_deref(),
             no_filter,
@@ -241,14 +268,39 @@ fn cmd_scene_event_scripts(
     Ok(())
 }
 
+/// The 12-byte CD-ROM sector sync pattern that opens every 2352-byte raw
+/// sector. Its presence at offset 0 means the user handed us a raw `.bin`
+/// disc image instead of an extracted PROT.DAT.
+const CD_SECTOR_SYNC: [u8; 12] = [
+    0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00,
+];
+
 fn cmd_scan_prot(
-    disc: &str,
+    prot: &str,
     cdname_path: Option<&str>,
     scene_filter: Option<&str>,
     no_filter: bool,
     bytewise: bool,
 ) -> Result<()> {
-    let mut archive = Archive::open(Path::new(disc))?;
+    // Friendly redirect for the most common mix-up: feeding the whole
+    // disc image where PROT.DAT is expected.
+    {
+        use std::io::Read as _;
+        let mut head = [0u8; 12];
+        let mut f =
+            fs::File::open(prot).with_context(|| format!("opening PROT.DAT file {prot}"))?;
+        let n = f
+            .read(&mut head)
+            .with_context(|| format!("reading {prot}"))?;
+        if n == head.len() && head == CD_SECTOR_SYNC {
+            anyhow::bail!(
+                "{prot} is a raw disc image - extract PROT.DAT first \
+                 (`disc-extract extract <bin> out/`) or use \
+                 `legaia-engine man-scripts --scene NAME --disc <bin>`"
+            );
+        }
+    }
+    let mut archive = Archive::open(Path::new(prot))?;
     let map = match cdname_path {
         Some(p) => cdname::parse(Path::new(p))?,
         None => cdname::IndexMap::new(),
@@ -265,7 +317,7 @@ fn cmd_scan_prot(
     println!(
         "// scanning {} PROT entries from {} ({}, filter={})",
         archive.entries.len(),
-        disc,
+        prot,
         mode,
         if no_filter {
             "off"

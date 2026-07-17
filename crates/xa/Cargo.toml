@@ -16,3 +16,6 @@ path = "src/bin/xa.rs"
 anyhow.workspace = true
 clap.workspace = true
 legaia-iso = { path = "../iso" }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

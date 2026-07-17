@@ -1,11 +1,21 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; item-effect table</div>
   <h1>Item-effect descriptor table <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">A static <code>SCUS_942.54</code> table saying <strong>what kind of effect</strong> each consumable has - heal HP, restore MP, cure status, revive, raise a stat, escape a dungeon - plus its target shape (single ally vs. whole party) and where it can be used (field menu vs. battle). Sibling of the item-name table (<code>DAT_80074368</code>) and the spell table: the three are contiguous static data, and this table ends exactly where the spell table begins.</p>
+  <p class="lede">What does a Healing Leaf actually <em>do</em>, and why can't you use a Door of Light in
+  battle? This table answers both: it is a static table in <code>SCUS_942.54</code> (the game's main executable
+  on the disc) saying <strong>what kind of effect</strong> each consumable has - heal HP, restore MP, cure
+  status, revive, raise a stat, escape a dungeon - plus its target shape (single ally vs. whole party) and where
+  it can be used (field menu vs. battle). Notably it does <strong>not</strong> hold the literal restore amounts
+  - those live in two separate small tables (<a href="#heal-amounts">below</a>) - and "key items are unusable"
+  is not a special case at all: a key item simply resolves to a descriptor with neither usability bit set, which
+  is how the menu greys it out. It is the sibling of the <a href="item-table.html">item-name table</a>
+  (<code>DAT_80074368</code>) and the <a href="spell-table.html">spell table</a>: the three are contiguous
+  static data, and this table ends exactly where the spell table begins.</p>
 </header>
 
 <section class="doc-section" id="table-layout">
   <h2>Table base + record layout</h2>
+  <p>(<code>DAT_800752C0</code> is a Ghidra label for the fixed RAM address the table occupies once the executable is loaded; static data, so the address maps directly to a file offset in <code>SCUS_942.54</code> on the disc. Each record is 4 bytes - the "stride".)</p>
   <table>
   <thead><tr><th>Field</th><th>Value</th></tr></thead>
   <tbody>
@@ -28,7 +38,7 @@
 
 <section class="doc-section" id="indexing">
   <h2>Indexing (double-indirected)</h2>
-  <p>The lookup goes item id &rarr; subtype &rarr; descriptor. From <code>FUN_8003043C</code>:</p>
+  <p>The lookup goes item id &rarr; subtype &rarr; descriptor: an item's record in the name table carries a subtype byte, and the subtype picks the descriptor here. From <code>FUN_8003043C</code> (<code>FUN_80xxxxxx</code> names are Ghidra-traced functions, labelled by their RAM address):</p>
   <pre><code>subtype    = item_name_table[id].byte(+1)      ; DAT_80074369[id*0xC]
 descriptor = (&amp;DAT_800752C0)[subtype * 4]      ; stride-4 record
 arm        = descriptor[+0]                    ; effect class / validator arm

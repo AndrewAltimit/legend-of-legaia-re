@@ -1,11 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; save screen</div>
   <h1>Save Screen</h1>
-  <p class="lede">The save-slot selection and write flow used whenever the game persists progress to the PSX memory card: an outer 9-state dispatcher (<code>FUN_801DC6B4</code>), a sub-screen function-pointer table, and a libcd I/O state machine that does the actual card writes. It lives inside the <strong>menu overlay</strong> (the same binary as the shop, inn, and status screens - not a separate overlay).</p>
+  <p class="lede">Everything that happens between "Save" on the menu and bytes landing on the PSX memory card: the slot list, the "Now checking. Do not remove MEMORY CARD" beat, the overwrite confirm, and the actual card write. One structural surprise up front: the retail save UI is <strong>two-stage in two different id spaces</strong> - the SLOT 1 / SLOT 2 pills pick a memory-card <em>port</em>, and the 5&times;3 preview grid then picks one of that card's 15 save <em>blocks</em>. Conflating the two is the easy mistake.</p>
 </header>
 
 <section class="doc-section" id="how-it-works">
   <h2>How it works</h2>
+  <p>The whole flow lives inside the <strong>menu overlay</strong> - a chunk of code the game streams into RAM on demand, the same binary that carries the shop, inn, and status screens (it is not an overlay of its own). We traced it with a disassembler (Ghidra); the <code>FUN_80xxxxxx</code> names below are RAM addresses in that trace. Three layers: an outer 9-state dispatcher (<code>FUN_801DC6B4</code>), a sub-screen function-pointer table, and a state machine over libcd (Sony's CD/memory-card library) that does the actual card I/O.</p>
   <p><code>FUN_801DC6B4</code> drives a 9-case state machine on <code>_DAT_8007B43C</code>. It returns <code>true</code> when the save flow terminates (state &ge; 6). The entry-context pointer <code>_DAT_8007B450</code> is decoded on state 0 to select which sub-screen opens:</p>
   <table>
     <thead><tr><th><code>_DAT_8007B450</code></th><th>Sub-screen ID</th><th>Meaning</th></tr></thead>
@@ -118,7 +119,7 @@
 
 <section class="doc-section" id="sprite-sources">
   <h2>Continue &rarr; Load screen sprite sources</h2>
-  <p>The retail Continue &rarr; Load screen overlays a &ldquo;Load&rdquo; header panel and N blue SLOT pills on top of dimmed title art, with a pointing-finger cursor next to the active pill. Every sprite source is byte-confirmed via VRAM dump + GP0 primitive scan at PCSX-Redux save state 9:</p>
+  <p>The retail Continue &rarr; Load screen overlays a &ldquo;Load&rdquo; header panel and N blue SLOT pills on top of dimmed title art, with a pointing-finger cursor next to the active pill. Every sprite source is byte-confirmed via a VRAM dump (VRAM is the PS1's video memory, where every texture and CLUT palette row lives) plus a scan of the GP0 primitives (the GPU's raw draw commands) at PCSX-Redux save state 9:</p>
   <table>
     <thead><tr><th>Element</th><th>Source</th><th>Notes</th></tr></thead>
     <tbody>

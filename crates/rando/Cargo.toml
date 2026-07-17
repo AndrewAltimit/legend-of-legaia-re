@@ -23,3 +23,6 @@ legaia-iso = { path = "../iso" }
 legaia-gamedata = { path = "../gamedata" }
 serde.workspace = true
 serde_yaml = "0.9"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

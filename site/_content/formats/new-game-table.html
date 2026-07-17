@@ -1,7 +1,18 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; new-game table</div>
   <h1>New-game starting-party table <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">When the title screen's NEW GAME row is confirmed, the boot chain (<code>FUN_80025B64</code> &rarr; <code>FUN_801D6704</code>) launches the field overlay with a fresh game state. The starting party comes from a small static table in <code>SCUS_942.54</code>: each roster member's opening stats and display name, expanded by the seed routine into the live per-character records at <code>0x80084708 + n&times;0x414</code>. The opening scene is <code>town01</code> (Rim Elm) - the executable's default map-name buffer at <code>0x8007050C</code> holds the literal <code>"town01"</code>.</p>
+  <p class="lede">Where a brand-new game comes from: the starting party's stats and names live in a small static
+  table in <code>SCUS_942.54</code> (the game's main executable on the disc) - four 26-byte rows, one each for
+  Vahn, Noa, Gala, and Terra - the later rows are the templates used as each character is introduced, since
+  only Vahn has joined at a true New Game. When the title
+  screen's NEW GAME row is confirmed, the boot chain (<code>FUN_80025B64</code> &rarr;
+  <code>FUN_801D6704</code>; <code>FUN_80xxxxxx</code> names are Ghidra-traced functions) expands these rows
+  into the live per-character records at <code>0x80084708 + n&times;0x414</code>. Two details worth knowing up
+  front: the starting inventory is <em>not</em> a table at all - Healing Leaf &times;5 is hard-coded as
+  instructions (<a href="#inventory">below</a>) - and the level number the game displays is a stored byte, not
+  something recomputed from experience (<a href="#progression">below</a>). The opening scene is
+  <code>town01</code> (Rim Elm) - the executable's default map-name buffer at <code>0x8007050C</code> holds the
+  literal <code>"town01"</code>.</p>
 </header>
 
 <section class="doc-section" id="table-layout">

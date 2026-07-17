@@ -11,7 +11,7 @@
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::path::Path;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
 pub const SECTOR: u32 = 0x800;
@@ -63,7 +63,7 @@ pub struct Archive {
 impl Archive {
     pub fn open(path: &Path) -> Result<Self> {
         use std::fs::File;
-        let file = File::open(path)?;
+        let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
         let file_len = file.metadata()?.len();
         Self::from_reader(Box::new(file), file_len)
     }

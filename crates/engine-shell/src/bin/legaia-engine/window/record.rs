@@ -61,10 +61,23 @@ pub(super) struct RecordTarget {
     rng_seed: u32,
 }
 
+/// Frames between periodic durability checkpoints when no pad input is
+/// arriving (~1 s at the 100 Hz sim rate). A pad transition checkpoints
+/// on the next redraw regardless of this interval.
+const CHECKPOINT_EVERY_FRAMES: u64 = 100;
+
 /// Per-tick recorded-pad-event buffer + flush state. Lives on
 /// [`PlayWindowApp`] when the user invoked the `record` subcommand;
 /// `None` for plain `play-window` runs so the keyboard handler pays
 /// nothing in the common case.
+///
+/// Durability: the replay file is not only written on clean window
+/// close - `observe_frame` checkpoints the complete file to disk
+/// whenever there are unwritten events (and at least once every
+/// [`CHECKPOINT_EVERY_FRAMES`] frames to keep `meta.frames` fresh), so
+/// a session killed by Ctrl-C / SIGTERM still leaves a valid replay
+/// covering everything up to the last checkpoint. Only SIGKILL between
+/// checkpoints can lose the final ~second.
 pub(super) struct RecordLog {
     out_path: std::path::PathBuf,
     events: Vec<PadEvent>,
@@ -78,7 +91,12 @@ pub(super) struct RecordLog {
     /// `meta.frames` so the on-disk file faithfully describes the
     /// recorded duration.
     last_frame: u64,
-    /// Once the file has been written, additional Close events become
+    /// `meta.frames` value of the last on-disk checkpoint (`None` =
+    /// nothing written yet - the first `observe_frame` writes).
+    checkpointed_frame: Option<u64>,
+    /// Events recorded since the last successful on-disk write.
+    dirty: bool,
+    /// Once the final flush has run, additional Close events become
     /// no-ops (winit can deliver CloseRequested + the loop's exit drop
     /// both).
     flushed: bool,
@@ -93,6 +111,8 @@ impl RecordLog {
             scenario: target.scenario,
             rng_seed: target.rng_seed,
             last_frame: 0,
+            checkpointed_frame: None,
+            dirty: false,
             flushed: false,
         }
     }
@@ -106,25 +126,48 @@ impl RecordLog {
         }
         self.events.push(PadEvent { frame, pad });
         self.last_pad = pad;
+        self.dirty = true;
         if frame > self.last_frame {
             self.last_frame = frame;
         }
     }
 
     /// Note the frame counter advanced past `frame` without a pad
-    /// change. Keeps `meta.frames` honest when the user closes the
-    /// window with no input held.
+    /// change (keeps `meta.frames` honest when the user closes the
+    /// window with no input held), and opportunistically checkpoint the
+    /// replay file to disk so an interrupted session stays recoverable.
     pub(super) fn observe_frame(&mut self, frame: u64) {
         if frame > self.last_frame {
             self.last_frame = frame;
         }
+        if self.flushed {
+            return;
+        }
+        let due = self.dirty
+            || self
+                .checkpointed_frame
+                .is_none_or(|c| self.last_frame >= c + CHECKPOINT_EVERY_FRAMES);
+        if !due {
+            return;
+        }
+        match self.write_file() {
+            Ok(_) => {
+                self.dirty = false;
+                self.checkpointed_frame = Some(self.last_frame);
+            }
+            Err(e) => log::warn!(
+                "record: checkpoint write to {} failed: {e:#}",
+                self.out_path.display()
+            ),
+        }
     }
 
-    /// Flush to disk. Idempotent.
-    pub(super) fn flush(&mut self) -> Result<()> {
-        if self.flushed {
-            return Ok(());
-        }
+    /// Serialize the current state as a complete, valid `j-replay-v1`
+    /// file at `out_path`. Returns `(event count, frames covered)`.
+    ///
+    /// Writes via a `.tmp` sibling + rename so a kill mid-write never
+    /// leaves a truncated replay - the previous checkpoint survives.
+    fn write_file(&self) -> Result<(usize, u64)> {
         let meta = ReplayMeta {
             schema: legaia_engine_shell::replay::REPLAY_SCHEMA_V1.to_string(),
             scenario: self.scenario.clone(),
@@ -134,12 +177,36 @@ impl RecordLog {
         let mut file = ReplayFile::new(meta);
         file.events = self.events.clone();
         file.validate()?;
-        file.write_to(&self.out_path)?;
+        let mut tmp_name = self
+            .out_path
+            .file_name()
+            .map(|n| n.to_os_string())
+            .unwrap_or_else(|| "replay".into());
+        tmp_name.push(".tmp");
+        let tmp = self.out_path.with_file_name(tmp_name);
+        file.write_to(&tmp)?;
+        std::fs::rename(&tmp, &self.out_path).with_context(|| {
+            format!(
+                "rename replay checkpoint {} -> {}",
+                tmp.display(),
+                self.out_path.display()
+            )
+        })?;
+        Ok((file.events.len(), file.meta.frames))
+    }
+
+    /// Final flush to disk on window close. Idempotent.
+    pub(super) fn flush(&mut self) -> Result<()> {
+        if self.flushed {
+            return Ok(());
+        }
+        let (events, frames) = self.write_file()?;
         self.flushed = true;
+        self.dirty = false;
         eprintln!(
             "record: wrote {} event(s) covering {} frame(s) -> {}",
-            file.events.len(),
-            file.meta.frames,
+            events,
+            frames,
             self.out_path.display()
         );
         Ok(())

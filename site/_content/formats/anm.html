@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; anm animation container</div>
   <h1>ANM animation container <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">The keyframe animation container for <strong>player characters and field actors</strong> - the walk cycles, idle loops, and scripted motion the field engine plays back. Asset type <code>0x06</code> from the <a href="asset-type.html">asset-type dispatcher</a>. Implementation: <code>crates/anm</code>.</p>
+  <p class="lede">ANM is the keyframe-animation container for <strong>player characters and field actors</strong> - the walk cycles, idle loops, and scripted motion the field engine plays back. Each record stores per-bone position/rotation keyframes that the runtime interpolates between to pose a <a href="tmd.html">TMD</a> mesh. Asset type <code>0x06</code> from the <a href="asset-type.html">asset-type dispatcher</a>. Implementation: <code>crates/anm</code>.</p>
   <p>It is not the only animation format on the disc, and picking the wrong one is the usual mistake. Battle monsters use a separate per-object keyframe stream inside the monster archive (<a href="monster-animation.html">monster animation</a>), and the party's <em>battle</em> poses come from the player battle files' own streams rather than from here (<a href="character-mesh.html">character mesh</a>). ANM data itself reaches you from two distinct bundles - the party locomotion bank and the per-scene NPC bank; see <a href="#disc-sources">disc sources</a>.</p>
 </header>
 
@@ -15,6 +15,17 @@ records[]                  // per-record bodies; offsets[i+1] - offsets[i] = rec
 u16 b              // varies (0..40 observed) - likely frame count
 u16 marker_1       // = 0x080C in every record observed
 u16 marker_2       // = 0x0002 (78%) or 0x0004 (22%)</code></pre>
+</section>
+
+<section class="doc-section" id="disc-sources">
+  <h2>Disc sources - locomotion bundle + per-scene bundle</h2>
+  <p>Where to find the data: two ANM-container families feed the field actors, both in the <strong>frame-stream</strong> record layout (per-record header <code>[a=bones][b=frames][marker 0x080C][flag]</code>, body = <code>frames &times; bones &times; 8-byte</code> entries, size <code>16 + 8&middot;bones&middot;frames</code>; parser <code>legaia_asset::player_anm</code>):</p>
+  <ul class="bullets">
+    <li><strong>Party locomotion bundle - PROT 0874 &sect;1</strong> (entry 0874 of <code>PROT.DAT</code>, the disc's single big archive, sub-section 1). The walk / run / idle clip set every field scene poses the party with: 23 records = three 7-record character banks (Vahn <code>0..=6</code>, Noa <code>7..=13</code>, Gala <code>14..=20</code>, all 10-bone) + a 3-bone savepoint loop (record 21) + a 2-bone aux clip (record 22). Bank slot 1 = the standing <strong>idle</strong> (all three live party actors' <code>+0x4C</code> record pointers sit at bank offset +1 in the town01 field anchor; frame 0 = the field rest-pose assembly transform), bank slot 0 = the <strong>walk</strong> loop (live pad-driven pin: the pointer flips record 1 &rarr; 0 while moving and back on stop). Byte-identical (post-LZS) to the runtime container. Parser entry: <code>legaia_asset::character_pack::field_locomotion_anm</code>.</li>
+    <li><strong>Per-scene bundle - the scene's first asset-table slot, type-0x05 section.</strong> The <strong>NPC / scene-actor</strong> clip pool (town01: 69 records at runtime <code>DAT_8007B7C8</code>; villager idles at records 14/17, children at 10/12). Which record an NPC plays comes from its MAN placement header: the record's <code>anim_id</code> byte = bundle record index + 1 (<code>0</code> = none), installed into the actor <code>+0x5C</code> halfword at spawn - see the <a href="../subsystems/script-vm.html#placement-header-model-animation-resolution">placement-header resolution</a>.</li>
+  </ul>
+  <p>Each 8-byte (bone, frame) entry decodes - <code>FUN_8001BE80</code>, ported at <code>player_anm::BoneTransform</code> - into three nibble-packed signed 12-bit translations + three <code>u8</code> rotation angles (<code>&lt;&lt; 4</code> to PSX 12-bit); the renderer (<code>FUN_8001B964</code>) poses TMD object <code>i</code> with bone <code>i</code>'s flat <code>R&middot;v + T</code>, requiring the actor's object-table count (<code>FUN_80024D78</code>, filled straight off the pool TMD) to equal the record's bone count.</p>
+  <p>A battle-form ANM bank also exists at PROT 1203 (<code>other5</code>), but it matches the PROT 1204 pack's own object order (the Baka Fighter / viewer configuration) - real battles pose the assembled meshes from the player files' <code>record[0]</code> TRS streams instead (see <a href="battle-data-pack.html#battle-animations">battle-data-pack &sect; battle animations</a>).</p>
 </section>
 
 <section class="doc-section" id="per-record-body-animation-opcode-6">
@@ -240,17 +251,6 @@ byte[7] | (byte[8] &amp; 0xF0) &lt;&lt; 4   &rarr; vec_b.z</code></pre>
 +0x0C  expanded_size   (u32 - payload byte length)
 +0x10  -- payload starts here --</code></pre>
   <p><code>crates/anm::peel_preamble</code> strips it; the on-disc form has no preamble.</p>
-</section>
-
-<section class="doc-section" id="disc-sources">
-  <h2>Disc sources - locomotion bundle + per-scene bundle</h2>
-  <p>Two ANM-container families feed the field actors, both in the <strong>frame-stream</strong> record layout (per-record header <code>[a=bones][b=frames][marker 0x080C][flag]</code>, body = <code>frames &times; bones &times; 8-byte</code> entries, size <code>16 + 8&middot;bones&middot;frames</code>; parser <code>legaia_asset::player_anm</code>):</p>
-  <ul class="bullets">
-    <li><strong>Party locomotion bundle - PROT 0874 &sect;1.</strong> The walk / run / idle clip set every field scene poses the party with: 23 records = three 7-record character banks (Vahn <code>0..=6</code>, Noa <code>7..=13</code>, Gala <code>14..=20</code>, all 10-bone) + a 3-bone savepoint loop (record 21) + a 2-bone aux clip (record 22). Bank slot 1 = the standing <strong>idle</strong> (all three live party actors' <code>+0x4C</code> record pointers sit at bank offset +1 in the town01 field anchor; frame 0 = the field rest-pose assembly transform), bank slot 0 = the <strong>walk</strong> loop (live pad-driven pin: the pointer flips record 1 &rarr; 0 while moving and back on stop). Byte-identical (post-LZS) to the runtime container. Parser entry: <code>legaia_asset::character_pack::field_locomotion_anm</code>.</li>
-    <li><strong>Per-scene bundle - the scene's first asset-table slot, type-0x05 section.</strong> The <strong>NPC / scene-actor</strong> clip pool (town01: 69 records at runtime <code>DAT_8007B7C8</code>; villager idles at records 14/17, children at 10/12). Which record an NPC plays comes from its MAN placement header: the record's <code>anim_id</code> byte = bundle record index + 1 (<code>0</code> = none), installed into the actor <code>+0x5C</code> halfword at spawn - see the <a href="../subsystems/script-vm.html#placement-header-model-animation-resolution">placement-header resolution</a>.</li>
-  </ul>
-  <p>Each 8-byte (bone, frame) entry decodes - <code>FUN_8001BE80</code>, ported at <code>player_anm::BoneTransform</code> - into three nibble-packed signed 12-bit translations + three <code>u8</code> rotation angles (<code>&lt;&lt; 4</code> to PSX 12-bit); the renderer (<code>FUN_8001B964</code>) poses TMD object <code>i</code> with bone <code>i</code>'s flat <code>R&middot;v + T</code>, requiring the actor's object-table count (<code>FUN_80024D78</code>, filled straight off the pool TMD) to equal the record's bone count.</p>
-  <p>A battle-form ANM bank also exists at PROT 1203 (<code>other5</code>), but it matches the PROT 1204 pack's own object order (the Baka Fighter / viewer configuration) - real battles pose the assembled meshes from the player files' <code>record[0]</code> TRS streams instead (see <a href="battle-data-pack.html#battle-animations">battle-data-pack &sect; battle animations</a>).</p>
 </section>
 
 <section class="doc-section" id="see-also">

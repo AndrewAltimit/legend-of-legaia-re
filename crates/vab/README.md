@@ -63,7 +63,10 @@ is identical to XA-ADPCM, only the block packaging differs.
 ## CLI
 
 Both subcommands scan `<file>` for every embedded `VABp` header, so you can
-point them at a raw PROT entry rather than a pre-sliced bank.
+point them at a raw PROT entry rather than a pre-sliced bank. A truncated
+trailing header (common in the wrapped BGM entries, whose final `pBAV` magic
+is cut off by the chunk framing) is skipped with a warning - the banks before
+it still list / extract and the tool exits 0.
 
 ```bash
 # Find + describe every VAB in a file: programs, tones, sample count, offsets

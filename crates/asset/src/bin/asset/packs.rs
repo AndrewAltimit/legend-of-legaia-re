@@ -6,7 +6,7 @@ use legaia_asset::{battle_data_pack, effect_bundle, field_pack};
 use legaia_prot::cdname;
 
 pub(crate) fn field_pack_one(input: &PathBuf, all_slots: bool, groups: bool) -> Result<()> {
-    let raw = std::fs::read(input)?;
+    let raw = crate::common::read_input(input)?;
     let Some(fp) = field_pack::detect(&raw) else {
         anyhow::bail!(
             "no field-pack signature in {} ({} bytes)",
@@ -112,7 +112,7 @@ pub(crate) fn field_pack_scan(dir: &Path, only_hits: bool) -> Result<()> {
     let mut total = 0usize;
     for path in &files {
         total += 1;
-        let raw = std::fs::read(path)?;
+        let raw = crate::common::read_input(path)?;
         let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
         match field_pack::detect(&raw) {
             Some(fp) => {
@@ -150,7 +150,7 @@ pub(crate) fn field_pack_scan(dir: &Path, only_hits: bool) -> Result<()> {
 }
 
 pub(crate) fn effect_bundle_one(input: &PathBuf, all_slots: bool) -> Result<()> {
-    let raw = std::fs::read(input)?;
+    let raw = crate::common::read_input(input)?;
     let Some(eb) = effect_bundle::detect(&raw) else {
         anyhow::bail!(
             "no effect-bundle signature in {} ({} bytes)",
@@ -296,7 +296,7 @@ pub(crate) fn effect_bundle_scan(dir: &Path, only_hits: bool) -> Result<()> {
     let mut total = 0usize;
     for path in &files {
         total += 1;
-        let raw = std::fs::read(path)?;
+        let raw = crate::common::read_input(path)?;
         let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
         match effect_bundle::detect(&raw) {
             Some(eb) => {
@@ -334,7 +334,7 @@ pub(crate) fn effect_bundle_scan(dir: &Path, only_hits: bool) -> Result<()> {
 }
 
 pub(crate) fn battle_data_pack_one(input: &Path, out: Option<&Path>) -> Result<()> {
-    let raw = std::fs::read(input)?;
+    let raw = crate::common::read_input(input)?;
     let pack = battle_data_pack::parse(&raw)?;
     println!("file       : {}", input.display());
     println!("file size  : {} bytes (0x{:x})", raw.len(), raw.len());
@@ -419,7 +419,7 @@ pub(crate) fn battle_data_pack_scan(
     let mut total_recs = 0usize;
     let mut total_tmds = 0usize;
     for path in &entries {
-        let raw = std::fs::read(path)?;
+        let raw = crate::common::read_input(path)?;
         let stem = path
             .file_stem()
             .and_then(|s| s.to_str())
@@ -465,7 +465,7 @@ pub(crate) fn battle_data_pack_scan(
 }
 
 pub(crate) fn scene_v12_one(input: &Path, dump_scripts: bool, max_scripts: usize) -> Result<()> {
-    let buf = std::fs::read(input)?;
+    let buf = crate::common::read_input(input)?;
     let t = legaia_asset::scene_v12_table::detect(&buf)
         .ok_or_else(|| anyhow::anyhow!("not a scene_v12_table (header magic / algebra failed)"))?;
 

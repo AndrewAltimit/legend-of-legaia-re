@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use legaia_save::card::{
-    RETAIL_CHAR_RECORD_HEADER_SIZE, RETAIL_CHAR_RECORD_STRIDE, RETAIL_GAME_DATA_OFFSET,
+    CARD_MAGIC, RETAIL_CHAR_RECORD_HEADER_SIZE, RETAIL_CHAR_RECORD_STRIDE, RETAIL_GAME_DATA_OFFSET,
     RETAIL_INVENTORY_OFFSET, RETAIL_INVENTORY_SIZE, RETAIL_STORY_FLAGS_OFFSET,
     RETAIL_STORY_FLAGS_SIZE, SAVE_BLOCK_MAGIC,
 };
@@ -16,7 +16,11 @@ use legaia_save::{
 };
 
 #[derive(Parser)]
-#[command(name = "save-tool", about = "Legaia memory-card / save inspector")]
+#[command(
+    name = "save-tool",
+    version,
+    about = "Legaia memory-card / save inspector"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -29,36 +33,47 @@ enum Cmd {
     /// Find every active save block and report its product code + block chain.
     Saves { path: PathBuf },
     /// Parse a 0x414-byte character record from a file or memory-card slice
-    /// (`--block N --offset 0xNN` to slice a save block).
+    /// (`--block N --offset 0xNN` to slice a save block). In a retail Legaia
+    /// SC save block the character-record array starts at offset 0x5C8 with a
+    /// 0x414-byte stride, so `--block N --offset 0x5C8` is the first
+    /// character, `--offset 0x9DC` the second, and so on (each record's
+    /// display name lands at +0x2A7, i.e. SC offset 0x86F for slot 0).
     Character {
         path: PathBuf,
-        /// If set, treat `path` as a memory-card image and read block `N`.
-        #[arg(long)]
+        /// If set, treat `path` as a memory-card image and read block `N`
+        /// (decimal or 0x-hex).
+        #[arg(long, value_parser = parse_u8_arg)]
         block: Option<u8>,
         /// Byte offset within the file or block where the character record
-        /// begins (default 0).
-        #[arg(long, default_value_t = 0)]
+        /// begins (decimal or 0x-hex; default 0; retail SC blocks: 0x5C8).
+        #[arg(long, default_value = "0", value_parser = parse_usize_arg)]
         offset: usize,
     },
     /// Round-trip parse → write → parse a character record region and
     /// confirm the bytes are identical.
     Roundtrip {
         path: PathBuf,
-        /// If set, treat `path` as a memory-card image and read block `N`.
-        #[arg(long)]
+        /// If set, treat `path` as a memory-card image and read block `N`
+        /// (decimal or 0x-hex).
+        #[arg(long, value_parser = parse_u8_arg)]
         block: Option<u8>,
         /// Byte offset within the file or block where the character record
-        /// begins (default 0).
-        #[arg(long, default_value_t = 0)]
+        /// begins (decimal or 0x-hex; default 0; retail SC blocks: 0x5C8).
+        #[arg(long, default_value = "0", value_parser = parse_usize_arg)]
         offset: usize,
     },
     /// Parse N consecutive character records starting at `--offset` and
-    /// emit them as JSON.
+    /// emit them as JSON. Retail SC blocks keep the party array at offset
+    /// 0x5C8 (stride 0x414).
     Party {
         path: PathBuf,
-        #[arg(long)]
+        /// If set, treat `path` as a memory-card image and read block `N`
+        /// (decimal or 0x-hex).
+        #[arg(long, value_parser = parse_u8_arg)]
         block: Option<u8>,
-        #[arg(long, default_value_t = 0)]
+        /// Byte offset where the first record begins (decimal or 0x-hex;
+        /// default 0; retail SC blocks: 0x5C8).
+        #[arg(long, default_value = "0", value_parser = parse_usize_arg)]
         offset: usize,
         /// Number of characters to read (default 5 - Legaia's max party).
         #[arg(long, default_value_t = 5)]
@@ -87,11 +102,12 @@ enum Cmd {
     /// Diff regions are annotated against the documented retail SC-block
     /// layout (see docs/subsystems/save-screen.md):
     ///   * `0x0000..0x0200`  - icon header (palette + pixels)
-    ///   * `0x0200..0x086F`  - display / global header (location, scenes,
-    ///     plus the not-yet-pinned story flags + inventory)
-    ///   * `0x086F..`        - 0x414-byte character records
+    ///   * `0x0200..0x05C8`  - display / global header (location, scenes,
+    ///     story flags, inventory)
+    ///   * `0x05C8..`        - 0x414-byte character records (display name
+    ///     at record +0x2A7)
     ///
-    /// The "differing" cluster inside `0x0200..0x086F` is the field
+    /// The "differing" cluster inside `0x0200..0x05C8` is the field
     /// you're hunting for; its width gives you the type (4 bytes = u32
     /// story flags; 2-byte stride = inventory `(item_id, count)` array).
     ScDiff {
@@ -105,7 +121,7 @@ enum Cmd {
         #[arg(long, default_value_t = 1)]
         save_index: usize,
         /// Restrict the diff to a byte range inside the SC block.
-        /// Default = `0x0000..0x086F` (skip character-record region;
+        /// Default = `0x0000..0x05C8` (skip character-record region;
         /// per-character changes are visible via `save-tool character`).
         #[arg(long)]
         range: Option<String>,
@@ -117,7 +133,34 @@ enum Cmd {
     },
 }
 
+/// Parse a decimal or `0x`-hex numeric argument (the help promises `0xNN`).
+fn parse_usize_arg(s: &str) -> Result<usize, String> {
+    let s = s.trim();
+    let parsed = if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        usize::from_str_radix(hex, 16)
+    } else {
+        s.parse::<usize>()
+    };
+    parsed.map_err(|e| format!("invalid number {s:?} (decimal or 0x-hex): {e}"))
+}
+
+/// Parse a decimal or `0x`-hex u8 argument (block indexes).
+fn parse_u8_arg(s: &str) -> Result<u8, String> {
+    let v = parse_usize_arg(s)?;
+    u8::try_from(v).map_err(|_| format!("value {v} out of range for a block index (0..=255)"))
+}
+
+/// Restore the default SIGPIPE disposition so piping into `head` etc.
+/// terminates the process quietly instead of panicking on a broken pipe.
+fn reset_sigpipe() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> Result<()> {
+    reset_sigpipe();
     match Cli::parse().cmd {
         Cmd::Dir { path } => dir(&path),
         Cmd::Saves { path } => saves(&path),
@@ -171,7 +214,15 @@ fn read_input(path: &PathBuf, block: Option<u8>, offset: usize) -> Result<Vec<u8
 }
 
 fn dir(path: &PathBuf) -> Result<()> {
-    let raw = std::fs::read(path)?;
+    let raw = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
+    // Same validity gate `saves` applies via parse_card: without it a random
+    // file walks as a garbage directory table with exit 0.
+    if raw.len() < 2 || raw[..2] != CARD_MAGIC {
+        anyhow::bail!(
+            "{} is not a PSX memory-card image (missing 'MC' magic at offset 0)",
+            path.display()
+        );
+    }
     let entries = walk_directory(&raw)?;
     println!("block  state    size  next  product");
     println!("-----  -----    ----  ----  -------");
@@ -192,7 +243,7 @@ fn dir(path: &PathBuf) -> Result<()> {
 }
 
 fn saves(path: &PathBuf) -> Result<()> {
-    let raw = std::fs::read(path)?;
+    let raw = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
     let saves = parse_card(&raw)?;
     if saves.is_empty() {
         println!("(no active saves found in {})", path.display());

@@ -5,6 +5,12 @@ use clap::{Parser, Subcommand};
 use legaia_cheats::{Category, Database, classify_address, parse_gs_text, parse_mednafen_cht};
 use std::path::{Path, PathBuf};
 
+/// The community-sourced Legaia NTSC-U databases from `data/cheats/` (no Sony
+/// bytes), baked in so the tool works from a release archive with zero input
+/// files.
+const BUILTIN_GS_TEXT: &str = include_str!("../../../../data/cheats/legaia-ntsc-u.gs.txt");
+const BUILTIN_CHT: &str = include_str!("../../../../data/cheats/legaia-ntsc-u.cht");
+
 /// Top-level CLI.
 #[derive(Parser, Debug)]
 #[command(version, about = "Inspect Legend of Legaia cheat databases", long_about = None)]
@@ -18,8 +24,9 @@ struct Cli {
 enum Cmd {
     /// Parse a cheat file and print the typed JSON.
     Parse {
-        /// Path to the cheat file.
-        path: PathBuf,
+        /// Path to the cheat file. Omit to use the built-in Legaia NTSC-U
+        /// databases (GameShark dump + mednafen .cht, baked into the binary).
+        path: Option<PathBuf>,
         /// Drop identical duplicate entries (the GameShark "Have 99
         /// Items" sprawl) before printing.
         #[arg(long)]
@@ -27,16 +34,18 @@ enum Cmd {
     },
     /// Print one line per cheat entry: `[CATEGORY] addr  description`.
     List {
-        /// Path to the cheat file.
-        path: PathBuf,
+        /// Path to the cheat file. Omit to use the built-in Legaia NTSC-U
+        /// databases.
+        path: Option<PathBuf>,
         /// Drop identical duplicate entries.
         #[arg(long)]
         dedupe: bool,
     },
     /// Group entries by [`Category`] and print a per-category roll-up.
     Classify {
-        /// Path to the cheat file.
-        path: PathBuf,
+        /// Path to the cheat file. Omit to use the built-in Legaia NTSC-U
+        /// databases.
+        path: Option<PathBuf>,
         /// Drop identical duplicate entries.
         #[arg(long)]
         dedupe: bool,
@@ -52,8 +61,9 @@ enum Cmd {
     /// grouped by character + offset. Useful for checking that the cheat
     /// database covers every named field in `docs/formats/save-record.md`.
     ExtractOffsets {
-        /// Path to the cheat file.
-        path: PathBuf,
+        /// Path to the cheat file. Omit to use the built-in Legaia NTSC-U
+        /// databases.
+        path: Option<PathBuf>,
     },
     /// Render a Markdown table of the per-character record offsets the
     /// database touches. Drops into `docs/reference/cheats.md`.
@@ -63,14 +73,24 @@ enum Cmd {
     },
 }
 
+/// Restore the default SIGPIPE disposition so piping into `head` etc.
+/// terminates the process quietly instead of panicking on a broken pipe.
+fn reset_sigpipe() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> Result<()> {
+    reset_sigpipe();
     let cli = Cli::parse();
     match cli.cmd {
-        Cmd::Parse { path, dedupe } => cmd_parse(&path, dedupe),
-        Cmd::List { path, dedupe } => cmd_list(&path, dedupe),
-        Cmd::Classify { path, dedupe } => cmd_classify(&path, dedupe),
+        Cmd::Parse { path, dedupe } => cmd_parse(path.as_deref(), dedupe),
+        Cmd::List { path, dedupe } => cmd_list(path.as_deref(), dedupe),
+        Cmd::Classify { path, dedupe } => cmd_classify(path.as_deref(), dedupe),
         Cmd::Diff { a, b } => cmd_diff(&a, &b),
-        Cmd::ExtractOffsets { path } => cmd_extract_offsets(&path),
+        Cmd::ExtractOffsets { path } => cmd_extract_offsets(path.as_deref()),
         Cmd::OffsetTable { path } => cmd_offset_table(&path),
     }
 }
@@ -88,20 +108,48 @@ fn load(path: &Path, dedupe: bool) -> Result<Database> {
     } else {
         parse_gs_text(&text)?
     };
+    if db.entries.is_empty() {
+        eprintln!(
+            "warning: 0 entries recognized in {} - expected a GameShark text dump \
+             (.gs.txt) or mednafen .cht cheat file",
+            path.display()
+        );
+    }
     if dedupe {
         db.dedupe_identical();
     }
     Ok(db)
 }
 
-fn cmd_parse(path: &Path, dedupe: bool) -> Result<()> {
-    let db = load(path, dedupe)?;
+/// The built-in Legaia NTSC-U corpus: the GameShark dump merged with the
+/// mednafen `.cht` databases shipped in `data/cheats/`.
+fn load_builtin(dedupe: bool) -> Result<Database> {
+    eprintln!("using built-in Legaia NTSC-U cheat databases (pass a path to read a file)");
+    let mut db = parse_gs_text(BUILTIN_GS_TEXT).context("parse built-in GameShark database")?;
+    let cht = parse_mednafen_cht(BUILTIN_CHT).context("parse built-in mednafen database")?;
+    db.entries.extend(cht.entries);
+    if dedupe {
+        db.dedupe_identical();
+    }
+    Ok(db)
+}
+
+/// Read the given cheat file, or fall back to the built-in databases.
+fn load_or_builtin(path: Option<&Path>, dedupe: bool) -> Result<Database> {
+    match path {
+        Some(p) => load(p, dedupe),
+        None => load_builtin(dedupe),
+    }
+}
+
+fn cmd_parse(path: Option<&Path>, dedupe: bool) -> Result<()> {
+    let db = load_or_builtin(path, dedupe)?;
     println!("{}", serde_json::to_string_pretty(&db)?);
     Ok(())
 }
 
-fn cmd_list(path: &Path, dedupe: bool) -> Result<()> {
-    let db = load(path, dedupe)?;
+fn cmd_list(path: Option<&Path>, dedupe: bool) -> Result<()> {
+    let db = load_or_builtin(path, dedupe)?;
     println!(
         "{} entries, {} unconditional writes",
         db.entries.len(),
@@ -118,8 +166,8 @@ fn cmd_list(path: &Path, dedupe: bool) -> Result<()> {
     Ok(())
 }
 
-fn cmd_classify(path: &Path, dedupe: bool) -> Result<()> {
-    let db = load(path, dedupe)?;
+fn cmd_classify(path: Option<&Path>, dedupe: bool) -> Result<()> {
+    let db = load_or_builtin(path, dedupe)?;
     let groups = db.classify();
     println!(
         "{} entries across {} categories",
@@ -162,8 +210,8 @@ fn cmd_diff(a: &Path, b: &Path) -> Result<()> {
     Ok(())
 }
 
-fn cmd_extract_offsets(path: &Path) -> Result<()> {
-    let db = load(path, true)?;
+fn cmd_extract_offsets(path: Option<&Path>) -> Result<()> {
+    let db = load_or_builtin(path, true)?;
     let mut by_char: std::collections::BTreeMap<&'static str, Vec<(u32, String)>> =
         std::collections::BTreeMap::new();
     for entry in &db.entries {

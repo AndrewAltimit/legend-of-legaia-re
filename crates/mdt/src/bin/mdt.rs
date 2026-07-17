@@ -19,10 +19,14 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use legaia_mdt::{MoveBuffer, RecordTable, classify};
+use legaia_mdt::{MoveBuffer, RecordTable, Verdict, classify};
 
 #[derive(Parser)]
-#[command(about = "Inspect move.mdt-style buffers (Tactical Arts move table)")]
+#[command(
+    name = "mdt",
+    version,
+    about = "Inspect move.mdt-style buffers (Tactical Arts move table)"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -31,12 +35,16 @@ struct Cli {
 #[derive(Subcommand)]
 enum Cmd {
     /// Run both interpretations and print which one fits.
+    ///
+    /// Input: an LZS-decoded PROT entry or per-scene Move buffer (e.g. from
+    /// `lzs-decode` / `legaia-extract <disc.bin> --out extracted` output).
     Classify {
         file: PathBuf,
         #[arg(long, help = "emit JSON instead of human-readable")]
         json: bool,
     },
     /// Dump the flat 128-byte-record view (what 0972/0973 actually look like).
+    /// Input: an LZS-decoded PROT entry (see `classify`).
     Records {
         file: PathBuf,
         #[arg(
@@ -49,6 +57,7 @@ enum Cmd {
         json: bool,
     },
     /// Dump the offset-table view (what FUN_800204f8 expects to read).
+    /// Input: an LZS-decoded PROT entry / scene Move buffer (see `classify`).
     Slots {
         file: PathBuf,
         #[arg(long, default_value_t = 32, help = "limit how many used slots to list")]
@@ -58,7 +67,17 @@ enum Cmd {
     },
 }
 
+/// Rust ignores SIGPIPE by default; restore SIG_DFL so `mdt ... | head`
+/// exits quietly instead of panicking on a broken pipe.
+fn reset_sigpipe() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> Result<()> {
+    reset_sigpipe();
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::Classify { file, json } => {
@@ -80,7 +99,27 @@ fn main() -> Result<()> {
                 println!("  non-empty: {}", c.flat_table_non_empty);
                 println!("  trailing bytes: {}", c.flat_table_trailing);
                 println!();
-                println!("verdict: {:?}", c.verdict);
+                if c.verdict_low_confidence {
+                    // Never print a confident verdict that contradicts the
+                    // strict fitness score printed just above.
+                    println!("verdict: {:?} (LOW CONFIDENCE)", c.verdict);
+                    println!("  note: only the relaxed move-buffer predicate matched; the strict");
+                    println!(
+                        "  offset-table fitness score is negative ({}), so this buffer does not",
+                        c.offset_table_fit
+                    );
+                    println!(
+                        "  cleanly match the runtime offset-table layout. Real per-scene Move"
+                    );
+                    println!("  buffers also score negative (short-table over-read), but so does");
+                    println!(
+                        "  unrelated data such as overlay code - cross-check with `mdt records`."
+                    );
+                } else if c.verdict == Verdict::Unknown {
+                    println!("verdict: {:?} (does not match either layout)", c.verdict);
+                } else {
+                    println!("verdict: {:?}", c.verdict);
+                }
             }
         }
         Cmd::Records { file, limit, json } => {

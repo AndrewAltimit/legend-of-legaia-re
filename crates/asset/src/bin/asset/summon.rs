@@ -11,7 +11,7 @@ pub(crate) fn summon_creatures_cmd(scus: Option<&Path>, json: bool) -> Result<()
     use legaia_asset::summon_creatures::SUMMON_CREATURES;
     let names = match scus {
         Some(p) => {
-            let bytes = std::fs::read(p)?;
+            let bytes = crate::common::read_input(p)?;
             legaia_asset::spell_names::SpellNameTable::from_scus(&bytes)
         }
         None => None,
@@ -60,7 +60,7 @@ pub(crate) fn summon_creatures_cmd(scus: Option<&Path>, json: bool) -> Result<()
 
 /// Parse a per-summon stager overlay and print its move-VM part-record list.
 pub(crate) fn summon_overlay_cmd(input: &Path, base: u32, trim: Option<u32>) -> Result<()> {
-    let mut bytes = std::fs::read(input)?;
+    let mut bytes = crate::common::read_input(input)?;
     let full_len = bytes.len();
     if let Some(t) = trim {
         bytes.truncate(t as usize);
@@ -119,7 +119,7 @@ pub(crate) fn summon_readef_cmd(
         return Ok(());
     }
 
-    let bytes = std::fs::read(input)?;
+    let bytes = crate::common::read_input(input)?;
     let file = summon_readef::parse(&bytes)?;
     println!(
         "side-band file {}: {} bytes, {} slot(s) of {SLOT_BYTES:#x}",

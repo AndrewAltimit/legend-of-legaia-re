@@ -17,3 +17,6 @@ anyhow.workspace = true
 bytemuck = { version = "1", features = ["derive"] }
 clap.workspace = true
 png = "0.17"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

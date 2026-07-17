@@ -26,3 +26,8 @@ legaia-vab = { path = "../vab" }
 legaia-seq = { path = "../seq" }
 log = "0.4"
 winit = "0.30"
+
+# SIGPIPE reset in the bin's main() so piping stdout into `head` exits
+# quietly instead of panicking on a broken pipe.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

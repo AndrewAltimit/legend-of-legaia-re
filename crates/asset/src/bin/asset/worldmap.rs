@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::Result;
 
 pub(crate) fn worldmap_menu_cmd(scus: &Path, json: bool) -> Result<()> {
-    let bytes = std::fs::read(scus)?;
+    let bytes = crate::common::read_input(scus)?;
     let menu = legaia_asset::worldmap_menu::parse_scus(&bytes)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&menu)?);
@@ -84,11 +84,11 @@ pub(crate) fn slot4_png_cmd(
     // Source the decoded slot-4 bytes from either a kingdom PROT entry or
     // a previously-decoded .bin.
     let decoded: Vec<u8> = if let Some(p) = input {
-        let buf = std::fs::read(p)?;
+        let buf = crate::common::read_input(p)?;
         kingdom_bundle::decode_slot(&buf, 4)
             .map_err(|e| anyhow::anyhow!("decode slot 4 from {p:?}: {e}"))?
     } else {
-        std::fs::read(from_raw.unwrap())?
+        crate::common::read_input(from_raw.unwrap())?
     };
 
     let parsed =
@@ -244,7 +244,7 @@ pub(crate) fn kingdom_slot_cmd(
 ) -> Result<()> {
     use legaia_asset::{kingdom_bundle, world_map_overlay};
 
-    let buf = std::fs::read(input)?;
+    let buf = crate::common::read_input(input)?;
     let bundle = kingdom_bundle::parse(&buf).ok_or_else(|| {
         anyhow::anyhow!("no 7-asset table found at any 0x800-aligned offset in {input:?}")
     })?;

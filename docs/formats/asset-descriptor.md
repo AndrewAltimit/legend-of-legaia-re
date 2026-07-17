@@ -20,7 +20,7 @@ Each descriptor pair is `(type_size, data_offset)` where `data_offset` is byte-r
 
 ## Strict-scan against the disc
 
-Strictly scanning all 1232 PROT entries against this format finds zero hits. That's consistent with both "format isn't on disc as a top-level entry" and "format is on disc but indexed differently" (e.g., embedded inside a scene asset table or a compressed payload). The parser is left in place for when a real on-disc consumer surfaces.
+Strictly scanning all 1233 PROT entries against this format finds zero hits. That's consistent with both "format isn't on disc as a top-level entry" and "format is on disc but indexed differently" (e.g., embedded inside a scene asset table or a compressed payload). The parser is left in place for when a real on-disc consumer surfaces.
 
 ## Note on naming
 

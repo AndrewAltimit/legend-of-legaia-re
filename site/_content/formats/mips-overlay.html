@@ -1,12 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; mips overlay code</div>
   <h1>MIPS overlay code <span class="tag tag-partial">Inferred</span></h1>
-  <p class="lede">Static disc copies of runtime overlays - small subsystem code blobs that load into the <code>0x801C0000+</code> overlay window. Distinct from the major full-scene overlays (title / town / battle / options); these are smaller specialised blobs from the <code>0901..=0969_xxx_dat</code> PROT range.</p>
+  <p class="lede">Some entries of <code>PROT.DAT</code> (the disc's main asset archive) contain not game assets but <em>code</em>: overlays, chunks of MIPS machine code the game loads into RAM on demand because the whole engine doesn't fit in memory at once. Most of Legaia's game logic actually lives in overlays rather than the main executable. This page covers how the project detects the smaller specialised code blobs in the <code>0901..=0969_xxx_dat</code> PROT range - distinct from the major full-scene overlays (title / town / battle / options). They all load into the overlay window at <code>0x801C0000+</code>, the RAM region reserved for swappable code.</p>
 </header>
 
 <section class="doc-section" id="overview">
   <h2>Overview</h2>
-  <p>Implementation: <code>crates/asset/src/mips_overlay.rs</code>.</p>
+  <p>Nothing on the disc labels these entries as code - they look like any other binary blob. The detector below identifies them by a fingerprint every compiled MIPS function starts with. Implementation: <code>crates/asset/src/mips_overlay.rs</code>.</p>
 </section>
 
 <section class="doc-section" id="layout">
@@ -16,6 +16,7 @@
                                 ; lui / sw / R-type - the second instruction
                                 ; of the entry function's prologue
 +0x08   ...                    ; rest of the overlay code blob</code></pre>
+  <p>The first instruction of a standard compiled MIPS function is a stack-pointer adjustment (the function "prologue") - so a blob that <em>begins</em> with one is very likely a code image whose entry function starts at byte 0.</p>
 </section>
 
 <section class="doc-section" id="detection">
@@ -30,8 +31,8 @@
 
 <section class="doc-section" id="cluster-anatomy">
   <h2>Cluster anatomy</h2>
-  <p>All matches cluster in the <code>0901..=0969</code> PROT range - sized 14 KB to 37 KB (one outlier at 163 KB for <code>0969_xxx_dat.BIN</code>). The <code>find-overlay</code> heuristic ranks these as MIPS-code-shape candidates; this detector formalises that ranking into the categorize pipeline.</p>
-  <p>Each entry can be Ghidra-imported via <a href="../tooling/overlay-capture.html"><code>scripts/ghidra-analysis/bulk-import-overlays.sh</code></a> once a base address is determined. The overlay window is <code>0x801C0000</code>–<code>0x80200000</code>; each blob loads at a specific offset within that range, determinable from the asset chain that pulls it in.</p>
+  <p>All matches cluster in the <code>0901..=0969</code> PROT range - sized 14 KB to 37 KB (one outlier at 163 KB for <code>0969_xxx_dat.BIN</code>). The <code>find-overlay</code> heuristic ranks these as MIPS-code-shape candidates; this detector formalises that ranking into the categorize pipeline (the sweep that classifies every archive entry by format).</p>
+  <p>Each entry can be imported into Ghidra (the disassembler this project uses) via <a href="../tooling/overlay-capture.html"><code>scripts/ghidra-analysis/bulk-import-overlays.sh</code></a> once a base address is determined. The overlay window is <code>0x801C0000</code>–<code>0x80200000</code>; each blob loads at a specific offset within that range, determinable from the asset chain that pulls it in.</p>
 </section>
 
 <section class="doc-section" id="likely-subsystems">

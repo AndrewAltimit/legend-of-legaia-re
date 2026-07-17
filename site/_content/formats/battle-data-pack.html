@@ -1,12 +1,13 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; player battle files</div>
   <h1>Player battle files (<code>data\battle\PLAYER1..4</code>) <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">The per-character battle asset files for Vahn / Noa / Gala / Terra - the retail <code>battle_data</code> CDNAME block (defines <code>865..868</code>, extraction entries <strong>0863..0866</strong>; the extraction filename labels <code>0863/0864_edstati3</code> are the <a href="cdname.html#numbering-space">+2 label shift</a>). Each file is a self-contained container: a header + LZS <code>record[0]</code> (the battle-palette chain <em>and</em> the character's battle action-animation streams), a 12-byte descriptor table, and a region of per-slot LZS streams that decompress to <code>[32-byte header + Legaia TMD + texture pool]</code>. Parsers: <code>crates/asset/src/battle_char_palette.rs</code> + <code>crates/asset/src/battle_data_pack.rs</code>.</p>
+  <p class="lede">One file per playable character - Vahn, Noa, Gala, Terra - holding everything that character needs in battle: mesh pieces, textures, and the battle animations. The elegant part is how the mesh pieces are keyed: the file is divided into sections, one per equipment slot (body, head, weapon, Ra-Seru, footwear), and each section's sub-entries are labelled with <em>item ids</em>. At battle load the engine matches your equipped items against those ids and splices the winning pieces into one mesh - which is why the battle model is <a href="character-mesh.html">assembled per character</a> rather than stored whole.
+These are the retail <code>battle_data</code> CDNAME block (defines <code>865..868</code>, extraction entries <strong>0863..0866</strong>; the extraction filename labels <code>0863/0864_edstati3</code> are the <a href="cdname.html#numbering-space">+2 label shift</a>). Parsers: <code>crates/asset/src/battle_char_palette.rs</code> + <code>crates/asset/src/battle_data_pack.rs</code>.</p>
 </header>
 
 <section class="doc-section" id="identity-note">
   <h2>Identity note</h2>
-  <p><strong>Not a &ldquo;16 MB container at PROT 0865&rdquo;.</strong> That figure is extraction 0865's TOC-<em>indexed</em> window (7811 sectors), which over-reads across 0866 into the <a href="#not-the-monster-archive">monster archive</a>'s sectors; every structure documented here sits inside each player file's own footprint (0865 = Gala, 222 sectors). The monster archive is a <strong>different container</strong> at extraction 0867.</p>
+  <p>Several distinct battle-data containers live near each other on the disc and have been conflated in the past. In particular this format is <strong>not a &ldquo;16 MB container at PROT 0865&rdquo;</strong> - that figure is extraction 0865's TOC-<em>indexed</em> window (7811 sectors), which over-reads across 0866 into the <a href="#not-the-monster-archive">monster archive</a>'s sectors; every structure documented here sits inside each player file's own footprint (0865 = Gala, 222 sectors). The monster archive is a <strong>different container</strong> at extraction 0867.</p>
   <p>This format is distinct from:</p>
   <ul>
     <li>the <a href="#not-the-monster-archive">monster stat archive</a> (extraction 0867, retail <code>monster_data</code>),</li>
@@ -16,60 +17,9 @@
   </ul>
 </section>
 
-<section class="doc-section" id="load-chain-index-space">
-  <h2>Load chain + index space</h2>
-  <p><code>FUN_80052770</code> points each party character's asset-table entry at the dev path <code>data\battle\PLAYER&lt;n&gt;</code> and opens it through the dual-mode wrapper <code>FUN_800558FC(path, &hellip;, char_id + 0x360)</code>. The retail ISO9660 branch is a trap stub on this build, so the load always resolves through <code>FUN_8003E8A8</code> with the <strong>raw in-RAM TOC index</strong> <code>char_id + 0x360</code> - extraction entry <code>char_id + 0x360 &minus; 2</code> (see <a href="prot.html">PROT TOC &sect; In-RAM TOC</a>):</p>
-  <table>
-    <thead><tr><th>Player</th><th>Raw TOC index</th><th>PROT.DAT offset</th><th>Footprint</th><th>Extraction entry</th></tr></thead>
-    <tbody>
-      <tr><td>Vahn</td><td><code>0x361</code></td><td><code>0x36E8000</code></td><td>338 sectors</td><td>0863 (<code>edstati3</code> label)</td></tr>
-      <tr><td>Noa</td><td><code>0x362</code></td><td><code>0x3791000</code></td><td>303 sectors</td><td>0864 (<code>edstati3</code> label)</td></tr>
-      <tr><td>Gala</td><td><code>0x363</code></td><td><code>0x3828800</code></td><td>222 sectors</td><td>0865</td></tr>
-      <tr><td>Terra</td><td><code>0x364</code></td><td><code>0x3897800</code></td><td>47 sectors</td><td>0866</td></tr>
-    </tbody>
-  </table>
-  <p>The offsets are the live-traced <code>FUN_800558FC</code> reads and equal the TOC <code>start_lba &times; 0x800</code> of extraction 863..866 exactly. The historical &ldquo;Vahn = PROT 0861&rdquo; attribution matched the same bytes through the 1-sector stub entries 0859..0862 that precede the true file - entry 0861's <em>extended</em> window reaches Vahn's file at window offset <code>0x1000</code>.</p>
-  <p><code>FUN_80052FA0</code> then decodes <code>record[0]</code> + its sub-records into the battle party palette (rows 481..483); the TMD slots install through the battle loaders. Full palette chain: <a href="character-mesh.html">character-mesh &sect; battle render</a>.</p>
-</section>
-
-<section class="doc-section" id="battle-animations">
-  <h2>Battle animations (record[0])</h2>
-  <p><code>record[0]</code> also carries the party's <strong>battle animations</strong>: its head is a u32 action-offset table (22 slots; slot 0 = the idle loop; the first byte of each entry is its action tag - <code>1</code> walk, <code>2..5</code> hit-reaction family, <code>7/8/9</code> ready/recover/defeat, <code>0x0B</code> block; slots <code>0xC..0xF</code> are runtime-filled with per-equipment swing records and <code>0x10</code>/<code>0x11</code> are dynamic art-anim slots) whose entries hold a monster-format <code>[u8 parts][u8 frames][9-byte TRS]</code> keyframe stream at entry <code>+0xAC</code> (the <a href="monster-animation.html">monster archive's</a> sibling entries keep theirs at <code>+0x8C</code>). <code>parts</code> = the character's skeleton bone count (15/16/15/17): channel <em>i</em> drives assembled object <em>i</em>, equipment extras ride their attach bone. Frame 0 of the idle is the combat-stance rest pose that sockets the assembled battle mesh; live-pinned byte-exact against a full-party capture's anim contexts (no PROT 1203 record is resident in battle RAM). Parsers: <code>battle_char_assembly::{decode_record0, battle_animations, idle_battle_animation}</code>.</p>
-
-  <h3>Swing records (equipment sections &rarr; slots 0xC..0xF)</h3>
-  <p>The swing records live in the equipment sections themselves (each section payload's <code>+0x04</code> word; section 4 carries a second at <code>+0x08</code> - see the <a href="#decompressed-slot-layout">slot layout</a>), so the four direction-command swings are <strong>per-equipment animations</strong>. <code>FUN_80052FA0</code> splices them into runtime action slots <code>0xC..0xF</code> at battle load.</p>
-
-  <h3>Art-animation bank (<code>record[0] +0x58</code>)</h3>
-  <p>The art-anim bank (<code>0xD0</code>-stride records with the arts-combo matcher head and the inline art name) keeps its keyframe streams out-of-file. A materialized art clip installs through the bank record's <strong>embedded entry</strong>: <code>FUN_8004AD80</code> installs record <code>+0x24</code> as the action-table slot <code>0x10</code>/<code>0x11</code> pointer.</p>
-
-  <h3>"ME" stream archives (<code>readef.DAT</code>)</h3>
-  <p>The art keyframe streams resolve through compressed <strong>"ME" archives at the head of <code>readef.DAT</code>'s side-band slots</strong> (see <a href="summon-readef.html">summon-readef</a>; parser <code>legaia_asset::me_archive</code>; every retail art stream decodes length-exact). The main-vs-base archive pick is <strong>per battle phase</strong>: the initiative scheduler <code>FUN_801DABA4</code> stages the acting character's group each turn and the applier stops after slot <code>3&times;char+1</code>, leaving the <em>main</em> archive resident; the battle-end arms (<code>FUN_801DABA4</code>'s no-living-enemy branch, <code>FUN_801E295C</code>'s victory arm) directly request slot <code>3&times;char+2</code>, so the win poses (ids <code>0x11..=0x18</code> = the eight <code>rate_alt == 0xFF</code> bank records 1..8, sources <code>0..=7</code>) decode from the <em>base</em> archive.</p>
-
-  <h3>Facial animation tracks (entry <code>+0x8C</code> / <code>+0x98</code>)</h3>
-  <p>Two further action-entry header fields are per-clip <strong>facial keyframe tracks</strong> - eyes at entry <code>+0x8C</code>, mouth at <code>+0x98</code> - consumed by the per-frame facial animator <code>FUN_8004C7B4</code>, which <code>MoveImage</code>-stamps the selected face frame over the head section's texture rows in step with the playing clip. An art clip's tracks sit at bank-record <code>+0xB0</code>/<code>+0xBC</code> (<code>battle_char_assembly::ArtAnimRecord::face</code>; nearly every Vahn/Noa/Gala bank record carries live records - the mid-battle art-strike faces - while Terra's are all empty). During the battle-end victory celebration (the <code>DAT_8007BD71 == 0xFE</code> signal with the <code>FUN_8004E568</code> victory sequencer running) a member whose staged anim id sits in the dynamic-art-slot band <code>0x11..=0x18</code> - the staged win pose - takes its mouth records from a sixteen-record static SCUS table at <code>0x80077E80</code> instead (<code>char*0x180 + staged_id*0x30</code>, raw band byte), clocked - eyes too - by the global victory counter <code>gp+0x9EA &gt;&gt; 1</code>: the win-quote mouth flap.</p>
-
-  <h3>Equipment-variant track (entry <code>+0xA4</code>)</h3>
-  <p>The entry header's last 8 bytes are a third track: two 2-byte <code>[start, end]</code> frame windows per <strong>variant pair</strong>, consumed by <code>FUN_8004CCD4</code> - called back to back with the facial animator under the same guards, but a <strong>mesh swap, not a stamp</strong>. Each equipment section's surplus objects are tagged <code>0xFF</code> / <code>0xFE</code> at splice: the <code>0xFE</code> extras sort in as extra animated channels (driven only by their section's extra-channel swing streams), while the <code>0xFF</code> variants sort past every drawn channel and only render when the pass swaps their pointer onto the attach-bone channel of the render node's per-channel model table (<code>*(node+0x44)+4</code>) - inside a <code>+0xA4</code> window, or unconditionally during the extra-channel swings. The arts motion-trail renderer <code>FUN_80049348</code> re-runs the pass per after-image ghost with the ghost's historical cursor. Live <code>+0xA4</code> windows exist <strong>only in Noa's file</strong> (reactions, every named art, her swings); the other three carry all-zero windows, so the pass just re-asserts their defaults.</p>
-</section>
-
-<section class="doc-section" id="toc-geometry">
-  <h2>TOC geometry (the 16 MB misreading)</h2>
-  <p>The TOC declares extraction 0865 with <code>indexed_size = 7811</code> sectors (<code>0xF41800</code> &asymp; 16.0 MB) against a 222-sector footprint. That extended window covers Gala's own file (<code>0x0..0x6F000</code>), all of Terra's (<code>0x6F000..0x86800</code>), and 7542 of the monster archive's 7760 sectors (<code>0x86800..</code>). The extractor's <code>0865_battle_data.BIN</code> is therefore a 16 MB file whose first 222 sectors are the actual player file - the earlier &ldquo;16 MB battle_data container&rdquo; reading analyzed that window without noticing the boundary. The format structures below all live inside the footprint, and the slot region <strong>tiles each file's footprint exactly</strong> (<code>data_base + last_offset + last_size = footprint</code> in all four retail files), confirming the footprint is the true file size.</p>
-</section>
-
-<section class="doc-section" id="not-the-monster-archive">
-  <h2>Not the monster archive</h2>
-  <p>The monster stat archive (<code>legaia_asset::monster_archive</code>, retail-space <code>monster_data</code> = define 869 &rarr; extraction <strong>0867</strong>) shares the <code>[u32 dec_size][LZS] &rarr; mesh + texture pool</code> general shape but is a different container with no shared structures:</p>
-  <ul>
-    <li>Archive slots are <strong>fixed-stride</strong> <code>0x14000</code> bytes keyed by 1-based monster id (<code>slot = (id&minus;1) &times; 0x14000</code>), with no descriptor table; player-file slots are variable-size, reached through the 12-byte descriptor table.</li>
-    <li>The archive's decoded head is the monster <strong>stat record</strong> (<code>+0x00 name_offset</code>, <code>+0x0C</code> HP, <code>+0x4C</code> action-offset array - see <a href="monster-animation.html">monster-animation</a>); the player-file slot head is the 32-byte texture-layout header below, with the TMD at <code>+0x20</code>.</li>
-    <li>Within extraction 0865's extended window the archive begins at byte <code>0x86800</code>; the player-file descriptor table (<code>0x6C68</code>) and slot region (<code>0x8000..0x6F000</code>) sit entirely before it.</li>
-  </ul>
-  <p>The old conflation (&ldquo;battle_data 0865 vs monster archive 0867&rdquo;) came from the overlapping extraction windows; the <a href="cdname.html#numbering-space">CDNAME &minus;2 correction</a> resolves it - the dev names say exactly what each entry is.</p>
-</section>
-
 <section class="doc-section" id="file-layout">
   <h2>File layout</h2>
+  <p>Each file is a self-contained container: a header + LZS-compressed <code>record[0]</code> (LZS being the game's own dictionary compression; this record carries the battle-palette chain <em>and</em> the character's battle action-animation streams), a 12-byte descriptor table, and a region of per-slot LZS streams that decompress to <code>[32-byte header + Legaia TMD + texture pool]</code>.</p>
 <pre><code>+0x00  u32 desc_off     ; descriptor-table offset. Also reads as a type-0
                         ; streaming chunk header ((0x00&lt;&lt;24)|size), which is
                         ; how streaming-format walkers skip the head cleanly.
@@ -134,6 +84,58 @@ LZS stream                  ; standard Legaia LZS (see lzs.html)</code></pre>
   <p><code>FUN_80052FA0</code>'s section loop rebases <code>+0x04</code> (and, for section index 4 only, <code>+0x08</code>) and splices the swing records into the runtime action table, and walks <code>+0x10</code>/<code>+0x14</code> as the attach-object list (decomp <code>ghidra/scripts/funcs/80052fa0.txt</code>). <code>frame_off = 0x14 + 4 * attach_obj_count</code> across the whole retail corpus (<code>0x14</code>/<code>0x18</code>/<code>0x1C</code>). The post-TMD pool has no PSX TIM image-block headers: it is one upload block <code>[u16 clut_x][u16 clut_n][clut_n &times; u16 BGR555][4bpp pixels]</code> - the same CLUT struct the palette chain STP-copies to VRAM rows 481..483 (decoded in <a href="character-mesh.html">character-mesh</a>; ported as <code>legaia_asset::battle_char_palette</code>).</p>
 </section>
 
+<section class="doc-section" id="battle-animations">
+  <h2>Battle animations (record[0])</h2>
+  <p>The player files are also the party's in-battle <strong>pose source</strong> - not just their meshes. <code>record[0]</code> carries the battle animations: its head is a u32 action-offset table (22 slots; slot 0 = the idle loop; the first byte of each entry is its action tag - <code>1</code> walk, <code>2..5</code> hit-reaction family, <code>7/8/9</code> ready/recover/defeat, <code>0x0B</code> block; slots <code>0xC..0xF</code> are runtime-filled with per-equipment swing records and <code>0x10</code>/<code>0x11</code> are dynamic art-anim slots) whose entries hold a monster-format <code>[u8 parts][u8 frames][9-byte TRS]</code> keyframe stream at entry <code>+0xAC</code> (the <a href="monster-animation.html">monster archive's</a> sibling entries keep theirs at <code>+0x8C</code>). <code>parts</code> = the character's skeleton bone count (15/16/15/17): channel <em>i</em> drives assembled object <em>i</em>, equipment extras ride their attach bone. Frame 0 of the idle is the combat-stance rest pose that sockets the assembled battle mesh; live-pinned byte-exact against a full-party capture's anim contexts (no PROT 1203 record is resident in battle RAM). Parsers: <code>battle_char_assembly::{decode_record0, battle_animations, idle_battle_animation}</code>.</p>
+
+  <h3>Swing records (equipment sections &rarr; slots 0xC..0xF)</h3>
+  <p>The swing records live in the equipment sections themselves (each section payload's <code>+0x04</code> word; section 4 carries a second at <code>+0x08</code> - see the <a href="#decompressed-slot-layout">slot layout</a>), so the four direction-command swings are <strong>per-equipment animations</strong>. <code>FUN_80052FA0</code> splices them into runtime action slots <code>0xC..0xF</code> at battle load.</p>
+
+  <h3>Art-animation bank (<code>record[0] +0x58</code>)</h3>
+  <p>The art-anim bank (<code>0xD0</code>-stride records with the arts-combo matcher head and the inline art name) keeps its keyframe streams out-of-file. A materialized art clip installs through the bank record's <strong>embedded entry</strong>: <code>FUN_8004AD80</code> installs record <code>+0x24</code> as the action-table slot <code>0x10</code>/<code>0x11</code> pointer.</p>
+
+  <h3>"ME" stream archives (<code>readef.DAT</code>)</h3>
+  <p>The art keyframe streams resolve through compressed <strong>"ME" archives at the head of <code>readef.DAT</code>'s side-band slots</strong> (see <a href="summon-readef.html">summon-readef</a>; parser <code>legaia_asset::me_archive</code>; every retail art stream decodes length-exact). The main-vs-base archive pick is <strong>per battle phase</strong>: the initiative scheduler <code>FUN_801DABA4</code> stages the acting character's group each turn and the applier stops after slot <code>3&times;char+1</code>, leaving the <em>main</em> archive resident; the battle-end arms (<code>FUN_801DABA4</code>'s no-living-enemy branch, <code>FUN_801E295C</code>'s victory arm) directly request slot <code>3&times;char+2</code>, so the win poses (ids <code>0x11..=0x18</code> = the eight <code>rate_alt == 0xFF</code> bank records 1..8, sources <code>0..=7</code>) decode from the <em>base</em> archive.</p>
+
+  <h3>Facial animation tracks (entry <code>+0x8C</code> / <code>+0x98</code>)</h3>
+  <p>Two further action-entry header fields are per-clip <strong>facial keyframe tracks</strong> - eyes at entry <code>+0x8C</code>, mouth at <code>+0x98</code> - consumed by the per-frame facial animator <code>FUN_8004C7B4</code>, which <code>MoveImage</code>-stamps the selected face frame over the head section's texture rows in step with the playing clip. An art clip's tracks sit at bank-record <code>+0xB0</code>/<code>+0xBC</code> (<code>battle_char_assembly::ArtAnimRecord::face</code>; nearly every Vahn/Noa/Gala bank record carries live records - the mid-battle art-strike faces - while Terra's are all empty). During the battle-end victory celebration (the <code>DAT_8007BD71 == 0xFE</code> signal with the <code>FUN_8004E568</code> victory sequencer running) a member whose staged anim id sits in the dynamic-art-slot band <code>0x11..=0x18</code> - the staged win pose - takes its mouth records from a sixteen-record static SCUS table at <code>0x80077E80</code> instead (<code>char*0x180 + staged_id*0x30</code>, raw band byte), clocked - eyes too - by the global victory counter <code>gp+0x9EA &gt;&gt; 1</code>: the win-quote mouth flap.</p>
+
+  <h3>Equipment-variant track (entry <code>+0xA4</code>)</h3>
+  <p>The entry header's last 8 bytes are a third track: two 2-byte <code>[start, end]</code> frame windows per <strong>variant pair</strong>, consumed by <code>FUN_8004CCD4</code> - called back to back with the facial animator under the same guards, but a <strong>mesh swap, not a stamp</strong>. Each equipment section's surplus objects are tagged <code>0xFF</code> / <code>0xFE</code> at splice: the <code>0xFE</code> extras sort in as extra animated channels (driven only by their section's extra-channel swing streams), while the <code>0xFF</code> variants sort past every drawn channel and only render when the pass swaps their pointer onto the attach-bone channel of the render node's per-channel model table (<code>*(node+0x44)+4</code>) - inside a <code>+0xA4</code> window, or unconditionally during the extra-channel swings. The arts motion-trail renderer <code>FUN_80049348</code> re-runs the pass per after-image ghost with the ghost's historical cursor. Live <code>+0xA4</code> windows exist <strong>only in Noa's file</strong> (reactions, every named art, her swings); the other three carry all-zero windows, so the pass just re-asserts their defaults.</p>
+</section>
+
+<section class="doc-section" id="load-chain-index-space">
+  <h2>Load chain + index space</h2>
+  <p><code>FUN_80052770</code> points each party character's asset-table entry at the dev path <code>data\battle\PLAYER&lt;n&gt;</code> and opens it through the dual-mode wrapper <code>FUN_800558FC(path, &hellip;, char_id + 0x360)</code>. The retail ISO9660 branch is a trap stub on this build, so the load always resolves through <code>FUN_8003E8A8</code> with the <strong>raw in-RAM TOC index</strong> <code>char_id + 0x360</code> - extraction entry <code>char_id + 0x360 &minus; 2</code> (see <a href="prot.html">PROT TOC &sect; In-RAM TOC</a>):</p>
+  <table>
+    <thead><tr><th>Player</th><th>Raw TOC index</th><th>PROT.DAT offset</th><th>Footprint</th><th>Extraction entry</th></tr></thead>
+    <tbody>
+      <tr><td>Vahn</td><td><code>0x361</code></td><td><code>0x36E8000</code></td><td>338 sectors</td><td>0863 (<code>edstati3</code> label)</td></tr>
+      <tr><td>Noa</td><td><code>0x362</code></td><td><code>0x3791000</code></td><td>303 sectors</td><td>0864 (<code>edstati3</code> label)</td></tr>
+      <tr><td>Gala</td><td><code>0x363</code></td><td><code>0x3828800</code></td><td>222 sectors</td><td>0865</td></tr>
+      <tr><td>Terra</td><td><code>0x364</code></td><td><code>0x3897800</code></td><td>47 sectors</td><td>0866</td></tr>
+    </tbody>
+  </table>
+  <p>The offsets are the live-traced <code>FUN_800558FC</code> reads and equal the TOC <code>start_lba &times; 0x800</code> of extraction 863..866 exactly. The historical &ldquo;Vahn = PROT 0861&rdquo; attribution matched the same bytes through the 1-sector stub entries 0859..0862 that precede the true file - entry 0861's <em>extended</em> window reaches Vahn's file at window offset <code>0x1000</code>.</p>
+  <p><code>FUN_80052FA0</code> then decodes <code>record[0]</code> + its sub-records into the battle party palette (rows 481..483); the TMD slots install through the battle loaders. Full palette chain: <a href="character-mesh.html">character-mesh &sect; battle render</a>.</p>
+</section>
+
+<section class="doc-section" id="toc-geometry">
+  <h2>TOC geometry (the 16 MB misreading)</h2>
+  <p>The TOC declares extraction 0865 with <code>indexed_size = 7811</code> sectors (<code>0xF41800</code> &asymp; 16.0 MB) against a 222-sector footprint. That extended window covers Gala's own file (<code>0x0..0x6F000</code>), all of Terra's (<code>0x6F000..0x86800</code>), and 7542 of the monster archive's 7760 sectors (<code>0x86800..</code>). The extractor's <code>0865_battle_data.BIN</code> is therefore a 16 MB file whose first 222 sectors are the actual player file - the earlier &ldquo;16 MB battle_data container&rdquo; reading analyzed that window without noticing the boundary. The format structures documented above all live inside the footprint, and the slot region <strong>tiles each file's footprint exactly</strong> (<code>data_base + last_offset + last_size = footprint</code> in all four retail files), confirming the footprint is the true file size.</p>
+</section>
+
+<section class="doc-section" id="not-the-monster-archive">
+  <h2>Not the monster archive</h2>
+  <p>The monster stat archive (<code>legaia_asset::monster_archive</code>, retail-space <code>monster_data</code> = define 869 &rarr; extraction <strong>0867</strong>) shares the <code>[u32 dec_size][LZS] &rarr; mesh + texture pool</code> general shape but is a different container with no shared structures:</p>
+  <ul>
+    <li>Archive slots are <strong>fixed-stride</strong> <code>0x14000</code> bytes keyed by 1-based monster id (<code>slot = (id&minus;1) &times; 0x14000</code>), with no descriptor table; player-file slots are variable-size, reached through the 12-byte descriptor table.</li>
+    <li>The archive's decoded head is the monster <strong>stat record</strong> (<code>+0x00 name_offset</code>, <code>+0x0C</code> HP, <code>+0x4C</code> action-offset array - see <a href="monster-animation.html">monster-animation</a>); the player-file slot head is the 32-byte texture-layout header above, with the TMD at <code>+0x20</code>.</li>
+    <li>Within extraction 0865's extended window the archive begins at byte <code>0x86800</code>; the player-file descriptor table (<code>0x6C68</code>) and slot region (<code>0x8000..0x6F000</code>) sit entirely before it.</li>
+  </ul>
+  <p>The old conflation (&ldquo;battle_data 0865 vs monster archive 0867&rdquo;) came from the overlapping extraction windows; the <a href="cdname.html#numbering-space">CDNAME &minus;2 correction</a> resolves it - the dev names say exactly what each entry is.</p>
+</section>
+
 <section class="doc-section" id="parser-status">
   <h2>Parser status</h2>
   <p>Two parsers read these files:</p>
@@ -145,7 +147,7 @@ LZS stream                  ; standard Legaia LZS (see lzs.html)</code></pre>
 
 <section class="doc-section" id="pinning-the-descriptor">
   <h2>VRAM byte-match corpus</h2>
-  <p>The principled tool for pinning the texture-pool descriptor is byte-matching: slide a 32-byte halfword-aligned window over each decoded slot's post-TMD bytes and search a mednafen-captured VRAM blob for exact matches; each hit yields <code>(slot, slot_offset, fb_x, fb_y)</code>. Driver: <code>mednafen-state clut-trace</code>; analysis API <code>battle_data_pack::find_clut_in_vram</code>.</p>
+  <p>The principled tool for pinning the texture-pool descriptor is byte-matching: slide a 32-byte halfword-aligned window over each decoded slot's post-TMD bytes and search a mednafen-captured VRAM blob for exact matches; each hit yields <code>(slot, slot_offset, fb_x, fb_y)</code> (framebuffer coordinates in the console's 1024&times;512 video memory). Driver: <code>mednafen-state clut-trace</code>; analysis API <code>battle_data_pack::find_clut_in_vram</code>.</p>
   <p>Findings from a four-save corpus over Gala's file (0865; saves: Rim Elm town, Izumi town, pre-battle, active battle):</p>
   <table>
     <thead><tr><th>Slot (table entry)</th><th>Header signature</th><th>VRAM placement (fb_x, fb_y range)</th></tr></thead>

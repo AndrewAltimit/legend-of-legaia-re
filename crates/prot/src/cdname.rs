@@ -1,12 +1,13 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 pub type IndexMap = BTreeMap<u32, String>;
 
 pub fn parse(path: &Path) -> Result<IndexMap> {
-    let text = std::fs::read_to_string(path)?;
+    let text = std::fs::read_to_string(path)
+        .with_context(|| format!("reading CDNAME map {}", path.display()))?;
     parse_str(&text)
 }
 

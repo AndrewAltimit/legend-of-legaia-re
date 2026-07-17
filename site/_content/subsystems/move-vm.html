@@ -1,23 +1,28 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; move-table VM</div>
   <h1>Move-table opcode VM</h1>
-  <p class="lede">A bytecode VM dedicated to per-actor animation, motion, and state. Distinct from the <a href="script-vm.html">field/event VM</a> and the <a href="actor-vm.html">actor / sprite VM</a>: this one lives in <code>SCUS_942.54</code>, runs on each actor's "move buffer", and is invoked every frame from the actor tick. <strong>71 opcodes</strong> in the main exe, plus <strong>61 sub-opcodes</strong> in a town-overlay extension reachable via opcode <code>0x2F</code>.</p>
+  <p class="lede">The interpreter that plays out a combat move's choreography. When a Tactical Arts input resolves to a move, what actually happens on screen - the actor stepping forward, the swing
+    animation, the tween back to idle - is a small bytecode program (a "move record") executed one instruction at a time by this VM. It drives per-actor animation, motion, and state for every animated
+    actor (an actor being the engine's record for one on-screen entity - a party member, an enemy, an NPC). Distinct from the <a href="script-vm.html">field/event VM</a> and the <a
+    href="actor-vm.html">actor / sprite VM</a>: this one lives in <code>SCUS_942.54</code> (the game's main executable on the disc - always resident, unlike the on-demand overlays), runs on each actor's
+    "move buffer", and is invoked every frame from the actor tick. <strong>71 opcodes</strong> in the main exe, plus <strong>61 sub-opcodes</strong> in a town-overlay extension reachable via opcode
+    <code>0x2F</code>.</p>
 </header>
 
 <section class="doc-section" id="how-it-works">
   <h2>How it works</h2>
-  <p>If the <a href="actor-vm.html">actor VM</a> is the title-screen sprite walker and the <a href="script-vm.html">field VM</a> is the cutscene / NPC scripter, the move VM is the layer in between - a tiny per-actor animation engine. Every actor (a party member, an enemy, an NPC) has a "move buffer" and a PC into it. Every frame, the actor tick calls into the move VM and runs opcodes until something forces it to pause (a HALT, a wait timer, or running out of buffer).</p>
+  <p>If the <a href="actor-vm.html">actor VM</a> is the title-screen sprite walker and the <a href="script-vm.html">field VM</a> is the cutscene / NPC scripter, the move VM is the layer in between - a tiny per-actor animation engine. Every actor (a party member, an enemy, an NPC) has a "move buffer" and a PC (program counter - the current read position) into it. Every frame, the actor tick calls into the move VM and runs opcodes until something forces it to pause (a HALT, a wait timer, or running out of buffer).</p>
 
-  <p>The move VM is what reads <a href="../formats/index.html">MDT</a> (move-table) records and turns them into world-space motion, render-bank writes, animation-bank selection, tween setup, and per-actor flag manipulation. It's the bytecode that drives Tactical Arts execution - when a Tactical Arts directional input maps to a move ID, the move VM is what plays out the move record one opcode at a time.</p>
+  <p>The move VM is what reads <a href="../formats/mdt.html">MDT</a> (move-table) records and turns them into world-space motion, render-bank writes, animation-bank selection, tween setup, and per-actor flag manipulation. It's the bytecode that drives Tactical Arts execution - when a Tactical Arts directional input maps to a move ID, the move VM is what plays out the move record one opcode at a time.</p>
 
   <p>One quirk worth noting: <strong>operands are 16-bit, not 8-bit.</strong> The PC counts in u16 units. Each handler returns its size also in u16 units, which the dispatcher epilogue adds to the PC. Coming from byte-stream VMs (the actor VM and field VM both use byte streams), this is easy to misread.</p>
 
-  <p>Opcode <code>0x2F</code> is the <strong>overlay-extension escape</strong>. It calls into a separate dispatcher inside the town overlay, which has its own 61-entry jump table. So the actual opcode count is "71 + 61 sub-ops accessible through opcode 0x2F". The town-overlay sub-handlers are scene-specific, which is why they live in the overlay rather than in the always-resident exe.</p>
+  <p>Opcode <code>0x2F</code> is the <strong>overlay-extension escape</strong>. It calls into a separate dispatcher inside the town overlay (an overlay is a chunk of code the game loads into RAM on demand), which has its own 61-entry jump table (the array of handler addresses a dispatcher jumps through). So the actual opcode count is "71 + 61 sub-ops accessible through opcode 0x2F". The town-overlay sub-handlers are scene-specific, which is why they live in the overlay rather than in the always-resident exe.</p>
 </section>
 
 <section class="doc-section" id="vm-family">
   <h2>The runtime VM family</h2>
-  <p>Legaia runs <strong>five</strong> distinct bytecode / state VMs. Confusing them is the classic mistake in this corpus, so each page states plainly which one it is. This table is the shared orientation; the per-VM pages carry the detail.</p>
+  <p>Legaia runs <strong>five</strong> distinct bytecode / state VMs. Confusing them is the classic mistake in this corpus, so each page states plainly which one it is. This table is the shared orientation; the per-VM pages carry the detail. ("Driver" is the interpreter's main function - <code>FUN_80xxxxxx</code> names are Ghidra's labels for traced routines at those RAM addresses.)</p>
   <table>
     <thead><tr><th>VM</th><th>Driver</th><th>Where</th><th>Opcodes</th><th>Operand width</th></tr></thead>
     <tbody>
@@ -155,7 +160,7 @@ goto v0;                                                  // computed jump</code
 <section class="doc-section" id="cross-refs">
   <h2>Connection to other crates</h2>
   <ul class="bullets">
-    <li><strong>crates/mdt</strong> - parses the <a href="../formats/index.html">MDT format</a>. The per-frame data inside an MDT record is exactly the move-VM bytecode this VM consumes. With the move-VM opcode set documented, <code>crates/mdt</code> can grow a disassembler.</li>
+    <li><strong>crates/mdt</strong> - parses the <a href="../formats/mdt.html">MDT format</a>. The per-frame data inside an MDT record is exactly the move-VM bytecode this VM consumes. With the move-VM opcode set documented, <code>crates/mdt</code> can grow a disassembler.</li>
     <li><strong>crates/engine-vm</strong> - clean-room Rust port lives at <code>crates/engine-vm/src/move_vm.rs</code>. All 71 outer opcodes plus all 61 inner ext sub-ops are ported; the <code>MoveHost</code> trait abstracts every actor-side callback. <code>actor_tick</code> mirrors the per-frame entry gate at <code>FUN_80021DF4 + 0x80022B94</code>.</li>
     <li><strong>Field VM op <code>0x22</code></strong> (<code>EXEC_MOVE</code>) - the gateway from script-VM into move-VM; calls <code>FUN_800204F8</code> to set up the per-actor buffer.</li>
   </ul>

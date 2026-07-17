@@ -20,8 +20,13 @@ struct DiscBuilder {
 
 impl DiscBuilder {
     fn new(num_sectors: usize) -> Self {
+        // Stamp the 12-byte CD sync pattern into every sector so the images
+        // pass `RawDisc::open`'s "is this really a raw 2352 dump?" precheck -
+        // these tests target the ISO9660 walker, not the sync detector.
+        let mut sector = [0u8; SECTOR_SIZE];
+        sector[..12].copy_from_slice(&legaia_iso::raw::SECTOR_SYNC);
         Self {
-            sectors: vec![[0u8; SECTOR_SIZE]; num_sectors],
+            sectors: vec![sector; num_sectors],
         }
     }
 

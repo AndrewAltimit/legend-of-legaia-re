@@ -1,13 +1,24 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; slot-4 records</div>
   <h1>Slot-4 records (world-map mesh library) <span class="tag tag-partial">Inferred</span></h1>
-  <p class="lede">Slot 4 of each kingdom bundle is <strong>a per-kingdom library of small object-local 3D meshes</strong>, rendered as PSX triangles and quads by the world-map renderer. The container layout below is byte-verified against live RAM, the consumer is pinned, and the per-record semantic is decoded: each 8-byte record is a GTE vertex - the cluster-A prim handler <code>FUN_80044c14</code> loads each record&apos;s two words straight into the GTE vertex registers (<code>VXYn = x | y&lt;&lt;16</code>, <code>VZn = z</code>) and RTPT-transforms them, so <code>x</code>/<code>y</code>/<code>z</code> are model-space coordinates and the 4th <code>i16</code> (<code>attr</code>) rides in the discarded high half of the <code>VZn</code> word and is not a coordinate. The slot-4 body is read <strong>in place, per frame</strong>, by the world-map renderer (<code>ra 0x801F78D4</code>) - there is <strong>no record &rarr; working-buffer transcode</strong>. See <a href="#consumer">Consumer call sites</a>.</p>
+  <p class="lede">Each of Legaia's three overworld continents (Drake, Sebucus, Karisto) ships as a "kingdom bundle" - a per-continent asset bundle whose numbered slots hold the map's textures, meshes, and data. Slot 4 is this page's subject: <strong>a per-kingdom library of small object-local 3D meshes</strong>, rendered as PSX triangles and quads by the world-map renderer. Fair warning before you chase the obvious idea: the tempting reading - that these records are 2D map data, the continent's <em>coastline wireframe</em> or the dev-menu top-view outline - is <strong>falsified</strong>. Rendering every body on every projection plane produces no map silhouette in any kingdom; see <a href="#falsified">Falsified readings</a> before re-opening that thread.</p>
+  <p class="lede">What the records actually are: 3D vertices. The container layout below is byte-verified
+  against live RAM, the consumer is pinned, and the per-record semantic is decoded: each 8-byte record is a GTE
+  vertex (the GTE is the PlayStation's geometry coprocessor - all 3D transforms go through its registers) - the
+  cluster-A prim handler <code>FUN_80044c14</code> (a Ghidra-traced function; <code>FUN_80xxxxxx</code> names
+  are addresses) loads each record&apos;s two words straight into the GTE vertex registers (<code>VXYn = x |
+  y&lt;&lt;16</code>, <code>VZn = z</code>) and RTPT-transforms them, so
+  <code>x</code>/<code>y</code>/<code>z</code> are model-space coordinates and the 4th <code>i16</code>
+  (<code>attr</code>) rides in the discarded high half of the <code>VZn</code> word and is not a coordinate. The
+  slot-4 body is read <strong>in place, per frame</strong>, by the world-map renderer (<code>ra
+  0x801F78D4</code>) - there is <strong>no record &rarr; working-buffer transcode</strong>. See <a
+  href="#consumer">Consumer call sites</a>.</p>
   <p class="lede">The bulk continent terrain itself - the ~4300 POLY_FT4 prims that tile the kingdom continent in the dev-menu top-view - is <em>not</em> sourced from slot 4. It comes from the same kingdom slot-1 TMD pack the landmarks draw from, routed through <code>FUN_80043390</code>&apos;s overlay-mode dispatch table at <code>0x801F8968</code> whose eight high-mode renderers replace the SCUS variants when the world-map overlay is paged in. See <a href="../subsystems/world-map.html#bulk-continent-terrain-emit-mechanism-pinned">subsystems / world-map - bulk continent terrain emit mechanism</a>.</p>
 </header>
 
 <section class="doc-section" id="overview">
   <h2>Overview</h2>
-  <p>Slot 4 of each world-map (kingdom) bundle decompresses to a fixed-size buffer that the runtime loads verbatim into RAM. Three carriers:</p>
+  <p>Slot 4 of each world-map (kingdom) bundle decompresses to a fixed-size buffer that the runtime loads verbatim into RAM. (PROT.DAT is the disc's single big archive; the "PROT index" is the bundle's entry number in it. CDNAME is the disc's name map, which is where the <code>map01..03</code> labels come from.) Three carriers:</p>
   <table>
     <thead><tr><th>Bundle</th><th>PROT index</th><th>CDNAME label</th><th>Decoded size</th></tr></thead>
     <tbody>

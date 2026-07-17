@@ -21,6 +21,15 @@ const NAV = [
     ],
   },
   {
+    label: 'guides',
+    items: [
+      { href: 'guides/getting-started.html',         text: 'Getting started',          key: 'guides/getting-started' },
+      { href: 'guides/extracting-assets.html',       text: 'Extracting assets',        key: 'guides/extracting-assets' },
+      { href: 'guides/playing-and-viewing.html',     text: 'Playing + viewing',        key: 'guides/playing-and-viewing' },
+      { href: 'guides/modding-and-translation.html', text: 'Modding + translation',    key: 'guides/modding-and-translation' },
+    ],
+  },
+  {
     label: 'explore',
     items: [
       { href: 'play.html',                      text: 'Play the port',            key: 'play' },
@@ -153,6 +162,7 @@ const NAV = [
       { href: 'tooling/port-catalog.html',           text: 'Port catalog',             key: 'tooling/port-catalog' },
       { href: 'tooling/determinism-replay.html',     text: 'Determinism replay',       key: 'tooling/determinism-replay' },
       { href: 'tooling/randomizer.html',             text: 'Randomizer / disc patcher', key: 'tooling/randomizer' },
+      { href: 'tooling/translation.html',            text: 'Translation / language packs', key: 'tooling/translation' },
     ],
   },
   {

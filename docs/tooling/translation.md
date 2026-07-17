@@ -41,6 +41,11 @@ working pack). Same-size in place is enforced from the disc, never from the pack
 
 ## Workflow
 
+Every disc argument takes a raw Mode 2/2352 `.bin` or a `.cue` sheet
+(resolved to the `.bin` it references). `stats` and `import` summarize
+skipped / over-budget entries per reason; pass `--verbose` to print every
+entry individually.
+
 ```bash
 # 1. Dump the source text into a working pack (once).
 legaia-rando translate export --input "Legend of Legaia (USA).bin" -o legaia_en.yaml
@@ -73,7 +78,11 @@ same pack over a patched image applies nothing) and incremental (fill more
 entries, re-import onto a fresh copy). When a scene's dialog no longer
 recompresses into its MAN's on-disc footprint (translated text is less
 repetitive than the source), import rolls back that scene's longest lines one at
-a time rather than dropping the whole scene.
+a time rather than dropping the whole scene - or, with
+`import --allow-relayout`, grows the overflowing scene MAN by whole sectors via
+a full-ISO relayout so the dialog imports byte-faithfully (the image grows, so
+this writes `--output`, not a same-size `--patch`; built for the official PAL
+lifts, see [`pal-localizations.md`](pal-localizations.md)).
 
 ### What may / may not be committed
 

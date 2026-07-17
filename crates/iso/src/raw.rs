@@ -6,16 +6,57 @@ pub const SECTOR_SIZE: usize = 2352;
 pub const USER_DATA_OFFSET: usize = 24;
 pub const USER_DATA_SIZE: usize = 2048;
 
+/// The 12-byte sync pattern that opens every raw CD sector
+/// (`00 FF FF FF FF FF FF FF FF FF FF 00`). Its presence at offset 0 is the
+/// cheap tell that a file really is a raw 2352-byte-sector dump and not, say,
+/// a 2048-byte ISO or an unrelated file handed to the CLI by mistake.
+pub const SECTOR_SYNC: [u8; 12] = [
+    0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00,
+];
+
+#[derive(Debug)]
 pub struct RawDisc {
     file: File,
     sector_count: u64,
 }
 
 impl RawDisc {
+    /// Open a Mode2/2352 disc image. Accepts either the raw `.bin` or a
+    /// `.cue` sheet pointing at it (resolved via [`resolve_disc_path`]).
+    ///
+    /// Rejects inputs that clearly aren't 2352-byte raw-sector dumps (too
+    /// small, or missing the CD sync pattern at sector 0) with an error that
+    /// names the offending file, instead of failing later with a bare
+    /// "failed to fill whole buffer" deep inside the ISO9660 walk.
     pub fn open(path: &Path) -> io::Result<Self> {
         let resolved = resolve_disc_path(path)?;
-        let file = File::open(&resolved)?;
+        let mut file = File::open(&resolved)?;
         let len = file.metadata()?.len();
+        if len < SECTOR_SIZE as u64 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "not a Mode2/2352 disc image: {} ({} bytes is smaller than one \
+                     2352-byte raw sector; pass the raw .bin dump or its .cue sheet)",
+                    resolved.display(),
+                    len
+                ),
+            ));
+        }
+        let mut head = [0u8; 12];
+        file.read_exact(&mut head)?;
+        file.seek(SeekFrom::Start(0))?;
+        if head != SECTOR_SYNC {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "not a Mode2/2352 disc image: {} (expected 2352-byte raw sectors \
+                     starting with the CD sync pattern; pass the raw .bin dump or its \
+                     .cue sheet - a 2048-byte .iso or any other file type won't work)",
+                    resolved.display()
+                ),
+            ));
+        }
         Ok(Self {
             file,
             sector_count: len / SECTOR_SIZE as u64,
@@ -204,6 +245,36 @@ mod tests {
         std::fs::write(&cue_path, "FILE \"game.bin\" BINARY\n").unwrap();
         let resolved = resolve_disc_path(&cue_path).unwrap();
         assert_eq!(resolved, bin_path);
+    }
+
+    #[test]
+    fn open_rejects_non_disc_file_with_path_in_error() {
+        let dir = std::env::temp_dir().join("legaia-raw-open-test");
+        let _ = std::fs::create_dir_all(&dir);
+        // A PNG-magic file padded past one sector: wrong sync pattern.
+        let png_path = dir.join("not-a-disc.png");
+        let mut bytes = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+        bytes.resize(SECTOR_SIZE * 2, 0);
+        std::fs::write(&png_path, &bytes).unwrap();
+        let err = RawDisc::open(&png_path).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("not a Mode2/2352 disc image"), "msg: {msg}");
+        assert!(msg.contains("not-a-disc.png"), "msg: {msg}");
+
+        // A tiny file: smaller than one raw sector.
+        let tiny_path = dir.join("tiny.bin");
+        std::fs::write(&tiny_path, b"short").unwrap();
+        let err = RawDisc::open(&tiny_path).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("not a Mode2/2352 disc image"), "msg: {msg}");
+        assert!(msg.contains("tiny.bin"), "msg: {msg}");
+
+        // A file that does start with the sync pattern opens fine.
+        let ok_path = dir.join("ok.bin");
+        let mut ok_bytes = vec![0u8; SECTOR_SIZE];
+        ok_bytes[..12].copy_from_slice(&SECTOR_SYNC);
+        std::fs::write(&ok_path, &ok_bytes).unwrap();
+        assert!(RawDisc::open(&ok_path).is_ok());
     }
 
     #[test]

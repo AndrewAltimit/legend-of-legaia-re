@@ -1,0 +1,83 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; playing + viewing</div>
+  <h1>Playing and viewing</h1>
+  <p class="lede"><code>legaia-engine</code> is the clean-room engine reimplementation: point it at your disc and it boots a scene, renders it, and takes pad input. <code>asset-viewer</code> is its museum-mode sibling for browsing individual assets. Both ship in the release archive.</p>
+</header>
+
+<section class="doc-section" id="inputs">
+  <h2>Where the data comes from</h2>
+  <p>Every subcommand accepts the disc directly via <code>--disc</code> - no extraction step required to play. Without <code>--disc</code>, tools read an <code>extracted/</code> tree (<code>--extracted-root</code>, default <code>extracted</code>, resolved against the current directory) produced by <code>legaia-extract</code> (<a href="getting-started.html">getting started</a>). Commands use the bare <code>./tool</code> form; source builds live at <code>target/release/</code>.</p>
+</section>
+
+<section class="doc-section" id="play-window">
+  <h2>1 &middot; Boot the engine</h2>
+<pre><code>./legaia-engine play-window --disc "/path/to/Legend of Legaia (USA).bin"</code></pre>
+  <p>This boots the scene <code>town01</code> (Rim Elm) straight off the disc: field rendering, BGM, NPC scripts, dialog. Keyboard defaults: arrows = D-pad, <kbd>Z</kbd> = Cross, <kbd>Esc</kbd> = quit. In-window extras: left-mouse drag orbits the camera, <kbd>T</kbd> cycles the camera-distance preset, <kbd>R</kbd> toggles precise free-angle movement (an opt-in enhancement - retail-style movement is the default), <kbd>V</kbd> mutes audio. <code>--boot-ui</code> starts at the title screen &rarr; save-select flow instead of jumping into the scene.</p>
+</section>
+
+<section class="doc-section" id="scenes">
+  <h2>2 &middot; Pick a scene</h2>
+<pre><code>./legaia-engine list-scenes --disc "/path/to/disc.bin"
+./legaia-engine play-window --disc "/path/to/disc.bin" --scene town04</code></pre>
+  <p><code>list-scenes</code> prints every scene name the game's file map exposes with the PROT entry range each covers - the same names feed <code>--scene</code>, and a range start is where that scene's files land in <code>extracted/PROT/</code>.</p>
+</section>
+
+<section class="doc-section" id="fmv">
+  <h2>3 &middot; Play the FMVs</h2>
+<pre><code>./legaia-engine play-str MOV/MV1.STR --disc "/path/to/disc.bin"</code></pre>
+  <p>With <code>--disc</code>, the argument is the movie's path <em>inside</em> the disc image and the interleaved XA audio track plays in sync (the video clock is driven off the audio cursor). Without <code>--disc</code> it plays a raw extracted <code>.STR</code> file (video only). To dump frames as PNGs instead, use <code>mdec</code> (<a href="extracting-assets.html">extracting assets</a>). Background: <a href="../subsystems/cutscene.html">cutscene subsystem</a>.</p>
+</section>
+
+<section class="doc-section" id="config-saves">
+  <h2>4 &middot; Saves and config live next to you</h2>
+  <p>The engine resolves its files against the <strong>current directory</strong>: key bindings in <code>legaia-input.toml</code>, options (camera preset, movement mode) in <code>legaia-options.toml</code>, and save slots under <code>saves/</code>. Run from the same directory each time - or pass explicit paths where supported (<code>--save-dir</code>, <code>config set --config-file</code>).</p>
+  <p>Rebind keys with <code>config</code>:</p>
+<pre><code>./legaia-engine config show
+./legaia-engine config set --binding Space=Cross
+./legaia-engine config set --binding Enter=Start</code></pre>
+  <p><code>KEY=BUTTON</code> uses friendly key names (<code>Z</code>, <code>Up</code>, <code>Enter</code>, <code>RShift</code>) and PSX pad button names (<code>Cross</code>, <code>Circle</code>, <code>Start</code>, <code>L1</code>).</p>
+</section>
+
+<section class="doc-section" id="record-replay">
+  <h2>5 &middot; Record and replay a session</h2>
+<pre><code>./legaia-engine record --disc "/path/to/disc.bin" --out session.toml
+./legaia-engine replay --input session.toml</code></pre>
+  <p><code>record</code> is <code>play-window</code> plus input capture into a small <code>j-replay-v1</code> TOML file. The file is checkpointed to disk about once a second and finalized on window close (<kbd>Esc</kbd>), so an interrupted session still yields a valid file up to the last checkpoint. <code>replay</code> runs it back headless and deterministic - the same file always produces a bit-identical engine trace, and it needs no disc at all. Details: <a href="../tooling/determinism-replay.html">determinism + replay</a>.</p>
+  <p><code>legaia-engine --help</code> lists many more subcommands; the <code>COMMAND GROUPS</code> footer separates the player-facing ones above from the development diagnostics (parity oracles, synthetic state drivers) you can ignore.</p>
+</section>
+
+<section class="doc-section" id="asset-viewer">
+  <h2>6 &middot; Browse assets interactively</h2>
+  <p><code>asset-viewer</code> reads the <code>extracted/</code> tree (there is no <code>--disc</code> here - run <code>legaia-extract</code> first). The <code>field</code> and <code>dialog</code> demos additionally need the dialog font at <code>extracted/font/</code>, which the pipeline writes by default (or <code>font-extract --disc</code> rebuilds).</p>
+<pre><code>./asset-viewer prot extracted/PROT.DAT --cdname extracted/CDNAME.TXT   # archive browser
+./asset-viewer tim  extracted/tim_scan/&lt;entry&gt;/raw_off&lt;HEX&gt;.tim        # one texture
+./asset-viewer tmd  extracted/tmd_scan                                 # cycle 3D meshes
+./asset-viewer vab  extracted/PROT/&lt;entry&gt;.BIN --sample 0              # play a sample
+./asset-viewer field --scene town01                                    # playable field demo</code></pre>
+  <p>In the PROT browser: <kbd>N</kbd> / <kbd>P</kbd> = next/prev entry, <kbd>PgDn</kbd> / <kbd>PgUp</kbd> = jump 10, <kbd>Esc</kbd> = quit; each entry's format is auto-detected and the first viewable sub-asset is shown. <code>tmd</code> pointed at a directory walks every mesh with the same keys. The <code>tim</code> subcommand also takes <code>extracted/PROT.DAT</code> itself with <code>--offset</code>/<code>--clut</code> for the system-UI textures that live outside any TOC entry.</p>
+</section>
+
+<section class="doc-section" id="scripts">
+  <h2>7 &middot; Read the game's scripts</h2>
+  <p>The field/event VM (<a href="../subsystems/script-vm.html">script VM</a>) drives every scene. Its disassembler is a release binary too:</p>
+<pre><code>./field-disasm scan-prot --prot extracted/PROT.DAT     # sweep for event scripts + FMV triggers
+./field-disasm file &lt;extracted-script-body&gt;            # walk one raw script linearly</code></pre>
+  <p>For a specific scene's per-scene scripts (LZS-compressed inside the scene's MAN sub-asset), the engine has the direct path:</p>
+<pre><code>./legaia-engine man-scripts --scene town01 --disc "/path/to/disc.bin"</code></pre>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Guides</span>
+    <a href="getting-started.html">Getting started</a>
+    <a href="extracting-assets.html">Extracting assets</a>
+    <a href="modding-and-translation.html">Modding + translation</a>
+  </div>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/engine.html">Engine architecture</a>
+    <a href="../subsystems/renderer.html">Renderer</a>
+    <a href="../tooling/determinism-replay.html">Determinism + replay</a>
+  </div>
+</section>

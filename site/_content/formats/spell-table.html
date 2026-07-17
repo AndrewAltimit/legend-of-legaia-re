@@ -1,11 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; spell table</div>
   <h1>Spell table <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">Every spell's MP cost, display name, target shape, and capture class lives in one static 12-byte-stride table in <code>SCUS_942.54</code> rodata. One shared id space covers internal enemy-attack tiers, named monster attacks, the player Seru-magic block, and the Ra-Seru summons - the battle-action state machine reads a cast's cost and name straight out of it.</p>
+  <p class="lede">Where the game keeps what every spell <em>is</em>: MP cost, display name, who it targets, and whether it can be captured. It is one static table baked into <code>SCUS_942.54</code> (the game's main executable on the disc), 12 bytes per spell, and a single shared numbering - the <em>spell id space</em> - covers everything from unnamed enemy-attack tiers through named monster attacks to the party's Seru magic and the Ra-Seru summons. When anything casts, the battle engine reads the cost and name straight out of this table. The twist: the table carries <strong>no damage number at all</strong> - a spell's magnitude is computed from battle state at cast time, never stored here (see <a href="#no-power-scalar">below</a>).</p>
 </header>
 
 <section class="doc-section" id="table-layout">
   <h2>Table base + record layout</h2>
+  <p>A note on naming: <code>DAT_80xxxxxx</code> is a Ghidra label (Ghidra is the disassembler this project uses) for a fixed RAM address - here, where the table sits once the PlayStation loads the executable. Because the data is static, the same bytes can be read straight out of the <code>SCUS_942.54</code> file on the disc; the parser translates the RAM address to a file offset. "Stride" is the size of one record - step that many bytes to reach the next spell.</p>
   <p>The table is viewed through two interleaved base pointers over the same records: <code>DAT_800754C8</code> (the stats base, read for MP + class + target) and <code>DAT_800754D0</code> (the same base shifted <code>+8</code>, read for the name pointer). Both step <code>0xC</code> per spell id, so record <code>id</code> sits at <code>DAT_800754C8 + id*0xC</code>.</p>
   <table>
   <thead><tr><th>Field</th><th>Value</th></tr></thead>
@@ -25,7 +26,7 @@
     <tr><td><code>+3</code></td><td>u8</td><td><strong>MP cost</strong></td></tr>
     <tr><td><code>+4</code></td><td>u8</td><td>animation id</td></tr>
     <tr><td><code>+5..+8</code></td><td>-</td><td>padding (zero)</td></tr>
-    <tr><td><code>+8</code></td><td>u32</td><td><code>name_ptr</code> - pointer to the display-name C-string (leading <code>0xCE</code> MES colour-control prefix before the ASCII name)</td></tr>
+    <tr><td><code>+8</code></td><td>u32</td><td><code>name_ptr</code> - pointer to the display-name C-string (leading <code>0xCE</code> colour-control prefix from MES, the game's text markup, before the ASCII name)</td></tr>
   </tbody>
   </table>
 </section>
@@ -56,7 +57,7 @@
     <tr><td><code>0x9A..=0xA0</code></td><td>Ra-Seru summons - Palma, Mule, Horn, Jedo, Meta, Terra, Ozma (the hidden 8th, Juggernaut, is outside this contiguous named region)</td></tr>
   </tbody>
   </table>
-  <p>An enemy cast is named exactly like a party cast: the AI spell picker <code>FUN_801E9FD4</code> (battle overlay, extraction entry 0898 / raw TOC index <code>0x384</code>) reads a <strong>global</strong> spell id from the monster record's magic-attack array at <code>+0x21..=+0x23</code>, writes it into the live battle actor at <code>+0x1DF</code>, and the battle-action SM prints <code>&amp;DAT_800754D0 + id*0xC</code>. The monster archive's local <code>+0x4C</code> entry ids (<code>0x0C..=0x1F</code>) only gate action cost - they are not this table's id space.</p>
+  <p>An enemy cast is named exactly like a party cast: the AI spell picker <code>FUN_801E9FD4</code> (a Ghidra-traced function in the battle overlay - a chunk of code the game loads into RAM on demand; extraction entry 0898 / raw TOC index <code>0x384</code>) reads a <strong>global</strong> spell id from the monster record's magic-attack array at <code>+0x21..=+0x23</code>, writes it into the live battle actor at <code>+0x1DF</code>, and the battle-action SM prints <code>&amp;DAT_800754D0 + id*0xC</code>. The monster archive's local <code>+0x4C</code> entry ids (<code>0x0C..=0x1F</code>) only gate action cost - they are not this table's id space.</p>
 </section>
 
 <section class="doc-section" id="no-power-scalar">

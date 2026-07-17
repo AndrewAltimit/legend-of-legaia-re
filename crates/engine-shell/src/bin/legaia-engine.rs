@@ -31,7 +31,18 @@ use commands::{
 use std::path::Path;
 use window::{cmd_play_str, cmd_play_window, cmd_record};
 
+/// Restore the default SIGPIPE disposition so piping stdout (JSONL traces,
+/// scene listings) into `head` terminates quietly instead of panicking with
+/// "failed printing to stdout: Broken pipe".
+fn reset_sigpipe() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> Result<()> {
+    reset_sigpipe();
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let cli = Cli::parse();
     match cli.cmd {

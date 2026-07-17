@@ -1,6 +1,6 @@
 # Pochi-filler placeholder slots
 
-265 of 1232 PROT entries are placeholder slots filled with a developer fill pattern - reserved-but-unused asset slots the game never loads. Detection class: `pochi_filler`. Detector + class: `crates/asset/src/categorize.rs`.
+266 of 1233 PROT entries are placeholder slots filled with a developer fill pattern - reserved-but-unused asset slots the game never loads. Detection class: `pochi_filler`. Detector + class: `crates/asset/src/categorize.rs`.
 
 > **These slots are a trap, not just dead weight.** The bytes behind the
 > `pochipochi…` prefix are **not zeros** - they are stale mastering scratch, and

@@ -1,11 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; item table</div>
   <h1>Item-name table <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">The single source of truth for every item's display name and shop price is a static 256-entry table in <code>SCUS_942.54</code>. The MES interpreter's item-substitution opcodes (<code>0xC2 XX</code> / <code>0xC4 XX</code>) print names by indexing it, and the same id space is what a monster record's <code>drop_item</code> byte and the <a href="steal-table.html">steal table</a>'s item byte index - one shared space for weapons, armor, accessories, consumables, and key items.</p>
+  <p class="lede">Every item's display name and shop price - weapons, armor, accessories, consumables, key items - lives in one static 256-entry table baked into <code>SCUS_942.54</code>, the game's main executable on the disc. Each item is a single byte-sized id, <code>0x00..=0xFF</code>, and that one id space is shared everywhere: when dialog text prints an item name (the game's MES text engine has substitution codes <code>0xC2 XX</code> / <code>0xC4 XX</code> that index this table), when a monster's <code>drop_item</code> byte says what it drops, and when the <a href="steal-table.html">steal table</a> says what can be stolen. The price halfword in each record is what the buy/sell UI actually charges - so this table, not any per-shop data, is where an item's price lives.</p>
 </header>
 
 <section class="doc-section" id="table-layout">
   <h2>Table base + record layout</h2>
+  <p>(<code>DAT_80xxxxxx</code> / <code>PTR_DAT_80xxxxxx</code> are Ghidra names - labels the disassembler assigns to fixed RAM addresses. The table is static data, so those addresses map one-to-one back to bytes in the <code>SCUS_942.54</code> file on the disc. "Stride" is the size of one record.)</p>
   <table>
   <thead><tr><th>Field</th><th>Value</th></tr></thead>
   <tbody>
@@ -30,7 +31,7 @@
 
 <section class="doc-section" id="name-strings">
   <h2>Name strings</h2>
-  <p>The display strings carry the same MES control prefixes as every other in-game string: a leading <code>0x01</code> icon escape and <code>0xCE XX</code> colour-control bytes. The parser strips control bytes (keeping printable ASCII) and trims whitespace. A handful of ids (<code>0x00</code>, <code>0x12</code>, <code>0x1A</code>, <code>0x52</code>, <code>0xB9</code>, <code>0xFD</code>) have empty names - reserved / gap slots.</p>
+  <p>The display strings carry the same control prefixes as every other in-game string (MES, the game's text markup): a leading <code>0x01</code> icon escape and <code>0xCE XX</code> colour-control bytes. The parser strips control bytes (keeping printable ASCII) and trims whitespace. A handful of ids (<code>0x00</code>, <code>0x12</code>, <code>0x1A</code>, <code>0x52</code>, <code>0xB9</code>, <code>0xFD</code>) have empty names - reserved / gap slots.</p>
 </section>
 
 <section class="doc-section" id="parser">

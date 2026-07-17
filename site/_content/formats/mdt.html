@@ -1,7 +1,15 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; mdt - move tables (tactical arts)</div>
   <h1>MDT - move tables (Tactical Arts) <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">The runtime buffer format consumed by <code>FUN_800204F8</code> (Tactical Arts move-table consumer; the same function the <a href="../subsystems/script-vm.html">script VM</a> opcode <code>0x22</code> <code>EXEC_MOVE</code> invokes). Implementation: <code>crates/mdt</code>.</p>
+  <p class="lede">MDT - the "move table" - is the buffer of animation programs a scene keeps in RAM: when an
+  actor performs a move, the per-frame data driving it is looked up by move id in this buffer, and that data is
+  bytecode for the game's <em>move VM</em> (a small interpreter dedicated to animation/motion). The runtime
+  consumer is <code>FUN_800204F8</code> (a Ghidra-traced function - names of the form <code>FUN_80xxxxxx</code>
+  are addresses of traced functions; it is the same function the <a href="../subsystems/script-vm.html">script
+  VM</a> opcode <code>0x22</code> <code>EXEC_MOVE</code> invokes). Each scene ships its own MOVE table inside
+  its asset bundle - there is no single global one. And a naming trap for anyone browsing the extracted disc:
+  the files literally named <code>move_program_no.BIN</code> are <strong>not</strong> move tables at all (<a
+  href="#cdname-mismatch">below</a>). Implementation: <code>crates/mdt</code>.</p>
 </header>
 
 <section class="doc-section" id="overview">
@@ -39,7 +47,7 @@ record:
 
 <section class="doc-section" id="on-disc-source-per-scene-scene-asset-table-slot-4">
   <h2>On-disc source - per-scene <code>scene_asset_table</code> slot 4</h2>
-  <p>The MOVE base pointer (<code>_DAT_8007B888</code>) is <strong>populated per scene</strong> during area transitions, not from a single boot-time PROT entry. Every per-scene CDNAME block's second PROT entry (the slot-1 entry classified as <code>scene_asset_table</code>) carries an <code>Asset(0x05) = Move</code> descriptor - that descriptor's payload is the runtime MOVE table for that scene.</p>
+  <p>(PROT.DAT is the disc's single big archive - everything except movies and audio streams lives in its numbered entries; CDNAME is the name map that groups consecutive PROT entries into per-scene blocks.) The MOVE base pointer (<code>_DAT_8007B888</code>) is <strong>populated per scene</strong> during area transitions, not from a single boot-time PROT entry. Every per-scene CDNAME block's second PROT entry (the slot-1 entry classified as <code>scene_asset_table</code>) carries an <code>Asset(0x05) = Move</code> descriptor - that descriptor's payload is the runtime MOVE table for that scene.</p>
 <pre><code>PROT entry at scene_block + 1            ← class = scene_asset_table
   u32 count = 7
   u32 meta1

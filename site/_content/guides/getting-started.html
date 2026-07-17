@@ -1,0 +1,114 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; getting started</div>
+  <h1>Getting started with the release tools</h1>
+  <p class="lede">For anyone who downloaded a release archive from the project's GitHub Releases page: a directory of prebuilt command-line binaries, two license files, and a short README.txt. No Rust toolchain, no source checkout - just your own disc image and a terminal.</p>
+</header>
+
+<section class="doc-section" id="bring-your-own-disc">
+  <h2>Bring your own disc</h2>
+  <p>One rule shapes everything here: <strong>the project ships no Sony-owned bytes.</strong> The archive contains only the project's own compiled tools. Every tool operates on a disc image <em>you</em> supply - a raw Mode 2/2352 <code>.bin</code> dump of your own <em>Legend of Legaia</em> (USA) disc, <code>SCUS-94254</code>. A <code>.cue</code> sheet is accepted anywhere a disc image is: the referenced <code>BINARY</code> track is resolved automatically.</p>
+  <p>Commands on this page use the bare <code>./tool</code> form, as run from inside the unpacked archive directory. If you build from source instead, the same binaries land in <code>target/release/</code> (<code>cargo build --release</code>), so substitute <code>./target/release/tool</code>.</p>
+</section>
+
+<section class="doc-section" id="download-verify">
+  <h2>1 &middot; Download and verify the archive</h2>
+  <p>Each tagged release publishes one archive per platform plus a <code>SHA256SUMS</code> manifest (see <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/releases.md" target="_blank" rel="noopener"><code>tooling/releases.md</code></a> for how they are built):</p>
+  <ul class="bullets">
+    <li><code>legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu.tar.gz</code> (Linux, glibc 2.28+)</li>
+    <li><code>legaia-tools-&lt;version&gt;-aarch64-unknown-linux-gnu.tar.gz</code> (Linux on ARM)</li>
+    <li><code>legaia-tools-&lt;version&gt;-x86_64-pc-windows-gnu.zip</code> (Windows)</li>
+  </ul>
+<pre><code>sha256sum -c SHA256SUMS --ignore-missing
+tar -xzf legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu.tar.gz
+cd legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu
+./legaia-extract --version</code></pre>
+  <p>Every binary answers <code>--version</code> and <code>--help</code>; subcommand help (<code>./asset monster-archive --help</code>) states where each input comes from.</p>
+</section>
+
+<section class="doc-section" id="check-disc">
+  <h2>2 &middot; Check your disc image</h2>
+<pre><code>./disc-extract verify "/path/to/Legend of Legaia (USA).bin"</code></pre>
+  <p>A good USA dump prints:</p>
+<pre><code>[ok] matches: Legend of Legaia (USA) - SCUS-94254</code></pre>
+  <p>An unrecognized dump (a PAL disc, a re-track, a bad rip) prints an <code>[unknown]</code> line with the computed SHA-256 instead of failing - the extraction tools still run on it, but the fingerprints, offsets, and the randomizer's patches all target the USA build. A file that is not a Mode 2/2352 image at all is rejected up front with <code>not a Mode2/2352 disc image: &lt;path&gt;</code>.</p>
+</section>
+
+<section class="doc-section" id="one-shot-extract">
+  <h2>3 &middot; Extract everything in one shot</h2>
+<pre><code>./legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted</code></pre>
+  <p>On a modern machine this takes about five seconds and writes roughly 1.1&nbsp;GB. The pipeline runs eight steps: disc verify, ISO9660 walk (the disc's 45 files), <code>PROT.DAT</code> split (1233 entries, named via <code>CDNAME.TXT</code>), per-entry format categorization, streaming sub-asset extraction, streaming-TIM PNG conversion, the TIM-catalog TSVs, CD-XA demux to per-channel WAVs (316 of them), and finally the dialog-font artifacts. Skip flags exist for each slow or optional step: <code>--skip-verify</code>, <code>--skip-png</code>, <code>--skip-xa</code>, <code>--skip-catalog</code>, <code>--skip-font</code>.</p>
+  <p>What lands where:</p>
+<pre><code>extracted/
+├── PROT.DAT                 - the game's main archive, raw copy
+├── CDNAME.TXT               - entry name map
+├── SCUS_942.54              - the game executable (data-table source)
+├── MOV/                     - FMV movies (MV1.STR ...)
+├── PROT/                    - one file per PROT entry, plus categorize.json
+├── streaming/               - sub-assets unpacked from streaming containers
+├── XA_WAV/                  - streamed audio, one WAV per channel
+├── font/                    - dialog-font atlas + widths (engine + viewer read this)
+├── prot_tim_catalog.tsv     - texture inventory (raw TIMs)
+└── prot_tim_deep_catalog.tsv - texture inventory (TIMs inside LZS)</code></pre>
+  <p>The final summary points at the texture path: bulk texture export is a separate two-command step (<code>asset tim-scan</code> + <code>tim convert-dir</code>) covered in <a href="extracting-assets.html">extracting assets</a>. Everything downstream - the <a href="extracting-assets.html">asset scenarios</a>, the <a href="playing-and-viewing.html">engine and viewers</a>, the <a href="modding-and-translation.html">modding tools</a> - reads either this <code>extracted/</code> tree or the disc image directly.</p>
+</section>
+
+<section class="doc-section" id="tool-index">
+  <h2>4 &middot; The tools at a glance</h2>
+  <p>Pipeline and per-format extractors:</p>
+  <table>
+    <thead><tr><th>Binary</th><th>What it's for</th></tr></thead>
+    <tbody>
+      <tr><td><code>legaia-extract</code></td><td>The one-shot pipeline: disc image &rarr; the whole <code>extracted/</code> tree. Start here.</td></tr>
+      <tr><td><code>disc-extract</code></td><td>Verify a dump's fingerprint; list / extract the raw ISO9660 files.</td></tr>
+      <tr><td><code>prot-extract</code></td><td>Split <code>PROT.DAT</code> into its numbered entries with CDNAME-derived names.</td></tr>
+      <tr><td><code>lzs-decode</code></td><td>Decompress Legaia's LZS streams and <code>.lzs</code> containers.</td></tr>
+      <tr><td><code>asset</code></td><td>The format hub: categorize entries, extract sub-assets, dump readable game-data tables, export monsters to glTF.</td></tr>
+      <tr><td><code>tim</code></td><td>TIM textures &rarr; PNG.</td></tr>
+      <tr><td><code>tmd</code></td><td>Legaia TMD meshes &rarr; Wavefront OBJ.</td></tr>
+      <tr><td><code>vab</code></td><td>VAB sound banks &rarr; VAG samples / WAV.</td></tr>
+      <tr><td><code>seq</code></td><td>SEQ music inspector: headers, event disassembly, <code>find</code> for wrapped BGM.</td></tr>
+      <tr><td><code>xa</code></td><td>Streamed CD-XA audio &rarr; correctly-paced per-channel WAVs.</td></tr>
+      <tr><td><code>mdec</code></td><td>FMV decoder: STR movie data &rarr; per-frame PNGs.</td></tr>
+      <tr><td><code>font-extract</code></td><td>Dialog-font atlas + width table, straight from the disc.</td></tr>
+    </tbody>
+  </table>
+  <p>Game-data, playing, and modding:</p>
+  <table>
+    <thead><tr><th>Binary</th><th>What it's for</th></tr></thead>
+    <tbody>
+      <tr><td><code>legaia-engine</code></td><td>The clean-room engine: play scenes, FMVs, record/replay - straight from your disc.</td></tr>
+      <tr><td><code>asset-viewer</code></td><td>Windowed browser for textures, meshes, audio banks, and scene demos.</td></tr>
+      <tr><td><code>legaia-rando</code></td><td>Randomizer / disc patcher plus the translation toolchain; emits shareable PPF patches.</td></tr>
+      <tr><td><code>save-tool</code></td><td>PSX memory-card / save inspector: character records, save-block diffs.</td></tr>
+      <tr><td><code>gamedata-tool</code></td><td>Curated game-data lookups (arts, items, shops, enemies, ...); needs no disc at all.</td></tr>
+      <tr><td><code>cheat-tool</code></td><td>GameShark cheat-database parser with the Legaia NTSC-U databases built in.</td></tr>
+    </tbody>
+  </table>
+  <p>Reverse-engineering aids (useful once you go deeper):</p>
+  <table>
+    <thead><tr><th>Binary</th><th>What it's for</th></tr></thead>
+    <tbody>
+      <tr><td><code>field-disasm</code></td><td>Field/event-VM script disassembler over <code>PROT.DAT</code>.</td></tr>
+      <tr><td><code>mes</code></td><td>MES dialog-container inspector (for readable game text, use <code>legaia-rando translate export</code> instead).</td></tr>
+      <tr><td><code>anm</code></td><td>ANM animation-container inspector.</td></tr>
+      <tr><td><code>mdt</code></td><td>Move-table (Tactical Arts) layout classifier.</td></tr>
+      <tr><td><code>art</code></td><td>Tactical Arts tables: action constants, arts names, Super/Miracle Art triggers.</td></tr>
+      <tr><td><code>mednafen-state</code></td><td>Mednafen save-state inspector: RAM diffs, VRAM dumps, SPU snapshots.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Guides</span>
+    <a href="extracting-assets.html">Extracting assets</a>
+    <a href="playing-and-viewing.html">Playing + viewing</a>
+    <a href="modding-and-translation.html">Modding + translation</a>
+  </div>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../formats/index.html">Format specs</a>
+    <a href="../tooling/extraction.html">Per-stage pipeline reference</a>
+  </div>
+</section>

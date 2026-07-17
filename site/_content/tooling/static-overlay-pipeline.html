@@ -1,7 +1,13 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; static overlay pipeline</div>
   <h1>Static overlay pipeline</h1>
-  <p class="lede">Most of Legaia's gameplay code lives in RAM <strong>overlays</strong> paged into the <code>0x801C0000+</code> window per game mode (title / field / battle / menu / world-map / cutscene / minigames). The <a href="overlay-capture.html">dynamic capture</a> workflow reverses them from emulator save states; this is the <strong>static</strong> complement - extract each overlay straight from <code>PROT.DAT</code> and disassemble it at its load base, with identity attached from the first byte. It complements the dynamic captures; it does not replace them.</p>
+  <p class="lede">Most of Legaia's gameplay code lives in RAM <strong>overlays</strong> - chunks of MIPS code the game pages into the
+  <code>0x801C0000+</code> window per game mode (title / field / battle / menu / world-map / cutscene / minigames). The <a
+  href="overlay-capture.html">dynamic capture</a> workflow reverses them from emulator save states; this page is the <strong>static</strong>
+  complement - extract each overlay straight from <code>PROT.DAT</code> (the disc's main archive, where the overlay code ships as ordinary
+  numbered entries) and disassemble it at its load address, with identity attached from the first byte. No emulator, no save state,
+  reproducible from any copy of the disc. It complements the dynamic captures; it does not replace them - and like them, it is maintainer
+  infrastructure: you only need it if you are extending the reverse-engineering itself.</p>
 </header>
 
 <section class="doc-section" id="why">
@@ -17,7 +23,7 @@
 <section class="doc-section" id="win">
   <h2>What it buys (and the limit)</h2>
   <ul class="bullets">
-    <li><strong>Solves the VA-aliasing identity problem structurally.</strong> Many overlays link to the same VA range - <code>0x801DD864</code> is a battle-action function in one overlay and a muscle-dome function in another - which is why the repo disambiguates with <code>overlay_&lt;label&gt;_&lt;addr&gt;</code> naming. Statically, an overlay is <strong>&ldquo;PROT entry N at base X&rdquo;</strong>: identity from the source entry, not a guessed label.</li>
+    <li><strong>Solves the VA-aliasing identity problem structurally.</strong> Many overlays link to the same VA (virtual address) range - <code>0x801DD864</code> is a battle-action function in one overlay and a muscle-dome function in another - which is why the repo disambiguates with <code>overlay_&lt;label&gt;_&lt;addr&gt;</code> naming. Statically, an overlay is <strong>&ldquo;PROT entry N at base X&rdquo;</strong>: identity from the source entry, not a guessed label.</li>
     <li><strong>Reproducible from the user's disc</strong>, with no curated save state - including overlays nobody ever captured.</li>
     <li><strong>It does not unblock runtime-value captures.</strong> Values an overlay only holds at run time - e.g. <code>gp[0x754]</code> (a <code>$gp</code>-relative global: the base index where the effect-model library starts in the mesh pointer table <code>DAT_8007C018</code>; <code>party_count + 2</code> in battle), watchpoint results, <code>ctx[+0x274]</code> bytes - still need <a href="pcsx-redux-automation.html">live probes</a>. This is a workflow + coverage + identity win; the dynamic captures stay authoritative for runtime values.</li>
   </ul>

@@ -1,11 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; field locomotion</div>
   <h1>Field free-movement locomotion</h1>
-  <p class="lede">The player free-movement controller for towns, dungeons, and walkable field areas is <code>FUN_801d01b0</code> in the field overlay. Each frame it turns the held pad into a camera-relative direction, advances the player position a fixed step with per-axis collision, and updates facing. This is the general locomotion path - <strong>not</strong> the <a href="../formats/navmesh.html">tile-board minigame</a> that shares the overlay.</p>
+  <p class="lede">How walking works: what happens, frame by frame, between holding a d-pad direction and Vahn taking a step in a town or dungeon. The controller reads the pad relative to the camera, advances the player 2 units at a time with per-axis collision against a per-scene walkability grid, and updates facing - all traced from the retail code and reproduced byte-exactly in the clean-room port.</p>
 </header>
 
 <section class="doc-section" id="actor-fields">
   <h2>Player actor fields</h2>
+  <p>The controller is <code>FUN_801d01b0</code> - a RAM address in our disassembler trace, like every <code>FUN_</code> name below - and it lives in the field <em>overlay</em> (a chunk of code the game streams into RAM when you enter a town or field map), not in the main executable. This is the general locomotion path - <strong>not</strong> the <a href="../formats/navmesh.html">tile-board minigame</a> that shares the overlay.</p>
   <p>The player actor pointer is the global <code>_DAT_8007c364</code>. Confirmed fields:</p>
   <table>
     <thead><tr><th>offset</th><th>meaning</th></tr></thead>

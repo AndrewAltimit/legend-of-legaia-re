@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use legaia_prot::archive::{Archive, Header};
 use legaia_prot::{cdname, timpack};
@@ -9,6 +9,7 @@ use serde::Serialize;
 #[derive(Parser)]
 #[command(
     name = "prot-extract",
+    version,
     about = "Extract Legaia PROT.DAT-style archives"
 )]
 struct Cli {
@@ -20,29 +21,53 @@ struct Cli {
 enum Cmd {
     /// Print header, TOC summary, and per-entry table.
     List {
+        /// PROT.DAT (or DMY.DAT) archive - the file `disc-extract extract`
+        /// or `legaia-extract` writes into the output root.
         prot: PathBuf,
-        /// Optional CDNAME.TXT to label entries with their block name.
+        /// Optional CDNAME.TXT (extracted next to PROT.DAT on the disc) to
+        /// label entries with their block name.
         #[arg(long)]
         cdname: Option<PathBuf>,
     },
     /// Extract every entry to `<out>`; also unpack TIM packs and write manifest.json.
     Extract {
+        /// PROT.DAT (or DMY.DAT) archive - the file `disc-extract extract`
+        /// or `legaia-extract` writes into the output root.
         prot: PathBuf,
+        /// Output directory (created if missing; resolved against the
+        /// current directory when relative). One `.BIN` per entry.
         out: PathBuf,
+        /// Optional CDNAME.TXT (extracted next to PROT.DAT on the disc) to
+        /// name each entry file after its block, e.g. `0004_town01.BIN`.
         #[arg(long)]
         cdname: Option<PathBuf>,
     },
 }
 
+/// Restore default SIGPIPE behaviour so piping into `head` etc. exits
+/// quietly instead of panicking on a broken-pipe write.
+fn reset_sigpipe() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> Result<()> {
+    reset_sigpipe();
     match Cli::parse().cmd {
         Cmd::List { prot, cdname } => list(&prot, cdname.as_deref()),
         Cmd::Extract { prot, out, cdname } => extract(&prot, &out, cdname.as_deref()),
     }
 }
 
+/// Open the archive with the path attached to any error.
+fn open_archive(prot: &Path) -> Result<Archive> {
+    Archive::open(prot).with_context(|| format!("opening PROT archive {}", prot.display()))
+}
+
 fn list(prot: &Path, cdname_path: Option<&Path>) -> Result<()> {
-    let archive = Archive::open(prot)?;
+    let archive = open_archive(prot)?;
     print_header(
         &archive.header,
         archive.toc.len(),
@@ -74,7 +99,7 @@ fn list(prot: &Path, cdname_path: Option<&Path>) -> Result<()> {
 }
 
 fn extract(prot: &Path, out: &Path, cdname_path: Option<&Path>) -> Result<()> {
-    let mut archive = Archive::open(prot)?;
+    let mut archive = open_archive(prot)?;
     print_header(
         &archive.header,
         archive.toc.len(),
