@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">reference</a> &middot; cheat databases</div>
   <h1>Cheat databases</h1>
-  <p class="lede">Third-party GameShark / Pro-Action-Replay cheat code dumps for <em>Legend of Legaia</em> (NTSC-U) are an unusually rich source of ground-truth RAM addresses. This page documents the encoding, the parser, the citation table, and the runtime applier wired into <code>legaia-engine play-window --cheat-file</code>.</p>
+  <p class="lede">A GameShark (or Pro Action Replay) is a 90s cheat cartridge: each code it applies is literally a RAM address plus a value to write there every frame. That makes twenty-year-old community cheat lists an unusually rich source of ground-truth RAM addresses - "Infinite HP (Vahn)" only works if its target address really is where Vahn's HP lives, so every published code is a memory-layout fact someone verified on real hardware. This page documents the code encoding, the parser, the notable addresses the corpus pinned, and the runtime applier wired into <code>legaia-engine play-window --cheat-file</code>.</p>
 </header>
 
 <section class="doc-section" id="files">

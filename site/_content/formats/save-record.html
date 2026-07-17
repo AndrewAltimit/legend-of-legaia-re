@@ -1,7 +1,8 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; per-character save record</div>
   <h1>Per-character save record <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">The runtime per-character record is <code>0x414</code> bytes. Four records sit contiguously at <code>0x80084708 + slot * 0x414</code> (Vahn / Noa / Gala / guest). Field offsets are pinned by a fusion of decompiled function dumps, captured save-state observations, and the GameShark cheat database under <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/tree/main/data/cheats"><code>data/cheats/</code></a>.</p>
+  <p class="lede">Everything the game knows about one party member - XP, HP/MP, stats, learned arts, equipped items, magic - lives in a single <code>0x414</code>-byte record in RAM. Four records sit contiguously at <code>0x80084708 + slot * 0x414</code> (Vahn / Noa / Gala / guest); this is the structure a save file preserves and the one every stat screen, level-up, and equip change reads and writes. Field offsets are pinned by a fusion of decompiled function dumps, captured save-state observations, and - an unusually good ground-truth source - the GameShark cheat database under <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/tree/main/data/cheats"><code>data/cheats/</code></a>: a cheat labelled &ldquo;Max ATK&rdquo;
+that pokes one address is a free field label for that offset.</p>
 </header>
 
 <section class="doc-section" id="confidence">
@@ -24,6 +25,7 @@
 
 <section class="doc-section" id="layout">
   <h2>Layout</h2>
+  <p>Note the paired stat fields: the <code>_live</code> copies are the effective values the aggregator rebuilds (with equipment and buffs applied), while the <code>_record</code> copies are the base stats the level-up system maintains. The quoted names ("Max ATK", "Infinite HP") are the GameShark cheat labels that pinned each offset.</p>
   <pre><code>+0x000  u32 LE   xp_cumulative            ; cumulative experience - "Max Exp" cheat
                                           ; target; what the level-up applier
                                           ; compares against the threshold.

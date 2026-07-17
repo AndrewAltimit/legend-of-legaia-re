@@ -1,12 +1,13 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; row-479 NPC CLUTs</div>
   <h1>NPC CLUTs at VRAM row 479 <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">PSX field/town NPC TMDs commonly sample CLUT cells along row 479. The data is <strong>plain PSX TIMs</strong> sitting inside the scene's PROT entries, uploaded to VRAM by the <code>FUN_8001FE70</code> battle-init walker (no special "hue-ramp generator" function exists). Implementation: <code>crates/tim/src/vram.rs</code> (merge-zeros CLUT upload), <code>crates/tmd/src/vram_targeted.rs</code> (targeted dispatch), and <code>crates/asset/src/scene_tmd_stream.rs::battle_tim_chunks</code> (FUN_8001FE70 emulation).</p>
+  <p class="lede">The colour palettes for town and field NPCs. On the PSX a palette (CLUT - colour look-up table) is just a row of pixels in VRAM, the console's 1024&times;512 video memory; Legaia parks its NPC palettes along <strong>row 479</strong>, near the bottom edge, and the NPC meshes point their colour lookups there. The data itself is unglamorous - <strong>plain PSX <a href="tim.html">TIMs</a></strong> inside the scene's PROT entries (numbered entries of <code>PROT.DAT</code>, the disc's single big archive), uploaded to VRAM by the <code>FUN_8001FE70</code> battle-init walker; no special "hue-ramp generator" function exists.
+The interesting parts are <em>when</em> the upload happens (only at battle init - a freshly loaded town has the row empty) and <em>how</em> several TIMs share the row without clobbering each other (merge-zeros semantics, below). Implementation: <code>crates/tim/src/vram.rs</code> (merge-zeros CLUT upload), <code>crates/tmd/src/vram_targeted.rs</code> (targeted dispatch), and <code>crates/asset/src/scene_tmd_stream.rs::battle_tim_chunks</code> (FUN_8001FE70 emulation).</p>
 </header>
 
 <section class="doc-section" id="layout">
   <h2>Layout</h2>
-  <p>Each contributing TIM has a CLUT block with <code>(fb_x, fb_y, w, h) = (0, 479, 256, 1)</code> - a 256-color row spanning fb_x=0..256, which carves into sixteen 16-color slots (slot N at fb_x = N*16..N*16+16). Field NPC TMDs sample these slots via CBA cells <code>0x77C0..0x77CF</code>.</p>
+  <p>Each contributing TIM has a CLUT block with <code>(fb_x, fb_y, w, h) = (0, 479, 256, 1)</code> (framebuffer coordinates) - a 256-color row spanning fb_x=0..256, which carves into sixteen 16-color slots (slot N at fb_x = N*16..N*16+16). Field NPC TMDs sample these slots via CBA cells <code>0x77C0..0x77CF</code> (the CBA being the per-primitive field that names which palette cell to use).</p>
   <p>The actual contents are <strong>scene-specific</strong>: each town/area embeds its own row-479 TIMs with the NPC palettes for that scene. Town01, town0b, town0c, town0d share one palette set (the human-villager NPCs); balden, bubu1, urudre1, nilboa, chitei2 each have their own.</p>
 </section>
 

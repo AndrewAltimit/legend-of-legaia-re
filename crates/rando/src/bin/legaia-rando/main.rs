@@ -22,7 +22,17 @@ use clap::Parser;
 
 use cli::{Cli, Cmd};
 
+/// Restore the default SIGPIPE disposition so piping into `head` etc.
+/// terminates the process quietly instead of panicking on a broken pipe.
+fn reset_sigpipe() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> Result<()> {
+    reset_sigpipe();
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::Drops { input } => commands::cmd_drops(&input),
@@ -46,7 +56,8 @@ fn main() -> Result<()> {
             input,
             patch,
             output,
-        } => randomize::cmd_verify(&input, &patch, output.as_deref()),
+            allow_region_mismatch,
+        } => randomize::cmd_verify(&input, &patch, output.as_deref(), allow_region_mismatch),
         Cmd::Translate { cmd } => match cmd {
             cli::TranslateCmd::Export { input, output } => translate::cmd_export(&input, &output),
             cli::TranslateCmd::Init {
@@ -76,21 +87,25 @@ fn main() -> Result<()> {
                 packs,
                 output,
             } => translate::cmd_merge(&base, &packs, &output),
-            cli::TranslateCmd::Stats { pack, input } => {
-                translate::cmd_stats(&pack, input.as_deref())
-            }
+            cli::TranslateCmd::Stats {
+                pack,
+                input,
+                verbose,
+            } => translate::cmd_stats(&pack, input.as_deref(), verbose),
             cli::TranslateCmd::Import {
                 input,
                 pack,
                 output,
                 patch,
                 allow_relayout,
+                verbose,
             } => translate::cmd_import(
                 &input,
                 &pack,
                 output.as_deref(),
                 patch.as_deref(),
                 allow_relayout,
+                verbose,
             ),
             cli::TranslateCmd::LiftOfficial {
                 from,

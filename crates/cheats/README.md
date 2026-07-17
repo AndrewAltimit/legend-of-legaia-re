@@ -24,14 +24,20 @@ The crate exposes:
   record, inventory slot, battle actor pool, engine global,
   mini-game scratch, …) plus a stable subtype label.
 
-The companion `cheat-tool` CLI exposes:
+The companion `cheat-tool` CLI ships with the community NTSC-U databases
+from [`data/cheats/`](../../data/cheats/) **embedded** (they are
+community-sourced, non-Sony data), so `PATH` is optional on every
+single-input subcommand - omit it to query the built-in databases, pass it
+to parse your own file. A file that parses to zero entries warns on stderr
+(the usual cause is a non-Legaia or differently-formatted cheat file):
 
 ```
-cheat-tool parse <PATH>           # parse + dump as JSON
-cheat-tool list <PATH>            # one line per entry
-cheat-tool classify <PATH>        # group by category, with citations
-cheat-tool diff <A> <B>           # show entries unique to each
-cheat-tool extract-offsets <PATH> # per-character record offsets only
+cheat-tool parse [PATH]            # parse + dump as JSON
+cheat-tool list [PATH]             # one line per entry
+cheat-tool classify [PATH]         # group by category, with citations
+cheat-tool diff <A> <B>            # show entries unique to each
+cheat-tool extract-offsets [PATH]  # per-character record offsets only
+cheat-tool offset-table <PATH>     # Markdown offset table for docs/reference/cheats.md
 ```
 
 The runtime cheat applier wired into `legaia-engine play-window

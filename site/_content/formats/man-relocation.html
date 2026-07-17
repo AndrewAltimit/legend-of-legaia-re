@@ -1,11 +1,22 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; MAN relocation</div>
   <h1>MAN relocation <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">How to <strong>resize</strong> a field-VM <code>0x3F</code> named-scene-change ("door / exit") destination in a decompressed scene MAN and rebuild the buffer so every internal offset stays valid - what lets the <a href="../tooling/randomizer.html">randomizer</a> re-point a door at a scene with a differently-sized name. Engine: <code>legaia_asset::man_edit</code>.</p>
+  <p class="lede">Every town and dungeon ships a <strong>MAN</strong> - the per-scene data file that carries, among other things, the scene's event scripts, including its doors. A door is a tiny script op (<code>0x3F</code>) that names its destination scene <em>inline, as a length-prefixed string</em> - so re-pointing a door at a scene with a longer or shorter name means the record physically changes size, and every byte-offset stored elsewhere in the file that points past the edit goes stale. This page is how to resize such a record and rebuild the MAN so every internal offset stays valid. Engine: <code>legaia_asset::man_edit</code>.</p>
 </header>
+
+<section class="doc-section" id="why-resize">
+  <h2>Why resize a record at all?</h2>
+  <p>Nobody edits a shipped game file for fun - two real consumers force the problem:</p>
+  <ul class="bullets">
+    <li><strong>The door randomizer.</strong> The <a href="../tooling/randomizer.html">randomizer</a>'s door shuffle re-points a scene exit at a different destination. Because the destination is an inline name, swapping <code>town01</code> for a longer scene name grows the record; without the fixups below, every record after it - and the tables that index them - would decode as garbage.</li>
+    <li><strong>Translation.</strong> The same machinery generalizes from a door's destination name to any interior byte run: a community language pack's dialog line that runs longer than the English original grows its record the same way. Growth is budgeted by the MAN's on-disc footprint - the recompressed file must still fit its original slot on the disc - so a wordier localization only fits when the rewritten MAN recompresses no larger than the original.</li>
+  </ul>
+  <p>The reason a resize is <em>safe at all</em> is structural: the doors are reached at runtime through an offset table the format already exposes (next section), not through absolute addresses scattered in code - fix the table and every door stays addressable.</p>
+</section>
 
 <section class="doc-section" id="indexing">
   <h2>The destination table is the partition-2 record-offset table</h2>
+  <p>(Terms: the <em>field VM</em> is the interpreter that runs a scene's event bytecode - <code>FUN_801DE840</code> in Ghidra's naming, where <code>FUN_80xxxxxx</code> labels a traced function by address. A MAN's records are grouped into three <em>partitions</em>; partition 2 holds the named event records, doors included.)</p>
   <p>A <code>0x3F</code> op carries its destination inline:</p>
 <pre><code>0x3F  [i16 index]  [u8 name_len]  [name bytes]  [entry_x]  [entry_z]  [dir]</code></pre>
   <p>The ops are <strong>partition-2 MAN records</strong> (the named records - see <a href="encounter.html">the MAN layout</a>). They are reached at runtime through the <strong>partition-2 record-offset table</strong>: on a transition the field controller sets the VM bytecode base to <code>man_base + data_region + partition2[slot]</code> and runs that record's small script by fall-through (<code>SysFlag.Set; CFlag.Set; EFFECT; yield; 0x3F; entry-trailer; JmpRel-1 self-loop</code>), whose <code>0x3F</code> op warps by the inline name. Selection is by stable <strong>slot index</strong>, so the op's <code>index</code> field is only the destination-scene id passed to the warp packet (<code>FUN_8001FD44</code>), not a record selector.</p>

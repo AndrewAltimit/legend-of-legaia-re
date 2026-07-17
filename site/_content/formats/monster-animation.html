@@ -1,7 +1,8 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; monster animation</div>
   <h1>Monster (enemy) battle animation <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">Per-object rigid-transform keyframe animation for battle monsters, stored inside the monster's archive block (extraction entry 0867 = raw TOC index 869; retail-space CDNAME block <code>monster_data</code>). Distinct from the <a href="anm.html">ANM container</a>, which drives player / field actors. Implementation: <code>legaia_asset::monster_archive</code> (<code>MonsterAnimation</code>, <code>PartPose</code>, <code>animations</code>, <code>idle_animation</code>). Seen live on the <a href="../monsters.html">enemy table</a>, which plays each monster's idle loop.</p>
+  <p class="lede">How the battle monsters move. Legaia's enemies are rigid-body puppets: each body part is a separate object of the monster's <a href="tmd.html">TMD</a> mesh, and every action - idle, walk, attack, knockdown - is a stream of per-part position + rotation keyframes stored right next to the mesh in the monster's archive block (extraction entry 0867 = raw TOC index 869; retail-space CDNAME block <code>monster_data</code>, inside <code>PROT.DAT</code>, the disc's single big archive). This is a different system from the <a href="anm.html">ANM container</a> that drives player / field actors - a recurring theme on this disc. Mesh, texture, and every animation export together as a standard <code>.glb</code> (see <a href="#export">Export</a>).
+Implementation: <code>legaia_asset::monster_archive</code> (<code>MonsterAnimation</code>, <code>PartPose</code>, <code>animations</code>, <code>idle_animation</code>). Seen live on the <a href="../monsters.html">enemy table</a>, which plays each monster's idle loop.</p>
 </header>
 
 <section class="doc-section" id="where-it-lives">
@@ -34,7 +35,7 @@ v5 = b7 | (b8 &amp; 0xf0) &lt;&lt; 4     rz</code></pre>
     <li><code>rx, ry, rz</code> are <strong>unsigned</strong> 12-bit Euler angles (<code>0..4095</code>, where <code>4096</code> = a full turn); values near <code>4095</code> are small negative rotations.</li>
   </ul>
   <p>One part maps to one <a href="tmd.html">TMD</a> object (a rigid body part). Across the retail roster the part count equals the TMD object count for &gt;98% of actions (one model carries an extra non-animated object).</p>
-  <p>The transform is <strong>absolute model-space, not a delta from a rest pose</strong>: each TMD object is modelled at its own local origin, and the per-part <code>[tx, ty, tz]</code> places that object at its socket while <code>[rx, ry, rz]</code> orients it about its local origin (<code>world = Rz&middot;Ry&middot;Rx &middot; v_local + t</code>). Frame 0 is therefore the assembled rest pose - assembling it spreads the collapsed model into its full silhouette.</p>
+  <p>The transform is <strong>absolute model-space, not a delta from a rest pose</strong>: each TMD object is modelled at its own local origin, and the per-part <code>[tx, ty, tz]</code> places that object at its socket while <code>[rx, ry, rz]</code> orients it about its local origin (<code>world = Rz&middot;Ry&middot;Rx &middot; v_local + t</code>). Frame 0 is therefore the assembled rest pose - and a raw monster TMD rendered <em>without</em> its animation looks like a collapsed heap of parts piled at the origin; assembling frame 0 spreads it into its full silhouette.</p>
 </section>
 
 <section class="doc-section" id="playback">

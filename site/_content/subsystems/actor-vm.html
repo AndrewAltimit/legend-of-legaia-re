@@ -1,12 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; actor / sprite VM</div>
   <h1>Actor / sprite VM</h1>
-  <p class="lede">A small fixed-width bytecode VM driving the title screen's animated sprite cluster. Lives in the title-screen overlay at <code>FUN_801D6628</code>. The simplest of Legaia's <a href="move-vm.html#vm-family">five runtime VMs</a> - 13 opcodes, byte-stream operands, no cross-context targeting. <span class="tag tag-done">Fully ported</span></p>
+  <p class="lede">The interpreter that animates the title screen: the little sprites that move, blink and cycle while the game waits for you to press Start are each running a tiny script, and this VM is what runs those scripts. It is the simplest of Legaia's <a href="move-vm.html#vm-family">five runtime VMs</a> (bytecode interpreters - each reads a stream of instruction bytes, "opcodes", and runs a handler per byte): just 13 opcodes, byte-stream operands, no cross-context targeting. The driver function is <code>FUN_801D6628</code> (Ghidra's name for the traced routine at that RAM address); it lives in the title-screen overlay, a chunk of code the game loads into RAM only while the title screen is up. <span class="tag tag-done">Fully ported</span></p>
 </header>
 
 <section class="doc-section" id="how-it-works">
   <h2>How it works</h2>
-  <p>If you've ever written a sprite-walk script for an old arcade game, this is exactly that. There's an array of "actors" (a sprite is an actor here), each one carries a small amount of per-instance state and a cursor into a bytecode buffer. Every frame, the VM reads the next byte at each actor's cursor and runs the corresponding handler. The handler might move the sprite, trigger an animation, set a flag, or wait for N frames. After the handler runs, the cursor advances and we're done with this actor for this frame.</p>
+  <p>If you've ever written a sprite-walk script for an old arcade game, this is exactly that. There's an array of "actors" (an actor is the engine's record for one on-screen entity; here, a sprite is an actor), each one carries a small amount of per-instance state and a cursor into a bytecode buffer. Every frame, the VM reads the next byte at each actor's cursor and runs the corresponding handler. The handler might move the sprite, trigger an animation, set a flag, or wait for N frames. After the handler runs, the cursor advances and we're done with this actor for this frame.</p>
 
   <p>The whole VM has 13 opcodes - the minimum you need for a sprite-animation system: spawn / despawn, position writes, motion, animation triggers, flag set / clear / test, wait, and a terminator. Operands are simple: typically zero or one byte after the opcode. There is no "switch context to a different actor" or "call this other script as a subroutine"; an actor's bytecode runs against itself only.</p>
 
@@ -18,7 +18,7 @@
   <dl class="kv">
     <dt>Driver</dt><dd><code>FUN_801D6628</code></dd>
     <dt>Dispatch table</dt><dd><code>0x801CED70</code> (13 entries)</dd>
-    <dt>Lives in</dt><dd>Title-screen overlay. The title overlay has no PROT id of its own - it rides the unindexed <code>PROT.DAT</code> gap after entry 0899 (see <code>crates/asset/data/static-overlays.toml</code>); PROT <code>0971</code> is the <em>debug-menu</em> overlay.</dd>
+    <dt>Lives in</dt><dd>Title-screen overlay. <code>PROT.DAT</code> is the disc's single big archive (nearly everything except movies and audio streams lives in its numbered entries); the title overlay has no PROT id of its own - it rides the unindexed <code>PROT.DAT</code> gap after entry 0899 (see <code>crates/asset/data/static-overlays.toml</code>); PROT <code>0971</code> is the <em>debug-menu</em> overlay.</dd>
     <dt>Operand format</dt><dd>Byte stream (1 byte opcode + zero-or-more operand bytes per instruction)</dd>
   </dl>
 </section>
@@ -46,7 +46,7 @@
 
 <section class="doc-section" id="anm-connection">
   <h2>Connection to ANM</h2>
-  <p>The "trigger animation" opcode hands off an <a href="../formats/index.html">ANM container</a> ID to the animation runner. <code>crates/anm</code> parses the container header + per-bone keyframe tables, and <code>legaia_anm::AnimPlayer</code> drives per-frame keyframe interpolation against the actor's bone count (<code>tick()</code> returns a <code>PoseFrame</code> the engine uploads as a posed mesh).</p>
+  <p>The "trigger animation" opcode hands off an <a href="../formats/anm.html">ANM container</a> ID to the animation runner. <code>crates/anm</code> parses the container header + per-bone keyframe tables, and <code>legaia_anm::AnimPlayer</code> drives per-frame keyframe interpolation against the actor's bone count (<code>tick()</code> returns a <code>PoseFrame</code> the engine uploads as a posed mesh).</p>
   <p>The per-frame anim driver itself lives in <code>SCUS_942.54</code>, not in an overlay. <code>FUN_80021DF4</code> is the tick the field/battle scenes call once per frame for every active actor. It reads three fixed offsets on the per-actor record:</p>
   <table>
     <thead><tr><th>Offset</th><th>Type</th><th>Field</th><th>Notes</th></tr></thead>

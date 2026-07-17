@@ -124,7 +124,9 @@ enum Cmd {
     Watch {
         /// Scenario label (looked up in scenarios.toml).
         label: String,
-        /// Scenario manifest (default: scripts/scenarios.toml).
+        /// Scenario manifest. The default `scripts/scenarios.toml` resolves
+        /// against the current directory and only exists inside a source
+        /// checkout of this repo - pass an explicit path elsewhere.
         #[arg(long, default_value = "scripts/scenarios.toml")]
         manifest: PathBuf,
         /// Optional output JSON path.
@@ -168,6 +170,9 @@ enum Cmd {
     },
     /// List the scenarios known to the manifest.
     Scenarios {
+        /// Scenario manifest. The default `scripts/scenarios.toml` resolves
+        /// against the current directory and only exists inside a source
+        /// checkout of this repo - pass an explicit path elsewhere.
         #[arg(long, default_value = "scripts/scenarios.toml")]
         manifest: PathBuf,
     },
@@ -307,7 +312,17 @@ fn parse_window(s: &str) -> Result<(u32, u32), String> {
     Ok((lo, hi))
 }
 
+/// Restore the default SIGPIPE disposition so piping into `head` etc.
+/// terminates the process quietly instead of panicking on a broken pipe.
+fn reset_sigpipe() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> Result<()> {
+    reset_sigpipe();
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::Info { save, all } => cmd_info(&save, all),

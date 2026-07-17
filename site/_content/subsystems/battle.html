@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; battle</div>
   <h1>Battle subsystem</h1>
-  <p class="lede">How Legaia runs a fight, from encounter trigger to victory screen. The battle overlay carries the battle scene loader, the per-actor action state machine, and the <a href="effect-vm.html">effect VM cluster</a>. Loaded at RAM <code>0x801CE818</code> - the same load slot as the town overlay, so battle and town never coexist in memory.</p>
+  <p class="lede">How Legaia runs a fight, from encounter trigger to victory screen. Nearly all of it lives in the <strong>battle overlay</strong> - an overlay being a chunk of code the game streams into RAM on demand - which carries the battle scene loader, the per-actor action state machine, and the <a href="effect-vm.html">effect VM cluster</a>. It loads at RAM <code>0x801CE818</code>, the <em>same</em> load slot the town overlay uses, so battle and town code never coexist in memory: entering a fight literally pages the town logic out. (Function names like <code>FUN_800520F0</code> below are Ghidra's labels for traced routines at those RAM addresses.)</p>
   <p class="hint">This page is the RE-side reference: scene loader, action SM keys, ctx struct, actor table, and the per-frame helpers. For the clean-room engine port (BattleSession, HUD, runner, SFX, equipment), see <a href="engine.html">engine reimplementation</a>.</p>
 </header>
 
@@ -35,7 +35,7 @@
     <dt>Function</dt><dd><code>FUN_800520F0</code></dd>
     <dt>Shape</dt><dd>Multi-step async state machine (sub-state byte at <code>gp+0xa59</code>); dev/retail dual-mode loader keyed on <code>_DAT_8007B8C2</code></dd>
   </dl>
-  <p>States are raw-TOC-indexed loads (raw index = extraction entry + 2; see <a href="../formats/prot.html">PROT</a>):</p>
+  <p>Each loader state pulls one entry out of <code>PROT.DAT</code> (the disc's single big archive; nearly everything lives in its numbered entries). The states are raw-TOC-indexed loads (raw index = extraction entry + 2; see <a href="../formats/prot.html">PROT</a>):</p>
   <table>
     <thead><tr><th>State</th><th>Loads</th></tr></thead>
     <tbody>
@@ -198,7 +198,7 @@
   <p>Pinned by a PCSX-Redux watchpoint during the Rim Elm scripted battles (<code>autorun_monster_record_source.lua</code>): the relative seek <code>(id-1)*40</code> sectors + the <code>disc_read</code> CdlLOC resolve to PROT.DAT <code>0x38AF000</code> = entry 867, and three records match live actor stats byte-for-byte (Gimard id 10 = 99/20, Killer Bee id 62 = 288/288, Queen Bee id 63 = 888/888). town01's encounter formations resolve to the Rim Elm Mist-attack set (Gobu Gobu 4, Green Slime 7, Gimard 10, Hornet 61, Killer Bee 62, Queen Bee 63, Tetsu 79 - Tetsu the 999/999 tutorial sparring partner). Parser <code>legaia_asset::monster_archive</code> (CLI <code>asset monster-archive</code>); bridge <code>catalog_from_monster_archive</code> merged into the catalog by <code>SceneHost::enter_field_scene</code>.</p>
 
   <h3 id="monster-mesh">Monster mesh (record <code>+0x04</code>)</h3>
-  <p>Each decoded monster block carries the monster's <strong>battle model</strong>: a <a href="../formats/index.html">Legaia TMD</a> embedded at the block-relative offset held in the stat record's <code>+0x04</code> field (immediately after the name string). This is the same pointer the loader installs at battle-actor <code>+0x230</code> and that <code>FUN_80049858</code> / <code>FUN_800495C8</code> walk as <code>0x1C</code>-stride records - a TMD object-table entry is exactly <code>0x1C</code> bytes, so that walk is iterating the mesh's per-object table. Verified across the archive: <strong>186 of the 194 slots carry a Legaia TMD at <code>+0x04</code> that the parser walks cleanly</strong> (the other 8 are empty / filler ids); e.g. Gimard (id 10) = 200 vertices / 269 textured prims at block <code>+0x7c</code>.</p>
+  <p>Each decoded monster block carries the monster's <strong>battle model</strong>: a <a href="../formats/tmd.html">Legaia TMD</a> embedded at the block-relative offset held in the stat record's <code>+0x04</code> field (immediately after the name string). This is the same pointer the loader installs at battle-actor <code>+0x230</code> and that <code>FUN_80049858</code> / <code>FUN_800495C8</code> walk as <code>0x1C</code>-stride records - a TMD object-table entry is exactly <code>0x1C</code> bytes, so that walk is iterating the mesh's per-object table. Verified across the archive: <strong>186 of the 194 slots carry a Legaia TMD at <code>+0x04</code> that the parser walks cleanly</strong> (the other 8 are empty / filler ids); e.g. Gimard (id 10) = 200 vertices / 269 textured prims at block <code>+0x7c</code>.</p>
   <p>Decoded-block layout (after the stat-record head at <code>+0x00</code>):</p>
   <pre><code>+0x00  stat record head (name_offset, +0x04 mesh offset, +0x08 pool offset, stats, rewards, spells)
 name   NUL-terminated name string (at name_offset, typically just before the mesh)

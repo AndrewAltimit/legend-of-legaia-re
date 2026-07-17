@@ -1,0 +1,117 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; extracting assets</div>
+  <h1>Extracting assets: step-by-step scenarios</h1>
+  <p class="lede">Textures to PNG, meshes to OBJ, monsters to Blender-ready glTF, music and voice lines to WAV, movies to frames - one scenario at a time, with the exact commands. Everything runs against your own disc image or the <code>extracted/</code> tree it produces.</p>
+</header>
+
+<section class="doc-section" id="prereq">
+  <h2>Prerequisite</h2>
+  <p>Every scenario below assumes the one-shot pipeline has run (<a href="getting-started.html">getting started</a>):</p>
+<pre><code>./legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted</code></pre>
+  <p>Commands use the bare <code>./tool</code> form from a release archive; source builds live at <code>target/release/</code>. Paths like <code>extracted/...</code> resolve against the current directory - run from the same place each time.</p>
+</section>
+
+<section class="doc-section" id="textures">
+  <h2>Textures &rarr; PNG</h2>
+  <p>The bulk texture path is a two-command chain: sweep every PROT entry for TIM images (raw and inside LZS compression), then convert the hits.</p>
+<pre><code>./asset tim-scan extracted/PROT --out extracted/tim_scan
+./tim convert-dir extracted/tim_scan</code></pre>
+  <p><code>tim_scan/</code> gets one directory per PROT entry holding files named <code>raw_off&lt;HEX&gt;.tim</code> (found in the raw bytes) or <code>lzs&lt;i&gt;_off&lt;HEX&gt;.tim</code> (found inside LZS section <code>i</code>); <code>convert-dir</code> writes a <code>.png</code> next to each. For a single texture:</p>
+<pre><code>./tim convert extracted/tim_scan/&lt;entry&gt;/raw_off&lt;HEX&gt;.tim -o out.png
+./tim convert &lt;file&gt;.tim --all-cluts        # one PNG per palette row</code></pre>
+  <p>Many TIMs carry several palettes (CLUTs) - a character atlas decoded with the wrong row looks like static, so try <code>--all-cluts</code> before assuming a texture is broken. The strict per-texture inventories the pipeline already wrote (<code>prot_tim_catalog.tsv</code>, <code>prot_tim_deep_catalog.tsv</code>) map every TIM to its owning entry and offset. Format: <a href="../formats/tim.html">TIM</a>.</p>
+</section>
+
+<section class="doc-section" id="models">
+  <h2>3D models &rarr; OBJ</h2>
+  <p>Legaia's meshes are a custom TMD variant (<a href="../formats/tmd.html">Legaia TMD</a>). Sweep and export:</p>
+<pre><code>./asset tmd-scan extracted/PROT --out extracted/tmd_scan
+./tmd dump-obj extracted/tmd_scan/&lt;entry&gt;/raw_off&lt;HEX&gt;.tmd --out mesh</code></pre>
+  <p><code>dump-obj</code> writes <code>mesh_obj0.obj</code> etc. - vertices <em>and</em> faces, decoded through the Legaia-specific primitive walker. Note: <code>tmd info</code> prints a <code>psx-walk: FAIL</code> line on every valid Legaia TMD - that is the diagnostic confirming the file is the Legaia variant rather than a standard PsyQ TMD, not an error.</p>
+</section>
+
+<section class="doc-section" id="monsters-gltf">
+  <h2>Monsters &rarr; glTF (opens in Blender)</h2>
+  <p>The monster archive (PROT entry <code>0867_battle_data</code>) carries each enemy's mesh, texture page, and battle animations. One command bundles all three into a <code>.glb</code>:</p>
+<pre><code>./asset monster-archive extracted/PROT/0867_battle_data.BIN          # list all 186
+./asset monster-archive extracted/PROT/0867_battle_data.BIN --id 1 --glb monster1.glb</code></pre>
+  <p>The listing prints every monster's name and battle stats; the <code>.glb</code> drags straight into Blender (or any glTF viewer) with geometry, material, and animation tracks intact. <code>--obj</code> / <code>--texture-png</code> export the pieces separately; <code>--anim</code> lists the decoded actions. Formats: <a href="../formats/battle-data-pack.html">battle-data pack</a>, <a href="../formats/monster-animation.html">monster animation</a>.</p>
+</section>
+
+<section class="doc-section" id="xa-audio">
+  <h2>Streamed audio (voice + ambience) &rarr; WAV</h2>
+  <p>The pipeline already demuxes this into <code>extracted/XA_WAV/</code>. To run just that step - it reads the raw disc, not the extracted tree:</p>
+<pre><code>./xa demux-disc-all "/path/to/Legend of Legaia (USA).bin" --out extracted/XA_WAV</code></pre>
+  <p>About three seconds on a modern machine for the disc's 34 <code>.XA</code> files &rarr; 316 per-channel WAVs, each decoded at the true sample rate and stereo mode read from its CD-XA subheaders. Prefer this over <code>xa convert</code>, which operates on Form-1 dumps and has to guess the rate. Format: <a href="../formats/xa.html">XA-ADPCM</a>.</p>
+</section>
+
+<section class="doc-section" id="vab-banks">
+  <h2>Sound banks (instruments + SFX) &rarr; WAV</h2>
+  <p>VAB banks hold the sampled instruments and sound effects (<a href="../formats/vab.html">VAB</a>):</p>
+<pre><code>./vab list    extracted/PROT/&lt;entry&gt;.BIN
+./vab extract extracted/PROT/&lt;entry&gt;.BIN --out vab_out --wav</code></pre>
+  <p>On the wrapped BGM entries (the <code>music_01</code> block) the scan warns about a truncated trailing header after the real banks extract - that is expected on those entries, and the exit code stays 0.</p>
+</section>
+
+<section class="doc-section" id="seq-bgm">
+  <h2>Background music (SEQ) - the wrapped-BGM story</h2>
+  <p>Retail BGM is not a bare SEQ file: each music PROT entry wraps it as <code>[chunk header][VAB][chunk header][SEQ]</code>, so the SEQ sits at a non-zero offset. <code>seq find</code> locates it:</p>
+<pre><code>./seq find extracted/PROT/0990_music_01.BIN
+./seq info extracted/PROT/0990_music_01.BIN --offset 0x&lt;from-find&gt;
+./seq events &lt;file&gt; --offset 0x&lt;N&gt;       # full event disassembly
+./seq json   &lt;file&gt; --offset 0x&lt;N&gt;       # machine-readable parse</code></pre>
+  <p><code>find</code> scans for <code>pQES</code> magics and reports each candidate offset with whether the full event stream parses. Without <code>--offset</code>, <code>info</code>/<code>events</code>/<code>json</code> try offset 0 and then fall back to the first parseable magic automatically - so <code>./seq info extracted/PROT/0990_music_01.BIN</code> alone also works; the explicit offset just makes the choice visible. Format: <a href="../formats/seq.html">PsyQ SEQ</a>; which track is which: <a href="../reference/music-tracks.html">music-track disambiguation</a>.</p>
+</section>
+
+<section class="doc-section" id="movies">
+  <h2>Movies &rarr; PNG frames</h2>
+  <p>The disc's FMVs land in <code>extracted/MOV/</code>. Decode them frame-by-frame:</p>
+<pre><code>./mdec scan-str   extracted/MOV/MV1.STR                  # list frames + dimensions
+./mdec decode-str extracted/MOV/MV1.STR -o frames/       # frame_0001.png, ...</code></pre>
+  <p>PNG is the default output (<code>--format ppm</code> for the raw variant); <code>--max-frames N</code> stops early. To <em>watch</em> a movie with its audio instead, use <code>legaia-engine play-str</code> (<a href="playing-and-viewing.html">playing + viewing</a>). Background: <a href="../subsystems/cutscene.html">cutscene subsystem</a>.</p>
+</section>
+
+<section class="doc-section" id="scus-tables">
+  <h2>Game-data tables from the executable</h2>
+  <p>The game executable <code>extracted/SCUS_942.54</code> carries the static stat tables. The <code>asset</code> hub prints them as readable, joined listings:</p>
+<pre><code>./asset item-tables extracted/SCUS_942.54     # item names + effects/stat bonuses
+./asset spell-names extracted/SCUS_942.54     # spells/arts, MP cost, target
+./asset steal-table extracted/SCUS_942.54     # what each monster can have stolen
+./asset new-game    extracted/SCUS_942.54     # starting party + inventory</code></pre>
+  <p>Siblings: <code>accessory-passive</code>, <code>sfx-table</code>, <code>level-up</code>, <code>worldmap-menu</code>. Formats: <a href="../formats/item-table.html">item table</a>, <a href="../formats/spell-table.html">spell table</a>, <a href="../formats/steal-table.html">steal table</a>, <a href="../formats/new-game-table.html">new-game template</a>.</p>
+</section>
+
+<section class="doc-section" id="dialog-font">
+  <h2>The dialog font</h2>
+  <p>The pipeline's final step writes <code>extracted/font/</code> (atlas PNG, tile-page sheet, widths CSV, metadata) - the engine and asset-viewer load text from it. To rebuild it alone, no emulator needed:</p>
+<pre><code>./font-extract --disc "/path/to/Legend of Legaia (USA).bin" --out extracted/font</code></pre>
+  <p><code>--disc</code> also accepts an already-extracted <code>PROT.DAT</code>. The alternative <code>--save</code> mode reads a mednafen save state's live VRAM instead. Format: <a href="../formats/dialog-font.html">dialog font</a>.</p>
+</section>
+
+<section class="doc-section" id="manual-chain">
+  <h2>The manual chain (when you want one stage at a time)</h2>
+  <p><code>legaia-extract</code> is these stages composed; each also runs standalone:</p>
+<pre><code>./disc-extract extract "/path/to/disc.bin" extracted/
+./prot-extract extract extracted/PROT.DAT extracted/PROT --cdname extracted/CDNAME.TXT
+./lzs-decode probe     extracted/PROT/&lt;entry&gt;.BIN            # is it an LZS container?
+./lzs-decode container extracted/PROT/&lt;entry&gt;.BIN out_dir/   # decompress every section
+./asset stream  extracted/PROT/&lt;entry&gt;.BIN                   # walk a streaming container
+./asset extract extracted/PROT/&lt;entry&gt;.BIN --out out_dir/    # unpack its sub-assets
+./asset categorize extracted/PROT                            # classify every entry</code></pre>
+  <p>One trap worth knowing: LZS "decompresses without error" is <strong>not</strong> a validity signal - the decoder's ring buffer initialises to zeros, so most random input decodes to plausible-looking bytes. Always check the <em>decoded</em> output for the expected magic (<a href="../formats/lzs.html">LZS</a>). The entry name map has a quirk of its own: CDNAME <code>#define</code> numbers are in-RAM TOC indices, so extraction filenames are shifted by 2 (<a href="../formats/cdname.html">CDNAME</a>).</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Guides</span>
+    <a href="getting-started.html">Getting started</a>
+    <a href="playing-and-viewing.html">Playing + viewing</a>
+    <a href="modding-and-translation.html">Modding + translation</a>
+  </div>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../tooling/extraction.html">Per-stage pipeline reference</a>
+    <a href="../formats/index.html">Format specs</a>
+  </div>
+</section>

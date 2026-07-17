@@ -30,6 +30,7 @@ use legaia_art::{
 #[derive(Parser, Debug)]
 #[command(
     name = "art",
+    version,
     about = "Inspect Legaia Tactical Arts tables and trigger Super/Miracle Arts."
 )]
 struct Cli {
@@ -47,6 +48,10 @@ enum Cmd {
         character: Option<CharArg>,
     },
     /// Best-effort parse of a raw art record from a binary blob.
+    ///
+    /// Input: a raw art-record blob, e.g. sliced out of PROT entry 0x05C4
+    /// in `legaia-extract <disc.bin> --out extracted` output (see
+    /// docs/formats/art-data.md).
     Parse {
         path: PathBuf,
         #[arg(long, default_value_t = 0)]
@@ -75,6 +80,10 @@ enum Cmd {
     MiracleArts,
     /// Decode the arts-name table (name + AP + command directions) from a
     /// `SCUS_942.54` image.
+    ///
+    /// Input: the game executable extracted by `legaia-extract <disc.bin>
+    /// --out extracted` (or `disc-extract extract`). The default path is
+    /// resolved against the current directory.
     ArtsTable {
         #[arg(long, default_value = "extracted/SCUS_942.54")]
         scus: PathBuf,
@@ -98,7 +107,17 @@ impl From<CharArg> for Character {
     }
 }
 
+/// Rust ignores SIGPIPE by default; restore SIG_DFL so `art ... | head`
+/// exits quietly instead of panicking on a broken pipe.
+fn reset_sigpipe() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> Result<()> {
+    reset_sigpipe();
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::Constants => cmd_constants(),
@@ -195,7 +214,7 @@ fn cmd_tables(character: Option<CharArg>) -> Result<()> {
 }
 
 fn cmd_parse(path: &PathBuf, offset: usize) -> Result<()> {
-    let bytes = fs::read(path)?;
+    let bytes = fs::read(path).with_context(|| format!("read {}", path.display()))?;
     if offset > bytes.len() {
         bail!("offset {offset} past end of file ({} bytes)", bytes.len());
     }

@@ -1,7 +1,17 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; STR FMV table</div>
   <h1>In-RAM STR FMV file tables <span class="tag tag-confirmed">Confirmed</span></h1>
-  <p class="lede">The cutscene / MDEC overlay's lookup tables for STR FMV files. Two distinct tables coexist in the str_fmv overlay's data section, with different roles: libcd's generic <em>directory-record cache</em> at <code>0x801CAE08</code> (PsyQ <code>CdlFILE</code> records - not an FMV structure), and the 23-slot <em>FMV dispatch</em> table at <code>0x801D0A6C</code> (32-byte stride) that the master dispatch hands to the play loop (<code>FUN_801CF098</code>). The dispatch table is static overlay data, so it decodes straight from the disc; it carries each <code>fmv_id</code>'s movie + frame range (<code>legaia_asset::fmv_dispatch</code>).</p>
+  <p class="lede">When the game plays a movie - the intro, the Mist rolling in - which file does it open, and
+  where does the player go afterwards? The answer is a 23-slot <em>FMV dispatch table</em> inside the cutscene
+  overlay (a chunk of code and data the game loads into RAM only when a movie plays). Each numbered cutscene
+  (<code>fmv_id</code>) maps to a movie file path, a <strong>frame range</strong> - one <code>.STR</code> file
+  (the PlayStation's streaming-movie format) can carry several cutscenes back-to-back, split by frame numbers -
+  and a return scene. Nine slots cover every movie on the retail disc; the rest are leftover developer test
+  slots pointing at files that never shipped. A second, unrelated table shares the overlay's data section and
+  misled earlier captures: libcd's generic <em>directory-record cache</em> at <code>0x801CAE08</code> (PsyQ
+  <code>CdlFILE</code> records - not an FMV structure at all). The dispatch table at <code>0x801D0A6C</code> (32
+  bytes per slot) is static overlay data, so it decodes straight from the disc; parser
+  <code>legaia_asset::fmv_dispatch</code>.</p>
 </header>
 
 <section class="doc-section" id="confidence">
@@ -11,7 +21,7 @@
 
 <section class="doc-section" id="dir-cache">
   <h2>Directory-record cache (<code>0x801CAE08</code>, 24 B <code>CdlFILE</code> records)</h2>
-  <p>What earlier captures read as a "compact MV-file table at <code>0x801CAE40</code>" is libcd's <code>CdSearchFile</code> per-directory file cache - one PsyQ <code>CdlFILE</code> record per file of the last-searched directory:</p>
+  <p>What earlier captures read as a "compact MV-file table at <code>0x801CAE40</code>" is libcd's <code>CdSearchFile</code> per-directory file cache (libcd is the CD-ROM library of PsyQ, the PlayStation SDK) - one <code>CdlFILE</code> record per file of the last-searched directory:</p>
 <pre><code>+0x00  u32       CdlLOC   - byte 0 = BCD minute, 1 = BCD second,
                             2 = BCD frame, 3 = zero
 +0x04  u32       size     - file size in bytes (LE)
@@ -53,7 +63,7 @@
 0x801CECA0: jal  FUN_801CF098
 0x801CECA4:  _addu a1, v0, 0x801D0A6C   ; param_2 = &amp;dispatch_table[fmv_id]</code></pre>
   <p>Each 32-byte record is <code>[u32 path_ptr, u32 color_flag, u32 start_frame, u32 end_frame, u32 fb_x, u32 fb_y, u32 width, u32 height]</code> (<code>color_flag</code> non-0 = 24-bit color; <code>fb_x</code>/<code>fb_y</code> = the VRAM decode-target rect, double-buffered at <code>fb_y</code> and <code>fb_y + height</code>). The play loop opens the file at <code>path_ptr</code>, seeks <code>(start_frame − 1) × 10</code> sectors in (the 15 fps cadence), and streams until the demuxed frame number reaches <code>end_frame</code> - so one <code>MVn.STR</code> file carries several cutscenes by frame range.</p>
-  <p>This is <strong>static initialised data</strong> in the cutscene overlay (PROT 0970), so it decodes straight from the disc - <code>legaia_asset::fmv_dispatch</code> reads it, pinned by the disc-gated <code>fmv_dispatch_real</code> test, and the windowed player uses the frame range to seek to the right segment (<code>cutscene_av::fmv_segment_window</code>).</p>
+  <p>This is <strong>static initialised data</strong> in the cutscene overlay (PROT entry 0970 - a numbered entry of PROT.DAT, the disc's single big archive), so it decodes straight from the disc - <code>legaia_asset::fmv_dispatch</code> reads it, pinned by the disc-gated <code>fmv_dispatch_real</code> test, and the windowed player uses the frame range to seek to the right segment (<code>cutscene_av::fmv_segment_window</code>).</p>
   <p>An earlier reading used a 64-byte stride (a <code>sll v0,v0,6</code> transcription error), pairing wrong slot halves - it concluded <code>MV2</code>/<code>MV5</code> were never referenced and slots 5..11 pointed at cut files. That reading is <strong>superseded</strong>; the disc-parsed <code>FmvTable</code> is the authoritative resolver, mirrored by <code>legaia_engine_core::cutscene::fmv_index_to_str_filename</code> for the retail <code>fmv_id 0..=8</code> slots.</p>
   <p><code>_DAT_8007BA78</code> is a <code>s16</code> written by the field-VM FMV-trigger op (<code>0x4C 0xE2 lo hi …</code>); see the <a href="../subsystems/cutscene.html#fmv-trigger-op">cutscene subsystem</a> for the full opcode trace.</p>
 

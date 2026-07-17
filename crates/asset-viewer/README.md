@@ -6,14 +6,27 @@ One binary: `asset-viewer`. Driven by `winit` 0.30 + `wgpu` 26 via
 
 ## Subcommands
 
+Every subcommand reads the `legaia-extract` output tree (`--extracted-root`
+defaults to `extracted`, resolved against the current directory). `field` and
+`dialog` additionally need the dialog font under `extracted/font/`, written by
+`legaia-extract` or `font-extract --disc <bin>`.
+
 ```bash
-asset-viewer tim   <input.tim>
+asset-viewer tim   <input.tim> [--offset H] [--clut N]
 asset-viewer tmd   <input> [--shape character] [--sort-by-size] [--bundle battle]
 asset-viewer stage <PATH>                       # wireframe stage geometry
 asset-viewer vab   <PROT_entry> --offset <H> --sample <N>
+asset-viewer seq   <file.seq> <file.vab> [--vab-offset H] [--looped]
 asset-viewer prot  <PROT.DAT> [--cdname <CDNAME.TXT>]
-asset-viewer field <SCENE> [--record N] [--cycle-records=true]
+asset-viewer field <SCENE> [--record N] [--cycle-records]
+asset-viewer dialog <MES_blob> [--message N]    # typewriter-paced dialog box
+asset-viewer battle-scene [--queued-action N]   # battle-action SM driver
+asset-viewer world <SCENE> [--max-actors N]     # engine-core World composite demo
 ```
+
+`--cycle-records` is a bare flag (on by default): when the active record
+reaches Halt or Unknown the runner advances to the next record, so a single
+session exercises every record in order.
 
 ### `tmd` - textured 3D meshes
 

@@ -19,7 +19,7 @@
   <div class="card-grid">
     <a class="card" href="functions.html">
       <div class="card-title">Key functions</div>
-      <div class="card-body">A directory of Ghidra-traced anchor functions across the codebase. Boot, asset loader, the runtime VMs, BIOS thunks, libsnd/libspu, GTE primitives, libcd, the battle and effect systems.</div>
+      <div class="card-body">A directory of the game's traced functions, grouped by subsystem - the <code>FUN_80xxxxxx</code> names are the disassembler's labels for code at those RAM addresses. Boot, asset loader, the runtime VMs, BIOS thunks, audio libraries, the battle and effect systems.</div>
     </a>
     <a class="card" href="memory-map.html">
       <div class="card-title">PSX RAM map</div>
@@ -27,7 +27,7 @@
     </a>
     <a class="card" href="cheats.html">
       <div class="card-title">Cheat databases</div>
-      <div class="card-body">Third-party GameShark / Mednafen cheat-code dumps as a ground-truth source for RAM addresses. Format reference, parser overview, citation table, and runtime applier wired into <code>legaia-engine play-window --cheat-file</code>.</div>
+      <div class="card-body">Third-party GameShark cheat-code dumps (each cheat is a RAM address someone verified on real hardware) as a ground-truth source for where game state lives. Format reference, parser overview, citation table, and a runtime applier wired into <code>legaia-engine play-window --cheat-file</code>.</div>
     </a>
     <a class="card" href="gamedata.html">
       <div class="card-title">Curated game-data tables</div>
@@ -43,7 +43,7 @@
     </a>
     <a class="card" href="open-rev-eng-threads.html">
       <div class="card-title">Open RE threads</div>
-      <div class="card-body">Index of still-open reverse-engineering hunts (kingdom slot-4 record semantic, PROT 0874 outer producer, per-Seru growth rates, &hellip;) plus the resolved threads and falsified hypotheses worth not re-walking. Question-level companion to the <a href="../tooling/port-catalog.html">port catalog</a>'s function-level worklist.</div>
+      <div class="card-body">The live list of unsolved mysteries - and the already-disproved dead ends, kept so nobody re-walks them. If you want to contribute to the reverse-engineering, start here. Question-level companion to the <a href="../tooling/port-catalog.html">port catalog</a>'s function-level worklist.</div>
     </a>
   </div>
 </section>

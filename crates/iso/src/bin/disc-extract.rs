@@ -22,7 +22,8 @@ const KNOWN_HASHES: &[(&str, &str)] = &[(
 #[derive(Parser)]
 #[command(
     name = "disc-extract",
-    about = "Read a PSX Mode2/2352 .bin and walk ISO9660"
+    version,
+    about = "Read a PSX Mode2/2352 disc image (.bin or .cue) and walk ISO9660"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -32,15 +33,28 @@ struct Cli {
 #[derive(Subcommand)]
 enum Cmd {
     /// List every file on the disc with its size and LBA.
-    List { bin: PathBuf },
+    List {
+        /// Disc image: a raw Mode2/2352 `.bin` dump, or its `.cue` sheet
+        /// (the referenced BINARY track is resolved automatically).
+        bin: PathBuf,
+    },
     /// Extract every file on the disc to `<out>`.
-    Extract { bin: PathBuf, out: PathBuf },
+    Extract {
+        /// Disc image: a raw Mode2/2352 `.bin` dump, or its `.cue` sheet
+        /// (the referenced BINARY track is resolved automatically).
+        bin: PathBuf,
+        /// Output directory (created if missing; resolved against the
+        /// current directory when relative). Existing files are overwritten.
+        out: PathBuf,
+    },
     /// Compute the .bin SHA-256 and compare against known good hashes.
     ///
     /// Pass --expected to compare against a specific hex; otherwise we look
-    /// up against KNOWN_HASHES (currently NA). The volume label and sector
-    /// count are also reported so users can sanity-check their dump.
+    /// up against the built-in known list (currently the North America
+    /// (NTSC-U) release, SCUS-94254). The volume label and sector count are
+    /// also reported so users can sanity-check their dump.
     Verify {
+        /// Disc image: a raw Mode2/2352 `.bin` dump, or its `.cue` sheet.
         bin: PathBuf,
         /// Expected SHA-256 in hex (case-insensitive). If absent, compare
         /// against the built-in known list.
@@ -49,7 +63,17 @@ enum Cmd {
     },
 }
 
+/// Restore default SIGPIPE behaviour so piping into `head` etc. exits
+/// quietly instead of panicking on a broken-pipe write.
+fn reset_sigpipe() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> Result<()> {
+    reset_sigpipe();
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::List { bin } => list(&bin),
@@ -58,8 +82,14 @@ fn main() -> Result<()> {
     }
 }
 
+/// Open the disc image, attaching the path to any error so a missing or
+/// non-disc file reports what it was rather than a bare os error.
+fn open_disc(bin: &Path) -> Result<RawDisc> {
+    RawDisc::open(bin).with_context(|| format!("opening disc image {}", bin.display()))
+}
+
 fn list(bin: &Path) -> Result<()> {
-    let mut disc = RawDisc::open(bin)?;
+    let mut disc = open_disc(bin)?;
     let vol = iso9660::read_volume(&mut disc)?;
     println!("volume: {:?}", vol.volume_id);
     println!("sectors: {}", disc.sector_count());
@@ -77,7 +107,7 @@ fn verify(bin: &Path, expected: Option<&str>) -> Result<()> {
     println!("sha256:  {}", hash);
 
     // Also peek at the volume label, sector count, and region for context.
-    match RawDisc::open(bin) {
+    match open_disc(bin) {
         Ok(mut disc) => {
             println!("sectors: {}", disc.sector_count());
             if let Ok(vol) = iso9660::read_volume(&mut disc) {
@@ -158,7 +188,7 @@ fn sha256_file(path: &Path) -> Result<String> {
 }
 
 fn extract(bin: &Path, out: &Path) -> Result<()> {
-    let mut disc = RawDisc::open(bin)?;
+    let mut disc = open_disc(bin)?;
     let vol = iso9660::read_volume(&mut disc)?;
     let files = iso9660::walk_files(&mut disc, &vol.root)?;
     std::fs::create_dir_all(out)?;

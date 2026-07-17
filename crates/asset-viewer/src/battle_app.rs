@@ -45,7 +45,7 @@ pub(crate) fn run_battle_scene(extracted_root: &Path, queued_action: u8) -> Resu
     }
     let font = Font::load_from_extracted(extracted_root).with_context(|| {
         format!(
-            "load extracted font under {} (run legaia-extract first?)",
+            "load extracted font under {} (run `legaia-extract` - it writes extracted/font/ - or `font-extract --disc <bin>`)",
             extracted_root.display()
         )
     })?;

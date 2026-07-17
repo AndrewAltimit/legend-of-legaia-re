@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; mednafen automation</div>
   <h1>Mednafen automation</h1>
-  <p class="lede">A scriptable substitute for mednafen's interactive memory-watchpoint debugger. The toolkit treats each <code>.mc{0..9}</code> save state as a frozen RAM snapshot, and uses pairwise diffs + targeted bisection to surface where the runtime wrote between snapshots - the watchpoint-equivalent answer without needing a live emulator session.</p>
+  <p class="lede">A recurring reverse-engineering question is "what code writes to this memory address?" - normally answered with a <em>watchpoint</em>, a debugger trap that fires on every write. Mednafen (a PSX emulator) has such a debugger, but it is keyboard-only and can't be scripted. This toolkit gets the same answers offline: it treats each mednafen save state (a frozen snapshot of the console's 2 MB RAM) as data, and uses pairwise diffs + targeted bisection to surface exactly which bytes the game wrote between two snapshots. You only need this page if you are extending the reverse-engineering itself.</p>
 </header>
 
 <section class="doc-section" id="overview">

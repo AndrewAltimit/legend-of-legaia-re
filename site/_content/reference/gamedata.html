@@ -1,12 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">reference</a> &middot; curated game-data</div>
   <h1>Curated game-data tables</h1>
-  <p class="lede">Arts, magic, items, weapons, armor, accessories, enemies, shops, casino, and fishing tables mined from three public walkthroughs and exposed as typed Rust accessors. Acts as ground-truth labels for the binary records being reverse-engineered.</p>
+  <p class="lede">Arts, magic, items, weapons, armor, accessories, enemies, shops, casino, and fishing tables mined from three public walkthroughs and exposed as typed Rust accessors. When a record comes off the disc as anonymous bytes, these tables are the ground-truth labels it gets checked against: the walkthroughs say what the numbers should be, the disc says what they are, and the tests below hold the two together.</p>
 </header>
 
 <section class="doc-section" id="why">
   <h2>Why this exists</h2>
-  <p>The binary reverse-engineering work has the raw record bytes (PROT entry <code>0x05C4</code> for arts, RAM <code>0x80160EFC+</code> for Vahn's runtime art table, <code>0x80085958+</code> for inventory, etc.) but no human-readable labels for any of them, and no public reference to cross-validate the parsed numeric fields against. The curated tables close that gap so:</p>
+  <p>The binary reverse-engineering work has the raw record bytes (PROT entry <code>0x05C4</code> - the arts records' slot in the disc's main archive - for arts, RAM <code>0x80160EFC+</code> for Vahn's runtime art table, <code>0x80085958+</code> for inventory, etc.) but no human-readable labels for any of them, and no public reference to cross-validate the parsed numeric fields against. The curated tables close that gap so:</p>
   <ul class="bullets">
     <li>Art records parsed from the binary can be sanity-checked against retail AP costs and command sequences.</li>
     <li>Inventory item IDs that appear as cheat-modifier values can be resolved to display names.</li>

@@ -1,12 +1,17 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; prot.dat / dmy.dat toc</div>
   <h1>PROT.DAT / DMY.DAT TOC <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede"><code>PROT.DAT</code> is the main asset archive - 1232 numbered entries containing every TIM, TMD, VAB, MES, ANM, MDT, DATA_FIELD streaming buffer, scene asset table, and runtime overlay. Some entries also carry <em>trailing-overlay</em> sectors past their TOC-indexed end (e.g. PROT 899's trailing 60 sectors are the title-screen overlay code); the extractor surfaces these so the on-disc footprint matches what the SCUS boot loader actually reads. <code>DMY.DAT</code> is a sibling archive that turns out to be developer fixtures (memory-bus test pattern + paired random blobs); see <a href="dmy.html">DMY.DAT</a>.</p>
+  <p class="lede"><code>PROT.DAT</code> is the disc's single big asset archive: 1233 numbered <em>entries</em> holding nearly everything in the game - every texture (TIM), 3D model (TMD), sound bank (VAB), dialog container (MES), animation set (ANM), move table (MDT), streaming buffer, scene asset table, and runtime code overlay. Only the movies, streamed audio, and the executable live outside it. This page documents its table of contents (TOC): the index that says where each entry starts and how big it is.</p>
 </header>
 
 <section class="doc-section" id="overview">
   <h2>Overview</h2>
-  <p>Implementation: <code>crates/prot/src/archive.rs</code>.</p>
+  <p>An "entry" (or "slot") is one numbered region of the archive - the unit the game requests when it loads assets. The TOC measures everything in sectors and LBAs (a sector is the disc's 2048-byte block; an LBA is a sector number counting from the start of the file). Two wrinkles make this TOC more interesting than a plain offset table, and both are covered below:</p>
+  <ul class="bullets">
+    <li><strong>Trailing-overlay sectors:</strong> for ~24% of entries the game reads <em>past</em> the size the TOC declares - the extra sectors carry real content (e.g. PROT 899's trailing 60 sectors are the title-screen overlay code, a chunk of MIPS code the game loads into RAM on demand).</li>
+    <li><strong>Two index spaces, off by 2:</strong> the game's in-RAM copy of the TOC counts entries from a different origin than this project's extraction, so every index recovered from game code must be shifted by 2 - the root cause of a whole family of historical mislabelings.</li>
+  </ul>
+  <p><code>DMY.DAT</code> is a sibling archive at the disc root that turns out to be developer fixtures (memory-bus test pattern + paired random blobs), not game data; see <a href="dmy.html">DMY.DAT</a>. Implementation: <code>crates/prot/src/archive.rs</code>.</p>
 </section>
 
 <section class="doc-section" id="header-8-bytes-at-offset-0x000-or-0x800">
@@ -27,18 +32,19 @@ byte_offset           = start_lba * 0x800
 size_bytes            = size_sectors * 0x800</code></pre>
   <p><code>toc[p+5]</code> is the absolute LBA of entry <code>p+3</code> (an end-marker that aliases the next-entry's start), so <code>toc[p+5] - toc[p+3] + 4</code> recovers the indexed size in sectors.</p>
   <h3>Trailing-overlay sectors</h3>
-  <p>For ~24% of entries the on-disc contiguous range to the next entry's start LBA is <strong>larger</strong> than the indexed payload - the trailing sectors carry overlay content the SCUS boot loader reads via a multi-sector <code>ReadN</code> past the TOC-claimed end. PROT entry 899 is the canonical example: indexed payload is 14 sectors (28 KiB, the options menu), but the on-disc footprint is 74 sectors - the trailing 60 sectors are the title-screen overlay code (see <a href="../subsystems/boot.html">boot.md</a>).</p>
+  <p>For ~24% of entries the on-disc contiguous range to the next entry's start LBA is <strong>larger</strong> than the indexed payload - the trailing sectors carry overlay content the SCUS boot loader (<code>SCUS_942.54</code> is the game's main executable) reads via a multi-sector <code>ReadN</code> past the TOC-claimed end. PROT entry 899 is the canonical example: indexed payload is 14 sectors (28 KiB, the options menu), but the on-disc footprint is 74 sectors - the trailing 60 sectors are the title-screen overlay code (see <a href="../subsystems/boot.html">boot.md</a>). The extractor surfaces these trailing sectors so the on-disc footprint matches what the boot loader actually reads.</p>
   <p><code>Archive::read_entry</code> reads the full footprint; <code>Archive::read_entry_indexed</code> reads only the indexed sub-region. Scene-side parsers were designed for the indexed view and use <code>read_entry_indexed</code> via <code>ProtIndex::entry_bytes</code>; asset-viewer / disc-browser consumers use the full footprint so trailing-overlay content is visible.</p>
 </section>
 
 <section class="doc-section" id="in-ram-toc">
   <h2>In-RAM TOC + the two index spaces</h2>
-  <p><code>SCUS_942.54</code> keeps a copy of the TOC at RAM address <code>0x801C70F0</code>. Used at <code>FUN_8003E8A8</code> (the LBA resolver):</p>
+  <p><code>SCUS_942.54</code> keeps a copy of the TOC at RAM address <code>0x801C70F0</code>. Used at <code>FUN_8003E8A8</code> (the LBA resolver; <code>FUN_80xxxxxx</code> names are Ghidra-traced function addresses in the executable):</p>
 <pre><code>start_lba    = TABLE[(idx + 2) * 4 + 0x801C70F0]
 end_lba      = TABLE[(idx + 3) * 4 + 0x801C70F0]
 size_sectors = end_lba - start_lba</code></pre>
   <p>The in-RAM copy is <strong>raw <code>PROT.DAT</code> from byte 0</strong> - <code>FUN_8003E4E8</code> reads the first three sectors of <code>PROT.DAT</code> into <code>0x801C70F0</code> at boot, header words included (byte-verified against a live save state's RAM). There is no transformation; but the <strong>index space differs by 2</strong> from the extraction's: the extraction (<code>crates/prot</code>, and the <code>NNNN</code> in <code>extracted/PROT/NNNN_*.BIN</code>) builds its <code>toc[]</code> array <em>after</em> the two file-header words, so extraction entry <code>p</code>'s <code>start_lba</code> sits at file word <code>p + 4</code>, while the resolver's <code>TABLE[(idx + 2)]</code> is file word <code>idx + 2</code>.</p>
-  <p class="hint"><strong>The canonical rule: raw TOC index = extraction index + 2.</strong> Any PROT index recovered from a <code>FUN_8003E8A8</code> argument must subtract 2 to land in extraction space (byte-verified for the battle side-band files: raw TOC indices <code>0x37F</code>/<code>0x380</code> resolve to extraction entries 893/894, see <a href="summon-readef.html">summon-readef</a>). Raw-TOC entries 0 and 1 cover the pre-<code>init_data</code> boot-UI region (LBA 3..120) that extraction indexing leaves unindexed: two TIM-packs holding the boot-resident <strong>system-UI bundle</strong> (menu-glyph atlas, sprite sheets, cursor parts; uploaded once at boot by <code>FUN_800198E0</code> with flat-strip CLUT semantics, parser <code>legaia_asset::system_ui_bundle</code>) - see <a href="tim-pack.html#boot-resident-system-ui-instance-raw-toc-entries-0-and-1">tim-pack &sect; boot-resident system-UI instance</a>. <a href="cdname.html"><code>CDNAME.TXT</code></a>'s <code>#define</code> numbers are authored in this raw-TOC space - the extractor's filename labels are shifted +2 relative to the content the defines name; see <a href="cdname.html#numbering-space">cdname &sect; numbering space</a>.</p>
+  <p class="hint"><strong>The canonical rule: raw TOC index = extraction index + 2.</strong> Any PROT index recovered from a <code>FUN_8003E8A8</code> argument must subtract 2 to land in extraction space (byte-verified for the battle side-band files: raw TOC indices <code>0x37F</code>/<code>0x380</code> resolve to extraction entries 893/894, see <a href="summon-readef.html">summon-readef</a>). Raw-TOC entries 0 and 1 cover the pre-<code>init_data</code> boot-UI region (LBA 3..120) that extraction indexing leaves unindexed: two TIM-packs holding the boot-resident <strong>system-UI bundle</strong> (menu-glyph atlas, sprite sheets, cursor parts; uploaded once at boot by <code>FUN_800198E0</code> with flat-strip CLUT semantics, parser <code>legaia_asset::system_ui_bundle</code>)
+    - see <a href="tim-pack.html#boot-resident-system-ui-instance-raw-toc-entries-0-and-1">tim-pack &sect; boot-resident system-UI instance</a>. <a href="cdname.html"><code>CDNAME.TXT</code></a>'s <code>#define</code> numbers are authored in this raw-TOC space - the extractor's filename labels are shifted +2 relative to the content the defines name; see <a href="cdname.html#numbering-space">cdname &sect; numbering space</a>.</p>
 </section>
 
 <section class="doc-section" id="resolving-entries-by-name-vs-by-index">
@@ -46,7 +52,7 @@ size_sectors = end_lba - start_lba</code></pre>
   <p>Two entry points:</p>
   <ul class="bullets">
     <li><code>FUN_8003E8A8</code> - index-based (consumed directly by the streaming loader and the dev-build sound branch).</li>
-    <li><code>FUN_8003E6BC</code> - path-based; resolves dev paths like <code>data\battle\efect.dat</code> or <code>h:\PROT\FIELD\&lt;scene&gt;\…</code> into an index via the CDNAME-driven name map, then delegates to the LBA resolver. Most retail-build code paths land here.</li>
+    <li><code>FUN_8003E6BC</code> - path-based; resolves dev paths like <code>data\battle\efect.dat</code> or <code>h:\PROT\FIELD\&lt;scene&gt;\&hellip;</code> into an index via the CDNAME-driven name map, then delegates to the LBA resolver. Most retail-build code paths land here.</li>
   </ul>
   <p>Names come from <a href="cdname.html"><code>CDNAME.TXT</code></a>, which lives at the top level of the disc.</p>
 </section>

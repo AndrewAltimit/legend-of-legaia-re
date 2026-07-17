@@ -42,10 +42,15 @@ dialog-rendering overlay is captured) will fill in the meanings.
 
 ## What this crate does NOT do
 
-- Decode the bytecode to readable text. The glyph→character mapping
-  needs a font tile sheet that hasn't been located yet (the proportional
-  dialog font is in VRAM but not extracted; see
-  [`docs/subsystems/script-vm.md`](../../docs/subsystems/script-vm.md)).
+- Decode the bytecode to readable text itself. The glyph→character mapping
+  *is* known - the proportional dialog font (glyph atlas + width table) is
+  extracted by [`crates/font`](../font/README.md) (`font-extract --disc`, or
+  the `legaia-extract` `font/` step), and the byte space `0x20..=0x7E` maps to
+  plain ASCII. The text-decoding consumers live elsewhere: the engine's
+  dialog renderer draws MES glyph streams through `legaia-font`, and the
+  translation codec (`legaia-rando translate export`, see
+  [`docs/tooling/translation.md`](../../docs/tooling/translation.md)) is the
+  user-facing dialog-text path.
 - Validate offset tables against the bytecode region. The offset-table
   base/encoding (u24 LE vs another stride) is empirical and not yet
   cross-checked against the interpreter.

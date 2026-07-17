@@ -9,7 +9,11 @@ use legaia_anm::{
 };
 
 #[derive(Parser)]
-#[command(name = "anm", about = "Legaia ANM (asset type 0x06) inspector")]
+#[command(
+    name = "anm",
+    version,
+    about = "Legaia ANM (asset type 0x06) inspector"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -18,6 +22,11 @@ struct Cli {
 #[derive(Subcommand)]
 enum Cmd {
     /// Print the count, offset table summary, and per-record headers.
+    ///
+    /// Input: a standalone ANM animation pack (asset type 0x06) - e.g. the
+    /// party locomotion bundle in PROT 0874 or a scene's first-slot NPC
+    /// bundle, sliced from `legaia-extract <disc.bin> --out extracted`
+    /// output (extracted/PROT/ + `asset stream`).
     Info {
         path: PathBuf,
         /// The input has the 16-byte allocator preamble (RAM-extracted blob).
@@ -29,6 +38,9 @@ enum Cmd {
         all: bool,
     },
     /// Extract every record to `<out>/rec_<NNN>.bin`.
+    ///
+    /// Input: a standalone ANM pack (see `info`). Warns when 0 records
+    /// parse out of a non-trivial input (likely not a standalone ANM).
     Extract {
         path: PathBuf,
         out: PathBuf,
@@ -100,7 +112,17 @@ enum Cmd {
     },
 }
 
+/// Rust ignores SIGPIPE by default; restore SIG_DFL so `anm ... | head`
+/// exits quietly instead of panicking on a broken pipe.
+fn reset_sigpipe() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> Result<()> {
+    reset_sigpipe();
     match Cli::parse().cmd {
         Cmd::Info {
             path,
@@ -328,6 +350,13 @@ fn extract(path: &Path, out: &Path, with_preamble: bool) -> Result<()> {
         std::fs::write(&p, bytes).with_context(|| format!("write {}", p.display()))?;
     }
     println!("wrote {} records to {}", pack.records.len(), out.display());
+    if pack.records.is_empty() && payload.len() > 4 {
+        eprintln!(
+            "warning: parsed 0 records from {} ({} bytes) - input is likely not a standalone ANM pack",
+            path.display(),
+            payload.len()
+        );
+    }
     Ok(())
 }
 

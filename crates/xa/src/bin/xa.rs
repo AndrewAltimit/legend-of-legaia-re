@@ -4,7 +4,7 @@ use legaia_xa::{Channels, DecodeOptions};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
-#[command(name = "xa", about = "PSX XA-ADPCM decoder + WAV exporter")]
+#[command(name = "xa", version, about = "PSX XA-ADPCM decoder + WAV exporter")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -13,6 +13,11 @@ struct Cli {
 #[derive(Subcommand)]
 enum Cmd {
     /// Print metadata: sound-group count, predicted output duration.
+    ///
+    /// Input: a subheader-stripped Form-1 .XA dump (e.g. extracted/XA*.XA
+    /// from `legaia-extract` / `disc-extract extract`). The sample rate /
+    /// channel mode must be guessed here - prefer `demux-disc-all` on the
+    /// raw disc .bin for correct pacing.
     Info {
         path: PathBuf,
         #[arg(long, value_enum, default_value_t = ChannelsArg::Mono)]
@@ -23,6 +28,10 @@ enum Cmd {
         bits: BitsArg,
     },
     /// Decode a single .XA to .WAV.
+    ///
+    /// Input: a subheader-stripped Form-1 .XA dump (e.g. extracted/XA*.XA
+    /// from `legaia-extract`). Rate/channels are guesses here - prefer
+    /// `demux-disc-all` on the raw disc .bin for correct pacing.
     Convert {
         path: PathBuf,
         #[arg(short, long)]
@@ -35,6 +44,10 @@ enum Cmd {
         bits: BitsArg,
     },
     /// Convert every .XA under `dir` to .WAV.
+    ///
+    /// Input: a directory of subheader-stripped Form-1 .XA dumps (e.g. the
+    /// extracted/ tree from `legaia-extract`). Prefer `demux-disc-all` on
+    /// the raw disc .bin for correct pacing.
     ConvertDir {
         dir: PathBuf,
         #[arg(short, long)]
@@ -56,7 +69,8 @@ enum Cmd {
         /// Path to the disc image (`.bin`, Mode 2 / 2352 raw sectors).
         bin: PathBuf,
         /// Output directory; WAVs land under `<out>/<xa-stem>_fileN_chM.wav`.
-        #[arg(long, default_value = "extracted/xa_demux")]
+        /// The default is resolved against the current directory.
+        #[arg(short, long, default_value = "extracted/xa_demux")]
         out: PathBuf,
     },
     /// Demux a CD-XA stream directly off a `.bin` disc image and write
@@ -75,8 +89,9 @@ enum Cmd {
         /// determine sector count).
         #[arg(long)]
         size: u32,
-        /// Output directory; one WAV per channel lands here.
-        #[arg(long, default_value = "extracted/xa_demux")]
+        /// Output directory; one WAV per channel lands here. The default is
+        /// resolved against the current directory.
+        #[arg(short, long, default_value = "extracted/xa_demux")]
         out: PathBuf,
         /// Optional name prefix for the output WAVs (default: derived
         /// from `--lba`).
@@ -117,7 +132,17 @@ impl From<BitsArg> for legaia_xa::BitsPerSample {
     }
 }
 
+/// Rust ignores SIGPIPE by default; restore SIG_DFL so `xa ... | head`
+/// exits quietly instead of panicking on a broken pipe.
+fn reset_sigpipe() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> Result<()> {
+    reset_sigpipe();
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::Info {

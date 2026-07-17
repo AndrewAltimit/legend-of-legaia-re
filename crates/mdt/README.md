@@ -40,12 +40,15 @@ u8  records[]            // each at the offset given by the table
 
 ## What's actually in the named PROT entries
 
-`0972_move_program_no.BIN` (24576 B) and `0973_move_program_no.BIN`
+`0972_move_program_no.BIN` (45056 B) and `0973_move_program_no.BIN`
 (47104 B) are CDNAME-named "move_program_no" but their byte layout does
-**not** match the consumer-derived offset-table format. They look like
-a flat array of fixed 128-byte records. The CDNAME label is misleading
+**not** cleanly match the consumer-derived offset-table format. They look
+like a flat array of fixed 128-byte records. The CDNAME label is misleading
 (same gotcha as `vab_01`); the real `move.mdt` is loaded by string-path
-elsewhere.
+elsewhere. `mdt classify` reflects this: on these entries only the relaxed
+move-buffer predicate matches, the strict offset-table fitness score is
+negative, and the verdict is printed with a `(LOW CONFIDENCE)` tag plus a
+note telling you to cross-check with `mdt records`.
 
 ## What the move VM does
 

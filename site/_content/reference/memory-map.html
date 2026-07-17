@@ -47,12 +47,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> · <a href="index.html">reference</a> · PSX RAM map</div>
   <h1>PSX RAM map</h1>
-  <p class="lede">2 MB of main RAM at <code>0x80000000-0x801FFFFF</code>. Click any region to see what lives there.</p>
+  <p class="lede">The PSX has exactly 2 MB of main RAM, at addresses <code>0x80000000-0x801FFFFF</code>, and everything the running game is - its code, the party's stats, the loaded scene, the story flags - lives somewhere in that window. This map says what lives where. Click any region to see the details.</p>
 </header>
 
 <section class="doc-section">
   <h2>Interactive map</h2>
-  <p>Order: low addresses on top. Hover for a one-liner, click for full detail.</p>
+  <p>Order: low addresses on top. Hover for a one-liner, click for full detail. Three landmarks orient everything else: <code>SCUS_942.54</code> (the game's main executable) loads at <code>0x80010000</code> and its data segment holds the persistent game state; the region above <code>0x801C0000</code> is the <em>overlay window</em>, where the game swaps in per-mode code (title / town / battle / menu) on demand; and the addresses quoted across this site's docs and cheat tables all point into this map.</p>
 
   <div class="memmap" id="memmap">
     <div class="memmap-section-head">BIOS / OS area</div>

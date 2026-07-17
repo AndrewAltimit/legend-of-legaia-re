@@ -6,7 +6,7 @@ use legaia_tim::vram::{PrimTextureStatus, VRAM_HEIGHT, VRAM_WIDTH, Vram};
 use legaia_tmd::{legaia_prim_probe, legaia_prims, parse, vram_targeted};
 
 #[derive(Parser)]
-#[command(name = "tmd", about = "PSX TMD parser")]
+#[command(name = "tmd", version, about = "PSX TMD parser (Legaia variant)")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -15,9 +15,13 @@ struct Cli {
 #[derive(Subcommand)]
 enum Cmd {
     /// Parse a TMD file and print structural summary.
+    ///
+    /// Input: a .tmd produced by `legaia-extract <disc.bin> --out extracted`
+    /// (see extracted/tmd_scan/<entry>/raw_off<HEX>.tmd).
     Info { input: PathBuf },
     /// Parse all `.tmd` files under a directory and print one-line summaries.
-    /// Reports any that fail to parse.
+    /// Reports any that fail to parse. Input: a directory such as
+    /// extracted/tmd_scan/ from `legaia-extract`.
     ScanDir {
         dir: PathBuf,
         /// Print only files that fail to parse.
@@ -27,6 +31,7 @@ enum Cmd {
     /// Dump vertices and faces of every object as a Wavefront OBJ file.
     /// Faces are decoded via the Legaia primitive iterator; pass --no-faces
     /// to emit only vertices (for sanity-checking vertex parsing).
+    /// Input: a .tmd from `legaia-extract` (see extracted/tmd_scan/).
     DumpObj {
         input: PathBuf,
         #[arg(short, long)]
@@ -101,7 +106,17 @@ enum Cmd {
     },
 }
 
+/// Rust ignores SIGPIPE by default; restore SIG_DFL so `tmd ... | head`
+/// exits quietly instead of panicking on a broken pipe.
+fn reset_sigpipe() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> Result<()> {
+    reset_sigpipe();
     match Cli::parse().cmd {
         Cmd::Info { input } => info(&input),
         Cmd::ScanDir { dir, only_failures } => scan_dir(&dir, only_failures),
@@ -324,7 +339,7 @@ fn validate_prims(dir: &PathBuf, verbose: bool, slack_bytes: usize) -> Result<()
 }
 
 fn prims(input: &PathBuf, limit: Option<usize>, vram_dirs: &[PathBuf]) -> Result<()> {
-    let raw = std::fs::read(input)?;
+    let raw = std::fs::read(input).with_context(|| format!("read {}", input.display()))?;
     let tmd = parse(&raw)?;
     println!("file={}  nobj={}", input.display(), tmd.objects.len());
 
@@ -567,7 +582,7 @@ fn sibling_tim_dir(tmd_path: &Path) -> Option<PathBuf> {
 }
 
 fn probe(input: &PathBuf) -> Result<()> {
-    let raw = std::fs::read(input)?;
+    let raw = std::fs::read(input).with_context(|| format!("read {}", input.display()))?;
     let tmd = parse(&raw)?;
     println!("file={}", input.display());
     for (i, o) in tmd.objects.iter().enumerate() {
@@ -590,7 +605,7 @@ fn probe(input: &PathBuf) -> Result<()> {
 }
 
 fn info(input: &PathBuf) -> Result<()> {
-    let raw = std::fs::read(input)?;
+    let raw = std::fs::read(input).with_context(|| format!("read {}", input.display()))?;
     let tmd = parse(&raw)?;
     let stats = tmd.stats();
     println!(
@@ -635,8 +650,14 @@ fn info(input: &PathBuf) -> Result<()> {
                         s.join(", ")
                     );
                 }
-                Err(e) => {
-                    println!("        psx-walk: FAIL ({})", e);
+                Err(_) => {
+                    // Not an error condition: Legaia TMDs use a custom
+                    // primitive layout, so the stock-PsyQ walk is expected
+                    // to fail on nearly every valid file. The detail lives
+                    // under `tmd probe`.
+                    println!(
+                        "        psx-walk: n/a (stock-PsyQ walk fails as expected on Legaia variant TMDs; see 'tmd probe')"
+                    );
                 }
             }
         }
@@ -690,7 +711,7 @@ fn scan_dir(dir: &PathBuf, only_failures: bool) -> Result<()> {
 }
 
 fn walk(dir: &PathBuf, out: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in std::fs::read_dir(dir)? {
+    for entry in std::fs::read_dir(dir).with_context(|| format!("read dir {}", dir.display()))? {
         let entry = entry?;
         let p = entry.path();
         if p.is_dir() {
@@ -703,7 +724,7 @@ fn walk(dir: &PathBuf, out: &mut Vec<PathBuf>) -> Result<()> {
 }
 
 fn dump_obj(input: &PathBuf, out: &PathBuf, no_faces: bool) -> Result<()> {
-    let raw = std::fs::read(input)?;
+    let raw = std::fs::read(input).with_context(|| format!("read {}", input.display()))?;
     let tmd = parse(&raw)?;
     let mut s = String::new();
     s.push_str(&format!(
@@ -761,7 +782,7 @@ fn dump_obj(input: &PathBuf, out: &PathBuf, no_faces: bool) -> Result<()> {
         }
         vert_base += o.vertices.len();
     }
-    std::fs::write(out, s)?;
+    std::fs::write(out, s).with_context(|| format!("write {}", out.display()))?;
     eprintln!(
         "wrote {} object(s), {} face(s)",
         tmd.objects.len(),

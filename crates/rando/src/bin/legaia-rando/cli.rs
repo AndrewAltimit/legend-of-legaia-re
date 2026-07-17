@@ -14,6 +14,7 @@ use crate::util::parse_item_spec;
 #[derive(Parser)]
 #[command(
     name = "legaia-rando",
+    version,
     about = "Legend of Legaia randomizer / disc patcher (operates on a user-supplied disc)"
 )]
 pub(crate) struct Cli {
@@ -28,7 +29,8 @@ pub(crate) enum Cmd {
     Randomize(RandomizeArgs),
     /// Read-only: list every monster's current item drop.
     Drops {
-        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
         #[arg(long)]
         input: PathBuf,
     },
@@ -36,21 +38,24 @@ pub(crate) enum Cmd {
     /// by scene, with the item each currently gives. Use this to audit which
     /// items would change (e.g. to spot quest items that should stay static).
     Chests {
-        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
         #[arg(long)]
         input: PathBuf,
     },
     /// Read-only: list every monster's current steal item (Evil God Icon),
     /// with its steal chance, from the static `SCUS_942.54` steal table.
     Steals {
-        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
         #[arg(long)]
         input: PathBuf,
     },
     /// Read-only: list every Tactical Art's current button combo, grouped by
     /// character, from the static `SCUS_942.54` arts-name table.
     Arts {
-        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
         #[arg(long)]
         input: PathBuf,
     },
@@ -58,7 +63,8 @@ pub(crate) enum Cmd {
     /// touch, grouped by the scene it lives in, with the destination each
     /// currently leads to.
     Doors {
-        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
         #[arg(long)]
         input: PathBuf,
     },
@@ -67,7 +73,8 @@ pub(crate) enum Cmd {
     /// cross-context player MOVE_TOs in named partition-0 door records (NPC /
     /// cutscene movement is excluded by construction).
     HouseDoors {
-        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
         #[arg(long)]
         input: PathBuf,
     },
@@ -76,7 +83,8 @@ pub(crate) enum Cmd {
     /// grouped by scene, with each record's walk-component class. The
     /// population `--house-doors shuffle` rewires alongside the script warps.
     MapDoors {
-        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
         #[arg(long)]
         input: PathBuf,
     },
@@ -84,21 +92,24 @@ pub(crate) enum Cmd {
     /// `(item, count)` slots a New Game begins with - vanilla is Healing Leaf
     /// ×5).
     StartingItems {
-        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
         #[arg(long)]
         input: PathBuf,
     },
     /// Read-only: list every town-merchant shop and what it sells, grouped by
     /// scene, with item names.
     Shops {
-        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
         #[arg(long)]
         input: PathBuf,
     },
     /// Read-only: list the casino prize-exchange prizes (item, coin price,
     /// progression gate).
     Casino {
-        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
         #[arg(long)]
         input: PathBuf,
     },
@@ -106,7 +117,8 @@ pub(crate) enum Cmd {
     /// UDF / LDF / INT / SPD) from the `battle_data` archive - the population
     /// the `--monster-stats` randomizer redistributes.
     MonsterStats {
-        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
         #[arg(long)]
         input: PathBuf,
     },
@@ -114,7 +126,8 @@ pub(crate) enum Cmd {
     /// the `--move-power` randomizer redistributes), each tagged with the
     /// spell-table name of a move id that resolves to it.
     MovePowers {
-        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
         #[arg(long)]
         input: PathBuf,
     },
@@ -122,14 +135,16 @@ pub(crate) enum Cmd {
     /// element, columns = defending element; each cell a damage-scale percent)
     /// the `--element-affinity` randomizer redistributes.
     Affinity {
-        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
         #[arg(long)]
         input: PathBuf,
     },
     /// Read-only: list every named spell's current MP cost from the SCUS spell
     /// table - the population the `--spell-cost` randomizer redistributes.
     SpellCosts {
-        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
         #[arg(long)]
         input: PathBuf,
     },
@@ -137,7 +152,8 @@ pub(crate) enum Cmd {
     /// by slot category, with each row's stats and the items that reference it -
     /// the population the `--equip-bonus` randomizer redistributes.
     EquipBonuses {
-        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
         #[arg(long)]
         input: PathBuf,
     },
@@ -145,7 +161,8 @@ pub(crate) enum Cmd {
     /// the player battle files) - what the `--weapon-specialty` randomizer
     /// permutes.
     WeaponSpecialty {
-        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
         #[arg(long)]
         input: PathBuf,
     },
@@ -153,7 +170,8 @@ pub(crate) enum Cmd {
     /// (records applied, the result still parses). Use this to check that a
     /// shared patch + seed match your own disc before playing.
     Verify {
-        /// Path to the user's retail disc image the patch targets.
+        /// Path to the user's retail disc image the patch targets (`.bin`,
+        /// Mode 2/2352; a `.cue` is accepted and resolved to its `.bin`).
         #[arg(long)]
         input: PathBuf,
         /// The PPF 3.0 patch to apply.
@@ -162,6 +180,12 @@ pub(crate) enum Cmd {
         /// Optionally write the patched image here (for local play only).
         #[arg(long)]
         output: Option<PathBuf>,
+        /// Proceed even when the disc is not the USA build (SCUS-94254) the
+        /// randomizer's patches target. A patch built against the USA disc
+        /// "applies" to a PAL disc but produces a corrupt hybrid - only pass
+        /// this if you know the patch was built for this exact disc.
+        #[arg(long, default_value_t = false)]
+        allow_region_mismatch: bool,
     },
     /// Translation / language-pack tools: export the disc's text to an
     /// editable YAML pack, generate per-language skeletons, check coverage,
@@ -182,7 +206,8 @@ pub(crate) enum TranslateCmd {
     /// local / share only filled translations per your jurisdiction's rules;
     /// never commit it to this repository.
     Export {
-        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
         #[arg(long)]
         input: PathBuf,
         /// Where to write the pack (YAML).
@@ -263,9 +288,14 @@ pub(crate) enum TranslateCmd {
         /// The language pack (YAML).
         #[arg(long)]
         pack: PathBuf,
-        /// Dry-run the pack against this disc image (`.bin`, Mode 2/2352).
+        /// Dry-run the pack against this disc image (`.bin`, Mode 2/2352; a
+        /// `.cue` is accepted and resolved to its `.bin`).
         #[arg(long)]
         input: Option<PathBuf>,
+        /// Print every skipped / over-budget entry individually instead of
+        /// the default per-reason summary.
+        #[arg(long, default_value_t = false)]
+        verbose: bool,
     },
     /// Cross-region corpus alignment report: compare a **target** disc (the
     /// one the importer would patch, e.g. the retail NTSC/USA build) against an
@@ -318,7 +348,8 @@ pub(crate) enum TranslateCmd {
     /// left byte-identical; every write is same-size in place and each
     /// touched sector's EDC/ECC is re-encoded.
     Import {
-        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
         #[arg(long)]
         input: PathBuf,
         /// The filled language pack (YAML).
@@ -337,12 +368,17 @@ pub(crate) enum TranslateCmd {
         /// byte-faithfully instead of being abbreviated. Grows the image.
         #[arg(long)]
         allow_relayout: bool,
+        /// Print every skipped entry individually instead of the default
+        /// per-reason summary.
+        #[arg(long, default_value_t = false)]
+        verbose: bool,
     },
 }
 
 #[derive(Parser)]
 pub(crate) struct RandomizeArgs {
-    /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+    /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+    /// is accepted and resolved to the `.bin` it references).
     #[arg(long)]
     pub(crate) input: PathBuf,
     /// Seed for reproducibility. Either a number (decimal or `0x`-hex) or any
@@ -651,6 +687,11 @@ pub(crate) struct RandomizeArgs {
     /// Plan and report the run but write no files (patch / output / manifest).
     #[arg(long, default_value_t = false)]
     pub(crate) dry_run: bool,
+    /// Proceed even when the disc is not the USA build (SCUS-94254). The
+    /// randomizer's offsets and code hooks target the USA disc; running it
+    /// against a PAL disc (SCES_019.44/.45/.46) produces a corrupt hybrid.
+    #[arg(long, default_value_t = false)]
+    pub(crate) allow_region_mismatch: bool,
 }
 
 #[derive(Copy, Clone, ValueEnum)]

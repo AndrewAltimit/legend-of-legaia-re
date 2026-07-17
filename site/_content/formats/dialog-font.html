@@ -1,17 +1,18 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; dialog font (proportional latin)</div>
   <h1>Dialog font (proportional Latin) <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">The proportional sans-serif font used by the dialog box, the field menu, and most in-game UI text. It lives in VRAM at runtime and is referenced by every text-rendering primitive the engine emits.</p>
+  <p class="lede">The proportional sans-serif font used by the dialog box, the field menu, and most in-game UI text - proportional meaning each letter has its own width (an &ldquo;i&rdquo; is 3 pixels, a &ldquo;W&rdquo; is 9), unusual polish for a PSX RPG. The glyph images live in VRAM (the console's 1024&times;512 video memory) at runtime, and every text-drawing primitive the game emits references them there.</p>
 </header>
 
 <section class="doc-section" id="overview">
   <h2>Overview</h2>
-  <p>The font has three pieces of static data, all in <code>SCUS_942.54</code>:</p>
+  <p>The font has three pieces of static data, all in <code>SCUS_942.54</code> (the game's main executable on the disc):</p>
   <ol class="bullets">
     <li>A <strong>256-byte width table</strong> at <code>0x80073F1C</code>, indexed by character byte.</li>
     <li>A <strong>38-entry escape-sequence table</strong> at <code>0x80074050</code>, indexed by the byte that follows a <code>0xCE</code> runtime escape.</li>
-    <li>The <strong>glyph bitmaps</strong>, which sit in VRAM at <code>(896, 0)..(960, 256)</code> (a 4bpp tile-page covering 256×256 source pixels). They're loaded from disc into VRAM by an overlay-resident routine; the on-disc PROT entry that carries them has not yet been classified by the static categorizer.</li>
+    <li>The <strong>glyph bitmaps</strong>, which sit in VRAM at <code>(896, 0)..(960, 256)</code> (a 4bpp tile-page - 4 bits per pixel, 16 colours - covering 256×256 source pixels). They're loaded from disc into VRAM by an overlay-resident routine; the on-disc PROT entry that carries them has not yet been classified by the static categorizer.</li>
   </ol>
+  <p>Here is the odd part: the metrics are in the executable, the pixels are visible in any VRAM dump - but the <strong>on-disc source of those pixels has never been found</strong>. An exhaustive search of every archive entry, raw and decompressed, returns zero hits (see <a href="#what-s-still-open">what's still open</a>). Extraction therefore reads the live bitmaps out of an emulator save state instead of off the disc.</p>
 </section>
 
 <section class="doc-section" id="glyph-layout-in-vram">
@@ -90,6 +91,7 @@ V = (c &amp; 0xF0) - 0x20</code></pre>
 
 <section class="doc-section" id="clut">
   <h2>CLUT</h2>
+  <p>A CLUT (colour look-up table) is a 16-colour palette stored as a row of framebuffer pixels; the 4bpp glyphs index into one to get their final colours.</p>
 <pre><code>VRAM (96, 510)   // CLUT 0 - dialog grayscale (white-on-transparent text)
 VRAM (96 + 16*i, 510)   // CLUT i - colored variants for status text, system prompts</code></pre>
   <p>Sixteen 16-color CLUTs are placed end-to-end across VRAM Y=510, one every 16 horizontal pixels. CLUT 0 is the canonical dialog palette: index 2 = transparent black, index 3 = white, indices 0/1/4..7 = mid-tone grays for anti-aliasing.</p>
@@ -211,7 +213,7 @@ VRAM (96 + 16*i, 510)   // CLUT i - colored variants for status text, system pro
 </tr>
 </tbody>
 </table>
-  <p>Per-glyph GP0 packet (variable-size textured rectangle, opaque, with raw-texture color):</p>
+  <p>Per-glyph GP0 packet (a GP0 packet is one command word sequence sent to the PSX GPU; this one is a variable-size textured rectangle, opaque, with raw-texture color):</p>
 <pre><code>[0x04 00 00 00]              // OT-list terminator
 [0x64 80 80 80]              // cmd 0x64 + RGB shading
 [i16 X][i16 Y]               // top-left in screen coords

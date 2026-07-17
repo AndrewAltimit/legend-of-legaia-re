@@ -1,13 +1,8 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; cdname.txt - entry name map</div>
   <h1>CDNAME.TXT - entry name map <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">A plain-text file at the disc root that maps PROT.DAT entry indices to human-readable names. One C-style <code>#define</code> per line:</p>
+  <p class="lede">A plain-text file the developers left at the disc root: a list of C-style <code>#define</code> lines that give human-readable names to the numbered entries of <code>PROT.DAT</code> (the disc's single big asset archive). It's the closest thing the disc has to a directory listing - and it hides a numbering trap that misled this project for a long time.</p>
 </header>
-
-<aside class="notice warn">
-  <div class="notice-title">The #define numbers are raw-TOC indices, not extraction indices</div>
-  The <code>#define</code> numbers are authored in the <strong>raw in-RAM TOC index space</strong> (the space <code>FUN_8003E8A8</code> consumes), which sits <strong>2 above</strong> the extraction's per-entry indexing: the content <code>#define name N</code> names lives at extraction entry <code>N &minus; 2</code>, and the extractor's filename labels (which apply define numbers as extraction indices directly) are systematically shifted +2. Several historical &ldquo;mislabeled block&rdquo; findings (<code>vab_01</code> &ldquo;without VAB headers&rdquo;, the <code>move_program_no</code> layout mismatch, <code>0895_bat_back_dat</code> = init.pak) were this filename shift, not dev mislabeling. When a label and the bytes still disagree, trust the bytes: re-derive structure from the leading magic and the loader-call constant in SCUS.
-</aside>
 
 <section class="doc-section" id="overview">
   <h2>Overview</h2>
@@ -23,18 +18,25 @@
 
 <section class="doc-section" id="block-start-semantics">
   <h2>Block-start semantics</h2>
-  <p>Each <code>#define name N</code> marks <strong>the start of a block</strong> of N entries. Subsequent PROT entries inherit the name of the most recent block:</p>
+  <p>Each <code>#define name N</code> marks <strong>the start of a block</strong>: the name applies to entry N and every subsequent entry until the next define. Subsequent PROT entries inherit the name of the most recent block:</p>
   <ul class="bullets">
     <li>entry 3 → block <code>town01</code></li>
     <li>entry 11 → block <code>town01</code> (since <code>town0b</code> starts at 12)</li>
     <li>entry 12 → block <code>town0b</code></li>
   </ul>
-  <p><code>prot-extract</code> uses these names to produce filenames like <code>0148_retock.BIN</code>.</p>
+  <p>Most blocks correspond to one scene (a town, dungeon room, or menu) and reserve a handful of entries for that scene's assets. <code>prot-extract</code> uses these names to produce filenames like <code>0148_retock.BIN</code>.</p>
 </section>
+
+<aside class="notice warn">
+  <div class="notice-title">The #define numbers are raw-TOC indices, not extraction indices</div>
+  There are two ways to count PROT entries. The game's own resolver (<code>FUN_8003E8A8</code>) counts <em>raw TOC words</em>, header included; this project's extraction counts <em>payload entries</em>, which start 2 words later. The <code>#define</code> numbers are authored in the <strong>raw in-RAM TOC index space</strong>, which sits <strong>2 above</strong> the extraction's: the content <code>#define name N</code> names lives at extraction entry <code>N &minus; 2</code>, and the extractor's filename labels (which apply define numbers as extraction indices directly) are systematically shifted +2. Several historical &ldquo;mislabeled block&rdquo; findings (<code>vab_01</code> &ldquo;without
+    VAB headers&rdquo;, the <code>move_program_no</code> layout mismatch, <code>0895_bat_back_dat</code>
+    = init.pak) were this filename shift, not dev mislabeling. When a label and the bytes still disagree, trust the bytes: re-derive structure from the leading magic and the loader-call constant in SCUS.
+</aside>
 
 <section class="doc-section" id="numbering-space">
   <h2>Numbering space (the &minus;2 correction)</h2>
-  <p>The boot TOC loader copies <code>PROT.DAT</code> verbatim (8-byte header included) into <code>0x801C70F0</code>, so <strong>raw index = extraction index + 2</strong> (see <a href="prot.html">PROT TOC &sect; In-RAM TOC</a>). The default <code>NNNN_&lt;name&gt;.BIN</code> naming is kept for stability; <code>legaia_prot::cdname::block_for_extraction_index</code> resolves the retail-space name for an extraction index, and <code>scripts/asset-investigation/cdname_shift_analysis.py</code> reproduces the full quantitative analysis against a local extraction.</p>
+  <p>The boot TOC loader copies <code>PROT.DAT</code> verbatim (8-byte header included) into RAM at <code>0x801C70F0</code>, so <strong>raw index = extraction index + 2</strong> (see <a href="prot.html">PROT TOC &sect; In-RAM TOC</a>). The default <code>NNNN_&lt;name&gt;.BIN</code> naming is kept for stability; <code>legaia_prot::cdname::block_for_extraction_index</code> resolves the retail-space name for an extraction index, and <code>scripts/asset-investigation/cdname_shift_analysis.py</code> reproduces the full quantitative analysis against a local extraction.</p>
   <h3>Evidence</h3>
   <p><strong>Loader-constant identities</strong> (strongest - retail hard-codes raw-TOC indices for dev-named files, and each constant <em>equals</em> the same-named define):</p>
   <table>
@@ -98,7 +100,8 @@
 
 <section class="doc-section" id="block-names-can-be-misleading">
   <h2>Block names can still mislead</h2>
-  <p>A block name describes the developer's organisation, not the runtime semantics of every entry inside the block - and any name read off an extraction <em>filename</em> must first be corrected by the +2 numbering shift above. Once that shift is applied, the dev names turn out to be accurate far more often than the historical &ldquo;label gotcha&rdquo; catalogue suggested: <code>vab_01</code> really is wall-to-wall VAB banks, <code>battle_data</code> really is the player battle files, <code>bat_back_dat</code> really names the battle side-band <code>summon.dat</code>/<code>readef.DAT</code> files (extraction 893/894). When a (shift-corrected) block name still conflicts with what the bytes look like, trust the bytes: re-derive structure from the leading magic + the loader-call constant in SCUS, not from the CDNAME label.</p>
+  <p>A block name describes the developer's organisation, not the runtime semantics of every entry inside the block - and any name read off an extraction <em>filename</em> must first be corrected by the +2 numbering shift above. Once that shift is applied, the dev names turn out to be accurate far more often than the historical &ldquo;label gotcha&rdquo; catalogue suggested: <code>vab_01</code> really is wall-to-wall VAB banks, <code>battle_data</code> really is the player battle files, <code>bat_back_dat</code> really names the battle side-band <code>summon.dat</code>/<code>readef.DAT</code> files (extraction 893/894). When a (shift-corrected) block name still conflicts with what the bytes look like, trust the bytes: re-derive structure from the leading magic + the loader-call
+    constant in SCUS, not from the CDNAME label.</p>
 </section>
 
 <section class="doc-section" id="per-scene-asset-reservations">

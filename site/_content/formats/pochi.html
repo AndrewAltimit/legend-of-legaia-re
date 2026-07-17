@@ -1,46 +1,47 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; pochi-filler placeholder slots</div>
   <h1>Pochi-filler placeholder slots <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">265 of 1232 PROT entries are placeholder slots filled with a developer fill pattern - reserved-but-unused asset slots the game never loads. Detection class: <code>pochi_filler</code>. Detector + class: <code>crates/asset/src/categorize.rs</code>.</p>
+  <p class="lede">266 of the 1233 entries in <code>PROT.DAT</code> (the disc's single big asset archive) are unused placeholder slots, padded with the repeating ASCII word <code>pochi</code> - a common Japanese dog name (<code>ポチ</code>), the kind of fill pattern a developer picks so that uninitialised data is instantly recognisable in a debugger. The game never loads them. The catch is what comes <em>after</em> the padding.</p>
 </header>
 
 <aside class="notice warn">
-  <div class="notice-title">These slots are a trap, not just dead weight</div>
-  The bytes behind the <code>pochipochi&hellip;</code> prefix are <strong>not zeros</strong> - they are stale mastering scratch, and in most scene blocks that scratch parses as a <em>complete, valid</em> TIM. Any "scan the block for TIMs" sweep that does not skip <code>pochi_filler</code> will upload a stale texture page over one the scene is actively using. See <a href="#scratch-tail">the scratch tail</a> below.
+  <div class="notice-title">The padding stops after ~2 KB - the rest only looks empty</div>
+  Beyond the <code>pochipochi&hellip;</code> prefix these slots are <strong>not zeros</strong>: they carry stale leftovers from the disc-mastering process, and in most scene blocks that leftover data parses as a <em>complete, valid</em> texture. A slot can look empty, parse as real, and be neither.
+  See <a href="#scratch-tail">the scratch tail</a> below.
 </aside>
 
-<section class="doc-section" id="layout">
-  <h2>Layout</h2>
-<pre><code>+0x000..0x786   ASCII "pochipochi..." (37 lines × 52 bytes + "po" = 1926 bytes)
-+0x786          0x1A (DOS EOF marker)
-+0x787..end     scratch / leftover data (no consistent format)</code></pre>
-  <p><code>pochi</code> (Japanese <code>ポチ</code>) is a generic dog name common in Japanese dev fill - uninitialised memory shows up obviously in a debugger this way.</p>
-  <p>Detection: <code>buf.starts_with(b"pochi") &amp;&amp; buf[0x786] == 0x1A</code>.</p>
-</section>
-
 <section class="doc-section" id="why-so-many">
-  <h2>Why so many</h2>
-  <p>These slots cluster at fixed <em>offsets within their CDNAME block</em> - typically positions 2, 4, 5, 6 inside a scene's reserved 6-8-slot block. Each scene reserves N PROT slots for asset variants, but most scenes only fill some; unused slots get pochi-filled.</p>
+  <h2>Why 266 of them exist</h2>
+  <p>The archive's entries are grouped into named blocks, one per scene, by <a href="cdname.html"><code>CDNAME.TXT</code></a> (the disc's plain-text map of entry names). Each scene's block reserves a fixed run of 6-8 slots for asset variants, but most scenes only fill some of them; whatever a scene didn't use got pochi-filled. That's why the filler slots cluster at fixed <em>offsets within their CDNAME block</em> - typically positions 2, 4, 5, 6.</p>
   <p>Some scene blocks are almost entirely pochi. The <code>edstati3</code> block (likely "ending station 3", possibly cut content) has 36 of ~38 pochi entries.</p>
 </section>
 
-<section class="doc-section" id="how-to-handle">
-  <h2>How to handle</h2>
-  <p>Treat as known-empty:</p>
-  <ul class="bullets">
-    <li>Don't run format detectors against them.</li>
-    <li>Don't include in TMD/TIM bulk-scan totals.</li>
-    <li>Skip in any "what's still uncategorised" tally.</li>
-  </ul>
+<section class="doc-section" id="scratch-tail">
+  <h2>The scratch tail: a working texture that was never meant to load</h2>
+  <p>The padding runs 1926 bytes and ends with a DOS end-of-file marker; the bytes after it are whatever the mastering tool happened to leave in the sector. A large share of scene-block pochi slots carry a complete, well-formed 256&times;256 4bpp PSX TIM (the PlayStation's standard texture format, here at 4 bits per pixel) - often two, with image blocks destined for framebuffer coordinates <code>(768, 0)</code> and <code>(832, 0)</code> and palettes (CLUTs - colour lookup tables stored as rows of framebuffer pixels) at rows 473 / 479: the block's battle-side character pages, left over from an earlier mastering pass.</p>
+  <p>They parse. They upload. Retail never touches them, because the field loader dispatches the scene's <em>asset table</em> - an explicit list of which entries to load - rather than walking the scene's reserved slots.</p>
+  <p>A reimplementation that instead scans every entry in the scene's block for textures walks straight into the trap. Framebuffer <code>(768, 0)</code> is tpage <code>0x0C</code> (the 64&times;256 slice of video memory starting at framebuffer x=768), and that is exactly where most field scenes put their <strong>ground-tile atlas</strong> (the per-cell page in the <code>.MAP</code> object record's <code>+0x15</code>; see <a href="../subsystems/world-map.html">world-map</a> "Ground texturing"). The stale pochi upload lands last and erases it, and the ground quads then sample character / backdrop texels: Jeremi's floor becomes a grid of grey "tombstones", Mt. Dhini's a repeating vine/crack pattern. Rim Elm escapes only because its sibling slots are all <code>scene_tmd_stream</code>
+    entries, which the field build already excludes.</p>
 </section>
 
-<section class="doc-section" id="scratch-tail">
-  <h2>The scratch tail is <em>live-looking</em> data - never load it</h2>
-  <p>The bytes after the <code>0x1A</code> are <strong>not zeros</strong>: they are whatever the mastering tool left in the sector. A large share of scene-block pochi slots carry a complete, well-formed <code>256 x 256</code> 4bpp PSX TIM - often two, with image blocks at fb <code>(768, 0)</code> and <code>(832, 0)</code> and CLUT rows 473 / 479, the block's battle-side character pages.</p>
-  <p>They parse. They upload. Retail never touches them, because the field loader dispatches the scene's asset table rather than its reserved slots.</p>
-  <p>So an engine-side "scan every entry in the CDNAME block for TIMs" sweep uploads a page of stale texels <em>over a page the scene is actively using</em>. The collision is not hypothetical: fb <code>(768, 0)</code> is tpage <code>0x0C</code>, which is where most field scenes put their <strong>ground-tile atlas</strong> (the per-cell page in the <code>.MAP</code> object record's <code>+0x15</code>; see <a href="../subsystems/world-map.html">world-map</a> "Ground texturing").</p>
-  <p>A pochi upload lands last and erases it, and the ground quads then sample character / backdrop texels: Jeremi's floor becomes a grid of grey "tombstones", Mt. Dhini's a repeating vine/crack pattern. Rim Elm escapes only because its sibling slots are all <code>scene_tmd_stream</code> entries, which the field build already excludes.</p>
-  <p>The engine's field VRAM pre-pass skips <code>Class::PochiFiller</code> entries outright (<code>legaia_engine_core::scene_resources</code>). The disc-gated regression <code>field_ground_texture_pages_disc</code> pins both halves - that the hazard exists on the disc, and that the built VRAM does not contain it.</p>
+<section class="doc-section" id="layout">
+  <h2>Byte layout</h2>
+<pre><code>+0x000..0x786   ASCII "pochipochi..." (37 lines × 52 bytes + "po" = 1926 bytes)
++0x786          0x1A (DOS EOF marker)
++0x787..end     scratch / leftover data (no consistent format)</code></pre>
+  <p>Detection is two checks: <code>buf.starts_with(b"pochi") &amp;&amp; buf[0x786] == 0x1A</code>. Detection class: <code>pochi_filler</code>; detector + class enum in <code>crates/asset/src/categorize.rs</code>.</p>
+</section>
+
+<section class="doc-section" id="how-to-handle">
+  <h2>What a contributor must do</h2>
+  <p>Treat these slots as known-empty, whatever their tails parse as:</p>
+  <ul class="bullets">
+    <li>Don't run format detectors against them.</li>
+    <li>Don't include them in TMD/TIM bulk-scan totals.</li>
+    <li>Skip them in any "what's still uncategorised" tally.</li>
+    <li>Never upload their textures: any VRAM-building sweep must skip <code>Class::PochiFiller</code> (the categorizer's enum variant for these slots).</li>
+  </ul>
+  <p>The engine's field VRAM pre-pass does exactly that - it skips <code>Class::PochiFiller</code> entries outright (<code>legaia_engine_core::scene_resources</code>). The disc-gated regression <code>field_ground_texture_pages_disc</code> pins both halves: that the hazard exists on the disc, and that the built VRAM does not contain it.</p>
 </section>
 
 <section class="doc-section" id="see-also">

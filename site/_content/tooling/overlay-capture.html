@@ -1,12 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; overlay capture</div>
   <h1>Overlay capture</h1>
-  <p class="lede">Most of Legaia's gameplay code doesn't live in <code>SCUS_942.54</code> - it lives in RAM-loaded overlays at <code>0x801C0000+</code> that the runtime pages in per-mode (title, town/field, battle, options menu, world map, cutscene). Capturing these requires dumping live RAM from a running emulator.</p>
+  <p class="lede">Most of Legaia's gameplay code doesn't live in <code>SCUS_942.54</code> (the game's main executable on the disc) - it lives in <strong>overlays</strong>: chunks of MIPS code the game loads into RAM at <code>0x801C0000+</code> on demand, one per game mode (title, town/field, battle, options menu, world map, cutscene). Disassembling the executable alone therefore misses the field script interpreter, the battle state machine, the whole menu system. This page is the workflow for getting that code anyway: freeze a running emulator at the right moment, dump the RAM window, and import the slice into Ghidra. You only need it if you are extending the reverse-engineering itself.</p>
 </header>
 
 <section class="doc-section" id="overview">
   <h2>Overview</h2>
-  <p>PCSX-Redux is the recommended emulator (open-source, built-in debugger, Lua scripting). Mednafen is also supported via the gzipped save-state extraction path. Duckstation <code>.sav</code> save states are supported via <code>scripts/ghidra-analysis/extract-duckstation-overlay.py</code> (zstd-compressed; same anchor-string approach, 256 KB slice). All three give equivalent overlay dumps.</p>
+  <p>The recipe is always the same: play the game to the moment the overlay you want is resident, take a save state (a frozen snapshot of the console's full RAM), slice the overlay window out of it, and import the slice into Ghidra at its load address. PCSX-Redux is the recommended emulator (open-source, built-in debugger, Lua scripting). Mednafen is also supported via the gzipped save-state extraction path. Duckstation <code>.sav</code> save states are supported via <code>scripts/ghidra-analysis/extract-duckstation-overlay.py</code> (zstd-compressed; same anchor-string approach, 256 KB slice). All three give equivalent overlay dumps.</p>
 </section>
 
 <section class="doc-section" id="what-s-in-the-overlay-window">

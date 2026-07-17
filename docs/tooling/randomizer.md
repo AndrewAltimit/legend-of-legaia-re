@@ -136,7 +136,10 @@ offline spoiler log). The CLI below is the scriptable / shareable-PPF path.
 
 ## CLI: `legaia-rando`
 
-The top-level binary turns a disc + seed into a portable patch:
+The top-level binary turns a disc + seed into a portable patch. Every disc
+argument takes a raw Mode 2/2352 `.bin` or a `.cue` sheet (resolved to the
+`.bin` it references), and writing over an existing output file prints a
+one-line `overwriting PATH` notice:
 
 ```bash
 legaia-rando drops     --input DISC.bin                       # read-only: monster drops
@@ -189,6 +192,12 @@ PPF.
 `--dry-run` reports the plan without writing. `--manifest` writes a small TOML
 record of the seed, options, and change counts - it embeds no game bytes, so it
 is safe to share.
+
+`randomize` and `verify` **refuse a non-USA disc**: every offset and code hook
+targets the USA build (SCUS-94254), and a USA-built patch "applies" to a PAL
+disc (SCES_019.44/.45/.46) but produces a corrupt hybrid. `verify` prints the
+detected `disc:` label; `--allow-region-mismatch` overrides the guard when you
+know the patch was built for that exact disc.
 
 ### `randomize` options
 
@@ -260,7 +269,8 @@ convenience toggles below, additively - five slots with `--all-warps`. See
 
 `verify` applies a PPF to a copy of the user's disc and confirms the result still
 parses end to end. It is the recipient's check that a shared patch + seed match
-their own disc.
+their own disc - including the region: it prints the detected `disc:` label and
+refuses a non-USA disc unless `--allow-region-mismatch` is passed (see above).
 
 The `drops`, `chests`, `shops`, `casino`, `steals`, `arts`, `doors`,
 `starting-items`, `monster-stats`, `move-powers`, `affinity`, `spell-costs`,

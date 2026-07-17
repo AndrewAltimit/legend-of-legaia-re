@@ -98,9 +98,14 @@ Both route through `FUN_80026b4c`. The wrapping differs:
 
 ## CLI
 
+Inputs come from `asset tmd-scan extracted/PROT --out extracted/tmd_scan`
+(after `legaia-extract`), which names each hit `<entry>/raw_off<HEX>.tmd` by
+its byte offset in the PROT entry; the streaming containers under
+`extracted/streaming/<entry>/chunk##_TMD/####.tmd` work too.
+
 ```bash
 # Structural summary: objects, vertex / normal / primitive counts
-tmd info extracted/tmd_scan/0005_town01/000.tmd
+tmd info extracted/tmd_scan/0148_retock/raw_off000004.tmd
 
 # Walk a directory of TMDs, one line each; reports any that fail to parse
 tmd scan-dir extracted/tmd_scan
@@ -108,22 +113,22 @@ tmd scan-dir extracted/tmd_scan
 # Export to Wavefront OBJ (--out is required). Faces come from the Legaia
 # primitive iterator; --no-faces emits vertices only, to isolate whether a
 # bad mesh is a vertex problem or a primitive-walk problem.
-tmd dump-obj extracted/tmd_scan/0005_town01/000.tmd --out mesh.obj
-tmd dump-obj extracted/tmd_scan/0005_town01/000.tmd --out mesh.obj --no-faces
+tmd dump-obj extracted/tmd_scan/0148_retock/raw_off000004.tmd --out mesh.obj
+tmd dump-obj extracted/tmd_scan/0148_retock/raw_off000004.tmd --out mesh.obj --no-faces
 
 # Walk + print the Legaia 8-byte group headers and per-prim vertex indices
-tmd prims extracted/tmd_scan/0005_town01/000.tmd
+tmd prims extracted/tmd_scan/0148_retock/raw_off000004.tmd
 
 # Same, but also simulate the targeted VRAM upload the viewer does at runtime:
 # per-prim Ok / MissingClut / ClutDepthMismatch / MissingTexturePage. This is
 # the fast way to diagnose a wrong-palette mesh without opening the GUI.
 # --vram-dir is repeatable.
-tmd prims extracted/tmd_scan/0005_town01/000.tmd --vram-dir extracted/tim_scan/0005_town01
+tmd prims extracted/tmd_scan/0148_retock/raw_off000004.tmd --vram-dir extracted/tim_scan/0148_retock
 
 # Export the simulated post-upload 1024x512 VRAM as a PNG - confirms visually
 # that the right TIMs landed and nothing collided
-tmd vram-dump extracted/tmd_scan/0005_town01/000.tmd -o vram.png \
-    --vram-dir extracted/tim_scan/0005_town01
+tmd vram-dump extracted/tmd_scan/0148_retock/raw_off000004.tmd -o vram.png \
+    --vram-dir extracted/tim_scan/0148_retock
 
 # Ground-truth the primitive iterator across a whole directory: claimed vs
 # walked prim counts, bytes consumed vs section size, vertex-index range
@@ -132,7 +137,7 @@ tmd validate-prims extracted/tmd_scan
 # Diagnostic only: try PsyQ standard primitive sizes per mode byte. Legaia
 # uses a custom layout, so this is expected to *fail* to consume cleanly -
 # it exists to demonstrate that the standard reading doesn't fit.
-tmd probe extracted/tmd_scan/0005_town01/000.tmd
+tmd probe extracted/tmd_scan/0148_retock/raw_off000004.tmd
 ```
 
 ## See also

@@ -14,15 +14,20 @@ use legaia_rando::ppf;
 
 use crate::cli::{RandomizeArgs, mode_str};
 use crate::util::{
-    clock_seed, cue_contents, load_image, parse_item_id, resolve_seed, with_extension,
+    check_usa_disc, clock_seed, cue_contents, load_image, note_overwrite, parse_item_id,
+    resolve_seed, with_extension,
 };
 
 pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
-    let seed = match &args.seed {
+    let seed = match args.seed.as_deref() {
+        Some(s) if s.trim().is_empty() => {
+            bail!("empty --seed; pass a number or a non-empty string (or omit for a clock seed)")
+        }
         Some(s) => resolve_seed(s),
         None => clock_seed(),
     };
     let original = load_image(&args.input)?;
+    check_usa_disc(&original, args.allow_region_mismatch, "randomize")?;
     let mut patcher = DiscPatcher::open(original.clone()).context("parse disc image")?;
 
     let mode = args.drops.mode();
@@ -733,6 +738,7 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         .patch
         .clone()
         .unwrap_or_else(|| with_extension(&args.input, "ppf"));
+    note_overwrite(&patch_path);
     std::fs::write(&patch_path, &ppf_bytes)
         .with_context(|| format!("write patch {}", patch_path.display()))?;
     println!(
@@ -743,6 +749,7 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     );
 
     if let Some(out) = &args.output {
+        note_overwrite(out);
         std::fs::write(out, &patched).with_context(|| format!("write {}", out.display()))?;
         println!(
             "patched image: {} (contains Sony bytes - do not redistribute)",
@@ -772,8 +779,15 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
 }
 
 /// Apply a PPF to a copy of the disc and confirm the result still parses.
-pub(crate) fn cmd_verify(input: &Path, patch: &Path, output: Option<&Path>) -> Result<()> {
+pub(crate) fn cmd_verify(
+    input: &Path,
+    patch: &Path,
+    output: Option<&Path>,
+    allow_region_mismatch: bool,
+) -> Result<()> {
     let mut image = load_image(input)?;
+    let disc_label = check_usa_disc(&image, allow_region_mismatch, "this patch")?;
+    println!("disc: {disc_label}");
     let ppf = std::fs::read(patch).with_context(|| format!("read patch {}", patch.display()))?;
     let applied =
         legaia_rando::ppf::apply_ppf3(&mut image, &ppf).context("apply PPF to disc image")?;
@@ -787,6 +801,7 @@ pub(crate) fn cmd_verify(input: &Path, patch: &Path, output: Option<&Path>) -> R
         patcher.entry_count()
     );
     if let Some(out) = output {
+        note_overwrite(out);
         std::fs::write(out, patcher.image()).with_context(|| format!("write {}", out.display()))?;
         println!(
             "patched image: {} (contains Sony bytes - do not redistribute)",

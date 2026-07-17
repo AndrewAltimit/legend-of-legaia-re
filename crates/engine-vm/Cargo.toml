@@ -19,3 +19,8 @@ legaia-art = { path = "../art" }
 legaia-anm = { path = "../anm" }
 legaia-asset = { path = "../asset" }
 legaia-prot = { path = "../prot" }
+
+# SIGPIPE reset in the bin's main() so piping stdout into `head` exits
+# quietly instead of panicking on a broken pipe.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

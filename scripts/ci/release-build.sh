@@ -168,11 +168,43 @@ cp LICENSE-MIT "$STAGE/LICENSE-MIT"
     printf 'you supply yourself; none is included or redistributed.\n\n'
     printf 'Start with legaia-extract, which drives the whole disc pipeline:\n\n'
     printf '    ./legaia-extract "/path/to/your/disc.bin" --out extracted\n\n'
-    printf 'Licensed MIT OR Unlicense - see LICENSE and LICENSE-MIT.\n'
+    printf 'The tools in this archive (%d), one line each:\n\n' "${#BINS[@]}"
+    printf 'Extract + convert\n'
+    printf '    legaia-extract  full disc pipeline: files, textures, audio, font\n'
+    printf '    disc-extract    disc image -> ISO9660 files; "verify" checks your dump\n'
+    printf '    prot-extract    PROT.DAT archive -> named entries\n'
+    printf '    lzs-decode      the game'"'"'s LZS decompressor\n'
+    printf '    asset           format hub: categorize, sub-asset extract, data tables\n'
+    printf '    tim             textures -> PNG\n'
+    printf '    tmd             3D meshes -> OBJ\n'
+    printf '    vab             instrument banks -> VAG samples / WAV\n'
+    printf '    xa              streamed CD-XA audio -> WAV\n'
+    printf '    seq             sequenced music (SEQ) inspector\n'
+    printf '    mdec            FMV movies -> image frames\n'
+    printf '    mes             dialog-container inspector\n'
+    printf '    anm             animation-container inspector\n'
+    printf '    mdt             move-table inspector\n'
+    printf '    art             Tactical Arts data inspector\n'
+    printf '    font-extract    dialog font -> glyph atlas + widths\n'
+    printf 'Play + view\n'
+    printf '    legaia-engine   the clean-room engine: play-window, play-str, record/replay\n'
+    printf '    asset-viewer    windowed viewer: textures, meshes, audio, scenes\n'
+    printf 'Mod + translate\n'
+    printf '    legaia-rando    randomizer / disc patcher + "translate" language packs\n'
+    printf '    save-tool       memory-card and save-file inspector\n'
+    printf '    gamedata-tool   curated game-data lookups (arts, items, enemies, shops)\n'
+    printf '    cheat-tool      cheat-database inspector (databases built in)\n'
+    printf 'Reverse engineering\n'
+    printf '    field-disasm    field-VM bytecode disassembler\n'
+    printf '    mednafen-state  emulator save-state analysis\n\n'
+    printf 'Every binary supports --help and --version.\n\n'
+    printf 'Guides:          https://github.com/%s/tree/main/docs/guides\n' \
+        "${GITHUB_REPOSITORY:-AndrewAltimit/legend-of-legaia-re}"
     printf 'Docs and source: https://github.com/%s\n\n' \
         "${GITHUB_REPOSITORY:-AndrewAltimit/legend-of-legaia-re}"
-    printf 'Binaries in this archive (%d):\n\n' "${#BINS[@]}"
-    for b in "${BINS[@]}"; do printf '    %s%s\n' "$b" "$BIN_EXT"; done
+    printf 'Verify this archive against the SHA256SUMS file on the release page:\n'
+    printf '    sha256sum -c SHA256SUMS --ignore-missing\n\n'
+    printf 'Licensed MIT OR Unlicense - see LICENSE and LICENSE-MIT.\n'
     if [[ "$TARGET" == "x86_64-unknown-linux-gnu" ]]; then
         printf '\nRequires glibc %s or newer.\n' "$GLIBC_PIN"
         printf 'legaia-engine and asset-viewer need ALSA (libasound.so.2) at\n'

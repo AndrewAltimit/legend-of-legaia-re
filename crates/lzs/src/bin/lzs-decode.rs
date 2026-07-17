@@ -1,10 +1,16 @@
 use std::path::PathBuf;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 
+/// Printed after any successful "it decoded" report: the 4 KB ring buffer
+/// initialises to zeros, so nearly every input decodes without error and a
+/// clean decode proves nothing by itself.
+const DECODE_CAVEAT: &str = "note: LZS decodes almost any input without error - validate the output magic/contents \
+     before trusting it";
+
 #[derive(Parser)]
-#[command(name = "lzs-decode", about = "Legaia LZS decompressor")]
+#[command(name = "lzs-decode", version, about = "Legaia LZS decompressor")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -14,6 +20,8 @@ struct Cli {
 enum Cmd {
     /// Decompress a raw LZS stream of known output size.
     Raw {
+        /// File holding the compressed stream (typically an extracted PROT
+        /// entry `.BIN` from `prot-extract` / `legaia-extract`).
         input: PathBuf,
         /// Expected decompressed output size in bytes.
         #[arg(long)]
@@ -21,24 +29,34 @@ enum Cmd {
         /// Skip N bytes from the start of input before treating it as an LZS stream.
         #[arg(long, default_value_t = 0)]
         skip: usize,
+        /// Write the decoded bytes here (default: print a hex preview).
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
     /// Parse an `.lzs` container and decompress every section.
     Container {
+        /// LZS container file (e.g. an extracted PROT entry `.BIN` that
+        /// `lzs-decode probe`/`scan` reports as a container).
         input: PathBuf,
         /// Output directory; one file per section.
         out: PathBuf,
     },
     /// Try to interpret a file as an LZS container and report.
-    Probe { input: PathBuf },
+    Probe {
+        /// Candidate container file (typically an extracted PROT entry `.BIN`).
+        input: PathBuf,
+    },
     /// Probe every file in a directory and list the ones that look like
     /// valid LZS containers.
-    Scan { dir: PathBuf },
+    Scan {
+        /// Directory of extracted PROT entries (e.g. `extracted/PROT`).
+        dir: PathBuf,
+    },
     /// Decode every LZS container in a directory and group results by
     /// `(total_decoded_size, first_24_bytes_of_decoded_payload)` for
     /// cluster identification. Verification at scale.
     Audit {
+        /// Directory of extracted PROT entries (e.g. `extracted/PROT`).
         dir: PathBuf,
         /// Optional path: write a one-line summary per file as TSV
         /// (`name<TAB>sections<TAB>decoded_total<TAB>head_hex<TAB>md5_decoded_total`).
@@ -64,7 +82,17 @@ enum Cmd {
     },
 }
 
+/// Restore default SIGPIPE behaviour so piping into `head` etc. exits
+/// quietly instead of panicking on a broken-pipe write.
+fn reset_sigpipe() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> Result<()> {
+    reset_sigpipe();
     match Cli::parse().cmd {
         Cmd::Raw {
             input,
@@ -163,7 +191,7 @@ fn find(path: &PathBuf, needle_hex: &str, max_out: usize) -> Result<()> {
     let mut out: Vec<u8> = Vec::with_capacity(max_out + 64);
     let mut window = [0u8; 4096];
     for f in &files {
-        let d = std::fs::read(f)?;
+        let d = read_input(f)?;
         if d.len() < 2 {
             continue;
         }
@@ -193,7 +221,7 @@ fn find_sub(hay: &[u8], needle: &[u8]) -> Option<usize> {
 }
 
 fn raw(input: &PathBuf, size: usize, skip: usize, out: Option<&PathBuf>) -> Result<()> {
-    let raw = std::fs::read(input)?;
+    let raw = read_input(input)?;
     if skip > raw.len() {
         bail!("--skip {} larger than input ({}b)", skip, raw.len());
     }
@@ -205,15 +233,22 @@ fn raw(input: &PathBuf, size: usize, skip: usize, out: Option<&PathBuf>) -> Resu
         decoded.len(),
         decoded.len() as f64 / body.len() as f64
     );
+    eprintln!("{}", DECODE_CAVEAT);
     match out {
-        Some(p) => std::fs::write(p, &decoded)?,
+        Some(p) => std::fs::write(p, &decoded)
+            .with_context(|| format!("writing output {}", p.display()))?,
         None => print_preview(&decoded),
     }
     Ok(())
 }
 
+/// Read a whole input file with the path attached to any error.
+fn read_input(path: &PathBuf) -> Result<Vec<u8>> {
+    std::fs::read(path).with_context(|| format!("reading input {}", path.display()))
+}
+
 fn container(input: &PathBuf, out_dir: &PathBuf) -> Result<()> {
-    let raw = std::fs::read(input)?;
+    let raw = read_input(input)?;
     let c = legaia_lzs::parse_container(&raw)?;
     eprintln!(
         "[container] meta=[0x{:08X}, 0x{:08X}]  sections={}",
@@ -244,7 +279,7 @@ fn container(input: &PathBuf, out_dir: &PathBuf) -> Result<()> {
 }
 
 fn probe(input: &PathBuf) -> Result<()> {
-    let raw = std::fs::read(input)?;
+    let raw = read_input(input)?;
     match legaia_lzs::parse_container(&raw) {
         Ok(c) => {
             eprintln!(
@@ -267,6 +302,7 @@ fn probe(input: &PathBuf) -> Result<()> {
                     Err(e) => eprintln!("  s{:02} FAILED: {}", i, e),
                 }
             }
+            eprintln!("{}", DECODE_CAVEAT);
         }
         Err(e) => eprintln!("[no container] {}", e),
     }

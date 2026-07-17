@@ -1,7 +1,11 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; level-up</div>
   <h1>Level-Up</h1>
-  <p class="lede">Post-battle XP distribution, per-level stat gains, and the banner display. Retail applies XP, stat growth, and the level bump in one overlay-resident function, <code>FUN_801E9504</code>, reading two static <code>SCUS_942.54</code> tables. The clean-room engine extracts both tables from the user's executable at boot and drives them through <code>engine-core::levelup::LevelUpTracker</code>.</p>
+  <p class="lede">How characters grow: the post-battle XP split, the per-level stat gains, and the "LEVEL UP!" banner. The numbers turn out to be tidy - the entire XP curve is the closed form
+    <code>&lfloor;n&sup2;/4&rfloor; + 1</code> per level, and every stat's growth is a normalised curve that lands each character exactly on their level-99 ceiling. Retail applies XP, stat growth, and the
+    level bump in one function, <code>FUN_801E9504</code> (Ghidra's name for the traced routine at that address; it lives in a battle overlay - code loaded into RAM on demand - but reads two static tables
+    baked into <code>SCUS_942.54</code>, the game's main executable). The clean-room engine extracts both tables from the user's own executable at boot and drives them through
+    <code>engine-core::levelup::LevelUpTracker</code>.</p>
 </header>
 
 <section class="doc-section" id="xp-table">

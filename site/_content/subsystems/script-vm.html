@@ -1,7 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; field / event script VM</div>
   <h1>Field / event script VM</h1>
-  <p class="lede">The bytecode interpreter behind Legaia's overworld scripting - NPC movement, dialog triggers, cutscene sequencing, story-flag manipulation. Lives in PROT entry <code>0897_xxx_dat</code> (the town/field overlay) at <code>FUN_801DE840</code>. The largest function in the corpus: ~17.5&nbsp;KB / 4099 instructions / 357 outgoing calls. The biggest of Legaia's <a href="move-vm.html#vm-family">five runtime VMs</a>. <span class="status-done">All 43 opcodes ported.</span></p>
+  <p class="lede">The interpreter that makes Legaia's towns work. Everything that happens outside combat - a villager's dialogue, a door that warps you to the next room, a chest that gives you an item,
+    a cutscene trigger, a story flag flipping so the plot can advance - is a small script, and this VM runs them all. It is a bytecode interpreter: each script is a stream of instruction bytes
+    ("opcodes"), and a central dispatcher reads the byte at the current position and jumps to its handler. It lives in PROT entry <code>0897_xxx_dat</code> - the town/field <strong>overlay</strong>, a
+    chunk of code the game loads into RAM whenever you're walking around (PROT.DAT is the disc's single big archive of numbered entries) - at <code>FUN_801DE840</code>, Ghidra's name for the traced
+    function at that RAM address. It is the largest function in the corpus: ~17.5&nbsp;KB / 4099 instructions / 357 outgoing calls, and the biggest of Legaia's <a href="move-vm.html#vm-family">five
+    runtime VMs</a>. <span class="status-done">All 43 opcodes ported.</span></p>
 </header>
 
 <section class="doc-section" id="how-it-works">
@@ -14,14 +19,14 @@
 
   <p>Three of Legaia's flag-storage banks are exposed by clean opcode triplets: per-script local flags, global story flags (in PSX scratchpad), and ctx flag word. A fourth flag bank is hidden in the dispatcher's "default route" - opcodes whose high nibble is <code>0x5</code>, <code>0x6</code>, or <code>0x7</code> get dispatched to set / clear / test handlers operating on a 256-bit bitfield, almost certainly an "engine system flags" bank.</p>
 
-  <p>The decompiled source is at <code>ghidra/scripts/funcs/overlay_0897_801de840.txt</code>. References below to <code>func_0x80xxxxxx</code> are calls into <code>SCUS_942.54</code>; <code>FUN_801xxxxx</code> are sister functions inside the same 0897 overlay.</p>
+  <p>The decompiled source is at <code>ghidra/scripts/funcs/overlay_0897_801de840.txt</code>. References below to <code>func_0x80xxxxxx</code> are calls into <code>SCUS_942.54</code> (the game's main executable - always resident, unlike the overlays); <code>FUN_801xxxxx</code> are sister functions inside the same 0897 overlay.</p>
 
   <p>For the full opcode reference, the source markdown has the complete tables. This page summarises the structure; jump to <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm.md" target="_blank" rel="noopener">docs/subsystems/script-vm.md</a> for the definitive listing.</p>
 </section>
 
 <section class="doc-section" id="on-disc-form">
   <h2>On-disc form: the scene MAN - <em>not</em> <code>scene_event_scripts</code></h2>
-  <p>The on-disc carrier for field-VM bytecode is the <strong>scene MAN</strong> sub-asset (asset type <code>0x03</code>, the third descriptor in each scene's asset-table bundle; see <a href="../formats/man-relocation.html">man-relocation</a> and <code>legaia_asset::man_section</code>). <code>FUN_8003A1E4</code> walks the MAN's partition-1 actor-placement records, installs each actor's script pointer at <code>actor[+0x90]</code>, and runs the field VM (<code>FUN_801DE840</code>) on the body <code>1 + N*2 + 4</code> bytes into the record. Partition-1 record 0 is the scene-entry system script; records <code>1..</code> are per-actor interaction scripts. These decode cleanly as field-VM (~8% linear-walk error on the retail town MANs).</p>
+  <p>The on-disc carrier for field-VM bytecode is the <strong>scene MAN</strong> - each scene's script + data container, shipped as a sub-asset (asset type <code>0x03</code>, the third descriptor in each scene's asset-table bundle; see <a href="../formats/man-relocation.html">man-relocation</a> and <code>legaia_asset::man_section</code>). <code>FUN_8003A1E4</code> walks the MAN's partition-1 actor-placement records, installs each actor's script pointer at <code>actor[+0x90]</code>, and runs the field VM (<code>FUN_801DE840</code>) on the body <code>1 + N*2 + 4</code> bytes into the record. Partition-1 record 0 is the scene-entry system script; records <code>1..</code> are per-actor interaction scripts. These decode cleanly as field-VM (~8% linear-walk error on the retail town MANs).</p>
   <p class="hint"><strong>The <code>scene_event_scripts</code> / <code>scene_v12_table</code> prescript is a move-VM stager table - not field-VM bytecode.</strong> The <code>[u16 count][u16 offsets[count]]</code> prescript (offset 0, or <code>+0x800</code> behind the v12 header) carries <strong>move-VM (<code>FUN_80023070</code>) records in the summon-stager format</strong> <code>[i16 model_sel][u16 flags][move-VM bytecode]</code>: the <code>0xFFFF 0x0000</code> lead is <code>model_sel = -1</code> (a transform/pivot node) + <code>flags = 0</code>, and the <code>0x0008</code> terminator is move-VM Halt.</p>
   <p class="hint">Runtime chain: the field VM itself calls the installer <code>FUN_800252EC(id)</code>, which resolves <code>record = _DAT_8007b8d0 + offsets[id]</code> and hands it to the part-stager <code>FUN_80021B04</code>; the move VM then runs <code>record+4</code> each frame. See <code>legaia_asset::scene_event_scripts</code> (<code>move_stager_records</code>) and the disc-gated <code>prescript_move_stager_records_real</code> test (78 entries / 1855 records, 100% valid stager leads).</p>
 </section>

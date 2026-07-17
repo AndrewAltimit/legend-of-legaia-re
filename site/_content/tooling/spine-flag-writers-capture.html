@@ -1,11 +1,17 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; spine flag-writers capture</div>
   <h1>Capturing the chapter-1 spine story-flag writers</h1>
-  <p class="lede">Three chapter-1 story-progression writes live in un-imported RAM overlays, so static analysis can't name the code that performs them. This runbook drives one interactive play-forward session that arms all three watches at once and logs the writer PC (<code>ra</code>) of each.</p>
+  <p class="lede">Legaia records story progress as <em>story flags</em> - single bits in a RAM bitmap that scene scripts check to decide what
+  happens next. The "spine" is the chain of mandatory chapter-1 story beats, and the question this page answers is: <em>which code sets each
+  spine flag?</em> The writes happen inside overlays (code the game loads into RAM on demand) that were never imported into the disassembler,
+  so static analysis alone cannot name the writer. This runbook is the dynamic answer - one interactive PCSX-Redux play-forward session, human
+  at the controls, that arms watchpoints on all three spine writes at once and logs each writer's return address (<code>ra</code> - i.e.
+  <em>who called the flag-setter</em>). It is maintainer infrastructure, kept as a worked example of a live writer hunt.</p>
 </header>
 
 <section class="doc-section" id="targets">
   <h2>What gets watched</h2>
+  <p>Three targets, two watch methods: a plain write-watch on a RAM address, and an execution breakpoint on the game's own flag-setter function (<code>0x8003CE08</code>) filtered by the flag index in its <code>a0</code> argument register - the latter names the calling code directly.</p>
   <table>
     <thead><tr><th>Target</th><th>What it gates</th><th>Watch method</th></tr></thead>
     <tbody>

@@ -1,12 +1,23 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; scene-prefixed asset bundles</div>
   <h1>Scene-prefixed asset bundles <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">Four related shapes account for the dominant per-scene asset layouts on the disc. All of them lead with a 4-byte chunk0 header in the form <code>(type &lt;&lt; 24) | size</code>, with <code>type = 0x00</code> - the same encoding as a <a href="data-field.html">DATA_FIELD streaming</a> chunk header. The standard streaming walker would interpret <code>type=0x00</code> as the TIM dispatcher slot; specialised loaders in the runtime know to dispatch chunk0 differently based on the <em>content</em> magic at offset +4.</p>
+  <p class="lede">When the game loads a town, dungeon, or battle, it pulls that scene's assets - 3D geometry,
+  textures, sound banks, scripts - out of PROT.DAT (the disc's single big archive; everything except movies and
+  audio streams lives in its numbered entries). This page catalogues the related container shapes those
+  per-scene entries use. All of them lead with a 4-byte chunk0 header in the form <code>(type &lt;&lt; 24) |
+  size</code>, with <code>type = 0x00</code> - the same encoding as a <a href="data-field.html">DATA_FIELD
+  streaming</a> chunk header. But the type byte misleads: the standard streaming walker would interpret
+  <code>type=0x00</code> as the TIM dispatcher slot; specialised loaders in the runtime know to dispatch chunk0
+  differently based on the <em>content</em> magic at offset +4. Two traps run through the whole page: handing an
+  entry to the wrong walker mis-dispatches and crashes (the header packing is identical, the semantics aren't),
+  and the "script" records these bundles carry are <strong>not</strong> field-VM event bytecode, however natural
+  that assumption looks - they're move-VM stager records, animation/motion programs (see <a
+  href="#scene-event-scripts-prescript-only">scene_event_scripts</a>).</p>
 </header>
 
 <section class="doc-section" id="scene-tmd-stream-bare-tmd-prefix">
   <h2>scene_tmd_stream - bare-TMD prefix</h2>
-  <p>The dominant scene-asset layout. Implementation: <code>crates/asset/src/scene_tmd_stream.rs</code>. ~12% of all PROT entries match. Walked by <code>FUN_8001FE70</code> (the battle-init custom walker) - <strong>not</strong> by <code>FUN_8002541C</code> / <code>FUN_8001F05C</code> despite the chunk-header packing matching the standard format.</p>
+  <p>The dominant scene-asset layout: a 3D mesh up front, textures behind it. TMD is the PlayStation's 3D-model format (Legaia uses a custom variant, magic <code>0x80000002</code> - see <a href="tmd.html">tmd</a>); TIM is the PSX image/texture format. Implementation: <code>crates/asset/src/scene_tmd_stream.rs</code>. ~12% of all PROT entries match. Walked by <code>FUN_8001FE70</code> (the battle-init custom walker; <code>FUN_80xxxxxx</code> names are Ghidra-traced functions, labelled by RAM address) - <strong>not</strong> by <code>FUN_8002541C</code> / <code>FUN_8001F05C</code> despite the chunk-header packing matching the standard format.</p>
 <pre><code>+0x00          u32 chunk0_header   ; (type=0x00 &lt;&lt; 24) | size
 +0x04          Legaia TMD          ; magic 0x80000002, fills `size` bytes
 +0x04 + size   streaming chunks    ; FUN_8001FE70-style tail until
@@ -67,7 +78,7 @@ for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
 
 <section class="doc-section" id="scene-vab-stream-vab-prefix">
   <h2>scene_vab_stream - VAB-prefix</h2>
-  <p>Same outer wrapper as <code>scene_tmd_stream</code> but the leading chunk carries a Sony VAB sound bank instead of a TMD. The single largest distributed-VAB carrier in the corpus. Implementation: <code>crates/asset/src/scene_vab_stream.rs</code>. ~17% of all PROT entries match.</p>
+  <p>Same outer wrapper as <code>scene_tmd_stream</code> but the leading chunk carries a Sony VAB (a sound bank: instrument programs + sample data) instead of a TMD. The single largest distributed-VAB carrier in the corpus. Implementation: <code>crates/asset/src/scene_vab_stream.rs</code>. ~17% of all PROT entries match.</p>
 <pre><code>+0x00          u32 chunk0_header  ; LE: type=0x00 in high byte, size=N in low 24 bits
 +0x04          u32 magic          ; 0x56414270 ('VABp' read as LE u32 = 'p' 'B' 'A' 'V')
 +0x08          u32 version        ; 7 in retail (must be ≤ 10)
@@ -131,14 +142,14 @@ if let Some(s) = scene_vab_stream::detect(buf) {
   <p>Each descriptor is <code>(type_size, data_offset)</code>:</p>
   <ul class="bullets">
     <li><code>type_size</code> packs <code>(type_byte &lt;&lt; 24) | (size &amp; 0x00FF_FFFF)</code> - the same packing the <a href="asset-type.html">asset-type dispatcher</a> accepts directly.</li>
-    <li><code>data_offset</code> is a file-relative byte position of that descriptor's own LZS stream, addressed against the bundle entry's <strong>extended on-disc footprint</strong>, <em>not</em> the TOC-indexed sub-region. Descriptor 0's offset is the header end <code>8 + count*8</code>; later descriptors frequently fall past the indexed end into the trailing-overlay sectors the per-PROT TOC crops off. <code>size</code> is the <strong>decompressed</strong> byte count.</li>
+    <li><code>data_offset</code> is a file-relative byte position of that descriptor's own LZS stream (LZS is Legaia's LZSS-style compression - see <a href="lzs.html">lzs</a>), addressed against the bundle entry's <strong>extended on-disc footprint</strong>, <em>not</em> the TOC-indexed sub-region. Descriptor 0's offset is the header end <code>8 + count*8</code>; later descriptors frequently fall past the indexed end into the trailing-overlay sectors the per-PROT TOC crops off. <code>size</code> is the <strong>decompressed</strong> byte count.</li>
   </ul>
   <p>The <strong><code>Tmd</code> descriptor (type 2)</strong> carries the scene's <strong>environment geometry</strong> - an <code>asset::pack</code> of Legaia TMDs (terrain, buildings, props) inside that descriptor's LZS stream (<code>town01</code> = 121 meshes, &asymp;8041 verts). Because the meshes are LZS-packed, a raw-only TMD scan misses them; the engine's <code>SceneResources</code> walks each entry's LZS-decompressed sections (<code>tmd_scan::scan_entry</code>) to load them, then renders the field with every TIM uploaded (<code>upload_all_tims</code>, matching retail's field loader). The per-mesh world placement + mesh selection for this static geometry come from the field map file's object table (<code>FUN_8003a55c</code>; parser <code>legaia_asset::field_objects</code>, which resolves each object's <code>pack_index</code> into this pack) - see <a href="../subsystems/field-locomotion.html">field-locomotion</a>; <code>legaia-engine play-window</code> renders the town from it, and the <a href="../viewer.html">asset viewer</a>'s <em>full map</em> mode assembles the same draws in the browser (shared kernel <code>engine-core::field_env</code>).</p>
   <p><code>Scene::load</code> fetches <code>SceneAssetTable</code> <strong>and <code>lzs_container</code></strong> entries at their <strong>extended footprint</strong> (<code>ProtIndex::entry_bytes_extended</code>) so the sweep reaches the streams past the TOC-indexed end. The <code>lzs_container</code> case is the dungeon shape: a v12-family dungeon ships its environment pack as a standalone LZS container (<code>rikuroa</code> = extraction 156, 77 TMDs) whose streams <em>start</em> inside the TOC window but <em>run into</em> the trailing sectors - truncated at the indexed end, every stream fails to decode and the scene resolves zero environment meshes.</p>
 
   <p><strong>Some dungeon scenes carry the whole asset table inside their <a href="scene-v12-table.html">scene_v12_table</a> entry</strong>, at file offset <code>0x1000</code> - not as a first-class <code>SceneAssetTable</code> / <code>SceneScriptedAssetTable</code> sibling. The v12 runtime-fixup header wins the classifier at offset 0, so the standalone detector never probes <code>0x1000</code>. <code>find_bundle</code> adds a v12 fallback that scans a <code>SceneV12Table</code> entry's 0x800-aligned offsets for the first <code>scene_asset_table</code> carrying a type-3 (MAN) descriptor and returns it as <code>BundleSource::V12Embedded { table_offset: 0x1000 }</code>; extraction resolves <code>0x1000 + data_offset</code> against the extended footprint exactly as for the scripted variant. The v12-family dungeons (<code>rikuroa</code>, <code>dolk2</code>) have <strong>no</strong> MAN-bearing bundle at all: their base+3 table is the MAN-less <code>count=4</code> form, and the scene MAN is the type-3 chunk of the block's standalone <code>data_field_streaming</code> entry (<code>rikuroa</code> extraction 157, partitions <code>[13, 29, 64]</code>; <code>dolk2</code> extraction 70, <code>[29, 73, 17]</code>) - resolved by the engine's <code>field_man_payload</code> streaming fallback. (The historical &ldquo;v12 entry 164 / 76 embeds the MAN at <code>0x1000</code>&rdquo; reading decoded the NEXT block's bundle through the CDNAME-shifted scene window plus the extended-footprint over-read; see <a href="scene-v12-table.html#embedded-man-over-read">scene-v12-table &sect; over-read</a>.) Disc-gated coverage: <code>crates/engine-core/tests/v12_bundle_man_disc.rs</code>.</p>
 
-  <p>Type-sequence variants (count=7 unless noted):</p>
+  <p>The seven canonical slots are the scene's asset kinds: <code>TimList</code> (textures), <code>Tmd</code> (3D meshes), <code>Man</code> (the scene's map data file - encounter tables, actor placements, field scripts), <code>Mes</code> (dialog text), <code>Move</code> (animation programs, see <a href="mdt.html">mdt</a>), <code>Anm</code> (actor animations), <code>Vdf</code>. Type-sequence variants (count=7 unless noted):</p>
 <table>
 <thead><tr>
 <th>Tuple</th>

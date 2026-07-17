@@ -1,31 +1,34 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; asset extraction</div>
   <h1>Asset extraction</h1>
-  <p class="lede">Tools for extracting assets from a user-supplied disc image. Per the project's clean-room model, no Sony bytes ship in this repo - the user runs the extraction tools against their own disc.</p>
+  <p class="lede">Point one command at your own Legend of Legaia disc image and get back every texture as a PNG, every 3D model as an OBJ, every sound bank and streamed voice line as a WAV - the game's whole asset library, unpacked into ordinary files you can browse. This page describes what each stage of that pipeline does; the project ships no game data, so the tools always run against a disc you supply.</p>
 </header>
 
 <section class="doc-section" id="top-level-pipeline">
   <h2>Top-level pipeline</h2>
-  <p><code>legaia-extract</code> (in <code>crates/extract</code>) drives the full pipeline:</p>
-<pre><code>./target/release/legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted</code></pre>
-  <p>The pipeline runs verify → disc → PROT → categorize → streaming-format extract → TIM → PNG → CD-XA demux → WAV → TIM-catalog TSV. Use <code>--skip-png</code> to skip the slowest step; <code>--skip-xa</code> to skip the CD-XA audio demux; <code>--skip-catalog</code> to skip writing the texture-inventory TSVs (<code>prot_tim_catalog.tsv</code> + <code>prot_tim_deep_catalog.tsv</code>); <code>--skip-verify</code> to skip the SHA verification.</p>
+  <p>Almost everything on the disc lives inside <code>PROT.DAT</code>, the game's single big archive of numbered entries, and most of those entries are containers-within-containers: compressed streams, texture packs, mesh bundles. The extraction pipeline walks that whole chain - and <code>legaia-extract</code> (in <code>crates/extract</code>) drives it end to end:</p>
+<pre><code>./legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted</code></pre>
+  <p>A <code>.cue</code> path also works - the tool follows it to the <code>.bin</code>. (Release-archive users run <code>./legaia-extract</code>; source builds live under <code>target/release/</code>.)</p>
+  <p>The pipeline runs verify → disc → PROT → categorize → streaming-format extract → PNG → CD-XA demux → TIM catalogs → dialog font. Skip flags per stage: <code>--skip-verify</code> (SHA verification), <code>--skip-png</code> (the streaming-container TIM renders - a quick step that only writes a couple of PNGs; the bulk of the textures come from <code>asset tim-scan</code> + <code>tim convert-dir</code> afterwards), <code>--skip-xa</code> (CD-XA audio demux), <code>--skip-catalog</code> (the texture-inventory TSVs <code>prot_tim_catalog.tsv</code> + <code>prot_tim_deep_catalog.tsv</code>), <code>--skip-font</code> (the dialog-font export).</p>
   <p>Output lands in <code>./extracted/</code> (gitignored):</p>
 <pre><code>extracted/
 ├── PROT.DAT                       - raw archive copy
 ├── CDNAME.TXT                     - entry name map
 ├── SCUS_942.54                    - executable
-├── PROT/                          - per-PROT-entry files (1232 entries, named via CDNAME).
+├── PROT/                          - per-PROT-entry files (1233 entries, named via CDNAME).
 │                                     Includes trailing-overlay sectors for entries
 │                                     whose on-disc footprint extends past their
 │                                     TOC-indexed end (see formats/prot.html).
 │   ├── categorize.json            - per-class breakdown
 │   └── ####_&lt;name&gt;.BIN
 ├── streaming/                     - DATA_FIELD streaming sub-assets
-│   └── ####_&lt;name&gt;/chunk##_&lt;TYPE&gt;/####.tim
+│   └── ####_&lt;name&gt;/chunk##_TMD/####.tmd   (also chunk##_TIM_LIST/####.tim,
+│                                     blob.bin, _trailer.bin - mostly meshes)
+├── font/                          - dialog-font atlas + width table
 ├── XA/                            - raw Form-1 .XA dumps (truncated audio; not listenable)
 └── XA_WAV/                        - correctly-paced per-channel WAVs (one per (file_no, ch_no))
     └── XAn_fileN_chM.wav</code></pre>
-  <p>The CD-XA step reads the raw disc directly and demuxes every <code>*.XA</code> file into one WAV per <code>(file_no, ch_no)</code> channel, each decoded at its true per-sector rate / stereo mode. This bypasses the <code>extracted/XA/</code> Form-1 dumps from the disc-walk step, which truncate the Form-2 audio sectors (2324 → 2048) and collapse a file's multiplexed channels into one shuffled stream. The NA corpus is 34 files / 316 channels, all 4-bit 37.8 kHz; non-4-bit channels are skipped with a warning (the group decoder is 4-bit only). The decoder is bit-exact, so the WAVs are reference-quality.</p>
+  <p>The CD-XA step reads the raw disc directly and demuxes every <code>*.XA</code> file into one WAV per <code>(file_no, ch_no)</code> channel, each decoded at its true per-sector rate / stereo mode. This bypasses the <code>extracted/XA/</code> Form-1 dumps from the disc-walk step, which truncate the Form-2 audio sectors (2324 → 2048) and collapse a file's multiplexed channels into one shuffled stream. The NA corpus is 34 files / 316 channels, all 4-bit 37.8 kHz; the decoder handles 4-bit and 8-bit widths, and any other, unexpected width is skipped with a warning. The decoder is bit-exact, so the WAVs are reference-quality.</p>
 </section>
 
 <section class="doc-section" id="per-stage-tools">
@@ -36,19 +39,19 @@
   <p>Walks ISO9660 and writes every file. See <a href="../formats/disc.html">disc + ISO9660</a>.</p>
   <h3>PROT.DAT → entries (<code>prot-extract</code>)</h3>
 <pre><code>prot-extract extract extracted/PROT.DAT extracted/PROT/ --cdname extracted/CDNAME.TXT</code></pre>
-  <p>Splits PROT.DAT into 1232 numbered entries with CDNAME-derived filenames. Each extracted file's size is the entry's full on-disc footprint - <code>max(indexed_size, next_start - this_start)</code> - so trailing-overlay sectors past the TOC-indexed end (e.g. PROT 899's title-screen overlay code) are visible. See <a href="../formats/prot.html">PROT TOC</a>.</p>
-  <h3>LZS decode (<code>lzs-decode</code>)</h3>
+  <p>Splits PROT.DAT into 1233 numbered entries with CDNAME-derived filenames. Each extracted file's size is the entry's full on-disc footprint - <code>max(indexed_size, next_start - this_start)</code> - so trailing-overlay sectors past the TOC-indexed end (e.g. PROT 899's title-screen overlay code) are visible. See <a href="../formats/prot.html">PROT TOC</a>.</p>
+  <h3>LZS decode (<code>lzs-decode</code>) - the game's compression format</h3>
 <pre><code>lzs-decode raw --size N &lt;file&gt;          # standalone LZS body
 lzs-decode container &lt;file&gt; &lt;out_dir&gt;   # multi-section player.lzs container, one file per section</code></pre>
   <p>See <a href="../formats/lzs.html">LZS compression</a>.</p>
-  <h3>TIM → PNG (<code>tim</code>)</h3>
+  <h3>TIM → PNG (<code>tim</code>) - TIM is the PSX texture/image format</h3>
 <pre><code>tim convert &lt;file&gt; [out.png]            # single TIM; out defaults to &lt;file&gt;.png
 tim convert-dir &lt;dir&gt;                    # recursively convert every .tim under &lt;dir&gt;</code></pre>
-  <h3>TMD analysis (<code>tmd</code>)</h3>
+  <h3>TMD analysis (<code>tmd</code>) - TMD is the 3D mesh format</h3>
 <pre><code>tmd info        &lt;file&gt;            # header + object table
 tmd dump-obj    &lt;file&gt; --out &lt;prefix&gt;     # OBJ-with-faces export
 tmd validate-prims &lt;DIR&gt;          # bulk-walk every prim group, sanity-check</code></pre>
-  <h3>VAB extraction (<code>vab</code>)</h3>
+  <h3>VAB extraction (<code>vab</code>) - VAB is the PSX instrument/sound-bank format</h3>
 <pre><code>vab list    &lt;file&gt;                                  # find + describe every VAB
 vab extract &lt;file&gt; --out &lt;out_dir&gt; [--wav] [--sample-rate 22050]   # VAG bodies (+ optional WAV)</code></pre>
   <h3>CD-XA demux → WAV (<code>xa</code>)</h3>
@@ -63,7 +66,7 @@ xa convert &lt;file.xa&gt; [-o out.wav]                       # single Form-1 du
 <pre><code>asset categorize     &lt;DIR&gt; [--out categorize.json]    # per-class breakdown
 asset extract        &lt;file&gt; --out &lt;out_dir&gt;           # streaming-format chunks → individual files
 asset stream         &lt;file&gt;                           # walk DATA_FIELD chunks, no extraction
-asset describe       &lt;file&gt;                           # asset-descriptor walk
+asset describe       &lt;file&gt;                           # container-TOC (player.lzs-style descriptor header) parse
 asset effect-bundle  &lt;file&gt;
 asset tmd-scan       &lt;DIR&gt;                            # bulk byte-search for TMD magic
 asset tim-scan       &lt;DIR&gt;                            # bulk byte-search for TIM magic (per-entry, lenient)
@@ -71,7 +74,7 @@ asset tim-catalog    &lt;PROT.DAT&gt; [--out f.tsv|f.json]  # flat strict-valida
 asset tim-deep-catalog &lt;PROT.DAT&gt; [--out f.tsv|f.json] # TIMs inside LZS-compressed sections</code></pre>
   <p><code>tim-catalog</code> scans the whole <code>PROT.DAT</code> image (not per-entry), strict-validates each TIM, and maps each hit to its owning PROT entry + offset (or the unindexed system-UI gap). It recovers the same set an independent reference decoder reports; the committed catalog + a disc-gated regression pin the result. <code>--rollup</code> prints the count + digest the test pins.</p>
   <p><code>tim-deep-catalog</code> covers what the flat catalog can't see: it LZS-decompresses every entry and catalogs the TIMs inside each decoded section (most character / scene textures are compressed). Each row is keyed by <code>(entry, LZS section, offset-in-section)</code>. A hit is admitted only when the decompressed bytes strict-parse <strong>and</strong> decode to RGBA - LZS "decodes without error" is never a validity signal (the ring buffer inits to zeros). It has its own committed reference + disc-gated regression. See <a href="../formats/tim.html">TIM</a>.</p>
-  <h3>MES dialog (<code>mes</code>)</h3>
+  <h3>MES dialog (<code>mes</code>) - MES is the dialog-text container format</h3>
 <pre><code>mes info     &lt;file&gt;
 mes disasm   &lt;file&gt;
 mes json     &lt;file&gt;</code></pre>

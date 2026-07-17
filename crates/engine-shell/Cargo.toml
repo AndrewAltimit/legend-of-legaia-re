@@ -39,6 +39,11 @@ serde_json.workspace = true
 toml = "0.8"
 sha2 = "0.10"
 
+# SIGPIPE reset in the bin's main() so piping stdout into `head` exits
+# quietly instead of panicking on a broken pipe.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 tempfile = "3"
 # tile_board_draw_live decodes each scene's MAN (LZS in the scene bundle) for

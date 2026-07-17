@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
-#[command(name = "tim", about = "PSX TIM texture parser + PNG exporter")]
+#[command(name = "tim", version, about = "PSX TIM texture parser + PNG exporter")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -12,11 +12,15 @@ struct Cli {
 #[derive(Subcommand)]
 enum Cmd {
     /// Print metadata for a TIM file (header, CLUT block, image dims).
+    ///
+    /// Input: a .tim produced by `legaia-extract <disc.bin> --out extracted`
+    /// (see extracted/tim_scan/<entry>/raw_off<HEX>_<W>x<H>_<BPP>bpp.tim).
     Info { path: PathBuf },
     /// Convert a single TIM to PNG.
     ///
-    /// For CLUT-bearing TIMs, --clut selects the palette row (default 0).
-    /// With --all-cluts, emit one PNG per CLUT row.
+    /// Input: a .tim produced by `legaia-extract <disc.bin> --out extracted`
+    /// (see extracted/tim_scan/). For CLUT-bearing TIMs, --clut selects the
+    /// palette row (default 0). With --all-cluts, emit one PNG per CLUT row.
     Convert {
         path: PathBuf,
         /// Output PNG path. Defaults to `<path>.png` (or `<path>_clut<N>.png` with --all-cluts).
@@ -28,6 +32,9 @@ enum Cmd {
         all_cluts: bool,
     },
     /// Recursively convert every .tim under a directory to .png.
+    ///
+    /// Input: a directory of .tim files, e.g. extracted/tim_scan/ from
+    /// `legaia-extract <disc.bin> --out extracted`.
     ConvertDir {
         dir: PathBuf,
         /// Output directory. Defaults to mirroring the input layout next to it.
@@ -38,7 +45,17 @@ enum Cmd {
     },
 }
 
+/// Rust ignores SIGPIPE by default; restore SIG_DFL so `tim ... | head`
+/// exits quietly instead of panicking on a broken pipe.
+fn reset_sigpipe() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> Result<()> {
+    reset_sigpipe();
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::Info { path } => info(&path),

@@ -21,3 +21,7 @@ legaia-lzs = { path = "../lzs" }
 legaia-tim = { path = "../tim" }
 legaia-tmd = { path = "../tmd" }
 legaia-xa = { path = "../xa" }
+legaia-font = { path = "../font" }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

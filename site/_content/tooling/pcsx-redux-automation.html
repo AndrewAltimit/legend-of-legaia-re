@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; pcsx-redux automation</div>
   <h1>PCSX-Redux automation</h1>
-  <p class="lede">PCSX-Redux ships a Lua scripting API + a breakpoint debugger over the live PSX CPU. The <code>scripts/pcsx-redux/</code> directory contains closed-loop probes that use this combination to answer questions static analysis can't: <em>"what code reads this address?"</em>, <em>"when does this RAM region get populated?"</em>, <em>"what's the dispatch path between two functions?"</em>.</p>
+  <p class="lede">PCSX-Redux is an open-source PSX emulator with a Lua scripting API and a breakpoint debugger over the live emulated CPU - which means a script can boot the game, jump to a saved moment, plant traps on addresses of interest, and log what the running game actually does with them. The <code>scripts/pcsx-redux/</code> directory contains closed-loop probes built on that combination, answering questions static disassembly can't: <em>"what code reads this address?"</em>, <em>"when does this RAM region get populated?"</em>, <em>"what's the dispatch path between two functions?"</em>. This is maintainer infrastructure - you only need it if you are extending the reverse-engineering itself.</p>
 </header>
 
 <section class="doc-section" id="overview">

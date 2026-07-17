@@ -1,11 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; determinism + replay</div>
   <h1>Engine determinism + scripted-input replay</h1>
-  <p class="lede">The engine ships a record/replay loop that captures per-frame pad input to a <code>.toml</code> file and plays it back deterministically. The same input file run twice produces a bit-identical state trace - that property is asserted by a disc-free regression test so any future change that introduces non-determinism fails CI.</p>
+  <p class="lede">Play the engine with the recorder armed and every button press lands in a small, human-readable <code>.toml</code> text file. Hand that file back to <code>legaia-engine replay</code> and the engine re-runs the session frame for frame - the same inputs always produce exactly the same game, down to the last random number. That guarantee is what makes bug reports reproducible and regressions catchable: a disc-free test replays a canned input file twice and asserts the two state traces are bit-identical, so any future change that sneaks in non-determinism fails CI.</p>
 </header>
 
 <section class="doc-section" id="pieces">
   <h2>Three pieces</h2>
+  <p>The feature is a file format, a test, and a pair of CLI subcommands:</p>
   <table>
     <thead><tr><th>Component</th><th>Lives in</th><th>Role</th></tr></thead>
     <tbody>
@@ -30,6 +31,7 @@
 
 <section class="doc-section" id="format">
   <h2>File format (<code>j-replay-v1</code>)</h2>
+  <p>A replay is plain TOML: a <code>[meta]</code> header, a sparse list of controller events (the PSX pad's buttons packed into one 16-bit mask; only frames where the mask changes are stored), and an optional list of expected checkpoints that turns the file into a regression fixture.</p>
 <pre><code>[meta]
 schema = "j-replay-v1"
 scenario = "title_attract"        # optional; resolves into scripts/scenarios.toml

@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; asset descriptor format</div>
   <h1>Asset descriptor format <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">A <code>(type_size, data_offset)</code> pair list walked by <code>FUN_80020224</code>. The walker has zero static xrefs in <code>SCUS_942.54</code> and is reached at runtime from the town/field overlay's main init path. Implementation: <code>crates/asset/src/lib.rs::parse_player_lzs</code>.</p>
+  <p class="lede">A small table-of-contents layout: a list of <code>(type_size, data_offset)</code> pairs, each pointing at one asset inside a buffer and saying what type it is. The walker that consumes it is <code>FUN_80020224</code> (a Ghidra-traced routine in the game's executable) - and the interesting part is that <em>nothing in the executable ever calls it</em>. It's reached only at runtime, from an overlay (a chunk of MIPS code the game loads into RAM on demand). Implementation: <code>crates/asset/src/lib.rs::parse_player_lzs</code>.</p>
 </header>
 
 <section class="doc-section" id="layout">
@@ -11,17 +11,17 @@ u32 (header word, purpose unknown)
 u32 type_size_0   u32 data_offset_0
 u32 type_size_1   u32 data_offset_1
 ...</code></pre>
-  <p>Each descriptor pair is <code>(type_size, data_offset)</code> where <code>data_offset</code> is byte-relative to the buffer start, and <code>type_size</code> packs the <a href="asset-type.html">asset-type byte</a> in the high byte.</p>
+  <p>Each descriptor pair is <code>(type_size, data_offset)</code> where <code>data_offset</code> is byte-relative to the buffer start, and <code>type_size</code> packs the <a href="asset-type.html">asset-type byte</a> (the 8-bit tag saying TIM / TMD / MES / &hellip;) in the high byte.</p>
 </section>
 
 <section class="doc-section" id="how-fun-80020224-got-reached">
   <h2>How <code>FUN_80020224</code> is reached</h2>
-  <p><code>FUN_801D6704</code> (the town overlay's <code>MAIN_INIT</code>) calls <code>FUN_80020224</code> at <code>0x801D6B0C</code> with <code>a0 = 0</code>. The result is stored at <code>0x80087AF8</code>. So the format IS exercised by retail gameplay - through a runtime overlay rather than the on-disc <code>SCUS_942.54</code> static call graph.</p>
+  <p>Static analysis of <code>SCUS_942.54</code> (the game's main executable) finds zero cross-references to the walker - which looks like dead code until you follow the overlays. <code>FUN_801D6704</code> (the town overlay's <code>MAIN_INIT</code>) calls <code>FUN_80020224</code> at <code>0x801D6B0C</code> with <code>a0 = 0</code>. The result is stored at <code>0x80087AF8</code>. So the format IS exercised by retail gameplay - through a runtime overlay rather than the executable's static call graph. (This "zero static callers but alive via overlay" pattern recurs across the whole codebase.)</p>
 </section>
 
 <section class="doc-section" id="strict-scan-against-the-disc">
   <h2>Strict-scan against the disc</h2>
-  <p>Strictly scanning all 1232 PROT entries against this format finds zero hits. That's consistent with both "format isn't on disc as a top-level entry" and "format is on disc but indexed differently" (e.g., embedded inside a scene asset table or a compressed payload). The parser is left in place for when a real on-disc consumer surfaces.</p>
+  <p>Strictly scanning all 1233 PROT entries (the numbered slots of <code>PROT.DAT</code>, the disc's main asset archive) against this format finds zero hits. That's consistent with both "format isn't on disc as a top-level entry" and "format is on disc but indexed differently" (e.g., embedded inside a scene asset table or a compressed payload). The parser is left in place for when a real on-disc consumer surfaces.</p>
 </section>
 
 <section class="doc-section" id="note-on-naming">

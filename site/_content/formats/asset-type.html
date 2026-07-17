@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; asset type dispatcher</div>
   <h1>Asset type dispatcher <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede"><code>FUN_8001F05C</code> is the central asset-type dispatcher - every per-asset-format branch (TIM, TMD, MES, ANM, …) is reached through it. Implementation: <code>crates/asset/src/lib.rs::AssetType</code>. Source: <code>ghidra/scripts/funcs/8001f05c.txt</code>.</p>
+  <p class="lede">How the game knows what a loaded blob of bytes <em>is</em>. Every asset arrives tagged with an 8-bit type byte (0 = TIM texture, 2 = TMD mesh, 4 = MES dialog, and so on), and a single routine - <code>FUN_8001F05C</code>, named by its address as traced in Ghidra - reads that byte and routes the data to the right format handler, decompressing on the way if needed. Every per-asset-format branch in the engine is reached through it. Implementation: <code>crates/asset/src/lib.rs::AssetType</code>. Source: <code>ghidra/scripts/funcs/8001f05c.txt</code>.</p>
 </header>
 
 <section class="doc-section" id="calling-convention">
@@ -10,12 +10,13 @@
   <ul class="bullets">
     <li><code>type_and_size</code> packs <strong>type</strong> in the high 8 bits, <strong>size</strong> in the low 24 bits.</li>
     <li><code>copy_only != 0</code> → asset is uncompressed; the dispatcher calls <code>FUN_8001A8B0</code> (memcpy).</li>
-    <li><code>copy_only == 0</code> → asset is LZS-compressed; the dispatcher calls <code>FUN_8001A55C</code> (the <a href="lzs.html">LZS decoder</a>).</li>
+    <li><code>copy_only == 0</code> → asset is LZS-compressed; the dispatcher calls <code>FUN_8001A55C</code> (the <a href="lzs.html">LZS decoder</a> - the game's dictionary decompressor).</li>
   </ul>
 </section>
 
 <section class="doc-section" id="type-table">
   <h2>Type table</h2>
+  <p>The full type space. A nice detail: the names aren't guesses - the developers left per-type malloc-error strings in the executable (<code>s_Tim_Malloc_Err_800104E8</code>, <code>s_tmd_malloc_err_80010504</code>, &hellip;), so each type byte comes with its original dev-side name.</p>
 <table>
 <thead><tr>
 <th>Type byte</th>
@@ -95,7 +96,6 @@
 </tr>
 </tbody>
 </table>
-  <p>Names come from the dev's malloc-error strings literally embedded in the binary (<code>s_Tim_Malloc_Err_800104E8</code>, <code>s_tmd_malloc_err_80010504</code>, etc).</p>
 </section>
 
 <section class="doc-section" id="return-value-bitfield">
@@ -197,7 +197,7 @@ return_value &amp; 0xFF00  = bit per FLAG-type marker seen</code></pre>
 
 <section class="doc-section" id="where-the-dispatcher-actually-gets-called">
   <h2>Where the dispatcher actually gets called</h2>
-  <p>In retail SCUS, only <code>FUN_8002541C</code>'s 0x14 (DATA_FIELD) branch reaches the dispatcher <em>from inside <code>SCUS_942.54</code></em>. The other static call site is <code>FUN_80020224</code> - a descriptor-pair walker with zero static xrefs in SCUS. It IS called at runtime from the town/field overlay (<code>FUN_801D6704</code> → <code>0x801D6B0C</code> with <code>a0 = 0</code>); see <a href="asset-descriptor.html">asset descriptor</a>.</p>
+  <p>In retail SCUS (<code>SCUS_942.54</code>, the game's main executable), only <code>FUN_8002541C</code>'s 0x14 (DATA_FIELD) branch reaches the dispatcher <em>from inside the executable's static call graph</em>. The other static call site is <code>FUN_80020224</code> - a descriptor-pair walker with zero static xrefs in SCUS (no compiled-in caller anywhere in the executable). It IS called at runtime from the town/field overlay (a chunk of MIPS code the game loads into RAM on demand - most game logic lives in these overlays, not the executable): <code>FUN_801D6704</code> → <code>0x801D6B0C</code> with <code>a0 = 0</code>; see <a href="asset-descriptor.html">asset descriptor</a>.</p>
 </section>
 
 

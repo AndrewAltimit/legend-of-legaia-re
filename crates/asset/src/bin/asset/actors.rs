@@ -327,7 +327,7 @@ pub(crate) fn monster_archive_one(
     glb: Option<&Path>,
 ) -> Result<()> {
     use legaia_asset::monster_archive;
-    let bytes = std::fs::read(input)?;
+    let bytes = crate::common::read_input(input)?;
     println!(
         "monster archive: {} bytes, {} slots of 0x{:X}",
         bytes.len(),
@@ -515,7 +515,7 @@ pub(crate) fn man_one(
     max_formations: usize,
     max_regions: usize,
 ) -> Result<()> {
-    let buf = std::fs::read(input)?;
+    let buf = crate::common::read_input(input)?;
     let (man_bytes, desc) = load_man_bytes(&buf)?;
     let man = legaia_asset::man_section::parse(&man_bytes)
         .map_err(|e| anyhow::anyhow!("MAN parse: {e}"))?;

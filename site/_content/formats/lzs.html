@@ -1,21 +1,21 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; legaia lzs compression</div>
   <h1>Legaia LZS compression <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">The compression wrapped around most of the disc's bulk assets - meshes, textures, scene MANs, the monster archive. Reverse-engineered byte-for-byte from <code>FUN_8001A55C</code>. Implementation: <code>crates/lzs/src/lib.rs</code>.</p>
+  <p class="lede">The compression scheme wrapped around most of the disc's bulk assets - meshes, textures, scene scripts, the monster archive. It's a variant of LZSS, the classic dictionary compressor that replaces repeated byte runs with short back-references into a sliding window of recent output. Reverse-engineered byte-for-byte from <code>FUN_8001A55C</code> (the decompressor routine in the game's executable, named by its address as traced in Ghidra). Implementation: <code>crates/lzs/src/lib.rs</code>.</p>
 </header>
 
 <aside class="notice warn">
-  <div class="notice-title">Decompresses without error is not a validity signal</div>
-  The 4096-byte ring buffer initialises to zeros, so most random inputs decode without error to plausible-looking zero-padded output. Always magic-check the <em>decoded</em> bytes before treating an LZS-decode result as a hit. The decoder's <code>tracked</code> mode returns end-of-stream offsets and overrun bits so callers can apply strict gates.
+  <div class="notice-title">"Decompresses without error" is not a validity signal</div>
+  The decoder's 4096-byte ring buffer initialises to zeros, so most <em>random</em> inputs also decode without error - to plausible-looking zero-padded output. Feeding arbitrary bytes through the decoder proves nothing. Always magic-check the <em>decoded</em> bytes before treating an LZS-decode result as a hit. The decoder's <code>tracked</code> mode returns end-of-stream offsets and overrun bits so callers can apply strict gates.
 </aside>
 
 <section class="doc-section" id="overview">
   <h2>Overview</h2>
   <p>A standard LZSS variant with three Legaia-specific choices:</p>
   <ul class="bullets">
-    <li><strong>4096-byte sliding ring buffer</strong>, initialised to zero.</li>
+    <li><strong>4096-byte sliding ring buffer</strong> (the dictionary of recent output that back-references copy from), initialised to zero.</li>
     <li><strong>Initial write position 0xFEE</strong> (3054).</li>
-    <li><strong>Control byte: 8 bits, LSB-first.</strong></li>
+    <li><strong>Control byte: 8 bits, LSB-first</strong> (each bit says whether the next item is a literal byte or a back-reference).</li>
   </ul>
 </section>
 
@@ -57,12 +57,12 @@ while !done {
 
 <section class="doc-section" id="container-format">
   <h2>Container format</h2>
-  <p><code>crates/lzs::parse_container</code> handles the multi-section <code>player.lzs</code>-style wrapper used by some PROT entries - a length-prefixed array of independently-compressed sections concatenated together.</p>
+  <p><code>crates/lzs::parse_container</code> handles the multi-section <code>player.lzs</code>-style wrapper used by some PROT entries (entries of <code>PROT.DAT</code>, the disc's main asset archive) - a length-prefixed array of independently-compressed sections concatenated together.</p>
 </section>
 
 <section class="doc-section" id="encoding-re-packing">
   <h2>Encoding (re-packing)</h2>
-  <p>The retail game ships only the <em>decoder</em>; there is no Sony encoder to reverse. <code>crates/lzs::compress</code> is an encoder for re-packing edited assets (the <a href="../tooling/randomizer.html">randomizer / disc patcher</a> uses it):</p>
+  <p>The retail game ships only the <em>decoder</em>; there is no Sony encoder to reverse. <code>crates/lzs::compress</code> is an encoder written fresh for re-packing edited assets (the <a href="../tooling/randomizer.html">randomizer / disc patcher</a> uses it):</p>
   <ul class="bullets">
     <li>An LZSS matcher with one-step lazy matching whose output the retail decoder accepts byte-for-byte - <strong>not</strong> a bit-exact clone of Sony's packer.</li>
     <li>Correctness criterion: <code>decompress(compress(x)) == x</code>, validated by a disc-gated round-trip over the real PROT corpus.</li>
@@ -73,7 +73,7 @@ while !done {
 
 <section class="doc-section" id="where-lzs-is-consumed">
   <h2>Where LZS is consumed</h2>
-  <p>The asset-type dispatcher (<code>FUN_8001F05C</code>) calls the LZS path when its <code>copy_only</code> flag is zero. See <a href="asset-type.html">asset type dispatcher</a>. Standalone-shaped LZS containers (with the descriptor-pair walker in <a href="asset-descriptor.html"><code>asset-descriptor.md</code></a>) are also recognised by <code>crates/lzs</code>.</p>
+  <p>The asset-type dispatcher (<code>FUN_8001F05C</code> - the routine that routes each loaded asset to its format handler) calls the LZS path when its <code>copy_only</code> flag is zero. See <a href="asset-type.html">asset type dispatcher</a>. Standalone-shaped LZS containers (with the descriptor-pair walker in <a href="asset-descriptor.html"><code>asset-descriptor.md</code></a>) are also recognised by <code>crates/lzs</code>.</p>
 </section>
 
 

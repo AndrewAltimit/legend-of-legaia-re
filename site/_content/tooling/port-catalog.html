@@ -1,11 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; port catalog</div>
   <h1>Port catalog</h1>
-  <p class="lede">A per-function status catalog that unifies four independent signals across the decompilation and engine-port tracks: a Ghidra dump exists, a docs page cites it, a Rust source carries a <code>// PORT:</code> tag, and the address is on the ignore list (statically-linked PsyQ that maps to native equivalents rather than line-by-line porting).</p>
+  <p class="lede">The project's progress ledger, kept at function granularity. Reverse-engineering the game means walking each traced retail function from disassembly to documentation to a clean-room Rust reimplementation - and the port catalog is the tool that tracks where every function stands. You only need this page if you are contributing to the decompilation or engine tracks.</p>
 </header>
 
 <section class="doc-section" id="columns">
   <h2>What each column means</h2>
+  <p>Each catalog row is one retail function address, with four independent yes/no signals: a Ghidra decompiler dump exists (<em>dumped</em>), a docs page cites it (<em>documented</em>), a Rust source carries a <code>// PORT:</code> tag for it (<em>ported</em>), and it sits on the ignore list (<em>ignored</em> - statically-linked PsyQ SDK code, Sony's standard PSX library, which the clean-room port maps to native equivalents rather than porting line by line). The interesting queries are the cross-cuts of those columns - see <a href="#cross-cuts">what the columns surface</a>.</p>
   <table>
     <thead><tr><th>Column</th><th>Source of truth</th></tr></thead>
     <tbody>

@@ -1,7 +1,11 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; effect VM</div>
   <h1>Effect VM (battle effect cluster)</h1>
-  <p class="lede">The runtime that drives battle-spawn effects - spell casts, item-use animations, hit sparks. Lives in the battle overlay (<code>0898_xxx_dat</code>); the per-frame walker is <code>FUN_801E0088</code>. The odd one out of Legaia's <a href="move-vm.html#vm-family">five runtime VMs</a>: it is a per-slot <strong>state machine</strong>, not a bytecode dispatcher - there's no central switch on a per-slot opcode byte, and state transitions are inlined throughout 600+ instructions of the walker.</p>
+  <p class="lede">The system that plays battle effects - the fireball flying at an enemy, the flash of an item use, the spark when a punch lands. Each effect is a small on-disc script, and this is the
+    runtime that executes them. It lives in the battle overlay (<code>0898_xxx_dat</code> - an overlay is a chunk of code the game loads into RAM on demand; the battle overlay is resident only during
+    fights), and the per-frame walker is <code>FUN_801E0088</code> (Ghidra's name for the traced function at that RAM address). It is the odd one out of Legaia's <a href="move-vm.html#vm-family">five
+    runtime VMs</a>: the other four are bytecode dispatchers (read an instruction byte, jump to its handler), while this one is a per-slot <strong>state machine</strong> - there's no central switch on a
+    per-slot opcode byte, and state transitions are inlined throughout 600+ instructions of the walker.</p>
 </header>
 
 <section class="doc-section" id="how-it-works">
@@ -12,7 +16,7 @@
 
   <p>Unlike the <a href="script-vm.html">field VM</a> or the <a href="move-vm.html">move VM</a>, this isn't a clean bytecode dispatcher with a switch table. It's a state machine where the "next state" tokens live inside the on-disc effect script, and the walker reads them inline. Producing a clean opcode table from it would mean extracting the per-state transition logic by hand (~10&ndash;20 cases). The cleaner port path is to model the walker as a state-machine class and accept its decompile shape rather than insisting on an opcode table.</p>
 
-  <p>The on-disc input is the <a href="../formats/index.html">runtime 2-pack wrapper</a> at PROT entry 873 (<code>data\battle\efect.dat</code>): pack0 holds 14 sprite-anim records, pack1 holds 33 effect-ID scripts indexed by the public effect ID.</p>
+  <p>The on-disc input is the <a href="../formats/effect.html">runtime 2-pack wrapper</a> at PROT entry 873 (<code>data\battle\efect.dat</code>; PROT.DAT is the disc's single big archive, and 873 is one of its numbered entries): pack0 holds 14 sprite-anim records, pack1 holds 33 effect-ID scripts indexed by the public effect ID.</p>
 </section>
 
 <section class="doc-section" id="placement">

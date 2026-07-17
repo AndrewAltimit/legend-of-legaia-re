@@ -1,12 +1,13 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; character mesh</div>
   <h1>Player-character mesh pack <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">The five Legaia TMDs the retail engine keeps resident at <code>DAT_8007C018[0..=4]</code> every field scene - Vahn, Noa, Gala, plus two smaller auxiliary actors. They live in the head LZS section of PROT entry <code>0874</code> (<code>befect_data</code>); slot identity is asserted by the on-disc layout and the active-party equipment-swap patch in <code>FUN_8001EBEC</code>. Implementation: <code>legaia_asset::character_pack</code>. Surfaced live on the <a href="../characters.html">characters page</a>.</p>
+  <p class="lede">Where the playable characters' 3D models live - and the answer is different for the two places you see them. The <strong>field form</strong> (walking around towns) is straightforward: five <a href="tmd.html">Legaia TMDs</a> - Vahn, Noa, Gala, plus two smaller auxiliary actors - stored whole in PROT entry <code>0874</code> (<code>befect_data</code>; PROT.DAT is the disc's single big archive of 1233 numbered entries) and kept resident at <code>DAT_8007C018[0..=4]</code> every field scene. The <strong>battle form</strong> is the twist: it exists on disc only as parts.
+At battle setup the engine <em>assembles</em> each character's high-detail mesh from per-equipment-slot pieces chosen by what that character has equipped - so the exact model you fight with may exist nowhere on the disc as a single file (see <a href="#battle-form">battle form</a>). Implementation: <code>legaia_asset::character_pack</code>. Surfaced live on the <a href="../characters.html">characters page</a>.</p>
 </header>
 
 <section class="doc-section" id="on-disc-layout">
   <h2>On-disc layout</h2>
-  <p>PROT entry 874 is a <code>parse_player_lzs(buf, 3)</code>-shaped container with three LZS-compressed sections. Section 0 decompresses to a canonical <a href="pack.html">pack</a> with five Legaia TMDs:</p>
+  <p>PROT entry 874 is a <code>parse_player_lzs(buf, 3)</code>-shaped container with three <a href="lzs.html">LZS</a>-compressed sections (LZS being the game's own dictionary compression). Section 0 decompresses to a canonical <a href="pack.html">pack</a> with five Legaia TMDs:</p>
   <table>
     <thead>
       <tr>
@@ -77,7 +78,7 @@
 
 <section class="doc-section" id="battle-form">
   <h2>Battle form - assembled from the player files</h2>
-  <p>A real main-game battle does not render any disc TMD directly: at battle setup the engine <strong>assembles</strong> each active party member's higher-detail mesh from that character's player battle file (<code>data\battle\PLAYER&lt;n&gt;</code>, extraction 0863..0866 - see <a href="battle-data-pack.html">the player battle files</a>), picking one section per equipment slot by the character's <strong>equipped item ids</strong> (char record <code>+0x196..+0x19A</code>), and installs the merged TMD into <code>DAT_8007C018[0..=2]</code>.</p>
+  <p>This is the part that defeats a naive &ldquo;extract the model&rdquo; approach. A real main-game battle does not render any disc TMD directly: at battle setup the engine <strong>assembles</strong> each active party member's higher-detail mesh from that character's player battle file (<code>data\battle\PLAYER&lt;n&gt;</code>, extraction 0863..0866 - see <a href="battle-data-pack.html">the player battle files</a>), picking one section per equipment slot by the character's <strong>equipped item ids</strong> (char record <code>+0x196..+0x19A</code>), and installs the merged TMD into <code>DAT_8007C018[0..=2]</code>.</p>
 
   <h3 id="assembly-chain">Assembly chain (static SCUS)</h3>
   <p><code>FUN_80052770</code> case 4 (section select) &rarr; <code>FUN_80052FA0</code> (assembler, blob at <code>ctx+0x50</code>) &rarr; <code>FUN_800536BC</code> &times;5 (object splice: relocated object entries, <code>nobj += section_nobj</code>, bone-id byte per object, surplus objects tagged as the equipment's visual meshes) &rarr; <code>FUN_80053898</code> (retag 200/201/100+, attach bones at <code>blob+nobj</code>, sort) &rarr; <code>FUN_800513F0</code> registers <code>blob+0x18</code>. Runtime <code>nobj</code> = skeleton bones + equipment extras (Vahn 15+2=17) - the equipped weapon's visual mesh is one of those spliced extras.</p>

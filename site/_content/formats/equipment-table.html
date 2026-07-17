@@ -1,12 +1,19 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; equipment table</div>
   <h1>Equipment stat-bonus table <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">A static <code>SCUS_942.54</code> table giving every equippable item (weapon / body armor / head gear / footwear) its passive stat bonuses, the characters that can equip it, and its slot type. It hangs off the shared <a href="item-table.html">item property table</a>: the item record's <code>+1</code> byte is the index into this stride-8 bonus table when the item's <code>kind</code> byte is <code>1</code> (equipment).</p>
+  <p class="lede">The numbers behind every weapon, armor piece, helmet, and boot: a static table in
+  <code>SCUS_942.54</code> (the game's main executable on the disc) giving each equippable item its stat
+  bonuses, the characters allowed to equip it, and which of the four equip slots it fills. Eight bytes per item
+  cover all of it - five bonus bytes, a character mask, and a slot/flag byte. It hangs off the shared <a
+  href="item-table.html">item property table</a>: an item whose <code>kind</code> byte is <code>1</code>
+  (equipment) uses its <code>+1</code> byte as the index into this table. One detail walkthroughs get wrong: the
+  two "defense numbers" listed for boots are actually a small attack bump plus lower-defense - and no equipment
+  in the game touches AGL at all (see <a href="#superseded">superseded readings</a>).</p>
 </header>
 
 <section class="doc-section" id="indexing">
   <h2>Indexing (Ghidra-traced)</h2>
-  <p>From the equip-effect aggregator <code>FUN_801CF650</code> (menu overlay), which walks a character's five equipment slots and sums their bonuses into the equip-screen preview:</p>
+  <p>The chain below is read out of the game's own code with Ghidra, the disassembler this project uses (<code>FUN_80xxxxxx</code> names are traced functions, <code>DAT_80xxxxxx</code> fixed RAM addresses - static data, so each maps straight back to file bytes in <code>SCUS_942.54</code>). From the equip-effect aggregator <code>FUN_801CF650</code> (in the menu overlay - a chunk of code loaded into RAM on demand), which walks a character's five equipment slots and sums their bonuses into the equip-screen preview:</p>
   <pre><code>kind        = item_table[id].byte(+0)            ; DAT_80074368[id*0xC]; 1 = equipment
 bonus_index = item_table[id].byte(+1)            ; DAT_80074369[id*0xC]
 record      = (&amp;DAT_80074F68)[bonus_index * 8]   ; stride-8 record

@@ -1,19 +1,19 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; engine reimplementation</div>
   <h1>Engine reimplementation</h1>
-  <p class="lede">A clean-room Rust port of Legend of Legaia. End-user model: ship the engine as a binary; users supply their own disc image; the engine extracts assets at first run and plays the game using fresh Rust ports of every runtime subsystem.</p>
+  <p class="lede">A clean-room Rust port of Legend of Legaia - the same model as ScummVM or OpenRCT2, not a recompile. We trace the original PS1 code with a disassembler, document what each function does, then write fresh Rust that does the same thing. You supply your own disc image; the engine extracts the assets at first run and plays the game. The simulation reproduces retail exactly; the enhancements (dynamic lighting, free-angle movement, VR) are opt-in and default off.</p>
 </header>
 
 <section class="doc-section" id="how-it-works">
   <h2>How it works</h2>
-  <p>"Clean-room" here means exactly what it means in the ScummVM / OpenRCT2 / OpenMW / OpenLara projects: every line of code in the engine port is fresh Rust, written from <em>format documentation + decompile-then-rewrite logic</em>, not by auto-translating MIPS assembly. We read the Ghidra dumps to understand <em>what</em> each function does; we write the Rust to <em>do that thing</em> idiomatically. The decompiled C in <code>ghidra/scripts/funcs/*.txt</code> is reference material, not committable engine code.</p>
+  <p>"Clean-room" here means exactly what it means in the ScummVM / OpenRCT2 / OpenMW / OpenLara projects: every line of code in the engine port is fresh Rust, written from <em>format documentation + decompile-then-rewrite logic</em>, not by auto-translating the original MIPS assembly. The tool is Ghidra, a disassembler that recovers readable pseudo-C from the game's machine code; the <code>FUN_80xxxxxx</code> names you'll see across these pages are the RAM addresses of functions in that trace, because the game shipped without symbols. We read the Ghidra dumps to understand <em>what</em> each function does; we write the Rust to <em>do that thing</em> idiomatically. The decompiled C in <code>ghidra/scripts/funcs/*.txt</code> is reference material, not committable engine code.</p>
   <p>The legal posture: <strong>zero Sony bytes ship in the repo or in any released binary.</strong> No game executable, no asset data, no decompressed Sony strings, no decompiled-C dumps with literal data - all gitignored. The engine binary is empty until you point it at your own disc image. CI runs without disc data, so disc-dependent tests skip when <code>LEGAIA_DISC_BIN</code> is unset. This is the same model used by the projects above and is well-established legal territory.</p>
 </section>
 
 <section class="doc-section" id="goal-non-goals">
   <h2>Goal &amp; non-goals</h2>
   <p><strong>Goal:</strong> a playable port of Legend of Legaia (NA SCUS-94254) on modern systems via Rust + wgpu, with an optional WASM/web target. JP/EU regions land after NA is solid.</p>
-  <p>"Playable port" is a claim about the <em>simulation</em>, not about the pixels. What the game does - damage arithmetic, RNG, script pacing, save-record layout - reproduces retail. How it is presented is a separate question, answered under <a href="#fidelity">fidelity &amp; enhancements</a>.</p>
+  <p>"Playable port" is a claim about the <em>simulation</em>, not about the pixels. What the game does - damage arithmetic, RNG, script pacing, save-record layout - reproduces retail. How it is presented is a separate question, and the answer has a deliberate split: <strong>shading defaults to retail</strong> (the game's own baked colours, no synthetic light), <strong>rasterisation defaults to clean</strong> (no vertex jitter or dither unless you opt in), and every enhancement that departs from retail defaults off. Details under <a href="#fidelity">fidelity &amp; enhancements</a>.</p>
   <p><strong>Non-goals:</strong></p>
   <ul class="bullets">
     <li><strong>Static recompilation of <code>SCUS_942.54</code>.</strong> The engine is clean-room from documented specs and decompile-then-rewrite logic - <em>not</em> auto-translated MIPS. This is the boundary the whole legal posture rests on.</li>
@@ -27,7 +27,7 @@
   <h2>Fidelity &amp; enhancements</h2>
   <p class="lede">The port draws a hard line between the simulation and the presentation, so that "faithful" stays a testable claim rather than a mood.</p>
 
-  <p><strong>Simulation is faithful, with no opt-out.</strong> No toggle changes damage, drop rolls, AP costs, encounter rates or story-flag behaviour - because the parity oracles depend on there not being one. The engine scenarios hash the resulting save bytes against a blessed baseline, the <a href="#vram-diff">VRAM diff harness</a> diffs engine uploads against runtime blobs captured from save states, and record / replay requires the same input file to produce bit-identical state traces twice.</p>
+  <p><strong>Simulation is faithful, with no opt-out.</strong> No toggle changes damage, drop rolls, AP costs, encounter rates or story-flag behaviour - because the parity oracles depend on there not being one. The engine scenarios hash the resulting save bytes against a blessed baseline, the <a href="#vram-diff">VRAM diff harness</a> diffs the engine's video-memory uploads against runtime blobs captured from save states (VRAM is the PS1's single 1024&times;512 video memory, where every texture and palette lives), and record / replay requires the same input file to produce bit-identical state traces twice.</p>
 
   <p><strong>Presentation is where the knobs live.</strong> Every enhancement is renderer or host state with no path into the world, so flipping one leaves replays and every oracle above untouched. The ones that depart from retail default off; the two that do not are called out below.</p>
 
@@ -45,7 +45,7 @@
 
   <p>Two details are worth having straight, because the direction is not uniform:</p>
   <ul class="bullets">
-    <li><strong>Shading defaults to retail.</strong> The field path has no runtime light source at all - both retail TMD renderers issue exactly one GTE colour op (<code>DPCS</code>, the depth cue) and never an <code>NC*</code> op, so shading is baked into the TMD colour words and applied as <code>texel * colour / 128</code>. The engine's field pipelines draw exactly that. The dynamic light is layered <em>over</em> it and is an exact identity when disabled, which is what keeps the render oracles honest.</li>
+    <li><strong>Shading defaults to retail.</strong> The field path has no runtime light source at all - both retail TMD renderers (TMD is the game's 3D-mesh format) issue exactly one colour op on the GTE (the PS1's geometry coprocessor) - <code>DPCS</code>, the depth cue - and never an <code>NC*</code> lighting op, so shading is baked into the TMD colour words and applied as <code>texel * colour / 128</code>. The engine's field pipelines draw exactly that. The dynamic light is layered <em>over</em> it and is an exact identity when disabled, which is what keeps the render oracles honest.</li>
     <li><strong>Rasterisation defaults to clean.</strong> <code>psx_mode</code> is off, so the default image is sharper than a PlayStation's: no sub-pixel vertex snap and no 15-bit ordered dither. Here faithfulness is the mode you opt into, not the default.</li>
   </ul>
 </section>
@@ -89,13 +89,13 @@ asset-viewer  &rarr; engine-*, all parser crates</code></pre>
 
 <section class="doc-section" id="foundation">
   <h2>Foundation: core, render, audio + the asset viewer</h2>
-  <p>The asset viewer is a standalone binary that loads the disc, lets you navigate PROT entries, and renders / plays them. It de-risks the engine's integration surface: everything it draws goes through the same crates the engine does. Render API: <strong>winit + wgpu</strong> (Vulkan / Metal / DX12 / WebGPU backends). Audio: cpal-backed mixer over a clean-room SPU model.</p>
+  <p>The asset viewer is a standalone binary that loads the disc, lets you navigate PROT entries, and renders / plays them. It de-risks the engine's integration surface: everything it draws goes through the same crates the engine does. Render API: <strong>winit + wgpu</strong> (Vulkan / Metal / DX12 / WebGPU backends). Audio: cpal-backed mixer over a clean-room model of the SPU, the PS1's sound chip.</p>
 
   <table>
     <thead><tr><th>Crate</th><th>What's there</th></tr></thead>
     <tbody>
       <tr><td><code>engine-core</code></td><td><code>Vfs</code> trait + three backends: <code>DirVfs</code> (extracted-dir), <code>DiscVfs</code> (reads PROT.DAT / CDNAME.TXT directly from a <code>.bin</code> ISO9660 tree, no extraction step needed), <code>MemoryVfs</code> (WASM in-memory). <code>AssetCache</code>, <code>FrameTime</code>. <code>SceneHost::open_disc(path)</code> bootstraps the engine from a disc image; <code>BootSession::open_disc(path, cfg)</code> wraps it for the runtime. Every <code>legaia-engine</code> subcommand (<code>info</code>, <code>list-scenes</code>, <code>play</code>, <code>play-window</code>, <code>save</code>) accepts <code>--disc PATH</code> as an alternative to <code>--extracted-root</code>. Engine-agnostic, no GPU deps.</td></tr>
-      <tr><td><code>engine-render</code></td><td><code>Renderer</code> (wgpu device + surface + textured-quad pipeline + flat / textured-mesh pipelines + lines pipeline). Aspect-preserving letterbox. Software PSX VRAM emulation (1024&times;512 R16Uint, per-prim CBA/TSB + 4/8/15bpp + CLUT decoded in fragment shader).</td></tr>
+      <tr><td><code>engine-render</code></td><td><code>Renderer</code> (wgpu device + surface + textured-quad pipeline + flat / textured-mesh pipelines + lines pipeline). Aspect-preserving letterbox. Software PSX VRAM emulation (1024&times;512 R16Uint, per-prim CBA/TSB + 4/8/15bpp + CLUT decode in the fragment shader - a CLUT is a 16- or 256-colour palette stored as a row of framebuffer pixels).</td></tr>
       <tr><td><code>engine-audio</code></td><td><code>AudioOut</code> (cpal-backed) + clean-room PSX SPU model (24-voice mixer, streaming ADPCM, ADSR, 512&nbsp;KB SPU RAM, libspu-shaped transfer engine). <code>VabBank::upload</code> drops VAB bodies into SPU RAM; <code>play_note</code> translates a MIDI key into voice config + key-on. <code>Sequencer</code> drives a SEQ + VAB pair from the cpal callback.</td></tr>
       <tr><td><code>asset-viewer</code></td><td>winit binary with subcommands: <code>tim</code>, <code>tmd</code>, <code>stage</code>, <code>vab</code>, <code>prot</code>.</td></tr>
     </tbody>
@@ -105,7 +105,7 @@ asset-viewer  &rarr; engine-*, all parser crates</code></pre>
 
   <p><strong>Smooth shading:</strong> <code>legaia_tmd::mesh::tmd_to_vram_mesh</code> emits a per-vertex normal stream by accumulating area-weighted face normals into per-position bins, so connected geometry shades smoothly; the VRAM-mesh shader falls back to screen-space derivatives only for unbinned positions. Those normals are what the opt-in <a href="#fidelity">dynamic light</a> reads - retail's own render uses none of them. The SPU side is a full 24-voice mixer with ADSR (see <a href="audio.html">audio</a>).</p>
 
-  <p><strong>Cutscene audio:</strong> <code>legaia-engine play-str</code> decodes a PSX STR's interleaved XA track off the disc and plays it through <code>AudioOut</code> in sync with the MDEC video. The track decodes up front rather than through an incremental streaming voice in <code>engine-audio</code>. See <a href="cutscene.html">cutscene</a>.</p>
+  <p><strong>Cutscene audio:</strong> <code>legaia-engine play-str</code> decodes a PSX STR movie's interleaved XA audio track off the disc and plays it through <code>AudioOut</code> in sync with the video frames, which retail fed through the MDEC (the PS1's video-decompressor chip). The track decodes up front rather than through an incremental streaming voice in <code>engine-audio</code>. See <a href="cutscene.html">cutscene</a>.</p>
 </section>
 
 <section class="doc-section" id="ported-vms">

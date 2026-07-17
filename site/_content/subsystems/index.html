@@ -1,12 +1,17 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; subsystems</div>
   <h1>Subsystems</h1>
-  <p class="lede">How Legaia's engine actually works under the hood. Each card is a self-contained page on one subsystem - what it does, where its code lives, and how it connects to the rest. Start with <a href="boot.html">Boot path</a> if you're new to the project.</p>
+  <p class="lede">How Legend of Legaia's engine actually works under the hood - how the retail PlayStation game boots, loads assets, renders, plays sound, and runs its battles and menus, and how this project's clean-room Rust port reimplements each piece. Each card is a self-contained page on one subsystem: what it does, where its code lives, and how it connects to the rest. Start with <a href="boot.html">Boot path</a> if you're new to the project.</p>
 </header>
 
 <section class="doc-section" id="overview">
   <h2>The shape of the engine</h2>
-  <p>Legaia is a fairly typical late-90s PSX RPG engine, but with a twist: most of the gameplay logic doesn't live in the main executable. <code>SCUS_942.54</code> contains the boot path, low-level I/O, the asset dispatcher, the move-table VM, the motion VM, and the audio / renderer libraries - about half the runtime. The other half lives in <strong>RAM overlays</strong> that the disc loads on demand into one shared window. There are fewer of them than the subsystem list suggests: the <em>slot-A family</em> (field/town <code>0897</code>, battle <code>0898</code>, menu <code>0899</code>, cutscene/STR <code>0970</code>, and the minigames) all load at the same base and are mutually exclusive, while the world map, save, shop, level-up, and options are <em>subsystems inside</em> the field and menu overlays, not separate ones. Two of the runtime VMs (the field/event VM and the effect VM) live in these overlays.</p>
+  <p>Everything on these pages comes from tracing the original PS1 code with a disassembler (Ghidra) and then reimplementing the behaviour in Rust. Names like <code>FUN_8002735c</code> are RAM addresses of functions in that trace - the game shipped without symbols, so the address <em>is</em> the name. When a page cites one, it is pointing at a specific traced routine you can find in the project's function dumps.</p>
+  <p>Legaia is a fairly typical late-90s PSX RPG engine, but with a twist: most of the gameplay logic doesn't live in the main executable.
+  <code>SCUS_942.54</code> (the game's main executable on the disc) contains the boot path, low-level I/O, the asset dispatcher, the move-table VM, the motion VM, and the audio / renderer libraries - about half the runtime.
+  The other half lives in <strong>RAM overlays</strong> - chunks of MIPS code the game streams from the disc into RAM on demand, one at a time, into one shared window.
+  There are fewer of them than the subsystem list suggests: the <em>slot-A family</em> (field/town <code>0897</code>, battle <code>0898</code>, menu <code>0899</code>, cutscene/STR <code>0970</code>, and the minigames) all load at the same base and are mutually exclusive, while the world map, save, shop, level-up, and options are <em>subsystems inside</em> the field and menu overlays, not separate ones.
+  Two of the runtime VMs (the field/event VM and the effect VM) live in these overlays.</p>
 
   <figure class="overlay-strip">
     <svg viewBox="0 0 880 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="overlay-strip-title">
@@ -64,7 +69,12 @@
       <rect x="40" y="290" width="800" height="22" class="ov-card" style="stroke:#2a323e"/>
       <text x="56" y="306" class="ov-sub">SCUS_942.54: boot path, asset dispatcher, move VM, motion VM, libsnd / libspu / libcd / libapi</text>
     </svg>
-    <figcaption>These overlays share one RAM window (the slot-A family loads at <code>0x801CE818</code>): battle loads on top of town's slot, never coexisting. The <strong>title overlay</strong> has no TOC entry of its own - it lives in the unindexed PROT.DAT gap between entries 899 and 900 (PROT 0971 is the dev <em>debug-menu</em> overlay; see <a href="boot.html#title-overlay-source">boot</a>). Several &ldquo;subsystems&rdquo; are <strong>not</strong> separate overlays - the <strong>world map</strong> is a mode of the field overlay (0897), and <strong>save / shop / level-up / options</strong> all live inside the menu overlay (0899). The <strong>minigames</strong> (fishing / slot machine / Baka Fighter / dance) have their own <a href="../minigames.html">top-level page</a>. The randomizer injects a whole new vendor screen into 0899's dead space - see the <a href="../writeups/disc-patching/f-overlay-dead-region.html">overlay dead-region write-up</a> for a zoom into that overlay.</figcaption>
+    <figcaption>These overlays share one RAM window (the slot-A family loads at <code>0x801CE818</code>): battle loads on top of town's slot, never coexisting.
+    The <strong>title overlay</strong> has no TOC entry of its own - it lives in the unindexed gap between entries 899 and 900 of PROT.DAT, the disc's single big archive - nearly everything except movies and audio streams lives in its 1233 numbered entries.
+    (PROT 0971 is the dev <em>debug-menu</em> overlay; see <a href="boot.html#title-overlay-source">boot</a>.)
+    Several &ldquo;subsystems&rdquo; are <strong>not</strong> separate overlays - the <strong>world map</strong> is a mode of the field overlay (0897), and <strong>save / shop / level-up / options</strong> all live inside the menu overlay (0899).
+    The <strong>minigames</strong> (fishing / slot machine / Baka Fighter / dance) have their own <a href="../minigames.html">top-level page</a>.
+    The randomizer injects a whole new vendor screen into 0899's dead space - see the <a href="../writeups/disc-patching/f-overlay-dead-region.html">overlay dead-region write-up</a> for a zoom into that overlay.</figcaption>
   </figure>
 
   <p>The list below groups subsystems by what layer of the engine they sit at.</p>
@@ -86,7 +96,7 @@
 
 <section class="doc-section" id="vms">
   <h2>The five runtime VMs</h2>
-  <p>Legaia's runtime is driven by five independent VMs that all talk to one shared actor model. Four are clean bytecode dispatchers (actor / move-table / motion / field-event); the fifth (effect) is a per-slot state machine - different shape, same architectural role. They serve different layers of the engine and were almost certainly written by different members of the dev team.</p>
+  <p>Legaia's runtime is driven by five independent VMs - small bytecode interpreters that execute scripts stored in the game's data files, so designers could author behaviour without recompiling the engine. All five talk to one shared actor model. Four are clean bytecode dispatchers (actor / move-table / motion / field-event); the fifth (effect) is a per-slot state machine - different shape, same architectural role. They serve different layers of the engine and were almost certainly written by different members of the dev team.</p>
   <div class="card-grid">
     <a class="card" href="actor-vm.html">
       <div class="card-title">Actor / sprite VM</div>
@@ -124,7 +134,7 @@
     </a>
     <a class="card" href="world-overview-viewer.html">
       <div class="card-title">World-overview viewer</div>
-      <div class="card-body">The static-site WebGL viewer for the three kingdom maps: AABB layout, the distance-cue fog pass, MAN bulk-terrain resolution, ocean tile + 13-frame CLUT animation, and camera anchors.</div>
+      <div class="card-body">The static-site WebGL viewer that assembles each of the three kingdom overworld maps into one browsable 3D scene: terrain layout, the retail distance-fog look, animated ocean water, and per-kingdom camera anchors.</div>
     </a>
     <a class="card" href="vr-mode.html">
       <div class="card-title">VR mode (WebXR)</div>
@@ -140,7 +150,7 @@
     </a>
     <a class="card" href="shop.html">
       <div class="card-title">Shop</div>
-      <div class="card-body">Buy / sell / quantity / confirm flow. Lives in the menu overlay. <code>ShopSession</code> tracks pending item, quantity, and buy/sell direction. Sell price = half buy price (min 1). Per-scene stock comes from the scene MAN's op-<code>0x49</code> shop records; prices from the static SCUS item table.</div>
+      <div class="card-body">Buy / sell / quantity / confirm flow. Lives in the menu overlay. <code>ShopSession</code> tracks pending item, quantity, and buy/sell direction. Sell price = half buy price (min 1). Per-scene stock comes from op-<code>0x49</code> shop records in the scene's script file (MAN); prices from the static SCUS item table.</div>
     </a>
     <a class="card" href="inn.html">
       <div class="card-title">Inn</div>
@@ -176,7 +186,7 @@
     </a>
     <a class="card" href="renderer.html">
       <div class="card-title">Renderer</div>
-      <div class="card-body">The Legaia TMD renderer (60 GTE ops with a per-mode descriptor table). The engine port emulates PSX VRAM in a compute-friendly format so multi-page meshes render correctly.</div>
+      <div class="card-body">The Legaia 3D-mesh renderer: 60 operations on the GTE (the PS1's geometry coprocessor) with a per-mode descriptor table. The engine port emulates PSX video memory in a compute-friendly format so multi-page meshes render correctly.</div>
     </a>
   </div>
 </section>

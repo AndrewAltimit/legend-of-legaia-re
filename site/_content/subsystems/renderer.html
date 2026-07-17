@@ -1,12 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; renderer</div>
   <h1>Renderer (Legaia TMD)</h1>
-  <p class="lede">Legaia uses a custom variant of the PSX TMD format for its 3D meshes, and a custom renderer to draw it. The renderer is <code>FUN_8002735C</code> - 60 GTE ops, with a per-mode descriptor table that encodes how each primitive group is laid out. The engine port emulates PSX VRAM in a compute-friendly format so multi-page meshes render correctly.</p>
+  <p class="lede">How Legaia puts 3D on screen. The game stores its meshes in a custom variant of Sony's TMD model format and draws them with its own renderer - a routine we traced in the game's executable with a disassembler, named <code>FUN_8002735C</code> after its RAM address: 60 operations on the GTE (the PS1's geometry coprocessor), steered by a small descriptor table that encodes how each primitive group is laid out. The clean-room Rust port reimplements that renderer over wgpu, emulating PSX video memory so multi-page meshes render correctly - and it draws <em>every</em> mesh a scene loads, every frame: there is no distance culling anywhere in the port.</p>
 </header>
 
 <section class="doc-section" id="how-it-works">
   <h2>How it works</h2>
-  <p>The PSX has dedicated 3D hardware called the GTE (Geometry Transformation Engine), which transforms vertices, and a dedicated 2D framebuffer with its own 1&nbsp;MB of VRAM. The way games typically draw a 3D model: walk the mesh primitive-by-primitive, push each one through the GTE for projection, then drop the resulting 2D primitive (as a "GP0" packet) into an ordering table (OT) that the GPU reads and rasterises. Textures and palettes (CLUTs) live as rectangular regions inside VRAM, addressed by their top-left corner.</p>
+  <p>The PSX has dedicated 3D hardware called the GTE (Geometry Transformation Engine), a coprocessor that transforms and projects vertices, and a dedicated 2D framebuffer with its own 1&nbsp;MB of VRAM (video memory). The way games typically draw a 3D model: walk the mesh primitive-by-primitive, push each one through the GTE for projection, then drop the resulting 2D primitive (as a "GP0" packet) into an ordering table (OT) that the GPU reads and rasterises. Textures and palettes (CLUTs) live as rectangular regions inside VRAM, addressed by their top-left corner.</p>
 
   <p>Legaia's TMDs are <em>almost</em> the standard format Sony documented, but with a custom primitive-group header layout and a custom renderer. Each primitive group has an 8-byte header <code>[u16 count, u16 flags, u8 olen, u8 ilen, u8 flag, u8 mode]</code> followed by <code>count &times; ilen*4</code> bytes of per-prim data. The vertex-index byte offset within each prim isn't a fixed field - it's looked up from a 6-entry descriptor table indexed by <code>((flags &gt;&gt; 1) - 8) &gt;&gt; 1</code>. The descriptor table also encodes which OT-packet shape the renderer emits.</p>
 
@@ -55,9 +55,9 @@
 
 <section class="doc-section" id="vram-emulation">
   <h2>VRAM emulation in the engine port</h2>
-  <p><code>crates/engine-render</code> emulates a 1024&times;512 R16Uint VRAM page so the per-prim CBA/TSB selectors plus 4/8/15bpp + CLUT decoding can happen in a fragment shader. The viewer uploads every sibling TIM into VRAM so multi-page meshes render correctly.</p>
+  <p><code>crates/engine-render</code> emulates a 1024&times;512 R16Uint VRAM page so the per-prim CBA/TSB selectors (CBA = the prim's CLUT base address, TSB = its texture-page selector) plus 4/8/15bpp + CLUT decoding can happen in a fragment shader. The viewer uploads every sibling TIM (a TIM is the PS1's standard texture-image format, carrying its own VRAM destination coordinates) so multi-page meshes render correctly.</p>
 
-  <p>CLUT data scatters across PROT entries - many character meshes reference CLUT rows that live in <em>different</em> PROT entries from their TMD source. This is the problem the rest of this section is about.</p>
+  <p>CLUT data scatters across the entries of PROT.DAT (the disc's single big archive; nearly all game data lives in its 1233 numbered entries) - many character meshes reference CLUT rows that live in <em>different</em> PROT entries from their TMD source. This is the problem the rest of this section is about.</p>
 
   <p>Engine-side scene loads resolve it from the disc: <code>SceneResources::build_targeted</code> walks the scene's own entries plus the shared and boot-resident blocks, with no hand-supplied directory. The asset-viewer's <code>--vram-extra-dir</code> is a <em>viewer</em> flag for browsing extracted <code>tim_scan/</code> dirs that are not tied to a CDNAME scene; it is not on the engine's scene-load path. See <a href="asset-loader.html">Asset loader &rarr; "CLUT-data scattering"</a>.</p>
 

@@ -1,18 +1,25 @@
 //! `font-extract` - produce `extracted/font/` artifacts (atlas PNG + widths CSV +
-//! metadata JSON + raw 4bpp tile-page sheet) from a Legaia disc + a mednafen save
-//! state with the dialog font live in VRAM.
+//! metadata JSON + raw 4bpp tile-page sheet) from a Legaia disc, with the glyph
+//! pixels sourced either straight from the disc (`--disc`) or from a mednafen
+//! save state with the dialog font live in VRAM (`--save`).
 //!
 //! See `docs/formats/dialog-font.md` for the format spec. The extractor reads:
 //!
 //! 1. `SCUS_942.54` for the static width table at RAM `0x80073F1C` and the
 //!    escape table at `0x80074050` (PSX-EXE header gives the file -> RAM offset).
-//! 2. A mednafen save state for the live VRAM tile-page at pixel `(896, 0)`
-//!    and the dialog CLUT at pixel `(96, 510)`. The save state is gzipped, has
-//!    an `MDFNSVST` magic header, and carries VRAM as a variable named
-//!    `&GPURAM[0][0]` inside the `GPU` section.
+//! 2. Glyph bitmaps + CLUT from one of:
+//!    - `--disc <bin-or-PROT.DAT>`: the 4bpp font TIM carried inside `PROT.DAT`
+//!      at file offset [`legaia_font::FONT_TIM_PROT_DAT_OFFSET`] (a raw Mode2/2352
+//!      disc image is walked via ISO9660 to find `PROT.DAT` first). No emulator
+//!      needed.
+//!    - `--save <state>`: a mednafen save state for the live VRAM tile-page at
+//!      pixel `(896, 0)` and the dialog CLUT at pixel `(96, 510)`. The save state
+//!      is gzipped, has an `MDFNSVST` magic header, and carries VRAM as a variable
+//!      named `&GPURAM[0][0]` inside the `GPU` section.
 //!
-//! The extractor produces no Sony bytes by itself - the inputs are user-supplied
-//! and the outputs land in `extracted/font/` which is gitignored.
+//! Both modes emit the same 5 files. The extractor produces no Sony bytes by
+//! itself - the inputs are user-supplied and the outputs land in
+//! `extracted/font/` which is gitignored.
 
 #![forbid(unsafe_code)]
 
@@ -20,8 +27,8 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::Parser;
 use flate2::read::GzDecoder;
 use std::fs::{File, create_dir_all};
-use std::io::{BufWriter, Read, Write};
-use std::path::PathBuf;
+use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
 
 const SCUS_LOAD_ADDR_FALLBACK: u32 = 0x8001_0000;
 const PSX_EXE_HEADER: u32 = 0x800;
@@ -54,23 +61,57 @@ const ATLAS_FIRST_CHAR: u8 = 0x20;
 #[derive(Parser, Debug)]
 #[command(
     name = "font-extract",
-    about = "Extract the proportional dialog font from SCUS_942.54 + a mednafen save state."
+    version,
+    about = "Extract the proportional dialog font from SCUS_942.54 + either the disc itself (--disc) or a mednafen save state (--save).",
+    long_about = "Extract the proportional dialog font (atlas PNG, tile-page sheet PNG, widths \
+CSV, metadata JSON, raw 4bpp page) from SCUS_942.54 plus ONE glyph source:\n\n\
+  --disc <bin-or-PROT.DAT>  disc-only mode - reads the font TIM carried inside PROT.DAT \
+(a raw .bin disc image or an already-extracted PROT.DAT both work); no emulator needed.\n\
+  --save <state>            mednafen save-state mode - reads the live VRAM tile-page. Any \
+in-game save state works (the font page is byte-identical across captures); mednafen keeps \
+them under ~/.mednafen/mcs/.\n\n\
+Both modes write the same 5 files. Default paths (extracted/SCUS_942.54, extracted/font) \
+are resolved against the current directory.",
+    group(clap::ArgGroup::new("glyph_source").required(true).args(["save", "disc"]))
 )]
 struct Args {
-    /// Path to extracted SCUS_942.54.
+    /// Path to extracted SCUS_942.54 (default resolves against the current
+    /// directory; produced by `legaia-extract` / `disc-extract extract`).
     #[arg(long, default_value = "extracted/SCUS_942.54")]
     scus: PathBuf,
-    /// Path to mednafen save state (.mc0..mc9). The save must have the dialog
-    /// font live in VRAM (any in-game capture works - the font tile-page is
-    /// byte-identical across captures).
+    /// Path to a mednafen save state (.mc0..mc9, typically under
+    /// ~/.mednafen/mcs/). The save must have the dialog font live in VRAM -
+    /// any in-game capture works, the font tile-page is byte-identical
+    /// across captures. Mutually exclusive with --disc.
     #[arg(long)]
-    save: PathBuf,
-    /// Output directory. Default: `extracted/font/`.
-    #[arg(long, default_value = "extracted/font")]
+    save: Option<PathBuf>,
+    /// Disc-only mode: path to a raw Mode2/2352 disc image (.bin) or to an
+    /// already-extracted PROT.DAT. The font TIM is read straight off the
+    /// disc - no emulator or save state needed. Mutually exclusive with
+    /// --save.
+    #[arg(long)]
+    disc: Option<PathBuf>,
+    /// Output directory (default resolves against the current directory).
+    #[arg(short, long, default_value = "extracted/font")]
     out: PathBuf,
     /// Print extra diagnostics.
     #[arg(long)]
     verbose: bool,
+}
+
+/// The glyph page + CLUT, whatever the source.
+struct GlyphPage {
+    /// 256×256 row-major 4-bit indices (one byte per pixel).
+    indexed: Vec<u8>,
+    /// 16-entry BGR555 CLUT used to render the sheet/atlas PNGs.
+    clut: [u16; CLUT_ENTRIES],
+    /// On-wire 4bpp packed bytes (two pixels per byte, low nibble first),
+    /// 32768 bytes.
+    raw_4bpp: Vec<u8>,
+    /// Human-readable provenance for the metadata JSON.
+    source: String,
+    /// Per-source explanation of what the recorded CLUT is.
+    clut_note: String,
 }
 
 fn main() -> Result<()> {
@@ -96,30 +137,23 @@ fn main() -> Result<()> {
     .context("read escape table")?;
     let escape = parse_escape_table(escape_bytes);
 
-    // 2. Save state - VRAM block.
-    let vram = read_vram_from_save(&args.save, args.verbose)
-        .with_context(|| format!("read VRAM from {}", args.save.display()))?;
-
-    // 3. Decode CLUT 0.
-    let clut = read_clut(&vram, CLUT_VRAM_X16, CLUT_VRAM_Y);
+    // 2. Glyph page - from the disc's font TIM or a save state's VRAM.
+    let page = match (&args.save, &args.disc) {
+        (Some(save), None) => glyph_page_from_save(save, args.verbose)?,
+        (None, Some(disc)) => glyph_page_from_disc(disc, &scus_bytes, args.verbose)?,
+        // clap's ArgGroup(required, single) makes the other arms unreachable.
+        _ => bail!("pass exactly one of --save <state> or --disc <bin-or-PROT.DAT>"),
+    };
+    let (indexed, clut) = (&page.indexed, &page.clut);
     if args.verbose {
-        eprintln!("[clut] (x={CLUT_VRAM_X16}, y={CLUT_VRAM_Y}):");
+        eprintln!("[clut] ({}):", page.source);
         for (i, c) in clut.iter().enumerate() {
             eprintln!("       [{i:2}] 0x{c:04X}");
         }
     }
 
-    // 4. Decode font tile-page (256 × 256 4bpp indexed).
-    let indexed = decode_4bpp_tile_page(
-        &vram,
-        FONT_VRAM_X16,
-        FONT_VRAM_Y,
-        FONT_VRAM_W16,
-        FONT_VRAM_H,
-    );
-
-    // 5. Write the four artifacts.
-    let sheet_rgba = render_indexed_to_rgba(&indexed, 256, 256, &clut);
+    // 3. Write the five artifacts.
+    let sheet_rgba = render_indexed_to_rgba(indexed, 256, 256, clut);
     write_png(
         &args.out.join("dialog_font_sheet.png"),
         &sheet_rgba,
@@ -128,7 +162,7 @@ fn main() -> Result<()> {
     )
     .context("write font sheet PNG")?;
 
-    let atlas_rgba = pack_atlas(&indexed, &clut);
+    let atlas_rgba = pack_atlas(indexed, clut);
     let atlas_w = ATLAS_COLS * ATLAS_GLYPH_W;
     let atlas_h = ATLAS_ROWS * ATLAS_GLYPH_H;
     write_png(
@@ -146,14 +180,36 @@ fn main() -> Result<()> {
         &args.out.join("dialog_font_metadata.json"),
         widths,
         &escape,
-        &clut,
+        clut,
+        &page.source,
+        &page.clut_note,
     )
     .context("write metadata JSON")?;
 
-    // Also dump the raw 4bpp VRAM bytes - needed for downstream tooling
+    // Also dump the raw 4bpp page bytes - needed for downstream tooling
     // that searches PROT entries for the on-disc carrier of the font.
     // The bytes are the literal 4bpp packed pixels (two pixels per byte,
     // low nibble first), 32768 bytes total = 256 × 256 / 2.
+    let raw_path = args.out.join("dialog_font_vram_4bpp.bin");
+    std::fs::write(&raw_path, &page.raw_4bpp)
+        .with_context(|| format!("write {}", raw_path.display()))?;
+
+    eprintln!("[ok] wrote 5 files into {}", args.out.display());
+    Ok(())
+}
+
+/// Save-state mode: pull the glyph page + dialog CLUT out of the live VRAM.
+fn glyph_page_from_save(save: &Path, verbose: bool) -> Result<GlyphPage> {
+    let vram = read_vram_from_save(save, verbose)
+        .with_context(|| format!("read VRAM from {}", save.display()))?;
+    let clut = read_clut(&vram, CLUT_VRAM_X16, CLUT_VRAM_Y);
+    let indexed = decode_4bpp_tile_page(
+        &vram,
+        FONT_VRAM_X16,
+        FONT_VRAM_Y,
+        FONT_VRAM_W16,
+        FONT_VRAM_H,
+    );
     let raw_4bpp = collect_raw_4bpp(
         &vram,
         FONT_VRAM_X16,
@@ -161,12 +217,204 @@ fn main() -> Result<()> {
         FONT_VRAM_W16,
         FONT_VRAM_H,
     );
-    let raw_path = args.out.join("dialog_font_vram_4bpp.bin");
-    std::fs::write(&raw_path, &raw_4bpp)
-        .with_context(|| format!("write {}", raw_path.display()))?;
+    Ok(GlyphPage {
+        indexed,
+        clut,
+        raw_4bpp,
+        source: format!("mednafen save-state VRAM dump ({})", save.display()),
+        clut_note: format!(
+            "16-color BGR555 CLUT at VRAM ({CLUT_VRAM_X16}, {CLUT_VRAM_Y}). Index 0 is BGR555 \
+             0x0000 - treated transparent in the renderer; index 1 is foreground white; indices \
+             2..5 are anti-aliasing gray ramp; the upper half of the CLUT is unused by the \
+             dialog renderer."
+        ),
+    })
+}
 
-    eprintln!("[ok] wrote 5 files into {}", args.out.display());
-    Ok(())
+/// Disc-only mode: slice the font TIM out of `PROT.DAT` (either given
+/// directly or found inside a raw Mode2/2352 disc image), validate it
+/// through the shared tested decoder, then unpack page + CLUT locally.
+///
+/// The TIM's baked CLUT is a mastering placeholder (bright primaries), NOT
+/// the runtime dialog CLUT - retail uploads that separately at runtime, so
+/// it isn't reachable without a VRAM capture. The PNGs are therefore
+/// rendered as the same whitewashed stencil
+/// [`legaia_font::Font::from_disc_tim_and_scus`] produces (index 0 ->
+/// transparent, index 14 -> the (32,32,32) drop shadow, everything else ->
+/// pure white), which is exactly what the engine's atlas loader would
+/// reduce any capture to anyway.
+fn glyph_page_from_disc(disc: &Path, scus_bytes: &[u8], verbose: bool) -> Result<GlyphPage> {
+    let tim = read_font_tim_bytes(disc, verbose)
+        .with_context(|| format!("read font TIM from {}", disc.display()))?;
+    // Cross-check through the library's tested disc-font path so a wrong
+    // slice fails loudly with its diagnostics (bad magic / framebuffer).
+    let font = legaia_font::Font::from_disc_tim_and_scus(&tim, scus_bytes)
+        .with_context(|| format!("validate font TIM from {}", disc.display()))?;
+    let (indexed, _tim_clut, raw_4bpp) = decode_disc_font_tim(&tim)?;
+    // Stencil CLUT: index 0 transparent, FONT_SHADOW_INDEX = 14 the
+    // (32,32,32) shadow (BGR555 0x1084), every other index pure white.
+    let mut clut = [0x7FFFu16; CLUT_ENTRIES];
+    clut[0] = 0x0000;
+    clut[14] = 0x1084;
+    // Self-check: rendering our page through the stencil CLUT must equal
+    // the library's tested atlas bake bit-for-bit.
+    if pack_atlas(&indexed, &clut) != font.atlas_rgba() {
+        bail!("internal error: stencil atlas diverges from legaia_font::Font's bake");
+    }
+    Ok(GlyphPage {
+        indexed,
+        clut,
+        raw_4bpp,
+        source: format!("PROT.DAT font TIM read from disc ({})", disc.display()),
+        clut_note: "Whitewashed stencil palette (disc mode): the font TIM's baked CLUT is a \
+                    mastering placeholder, and the real runtime dialog CLUT is uploaded at \
+                    runtime (VRAM (96, 510)) rather than carried on disc. Index 0 = transparent, \
+                    index 14 = the (32,32,32) drop shadow, all other indices = pure white - \
+                    identical to what the engine's atlas loader normalises a VRAM capture to."
+            .to_string(),
+    })
+}
+
+/// Get [`legaia_font::FONT_TIM_LEN`] bytes starting at
+/// [`legaia_font::FONT_TIM_PROT_DAT_OFFSET`] of `PROT.DAT`, from either an
+/// already-extracted PROT.DAT or a raw Mode2/2352 `.bin` disc image
+/// (detected by the 12-byte CD sector sync pattern).
+fn read_font_tim_bytes(path: &Path, verbose: bool) -> Result<Vec<u8>> {
+    const SYNC: [u8; 12] = [
+        0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00,
+    ];
+    let mut f = File::open(path).with_context(|| format!("open {}", path.display()))?;
+    let mut head = [0u8; 12];
+    let n = f.read(&mut head)?;
+    if n == 12 && head == SYNC {
+        // Raw 2352-byte-sector disc image: walk ISO9660 for PROT.DAT.
+        let (lba, size) = find_prot_dat(&mut f)
+            .with_context(|| format!("locate PROT.DAT in disc image {}", path.display()))?;
+        if verbose {
+            eprintln!("[disc] PROT.DAT @ LBA {lba} ({size} bytes)");
+        }
+        let off = legaia_font::FONT_TIM_PROT_DAT_OFFSET as usize;
+        let len = legaia_font::FONT_TIM_LEN;
+        if (off + len) as u64 > size as u64 {
+            bail!("PROT.DAT too small ({size} bytes) for the font TIM slice");
+        }
+        let first = off / 2048;
+        let last = (off + len - 1) / 2048;
+        let mut buf = Vec::with_capacity((last - first + 1) * 2048);
+        for s in first..=last {
+            buf.extend_from_slice(&read_user_sector(&mut f, lba + s as u32)?);
+        }
+        let rel = off - first * 2048;
+        Ok(buf[rel..rel + len].to_vec())
+    } else {
+        // Assume an extracted PROT.DAT: the TIM sits at a fixed offset.
+        f.seek(SeekFrom::Start(legaia_font::FONT_TIM_PROT_DAT_OFFSET))
+            .with_context(|| format!("seek in {}", path.display()))?;
+        let mut buf = vec![0u8; legaia_font::FONT_TIM_LEN];
+        f.read_exact(&mut buf).with_context(|| {
+            format!(
+                "{} is neither a raw .bin disc image (no CD sync pattern) nor a PROT.DAT \
+                 big enough to hold the font TIM",
+                path.display()
+            )
+        })?;
+        Ok(buf)
+    }
+}
+
+/// Read the 2048-byte user-data payload of Mode2/Form1 sector `lba` from a
+/// raw 2352-byte-sector image (sync 12 + header 4 + subheader 8 = 24-byte
+/// prefix).
+fn read_user_sector(f: &mut File, lba: u32) -> Result<[u8; 2048]> {
+    f.seek(SeekFrom::Start(lba as u64 * 2352 + 24))?;
+    let mut buf = [0u8; 2048];
+    f.read_exact(&mut buf)
+        .with_context(|| format!("read sector LBA {lba}"))?;
+    Ok(buf)
+}
+
+/// Minimal ISO9660 walk: PVD at LBA 16, root directory record at PVD+156,
+/// then scan the root directory for `PROT.DAT` (Legaia keeps it at the disc
+/// root). Returns `(start_lba, size_bytes)`.
+fn find_prot_dat(f: &mut File) -> Result<(u32, u32)> {
+    let pvd = read_user_sector(f, 16)?;
+    if &pvd[1..6] != b"CD001" {
+        bail!("no ISO9660 primary volume descriptor at LBA 16");
+    }
+    let root = &pvd[156..190];
+    let dir_lba = u32::from_le_bytes(root[2..6].try_into().unwrap());
+    let dir_size = u32::from_le_bytes(root[10..14].try_into().unwrap());
+    let n_sectors = dir_size.div_ceil(2048);
+    for s in 0..n_sectors {
+        let sec = read_user_sector(f, dir_lba + s)?;
+        let mut p = 0usize;
+        while p + 33 <= sec.len() {
+            let rec_len = sec[p] as usize;
+            if rec_len == 0 {
+                break; // records never span sectors; rest of sector is pad
+            }
+            let name_len = sec[p + 32] as usize;
+            if p + 33 + name_len <= sec.len() {
+                let name = &sec[p + 33..p + 33 + name_len];
+                if name == b"PROT.DAT" || name == b"PROT.DAT;1" {
+                    let lba = u32::from_le_bytes(sec[p + 2..p + 6].try_into().unwrap());
+                    let size = u32::from_le_bytes(sec[p + 10..p + 14].try_into().unwrap());
+                    return Ok((lba, size));
+                }
+            }
+            p += rec_len;
+        }
+    }
+    bail!("PROT.DAT not found in the ISO9660 root directory - is this a Legend of Legaia disc?")
+}
+
+/// Unpack the font TIM (4bpp, CLUT block + image block) into the 256×256
+/// indexed page, its 16-entry CLUT, and the on-wire packed pixel bytes.
+/// Layout already validated by [`legaia_font::Font::from_disc_tim_and_scus`].
+fn decode_disc_font_tim(tim: &[u8]) -> Result<(Vec<u8>, [u16; CLUT_ENTRIES], Vec<u8>)> {
+    let rd_u32 = |o: usize| -> Result<u32> {
+        tim.get(o..o + 4)
+            .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+            .ok_or_else(|| anyhow!("font TIM truncated at 0x{o:X}"))
+    };
+    if rd_u32(0)? != 0x10 {
+        bail!("not a TIM (bad magic)");
+    }
+    let flags = rd_u32(4)?;
+    let mut p = 8usize;
+    let mut clut = [0u16; CLUT_ENTRIES];
+    if flags & 0x8 != 0 {
+        // CLUT block: [u32 block_len][u16 dx][u16 dy][u16 w][u16 h][entries].
+        let clut_len = rd_u32(p)? as usize;
+        let entries_off = p + 12;
+        for (i, slot) in clut.iter_mut().enumerate() {
+            let o = entries_off + i * 2;
+            *slot = tim
+                .get(o..o + 2)
+                .map(|b| u16::from_le_bytes(b.try_into().unwrap()))
+                .ok_or_else(|| anyhow!("font TIM CLUT truncated at 0x{o:X}"))?;
+        }
+        p = p
+            .checked_add(clut_len)
+            .filter(|&e| e <= tim.len())
+            .ok_or_else(|| anyhow!("font TIM CLUT block overruns"))?;
+    } else {
+        bail!("font TIM carries no CLUT block");
+    }
+    // Image block: [u32 len][u16 dx][u16 dy][u16 w16][u16 h][pixels].
+    let pixels_off = p + 12;
+    let n_pixel_bytes = FONT_VRAM_W16 * 2 * FONT_VRAM_H; // 32768
+    let raw_4bpp = tim
+        .get(pixels_off..pixels_off + n_pixel_bytes)
+        .ok_or_else(|| anyhow!("font TIM pixel data truncated"))?
+        .to_vec();
+    let width = FONT_VRAM_W16 * 4;
+    let mut indexed = vec![0u8; width * FONT_VRAM_H];
+    for (i, &b) in raw_4bpp.iter().enumerate() {
+        indexed[i * 2] = b & 0x0F;
+        indexed[i * 2 + 1] = (b >> 4) & 0x0F;
+    }
+    Ok((indexed, clut, raw_4bpp))
 }
 
 /// Pack the live VRAM tile-page back to its on-wire 4bpp bytes (so
@@ -409,6 +657,8 @@ fn write_metadata_json(
     widths: &[u8],
     escape: &[EscapeEntry],
     clut: &[u16; CLUT_ENTRIES],
+    source: &str,
+    clut_note: &str,
 ) -> Result<()> {
     use serde_json::{Value, json};
 
@@ -437,7 +687,12 @@ fn write_metadata_json(
     let v = json!({
         "format": "legend-of-legaia-dialog-font",
         "version": 1,
-        "description": "Proportional dialog font, extracted from Legend of Legaia (NA, SCUS_942.54). Width table + escape table come from the SCUS executable; glyph pixel data and the CLUT come from a mednafen-VRAM dump.",
+        "description": format!(
+            "Proportional dialog font, extracted from Legend of Legaia (NA, SCUS_942.54). \
+             Width table + escape table come from the SCUS executable; glyph pixel data \
+             and the CLUT come from: {source}."
+        ),
+        "glyph_source": source,
         "vram_source": {
             "x_pixels_16bit": FONT_VRAM_X16,
             "y_pixels": FONT_VRAM_Y,
@@ -453,7 +708,7 @@ fn write_metadata_json(
             "vram_y_pixels": CLUT_VRAM_Y,
             "colors": CLUT_ENTRIES,
             "index_for_dialog": 0,
-            "note": "16-color BGR555 CLUT at VRAM (96, 510). Index 0 is BGR555 0x0000 - treated transparent in the renderer; index 1 is foreground white; indices 2..5 are anti-aliasing gray ramp; the upper half of the CLUT is unused by the dialog renderer.",
+            "note": clut_note,
             "palette_bgr555": palette
         },
         "glyph_layout": {

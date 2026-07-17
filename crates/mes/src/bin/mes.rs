@@ -3,23 +3,41 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use legaia_mes::{
-    EventStats, Interpreter, SubstituteOpcode, Token, extract_all_messages, iter_tokens, parse,
+    EventStats, Format, Interpreter, SubstituteOpcode, Token, extract_all_messages, iter_tokens,
+    parse,
 };
 
 #[derive(Parser)]
-#[command(name = "mes", about = "Legaia MES (asset type 0x04) inspector")]
+#[command(
+    name = "mes",
+    version,
+    about = "Legaia MES (asset type 0x04) inspector"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
 }
 
+/// Records-variant detection is a heuristic (>= 4 hits of the `0x44 0x78`
+/// record marker anywhere in the blob). Big non-MES inputs (e.g. whole scene
+/// bundles) can cross that bar by accident; flag the low-density case.
+/// Real Records blobs put a marker every few hundred bytes - one marker per
+/// > 4 KB is almost certainly a false positive.
+const RECORDS_SPARSE_GAP: usize = 4096;
+
 #[derive(Subcommand)]
 enum Cmd {
     /// Detect format and print the structural header / table layout.
+    ///
+    /// Input: a MES dialog blob (asset type 0x04) pulled out of a scene
+    /// bundle by `legaia-extract <disc.bin> --out extracted` (see
+    /// extracted/streaming/). For readable dialog text, prefer
+    /// `legaia-rando translate export`.
     Info { path: PathBuf },
     /// Greedy bytecode disassembly. For Compact, starts at the bytecode
     /// offset; for Records, starts at byte 0 (record content is
     /// interleaved with markers).
+    /// Input: a MES blob from `legaia-extract` (see extracted/streaming/).
     Disasm {
         path: PathBuf,
         /// Override the start offset for the bytecode walk.
@@ -30,8 +48,10 @@ enum Cmd {
         limit: usize,
     },
     /// Emit a JSON dump of the parsed structure (for tooling).
+    /// Input: a MES blob from `legaia-extract` (see extracted/streaming/).
     Json { path: PathBuf },
     /// Walk the bytecode interpreter for a single message and print events.
+    /// Input: a Compact-variant MES blob from `legaia-extract`.
     Events {
         path: PathBuf,
         #[arg(long, default_value_t = 0)]
@@ -42,10 +62,21 @@ enum Cmd {
         verbose: bool,
     },
     /// Walk every offset-table entry, print event-stats for each message.
+    /// Input: a Compact-variant MES blob from `legaia-extract`.
     StatsAll { path: PathBuf },
 }
 
+/// Rust ignores SIGPIPE by default; restore SIG_DFL so `mes disasm f | head`
+/// exits quietly instead of panicking on a broken pipe.
+fn reset_sigpipe() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> Result<()> {
+    reset_sigpipe();
     match Cli::parse().cmd {
         Cmd::Info { path } => info(&path),
         Cmd::Disasm { path, start, limit } => disasm(&path, start, limit),
@@ -65,6 +96,18 @@ fn info(path: &PathBuf) -> Result<()> {
     println!("file:    {}", path.display());
     println!("size:    {} bytes", blob.size);
     println!("format:  {}", blob.format.name());
+    if blob.format == Format::Records {
+        println!(
+            "         (Records detection is heuristic: >= 4 hits of the 0x44 0x78 record marker)"
+        );
+        let n_markers = blob.records.as_ref().map(|r| r.len()).unwrap_or(0);
+        if blob.size / n_markers.max(1) > RECORDS_SPARSE_GAP {
+            println!(
+                "warning: only {} marker hit(s) in {} bytes - input may not be a MES container",
+                n_markers, blob.size
+            );
+        }
+    }
     if let Some(rh) = blob.runtime_header {
         println!("runtime header @ +0x28:");
         println!("  back_ptr      = 0x{:08X}", rh.back_ptr);

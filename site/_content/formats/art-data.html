@@ -1,11 +1,20 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; art data - tactical arts records</div>
-  <h1>Art Data - Tactical Arts records <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">Each playable character (Vahn, Noa, Gala) has a per-character table of <em>art records</em> describing damage, animation, hit timing, status effects, and Super/Miracle Art trigger metadata. These records drive the battle action system. Implementation: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/art/README.md"><code>crates/art</code></a>.</p>
+  <h1>Art Data - Tactical Arts records <span class="tag tag-partial">Inferred</span></h1>
+  <p class="lede">Legaia's battles are famous for their fighting-game input system: tap the right d-pad sequence
+  and your character performs a Tactical Art combo. This page is the data behind it. Each playable character
+  (Vahn, Noa, Gala) has a per-character table of <em>art records</em> describing damage, animation, hit timing,
+  status effects, and Super/Miracle Art trigger metadata; these records drive the battle action system. The
+  mechanics hiding in the data are the fun part: a Miracle Art is a literal secret input string that, when
+  matched exactly, <em>wipes the whole action queue</em> and substitutes its own (<a
+  href="#miracle-arts">below</a>), and Super Arts trigger by a find-and-replace pass over the tail of the queue
+  (<a href="#super-arts">below</a>). Implementation: <a
+  href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/art/README.md"><code>crates/art</code></a>.</p>
 </header>
 
 <section class="doc-section" id="where-the-data-lives">
   <h2>Where the data lives</h2>
+  <p>(Addresses below are RAM locations - where the tables sit while the game runs. "PROT" is PROT.DAT, the disc's single big archive; everything except movies and audio streams lives in its numbered entries. <code>FUN_80xxxxxx</code> names, where they appear, are functions traced in Ghidra, the disassembler this project uses.)</p>
 <table>
 <thead><tr>
 <th>Source</th>

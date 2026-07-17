@@ -1,12 +1,17 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; seq - psyq sequenced-music format</div>
   <h1>SEQ - PsyQ sequenced-music format <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">PsyQ's <code>SsSeqOpen</code> / <code>SsSeqPlay</code> accepts a 13-byte-header SEQ file: a thin MIDI variant that names a single track with delta-time + event records. Legaia uses it for in-game music, paired with a <a href="vab.html">VAB</a> sound bank that holds the instrument samples.</p>
+  <p class="lede">SEQ is the PlayStation SDK's sequenced-music format - essentially a single-track MIDI file with a 13-byte header, played by the console against a <a href="vab.html">VAB</a> sound bank that holds the instrument samples. All of Legaia's in-game music is SEQ + VAB. It is <em>close enough</em> to MIDI that generic tools almost work - and different enough that they fail in two specific, diagnosable ways.</p>
 </header>
 
 <section class="doc-section" id="overview">
-  <h2>Overview</h2>
-  <p>The format is a publicly-documented PsyQ SDK shape (header layout + event encoding). This page describes byte order, the meaning of every header field, and how Sony's SsAPI sequencer consumes the event stream; <strong>no Sony bytes appear here</strong>.</p>
+  <h2>Why your MIDI tool chokes</h2>
+  <p>Two retail-vs-spec divergences catch every converter that treats SEQ as &ldquo;MIDI with a different header&rdquo;:</p>
+  <ol>
+    <li><strong>Legaia's header has a u32 big-endian version field</strong> where the PsyQ documentation says u16, shifting every later field by two bytes. A parser using the documented 13-byte layout reads the wrong PPQN and tempo.</li>
+    <li><strong>PSX SEQ meta events carry no MIDI length byte.</strong> A Standard MIDI File writes a tempo change as <code>FF 51 03 tt tt tt</code>; SEQ writes <code>FF 51 tt tt tt</code>. Reading a phantom length byte silently drops the first tempo override - and because every retail track ships a 240&nbsp;BPM placeholder header tempo that the first body event corrects, the audible symptom is <strong>everything plays ~3x too fast</strong>.</li>
+    </ol>
+  <p>Both are detailed below. The format is a publicly-documented PsyQ SDK shape (header layout + event encoding); this page describes byte order, the meaning of every header field, and how Sony's SsAPI sequencer consumes the event stream - <strong>no Sony bytes appear here</strong>.</p>
 </section>
 
 <section class="doc-section" id="header">
@@ -35,7 +40,7 @@
 
 <section class="doc-section" id="event-stream">
   <h2>Event stream</h2>
-  <p>Each event is a <em>delta-time</em> (variable-length integer) followed by a status byte and zero or more data bytes. Running status applies: if the first byte of an event is <code>&lt; 0x80</code>, reuse the previous status byte and treat that byte as data.</p>
+  <p>Each event is a <em>delta-time</em> (variable-length integer) followed by a status byte and zero or more data bytes - the standard MIDI encoding. Running status applies: if the first byte of an event is <code>&lt; 0x80</code>, reuse the previous status byte and treat that byte as data.</p>
 <table>
 <thead><tr>
 <th>Status range</th>
@@ -86,7 +91,7 @@
 </tbody>
 </table>
   <p>Channel index is the low nibble of the status byte (<code>0..=15</code>). Retail data only uses <code>0x90</code> / <code>0xB0</code> / <code>0xC0</code> / <code>0xE0</code> (Note Off is <code>0x90</code> with <code>velocity == 0</code>).</p>
-  <p>A disc-wide sweep of every SEQ-bearing PROT entry pins exactly what the score emits, and the engine <code>Sequencer</code> acts on all of it: <strong>pitch bend</strong> (<code>0xE0</code>) is used heavily (thousands of events across a handful of music banks) and is applied by scaling each sounding voice's pitch over the tone's own <code>pbmin</code>/<code>pbmax</code> range; <strong>channel volume (CC7)</strong> and <strong>pan (CC10)</strong> are the busiest controllers and are <em>dynamic</em> (the music swells and pans voices mid-note), re-derived per change from a channel-free per-note base. <strong>Channel/poly aftertouch</strong> (<code>0xD0</code>/<code>0xA0</code>) and expression/reverb controllers never appear, so the per-cue reverb-enable for BGM is not carried in the sequence data.</p>
+  <p>A disc-wide sweep of every SEQ-bearing PROT entry (numbered entry in <code>PROT.DAT</code>, the disc's single big archive) pins exactly what the score emits, and the engine <code>Sequencer</code> acts on all of it: <strong>pitch bend</strong> (<code>0xE0</code>) is used heavily (thousands of events across a handful of music banks) and is applied by scaling each sounding voice's pitch over the tone's own <code>pbmin</code>/<code>pbmax</code> range; <strong>channel volume (CC7)</strong> and <strong>pan (CC10)</strong> are the busiest controllers and are <em>dynamic</em> (the music swells and pans voices mid-note), re-derived per change from a channel-free per-note base. <strong>Channel/poly aftertouch</strong> (<code>0xD0</code>/<code>0xA0</code>) and expression/reverb controllers never appear, so the per-cue reverb-enable for BGM is not carried in the sequence data.</p>
   <h3>Variable-length quantity (VLQ)</h3>
   <p>A VLQ is a big-endian sequence of 7-bit groups; the high bit of each byte is <code>1</code> for "more bytes follow", <code>0</code> for the final group. Maximum 4 bytes per delta. SEQ uses VLQ for delta-times. See <code>legaia_seq::read_vlq</code>.</p>
   <h3>Meta events</h3>
@@ -125,7 +130,7 @@
 
 <section class="doc-section" id="where-the-data-lives">
   <h2>Where the data lives</h2>
-  <p>SEQ payloads are loaded by the PsyQ libsnd <code>SsSeqOpen</code> family - see <a href="../subsystems/audio.html"><code>subsystems/audio.md</code></a> → "Public SEQ API". On-disc, SEQ data lives inside the same scene-VAB-prefixed streaming containers described in <a href="scene-bundles.html">scene-bundles.md</a>. The <code>_DAT_8007BAC8</code> slot the field VM writes (opcode <code>0x35</code>) is consumed by <code>FUN_800243F0</code>, which resolves a SEQ payload through the <a href="cdname.html">CDNAME</a> per-scene block and hands it to <code>FUN_80062340</code> (<code>SsSeqOpen</code>) for playback.</p>
+  <p>SEQ payloads are loaded by the PsyQ libsnd <code>SsSeqOpen</code> family - see <a href="../subsystems/audio.html"><code>subsystems/audio.md</code></a> → "Public SEQ API". On-disc, SEQ data lives inside the same scene-VAB-prefixed streaming containers described in <a href="scene-bundles.html">scene-bundles.md</a> - which means the SEQ bytes sit at a non-zero offset behind a wrapper, not at the start of the file. The <code>_DAT_8007BAC8</code> slot the field VM writes (opcode <code>0x35</code>) is consumed by <code>FUN_800243F0</code>, which resolves a SEQ payload through the <a href="cdname.html">CDNAME</a> per-scene block and hands it to <code>FUN_80062340</code> (<code>SsSeqOpen</code>) for playback.</p>
 </section>
 
 <section class="doc-section" id="tooling">

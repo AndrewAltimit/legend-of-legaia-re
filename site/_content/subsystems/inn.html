@@ -1,21 +1,28 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; inn</div>
   <h1>Inn</h1>
-  <p class="lede">HP / MP restore flow at in-game inns. Retail has <strong>no inn overlay and no inn cost table</strong>: each inn is an ordinary field-VM dialogue in its scene's MAN, and the price is a script literal. Clean-room session state: <code>engine-core::inn::InnSession</code>; the scene host scans the scripted cost from the MAN at load (<code>SceneHost::scene_inn_cost</code>) and <code>MenuRuntime::open_scene_inn</code> opens the prompt with it (<code>open_inn(cost)</code> is the direct entry for tests and tooling).</p>
+  <p class="lede">What happens when you pay to rest at an inn - the "spend some gold, restore the party's HP and MP" flow. The headline finding: <strong>retail Legaia has no inn system at all</strong>. There is no inn overlay (no dedicated chunk of loadable code) and no inn cost table anywhere on the disc. Each inn is just an ordinary dialogue in its town's script - the innkeeper's conversation checks your gold, deducts the price, restores the party, and hands off to the dream sequence, all as plain script instructions - and the price is a literal number embedded in that script.</p>
 </header>
+
+<section class="doc-section" id="what-is-this">
+  <h2>What this page covers</h2>
+  <p>Every town's dialogue, doors and triggers run as bytecode in the <a href="script-vm.html">field/event VM</a> (a small interpreter for per-scene scripts), and each scene ships its script in a container called the <strong>MAN</strong> (the scene's script + data sub-asset). An inn stay is nothing more than one such script: a gold check, a debit, a restore, a dream. Because the price is data inside the script rather than a row in a table, finding "what does this inn charge?" means <em>scanning the script bytes</em> - which is exactly what the clean-room engine does at scene load.</p>
+  <p>Engine-side session state: <code>engine-core::inn::InnSession</code>; the scene host scans the scripted cost from the MAN at load (<code>SceneHost::scene_inn_cost</code>) and <code>MenuRuntime::open_scene_inn</code> opens the prompt with it (<code>open_inn(cost)</code> is the direct entry for tests and tooling).</p>
+</section>
 
 <section class="doc-section" id="cost-source">
   <h2>Retail cost source (field-VM script literals)</h2>
   <p>An inn stay is a scripted <strong>gold-gate + debit pair</strong> inline in the scene MAN (asset type <code>0x03</code>),
-  the same place the town gold-shop stock lives (see <a href="shop.html#stock-source">Shop</a>):</p>
+  the same place the town gold-shop stock lives (see <a href="shop.html#stock-source">Shop</a>). In the disassembly below,
+  each line is one script instruction: an opcode byte (<code>0x4E</code>, <code>0x3A</code>) followed by its operands:</p>
 <pre><code>0x4E &lt;pp&gt; 0x30 &lt;cost u16&gt; &lt;skip u16&gt;   ; if gold &lt; cost, jump +skip
 ...                                    ;   (the "can't afford" reply)
 0x3A &lt;sext24(-cost)&gt;                   ; ADD_MONEY: gold -= cost</code></pre>
   <p>Op <code>0x4E</code> <strong>sub-op 3</strong> (operand byte 1, high nibble) loads the party gold <code>_DAT_8008459C</code>
   and compares it against the u16 literal at operand <code>+2</code> (low nibble <code>0</code> = jump when gold &lt; literal -
   the can't-afford branch); sub-op 10 is the 32-bit sibling (literal lo16 at <code>+2</code> / hi16 at <code>+6</code>, 9 bytes)
-  used where a price can exceed 65535 (the casino gold-to-coin counter). Provenance: the op-<code>0x4E</code> inner jump table at
-  field-overlay VA <code>0x801CEE30</code> (12 entries) - the sub-3 arm at <code>0x801E0AEC</code> loads
+  used where a price can exceed 65535 (the casino gold-to-coin counter). Provenance: the op-<code>0x4E</code> inner jump table
+  (the array of handler addresses the interpreter jumps through) at field-overlay VA <code>0x801CEE30</code> (12 entries) - the sub-3 arm at <code>0x801E0AEC</code> loads
   <code>_DAT_8008459C</code>, sub-2 at <code>0x801E0AC0</code> loads a per-character level byte (<code>+0x130</code>), sub-9 at
   <code>0x801E0B34</code> loads the casino coin bank <code>_DAT_800845A4</code> (see
   <code>ghidra/scripts/funcs/overlay_0897_801de840.txt</code>; the decompiled-C case labels collapse these arms - the

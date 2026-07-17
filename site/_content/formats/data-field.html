@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; data_field streaming format</div>
   <h1>DATA_FIELD streaming format <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">A stream of typed chunks consumed by <code>FUN_8002541C</code> on its <code>0x14</code> (DATA_FIELD) branch. The walker passes every chunk through the <a href="asset-type.html">asset-type dispatcher</a> with <code>copy_only=1</code>, so chunks are always uncompressed.</p>
+  <p class="lede">A container format for shipping several assets in one file: a stream of typed <em>chunks</em>, each a 4-byte header (type + size) followed by raw data, read one after another until a terminator. The consumer is <code>FUN_8002541C</code> (a Ghidra-traced routine in the game's executable) on its <code>0x14</code> (DATA_FIELD) branch, which passes every chunk through the <a href="asset-type.html">asset-type dispatcher</a> - the routine that routes each blob to its format handler - with <code>copy_only=1</code>, so chunks are always uncompressed.</p>
 </header>
 
 <section class="doc-section" id="overview">
@@ -9,7 +9,7 @@
   <p>Implementation: <code>crates/asset/src/lib.rs::parse_streaming</code>.</p>
   <aside class="notice">
     <div class="notice-title">Scope note</div>
-    <p>This page covers the <em>typed-chunk streaming</em> shape that <code>FUN_8002541C</code> consumes - not the wider question of "what does the per-scene CDNAME block actually carry?" Per-scene field bundles use multiple shapes; the typed map below identifies which shapes show up where.</p>
+    <p>This page covers the <em>typed-chunk streaming</em> shape that <code>FUN_8002541C</code> consumes - not the wider question of "what does the per-scene CDNAME block actually carry?" (a CDNAME block is the run of consecutive <code>PROT.DAT</code> archive entries that <a href="cdname.html"><code>CDNAME.TXT</code></a> assigns to one scene). Per-scene field bundles use multiple shapes; the typed map below identifies which shapes show up where.</p>
   </aside>
 </section>
 
@@ -55,7 +55,7 @@ terminator</code></pre>
 
 <section class="doc-section" id="per-scene-field-bundles-what-s-still-open">
   <h2>Per-scene field bundles - what's still open</h2>
-  <p>The CDNAME block for a typical field/town scene (e.g. <code>town01</code>, <code>bubu1</code>) carries 8–12 PROT entries. Categorize identifies several known shapes per block:</p>
+  <p>The CDNAME block for a typical field/town scene (e.g. <code>town01</code>, <code>bubu1</code>) carries 8–12 PROT entries. Categorize (the sweep that classifies every archive entry by format) identifies several known shapes per block:</p>
 <table>
 <thead><tr>
 <th>Common slot</th>

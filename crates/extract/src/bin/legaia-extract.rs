@@ -23,18 +23,24 @@ use rayon::prelude::*;
 #[derive(Parser)]
 #[command(
     name = "legaia-extract",
-    about = "Run the full Legaia extraction pipeline (disc → PROT → categorize → sub-assets → PNG)"
+    version,
+    about = "Run the full Legaia extraction pipeline (disc → PROT → categorize → sub-assets → PNG → XA → font)"
 )]
 struct Cli {
-    /// Path to the Legend of Legaia (USA) disc image (.bin, Mode2/2352).
+    /// Legend of Legaia (USA) disc image: a raw Mode2/2352 `.bin` dump, or
+    /// its `.cue` sheet (the referenced BINARY track is resolved
+    /// automatically).
     bin: PathBuf,
-    /// Output directory. Created if missing. Existing files are overwritten.
+    /// Output directory (resolved against the current directory when
+    /// relative). Created if missing. Existing files are overwritten.
     #[arg(long, default_value = "extracted")]
     out: PathBuf,
     /// Skip the disc verification step (don't compute SHA-256).
     #[arg(long)]
     skip_verify: bool,
-    /// Skip TIM → PNG conversion (the slowest step).
+    /// Skip converting the streaming-container TIMs to PNG (a quick step;
+    /// the bulk texture inventory is the TIM-catalog TSVs, see
+    /// --skip-catalog).
     #[arg(long)]
     skip_png: bool,
     /// Skip CD-XA demux → per-channel WAV (the streamed-audio step).
@@ -43,16 +49,33 @@ struct Cli {
     /// Skip writing the TIM-catalog TSVs (the texture inventory step).
     #[arg(long)]
     skip_catalog: bool,
+    /// Skip building the dialog-font artifacts (`font/` dir the engine and
+    /// asset-viewer load text from).
+    #[arg(long)]
+    skip_font: bool,
     /// Print one line per file written.
     #[arg(short, long)]
     verbose: bool,
 }
 
+/// Restore default SIGPIPE behaviour so piping into `head` etc. exits
+/// quietly instead of panicking on a broken-pipe write.
+fn reset_sigpipe() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> Result<()> {
+    reset_sigpipe();
     let cli = Cli::parse();
     if !cli.bin.exists() {
         bail!("disc image not found: {}", cli.bin.display());
     }
+    // Fail fast (with the path and what was wrong) on inputs that aren't
+    // Mode2/2352 disc images, before any hashing / extraction starts.
+    RawDisc::open(&cli.bin).with_context(|| format!("opening disc image {}", cli.bin.display()))?;
     std::fs::create_dir_all(&cli.out)
         .with_context(|| format!("creating output dir {}", cli.out.display()))?;
 
@@ -66,11 +89,11 @@ fn main() -> Result<()> {
         log("verify: skipped");
     }
 
-    log("step 1/7: disc → ISO9660 files");
+    log("step 1/8: disc → ISO9660 files");
     let n = step_disc_extract(&cli.bin, &cli.out, cli.verbose)?;
     log(&format!("  {} files extracted", n));
 
-    log("step 2/7: PROT.DAT → named entries");
+    log("step 2/8: PROT.DAT → named entries");
     let prot_dir = cli.out.join("PROT");
     let cdname_path = cli.out.join("CDNAME.TXT");
     let cdname_arg = if cdname_path.exists() {
@@ -90,7 +113,7 @@ fn main() -> Result<()> {
         prot_dir.display()
     ));
 
-    log("step 3/7: categorize PROT entries");
+    log("step 3/8: categorize PROT entries");
     let cat_path = prot_dir.join("categorize.json");
     let report = step_categorize(&prot_dir, &cat_path)?;
     log(&format!(
@@ -99,27 +122,28 @@ fn main() -> Result<()> {
         cat_path.display()
     ));
 
-    log("step 4/7: extract sub-assets from streaming-format entries");
+    log("step 4/8: extract sub-assets from streaming-format entries");
     let stream_dir = cli.out.join("streaming");
     let n_streams = step_streaming_extract(&prot_dir, &stream_dir, cli.verbose)?;
     log(&format!("  {} streaming containers expanded", n_streams));
 
     if cli.skip_png {
-        log("step 5/7: TIM → PNG (skipped via --skip-png)");
+        log("step 5/8: streaming-container TIMs → PNG (skipped via --skip-png)");
     } else {
-        log("step 5/7: TIM → PNG");
+        log("step 5/8: streaming-container TIMs → PNG");
         let n_png = step_tim_to_png(&stream_dir, cli.verbose)?;
         log(&format!(
-            "  {} PNG images written under {}",
+            "  {} PNG images written under {} (only the TIMs step 4 emitted; the \
+             full texture inventory comes from the TIM catalogs in step 7)",
             n_png,
             stream_dir.display()
         ));
     }
 
     if cli.skip_xa {
-        log("step 6/7: CD-XA demux → WAV (skipped via --skip-xa)");
+        log("step 6/8: CD-XA demux → WAV (skipped via --skip-xa)");
     } else {
-        log("step 6/7: CD-XA demux → per-channel WAV");
+        log("step 6/8: CD-XA demux → per-channel WAV");
         let xa_dir = cli.out.join("XA_WAV");
         let n_wav = step_xa_demux(&cli.bin, &xa_dir, cli.verbose)?;
         log(&format!(
@@ -130,9 +154,9 @@ fn main() -> Result<()> {
     }
 
     if cli.skip_catalog {
-        log("step 7/7: TIM catalog → TSV (skipped via --skip-catalog)");
+        log("step 7/8: TIM catalog → TSV (skipped via --skip-catalog)");
     } else {
-        log("step 7/7: TIM catalog → TSV");
+        log("step 7/8: TIM catalog → TSV");
         let (raw_n, deep_n) = step_tim_catalog(&cli.out.join("PROT.DAT"), &cli.out)?;
         log(&format!(
             "  {} raw + {} compressed TIMs → prot_tim_catalog.tsv / prot_tim_deep_catalog.tsv",
@@ -140,8 +164,54 @@ fn main() -> Result<()> {
         ));
     }
 
+    if cli.skip_font {
+        log("step 8/8: dialog font → font/ (skipped via --skip-font)");
+    } else {
+        log("step 8/8: dialog font → font/");
+        // The engine and asset-viewer load dialog text from these artifacts;
+        // a failure here degrades text rendering but must not abort an
+        // otherwise-good extraction, so it's a warning.
+        match step_font_export(&cli.out) {
+            Ok(font_dir) => log(&format!(
+                "  5 dialog-font artifacts written to {}",
+                font_dir.display()
+            )),
+            Err(e) => log(&format!(
+                "  [warn] dialog-font build failed ({:#}); engine text will fall \
+                 back to a placeholder font",
+                e
+            )),
+        }
+    }
+
     log("done");
+    let out = cli.out.display();
+    log(&format!(
+        "textures: inventoried in {out}/prot_tim_catalog.tsv (+ prot_tim_deep_catalog.tsv); \
+         export them with `asset tim-scan {out}/PROT --out {out}/tim_scan` and convert to \
+         PNG with `tim convert-dir {out}/tim_scan`"
+    ));
     Ok(())
+}
+
+/// Step 8: build the `font/` artifact set (atlas + sheet PNGs, widths CSV,
+/// metadata JSON, raw 4bpp page) straight from the extracted `PROT.DAT` +
+/// `SCUS_942.54` - no emulator save state needed. This is the directory
+/// `legaia-engine` / `asset-viewer` load dialog text from
+/// (`Font::load_from_extracted`). Returns the font dir path.
+fn step_font_export(out: &Path) -> Result<PathBuf> {
+    let prot = out.join("PROT.DAT");
+    let scus = out.join("SCUS_942.54");
+    let prot_bytes = std::fs::read(&prot).with_context(|| format!("reading {}", prot.display()))?;
+    let scus_bytes = std::fs::read(&scus).with_context(|| format!("reading {}", scus.display()))?;
+    let off = legaia_font::FONT_TIM_PROT_DAT_OFFSET as usize;
+    let end = off + legaia_font::FONT_TIM_LEN;
+    let tim = prot_bytes
+        .get(off..end)
+        .with_context(|| format!("PROT.DAT too short for font TIM at 0x{off:X}"))?;
+    let font_dir = out.join("font");
+    legaia_font::export_extracted_font_dir(tim, &scus_bytes, &font_dir)?;
+    Ok(font_dir)
 }
 
 /// Write the flat and deep TIM catalogs as TSVs into the extract root, so a

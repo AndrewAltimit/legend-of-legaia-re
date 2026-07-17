@@ -18,3 +18,6 @@ clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 legaia-tim = { path = "../tim" }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

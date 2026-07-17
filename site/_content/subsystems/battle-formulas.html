@@ -1,12 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; battle formulas</div>
   <h1>Battle formulas</h1>
-  <p class="lede">Damage, MP-cost, accuracy, and RNG arithmetic kernels used by the <a href="battle-action.html">battle action state machine</a>. The central damage-application primitive is <code>FUN_800402F4</code>; the engine-side mirror lives in <code>crates/engine-vm/src/battle_formulas.rs</code>.</p>
+  <p class="lede">The actual arithmetic behind Legaia's battles - if you have ever wondered exactly how much damage a hit does, what your odds are to connect or to flee, how MP-saver accessories round, or how the random number generator is seeded, this is the page. Every formula here is traced from the game's own code (function names like <code>FUN_800402F4</code> are Ghidra's labels for the routines at those RAM addresses), and the clean-room Rust engine mirrors the arithmetic <em>exactly</em> - same integer truncation, same clamps, same order of RNG draws - in <code>crates/engine-vm/src/battle_formulas.rs</code>. These kernels are what the <a href="battle-action.html">battle action state machine</a> calls when an action lands.</p>
 </header>
 
 <section class="doc-section" id="damage-primitive">
   <h2>Damage application primitive</h2>
-  <p><code>FUN_800402F4</code> (~7,904 bytes / 1,976 instructions, dumped as <code>ghidra/scripts/funcs/800402f4.txt</code>) is a <strong>selector dispatch</strong>: <code>switch(selector) { case 0..0x83 ... }</code>. Each case is one &ldquo;damage / status / stat-modify kind.&rdquo; The function fills four local 8-pointer arrays (one per actor slot) over <code>+0x14C</code> (HP), <code>+0x14E</code>, <code>+0x150</code> (MP), <code>+0x152</code> before the selector switch.</p>
+  <p>Almost everything that changes a combatant's numbers - damage, healing, buffs, status - funnels through one big routine. <code>FUN_800402F4</code> (~7,904 bytes / 1,976 instructions, dumped as <code>ghidra/scripts/funcs/800402f4.txt</code>) is a <strong>selector dispatch</strong>: <code>switch(selector) { case 0..0x83 ... }</code>. Each case is one &ldquo;damage / status / stat-modify kind.&rdquo; The function fills four local 8-pointer arrays (one per <strong>actor</strong> slot - an actor is the engine's live record for one combatant, party member or monster; battle holds 8 slots) over <code>+0x14C</code> (HP), <code>+0x14E</code>, <code>+0x150</code> (MP), <code>+0x152</code> before the selector switch.</p>
   <p>The most common selectors:</p>
   <ul class="bullets">
     <li><strong>Selector 0</strong> - the HP <em>applicator</em>: applies the pending HP delta (<code>actor[+0x14E] - actor[+0x14C]</code> within the target), capped at the per-party-slot ceiling table at <code>DAT_8007655C</code>. The attack-vs-defense hit value is computed earlier (see below) and staged into the actor first.</li>

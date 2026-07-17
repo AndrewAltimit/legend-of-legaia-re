@@ -1,12 +1,21 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; move-power table</div>
   <h1>Move-power / parameter table <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">The battle-action overlay's per-move <strong>power and behaviour</strong> table: one 26-byte record per battle move drives the damage roll, homing motion, hit reaction, sound cue and spawned effects. Parser <code>legaia_asset::move_power</code>; CLI <code>asset move-power</code>.</p>
+  <p class="lede">When an enemy uses a named special attack - Fire Breath, Tail Fire - how hard it hits and how
+  it looks on screen come from this table: one 26-byte record per battle move carrying the damage power, homing
+  motion, hit reaction, sound cue, and the effect lists that spawn the visuals. It lives in the battle-action
+  <em>overlay</em> (a chunk of code and data the game loads into RAM for battles, shipped as PROT entry 0898 - a
+  numbered entry of PROT.DAT, the disc's single big archive), not in the main executable. Two things make it
+  interesting: it covers enemy <em>special</em> attacks only (a party member's Tactical Art takes its power from
+  the <a href="art-data.html">art record</a> instead, and basic attacks use the generic physical path), and one
+  record survives for a move no enemy can use - the dummied-out "Freeze Thunder" spell, whose power record is
+  intact but whose effect lists are empty. Parser <code>legaia_asset::move_power</code>; CLI <code>asset
+  move-power</code>.</p>
 </header>
 
 <section class="doc-section" id="location">
   <h2>Location - static overlay data</h2>
-  <p>The table is loaded with the battle-action overlay image (PROT entry 0898), not built per battle: the <code>0x801F4F5C..0x801F69D8</code> window is byte-identical across two unrelated battle save states, and the raw PROT 0898 bytes byte-match the in-RAM table.</p>
+  <p>The table is loaded with the battle-action overlay image (PROT entry 0898), not built per battle: the <code>0x801F4F5C..0x801F69D8</code> window is byte-identical across two unrelated battle save states, and the raw PROT 0898 bytes byte-match the in-RAM table. (The "runtime VA" is the fixed RAM address the overlay occupies once loaded; because the data is static, the same bytes sit at a fixed file offset inside the PROT entry, which is how the parser reads it straight off the disc.)</p>
 <table>
 <thead><tr><th>Thing</th><th>Value</th></tr></thead>
 <tbody>
@@ -22,7 +31,7 @@
 
 <section class="doc-section" id="indexing">
   <h2>Indexing - <code>power_table[map[move_id]]</code></h2>
-  <p>The record index is <strong>not</strong> the battle move id directly. The setup site reads the actor's move id at <code>actor[+0x1df]</code>, looks it up in the 128-byte id&rarr;index map, and indexes the table with the result. A map byte of <code>0x00</code> or <code>0xFF</code> means "no record". The move id is the <strong>same id space as the SCUS spell-name table</strong> (<a href="spell-table.html">spell table</a>, also indexed by <code>actor[+0x1df]</code>), so joining the two labels every record:</p>
+  <p>(<code>FUN_80xxxxxx</code> names throughout are Ghidra-traced functions, labelled by their RAM address.) The record index is <strong>not</strong> the battle move id directly. The setup site reads the actor's move id at <code>actor[+0x1df]</code>, looks it up in the 128-byte id&rarr;index map, and indexes the table with the result. A map byte of <code>0x00</code> or <code>0xFF</code> means "no record". The move id is the <strong>same id space as the SCUS spell-name table</strong> (<a href="spell-table.html">spell table</a>, also indexed by <code>actor[+0x1df]</code>), so joining the two labels every record:</p>
   <ul class="bullets">
     <li>records <code>0x10..=0x2b</code> (move ids <code>0x25..=0x74</code>) are the <strong>named monster special attacks</strong> (Fire Breath <code>0x25</code>, Tail Fire <code>0x27</code>, &hellip;) - their special-attack <em>power</em>, separate from the <em>name</em> the spell table carries.</li>
     <li>records <code>0x01..=0x0f</code> (move ids <code>0x04..=0x1f</code>) are the spell table's unnamed <strong>internal enemy-attack tiers</strong>.</li>
