@@ -14,9 +14,16 @@
 //! / `CC`, so **there is no runtime light source on the field path**: no light
 //! matrix is consulted, no vertex normal is transformed. (The GTE light matrix
 //! `L` (cr8-12) and light-colour matrix `LC` (cr16-20) *are* populated -
-//! `FUN_8005b648` / `FUN_8005b678` - but the only functions that consume them
-//! via `NCCS`/`NCCT` are the world-map slot-4 mesh handlers, `FUN_8004409c` /
-//! `FUN_8004423c` / `FUN_80044434` / `FUN_800445b0`.)
+//! `FUN_8005b648` / `FUN_8005b678` - and the only functions that *statically*
+//! consume them via `NCCS`/`NCCT` are the four handlers `FUN_8004409c` /
+//! `FUN_8004423c` / `FUN_80044434` / `FUN_800445b0` (dispatch kinds 8..11).
+//! Those handlers are not observed executing at runtime, though: GTE-op sampling
+//! of a battle, a summon, and the `map01` world map - whose slot-4 landmark meshes
+//! are the presumed consumer - issues only `RTPT`/`RTPS` + `DPCS`/`DPCT`, zero
+//! `NCC*`. The world map renders unlit through the overlay renderer, so the NCC
+//! path is present in the ROM but appears runtime-dead: the code that *would*
+//! light a mesh, not a confirmed live light source. Confirmed on `map01`;
+//! `map02`/`map03` are story-gated and untested.)
 //!
 //! Field shading is therefore **baked into the TMD**. Every primitive carries a
 //! colour word - `[R][G][B][GP0 code]`, the code byte being one of

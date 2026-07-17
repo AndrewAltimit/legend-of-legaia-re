@@ -58,9 +58,22 @@ renderers over this table - `FUN_8002735C` and its light-source sibling
 ever issues `NCDS` / `NCDT` / `NCS` / `NCT` / `NCCS` / `NCCT` / `CDP` / `CC`, so
 no light matrix is consulted and no vertex normal is transformed. The GTE light
 matrix `L` (cr8-12) and light-colour matrix `LC` (cr16-20) *are* populated
-(`FUN_8005B648` = `SetLightMatrix`, `FUN_8005B678` = `SetColorMatrix`), but the
-only functions that consume them - via `NCCS`/`NCCT` - are the world-map slot-4
-mesh handlers `FUN_8004409C` / `FUN_8004423C` / `FUN_80044434` / `FUN_800445B0`.
+(`FUN_8005B648` = `SetLightMatrix`, `FUN_8005B678` = `SetColorMatrix`), and the
+only functions that *statically* consume them - via `NCCS`/`NCCT` - are the four
+handlers `FUN_8004409C` / `FUN_8004423C` / `FUN_80044434` / `FUN_800445B0` (dispatch
+kinds 8..11; see the dispatch table below).
+
+**But those handlers are not observed executing at runtime.** GTE-op sampling of
+live gameplay - a battle, a summon, and the `map01` world map (the Sebucus kingdom
+overworld, whose slot-4 landmark meshes are the presumed consumer) - issues only
+`RTPT`/`RTPS` transform and `DPCS`/`DPCT` depth cue: **zero** `NCC*` (or any other
+`NC*`) ops. The world map itself renders through the overlay renderer at
+`0x801F7xxx` (which reads the slot-4 landmark meshes in place) with baked colour, no
+light. So the NCC light path is present in the ROM but appears runtime-**dead**: the
+four handlers are the only code that *would* light a mesh, yet nothing dispatches
+to them in the scenes sampled. (Confirmed on `map01`; `map02`/`map03` are gated
+behind story progression and untested, so a light-using kingdom map or landmark LOD
+is not fully ruled out.)
 
 Field shading is instead **baked into the TMD**. Every primitive carries a
 colour word `[R][G][B][GP0 code]`, the code byte being one of `0x20` (`F3`),
@@ -98,6 +111,61 @@ the lit rows, having no colour word, get `MODULATION_NEUTRAL`) →
 pipeline → `psx_modulate` / `psx_depth_cue` in the shader prelude, mirrored on
 the CPU by `legaia_engine_render::psx_light` and pinned by its tests. The far
 colour and `IR0` are set with `Renderer::set_depth_cue` (default `IR0 = 0`).
+
+### Per-prim dispatch table (`FUN_80043390`)
+
+`FUN_80043390` is the per-prim *dispatcher* behind the two TMD renderers: it
+decodes a primitive kind (`0..19`) and count, then tail-calls a **20-slot × 4
+alpha-bank jump table** - `0x8007657C` on the SCUS path, `0x801F8968` when the
+world-map overlay is paged in (`_DAT_1F800394 & 1`). Each handler does
+`RTPT`/`RTPS` → `NCLIP` backface cull → `AVSZ3`/`AVSZ4` depth → packet write into
+an ordering table (deferred `DrawOTag`; no direct GPU DMA). The alpha bank is the
+`_DAT_1F800028` offset (`0x00`/`0x50`/`0xA0`/`0xF0` = opaque / half / additive /
+subtractive).
+
+| kind | bank 0 (opaque) | banks 1-3 (fog) | topo | colour op |
+|---:|---|---|---|---|
+| 0-7 | — | — | — | none (unused) |
+| 8 | `0x8004409C` | (shared) | tri | **NCCS** (lit) |
+| 9 | `0x8004423C` | (shared) | quad | **NCCS** (lit) |
+| 10 | `0x80044434` | (shared) | tri | **NCCT** (lit) |
+| 11 | `0x800445B0` | (shared) | quad | **NCCT+NCCS** (lit) |
+| 12 | `0x80043658` | `0x800448B0` | tri | DPCS (fog banks) |
+| 13 | `0x80043768` | `0x80044A3C` | quad | DPCS |
+| 14 | `0x80043B58` | `0x80044FDC` | tri | DPCT |
+| 15 | `0x80043C6C` | `0x80045194` | quad | DPCT+DPCS |
+| 16 | `0x800438B8` | `0x80044C14` | tri | DPCS |
+| 17 | `0x800439E4` | `0x80044DC8` | quad | DPCS |
+| 18 | `0x80043DD4` | `0x800453BC` (b2 `0x800457C4`) | tri | DPCT/DPCS |
+| 19 | `0x80043F10` | `0x80045584` (b2 `0x80045988`, b3 `0x80045BB4`) | quad | DPCT/DPCS |
+
+Structural facts (raw table): slots **0-7 are NULL** in every bank; **8-11 are
+bank-invariant** and the *only* handlers that run a light source (`NCCS`/`NCCT`,
+i.e. the world-map slot-4 landmark meshes above); **12-19 are bank-dependent** -
+bank 0 is opaque with no colour op, banks 1/2/3 add the `DPCS`/`DPCT` depth cue.
+Kinds 8..11 are the only handlers carrying an `NCC*` light op - though runtime GTE
+sampling never catches them executing (see "Retail runs no light source" above), so
+treat them as the ROM's light-*capable* handlers, not a confirmed live light path.
+**Topology is parity-based** (definitive from `AVSZ3` vs `AVSZ4`): even kinds are
+triangles, odd kinds are quads, so neither range is a uniform vertex count. Kind
+19 bank 3 (`0x80045BB4`) is a composite/tessellating body (emits both `POLY_G3`
+and `LINE_F2`, dual `RTPT`).
+
+Provenance: the jump table's computed `jr` is not statically resolvable (a static
+recompilation of `SCUS_942.54` leaves these handler bodies uncompiled), so the
+map is read from the SCUS PSX-EXE directly (`t_addr = 0x80010000`, file offset =
+`VA − 0x80010000 + 0x800`).
+
+Engine port: `legaia_engine_vm::prim_dispatch` models this table - `slot_to_kind`
+(topology-correct `PolyKind`), `slot_lit` (`NccMode` for slots 8-11), and
+`RenderMode::applies_depth_cue` (the SCUS fog banks). The `NCCS`/`NCCT` kernels
+live in `legaia_engine_render::gte::lighting` and are exercised by the `gte_trace`
+parity oracle, but no wgpu path yet draws the world-map slot-4 meshes, so the lit
+handlers are a faithful data model rather than a wired render path. This is a low
+priority: retail itself is not observed dispatching to these handlers at runtime
+(the world map renders unlit), so leaving them unwired matches observed retail
+output; the `NccMode` metadata is kept for fidelity if a light-using scene is ever
+found.
 
 ## TMD pointer table
 
