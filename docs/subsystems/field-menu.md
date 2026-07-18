@@ -510,6 +510,39 @@ Engine port: `engine-core::options` (`OPTIONS_DISPLAY_ROWS`,
 mixer's monaural downmix (`engine-audio AudioOut::set_mono`), the other
 settings persist in the engine's options config file.
 
+## Dialog reading box (FUN_801D84D0)
+
+The field dialog pager `FUN_801D84D0` (dialog overlay) draws the NPC /
+event message box with the same window emitter `FUN_8002C69C` the menu
+uses. Geometry, pinned from the live pager context (`*DAT_801C6EA4`) in
+the `v0_1_tetsu_dialogue_accept` save state plus the on-screen
+framebuffer:
+
+- **Reading box centre rect** = `(ctx+0x12, ctx+0x14, 0xF4,
+  lines*0xF + 5 - 8)` with `ctx+0x12 = 0x26` (38), `ctx+0x14 = 0x10`
+  (16) and `_DAT_801F2740 = 3` lines - the box sits at the **top** of
+  the screen. The emitter's standard skin extends ~8 px beyond the
+  centre rect on every side: measured footprint `x 30..289, y 8..65`,
+  with the outermost 4 px as the tan border band and the translucent
+  gouraud gradient fill spanning the rest (centre inflated by 4).
+- **Interior fill** = two stacked semi-transparent gouraud `POLY_G4`
+  quads (top RGB `(0x18,0x18,0x28)`, bottom `(0x40,0x40,0xA0)`,
+  composing to `0.25*back + 0.75*gradient`).
+- **Text pen** = the box origin exactly: each line draws at
+  `FUN_80036888(line, 0, 0, ctx+0x12, ctx+0x14 + i*0xF)` with the ink
+  staged CLUT 7. Measured first-line ink starts at `x 38, y 18`.
+- **Advance hand** (page-wait state `0x19`) = `FUN_8002B994(1, 1,
+  0x10A, ctx+0x14 + lines*0xF - 0x13)` - `0x10A = x + w - 0x10` for the
+  standard box.
+- **Option picker box** = `x 0x26, y 0x94 + ((4-n)*0xF)/2, w 0xF4,
+  h 0x38 - (4-n)*0xF` (2..4 options); option rows at `x+0x10`,
+  `y + i*0xF`; hand cursor `FUN_8002B994(0, 1, x-6, y + cursor*0xF)`.
+
+Engine port: `engine-ui::dialog_window_chrome_draws_for` (centre-rect
+semantics, border+fill inflation), `dialog_advance_hand_sprite`,
+`dialog_option_hand_sprite`; the play-window's `dialog_stage_layout`
+carries the rects.
+
 ## Draw primitives + CLUT staging
 
 Three shared primitives render everything:
@@ -532,6 +565,38 @@ in the framebuffer), 5 (status separators - the teal `(66,222,222)`
 parenthesised-value ink), 6 (magic header + skill labels), 9 (moves
 header), 4 (skill passives), 1 (command label + arrows), 0 (non-selected
 magic rows).
+
+### Ink CLUT rows
+
+The staged index selects a 16-colour CLUT at VRAM `(16*(6+index), 510)`
+(the in-prim halfword `index + 0x7f86` decoded as `x = (c & 0x3f) * 16`,
+`y = c >> 6`). The **main ink is palette entry 15**; entries 12..14 hold
+the outline/shade ramp. Entry-15 values read off the golden
+`menu_status_town` VRAM:
+
+| index | entry-15 RGB | role |
+|---|---|---|
+| 0 | `(132,132,132)` | grey (non-selected rows) |
+| 1 | `(107,107,231)` | lavender (command labels) |
+| 2 | `(231,33,0)` | red (downed - 0 HP) |
+| 4 | `(107,222,107)` | green (skill passives) |
+| 5 | `(66,222,222)` | teal (separators / base values) |
+| 6 | `(231,173,0)` | gold (warning tier, headers) |
+| 7 | `(206,206,206)` | white (default text) |
+| 9 | `(222,90,0)` | orange (critical tier, moves header) |
+
+### HP / MP health-tier inks
+
+The status page and the top-level party panel stage the HP / MP number
+fields (current **and** max) through two per-character tier functions:
+
+- **`FUN_800349EC`** (HP): `hp == 0` → 2 (red); `hp <= max/4` → 9
+  (orange); `hp <= max/2` → 6 (gold); else 7 (white). A non-zero
+  status halfword at record `+0x12E` forces the gold tier at any HP.
+- **`FUN_80035EA8`** (MP): same quarter/half thresholds without the
+  zero case (`mp <= max/4` → 9, `<= max/2` → 6, else 7).
+
+Engine port: `engine-ui::menu_hp_ink` / `menu_mp_ink`.
 
 ## Record fields consumed
 
