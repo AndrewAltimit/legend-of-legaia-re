@@ -63,6 +63,7 @@ impl World {
         // encounter / field.
         self.battle_hit_fx.clear();
         self.battle_sfx_cues.clear();
+        self.battle_shout_cues.clear();
         // Post-battle grace + suppression on the session.
         self.end_encounter_battle();
         // Restore the field actor table captured at the transition.

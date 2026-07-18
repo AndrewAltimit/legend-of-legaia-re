@@ -100,12 +100,25 @@ impl World {
                 // Miracle replacement runs before any tail Super expansion).
                 if let Some(miracle) = miracle_for_chain(character, &c.sequence) {
                     let (power, enemy_effect) = self.miracle_strike_profile(character, miracle);
+                    // Shout key: the finisher constant of the resolved
+                    // Miracle queue (the last art the materialiser runs).
+                    let action = legaia_engine_vm::battle_action::resolve_action_queue(
+                        character,
+                        miracle.commands,
+                        &[],
+                    )
+                    .actions()
+                    .iter()
+                    .rev()
+                    .copied()
+                    .find(|a| a.is_art());
                     return ArtRow {
                         name: c.name.clone(),
                         power,
                         enemy_effect,
                         miracle: Some(miracle.name),
                         super_art: None,
+                        action,
                     };
                 }
                 // Super Arts next (after Miracle, matching the retail order):
@@ -120,12 +133,21 @@ impl World {
                 };
                 if let Some(sa) = super_for_chain(character, &c.sequence, caster_records()) {
                     let (power, enemy_effect) = self.super_strike_profile(character, sa);
+                    // Shout key: the Super's finisher constant (last art of
+                    // the replacement queue).
+                    let action = sa
+                        .replace
+                        .iter()
+                        .rev()
+                        .filter_map(|&b| legaia_art::ActionConstant::from_byte(b))
+                        .find(|a| a.is_art());
                     return ArtRow {
                         name: c.name.clone(),
                         power,
                         enemy_effect,
                         miracle: None,
                         super_art: Some(sa.name),
+                        action,
                     };
                 }
                 let best = self
@@ -135,7 +157,7 @@ impl World {
                     .filter(|(_, rec)| chain_matches_record(&c.sequence, rec))
                     .max_by_key(|(_, rec)| rec.commands.len());
                 match best {
-                    Some((_, rec)) => {
+                    Some(((_, action), rec)) => {
                         let (power, enemy_effect) = power_from_record(rec);
                         ArtRow {
                             name: c.name.clone(),
@@ -143,6 +165,8 @@ impl World {
                             enemy_effect,
                             miracle: None,
                             super_art: None,
+                            // Shout key: the matched record's own constant.
+                            action: Some(*action),
                         }
                     }
                     None => ArtRow {
@@ -151,6 +175,8 @@ impl World {
                         enemy_effect: legaia_art::EnemyEffect::None,
                         miracle: None,
                         super_art: None,
+                        // No matched record: the art executes silent.
+                        action: None,
                     },
                 }
             })

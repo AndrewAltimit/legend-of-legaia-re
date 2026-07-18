@@ -279,6 +279,38 @@ TARGETS = [
     # at _DAT_801C6EA4 +0x4C/+0x4E/+0x50/+0x52 written by the op 0x4C nibble-E
     # sub-8 config op (CC F8 E8 ...). See docs/subsystems/cutscene.md.
     "80037174",  # crawl-roller tick FUN_80037174
+
+    # Recomp gap-inventory closure wave: main loop (80015e90), battle actor
+    # maintenance pass (8004ce30), dev-HUD wireframe/number emitters, the
+    # statically-linked libgte per-op primitive family, party accessory
+    # unequip (800430ac)
+    "80015e90",
+    "8001c7a0",
+    "8001cad8",
+    "8001ccfc",
+    "8001ce34",
+    "8004ce30",
+    "800430ac",
+    "8003d300",
+    "8003d320",
+    "8003d388",
+    "8003fabc",
+    "80046190",
+    "8005b158",
+    "8005b2a4",
+    "8005b340",
+    "8005b6f8",
+    "8005b760",
+    "8005b828",
+    "8005b850",
+    "8005b878",
+    "8005b8b4",
+    "8005b8d8",
+    "8005b900",
+    "8005b928",
+    "8005b948",
+    "8005b96c",
+    "8005b9c4",
 ]
 
 OUT_DIR = "/scripts/funcs"

@@ -520,3 +520,78 @@ fn arts_voice_is_the_retail_cue_not_a_guess() {
         assert!(voiced > 0, "char {cslot} has at least one voiced art");
     }
 }
+
+#[test]
+fn export_character_glb_carries_the_whole_animation_bank() {
+    let Some((mut arts, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    for cslot in 0..4u32 {
+        let st: serde_json::Value = serde_json::from_str(&arts.set_character(cslot)).unwrap();
+        assert_eq!(st["ok"], true, "char {cslot} assembles");
+        let name = st["character"].as_str().unwrap().to_string();
+        let parts = st["part_count"].as_u64().unwrap() as usize;
+        let bank = st["arts"].as_array().unwrap();
+        let decoded = bank.iter().filter(|a| a["ok"] == true).count();
+        let has_idle = !st["idle"].is_null();
+
+        let glb = arts.export_character_glb();
+        assert!(
+            glb.len() > 100_000,
+            "{name}: .glb non-trivial ({} bytes)",
+            glb.len()
+        );
+        // GLB container: magic, version, declared length.
+        assert_eq!(&glb[0..4], b"glTF", "{name}: magic");
+        assert_eq!(u32::from_le_bytes(glb[4..8].try_into().unwrap()), 2);
+        let total = u32::from_le_bytes(glb[8..12].try_into().unwrap()) as usize;
+        assert_eq!(total, glb.len(), "{name}: declared length");
+        let json_len = u32::from_le_bytes(glb[12..16].try_into().unwrap()) as usize;
+        assert_eq!(&glb[16..20], b"JSON");
+        let root: serde_json::Value = serde_json::from_slice(&glb[20..20 + json_len]).unwrap();
+        assert_eq!(root["asset"]["version"], "2.0");
+
+        // One node per assembled TMD object + the reorienting root.
+        let nodes = root["nodes"].as_array().unwrap();
+        assert_eq!(nodes.len(), parts + 1, "{name}: node count");
+        assert_eq!(nodes[parts]["name"].as_str(), Some(name.as_str()));
+
+        // Every decoded bank record + the idle became a named animation.
+        let anims = root["animations"].as_array().unwrap();
+        assert_eq!(
+            anims.len(),
+            decoded + usize::from(has_idle),
+            "{name}: animation count"
+        );
+        assert!(anims.len() > 1, "{name}: more than one animation");
+        if has_idle {
+            assert_eq!(anims[0]["name"].as_str(), Some("battle idle"));
+        }
+        // Names are unique; durations are plausible (retail clips run
+        // fractions of a second up to a few seconds at 7.5 * rate fps).
+        let mut names: Vec<&str> = anims.iter().map(|a| a["name"].as_str().unwrap()).collect();
+        names.sort_unstable();
+        let before = names.len();
+        names.dedup();
+        assert_eq!(names.len(), before, "{name}: animation names unique");
+        let accessors = root["accessors"].as_array().unwrap();
+        for a in anims {
+            let chans = a["channels"].as_array().unwrap();
+            assert!(!chans.is_empty(), "{name}: animation has channels");
+            let in_acc = a["samplers"][0]["input"].as_u64().unwrap() as usize;
+            let dur = accessors[in_acc]["max"][0].as_f64().unwrap();
+            assert!(
+                (0.0..30.0).contains(&dur),
+                "{name} '{}': implausible duration {dur}",
+                a["name"]
+            );
+        }
+        eprintln!(
+            "[arts-glb] {name}: {} bytes, {} animations, {} nodes",
+            glb.len(),
+            anims.len(),
+            nodes.len()
+        );
+    }
+}

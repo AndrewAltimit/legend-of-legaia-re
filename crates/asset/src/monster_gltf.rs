@@ -491,7 +491,7 @@ fn build_animations(
 
 /// Compose the quaternion `[x, y, z, w]` for the engine's `Rz * Ry * Rx` Euler
 /// order, with each raw 12-bit angle (`4096` = a full turn) in turns.
-fn euler_zyx_quat(rx: u16, ry: u16, rz: u16) -> [f32; 4] {
+pub(crate) fn euler_zyx_quat(rx: u16, ry: u16, rz: u16) -> [f32; 4] {
     let ang = |raw: u16| (raw as f32) * (std::f32::consts::TAU / 4096.0);
     let (hx, hy, hz) = (ang(rx) * 0.5, ang(ry) * 0.5, ang(rz) * 0.5);
     let qx = [hx.sin(), 0.0, 0.0, hx.cos()];

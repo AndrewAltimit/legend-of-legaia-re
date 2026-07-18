@@ -223,12 +223,19 @@ impl World {
                 target_slot,
             }) => {
                 let caster = menu.actor;
-                let (power, enemy_effect) = menu
+                let (power, enemy_effect, action) = menu
                     .arts
                     .get(art_index as usize)
-                    .map(|a| (a.power.clone(), a.enemy_effect))
+                    .map(|a| (a.power.clone(), a.enemy_effect, a.action))
                     .unwrap_or_default();
-                self.apply_battle_art(caster, &power, enemy_effect, target_row, target_slot);
+                self.apply_battle_art(
+                    caster,
+                    &power,
+                    enemy_effect,
+                    action,
+                    target_row,
+                    target_slot,
+                );
                 self.battle_ctx.action_state =
                     vm::battle_action::ActionState::EndOfAction.as_byte();
             }
@@ -261,6 +268,7 @@ impl World {
         caster: u8,
         power: &[legaia_art::PowerByte],
         enemy_effect: legaia_art::EnemyEffect,
+        action: Option<legaia_art::ActionConstant>,
         target_row: crate::target_picker::CursorRow,
         target_slot: u8,
     ) {
@@ -280,6 +288,26 @@ impl World {
             .copied()
             .unwrap_or(0);
         let character = self.caster_character(caster);
+        // Arts-voice shout: fired once, on the art's animation-start frame,
+        // when the art carries a real action constant (a synthetic/demo art
+        // has none and stays silent - the retail degradation for arts with no
+        // cue-table entry). The host resolves the (character, action) pair
+        // against the arts-voice tables + XA clip banks and plays the CD-XA
+        // shout with the modeled CD-response delay, so the audio trails this
+        // frame rather than leading it. REF: FUN_8004C140.
+        if let Some(action) = action {
+            let cslot = legaia_art::Character::all()
+                .iter()
+                .position(|c| *c == character)
+                .unwrap_or(usize::MAX);
+            if cslot < 3 {
+                self.battle_shout_cues
+                    .push(crate::battle_events::BattleShoutCue {
+                        cslot: cslot as u8,
+                        action: action.as_byte(),
+                    });
+            }
+        }
         // Selector-9 accuracy/evasion terms (retail actor `+0x168`): the
         // attacker's accuracy vs the target's evasion. The roll engages only
         // when the ATTACKER has a seeded accuracy stat; an unseeded attacker
@@ -299,15 +327,17 @@ impl World {
                 break;
             }
             // Minimal per-strike info: `apply_art_strike` + `resolve_battle_defense`
-            // only read `power` + `enemy_effect`. `art` is a placeholder; the
-            // live loop doesn't drive the per-art animation script.
+            // only read `power` + `enemy_effect`. `art` carries the row's
+            // matched action constant when one exists (the shout-cue key);
+            // the placeholder only remains for synthetic rows, and the live
+            // loop doesn't drive the per-art animation script either way.
             let info = ArtStrikeInfo {
                 strike_index: i as u8,
                 anim_byte: 0,
                 actor_slot: caster,
                 target_slot: target as u8,
                 character,
-                art: legaia_art::ActionConstant::Art1B,
+                art: action.unwrap_or(legaia_art::ActionConstant::Art1B),
                 power: Some(*pb),
                 dmg_timing: None,
                 enemy_effect,

@@ -26,6 +26,7 @@ pub mod battle_char_palette;
 pub mod battle_data_pack;
 pub mod befect_cluster;
 pub mod categorize;
+pub mod character_gltf;
 pub mod character_pack;
 pub mod clut_walk;
 pub mod cutscene_text;

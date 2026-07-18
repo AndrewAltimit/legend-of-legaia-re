@@ -296,16 +296,18 @@ impl Renderer {
     }
 
     /// Set the full-scene colour grade applied by the field mesh shaders:
-    /// each shaded pixel is tone-mapped to `luminance * (gold_r, gold_g,
-    /// gold_b)` and cross-faded to that by `strength`. `strength = 0.0`
-    /// (the default) leaves the scene untouched; `1.0` is a full sepia
-    /// collapse. Reproduces the opening prologue's gold/amber grade
-    /// (the `opdeene` "It was the Seru." cutscene), which renders the whole
-    /// 3D scene in warm monochrome while the narration text stays white.
+    /// each shaded pixel is cross-faded toward the per-channel multiply
+    /// `rgb * (gold_r, gold_g, gold_b)` by `strength`. `strength = 0.0`
+    /// (the default) leaves the scene untouched; `1.0` is the full tint.
+    /// Reproduces the opening prologue's gold/amber grade (the `opdeene`
+    /// "It was the Seru." cutscene), which renders the whole 3D scene in
+    /// warm amber while the narration text stays white.
     ///
-    /// The retail grade measured off a VRAM capture averages RGB
-    /// `(69, 62, 23)` with hue ≈ 50° and no surviving green/blue, i.e. a
-    /// gold direction of `≈(1.0, 0.90, 0.33)` at near-full strength.
+    /// A multiply matches the retail mechanism: the amber is baked into the
+    /// drawn gouraud / texture-modulation colour words (measured on-geometry
+    /// ratio ≈ `255:240:110`), while backdrop textures draw at neutral
+    /// modulation and keep their pre-baked warm texel chroma - which a
+    /// multiply preserves and a luminance collapse would flatten.
     pub fn set_color_grade(&self, gold: [f32; 3], strength: f32) {
         self.color_grade
             .set([gold[0], gold[1], gold[2], strength.clamp(0.0, 1.0)]);

@@ -279,6 +279,81 @@ fn read_sfx_bank(source: &SceneSource<'_>) -> Option<legaia_engine_audio::SfxBan
     ))
 }
 
+/// Demux + decode the battle **arts-voice shout** banks from a disc image:
+/// the per-character CD-XA clip files (`XA2.XA` Vahn / `XA4.XA` Noa /
+/// `XA6.XA` Gala, 16-channel short-mono banks) plus the `SCUS_942.54`
+/// cue tables that map each art's action constant to its candidate-channel
+/// pool (`legaia_art::arts_voice`, the `FUN_8004C140` tables).
+///
+/// Channel demux needs the raw 2352-byte sectors (the CD-XA subheaders carry
+/// the channel number; a 2048-byte ISO view strips them), so this reads the
+/// disc through [`legaia_iso::raw::RawDisc`] - extracted-directory boots
+/// can't stage a shout bank. Returns `None` when the disc / executable /
+/// tables don't resolve; the caller degrades to silent arts.
+///
+/// Public so disc-gated tests can build the same bank the boot path stages.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn read_arts_shout_bank(disc: &Path) -> Option<legaia_engine_audio::ArtsShoutBank> {
+    use legaia_engine_audio::{ArtsShoutBank, ShoutClip};
+    let scus = read_scus(&SceneSource::Disc(disc))?;
+    let table = legaia_art::arts_voice::ArtsVoiceTable::parse_from_scus(&scus)?;
+    let mut raw = legaia_iso::raw::RawDisc::open(disc).ok()?;
+    let volume = legaia_iso::iso9660::read_volume(&mut raw).ok()?;
+    let files = legaia_iso::iso9660::walk_files(&mut raw, &volume.root).ok()?;
+    let mut bank = ArtsShoutBank::new();
+    for cslot in 0u8..3 {
+        let name = legaia_art::arts_voice::clip_file(cslot as usize)?;
+        // ISO paths look like `XA/XA2.XA;1` - match on the file name.
+        let rec = files.iter().find_map(|(path, rec)| {
+            let base = path.rsplit('/').next().unwrap_or(path);
+            let base = base.split(';').next().unwrap_or(base);
+            base.eq_ignore_ascii_case(name).then_some(rec)
+        })?;
+        let sectors = rec.size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
+        let streams = legaia_xa::demux::demux_disc_range(&mut raw, rec.lba, sectors).ok()?;
+        for s in &streams {
+            // The shout banks are 4-bit mono; skip anything else (a stereo or
+            // 8-bit stream here would be a mis-identified file).
+            if s.stereo || s.bits_per_sample != 4 {
+                continue;
+            }
+            let (pcm, _) = legaia_xa::decode(
+                &s.audio,
+                legaia_xa::DecodeOptions {
+                    channels: legaia_xa::Channels::Mono,
+                    sample_rate: s.sample_rate,
+                    bits: legaia_xa::BitsPerSample::Four,
+                },
+            )
+            .ok()?;
+            // Trim the trailing channel-padding silence so a clip's audible
+            // end matches the retail read-span cutoff closely enough for the
+            // back-to-back promotion queue.
+            let mut end = pcm.len();
+            while end > 0 && pcm[end - 1].unsigned_abs() < 8 {
+                end -= 1;
+            }
+            let mut pcm = pcm;
+            pcm.truncate(end);
+            if pcm.is_empty() {
+                continue;
+            }
+            bank.insert_clip(
+                cslot,
+                s.ch_no,
+                ShoutClip {
+                    pcm,
+                    sample_rate: s.sample_rate,
+                },
+            );
+        }
+        for (action, pool) in table.pools(cslot as usize) {
+            bank.set_pool(cslot, action, pool.to_vec());
+        }
+    }
+    bank.has_clips().then_some(bank)
+}
+
 /// Read the gold-shop item data (per-id buy price + "names a real item" mask)
 /// from a boot source's `SCUS_942.54` item table. Returns `None` when the
 /// executable isn't reachable or its item table doesn't parse, so a boot never
@@ -547,6 +622,17 @@ impl BootSession {
                         log::warn!(
                             "class-2 SFX bank (PROT {SFX_BANK_PROT_INDEX}) not staged: {e:#}"
                         );
+                    }
+                    // Demux + decode the arts-voice shout banks (XA2/XA4/XA6)
+                    // and the SCUS cue tables. Disc-image boots only (channel
+                    // demux needs the raw CD-XA subheaders). Best-effort - an
+                    // absent bank leaves arts silent.
+                    #[cfg(not(target_arch = "wasm32"))]
+                    if let SceneSource::Disc(path) = &source {
+                        match read_arts_shout_bank(path) {
+                            Some(bank) => director.set_shout_bank(bank),
+                            None => log::warn!("arts-voice shout bank not staged"),
+                        }
                     }
                     (Some(audio), Some(director))
                 }

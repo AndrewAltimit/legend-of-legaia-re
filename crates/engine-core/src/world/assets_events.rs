@@ -203,6 +203,14 @@ impl World {
         std::mem::take(&mut self.battle_sfx_cues)
     }
 
+    /// Drain the Tactical-Arts shout cues queued this frame (one per executed
+    /// party art with a real action constant, pushed at art start). The host
+    /// resolves each against its arts-voice bank and plays the CD-XA shout
+    /// clip; nothing here mutates gameplay state.
+    pub fn drain_battle_shout_cues(&mut self) -> Vec<crate::battle_events::BattleShoutCue> {
+        std::mem::take(&mut self.battle_shout_cues)
+    }
+
     /// Apply the gameplay-state side of a single battle event - currently
     /// `ApplyArtStrike` (subtracts the resolved damage from the target's
     /// `BattleActor::hp`, clamping at zero, and records the enemy effect on

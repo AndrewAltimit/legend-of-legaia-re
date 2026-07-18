@@ -126,6 +126,32 @@ Statically-linked PsyQ glue. Trivial to stub in a clean-room port.
 | `8005AF0C` | `isqrt`-style normalise - uses `FUN_8005BA1C` (GTE normalize) then dispatches to `FUN_8005ADB8` with shift correction. |
 | `8005ADB8` | Fixed-point bit-rotation / arc helper - consumed by `FUN_8005AF0C`. 85-instr ladder of conditional shifts. |
 
+#### Statically-linked per-op wrappers (`0x8005B158..0x8005BA1C`)
+
+The rest of the libgte link unit is a family of single-COP2-op wrappers. None has
+a static caller in `SCUS_942.54` or a hit in any runtime hot profile - the TMD
+renderer (`FUN_8002735C`) and the cluster-A path (`FUN_80043390`) issue their COP2
+ops inline, so these are link residue carried in by the `.a` member. Catalogued so
+gap sweeps stop re-flagging them; all are dumped under `ghidra/scripts/funcs/<addr>.txt`.
+
+| Address | COP2 cmd | Role |
+|---|---|---|
+| `8005B158` | `MVMVA` ×3 (`0x0486012`, RT·V0) | `MulMatrix0`-shaped 3×3 matrix·matrix multiply: installs m0 into the RT control regs, streams m1's columns through V0, reads each product column from IR1..3 (clobbers RT). |
+| `8005B6F8` | none | Vertex staging: loads V0/V1/V2 from three packed-SVECTOR pointers (`lwc2` data regs 0..5) - the load half of an RTPT sequence. |
+| `8005B760` | none | SZ-FIFO staging: `mtc2` SZ0..SZ3 from the four args - the load half of an AVSZ4 sequence. |
+| `8005B828` | `MVMVA` (`0x04DA412`, LCM·IR+BK, lm=1) | Colour-matrix transform: vec3 from `a0` through the light-colour matrix + background colour, result to `a1` - the lighting second stage as a standalone op. |
+| `8005B850` | `DCPL` (`0x0680029`) | `DpqColorLight`-shaped: IR vec + RGB-in + IR0 depth factor → depth-cued lit RGB2 out. |
+| `8005B878` | `DPCT` (`0x0F8002A`) | `DpqColor3`-shaped: RGB0..2 + IR0 → three depth-cued colours. |
+| `8005B8B4` | `INTPL` (`0x0980011`) | `Intpl`-shaped far-colour interpolate: IR vec + IR0 → RGB2. |
+| `8005B8D8` / `8005B900` | `SQR` sf=1 / sf=0 | `Square12` / `Square0`: component-wise square of IR1..3 into MAC1..3. |
+| `8005B928` / `8005B948` | `AVSZ3` / `AVSZ4` | `AverageZ3` / `AverageZ4`: SZ values in via `mtc2`, averaged OTZ returned. |
+| `8005B96C` / `8005B9C4` | `OP` sf=1 / sf=0 | `OuterProduct12` / `OuterProduct0`: saves the RT control regs, installs the operand vector as the D1/D2/D3 diagonal, cross-products against IR, restores RT. |
+| `8003D300` / `8003D320` | `AVSZ3` / `AVSZ4` | Second link copy of the AVSZ pair in the billboard/OT module band (`0x8003Dxxx`); the `8003D320` AVSZ4 variant additionally takes the `ZSF4` scale factor as a fifth argument (`ctc2` cr30). |
+| `8003D368` | `RTPS` (`0x0180001`) | Single-vertex projector: `(vec3*, sxy_out*) -> IR3`. Loads V0, projects, stores packed SXY2, returns the depth. The projector the dev line emitters (`FUN_8001CE34`) call. |
+| `8003D388` | `RTPT` (`0x0280030`) | `RotTransPers3`-shaped triangle projector: three SVECTOR pointers in, three packed-SXY out-pointers, returns IR3 (last vertex depth). Ghidra's auto-analysis splits this entry as `8003d388`/`8003d38c`; the body is one function at `0x8003D388`. |
+| `80046190` | none | Far-colour read-back: `cfc2` cr21 (RFC) returned. Sits just before the `RotMatrixX` trio. |
+| `8003FABC` | none | Not a standalone primitive: the out-of-line tail of the `FUN_8003F86C` line-emitter module - restores `s0..s7` from the scratchpad save slots (`0x1F800000..0x1C`, the same convention `FUN_8003F86C`'s prologue writes), installs a `diag(0x6000)` RT and stages a vector into data regs 5..7. Reached only from the hand-scheduled emitter code. |
+
 ### libcd primitives
 
 | Address | Role |
@@ -156,6 +182,8 @@ Used by the sound subsystem's dev branch and elsewhere when retail-async CD read
 | `80017888` | Malloc - the general-purpose allocator. |
 | `80019788` | Global-buffer base accessor. `() -> ptr`. Two-instruction `lui v0,0x8009` + `jr ra` thunk returning the fixed address `0x80088758` (a game-side char/data buffer). Callers (the world-map-walk, fishing, slot-machine, debug-menu and cutscene overlays, plus `FUN_801EE328`) store the result at `actor[+0x94]` and walk it as a `char*`, scanning for `'_'` separators. A pointer getter, not transform or floor math (its address proximity to the floor sampler `FUN_80019278` is incidental). `see ghidra/scripts/funcs/80019788.txt`. |
 | `8003C5F0` | Generic ramp scheduler. 64-slot pool at `0x801C66A0` (stride 0x20). Used for sound + render-bank ramps. |
+| `8001A78C` | RGB→HSV decompose: `(r, g, b, hue*, sat*, val*)`. Max/min channel select, `sat = (max-min)<<8 / max`, hue = sextant·`0x100` + minor/major ratio (range `0..0x600`). Overlay colour-cycling / tint effects call it (menu 0896, field 0897, the cutscene + dialog overlays via `FUN_801D362C`-family sites). `see ghidra/scripts/funcs/8001a78c.txt`. |
+| `8001A8DC` | HSV→RGB compose - the inverse of `FUN_8001A78C`. Clamps sat/val to `0..0x100`, reduces hue mod `0x600`, then a six-arm jump table (`jr` at `0x8001A9FC`, arms `0x8001AA14..0x8001AA54`) writes the `(val, ramp, base)` triple in the sextant's channel order. `see ghidra/scripts/funcs/8001a8dc.txt`. |
 | `8003D038` | Animation index filter. Writes `DAT_80073F1C = param` when `(&DAT_801C6470)[param * 4] != -0x74`; silently skips invalid entries. Called from the cutscene/world-map sprite batcher (`FUN_801CFC40`) with actor`+0x50` (anim-index field). |
 | `8001FA34` | Sprite-list consumer. Decrements the u16 count at `*param_1` and returns `*(short *)(param_2 + 2*(count-1))`; returns -1 on underflow. Pops the "current" entry index from a compact sprite-list header. Cited from the cutscene sprite emitter (`FUN_801D629C`). |
 | `8003C83C` | Script-context resolver. `id == 0xF8` returns `_DAT_8007C364` (the player / camera-anchor actor); `id == 0xFB` is the system channel; any other id matches an actor by `node[+0x14]` in the `_DAT_8007C354` list. Resolves the field VM's cross-context (`0x80`-bit) target byte. |
@@ -183,6 +211,10 @@ Used by the sound subsystem's dev branch and elsewhere when retail-async CD read
 | `8001822C` | Per-frame input handler / debug dispatcher. Reads BIOS pad at `0x800840F8`, builds button mask `_DAT_8007B850`. Gates upper 16 bits and all debug bindings on `_DAT_8007B98C != 0`. |
 | `80016230` | Dev-print driver. Loads `program_no=%d` / `..\..\FIELD\PROGRAM\....\%d` strings only when debug enable is non-zero. |
 | `8001AA68` | Fixed-cell debug string drawer - [details ↓](#8001aa68) |
+| `8001CE34` | **Dev 3-D line emitter.** `(x, y, z, dx, dy, dz)`. Projects both endpoints through the RTPS wrapper `FUN_8003D368`, writes a 3-word GP0 line packet (cmd = `DAT_8007B714` colour + `0x40000000`) at the scratchpad OT cursor `_DAT_1F8003A0` and links it (`FUN_8003D2C4`) into OT bucket `_DAT_1F8003F4 + 8`. All twelve static callers are `FUN_8001CAD8` - it is not a shared boot utility, despite the in-degree. No caller outside the dev-draw cluster in the captured corpus. `see ghidra/scripts/funcs/8001ce34.txt`. |
+| `8001CAD8` | **Dev wireframe-box drawer.** `(x, y, z, dx, dy, dz)`. Emits the 12 edges of the axis-aligned box spanned by the corner + extents via 12 `FUN_8001CE34` calls. Debug visualisation (bounding boxes / trigger volumes); zero callers across SCUS + the captured overlays. `see ghidra/scripts/funcs/8001cad8.txt`. |
+| `8001CCFC` | **Dev 2-D line emitter.** `(x0, y0, x1, y1, cmd_color, ot_bucket)`. Same 3-word GP0 line packet as `FUN_8001CE34` but takes pre-projected screen coords, the full command/colour word and the OT bucket index directly. `see ghidra/scripts/funcs/8001ccfc.txt`. |
+| `8001C7A0` | **Dev tiny-digit number drawer.** `(value, digit_count, x, y)`. Renders `value` right-to-left as `digit_count` 4x8 semi-transparent textured sprites (GP0 `0x66`-family; UV `u = digit*4 - 0x58`, `v = 0xF8`, CLUT `0x7F83`, colour from `DAT_8007B7A4`), plus a minus glyph (`u = 0xD0`) for negatives. The 4x8 sibling of the debug-HUD digit drawer `FUN_8001ABC8`; zero callers in the captured corpus. `see ghidra/scripts/funcs/8001c7a0.txt`. |
 
 ## Move / animation subsystem
 
@@ -211,6 +243,7 @@ The 28 × 24-byte table at `0x8007078C` is detailed in [`subsystems/boot.md` § 
 | `0x8007078C` (data) | Mode table - 28 entries × 24 bytes. `+0x00` = name string ptr; `+0x10` = handler fn ptr; `+0x14` = parameter. |
 | `gp[0x524]` (data) | Current-mode register (i16). |
 | `_DAT_8007B83C` (data) | Master game-mode index, u16. Title overlay writes `0x1A` (= STR FMV mode 26) on attract countdown underflow; FMV id slot at `_DAT_8007BA78` is zeroed in the same block → `MV1.STR`. |
+| `80015E90` | **`main()` - cold-boot init + master mode loop.** Called once from the entry stub `FUN_80026C28`. Runs the subsystem-init sequence (GTE/GPU/CD/SPU/libsnd, heap, DISPENV, mode table) then loops dispatching the current mode's handler from the `0x8007078C` table until the mode index goes negative. Full walk-through: [`subsystems/boot.md` § The main loop](../subsystems/boot.md#the-main-loop-fun_80015e90). `see ghidra/scripts/funcs/80015e90.txt`. |
 | `800179C0` | Dev mode-transition writer. Reads input mask, advances current mode. Gated on `_DAT_8007B98C != 0`. |
 | `8001DAF8` | **Display-environment + GTE screen-setup.** `(width_selector)`. Builds the two double-buffered DISPENV/DRAWENV structs at `0x8007BF30` / `0x8007BFA4` (via the libgpu env fillers `FUN_8005731C` / `FUN_8005724C`) and the framebuffer-rect globals at `0x1F800388`. `0x400` selects the 640x480 (`0x280`x`0x1E0`) wide mode; any other value (retail passes `0x140` = 320) selects the default-width / `0xE0`-height mode. Stores the active width at `0x8007B810`, then primes the GTE projection via `FUN_8005B818` (`SetGeomScreen`, H=0x78) and `FUN_8005B7F8` (`SetGeomOffset`, OFX=width/2). Called from the mode-init handlers (`FUN_8002574C`, `FUN_80025FB4`, `FUN_80055B6C`) and the field initializer `FUN_801D6704`. `see ghidra/scripts/funcs/8001daf8.txt`. |
 | `8001E3B8` | **Primitive-packet + ordering-table allocator.** `(packet_size)`. Allocates the GPU primitive-packet buffer (base/end at `0x8007B728` / `0x8007B72C`, mirrored to `0x8007B908` / `0x8007B90C`) via the malloc wrapper `FUN_80017888` (`size << 1` bytes; `size == 0` borrows the static region `0x8007B85C`); a dev flag at `gp+0x704` swaps in fixed buffer addresses. Then calls `FUN_8001F690` to allocate the ordering table (`1 << depth` entries, depth from `DAT_1F8003A5`, default 10) into the same display-env struct at `0x8007BF30 + 0x70` / `+0xE4`. When `_DAT_8007B83C == 0x14` it allocates an extra `0x1000`-byte buffer at `0x8007B814`. Paired with `FUN_8001DAF8` at every game-mode display init. `see ghidra/scripts/funcs/8001e3b8.txt`. |
@@ -259,6 +292,7 @@ The 28 × 24-byte table at `0x8007078C` is detailed in [`subsystems/boot.md` § 
 | `0x80084708` (data) | Character record table base. Stride `0x414` per character. See [`subsystems/battle.md`](../subsystems/battle.md) → "Character record layout". |
 | `80042558` | **Per-frame stat aggregator + accessory-passive assembler.** Walks the 3 party members' equip ids `char +0x196..0x19D`: each item's passive index (`kind==1`→equip `+5`, `kind==2`→descriptor `+3`; `<0x40`) sets a bit in the ability bitfield `+0xF4..0x103`; boosts rebuild the effective-stat block `+0x104..0x11B` from base `+0x11C..0x12D`, bitfields OR into the global mask; a separate arm grants Talisman + Ra-Seru spells (`+0x13D` list). **All fields are in the character record `+0xF4..+0x13D`, NOT the battle-actor runtime struct** (`+0x14C`/`+0x150`/`+0x176` are in the `DAT_801C9370` pool). Full field map + correction: [battle-action § aggregator](../subsystems/battle-action.md#fun_80042558---per-frame-stat-aggregator). `see ghidra/scripts/funcs/80042558.txt`. |
 | `80034250` | Goods description resolver (static): item id → descriptor `+3` passive index → `0x8007625C` record `+8` description pointer; the menu overlay's detail panel `FUN_801D0F1C` reads the same table's `+4` name pointer. |
+| `8004CE30` | **Per-frame battle actor maintenance pass** (3 KB). Three sweeps over the `DAT_801C9370` actor table: status-flag expiry at `actor+0x16E`, per-action animation/effect seeding, and the AP/HP gauge + RGB555 damage-flash-tint refresh. Not a mode dispatcher. Full pass-by-pass walk: [`subsystems/battle.md` § Per-frame actor maintenance](../subsystems/battle.md#per-frame-actor-maintenance-fun_8004ce30). `see ghidra/scripts/funcs/8004ce30.txt`. |
 | `0x8007625C` (data) | Passive-effect name/description table: 64 × 12-byte `[u32 scope][u32 name_ptr][u32 desc_ptr]`, indexed by the passive-effect index. Scope `1` = party-wide. |
 | `80043048` | **Inventory consume-by-slot:** `(slot: i16, amount, prev) -> remaining`. The stride-2 array at `_DAT_80085958` (= `0x80084140 + 0x1818` = SC `+0x1818`) is the **item inventory**: byte 0 = item id, byte 1 = stack count. Bounds-checked (`slot < gp[+0x2D4]`); subtracts `amount` from the count, clamps at 0, zeroes the id when the count reaches 0. (Previously mis-documented as a "status-effect timer decrementer" - the `0x80085958` table is the item bag the `Have 99 Items` / `Item Modifier` GameShark codes target, not a timer table, and its sibling helpers id-match + cap stacks at 99.) |
 | `80042310` | **Inventory consume-by-id:** `(id, amount) -> slot`. Scans the active window `gp[+0x2D2]..gp[+0x2D4]` of `_DAT_80085958` for `id`, then decrements that slot's count (same clamp-at-0 / zero-id-at-0 as `FUN_80043048`). Bounds-checked. |
@@ -697,6 +731,9 @@ The "records" page (battles fought, escapes, play time, per-character maximums) 
 | Address | Role |
 |---|---|
 | `80042DBC` | Spell-list pop: `(char_idx, spell_id, dst_slot)`. Per-character record stride `0x414` (matches the magic-table stride from `FUN_80036044`). Searches the per-character spell list at `[char_base + 0x13d ..]` for `spell_id`, copies the matched 4-byte record into the active-spell slot at `[char_base + dst_slot*0x14 + 0x2B0]`, then shifts the rest of the list down (counter at `[char_base + 0x13c]`). |
+| `800431FC` | Knows-spell predicate: `(char_idx, spell_id) -> bool`. Scans the same `+0x13D` spell list (count at `+0x13C`) for `spell_id`. `see ghidra/scripts/funcs/800431fc.txt`. |
+| `80043264` | Accessory-equipped predicate: `(char_idx, item_id) -> bool`. Scans the character's equip-id bytes `+0x19B..0x19D` (slots 5..7 of the `+0x196..0x19D` block - the Goods slots) for `item_id`. `see ghidra/scripts/funcs/80043264.txt`. |
+| `800430AC` | Party-wide accessory unequip-by-id: `(item_id) -> 0 \| 0x100`. For each active party member (`DAT_80084594` count, member ids at `0x80084598+`), scans the record's Goods slots `+0x19B..0x19D`; on the first match zeroes the slot and returns `0`, else `0x100`. Ghidra's auto-analysis leaves this body undisassembled (the `800430ac` function record is degenerate until re-created); the dump is force-created. `see ghidra/scripts/funcs/800430ac.txt`. |
 
 ## Menu / HUD globals
 

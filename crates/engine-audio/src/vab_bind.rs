@@ -218,6 +218,24 @@ impl VabBank {
             .map(|t| (t.pbmin, t.pbmax))
             .unwrap_or((0, 0))
     }
+
+    /// The VAB `prior` byte of the tone that would be selected for
+    /// `(program, note)` - the note's requested **allocation priority**.
+    ///
+    /// Retail stages this byte (VagAtr `+0` of the resolved tone) into the
+    /// driver's note-staging block before running the voice-allocation scan,
+    /// where it seeds the steal threshold: only sounding voices whose own
+    /// priority is `<=` the request may be stolen. `None` when the program /
+    /// tone doesn't resolve (the note would not key on at all).
+    ///
+    /// REF: FUN_80066308 (stages the tone attrs), FUN_80066B00 (consumes the
+    /// staged priority as the scan threshold).
+    pub fn tone_prior(&self, program: usize, note: u8) -> Option<u8> {
+        self.programs
+            .get(program)
+            .and_then(|tones| tones.iter().find(|t| note >= t.min && note <= t.max))
+            .map(|t| t.prior)
+    }
 }
 
 /// Compute the SPU pitch register value for `note` against `tone.center`,

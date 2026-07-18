@@ -25,6 +25,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 pub mod seq_slots;
 pub mod sequencer;
 pub mod sfx;
+pub mod shout;
 pub mod spu;
 pub mod vab_bind;
 #[cfg(all(target_arch = "wasm32", feature = "audio-webaudio"))]
@@ -36,6 +37,7 @@ pub use sfx::{
     CueDispatch, PendingCue, SfxBank, SfxEntry, SfxFireBatch, SfxScheduler, classify_cue,
     voice_pitch,
 };
+pub use shout::{ArtsShoutBank, SHOUT_CD_RESPONSE_DELAY, ShoutClip};
 pub use spu::Spu;
 pub use spu::adpcm::{AdpcmDecoder, BLOCK_BYTES, SAMPLES_PER_BLOCK};
 pub use spu::adsr::{AdsrConfig, AdsrState, Phase};
@@ -447,6 +449,84 @@ impl StreamResampler {
     }
 }
 
+/// Stage a one-shot XA shout into a resampler, honoring the back-to-back
+/// no-drop queue: a shout that arrives while one is still sounding is queued
+/// behind it rather than cutting it mid-play; only the most recent pending
+/// clip is kept. Shared by [`AudioOut::play_xa_shout`] and
+/// [`OfflineMixer::play_xa_shout`].
+fn stage_xa_shout(s: &mut StreamResampler, shout: XaPlayback) {
+    if s.xa.as_ref().is_some_and(|x| !x.is_done()) {
+        // A shout is still sounding: queue behind it (no mid-play cut).
+        s.pending_xa = Some(shout);
+    } else {
+        s.pending_xa = None;
+        s.xa = Some(shout);
+    }
+}
+
+/// Device-free mixing harness over the same core the cpal callback drives
+/// ([`StreamResampler`]): SPU + sequencer + XA shout mixing, pulled one frame
+/// at a time by the caller instead of by an audio device. Used by tests and
+/// offline renderers that need to observe exactly what would reach the
+/// speakers - e.g. asserting an arts-voice shout's PCM lands in the mix at
+/// the modeled CD-response time.
+pub struct OfflineMixer {
+    state: StreamResampler,
+}
+
+impl OfflineMixer {
+    /// Create a mixer producing frames at `device_rate` Hz (pass 44_100 for
+    /// 1:1 SPU-rate output with no resampling).
+    pub fn new(device_rate: u32) -> Self {
+        Self {
+            state: StreamResampler::new(device_rate),
+        }
+    }
+
+    /// Mirror of [`AudioOut::play_xa_shout`] - same staging semantics
+    /// (response-presentation delay + back-to-back no-drop queue).
+    pub fn play_xa_shout(
+        &mut self,
+        pcm: Vec<i16>,
+        sample_rate: u32,
+        channels: legaia_xa::Channels,
+        gain: u16,
+        start_delay_frames: u32,
+    ) {
+        stage_xa_shout(
+            &mut self.state,
+            XaPlayback {
+                pcm,
+                sample_rate,
+                channels,
+                looping: false,
+                gain,
+                cursor: 0.0,
+                start_delay: start_delay_frames,
+            },
+        );
+    }
+
+    /// `true` while an XA shout is attached and not yet exhausted.
+    pub fn xa_active(&self) -> bool {
+        self.state.xa.as_ref().is_some_and(|x| !x.is_done())
+    }
+
+    /// Run a closure with mutable access to the underlying SPU model
+    /// (mirror of [`AudioOut::with_spu`]).
+    pub fn with_spu<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce(&mut Spu) -> R,
+    {
+        f(&mut self.state.spu)
+    }
+
+    /// Pull one output frame - identical mixing math to the cpal callback.
+    pub fn next_frame(&mut self) -> (i16, i16) {
+        self.state.next_frame()
+    }
+}
+
 /// Multiply a stereo i16 sample pair by a 0.0..=1.0 gain.
 fn apply_fade(s: (i16, i16), fade: f32) -> (i16, i16) {
     let l = (s.0 as f32 * fade).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
@@ -727,14 +807,7 @@ impl AudioOut {
             cursor: 0.0,
             start_delay: start_delay_frames,
         };
-        let mut s = self.lock();
-        if s.xa.as_ref().is_some_and(|x| !x.is_done()) {
-            // A shout is still sounding: queue behind it (no mid-play cut).
-            s.pending_xa = Some(shout);
-        } else {
-            s.pending_xa = None;
-            s.xa = Some(shout);
-        }
+        stage_xa_shout(&mut self.lock(), shout);
     }
 
     /// Install a streaming XA-ADPCM voice fed from a buffer of raw XA-ADPCM

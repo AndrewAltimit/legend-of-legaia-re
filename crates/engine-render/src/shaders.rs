@@ -73,19 +73,25 @@ fn psx_dither(rgb: vec3<f32>, frag: vec2<f32>, dither_on: f32) -> vec3<f32> {
     return outc;
 }
 
-// Full-scene colour grade. `grade.rgb` is the gold/sepia direction and
-// `grade.a` the strength: the shaded pixel is tone-mapped to
-// `luminance(rgb) * grade.rgb` and cross-faded to that by the strength.
-// strength 0 (the identity default) passes the colour through unchanged.
-// Drives the opening prologue's warm gold grade (the `opdeene` cutscene):
-// green/blue collapse toward amber while the narration text - drawn by a
-// separate shader - stays white. Rec.601 luma weights.
+// Full-scene colour grade. `grade.rgb` is a per-channel multiply tint and
+// `grade.a` the strength: the shaded pixel is cross-faded toward
+// `rgb * grade.rgb`. strength 0 (the identity default) passes the colour
+// through unchanged.
+//
+// A *multiply*, not a luminance collapse, to match the retail mechanism:
+// the prologue's amber is baked into the drawn colour (dim ambient + gold
+// far-colour depth cue folded into per-vertex gouraud / texture-modulation
+// words), while bulk backdrop textures draw at NEUTRAL 0x808080 modulation
+// and keep their pre-baked warm texel chroma. A multiply preserves that
+// texel chroma exactly the way retail does; a luminance collapse would
+// flatten it. Drives the opening prologue (`opdeene`): green/blue crush
+// toward amber while the narration text - drawn by a separate shader -
+// stays white.
 fn apply_grade(rgb: vec3<f32>, grade: vec4<f32>) -> vec3<f32> {
     if (grade.a <= 0.0) {
         return rgb;
     }
-    let lum = dot(rgb, vec3<f32>(0.299, 0.587, 0.114));
-    return mix(rgb, lum * grade.rgb, grade.a);
+    return mix(rgb, rgb * grade.rgb, grade.a);
 }
 
 // PSX GPU texture blending - THE field lighting model.

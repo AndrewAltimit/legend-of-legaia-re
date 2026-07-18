@@ -38,6 +38,23 @@ export class LegaiaArts {
      */
     art_voice_pcm_i16(art_index: number): Int16Array;
     /**
+     * Bake the current character's assembled battle mesh **plus its whole
+     * battle-animation bank** into a binary glTF (`.glb`) for download:
+     * one node per rigid TMD object (the engine's `R . v + T` pose model
+     * expressed as native TRS keyframe channels), textured from the same
+     * runtime VRAM the canvas renders (every sampled `(cba, tsb-page)` pair
+     * baked into one RGBA atlas). Animation 0 is the battle idle; every
+     * art-bank record whose keyframe stream decoded follows, named by its
+     * inline HUD art name where the record carries one, else by its
+     * `anim_id` in hex (duplicated names get the hex id appended). Each
+     * clip's timeline runs at its retail rate byte (`7.5 * rate`).
+     *
+     * Everything is baked client-side off the visitor's own disc; nothing
+     * is uploaded. Empty until [`Self::set_character`] (or if the mesh has
+     * nothing to export).
+     */
+    export_character_glb(): Uint8Array;
+    /**
      * The idle loop's pose frames (see [`flatten_pose_frames`] layout).
      * Empty when the character has no decodable idle stream.
      */
@@ -2886,6 +2903,7 @@ export interface InitOutput {
     readonly legaiaarts_art_strike_cue: (a: number) => number;
     readonly legaiaarts_art_strike_frames: (a: number, b: number) => [number, number];
     readonly legaiaarts_art_voice_pcm_i16: (a: number, b: number) => [number, number];
+    readonly legaiaarts_export_character_glb: (a: number) => [number, number];
     readonly legaiaarts_idle_pose_frames: (a: number) => [number, number];
     readonly legaiaarts_load_disc: (a: number, b: number, c: number) => [number, number, number, number];
     readonly legaiaarts_mesh_bounds: (a: number) => [number, number];

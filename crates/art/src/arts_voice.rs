@@ -168,6 +168,16 @@ impl ArtsVoiceTable {
         Some(out)
     }
 
+    /// Iterate every `(action_constant, candidate channel pool)` pair for a
+    /// character slot - the full decoded cue table, for consumers that stage
+    /// it into a runtime bank. Empty for out-of-range slots.
+    pub fn pools(&self, cslot: usize) -> impl Iterator<Item = (u8, &[u8])> {
+        self.pools
+            .get(cslot)
+            .into_iter()
+            .flat_map(|m| m.iter().map(|(k, v)| (*k, v.as_slice())))
+    }
+
     /// The candidate voice-channel pool for `(character, action_constant)`.
     /// `None` when the character slot is out of range or the art has no
     /// arts-voice entry (an art the retail build plays silent).

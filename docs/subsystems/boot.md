@@ -24,12 +24,60 @@ overlay, which is why it has no row in the mode table.
 
 ## Contents
 
+- [The main loop (`FUN_80015E90`)](#the-main-loop-fun_80015e90)
 - [TOC loader (`FUN_8003E4E8`)](#toc-loader-fun_8003e4e8)
 - [Asset-type dispatcher (`FUN_8001F05C`)](#asset-type-dispatcher-fun_8001f05c)
 - [Game-mode state machine](#game-mode-state-machine) - [full handler map](#full-handler-map-recovered-from-the-disc) · [New Game boot chain](#new-game-boot-chain-title--field) · [title is not in the table](#title-screen-is-not-in-the-mode-table) · [CD-read API stack](#cd-read-api-stack) · [system-UI gap](#pre-init_data-system-ui-gap-menu-glyph-atlas--boot-cursors) · [title-overlay source](#title-overlay-source-on-disc)
 - [Title-screen overlay state](#title-screen-overlay-state) - [tick](#tick-function) · [sub-mode dispatcher](#sub-mode-dispatcher) · [opening scene chain + intro skip](#the-opening-scene-chain--the-fun_801d1344-intro-skip) · [name-entry overlay](#name-entry-overlay) · [sprite-emit helpers](#sprite-emit-helpers) · [state struct](#state-struct-extended) · [pad-mask layout](#pad-mask-layout-important)
 - [Boot init.pak (PROT 0895)](#boot-initpak-prot-0895) · [strip-grid unfolding](#strip-grid-unfolding)
 - [Debug flags](#debug-flags)
+
+## The main loop (`FUN_80015E90`)
+
+`FUN_80015E90` is the game's `main()`: the single function between the
+executable entry stub and the mode state machine. The entry stub
+`FUN_80026C28` (the address the SCUS header's initial PC resolves into) sets
+`$gp = 0x8007B318` and calls it once; it never returns in normal play.
+`see ghidra/scripts/funcs/80015e90.txt`.
+
+**Init sequence** (each stage bracketed by dev-checkpoint prints through the
+dev-string formatter `FUN_800567A8` - `main.exe` / `pad_init` / `init_mem` /
+`init_work` / `enter main_loop`, compiled in but inert in retail):
+
+1. GPU/display: `FUN_80057C44` (display-mode reset), `FUN_80058068(0)`
+   (`SetDispMask` off), `FUN_80057EDC`, then a full-frame `ClearImage`
+   (`FUN_80058298`) and queue flush (`FUN_80058104`).
+2. CD + XA: `FUN_8003EE7C(0)`, `FUN_8003F024`, and the region/console probe
+   `FUN_8002B92C` whose result (stored at `gp+0x550`) selects the heap size.
+3. Sound: libsnd init `FUN_80062310` + `FUN_800644C0(&DAT_80085B58, 4, 4)`
+   (the sound-driver work area; see [`audio.md`](audio.md)).
+4. Heap: `InitHeap`-wrapper `FUN_8002B3D4(2, DAT_8007B414, size)` with
+   `size = 0x134800` retail / `0x200000` when the `gp+0x550` probe reports the
+   expanded-RAM dev console.
+5. Boot-scene name: the default scene string is `opdeene`; when the dev flag
+   halfword at `gp+0x5AA` (from `FUN_8003F084`) is set it is copied over the
+   scene-name slot at `0x8007050C` instead (dev boot-into-scene override).
+   The retail path also primes the CDNAME map from `PROT\CDNAME.DAT` via the
+   path-opener (`FUN_8003E6BC` family).
+6. Display env + mode machine: `FUN_8001DAF8(0x400)` (DISPENV/DRAWENV pair),
+   `FUN_8001DCF8(10)` (the boot mode-init), `FUN_8001E3B8(0xC800)`
+   (primitive-packet + OT allocator), one priming `FUN_8001698C` /
+   `FUN_80016B6C` frame pass, `SetDispMask(1)`, then the overlay loader
+   (`FUN_8003EBE4` family) streams the first overlay pair.
+
+**Master loop.** While the current-mode register `gp[0x524]` is non-negative:
+call `FUN_8003D254` with the frame counter, then dispatch
+`(*(0x8007078C + mode*0x18 + 0x10))()` - the handler word of the
+[mode table](#game-mode-state-machine). When the handler wrote a new mode index
+(`gp[0x524] != gp[0x494]`), the loop runs the transition housekeeping before
+the next dispatch: XA/CD stop (`FUN_8003DE7C` / `FUN_8003ED04`), dev print
+(`FUN_80016230`), GPU-queue flush, pad re-read (`FUN_8001822C`), and clears the
+held-input / frame-state globals (`gp+0x3D8`, `gp+0x538`, `_DAT_8007B938`,
+`gp+0x55C`) before latching the new mode into `gp[0x564]` / `gp[0x494]`. A
+negative mode index exits the loop (dev quit path; retail never takes it).
+
+The port counterpart is `engine-shell`'s driver loop + `engine-core`'s
+mode-menu-world dispatch; the init sequence maps onto `BootSession`.
 
 ## TOC loader (`FUN_8003E4E8`)
 

@@ -1151,8 +1151,9 @@ So the blocker (the per-cue enable source) dissolves: there is nothing to trace.
 | Debug flags `0x8007B8C2` / `0x8007B98F` | resolved (static) | `0x8007B98F` has no byte-granular reader: it is byte +3 (MSB, little-endian) of the 32-bit debug-mode word `_DAT_8007B98C`, and *that word* is the consumer surface (grep of `funcs/` for `8007b98f` = 0 hits; `8007b98c` gate-read at `8001822c.txt:500/533` + ~14 field-overlay-0897 gates, sole `sw` writer in the menu/title/save-init routine). Writing `0x8007B98F = 1` sets the MSB so every `_DAT_8007B98C != 0` gate reads active. [details ↓](#debug-flags-0x8007b8c2--0x8007b98f) |
 | Key-item area consumers (`0x800859E8..0x80085A40`) | resolved (static; no OOB amplifier) | The range is inventory slots `>= 72` of `&DAT_80085958`; its readers are the indexed item-menu functions (`FUN_8002ff8c`/`800302e4`/`80032a44`/`80030628`/`80034250`), each masking the slot `& 0x3ff` and using the id byte as an index into 256-entry item tables - inherently bounded; add/find/consume helpers bound their scan by the live item count. No consumer treats a key-item byte as an unguarded index, so the range amplifies to game-state corruption (item possession + displayed ids), not a native index-OOB chain step. The `lb $reg,0x5aXX($zero)` overlay "hits" were mis-decoded data tables. Read-BP probe deprioritized. |
 | XP-table source + reader | resolved + ported | [details ↓](#xp-table-source--reader) |
-| New-Game opening chain + narration roller | resolved (caption = baked TIM; roller config op decoded) | [details ↓](#new-game-opening-chain--narration-roller) |
+| New-Game opening chain + narration roller | partial (chain + caption + roller resolved; two render-fidelity residuals open) | [details ↓](#new-game-opening-chain--narration-roller) |
 | Overlay identity from the disc (static extraction) | resolved (pipeline landed) | [details ↓](#overlay-identity-from-the-disc-static-extraction) |
+| SCUS recomp gap - render/GTE + boot/init clusters | resolved (aliases + libgte residue + dev tooling; `main()` documented) | [details ↓](#scus-recomp-gap---rendergte--bootinit-clusters) |
 | Options/menu overlay PROT entry | resolved (RAM-verified; PROT 0899 @ `0x801CE818`) | The options/pause/inventory-equipment-status menu overlay is **PROT 0899**, not 0896: `FUN_801CF650`'s signature byte-matches PROT 0899 file `0xe38`, and the `.text`+`.rodata` prefix is byte-identical across six menu-open saves. VA-alias sibling of the field overlay 0897 in slot A - the menu overlay replaces the field overlay at the base. The earlier "0896 = menu" label is falsified. |
 | PROT 0896 (`bat_back_dat`) identity | resolved | The unique ~`0x9000`-byte head is the **vestigial Japanese-build field-menu / config / status overlay** - the debug-string sibling of the English retail menu overlay PROT 0899 (same `~0x801D0000` window-renderer VA family, a `"FWIN ERR %d"` printf at file `0x3D4`, `0x414`-byte char-record indexing). 0899 ships the English label set with zero `FWIN`; a signature scan finds 0896 resident in **0** of 140 states (control: English "Battle Voices" resident in 10), so the USA build never loads it. [details ↓](#prot-0896-bat_back_dat-identity) |
 | Slot-A scene-overlay family beyond field/battle/menu | resolved (in the static map) | The rest of the slot-A (`0x801CE818`) VA-alias family is pinned from the disc: **0970 cutscene_str** (STR/MDEC FMV, modes 26/27) and the minigame overlays **0972 fishing / 0975 slot_machine / 0976 baka_fighter / 0980 dance** (the mode-24 `0x3E` door-warp sub-id slots 0/3/4/6), each cross-checked by a documented function landing on a prologue at the base. Minigame entries over-read each other (phantom-base risk); the canonical entry recovers `0x801CE818` and is the entry the warp streams (the historical "slot_machine = 0973 @ `0x801CA818`" was the phantom - the image inside 0973's over-read tail). Found via `asset overlay scan` + the leading dev string. |
@@ -1255,7 +1256,7 @@ See [`subsystems/level-up.md`](../subsystems/level-up.md#xp-table).
 
 ### New-Game opening chain + narration roller
 
-*Status:* resolved
+*Status:* partial - the chain, caption, and roller are resolved; two render-fidelity residuals below are open
 
 **The opening is a five-scene chain, live-probe + pixel-capture pinned** - `opdeene` → `opstati` → `opurud` → `map01` → `town01`, all master mode 3, zero input; the `FUN_801D1344` `town01` packet is the **intro skip** (its earlier reading as the required hand-off gate is superseded). Each leg's record spawn is pinned (exec-BP on `FUN_8003BDE0`, exactly 5 hits): op `0x44` SPAWN_RECORD in the first three legs' entry scripts (the old op-`0x44` "COUNTER" reading is superseded), the walk-on tile trigger (`FUN_801D1EC4` → `FUN_801D5630`) for `map01`/`town01`. Full mechanics: [`cutscene.md`](../subsystems/cutscene.md#in-engine-3d-opening-the-five-scene-new-game-chain).
 
@@ -1267,6 +1268,11 @@ The op-`0x45` camera param→global map, the GTE rotation build (`FUN_8001CF50`)
 
 1. **The *"It was the Seru."* caption's data source - it is not text.** The caption is a **pre-rendered 112×32 4bpp TIM** (two CLUT palettes = the fade steps) baked into the `opdeene` geometry pack **PROT entry 0749** at LZS-decoded offset `0x01EC30` (VRAM `fb=(384,0)`), drawn by the scene renderer as a screen-space textured quad - not a `4C E1` balloon, not a MES id, not any font string. Pinned by cold-boot probes (`autorun_text_census.lua` + `autorun_seru_blit_probe.lua` + a full-RAM dump): every UI text/image draw path fires **zero** times in the caption window and the string is in RAM in **no** encoding. `tim-scan extracted/PROT/0749_opdeene.BIN` renders it. See [`cutscene.md`](../subsystems/cutscene.md#narration-playback---the-crawl-roller-fun_80037174).
 2. **The retail roller config op's parameter decode - decoded (Ghidra-traced).** Two sub-ops of field-VM op `0x4C`: the spawner `CC F8 80 N` (`N` = page count) allocates the roller child on `FUN_80037174`, and `CC F8 E8 …` (four signed-16 LE words) seeds the per-scene crawl globals at `_DAT_801C6EA4`: `+0x4C` = window top Y, `+0x4E` = visible line count, `+0x50` = scroll-cadence divisor (`word3` selects seed/pause/resume/kill). The earlier `4C 88`-shaped label was a **mis-attribution** (op0 `0x88` writes `_DAT_80084628/…`, not the crawl geometry; the seed is the nibble-`E` sub-8 `0xE8` form). So `RollerParams::for_scene` is derivable from the scene bytecode, not just the pixel capture. Full decode in [`cutscene.md`](../subsystems/cutscene.md#roller-op-operands-ghidra-traced).
+
+**Render-fidelity residuals (open):**
+
+- **Prologue per-node depth-cue crush.** The engine's sepia grade is the retail modulation multiply (`(1.0, 0.94, 0.43)`, see [`cutscene.md`](../subsystems/cutscene.md#full-scene-sepia-grade-the-gold-prologue-look)); retail additionally pulls each render node toward the gold far colour by its per-node `IR0` (`+0x74`/`+0x78`), so far-field blue crushes to `B/R 0.12..0.18` where the engine holds the uniform `~0.31..0.36`. Closing it means staging the DPCS depth cue per mesh (the engine's `psx_depth_cue` uniform already exists but is scene-global and identity); the next step is a per-mesh `IR0` computed from view depth in the field render loop, gated on the prologue grade.
+- **Tableau ground texture chroma.** In the retail `opdeene` villager-tableau framebuffer the ground is warm grey-brown (`G/R 0.88`); the engine draws the same beat's ground vivid green (`G/R ~1.07` after the tint), so the whole-frame ratio diverges. The `0749` pack carries both a green 256×256 page and a neutral-grey one - the engine likely resolves a different page/CLUT for the ground quads than retail's draw list binds. Next step: dump the engine's texture binding for the tableau ground mesh and compare against the retail GP0 texpage/CLUT words for the neutral-modulation `0x2C` quads.
 
 
 ### Overlay identity from the disc (static extraction)
@@ -1418,6 +1424,61 @@ The overlay loaders (`FUN_8003EBE4`/`FUN_8003EC70` → `FUN_8003E8A8(param + 0x3
 2. **The 0977 sub-id-5 minigame - resolved.** `0977` ("Ronginus") is the mode-24 case-5 **door/init** slot: the `0x801CEA6C` init prologue + the arena monster-name roster + `other6` dev paths. The Muscle Dome **match SM `FUN_801D0748` + all its data lives in the battle-action overlay (PROT 0898)**, not in `0977` and not in a separate aliasing overlay - the arena is a *mode of the battle engine* (fighters are battle actors, cards resolve through the battle-action path).
    Pinned by `asset overlay find-sig` of the controller prologue (`lui v0,0x8008; lw v0,-0x42dc(v0)` reading the ctx `_DAT_8007bd24`) → 0898 @ base `0x801CE818` file offset `0x1F30`, plus the deck/sub-draw/victory tables resolving in-overlay (`legaia_asset::muscle_dome::verify_resident`; the Duckstation `overlay_muscle_dome.bin` capture was that overlay's slot).
 3. **Engine mirrors - resolved.** `OVERLAY_PROT_BASE` now carries the extraction-space `0x37F` (the engine host chain - `prot_one_shot_load` → `entry_start_lba_retail`, whose `toc` array starts at raw dword 2 - consumes extraction indices, so the raw `+ 0x381` loaded entries 2 high); `summon.rs` maps `0x81..=0x8B → 903..=913` directly. The constant's unit test documents the raw-vs-extraction shift.
+
+### SCUS recomp gap - render/GTE + boot/init clusters
+
+*Status:* resolved (behavior-read + dumped); the general-game band remains the
+open remainder
+
+The psxrecomp static recompilation's function inventory surfaced a set of SCUS
+entries with no dump / doc / port-tag on our side, clustered by VA band. The
+render/GTE and boot/init clusters are now fully attributed, and the attribution
+is mostly *negative* - the VA-band labels did not survive a behavior read.
+Recorded so the same entries aren't re-flagged:
+
+- **The "COP2 render gap" band (`0x43000..0x47000`) is not render code.** The
+  small entries there are recomp block-splits of **inventory/equip predicates**:
+  `0x800430D4..0x80043134` = interior of `FUN_800430AC` (party-wide accessory
+  unequip-by-id), `0x80043238..0x8004325C` = interior of `FUN_800431FC`
+  (knows-spell), `0x80043290/0x800432A8` = interior of `FUN_80043264`
+  (accessory-equipped). `0x80043580` / `0x8004361C` are interior blocks of the
+  already-documented cluster-A renderer `FUN_80043390` (far-colour / ZSF setup +
+  its custom-convention epilogue). `0x80046498` = `FUN_80046494` (+4 entry skew,
+  the locomotion collision resolver - the "render→overlay draw seam" reading was
+  already falsified) and `0x8004697C` = `FUN_80046978` (+4, palette fade).
+- **The 14 `gte_execute` entries are statically-linked libgte per-op wrappers**
+  (`MulMatrix0`, `Square12/0`, `AverageZ3/4`, `OuterProduct12/0`, `DCPL`/`DPCT`/
+  `INTPL`, the `RotTransPers3`-shaped RTPT projector) with zero static callers
+  and zero runtime hot-profile hits - link residue; the render paths issue COP2
+  inline. Table: [`functions.md` § libgte primitives](functions.md#libgte-primitives);
+  all ignore-listed.
+- **The boot/init cluster is dominated by aliases of documented functions.**
+  `0x80016448`→`FUN_80016444`, `0x80016B74`→`FUN_80016B6C`,
+  `0x800173C0`→`FUN_800173BC` (dev profiler HUD, ignored),
+  `0x80016998`→interior of `FUN_8001698C`, `0x80017914`→`FUN_80017910`,
+  `0x80017A04`-family→interior of `FUN_800179C0`, `0x8001A078`→interior of the
+  dev printf `FUN_8001A068`, `0x8001A814`→interior of `FUN_8001A78C` (RGB→HSV),
+  `0x8001AA14..0x8001AA60` = the six hue-sextant jump-table arms inside
+  `FUN_8001A8DC` (HSV→RGB), `0x80019BC0..0x80019D48` = interior of the atan2
+  bearing resolver `FUN_80019B28`, `0x8005B2A4`/`0x8005B340` = interior of
+  PushMatrix `0x8005B268` / PopMatrix `0x8005B308`.
+- **The genuinely-new identifications:** `FUN_80015E90` = **`main()`**
+  ([`boot.md` § The main loop](../subsystems/boot.md#the-main-loop-fun_80015e90));
+  the dev draw cluster `FUN_8001CE34` (3-D line) / `FUN_8001CAD8` (wireframe
+  box, the sole source of `8001CE34`'s in-degree-12 - the "most-called boot
+  utility" reading is falsified) / `FUN_8001CCFC` (2-D line) / `FUN_8001C7A0`
+  (4x8 digit printer); `FUN_800430AC` (whose Ghidra auto-analysis body was
+  degenerate until force-created); and `FUN_8004CE30`, the largest undumped SCUS
+  function - the per-frame battle actor maintenance pass
+  ([`battle.md` § Per-frame actor maintenance](../subsystems/battle.md#per-frame-actor-maintenance-fun_8004ce30)),
+  **not** a mode dispatcher.
+- **Still open from the same inventory:** the general-game band (never
+  per-address catalogued), headed by `0x8002A9F8` (2.2 KB table-driven logic,
+  no static caller), `0x80056208` (libgpu-band SCUS→overlay bridge into
+  `0x801F69xx`), `0x8004DC68`, `0x8002149C`, `0x80036D80`, `0x80059E10`,
+  `0x80025DA4`. Next step: behavior-read each against its `0x8007xxxx`/`gp`
+  globals the way this thread's entries were closed. The PsyQ sound-driver
+  cluster is tracked separately under Audio.
 
 A thread belongs here when:
 

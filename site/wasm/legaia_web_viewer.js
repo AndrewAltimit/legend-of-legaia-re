@@ -70,6 +70,29 @@ export class LegaiaArts {
         return v1;
     }
     /**
+     * Bake the current character's assembled battle mesh **plus its whole
+     * battle-animation bank** into a binary glTF (`.glb`) for download:
+     * one node per rigid TMD object (the engine's `R . v + T` pose model
+     * expressed as native TRS keyframe channels), textured from the same
+     * runtime VRAM the canvas renders (every sampled `(cba, tsb-page)` pair
+     * baked into one RGBA atlas). Animation 0 is the battle idle; every
+     * art-bank record whose keyframe stream decoded follows, named by its
+     * inline HUD art name where the record carries one, else by its
+     * `anim_id` in hex (duplicated names get the hex id appended). Each
+     * clip's timeline runs at its retail rate byte (`7.5 * rate`).
+     *
+     * Everything is baked client-side off the visitor's own disc; nothing
+     * is uploaded. Empty until [`Self::set_character`] (or if the mesh has
+     * nothing to export).
+     * @returns {Uint8Array}
+     */
+    export_character_glb() {
+        const ret = wasm.legaiaarts_export_character_glb(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
      * The idle loop's pose frames (see [`flatten_pose_frames`] layout).
      * Empty when the character has no decodable idle stream.
      * @returns {Int32Array}

@@ -72,6 +72,21 @@ canvas.arts-canvas {
 canvas.arts-canvas:active { cursor: grabbing; }
 .arts-now { margin-top: 0.5rem; font-weight: 600; }
 .arts-note { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.8rem; min-height: 1.2em; }
+.arts-controls {
+  display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap;
+  margin: 0.6rem 0 0;
+}
+.arts-controls label.arts-trail-label {
+  display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer;
+  color: var(--text-muted); font-family: var(--font-mono); font-size: 0.82rem;
+}
+.arts-controls button {
+  padding: 0.3rem 0.7rem; cursor: pointer; font: inherit; font-size: 0.82rem;
+  border-radius: 4px; border: 1px solid var(--border, #4a4668);
+  background: transparent; color: var(--text-muted, #9a96b8);
+}
+.arts-controls button:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.arts-controls button:disabled { opacity: 0.45; cursor: default; }
 /* Cards become interactive once a disc is loaded. */
 body.arts-live .art-card[data-art] { cursor: pointer; }
 body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
@@ -93,12 +108,19 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
 <section class="doc-section" id="arts-motion">
   <h2>Watch the arts</h2>
   <p>
-    With a disc loaded, every art card below becomes clickable: the canvas plays that art on the character's battle model, posed from the on-disc keyframes, with the voice shout and the tinted after-image trail (Vahn <span style="color:#e0524a">red</span>, Noa <span style="color:#4ac05a">green</span>, Gala <span style="color:#5a7ae8">blue</span>) riding along as in retail. Nothing is uploaded; the disc never leaves your machine.
+    With a disc loaded, every art card below becomes clickable: the canvas plays that art on the character's battle model, posed from the on-disc keyframes, with the voice shout and the tinted after-image trail (Vahn <span style="color:#e0524a">red</span>, Noa <span style="color:#4ac05a">green</span>, Gala <span style="color:#5a7ae8">blue</span>) riding along as in retail - switch the trail off below if you'd rather watch the model clean. The <strong>.glb</strong> button bakes the selected character's assembled battle model with its <em>entire</em> battle-animation bank (idle + every art) as named glTF animations, ready for Blender or three.js. Nothing is uploaded; the disc never leaves your machine.
   </p>
   <div class="file-input-group">
     <label for="arts-file"><strong>Choose file:</strong></label>
     <input type="file" id="arts-file" accept=".bin,.DAT,.dat">
     <span class="arts-status" id="arts-status">No disc loaded - the cards below stay a static reference until you provide a <code>.bin</code> Mode2/2352 image (or a raw <code>PROT.DAT</code>).</span>
+  </div>
+  <div class="arts-controls">
+    <label class="arts-trail-label" title="The tinted delayed after-image drawn behind the character during an art (retail-faithful). Untick to draw the animation clean.">
+      <input type="checkbox" id="arts-trail-toggle" checked> after-image trail
+    </label>
+    <button id="arts-glb-btn" type="button" disabled
+            title="Download the selected character's assembled battle model with every battle animation (idle + all arts) baked in as named glTF animations. Needs a loaded disc.">&#11015; .glb with all battle animations</button>
   </div>
   <div class="arts-stage" id="arts-stage" hidden>
     <canvas id="arts-canvas" class="arts-canvas" width="720" height="420"></canvas>
@@ -271,6 +293,7 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
     ? window.ArtsViewerApp.mount({
         file: 'arts-file', status: 'arts-status', stage: 'arts-stage',
         now: 'arts-now', note: 'arts-note', panels: 'arts-panels', canvas: 'arts-canvas',
+        trail: 'arts-trail-toggle', glb: 'arts-glb-btn',
       })
     : null;
 

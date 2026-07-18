@@ -494,17 +494,21 @@ work can replay the register state faithfully.
 ### Full-scene colour grade
 
 `Renderer::set_color_grade(gold, strength)` stages a per-frame `(gold_rgb, strength)` into every
-field `MeshUniforms`; the textured / VRAM / colour mesh shaders' `apply_grade` tone-maps each shaded
-pixel to `luminance · gold` and cross-fades to it by `strength` (`strength = 0`, the default, is a
-no-op; text/UI overlays use separate shaders and are never graded). This reproduces the opening
-prologue's warm gold sepia - the `opdeene` / `opstati` / `opurud` cutscene legs render their whole
-3D scenes in amber monochrome (the grade drops for the `map01` fly-in + `town01`). Retail achieves
-it with a GTE far-colour DPCS depth-cue + dim ambient (see
-[`cutscene.md`](cutscene.md#full-scene-sepia-grade-the-gold-prologue-look)); the engine mirrors the
-measured display ratios (`G/R ≈ 0.90`, `B/R ≈ 0.24`). Gold coefficients are the display ratios
-themselves - see [Colour space](#colour-space-psx-framebuffer-values-end-to-end). Driven by
+field `MeshUniforms`; the textured / VRAM / colour mesh shaders' `apply_grade` cross-fades each
+shaded pixel toward the per-channel multiply `rgb · gold` by `strength` (`strength = 0`, the
+default, is a no-op; text/UI overlays use separate shaders and are never graded). This reproduces
+the opening prologue's warm gold sepia - the `opdeene` / `opstati` / `opurud` cutscene legs render
+their whole 3D scenes through the amber tint (the grade drops for the `map01` fly-in + `town01`).
+Retail achieves it with a GTE far-colour DPCS depth-cue + dim ambient folded into the drawn
+gouraud / texture-modulation colour words, while backdrop textures draw at neutral modulation and
+keep their pre-baked warm chroma (see
+[`cutscene.md`](cutscene.md#full-scene-sepia-grade-the-gold-prologue-look)) - which is why the
+engine multiplies rather than collapsing to luminance. The gold coefficients `(1.0, 0.94, 0.43)`
+are the measured on-geometry modulation ratio, stored as display ratios as-is - see
+[Colour space](#colour-space-psx-framebuffer-values-end-to-end). Driven by
 [`World::scene_color_grade`](../../crates/engine-core/src/world/narration.rs) (only the prologue
-cutscene legs grade).
+cutscene legs grade). Known residual: retail's per-render-node depth cue crushes far-field blue
+further (`B/R` down to ~`0.13`); the engine does not stage that per node.
 
 ### Colour space: PSX framebuffer values end to end
 
@@ -797,6 +801,20 @@ SXY-FIFO saturation bound: the GTE clamps the stored screen coordinate to signed
 range — **not** the i16 IR-numerator range. The distinction only shows off-screen,
 so the self-consistent in-repo sweep (which shared the earlier i16 assumption on
 both sides) could not surface it; the real-cop2 capture did.
+
+### Statically-linked libgte residue (retail side)
+
+Retail's render paths issue their COP2 ops **inline**: the TMD renderer
+(`FUN_8002735C`), the cluster-A per-prim dispatcher (`FUN_80043390`), and the
+world-map handlers all embed raw `cop2` instructions rather than calling
+per-op wrappers. The libgte per-op wrapper family the link carries anyway
+(`MulMatrix0`, `Square12/0`, `AverageZ3/4`, `OuterProduct12/0`,
+`DpqColorLight`/`DpqColor3`/`Intpl`, the `RotTransPers3`-shaped RTPT
+projector, and the staging loaders) has **no static caller** in `SCUS_942.54`
+and no hit in any runtime hot profile - library link residue, not a render
+seam. The full per-address table lives in
+[`reference/functions.md` § libgte primitives](../reference/functions.md#libgte-primitives);
+the family is ignore-listed in the port catalog.
 
 ### GTE register-state emulator
 

@@ -19,7 +19,10 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use legaia_engine_audio::{AudioOut, PendingCue, Sequencer, SfxBank, SfxScheduler, VabBank};
+use legaia_engine_audio::{
+    ArtsShoutBank, AudioOut, PendingCue, SHOUT_CD_RESPONSE_DELAY, Sequencer, SfxBank, SfxScheduler,
+    VabBank,
+};
 use legaia_engine_core::scene::BgmDirector;
 use legaia_seq::Seq;
 
@@ -67,6 +70,13 @@ pub struct AudioBgmDirector {
     /// its strike-relative delay; [`Self::tick_sfx_frame`] advances one frame
     /// and fires matured cues through the SPU.
     sfx_sched: SfxScheduler,
+    /// Arts-voice **shout** bank: the per-character CD-XA clips
+    /// (`XA2`/`XA4`/`XA6`, demuxed per channel + decoded at boot) and the
+    /// SCUS cue tables. `None` on a disc-free / extracted-dir boot (the raw
+    /// CD-XA subheaders needed for channel demux only exist on a real disc
+    /// image); shout requests then no-op, leaving arts silent - the same
+    /// degradation retail applies to an unvoiced art.
+    shout_bank: Option<ArtsShoutBank>,
 }
 
 impl AudioBgmDirector {
@@ -82,7 +92,41 @@ impl AudioBgmDirector {
             sfx_bank: SfxBank::new(),
             sfx_vab: None,
             sfx_sched: SfxScheduler::new(),
+            shout_bank: None,
         }
+    }
+
+    /// Install the arts-voice shout bank (demuxed + decoded from the user's
+    /// disc at boot; see [`crate::boot::read_arts_shout_bank`]).
+    pub fn set_shout_bank(&mut self, bank: ArtsShoutBank) {
+        self.shout_bank = Some(bank);
+    }
+
+    /// Whether the arts-voice shout bank was staged.
+    pub fn has_shout_bank(&self) -> bool {
+        self.shout_bank.is_some()
+    }
+
+    /// Fire the Tactical-Arts shout for `(cslot, action_constant)` through
+    /// the XA mixing path. Resolves the cue against the bank's channel pools
+    /// (retail `FUN_8004C140` selection, no immediate repeat) and stages the
+    /// clip with the modeled CD-response start delay
+    /// ([`SHOUT_CD_RESPONSE_DELAY`]), so the shout starts *after* the art
+    /// animation that requested it - never before. A second shout while one
+    /// is sounding queues behind it (the back-to-back no-drop path in
+    /// [`AudioOut::play_xa_shout`]). Returns the fired channel, or `None`
+    /// when the bank is absent or the art is unvoiced.
+    pub fn play_art_shout(&mut self, cslot: u8, action: u8) -> Option<u8> {
+        let bank = self.shout_bank.as_mut()?;
+        let (channel, clip) = bank.shout(cslot, action)?;
+        self.audio.play_xa_shout(
+            clip.pcm.clone(),
+            clip.sample_rate,
+            legaia_xa::Channels::Mono,
+            0x4000,
+            SHOUT_CD_RESPONSE_DELAY,
+        );
+        Some(channel)
     }
 
     /// Install the sound-effect descriptor bank (decoded from the user's
