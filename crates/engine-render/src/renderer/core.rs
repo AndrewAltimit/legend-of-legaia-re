@@ -254,6 +254,7 @@ impl Renderer {
                     DYN_LIGHT_TINT[2],
                     DYN_LIGHT_AMBIENT,
                 ],
+                cue_ramp: [0.0; 4],
             }]),
             wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
         );
@@ -1120,6 +1121,7 @@ impl Renderer {
             tex_window: std::cell::Cell::new([0; 4]),
             color_grade: std::cell::Cell::new([1.0, 1.0, 1.0, 0.0]),
             depth_cue: std::cell::Cell::new([0.0, 0.0, 0.0, 0.0]),
+            cue_ramp: std::cell::Cell::new([0.0, 0.0, 0.0, 0.0]),
             backface_cull: std::cell::Cell::new(0.0),
             // Semi-transparency (ABE) blending on by default: retail's GPU
             // always blends ABE prims, so field water / glass / effects should

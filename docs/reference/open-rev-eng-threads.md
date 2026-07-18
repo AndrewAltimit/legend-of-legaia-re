@@ -102,6 +102,8 @@ The per-prim dispatcher `FUN_80043390` owns four `NCCS`/`NCCT` **light** handler
 | Thread | Status | What would close it |
 |---|---|---|
 | Encounter MAN sub-section layout | resolved | [details ↓](#encounter-man-sub-section-layout) |
+| Effect-VM pass-1 "state token algebra" (`FUN_801E0088`) | resolved (fully extracted); faithful `Pool::tick` port still owed | The "state" bytes are 5.3 fixed-point **wait counters**, not opcodes - the lifecycle is two countdown-driven cursor walks (master spawn cadence over 14-byte pack1 records; child anim/motion over 6-byte pack0 frames), with the pack1 fields re-pinned (the old `sprite_id`/`anim_flags`/`tail` reading superseded), the init immediates `(0x1000, 0xA00)` resolved as the motion + sprite-scale scalars, and the pass-2 brightness envelope + random UV-mirror bits decoded. Full algebra: [effect-vm.md](../subsystems/effect-vm.md#the-extracted-pass-1-state-algebra). The engine's fixed-lifetime `advance_state` stand-in can now be replaced by a mechanical port. |
+| Move-VM op `0x2F` extension dispatcher - per-overlay copies? | falsified (one copy, field overlay 0897 only) | The seven `_801d362c` capture dumps are byte-identical (0897 observed under world-map / dialog / cutscene scenario labels); every other mapped slot-A overlay + the title overlay carries unrelated bytes at the fixed call VA and no JT at `0x801CE868`. So op `0x2F` is executable only while 0897 is resident, and battle-side move records cannot use it. See [move-vm-overlay-ext.md](../subsystems/move-vm-overlay-ext.md#overlay-residency---one-copy-in-the-field-overlay-only). |
 | "`FUN_801F3894` spirit/magic damage roll" (state-`0x3D` chain caller) | falsified (VA-aliased dump) | The `overlay_0897_801f3894` dump is `FUN_801DD0AC` byte-for-byte under a double VA shift (0897's extraction over-reads into 0898; the Ghidra program maps the file at `0x801C0000`, not the slot-A base `0x801CE818`), so the already-ported damage kernel surfaces at a fake entry VA. The real state-`0x3D` callee `FUN_801F3990` is a cast **audio-cue dispatcher**; spirit damage is state `0x3E`'s inline formula (`battle_formulas::spirit_damage`). **Corollary: every `overlay_0897_801fxxxx` dump of the `0x801F` region is suspect** — verify vs battle-resident bytes (`0x801F0348`/`0x801F1ED4`/`0x801F45A4` pending). See [battle-formulas.md](../subsystems/battle-formulas.md#whats-still-open). |
 | Super / Miracle Arts trigger logic | partial | [details ↓](#super--miracle-arts-trigger-logic) |
 | Seru-magic summon visual (e.g. Tail Fire) | resolved (player visual; wired) | [details ↓](#seru-magic-summon-visual-eg-tail-fire) |
@@ -729,6 +731,7 @@ This relies on the **runtime actor frame == MAN placement frame** finding: `FUN_
 | Thread | Status | What would close it |
 |---|---|---|
 | Town/field free-movement locomotion | resolved | [details ↓](#townfield-free-movement-locomotion) |
+| "~270 undumped field-overlay functions" (recomp dispatch-entry seed list) | falsified (not a function inventory gap) | [details ↓](#270-undumped-field-overlay-functions-recomp-dispatch-entry-seeds) |
 | Field collision-map source | resolved | [details ↓](#field-collision-map-source) |
 | Tile-board grid mode | resolved | The `_DAT_8007b450`/`DAT_801f35c0`/`801ef2b0` tile-grid walk is a puzzle / board minigame (procedural `rand`-filled board, per-cell drawn tiles), not town locomotion. It is a field-overlay (`0897`) construct driven from the field/event VM (op `0x49`); the `_DAT_8007b450` refs in the hub minigame overlays are only the shared equip-comparison layout hint `FUN_801e5b4c`, not board use. The `func_0x800467e8` facing remap is a quantized 45° octant rotation. **Sub-questions closed:** boards are always procedural (op `0x49` sub-op-5 = constant 14-byte advance; cells `rand()%6+2` malloc-filled, `FUN_801e0b1c`); no fixed board exists. Header layout + event-cell flags in `docs/subsystems/tile-board.md`. |
 | game_mode 0x03 = field/town gameplay | resolved | [details ↓](#game_mode-0x03--fieldtown-gameplay) |
@@ -743,6 +746,44 @@ This relies on the **runtime actor frame == MAN placement frame** finding: `FUN_
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure mapped across the chapter-2/3 regions; play order for the dungeons the capture corpus never walked is still owed | [details ↓](#region-story-flag-gate-families) |
 | Writer of the Rim Elm opening flag (`549`) | resolved (self-latching script SET; the census was width-blind) | Writer = **town01 `P2[3]` itself**: a plain `52 25` SET at body `+0x3` in the very record its C1 gates (the rikuroa-`P2[50]`/`0x142` self-latch shape) + the `gameover_data` dev copy. Runtime-pinned first (reader-watch from `s2_rimelm_town01`: SET `ra 0x801E3598`, script-PC offset `+0xF`), then found statically: the preceding `4C ED` op had no width in the disassembler, so the walk desynced one byte short - the old "capture-only" verdict was **width blindness**. Full write-up in [script-vm.md](../subsystems/script-vm.md) (decode-coherence section); anchors `flag_549_reader_is_the_rim_elm_p2_gate` + `flag_549_writer_is_the_rim_elm_p2_3_self_latch`. |
 
+
+### 270 undumped field-overlay functions (recomp dispatch-entry seeds)
+
+*Status:* falsified - the list is not a function inventory, and the inventory gap it implied does not exist.
+
+A PSXRecomp runtime capture of the slot-A overlay window during a boot-to-town play
+session yielded ~312 "call targets" in the `0x801CC000+0x29000` band, ~270 of them
+absent from `ghidra/scripts/funcs/` + [`functions.md`](functions.md) - read at the
+time as a large undumped-function backlog for PROT 0897. Triaging every address
+against the disc overlay images and the captures' own resident bytes falsifies the
+premise on three independent axes:
+
+- **They are dispatch entries, not call targets.** The recomp's capture seeds record
+  every PC where its dispatcher entered interpretation: indirect-call targets, but
+  also **return sites** (the instruction after a `jal`+delay-slot), **interrupt-resume
+  PCs** (arbitrary mid-loop addresses, weighted by hot loops), and `jr`-table case
+  labels. Against the resident image, only ~1/4 of the entries classify as
+  call-shaped at all; the rest sit mid-function or mid-loop.
+- **The PC tables span overlay generations; only the byte snapshot is coherent.** The
+  capture accumulates PCs across the whole session (title → FMV → menus → field), so
+  a "field window" list mixes title-overlay, cutscene-overlay (0970) and menu-era
+  PCs with field-era ones. Smoking guns: one source capture's resident bytes match
+  the disc 0897 image at only ~16% (title-era, different occupant); dozens of listed
+  PCs land inside 0897's **data head** (debug strings + pointer tables - impossible
+  as 0897 code); and two entries the list marked as already-known resolve to the
+  cutscene overlay's STR dispatch `FUN_801CEA3C` and the actor-VM jump *table*
+  `0x801CED70` - a different overlay's function and a data address.
+- **No image claims them as functions.** Sweeping all mapped slot-A overlay images +
+  the slot-B field library for prologues / static `jal` targets at the listed
+  addresses yields only two coincidental hits (both in the never-resident
+  slot-machine image) and a handful of `j`-target labels.
+
+The durable lessons: seed lists from a recomp's interpreter dispatcher need
+**per-hit resident-image resolution** (e.g. a mode-gated `dirty_exec_hot` window)
+before any identity claim, and a "new function" claim needs a prologue or a
+static-call witness in the image that was actually resident. The real undumped-code
+question for 0897 is better served by the [port-catalog dashboard](../tooling/port-catalog.md)
+than by this list.
 
 ### Region story-flag gate families
 

@@ -69,7 +69,7 @@ The `crates/engine-vm` constants `ACTOR_RECORD_PTR_OFFSET`, `ACTOR_DISPATCH_BYTE
 
 | Byte | Mnemonic | Handler block | Notes |
 |---|---|---|---|
-| `0x01` | `Snap` | (TBD) | Pose-snap variant. |
+| `0x01` | `Plain` | none - no `== 1` test exists anywhere in the function | Common stages only (pre-update, default movement, late-update): plain kinematics with no keyframe / path / SFX / damp / spline arm. The earlier "pose-snap variant with a to-be-found handler block" reading is retired - the comparison ladder tests `2/6`, `5`, `3`, `3\|\|5`, `7`, `4`, `6` and never `1`. `see ghidra/scripts/funcs/80021df4.txt`. |
 | `0x02` | `KeyframeAlt` | shares with `0x06` at `0x80021E90..` | Per-bone keyframe-style. |
 | `0x03` | `Path` | `0x800226DC..` | State-write logic shared with `0x05`. |
 | `0x04` | `Damp` | `0x80022CBC..0x80022EE4` | Damping / spring-decay variant. |

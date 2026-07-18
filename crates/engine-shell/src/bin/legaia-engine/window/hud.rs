@@ -940,16 +940,25 @@ impl PlayWindowApp {
             let mut draws: Vec<TextDraw> = Vec::new();
             let (bx, by, _, _) = lay.main;
             // Main text: one row per 0x7C-separated line at the retail
-            // 15-px pitch, pen at the traced interior offset (+0x10).
+            // 15-px pitch. The pager draws each reading-box line at the
+            // box origin exactly - `FUN_80036888(line, 0, 0, ctx+0x12,
+            // ctx+0x14 + i*0xF)` - with the string ink staged CLUT 7
+            // (`_DAT_8007B454 = 7` before every line), the (206,206,206)
+            // menu white.
             for (i, line) in snap.page.split('|').enumerate() {
                 let row_layout = self.font.layout_ascii(line);
-                let pen = (bx + 0x10, by + 4 + i as i32 * 0xF);
-                draws.extend(text_draws_for(&row_layout, pen, [1.0, 1.0, 1.0, 1.0]));
+                let pen = (bx, by + i as i32 * 0xF);
+                draws.extend(text_draws_for(
+                    &row_layout,
+                    pen,
+                    legaia_engine_render::MENU_TEXT_WHITE,
+                ));
             }
             // Option-picker labels: retail draws them CLUT-7 white at
-            // `box_x + 0x10`, 15-px pitch; the pointing-hand sprite
-            // (drawn in the chrome layer) marks the selection. Keep a
-            // text `>` marker only when the chrome atlas is missing.
+            // `box_x + 0x10`, 15-px pitch from the box origin row; the
+            // pointing-hand sprite (drawn in the chrome layer) marks the
+            // selection. Keep a text `>` marker only when the chrome
+            // atlas is missing.
             if let Some((px, py, _, _)) = lay.picker {
                 for (i, opt) in snap.options.iter().enumerate() {
                     let selected = i == snap.cursor;
@@ -959,9 +968,9 @@ impl PlayWindowApp {
                         format!("{}{}", if selected { "> " } else { "  " }, opt)
                     };
                     let row_layout = self.font.layout_ascii(&label);
-                    let pen = (px + 0x10, py + 4 + i as i32 * 0xF);
+                    let pen = (px + 0x10, py + i as i32 * 0xF);
                     let color = if selected || has_chrome {
-                        [1.0, 1.0, 1.0, 1.0]
+                        legaia_engine_render::MENU_TEXT_WHITE
                     } else {
                         [0.8, 0.85, 1.0, 1.0]
                     };
@@ -1043,15 +1052,21 @@ impl PlayWindowApp {
     /// Compute the stage-pixel box rects for a dialog snapshot,
     /// mirroring the pager's traced geometry (`FUN_801D84D0`):
     ///
-    /// - Main box: width `0xF4` (244), height `lines*0xF - 3` (the
-    ///   per-frame `FUN_8002C69C` call passes `lines*0xF + 5 - 8`).
-    ///   Anchored near the bottom of the 320x240 stage; when an
-    ///   option picker is open the reading box moves to the top band
-    ///   and the picker takes the bottom - the retail two-box
-    ///   conversation layout.
+    /// - Main (reading) box: `(0x26, 0x10, 0xF4, lines*0xF - 3)` - the
+    ///   per-frame `FUN_8002C69C` call passes `(ctx+0x12, ctx+0x14,
+    ///   0xF4, lines*0xF + 5 - 8)`, and the live context in the
+    ///   `v0_1_tetsu_dialogue_accept` capture holds `ctx+0x12 = 0x26`,
+    ///   `ctx+0x14 = 0x10` (framebuffer cross-checked: drawn footprint
+    ///   `x 30..289, y 8..65` = this rect inflated by the skin border).
+    ///   Retail anchors the reading box at the TOP of the stage - with
+    ///   or without an option picker.
     /// - Picker box: `x = 0x26`, `y = 0x94 + ((4-n)*0xF)/2`,
     ///   `w = 0xF4`, `h = 0x38 - (4-n)*0xF` (the picker-init arms'
     ///   literal geometry writes).
+    ///
+    /// Rects are the retail centre rects; the border skin the chrome
+    /// pass draws extends ~8 px beyond them on every side
+    /// (`dialog_window_chrome_draws_for`).
     pub(super) fn dialog_stage_layout(snap: &DialogSnapshot) -> DialogStageLayout {
         // Retail's standard reading box is ALWAYS 3 rows tall
         // (`_DAT_801F2740 = 3` in both box-init arms) regardless of how
@@ -1059,25 +1074,15 @@ impl PlayWindowApp {
         // it to a 4th row.
         let lines = snap.page.split('|').count().clamp(3, 4) as i32;
         let main_w = 0xF4;
-        // Retail passes `h = lines*0xF - 3` and the standard skin then
-        // expands the drawn footprint by 8 (the emitter's case-0
-        // `-4/+8` border inflation); the engine's border draws inside
-        // the rect, so bake the +8 into the rect height.
-        let main_h = lines * 0xF - 3 + 8;
+        let main_h = lines * 0xF - 3;
         let picker = if snap.options.is_empty() {
             None
         } else {
             let n = snap.options.len().clamp(2, 4) as i32;
-            Some((
-                0x26,
-                0x94 + ((4 - n) * 0xF) / 2,
-                0xF4,
-                0x38 - (4 - n) * 0xF + 8,
-            ))
+            Some((0x26, 0x94 + ((4 - n) * 0xF) / 2, 0xF4, 0x38 - (4 - n) * 0xF))
         };
-        let main_y = if picker.is_some() { 12 } else { 204 - main_h };
         DialogStageLayout {
-            main: (0x1A, main_y, main_w, main_h),
+            main: (0x26, 0x10, main_w, main_h),
             picker,
         }
     }
@@ -1119,7 +1124,7 @@ impl PlayWindowApp {
             // (FUN_8002B994 kind 0 at box_x-6, box_y + cursor*0xF).
             out.push(legaia_engine_render::dialog_option_hand_sprite(
                 &assets.rects,
-                (prect.0, prect.1 + 2),
+                (prect.0, prect.1),
                 snap.cursor,
                 stage_origin,
                 stage_scale,

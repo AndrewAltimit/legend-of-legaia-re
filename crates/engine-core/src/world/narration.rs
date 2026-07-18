@@ -117,6 +117,19 @@ impl World {
         }
     }
 
+    /// The per-render-node depth-cue pull the current scene renders through,
+    /// or `None` for the identity default. Keyed on the same prologue scene
+    /// gate as [`Self::scene_color_grade`]: retail stages a gold DPCS far
+    /// colour + depth-graded `IR0` per render node across the opening's
+    /// narration beats (crushing far scenery toward gold) and neutral values
+    /// on the interactive field, where the cue is the identity. Hosts stage
+    /// this each frame (`set_depth_cue_ramp` / `clear_depth_cue_ramp`) - see
+    /// [`crate::fade::DepthCueRamp`] for the traced mechanism.
+    pub fn scene_depth_cue(&self) -> Option<crate::fade::DepthCueRamp> {
+        self.scene_color_grade()
+            .map(|_| crate::fade::DepthCueRamp::PROLOGUE_GOLD)
+    }
+
     /// Skip the active narration to its next page (a confirm press). Clears
     /// the presenter once it advances past the last page. Returns `true` while
     /// narration is still on screen, `false` once it completes (so the host
@@ -1299,8 +1312,21 @@ impl World {
             .map(|(&slot, _)| slot)
             .collect();
         for slot in restored {
-            self.field_npc_positions.remove(&slot);
-            self.field_npc_headings.remove(&slot);
+            // A slot the spawn-prologue pre-run ALREADY parked at scene entry
+            // ([`Self::pre_run_field_channel_prologues`]) is story-hidden, not
+            // cutscene-hidden: restore it to its entry state (which may itself
+            // be the hide box) rather than resurrecting it at the raw MAN
+            // spawn tile - the exact ghost the prologue park exists to
+            // prevent.
+            match self.field_npc_entry_positions.get(&slot) {
+                Some(&entry_pos) => {
+                    self.field_npc_positions.insert(slot, entry_pos);
+                }
+                None => {
+                    self.field_npc_positions.remove(&slot);
+                    self.field_npc_headings.remove(&slot);
+                }
+            }
         }
     }
 
@@ -1336,9 +1362,6 @@ impl World {
     // PORT: FUN_80039B7C (per-actor frame-slice loop; NOP break + halt park)
     // REF: FUN_8003C83C (cross-context target resolve)
     pub fn step_field_channels(&mut self) {
-        if self.field_channels.is_empty() {
-            return;
-        }
         // Free-roam channels only STEP when the engine's NPC-animation switch is
         // on - the same master gate the waypoint patroller
         // ([`Self::tick_field_npc_motions`]) honours. With it off, the seeded
@@ -1347,6 +1370,47 @@ impl World {
         // no MoveTo `FieldEvent`s) until liveliness is enabled. A cutscene
         // timeline always drives its channels regardless of the switch.
         if !self.cutscene_timeline_active() && !self.animate_field_npcs {
+            return;
+        }
+        self.step_field_channels_inner(false);
+    }
+
+    /// Retail's spawn-install prologue pre-run: `FUN_8003A1E4` runs each
+    /// just-spawned placement context through the field VM at scene load, so
+    /// the record's story-flag-tested opening ops execute BEFORE the first
+    /// rendered frame - the `0x23 MoveTo` park to the off-map sentinel tile
+    /// (`0x7F,0x7F`) for actors the current story state despawns, and the
+    /// story-relocation `MoveTo`s that seat an actor away from its MAN header
+    /// tile. Runtime-pinned against the retail town01 actor list: a share of
+    /// the placements stand parked or relocated from frame one, positions the
+    /// raw placement header does not carry.
+    ///
+    /// The engine mirror: run ONE frame slice per channel (the same
+    /// NOP-break slice [`Self::step_field_channels`] runs per frame - a spawn
+    /// prologue is written `test / MoveTo / 21`-idle, so its repositioning
+    /// lands in the first slice), *unconditionally* - this is load-time
+    /// behaviour, not the opt-in free-roam liveliness. Position writes are
+    /// surfaced for every repositioned slot, and a slot whose scripted
+    /// position parks it or leaves its decoded patrol route's locality drops
+    /// that route (the route was derived by a flag-blind linear walk; the
+    /// executed branch supersedes it). Headings are NOT derived from these
+    /// teleports - [`Self::seed_field_npc_facings`] carries the prologue's
+    /// facing ops.
+    ///
+    /// Call at scene entry after the carrier/channel install; the resulting
+    /// positions snapshot into [`Self::field_npc_entry_positions`], the state
+    /// a cutscene teardown restores to.
+    // PORT: FUN_8003A1E4 (spawn-prologue pre-run -> initial actor positions)
+    // REF: FUN_8003AEB0, FUN_80039B7C
+    pub fn pre_run_field_channel_prologues(&mut self) {
+        self.field_entry_prerun = true;
+        self.step_field_channels_inner(true);
+        self.field_entry_prerun = false;
+        self.field_npc_entry_positions = self.field_npc_positions.clone();
+    }
+
+    fn step_field_channels_inner(&mut self, entry_prerun: bool) {
+        if self.field_channels.is_empty() {
             return;
         }
         let Some(man) = self.field_channels_man.clone() else {
@@ -1457,6 +1521,13 @@ impl World {
         // move is surfaced only for placements it does not drive - "keep the
         // existing locomotion where the channel doesn't override it". During a
         // cutscene the patroller stands down, so the channel owns every slot.
+        //
+        // The ENTRY PRE-RUN writes through unconditionally: the executed
+        // spawn-prologue branch is the story truth for the slot's initial
+        // position, and a decoded patrol route it contradicts (a park, or a
+        // relocation beyond the route's locality) is a branch the flag-blind
+        // route decode kept wrongly - drop it so the patroller can neither
+        // resurrect the ghost nor pace a patrol around the wrong anchor.
         let patroller_active = !self.cutscene_timeline_active();
         for (c, pre) in channels.iter().zip(pre_pos) {
             let (nx, nz) = (c.ctx.world_x, c.ctx.world_z);
@@ -1464,6 +1535,25 @@ impl World {
                 continue;
             }
             let slot = c.placement_index as u8;
+            if entry_prerun {
+                let (nx, nz) = (nx as i16, nz as i16);
+                let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
+                let parked = (nx, nz) == (hide, hide);
+                let outside_route = self.field_npc_routes.get(&slot).is_some_and(|route| {
+                    route.iter().all(|&(wx, wz)| {
+                        let (dx, dz) =
+                            ((wx as i32 - nx as i32).abs(), (wz as i32 - nz as i32).abs());
+                        dx.max(dz) > crate::man_field_scripts::NPC_ROUTE_LOCALITY
+                    })
+                });
+                if parked || outside_route {
+                    self.field_npc_routes.remove(&slot);
+                    self.field_npc_glide_speeds.remove(&slot);
+                    self.field_npc_motions.remove(&slot);
+                }
+                self.field_npc_positions.insert(slot, (nx, nz));
+                continue;
+            }
             if patroller_active {
                 if self.field_npc_routes.contains_key(&slot) {
                     continue;
@@ -1806,6 +1896,28 @@ mod tests {
             w.scene_color_grade(),
             Some(crate::fade::ColorGrade::PROLOGUE_SEPIA)
         );
+    }
+
+    #[test]
+    fn scene_depth_cue_tracks_the_prologue_grade_gate() {
+        let mut w = World::new();
+        // Interactive scenes stage NO depth-cue ramp: the renderer's ramp-off
+        // path is the pre-ramp identity, so town01 pixels are unchanged.
+        assert!(w.scene_depth_cue().is_none());
+        w.set_active_scene_label("town01");
+        assert!(
+            w.scene_depth_cue().is_none(),
+            "interactive field renders without the far-colour pull"
+        );
+        // All three prologue legs pull toward the gold far colour.
+        for scene in ["opdeene", "opstati", "opurud"] {
+            w.set_active_scene_label(scene);
+            assert_eq!(
+                w.scene_depth_cue(),
+                Some(crate::fade::DepthCueRamp::PROLOGUE_GOLD),
+                "{scene} stages the prologue depth-cue ramp"
+            );
+        }
     }
 
     /// Build a minimal timeline that reaches a cross-context CFLAG_TST

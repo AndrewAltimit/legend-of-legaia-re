@@ -421,6 +421,14 @@ impl PlayWindowApp {
                 Some(g) => r.set_color_grade(g.gold, g.strength),
                 None => r.set_color_grade([1.0, 1.0, 1.0], 0.0),
             }
+            // The grade's second half: the per-render-node DPCS far-colour
+            // pull (gold far colour + depth-graded IR0 in retail), staged as
+            // a view-depth IR0 ramp. Cleared every non-prologue frame, so
+            // interactive scenes render the identity (ramp-off) path.
+            match self.session.host.world.scene_depth_cue() {
+                Some(c) => r.set_depth_cue_ramp(c.far, c.near_z, c.far_z, c.max_ir0),
+                None => r.clear_depth_cue_ramp(),
+            }
             // Retail GTE NCLIP winding rejection, scoped to the in-engine
             // cutscene camera: the opdeene prologue's crater-rim tableau shot
             // sits INSIDE the scene's closed cave-wall backdrop mesh, and
@@ -532,15 +540,25 @@ impl PlayWindowApp {
             // Field-NPC clip playback: advance each placed NPC's looping ANM
             // clip and draw its posed mesh halves.
             //
+            // The playhead advances in SIM-TICK time, not render-frame time:
+            // each redraw shows the clip's current frame and then advances the
+            // playhead by `run_ticks` (the number of 60 Hz sim ticks this
+            // redraw drained). Ticking once per *redraw* (what this did
+            // before) tied the animation rate to the display's refresh rate -
+            // on a 144 Hz monitor every NPC animated 2.4x too fast, and any
+            // screenshot oracle over an animated field scene was only
+            // reproducible while the engine held exactly 60 fps. At a steady
+            // 60 Hz (1 tick per redraw) the emitted frame sequence is
+            // unchanged. The player and prop clips already advance inside
+            // `World::tick`; this brings the NPC clips onto the same clock.
+            //
             // The skinned mesh for a `(slot, clip frame)` is a **constant** -
             // the clip is a short loop over a fixed pose set - so it is skinned
             // and uploaded on the first visit to that frame and memoised in
             // `npc_pose_cache` thereafter. Rebuilding it every render frame
-            // (what this did before) re-derived the same vertex bytes and
-            // allocated fresh GPU buffers for them, which dominated the frame:
-            // the CPU re-pose plus its upload was ~70% of the field frame in a
-            // populated town. The playhead still advances every frame, so the
-            // animation is unchanged - only the recomputation is skipped.
+            // re-derived the same vertex bytes and allocated fresh GPU buffers
+            // for them, which dominated the frame: the CPU re-pose plus its
+            // upload was ~70% of the field frame in a populated town.
             //
             // The rest-pose meshes in `field_npc_draws` stay as the fallback
             // for NPCs whose clip or upload is unavailable.
@@ -596,10 +614,14 @@ impl PlayWindowApp {
                     let Some((tmd, raw)) = srcs.get(slot) else {
                         continue;
                     };
-                    // `frame()` is the frame `tick()` is about to emit; take it
-                    // as the cache key, then tick to advance the playhead.
+                    // `frame()` is the frame this redraw shows; take it as the
+                    // cache key and read its pose WITHOUT moving the playhead,
+                    // then advance by the sim ticks this redraw ran (0 on a
+                    // pure-refresh frame, so a 144 Hz display holds each frame
+                    // for the same wall-clock time a 60 Hz one does).
                     let key = (*slot, player.frame());
-                    let pose = player.tick();
+                    let pose = player.current_pose();
+                    player.advance(run_ticks);
                     npc_frames.push(key);
                     if cache.contains_key(&key) {
                         // `LEGAIA_POSE_CACHE_VERIFY=1`: the pose behind a hit
@@ -935,6 +957,14 @@ impl PlayWindowApp {
                             .get(&d.slot)
                             .copied()
                             .unwrap_or(d.spawn);
+                        // Story-parked actor (spawn-prologue `MoveTo` to the
+                        // off-map hide box, or a cutscene hide): not drawn -
+                        // retail parks despawned actors at the far-corner
+                        // sentinel tile precisely so they never render.
+                        let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
+                        if x == hide && z == hide {
+                            continue;
+                        }
                         let y = w.sample_field_floor_height(x as i32, z as i32) as f32;
                         // Raw retail-convention transform (no model
                         // flip): the field camera's FIELD_WORLD_FLIP

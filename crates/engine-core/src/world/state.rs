@@ -595,6 +595,22 @@ pub struct World {
     /// a moving NPC.
     pub field_npc_positions: std::collections::HashMap<u8, (i16, i16)>,
 
+    /// `true` only while [`Self::pre_run_field_channel_prologues`] is
+    /// executing the scene-entry spawn-prologue slices. The field-VM host
+    /// reads it to give the prologue's `4C 51` NPC-run ops their load-time
+    /// semantics (an initial SEAT written through the channel ctx) without
+    /// touching the live free-roam / cutscene behaviour of the same op.
+    pub field_entry_prerun: bool,
+
+    /// Snapshot of [`Self::field_npc_positions`] taken right after the
+    /// scene-entry spawn-prologue pre-run
+    /// ([`Self::pre_run_field_channel_prologues`]) - each slot's story-true
+    /// initial position (spawn tile, story relocation, or the off-map park).
+    /// The cutscene-teardown un-hide restores parked slots to THIS state
+    /// rather than the raw MAN spawn tile, so a story-parked actor stays
+    /// parked when a timeline ends.
+    pub field_npc_entry_positions: std::collections::HashMap<u8, (i16, i16)>,
+
     /// Live per-NPC heading (PSX 12-bit angle, same `render_26` convention as
     /// the player: `0` = travel Z+), keyed by placement slot. Written by
     /// `Self::tick_field_npc_motions` from each walk step's direction, and
@@ -1935,6 +1951,8 @@ impl World {
             field_npc_dialog_prologue: std::collections::HashMap::new(),
             active_inline_prologue: None,
             field_npc_positions: std::collections::HashMap::new(),
+            field_entry_prerun: false,
+            field_npc_entry_positions: std::collections::HashMap::new(),
             field_npc_headings: std::collections::HashMap::new(),
             field_prop_colliders: Vec::new(),
             resolved_cold_spawn: None,

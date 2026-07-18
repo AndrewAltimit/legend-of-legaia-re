@@ -21,9 +21,16 @@ The sub-opcode is bounds-checked before the indirect jump:
 
 So this overlay-escape, despite being an indirect-jump-table dispatch on a bytecode-supplied operand, has **no out-of-bounds-jump path** - a relevant property given the move buffer is partly attacker-influenceable (the self-modifying sub-ops `0x04`/`0x1B`/`0x1E` below write into it). The clean-room port mirrors the guarded return with a `_ => default_arm()` catch-all for any sub-opcode `>= 0x3D`.
 
-### Overlay residency
+### Overlay residency - one copy, in the field overlay only
 
-The same dispatcher resides in many overlays (town, world-map and its variants, dialog, cutscene) at the same RAM address; each overlay supplies its own JT contents. Each sub-handler returns the size in u16 units. Sub-handlers at `0x801D31B0` (per-scanline POLY_FT4 strip emitter; reused across dialog / cutscene / world-map / 0897 overlays), `0x801D32F8`, `0x801D3444`, `0x801D3748`, `0x801D52D0`, etc. are members of this table.
+The dispatcher and its JT live in **PROT 0897 alone**. The earlier "many overlays, each with its own JT contents" reading is **falsified**:
+
+- The seven capture-derived dumps (`overlay_0897` / `world_map` / `world_map_walk` / `dialog_mc4` / `dialog_typing` / `cutscene_dialogue` / `cutscene_mapview` `_801d362c.txt`) are **byte-identical disassembly** - one 0897-resident function observed under different scenario labels (world-map, dialog and mapview-cutscene play are all 0897-hosted modes). The `overlay_0897` static dump merely has coverage gaps where Ghidra couldn't follow the JT flow.
+- In the disc images of every other mapped slot-A overlay the VA `0x801D362C` holds unrelated bytes: menu 0899 / fishing 0972 / slot-machine 0973 / baka 0976 / dance 0980 carry mid-function code of their own, cutscene_str 0970 is zero-fill there, battle-action 0898 has a different battle function (a save-block `0x80084140` walker) at that address, and the title overlay holds data tables. None has a 61-pointer JT at `0x801CE868` (0897's is at file `+0x50`; the others carry path strings or unrelated data there).
+
+Since the SCUS opcode arm calls the **fixed VA** `0x801D362C`, op `0x2F` is only executable while the field overlay is resident - in any other overlay generation it would jump into unrelated code. Battle-side move records (monster archive, summon stagers) therefore cannot use op `0x2F`; the extension sub-ops are a field/world-map/dialog-mode vocabulary.
+
+Each sub-handler returns the size in u16 units. Sub-handlers at `0x801D31B0` (per-scanline POLY_FT4 strip emitter), `0x801D32F8`, `0x801D3444`, `0x801D3748`, `0x801D52D0`, etc. are members of the 0897 table.
 
 ## Sub-op clusters
 

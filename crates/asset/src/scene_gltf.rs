@@ -69,7 +69,7 @@ pub struct SceneInstance {
 /// `cba` is zeroed for 15bpp pages (no CLUT involved) so direct-colour tiles
 /// dedupe across CLUT bits.
 pub(crate) fn tile_key(cba: u16, tsb: u16) -> (u16, u16) {
-    let tsb = tsb & 0x018F; // bits 0-3 page x, bit 4 page y, bits 7-8 depth
+    let tsb = tsb & 0x019F; // bits 0-3 page x, bit 4 page y, bits 7-8 depth
     let depth = (tsb >> 7) & 3;
     if depth >= 2 { (0, tsb) } else { (cba, tsb) }
 }
@@ -381,6 +381,34 @@ mod tests {
         // Instance TRS carried through.
         assert_eq!(root["nodes"][0]["translation"][0], 100.0);
         assert_eq!(root["nodes"][0]["scale"][0], 6.0);
+    }
+
+    #[test]
+    fn tile_key_then_bake_reads_the_second_page_row() {
+        // The assembled battle characters sample tsb 0x38: page x = 8 (512),
+        // page y = 1 (256), 4bpp. The atlas bake goes through tile_key first,
+        // so the key must keep bit 4 - masking it off bakes the tile from
+        // page y = 0 and the whole character comes out transparent.
+        let (cba, tsb) = (0x7844u16, 0x0038u16);
+        assert_ne!(
+            tile_key(cba, tsb),
+            tile_key(cba, tsb & !0x10),
+            "tile_key must distinguish page y"
+        );
+        let mut vram = Vram::new();
+        // One 4bpp word at texel (0, 44) of the y=256 page: index 1 in the
+        // low nibble. CLUT row 400, column 2: entry 1 = opaque white.
+        vram.write_block(512, 300, 1, 1, &[0x01, 0x00]);
+        let mut clut = [0u8; 32];
+        clut[2] = 0xFF;
+        clut[3] = 0x7F;
+        vram.write_clut_row(32, 400, &clut);
+        let cba = (400u16 << 6) | 2;
+        let (kc, kt) = tile_key(cba, tsb);
+        let mut out = vec![0u8; TILE * TILE * 4];
+        bake_tile(&vram, kc, kt, &mut out, TILE, 0, 0);
+        let px = &out[(44 * TILE) * 4..(44 * TILE) * 4 + 4];
+        assert_eq!(px, [255, 255, 255, 255], "texel decodes via the CLUT");
     }
 
     #[test]

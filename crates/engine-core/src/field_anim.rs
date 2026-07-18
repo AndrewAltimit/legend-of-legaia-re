@@ -99,17 +99,33 @@ impl FieldClipPlayer {
     /// Emit the current frame's pose and advance the playhead (wrapping -
     /// locomotion clips loop, `finished` stays `false`).
     pub fn tick(&mut self) -> PoseFrame {
-        let pose = PoseFrame {
+        let pose = self.current_pose();
+        self.advance(1);
+        pose
+    }
+
+    /// The current frame's pose WITHOUT advancing the playhead. Hosts whose
+    /// render rate is decoupled from the sim rate read the pose here every
+    /// redraw and call [`Self::advance`] once per *sim tick*, so the clip
+    /// plays at the retail cadence regardless of display refresh rate.
+    pub fn current_pose(&self) -> PoseFrame {
+        PoseFrame {
             bone_outputs: self.frames[self.frame].clone(),
             factor: 0,
             finished: false,
-        };
-        self.counter += 1;
-        if self.counter >= self.ticks_per_frame.max(1) {
-            self.counter = 0;
-            self.frame = (self.frame + 1) % self.frames.len();
         }
-        pose
+    }
+
+    /// Advance the playhead by `n` engine ticks (`0` = hold the frame). O(1)
+    /// in `n`; equivalent to `n` post-emit advances of [`Self::tick`].
+    pub fn advance(&mut self, n: u32) {
+        if n == 0 || self.frames.is_empty() {
+            return;
+        }
+        let tpf = self.ticks_per_frame.max(1);
+        let total = self.counter + n;
+        self.counter = total % tpf;
+        self.frame = (self.frame + (total / tpf) as usize) % self.frames.len();
     }
 }
 
@@ -207,6 +223,53 @@ mod tests {
             assert_eq!(pose.bone_outputs[1].0[0], expect + 1);
             assert!(!pose.finished);
         }
+    }
+
+    /// `advance(n)` must land exactly where `n` sequential `tick()`s land,
+    /// including the sub-frame counter, for every phase of the clip - the
+    /// contract that makes the host's "pose per redraw, advance per sim tick"
+    /// split equivalent to the old per-tick emit at a 1:1 tick:redraw ratio.
+    #[test]
+    fn advance_matches_sequential_ticks() {
+        let bundle = synth_bundle();
+        for tpf in [1u32, 2, 3] {
+            for n in 0..10u32 {
+                let mut seq = FieldClipPlayer::from_record(&bundle, 0).unwrap();
+                let mut jump = seq.clone();
+                seq.ticks_per_frame = tpf;
+                jump.ticks_per_frame = tpf;
+                for _ in 0..n {
+                    let _ = seq.tick();
+                }
+                jump.advance(n);
+                assert_eq!(seq.frame, jump.frame, "frame after {n} ticks (tpf={tpf})");
+                assert_eq!(
+                    seq.counter, jump.counter,
+                    "counter after {n} ticks (tpf={tpf})"
+                );
+                assert_eq!(
+                    seq.current_pose().bone_outputs,
+                    jump.current_pose().bone_outputs
+                );
+            }
+        }
+    }
+
+    /// `current_pose` is a pure read: it never moves the playhead, and
+    /// `advance(0)` holds the frame.
+    #[test]
+    fn current_pose_does_not_advance() {
+        let bundle = synth_bundle();
+        let mut p = FieldClipPlayer::from_record(&bundle, 0).unwrap();
+        p.ticks_per_frame = 1;
+        let a = p.current_pose();
+        let b = p.current_pose();
+        assert_eq!(a.bone_outputs, b.bone_outputs);
+        assert_eq!(p.frame(), 0);
+        p.advance(0);
+        assert_eq!(p.frame(), 0);
+        p.advance(1);
+        assert_eq!(p.frame(), 1);
     }
 
     #[test]

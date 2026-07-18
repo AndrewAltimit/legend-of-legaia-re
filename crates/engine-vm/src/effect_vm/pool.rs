@@ -128,27 +128,34 @@ pub struct EffectScript {
     pub body: Vec<u8>,
 }
 
-/// Per-master-slot child-distribution descriptor used by [`Pool::spawn`]
-/// when the script's `flags & 0x01` bit is set. One entry per child sprite
-/// the script will spawn; the spawn loop reads two random values per child.
-///
-/// Models the per-child params at `pack1_record[+0x4 + child_idx * 14]`
-/// in the retail layout (the retail random-distribution loop reads only
-/// `+0x2` and `+0x6` of each - width and depth). Other fields belong to
-/// the per-frame walker.
+/// One 14-byte pack1 spawn record (`pack1_entry[+0x4 + child_idx * 14]`).
+/// Consumed once by the retail walker (`FUN_801E0088` pass 1) when its child
+/// spawns; the field roles below are pinned from the spawn block
+/// `0x801E0184..0x801E03F0`. [`Pool::spawn`] additionally rewrites the two
+/// planar offset fields with random values when the script's `flags & 0x01`
+/// bit is set (retail scribbles them back into the resident script buffer).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ChildSprite {
-    /// `+0x00..0x02` - sprite identifier, copied to `MasterSlot.field_18`
-    /// downstream.
+    /// `+0x00` - pack0 anim-batch index (a single byte in retail; kept as
+    /// `u16` for the existing consumer surface). Selects the child's sprite
+    /// animation - the batch's frame count seeds the child slot's lifetime.
     pub sprite_id: u16,
-    /// `+0x02` - half-width of the random X distribution (in 8.8 fixed).
+    /// `+0x01` - frames the master waits after this spawn before consuming
+    /// the next record (`<<3` into the master's 5.3 wait counter).
+    pub delay: u8,
+    /// `+0x02` - planar spawn offset, leg A (rotated into world space by the
+    /// master angle, `>>4`). Rewritten with `rand % (2*spread) - spread`
+    /// when the script's flags bit 0 is set.
     pub width: i16,
-    /// `+0x04..0x06` - anim / shading flags.
-    pub anim_flags: u16,
-    /// `+0x06` - half-width of the random Z distribution (in 8.8 fixed).
+    /// `+0x04` - vertical spawn offset (`<<8`, subtracted from Y).
+    pub height: i16,
+    /// `+0x06` - planar spawn offset, leg B (rotated, `>>4`). Randomized
+    /// alongside `width` under flags bit 0.
     pub depth: i16,
-    /// `+0x08..0x0E` - opaque tail (animation curves / sound id / etc.).
-    pub tail: [u8; 6],
+    /// `+0x08 / +0x0A / +0x0C` - initial velocity `(leg A, vertical, leg B)`.
+    /// The planar legs are rotated by the master angle (`>>12`); the
+    /// vertical component is copied direct to the child slot.
+    pub velocity: [i16; 3],
 }
 
 /// 32-master / 128-child slot pool. Mirrors the 5008-byte block at
@@ -157,8 +164,11 @@ pub struct ChildSprite {
 pub struct Pool {
     /// `+0x00..0x10` - pool-head record set by [`Pool::init`].
     /// `param_1`, `param_2` are the two `(id=0x1000, param=0xA00)` immediates
-    /// the retail caller passes; their semantics remain opaque pending more
-    /// reverse work, so we just retain them.
+    /// the retail caller passes: the walker consumes the i16 at pool `+0`
+    /// (`0x1000`) as the global child **motion scale** (its
+    /// `* scale * 8 >> 15` reduces to unity) and the i16 at pool `+2`
+    /// (`0xA00`) as the sprite **world scale** (`atlas w/h * 0xA00 >> 8` =
+    /// x10 texel size before projection).
     pub head: PoolHead,
     pub master_slots: [MasterSlot; MAX_MASTER_SLOTS],
     pub children: [ChildSlot; MAX_CHILD_SLOTS],
@@ -169,9 +179,11 @@ pub struct Pool {
 /// We model the two 16-bit halves as separate fields for clarity.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PoolHead {
-    /// Lower half of word 0: `param_1` from `init`.
+    /// Lower half of word 0: `param_1` from `init` (retail `0x1000` - the
+    /// walker's global child motion scale, unity at `0x1000`).
     pub param_id: u16,
-    /// Upper half of word 0: `param_2` from `init`.
+    /// Upper half of word 0: `param_2` from `init` (retail `0xA00` - the
+    /// pass-2 sprite world scale, `atlas w/h * param >> 8`).
     pub param_extra: u16,
     /// Word 1: pack0 record table base (frame-batch animations). Engines
     /// resolve this to a Rust slice; we keep an `u32` opaque token so the

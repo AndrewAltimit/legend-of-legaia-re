@@ -144,6 +144,13 @@ pub struct Renderer {
     /// what the field passes for an unfogged scene. Set with
     /// [`Renderer::set_depth_cue`].
     pub(super) depth_cue: std::cell::Cell<[f32; 4]>,
+    /// View-depth IR0 ramp `(near_z, inv_range, max_ir0, enable)` staged into
+    /// every field `MeshUniforms` (see [`super::uploaded::MeshUniforms`]).
+    /// Defaults to all-zero = disabled (constant-`IR0` fallback). Set with
+    /// [`Renderer::set_depth_cue_ramp`] / cleared with
+    /// [`Renderer::clear_depth_cue_ramp`]; drives the opening prologue's
+    /// per-render-node far-colour crush.
+    pub(super) cue_ramp: std::cell::Cell<[f32; 4]>,
     /// Backface-cull mode staged into `MeshUniforms.flags[0]` (see there).
     /// `0.0` (default) = draw both sides; `1.0` / `2.0` = discard back /
     /// front-facing fragments. Set with [`Renderer::set_backface_cull`].
@@ -336,6 +343,48 @@ impl Renderer {
     /// Read the current depth cue `(far_r, far_g, far_b, ir0)`.
     pub fn depth_cue(&self) -> [f32; 4] {
         self.depth_cue.get()
+    }
+
+    /// Stage the **per-render-node depth-cue pull** as a view-depth `IR0`
+    /// ramp: far colour `far` (display `0..1`, written into the
+    /// [`Self::set_depth_cue`] far slot) plus a linear ramp that takes each
+    /// fragment's projected view depth to
+    /// `ir0 = clamp((z - near_z) / (far_z - near_z), 0, 1) * max_ir0`.
+    ///
+    /// Retail stages the DPCS far colour and `IR0` per render node (`+0x74` /
+    /// `+0x78` into GTE cr21-23 / `IR0`, `FUN_8002735C`); the cutscene host
+    /// sets a gold far colour with depth-graded `IR0`s across the opening
+    /// prologue so far scenery crushes toward gold while near ground keeps
+    /// the modulation tint. The ramp reproduces that depth dependence
+    /// per-fragment. The constant-`IR0` fog path ([`Self::set_depth_cue`]) is
+    /// unaffected when the ramp is cleared.
+    pub fn set_depth_cue_ramp(&self, far: [f32; 3], near_z: f32, far_z: f32, max_ir0: f32) {
+        let cur = self.depth_cue.get();
+        self.depth_cue.set([
+            far[0].clamp(0.0, 1.0),
+            far[1].clamp(0.0, 1.0),
+            far[2].clamp(0.0, 1.0),
+            cur[3],
+        ]);
+        let inv_range = if far_z > near_z {
+            1.0 / (far_z - near_z)
+        } else {
+            0.0
+        };
+        self.cue_ramp
+            .set([near_z, inv_range, max_ir0.clamp(0.0, 1.0), 1.0]);
+    }
+
+    /// Disable the view-depth `IR0` ramp (the default): the shaders fall back
+    /// to the constant `IR0` staged by [`Self::set_depth_cue`], which is `0`
+    /// (identity) unless a fog op set it.
+    pub fn clear_depth_cue_ramp(&self) {
+        self.cue_ramp.set([0.0, 0.0, 0.0, 0.0]);
+    }
+
+    /// Read the current cue ramp `(near_z, inv_range, max_ir0, enable)`.
+    pub fn depth_cue_ramp(&self) -> [f32; 4] {
+        self.cue_ramp.get()
     }
 
     /// Enable/disable the shader-side backface cull on the VRAM / colour

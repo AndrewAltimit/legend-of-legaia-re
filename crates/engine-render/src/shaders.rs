@@ -114,18 +114,43 @@ fn psx_modulate(texel: vec3<f32>, colour: vec3<f32>) -> vec3<f32> {
 }
 
 // GTE depth cue (DPCS, cop2 0x780010) - the one colour op the retail TMD
-// renderers run. Blends the shaded colour toward the far colour (GTE cr21-23)
-// by IR0:
+// renderers run. Blends the shaded colour toward a far term by IR0:
 //     out = c + (fc - c) * ir0
-// `cue.rgb` is the far colour in 0..1, `cue.a` is IR0 in 0..1 (hardware
+// `far_rgb` is the far term in 0..1, `ir0` the blend factor in 0..1 (hardware
 // 0..0x1000). ir0 = 0 is the identity - the unfogged field case, and what a
 // town0c retail capture shows (baked colours leave the GTE's RGB FIFO
 // byte-unchanged).
-fn psx_depth_cue(rgb: vec3<f32>, cue: vec4<f32>) -> vec3<f32> {
-    if (cue.a <= 0.0) {
+//
+// Retail runs DPCS on the PACKET COLOUR before the GPU's texture blend
+// (`texel * colour / 128`), so on a textured prim the far term arrives at the
+// pixel as `texel * far / 128` - callers pass `psx_modulate(texel, far_bytes)`
+// as `far_rgb`. An untextured prim is filled with the packet colour directly,
+// so its far term is the far colour itself.
+fn psx_depth_cue(rgb: vec3<f32>, far_rgb: vec3<f32>, ir0: f32) -> vec3<f32> {
+    if (ir0 <= 0.0) {
         return rgb;
     }
-    return clamp(mix(rgb, cue.rgb, cue.a), vec3<f32>(0.0), vec3<f32>(1.0));
+    return clamp(mix(rgb, far_rgb, ir0), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+// View-depth-driven IR0 - the prologue's per-render-node depth-cue pull.
+//
+// Retail stages the DPCS far colour + IR0 PER RENDER NODE (`+0x74` / `+0x78`,
+// written by the cutscene host across the opening's narration beats), so far
+// scenery (sky planes, distant spires) is pulled hard toward the gold far
+// colour while near ground keeps the modulation tint almost unblended. The
+// engine reproduces that depth dependence with a linear view-depth ramp:
+//     ir0(z) = clamp((z - near) * inv_range, 0, 1) * max_ir0
+// `ramp = (near_z, inv_range, max_ir0, enable)`; `frag_w` is the fragment
+// `@builtin(position).w` = 1/clip_w, so `view_z = 1/frag_w` is the view-space
+// depth the vertex projected at. `enable <= 0` falls back to the constant
+// `cue_a` (the fog-op path; 0 = the unfogged identity default).
+fn cue_ramp_ir0(cue_a: f32, ramp: vec4<f32>, frag_w: f32) -> f32 {
+    if (ramp.w <= 0.0) {
+        return cue_a;
+    }
+    let view_z = 1.0 / max(frag_w, 1e-8);
+    return clamp((view_z - ramp.x) * ramp.y, 0.0, 1.0) * ramp.z;
 }
 
 // ---- Opt-in dynamic-lighting enhancement (NON-RETAIL) ----
@@ -239,6 +264,10 @@ struct MeshUniforms {
     // `.xyz` = warm light tint applied to the diffuse + pool terms,
     // `.w` = ambient floor.
     light_color: vec4<f32>,
+    // View-depth IR0 ramp for the per-render-node depth cue (see
+    // `cue_ramp_ir0` in the prelude): (near_z, inv_range, max_ir0, enable).
+    // enable 0 (the default) = constant `depth_cue.a` (identity when 0).
+    cue_ramp: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 
@@ -313,6 +342,10 @@ struct MeshUniforms {
     // `.xyz` = warm light tint applied to the diffuse + pool terms,
     // `.w` = ambient floor.
     light_color: vec4<f32>,
+    // View-depth IR0 ramp for the per-render-node depth cue (see
+    // `cue_ramp_ir0` in the prelude): (near_z, inv_range, max_ir0, enable).
+    // enable 0 (the default) = constant `depth_cue.a` (identity when 0).
+    cue_ramp: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 @group(1) @binding(0) var t_color: texture_2d<f32>;
@@ -336,11 +369,16 @@ fn vs_main(@location(0) position: vec3<f32>, @location(1) uv: vec2<f32>) -> VsOu
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // No per-prim colour on this vertex format: draw the raw texel (the GPU's
-    // behaviour for the neutral modulation colour 0x80), then depth-cue it.
+    // behaviour for the neutral modulation colour 0x80), grade it, then
+    // depth-cue it. Retail's DPCS runs on the packet colour BEFORE the texel
+    // multiply, so the far term is the far colour modulated by the texel; the
+    // grade tint models the modulation colour and belongs to the near term
+    // only.
     let texel = textureSample(t_color, s_color, in.uv);
-    let cued = psx_depth_cue(texel.rgb, u.depth_cue);
-    let graded = apply_grade(cued, u.grade);
-    let rgb = psx_dither(graded, in.clip_pos.xy, u.psx_params.w);
+    let graded = apply_grade(texel.rgb, u.grade);
+    let ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
+    let cued = psx_depth_cue(graded, psx_modulate(texel.rgb, u.depth_cue.rgb * 255.0), ir0);
+    let rgb = psx_dither(cued, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, texel.a);
 }
 "#;
@@ -393,6 +431,10 @@ struct MeshUniforms {
     // `.xyz` = warm light tint applied to the diffuse + pool terms,
     // `.w` = ambient floor.
     light_color: vec4<f32>,
+    // View-depth IR0 ramp for the per-render-node depth cue (see
+    // `cue_ramp_ir0` in the prelude): (near_z, inv_range, max_ir0, enable).
+    // enable 0 (the default) = constant `depth_cue.a` (identity when 0).
+    cue_ramp: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 @group(1) @binding(0) var t_vram: texture_2d<u32>;
@@ -562,9 +604,16 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     let enhanced = dyn_light(
         lit, in.normal, geo_n, in.clip_pos.xy, u.psx_params.xy, u.light_dir, u.light_color,
     );
-    let cued = psx_depth_cue(enhanced, u.depth_cue);
-    let graded = apply_grade(cued, u.grade);
-    let rgb = psx_dither(graded, in.clip_pos.xy, u.psx_params.w);
+    // Retail order: DPCS blends the PACKET COLOUR toward the far colour, then
+    // the GPU multiplies the texel by the result - so the far term reaches the
+    // pixel as `texel * far / 128` (`psx_modulate` with the far colour in
+    // colour-byte units). The grade tint models the amber modulation colour
+    // and belongs to the near term only; the far colour is staged in absolute
+    // display units and is not re-tinted.
+    let graded = apply_grade(enhanced, u.grade);
+    let ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
+    let cued = psx_depth_cue(graded, psx_modulate(color.rgb, u.depth_cue.rgb * 255.0), ir0);
+    let rgb = psx_dither(cued, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, color.a);
 }
 
@@ -597,8 +646,12 @@ fn blend_pass_color(in: VsOut, f_scale: f32) -> vec4<f32> {
     let enhanced = dyn_light(
         lit, in.normal, geo_n, in.clip_pos.xy, u.psx_params.xy, u.light_dir, u.light_color,
     );
-    let cued = psx_depth_cue(enhanced, u.depth_cue);
-    return vec4<f32>(apply_grade(cued, u.grade) * f_scale, 1.0);
+    // Same grade-then-cue order as the opaque pass (see fs_main): the far
+    // term is the texel-modulated far colour, un-tinted.
+    let graded = apply_grade(enhanced, u.grade);
+    let ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
+    let cued = psx_depth_cue(graded, psx_modulate(color.rgb, u.depth_cue.rgb * 255.0), ir0);
+    return vec4<f32>(cued * f_scale, 1.0);
 }
 
 @fragment
@@ -644,6 +697,10 @@ struct MeshUniforms {
     // `.xyz` = warm light tint applied to the diffuse + pool terms,
     // `.w` = ambient floor.
     light_color: vec4<f32>,
+    // View-depth IR0 ramp for the per-render-node depth cue (see
+    // `cue_ramp_ir0` in the prelude): (near_z, inv_range, max_ir0, enable).
+    // enable 0 (the default) = constant `depth_cue.a` (identity when 0).
+    cue_ramp: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 
@@ -693,9 +750,13 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
         in.color.rgb, vec3<f32>(0.0), geo_n, in.clip_pos.xy, u.psx_params.xy,
         u.light_dir, u.light_color,
     );
-    let cued = psx_depth_cue(enhanced, u.depth_cue);
-    let graded = apply_grade(cued, u.grade);
-    let rgb = psx_dither(graded, in.clip_pos.xy, u.psx_params.w);
+    // An untextured prim is filled with the packet colour, so its DPCS far
+    // term is the far colour itself (no texel multiply). Grade-then-cue,
+    // matching the textured path; the far colour is not re-tinted.
+    let graded = apply_grade(enhanced, u.grade);
+    let ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
+    let cued = psx_depth_cue(graded, u.depth_cue.rgb, ir0);
+    let rgb = psx_dither(cued, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, 1.0);
 }
 
@@ -715,8 +776,12 @@ fn blend_pass_color(in: VsOut, f_scale: f32) -> vec4<f32> {
         in.color.rgb, vec3<f32>(0.0), geo_n, in.clip_pos.xy, u.psx_params.xy,
         u.light_dir, u.light_color,
     );
+    // Grade-then-cue, matching the opaque colour pass (far colour direct -
+    // an untextured prim has no texel multiply).
     let graded = apply_grade(enhanced, u.grade);
-    let rgb = psx_dither(graded, in.clip_pos.xy, u.psx_params.w);
+    let ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
+    let cued = psx_depth_cue(graded, u.depth_cue.rgb, ir0);
+    let rgb = psx_dither(cued, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb * f_scale, 1.0);
 }
 
@@ -762,6 +827,10 @@ struct MeshUniforms {
     // `.xyz` = warm light tint applied to the diffuse + pool terms,
     // `.w` = ambient floor.
     light_color: vec4<f32>,
+    // View-depth IR0 ramp for the per-render-node depth cue (see
+    // `cue_ramp_ir0` in the prelude): (near_z, inv_range, max_ir0, enable).
+    // enable 0 (the default) = constant `depth_cue.a` (identity when 0).
+    cue_ramp: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 

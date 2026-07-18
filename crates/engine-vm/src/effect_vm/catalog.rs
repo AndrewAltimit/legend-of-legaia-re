@@ -40,8 +40,11 @@ pub struct SpriteAtlasEntry {
 }
 
 /// One frame of a pack0 animation batch. The first byte indexes the sprite
-/// atlas (which texel rect to draw this frame); the remaining 5 bytes are
-/// timing / direction bits the walker advances per frame.
+/// atlas (which texel rect to draw this frame). Of the trailing bytes the
+/// retail walker reads exactly two: `timing[0]` is the frame's hold delay
+/// (frames, `<<3` into the child's 5.3 wait counter) and `timing[1]` is the
+/// per-frame motion speed scalar multiplying the child velocity;
+/// `timing[2..=4]` are never read (`overlay_battle_801e0088.txt`).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AnimFrame {
     pub atlas_index: u8,
@@ -244,11 +247,19 @@ impl EffectCatalog {
                 break;
             };
             children.push(ChildSprite {
-                sprite_id: u16::from_le_bytes([rec[0], rec[1]]),
+                // Retail reads a single byte here (pack0 anim-batch index);
+                // rec[1] is the master's post-spawn delay, NOT the high byte
+                // of a u16 id (see docs/formats/effect.md).
+                sprite_id: rec[0] as u16,
+                delay: rec[1],
                 width: i16::from_le_bytes([rec[2], rec[3]]),
-                anim_flags: u16::from_le_bytes([rec[4], rec[5]]),
+                height: i16::from_le_bytes([rec[4], rec[5]]),
                 depth: i16::from_le_bytes([rec[6], rec[7]]),
-                tail: [rec[8], rec[9], rec[10], rec[11], rec[12], rec[13]],
+                velocity: [
+                    i16::from_le_bytes([rec[8], rec[9]]),
+                    i16::from_le_bytes([rec[10], rec[11]]),
+                    i16::from_le_bytes([rec[12], rec[13]]),
+                ],
             });
         }
         let body_start = (4 + child_count * 14).min(entry.len());
@@ -329,11 +340,16 @@ impl EffectCatalog {
                 for c in 0..child_count {
                     let cb = &entry[4 + c * 14..4 + (c + 1) * 14];
                     children.push(ChildSprite {
-                        sprite_id: u16::from_le_bytes([cb[0], cb[1]]),
+                        sprite_id: cb[0] as u16,
+                        delay: cb[1],
                         width: i16::from_le_bytes([cb[2], cb[3]]),
-                        anim_flags: u16::from_le_bytes([cb[4], cb[5]]),
+                        height: i16::from_le_bytes([cb[4], cb[5]]),
                         depth: i16::from_le_bytes([cb[6], cb[7]]),
-                        tail: [cb[8], cb[9], cb[10], cb[11], cb[12], cb[13]],
+                        velocity: [
+                            i16::from_le_bytes([cb[8], cb[9]]),
+                            i16::from_le_bytes([cb[10], cb[11]]),
+                            i16::from_le_bytes([cb[12], cb[13]]),
+                        ],
                     });
                 }
             }
