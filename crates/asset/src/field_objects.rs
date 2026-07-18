@@ -108,6 +108,13 @@ pub const FLAG_COLLIDER_CORRECTION: u16 = 0x8;
 /// `FUN_801F69D8`), reading `opmap01.MAP` whose pool is the *larger* overview
 /// pack - so `+0x10` reaches well past `0x3F` there.
 ///
+/// `0x2000` is **not** exclusive to overview mode, though: the ordinary-field
+/// static-object / decoration pass (`FUN_801F7088`, PROT 0900) reuses the same
+/// bit as its per-object draw gate over a normal scene `.MAP` (real `town01`:
+/// 1946 cells set `0x1000`, 208 set `0x2000`, 126 both). So in a field scene
+/// `0x2000` marks the decoration/object cells that pass draws, alongside the
+/// `0x1000` walk-visible ground cells - two consumers of the same grid word.
+///
 /// **The free-roam *walk* view (game mode `0x03`) uses the same record layout
 /// but a different cell gate, [`CELL_WALK_VISIBLE`] (`0x1000`).** It reads the
 /// per-scene walk `.MAP` (e.g. `map01` walk = PROT entry `0085`), whose `+0x10`
