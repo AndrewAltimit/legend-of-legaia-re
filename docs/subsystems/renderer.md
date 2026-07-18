@@ -525,6 +525,13 @@ pre-ramp render. See
 [`cutscene.md`](cutscene.md#full-scene-sepia-grade-the-gold-prologue-look) for the calibration
 measurements and the per-node residual.
 
+The scripted screen fade (field-VM op `0x4C 0x12` global tint - the scene-entry
+fade-from-black) reuses this same staging rather than adding a shader term: the host multiplies
+the fade tint into the staged grade gold (at full strength) *and* into the depth-cue far colour,
+so both branches of the shaders' cue mix carry it and the product distributes to the final
+pixel. A neutral tint stages the identity values - byte-identical to the fade-free path. See
+[`cutscene.md`](cutscene.md#scripted-screen-fade-op-0x4c-0x12--the-effect-colour-op-0x34-sub-0).
+
 ### Colour space: PSX framebuffer values end to end
 
 Every colour in the engine - texels, CLUT entries, vertex colours, menu inks, grade coefficients -

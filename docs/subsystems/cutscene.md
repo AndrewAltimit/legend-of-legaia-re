@@ -32,7 +32,7 @@ library. The FMV dispatch table is at `0x801D0A6C`.
 - [Playback loop (`play-str`)](#playback-loop-play-str) · [frame-rate detection](#frame-rate-detection) · [CLI reference](#cli-reference)
 - [CDNAME → STR override map](#cdname--str-override-map) · [overlay residency](#strmdec-fmv-overlay-residency) · [directory-record cache](#directory-record-cache) · [post-FMV return scenes](#post-fmv-return-scenes)
 - [Field-VM FMV-trigger op](#field-vm-fmv-trigger-op) - [static trigger sites](#static-fmv-trigger-sites---exhaustive) · [trigger assignment is disc-sourced](#the-per-scene-trigger-assignment-is-disc-sourced-the-runtime-reconstructed-reading-is-falsified) · [per-STR trigger corpus](#per-str-fmv-trigger-corpus)
-- [In-engine 3D opening](#in-engine-3d-opening-the-five-scene-new-game-chain) - [the five-scene chain](#the-five-scene-chain) · [record spawn](#record-spawn-mechanisms-live-probe-pinned) · [`opdeene` timeline record](#the-opdeene-timeline-record) · [inline narration](#inline-narration-format) · [crawl roller](#narration-playback---the-crawl-roller-fun_80037174) · [timeline execution](#timeline-execution-model-ghidra-traced) · [engine port](#timeline-execution-engine-port) · [vignette actors](#per-actor-channels---the-vignette-actors) · [colour fade](#colour-fade-op-0x34-sub-0) · [sepia grade](#full-scene-sepia-grade-the-gold-prologue-look)
+- [In-engine 3D opening](#in-engine-3d-opening-the-five-scene-new-game-chain) - [the five-scene chain](#the-five-scene-chain) · [record spawn](#record-spawn-mechanisms-live-probe-pinned) · [`opdeene` timeline record](#the-opdeene-timeline-record) · [inline narration](#inline-narration-format) · [crawl roller](#narration-playback---the-crawl-roller-fun_80037174) · [timeline execution](#timeline-execution-model-ghidra-traced) · [engine port](#timeline-execution-engine-port) · [vignette actors](#per-actor-channels---the-vignette-actors) · [screen fade](#scripted-screen-fade-op-0x4c-0x12--the-effect-colour-op-0x34-sub-0) · [sepia grade](#full-scene-sepia-grade-the-gold-prologue-look)
 - [Open items](#open-items) · [Provenance](#provenance)
 
 ## Game modes
@@ -661,7 +661,7 @@ The narration does **not** gate the `town01` hand-off: the roller is timer-drive
 
 The cutscene timeline runs on the **same field/event VM** (`FUN_801DE840`) as every other field script - there is no dedicated cutscene executor. The pieces:
 
-- **Record header.** Partition-2 records are **named records**, *not* the partition-1 `[u8 N][N*2 locals][4-byte header]` shape. Layout: `[u8 name_len][name_len*2 SJIS name][u8 C0][C0 bytes][u8 C1][C1*u16][u8 C2][C2*u16]<script>`. The name length is in characters; the three condition-list gates are story-flag predicates the dispatcher tests before running the record (block 1 = OR gate, block 2 = AND gate; block 0 is skipped here). The script entry offset is `1 + name_len*2 + (1+C0) + (1+C1*2) + (1+C2*2)`. For `opdeene`'s record 18 (`name_len=6` "Opening", all blocks empty) that is `0x10` - the `0x34` EFFECT op (white fade-in) that opens the prologue, immediately followed by `GFLAG_SET 26` at `+0x17`. Decoder:
+- **Record header.** Partition-2 records are **named records**, *not* the partition-1 `[u8 N][N*2 locals][4-byte header]` shape. Layout: `[u8 name_len][name_len*2 SJIS name][u8 C0][C0 bytes][u8 C1][C1*u16][u8 C2][C2*u16]<script>`. The name length is in characters; the three condition-list gates are story-flag predicates the dispatcher tests before running the record (block 1 = OR gate, block 2 = AND gate; block 0 is skipped here). The script entry offset is `1 + name_len*2 + (1+C0) + (1+C1*2) + (1+C2*2)`. For `opdeene`'s record 18 (`name_len=6` "Opening", all blocks empty) that is `0x10` - the `0x34` EFFECT op (an instant colour reset to neutral) that opens the prologue, immediately followed by `GFLAG_SET 26` at `+0x17`. Decoder:
   [`man_field_scripts::partition_record_span`](../../crates/engine-core/src/man_field_scripts.rs) (`FUN_8003BDE0`).
 - **Dispatch.** `FUN_8003BDE0` resolves a partition record by index, walks the header, and **spawns a VM context** (`ctx[+0x90]` = record base, `ctx[+0x9e]` = entry PC, `ctx[+0x10] |= 0x100` "run me"); the per-frame runner `FUN_80039B7C` then loops `FUN_801DE840` on it until a yield. The index comes from the two caller families [above](#record-spawn-mechanisms-live-probe-pinned) - an entry-script op `0x44` or a walk-on tile trigger (`FUN_801D1EC4`) - not a sequential partition walk.
 - **Cross-context target `0xF8`.** Nearly every op in the timeline carries the extended-target byte `0xF8` (`A3 F8 …` = MoveTo, `CC F8 …` = MenuCtrl). `FUN_8003C83C(0xF8)` resolves to `_DAT_8007C364` - the **player / camera-anchor actor** - so the timeline drives the camera/lead actor.
@@ -849,21 +849,42 @@ by `cutscene_timeline_player_channel_door_reaches_scene_change`; the disc-gated
 `chapter1_hub_depth_oracle` drives the jou castle door through this path to
 `SceneEntered("jouina")`.
 
-### Colour fade (op `0x34` sub-0)
+### Scripted screen fade (op `0x4C 0x12`) + the effect colour (op `0x34` sub-0)
 
-The prologue opens on a white flash: the timeline's first op is `34 05 FF FF FF 00 00` = op
-`0x34` sub-0 (effect-global colour + intensity; the sub-0 arm at `0x801E1FB0` inside the field-VM
-dispatcher `FUN_801DE840` - a Ghidra-promoted intra-function label, not a separate function).
-Retail clears the active fade
-when the colour is all-zero, else schedules a fade of that colour with a direction from `op0 & 1`.
-The engine ports the *setup* to [`fade::ColorFade`](../../crates/engine-core/src/fade.rs) (a
-colour + a coverage ramp; `op0 & 1` selects a reveal / fade-from-colour vs a fade-to-colour),
-driven by
-[`FieldHostImpl::op34_sub0_color_intensity_setup`](../../crates/engine-core/src/world/vm_hosts.rs)
-into `World::color_fade`, stepped per `World::tick` and drawn by `play-window` as a full-screen
-semi-transparent wash while active. **Approximate by design:** the retail fade actor's per-frame
-*draw* handler is not dumped, so the coverage curve + PSX blend mode aren't pinned - the render is
-a 50%-average (ABR 0) wash that lifts as the ramp completes, pending that dump.
+**Op `0x4C 0x12`** (7 bytes `[4C, 12, r, g, b, ramp_lo, ramp_hi]`) is the retail **screen-fade
+primitive**: the global multiply tint `DAT_8007BCB8/B9/BA` (neutral `0x80`), optionally ramped
+over `LE_u16(ramp)` frames by the slot-job spawner `FUN_8003C5F0`. Every field scene's `P1[0]`
+entry script carries the arrival arm of the `0x52F`/`0x530`/`0x531` fade handshake (see
+[`script-vm.md`](script-vm.md#the-0x5270x531-scene-transition-scratch-band)) -
+`4C 12 00 00 00 00 00` (instant black) then `4C 12 80 80 80 44 00` (ramp to neutral over 68
+frames), the **fade-in from black** that opens the prologue. New Game arms the handshake
+(`World::begin_new_game` sets sysflag `0x52F`, the boot-side stage retail performs before the
+field launches); the destination entry script consumes it. The engine runs the entry script's
+load-frame slice at prologue-scene entry (`World::pre_run_entry_script`), so the instant black is
+on screen before the first rendered frame, matching retail's load-frame execution. The tint
+darkens the drawn 3D scene only - the narration crawl is a separate draw path and keeps scrolling
+bright, as the retail capture shows - and persists across scene changes (retail's cross-scene
+fade continuity). Engine model: [`fade::SceneTintRamp`](../../crates/engine-core/src/fade.rs)
+(normalized, `1.0` = neutral) in `World::screen_tint`, stepped per `World::tick`, surfaced by
+`World::scene_screen_tint`; `play-window` folds it into the colour-grade + depth-cue staging
+(both branches of the shaders' cue mix carry it, so the tint distributes to the final pixel). A
+landed non-neutral tint holds; a landed neutral drops to the identity path.
+
+**Op `0x34` sub-0** (7 bytes `[34, op0, r, g, b, ramp_lo, ramp_hi]`; the sub-0 arm at
+`0x801E1FB0` inside the field-VM dispatcher `FUN_801DE840` - a Ghidra-promoted intra-function
+label, not a separate function) ramps the **effect-layer global colour** (neutral `0xFF`) toward
+the operand RGB over the trailing word's frame count. The opening timeline drives it in the crawl
+gaps (`34 05 00 00 00 D2 00` = to black over 210 frames, `34 01 FF FF FF 00 00` = instant
+neutral, `34 01 FF FF FF 78 00` = up over 120 frames); the timeline's first op
+(`34 05 FF FF FF 00 00`, instant neutral) is a colour *reset*, not a white flash, and an all-zero
+colour is a ramp target, not a clear. **It is not a screen fade**: the retail cold-boot capture
+holds the lit villager tableau across the whole span where the timeline's `34 01 00 00 00 28 00`
+→ `34 05 FF FF FF 5A 00` pair would black a full-screen fade, falsifying the earlier
+"between-beat black fade" reading (and the older "white flash + 50% wash" model before it). The
+value feeds the effect layer - the creation-glow planes are the likely consumer, still an open
+thread. Engine model: the same ramp type in `World::effect_tint` (scene-local, kept out of
+`scene_screen_tint`). Disc-gated `opening_fade_from_black` pins both value models against the
+real `opdeene` bytecode.
 
 ### Full-scene sepia grade (the gold prologue look)
 
@@ -884,8 +905,8 @@ geometry and not a `MES`/texture change:
   `FUN_80043390` - the darkening half of the look. (Byte-exact across save states.)
 
 The `opdeene` MAN itself carries **no** colour op (no op `0x4C 0x8A` ambient, no `0x4C 0x81` far
-colour); it drives op `0x46` depth-fog and op `0x4C 0x12` fade-to-black only. So the gold is set by
-the **cutscene-host overlay during the narration beats**, not the field script.
+colour); it drives op `0x46` depth-fog and the op `0x4C 0x12` screen fade only. So the gold is set
+by the **cutscene-host overlay during the narration beats**, not the field script.
 
 A GP0 draw-list capture of the retail opening chain refines what "the grade" actually is, per
 primitive class:
