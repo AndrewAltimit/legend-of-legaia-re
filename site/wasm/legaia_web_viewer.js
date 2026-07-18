@@ -2458,6 +2458,28 @@ export class LegaiaRuntime {
         }
     }
     /**
+     * `[width, height]` of the caption image; `[0, 0]` when none.
+     * @returns {Uint32Array}
+     */
+    cutscene_caption_dims() {
+        const ret = wasm.legaiaruntime_cutscene_caption_dims(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * The "It was the Seru." caption image (a baked TIM the prologue blits,
+     * faded, between the two narration crawls), RGBA8. Empty when the
+     * current scene carries none.
+     * @returns {Uint8Array}
+     */
+    cutscene_caption_rgba() {
+        const ret = wasm.legaiaruntime_cutscene_caption_rgba(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
      * `true` if a disc has been loaded.
      * @returns {boolean}
      */
@@ -2702,6 +2724,18 @@ export class LegaiaRuntime {
         var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v1;
+    }
+    /**
+     * The off-map hide-box coordinate (`FIELD_OFFMAP_HIDE_XZ`). Retail parks
+     * despawned / story-hidden actors at this far-corner sentinel tile
+     * precisely so they never render; the page must skip drawing any NPC
+     * whose **live** position is this tile on both axes, exactly as the
+     * native play-window's draw pass does.
+     * @returns {number}
+     */
+    field_offmap_hide_xz() {
+        const ret = wasm.legaiaruntime_field_offmap_hide_xz(this.__wbg_ptr);
+        return ret;
     }
     /**
      * Per-placement object-bind animation id (parallel to
@@ -2990,6 +3024,112 @@ export class LegaiaRuntime {
         wasm.legaiaruntime_open_menu(this.__wbg_ptr);
     }
     /**
+     * Camera parameters for the cutscene shot, decoded from the timeline's
+     * executed op-`0x45` Camera Configure params - the browser mirror of
+     * the native window's `cutscene_view` (see that fn for the retail
+     * provenance: focus X/Z stored negated in params 6/8; pitch/yaw in
+     * params 0/1, PSX 4096 = turn; H in param 9; the eye-space translation
+     * trio in params 3/4/5, divided by retail's folded-in 6x world scale).
+     * Shape:
+     * ```text
+     * { "active": bool,  // a cutscene timeline is running
+     *   "focus": [x, y, z], "pitch": rad, "yaw": rad,
+     *   "h": f, "tr": [x, y, z] }
+     * ```
+     * `null` before a scene is entered.
+     * REF: FUN_801DE084, FUN_800172C0
+     * @returns {string}
+     */
+    play_cutscene_camera_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_play_cutscene_camera_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Per-frame cutscene presentation state:
+     * ```text
+     * { "locked": bool,          // freeze the pad this frame (feed 0)
+     *   "chain": bool,           // opening chain playing (skip available)
+     *   "narration": bool, "card": bool,
+     *   "caption_alpha": 0.0,    // "It was the Seru." fade (0 = hidden)
+     *   "grade": { "gold": [r,g,b], "strength": s } | null,
+     *   "cue": { "far": [r,g,b], "near_z": f, "far_z": f, "max_ir0": f } | null }
+     * ```
+     * `grade` / `cue` mirror `World::scene_color_grade` /
+     * `World::scene_depth_cue` - the prologue sepia multiply + gold DPCS
+     * depth-cue ramp the native window stages into its renderer each frame.
+     * @returns {string}
+     */
+    play_cutscene_state_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_play_cutscene_state_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * The narration crawl + title card as font-atlas text quads over a
+     * `surface_w` x `surface_h` canvas - the same
+     * `{ "open", "texts" }` quad shape as the menu / dialog draws (blit off
+     * the font atlas; there are no chrome sprites). Line Ys are the
+     * roller's PSX 240-line window scaled to the surface; each line is
+     * centred, white - the native window's narration draw.
+     * REF: FUN_80037174
+     * @param {number} surface_w
+     * @param {number} surface_h
+     * @returns {string}
+     */
+    play_cutscene_text_draws_json(surface_w, surface_h) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_play_cutscene_text_draws_json(this.__wbg_ptr, surface_w, surface_h);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Draw lists for the retail dialog reading box over a `surface_w` x
+     * `surface_h` canvas. Same shape as
+     * [`Self::play_menu_draws_json`]: `{ "open", "sprites", "texts" }` -
+     * `sprites` sample the chrome atlas, `texts` the font atlas (upload both
+     * via the `play_menu_*` atlas accessors; this call builds the shared
+     * assets on first use). `open` is `false` when no box is up this frame.
+     *
+     * Unlike the pause menu the field keeps running underneath - retail
+     * draws the reading box over the live scene.
+     * @param {number} surface_w
+     * @param {number} surface_h
+     * @returns {string}
+     */
+    play_dialog_draws_json(surface_w, surface_h) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_play_dialog_draws_json(this.__wbg_ptr, surface_w, surface_h);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * `[width, height]` of the chrome atlas; `[0, 0]` when none.
      * @returns {Uint32Array}
      */
@@ -3136,6 +3276,41 @@ export class LegaiaRuntime {
         }
     }
     /**
+     * Live clip-playback state of every catalogued NPC, flattened
+     * `[frame, generation, ...]` pairs in catalog order; `[-1, -1]` for an
+     * entry with no live clip player. `frame` is the clip frame this render
+     * should show ([`legaia_engine_core::field_anim::FieldClipPlayer::frame`],
+     * advanced once per drained sim tick - the native window's sim-tick anim
+     * contract); `generation` bumps when an ANIMATE cue re-targets the clip,
+     * telling the page to re-read the pose behind the index.
+     * @returns {Int32Array}
+     */
+    play_npc_clip_states() {
+        const ret = wasm.legaiaruntime_play_npc_clip_states(this.__wbg_ptr);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Current pose of catalog entry `i`'s **live** clip: 6 `i32` per bone
+     * (`[tx, ty, tz, rx, ry, rz]`, absolute), read WITHOUT advancing the
+     * playhead ([`FieldClipPlayer::current_pose`] - the playhead moves only
+     * in [`LegaiaRuntime::tick_frame`]). Unlike
+     * [`Self::play_npc_pose_frames`] this follows ANIMATE-cue re-targets, so
+     * a scripted actor's performed clip is what comes back. Empty when the
+     * entry has no live clip player.
+     *
+     * [`FieldClipPlayer::current_pose`]: legaia_engine_core::field_anim::FieldClipPlayer::current_pose
+     * @param {number} i
+     * @returns {Int32Array}
+     */
+    play_npc_live_bones(i) {
+        const ret = wasm.legaiaruntime_play_npc_live_bones(this.__wbg_ptr, i);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
      * Build catalog entry `i`'s mesh (hybrid: textured + vertex-colour prims,
      * with per-vertex bone ids). Returns `i`.
      *
@@ -3256,6 +3431,32 @@ export class LegaiaRuntime {
         var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
+    }
+    /**
+     * Poll the retail prologue intro-skip (`FUN_801D1344`): while the
+     * opening chain plays with the handoff bit armed, a confirm press skips
+     * the whole remaining opening to `town01`. Returns the target scene
+     * label once (the page then enters it), else `""`.
+     *
+     * Browser note: the engine-side handoff marks the upcoming `town01`
+     * entry as the new-game opening (installing the establishing-sweep
+     * timeline, which opens the name-entry overlay); the browser has no
+     * name-entry surface, so that mark is cleared here and `town01` starts
+     * in normal free-roam play.
+     * @param {boolean} confirm
+     * @returns {string}
+     */
+    play_take_prologue_handoff(confirm) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_play_take_prologue_handoff(this.__wbg_ptr, confirm);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
     }
     /**
      * `true` when the lead's field mesh resolved out of the global TMD pool.
@@ -6488,7 +6689,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 112, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 114, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23);
             return ret;
         },
