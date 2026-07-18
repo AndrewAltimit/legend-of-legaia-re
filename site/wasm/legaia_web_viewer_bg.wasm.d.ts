@@ -18,6 +18,7 @@ export const legaiaarts_art_pose_frames: (a: number, b: number) => [number, numb
 export const legaiaarts_art_strike_cue: (a: number) => number;
 export const legaiaarts_art_strike_frames: (a: number, b: number) => [number, number];
 export const legaiaarts_art_voice_pcm_i16: (a: number, b: number) => [number, number];
+export const legaiaarts_export_character_glb: (a: number) => [number, number];
 export const legaiaarts_idle_pose_frames: (a: number) => [number, number];
 export const legaiaarts_load_disc: (a: number, b: number, c: number) => [number, number, number, number];
 export const legaiaarts_mesh_bounds: (a: number) => [number, number];
