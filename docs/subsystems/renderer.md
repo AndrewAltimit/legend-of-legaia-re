@@ -777,6 +777,16 @@ projection, and `project_billboard`'s effect quads all use the exact divide).
 The `gte_divide` primitive is the ready hook should a future faithful-render
 mode gate the GTE projection under `Renderer::set_psx_mode`.
 
+The full `Gte::rtps` projection is cross-checked against an independent
+second implementation of `gte_rtps_internal` (in the hardware register scale,
+with the reference's OFX-before-shift ordering) over a wide input sweep, at
+zero tolerance on the projection outputs. Because `Gte` keeps MAC/IR in q19.12,
+only the hardware-scale outputs are register-comparable — the **SXY** FIFO, the
+**SZ** FIFO, and the FLAG bits that do not depend on the MAC/IR scale
+(`DIVIDE_OVERFLOW`, `SZ3_OTZ`, `SX2`/`SY2` saturation). The IR/MAC-saturation
+bits (and thus the `ANY_ERROR` roll-up) diverge by that scale convention; a
+future real-silicon or cosim register oracle must compare the same subset.
+
 ### GTE register-state emulator
 
 `Gte` is a register-level cop2 emulator next to the math module, mirroring the PSX hardware register file: V0..V2 input vectors, MAC0..MAC3 wide accumulators (i64), IR0..IR3 saturating shorts, the SXY (3-deep) / SZ (4-deep) / RGB (3-deep) FIFOs, OTZ, and the FLAG sticky-saturation register with hardware-matching bit positions exposed via `gte::flag_bits` (engines comparing against captured FLAG dumps mask the same bits). Control registers cover the rotation matrix, translation, focal length `H`, screen offset `OFX/OFY`, the average-Z scale factors `ZSF3` / `ZSF4`, the depth-cue interpolation slope/intercept `DQA` / `DQB`, the light source matrix `L`, the light color matrix, and the `back_color` / `far_color` triplets used by the depth-cue pipeline.

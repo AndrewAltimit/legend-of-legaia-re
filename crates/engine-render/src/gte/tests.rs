@@ -386,6 +386,172 @@ fn gte_rtps_behind_camera_overflows_divide_not_mac3_neg() {
     assert_eq!(g.flag & flag_bits::MAC3_OVERFLOW_NEG, 0);
 }
 
+/// Independent reference projection mirroring the Beetle-validated
+/// `gte_rtps_internal` (psxrecomp `runtime/src/gte.cpp`) in the HARDWARE
+/// register scale and with the reference's OFX-before-shift ordering -
+/// deliberately different arithmetic from `Gte::rtps`, which holds MAC/IR in
+/// q19.12 and adds OFX *after* the `>>16` floor-shift. Returns the
+/// hardware-comparable subset: the saturated SXY, the pushed SZ3, and the
+/// FLAG bits that do not depend on the q19.12 MAC/IR representation. The
+/// IR/MAC-saturation bits are excluded on purpose - they diverge by the
+/// documented scale convention, which is exactly why a naive register-exact
+/// cosim comparison cannot be used against this port.
+fn reference_rtps(
+    rot: &GteMat3,
+    trans: GteVec3,
+    v: GteVec3,
+    h: i32,
+    ofx: i32,
+    ofy: i32,
+) -> (ScreenXY, u16, u32) {
+    // Reference MAC = (RT*V + TR<<12) >> 12. `rot_trans` yields RT*V + trans
+    // with trans already in q19.12, so the `>>12` recovers the hardware-scale
+    // MAC the real GTE latches.
+    let view = rot_trans(rot, v, trans);
+    let mac1 = (view.x >> ROT_FRAC_BITS) as i64;
+    let mac2 = (view.y >> ROT_FRAC_BITS) as i64;
+    let mac3 = view.z >> ROT_FRAC_BITS;
+
+    let mut flag = 0u32;
+    // push_sz: clamp MAC3 into the u16 SZ FIFO, flagging on saturation.
+    let sz3 = if mac3 < 0 {
+        flag |= flag_bits::SZ3_OTZ_SATURATED;
+        0
+    } else if mac3 > u16::MAX as i32 {
+        flag |= flag_bits::SZ3_OTZ_SATURATED;
+        u16::MAX as i32
+    } else {
+        mac3
+    } as u16;
+
+    // Screen numerators are the i16-saturated hardware IR1/IR2.
+    let ir1 = mac1.clamp(SXY_MIN as i64, SXY_MAX as i64);
+    let ir2 = mac2.clamp(SXY_MIN as i64, SXY_MAX as i64);
+
+    let (recip, overflow) = gte_divide(h as u16, sz3);
+    if overflow {
+        flag |= flag_bits::DIVIDE_OVERFLOW;
+    }
+
+    // Reference ordering: add the fixed-point OFX/OFY (`<<16`), THEN
+    // floor-shift by 16. The port does `(IR*recip)>>16` first and adds an
+    // integer-pixel OFX after; the two agree because retail's OFX/OFY have
+    // zero low 16 bits (SetGeomOffset, FUN_8005B7F8). This sweep machine-
+    // checks that equivalence across the full numerator-sign space.
+    let sx = (((ofx as i64) << 16) + ir1 * recip) >> 16;
+    let sy = (((ofy as i64) << 16) + ir2 * recip) >> 16;
+
+    if sx < SXY_MIN as i64 || sx > SXY_MAX as i64 {
+        flag |= flag_bits::SX2_SATURATED;
+    }
+    if sy < SXY_MIN as i64 || sy > SXY_MAX as i64 {
+        flag |= flag_bits::SY2_SATURATED;
+    }
+    let sxy = ScreenXY::new(sx as i32, sy as i32).saturate_sxy();
+    (sxy, sz3, flag)
+}
+
+#[test]
+fn gte_rtps_matches_independent_reference_over_input_sweep() {
+    // Closes the RTPS integration-validation gap: `Gte::rtps` (q19.12 MAC/IR,
+    // OFX added after the floor-shift) is checked against `reference_rtps`, an
+    // independent second implementation in the hardware register scale with
+    // the reference's OFX-before-shift ordering. Everything that determines
+    // the on-screen projection - SXY, SZ, divide overflow, SXY saturation,
+    // SZ3 clamp - is compared with ZERO tolerance across a wide input sweep.
+    //
+    // The IR/MAC-saturation FLAG bits (and thus ANY_ERROR) are intentionally
+    // outside the mask: the port keeps MAC/IR in q19.12, so those bits diverge
+    // from hardware by the documented scale convention. This test pins exactly
+    // which cop2 outputs are hardware-comparable - the contract a future
+    // real-silicon/cosim oracle would compare against.
+    const MASK: u32 = flag_bits::DIVIDE_OVERFLOW
+        | flag_bits::SZ3_OTZ_SATURATED
+        | flag_bits::SX2_SATURATED
+        | flag_bits::SY2_SATURATED;
+
+    let rots = [
+        GteMat3::IDENTITY,
+        GteMat3::rot_x(0.6),
+        GteMat3::rot_y(1.2),
+        GteMat3::rot_z(-0.9),
+        GteMat3::rot_y(0.7).mul(&GteMat3::rot_x(0.3)),
+    ];
+    // Depths in q19.12: on/behind plane, near the H/2 overflow knee, and far.
+    let depths = [
+        -(ROT_ONE * 100),
+        0,
+        ROT_ONE / 2,
+        ROT_ONE * 2,
+        ROT_ONE * 50,
+        ROT_ONE * 200,
+        ROT_ONE * 1000,
+        ROT_ONE * 8000,
+    ];
+    let laterals = [
+        GteVec3::new(0, 0, 0),
+        GteVec3::new(ROT_ONE * 30, -(ROT_ONE * 20), 0),
+        // Far off-axis: under the identity rotation this drives the projected
+        // SXY past the i16 range, exercising the SX2/SY2 saturation path.
+        GteVec3::new(ROT_ONE * 25000, -(ROT_ONE * 25000), 0),
+    ];
+    let verts = [
+        GteVec3::new(0, 0, 0),
+        GteVec3::new(100, 0, 0),
+        GteVec3::new(0, 80, 0),
+        GteVec3::new(-64, 40, 128),
+        GteVec3::new(500, -300, 200),
+    ];
+    let hs = [256, 320];
+    let offsets = [(0, 0), (160, 120)];
+
+    let mut cases = 0u32;
+    let mut flag_coverage = 0u32;
+    for rot in &rots {
+        for &depth in &depths {
+            for lat in &laterals {
+                let trans = GteVec3::new(lat.x, lat.y, depth);
+                for v in &verts {
+                    for &h in &hs {
+                        for &(ofx, ofy) in &offsets {
+                            let mut g = Gte::new();
+                            g.rot = *rot;
+                            g.trans = trans;
+                            g.h = h;
+                            g.ofx = ofx;
+                            g.ofy = ofy;
+                            g.v[0] = *v;
+                            let sxy_port = g.rtps();
+
+                            let (sxy_ref, sz_ref, flag_ref) =
+                                reference_rtps(rot, trans, *v, h, ofx, ofy);
+
+                            let ctx = format!("depth={depth} v={v:?} h={h} of=({ofx},{ofy})");
+                            assert_eq!(sxy_port, sxy_ref, "SXY mismatch @ {ctx}");
+                            assert_eq!(g.sz_fifo[3], sz_ref, "SZ mismatch @ {ctx}");
+                            assert_eq!(
+                                g.flag & MASK,
+                                flag_ref & MASK,
+                                "FLAG-subset mismatch @ {ctx}"
+                            );
+                            flag_coverage |= flag_ref & MASK;
+                            cases += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Guard against the sweep silently collapsing to nothing, and confirm the
+    // flag comparison is non-vacuous - every masked bit fires somewhere, so
+    // the equality above is exercised on set bits, not just zeros.
+    assert_eq!(cases, 2400, "expected the full cartesian sweep");
+    assert_eq!(
+        flag_coverage, MASK,
+        "sweep did not exercise every masked bit"
+    );
+}
+
 #[test]
 fn gte_nclip_writes_mac0_and_returns_signed_area() {
     let mut g = Gte::new();
