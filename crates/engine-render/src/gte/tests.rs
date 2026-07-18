@@ -143,12 +143,33 @@ fn camera_marks_behind_camera_vertex() {
 }
 
 #[test]
-fn camera_projection_is_pixel_exact_for_unit_z() {
-    // Pin one specific projection so we catch regressions: with H=320,
-    // a vertex at (1024, 0, 1024) (in q19.12 = 0.25 world units in X,
-    // 0.25 in Z) projects to screen.x = 320 * 1024 / 1024 = 320,
-    // i.e. one full focal-length offset to the right of the screen
-    // origin. (No center offset here.)
+fn camera_projection_is_pixel_exact_for_realistic_depth() {
+    // Pin one specific projection so we catch regressions. The GTE divides
+    // via the UNR reciprocal (crate::gte::math::gte_divide), not an exact
+    // divide, so this asserts the hardware value: with H=320 and a vertex at
+    // real (50, 0, 200) world units (q19.12), SZ3 = 200 (> H/2 = 160, so no
+    // overflow clamp) and gte_divide(320, 200) yields the same 320*50/200 = 80
+    // the exact divide would (the UNR error is 0 here).
+    let cam = Camera {
+        rot: GteMat3::IDENTITY,
+        trans: GteVec3::new(0, 0, 0),
+        h: 320,
+        ofx: 0,
+        ofy: 0,
+    };
+    let p = cam.transform(GteVec3::new(ROT_ONE * 50, 0, ROT_ONE * 200));
+    assert_eq!(p.clip, Clip::SafeFront);
+    assert_eq!(p.screen_xy.x, 80);
+    assert_eq!(p.screen_xy.y, 0);
+}
+
+#[test]
+fn camera_near_camera_vertex_overflow_clamps_like_hardware() {
+    // A vertex at real depth 0.25 units (q19.12 z = 1024) has SZ3 = 0 after
+    // the >>12 depth reduction, so 2*SZ3 = 0 <= H: hardware raises the divide
+    // overflow flag and saturates the reciprocal to 0x1FFFF instead of
+    // dividing. With IR1 = 1024>>12 = 0 the projected X collapses to OFX.
+    // (An exact divide would have wrongly placed it at 320.)
     let cam = Camera {
         rot: GteMat3::IDENTITY,
         trans: GteVec3::new(0, 0, 0),
@@ -157,9 +178,8 @@ fn camera_projection_is_pixel_exact_for_unit_z() {
         ofy: 0,
     };
     let p = cam.transform(GteVec3::new(1024, 0, 1024));
-    assert_eq!(p.clip, Clip::SafeFront);
-    assert_eq!(p.screen_xy.x, 320);
-    assert_eq!(p.screen_xy.y, 0);
+    assert_eq!(p.clip, Clip::SafeFront); // still in front of the camera plane
+    assert_eq!(p.screen_xy.x, 0);
 }
 
 #[test]

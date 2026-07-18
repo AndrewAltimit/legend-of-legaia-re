@@ -743,6 +743,29 @@ Production rendering still uses f32 wgpu math. This module is the single citatio
 point for code that needs to reproduce per-vertex GTE behaviour: effect spawners,
 hit-detection, animation re-targeting, offline regression checks.
 
+**Perspective divide (UNR reciprocal).** The projection step is not an exact
+`OFX + (H * IR1) / SZ3`. The GTE approximates `1 / SZ3` with an Unsigned
+Newton-Raphson step seeded from a 257-entry table, then applies it as
+`OFX + (IR1 * (H / SZ3)) >> 16` with an arithmetic (floor) shift. Two hardware
+quirks follow and are reproduced by `gte::math::gte_divide`, used by the GTE
+emulation sites `Gte::rtps` (the register-level cop2 oracle) and its
+`Camera::transform` RTPT shim: near or behind the camera (`2 * SZ3 <= H`,
+including `SZ3 == 0`) the quotient saturates to `0x1FFFF` and the divide-overflow
+FLAG bit (17) is set instead of dividing; elsewhere the reciprocal diverges from
+an exact divide by ±1 (up to a couple of units for extreme numerators near the
+overflow boundary). The seed table is *computed* from the published algorithm
+(no$psx "GTE Division Inaccuracy"), not copied Sony data — the same clean-room
+provenance class as the SPU Gaussian / reverb tables. These sites hold MAC/IR in
+q19.12 (4096× the hardware IR/SZ scale) and reduce with a `>>12` before the
+divide.
+
+This UNR path is the faithful GTE-register behaviour that the parity oracles
+measure; it does not change on-screen rendering, which projects through the
+clean f32 pipeline (the field's modern `perspective_rh`, the battle GTE
+projection, and `project_billboard`'s effect quads all use the exact divide).
+The `gte_divide` primitive is the ready hook should a future faithful-render
+mode gate the GTE projection under `Renderer::set_psx_mode`.
+
 ### GTE register-state emulator
 
 `Gte` is a register-level cop2 emulator next to the math module, mirroring the PSX hardware register file: V0..V2 input vectors, MAC0..MAC3 wide accumulators (i64), IR0..IR3 saturating shorts, the SXY (3-deep) / SZ (4-deep) / RGB (3-deep) FIFOs, OTZ, and the FLAG sticky-saturation register with hardware-matching bit positions exposed via `gte::flag_bits` (engines comparing against captured FLAG dumps mask the same bits). Control registers cover the rotation matrix, translation, focal length `H`, screen offset `OFX/OFY`, the average-Z scale factors `ZSF3` / `ZSF4`, the depth-cue interpolation slope/intercept `DQA` / `DQB`, the light source matrix `L`, the light color matrix, and the `back_color` / `far_color` triplets used by the depth-cue pipeline.
