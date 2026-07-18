@@ -61,7 +61,55 @@ pinned by the disc-gated parity test `tests/play_parity.rs`:
   draws raw (draw kind 5), which the curated NPC-browser catalog withholds;
 - a catalogued NPC's mesh truncates its TMD object table to its clip's bone
   count (the objects past it are equipment-swap templates), and a slot with
-  no seeded heading renders at identity, both as the native draw pass does.
+  no seeded heading renders at identity, both as the native draw pass does;
+- NPC visibility follows the native hide-box contract: a header-parked
+  placement uploads only when the scene-entry spawn-prologue pre-run seated it
+  into the town (story-placed NPCs appear from frame one), and any slot whose
+  **live** position is the off-map hide box (`field_offmap_hide_xz`) is
+  skipped at draw time (story-parked actors never render);
+- NPC clip playback runs in **sim-tick time**: `LegaiaRuntime` hosts one
+  `FieldClipPlayer` per placed slot (the native `npc_clip_players` twin),
+  advances it once per `tick_frame` (60 Hz ticks, 2 per clip frame - the
+  retail cadence), re-targets it on channel op-`0x4B` ANIMATE cues, and
+  serves the current frame (`play_npc_clip_states` / `play_npc_live_bones`)
+  without moving the playhead - so clip cadence is refresh-rate-independent
+  and scripted actors perform their cued beats.
+
+The disc-gated `tests/play_parity_wave.rs` pins the hide-box contract, the
+sim-tick clip cadence, and the opening-chain staging below.
+
+## Retail dialog reading box (`play_dialog`)
+
+The field NPC / event message box, served as the same `{ sprites, texts }`
+quad lists the pause menu ships (`play_dialog_draws_json`) and blitted by the
+page over the live, still-running field. Geometry is the traced pager's
+(`FUN_801D84D0`): main centre rect `(0x26, 0x10, 0xF4, lines*0xF - 3)` at the
+top of the 320x240 stage, picker `(0x26, 0x94 + ((4-n)*0xF)/2, ...)`, text
+pen at the box origin with 15-px row pitch in the staged CLUT-7 white, the
+chrome via `legaia_engine_ui::dialog_window_chrome_draws_for` (fill at
+centre+4, border ring at centre+8) and the option / page-advance hand
+sprites. The page's DOM text box remains only as a fallback for a cached
+WASM without this API.
+
+## Opening prologue chain (`play_cutscene`)
+
+New Game runs the retail opening: entering `opdeene` through the engine arms
+the chain (`opening_chain_active`), installs the cutscene timeline whose
+SceneChange ops walk the remaining legs, and the page renders the
+presentation layer from per-frame reads: the narration crawl + title card
+(`play_cutscene_text_draws_json`, font quads at the roller's PSX 240-line
+Ys), the "It was the Seru." caption (`cutscene_caption_*`, faded by the
+engine's alpha), the prologue sepia grade + gold depth-cue ramp
+(`play_cutscene_state_json` mirrors `World::scene_color_grade` /
+`scene_depth_cue`; the page stages them as WebGL uniforms), the op-`0x45`
+cutscene camera decode (`play_cutscene_camera_json`, mapped onto the page's
+orbit projection - an approximation of the native PSX GTE camera), the
+narration input lock, and the retail intro-skip
+(`play_take_prologue_handoff` - Cross skips the whole remaining opening to
+`town01`). Browser deviations, both deliberate: FMV beats are auto-finished
+(no STR/MDEC playback on the play path), and the `town01` establishing-sweep
+timeline is not run (it opens the name-entry overlay, which has no browser
+surface yet) - arrival lands in free-roam play.
 
 Two things the browser host has to do that the native one gets for free:
 
@@ -137,7 +185,7 @@ NEW GAME / CONTINUE, copyright) as sprite quads off `title_screen_atlas`
 black. `site/js/play-app.js` exposes the `AtlasBlitter`; the page's small boot
 controller runs before any scene exists, feeds the title edge-triggered pad
 words, and on the New Game outcome seeds the retail defaults + enters the
-opening scene (the existing `enter_field_scene` path). Publisher logos and the
+opening prologue chain (`play_cutscene` above). Publisher logos and the
 Continue save-slot grid are not yet wired.
 
 ## Assembled full-scene maps (`field_scene`)

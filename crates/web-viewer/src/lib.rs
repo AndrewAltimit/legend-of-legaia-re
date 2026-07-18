@@ -21,6 +21,8 @@ pub mod minigames;
 mod monster;
 mod nav_disc;
 pub mod play;
+pub mod play_cutscene;
+pub mod play_dialog;
 pub mod play_menu;
 mod player_anm;
 pub mod rom_patcher;

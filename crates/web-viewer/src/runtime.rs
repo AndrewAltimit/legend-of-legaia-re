@@ -28,7 +28,7 @@ use legaia_engine_core::world::{SceneMode, World};
 use legaia_engine_vm::menu::{MenuInput, open as menu_open};
 use wasm_bindgen::prelude::*;
 
-use crate::play::{FieldRender, NpcRender, PlayerRig};
+use crate::play::{FieldRender, NpcClip, NpcRender, PlayerRig};
 
 /// Bridge object the play page instantiates once. Holds a `World` +
 /// `MenuRuntime` for the disc-free path, and - once `load_disc` has run - a
@@ -44,6 +44,11 @@ pub struct LegaiaRuntime {
     pub(crate) player: Option<PlayerRig>,
     /// The scene's MAN-placed NPC catalog.
     pub(crate) npcs: Option<NpcRender>,
+    /// Live NPC clip players keyed by placement slot - the browser twin of
+    /// the native window's `npc_clip_players`. Advanced one tick per
+    /// [`Self::tick_frame`] (the sim clock, not the render clock) and
+    /// re-targeted by drained op-`0x4B` ANIMATE cues.
+    pub(crate) npc_clips: std::collections::HashMap<u8, NpcClip>,
     /// The scene's ANM bundle (the pose source for scene NPCs **and** placed
     /// props), resolved once per scene the way the native window's
     /// `find_scene_anm_bundle` does: entry-major, descriptor-count seed
@@ -95,6 +100,7 @@ impl LegaiaRuntime {
             field: None,
             player: None,
             npcs: None,
+            npc_clips: std::collections::HashMap::new(),
             scene_anm: None,
             locomotion_anm: None,
             item_names: None,
@@ -258,7 +264,16 @@ impl LegaiaRuntime {
                 .map_err(|e| JsValue::from_str(&format!("enter_field({name}): {e:#}")))?;
         }
         self.rebuild_render_state()?;
-        self.seat_player();
+        // The seat heuristic is for interactive free-roam entry; the opening
+        // chain's cutscene legs stage their own tableau (the timeline owns
+        // actor placement) and must not have the anchor relocated under it.
+        let in_opening = self
+            .scene_host
+            .as_ref()
+            .is_some_and(|h| h.world.opening_chain_active || h.world.cutscene_timeline_active());
+        if !in_opening {
+            self.seat_player();
+        }
         Ok(self.state_json())
     }
 
@@ -319,10 +334,31 @@ impl LegaiaRuntime {
         let event = host
             .tick()
             .map_err(|e| JsValue::from_str(&format!("tick: {e:#}")))?;
+        // Browser FMV auto-skip: the play page has no STR/MDEC playback, so
+        // an FMV the field VM triggers (SceneMode::Cutscene + active_fmv)
+        // would otherwise park the world forever. Finish it immediately -
+        // the 3D cutscene / field resumes, minus the movie.
+        if host.world.mode == SceneMode::Cutscene && host.world.active_fmv.is_some() {
+            host.world.finish_cutscene();
+        }
         if let SceneTickEvent::SceneEntered { name } = event {
+            // Browser: arriving at town01 from the opening chain would run
+            // the establishing-sweep timeline, whose pinned op-0x49 opens the
+            // name-entry overlay - no browser surface exists for it yet, and
+            // a timeline waiting on it would freeze the page. Drop the
+            // timeline so the opening lands in normal free-roam play.
+            if name == legaia_asset::new_game::OPENING_SCENE
+                && let Some(h) = self.scene_host.as_mut()
+                && h.world.cutscene_timeline.is_some()
+            {
+                h.world.cutscene_timeline = None;
+                h.world.cutscene_narration = None;
+                h.world.cutscene_card = None;
+            }
             self.rebuild_render_state()?;
             return Ok(name);
         }
+        self.drive_npc_clips();
         Ok(String::new())
     }
 
@@ -559,6 +595,7 @@ impl LegaiaRuntime {
         self.field = None;
         self.player = None;
         self.npcs = None;
+        self.npc_clips.clear();
         self.scene_anm = None;
         self.locomotion_anm = None;
         let Some(host) = self.scene_host.as_ref() else {
@@ -605,8 +642,84 @@ impl LegaiaRuntime {
             Ok(pack) => self.npcs = Some(NpcRender { pack }),
             Err(e) => crate::console_log(&format!("play: NPC catalog for {name}: {e}")),
         }
+        self.build_npc_clips();
         self.build_player_rig();
         Ok(())
+    }
+
+    /// Build one [`NpcClip`] per catalogued placement that names a clip - the
+    /// native window's `npc_clip_players` rebuild. The clip is the placement's
+    /// `anim_id - 1` in the scene's own ANM bundle (a global-pool special
+    /// indexes the PROT 0874 locomotion bundle instead); ANIMATE cues
+    /// re-target it live in [`Self::drive_npc_clips`].
+    fn build_npc_clips(&mut self) {
+        self.npc_clips.clear();
+        let Some(n) = self.npcs.as_ref() else {
+            return;
+        };
+        for e in &n.pack.entries {
+            let bundle = if e.special {
+                self.locomotion_anm.as_ref()
+            } else {
+                self.scene_anm.as_ref()
+            };
+            let (Some(b), Some(rec)) = (bundle, (e.placement.anim_id as usize).checked_sub(1))
+            else {
+                continue;
+            };
+            if let Some(player) =
+                legaia_engine_core::field_anim::FieldClipPlayer::from_record(b, rec)
+            {
+                self.npc_clips.insert(
+                    e.placement.index as u8,
+                    NpcClip {
+                        player,
+                        generation: 0,
+                        special: e.special,
+                    },
+                );
+            }
+        }
+    }
+
+    /// One sim tick of NPC clip playback: drain this tick's op-`0x4B` ANIMATE
+    /// cues (re-targeting the cued slots' players - the cue's anim id names a
+    /// bundle record the same way the placement anim byte does, `record =
+    /// id - 1`, against whichever bundle the placement resolved through), then
+    /// advance every player by exactly one tick. The render side reads
+    /// [`crate::play::NpcClip`] state without moving the playhead
+    /// (`current_pose`), so clip cadence is tied to the 60 Hz sim clock, not
+    /// the display refresh - the native window's sim-tick anim contract.
+    fn drive_npc_clips(&mut self) {
+        /// One drained ANIMATE cue: `(slot, (count, base_anim_id, frames))`,
+        /// the `World::field_npc_anim_cues` entry shape.
+        type AnimCue = (u8, (u8, u8, Vec<u8>));
+        let cues: Vec<AnimCue> = match self.scene_host.as_mut() {
+            Some(h) => h.world.field_npc_anim_cues.drain().collect(),
+            None => return,
+        };
+        for (slot, (_count, base_id, _frames)) in cues {
+            let Some(clip) = self.npc_clips.get_mut(&slot) else {
+                continue;
+            };
+            let bundle = if clip.special {
+                self.locomotion_anm.as_ref()
+            } else {
+                self.scene_anm.as_ref()
+            };
+            let (Some(b), Some(rec)) = (bundle, (base_id as usize).checked_sub(1)) else {
+                continue;
+            };
+            if let Some(player) =
+                legaia_engine_core::field_anim::FieldClipPlayer::from_record(b, rec)
+            {
+                clip.player = player;
+                clip.generation = clip.generation.wrapping_add(1);
+            }
+        }
+        for clip in self.npc_clips.values_mut() {
+            clip.player.advance(1);
+        }
     }
 
     /// Put the player somewhere they can actually stand.
