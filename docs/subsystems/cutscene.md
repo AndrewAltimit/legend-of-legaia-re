@@ -878,24 +878,42 @@ geometry and not a `MES`/texture change:
 
 The `opdeene` MAN itself carries **no** colour op (no op `0x4C 0x8A` ambient, no `0x4C 0x81` far
 colour); it drives op `0x46` depth-fog and op `0x4C 0x12` fade-to-black only. So the gold is set by
-the **cutscene-host overlay during the narration beats**, not the field script. Measured off the
-retail cutscene framebuffer, the grade collapses all hues to amber: average RGB `(61, 55, 15)`,
-`G/R ≈ 0.90`, `B/R ≈ 0.24`, zero surviving green/blue.
+the **cutscene-host overlay during the narration beats**, not the field script.
+
+A GP0 draw-list capture of the retail opening chain refines what "the grade" actually is, per
+primitive class:
+- **Lit gouraud + modulated-texture prims** carry amber colour words ≈ `255:240:110`
+  (`G/R ≈ 0.94`, `B/R ≈ 0.43`), consistent across `opdeene` and `opurud` - the dim ambient and
+  the gold far-colour depth cue folded into the drawn modulation colour. The near-field surfaces
+  of the retail tableau framebuffer measure `B/R ≈ 0.44`, i.e. the modulation ratio almost
+  unblended.
+- **Far-field geometry** (sky planes, distant spires) measures `B/R ≈ 0.12..0.18` in the
+  framebuffer - pulled hard toward the gold **far colour** (`255:230:62`, `B/R ≈ 0.24` whole-frame
+  average RGB `(61, 55, 15)`) by the per-render-node DPCS depth cue.
+- **Bulk backdrop textures** draw at *neutral* `0x808080` modulation: their amber is pre-baked
+  in the texels and retail preserves that chroma - the grade is **not** a whole-frame hue
+  collapse.
 
 **Engine port.** Rather than replicate the per-object GTE far-colour plumbing, the engine
-reproduces the measured *look* with a single luminance→gold tone-map:
-[`fade::ColorGrade`](../../crates/engine-core/src/fade.rs) holds the gold direction + strength
-([`ColorGrade::PROLOGUE_SEPIA`](../../crates/engine-core/src/fade.rs)), and
+reproduces the modulation half with a per-channel **multiply tint**:
+[`fade::ColorGrade`](../../crates/engine-core/src/fade.rs) holds the tint + strength
+([`ColorGrade::PROLOGUE_SEPIA`](../../crates/engine-core/src/fade.rs), gold
+`(1.0, 0.94, 0.43)` = the measured on-geometry modulation ratio), and
 [`World::scene_color_grade`](../../crates/engine-core/src/world/narration.rs) returns it while
 the active scene is one of the prologue cutscene legs (`opdeene` / `opstati` / `opurud`) and
 `None` for every other scene (including `map01` / `town01`). `play-window` stages
 it into the renderer each frame ([`Renderer::set_color_grade`](../../crates/engine-render/src/renderer.rs));
-the field mesh shaders' `apply_grade` maps each shaded pixel to `luminance · gold` cross-faded by
-`strength` (the text/UI overlays use separate shaders, so the narration stays white). The gold
-coefficients `(1.0, 0.90, 0.24)` are the **display** direction as-is: the shader multiplies into a
-pixel that is already a PSX framebuffer value and the attachment is UNORM, so nothing re-encodes
-the product (see [`renderer.md`](renderer.md#colour-space-psx-framebuffer-values-end-to-end)).
-Verified pixel-aligned against a pure-diagnostic grade - the output lands `G/R ≈ 0.90`, `B/R ≈ 0.24`.
+the field mesh shaders' `apply_grade` cross-fades each shaded pixel toward `rgb · gold` by
+`strength` (the text/UI overlays use separate shaders, so the narration stays white). A multiply -
+not a luminance collapse - because that is retail's mechanism: neutral-modulation backdrop chroma
+survives it exactly as on hardware. The coefficients are the **display** ratios as-is: the shader
+multiplies into a pixel that is already a PSX framebuffer value and the attachment is UNORM, so
+nothing re-encodes the product (see
+[`renderer.md`](renderer.md#colour-space-psx-framebuffer-values-end-to-end)).
+Pixel-verified against the retail tableau framebuffer on matched regions: gold geometry lands
+`G/R 0.91..0.93` (retail ~`0.89`) with near-field `B/R ≈ 0.37` against retail's `0.44`. The known
+residual is the far-field crush (retail `B/R 0.12..0.18`): that is the per-node depth-cue pull,
+which a uniform multiply cannot reproduce and the engine does not yet stage per node.
 `scene_color_grade_only_on_the_prologue_cutscene` (engine-core) guards the scene gate.
 
 ## Open items
