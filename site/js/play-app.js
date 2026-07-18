@@ -25,7 +25,11 @@
   const A2R = Math.PI * 2 / 4096;     /* PSX 12-bit angle -> radians */
   const PLAYER_MESH_ID = 900000;      /* scene-mesh id space above any env slot */
   const NPC_MESH_BASE  = 910000;
-  const NPC_CLIP_FPS   = 15;          /* the field anim cadence (30 Hz tick, 2 ticks/frame) */
+  /* Wall-clock NPC anim fallback rate, used ONLY against a cached WASM
+   * without the engine clip-state API. The live path reads each clip's
+   * current frame from the engine, whose playhead advances in sim-tick time
+   * (60 Hz ticks, 2 ticks per clip frame = 30 clip fps, the retail cadence). */
+  const NPC_CLIP_FPS   = 15;
   /* VR world scale - same anchor as the full-map view: the ~130-unit character
    * mesh is a 1.7 m human, so a metre is ~76 world units and the headset stands
    * in the town at human height. See docs/subsystems/vr-mode.md. */
@@ -277,7 +281,10 @@
       this._menuCtx = null;
       this._menuFont = null;      /* AtlasBlitter for the dialog-font atlas */
       this._menuChrome = undefined;  /* AtlasBlitter | null (null once resolved to "no chrome") */
-      this._menuWasOpen = false;
+      this._overlayActive = false;
+      /* True while the retail dialog reading box is being blitted onto the
+       * overlay canvas - the page hides its DOM text fallback then. */
+      this.dialogOnCanvas = false;
       /* Last engine state handed to the HUD - lets the menu gate on Field
        * mode / no-dialog before opening. */
       this._hudState = null;
@@ -510,6 +517,9 @@
       this.player = null;
       this.npcs = [];
       this.animProps = [];
+      /* Scene-owned caption image (the prologue's baked TIM): re-resolve on
+       * the next draw that needs it. */
+      this._captionBlit = undefined;
 
       this.renderer.uploadVram(rt.field_vram_bytes());
 
@@ -612,13 +622,23 @@
         }
       }
 
-      /* NPCs: the scene's MAN placements. A conditional spawn (parked at the
-       * off-map hide box) is one retail withholds until a script places it -
-       * skip it, exactly as the field renderer does. */
+      /* NPCs: the scene's MAN placements. The scene-entry spawn-prologue
+       * pre-run (engine-side, retail FUN_8003A1E4) can SEAT a header-parked
+       * placement into the town per story state, and can PARK a header-placed
+       * one at the off-map hide box - so upload every placement except one
+       * that is header-parked AND still parked live (the native window's
+       * upload rule), and let the per-frame draw skip anyone whose live
+       * position is the hide box. */
+      this._hideXZ = (typeof rt.field_offmap_hide_xz === 'function')
+        ? rt.field_offmap_hide_xz() : 16320;
       const cat = JSON.parse(rt.play_npc_catalog_json() || 'null');
       if (cat) {
+        const nt0 = rt.play_npc_transforms();
         for (const npc of cat.npcs) {
-          if (npc.conditional) continue;
+          const b4 = npc.i * 4;
+          const liveParked = (b4 + 3 >= nt0.length)
+            || (nt0[b4] === this._hideXZ && nt0[b4 + 2] === this._hideXZ);
+          if (npc.conditional && liveParked) continue;
           let ok = true;
           try { rt.play_npc_mesh(npc.i); } catch (e) { ok = false; }
           if (!ok) continue;
@@ -634,7 +654,7 @@
           const rec = {
             i: npc.i, meshId, base, objectIds: rt.play_npc_mesh_object_ids(),
             frames, frameCount: dims[0], partCount: dims[1],
-            out: new Float32Array(base.length), lastFrame: -1,
+            out: new Float32Array(base.length), lastFrame: -1, lastGen: -1,
           };
           /* Pose to frame 0 immediately: an unposed multi-object character is a
            * heap of limbs at the origin, which is worse than not drawing it. */
@@ -799,6 +819,8 @@
       try { mode = this.rt.scene_mode(); } catch (e) { return false; }
       if (mode !== 'Field') return false;
       if (this._hudState && this._hudState.dialog) return false;
+      /* The opening chain / a narration beat owns the scene - Start is inert. */
+      if (this._cut && (this._cut.locked || this._cut.chain)) return false;
       return true;
     }
 
@@ -830,10 +852,14 @@
       } catch (e) { console.warn('play menu: atlas upload', e); this._menuChrome = null; }
     }
 
-    /* Blit the current pause-menu draw lists onto the 2D overlay canvas: the
-     * gold 9-slice / filigree chrome from the menu sheet, then the font glyphs.
-     * A no-op (and a one-shot clear) when the menu is closed. */
-    _drawMenu() {
+    /* Blit the current pause-menu OR retail-dialog draw lists onto the 2D
+     * overlay canvas: the gold 9-slice / filigree chrome from the menu sheet,
+     * then the font glyphs. A no-op (and a one-shot clear) when neither is up.
+     *
+     * The pause menu blacks the whole surface (retail suppresses the 3D draw
+     * under it); the dialog reading box does NOT - retail draws it over the
+     * live, still-running field, so only the box quads paint. */
+    _drawOverlay() {
       const ov = this.menuOverlay;
       if (!ov) return;
       const ctx = this._menuCtx || (this._menuCtx = ov.getContext('2d'));
@@ -846,27 +872,98 @@
       ctx.imageSmoothingEnabled = false;
       let open = false;
       try { open = this.rt.play_menu_is_open(); } catch (e) {}
-      if (!open) {
-        if (this._menuWasOpen) { ctx.clearRect(0, 0, ov.width, ov.height); this._menuWasOpen = false; }
+      if (open) {
+        this.dialogOnCanvas = false;
+        this._overlayActive = true;
+        this._ensureMenuBlitters();
+        let draws;
+        try { draws = JSON.parse(this.rt.play_menu_draws_json(ov.width, ov.height)); }
+        catch (e) { return; }
+        if (!draws || !draws.open) return;
+        /* Native blacks the whole framebuffer while the pause menu is up
+         * (`boot_ui.is_active()` clears to black + suppresses every 3D draw) - the
+         * frozen scene is NOT visible around the windows. This overlay canvas sits
+         * over the GL view, so paint it fully opaque black first, then blit the
+         * menu on top: same result as native's black backdrop. */
+        ctx.clearRect(0, 0, ov.width, ov.height);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, ov.width, ov.height);
+        if (this._menuChrome) this._menuChrome.blit(ctx, draws.sprites);
+        if (this._menuFont) this._menuFont.blit(ctx, draws.texts);
         return;
       }
-      this._menuWasOpen = true;
-      this._ensureMenuBlitters();
-      let draws;
-      try { draws = JSON.parse(this.rt.play_menu_draws_json(ov.width, ov.height)); }
-      catch (e) { return; }
-      if (!draws || !draws.open) return;
-      /* Native blacks the whole framebuffer while the pause menu is up
-       * (`boot_ui.is_active()` clears to black + suppresses every 3D draw) - the
-       * frozen scene is NOT visible around the windows. This overlay canvas sits
-       * over the GL view, so paint it fully opaque black first, then blit the
-       * menu on top: same result as native's black backdrop. */
-      ctx.clearRect(0, 0, ov.width, ov.height);
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, ov.width, ov.height);
-      if (this._menuChrome) this._menuChrome.blit(ctx, draws.sprites);
-      if (this._menuFont) this._menuFont.blit(ctx, draws.texts);
+      /* Retail dialog reading box (field NPC / event message): the engine
+       * serves the byte-pinned chrome + glyph quads; blit them over the live
+       * GL view. Falls back to the DOM text box (the page hides it while
+       * `dialogOnCanvas` is true) against a cached WASM without the API. */
+      let dlg = null;
+      if (typeof this.rt.play_dialog_draws_json === 'function') {
+        try { dlg = JSON.parse(this.rt.play_dialog_draws_json(ov.width, ov.height)); }
+        catch (e) { dlg = null; }
+      }
+      if (dlg && dlg.open) {
+        this._ensureMenuBlitters();
+        ctx.clearRect(0, 0, ov.width, ov.height);
+        if (this._menuChrome) this._menuChrome.blit(ctx, dlg.sprites);
+        if (this._menuFont) this._menuFont.blit(ctx, dlg.texts);
+        this._overlayActive = true;
+        this.dialogOnCanvas = !!this._menuFont;
+        return;
+      }
+      this.dialogOnCanvas = false;
+      /* Opening-cutscene narration crawl / title card / "It was the Seru."
+       * caption: font-atlas text quads + one faded image quad over the live
+       * 3D prologue scene. */
+      let cutDrew = false;
+      if (this._cut && (this._cut.narration || this._cut.card
+          || this._cut.caption_alpha > 0.001)
+          && typeof this.rt.play_cutscene_text_draws_json === 'function') {
+        let txt = null;
+        try { txt = JSON.parse(this.rt.play_cutscene_text_draws_json(ov.width, ov.height)); }
+        catch (e) { txt = null; }
+        this._ensureMenuBlitters();
+        ctx.clearRect(0, 0, ov.width, ov.height);
+        if (txt && txt.open && this._menuFont) {
+          this._menuFont.blit(ctx, txt.texts);
+          cutDrew = true;
+        }
+        /* Caption image (a baked TIM): centered horizontally, mid-screen
+         * ~y110 of the PSX 240-line frame, scaled by h/240, faded by the
+         * engine's alpha - the native window's caption quad. */
+        if (this._cut.caption_alpha > 0.001) {
+          if (this._captionBlit === undefined) {
+            this._captionBlit = null;
+            try {
+              const cd = this.rt.cutscene_caption_dims();
+              if (cd && cd[0] > 0 && cd[1] > 0) {
+                const rgba = this.rt.cutscene_caption_rgba();
+                if (rgba && rgba.length) {
+                  this._captionBlit = new AtlasBlitter(rgba, cd[0], cd[1]);
+                }
+              }
+            } catch (e) { this._captionBlit = null; }
+          }
+          if (this._captionBlit) {
+            const scale = ov.height / 240;
+            const dw = Math.round(this._captionBlit.w * scale);
+            const dh = Math.round(this._captionBlit.h * scale);
+            const dx = Math.round((ov.width - dw) / 2);
+            const dy = Math.round((110 / 240) * ov.height - dh / 2);
+            this._captionBlit.blit(ctx, [{
+              dst: [dx, dy, dw, dh],
+              src: [0, 0, this._captionBlit.w, this._captionBlit.h],
+              color: [1, 1, 1, Math.min(1, this._cut.caption_alpha)],
+            }]);
+            cutDrew = true;
+          }
+        }
+        if (cutDrew) { this._overlayActive = true; return; }
+      }
+      if (this._overlayActive) {
+        ctx.clearRect(0, 0, ov.width, ov.height);
+        this._overlayActive = false;
+      }
     }
 
     /* ---------- loop ---------- */
@@ -908,6 +1005,16 @@
       const advance = !this.paused || stepping;
       this.stepOnce = false;
 
+      /* Opening-chain / cutscene presentation state (narration crawl, title
+       * card, prologue grade, intro-skip availability). Read before the menu
+       * and the ticks: while the timeline owns the scene the pad is frozen
+       * and the pause menu stays shut, exactly as the native window gates. */
+      this._cut = null;
+      if (typeof rt.play_cutscene_state_json === 'function') {
+        try { this._cut = JSON.parse(rt.play_cutscene_state_json()); }
+        catch (e) { this._cut = null; }
+      }
+
       /* Field pause menu (Start): consumes this frame's edges and, while up,
        * freezes the field. Must run before the tick reads the pad. */
       const menuOpen = this._updateFieldMenu();
@@ -934,14 +1041,40 @@
           this._simAccum -= steps * TICK_DT;
         }
         for (let s = 0; s < steps; s++) {
+          /* Retail prologue intro-skip (FUN_801D1344): while the opening
+           * chain plays, a Cross press skips the whole remaining opening to
+           * town01 - available mid-narration too. The engine returns the
+           * target label once; enter it like a door. */
+          if (this._cut && this._cut.chain
+              && (this.pulse.has('KeyZ') || this.pulse.has('Space'))
+              && typeof rt.play_take_prologue_handoff === 'function') {
+            let target = '';
+            try { target = rt.play_take_prologue_handoff(true); } catch (e) {}
+            if (target) {
+              try {
+                rt.enter_field(target);
+                this.scene = target;
+                this._rebuild();
+                if (this.vr) this.vr.respawn();
+                if (this.opts.onScene) this.opts.onScene(target);
+              } catch (e) {
+                this._onEngineTrap('prologue handoff', e);
+                return;
+              }
+              this.pulse.clear();
+              this._repack();
+              break;
+            }
+          }
           /* VR first-person owns the azimuth (the gaze) and merges its stick
            * pad word over the keyboard's; otherwise the follow camera rules. */
+          const lockedPad = this._cut && this._cut.locked;
           if (this._vrDrive) {
             rt.set_camera_azimuth(this._vrDrive.azimuth);
-            rt.set_pad(this.pad | this._vrDrive.pad);
+            rt.set_pad(lockedPad ? 0 : (this.pad | this._vrDrive.pad));
           } else {
             rt.set_camera_azimuth(azimuthUnits(this.cam.yaw));
-            rt.set_pad(this.pad);
+            rt.set_pad(lockedPad ? 0 : this.pad);
           }
           /* A tap's just-pressed edge fires on the first tick of this frame
            * only; later catch-up ticks see the held set, so a one-frame tap
@@ -1039,20 +1172,43 @@
         }
       }
 
-      /* NPCs: advance each clip and draw at the world's live position. A clip is
-       * a short loop, so the pose only rebuilds when the playhead actually moves
-       * to a new keyframe - not once per rendered frame. */
+      /* NPCs: show each clip's CURRENT engine frame and draw at the world's
+       * live position. The playhead lives in the engine and advances one step
+       * per SIM tick (`tick_frame` -> `drive_npc_clips`), so clip cadence is
+       * the retail 60 Hz-tick rate however fast the display refreshes - the
+       * native window's sim-tick anim contract. The pose only rebuilds when
+       * the engine's frame (or the clip itself, via an ANIMATE cue re-target -
+       * the `generation` bump) actually changed. Falls back to the wall-clock
+       * animator against a cached WASM without the clip-state API. */
       const nt = rt.play_npc_transforms();
+      const clipStates = (typeof rt.play_npc_clip_states === 'function')
+        ? rt.play_npc_clip_states() : null;
       const clipFrame = Math.floor(performance.now() / 1000 * NPC_CLIP_FPS);
       for (let k = 0; k < this.npcs.length; k++) {
         const n = this.npcs[k];
         const base = n.i * 4;
         if (base + 3 >= nt.length) continue;
-        const f = n.frameCount > 1 ? clipFrame % n.frameCount : 0;
-        if (advance && n.frameCount > 1 && f !== n.lastFrame) {
-          poseInto(n.out, n.base, n.objectIds, n.frames, n.partCount, f);
-          this.renderer.updateSceneMeshPositions(n.meshId, n.out);
-          n.lastFrame = f;
+        /* Story-parked actor (spawn-prologue MoveTo to the off-map hide box,
+         * or a cutscene hide): not drawn - retail parks despawned actors at
+         * the far-corner sentinel tile precisely so they never render. */
+        if (nt[base] === this._hideXZ && nt[base + 2] === this._hideXZ) continue;
+        if (clipStates && n.i * 2 + 1 < clipStates.length) {
+          const f = clipStates[n.i * 2], gen = clipStates[n.i * 2 + 1];
+          if (f >= 0 && (f !== n.lastFrame || gen !== n.lastGen)) {
+            const bones = rt.play_npc_live_bones(n.i);
+            if (bones.length) {
+              poseInto(n.out, n.base, n.objectIds, bones, bones.length / 6, 0);
+              this.renderer.updateSceneMeshPositions(n.meshId, n.out);
+              n.lastFrame = f; n.lastGen = gen;
+            }
+          }
+        } else if (advance && n.frameCount > 1) {
+          const f = clipFrame % n.frameCount;
+          if (f !== n.lastFrame) {
+            poseInto(n.out, n.base, n.objectIds, n.frames, n.partCount, f);
+            this.renderer.updateSceneMeshPositions(n.meshId, n.out);
+            n.lastFrame = f;
+          }
         }
         draws.push({
           meshId: n.meshId,
@@ -1062,7 +1218,40 @@
         });
       }
 
-      this._followCamera(pt);
+      /* Cutscene camera: while a timeline runs, aim the orbit camera from
+       * the engine's staged op-0x45 params (the native `cutscene_view`
+       * decode) instead of following the player. Mapped onto the page's
+       * orbit projection: focus -> target, pitch/yaw -> orbit angles, and
+       * the framing half-height from the eye depth x the PSX projection
+       * (half-screen 120 px over the staged H focal length). */
+      let cutsceneCam = false;
+      if (this._cut && typeof rt.play_cutscene_camera_json === 'function') {
+        try {
+          const cc = JSON.parse(rt.play_cutscene_camera_json());
+          if (cc && cc.active) {
+            cutsceneCam = true;
+            this.cam.centerX = cc.focus[0];
+            this.cam.centerY = -cc.focus[1] + 60;
+            this.cam.centerZ = cc.focus[2];
+            this.cam.yaw = -cc.yaw;
+            this.cam.pitch = Math.max(0.12, Math.min(1.35, cc.pitch));
+            const half = Math.abs(cc.tr[2]) * 120 / Math.max(cc.h, 1);
+            this.cam.halfWidth = Math.max(220, Math.min(6000, half));
+            this.cam.halfHeight = this.cam.halfWidth;
+          }
+        } catch (e) { /* keep the follow camera */ }
+      }
+      if (!cutsceneCam) this._followCamera(pt);
+      /* Prologue colour grade + gold depth-cue ramp (the native window's
+       * per-frame set_color_grade / set_depth_cue_ramp staging). No-ops on
+       * a renderer without the uniforms (cached JS). */
+      if (this.renderer.setColorGrade) {
+        const g = this._cut && this._cut.grade;
+        this.renderer.setColorGrade(g ? g.gold : null, g ? g.strength : 0);
+        const c = this._cut && this._cut.cue;
+        this.renderer.setDepthCue(c ? c.far : null,
+          c ? c.near_z : 0, c ? c.far_z : 0, c ? c.max_ir0 : 0);
+      }
       this._draws = draws;
       /* `skipDraw`: a VR session owns the framebuffer and re-issues this draw
        * once per eye with the XR view matrices. */
@@ -1088,9 +1277,10 @@
         } catch (e) { /* a malformed frame must not kill the loop */ }
       }
 
-      /* The retail pause menu overlay: engine-driven, blitted onto the 2D
-       * overlay canvas over the (frozen) GL view. Skipped while VR presents. */
-      if (!skipDraw) this._drawMenu();
+      /* The retail pause menu / dialog reading box overlay: engine-driven,
+       * blitted onto the 2D overlay canvas over the GL view. Skipped while VR
+       * presents. */
+      if (!skipDraw) this._drawOverlay();
     }
 
     /* Where the shared orbit projection puts the eye for the current camera
