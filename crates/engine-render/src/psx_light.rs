@@ -11,19 +11,30 @@
 //! (`DAT_8007326c`) and, between them, issue exactly **one** GTE colour op:
 //! `DPCS` (`cop2 0x780010` - real command `0x10`, `sf = 1`), the depth cue.
 //! Neither ever issues `NCDS` / `NCDT` / `NCS` / `NCT` / `NCCS` / `NCCT` / `CDP`
-//! / `CC`, so **there is no runtime light source on the field path**: no light
-//! matrix is consulted, no vertex normal is transformed. (The GTE light matrix
-//! `L` (cr8-12) and light-colour matrix `LC` (cr16-20) *are* populated -
-//! `FUN_8005b648` / `FUN_8005b678` - and the only functions that *statically*
-//! consume them via `NCCS`/`NCCT` are the four handlers `FUN_8004409c` /
-//! `FUN_8004423c` / `FUN_80044434` / `FUN_800445b0` (dispatch kinds 8..11).
-//! Those handlers are not observed executing at runtime, though: GTE-op sampling
-//! of a battle, a summon, and the `map01` world map - whose slot-4 landmark meshes
-//! are the presumed consumer - issues only `RTPT`/`RTPS` + `DPCS`/`DPCT`, zero
-//! `NCC*`. The world map renders unlit through the overlay renderer, so the NCC
-//! path is present in the ROM but appears runtime-dead: the code that *would*
-//! light a mesh, not a confirmed live light source. Confirmed on `map01`;
-//! `map02`/`map03` are story-gated and untested.)
+//! / `CC`, so **these two renderers consult no light source**: no light matrix,
+//! no vertex normal transform. The field object/decoration path emits through a
+//! separate dispatcher (`FUN_80043390`) whose kind-8..11 handlers *do* carry `NCC`
+//! light ops, so it *could* light in principle - but a cold-boot capture shows it
+//! does not. In a live `town01` field a `dirty_exec_hot` sweep of ~46M interpreted
+//! instructions (idle + walk) lands entirely in the depth-cue fog body
+//! `FUN_80045584` (`DPCT`+`DPCS`), with zero hits in the kind-8..11 NCC band
+//! `[0x800445b0,0x80044798)` - specifically zero at the two light-op sites
+//! `NCCT` `0x80044724` / `NCCS` `0x80044750`. This matches the battle, summon and
+//! `map01` samples: across every robustly-sampled scene the field renders through
+//! `DPCS`/`DPCT` depth cue and the NCC handlers are never observed executing. So
+//! **this crate's baked-colour + depth-cue model is faithful to the field object
+//! path too, not just the TMD mesh path** - retail runs no runtime light source on
+//! the field. (The GTE light matrix `L` (cr8-12) and light-colour matrix `LC`
+//! (cr16-20) *are* populated - `FUN_8005b648` / `FUN_8005b678` - and the only
+//! functions that *statically* consume them via `NCCS`/`NCCT` are the four handlers
+//! `FUN_8004409c` / `FUN_8004423c` / `FUN_80044434` / `FUN_800445b0` (dispatch kinds
+//! 8..11), which stay dormant at runtime.) Two methodology notes: the recomp's GTE
+//! ring records only `RTPS`/`RTPT`/`INTPL` (never `NCCS`/`NCCT`/`DPCS`/`DPCT`), so a
+//! GTE-ring "zero NCC" is vacuous and only `dirty_exec_hot` is a valid probe here;
+//! and `map01` dispatches through a different overlay table (`0x801F8968`) that never
+//! reaches these SCUS handlers. Remaining caveat: the town sweep covered the
+//! Mist-era prologue arrival area; `map02`/`map03` and free-roam towns are unreached
+//! (blocked by the recomp savestate-load freeze).
 //!
 //! Field shading is therefore **baked into the TMD**. Every primitive carries a
 //! colour word - `[R][G][B][GP0 code]`, the code byte being one of
