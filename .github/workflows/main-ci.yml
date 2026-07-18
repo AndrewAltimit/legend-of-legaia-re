@@ -38,7 +38,9 @@ jobs:
   ci:
     name: Legaia CI
     runs-on: self-hosted
-    timeout-minutes: 30
+    # A cold sccache after a big wave can push the full build + test pass past
+    # 30 minutes on the shared runner; match the disc-test job's budget.
+    timeout-minutes: 60
     # Don't run the full CI on PR label events - that trigger is reserved for
     # the disc-test job below. CI still runs on push-to-main and workflow_dispatch.
     if: github.event_name != 'pull_request'
