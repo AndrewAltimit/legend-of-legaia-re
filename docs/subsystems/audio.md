@@ -37,7 +37,7 @@ with `SceneAssets::seq_in_stream_entries` / `bgm_seq_offset`.
 - [SsAPI sequencer](#ssapi-sequencer-0x80061-0x80067-cluster) - [globals](#globals) · [public SEQ API](#public-seq-api) · [SEQ internals](#seq-internals) · [voice / mixer](#voice--mixer-audible-output-critical-path) · [SPU command shims](#spu-command-shims-0x81-scaling--0127--016383) · [renderer-citation correction](#renderer-citation-correction)
 - [libspu / SPU control](#libspu--spu-control-0x80068-0x8006d-cluster) - [SPU globals](#spu-globals) · [primitives](#libspu-primitives) · [DMA transfer engine](#spu-dma-transfer-engine) · [reverb model](#reverb-model-engine-audio) · [Gaussian resampler](#voice-resampler---4-point-gaussian-interpolation-engine-audio) · [SsApi seq-management layer](#ssapi-seq-management-layer-above-libspu)
 - [Engine-audio: Sequencer port](#engine-audio-model---sequencer-port) · [clean-room SPU port](#engine-audio-model---clean-room-spu-port) · [SFX bank + scheduler](#sfx-bank--scheduler) · [XA-ADPCM](#xa-adpcm)
-- [Audio-trace parity oracle](#audio-trace-parity-oracle) · [What's left](#whats-left)
+- [Battle arts-voice shout path](#battle-arts-voice-shout-path-engine) · [Audio-trace parity oracle](#audio-trace-parity-oracle) · [What's left](#whats-left)
 
 ## Path-string cluster
 
@@ -107,7 +107,10 @@ Legaia statically links Sony's PsyQ **libsnd / SsAPI** sequencer for `.SEQ`-driv
 | `_DAT_801CE060` | Per-voice flag bank (32 voices, bit-packed). |
 | `_DAT_801CE080..AC` | Voice-attribute slots (per-voice pitch + vol working state). |
 | `_DAT_801CE088[voice]` | Voice base-note table (stride 2). |
-| `_DAT_801CE208` | Voice-allocation bitmap (free/busy per voice; the allocator scans this). |
+| `_DAT_801CE204` | Ring index (0..15) into `_DAT_801CE208`, advanced once per `FUN_80065BAC` flush. |
+| `_DAT_801CE208` | **16-word silent-history ring**: one word per recent flush frame, bit `v` set when voice `v`'s envelope read zero that frame. AND of all 16 = "silent 16 consecutive frames", the condition that unreserves a voice. (Not a free/busy bitmap - that earlier reading came from the gap-map fingerprints and is corrected by the per-instruction read.) |
+| `_DAT_801CDB50` | Per-voice driver records (24 × stride `0x36`): `+0x02` allocation age, `+0x06` live envelope level, `+0x1A` note priority, `+0x1D` in-use marker. The state the allocation scan (`FUN_80066B00`) reads. |
+| `_DAT_801CE362` | Chosen-voice halfword: the allocation scan's winner, consumed by `_SsVoKeyOnDirect` (`FUN_80065978`). |
 | `_DAT_801CDB48 / _DAT_801CDB4A` | **Key-ON mask accumulator** (lo/hi 16 of the 24-voice key-on word). OR'd by the voice-alloc path, flushed to the SPU by `FUN_8006C048`, cleared at flush. Register-for-register the retail twin of `engine-audio`'s `Spu::key_on_mask`. |
 | `_DAT_801CDB4C / _DAT_801CDB4E` | **Key-OFF mask accumulator** (lo/hi 16), set by the release sweep. Twin of `Spu::key_off_mask`. |
 | `_DAT_801CE248 / _DAT_801CE24A` | Currently-sounding voice mask (lo/hi 16). |
@@ -140,7 +143,7 @@ Legaia statically links Sony's PsyQ **libsnd / SsAPI** sequencer for `.SEQ`-driv
 | `FUN_80061EDC(slot, channel, vol, ...)` | `SsSeqSetVol` - calls `FUN_800683D8` to fetch `(vol_l, vol_r)`, clamps target ≥ requested, calls `FUN_8006206C` (slewer), sets bit `0x20`, clears bit `0x10` in `+0x98`. |
 | `FUN_8006206C(...)` | `_SsSetSlideVolume` - ramp from→to over N ticks. Touches `+0x48/0x4A/0x9C/0xA0/0x4C`, signed-divide per-tick delta. Gated by flags `4 & 0x100` in `+0x98`. |
 
-**Per-frame tick call graph.** The concrete chain behind the prose "hand the payload to `FUN_80062340` for playback": `FUN_80062F98` (per-slot fan-out) → `FUN_8006320C` / `FUN_8006352C` (the two per-channel note/expression handlers, walking `_DAT_801CD2C0[slot]`) → `FUN_80066308` (note-trigger dispatch; applies the `×0x81` velocity scale, the same `0..127 → 0..16383` law the SPU command shims use, and stamps per-slot status `_DAT_801CE34x`) → `FUN_80065BAC` / `FUN_800675C8` (the voice-alloc / release flush above). The SEQ-stream cursor advances through `FUN_80063CEC` (calls the varint decoder `FUN_80061C68`, steps `_DAT_801CD220..230`) with track-end / vab-release in `FUN_80063AA8`. This is `sequencer.rs`'s integer-accumulator event loop in retail form.
+**Per-frame tick call graph.** The concrete chain behind the prose "hand the payload to `FUN_80062340` for playback": `FUN_80062F98` (per-slot fan-out) → `FUN_8006320C` / `FUN_8006352C` (the per-channel note/expression handlers over `_DAT_801CD2C0[slot]`) → `FUN_80066308` (note-trigger dispatch; `×0x81` velocity scale, per-slot status `_DAT_801CE34x`) → `FUN_80066B00` (voice-allocation scan) → `FUN_80065978` (`_SsVoKeyOnDirect`), with `FUN_80065BAC` / `FUN_800675C8` (the voice flush / release sweep below) carrying the result to the SPU. The SEQ-stream cursor advances through `FUN_80063CEC` (calls the varint decoder `FUN_80061C68`, steps `_DAT_801CD220..230`) with track-end / vab-release in `FUN_80063AA8`. This is `sequencer.rs`'s integer-accumulator event loop in retail form.
 
 **Correction** (label ≠ role): `FUN_8006352C` / `FUN_8006320C` were tagged elsewhere as "fixed-point div" pitch kernels - they carry **no division** and are per-channel note/expression handlers. The fixed-point note→pitch math is confined to `FUN_80066E50` (`_SsPitchFromKey`) and `FUN_8006C6E4` (`_SsKey2Pitch`); no additional pitch kernel exists in this cluster.
 
@@ -150,7 +153,7 @@ Legaia statically links Sony's PsyQ **libsnd / SsAPI** sequencer for `.SEQ`-driv
 |---|---|
 | `FUN_80067550(voice, key, vel, ...)` | `_SsVoNoteOn` - master-vol × velocity × channel vol(`+0x58`)/pan(`+0x5A`) × four expression sliders × stereo-pan square law (`uV*uV/0x3FFF`); writes `&DAT_801CE080[voice]`, sets per-voice flags `0x7`, updates active-voice masks at `_DAT_801CDB48/4A/4C/4E` and `_DAT_801CE248/24A`. |
 | `FUN_80067E9C(slot, vol, pan, ...)` | `_SsSeqNoteOn` - iterates `DAT_801CE344`, calls `FUN_80068B98` (program-change?), runs the same vol/pan chain as `FUN_80067550`. Sequence-driven keyon. |
-| `FUN_80065978(...)` | `_SsVoKeyOnDirect` - allocates a voice from `_DAT_801CE208`, looks up region in `_DAT_801CE334` (stride `0x10`), writes pitch + base note to `&DAT_801CE088 + voice*2`, ORs flags `0x8/0x30` into `&DAT_801CE060`. |
+| `FUN_80065978(...)` | `_SsVoKeyOnDirect` - consumes the **already-chosen** voice at `_DAT_801CE362` (the `FUN_80066B00` scan's winner): clears that voice's bit from all 16 silent-history ring words at `_DAT_801CE208`, sets its envelope word to `0x7FFF`, looks up region in `_DAT_801CE334` (stride `0x10`), writes pitch + base note to `&DAT_801CE088 + voice*2`, ORs flags `0x8/0x30` into `&DAT_801CE060`. |
 | `FUN_80066E50(key, fine)` | `_SsPitchFromKey` - indexes 12-entry pitch table `&DAT_8007A940`, octave-shift by `(oct-5)`. Returns 16-bit SPU PITCH register value. |
 | `FUN_80065B88` | `SsResetTranspose` - single-store stub: zeros `_DAT_801CE2E8` (a base-note offset shifted in by `FUN_80065978`). |
 
@@ -160,12 +163,14 @@ Between the SEQ event dispatch above and the documented 24-voice SPU broadcaster
 
 | Function | Role |
 |---|---|
-| `FUN_80065BAC(...)` | **Voice-allocate + key-ON + SPU flush.** Claims a slot from the allocation bitmap `_DAT_801CE208`, stages per-voice pitch/L-R-vol/base-note (`_DAT_801CE080..09A`, base-note `_DAT_801CE088`), OR's the voice bit into the key-on accumulator `_DAT_801CDB48/4A`, then hands the 24-voice block to `FUN_8006C048` (which writes the SPU VOL/PITCH/ADSR/env regs) + reverb send `FUN_8006A7A4`. Clears the key-on / sounding masks at exit. |
+| `FUN_80066B00()` | **The voice-allocation scan** (winner lands at `_DAT_801CE362`). Ascending scan over the `_DAT_801CDB50` records: the **first** unreserved + envelope-silent voice wins, scan stops. Else steal the minimum-priority voice with priority `<=` the request (threshold starts at the tone `prior`, tightens per lower priority seen); ties: lowest envelope, then largest age. No candidate → returns the voice count as an out-of-range sentinel; the note is **dropped**. On success every age increments, the winner's resets and adopts the request priority. (`0x63` is the sentinel 99 "no voice", not a loop count - the gap-map "cold-init fill" reading is corrected.) |
+| `FUN_80065BAC()` | **Per-frame voice flush** (SsSeqCalc tier). Advances ring index `_DAT_801CE204`, clears the new ring word, services each voice via `FUN_8006C9A8`, records envelope-silent voices into `_DAT_801CE208[ring]`; voices silent across all 16 ring words get the in-use marker cleared (marker-2 → reverb release `FUN_8006A7A4`). Stages per-voice vol/pitch/addr/ADSR attrs per the `_DAT_801CE060` flag bits through `FUN_8006C048`, flushes sounding/key-on/key-off masks to the SPU, zeroes the sounding + key-on accumulators. (It does not choose voices - the earlier "claims a slot from the bitmap" reading is corrected.) |
 | `FUN_800675C8()` | **Key-OFF / release sweep** (no callees, pure state). Scans sounding voices, clears the per-voice flag `_DAT_801CE060`, sets the key-off accumulator `_DAT_801CDB4C/4E`, updates the sounding mask `_DAT_801CE248/24A`. |
 | `FUN_80065FE8()` | **All-voice reset / calc-top.** Zeroes every mask (`DB48/4A/4C/4E`, `E248/24A`) + voice flags, drives `FUN_80065BAC` over the active set, installs the SPU transfer-callback block (`FUN_8006BC70`). A `Spu` reset + one `Sequencer` tick pass. |
-| `FUN_80066B00()` | Voice/slot cold-init: `0x63`-count `0xFFFF`-fill of the voice tables + reverb-vol setup. Retail `Spu::new`. |
 
-**engine-audio parity caveat.** Retail allocates from the *bitmap* `_DAT_801CE208` with its own scan order; the engine (`sequencer.rs` voice alloc) uses first-idle + steal. Not audibly different for Legaia's polyphony, but the *which-voice* choice is not bit-identical - the audio-trace oracle's `VoiceStartAddrMismatch` should tolerate a differing voice index as long as the *sounding set* matches. Provenance: recomp cross-ref `sound_driver_gap_map.md` (no per-function Ghidra dump exists for this tier).
+**engine-audio port.** `sequencer.rs`'s `alloc_voice` implements the retail scan order (`// PORT: FUN_80066B00`): first-idle-ascending with early stop, the tightening-threshold steal tier keyed on the VAB tone `prior` byte (`VabBank::tone_prior`), the envelope-then-age tie-breaks (with the retail signedness quirk - challenger age sign-extends, incumbent zero-extends), the drop-when-outranked case, and the age bookkeeping.
+Engine stand-ins: "reserved" = bound to an active sequencer note; "envelope" = the live ADSR level. The engine keeps no 16-frame silent-history ring - a released voice unreserves when its owning note drops, and its decaying tail stays steal-visible through the envelope tie-break.
+Provenance: per-instruction read of the decompiled reference for `FUN_80066B00` / `FUN_80065BAC` / `FUN_80065978` / `FUN_80066308`; no Ghidra dump exists for this tier.
 
 ### SPU command shims (`*0x81` scaling = 0..127 → 0..16383)
 
@@ -325,8 +330,12 @@ sequencer cluster above. Surface mirrors `SsSeqOpen` / `SsSeqPlay` /
 | `Sequencer::stop(spu)` | `_SsSeqCtrl(mode=1)` - silences and freezes |
 | `Sequencer::rewind_to(idx, spu)` | `SsSeqRewind` |
 
-Voice allocation is round-robin over the 24 SPU voices, with the
-sequencer tracking `(channel, key) → voice` so the matching key-off can
+Voice allocation follows the retail scan order (`alloc_voice`,
+`// PORT: FUN_80066B00` - see the "Voice allocator + key-on/off flush"
+section above): first idle voice in ascending order, else steal the
+minimum-priority voice at or below the note's VAB tone `prior`
+(quietest-envelope then oldest-age tie-breaks), else drop the note. The
+sequencer tracks `(channel, key) → voice` so the matching key-off can
 shut down the right slot. Tempo events from the SEQ override the running
 tempo at the event's absolute tick (matching libsnd's mid-stream
 `0xFF 0x51`).
@@ -459,6 +468,19 @@ Implementation: [`crates/engine-audio::sfx`](../../crates/engine-audio/src/sfx.r
 ## XA-ADPCM
 
 `crates/xa` decodes CD-XA 4-bit ADPCM bit-exactly: on a real cutscene track its per-channel PCM matches an external lossless reference decode sample-for-sample. The on-disc `.XA` / `.STR` audio is standard CD-XA Mode 2 Form 2 - the earlier "non-standard interleave" was Form-1 truncation damage in the old extractor, not a bespoke format. The demuxer (`legaia_xa::demux`) splits raw 2352-byte sectors by `(file_no, ch_no)` and the group decoder reconstructs each channel. See [`formats/xa.md`](../formats/xa.md) for the sound-group decode (parameter/nibble layout, full-precision predictor) and [Cutscene / STR](cutscene.md) for the interleaved A/V path.
+
+## Battle arts-voice shout path (engine)
+
+The Tactical-Arts **shout** - each character's voice clip when an art executes - is CD-XA audio, not a VAB one-shot. Retail: the staged-animation materialiser (`FUN_8004AD80`) calls the cue selector `FUN_8004C140(char_id, action_constant, flag)`, which picks a channel from the art's candidate-channel pool (random, avoiding an immediate repeat) and fires the CD-XA clip player `FUN_8003D53C(clip_slot, channel, dur)`. Clip files are per character: Vahn=`XA2.XA`, Noa=`XA4.XA`, Gala=`XA6.XA` (16-channel short-mono banks). The SCUS cue tables are parsed by `legaia_art::arts_voice` (`ArtsVoiceTable`); the mapping is capture-verified (Vahn's Somersault → XA2 channels 0/6).
+
+The engine wires this end-to-end:
+
+- **Cue emission** (`engine-core`): executing an art through the live battle Arts menu pushes one `BattleShoutCue { cslot, action }` onto the world on the art's animation-start frame (`apply_battle_art`), keyed on the menu row's matched art-record action constant (`ArtRow::action`). Synthetic rows with no matched record carry no constant and stay silent - the same degradation retail applies to an art with no cue-table entry. Drain: `World::drain_battle_shout_cues`.
+- **Bank staging** (`engine-shell` boot): `read_arts_shout_bank` demuxes `XA2/XA4/XA6` per channel from the **raw 2352-byte sectors** (`legaia_xa::demux` - the CD-XA subheader carries the channel number, which a 2048-byte ISO view strips), decodes each channel to mono PCM, and pairs it with the `ArtsVoiceTable` pools in a `legaia_engine_audio::ArtsShoutBank`. Disc-image boots only; extracted-directory boots leave arts silent.
+- **Playback** (`engine-audio` / `engine-shell`): `AudioBgmDirector::play_art_shout` resolves the cue against the bank (deterministic pool pick, no immediate repeat - `// PORT: FUN_8004C140`) and stages the clip through `AudioOut::play_xa_shout`, which mixes decoded XA into the SPU output the way the PSX CD-input path does (never through the 24 voices).
+
+Two timing behaviours model the retail CD/XA sequencing contract (the recomp cross-reference established that the shout **trails** the art animation - the XA response arrives after the animation begins, never before): a fixed response-presentation delay (`SHOUT_CD_RESPONSE_DELAY`, ~150 ms of 44.1 kHz samples - the modeled seek/first-sector latency) gates the clip silent after the animation-start request; and a back-to-back request while a shout is still sounding queues behind it rather than cutting it (only the most recent pending clip is kept), so consecutive arts don't drop the later voice line.
+`OfflineMixer` exposes the same mixing core device-free; the disc-gated oracle `engine-shell/tests/arts_shout_battle.rs` drives an art through the live battle session and asserts the shout PCM lands in the mix only after the delay window, with `engine-core/tests/battle_shout_cue.rs` as the disc-free cue-emission check.
 
 ## Audio-trace parity oracle
 
