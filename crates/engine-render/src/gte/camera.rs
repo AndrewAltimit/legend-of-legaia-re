@@ -63,27 +63,27 @@ impl Camera {
         // divide is the UNR reciprocal, not an exact division.
         // REF: gte_divide (crate::gte::math). View-space is held in q19.12
         // (4096x the hardware IR/SZ scale), so reduce to the hardware IR1/IR2
-        // numerator and SZ3 depth with a >>12 before feeding the divide.
-        let (sx, sy, clip) = if view.z <= 0 {
-            // Behind-camera: GTE saturates SX/SY toward i16 extremes
-            // following the sign of the numerator. Approximate the same
-            // behaviour without dividing by 0/negative.
-            let sx = saturate_behind(view.x);
-            let sy = saturate_behind(view.y);
-            (sx, sy, Clip::Behind)
+        // numerator and SZ3 depth with a >>12 before feeding the divide. A
+        // behind-camera vertex is not a special hardware case: SZ3 clamps to 0
+        // and the divide overflows to the 0x1FFFF quotient just like on a real
+        // GTE. Tooling drops such primitives via the `Clip` flag rather than
+        // via bogus coordinates - the numbers below are exactly what hardware
+        // would latch.
+        let sz3 = ((view.z >> ROT_FRAC_BITS).clamp(0, u16::MAX as i32)) as u16;
+        let ir_x = (view.x >> ROT_FRAC_BITS).clamp(SXY_MIN, SXY_MAX);
+        let ir_y = (view.y >> ROT_FRAC_BITS).clamp(SXY_MIN, SXY_MAX);
+        let (recip, _overflow) = gte_divide(self.h as u16, sz3);
+        let sx = (gte_persp_term(ir_x, recip) + self.ofx as i64)
+            .clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+        let sy = (gte_persp_term(ir_y, recip) + self.ofy as i64)
+            .clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+        // `Behind` marks vertices on/behind the camera plane; `SafeFront`
+        // marks valid front-facing ones. Tooling that wants to exactly match
+        // GTE SXY saturation can call `.screen_xy.saturate_sxy()`.
+        let clip = if view.z <= 0 {
+            Clip::Behind
         } else {
-            let sz3 = ((view.z >> ROT_FRAC_BITS).clamp(0, u16::MAX as i32)) as u16;
-            let ir_x = (view.x >> ROT_FRAC_BITS).clamp(SXY_MIN, SXY_MAX);
-            let ir_y = (view.y >> ROT_FRAC_BITS).clamp(SXY_MIN, SXY_MAX);
-            let (recip, _overflow) = gte_divide(self.h as u16, sz3);
-            let sx = (gte_persp_term(ir_x, recip) + self.ofx as i64)
-                .clamp(i32::MIN as i64, i32::MAX as i64) as i32;
-            let sy = (gte_persp_term(ir_y, recip) + self.ofy as i64)
-                .clamp(i32::MIN as i64, i32::MAX as i64) as i32;
-            // SafeFront marks "valid front-facing"; tooling that wants to
-            // exactly match GTE saturation behaviour can call
-            // `.screen_xy.saturate_sxy()` on the result.
-            (sx, sy, Clip::SafeFront)
+            Clip::SafeFront
         };
         ProjectedVertex {
             screen_xy: ScreenXY::new(sx, sy),

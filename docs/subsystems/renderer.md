@@ -759,6 +759,17 @@ provenance class as the SPU Gaussian / reverb tables. These sites hold MAC/IR in
 q19.12 (4096× the hardware IR/SZ scale) and reduce with a `>>12` before the
 divide.
 
+A behind-camera vertex is not a special case: `SZ3` clamps to `0` (raising the
+SZ3/OTZ FLAG bit on the FIFO push) and `gte_divide(H, 0)` overflows to `0x1FFFF`
+exactly as above, so the projection flows through the one path and sets
+`DIVIDE_OVERFLOW` — never the MAC3-negative-overflow bit, which is reserved for a
+genuine 44-bit MAC3 overflow. The port adds `OFX`/`OFY` as an integer pixel value
+*after* the `>>16` floor-shift, whereas hardware adds the fixed-point control
+word *before* it. These are bit-identical because retail writes the offsets via
+`SetGeomOffset` (`FUN_8005B7F8`: `sll a0,a0,0x10` then `ctc2` to cop2 control 24 /
+25, `OFX = (width/2) << 16`), so the low 16 bits are always zero and the two
+orderings agree for every numerator sign.
+
 This UNR path is the faithful GTE-register behaviour that the parity oracles
 measure; it does not change on-screen rendering, which projects through the
 clean f32 pipeline (the field's modern `perspective_rh`, the battle GTE

@@ -295,16 +295,6 @@ pub(crate) fn gte_persp_term(numerator_i16: i32, recip: i64) -> i64 {
     (numerator_i16 as i64 * recip) >> 16
 }
 
-pub(crate) fn saturate_behind(numerator: i32) -> i32 {
-    if numerator > 0 {
-        SXY_MAX
-    } else if numerator < 0 {
-        SXY_MIN
-    } else {
-        0
-    }
-}
-
 /// `NCLIP`: signed 2× area of the screen-space triangle (a, b, c), used by
 /// the GTE for back-face rejection. The retail TMD renderer reads `MAC0`
 /// after `NCLIP` and drops primitives where the result is non-negative

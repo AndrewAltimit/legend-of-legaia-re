@@ -358,13 +358,32 @@ fn gte_rtps_sets_mac_and_ir_registers() {
 }
 
 #[test]
-fn gte_rtps_behind_camera_sets_mac3_overflow_neg_flag() {
+fn gte_rtps_behind_camera_overflows_divide_not_mac3_neg() {
+    // A behind/on-plane vertex is NOT a special hardware case. SZ3 clamps to
+    // 0 and the perspective divide overflows to the 0x1FFFF quotient, raising
+    // DIVIDE_OVERFLOW. Hardware does not raise MAC3_OVERFLOW_NEG for a merely
+    // behind-camera vertex - that bit is reserved for a genuine 44-bit MAC3
+    // overflow. Matches gte_rtps_internal in the Beetle-validated reference.
     let mut g = Gte::new();
     g.set_viewport(320, 240);
-    // No translation; vertex with view.z = 0 ⇒ behind-camera path.
+    // view.z == 0 exactly: the divide overflows, but pushing SZ3 = 0 is not a
+    // saturation, so SZ3_OTZ stays clear.
     g.v[0] = GteVec3::new(0, 0, 0);
     g.rtps();
-    assert_ne!(g.flag & flag_bits::MAC3_OVERFLOW_NEG, 0);
+    assert_ne!(g.flag & flag_bits::DIVIDE_OVERFLOW, 0);
+    assert_eq!(g.flag & flag_bits::MAC3_OVERFLOW_NEG, 0);
+    assert_eq!(g.flag & flag_bits::SZ3_OTZ_SATURATED, 0);
+
+    // Strictly behind the camera: the negative MAC3 pushes SZ3 = 0 via the
+    // clamp, so SZ3_OTZ joins DIVIDE_OVERFLOW; still no MAC3_OVERFLOW_NEG.
+    let mut g = Gte::new();
+    g.set_viewport(320, 240);
+    g.trans = GteVec3::new(0, 0, -(ROT_ONE * 100));
+    g.v[0] = GteVec3::new(0, 0, 0);
+    g.rtps();
+    assert_ne!(g.flag & flag_bits::DIVIDE_OVERFLOW, 0);
+    assert_ne!(g.flag & flag_bits::SZ3_OTZ_SATURATED, 0);
+    assert_eq!(g.flag & flag_bits::MAC3_OVERFLOW_NEG, 0);
 }
 
 #[test]
