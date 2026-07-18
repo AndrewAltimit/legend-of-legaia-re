@@ -279,7 +279,16 @@ pub(super) fn cmd_play_window_with_record(
     // When booting from a disc image we can resolve the scene's movie inside
     // the ISO and play it with its interleaved XA audio (read raw 2352-byte
     // sectors). Otherwise we fall back to the filesystem (video only).
-    if let Some(str_path) = resolved_str {
+    //
+    // Screenshot mode skips the *auto-resolved* STR (an explicit `--str-file`
+    // is still honoured): winit event loops cannot be recreated in-process, so
+    // a phase-1 video window would make the scene window - and therefore the
+    // screenshot - impossible. The real boot flow enters the prologue 3D scene
+    // with no FMV anyway; the prepended STR is a preview-harness convenience.
+    let skip_auto_str = screenshot.is_some() && str_file.is_none();
+    if skip_auto_str {
+        // No phase-1 window; fall through to the scene window.
+    } else if let Some(str_path) = resolved_str {
         cmd_play_str(str_path, None, 640, 480)?;
     } else if let (Some(disc_path), None) = (disc, str_file) {
         // Disc mode, no explicit file: resolve the scene's MV*.STR via the

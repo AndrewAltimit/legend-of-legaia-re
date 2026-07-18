@@ -97,7 +97,8 @@ impl World {
     /// `None` for the natural-colour default. The opening prologue cutscene
     /// scenes (`opdeene` / `opstati` / `opurud`) return
     /// [`crate::fade::ColorGrade::PROLOGUE_SEPIA`] so the whole 3D scene draws
-    /// in warm gold monochrome while the narration text stays white - the
+    /// through the warm gold multiply tint while the narration text stays
+    /// white - the
     /// retail cold-boot capture shows the grade persisting across all three
     /// legs and dropping for the full-colour `map01` fly-in + `town01`. Hosts
     /// stage this into the renderer each frame (e.g. `set_color_grade`).

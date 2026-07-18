@@ -185,34 +185,57 @@ pub fn spawn_fade(template: &FadeTemplate, id: i16, slot_free: bool) -> Option<F
 ///   written by the actor-VM colour opcode `0x0C`), which crushes the blue
 ///   channel to ~40% with R≈G.
 ///
-/// Framebuffer measurement of the retail cutscene averages RGB `(61, 55, 15)`
-/// (blue/​red ≈ 0.24, R≈G) over a full-spectrum source, i.e. every hue
-/// collapsed toward amber. The engine reproduces the *look* with a single
-/// luminance→gold tone-map (see `engine-render` `apply_grade`): each shaded
-/// pixel becomes `luminance * gold` cross-faded by `strength`.
+/// Retail draw-list measurement (recomp GP0 capture of the opening chain):
+/// lit gouraud + modulated-texture prims carry colour words ≈ `255:240:110`
+/// (G/R ≈ 0.94, B/R ≈ 0.43), consistent across `opdeene` and `opurud`, while
+/// bulk backdrop textures draw at *neutral* `0x808080` modulation - their
+/// amber is pre-baked in the texels and retail preserves its chroma. The
+/// engine reproduces the mechanism with a per-channel **multiply tint** (see
+/// `engine-render` `apply_grade`): each shaded pixel becomes `rgb * gold`
+/// cross-faded by `strength`, which crushes blue on neutral content and
+/// leaves the warm backdrop chroma intact, exactly as retail's modulation
+/// multiply does. Whole-frame framebuffer average of the retail cutscene is
+/// RGB `(61, 55, 15)` (G/R ≈ 0.90, B/R ≈ 0.24) - warmer than the tint alone
+/// because the already-amber texels multiply under it.
 ///
 /// REF: FUN_80043390 (ambient → GTE cr13-15)
 /// REF: FUN_8002735C (far colour → GTE cr21-23)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColorGrade {
-    /// Gold/sepia direction the pixel luminance is tinted toward, `0.0..=1.0`
+    /// Per-channel multiply tint applied to the shaded pixel, `0.0..=1.0`
     /// per channel, in the same display-referred space as every other colour
     /// the engine handles (PSX framebuffer values; nothing re-encodes them).
     pub gold: [f32; 3],
-    /// Cross-fade strength `0.0..=1.0` (`0` = untouched, `1` = full collapse).
+    /// Cross-fade strength `0.0..=1.0` (`0` = untouched, `1` = full tint).
     pub strength: f32,
 }
 
 impl ColorGrade {
-    /// The `opdeene` opening-prologue grade, matching the retail cutscene's
-    /// measured warm amber: the display direction is `(1.0, 0.90, 0.24)`
-    /// (R≈G, blue crushed to ¼ - the traced far-colour ratio 255:230:62).
-    /// The shader multiplies these into a pixel that is already a PSX
-    /// framebuffer value, and the attachment is UNORM, so nothing re-encodes
-    /// the product: the coefficients *are* the display ratios. Full strength
-    /// (`1.0`).
+    /// The `opdeene` opening-prologue grade: the multiply tint is the retail
+    /// draw-list *modulation* ratio `255:240:110` → `(1.0, 0.94, 0.43)` -
+    /// the depth-blended amber actually baked into drawn geometry, not the
+    /// GTE far-colour extreme `255:230:62` only the farthest verts reach.
+    ///
+    /// Colour-space derivation: retail multiplies this tint in PSX integer
+    /// space, i.e. on display-referred framebuffer values. The engine's
+    /// shaded pixel is the same display-referred value and the render
+    /// attachment is always viewed UNORM (never sRGB - pinned by
+    /// `engine-render` `tests::color_space`), so nothing re-encodes the
+    /// product: the stored coefficients are retail's measured display
+    /// ratios verbatim, no gamma adjustment. Full strength (`1.0`).
+    ///
+    /// Pixel check against the retail `opdeene` tableau framebuffer: on the
+    /// matched gold-geometry regions (Seru spires / rock spires / sky) the
+    /// tinted engine output lands G/R 0.91..0.93 vs retail's ~0.89, and the
+    /// near-field surface B/R ~0.37 sits against retail's near-ground 0.44
+    /// (the beat where the modulation ratio shows almost unblended). The
+    /// remaining far-field gap (retail sky/spire B/R crushes to 0.12..0.18)
+    /// is the per-render-node DPCS depth-cue pull toward the gold far colour
+    /// (`+0x74`/`+0x78`, GTE cr21-23), which the engine does not stage
+    /// per-node - a uniform multiply cannot reproduce that depth-varying
+    /// crush and it is left as a documented residual.
     pub const PROLOGUE_SEPIA: ColorGrade = ColorGrade {
-        gold: [1.0, 0.90, 0.24],
+        gold: [1.0, 0.94, 0.43],
         strength: 1.0,
     };
 }
@@ -302,25 +325,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn prologue_sepia_is_a_warm_gold_collapse() {
+    fn prologue_sepia_is_a_warm_gold_multiply_tint() {
         let g = ColorGrade::PROLOGUE_SEPIA;
-        assert_eq!(g.strength, 1.0, "full collapse");
+        assert_eq!(g.strength, 1.0, "full tint");
         assert_eq!(g.gold[0], 1.0, "red is the anchor channel");
         assert!(g.gold[1] < g.gold[0], "green below red");
         assert!(g.gold[2] < g.gold[1], "blue crushed below green");
         // Display-referred, like every colour the engine handles: nothing on
         // the path re-encodes the shaded pixel (the attachment is UNORM), so
-        // the stored coefficients are retail's measured display direction
-        // as-is - G/R ~= 0.90, B/R ~= 0.24.
+        // the stored coefficients are retail's measured on-geometry
+        // modulation ratio as-is - 255:240:110, G/R ~= 0.94, B/R ~= 0.43.
         let disp_g = g.gold[1] / g.gold[0];
         let disp_b = g.gold[2] / g.gold[0];
         assert!(
-            (disp_g - 0.90).abs() < 0.02,
-            "display G/R ~= 0.90, got {disp_g:.3}"
+            (disp_g - 0.94).abs() < 0.02,
+            "display G/R ~= 0.94, got {disp_g:.3}"
         );
         assert!(
-            (disp_b - 0.24).abs() < 0.02,
-            "display B/R ~= 0.24, got {disp_b:.3}"
+            (disp_b - 0.43).abs() < 0.02,
+            "display B/R ~= 0.43, got {disp_b:.3}"
         );
     }
 
