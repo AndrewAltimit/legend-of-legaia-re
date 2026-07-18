@@ -51,16 +51,54 @@ at prim offset 0 and normal indices trail the vertex indices. See
 
 ## Lighting
 
-**Retail runs no light source on the field path.** `SCUS_942.54` has two TMD
-renderers over this table - `FUN_8002735C` and its light-source sibling
+**The two retail TMD mesh renderers issue no light op** (the field object/decoration
+path through `FUN_80043390` is a separate question - see below). `SCUS_942.54` has
+two TMD renderers over this table - `FUN_8002735C` and its light-source sibling
 `FUN_80029888` - and between them they issue exactly **one** GTE colour op:
 `DPCS` (`cop2 0x780010`; real command `0x10`, `sf = 1`), the depth cue. Neither
 ever issues `NCDS` / `NCDT` / `NCS` / `NCT` / `NCCS` / `NCCT` / `CDP` / `CC`, so
 no light matrix is consulted and no vertex normal is transformed. The GTE light
 matrix `L` (cr8-12) and light-colour matrix `LC` (cr16-20) *are* populated
-(`FUN_8005B648` = `SetLightMatrix`, `FUN_8005B678` = `SetColorMatrix`), but the
-only functions that consume them - via `NCCS`/`NCCT` - are the world-map slot-4
-mesh handlers `FUN_8004409C` / `FUN_8004423C` / `FUN_80044434` / `FUN_800445B0`.
+(`FUN_8005B648` = `SetLightMatrix`, `FUN_8005B678` = `SetColorMatrix`), and the
+only functions that *statically* consume them - via `NCCS`/`NCCT` - are the four
+handlers `FUN_8004409C` / `FUN_8004423C` / `FUN_80044434` / `FUN_800445B0` (dispatch
+kinds 8..11; see the dispatch table below).
+
+**The field decoration path does not dispatch the NCC light handlers either -
+it stays on the depth-cue path.** `FUN_8002735C`/`FUN_80029888` are statically
+NCC-free; the per-scene field render library's static-object pass (`FUN_801F7088`)
+emits through the `FUN_80043390` *dispatcher*, which owns the kind-8..11 NCC handlers,
+so the field *could* light in principle. A cold-boot capture settles that it does not:
+in a live `town01` field (reached New Game → prologue → Rim Elm), a `dirty_exec_hot`
+sweep of ~46M interpreted instructions across idle + attempted walk lands **entirely**
+in the kind-19 bank-1 depth-cue body `FUN_80045584` `[0x80045584,0x800457C4)`
+(`DPCT`+`DPCS`), with **zero** hits anywhere in the kind-8..11 NCC band
+`[0x800445B0,0x80044798)` - in particular zero at the two light-op sites
+`NCCT` `0x80044724` and `NCCS` `0x80044750` (disassembled from the handler body).
+This matches the battle, summon and `map01` samples: across every robustly-sampled
+scene the field renders through `DPCS`/`DPCT` depth cue and the NCC handlers are not
+observed executing. So the retail field runs **no hardware light source** at runtime;
+the baked-colour + depth-cue model below is faithful for the object path too, and the
+kind-8..11 `NccMode` in [`prim_dispatch`](../../crates/engine-vm/src/prim_dispatch.rs)
+is a static data model with no runtime consumer (wire it only if a lit mesh path -
+e.g. a 3D world-map renderer - is ever built).
+
+Why the earlier evidence looked open, and two instrument caveats. A lone prior
+`town01` capture (~31 K interp hits) showed the kind-11 NCC body and the fog bodies
+hot in roughly equal measure; against the cold-boot sweep's ~46 M hits with exactly
+zero NCC, that ~1500×-smaller window does not reproduce and is discounted as a
+transitional/mislabeled sample. (1) The recomp's `gte_ring` records **only**
+`RTPS`/`RTPT` - never `NCCS`/`NCCT`/`DPCS`/`DPCT` (`gte.cpp` records func `0x01`/`0x30`
+into the RTP ring and `0x11` into the INTPL ring, nothing else) - so any "zero NCC in
+a GTE-ring dump" is vacuous; only `dirty_exec_hot` (interpreted-PC histogram) is a
+valid liveness probe here. (2) The `map01`-class world map dispatches through a
+**different** jump table (`0x801F8968` → the 0901 overlay's own emit leaves at
+`0x801F76xx`, hot via `dirty_exec_hot` at `0x801F6E6C`), so it never reaches the SCUS
+NCC handlers - its "no NCC" is a different-renderer fact, not a light-path test.
+Remaining caveat: the town sweep covered the Mist-era prologue arrival area (Vahn's
+movement is script-locked there) and `map02`/`map03` are unreached; a free-roam
+multi-screen town sweep is blocked by the recomp savestate-load freeze. See
+[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
 Field shading is instead **baked into the TMD**. Every primitive carries a
 colour word `[R][G][B][GP0 code]`, the code byte being one of `0x20` (`F3`),
@@ -98,6 +136,78 @@ the lit rows, having no colour word, get `MODULATION_NEUTRAL`) →
 pipeline → `psx_modulate` / `psx_depth_cue` in the shader prelude, mirrored on
 the CPU by `legaia_engine_render::psx_light` and pinned by its tests. The far
 colour and `IR0` are set with `Renderer::set_depth_cue` (default `IR0 = 0`).
+
+### Per-prim dispatch table (`FUN_80043390`)
+
+`FUN_80043390` is the per-prim *dispatcher* behind the two TMD renderers: it
+decodes a primitive kind (`0..19`) and count, then tail-calls a **20-slot × 4
+alpha-bank jump table** - `0x8007657C` on the SCUS path, `0x801F8968` when the
+world-map overlay is paged in (`_DAT_1F800394 & 1`). Each handler does
+`RTPT`/`RTPS` → `NCLIP` backface cull → `AVSZ3`/`AVSZ4` depth → packet write into
+an ordering table (deferred `DrawOTag`; no direct GPU DMA). The alpha bank is the
+`_DAT_1F800028` offset (`0x00`/`0x50`/`0xA0`/`0xF0` = opaque / half / additive /
+subtractive).
+
+| kind | bank 0 (opaque) | banks 1-3 (fog) | topo | colour op |
+|---:|---|---|---|---|
+| 0-7 | — | — | — | none (unused) |
+| 8 | `0x8004409C` | (shared) | tri | **NCCS** (lit) |
+| 9 | `0x8004423C` | (shared) | quad | **NCCS** (lit) |
+| 10 | `0x80044434` | (shared) | tri | **NCCT** (lit) |
+| 11 | `0x800445B0` | (shared) | quad | **NCCT+NCCS** (lit) |
+| 12 | `0x80043658` | `0x800448B0` | tri | DPCS (fog banks) |
+| 13 | `0x80043768` | `0x80044A3C` | quad | DPCS |
+| 14 | `0x80043B58` | `0x80044FDC` | tri | DPCT |
+| 15 | `0x80043C6C` | `0x80045194` | quad | DPCT+DPCS |
+| 16 | `0x800438B8` | `0x80044C14` | tri | DPCS |
+| 17 | `0x800439E4` | `0x80044DC8` | quad | DPCS |
+| 18 | `0x80043DD4` | `0x800453BC` (b2 `0x800457C4`) | tri | DPCT/DPCS |
+| 19 | `0x80043F10` | `0x80045584` (b2 `0x80045988`, b3 `0x80045BB4`) | quad | DPCT/DPCS |
+
+Structural facts (raw table): slots **0-7 are NULL** in every bank; **8-11 are
+bank-invariant** and the *only* handlers carrying a light source (`NCCS`/`NCCT`);
+**12-19 are bank-dependent** - bank 0 is opaque with no colour op, banks 1/2/3 add
+the `DPCS`/`DPCT` depth cue. Kinds 8..11 are the only handlers with an `NCC*` light
+op, but `dirty_exec_hot` never catches them executing on any robustly-sampled scene -
+battle, summon, `map01`, and a cold-boot `town01` field (~46M interp hits, zero NCC;
+see "no light source on the field path" above) - so treat them as the ROM's
+light-*capable* handlers, not a live light path. (The presumed consumer is the
+world-map slot-4 landmark meshes, but `map01` renders through a *different* overlay
+table and never reaches these SCUS handlers, so that consumer is unconfirmed at
+runtime.)
+**Topology is parity-based** (definitive from `AVSZ3` vs `AVSZ4`): even kinds are
+triangles, odd kinds are quads, so neither range is a uniform vertex count. Kind
+19 bank 3 (`0x80045BB4`) is a composite/tessellating body (emits both `POLY_G3`
+and `LINE_F2`, dual `RTPT`).
+
+The body at `0x80044798` - which sits *between* the lit set (`8..11`) and the fog
+banks - is **not a table entry**: it is a transform-free `mfc2`-only GTE
+result-read-back / packet-pack helper. The per-kind fog-bank bodies for `12..19`
+continue past it, running to `~0x80045BB4`. (An earlier "the per-kind entries are
+stubs ending ~`0x80044798`" reading is wrong - that address is only the end of the
+bank-invariant lit set, and the fog bodies are full per-kind handlers beyond it.)
+Unlike the lit `8..11`, the fog-bank bodies **are** on the live path: runtime GTE
+sampling of a summon / battle catches kinds 16 (bank 1, `0x80044C14`) and 18/19
+(bank 2, `0x800457C4` / `0x80045988`) executing. The depth-cued rasterizer is the
+hot render path; the `NCC`-lit one is not.
+
+Provenance: the jump table's computed `jr` is not statically resolvable - a static
+recompilation of `SCUS_942.54` *does* emit the handler bodies (verified against the
+recomp's `func_80043658` / `func_800448B0` / `func_800460AC`), but the table →
+handler mapping is not recoverable by following calls - so the map itself is read
+from the SCUS PSX-EXE directly (`t_addr = 0x80010000`, file offset =
+`VA − 0x80010000 + 0x800`).
+
+Engine port: `legaia_engine_vm::prim_dispatch` models this table - `slot_to_kind`
+(topology-correct `PolyKind`), `slot_lit` (`NccMode` for slots 8-11), and
+`RenderMode::applies_depth_cue` (the SCUS fog banks). The `NCCS`/`NCCT` kernels
+live in `legaia_engine_render::gte::lighting` and are exercised by the `gte_trace`
+parity oracle, but no wgpu path yet draws the world-map slot-4 meshes, so the lit
+handlers are a faithful data model rather than a wired render path. This is a low
+priority: retail itself is not observed dispatching to these handlers at runtime
+(the world map renders unlit), so leaving them unwired matches observed retail
+output; the `NccMode` metadata is kept for fidelity if a light-using scene is ever
+found.
 
 ## TMD pointer table
 

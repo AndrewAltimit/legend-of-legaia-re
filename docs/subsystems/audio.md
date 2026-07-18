@@ -107,8 +107,10 @@ Legaia statically links Sony's PsyQ **libsnd / SsAPI** sequencer for `.SEQ`-driv
 | `_DAT_801CE060` | Per-voice flag bank (32 voices, bit-packed). |
 | `_DAT_801CE080..AC` | Voice-attribute slots (per-voice pitch + vol working state). |
 | `_DAT_801CE088[voice]` | Voice base-note table (stride 2). |
-| `_DAT_801CE208` | Voice-allocation bitmap. |
-| `_DAT_801CE248 / _DAT_801CE24A` | Active-voice masks. |
+| `_DAT_801CE208` | Voice-allocation bitmap (free/busy per voice; the allocator scans this). |
+| `_DAT_801CDB48 / _DAT_801CDB4A` | **Key-ON mask accumulator** (lo/hi 16 of the 24-voice key-on word). OR'd by the voice-alloc path, flushed to the SPU by `FUN_8006C048`, cleared at flush. Register-for-register the retail twin of `engine-audio`'s `Spu::key_on_mask`. |
+| `_DAT_801CDB4C / _DAT_801CDB4E` | **Key-OFF mask accumulator** (lo/hi 16), set by the release sweep. Twin of `Spu::key_off_mask`. |
+| `_DAT_801CE248 / _DAT_801CE24A` | Currently-sounding voice mask (lo/hi 16). |
 | `_DAT_801CE2E8` | Pitch transpose base. |
 | `_DAT_801CE334` | Program region table (stride `0x10`). |
 | `_DAT_801CE344` | Sequence-active voice scan target. |
@@ -138,6 +140,10 @@ Legaia statically links Sony's PsyQ **libsnd / SsAPI** sequencer for `.SEQ`-driv
 | `FUN_80061EDC(slot, channel, vol, ...)` | `SsSeqSetVol` - calls `FUN_800683D8` to fetch `(vol_l, vol_r)`, clamps target ≥ requested, calls `FUN_8006206C` (slewer), sets bit `0x20`, clears bit `0x10` in `+0x98`. |
 | `FUN_8006206C(...)` | `_SsSetSlideVolume` - ramp from→to over N ticks. Touches `+0x48/0x4A/0x9C/0xA0/0x4C`, signed-divide per-tick delta. Gated by flags `4 & 0x100` in `+0x98`. |
 
+**Per-frame tick call graph.** The concrete chain behind the prose "hand the payload to `FUN_80062340` for playback": `FUN_80062F98` (per-slot fan-out) → `FUN_8006320C` / `FUN_8006352C` (the two per-channel note/expression handlers, walking `_DAT_801CD2C0[slot]`) → `FUN_80066308` (note-trigger dispatch; applies the `×0x81` velocity scale, the same `0..127 → 0..16383` law the SPU command shims use, and stamps per-slot status `_DAT_801CE34x`) → `FUN_80065BAC` / `FUN_800675C8` (the voice-alloc / release flush above). The SEQ-stream cursor advances through `FUN_80063CEC` (calls the varint decoder `FUN_80061C68`, steps `_DAT_801CD220..230`) with track-end / vab-release in `FUN_80063AA8`. This is `sequencer.rs`'s integer-accumulator event loop in retail form.
+
+**Correction** (label ≠ role): `FUN_8006352C` / `FUN_8006320C` were tagged elsewhere as "fixed-point div" pitch kernels - they carry **no division** and are per-channel note/expression handlers. The fixed-point note→pitch math is confined to `FUN_80066E50` (`_SsPitchFromKey`) and `FUN_8006C6E4` (`_SsKey2Pitch`); no additional pitch kernel exists in this cluster.
+
 ### Voice / mixer (audible-output critical path)
 
 | Function | Role |
@@ -147,6 +153,19 @@ Legaia statically links Sony's PsyQ **libsnd / SsAPI** sequencer for `.SEQ`-driv
 | `FUN_80065978(...)` | `_SsVoKeyOnDirect` - allocates a voice from `_DAT_801CE208`, looks up region in `_DAT_801CE334` (stride `0x10`), writes pitch + base note to `&DAT_801CE088 + voice*2`, ORs flags `0x8/0x30` into `&DAT_801CE060`. |
 | `FUN_80066E50(key, fine)` | `_SsPitchFromKey` - indexes 12-entry pitch table `&DAT_8007A940`, octave-shift by `(oct-5)`. Returns 16-bit SPU PITCH register value. |
 | `FUN_80065B88` | `SsResetTranspose` - single-store stub: zeros `_DAT_801CE2E8` (a base-note offset shifted in by `FUN_80065978`). |
+
+### Voice allocator + key-on/off flush (the middle tier)
+
+Between the SEQ event dispatch above and the documented 24-voice SPU broadcaster `FUN_8006C048` sits the voice allocator + key-on/off mask accumulator - the tier `engine-audio`'s `spu::voice` + `Spu::key_on_mask` / `key_off_mask` reimplement, so parity is decided here (not in the already-documented SPU-register or pitch layers).
+
+| Function | Role |
+|---|---|
+| `FUN_80065BAC(...)` | **Voice-allocate + key-ON + SPU flush.** Claims a slot from the allocation bitmap `_DAT_801CE208`, stages per-voice pitch/L-R-vol/base-note (`_DAT_801CE080..09A`, base-note `_DAT_801CE088`), OR's the voice bit into the key-on accumulator `_DAT_801CDB48/4A`, then hands the 24-voice block to `FUN_8006C048` (which writes the SPU VOL/PITCH/ADSR/env regs) + reverb send `FUN_8006A7A4`. Clears the key-on / sounding masks at exit. |
+| `FUN_800675C8()` | **Key-OFF / release sweep** (no callees, pure state). Scans sounding voices, clears the per-voice flag `_DAT_801CE060`, sets the key-off accumulator `_DAT_801CDB4C/4E`, updates the sounding mask `_DAT_801CE248/24A`. |
+| `FUN_80065FE8()` | **All-voice reset / calc-top.** Zeroes every mask (`DB48/4A/4C/4E`, `E248/24A`) + voice flags, drives `FUN_80065BAC` over the active set, installs the SPU transfer-callback block (`FUN_8006BC70`). A `Spu` reset + one `Sequencer` tick pass. |
+| `FUN_80066B00()` | Voice/slot cold-init: `0x63`-count `0xFFFF`-fill of the voice tables + reverb-vol setup. Retail `Spu::new`. |
+
+**engine-audio parity caveat.** Retail allocates from the *bitmap* `_DAT_801CE208` with its own scan order; the engine (`sequencer.rs` voice alloc) uses first-idle + steal. Not audibly different for Legaia's polyphony, but the *which-voice* choice is not bit-identical - the audio-trace oracle's `VoiceStartAddrMismatch` should tolerate a differing voice index as long as the *sounding set* matches. Provenance: recomp cross-ref `sound_driver_gap_map.md` (no per-function Ghidra dump exists for this tier).
 
 ### SPU command shims (`*0x81` scaling = 0..127 → 0..16383)
 

@@ -80,6 +80,23 @@ Engine bakes per-cell UV + `[clut,tpage]` in `build_walk_heightfield` (`WalkHeig
 
 **Falsified:** (a) the "continent is per-cell instanced *meshes*" model - the bulk `0x1000` cells carry `+0x10 == 0`. (b) the earlier **"single `0x1A` grass page, positional `(col%3,row%3)`, `+0x14` unused metadata"** reading - a misread: grass cells use page `0x1A` with `+0x14` landing in the atlas's top-left `3×3` block, so the mod-3 sequence was coincidental; `+0x14` IS the tile selector and `+0x15`/`+0x16` carry the page/palette. (The static-decomp consumer sweep missed the per-cell terrain renderer, which is overlay-resident and aliased at `0x801F76xx`.) (c) A combined walk+overview mesh pool - 0085's and 0093's slot-0 atlases target the *same* VRAM pages, so they are mutually-exclusive sets that clobber each other if co-loaded.
 
+### Field decoration path - does it dispatch the NCC light handlers?
+
+*Status:* **resolved (no field light; depth-cue only)** - cold-boot `town01` field, `dirty_exec_hot`, ~46M interp hits, zero NCC
+
+The per-prim dispatcher `FUN_80043390` owns four `NCCS`/`NCCT` **light** handlers (dispatch kinds 8..11: `FUN_8004409C`/`FUN_8004423C`/`FUN_80044434`/`FUN_800445B0`) - the ROM's *only* hardware-light code. The field object/decoration pass (`FUN_801F7088`, PROT 0900/0901) emits through `FUN_80043390`, so the field *could* dispatch them. A cold-boot capture settles that it does not.
+
+**Deciding capture:** drove the recomp New Game → prologue (`opdeene`→`opstati`→`opurud`→`map01`) → live `town01` field, then `dirty_exec_hot` across idle + attempted walk (~46M interpreted instructions, 7 samples). Every sample's render band lands in the kind-19 bank-1 depth-cue body `FUN_80045584` `[0x80045584,0x800457C4)` (`DPCT`+`DPCS`), with **zero** hits in the kind-8..11 NCC band `[0x800445B0,0x80044798)` - in particular zero at the two light-op sites `NCCT` `0x80044724` and `NCCS` `0x80044750` (disassembled from the handler body). So the field renders through depth cue, not the light path: the "field shading is baked, no runtime light" model in `renderer.md` / `engine-render::psx_light` holds, and holds for the object path too, not just the TMD mesh path.
+
+**The prior counter-signal, resolved:** a lone earlier `town01` capture (~31K interp hits) showed the kind-11 NCC body and the fog bodies hot in roughly equal measure. Against the ~46M-hit sweep's exact-zero NCC, that ~1500×-smaller window does not reproduce and is discounted as a transitional/mislabeled sample.
+
+**Why the two instruments that looked like they'd ruled NCC out actually couldn't** (kept because they bite again): 
+- *`gte_ring` is RTP/INTPL-only.* It records `RTPS`/`RTPT` (`gte_rtp_record`, func `0x01`/`0x30`) and `INTPL` (func `0x11`) - never `NCCS`/`NCCT`/`DPCS`/`DPCT` (`gte.cpp` record hooks). A GTE-ring "zero NCC" is vacuous; only `dirty_exec_hot` is a valid liveness probe here.
+- *`fntrace` is blind to the handlers.* It only catches dispatcher round-trips; the SCUS render handlers are natively compiled + directly called, so even `FUN_80043390` records 0 fntrace hits while `fntrace_arm all` catches ~300k dispatches/s.
+- *`map01` uses a different table.* The `map01`-class world map dispatches through the **replaced** table `0x801F8968` → the 0901 overlay's own leaves (`dirty_exec_hot` hot at `0x801F6E6C`, **not** the SCUS `0x8004xxxx` handlers), so its "no NCC" is a different-renderer fact, not a light-path test.
+
+**Remaining caveat (narrow):** the sweep covered the Mist-era prologue arrival area, where Vahn's movement is script-locked, so it is effectively one viewpoint's worth of decorations; `map02`/`map03` and free-roam multi-screen towns are unreached (a free-roam sweep is blocked by the recomp savestate-load freeze - a saved town state reloads frozen at mode 0). The finding is robust for the sampled scenes but not an absolute proof that no town object anywhere is authored as a lit kind.
+
 ## Battle / arts / level-up
 
 | Thread | Status | What would close it |

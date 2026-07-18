@@ -188,7 +188,27 @@ form = "raw"
 eligibility = "static"
 base_source = "capture"
 fingerprint_sha256 = "05d8d68e3471efe33edd78afefe270031e4fccdcde7143fa210140a8e83dc624"
-notes = "Player-summon render / GTE-transform overlay (RotMatrixX/Y/Z x6 + prim emit; animates + draws the parts the 0905 stager spawned). Byte-resident in a mid-cast Gimard save: file 0x1000..0x2400 (RAM 0x801F79D8..0x801F8DD8) is byte-identical, pinning base 0x801F69D8 (anchor file 0x1628 <-> 0x801F8000). Not a clean whole-overlay copy -- the slot-B buffer timeshares two overlays at runtime. See summon_overlay.rs + docs/reference/open-rev-eng-threads.md."
+notes = "Player-summon render / GTE-transform overlay (RotMatrixX/Y/Z x6 + prim emit; animates + draws the parts the 0905 stager spawned). Byte-resident in a mid-cast Gimard save: file 0x1000..0x2400 (RAM 0x801F79D8..0x801F8DD8) is byte-identical, pinning base 0x801F69D8 (anchor file 0x1628 <-> 0x801F8000). Not a clean whole-overlay copy -- the slot-B buffer timeshares several overlays at runtime. See summon_overlay.rs + docs/reference/open-rev-eng-threads.md. The 'summon' label is INCOMPLETE: 0900 is a general slot-B FIELD render library, byte-resident (whole image, base 0x801F69D8) during ordinary town/field play (mode 3) -- the disc-extracted 0900 blob matches the town-scene slot-B image 100% over the hot code window (town01/town0c). Its per-scene sibling is PROT 0901 (the world-map image; 0900[0x2800:0x5000] == 0901[0x0:0x2800] byte-for-byte); the map01/02/03 class loads 0901 into this same slot, not 0900. Renderers in 0900: FUN_801F69D8 / FUN_801F6D48 are per-cell ground/tile emitters (read the tile's terrain fields, build a GT3 packet directly); FUN_801F7088 (real stack frame at file +0x6B0; its body includes the hot per-frame kernel at VA 0x801F7460 = file +0xA88) walks the scene .MAP blob (+0x8000 section, row stride 0x100, scratchpad window bytes 0x1F800384..0x387) and emits per-cell/-object prims via the display-list dispatcher FUN_80043390 -- it is the static-object/decoration pass (gates on grid bit 0x2000, skips FLAG_PLACED tiles), NOT the ground plane. VA-ALIASING CAUTION: the tutorial-step text emitters at 0x801F6C70/6D48/71E0/747C documented in functions.md are NOT 0900 -- they are a DIFFERENT slot-B overlay resident during the Tetsu tutorial battle (s5_tetsu_battle slot-B is only 28.7% identical to 0900; it calls the text actor FUN_8003541C and never FUN_80043390, the reverse of the field/0900 image). That battle overlay's PROT identity is unpinned."
+
+[[overlays]]
+prot_index = 901
+label = "world_map_render"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "verified"
+base_source = "cross_ref"
+fingerprint_sha256 = "53b018b9b02222c2b130ed0050ad509ecf3691ab820b70a01b9e717bda008464"
+notes = "World-map bulk-terrain render companion: the slot-B image resident (base 0x801F69D8, span 0x801F69D8..0x801FA1D8) during map01-class (world-map kingdom) scenes -- the per-scene world-map sibling of the field render library 0900. Retail-confirmed: byte-identical to slot B in every mode-3 map01/map02/map03 state in saves/library (0900 does NOT match those; 0900 matches town scenes). Sibling relationship is exact: 0900[0x2800:0x5000] == 0901[0x0:0x2800]. Hosts the per-cell terrain emitter FUN_801F69D8 (file 0) and the replaced prim-dispatch table at file +0x1F90 = VA 0x801F8968 whose eight high-mode emit leaves (0x801F7644..0x801F8690) all resolve in-file -- the per-prim renderers the world-map top-view routes TMD prims through (see docs/subsystems/world-map.md, docs/formats/world-map-overlay.md; mednafen-state prim-dispatch-table decodes this table). The table is populated in the disc file, not runtime-written. CDNAME label is a dev placeholder (xxx_dat)."
+
+[[overlays]]
+prot_index = 967
+label = "battle_tutorial"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "verified"
+base_source = "capture"
+fingerprint_sha256 = "5b85336efb07ef2909b7e7abf766bd1f6fc131cd82d9d8ba5bc649c292a7ba8d"
+notes = "Battle sparring-tutorial slot-B overlay (14 KB): drives the in-battle tutorial prompts of the scripted Tetsu how-to-fight fight. The THIRD documented occupant of the shared slot-B buffer at base 0x801F69D8 (after field render 0900 and world-map render 0901), resident during the Tetsu tutorial battle. Identity + base pinned by a live-battle-RAM (s5_tetsu_battle) vs static-blob byte fingerprint (94/99 needle-sweep on 0967; runners-up 0968 @ 22, 0966 @ 17). Its emitters call the SCUS text-actor FUN_8003541C and never the display-list dispatcher FUN_80043390 -- the reverse of the field/0900 image (0900's slot-B is only 28.7% identical), which is what disambiguates the VA-aliased 0x801F6C70/6D48/71E0/747C tutorial functions in docs/reference/functions.md from 0900's FUN_801F7088 interior. Its shifted sibling is PROT 0965 (30 KB): 0965[0x5FE8:] == 0967[0x0:] (911/1024 identical over the first 4 KB at shift 0x5FE8) -- the same render-library re-imaging per game-mode context as 0900<->0901, but 0965 carries the code at a shifted base, so it gets no row here (its resident base is unpinned)."
 
 [[overlays]]
 prot_index = 903
