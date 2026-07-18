@@ -380,18 +380,26 @@ fn menu_window_chrome_frames_arbitrary_rect() {
 #[test]
 fn dialog_window_chrome_fill_then_border() {
     // The dialog box (FUN_8002C69C port): first draw = the translucent
-    // gradient fill stretched over the whole rect, then the same
-    // 9-slice border the menu windows use, all inside the box.
+    // gradient fill, then the same 9-slice border the menu windows
+    // use. `dst_stage` is the retail centre rect; the skin extends 8 px
+    // beyond it on every side (retail `v0_1_tetsu_dialogue_accept`
+    // framebuffer: centre (38,16,244,42) -> footprint x 30..289,
+    // y 8..65) with the gradient fill spanning centre+4.
     let rects = pinned_save_menu_rects();
-    let (px, py, pw, ph) = (26, 162, 244, 50);
+    let (px, py, pw, ph) = (0x26, 0x10, 0xF4, 42);
     let draws = dialog_window_chrome_draws_for(&rects, (px, py, pw, ph), (0, 0), 1);
     assert!(draws.len() >= 5, "fill + 4 corners + edges");
     // Fill quad first, sampling the baked gradient column, spanning
-    // the full rect.
+    // the centre rect inflated by 4.
     let fill = &draws[0];
     assert_eq!(fill.src, rects.dialog_fill);
-    assert_eq!(fill.dst, (px, py, pw as u32, ph as u32));
-    // The four border corners are present and inside the rect.
+    assert_eq!(
+        fill.dst,
+        (px - 4, py - 4, pw as u32 + 8, ph as u32 + 8),
+        "fill spans centre+4 (retail interior x 34..285, y 12..61)"
+    );
+    // The four border corners are present and inside the footprint
+    // (centre inflated by 8).
     for corner in [
         rects.panel_tl,
         rects.panel_tr,
@@ -405,10 +413,10 @@ fn dialog_window_chrome_fill_then_border() {
     }
     for d in &draws {
         let (dx, dy, dw, dh) = d.dst;
-        assert!(dx >= px && dy >= py, "tile before box origin");
+        assert!(dx >= px - 8 && dy >= py - 8, "tile before footprint origin");
         assert!(
-            dx + dw as i32 <= px + pw && dy + dh as i32 <= py + ph,
-            "tile past box extent"
+            dx + dw as i32 <= px + pw + 8 && dy + dh as i32 <= py + ph + 8,
+            "tile past footprint extent"
         );
     }
     // No filigree tile: the dialog interior is the gradient, not the
@@ -430,12 +438,14 @@ fn dialog_hand_sprites_anchor_to_box() {
     assert_eq!(hand.src, rects.cursor);
     assert_eq!(hand.dst.0, 0x26 - 6);
     assert_eq!(hand.dst.1, 0x96 + 2 * 0xF);
-    // Advance hand: kind 1 at the lower-right rim (retail x = 0x10A
-    // for the standard 244-wide box at x = 0x1A).
-    let adv = dialog_advance_hand_sprite(&rects, (0x1A, 162, 0xF4, 50), (0, 0), 1);
-    assert_eq!(adv.dst.0, 0x1A + 0xF4 - 4);
+    // Advance hand: kind 1 at the lower-right rim - retail draws it at
+    // literal x = 0x10A, which for the standard reading box centre rect
+    // (0x26, 0x10, 0xF4, lines*0xF - 3) is x + w - 0x10; retail
+    // y = box_y + lines*0xF - 0x13 = centre bottom - 0x10.
+    let adv = dialog_advance_hand_sprite(&rects, (0x26, 0x10, 0xF4, 42), (0, 0), 1);
+    assert_eq!(adv.dst.0, 0x26 + 0xF4 - 0x10);
     assert_eq!(adv.dst.0, 0x10A);
-    assert_eq!(adv.dst.1, 162 + 50 - 0x10);
+    assert_eq!(adv.dst.1, 0x10 + 42 - 0x10);
     // Gold tint distinguishes it from the silver option hand.
     assert!(adv.color[2] < hand.color[2]);
 }

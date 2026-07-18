@@ -242,6 +242,14 @@ pub fn menu_window_chrome_draws_for(
 ///   windows (4 corners + tiled edges from the skin's tile records),
 ///   drawn on top of the fill exactly like retail.
 ///
+/// `dst_stage` is the retail **centre rect** - the `(x, y, w, h)` the
+/// pager passes to the emitter. The drawn skin extends beyond it: the
+/// `v0_1_tetsu_dialogue_accept` framebuffer puts the reading box's
+/// centre rect at `(38, 16, 244, 42)` with the visible footprint
+/// `x 30..289, y 8..65` (centre inflated by 8 on every side; the 4-px
+/// tan border band is the outermost ring, the gradient fill spans the
+/// rest, centre inflated by 4).
+///
 /// Returns [`SpriteDraw`]s only - text and hand cursors layer on top.
 pub fn dialog_window_chrome_draws_for(
     rects: &SaveMenuAtlasRects,
@@ -251,20 +259,23 @@ pub fn dialog_window_chrome_draws_for(
 ) -> Vec<SpriteDraw> {
     let scale = stage_scale.max(1) as i32;
     let (px, py, pw, ph) = dst_stage;
+    // Footprint = centre rect inflated by the skin border (8 px each
+    // side); the translucent gradient fill spans the footprint minus
+    // the 4-px border band.
+    let footprint = (px - 8, py - 8, pw + 16, ph + 16);
+    let fill = (px - 4, py - 4, pw + 8, ph + 8);
     let mut out = Vec::with_capacity(24);
-    // Translucent gradient fill first (retail's G4 pair spans the raw
-    // box rect; the border sprites overlap its rim).
     out.push(SpriteDraw {
         dst: (
-            stage_origin.0 + px * scale,
-            stage_origin.1 + py * scale,
-            (pw.max(0) as u32) * scale as u32,
-            (ph.max(0) as u32) * scale as u32,
+            stage_origin.0 + fill.0 * scale,
+            stage_origin.1 + fill.1 * scale,
+            (fill.2.max(0) as u32) * scale as u32,
+            (fill.3.max(0) as u32) * scale as u32,
         ),
         src: rects.dialog_fill,
         color: [1.0, 1.0, 1.0, 1.0],
     });
-    nine_slice_border_into(&mut out, rects, dst_stage, stage_origin, stage_scale);
+    nine_slice_border_into(&mut out, rects, footprint, stage_origin, stage_scale);
     out
 }
 
@@ -297,11 +308,13 @@ pub fn dialog_option_hand_sprite(
 /// The dialog **page-advance hand**: retail draws a hand sprite
 /// (`FUN_8002B994` kind 1) at `(0x10A, box_y + lines*0xF - 0x13)` -
 /// the lower-right rim of the standard 244-wide box - while the pager
-/// waits for confirm on a full page (state `0x19`). The engine keeps
-/// the same "1 tile inside the right edge, near the bottom" anchor
-/// relative to the caller's box rect so non-standard widths stay
-/// attached. Tinted gold: the retail kind-1 sprite decodes with the
-/// gold ramp CLUT rather than the silver cursor row.
+/// waits for confirm on a full page (state `0x19`). With the standard
+/// centre rect `(x, y, 0xF4, lines*0xF - 3)`, `0x10A = x + w - 0x10`
+/// and the y lands `0x10` above the centre-rect bottom; the engine
+/// keeps that relative anchor so non-standard widths stay attached.
+/// `dst_stage` is the same centre rect the chrome pass receives.
+/// Tinted gold: the retail kind-1 sprite decodes with the gold ramp
+/// CLUT rather than the silver cursor row.
 pub fn dialog_advance_hand_sprite(
     rects: &SaveMenuAtlasRects,
     dst_stage: (i32, i32, i32, i32),
@@ -313,9 +326,9 @@ pub fn dialog_advance_hand_sprite(
     let (_, _, w, h) = rects.cursor;
     SpriteDraw {
         dst: (
-            stage_origin.0 + (px + pw - 4) * scale,
-            // Retail: y = box_y + lines*0xF - 0x13 with box h =
-            // lines*0xF - 3, i.e. 0x10 above the box bottom.
+            stage_origin.0 + (px + pw - 0x10) * scale,
+            // Retail: y = box_y + lines*0xF - 0x13 with centre h =
+            // lines*0xF - 3, i.e. 0x10 above the centre-rect bottom.
             stage_origin.1 + (py + ph - 0x10) * scale,
             w * stage_scale,
             h * stage_scale,

@@ -192,9 +192,9 @@ pub fn field_menu_info_draws_for(
         // LV label sprite; HP / MP current/max as 4-digit fields at
         // +0x38 / +0x60 with the slash at +0x58, on rows +0xf / +0x1c
         // (the label sprites at +0x28 sit 2 px lower - sprite pass).
-        // Retail inks the HP / MP values through per-member health-tier
-        // color fns (FUN_800349EC / FUN_80035EA8); the full-health tier
-        // is the plain CLUT-7 white drawn here (low-HP tiers untraced).
+        // The HP / MP number fields ink through the per-member
+        // health-tier fns ([`menu_hp_ink`] / [`menu_mp_ink`], the
+        // FUN_800349EC / FUN_80035EA8 ports); the slash stays white.
         out.extend(text_draws_for(
             &font.layout_ascii(m.name),
             (pen.0 + 0x10, y),
@@ -208,17 +208,27 @@ pub fn field_menu_info_draws_for(
             2,
             white,
         ));
-        for (row_y, cur, max) in [
-            (y + 0x0f, m.hp as u64, m.hp_max as u64),
-            (y + 0x1c, m.mp as u64, m.mp_max as u64),
+        for (row_y, cur, max, tier) in [
+            (
+                y + 0x0f,
+                m.hp as u64,
+                m.hp_max as u64,
+                menu_hp_ink(m.hp, m.hp_max),
+            ),
+            (
+                y + 0x1c,
+                m.mp as u64,
+                m.mp_max as u64,
+                menu_mp_ink(m.mp, m.mp_max),
+            ),
         ] {
-            out.extend(num_field_draws(font, cur, pen.0 + 0x38, row_y, 4, white));
+            out.extend(num_field_draws(font, cur, pen.0 + 0x38, row_y, 4, tier));
             out.extend(text_draws_for(
                 &font.layout_ascii("/"),
                 (pen.0 + 0x58, row_y),
                 white,
             ));
-            out.extend(num_field_draws(font, max, pen.0 + 0x60, row_y, 4, white));
+            out.extend(num_field_draws(font, max, pen.0 + 0x60, row_y, 4, tier));
         }
     }
     out
@@ -337,6 +347,61 @@ pub const MENU_TEXT_WHITE: [f32; 4] = [0.807_843_1, 0.807_843_1, 0.807_843_1, 1.
 /// golden capture - the CLUT row the separator-staging value 5 selects.
 /// Byte values, like [`MENU_TEXT_WHITE`].
 pub const MENU_TEXT_TEAL: [f32; 4] = [0.258_823_5, 0.870_588_2, 0.870_588_2, 1.0];
+/// Retail gold/yellow warning ink - staging id 6. The string-CLUT rows
+/// live at VRAM row 510, cell `x = 16*(6+id)`; the main ink is palette
+/// entry 15, and id 6 decodes to RGB `(231, 173, 0)` (read from the
+/// golden `menu_status_town` VRAM).
+pub const MENU_TEXT_GOLD: [f32; 4] = [0.905_882_4, 0.678_431_4, 0.0, 1.0];
+/// Retail orange "critical" ink - staging id 9, RGB `(222, 90, 0)`
+/// (same VRAM CLUT-row decode as [`MENU_TEXT_GOLD`]).
+pub const MENU_TEXT_ORANGE: [f32; 4] = [0.870_588_2, 0.352_941_2, 0.0, 1.0];
+/// Retail red "downed" ink - staging id 2, RGB `(231, 33, 0)`
+/// (same VRAM CLUT-row decode as [`MENU_TEXT_GOLD`]).
+pub const MENU_TEXT_RED: [f32; 4] = [0.905_882_4, 0.129_411_8, 0.0, 1.0];
+
+/// Menu HP health-tier ink - the retail per-character colour fn
+/// `FUN_800349EC` the status / party panels stage before drawing the
+/// HP current+max number fields:
+///
+/// - `hp == 0` -> staging 2 (red, [`MENU_TEXT_RED`])
+/// - `hp <= max/4` -> staging 9 (orange, [`MENU_TEXT_ORANGE`])
+/// - `hp <= max/2` -> staging 6 (gold, [`MENU_TEXT_GOLD`])
+/// - else -> staging 7 (white, [`MENU_TEXT_WHITE`])
+///
+/// (Retail also forces the gold tier at any HP when the char-record
+/// `+0x12E` status halfword is non-zero - an ailment latch the engine
+/// roster doesn't model yet.)
+///
+/// PORT: FUN_800349EC - menu HP ink tier (record `+0x104`/`+0x106`
+/// thresholds at max/4 and max/2).
+pub fn menu_hp_ink(hp: u16, hp_max: u16) -> [f32; 4] {
+    if hp == 0 {
+        MENU_TEXT_RED
+    } else if hp <= hp_max / 4 {
+        MENU_TEXT_ORANGE
+    } else if hp <= hp_max / 2 {
+        MENU_TEXT_GOLD
+    } else {
+        MENU_TEXT_WHITE
+    }
+}
+
+/// Menu MP tier ink - retail `FUN_80035EA8`: `mp <= max/4` -> orange
+/// (staging 9), `mp <= max/2` -> gold (staging 6), else white
+/// (staging 7). Unlike HP there is no zero special-case.
+///
+/// PORT: FUN_80035EA8 - menu MP ink tier (record `+0x108`/`+0x10A`).
+pub fn menu_mp_ink(mp: u16, mp_max: u16) -> [f32; 4] {
+    if mp > mp_max / 4 {
+        if mp <= mp_max / 2 {
+            MENU_TEXT_GOLD
+        } else {
+            MENU_TEXT_WHITE
+        }
+    } else {
+        MENU_TEXT_ORANGE
+    }
+}
 
 /// Fixed decimal-cell pitch of the retail number primitive
 /// `FUN_80034b78`: one glyph cell per digit, 8 px apart (pinned against
@@ -429,13 +494,17 @@ pub fn status_screen_draws_for(
     // "180/ 180" spacing), max at +0x58, then the teal parenthesised
     // base group: "(" at +0x7c, base at +0x84, ")" at +0xa4 (all 4-digit
     // fields; parens + base value share the teal separator ink).
-    for (row_y, tag, cur, max, base) in [
+    // Both number fields draw in the health-tier ink retail stages
+    // before them (FUN_800349EC / FUN_80035EA8); the "/" stays white
+    // (re-staged 7) and the paren group teal (staged 5).
+    for (row_y, tag, cur, max, base, tier) in [
         (
             wy + 0x13,
             "HP",
             panel.hp as u64,
             panel.hp_max as u64,
             panel.hp_max as u64,
+            menu_hp_ink(panel.hp, panel.hp_max),
         ),
         (
             wy + 0x20,
@@ -443,14 +512,15 @@ pub fn status_screen_draws_for(
             panel.mp as u64,
             panel.mp_max as u64,
             panel.mp_max as u64,
+            menu_mp_ink(panel.mp, panel.mp_max),
         ),
     ] {
         if !label_icons {
             str_at(&mut out, tag, wx + 0x20, row_y, gold);
         }
-        out.extend(num_field_draws(font, cur, wx + 0x30, row_y, 4, white));
+        out.extend(num_field_draws(font, cur, wx + 0x30, row_y, 4, tier));
         str_at(&mut out, "/", wx + 0x50, row_y, white);
-        out.extend(num_field_draws(font, max, wx + 0x58, row_y, 4, white));
+        out.extend(num_field_draws(font, max, wx + 0x58, row_y, 4, tier));
         str_at(&mut out, "(", wx + 0x7c, row_y, teal);
         out.extend(num_field_draws(font, base, wx + 0x84, row_y, 4, teal));
         str_at(&mut out, ")", wx + 0xa4, row_y, teal);
@@ -917,4 +987,37 @@ pub fn tab_banner_draws(
     }
     push(rects.tab_cap_r, wx + content_w, y);
     out
+}
+
+#[cfg(test)]
+mod health_tier_ink_tests {
+    use super::*;
+
+    /// The retail HP ink thresholds (`FUN_800349EC`): red at 0, orange
+    /// at `<= max/4`, gold at `<= max/2`, white above. Boundaries are
+    /// inclusive on the low side (the decompile tests `max>>2 < hp`).
+    #[test]
+    fn hp_tiers_match_the_retail_thresholds() {
+        let max = 180;
+        assert_eq!(menu_hp_ink(0, max), MENU_TEXT_RED);
+        assert_eq!(menu_hp_ink(1, max), MENU_TEXT_ORANGE);
+        assert_eq!(menu_hp_ink(45, max), MENU_TEXT_ORANGE); // == max/4
+        assert_eq!(menu_hp_ink(46, max), MENU_TEXT_GOLD);
+        assert_eq!(menu_hp_ink(90, max), MENU_TEXT_GOLD); // == max/2
+        assert_eq!(menu_hp_ink(91, max), MENU_TEXT_WHITE);
+        assert_eq!(menu_hp_ink(180, max), MENU_TEXT_WHITE);
+    }
+
+    /// MP tiers (`FUN_80035EA8`): same quarter/half thresholds but no
+    /// zero special-case - 0 MP sits in the orange tier.
+    #[test]
+    fn mp_tiers_match_the_retail_thresholds() {
+        let max = 20;
+        assert_eq!(menu_mp_ink(0, max), MENU_TEXT_ORANGE);
+        assert_eq!(menu_mp_ink(5, max), MENU_TEXT_ORANGE); // == max/4
+        assert_eq!(menu_mp_ink(6, max), MENU_TEXT_GOLD);
+        assert_eq!(menu_mp_ink(10, max), MENU_TEXT_GOLD); // == max/2
+        assert_eq!(menu_mp_ink(11, max), MENU_TEXT_WHITE);
+        assert_eq!(menu_mp_ink(20, max), MENU_TEXT_WHITE);
+    }
 }
