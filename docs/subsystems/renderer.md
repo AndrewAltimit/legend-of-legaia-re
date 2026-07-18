@@ -784,8 +784,19 @@ zero tolerance on the projection outputs. Because `Gte` keeps MAC/IR in q19.12,
 only the hardware-scale outputs are register-comparable — the **SXY** FIFO, the
 **SZ** FIFO, and the FLAG bits that do not depend on the MAC/IR scale
 (`DIVIDE_OVERFLOW`, `SZ3_OTZ`, `SX2`/`SY2` saturation). The IR/MAC-saturation
-bits (and thus the `ANY_ERROR` roll-up) diverge by that scale convention; a
-future real-silicon or cosim register oracle must compare the same subset.
+bits (and thus the `ANY_ERROR` roll-up) diverge by that scale convention.
+
+That same comparable subset is also checked against a **real cop2 register
+file** by the env-gated `rtpt_matches_recomp_cop2_capture` oracle, which replays
+RTPT input tuples captured from a Beetle-validated static recompilation of the
+retail game through `Gte::rtpt` and asserts bit-exact SXY/SZ/flag-subset (the
+capture holds game-derived bytes, so it is supplied out-of-tree via
+`LEGAIA_RECOMP_GTE_CAPTURE` and skip-passes when unset). This is what pinned the
+SXY-FIFO saturation bound: the GTE clamps the stored screen coordinate to signed
+11 bits `[-0x400, 0x3FF]` (raising `SX2`/`SY2`), matching the PSX GPU's drawing
+range — **not** the i16 IR-numerator range. The distinction only shows off-screen,
+so the self-consistent in-repo sweep (which shared the earlier i16 assumption on
+both sides) could not surface it; the real-cop2 capture did.
 
 ### GTE register-state emulator
 

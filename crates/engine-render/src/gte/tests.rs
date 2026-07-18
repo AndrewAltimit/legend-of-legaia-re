@@ -238,10 +238,12 @@ fn screen_to_pixel_clamps_off_screen() {
 }
 
 #[test]
-fn saturate_sxy_clamps_to_i16() {
+fn saturate_sxy_clamps_to_hardware_screen_range() {
+    // The SXY FIFO saturates to signed 11 bits, not i16 (the i16 bound is the
+    // IR numerator clamp). Confirmed bit-exact against a real-COP2 capture.
     let big = ScreenXY::new(i32::MAX, i32::MIN).saturate_sxy();
-    assert_eq!(big.x, SXY_MAX);
-    assert_eq!(big.y, SXY_MIN);
+    assert_eq!(big.x, SX_MAX);
+    assert_eq!(big.y, SX_MIN);
 }
 
 #[test]
@@ -441,10 +443,12 @@ fn reference_rtps(
     let sx = (((ofx as i64) << 16) + ir1 * recip) >> 16;
     let sy = (((ofy as i64) << 16) + ir2 * recip) >> 16;
 
-    if sx < SXY_MIN as i64 || sx > SXY_MAX as i64 {
+    // Final screen coords saturate to the hardware signed-11-bit range,
+    // raising SX2/SY2 - distinct from the i16 IR-numerator clamp above.
+    if sx < SX_MIN as i64 || sx > SX_MAX as i64 {
         flag |= flag_bits::SX2_SATURATED;
     }
-    if sy < SXY_MIN as i64 || sy > SXY_MAX as i64 {
+    if sy < SX_MIN as i64 || sy > SX_MAX as i64 {
         flag |= flag_bits::SY2_SATURATED;
     }
     let sxy = ScreenXY::new(sx as i32, sy as i32).saturate_sxy();
@@ -492,7 +496,7 @@ fn gte_rtps_matches_independent_reference_over_input_sweep() {
         GteVec3::new(0, 0, 0),
         GteVec3::new(ROT_ONE * 30, -(ROT_ONE * 20), 0),
         // Far off-axis: under the identity rotation this drives the projected
-        // SXY past the i16 range, exercising the SX2/SY2 saturation path.
+        // SXY past the ±0x400 hardware screen range, exercising SX2/SY2.
         GteVec3::new(ROT_ONE * 25000, -(ROT_ONE * 25000), 0),
     ];
     let verts = [
@@ -1345,4 +1349,187 @@ fn null_mem_returns_zero_loads_and_drops_stores() {
     // Stores are silently dropped.
     g.write_data(6, 0xDEAD_BEEF);
     g.swc2(&mut mem, 6, 0x100); // no panic
+}
+
+// ---------------------------------------------------------------------------
+// Real-COP2 oracle: cross-check `Gte::rtpt` against a live PS1 execution.
+//
+// The in-repo `reference_rtps` sweep validates the UNR divide against a second
+// clean-room implementation, but both share this crate's scale conventions, so
+// a convention shared by BOTH is invisible to it. This test closes that gap by
+// replaying real GTE RTPT (func 0x30) traffic captured from a Beetle-validated
+// PS1 static recompilation's COP2 register file (its `gte.cpp` gte_divide is the
+// same UNR algorithm this crate ports). Each capture record carries the inputs
+// (RT, TR, H, OFX/OFY, V0/V1/V2) and the resulting SXY/SZ FIFOs + FLAG.
+//
+// Sony-free: the capture holds game-derived vertex/matrix bytes, so it lives
+// OUTSIDE the repo and is supplied via `LEGAIA_RECOMP_GTE_CAPTURE` (a path to a
+// JSON array of ring-dump entries). With the var unset the test skip-passes,
+// exactly like the disc-gated integration tests - CI never needs the capture.
+//
+// Comparison is restricted to the hardware-scale-comparable subset (this crate
+// holds MAC/IR in q19.12): the SZ FIFO, the SXY FIFO, and the FLAG bits
+// {DIVIDE_OVERFLOW, SZ3_OTZ, SX2, SY2}. IR/MAC-saturation bits and ANY_ERROR
+// diverge by the documented scale convention and are excluded.
+//
+// This crate saturates the SXY FIFO to the hardware signed-11-bit screen range
+// (-0x400..=+0x3FF), so SXY value + SX2/SY2 flag are bit-exact against real
+// COP2 on EVERY record, on- or off-screen. (A prior i16 SXY clamp - shared by
+// this crate and its `reference_rtps`, hence invisible to the self-consistent
+// in-repo sweep - diverged off-screen; this capture oracle is what surfaced and
+// fixed it.) The SZ FIFO (the divide's own depth) is likewise checked on every
+// record.
+
+#[cfg(test)]
+fn recomp_arr_i64(v: &serde_json::Value, key: &str) -> Vec<i64> {
+    v[key]
+        .as_array()
+        .unwrap_or_else(|| panic!("capture entry missing array field {key}"))
+        .iter()
+        .map(|x| x.as_i64().expect("capture array element not an integer"))
+        .collect()
+}
+
+#[test]
+fn rtpt_matches_recomp_cop2_capture() {
+    let path = match std::env::var("LEGAIA_RECOMP_GTE_CAPTURE") {
+        Ok(p) if !p.is_empty() => p,
+        _ => {
+            eprintln!(
+                "SKIP rtpt_matches_recomp_cop2_capture: set LEGAIA_RECOMP_GTE_CAPTURE \
+                 to an external ring-dump JSON to run the real-COP2 cross-check"
+            );
+            return;
+        }
+    };
+    let raw = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read capture {path}: {e}"));
+    let entries: Vec<serde_json::Value> =
+        serde_json::from_str(&raw).expect("capture is not a JSON array of ring entries");
+
+    const SUBSET: u32 = flag_bits::DIVIDE_OVERFLOW
+        | flag_bits::SZ3_OTZ_SATURATED
+        | flag_bits::SX2_SATURATED
+        | flag_bits::SY2_SATURATED;
+
+    let (mut processed, mut sz_checked, mut strict_checked, mut div_ovf_seen) = (0, 0, 0, 0);
+
+    for e in &entries {
+        // Only RTPT (func 0x30): all three SXY/SZ slots come from this op.
+        let cmd = i64::from_str_radix(
+            e["cmd"].as_str().unwrap_or("0x0").trim_start_matches("0x"),
+            16,
+        )
+        .unwrap_or(0);
+        if cmd & 0x3F != 0x30 {
+            continue;
+        }
+        processed += 1;
+
+        let rt = recomp_arr_i64(e, "RT"); // 9, row-major, i16 q3.12
+        let tr = recomp_arr_i64(e, "TR"); // 3, raw control-reg integer scale
+        let h = e["H"].as_i64().expect("H") as i32;
+        let ofx = e["OFX"].as_i64().expect("OFX") as i32;
+        let ofy = e["OFY"].as_i64().expect("OFY") as i32;
+        let vs = [
+            recomp_arr_i64(e, "V0"),
+            recomp_arr_i64(e, "V1"),
+            recomp_arr_i64(e, "V2"),
+        ];
+
+        // Map the recomp's hardware-scale inputs into this crate's units:
+        //   rot: i16 q3.12 verbatim.
+        //   vertex: << 12 so `rot.mul_vec` (which >>12's the product) yields the
+        //           rotated vector in q19.12 (this crate's MAC scale).
+        //   trans: << 12 -> q19.12.
+        let rot = GteMat3 {
+            m: [
+                [rt[0] as i16, rt[1] as i16, rt[2] as i16],
+                [rt[3] as i16, rt[4] as i16, rt[5] as i16],
+                [rt[6] as i16, rt[7] as i16, rt[8] as i16],
+            ],
+        };
+        let mut g = Gte::new();
+        g.rot = rot;
+        g.trans = GteVec3::new(
+            (tr[0] << ROT_FRAC_BITS) as i32,
+            (tr[1] << ROT_FRAC_BITS) as i32,
+            (tr[2] << ROT_FRAC_BITS) as i32,
+        );
+        g.h = h;
+        // Retail OFX/OFY are s15.16 with zero fractional; this crate stores the
+        // integer pixel offset.
+        g.ofx = ofx >> 16;
+        g.ofy = ofy >> 16;
+        for (i, v) in vs.iter().enumerate() {
+            g.v[i] = GteVec3::new(
+                (v[0] << ROT_FRAC_BITS) as i32,
+                (v[1] << ROT_FRAC_BITS) as i32,
+                (v[2] << ROT_FRAC_BITS) as i32,
+            );
+        }
+        g.rtpt();
+
+        // Expected outputs from the real COP2 register file.
+        let exp_s = [
+            recomp_arr_i64(e, "S0"),
+            recomp_arr_i64(e, "S1"),
+            recomp_arr_i64(e, "S2"),
+        ];
+        let exp_sz = recomp_arr_i64(e, "SZ"); // [SZ1, SZ2, SZ3] = V0.z, V1.z, V2.z
+        let exp_flag = u32::from_str_radix(
+            e["FLAG"].as_str().unwrap_or("0x0").trim_start_matches("0x"),
+            16,
+        )
+        .unwrap_or(0);
+
+        // SZ FIFO: the divide's own depth bucket. Checked on EVERY record - this
+        // is the perspective-divide input and it must be bit-exact.
+        assert_eq!(
+            [
+                g.sz_fifo[1] as i64,
+                g.sz_fifo[2] as i64,
+                g.sz_fifo[3] as i64
+            ],
+            [exp_sz[0], exp_sz[1], exp_sz[2]],
+            "SZ FIFO mismatch (seq {:?})",
+            e["seq"]
+        );
+        sz_checked += 1;
+
+        // Strict SXY + flag-subset check on EVERY record. The SXY FIFO now
+        // saturates to the hardware ±0x400 screen range (SX2/SY2 flags and the
+        // clamped value both match), so on- and off-screen verts are bit-exact.
+        for (i, s) in exp_s.iter().enumerate() {
+            assert_eq!(
+                (g.sxy_fifo[i].x as i64, g.sxy_fifo[i].y as i64),
+                (s[0], s[1]),
+                "SXY[{i}] mismatch (seq {:?})",
+                e["seq"]
+            );
+        }
+        assert_eq!(
+            g.flag & SUBSET,
+            exp_flag & SUBSET,
+            "FLAG subset mismatch (seq {:?})",
+            e["seq"]
+        );
+        strict_checked += 1;
+        if exp_flag & flag_bits::DIVIDE_OVERFLOW != 0 {
+            div_ovf_seen += 1;
+        }
+    }
+
+    eprintln!(
+        "rtpt_matches_recomp_cop2_capture: processed={processed} sz_checked={sz_checked} \
+         strict={strict_checked} div_overflow_exercised={div_ovf_seen}"
+    );
+    assert!(
+        processed >= 8,
+        "capture had too few RTPT records ({processed}) to be a meaningful oracle"
+    );
+    assert!(
+        strict_checked > 0,
+        "no on-screen RTPT records to strictly cross-check"
+    );
 }

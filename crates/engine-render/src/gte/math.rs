@@ -10,10 +10,24 @@ pub const ROT_ONE: i32 = 1 << ROT_FRAC_BITS;
 /// loads into `H` for the standard 320×240 PSX frame: `H = 320`).
 pub const DEFAULT_H: i32 = 320;
 
-/// Saturated 16-bit signed clamp. The GTE saturates to `[-32768, 32767]`
-/// when storing screen-space coordinates back into the SXY FIFO.
+/// Saturated 16-bit signed clamp for the perspective-divide *numerator* -
+/// the hardware IR1/IR2 the projection multiplies by the reciprocal. IR
+/// registers are 16-bit signed, so the numerator is clamped to `[-32768,
+/// 32767]`. NB this is the IR clamp, NOT the final screen-coordinate clamp -
+/// the GTE saturates the *stored* SXY FIFO entry much more tightly (see
+/// [`SX_MIN`]/[`SX_MAX`]).
 pub const SXY_MIN: i32 = i16::MIN as i32;
 pub const SXY_MAX: i32 = i16::MAX as i32;
+
+/// Final SXY-FIFO screen-coordinate saturation bound. The GTE clamps the
+/// projected screen X/Y to signed 11 bits, `[-0x400, 0x3FF]`, and raises
+/// `SX2_SATURATED` / `SY2_SATURATED` when it does - matching the PSX GPU's
+/// 11-bit-signed drawing coordinate range. Cross-validated bit-exact against
+/// a real-COP2 RTPT ring capture (see the `rtpt_matches_recomp_cop2_capture`
+/// oracle in `tests.rs`); the earlier i16 bound here was a latent divergence
+/// that a self-consistent in-repo sweep could not surface.
+pub const SX_MIN: i32 = -0x400;
+pub const SX_MAX: i32 = 0x3FF;
 
 /// 3-vector of i32. Matches the GTE's MAC0/MAC1/MAC2/MAC3 accumulator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -187,14 +201,15 @@ impl ScreenXY {
         Self { x, y }
     }
 
-    /// Saturate to the GTE's i16 SXY-FIFO range. The retail GTE pushes
-    /// off-screen coordinates through this clamp before the OT writer
-    /// reads them; reproduce that saturation here so out-of-bounds verts
-    /// behave the same as on hardware.
+    /// Saturate to the GTE's signed-11-bit SXY-FIFO range `[-0x400, 0x3FF]`.
+    /// The retail GTE pushes projected coordinates through this clamp before
+    /// the OT writer reads them, raising SX2/SY2 on saturation; reproduce that
+    /// so out-of-bounds verts behave the same as on hardware. Bound confirmed
+    /// against a real-COP2 capture (see [`SX_MIN`]/[`SX_MAX`]).
     pub fn saturate_sxy(self) -> Self {
         Self {
-            x: self.x.clamp(SXY_MIN, SXY_MAX),
-            y: self.y.clamp(SXY_MIN, SXY_MAX),
+            x: self.x.clamp(SX_MIN, SX_MAX),
+            y: self.y.clamp(SX_MIN, SX_MAX),
         }
     }
 }
