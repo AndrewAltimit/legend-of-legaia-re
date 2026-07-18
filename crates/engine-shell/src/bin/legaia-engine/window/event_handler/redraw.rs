@@ -540,15 +540,25 @@ impl PlayWindowApp {
             // Field-NPC clip playback: advance each placed NPC's looping ANM
             // clip and draw its posed mesh halves.
             //
+            // The playhead advances in SIM-TICK time, not render-frame time:
+            // each redraw shows the clip's current frame and then advances the
+            // playhead by `run_ticks` (the number of 60 Hz sim ticks this
+            // redraw drained). Ticking once per *redraw* (what this did
+            // before) tied the animation rate to the display's refresh rate -
+            // on a 144 Hz monitor every NPC animated 2.4x too fast, and any
+            // screenshot oracle over an animated field scene was only
+            // reproducible while the engine held exactly 60 fps. At a steady
+            // 60 Hz (1 tick per redraw) the emitted frame sequence is
+            // unchanged. The player and prop clips already advance inside
+            // `World::tick`; this brings the NPC clips onto the same clock.
+            //
             // The skinned mesh for a `(slot, clip frame)` is a **constant** -
             // the clip is a short loop over a fixed pose set - so it is skinned
             // and uploaded on the first visit to that frame and memoised in
             // `npc_pose_cache` thereafter. Rebuilding it every render frame
-            // (what this did before) re-derived the same vertex bytes and
-            // allocated fresh GPU buffers for them, which dominated the frame:
-            // the CPU re-pose plus its upload was ~70% of the field frame in a
-            // populated town. The playhead still advances every frame, so the
-            // animation is unchanged - only the recomputation is skipped.
+            // re-derived the same vertex bytes and allocated fresh GPU buffers
+            // for them, which dominated the frame: the CPU re-pose plus its
+            // upload was ~70% of the field frame in a populated town.
             //
             // The rest-pose meshes in `field_npc_draws` stay as the fallback
             // for NPCs whose clip or upload is unavailable.
@@ -604,10 +614,14 @@ impl PlayWindowApp {
                     let Some((tmd, raw)) = srcs.get(slot) else {
                         continue;
                     };
-                    // `frame()` is the frame `tick()` is about to emit; take it
-                    // as the cache key, then tick to advance the playhead.
+                    // `frame()` is the frame this redraw shows; take it as the
+                    // cache key and read its pose WITHOUT moving the playhead,
+                    // then advance by the sim ticks this redraw ran (0 on a
+                    // pure-refresh frame, so a 144 Hz display holds each frame
+                    // for the same wall-clock time a 60 Hz one does).
                     let key = (*slot, player.frame());
-                    let pose = player.tick();
+                    let pose = player.current_pose();
+                    player.advance(run_ticks);
                     npc_frames.push(key);
                     if cache.contains_key(&key) {
                         // `LEGAIA_POSE_CACHE_VERIFY=1`: the pose behind a hit
