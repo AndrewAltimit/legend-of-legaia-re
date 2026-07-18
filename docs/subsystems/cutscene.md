@@ -911,10 +911,27 @@ multiplies into a pixel that is already a PSX framebuffer value and the attachme
 nothing re-encodes the product (see
 [`renderer.md`](renderer.md#colour-space-psx-framebuffer-values-end-to-end)).
 Pixel-verified against the retail tableau framebuffer on matched regions: gold geometry lands
-`G/R 0.91..0.93` (retail ~`0.89`) with near-field `B/R ≈ 0.37` against retail's `0.44`. The known
-residual is the far-field crush (retail `B/R 0.12..0.18`): that is the per-node depth-cue pull,
-which a uniform multiply cannot reproduce and the engine does not yet stage per node.
+`G/R 0.91..0.93` (retail ~`0.89`) with near-field `B/R ≈ 0.37` against retail's `0.44`.
 `scene_color_grade_only_on_the_prologue_cutscene` (engine-core) guards the scene gate.
+
+The far-field crush (retail `B/R 0.12..0.18`) is the tint's second half: the **per-render-node
+depth-cue pull**, which a uniform multiply cannot reproduce. The engine stages it as a
+view-depth `IR0` ramp ([`fade::DepthCueRamp`](../../crates/engine-core/src/fade.rs)
+`PROLOGUE_GOLD`, staged by `Renderer::set_depth_cue_ramp` on the same prologue scene gate via
+[`World::scene_depth_cue`](../../crates/engine-core/src/world/narration.rs)): each fragment's
+projected view depth maps to `ir0 = clamp((z - near_z) / (far_z - near_z), 0, 1) * max_ir0`,
+and the shaders blend toward the far term **in retail's order** - DPCS runs on the packet
+colour *before* the GPU's texel multiply, so a textured prim's far term arrives as
+`texel * far / 128` (texture detail survives the crush, exactly as the retail framebuffer
+shows) while an untextured prim pulls to the far colour directly. Calibrated against the
+retail tableau on matched regions: the far cave wall lands within a few percent of retail per
+channel (engine `B/R 0.126` vs retail `0.131`, `G/R 0.895` vs `0.893`) and the gold spires
+hold `G/R 0.87..0.90`. Interactive scenes stage no ramp, and the ramp-off shader path is
+pixel-identical to the pre-ramp render (verified on a `town01` A/B capture). Known residual:
+retail's staging is truly per node - the spire nodes combine a strong pull with a brighter
+far colour than the backdrop nodes - so a shared ramp leaves the spires' `B/R` at ~`0.26`
+against retail's ~`0.15`; closing it needs a capture of the per-node `+0x74`/`+0x78` values
+during the opening beats. `scene_depth_cue_tracks_the_prologue_grade_gate` guards the gate.
 
 ## Open items
 

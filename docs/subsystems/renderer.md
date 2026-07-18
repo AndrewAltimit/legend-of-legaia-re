@@ -135,7 +135,9 @@ the lit rows, having no colour word, get `MODULATION_NEUTRAL`) →
 `legaia_tmd::mesh::VramMesh::colors` → a per-vertex attribute on the VRAM-mesh
 pipeline → `psx_modulate` / `psx_depth_cue` in the shader prelude, mirrored on
 the CPU by `legaia_engine_render::psx_light` and pinned by its tests. The far
-colour and `IR0` are set with `Renderer::set_depth_cue` (default `IR0 = 0`).
+colour and `IR0` are set with `Renderer::set_depth_cue` (default `IR0 = 0`); the opening
+prologue's per-render-node pull is staged separately as a view-depth `IR0` ramp
+(`Renderer::set_depth_cue_ramp` - see [the grade section](#full-scene-colour-grade)).
 
 ### Per-prim dispatch table (`FUN_80043390`)
 
@@ -507,8 +509,21 @@ engine multiplies rather than collapsing to luminance. The gold coefficients `(1
 are the measured on-geometry modulation ratio, stored as display ratios as-is - see
 [Colour space](#colour-space-psx-framebuffer-values-end-to-end). Driven by
 [`World::scene_color_grade`](../../crates/engine-core/src/world/narration.rs) (only the prologue
-cutscene legs grade). Known residual: retail's per-render-node depth cue crushes far-field blue
-further (`B/R` down to ~`0.13`); the engine does not stage that per node.
+cutscene legs grade).
+
+Retail's per-render-node depth cue additionally crushes far-field blue (`B/R` down to ~`0.13`).
+`Renderer::set_depth_cue_ramp(far, near_z, far_z, max_ir0)` stages that pull as a view-depth
+`IR0` ramp (`cue_ramp` in `MeshUniforms`, `cue_ramp_ir0` in the shader prelude): each fragment's
+projected view depth maps to `ir0 = clamp((z - near_z) / (far_z - near_z), 0, 1) * max_ir0`, and
+the shaders blend toward the far term in retail's order - DPCS runs on the packet colour before
+the GPU texel multiply, so a textured prim's far term is `texel * far / 128` and an untextured
+prim pulls to the far colour directly. Driven by
+[`World::scene_depth_cue`](../../crates/engine-core/src/world/narration.rs) on the same prologue
+gate ([`fade::DepthCueRamp`](../../crates/engine-core/src/fade.rs) has the calibration); cleared
+(`clear_depth_cue_ramp`) on every other scene, where the ramp-off path is pixel-identical to the
+pre-ramp render. See
+[`cutscene.md`](cutscene.md#full-scene-sepia-grade-the-gold-prologue-look) for the calibration
+measurements and the per-node residual.
 
 ### Colour space: PSX framebuffer values end to end
 
