@@ -3,21 +3,17 @@ use crate::*;
 /// Retail PSX framebuffer placement of the "Now checking" dialog panel,
 /// parked. Retail draws it with `FUN_801E36C4(160, 97, 169, 26)` (args traced
 /// live; the `169` is the text-derived width retail computes for
-/// "Do not remove MEMORY CARD"), which lands at `(67, 96, 183, 40)` - see
-/// [`messagebox_rect`].
-///
-/// Cross-checked against the gold-border scan of
-/// `captures/slot_info_dump/.../now_checking_fb`: that capture caught the
-/// dialog **mid-slide** at `center_x = 240`, where the same math predicts
-/// left 147 / rows 96..135 - exactly the box the capture contains.
+/// "Do not remove MEMORY CARD"), which lands the 9-slice footprint at
+/// `(66, 95, 185, 42)` - see [`messagebox_rect`]. Pinned against the live
+/// GP0 draw list (edge tiles x=66 / x=247, rows 95..137).
 ///
 /// The slide start / target are `center_x` values, so a caller drives the
 /// slide by passing `slide_offset.0 = center_x - 160` (see
 /// [`now_checking_panel_draws_for`]).
-pub const NOW_CHECKING_PANEL_POS: (i32, i32) = (67, 96);
-/// Companion to [`NOW_CHECKING_PANEL_POS`]. `169 + 14` x `26 + 14`: the panel
-/// drawer adds a uniform 7px border to the size it is asked for.
-pub const NOW_CHECKING_PANEL_SIZE: (u32, u32) = (183, 40);
+pub const NOW_CHECKING_PANEL_POS: (i32, i32) = (66, 95);
+/// Companion to [`NOW_CHECKING_PANEL_POS`]. `169 + 16` x `26 + 16`: the panel
+/// drawer inflates the centre rect by a uniform 8px on every side.
+pub const NOW_CHECKING_PANEL_SIZE: (u32, u32) = (185, 42);
 
 /// Retail slide-in start position for the "Now checking" dialog's
 /// **center x** before it has slid into place. From Ghidra trace
@@ -36,14 +32,13 @@ pub const NOW_CHECKING_SLIDE_TARGET_X: i32 = 160;
 /// glyphs at `(x - text_width/2, y + 7)`. The +7 offset is baked
 /// into the renderer itself (see `overlay_menu_801e3ee0.txt`).
 pub const DIALOG_TEXT_CENTER_X: i32 = 160;
-/// "Now checking." line: retail `FUN_801E3EE0(string, 0xA0, 0x60)`
-/// → text top y = 0x60 + 7 = 103. Source:
-/// `overlay_save_ui_select_801dd35c.txt:1054`.
-pub const NOW_CHECKING_TEXT_LINE1_Y: i32 = 103;
-/// "Do not remove MEMORY CARD" line: retail
-/// `FUN_801E3EE0(string, 0xA0, 0x70)` → text top y = 0x70 + 7 = 119.
-/// Source: `overlay_save_ui_select_801dd35c.txt:809`.
-pub const NOW_CHECKING_TEXT_LINE2_Y: i32 = 119;
+/// "Now checking." line: mode 0 of `FUN_801E1C1C` centres its first
+/// line at `param_4 - 0x11` = 112 - 17 = 95, and the wrapper's +7
+/// lands the glyph tops at y = 102 (GP0-dump-pinned).
+pub const NOW_CHECKING_TEXT_LINE1_Y: i32 = 102;
+/// "Do not remove MEMORY CARD" line: mode 0's second line at
+/// `param_4 - 1` = 111, +7 → glyph tops at y = 118 (GP0-dump-pinned).
+pub const NOW_CHECKING_TEXT_LINE2_Y: i32 = 118;
 /// Backwards-compat: left-edge positions derived from
 /// `center_x - retail_text_width / 2` for the two lines (computed
 /// at runtime in `now_checking_text_draws_for` from the actual
@@ -145,18 +140,26 @@ pub const CONFIRM_DIALOG_SLIDE_START_Y: i32 = 344;
 pub const CONFIRM_DIALOG_SLIDE_TARGET_Y: i32 = 88;
 
 /// Geometry of retail's messagebox panel drawer
-/// `FUN_801E36C4(center_x, y, w, h)`: it lands the visible gold-bordered box
-/// at `(center_x - w/2 - 9, y - 1, w + 14, h + 14)` - centred on `center_x`
-/// (including the drawer's own `-2` x shift, see
-/// `ghidra/scripts/funcs/overlay_save_ui_select_801e36c4.txt`) with a uniform
-/// 7px border around the `w x h` it is asked for.
+/// `FUN_801E36C4(center_x, y, w, h)`: it forwards
+/// `func_0x8002c69c(center_x - w/2 - 2, y + 6, w, h)` (see
+/// `ghidra/scripts/funcs/overlay_save_ui_select_801e36c4.txt`), and the box
+/// emitter inflates its centre rect by a uniform **8px** on every side -
+/// the same inflation the dialog reading box uses. So the drawn 9-slice
+/// footprint is:
 ///
-/// Measured, not modelled: the `+14` sizes are read off captured retail
-/// frames and hold for every save-UI panel (they are independent of where the
-/// box sits), and the `-9` / `-1` were then confirmed by predicting each
-/// panel's pixels and matching them exactly.
+/// ```text
+/// footprint = (center_x - w/2 - 10, y - 2, w + 16, h + 16)
+/// ```
+///
+/// GP0-dump-pinned on two panels at once: the header tab
+/// `(48, 6, 65, 13)` predicts `(6, 4, 81, 29)` = exactly the Load panel's
+/// 14-sprite composition, and the parked "Now checking" dialog
+/// `(160, 97, 169, 26)` predicts `(66, 95, 185, 42)` = the live dump's
+/// edge-tile extents. (An earlier `+14 / -9 / -1` model, measured off
+/// gold-border pixel scans, was 1px short on every side - the outermost
+/// tile ring reads as background in a framebuffer scan.)
 fn messagebox_rect(center_x: i32, y: i32, w: i32, h: i32) -> (i32, i32, i32, i32) {
-    (center_x - w / 2 - 9, y - 1, w + 14, h + 14)
+    (center_x - w / 2 - 10, y - 2, w + 16, h + 16)
 }
 
 /// The confirm dialog is **two** panels, not one: a near-full-width prompt bar
@@ -171,7 +174,9 @@ const CONFIRM_OPTIONS_PANEL: (i32, i32) = (42, 26);
 /// `param_4 + 0x20`).
 const CONFIRM_OPTIONS_DY: i32 = 32;
 /// Retail's centring text emitter `FUN_801E3EE0(text, x, y)` draws glyphs at
-/// `(x - width/2, y + 7)`; the `+7` is baked into the emitter.
+/// `(x - width/2, y + 7)`; the `+7` is baked into the emitter
+/// (GP0-dump-corroborated by the "No data" caption at
+/// `local_34 + 0x18 + 7` and the confirm prompt at `slide_y + 7`).
 const DIALOG_TEXT_BASELINE_DY: i32 = 7;
 /// The prompt is centred at `param_3 + 0x1a`, right of the dialog's centre -
 /// the left of the bar carries the `No.NN` block badge.
@@ -185,16 +190,15 @@ const CONFIRM_OPTION_YES_DY: i32 = 32;
 const CONFIRM_OPTION_NO_DY: i32 = 48;
 
 /// Prompt-bar rect of the confirm dialog for a given slide `y`.
-/// At the parked `y = 88` this is `(9, 87, 298, 27)` - matching a scan of the
-/// retail framebuffer with the prompt parked.
+/// At the parked `y = 88` this is `(8, 86, 300, 29)` (the gold border
+/// scan reads the ring one pixel inside the footprint).
 fn confirm_prompt_rect(slide_y: i32) -> (i32, i32, i32, i32) {
     let (w, h) = CONFIRM_PROMPT_PANEL;
     messagebox_rect(CONFIRM_DIALOG_CENTER_X, slide_y, w, h)
 }
 
 /// `Yes`/`No` box rect of the confirm dialog for a given slide `y`.
-/// At the parked `y = 88` this is `(130, 119, 56, 40)` - matching the same
-/// scan.
+/// At the parked `y = 88` this is `(129, 118, 58, 42)`.
 fn confirm_options_rect(slide_y: i32) -> (i32, i32, i32, i32) {
     let (w, h) = CONFIRM_OPTIONS_PANEL;
     messagebox_rect(CONFIRM_DIALOG_CENTER_X, slide_y + CONFIRM_OPTIONS_DY, w, h)
@@ -297,30 +301,32 @@ pub fn confirm_dialog_text_draws_for(
 mod messagebox_geometry_tests {
     use super::*;
 
-    /// The panel drawer's geometry, checked against retail pixels from three
-    /// independent panels on captured frames. Each case is
-    /// `FUN_801E36C4(center_x, y, w, h)` args traced live off the running
-    /// game, paired with the gold-border box measured in the same frame.
+    /// The panel drawer's geometry, checked against the live GP0 draw
+    /// list. Each case is `FUN_801E36C4(center_x, y, w, h)` args traced
+    /// live off the running game, paired with the 9-slice footprint the
+    /// GPU actually received.
     #[test]
     fn messagebox_rect_matches_retail_captures() {
-        // The Load/Save header tab (slide mode 1, held at (48, 6)).
-        // Measured: border rows 5..31.
-        assert_eq!(messagebox_rect(48, 6, 65, 13), (7, 5, 79, 27));
+        // The Load/Save header tab (slide mode 1, held at (48, 6)):
+        // the model must predict the Load panel's byte-pinned 14-sprite
+        // composition at (6, 4) size 81x29.
+        assert_eq!(messagebox_rect(48, 6, 65, 13), (6, 4, 81, 29));
 
         // "Now checking" (mode 0) mid-slide, center_x = 240. The archived
-        // capture that pinned this dialog caught it part-way in, and its box
-        // measured left = 147, rows 96..135 - which is exactly what the model
-        // predicts, from a capture taken long before the model existed.
-        assert_eq!(messagebox_rect(240, 97, 169, 26), (147, 96, 183, 40));
+        // capture that pinned this dialog caught it part-way in; its
+        // gold-border scan read left = 147 = one pixel inside the
+        // footprint the model predicts.
+        assert_eq!(messagebox_rect(240, 97, 169, 26), (146, 95, 185, 42));
 
-        // The same dialog parked (center_x = 160).
-        assert_eq!(messagebox_rect(160, 97, 169, 26), (67, 96, 183, 40));
+        // The same dialog parked (center_x = 160): the live GP0 dump has
+        // edge tiles at x = 66 / 247 and rows 95..137.
+        assert_eq!(messagebox_rect(160, 97, 169, 26), (66, 95, 185, 42));
     }
 
     /// The published NowChecking constants must BE the parked rect, and the
     /// slide-offset path must reproduce the mid-slide capture: the caller
     /// passes `center_x - 160` as the x offset, so `center_x = 240` has to
-    /// land on the left 147 that capture actually contains.
+    /// land the footprint at 146 (gold border at 147).
     #[test]
     fn now_checking_constants_match_the_capture() {
         assert_eq!(
@@ -331,23 +337,20 @@ mod messagebox_geometry_tests {
                     NOW_CHECKING_PANEL_SIZE.1 as i32
                 )
             ),
-            ((67, 96), (183, 40))
+            ((66, 95), (185, 42))
         );
         let mid_slide_center_x = 240;
         let slide_offset_x = mid_slide_center_x - NOW_CHECKING_SLIDE_TARGET_X;
-        assert_eq!(NOW_CHECKING_PANEL_POS.0 + slide_offset_x, 147);
+        assert_eq!(NOW_CHECKING_PANEL_POS.0 + slide_offset_x, 146);
     }
 
-    /// The confirm dialog is two panels. Both rects are measured off a
-    /// framebuffer captured with the prompt parked at its retail rest
-    /// position (slide target y = 88): the prompt bar's gold border spans
-    /// rows 87..113 / cols 9..306, and the Yes/No box rows 119..158 /
-    /// cols 130..185.
+    /// The confirm dialog is two panels, both riding the mode-3 slide.
+    /// Footprints at the parked rest position (slide target y = 88).
     #[test]
     fn confirm_dialog_panels_match_parked_capture() {
         let y = CONFIRM_DIALOG_SLIDE_TARGET_Y;
-        assert_eq!(confirm_prompt_rect(y), (9, 87, 298, 27));
-        assert_eq!(confirm_options_rect(y), (130, 119, 56, 40));
+        assert_eq!(confirm_prompt_rect(y), (8, 86, 300, 29));
+        assert_eq!(confirm_options_rect(y), (129, 118, 58, 42));
     }
 
     /// Both panels ride the slide together: at the start of the slide the

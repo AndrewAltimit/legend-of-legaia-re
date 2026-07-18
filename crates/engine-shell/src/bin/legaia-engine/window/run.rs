@@ -760,6 +760,7 @@ pub(super) fn cmd_play_window_with_record(
         disc_path: disc.map(|d| d.to_path_buf()),
         cutscene: None,
         cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp::new(),
+        pending_camera_snaps: Vec::new(),
         active_dialog: None,
         seru_names: None,
         dynamic_lighting,

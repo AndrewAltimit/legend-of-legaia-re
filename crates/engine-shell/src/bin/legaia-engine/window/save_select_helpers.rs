@@ -62,6 +62,133 @@ pub(crate) fn info_panel_slide_offset(
     y - legaia_engine_core::save_select::INFO_PANEL_PARKED_Y
 }
 
+/// Retail title word for a save-select screen. The header tab is one
+/// panel whose string toggles on the retail direction flag
+/// `_DAT_801f0200` (`0` = the Save path, the branch that stamps a
+/// product code into the chosen block; non-zero = Load) - mode 1 of
+/// the slide-in primitive `FUN_801E1C1C`. The session's
+/// [`SaveSelectMode`] carries the same bit, so the word must come from
+/// it rather than from which host screen opened the session: the
+/// field menu's Load row builds the same sub-session as its Save row,
+/// only the mode differs.
+pub(crate) fn save_select_title_word(
+    session: &legaia_engine_core::save_select::SaveSelectSession,
+) -> &'static str {
+    match session.mode() {
+        legaia_engine_core::save_select::SaveSelectMode::Load => "Load",
+        legaia_engine_core::save_select::SaveSelectMode::Save => "Save",
+    }
+}
+
+/// Live y of the confirm messagebox: retail mode 3 of `FUN_801E1C1C`
+/// slides it up from below the stage, `(160, 344) -> (160, 88)`,
+/// against the same 12-bit timer family as the info panel.
+pub(crate) fn confirm_dialog_slide_y(
+    session: &legaia_engine_core::save_select::SaveSelectSession,
+) -> i32 {
+    legaia_engine_core::save_select::interpolate_anim(
+        (0, legaia_engine_render::CONFIRM_DIALOG_SLIDE_START_Y),
+        (0, legaia_engine_render::CONFIRM_DIALOG_SLIDE_TARGET_Y),
+        session.info_panel_slide_anim_t(),
+    )
+    .1
+}
+
+/// Phase-dependent text overlays for a save-select session: the
+/// "Now checking" dialog lines, the slot-preview info panel text (or
+/// its "Able to save." / "No data" / "Not a Legend of Legaia save."
+/// caption), and the confirm messagebox ("Do you wish to save?") with
+/// its stacked Yes / No rows. Shared by the boot Continue → Load
+/// screen and the field-menu Load / Save sub-screens so the two paths
+/// cannot drift; the sprite half of the same overlays is emitted by
+/// `save_select_chrome_sprite_draws`.
+/// `chrome_present` = the system-UI atlas is resident, so the sprite
+/// pass draws retail's LV / HP / MP label sprites and the text pass
+/// must skip its ASCII stand-ins.
+pub(crate) fn save_select_phase_text_draws(
+    font: &legaia_font::Font,
+    session: &legaia_engine_core::save_select::SaveSelectSession,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+    chrome_present: bool,
+) -> Vec<TextDraw> {
+    use legaia_engine_core::save_select::{SelectPhase, SlotInfoMode};
+    let mut out = Vec::new();
+    match session.phase() {
+        SelectPhase::NowChecking { .. } => {
+            // Retail slide: dialog x slides from
+            // NOW_CHECKING_SLIDE_START_X (416) to
+            // NOW_CHECKING_SLIDE_TARGET_X (160) over 16 frames.
+            let pos_x = legaia_engine_core::save_select::interpolate_anim(
+                (legaia_engine_render::NOW_CHECKING_SLIDE_START_X, 0),
+                (legaia_engine_render::NOW_CHECKING_SLIDE_TARGET_X, 0),
+                session.slide_anim_t(),
+            )
+            .0;
+            let slide_offset = (pos_x - legaia_engine_render::NOW_CHECKING_SLIDE_TARGET_X, 0);
+            out.extend(legaia_engine_render::now_checking_text_draws_for(
+                font,
+                stage_origin,
+                stage_scale,
+                slide_offset,
+            ));
+        }
+        SelectPhase::SlotPreview { slot } => {
+            let info = build_slot_info_view(session.slots(), slot);
+            let view = info.as_ref().map(|i| i.as_view());
+            let panel_y_offset = info_panel_slide_offset(session);
+            out.extend(legaia_engine_render::slot_info_panel_text_draws_for(
+                font,
+                view.as_ref(),
+                panel_y_offset,
+                stage_origin,
+                stage_scale,
+                chrome_present,
+            ));
+            // Nothing loadable here: retail captions the panel rather
+            // than leaving it empty.
+            if view.is_none()
+                && let Some(snap) = session.slots().get(slot as usize)
+                && let Some(caption) = SlotInfoMode::for_slot(snap).caption(session.mode())
+            {
+                out.extend(legaia_engine_render::slot_info_caption_draws_for(
+                    font,
+                    caption,
+                    panel_y_offset,
+                    stage_origin,
+                    stage_scale,
+                ));
+            }
+        }
+        // The confirm prompt is retail's centred messagebox (mode 3 of
+        // the slide-in primitive), NOT an inline row under the pills:
+        // a near-full-width prompt bar + a small box with the Yes / No
+        // rows stacked, sliding up from below the stage.
+        SelectPhase::ConfirmOverwrite { cursor, .. } => {
+            out.extend(legaia_engine_render::confirm_dialog_text_draws_for(
+                font,
+                "Do you wish to save?",
+                cursor,
+                confirm_dialog_slide_y(session),
+                stage_origin,
+                stage_scale,
+            ));
+        }
+        SelectPhase::ConfirmDelete { cursor, .. } => {
+            out.extend(legaia_engine_render::confirm_dialog_text_draws_for(
+                font,
+                "Delete this save?",
+                cursor,
+                confirm_dialog_slide_y(session),
+                stage_origin,
+                stage_scale,
+            ));
+        }
+        _ => {}
+    }
+    out
+}
+
 /// Owned-string flavour of [`legaia_engine_render::SlotInfoView`] used
 /// to keep the strings alive across the render call. The borrowed
 /// view referenced by the renderer is taken via [`Self::as_view`].
@@ -178,6 +305,26 @@ pub(crate) fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_sel
         out.push(snap);
     }
     out
+}
+
+#[cfg(test)]
+mod title_word_tests {
+    use super::save_select_title_word;
+    use legaia_engine_core::save_select::{SaveSelectMode, SaveSelectSession, SlotSnapshot};
+
+    /// The header word must follow the session's MODE - the field
+    /// menu's Load row builds the same `FieldMenuSubsession::Save`
+    /// shape as its Save row, and a hardcoded "Save" at the draw site
+    /// is exactly the bug that put the Save title on the in-game Load
+    /// screen.
+    #[test]
+    fn title_word_follows_session_mode_not_host_screen() {
+        let slots = vec![SlotSnapshot::empty(0)];
+        let load = SaveSelectSession::new(SaveSelectMode::Load, slots.clone());
+        let save = SaveSelectSession::new(SaveSelectMode::Save, slots);
+        assert_eq!(save_select_title_word(&load), "Load");
+        assert_eq!(save_select_title_word(&save), "Save");
+    }
 }
 
 #[cfg(test)]

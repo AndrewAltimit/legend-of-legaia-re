@@ -140,6 +140,7 @@ out vec2 v_uv;          /* interpolated linearly across the triangle */
 flat out uvec2 v_cba_tsb;
 out float v_fog_t;     /* 0..1, fraction of u_fog_far_ref */
 out vec4 v_flat_rgba;
+out float v_view_z;    /* perspective view depth (clip w) for the depth cue */
 
 void main() {
   vec4 world_pos = u_model * vec4(a_position, 1.0);
@@ -165,6 +166,7 @@ void main() {
     v_fog_t = 0.0;
   }
   gl_Position = u_mvp * world_pos;
+  v_view_z = gl_Position.w;
 }
 `;
 
@@ -216,12 +218,27 @@ uniform vec3 u_fog_color;
  * trail is a delayed mesh copy drawn as a PSX ABE additive prim). a == 0
  * (the GL uniform default) leaves every existing draw untouched. */
 uniform vec4 u_ghost;
+/* Prologue colour grade: rgb = multiply tint, a = strength (0 = identity -
+ * the GL default, so every existing draw is untouched). Mirrors the engine's
+ * set_color_grade (World::scene_color_grade, the opdeene/opstati/opurud
+ * sepia). Applied to the NEAR term only, per the retail DPCS order. */
+uniform vec4 u_grade;
+/* Prologue depth-cue ramp (World::scene_depth_cue -> the native renderer's
+ * set_depth_cue_ramp): x = near_z, y = far_z, z = max_ir0, w = enable
+ * (0 = off, the GL default). Retail's GTE DPCS runs on the packet colour
+ * BEFORE the texel multiply, so a textured prim's far term is
+ * texel * far_colour and an untextured prim pulls to the far colour
+ * directly - mirrored here with ir0(z) = clamp((z-near)/(far-near),0,1)
+ * * max_ir0 over the perspective view depth. REF: FUN_8002735C */
+uniform vec4 u_cue;
+uniform vec3 u_cue_far;   /* DPCS far colour, linear 0..1 */
 
 in vec3 v_world;
 in vec2 v_uv;
 flat in uvec2 v_cba_tsb;
 in float v_fog_t;
 in vec4 v_flat_rgba;
+in float v_view_z;
 
 out vec4 o_color;
 
@@ -241,6 +258,18 @@ vec4 bgr555_to_rgba(uint c) {
   uint stp = (c >> 15u) & 1u;
   float a = (c == 0u && stp == 0u) ? 0.0 : 1.0;
   return vec4(r, g, b, a);
+}
+
+/* Depth-cue interpolation factor for the current fragment's view depth. */
+float cue_ir0(float z) {
+  if (u_cue.w < 0.5) return 0.0;
+  float d = max(u_cue.y - u_cue.x, 1.0);
+  return clamp((z - u_cue.x) / d, 0.0, 1.0) * u_cue.z;
+}
+
+/* Prologue grade multiply on the near term (identity at strength 0). */
+vec3 grade_near(vec3 c) {
+  return mix(c, c * u_grade.rgb, u_grade.a);
 }
 
 void main() {
@@ -269,7 +298,10 @@ void main() {
     vec3 dyf = dFdy(v_world);
     vec3 nf = normalize(cross(dxf, dyf)) * u_normal_sign;
     float lf = max(dot(nf, normalize(-u_light)), 0.0);
-    o_color = vec4(v_flat_rgba.rgb * (0.45 + 0.55 * lf), 1.0);
+    /* Untextured prims pull to the DPCS far colour directly (retail: the
+     * cue runs on the packet colour and there is no texel multiply). */
+    vec3 flat_lit = grade_near(v_flat_rgba.rgb * (0.45 + 0.55 * lf));
+    o_color = vec4(mix(flat_lit, u_cue_far, cue_ir0(v_view_z)), 1.0);
     return;
   }
 
@@ -363,6 +395,15 @@ void main() {
       ? v_fog_t
       : clamp(lut_factor, 0.0, 1.0);
     lit = mix(lit, u_fog_color, factor);
+  }
+
+  /* Prologue grade + depth-cue ramp (identity when unset). Retail order:
+   * the grade tints the NEAR term; the far term is texel * far colour
+   * (texture detail survives the crush - DPCS runs on the packet colour
+   * before the GPU texel multiply). */
+  {
+    float ir0 = cue_ir0(v_view_z);
+    lit = mix(grade_near(lit), color.rgb * u_cue_far, ir0);
   }
 
   /* Ghost (after-image) draw: keep the cutout silhouette (the discard above

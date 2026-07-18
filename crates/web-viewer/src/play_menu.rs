@@ -114,6 +114,12 @@ impl PlayMenuAssets {
         &self.font
     }
 
+    /// The chrome atlas' band rects, when the gold chrome resolved from the
+    /// disc (shared with the dialog reading box, [`crate::play_dialog`]).
+    pub(crate) fn chrome_rects(&self) -> Option<&SaveMenuAtlasRects> {
+        self.chrome.as_ref().map(|(_, r)| r)
+    }
+
     fn window_rect(&self, id: usize) -> (i32, i32, i32, i32) {
         if let Some(d) = self.windows.as_ref().and_then(|t| t.window(id)) {
             return d.rect();
@@ -213,7 +219,7 @@ fn step_grid_cursor(cursor: u8, edge: u16) -> u8 {
 /// Stage origin + integer scale that upscales the 320x240 boot-UI stage to fill
 /// the play surface, centred - identical math to the native window's
 /// `save_select_stage`.
-fn stage_transform(surface_w: u32, surface_h: u32) -> ((i32, i32), u32) {
+pub(crate) fn stage_transform(surface_w: u32, surface_h: u32) -> ((i32, i32), u32) {
     let scale = (surface_w / STAGE_W).min(surface_h / STAGE_H).clamp(1, 4);
     let sw = STAGE_W * scale;
     let sh = STAGE_H * scale;
@@ -246,7 +252,7 @@ fn info_panel_slide_offset(session: &SaveSelectSession) -> i32 {
 /// Serialize one draw quad to JSON. `TextDraw` and `SpriteDraw` are the same
 /// shape (`dst` / `src` rect + RGBA tint); the page samples the font atlas for
 /// quads in the `texts` list and the chrome atlas for the `sprites` list.
-fn quad_json(d: &TextDraw) -> serde_json::Value {
+pub(crate) fn quad_json(d: &TextDraw) -> serde_json::Value {
     serde_json::json!({
         "dst": [d.dst.0, d.dst.1, d.dst.2, d.dst.3],
         "src": [d.src.0, d.src.1, d.src.2, d.src.3],
@@ -1128,9 +1134,13 @@ impl LegaiaRuntime {
             | SelectPhase::SlotPreview { slot }
             | SelectPhase::ConfirmOverwrite { slot, .. }
             | SelectPhase::ConfirmDelete { slot, .. } => {
-                // Mode-2 start (160, 96) minus the inlined -0x18 x-shift.
-                const SLIDE_START_TOPLEFT: (i32, i32) = (136, 96);
-                let pos = s.interpolate(SLIDE_START_TOPLEFT, ui::SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE);
+                // Slide start = the pill's Browsing position (retail
+                // mode-2 start (160, 96) minus the inlined -0x18
+                // x-shift = the Browsing pill quad).
+                let pos = s.interpolate(
+                    ui::SAVE_SELECT_SLOT1_POS,
+                    ui::SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE,
+                );
                 (vec![slot], pos)
             }
             _ => (
@@ -1224,6 +1234,9 @@ impl LegaiaRuntime {
                     y_off,
                     origin,
                     scale,
+                    // This branch only runs with the chrome atlas
+                    // resident, which draws the label sprites.
+                    true,
                 ));
                 // No preview means the block holds nothing loadable; retail
                 // fills the panel with a caption saying which kind of

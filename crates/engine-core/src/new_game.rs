@@ -301,6 +301,11 @@ mod tests {
             world.name_entry.as_ref().unwrap().state,
             NameEntryState::Confirm
         );
+        // The prompt opens on No (retail); Up moves the hand to Yes.
+        world.step_name_entry(NameEntryInput {
+            up: true,
+            ..Default::default()
+        });
         let committed = world.step_name_entry(NameEntryInput {
             confirm: true,
             ..Default::default()

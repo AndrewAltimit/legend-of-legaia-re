@@ -32,7 +32,7 @@ library. The FMV dispatch table is at `0x801D0A6C`.
 - [Playback loop (`play-str`)](#playback-loop-play-str) · [frame-rate detection](#frame-rate-detection) · [CLI reference](#cli-reference)
 - [CDNAME → STR override map](#cdname--str-override-map) · [overlay residency](#strmdec-fmv-overlay-residency) · [directory-record cache](#directory-record-cache) · [post-FMV return scenes](#post-fmv-return-scenes)
 - [Field-VM FMV-trigger op](#field-vm-fmv-trigger-op) - [static trigger sites](#static-fmv-trigger-sites---exhaustive) · [trigger assignment is disc-sourced](#the-per-scene-trigger-assignment-is-disc-sourced-the-runtime-reconstructed-reading-is-falsified) · [per-STR trigger corpus](#per-str-fmv-trigger-corpus)
-- [In-engine 3D opening](#in-engine-3d-opening-the-five-scene-new-game-chain) - [the five-scene chain](#the-five-scene-chain) · [record spawn](#record-spawn-mechanisms-live-probe-pinned) · [`opdeene` timeline record](#the-opdeene-timeline-record) · [inline narration](#inline-narration-format) · [crawl roller](#narration-playback---the-crawl-roller-fun_80037174) · [timeline execution](#timeline-execution-model-ghidra-traced) · [engine port](#timeline-execution-engine-port) · [vignette actors](#per-actor-channels---the-vignette-actors) · [colour fade](#colour-fade-op-0x34-sub-0) · [sepia grade](#full-scene-sepia-grade-the-gold-prologue-look)
+- [In-engine 3D opening](#in-engine-3d-opening-the-five-scene-new-game-chain) - [the five-scene chain](#the-five-scene-chain) · [record spawn](#record-spawn-mechanisms-live-probe-pinned) · [`opdeene` timeline record](#the-opdeene-timeline-record) · [inline narration](#inline-narration-format) · [crawl roller](#narration-playback---the-crawl-roller-fun_80037174) · [timeline execution](#timeline-execution-model-ghidra-traced) · [engine port](#timeline-execution-engine-port) · [vignette actors](#per-actor-channels---the-vignette-actors) · [screen fade](#scripted-screen-fade-op-0x4c-0x12--the-effect-colour-op-0x34-sub-0) · [sepia grade](#full-scene-sepia-grade-the-gold-prologue-look)
 - [Open items](#open-items) · [Provenance](#provenance)
 
 ## Game modes
@@ -661,7 +661,7 @@ The narration does **not** gate the `town01` hand-off: the roller is timer-drive
 
 The cutscene timeline runs on the **same field/event VM** (`FUN_801DE840`) as every other field script - there is no dedicated cutscene executor. The pieces:
 
-- **Record header.** Partition-2 records are **named records**, *not* the partition-1 `[u8 N][N*2 locals][4-byte header]` shape. Layout: `[u8 name_len][name_len*2 SJIS name][u8 C0][C0 bytes][u8 C1][C1*u16][u8 C2][C2*u16]<script>`. The name length is in characters; the three condition-list gates are story-flag predicates the dispatcher tests before running the record (block 1 = OR gate, block 2 = AND gate; block 0 is skipped here). The script entry offset is `1 + name_len*2 + (1+C0) + (1+C1*2) + (1+C2*2)`. For `opdeene`'s record 18 (`name_len=6` "Opening", all blocks empty) that is `0x10` - the `0x34` EFFECT op (white fade-in) that opens the prologue, immediately followed by `GFLAG_SET 26` at `+0x17`. Decoder:
+- **Record header.** Partition-2 records are **named records**, *not* the partition-1 `[u8 N][N*2 locals][4-byte header]` shape. Layout: `[u8 name_len][name_len*2 SJIS name][u8 C0][C0 bytes][u8 C1][C1*u16][u8 C2][C2*u16]<script>`. The name length is in characters; the three condition-list gates are story-flag predicates the dispatcher tests before running the record (block 1 = OR gate, block 2 = AND gate; block 0 is skipped here). The script entry offset is `1 + name_len*2 + (1+C0) + (1+C1*2) + (1+C2*2)`. For `opdeene`'s record 18 (`name_len=6` "Opening", all blocks empty) that is `0x10` - the `0x34` EFFECT op (an instant colour reset to neutral) that opens the prologue, immediately followed by `GFLAG_SET 26` at `+0x17`. Decoder:
   [`man_field_scripts::partition_record_span`](../../crates/engine-core/src/man_field_scripts.rs) (`FUN_8003BDE0`).
 - **Dispatch.** `FUN_8003BDE0` resolves a partition record by index, walks the header, and **spawns a VM context** (`ctx[+0x90]` = record base, `ctx[+0x9e]` = entry PC, `ctx[+0x10] |= 0x100` "run me"); the per-frame runner `FUN_80039B7C` then loops `FUN_801DE840` on it until a yield. The index comes from the two caller families [above](#record-spawn-mechanisms-live-probe-pinned) - an entry-script op `0x44` or a walk-on tile trigger (`FUN_801D1EC4`) - not a sequential partition walk.
 - **Cross-context target `0xF8`.** Nearly every op in the timeline carries the extended-target byte `0xF8` (`A3 F8 …` = MoveTo, `CC F8 …` = MenuCtrl). `FUN_8003C83C(0xF8)` resolves to `_DAT_8007C364` - the **player / camera-anchor actor** - so the timeline drives the camera/lead actor.
@@ -685,7 +685,10 @@ The cutscene timeline runs on the **same field/event VM** (`FUN_801DE840`) as ev
   **The full transform is `screen = H · (R·(v − focus) + tr_eye) / Ze`; the eye-back depth is `tr_eye.z` (slot 5), not a missing scalar.** The once-per-frame view builder `FUN_800172c0` assembles it: build `R` from the angle globals (`FUN_80026988`), left-multiply the constant base matrix `DAT_8007BF10` (a uniform `24576·I` = **6× world scale**), copy the eye-space translation trio `_DAT_800840B8/BC/C0` into the view struct's `.t`, then MVMVA the negated focus `(_DAT_80089118/1C/20)` through `R` and add `.t` - giving the uploaded GTE translation `TR = R·(−focus) + tr_eye`, so every world vertex maps to `R·(v − focus) + tr_eye`.
   The camera-rotation build is pinned: `FUN_8001CF50` composes `R` by rotating about each axis with the angle globals - `RotMatrixX(pitch=_DAT_8007B790)` at `0x800461A4`, `RotMatrixY(yaw=_DAT_8007B792)` at `0x8004629C`, `RotMatrixZ(roll=_DAT_8007B794)` at `0x8004638C` (each masks the angle to 12 bits and indexes the shared sin/cos LUT at `0x80070A2C`, `4096 = 360°`, `+0x800` = the quarter-wave cosine offset; composed via GTE `mvmva`).
   **So param 0 is the camera PITCH, not a "rot/zoom" word** - the zoom is H (a separate projection register). The eye sits *behind* the focus by `tr_eye` (in the 6×-scaled space); it is NOT at the focus.
-  The per-frame *interpolation* is also pinned: `FUN_801DB510` eases the focus globals, the eye-space translation trio, and the typed `0x801F2798` param table toward their control-block targets every frame with an exponential right-shift lerp (`srav` by `_DAT_8007B60B>>4`), so Camera Configure beats blend rather than snap.
+  The per-frame *interpolation* (`FUN_801DB510`, the mover behind the control-block targets) is pinned from a per-frame RAM capture of the live camera globals across the whole retail New-Game opening chain:
+  - **`apply_trigger` is the glide length in frames, 1:1** (measured arrivals `48/50`, `85/90`, `239/240`, `≈965/1000`, `≈900/900`). A long `apply` acts as a *dolly velocity*: `opurud` stages an `apply 2300` eye glide whose next snap beat lands about a quarter of the way through - retail never reaches the staged target.
+  - **The ease curve is selected by the op's high bits** (the decoded mode nibble `op0 >> 2`). Mode 1 (the common `45 07 ..` form): the eye trio / focus / H move at **constant velocity** (`delta / apply` per frame - measured exactly linear on the `opdeene` `apply 840` grove dolly and `opurud`'s `apply 50/240/2300` moves) while **pitch / yaw decelerate along a quadratic ease-out** (initial rate `2·delta/apply`). Mode 2 (`45 0B ..`): **every component** eases out quadratically - the `map01` fly-in descent fits `1-(1-t)^2` across its whole travel. Mode 4 (`45 13 ..`): every component eases **in-out** (slow-fast-slow; `opdeene`'s crater-rim tableau dolly).
+  - Arrival is exact (no asymptote); an arrived component holds until re-staged, and a re-stage mid-glide re-arms from the current value.
   Confirmed against the `new_game_cutscene_intro_a` save state: focus `(8640, 0, 10304)` (mode byte `0x10` = anchor-follow), pitch `180` (≈15.8°), yaw `-2967`, roll `0`, H `792`, `tr_eye = _DAT_800840B8 = (260, 1293, 17145)`; the focus projects to screen `(792·260/17145 + 160, 792·1293/17145 + 120) = (172, 180)`, matching the party position in that frame's framebuffer.
   The captured RAM is the interpolated tween between two op-`0x45` keyframes (`opdeene` beat 0 `tr_eye = (−740, 512, 16384)`, focus `(10816, ?, 12224)`; a later beat `tr_eye = (118, 2241, 20795)`, focus `(5824, ?, 1984)`) - every axis of the capture sits between them. Note (don't re-walk): the GTE rotation matrix read straight from a save state is the last-rendered object's composed transform (row norms ≈ 6.0 = the base-matrix world scale), so recover `R` from the angle globals - but that `6.0` **is** the camera world scale, folded into `R` via `DAT_8007BF10`.
 
@@ -717,20 +720,24 @@ Two single-shared-VM accommodations, **approximate by design**:
   `SceneHost`'s `cutscene_view` decodes the pinned params: **focus** `(-param6, param7, -param8)` (Y defaults to retail's `0`), **pitch/yaw** from params 0/1 (`4096` = full turn), **H** straight from param 9, and **tr_eye** = the eye-space translation trio (params 3/4/5, `0x800840B8`) - the eye-back depth is `param5`. There is **no eye-distance heuristic**: the depth is a real decoded param.
   Because retail folds a `6×` world scale into `R` (base matrix `DAT_8007BF10`) while the engine renders geometry at native `1×`, `tr_eye` is divided by `6` - the perspective divide makes `6×`-geometry-at-`z` and `1×`-geometry-at-`z/6` project to identical pixels (the same `depth/6` trick `field_follow_camera_mvp`'s `FIELD_CAM_DEPTH = 1200 = 7200/6` uses). `opdeene` supplies all three offset slots per beat.
   The shot re-targets each time the timeline executes a new Camera Configure op; rather than
-  cutting, `play-window` eases the rendered `(focus, pitch, yaw, H, tr_eye)` toward each new beat
-  through [`window::CutsceneCameraInterp`](../../crates/engine-render/src/window.rs) (per-frame
-  ease, angles along the shortest arc, reset to snap when the timeline first installs) - mirroring
-  retail's own per-frame `FUN_801DB510` exponential ease. The ease **rate is the beat's
-  `apply_trigger`**: a Configure with `apply == 0` commits the camera targets immediately (a hard
-  cut), while `apply > 0` stages them and lets the ease glide the eye toward them over roughly
-  `apply` frames (`t ≈ 4/apply`, clamped) - the same snap-vs-tween split `FUN_801DE084`'s
-  `apply_trigger` selects. opdeene mixes both: the entry shot snaps (`apply 0`), but the
-  mid-prologue forest dolly is `apply 840`, paired with a `760`-frame `WaitFrames`, so the camera
-  glides continuously *while the narration crawl scrolls* rather than snapping to a still hold. The
-  ease is stepped in **sim-tick time** (once per world tick that elapsed, not once per rendered
-  frame), so an `apply`-paced glide spans its authored sim-frame count even across a long
-  `WaitFrames` where few ticks advance but many redraws fire - without that, the dolly converged in
-  a fraction of a wall-clock second and then froze into a dead static hold.
+  cutting, `play-window` moves the rendered `(focus, pitch, yaw, H, tr_eye)` toward each new beat
+  through [`window::CutsceneCameraInterp`](../../crates/engine-render/src/window.rs), which
+  implements the capture-pinned `FUN_801DB510` mover law above per component: a Configure with
+  `apply == 0` snaps its staged components (a hard cut), `apply > 0` glides each re-staged
+  component over exactly `apply` sim ticks with the beat's mode-selected curve (constant-velocity
+  eye/focus/H + ease-out angles under mode 1; all-ease-out under mode 2; in-out under mode 4),
+  arriving exactly and holding. Components an in-flight glide owns are only re-armed when a new
+  beat re-stages them, angles glide along the shortest arc, and the interp resets to snap when the
+  timeline first installs. A long `apply` behaves as a dolly velocity: `opurud`'s `apply 2300`
+  eye glide is still ~3/4 short of its staged target when the next snap beat lands, exactly like
+  retail - an interp that compresses the glide to arrive early parks the camera at extreme staged
+  eye targets retail only drifts toward (the "camera inside the scene geometry" failure). opdeene
+  mixes snap and glide: the entry shot snaps (`apply 0`), but the mid-prologue forest dolly is
+  `apply 840`, paired with a `760`-frame `WaitFrames`, so the camera glides continuously *while
+  the narration crawl scrolls* rather than snapping to a still hold. The glide is stepped in
+  **sim-tick time** (once per world tick that elapsed, not once per rendered frame), so an
+  `apply`-paced glide spans its authored sim-frame count even across a long `WaitFrames` where few
+  ticks advance but many redraws fire.
   The framing is pinned by the disc-free regression tests `cutscene_framing_tests` (focus → `(172, 180)`; a `133`-unit character subtends the retail ~1/6-frame height, upright). The legacy orbit-radius framing [`window::cutscene_camera_mvp`](../../crates/engine-render/src/window.rs) is retained only as a unit-tested reference, no longer wired into a render path.
 
 The same machinery drives the **`town01` opening** (a sibling partition-2 record, `P2[3]`). It installs two ways: the **natural chain arrival** from the `map01` fly-in fires the walk-on tile trigger at the entry tile `(0x1D, 0x5B)` (C1 gate `0x225` makes it one-shot), and the **intro skip** ([`World::take_prologue_handoff`](../../crates/engine-core/src/world/narration.rs)) sets `entering_town01_opening` so the `town01` field entry installs the record via [`World::install_town01_opening_timeline`](../../crates/engine-core/src/world/narration.rs) - which honors the record's C1/C2 header gates, so both routes share the retail one-shot.
@@ -842,21 +849,42 @@ by `cutscene_timeline_player_channel_door_reaches_scene_change`; the disc-gated
 `chapter1_hub_depth_oracle` drives the jou castle door through this path to
 `SceneEntered("jouina")`.
 
-### Colour fade (op `0x34` sub-0)
+### Scripted screen fade (op `0x4C 0x12`) + the effect colour (op `0x34` sub-0)
 
-The prologue opens on a white flash: the timeline's first op is `34 05 FF FF FF 00 00` = op
-`0x34` sub-0 (effect-global colour + intensity; the sub-0 arm at `0x801E1FB0` inside the field-VM
-dispatcher `FUN_801DE840` - a Ghidra-promoted intra-function label, not a separate function).
-Retail clears the active fade
-when the colour is all-zero, else schedules a fade of that colour with a direction from `op0 & 1`.
-The engine ports the *setup* to [`fade::ColorFade`](../../crates/engine-core/src/fade.rs) (a
-colour + a coverage ramp; `op0 & 1` selects a reveal / fade-from-colour vs a fade-to-colour),
-driven by
-[`FieldHostImpl::op34_sub0_color_intensity_setup`](../../crates/engine-core/src/world/vm_hosts.rs)
-into `World::color_fade`, stepped per `World::tick` and drawn by `play-window` as a full-screen
-semi-transparent wash while active. **Approximate by design:** the retail fade actor's per-frame
-*draw* handler is not dumped, so the coverage curve + PSX blend mode aren't pinned - the render is
-a 50%-average (ABR 0) wash that lifts as the ramp completes, pending that dump.
+**Op `0x4C 0x12`** (7 bytes `[4C, 12, r, g, b, ramp_lo, ramp_hi]`) is the retail **screen-fade
+primitive**: the global multiply tint `DAT_8007BCB8/B9/BA` (neutral `0x80`), optionally ramped
+over `LE_u16(ramp)` frames by the slot-job spawner `FUN_8003C5F0`. Every field scene's `P1[0]`
+entry script carries the arrival arm of the `0x52F`/`0x530`/`0x531` fade handshake (see
+[`script-vm.md`](script-vm.md#the-0x5270x531-scene-transition-scratch-band)) -
+`4C 12 00 00 00 00 00` (instant black) then `4C 12 80 80 80 44 00` (ramp to neutral over 68
+frames), the **fade-in from black** that opens the prologue. New Game arms the handshake
+(`World::begin_new_game` sets sysflag `0x52F`, the boot-side stage retail performs before the
+field launches); the destination entry script consumes it. The engine runs the entry script's
+load-frame slice at prologue-scene entry (`World::pre_run_entry_script`), so the instant black is
+on screen before the first rendered frame, matching retail's load-frame execution. The tint
+darkens the drawn 3D scene only - the narration crawl is a separate draw path and keeps scrolling
+bright, as the retail capture shows - and persists across scene changes (retail's cross-scene
+fade continuity). Engine model: [`fade::SceneTintRamp`](../../crates/engine-core/src/fade.rs)
+(normalized, `1.0` = neutral) in `World::screen_tint`, stepped per `World::tick`, surfaced by
+`World::scene_screen_tint`; `play-window` folds it into the colour-grade + depth-cue staging
+(both branches of the shaders' cue mix carry it, so the tint distributes to the final pixel). A
+landed non-neutral tint holds; a landed neutral drops to the identity path.
+
+**Op `0x34` sub-0** (7 bytes `[34, op0, r, g, b, ramp_lo, ramp_hi]`; the sub-0 arm at
+`0x801E1FB0` inside the field-VM dispatcher `FUN_801DE840` - a Ghidra-promoted intra-function
+label, not a separate function) ramps the **effect-layer global colour** (neutral `0xFF`) toward
+the operand RGB over the trailing word's frame count. The opening timeline drives it in the crawl
+gaps (`34 05 00 00 00 D2 00` = to black over 210 frames, `34 01 FF FF FF 00 00` = instant
+neutral, `34 01 FF FF FF 78 00` = up over 120 frames); the timeline's first op
+(`34 05 FF FF FF 00 00`, instant neutral) is a colour *reset*, not a white flash, and an all-zero
+colour is a ramp target, not a clear. **It is not a screen fade**: the retail cold-boot capture
+holds the lit villager tableau across the whole span where the timeline's `34 01 00 00 00 28 00`
+→ `34 05 FF FF FF 5A 00` pair would black a full-screen fade, falsifying the earlier
+"between-beat black fade" reading (and the older "white flash + 50% wash" model before it). The
+value feeds the effect layer - the creation-glow planes are the likely consumer, still an open
+thread. Engine model: the same ramp type in `World::effect_tint` (scene-local, kept out of
+`scene_screen_tint`). Disc-gated `opening_fade_from_black` pins both value models against the
+real `opdeene` bytecode.
 
 ### Full-scene sepia grade (the gold prologue look)
 
@@ -877,8 +905,8 @@ geometry and not a `MES`/texture change:
   `FUN_80043390` - the darkening half of the look. (Byte-exact across save states.)
 
 The `opdeene` MAN itself carries **no** colour op (no op `0x4C 0x8A` ambient, no `0x4C 0x81` far
-colour); it drives op `0x46` depth-fog and op `0x4C 0x12` fade-to-black only. So the gold is set by
-the **cutscene-host overlay during the narration beats**, not the field script.
+colour); it drives op `0x46` depth-fog and the op `0x4C 0x12` screen fade only. So the gold is set
+by the **cutscene-host overlay during the narration beats**, not the field script.
 
 A GP0 draw-list capture of the retail opening chain refines what "the grade" actually is, per
 primitive class:

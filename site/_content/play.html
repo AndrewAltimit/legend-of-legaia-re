@@ -251,9 +251,10 @@
       <button class="play-mode" type="button" data-mode="newgame">
         <span class="play-mode-tag">boot</span>
         <span class="play-mode-name">New game</span>
-        <span class="play-mode-desc">Boots the retail title card off your disc's own art, then drops
-          you in Rim Elm, the scene the disc's new-game table names as the opening. The pre-title
-          FMV, Continue save-slot grid, and prologue cutscenes are native-only for now.</span>
+        <span class="play-mode-desc">Boots the retail title card off your disc's own art, then plays
+          the opening prologue - the cutscene tableaux with the narration crawl, in the retail sepia
+          grade (Z/Space skips to Rim Elm, retail's intro skip). The pre-title FMV movie and the
+          Continue save-slot grid are native-only for now.</span>
       </button>
       <button class="play-mode" type="button" data-mode="scene">
         <span class="play-mode-tag">explore</span>
@@ -355,9 +356,10 @@
     <li><strong>Battles.</strong> The <a href="subsystems/battle.html">battle</a> state machine and
       formulas are ported and tested, but the battle render path lives in the native window;
       encounters are disarmed here rather than dropping you into a black screen.</li>
-    <li><strong>The pre-title FMV and the opening prologue.</strong> The title card renders here off
-      your disc's art; the movie, narration crawl, and prologue
-      <a href="subsystems/cutscene.html">cutscene</a> chain run only in the native window.</li>
+    <li><strong>The pre-title FMV movies.</strong> The title card, the prologue
+      <a href="subsystems/cutscene.html">cutscene</a> chain, its narration crawl, and the sepia +
+      depth-cue grade all render here off your disc; STR movie playback (MDEC video) runs only in
+      the native window, so an FMV beat is skipped in the browser.</li>
     <li><strong>Shops and the inn.</strong> The runtime state is there; their menu screens are not
       surfaced on this page.</li>
     <li><strong>Audio.</strong> The sequencer and SPU are ported
@@ -440,6 +442,11 @@
   /* The scene the disc's new-game table names as the opening (Rim Elm). Kept in
    * sync with `legaia_asset::new_game::OPENING_SCENE`. */
   const OPENING_SCENE = 'town01';
+  /* The prologue cutscene chain's first leg (`OPENING_CUTSCENE_SCENE`): New
+   * Game enters here and the engine's opening timeline walks the remaining
+   * legs (narration crawl over the 3D tableaux; Z/Space skips to Rim Elm -
+   * retail's intro skip). */
+  const OPENING_CUTSCENE_SCENE = 'opdeene';
 
   /* Only categories whose scenes are actually walkable are offered. World-map
    * blocks load but run a different controller; battle / audio / system blocks
@@ -487,10 +494,16 @@
     b.classList.add('is-active');
     if (b.dataset.mode === 'newgame') {
       /* Boot chain: show the retail title card (New Game / Continue) off the
-       * disc's own title art, then drop into the opening scene the seed names.
+       * disc's own title art, then run the prologue cutscene chain (falling
+       * back to Rim Elm directly if the cutscene scene fails to enter).
        * Continue has no browser save-slot grid yet, so every confirmed outcome
        * proceeds to New Game. */
-      runBootTitle(() => enter(OPENING_SCENE));
+      runBootTitle(() => {
+        enter(OPENING_CUTSCENE_SCENE);
+        if (active !== OPENING_CUTSCENE_SCENE || !window.__playState) {
+          enter(OPENING_SCENE);
+        }
+      });
     } else {
       /* The scene list lives inside #play-stage, which starts hidden. Reveal
        * the stage so the picker is visible and selectable without first
@@ -710,7 +723,10 @@
       ? `${st.player.x}, ${st.player.z}` + (st.player.walking ? ' (walking)' : '')
       : '-';
 
-    if (st.dialog && st.dialog.text) {
+    /* The retail dialog reading box is engine-drawn on the overlay canvas
+     * (PlayView.dialogOnCanvas); this DOM text box only stands in against a
+     * cached WASM without that draw path. */
+    if (st.dialog && st.dialog.text && !(view && view.dialogOnCanvas)) {
       let html = st.dialog.text.replace(/[<>&]/g, c => (
         { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
       if (st.dialog.options && st.dialog.options.length) {

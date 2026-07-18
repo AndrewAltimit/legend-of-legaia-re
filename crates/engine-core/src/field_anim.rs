@@ -144,6 +144,15 @@ pub struct FieldPlayerAnim {
     /// (held pad or nav step - a wall-blocked step still walks in place, as
     /// retail does). Consumed and cleared by the anim tick.
     pub moved_this_frame: bool,
+    /// Queued scripted one-shot clips (field-VM `A2 F8 <move_id>` ExecMove
+    /// pokes against the player). Each plays through exactly once - front of
+    /// the queue first - overriding idle/walk; the retail player actor's
+    /// `+0x4C` anim pointer does the same (live-pinned across the `town01`
+    /// post-naming beats: ExecMove 48/49 point it at scene-bundle records
+    /// 47/48 for one playthrough each, then locomotion clips resume).
+    pub scripted: std::collections::VecDeque<FieldClipPlayer>,
+    /// Engine ticks left on the front scripted clip.
+    scripted_ticks_left: u32,
 }
 
 impl FieldPlayerAnim {
@@ -153,13 +162,46 @@ impl FieldPlayerAnim {
             walk,
             walking: false,
             moved_this_frame: false,
+            scripted: std::collections::VecDeque::new(),
+            scripted_ticks_left: 0,
         }
     }
 
-    /// One field tick: switch clips on a movement-state edge (rewinding the
-    /// incoming clip) and emit the active clip's pose.
+    /// Queue a scripted one-shot clip (an `A2 F8` ExecMove resolution). The
+    /// clip starts at frame 0 when it reaches the front of the queue and
+    /// plays `frame_count * ticks_per_frame` engine ticks.
+    pub fn push_scripted(&mut self, mut clip: FieldClipPlayer) {
+        clip.rewind();
+        self.scripted.push_back(clip);
+    }
+
+    /// `true` while a scripted one-shot is playing or queued.
+    pub fn scripted_active(&self) -> bool {
+        !self.scripted.is_empty()
+    }
+
+    /// One field tick: a queued scripted one-shot takes priority (playing
+    /// through once, then handing back); otherwise switch idle/walk clips on
+    /// a movement-state edge (rewinding the incoming clip) and emit the
+    /// active clip's pose.
     pub fn tick(&mut self) -> PoseFrame {
         let moved = std::mem::take(&mut self.moved_this_frame);
+        if let Some(front) = self.scripted.front_mut() {
+            if self.scripted_ticks_left == 0 {
+                // Freshly-promoted front clip: arm its full playthrough.
+                self.scripted_ticks_left =
+                    (front.frame_count() as u32) * front.ticks_per_frame.max(1);
+            }
+            let pose = front.tick();
+            self.scripted_ticks_left = self.scripted_ticks_left.saturating_sub(1);
+            if self.scripted_ticks_left == 0 {
+                self.scripted.pop_front();
+                // Restart whichever locomotion loop resumes underneath.
+                self.idle.rewind();
+                self.walk.rewind();
+            }
+            return pose;
+        }
         if moved != self.walking {
             self.walking = moved;
             if moved {
@@ -314,6 +356,39 @@ mod tests {
         let pose = w.actors[0].pose_frame.clone().expect("idle pose set");
         assert_eq!(pose.bone_outputs[0].0[0], 100);
         assert!(!w.field_player_anim.as_ref().unwrap().walking);
+    }
+
+    /// A scripted one-shot (ExecMove) overrides idle/walk for exactly one
+    /// playthrough per queued clip, then locomotion resumes from frame 0 -
+    /// the retail post-naming shape (clip 47 then 48, then idle/walk).
+    #[test]
+    fn scripted_one_shots_play_once_in_order_then_locomotion_resumes() {
+        let bundle = synth_bundle();
+        let mut idle = FieldClipPlayer::from_record(&bundle, 1).unwrap();
+        let mut walk = FieldClipPlayer::from_record(&bundle, 0).unwrap();
+        idle.ticks_per_frame = 1;
+        walk.ticks_per_frame = 1;
+        let mut anim = FieldPlayerAnim::new(idle, walk);
+        // Queue the "walk" record (tags 0/10/20) then the "idle" record
+        // (tags 100/110) as scripted clips.
+        let mut a = FieldClipPlayer::from_record(&bundle, 0).unwrap();
+        a.ticks_per_frame = 1;
+        let mut b = FieldClipPlayer::from_record(&bundle, 1).unwrap();
+        b.ticks_per_frame = 1;
+        anim.push_scripted(a);
+        anim.push_scripted(b);
+        assert!(anim.scripted_active());
+        // First clip: 3 frames exactly once.
+        for expect in [0i16, 10, 20] {
+            assert_eq!(anim.tick().bone_outputs[0].0[0], expect);
+        }
+        // Second clip: 2 frames.
+        for expect in [100i16, 110] {
+            assert_eq!(anim.tick().bone_outputs[0].0[0], expect);
+        }
+        assert!(!anim.scripted_active());
+        // Idle loop resumes from frame 0.
+        assert_eq!(anim.tick().bone_outputs[0].0[0], 100);
     }
 
     #[test]

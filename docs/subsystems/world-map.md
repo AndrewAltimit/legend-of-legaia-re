@@ -443,6 +443,22 @@ the player's AABB-relative world position as the `pan` offset to
 the framing centre tracks the player as they walk; the top-view debug camera
 keeps the controller's free scroll.
 
+While a **cutscene timeline that staged op-`0x45` camera params** owns the
+overworld - the New-Game opening's `map01` leg - the walk/top-view cameras
+stand down and the shell renders the same cutscene GTE camera the field
+prologue scenes use (`compute_scene_camera`'s cutscene branch; see
+[`cutscene.md`](cutscene.md#timeline-execution-engine-port)). Retail's Rim Elm aerial fly-in is
+three camera beats in `map01`'s opening record (`P2[38]`): a snap to the high
+aerial shot (pitch `735`, H `368`, eye trio `(-1268, -3756, 18784)`, focus
+`(12162, ?, 3510)`), then a `45 0B .. apply 900` beat - mode 2 = quadratic
+ease-out on **every** component - descending to pitch `355` / eye trio
+`(412, -2336, 12384)`, all confirmed against a per-frame RAM capture of the
+live camera globals. The overworld player / entity marker overlay is hidden
+while the timeline runs (retail's descent shows the bare continent); a
+world-map beat record **without** camera beats (the Drake mist-wall
+force-walk bands) keeps the ordinary walk camera. Disc-gated pin:
+`engine-core/tests/map01_flyin_camera.rs`.
+
 ### Overworld collision / walkability
 
 Overworld walkability is **not** a separate format. The world-map-walk overlay's

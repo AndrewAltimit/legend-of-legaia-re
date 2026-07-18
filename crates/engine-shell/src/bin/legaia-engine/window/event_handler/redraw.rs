@@ -336,20 +336,28 @@ impl PlayWindowApp {
         // interpolator can take `&mut self`; while no cutscene timeline
         // owns the scene the interp is reset so the next opening shot
         // snaps in rather than sweeping from a stale pose.
-        let cutscene_cam = if self.session.host.world.mode != SceneMode::WorldMap
-            && self.session.host.world.cutscene_timeline_active()
+        // The cutscene camera also owns the WORLD-MAP frame while the opening
+        // chain's map01 leg runs its timeline: retail's Rim Elm fly-in is
+        // three op-0x45 beats in map01's opening record (snap to the high
+        // aerial shot, then the `45 0B .. apply 900` ease-out descent), driven
+        // through the same camera globals as the field cutscenes. Gate on a
+        // staged param so a world-map beat record WITHOUT camera beats (the
+        // Drake mist-wall force-walk bands) keeps the ordinary walk camera.
+        let cutscene_cam = if self.session.host.world.cutscene_timeline_active()
+            && (self.session.host.world.mode != SceneMode::WorldMap
+                || !self.session.host.world.camera_state.params.is_empty())
         {
             let (focus, pitch, yaw, h, tr_eye) = self.cutscene_view();
             // Glide pacing from the op-`0x45` `apply_trigger` (retail
             // `FUN_801DE084` → `FUN_801DB510`): a Configure with `apply == 0`
             // commits its camera targets IMMEDIATELY (snap cut), while
             // `apply > 0` stages them and the per-frame mover glides the live
-            // globals there over `apply` frames (constant velocity, exact
-            // arrival - the `FUN_801DB510` head subtracts a per-frame step
-            // from the eye trio). opdeene's beats mix both: the entry shot
-            // snaps (`apply 0`), the mid-prologue grove drift glides
-            // (`apply 840`, paired with a 760-frame WaitFrames), and the
-            // crater-rim tableau dolly glides (`apply 480`) WHILE the
+            // globals there over exactly `apply` frames - the mover law
+            // (curve per mode nibble, 1 apply unit = 1 sim tick) is
+            // capture-pinned; see `CutsceneCameraInterp`. opdeene's beats mix
+            // both: the entry shot snaps (`apply 0`), the mid-prologue grove
+            // drift glides (`apply 840`, paired with a 760-frame WaitFrames),
+            // and the crater-rim tableau dolly glides (`apply 480`) WHILE the
             // narration text scrolls - the "3D keeps playing under the
             // crawl" retail behaviour. The interp arms glides PER COMPONENT
             // on target change (see `CutsceneCameraInterp::glide`), so the
@@ -359,10 +367,15 @@ impl PlayWindowApp {
             // geometry - the "opening shot buried in a gold wall" report).
             //
             // Advanced in SIM-TICK time, not render-frame time (`run_ticks`
-            // steps per redraw): retail's mover runs in the 60 Hz field
-            // loop, so an `apply`-paced glide must span `apply` SIM frames.
-            // Min 1 step so an idle frame still refreshes the held pose.
+            // steps per redraw): retail's mover runs in the field loop, so an
+            // `apply`-paced glide must span `apply` SIM frames. Min 1 step so
+            // an idle frame still refreshes the held pose.
+            // Snap beats drained this frame commit first (retail order: the
+            // mover snaps to an `apply 0` beat, then glides from there when
+            // a same-tick follow-up beat re-stages - the map01 fly-in pair).
+            self.replay_camera_snap_beats();
             let apply = self.session.host.world.camera_state.apply_trigger;
+            let mode = self.session.host.world.camera_state.mode;
             let steps = run_ticks.max(1);
             let out = self.cutscene_cam_interp.glide(
                 focus,
@@ -371,6 +384,7 @@ impl PlayWindowApp {
                 h,
                 tr_eye,
                 u32::from(apply),
+                mode,
                 steps,
             );
             if std::env::var_os("LEGAIA_DIAG_CUTCAM").is_some() {
@@ -385,6 +399,7 @@ impl PlayWindowApp {
             Some(out)
         } else {
             self.cutscene_cam_interp.reset();
+            self.pending_camera_snaps.clear();
             None
         };
         if let (Some(r), Some(vram), Some(atlas)) = (
@@ -417,16 +432,48 @@ impl PlayWindowApp {
             // warm gold sepia (dim ambient + gold far-colour depth cue in
             // retail); every other scene, incl. the Rim Elm hand-off, is
             // natural colour. Staged every frame so it clears on transition.
-            match self.session.host.world.scene_color_grade() {
-                Some(g) => r.set_color_grade(g.gold, g.strength),
-                None => r.set_color_grade([1.0, 1.0, 1.0], 0.0),
+            //
+            // The scripted screen-fade tint (op `0x4C 0x12` global tint -
+            // the scene-entry fade-from-black) composes into the
+            // same multiply: with grade strength `s` and gold `G`, the shaded
+            // pixel is `rgb*((1-s) + G*s)`, so a full-strength grade of
+            // `gold' = tint*((1-s) + G*s)` is exactly `tint * graded`. The
+            // depth-cue far colour is tinted the same way below, so both
+            // branches of the shader's cue mix carry the tint and the product
+            // distributes to the final pixel. `None` tint stages the previous
+            // identity values - the byte-identical untouched path. The text /
+            // narration overlay is a separate shader and stays bright, which
+            // is retail's look (the creation crawl scrolls over the fades).
+            let tint = self.session.host.world.scene_screen_tint();
+            match (self.session.host.world.scene_color_grade(), tint) {
+                (Some(g), None) => r.set_color_grade(g.gold, g.strength),
+                (grade, Some(t)) => {
+                    let (gold, s) = grade
+                        .map(|g| (g.gold, g.strength))
+                        .unwrap_or(([1.0; 3], 0.0));
+                    let eff = [
+                        t[0] * ((1.0 - s) + gold[0] * s),
+                        t[1] * ((1.0 - s) + gold[1] * s),
+                        t[2] * ((1.0 - s) + gold[2] * s),
+                    ];
+                    r.set_color_grade(eff, 1.0);
+                }
+                (None, None) => r.set_color_grade([1.0, 1.0, 1.0], 0.0),
             }
             // The grade's second half: the per-render-node DPCS far-colour
             // pull (gold far colour + depth-graded IR0 in retail), staged as
             // a view-depth IR0 ramp. Cleared every non-prologue frame, so
-            // interactive scenes render the identity (ramp-off) path.
+            // interactive scenes render the identity (ramp-off) path. The
+            // screen-fade tint multiplies the far colour too (see above), so
+            // a fade-to-black reaches full black on far-cued geometry.
             match self.session.host.world.scene_depth_cue() {
-                Some(c) => r.set_depth_cue_ramp(c.far, c.near_z, c.far_z, c.max_ir0),
+                Some(c) => {
+                    let far = match tint {
+                        Some(t) => [c.far[0] * t[0], c.far[1] * t[1], c.far[2] * t[2]],
+                        None => c.far,
+                    };
+                    r.set_depth_cue_ramp(far, c.near_z, c.far_z, c.max_ir0)
+                }
                 None => r.clear_depth_cue_ramp(),
             }
             // Retail GTE NCLIP winding rejection, scoped to the in-engine
@@ -440,8 +487,12 @@ impl PlayWindowApp {
             // (discard front-facing = discard CCW under the pipelines'
             // default Ccw front-face) keeps them. Off outside the cutscene
             // camera (free-roam field / battle / world map keep both-sided
-            // draws; their per-pass winding parities differ).
-            let nclip_mode = u32::from(cutscene_cam.is_some()) * 2;
+            // draws; their per-pass winding parities differ). The world-map
+            // fly-in leg keeps both-sided draws too - the continent terrain's
+            // winding parity is the world-map pass's, not the field pass's,
+            // so the field-tuned cull would eat the ground tiles.
+            let in_world_map_now = self.session.host.world.mode == SceneMode::WorldMap;
+            let nclip_mode = u32::from(cutscene_cam.is_some() && !in_world_map_now) * 2;
             r.set_backface_cull(nclip_mode);
             // World-map mode frames the loaded map with the
             // controller-driven camera (azimuth / zoom / pan); an active
@@ -574,6 +625,39 @@ impl PlayWindowApp {
                 // placement originally resolved through. This is what makes
                 // the prologue-vignette actors *perform* their scripted
                 // beats instead of looping the placement clip.
+                // Timeline `A2 F8 <move_id>` ExecMove cues against the
+                // PLAYER: resolve scene-ANM-bundle record `move_id - 1`
+                // (the same `id - 1` record space as the NPC cues; pinned
+                // live - town01's post-naming ExecMove 48/49 land the
+                // retail player anim pointer on scene records 47/48) and
+                // queue it as a one-shot over the idle/walk pair. Cues
+                // whose record doesn't resolve (e.g. the low walk-move
+                // ids the locomotion controller already covers) drop out
+                // harmlessly.
+                let move_cues = std::mem::take(&mut self.session.host.world.field_player_move_cues);
+                if !move_cues.is_empty()
+                    && let Some(bundle) = self.npc_anim_bundles.0.as_ref()
+                {
+                    for id in move_cues {
+                        // Moves 1/2 are the locomotion walk moves - the
+                        // live trace keeps the retail anim pointer on the
+                        // PROT 0874 walk/idle clips across them, and the
+                        // engine's movement controller already animates
+                        // those - so only higher ids re-target the clip.
+                        if id <= 2 {
+                            continue;
+                        }
+                        if let Some(clip) =
+                            legaia_engine_core::field_anim::FieldClipPlayer::from_record(
+                                bundle,
+                                id as usize - 1,
+                            )
+                            && let Some(anim) = self.session.host.world.field_player_anim.as_mut()
+                        {
+                            anim.push_scripted(clip);
+                        }
+                    }
+                }
                 let cues: Vec<_> = self
                     .session
                     .host
@@ -1152,6 +1236,9 @@ impl PlayWindowApp {
             // cursors) shares the system-UI atlas slot; a dialog box
             // and the boot/menu chrome are mutually exclusive states.
             save_chrome_draw_vec.extend(self.dialog_chrome_sprite_draws(w, h));
+            // Name-entry window chrome (grid + name-field filigree
+            // windows + hand cursor) shares the same atlas slot.
+            save_chrome_draw_vec.extend(self.name_entry_chrome_sprite_draws(w, h));
             let logo_overlay = self.publisher_logos.as_ref().map(|p| TextOverlay {
                 atlas: &p.atlas,
                 draws: &logo_draw_vec,
@@ -1357,21 +1444,11 @@ impl PlayWindowApp {
                     mvp: screen_fx_mvp,
                 });
             }
-            // Field colour fade (op 0x34 sub-0, e.g. the opening white
-            // flash): a full-screen wash of the fade colour. The PSX
-            // pipeline blends per-ABR-mode (no free alpha) and the
-            // retail fade-actor draw handler isn't dumped, so this is
-            // an approximation - a 50%-average (ABR 0) wash drawn while
-            // the ramp still has coverage; it lifts when the fade
-            // completes (`World::color_fade` drops). Held here so it
-            // outlives `screen_fx_solid`'s borrow.
-            let color_fade_mesh = self.build_color_fade_mesh(r);
-            if let Some(m) = &color_fade_mesh {
-                color_draws.push(ColorSceneDraw {
-                    mesh: m,
-                    mvp: screen_fx_mvp,
-                });
-            }
+            // The scripted screen fade (op 0x4C 0x12) is NOT drawn as a wash
+            // mesh here: it is a multiply tint staged into the colour grade +
+            // depth-cue far colour (see the grade staging above), matching
+            // the retail mechanism - the 3D scene darkens while the narration
+            // overlay keeps scrolling bright.
             legaia_engine_render::profile::draw_counts(draws.len(), color_draws.len());
             let scene = RenderScene {
                 vram,

@@ -19,6 +19,7 @@
   <p><code>tim_scan/</code> gets one directory per PROT entry holding files named <code>raw_off&lt;HEX&gt;.tim</code> (found in the raw bytes) or <code>lzs&lt;i&gt;_off&lt;HEX&gt;.tim</code> (found inside LZS section <code>i</code>); <code>convert-dir</code> writes a <code>.png</code> next to each. For a single texture:</p>
 <pre><code>./tim convert extracted/tim_scan/&lt;entry&gt;/raw_off&lt;HEX&gt;.tim -o out.png
 ./tim convert &lt;file&gt;.tim --all-cluts        # one PNG per palette row</code></pre>
+  <p>The filename is how a texture-catalog label maps to a file on disk. A label like <code>PROT 46 &middot; LZS sec 0 +0x13368 &middot; 128&times;128 4bpp &middot; foliage</code> reads as: PROT entry 46 (<code>0046_vell</code>), inside LZS section 0, at offset <code>0x13368</code>. So after the sweep it lands at <code>extracted/tim_scan/0046_vell/lzs0_off13368.tim</code> - convert that one file. <code>tim-scan</code> does the LZS decompression itself, so this is the whole texture path; you never need to decompress sections by hand (the <a href="#manual-chain">manual chain</a> below is for the rarer non-texture cases).</p>
   <p>Many TIMs carry several palettes (CLUTs) - a character atlas decoded with the wrong row looks like static, so try <code>--all-cluts</code> before assuming a texture is broken. The strict per-texture inventories the pipeline already wrote (<code>prot_tim_catalog.tsv</code>, <code>prot_tim_deep_catalog.tsv</code>) map every TIM to its owning entry and offset. Format: <a href="../formats/tim.html">TIM</a>.</p>
 </section>
 
@@ -90,15 +91,28 @@
 
 <section class="doc-section" id="manual-chain">
   <h2>The manual chain (when you want one stage at a time)</h2>
-  <p><code>legaia-extract</code> is these stages composed; each also runs standalone:</p>
+  <p><code>legaia-extract</code> is these stages composed; each also runs standalone. The first two build the <code>extracted/</code> tree; the rest operate on one PROT entry at a time:</p>
 <pre><code>./disc-extract extract "/path/to/disc.bin" extracted/
 ./prot-extract extract extracted/PROT.DAT extracted/PROT --cdname extracted/CDNAME.TXT
+./asset categorize extracted/PROT                            # classify every entry (run this first)
 ./lzs-decode probe     extracted/PROT/&lt;entry&gt;.BIN            # is it an LZS container?
 ./lzs-decode container extracted/PROT/&lt;entry&gt;.BIN out_dir/   # decompress every section
-./asset stream  extracted/PROT/&lt;entry&gt;.BIN                   # walk a streaming container
-./asset extract extracted/PROT/&lt;entry&gt;.BIN --out out_dir/    # unpack its sub-assets
-./asset categorize extracted/PROT                            # classify every entry</code></pre>
-  <p>One trap worth knowing: LZS "decompresses without error" is <strong>not</strong> a validity signal - the decoder's ring buffer initialises to zeros, so most random input decodes to plausible-looking bytes. Always check the <em>decoded</em> output for the expected magic (<a href="../formats/lzs.html">LZS</a>). The entry name map has a quirk of its own: CDNAME <code>#define</code> numbers are in-RAM TOC indices, so extraction filenames are shifted by 2 (<a href="../formats/cdname.html">CDNAME</a>).</p>
+./asset decode  extracted/PROT/&lt;entry&gt;.BIN --type-size 0x.. --offset 0x.. --mode lzs  # one section
+./asset stream  extracted/PROT/&lt;entry&gt;.BIN                   # list a streaming container's chunks
+./asset extract extracted/PROT/&lt;entry&gt;.BIN --out out_dir/    # unpack a streaming container's sub-assets</code></pre>
+
+  <h3>Which <code>&lt;entry&gt;</code> do I pass?</h3>
+  <p><code>&lt;entry&gt;</code> is a filename from <code>extracted/PROT/</code>, and every file there is named <code>NNNN_&lt;name&gt;.BIN</code> where <code>NNNN</code> is the zero-padded PROT index. A catalog or site label that reads <code>PROT 46</code> means entry <strong>46</strong>, i.e. <code>0046_vell.BIN</code> - not <code>0446</code>. The four-digit prefix <em>is</em> the index; don't add or drop digits. When a label and a filename disagree on the <code>&lt;name&gt;</code> half, trust the number: CDNAME names are shifted +2 against the <code>#define</code> numbers (<a href="../formats/cdname.html">CDNAME</a>).</p>
+
+  <h3>Which command for which entry?</h3>
+  <p>Run <code>asset categorize</code> first - it prints each entry's format class, so you know whether an entry is an LZS container, a streaming/pack bundle, a raw scene bundle, or overlay code before you pick a decoder. Then:</p>
+  <ul>
+    <li><strong>LZS container</strong> - <code>lzs-decode container</code> dumps <em>every</em> section to <code>out_dir/</code>. <code>asset decode</code> pulls a <em>single</em> section instead: take the <code>--type-size</code> and <code>--offset</code> from an <code>asset describe</code> row of the same file, and pass <code>--mode raw</code> for the small uncompressed control sections (<code>--mode lzs</code> for the compressed ones). Reach for <code>decode</code> when you want one section, or when the container header table doesn't auto-walk cleanly.</li>
+    <li><strong>Streaming/pack bundle</strong> - <code>asset stream</code> lists its chunks and <code>asset extract</code> unpacks the TIM/TMD sub-assets. Both expect the DATA_FIELD chunk format; pointed at a flat blob (e.g. a decompressed LZS section) they misread the leading bytes as a chunk header and print <code>magic MISMATCH</code> on every "chunk" - that means it is the wrong tool for that input, not a corrupt file.</li>
+    <li><strong>Textures, in any container</strong> - skip the section plumbing and use <code>asset tim-scan</code> (<a href="#textures">Textures &rarr; PNG</a>); it decompresses LZS sections itself and writes each TIM as <code>lzs&lt;i&gt;_off&lt;HEX&gt;.tim</code>.</li>
+  </ul>
+
+  <p>One trap worth knowing: LZS "decompresses without error" is <strong>not</strong> a validity signal - the decoder's ring buffer initialises to zeros, so most random input decodes to plausible-looking bytes. Always check the <em>decoded</em> output for the expected magic (<a href="../formats/lzs.html">LZS</a>). This is why <code>lzs-decode probe</code> reports <code>no plausible sections</code> on a non-container entry rather than emitting garbage - a clean "this isn't LZS" is the useful answer.</p>
 </section>
 
 <section class="doc-section" id="see-also">

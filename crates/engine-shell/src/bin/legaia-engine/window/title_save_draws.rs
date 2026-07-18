@@ -144,12 +144,12 @@ impl PlayWindowApp {
         // matches retail's slide-in.
         let (pills, pill_anchor): (Vec<u8>, (i32, i32)) = match session.phase() {
             SelectPhase::NowChecking { slot, .. } | SelectPhase::SlotPreview { slot } => {
-                // Slide start: retail mode-2 start `(160, 96)` minus
-                // the `-0x18` x-shift baked into the inline emit
-                // before the GPU command -> top-left `(136, 96)`.
-                const SLIDE_START_TOPLEFT: (i32, i32) = (136, 96);
+                // Slide start = the pill's Browsing position (retail
+                // mode-2 start `(160, 96)` minus the `-0x18` x-shift
+                // = the Browsing pill quad, i.e. the pill slides away
+                // from where it already sat).
                 let pos = session.interpolate(
-                    SLIDE_START_TOPLEFT,
+                    legaia_engine_render::SAVE_SELECT_SLOT1_POS,
                     legaia_engine_render::SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE,
                 );
                 (vec![slot], pos)
@@ -243,6 +243,19 @@ impl PlayWindowApp {
                     stage_origin,
                     stage_scale,
                     slide_offset,
+                ));
+            }
+            SelectPhase::ConfirmOverwrite { .. } | SelectPhase::ConfirmDelete { .. } => {
+                // Retail raises the confirm as its own centred
+                // messagebox pair (prompt bar + stacked Yes/No box,
+                // mode 3 of FUN_801E1C1C), sliding up from below the
+                // stage. Text half lives in
+                // `save_select_phase_text_draws`.
+                draws.extend(legaia_engine_render::confirm_dialog_panel_draws_for(
+                    &assets.rects,
+                    confirm_dialog_slide_y(session),
+                    stage_origin,
+                    stage_scale,
                 ));
             }
             _ => {}

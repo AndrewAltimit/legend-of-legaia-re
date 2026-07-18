@@ -97,6 +97,13 @@ class TmdRenderer {
     this.locFogZShift   = gl.getUniformLocation(this.program, 'u_fog_z_shift');
     this.locUseFlatColors = gl.getUniformLocation(this.program, 'u_use_flat_colors');
     this.locGhost   = gl.getUniformLocation(this.program, 'u_ghost');
+    this.locGrade   = gl.getUniformLocation(this.program, 'u_grade');
+    this.locCue     = gl.getUniformLocation(this.program, 'u_cue');
+    this.locCueFar  = gl.getUniformLocation(this.program, 'u_cue_far');
+    /* Prologue colour grade + depth-cue ramp, staged per frame by the play
+     * page (identity / off by default - no other page is affected). */
+    this.gradeParams = { rgb: null, strength: 0 };
+    this.cueParams = { far: null, nearZ: 0, farZ: 0, maxIr0: 0 };
     this.locPos     = gl.getAttribLocation(this.program, 'a_position');
     this.locUv      = gl.getAttribLocation(this.program, 'a_uv_byte');
     this.locCbaTsb  = gl.getAttribLocation(this.program, 'a_cba_tsb');
@@ -342,6 +349,40 @@ class TmdRenderer {
    * top-down camera target so silhouettes near the player fade last). */
   setFogOrigin(x, y, z) {
     this.fogParams.origin = [x, y, z];
+  }
+
+  /* Prologue colour grade: `rgb` = [r,g,b] multiply tint in 0..1 (or null
+   * to clear), `strength` 0..1. Mirrors the native renderer's
+   * `set_color_grade` (World::scene_color_grade); identity when cleared. */
+  setColorGrade(rgb, strength) {
+    this.gradeParams = (rgb && strength > 0)
+      ? { rgb: rgb.slice(0, 3), strength: +strength }
+      : { rgb: null, strength: 0 };
+  }
+
+  /* Prologue depth-cue ramp: `far` = [r,g,b] DPCS far colour (or null to
+   * clear), plus the view-depth window + max IR0. Mirrors the native
+   * renderer's `set_depth_cue_ramp` / `clear_depth_cue_ramp`. */
+  setDepthCue(far, nearZ, farZ, maxIr0) {
+    this.cueParams = (far && maxIr0 > 0)
+      ? { far: far.slice(0, 3), nearZ: +nearZ, farZ: +farZ, maxIr0: +maxIr0 }
+      : { far: null, nearZ: 0, farZ: 0, maxIr0: 0 };
+  }
+
+  /* Stage the grade + cue uniforms on the currently-bound main program. */
+  _applyGradeCue() {
+    const gl = this.gl;
+    if (!this.locGrade) return;
+    const g = this.gradeParams, c = this.cueParams;
+    if (g.rgb) gl.uniform4f(this.locGrade, g.rgb[0], g.rgb[1], g.rgb[2], g.strength);
+    else gl.uniform4f(this.locGrade, 1, 1, 1, 0);
+    if (c.far) {
+      gl.uniform4f(this.locCue, c.nearZ, c.farZ, c.maxIr0, 1);
+      gl.uniform3f(this.locCueFar, c.far[0], c.far[1], c.far[2]);
+    } else {
+      gl.uniform4f(this.locCue, 0, 0, 0, 0);
+      gl.uniform3f(this.locCueFar, 0, 0, 0);
+    }
   }
 
   /* Set the per-kingdom ocean tint + enable flag. `color` is `{ r, g, b }`
@@ -905,6 +946,9 @@ class TmdRenderer {
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.locMvp, false, vp);
     gl.uniform3f(this.locLight, 0.5, -0.7, 0.4);
+    /* Prologue grade + depth cue (identity / off unless the play page
+     * staged them this frame). */
+    this._applyGradeCue();
     /* The top-down VP horizontally mirrors a screen axis (retail orientation),
      * which flips the handedness of the screen-space derivatives the FS uses
      * to build the shading normal. Negate it back so lighting matches the

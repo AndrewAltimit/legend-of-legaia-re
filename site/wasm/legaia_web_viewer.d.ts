@@ -1213,6 +1213,16 @@ export class LegaiaRuntime {
      */
     card_slots_json(): string;
     /**
+     * `[width, height]` of the caption image; `[0, 0]` when none.
+     */
+    cutscene_caption_dims(): Uint32Array;
+    /**
+     * The "It was the Seru." caption image (a baked TIM the prologue blits,
+     * faded, between the two narration crawls), RGBA8. Empty when the
+     * current scene carries none.
+     */
+    cutscene_caption_rgba(): Uint8Array;
+    /**
      * `true` if a disc has been loaded.
      */
     disc_loaded(): boolean;
@@ -1301,6 +1311,14 @@ export class LegaiaRuntime {
     field_mesh_posed_frame_positions(slot: number, anim_id: number, frame: number): Float32Array;
     field_mesh_positions(): Float32Array;
     field_mesh_uvs(): Uint8Array;
+    /**
+     * The off-map hide-box coordinate (`FIELD_OFFMAP_HIDE_XZ`). Retail parks
+     * despawned / story-hidden actors at this far-corner sentinel tile
+     * precisely so they never render; the page must skip drawing any NPC
+     * whose **live** position is this tile on both axes, exactly as the
+     * native play-window's draw pass does.
+     */
+    field_offmap_hide_xz(): number;
     /**
      * Per-placement object-bind animation id (parallel to
      * [`Self::field_placement_slots`]). `0` = unposed; nonzero = draw the
@@ -1395,6 +1413,60 @@ export class LegaiaRuntime {
      */
     open_menu(): void;
     /**
+     * Camera parameters for the cutscene shot, decoded from the timeline's
+     * executed op-`0x45` Camera Configure params - the browser mirror of
+     * the native window's `cutscene_view` (see that fn for the retail
+     * provenance: focus X/Z stored negated in params 6/8; pitch/yaw in
+     * params 0/1, PSX 4096 = turn; H in param 9; the eye-space translation
+     * trio in params 3/4/5, divided by retail's folded-in 6x world scale).
+     * Shape:
+     * ```text
+     * { "active": bool,  // a cutscene timeline is running
+     *   "focus": [x, y, z], "pitch": rad, "yaw": rad,
+     *   "h": f, "tr": [x, y, z] }
+     * ```
+     * `null` before a scene is entered.
+     * REF: FUN_801DE084, FUN_800172C0
+     */
+    play_cutscene_camera_json(): string;
+    /**
+     * Per-frame cutscene presentation state:
+     * ```text
+     * { "locked": bool,          // freeze the pad this frame (feed 0)
+     *   "chain": bool,           // opening chain playing (skip available)
+     *   "narration": bool, "card": bool,
+     *   "caption_alpha": 0.0,    // "It was the Seru." fade (0 = hidden)
+     *   "grade": { "gold": [r,g,b], "strength": s } | null,
+     *   "cue": { "far": [r,g,b], "near_z": f, "far_z": f, "max_ir0": f } | null }
+     * ```
+     * `grade` / `cue` mirror `World::scene_color_grade` /
+     * `World::scene_depth_cue` - the prologue sepia multiply + gold DPCS
+     * depth-cue ramp the native window stages into its renderer each frame.
+     */
+    play_cutscene_state_json(): string;
+    /**
+     * The narration crawl + title card as font-atlas text quads over a
+     * `surface_w` x `surface_h` canvas - the same
+     * `{ "open", "texts" }` quad shape as the menu / dialog draws (blit off
+     * the font atlas; there are no chrome sprites). Line Ys are the
+     * roller's PSX 240-line window scaled to the surface; each line is
+     * centred, white - the native window's narration draw.
+     * REF: FUN_80037174
+     */
+    play_cutscene_text_draws_json(surface_w: number, surface_h: number): string;
+    /**
+     * Draw lists for the retail dialog reading box over a `surface_w` x
+     * `surface_h` canvas. Same shape as
+     * [`Self::play_menu_draws_json`]: `{ "open", "sprites", "texts" }` -
+     * `sprites` sample the chrome atlas, `texts` the font atlas (upload both
+     * via the `play_menu_*` atlas accessors; this call builds the shared
+     * assets on first use). `open` is `false` when no box is up this frame.
+     *
+     * Unlike the pause menu the field keeps running underneath - retail
+     * draws the reading box over the live scene.
+     */
+    play_dialog_draws_json(surface_w: number, surface_h: number): string;
+    /**
      * `[width, height]` of the chrome atlas; `[0, 0]` when none.
      */
     play_menu_chrome_dims(): Uint32Array;
@@ -1462,6 +1534,28 @@ export class LegaiaRuntime {
      */
     play_npc_catalog_json(): string;
     /**
+     * Live clip-playback state of every catalogued NPC, flattened
+     * `[frame, generation, ...]` pairs in catalog order; `[-1, -1]` for an
+     * entry with no live clip player. `frame` is the clip frame this render
+     * should show ([`legaia_engine_core::field_anim::FieldClipPlayer::frame`],
+     * advanced once per drained sim tick - the native window's sim-tick anim
+     * contract); `generation` bumps when an ANIMATE cue re-targets the clip,
+     * telling the page to re-read the pose behind the index.
+     */
+    play_npc_clip_states(): Int32Array;
+    /**
+     * Current pose of catalog entry `i`'s **live** clip: 6 `i32` per bone
+     * (`[tx, ty, tz, rx, ry, rz]`, absolute), read WITHOUT advancing the
+     * playhead ([`FieldClipPlayer::current_pose`] - the playhead moves only
+     * in [`LegaiaRuntime::tick_frame`]). Unlike
+     * [`Self::play_npc_pose_frames`] this follows ANIMATE-cue re-targets, so
+     * a scripted actor's performed clip is what comes back. Empty when the
+     * entry has no live clip player.
+     *
+     * [`FieldClipPlayer::current_pose`]: legaia_engine_core::field_anim::FieldClipPlayer::current_pose
+     */
+    play_npc_live_bones(i: number): Int32Array;
+    /**
      * Build catalog entry `i`'s mesh (hybrid: textured + vertex-colour prims,
      * with per-vertex bone ids). Returns `i`.
      *
@@ -1509,6 +1603,19 @@ export class LegaiaRuntime {
      * that has never moved. `y` is the floor height under the NPC.
      */
     play_npc_transforms(): Float32Array;
+    /**
+     * Poll the retail prologue intro-skip (`FUN_801D1344`): while the
+     * opening chain plays with the handoff bit armed, a confirm press skips
+     * the whole remaining opening to `town01`. Returns the target scene
+     * label once (the page then enters it), else `""`.
+     *
+     * Browser note: the engine-side handoff marks the upcoming `town01`
+     * entry as the new-game opening (installing the establishing-sweep
+     * timeline, which opens the name-entry overlay); the browser has no
+     * name-entry surface, so that mark is cleared here and `town01` starts
+     * in normal free-roam play.
+     */
+    play_take_prologue_handoff(confirm: boolean): string;
     /**
      * `true` when the lead's field mesh resolved out of the global TMD pool.
      */
@@ -3055,6 +3162,8 @@ export interface InitOutput {
     readonly legaiaruntime_boot_title_step: (a: number, b: number) => [number, number];
     readonly legaiaruntime_card_slot_dirty: (a: number, b: number) => number;
     readonly legaiaruntime_card_slots_json: (a: number) => [number, number];
+    readonly legaiaruntime_cutscene_caption_dims: (a: number) => [number, number];
+    readonly legaiaruntime_cutscene_caption_rgba: (a: number) => [number, number];
     readonly legaiaruntime_disc_loaded: (a: number) => number;
     readonly legaiaruntime_eject_card: (a: number, b: number) => void;
     readonly legaiaruntime_enter_field: (a: number, b: number, c: number) => [number, number, number, number];
@@ -3074,6 +3183,7 @@ export interface InitOutput {
     readonly legaiaruntime_field_mesh_posed_frame_positions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly legaiaruntime_field_mesh_positions: (a: number) => [number, number];
     readonly legaiaruntime_field_mesh_uvs: (a: number) => [number, number];
+    readonly legaiaruntime_field_offmap_hide_xz: (a: number) => number;
     readonly legaiaruntime_field_placement_anim_ids: (a: number) => [number, number];
     readonly legaiaruntime_field_placement_frames: (a: number) => [number, number];
     readonly legaiaruntime_field_placement_positions: (a: number) => [number, number];
@@ -3094,6 +3204,10 @@ export interface InitOutput {
     readonly legaiaruntime_menu_tick: (a: number, b: number) => any;
     readonly legaiaruntime_new: () => number;
     readonly legaiaruntime_open_menu: (a: number) => void;
+    readonly legaiaruntime_play_cutscene_camera_json: (a: number) => [number, number];
+    readonly legaiaruntime_play_cutscene_state_json: (a: number) => [number, number];
+    readonly legaiaruntime_play_cutscene_text_draws_json: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaruntime_play_dialog_draws_json: (a: number, b: number, c: number) => [number, number];
     readonly legaiaruntime_play_menu_chrome_dims: (a: number) => [number, number];
     readonly legaiaruntime_play_menu_chrome_rgba: (a: number) => [number, number];
     readonly legaiaruntime_play_menu_close: (a: number) => void;
@@ -3106,6 +3220,8 @@ export interface InitOutput {
     readonly legaiaruntime_play_menu_open: (a: number) => void;
     readonly legaiaruntime_play_menu_take_load_scene: (a: number) => [number, number];
     readonly legaiaruntime_play_npc_catalog_json: (a: number) => [number, number];
+    readonly legaiaruntime_play_npc_clip_states: (a: number) => [number, number];
+    readonly legaiaruntime_play_npc_live_bones: (a: number, b: number) => [number, number];
     readonly legaiaruntime_play_npc_mesh: (a: number, b: number) => [number, number, number];
     readonly legaiaruntime_play_npc_mesh_cba_tsb: (a: number) => [number, number];
     readonly legaiaruntime_play_npc_mesh_flat_rgba: (a: number) => [number, number];
@@ -3116,6 +3232,7 @@ export interface InitOutput {
     readonly legaiaruntime_play_npc_pose_dims: (a: number, b: number) => [number, number];
     readonly legaiaruntime_play_npc_pose_frames: (a: number, b: number) => [number, number];
     readonly legaiaruntime_play_npc_transforms: (a: number) => [number, number];
+    readonly legaiaruntime_play_take_prologue_handoff: (a: number, b: number) => [number, number];
     readonly legaiaruntime_player_has_mesh: (a: number) => number;
     readonly legaiaruntime_player_mesh_cba_tsb: (a: number) => [number, number];
     readonly legaiaruntime_player_mesh_flat_rgba: (a: number) => [number, number];

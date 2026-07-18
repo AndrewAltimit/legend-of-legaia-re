@@ -79,6 +79,25 @@ pub(crate) struct NpcRender {
     pub pack: crate::field_npc::FieldNpcPack,
 }
 
+/// Live clip playback for one placed NPC - the browser twin of the native
+/// play-window's `npc_clip_players` map: a [`FieldClipPlayer`] per placement
+/// slot, advanced in **sim-tick** time (one [`LegaiaRuntime::tick_frame`] =
+/// one 60 Hz tick) so the clip plays at the retail cadence regardless of the
+/// display refresh rate, and re-targeted by channel op-`0x4B` ANIMATE cues
+/// (drained from `World::field_npc_anim_cues`) so scripted actors perform
+/// their beats instead of looping the placement clip.
+///
+/// [`FieldClipPlayer`]: legaia_engine_core::field_anim::FieldClipPlayer
+pub(crate) struct NpcClip {
+    pub player: legaia_engine_core::field_anim::FieldClipPlayer,
+    /// Bumped on every ANIMATE-cue re-target, so the page knows the pose
+    /// stream behind the frame index changed and must be re-read.
+    pub generation: u32,
+    /// Clip resolves from the PROT 0874 locomotion bundle (global-pool
+    /// special) rather than the scene's own ANM bundle.
+    pub special: bool,
+}
+
 /// Compose `Rz . Ry . Rx . v + T` for every vertex, keyed by its bone
 /// (`object_ids`). A vertex whose bone the pose doesn't cover keeps its
 /// object-local position - a single-object model needs no pose at all, since
@@ -827,6 +846,76 @@ impl LegaiaRuntime {
             Ok(r) if r.bone_count > 0 => vec![r.frame_count as u32, r.bone_count as u32],
             _ => vec![0, 0],
         }
+    }
+
+    /// The off-map hide-box coordinate (`FIELD_OFFMAP_HIDE_XZ`). Retail parks
+    /// despawned / story-hidden actors at this far-corner sentinel tile
+    /// precisely so they never render; the page must skip drawing any NPC
+    /// whose **live** position is this tile on both axes, exactly as the
+    /// native play-window's draw pass does.
+    pub fn field_offmap_hide_xz(&self) -> i32 {
+        legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ as i32
+    }
+
+    /// Live clip-playback state of every catalogued NPC, flattened
+    /// `[frame, generation, ...]` pairs in catalog order; `[-1, -1]` for an
+    /// entry with no live clip player. `frame` is the clip frame this render
+    /// should show ([`legaia_engine_core::field_anim::FieldClipPlayer::frame`],
+    /// advanced once per drained sim tick - the native window's sim-tick anim
+    /// contract); `generation` bumps when an ANIMATE cue re-targets the clip,
+    /// telling the page to re-read the pose behind the index.
+    pub fn play_npc_clip_states(&self) -> Vec<i32> {
+        let Some(n) = self.npcs.as_ref() else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(n.pack.entries.len() * 2);
+        for e in &n.pack.entries {
+            match self.npc_clips.get(&(e.placement.index as u8)) {
+                Some(c) => {
+                    out.push(c.player.frame() as i32);
+                    out.push(c.generation as i32);
+                }
+                None => {
+                    out.push(-1);
+                    out.push(-1);
+                }
+            }
+        }
+        out
+    }
+
+    /// Current pose of catalog entry `i`'s **live** clip: 6 `i32` per bone
+    /// (`[tx, ty, tz, rx, ry, rz]`, absolute), read WITHOUT advancing the
+    /// playhead ([`FieldClipPlayer::current_pose`] - the playhead moves only
+    /// in [`LegaiaRuntime::tick_frame`]). Unlike
+    /// [`Self::play_npc_pose_frames`] this follows ANIMATE-cue re-targets, so
+    /// a scripted actor's performed clip is what comes back. Empty when the
+    /// entry has no live clip player.
+    ///
+    /// [`FieldClipPlayer::current_pose`]: legaia_engine_core::field_anim::FieldClipPlayer::current_pose
+    pub fn play_npc_live_bones(&self, i: u32) -> Vec<i32> {
+        let Some(n) = self.npcs.as_ref() else {
+            return Vec::new();
+        };
+        let Some(e) = n.pack.entries.get(i as usize) else {
+            return Vec::new();
+        };
+        let Some(c) = self.npc_clips.get(&(e.placement.index as u8)) else {
+            return Vec::new();
+        };
+        let pose = c.player.current_pose();
+        let mut out = Vec::with_capacity(pose.bone_outputs.len() * 6);
+        for (t, r) in pose.bone_outputs {
+            out.extend([
+                t[0] as i32,
+                t[1] as i32,
+                t[2] as i32,
+                r[0] as i32,
+                r[1] as i32,
+                r[2] as i32,
+            ]);
+        }
+        out
     }
 
     /// Live world state of every catalogued NPC, flattened

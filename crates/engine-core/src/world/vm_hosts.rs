@@ -1187,17 +1187,28 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         SceneFadeResult::Done
     }
 
-    fn op34_sub0_color_intensity_setup(&mut self, op0: u8, rgb: [u8; 3], _intensity: i16) {
-        // Op 0x34 sub-0 = the effect-global colour fade (`FUN_801E1FB0`). Retail
-        // clears the active fade when all three colour bytes are zero, else
-        // schedules a fade of that colour. The opening prologue's white flash
-        // (`34 05 FF FF FF 00 00`) reaches here; drive the field colour-fade
-        // overlay so the host can draw it.
-        if rgb == [0, 0, 0] {
-            self.world.color_fade = None;
-        } else {
-            self.world.color_fade = Some(crate::fade::ColorFade::from_op34(op0, rgb));
-        }
+    fn op34_sub0_color_intensity_setup(&mut self, op0: u8, rgb: [u8; 3], intensity: i16) {
+        // Op 0x34 sub-0 = the EFFECT-layer global colour (`FUN_801E1FB0`):
+        // ramp toward the operand RGB (neutral 0xFF) over `intensity` frames.
+        // The opening timeline drives it in the crawl gaps (`34 05 00 00 00
+        // D2 00` = to black over 210 frames, `34 01 FF FF FF 00 00` =
+        // instant neutral). The value ramps are modelled faithfully, but
+        // this is NOT a whole-screen fade: the retail cold-boot capture
+        // holds the lit villager tableau across the span where a screen
+        // fade would run black, so the colour feeds the effect layer (the
+        // creation-glow planes - consumer still an open thread) and is kept
+        // out of `World::scene_screen_tint`. All-zero RGB is a ramp target,
+        // not a clear.
+        let target = [
+            rgb[0] as f32 / 255.0,
+            rgb[1] as f32 / 255.0,
+            rgb[2] as f32 / 255.0,
+        ];
+        let frames = intensity.max(0) as u16;
+        let current = self.world.effect_tint.as_ref().map(|t| t.factor());
+        self.world.effect_tint = Some(crate::fade::SceneTintRamp::to_target(
+            current, target, frames,
+        ));
         self.world
             .pending_field_events
             .push(FieldEvent::ColorFade { op0, rgb });
@@ -1227,6 +1238,26 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn menu_ctrl_sub1(&mut self, op0: u8, payload: &[u8; 5]) {
+        // Sub-op 0x12: the global multiply screen tint `DAT_8007BCB8/B9/BA =
+        // payload[0..3]` (neutral 0x80), optionally ramped there over
+        // `LE_u16(payload[3..5])` frames by the slot-job spawner
+        // `FUN_8003C5F0`. This is the retail scene-fade primitive - every
+        // field scene `P1[0]`'s 0x52F arrival arm fades in from black with
+        // `4C 12 00 00 00 00 00` (instant black) + `4C 12 80 80 80 44 00`
+        // (ramp to neutral over 68 frames).
+        // REF: FUN_8003C5F0
+        if op0 == 0x12 {
+            let target = [
+                (payload[0] as f32 / 128.0).min(2.0),
+                (payload[1] as f32 / 128.0).min(2.0),
+                (payload[2] as f32 / 128.0).min(2.0),
+            ];
+            let frames = u16::from_le_bytes([payload[3], payload[4]]);
+            let current = self.world.screen_tint.as_ref().map(|t| t.factor());
+            self.world.screen_tint = Some(crate::fade::SceneTintRamp::to_target(
+                current, target, frames,
+            ));
+        }
         self.world.pending_field_events.push(FieldEvent::MenuCtrl {
             op0,
             payload: *payload,

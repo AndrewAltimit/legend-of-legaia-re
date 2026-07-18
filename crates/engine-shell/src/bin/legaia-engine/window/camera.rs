@@ -370,6 +370,37 @@ impl PlayWindowApp {
         (focus, pitch, yaw, h, tr_eye)
     }
 
+    /// Replay this frame's drained `apply == 0` Camera Configure beats as
+    /// snaps onto the cutscene camera interp (see `pending_camera_snaps`).
+    /// Slot decode mirrors [`Self::cutscene_view`] exactly - same negations,
+    /// same angle scale, same `CUTSCENE_WORLD_SCALE` reduction, same
+    /// degenerate-value filters - so a snapped component's value equals the
+    /// glide target `cutscene_view` computes for it (no spurious re-arm).
+    pub(super) fn replay_camera_snap_beats(&mut self) {
+        use std::f32::consts::TAU;
+        const CUTSCENE_WORLD_SCALE: f32 = 6.0;
+        let beats = std::mem::take(&mut self.pending_camera_snaps);
+        for params in beats {
+            let mut comps: Vec<(usize, f32)> = Vec::with_capacity(params.len());
+            for p in &params {
+                let v = p.value as i16 as f32;
+                match p.slot {
+                    0 => comps.push((3, v / 4096.0 * TAU)),
+                    1 => comps.push((4, v / 4096.0 * TAU)),
+                    3 => comps.push((6, v / CUTSCENE_WORLD_SCALE)),
+                    4 => comps.push((7, v / CUTSCENE_WORLD_SCALE)),
+                    5 if v.abs() > 1.0 => comps.push((8, v / CUTSCENE_WORLD_SCALE)),
+                    6 => comps.push((0, -v)),
+                    7 => comps.push((1, v)),
+                    8 => comps.push((2, -v)),
+                    9 if v > 1.0 => comps.push((5, v)),
+                    _ => {}
+                }
+            }
+            self.cutscene_cam_interp.snap_components(&comps);
+        }
+    }
+
     pub(super) fn actor_model(&self, slot: usize) -> Mat4 {
         let a = &self.session.host.world.actors[slot];
         let pos = Vec3::new(

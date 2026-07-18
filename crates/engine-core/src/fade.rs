@@ -171,7 +171,7 @@ pub fn spawn_fade(template: &FadeTemplate, id: i16, slot_free: bool) -> Option<F
 
 /// A persistent full-scene colour grade - the warm gold/sepia the opening
 /// prologue cutscene (`opdeene`, "It was the Seru.") renders its whole 3D
-/// scene through, distinct from the transient [`ColorFade`] flashes.
+/// scene through, distinct from the transient [`SceneTintRamp`] fades.
 ///
 /// ## Retail mechanism
 ///
@@ -299,83 +299,87 @@ impl DepthCueRamp {
     };
 }
 
-/// Field-VM colour-fade overlay (op `0x34` sub-0, `FUN_801E1FB0`).
+/// Scripted colour **ramp toward a target over an authored frame count** -
+/// the shared value model behind two script-driven globals:
 ///
-/// The field/cutscene fade path: a full-screen wash of one colour whose
-/// *coverage* ramps over a short window. Unlike [`FadeState`] (which ramps the
-/// RGB channels for the battle escape white-out), this holds a fixed colour
-/// and ramps how much of the screen it covers - the shape the opening
-/// prologue's white flash needs (`34 05 FF FF FF 00 00` = a white overlay that
-/// fades to reveal the scene).
+/// - **Op `0x4C 0x12`** (7-byte `[4C, 12, r, g, b, ramp_lo, ramp_hi]`): the
+///   global multiply screen tint `DAT_8007BCB8/B9/BA = r/g/b`, optionally
+///   ramped there over `LE_u16(ramp)` frames by the slot-job spawner
+///   `FUN_8003C5F0`. Neutral is `0x80`. This one IS the scene fade: every
+///   field scene's `P1[0]` entry script carries the arrival arm of the
+///   `0x52F`/`0x530`/`0x531` fade handshake - `4C 12 00 00 00 00 00`
+///   (black, instant) then `4C 12 80 80 80 44 00` (ramp to neutral over 68
+///   frames), the retail fade-in from black. Hosts multiply the drawn 3D
+///   scene by it ([`crate::World::scene_screen_tint`]); the narration/text
+///   overlay is a separate draw path and stays bright, matching retail.
+/// - **Op `0x34` sub-0** (7-byte `[34, op0, r, g, b, ramp_lo, ramp_hi]`,
+///   `FUN_801E1FB0`): the effect-layer global colour, neutral `0xFF`. The
+///   opening timeline ramps it in the crawl gaps (`34 05 00 00 00 D2 00` =
+///   to black over 210 frames, `34 01 FF FF FF 00 00` = instant neutral).
+///   **Not a screen fade** - the retail cold-boot capture holds the lit
+///   villager tableau across the span where the black ramp would blank a
+///   full-screen fade; the value feeds the effect layer (creation-glow
+///   planes, consumer an open thread) and stays out of the screen tint.
 ///
-/// ## Approximate by design
+/// Both store normalized factors (`1.0` = neutral).
 ///
-/// The retail fade actor's per-frame draw handler is not dumped, so the exact
-/// coverage curve + PSX blend mode are not pinned. This models the documented
-/// setup (`FUN_801E1FB0`: colour = operand RGB, direction from `op0 & 1`,
-/// zero-colour = clear) as a linear coverage ramp; the host draws it with a
-/// semi-transparent wash. When the draw handler is dumped this can be made
-/// byte-exact.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ColorFade {
-    /// Overlay colour (operand RGB).
-    pub rgb: [u8; 3],
-    /// Ramp length in frames.
-    pub frames: u16,
+/// REF: FUN_801E1FB0
+/// REF: FUN_8003C5F0
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SceneTintRamp {
+    /// Factor at ramp start (`1.0` = neutral).
+    from: [f32; 3],
+    /// Ramp target factor.
+    to: [f32; 3],
+    /// Ramp length in frames (`0` = instant).
+    frames: u16,
     /// Frames stepped so far.
     elapsed: u16,
-    /// When `true`, coverage ramps 1.0 → 0.0 (a fade-*from*-colour reveal, the
-    /// opening white flash); when `false`, 0.0 → 1.0 (a fade-*to*-colour).
-    pub reveal: bool,
 }
 
-impl ColorFade {
-    /// Default ramp length for a field colour fade (frames). Retail flashes
-    /// are brief; the exact count is per-op and not pinned, so this is a
-    /// reasonable opening-flash duration (~0.5 s at 60 fps).
-    pub const DEFAULT_FRAMES: u16 = 32;
-
-    /// Build a colour fade from an op-`0x34` sub-0 setup: `op0`'s low bit
-    /// selects direction (`& 1` = reveal / fade-from-colour, the opening
-    /// flash form), the RGB is the wash colour. A zero colour is *not* a fade;
-    /// callers clear the overlay instead (mirrors retail's "all colour bytes
-    /// zero → clear `_DAT_8007B62C`").
-    ///
-    /// REF: FUN_801E1FB0
-    pub fn from_op34(op0: u8, rgb: [u8; 3]) -> ColorFade {
-        ColorFade {
-            rgb,
-            frames: Self::DEFAULT_FRAMES,
+impl SceneTintRamp {
+    /// Start a ramp from `current` (or neutral when `None` - no tint active)
+    /// toward `to`, over `frames` frames. `frames == 0` lands instantly.
+    pub fn to_target(current: Option<[f32; 3]>, to: [f32; 3], frames: u16) -> SceneTintRamp {
+        SceneTintRamp {
+            from: current.unwrap_or([1.0; 3]),
+            to,
+            frames,
             elapsed: 0,
-            reveal: op0 & 1 != 0,
         }
     }
 
-    /// Advance one frame. Returns `true` while still running, `false` once the
-    /// ramp completes (the host then drops the overlay).
-    pub fn step(&mut self) -> bool {
-        if self.elapsed >= self.frames {
-            return false;
+    /// Advance one frame (no-op once the ramp has landed - the tint then
+    /// *holds* its target until a new op replaces it; a screen faded to black
+    /// stays black).
+    pub fn step(&mut self) {
+        if self.elapsed < self.frames {
+            self.elapsed += 1;
         }
-        self.elapsed += 1;
-        self.elapsed < self.frames
     }
 
-    /// Screen coverage in `0.0..=1.0` this frame: `reveal` ramps down from
-    /// full, otherwise up from empty.
-    pub fn coverage(&self) -> f32 {
-        let p = self.elapsed as f32 / self.frames.max(1) as f32;
-        if self.reveal { 1.0 - p } else { p }
+    /// Current tint factor per channel (`1.0` = neutral).
+    pub fn factor(&self) -> [f32; 3] {
+        if self.frames == 0 || self.elapsed >= self.frames {
+            return self.to;
+        }
+        let p = self.elapsed as f32 / self.frames as f32;
+        [
+            self.from[0] + (self.to[0] - self.from[0]) * p,
+            self.from[1] + (self.to[1] - self.from[1]) * p,
+            self.from[2] + (self.to[2] - self.from[2]) * p,
+        ]
     }
 
-    /// The wash colour.
-    pub fn rgb(&self) -> [u8; 3] {
-        self.rgb
-    }
-
-    /// `true` once the ramp has completed.
+    /// `true` once the ramp has landed on its target.
     pub fn finished(&self) -> bool {
         self.elapsed >= self.frames
+    }
+
+    /// `true` when the ramp has landed on the neutral identity - the host can
+    /// drop the tint and return to the untouched render path.
+    pub fn is_identity(&self) -> bool {
+        self.finished() && self.to.iter().all(|&c| (c - 1.0).abs() < 1e-6)
     }
 }
 
@@ -407,29 +411,50 @@ mod tests {
     }
 
     #[test]
-    fn color_fade_reveal_ramps_coverage_down() {
-        // op0 = 5 (low bit set) = reveal: coverage starts full, ends empty.
-        let mut f = ColorFade::from_op34(0x05, [0xFF, 0xFF, 0xFF]);
-        assert!(f.reveal);
-        assert_eq!(f.rgb(), [0xFF, 0xFF, 0xFF]);
-        assert_eq!(f.coverage(), 1.0);
-        let mut frames = 0;
-        while f.step() {
-            frames += 1;
+    fn scene_tint_ramps_linearly_to_black_and_holds() {
+        // `34 01 00 00 00 F0 00` - ramp to black over 240 frames from
+        // neutral. Mid-ramp is the linear midpoint; the landed value HOLDS
+        // black (until a new op replaces it).
+        let mut t = SceneTintRamp::to_target(None, [0.0; 3], 240);
+        assert_eq!(t.factor(), [1.0; 3], "starts on the neutral identity");
+        for _ in 0..120 {
+            t.step();
         }
-        assert_eq!(frames + 1, ColorFade::DEFAULT_FRAMES as i32);
-        assert!(f.finished());
-        assert_eq!(f.coverage(), 0.0, "reveal lands fully transparent");
+        assert!((t.factor()[0] - 0.5).abs() < 1e-4, "linear midpoint");
+        for _ in 0..200 {
+            t.step();
+        }
+        assert!(t.finished());
+        assert_eq!(t.factor(), [0.0; 3], "holds black after landing");
+        assert!(!t.is_identity(), "a black hold is not droppable");
     }
 
     #[test]
-    fn color_fade_cover_ramps_coverage_up() {
-        // op0 = 4 (low bit clear) = fade-to-colour.
-        let mut f = ColorFade::from_op34(0x04, [0, 0, 0]);
-        assert!(!f.reveal);
-        assert_eq!(f.coverage(), 0.0);
-        while f.step() {}
-        assert_eq!(f.coverage(), 1.0, "cover lands fully opaque");
+    fn scene_tint_instant_and_identity_drop() {
+        // `34 01 FF FF FF 00 00` - instant cut back to neutral: lands at
+        // once and reports identity so the host drops it.
+        let t = SceneTintRamp::to_target(Some([0.0; 3]), [1.0; 3], 0);
+        assert_eq!(t.factor(), [1.0; 3]);
+        assert!(t.finished());
+        assert!(t.is_identity());
+    }
+
+    #[test]
+    fn scene_tint_fade_in_from_black_ramps_up() {
+        // The `P1[0]` arrival arm: `4C 12 00 00 00 00 00` (instant black)
+        // then `4C 12 80 80 80 44 00` (ramp to neutral over 68 frames) - the
+        // retail fade-in from black at scene entry.
+        let black = SceneTintRamp::to_target(None, [0.0; 3], 0);
+        let mut t = SceneTintRamp::to_target(Some(black.factor()), [1.0; 3], 68);
+        assert_eq!(t.factor(), [0.0; 3], "opens black");
+        for _ in 0..34 {
+            t.step();
+        }
+        assert!((t.factor()[1] - 0.5).abs() < 1e-4, "half way up");
+        for _ in 0..34 {
+            t.step();
+        }
+        assert!(t.is_identity(), "lands neutral and droppable");
     }
 
     #[test]

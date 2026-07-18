@@ -681,6 +681,14 @@ struct PlayWindowApp {
     /// the opening choreography blends instead of cutting. Reset (snaps) while
     /// no cutscene timeline is active.
     cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp,
+    /// `apply == 0` Camera Configure beats drained from this frame's field
+    /// events, replayed as snaps onto the interp before the glide arms. The
+    /// field VM runs until yield, so a snap beat + glide beat pair with no
+    /// yield between (map01's fly-in aerial snap -> apply-900 descent)
+    /// commits in ONE tick and the merged `camera_state` only shows the
+    /// glide's targets; the snap replays keep the glide's start pose retail
+    /// (the captured fly-in trajectory starts exactly at the snapped pose).
+    pending_camera_snaps: Vec<Vec<legaia_engine_vm::field::CameraParam>>,
     /// Active dialog box, mirroring `World::current_dialog`. Opened from the
     /// scene's MES container the frame a dialog request appears (field-VM
     /// op `0x3F` or the overworld talk-to), ticked for its typewriter reveal,
@@ -778,7 +786,8 @@ pub(crate) use run::cmd_play_window;
 // that `use super::*` still resolve them unqualified.
 pub(in crate::window) use run::{build_window_scene_resources, cmd_play_window_with_record};
 pub(crate) use save_select_helpers::{
-    build_slot_info_view, info_panel_slide_offset, scan_save_dir, slot_leader_char_id,
+    build_slot_info_view, confirm_dialog_slide_y, info_panel_slide_offset,
+    save_select_phase_text_draws, save_select_title_word, scan_save_dir, slot_leader_char_id,
 };
 pub(crate) use str_player::{cmd_play_str, resolve_iso_file};
 

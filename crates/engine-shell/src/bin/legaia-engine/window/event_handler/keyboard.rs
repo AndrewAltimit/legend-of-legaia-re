@@ -594,12 +594,10 @@ impl PlayWindowApp {
             return;
         }
         // `N`: open the name-entry overlay for the lead character. The
-        // NEW GAME flow now opens it automatically at the `opdeene` ->
-        // `town01` opening hand-off (see the prologue-handoff block
-        // below); this key is a dev hand-trigger to exercise the ported
-        // overlay outside that flow. The exact in-script field-VM op
-        // that opens it mid-establishing-sequence is still an open RE
-        // thread.
+        // NEW GAME flow opens it automatically when the `town01` opening
+        // timeline reaches its op-`0x49` STATE_RESUME (P2[3] body
+        // `0x02c6`); this key is a dev hand-trigger to exercise the
+        // ported overlay outside that flow.
         if matches!(code, KeyCode::KeyN)
             && state == ElementState::Pressed
             && !self.boot_ui.is_active()
