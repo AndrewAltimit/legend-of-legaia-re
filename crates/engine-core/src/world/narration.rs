@@ -505,6 +505,12 @@ impl World {
         ) {
             return false;
         }
+        // The opening hides the town for its establishing shot; free-roam
+        // follows with no scene reload, so completion must drop the hide-box
+        // overrides (see `CutsceneTimeline::restore_hidden_on_complete`).
+        if let Some(tl) = self.cutscene_timeline.as_mut() {
+            tl.restore_hidden_on_complete = true;
+        }
         self.prologue_naming_pending = true;
         self.prologue_naming_armed = false;
         true
@@ -569,9 +575,30 @@ impl World {
         self.cutscene_timeline = Some(tl);
         // Spawn the per-actor channels (one per partition-1 placement,
         // retail `FUN_8003AEB0`'s spawn loop) so the timeline's cross-context
-        // pokes land on real per-actor contexts - the vignette mechanism.
-        self.field_channels = crate::field_channels::spawn_channels(man_file, man);
-        self.field_channels_man = Some(std::sync::Arc::new(man.to_vec()));
+        // pokes land on real per-actor contexts - the vignette mechanism -
+        // UNLESS this scene's channels are already seeded over the SAME MAN.
+        // Retail's walk-on record dispatch (`FUN_8003BDE0`) creates ONE new
+        // context and leaves the placement contexts (spawned once at scene
+        // entry by `FUN_8003AEB0`) untouched, so a mid-scene beat must keep
+        // their state: halt bits, entry-pre-run positions, parked PCs.
+        // Respawning here discarded that state and re-ran every spawn
+        // prologue mid-scene with the beat's OWN flag writes visible - the
+        // town01 Mei beat's opening `SET 550` re-routed her prologue to its
+        // post-beat seat, fighting the beat's own door-tile seat poke.
+        let same_man = self
+            .field_channels_man
+            .as_deref()
+            .is_some_and(|m| m.as_slice() == man);
+        if !same_man || self.field_channels.is_empty() {
+            self.field_channels = crate::field_channels::spawn_channels(man_file, man);
+            let binds = std::mem::take(&mut self.object_channel_binds);
+            self.field_channels
+                .extend(crate::field_channels::spawn_object_channels(
+                    man_file, man, &binds,
+                ));
+            self.object_channel_binds = binds;
+            self.field_channels_man = Some(std::sync::Arc::new(man.to_vec()));
+        }
         self.field_npc_anim_cues.clear();
         true
     }
@@ -670,8 +697,11 @@ impl World {
                 return;
             }
             if tl.done {
+                let restore = tl.restore_hidden_on_complete;
                 self.cutscene_timeline = None;
-                self.restore_hidden_field_npcs();
+                if restore {
+                    self.restore_hidden_field_npcs();
+                }
                 return;
             }
         }
@@ -743,6 +773,7 @@ impl World {
     ) -> bool {
         tl.frames = tl.frames.saturating_add(1);
         self.in_cutscene_timeline = modal;
+        self.in_spawned_record_slice = true;
         let mut channels = std::mem::take(&mut self.field_channels);
         let channel_pre_pos: Vec<(u16, u16)> = channels
             .iter()
@@ -766,6 +797,7 @@ impl World {
                     tl.channel_wait = Some(wait);
                     self.field_channels = channels;
                     self.in_cutscene_timeline = false;
+                    self.in_spawned_record_slice = false;
                     return false;
                 }
                 // The channel raised the flag (resume), the target is gone, or
@@ -797,6 +829,7 @@ impl World {
                 tl.player_wait = Some(width);
                 self.field_channels = channels;
                 self.in_cutscene_timeline = false;
+                self.in_spawned_record_slice = false;
                 return false;
             }
             tl.pc += width;
@@ -900,12 +933,16 @@ impl World {
                 // (player anchor) / `0xFB` (system) keep the timeline's own
                 // context (the player pokes route through host hooks).
                 //
-                // An UNRESOLVED id (a context the engine does not spawn -
-                // partition-0 object contexts, e.g. the Mei beat's `0x01`) is
-                // skipped by its decoded width instead: running it against the
-                // timeline's own ctx corrupted the timeline (a `B1 01 00` set
-                // the timeline's OWN busy bit, and the `CC 01 A0` busy-wait
-                // then hijacked the caller PC into the record header).
+                // Partition-0 object contexts resolve too: the scene entry
+                // spawns an object-bind channel per `.MAP` object script
+                // (retail `FUN_8003A55C` writes the gate-0 trigger's flat
+                // record index into `actor[+0x50]`), so the Mei beat's `0x01`
+                // pokes land on the Vahn's-house door context. An id that
+                // STILL matches no channel is skipped by its decoded width
+                // instead: running it against the timeline's own ctx
+                // corrupted the timeline (a `B1 <id> 00` set the timeline's
+                // OWN busy bit, and the `CC <id> A0` busy-wait then hijacked
+                // the caller PC into the record header).
                 let target = vm::field::peek_extended(&tl.bytecode, pc).and_then(|t| {
                     crate::field_channels::resolve_target(&channels, t).map(|ci| (t, ci))
                 });
@@ -992,7 +1029,12 @@ impl World {
                     }
                 }
                 let result = if let Some((_, ci)) = target {
-                    host.world.executing_channel = Some(channels[ci].placement_index as u8);
+                    // Object-bind channels are poke targets, but their
+                    // `placement_index` is a flat record index - never
+                    // attribute placement-keyed side effects (anim cues,
+                    // seat write-throughs) to them.
+                    host.world.executing_channel =
+                        (!channels[ci].object_bind).then_some(channels[ci].placement_index as u8);
                     // The timeline is the acquirer: it halt-acquired these
                     // channels earlier (the `4C 85` freeze sweep) and now
                     // drives them beat by beat. A poke from the owner is the
@@ -1190,9 +1232,12 @@ impl World {
             }
         }
         // Timeline pokes that moved a channel context (cross-context MoveTo)
-        // write through to the field NPC render/probe state.
+        // write through to the field NPC render/probe state. Object-bind
+        // channels never write through: their `placement_index` is a FLAT
+        // record index, not a placement slot, and the NPC surfaces are
+        // placement-keyed.
         for (c, pre) in channels.iter().zip(channel_pre_pos) {
-            if (c.ctx.world_x, c.ctx.world_z) != pre {
+            if !c.object_bind && (c.ctx.world_x, c.ctx.world_z) != pre {
                 self.field_npc_positions.insert(
                     c.placement_index as u8,
                     (c.ctx.world_x as i16, c.ctx.world_z as i16),
@@ -1201,6 +1246,7 @@ impl World {
         }
         self.field_channels = channels;
         self.in_cutscene_timeline = false;
+        self.in_spawned_record_slice = false;
         true
     }
 
@@ -1243,16 +1289,22 @@ impl World {
             }
             self.cutscene_timeline = Some(tl);
         } else if tl.done {
-            // town01 opening timeline finished (or capped): drop it so the view
-            // reverts from the cutscene camera to normal field gameplay.
+            // Timeline finished (or capped): drop it so the view reverts
+            // from the cutscene camera to normal field gameplay.
+            let restore = tl.restore_hidden_on_complete;
             self.cutscene_timeline = None;
-            // The opening choreography `MoveTo`s the townsfolk to the off-map
-            // hide box to clear the establishing shot. Nothing reloads the
-            // scene between the cutscene and free-roam, so those position
-            // overrides must be dropped here or the field render draws each
-            // hidden NPC off-screen (the "town NPCs vanish after New Game"
-            // symptom, only on the prologue path that installs this timeline).
-            self.restore_hidden_field_npcs();
+            // The town01 OPENING choreography `MoveTo`s the townsfolk to the
+            // off-map hide box to clear the establishing shot. Nothing
+            // reloads the scene between the cutscene and free-roam, so that
+            // install marks the timeline restore-on-complete or the field
+            // render draws each hidden NPC off-screen (the "town NPCs vanish
+            // after New Game" symptom). A mid-scene walk-on beat does NOT
+            // restore: its hide-box seats are story choreography (the Mei
+            // beat walks her out and despawns her - retail keeps her hidden
+            // until the next scene entry re-runs her spawn prologue).
+            if restore {
+                self.restore_hidden_field_npcs();
+            }
         } else {
             self.cutscene_timeline = Some(tl);
         }
@@ -1392,16 +1444,14 @@ impl World {
     // PORT: FUN_80039B7C (per-actor frame-slice loop; NOP break + halt park)
     // REF: FUN_8003C83C (cross-context target resolve)
     pub fn step_field_channels(&mut self) {
-        // Free-roam channels only STEP when the engine's NPC-animation switch is
-        // on - the same master gate the waypoint patroller
-        // ([`Self::tick_field_npc_motions`]) honours. With it off, the seeded
-        // channels stay resident but idle, so ordinary free-roam behaves exactly
-        // as it did before per-actor channels existed (no scripted repositioning,
-        // no MoveTo `FieldEvent`s) until liveliness is enabled. A cutscene
-        // timeline always drives its channels regardless of the switch.
-        if !self.cutscene_timeline_active() && !self.animate_field_npcs {
-            return;
-        }
+        // Always-on, free-roam included: retail's per-actor ticker
+        // (`FUN_80039B7C`) steps every context every frame unconditionally -
+        // halted contexts (the spawn-prologue `0x41` Yield park) and
+        // dialog-byte parks skip inside the slice, so the resident set is
+        // cheap and story-inert until something un-halts a channel. The
+        // `animate_field_npcs` switch now scopes ONLY the engine's derived
+        // waypoint patroller ([`Self::tick_field_npc_motions`]), which is a
+        // flag-blind route approximation, not the retail mechanism.
         self.step_field_channels_inner(false);
     }
 
@@ -1455,6 +1505,14 @@ impl World {
             if channels[i].done {
                 continue;
             }
+            // Object-bind channels are cross-context poke targets only: the
+            // engine drives their interaction bodies through the
+            // touch/interact dispatch, not autonomous stepping (their
+            // bind-time `0x24`/`0x25` prologue already ran at install,
+            // mirroring `FUN_8003A55C`).
+            if channels[i].object_bind {
+                continue;
+            }
             if man.len() <= channels[i].record_offset {
                 channels[i].done = true;
                 continue;
@@ -1486,10 +1544,13 @@ impl World {
                     let ci = crate::field_channels::resolve_target(&channels, t)?;
                     (ci != i).then_some(ci)
                 });
-                self.executing_channel = Some(match target {
-                    Some(ci) => channels[ci].placement_index as u8,
-                    None => channels[i].placement_index as u8,
-                });
+                self.executing_channel = match target {
+                    // Object-bind targets carry a flat record index, not a
+                    // placement slot - no placement-keyed attribution.
+                    Some(ci) if channels[ci].object_bind => None,
+                    Some(ci) => Some(channels[ci].placement_index as u8),
+                    None => Some(channels[i].placement_index as u8),
+                };
                 let result = {
                     let mut host = FieldHostImpl { world: self };
                     match target {
@@ -1560,6 +1621,11 @@ impl World {
         // resurrect the ghost nor pace a patrol around the wrong anchor.
         let patroller_active = !self.cutscene_timeline_active();
         for (c, pre) in channels.iter().zip(pre_pos) {
+            if c.object_bind {
+                // Flat-record-keyed context; the NPC surfaces are
+                // placement-keyed.
+                continue;
+            }
             let (nx, nz) = (c.ctx.world_x, c.ctx.world_z);
             if (nx, nz) == pre {
                 continue;
@@ -1631,7 +1697,110 @@ impl World {
         } else {
             Some(std::sync::Arc::new(man.to_vec()))
         };
+        // A new scene's binds are installed by `seed_object_channels` after
+        // the trigger tables resolve; drop the previous scene's.
+        self.object_channel_binds.clear();
         self.field_npc_anim_cues.clear();
+    }
+
+    /// Append the `.MAP` **object-bind** channels (retail scene-init
+    /// `FUN_8003A55C`): one context per bound object, script id = the gate-0
+    /// trigger's **flat** MAN record index (`actor[+0x50] = trigger[2]`).
+    /// This is what makes partition-0 records resolvable cross-context
+    /// targets through the `FUN_8003C83C` walk - the `town01` Mei walk-on
+    /// beat pokes the Vahn's-house door object as channel `0x01`.
+    ///
+    /// Mirrors the retail bind-time prologue pre-run: a bound record whose
+    /// first opcode is `0x24`/`0x25` runs through the field VM until it
+    /// yields, stalls, or reaches a dialog byte (the `FUN_8003A55C` inline
+    /// loop), so the object context carries its init state (the door-angle
+    /// `4C 41` ramp seed) before the first poke.
+    ///
+    /// Binds are remembered on [`Self::object_channel_binds`] so a
+    /// cutscene-timeline install that has to respawn the channel set
+    /// re-appends them. Call after [`Self::seed_field_channels`]; no-op when
+    /// that seeded nothing (a scene without a MAN).
+    // REF: FUN_8003A55C (object bind: +0x50 flat script id + prologue pre-run)
+    pub fn seed_object_channels(
+        &mut self,
+        man_file: &legaia_asset::man_section::ManFile,
+        man: &[u8],
+        binds: &[(usize, (i16, i16))],
+    ) {
+        self.object_channel_binds = binds.to_vec();
+        let same_man = self
+            .field_channels_man
+            .as_deref()
+            .is_some_and(|m| m.as_slice() == man);
+        if !same_man {
+            return;
+        }
+        let mut obj = crate::field_channels::spawn_object_channels(man_file, man, binds);
+        self.pre_run_object_channel_prologues(&mut obj, man);
+        self.field_channels.extend(obj);
+    }
+
+    /// The `FUN_8003A55C` bind-time prologue pre-run: for each object-bind
+    /// channel whose first opcode is `0x24`/`0x25`, step the field VM until
+    /// the op was a `0x21` NOP, the PC stalls, a dialog byte is reached, or
+    /// the context yields/halts - the retail inline loop's exact stop set.
+    fn pre_run_object_channel_prologues(
+        &mut self,
+        channels: &mut [crate::field_channels::FieldChannel],
+        man: &[u8],
+    ) {
+        for c in channels.iter_mut() {
+            let Some(bc) = man.get(c.record_offset..) else {
+                c.done = true;
+                continue;
+            };
+            let Some(&first) = bc.get(c.pc) else {
+                c.done = true;
+                continue;
+            };
+            if first != 0x24 && first != 0x25 {
+                continue;
+            }
+            let mut budget = FIELD_CHANNEL_STEP_BUDGET;
+            while budget > 0 {
+                budget -= 1;
+                let pc = c.pc;
+                let Some(&op) = bc.get(pc) else {
+                    break;
+                };
+                if op & 0x7F < 0x20 {
+                    // Dialog byte: the retail pre-run loop stops here.
+                    break;
+                }
+                let result = {
+                    let mut host = FieldHostImpl { world: self };
+                    vm::field::step(&mut host, &mut c.ctx, bc, pc)
+                };
+                match result {
+                    FieldStepResult::Advance { next_pc } => {
+                        if next_pc == pc {
+                            break;
+                        }
+                        c.pc = next_pc;
+                        if op & 0x7F == 0x21 {
+                            break;
+                        }
+                    }
+                    FieldStepResult::Yield { resume_pc } => {
+                        c.pc = resume_pc;
+                        break;
+                    }
+                    FieldStepResult::Halt { final_pc } => {
+                        c.pc = final_pc;
+                        break;
+                    }
+                    FieldStepResult::Pending { pc, .. } | FieldStepResult::Unknown { pc, .. } => {
+                        c.pc = pc;
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     /// Begin running an inline interaction script through the field VM (the
@@ -1977,6 +2146,7 @@ mod tests {
             record_offset: 0,
             pc: 0,
             done: false,
+            object_bind: false,
         }];
         w
     }

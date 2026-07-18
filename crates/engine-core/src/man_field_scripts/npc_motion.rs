@@ -850,6 +850,42 @@ pub fn object_walk_touch_binds(
     out
 }
 
+/// Every `.MAP`-object script bind in a scene, **unfiltered**: walk the
+/// object layer, resolve each spawnable object's key tile against the
+/// kind-1 trigger tables, and return `(flat_record_index, contact_centre)`
+/// per bound object - door or not. This is the full retail bind population
+/// (`FUN_8003A55C` attaches the record to every object whose key tile
+/// carries a trigger, and writes the flat index into the actor's `+0x50`
+/// script id), which is what makes those records resolvable cross-context
+/// targets - the `town01` Mei walk-on beat's channel `0x01` is the
+/// Vahn's-house door object bound to flat record 1.
+///
+/// [`object_walk_touch_binds`] is the door-classified subset (records
+/// carrying a player teleport); this one feeds
+/// [`crate::field_channels::spawn_object_channels`]. Duplicate
+/// `(record, contact)` pairs collapse to one bind.
+// REF: FUN_8003A55C
+pub fn object_script_binds(
+    map: &[u8],
+    triggers: &[crate::field_regions::TileTrigger],
+) -> Vec<(usize, (i16, i16))> {
+    let mut out: Vec<(usize, (i16, i16))> = Vec::new();
+    for obj in crate::field_regions::parse_map_objects(map) {
+        let Some(t) = triggers
+            .iter()
+            .find(|t| (t.tile_x, t.tile_z) == obj.key_tile)
+        else {
+            continue;
+        };
+        let record = usize::from(t.record);
+        if out.iter().any(|&(r, c)| r == record && c == obj.contact) {
+            continue;
+        }
+        out.push((record, obj.contact));
+    }
+    out
+}
+
 /// The walk-touch effect of the MAN record at **flat** index `flat`: its first
 /// player-channel teleport (either op form - see [`PlayerMoveKind`]), or
 /// `None` when the record repositions nobody (a plain scenery / chest / sign

@@ -208,3 +208,146 @@ fn town01_entry_positions_match_retail_actor_list() {
         failures.len()
     );
 }
+
+/// Disc-gated (no capture needed): the town01 Mei walk-on beat (`P2[4]`,
+/// `C1=[550] C2=[549]` - the post-naming hunter's-clothes conversation)
+/// makes Mei VISIBLE at the Vahn's-house door.
+///
+/// The record's `CC 46 51 11 1D 00 3C` poke seats channel `0x46`
+/// (= partition-0 count 36 + placement 34, Mei) at tile `(17,29)`; the ops
+/// on channel `0x01` drive the Vahn's-house door object, whose context is
+/// the `FUN_8003A55C` object bind (flat record 1, `actor[+0x50] =
+/// trigger[2]`). The regression this pins: the engine skipped the door pokes
+/// (no object channel) and DROPPED the seat poke (host hook only wrote
+/// positions in the entry pre-run), so the conversation played with Mei
+/// still standing in her own house across town.
+#[test]
+fn town01_mei_walk_on_beat_places_mei_at_the_door() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+    let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
+    // The beat's story state: the opening timeline's one-shot (549) is set,
+    // the beat's own latch (550) still clear.
+    host.world.system_flag_set(549);
+    host.enter_field_scene("town01", 0)
+        .expect("enter town01 field scene");
+
+    let man = host
+        .scene
+        .as_ref()
+        .expect("scene loaded")
+        .field_man_payload(&host.index)
+        .expect("man payload")
+        .expect("town01 has a MAN");
+    let mf = legaia_asset::man_section::parse(&man).expect("man parse");
+    let n0 = mf.header.partition_counts[0].max(0) as u8;
+    assert_eq!(n0, 36, "town01 partition-0 record count (disc invariant)");
+    // The beat's NPC target 0x46 resolves as placement `0x46 - N0` = 34.
+    let mei: u8 = 0x46 - n0;
+
+    // The object-bind context for the beat's door pokes (`CC 01 ...`)
+    // exists: flat record 1 spawned as a poke-target channel
+    // (retail `FUN_8003A55C` writes `actor[+0x50] = 1`).
+    assert!(
+        host.world
+            .field_channels
+            .iter()
+            .any(|c| c.object_bind && c.ctx.script_id == 1),
+        "the Vahn's-house door object (flat record 1) spawns as a resolvable channel"
+    );
+
+    let door = (17i16 * 128 + 0x40, 29i16 * 128 + 0x40);
+    let entry = host
+        .world
+        .field_npc_positions
+        .get(&mei)
+        .copied()
+        .expect("Mei's slot has an entry position");
+    assert!(!is_parked(entry.0, entry.1), "Mei is placed at entry");
+    assert_ne!(entry, door, "Mei does not start at the beat's door seat");
+
+    // Spawn the beat (the walk-on dispatch path ends in the same call).
+    assert!(
+        host.world.install_gated_p2_record(&mf, &man, 4),
+        "P2[4] gates pass (549 set, 550 clear) and the record installs"
+    );
+    // First slices reach the seat poke well before the first dialog park.
+    for _ in 0..5 {
+        host.world.tick();
+    }
+    let during = host
+        .world
+        .field_npc_positions
+        .get(&mei)
+        .copied()
+        .expect("Mei's slot still surfaced");
+    assert_eq!(
+        during, door,
+        "the beat's `4C 51` channel poke seats Mei at the Vahn's-house door tile (17,29)"
+    );
+
+    // Drive the conversation to completion (inline dialog parks want
+    // confirm edges) and re-check the post-beat state.
+    let mut n = 0u32;
+    while host.world.cutscene_timeline_active() && n < 20000 {
+        let pad = if n.is_multiple_of(2) {
+            legaia_engine_core::input::PadButton::Cross.mask()
+        } else {
+            0
+        };
+        host.world.set_pad(pad);
+        host.world.tick();
+        n += 1;
+    }
+    host.world.set_pad(0);
+    assert!(n < 20000, "the beat completes (ticked {n})");
+    if std::env::var_os("LEGAIA_DIAG_MEI").is_some() {
+        let ch = host
+            .world
+            .field_channels
+            .iter()
+            .find(|c| !c.object_bind && c.placement_index == mei as usize);
+        eprintln!(
+            "[diag] ticks={n} mei channel: {:?}",
+            ch.map(|c| (
+                c.pc,
+                c.done,
+                c.ctx.is_halted(),
+                c.ctx.world_x,
+                c.ctx.world_z
+            ))
+        );
+        eprintln!(
+            "[diag] motion: {:?} routes: {:?}",
+            host.world.field_npc_motions.get(&mei),
+            host.world.field_npc_routes.get(&mei)
+        );
+    }
+    assert!(
+        host.world.p2_gate_flag_set(550),
+        "the beat latched its one-shot flag by execution"
+    );
+    // The record's closing choreography walks Mei out of the house and
+    // despawns her (a `4C 51` seat at the (127,127) hide box); retail keeps
+    // her hidden until the next scene entry re-runs her spawn prologue
+    // (which, with 550 latched, seats her at a new spot). The regression
+    // this guards: the opening-timeline restore used to resurrect her at
+    // her ENTRY seat the moment the beat completed.
+    let after = host
+        .world
+        .field_npc_positions
+        .get(&mei)
+        .copied()
+        .expect("Mei's slot survives the beat");
+    assert!(
+        is_parked(after.0, after.1),
+        "Mei is despawned after the beat (retail: she leaves the house), got {after:?}"
+    );
+}

@@ -619,6 +619,35 @@ impl SceneHost {
                         );
                     }
                     self.world.install_trigger_walk_touch_with_records(&binds);
+                    // Object-bind script CONTEXTS (the other half of
+                    // `FUN_8003A55C`): every bound object's actor carries the
+                    // trigger's flat record index as its script id
+                    // (`actor[+0x50] = trigger[2]`), making partition-0
+                    // records resolvable cross-context targets - the town01
+                    // Mei walk-on beat pokes the Vahn's-house door object as
+                    // channel `0x01`. Spawn one poke-target channel per bind
+                    // (bind-time `0x24`/`0x25` prologues pre-run inside).
+                    // Falls back to the gate-0 trigger tiles when the scene
+                    // has no readable `.MAP` object layer.
+                    // REF: FUN_8003A55C, FUN_8003C83C
+                    let object_binds: Vec<(usize, (i16, i16))> = match map_bytes.as_deref() {
+                        Some(map) => crate::man_field_scripts::object_script_binds(map, &triggers),
+                        None => triggers
+                            .iter()
+                            .filter(|t| t.gate == 0)
+                            .map(|t| {
+                                (
+                                    t.record as usize,
+                                    (
+                                        i16::from(t.tile_x) * 128 + 0x40,
+                                        i16::from(t.tile_z) * 128 + 0x40,
+                                    ),
+                                )
+                            })
+                            .collect(),
+                    };
+                    self.world
+                        .seed_object_channels(&man_file, &man_bytes, &object_binds);
                     // Boss-stager placements (chapter-1: Mt. Rikuroa's Caruban
                     // stager P1[3]): partition-1 records carrying the
                     // scripted-battle op `3E FF <row>`, armed as approach /

@@ -1402,6 +1402,31 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             ctx.world_z = world_z;
             return;
         }
+        // A spawned partition-2 record's channel poke (the modal cutscene
+        // timeline / a concurrent helper context driving a resolved
+        // channel): SEAT the target exactly. Retail dispatches the run via
+        // the move table and the settled position equals the op target -
+        // the same pin as the entry pre-run. This is the town01 Mei
+        // walk-on beat's `CC 46 51 11 1D 00 3C` (seat placement 34 at the
+        // Vahn's-house door tile (17,29)); dropping it left Mei standing in
+        // her own house across town, invisible to the conversation. The
+        // (127,127) hide-box park writes through too - a record hiding an
+        // actor is a despawn the render must see. `ctx` is the TARGET
+        // channel's context here; the slice's write-through surfaces the
+        // move into the placement-keyed NPC state.
+        // REF: FUN_8003C83C (cross-context target resolve)
+        if self.world.in_spawned_record_slice
+            && let Some(slot) = self.world.executing_channel
+        {
+            ctx.world_x = world_x;
+            ctx.world_z = world_z;
+            if let Some(heading) =
+                crate::man_field_scripts::facing_index_to_engine_heading(depth_byte & 0xF)
+            {
+                self.world.field_npc_headings.insert(slot, heading);
+            }
+            return;
+        }
         // The parked-sentinel tile (127,127) decodes to (0x3FC0, 0x3FC0):
         // a despawn, not a walk.
         if world_x == 0x3FC0 && world_z == 0x3FC0 {
@@ -1431,11 +1456,25 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             });
             return;
         }
-        let Some(slot) = self.world.stepping_inline_npc else {
+        if let Some(slot) = self.world.stepping_inline_npc {
+            self.world
+                .start_field_npc_motion(slot, world_x as i16, world_z as i16);
             return;
-        };
-        self.world
-            .start_field_npc_motion(slot, world_x as i16, world_z as i16);
+        }
+        // A live channel stepping its OWN script (the always-on
+        // `step_field_channels` free-roam slice, retail `FUN_80039B7C`):
+        // walk the placement there as a scripted glide leg (the faithful
+        // `4C 51` run dispatch plays a move clip toward the tile). Falls
+        // back to a direct ctx seat when the slot has no surfaced position
+        // yet (the glide needs a start point).
+        if let Some(slot) = self.world.executing_channel
+            && !self
+                .world
+                .start_field_npc_motion(slot, world_x as i16, world_z as i16)
+        {
+            ctx.world_x = world_x;
+            ctx.world_z = world_z;
+        }
     }
 
     // PORT: FUN_8003C8F0 - the `_DAT_8007B898` partition-table record

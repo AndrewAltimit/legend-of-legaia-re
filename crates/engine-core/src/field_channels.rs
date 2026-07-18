@@ -77,6 +77,17 @@ pub struct FieldChannel {
     /// advance past - it stops stepping but stays resolvable as a
     /// cross-context target.
     pub done: bool,
+    /// `true` for a `.MAP` **object-bind** context (retail `FUN_8003A55C`):
+    /// a gate-0 kind-1 trigger binds a MAN record to a placed object and
+    /// writes the trigger's **flat** record index into the actor's script id
+    /// (`actor[+0x50] = trigger[2]`), so partition-0 records ARE resolvable
+    /// cross-context targets - the `town01` Mei walk-on beat pokes the
+    /// Vahn's-house door object as channel `0x01` this way. Object channels
+    /// are poke targets only: the engine does not step them autonomously
+    /// (their interaction bodies are driven by the touch/interact dispatch),
+    /// and their state never writes through to the placement-keyed NPC
+    /// surfaces ([`crate::world::World::field_npc_positions`]).
+    pub object_bind: bool,
 }
 
 impl FieldChannel {
@@ -124,9 +135,67 @@ pub fn spawn_channels(man_file: &ManFile, man: &[u8]) -> Vec<FieldChannel> {
                 record_offset: p.record_offset,
                 pc: p.script_pc0,
                 done: false,
+                object_bind: false,
             }
         })
         .collect()
+}
+
+/// Spawn a [`FieldChannel`] per `.MAP` **object bind**, mirroring the retail
+/// scene-init object walk (`FUN_8003A55C`): each bound object's actor gets
+/// the gate-0 trigger's **flat** MAN record index as its script id
+/// (`actor[+0x50] = trigger[2]`, the `sh t3,0x50(s0)` at `0x8003a8c4`), the
+/// record base as its bytecode buffer (`actor[+0x90]`) and the record's
+/// first-opcode offset as its entry PC (`actor[+0x9E]`). This is the id
+/// space that makes partition-0 records resolvable cross-context targets
+/// through the `FUN_8003C83C` actor-list walk.
+///
+/// `binds` carries `(flat_record_index, contact_centre)` pairs (see
+/// [`crate::man_field_scripts::object_script_binds`]). Binds whose flat
+/// record cannot be spanned are skipped. Spawn these AFTER the placement
+/// channels: a flat index `>= N0` aliases a placement channel's script id,
+/// and [`resolve_target`]'s first-match walk must keep the placement.
+// REF: FUN_8003A55C (object-bind context: +0x50 script id, +0x90/+0x9E script)
+// REF: FUN_8003C83C
+pub fn spawn_object_channels(
+    man_file: &ManFile,
+    man: &[u8],
+    binds: &[(usize, (i16, i16))],
+) -> Vec<FieldChannel> {
+    let mut out = Vec::new();
+    for &(flat, (cx, cz)) in binds {
+        if flat > u16::MAX as usize {
+            continue;
+        }
+        let Some((record_offset, pc0, _len)) =
+            crate::man_field_scripts::flat_record_span(man_file, man, flat)
+        else {
+            continue;
+        };
+        if out
+            .iter()
+            .any(|c: &FieldChannel| c.ctx.script_id == flat as u16)
+        {
+            continue;
+        }
+        let ctx = FieldCtx {
+            script_id: flat as u16,
+            world_x: cx as u16,
+            world_z: cz as u16,
+            // Retail inits the `+0x94` payload slot to `-1` (`FUN_8003A55C`).
+            saved_pc: 0xFFFF_FFFF,
+            ..FieldCtx::default()
+        };
+        out.push(FieldChannel {
+            placement_index: flat,
+            ctx,
+            record_offset,
+            pc: pc0,
+            done: false,
+            object_bind: true,
+        });
+    }
+    out
 }
 
 /// Resolve a cross-context target id to a channel index
@@ -158,6 +227,7 @@ mod tests {
             record_offset: 0,
             pc: 0,
             done: false,
+            object_bind: false,
         };
         let channels = vec![mk(4), mk(5), mk(6)];
         assert_eq!(resolve_target(&channels, 5), Some(1));
