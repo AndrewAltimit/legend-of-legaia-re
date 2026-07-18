@@ -213,6 +213,18 @@ pub struct Sequencer {
     /// tick peaks and resets within a single sample (a marker-less EOT whose
     /// last event is zero-delta). Read via [`Self::loop_count`].
     loop_count: u64,
+    /// Per-voice allocation **priority** - the VAB tone `prior` byte the note
+    /// occupying the voice was keyed on with. Retail keeps this in the
+    /// driver's per-voice record block (`0x801CDB50`, stride `0x36`, field
+    /// `+0x1A`); the allocation scan may only steal a voice whose priority is
+    /// `<=` the incoming note's. Written on every successful allocation.
+    voice_prio: [u8; crate::spu::NUM_VOICES],
+    /// Per-voice allocation **age** counter (retail per-voice record `+0x02`):
+    /// every successful allocation increments every voice's age by one and
+    /// zeroes the winner's, so the largest age marks the least-recently
+    /// allocated voice. Used as the final steal tie-break. u16 with wrapping
+    /// add, matching the retail halfword.
+    voice_age: [u16; crate::spu::NUM_VOICES],
 }
 
 impl Sequencer {
@@ -242,6 +254,8 @@ impl Sequencer {
             active: Vec::new(),
             master_vol: 127,
             loop_count: 0,
+            voice_prio: [0; crate::spu::NUM_VOICES],
+            voice_age: [0; crate::spu::NUM_VOICES],
         }
     }
 
@@ -510,7 +524,16 @@ impl Sequencer {
         // Drop the prior instance of this (channel, key) if it exists -
         // libsnd silently restarts the voice.
         self.note_off(spu, channel, key);
-        let Some(voice) = self.alloc_voice(spu) else {
+        // Resolve the note's allocation priority (the VAB tone `prior` byte)
+        // before scanning: retail stages the tone attrs first (FUN_80066308)
+        // and only then runs the allocation scan against that priority. A
+        // note whose program/tone doesn't resolve never reaches the scan.
+        let program = self.channels[channel as usize].program as usize;
+        let Some(prio) = self.bank.tone_prior(program, key) else {
+            log::trace!("sequencer: no tone for ch{channel} prog{program} key{key}");
+            return;
+        };
+        let Some(voice) = self.alloc_voice(spu, prio) else {
             log::trace!(
                 "sequencer: no free voice for ch{} key{} (active={})",
                 channel,
@@ -598,34 +621,117 @@ impl Sequencer {
         }
     }
 
-    fn alloc_voice(&mut self, spu: &mut Spu) -> Option<u8> {
-        // Skip voices currently bound to active notes; the SPU itself can
-        // advertise a voice as "off" between key-off and tail-fade, but we
-        // don't want to steal one we still own.
+    /// Retail voice-allocation scan.
+    ///
+    /// PORT: FUN_80066B00 - the sound driver's voice chooser, called per
+    /// resolved tone by the note-trigger dispatcher (`FUN_80066308`) with the
+    /// tone's staged `prior` byte as the request priority. Semantics recovered
+    /// from the decompiled reference (no bytes copied):
+    ///
+    /// 1. Scan voices in **ascending order**. The first voice that is both
+    ///    unreserved and has a fully-decayed envelope is taken immediately -
+    ///    the scan stops there (first-idle, not last-idle).
+    /// 2. While scanning, every voice also feeds a running steal-candidate
+    ///    evaluation against a priority threshold that **starts at the
+    ///    request's priority and tightens** to each lower priority seen:
+    ///    - a voice with priority strictly below the threshold becomes the
+    ///      candidate and lowers the threshold to its priority;
+    ///    - a voice with priority equal to the threshold competes on the
+    ///      **lowest current envelope level**, then (envelopes equal) on the
+    ///      **largest allocation age** (least-recently allocated).
+    ///
+    ///    Net effect: the steal target is the minimum-priority voice among
+    ///    those with priority `<=` the request, quietest-then-oldest within
+    ///    that tier.
+    /// 3. No idle voice and no candidate (every sounding voice outranks the
+    ///    request): the note is **dropped** - retail returns the voice count
+    ///    as an out-of-range sentinel and the dispatcher marks the note
+    ///    failed. This differs from a naive always-steal policy.
+    /// 4. On success every voice's age increments and the winner's resets to
+    ///    zero; the winner adopts the request's priority.
+    ///
+    /// REF: FUN_80065BAC (the per-frame flush that maintains the 16-deep
+    /// silent-history ring at `0x801CE208` used to *unreserve* voices),
+    /// FUN_80065978 (`_SsVoKeyOnDirect`, which consumes the chosen voice and
+    /// clears its ring history). The engine's stand-ins: "reserved" = bound
+    /// to an entry in `self.active`; "envelope" = the SPU voice's live ADSR
+    /// level.
+    fn alloc_voice(&mut self, spu: &mut Spu, req_prio: u8) -> Option<u8> {
         let occupied: u32 = self
             .active
             .iter()
             .map(|n| 1u32 << n.voice as u32)
             .fold(0, |a, b| a | b);
-        for (i, voice) in spu.voices.iter().enumerate() {
-            if occupied & (1 << i) == 0 && voice.is_off() {
-                return Some(i as u8);
+        let n = spu.voices.len().min(crate::spu::NUM_VOICES);
+        let mut chosen: Option<usize> = None;
+        // Steal-candidate evaluation state (retail registers r9/r10/r11/r8/r12).
+        let mut threshold = req_prio as i32;
+        let mut steal: Option<usize> = None;
+        // Initial best-envelope sentinel is 0xFFFF, above any real ADSR level,
+        // so the first voice on the threshold tier always seeds the candidate.
+        let mut steal_env: u32 = 0xFFFF;
+        let mut steal_age: i32 = 0;
+        for (v, voice) in spu.voices.iter().enumerate().take(n) {
+            let reserved = occupied & (1 << v) != 0;
+            let env = voice.adsr.level as u32;
+            if !reserved && voice.is_off() {
+                // First idle voice: taken immediately, scan stops.
+                chosen = Some(v);
+                break;
+            }
+            let pr = self.voice_prio[v] as i32;
+            if pr < threshold {
+                threshold = pr;
+                steal = Some(v);
+                steal_env = env;
+                steal_age = self.voice_age[v] as i32;
+            } else if pr == threshold {
+                if env < steal_env {
+                    steal = Some(v);
+                    steal_env = env;
+                    steal_age = self.voice_age[v] as i32;
+                } else if env == steal_env {
+                    // Retail signedness quirk kept verbatim: the incumbent age
+                    // is zero-extended, the challenger sign-extended, compared
+                    // as i32 - an age >= 0x8000 can defend but never attack.
+                    let age = self.voice_age[v] as i16 as i32;
+                    if steal_age < age {
+                        steal = Some(v);
+                        steal_age = age;
+                    }
+                }
             }
         }
-        // No idle voice available. Steal the oldest active note's voice - but
-        // FREE its `active` slot and key-off its voice first. Otherwise the
-        // stolen note lingers in `self.active` aliasing the reused voice: its
-        // later note-off would key-off the new note that took the voice over
-        // (cutting it short), and the voice would stay permanently "occupied"
-        // in the mask above, leaking it.
-        if self.active.is_empty() {
-            return None;
+        // No idle voice and no steal candidate: every sounding voice outranks
+        // the request, so the note is dropped (retail returns the out-of-range
+        // voice count).
+        let winner = chosen.or(steal)?;
+        // Steal path: FREE the stolen note's `active` slot and key-off its
+        // voice first. Otherwise the stolen note lingers in `self.active`
+        // aliasing the reused voice: its later note-off would key-off the new
+        // note that took the voice over (cutting it short), and the voice
+        // would stay permanently "occupied" in the mask above, leaking it.
+        if chosen.is_none() {
+            let mut idx = 0;
+            while idx < self.active.len() {
+                if self.active[idx].voice as usize == winner {
+                    self.active.swap_remove(idx);
+                } else {
+                    idx += 1;
+                }
+            }
+            if let Some(v) = spu.voices.get_mut(winner) {
+                v.key_off();
+            }
         }
-        let stolen = self.active.remove(0);
-        if let Some(v) = spu.voices.get_mut(stolen.voice as usize) {
-            v.key_off();
+        // Post-allocation bookkeeping: age every voice, zero the winner's,
+        // stamp the winner with the request's priority.
+        for age in self.voice_age.iter_mut() {
+            *age = age.wrapping_add(1);
         }
-        Some(stolen.voice)
+        self.voice_age[winner] = 0;
+        self.voice_prio[winner] = req_prio;
+        Some(winner as u8)
     }
 }
 
@@ -695,7 +801,7 @@ mod tests {
         }
         assert_eq!(seq.active.len(), 24);
 
-        let stolen = seq.alloc_voice(&mut spu);
+        let stolen = seq.alloc_voice(&mut spu, 0);
 
         assert_eq!(stolen, Some(0), "steals the oldest note's voice");
         assert_eq!(
@@ -707,6 +813,123 @@ mod tests {
             !seq.active.iter().any(|n| n.voice == 0),
             "no lingering ActiveNote still references the reused voice"
         );
+    }
+
+    /// Occupy a voice with a synthetic active note so the allocator treats it
+    /// as reserved (the engine stand-in for the retail in-use marker).
+    fn occupy(seq: &mut Sequencer, voice: u8) {
+        seq.active.push(ActiveNote {
+            channel: 0,
+            key: 60 + voice,
+            voice,
+            base_pitch: 0x1000,
+            bend_range: (2, 2),
+            base_vol: (0x3FFF, 0x3FFF),
+        });
+    }
+
+    /// FUN_80066B00 case: the scan takes the FIRST idle voice in ascending
+    /// order and stops there - it does not prefer a later idle voice, and the
+    /// steal evaluation of earlier voices is discarded.
+    #[test]
+    fn retail_alloc_takes_first_idle_and_stops() {
+        let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+        let mut spu = Spu::new();
+        // Voices 0..=2 reserved, 3 and 17 idle.
+        for v in 0..3 {
+            occupy(&mut seq, v);
+        }
+        assert_eq!(seq.alloc_voice(&mut spu, 0), Some(3));
+        // Age bookkeeping ran: everyone aged, winner zeroed.
+        assert_eq!(seq.voice_age[3], 0);
+        assert_eq!(seq.voice_age[0], 1);
+    }
+
+    /// FUN_80066B00 case: a released voice still ringing (envelope above
+    /// zero, no owning note) is NOT idle - it is skipped in favor of a later
+    /// fully-decayed voice.
+    #[test]
+    fn retail_alloc_skips_ringing_release_tails() {
+        let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+        let mut spu = Spu::new();
+        // Voice 0: unreserved but still ringing (release tail).
+        spu.voices[0].adsr.level = 0x1000;
+        spu.voices[0].adsr.phase = crate::spu::adsr::Phase::Release;
+        assert_eq!(seq.alloc_voice(&mut spu, 0), Some(1));
+    }
+
+    /// FUN_80066B00 steal tier: the candidate is the minimum-priority voice
+    /// among those with priority <= the request; the threshold tightens as
+    /// lower priorities are seen.
+    #[test]
+    fn retail_steal_picks_minimum_priority_at_or_below_request() {
+        let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+        let mut spu = Spu::new();
+        for v in 0..24 {
+            occupy(&mut seq, v);
+            spu.voices[v as usize].adsr.level = 0x4000;
+        }
+        seq.voice_prio = [9; 24];
+        seq.voice_prio[5] = 4; // strictly below request: tier-1 candidate
+        seq.voice_prio[9] = 2; // even lower: tightens the threshold
+        seq.voice_prio[13] = 2; // equal to tightened threshold, same env, age 0
+        assert_eq!(seq.alloc_voice(&mut spu, 6), Some(9));
+    }
+
+    /// FUN_80066B00 equal-priority tie-breaks: lowest envelope level first,
+    /// then largest allocation age (least-recently allocated).
+    #[test]
+    fn retail_steal_ties_break_on_env_then_age() {
+        let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+        let mut spu = Spu::new();
+        for v in 0..24 {
+            occupy(&mut seq, v);
+            spu.voices[v as usize].adsr.level = 0x4000;
+        }
+        // All equal priority (= request). Voice 7 is quietest.
+        spu.voices[7].adsr.level = 0x0100;
+        assert_eq!(seq.alloc_voice(&mut spu, 0), Some(7));
+
+        // Re-occupy 7 (alloc freed it) and equalize envelopes; voice 11 is
+        // now the least-recently allocated (largest age).
+        occupy(&mut seq, 7);
+        for v in 0..24 {
+            spu.voices[v as usize].adsr.level = 0x4000;
+        }
+        seq.voice_age = [3; 24];
+        seq.voice_age[11] = 200;
+        assert_eq!(seq.alloc_voice(&mut spu, 0), Some(11));
+    }
+
+    /// FUN_80066B00 case 3: when every sounding voice outranks the request's
+    /// priority, the note is DROPPED (retail returns the out-of-range voice
+    /// count) - it does not steal a higher-priority voice.
+    #[test]
+    fn retail_alloc_drops_note_when_all_voices_outrank_request() {
+        let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+        let mut spu = Spu::new();
+        for v in 0..24 {
+            occupy(&mut seq, v);
+            spu.voices[v as usize].adsr.level = 0x4000;
+        }
+        seq.voice_prio = [10; 24];
+        assert_eq!(seq.alloc_voice(&mut spu, 3), None);
+        assert_eq!(seq.active.len(), 24, "no voice was stolen");
+    }
+
+    /// The retail age-comparison signedness quirk: a challenger age >= 0x8000
+    /// sign-extends negative and can never displace the incumbent.
+    #[test]
+    fn retail_steal_age_signedness_quirk() {
+        let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+        let mut spu = Spu::new();
+        for v in 0..24 {
+            occupy(&mut seq, v);
+            spu.voices[v as usize].adsr.level = 0x4000;
+        }
+        seq.voice_age[0] = 5;
+        seq.voice_age[1] = 0x8001; // huge age, but sign-extends negative
+        assert_eq!(seq.alloc_voice(&mut spu, 0), Some(0));
     }
 
     #[test]
