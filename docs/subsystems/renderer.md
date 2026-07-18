@@ -798,6 +798,20 @@ range — **not** the i16 IR-numerator range. The distinction only shows off-scr
 so the self-consistent in-repo sweep (which shared the earlier i16 assumption on
 both sides) could not surface it; the real-cop2 capture did.
 
+### Statically-linked libgte residue (retail side)
+
+Retail's render paths issue their COP2 ops **inline**: the TMD renderer
+(`FUN_8002735C`), the cluster-A per-prim dispatcher (`FUN_80043390`), and the
+world-map handlers all embed raw `cop2` instructions rather than calling
+per-op wrappers. The libgte per-op wrapper family the link carries anyway
+(`MulMatrix0`, `Square12/0`, `AverageZ3/4`, `OuterProduct12/0`,
+`DpqColorLight`/`DpqColor3`/`Intpl`, the `RotTransPers3`-shaped RTPT
+projector, and the staging loaders) has **no static caller** in `SCUS_942.54`
+and no hit in any runtime hot profile - library link residue, not a render
+seam. The full per-address table lives in
+[`reference/functions.md` § libgte primitives](../reference/functions.md#libgte-primitives);
+the family is ignore-listed in the port catalog.
+
 ### GTE register-state emulator
 
 `Gte` is a register-level cop2 emulator next to the math module, mirroring the PSX hardware register file: V0..V2 input vectors, MAC0..MAC3 wide accumulators (i64), IR0..IR3 saturating shorts, the SXY (3-deep) / SZ (4-deep) / RGB (3-deep) FIFOs, OTZ, and the FLAG sticky-saturation register with hardware-matching bit positions exposed via `gte::flag_bits` (engines comparing against captured FLAG dumps mask the same bits). Control registers cover the rotation matrix, translation, focal length `H`, screen offset `OFX/OFY`, the average-Z scale factors `ZSF3` / `ZSF4`, the depth-cue interpolation slope/intercept `DQA` / `DQB`, the light source matrix `L`, the light color matrix, and the `back_color` / `far_color` triplets used by the depth-cue pipeline.

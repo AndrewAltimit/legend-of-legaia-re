@@ -1153,6 +1153,7 @@ So the blocker (the per-cue enable source) dissolves: there is nothing to trace.
 | XP-table source + reader | resolved + ported | [details ↓](#xp-table-source--reader) |
 | New-Game opening chain + narration roller | resolved (caption = baked TIM; roller config op decoded) | [details ↓](#new-game-opening-chain--narration-roller) |
 | Overlay identity from the disc (static extraction) | resolved (pipeline landed) | [details ↓](#overlay-identity-from-the-disc-static-extraction) |
+| SCUS recomp gap - render/GTE + boot/init clusters | resolved (aliases + libgte residue + dev tooling; `main()` documented) | [details ↓](#scus-recomp-gap---rendergte--bootinit-clusters) |
 | Options/menu overlay PROT entry | resolved (RAM-verified; PROT 0899 @ `0x801CE818`) | The options/pause/inventory-equipment-status menu overlay is **PROT 0899**, not 0896: `FUN_801CF650`'s signature byte-matches PROT 0899 file `0xe38`, and the `.text`+`.rodata` prefix is byte-identical across six menu-open saves. VA-alias sibling of the field overlay 0897 in slot A - the menu overlay replaces the field overlay at the base. The earlier "0896 = menu" label is falsified. |
 | PROT 0896 (`bat_back_dat`) identity | resolved | The unique ~`0x9000`-byte head is the **vestigial Japanese-build field-menu / config / status overlay** - the debug-string sibling of the English retail menu overlay PROT 0899 (same `~0x801D0000` window-renderer VA family, a `"FWIN ERR %d"` printf at file `0x3D4`, `0x414`-byte char-record indexing). 0899 ships the English label set with zero `FWIN`; a signature scan finds 0896 resident in **0** of 140 states (control: English "Battle Voices" resident in 10), so the USA build never loads it. [details ↓](#prot-0896-bat_back_dat-identity) |
 | Slot-A scene-overlay family beyond field/battle/menu | resolved (in the static map) | The rest of the slot-A (`0x801CE818`) VA-alias family is pinned from the disc: **0970 cutscene_str** (STR/MDEC FMV, modes 26/27) and the minigame overlays **0972 fishing / 0975 slot_machine / 0976 baka_fighter / 0980 dance** (the mode-24 `0x3E` door-warp sub-id slots 0/3/4/6), each cross-checked by a documented function landing on a prologue at the base. Minigame entries over-read each other (phantom-base risk); the canonical entry recovers `0x801CE818` and is the entry the warp streams (the historical "slot_machine = 0973 @ `0x801CA818`" was the phantom - the image inside 0973's over-read tail). Found via `asset overlay scan` + the leading dev string. |
@@ -1418,6 +1419,61 @@ The overlay loaders (`FUN_8003EBE4`/`FUN_8003EC70` → `FUN_8003E8A8(param + 0x3
 2. **The 0977 sub-id-5 minigame - resolved.** `0977` ("Ronginus") is the mode-24 case-5 **door/init** slot: the `0x801CEA6C` init prologue + the arena monster-name roster + `other6` dev paths. The Muscle Dome **match SM `FUN_801D0748` + all its data lives in the battle-action overlay (PROT 0898)**, not in `0977` and not in a separate aliasing overlay - the arena is a *mode of the battle engine* (fighters are battle actors, cards resolve through the battle-action path).
    Pinned by `asset overlay find-sig` of the controller prologue (`lui v0,0x8008; lw v0,-0x42dc(v0)` reading the ctx `_DAT_8007bd24`) → 0898 @ base `0x801CE818` file offset `0x1F30`, plus the deck/sub-draw/victory tables resolving in-overlay (`legaia_asset::muscle_dome::verify_resident`; the Duckstation `overlay_muscle_dome.bin` capture was that overlay's slot).
 3. **Engine mirrors - resolved.** `OVERLAY_PROT_BASE` now carries the extraction-space `0x37F` (the engine host chain - `prot_one_shot_load` → `entry_start_lba_retail`, whose `toc` array starts at raw dword 2 - consumes extraction indices, so the raw `+ 0x381` loaded entries 2 high); `summon.rs` maps `0x81..=0x8B → 903..=913` directly. The constant's unit test documents the raw-vs-extraction shift.
+
+### SCUS recomp gap - render/GTE + boot/init clusters
+
+*Status:* resolved (behavior-read + dumped); the general-game band remains the
+open remainder
+
+The psxrecomp static recompilation's function inventory surfaced a set of SCUS
+entries with no dump / doc / port-tag on our side, clustered by VA band. The
+render/GTE and boot/init clusters are now fully attributed, and the attribution
+is mostly *negative* - the VA-band labels did not survive a behavior read.
+Recorded so the same entries aren't re-flagged:
+
+- **The "COP2 render gap" band (`0x43000..0x47000`) is not render code.** The
+  small entries there are recomp block-splits of **inventory/equip predicates**:
+  `0x800430D4..0x80043134` = interior of `FUN_800430AC` (party-wide accessory
+  unequip-by-id), `0x80043238..0x8004325C` = interior of `FUN_800431FC`
+  (knows-spell), `0x80043290/0x800432A8` = interior of `FUN_80043264`
+  (accessory-equipped). `0x80043580` / `0x8004361C` are interior blocks of the
+  already-documented cluster-A renderer `FUN_80043390` (far-colour / ZSF setup +
+  its custom-convention epilogue). `0x80046498` = `FUN_80046494` (+4 entry skew,
+  the locomotion collision resolver - the "render→overlay draw seam" reading was
+  already falsified) and `0x8004697C` = `FUN_80046978` (+4, palette fade).
+- **The 14 `gte_execute` entries are statically-linked libgte per-op wrappers**
+  (`MulMatrix0`, `Square12/0`, `AverageZ3/4`, `OuterProduct12/0`, `DCPL`/`DPCT`/
+  `INTPL`, the `RotTransPers3`-shaped RTPT projector) with zero static callers
+  and zero runtime hot-profile hits - link residue; the render paths issue COP2
+  inline. Table: [`functions.md` § libgte primitives](functions.md#libgte-primitives);
+  all ignore-listed.
+- **The boot/init cluster is dominated by aliases of documented functions.**
+  `0x80016448`→`FUN_80016444`, `0x80016B74`→`FUN_80016B6C`,
+  `0x800173C0`→`FUN_800173BC` (dev profiler HUD, ignored),
+  `0x80016998`→interior of `FUN_8001698C`, `0x80017914`→`FUN_80017910`,
+  `0x80017A04`-family→interior of `FUN_800179C0`, `0x8001A078`→interior of the
+  dev printf `FUN_8001A068`, `0x8001A814`→interior of `FUN_8001A78C` (RGB→HSV),
+  `0x8001AA14..0x8001AA60` = the six hue-sextant jump-table arms inside
+  `FUN_8001A8DC` (HSV→RGB), `0x80019BC0..0x80019D48` = interior of the atan2
+  bearing resolver `FUN_80019B28`, `0x8005B2A4`/`0x8005B340` = interior of
+  PushMatrix `0x8005B268` / PopMatrix `0x8005B308`.
+- **The genuinely-new identifications:** `FUN_80015E90` = **`main()`**
+  ([`boot.md` § The main loop](../subsystems/boot.md#the-main-loop-fun_80015e90));
+  the dev draw cluster `FUN_8001CE34` (3-D line) / `FUN_8001CAD8` (wireframe
+  box, the sole source of `8001CE34`'s in-degree-12 - the "most-called boot
+  utility" reading is falsified) / `FUN_8001CCFC` (2-D line) / `FUN_8001C7A0`
+  (4x8 digit printer); `FUN_800430AC` (whose Ghidra auto-analysis body was
+  degenerate until force-created); and `FUN_8004CE30`, the largest undumped SCUS
+  function - the per-frame battle actor maintenance pass
+  ([`battle.md` § Per-frame actor maintenance](../subsystems/battle.md#per-frame-actor-maintenance-fun_8004ce30)),
+  **not** a mode dispatcher.
+- **Still open from the same inventory:** the general-game band (never
+  per-address catalogued), headed by `0x8002A9F8` (2.2 KB table-driven logic,
+  no static caller), `0x80056208` (libgpu-band SCUS→overlay bridge into
+  `0x801F69xx`), `0x8004DC68`, `0x8002149C`, `0x80036D80`, `0x80059E10`,
+  `0x80025DA4`. Next step: behavior-read each against its `0x8007xxxx`/`gp`
+  globals the way this thread's entries were closed. The PsyQ sound-driver
+  cluster is tracked separately under Audio.
 
 A thread belongs here when:
 

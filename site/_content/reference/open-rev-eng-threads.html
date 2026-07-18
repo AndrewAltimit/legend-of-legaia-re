@@ -595,6 +595,12 @@
         <td><a href="../tooling/static-overlay-pipeline.html">static-overlay-pipeline</a></td>
       </tr>
       <tr>
+        <td>SCUS recomp gap - render/GTE + boot/init clusters</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>The recomp's "undocumented" render/GTE + boot bands dissolve on behavior read: entry-skew aliases of documented functions, statically-linked libgte per-op wrappers with zero callers (link residue), and a dev draw cluster (wireframe box / line / digit emitters). Genuinely new: <code>FUN_80015E90</code> = <strong>main()</strong>, and <code>FUN_8004CE30</code> = the per-frame battle actor maintenance pass (not a mode dispatcher). The general-game band stays open.</td>
+        <td><a href="../subsystems/boot.html">boot</a></td>
+      </tr>
+      <tr>
         <td>Options/menu overlay PROT entry</td>
         <td><span class="tag tag-done">resolved</span></td>
         <td><strong>PROT 0899</strong> at <code>0x801CE818</code>: <code>FUN_801CF650</code>'s signature byte-matches file <code>0xe38</code>; the prefix is byte-identical across menu-open saves. The earlier "0896 = menu" label is falsified.</td>

@@ -21,6 +21,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 - [Battle archive (`FUN_80052FA0` / `FUN_800542C8`)](#battle-archive-fun_80052fa0--fun_800542c8)
 - [Character record layout](#character-record-layout)
 - [Battle main dispatcher (`FUN_801D0748`)](#battle-main-dispatcher-fun_801d0748) · [hottest utility (`FUN_801D8DE8`)](#hottest-battle-utility-fun_801d8de8) · [weapon trail builder](#weapon--effect-trail-builder-fun_80048310--fun_800485bc)
+- [Per-frame actor maintenance (`FUN_8004CE30`)](#per-frame-actor-maintenance-fun_8004ce30)
 
 **Clean-room engine systems**
 - [Inventory (page-banked)](#inventory-cratesasset-page-banked-layout) · [Status effects](#status-effects) · [AP / Spirit gauge](#ap--spirit-gauge) · [Battle stat aggregator](#battle-stat-aggregator) · [Item catalog](#item-catalog)
@@ -675,6 +676,38 @@ Visual-only helpers that build the swept geometry behind a moving battle actor (
 `FUN_800485BC` is a 275-instruction quad-strip emitter. It looks up the actor pose from `*(int*)(0x801C9370 + actor[+0x5A]*4) + 0x34/+0x38` (re-confirms the battle actor pointer table), reads sin/cos LUTs at `_DAT_8007B81C` / `_DAT_8007B7F8` keyed on `actor[+0x26] * 0xFFF`, runs each vertex through `FUN_800195A8` for GTE projection, and drops `0x3B808080` (GP0 G3 textured-quad) packets into the OT.
 
 These are pure rendering helpers - no gameplay state changes. Engine reimpl can defer them until visuals matter.
+
+## Per-frame actor maintenance (`FUN_8004CE30`)
+
+The SCUS-resident per-frame sweep over the battle actor table - one of the
+largest SCUS functions with no static caller (it is reached from the battle
+tick). Three sequential passes over `DAT_801C9370`, bounded by the actor count
+byte `*(_DAT_8007BD24)[0]`:
+
+1. **Status-flag reconcile.** For each actor, walks the element/condition word
+   in the `0x80084140`-region record and clears matching condition bits in the
+   actor's status halfword at `+0x16E` (masks `0x0001`/`0x0003`/`0x0078`/
+   `0x1000`/`0x0004`/`0x0400`), i.e. "expire conditional status effects".
+2. **Action reaction.** Resolves the active actor's current action id via
+   `actor+0x22C → +0x4C → +0x77` (the shared spell/move id space of
+   [`move-power.md`](../formats/move-power.md)) and per action band seeds
+   animation timers and effect pointers from the overlay globals
+   `_DAT_801F53D4` / `_DAT_801F53D8` into `actor+0x4`, `+0x21B..+0x21F`;
+   the `action == 24` low-speed arm calls overlay `FUN_801E1D98`.
+3. **Gauge + tint refresh.** Gated on the sequence sub-phase byte
+   `_DAT_8007BCEC` (138/170/180 bands) and the active action id
+   `*(_DAT_8007BD24)[7]`: recomputes AP/HP gauge geometry - the `0x51EB851F`
+   magic multiply is a fixed-point ÷100 (percent-of-max), and the `0x1F80`
+   constant is the gauge bar-width base (`8064 - n*18`), **not** a hardware
+   register - then, for actors with status bit `0x0004` and a live fade byte
+   `+0x220`, averages the RGB555 channels and writes the damage-flash tint to
+   `actor+0xE34`.
+
+Calls the actor-spawn/move-VM invoker `FUN_80021B04` and helpers
+`FUN_8004FE5C` / `FUN_800583C8` / `FUN_80031D00` / RNG `FUN_80056798`.
+Despite its size and shape it is **not a mode dispatcher**: the master mode
+word `_DAT_8007B83C` never appears; every global it touches is battle-domain.
+`see ghidra/scripts/funcs/8004ce30.txt`.
 
 ## Inventory (`crates/asset` page-banked layout)
 
