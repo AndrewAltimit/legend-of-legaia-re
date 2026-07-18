@@ -87,12 +87,18 @@ impl World {
         {
             self.screen_fade = None;
         }
-        // Step the field-VM colour fade (op 0x34 sub-0, e.g. the opening white
-        // flash); drop it when the ramp completes.
-        if let Some(fade) = &mut self.color_fade
-            && !fade.step()
-        {
-            self.color_fade = None;
+        // Step the two scripted scene-tint channels (op 0x34 sub-0 effect
+        // tint + op 0x4C 0x12 global screen tint). A ramp that lands on a
+        // non-neutral target HOLDS there (a screen faded to black stays
+        // black until a new op replaces it); one that lands on the neutral
+        // identity is dropped so the render path returns to untouched.
+        for tint in [&mut self.effect_tint, &mut self.screen_tint] {
+            if let Some(t) = tint {
+                t.step();
+                if t.is_identity() {
+                    *tint = None;
+                }
+            }
         }
         // Consume a pending FMV transition the field VM signalled last frame
         // (op `0x4C 0xE2`). Retail's main mode dispatcher reads the

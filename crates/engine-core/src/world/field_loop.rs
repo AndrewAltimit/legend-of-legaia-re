@@ -336,6 +336,49 @@ impl World {
         Some(res)
     }
 
+    /// Run the just-loaded scene-entry system script (ctx `0xFB`) up to its
+    /// first yield / wait / halt, bounded.
+    ///
+    /// Retail's per-frame context loop runs every live context until it
+    /// yields, so the entry script's whole prologue - flag routing, tile
+    /// walls, BGM, and the `0x52F` arrival-fade arm (`4C 12 00 00 00 00 00`
+    /// instant black + `4C 12 80 80 80 44 00` ramp to neutral) - executes
+    /// within the scene-load frame, BEFORE the first rendered frame. The
+    /// engine's per-tick driver steps the field VM one op per tick, which
+    /// would smear those load-frame ops over seconds (and flash the scene
+    /// full-bright before the fade op is reached); this pre-run restores the
+    /// load-frame semantics. The budget bounds a mis-decoded stream; a
+    /// script parked on a wait/yield resumes on the normal per-tick step.
+    ///
+    /// REF: FUN_8003AB2C (system-script frame slice)
+    pub fn pre_run_entry_script(&mut self) {
+        const ENTRY_SCRIPT_STEP_BUDGET: usize = 2048;
+        // Seat the system ctx on the player's spawn position: the entry
+        // script's player-targeted position tests (`CD F8` bbox - retail
+        // resolves target `0xF8` to the live player object) read the ctx
+        // position, and the ctx-0xFB system context has none of its own. The
+        // opdeene fade arm sits behind exactly such a bbox gate.
+        if let Some(slot) = self.player_actor_slot
+            && let Some(a) = self.actors.get(slot as usize)
+        {
+            self.field_ctx.world_x = a.move_state.world_x as u16;
+            self.field_ctx.world_z = a.move_state.world_z as u16;
+        }
+        for _ in 0..ENTRY_SCRIPT_STEP_BUDGET {
+            match self.step_field() {
+                // Continue through `Yield` as well as `Advance`: several
+                // dispatcher arms exit via retail's `addiu s8, s8, N` PC-delta
+                // idiom (e.g. the nibble-7 tile-wall ops), which the VM models
+                // as a yield even though retail continues the same frame - the
+                // opdeene fade arm sits past three of them. Real frame parks
+                // stop the pre-run: `WaitFrames` mid-wait reports `Halt` at
+                // PC, and unimplemented / text ops report Pending / Unknown.
+                Some(FieldStepResult::Advance { .. } | FieldStepResult::Yield { .. }) => continue,
+                _ => break,
+            }
+        }
+    }
+
     /// Drain a queued scripted-encounter install (set by the `+0x94`
     /// forwarded-PC capture host hook) into the active encounter session.
     /// No-op when nothing is queued. Called by [`Self::step_field`] once the

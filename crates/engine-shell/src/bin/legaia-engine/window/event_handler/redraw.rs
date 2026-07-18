@@ -432,16 +432,48 @@ impl PlayWindowApp {
             // warm gold sepia (dim ambient + gold far-colour depth cue in
             // retail); every other scene, incl. the Rim Elm hand-off, is
             // natural colour. Staged every frame so it clears on transition.
-            match self.session.host.world.scene_color_grade() {
-                Some(g) => r.set_color_grade(g.gold, g.strength),
-                None => r.set_color_grade([1.0, 1.0, 1.0], 0.0),
+            //
+            // The scripted screen-fade tint (op `0x4C 0x12` global tint -
+            // the scene-entry fade-from-black) composes into the
+            // same multiply: with grade strength `s` and gold `G`, the shaded
+            // pixel is `rgb*((1-s) + G*s)`, so a full-strength grade of
+            // `gold' = tint*((1-s) + G*s)` is exactly `tint * graded`. The
+            // depth-cue far colour is tinted the same way below, so both
+            // branches of the shader's cue mix carry the tint and the product
+            // distributes to the final pixel. `None` tint stages the previous
+            // identity values - the byte-identical untouched path. The text /
+            // narration overlay is a separate shader and stays bright, which
+            // is retail's look (the creation crawl scrolls over the fades).
+            let tint = self.session.host.world.scene_screen_tint();
+            match (self.session.host.world.scene_color_grade(), tint) {
+                (Some(g), None) => r.set_color_grade(g.gold, g.strength),
+                (grade, Some(t)) => {
+                    let (gold, s) = grade
+                        .map(|g| (g.gold, g.strength))
+                        .unwrap_or(([1.0; 3], 0.0));
+                    let eff = [
+                        t[0] * ((1.0 - s) + gold[0] * s),
+                        t[1] * ((1.0 - s) + gold[1] * s),
+                        t[2] * ((1.0 - s) + gold[2] * s),
+                    ];
+                    r.set_color_grade(eff, 1.0);
+                }
+                (None, None) => r.set_color_grade([1.0, 1.0, 1.0], 0.0),
             }
             // The grade's second half: the per-render-node DPCS far-colour
             // pull (gold far colour + depth-graded IR0 in retail), staged as
             // a view-depth IR0 ramp. Cleared every non-prologue frame, so
-            // interactive scenes render the identity (ramp-off) path.
+            // interactive scenes render the identity (ramp-off) path. The
+            // screen-fade tint multiplies the far colour too (see above), so
+            // a fade-to-black reaches full black on far-cued geometry.
             match self.session.host.world.scene_depth_cue() {
-                Some(c) => r.set_depth_cue_ramp(c.far, c.near_z, c.far_z, c.max_ir0),
+                Some(c) => {
+                    let far = match tint {
+                        Some(t) => [c.far[0] * t[0], c.far[1] * t[1], c.far[2] * t[2]],
+                        None => c.far,
+                    };
+                    r.set_depth_cue_ramp(far, c.near_z, c.far_z, c.max_ir0)
+                }
                 None => r.clear_depth_cue_ramp(),
             }
             // Retail GTE NCLIP winding rejection, scoped to the in-engine
@@ -1376,21 +1408,11 @@ impl PlayWindowApp {
                     mvp: screen_fx_mvp,
                 });
             }
-            // Field colour fade (op 0x34 sub-0, e.g. the opening white
-            // flash): a full-screen wash of the fade colour. The PSX
-            // pipeline blends per-ABR-mode (no free alpha) and the
-            // retail fade-actor draw handler isn't dumped, so this is
-            // an approximation - a 50%-average (ABR 0) wash drawn while
-            // the ramp still has coverage; it lifts when the fade
-            // completes (`World::color_fade` drops). Held here so it
-            // outlives `screen_fx_solid`'s borrow.
-            let color_fade_mesh = self.build_color_fade_mesh(r);
-            if let Some(m) = &color_fade_mesh {
-                color_draws.push(ColorSceneDraw {
-                    mesh: m,
-                    mvp: screen_fx_mvp,
-                });
-            }
+            // The scripted screen fade (op 0x4C 0x12) is NOT drawn as a wash
+            // mesh here: it is a multiply tint staged into the colour grade +
+            // depth-cue far colour (see the grade staging above), matching
+            // the retail mechanism - the 3D scene darkens while the narration
+            // overlay keeps scrolling bright.
             legaia_engine_render::profile::draw_counts(draws.len(), color_draws.len());
             let scene = RenderScene {
                 vram,

@@ -168,6 +168,13 @@ impl SceneHost {
         // in `camera_configure`, so a stale set would leak the prior scene's
         // focus / depth into a beat that omits those slots).
         self.world.camera_state.params.clear();
+        // The op-0x34 effect-global tint is scene-scoped (the opening
+        // timeline's between-beat black fades); drop any in flight. The
+        // op-0x4C-0x12 global screen tint (`World::screen_tint`) deliberately
+        // PERSISTS - retail's cross-scene fade continuity: a departure
+        // fade-to-black carries into the next scene, whose `P1[0]` arrival
+        // arm fades back in.
+        self.world.effect_tint = None;
         // Scripted CLUT-cell effects are scene-scoped (their cell operands
         // came from the previous scene's MAN); drop any in flight and re-pin
         // the frame-step factor `dt` (retail `DAT_1F800393`, the adaptive
@@ -894,6 +901,24 @@ impl SceneHost {
         // shop-open path offers real per-scene items at real prices instead of a
         // hand-authored list. Cheap when the scene has no merchant.
         self.populate_scene_shops();
+        // Run the entry system script's load-frame slice (to its first
+        // yield/wait): retail executes the ctx-0xFB prologue - flag routing,
+        // walls, BGM cue, and the 0x52F arrival-fade arm (fade-in from
+        // black) - within the scene-load frame, before the first rendered
+        // frame. Placed at the end of entry so every host hook the script
+        // fires sees the fully-installed scene (channels, props, shops).
+        // Scoped to the opening prologue cutscene scenes (the same gate as
+        // `scene_color_grade`): their `P1[0]` is pure choreography setup, so
+        // the linear load-frame run is safe, and it is what puts the fade
+        // instant-black on screen before the first frame. Interactive scenes
+        // keep the per-tick trickle - a linear pre-run through their
+        // dialog-carrying entry scripts can wander into text bytes that
+        // decode as story-flag writes (seen as a story-gate drift in the
+        // chapter-2 hub sweep), so widening this gate needs a text-boundary
+        // stop first.
+        if matches!(name, "opdeene" | "opstati" | "opurud") {
+            self.world.pre_run_entry_script();
+        }
         // Drain any pending transition the previous scene left behind.
         self.world.pending_scene_transition = None;
         Ok(())

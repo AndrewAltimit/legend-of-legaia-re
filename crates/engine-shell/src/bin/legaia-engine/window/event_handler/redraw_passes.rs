@@ -614,30 +614,4 @@ impl PlayWindowApp {
         }
         (screen_fx_solid, screen_fx_tex)
     }
-
-    pub(super) fn build_color_fade_mesh(
-        &self,
-        r: &legaia_engine_render::Renderer,
-    ) -> Option<UploadedColorMesh> {
-        let mut color_fade_mesh = None;
-        if let Some(cf) = &self.session.host.world.color_fade
-            && cf.coverage() > 0.15
-        {
-            let rgb = cf.rgb();
-            let pos = vec![
-                [0.0f32, 0.0, -0.003],
-                [320.0, 0.0, -0.003],
-                [0.0, 240.0, -0.003],
-                [320.0, 240.0, -0.003],
-            ];
-            let colors = vec![rgb; 4];
-            let idx = [0u32, 1, 2, 1, 3, 2];
-            let blend = vec![legaia_engine_render::psx_blend::pack_blend_word(true, 0); 4];
-            match r.upload_color_mesh_blended(&pos, &colors, &idx, &blend) {
-                Ok(m) => color_fade_mesh = Some(m),
-                Err(e) => log::warn!("color-fade wash upload: {e:#}"),
-            }
-        }
-        color_fade_mesh
-    }
 }

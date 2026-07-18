@@ -370,14 +370,28 @@ pub struct World {
     /// overlay from [`crate::fade::FadeState::rgb`] while this is `Some`.
     pub screen_fade: Option<crate::fade::FadeState>,
 
-    /// Active field-VM colour-fade overlay (op `0x34` sub-0, the effect-global
-    /// colour + intensity setup `FUN_801E1FB0`). The opening prologue's white
-    /// flash (`34 05 FF FF FF 00 00`) sets this; hosts draw a full-screen wash
-    /// of [`crate::fade::ColorFade::rgb`] at [`crate::fade::ColorFade::coverage`]
-    /// while it is `Some`. Stepped once per [`World::tick`]; dropped when the
-    /// ramp completes. Distinct from [`Self::screen_fade`] (the battle escape
-    /// RGB ramp) - this is the field/cutscene fade path.
-    pub color_fade: Option<crate::fade::ColorFade>,
+    /// Effect-layer global colour (op `0x34` sub-0, `FUN_801E1FB0`; neutral
+    /// operand `0xFF`, stored normalized). The opening timeline ramps it in
+    /// the crawl gaps (`34 05 00 00 00 D2 00` = to black over 210 frames,
+    /// `34 01 FF FF FF 00 00` = instant neutral). Stepped once per
+    /// [`World::tick`]; dropped once it lands on the neutral identity.
+    /// **Not a screen fade**: the retail cold-boot capture holds the lit
+    /// villager tableau across the span where the timeline's black ramp
+    /// would blank a full-screen fade, so this value feeds the effect layer
+    /// (the creation-glow planes; consumer still an open thread) and stays
+    /// out of [`World::scene_screen_tint`]. Scene-local: reset on scene
+    /// entry. Distinct from [`Self::screen_fade`] (the battle escape ramp).
+    pub effect_tint: Option<crate::fade::SceneTintRamp>,
+
+    /// Global multiply screen tint (op `0x4C 0x12` → `DAT_8007BCB8/B9/BA`,
+    /// neutral operand `0x80`, stored normalized; ramp via `FUN_8003C5F0`).
+    /// The scene-entry fade-in from black - every field scene `P1[0]`'s
+    /// `0x52F` arrival arm: `4C 12 00 00 00 00 00` (instant black) then
+    /// `4C 12 80 80 80 44 00` (ramp to neutral over 68 frames) - lives here.
+    /// Persists across scene changes (retail's cross-scene fade continuity:
+    /// a departure fade-to-black carries into the next scene's fade-in).
+    /// Stepped once per [`World::tick`]; dropped once neutral.
+    pub screen_tint: Option<crate::fade::SceneTintRamp>,
 
     /// Persistent per-character roster - populated by [`World::load_party`]
     /// and written back by [`World::save_party`]. Each record is the
@@ -1924,7 +1938,8 @@ impl World {
             active_party: Vec::new(),
             battle_end: None,
             screen_fade: None,
-            color_fade: None,
+            effect_tint: None,
+            screen_tint: None,
             roster: legaia_save::Party::zeroed(0),
             pending_scene_transition: None,
             pending_named_scene_transition: None,
@@ -2183,6 +2198,15 @@ impl World {
         self.entering_town01_opening = false;
         self.pending_record_spawns.clear();
         self.opening_chain_active = false;
+        // Arm the arrival side of the scene-transition fade handshake
+        // (`0x52F`/`0x530`/`0x531`, the shared `P1[0]` idiom): with `0x52F`
+        // set, the destination entry script's arrival arm fires `4C 12 00 00
+        // 00 00 00` (instant black) + `4C 12 80 80 80 44 00` (ramp to neutral
+        // over 68 frames) - the fade-in from black the retail cold-boot
+        // capture shows opening the prologue. In retail the flag is staged by
+        // the departing side / New-Game boot before the field launches; the
+        // engine's New Game is that boot.
+        self.system_flag_set(0x52F);
         self.mode = SceneMode::Field;
     }
 }

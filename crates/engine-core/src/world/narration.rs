@@ -130,6 +130,29 @@ impl World {
             .map(|_| crate::fade::DepthCueRamp::PROLOGUE_GOLD)
     }
 
+    /// The scripted full-scene multiply tint currently in force, or `None`
+    /// for the untouched render path. This is [`crate::World::screen_tint`] -
+    /// the op `0x4C 0x12` global tint (`DAT_8007BCB8/B9/BA`), the
+    /// scene-transition fade primitive (the opening's fade-in from black).
+    ///
+    /// Hosts stage this each frame over the drawn 3D scene (multiplying the
+    /// colour-grade gold and the depth-cue far colour by it - both branches
+    /// of the shader's cue mix, so the product distributes to the final
+    /// pixel). The text/narration overlay stays bright, matching retail (the
+    /// creation crawl scrolls over the fade). `None` when no tint is active -
+    /// the identity path, byte-identical to a build without this feature.
+    ///
+    /// [`crate::World::effect_tint`] (op `0x34` sub-0) is deliberately NOT
+    /// composed in: the retail cold-boot capture holds the lit villager
+    /// tableau across the whole span where the opening timeline's
+    /// `34 01 00 00 00 28 00` → `34 05 FF FF FF 5A 00` pair would black a
+    /// full-screen fade, which falsifies the "op 0x34 = screen fade" reading.
+    /// That op ramps the effect-layer colour (`FUN_801E1FB0`); its consumer
+    /// (the creation-glow effect planes) is a separate open thread.
+    pub fn scene_screen_tint(&self) -> Option<[f32; 3]> {
+        self.screen_tint.as_ref().map(|t| t.factor())
+    }
+
     /// Skip the active narration to its next page (a confirm press). Clears
     /// the presenter once it advances past the last page. Returns `true` while
     /// narration is still on screen, `false` once it completes (so the host
