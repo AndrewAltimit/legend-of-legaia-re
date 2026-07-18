@@ -1,14 +1,19 @@
 use crate::*;
 
 /// Retail PSX framebuffer placement of the slot-preview 5×3 grid.
-/// Mirror of `legaia_asset::title_pak::OVERLAY_LOAD_SLOT_GRID_*` -
-/// retail-pinned via per-row/per-column blue-outline scan on
-/// `slot_info_fb.png`: cell visible top-left corners at fb-y rows
-/// 35 (row 0), 55 (row 1), 75 (row 2) and fb-x columns 104, 144,
-/// 184, 224, 264 (col 0..4). Pitch X = 40, pitch Y = 20.
-pub const SLOT_GRID_ORIGIN: (i32, i32) = (104, 35);
+/// GP0-dump-pinned on the live SlotPreview screen: the 32×32 cell
+/// quads land at row-0 x = 98, 138, 178, 218, 258 / y = 28, row 1 at
+/// x = 102.. / y = 48, row 2 at x = 106.. / y = 68 - each row is
+/// shifted **+4 px right** of the row above (the grid slants). With
+/// the tile's 6 px transparent margin the visible 20×20 frames start
+/// at `(104, 34)`. Pitch X = 40, pitch Y = 20.
+pub const SLOT_GRID_ORIGIN: (i32, i32) = (104, 34);
 pub const SLOT_GRID_PITCH_X: i32 = 40;
 pub const SLOT_GRID_PITCH_Y: i32 = 20;
+/// Per-row rightward shift: retail offsets each successive grid row
+/// +4 px in x (row 0 at 98, row 1 at 102, row 2 at 106 in cell-quad
+/// coords).
+pub const SLOT_GRID_ROW_STAGGER_X: i32 = 4;
 pub const SLOT_GRID_COLS: usize = 5;
 pub const SLOT_GRID_ROWS: usize = 3;
 
@@ -38,6 +43,10 @@ pub fn slot_preview_grid_draws_for(
 ) -> Vec<SpriteDraw> {
     let scale = stage_scale.max(1) as i32;
     let white = [1.0, 1.0, 1.0, 1.0];
+    // Retail dims every non-focused cell (and its portrait) to 0x60
+    // modulation = 75% of the neutral 0x80; only the focused cell
+    // draws at full brightness (GP0 dump of the live SlotPreview).
+    let dim = [0.75, 0.75, 0.75, 1.0];
     let mut out = Vec::with_capacity(SLOT_GRID_COLS * SLOT_GRID_ROWS + 2);
 
     let push = |out: &mut Vec<SpriteDraw>,
@@ -45,7 +54,8 @@ pub fn slot_preview_grid_draws_for(
                 sx: i32,
                 sy: i32,
                 sw: i32,
-                sh: i32| {
+                sh: i32,
+                color: [f32; 4]| {
         out.push(SpriteDraw {
             dst: (
                 stage_origin.0 + sx * scale,
@@ -54,7 +64,7 @@ pub fn slot_preview_grid_draws_for(
                 (sh as u32) * scale as u32,
             ),
             src,
-            color: white,
+            color,
         });
     };
 
@@ -64,17 +74,26 @@ pub fn slot_preview_grid_draws_for(
         let row = slot / SLOT_GRID_COLS;
         // Empty-frame sprite top-left in stage pixels. The 32×32
         // sprite has a 6px transparent margin; the visible 20×20
-        // frame's top-left should land at (origin.x + col*pitch_x,
-        // origin.y + row*pitch_y). So sprite origin = grid pos - 6.
-        let cell_x = SLOT_GRID_ORIGIN.0 + (col as i32) * SLOT_GRID_PITCH_X;
+        // frame's top-left should land at (origin.x + col*pitch_x +
+        // row*stagger, origin.y + row*pitch_y) - retail slants each
+        // row +4 px right of the one above. Sprite origin = grid pos
+        // - 6.
+        let cell_x = SLOT_GRID_ORIGIN.0
+            + (col as i32) * SLOT_GRID_PITCH_X
+            + (row as i32) * SLOT_GRID_ROW_STAGGER_X;
         let cell_y = SLOT_GRID_ORIGIN.1 + (row as i32) * SLOT_GRID_PITCH_Y;
+        let color = if slot == cursor_slot as usize {
+            white
+        } else {
+            dim
+        };
         if let Some(frame) = rects.load_empty_frame {
             // The full 32×32 sprite is drawn with its top-left at
             // (cell_x - 6, cell_y - 6) so the visible 20×20 border
             // sits at the cell position. Engines may instead sample
             // sub-rect (6, 6, 20, 20) and skip the margin - both
             // produce the same on-screen pixels.
-            push(&mut out, frame, cell_x - 6, cell_y - 6, 32, 32);
+            push(&mut out, frame, cell_x - 6, cell_y - 6, 32, 32, color);
         }
         if cell.present
             && let Some(char_id) = cell.portrait_char_id
@@ -86,20 +105,23 @@ pub fn slot_preview_grid_draws_for(
         {
             // Portrait centred inside the 20×20 visible frame
             // (16×16 portrait + 2px margin each side).
-            push(&mut out, portrait, cell_x + 2, cell_y + 2, 16, 16);
+            push(&mut out, portrait, cell_x + 2, cell_y + 2, 16, 16, color);
         }
     }
 
     // Cursor sprite to the left of the currently-selected cell.
-    // Retail pin: in `slot_info_fb.png` the pointing-finger cursor
-    // bbox sits at fb-x 90..105 (16 wide) pointing at cell (0, 0) at
-    // fb-x 104. That puts the cursor's right edge 1 px shy of the
-    // cell's left edge - i.e. `cursor_x = cell_x - 14` (not -16).
+    // GP0 pin: on the live SlotPreview the pointing-finger sprite sits
+    // at (88, 32) against the focused cell quad at (98, 28) - i.e.
+    // 10 px left of the cell quad and 4 px below its top, which in
+    // visible-cell coords is `(cell_x - 16, cell_y - 2)`.
     let cursor_col = (cursor_slot as usize) % SLOT_GRID_COLS;
     let cursor_row = (cursor_slot as usize) / SLOT_GRID_COLS;
-    let cursor_x = SLOT_GRID_ORIGIN.0 + (cursor_col as i32) * SLOT_GRID_PITCH_X - 14;
-    let cursor_y = SLOT_GRID_ORIGIN.1 + (cursor_row as i32) * SLOT_GRID_PITCH_Y;
-    push(&mut out, rects.cursor, cursor_x, cursor_y, 16, 16);
+    let cursor_x = SLOT_GRID_ORIGIN.0
+        + (cursor_col as i32) * SLOT_GRID_PITCH_X
+        + (cursor_row as i32) * SLOT_GRID_ROW_STAGGER_X
+        - 16;
+    let cursor_y = SLOT_GRID_ORIGIN.1 + (cursor_row as i32) * SLOT_GRID_PITCH_Y - 2;
+    push(&mut out, rects.cursor, cursor_x, cursor_y, 16, 16, white);
 
     out
 }

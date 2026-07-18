@@ -142,20 +142,12 @@ impl PlayWindowApp {
                         location: &snap.location,
                     })
                     .collect();
-                let (cursor, confirm) = match s.phase() {
-                    SelectPhase::Browsing { cursor } => (cursor as usize, None),
-                    // Load-mode NowChecking / SlotPreview phases render
-                    // separately (see slot_preview_draws / now_checking
-                    // overlay below); pass through to a plain cursor.
-                    SelectPhase::NowChecking { slot, .. } | SelectPhase::SlotPreview { slot } => {
-                        (slot as usize, None)
-                    }
-                    SelectPhase::ConfirmOverwrite { slot, cursor } => {
-                        (slot as usize, Some(("Overwrite slot?", cursor)))
-                    }
-                    SelectPhase::ConfirmDelete { slot, cursor } => {
-                        (slot as usize, Some(("Delete slot?", cursor)))
-                    }
+                let cursor = match s.phase() {
+                    SelectPhase::Browsing { cursor } => cursor as usize,
+                    SelectPhase::NowChecking { slot, .. }
+                    | SelectPhase::SlotPreview { slot }
+                    | SelectPhase::ConfirmOverwrite { slot, .. }
+                    | SelectPhase::ConfirmDelete { slot, .. } => slot as usize,
                     SelectPhase::Done(_) => return Vec::new(),
                 };
                 // Field-menu Save subsession reuses the load-screen
@@ -168,16 +160,36 @@ impl PlayWindowApp {
                     .unwrap_or((1, 1));
                 let (stage_origin, stage_scale) = self.save_select_stage(sw, sh);
                 let emit_text_cursor = self.save_menu.is_none();
-                legaia_engine_render::save_select_draws_for(
+                // The title word comes from the session's MODE, not
+                // from which menu row opened it: the field menu's Load
+                // row builds the same sub-session shape as its Save
+                // row (`FieldMenuSubsession::Save` with
+                // `SaveSelectMode::Load`), and retail's header tab
+                // toggles its string on the same direction flag
+                // (`_DAT_801f0200`). A hardcoded "Save" here made the
+                // in-game Load screen carry the Save title.
+                let mut out = legaia_engine_render::save_select_draws_for(
                     &self.font,
-                    "Save",
+                    save_select_title_word(s),
                     &rows,
                     cursor,
-                    confirm,
+                    None,
                     stage_origin,
                     stage_scale,
                     emit_text_cursor,
-                )
+                );
+                // Phase overlays (NowChecking dialog text, slot-info
+                // panel text / captions, confirm messagebox) - shared
+                // with the boot Continue → Load screen so the two
+                // paths render identically.
+                out.extend(save_select_phase_text_draws(
+                    &self.font,
+                    s,
+                    stage_origin,
+                    stage_scale,
+                    self.save_menu.is_some(),
+                ));
+                out
             }
             FieldMenuSubsession::Spells(s) => {
                 use legaia_engine_core::spell_menu::SpellMenuPhase;

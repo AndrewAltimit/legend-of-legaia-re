@@ -29,28 +29,36 @@ pub const BOOT_UI_STAGE_H: u32 = 240;
 pub const SAVE_SELECT_PANEL_POS: (i32, i32) = (6, 4);
 /// Total size of the load-screen panel in source pixels.
 pub const SAVE_SELECT_PANEL_SIZE: (i32, i32) = (81, 29);
-/// Retail PSX framebuffer position of the SLOT 1 pill **sprite top
-/// edge**. Pinned via direct framebuffer-pixel inspection at sstate9
-/// - the rounded pill outline starts at `fb_y=99` (transition pixels),
-///   the saturated-blue body at `y=101`, sprite bottom at `y=112`. The
-///   earlier `y=102` pin tracked the saturated-blue body, not the
-///   sprite-top edge - drawing at that offset made the cursor finger
-///   look too high relative to the pill chrome.
-pub const SAVE_SELECT_SLOT1_POS: (i32, i32) = (137, 99);
-/// Retail pin of the SLOT 1 pill sprite top-left **after the user
+/// Retail PSX framebuffer position of the SLOT 1 pill's **first
+/// visible pixel row/column**. Retail dispatches each pill as a 48x16
+/// textured quad at dst `(136, 96)` sampling atlas `(32, 96, 48, 16)`
+/// (GP0 ring dump of the live Browsing screen); the tile's first
+/// non-transparent texel row is `v = 97` and the first content column
+/// `u = 32`, so the visible pill body lands at `(136, 97)`. The
+/// engine's atlas crop starts at atlas `(33, 97)`, one column into
+/// the content, so drawing the crop at `(137, 97)` reproduces
+/// retail's visible pixels. An earlier `y = 99` pin came from a
+/// framebuffer scan that read the semi-transparent outline rows as
+/// background - the pills are drawn twice semi-transparent over the
+/// dimmed title art, which muddied the edge rows.
+pub const SAVE_SELECT_SLOT1_POS: (i32, i32) = (137, 97);
+/// Retail pin of the SLOT 1 pill's **visible top-left after the user
 /// has committed to loading a slot** - once the load flow enters
 /// `NowChecking` / `SlotPreview`, retail relocates the active pill
-/// up under the Load panel. Pinned via the slide-in primitive
-/// `FUN_801E1C1C` mode 2 in `overlay_save_ui_select_801dd35c.txt`:
-/// the dispatcher calls `FUN_801e1c1c(2, DAT_801ef194, 0xa0, 0x60,
-/// 0x30, 0x28)` - slide from `(160, 96)` to **target `(48, 40)`**.
-/// Mode 2's GPU emit pre-shifts `sVar6 = param_3 - 0x18` so the
-/// composite's top-left lands at `(24, 40)`. The earlier
-/// screenshot-derived `(22, 41)` was ~2px off due to anti-aliased
-/// sprite-edge sampling. Pairs with [`SAVE_SELECT_CURSOR_POS_LOAD_ACTIVE`].
-pub const SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE: (i32, i32) = (24, 40);
+/// up under the Load panel. Pinned twice over: the slide-in
+/// primitive `FUN_801E1C1C` mode 2 slides the composite quad from
+/// `(160, 96)` to `(48, 40)` with a `-0x18` x pre-shift (quad
+/// top-left `(24, 40)`), and the live GP0 dump shows the parked quad
+/// at exactly `(24, 40, 48, 16)`. The pill tile's content starts one
+/// texel in on both axes (same tile as the Browsing pills), so the
+/// engine's tight atlas crop anchors at `(25, 41)` - quad + (1, 1) -
+/// the same inset that puts the Browsing crop at
+/// [`SAVE_SELECT_SLOT1_POS`]. Pairs with
+/// [`SAVE_SELECT_CURSOR_POS_LOAD_ACTIVE`].
+pub const SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE: (i32, i32) = (25, 41);
 /// Vertical pitch between consecutive slot pill sprite tops in
-/// framebuffer pixels. SLOT 1 sprite top at y=99, SLOT 2 at y=115.
+/// framebuffer pixels. Retail quads at y=96 / y=112 (visible rows
+/// 97 / 113).
 pub const SAVE_SELECT_SLOT_PITCH_Y: i32 = 16;
 /// Retail PSX framebuffer position of the pointing-finger cursor when
 /// pointing at SLOT 1. Mirror of

@@ -90,10 +90,10 @@
 
 <section class="doc-section" id="messagebox-geometry">
   <h2>Messagebox panel geometry (<code>FUN_801E36C4</code>)</h2>
-  <p>Every save-UI panel rect flows through one drawer. Its <code>x</code> is a <strong>centre</strong>, not a left edge, and the visible gold-bordered box is a uniform 7px larger than the <code>w x h</code> asked for:</p>
-  <pre><code>visible = (center_x - w/2 - 9,  y - 1,  w + 14,  h + 14)</code></pre>
-  <p>The <code>+14</code> sizes are measured off captured retail frames and are independent of where a box sits, which is what makes them safe to generalise; the <code>-9</code> / <code>-1</code> then predict each panel's pixels exactly. Verified against three panels: the header tab <code>(48, 6, 65, 13)</code> &rarr; rows 5..31; the "Now checking" dialog mid-slide at <code>center_x = 240</code> &rarr; left 147 (matching an independent capture of that dialog); and both confirm-dialog panels.</p>
-  <p>The confirm prompt is <strong>two</strong> panels plus stacked options - not one box with Yes/No side by side.</p>
+  <p>Every save-UI panel rect flows through one drawer. Its <code>x</code> is a <strong>centre</strong>, not a left edge, and the box emitter it forwards to inflates the centre rect by a uniform 8px on every side (the same inflation as the dialog reading box):</p>
+  <pre><code>footprint = (center_x - w/2 - 10,  y - 2,  w + 16,  h + 16)</code></pre>
+  <p>Pinned against the live GP0 draw list (the sprite rects the GPU actually receives): the header tab <code>(48, 6, 65, 13)</code> predicts <code>(6, 4, 81, 29)</code> - exactly the Load panel's byte-pinned 14-sprite composition - and the parked "Now checking" dialog <code>(160, 97, 169, 26)</code> predicts <code>(66, 95, 185, 42)</code>. Gold-border pixel scans read one pixel inside this footprint (the outermost tile ring scans as background), which is what an earlier <code>+14 / -9 / -1</code> model was built on.</p>
+  <p>The confirm prompt is <strong>two</strong> panels plus stacked options - not one box with Yes/No side by side: prompt bar <code>(8, 86, 300, 29)</code> and Yes/No box <code>(129, 118, 58, 42)</code> at the parked slide y = 88.</p>
 </section>
 
 <section class="doc-section" id="engine-port">

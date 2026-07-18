@@ -1128,9 +1128,13 @@ impl LegaiaRuntime {
             | SelectPhase::SlotPreview { slot }
             | SelectPhase::ConfirmOverwrite { slot, .. }
             | SelectPhase::ConfirmDelete { slot, .. } => {
-                // Mode-2 start (160, 96) minus the inlined -0x18 x-shift.
-                const SLIDE_START_TOPLEFT: (i32, i32) = (136, 96);
-                let pos = s.interpolate(SLIDE_START_TOPLEFT, ui::SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE);
+                // Slide start = the pill's Browsing position (retail
+                // mode-2 start (160, 96) minus the inlined -0x18
+                // x-shift = the Browsing pill quad).
+                let pos = s.interpolate(
+                    ui::SAVE_SELECT_SLOT1_POS,
+                    ui::SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE,
+                );
                 (vec![slot], pos)
             }
             _ => (
@@ -1224,6 +1228,9 @@ impl LegaiaRuntime {
                     y_off,
                     origin,
                     scale,
+                    // This branch only runs with the chrome atlas
+                    // resident, which draws the label sprites.
+                    true,
                 ));
                 // No preview means the block holds nothing loadable; retail
                 // fills the panel with a caption saying which kind of

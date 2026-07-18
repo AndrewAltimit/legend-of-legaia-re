@@ -2,11 +2,14 @@ use crate::*;
 
 /// Retail PSX framebuffer placement of the slot-info panel (bottom
 /// of stage), parked / fully-slid-in. Pinned to FUN_801E08D8's
-/// `FUN_801e36c4(0xA0, local_34, 0x11c, 0x40)` call: panel chrome
-/// top at `local_34` (= 138 when `DAT_801ef1a0 = 0x1000`), width 293,
-/// height 77. Matches the visual gold-border scan in `slot_info_fb.png`.
-pub const SLOT_INFO_PANEL_POS: (i32, i32) = (11, 138);
-pub const SLOT_INFO_PANEL_SIZE: (u32, u32) = (293, 77);
+/// `FUN_801e36c4(0xA0, local_34, 0x11c, 0x40)` call through the
+/// messagebox model (centre rect inflated by 8 on every side):
+/// footprint `(160 - 142 - 10, local_34 - 2, 284 + 16, 64 + 16)` =
+/// `(8, 136, 300, 80)` at the parked `local_34 = 138`. GP0-dump-pinned
+/// on the live SlotPreview screen (corner tiles at (8, 136) / (304,
+/// 212); left/right edges tiled 3 x 24 tall at x = 8 / 304).
+pub const SLOT_INFO_PANEL_POS: (i32, i32) = (8, 136);
+pub const SLOT_INFO_PANEL_SIZE: (u32, u32) = (300, 80);
 /// Panel-y origin when fully slid-in (= `local_34` at anim_t=0x1000).
 pub const SLOT_INFO_PANEL_PARKED_Y: i32 = 138;
 
@@ -44,8 +47,9 @@ pub const SLOT_INFO_TIME_VALUE_OFFSET: (i32, i32) = (236, 4);
 /// Retail emits it through the centring wrapper
 /// `FUN_801E3EE0(text, 0xA0, local_34 + 0x18)`, which measures the string
 /// and hands the raw text emitter `x - width/2` at `y + 7`. So the centre
-/// is screen x=160 and the drawn y is `panel_y + 24 + 7`. The `+ 7` is
-/// folded in here: unlike every other offset on this panel, which retail
+/// is screen x=160 and the drawn y is `panel_y + 24 + 7` (GP0-dump-pinned:
+/// the live "No data" caption glyphs sit at y = 169 = 138 + 31). The `+ 7`
+/// is folded in here: unlike every other offset on this panel, which retail
 /// passes straight to the raw emitter, this one goes through the wrapper.
 pub const SLOT_INFO_CAPTION_CENTER_X: i32 = 160;
 pub const SLOT_INFO_CAPTION_Y_OFFSET: i32 = 31;
@@ -56,8 +60,19 @@ pub const SLOT_INFO_LV_LABEL_OFFSET: (i32, i32) = (16, 33);
 pub const SLOT_INFO_LV_VALUE_OFFSET: (i32, i32) = (48, 33);
 pub const SLOT_INFO_HP_LABEL_OFFSET: (i32, i32) = (16, 46);
 pub const SLOT_INFO_HP_VALUE_OFFSET: (i32, i32) = (32, 46);
+/// Retail splits current / max across separate emits with a `/`
+/// separator glyph between them (GP0 dump: col-0 HP cur digits from
+/// x=32, separator at x=65, max digits from x=77; MP row cur from
+/// x=40, separator x=65, max from x=85).
+pub const SLOT_INFO_HP_SEP_OFFSET: (i32, i32) = (65, 46);
+/// Companion to [`SLOT_INFO_HP_SEP_OFFSET`].
+pub const SLOT_INFO_HP_MAX_OFFSET: (i32, i32) = (77, 46);
 pub const SLOT_INFO_MP_LABEL_OFFSET: (i32, i32) = (16, 59);
 pub const SLOT_INFO_MP_VALUE_OFFSET: (i32, i32) = (40, 59);
+/// See [`SLOT_INFO_HP_SEP_OFFSET`].
+pub const SLOT_INFO_MP_SEP_OFFSET: (i32, i32) = (65, 59);
+/// Companion to [`SLOT_INFO_MP_SEP_OFFSET`].
+pub const SLOT_INFO_MP_MAX_OFFSET: (i32, i32) = (85, 59);
 
 /// Plain-data view of the per-slot info passed to the info-panel
 /// renderer. Engines build one from the `SlotSnapshot` of the
@@ -107,26 +122,53 @@ pub fn slot_info_panel_draws_for(
     // when a save is present at the current slot. Position pinned
     // from FUN_801E08D8's `FUN_801e3ff0(0, _, iVar4=16, s3-4=154)`
     // with s3 = local_34 + 20: portrait top-left at (16, panel_y+16).
-    if let Some(info) = info
-        && let Some(portrait) = rects
+    if let Some(info) = info {
+        let scale = stage_scale.max(1) as i32;
+        let content_y = SLOT_INFO_PANEL_PARKED_Y + panel_y_offset;
+        let mut sprite = |src: (u32, u32, u32, u32), sx: i32, sy: i32| {
+            out.push(SpriteDraw {
+                dst: (
+                    stage_origin.0 + sx * scale,
+                    stage_origin.1 + sy * scale,
+                    src.2 * scale as u32,
+                    src.3 * scale as u32,
+                ),
+                src,
+                color: [1.0, 1.0, 1.0, 1.0],
+            });
+        };
+        if let Some(portrait) = rects
             .load_portrait_by_char
             .get(info.leader_char_id as usize)
             .copied()
             .flatten()
-    {
-        let scale = stage_scale.max(1) as i32;
-        let px = SLOT_INFO_PORTRAIT_OFFSET.0;
-        let pyy = py_base + SLOT_INFO_PORTRAIT_OFFSET.1 + panel_y_offset;
-        out.push(SpriteDraw {
-            dst: (
-                stage_origin.0 + px * scale,
-                stage_origin.1 + pyy * scale,
-                16 * scale as u32,
-                16 * scale as u32,
-            ),
-            src: portrait,
-            color: [1.0, 1.0, 1.0, 1.0],
-        });
+        {
+            sprite(
+                portrait,
+                SLOT_INFO_PORTRAIT_OFFSET.0,
+                py_base + SLOT_INFO_PORTRAIT_OFFSET.1 + panel_y_offset,
+            );
+        }
+        // Retail draws the LV / HP / MP row markers as 16x10 label
+        // sprites from the system-UI sheet (GP0 dump: 16x10 quads at
+        // the column base sampling the label strip with the (16, 511)
+        // CLUT), not as font glyphs. The paired text builder skips its
+        // ASCII stand-ins when told these sprites are being drawn.
+        sprite(
+            rects.label_lv,
+            SLOT_INFO_LV_LABEL_OFFSET.0,
+            content_y + SLOT_INFO_LV_LABEL_OFFSET.1,
+        );
+        sprite(
+            rects.label_hp,
+            SLOT_INFO_HP_LABEL_OFFSET.0,
+            content_y + SLOT_INFO_HP_LABEL_OFFSET.1,
+        );
+        sprite(
+            rects.label_mp,
+            SLOT_INFO_MP_LABEL_OFFSET.0,
+            content_y + SLOT_INFO_MP_LABEL_OFFSET.1,
+        );
     }
     out
 }
@@ -135,12 +177,19 @@ pub fn slot_info_panel_draws_for(
 /// name, time, character stats). Returns empty when `info` is `None`.
 /// `panel_y_offset` matches the value passed to
 /// [`slot_info_panel_draws_for`].
+///
+/// `labels_as_sprites = true` skips the ASCII `LV` / `HP` / `MP`
+/// stand-ins: when the system-UI atlas is resident the chrome builder
+/// emits retail's 16x10 label sprites at the same offsets, and the
+/// double-draw would collide with the value columns. Pass `false`
+/// only for the no-atlas fallback.
 pub fn slot_info_panel_text_draws_for(
     font: &legaia_font::Font,
     info: Option<&SlotInfoView<'_>>,
     panel_y_offset: i32,
     stage_origin: (i32, i32),
     stage_scale: u32,
+    labels_as_sprites: bool,
 ) -> Vec<TextDraw> {
     let Some(info) = info else { return Vec::new() };
     let scale = stage_scale.max(1);
@@ -204,14 +253,16 @@ pub fn slot_info_panel_text_draws_for(
         info.leader_name,
         (SLOT_INFO_NAME_OFFSET.0, panel_y + SLOT_INFO_NAME_OFFSET.1),
     );
-    emit_at(
-        &mut out,
-        "LV",
-        (
-            SLOT_INFO_LV_LABEL_OFFSET.0,
-            panel_y + SLOT_INFO_LV_LABEL_OFFSET.1,
-        ),
-    );
+    if !labels_as_sprites {
+        emit_at(
+            &mut out,
+            "LV",
+            (
+                SLOT_INFO_LV_LABEL_OFFSET.0,
+                panel_y + SLOT_INFO_LV_LABEL_OFFSET.1,
+            ),
+        );
+    }
     emit_at(
         &mut out,
         &format!("{}", info.leader_level),
@@ -220,17 +271,22 @@ pub fn slot_info_panel_text_draws_for(
             panel_y + SLOT_INFO_LV_VALUE_OFFSET.1,
         ),
     );
+    // Retail emits current, `/` separator, and max at fixed columns
+    // rather than one packed string, so the max column stays aligned
+    // regardless of the current value's digit count.
+    if !labels_as_sprites {
+        emit_at(
+            &mut out,
+            "HP",
+            (
+                SLOT_INFO_HP_LABEL_OFFSET.0,
+                panel_y + SLOT_INFO_HP_LABEL_OFFSET.1,
+            ),
+        );
+    }
     emit_at(
         &mut out,
-        "HP",
-        (
-            SLOT_INFO_HP_LABEL_OFFSET.0,
-            panel_y + SLOT_INFO_HP_LABEL_OFFSET.1,
-        ),
-    );
-    emit_at(
-        &mut out,
-        &format!("{}/{}", info.leader_hp.0, info.leader_hp.1),
+        &format!("{}", info.leader_hp.0),
         (
             SLOT_INFO_HP_VALUE_OFFSET.0,
             panel_y + SLOT_INFO_HP_VALUE_OFFSET.1,
@@ -238,18 +294,52 @@ pub fn slot_info_panel_text_draws_for(
     );
     emit_at(
         &mut out,
-        "MP",
+        "/",
         (
-            SLOT_INFO_MP_LABEL_OFFSET.0,
-            panel_y + SLOT_INFO_MP_LABEL_OFFSET.1,
+            SLOT_INFO_HP_SEP_OFFSET.0,
+            panel_y + SLOT_INFO_HP_SEP_OFFSET.1,
         ),
     );
     emit_at(
         &mut out,
-        &format!("{}/{}", info.leader_mp.0, info.leader_mp.1),
+        &format!("{}", info.leader_hp.1),
+        (
+            SLOT_INFO_HP_MAX_OFFSET.0,
+            panel_y + SLOT_INFO_HP_MAX_OFFSET.1,
+        ),
+    );
+    if !labels_as_sprites {
+        emit_at(
+            &mut out,
+            "MP",
+            (
+                SLOT_INFO_MP_LABEL_OFFSET.0,
+                panel_y + SLOT_INFO_MP_LABEL_OFFSET.1,
+            ),
+        );
+    }
+    emit_at(
+        &mut out,
+        &format!("{}", info.leader_mp.0),
         (
             SLOT_INFO_MP_VALUE_OFFSET.0,
             panel_y + SLOT_INFO_MP_VALUE_OFFSET.1,
+        ),
+    );
+    emit_at(
+        &mut out,
+        "/",
+        (
+            SLOT_INFO_MP_SEP_OFFSET.0,
+            panel_y + SLOT_INFO_MP_SEP_OFFSET.1,
+        ),
+    );
+    emit_at(
+        &mut out,
+        &format!("{}", info.leader_mp.1),
+        (
+            SLOT_INFO_MP_MAX_OFFSET.0,
+            panel_y + SLOT_INFO_MP_MAX_OFFSET.1,
         ),
     );
     out

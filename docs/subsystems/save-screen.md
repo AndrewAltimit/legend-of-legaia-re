@@ -426,6 +426,33 @@ The `Load` text glyphs are **PINNED to the dialog font (`legaia_font`)**:
   (`scripts/pcsx-redux/verify_menu_glyph_load_rects.py` confirms; left here as a
   negative finding).
 
+### Live-pinned screen geometry (GP0 draw list)
+
+Frame dumps of the running load screen (the GP0 command ring, i.e. the sprite
+rects the GPU actually receives) pin the remaining layout:
+
+- **Slot pills** dispatch as 48x16 textured quads at `(136, 96)` /
+  `(136, 112)` sampling atlas `(32, 96)` / `(32, 112)` of the menu texture
+  page; the tile's content starts one texel in on both axes, so the visible
+  pills sit at `(137, 97)` / `(137, 113)`. While Browsing each pill is drawn
+  **twice semi-transparent** (two CLUT variants layered) over the dimmed
+  title art; once a slot is committed only the picked pill draws, opaque,
+  parked at quad `(24, 40)` under the Load panel.
+- **The 5x3 block grid** is pre-staged **off-screen right** during Browsing
+  (cell quads parked at x = 354..1386 with a 104px stagger) and slides left
+  on commit. Landed: 32x32 cell quads with row 0 at `(98, 28)`, pitch
+  `(40, 20)`, and each successive row shifted **+4 px right** (the grid
+  slants). The focused cell draws at full `0x80` modulation, every other
+  cell dimmed to `0x60` (75%); portraits are 16x16 quads at cell `+8, +8`;
+  the pointing-finger cursor sits at cell quad `+(-10, +4)`.
+- **The bottom info panel** footprint lands at `(8, 136, 300, 80)`
+  (= the messagebox model applied to `FUN_801E36C4(160, 138, 0x11C, 0x40)`).
+  The `LV` / `HP` / `MP` row markers are 16x10 **label sprites** from the
+  system-UI sheet, not font glyphs; current / `/` / max emit at fixed
+  columns `+16 / +49 / +61` (HP) and `+24 / +49 / +69` (MP) off each
+  character column base, and the play-time digits use the small 8x12 digit
+  glyphs at x = 236/244, colon 252, 260/268, colon 276, 284/292.
+
 ### Pinned 9-slice tile rects (system-UI TIM CLUT row 2)
 
 All rects are `(u, v, w, h)` in 256x192 source-page-pixel coords;
@@ -469,13 +496,13 @@ on the load screen):
 ### Current engine port status
 
 The engine port (`legaia_engine_core::save_menu_atlas` +
-`legaia_engine_render::save_select_chrome_draws_for`) ships the SLOT
-pills byte-equal to retail and uses a **speculative** PROT 0899
-sub-rect for the panel pending the 9-slice tile-geometry pin. The
-byte-confirmed system-UI TIM is declared in
-`legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET` /
-`OVERLAY_SYSTEM_UI_PANEL_CLUT_ROW`; switching the atlas builder over
-to it is gated on the GPULog probe.
+`legaia_engine_render::save_select_chrome_draws_for`) composes the
+panel from the pinned 9-slice tiles of the byte-confirmed system-UI
+TIM (`legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET` /
+`OVERLAY_SYSTEM_UI_PANEL_CLUT_ROW`) and ships the SLOT pills
+byte-equal to retail. The title word is mode-derived
+(`Load` / `Save` from `SaveSelectMode`, mirroring the retail
+`_DAT_801f0200` string toggle), never hardcoded per host screen.
 
 ## Slide-in UI primitive (`FUN_801E1C1C`)
 
@@ -554,19 +581,25 @@ void FUN_801E36C4(int center_x, int y, int w, int h) {
 }
 ```
 
-Its `x` is a **centre**, not a left edge, and the visible gold-bordered box is
-a uniform 7px larger than the `w x h` asked for:
+Its `x` is a **centre**, not a left edge, and the box emitter it forwards to
+inflates the centre rect by a uniform **8px** on every side - the same
+inflation the dialog reading box (`FUN_8002C69C`) applies everywhere - so the
+drawn 9-slice footprint is:
 
 ```
-visible = (center_x - w/2 - 9,  y - 1,  w + 14,  h + 14)
+footprint = (center_x - w/2 - 10,  y - 2,  w + 16,  h + 16)
 ```
 
-The `+14` sizes are measured off captured retail frames and are independent of
-where a box sits, which is what makes them safe to generalise; the `-9` / `-1`
-then predict each panel's pixels exactly. Verified against three panels: the
-header tab `(48, 6, 65, 13)` → rows 5..31; the "Now checking" dialog mid-slide
-at `center_x = 240` → left 147 (matching the older capture that pinned that
-dialog, taken long before this model); and both confirm-dialog panels below.
+Pinned against the live GP0 draw list (frame dumps of the running load
+screen), which reads the sprite rects the GPU actually receives rather than
+scanning framebuffer pixels: the header tab `(48, 6, 65, 13)` predicts
+`(6, 4, 81, 29)` - exactly the Load panel's byte-pinned 14-sprite
+composition - and the parked "Now checking" dialog `(160, 97, 169, 26)`
+predicts `(66, 95, 185, 42)`, matching the dump's edge-tile extents. An
+earlier `+14 / -9 / -1` model measured off gold-border pixel scans was 1px
+short on every side: the outermost tile ring reads as background in a
+framebuffer scan (the mid-slide capture's "left 147" is the gold ring one
+pixel inside the true footprint at 146).
 
 ### Confirm dialog panels (mode 3)
 
@@ -575,11 +608,11 @@ Yes/No side by side. Mode 3 draws, at slide y `param_4`:
 
 | Element | Retail call | Parked rect (`y = 88`) |
 |---|---|---|
-| Prompt bar | `FUN_801E36C4(160, y, 284, 13)` | `(9, 87, 298, 27)` |
+| Prompt bar | `FUN_801E36C4(160, y, 284, 13)` | `(8, 86, 300, 29)` |
 | Prompt text | `FUN_801E3EE0(msg, 160 + 0x1a, y)` | centred x=186, glyph top y=95 |
 | `Yes` row | `FUN_801E3EE0(.., 160 + 4, y + 0x20)` | centred x=164, glyph top y=127 |
 | `No` row | `FUN_801E3EE0(.., 160 + 4, y + 0x30)` | centred x=164, glyph top y=143 |
-| Options box | `FUN_801E36C4(160, y + 0x20, 42, 26)` | `(130, 119, 56, 40)` |
+| Options box | `FUN_801E36C4(160, y + 0x20, 42, 26)` | `(129, 118, 58, 42)` |
 | Row cursor | `func_0x8002c488(160 - 0x1a, y + ((_DAT_801f01fc + 1) & 1) * 0x10 + 0x24, 0x4e)` | x=134, y=124 (Yes) / 140 (No) |
 
 The prompt bar spans nearly the full stage because its left end carries the

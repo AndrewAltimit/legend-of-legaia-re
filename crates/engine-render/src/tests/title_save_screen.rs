@@ -257,9 +257,8 @@ fn save_select_chrome_emits_9slice_panel_and_pills() {
     // dst = (10 + 6*2, 20 + 8*2, 4*2, 21*2) = (22, 36, 8, 42).
     let left_edge = draws.iter().find(|d| d.src == (160, 4, 4, 21)).unwrap();
     assert_eq!(left_edge.dst, (22, 36, 8, 42));
-    // Slot pills sit at SAVE_SELECT_SLOT1_POS = (137, 102) with
-    // SAVE_SELECT_SLOT_PITCH_Y = 17 between rows; scale=2 origin (10, 20)
-    // → SLOT 1 screen (10+274, 20+204) = (284, 224), size 45*2 × 15*2.
+    // Slot pills sit at SAVE_SELECT_SLOT1_POS = (137, 97) with
+    // SAVE_SELECT_SLOT_PITCH_Y = 16 between rows; scale=2 origin (10, 20).
     let slot1 = draws.iter().find(|d| d.src == (33, 97, 45, 15)).unwrap();
     assert_eq!(slot1.dst.0, 10 + SAVE_SELECT_SLOT1_POS.0 * 2);
     assert_eq!(slot1.dst.1, 20 + SAVE_SELECT_SLOT1_POS.1 * 2);
@@ -313,9 +312,10 @@ fn save_select_chrome_selected_pill_only_draws_one_pill_at_natural_row() {
 #[test]
 fn save_select_chrome_load_active_anchor_relocates_pill() {
     // During NowChecking / SlotPreview retail moves the SLOT 1
-    // pill up to (22, 41) under the Load panel. Passing
-    // SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE as `pill_anchor` must
-    // land the pill there instead of the Browsing position.
+    // pill up under the Load panel (parked quad (24, 40), visible
+    // crop anchor (25, 41)). Passing SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE
+    // as `pill_anchor` must land the pill there instead of the
+    // Browsing position.
     let rects = pinned_save_menu_rects();
     let draws =
         save_select_chrome_draws_for(&rects, &[0], SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE, (0, 0), 1);
@@ -571,21 +571,38 @@ fn slot_preview_grid_emits_one_frame_per_cell_plus_portraits_plus_cursor() {
     // Cursor (the last sprite) sits to the left of slot 0's cell.
     let cursor = draws.last().unwrap();
     assert_eq!(cursor.src, rects.cursor);
-    // Retail pin: cursor right edge sits 1 px shy of cell left,
-    // giving a -14 (not -16) offset from the cell's top-left.
-    assert_eq!(cursor.dst.0, SLOT_GRID_ORIGIN.0 - 14);
-    assert_eq!(cursor.dst.1, SLOT_GRID_ORIGIN.1);
+    // GP0 pin: cursor sprite at (88, 32) against the focused cell
+    // quad (98, 28) = visible cell (104, 34) + (-16, -2).
+    assert_eq!(cursor.dst.0, SLOT_GRID_ORIGIN.0 - 16);
+    assert_eq!(cursor.dst.1, SLOT_GRID_ORIGIN.1 - 2);
+}
+
+#[test]
+fn slot_preview_grid_rows_carry_the_retail_stagger_and_dim() {
+    let rects = pinned_save_menu_rects();
+    let cells = [SlotGridCell::default(); 15];
+    let draws = slot_preview_grid_draws_for(&rects, &cells, 0, (0, 0), 1);
+    // Cell quads land at the GP0-pinned positions: row 0 starts at
+    // (98, 28), each row below shifts +4 px right and +20 down.
+    assert_eq!((draws[0].dst.0, draws[0].dst.1), (98, 28));
+    assert_eq!((draws[5].dst.0, draws[5].dst.1), (102, 48));
+    assert_eq!((draws[10].dst.0, draws[10].dst.1), (106, 68));
+    // Focused cell draws full-bright; every other cell dims to 75%
+    // (retail's 0x60-vs-0x80 modulation).
+    assert_eq!(draws[0].color, [1.0, 1.0, 1.0, 1.0]);
+    assert_eq!(draws[1].color, [0.75, 0.75, 0.75, 1.0]);
 }
 
 #[test]
 fn slot_preview_grid_cursor_follows_selected_slot() {
     let rects = pinned_save_menu_rects();
     let cells = [SlotGridCell::default(); 15];
-    // Slot 7 = row 1 col 2.
+    // Slot 7 = row 1 col 2. Row 1 carries the retail +4 px row
+    // stagger; the cursor rides the same slant.
     let draws = slot_preview_grid_draws_for(&rects, &cells, 7, (0, 0), 1);
     let cursor = draws.last().unwrap();
-    let expected_x = SLOT_GRID_ORIGIN.0 + 2 * SLOT_GRID_PITCH_X - 14;
-    let expected_y = SLOT_GRID_ORIGIN.1 + SLOT_GRID_PITCH_Y;
+    let expected_x = SLOT_GRID_ORIGIN.0 + 2 * SLOT_GRID_PITCH_X + SLOT_GRID_ROW_STAGGER_X - 16;
+    let expected_y = SLOT_GRID_ORIGIN.1 + SLOT_GRID_PITCH_Y - 2;
     assert_eq!(
         (cursor.dst.0, cursor.dst.1),
         (expected_x, expected_y),
@@ -613,16 +630,30 @@ fn slot_info_panel_skips_chrome_portrait_when_no_save() {
         1,
     );
     let chrome_none = slot_info_panel_draws_for(&rects, None, 0, (0, 0), 1);
-    // With Some, expect the chrome PLUS one portrait sprite.
+    // With Some, expect the chrome PLUS the leader portrait and the
+    // three retail LV / HP / MP label sprites.
     assert!(
         chrome_with.len() > chrome_none.len(),
-        "info-panel with save should emit at least one extra portrait sprite"
+        "info-panel with save should emit extra content sprites"
     );
     assert_eq!(
         chrome_with.len() - chrome_none.len(),
-        1,
-        "delta should be exactly the leader portrait"
+        4,
+        "delta should be the leader portrait + LV/HP/MP label sprites"
     );
+    // The label sprites sit at the pinned column-0 offsets off the
+    // parked panel y (138 + 33/46/59).
+    for (src, dy) in [
+        (rects.label_lv, 33),
+        (rects.label_hp, 46),
+        (rects.label_mp, 59),
+    ] {
+        let d = chrome_with
+            .iter()
+            .find(|d| d.src == src)
+            .expect("label sprite emitted");
+        assert_eq!((d.dst.0, d.dst.1), (16, 138 + dy));
+    }
 }
 
 #[test]
@@ -685,9 +716,9 @@ fn slot_info_panel_text_emits_all_six_lines() {
         leader_mp: (27, 27),
         leader_char_id: 0,
     };
-    let draws = slot_info_panel_text_draws_for(&font, Some(&info), 0, (0, 0), 1);
+    let draws = slot_info_panel_text_draws_for(&font, Some(&info), 0, (0, 0), 1, false);
     // Empty-save case must emit zero glyphs.
-    assert!(slot_info_panel_text_draws_for(&font, None, 0, (0, 0), 1).is_empty());
+    assert!(slot_info_panel_text_draws_for(&font, None, 0, (0, 0), 1, false).is_empty());
     // The panel emits 10 distinct text rows (No, location, Time
     // label, time value, name, LV label, LV value, HP label,
     // HP value, MP label, MP value). Their y-coords cluster into
@@ -724,8 +755,8 @@ fn slot_info_panel_slide_offset_shifts_everything_below_parked() {
             "y must shift by exactly slide offset"
         );
     }
-    let text_landed = slot_info_panel_text_draws_for(&font, Some(&info), 0, (0, 0), 1);
-    let text_slid = slot_info_panel_text_draws_for(&font, Some(&info), 50, (0, 0), 1);
+    let text_landed = slot_info_panel_text_draws_for(&font, Some(&info), 0, (0, 0), 1, false);
+    let text_slid = slot_info_panel_text_draws_for(&font, Some(&info), 50, (0, 0), 1, false);
     assert_eq!(text_landed.len(), text_slid.len());
     for (a, b) in text_landed.iter().zip(text_slid.iter()) {
         assert_eq!(b.dst.1 - a.dst.1, 50);

@@ -447,7 +447,7 @@ impl PlayWindowApp {
                 )
             }
             BootUiState::SaveSelect(s) => {
-                use legaia_engine_core::save_select::{SelectPhase, SlotInfoMode};
+                use legaia_engine_core::save_select::SelectPhase;
                 let rows: Vec<legaia_engine_render::SaveSelectRow<'_>> = s
                     .slots()
                     .iter()
@@ -461,86 +461,44 @@ impl PlayWindowApp {
                     })
                     .collect();
                 let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
-                let (cursor, confirm) = match s.phase() {
-                    SelectPhase::Browsing { cursor } => (cursor as usize, None),
-                    SelectPhase::NowChecking { slot, .. } => (slot as usize, None),
-                    SelectPhase::SlotPreview { slot } => (slot as usize, None),
-                    SelectPhase::ConfirmOverwrite { slot, cursor } => {
-                        (slot as usize, Some(("Overwrite slot?", cursor)))
-                    }
-                    SelectPhase::ConfirmDelete { slot, cursor } => {
-                        (slot as usize, Some(("Delete slot?", cursor)))
-                    }
+                let cursor = match s.phase() {
+                    SelectPhase::Browsing { cursor } => cursor as usize,
+                    SelectPhase::NowChecking { slot, .. }
+                    | SelectPhase::SlotPreview { slot }
+                    | SelectPhase::ConfirmOverwrite { slot, .. }
+                    | SelectPhase::ConfirmDelete { slot, .. } => slot as usize,
                     SelectPhase::Done(_) => return Vec::new(),
                 };
-                // Always emit the base save-select chrome text ("Load"
-                // title) so it stays visible in every Load-mode phase.
-                // Skip the ASCII `>` cursor when the sprite-based
-                // pointing-finger cursor is being emitted alongside
-                // (i.e. when the save-menu atlas is loaded).
+                // Always emit the base save-select chrome text (the
+                // mode's title word) so it stays visible in every
+                // phase. Skip the ASCII `>` cursor when the
+                // sprite-based pointing-finger cursor is being emitted
+                // alongside (i.e. when the save-menu atlas is loaded).
+                // The confirm prompt is NOT the flat inline Yes/No:
+                // retail raises it as its own centred messagebox,
+                // emitted by `save_select_phase_text_draws` (text) +
+                // `save_select_chrome_sprite_draws` (panels).
                 let emit_text_cursor = self.save_menu.is_none();
                 let mut out = legaia_engine_render::save_select_draws_for(
                     &self.font,
-                    "Load",
+                    save_select_title_word(s),
                     &rows,
                     cursor,
-                    confirm,
+                    None,
                     stage_origin,
                     stage_scale,
                     emit_text_cursor,
                 );
-                // Phase-specific overlays.
-                match s.phase() {
-                    SelectPhase::NowChecking { .. } => {
-                        // Retail slide: dialog x slides from
-                        // NOW_CHECKING_SLIDE_START_X (416) to
-                        // NOW_CHECKING_SLIDE_TARGET_X (160) over 16
-                        // frames. Use the session's animation t to
-                        // compute the per-frame x offset relative to
-                        // the at-target rendering position.
-                        let pos_x = legaia_engine_core::save_select::interpolate_anim(
-                            (legaia_engine_render::NOW_CHECKING_SLIDE_START_X, 0),
-                            (legaia_engine_render::NOW_CHECKING_SLIDE_TARGET_X, 0),
-                            s.slide_anim_t(),
-                        )
-                        .0;
-                        let slide_offset =
-                            (pos_x - legaia_engine_render::NOW_CHECKING_SLIDE_TARGET_X, 0);
-                        out.extend(legaia_engine_render::now_checking_text_draws_for(
-                            &self.font,
-                            stage_origin,
-                            stage_scale,
-                            slide_offset,
-                        ));
-                    }
-                    SelectPhase::SlotPreview { slot } => {
-                        let info = build_slot_info_view(s.slots(), slot);
-                        let view = info.as_ref().map(|i| i.as_view());
-                        let panel_y_offset = info_panel_slide_offset(s);
-                        out.extend(legaia_engine_render::slot_info_panel_text_draws_for(
-                            &self.font,
-                            view.as_ref(),
-                            panel_y_offset,
-                            stage_origin,
-                            stage_scale,
-                        ));
-                        // Nothing loadable here: retail captions the panel
-                        // rather than leaving it empty.
-                        if view.is_none()
-                            && let Some(snap) = s.slots().get(slot as usize)
-                            && let Some(caption) = SlotInfoMode::for_slot(snap).caption(s.mode())
-                        {
-                            out.extend(legaia_engine_render::slot_info_caption_draws_for(
-                                &self.font,
-                                caption,
-                                panel_y_offset,
-                                stage_origin,
-                                stage_scale,
-                            ));
-                        }
-                    }
-                    _ => {}
-                }
+                // Phase-specific overlays (NowChecking dialog text,
+                // slot-info panel text / captions, confirm messagebox)
+                // - shared with the field-menu Load / Save sub-screens.
+                out.extend(save_select_phase_text_draws(
+                    &self.font,
+                    s,
+                    stage_origin,
+                    stage_scale,
+                    self.save_menu.is_some(),
+                ));
                 out
             }
             BootUiState::Options(s) => {
