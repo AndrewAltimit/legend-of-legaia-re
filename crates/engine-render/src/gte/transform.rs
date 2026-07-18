@@ -66,18 +66,28 @@ impl Gte {
         self.ir2 = self.saturate_ir(self.mac2, flag_bits::IR2_SATURATED);
         self.ir3 = self.saturate_ir(self.mac3, flag_bits::IR3_SATURATED);
 
-        // Perspective divide. SX = (H * MAC1) / MAC3 + OFX.
-        let (sx, sy) = if view.z <= 0 {
-            self.flag |= flag_bits::MAC3_OVERFLOW_NEG | flag_bits::ANY_ERROR;
-            (saturate_behind(view.x), saturate_behind(view.y))
-        } else {
-            let z = view.z as i64;
-            let sx_full = (self.h as i64 * view.x as i64) / z;
-            let sy_full = (self.h as i64 * view.y as i64) / z;
-            let sx = (sx_full + self.ofx as i64).clamp(i32::MIN as i64, i32::MAX as i64) as i32;
-            let sy = (sy_full + self.ofy as i64).clamp(i32::MIN as i64, i32::MAX as i64) as i32;
-            (sx, sy)
-        };
+        // Perspective divide via the GTE's UNR reciprocal (not an exact
+        // divide): SX = OFX + (IR1 * (H / SZ3)) >> 16.
+        // REF: gte_divide - Unsigned Newton-Raphson reciprocal + near/behind-
+        // camera overflow clamp (see crate::gte::math). MAC1/MAC3 are held here
+        // in q19.12 (4096x the hardware IR/SZ scale), so reduce to the hardware
+        // IR1/IR2 numerator and SZ3 depth with the same >>12 the SZ FIFO push
+        // uses below before feeding the divide. A behind-camera vertex is not a
+        // special case on hardware: SZ3 clamps to 0 (SZ3_OTZ flag on the push
+        // below) and gte_divide(H, 0) overflows to the 0x1FFFF quotient,
+        // raising DIVIDE_OVERFLOW - it does NOT raise MAC3_OVERFLOW_NEG, which
+        // only fires on a genuine 44-bit MAC3 overflow.
+        let sz3 = ((view.z >> ROT_FRAC_BITS).clamp(0, u16::MAX as i32)) as u16;
+        let ir_x = (view.x >> ROT_FRAC_BITS).clamp(SXY_MIN, SXY_MAX);
+        let ir_y = (view.y >> ROT_FRAC_BITS).clamp(SXY_MIN, SXY_MAX);
+        let (recip, overflow) = gte_divide(self.h as u16, sz3);
+        if overflow {
+            self.flag |= flag_bits::DIVIDE_OVERFLOW | flag_bits::ANY_ERROR;
+        }
+        let sx = (gte_persp_term(ir_x, recip) + self.ofx as i64)
+            .clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+        let sy = (gte_persp_term(ir_y, recip) + self.ofy as i64)
+            .clamp(i32::MIN as i64, i32::MAX as i64) as i32;
         // Push SXY and SZ; the FIFOs handle their own saturation flags.
         let xy = ScreenXY::new(sx, sy);
         self.push_sxy(xy);

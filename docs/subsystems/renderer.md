@@ -743,6 +743,61 @@ Production rendering still uses f32 wgpu math. This module is the single citatio
 point for code that needs to reproduce per-vertex GTE behaviour: effect spawners,
 hit-detection, animation re-targeting, offline regression checks.
 
+**Perspective divide (UNR reciprocal).** The projection step is not an exact
+`OFX + (H * IR1) / SZ3`. The GTE approximates `1 / SZ3` with an Unsigned
+Newton-Raphson step seeded from a 257-entry table, then applies it as
+`OFX + (IR1 * (H / SZ3)) >> 16` with an arithmetic (floor) shift. Two hardware
+quirks follow and are reproduced by `gte::math::gte_divide`, used by the GTE
+emulation sites `Gte::rtps` (the register-level cop2 oracle) and its
+`Camera::transform` RTPT shim: near or behind the camera (`2 * SZ3 <= H`,
+including `SZ3 == 0`) the quotient saturates to `0x1FFFF` and the divide-overflow
+FLAG bit (17) is set instead of dividing; elsewhere the reciprocal diverges from
+an exact divide by ±1 (up to a couple of units for extreme numerators near the
+overflow boundary). The seed table is *computed* from the published algorithm
+(no$psx "GTE Division Inaccuracy"), not copied Sony data — the same clean-room
+provenance class as the SPU Gaussian / reverb tables. These sites hold MAC/IR in
+q19.12 (4096× the hardware IR/SZ scale) and reduce with a `>>12` before the
+divide.
+
+A behind-camera vertex is not a special case: `SZ3` clamps to `0` (raising the
+SZ3/OTZ FLAG bit on the FIFO push) and `gte_divide(H, 0)` overflows to `0x1FFFF`
+exactly as above, so the projection flows through the one path and sets
+`DIVIDE_OVERFLOW` — never the MAC3-negative-overflow bit, which is reserved for a
+genuine 44-bit MAC3 overflow. The port adds `OFX`/`OFY` as an integer pixel value
+*after* the `>>16` floor-shift, whereas hardware adds the fixed-point control
+word *before* it. These are bit-identical because retail writes the offsets via
+`SetGeomOffset` (`FUN_8005B7F8`: `sll a0,a0,0x10` then `ctc2` to cop2 control 24 /
+25, `OFX = (width/2) << 16`), so the low 16 bits are always zero and the two
+orderings agree for every numerator sign.
+
+This UNR path is the faithful GTE-register behaviour that the parity oracles
+measure; it does not change on-screen rendering, which projects through the
+clean f32 pipeline (the field's modern `perspective_rh`, the battle GTE
+projection, and `project_billboard`'s effect quads all use the exact divide).
+The `gte_divide` primitive is the ready hook should a future faithful-render
+mode gate the GTE projection under `Renderer::set_psx_mode`.
+
+The full `Gte::rtps` projection is cross-checked against an independent
+second implementation of `gte_rtps_internal` (in the hardware register scale,
+with the reference's OFX-before-shift ordering) over a wide input sweep, at
+zero tolerance on the projection outputs. Because `Gte` keeps MAC/IR in q19.12,
+only the hardware-scale outputs are register-comparable — the **SXY** FIFO, the
+**SZ** FIFO, and the FLAG bits that do not depend on the MAC/IR scale
+(`DIVIDE_OVERFLOW`, `SZ3_OTZ`, `SX2`/`SY2` saturation). The IR/MAC-saturation
+bits (and thus the `ANY_ERROR` roll-up) diverge by that scale convention.
+
+That same comparable subset is also checked against a **real cop2 register
+file** by the env-gated `rtpt_matches_recomp_cop2_capture` oracle, which replays
+RTPT input tuples captured from a Beetle-validated static recompilation of the
+retail game through `Gte::rtpt` and asserts bit-exact SXY/SZ/flag-subset (the
+capture holds game-derived bytes, so it is supplied out-of-tree via
+`LEGAIA_RECOMP_GTE_CAPTURE` and skip-passes when unset). This is what pinned the
+SXY-FIFO saturation bound: the GTE clamps the stored screen coordinate to signed
+11 bits `[-0x400, 0x3FF]` (raising `SX2`/`SY2`), matching the PSX GPU's drawing
+range — **not** the i16 IR-numerator range. The distinction only shows off-screen,
+so the self-consistent in-repo sweep (which shared the earlier i16 assumption on
+both sides) could not surface it; the real-cop2 capture did.
+
 ### GTE register-state emulator
 
 `Gte` is a register-level cop2 emulator next to the math module, mirroring the PSX hardware register file: V0..V2 input vectors, MAC0..MAC3 wide accumulators (i64), IR0..IR3 saturating shorts, the SXY (3-deep) / SZ (4-deep) / RGB (3-deep) FIFOs, OTZ, and the FLAG sticky-saturation register with hardware-matching bit positions exposed via `gte::flag_bits` (engines comparing against captured FLAG dumps mask the same bits). Control registers cover the rotation matrix, translation, focal length `H`, screen offset `OFX/OFY`, the average-Z scale factors `ZSF3` / `ZSF4`, the depth-cue interpolation slope/intercept `DQA` / `DQB`, the light source matrix `L`, the light color matrix, and the `back_color` / `far_color` triplets used by the depth-cue pipeline.

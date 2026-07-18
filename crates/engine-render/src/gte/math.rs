@@ -10,10 +10,24 @@ pub const ROT_ONE: i32 = 1 << ROT_FRAC_BITS;
 /// loads into `H` for the standard 320×240 PSX frame: `H = 320`).
 pub const DEFAULT_H: i32 = 320;
 
-/// Saturated 16-bit signed clamp. The GTE saturates to `[-32768, 32767]`
-/// when storing screen-space coordinates back into the SXY FIFO.
+/// Saturated 16-bit signed clamp for the perspective-divide *numerator* -
+/// the hardware IR1/IR2 the projection multiplies by the reciprocal. IR
+/// registers are 16-bit signed, so the numerator is clamped to `[-32768,
+/// 32767]`. NB this is the IR clamp, NOT the final screen-coordinate clamp -
+/// the GTE saturates the *stored* SXY FIFO entry much more tightly (see
+/// [`SX_MIN`]/[`SX_MAX`]).
 pub const SXY_MIN: i32 = i16::MIN as i32;
 pub const SXY_MAX: i32 = i16::MAX as i32;
+
+/// Final SXY-FIFO screen-coordinate saturation bound. The GTE clamps the
+/// projected screen X/Y to signed 11 bits, `[-0x400, 0x3FF]`, and raises
+/// `SX2_SATURATED` / `SY2_SATURATED` when it does - matching the PSX GPU's
+/// 11-bit-signed drawing coordinate range. Cross-validated bit-exact against
+/// a real-COP2 RTPT ring capture (see the `rtpt_matches_recomp_cop2_capture`
+/// oracle in `tests.rs`); the earlier i16 bound here was a latent divergence
+/// that a self-consistent in-repo sweep could not surface.
+pub const SX_MIN: i32 = -0x400;
+pub const SX_MAX: i32 = 0x3FF;
 
 /// 3-vector of i32. Matches the GTE's MAC0/MAC1/MAC2/MAC3 accumulator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -187,14 +201,15 @@ impl ScreenXY {
         Self { x, y }
     }
 
-    /// Saturate to the GTE's i16 SXY-FIFO range. The retail GTE pushes
-    /// off-screen coordinates through this clamp before the OT writer
-    /// reads them; reproduce that saturation here so out-of-bounds verts
-    /// behave the same as on hardware.
+    /// Saturate to the GTE's signed-11-bit SXY-FIFO range `[-0x400, 0x3FF]`.
+    /// The retail GTE pushes projected coordinates through this clamp before
+    /// the OT writer reads them, raising SX2/SY2 on saturation; reproduce that
+    /// so out-of-bounds verts behave the same as on hardware. Bound confirmed
+    /// against a real-COP2 capture (see [`SX_MIN`]/[`SX_MAX`]).
     pub fn saturate_sxy(self) -> Self {
         Self {
-            x: self.x.clamp(SXY_MIN, SXY_MAX),
-            y: self.y.clamp(SXY_MIN, SXY_MAX),
+            x: self.x.clamp(SX_MIN, SX_MAX),
+            y: self.y.clamp(SX_MIN, SX_MAX),
         }
     }
 }
@@ -217,14 +232,82 @@ pub struct ProjectedVertex {
     pub clip: Clip,
 }
 
-pub(crate) fn saturate_behind(numerator: i32) -> i32 {
-    if numerator > 0 {
-        SXY_MAX
-    } else if numerator < 0 {
-        SXY_MIN
-    } else {
-        0
+// ---- Perspective divide: Unsigned Newton-Raphson (UNR) reciprocal. --------
+//
+// The PSX GTE does NOT compute an exact `H * 0x10000 / SZ3` for the
+// perspective divide. It approximates the reciprocal `1 / SZ3` with an
+// Unsigned Newton-Raphson step seeded from a 257-entry table, then saturates
+// the 17-bit result. Exact division diverges from hardware by up to a few
+// units, and near/behind the camera (`2 * SZ3 <= H`) hardware sets the divide
+// overflow flag and saturates the quotient to `0x1FFFF` instead of dividing.
+//
+// The 257-entry seed table is generated below from the published PSX hardware
+// algorithm (no$psx "GTE Division Inaccuracy"; the same values Beetle/mednafen
+// derive). It is *computed*, not copied Sony data - the same clean-room
+// provenance class as the SPU Gaussian / reverb tables (`spu/gauss.rs`,
+// `spu/reverb.rs`). See docs/subsystems/renderer.md.
+
+/// Build the 257-entry UNR reciprocal seed table from the documented formula.
+/// Entry `n` seeds the reciprocal of a normalized divisor whose top bits are
+/// `n`; four Newton-Raphson iterations refine `xa` before it is packed to the
+/// stored 8-bit correction. Const-evaluated, so no runtime initialisation.
+const fn build_gte_div_table() -> [u8; 0x101] {
+    let mut table = [0u8; 0x101];
+    let mut divisor = 0x8000u32;
+    while divisor < 0x10000 {
+        let mut xa = 512u32;
+        let mut i = 1;
+        while i < 5 {
+            // Wrapping u32 arithmetic exactly as the hardware-derivation spec
+            // specifies; the Newton-Raphson recurrence keeps the value in range.
+            xa = (xa.wrapping_mul((1024 * 512) - ((divisor >> 7) * xa))) >> 18;
+            i += 1;
+        }
+        table[((divisor >> 7) & 0xFF) as usize] = (((xa + 1) >> 1).wrapping_sub(0x101)) as u8;
+        divisor += 0x80;
     }
+    table[0x100] = table[0xFF];
+    table
+}
+
+static GTE_DIV_TABLE: [u8; 0x101] = build_gte_div_table();
+
+/// The single Newton-Raphson refinement the GTE applies to the seed value.
+/// `divisor` is the 16-bit normalized denominator (bit 15 set).
+fn gte_calc_recip(divisor: u16) -> i64 {
+    let idx = (((divisor as u32 & 0x7FFF) + 0x40) >> 7) as usize;
+    let x = 0x101i64 + GTE_DIV_TABLE[idx] as i64;
+    let tmp = (((divisor as i64) * -x) + 0x80) >> 8;
+    ((x * (0x20000 + tmp)) + 0x80) >> 8
+}
+
+/// GTE perspective divide: approximate `H * 0x10000 / SZ3` via the UNR
+/// reciprocal, matching PSX hardware including the near/behind-camera overflow
+/// clamp. Returns `(quotient, overflow)` where `overflow` is set only when
+/// `2 * SZ3 <= H` (the divide-overflow FLAG case); the plain 17-bit saturation
+/// of a large quotient does not raise the flag, mirroring hardware.
+///
+/// `H` is the focal length register and `SZ3` the projected depth bucket, both
+/// unsigned; the quotient is later multiplied by the (i16-saturated) IR1/IR2
+/// numerator and shifted right by 16 to yield the screen coordinate offset.
+pub fn gte_divide(h: u16, sz3: u16) -> (i64, bool) {
+    // Overflow / behind-camera: hardware saturates the quotient and flags it.
+    if (sz3 as u32) * 2 <= h as u32 {
+        return (0x1FFFF, true);
+    }
+    let shift = sz3.leading_zeros(); // clz16, 0..=15 (sz3 != 0 here)
+    let dividend = (h as u32) << shift;
+    let divisor = (sz3 as u32) << shift; // normalized to [0x8000, 0xFFFF]
+    let recip = gte_calc_recip((divisor | 0x8000) as u16);
+    let result = (((dividend as i64) * recip) + 0x8000) >> 16;
+    (result.min(0x1FFFF), false)
+}
+
+/// Apply a `gte_divide` quotient to one screen axis: multiply by the
+/// i16-saturated numerator (IR1 for X, IR2 for Y) and drop the 16 fractional
+/// bits the reciprocal carries. Caller adds `OFX`/`OFY` and clamps.
+pub(crate) fn gte_persp_term(numerator_i16: i32, recip: i64) -> i64 {
+    (numerator_i16 as i64 * recip) >> 16
 }
 
 /// `NCLIP`: signed 2× area of the screen-space triangle (a, b, c), used by
@@ -322,5 +405,70 @@ pub(crate) fn count_leading_same(v: i32) -> u32 {
         (!v as u32).leading_zeros()
     } else {
         (v as u32).leading_zeros()
+    }
+}
+
+#[cfg(test)]
+mod unr_tests {
+    use super::*;
+
+    #[test]
+    fn unr_table_matches_published_seed_values() {
+        // The generated table must reproduce the published PSX GTE UNR seed
+        // table (no$psx / Beetle). Pin the head, the two trailing entries, and
+        // the duplicated 0x100 slot - a mismatch means the formula drifted.
+        let expected_head = [0xFFu8, 0xFD, 0xFB, 0xF9, 0xF7, 0xF5, 0xF3, 0xF1];
+        assert_eq!(&GTE_DIV_TABLE[..8], &expected_head);
+        assert_eq!(GTE_DIV_TABLE[0xFE], 0x00);
+        assert_eq!(GTE_DIV_TABLE[0xFF], 0x00);
+        assert_eq!(GTE_DIV_TABLE[0x100], GTE_DIV_TABLE[0xFF]);
+    }
+
+    #[test]
+    fn gte_divide_near_camera_overflow_saturates_and_flags() {
+        // Audit case: H=256, SZ3=100. 2*100 <= 256 ⇒ overflow, quotient
+        // saturates to 0x1FFFF. With IR1=50 the projected offset is 99 (the
+        // retail value), where an exact H*IR1/SZ3 would give 128.
+        let (recip, overflow) = gte_divide(256, 100);
+        assert!(overflow);
+        assert_eq!(recip, 0x1FFFF);
+        assert_eq!(gte_persp_term(50, recip), 99);
+    }
+
+    #[test]
+    fn gte_divide_overflow_boundary_is_2sz3_le_h() {
+        // Exactly 2*SZ3 == H still overflows (<=), one above does not.
+        let (r_ovf, ovf) = gte_divide(320, 160);
+        assert!(ovf);
+        assert_eq!(r_ovf, 0x1FFFF);
+        let (_r, no_ovf) = gte_divide(320, 161);
+        assert!(!no_ovf);
+        // SZ3 == 0 (behind / on the near plane) always overflows.
+        assert_eq!(gte_divide(320, 0), (0x1FFFF, true));
+    }
+
+    #[test]
+    fn gte_divide_matches_exact_within_documented_error_for_large_sz3() {
+        // For SZ3 > H/2 (no overflow) the UNR reciprocal tracks the exact
+        // divide to within the documented bound (±1, up to 2 at the boundary /
+        // for extreme numerators), across the full i16 numerator range.
+        for &h in &[256u16, 320] {
+            let mut sz3 = (h / 2) + 1;
+            while sz3 <= 8192 {
+                let (recip, overflow) = gte_divide(h, sz3);
+                assert!(!overflow, "sz3={sz3} above H/2 must not overflow");
+                let mut ir = -32768i64;
+                while ir <= 32767 {
+                    let approx = gte_persp_term(ir as i32, recip);
+                    let exact = (ir * h as i64) / sz3 as i64;
+                    assert!(
+                        (approx - exact).abs() <= 2,
+                        "h={h} sz3={sz3} ir={ir}: approx={approx} exact={exact}"
+                    );
+                    ir += 97;
+                }
+                sz3 += 1;
+            }
+        }
     }
 }

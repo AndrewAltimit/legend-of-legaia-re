@@ -179,6 +179,14 @@ pub struct XaPlayback {
     pub gain: u16,
     /// Playback cursor in source samples per channel. `0..source_frames`.
     pub cursor: f64,
+    /// SPU-rate output samples to hold silent before the stream becomes
+    /// audible. Models the PSX CD controller's response-presentation delay
+    /// (the fixed latency between issuing the seek/read and the first XA
+    /// sector decoding). Retail arts-voice shouts ride this delay, so a
+    /// caller that requests a shout on the animation-start frame gets a
+    /// start that *trails* the trigger by this many samples instead of
+    /// racing ahead of the animation. Zero for FMV/BGM (no gate).
+    pub start_delay: u32,
 }
 
 impl XaPlayback {
@@ -199,6 +207,14 @@ impl XaPlayback {
     /// SPU-rate output sample (i.e. `sample_rate / 44100` of a source
     /// frame). Returns `(L, R)`. Mono is duplicated to both channels.
     fn tick_for_spu(&mut self) -> (i16, i16) {
+        // Response-presentation delay gate: stay silent (and do not advance
+        // the cursor) until the modeled CD-response latency has elapsed. This
+        // is what keeps a shout requested at animation-start from leading the
+        // animation - the retail pre-fix bug.
+        if self.start_delay > 0 {
+            self.start_delay -= 1;
+            return (0, 0);
+        }
         let frames = self.source_frames();
         if frames == 0 {
             return (0, 0);
@@ -292,6 +308,10 @@ struct StreamResampler {
     /// Optional active XA streaming voice. Mixed into the SPU output at
     /// SPU rate (44.1 kHz) before the host-rate resample.
     xa: Option<XaPlayback>,
+    /// A single queued XA shout that starts when `xa` runs off its end.
+    /// Powers the back-to-back arts-voice no-drop path (see
+    /// [`AudioOut::play_xa_shout`]); `None` for FMV/BGM.
+    pending_xa: Option<XaPlayback>,
     /// Monaural downmix (the retail options screen's "Sound: Monaural"):
     /// when set, L/R are averaged into both channels at output time.
     mono: bool,
@@ -326,6 +346,7 @@ impl StreamResampler {
             fade_target: 1.0,
             fade_step: 0.0,
             xa: None,
+            pending_xa: None,
             mono: false,
             muted: false,
             prev: (0, 0),
@@ -365,7 +386,13 @@ impl StreamResampler {
             // XA is mixed in after the fade - not subject to BGM crossfade.
             if let Some(xa) = self.xa.as_mut() {
                 if xa.is_done() {
-                    self.xa = None;
+                    // Active shout exhausted: promote a queued shout (if any)
+                    // so back-to-back arts don't lose the later clip's audio.
+                    self.xa = self.pending_xa.take();
+                    if let Some(next) = self.xa.as_mut() {
+                        let xa_sample = next.tick_for_spu();
+                        sample = mix_stereo(sample, xa_sample);
+                    }
                 } else {
                     let xa_sample = xa.tick_for_spu();
                     sample = mix_stereo(sample, xa_sample);
@@ -647,6 +674,7 @@ impl AudioOut {
         gain: u16,
     ) {
         let mut s = self.lock();
+        s.pending_xa = None;
         s.xa = Some(XaPlayback {
             pcm,
             sample_rate,
@@ -654,7 +682,59 @@ impl AudioOut {
             looping,
             gain,
             cursor: 0.0,
+            start_delay: 0,
         });
+    }
+
+    /// Install an arts-voice battle shout, modeling the retail CD/XA
+    /// scheduling contract instead of the FMV one-shot path.
+    ///
+    /// Two retail behaviours the plain [`AudioOut::play_xa`] cannot express:
+    ///
+    /// * **Response-presentation delay.** `start_delay_frames` (in 44.1 kHz
+    ///   SPU samples) holds the shout silent before its first audible sample,
+    ///   mirroring the CD controller's fixed seek/read-to-first-sector
+    ///   latency. A caller that requests the shout on the animation-start
+    ///   frame gets a start that *trails* the animation by this delay -
+    ///   matching the post-fix retail sync - rather than racing ahead of it
+    ///   (the pre-fix bug where "XA audio began well before the animation").
+    ///
+    /// * **Back-to-back no-drop.** If a shout is already active, a new request
+    ///   is *queued* (staged into `pending_xa`) rather than cutting the active
+    ///   one mid-play; the queued shout starts the sample the active one runs
+    ///   off its end. This is the counterpart to the retail back-to-back
+    ///   Hyper-Art fix (the later clip must not be dropped). One deep - a
+    ///   third request while one is active and one queued replaces the queued
+    ///   one (retail plays combo shouts strictly in sequence, so only the most
+    ///   recent pending clip is meaningful).
+    ///
+    /// Shouts are always one-shot mono/stereo at unity-ish `gain`; `looping`
+    /// has no analogue here.
+    pub fn play_xa_shout(
+        &self,
+        pcm: Vec<i16>,
+        sample_rate: u32,
+        channels: legaia_xa::Channels,
+        gain: u16,
+        start_delay_frames: u32,
+    ) {
+        let shout = XaPlayback {
+            pcm,
+            sample_rate,
+            channels,
+            looping: false,
+            gain,
+            cursor: 0.0,
+            start_delay: start_delay_frames,
+        };
+        let mut s = self.lock();
+        if s.xa.as_ref().is_some_and(|x| !x.is_done()) {
+            // A shout is still sounding: queue behind it (no mid-play cut).
+            s.pending_xa = Some(shout);
+        } else {
+            s.pending_xa = None;
+            s.xa = Some(shout);
+        }
     }
 
     /// Install a streaming XA-ADPCM voice fed from a buffer of raw XA-ADPCM
@@ -694,6 +774,7 @@ impl AudioOut {
     pub fn stop_xa(&self) {
         let mut s = self.lock();
         s.xa = None;
+        s.pending_xa = None;
     }
 
     /// `true` if an XA stream is currently attached and not yet exhausted.
@@ -993,6 +1074,7 @@ mod tests {
             looping,
             gain: 0x4000,
             cursor: 0.0,
+            start_delay: 0,
         }
     }
 
@@ -1071,6 +1153,7 @@ mod tests {
             looping: false,
             gain: 0x4000,
             cursor: 0.0,
+            start_delay: 0,
         };
         let (l, r) = xa.tick_for_spu();
         assert_eq!(l, 100);
@@ -1086,6 +1169,7 @@ mod tests {
             looping: false,
             gain: 0,
             cursor: 0.0,
+            start_delay: 0,
         };
         let (l, r) = xa.tick_for_spu();
         assert_eq!((l, r), (0, 0));
@@ -1150,6 +1234,67 @@ mod tests {
             let _ = r.next_frame();
         }
         assert!(r.xa.is_none(), "exhausted XA stream should detach");
+    }
+
+    // --- arts-voice battle shout scheduling ---
+
+    /// The response-presentation delay keeps a shout silent (and its cursor
+    /// parked at 0) for `start_delay` output samples, then it plays from the
+    /// first source sample. This is what makes a shout requested on the
+    /// animation-start frame *trail* the animation instead of leading it.
+    #[test]
+    fn xa_shout_start_delay_gates_then_plays_from_start() {
+        let delay = 32u32;
+        let mut xa = make_mono_xa(SPU_INTERNAL_RATE, vec![7000i16; 64], false);
+        xa.start_delay = delay;
+        // During the delay: pure silence, cursor unmoved, not done.
+        for _ in 0..delay {
+            assert_eq!(xa.tick_for_spu(), (0, 0), "gated shout must be silent");
+        }
+        assert_eq!(xa.cursor, 0.0, "cursor must not advance during the gate");
+        assert!(!xa.is_done());
+        // First post-gate sample is the buffer's first sample (full volume).
+        let (l, _) = xa.tick_for_spu();
+        assert!(
+            l > 7000 - 100,
+            "post-gate shout should play from start: {l}"
+        );
+    }
+
+    /// Back-to-back arts: a second shout requested while the first is still
+    /// sounding is queued, not dropped and not a mid-play cut. It begins the
+    /// sample the first runs off its end - the counterpart to the retail
+    /// back-to-back Hyper-Art fix (the later clip must still sound).
+    #[test]
+    fn xa_shout_back_to_back_queues_second_without_dropping_it() {
+        let mut r = StreamResampler::new(SPU_INTERNAL_RATE);
+        // Shout A: short, distinct amplitude. Shout B: distinct amplitude.
+        let mut a = make_mono_xa(SPU_INTERNAL_RATE, vec![4000i16; 8], false);
+        a.gain = 0x4000;
+        r.xa = Some(a);
+        // Second request arrives while A is active -> queued behind it.
+        let mut b = make_mono_xa(SPU_INTERNAL_RATE, vec![9000i16; 8], false);
+        b.gain = 0x4000;
+        r.pending_xa = Some(b);
+        // Drain enough frames to exhaust A and let B promote and play.
+        let mut saw_a = false;
+        let mut saw_b = false;
+        for _ in 0..40 {
+            r.phase = 1.0;
+            let (l, _) = r.next_frame();
+            if (l - 4000).abs() < 400 {
+                saw_a = true;
+            }
+            if (l - 9000).abs() < 400 {
+                saw_b = true;
+            }
+        }
+        assert!(saw_a, "first shout should have sounded");
+        assert!(saw_b, "queued second shout must not be dropped");
+        assert!(
+            r.pending_xa.is_none(),
+            "pending slot consumed after promotion"
+        );
     }
 
     // --- master mute gate ---

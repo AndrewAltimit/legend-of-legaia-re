@@ -202,6 +202,9 @@ pub mod flag_bits {
     pub const SY2_SATURATED: u32 = 1 << 13;
     /// SZ3 / OTZ saturated.
     pub const SZ3_OTZ_SATURATED: u32 = 1 << 18;
+    /// Perspective-divide result saturated to `0x1FFFF` (the near/behind-camera
+    /// `2 * SZ3 <= H` case). Matches the hardware GTE FLAG bit 17.
+    pub const DIVIDE_OVERFLOW: u32 = 1 << 17;
     /// MAC0 overflowed positive.
     pub const MAC0_OVERFLOW_POS: u32 = 1 << 16;
     /// MAC0 overflowed negative.
