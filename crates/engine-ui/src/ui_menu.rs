@@ -17,6 +17,9 @@ pub use name_entry::*;
 mod inventory;
 pub use inventory::*;
 
+mod pause_lists;
+pub use pause_lists::*;
+
 mod equipment;
 pub use equipment::*;
 
