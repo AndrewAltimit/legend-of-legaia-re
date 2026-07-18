@@ -5,7 +5,9 @@ use super::*;
 
 /// Outcome of one master-slot state advance, returned by
 /// [`EffectHost::advance_state`]. The pool uses this to update the slot's
-/// state byte / lifecycle.
+/// state byte / lifecycle. Legacy-path only: the faithful walker
+/// ([`Pool::tick_retail`]) derives the lifecycle from the catalog's spawn
+/// records and animation frames and never consults this.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StateOutcome {
     /// Stay active, run again next frame (state byte stays at 0).
@@ -21,7 +23,12 @@ pub enum StateOutcome {
 /// Engine-side callbacks the effect VM dispatches into.
 ///
 /// All methods have default impls so a minimal host (only RNG) compiles.
-/// Each method documents which retail function it stands in for.
+/// Each method documents which retail function it stands in for. The
+/// faithful walker ([`Pool::tick_retail`]) uses only [`next_random`]; the
+/// `advance_state` / `accumulate_child_motion` hooks belong to the legacy
+/// [`Pool::tick`] shim.
+///
+/// [`next_random`]: EffectHost::next_random
 pub trait EffectHost {
     /// Equivalent of `func_0x80056798` - uniform random `i32`. The retail
     /// PRNG is an LCG seeded by `_DAT_8007AB80`; engines plug whatever RNG

@@ -68,21 +68,21 @@ fn init_zeros_all_slots() {
     let mut pool = Pool::new();
     // Smudge the pool so init has something to clear.
     pool.master_slots[0].child_count = 1;
-    pool.children[5].src_x = 0xDEAD_BEEFu32 as i32;
+    pool.children[5].pos[0] = 0xDEAD_BEEFu32 as i32;
 
     pool.init(PoolHead {
-        param_id: 0x1000,
-        param_extra: 0x0A00,
-        pack0_base: 0x1234_0000,
-        pack1_index_base: 0x1234_4000,
-        pack1_body_base: 0x1234_8000,
+        motion_scale: 0x1000,
+        sprite_scale: 0x0A00,
+        atlas_base: 0x1234_0000,
+        pack0_base: 0x1234_4000,
+        pack1_base: 0x1234_8000,
     });
 
     assert_eq!(pool.master_slots[0].child_count, 0);
-    assert_eq!(pool.children[5].src_x, 0);
-    assert_eq!(pool.head.param_id, 0x1000);
-    assert_eq!(pool.head.param_extra, 0x0A00);
-    assert_eq!(pool.head.pack0_base, 0x1234_0000);
+    assert_eq!(pool.children[5].pos[0], 0);
+    assert_eq!(pool.head.motion_scale, 0x1000);
+    assert_eq!(pool.head.sprite_scale, 0x0A00);
+    assert_eq!(pool.head.atlas_base, 0x1234_0000);
 }
 
 #[test]
@@ -628,4 +628,421 @@ fn summon_path_does_not_consume_master_slot() {
     }
     // Allocator should still hand out slot 0 on a non-summon spawn.
     assert_eq!(pool.allocate_master(), Some(0));
+}
+
+// ---------------------------------------------------------------------------
+// Faithful walker tests - `Pool::tick_retail` (pass 1) and
+// `Pool::child_billboards` (pass 2), against the algebra in
+// `docs/subsystems/effect-vm.md#the-extracted-pass-1-state-algebra`.
+// ---------------------------------------------------------------------------
+
+/// One synthetic spawn record: `sprite_id` selects the pack0 batch, `delay`
+/// is the master's post-spawn wait (frames).
+fn rec(sprite_id: u16, delay: u8) -> ChildSprite {
+    ChildSprite {
+        sprite_id,
+        delay,
+        ..ChildSprite::default()
+    }
+}
+
+/// Build a catalog: one effect script per `effects` entry (flags + spawn
+/// records, spread 16), one pack0 batch per `anims` entry (frames as
+/// `(atlas_index, delay, speed)`), plus the sprite atlas.
+fn walker_catalog(
+    effects: &[(u8, &[ChildSprite])],
+    anims: &[&[(u8, u8, u8)]],
+    atlas: &[SpriteAtlasEntry],
+) -> EffectCatalog {
+    let entries = effects
+        .iter()
+        .map(|(flags, recs)| {
+            (
+                EffectScript {
+                    child_count: recs.len() as u8,
+                    flags: *flags,
+                    spread: 16,
+                    body: vec![],
+                },
+                recs.to_vec(),
+            )
+        })
+        .collect();
+    let anims = anims
+        .iter()
+        .map(|frames| AnimBatch {
+            flags: 0,
+            frames: frames
+                .iter()
+                .map(|&(a, d, s)| AnimFrame {
+                    atlas_index: a,
+                    timing: [d, s, 0, 0, 0],
+                })
+                .collect(),
+        })
+        .collect();
+    EffectCatalog::from_parts(entries, atlas.to_vec(), anims)
+}
+
+/// Master spawn cadence: a record's delay arms the 5.3 wait counter
+/// (`delay << 3`), each tick subtracts 8, and the next record is consumed
+/// only at zero. Consuming the final record frees the master.
+#[test]
+fn retail_master_cadence_walks_records_on_5_3_countdown() {
+    let records = [rec(0, 3), rec(0, 9)];
+    let catalog = walker_catalog(&[(0, &records)], &[&[(0, 10, 0)]], &[]);
+    let mut pool = Pool::new();
+    let mut host = RecHost::default();
+    pool.spawn_by_ui_id(&mut host, 0, [0, 0, 0], 0, &catalog)
+        .expect("spawn");
+
+    // Tick 1: record 0 consumed (child seeded), wait = 3 << 3 = 24.
+    pool.tick_retail(&mut host, &catalog, 1);
+    assert_eq!(pool.master_slots[0].spawn_cursor, 1);
+    assert_eq!(pool.master_slots[0].state, 24);
+    assert_eq!(pool.active_child_count(), 1);
+
+    // Ticks 2..4: countdown 24 -> 16 -> 8 -> 0, no record consumed.
+    for want in [16u8, 8, 0] {
+        pool.tick_retail(&mut host, &catalog, 1);
+        assert_eq!(pool.master_slots[0].state, want);
+        assert_eq!(pool.master_slots[0].spawn_cursor, 1);
+    }
+
+    // Tick 5: wait hit zero -> record 1 consumed; it was the last record, so
+    // the master frees itself and forces wait = 8 to exit the burst loop.
+    pool.tick_retail(&mut host, &catalog, 1);
+    assert_eq!(pool.active_count(), 0);
+    assert_eq!(pool.master_slots[0].state, 8);
+    assert_eq!(pool.active_child_count(), 2);
+}
+
+/// A wait already below 8 clamps to zero (no spawn on the clamping tick).
+#[test]
+fn retail_master_wait_below_8_clamps_without_spawning() {
+    let records = [rec(0, 1)];
+    let catalog = walker_catalog(&[(0, &records)], &[&[(0, 10, 0)]], &[]);
+    let mut pool = Pool::new();
+    let mut host = RecHost::default();
+    pool.spawn_by_ui_id(&mut host, 0, [0, 0, 0], 0, &catalog)
+        .expect("spawn");
+    pool.master_slots[0].state = 5; // sub-8 residue
+
+    pool.tick_retail(&mut host, &catalog, 1);
+    assert_eq!(pool.master_slots[0].state, 0, "clamped, not wrapped");
+    assert_eq!(pool.master_slots[0].spawn_cursor, 0, "no record consumed");
+    assert_eq!(pool.active_child_count(), 0);
+}
+
+/// Zero-delay records spawn as one burst within a single tick.
+#[test]
+fn retail_zero_delay_records_burst_in_one_tick() {
+    let records = [rec(0, 0), rec(0, 0), rec(0, 5)];
+    let catalog = walker_catalog(&[(0, &records)], &[&[(0, 10, 0)]], &[]);
+    let mut pool = Pool::new();
+    let mut host = RecHost::default();
+    pool.spawn_by_ui_id(&mut host, 0, [0, 0, 0], 0, &catalog)
+        .expect("spawn");
+
+    pool.tick_retail(&mut host, &catalog, 1);
+    // All three records consumed in one sweep (the third was the last, so
+    // the master freed itself); three children live.
+    assert_eq!(pool.active_count(), 0);
+    assert_eq!(pool.active_child_count(), 3);
+}
+
+/// The `frame_skip` catch-up factor runs pass 1 that many times per call.
+#[test]
+fn retail_frame_skip_replays_the_sweep() {
+    let records = [rec(0, 3), rec(0, 9)];
+    let catalog = walker_catalog(&[(0, &records)], &[&[(0, 10, 0)]], &[]);
+    let mut pool = Pool::new();
+    let mut host = RecHost::default();
+    pool.spawn_by_ui_id(&mut host, 0, [0, 0, 0], 0, &catalog)
+        .expect("spawn");
+
+    // One call at frame_skip 4 = spawn record 0 (wait 24) + three countdown
+    // sweeps -> state back to 0.
+    pool.tick_retail(&mut host, &catalog, 4);
+    assert_eq!(pool.master_slots[0].state, 0);
+    assert_eq!(pool.master_slots[0].spawn_cursor, 1);
+    assert_eq!(pool.active_child_count(), 1);
+}
+
+/// On pool exhaustion the spawn record is still consumed with no child -
+/// the effect degrades rather than stalling.
+#[test]
+fn retail_pool_exhaustion_consumes_record_without_child() {
+    let records = [rec(5, 1)];
+    let frames: &[(u8, u8, u8)] = &[(0, 10, 0)];
+    let catalog = walker_catalog(&[(0, &records)], &[frames; 6], &[]); // batches 0..=5
+    let mut pool = Pool::new();
+    let mut host = RecHost::default();
+    // Fill every child slot with a long-waiting occupant.
+    for c in &mut pool.children {
+        c.frame_count = 1;
+        c.wait = 200;
+        c.anim_id = 0;
+    }
+    pool.spawn_by_ui_id(&mut host, 0, [0, 0, 0], 0, &catalog)
+        .expect("spawn");
+
+    pool.tick_retail(&mut host, &catalog, 1);
+    // Record consumed -> single-record master freed; no slot was reseeded.
+    assert_eq!(pool.active_count(), 0);
+    assert!(pool.children.iter().all(|c| c.anim_id != 5));
+}
+
+/// Child seeding reads the anim index as the single byte at record +0 and
+/// the master delay from the byte at +1 (the `ChildSprite` u16-read
+/// regression), and arms the child wait from the first frame's delay.
+#[test]
+fn retail_child_seed_uses_anim_byte_and_first_frame_delay() {
+    let records = [rec(1, 2)];
+    let catalog = walker_catalog(
+        &[(0, &records)],
+        &[&[(0, 9, 0)], &[(0, 4, 0), (0, 1, 0)]],
+        &[],
+    );
+    let mut pool = Pool::new();
+    let mut host = RecHost::default();
+    pool.spawn_by_ui_id(&mut host, 0, [0, 0, 0], 0, &catalog)
+        .expect("spawn");
+
+    pool.tick_retail(&mut host, &catalog, 1);
+    // Master armed from the record's delay byte (2 << 3 = 16)... but the
+    // single-record master frees itself instead (state = 8). The child must
+    // come from batch 1, not batch (1 | 2 << 8).
+    let c = &pool.children[0];
+    assert_eq!(c.anim_id, 1);
+    assert_eq!(c.frame_count, 2);
+    // Seeded wait = batch 1 frame 0 delay << 3 = 32, then the same sweep's
+    // child walk already counted it down once: 32 - 8 = 24.
+    assert_eq!(c.wait, 24);
+    assert_eq!(c.frame_cursor, 0);
+}
+
+/// Child frame advance: each frame holds `delay << 3` in 5.3, the cursor
+/// steps at zero, and reaching `frame_count` retires the slot.
+#[test]
+fn retail_child_walk_advances_frames_and_retires() {
+    // Batch 0: three frames, delays 1 / 2 / 1.
+    let records = [rec(0, 0)];
+    let catalog = walker_catalog(&[(0, &records)], &[&[(0, 1, 0), (1, 2, 0), (2, 1, 0)]], &[]);
+    let mut pool = Pool::new();
+    let mut host = RecHost::default();
+    pool.spawn_by_ui_id(&mut host, 0, [0, 0, 0], 0, &catalog)
+        .expect("spawn");
+
+    // Tick 1: seed (wait = 1 << 3 = 8), then the child walk counts 8 -> 0.
+    pool.tick_retail(&mut host, &catalog, 1);
+    assert_eq!(pool.children[0].frame_cursor, 0);
+    assert_eq!(pool.children[0].wait, 0);
+    // Tick 2: advance to frame 1, wait = 2 << 3 = 16.
+    pool.tick_retail(&mut host, &catalog, 1);
+    assert_eq!(pool.children[0].frame_cursor, 1);
+    assert_eq!(pool.children[0].wait, 16);
+    // Ticks 3-4: countdown 16 -> 8 -> 0.
+    pool.tick_retail(&mut host, &catalog, 1);
+    assert_eq!(pool.children[0].wait, 8);
+    pool.tick_retail(&mut host, &catalog, 1);
+    assert_eq!(pool.children[0].wait, 0);
+    // Tick 5: advance to frame 2, wait = 8.
+    pool.tick_retail(&mut host, &catalog, 1);
+    assert_eq!(pool.children[0].frame_cursor, 2);
+    assert_eq!(pool.children[0].wait, 8);
+    // Tick 6: countdown to 0. Tick 7: cursor would reach frame_count -> retire.
+    pool.tick_retail(&mut host, &catalog, 1);
+    pool.tick_retail(&mut host, &catalog, 1);
+    assert_eq!(pool.children[0].frame_count, 0, "slot retired");
+    assert_eq!(pool.active_child_count(), 0);
+}
+
+/// Motion: `pos += vel * frame.speed * motion_scale * 8 >> 15`, which at the
+/// retail scale (0x1000) is exactly `vel * speed` - and it integrates on
+/// countdown ticks too (drift during a frame hold).
+#[test]
+fn retail_child_motion_reduces_to_vel_times_speed_and_drifts_during_wait() {
+    // One record, vertical velocity 16; batch frames all speed 2, delays 1.
+    let mut r = rec(0, 0);
+    r.velocity = [0, 16, 0];
+    let records = [r];
+    let catalog = walker_catalog(&[(0, &records)], &[&[(0, 1, 2), (0, 1, 2), (0, 1, 2)]], &[]);
+    let mut pool = Pool::new();
+    let mut host = RecHost::default();
+    pool.spawn_by_ui_id(&mut host, 0, [0, 0, 0], 0, &catalog)
+        .expect("spawn");
+
+    // Per-tick motion steps: every tick (advance or countdown) takes exactly
+    // one step of 16 * 2 = 32 (16.8 units) until retirement.
+    let mut last = 0i32;
+    let mut steps = 0;
+    for _ in 0..16 {
+        pool.tick_retail(&mut host, &catalog, 1);
+        if pool.children[0].frame_count == 0 {
+            break;
+        }
+        let y = pool.children[0].pos[1];
+        assert_eq!(y - last, 32, "one vel*speed step per logic frame");
+        last = y;
+        steps += 1;
+    }
+    assert!(steps >= 4, "drifted across advance AND countdown ticks");
+}
+
+/// Spawn-record planar legs rotate by the master angle through the 4096-entry
+/// trig tables: at angle 0 the width leg maps to +X (exactly `width << 8` in
+/// 16.8) and at 0x400 (90 degrees) to -Z, with the table's one-index skew
+/// (`table[0xFFF - a]`) leaking a tiny cross-axis term.
+#[test]
+fn retail_child_offsets_rotate_by_master_angle() {
+    let mut r = rec(0, 1);
+    r.width = 16;
+    r.height = 2;
+    let records = [r];
+    let catalog = walker_catalog(&[(0, &records)], &[&[(0, 10, 0)]], &[]);
+
+    // Angle 0.
+    let mut pool = Pool::new();
+    let mut host = RecHost::default();
+    pool.spawn_by_ui_id(&mut host, 0, [1000, 500, 2000], 0, &catalog)
+        .expect("spawn");
+    pool.tick_retail(&mut host, &catalog, 1);
+    let c = &pool.children[0];
+    assert_eq!(c.pos[0], (1000 << 8) + (16 << 8), "width -> +X at angle 0");
+    assert_eq!(c.pos[1], (500 << 8) - (2 << 8), "height subtracts from Y");
+    assert_eq!(c.pos[2], (2000 << 8) - 6, "cross-axis skew from sin[0xFFF]");
+
+    // Angle 0x400 (90 degrees).
+    let mut pool = Pool::new();
+    pool.spawn_by_ui_id(&mut host, 0, [1000, 500, 2000], 0x400, &catalog)
+        .expect("spawn");
+    pool.tick_retail(&mut host, &catalog, 1);
+    let c = &pool.children[0];
+    assert_eq!(c.pos[0], (1000 << 8) - 6, "cross-axis skew from cos[0xBFF]");
+    assert_eq!(
+        c.pos[2],
+        (2000 << 8) - (16 << 8),
+        "width -> -Z at 90 degrees"
+    );
+}
+
+/// Brightness envelope at key ticks: ramp-in over the first eighth
+/// (`0x80 * (cursor + 1) / n`), ramp-out over the rest, clamp at 0x80.
+#[test]
+fn pass2_brightness_envelope_key_ticks() {
+    // frame_count = 16 -> n = 2.
+    assert_eq!(pass2_brightness(16, 0), 0x40); // (0+1)*0x80/2
+    assert_eq!(pass2_brightness(16, 1), 0x80); // (1+1)*0x80/2
+    assert_eq!(pass2_brightness(16, 2), 0x80); // (16-2)*0x80/14 -> clamp
+    assert_eq!(pass2_brightness(16, 8), 0x49); // (16-8)*0x80/14 = 73
+    assert_eq!(pass2_brightness(16, 15), 0x09); // (16-15)*0x80/14 = 9
+    // frame_count < 8 -> n = 0: pure ramp-out over the whole batch.
+    assert_eq!(pass2_brightness(4, 0), 0x80);
+    assert_eq!(pass2_brightness(4, 3), 0x20);
+}
+
+/// Pass 2 resolves each live child's current frame to its atlas entry,
+/// scales the quad by the pool sprite scale (x10 at the retail 0xA00), and
+/// exposes the random UV-mirror bits.
+#[test]
+fn retail_child_billboards_resolve_atlas_scale_and_mirror() {
+    let atlas = [
+        SpriteAtlasEntry {
+            u: 8,
+            v: 16,
+            w: 4,
+            h: 6,
+            clut: 0x7680,
+            page: 0x25,
+            unk: 0,
+        },
+        SpriteAtlasEntry {
+            u: 64,
+            v: 0,
+            w: 8,
+            h: 8,
+            clut: 0x7680,
+            page: 0x25,
+            unk: 0,
+        },
+    ];
+    let records = [rec(0, 1)];
+    let catalog = walker_catalog(&[(0, &records)], &[&[(1, 4, 0), (0, 4, 0)]], &atlas);
+    let mut pool = Pool::new();
+    let mut host = RecHost::default();
+    host.rng_seq = vec![3]; // mirror bits = 3 -> both bits SET = unflipped
+    pool.spawn_by_ui_id(&mut host, 0, [10, 20, 30], 0, &catalog)
+        .expect("spawn");
+    pool.tick_retail(&mut host, &catalog, 1);
+
+    let bills = pool.child_billboards(&catalog);
+    assert_eq!(bills.len(), 1);
+    let b = &bills[0];
+    // Frame 0's atlas index is 1.
+    assert_eq!(b.atlas_index, 1);
+    assert_eq!(b.entry, atlas[1]);
+    // 8x8 texels * 0xA00 >> 8 = x10.
+    assert_eq!((b.world_w, b.world_h), (80, 80));
+    // frame_count = 2 -> n = 0 -> (2-0)*0x80/2 = 0x80.
+    assert_eq!(b.brightness, 0x80);
+    // Mirror bits SET = the retail "unswapped" corner order.
+    assert!(!b.flip_h);
+    assert!(!b.flip_v);
+    // Position: 16.8 master origin >> 8 (angle 0, zero legs => tiny Z skew
+    // truncates away: 30<<8 - 0 legs; width/depth are 0 here).
+    assert_eq!(b.pos, [10, 20, 30]);
+
+    // Clear-bit mirror reads as flipped.
+    let mut pool2 = Pool::new();
+    let mut host2 = RecHost::default(); // rng defaults to 0 -> bits clear
+    pool2
+        .spawn_by_ui_id(&mut host2, 0, [0, 0, 0], 0, &catalog)
+        .expect("spawn");
+    pool2.tick_retail(&mut host2, &catalog, 1);
+    let b2 = pool2.child_billboards(&catalog);
+    assert!(b2[0].flip_h);
+    assert!(b2[0].flip_v);
+}
+
+/// The randomized planar legs (`flags & 1`) recorded at spawn replace the
+/// record's width/depth when the walker seeds the child.
+#[test]
+fn retail_randomized_offsets_override_record_legs() {
+    let mut r = rec(0, 1);
+    r.width = 100; // authored legs, must be ignored under flags & 1
+    r.depth = 100;
+    let records = [r];
+    let catalog = walker_catalog(&[(1, &records)], &[&[(0, 10, 0)]], &[]);
+    let mut pool = Pool::new();
+    let mut host = RecHost::default();
+    // Spawn rewrites: dx = 20 % 32 - 16 = 4, dz = 24 % 32 - 16 = 8.
+    // The walker then consumes one more sample for the mirror bits.
+    host.rng_seq = vec![20, 24, 0];
+    pool.spawn_by_ui_id(&mut host, 0, [0, 0, 0], 0, &catalog)
+        .expect("spawn");
+    assert_eq!(pool.master_slots[0].child_offsets, vec![(4, 8)]);
+
+    pool.tick_retail(&mut host, &catalog, 1);
+    let c = &pool.children[0];
+    // Angle 0: X = dx << 8 (width leg), Z = dz << 8 + the sin[0xFFF] skew of
+    // the width leg (4 * -6 >> 4 = -2, floored).
+    assert_eq!(c.pos[0], 4 << 8);
+    assert_eq!(c.pos[2], (8 << 8) + ((4 * -6) >> 4));
+}
+
+/// `field_14` ages once per `tick_retail` call per active master (a
+/// port-side aid for age-based render fades; retail leaves +0x14 unwritten).
+#[test]
+fn tick_retail_ages_active_masters() {
+    let records = [rec(0, 10), rec(0, 10)];
+    let catalog = walker_catalog(&[(0, &records)], &[&[(0, 10, 0)]], &[]);
+    let mut pool = Pool::new();
+    let mut host = RecHost::default();
+    pool.spawn_by_ui_id(&mut host, 0, [0, 0, 0], 0, &catalog)
+        .expect("spawn");
+    for want in 1..=3 {
+        pool.tick_retail(&mut host, &catalog, 1);
+        assert_eq!(pool.master_slots[0].field_14, want);
+    }
 }

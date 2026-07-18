@@ -86,6 +86,22 @@ impl EffectCatalog {
         }
     }
 
+    /// Construct from fully pre-parsed parts - scripts, sprite atlas, and
+    /// pack0 animation batches. For hosts/tests that assemble a catalog
+    /// without an `efect.dat` buffer (the walker needs `anims` populated to
+    /// run the [`Pool::tick_retail`] cadence).
+    pub fn from_parts(
+        entries: Vec<(EffectScript, Vec<ChildSprite>)>,
+        atlas: Vec<SpriteAtlasEntry>,
+        anims: Vec<AnimBatch>,
+    ) -> Self {
+        Self {
+            entries,
+            atlas,
+            anims,
+        }
+    }
+
     /// Number of effect scripts in the catalog.
     pub fn len(&self) -> usize {
         self.entries.len()
