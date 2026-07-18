@@ -186,7 +186,12 @@ mod tests {
         );
         assert!(src.contains("fn psx_modulate"));
         assert!(src.contains("fn psx_depth_cue"));
-        assert!(src.contains("mix(rgb, cue.rgb, cue.a)"));
+        assert!(src.contains("mix(rgb, far_rgb, ir0)"));
+        // The per-render-node depth-cue ramp: disabled (`enable <= 0`) must
+        // fall back to the constant IR0 so the unfogged default stays the
+        // identity.
+        assert!(src.contains("fn cue_ramp_ir0"));
+        assert!(src.contains("if (ramp.w <= 0.0) {\n        return cue_a;\n    }"));
         // No always-on synthetic light may creep back into the retail
         // helpers: the ONLY light in the prelude is the opt-in `dyn_light`
         // enhancement, and it must early-return the input unchanged when its

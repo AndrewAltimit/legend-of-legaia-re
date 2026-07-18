@@ -76,6 +76,15 @@ pub(super) struct MeshUniforms {
     /// ambient floor ([`DYN_LIGHT_AMBIENT`]). Only read when
     /// `light_dir[3]` is set.
     pub(super) light_color: [f32; 4],
+    /// View-depth IR0 ramp for the per-render-node depth cue -
+    /// `(near_z, inv_range, max_ir0, enable)`, consumed by the `cue_ramp_ir0`
+    /// WGSL helper. Retail stages the DPCS far colour + `IR0` per render node
+    /// (`+0x74` / `+0x78`); the engine reproduces the depth dependence with a
+    /// linear view-depth ramp on the fragment's projected depth. `enable = 0`
+    /// (the default) falls back to the constant [`Self::depth_cue`]`[3]`.
+    /// Set with [`Renderer::set_depth_cue_ramp`]. Drives the opening
+    /// prologue's far-field gold crush.
+    pub(super) cue_ramp: [f32; 4],
 }
 
 pub struct UploadedTexture {

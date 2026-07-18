@@ -117,6 +117,19 @@ impl World {
         }
     }
 
+    /// The per-render-node depth-cue pull the current scene renders through,
+    /// or `None` for the identity default. Keyed on the same prologue scene
+    /// gate as [`Self::scene_color_grade`]: retail stages a gold DPCS far
+    /// colour + depth-graded `IR0` per render node across the opening's
+    /// narration beats (crushing far scenery toward gold) and neutral values
+    /// on the interactive field, where the cue is the identity. Hosts stage
+    /// this each frame (`set_depth_cue_ramp` / `clear_depth_cue_ramp`) - see
+    /// [`crate::fade::DepthCueRamp`] for the traced mechanism.
+    pub fn scene_depth_cue(&self) -> Option<crate::fade::DepthCueRamp> {
+        self.scene_color_grade()
+            .map(|_| crate::fade::DepthCueRamp::PROLOGUE_GOLD)
+    }
+
     /// Skip the active narration to its next page (a confirm press). Clears
     /// the presenter once it advances past the last page. Returns `true` while
     /// narration is still on screen, `false` once it completes (so the host
@@ -1806,6 +1819,28 @@ mod tests {
             w.scene_color_grade(),
             Some(crate::fade::ColorGrade::PROLOGUE_SEPIA)
         );
+    }
+
+    #[test]
+    fn scene_depth_cue_tracks_the_prologue_grade_gate() {
+        let mut w = World::new();
+        // Interactive scenes stage NO depth-cue ramp: the renderer's ramp-off
+        // path is the pre-ramp identity, so town01 pixels are unchanged.
+        assert!(w.scene_depth_cue().is_none());
+        w.set_active_scene_label("town01");
+        assert!(
+            w.scene_depth_cue().is_none(),
+            "interactive field renders without the far-colour pull"
+        );
+        // All three prologue legs pull toward the gold far colour.
+        for scene in ["opdeene", "opstati", "opurud"] {
+            w.set_active_scene_label(scene);
+            assert_eq!(
+                w.scene_depth_cue(),
+                Some(crate::fade::DepthCueRamp::PROLOGUE_GOLD),
+                "{scene} stages the prologue depth-cue ramp"
+            );
+        }
     }
 
     /// Build a minimal timeline that reaches a cross-context CFLAG_TST

@@ -421,6 +421,14 @@ impl PlayWindowApp {
                 Some(g) => r.set_color_grade(g.gold, g.strength),
                 None => r.set_color_grade([1.0, 1.0, 1.0], 0.0),
             }
+            // The grade's second half: the per-render-node DPCS far-colour
+            // pull (gold far colour + depth-graded IR0 in retail), staged as
+            // a view-depth IR0 ramp. Cleared every non-prologue frame, so
+            // interactive scenes render the identity (ramp-off) path.
+            match self.session.host.world.scene_depth_cue() {
+                Some(c) => r.set_depth_cue_ramp(c.far, c.near_z, c.far_z, c.max_ir0),
+                None => r.clear_depth_cue_ramp(),
+            }
             // Retail GTE NCLIP winding rejection, scoped to the in-engine
             // cutscene camera: the opdeene prologue's crater-rim tableau shot
             // sits INSIDE the scene's closed cave-wall backdrop mesh, and

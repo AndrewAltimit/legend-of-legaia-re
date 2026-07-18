@@ -229,14 +229,73 @@ impl ColorGrade {
     /// tinted engine output lands G/R 0.91..0.93 vs retail's ~0.89, and the
     /// near-field surface B/R ~0.37 sits against retail's near-ground 0.44
     /// (the beat where the modulation ratio shows almost unblended). The
-    /// remaining far-field gap (retail sky/spire B/R crushes to 0.12..0.18)
-    /// is the per-render-node DPCS depth-cue pull toward the gold far colour
-    /// (`+0x74`/`+0x78`, GTE cr21-23), which the engine does not stage
-    /// per-node - a uniform multiply cannot reproduce that depth-varying
-    /// crush and it is left as a documented residual.
+    /// far-field crush (retail sky/spire B/R down to 0.12..0.18) is the
+    /// per-render-node DPCS depth-cue pull toward the gold far colour
+    /// (`+0x74`/`+0x78`, GTE cr21-23), which a uniform multiply cannot
+    /// reproduce - the engine stages it separately as
+    /// [`DepthCueRamp::PROLOGUE_GOLD`], layered over this tint.
     pub const PROLOGUE_SEPIA: ColorGrade = ColorGrade {
         gold: [1.0, 0.94, 0.43],
         strength: 1.0,
+    };
+}
+
+/// The prologue's **per-render-node depth-cue pull** - the second half of the
+/// retail grade, layered over [`ColorGrade::PROLOGUE_SEPIA`]'s multiply tint.
+///
+/// ## Retail mechanism
+///
+/// The TMD renderer `FUN_8002735C` runs the GTE **DPCS** depth cue per prim:
+/// `out = base + IR0 * (far - base)`, with the far colour and `IR0` staged
+/// **per render node** (`+0x74` → GTE cr21-23, `+0x78` → `IR0`). Across the
+/// opening's narration beats the cutscene host stages a gold far colour with
+/// depth-graded `IR0`s, so far scenery (sky planes, distant spires) crushes
+/// hard toward gold (retail far-field `B/R ≈ 0.12..0.18`) while near ground
+/// keeps the modulation tint almost unblended (`B/R ≈ 0.44`). DPCS runs on
+/// the *packet colour* before the GPU's texel multiply, so on textured prims
+/// the far term reaches the pixel as `texel * far / 128` - texture detail
+/// survives the crush, as the retail framebuffer shows.
+///
+/// The engine reproduces the depth dependence as a linear view-depth ramp:
+/// `ir0(z) = clamp((z - near_z) / (far_z - near_z), 0, 1) * max_ir0` per
+/// fragment (`engine-render` `cue_ramp_ir0`), staged with
+/// `Renderer::set_depth_cue_ramp` while this ramp is active and cleared
+/// otherwise - interactive scenes (`town01` onward) render with the ramp off,
+/// which is the bit-identical pre-ramp path.
+///
+/// REF: FUN_8002735C (far colour / IR0 → GTE cr21-23 / IR0)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DepthCueRamp {
+    /// DPCS far colour (GTE cr21-23) in display `0..1` per channel.
+    pub far: [f32; 3],
+    /// View depth (camera units) where the pull begins (`ir0 = 0`).
+    pub near_z: f32,
+    /// View depth of the full pull (`ir0 = max_ir0`).
+    pub far_z: f32,
+    /// `IR0` ceiling, `0.0..=1.0` (hardware `0..0x1000`).
+    pub max_ir0: f32,
+}
+
+impl DepthCueRamp {
+    /// The opening-prologue gold pull, calibrated pixel-for-pixel against the
+    /// retail tableau framebuffer on matched regions: the far cave wall lands
+    /// within a few percent of retail per channel with `B/R` inside retail's
+    /// `0.12..0.18` far-field band, the gold spires hold `G/R ≈ 0.87..0.90`
+    /// (retail `~0.89`), and the near ground stays on the unpulled multiply
+    /// tint. The `near_z`/`far_z` window sits just past the cutscene camera's
+    /// telephoto ground plane (the eye is ~3.5k view units out of the
+    /// tableau, so the whole depth spread is only a few hundred units); the
+    /// far colour keeps the modulation ratio's gold hue at roughly an eighth
+    /// of full brightness - the retail wall's effective post-pull modulation.
+    /// Retail's true staging is per node, which a shared ramp cannot fully
+    /// reproduce: the spire nodes combine a strong pull with a brighter far
+    /// colour, so their `B/R` keeps a documented residual (see
+    /// `docs/subsystems/cutscene.md`).
+    pub const PROLOGUE_GOLD: DepthCueRamp = DepthCueRamp {
+        far: [0.121, 0.111, 0.0095],
+        near_z: 3250.0,
+        far_z: 3550.0,
+        max_ir0: 0.92,
     };
 }
 
