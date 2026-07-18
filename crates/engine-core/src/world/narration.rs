@@ -1444,14 +1444,23 @@ impl World {
     // PORT: FUN_80039B7C (per-actor frame-slice loop; NOP break + halt park)
     // REF: FUN_8003C83C (cross-context target resolve)
     pub fn step_field_channels(&mut self) {
-        // Always-on, free-roam included: retail's per-actor ticker
-        // (`FUN_80039B7C`) steps every context every frame unconditionally -
-        // halted contexts (the spawn-prologue `0x41` Yield park) and
-        // dialog-byte parks skip inside the slice, so the resident set is
-        // cheap and story-inert until something un-halts a channel. The
-        // `animate_field_npcs` switch now scopes ONLY the engine's derived
-        // waypoint patroller ([`Self::tick_field_npc_motions`]), which is a
-        // flag-blind route approximation, not the retail mechanism.
+        // ENGAGE-gated, not free-running. Retail's per-actor ticker
+        // (`FUN_8003BC08`, body `0x8003bd10..0x8003bd38`) dispatches the
+        // script runner `FUN_80039B7C` only while the actor carries the
+        // script-engaged bit (`actor[+0x10] & 0x100`, cleared by the
+        // runner's own interaction teardown `& 0xfffffeff`); ambient NPC
+        // walking is the motion-VM arm (`& 0x400` -> `FUN_8003774C`), not
+        // script stepping. A placement script therefore does NOT free-run
+        // in free-roam - its post-prologue body is the talked-to
+        // conversation (and town01 `P1[40]`'s opens with a `52 34` flag SET
+        // plus an op-`0x45` camera configure that must never fire
+        // ambiently). The engine's engaged windows: an active cutscene
+        // timeline (whose choreography drives the channels), plus the
+        // opt-in `animate_field_npcs` liveliness approximation.
+        // REF: FUN_8003BC08 (the `+0x10 & 0x100` dispatch gate)
+        if !self.cutscene_timeline_active() && !self.animate_field_npcs {
+            return;
+        }
         self.step_field_channels_inner(false);
     }
 

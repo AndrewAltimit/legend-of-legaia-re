@@ -80,32 +80,17 @@ fn town01_npc_motion_routes_walk_npcs_through_the_motion_vm() {
         }
     }
 
-    // Baseline: channel stepping is always-on (retail `FUN_80039B7C` steps
-    // every context every frame), so even with the patrol flag off the
-    // placement scripts run live in a raw-World install: one-shot spawn
-    // prologue legs land (the SceneHost path consumes those in the entry
-    // pre-run instead) and the authored CONTINUOUS walkers keep pacing
-    // their local loops - exactly what retail towns do by default. The
-    // flag-off contract is locality: nothing runs away from its scripted
-    // seat.
-    for _ in 0..600 {
+    // Baseline: with the patrol flag off, every NPC rests at its placement
+    // anchor across ticks (the non-vacuous control).
+    for _ in 0..30 {
         let _ = world.tick();
     }
-    let settled = world.field_npc_positions.clone();
-    for _ in 0..60 {
-        let _ = world.tick();
-    }
-    for (slot, &(x, z)) in &world.field_npc_positions {
-        let &(sx, sz) = settled.get(slot).expect("no slots appear mid-run");
-        assert!(
-            (x as i32 - sx as i32).abs() <= NPC_ROUTE_LOCALITY
-                && (z as i32 - sz as i32).abs() <= NPC_ROUTE_LOCALITY,
-            "flag off: slot {slot} roams locally (({x},{z}) vs settled ({sx},{sz}))"
-        );
-    }
+    assert_eq!(
+        world.field_npc_positions, anchors,
+        "flag off: NPCs rest at their MAN placement anchors"
+    );
 
-    // Flag on: the motion VM walks at least one routed NPC off its settled
-    // seat.
+    // Flag on: the motion VM walks at least one routed NPC off its anchor.
     world.animate_field_npcs = true;
     for _ in 0..120 {
         let _ = world.tick();
@@ -113,7 +98,7 @@ fn town01_npc_motion_routes_walk_npcs_through_the_motion_vm() {
     let moved: Vec<u8> = world
         .field_npc_routes
         .keys()
-        .filter(|slot| world.field_npc_positions.get(slot) != settled.get(slot))
+        .filter(|slot| world.field_npc_positions.get(slot) != anchors.get(slot))
         .copied()
         .collect();
     assert!(

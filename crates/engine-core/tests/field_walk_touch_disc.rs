@@ -101,10 +101,10 @@ fn koin1_portal_walk_touch_queues_the_door_warp() {
     let (slot, pos, target_map) = warps[0];
     eprintln!("[koin1] walking into portal slot {slot} at {pos:?} (target_map {target_map})");
 
-    // Baseline: standing far from every portal posts no TOUCH. The always-on
-    // channel stepper (retail `FUN_80039B7C`) legitimately emits ambient
-    // field events from the scene's own placement scripts during these
-    // ticks, so the assertion is scoped to the walk-touch surface.
+    // Baseline: standing far from every portal posts no TOUCH. The
+    // assertion is scoped to the walk-touch surface: channel stepping (when
+    // an engaged window - a cutscene timeline or the liveliness opt-in -
+    // has it running) may legitimately emit ambient field events.
     let _ = world.drain_field_events();
     for _ in 0..5 {
         let _ = world.tick();

@@ -1461,8 +1461,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 .start_field_npc_motion(slot, world_x as i16, world_z as i16);
             return;
         }
-        // A live channel stepping its OWN script (the always-on
-        // `step_field_channels` free-roam slice, retail `FUN_80039B7C`):
+        // A live channel stepping its OWN script (an engaged
+        // `step_field_channels` slice, retail `FUN_80039B7C`):
         // walk the placement there as a scripted glide leg (the faithful
         // `4C 51` run dispatch plays a move clip toward the tile). Falls
         // back to a direct ctx seat when the slot has no surfaced position
