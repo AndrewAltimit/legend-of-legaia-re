@@ -278,9 +278,24 @@ fn confirm_skips_the_opening_to_town01_name_entry() {
         "the opening timeline completes after naming (ticked {more})"
     );
     assert!(saw_hidden, "the establishing shot parks townsfolk off-map");
+    // STORY-parked villagers legitimately stay at the hide box - the retail
+    // town01 field-actor list keeps a parked cohort in free roam (the
+    // spawn-prologue `MoveTo (0x7F,0x7F)` despawns; see
+    // `field_npc_entry_positions_disc`). What the teardown must restore is
+    // every villager the CUTSCENE hid: any slot still at the hide box must
+    // be one the scene-entry pre-run itself parked.
+    let leftover: Vec<u8> = host
+        .world
+        .field_npc_positions
+        .iter()
+        .filter(|&(_, &(x, z))| x == hide && z == hide)
+        .map(|(&slot, _)| slot)
+        .collect();
     assert!(
-        !parked_at_hide(&host.world),
-        "free-roam restores every hidden villager"
+        leftover
+            .iter()
+            .all(|slot| host.world.field_npc_entry_positions.get(slot) == Some(&(hide, hide))),
+        "free-roam restores every cutscene-hidden villager (story-parked slots stay): {leftover:?}"
     );
     eprintln!("[opening] skip path reached town01 name entry + free-roam");
 }

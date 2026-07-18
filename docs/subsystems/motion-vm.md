@@ -67,6 +67,21 @@ The default mode follows a target actor slot at a configured distance + height.
 
 ### Field-NPC walking
 
+**Initial seats come from the spawn-prologue pre-run, not the placement header.**
+Retail's placement installer (`FUN_8003A1E4`) runs each partition-1 record's
+story-flag-tested opening ops through the field VM at scene load: a `0x23 MoveTo`
+to the parked-sentinel tile `(0x7F,0x7F)` despawns the actor for the current story
+state, and cross-scene `MoveTo`s seat an actor away from its MAN header tile.
+Runtime-pinned against the retail `town01` field-actor list (`_DAT_8007C354`
+class; a large share of the placements stand parked or relocated from frame one).
+The engine mirror is `World::pre_run_field_channel_prologues` (scene entry, after
+the carrier/channel install): one field-VM frame slice per placement channel, run
+unconditionally - load-time behaviour, not the opt-in free-roam liveliness - with
+position write-through, patrol-route invalidation when the executed branch
+contradicts the flag-blind route decode, and no heading derivation (facings come
+from `seed_field_npc_facings`). Disc + save-library oracle:
+`crates/engine-core/tests/field_npc_entry_positions_disc.rs`.
+
 `World::tick_field_npc_motions` (`engine-core`) drives MAN-placed field NPCs through the `0x47` `MoveTowardTarget` pursue step, one motion-VM step per field tick, writing the live position back into `World::field_npc_positions` so the moving NPC's ±40-unit collision box and its interact box follow it (retail probes the live `+0x14`/`+0x18`, not the spawn anchor). Three start paths feed it:
 
 - **Autonomous patrol routes** (`World::field_npc_routes`, gated by `World::animate_field_npcs` / `play-window --live-npcs`): each placement's own pre-text script bytecode carries `0x4C 0x51` NPC move-to-tile ops; `man_field_scripts::placement_motion_route` decodes the local waypoints (dropping the `(127,127)` park sentinel, cross-context targets, and beyond-locality story-relocation branches) and the engine loops them as a patrol. Autonomous legs pause while a dialogue is up - retail's interaction motion-pause kick (`FUN_8003c9ac` reloading every moving-class actor's pause timer on the touch event post).

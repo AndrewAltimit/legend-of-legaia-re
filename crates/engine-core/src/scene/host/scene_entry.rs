@@ -527,6 +527,19 @@ impl SceneHost {
                     // never-walked NPC stands with its retail facing.
                     // REF: FUN_8003A1E4
                     self.world.seed_field_npc_facings(&man_file, &man_bytes);
+                    // Initial NPC POSITIONS: the same retail pre-run also
+                    // executes each record's story-flag-tested opening ops -
+                    // the `0x23 MoveTo` park to the off-map sentinel for
+                    // actors the current story state despawns, and the
+                    // story relocations that seat an actor away from its MAN
+                    // header tile. Run one field-VM frame slice per channel
+                    // (unconditionally - load-time behaviour, not the opt-in
+                    // free-roam liveliness) so the first rendered frame shows
+                    // the story-true town, not the raw placement headers.
+                    // Runtime-pinned against the retail town01 actor list
+                    // (`field_npc_entry_positions_town01` disc test).
+                    // REF: FUN_8003A1E4
+                    self.world.pre_run_field_channel_prologues();
                     // Placed-prop colliders + the prop animation/interaction
                     // bank: every placed `.MAP` object is a solid actor in
                     // retail's collision candidate list (`FUN_801CF754`),

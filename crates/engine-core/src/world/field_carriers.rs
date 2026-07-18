@@ -92,6 +92,7 @@ impl World {
         self.field_npc_dialog.clear();
         self.field_npc_dialog_prologue.clear();
         self.field_npc_positions.clear();
+        self.field_npc_entry_positions.clear();
         self.field_npc_headings.clear();
         for (placement, kind) in crate::man_field_scripts::classify_placements(man_file, man) {
             let Ok(slot) = u8::try_from(placement.index) else {

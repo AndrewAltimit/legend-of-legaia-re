@@ -957,6 +957,14 @@ impl PlayWindowApp {
                             .get(&d.slot)
                             .copied()
                             .unwrap_or(d.spawn);
+                        // Story-parked actor (spawn-prologue `MoveTo` to the
+                        // off-map hide box, or a cutscene hide): not drawn -
+                        // retail parks despawned actors at the far-corner
+                        // sentinel tile precisely so they never render.
+                        let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
+                        if x == hide && z == hide {
+                            continue;
+                        }
                         let y = w.sample_field_floor_height(x as i32, z as i32) as f32;
                         // Raw retail-convention transform (no model
                         // flip): the field camera's FIELD_WORLD_FLIP

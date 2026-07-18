@@ -1240,6 +1240,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn move_to(&mut self, ctx: &mut FieldCtx, world_x: u16, world_z: u16, is_player: bool) {
+        // Scene-entry spawn-prologue pre-run: the record seats ITS OWN actor
+        // (the VM already wrote the channel ctx position; the pre-run's
+        // write-through surfaces it). Never yank the player from here - a
+        // prologue that flips its own ctx class bit would otherwise
+        // teleport the player to the record's seat at scene load (seen as
+        // `suimon`'s cold spawn landing in the off-map hide box).
+        if self.world.field_entry_prerun {
+            let _ = ctx;
+            return;
+        }
         // Player path: also propagate to the active actor slot's
         // move_state so the renderer / collision layer sees the teleport.
         if is_player
@@ -1337,13 +1347,30 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // PORT: FUN_801DE840 (nibble-5 sub-1: position write + heading LUT + move-anim)
     fn op4c_n5_sub1_npc_run(
         &mut self,
-        _ctx: &mut FieldCtx,
+        ctx: &mut FieldCtx,
         world_x: u16,
         world_z: u16,
         depth_byte: u8,
         _move_id: u8,
         is_player: bool,
     ) {
+        // Scene-entry spawn-prologue pre-run
+        // ([`World::pre_run_field_channel_prologues`]): the record's own
+        // `4C 51` is the actor's initial SEAT - retail's install pre-run
+        // walks the actor there before the scene fades in, and the settled
+        // retail position equals the op target exactly (town01 actor-list
+        // pin). Write it through the channel ctx (including the
+        // parked-sentinel despawn, `(127,127)` -> the off-map hide box) so
+        // the pre-run's write-through + route invalidation see it. Scoped to
+        // the pre-run: live channel stepping keeps its previous semantics.
+        // The player arm is suppressed too - at install the op belongs to
+        // the spawned actor, and a record whose ctx carries the player-class
+        // bit must not yank the player at scene load (see `move_to`).
+        if self.world.field_entry_prerun {
+            ctx.world_x = world_x;
+            ctx.world_z = world_z;
+            return;
+        }
         // The parked-sentinel tile (127,127) decodes to (0x3FC0, 0x3FC0):
         // a despawn, not a walk.
         if world_x == 0x3FC0 && world_z == 0x3FC0 {
