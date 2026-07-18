@@ -222,6 +222,33 @@ instead of the scene's and are routed to the characters page
 (`special_count`). Off-map "hidden" spawns are script-gated story actors,
 fully resolvable, so they *are* listed - flagged `conditional`.
 
+## Tactical Arts viewer (`arts_view`)
+
+`LegaiaArts` drives `site/arts.html`'s interactive half: click an art card,
+watch the character perform it. Per character it assembles the battle mesh
+from the player battle file's equipment sections
+(`legaia_asset::battle_char_assembly`, PROT 863..866), textures it from the
+same file's pools + decoded battle palette into a runtime VRAM image, and
+decodes the record[0] idle loop plus the whole art-animation bank through
+the `readef.DAT` `"ME"` archives (PROT 894) - every clip pre-expanded per
+assembled object so the page's pose loop drives object `i` with channel
+`i`. Arts-voice shouts are the RE'd retail cue: the character's own XA bank
+demuxed off the disc, each art mapped to a real member of its
+`FUN_8004C140` candidate channel pool.
+
+`export_character_glb` bakes the current character + its **entire**
+animation bank into one `.glb` (`legaia_asset::character_gltf`): one node
+per rigid TMD object, each decoded bank record a named glTF TRS animation
+("battle idle" first; art names where the record carries one, else the
+`anim_id` in hex), textured from the same VRAM via a baked tile atlas. The
+page's download button hands it out client-side - nothing is uploaded.
+
+The page's tinted after-image trail (the retail arts ghosting; per-character
+tint) is a JS-side re-draw (`MeshView.setTrail` -> the renderer's
+`ghostTrail` additive passes) with a persisted user toggle, default on.
+Disc-gated oracle: `tests/arts_view_real.rs` (bank coverage, arts-table
+resolution, voice pools, and the `.glb` export's animation bank).
+
 ## Playable minigames (`minigames`)
 
 `LegaiaMinigames` is a standalone `#[wasm_bindgen]` class (its own

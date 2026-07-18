@@ -139,6 +139,17 @@ vertices ride `COLOR_0` + a white tile). Consumed by the web viewer's
 `scene_export_*` WASM session behind the site's download buttons.
 Disc-gated smoke: `tests/scene_gltf_real.rs`.
 
+`character_gltf::build_character_glb` combines the two models for the
+assembled player battle characters: `monster_gltf`'s per-object animated
+nodes (one node per rigid TMD object, TRS keyframe channels from clips
+pre-expanded per object) textured through `scene_gltf`'s VRAM tile atlas
+(the assembled mesh samples runtime VRAM, not a monster page). Each
+supplied `CharacterClip` becomes a named glTF animation on its own
+timeline (`7.5 * rate` fps). Consumed by the web viewer's arts page
+(`LegaiaArts::export_character_glb` - "download this character with every
+battle animation"); disc-gated coverage rides
+`crates/web-viewer/tests/arts_view_real.rs`.
+
 See [`battle.md`](../../docs/subsystems/battle.md#monster-mesh-record-0x04) and
 [`monster-animation.md`](../../docs/formats/monster-animation.md).
 

@@ -61,6 +61,9 @@
     { delay: 8, alpha: 0.22 },
     { delay: 12, alpha: 0.11 },
   ];
+  /* User toggle for the after-image trail. Default ON (retail-faithful);
+   * persisted like the shared sound gate (audio-toggle.js). */
+  const TRAIL_KEY = 'legaia-arts-trail';
 
   const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -128,6 +131,13 @@
                                * voice bank ({file, base, count, channels}) -
                                * per-ART clips in XA2 (Vahn/Noa) / XA4 (Gala),
                                * or null when the disc has no voice audio. */
+      this._trailCfg = null;  /* the playing art's trail config (tint+echoes),
+                               * kept even while the toggle is off so flipping
+                               * it back on mid-art restores the echoes. */
+      this.trailEnabled = true;
+      try {
+        this.trailEnabled = window.localStorage.getItem(TRAIL_KEY) !== '0';
+      } catch (e) { /* private mode */ }
     }
 
     get ready() { return !!(this.api && this.charState && this.charState.ok); }
@@ -162,6 +172,8 @@
         this.els.stage.hidden = false;
         prog.done(`Ready - ${st.entries} PROT entries; click any art card below.`);
         document.body.classList.add('arts-live');
+        /* The .glb export needs an assembled character - live now. */
+        if (this.els.glbBtn) this.els.glbBtn.disabled = false;
         /* Sound: render the strike cue off the same disc bytes (SCUS -> the
          * SFX descriptor table, PROT 869 -> the class-2 sound bank, through
          * the clean-room SPU). Non-blocking, and a no-op on a raw PROT.DAT
@@ -244,10 +256,24 @@
       };
     }
 
+    /* Flip the after-image trail on/off (persisted). Applies immediately,
+     * including mid-art: off drops every ghost pass on the next frame, on
+     * restores the playing art's echo train. */
+    setTrailEnabled(on) {
+      this.trailEnabled = !!on;
+      try {
+        window.localStorage.setItem(TRAIL_KEY, this.trailEnabled ? '1' : '0');
+      } catch (e) { /* ignore */ }
+      if (this.view) {
+        this.view.setTrail(this.trailEnabled ? this._trailCfg : null);
+      }
+    }
+
     playIdle(note) {
       if (!this.ready || !this.view) return;
       this.currentArt = null;
       this._armCues(null);          /* the idle loop is silent */
+      this._trailCfg = null;
       this.view.setTrail(null);     /* no after-image outside an art */
       const idle = this.charState.idle;
       const frames = this.api.idle_pose_frames();
@@ -321,11 +347,13 @@
         }
         if (LegaiaSfx.hasPcm(key)) LegaiaSfx.playPcm(key, 'arts.voice');
       }
-      /* Per-character tinted after-image echoes (the retail arts trail). */
-      this.view.setTrail({
+      /* Per-character tinted after-image echoes (the retail arts trail).
+       * The config is kept either way; the user toggle gates the draw. */
+      this._trailCfg = {
         tint: TRAIL_TINT[this.charName] || [1, 1, 1],
         echoes: TRAIL_ECHOES,
-      });
+      };
+      this.view.setTrail(this.trailEnabled ? this._trailCfg : null);
       this.view.setAnimation({
         partCount: parts,
         frameCount: total / (parts * 6),
@@ -350,6 +378,20 @@
         `record 0x${bank[first].anim_id.toString(16).toUpperCase()}` +
         `, ${total / (parts * 6)} keyframes @ rate ${bank[first].rate}${segNote}${voiceNote}`;
     }
+
+    /* Bake the selected character's assembled battle mesh + its WHOLE
+     * battle-animation bank (idle + every decodable art record, as named
+     * glTF TRS animations) into a .glb, entirely client-side (WASM
+     * `export_character_glb`). Returns { bytes, filename } or null. */
+    exportGlb() {
+      if (!this.ready || !this.api.export_character_glb) return null;
+      const bytes = this.api.export_character_glb();
+      if (!bytes || !bytes.length) return null;
+      return {
+        bytes,
+        filename: `legaia-${(this.charName || 'character').toLowerCase()}-battle-arts.glb`,
+      };
+    }
   }
 
   /* Wire the page: disc input + canvas + the art-card / tab delegation.
@@ -361,8 +403,51 @@
     const els = {
       canvas: $(ids.canvas), status: $(ids.status), stage: $(ids.stage),
       now: $(ids.now), note: $(ids.note),
+      glbBtn: ids.glb ? $(ids.glb) : null,
     };
     const app = new ArtsViewerApp(els);
+    /* Trail toggle: reflect the persisted preference, flip live on change. */
+    const trailToggle = ids.trail ? $(ids.trail) : null;
+    if (trailToggle) {
+      trailToggle.checked = app.trailEnabled;
+      trailToggle.addEventListener('change', () => {
+        app.setTrailEnabled(trailToggle.checked);
+      });
+    }
+    /* .glb download: the assembled battle mesh + the whole animation bank,
+     * baked in WASM and saved via Blob + anchor (nothing is uploaded).
+     * Disabled until a disc is loaded (see load()). */
+    if (els.glbBtn) {
+      els.glbBtn.addEventListener('click', async () => {
+        if (!app.ready) return;
+        const prev = els.glbBtn.textContent;
+        els.glbBtn.disabled = true;
+        els.glbBtn.textContent = 'baking…';
+        /* The bake is synchronous inside WASM - repaint the label first. */
+        await new Promise((r) => setTimeout(r, 30));
+        let msg = null;
+        try {
+          const out = app.exportGlb();
+          if (!out) {
+            msg = 'no model';
+          } else {
+            const url = URL.createObjectURL(
+              new Blob([out.bytes], { type: 'model/gltf-binary' }));
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = out.filename;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+          }
+        } catch (err) {
+          console.warn('arts: glb export failed', err);
+          msg = 'export failed';
+        }
+        els.glbBtn.textContent = msg || prev;
+        els.glbBtn.disabled = false;
+        if (msg) setTimeout(() => { els.glbBtn.textContent = prev; }, 1500);
+      });
+    }
     const fileInput = $(ids.file);
     if (fileInput && window.RomCache) {
       RomCache.attach(fileInput, { onLoad: (f) => app.load(f) });
@@ -406,7 +491,10 @@
        * WASM cue renderer decoded off the disc. */
       cueFrames: app.cueFrames ? Array.from(app.cueFrames).sort((a, b) => a - b) : null,
       cueLog: app.cueLog.slice(),
-      /* Trail: the configured tint + how many echo passes drew last frame. */
+      /* Trail: the user toggle, the configured tint + how many echo passes
+       * drew last frame (`trail` is null - and ghostPasses 0 - whenever the
+       * toggle is off, even mid-art). */
+      trailEnabled: app.trailEnabled,
       trail: app.view && app.view.trail
         ? { tint: app.view.trail.tint, echoes: app.view.trail.echoes.length }
         : null,

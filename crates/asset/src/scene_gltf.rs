@@ -37,7 +37,7 @@ use std::collections::BTreeMap;
 
 /// Atlas tile edge in texels - one full PSX texture page window (u8 UVs
 /// address 0..255 within the page picked by the vertex's `tsb`).
-const TILE: usize = 256;
+pub(crate) const TILE: usize = 256;
 
 /// One reusable mesh: the exact vertex streams the WebGL scene path renders
 /// (`positions` f32 xyz in PSX space, `uvs` u8 page-local texel pairs,
@@ -68,7 +68,7 @@ pub struct SceneInstance {
 /// masked to the bits the sampler actually reads (page x/y + depth), and
 /// `cba` is zeroed for 15bpp pages (no CLUT involved) so direct-colour tiles
 /// dedupe across CLUT bits.
-fn tile_key(cba: u16, tsb: u16) -> (u16, u16) {
+pub(crate) fn tile_key(cba: u16, tsb: u16) -> (u16, u16) {
     let tsb = tsb & 0x018F; // bits 0-3 page x, bit 4 page y, bits 7-8 depth
     let depth = (tsb >> 7) & 3;
     if depth >= 2 { (0, tsb) } else { (cba, tsb) }
@@ -77,7 +77,15 @@ fn tile_key(cba: u16, tsb: u16) -> (u16, u16) {
 /// Decode one texel the way the site's fragment shader does: page origin
 /// from `tsb`, 4/8bpp CLUT indirection via `cba` (or 15bpp direct), BGR555
 /// to RGBA with word `0` = fully transparent.
-fn bake_tile(vram: &Vram, cba: u16, tsb: u16, out: &mut [u8], out_w: usize, x0: usize, y0: usize) {
+pub(crate) fn bake_tile(
+    vram: &Vram,
+    cba: u16,
+    tsb: u16,
+    out: &mut [u8],
+    out_w: usize,
+    x0: usize,
+    y0: usize,
+) {
     let tpage_x = ((tsb & 0xF) as usize) * 64;
     let tpage_y = (((tsb >> 4) & 1) as usize) * 256;
     let depth = (tsb >> 7) & 3;

@@ -96,7 +96,7 @@ struct LoadedCharacter {
     part_count: usize,
     mesh: legaia_tmd::mesh::VramMesh,
     object_ids: Vec<u32>,
-    vram: Vec<u8>,
+    vram: legaia_tim::Vram,
     /// Idle loop (record[0] slot 0), expanded per object.
     idle: Option<MonsterAnimation>,
     arts: Vec<ArtSlot>,
@@ -455,7 +455,7 @@ fn build_character(
         part_count: asm.anm_bones.len(),
         mesh,
         object_ids,
-        vram: vram.as_bytes().to_vec(),
+        vram,
         idle,
         arts,
         voice: decode_voice_bank(voice_files, cslot),
@@ -668,7 +668,7 @@ impl LegaiaArts {
     pub fn vram_bytes(&self) -> Vec<u8> {
         self.current
             .as_ref()
-            .map(|c| c.vram.clone())
+            .map(|c| c.vram.as_bytes().to_vec())
             .unwrap_or_default()
     }
 
@@ -730,6 +730,67 @@ impl LegaiaArts {
                 Some(c.voice_clip(ch)?.pcm.clone())
             })
             .unwrap_or_default()
+    }
+
+    /// Bake the current character's assembled battle mesh **plus its whole
+    /// battle-animation bank** into a binary glTF (`.glb`) for download:
+    /// one node per rigid TMD object (the engine's `R . v + T` pose model
+    /// expressed as native TRS keyframe channels), textured from the same
+    /// runtime VRAM the canvas renders (every sampled `(cba, tsb-page)` pair
+    /// baked into one RGBA atlas). Animation 0 is the battle idle; every
+    /// art-bank record whose keyframe stream decoded follows, named by its
+    /// inline HUD art name where the record carries one, else by its
+    /// `anim_id` in hex (duplicated names get the hex id appended). Each
+    /// clip's timeline runs at its retail rate byte (`7.5 * rate`).
+    ///
+    /// Everything is baked client-side off the visitor's own disc; nothing
+    /// is uploaded. Empty until [`Self::set_character`] (or if the mesh has
+    /// nothing to export).
+    pub fn export_character_glb(&self) -> Vec<u8> {
+        let Some(c) = &self.current else {
+            return Vec::new();
+        };
+        let fps_for_rate = |rate: u8| {
+            if rate > 0 {
+                7.5 * f32::from(rate)
+            } else {
+                15.0
+            }
+        };
+        let mut clips: Vec<legaia_asset::character_gltf::CharacterClip<'_>> = Vec::new();
+        if let Some(idle) = &c.idle {
+            clips.push(legaia_asset::character_gltf::CharacterClip {
+                name: "battle idle".to_string(),
+                fps: fps_for_rate(idle.rate),
+                anim: idle,
+            });
+        }
+        let mut used_names: Vec<String> = clips.iter().map(|c| c.name.clone()).collect();
+        for a in &c.arts {
+            let Some(anim) = &a.anim else { continue };
+            let mut name = if a.name.is_empty() {
+                format!("0x{:02X}", a.anim_id)
+            } else {
+                a.name.clone()
+            };
+            if used_names.iter().any(|n| n == &name) {
+                name = format!("{name} (0x{:02X})", a.anim_id);
+            }
+            used_names.push(name.clone());
+            clips.push(legaia_asset::character_gltf::CharacterClip {
+                name,
+                fps: fps_for_rate(a.rate),
+                anim,
+            });
+        }
+        legaia_asset::character_gltf::build_character_glb(
+            CHARACTER_LABELS[c.cslot],
+            &c.mesh,
+            &c.object_ids,
+            &c.vram,
+            &clips,
+        )
+        .unwrap_or_default()
     }
 
     /// The arts-voice PCM of the current character's XA channel `channel`,
