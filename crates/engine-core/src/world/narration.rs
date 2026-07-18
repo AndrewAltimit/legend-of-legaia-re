@@ -958,6 +958,13 @@ impl World {
                         host.world
                             .pending_field_events
                             .push(FieldEvent::ExecMove { move_id });
+                        // Cue the scripted player clip: the windowed host
+                        // resolves scene-ANM record `move_id - 1` and plays
+                        // it once over idle/walk (live-pinned: the town01
+                        // post-naming `A2 F8 30`/`31` land the retail anim
+                        // pointer on scene records 47/48 for one playthrough
+                        // each).
+                        host.world.field_player_move_cues.push(move_id);
                         tl.player_move_frames = CHANNEL_WAIT_PARK_TIMEOUT;
                         if pc < tl.visited.len() {
                             tl.visited[pc] = true;

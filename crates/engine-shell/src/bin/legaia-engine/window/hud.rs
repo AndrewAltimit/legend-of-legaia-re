@@ -888,42 +888,17 @@ impl PlayWindowApp {
                 ));
             }
         }
-        // Name-entry overlay: the opening `town01` lead-character naming prompt.
+        // Name-entry overlay: the opening `town01` lead-character naming
+        // prompt, laid out in stage pixels at the retail-traced geometry
+        // and upscaled with the same stage transform the window chrome
+        // uses (`name_entry_chrome_sprite_draws`) so text and frames stay
+        // locked together.
         if let Some(entry) = &self.session.host.world.name_entry {
-            use legaia_engine_core::name_entry::{CHAR_CELLS, GRID, GRID_COLS};
-            let (grid_cursor, control_cursor) = if entry.cursor < CHAR_CELLS {
-                (
-                    Some((entry.cursor / GRID_COLS, entry.cursor % GRID_COLS)),
-                    None,
-                )
-            } else {
-                // Map the control-row column to a button index (Back=0/Space=1/End=2)
-                // via the cell's resolved action.
-                use legaia_engine_core::name_entry::Control;
-                let ctrl = entry.control_at(entry.cursor);
-                let idx = match ctrl {
-                    Some(Control::Backspace) => Some(0),
-                    Some(Control::Space) => Some(1),
-                    Some(Control::End) => Some(2),
-                    _ => None,
-                };
-                (None, idx)
-            };
-            let view = legaia_engine_render::NameEntryView {
-                grid_rows: &GRID,
-                control_labels: &["Back", "Space", "End"],
-                name: &entry.name,
-                grid_cursor,
-                control_cursor,
-                confirming: entry.state == legaia_engine_core::name_entry::NameEntryState::Confirm,
-                confirm_yes: entry.confirm_yes,
-                caret_on: (self.session.host.world.frame / 16).is_multiple_of(2),
-            };
-            out.extend(legaia_engine_render::name_entry_draws_for(
-                &self.font,
-                &view,
-                (32, 24),
-            ));
+            let view = self.name_entry_view(entry);
+            let mut draws = legaia_engine_render::name_entry_draws_for(&self.font, &view);
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+            out.extend(draws);
         }
         // Dialog box text: the active NPC / event message (simplified
         // panel, cutscene-timeline segment, or the inline-script
@@ -1140,6 +1115,67 @@ impl PlayWindowApp {
             ));
         }
         out
+    }
+
+    /// Project the live name-entry session into the renderer-agnostic view
+    /// the engine-ui builders consume (grid vs control cursor split via the
+    /// session's own control mapping).
+    pub(super) fn name_entry_view<'a>(
+        &self,
+        entry: &'a legaia_engine_core::name_entry::NameEntry,
+    ) -> legaia_engine_render::NameEntryView<'a> {
+        use legaia_engine_core::name_entry::{CHAR_CELLS, Control, GRID, GRID_COLS};
+        let (grid_cursor, control_cursor) = if entry.cursor < CHAR_CELLS {
+            (
+                Some((entry.cursor / GRID_COLS, entry.cursor % GRID_COLS)),
+                None,
+            )
+        } else {
+            let idx = match entry.control_at(entry.cursor) {
+                Some(Control::Backspace) => Some(0),
+                Some(Control::Default) => Some(1),
+                Some(Control::End) => Some(2),
+                None => None,
+            };
+            (None, idx)
+        };
+        legaia_engine_render::NameEntryView {
+            grid_rows: &GRID,
+            name: &entry.name,
+            default_name: &entry.default_name,
+            grid_cursor,
+            control_cursor,
+            confirming: entry.state == legaia_engine_core::name_entry::NameEntryState::Confirm,
+            confirm_yes: entry.confirm_yes,
+            // Retail blinks the caret at 75% duty from the frame counter's
+            // `& 0x18` bits.
+            caret_on: (self.session.host.world.frame & 0x18) != 0,
+        }
+    }
+
+    /// Build the name-entry window chrome + hand cursor sprites (the two
+    /// filigree 9-slice windows at the retail-traced footprints). Sampled
+    /// from the resident system-UI atlas; composited in the same sprite
+    /// slot as the dialog chrome, under the text layer.
+    pub(super) fn name_entry_chrome_sprite_draws(
+        &self,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<legaia_engine_render::SpriteDraw> {
+        let Some(assets) = self.save_menu.as_ref() else {
+            return Vec::new();
+        };
+        let Some(entry) = self.session.host.world.name_entry.as_ref() else {
+            return Vec::new();
+        };
+        let view = self.name_entry_view(entry);
+        let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
+        legaia_engine_render::name_entry_chrome_sprite_draws_for(
+            &assets.rects,
+            &view,
+            stage_origin,
+            stage_scale,
+        )
     }
 }
 

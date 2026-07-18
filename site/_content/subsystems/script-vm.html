@@ -165,7 +165,7 @@ switch (*pc & 0x7f) {
       <tr><td><code>0x44</code></td><td>SPAWN_RECORD</td><td><code>[44, global_index]</code>: spawns a MAN partition-2 record as a new field-VM context via <code>FUN_8003BDE0</code> (ra <code>0x801DF098</code>, gate forced to 1); the operand is a GLOBAL record index re-based <code>- N0 - N1</code> into partition 2. Live-probe-pinned on the New-Game opening (<code>opdeene</code>/<code>opstati</code>/<code>opurud</code> entry scripts); the earlier COUNTER reading is superseded.</td></tr>
       <tr><td><code>0x45</code></td><td>CAMERA</td><td>Sub-dispatch on <code>op0 &amp; 0xC0</code>: configure / LOAD / SAVE / APPLY.</td></tr>
       <tr><td><code>0x46</code></td><td>RENDER_CFG</td><td>Fog/render params.</td></tr>
-      <tr><td><code>0x49</code></td><td>STATE_RESUME</td><td>Multi-frame state machine: tristate (Idle / Armed / Done). Done-state sub-0 walks an inline MES-shape payload (counts bytes <code>&gt; 0x1E</code> with one-byte peek-extension for <code>0xCx</code> prefix bytes) and advances PC by <code>5 + length + walked</code>.</td></tr>
+      <tr><td><code>0x49</code></td><td>STATE_RESUME</td><td>Multi-frame state machine: tristate (Idle / Armed / Done). Done-state sub-0 walks an inline MES-shape payload (counts bytes <code>&gt; 0x1E</code> with one-byte peek-extension for <code>0xCx</code> prefix bytes) and advances PC by <code>5 + length + walked</code>. The town01 opening's <code>49 03 00</code> (P2[3] <code>+0x02C6</code>) is the name-entry hand-off - see below.</td></tr>
       <tr><td><code>0x4A</code></td><td>WAIT_FRAMES</td><td>Frame timer; ticks <code>ctx[+0x54]</code>.</td></tr>
       <tr><td><code>0x4B</code></td><td>ANIMATE</td><td>Multi-keyframe setup. Sets <code>+0x10</code> bit <code>0x1000</code> (animation flag).</td></tr>
       <tr><td><code>0x4C</code></td><td>MENU_CTRL</td><td>Outer-nibble-dispatched (16 sub-dispatchers). The biggest single opcode.</td></tr>
@@ -174,6 +174,38 @@ switch (*pc & 0x7f) {
       <tr><td><code>0x4F</code></td><td>SCENE_REGISTER_WRITE</td><td>Writes three <code>u16</code> values to <code>_DAT_801C6EA4 + 0x10/0x12/0x14</code>.</td></tr>
     </tbody>
   </table>
+
+  <h3>The name-entry screen (op-<code>0x49</code> <code>49 03 &lt;char&gt;</code>)</h3>
+  <p>The operand names the party slot (<code>03</code> sub, <code>00</code> = Vahn); the field
+  overlay's SM runs the screen and writes the typed name <strong>live</strong> into the character
+  record's name field at <code>+0x2A7</code>. Renderer <code>FUN_801E6B34</code>; cursor cell
+  <code>_DAT_8007BB88</code>, SM state <code>_DAT_8007BB94</code> (1 = editing, 4 = the Yes/No
+  confirm). Draw-stream-traced geometry (320&times;240 framebuffer pixels, overlay base
+  <code>(32, 99)</code>):</p>
+  <ul>
+    <li>Two pause-menu-skin filigree windows: the grid window at footprint
+    <code>(24, 91, 272, 120)</code> and the name-field window at <code>(196, 71, 88, 28)</code>
+    (the renderer's <code>FUN_8002C69C(base_x+0xAC, base_y-0x14, 0x48, 0xC)</code> centre rect
+    plus the 8&nbsp;px skin border).</li>
+    <li>Charset grid (7&nbsp;rows &times; 17 at <code>0x801F29F0</code>): glyphs from
+    <code>base + (4, 4)</code>, 15&nbsp;px column pitch, 14&nbsp;px row pitch, ink&nbsp;7 white;
+    blank cells are selectable space glyphs.</li>
+    <li>Working name at <code>(208, 79)</code>; teal <code>_</code> caret 6&nbsp;px after it,
+    75%-duty blink (<code>frame &amp; 0x18</code>), gated to the 57&nbsp;px field.</li>
+    <li>Control bar at <code>y = 191</code>, ink&nbsp;6 gold, resolved through a
+    <code>grid[cell + 2]</code> sentinel read: "BS" (backspace), the quoted default name
+    (<strong>restores the template name</strong> - there is no space button), and "Select" (end).
+    Cursor anchors are cells 102/108/114 and the SM opens on Select.</li>
+    <li>Prompt "Select your name." at <code>(176, 32)</code>; the confirm state replaces it with
+    "Is this name okay?" at <code>(172, 24)</code> plus stacked teal Yes <code>(204, 38)</code> /
+    No <code>(204, 50)</code> rows - the hand opens on <strong>No</strong>.</li>
+  </ul>
+  <p>After the Done resume, the post-naming beats animate the lead: <code>A2 F8 30</code> then
+  <code>A2 F8 31</code> (op-<code>0x22</code> ExecMove) land the player's <code>+0x4C</code> anim
+  pointer on scene-ANM records 47/48 (<code>record = move_id - 1</code>, the op-<code>0x4B</code>
+  NPC-cue record space) for one playthrough each before the walk-out resumes the locomotion
+  clips. Engine port: <code>engine-core::name_entry</code>, <code>engine-ui</code> name-entry
+  builders, and the scripted-clip queue on <code>FieldPlayerAnim</code>.</p>
 </section>
 
 <section class="doc-section" id="default-route">

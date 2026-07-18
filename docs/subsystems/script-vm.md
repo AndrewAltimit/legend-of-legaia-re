@@ -477,6 +477,47 @@ MES-shape payload via `func_0x8003CA38` (`length = pbVar47[2]`, PC +=
 The Armed park is the town01 name-entry hand-off (P2[3] `+0x02C6`); see
 [`playthrough-coverage.md`](../tooling/playthrough-coverage.md#s3-captured-the-town01-opening-is-the-name-entry-screen).
 
+##### The name-entry screen (op-`0x49` `49 03 <char>`)
+
+The town01 hand-off's operand names the party slot (`_DAT_8007B450 + 1` -
+`03` sub, `00` = Vahn); the field overlay's SM runs the screen and writes
+the typed name **live** into the character record's name field at `+0x2A7`
+(record base `0x80084708 + n*0x414`). Renderer `FUN_801E6B34`
+(`ghidra/scripts/funcs/801e6b34.txt`), cursor cell at `_DAT_8007BB88`, SM
+state at `_DAT_8007BB94` (1 = editing, 4 = the Yes/No confirm).
+
+Traced geometry (draw-stream-pinned, 320x240 framebuffer pixels; overlay
+base `(32, 99)` from the context's `+0xA/+0xC`):
+
+- Two windows in the pause-menu filigree skin: the grid window at footprint
+  `(24, 91, 272, 120)` and the name-field window at `(196, 71, 88, 28)` -
+  the latter is the renderer's own `FUN_8002C69C(base_x+0xAC, base_y-0x14,
+  0x48, 0xC)` centre rect plus the 8 px skin border.
+- Charset grid (7 rows x 17 at `0x801F29F0`): glyphs from `base + (4, 4)`,
+  15 px column pitch, 14 px row pitch, ink 7 white; `|` separators at
+  columns 5/11 skipped; blank cells are selectable space glyphs.
+- Working name at `(208, 79)` ink 7; a teal (`ink 5`) `_` caret 6 px after
+  the name, blinking at 75% duty (`frame & 0x18`), gated to the 57 px field.
+- Control bar at `y = 191`, ink 6 gold, three buttons resolved through a
+  **`grid[cell + 2]`** sentinel read (`0x66`/`0x64`/`0x65`): "BS" at
+  `x = 36` (backspace), the quoted default name at `x = 148` (**restores
+  the template name** - live-verified against `+0x2A7`; there is no space
+  button), "Select" at `x = 244` (end). Cursor anchors = cells 102/108/114;
+  the SM opens on Select (initial cell `0x74`).
+- Prompt "Select your name." at `(176, 32)`; the confirm state replaces it
+  with "Is this name okay?" at `(172, 24)` + stacked teal "Yes" `(204, 38)`
+  / "No" `(204, 50)` rows, hand on **No** at open, up/down moving it.
+
+After the Done resume the timeline's post-naming beats animate the lead:
+`A2 F8 30` then `A2 F8 31` (op-`0x22` ExecMove, P2[3] `+0x030B`/`+0x0352`)
+land the player's `+0x4C` anim pointer on the scene ANM bundle's records
+47/48 (`record = move_id - 1`, the same record space as op-`0x4B` NPC
+cues) for one playthrough each before the walk-out moves resume the
+locomotion clips. Engine port: `engine-core::name_entry` (SM),
+`engine-ui::ui_menu::name_entry` (draw builders + traced constants), and
+the `field_player_move_cues` scripted-clip queue on
+`engine-core::field_anim::FieldPlayerAnim`.
+
 #### `0x4E` INVENTORY_CMP
 
 Compare-and-jump on party state. **Every sub-op 0..9 is the 7-byte

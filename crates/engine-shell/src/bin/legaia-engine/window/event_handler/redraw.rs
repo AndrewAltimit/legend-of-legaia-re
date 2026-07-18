@@ -625,6 +625,39 @@ impl PlayWindowApp {
                 // placement originally resolved through. This is what makes
                 // the prologue-vignette actors *perform* their scripted
                 // beats instead of looping the placement clip.
+                // Timeline `A2 F8 <move_id>` ExecMove cues against the
+                // PLAYER: resolve scene-ANM-bundle record `move_id - 1`
+                // (the same `id - 1` record space as the NPC cues; pinned
+                // live - town01's post-naming ExecMove 48/49 land the
+                // retail player anim pointer on scene records 47/48) and
+                // queue it as a one-shot over the idle/walk pair. Cues
+                // whose record doesn't resolve (e.g. the low walk-move
+                // ids the locomotion controller already covers) drop out
+                // harmlessly.
+                let move_cues = std::mem::take(&mut self.session.host.world.field_player_move_cues);
+                if !move_cues.is_empty()
+                    && let Some(bundle) = self.npc_anim_bundles.0.as_ref()
+                {
+                    for id in move_cues {
+                        // Moves 1/2 are the locomotion walk moves - the
+                        // live trace keeps the retail anim pointer on the
+                        // PROT 0874 walk/idle clips across them, and the
+                        // engine's movement controller already animates
+                        // those - so only higher ids re-target the clip.
+                        if id <= 2 {
+                            continue;
+                        }
+                        if let Some(clip) =
+                            legaia_engine_core::field_anim::FieldClipPlayer::from_record(
+                                bundle,
+                                id as usize - 1,
+                            )
+                            && let Some(anim) = self.session.host.world.field_player_anim.as_mut()
+                        {
+                            anim.push_scripted(clip);
+                        }
+                    }
+                }
                 let cues: Vec<_> = self
                     .session
                     .host
@@ -1203,6 +1236,9 @@ impl PlayWindowApp {
             // cursors) shares the system-UI atlas slot; a dialog box
             // and the boot/menu chrome are mutually exclusive states.
             save_chrome_draw_vec.extend(self.dialog_chrome_sprite_draws(w, h));
+            // Name-entry window chrome (grid + name-field filigree
+            // windows + hand cursor) shares the same atlas slot.
+            save_chrome_draw_vec.extend(self.name_entry_chrome_sprite_draws(w, h));
             let logo_overlay = self.publisher_logos.as_ref().map(|p| TextOverlay {
                 atlas: &p.atlas,
                 draws: &logo_draw_vec,

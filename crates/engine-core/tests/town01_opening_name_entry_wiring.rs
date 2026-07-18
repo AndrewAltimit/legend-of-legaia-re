@@ -119,13 +119,13 @@ fn town01_opening_timeline_opens_name_entry_at_op49() {
     );
 
     // 4. Commit a name: type one glyph (so the name is non-empty), then go to
-    //    End → confirm → Yes.
+    //    End → confirm opens on No (retail) → Up to Yes → confirm.
     host.world.name_entry.as_mut().unwrap().cursor = 0; // 'A'
     host.world.step_name_entry(NameEntryInput {
         confirm: true,
         ..Default::default()
     });
-    let end = legaia_engine_core::name_entry::CHAR_CELLS + 16;
+    let end = legaia_engine_core::name_entry::CONTROL_ANCHORS[2];
     host.world.name_entry.as_mut().unwrap().cursor = end;
     host.world.step_name_entry(NameEntryInput {
         confirm: true,
@@ -136,6 +136,14 @@ fn town01_opening_timeline_opens_name_entry_at_op49() {
         NameEntryState::Confirm,
         "End opens the Yes/No confirm"
     );
+    assert!(
+        !host.world.name_entry.as_ref().unwrap().confirm_yes,
+        "the confirm prompt opens with the hand on No (retail default)"
+    );
+    host.world.step_name_entry(NameEntryInput {
+        up: true,
+        ..Default::default()
+    });
     let committed = host.world.step_name_entry(NameEntryInput {
         confirm: true,
         ..Default::default()
@@ -149,6 +157,7 @@ fn town01_opening_timeline_opens_name_entry_at_op49() {
 
     // 5. The timeline resumes (op-0x49 now Done) and eventually completes,
     //    dropping itself so the view reverts from the cutscene camera.
+    host.world.field_player_move_cues.clear();
     let mut more = 0u32;
     while host.world.cutscene_timeline.is_some() && more < 4000 {
         host.world.tick();
@@ -158,6 +167,18 @@ fn town01_opening_timeline_opens_name_entry_at_op49() {
         host.world.cutscene_timeline.is_none(),
         "the opening timeline completes after naming and is dropped (ticked {more} more)"
     );
+    // The post-confirm beats run the player's scripted animation: the MAN
+    // record's `A2 F8 30` (+0x030B) then `A2 F8 31` (+0x0352) ExecMoves -
+    // the retail anim cue the recomp trace pinned to scene-ANM records
+    // 47/48. The world surfaces them as player move cues in order.
+    let cues = &host.world.field_player_move_cues;
+    let pos48 = cues.iter().position(|&m| m == 48);
+    let pos49 = cues.iter().position(|&m| m == 49);
+    assert!(
+        pos48.is_some() && pos49.is_some(),
+        "the resumed timeline cues ExecMove 48 then 49 on the player (got {cues:?})"
+    );
+    assert!(pos48 < pos49, "ExecMove 48 precedes 49 (got {cues:?})");
     // Sanity: the record index constant matches the disc invariant.
     assert_eq!(World::TOWN01_OPENING_TIMELINE_RECORD, 3);
 }

@@ -1788,6 +1788,15 @@ pub struct World {
     /// host drains these each frame and re-targets the NPC's clip player.
     pub field_npc_anim_cues: std::collections::HashMap<u8, (u8, u8, Vec<u8>)>,
 
+    /// Scripted player-move cues raised by cutscene-timeline `A2 F8
+    /// <move_id>` ExecMove pokes, in emission order. The windowed host
+    /// drains these each frame and queues the named clip as a one-shot on
+    /// [`Self::field_player_anim`] - the clip is scene-ANM-bundle record
+    /// `move_id - 1`, the same `id - 1` record space the op-`0x4B` NPC cues
+    /// use (live-pinned: the `town01` post-naming ExecMove 48/49 land the
+    /// retail player anim pointer on scene records 47/48).
+    pub field_player_move_cues: Vec<u8>,
+
     /// Set when the `town01` opening cutscene timeline is installed via the
     /// new-game prologue hand-off. While set, the timeline's first op-`0x49`
     /// STATE_RESUME (the pinned name-entry handoff at P2[3] body `0x02c6`) opens
@@ -2125,6 +2134,7 @@ impl World {
             field_channels_man: None,
             executing_channel: None,
             field_npc_anim_cues: std::collections::HashMap::new(),
+            field_player_move_cues: Vec::new(),
             prologue_naming_pending: false,
             prologue_naming_armed: false,
             entering_town01_opening: false,

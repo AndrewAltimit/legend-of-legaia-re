@@ -66,16 +66,21 @@ fn run_opening_to_freeroam(host: &mut SceneHost) {
         ticks += 1;
     }
     assert!(host.world.name_entry_active(), "name entry opens");
-    // Type one glyph, go to End, confirm Yes.
+    // Type one glyph, go to End; the confirm opens on No (retail), so Up
+    // moves the hand to Yes before the committing confirm.
     host.world.name_entry.as_mut().unwrap().cursor = 0;
     host.world.step_name_entry(NameEntryInput {
         confirm: true,
         ..Default::default()
     });
     host.world.name_entry.as_mut().unwrap().cursor =
-        legaia_engine_core::name_entry::CHAR_CELLS + 16;
+        legaia_engine_core::name_entry::CONTROL_ANCHORS[2];
     host.world.step_name_entry(NameEntryInput {
         confirm: true,
+        ..Default::default()
+    });
+    host.world.step_name_entry(NameEntryInput {
+        up: true,
         ..Default::default()
     });
     host.world.step_name_entry(NameEntryInput {
