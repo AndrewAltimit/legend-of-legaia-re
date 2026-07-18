@@ -685,7 +685,10 @@ The cutscene timeline runs on the **same field/event VM** (`FUN_801DE840`) as ev
   **The full transform is `screen = H · (R·(v − focus) + tr_eye) / Ze`; the eye-back depth is `tr_eye.z` (slot 5), not a missing scalar.** The once-per-frame view builder `FUN_800172c0` assembles it: build `R` from the angle globals (`FUN_80026988`), left-multiply the constant base matrix `DAT_8007BF10` (a uniform `24576·I` = **6× world scale**), copy the eye-space translation trio `_DAT_800840B8/BC/C0` into the view struct's `.t`, then MVMVA the negated focus `(_DAT_80089118/1C/20)` through `R` and add `.t` - giving the uploaded GTE translation `TR = R·(−focus) + tr_eye`, so every world vertex maps to `R·(v − focus) + tr_eye`.
   The camera-rotation build is pinned: `FUN_8001CF50` composes `R` by rotating about each axis with the angle globals - `RotMatrixX(pitch=_DAT_8007B790)` at `0x800461A4`, `RotMatrixY(yaw=_DAT_8007B792)` at `0x8004629C`, `RotMatrixZ(roll=_DAT_8007B794)` at `0x8004638C` (each masks the angle to 12 bits and indexes the shared sin/cos LUT at `0x80070A2C`, `4096 = 360°`, `+0x800` = the quarter-wave cosine offset; composed via GTE `mvmva`).
   **So param 0 is the camera PITCH, not a "rot/zoom" word** - the zoom is H (a separate projection register). The eye sits *behind* the focus by `tr_eye` (in the 6×-scaled space); it is NOT at the focus.
-  The per-frame *interpolation* is also pinned: `FUN_801DB510` eases the focus globals, the eye-space translation trio, and the typed `0x801F2798` param table toward their control-block targets every frame with an exponential right-shift lerp (`srav` by `_DAT_8007B60B>>4`), so Camera Configure beats blend rather than snap.
+  The per-frame *interpolation* (`FUN_801DB510`, the mover behind the control-block targets) is pinned from a per-frame RAM capture of the live camera globals across the whole retail New-Game opening chain:
+  - **`apply_trigger` is the glide length in frames, 1:1** (measured arrivals `48/50`, `85/90`, `239/240`, `≈965/1000`, `≈900/900`). A long `apply` acts as a *dolly velocity*: `opurud` stages an `apply 2300` eye glide whose next snap beat lands about a quarter of the way through - retail never reaches the staged target.
+  - **The ease curve is selected by the op's high bits** (the decoded mode nibble `op0 >> 2`). Mode 1 (the common `45 07 ..` form): the eye trio / focus / H move at **constant velocity** (`delta / apply` per frame - measured exactly linear on the `opdeene` `apply 840` grove dolly and `opurud`'s `apply 50/240/2300` moves) while **pitch / yaw decelerate along a quadratic ease-out** (initial rate `2·delta/apply`). Mode 2 (`45 0B ..`): **every component** eases out quadratically - the `map01` fly-in descent fits `1-(1-t)^2` across its whole travel. Mode 4 (`45 13 ..`): every component eases **in-out** (slow-fast-slow; `opdeene`'s crater-rim tableau dolly).
+  - Arrival is exact (no asymptote); an arrived component holds until re-staged, and a re-stage mid-glide re-arms from the current value.
   Confirmed against the `new_game_cutscene_intro_a` save state: focus `(8640, 0, 10304)` (mode byte `0x10` = anchor-follow), pitch `180` (≈15.8°), yaw `-2967`, roll `0`, H `792`, `tr_eye = _DAT_800840B8 = (260, 1293, 17145)`; the focus projects to screen `(792·260/17145 + 160, 792·1293/17145 + 120) = (172, 180)`, matching the party position in that frame's framebuffer.
   The captured RAM is the interpolated tween between two op-`0x45` keyframes (`opdeene` beat 0 `tr_eye = (−740, 512, 16384)`, focus `(10816, ?, 12224)`; a later beat `tr_eye = (118, 2241, 20795)`, focus `(5824, ?, 1984)`) - every axis of the capture sits between them. Note (don't re-walk): the GTE rotation matrix read straight from a save state is the last-rendered object's composed transform (row norms ≈ 6.0 = the base-matrix world scale), so recover `R` from the angle globals - but that `6.0` **is** the camera world scale, folded into `R` via `DAT_8007BF10`.
 
@@ -717,20 +720,24 @@ Two single-shared-VM accommodations, **approximate by design**:
   `SceneHost`'s `cutscene_view` decodes the pinned params: **focus** `(-param6, param7, -param8)` (Y defaults to retail's `0`), **pitch/yaw** from params 0/1 (`4096` = full turn), **H** straight from param 9, and **tr_eye** = the eye-space translation trio (params 3/4/5, `0x800840B8`) - the eye-back depth is `param5`. There is **no eye-distance heuristic**: the depth is a real decoded param.
   Because retail folds a `6×` world scale into `R` (base matrix `DAT_8007BF10`) while the engine renders geometry at native `1×`, `tr_eye` is divided by `6` - the perspective divide makes `6×`-geometry-at-`z` and `1×`-geometry-at-`z/6` project to identical pixels (the same `depth/6` trick `field_follow_camera_mvp`'s `FIELD_CAM_DEPTH = 1200 = 7200/6` uses). `opdeene` supplies all three offset slots per beat.
   The shot re-targets each time the timeline executes a new Camera Configure op; rather than
-  cutting, `play-window` eases the rendered `(focus, pitch, yaw, H, tr_eye)` toward each new beat
-  through [`window::CutsceneCameraInterp`](../../crates/engine-render/src/window.rs) (per-frame
-  ease, angles along the shortest arc, reset to snap when the timeline first installs) - mirroring
-  retail's own per-frame `FUN_801DB510` exponential ease. The ease **rate is the beat's
-  `apply_trigger`**: a Configure with `apply == 0` commits the camera targets immediately (a hard
-  cut), while `apply > 0` stages them and lets the ease glide the eye toward them over roughly
-  `apply` frames (`t ≈ 4/apply`, clamped) - the same snap-vs-tween split `FUN_801DE084`'s
-  `apply_trigger` selects. opdeene mixes both: the entry shot snaps (`apply 0`), but the
-  mid-prologue forest dolly is `apply 840`, paired with a `760`-frame `WaitFrames`, so the camera
-  glides continuously *while the narration crawl scrolls* rather than snapping to a still hold. The
-  ease is stepped in **sim-tick time** (once per world tick that elapsed, not once per rendered
-  frame), so an `apply`-paced glide spans its authored sim-frame count even across a long
-  `WaitFrames` where few ticks advance but many redraws fire - without that, the dolly converged in
-  a fraction of a wall-clock second and then froze into a dead static hold.
+  cutting, `play-window` moves the rendered `(focus, pitch, yaw, H, tr_eye)` toward each new beat
+  through [`window::CutsceneCameraInterp`](../../crates/engine-render/src/window.rs), which
+  implements the capture-pinned `FUN_801DB510` mover law above per component: a Configure with
+  `apply == 0` snaps its staged components (a hard cut), `apply > 0` glides each re-staged
+  component over exactly `apply` sim ticks with the beat's mode-selected curve (constant-velocity
+  eye/focus/H + ease-out angles under mode 1; all-ease-out under mode 2; in-out under mode 4),
+  arriving exactly and holding. Components an in-flight glide owns are only re-armed when a new
+  beat re-stages them, angles glide along the shortest arc, and the interp resets to snap when the
+  timeline first installs. A long `apply` behaves as a dolly velocity: `opurud`'s `apply 2300`
+  eye glide is still ~3/4 short of its staged target when the next snap beat lands, exactly like
+  retail - an interp that compresses the glide to arrive early parks the camera at extreme staged
+  eye targets retail only drifts toward (the "camera inside the scene geometry" failure). opdeene
+  mixes snap and glide: the entry shot snaps (`apply 0`), but the mid-prologue forest dolly is
+  `apply 840`, paired with a `760`-frame `WaitFrames`, so the camera glides continuously *while
+  the narration crawl scrolls* rather than snapping to a still hold. The glide is stepped in
+  **sim-tick time** (once per world tick that elapsed, not once per rendered frame), so an
+  `apply`-paced glide spans its authored sim-frame count even across a long `WaitFrames` where few
+  ticks advance but many redraws fire.
   The framing is pinned by the disc-free regression tests `cutscene_framing_tests` (focus → `(172, 180)`; a `133`-unit character subtends the retail ~1/6-frame height, upright). The legacy orbit-radius framing [`window::cutscene_camera_mvp`](../../crates/engine-render/src/window.rs) is retained only as a unit-tested reference, no longer wired into a render path.
 
 The same machinery drives the **`town01` opening** (a sibling partition-2 record, `P2[3]`). It installs two ways: the **natural chain arrival** from the `map01` fly-in fires the walk-on tile trigger at the entry tile `(0x1D, 0x5B)` (C1 gate `0x225` makes it one-shot), and the **intro skip** ([`World::take_prologue_handoff`](../../crates/engine-core/src/world/narration.rs)) sets `entering_town01_opening` so the `town01` field entry installs the record via [`World::install_town01_opening_timeline`](../../crates/engine-core/src/world/narration.rs) - which honors the record's C1/C2 header gates, so both routes share the retail one-shot.
