@@ -501,6 +501,15 @@ pub struct World {
     /// cleared on battle exit.
     pub battle_sfx_cues: Vec<BattleSfxCue>,
 
+    /// Tactical-Arts **shout** cues queued this frame - one per executed
+    /// party art carrying a real action constant, pushed on the art's
+    /// animation-start frame (see [`crate::battle_events::BattleShoutCue`]).
+    /// Cosmetic: the host resolves each against the arts-voice tables + XA
+    /// clip banks and plays the CD-XA shout; nothing here mutates gameplay
+    /// state. Drained via [`World::drain_battle_shout_cues`]; cleared on
+    /// battle exit.
+    pub battle_shout_cues: Vec<crate::battle_events::BattleShoutCue>,
+
     /// Last BGM the field VM started (op 0x35 sub-1 / sub-9). `None` until
     /// a scene starts one. Updated synchronously when the VM emits the
     /// corresponding `Bgm` event.
@@ -1914,6 +1923,7 @@ impl World {
             pending_battle_events: Vec::new(),
             battle_hit_fx: Vec::new(),
             battle_sfx_cues: Vec::new(),
+            battle_shout_cues: Vec::new(),
             current_bgm: None,
             battle_bgm: None,
             field_bgm_resume: None,

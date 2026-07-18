@@ -52,12 +52,32 @@ impl PlayWindowApp {
         // the director borrow. SFX touch the SPU only - no RNG - so battle
         // determinism stays bit-exact.
         let cues = self.session.host.world.drain_battle_sfx_cues();
+        // Arts-voice shouts: one cue per executed party art, queued on the
+        // art's animation-start frame. The director resolves the (character,
+        // action) pair against the demuxed XA clip bank and fires the CD-XA
+        // shout with the modeled CD-response delay, so the voice trails the
+        // animation (the retail contract) instead of leading it.
+        let shouts = self.session.host.world.drain_battle_shout_cues();
         if let Some(bgm) = self.session.bgm.as_mut() {
             for cue in &cues {
                 bgm.enqueue_sfx(cue.kind, cue.timing_frames, cue.actor_slot, cue.target_slot);
             }
             for (id, voice) in bgm.tick_sfx_frame() {
                 log::debug!("battle SFX cue {id:#04x} fired on voice {voice}");
+            }
+            for shout in &shouts {
+                match bgm.play_art_shout(shout.cslot, shout.action) {
+                    Some(ch) => log::debug!(
+                        "arts shout cslot {} action {:#04x} fired on XA channel {ch}",
+                        shout.cslot,
+                        shout.action
+                    ),
+                    None => log::debug!(
+                        "arts shout cslot {} action {:#04x} unvoiced / bank absent",
+                        shout.cslot,
+                        shout.action
+                    ),
+                }
             }
         } else {
             for cue in &cues {

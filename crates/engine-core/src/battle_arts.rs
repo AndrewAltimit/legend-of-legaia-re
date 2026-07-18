@@ -71,6 +71,13 @@ pub struct ArtRow {
     /// exclusive with [`Self::miracle`] (Miracle is checked first, matching the
     /// retail "Miracle replacement runs before Super tail expansion" order).
     pub super_art: Option<&'static str>,
+    /// The **action constant** the arts-voice shout cue is keyed on
+    /// (`FUN_8004C140`'s cue-table key): the matched art record's action for
+    /// an ordinary row, the finisher constant for a Miracle / Super row.
+    /// `None` for a synthetic row with no matched record - the art executes
+    /// silent, the same degradation retail applies to arts with no cue-table
+    /// entry.
+    pub action: Option<legaia_art::ActionConstant>,
 }
 
 impl ArtRow {
@@ -298,6 +305,8 @@ pub fn rows_from_chains(actor: u8, chains: &[legaia_save::SavedChainRecord]) -> 
             // can't run; Super detection is resolved by the World (which owns
             // the art-record catalog) in `build_battle_arts_rows`.
             super_art: None,
+            // Synthetic profile: no matched record, so no shout cue key.
+            action: None,
         })
         .collect()
 }
