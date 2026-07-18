@@ -674,14 +674,28 @@ impl PlayWindowApp {
         let world = &mut self.session.host.world;
         let events = world.drain_field_events();
         for ev in events {
-            if let FieldEvent::ActorSpawned { slot, .. } = ev {
-                let has_tmd = world
-                    .actors
-                    .get(slot as usize)
-                    .is_some_and(|a| a.tmd_ref.is_some());
-                if has_tmd {
-                    self.pending_dynamic_mesh_slots.push(slot);
+            match ev {
+                FieldEvent::ActorSpawned { slot, .. } => {
+                    let has_tmd = world
+                        .actors
+                        .get(slot as usize)
+                        .is_some_and(|a| a.tmd_ref.is_some());
+                    if has_tmd {
+                        self.pending_dynamic_mesh_slots.push(slot);
+                    }
                 }
+                // `apply == 0` Camera Configure beats snap the live camera
+                // globals immediately in retail. Queue them for the cutscene
+                // camera interp so a snap+glide beat pair committed in ONE
+                // tick (no yield between the ops) still glides FROM the
+                // snapped pose - the merged `camera_state` alone only shows
+                // the last beat's targets. See `pending_camera_snaps`.
+                FieldEvent::CameraConfigure {
+                    params,
+                    apply_trigger: 0,
+                    ..
+                } => self.pending_camera_snaps.push(params),
+                _ => {}
             }
         }
     }

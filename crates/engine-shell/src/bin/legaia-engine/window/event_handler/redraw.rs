@@ -336,20 +336,28 @@ impl PlayWindowApp {
         // interpolator can take `&mut self`; while no cutscene timeline
         // owns the scene the interp is reset so the next opening shot
         // snaps in rather than sweeping from a stale pose.
-        let cutscene_cam = if self.session.host.world.mode != SceneMode::WorldMap
-            && self.session.host.world.cutscene_timeline_active()
+        // The cutscene camera also owns the WORLD-MAP frame while the opening
+        // chain's map01 leg runs its timeline: retail's Rim Elm fly-in is
+        // three op-0x45 beats in map01's opening record (snap to the high
+        // aerial shot, then the `45 0B .. apply 900` ease-out descent), driven
+        // through the same camera globals as the field cutscenes. Gate on a
+        // staged param so a world-map beat record WITHOUT camera beats (the
+        // Drake mist-wall force-walk bands) keeps the ordinary walk camera.
+        let cutscene_cam = if self.session.host.world.cutscene_timeline_active()
+            && (self.session.host.world.mode != SceneMode::WorldMap
+                || !self.session.host.world.camera_state.params.is_empty())
         {
             let (focus, pitch, yaw, h, tr_eye) = self.cutscene_view();
             // Glide pacing from the op-`0x45` `apply_trigger` (retail
             // `FUN_801DE084` → `FUN_801DB510`): a Configure with `apply == 0`
             // commits its camera targets IMMEDIATELY (snap cut), while
             // `apply > 0` stages them and the per-frame mover glides the live
-            // globals there over `apply` frames (constant velocity, exact
-            // arrival - the `FUN_801DB510` head subtracts a per-frame step
-            // from the eye trio). opdeene's beats mix both: the entry shot
-            // snaps (`apply 0`), the mid-prologue grove drift glides
-            // (`apply 840`, paired with a 760-frame WaitFrames), and the
-            // crater-rim tableau dolly glides (`apply 480`) WHILE the
+            // globals there over exactly `apply` frames - the mover law
+            // (curve per mode nibble, 1 apply unit = 1 sim tick) is
+            // capture-pinned; see `CutsceneCameraInterp`. opdeene's beats mix
+            // both: the entry shot snaps (`apply 0`), the mid-prologue grove
+            // drift glides (`apply 840`, paired with a 760-frame WaitFrames),
+            // and the crater-rim tableau dolly glides (`apply 480`) WHILE the
             // narration text scrolls - the "3D keeps playing under the
             // crawl" retail behaviour. The interp arms glides PER COMPONENT
             // on target change (see `CutsceneCameraInterp::glide`), so the
@@ -359,10 +367,15 @@ impl PlayWindowApp {
             // geometry - the "opening shot buried in a gold wall" report).
             //
             // Advanced in SIM-TICK time, not render-frame time (`run_ticks`
-            // steps per redraw): retail's mover runs in the 60 Hz field
-            // loop, so an `apply`-paced glide must span `apply` SIM frames.
-            // Min 1 step so an idle frame still refreshes the held pose.
+            // steps per redraw): retail's mover runs in the field loop, so an
+            // `apply`-paced glide must span `apply` SIM frames. Min 1 step so
+            // an idle frame still refreshes the held pose.
+            // Snap beats drained this frame commit first (retail order: the
+            // mover snaps to an `apply 0` beat, then glides from there when
+            // a same-tick follow-up beat re-stages - the map01 fly-in pair).
+            self.replay_camera_snap_beats();
             let apply = self.session.host.world.camera_state.apply_trigger;
+            let mode = self.session.host.world.camera_state.mode;
             let steps = run_ticks.max(1);
             let out = self.cutscene_cam_interp.glide(
                 focus,
@@ -371,6 +384,7 @@ impl PlayWindowApp {
                 h,
                 tr_eye,
                 u32::from(apply),
+                mode,
                 steps,
             );
             if std::env::var_os("LEGAIA_DIAG_CUTCAM").is_some() {
@@ -385,6 +399,7 @@ impl PlayWindowApp {
             Some(out)
         } else {
             self.cutscene_cam_interp.reset();
+            self.pending_camera_snaps.clear();
             None
         };
         if let (Some(r), Some(vram), Some(atlas)) = (
@@ -440,8 +455,12 @@ impl PlayWindowApp {
             // (discard front-facing = discard CCW under the pipelines'
             // default Ccw front-face) keeps them. Off outside the cutscene
             // camera (free-roam field / battle / world map keep both-sided
-            // draws; their per-pass winding parities differ).
-            let nclip_mode = u32::from(cutscene_cam.is_some()) * 2;
+            // draws; their per-pass winding parities differ). The world-map
+            // fly-in leg keeps both-sided draws too - the continent terrain's
+            // winding parity is the world-map pass's, not the field pass's,
+            // so the field-tuned cull would eat the ground tiles.
+            let in_world_map_now = self.session.host.world.mode == SceneMode::WorldMap;
+            let nclip_mode = u32::from(cutscene_cam.is_some() && !in_world_map_now) * 2;
             r.set_backface_cull(nclip_mode);
             // World-map mode frames the loaded map with the
             // controller-driven camera (azimuth / zoom / pan); an active

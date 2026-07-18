@@ -17,7 +17,33 @@ impl PlayWindowApp {
         in_world_map: bool,
         cutscene_cam: Option<CutsceneCam>,
     ) -> Mat4 {
-        if in_world_map {
+        // An active in-engine cutscene camera wins over every mode-derived
+        // camera, INCLUDING the world map: the opening chain's map01 leg is
+        // the retail Rim Elm aerial fly-in, driven by the same op-0x45
+        // camera globals as the field cutscenes (three beats in map01's
+        // opening record; the caller only passes `cutscene_cam` in world-map
+        // mode when the running timeline actually staged camera params).
+        // The continent terrain draws at raw retail world coordinates, so
+        // the same `psx_camera_mvp * FIELD_WORLD_FLIP` composition (with
+        // `tr_eye` pre-divided by the 6x world scale in `cutscene_view`)
+        // frames it exactly like retail's 6x-scaled GTE camera.
+        if let Some((focus, pitch, yaw, h, tr_eye)) = cutscene_cam {
+            // The cutscene camera is the EXACT retail PSX GTE model
+            // `screen = H*(R*(v - focus) + tr_eye)/Ze` (`FUN_800172c0`
+            // view build; `psx_camera_mvp`), driven by the decoded
+            // op-0x45 params - the same builder the field follow
+            // camera uses, so elevation and framing render
+            // retail-correct. The field world frame runs on raw
+            // retail Y-down coordinates: `psx_camera_mvp`'s internal
+            // `F` (Y-flip) and this `FIELD_WORLD_FLIP` post-multiply
+            // cancel (`F*F = I`), and the field draws use UN-flipped
+            // model matrices - so `focus` is passed as the raw retail
+            // world point, exactly like `field_follow_camera_mvp`'s
+            // target. Eye distance is no longer a heuristic: `tr_eye.z`
+            // is the pinned eye-back depth (op-0x45 offset slot 5).
+            Self::psx_camera_mvp(pitch, yaw, h, Vec3::from(tr_eye), Vec3::from(focus), aspect)
+                * FIELD_WORLD_FLIP
+        } else if in_world_map {
             let world = &self.session.host.world;
             let (az, zoom, px, pz, walk_mode) = world
                 .world_map_ctrl
@@ -137,22 +163,6 @@ impl PlayWindowApp {
                     cam_lo, cam_hi, az, zoom, pan_x, pan_z, aspect,
                 ) * FIELD_WORLD_FLIP
             }
-        } else if let Some((focus, pitch, yaw, h, tr_eye)) = cutscene_cam {
-            // The cutscene camera is the EXACT retail PSX GTE model
-            // `screen = H*(R*(v - focus) + tr_eye)/Ze` (`FUN_800172c0`
-            // view build; `psx_camera_mvp`), driven by the decoded
-            // op-0x45 params - the same builder the field follow
-            // camera uses, so elevation and framing render
-            // retail-correct. The field world frame runs on raw
-            // retail Y-down coordinates: `psx_camera_mvp`'s internal
-            // `F` (Y-flip) and this `FIELD_WORLD_FLIP` post-multiply
-            // cancel (`F*F = I`), and the field draws use UN-flipped
-            // model matrices - so `focus` is passed as the raw retail
-            // world point, exactly like `field_follow_camera_mvp`'s
-            // target. Eye distance is no longer a heuristic: `tr_eye.z`
-            // is the pinned eye-back depth (op-0x45 offset slot 5).
-            Self::psx_camera_mvp(pitch, yaw, h, Vec3::from(tr_eye), Vec3::from(focus), aspect)
-                * FIELD_WORLD_FLIP
         } else if self.session.host.world.mode == SceneMode::Battle {
             if self.battle_stage_mesh.is_some() {
                 // Stage-dome battle: low front-facing shot into the
@@ -308,7 +318,13 @@ impl PlayWindowApp {
         r: &legaia_engine_render::Renderer,
         in_world_map: bool,
     ) -> Option<legaia_engine_render::UploadedLines> {
-        if in_world_map && !self.boot_ui.is_active() {
+        // The marker overlay is hidden while a cutscene timeline owns the
+        // world map (the opening chain's map01 fly-in): retail's aerial
+        // descent shows the bare continent - no player or entity markers.
+        if in_world_map
+            && !self.boot_ui.is_active()
+            && !self.session.host.world.cutscene_timeline_active()
+        {
             let markers = self.session.host.world.world_map_entity_markers();
             let mut pos: Vec<[f32; 3]> = Vec::new();
             let mut col: Vec<[u8; 4]> = Vec::new();
