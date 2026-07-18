@@ -32,13 +32,46 @@ The on-disc input format is the [runtime 2-pack wrapper](../formats/effect.md) (
 
 ## How it dispatches
 
-Each 28-byte master slot carries `(state, counter, ?, sub_state, pos_x, pos_y, pos_z, data_ptr)`. The walker reads `*data_ptr` as the next-state token, but state transitions are inlined throughout `FUN_801E0088` (600+ instructions). To produce a clean-room opcode table you'd need to extract per-state-byte transition logic by hand (~10–20 cases).
+There is no opcode byte anywhere: the "state" bytes are **wait counters**, and the only data consumed are the pack1 spawn records and the pack0 anim frames. The full lifecycle is extracted below - it is a pair of countdown-driven cursor walks, not a token dispatch.
 
-The cleaner port path: model the walker as a state-machine class and accept its decompile-shape rather than insisting on an opcode table. The 32-master / 128-child slot pool, the spawn API, and the per-frame walker are all well-understood - the port itself is straightforward; the question is just whether to label the format an "opcode table" or a "state machine".
+## The extracted pass-1 state algebra
+
+Traced instruction-for-instruction from `overlay_battle_801e0088.txt` (walker) and `overlay_battle_801dfdf8.txt` (spawn). Every wait counter in the system is **5.3 fixed-point**: a frame count is stored `<<3` and decremented by 8 per logic frame (a value already `< 8` clamps to 0), so fractional catch-up ticks stay cheap.
+
+The walker body runs only when the ready flag `DAT_8007BD71` reads `0xFF`. Pass 1 (spawn cadence + child animation/motion) repeats `DAT_1F800393` times per call - the adaptive frame-skip factor, so effect time tracks wall-clock under frame skip - and a sweep that finds zero active masters and zero active children skips the remaining catch-up iterations. Pass 2 (render) runs once per call.
+
+### Master slot lifecycle (28-byte stride, 32 slots at pool `+0x1010`)
+
+| Offset | Field | Behaviour |
+|---|---|---|
+| `+0` | `child_count` | Total spawn records (pack1 header byte 0). Doubles as the active flag - 0 = free slot. |
+| `+1` | `flags` | pack1 header byte 1 (bit 0 = randomized offsets, consumed at spawn time). |
+| `+2` | `spawn_cursor` | Records consumed so far. |
+| `+3` | `wait` | 5.3 wait counter. Non-zero: decrement by 8 and stop. Zero: run the spawn loop. |
+| `+4` | `angle` | Spawn angle `& 0xFFF` (12-bit PSX angle). |
+| `+8..+0x10` | `origin x/y/z` | World position, 16.8 fixed (`i16 << 8` at spawn). |
+| `+0x14` | - | Never written by the spawn API; its copy into `child[+0x18]` is a dead lane. |
+| `+0x18` | `script_cursor` | pack1 `entry + 4`, advanced `+14` per record. |
+
+The spawn loop: seed the next free child slot from the current 14-byte record (allocation scans forward with a cursor that persists across masters within one sweep; on **pool exhaustion the record is still consumed** with no child - effects degrade rather than stall), then advance - `spawn_cursor += 1`, `script_cursor += 14`, `wait = record.delay << 3` - and repeat while the new wait is zero, so zero-delay records spawn as one burst. When `spawn_cursor` reaches `child_count` the master frees itself (`+0` = 0) and forces `wait = 8` to exit the loop.
+
+### Child slot lifecycle (32-byte stride, 128 slots at pool `+0x10`)
+
+Seeding (walker pass 1, from the spawn record + master): `frame_count`(+0) = pack0 byte 0 (doubles as the active flag); `mirror`(+1) = `rand() % 4` - **random UV flip bits** for sprite variety (bit 0 = horizontal, bit 1 = vertical, consumed by pass 2); `frame_cursor`(+2) = 0; `wait`(+3) = first frame's delay `<<3`; velocity (+4/+6/+8 i16 x/y/z) = the record's planar legs rotated by the master angle (`>>12`) with `vel_y` direct; position (+0xC/+0x10/+0x14, 16.8) = master origin, `y -= height << 8`, x/z offset by the rotated planar legs (`>>4`); anim cursor (+0x1C) = pack0 `entry + 2`.
+
+Tick: `wait` non-zero → decrement by 8 plus one motion step. Zero → loop { advance one anim frame (`anim_cursor += 6`, `frame_cursor += 1`, `wait` = new frame's delay `<<3`; reaching `frame_count` retires the slot), then one motion step } while the new wait is zero. A motion step is `pos += vel * frame.speed * pool_scale_0 * 8 >> 15` per axis - with the retail init scalar `0x1000` at pool `+0` this reduces exactly to `pos += vel * frame.speed`.
+
+### Pass 2 - render
+
+For each live child, one flat textured **semi-transparent quad** (9-word GPU packet, tag `0x09000000`, prim code `0x2E`):
+
+- **Brightness envelope**: with `n = frame_count >> 3`, the modulation ramps in over the first eighth of the animation (`0x80 * (frame_cursor+1) / n`) then back out over the rest (`0x80 * (frame_count - frame_cursor) / (frame_count - n)`), clamped at `0x80` (neutral) and written as `r = g = b`.
+- **Size**: atlas `w/h * pool_scale_1 >> 8` (retail init `0xA00` → ×10 texel size), projected through `FUN_800195A8` and inserted into the OT at `_DAT_1F8003F4 + depth * 4`.
+- **UV corners**: base/extent from the 8-byte atlas entry, corner order swapped per the child's random mirror bits; CLUT from atlas `+4`, tpage from atlas `+6`.
 
 ## Lifetime + render bridge (engine port)
 
-The retail per-state token algebra (`FUN_801E0088` pass 1) is inlined and not yet extracted, so `EffectHost::advance_state` models the lifecycle as a fixed-frame countdown: each work tick increments `master.field_14`, and the slot retires once it reaches `effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES`. Without this an effect terminated on its first work tick and never persisted to draw.
+The engine port does not yet execute the algebra above: `EffectHost::advance_state` models the lifecycle as a fixed-frame countdown - each work tick increments `master.field_14`, and the slot retires once it reaches `effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES`. Without this an effect terminated on its first work tick and never persisted to draw. Now that the retail algebra is fully specified, a faithful `Pool::tick` is a mechanical port (tracked in [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)).
 
 The per-frame walker splits into two host hooks because retail runs two
 distinct passes at different cadences.
@@ -104,7 +137,7 @@ This is distinct from the 2D billboard path here:
 - `World::active_effect_sprites` builds billboards from the `efect.dat` atlas. An earlier reading held that its `0x7680` field was a tpage sampling VRAM **page (0,0), 8bpp** - falsified by the pass-2 consumer.
 - That `0x7680` is the atlas entry's **CLUT**, not its tpage - the `+4`/`+6` fields are CLUT (u16) / tpage (byte), the reverse of an earlier reading (the emit at `~0x801E0980` writes `atlas[4..5]` into the primitive's CLUT field and `atlas[6]` into its tpage field). `0x7680` decodes as CBA fb `(0,474)`, an effect-CLUT row, *not* page `(0,0)`.
 - Confirmed from a melee hit-spark battle capture: no prim samples page (0,0)/8bpp/`0x7680`, and the spark draws as textured quads sampling the loaded effect pages (PROT 870 flame atlas `(320,0)`/`(448,0)`, effect-band CLUTs).
-- The engine's `SpriteAtlasEntry` now reads the fields in the correct order, so `active_effect_sprites` yields the real effect page + CLUT and the billboards sample the resident PROT 870 / `etim` texels. The faithful per-frame token cadence (`FUN_801E0088` pass 1 state algebra) is also still inlined-only; the render loops each child's anim batch uniformly over the effect lifetime as a stand-in.
+- The engine's `SpriteAtlasEntry` now reads the fields in the correct order, so `active_effect_sprites` yields the real effect page + CLUT and the billboards sample the resident PROT 870 / `etim` texels. The faithful per-frame cadence is specified above ([pass-1 algebra](#the-extracted-pass-1-state-algebra)) but not yet executed by the port; the render loops each child's anim batch uniformly over the effect lifetime as a stand-in.
 
 ## Pool layout (`_DAT_8007BD30`, 5008 bytes total)
 

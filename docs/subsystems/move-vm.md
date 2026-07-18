@@ -37,7 +37,7 @@ How the move VM wires to the others:
 
 - Field VM op `0x22` `EXEC_MOVE` calls `FUN_800204F8`, which finds the move record for `move_id` and stages it into the actor at `actor[+0x48]` (buffer base) / `actor[+0x70]` (PC).
 - Actor tick (`FUN_80021DF4`, per frame) and actor spawn (`FUN_80021B04`, one-shot) both call `FUN_80023070(actor)` to step the move buffer.
-- Move-VM opcode `0x2F` calls `FUN_801D362C(actor, opcode_ptr)` for **overlay-defined extension opcodes**. The dispatcher exists in many overlays (town, world-map and its variants, dialog, cutscene); each overlay carries its own copy with its own JT contents.
+- Move-VM opcode `0x2F` calls `FUN_801D362C(actor, opcode_ptr)` for **overlay-defined extension opcodes**. The dispatcher exists **only in the field overlay (0897)** - the call goes to a fixed VA, so `0x2F` is a field-resident-only opcode ([residency evidence](move-vm-overlay-ext.md#overlay-residency---one-copy-in-the-field-overlay-only)).
 
 ### Move-buffer record sources
 

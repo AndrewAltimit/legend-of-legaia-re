@@ -79,6 +79,18 @@
         <td><a href="../subsystems/battle-formulas.html">battle-formulas</a></td>
       </tr>
       <tr>
+        <td>Effect-VM pass-1 "state token algebra" (<code>FUN_801E0088</code>)</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Fully extracted: the "state" bytes are 5.3 fixed-point <strong>wait counters</strong>, not opcodes &mdash; the lifecycle is two countdown-driven cursor walks (master spawn cadence over 14-byte pack1 records, child anim/motion over 6-byte pack0 frames). The pack1 record fields are re-pinned (anim-batch index + delay + rotated offsets/velocities; the old <code>sprite_id</code>/<code>anim_flags</code>/<code>tail</code> reading is superseded), the init immediates <code>(0x1000, 0xA00)</code> resolve as the global motion + sprite-scale scalars, and pass 2's triangular brightness envelope + random UV-mirror bits are decoded. A faithful <code>Pool::tick</code> port is still owed.</td>
+        <td><a href="../subsystems/effect-vm.html">effect-vm</a></td>
+      </tr>
+      <tr>
+        <td>Move-VM op <code>0x2F</code> extension dispatcher &mdash; per-overlay copies?</td>
+        <td><span class="tag tag-done">falsified</span></td>
+        <td>One copy, field overlay 0897 only. The seven <code>_801d362c</code> capture dumps are byte-identical (0897 observed under world-map / dialog / cutscene scenario labels); every other mapped slot-A overlay + the title overlay carries unrelated bytes at the fixed call VA and no jump table at <code>0x801CE868</code>. So op <code>0x2F</code> is executable only while 0897 is resident, and battle-side move records cannot use it.</td>
+        <td><a href="../subsystems/move-vm.html">move-vm</a></td>
+      </tr>
+      <tr>
         <td>Super / Miracle Arts trigger logic</td>
         <td><span class="tag tag-partial">partial</span></td>
         <td>Ported <strong>and live-wired</strong>: <code>engine-vm</code>'s <code>battle_action</code> applies <code>MiracleMatcher</code>/<code>SuperMatcher</code> and the Arts submenu flags Miracle/Super chains; Miracle + Tri-Somersault queues capture-validated byte-exact. Residue: byte-exact queue connectors for the remaining Supers. <a href="#d-super-miracle">details &darr;</a></td>
@@ -315,6 +327,12 @@
         <td><span class="tag tag-done">resolved</span></td>
         <td><code>FUN_801d01b0</code> (field overlay 0897): camera-remapped pad, per-frame speed, 2-unit steps gated by per-axis wall collision <code>FUN_801cfe4c</code> and the actor probe. Footprint probes, NPC boxes, and the interact probe are byte-reproduced in the engine.</td>
         <td><a href="../subsystems/field-locomotion.html">field-locomotion</a></td>
+      </tr>
+      <tr>
+        <td>"~270 undumped field-overlay functions" (recomp dispatch-entry seed list)</td>
+        <td><span class="tag tag-done">falsified</span></td>
+        <td>Not a function inventory. The recomp capture's seed PCs are interpreter <em>dispatch entries</em> &mdash; return sites, interrupt-resume PCs and <code>jr</code>-table labels &mdash; accumulated across every overlay generation of the session (title / FMV / menu / field) while only the byte snapshot is per-dump. Dozens of listed addresses land in 0897's <em>data</em> head, one source capture's resident bytes match disc 0897 at only ~16%, and zero entries verify as new 0897 function entries (no prologue / static-<code>jal</code> witness in any resident image). Seed lists need per-hit resident-image resolution before any identity claim.</td>
+        <td><code>docs/reference/open-rev-eng-threads.md</code></td>
       </tr>
       <tr>
         <td>Field collision-map source</td>

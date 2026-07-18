@@ -77,33 +77,47 @@ The format `data\battle\efect.dat` (PROT entry 873) actually uses at runtime. Cr
 ...   [pack1]  u32 count, u32 entry_offsets[count]   ← packs of effect scripts
 ```
 
-Each **pack0 entry** is a frame-batch animation record:
+Each **pack0 entry** is a frame-batch animation record (field roles traced from the
+walker's spawn + frame-advance code, `overlay_battle_801e0088.txt`):
 
 ```
-+0   u8 frame_count     ← number of 6-byte frames
-+1   u8 flags
++0   u8 frame_count     ← number of 6-byte frames; copied to child[+0] at spawn
++1   u8 flags           ← not read by the walker
 +2   [N × 6-byte frame records]
    each frame:
     +0  u8  sprite_atlas_index   (indexes the inline 8-byte atlas at buffer+8)
-    +1..+5 (timing / dir bits)
+    +1  u8  delay                (frames this frame holds; <<3 into the child wait counter)
+    +2  u8  speed                (per-frame motion scalar - multiplies the child velocity)
+    +3..+5  not read by the walker
 ```
 
 Each **pack1 entry** is an effect-ID script:
 
 ```
-+0   u8   child_count         ← N - number of child sprites to spawn
-+1   u8   flags               (bit 0 = use random child distribution)
-+2   u16  spread              ← half-range modulo for random child position (signed 8.8 fixed)
-+4   [N × 14-byte child sprite descriptors]
-   each descriptor (retail offsets from the per-frame walker):
-    +0x00  u16  sprite_id     ← indexes pack0; copied to master slot on spawn
-    +0x02  i16  width         ← half-width of random X distribution (8.8 fixed)
-    +0x04  u16  anim_flags    ← animation / shading flags read by the per-frame walker
-    +0x06  i16  depth         ← half-width of random Z distribution (8.8 fixed)
-    +0x08  u8[6] tail         ← animation curves / sound-id / timing (per-frame walker only)
++0   u8   child_count         ← N - number of 14-byte spawn records (children spawned over the effect's life)
++1   u8   flags               bit 0 = randomize spawn offsets (see below); copied to master[+1]
++2   i16  spread              ← half-range for the random offset rewrite
++4   [N × 14-byte spawn records]
+   each record (consumed once by `FUN_801E0088` pass 1 when its child spawns; the two
+   planar legs are rotated into world space by the master's spawn angle through the
+   4096-entry trig tables `_DAT_8007B81C` / `_DAT_8007B7F8`):
+    +0x00  u8   anim_batch    ← pack0 index - the child's sprite animation
+    +0x01  u8   delay         ← frames the master waits after this spawn before the next record (<<3)
+    +0x02  i16  offset_a      ← planar spawn offset, leg A (rotated, >>4)
+    +0x04  i16  height        ← vertical spawn offset (<<8, subtracted from Y)
+    +0x06  i16  offset_b      ← planar spawn offset, leg B (rotated, >>4)
+    +0x08  i16  vel_a         ← planar velocity, leg A (rotated, >>12)
+    +0x0A  i16  vel_y         ← vertical velocity (copied direct to child[+6])
+    +0x0C  i16  vel_b         ← planar velocity, leg B (rotated, >>12)
 ```
 
-The retail random-distribution loop (`FUN_801E0088` pass 1) reads only `+0x02` (width) and `+0x06` (depth) per child - those two govern where a child sprite spawns relative to the effect origin. `anim_flags` and `tail` are consumed later by the per-frame walker when advancing a live child slot's animation state.
+An earlier reading of this record (`+0 u16 sprite_id / +4 u16 anim_flags / +8 u8[6]
+tail`) is **superseded** - every field is now pinned from the walker's spawn block
+(`0x801E0184..0x801E03F0`). When flags bit 0 is set, the spawn API `FUN_801DFDF8`
+**rewrites `+0x02` and `+0x06` of every record in place** with
+`rand() % (2 * spread) - spread` - the resident `efect.dat` buffer mutates on every
+randomized spawn, so those two fields are scratch as much as data. Full lifecycle:
+[`effect-vm.md`](../subsystems/effect-vm.md#the-extracted-pass-1-state-algebra).
 
 A live `0873_befect_data` sample carries 14 entries in pack0 and 33 entries in pack1. The pack0/pack1 offset tables hold **absolute file offsets** (not the `word*4` offsets of `asset::pack`). Parser: `legaia_engine_vm::effect_vm::EffectCatalog::from_efect_dat_bytes`.
 
@@ -235,14 +249,11 @@ The runtime consumer lives in the battle overlay (`0898_xxx_dat`) and is three f
 | `0x801E0088` | 0x970 | Per-frame walker (update + render) |
 
 **`0x801DE914` - init / pack-fixup.** Called by `FUN_800520F0` case `0xE` with `(id=0x1000, param=0xA00)`. It zeros the 5008-byte runtime pool at `_DAT_8007BD30`, treats `_DAT_8007BD5C` as the 2-pack wrapper, and walks both packs converting offsets to pointers (the fixup is gated by `byte[3] == 0`). Post-fixup state goes in the table-head 16-byte record `(u16 id, u16 param, u32 buf+8, u32 pack0_data+4, u32 pack1_data+4)`, and the init flag `_DAT_8007BD58` is set to `1`.
+The two init immediates are the walker's global scalars: the i16 at pool `+0` (`0x1000`) is the child **motion scale** (unity - the walker's `* scale * 8 >> 15` reduces to `pos += vel * frame_speed`), and the i16 at pool `+2` (`0xA00`) is the sprite **world scale** (`quad_size = atlas_w/h * 0xA00 >> 8` = ×10 texel size before projection).
 
-**`0x801DFDF8` - public spawn-effect API.** Signature `(byte effect_id, short* world_pos, ushort angle)`. It reads `pack1[effect_id]` from the head record to find the effect's script, allocates the first free slot in the 32-entry × 28-byte master pool, writes pos/angle, copies the script header bytes, and sets the script cursor to `entry + 4`. Two ids are special-cased: `effect_id = 4 → 0x801F5D90` and `effect_id = 0x13 → 0x801F5CF8`.
+**`0x801DFDF8` - public spawn-effect API.** Signature `(byte effect_id, short* world_pos, ushort angle)`. It reads `pack1[effect_id]` from the head record to find the effect's script, allocates the first free slot in the 32-entry × 28-byte master pool, writes pos/angle, copies the script header bytes, and sets the script cursor to `entry + 4`. When the script's flags bit 0 is set it also rewrites every spawn record's `+0x02`/`+0x06` offsets in place with `rand() % (2*spread) - spread` (see the pack1 layout above). Two ids are special-cased: `effect_id = 4 → 0x801F5D90` and `effect_id = 0x13 → 0x801F5CF8`.
 
-**`0x801E0088` - per-frame walker.** Runs two passes over the pools.
-
-Pass 1 covers the 32 master slots. For each active slot it decrements the state byte; on zero it fetches the next 14-byte script instruction, where byte 0 indexes `pack0` to select an anim batch and the rest supplies angle, direction, and lifetime. It spawns into the 128 child slots, applying sin/cos through the lookup tables at `_DAT_8007B7F8` and `_DAT_8007B81C`.
-
-Pass 2 covers the 128 child slots. For each it builds a PSX GPU sprite primitive (`0x9000000` opcode + `0x2E000000` RGB), pulls UV / size / page from the inline sprite atlas via the child's anim cursor, and submits through `func_0x8003D2C4`.
+**`0x801E0088` - per-frame walker.** Runs two passes over the pools: pass 1 (spawn cadence + child anim/motion, repeated `DAT_1F800393` times for frame-skip catch-up) and pass 2 (render - one flat textured semi-transparent quad per live child, `0x09000000` packet tag + `0x2E`-code prim, brightness from the triangular age envelope, submitted through `func_0x8003D2C4`). The complete per-slot algebra is documented in [`effect-vm.md`](../subsystems/effect-vm.md#the-extracted-pass-1-state-algebra).
 
 Decompiled output: `ghidra/scripts/funcs/overlay_battle_*.txt`.
 

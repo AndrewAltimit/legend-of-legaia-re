@@ -550,12 +550,16 @@ fn catalog_from_efect_dat_parses_packs_atlas_and_anims() {
     let script0 = buf.len() as u32;
     buf.extend_from_slice(&[2u8, 0x00]); // child_count=2, flags
     buf.extend_from_slice(&0i16.to_le_bytes()); // spread
-    for sid in [514u16, 2u16] {
-        buf.extend_from_slice(&sid.to_le_bytes()); // sprite_id
-        buf.extend_from_slice(&0i16.to_le_bytes()); // width
-        buf.extend_from_slice(&0u16.to_le_bytes()); // anim_flags
-        buf.extend_from_slice(&0i16.to_le_bytes()); // depth
-        buf.extend_from_slice(&[0u8; 6]); // tail
+    // Two 14-byte spawn records: (anim_batch, delay) byte pair then the
+    // offset/velocity i16 fields (see docs/formats/effect.md).
+    for (batch, delay) in [(2u8, 3u8), (2u8, 0u8)] {
+        buf.extend_from_slice(&[batch, delay]);
+        buf.extend_from_slice(&5i16.to_le_bytes()); // offset leg A ("width")
+        buf.extend_from_slice(&(-7i16).to_le_bytes()); // height
+        buf.extend_from_slice(&9i16.to_le_bytes()); // offset leg B ("depth")
+        buf.extend_from_slice(&1i16.to_le_bytes()); // vel leg A
+        buf.extend_from_slice(&2i16.to_le_bytes()); // vel Y
+        buf.extend_from_slice(&3i16.to_le_bytes()); // vel leg B
     }
     buf[p1_table + 4..p1_table + 8].copy_from_slice(&script0.to_le_bytes());
 
@@ -576,8 +580,16 @@ fn catalog_from_efect_dat_parses_packs_atlas_and_anims() {
     assert_eq!(batch.frames[1].atlas_index, 1);
     let (script, children) = cat.entry(0).unwrap();
     assert_eq!(script.child_count, 2);
-    assert_eq!(children[0].sprite_id, 514);
+    // The anim index is the single byte at +0 - NOT a u16 spanning the
+    // delay byte at +1 (the retail walker reads `lbu`).
+    assert_eq!(children[0].sprite_id, 2);
+    assert_eq!(children[0].delay, 3);
     assert_eq!(children[1].sprite_id, 2);
+    assert_eq!(children[1].delay, 0);
+    assert_eq!(children[0].width, 5);
+    assert_eq!(children[0].height, -7);
+    assert_eq!(children[0].depth, 9);
+    assert_eq!(children[0].velocity, [1, 2, 3]);
 }
 
 #[test]
