@@ -21,7 +21,7 @@ static call site to follow. See [Provenance](#provenance).
 - [Engine port](#engine-port) - [environment geometry](#environment-geometry) · [scene-entry script](#scene-entry-script) · [encounter table](#scene-encounter-table) · [per-step encounter roll](#per-step-encounter-roll-in-the-live-loop) · [input lock during cutscenes](#input-is-locked-during-an-opening-cutscene-timeline)
 - [Field-buffer load chain](#field-buffer-load-chain)
 - [Intra-scene doorways](#intra-scene-doorways---the-walk-touch-teleport-family) - [the three player-move op forms](#the-three-player-move-op-forms) · [the record is a branch](#the-record-is-a-branch-not-a-constant) · [pairing convention](#the-pairing-convention) · [geometry](#geometry) · [landing records](#landing-records) · [Rim Elm](#rim-elm) · [engine port](#engine-port-1)
-- [Open](#open) · [NPC initial facing](#npc-initial-facing) · [NPC glide speed](#npc-glide-speed)
+- [Open](#open) · [NPC initial facing](#npc-initial-facing) · [NPC dynamic facing](#npc-dynamic-facing) · [NPC glide speed](#npc-glide-speed)
 - [Engine port: movement compass + opt-in precise movement](#engine-port-movement-compass--opt-in-precise-movement)
 
 ## Player actor fields used
@@ -32,7 +32,7 @@ The player actor pointer is the global `_DAT_8007c364`. Confirmed fields on the 
 |---|---|
 | `+0x10` | flags; bit `0x80000` = movement disabled (encounter pending / cutscene), bit `0x1000000` = action/interact requested |
 | `+0x14` | world X (`s16`) |
-| `+0x16` | facing angle for the renderer (`s16`, set elsewhere) |
+| `+0x16` | terrain-conform angle (`s16`), **not** the yaw - see [NPC dynamic facing](#npc-dynamic-facing) |
 | `+0x18` | world Z (`s16`) |
 | `+0x26` | heading (8-direction movement angle, set from the pad direction) |
 | `+0x5c` | running/dash state counter (`> 0` switches the walk-animation select) |
@@ -776,6 +776,85 @@ Town prologues route the facing leg through a story-flag `0x7x`-TEST branch chai
 The engine decodes that leg statically per placement ([`man_field_scripts::placement_initial_facing`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), skipping cross-context and park-sentinel legs), converts through [`facing_index_to_engine_heading`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), and seeds `World::field_npc_headings` at scene entry (`World::seed_field_npc_facings`) - a later walk overwrites the slot exactly as retail's per-step facing writes overwrite `+0x26`. Semantic pin: town01's side-by-side villager pair at tiles `(29,22)`/`(30,22)` derives LUT indices 6 (X+) and 2 (X-) - they face each other; disc-gated coverage in `field_npc_initial_facing_disc.rs`.
 
 Note the facing pin also fixes what `0x4C 0x51` operand byte +3 **is**: bit 7 toggles the special-model flag, the low nibble is the facing-LUT index - and the raw case-5-sub-1 asm reads the byte **nowhere else**, so the op carries no speed operand (byte +4 is the move-anim id written to `+0x5C`; the trailing `FUN_801D81E0` is an active-list relink via `FUN_800204A4`/`FUN_80020454`, not a bytecode builder). The old glide-speed reading of the same byte is a misattribution of the walk-kernel op `0x47`'s own operand encoding - see the reconcile note under [NPC glide speed](#npc-glide-speed).
+
+## NPC dynamic facing
+
+[NPC initial facing](#npc-initial-facing) covers the heading an actor spawns
+with. Everything after that - who may overwrite it, and whether the turn is
+instant - is this section. The full opcode-level arithmetic lives in
+[motion-vm.md](motion-vm.md#how-an-actors-facing-changes); what follows is the
+frame-level picture.
+
+### Snap or ramp
+
+Both, and which one you get is a property of the bytecode, not of the
+situation:
+
+- **Walking snaps.** Every walk kernel writes the heading from the eight-entry
+  compass LUT at `0x80073F04` (`entry[i] = i * 0x200`, `0` = -Z) as it steps -
+  the `0x47` tail in `FUN_8003774C` and the directional / wander steps in
+  `FUN_80038158`. A walking actor holds a compass point and changes to another
+  compass point in one frame. Retail has no walk-turn interpolation at all.
+- **Scripted turns ramp.** The four dedicated rotate ops (`0x38` / `0x4C` in
+  `FUN_8003774C`, `0x04` / `0x0D` in `FUN_80038158`) interpolate over a frame
+  budget the op itself carries, stepping `arc * speed / frames_remaining` off
+  the *live* heading and snapping to the exact target on the terminal frame.
+  These are the cinematic turns - a cutscene actor pivoting, an NPC turning to
+  face the speaker.
+
+There is no wrap-handling subtlety to get wrong beyond the arc measurement:
+the ramps normalise the signed difference into `0..0xFFF` and pick a
+direction, either the shortest arc or one the operand forces, and then never
+re-decide mid-leg.
+
+### Which writer wins
+
+Retail resolves conflicts by **execution order inside the per-actor tick**
+`FUN_8003BC08`, not by any priority field - the last writer of the frame is
+the facing that draws. The whole block is gated on the global freeze bit
+`_DAT_1F800394 & 0x400`; within it the order is fixed:
+
+| order | routine | gate | what it may write |
+|---|---|---|---|
+| 1 | `FUN_80039B7C` | `+0x10 & 0x100` and `+0x90 != 0` | the dialog/interaction SM, including the facing restore from `+0x5A` on interaction end |
+| 2 | `FUN_8003774C` | `+0x10 & 0x400` | scripted yield legs: walk snap (`0x47`), rotate ramps (`0x38` / `0x4C`) |
+| 3 | `FUN_80038158` | scene not paused (`*(s16 *)(_DAT_801C6EA4 + 8) == 0`), `+0x80 != 0`, `!(+0x10 & 8)` | ambient tail-section-1 motion: wander snaps, facing ramps (`0x04` / `0x0D`) |
+| 4 | move-table consumer | `+0x5C > 0` or `+0x10 & 0x1000` | animation only |
+
+So an actor running both a scripted leg and an ambient wander stream in the
+same frame ends up facing wherever the **ambient** stream put it - stage 3
+overwrites stage 2. Stage 3 is also the only one with a scene-wide off switch:
+whenever `*(s16 *)(_DAT_801C6EA4 + 8)` is non-zero the ambient layer stands
+down and stage 2's pose is what survives the frame. What sets that word is not
+pinned here.
+
+Outside this tick the field VM's spawn-prologue pre-run writes the heading
+once at scene load ([NPC initial facing](#npc-initial-facing)), and the player
+is its own case - `FUN_801D01B0` sets `+0x26` straight from the remapped pad
+direction, a snap with no ramp.
+
+### `+0x16` is not the yaw
+
+The actor tick's first block ramps `+0x16`, which reads like a facing slew but
+is not one: its value comes from `FUN_80019278`, which samples the per-scene
+terrain grid at `*_DAT_1F8003EC + 0x4000 / + 0x8000` under the actor's tile.
+It is the **terrain-conform angle** - the tilt that sits an actor on a slope -
+and it is the only per-frame angle ramp that is not opcode-driven:
+
+- skipped entirely when `+0x5C < 0` or `+0x10 & 2`;
+- forced to `-actor[+0x8E]` when `+0x10 & 0x20000000`;
+- **snapped** to the sampled value when `+0x10 & 0x2000` is clear;
+- otherwise **ramped** toward it, clamped to `±6 * _DAT_1F800393` per frame.
+
+The yaw an NPC faces is `+0x26`, always.
+
+### Live corroboration
+
+A cold-boot `town01` sample off the static recompilation reads every field
+actor's `+0x26` per frame. Across the on-field actors every heading is a
+multiple of `0x200` and all eight compass points appear; the only non-compass
+values belong to actors parked on the `(0x7F, 0x7F)` sentinel tile (world
+`16320, 16320`), whose heading no compass op ever wrote.
 
 ## NPC glide speed
 

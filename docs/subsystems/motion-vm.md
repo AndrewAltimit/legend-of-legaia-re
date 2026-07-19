@@ -38,15 +38,80 @@ When the high bit is set, the VM resolves a target actor before applying the bod
 
 ## Opcodes
 
-| byte | retail addr | name             | semantics                                |
-|------|-------------|------------------|------------------------------------------|
-| 0x37 | 80037894    | TranslateY       | accumulate Y axis by per-frame speed     |
-| 0x38 | 80037de0    | RotateToAngle    | yaw rotates toward an absolute angle (16-entry `ANGLE_TABLE`) over a frame budget; shortest-path (`body0 & 0x80`) or forced-direction (`body1 & 0x80`), 12-bit fixed-point |
-| 0x41 | 80037894    | TranslateX       | accumulate X axis by per-frame speed     |
-| 0x43 | 80037f5c    | NoOp             | tick budget consumed, no actor mutation  |
-| 0x47 | 80037ba8    | MoveTowardTarget | step actor XZ toward `(tx, tz)`          |
-| 0x4C | 80037de0    | FaceTarget       | yaw rotates to the target's bearing over a frame budget; sub-modes 0x85 / 0x8E / 0x8F gate which component is rotated (0x8F forces clockwise) |
-|      |             | (default arm)    | terminate with `Done`                    |
+Dispatch is a 22-entry jump table at `0x80010EE0` indexed by `(op & 0x7F) -
+0x37`; opcodes outside `0x37..=0x4C`, and the fifteen table slots pointing at
+`0x80037FEC`, all take the default arm.
+
+| byte | case body  | name             | semantics                                |
+|------|------------|------------------|------------------------------------------|
+| 0x37 | 0x8003789C | TranslateY       | accumulate Y axis by per-frame speed     |
+| 0x38 | 0x800379FC | RotateToAngle    | yaw ramps to a compass-LUT entry over a frame budget; shortest-path (`body0 & 0x80`) or forced-direction (`body1 & 0x80`), 12-bit fixed-point |
+| 0x41 | 0x8003789C | TranslateX       | accumulate X axis by per-frame speed     |
+| 0x43 | 0x80037FF0 | NoOp             | tick budget consumed, no actor mutation  |
+| 0x47 | 0x80037B84 | MoveTowardTarget | step actor XZ toward `(tx, tz)`, snapping facing to the compass each moving frame |
+| 0x4C | 0x80037DE0 | FaceTarget       | yaw ramps to the target's live bearing over a frame budget; sub-mode bytes `0x85` / `0x8E` / `0x8F` are the three retail accepts, and `0x8F` alone forces the decreasing direction instead of the shortest arc |
+|      | 0x80037FEC | (default arm)    | terminate with `Done`                    |
+
+The return value carries the outcome: the yield arm at `0x80037FF0` returns
+`0` (leg still running), the default arm at `0x80037FEC` increments the flag
+first and returns `1`, clearing the actor's HALT bit `0x400` and zeroing the
+`+0x54` progress cursor on the way out.
+
+## How an actor's facing changes
+
+Three opcodes write the actor's 12-bit heading at `+0x26`, under **two
+distinct laws** - the distinction that decides whether a turn is instant or
+animated.
+
+**Snap - the walk-direction-implied facing.** The tail of the `0x47` case
+(`0x80037D4C..0x80037DDC`) runs on every frame the actor moved. It reduces the
+step to its axis signs, maps them to an index in the heading LUT at
+`0x80073F04`, and writes the entry outright:
+
+| index | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|---|
+| direction | -Z | -X -Z | -X | -X +Z | +Z | +X +Z | +X | +X -Z |
+
+Entry `i` is `i * 0x200` in the retail heading space (`0` = -Z), so a walking
+actor's facing is always one of eight compass points and **never an
+in-between angle** - there is no walk-turn interpolation anywhere in retail.
+The ops index the LUT `& 0xF`, but only the first eight slots are direction
+entries; the upper half is unrelated SCUS data.
+
+**Ramp - the two dedicated rotate ops.** `0x38` and `0x4C` interpolate toward
+a target angle over a frame budget carried in their own operands. Both run the
+same arithmetic each tick:
+
+```text
+remaining = budget - cursor                  ; cursor at actor +0x54
+if remaining - speed <= 0:                   ; terminal frame
+    heading = target                         ; exact snap, leg is Done
+else:
+    cursor += speed
+    arc  = (target - heading) mod 0x1000     ; or (heading - target) when decreasing
+    heading += arc * speed / remaining       ; or -=
+```
+
+`speed` is `_DAT_1F800393`, the per-frame scalar. Because the arc is measured
+from the *live* heading every tick, the step is a linear ease that lands
+exactly on the target, and the terminal frame snaps rather than steps so
+rounding can never leave the actor short. The two differ only in what they
+aim at and how they choose a direction:
+
+| | `0x38` RotateToAngle | `0x4C` FaceTarget |
+|---|---|---|
+| target | heading-LUT index `body0 & 0xF` | live bearing to the resolved target actor, `FUN_80019B28(self.z, self.x, tgt.z, tgt.x) + 0x800` |
+| budget | `body1 & 0x7F` (7-bit) | `body1 \| body2 << 8` (16-bit), target id in `body3` |
+| direction | `body1 & 0x80` forces it, unless `body0 & 0x80` opts into shortest-path (decrease when the increasing arc exceeds `0x800`) | always the shortest arc, unless sub-mode `0x8F` forces decreasing |
+
+Because `0x4C` re-reads the bearing each tick, a FaceTarget leg tracks a
+target that is itself moving.
+
+The `+0x800` on the bearing is the convention shift, not a fudge:
+`FUN_80019B28` returns `0` = +Z (quadrant-decomposed against the arctangent
+table at `0x8006F4C8`, indexed by `min << 11 / max`), while the actor heading
+space has `0` = -Z. The engine's `render_26` space matches the bearing's, so
+the port carries the half-turn on the LUT instead.
 
 ## Per-frame speed
 
@@ -55,6 +120,10 @@ When the high bit is set, the VM resolves a target actor before applying the bod
 ## Clean-room port
 
 [`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs) is the clean-room port. All six opcodes are implemented: `0x37` `TranslateY`, `0x38` `RotateToAngle`, `0x41` `TranslateX`, `0x43` `NoOp`, `0x47` `MoveTowardTarget`, `0x4C` `FaceTarget`. Each step returns `StepResult::Yield` (budget consumed, resume next tick) or `StepResult::Done` (terminal op / default arm); there is no fallback path.
+
+The facing law above is `heading_lut_engine` (the eight compass entries, carried in the engine's `0` = +Z space), `walk_facing_index` / `walk_facing_yaw` (the `0x47` sign-to-index table), and `rotate_step` (the shared ramp arithmetic, widened to 32-bit so a large speed cannot overflow the increment). `engine-core`'s `facing_index_to_engine_heading` delegates to the same LUT, so the spawn-prologue facings and the runtime ones cannot drift apart.
+
+Two deliberate departures: LUT indices `8..=15` are treated as no-ops rather than reproducing retail's overread into adjacent SCUS data, and an unrecognised `0x4C` sub-mode terminates the leg instead of yielding forever the way retail's inert arm does.
 
 ## Engine consumers
 
@@ -178,6 +247,24 @@ ambient wander pace; the engine decode is
 `man_field_scripts::placement_wander_step` →
 `World::field_npc_glide_speeds` (default variant first, then the gated
 variants in table order).
+
+### The ambient VM's own facing ops
+
+`FUN_80038158` writes `+0x26` from the same `0x80073F04` compass, under the
+same two laws:
+
+- **Snap.** The directional steps `0x03`/`0x19`/`0x20` and the wander/pad-echo
+  ops set the heading from their operand's LUT index as they move.
+- **Ramp.** Op `0x04` `[04, b1, b2]` (body at `0x800385D0`) rotates to
+  `LUT[b1 & 7]` over `b2 & 0x7F` frames, stepping `arc / frames_remaining`
+  and snapping on the terminal frame - the `FUN_8003774C` ramp with a
+  **unit-per-tick cursor** (`+0x8B`) instead of the `_DAT_1F800393` scalar,
+  and with no shortest-arc choice: `b1 & 0x80` alone picks the direction. Op
+  `0x0D` `[0D, b1, b2, b3]` (body at `0x800386A4`) pre-unwraps the current
+  heading past the `0x1000` boundary in the chosen direction and then hands
+  `&actor+0x26` to the generic 16-bit tween channel for `b2 | b3 << 8`
+  frames, so the turn is a plain linear interpolation that crosses the wrap
+  correctly.
 
 ### Op `0x17` - the per-actor default-move table
 
