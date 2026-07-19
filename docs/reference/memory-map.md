@@ -286,13 +286,40 @@ Full write-ups for the rows above whose detail outgrew a table cell. Linked from
 
 ### `0x80085958` - Item inventory
 
-**Item inventory** array (= SC `+0x1818`), 2-byte stride `(id, count)`; the `Have 99 Items` cheat targets the count bytes (`0x80085958..0x800859E8` = the 72-slot general-item page). Stacks cap at 99. The read/consume/merge accessors (`FUN_80042310`/`_42EE0`/`_42F4C`/`_423E0`/`_43048`) all scan/write within the active window `gp[+0x2D2]..gp[+0x2D4]` and fully bound the slot index on `gp[+0x2D4]`. A sweep of the item-menu overlay (`overlay_menu.bin`, all 129 functions via `dump_menu_inventory_refs.py`) finds **zero** direct array writes: every one of its 17 inventory ops calls these SCUS helpers (passing item ids / helper-returned slots), so the menu has no raw-index sort/swap primitive.
+**Item inventory** array (= SC `+0x1818`), 2-byte stride `(id, count)`; the `Have 99 Items` cheat targets the count bytes over `0x80085958..0x800859E8`, which is that cheat's 72-slot general-item **page**, not an engine bound. Stacks cap at 99. The read/consume/merge accessors (`FUN_80042310`/`_42EE0`/`_42F4C`/`_423E0`/`_43048`) all scan/write within the active window `gp[+0x2D2]..gp[+0x2D4]` and fully bound the slot index on `gp[+0x2D4]`.
+
+**The active window is context state, installed by `FUN_8004313C`** - the sole
+`SCUS_942.54` writer of either halfword (11 callers; `FUN_800423E0` calls it
+before normalizing). It branches on the party-member count at SC`+0x454`
+(`0x80084594`):
+
+| members | window installed |
+|---|---|
+| `0` | none - the previous window stays intact |
+| `1` | story flag 20 (`FUN_8003CE64`) set: `[0, 256)`; clear: the half chosen by `0x80084598` - `[128, 256)` when nonzero, else `[0, 128)` |
+| `>= 2` | `[0, 256)`, no flag test |
+
+The length also lands in `gp[+0x2D6]`, so `gp[+0x2D4]` is only ever `128` or
+`256`. Live cross-check on a mid-game battle state with a three-member party:
+`3` at `0x80084594`, `(start, end, len) = (0, 256, 256)`, 160 contiguous
+occupied slots. A sweep of the item-menu overlay (`overlay_menu.bin`, all 129 functions via `dump_menu_inventory_refs.py`) finds **zero** direct array writes: every one of its 17 inventory ops calls these SCUS helpers (passing item ids / helper-returned slots), so the menu has no raw-index sort/swap primitive.
 
 The **add** helper `FUN_800421D4` is the one exception worth noting: its id store precedes the bound check, so a full-window add writes the item id **one slot past** the window (`0x80085958 + gp[+0x2D4]*2`); only its count store is guarded (see [`functions.md`](functions.md)).
 
-**Aliasing (RESOLVED):** `0x800859E8` = SC+0x18A8 = the first slot of the KEY-ITEM list immediately following the 72-slot consumable window, so the full-bag add's 1-byte OOB lands on the first key-item id - *not* on any debug/control flag (it does not reach the `0x8007Bxxx` debug bytes).
+**Where the OOB lands (CORRECTED).** The target is `0x80085958 + gp[+0x2D4]*2`, so with `FUN_8004313C`'s only two `end` values it is `0x80085A58` (`end = 128`) or `0x80085B58` (`end = 256`). The earlier "`0x800859E8` = SC+0x18A8, the first key-item slot" reading rested on the 72-slot page being the window; it is not.
 
-**Reachability live-confirmed via two independent caller paths:** a probe-instrumented full-bag scene shows `pc=0x800422BC` write hits via (A) casino prize-exchange CROSS (`id=0x9C` → `0x800859E8`) and (B) equip-unequip via START menu (`id=0xD0` → `0x800859EA`). The free-slot scan does not stop at the 72-slot boundary, so successive full-bag adds chain through the key-item area one slot at a time (each add writes to the next non-zero-free slot). A memory-safe RE model of this accessor family (incl. the OOB primitive surfaced as `AddOutcome::OobIdWrite { oob_target, written_id }`) lives in [`legaia_save::retail_inventory`](../../crates/save/src/retail_inventory.rs).
+**The `pc=0x800422BC` probe hits are not OOB evidence.** That store executes on
+*every* successful add, before the guard - the free-slot scan runs once and
+exits either at the first `id == 0` slot (ordinary, in-window) or at
+`i == end` (the primitive). The probe's two hits - casino prize-exchange
+`id=0x9C` at `0x800859E8` and equip-unequip `id=0xD0` at `0x800859EA` - are
+consecutive slots 72 and 73, i.e. exactly the ordinary id store for a bag whose
+first free slot was 72. **Reachability of the primitive itself is therefore
+unproven**: it needs a bag full to `gp[+0x2D4]`, which the probe scene was not.
+
+A memory-safe RE model of this accessor family (incl. the primitive surfaced as
+`AddOutcome::OobIdWrite { oob_target, written_id }`) lives in
+[`legaia_save::retail_inventory`](../../crates/save/src/retail_inventory.rs).
 
 ### `0x8007C018` - Global TMD pointer table
 
