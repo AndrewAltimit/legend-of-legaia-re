@@ -134,6 +134,20 @@ pub struct BootSession {
     /// battle spell catalog, so a randomized / translated disc is honoured;
     /// `None` on disc-free builds.
     pub spell_catalog: Option<legaia_engine_core::spells::SpellCatalog>,
+    /// The real retail proportional dialog font, decoded straight from the
+    /// boot source (`PROT.DAT`'s 4bpp font TIM + the `SCUS_942.54` advance
+    /// table at `0x80073F1C`) - **no mednafen save state required**.
+    ///
+    /// Every native text draw goes through this font's metrics, and retail's
+    /// glyph advance is proportional (`pen_x += widths[c] + 1`, pinned at
+    /// `FUN_80036888` body `0x80036B9C`). The `extracted/font/` artifacts the
+    /// legacy loader wants only exist after a `font-extract` run, which needs
+    /// a save state - so a disc-only boot used to silently fall back to the
+    /// fixed-width placeholder and rendered every string ~35% too wide. This
+    /// field is the disc-derived fallback that keeps a plain
+    /// `--disc <image>` boot on the retail metrics. `None` when the source
+    /// carries neither the font TIM nor the executable.
+    pub dialog_font: Option<legaia_font::Font>,
     /// In-field pause-menu session, when open. Retail runs the pause menu
     /// under the CARD mode pair (`_DAT_8007B83C = 0x17`, `CARD MODE`, in
     /// every menu-open capture); the session-hosted equivalent holds
@@ -251,6 +265,29 @@ fn read_scus(source: &SceneSource<'_>) -> Option<Vec<u8>> {
             .read("SCUS_942.54")
             .ok(),
     }
+}
+
+/// Build the retail proportional dialog font straight from the boot source:
+/// the 4bpp font TIM at [`legaia_font::FONT_TIM_PROT_DAT_OFFSET`] inside
+/// `PROT.DAT` supplies the glyph bitmaps and `SCUS_942.54` the per-character
+/// advance table (`0x80073F1C`).
+///
+/// This is the disc-only path - it needs no `extracted/font/` artifacts and no
+/// save state, so a `--disc <image>` boot renders text on retail metrics
+/// instead of the fixed-width placeholder. Returns `None` (never an error)
+/// when either half is unreachable.
+fn read_dialog_font(
+    index: &legaia_engine_core::scene::ProtIndex,
+    source: &SceneSource<'_>,
+) -> Option<legaia_font::Font> {
+    let tim = index
+        .prot_dat_raw_bytes(
+            legaia_font::FONT_TIM_PROT_DAT_OFFSET,
+            legaia_font::FONT_TIM_LEN,
+        )
+        .ok()?;
+    let scus = read_scus(source)?;
+    legaia_font::Font::from_disc_tim_and_scus(&tim, &scus).ok()
 }
 
 /// Read + decode the sound-effect descriptor bank from a boot source's
@@ -518,6 +555,16 @@ impl BootSession {
         // transitions resolve to the right CDNAME label.
         host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
 
+        // Retail proportional dialog font off the disc (no save state). See
+        // `BootSession::dialog_font`.
+        let dialog_font = read_dialog_font(&host.index, &source);
+        if dialog_font.is_none() {
+            log::warn!(
+                "dialog font not decodable from the boot source; \
+                 text falls back to extracted/ or the placeholder"
+            );
+        }
+
         // Hand the host the retail new-game defaults so a cold `--scene X`
         // boot (no New Game confirm, no save loaded) seeds the template party
         // + starting bag at scene entry instead of leaving a zeroed scaffold
@@ -660,6 +707,7 @@ impl BootSession {
             equip_modifier_table,
             equip_restrictions,
             spell_catalog,
+            dialog_font,
             field_menu: None,
             field_menu_resume: SceneMode::Field,
         })
