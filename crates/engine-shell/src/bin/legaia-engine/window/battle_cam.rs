@@ -32,14 +32,43 @@
 //!   while the strike animation plays; the engine chains the two segments
 //!   back-to-back.)
 //!
-//! The per-character submenu framing is measured for the solo-Vahn Tetsu
-//! fight (seat `(0, -800)`). How it generalizes to the other party seats
-//! is an open thread - only the one framing is pinned, so every member
-//! currently gets the measured close-up.
+//! ## Submenu framing is a formula, not a per-seat table
 //!
-//! REF: FUN_801D829C (the battle camera angle-tween builder these glides
-//! ride in retail; the fixed-point kernel port lives at
-//! `legaia_engine_vm::battle_camera`).
+//! The submenu close-up comes from `FUN_801D5854` case `0` (mode `0`,
+//! called with the active battle-actor slot). Every component is either a
+//! constant or a function of the acting actor - there is no seat table and
+//! no `base + seat * delta` angle law:
+//!
+//! ```text
+//! pitch = 0x20                                  // constant
+//! yaw   = 0x8F0 - actor[+0x46]                  // facing-relative
+//! TR    = (-0x200, HEIGHT[char_id], 0x600)      // x, z constant
+//! focus = -actor[+0x34/+0x36/+0x38]             // negated world position
+//! ```
+//!
+//! Two things follow. First, the measured `yaw 2288` is not a seat magic
+//! number - it is `0x8F0` with Vahn's battle facing of `0` subtracted, so
+//! the framing is a fixed over-the-shoulder offset that generalizes to any
+//! seat once the actor's facing is tracked. Second, the per-seat variation
+//! lives entirely in the **focus** trio (`0x80089118/1C/20`), which is the
+//! negated position of whichever actor is acting: the camera orbits about
+//! the active character. A solo-Vahn trace cannot distinguish that from a
+//! constant, which is why the original measurement read as one fixed pose.
+//!
+//! `TR.z` is the one prescaled slot. `FUN_801D829C` rewrites its argument
+//! as `(z << 8) / 0xA0` - a world distance into GTE projection units
+//! (`0xA0` = 160 = screen half-width, `<< 8` = `H = 256`). The measured
+//! `2457` is `floor(0x600 * 256 / 160)`; the truncation is why the traced
+//! values are not exact divides.
+//!
+//! `TR.y` is the only genuine table: `0x801F4D2C + char_id * 2`, keyed on
+//! **character identity** (`DAT_8007BD10[slot] - 1`, the party-record
+//! selector), not on seat - a per-model height offset. See
+//! [`SUBMENU_HEIGHT`] for what is pinned.
+//!
+//! REF: FUN_801D5854 (the mode-0 submenu framing), FUN_801D829C (the
+//! battle camera angle-tween builder these glides ride in retail; the
+//! fixed-point kernel port lives at `legaia_engine_vm::battle_camera`).
 
 /// Battle-camera framing phase, derived from the live battle state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,12 +103,84 @@ const DIALOGUE_POSE: BattleCamPose = BattleCamPose {
 /// Far Begin/Run framing (pitch / TR; yaw free-orbits).
 const MENU_PITCH: f32 = 32.0;
 const MENU_TR: [f32; 3] = [0.0, 1280.0, 7680.0];
-/// Active-character command close-up (measured Vahn framing; see module doc).
-const SUBMENU_POSE: BattleCamPose = BattleCamPose {
-    pitch: 32.0,
-    yaw: 2288.0,
-    tr: [-512.0, 1152.0, 2457.0],
-};
+/// Submenu close-up constants, from `FUN_801D5854` case `0`.
+const SUBMENU_PITCH: f32 = 32.0; // 0x20
+/// Yaw base: retail computes `0x8F0 - actor_facing`.
+const SUBMENU_YAW_BASE: i32 = 0x8F0; // 2288
+/// Eye-space X, constant across every seat and character.
+const SUBMENU_TR_X: f32 = -512.0; // -0x200
+/// Raw eye-space Z before `FUN_801D829C`'s projection prescale.
+const SUBMENU_TR_Z_RAW: i32 = 0x600; // 1536
+
+/// `FUN_801D829C`'s TR.z prescale: world distance -> GTE projection units.
+/// `0xA0` = 160 = PSX screen half-width; `<< 8` = GTE `H = 256`. The divide
+/// truncates, which is why the traced `0x600` lands on `2457`, not `2457.6`.
+const fn prescale_tr_z(raw: i32) -> f32 {
+    ((raw << 8) / 0xA0) as f32
+}
+
+/// Per-**character** camera height (retail `0x801F4D2C + char_id * 2`),
+/// indexed by character id (`0` = Vahn, `1` = Noa, `2` = Gala, `3` = Terra
+/// - i.e. `DAT_8007BD10[slot] - 1`).
+///
+/// Only Vahn's entry is pinned from the trace (`0x480` = 1152). The other
+/// three are read out of the battle-action overlay at boot when available;
+/// this table is the fallback, and defaults them to Vahn's height so an
+/// unpinned character frames like the measured case instead of jumping.
+/// Reading `0x801F4D2C` out of the overlay closes the gap.
+pub(crate) const SUBMENU_HEIGHT: [f32; 4] = [1152.0, 1152.0, 1152.0, 1152.0];
+
+/// The acting battle actor the submenu framing is built around.
+///
+/// `facing` is retail `actor[+0x46]` (12-bit angle), `char_id` the party
+/// record selector (`DAT_8007BD10[slot] - 1`), `world` the actor position
+/// at `actor[+0x34/+0x36/+0x38]`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct BattleCamActor {
+    pub facing: i32,
+    pub char_id: u8,
+    pub world: [f32; 3],
+}
+
+impl Default for BattleCamActor {
+    /// The measured solo-Vahn case: character `0`, facing `0`, seated at
+    /// the traced `(0, -800)`. Reproduces the originally pinned framing
+    /// exactly, so an un-wired host keeps the measured behaviour.
+    fn default() -> Self {
+        BattleCamActor {
+            facing: 0,
+            char_id: 0,
+            world: [0.0, 0.0, -800.0],
+        }
+    }
+}
+
+impl BattleCamActor {
+    /// Retail's mode-0 submenu framing for this actor (`FUN_801D5854`).
+    pub(crate) fn submenu_pose(self) -> BattleCamPose {
+        BattleCamPose {
+            pitch: SUBMENU_PITCH,
+            yaw: (SUBMENU_YAW_BASE - self.facing).rem_euclid(4096) as f32,
+            tr: [
+                SUBMENU_TR_X,
+                SUBMENU_HEIGHT[(self.char_id as usize).min(SUBMENU_HEIGHT.len() - 1)],
+                prescale_tr_z(SUBMENU_TR_Z_RAW),
+            ],
+        }
+    }
+
+    /// Retail's focus trio (`0x80089118/1C/20`) - the negated actor
+    /// position. This is where the per-seat variation actually lives.
+    ///
+    /// Not yet consumed by the window's battle MVP, which composes only the
+    /// rotation + translation trios; wiring the focus trio through
+    /// `battle_camera_mvp` is what makes a non-solo party frame on the
+    /// acting member instead of the formation centre.
+    #[allow(dead_code)]
+    pub(crate) fn focus(self) -> [f32; 3] {
+        [-self.world[0], -self.world[1], -self.world[2]]
+    }
+}
 /// Over-the-shoulder swing pose the submenu exit passes through
 /// (trace frames 163..173; yaw target is `4096` = `0` unwrapped upward
 /// from `2288`).
@@ -170,6 +271,10 @@ pub(crate) struct BattleCamera {
     last_frames: u64,
     /// Sub-step vsync accumulator (steps fire every 2 frames).
     frame_accum: u64,
+    /// The acting actor the submenu close-up frames. Defaults to the
+    /// measured solo-Vahn case; hosts that track the live battle actor call
+    /// [`BattleCamera::set_actor`] so non-Vahn seats frame correctly.
+    actor: BattleCamActor,
 }
 
 impl BattleCamera {
@@ -177,9 +282,10 @@ impl BattleCamera {
     /// on tutorial dialogue starts in the held close-up; any other battle
     /// starts at the far menu framing).
     pub(crate) fn new(phase: BattleCamPhase, frames_now: u64) -> Self {
+        let actor = BattleCamActor::default();
         let pose = match phase {
             BattleCamPhase::Dialogue => DIALOGUE_POSE,
-            BattleCamPhase::Submenu => SUBMENU_POSE,
+            BattleCamPhase::Submenu => actor.submenu_pose(),
             BattleCamPhase::Menu => BattleCamPose {
                 pitch: MENU_PITCH,
                 yaw: 0.0,
@@ -192,7 +298,16 @@ impl BattleCamera {
             glides: std::collections::VecDeque::new(),
             last_frames: frames_now,
             frame_accum: 0,
+            actor,
         }
+    }
+
+    /// Point the submenu close-up at the acting battle actor. Retail
+    /// rebuilds the framing from the actor record on every submenu open
+    /// (`FUN_801D5854` case `0`), so hosts should call this as the active
+    /// seat changes; an already-armed glide is left alone.
+    pub(crate) fn set_actor(&mut self, actor: BattleCamActor) {
+        self.actor = actor;
     }
 
     /// Current camera pose (12-bit angle units + eye-space TR).
@@ -250,7 +365,7 @@ impl BattleCamera {
             BattleCamPhase::Submenu => {
                 self.glides.push_back(Glide::linear(
                     &from,
-                    SUBMENU_POSE,
+                    self.actor.submenu_pose(),
                     SUBMENU_ENTER_STEPS,
                     true,
                 ));
@@ -340,6 +455,97 @@ impl BattleCamera {
 mod tests {
     use super::*;
 
+    /// The originally measured solo-Vahn framing must fall out of the
+    /// formula, not be hardcoded: `yaw 2288 / TR (-512, 1152, 2457)`.
+    #[test]
+    fn default_actor_reproduces_the_measured_vahn_framing() {
+        let p = BattleCamActor::default().submenu_pose();
+        assert_eq!(p.pitch, 32.0);
+        assert_eq!(p.yaw, 2288.0, "0x8F0 - facing 0");
+        assert_eq!(p.tr, [-512.0, 1152.0, 2457.0]);
+    }
+
+    /// `2288` is `0x8F0` minus the actor's facing - a fixed
+    /// over-the-shoulder offset, so any seat's framing follows its facing.
+    #[test]
+    fn submenu_yaw_tracks_actor_facing() {
+        let at = |facing| {
+            BattleCamActor {
+                facing,
+                ..Default::default()
+            }
+            .submenu_pose()
+            .yaw
+        };
+        assert_eq!(at(0), 2288.0);
+        assert_eq!(at(1024), 1264.0, "quarter turn right");
+        assert_eq!(at(2288), 0.0, "actor facing the base angle");
+        // Wraps into [0, 4096) rather than going negative.
+        assert_eq!(at(3000), (0x8F0 - 3000 + 4096) as f32);
+        assert_eq!(at(4096), 2288.0, "full turn is identity");
+    }
+
+    /// TR.x / TR.z / pitch are seat- and character-invariant constants.
+    #[test]
+    fn submenu_constants_do_not_vary_by_actor() {
+        for facing in [0, 700, 2048, 4095] {
+            for char_id in 0..4u8 {
+                let p = BattleCamActor {
+                    facing,
+                    char_id,
+                    world: [1.0, 2.0, 3.0],
+                }
+                .submenu_pose();
+                assert_eq!(p.pitch, 32.0);
+                assert_eq!(p.tr[0], -512.0);
+                assert_eq!(p.tr[2], 2457.0);
+            }
+        }
+    }
+
+    /// The prescale truncates - `0x600` lands on 2457, not 2458.
+    #[test]
+    fn tr_z_prescale_truncates() {
+        assert_eq!(prescale_tr_z(0x600), 2457.0);
+        // The other traced framings fall out of the same divide.
+        assert_eq!(prescale_tr_z(0x400), 1638.0);
+        assert_eq!(prescale_tr_z(0x800), 3276.0);
+    }
+
+    /// The per-seat half of the framing: focus is the negated actor
+    /// position, so the camera orbits about whoever is acting.
+    #[test]
+    fn focus_is_the_negated_actor_position() {
+        let a = BattleCamActor {
+            facing: 0,
+            char_id: 1,
+            world: [640.0, -128.0, -800.0],
+        };
+        assert_eq!(a.focus(), [-640.0, 128.0, 800.0]);
+        // Two seats at different positions frame differently even though
+        // their pose trios agree - which is why a solo trace saw one pose.
+        let b = BattleCamActor {
+            world: [-640.0, -128.0, -800.0],
+            ..a
+        };
+        assert_eq!(a.submenu_pose().tr, b.submenu_pose().tr);
+        assert_ne!(a.focus(), b.focus());
+    }
+
+    /// Retargeting the camera at a different seat moves the glide target.
+    #[test]
+    fn set_actor_retargets_the_submenu_glide() {
+        let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+        cam.set_actor(BattleCamActor {
+            facing: 1024,
+            char_id: 2,
+            world: [640.0, 0.0, -800.0],
+        });
+        cam.set_phase(BattleCamPhase::Submenu);
+        steps(&mut cam, 2 * SUBMENU_ENTER_STEPS as u64);
+        assert_eq!(cam.pose().yaw.rem_euclid(4096.0), 1264.0);
+    }
+
     fn steps(cam: &mut BattleCamera, n: u64) {
         for _ in 0..n {
             cam.advance_to(cam.last_frames + 2);
@@ -404,12 +610,19 @@ mod tests {
         steps(&mut cam, 18);
         cam.set_phase(BattleCamPhase::Submenu);
         steps(&mut cam, 5);
-        assert_ne!(cam.pose().tr, SUBMENU_POSE.tr, "still mid-glide");
+        assert_ne!(
+            cam.pose().tr,
+            BattleCamActor::default().submenu_pose().tr,
+            "still mid-glide"
+        );
         steps(&mut cam, 1);
         let pose = cam.pose();
-        assert_eq!(pose.pitch, SUBMENU_POSE.pitch);
-        assert_eq!(pose.tr, SUBMENU_POSE.tr);
-        assert_eq!(pose.yaw.rem_euclid(4096.0), SUBMENU_POSE.yaw);
+        assert_eq!(pose.pitch, BattleCamActor::default().submenu_pose().pitch);
+        assert_eq!(pose.tr, BattleCamActor::default().submenu_pose().tr);
+        assert_eq!(
+            pose.yaw.rem_euclid(4096.0),
+            BattleCamActor::default().submenu_pose().yaw
+        );
         // Held static while the submenu stays open.
         steps(&mut cam, 30);
         assert_eq!(cam.pose(), pose);
@@ -455,6 +668,6 @@ mod tests {
         steps(&mut cam, 1);
         assert!(cam.pose().yaw < 3500.0);
         steps(&mut cam, 5);
-        assert_eq!(cam.pose().yaw, SUBMENU_POSE.yaw);
+        assert_eq!(cam.pose().yaw, BattleCamActor::default().submenu_pose().yaw);
     }
 }

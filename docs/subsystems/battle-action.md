@@ -464,6 +464,36 @@ It is a **camera/presentation program driver**, not the animation system: its bo
 
 Note that `FUN_801D5854` for `param_2 == 9 && param_1 == 7` (the only path that calls the special-case) writes pose 9 unconditionally and triggers the run-side animation lookup `FUN_801DB9C4`.
 
+#### Case `0` - the submenu close-up framing
+
+Pose `0` is the per-character command-menu close-up, called as `FUN_801D5854(actor_slot, 0)` from `FUN_801D388C`. Every component is a constant or a function of the acting actor; there is no per-seat table and no `base + seat * delta` angle law:
+
+| Slot | Value | Kind |
+|---|---|---|
+| pitch | `0x20` | constant |
+| yaw | `0x8F0 - actor[+0x46]` | facing-relative |
+| TR.x | `-0x200` | constant |
+| TR.y | `[0x801F4D2C + char_id * 2]` | per-character height |
+| TR.z | `0x600` (prescaled) | constant |
+| focus | `-actor[+0x34/+0x36/+0x38]` | negated world position |
+| duration | `0xC` = 12 frames | 6 camera steps x 2 vsyncs |
+
+The battle actor pointer table is `0x801C9370`, indexed by slot (sibling of the `0x801C9360` arts-gauge table). `char_id = DAT_8007BD10[slot] - 1` is the party-record selector, so TR.y keys on **character identity** (Vahn / Noa / Gala / Terra), not on seat - a per-model height offset. Vahn's entry is `0x480` = 1152.
+
+A yaw of `2288` measured on a solo-Vahn fight is therefore not a seat constant: it is `0x8F0` with Vahn's battle facing of `0` subtracted, and `FUN_801E7824` resetting `actor[+0x46] = 0` is what makes that facing `0`. The framing is a fixed over-the-shoulder offset that generalizes to any seat once facing is tracked. The **per-seat variation lives entirely in the focus trio** (`0x80089118/1C/20`): the camera orbits about whichever actor is acting. With one party member that is indistinguishable from a constant, which is why a solo trace reads as a single fixed pose.
+
+`TR.z` is the one prescaled slot - see [`FUN_801D829C`](#fun_801d829c---camera-angle-tween-prescale) below. Case `3` is the same shape with `0x900 - actor[+0x46]`, a second close-up `0x10` units round from this one.
+
+#### `FUN_801D829C` - camera angle-tween prescale
+
+The angle-tween builder takes three caller buffers of 3 x `i16` (rotation trio `0x8007B790/92/94`, translation trio `0x800840B8/BC/C0`, focus trio `0x80089118/1C/20`) plus a frame count. It rewrites **slot 5 only** - `TR.z` - as `(z << 8) / 0xA0`, converting a world-space camera distance into GTE projection units (`0xA0` = 160 = PSX screen half-width, `<< 8` = GTE `H = 256`).
+
+The divide truncates, which is the fingerprint to look for: traced `TR.z` values are floors of a round raw, not exact divides. `0x400 -> 1638`, `0x600 -> 2457`, `0x800 -> 3276`.
+
+The fourth argument is a **frame count**, not a speed - the stored word is the per-frame increment and the tween lasts that many vsyncs. The submenu call passes `0xC` (12 frames = the 6 measured camera steps at 2 vsyncs each); the action-camera sites pass `1` (instant cut) and `0x30`. Under a speed reading the submenu tween would take 436 steps.
+
+The engine port of the framing rule lives at `crates/engine-shell/src/bin/legaia-engine/window/battle_cam.rs` (`BattleCamActor::submenu_pose`); the fixed-point tween kernel is `legaia_engine_vm::battle_camera`.
+
 ### `FUN_801EED1C` / `FUN_801E7320` - party / monster setup hooks
 
 Called from state `0x0C`:
