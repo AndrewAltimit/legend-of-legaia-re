@@ -86,16 +86,6 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
         note: "same mid-opening-timeline park cohort as rim_elm_zoom_intro",
     },
     KnownDivergence {
-        label: "octam_to_sebucus_worldmap",
-        key: "vis:30",
-        class: "a-reported",
-        note: "engine pre-run slice ends after the seat arm's no-mask 4C-70 wall paint \
-               (engine-vm menu_ctrl nibble-7 sub-0/1 returns Yield); retail FUN_8003A1E4 \
-               breaks only on an executed 0x21 NOP and reaches the `23 2A 70` seat -> \
-               (5440,14400). Flag gate 0x1D4 evaluates identically in both. Field-VM slice \
-               model fix - reported to the stepping lane",
-    },
-    KnownDivergence {
         label: "ending_vignette_fullscreen",
         key: "vis:*",
         class: "b",
