@@ -1389,7 +1389,13 @@ with the record that staged it, and a beat landing mid-tween re-seeds every axis
 All four ease curves are decoded, and the port (`legaia_engine_vm::camera_mover`) reproduces a live
 retail capture on 2471 of 2480 sampled axis values, the rest resolving under the probe's own read
 skew. Falsified with it: the "mode 1 eases the angles but runs the eye trio linear" per-axis curve
-split - retail applies one curve to all ten axes. Full law in
+split - retail applies one curve to all ten axes, so mode 1 is **linear on pitch/yaw too** (measured
+on three independent beats, incl. a 2000+-frame yaw dolly). Frame-exact recomp captures of the whole
+opening chain re-confirm the law per display frame: the env-gated oracle
+`camera_mover_recomp_oracle` (`LEGAIA_RECOMP_TRACE_DIR`) replays the staged snap / mode-1 / mode-2 /
+mode-4 beats bit-exact, and pins the `town01` arrival H glide (`P2[3] +0x00C4`, `apply` 600,
+H 412 → 512) as **mode 4** ease-in-out (`op0 0x13 >> 2`; an earlier mode-2 reading of that beat is
+falsified - disc pin `town01_arrival_camera`). Full law in
 [`cutscene.md`](../subsystems/cutscene.md#in-engine-3d-opening-the-five-scene-new-game-chain).
 
 **Retired: the "field-VM step-parallelism" dead-air thread.** Retail runs no hidden parallelism the

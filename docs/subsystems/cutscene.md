@@ -717,6 +717,9 @@ The cutscene timeline runs on the **same field/event VM** (`FUN_801DE840`) as ev
 
   The port is [`legaia_engine_vm::camera_mover`](../../crates/engine-vm/src/camera_mover.rs) (the integer law verbatim, plus `curve_unit` as the normalized `f32` shape the renderer's [`CutsceneCameraInterp`](../../crates/engine-render/src/window.rs) evaluates). It was validated against a live headless capture of the retail mover: 2471 of 2480 sampled `(axis, start, end, t, d, curve) -> global` tuples reproduce exactly, and every remaining sample resolves under a 1-6 display-frame read skew (the probe's own round-trip lag) except the two frames on which a new beat re-armed the block mid-read.
 
+  A second, frame-exact validation replays whole staged beats against per-display-frame recomp captures of the opening chain (the [recomp differential harness](../tooling/recomp-differential.md)): the env-gated oracle [`camera_mover_recomp_oracle`](../../crates/engine-vm/tests/camera_mover_recomp_oracle.rs) (`LEGAIA_RECOMP_TRACE_DIR`) reproduces the snap, mode-1, mode-2 and mode-4 beats **bit-exact** per frame within the mover's own 2-3-frame tick quantisation.
+  Mode 1 measures linear on pitch/yaw across three independent beats (the per-axis "eased angles" split fails those captures by an order of magnitude), and the `town01` arrival H glide (`P2[3] +0x00C4`, `op0 0x13`, `apply` 600, H 412 → 512) decodes and measures as **mode 4** ease-in-out - the H slot participates in the glide like every other slot. The disc-gated pin `town01_arrival_camera` holds the three arrival beats' decoded `(apply, mode)` staging.
+
   **Held divergence**: `CutsceneCameraInterp` still arms glides *per component* (only re-arming an axis whose target changed) where retail re-seeds all ten and restarts the shared progress on every apply beat. The per-component model was adopted to stop a single-slot follow-up poke cancelling an in-flight dolly; under the retail rule that poke instead re-times the whole glide over the new `apply`. Closing it needs a beat-sequence counter on `CameraState` so the interp can tell a real re-stage from an unchanged frame.
 
   Confirmed against the `new_game_cutscene_intro_a` save state: focus `(8640, 0, 10304)` (mode byte `0x10` = anchor-follow), pitch `180` (≈15.8°), yaw `-2967`, roll `0`, H `792`, `tr_eye = _DAT_800840B8 = (260, 1293, 17145)`; the focus projects to screen `(792·260/17145 + 160, 792·1293/17145 + 120) = (172, 180)`, matching the party position in that frame's framebuffer.
@@ -765,10 +768,11 @@ Two single-shared-VM accommodations, **approximate by design**:
   The shot re-targets each time the timeline executes a new Camera Configure op; rather than
   cutting, `play-window` moves the rendered `(focus, pitch, yaw, H, tr_eye)` toward each new beat
   through [`window::CutsceneCameraInterp`](../../crates/engine-render/src/window.rs), which
-  implements the capture-pinned `FUN_801DB510` mover law above per component: a Configure with
+  implements the capture-pinned `FUN_801DC0BC` mover law above per component: a Configure with
   `apply == 0` snaps its staged components (a hard cut), `apply > 0` glides each re-staged
-  component over exactly `apply` sim ticks with the beat's mode-selected curve (constant-velocity
-  eye/focus/H + ease-out angles under mode 1; all-ease-out under mode 2; in-out under mode 4),
+  component over exactly `apply` sim ticks with the beat's mode-selected curve applied to
+  **every** slot, the angles included (mode 1 linear; mode 2 quadratic ease-out; mode 4 the
+  two-half ease-in-out - the shapes of `camera_mover::curve_unit`),
   arriving exactly and holding. Components an in-flight glide owns are only re-armed when a new
   beat re-stages them, angles glide along the shortest arc, and the interp resets to snap when the
   timeline first installs. A long `apply` behaves as a dolly velocity: `opurud`'s `apply 2300`

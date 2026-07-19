@@ -63,6 +63,12 @@
 //! GTE `H` projection register (`0x8007B6F4`). Camera shake
 //! (`_DAT_8007B630`) is added to the two eye axes *after* the tween and is
 //! not part of the mover law.
+//!
+//! The env-gated oracle `tests/camera_mover_recomp_oracle.rs`
+//! (`LEGAIA_RECOMP_TRACE_DIR`) replays staged opening-chain beats against
+//! per-display-frame recomp captures of the camera globals: snap, mode-1
+//! (linear on every slot, angles included), mode-2 and mode-4 beats all
+//! reproduce bit-exact within the mover's own frame-skip quantisation.
 
 /// Number of camera axes an op-`0x45` beat can stage.
 pub const AXIS_COUNT: usize = 10;
