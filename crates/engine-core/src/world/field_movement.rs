@@ -860,8 +860,7 @@ impl World {
                     // one whose first frame is blocked - keeps it instead of
                     // snapping to the compass origin.
                     yaw: (self.field_npc_headings.get(&slot).copied().unwrap_or(0) & 0x0FFF) as u16,
-                    op_accum: 0,
-                    pc: 0,
+                    ..Default::default()
                 },
                 target: (tx, tz),
                 route_cursor: None,
@@ -909,15 +908,13 @@ impl World {
         let cur_yaw = (self.field_npc_headings.get(&slot).copied().unwrap_or(0) & 0x0FFF) as u16;
         let mut state = vm::motion_vm::MotionState {
             world_x: cx,
-            world_y: 0,
             world_z: cz,
             // Budget of 1 (below) against this speed makes the FaceTarget leg
             // settle onto the exact bearing in a single step - the dialog
             // "snap to face the speaker" the retail engine performs on talk.
             speed: 0x0400,
             yaw: cur_yaw,
-            op_accum: 0,
-            pc: 0,
+            ..Default::default()
         };
         let target = vm::motion_vm::MotionTarget {
             x: tx,
@@ -1004,11 +1001,16 @@ impl World {
             let pos = (motion.state.world_x, motion.state.world_z);
             let cursor = motion.route_cursor;
             // The walker's heading is the one the `0x47` step itself snapped
-            // onto the eight-point compass (retail writes `+0x26` from the
-            // heading LUT every moving frame); an unmoved step leaves the VM's
-            // yaw - and so the previous facing - standing.
-            self.field_npc_headings
-                .insert(slot, (motion.state.yaw & 0x0FFF) as i16);
+            // onto the eight-point compass - written **once per leg** at the
+            // first moving frame and again on a step-direction change, the
+            // retail write pattern (runtime-pinned: a walk leg holds one
+            // heading for its whole run). Gating the copy on the VM's own
+            // write keeps a heading some other writer posed (the interact
+            // face-the-speaker bearing) standing while a leg idles unmoved.
+            if motion.state.yaw_written {
+                self.field_npc_headings
+                    .insert(slot, motion.state.yaw as i16);
+            }
             self.field_npc_positions.insert(slot, pos);
             if result == vm::motion_vm::StepResult::Done {
                 match cursor {
@@ -1204,15 +1206,12 @@ impl World {
             FieldNpcMotion {
                 state: vm::motion_vm::MotionState {
                     world_x: cx,
-                    world_y: 0,
                     // The sprite-actor glide runs in the actor VM's packed
                     // (x, y) plane; the motion VM's XZ pursue step maps
                     // y → z here.
                     world_z: cy,
                     speed: FIELD_NPC_MOTION_SPEED,
-                    yaw: 0,
-                    op_accum: 0,
-                    pc: 0,
+                    ..Default::default()
                 },
                 target: (target.x, target.y),
                 route_cursor: None,

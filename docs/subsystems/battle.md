@@ -135,6 +135,19 @@ TMD walk:
 - These tiles are the **619 `POLY_GT4`** in the live pool. Because the grid is a
   *full* flat plane centred on the actors, it fills the foreground/ground at
   **every** orbit angle - there is no half-dome gap for the ground.
+- **Texture address (constant in the overlay, content per scene).** The grid
+  quads sample a **4bpp texture page at framebuffer `(832, 0)`** (tpage attr
+  `0x000D`) with **CLUT `(0, 479)`** (CBA `0x77C0`), UV window
+  **`(192..255)²`** - scratch literals in `func_0x801d02c0`, confirmed
+  against the GT4 packets in the live prim pool of the Tetsu battle states.
+  The 64² window holds **four 32×32 sub-tiles** (two distinct variants, each
+  duplicated across the row); each cell samples one sub-tile with a
+  per-cell random corner mirror. The *address* is scene-independent - the
+  scene's battle VRAM build is what places that scene's own ground tile
+  there (`town01` = warm sandy pebbles; an earlier engine heuristic that
+  borrowed the dome's nearest "grass vertex" sampled a blue texel region in
+  `town01` and painted the floor sky-blue). Engine mirror:
+  `build_battle_ground_grid` in `play-window`.
   The historical overlay capture filed under the `0896` label (a mislabeled
   slot-A window image; PROT 0896 itself is neither the battle background nor
   an overlay that loads here) shows the same grid renderer + `_DAT_8007b814`
@@ -208,18 +221,29 @@ dome (PROT `88` for `map01`) - the `POLY_GT3` prims (116 in angle-a):
   along its edge) - *not* a ring. The dome's own ground ring (inner radius
   `2889`) is the far grass behind the flat grid.
 
-**Engine status.** `legaia-engine play-window --scene map01 --live-loop` renders
-the overworld battle as a faithful scene: the exact orbit camera (below), the
-PROT 88 dome at raw coords plus a `Ry(180°)` mirror so the mountain ring + sky
-read as a full circle, a flat tiled grass grid under the actors (the
-`func_0x801d02c0` grid, `0x200` cell pitch, sampling the dome's grass tile), a
-sky-blue clear so the open horizon reads as sky, the real **assembled** battle
-party (see below), and animated monsters. The actors draw through the exact
-`tr.z = 7680` camera with the retail **4× actor world scale** composed under
-the rotation (see below) - the battle meshes are small (party 134–284 units,
-monsters 77–368), and the 4× base is what makes them read at retail size
-against the deep translation. Cosmetic gaps remain (the ground-mist `obj1` is
-more prominent than retail; the mountain CLUT skews tan vs grey).
+The half-shape holds per scene, along different axes: `town01`'s stage TMD
+(extraction 7) is a **half arena authored entirely at `X ≥ 0`** (obj0
+`X ∈ [0, 10751]`, `Z ± 10751`), open side facing `-X` - the sea horizon in
+the retail Tetsu close-up. Only **object 0** (the arena shell) is on screen
+in the retail captures; object 1 (a small ground-level ribbon of near
+props / ground mist) never is.
+
+**Engine status.** `legaia-engine play-window` renders stage battles as a
+faithful scene: the phase-scripted camera (below), the stage TMD's object 0
+drawn **once** at raw coords (an earlier build added a `Ry(180°)` mirror
+copy to "complete the circle"; for `town01` that planted a duplicate
+village wall across the open sea side, so the mirror is removed - one
+instance, like retail), the flat tiled ground grid under the actors (the
+`func_0x801d02c0` grid + constant texture address above), a sky-blue clear
+so the open horizon reads as sky, the real **assembled** battle party (see
+below), and animated monsters. Monster actors compose a half-turn so they
+face the party (`-Z` from the `+Z` seats - the retail Tetsu dialogue
+close-up shows the monster's face while the archive meshes rest facing
+`+Z`). The actors draw through the exact `tr.z = 7680` camera with the
+retail **4× actor world scale** composed under the rotation (see below) -
+the battle meshes are small (party 134–284 units, monsters 77–368), and the
+4× base is what makes them read at retail size against the deep
+translation.
 
 ### Battle camera (exact)
 
@@ -236,7 +260,8 @@ screen = H * (R*v + TR) / Ze          R = Rx(pitch) * Ry(yaw)
 
 with `pitch = _DAT_8007b790 = 32` (12-bit angle, `4096` = 360°, ≈2.8° down-tilt),
 `yaw = _DAT_8007b792` (the orbit azimuth; the battle tick `FUN_801D0748`
-decrements it by `DAT_1f800393 * 2` ≈ 4 units/frame while idle), `roll = 0`,
+decrements it by `DAT_1f800393 * 2` ≈ 4 units per camera step while idle -
+one step per 2 vsyncs, i.e. -120 units/s), `roll = 0`,
 `TR = (_DAT_800840b8, _DAT_800840bc, _DAT_800840c0) = (0, 1280, 7680)` (eye-space
 depth 7680 / height 1280), `H = _DAT_8007b6f4 = 256` (written to the GTE
 projection register by `FUN_8003d254`), and the look-at target at the world
@@ -252,6 +277,29 @@ breakpoint, since at frame 0 the globals hold stale field state) it reports
 the battle actors at scale `+0x72 = 0x1000` (1.0, *not* scaled up - the
 on-screen size comes from the mesh, not a scale), and the dome registered at
 `DAT_8007C018[2]`.
+
+**Phase-scripted framings + glides.** The projection above is the fixed part;
+the *pose* (pitch / yaw / TR) is **phase-scripted with glides**, not a single
+orbit. Pinned per-frame from a PCSX-Redux camera trace on the
+`s5_tetsu_battle` anchor (logging the rotation trio `0x8007B790` + the
+translation trio `0x800840B8` every vsync), cross-checked against the
+catalogued mednafen Tetsu battle states; one camera step spans **2 vsyncs**:
+
+| Phase | pitch | yaw | TR | motion |
+|---|---|---|---|---|
+| tutorial dialogue up | 0 | 0 | `(0, 1280, 1638)` | held static |
+| dialogue dismiss | 0→32, `+6`/step | orbit resumes | z 1638→7680, `+864`/step | rate-clamped glide |
+| Begin/Run menu | 32 | free | `(0, 1280, 7680)` | idle orbit `-4` yaw/step |
+| command submenu | 32 | **2288** | `(-512, 1152, 2457)` | 6-step glide in, then held |
+| submenu exit | swings 32→256→32 | eases to 0 | via `(0, 1536, 3276)`, back to menu TR | 6-step swing + 7-step return |
+
+`H = 256` and the identity·16384 base hold through every phase. The submenu
+close-up is measured for the solo-Vahn Tetsu fight; how the framing
+generalizes to the other party seats is an open thread. Engine mirror:
+`window/battle_cam.rs` in `play-window` (phase derived from the live dialogue
+/ command-session state, stepped on the retail display-frame clock), with the
+glide-table kernel port at `legaia_engine_vm::battle_camera`
+(`FUN_801D829C`).
 
 **Actor pass: the 4× world-scale base matrix.** The battle base matrix
 `DAT_8007BF10` holds `16384 * I` (GTE `4096` = 1.0 → a **4.0× uniform

@@ -27,7 +27,8 @@ use std::path::PathBuf;
         Exploring:    list-scenes, info, record, replay\n  \
         Diagnostics (engine development; not needed to play):\n    \
         scene / script analysis:  play, clut-trace, man-scripts\n    \
-        parity oracles:           vram-oracle, mode-trace, audio-trace, pcm-trace, gte-replay, scenarios\n    \
+        parity oracles:           vram-oracle, mode-trace, audio-trace, pcm-trace, gte-replay, scenarios,\n                              \
+        sim-trace\n    \
         synthetic state drivers:  battle, inventory, equip, title, save-select, encounter,\n                              \
         target-pick, chain-editor, seru-capture"
 )]
@@ -370,6 +371,39 @@ pub(crate) enum Cmd {
         /// valid in scenario mode.
         #[arg(long, default_value_t = false)]
         strict: bool,
+    },
+    /// Recomp-differential sim trace. Boots a `BootSession` on the scene,
+    /// ticks it `--frames` times, and emits the canonical frame-tagged
+    /// state-trace JSONL (camera pose, player, per-actor positions +
+    /// headings) in RETAIL units (PSX 12-bit angles, retail world units).
+    /// The recomp side of the pair is captured by
+    /// `scripts/recomp/trace_capture.py`; align + compare the two with
+    /// `scripts/recomp/trace_diff.py`. See
+    /// `docs/tooling/recomp-differential.md`.
+    #[command(display_order = 39)]
+    SimTrace {
+        /// CDNAME scene name (e.g. `town01`).
+        #[arg(long)]
+        scene: String,
+        /// Extracted-root directory containing `PROT.DAT` + `CDNAME.TXT`.
+        #[arg(long, default_value = "extracted")]
+        extracted_root: PathBuf,
+        /// Alternative source: read PROT.DAT + CDNAME.TXT directly from
+        /// a `.bin` disc image.
+        #[arg(long)]
+        disc: Option<PathBuf>,
+        /// Sim frames to tick. The trace has `frames + 1` records (one for
+        /// boot state, one per tick).
+        #[arg(long, default_value_t = 100)]
+        frames: u64,
+        /// Skip `enter_field_live`: sample the plain `load_scene` boot
+        /// state instead of dropping into a live field scene (field VM +
+        /// locomotion + camera events armed) first.
+        #[arg(long, default_value_t = false)]
+        no_field_live: bool,
+        /// Where to write the engine JSONL trace. Default `-` = stdout.
+        #[arg(long, default_value = "-")]
+        out: PathBuf,
     },
     /// Audio-trace parity oracle. Boots a `BootSession` on the
     /// resolved scene, runs a private headless SPU + sequencer in

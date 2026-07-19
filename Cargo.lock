@@ -1375,6 +1375,7 @@ dependencies = [
  "legaia-asset",
  "legaia-prot",
  "libc",
+ "serde_json",
 ]
 
 [[package]]

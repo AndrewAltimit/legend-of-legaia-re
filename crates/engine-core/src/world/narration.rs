@@ -954,6 +954,39 @@ impl World {
             }
             tl.pc = walk.resume_pc;
         }
+        // Cross-context rotate park (`B8 <id> <dir|flags> <budget|dir>` = op
+        // 0x38 with a non-zero budget against an NPC channel): retail parks
+        // the record and the `FUN_8003774C` 0x38 RotateToAngle leg ramps the
+        // target actor's `+0x26` linearly over the operand budget - per-op
+        // turn rates (`arc / budget`), raw pre-unwrap mid-ramp headings, and
+        // an exact terminal snap onto the compass entry. Step the parked leg
+        // once per tick, mirror the raw yaw into the render-heading map, and
+        // resume the record past the yield when the ramp snaps.
+        // REF: FUN_8003774C (case 0x38 interpreted in place)
+        if let Some(mut fw) = tl.facing_wait.take() {
+            fw.frames += 1;
+            let r = vm::motion_vm::step(
+                &mut fw.state,
+                vm::motion_vm::MotionTarget::default(),
+                &fw.program,
+            );
+            if fw.state.yaw_written {
+                // Raw write-back (`yaw` may sit outside 0..0xFFF mid-ramp,
+                // exactly as retail's `+0x26` does); render consumers mask.
+                self.field_npc_headings.insert(fw.slot, fw.state.yaw as i16);
+            }
+            if r != vm::motion_vm::StepResult::Done && fw.frames < WALK_PARK_TIMEOUT {
+                tl.facing_wait = Some(fw);
+                self.field_channels = channels;
+                self.in_cutscene_timeline = false;
+                self.in_spawned_record_slice = false;
+                // Like the walk park: a rotate park is real playout progress,
+                // not a hang - keep it off the anti-hang frame cap.
+                tl.frames = tl.frames.saturating_sub(1);
+                return false;
+            }
+            tl.pc = fw.resume_pc;
+        }
         {
             let mut host = FieldHostImpl { world: self };
             let mut budget = CUTSCENE_TIMELINE_STEP_BUDGET;
@@ -1184,6 +1217,66 @@ impl World {
                         });
                         break;
                     }
+                }
+                // Cross-context facing op (`B8 <id> <op0> <op1>` = op 0x38
+                // CAM_CFG against a spawned NPC channel).
+                //
+                // - Simple path (`op1 & 0x7F == 0`): retail copies the
+                //   compass-LUT entry `0x80073F04 + (op0 & 0xF) * 2` straight
+                //   into the target's `+0x26` - an instant scripted pose.
+                // - Budget path: the halt-acquire arm parks the record and
+                //   the op bytes run in place as the walk kernel's `0x38`
+                //   RotateToAngle leg - a linear ramp at the op's own
+                //   `arc / budget` rate with an exact terminal compass snap
+                //   (the town01 Mei dinner beat authors seven of these at
+                //   budgets 0x12..0x20). Arm the rotate park; the pre-step
+                //   gate plays it out and resumes past the yield.
+                // REF: FUN_801DE840 (case 0x38), FUN_8003774C (case 0x38)
+                if opcode_byte & 0x7F == 0x38
+                    && opcode_byte & 0x80 != 0
+                    && let (Some(&op0), Some(&op1)) =
+                        (tl.bytecode.get(pc + 2), tl.bytecode.get(pc + 3))
+                    && let Some((_, ci)) = target
+                    && !channels[ci].object_bind
+                {
+                    let slot = channels[ci].placement_index as u8;
+                    if pc < tl.visited.len() {
+                        tl.visited[pc] = true;
+                    }
+                    if op1 & 0x7F == 0 {
+                        if let Some(h) =
+                            crate::man_field_scripts::facing_index_to_engine_heading(op0 & 0xF)
+                        {
+                            host.world.field_npc_headings.insert(slot, h);
+                        }
+                        tl.pc = pc + 4;
+                        continue;
+                    }
+                    // Seed from the NPC's live heading (retail reads the
+                    // live `+0x26`); a never-posed NPC stands at the retail
+                    // spawn default 0 = engine 0x800.
+                    let cur = host
+                        .world
+                        .field_npc_headings
+                        .get(&slot)
+                        .copied()
+                        .unwrap_or(0x800);
+                    tl.facing_wait = Some(crate::cutscene_timeline::TimelineFacing {
+                        slot,
+                        state: vm::motion_vm::MotionState {
+                            yaw: (cur as u16) & 0x0FFF,
+                            // The timeline ticks once per retail display
+                            // frame, so speed 1 maps the operand budget 1:1
+                            // to parked ticks (retail consumes the same
+                            // budget at `_DAT_1F800393` per actor tick).
+                            speed: 1,
+                            ..Default::default()
+                        },
+                        program: [0x38, op0, op1],
+                        resume_pc: pc + 4,
+                        frames: 0,
+                    });
+                    break;
                 }
                 if vm::field::peek_extended(&tl.bytecode, pc) == Some(0xF8) {
                     let op = opcode_byte & 0x7F;
@@ -1862,14 +1955,18 @@ impl World {
                     continue;
                 }
                 // Surface a facing from the scripted move so a never-walked NPC
-                // its placement script repositions no longer renders unrotated:
-                // the same 12-bit atan2 heading (`0` = Z+) the patroller writes
-                // from its own step deltas (see `tick_field_npc_motions`).
-                let (dx, dz) = (nx as f32 - pre.0 as f32, nz as f32 - pre.1 as f32);
-                if dx != 0.0 || dz != 0.0 {
-                    let heading = ((dx.atan2(dz) / std::f32::consts::TAU * 4096.0).round() as i32
-                        & 0x0FFF) as i16;
-                    self.field_npc_headings.insert(slot, heading);
+                // its placement script repositions no longer renders unrotated.
+                // Deliberate stand-in (retail's `0x23` teleport writes no
+                // heading at all), quantised onto the walk law's eight-point
+                // compass from the step's axis signs - every retail
+                // walk-driven facing is a compass entry (`walk_facing_yaw`,
+                // the `0x47` tail's LUT write), never an arbitrary bearing.
+                let (dx, dz) = (
+                    i32::from(nx) - i32::from(pre.0),
+                    i32::from(nz) - i32::from(pre.1),
+                );
+                if let Some(yaw) = vm::motion_vm::walk_facing_yaw(dx, dz) {
+                    self.field_npc_headings.insert(slot, yaw as i16);
                 }
             }
             self.field_npc_positions
@@ -2448,6 +2545,96 @@ mod tests {
             resumed,
             "the park times out and the timeline steps past the flag-test"
         );
+    }
+
+    /// Build a timeline whose record turns NPC channel 5 with a cross-context
+    /// op-0x38 facing op (`B8 05 <op0> <op1>`), then WAIT_FRAMES so the
+    /// timeline stays installed. The NPC starts posed at engine heading
+    /// `start` (slot 5 in the render-heading map).
+    fn timeline_with_npc_facing_op(op0: u8, op1: u8, start: i16) -> World {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        use crate::field_channels::FieldChannel;
+        use legaia_engine_vm::field::FieldCtx;
+
+        let mut w = World::new();
+        let bc = vec![0xB8, 0x05, op0, op1, 0x4A, 0xFF, 0x7F];
+        w.cutscene_timeline = Some(CutsceneTimeline::new(bc, 0));
+        w.field_channels = vec![FieldChannel {
+            placement_index: 5,
+            ctx: FieldCtx {
+                script_id: 5,
+                ..FieldCtx::default()
+            },
+            record_offset: 0,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        }];
+        w.field_npc_positions.insert(5, (1000, 1000));
+        w.field_npc_headings.insert(5, start);
+        w
+    }
+
+    /// A budgeted cross-context `0x38` against an NPC channel plays out as
+    /// the retail rotate leg: a **linear ramp at the op's own `arc / budget`
+    /// rate**, holding raw pre-unwrap headings across the `0x1000` wrap, and
+    /// snapping exactly onto the compass entry on the terminal frame - one
+    /// parked tick per budget frame (the Mei dinner beat's `B8 46 <dir>
+    /// <budget>` turns, runtime-pinned frame-exact off the static recomp).
+    #[test]
+    fn cutscene_timeline_npc_facing_ramp_plays_out_linearly() {
+        // LUT index 6 (engine 0x400) over budget 0x12 = 18 frames, from
+        // engine 0xE00: arc = 0x600, increasing, crossing the wrap.
+        let mut w = timeline_with_npc_facing_op(0x06, 0x12, 0xE00);
+        w.step_cutscene_timeline(); // reaches the op, arms the rotate park
+        assert!(
+            w.cutscene_timeline
+                .as_ref()
+                .is_some_and(|tl| tl.facing_wait.is_some()),
+            "budgeted facing op parks the timeline on the rotate leg"
+        );
+        let mut headings = Vec::new();
+        for _ in 0..18 {
+            assert!(
+                w.cutscene_timeline
+                    .as_ref()
+                    .is_some_and(|tl| tl.facing_wait.is_some()),
+                "the park holds for the op's whole frame budget"
+            );
+            w.step_cutscene_timeline();
+            headings.push(*w.field_npc_headings.get(&5).expect("heading written"));
+        }
+        // Linear at arc/budget = 0x600/18 = 85 units/frame (floor-divide
+        // pattern 85 85 85 86 ... as the live arc feeds back), raw values
+        // held past 0xFFF mid-ramp, exact compass snap on the last frame.
+        assert_eq!(headings.first(), Some(&0x0E55), "first tick steps +85");
+        assert!(
+            headings.iter().any(|&h| !(0..=0xFFF).contains(&(h as i32))),
+            "mid-ramp headings hold the raw pre-unwrap value across the wrap"
+        );
+        assert_eq!(
+            headings.last(),
+            Some(&0x0400),
+            "terminal frame snaps exactly onto the compass entry"
+        );
+        let tl = w.cutscene_timeline.as_ref().expect("timeline installed");
+        assert!(tl.facing_wait.is_none(), "ramp done: park released");
+        assert_eq!(tl.pc, 4, "record resumed past the 4-byte yield op");
+    }
+
+    /// The simple path (`op1 & 0x7F == 0`) is retail's instant compass write
+    /// into the target's `+0x26` - no park, no ramp.
+    #[test]
+    fn cutscene_timeline_npc_facing_simple_path_snaps_instantly() {
+        let mut w = timeline_with_npc_facing_op(0x02, 0x00, 0x000);
+        w.step_cutscene_timeline();
+        assert_eq!(
+            w.field_npc_headings.get(&5),
+            Some(&0x0C00),
+            "LUT index 2 (-X) written outright"
+        );
+        let tl = w.cutscene_timeline.as_ref().expect("timeline installed");
+        assert!(tl.facing_wait.is_none(), "no park on the simple path");
     }
 
     /// Build a timeline whose record drives the **player-anchor channel**

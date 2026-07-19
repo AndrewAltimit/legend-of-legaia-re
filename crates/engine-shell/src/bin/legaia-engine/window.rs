@@ -568,9 +568,9 @@ struct PlayWindowApp {
     /// scene has no stage or it failed to load.
     battle_stage_mesh: Option<usize>,
     /// Mesh index of the flat tiled ground grid drawn under the battle actors
-    /// (retail's `func_0x801d02c0` grass grid). Reuses the stage dome's grass
-    /// texel so it samples real grass from the battle VRAM. `None` outside a
-    /// stage-dome battle or when the dome has no usable ground texel.
+    /// (retail's `func_0x801d02c0` grid), textured from the constant retail
+    /// page/CLUT/UV-window address where the scene battle VRAM places its own
+    /// ground tile. `None` outside a stage-dome battle.
     battle_ground_mesh: Option<usize>,
     scene_aabb: ([f32; 3], [f32; 3]),
     /// Current held-button bitmask (PSX pad encoding). Updated per key event.
@@ -703,6 +703,10 @@ struct PlayWindowApp {
     /// Trade screens can label each offer ("Gimard (Vahn) -> Orb"). `None` on
     /// disc-free runs or before the first lookup.
     seru_names: Option<legaia_asset::spell_names::SpellNameTable>,
+    /// The phase-scripted retail battle camera (see [`battle_cam`]): `Some`
+    /// while a stage-dome battle is on screen, stepped once per 2 retail
+    /// display frames by `tick_battle_camera`, dropped on battle exit.
+    battle_camera: Option<battle_cam::BattleCamera>,
 }
 
 /// Boot-UI state machine. Drives the pre-scene UI when `--boot-ui` is
@@ -747,6 +751,8 @@ enum BootUiState {
 mod assets;
 #[path = "window/battle.rs"]
 mod battle;
+#[path = "window/battle_cam.rs"]
+mod battle_cam;
 #[path = "window/boot_cutscene.rs"]
 mod boot_cutscene;
 #[path = "window/camera.rs"]

@@ -24,3 +24,8 @@ legaia-prot = { path = "../prot" }
 # quietly instead of panicking on a broken pipe.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[dev-dependencies]
+# The camera-mover recomp oracle parses the external frame-tagged JSONL
+# captures (env-gated via LEGAIA_RECOMP_TRACE_DIR; never committed).
+serde_json.workspace = true

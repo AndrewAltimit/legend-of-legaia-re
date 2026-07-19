@@ -475,6 +475,40 @@ fn resolve_mode_trace_inputs(args: &ModeTraceArgs<'_>) -> Result<ResolvedModeTra
     }
 }
 
+/// Recomp-differential sim trace: emit the canonical frame-tagged
+/// state-trace JSONL (`legaia_engine_shell::sim_trace`) for `frames` sim
+/// ticks. The recomp-side pair is `scripts/recomp/trace_capture.py`; diff
+/// with `scripts/recomp/trace_diff.py`.
+pub(crate) fn cmd_sim_trace(
+    scene: &str,
+    extracted_root: &Path,
+    disc: Option<&Path>,
+    frames: u64,
+    field_live: bool,
+    out: &Path,
+) -> Result<()> {
+    use legaia_engine_shell::sim_trace::{build_sim_trace, sim_trace_to_jsonl};
+    let trace = build_sim_trace(scene, extracted_root, disc, frames, field_live)?;
+    let jsonl = sim_trace_to_jsonl(&trace);
+    let out_label = if out.as_os_str() == "-" {
+        print!("{jsonl}");
+        "<stdout>".to_string()
+    } else {
+        std::fs::write(out, jsonl.as_bytes())
+            .with_context(|| format!("write sim-trace JSONL to {}", out.display()))?;
+        out.display().to_string()
+    };
+    eprintln!(
+        "sim-trace: scene '{}' frames={} trace_len={} field_live={} -> {}",
+        scene,
+        frames,
+        trace.len(),
+        field_live,
+        out_label
+    );
+    Ok(())
+}
+
 pub(crate) fn cmd_mode_trace(args: ModeTraceArgs<'_>) -> Result<()> {
     if args.strict && args.scenario.is_none() {
         anyhow::bail!(

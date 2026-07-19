@@ -286,6 +286,39 @@ pub struct CutsceneTimeline {
     /// mirrors that with a motion-VM glide on the target and this park.
     // REF: FUN_8003774C (case 0x47: walk-to-tile interpreted in place)
     pub walk_wait: Option<TimelineWalk>,
+    /// `Some` while the timeline is PARKED on a cross-context **rotate
+    /// yield** (`B8 <id> <dir|flags> <budget|dir>` = op `0x38` CAM_CFG with a
+    /// non-zero budget against an NPC channel). Retail's halt-acquire arm
+    /// parks the record and the yield-op bytes run in place as the
+    /// `FUN_8003774C` `0x38` RotateToAngle leg on the target actor: a linear
+    /// per-frame ramp (`arc * speed / frames_remaining`, raw pre-unwrap
+    /// write-back) onto the compass-LUT entry over the operand's own frame
+    /// budget, terminal frame snapping exactly. This is where a story beat's
+    /// per-op turn rates come from - the budget is op data, not an engine
+    /// constant. The engine mirrors it with a parked motion-VM rotate leg
+    /// writing the NPC's render heading each frame.
+    // REF: FUN_8003774C (case 0x38: rotate-to-angle interpreted in place)
+    pub facing_wait: Option<TimelineFacing>,
+}
+
+/// State of a parked cross-context rotate yield (see
+/// [`CutsceneTimeline::facing_wait`]): one motion-VM `0x38` RotateToAngle leg
+/// stepped once per timeline tick against the target NPC's render heading.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimelineFacing {
+    /// Placement slot of the turning NPC.
+    pub slot: u8,
+    /// The parked rotate leg: yaw seeded from the NPC's current heading,
+    /// speed 1 (the engine ticks the timeline once per retail display frame,
+    /// so the operand budget maps 1:1 to parked ticks).
+    pub state: legaia_engine_vm::motion_vm::MotionState,
+    /// The yield-op bytes re-encoded for the in-place kernel:
+    /// `[0x38, dir|flags, budget|dir]`.
+    pub program: [u8; 3],
+    /// PC to resume at once the ramp snaps (`yield pc + 4`).
+    pub resume_pc: usize,
+    /// Ticks parked so far, bounded by the walk park timeout.
+    pub frames: u32,
 }
 
 /// State of a parked cross-context walk-to-tile yield (see
@@ -338,6 +371,7 @@ impl CutsceneTimeline {
             restore_hidden_on_complete: false,
             camera_loop_broken: Vec::new(),
             walk_wait: None,
+            facing_wait: None,
         }
     }
 

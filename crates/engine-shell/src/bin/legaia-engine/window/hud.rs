@@ -632,7 +632,15 @@ impl PlayWindowApp {
             // Player-driven submenus (opened from the Arts / Magic / Item
             // commands). Each parks both the SM and the command session while
             // open, so it takes priority over the command menu.
-            if let Some(arts) = &bw.battle_arts_menu {
+            //
+            // While an in-battle dialogue box owns the frame (the tutorial
+            // text; the battle tick parks the SM and the camera holds the
+            // dialogue close-up), the menus are hidden - retail shows no
+            // command chrome under the tutorial box.
+            let dialogue_up = bw.current_dialog.is_some() || bw.inline_dialogue.is_some();
+            if dialogue_up {
+                // Dialogue box up: no menu chrome.
+            } else if let Some(arts) = &bw.battle_arts_menu {
                 use legaia_engine_core::battle_arts::ArtsPhase;
                 let menu_x = 8i32;
                 let mut my = 210i32;

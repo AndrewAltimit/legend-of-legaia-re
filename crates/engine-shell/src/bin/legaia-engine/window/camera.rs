@@ -168,14 +168,48 @@ impl PlayWindowApp {
         orbit_camera_mvp(lo, hi, 0.12, 0.35, self.win.elapsed_secs(), aspect)
     }
 
-    /// Battle orbit yaw in radians, at the **retail rate**. The battle tick
-    /// (`FUN_801D0748`) decrements the camera yaw `_DAT_8007b792` by
-    /// `DAT_1f800393 * 2` (≈2) per frame while idle: ≈ -4 units/frame, and a
-    /// PSX turn is 4096 units, so the idle orbit is `4*60/4096` turn/s ≈ 0.059
-    /// turn/s. Decreasing yaw = retail's spin sense.
-    pub(super) fn battle_orbit_yaw_rad(&self) -> f32 {
-        const RETAIL_UNITS_PER_SEC: f32 = 4.0 * 60.0; // -4 u/frame at 60 fps
-        -self.win.elapsed_secs() * RETAIL_UNITS_PER_SEC / 4096.0 * std::f32::consts::TAU
+    /// Advance the phase-scripted battle camera for this frame. Creates the
+    /// state on stage-dome battle entry (snapped to the entry phase's
+    /// framing), derives the retail phase from the live battle state -
+    /// **Dialogue** while an in-battle box is up, **Submenu** while a
+    /// command / arts / spell / item menu owns the pad, **Menu** otherwise -
+    /// and steps the pose on the retail display-frame clock
+    /// (`World::field_frames`; one camera step per 2 vsyncs). Dropped
+    /// outside stage-dome battles so the next battle re-snaps.
+    /// See [`super::battle_cam`] for the measured phase law + provenance.
+    pub(super) fn tick_battle_camera(&mut self) {
+        use super::battle_cam::{BattleCamPhase, BattleCamera};
+        let world = &self.session.host.world;
+        if world.mode != SceneMode::Battle || self.battle_stage_mesh.is_none() {
+            self.battle_camera = None;
+            return;
+        }
+        let phase = if world.current_dialog.is_some() || world.inline_dialogue.is_some() {
+            BattleCamPhase::Dialogue
+        } else if world.battle_command.is_some()
+            || world.battle_arts_menu.is_some()
+            || world.battle_spell_menu.is_some()
+            || world.battle_item_menu.is_some()
+        {
+            BattleCamPhase::Submenu
+        } else {
+            BattleCamPhase::Menu
+        };
+        let frames = world.field_frames;
+        // Entry snap: a battle that opens on dialogue starts in the held
+        // close-up; anything else starts at the far menu framing (retail's
+        // loading pose resolves there) and glides out to whichever menu
+        // phase is already live.
+        let entry = if phase == BattleCamPhase::Dialogue {
+            BattleCamPhase::Dialogue
+        } else {
+            BattleCamPhase::Menu
+        };
+        let cam = self
+            .battle_camera
+            .get_or_insert_with(|| BattleCamera::new(entry, frames));
+        cam.set_phase(phase);
+        cam.advance_to(frames);
     }
 
     /// The **exact** retail overworld-battle camera (game mode `0x15`), pinned
@@ -266,13 +300,15 @@ impl PlayWindowApp {
         proj * t * r * Mat4::from_translation(-target) * f
     }
 
-    /// The single battle camera, used for **everything** in a stage-dome battle
-    /// The RETAIL battle camera (dome + ground-grid pass): pinned from the
-    /// four `overworld_battle_bg_angle_{a..d}` savestates' RAM + the earlier
-    /// framebuffer verification. Rotation trio `0x8007B790` = `(32, yaw, 0)`,
-    /// GTE `H = 256`, translation trio `0x800840B8` = `(0, 1280, 7680)`,
-    /// identity base (`DAT_80010B84`) - the exact `retail_battle_mvp`
-    /// projection, verified to 0.0002 px against the savestate framebuffer.
+    /// The single battle camera, used for **everything** in a stage-dome
+    /// battle: the RETAIL phase-scripted camera. Rotation trio `0x8007B790`
+    /// = `(pitch, yaw, 0)`, GTE `H = 256`, translation trio `0x800840B8` -
+    /// all four driven per battle phase by [`super::battle_cam`] (dialogue
+    /// close-up / far menu framing with the idle orbit / per-character
+    /// submenu close-up, with the measured glides between), stepped by
+    /// [`Self::tick_battle_camera`]. The static-projection composition was
+    /// verified to 0.0002 px against the savestate framebuffer
+    /// (`retail_battle_mvp_matches_psx_projection`).
     ///
     /// The ACTORS ride the same rotation but with the **4.0x uniform world
     /// scale** base matrix `0x8007BF10` (`16384 * I`; GTE `4096` = 1.0)
@@ -284,11 +320,14 @@ impl PlayWindowApp {
     /// draws only, superseding the old DEPTH=1500 single-camera compromise
     /// (and its "separate close actor matrix" reading).
     pub(super) fn battle_dome_camera_mvp(&self, aspect: f32) -> Mat4 {
-        Self::battle_mvp_with_tr(
-            self.battle_orbit_yaw_rad(),
-            Vec3::new(0.0, 1280.0, 7680.0),
-            aspect,
-        )
+        let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
+        let pose = self.battle_camera.as_ref().map(|c| c.pose());
+        let (pitch, yaw, tr) = match pose {
+            Some(p) => (p.pitch, p.yaw, Vec3::from(p.tr)),
+            // First frame before the tick armed the state: the far framing.
+            None => (32.0, 0.0, Vec3::new(0.0, 1280.0, 7680.0)),
+        };
+        Self::psx_camera_mvp(to_rad(pitch), to_rad(yaw), 256.0, tr, Vec3::ZERO, aspect)
     }
 
     /// Camera parameters for the cutscene shot, decoded from the cutscene
@@ -427,7 +466,18 @@ impl PlayWindowApp {
         // correct elevation. Yaw is unaffected either way (a Y negation
         // leaves X/Z, and thus the heading, untouched).
         if self.session.host.world.mode == SceneMode::Battle {
-            Mat4::from_translation(pos) * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
+            // Monster battle actors face the party (-Z from the +Z seats):
+            // the retail Tetsu dialogue close-up (camera at yaw 0 on the
+            // party side, looking +Z) shows the monster's FACE, while the
+            // archive meshes rest facing +Z - so the enemy side carries the
+            // half-turn. Party actors keep their rest orientation (already
+            // toward the enemy seats).
+            let rot = if a.battle_monster_id.is_some() {
+                Mat4::from_rotation_y(std::f32::consts::PI)
+            } else {
+                Mat4::IDENTITY
+            };
+            Mat4::from_translation(pos) * rot * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
         } else {
             let yaw = std::f32::consts::PI
                 + (a.move_state.render_26 as f32) / 4096.0 * std::f32::consts::TAU;

@@ -773,7 +773,7 @@ The heading space itself is pinned from the locomotion's pad→facing writes (`F
 
 Town prologues route the facing leg through a story-flag `0x7x`-TEST branch chain (jump when the flag is **set**), so the fall-through branch - the first leg in linear record order - is the fresh-game state.
 
-The engine decodes that leg statically per placement ([`man_field_scripts::placement_initial_facing`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), skipping cross-context and park-sentinel legs), converts through [`facing_index_to_engine_heading`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), and seeds `World::field_npc_headings` at scene entry (`World::seed_field_npc_facings`) - a later walk overwrites the slot exactly as retail's per-step facing writes overwrite `+0x26`. Semantic pin: town01's side-by-side villager pair at tiles `(29,22)`/`(30,22)` derives LUT indices 6 (X+) and 2 (X-) - they face each other; disc-gated coverage in `field_npc_initial_facing_disc.rs`.
+The engine decodes that leg statically per placement ([`man_field_scripts::placement_initial_facing`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), skipping cross-context and park-sentinel legs), converts through [`facing_index_to_engine_heading`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), and seeds `World::field_npc_headings` at scene entry (`World::seed_field_npc_facings`) - a later walk overwrites the slot exactly as retail's walk-leg facing writes overwrite `+0x26`. Semantic pin: town01's side-by-side villager pair at tiles `(29,22)`/`(30,22)` derives LUT indices 6 (X+) and 2 (X-) - they face each other; disc-gated coverage in `field_npc_initial_facing_disc.rs`.
 
 Note the facing pin also fixes what `0x4C 0x51` operand byte +3 **is**: bit 7 toggles the special-model flag, the low nibble is the facing-LUT index - and the raw case-5-sub-1 asm reads the byte **nowhere else**, so the op carries no speed operand (byte +4 is the move-anim id written to `+0x5C`; the trailing `FUN_801D81E0` is an active-list relink via `FUN_800204A4`/`FUN_80020454`, not a bytecode builder). The old glide-speed reading of the same byte is a misattribution of the walk-kernel op `0x47`'s own operand encoding - see the reconcile note under [NPC glide speed](#npc-glide-speed).
 
@@ -791,21 +791,37 @@ Both, and which one you get is a property of the bytecode, not of the
 situation:
 
 - **Walking snaps.** Every walk kernel writes the heading from the eight-entry
-  compass LUT at `0x80073F04` (`entry[i] = i * 0x200`, `0` = -Z) as it steps -
-  the `0x47` tail in `FUN_8003774C` and the directional / wander steps in
+  compass LUT at `0x80073F04` (`entry[i] = i * 0x200`, `0` = -Z) - the `0x47`
+  tail in `FUN_8003774C` and the directional / wander steps in
   `FUN_80038158`. A walking actor holds a compass point and changes to another
-  compass point in one frame. Retail has no walk-turn interpolation at all.
+  compass point in one frame; retail has no walk-turn interpolation at all.
+  The write lands **once per leg**: a frame-exact trace of the Mei dinner
+  walk-on shows each leg (straight and diagonal alike) holding a single
+  heading for its whole run, so the engine writes at the leg's first moving
+  frame and on a step-direction change only.
 - **Scripted turns ramp.** The four dedicated rotate ops (`0x38` / `0x4C` in
   `FUN_8003774C`, `0x04` / `0x0D` in `FUN_80038158`) interpolate over a frame
   budget the op itself carries, stepping `arc * speed / frames_remaining` off
   the *live* heading and snapping to the exact target on the terminal frame.
   These are the cinematic turns - a cutscene actor pivoting, an NPC turning to
-  face the speaker.
+  face the speaker. The ramp is **linear at `arc / budget`** - per-op turn
+  rates are disc data (the traced corpus spans ~16 units/frame authored slow
+  turns through the ambient 32 / 64 / 128 ladder up to ~85 units/frame story
+  beats), never a single engine constant.
 
-There is no wrap-handling subtlety to get wrong beyond the arc measurement:
-the ramps normalise the signed difference into `0..0xFFF` and pick a
-direction, either the shortest arc or one the operand forces, and then never
-re-decide mid-leg.
+One wrap subtlety IS load-bearing: only the **arc** is normalised into
+`0..0xFFF`. The heading write-back itself is raw 16-bit wrapping - a
+wrap-crossing ramp holds out-of-range values mid-turn (`0xFFxx` live on a
+decreasing turn through zero; the `0x0D` tween pre-unwraps past `0x1000` the
+same way) and only the terminal snap lands in range. The direction is picked
+once (shortest arc or operand-forced) and never re-decided mid-leg. The
+`0x38` / `0x04` endpoints are always compass entries; the `0x4C` endpoint is
+the live arctan bearing - the interact face-the-player write is a single
+instant bearing write with a **non-compass** endpoint (`1024 → 1075`
+measured), and no walk snap re-quantises it. Frame-level oracle:
+`crates/engine-core/tests/recomp_facing_trace.rs` (gated on
+`LEGAIA_RECOMP_TRACE_DIR`) replays the traced beat's ramps and walk legs
+through the ported VM and the field-NPC tick, raw-value exact.
 
 ### Which writer wins
 
@@ -851,10 +867,14 @@ The yaw an NPC faces is `+0x26`, always.
 ### Live corroboration
 
 A cold-boot `town01` sample off the static recompilation reads every field
-actor's `+0x26` per frame. Across the on-field actors every heading is a
-multiple of `0x200` and all eight compass points appear; the only non-compass
-values belong to actors parked on the `(0x7F, 0x7F)` sentinel tile (world
-`16320, 16320`), whose heading no compass op ever wrote.
+actor's `+0x26` per frame. Across the on-field actors every *settled* heading
+is a multiple of `0x200` and all eight compass points appear; the only
+non-compass settled values belong to actors parked on the `(0x7F, 0x7F)`
+sentinel tile (world `16320, 16320`), whose heading no compass op ever wrote.
+A frame-exact capture of the Mei dinner walk-on adds the dynamic half:
+mid-ramp headings are arbitrary (including raw values outside `0..0xFFF` on
+wrap-crossing turns), every ramp terminates on an exact compass snap, and
+every walk leg holds the single compass heading its step direction implies.
 
 ## NPC glide speed
 

@@ -153,6 +153,16 @@ impl World {
     ) {
         let party_count = self.party_count.clamp(1, 3);
         let monster_count = formation.slots.len().min(5) as u8;
+        // Drop any field dialogue left open across the transition. The
+        // engage conversation already played in the field; a leftover
+        // inline-script runner would otherwise re-walk the NPC's whole
+        // segment bank over the battle (and nothing in battle mode owns
+        // its input). Retail's in-battle tutorial boxes are a separate
+        // stage-overlay (extraction 967) channel, not the field box.
+        self.inline_dialogue = None;
+        self.current_dialog = None;
+        self.carrier_menu = None;
+        self.pending_carrier_engage = None;
         // Reuse the placement helper for actor spawn + seating, then overlay
         // per-slot stats.
         self.enter_battle(party_count, monster_count);

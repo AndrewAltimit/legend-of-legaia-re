@@ -194,7 +194,30 @@ impl World {
         }
         match self.mode {
             SceneMode::Battle => {
-                if self.live_gameplay_loop {
+                // In-battle dialogue box (the tutorial text the engage script
+                // opened across the transition): the box owns the frame -
+                // retail parks the battle under it (the camera holds the
+                // dialogue close-up while the text is up) and a confirm /
+                // cancel press advances / dismisses it. Drive whichever
+                // dialogue channel is live: the inline-script runner carried
+                // across the Field -> Battle transition (only Field ticks it
+                // otherwise, so it would stick mid-line forever), or the
+                // simplified `current_dialog` box on the field / overworld
+                // dismiss idiom (`op4c_n_5_sub_4_dialog_advance` /
+                // `tick_world_map_npc_dialog`).
+                if self.inline_dialogue.is_some() {
+                    self.drive_inline_dialogue();
+                    None
+                } else if self.current_dialog.is_some() {
+                    if self.input.just_pressed(input::PadButton::Cross)
+                        || self.input.just_pressed(input::PadButton::Circle)
+                    {
+                        self.current_dialog = None;
+                        self.pending_field_events
+                            .push(crate::field_events::FieldEvent::DialogDismissed);
+                    }
+                    None
+                } else if self.live_gameplay_loop {
                     self.live_battle_tick()
                 } else {
                     Some(self.step_battle())

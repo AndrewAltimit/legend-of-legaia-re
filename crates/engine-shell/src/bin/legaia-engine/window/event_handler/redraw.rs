@@ -331,6 +331,11 @@ impl PlayWindowApp {
         // and swap the VRAM. Must run before the render borrows
         // `uploaded_vram` below (this method may re-upload it).
         self.sync_battle_render();
+        // Step the phase-scripted battle camera (dialogue close-up / far
+        // menu framing + idle orbit / submenu close-up, with the measured
+        // glides between). After `sync_battle_render` so battle entry sees
+        // `battle_stage_mesh`; before the render borrow reads the pose.
+        self.tick_battle_camera();
         // Ease the in-engine cutscene camera between Camera Configure
         // beats. Done here (outside the renderer borrow below) so the
         // interpolator can take `&mut self`; while no cutscene timeline
@@ -861,36 +866,28 @@ impl PlayWindowApp {
                     // (`FUN_800513F0`: `tmd_register` -> `DAT_8007C018[]`
                     // + `FUN_80020de0` actor_alloc + `FUN_80020f88` link)
                     // rendered by the normal actor path `FUN_80048A08`.
-                    // The dome is a FRONT half (verts `Z in [-1260,
-                    // +12155]`), so it is NOT a full surround: as the
-                    // camera orbits, different portions of the front arc
-                    // come into view and the rest of the horizon is open
-                    // sky/grass. The retail captures bear this out -
-                    // mountains cover only 44–81% of the horizon columns
-                    // depending on angle (NOT a ring). Earlier engine
-                    // builds added a 180° mirror to "complete" the
-                    // surround; that over-fills what retail leaves as a
-                    // gap, so it is removed. See
-                    // `project_battle_backdrop_is_prot88_dome`.
+                    // The stage TMD is a HALF arena, not a full surround
+                    // (map01's dome is a front half, verts `Z in [-1260,
+                    // +12155]`; town01's arena is authored entirely at
+                    // `X >= 0`, open side facing -X - the sea horizon in
+                    // the retail Tetsu close-up). Retail never completes
+                    // the circle: its captures show 44-81% horizon
+                    // coverage depending on angle, and the phase-scripted
+                    // camera either sits in a close-up or clips the
+                    // near-side arc behind the eye. An earlier engine
+                    // build drew a second 180-deg-Y mirror instance to
+                    // "complete" the surround - for town01 that planted a
+                    // duplicate village wall across the open sea side, so
+                    // the mirror draw is removed (one instance, like
+                    // retail). See `project_battle_backdrop_is_prot88_dome`.
                     if let Some(stage_idx) = self.battle_stage_mesh
                         && let Some(mesh) = self.meshes.get(stage_idx)
                     {
                         let flip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
-                        // Front half-dome at raw world coords.
+                        // Half-arena stage at raw world coords.
                         draws.push(SceneDraw {
                             mesh,
                             mvp: cam * flip,
-                        });
-                        // The dome geometry is a FRONT half (Z>=0), so a
-                        // single instance leaves the back of the horizon
-                        // open. Draw a 180-deg-Y mirror so the mountain
-                        // ring + sky complete the full circle around the
-                        // actors. (Retail's dome is a front half with
-                        // partial coverage; the mirror reads fuller.)
-                        let back = flip * Mat4::from_rotation_y(std::f32::consts::PI);
-                        draws.push(SceneDraw {
-                            mesh,
-                            mvp: cam * back,
                         });
                     }
                 } else {
