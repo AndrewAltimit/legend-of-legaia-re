@@ -166,12 +166,14 @@ impl PlayWindowApp {
     ) -> Option<(legaia_tim::Vram, (legaia_tmd::Tmd, Vec<u8>))> {
         let scene = self.session.host.scene.as_ref()?;
         let scene_name = scene.name.clone();
-        let stage_entry = *self
+        // Not the block's first stage stream: a scene bundle carries one per
+        // sub-area, and Rim Elm's own backdrop is the second (see
+        // `ProtIndex::battle_stage_entry_for_scene`).
+        let stage_entry = self
             .session
             .host
             .index
-            .battle_stage_entries(&scene_name)
-            .first()?;
+            .battle_stage_entry_for_scene(&scene_name)?;
         let mut shared: Vec<Scene> = Vec::new();
         for name in FIELD_SHARED_BLOCKS {
             if let Ok(s) = Scene::load(&self.session.host.index, name) {

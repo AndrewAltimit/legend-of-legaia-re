@@ -96,6 +96,50 @@ pub const OVERLAY_PROT_BASE: i32 = 0x37F;
 /// and clears `gp+0x934` to `-1` on match.
 pub const OVERLAY_B_INVALIDATE_STATE: u16 = 0x15;
 
+/// Loader-B parameter base the battle scene loader adds to the battle-stage
+/// id before calling [`load_overlay_b`].
+///
+/// The battle scene loader `FUN_800520F0` reads the stage id byte
+/// `_DAT_8007B64A`, and - **only when it is non-zero** (`beq v1, zero` at
+/// `0x80052688` skips the whole call) - issues
+/// `FUN_8003EC70(stage_id + 0x47, 0)` at `0x800526A0`. So a stage overlay
+/// occupies extraction PROT entry `stage_id + BATTLE_STAGE_PARAM_BASE +
+/// OVERLAY_PROT_BASE` = `stage_id + 966`, and stage id `0` means *no* stage
+/// overlay: the battle draws over the resident field/world backdrop alone.
+///
+/// This is the `+0x47` computed-parameter site in the SCUS loader census -
+/// the only one that can reach extraction entries 967/968, neither of which
+/// any constant-parameter call site produces.
+pub const BATTLE_STAGE_PARAM_BASE: i32 = 0x47;
+
+/// Extraction PROT entry holding the battle-stage overlay for `stage_id`, or
+/// `None` for stage id `0` (no stage overlay - the retail default).
+///
+/// Pinned across the battle save-state library by reading the stage id at
+/// `_DAT_8007B64A` together with loader B's current-id tracker
+/// `gp+0x934` (`0x8007BC4C`):
+///
+/// | Battle | `_DAT_8007B64A` | `0x8007BC4C` | Entry |
+/// |---|---|---|---|
+/// | Tetsu sparring tutorial (`town01`) | `1` | `0x48` | 967 |
+/// | every other catalogued battle | `0` | unchanged | none |
+///
+/// `SCUS_942.54` writes the byte in exactly three places: two clears, and
+/// `FUN_80055B6C`'s `*_DAT_8007BD0C == 0xB5 → 2` per-formation override
+/// (`0x8007BD0C` reads `0x4F` = Tetsu's archive id in the tutorial states),
+/// which selects entry 968.
+///
+/// The overlay is battle *code* in slot B, not stage geometry - the backdrop
+/// mesh comes from the resident scene bundle
+/// (`ProtIndex::battle_stage_entry_for_scene`).
+// PORT: FUN_800520F0 (battle-stage overlay dispatch)
+pub fn battle_stage_overlay_entry(stage_id: u8) -> Option<u32> {
+    if stage_id == 0 {
+        return None;
+    }
+    Some(stage_id as u32 + BATTLE_STAGE_PARAM_BASE as u32 + OVERLAY_PROT_BASE as u32)
+}
+
 /// Host hooks for the parallel overlay loaders. Composes the existing
 /// [`CdDmaHost`] (for the actual PROT.DAT streaming read) with three
 /// per-loader scratchpad globals the retail mode-table uses.
