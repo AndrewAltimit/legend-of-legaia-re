@@ -866,6 +866,69 @@ impl World {
         true
     }
 
+    /// Attach the `4C 51` record's byte-`+4` **move-anim id** to a just-started
+    /// NPC glide leg. Retail's run dispatch writes that byte to the actor's
+    /// `+0x5C` anim slot (consumed by the anim-stream stepper `FUN_800204F8`),
+    /// so the walk plays its named move clip instead of gliding in a frozen
+    /// pose. The engine surfaces it as a [`Self::field_npc_anim_cues`] entry -
+    /// the same shape the cross-context `A2` ExecMove raises - keyed by the
+    /// placement slot. A zero id carries no clip (retail's `+0x5C = 0` is the
+    /// "no move-anim" sentinel, not clip `-1`).
+    ///
+    /// REF: FUN_80024E08, FUN_800204F8 (actor `+0x5C` anim-slot consumer)
+    pub(crate) fn carry_npc_run_anim(&mut self, slot: u8, move_id: u8) {
+        if move_id != 0 {
+            self.field_npc_anim_cues
+                .insert(slot, (1, move_id, Vec::new()));
+        }
+    }
+
+    /// Turn a stationary field NPC to face world `(tx, tz)` - the retail
+    /// "face the speaker" cinematic pose. This runs one shot of the ported
+    /// motion VM's `0x4C` `FaceTarget` op (the yaw-rotate leg of
+    /// `FUN_8003774C`, [`legaia_engine_vm::motion_vm`]) seeded from the NPC's
+    /// current heading and settles the resulting 12-bit yaw straight into
+    /// [`Self::field_npc_headings`] - the map every NPC draw reads. It is the
+    /// runtime driver the retail dialog engine invokes when the player talks
+    /// to an actor (a `FaceTarget` leg whose budget is small enough to snap in
+    /// one step), and is a no-op for a slot with no surfaced position (the
+    /// retail actor-list miss returns 0 and never poses the actor).
+    ///
+    /// REF: FUN_8003774C (0x4C FaceTarget), FUN_80019B28 (bearing)
+    pub fn face_field_npc_toward(&mut self, slot: u8, tx: i16, tz: i16) {
+        let Some(&(cx, cz)) = self.field_npc_positions.get(&slot) else {
+            return;
+        };
+        // Seed the one-shot VM state from the NPC's current facing so the leg
+        // rotates *from* where it stands (a full match for retail's actor
+        // `+0x26` seed) and mask into the 12-bit yaw space the op expects.
+        let cur_yaw = (self.field_npc_headings.get(&slot).copied().unwrap_or(0) & 0x0FFF) as u16;
+        let mut state = vm::motion_vm::MotionState {
+            world_x: cx,
+            world_y: 0,
+            world_z: cz,
+            // Budget of 1 (below) against this speed makes the FaceTarget leg
+            // settle onto the exact bearing in a single step - the dialog
+            // "snap to face the speaker" the retail engine performs on talk.
+            speed: 0x0400,
+            yaw: cur_yaw,
+            op_accum: 0,
+            pc: 0,
+        };
+        let target = vm::motion_vm::MotionTarget {
+            x: tx,
+            y: 0,
+            z: tz,
+            id: 0,
+        };
+        // `0x4C` FaceTarget, sub-mode `0x85` (rotate yaw), budget `0x0001`,
+        // target byte `0xF8` (self); no high bit -> the body starts at +1.
+        const FACE_TARGET_PROGRAM: [u8; 5] = [0x4C, 0x85, 0x01, 0x00, 0xF8];
+        let _ = vm::motion_vm::step(&mut state, target, &FACE_TARGET_PROGRAM);
+        self.field_npc_headings
+            .insert(slot, (state.yaw & 0x0FFF) as i16);
+    }
+
     /// Step every in-flight field-NPC walk leg one frame through the ported
     /// motion VM and kick autonomous route legs, writing each NPC's new
     /// position back into [`Self::field_npc_positions`] - so the moving NPC's
@@ -1645,5 +1708,58 @@ impl World {
             self.advance_with_collision(slot, dir, FIELD_BASE_STEP);
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod face_target_tests {
+    use super::*;
+    use crate::world::vm_hosts::FieldHostImpl;
+    use vm::field::FieldHost;
+
+    /// Talking to a field NPC turns it to face the player: the interaction
+    /// dispatch (`FieldHostImpl::field_interact`) drives the ported `0x4C`
+    /// `FaceTarget` motion-VM leg through [`World::face_field_npc_toward`] and
+    /// settles the NPC's [`World::field_npc_headings`] entry onto the player
+    /// bearing, converging from whatever stale facing it held.
+    #[test]
+    fn interaction_start_turns_npc_to_face_player() {
+        let mut w = World::new();
+        // Player in slot 0, standing at (+100, 0) - due +X of the NPC.
+        w.player_actor_slot = Some(0);
+        w.actors[0].active = true;
+        w.actors[0].move_state.world_x = 100;
+        w.actors[0].move_state.world_z = 0;
+        // NPC placement slot 3 at the origin, facing the *opposite* way (0x800)
+        // so the face leg has a full half-turn to converge.
+        w.field_npc_positions.insert(3, (0, 0));
+        w.field_npc_headings.insert(3, 0x800);
+
+        {
+            let mut host = FieldHostImpl { world: &mut w };
+            host.field_interact(0x05, 3);
+        }
+
+        // atan2(dx=100, dz=0) = +pi/2 -> 12-bit yaw 0x400 (X+); the one-shot
+        // FaceTarget leg snaps straight onto it.
+        assert_eq!(w.field_npc_headings.get(&3), Some(&0x0400));
+    }
+
+    /// The face driver rotates toward the bearing from an arbitrary start and
+    /// is a no-op for a slot with no surfaced position (the retail actor-list
+    /// miss never poses an actor).
+    #[test]
+    fn face_field_npc_toward_converges_and_skips_unplaced() {
+        let mut w = World::new();
+        // NPC at the origin, facing +X (0x400). Player is due -Z (0, -100):
+        // atan2(dx=0, dz=-100) = pi -> yaw 0x800.
+        w.field_npc_positions.insert(2, (0, 0));
+        w.field_npc_headings.insert(2, 0x400);
+        w.face_field_npc_toward(2, 0, -100);
+        assert_eq!(w.field_npc_headings.get(&2), Some(&0x0800));
+
+        // A slot with no position is left untouched - no heading is invented.
+        w.face_field_npc_toward(9, 100, 100);
+        assert!(!w.field_npc_headings.contains_key(&9));
     }
 }

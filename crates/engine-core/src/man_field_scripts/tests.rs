@@ -777,3 +777,77 @@ fn boss_stager_placements_decodes_gate_station_and_row() {
     let (mf, man) = man_with_placement_script(&[0xBE, 0x07, 0xFF, 0x11, 0x21]);
     assert!(boss_stager_placements(&mf, &man).is_empty());
 }
+
+/// Disc-free coverage for the `FUN_8003774C` glide-step operand decode in
+/// [`placement_yield_step`] (the on-disc oracle for this lives behind
+/// `LEGAIA_DISC_BIN` and skip-passes on CI, so it never exercises the math
+/// there). Each case tunes the operand bytes so the field-VM disassembler's
+/// yield width lands on the asserted `(op, bits, speed)`; the record's own
+/// pre-text script runs from the `man_with_placement_script` (3, 4) spawn
+/// anchor and terminates with a `0x21` NOP.
+///
+/// Math per `ghidra/scripts/funcs/8003774c.txt`:
+/// `0x37`/`0x41` `bits = (b0 >> 5 & 4) | (b1 >> 6)`; `0x47` `bits = b2 & 7`;
+/// `speed = numerator >> (2 + bits)` floored at 1, with `numerator = 0x40`
+/// for `0x41` (half-speed arm) and `0x80` for `0x37` / `0x47`.
+#[test]
+fn placement_yield_step_decodes_0x41_axis_glide() {
+    // 0x41 TranslateX (numerator 0x40). Operands: b0 = 0x00 (bit 7 clear ->
+    // hi selector 0), b1 = 0x40 (bits 7:6 = 01 -> lo selector 1) => bits = 1.
+    // speed = 0x40 >> (2 + 1) = 8.
+    let (mf, man) = man_with_placement_script(&[0x41, 0x00, 0x40, 0x21]);
+    let p = &mf.actor_placements(&man)[0];
+    assert_eq!(
+        placement_yield_step(&mf, &man, p),
+        Some(PlacementWalkStep {
+            op: 0x41,
+            bits: 1,
+            speed: 8,
+        })
+    );
+}
+
+#[test]
+fn placement_yield_step_decodes_0x37_axis_glide() {
+    // 0x37 TranslateY (numerator 0x80). Operands: b0 = 0x00 (hi selector 0),
+    // b1 = 0xC0 (bits 7:6 = 11 -> lo selector 3) => bits = 3.
+    // speed = 0x80 >> (2 + 3) = 4.
+    let (mf, man) = man_with_placement_script(&[0x37, 0x00, 0xC0, 0x21]);
+    let p = &mf.actor_placements(&man)[0];
+    assert_eq!(
+        placement_yield_step(&mf, &man, p),
+        Some(PlacementWalkStep {
+            op: 0x37,
+            bits: 3,
+            speed: 4,
+        })
+    );
+}
+
+#[test]
+fn placement_yield_step_decodes_0x47_walk_to_tile() {
+    // 0x47 walk-to-tile (numerator 0x80). Operands: [tile_x = 5, tile_z = 6,
+    // mode|bits = 0x05] => bits = 0x05 & 7 = 5. speed = 0x80 >> (2 + 5) = 1.
+    // Target world (704, 832) is within NPC_ROUTE_LOCALITY (0x300) of the
+    // (3, 4) = (448, 576) spawn anchor (dx = dz = 256), so it is a kept leg.
+    let (mf, man) = man_with_placement_script(&[0x47, 5, 6, 0x05, 0x21]);
+    let p = &mf.actor_placements(&man)[0];
+    assert_eq!(
+        placement_yield_step(&mf, &man, p),
+        Some(PlacementWalkStep {
+            op: 0x47,
+            bits: 5,
+            speed: 1,
+        })
+    );
+}
+
+#[test]
+fn placement_yield_step_rejects_far_walk_to_tile() {
+    // 0x47 whose target tile (40, 4) = world (5184, 576) is > 0x300 from the
+    // (448, 576) anchor: a story-gated relocation, not a local glide leg, so
+    // the operand decode is skipped and no step is reported.
+    let (mf, man) = man_with_placement_script(&[0x47, 40, 4, 0x02, 0x21]);
+    let p = &mf.actor_placements(&man)[0];
+    assert_eq!(placement_yield_step(&mf, &man, p), None);
+}

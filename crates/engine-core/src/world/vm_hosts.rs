@@ -1022,6 +1022,19 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             self.world.trigger_scripted_battle(slot);
             return;
         }
+        // "Face the speaker": turn the interacted NPC toward the player before
+        // the dialogue opens. Retail's talk kernel runs a `0x4C` FaceTarget
+        // motion leg on the spoken-to actor (its `+0x26` heading rotates to the
+        // player bearing); the ported op lives in
+        // [`World::face_field_npc_toward`] and the renderer already consumes the
+        // resulting [`World::field_npc_headings`] entry. A no-op for a slot with
+        // no surfaced position (the retail actor-list miss).
+        if let Some(pslot) = self.world.player_actor_slot
+            && let Some(pactor) = self.world.actors.get(pslot as usize)
+        {
+            let (px, pz) = (pactor.move_state.world_x, pactor.move_state.world_z);
+            self.world.face_field_npc_toward(slot, px, pz);
+        }
         // The real field-dialogue path: open the interacted actor's own inline
         // interaction-script MES (retail `actor[+0x90]`, keyed by `slot`) and
         // arm/engage a scripted-encounter carrier on that slot (the dialogue-
@@ -1383,7 +1396,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         world_x: u16,
         world_z: u16,
         depth_byte: u8,
-        _move_id: u8,
+        move_id: u8,
         is_player: bool,
     ) {
         // Scene-entry spawn-prologue pre-run
@@ -1460,6 +1473,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         if let Some(slot) = self.world.stepping_inline_npc {
             self.world
                 .start_field_npc_motion(slot, world_x as i16, world_z as i16);
+            self.world.carry_npc_run_anim(slot, move_id);
             return;
         }
         // A live channel stepping its OWN script (an engaged
@@ -1468,13 +1482,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // `4C 51` run dispatch plays a move clip toward the tile). Falls
         // back to a direct ctx seat when the slot has no surfaced position
         // yet (the glide needs a start point).
-        if let Some(slot) = self.world.executing_channel
-            && !self
+        if let Some(slot) = self.world.executing_channel {
+            if self
                 .world
                 .start_field_npc_motion(slot, world_x as i16, world_z as i16)
-        {
-            ctx.world_x = world_x;
-            ctx.world_z = world_z;
+            {
+                self.world.carry_npc_run_anim(slot, move_id);
+            } else {
+                ctx.world_x = world_x;
+                ctx.world_z = world_z;
+            }
         }
     }
 
