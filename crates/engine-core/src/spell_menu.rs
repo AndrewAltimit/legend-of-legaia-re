@@ -45,6 +45,12 @@ pub struct CasterSlot {
     /// parallel to `+0x13D` ids - the "Lv n" the spell info window shows).
     /// May be empty (level defaults to 1).
     pub spell_levels: Vec<u8>,
+    /// Caster's active-abilities bitfield word (record `+0xF4`, mirrored in
+    /// `World::character_ability_bits`). The Magic screen discounts each
+    /// displayed MP cost through the per-caster MP-cost kernel
+    /// (`FUN_80035394`): bit `0x20` = half cost, bit `0x10` = quarter off,
+    /// Half winning when both are set. Defaults to `0` (no discount).
+    pub ability_bits: u32,
 }
 
 impl CasterSlot {
