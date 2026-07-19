@@ -503,7 +503,9 @@ pub fn placement_initial_facing(man_file: &ManFile, man: &[u8], p: &ActorPlaceme
 /// so `engine = (retail + 0x800) & 0xFFF` with no axis mirror.
 // REF: FUN_801d01b0 (retail heading convention), FUN_801DE840 (LUT consumer)
 pub fn facing_index_to_engine_heading(idx: u8) -> Option<i16> {
-    (idx <= 7).then(|| ((i32::from(idx) * 0x200 + 0x800) & 0xFFF) as i16)
+    // One law, one place: the same LUT the motion VM's `0x38` / `0x47` arms
+    // resolve their headings through.
+    legaia_engine_vm::motion_vm::heading_lut_engine(idx).map(|h| h as i16)
 }
 
 /// The field-VM **player system channel** id (`0xF8`): a cross-context op

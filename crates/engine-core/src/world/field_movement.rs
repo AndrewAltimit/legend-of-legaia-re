@@ -855,7 +855,11 @@ impl World {
                     world_y: 0,
                     world_z: cz,
                     speed,
-                    yaw: 0,
+                    // Seed from the facing the NPC is standing in (retail
+                    // reads the live `+0x26`), so a leg that never moves - or
+                    // one whose first frame is blocked - keeps it instead of
+                    // snapping to the compass origin.
+                    yaw: (self.field_npc_headings.get(&slot).copied().unwrap_or(0) & 0x0FFF) as u16,
                     op_accum: 0,
                     pc: 0,
                 },
@@ -999,17 +1003,12 @@ impl World {
             let result = vm::motion_vm::step(&mut motion.state, target, &FIELD_NPC_MOTION_PROGRAM);
             let pos = (motion.state.world_x, motion.state.world_z);
             let cursor = motion.route_cursor;
-            // Track the walker's heading from the step direction (12-bit,
-            // `0` = Z+ - the same convention the player's `render_26`
-            // carries); an unmoved step keeps the previous facing.
-            if let Some(&(px, pz)) = self.field_npc_positions.get(&slot) {
-                let (dx, dz) = ((pos.0 - px) as f32, (pos.1 - pz) as f32);
-                if dx != 0.0 || dz != 0.0 {
-                    let heading = ((dx.atan2(dz) / std::f32::consts::TAU * 4096.0).round() as i32
-                        & 0x0FFF) as i16;
-                    self.field_npc_headings.insert(slot, heading);
-                }
-            }
+            // The walker's heading is the one the `0x47` step itself snapped
+            // onto the eight-point compass (retail writes `+0x26` from the
+            // heading LUT every moving frame); an unmoved step leaves the VM's
+            // yaw - and so the previous facing - standing.
+            self.field_npc_headings
+                .insert(slot, (motion.state.yaw & 0x0FFF) as i16);
             self.field_npc_positions.insert(slot, pos);
             if result == vm::motion_vm::StepResult::Done {
                 match cursor {
