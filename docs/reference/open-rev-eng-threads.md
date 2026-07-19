@@ -122,6 +122,8 @@ The per-prim dispatcher `FUN_80043390` owns four `NCCS`/`NCCT` **light** handler
 | Battle party mesh pack `other5` = **PROT 1204** (battle form; Baka Fighter reuses it) | resolved (empirical) | [details ↓](#battle-party-meshes--assembled-from-the-player-battle-files-prot-1204--baka-fighter--default-equipment-sibling) |
 | MP-cost ability-bit priority (half vs quarter) | resolved (dump-confirmed) | [details ↓](#mp-cost-ability-bit-priority-half-vs-quarter) |
 | Scripted Tetsu encounter → Battle (v0.1 oracle Battle leg) | resolved | All three residuals are now derived from disc bytes: the formation-row selection is the standard scripted-battle op `3E FF 04` in `P1[10]` (same case-`0x3E` install arm as Zeto/Caruban; row 4 = lone Tetsu), the sparring-partner reposition is `P1[10]`'s `4C 51 15 0E 07 22` NpcRun→tile `(21,14)` = `RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS` exactly, and the spar Yes/No is a MES-embedded option picker (`0x29` open + N×2 signed relative-jump table, handler `FUN_80038050`; port `legaia_mes::Picker::jump_target` + `InlineDialogueRunner::last_choice`), not a field-VM opcode. [details ↓](#scripted-tetsu-encounter--battle-v01-oracle-battle-leg) |
+| Battle stage backdrop: which `scene_tmd_stream` a scene fights in | resolved | A scene bundle carries one stage stream per sub-area, and the battle's is not uniformly the block's first - `map01` uses bundle slot 5 (entry 88), Rim Elm `town01` slot 6 (entry **7**). Engine `ProtIndex::battle_stage_entry_for_scene`. [details ↓](../subsystems/battle.md#which-stage-stream-a-scene-fights-in) |
+| Battle-stage overlay band (`+0x47`) | resolved | `FUN_800520F0` pages a per-stage slot-B overlay via `FUN_8003EC70(_DAT_8007B64A + 0x47)`, skipped when the id is `0` (which every catalogued battle but the Tetsu tutorial reads). Engine `engine-core::overlay_loader::battle_stage_overlay_entry`. [details ↓](../subsystems/battle.md#stage-overlay-dispatch-the-0x47-loader-band) |
 | First boss trigger -> Battle | mostly resolved (mechanism pinned for both bosses; one vestigial-flag question open) | The scripted-battle arm is the field-VM op `3E FF <formation_row>` ([battle.md](../subsystems/battle.md#scripted-battle-entry-3e-ff-row)). Zeto: garmel `P2[12]` ends `3E FF 09` -> row 9 = lone `0x4B` (firehose-confirmed; `0x8007b7fc` stayed silent) - organic in the engine (`organic_zeto_encounter_disc.rs`). Caruban: rikuroa stager `P1[3]` ends `3E FF 11` -> row 17 = lone `0x49` - same record path; the engine runs `P1[3]` on approach (`World::run_boss_stager_record`; `SCRIPTED_SCENE_BOSSES` deleted). Open: does any retail battle write `DAT_8007b7fc` (reads `0` everywhere; may be vestigial)? |
 | Spine flag `0x142` (Caruban beat / dolk-dolk2 switch) writer | resolved (disc writers + engine port + oracle) | Spine-writer #2 of 3, closed: plain field-VM `51 42` SETs in the rikuroa **streaming variant MAN** (PROT 0157: P1[10..12] + post-victory P2[50], C1 = `0x142` itself - the self-latching one-shot), re-asserted by dolk2's carrier P1[0..1], cleared by dolk P1[26]. Firehose-caught live (`ra 0x801E3598`); resident heap byte-matches the carrier. The old corpus-negative stood because no census walked the streaming carriers. Census + pins: `man_variant_carrier_census_disc.rs`; the engine sets it **organically** - rikuroa `P2[50]` executes from its own script bytes on the Battle->Field edge (`organic_beat_records_disc.rs`), retiring the earlier `SCRIPTED_SCENE_BOSSES` victory latch. |
 | Spine flag `0x482` (Drake mist-wall) writer | resolved (writer-less; "direct code path" presumption falsified) | The named capture ran: byte write-watch on `0x800857E8` (`autorun_flag_writer_watch.lua`) across the whole post-Zeto beat (battle exit, mist-clear FMV, `map01` arrival). The only write to the byte is the SET helper re-latching `0x484` (store `FUN_8003CE08+0x28`, `ra 0x801E3598`); `0x482` never flips. Every catalogued state through the Karisto era holds it clear (neighbours `0x484..0x487` at `0x0F`), and all 37 census sites stay `DESYNCED`. Verdict: **no writer ever fires** - the `map01` P2[34..36] C1 spawn-block never latches; wall despawn is not flag-driven. Residual: only an engine-side C1-latch-on-fire (pad-walk into a wall) could revive this. |
@@ -138,6 +140,7 @@ The per-prim dispatcher `FUN_80043390` owns four `NCCS`/`NCCT` **light** handler
 | Drake Castle deep interiors (`jouinc`/`jouind`) depth decode | resolved (door-choreography families, not story gates) | `jouinc`'s 58-record `C1=[0x00F]` P2 family is a **busy-mutex door family**: each record SETs `0x00F` first / CLEARs it last, so the C1 gate is a mutual-exclusion lock, and bodies are per-door walk-through choreography. `jouind` P2[10..13]'s `0x4BE..0x4C2` band is **per-visit door/lift state** (cleared by `jouina` P1[0] on entry), not a later-chapter revisit gate pair. Decoding these exposed (and fixed) whole-nibble width blindness (`0x4C` nibbles 9/A/C/D/F). `jouinb P2[6..8]` is the interior beat band (`0x44E..0x450` latches + the jouinb-local `0x461` state flag). Full mechanism: [script-vm.md](../subsystems/script-vm.md) § door-choreography record families. |
 | `scene_destinations` P1-table scan misses P2-only door names | resolved (P2 pass folded in) | The P2-only class is the town/dungeon **exit door** (a P2 door-choreography record): `town01`→`map01` (Rim Elm's overworld exit; the P1 pass alone sees *zero* town01 destinations), `retockin`→`retona`, `geremi`→`map02`/`tower` - 13 scenes / 14 destinations disc-wide. The suspected `jouinb`→`jouina` exemplar is falsified: it is P1-visible (the over-walk resyncs across that record). Merged kernel `legaia_asset::man_edit::scene_destinations` (P1 pass as prefix + clean-gated P2 pass, `(name, index)` dedupe); the engine delegates to it; disc pins `scene_destinations_p2_disc.rs`. |
 | `0x4C 0x51` byte `+3` = `[bit7 special-model \| facing nibble]` vs the glide-speed interim `depth & 7` reading | resolved (facing wins; the two readings were two different ops) | [details ↓](#0x4c-0x51-byte-3-reconcile---facing-wins-no-motion-bytecode-synthesis) |
+| How an NPC's facing changes **after** spawn - snap vs ramp, and which writer wins | resolved (two laws; order-of-execution priority) | [details ↓](#npc-dynamic-facing---two-laws-and-an-execution-order) |
 | dolk2/rikuroa MAN source (the "v12-embedded MAN" was an over-read) | resolved (streaming carrier) | Their own `base+3` bundles are the MAN-less count=4 form `[1,2,6,0x14]`; the "embedded MAN at 0x1000" inside their SceneV12Table entries is an over-read onto the next scene's bundle (suimon's / geremi's; [scene-v12-table.md](../formats/scene-v12-table.md) § over-read). Retail sources their partition scripts from the block's standalone `data_field_streaming` entry's type-3 chunk (`dolk2` ext 70 `[29,73,17]`, `rikuroa` ext 157 `[13,29,64]`; live script-heap byte-match at the Caruban beat). Engine: `field_man_payload` streaming fallback (`streaming_man_payloads`) + retail-frame `Scene::load` windows; pins `v12_bundle_man_disc.rs`. |
 | kor-family op-0x49 flag window `[0x138..0x13F]` - what the 8 flags gate | resolved (Uru Mais warp-pad destination memory) | [details ↓](#kor-family-op-0x49-flag-window-0x1380x13f---uru-mais-warp-pad-picker) |
 | `801d58f0` / `801d63b0` as single shared port blockers | falsified (VA-aliasing artifact) | The two addresses host different code in different overlays (byte-verified: 80/228/124/308/1 B and 208/1036 B across 0897/baka/cutscene/debug-menu/fishing/slot/dance) - the port-catalog's bare-VA keying aggregated their refs into phantom top blockers. Tracked per-overlay via `overlay_<label>_<addr>` identities; catalog ignore category `va_aliased_overlay_local`. |
@@ -187,6 +190,44 @@ bare-`break` arms for 2..9 were the collapsed switch - each raw loader ends `j 0
 label-call idiom). Disassembler + executing VM corrected: `field_disasm::decode_subops` (single
 0..=9 compare arm), `engine-vm` `field/step/flow.rs` + `FieldHost::op4e_char_level` /
 `slot_table_read`. cave01's `P2[12]` spawn gate is the live sub-5 exemplar.
+
+### NPC dynamic facing - two laws and an execution order
+
+The spawn heading is settled ([above](#0x4c-0x51-byte-3-reconcile---facing-wins-no-motion-bytecode-synthesis)); this row is
+everything after it.
+
+**Two laws, chosen by the bytecode.** Walking **snaps**: every walk kernel -
+the `0x47` tail in `FUN_8003774C` and the directional / wander steps in
+`FUN_80038158` - quantises the frame's step to the eight-entry compass LUT at
+`0x80073F04` (`entry[i] = i * 0x200`, `0` = -Z) and writes `+0x26` outright.
+A walking actor therefore never holds an in-between angle; retail has no
+walk-turn interpolation. The four dedicated rotate ops (`0x38` / `0x4C`,
+`0x04` / `0x0D`) **ramp** instead, stepping `arc * speed / frames_remaining`
+off the live heading over a budget the op carries, with an exact snap on the
+terminal frame.
+
+**Priority is execution order, not a field.** `FUN_8003BC08` runs the dialog
+SM, then `FUN_8003774C`, then `FUN_80038158`, then the anim consumer - so an
+actor running both a scripted leg and an ambient stream ends the frame facing
+wherever the ambient stream put it.
+
+**Corrections this closed.** Op `0x38`'s case body is `0x800379FC`, not
+`0x80037DE0` (only `0x4C` lives there); the jump table at `0x80010EE0` settles
+all 22 slots. The LUT is eight entries of `0x200`, not sixteen of `0x100` -
+the port's synthetic table pointed rotating NPCs 45° wrong and doubled every
+index. `0x4C`'s sub-modes `0x85` / `0x8E` / `0x8F` do not "gate which
+component is rotated"; all three take one arm and `0x8F` alone forces the
+direction. And `+0x16` is the **terrain-conform angle** sampled from the scene
+grid by `FUN_80019278`, not a facing - the yaw is `+0x26`, always.
+
+Live corroboration: a cold-boot `town01` sample off the static recompilation
+reads every field actor's `+0x26`; all on-field headings are multiples of
+`0x200` with all eight points present, the only exceptions being actors parked
+on the `(0x7F, 0x7F)` sentinel tile.
+
+Full write-ups:
+[field-locomotion.md](../subsystems/field-locomotion.md#npc-dynamic-facing) +
+[motion-vm.md](../subsystems/motion-vm.md#how-an-actors-facing-changes).
 
 ### 0x4C 0x51 byte +3 reconcile - facing wins; no motion-bytecode synthesis
 
@@ -1150,7 +1191,7 @@ Decoded by `legaia_mes::dialog_box` (`pack_box` / `pack_boxes`, `LINES_PER_BOX =
 
 The on-disc per-record body decodes byte-exact across **all 296 records** in the 5 pinned scenes (296 record / 5 scene corpus, plus every other scene's bundle the corpus sweep finds): `record_size = 16 + 8 × (a & 0xFF) × b`, where `a & 0xFF` is the **bone count** of the clip and `b` is the **frame count**. Layout: 8-byte `(a, b, marker_1=0x080C, flag)` header + 8-byte per-anim prologue + `b` frames × `bone_count` × 8 bytes per (bone, frame). Pinned by the disc-gated regression `crates/asset/tests/player_anm_real.rs` after the offset-convention fix (offsets in the offset table are **absolute** byte offsets, not relative to `+4` - earlier framing was wrong; size invariant now validates 296/296).
 
-**Per-`(bone, frame)` 8-byte semantic - resolved** (the earlier "4 little-endian `i16`s, semantic open" framing is superseded): the entry is **not** four shorts but a **translation + rotation** pair, decoded exactly as the retail interpreter [`FUN_8001BE80`](../../ghidra/scripts/funcs/8001be80.txt) does - bytes 0..4 hold three **nibble-packed signed 12-bit translation** values `(t_x, t_y, t_z)` (byte 2 = `high4(t_y)<<4 | high4(t_x)`, byte 4 high nibble = `high4(t_z)`; sign-extend on bit 11), and bytes 5/6/7 are three **`u8` rotation angles** `(r_x, r_y, r_z)` each `<< 4` to a PSX 12-bit angle (`4096` = 360°), composed Z→Y→X via `FUN_8004638C`/`FUN_8004629C`/`FUN_800461A4`.
+**Per-`(bone, frame)` 8-byte semantic - resolved** (the earlier "4 little-endian `i16`s, semantic open" framing is superseded): the entry is **not** four shorts but a **translation + rotation** pair, decoded exactly as the retail interpreter `FUN_8001BE80` (`ghidra/scripts/funcs/8001be80.txt`) does - bytes 0..4 hold three **nibble-packed signed 12-bit translation** values `(t_x, t_y, t_z)` (byte 2 = `high4(t_y)<<4 | high4(t_x)`, byte 4 high nibble = `high4(t_z)`; sign-extend on bit 11), and bytes 5/6/7 are three **`u8` rotation angles** `(r_x, r_y, r_z)` each `<< 4` to a PSX 12-bit angle (`4096` = 360°), composed Z→Y→X via `FUN_8004638C`/`FUN_8004629C`/`FUN_800461A4`.
 
 The piece poses `R·v + T` about its own object origin (no centroid subtraction); frame 0 of an idle clip is the rest pose. Decoder `legaia_asset::player_anm::BoneTransform::decode` mirrors the decompiled C, pinned by the byte-exact unit test `bone_transform_decode_signed_12bit` (town01 record 17). The site characters page applies the same `(t, r)` pipeline.
 
@@ -1197,6 +1238,7 @@ So the blocker (the per-cue enable source) dissolves: there is nothing to trace.
 | Load-screen panel 9-slice geometry | resolved (engine renders byte-perfect) | Pinned in [`subsystems/save-screen.md`](../subsystems/save-screen.md#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2): retail composes the 81×29 panel at dst `(6, 4)` from 14 textured-sprite primitives (GP0 cmd `0x64`) sampling the system-UI sheet with CLUT `(32, 511)`. The exact per-tile rects are exported as `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*` and emitted by `legaia_engine_render::save_select_chrome_draws_for` (covered by `save_select_chrome_emits_9slice_panel_and_pills` test). No interior fill sprite is drawn - the "marbled blue" look is the dimmed title art bleeding through the empty middle of the frame. |
 | Debug flags `0x8007B8C2` / `0x8007B98F` | resolved (static) | `0x8007B98F` has no byte-granular reader: it is byte +3 (MSB, little-endian) of the 32-bit debug-mode word `_DAT_8007B98C`, and *that word* is the consumer surface (grep of `funcs/` for `8007b98f` = 0 hits; `8007b98c` gate-read at `8001822c.txt:500/533` + ~14 field-overlay-0897 gates, sole `sw` writer in the menu/title/save-init routine). Writing `0x8007B98F = 1` sets the MSB so every `_DAT_8007B98C != 0` gate reads active. [details ↓](#debug-flags-0x8007b8c2--0x8007b98f) |
 | Key-item area consumers (`0x800859E8..0x80085A40`) | resolved (static; no OOB amplifier) | The range is inventory slots `>= 72` of `&DAT_80085958`; its readers are the indexed item-menu functions (`FUN_8002ff8c`/`800302e4`/`80032a44`/`80030628`/`80034250`), each masking the slot `& 0x3ff` and using the id byte as an index into 256-entry item tables - inherently bounded; add/find/consume helpers bound their scan by the live item count. No consumer treats a key-item byte as an unguarded index, so the range amplifies to game-state corruption (item possession + displayed ids), not a native index-OOB chain step. The `lb $reg,0x5aXX($zero)` overlay "hits" were mis-decoded data tables. Read-BP probe deprioritized. |
+| Full-window item-add OOB primitive: reachability | open (re-opened; the earlier live confirmation does not hold) | [details ↓](#full-window-item-add-oob-primitive-reachability) |
 | XP-table source + reader | resolved + ported | [details ↓](#xp-table-source--reader) |
 | New-Game opening chain + narration roller | partial (chain + caption + roller resolved; two render-fidelity residuals open) | [details ↓](#new-game-opening-chain--narration-roller) |
 | Overlay identity from the disc (static extraction) | resolved (pipeline landed) | [details ↓](#overlay-identity-from-the-disc-static-extraction) |
@@ -1207,6 +1249,35 @@ So the blocker (the per-cue enable source) dissolves: there is nothing to trace.
 | "world-map / save / shop" overlay PROT entries | resolved (not separate entries) | The world-map / overworld controller `FUN_801E76D4` lives in the **field overlay 0897** (base+0x18EBC), and the save-slot dispatcher `FUN_801DC6B4` + the shop/buy session live in the **menu overlay 0899** (save at base+0xDE9C) - each function's instruction signature byte-matches only that one entry (`asset overlay find-sig`). So "world-map", "save", and "shop" are *subsystems* of existing slot-A overlays, not separate PROT entries; recorded in the 0897 / 0899 map notes. |
 | Slot-B overlay cluster (`0900..0969`) per-entry identity | mostly resolved | [details ↓](#slot-b-overlay-cluster-09000969-per-entry-identity) |
 
+
+### Full-window item-add OOB primitive: reachability
+
+*Status:* open - the primitive is real and statically pinned; the claim that
+normal play reaches it is not.
+
+`FUN_800421D4`'s free-slot pass stores the item id at `slot[i]` before the
+`slt` that guards only the count store, so a scan that exhausts the window
+writes one slot past it. That much is unchanged. Two corrections narrow what is
+actually known:
+
+- **The landing address depends on the active window, and the window is not
+  72 slots.** `FUN_8004313C` is the sole `SCUS_942.54` writer of
+  `gp[+0x2D2]`/`gp[+0x2D4]`, and it only ever installs `[0, 256)`, `[0, 128)`
+  or `[128, 256)` (party-member count at `0x80084594`, story flag 20, and the
+  byte at `0x80084598`). So the OOB target is `0x80085A58` or `0x80085B58`,
+  not the `0x800859E8` an earlier note recorded. The 72 came from the
+  `Have 99 Items` cheat's page span. A live read of a mid-game battle state
+  confirms `(start, end, len) = (0, 256, 256)` with 160 contiguous occupied
+  slots.
+- **The `pc = 0x800422BC` probe hits were not OOB hits.** That store runs on
+  every successful add. The two recorded hits (`id=0x9C` at `0x800859E8`,
+  `id=0xD0` at `0x800859EA`) are consecutive slots 72 and 73 - an ordinary
+  pair of adds into the next free slots of a bag that was not full.
+
+What would close it: a probe on a bag genuinely filled to `gp[+0x2D4]` (read
+the window bounds first, then fill to `end`), watching for a store at
+`base + end*2`. Whether the game can even present a 256-entry-full bag through
+the add call sites in `legaia_save::retail_inventory::AddHelperCaller` is the open half of the question.
 
 ### Slot-B overlay cluster (`0900..0969`) per-entry identity
 
@@ -1309,7 +1380,28 @@ See [`subsystems/level-up.md`](../subsystems/level-up.md#xp-table).
 
 **The narration is a bottom-up scrolling crawl** (roller actor `FUN_80037174`, spawned as a **child context** so the parent timeline keeps executing and the between-block camera cuts play under the scroll; per-scene capture-pinned geometry/speed), not a one-caption-at-a-time presenter - the prior one-line model described the separate `4C E1` balloon op (`FUN_8003C764` / `FUN_801DA7F0`) and is superseded. A cold-boot crawl-1 capture (`scripts/pcsx-redux/autorun_crawl1_capture.lua`) confirms the eye cuts through the Genesis-grove foliage to the villager tableau *while* the creation crawl scrolls; the engine ports this as a non-blocking crawl (blocking only the last block of a scene before its terminal SceneChange).
 The name-entry auto-open stays pinned: op `0x49` STATE_RESUME sub-op 3 at town01 P2[3] body offset `0x02c6` (`_DAT_8007B450` parks there while name entry is up); the retail town01 order is establishing pan → name entry → Vahn's walk-out.
-The op-`0x45` camera param→global map, the GTE rotation build (`FUN_8001CF50`), the per-frame ease (`FUN_801DB510`), and the eye-back depth (the offset-trio slot 5, `0x800840B8` - no separate eye-distance scalar) are all pinned; `play-window` renders through `psx_camera_mvp`.
+The op-`0x45` camera param→global map, the GTE rotation build (`FUN_8001CF50`), and the eye-back depth (the offset-trio slot 5, `0x800840B8` - no separate eye-distance scalar) are all pinned; `play-window` renders through `psx_camera_mvp`.
+
+**The per-frame camera mover is `FUN_801DC0BC`, not `FUN_801DB510`** (that is the follow / scroll
+camera - a different mode of the same globals). `FUN_801DD310` attaches ten `(start, end)` pairs plus
+one shared progress / duration / curve to a dedicated mover actor, so a glide runs **in parallel**
+with the record that staged it, and a beat landing mid-tween re-seeds every axis from the live pose.
+All four ease curves are decoded, and the port (`legaia_engine_vm::camera_mover`) reproduces a live
+retail capture on 2471 of 2480 sampled axis values, the rest resolving under the probe's own read
+skew. Falsified with it: the "mode 1 eases the angles but runs the eye trio linear" per-axis curve
+split - retail applies one curve to all ten axes. Full law in
+[`cutscene.md`](../subsystems/cutscene.md#in-engine-3d-opening-the-five-scene-new-game-chain).
+
+**Retired: the "field-VM step-parallelism" dead-air thread.** Retail runs no hidden parallelism the
+engine has to catch up with - `FUN_8002519C` walks the actor lists in full every frame, so every
+context already gets one run-until-yield slice per frame
+([`script-vm.md`](../subsystems/script-vm.md#per-frame-scheduling)). The measured inter-crawl gap was
+a units error: record durations count retail **display** frames (op-`0x4A` and the mover both
+accumulate `DAT_1F800393`), and the engine stepped its timeline once per 100 Hz sim tick. Pacing the
+timeline off the existing 60 Hz sub-clock moved the whole zero-input opening chain from ~10 % short
+of retail wall-time to within ~4 %, pinned by `opening_chain_wall_time`. **Residual:** the `map01`
+fly-in leg now runs ~22 % long against a headless retail capture while the other three legs sit
+within ~6 % - a per-leg thread in the world-map fly-in choreography, not a global rate.
 
 **Data-source sub-threads - both resolved:**
 
@@ -1406,7 +1498,10 @@ Superseding findings (kept so the reframing isn't re-walked):
    `+0x74`/`+0x47`/`5-or-6` bases that cannot reach 1). A companion scan for
    the raw indices `0x381`/`0x382` as immediates finds only the two loaders'
    own internal `param + 0x381` adds - no direct `FUN_8003E8A8`/file-open
-   path either.
+   path either. The `+0x47` computed site is since fully decoded and can only
+   reach extraction 967/968 - see
+   [`battle.md` § Stage-overlay dispatch](../subsystems/battle.md#stage-overlay-dispatch-the-0x47-loader-band) -
+   so it corroborates rather than weakens the "0896 is unreachable" reading.
 
 What would close it: a consumer - any retail moment where the head bytes are
 resident (offline check:

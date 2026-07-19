@@ -66,7 +66,8 @@ pub use ext::{
     SaveExtV2, SaveFile, SavedChainRecord,
 };
 pub use retail_inventory::{
-    AddOutcome, ITEM_WINDOW_BASE, ITEM_WINDOW_SLOTS, RetailInventory, STACK_CAP,
+    AddOutcome, FULL_WINDOW_STORY_FLAG, GENERAL_ITEM_PAGE_SLOTS, ITEM_SLOTS_HALF, ITEM_SLOTS_TOTAL,
+    ITEM_WINDOW_BASE, ITEM_WINDOW_SLOTS, ItemWindow, RetailInventory, STACK_CAP,
 };
 
 /// Retail cumulative XP thresholds for levels 2..=99 (the **base / slot-0

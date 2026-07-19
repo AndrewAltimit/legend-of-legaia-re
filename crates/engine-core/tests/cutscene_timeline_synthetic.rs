@@ -10,6 +10,22 @@
 use legaia_engine_core::cutscene_timeline::CutsceneTimeline;
 use legaia_engine_core::world::{PROLOGUE_HANDOFF_FLAG, SceneMode, World};
 
+/// Tick the world until one **retail display frame** has elapsed.
+///
+/// The sim clock runs at 100 Hz but spawned-record contexts are paced off the
+/// 60 Hz retail-frame sub-clock (`World::step_spawned_record_contexts`), so
+/// "advance the timeline one step" is "tick until `field_frame_step` fires",
+/// not "call `tick()` once".
+fn step_frame(w: &mut World) {
+    for _ in 0..8 {
+        let _ = w.tick();
+        if w.field_frame_step == 1 {
+            return;
+        }
+    }
+    panic!("no retail display frame within 8 sim ticks");
+}
+
 /// A timeline executing `GFLAG_SET 26` sets the hand-off bit by execution but
 /// KEEPS RUNNING - the real `opdeene` record arms the bit near its top
 /// (`+0x17`) and then stages the vignette choreography, so "bit armed" must
@@ -29,7 +45,7 @@ fn timeline_fires_handoff_bit_by_execution() {
     assert!(w.cutscene_timeline_active());
     assert_eq!(w.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
 
-    let _ = w.tick();
+    step_frame(&mut w);
 
     assert!(
         w.story_flags & PROLOGUE_HANDOFF_FLAG != 0,
@@ -45,7 +61,7 @@ fn timeline_fires_handoff_bit_by_execution() {
 
     // The next tick resumes past the YIELD, runs off the record end, and
     // completes.
-    let _ = w.tick();
+    step_frame(&mut w);
     assert!(
         !w.cutscene_timeline_active(),
         "the timeline completes when the record reaches a terminal state"
@@ -70,7 +86,7 @@ fn timeline_safety_net_arms_when_execution_stalls() {
     let mut ticks = 0u32;
     // Generous cap above the timeline's internal frame cap.
     while w.cutscene_timeline_active() && ticks < 4000 {
-        let _ = w.tick();
+        step_frame(&mut w);
         ticks += 1;
     }
 
@@ -95,14 +111,14 @@ fn completed_timeline_is_idempotent() {
         Some(CutsceneTimeline::new(vec![0x2E, 0x1A, 0x37], 0).arming_prologue_handoff());
     // Tick 1 arms the bit + yields; tick 2 runs off the record end and
     // completes.
-    let _ = w.tick();
-    let _ = w.tick();
+    step_frame(&mut w);
+    step_frame(&mut w);
     assert!(!w.cutscene_timeline_active());
 
     // Clear the bit and tick again: a done timeline must not re-execute and
     // re-set it.
     w.story_flags &= !PROLOGUE_HANDOFF_FLAG;
-    let _ = w.tick();
+    step_frame(&mut w);
     assert_eq!(
         w.story_flags & PROLOGUE_HANDOFF_FLAG,
         0,
@@ -124,7 +140,7 @@ fn opening_timeline_op49_opens_name_entry_then_resumes() {
     // `[0x49 0x03 0x00]` = STATE_RESUME sub-op 3 (the name-entry handoff form).
     w.cutscene_timeline = Some(CutsceneTimeline::new(vec![0x49, 0x03, 0x00], 0));
 
-    let _ = w.tick();
+    step_frame(&mut w);
     assert!(
         w.name_entry_active(),
         "executing op-0x49 in the opening timeline opens name entry"
@@ -143,7 +159,7 @@ fn opening_timeline_op49_opens_name_entry_then_resumes() {
 
     // Frozen while the overlay is up.
     let frames = w.cutscene_timeline.as_ref().unwrap().frames;
-    let _ = w.tick();
+    step_frame(&mut w);
     assert!(w.name_entry_active());
     assert_eq!(
         w.cutscene_timeline.as_ref().unwrap().frames,
@@ -156,7 +172,7 @@ fn opening_timeline_op49_opens_name_entry_then_resumes() {
     w.name_entry = None;
     let mut ticks = 0;
     while w.cutscene_timeline.is_some() && ticks < 100 {
-        let _ = w.tick();
+        step_frame(&mut w);
         ticks += 1;
     }
     assert!(
@@ -189,7 +205,7 @@ fn walk_to_tile_yield_parks_and_glides_the_player() {
         0,
     ));
 
-    let _ = w.tick();
+    step_frame(&mut w);
     let tl = w.cutscene_timeline.as_ref().expect("timeline still up");
     assert!(
         tl.walk_wait.is_some(),
@@ -198,7 +214,7 @@ fn walk_to_tile_yield_parks_and_glides_the_player() {
     // mode 0x33 -> bits 3 -> 0x80 >> 5 = 4 units per tick; 256 units takes
     // ~64 ticks. After a few ticks the player has moved but not arrived.
     for _ in 0..10 {
-        let _ = w.tick();
+        step_frame(&mut w);
     }
     let slot = w.player_actor_slot.unwrap() as usize;
     let mid_x = w.actors[slot].move_state.world_x;
@@ -208,7 +224,7 @@ fn walk_to_tile_yield_parks_and_glides_the_player() {
     );
     let mut ticks = 0u32;
     while w.cutscene_timeline.is_some() && ticks < 400 {
-        let _ = w.tick();
+        step_frame(&mut w);
         ticks += 1;
     }
     assert!(

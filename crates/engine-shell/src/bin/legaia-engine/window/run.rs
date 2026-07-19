@@ -489,7 +489,21 @@ pub(super) fn cmd_play_window_with_record(
         scene_res.tim_count
     );
 
-    let font = Font::load_or_placeholder(extracted_root);
+    // Text metrics, best source first. `extracted/font/` (a `font-extract`
+    // run) wins when present; otherwise the boot source's own disc bytes
+    // (PROT.DAT font TIM + the SCUS width table) - both produce the same
+    // atlas + advance table, so this is a source preference, not a fidelity
+    // one. The fixed-width placeholder is the last resort: it advances every
+    // glyph 9px where retail advances `widths[c] + 1` (4..10), which stretched
+    // every string by roughly a third.
+    let font = Font::load_from_extracted(extracted_root)
+        .map_err(|e| log::debug!("extracted/font not loaded ({e:#}); trying the disc"))
+        .ok()
+        .or_else(|| session.dialog_font.clone())
+        .unwrap_or_else(|| {
+            log::warn!("dialog font unavailable; falling back to the placeholder font");
+            Font::placeholder()
+        });
 
     let mapping = legaia_engine_core::input::Mapping::load_or_default(&std::path::PathBuf::from(
         "legaia-input.toml",
@@ -760,6 +774,7 @@ pub(super) fn cmd_play_window_with_record(
         disc_path: disc.map(|d| d.to_path_buf()),
         cutscene: None,
         cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp::new(),
+        cutscene_cam_frames: 0,
         pending_camera_snaps: Vec::new(),
         active_dialog: None,
         seru_names: None,

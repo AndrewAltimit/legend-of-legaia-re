@@ -1770,6 +1770,14 @@ pub struct World {
     /// retail wall-time; pacing them too would push block 2 far too late.
     pub field_frame_accum: u32,
 
+    /// Monotonic count of retail display frames elapsed - incremented on
+    /// every sim tick that sets [`Self::field_frame_step`]. Consumers that
+    /// have to advance something in retail-frame time across a variable
+    /// number of sim ticks (the renderer's cutscene camera glide, whose
+    /// `apply_trigger` is a duration in display frames) diff this rather
+    /// than counting sim ticks.
+    pub field_frames: u64,
+
     /// `1` on the ~60 % of sim ticks that map to a retail field frame, else `0`
     /// (derived from [`Self::field_frame_accum`] each [`Self::tick`]). Fed to
     /// the narration roller so the crawl scrolls at retail's 60 fps wall-speed.
@@ -2157,8 +2165,13 @@ impl World {
             helper_contexts: Vec::new(),
             inline_dialogue: None,
             in_cutscene_timeline: false,
-            field_frame_accum: 0,
+            // Primed so the FIRST sim tick is a retail display frame: the
+            // accumulator crosses `SIM_HZ` on tick 1 rather than tick 2, so a
+            // world that ticks exactly once still advances the roller and the
+            // retail-frame-paced record contexts.
+            field_frame_accum: 40,
             field_frame_step: 0,
+            field_frames: 0,
             field_channels: Vec::new(),
             field_channels_man: None,
             executing_channel: None,

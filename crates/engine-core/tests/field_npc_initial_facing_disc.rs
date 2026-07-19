@@ -128,3 +128,109 @@ fn town01_npc_initial_facings_derive_from_spawn_prologues() {
         );
     }
 }
+
+/// Disc-gated: the **dynamic** facing law - how a placement's heading changes
+/// once it starts walking a route the disc actually authors.
+///
+/// Retail's `0x47` walk kernel (`FUN_8003774C`, tail `0x80037D4C`) quantises
+/// each frame's step to the eight-entry compass LUT at `0x80073F04` and writes
+/// `+0x26` outright, so a walking NPC's facing is always one of eight values
+/// and never an interpolated angle. It also closes the **dominant axis first**
+/// (`0x80037C4C`), which is what keeps a walker on a cardinal heading for most
+/// of a leg. This drives the ported VM over each town01 placement's own
+/// decoded waypoints, at that placement's own decoded glide speed.
+#[test]
+fn town01_walk_legs_only_ever_face_the_eight_compass_points() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return;
+    };
+
+    let index = Arc::new(ProtIndex::open_extracted(&extracted).expect("open ProtIndex"));
+    let scene = Scene::load(&index, "town01").expect("load town01");
+    let man_bytes = scene
+        .field_man_payload(&index)
+        .expect("read MAN")
+        .expect("town01 has a MAN payload");
+    let man_file = parse_man(&man_bytes).expect("parse MAN");
+    let placements = man_file.actor_placements(&man_bytes);
+
+    // Every compass heading the walk law may emit, and nothing else.
+    let compass: Vec<u16> = (0..8u8)
+        .map(|i| legaia_engine_vm::motion_vm::heading_lut_engine(i).expect("direction slot"))
+        .collect();
+
+    let mut legs = 0usize;
+    let mut cardinal_frames = 0usize;
+    for p in &placements {
+        let route =
+            legaia_engine_core::man_field_scripts::placement_motion_route(&man_file, &man_bytes, p);
+        if route.is_empty() {
+            continue;
+        }
+        // The placement's own decoded walk-kernel step, so the pacing is the
+        // disc's rather than a stand-in.
+        let speed =
+            legaia_engine_core::man_field_scripts::placement_wander_step(&man_file, &man_bytes, p)
+                .map(|s| s.speed)
+                .unwrap_or(4);
+        let mut state = legaia_engine_vm::motion_vm::MotionState {
+            world_x: p.world_x,
+            world_z: p.world_z,
+            speed: speed.max(1),
+            ..Default::default()
+        };
+        for &(tx, tz) in &route {
+            legs += 1;
+            // Retail resets the progress cursor per leg (the `+0x54` zero in
+            // the Done epilogue); the engine's `start_field_npc_motion` does
+            // the same, so the harness must too.
+            state.pc = 0;
+            state.op_accum = 0;
+            let target = legaia_engine_vm::motion_vm::MotionTarget {
+                x: tx,
+                z: tz,
+                ..Default::default()
+            };
+            let program = [legaia_engine_vm::motion_vm::MotionOp::MoveTowardTarget as u8];
+            for frame in 0..4096 {
+                let moved_from = (state.world_x, state.world_z);
+                let r = legaia_engine_vm::motion_vm::step(&mut state, target, &program);
+                if (state.world_x, state.world_z) != moved_from {
+                    assert!(
+                        compass.contains(&state.yaw),
+                        "placement {} leg to ({tx}, {tz}) frame {frame}: heading {:#05X} \
+                         is not one of the eight compass points",
+                        p.index,
+                        state.yaw,
+                    );
+                    // A cardinal heading means exactly one axis advanced -
+                    // the dominant-axis phase.
+                    if state.yaw.is_multiple_of(0x400) {
+                        cardinal_frames += 1;
+                    }
+                }
+                if r == legaia_engine_vm::motion_vm::StepResult::Done {
+                    break;
+                }
+            }
+            assert_eq!(
+                (state.world_x, state.world_z),
+                (tx, tz),
+                "placement {} leg to ({tx}, {tz}) never arrived",
+                p.index
+            );
+        }
+    }
+
+    assert!(legs >= 4, "town01 authors several walk legs (got {legs})");
+    assert!(
+        cardinal_frames > 0,
+        "no leg spent a frame on a cardinal heading - the dominant-axis \
+         approach is not running"
+    );
+}

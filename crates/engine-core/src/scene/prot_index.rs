@@ -12,6 +12,20 @@ pub const FIELD_MAP_COLLISION_OFFSET: usize = 0x4000;
 /// Length of the collision/floor grid (`0x80 x 0x80` bytes, 1 byte/tile).
 pub const FIELD_COLLISION_GRID_LEN: usize = 0x80 * 0x80;
 
+/// Per-scene battle-stage stream position within
+/// [`ProtIndex::battle_stage_entries`]'s slot-ordered list. A scene bundle
+/// carries one stage stream per sub-area, so the block's *first* stream is
+/// frequently a neighbouring sub-area's backdrop rather than the scene's own.
+/// Each row is pinned by byte-matching a retail battle save state's resident
+/// dome (the vertex pool `_DAT_8007B864` points at) back to a PROT entry - see
+/// [`ProtIndex::battle_stage_entry_for_scene`].
+const BATTLE_STAGE_SLOT: &[(&str, usize)] = &[
+    // Rim Elm: bundle slot 6 = entry 7 (2 objects, 341 vertices).
+    ("town01", 1),
+    // Overworld: bundle slot 5 = entry 88 (4 objects, 340 vertices).
+    ("map01", 0),
+];
+
 /// Index over PROT.DAT + CDNAME.TXT. Built once and shared for the whole
 /// scene-host's lifetime. Thread-safe - the underlying file handle and the
 /// caches are guarded by Mutexes.
@@ -295,11 +309,17 @@ impl ProtIndex {
     /// PROT entries in `scene_name`'s CDNAME block whose payload is a
     /// `scene_tmd_stream` - the battle-stage half-dome backdrops (sky + mountain
     /// ring + ground that the battle is fought inside; see
-    /// [`docs/subsystems/battle.md`] "Battle background"). For an overworld
-    /// scene like `map01` these are the per-area stage variants (e.g. 88/89/90:
-    /// byte-identical dome geometry, different textures). The first is the
-    /// default backdrop; per-sub-area variant selection is a follow-up. Empty
-    /// when no CDNAME map is loaded or the block has no stage entries.
+    /// [`docs/subsystems/battle.md`] "Battle background").
+    ///
+    /// A scene bundle lays its streams out at fixed **bundle slots** after the
+    /// `.MAP` / v12 / event-script / asset-table / texture-pack head, so the
+    /// returned vec is slot-ordered: element `n` is bundle slot
+    /// `stage_slot_base + n`. A block carries one stream per sub-area, not one
+    /// per texture variant. Empty when no CDNAME map is loaded or the block has
+    /// no stage entries.
+    ///
+    /// Which of them a battle is actually fought inside is
+    /// [`Self::battle_stage_entry_for_scene`] - it is *not* always the first.
     pub fn battle_stage_entries(&self, scene_name: &str) -> Vec<u32> {
         let Some((start, end)) = self.block_range_extraction(scene_name) else {
             return Vec::new();
@@ -311,6 +331,38 @@ impl ProtIndex {
                     .unwrap_or(false)
             })
             .collect()
+    }
+
+    /// The PROT entry a battle fought in `scene_name` uses as its stage
+    /// backdrop: the entry whose stream the retail scene loader leaves in
+    /// `_DAT_8007B864` (the type-`0x01` chunk walker `FUN_8001FE70`'s last
+    /// chunk) when game mode flips to `0x15`.
+    ///
+    /// The walker records whatever the scene's asset table streamed, so the
+    /// choice is scene data rather than a code table - and it is **not**
+    /// uniformly the block's first stage stream. The per-scene bundle slot is
+    /// pinned from retail battle save states by byte-matching the resident
+    /// dome's vertex pool back to a PROT entry (rejecting matches that land
+    /// past an entry's unique on-disc length, which is how the block's
+    /// over-read tails produce phantom hits):
+    ///
+    /// | Scene | Stage-list position | Bundle slot | Entry | Pinned from |
+    /// |---|---|---|---|---|
+    /// | `town01` (Rim Elm) | 1 | 6 | 7 | the three Tetsu tutorial anchors |
+    /// | `map01` (overworld) | 0 | 5 | 88 | the four camera-orbit angle saves |
+    ///
+    /// Scenes with no pinned slot fall back to the block's first stage stream.
+    /// See [`docs/subsystems/battle.md`] "Battle background".
+    pub fn battle_stage_entry_for_scene(&self, scene_name: &str) -> Option<u32> {
+        let stages = self.battle_stage_entries(scene_name);
+        let pinned = BATTLE_STAGE_SLOT
+            .iter()
+            .find(|(name, _)| *name == scene_name)
+            .map(|(_, n)| *n);
+        match pinned {
+            Some(n) => stages.get(n).or_else(|| stages.first()).copied(),
+            None => stages.first().copied(),
+        }
     }
 
     /// First scene label whose block contains `idx`. Useful for diagnostics
