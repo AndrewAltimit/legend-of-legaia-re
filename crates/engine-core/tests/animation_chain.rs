@@ -8,6 +8,25 @@ use legaia_anm::{AnimPlayer, RECORD_HEADER_SIZE};
 use legaia_engine_core::world::{SceneMode, World};
 use legaia_tmd::mesh::tmd_to_vram_mesh_posed;
 
+/// Advance the world until the **actor pool's** next pass has run.
+///
+/// The anim player is stepped by `World::tick_actors`, which is part of the
+/// per-actor pool - and retail runs that pool once per *game tick*, a span of
+/// `frame_step` vsyncs (`DAT_1F800393`, resolved by `FUN_80016B6C`; the field
+/// scene loader `FUN_801D6704` installs a floor of 2). So one `World::tick`
+/// is not one anim advance, and these chain tests step to the pass instead of
+/// assuming it. The pass is detected by the pose frame's own advance.
+fn tick_to_actor_pass(world: &mut World, slot: usize) {
+    let before = world.actors[slot].pose_frame.as_ref().map(|f| f.factor);
+    for _ in 0..32 {
+        world.tick();
+        if world.actors[slot].pose_frame.as_ref().map(|f| f.factor) != before {
+            return;
+        }
+    }
+    panic!("actor pool did not run within 32 sim ticks");
+}
+
 /// Minimal valid Legaia TMD with one object, 5 vertices, 4 FT3 triangles.
 fn synth_pyramid_tmd() -> Vec<u8> {
     let mut buf = Vec::new();
@@ -85,9 +104,9 @@ fn tick_produces_pose_frame_for_active_actor() {
     // Before the first tick, no pose frame exists.
     assert!(world.actors[0].pose_frame.is_none());
 
-    world.tick();
+    tick_to_actor_pass(&mut world, 0);
 
-    // After one tick, pose_frame should be populated.
+    // After one actor pass, pose_frame should be populated.
     let frame = world.actors[0]
         .pose_frame
         .as_ref()
@@ -130,14 +149,15 @@ fn pose_frame_advances_each_tick() {
     player.frame_delta = 0x40; // large delta so we see factor movement
     world.set_actor_animation(0, player);
 
-    world.tick();
+    tick_to_actor_pass(&mut world, 0);
     let f0 = world.actors[0].pose_frame.clone().unwrap();
 
-    world.tick();
+    tick_to_actor_pass(&mut world, 0);
     let f1 = world.actors[0].pose_frame.clone().unwrap();
 
-    // Each tick should advance the factor and produce different bone outputs.
-    assert_ne!(f0.factor, f1.factor, "factor should advance between ticks");
+    // Each actor pass should advance the factor and produce different bone
+    // outputs.
+    assert_ne!(f0.factor, f1.factor, "factor should advance between passes");
 }
 
 #[test]
@@ -147,7 +167,7 @@ fn set_actor_animation_resets_pose_frame() {
     let record = synth_anm_record(1);
     let player = AnimPlayer::new(record.clone(), 1).unwrap();
     world.set_actor_animation(0, player);
-    world.tick();
+    tick_to_actor_pass(&mut world, 0);
     assert!(world.actors[0].pose_frame.is_some());
 
     // Setting a new animation should clear the stale pose_frame.
@@ -181,7 +201,7 @@ fn bone_output_is_nonzero_at_midpoint_factor() {
     player.frame_delta = 0x80;
     world.set_actor_animation(0, player);
 
-    world.tick(); // factor moves from 0 to 0x80
+    tick_to_actor_pass(&mut world, 0); // factor moves from 0 to 0x80
     let frame = world.actors[0].pose_frame.as_ref().unwrap();
     let (pos, _rot) = frame.bone_outputs[0];
     // factor=0x80 → lerp(0, 10, 0x80/0x100) ≈ 5
@@ -227,7 +247,7 @@ fn animation_player_pose_frame_drives_posed_mesh() {
     world.set_actor_tmd_binding(0, 0);
     world.set_actor_animation(0, AnimPlayer::new(record, 1).unwrap());
 
-    world.tick();
+    tick_to_actor_pass(&mut world, 0);
     let pose = world.actors[0].pose_frame.as_ref().unwrap();
 
     let mesh = tmd_to_vram_mesh_posed(&tmd, &buf, &pose.bone_outputs);

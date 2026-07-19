@@ -83,6 +83,14 @@ The consequence for ordinary field play: `DAT_8007B9D8 = 2`, so **actor motion a
 
 `legaia_engine_vm::actor_tick::FrameCadence` models this law; `TickScalars::for_cadence` feeds it into the dispatcher multiplier.
 
+#### Engine wiring
+
+`World::tick` drives the pool on the same clock. It banks a vsync per retail frame and runs the per-actor passes (`tick_actor_physics` / `tick_actors` / `tick_actor_motions`) once every `World::frame_step` of them; the pass that fires carries `frame_step` as the dispatcher's `frame_delta` rather than a constant `1`.
+
+The gate and the scalar are one change, not two. Gating alone would halve wall-clock motion; scaling alone would double it. Together they conserve vsyncs-per-second, which is what leaves every duration where it was and moves only the sample rate. `World::tick_field_npc_ambient` rides the same gate, so op `0x0D` stays in lockstep with its ramp scheduler (see [`motion-vm.md`](motion-vm.md#the-ambient-vms-own-facing-ops)).
+
+The property is pinned directly in `crates/engine-core/src/world/tests/actor_cadence.rs`: across cadences `1..=4` the integrated displacement and the timer drain are identical while the pose count scales as `1 / cadence`. A change that moves a duration is a regression, not a reason to retune the assertion.
+
 ### Actor record fields
 
 The tick reads three fixed offsets on the per-actor record:

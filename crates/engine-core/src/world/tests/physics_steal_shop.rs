@@ -65,6 +65,11 @@ fn move_vm_kick_drives_cursor_advance_against_installed_pool() {
     // Request move id 3; phase rate of 8 steps per frame.
     world.actors[0].move_buffer.cursor_requested = 3;
     world.actors[0].move_buffer.phase_rate = 8;
+    // Pin the cadence: `tick_actor_physics` carries the live `frame_step`
+    // into the dispatcher's `frame_delta` (retail `DAT_1F800393`), so the
+    // per-tick arithmetic below is only meaningful against a stated cadence.
+    // `World::new()` defaults to the field floor of 2.
+    world.frame_step = 1;
     world.tick_actor_physics();
     // MoveVmKick emitted.
     let (_, res) = &world.last_tick_events[0];
@@ -81,6 +86,31 @@ fn move_vm_kick_drives_cursor_advance_against_installed_pool() {
     // Move VM kick flag set by the latch (cursor_advance writes
     // move_vm_kick = 1 whenever it latches a new record).
     assert_eq!(world.actors[0].move_buffer.move_vm_kick, 1);
+}
+
+/// The move-buffer phase is a duration, so it is cadence-invariant like
+/// every other retail accumulator: one tick at cadence 2 advances the phase
+/// by `phase_rate * 2`, but that tick covers two vsyncs, so the phase per
+/// *vsync* is `phase_rate` at any cadence. Companion to the unit-cadence
+/// arithmetic pinned above.
+#[test]
+fn move_buffer_phase_advances_per_vsync_not_per_tick() {
+    for cadence in [1u8, 2, 4] {
+        let mut world = World::new();
+        world.set_move_buffer_root(make_move_pool(3, 0x1010, 8, 1));
+        world.frame_step = cadence;
+        world.actors[0].active = true;
+        world.actors[0].set_physics_dispatch(0x06);
+        world.actors[0].physics.move_vm_kick = 1;
+        world.actors[0].move_buffer.cursor_requested = 3;
+        world.actors[0].move_buffer.phase_rate = 8;
+        world.tick_actor_physics();
+        assert_eq!(
+            world.actors[0].move_buffer.phase,
+            8 * i16::from(cadence),
+            "one tick at cadence {cadence} carries {cadence} vsyncs of phase"
+        );
+    }
 }
 
 #[test]
@@ -117,22 +147,33 @@ fn tick_does_not_advance_cursor_when_move_vm_kick_is_clear() {
 }
 
 #[test]
-fn world_tick_runs_physics_pass_in_order() {
-    // Smoke test: World::tick invokes tick_actor_physics. After
-    // one tick with the kick flag set + a record installed, the
-    // per-actor cursor should have advanced.
+fn world_tick_runs_physics_pass_on_the_actor_game_tick() {
+    // Smoke test: World::tick invokes tick_actor_physics. It runs on the
+    // retail **game tick** - once every `frame_step` vsyncs - not once per
+    // sim tick, so the pass needs the clock to reach a game tick before the
+    // per-actor cursor advances. (`FUN_80016B6C` resolves one
+    // `DAT_1F800393` per frame and the actor pool runs per game tick.)
     let mut world = World::new();
     world.set_move_buffer_root(make_move_pool(1, 0x1010, 8, 1));
+    world.frame_step = 1; // one game tick per vsync
     world.actors[0].active = true;
     world.actors[0].set_physics_dispatch(0x06);
     world.actors[0].physics.move_vm_kick = 1;
     world.actors[0].move_buffer.cursor_requested = 1;
     world.actors[0].move_buffer.phase_rate = 4;
-    // World::tick (no scene mode) returns None for Title; the
-    // physics pass still runs unconditionally.
+    // The sim clocks at 100 Hz and marks a vsync on the ~60 % of ticks that
+    // cross it, so the first vsync (and with `frame_step = 1`, the first
+    // game tick) lands within the first two sim ticks.
+    world.tick();
     world.tick();
     assert_eq!(world.actors[0].move_buffer.cursor_active, 1);
 }
+
+// The pool's firing *rate* (once per `frame_step` vsyncs) and the
+// cadence-invariance it buys are pinned in `world::tests::actor_cadence`,
+// which measures displacement and pose count directly rather than through
+// `last_tick_events` (that buffer holds the last game tick's events, so it
+// reads as non-empty on the sim ticks between game ticks too).
 
 #[test]
 fn apply_steal_grants_item_on_hit_and_respects_non_stealable() {

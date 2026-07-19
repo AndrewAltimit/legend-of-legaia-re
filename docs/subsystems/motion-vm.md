@@ -399,6 +399,39 @@ the stepped-over ones from spinning. The pool is ticked in slot order rather
 than through retail's linked list - observable only if two live ramps shared
 a destination, which one actor's heading channel cannot do.
 
+#### Engine wiring
+
+The host keeps one channel per placement slot (`World::field_npc_ambient`),
+seeded at scene load by `World::seed_field_npc_ambient` from the MAN's
+tail-section-1 streams through the installer's binding law
+(`actor_id = N0 + placement_index`). The whole variant table is carried, not
+just the fresh-game one, because the interpreter preamble re-selects the live
+variant **every tick** against `DAT_80085758`; a swap reseeds the cursor
+rather than resuming the old variant's offset into new bytecode.
+
+`World::tick_field_npc_ambient` steps each channel on the **actor game tick**
+(see [`actor-vm.md`](actor-vm.md#tick-cadence-dat_1f800393)), not per rendered
+frame - that is what keeps `0x0D` in lockstep with the ramp scheduler, since
+both advance by the same `DAT_1F800393`. Op `0x04`'s unit-per-tick cursor is
+unaffected by the same scalar, which is the retail asymmetry, not a port
+artefact.
+
+Where the facing ops sit in the corpus is worth knowing before debugging a
+"nobody turns" report. In `town01` the **default** (fresh-game) variants carry
+no facing op at all - they are `0x17` default-move, `0x05` wait, `0x18` AABB
+wander - so a fresh Rim Elm villager's ambient behaviour is *wandering*. The
+`0x04` ramps live in **flag-gated** variants, i.e. later story states. A fresh
+save showing no turning NPCs is therefore the authored behaviour, not broken
+wiring; the gated path is exercised in
+[`crates/engine-core/tests/field_npc_ambient_idle_disc.rs`](../../crates/engine-core/tests/field_npc_ambient_idle_disc.rs).
+
+The channel's `render_heading()` is mirrored into `World::field_npc_headings`
+- converted out of retail heading space into the engine's `render_26` space
+(`+0x800`) - **only on a tick that actually moved the heading**. That gate is
+the ambient sibling of `MotionState::yaw_written`: an NPC parked in a `0x05`
+wait must not re-stamp its stale heading over a pose another writer set (the
+interact face-the-speaker bearing being the case that regressed before).
+
 Disc oracle:
 [`crates/engine-vm/tests/ambient_motion_disc_oracle.rs`](../../crates/engine-vm/tests/ambient_motion_disc_oracle.rs)
 re-derives the disc-wide census (every scene bundle's MAN → tail-section 1 →

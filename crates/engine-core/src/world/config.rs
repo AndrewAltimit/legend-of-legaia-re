@@ -243,6 +243,51 @@ pub struct FieldNpcMotion {
     pub route_cursor: Option<usize>,
 }
 
+/// One NPC's **ambient facing** channel - the idle turn-in-place behaviour of
+/// the second motion VM (`FUN_80038158` ops `0x04` / `0x0D`), driven by the
+/// [`legaia_engine_vm::ambient_motion::AmbientMotion`] port.
+///
+/// The stream arrives as MAN tail-section 1: one motion record per bound
+/// actor, each carrying a table of gated *variants*
+/// ([`legaia_asset::man_motion::stream_variants`]). Retail's interpreter
+/// preamble re-selects the live variant every tick - the first variant whose
+/// `DAT_80085758` system flag is set, else the `0xFFFF` default - so the
+/// selection is re-run per tick here too rather than frozen at scene load,
+/// and a swap reseeds the VM cursor the way the retail preamble does.
+#[derive(Debug, Clone)]
+pub struct FieldNpcAmbient {
+    /// `(selector, bytecode)` per variant, in header-table order. The
+    /// selector is the raw `MotionVariant::selector`: `0xFFFF` = default,
+    /// else `selector & 0xFFF` is the gating system-flag id.
+    pub variants: Vec<(u16, Vec<u8>)>,
+    /// Index into [`Self::variants`] the VM is currently running, or `None`
+    /// before the first tick has selected one.
+    pub live: Option<usize>,
+    /// The ambient facing interpreter (PC, cursor, raw `+0x26` heading, and
+    /// the actor's own slice of the `0x801C66A0` ramp pool).
+    pub vm: vm::ambient_motion::AmbientMotion,
+}
+
+impl FieldNpcAmbient {
+    /// Retail's per-tick variant re-selection: the first flag-gated variant
+    /// whose system flag is set, else the `0xFFFF` default. Returns an index
+    /// into [`Self::variants`].
+    ///
+    /// REF: FUN_80038158 (interpreter preamble), FUN_8003A9D4 (binding)
+    pub fn select_variant(&self, flag: impl Fn(u16) -> bool) -> Option<usize> {
+        self.variants
+            .iter()
+            .position(|(sel, _)| {
+                *sel != legaia_asset::man_motion::SELECTOR_DEFAULT && flag(*sel & 0x0FFF)
+            })
+            .or_else(|| {
+                self.variants
+                    .iter()
+                    .position(|(sel, _)| *sel == legaia_asset::man_motion::SELECTOR_DEFAULT)
+            })
+    }
+}
+
 /// Cold field-entry player spawn coordinate (both X and Z).
 ///
 /// On a non-warp (cold) field scene entry, the per-scene initializer

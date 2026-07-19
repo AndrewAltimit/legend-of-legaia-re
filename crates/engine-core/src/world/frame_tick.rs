@@ -118,11 +118,37 @@ impl World {
             self.tick_effects();
         }
         self.tick_move_vms();
-        self.tick_actor_physics();
-        self.tick_actors();
-        // Actor-VM glides (op 0x09 `MotionAt` -> `start_motion`): one
-        // motion-VM pursue step per frame toward the recorded target.
-        self.tick_actor_motions();
+        // Actor pool on the retail **game-tick** clock. Retail resolves one
+        // `DAT_1F800393` per frame (`FUN_80016B6C`) and runs the per-actor
+        // dispatcher once per game tick, so with the field floor of 2
+        // (installed by the scene loader `FUN_801D6704`) the pool advances
+        // every second vsync - and the tick that fires carries `frame_step`
+        // into the dispatcher's scalars instead of `1`.
+        //
+        // The pairing is the whole point, and neither half is correct alone:
+        // every retail duration accumulates `DAT_1F800393` rather than `1`
+        // (`t = min(t + dt, d)`), which makes durations **cadence-invariant** -
+        // a 600-frame move arrives after 600 vsyncs at any cadence. Gating
+        // without the scalars would halve wall-clock speed; scaling without
+        // the gate would double it. Together they leave every duration where
+        // it was and only drop the *sample rate*: retail emits a pose every
+        // `frame_step` vsyncs, so the engine draws proportionally fewer
+        // intermediate poses over the same wall-clock span.
+        //
+        // REF: FUN_80016B6C (cadence resolver), FUN_801D6704 (field floor)
+        if self.field_frame_step == 1 {
+            self.actor_vsync_accum += 1;
+        }
+        let cadence = self.frame_step.max(1);
+        let actor_tick_fired = self.actor_vsync_accum >= cadence;
+        if actor_tick_fired {
+            self.actor_vsync_accum = 0;
+            self.tick_actor_physics();
+            self.tick_actors();
+            // Actor-VM glides (op 0x09 `MotionAt` -> `start_motion`): one
+            // motion-VM pursue step per game tick toward the recorded target.
+            self.tick_actor_motions();
+        }
         // Tick art-learned banner countdown - clear when it reaches zero.
         if let Some(banner) = &mut self.current_art_banner {
             if banner.frames_remaining > 0 {
@@ -240,6 +266,15 @@ impl World {
                 // writing back into `field_npc_positions` so collision /
                 // interact probes follow the live NPC.
                 self.tick_field_npc_motions();
+                // Ambient facing channels (`FUN_80038158` ops 0x04 / 0x0D):
+                // the idle turn-in-place a standing town NPC runs between
+                // walk legs. Part of the actor pool, so it advances on the
+                // actor game tick, not per rendered frame - which is what
+                // keeps op 0x0D in lockstep with its ramp scheduler.
+                // REF: FUN_80038158, FUN_80036D80
+                if actor_tick_fired {
+                    self.tick_field_npc_ambient();
+                }
                 self.tick_tile_board();
                 // Rebuild the tile-actor draw list from the current board +
                 // player cell (retail's per-frame board render pass).
