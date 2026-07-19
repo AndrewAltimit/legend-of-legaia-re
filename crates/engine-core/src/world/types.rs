@@ -71,10 +71,12 @@ pub struct EffectMarker {
 }
 
 /// Render-agnostic snapshot of one live effect **child sprite**, produced by
-/// [`World::active_effect_sprites`]. This is the faithful billboard the retail
-/// per-frame walker (`FUN_801E0088` pass 2) emits: a camera-facing quad sized
-/// by the sprite-atlas entry, positioned at the effect origin plus the child's
-/// spread offset, sampling VRAM at the atlas's `(u, v)` / `tpage` / `clut`.
+/// [`World::active_effect_sprites`] straight off the pool's live child slots
+/// (`Pool::child_billboards`, the `FUN_801E0088` pass-2 port): a camera-facing
+/// quad at the child's integrated world position, sized by the sprite-atlas
+/// entry × the pool sprite scale, sampling VRAM at the current animation
+/// frame's atlas `(u, v)` / `tpage` / `clut`, with the retail brightness
+/// envelope and random UV-mirror corner order.
 ///
 /// The texel-source VRAM upload for battle effects is not yet pinned (see
 /// `docs/formats/effect.md`), so a host that samples VRAM here will draw the
@@ -84,10 +86,11 @@ pub struct EffectMarker {
 /// REF: FUN_801E0088
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EffectSprite {
-    /// Child world position in world units (effect origin + spread offset).
+    /// Child world position in world units (the pool's 16.8 coordinates
+    /// `>> 8`, exactly as the retail projection input truncates).
     pub world_pos: [f32; 3],
-    /// Billboard size in world units (atlas `w` × `h`, in texel-equivalent
-    /// units the host scales as it sees fit).
+    /// Billboard size in world units - the pass-2 sizing `atlas w/h *
+    /// sprite_scale >> 8` (x10 the texel size at the retail `0xA00` scale).
     pub size: [f32; 2],
     /// Top-left source texel within the texture page (atlas `u`, `v`).
     pub uv: [u16; 2],
@@ -97,8 +100,31 @@ pub struct EffectSprite {
     pub page: u16,
     /// CLUT (CBA) id.
     pub clut: u16,
-    /// Lifetime fraction `0.0..=1.0` (for fade-out), shared with the effect.
+    /// Brightness modulation `0..=0x80` from the retail ramp-in / ramp-out
+    /// envelope (`0x80` = neutral). Hosts write it as `r = g = b`.
+    pub brightness: u8,
+    /// Horizontal texel-corner swap (the random UV mirror, bit 0 clear).
+    pub flip_h: bool,
+    /// Vertical texel-corner swap (mirror bit 1 clear).
+    pub flip_v: bool,
+    /// Animation fraction `0.0..=1.0` (`frame_cursor / frame_count`) - a
+    /// render aid for outline fades; the faithful fade is `brightness`.
     pub age01: f32,
+}
+
+/// One dev-spawned synthetic effect ([`World::spawn_debug_effect`] /
+/// [`World::spawn_debug_effect_model`]) - an engine-side visualization aid,
+/// **not** a retail pool slot. Lives outside the effect pool so the faithful
+/// walker never sees it; [`World::tick_effects`] ages it over a fixed budget.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DebugEffect {
+    /// Effect origin in world units.
+    pub world_pos: [f32; 3],
+    /// Index into [`World::global_tmd_pool`] for the model-driven debug
+    /// effects (`None` for the plain marker spawn).
+    pub model_index: Option<usize>,
+    /// Frames elapsed since the spawn.
+    pub age_frames: u32,
 }
 
 /// Render-agnostic snapshot of one live effect's **3D model** (`etmd.dat`),

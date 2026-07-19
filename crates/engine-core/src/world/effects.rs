@@ -5,6 +5,16 @@
 
 use super::*;
 
+/// Fixed lifetime (frames) of the dev-spawned [`DebugEffect`] entries -
+/// engine-side visualization aids, not a retail cadence (retail effects
+/// retire when their spawn records + child animations drain through
+/// `Pool::tick_retail`).
+pub const DEBUG_EFFECT_LIFETIME_FRAMES: u32 = 30;
+
+/// Cap on simultaneous [`DebugEffect`] entries (mirrors the pool's 32
+/// master slots so the debug exerciser degrades the same way).
+pub const MAX_DEBUG_EFFECTS: usize = 32;
+
 impl World {
     /// Set / clear the move-VM bytecode for `slot`. `None` clears the
     /// buffer; subsequent ticks won't run the move VM on this actor.
@@ -220,26 +230,46 @@ impl World {
         vm::battle_action::step(&mut host, ctx)
     }
 
-    /// Tick the effect pool.
+    /// Tick the effect pool - one sweep of the faithful retail walker
+    /// (`Pool::tick_retail`, the `FUN_801E0088` pass-1 port): the master
+    /// spawn cadence over the catalog's 14-byte pack1 records and the child
+    /// anim/motion walk over the 6-byte pack0 frames, on the 5.3 fixed-point
+    /// wait counters. One call = one retail logic frame (`frame_skip = 1`);
+    /// [`Self::tick`] calls this on the retail-frame sub-clock so effect
+    /// cadence tracks retail wall-speed.
+    ///
+    /// Also ages the engine-side [`Self::debug_effects`] (dev spawns kept
+    /// outside the pool) over their fixed budget.
+    ///
+    /// REF: FUN_801E0088
     pub fn tick_effects(&mut self) {
         let pool_ptr: *mut Pool = &mut self.effect_pool;
+        let catalog_ptr: *const vm::effect_vm::EffectCatalog = &self.effect_catalog;
         let mut host = EffectHostImpl { world: self };
-        // SAFETY: EffectHostImpl never reads `world.effect_pool` through
-        // the borrow.
+        // SAFETY: EffectHostImpl only reads `world.rng_state`; it never
+        // accesses `effect_pool` or `effect_catalog` through the borrow.
         let pool = unsafe { &mut *pool_ptr };
-        pool.tick(&mut host);
+        let catalog = unsafe { &*catalog_ptr };
+        pool.tick_retail(&mut host, catalog, 1);
+        self.debug_effects.retain_mut(|d| {
+            d.age_frames += 1;
+            d.age_frames < DEBUG_EFFECT_LIFETIME_FRAMES
+        });
     }
 
     /// Snapshot every live effect for the renderer: one [`EffectMarker`] per
-    /// active master slot (`child_count > 0`), with its world position, spawn
-    /// angle, and lifetime fraction.
+    /// active master slot (`child_count > 0`) - i.e. per effect still in its
+    /// spawn phase - plus one per live [`Self::debug_effects`] entry, with
+    /// world position, spawn angle, and a coarse age fraction.
     ///
     /// This is the render-agnostic seam between the effect VM and the host's
     /// draw path. The host drains it each frame after [`Self::tick`] and emits
-    /// whatever it can draw; nothing here depends on the renderer.
+    /// whatever it can draw; nothing here depends on the renderer. The
+    /// faithful per-child view is [`Self::active_effect_sprites`].
     pub fn active_effect_markers(&self) -> Vec<EffectMarker> {
-        let lifetime = vm::effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES.max(1) as f32;
-        self.effect_pool
+        let lifetime = DEBUG_EFFECT_LIFETIME_FRAMES.max(1) as f32;
+        let mut out: Vec<EffectMarker> = self
+            .effect_pool
             .master_slots
             .iter()
             .filter(|m| m.child_count > 0)
@@ -251,107 +281,74 @@ impl World {
                     (m.pos_z as f32) / 256.0,
                 ],
                 angle: m.angle,
+                // `field_14` counts walker calls (a port-side aid); a master
+                // only lives through its spawn phase, so normalize against
+                // the nominal debug budget for a stable fade.
                 age01: ((m.field_14 as f32) / lifetime).clamp(0.0, 1.0),
+            })
+            .collect();
+        out.extend(self.debug_effects.iter().map(|d| EffectMarker {
+            world_pos: d.world_pos,
+            angle: 0,
+            age01: ((d.age_frames as f32) / lifetime).clamp(0.0, 1.0),
+        }));
+        out
+    }
+
+    /// Snapshot every live effect **child sprite** as a faithful billboard -
+    /// the textured-quad seam that supersedes [`Self::active_effect_markers`]'
+    /// one-cross-per-effect view. A direct mapping of the pool's live child
+    /// slots through `Pool::child_billboards` (the `FUN_801E0088` pass-2
+    /// port): each child's integrated 16.8 position, its current pack0
+    /// frame's atlas rect + `tpage`/`clut`, the pass-2 sprite sizing, the
+    /// retail brightness envelope, and the random UV-mirror corner order.
+    ///
+    /// Returns an empty vector when the catalog is empty (e.g. no disc) or
+    /// no children are live, so it degrades cleanly.
+    ///
+    /// REF: FUN_801E0088
+    pub fn active_effect_sprites(&self) -> Vec<EffectSprite> {
+        self.effect_pool
+            .child_billboards(&self.effect_catalog)
+            .into_iter()
+            .map(|b| EffectSprite {
+                world_pos: [b.pos[0] as f32, b.pos[1] as f32, b.pos[2] as f32],
+                size: [b.world_w.max(1) as f32, b.world_h.max(1) as f32],
+                uv: [b.entry.u as u16, b.entry.v as u16],
+                uv_size: [b.entry.w as u16, b.entry.h as u16],
+                page: b.entry.page,
+                clut: b.entry.clut,
+                brightness: b.brightness,
+                flip_h: b.flip_h,
+                flip_v: b.flip_v,
+                age01: (b.frame_cursor as f32 / b.frame_count.max(1) as f32).clamp(0.0, 1.0),
             })
             .collect()
     }
 
-    /// Snapshot every live effect's **child sprites** as faithful billboards -
-    /// the textured-quad seam that supersedes [`Self::active_effect_markers`]'
-    /// one-cross-per-effect view. For each active master slot it resolves the
-    /// effect's children through the loaded [`crate::world::World::effect_catalog`],
-    /// walks each child's pack0 animation to the current frame, and reads the
-    /// frame's sprite-atlas entry for size + VRAM `(u, v)` / `tpage` / `clut`.
-    ///
-    /// Mirrors the retail per-frame walker (`FUN_801E0088` pass 2): one GPU
-    /// sprite primitive per child, sized from the atlas, placed at the effect
-    /// origin plus the child's spread offset. Returns an empty vector when the
-    /// catalog is empty (e.g. no disc), so it degrades cleanly.
-    pub fn active_effect_sprites(&self) -> Vec<EffectSprite> {
-        let lifetime = vm::effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES.max(1) as f32;
-        let atlas = self.effect_catalog.atlas();
-        let mut out = Vec::new();
-        for m in self.effect_pool.master_slots.iter() {
-            if m.child_count == 0 {
-                continue;
-            }
-            let Some((_script, children)) = self.effect_catalog.entry(m.ui_id) else {
-                continue;
-            };
-            let age01 = ((m.field_14 as f32) / lifetime).clamp(0.0, 1.0);
-            let frame_idx = m.field_14.max(0) as usize;
-            let origin = [
-                m.pos_x as f32 / 256.0,
-                m.pos_y as f32 / 256.0,
-                m.pos_z as f32 / 256.0,
-            ];
-            for (i, child) in children.iter().enumerate() {
-                // Resolve the current animation frame -> atlas entry.
-                let entry = self.effect_catalog.anim(child.sprite_id).and_then(|batch| {
-                    if batch.frames.is_empty() {
-                        return None;
-                    }
-                    // Loop the batch over the effect lifetime (the faithful
-                    // per-frame token cadence is not extracted; a uniform loop
-                    // keeps the sprite animating over its visible life).
-                    let f = frame_idx % batch.frames.len();
-                    atlas.get(batch.frames[f].atlas_index as usize)
-                });
-                let Some(e) = entry else {
-                    continue;
-                };
-                // Child placement: the stored spread offset (random-distribution
-                // path) or a small deterministic ring (walker-populated path).
-                let (dx, dz) = m
-                    .child_offsets
-                    .get(i)
-                    .copied()
-                    .map(|(x, z)| (x as f32 / 256.0, z as f32 / 256.0))
-                    .unwrap_or_else(|| {
-                        let a = i as f32 * std::f32::consts::TAU / children.len().max(1) as f32;
-                        let r = (child.width.max(child.depth).max(8) as f32) / 256.0;
-                        (a.cos() * r, a.sin() * r)
-                    });
-                out.push(EffectSprite {
-                    world_pos: [origin[0] + dx, origin[1], origin[2] + dz],
-                    size: [e.w.max(1) as f32, e.h.max(1) as f32],
-                    uv: [e.u as u16, e.v as u16],
-                    uv_size: [e.w as u16, e.h as u16],
-                    page: e.page,
-                    clut: e.clut,
-                    age01,
-                });
-            }
-        }
-        out
-    }
-
-    /// Snapshot every live effect that has a 3D model assigned, for the
-    /// `etmd`-model render path. One [`EffectModel`] per active master slot
-    /// whose `model_index` is set (the model-driven effects); 2D-billboard-only
-    /// effects are skipped. The host resolves `tmd_index` through
-    /// [`Self::global_tmd`], builds a VRAM mesh, and draws it at `world_pos`.
+    /// Snapshot every live **debug** effect that has a 3D model assigned, for
+    /// the `etmd`-model render path. One [`EffectModel`] per
+    /// [`Self::debug_effects`] entry whose `model_index` is set. The host
+    /// resolves `tmd_index` through [`Self::global_tmd`], builds a VRAM mesh,
+    /// and draws it at `world_pos`.
     ///
     /// Distinct from [`Self::active_effect_sprites`] (the 2D billboard seam):
     /// effects like *Tail Fire* render as a small `etmd` mesh textured by the
-    /// resident `etim` texels, not a billboard.
+    /// resident `etim` texels, not a billboard. The production effect-id ->
+    /// etmd-model selection is driven by the move/art VM (the
+    /// [`Self::spawn_move_fx`] / summon paths); this snapshot only carries the
+    /// hand-spawned model exerciser.
     pub fn active_effect_models(&self) -> Vec<EffectModel> {
-        let lifetime = vm::effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES.max(1) as f32;
-        self.effect_pool
-            .master_slots
+        let lifetime = DEBUG_EFFECT_LIFETIME_FRAMES.max(1) as f32;
+        self.debug_effects
             .iter()
-            .filter(|m| m.child_count > 0)
-            .filter_map(|m| {
-                let tmd_index = m.model_index?;
+            .filter_map(|d| {
+                let tmd_index = d.model_index?;
                 Some(EffectModel {
                     tmd_index,
-                    world_pos: [
-                        m.pos_x as f32 / 256.0,
-                        m.pos_y as f32 / 256.0,
-                        m.pos_z as f32 / 256.0,
-                    ],
-                    angle: m.angle,
-                    age01: ((m.field_14 as f32) / lifetime).clamp(0.0, 1.0),
+                    world_pos: d.world_pos,
+                    angle: 0,
+                    age01: ((d.age_frames as f32) / lifetime).clamp(0.0, 1.0),
                 })
             })
             .collect()
@@ -421,26 +418,26 @@ impl World {
         })
     }
 
-    /// Dev/visualization helper: seat one synthetic active effect carrying a
-    /// 3D `etmd` model at `world_pos` (world units), so the model render path
+    /// Dev/visualization helper: seat one synthetic effect carrying a 3D
+    /// `etmd` model at `world_pos` (world units), so the model render path
     /// (e.g. *Tail Fire* = `etmd` mesh index 4, textured by `etim`) can be
     /// exercised by hand. `tmd_index` indexes [`Self::global_tmd_pool`]. The
-    /// slot ages and retires through the normal [`Self::tick_effects`] lifetime.
+    /// entry ages and retires through [`Self::tick_effects`]' fixed debug
+    /// budget ([`DEBUG_EFFECT_LIFETIME_FRAMES`]).
     ///
     /// Like [`Self::spawn_debug_effect`], this is **not** a retail code path -
-    /// the production effect-id -> etmd-model selection (driven by the move/art
-    /// VM) is not yet decoded. Returns `false` when the pool is full.
+    /// it lives in [`Self::debug_effects`], outside the retail pool, so the
+    /// faithful walker never sees it. Returns `false` when the debug list is
+    /// at its cap.
     pub fn spawn_debug_effect_model(&mut self, world_pos: [f32; 3], tmd_index: usize) -> bool {
-        let Some(slot) = self.effect_pool.allocate_master() else {
+        if self.debug_effects.len() >= MAX_DEBUG_EFFECTS {
             return false;
-        };
-        let m = &mut self.effect_pool.master_slots[slot];
-        *m = vm::effect_vm::MasterSlot::default();
-        m.child_count = 1;
-        m.pos_x = (world_pos[0] * 256.0) as i32;
-        m.pos_y = (world_pos[1] * 256.0) as i32;
-        m.pos_z = (world_pos[2] * 256.0) as i32;
-        m.model_index = Some(tmd_index);
+        }
+        self.debug_effects.push(DebugEffect {
+            world_pos,
+            model_index: Some(tmd_index),
+            age_frames: 0,
+        });
         true
     }
 
@@ -793,27 +790,26 @@ impl World {
         }
     }
 
-    /// Dev/visualization helper: seat one synthetic active effect into the
-    /// pool at `world_pos` (world units) so the effect-pool render bridge can
-    /// be exercised by hand. It ages and retires through the normal
-    /// [`Self::tick_effects`] lifetime like any spawned effect.
+    /// Dev/visualization helper: seat one synthetic marker effect at
+    /// `world_pos` (world units) so the effect render bridge can be exercised
+    /// by hand. It ages and retires through [`Self::tick_effects`]' fixed
+    /// debug budget ([`DEBUG_EFFECT_LIFETIME_FRAMES`]).
     ///
-    /// This is **not** a retail code path - it's a hand-spawn for exercising
-    /// the render bridge without driving the action SM. The real catalog (PROT
+    /// This is **not** a retail code path - it lives in
+    /// [`Self::debug_effects`], outside the retail pool, so the faithful
+    /// walker never consumes it as a spawn script. The real catalog (PROT
     /// 0873 `efect.dat`) loads at scene entry, so `ui_element` spawns resolve
-    /// to real scripts; use [`Self::try_spawn_effect`] for the production path.
-    /// Returns `false` when the pool is full.
+    /// to real scripts; use [`Self::try_spawn_effect`] for the production
+    /// path. Returns `false` when the debug list is at its cap.
     pub fn spawn_debug_effect(&mut self, world_pos: [f32; 3]) -> bool {
-        let Some(slot) = self.effect_pool.allocate_master() else {
+        if self.debug_effects.len() >= MAX_DEBUG_EFFECTS {
             return false;
-        };
-        let m = &mut self.effect_pool.master_slots[slot];
-        *m = vm::effect_vm::MasterSlot::default();
-        // child_count > 0 marks the slot active for the walker + markers.
-        m.child_count = 1;
-        m.pos_x = (world_pos[0] * 256.0) as i32;
-        m.pos_y = (world_pos[1] * 256.0) as i32;
-        m.pos_z = (world_pos[2] * 256.0) as i32;
+        }
+        self.debug_effects.push(DebugEffect {
+            world_pos,
+            model_index: None,
+            age_frames: 0,
+        });
         true
     }
 

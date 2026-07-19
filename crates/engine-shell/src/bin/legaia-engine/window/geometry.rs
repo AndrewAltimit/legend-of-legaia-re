@@ -5,15 +5,15 @@
 //! and the battle ground grid builder.
 
 use super::*;
-use legaia_tmd::legaia_prims::MODULATION_NEUTRAL as NEUTRAL;
 
 /// Raw `LineList` geometry: `(positions, per-vertex colours, line indices)`.
 /// The geometry helpers (`world_map_*_line_geometry`) emit this shape; it is
 /// uploaded via `Renderer::upload_lines`.
 pub(crate) type LineGeometry = (Vec<[f32; 3]>, Vec<[u8; 4]>, Vec<u32>);
 
-/// World-unit size of one texel when drawing an effect billboard (the atlas
-/// stores sprite extents in texels; the renderer scales them to world units).
+/// Extra world-unit scale on an effect billboard. The sprite's `size` is
+/// already the retail pass-2 world size (`atlas w/h * sprite_scale >> 8`),
+/// so the identity scale draws it faithfully.
 const EFFECT_TEXEL_WORLD: f32 = 1.0;
 
 /// The four world-space corners of a camera-facing billboard for `sprite`,
@@ -57,15 +57,25 @@ pub(crate) fn effect_billboard_mesh(
     // Quad faces the camera; a single normal toward the viewer keeps the
     // lambert term stable rather than relying on the derivative fallback.
     let face = right.cross(up).normalize_or_zero().to_array();
-    // Effect sprites are engine-synthesised, not TMD prims: no baked colour
-    // word, so the neutral modulation colour draws the texel unchanged.
+    // Per-sprite modulation: the retail pass-2 brightness envelope writes
+    // `r = g = b = brightness` on the GPU packet (`0x80` = neutral, the
+    // same value as `legaia_prims::MODULATION_NEUTRAL`), so the ramp-in /
+    // ramp-out fade is faithful.
     let mut colors: Vec<[u8; 3]> = Vec::with_capacity(sprites.len() * 4);
     for s in sprites {
         let [u0, v0] = s.uv;
         let u1 = u0.saturating_add(s.uv_size[0].saturating_sub(1)).min(255) as u8;
         let v1 = v0.saturating_add(s.uv_size[1].saturating_sub(1)).min(255) as u8;
-        let u0 = (u0 & 0xFF) as u8;
-        let v0 = (v0 & 0xFF) as u8;
+        let (mut u0, mut u1) = ((u0 & 0xFF) as u8, u1);
+        let (mut v0, mut v1) = ((v0 & 0xFF) as u8, v1);
+        // Random UV-mirror corner order (retail pass 2): a set flip swaps
+        // which side samples the base texel column/row.
+        if s.flip_h {
+            std::mem::swap(&mut u0, &mut u1);
+        }
+        if s.flip_v {
+            std::mem::swap(&mut v0, &mut v1);
+        }
         let corners = effect_sprite_corners(s, right, up);
         let corner_uv = [[u0, v0], [u1, v0], [u0, v1], [u1, v1]];
         let base = positions.len() as u32;
@@ -74,7 +84,7 @@ pub(crate) fn effect_billboard_mesh(
             uvs.push(uv);
             cba_tsb.push([s.clut, s.page]);
             normals.push(face);
-            colors.push([NEUTRAL; 3]);
+            colors.push([s.brightness; 3]);
         }
         indices.extend_from_slice(&[base, base + 1, base + 2, base + 2, base + 1, base + 3]);
     }

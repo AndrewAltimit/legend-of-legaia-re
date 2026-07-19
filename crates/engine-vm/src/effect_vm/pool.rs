@@ -4,9 +4,9 @@
 //!
 //! The faithful per-frame algebra lives in [`Pool::tick_retail`] (pass 1:
 //! master spawn cadence + child anim/motion) and [`Pool::child_billboards`]
-//! (pass 2: brightness envelope + UV mirror + sprite sizing). The older
-//! host-delegating [`Pool::tick`] is kept as a compatibility shim for engines
-//! that model the lifecycle through [`EffectHost::advance_state`].
+//! (pass 2: brightness envelope + UV mirror + sprite sizing). These are the
+//! only per-frame entries - the pre-algebra host-delegating shim
+//! (`Pool::tick` + `EffectHost::advance_state`) is retired.
 
 use super::*;
 // The 4096-entry 4.12 trig tables the walker reaches through the pointers
@@ -14,15 +14,6 @@ use super::*;
 // the slot-machine reel renderer reads; reuse the reproduced lookups.
 // REF: FUN_801d0fa8 (independent consumer that pinned the two tables)
 use legaia_asset::minigame_slot_scene::{cos_4096, sin_4096};
-
-/// Default per-effect lifetime in frames, for hosts that model the effect
-/// lifecycle as a fixed countdown through [`EffectHost::advance_state`]
-/// instead of running the faithful walker.
-///
-/// Superseded stand-in: the retail cadence (spawn-record delays + pack0 frame
-/// delays) is fully ported in [`Pool::tick_retail`]; this budget exists only
-/// for the legacy [`Pool::tick`] host path.
-pub const DEFAULT_EFFECT_LIFETIME_FRAMES: u32 = 30;
 
 /// Maximum simultaneous effects (master slots).
 pub const MAX_MASTER_SLOTS: usize = 32;
@@ -97,14 +88,6 @@ pub struct MasterSlot {
     /// the port stores them here and [`Pool::tick_retail`] reads them in
     /// place of the record's offset legs. Empty when flags bit 0 is clear.
     pub child_offsets: Vec<(i16, i16)>,
-    /// Optional index into the host's global TMD pool (`etmd.dat`) for the
-    /// effect's 3D model. `Some` for model-driven effects (the flame mesh of a
-    /// spell like *Tail Fire* - an `etmd` TMD textured by `etim`); `None` for
-    /// the 2D-billboard-only effects. Not part of the 28-byte retail slot: the
-    /// production effect-id -> etmd-model selection is driven by the move/art
-    /// VM and not yet decoded, so this is currently set only by the host's
-    /// model-spawn helper.
-    pub model_index: Option<usize>,
 }
 
 /// Per-sprite render state. Retail layout: 32 bytes per slot at
@@ -222,6 +205,12 @@ pub struct ChildBillboard {
     pub flip_h: bool,
     /// Vertical texel-corner swap - mirror bit 1 clear (`0x801E0944`).
     pub flip_v: bool,
+    /// The child's current pack0 frame cursor (frames consumed so far).
+    /// Exposed alongside `frame_count` so hosts can derive an age fraction
+    /// for render aids; `brightness` is the retail-derived fade.
+    pub frame_cursor: u8,
+    /// The child's pack0 batch frame count (its total animation length).
+    pub frame_count: u8,
 }
 
 /// 32-master / 128-child slot pool. Mirrors the 5008-byte block at
@@ -782,62 +771,10 @@ impl Pool {
                 world_h: (entry.h as i32 * sprite_scale) >> 8,
                 flip_h: c.mirror & 0x01 == 0,
                 flip_v: c.mirror & 0x02 == 0,
+                frame_cursor: c.frame_cursor,
+                frame_count: c.frame_count,
             });
         }
         out
-    }
-
-    /// Legacy host-delegating frame - the pre-algebra shim kept for engines
-    /// that model the effect lifecycle through
-    /// [`EffectHost::advance_state`] / [`EffectHost::accumulate_child_motion`]
-    /// (a fixed-lifetime countdown instead of the retail cadence). New hosts
-    /// should call [`Pool::tick_retail`], the faithful walker.
-    ///
-    /// This shim still ports the master-slot iteration + the 5.3 state-byte
-    /// countdown (`0x801e0130..0x801e015f`); only the `state == 0` work is
-    /// delegated.
-    ///
-    /// REF: FUN_801E0088
-    pub fn tick<H: EffectHost + ?Sized>(&mut self, host: &mut H) {
-        for slot in 0..MAX_MASTER_SLOTS {
-            // Snapshot the activeness up front; the host may compact the
-            // pool during `advance_state` and we want a stable view.
-            let m = &mut self.master_slots[slot];
-            if m.child_count == 0 {
-                continue;
-            }
-
-            // Per-frame child-sprite motion runs FIRST, unconditionally, for
-            // every active slot - retail FUN_801E0088 integrates each child's
-            // position by its velocity in both the work loop and the
-            // wait-countdown branch, so billboards keep drifting during a
-            // wait state. Only the script advance below is `state`-gated.
-            host.accumulate_child_motion(slot, m);
-
-            // State-byte countdown logic. Retail at 801e0130-801e015f:
-            //   state = master[+0x03]
-            //   if state == 0 → fall through to work
-            //   else if state < 8 → master[+0x03] = 0; skip
-            //   else            → master[+0x03] = state - 8; skip
-            let s = m.state;
-            if s != 0 {
-                m.state = s.saturating_sub(8);
-                continue;
-            }
-
-            // State == 0: work path, delegated to the host.
-            let outcome = host.advance_state(slot, m);
-            match outcome {
-                StateOutcome::Continue => {}
-                StateOutcome::Wait { frames } => {
-                    // Encode frames + 8 so the countdown rebase path picks
-                    // up `frames` next tick. saturating_add caps at u8::MAX.
-                    m.state = frames.saturating_add(8);
-                }
-                StateOutcome::Terminate => {
-                    *m = MasterSlot::default();
-                }
-            }
-        }
     }
 }

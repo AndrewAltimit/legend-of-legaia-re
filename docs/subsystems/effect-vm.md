@@ -19,9 +19,10 @@ The port models the slot pool (`Pool`), the `MasterSlot` / `ChildSlot` /
 `Pool::tick_retail` (master spawn cadence + child anim/motion walk) with the
 pass-2 per-child computation exposed as `Pool::child_billboards` (brightness
 envelope, atlas resolution, sprite scaling, UV-mirror corner order). The
-`EffectHost` trait supplies the RNG and the summon routing; a legacy
-host-delegating frame (`Pool::tick` + `EffectHost::advance_state`) remains for
-engines still on the fixed-lifetime model.
+`EffectHost` trait supplies the RNG and the summon routing. The engine's live
+path runs this walker: `engine-core::World::tick_effects` sweeps
+`Pool::tick_retail` once per retail frame and `World::active_effect_sprites`
+is a direct mapping of `Pool::child_billboards`.
 
 Three functions:
 
@@ -88,18 +89,16 @@ retirement-loop overrun is cut at retirement (see the quirk note above), and
 `master.field_14` - a retail dead lane - is bumped once per call per active
 master as an age counter for age-based render fades.
 
-A legacy host-delegating frame (`Pool::tick`) predates the algebra extraction
-and remains for compatibility: `EffectHost::advance_state` models the
-lifecycle as a fixed-frame countdown (`master.field_14` up to
-`effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES`), and
-`EffectHost::accumulate_child_motion` is the per-child position integration
-that runs **every frame for every active slot regardless of `state`** -
-retail integrates in both the work loop and the wait-countdown branch, so a
-child billboard keeps drifting during a wait state, and `Pool::tick` calls the
-hook *before* the state-byte gate for the same reason. `engine-core`'s
-`World::tick_effects` still drives this legacy shim; switching it (and the
-`active_effect_sprites` snapshot) onto `tick_retail` / `child_billboards` is
-the remaining consumer wiring.
+This walker is the engine's only per-frame effect path. `engine-core`'s
+`World::tick_effects` runs one `tick_retail` sweep per retail logic frame
+(`World::tick` gates it on the ~60 Hz retail-frame sub-clock, so the 5.3
+wait-counter cadence tracks retail wall-speed from the 100 Hz sim), and
+`World::active_effect_sprites` maps `child_billboards` one-for-one. The
+pre-algebra host-delegating shim (`Pool::tick` +
+`EffectHost::advance_state` / `accumulate_child_motion`, a fixed-lifetime
+countdown) is retired; the dev-only `World::spawn_debug_effect*` helpers
+keep a fixed budget, but they live outside the pool
+(`World::debug_effects`) so the walker never sees them.
 
 ### Catalog load
 
@@ -109,10 +108,10 @@ The runtime effect catalog (PROT 0873 `efect.dat`) loads at scene entry via `Eff
 
 Two render-agnostic seams expose the live pool:
 
-- `World::active_effect_markers` - one coarse `EffectMarker` per effect (origin + age). For hosts/tests that only need effect positions.
-- `World::active_effect_sprites` - the faithful per-child billboard view (the textured-quad path). For each active effect it resolves the effect's children through the catalog, walks each child's pack0 animation to the current frame, and reads that frame's sprite-atlas entry for size + VRAM `(u, v)` / `tpage` / `clut`. Mirrors `FUN_801E0088` pass 2 (one GPU sprite primitive per child).
+- `World::active_effect_markers` - one coarse `EffectMarker` per effect still in its spawn phase (origin + age), plus the dev `debug_effects`. For hosts/tests that only need effect positions.
+- `World::active_effect_sprites` - the faithful per-child billboard view (the textured-quad path): a one-for-one mapping of `Pool::child_billboards` over the pool's live child slots - each child's integrated 16.8 position, its current pack0 frame's atlas rect + `tpage`/`clut`, the pass-2 sprite sizing (`atlas w/h * sprite_scale >> 8`), the retail brightness envelope, and the random UV-mirror corner order. `FUN_801E0088` pass 2, one GPU sprite primitive per child.
 
-The native host (`play-window`) draws each `EffectSprite` two ways: a **camera-facing textured quad** through the VRAM-mesh pipeline (`upload_vram_mesh`, sampling the scene VRAM at the sprite's atlas page/clut/uv as a `SceneDraw`), plus a **tinted outline** through the `UploadedLines` pipeline so the billboard is visible regardless of VRAM contents, faded by age. `World::spawn_debug_effect` seats a synthetic effect by hand (the `E` key in `play-window`); it is not a retail path.
+The native host (`play-window`) draws each `EffectSprite` two ways: a **camera-facing textured quad** through the VRAM-mesh pipeline (`upload_vram_mesh`, sampling the scene VRAM at the sprite's atlas page/clut/uv as a `SceneDraw`, modulated by the pass-2 brightness with the mirror-resolved UV corner order), plus a **tinted outline** through the `UploadedLines` pipeline so the billboard is visible regardless of VRAM contents, faded by animation age. `World::spawn_debug_effect` seats a synthetic marker by hand (the `E` key in `play-window`); it is not a retail path and lives outside the pool.
 
 **Two effect-texel pools, both pixel-verified.** The retail `befect_data` block (CDNAME defines `872..875` → extraction entries **870..873**) holds the four battle effect files - `etim.dat` (0870), `etmd.dat` (0871), `vdf.dat` (0872), `efect.dat` (0873) - pulled by `FUN_800520F0` at raw TOC indices `0x368..0x36B`; see the verified case→index→entry map in [`formats/effect.md`](../formats/effect.md#battle-effect-cluster-befect_data). The texels effects sample come from two pools:
 
@@ -121,7 +120,7 @@ The native host (`play-window`) draws each `EffectSprite` two ways: a **camera-f
 
 Full byte evidence: [`formats/effect.md` § Effect texels in VRAM](../formats/effect.md#effect-texels-in-vram---pixel-verified).
 
-The **3D-model render path** is wired: `World::active_effect_models` snapshots each live effect that has a model assigned (`EffectModel` = global-TMD-pool index + world position + age), and the native host (`play-window`) builds a textured `legaia_tmd` VRAM mesh for it through the standard mesh pipeline, drawing it at the effect origin with the `etim` texels resident.
+The **3D-model render path** is wired: `World::active_effect_models` snapshots each dev-spawned model effect (`EffectModel` = global-TMD-pool index + world position + age, from the pool-external `World::debug_effects` exerciser - the production effect-id → model selection is the move/art-VM path, `World::spawn_move_fx`), and the native host (`play-window`) builds a textured `legaia_tmd` VRAM mesh for it through the standard mesh pipeline, drawing it at the effect origin with the `etim` texels resident.
 
 **The real effect-model library (extraction 0871, `etmd.dat`, raw index `0x369`) is loaded.**
 `engine-core::scene::seed_effect_model_library_from_etmd` reads entry 0871 (an
@@ -151,7 +150,7 @@ This is distinct from the 2D billboard path here:
 - `World::active_effect_sprites` builds billboards from the `efect.dat` atlas. An earlier reading held that its `0x7680` field was a tpage sampling VRAM **page (0,0), 8bpp** - falsified by the pass-2 consumer.
 - That `0x7680` is the atlas entry's **CLUT**, not its tpage - the `+4`/`+6` fields are CLUT (u16) / tpage (byte), the reverse of an earlier reading (the emit at `~0x801E0980` writes `atlas[4..5]` into the primitive's CLUT field and `atlas[6]` into its tpage field). `0x7680` decodes as CBA fb `(0,474)`, an effect-CLUT row, *not* page `(0,0)`.
 - Confirmed from a melee hit-spark battle capture: no prim samples page (0,0)/8bpp/`0x7680`, and the spark draws as textured quads sampling the loaded effect pages (PROT 870 flame atlas `(320,0)`/`(448,0)`, effect-band CLUTs).
-- The engine's `SpriteAtlasEntry` now reads the fields in the correct order, so `active_effect_sprites` yields the real effect page + CLUT and the billboards sample the resident PROT 870 / `etim` texels. The faithful per-frame cadence ([pass-1 algebra](#the-extracted-pass-1-state-algebra)) is executed by `Pool::tick_retail`, with the pass-2 computation exposed as `Pool::child_billboards`; the `engine-core` snapshot `active_effect_sprites` still loops each child's anim batch uniformly over the effect lifetime as a stand-in until it is rewired onto the pool's live child slots.
+- The engine's `SpriteAtlasEntry` reads the fields in the correct order, so `active_effect_sprites` yields the real effect page + CLUT and the billboards sample the resident PROT 870 / `etim` texels. The faithful per-frame cadence ([pass-1 algebra](#the-extracted-pass-1-state-algebra)) is executed by `Pool::tick_retail`, with the pass-2 computation exposed as `Pool::child_billboards` - and the `engine-core` snapshot `active_effect_sprites` maps those live child slots directly (the earlier uniform-loop stand-in is gone).
 
 ## Pool layout (`_DAT_8007BD30`, 5008 bytes total)
 

@@ -12,8 +12,6 @@ struct RecHost {
     rng_pos: usize,
     summon_ids: std::collections::HashSet<u8>,
     events: Vec<HostEvent>,
-    advance_outcomes: Vec<StateOutcome>,
-    advance_pos: usize,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -21,8 +19,6 @@ enum HostEvent {
     Random,
     HandleSummon(u8, [i16; 3], u16),
     ChildOffset(usize, u8, i16, i16),
-    AdvanceState(usize),
-    ChildMotion(usize),
 }
 
 impl EffectHost for RecHost {
@@ -45,21 +41,6 @@ impl EffectHost for RecHost {
     fn assign_child_random_offset(&mut self, slot: usize, child_idx: u8, dx: i16, dz: i16) {
         self.events
             .push(HostEvent::ChildOffset(slot, child_idx, dx, dz));
-    }
-
-    fn accumulate_child_motion(&mut self, slot: usize, _m: &mut MasterSlot) {
-        self.events.push(HostEvent::ChildMotion(slot));
-    }
-
-    fn advance_state(&mut self, slot: usize, _m: &mut MasterSlot) -> StateOutcome {
-        self.events.push(HostEvent::AdvanceState(slot));
-        let outcome = self
-            .advance_outcomes
-            .get(self.advance_pos)
-            .copied()
-            .unwrap_or(StateOutcome::Continue);
-        self.advance_pos += 1;
-        outcome
     }
 }
 
@@ -193,151 +174,6 @@ fn spawn_angle_is_masked_to_12_bits() {
     assert_eq!(pool.master_slots[0].angle, 0x0234);
 }
 
-#[test]
-fn tick_decrements_state_below_8() {
-    let mut pool = Pool::new();
-    let mut host = RecHost::default();
-    // Mark slot 0 active with a low state.
-    pool.master_slots[0].child_count = 1;
-    pool.master_slots[0].state = 5;
-
-    pool.tick(&mut host);
-
-    // State < 8 → goes to 0 in one tick (retail clears, doesn't decrement).
-    assert_eq!(pool.master_slots[0].state, 0);
-    // No advance_state (slot was waiting) - but child motion still
-    // integrates every frame, even during the wait (C-EFXANIM).
-    assert_eq!(host.events, vec![HostEvent::ChildMotion(0)]);
-}
-
-#[test]
-fn tick_rebases_state_at_or_above_8() {
-    let mut pool = Pool::new();
-    let mut host = RecHost::default();
-    pool.master_slots[0].child_count = 1;
-    pool.master_slots[0].state = 16;
-
-    pool.tick(&mut host);
-
-    // State >= 8 → state -= 8.
-    assert_eq!(pool.master_slots[0].state, 8);
-    // Waiting slot: motion integrates, but no script advance.
-    assert_eq!(host.events, vec![HostEvent::ChildMotion(0)]);
-}
-
-#[test]
-fn tick_calls_advance_state_when_state_is_zero() {
-    let mut pool = Pool::new();
-    let mut host = RecHost::default();
-    host.advance_outcomes = vec![StateOutcome::Continue];
-
-    pool.master_slots[0].child_count = 1;
-    pool.master_slots[0].state = 0;
-
-    pool.tick(&mut host);
-
-    // Motion integrates first, then the state==0 script advance fires.
-    assert_eq!(
-        host.events,
-        vec![HostEvent::ChildMotion(0), HostEvent::AdvanceState(0)]
-    );
-    // Slot still active.
-    assert_eq!(pool.master_slots[0].child_count, 1);
-}
-
-#[test]
-fn tick_terminate_clears_slot() {
-    let mut pool = Pool::new();
-    let mut host = RecHost::default();
-    host.advance_outcomes = vec![StateOutcome::Terminate];
-
-    pool.master_slots[0].child_count = 1;
-    pool.master_slots[0].state = 0;
-    pool.master_slots[0].pos_x = 0xDEAD;
-
-    pool.tick(&mut host);
-
-    assert_eq!(pool.master_slots[0].child_count, 0);
-    assert_eq!(pool.master_slots[0].pos_x, 0);
-}
-
-#[test]
-fn tick_wait_encodes_frames_via_state_byte() {
-    let mut pool = Pool::new();
-    let mut host = RecHost::default();
-    host.advance_outcomes = vec![StateOutcome::Wait { frames: 3 }];
-
-    pool.master_slots[0].child_count = 1;
-    pool.master_slots[0].state = 0;
-
-    pool.tick(&mut host);
-
-    // Wait { frames: 3 } → state = 3 + 8 = 11 (so countdown rebase
-    // brings it back to 3 next tick).
-    assert_eq!(pool.master_slots[0].state, 11);
-}
-
-#[test]
-fn tick_skips_inactive_slots() {
-    let mut pool = Pool::new();
-    let mut host = RecHost::default();
-    // No slot activated → no advance_state ever called.
-    pool.tick(&mut host);
-    assert!(host.events.is_empty());
-}
-
-#[test]
-fn tick_iterates_all_active_slots() {
-    let mut pool = Pool::new();
-    let mut host = RecHost::default();
-    host.advance_outcomes = vec![StateOutcome::Continue; 5];
-
-    // Activate slots 0, 7, 31.
-    for &i in &[0usize, 7, 31] {
-        pool.master_slots[i].child_count = 1;
-    }
-
-    pool.tick(&mut host);
-
-    // Each active slot integrates motion then advances its state, in
-    // slot order.
-    let want = vec![
-        HostEvent::ChildMotion(0),
-        HostEvent::AdvanceState(0),
-        HostEvent::ChildMotion(7),
-        HostEvent::AdvanceState(7),
-        HostEvent::ChildMotion(31),
-        HostEvent::AdvanceState(31),
-    ];
-    assert_eq!(host.events, want);
-}
-
-/// C-EFXANIM regression: a waiting slot (`state != 0`) still integrates
-/// child motion every frame - retail `FUN_801E0088` runs the per-child
-/// position accumulation in its wait-countdown branch, not just the
-/// `state == 0` work loop. The hook must fire while `advance_state` stays
-/// gated, so a billboard keeps drifting during a wait instead of freezing.
-#[test]
-fn child_motion_runs_during_wait_state_but_advance_does_not() {
-    let mut pool = Pool::new();
-    let mut host = RecHost::default();
-    host.advance_outcomes = vec![StateOutcome::Continue];
-
-    pool.master_slots[0].child_count = 1;
-    pool.master_slots[0].state = 16; // waiting (>= 8)
-
-    pool.tick(&mut host);
-
-    assert!(
-        host.events.contains(&HostEvent::ChildMotion(0)),
-        "child motion must integrate during a wait state"
-    );
-    assert!(
-        !host.events.contains(&HostEvent::AdvanceState(0)),
-        "script advance must stay gated on state == 0"
-    );
-}
-
 /// Pool exhaustion: spawning into a fully-occupied pool returns `None`.
 /// Mirrors retail's "no free slot → drop spawn" branch in `FUN_801DFDF8`.
 #[test]
@@ -356,81 +192,50 @@ fn spawn_returns_none_when_pool_exhausted() {
     assert!(host.events.is_empty());
 }
 
-/// Spawn → tick to completion → slot freed → respawn. Validates the
-/// full lifecycle of a master slot: terminate clears `child_count`,
-/// then the next allocator call returns the same slot index.
+/// Spawn → walker runs the effect to completion → slot freed → respawn.
+/// Validates the full lifecycle of a master slot under the faithful walker:
+/// consuming the final spawn record clears `child_count`, then the next
+/// allocator call returns the same slot index.
 #[test]
-fn spawn_terminate_respawn_reuses_slot() {
+fn spawn_walker_completion_respawn_reuses_slot() {
+    let records = [ChildSprite::default()]; // one zero-delay record
+    let catalog = {
+        let script = EffectScript {
+            child_count: 1,
+            flags: 0,
+            spread: 0,
+            body: vec![],
+        };
+        EffectCatalog::from_parts(
+            vec![(script, records.to_vec())],
+            vec![],
+            vec![AnimBatch {
+                flags: 0,
+                frames: vec![AnimFrame {
+                    atlas_index: 0,
+                    timing: [4, 0, 0, 0, 0],
+                }],
+            }],
+        )
+    };
     let mut pool = Pool::new();
     let mut host = RecHost::default();
-    let script = EffectScript::default();
 
-    // First spawn - slot 0.
     let s0 = pool
-        .spawn(&mut host, 10, [1, 2, 3], 0x111, &script, &[])
+        .spawn_by_ui_id(&mut host, 0, [1, 2, 3], 0x111, &catalog)
         .expect("first spawn ok");
     assert_eq!(s0, 0);
-    assert_eq!(pool.master_slots[0].child_count, 0); // EffectScript::default() has 0 children
-    // child_count == 0 means the slot is "empty" by allocator rules. To
-    // simulate a real spawn that activates the slot, mark it manually.
-    pool.master_slots[0].child_count = 1;
+    assert_eq!(pool.active_count(), 1);
 
-    // Tick once - host returns Terminate for this slot.
-    host.advance_outcomes = vec![StateOutcome::Terminate];
-    pool.master_slots[0].state = 0; // ensure work-path runs
-    pool.tick(&mut host);
+    // One walker sweep consumes the single record and frees the master.
+    pool.tick_retail(&mut host, &catalog, 1);
     assert_eq!(pool.master_slots[0].child_count, 0); // freed
 
     // Second spawn - should reuse slot 0 since it's the first empty.
     let s1 = pool
-        .spawn(&mut host, 11, [4, 5, 6], 0x222, &script, &[])
+        .spawn_by_ui_id(&mut host, 0, [4, 5, 6], 0x222, &catalog)
         .expect("respawn ok");
     assert_eq!(s1, 0);
-}
-
-/// Tick a Wait-encoded slot through several frames - each tick subtracts
-/// 8 (saturating) until state hits 0, at which point the next tick fires
-/// `advance_state`. Mirrors retail's `state -= 8` countdown at
-/// `0x801e0130..0x801e015f`.
-#[test]
-fn wait_state_subtracts_8_per_tick_across_multiple_frames() {
-    let mut pool = Pool::new();
-    let mut host = RecHost::default();
-
-    // Seed slot 0 with state = 24 - three ticks of `-= 8` before reaching 0.
-    pool.master_slots[0].child_count = 1;
-    pool.master_slots[0].state = 24;
-
-    // Each wait tick integrates motion but never advances the script.
-    // After tick: 24 → 16. No advance_state.
-    pool.tick(&mut host);
-    assert_eq!(pool.master_slots[0].state, 16);
-    assert_eq!(host.events, vec![HostEvent::ChildMotion(0)]);
-    assert!(
-        !host.events.contains(&HostEvent::AdvanceState(0)),
-        "advance_state called too early"
-    );
-    host.events.clear();
-
-    // After tick: 16 → 8.
-    pool.tick(&mut host);
-    assert_eq!(pool.master_slots[0].state, 8);
-    assert_eq!(host.events, vec![HostEvent::ChildMotion(0)]);
-    host.events.clear();
-
-    // After tick: 8 → 0 (still NOT a work tick - saturates).
-    pool.tick(&mut host);
-    assert_eq!(pool.master_slots[0].state, 0);
-    assert_eq!(host.events, vec![HostEvent::ChildMotion(0)]);
-    host.events.clear();
-
-    // After tick: state==0 → motion + script advance both fire.
-    host.advance_outcomes = vec![StateOutcome::Continue];
-    pool.tick(&mut host);
-    assert_eq!(
-        host.events,
-        vec![HostEvent::ChildMotion(0), HostEvent::AdvanceState(0)]
-    );
 }
 
 #[test]

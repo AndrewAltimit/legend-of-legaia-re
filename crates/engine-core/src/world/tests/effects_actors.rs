@@ -125,13 +125,31 @@ fn try_spawn_effect_populates_pool() {
 #[test]
 fn active_effect_markers_reflect_pool_and_fade_with_age() {
     let mut world = World::default();
+    // Two spawn records with delays so the master persists through a
+    // multi-frame spawn phase under the faithful walker.
     let script = vm::effect_vm::EffectScript {
         child_count: 2,
         flags: 0,
         spread: 0,
         body: vec![],
     };
-    world.effect_catalog = vm::effect_vm::EffectCatalog::new(vec![(script, vec![])]);
+    let recs = vec![
+        vm::effect_vm::ChildSprite {
+            sprite_id: 0,
+            delay: 4,
+            ..Default::default()
+        };
+        2
+    ];
+    let anims = vec![vm::effect_vm::AnimBatch {
+        flags: 0,
+        frames: vec![vm::effect_vm::AnimFrame {
+            atlas_index: 0,
+            timing: [2, 0, 0, 0, 0],
+        }],
+    }];
+    world.effect_catalog =
+        vm::effect_vm::EffectCatalog::from_parts(vec![(script, recs)], vec![], anims);
 
     // No live effects -> no markers.
     assert!(world.active_effect_markers().is_empty());
@@ -145,14 +163,15 @@ fn active_effect_markers_reflect_pool_and_fade_with_age() {
     // Freshly spawned: no elapsed frames yet.
     assert_eq!(markers[0].age01, 0.0);
 
-    // Age advances toward 1.0 as the effect ticks through its lifetime.
+    // Age advances toward 1.0 while the spawn phase runs.
     world.tick_effects();
     let aged = world.active_effect_markers();
     assert_eq!(aged.len(), 1);
     assert!(aged[0].age01 > 0.0 && aged[0].age01 < 1.0);
 
-    // Once the lifetime is spent the slot retires and emits no marker.
-    for _ in 0..vm::effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES {
+    // Once the walker consumes every spawn record the master frees itself
+    // and emits no marker (the delay-4 second record takes 5 more sweeps).
+    for _ in 0..8 {
         world.tick_effects();
     }
     assert!(world.active_effect_markers().is_empty());
@@ -167,8 +186,9 @@ fn spawn_debug_effect_seats_marker_then_ages_out() {
     assert_eq!(markers[0].world_pos, [128.0, 0.0, -64.0]);
     assert_eq!(markers[0].age01, 0.0);
 
-    // Ages and retires via the normal effect lifetime.
-    for _ in 0..=vm::effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES {
+    // Ages and retires via the fixed debug budget (kept outside the pool,
+    // so the faithful walker never consumes it as a spawn script).
+    for _ in 0..=crate::world::DEBUG_EFFECT_LIFETIME_FRAMES {
         world.tick_effects();
     }
     assert!(world.active_effect_markers().is_empty());
@@ -185,12 +205,13 @@ fn spawn_debug_effect_model_emits_model_not_billboard() {
     assert_eq!(models[0].tmd_index, 4);
     assert_eq!(models[0].world_pos, [16.0, 4.0, -8.0]);
     assert_eq!(models[0].age01, 0.0);
+    assert!(world.active_effect_sprites().is_empty());
     // Plain debug effect (no model_index) emits no model.
     assert!(world.spawn_debug_effect([0.0, 0.0, 0.0]));
     assert_eq!(world.active_effect_models().len(), 1);
 
-    // Ages and retires via the normal effect lifetime.
-    for _ in 0..=vm::effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES {
+    // Ages and retires via the fixed debug budget.
+    for _ in 0..=crate::world::DEBUG_EFFECT_LIFETIME_FRAMES {
         world.tick_effects();
     }
     assert!(world.active_effect_models().is_empty());

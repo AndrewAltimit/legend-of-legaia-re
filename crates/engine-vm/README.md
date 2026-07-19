@@ -71,9 +71,10 @@ the actor VM above.
 ## `effect_vm` - `FUN_801DE914` / `FUN_801DFDF8` / `FUN_801E0088`
 
 Effect VM with a 32-master + 128-child slot pool.
-`Pool::init` / `Pool::spawn` / `Pool::tick` are the three API entries;
-`EffectHost::advance_state` is the extension hook for per-effect state
-machines that aren't pure data-driven.
+`Pool::init` / `Pool::spawn` / `Pool::tick_retail` are the three API entries
+(`Pool::child_billboards` is the pass-2 render snapshot); the lifecycle is
+pure data (the catalog's spawn records + animation frames), so `EffectHost`
+only supplies the RNG and the summon routing.
 
 ## `move_vm` - `FUN_80023070`
 

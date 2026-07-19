@@ -23,6 +23,11 @@ pub struct World {
     /// nothing until a real catalog is wired. Set via
     /// [`crate::scene::SceneHost::set_effect_catalog`].
     pub effect_catalog: vm::effect_vm::EffectCatalog,
+    /// Dev-spawned synthetic effects ([`World::spawn_debug_effect`] /
+    /// [`World::spawn_debug_effect_model`]) - engine-side visualization
+    /// aids kept outside the retail effect pool, aged by
+    /// [`World::tick_effects`] over a fixed budget.
+    pub debug_effects: Vec<DebugEffect>,
     /// Field VM execution context. Live in `SceneMode::Field` and
     /// `SceneMode::Cutscene` (cutscenes are field scenes that suppress
     /// player input via context flags).
@@ -1899,6 +1904,7 @@ impl World {
             battle_ctx: BattleActionCtx::new(),
             effect_pool: Pool::new(),
             effect_catalog: vm::effect_vm::EffectCatalog::default(),
+            debug_effects: Vec::new(),
             field_ctx: FieldCtx::default(),
             field_bytecode: Vec::new(),
             field_pc: 0,
