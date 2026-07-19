@@ -29,6 +29,10 @@ i32 scale         // ALWAYS 0x00808080 in Legaia (Legaia-custom; standard
 
 After `FUN_800268DC` runs at load time, `vert_top` / `normal_top` / `prim_top` are patched in-place to absolute RAM addresses. Static tools should NOT do this patch - they should use the offsets as `(ptr_base + offset)` where `ptr_base = 12` (HEADER_SIZE).
 
+**The `flags` word is the relocation sentinel, and it makes the fixup idempotent.** `FUN_800268DC` early-returns when `flags == 1`, and sets `flags = 1` *before* walking the object table, so re-registering an already-relocated TMD is a no-op rather than a double-relocation. Retail depends on this: an actor's per-object render table can be rebuilt from a TMD that may or may not have been relocated yet (`FUN_80024D78`), and the guard is what makes that safe. A TMD reached through that path while still unrelocated hands the renderer file-relative offsets in pointer slots - which is why the fixup runs there at all.
+
+Two implications: a static tool must never write `flags`, since a `1` on disc would make the runtime skip a relocation the mesh still needs; and a clean-room port that parses to typed offsets instead of patching pointers in place is structurally immune to the whole failure mode, so it should not reimplement the relocation.
+
 ## Vertex / normal data
 
 Both are arrays of `SVECTOR { i16 x, y, z, pad }` = 8 bytes each.

@@ -774,6 +774,8 @@ This relies on the **runtime actor frame == MAN placement frame** finding: `FUN_
 | Thread | Status | What would close it |
 |---|---|---|
 | Town/field free-movement locomotion | resolved | [details ↓](#townfield-free-movement-locomotion) |
+| What opens an inn stay in retail? | open | The inn's *cost* source is pinned (scripted gold charges, `legaia_asset::inn_costs` - retail has no inn cost table) and the port models the whole session, but the retail **trigger** is not: nothing is known to call the equivalent of `MenuRuntime::open_inn`, which is why the engine reaches the inn only from tests. Closing it means pinning which dialogue-option effect or field-VM op commits the stay and charges the gold, then wiring that path. |
+| What transitions retail into game over? | open | Party-wipe is presumed to route through `game_mode` 18/19 (`GameOverInit`/`GameOverMode`), but the writer that installs those modes is unpinned. The port has the same hole from the other side: `BootUiState::GameOver` is only ever matched, never constructed, so the screen is unreachable. Closing it means finding the mode-18 writer on the battle-defeat path. |
 | "~270 undumped field-overlay functions" (recomp dispatch-entry seed list) | falsified (not a function inventory gap) | [details ↓](#270-undumped-field-overlay-functions-recomp-dispatch-entry-seeds) |
 | Field collision-map source | resolved | [details ↓](#field-collision-map-source) |
 | Tile-board grid mode | resolved | The `_DAT_8007b450`/`DAT_801f35c0`/`801ef2b0` tile-grid walk is a puzzle / board minigame (procedural `rand`-filled board, per-cell drawn tiles), not town locomotion. It is a field-overlay (`0897`) construct driven from the field/event VM (op `0x49`); the `_DAT_8007b450` refs in the hub minigame overlays are only the shared equip-comparison layout hint `FUN_801e5b4c`, not board use. The `func_0x800467e8` facing remap is a quantized 45° octant rotation. **Sub-questions closed:** boards are always procedural (op `0x49` sub-op-5 = constant 14-byte advance; cells `rand()%6+2` malloc-filled, `FUN_801e0b1c`); no fixed board exists. Header layout + event-cell flags in `docs/subsystems/tile-board.md`. |
@@ -1237,7 +1239,7 @@ So the blocker (the per-cue enable source) dissolves: there is nothing to trace.
 | `title.pak` PROT entry | resolved | [details ↓](#titlepak-prot-entry) |
 | Title screen mode-table PROT | resolved (no such entry) | [details ↓](#title-screen-mode-table-prot) |
 | Load-screen panel 9-slice geometry | resolved (engine renders byte-perfect) | Pinned in [`subsystems/save-screen.md`](../subsystems/save-screen.md#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2): retail composes the 81×29 panel at dst `(6, 4)` from 14 textured-sprite primitives (GP0 cmd `0x64`) sampling the system-UI sheet with CLUT `(32, 511)`. The exact per-tile rects are exported as `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*` and emitted by `legaia_engine_render::save_select_chrome_draws_for` (covered by `save_select_chrome_emits_9slice_panel_and_pills` test). No interior fill sprite is drawn - the "marbled blue" look is the dimmed title art bleeding through the empty middle of the frame. |
-| Debug flags `0x8007B8C2` / `0x8007B98F` | resolved (static) | `0x8007B98F` has no byte-granular reader: it is byte +3 (MSB, little-endian) of the 32-bit debug-mode word `_DAT_8007B98C`, and *that word* is the consumer surface (grep of `funcs/` for `8007b98f` = 0 hits; `8007b98c` gate-read at `8001822c.txt:500/533` + ~14 field-overlay-0897 gates, sole `sw` writer in the menu/title/save-init routine). Writing `0x8007B98F = 1` sets the MSB so every `_DAT_8007B98C != 0` gate reads active. [details ↓](#debug-flags-0x8007b8c2--0x8007b98f) |
+| Debug flags `0x8007B8C2` / `0x8007B98F` | resolved (static + runtime-confirmed) | `0x8007B98F` has no byte-granular reader: it is byte +3 (MSB, little-endian) of the 32-bit debug-mode word `_DAT_8007B98C`, and *that word* is the consumer surface (grep of `funcs/` for `8007b98f` = 0 hits; `8007b98c` gate-read at `8001822c.txt:500/533` + ~14 field-overlay-0897 gates, sole `sw` writer in the menu/title/save-init routine). Writing `0x8007B98F = 1` sets the MSB so every `_DAT_8007B98C != 0` gate reads active. [details ↓](#debug-flags-0x8007b8c2--0x8007b98f) |
 | Key-item area consumers (`0x800859E8..0x80085A40`) | resolved (static; no OOB amplifier) | The range is inventory slots `>= 72` of `&DAT_80085958`; its readers are the indexed item-menu functions (`FUN_8002ff8c`/`800302e4`/`80032a44`/`80030628`/`80034250`), each masking the slot `& 0x3ff` and using the id byte as an index into 256-entry item tables - inherently bounded; add/find/consume helpers bound their scan by the live item count. No consumer treats a key-item byte as an unguarded index, so the range amplifies to game-state corruption (item possession + displayed ids), not a native index-OOB chain step. The `lb $reg,0x5aXX($zero)` overlay "hits" were mis-decoded data tables. Read-BP probe deprioritized. |
 | Full-window item-add OOB primitive: reachability | open (re-opened; the earlier live confirmation does not hold) | [details ↓](#full-window-item-add-oob-primitive-reachability) |
 | XP-table source + reader | resolved + ported | [details ↓](#xp-table-source--reader) |
@@ -1321,7 +1323,7 @@ and the **options/config-menu bundle** is **PROT 899** (`xxx_dat`) - its indexed
 
 ### Debug flags `0x8007B8C2` / `0x8007B98F`
 
-*Status:* resolved (static) - `_DAT_8007B8C2` resolved (read-only retail-mode selector); `_DAT_8007B98F` is the MSB of the debug-mode word `_DAT_8007B98C`, whose consumer is statically pinned (`FUN_8001822c` + the resident field-overlay gates), no capture required
+*Status:* resolved (static + runtime-confirmed) - `_DAT_8007B8C2` resolved (read-only retail-mode selector); `_DAT_8007B98F` is the MSB of the debug-mode word `_DAT_8007B98C`, whose consumer is statically pinned (`FUN_8001822c` + the resident field-overlay gates), no capture required - and the static model has since been exercised end-to-end under the recomp
 
 Both addresses are in the SBSS/BSS region (zero-initialised at boot). `_DAT_8007B8C2` is the dev/retail asset-load selector: `FUN_8003E360`'s dual-mode loader pattern routes through ISO9660 when `_DAT_8007B8C2 == 0` (retail) and through the PROT-index loader when non-zero (dev); same shape at `FUN_8001FA88` / `FUN_8001FC00` (sound) and `FUN_8001F7C0` (per-scene field-asset loader). Zero code writers across the full corpus - BSS init establishes the retail config.
 
@@ -1346,6 +1348,23 @@ uncaptured overlay" framings are both superseded: the consumer is `FUN_8001822c`
 [`subsystems/boot.md` § Debug flags](../subsystems/boot.md#debug-flags) and
 [`reference/builds.md` § Debug input bindings](builds.md#debug-input-bindings)
 for the combo table.
+
+**Runtime confirmation.** The static model above was derived without ever opening the
+menu; driving it under the static recomp then reproduced every part of it, and the
+three details that only a live run could show all fall out of the static reading
+rather than contradicting it:
+
+- Asserting the debug word and pulsing `SELECT + △` **on controller port 2** opens the
+  game-owned developer menu. Port 2 is not an extra fact to learn - it is forced by the
+  `_DAT_8007B850 &= 0xFFFF` mask, which puts every debug binding in the upper half.
+- The gate **does not survive scene initialisation** and has to be held asserted for
+  the session. That is the single `sw` writer doing its job: scene transitions run the
+  shared menu/title/save-init routine, which clears the word.
+- Forcing game **mode 0** does *not* reach that menu - it loads PROT 0971's full-screen
+  configuration tester, exactly as the `CONFIG INIT` mode-table reading in
+  [`boot.md`](../subsystems/boot.md#game-mode-state-machine) predicts. The developer
+  menu's MAP CHANGE appliers are field-overlay-0897-resident, matching the 14 gate
+  reads found there.
 
 
 ### XP-table source + reader

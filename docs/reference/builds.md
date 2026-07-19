@@ -64,7 +64,7 @@ Once `_DAT_8007B98F` is set, these button combos are live. Dispatcher: `FUN_8001
 | Combo | Effect |
 |---|---|
 | SELECT + △ | Open Debug Menu (item-give, map-change, stats, event flags, …) |
-| SELECT + START | Start game in Debug Mode (TMD/sprite/sound/music testers) |
+| SELECT + START | Start game in Debug Mode - the full-screen configuration tester in PROT 0971, reached as game mode 0 / `CONFIG INIT` (see [`boot.md`](../subsystems/boot.md#game-mode-state-machine)) |
 | R1 + R2 + X | Coordinates debug overlay + free camera |
 | (in coords mode) ○ | Dim lighting |
 | (in coords mode) ▢ | Toggle verbose overlay |
@@ -73,6 +73,16 @@ Once `_DAT_8007B98F` is set, these button combos are live. Dispatcher: `FUN_8001
 - Reads BIOS pad data at `0x800840F8`, builds 32-bit button mask `_DAT_8007B850`.
 - `if (_DAT_8007B98C == 0) _DAT_8007B850 &= 0xFFFF` - the upper 16 bits (controller 2 / debug bindings) are stripped when debug is OFF. **This is the master gate.**
 - Then a large block guarded by `if (_DAT_8007B98C != 0)` handles the button combos above.
+
+Two consequences of that mask, both load-bearing when driving the menu externally:
+
+- **The combos are pad-port-2 bindings.** The debug block reads the upper 16 bits, so
+  the chord must arrive on the second controller port; the same chord on port 1 lands
+  in the low half and is ignored.
+- **The gate does not latch for the session.** The word's sole `sw` writer is the
+  shared menu/title/save-init routine, which scene transitions run - so entering a
+  scene can clear `_DAT_8007B98C` mid-session and the gate has to be re-asserted
+  rather than set once.
 
 GameShark D-code globals:
 - `DAT_8007B7C0` - previous-frame button mask (so `D007B7C0 XXXX` D-codes mean "wait for the user to press XXXX").
