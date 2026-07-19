@@ -502,28 +502,37 @@ pub fn cutscene_camera_mvp(
 ///   (The earlier `apply / 3.5` reading compressed those dollies ~6x, so
 ///   the engine ARRIVED at extreme staged eye targets retail only drifts
 ///   toward - parking the camera inside scene geometry.)
-/// - **Shape**: the op-`0x45` opcode's high bits (engine: the decoded
-///   `mode` nibble, `op0 >> 2`) select the beat's ease curve.
-///   `mode 1` (the common `45 07 ..` form): the eye trio / focus / H move
-///   at CONSTANT VELOCITY (`delta / apply` per frame - measured exactly
-///   linear across opdeene's `apply 840` grove dolly and opurud's
-///   `apply 50/240/2300` moves) while pitch / yaw decelerate along a
-///   quadratic ease-out (initial rate `2·delta/apply`, measured).
-///   `mode 2` (`45 0B ..`): every component eases out quadratically -
-///   the map01 Rim Elm fly-in (`apply 900`) fits `1-(1-t)^2` to within
-///   sampling noise over its whole 6330-unit descent.
-///   `mode 4` (`45 13 ..`): every component eases in-out (slow-fast-slow;
-///   opdeene's crater-rim tableau dolly) - modeled as smoothstep.
+/// - **Shape**: the beat's decoded `mode` nibble (`op0 >> 2 & 0xF`) selects
+///   the ease curve, and retail applies that ONE curve to **all ten axes** -
+///   the angles included. The curves are
+///   [`legaia_engine_vm::camera_mover::curve_unit`]: `1` (and any unlisted
+///   value) linear, `2` quadratic ease-out, `3` quadratic ease-in, `4`
+///   ease-in-out built from a quad-in half and a quad-out half. The earlier
+///   "`mode 1` eases the angles out while the eye trio runs linear" split is
+///   FALSIFIED - it does not exist in the mover, which reads the same curve
+///   word once per axis; `mode 4` is likewise the two-half integer curve,
+///   not smoothstep, and `mode 3` was missing entirely.
 ///
-/// Angles glide along the shortest arc so a wrap across ±π doesn't spin the
-/// long way round. [`Self::reset`] makes the next [`Self::glide`] snap
-/// directly to the target - call it when a cutscene (re)starts so the
-/// opening shot doesn't sweep in from a stale pose.
+/// Angles glide along the shortest arc here, which is a **port convenience**,
+/// not retail: the mover lerps the raw 12-bit angle words with no wrap
+/// handling, so a beat staging a crossing of the `4096`-unit wrap travels the
+/// long way round in retail. No opening-chain beat stages such a crossing.
+/// [`Self::reset`] makes the next [`Self::glide`] snap directly to the target -
+/// call it when a cutscene (re)starts so the opening shot doesn't sweep in
+/// from a stale pose.
 ///
-/// REF: FUN_801DB510 (cutscene overlay) - retail's per-frame camera mover
-/// (constant-velocity eye-trio head + the typed `0x801F2798` param table).
+/// This type still arms glides **per component**, where retail's
+/// `FUN_801DD310` re-seeds all ten axes from the live pose and resets the one
+/// shared progress counter on every apply beat. See
+/// `docs/subsystems/cutscene.md` for that open divergence.
+///
+/// PORT: FUN_801DC0BC - retail's per-frame camera mover, ported exactly (in
+/// its native integer arithmetic) as `legaia_engine_vm::camera_mover`; this
+/// type is the `f32` rendition of the same shapes.
+/// REF: FUN_801DD310 - allocates / re-seeds the mover actor's pair block.
 /// REF: FUN_801DE084 - the op-`0x45` Configure apply handler (per-slot
-/// staging into the persistent control block; `apply == 0` = immediate).
+/// staging into the persistent control block; `apply == 0` = snap, which also
+/// kills any mover in flight).
 /// The *dialog* overlay's copy is this same function (the dialog and
 /// cutscene_dialogue dumps are instruction-identical); only the menu overlay
 /// hosts different code at this VA - see `docs/reference/functions.md`.
@@ -539,22 +548,9 @@ pub struct CutsceneCameraInterp {
     total: [u32; 9],
     /// Per-component frames elapsed since the glide was armed.
     done: [u32; 9],
-    /// Per-component ease curve, latched from the staging beat's mode.
-    curve: [EaseCurve; 9],
+    /// Per-component ease curve nibble, latched from the staging beat's mode.
+    curve: [u8; 9],
     initialized: bool,
-}
-
-/// Per-component ease curve of an op-`0x45` glide (see
-/// [`CutsceneCameraInterp`]'s mover-law provenance).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-enum EaseCurve {
-    /// Constant velocity, exact arrival (`mode 1` eye/focus/H).
-    #[default]
-    Linear,
-    /// Quadratic ease-out (`mode 1` angles; every `mode 2` component).
-    QuadOut,
-    /// Smoothstep ease-in-out (every `mode 4` component).
-    InOut,
 }
 
 impl CutsceneCameraInterp {
@@ -641,7 +637,7 @@ impl CutsceneCameraInterp {
             self.target = packed;
             self.total = [0; 9];
             self.done = [0; 9];
-            self.curve = [EaseCurve::Linear; 9];
+            self.curve = [1; 9];
             self.initialized = true;
         } else {
             for (i, &target_i) in packed.iter().enumerate() {
@@ -655,17 +651,10 @@ impl CutsceneCameraInterp {
                     // ticks, 1:1 (capture-pinned; see the type doc).
                     self.total[i] = apply;
                     self.done[i] = 0;
-                    let is_angle = i == Self::PITCH || i == Self::YAW;
-                    self.curve[i] = match mode {
-                        // 45 0B ..: every component eases out (map01 fly-in).
-                        2 => EaseCurve::QuadOut,
-                        // 45 13 ..: every component eases in-out.
-                        4 => EaseCurve::InOut,
-                        // 45 07 .. (and unseen modes): linear eye/focus/H,
-                        // ease-out angles.
-                        _ if is_angle => EaseCurve::QuadOut,
-                        _ => EaseCurve::Linear,
-                    };
+                    // Retail applies ONE curve to all ten axes - the mover
+                    // re-reads the same `actor[+0x50]` per axis. There is no
+                    // angle/eye split (`legaia_engine_vm::camera_mover`).
+                    self.curve[i] = mode;
                 }
                 self.done[i] = self.done[i].saturating_add(steps).min(self.total[i]);
                 let s = if self.total[i] == 0 {
@@ -673,11 +662,7 @@ impl CutsceneCameraInterp {
                 } else {
                     self.done[i] as f32 / self.total[i] as f32
                 };
-                let s = match self.curve[i] {
-                    EaseCurve::Linear => s,
-                    EaseCurve::QuadOut => 1.0 - (1.0 - s) * (1.0 - s),
-                    EaseCurve::InOut => s * s * (3.0 - 2.0 * s),
-                };
+                let s = legaia_engine_vm::camera_mover::curve_unit(s, self.curve[i]);
                 let delta = if i == Self::PITCH || i == Self::YAW {
                     wrap_pi(self.target[i] - self.start[i])
                 } else {
