@@ -8,8 +8,8 @@ clean-room engine systems. Use the contents below to jump to a section.
 ## Contents
 
 **Retail scene + render**
-- [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0)
-- [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [dome](#backdrop-dome---sky--distant-mountains-prot-88-for-map01) · [camera](#battle-camera-exact) · [party meshes](#battle-party-meshes-assembled)
+- [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0) - [stage-overlay dispatch](#stage-overlay-dispatch-the-0x47-loader-band)
+- [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [dome](#backdrop-dome---sky--distant-mountains-prot-88-for-map01) · [camera](#battle-camera-exact) · [party meshes](#battle-party-meshes-assembled)
 
 **Retail battle logic + data**
 - [Battle action state machine (`FUN_801E295C`)](#battle-action-state-machine-fun_801e295c)
@@ -69,6 +69,38 @@ loader (`_DAT_8007b8c2`) chooses between PROT-TOC indices (dev) and
 A paired stage pack loads at raw TOC `0x367`/`0x36d` (= extraction entries 0869/0875) in states 2/4/6.
 The asset-viewer's `--bundle battle` mode mirrors this loader's PROT 865–890 set so character meshes have the right CLUT bindings.
 
+### Stage-overlay dispatch (the `+0x47` loader band)
+
+Sub-state `0x11` reads the **battle-stage id** byte `_DAT_8007B64A` and, only
+when it is non-zero, pages a per-stage code overlay into slot B:
+
+```
+stage_id = *(u8 *)0x8007B64A;
+if (stage_id == 0) goto no_stage;                 // beq v1, zero  @ 0x80052688
+FUN_8003EC70(stage_id + 0x47, 0);                 // addiu a0,a0,0x47 @ 0x800526A0
+```
+
+Overlay loader B resolves extraction entry `param + 0x37F`, so a stage overlay
+lives at **extraction `stage_id + 966`**. This is the `+0x47` computed-parameter
+site in the SCUS loader census, and the only call site that can reach entries
+**967 / 968** - no constant-parameter site produces them.
+
+`SCUS_942.54` touches the id byte in three places: two clears, and
+`FUN_80055B6C`'s per-formation override `*_DAT_8007BD0C == 0xB5 → 2` (entry
+968), where `_DAT_8007BD0C` is the formation's monster id.
+
+**Stage id `0` is the norm, not a fallback.** Across the catalogued battle
+save-state library every battle reads `0` - the fight simply draws over the
+resident field/world backdrop - except the **Tetsu sparring tutorial**, which
+reads `1` and whose loader-B current-id tracker `gp+0x934` (`0x8007BC4C`) holds
+`0x48` = extraction **967**, the battle tutorial overlay. `_DAT_8007BD0C` reads
+`0x4F` (Tetsu's archive id) in those same states.
+
+The overlay is battle *code*, not stage geometry: the backdrop mesh comes from
+the resident scene bundle (below). Engine mirror:
+[`engine-core::overlay_loader::battle_stage_overlay_entry`](../../crates/engine-core/src/overlay_loader.rs);
+oracle `crates/engine-shell/tests/battle_stage_live.rs`.
+
 The `asset-viewer battle-scene` subcommand drives the engine-side composite end-to-end: loads the same battle bundle TMDs, builds an `engine-core::World` in `SceneMode::Battle`, spawns 3 party + 5 monster actor slots, and ticks the [battle-action state machine](battle-action.md) per frame. HUD shows the current `ActionState` (decoded into the named variant), queued action, per-slot liveness, transition counts, and any `BattleEndCause` the SM emits. Triangle cycles `queued_action`; Cross re-seeds at `ActionState::Begin`.
 
 ## Battle background
@@ -113,6 +145,38 @@ TMD walk:
 > positive** (3 degenerate `clut=0` `POLY_FT4` prims stride-1 flooding that
 > window). The ground is this **flat procedural grid**, not a per-tile continent
 > descriptor table read from RAM, and not a 3D heightfield (cell `Y ≈ 0`).
+
+### Which stage stream a scene fights in
+
+A scene bundle is a fixed slot array - `.MAP`, v12 table, event scripts, asset
+table, texture pack, then **one `scene_tmd_stream` per sub-area**. The battle
+backdrop is whichever of those streams the type-`0x01` chunk walker
+`FUN_8001FE70` last recorded in `_DAT_8007B864` (its sole writer, at
+`0x8001FEC0`), so the choice is scene data, not a code table - and it is **not
+uniformly the block's first stream**:
+
+| Scene | Bundle slot | Extraction entry | Dome shape | Pinned from |
+|---|---|---|---|---|
+| `map01` (overworld) | 5 | 88 | 4 objects, 340 verts | the four camera-orbit angle saves |
+| `town01` (Rim Elm) | 6 | 7 | 2 objects, 341 verts | the three Tetsu tutorial anchors |
+
+Rim Elm's bundle carries four sub-area backdrops (entries 6..9); the Tetsu
+sparring match is fought in the **second**. Each row is pinned by reading
+`_DAT_8007B864` in a battle save state, taking object 0's live vertex pool, and
+byte-matching it back to a PROT entry.
+
+> **Over-read trap.** PROT extraction over-reads into the following entries, so
+> the Rim Elm dome's bytes also appear inside entry **6**'s file - at offset
+> `0x16038`, past entry 6's own `(next_lba - lba) * 0x800 = 0x14000`. Any "scan
+> the block for the resident dome" sweep must reject hits beyond an entry's
+> unique length or it will attribute the backdrop one entry too low. Entries 7
+> and 8 additionally share a vertex *count*, so shape alone cannot separate them
+> either - only the bytes can.
+
+Engine mirror: `ProtIndex::battle_stage_entry_for_scene`, consumed by
+`play-window`'s `build_battle_stage`. Tests
+`crates/engine-core/tests/battle_stage_entries_real.rs` (disc) and
+`crates/engine-shell/tests/battle_stage_live.rs` (save library).
 
 ### Backdrop dome - sky + distant mountains (PROT 88 for `map01`)
 
