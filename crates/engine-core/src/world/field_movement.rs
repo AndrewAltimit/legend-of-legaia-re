@@ -887,13 +887,15 @@ impl World {
         // A running cutscene timeline owns the stage: its per-actor channels
         // ([`Self::step_field_channels`]) drive NPC moves, so the engine's
         // autonomous waypoint substitute stands down (it would overwrite the
-        // scripted positions each frame).
-        if self.cutscene_timeline_active() {
-            return;
-        }
+        // scripted positions each frame). In-flight SCRIPTED legs keep
+        // stepping - the timeline's own cross-context walk-to-tile yields
+        // (`C7 <id> …`, [`crate::cutscene_timeline::TimelineWalk`]) glide
+        // through this same machinery, and retail's walk kernel ticks every
+        // frame regardless of what spawned the record.
+        let timeline_up = self.cutscene_timeline_active();
         let dialogue_up = self.current_dialog.is_some() || self.inline_dialogue.is_some();
         // Kick autonomous legs for routed NPCs with no in-flight motion.
-        if self.animate_field_npcs && !dialogue_up {
+        if self.animate_field_npcs && !dialogue_up && !timeline_up {
             let kicks: Vec<(u8, (i16, i16))> = self
                 .field_npc_routes
                 .iter()
@@ -922,8 +924,8 @@ impl World {
             let Some(motion) = self.field_npc_motions.get_mut(&slot) else {
                 continue;
             };
-            if dialogue_up && motion.route_cursor.is_some() {
-                continue; // autonomous legs pause during an interaction
+            if (dialogue_up || timeline_up) && motion.route_cursor.is_some() {
+                continue; // autonomous legs pause during an interaction / beat
             }
             let target = vm::motion_vm::MotionTarget {
                 x: motion.target.0,

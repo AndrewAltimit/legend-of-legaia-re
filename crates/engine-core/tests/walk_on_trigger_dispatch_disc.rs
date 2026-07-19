@@ -144,8 +144,15 @@ fn post_naming_story_beat_spawns_on_walk_on() {
     // the timeline until the player confirms, so mash confirm on alternate
     // ticks (edge-triggered input) while it plays out. The timeline completes
     // at the record's resident loop-back (choreography wrapped), well under
-    // the anti-hang frame cap.
+    // the anti-hang frame cap. While it plays, trace Mei (placement 34,
+    // channel 0x46) and the player: the record's cross-context walk-to-tile
+    // yields must actually WALK them - `C7 46 11 1A 33` brings Mei from her
+    // door seat (17,29) to the conversation tile (17,26) = (2240, 3392), and
+    // `C7 F8 12 1A 33` walks the player to (18,26) = (2368, 3392), the beat's
+    // camera focus. Dropping those walks left Mei standing outside the
+    // conversation frame for the whole beat (the "Mei is invisible" report).
     let mut n = 0u32;
+    let mut mei_positions: Vec<(i16, i16)> = Vec::new();
     while host.world.cutscene_timeline_active() && n < 20000 {
         let pad = if n.is_multiple_of(2) {
             legaia_engine_core::input::PadButton::Cross.mask()
@@ -155,12 +162,41 @@ fn post_naming_story_beat_spawns_on_walk_on() {
         host.world.set_pad(pad);
         host.tick().expect("tick");
         n += 1;
+        if let Some(&p) = host.world.field_npc_positions.get(&34)
+            && mei_positions.last() != Some(&p)
+        {
+            mei_positions.push(p);
+        }
     }
     host.world.set_pad(0);
     assert!(
-        n < 3000,
-        "the beat completes naturally (ticked {n}, cap would be ~1200 frames of lock)"
+        n < 5000,
+        "the beat completes naturally (ticked {n}; the walk playouts add \
+         ~2s to the pre-walk pacing, still far under the lock cap)"
     );
+    let conversation_seat = (17i16 * 128 + 0x40, 26i16 * 128 + 0x40);
+    assert!(
+        mei_positions.contains(&conversation_seat),
+        "the `C7 46` walk-to-tile playout brings Mei to the conversation \
+         tile (17,26); observed path: {mei_positions:?}"
+    );
+    assert!(
+        mei_positions
+            .iter()
+            .any(|&(x, z)| x == 2240 && z > conversation_seat.1 && z < 3776),
+        "Mei WALKS in (intermediate positions between her door seat and the \
+         conversation tile), not a single-op teleport; observed: {mei_positions:?}"
+    );
+    {
+        let slot = host.world.player_actor_slot.expect("player") as usize;
+        let ms = &host.world.actors[slot].move_state;
+        assert_eq!(
+            (ms.world_x, ms.world_z),
+            (18 * 128 + 0x40, 26 * 128 + 0x40),
+            "the `C7 F8` walk-to-tile playout walks the player to the beat's \
+             camera-focus tile (18,26)"
+        );
+    }
     assert!(
         host.world.p2_gate_flag_set(550),
         "the beat set its one-shot flag by execution (no re-fire)"

@@ -1286,6 +1286,20 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn exec_move(&mut self, _ctx: &mut FieldCtx, move_id: u8) {
+        // A cross-context ExecMove against an NPC channel (`A2 <id>
+        // <move_id>`): retail is `FUN_80024E08(actor, id)` - the id lands in
+        // the actor's anim slot and the anim-clock (`FUN_800204F8`) plays the
+        // named clip (scene-bundle record `id - 1`, the same `+0x5C` id space
+        // the placement anim byte seeds). Surface it as an anim cue so the
+        // windowed host re-targets the NPC's clip player - this is what makes
+        // Mei visibly WALK (clip 61) then idle (clip 60) through her town01
+        // walk-on beat instead of sliding in a frozen pose.
+        // REF: FUN_80024E08, FUN_800204F8
+        if let Some(slot) = self.world.executing_channel {
+            self.world
+                .field_npc_anim_cues
+                .insert(slot, (1, move_id, Vec::new()));
+        }
         self.world
             .pending_field_events
             .push(FieldEvent::ExecMove { move_id });

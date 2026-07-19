@@ -185,3 +185,55 @@ fn field_fmv_trigger_cut_path_is_a_noop() {
     assert_eq!(world.pending_fmv_trigger, None, "pending still drained");
     assert_eq!(world.active_fmv(), None);
 }
+
+/// A scene whose MAN has `.MAP` object binds but ZERO partition-1
+/// placements still seeds its object-bind channels: retail's scene-init
+/// object walk (`FUN_8003A55C`) binds every trigger'd object regardless of
+/// whether partition 1 placed any actors, and the walk-on partition-2
+/// installer executes out of the same retained MAN buffer. The regression
+/// this pins: `seed_field_channels` used to drop the MAN Arc whenever the
+/// placement channel set came back empty, so `seed_object_channels`
+/// early-returned and the scene's door/prop pokes had no target context.
+#[test]
+fn object_channels_seed_without_partition1_placements() {
+    use legaia_asset::man_section::{ManFile, ManHeader, SectionRef};
+
+    // One partition-0 record (flat index 0), zero placements.
+    let data_region_offset = 0x40usize;
+    let mut man = vec![0u8; data_region_offset];
+    man.push(0x00); // N = 0 local entries
+    man.extend_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]); // 4-byte header
+    man.push(0x21); // pc0: a NOP the bind prologue pre-run stops on
+    man.push(0x00);
+    let header = ManHeader {
+        status_flags: 0,
+        low_flag: false,
+        depth_lut: [0; 16],
+        partition_counts: [1, 0, 0],
+        u24_at_28: 0,
+    };
+    let man_file = ManFile {
+        header,
+        partitions: [vec![0u32], vec![], vec![]],
+        data_region_offset,
+        sections: std::array::from_fn(|_| SectionRef {
+            offset: man.len(),
+            length: 0,
+        }),
+    };
+
+    let mut world = World::default();
+    world.seed_field_channels(&man_file, &man);
+    assert!(
+        world.field_channels.is_empty(),
+        "no placements -> no placement channels"
+    );
+    world.seed_object_channels(&man_file, &man, &[(0usize, (100i16, 200i16))]);
+    let obj = world
+        .field_channels
+        .iter()
+        .find(|c| c.object_bind)
+        .expect("the object bind seeds a channel even with zero placements");
+    assert_eq!(obj.ctx.script_id, 0);
+    assert_eq!((obj.ctx.world_x, obj.ctx.world_z), (100, 200));
+}

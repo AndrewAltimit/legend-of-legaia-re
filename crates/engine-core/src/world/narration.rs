@@ -834,6 +834,93 @@ impl World {
             }
             tl.pc += width;
         }
+        // Cross-context walk-to-tile park (`C7 <id> <tx> <tz> <mode>` = op
+        // 0x47 against an NPC channel / the player anchor): retail saves the
+        // yield-op pointer into the TARGET actor's `+0x94` and the per-frame
+        // walk kernel (`FUN_8003774C` case 0x47) moves it toward the tile at
+        // `0x80 >> (2 + (mode & 7))` per frame, resuming the parked record on
+        // arrival. The NPC leg glides through the motion VM
+        // (`tick_field_npc_motions` removes the leg on arrival); the player
+        // leg steps here directly. The town01 Mei walk-on beat is the pinned
+        // case: `C7 46 11 1B 33` / `C7 46 11 1A 33` walk Mei from her seat at
+        // the Vahn's-house door into the conversation frame, and
+        // `C7 F8 12 1A 33` walks the player to the beat's camera focus -
+        // dropping these left Mei OFFSCREEN (top corner of the shot) for the
+        // whole conversation.
+        // REF: FUN_8003774C (case 0x47), FUN_8003BC08 (0x400 walk-bit tick)
+        if let Some(mut walk) = tl.walk_wait.take() {
+            walk.frames += 1;
+            let arrived = match walk.slot {
+                Some(slot) => !self.field_npc_motions.contains_key(&slot),
+                None => {
+                    // Step the player toward the target at the op's speed.
+                    if let Some(p) = self.player_actor_slot
+                        && let Some(actor) = self.actors.get_mut(p as usize)
+                    {
+                        let ms = &mut actor.move_state;
+                        let (dx, dz) = (
+                            i32::from(walk.target.0) - i32::from(ms.world_x),
+                            i32::from(walk.target.1) - i32::from(ms.world_z),
+                        );
+                        let step = i32::from(walk.speed.max(1));
+                        let sx = dx.clamp(-step, step);
+                        let sz = dz.clamp(-step, step);
+                        if sx != 0 || sz != 0 {
+                            ms.world_x += sx as i16;
+                            ms.world_z += sz as i16;
+                            ms.render_26 = (((sx as f32).atan2(sz as f32) / std::f32::consts::TAU
+                                * 4096.0)
+                                .round() as i32
+                                & 0x0FFF) as i16;
+                        }
+                        let (nx, nz) = (i32::from(ms.world_x), i32::from(ms.world_z));
+                        let arrived =
+                            (nx, nz) == (i32::from(walk.target.0), i32::from(walk.target.1));
+                        if arrived {
+                            let y = self.sample_field_floor_height(nx, nz) as i16;
+                            if let Some(a) = self.actors.get_mut(p as usize) {
+                                a.move_state.world_y = y;
+                            }
+                        }
+                        arrived
+                    } else {
+                        true
+                    }
+                }
+            };
+            if !arrived && walk.frames < WALK_PARK_TIMEOUT {
+                tl.walk_wait = Some(walk);
+                self.field_channels = channels;
+                self.in_cutscene_timeline = false;
+                self.in_spawned_record_slice = false;
+                // A walk park is real playout progress, not a hang: don't let
+                // it accumulate toward the anti-hang frame cap (a long leg -
+                // tower P2[2]'s `C7 F8 0D 45` covers ~7500 units at 4/tick -
+                // would otherwise burn the cap mid-walk and the forced
+                // completion would skip the record's trailing flag latches).
+                tl.frames = tl.frames.saturating_sub(1);
+                return false;
+            }
+            // Arrived (or safety timeout: snap to the target so the
+            // choreography stays coherent) - resume past the yield.
+            if !arrived {
+                match walk.slot {
+                    Some(slot) => {
+                        self.field_npc_motions.remove(&slot);
+                        self.field_npc_positions.insert(slot, walk.target);
+                    }
+                    None => {
+                        if let Some(p) = self.player_actor_slot
+                            && let Some(actor) = self.actors.get_mut(p as usize)
+                        {
+                            actor.move_state.world_x = walk.target.0;
+                            actor.move_state.world_z = walk.target.1;
+                        }
+                    }
+                }
+            }
+            tl.pc = walk.resume_pc;
+        }
         {
             let mut host = FieldHostImpl { world: self };
             let mut budget = CUTSCENE_TIMELINE_STEP_BUDGET;
@@ -987,6 +1074,84 @@ impl World {
                 //   completion-shaped and needs no special case.)
                 // REF: FUN_8003C83C
                 // REF: FUN_8003BDE0
+                // Cross-context walk-to-tile yield (`C7 <id|F8> <tx> <tz>
+                // <mode>`): retail parks the record and the walk kernel
+                // (`FUN_8003774C` case 0x47) moves the TARGET toward the tile
+                // in place. Arm the walk + park; the pre-step gate resumes
+                // past the op on arrival. The despawn form (tile 127,127)
+                // seats instantly - walking to the off-map box is invisible.
+                // REF: FUN_8003774C (case 0x47)
+                if opcode_byte & 0x7F == 0x47
+                    && opcode_byte & 0x80 != 0
+                    && let (Some(&b0), Some(&b1), Some(&b2)) = (
+                        tl.bytecode.get(pc + 2),
+                        tl.bytecode.get(pc + 3),
+                        tl.bytecode.get(pc + 4),
+                    )
+                {
+                    let ext = vm::field::peek_extended(&tl.bytecode, pc);
+                    let decode = |b: u8| -> i16 {
+                        i16::from(b & 0x7F) * 0x80 + 0x40 + if b & 0x80 != 0 { 0x40 } else { 0 }
+                    };
+                    let (tx, tz) = (decode(b0), decode(b1));
+                    let speed = crate::world::field_npc_walk_step_speed(0x80, b2 & 7);
+                    let parked_sentinel =
+                        (b0 & 0x7F, b1 & 0x7F) == crate::man_field_scripts::PARKED_SENTINEL_TILE;
+                    let walk_slot: Option<Option<u8>> = if ext == Some(0xF8) {
+                        Some(None) // player anchor
+                    } else if let Some((_, ci)) = target {
+                        (!channels[ci].object_bind)
+                            .then_some(Some(channels[ci].placement_index as u8))
+                    } else {
+                        None
+                    };
+                    if let Some(slot) = walk_slot {
+                        if pc < tl.visited.len() {
+                            tl.visited[pc] = true;
+                        }
+                        if let Some(s) = slot {
+                            if let Some((_, ci)) = target {
+                                channels[ci].ctx.world_x = tx as u16;
+                                channels[ci].ctx.world_z = tz as u16;
+                            }
+                            if parked_sentinel {
+                                // Despawn: seat at the hide box, no playout.
+                                host.world.field_npc_positions.insert(
+                                    s,
+                                    (
+                                        crate::world::FIELD_OFFMAP_HIDE_XZ,
+                                        crate::world::FIELD_OFFMAP_HIDE_XZ,
+                                    ),
+                                );
+                                tl.pc = pc + 5;
+                                continue;
+                            }
+                            if host.world.start_field_npc_motion(s, tx, tz) {
+                                if let Some(m) = host.world.field_npc_motions.get_mut(&s) {
+                                    m.state.speed = speed;
+                                    m.route_cursor = None;
+                                }
+                            } else {
+                                // No surfaced live position to glide from:
+                                // seat directly (the pre-park fallback).
+                                host.world.field_npc_positions.insert(s, (tx, tz));
+                                tl.pc = pc + 5;
+                                continue;
+                            }
+                        } else if parked_sentinel {
+                            tl.pc = pc + 5;
+                            continue;
+                        }
+                        tl.walk_wait = Some(crate::cutscene_timeline::TimelineWalk {
+                            slot,
+                            target: (tx, tz),
+                            resume_pc: pc + 5,
+                            speed,
+                            frames: 0,
+                        });
+                        break;
+                    }
+                }
                 if vm::field::peek_extended(&tl.bytecode, pc) == Some(0xF8) {
                     let op = opcode_byte & 0x7F;
                     if op == 0x22
@@ -1692,7 +1857,12 @@ impl World {
     /// Cutscene scenes (`opdeene` and friends) re-seed the set through
     /// [`Self::install_cutscene_timeline_record`] afterwards, which simply
     /// replaces this set, so the two paths compose. A scene with no placements
-    /// seeds an empty set and [`Self::step_field_channels`] no-ops.
+    /// seeds an empty set and [`Self::step_field_channels`] no-ops - but the
+    /// MAN is retained regardless: object-bind channels
+    /// ([`Self::seed_object_channels`]) and walk-on partition-2 installs
+    /// ([`Self::install_gated_p2_record`]) execute out of the same buffer, and
+    /// retail binds objects (`FUN_8003A55C`) whether or not partition 1 placed
+    /// any actors.
     // PORT: FUN_8003AEB0 (the per-record spawn loop, free-roam entry)
     // REF: FUN_8003A1E4 (per-record context spawn)
     pub fn seed_field_channels(
@@ -1701,7 +1871,7 @@ impl World {
         man: &[u8],
     ) {
         self.field_channels = crate::field_channels::spawn_channels(man_file, man);
-        self.field_channels_man = if self.field_channels.is_empty() {
+        self.field_channels_man = if man.is_empty() {
             None
         } else {
             Some(std::sync::Arc::new(man.to_vec()))

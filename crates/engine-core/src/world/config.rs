@@ -401,6 +401,14 @@ pub const SPAWNED_CONTEXT_SLOTS: usize = 8;
 /// so many parks in one record still complete comfortably.
 pub(crate) const CHANNEL_WAIT_PARK_TIMEOUT: u32 = 30;
 
+/// Park bound for a cross-context **walk-to-tile yield**
+/// (`C7 <id> <tx> <tz> <mode>`, [`crate::cutscene_timeline::TimelineWalk`]).
+/// A walk park is a real playout - the longest authored legs cross a dozen
+/// tiles at the slowest operand speed (1 unit/tick ≈ 1500 ticks) - so this is
+/// sized as a safety net, not a beat length; on expiry the walker snaps to
+/// the op target so the choreography stays coherent.
+pub(crate) const WALK_PARK_TIMEOUT: u32 = 2400;
+
 /// Move `cur` toward `target` by at most `max_delta`, snapping exactly
 /// onto `target` when within range. Used by the tile-board interpolator.
 pub(crate) fn step_toward(cur: i32, target: i32, max_delta: i32) -> i32 {
