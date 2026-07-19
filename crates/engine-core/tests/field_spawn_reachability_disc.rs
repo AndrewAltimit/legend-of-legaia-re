@@ -202,11 +202,14 @@ fn izumi_spawn_is_walkable_and_pad_moves_the_player() {
     // Let the entry script run its course: it spawns the first-visit record,
     // which parks the player at the spring for its choreography; when the
     // record drains (completion or frame cap) the rescue re-seats the player.
-    let mut budget = 1500usize;
+    // Budget in SIM ticks. Spawned-record contexts step on the 60 Hz
+    // retail-frame sub-clock, so ~1.67 sim ticks buy one record frame - the
+    // budget has to cover the record's frame cap in display frames.
+    let mut budget = 2600usize;
     loop {
         let _ = host.tick();
         budget -= 1;
-        if budget == 0 || (budget <= 1470 && host.world.helper_contexts.is_empty()) {
+        if budget == 0 || (budget <= 2550 && host.world.helper_contexts.is_empty()) {
             break;
         }
     }

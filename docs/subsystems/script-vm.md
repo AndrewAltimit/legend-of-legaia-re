@@ -122,6 +122,44 @@ int FUN_801DE840(int buffer_base, int pc_offset, int ctx_ptr);
 
 The VM is **not** a step-and-yield loop - each call executes from `pc_offset` until something forces a return (instruction halt, branch back into the caller, target script done). The host calls back in at the next frame (or when an external event fires) with the returned PC.
 
+## Per-frame scheduling
+
+There is no scheduler above the VM: retail walks its actor lists in full every
+frame and gives **every** live context one slice.
+
+`FUN_8002519C` iterates the five lists at `_DAT_8007C34C..._DAT_8007C36C` once
+per frame, dispatching each node through `jalr node[+0x0C]`. Field actors land
+on `FUN_8003BC08`, which routes by the node's flag word `+0x10`: bit `0x100`
+runs the field-VM slice (`FUN_80039B7C`), bit `0x400` the walk kernel
+(`FUN_8003774C`), a non-zero `+0x80` the motion VM (`FUN_80038158`), and
+`+0x5C > 0` / bit `0x1000` the move-table VM.
+
+The slice itself is the run-until-yield loop inside `FUN_80039B7C` (its
+run-to-**text** sibling is `FUN_8003CF7C`): call `FUN_801DE840`, write the
+returned PC back to `ctx[+0x9E]`, and repeat while the opcode byte still has
+`(byte & 0x7F) >= 0x20`, stopping on opcode `0x21`, on a PC that did not
+advance, or on a byte below the opcode range. So one frame runs *many* ops per
+context, and a script yields for the frame only when an op says so.
+
+Three consequences worth stating plainly, because they retire the intuition
+that long cutscenes need catching up:
+
+- **No budget, no round-robin.** Contexts are not time-sliced against each
+  other; the list length is the only bound. A live capture of the opening
+  chain shows ~30-40 nodes across the two populated lists, of which the ones
+  carrying bit `0x100` each run their own slice every frame.
+- **Presenters are contexts too.** The narration crawl roller
+  (`FUN_80037174`) and the cutscene camera mover (`FUN_801DC0BC`) are ordinary
+  actors in `_DAT_8007C34C` with their own tick fns, so they advance in
+  parallel with the script that spawned them - the script never blocks on
+  either. See [`cutscene.md`](cutscene.md).
+- **Durations are display frames.** Op-`0x4A` `WAIT_FRAMES` adds
+  `DAT_1F800393` - the adaptive frame-skip factor, i.e. the logic tick's `dt`
+  in display frames - to `ctx[+0x54]` per visit, so a wait of `N` elapses in
+  `N` display frames whatever the skip factor. An engine ticking at a
+  different rate has to pace the VM off a display-frame sub-clock, not its own
+  tick (see [`cutscene.md`](cutscene.md#record-pacing---the-60-hz-sub-clock)).
+
 ## Top-level dispatch
 
 ```c

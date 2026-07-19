@@ -1380,7 +1380,28 @@ See [`subsystems/level-up.md`](../subsystems/level-up.md#xp-table).
 
 **The narration is a bottom-up scrolling crawl** (roller actor `FUN_80037174`, spawned as a **child context** so the parent timeline keeps executing and the between-block camera cuts play under the scroll; per-scene capture-pinned geometry/speed), not a one-caption-at-a-time presenter - the prior one-line model described the separate `4C E1` balloon op (`FUN_8003C764` / `FUN_801DA7F0`) and is superseded. A cold-boot crawl-1 capture (`scripts/pcsx-redux/autorun_crawl1_capture.lua`) confirms the eye cuts through the Genesis-grove foliage to the villager tableau *while* the creation crawl scrolls; the engine ports this as a non-blocking crawl (blocking only the last block of a scene before its terminal SceneChange).
 The name-entry auto-open stays pinned: op `0x49` STATE_RESUME sub-op 3 at town01 P2[3] body offset `0x02c6` (`_DAT_8007B450` parks there while name entry is up); the retail town01 order is establishing pan → name entry → Vahn's walk-out.
-The op-`0x45` camera param→global map, the GTE rotation build (`FUN_8001CF50`), the per-frame ease (`FUN_801DB510`), and the eye-back depth (the offset-trio slot 5, `0x800840B8` - no separate eye-distance scalar) are all pinned; `play-window` renders through `psx_camera_mvp`.
+The op-`0x45` camera param→global map, the GTE rotation build (`FUN_8001CF50`), and the eye-back depth (the offset-trio slot 5, `0x800840B8` - no separate eye-distance scalar) are all pinned; `play-window` renders through `psx_camera_mvp`.
+
+**The per-frame camera mover is `FUN_801DC0BC`, not `FUN_801DB510`** (that is the follow / scroll
+camera - a different mode of the same globals). `FUN_801DD310` attaches ten `(start, end)` pairs plus
+one shared progress / duration / curve to a dedicated mover actor, so a glide runs **in parallel**
+with the record that staged it, and a beat landing mid-tween re-seeds every axis from the live pose.
+All four ease curves are decoded, and the port (`legaia_engine_vm::camera_mover`) reproduces a live
+retail capture on 2471 of 2480 sampled axis values, the rest resolving under the probe's own read
+skew. Falsified with it: the "mode 1 eases the angles but runs the eye trio linear" per-axis curve
+split - retail applies one curve to all ten axes. Full law in
+[`cutscene.md`](../subsystems/cutscene.md#in-engine-3d-opening-the-five-scene-new-game-chain).
+
+**Retired: the "field-VM step-parallelism" dead-air thread.** Retail runs no hidden parallelism the
+engine has to catch up with - `FUN_8002519C` walks the actor lists in full every frame, so every
+context already gets one run-until-yield slice per frame
+([`script-vm.md`](../subsystems/script-vm.md#per-frame-scheduling)). The measured inter-crawl gap was
+a units error: record durations count retail **display** frames (op-`0x4A` and the mover both
+accumulate `DAT_1F800393`), and the engine stepped its timeline once per 100 Hz sim tick. Pacing the
+timeline off the existing 60 Hz sub-clock moved the whole zero-input opening chain from ~10 % short
+of retail wall-time to within ~4 %, pinned by `opening_chain_wall_time`. **Residual:** the `map01`
+fly-in leg now runs ~22 % long against a headless retail capture while the other three legs sit
+within ~6 % - a per-leg thread in the world-map fly-in choreography, not a global rate.
 
 **Data-source sub-threads - both resolved:**
 

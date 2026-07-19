@@ -619,7 +619,7 @@ The engine's [`CutsceneNarration`](../../crates/engine-core/src/cutscene_narrati
 
 The `RollerParams` px/frame values are pinned against retail's **~60 Hz** field frames, but the engine sim ticks at **100 Hz** ([`redraw`](../../crates/engine-shell/src/bin/legaia-engine/window/event_handler/redraw.rs) `advance_tick(100)`). Advancing the roller once per sim tick would scroll it 1.67× too fast and drain the crawl ~6 s early, opening the inter-crawl gap. `World::tick` therefore drives the roller off a **60 fps sub-clock** (`field_frame_accum += 60; step = accum >= 100`, ~0.6 roller-frames per sim tick), so the crawl duration matches retail wall-time.
 
-The residual dead-air between the two crawls (engine ~5 s vs retail ~3 s) is the ~800-frame small-`WaitFrames` camera choreography (`pc 0x2d9..0x88f`) that the engine runs **sequentially** before block 2 - a field-VM step-parallelism thread, not a roller-speed one.
+The old "field-VM step-parallelism" reading of the residual inter-crawl dead-air is **retired**. Retail has no hidden parallelism to catch up with: its actor lists are walked in full every frame (`FUN_8002519C`), so every script context - the timeline, the crawl roller, the camera mover - already gets one run-until-yield slice per frame, and the engine already runs the roller and the helper contexts that way. The measured gap was a **units** error instead: the engine's timeline was stepped once per 100 Hz sim tick while every duration a record can express is counted in retail's 60 Hz display frames, so `WaitFrames` drained 1.67x fast. See [Record pacing](#record-pacing---the-60-hz-sub-clock).
 
 #### Roller op operands (Ghidra-traced)
 
@@ -685,12 +685,55 @@ The cutscene timeline runs on the **same field/event VM** (`FUN_801DE840`) as ev
   **The full transform is `screen = H · (R·(v − focus) + tr_eye) / Ze`; the eye-back depth is `tr_eye.z` (slot 5), not a missing scalar.** The once-per-frame view builder `FUN_800172c0` assembles it: build `R` from the angle globals (`FUN_80026988`), left-multiply the constant base matrix `DAT_8007BF10` (a uniform `24576·I` = **6× world scale**), copy the eye-space translation trio `_DAT_800840B8/BC/C0` into the view struct's `.t`, then MVMVA the negated focus `(_DAT_80089118/1C/20)` through `R` and add `.t` - giving the uploaded GTE translation `TR = R·(−focus) + tr_eye`, so every world vertex maps to `R·(v − focus) + tr_eye`.
   The camera-rotation build is pinned: `FUN_8001CF50` composes `R` by rotating about each axis with the angle globals - `RotMatrixX(pitch=_DAT_8007B790)` at `0x800461A4`, `RotMatrixY(yaw=_DAT_8007B792)` at `0x8004629C`, `RotMatrixZ(roll=_DAT_8007B794)` at `0x8004638C` (each masks the angle to 12 bits and indexes the shared sin/cos LUT at `0x80070A2C`, `4096 = 360°`, `+0x800` = the quarter-wave cosine offset; composed via GTE `mvmva`).
   **So param 0 is the camera PITCH, not a "rot/zoom" word** - the zoom is H (a separate projection register). The eye sits *behind* the focus by `tr_eye` (in the 6×-scaled space); it is NOT at the focus.
-  The per-frame *interpolation* (`FUN_801DB510`, the mover behind the control-block targets) is pinned from a per-frame RAM capture of the live camera globals across the whole retail New-Game opening chain:
-  - **`apply_trigger` is the glide length in frames, 1:1** (measured arrivals `48/50`, `85/90`, `239/240`, `≈965/1000`, `≈900/900`). A long `apply` acts as a *dolly velocity*: `opurud` stages an `apply 2300` eye glide whose next snap beat lands about a quarter of the way through - retail never reaches the staged target.
-  - **The ease curve is selected by the op's high bits** (the decoded mode nibble `op0 >> 2`). Mode 1 (the common `45 07 ..` form): the eye trio / focus / H move at **constant velocity** (`delta / apply` per frame - measured exactly linear on the `opdeene` `apply 840` grove dolly and `opurud`'s `apply 50/240/2300` moves) while **pitch / yaw decelerate along a quadratic ease-out** (initial rate `2·delta/apply`). Mode 2 (`45 0B ..`): **every component** eases out quadratically - the `map01` fly-in descent fits `1-(1-t)^2` across its whole travel. Mode 4 (`45 13 ..`): every component eases **in-out** (slow-fast-slow; `opdeene`'s crater-rim tableau dolly).
-  - Arrival is exact (no asymptote); an arrived component holds until re-staged, and a re-stage mid-glide re-arms from the current value.
+  The commit's second argument decides between two behaviours, and the third selects the ease curve: the field VM calls `FUN_801DE084(0x801C6EA8, apply, op0 >> 2 & 0xF)`, reading `apply` as the u16 at operand `+2` (`overlay_0897_801de840.txt`, case `0x45` sub-`0x00`).
+
+  - **`apply == 0` - snap.** `FUN_801DE084` writes the ten params straight into the camera globals and marks every live mover actor dead, cancelling a glide in flight.
+  - **`apply != 0` - glide.** It tail-calls `FUN_801DD310`, which finds (or allocates) the **one** camera-mover actor - the node in list `_DAT_8007C34C` whose tick fn is `FUN_801DC0BC` - and hands it a 40-byte block of ten `(start, end)` u16 pairs. `start` comes from the LIVE globals, `end` from the staging struct. It then sets `actor[+0x9C] = 0` (progress), `actor[+0x9E] = apply` (duration) and `actor[+0x50] = curve`.
+
+  Two structural consequences:
+
+  - The mover is a **separate actor**, dispatched by the per-frame actor-list walk `FUN_8002519C` like any other. The record that staged the beat does **not** block on it - choreography and glide run in parallel, and a record whose `WaitFrames` run out first simply moves on while the camera keeps travelling. A long `apply` is therefore a *dolly velocity*, not a promise of arrival: `opurud` stages an `apply 2300` eye glide whose next beat lands about a quarter of the way through, so retail never reaches that staged target.
+  - A beat landing **mid-tween** re-seeds every axis' `start` from the current interpolated globals and resets the shared progress to `0`. There is one progress counter, one duration and one curve for all ten axes - no per-axis state, no carry-over, and no discontinuity.
+
+  **Per-frame law** (`FUN_801DC0BC`, body `0x801DC104..0x801DD220`):
+
+  ```text
+  t = min(t + DAT_1F800393, d)
+  per axis (start s, end e):  s if e == s;  e if t >= d;  else s + curve_offset(e - s, t, d, curve)
+  ```
+
+  `DAT_1F800393` is the adaptive frame-skip factor - the logic tick's `dt` in display frames - so `t` counts **display frames** and `apply` is a duration in display frames 1:1. Live-confirmed: `opurud`'s `apply 2300` beat advances its progress exactly 30 per 30 display frames while the factor reads `3`. Arrival is exact (no overshoot, no asymptote), and on `t >= d` the mover sets its own dead bit and frees the pair block, so a glide is one-shot.
+
+  | `curve` | shape | `curve_offset(k, t, d, ·)` |
+  |---|---|---|
+  | `2` | quadratic ease-**out** | `n = k*t; (n + (n/d)*(d - t)) / d` |
+  | `3` | quadratic ease-**in** | `((k*t)/d * t) / d` |
+  | `4` | ease-in-out | quad-in over `h = d>>1` to the midpoint `k>>1`, then curve `2` from there over `h` |
+  | `1`, and any other value | linear | `(k*t) / d` |
+
+  The double truncating divisions are load-bearing - `(k*t/d)*t/d` is not `k*t*t/(d*d)` in integer arithmetic, and retail computes the former. Every axis uses the **same** curve, the three angles included; the angles are lerped as plain integers over their raw 12-bit values, with no shortest-arc handling.
+
+  **Falsified**: the earlier reading that mode 1 runs the eye trio linear while pitch / yaw ease out. There is no per-axis curve split - the mover re-reads the same `actor[+0x50]` once per axis. Mode 4 is the two-half integer curve above, not smoothstep, and mode 3 (ease-in) was missing from the model entirely. The earlier attribution of the mover to `FUN_801DB510` was also wrong: that is the **follow / scroll** camera (its `srav` lerp toward `_DAT_801F2798`-table targets), a different mode of the same globals.
+
+  The port is [`legaia_engine_vm::camera_mover`](../../crates/engine-vm/src/camera_mover.rs) (the integer law verbatim, plus `curve_unit` as the normalized `f32` shape the renderer's [`CutsceneCameraInterp`](../../crates/engine-render/src/window.rs) evaluates). It was validated against a live headless capture of the retail mover: 2471 of 2480 sampled `(axis, start, end, t, d, curve) -> global` tuples reproduce exactly, and every remaining sample resolves under a 1-6 display-frame read skew (the probe's own round-trip lag) except the two frames on which a new beat re-armed the block mid-read.
+
+  **Held divergence**: `CutsceneCameraInterp` still arms glides *per component* (only re-arming an axis whose target changed) where retail re-seeds all ten and restarts the shared progress on every apply beat. The per-component model was adopted to stop a single-slot follow-up poke cancelling an in-flight dolly; under the retail rule that poke instead re-times the whole glide over the new `apply`. Closing it needs a beat-sequence counter on `CameraState` so the interp can tell a real re-stage from an unchanged frame.
+
   Confirmed against the `new_game_cutscene_intro_a` save state: focus `(8640, 0, 10304)` (mode byte `0x10` = anchor-follow), pitch `180` (≈15.8°), yaw `-2967`, roll `0`, H `792`, `tr_eye = _DAT_800840B8 = (260, 1293, 17145)`; the focus projects to screen `(792·260/17145 + 160, 792·1293/17145 + 120) = (172, 180)`, matching the party position in that frame's framebuffer.
   The captured RAM is the interpolated tween between two op-`0x45` keyframes (`opdeene` beat 0 `tr_eye = (−740, 512, 16384)`, focus `(10816, ?, 12224)`; a later beat `tr_eye = (118, 2241, 20795)`, focus `(5824, ?, 1984)`) - every axis of the capture sits between them. Note (don't re-walk): the GTE rotation matrix read straight from a save state is the last-rendered object's composed transform (row norms ≈ 6.0 = the base-matrix world scale), so recover `R` from the angle globals - but that `6.0` **is** the camera world scale, folded into `R` via `DAT_8007BF10`.
+
+### Record pacing - the 60 Hz sub-clock
+
+Retail paces cutscene records in **display frames**, and the two clocks that matter both count them through the same factor:
+
+- Op-`0x4A` `WAIT_FRAMES` accumulates `DAT_1F800393` into `ctx[+0x54]` per visit and returns to the caller while the sum is below the operand (`overlay_0897_801de840.txt`, case `0x4A`).
+- The camera mover accumulates the same `DAT_1F800393` into its progress (`FUN_801DC0BC`).
+
+`DAT_1F800393` is the adaptive frame-skip factor - the number of display frames one logic tick spans (it reads `2`-`3` through the opening chain). A logic tick that runs once per `dt` display frames and credits `dt` per visit therefore banks exactly one unit per display frame either way, so **every authored duration is a duration in 60 Hz frames**, independent of the skip factor.
+
+The engine's sim clock runs at 100 Hz. The narration roller was already corrected onto a 60 Hz sub-clock (`field_frame_accum += 60; step = accum >= 100`); [`World::step_spawned_record_contexts`](../../crates/engine-core/src/world/narration.rs) paces the modal cutscene timeline and the concurrent helper contexts off that same sub-clock, so a wait-dominated leg keeps retail wall-time too. `World::field_frames` counts the elapsed display frames for consumers that have to advance something in retail-frame time across a variable number of sim ticks - the renderer's camera glide diffs it rather than counting sim ticks.
+
+The disc-gated oracle [`opening_chain_wall_time`](../../crates/engine-core/tests/opening_chain_wall_time.rs) pins the result against a headless capture of retail playing the same zero-input chain, per leg and for the chain as a whole. Stepping a leg at the sim rate instead of the sub-clock puts it ~67 % fast, far outside the test's per-leg bound.
 
 ### Timeline execution (engine port)
 

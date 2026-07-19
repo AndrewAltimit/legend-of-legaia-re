@@ -366,17 +366,26 @@ impl PlayWindowApp {
             // did exactly that, tele-porting the eye into the crater-rim
             // geometry - the "opening shot buried in a gold wall" report).
             //
-            // Advanced in SIM-TICK time, not render-frame time (`run_ticks`
-            // steps per redraw): retail's mover runs in the field loop, so an
-            // `apply`-paced glide must span `apply` SIM frames. Min 1 step so
-            // an idle frame still refreshes the held pose.
+            // Advanced in RETAIL DISPLAY-FRAME time, not render-frame or
+            // sim-tick time. Retail's mover (`FUN_801DC0BC`) accumulates the
+            // frame-skip factor `DAT_1F800393` into its progress once per
+            // logic tick, which credits exactly one unit per display frame -
+            // so `apply` is a duration in display frames and the glide must
+            // span that many of them. The sim clock runs at 100 Hz, so
+            // stepping per sim tick ran every glide 1.67x fast; diff the
+            // world's retail-frame counter instead. Min 1 step so an idle
+            // frame still refreshes the held pose.
             // Snap beats drained this frame commit first (retail order: the
             // mover snaps to an `apply 0` beat, then glides from there when
             // a same-tick follow-up beat re-stages - the map01 fly-in pair).
             self.replay_camera_snap_beats();
             let apply = self.session.host.world.camera_state.apply_trigger;
             let mode = self.session.host.world.camera_state.mode;
-            let steps = run_ticks.max(1);
+            let now = self.session.host.world.field_frames;
+            let steps = u32::try_from(now.saturating_sub(self.cutscene_cam_frames))
+                .unwrap_or(u32::MAX)
+                .max(1);
+            self.cutscene_cam_frames = now;
             let out = self.cutscene_cam_interp.glide(
                 focus,
                 pitch,

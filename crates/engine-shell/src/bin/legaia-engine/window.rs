@@ -681,6 +681,10 @@ struct PlayWindowApp {
     /// the opening choreography blends instead of cutting. Reset (snaps) while
     /// no cutscene timeline is active.
     cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp,
+    /// `World::field_frames` at the last cutscene-camera glide step. The
+    /// interp advances in retail DISPLAY frames (the op-`0x45` `apply` unit),
+    /// so the step count is this counter's delta, not the sim-tick count.
+    cutscene_cam_frames: u64,
     /// `apply == 0` Camera Configure beats drained from this frame's field
     /// events, replayed as snaps onto the interp before the glide arms. The
     /// field VM runs until yield, so a snap beat + glide beat pair with no

@@ -1300,6 +1300,7 @@ dependencies = [
  "glam",
  "legaia-asset",
  "legaia-engine-ui",
+ "legaia-engine-vm",
  "legaia-font",
  "legaia-tim",
  "log",

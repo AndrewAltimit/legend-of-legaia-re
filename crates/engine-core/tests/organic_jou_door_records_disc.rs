@@ -132,7 +132,14 @@ fn jouinc_doors_hold_and_release_the_busy_mutex_organically() {
             "the gated dispatch admits P2[{record}] with the mutex clear"
         );
         // First slice: the record's own `50 0F` acquires the mutex.
-        host.tick().expect("tick");
+        // Spawned-record contexts step on the 60 Hz retail-frame sub-clock,
+        // so "one slice" is "tick until a display frame fires", not one tick.
+        for _ in 0..8 {
+            host.tick().expect("tick");
+            if host.world.field_frame_step == 1 {
+                break;
+            }
+        }
         assert!(
             host.world.system_flag_test(DOOR_MUTEX_FLAG),
             "P2[{record}]'s `50 0F` holds the mutex while in flight"
