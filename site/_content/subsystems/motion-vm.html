@@ -21,22 +21,44 @@
 <section class="doc-section" id="opcodes">
   <h2>Opcodes</h2>
   <table>
-    <thead><tr><th>byte</th><th>retail addr</th><th>name</th><th>semantics</th></tr></thead>
+    <thead><tr><th>byte</th><th>case body</th><th>name</th><th>semantics</th></tr></thead>
     <tbody>
-      <tr><td><code>0x37</code></td><td><code>80037894</code></td><td>TranslateY</td><td>accumulate Y axis by per-frame speed</td></tr>
-      <tr><td><code>0x38</code></td><td><code>80037de0</code></td><td>RotateToAngle</td><td>yaw rotates toward absolute angle; 12-bit fixed-point math, shortest-path CCW/CW select (body0 &amp; 0x80), explicit direction override (body1 &amp; 0x80), proportional interpolation step, 16-entry <code>ANGLE_TABLE</code> at <code>DAT_80073f04</code></td></tr>
-      <tr><td><code>0x41</code></td><td><code>80037894</code></td><td>TranslateX</td><td>accumulate X axis by per-frame speed</td></tr>
-      <tr><td><code>0x43</code></td><td><code>80037f5c</code></td><td>NoOp</td><td>tick budget consumed, no actor mutation</td></tr>
-      <tr><td><code>0x47</code></td><td><code>80037ba8</code></td><td>MoveTowardTarget</td><td>step actor XZ toward <code>(tx, tz)</code></td></tr>
-      <tr><td><code>0x4C</code></td><td><code>80037de0</code></td><td>FaceTarget</td><td>yaw rotates to bearing computed via <code>atan2(dx, dz)</code> (<code>bearing_to_yaw</code>); sub-modes 0x85 / 0x8E / 0x8F gate which component is rotated</td></tr>
-      <tr><td>(default)</td><td>-</td><td>Done</td><td>terminate</td></tr>
+      <tr><td><code>0x37</code></td><td><code>0x8003789C</code></td><td>TranslateY</td><td>accumulate Y axis by per-frame speed</td></tr>
+      <tr><td><code>0x38</code></td><td><code>0x800379FC</code></td><td>RotateToAngle</td><td>yaw ramps toward an absolute compass angle over a frame budget; 12-bit fixed-point, shortest-path select (<code>body0 &amp; 0x80</code>) or forced direction (<code>body1 &amp; 0x80</code>), eight-entry heading LUT at <code>DAT_80073F04</code></td></tr>
+      <tr><td><code>0x41</code></td><td><code>0x8003789C</code></td><td>TranslateX</td><td>accumulate X axis by per-frame speed</td></tr>
+      <tr><td><code>0x43</code></td><td><code>0x80037FF0</code></td><td>NoOp</td><td>tick budget consumed, no actor mutation</td></tr>
+      <tr><td><code>0x47</code></td><td><code>0x80037B84</code></td><td>MoveTowardTarget</td><td>step actor XZ toward <code>(tx, tz)</code>, closing the dominant axis first and snapping the facing to the compass every moving frame</td></tr>
+      <tr><td><code>0x4C</code></td><td><code>0x80037DE0</code></td><td>FaceTarget</td><td>yaw ramps to the target's <em>live</em> bearing (<code>FUN_80019B28</code>) over a frame budget; <code>0x85</code> / <code>0x8E</code> / <code>0x8F</code> are the three sub-mode bytes retail accepts, and <code>0x8F</code> alone forces the decreasing direction instead of the shortest arc</td></tr>
+      <tr><td>(default)</td><td><code>0x80037FEC</code></td><td>Done</td><td>terminate</td></tr>
     </tbody>
   </table>
 </section>
 
+<section class="doc-section" id="facing">
+  <h2>How an actor's facing changes</h2>
+  <p>Three opcodes write the actor's 12-bit heading at <code>+0x26</code>, and they split into <strong>two laws</strong>. Which one an NPC gets is a property of the bytecode, not of the situation.</p>
+  <h3>Snap - walking</h3>
+  <p>The tail of the <code>0x47</code> case runs on every frame the actor moved. It reduces the step to its axis signs, maps them to an index in the heading LUT at <code>0x80073F04</code>, and writes the entry outright:</p>
+  <table>
+    <thead><tr><th>index</th><th>0</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th></tr></thead>
+    <tbody><tr><td>direction</td><td>-Z</td><td>-X -Z</td><td>-X</td><td>-X +Z</td><td>+Z</td><td>+X +Z</td><td>+X</td><td>+X -Z</td></tr></tbody>
+  </table>
+  <p>Entry <code>i</code> is <code>i * 0x200</code>, so a walking actor's facing is always one of eight compass points and <strong>never an in-between angle</strong>. There is no walk-turn interpolation anywhere in retail. A cold-boot <code>town01</code> sample off the static recompilation bears this out: across the on-field actors every <code>+0x26</code> is a multiple of <code>0x200</code> and all eight points appear, the only exceptions being actors parked on the off-field sentinel tile.</p>
+  <h3>Ramp - the two rotate ops</h3>
+  <p><code>0x38</code> and <code>0x4C</code> interpolate toward a target angle over a frame budget carried in their own operands, running the same arithmetic each tick:</p>
+  <pre><code>remaining = budget - cursor                  ; cursor at actor +0x54
+if remaining - speed &lt;= 0:                   ; terminal frame
+    heading = target                         ; exact snap, leg is Done
+else:
+    cursor += speed
+    arc  = (target - heading) mod 0x1000     ; or (heading - target) when decreasing
+    heading += arc * speed / remaining       ; or -=</code></pre>
+  <p>Because the arc is measured from the <em>live</em> heading every tick, the step is a linear ease that lands exactly on the target, and the terminal frame snaps rather than steps so rounding can never leave the actor short. <code>0x38</code> aims at a LUT index; <code>0x4C</code> re-reads the bearing to its target actor each tick, so a FaceTarget leg tracks a target that is itself moving.</p>
+</section>
+
 <section class="doc-section" id="port">
   <h2>Clean-room port</h2>
-  <p><code>legaia_engine_vm::motion_vm</code> in <code>crates/engine-vm/src/motion_vm.rs</code> is the clean-room port. All opcodes are ported: <code>0x37</code> <code>TranslateY</code>, <code>0x38</code> <code>RotateToAngle</code>, <code>0x41</code> <code>TranslateX</code>, <code>0x43</code> <code>NoOp</code>, <code>0x47</code> <code>MoveTowardTarget</code>, <code>0x4C</code> <code>FaceTarget</code>. The angle-math opcodes use the 12-bit fixed-point shortest-path quadrant logic from <code>FUN_8003774C</code> lines 690+.</p>
+  <p><code>legaia_engine_vm::motion_vm</code> in <code>crates/engine-vm/src/motion_vm.rs</code> is the clean-room port. All opcodes are ported: <code>0x37</code> <code>TranslateY</code>, <code>0x38</code> <code>RotateToAngle</code>, <code>0x41</code> <code>TranslateX</code>, <code>0x43</code> <code>NoOp</code>, <code>0x47</code> <code>MoveTowardTarget</code>, <code>0x4C</code> <code>FaceTarget</code>. The facing law lives in <code>heading_lut_engine</code> (the eight compass entries), <code>walk_facing_index</code> / <code>walk_facing_yaw</code> (the <code>0x47</code> sign-to-index table) and <code>rotate_step</code> (the shared ramp arithmetic); <code>engine-core</code>'s <code>facing_index_to_engine_heading</code> delegates to the same LUT so spawn-time and runtime facings cannot drift apart.</p>
 </section>
 
 <section class="doc-section" id="camera">

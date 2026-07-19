@@ -30,17 +30,38 @@
 //!
 //! ## Opcodes implemented
 //!
-//! | byte | retail addr | name             | semantics                                |
-//! |------|-------------|------------------|------------------------------------------|
-//! | 0x37 | 80037894    | TranslateY       | accumulate Y axis by per-frame speed     |
-//! | 0x41 | 80037894    | TranslateX       | accumulate X axis by per-frame speed     |
-//! | 0x43 | 80037f5c    | NoOp             | tick budget consumed, no actor mutation  |
-//! | 0x47 | 80037ba8    | MoveTowardTarget | step actor XZ toward `(tx, tz)`          |
-//! |      |             | (default arm)    | terminate with `done=true`               |
+//! Dispatch is a 22-entry jump table at `0x80010EE0` indexed by
+//! `(op & 0x7F) - 0x37`; every slot not listed below is the default arm.
 //!
-//! Opcodes `0x38` (RotateToAngle) and `0x4C` (FaceTarget) implement 12-bit
-//! fixed-point yaw with shortest-path quadrant logic. See the `step`
-//! implementation and the `ANGLE_TABLE` constant for details.
+//! | byte | case body  | name             | semantics                                |
+//! |------|------------|------------------|------------------------------------------|
+//! | 0x37 | 0x8003789C | TranslateY       | accumulate Y axis by per-frame speed     |
+//! | 0x38 | 0x800379FC | RotateToAngle    | ramp yaw to a compass LUT entry over a frame budget |
+//! | 0x41 | 0x8003789C | TranslateX       | accumulate X axis by per-frame speed     |
+//! | 0x43 | 0x80037FF0 | NoOp             | tick budget consumed, no actor mutation  |
+//! | 0x47 | 0x80037B84 | MoveTowardTarget | step actor XZ toward `(tx, tz)`, snapping facing per frame |
+//! | 0x4C | 0x80037DE0 | FaceTarget       | ramp yaw to the target's live bearing over a frame budget |
+//! |      | 0x80037FEC | (default arm)    | terminate with `done=true`               |
+//!
+//! ## How this VM changes an actor's facing
+//!
+//! Three of the six opcodes write the actor's 12-bit heading (`+0x26`), and
+//! they split into **two laws**:
+//!
+//! - **Snap.** `0x47` `MoveTowardTarget` quantises the frame's step direction
+//!   to the eight-point compass and writes it outright, every moving frame
+//!   ([`walk_facing_yaw`]). A walking actor therefore never holds an
+//!   in-between angle - retail has no walk-turn interpolation.
+//! - **Ramp.** `0x38` and `0x4C` interpolate toward a target angle over an
+//!   explicit frame budget carried in their own operands, stepping
+//!   `arc * speed / frames_remaining` per tick and snapping to the exact
+//!   target on the terminal frame ([`rotate_step`]). `0x38`'s target is a
+//!   compass LUT index; `0x4C`'s is the *live* bearing to another actor, so
+//!   the ramp tracks a target that is itself moving.
+//!
+//! Which of the two an NPC is running is a property of the bytecode, not of
+//! the engine - see `docs/subsystems/field-locomotion.md` for the priority
+//! order across every facing source.
 //!
 //! ## Clean-room boundary
 //!
@@ -90,8 +111,9 @@ pub struct MotionState {
 pub enum MotionOp {
     /// `0x37` - translate along Y axis at per-frame speed.
     TranslateY = 0x37,
-    /// `0x38` - rotate yaw toward an absolute angle (from the 16-entry
-    /// `ANGLE_TABLE`) over a frame budget, shortest-path or forced-direction.
+    /// `0x38` - ramp yaw toward an absolute compass angle (an index into the
+    /// eight-entry heading LUT, [`heading_lut_engine`]) over a frame budget,
+    /// shortest-path (`body0 & 0x80`) or forced-direction (`body1 & 0x80`).
     RotateToAngle = 0x38,
     /// `0x41` - translate along X axis at per-frame speed.
     TranslateX = 0x41,
@@ -100,8 +122,11 @@ pub enum MotionOp {
     /// `0x47` - move actor's (X, Z) toward the target's (X, Z). Used by NPC
     /// pursue / camera-follow scripts.
     MoveTowardTarget = 0x47,
-    /// `0x4C` - face the target (yaw rotates to bearing). Sub-modes
-    /// 0x85 / 0x8E / 0x8F gate which component is rotated.
+    /// `0x4C` - face the target: yaw ramps to the target's live bearing over
+    /// the operand frame budget. Retail accepts exactly three sub-mode bytes
+    /// (`0x85` / `0x8E` / `0x8F`) and takes the same arm for all three;
+    /// `0x8F` additionally forces the decreasing rotation direction instead
+    /// of taking the shortest arc. Any other sub-mode byte is inert.
     FaceTarget = 0x4C,
 }
 
@@ -129,13 +154,75 @@ pub enum StepResult {
     Done,
 }
 
-/// 16-entry angle lookup table at retail `DAT_80073f04`. Each entry is a
-/// 12-bit yaw value (0x000..0xFFF = 0°..360°), evenly spaced at 22.5°
-/// increments. Common angles used by NPC patrol scripts and camera paths.
-const ANGLE_TABLE: [u16; 16] = [
-    0x000, 0x100, 0x200, 0x300, 0x400, 0x500, 0x600, 0x700, 0x800, 0x900, 0xA00, 0xB00, 0xC00,
-    0xD00, 0xE00, 0xF00,
-];
+/// The 8-direction heading LUT at retail `DAT_80073F04`, expressed in the
+/// **engine** heading space (`0` = +Z).
+///
+/// Retail stores `u16 entry[i] = i * 0x200` for `i` in `0..=7` (a 45° compass
+/// in the retail heading space, `0` = -Z), and the ops index it `& 0xF` - the
+/// upper eight slots are unrelated SCUS data, not direction entries, so this
+/// port defines only the real eight. `engine = (retail + 0x800) & 0xFFF`, the
+/// half-turn the `render_26` convention differs by (pinned from the
+/// locomotion's pad->facing writes, `FUN_801d01b0` body
+/// `0x801d04b8..0x801d0548`).
+///
+/// Index → direction: `0` = -Z, `2` = -X, `4` = +Z, `6` = +X, odd entries the
+/// diagonals between them.
+pub fn heading_lut_engine(idx: u8) -> Option<u16> {
+    (idx <= 7).then(|| ((u16::from(idx) * 0x200).wrapping_add(0x800)) & 0x0FFF)
+}
+
+/// The **walk-direction-implied facing** index retail derives from a step's
+/// axis signs - the tail of the `0x47` `MoveTowardTarget` case at
+/// `0x80037D4C..0x80037DDC`, which writes `actor+0x26` from
+/// [`heading_lut_engine`] on **every** frame the actor moves.
+///
+/// This is the reason a walking NPC's facing is always one of eight compass
+/// points and never an arbitrary bearing: retail quantises here, it does not
+/// interpolate. Returns `None` when neither axis moved (retail's `a3 == 0`
+/// early-out leaves the previous facing standing).
+pub fn walk_facing_index(dx: i32, dz: i32) -> Option<u8> {
+    let (sx, sz) = (dx.signum(), dz.signum());
+    if sx == 0 && sz == 0 {
+        return None;
+    }
+    Some(match sx {
+        0 => (2 * sz + 2) as u8,
+        s if s > 0 => (6 - sz) as u8,
+        _ => (sz + 2) as u8,
+    })
+}
+
+/// [`walk_facing_index`] resolved through [`heading_lut_engine`] - the 12-bit
+/// engine-space heading a step of `(dx, dz)` snaps an actor to.
+pub fn walk_facing_yaw(dx: i32, dz: i32) -> Option<u16> {
+    walk_facing_index(dx, dz).and_then(heading_lut_engine)
+}
+
+/// One frame of the shared **rotate-toward-angle** law both yaw ops run
+/// (`0x38` `RotateToAngle` and `0x4C` `FaceTarget`, retail `0x800379FC` /
+/// `0x80037DE0`; the ambient VM's `0x04` facing ramp at `0x800385D0` is the
+/// same law with a unit-per-tick cursor).
+///
+/// Given the arc still to travel and the frames still budgeted, retail steps
+/// `arc * speed / remaining` - a linear ease whose per-frame magnitude is
+/// recomputed from the *live* heading each tick. The caller handles the
+/// terminal frame, which snaps to the exact target rather than stepping.
+///
+/// `decreasing` selects the rotation direction; the arc is measured the long
+/// way round when it has to be, so a forced direction still lands.
+fn rotate_step(current: u16, target: u16, decreasing: bool, speed: u32, remaining: u32) -> u16 {
+    let (cur, tgt) = (i32::from(current) & 0xFFF, i32::from(target) & 0xFFF);
+    let arc = if decreasing { cur - tgt } else { tgt - cur };
+    // Retail's `+0x1000` then `& 0xFFF`: normalise a possibly-negative arc
+    // into `0..0xFFF` without a branch.
+    let arc = ((arc + 0x1000) & 0xFFF) as u32;
+    let inc = (arc * speed / remaining.max(1)) as u16;
+    if decreasing {
+        current.wrapping_sub(inc) & 0x0FFF
+    } else {
+        current.wrapping_add(inc) & 0x0FFF
+    }
+}
 
 /// Convert a 2D displacement `(dx, dz)` to a 12-bit fixed-point yaw
 /// (0x000..0xFFF, clockwise, 0x000 = +Z). Retail calls `FUN_80019b28`.
@@ -213,17 +300,49 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
             StepResult::Yield
         }
         MotionOp::MoveTowardTarget => {
-            // Retail computes Manhattan-distance ratios + dispatches between
-            // (X-dominant, Z-dominant, both) but the net effect is "move
-            // both axes by `speed` clamped at the target".
             let cur_x = state.world_x as i32;
             let cur_z = state.world_z as i32;
             let dx = target.x as i32 - cur_x;
             let dz = target.z as i32 - cur_z;
-            let step_x = dx.signum() * speed.min(dx.abs());
-            let step_z = dz.signum() * speed.min(dz.abs());
+            // Retail's axis mask (`0x80037C18`): bit 0 = X still to close,
+            // bit 1 = Z still to close.
+            let mut mask = u8::from(dx != 0) | (u8::from(dz != 0) << 1);
+            if mask == 0 {
+                state.pc = body_off as u16;
+                return StepResult::Done;
+            }
+            let mut step = speed;
+            if mask == 3 {
+                // Retail's default approach mode (`0x80037C4C..0x80037C98`):
+                // an actor with both axes open walks the **dominant axis
+                // alone**, clamped to the difference, until the two remaining
+                // deltas are equal - only then does it cut the diagonal. That
+                // sequencing is what makes a walking NPC face a cardinal
+                // direction for most of a leg instead of a diagonal from
+                // frame one.
+                let (ax, az) = (dx.abs(), dz.abs());
+                if ax != az {
+                    mask = if az < ax { 1 } else { 2 };
+                    step = step.min(ax.abs_diff(az) as i32);
+                }
+            }
+            let step_x = if mask & 1 != 0 {
+                dx.signum() * step.min(dx.abs())
+            } else {
+                0
+            };
+            let step_z = if mask & 2 != 0 {
+                dz.signum() * step.min(dz.abs())
+            } else {
+                0
+            };
             state.world_x = (cur_x + step_x) as i16;
             state.world_z = (cur_z + step_z) as i16;
+            // Walk-direction-implied facing: retail snaps `+0x26` to the
+            // 8-way compass every moving frame (`0x80037D4C`).
+            if let Some(yaw) = walk_facing_yaw(step_x, step_z) {
+                state.yaw = yaw;
+            }
             if state.world_x == target.x && state.world_z == target.z {
                 state.pc = body_off as u16;
                 StepResult::Done
@@ -237,46 +356,39 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
             }
             let body0 = bytecode[body_off];
             let body1 = bytecode[body_off + 1];
+            // Retail masks the LUT index `& 0xF`; indices 8..=15 read past the
+            // eight direction entries into unrelated SCUS data, so this port
+            // treats them as no-ops rather than reproducing the overread.
+            let Some(target_yaw) = heading_lut_engine(body0 & 0x0F) else {
+                state.pc = (body_off + 2) as u16;
+                return StepResult::Done;
+            };
             let total_budget = (body1 & 0x7f) as u16;
             let remaining = total_budget.saturating_sub(state.op_accum);
             if remaining <= state.speed {
-                let angle_idx = (body0 & 0x0f) as usize;
-                state.yaw = ANGLE_TABLE[angle_idx];
+                state.yaw = target_yaw;
                 state.op_accum = 0;
                 state.pc = (body_off + 2) as u16;
                 StepResult::Done
             } else {
                 state.op_accum += state.speed;
-                let angle_idx = (body0 & 0x0f) as usize;
-                let target_yaw = ANGLE_TABLE[angle_idx] as i32;
-                let current_yaw = (state.yaw & 0x0fff) as i32;
-                let mut clockwise = body1 & 0x80 != 0;
-                if body0 & 0x80 != 0 {
-                    let mut delta = target_yaw - current_yaw;
-                    if target_yaw < current_yaw {
-                        delta += 0x1000;
-                    }
-                    clockwise = delta > 0x800;
-                }
-                let delta = if clockwise {
-                    let mut d = current_yaw - target_yaw;
-                    if current_yaw < target_yaw {
-                        d += 0x1000;
-                    }
-                    d & 0x0fff
+                // Direction: `body1 & 0x80` forces one, unless `body0 & 0x80`
+                // opts into shortest-path, which decreases when the
+                // increasing arc would exceed a half-turn.
+                let decreasing = if body0 & 0x80 != 0 {
+                    let arc =
+                        (i32::from(target_yaw) - i32::from(state.yaw & 0x0FFF)).rem_euclid(0x1000);
+                    arc > 0x800
                 } else {
-                    let mut d = target_yaw - current_yaw;
-                    if target_yaw < current_yaw {
-                        d += 0x1000;
-                    }
-                    d & 0x0fff
-                } as u16;
-                let step = (delta * state.speed) / remaining.max(1);
-                if clockwise {
-                    state.yaw = state.yaw.wrapping_sub(step) & 0x0FFF;
-                } else {
-                    state.yaw = state.yaw.wrapping_add(step) & 0x0FFF;
-                }
+                    body1 & 0x80 != 0
+                };
+                state.yaw = rotate_step(
+                    state.yaw,
+                    target_yaw,
+                    decreasing,
+                    u32::from(state.speed),
+                    u32::from(remaining),
+                );
                 StepResult::Yield
             }
         }
@@ -304,26 +416,20 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
                 StepResult::Done
             } else {
                 state.op_accum += state.speed;
-                let current_yaw = (state.yaw & 0x0fff) as i32;
-                let tgt = target_yaw as i32;
-                let ccw_dist = if tgt >= current_yaw {
-                    tgt - current_yaw
-                } else {
-                    tgt + 0x1000 - current_yaw
-                } & 0x0fff;
-                let cw_dist = if current_yaw >= tgt {
-                    current_yaw - tgt
-                } else {
-                    current_yaw + 0x1000 - tgt
-                } & 0x0fff;
-                let clockwise = cw_dist < ccw_dist || body0 == 0x8f;
-                let delta = if clockwise { cw_dist } else { ccw_dist } as u16;
-                let step = (delta * state.speed) / remaining.max(1);
-                if clockwise {
-                    state.yaw = state.yaw.wrapping_sub(step) & 0x0FFF;
-                } else {
-                    state.yaw = state.yaw.wrapping_add(step) & 0x0FFF;
-                }
+                let current_yaw = i32::from(state.yaw) & 0x0FFF;
+                let tgt = i32::from(target_yaw) & 0x0FFF;
+                // Shortest arc, always - sub-mode `0x8F` is the one that
+                // overrides it and forces the decreasing direction.
+                let decreasing = (current_yaw - tgt).rem_euclid(0x1000)
+                    < (tgt - current_yaw).rem_euclid(0x1000)
+                    || body0 == 0x8f;
+                state.yaw = rotate_step(
+                    state.yaw,
+                    target_yaw,
+                    decreasing,
+                    u32::from(state.speed),
+                    u32::from(remaining),
+                );
                 StepResult::Yield
             }
         }
@@ -443,9 +549,11 @@ mod tests {
             pc: 0,
             ..Default::default()
         };
-        // body0 = 0x04 (index 4 = 0x400 = 90°), body1 = 0x10 (budget=16)
-        let bc = [0x38, 0x04, 0x10];
-        // Total delta = 0x400, budget = 16, speed = 4
+        // body0 = 0x06 (LUT index 6 = +X = engine yaw 0x400),
+        // body1 = 0x10 (budget = 16, force bit clear -> increasing).
+        let bc = [0x38, 0x06, 0x10];
+        // Total arc = 0x400, budget = 16, speed = 4. Retail recomputes the
+        // step from the *live* arc each tick, so the increment stays 0x100.
         // First step: moves 0x400 * 4 / 16 = 0x100
         assert_eq!(step(&mut s, tgt(0, 0, 0), &bc), StepResult::Yield);
         assert_eq!(s.yaw, 0x0100);
@@ -472,8 +580,9 @@ mod tests {
             pc: 0,
             ..Default::default()
         };
-        // target = 0x800, delta = 0x800 (ccw = cw, equal => ccw chosen).
-        let bc = [0x38, 0x88, 0x10];
+        // LUT index 0 = -Z = engine yaw 0x800; the two arcs tie at 0x800 and
+        // retail's `arc > 0x800` test breaks the tie toward increasing.
+        let bc = [0x38, 0x80, 0x10];
         assert_eq!(step(&mut s, tgt(0, 0, 0), &bc), StepResult::Yield);
         assert_eq!(s.yaw, 0x0400);
     }
@@ -487,12 +596,10 @@ mod tests {
             pc: 0,
             ..Default::default()
         };
-        // body0 = 0x8E: auto-dir bit set, angle index = 0x0E = 14 → target = 0xE00.
-        // delta = 0xE00, which is > 0x800 => clockwise.
-        // CW delta = 0x000 - 0xE00, wrap => 0x200.
-        // budget=32 (body1=0x20), speed=16 → remaining=32 > 16: Yield.
-        // step = 0x200 * 16 / 32 = 0x100; yaw = 0x000 - 0x100 (12-bit mask) = 0xF00.
-        let bc = [0x38, 0x8E, 0x20];
+        // body0 = 0x83: shortest-path bit set, LUT index 3 -> engine yaw 0xE00.
+        // The increasing arc is 0xE00 > 0x800, so retail rotates decreasing
+        // instead: arc = 0x200, step = 0x200 * 16 / 32 = 0x100, yaw = 0xF00.
+        let bc = [0x38, 0x83, 0x20];
         assert_eq!(step(&mut s, tgt(0, 0, 0), &bc), StepResult::Yield);
         assert_eq!(s.yaw, 0x0F00);
     }
@@ -623,14 +730,109 @@ mod tests {
         assert_eq!(s.pc, 6, "PC advanced past FaceTarget body (4 bytes)");
     }
 
+    /// The eight compass entries of the retail heading LUT `DAT_80073F04`,
+    /// expressed in the engine's `0` = +Z space. Indices past the eight real
+    /// direction entries have no heading.
+    #[test]
+    fn heading_lut_covers_the_compass_and_stops_at_eight() {
+        assert_eq!(heading_lut_engine(0), Some(0x800), "index 0 = -Z");
+        assert_eq!(heading_lut_engine(2), Some(0xC00), "index 2 = -X");
+        assert_eq!(heading_lut_engine(4), Some(0x000), "index 4 = +Z");
+        assert_eq!(heading_lut_engine(6), Some(0x400), "index 6 = +X");
+        // 45 degrees per index, in order, all the way round.
+        for i in 0..8u8 {
+            let expect = (u16::from(i) * 0x200 + 0x800) & 0x0FFF;
+            assert_eq!(heading_lut_engine(i), Some(expect), "index {i}");
+        }
+        for i in 8..16u8 {
+            assert_eq!(heading_lut_engine(i), None, "index {i} is not a direction");
+        }
+    }
+
+    /// The walk-direction-implied facing table retail derives from the step's
+    /// axis signs (`0x80037D4C`). Cardinal steps land on the even indices,
+    /// diagonals on the odd ones between them.
+    #[test]
+    fn walk_facing_index_matches_the_retail_sign_table() {
+        // (dx, dz) -> LUT index.
+        let cases: [(i32, i32, u8); 8] = [
+            (0, -1, 0),  // -Z
+            (-1, -1, 1), // -X -Z
+            (-1, 0, 2),  // -X
+            (-1, 1, 3),  // -X +Z
+            (0, 1, 4),   // +Z
+            (1, 1, 5),   // +X +Z
+            (1, 0, 6),   // +X
+            (1, -1, 7),  // +X -Z
+        ];
+        for (dx, dz, idx) in cases {
+            assert_eq!(walk_facing_index(dx, dz), Some(idx), "({dx}, {dz})");
+            // Magnitude never matters - only the signs.
+            assert_eq!(
+                walk_facing_index(dx * 97, dz * 3),
+                Some(idx),
+                "scaled ({dx}, {dz})"
+            );
+        }
+        assert_eq!(
+            walk_facing_index(0, 0),
+            None,
+            "a standing actor keeps its facing"
+        );
+    }
+
+    /// A walking actor's facing is a **snap**, not a ramp: every moving frame
+    /// writes one of the eight compass headings outright.
+    #[test]
+    fn move_toward_target_snaps_facing_to_the_compass() {
+        for (tx, tz, want) in [
+            (100i16, 0i16, 0x400u16), // +X
+            (-100, 0, 0xC00),         // -X
+            (0, 100, 0x000),          // +Z
+            (0, -100, 0x800),         // -Z
+        ] {
+            let mut s = st(0, 0, 4);
+            s.yaw = 0x111; // an angle the compass can never produce
+            let bc = [0x47];
+            assert_eq!(step(&mut s, tgt(tx, 0, tz), &bc), StepResult::Yield);
+            assert_eq!(s.yaw, want, "walking toward ({tx}, {tz})");
+        }
+    }
+
+    /// Retail closes the **dominant axis first** and only cuts the diagonal
+    /// once the two remaining deltas are equal - so a walking NPC holds a
+    /// cardinal facing for most of a leg and turns to a diagonal late,
+    /// instead of moving (and facing) diagonally from frame one.
+    #[test]
+    fn move_toward_target_closes_dominant_axis_first() {
+        let mut s = st(0, 0, 4);
+        let t = tgt(100, 0, 20);
+        let bc = [0x47];
+        // 20 steps of 4 close X from 0 to 80, leaving |dx| == |dz| == 20.
+        for i in 0..20 {
+            assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
+            assert_eq!(s.world_z, 0, "Z is untouched while X dominates (step {i})");
+            assert_eq!(s.yaw, 0x400, "facing +X while closing X (step {i})");
+        }
+        assert_eq!((s.world_x, s.world_z), (80, 0));
+        // Deltas are now equal: the leg cuts the diagonal and the facing turns.
+        assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
+        assert_eq!(
+            (s.world_x, s.world_z),
+            (84, 4),
+            "both axes advance together"
+        );
+        assert_eq!(s.yaw, 0x200, "facing the +X +Z diagonal");
+    }
+
     /// Validate that RotateToAngle reaches its target yaw monotonically and
     /// stops exactly at the table entry, regardless of budget pacing.
     #[test]
     fn rotate_to_angle_reaches_target_monotonically() {
-        // Target = angle index 2 = 0x200 (= 45°). Budget = 20 frames.
-        // CCW path (body0 bit 7 unset = auto-dir): 0x000 → 0x200, delta = 0x200,
-        // which is 0x200 < 0x800 so auto-dir picks CCW (adding direction).
-        let bc = [0x38, 0x02, 0x14]; // op, body0=index2, body1=budget=20
+        // LUT index 5 -> engine yaw 0x200. Budget = 20 frames, force bit
+        // clear, so the ramp increases from 0x000 to 0x200 and lands exactly
+        // on the table entry via the terminal-frame snap.
+        let bc = [0x38, 0x05, 0x14]; // op, body0 = index 5, body1 = budget 20
         let mut s = MotionState {
             yaw: 0x000,
             speed: 4,

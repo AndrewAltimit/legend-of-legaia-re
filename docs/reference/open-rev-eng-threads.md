@@ -140,6 +140,7 @@ The per-prim dispatcher `FUN_80043390` owns four `NCCS`/`NCCT` **light** handler
 | Drake Castle deep interiors (`jouinc`/`jouind`) depth decode | resolved (door-choreography families, not story gates) | `jouinc`'s 58-record `C1=[0x00F]` P2 family is a **busy-mutex door family**: each record SETs `0x00F` first / CLEARs it last, so the C1 gate is a mutual-exclusion lock, and bodies are per-door walk-through choreography. `jouind` P2[10..13]'s `0x4BE..0x4C2` band is **per-visit door/lift state** (cleared by `jouina` P1[0] on entry), not a later-chapter revisit gate pair. Decoding these exposed (and fixed) whole-nibble width blindness (`0x4C` nibbles 9/A/C/D/F). `jouinb P2[6..8]` is the interior beat band (`0x44E..0x450` latches + the jouinb-local `0x461` state flag). Full mechanism: [script-vm.md](../subsystems/script-vm.md) § door-choreography record families. |
 | `scene_destinations` P1-table scan misses P2-only door names | resolved (P2 pass folded in) | The P2-only class is the town/dungeon **exit door** (a P2 door-choreography record): `town01`→`map01` (Rim Elm's overworld exit; the P1 pass alone sees *zero* town01 destinations), `retockin`→`retona`, `geremi`→`map02`/`tower` - 13 scenes / 14 destinations disc-wide. The suspected `jouinb`→`jouina` exemplar is falsified: it is P1-visible (the over-walk resyncs across that record). Merged kernel `legaia_asset::man_edit::scene_destinations` (P1 pass as prefix + clean-gated P2 pass, `(name, index)` dedupe); the engine delegates to it; disc pins `scene_destinations_p2_disc.rs`. |
 | `0x4C 0x51` byte `+3` = `[bit7 special-model \| facing nibble]` vs the glide-speed interim `depth & 7` reading | resolved (facing wins; the two readings were two different ops) | [details ↓](#0x4c-0x51-byte-3-reconcile---facing-wins-no-motion-bytecode-synthesis) |
+| How an NPC's facing changes **after** spawn - snap vs ramp, and which writer wins | resolved (two laws; order-of-execution priority) | [details ↓](#npc-dynamic-facing---two-laws-and-an-execution-order) |
 | dolk2/rikuroa MAN source (the "v12-embedded MAN" was an over-read) | resolved (streaming carrier) | Their own `base+3` bundles are the MAN-less count=4 form `[1,2,6,0x14]`; the "embedded MAN at 0x1000" inside their SceneV12Table entries is an over-read onto the next scene's bundle (suimon's / geremi's; [scene-v12-table.md](../formats/scene-v12-table.md) § over-read). Retail sources their partition scripts from the block's standalone `data_field_streaming` entry's type-3 chunk (`dolk2` ext 70 `[29,73,17]`, `rikuroa` ext 157 `[13,29,64]`; live script-heap byte-match at the Caruban beat). Engine: `field_man_payload` streaming fallback (`streaming_man_payloads`) + retail-frame `Scene::load` windows; pins `v12_bundle_man_disc.rs`. |
 | kor-family op-0x49 flag window `[0x138..0x13F]` - what the 8 flags gate | resolved (Uru Mais warp-pad destination memory) | [details ↓](#kor-family-op-0x49-flag-window-0x1380x13f---uru-mais-warp-pad-picker) |
 | `801d58f0` / `801d63b0` as single shared port blockers | falsified (VA-aliasing artifact) | The two addresses host different code in different overlays (byte-verified: 80/228/124/308/1 B and 208/1036 B across 0897/baka/cutscene/debug-menu/fishing/slot/dance) - the port-catalog's bare-VA keying aggregated their refs into phantom top blockers. Tracked per-overlay via `overlay_<label>_<addr>` identities; catalog ignore category `va_aliased_overlay_local`. |
@@ -189,6 +190,44 @@ bare-`break` arms for 2..9 were the collapsed switch - each raw loader ends `j 0
 label-call idiom). Disassembler + executing VM corrected: `field_disasm::decode_subops` (single
 0..=9 compare arm), `engine-vm` `field/step/flow.rs` + `FieldHost::op4e_char_level` /
 `slot_table_read`. cave01's `P2[12]` spawn gate is the live sub-5 exemplar.
+
+### NPC dynamic facing - two laws and an execution order
+
+The spawn heading is settled ([above](#0x4c-0x51-byte-3-reconcile---facing-wins-no-motion-bytecode-synthesis)); this row is
+everything after it.
+
+**Two laws, chosen by the bytecode.** Walking **snaps**: every walk kernel -
+the `0x47` tail in `FUN_8003774C` and the directional / wander steps in
+`FUN_80038158` - quantises the frame's step to the eight-entry compass LUT at
+`0x80073F04` (`entry[i] = i * 0x200`, `0` = -Z) and writes `+0x26` outright.
+A walking actor therefore never holds an in-between angle; retail has no
+walk-turn interpolation. The four dedicated rotate ops (`0x38` / `0x4C`,
+`0x04` / `0x0D`) **ramp** instead, stepping `arc * speed / frames_remaining`
+off the live heading over a budget the op carries, with an exact snap on the
+terminal frame.
+
+**Priority is execution order, not a field.** `FUN_8003BC08` runs the dialog
+SM, then `FUN_8003774C`, then `FUN_80038158`, then the anim consumer - so an
+actor running both a scripted leg and an ambient stream ends the frame facing
+wherever the ambient stream put it.
+
+**Corrections this closed.** Op `0x38`'s case body is `0x800379FC`, not
+`0x80037DE0` (only `0x4C` lives there); the jump table at `0x80010EE0` settles
+all 22 slots. The LUT is eight entries of `0x200`, not sixteen of `0x100` -
+the port's synthetic table pointed rotating NPCs 45° wrong and doubled every
+index. `0x4C`'s sub-modes `0x85` / `0x8E` / `0x8F` do not "gate which
+component is rotated"; all three take one arm and `0x8F` alone forces the
+direction. And `+0x16` is the **terrain-conform angle** sampled from the scene
+grid by `FUN_80019278`, not a facing - the yaw is `+0x26`, always.
+
+Live corroboration: a cold-boot `town01` sample off the static recompilation
+reads every field actor's `+0x26`; all on-field headings are multiples of
+`0x200` with all eight points present, the only exceptions being actors parked
+on the `(0x7F, 0x7F)` sentinel tile.
+
+Full write-ups:
+[field-locomotion.md](../subsystems/field-locomotion.md#npc-dynamic-facing) +
+[motion-vm.md](../subsystems/motion-vm.md#how-an-actors-facing-changes).
 
 ### 0x4C 0x51 byte +3 reconcile - facing wins; no motion-bytecode synthesis
 
