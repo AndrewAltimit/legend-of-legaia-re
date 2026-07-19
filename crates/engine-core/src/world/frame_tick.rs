@@ -64,6 +64,7 @@ impl World {
         if self.field_frame_accum >= SIM_HZ {
             self.field_frame_accum -= SIM_HZ;
             self.field_frame_step = 1;
+            self.field_frames += 1;
         } else {
             self.field_frame_step = 0;
         }
@@ -203,11 +204,8 @@ impl World {
                 // Per-tick: one Cross/Circle edge feeds at most one of the
                 // script's 0x4C dialog poll or the interaction probe.
                 self.dialog_input_consumed = false;
-                self.step_cutscene_timeline();
-                // Concurrent spawned-record contexts (mid-play op-0x44 helper
-                // spawns): independent field-VM contexts that never seize the
-                // camera or lock the player.
-                self.step_helper_contexts();
+                // Retail-frame paced (see `step_spawned_record_contexts`).
+                self.step_spawned_record_contexts();
                 // Per-actor script channels (spawned with a cutscene
                 // timeline): each vignette actor's own placement script runs
                 // its frame slice - animate cues, scripted moves, flag
@@ -260,8 +258,7 @@ impl World {
                 // hands the frame to the cutscene/MDEC overlay - and the host
                 // drives playback, calling [`finish_cutscene`] when it ends.
                 if self.active_fmv.is_none() {
-                    self.step_cutscene_timeline();
-                    self.step_helper_contexts();
+                    self.step_spawned_record_contexts();
                     self.step_field_channels();
                     self.step_field();
                     self.tick_screen_fx();
@@ -278,12 +275,10 @@ impl World {
                 // same single-context cutscene timeline. Step whichever is
                 // installed; `step_world_map_locomotion` stands the overworld
                 // player down while it plays (the force-walk lock).
-                if self.opening_chain_active || self.cutscene_timeline_active() {
-                    self.step_cutscene_timeline();
-                }
                 // Overworld helper spawns (an op-0x44 issued by a world-map
-                // record) execute concurrently, same as the field arm.
-                self.step_helper_contexts();
+                // record) execute concurrently, same as the field arm - both
+                // are retail-frame paced.
+                self.step_spawned_record_contexts();
                 self.tick_world_map();
                 None
             }

@@ -636,6 +636,39 @@ impl World {
     /// stays suspended exactly as retail's STATE_RESUME does.
     ///
     /// No-op when no timeline is installed or it has already completed.
+    /// Step the modal cutscene timeline and every concurrent helper context
+    /// **once per retail display frame**.
+    ///
+    /// Retail's script contexts live on actors that the per-frame actor-list
+    /// walk (`FUN_8002519C`) dispatches every frame - every context gets one
+    /// run-until-yield slice per frame, with no budget and no round-robin.
+    /// The rate that matters is therefore the display-frame rate, and every
+    /// duration a cutscene record can express is counted in display frames:
+    /// op-`0x4A` `WaitFrames` accumulates `DAT_1F800393` (the frame-skip
+    /// factor = the logic tick's `dt` in display frames) into `ctx[+0x54]`
+    /// per visit, and the camera mover accumulates the same `dt` into its
+    /// progress - so a logic tick running once per `dt` display frames credits
+    /// exactly one display frame of wait per display frame either way.
+    ///
+    /// The engine's sim clock runs at 100 Hz, so stepping the timeline once
+    /// per sim tick drained every `WaitFrames` 1.67x too fast. The narration
+    /// roller was already corrected onto the retail-frame sub-clock
+    /// ([`crate::world::World::field_frame_step`]); the timeline is paced off
+    /// the same sub-clock here so wait-dominated legs keep retail wall-time
+    /// too. (Measured against a headless retail capture of the New Game
+    /// opening chain: before, the roller-bound `opdeene` leg matched retail
+    /// wall-time to ~1% while the wait-bound `opstati` / `opurud` legs ran
+    /// ~15% / ~30% short.)
+    // REF: FUN_8002519C
+    // REF: FUN_801DC0BC
+    pub fn step_spawned_record_contexts(&mut self) {
+        if self.field_frame_step != 1 {
+            return;
+        }
+        self.step_cutscene_timeline();
+        self.step_helper_contexts();
+    }
+
     // REF: FUN_8003BDE0
     pub fn step_cutscene_timeline(&mut self) {
         let Some(mut tl) = self.cutscene_timeline.take() else {
