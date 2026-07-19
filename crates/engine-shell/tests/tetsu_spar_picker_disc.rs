@@ -101,3 +101,77 @@ fn rim_elm_spar_menu_decodes_as_a_four_option_picker() {
         "index-2 option resolves to a branch target (the arm-the-fight path)"
     );
 }
+
+/// End-to-end disc proof of the disc-derived fight option: at least one town01
+/// field-NPC dialogue is a spar menu whose fight option
+/// ([`legaia_engine_core::world::spar_menu_of`]) is chosen from the
+/// scripted-battle install `3E FF 04` sitting in that option's branch - **not**
+/// from any English label. This is the translation-independent path.
+///
+/// Contingency (see lane report): if `3E FF 04` is not present in the buffer
+/// `spar_menu_of` receives (the truncated `dialog_inline`), the derivation must
+/// instead run over the full `partition_record_span(..,1,10)` body. This test
+/// keys on `field_npc_dialog` - the same buffer the live carrier path feeds -
+/// so a failure here is the signal to widen that buffer.
+#[test]
+fn rim_elm_spar_fight_option_is_disc_derived_from_the_battle_install() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+    let cfg = BootConfig {
+        scene: "town01".to_string(),
+        enable_audio: false,
+    };
+    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    session
+        .enter_field_live(
+            "town01",
+            &FieldLiveOpts {
+                live_loop: true,
+                ..Default::default()
+            },
+        )
+        .expect("enter field live");
+
+    // Find a field dialogue the shipped derivation reads as a spar menu, and
+    // confirm its fight option's branch carries the exact Tetsu install.
+    let mut proven = false;
+    for (slot, bytes) in &session.host.world.field_npc_dialog {
+        let Some((n, fight_option)) = legaia_engine_core::world::spar_menu_of(bytes) else {
+            continue;
+        };
+        assert_eq!(n, 4, "the spar menu is a 4-option picker");
+        // Recover the picker to resolve the fight option's branch target.
+        let picker = legaia_mes::scan_pickers(bytes)
+            .into_iter()
+            .find(|p| p.n == 4)
+            .expect("the spar picker re-decodes");
+        let t = picker
+            .jump_target(fight_option)
+            .expect("the fight option resolves to a branch target");
+        let branch = &bytes[t.min(bytes.len())..];
+        eprintln!(
+            "[slot {slot}] disc-derived fight_option = {fight_option}, branch @0x{t:X} \
+             starts {:02X?}",
+            &branch[..branch.len().min(8)]
+        );
+        assert!(
+            branch.windows(3).any(|w| w == [0x3E, 0xFF, 0x04]),
+            "the disc-derived fight option's branch installs the lone-Tetsu formation \
+             (`3E FF 04`) - the derivation is keyed on this op, not an English label"
+        );
+        proven = true;
+    }
+
+    assert!(
+        proven,
+        "town01 must present a spar menu whose fight option is derived from the \
+         `3E FF 04` scripted-battle install (contingency: widen the buffer to the \
+         full P1[10] partition body - see lane report)"
+    );
+}

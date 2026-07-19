@@ -580,16 +580,65 @@ pub struct CarrierMenu {
     pub cursor: usize,
 }
 
+/// The field-VM scripted-battle install prefix (`3E FF <formation-row>`): the
+/// op `FUN_801DA51C` uses to arm a formation-row fight (the Rim Elm spar's
+/// `3E FF 04` = row 4 lone Tetsu; garmel's Zeto `3E FF 09`; rikuroa's Caruban
+/// `3E FF 11` - see `rim_elm_sparring_carrier`). Matching the two-byte prefix
+/// is row-agnostic, so it recognises any scripted-battle branch.
+const SCRIPTED_BATTLE_INSTALL: [u8; 2] = [0x3E, 0xFF];
+
+/// Bytes to scan from an option's branch target when hunting the install, if no
+/// nearer branch bounds the window first. A spar reply branch is short; a span
+/// this size can't reach into an unrelated later region.
+const SPAR_BRANCH_SCAN_SPAN: usize = 256;
+
 /// If `dialogue` presents the spar's 4-option picker, return `(n_options,
-/// fight_option_index)`. The fight option is the choice whose label is the
-/// "practice" request ("I want to practice with you." - RE-pinned index 2 for
-/// the Rim Elm spar). `None` when the dialogue carries no such picker, so a
-/// carrier without a menu keeps the any-accept engage path.
-pub(crate) fn spar_menu_of(dialogue: &[u8]) -> Option<(usize, usize)> {
+/// fight_option_index)`. The fight option is disc-derived: the choice whose
+/// branch (at its [`legaia_mes::Picker::jump_target`]) installs a scripted
+/// battle (`3E FF _`, the exact op the RE pinned for the Rim Elm training
+/// fight). Because that ties the choice to a disc op rather than an English
+/// label, it holds under translation packs / PAL discs. The `"practice"` label
+/// match is kept only as a last-resort fallback for a buffer whose branch
+/// bytes were truncated away (so no install is present to key on). `None` when
+/// the dialogue carries no such picker, so a carrier without a menu keeps the
+/// any-accept engage path.
+pub fn spar_menu_of(dialogue: &[u8]) -> Option<(usize, usize)> {
     for p in legaia_mes::scan_pickers(dialogue) {
         if p.n != 4 {
             continue;
         }
+        // Resolve each option's branch entry offset into this same buffer.
+        // `jump_target` shares `dialogue`'s coordinate space (both `open` and
+        // the returned offset index it), so an out-of-range target is dropped.
+        let targets: Vec<usize> = (0..p.n)
+            .map(|i| p.jump_target(i).unwrap_or(usize::MAX))
+            .collect();
+        // Disc-derived fight option: its branch carries the scripted-battle
+        // install. Bound each option's scan to the start of the nearest later
+        // branch (so a lower option's window can't run into a higher option's
+        // install) capped by a fixed span and the buffer end.
+        let fight = (0..p.n).find(|&i| {
+            let t = targets[i];
+            if t >= dialogue.len() {
+                return false;
+            }
+            let next = targets
+                .iter()
+                .copied()
+                .filter(|&o| o > t && o <= dialogue.len())
+                .min()
+                .unwrap_or(dialogue.len());
+            let end = next
+                .min(t.saturating_add(SPAR_BRANCH_SCAN_SPAN))
+                .min(dialogue.len());
+            dialogue[t..end]
+                .windows(2)
+                .any(|w| w == SCRIPTED_BATTLE_INSTALL)
+        });
+        if let Some(f) = fight {
+            return Some((p.n, f));
+        }
+        // Last-resort fallback: the English "practice" label.
         if let Some(f) = p.options.iter().position(|o| {
             o.label
                 .windows(8)

@@ -2138,12 +2138,27 @@ impl World {
                     }
                 }
                 FieldStepResult::Yield { resume_pc } => id.pc = resume_pc,
-                // A wait/hold, an unhandled op, or an end: stop. (Unlike the
-                // cutscene timeline the runner does not force-advance past a
-                // Halt - an inline interaction script that can't proceed ends.)
-                // While a prologue is still running (no box opened yet), a halt
-                // means the prologue can't proceed - fall back to the first
-                // segment so the dialogue is never worse than the truncated path.
+                // op-0x4A WAIT_FRAMES halts at its own PC every tick until its
+                // frame target elapses (`ctx.wait_accum` accumulates one
+                // `frame_delta` per `step`, and `id.ctx` persists across ticks).
+                // Persist the PC and resume next tick instead of ending, so
+                // option effects scripted *behind* a wait still run - the Rim
+                // Elm spar's `3E FF 04` battle install sits behind a
+                // `WaitFrames 16`. Only when no prologue fallback is pending;
+                // a wait during prologue selection still falls back so the box
+                // is never worse than the truncated path.
+                FieldStepResult::Halt { final_pc }
+                    if (b & 0x7F) == 0x4A && id.fallback_segment_pc.is_none() =>
+                {
+                    id.pc = final_pc;
+                    break;
+                }
+                // Any other halt/hold, an unhandled op, or an end: stop.
+                // (Unlike the cutscene timeline the runner does not force-
+                // advance past these - an inline script that can't proceed
+                // ends.) While a prologue is still running (no box opened yet),
+                // a halt means the prologue can't proceed - fall back to the
+                // first segment so the dialogue is never worse than truncation.
                 FieldStepResult::Halt { .. }
                 | FieldStepResult::Pending { .. }
                 | FieldStepResult::Unknown { .. } => {
