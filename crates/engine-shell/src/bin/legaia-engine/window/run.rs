@@ -778,6 +778,7 @@ pub(super) fn cmd_play_window_with_record(
         pending_camera_snaps: Vec::new(),
         active_dialog: None,
         seru_names: None,
+        battle_camera: None,
         dynamic_lighting,
         orbit_drag_last_x: None,
         cursor_x: 0.0,

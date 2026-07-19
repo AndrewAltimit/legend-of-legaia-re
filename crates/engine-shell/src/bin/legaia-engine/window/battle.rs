@@ -257,7 +257,17 @@ impl PlayWindowApp {
         // it away with the monster meshes.
         self.battle_stage_mesh = None;
         if let Some((_, (tmd, raw))) = &stage {
-            let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(tmd, raw);
+            // Draw the stage's object 0 only (the arena walls / beach / sky
+            // shell). Object 1 is a small ground-level ribbon mesh (near
+            // props / ground mist) that NO retail battle capture shows on
+            // screen - drawing it painted an engine-only white streak
+            // across the arena floor (the "swirl FX" divergence in the
+            // Tetsu ground truth).
+            let tmd0 = legaia_tmd::Tmd {
+                header: tmd.header.clone(),
+                objects: tmd.objects.first().cloned().into_iter().collect(),
+            };
+            let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd0, raw);
             if !vmesh.indices.is_empty()
                 && let Ok(m) = r.upload_vram_mesh(
                     &vmesh.positions,
@@ -272,23 +282,26 @@ impl PlayWindowApp {
                 self.meshes.push(m);
                 self.scene_tmd_data.push((tmd.clone(), raw.clone()));
                 // Flat tiled ground grid under the actors (retail's
-                // `func_0x801d02c0` grass grid). Reuse the dome's grass texel so
-                // it samples real grass from the battle VRAM; drawn with the
-                // actor camera so the party stands on it.
+                // `func_0x801d02c0` grid), textured from the constant
+                // retail page/CLUT/UV-window address - the scene battle
+                // VRAM holds that scene's own ground tile there (see
+                // `build_battle_ground_grid`).
                 self.battle_ground_mesh = None;
-                if let Some(grid) = build_battle_ground_grid(&vmesh)
-                    && let Ok(gm) = r.upload_vram_mesh(
-                        &grid.positions,
-                        &grid.uvs,
-                        &grid.cba_tsb,
-                        &grid.normals,
-                        &grid.colors,
-                        &grid.indices,
-                    )
-                {
-                    self.battle_ground_mesh = Some(self.meshes.len());
-                    self.meshes.push(gm);
-                    self.scene_tmd_data.push((tmd.clone(), raw.clone())); // keep meshes/data aligned
+                let grid = build_battle_ground_grid();
+                match r.upload_vram_mesh(
+                    &grid.positions,
+                    &grid.uvs,
+                    &grid.cba_tsb,
+                    &grid.normals,
+                    &grid.colors,
+                    &grid.indices,
+                ) {
+                    Ok(gm) => {
+                        self.battle_ground_mesh = Some(self.meshes.len());
+                        self.meshes.push(gm);
+                        self.scene_tmd_data.push((tmd.clone(), raw.clone())); // keep meshes/data aligned
+                    }
+                    Err(e) => log::warn!("play-window: battle ground grid upload: {e:#}"),
                 }
             }
         }

@@ -306,45 +306,34 @@ pub(crate) fn world_map_slot4_line_geometry(
     (pos, col, idx)
 }
 
-/// Build the flat tiled battle ground grid (retail's `func_0x801d02c0` grass
-/// grid): a `(N+1)x(N+1)` vertex grid of quads on the PSX `y=0` plane centred at
-/// the world origin, every vertex sampling the stage dome's **grass texel** so
-/// it reads as real grass from the battle VRAM instead of the bare clear colour.
-/// Returns `None` if the dome has no ground-plane (`|y|` small) textured vertex
-/// to borrow the texel from. Drawn with the actor camera so the party stands on
-/// it; coarse cells are fine because every vertex samples the same texel.
-pub(crate) fn build_battle_ground_grid(
-    dome: &legaia_tmd::mesh::VramMesh,
-) -> Option<legaia_tmd::mesh::VramMesh> {
-    // Borrow the dome's GRASS texture, targeting the exact tile retail's grid
-    // (func_0x801d02c0) uses. `mednafen-state prim-trace` on the real map01
-    // battle shows those ground tiles at uv ~ (132..140, 2..13) with their own
-    // CBA/TSB. PROT 88 is the same TMD, so the dome's grass vertices carry the
-    // same UVs - find the flat ground vertex nearest that tile centre, take its
-    // CBA/TSB, and tile that small window. (Earlier picks - "first textured
-    // vertex", "largest XZ area + bbox centre" - landed on the ground-mist
-    // object or a 2-tone checker region of the texture, hence the checkerboard.)
-    const GU0: u8 = 132;
-    const GU1: u8 = 140;
-    const GV0: u8 = 2;
-    const GV1: u8 = 13;
-    let tcu = ((GU0 as u16 + GU1 as u16) / 2) as i32;
-    let tcv = ((GV0 as u16 + GV1 as u16) / 2) as i32;
-    let best = (0..dome.positions.len())
-        .filter(|&i| dome.positions[i][1].abs() < 5.0 && dome.cba_tsb[i] != [0, 0])
-        .min_by_key(|&i| {
-            let [u, v] = dome.uvs[i];
-            (u as i32 - tcu).pow(2) + (v as i32 - tcv).pow(2)
-        })?;
-    let cba_tsb = dome.cba_tsb[best];
-    let [bu, bv] = dome.uvs[best];
-    log::info!(
-        "battle ground grid: grass tile uv [{GU0}..{GU1}]x[{GV0}..{GV1}] cba_tsb={cba_tsb:?} (nearest dome vert uv=({bu},{bv}))"
-    );
-    let (u0, u1, v0, v1) = (GU0, GU1, GV0, GV1);
+/// The battle ground grid's texture address, constant in the retail overlay
+/// (`func_0x801d02c0` scratch literals, confirmed against the GT4 packets in
+/// the live prim pool of the Tetsu battle savestates): 4bpp texture page at
+/// framebuffer `(832, 0)` = tpage attr `0x000D`, CLUT at `(0, 479)` = CBA
+/// `0x77C0`. The ADDRESS is scene-independent - the scene's battle VRAM
+/// build is what places that scene's own ground tile there (town01 = warm
+/// sandy pebbles; the old "borrow the dome's nearest grass vertex" pick
+/// sampled a blue texel region in town01 and painted the floor sky-blue).
+pub(crate) const BATTLE_GROUND_TSB: u16 = 0x000D;
+pub(crate) const BATTLE_GROUND_CBA: u16 = 0x77C0;
 
+/// Build the flat tiled battle ground grid (retail's `func_0x801d02c0`
+/// ground grid): a 28x28-cell field of `0x200`-pitch quads on the PSX `y=0`
+/// plane centred at the world origin, textured from the constant
+/// [`BATTLE_GROUND_TSB`] / [`BATTLE_GROUND_CBA`] page. The UV window is the
+/// fixed `(192..255)^2` block of that page, which holds **four 32x32
+/// sub-tiles** (two distinct variants, each duplicated across the row -
+/// verified on the decoded town01 tile); each cell samples one sub-tile
+/// picked by a per-cell deterministic hash standing in for retail's per-cell
+/// `rand()` corner pick, with a random UV corner mirror on top (the GT4
+/// packets' mirrored corner orders). Drawn with the battle camera so the
+/// party stands on it.
+pub(crate) fn build_battle_ground_grid() -> legaia_tmd::mesh::VramMesh {
     const N: i32 = 28; // cells per side (retail func_0x801d02c0 grid)
-    const P: f32 = 512.0; // retail func_0x801d02c0 cell pitch (0x200) -> ~+/-16384 extent
+    const P: f32 = 512.0; // cell pitch (0x200) -> ~+/-7168 extent
+    // The fixed sub-tile window inside the (192..255)^2 block.
+    const UV_BASE: u16 = 192;
+    const SUB: u16 = 32;
     let mut m = legaia_tmd::mesh::VramMesh {
         positions: Vec::new(),
         uvs: Vec::new(),
@@ -353,31 +342,51 @@ pub(crate) fn build_battle_ground_grid(
         normals: Vec::new(),
         colors: Vec::new(),
     };
-    // Per-cell quads (own 4 vertices each) so EVERY cell maps to the same full
-    // grass UV tile `[u0..u1]x[v0..v1]`. Shared-vertex grids forced a single UV
-    // per vertex, which (alternating box corners by parity) made adjacent cells
-    // sample different texture columns -> green-vs-dirt whole-cell jumps. With
-    // each cell carrying the whole tile, the grass repeats uniformly.
     let half = N / 2;
     for iz in 0..N {
         for ix in 0..N {
             let (x0, z0) = ((ix - half) as f32 * P, (iz - half) as f32 * P);
             let (x1, z1) = (x0 + P, z0 + P);
+            // Deterministic per-cell "random": quadrant pick (2 bits) +
+            // mirror pick (2 bits). Retail rolls rand() per cell at grid
+            // build; a coordinate hash keeps the engine build reproducible.
+            let h = (ix as u32)
+                .wrapping_mul(0x9E37_79B9)
+                .wrapping_add((iz as u32).wrapping_mul(0x85EB_CA6B));
+            let h = (h ^ (h >> 13)).wrapping_mul(0xC2B2_AE35);
+            let (qu, qv) = ((h & 1) as u16, ((h >> 1) & 1) as u16);
+            let (mir_h, mir_v) = (h & 4 != 0, h & 8 != 0);
+            let (mut ua, mut ub) = (UV_BASE + qu * SUB, UV_BASE + qu * SUB + (SUB - 1));
+            let (mut va, mut vb) = (UV_BASE + qv * SUB, UV_BASE + qv * SUB + (SUB - 1));
+            if mir_h {
+                std::mem::swap(&mut ua, &mut ub);
+            }
+            if mir_v {
+                std::mem::swap(&mut va, &mut vb);
+            }
+            let (ua, ub, va, vb) = (ua as u8, ub as u8, va as u8, vb as u8);
             let base = m.positions.len() as u32;
             for (x, z, u, v) in [
-                (x0, z0, u0, v0),
-                (x1, z0, u1, v0),
-                (x0, z1, u0, v1),
-                (x1, z1, u1, v1),
+                (x0, z0, ua, va),
+                (x1, z0, ub, va),
+                (x0, z1, ua, vb),
+                (x1, z1, ub, vb),
             ] {
                 m.positions.push([x, 0.0, z]);
                 m.uvs.push([u, v]);
-                m.cba_tsb.push(cba_tsb);
+                m.cba_tsb.push([BATTLE_GROUND_CBA, BATTLE_GROUND_TSB]);
                 m.normals.push([0.0, -1.0, 0.0]); // PSX up = -y (flat ground faces up)
+                // Neutral modulation: the grid quads draw the raw tile
+                // texel. (NB the old builder pushed NO colours at all, so
+                // its upload failed the attribute-length check and the
+                // grid never drew - the "sky-blue floor" was the bare
+                // battle clear colour showing through.)
+                m.colors
+                    .push([legaia_tmd::legaia_prims::MODULATION_NEUTRAL; 3]);
             }
             m.indices
                 .extend([base, base + 2, base + 1, base + 1, base + 2, base + 3]);
         }
     }
-    Some(m)
+    m
 }
