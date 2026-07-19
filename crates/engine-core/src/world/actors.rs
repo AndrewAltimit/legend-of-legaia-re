@@ -89,11 +89,22 @@ impl World {
         }
     }
 
-    /// Backwards-compatible wrapper using idle scalars and a default
-    /// listener (no positional SFX integration yet).
+    /// Default-listener wrapper (no positional SFX integration yet) carrying
+    /// the **live cadence** into the dispatcher scalars.
+    ///
+    /// `frame_delta` is retail's `DAT_1F800393` - the vsyncs one game tick
+    /// spans - not a constant `1`. [`World::tick`] fires this once every
+    /// [`World::frame_step`] vsyncs, so the two together conserve
+    /// vsyncs-per-second: the dispatcher integrates the same total delta over
+    /// the same wall-clock span, just in fewer, larger steps. That is exactly
+    /// retail's own trade, and it is why duration-based parity (the camera
+    /// mover, every `t = min(t + dt, d)` accumulator) is untouched by it.
+    ///
+    /// REF: FUN_80016B6C
     pub fn tick_actor_physics(&mut self) {
         let listener = ListenerState::unicast(0, 0, 0);
-        self.tick_actor_physics_with(TickScalars::idle(), &listener);
+        let cadence = vm::actor_tick::FrameCadence::from_raw(self.frame_step);
+        self.tick_actor_physics_with(TickScalars::for_cadence(cadence, 1), &listener);
     }
 
     /// Install the MOVE buffer pool root (retail `_DAT_8007B888`). The

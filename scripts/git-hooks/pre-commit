@@ -175,4 +175,19 @@ if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ci/check-port-tags.py" ]
     python3 scripts/ci/check-port-tags.py --staged --quiet || true
 fi
 
+# UI host-drift check. The browser play page and the native play-window are two
+# framebuffers over one engine; a screen wired into only one of them is invisible
+# in a diff. This derives the shared feature surface from the engine-ui draw
+# builders and fails when a builder reaches one host and not the other without a
+# recorded reason. Hard gate: it is cheap, has no false positives that a waiver
+# cannot express, and the whole point is that it cannot be ignored.
+if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ci/check-ui-host-drift.py" ]]; then
+    printf '[pre-commit] UI host-drift check (engine-ui builders vs both hosts)\n'
+    if ! python3 scripts/ci/check-ui-host-drift.py --quiet; then
+        printf '[pre-commit] UI drifted between the native window and the browser play page (see above).\n' >&2
+        printf '[pre-commit] Wire the screen into crates/web-viewer, or record why not in scripts/ci/ui-host-drift-waivers.toml (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
 printf '[pre-commit] OK\n'

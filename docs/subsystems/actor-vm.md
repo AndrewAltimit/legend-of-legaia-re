@@ -49,7 +49,47 @@ Opcode "trigger animation" hands off an ANM container ID to the animation runner
 
 ## Per-actor anim tick - `FUN_80021DF4`
 
-The per-frame anim driver lives in `SCUS_942.54`, not in an overlay. `FUN_80021DF4` is the static-binary tick the field/battle scenes call once per frame for every active actor.
+The per-frame anim driver lives in `SCUS_942.54`, not in an overlay. `FUN_80021DF4` is the static-binary tick the field/battle scenes call once per **game tick** for every active actor. A game tick is not a vsync - see [Tick cadence](#tick-cadence-dat_1f800393) below.
+
+### Tick cadence (`DAT_1F800393`)
+
+One game tick spans `DAT_1F800393` vsyncs. `FUN_80016B6C` rewrites that byte every frame from two independent inputs (see `ghidra/scripts/funcs/80016b6c.txt`):
+
+```text
+adaptive = if frameskip_enabled && worst > 0xF0 {
+    if worst > 0x2D0 { 4 } else if worst > 0x1FE { 3 } else { 2 }
+} else { 1 };
+DAT_1F800393 = max(adaptive, DAT_8007B9D8);
+```
+
+**Adaptive frame-skip.** `FUN_800173BC` returns `VSync(1)` - the hblank (scanline) duration of the frame just rendered. `FUN_80016B6C` keeps a 16-entry ring of those samples at `DAT_80084098` and takes the running maximum, so the factor is sticky against the worst of the last 16 frames. The thresholds `0xF0 / 0x1FE / 0x2D0` sit just under 1 / 2 / 3 NTSC fields (263 hblanks each): the game advances the simulation proportionally when it misses vsync, keeping wall-clock speed constant. It is gated on a boot-time config word (`gp+0x4CE == 0x10`), read at exactly this one site. On hardware keeping up, the adaptive term is `1`.
+
+**Per-mode floor `DAT_8007B9D8`.** This is the deterministic half, installed by mode rather than by performance:
+
+| Installer | Floor | Mode |
+|---|---|---|
+| `FUN_801D6704` | 2 | Field scene loader - ordinary field / town play |
+| `FUN_801C6C78` | 2 | Options screen (PROT 0896) |
+| `FUN_801CFDA0` | 3 | Field-to-battle intro transition |
+| `FUN_801DC6B4` / `FUN_801DE234` / `FUN_801DD35C` | 1 | Menu family; save/restore idiom |
+| `FUN_801CF678` | 1 / 4 | Baka Fighter duel / scripted beat |
+| `FUN_801D362C` | script | Cutscene dialogue; operand at `param_2 + 4` |
+
+The menu family drops the floor to `1` on entry and writes the saved value back from `DAT_801EF19C` on exit, which is why the field floor survives a pause-menu round trip.
+
+The consequence for ordinary field play: `DAT_8007B9D8 = 2`, so **actor motion advances every second vsync** (~30 Hz), not every vsync.
+
+**Durations stay cadence-invariant.** Everything measuring a duration accumulates `DAT_1F800393` rather than `1` - the camera mover's `t = min(t + DAT_1F800393, d)` is the canonical case. A glide with `apply = 600` therefore arrives after 600 *vsyncs* at any cadence (600 ticks x 1, or 300 ticks x 2). Retail durations are denominated in vsyncs, so a port running at cadence 1 reaches the same endpoints at the same wall-clock moments. What changes is the **sample rate**: at cadence 2 retail emits a pose only every second vsync, so a port ticking every vsync shows intermediate poses retail never draws. That is the entire field-motion divergence - identical endpoints, double the samples between them.
+
+`legaia_engine_vm::actor_tick::FrameCadence` models this law; `TickScalars::for_cadence` feeds it into the dispatcher multiplier.
+
+#### Engine wiring
+
+`World::tick` drives the pool on the same clock. It banks a vsync per retail frame and runs the per-actor passes (`tick_actor_physics` / `tick_actors` / `tick_actor_motions`) once every `World::frame_step` of them; the pass that fires carries `frame_step` as the dispatcher's `frame_delta` rather than a constant `1`.
+
+The gate and the scalar are one change, not two. Gating alone would halve wall-clock motion; scaling alone would double it. Together they conserve vsyncs-per-second, which is what leaves every duration where it was and moves only the sample rate. `World::tick_field_npc_ambient` rides the same gate, so op `0x0D` stays in lockstep with its ramp scheduler (see [`motion-vm.md`](motion-vm.md#the-ambient-vms-own-facing-ops)).
+
+The property is pinned directly in `crates/engine-core/src/world/tests/actor_cadence.rs`: across cadences `1..=4` the integrated displacement and the timer drain are identical while the pose count scales as `1 / cadence`. A change that moves a duration is a regression, not a reason to retune the assertion.
 
 ### Actor record fields
 

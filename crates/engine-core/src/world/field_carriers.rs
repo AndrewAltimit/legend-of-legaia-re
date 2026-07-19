@@ -165,6 +165,12 @@ impl World {
         // this set through `install_cutscene_timeline_record` afterwards.
         self.seed_field_channels(man_file, man);
 
+        // Ambient facing channels: each placement's bound tail-section-1
+        // motion stream (`FUN_80038158` ops 0x04 / 0x0D). Seeded last so the
+        // VMs start from whatever heading the spawn prologue / channel init
+        // above left in `field_npc_headings`.
+        self.seed_field_npc_ambient(man_file, man);
+
         sparring_idx
     }
 

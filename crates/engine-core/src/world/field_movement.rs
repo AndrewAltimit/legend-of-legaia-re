@@ -815,6 +815,167 @@ impl World {
             };
             self.field_npc_headings.entry(slot).or_insert(heading);
         }
+        // The ambient facing channels are installed by
+        // `install_field_carriers_from_man`, which runs BEFORE this pass - so
+        // at install time the headings map is still empty and every channel
+        // started from compass zero. Re-seed the start heading of every
+        // channel that has not ticked yet, so an ambient turn begins where
+        // the spawn prologue actually left the actor.
+        self.resync_ambient_start_headings();
+    }
+
+    /// Point every not-yet-started ambient facing channel at its NPC's
+    /// current render heading, converted back into the **retail** heading
+    /// space the ambient ops work in (`retail = engine - 0x800`).
+    ///
+    /// Only channels that have not selected a variant yet (`live.is_none()`)
+    /// are touched: once a stream is running its `+0x26` is the VM's own, and
+    /// rewriting it would teleport a turn mid-ramp.
+    pub(crate) fn resync_ambient_start_headings(&mut self) {
+        for (slot, chan) in self.field_npc_ambient.iter_mut() {
+            if chan.live.is_some() {
+                continue;
+            }
+            let engine = (self.field_npc_headings.get(slot).copied().unwrap_or(0) & 0x0FFF) as u16;
+            chan.vm.heading = engine.wrapping_sub(0x800) & 0x0FFF;
+        }
+    }
+
+    /// Seed the per-NPC **ambient facing** channels from the scene MAN's
+    /// tail-section-1 motion streams - the idle turn-in-place behaviour of the
+    /// second motion VM (`FUN_80038158` ops `0x04` / `0x0D`, ported at
+    /// [`legaia_engine_vm::ambient_motion`]). Without this a standing town NPC
+    /// holds one heading forever where retail NPCs slowly look around.
+    ///
+    /// Binding resolution is the installer's: `FUN_8003A9D4` matches each
+    /// record's `actor_id` byte against actor `+0x50`, and the placement
+    /// spawner `FUN_8003A1E4` writes `+0x50 = N0 + placement_index` (`N0` =
+    /// the MAN's partition-0 record count). The full variant table is carried
+    /// per slot, not just the fresh-game one, because retail re-selects the
+    /// live variant every tick against `DAT_80085758`
+    /// ([`FieldNpcAmbient::select_variant`]).
+    ///
+    /// Each channel's VM starts from the heading the NPC is already standing
+    /// in ([`Self::field_npc_headings`], seeded by
+    /// [`Self::seed_field_npc_facings`]), converted back into the **retail**
+    /// heading space the ambient ops work in (`retail = engine - 0x800`), so
+    /// an ambient turn starts where the spawn prologue left the actor.
+    ///
+    /// Call after [`Self::seed_field_npc_facings`].
+    // PORT: FUN_80038158 (stream binding + variant table)
+    // REF: FUN_8003A9D4 (binding installer), FUN_8003A1E4 (+0x50 = N0 + index)
+    pub fn seed_field_npc_ambient(
+        &mut self,
+        man_file: &legaia_asset::man_section::ManFile,
+        man: &[u8],
+    ) {
+        use legaia_asset::man_motion;
+        self.field_npc_ambient.clear();
+        let Some(n0) = man_file.partitions.first().map(|p| p.len()) else {
+            return;
+        };
+        let records = man_motion::motion_records(man, man_file);
+        for p in man_file.actor_placements(man) {
+            let Ok(slot) = u8::try_from(p.index) else {
+                continue;
+            };
+            let Some(bind_id) = n0.checked_add(p.index).and_then(|v| u8::try_from(v).ok()) else {
+                continue;
+            };
+            if bind_id >= man_motion::ACTOR_PLAYER {
+                continue; // collides with the 0xF8/0xFB special ids
+            }
+            let Some(rec) = records
+                .iter()
+                .find(|r| r.bindings.iter().any(|b| b.actor_id == bind_id))
+            else {
+                continue;
+            };
+            let variants: Vec<(u16, Vec<u8>)> = man_motion::stream_variants(man, rec)
+                .into_iter()
+                .filter_map(|v| {
+                    man.get(v.code_offset..v.code_end)
+                        .map(|code| (v.selector, code.to_vec()))
+                })
+                .filter(|(_, code)| !code.is_empty())
+                .collect();
+            if variants.is_empty() {
+                continue;
+            }
+            // The ambient ops live in retail heading space; the engine's
+            // render heading is the same compass rotated a half turn.
+            let engine_heading =
+                (self.field_npc_headings.get(&slot).copied().unwrap_or(0) & 0x0FFF) as u16;
+            let retail_heading = engine_heading.wrapping_sub(0x800) & 0x0FFF;
+            self.field_npc_ambient.insert(
+                slot,
+                FieldNpcAmbient {
+                    variants,
+                    live: None,
+                    vm: vm::ambient_motion::AmbientMotion::new(u32::from(slot), retail_heading),
+                },
+            );
+        }
+    }
+
+    /// Step every NPC's ambient facing channel one **actor game tick** and
+    /// mirror the result into [`Self::field_npc_headings`].
+    ///
+    /// `speed` is retail's `DAT_1F800393` ([`Self::frame_step`]). The two ops
+    /// respond to it differently and both readings are the retail law:
+    /// `0x04`'s cursor is `addiu a0, a0, 1` - unit-per-tick, scalar-invariant,
+    /// so its budget is denominated in *ticks*; `0x0D`'s wait cursor advances
+    /// by the scalar, which is precisely what keeps it in lockstep with the
+    /// ramp scheduler (`FUN_80036D80` decrements `remaining` by the same
+    /// scalar, so op and ramp retire together).
+    ///
+    /// **The mirror is gated on the VM having actually moved the heading**,
+    /// the same contract [`legaia_engine_vm::motion_vm::MotionState`]'s
+    /// `yaw_written` buys for the walk channel: an NPC parked in a `0x05`
+    /// wait op must not re-stamp its stale ambient heading over a pose some
+    /// other writer set - the interact "face the speaker" bearing, a scripted
+    /// channel facing. Only a tick that changed the raw `+0x26` writes back.
+    ///
+    /// Retail's variant preamble re-selects the live variant every tick
+    /// against `DAT_80085758`; a swap reseeds the record's cursor, so the
+    /// port resets the VM's PC / cursor on a change rather than resuming the
+    /// old variant's offset into new bytecode.
+    // PORT: FUN_80038158 (facing channel drive), FUN_80036D80 (ramp pool)
+    pub fn tick_field_npc_ambient(&mut self) {
+        if self.field_npc_ambient.is_empty() {
+            return;
+        }
+        let speed = self.frame_step.max(1);
+        let slots: Vec<u8> = self.field_npc_ambient.keys().copied().collect();
+        for slot in slots {
+            // Re-select against the live system-flag bank before stepping.
+            let pick = self
+                .field_npc_ambient
+                .get(&slot)
+                .and_then(|c| c.select_variant(|f| self.system_flag_test(f)));
+            let Some(pick) = pick else { continue };
+            let Some(chan) = self.field_npc_ambient.get_mut(&slot) else {
+                continue;
+            };
+            // Split the borrow across the struct's fields so the bytecode can
+            // be read while the VM is stepped - no per-frame clone.
+            let FieldNpcAmbient { variants, live, vm } = chan;
+            if *live != Some(pick) {
+                *live = Some(pick);
+                vm.pc = 0;
+                vm.cursor = 0;
+            }
+            let Some((_, code)) = variants.get(pick) else {
+                continue;
+            };
+            let before = vm.heading;
+            vm.tick(code, speed);
+            if vm.heading == before {
+                continue; // idle op: leave whatever heading is posted standing
+            }
+            let engine_heading = vm.render_heading().wrapping_add(0x800) & 0x0FFF;
+            self.field_npc_headings.insert(slot, engine_heading as i16);
+        }
     }
 
     /// Start a field NPC walking to world `(tx, tz)` through the motion VM -

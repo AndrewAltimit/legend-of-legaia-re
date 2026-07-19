@@ -196,12 +196,15 @@ impl VabBank {
             v.vol_right = vol_r;
             v.adsr_cfg = AdsrConfig::from_words(tone.adsr1, tone.adsr2);
         }
-        let crate::spu::Spu {
-            ref mut voices,
-            ref ram,
-            ..
-        } = *spu;
-        voices[voice].key_on(ram);
+        {
+            let crate::spu::Spu {
+                ref mut voices,
+                ref ram,
+                ..
+            } = *spu;
+            voices[voice].key_on(ram);
+        }
+        spu.record_key_on(voice);
         true
     }
 

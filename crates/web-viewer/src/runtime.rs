@@ -218,6 +218,19 @@ impl LegaiaRuntime {
         {
             host.world.set_item_effects(effects);
         }
+        // Gold-shop item data (per-id buy price + "names a real item" mask),
+        // the twin of the native boot's `read_shop_item_data`. Without it
+        // `World::try_arm_field_shop` fails its priced-record validation and
+        // every field-VM merchant is silently inert. Lands with
+        // [`crate::play_shop`], which owns the UI the armed shop suspends the
+        // field VM on - installing the catalog without that screen would park
+        // the script at the first merchant.
+        if let Some(shop_data) = scus
+            .as_ref()
+            .and_then(|s| legaia_engine_core::shop_catalog::ShopItemData::from_scus(s))
+        {
+            host.world.item_shop_data = Some(shop_data);
+        }
 
         let count = host.index.entry_count() as u32;
         self.scene_host = Some(host);
@@ -364,6 +377,11 @@ impl LegaiaRuntime {
             self.rebuild_render_state()?;
             return Ok(name);
         }
+        // A field-VM op-0x49 sub-0 merchant armed a shop this tick: hand it to
+        // the menu runtime so the page can open the store. The field VM stays
+        // suspended (op-0x49 Armed) until `play_shop_input` sees the session
+        // end and calls `finish_field_shop`.
+        self.poll_field_shop();
         self.drive_npc_clips();
         Ok(String::new())
     }

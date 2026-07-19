@@ -138,6 +138,8 @@ The HUD / banner cluster is ported as a draw-list layer (`HudDraw`): `persistent
 
 The `FishingSession` composes those kernels into a cast → fight → score loop. The win/lose glue (line-snaps-at-max-tension, reel-progress land, the locked-cast species pick, and the steady per-frame fish pull) is an **engine-side reconstruction** of the [Open](#open) items below and is marked as such at each call site - no Sony bytes are baked in.
 
+**Retail entry.** A fishing-pond door hands off through the ordinary **game mode 24** (`OTHER INIT`, `sub_id = 0`) path - the same scene-backup → overlay-load → return-to-field sequence any mode-24 minigame takes, with PROT 0972 as the loaded overlay. There is no bespoke fishing entry: the pond door is a normal door whose target mode is 24, which is why the minigame inherits the host scene's BGM (above) and returns to the exact field state it suspended. The engine's `GameMode::OtherInit`/`OtherMode` pair (`crates/engine-core/src/mode.rs`) is that mode.
+
 Runtime wiring: installed as a suspending scene mode (`SceneMode::Fishing`; `World::enter_fishing` / `tick_fishing` / `exit_fishing`). The `play-window` viewer starts it from the `L` key (loads the fishing overlay PROT 0972, `fishing_species::parse`); Cross locks the cast and reels (reel A), Square is reel B (retail: `0x80`), and the HUD shows the cast-power / tension / catch-result line plus the running point total. `P` opens the [point exchange](#point-exchange-prize-shop) (Up/Down move, Left/Right switch venue, Enter trades).
 
 ## Point exchange (prize shop)

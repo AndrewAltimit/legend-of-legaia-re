@@ -360,8 +360,9 @@
       <a href="subsystems/cutscene.html">cutscene</a> chain, its narration crawl, and the sepia +
       depth-cue grade all render here off your disc; STR movie playback (MDEC video) runs only in
       the native window, so an FMV beat is skipped in the browser.</li>
-    <li><strong>Shops and the inn.</strong> The runtime state is there; their menu screens are not
-      surfaced on this page.</li>
+    <li><strong>The inn.</strong> Its runtime state is ported, but no scene opens an inn session
+      in either the browser or the native window yet. Merchants <em>do</em> work here: walking into
+      a shopkeeper opens the retail gold shop, priced from your disc's own item table.</li>
     <li><strong>Audio.</strong> The sequencer and SPU are ported
       (<a href="subsystems/audio.html">audio</a>) and the WebAudio backend exists, but the BGM
       director is not wired into this page.</li>
@@ -387,6 +388,17 @@
     vertices (<a href="formats/character-mesh.html">character meshes</a>,
     <a href="formats/anm.html">ANM</a>).
   </p>
+  <p>
+    The menus are the same menus. Every screen's geometry - the pause menu, the save-card flow,
+    the dialog box, the shop panel - is built by one renderer-agnostic crate that both this page
+    and the native window call; the page supplies a different framebuffer, not a different UI.
+    That is also how the two stay in step: because a host "has" a screen exactly when it calls
+    that screen's builder, a repository check can derive the shared surface from the source and
+    fail the build when a screen reaches one host and not the other. Anything genuinely
+    single-host has to be written down with a reason, and the check re-validates those reasons
+    against the code on every commit - so this list of what does not run here cannot quietly go
+    out of date.
+  </p>
   <div class="see-also">
     <span class="see-also-label">Related</span>
     <a href="subsystems/engine.html">Engine reimplementation</a>
@@ -402,7 +414,7 @@
 <script src="js/webgl-math.js?v=play-1"></script>
 <script src="js/webgl-tmd.js?v=play-1"></script>
 <script src="js/field-scene-view.js?v=play-1"></script>
-<script src="js/play-app.js?v=play-2"></script>
+<script src="js/play-app.js?v=play-3"></script>
 <script>
 (function () {
   'use strict';

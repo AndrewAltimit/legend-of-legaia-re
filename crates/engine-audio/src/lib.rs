@@ -22,6 +22,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context, Result, anyhow};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
+pub mod note_trace;
 pub mod seq_slots;
 pub mod sequencer;
 pub mod sfx;

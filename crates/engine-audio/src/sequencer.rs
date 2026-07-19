@@ -442,6 +442,7 @@ impl Sequencer {
         for note in self.active.drain(..) {
             if (note.voice as usize) < spu.voices.len() {
                 spu.voices[note.voice as usize].key_off();
+                spu.record_key_off(note.voice as usize);
             }
         }
     }
@@ -613,6 +614,7 @@ impl Sequencer {
             if n.channel == channel && n.key == key {
                 if (n.voice as usize) < spu.voices.len() {
                     spu.voices[n.voice as usize].key_off();
+                    spu.record_key_off(n.voice as usize);
                 }
                 self.active.swap_remove(idx);
             } else {
@@ -723,6 +725,7 @@ impl Sequencer {
             if let Some(v) = spu.voices.get_mut(winner) {
                 v.key_off();
             }
+            spu.record_key_off(winner);
         }
         // Post-allocation bookkeeping: age every voice, zero the winner's,
         // stamp the winner with the request's priority.

@@ -717,6 +717,16 @@ pub struct World {
     /// VM `start_motion`) run regardless of [`Self::animate_field_npcs`].
     pub field_npc_motions: std::collections::BTreeMap<u8, FieldNpcMotion>,
 
+    /// Per-NPC **ambient facing** channels, keyed by placement `slot`: the
+    /// second motion VM's idle turn-in-place behaviour (`FUN_80038158` ops
+    /// `0x04` / `0x0D`, ported at
+    /// [`legaia_engine_vm::ambient_motion::AmbientMotion`]). Seeded at scene
+    /// load from the MAN's tail-section-1 streams
+    /// ([`World::seed_field_npc_ambient`]) and stepped once per actor game
+    /// tick by [`World::tick_field_npc_ambient`]. Without it a standing town
+    /// NPC holds one heading forever where retail NPCs slowly look around.
+    pub field_npc_ambient: std::collections::BTreeMap<u8, FieldNpcAmbient>,
+
     /// Drive autonomous NPC patrol routes ([`Self::field_npc_routes`]) through
     /// the motion VM. Off by default (NPCs rest at their placement anchors,
     /// like the locomotion oracles expect); `play-window --live-npcs` enables
@@ -1336,6 +1346,18 @@ pub struct World {
     /// spans [`Self::frame_step`] vsyncs). Advanced by [`World::tick`] on the
     /// sim ticks that map to a retail vsync ([`Self::field_frame_step`]).
     pub clut_vsync_accum: u8,
+    /// Vsyncs accumulated toward the next **actor** game tick. Same clock as
+    /// [`Self::clut_vsync_accum`] and the same law - retail resolves one
+    /// `DAT_1F800393` per frame and runs the actor pool once per game tick,
+    /// so the per-actor physics / anim / motion passes fire once every
+    /// [`Self::frame_step`] vsyncs rather than once per rendered frame. The
+    /// tick that fires carries [`Self::frame_step`] into the dispatcher's
+    /// scalars ([`legaia_engine_vm::actor_tick::TickScalars::for_cadence`]),
+    /// which is what keeps wall-clock durations identical while the pose
+    /// sample rate drops.
+    ///
+    /// REF: FUN_80016B6C (cadence resolver), FUN_801D6704 (field floor = 2)
+    pub actor_vsync_accum: u8,
     /// Retail game ticks elapsed since the host last drained the scripted
     /// CLUT effects ([`World::step_clut_fx`] consumes these). Only
     /// accumulates while [`Self::clut_fx`] is non-empty, and saturates at a
@@ -2022,6 +2044,7 @@ impl World {
             field_npc_glide_speeds: std::collections::BTreeMap::new(),
             field_npc_default_moves: std::collections::BTreeMap::new(),
             field_npc_motions: std::collections::BTreeMap::new(),
+            field_npc_ambient: std::collections::BTreeMap::new(),
             animate_field_npcs: false,
             field_walk_touch: std::collections::BTreeMap::new(),
             field_walk_touch_records: std::collections::BTreeMap::new(),
@@ -2108,6 +2131,7 @@ impl World {
             // Field/town baseline; scene entry re-pins (`mapNN` -> 3).
             frame_step: 2,
             clut_vsync_accum: 0,
+            actor_vsync_accum: 0,
             clut_pending_game_ticks: 0,
             clut_fx: Vec::new(),
             pending_move_fx_cue: None,

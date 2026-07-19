@@ -1,0 +1,145 @@
+# Waivers for scripts/ci/check-ui-host-drift.py.
+#
+# Each entry records a shared `engine-ui` draw builder that one host reaches
+# and the other does not, plus WHY that is acceptable today. The checker
+# validates every waiver against the real source, in both directions:
+#
+#   * a builder that no longer exists          -> stale waiver, CI fails
+#   * a builder now wired on both hosts        -> stale waiver, CI fails
+#   * a `web_missing` waiver whose builder is
+#     no longer native-only                    -> wrong bucket, CI fails
+#   * an empty `reason`                        -> CI fails
+#
+# So this file cannot quietly become fiction: it only passes while it
+# describes the actual state of the two hosts. Closing a gap means deleting
+# the waiver, and CI tells you when you forgot.
+#
+# `kind` is one of:
+#   "web_missing" - native calls it, the browser play page does not
+#   "orphan"      - neither host calls it
+
+[[waiver]]
+builder = "battle_hud_draws_for"
+kind = "web_missing"
+reason = """
+The browser play page has no battle host at all: it never arms encounters
+(`step_encounters` is left off in `LegaiaRuntime::enter_field`) and exports no
+battle render, camera, or command-menu path. The HUD is the last piece to wire,
+not the first - it needs the battle scene, the actor pointer table, and the
+command/target sessions to exist first.
+"""
+
+[[waiver]]
+builder = "encounter_banner_draws_for"
+kind = "web_missing"
+reason = """
+Same root cause as the battle HUD: the page does not step encounters, so no
+formation is ever drawn. An ENCOUNTER! banner with no battle behind it would
+report a transition the page cannot perform.
+"""
+
+[[waiver]]
+builder = "dialog_box_draws_for"
+kind = "web_missing"
+reason = """
+This is the plain typewriter fallback the native window uses under
+`--simple-dialogue`. The browser page always runs the field-VM inline dialogue
+runner and draws the retail reading box (`crate::play_dialog`, built from
+`dialog_window_chrome_draws_for` + `text_draws_for`), so it has no use for the
+degraded path. Not a missing screen - a missing *fallback*.
+"""
+
+[[waiver]]
+builder = "dialog_panel_draws_for"
+kind = "web_missing"
+reason = """
+The native window's `OwnedDialogPanel` projection. The browser page builds its
+box from its own `DialogSnapshot` at the byte-pinned retail geometry
+(`crate::play_dialog::dialog_stage_layout`, REF FUN_801D84D0) because it also
+has to place the option picker and the two hand cursors. Same screen, both
+hosts; the shared builder covers only the native panel shape.
+"""
+
+[[waiver]]
+builder = "game_over_draws_for"
+kind = "web_missing"
+reason = """
+Unreachable on BOTH hosts, so there is nothing for the page to mirror: the
+native window declares `BootUiState::GameOver` but never constructs it (the
+variant carries `#[allow(dead_code)]`), and no party-wipe path routes into it.
+Wiring the browser side ahead of the native side would invent behaviour rather
+than close drift.
+"""
+
+[[waiver]]
+builder = "key_rebind_draws_for"
+kind = "web_missing"
+reason = """
+Native-only by design. The native window rebinds through a `legaia-input.toml`
+config file and an in-engine screen; the browser page's bindings are a JS
+keycode table (`site/js/play-app.js` PAD/BOOT_PAD) owned by the page, not the
+engine. A shared rebind screen would have to write a config the browser has no
+place to persist.
+"""
+
+[[waiver]]
+builder = "name_entry_draws_for"
+kind = "web_missing"
+reason = """
+The page deliberately drops the `town01` establishing timeline whose pinned
+op-0x49 opens name entry (`crate::runtime::tick_frame`), because a timeline
+suspended on an overlay the page cannot draw would freeze it. Closing this
+means wiring the overlay AND restoring the timeline together - the same
+catalog-plus-screen pairing the field shop needed.
+"""
+
+[[waiver]]
+builder = "name_entry_chrome_sprite_draws_for"
+kind = "web_missing"
+reason = """
+The chrome half of the name-entry overlay; blocked on exactly the same work as
+`name_entry_draws_for` and must land with it.
+"""
+
+[[waiver]]
+builder = "tactical_arts_editor_draws_for"
+kind = "web_missing"
+reason = """
+An engine extension with no retail pause-menu row on either host: retail's
+top-level menu is the 7 rows in `engine-core::field_menu`, and
+`FieldMenuSubsession::Arts` is documented as constructed directly rather than
+navigated to (`engine-core/src/field_menu_dispatch.rs:80`). The native window
+draws it because its match is exhaustive, not because a player can reach it.
+"""
+
+[[waiver]]
+builder = "title_menu_draws_for"
+kind = "web_missing"
+reason = """
+Not a gap - the page draws the *better* source. This builder emits NEW GAME /
+CONTINUE from the menu-glyph atlas, which the native window uses when the title
+art is absent; the browser page composites the real title-TIM bands instead
+(`crate::boot_title::title_band_sprites`, TITLE_BAND_MENU_NEW_GAME /
+TITLE_BAND_MENU_CONTINUE) and only falls back to `title_draws_for` text when
+PROT 0888 does not resolve.
+"""
+
+[[waiver]]
+builder = "sprite_draws_for"
+kind = "web_missing"
+reason = """
+A generic anchor-translate helper for `SpriteRequest` batches, not a screen.
+The browser page emits its quads through `crate::play_menu::quad_json` after
+`scale_stage_text_draws`, which already applies the stage transform this helper
+would duplicate.
+"""
+
+[[waiver]]
+builder = "ap_gauge_sprites"
+kind = "orphan"
+reason = """
+Built for the battle Arts AP gauge (see docs/subsystems/arts-command-gauge.md)
+ahead of its consumer; no host draws a gauge yet. Kept rather than deleted
+because the native battle HUD is the intended caller. If the battle HUD lands
+without it, delete the builder instead of re-waiving.
+"""

@@ -69,6 +69,7 @@
 
 pub mod actor_alloc;
 pub mod actor_tick;
+pub mod ambient_motion;
 pub mod anim_vm;
 pub mod battle_action;
 pub mod battle_camera;

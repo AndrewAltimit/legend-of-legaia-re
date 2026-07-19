@@ -196,6 +196,14 @@ impl PlayWindowApp {
             BattleCamPhase::Menu
         };
         let frames = world.field_frames;
+        // Retail rebuilds the submenu close-up from the acting actor's own
+        // record on every open (`FUN_801D5854` case 0), so the framing has
+        // to follow whoever owns the menu rather than staying pinned to the
+        // measured solo-Vahn pose. `party_slot` stands in for retail's
+        // `DAT_8007BD10[slot] - 1` character id, which keys the per-model
+        // camera height; facing and world position keep their defaults
+        // until the battle actor transform is exposed to the window.
+        let acting = world.battle_command.as_ref().map(|c| c.party_slot);
         // Entry snap: a battle that opens on dialogue starts in the held
         // close-up; anything else starts at the far menu framing (retail's
         // loading pose resolves there) and glides out to whichever menu
@@ -208,6 +216,12 @@ impl PlayWindowApp {
         let cam = self
             .battle_camera
             .get_or_insert_with(|| BattleCamera::new(entry, frames));
+        if let Some(char_id) = acting {
+            cam.set_actor(super::battle_cam::BattleCamActor {
+                char_id,
+                ..Default::default()
+            });
+        }
         cam.set_phase(phase);
         cam.advance_to(frames);
     }
