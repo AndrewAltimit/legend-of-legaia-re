@@ -221,14 +221,18 @@ pub(super) fn op_4c_n7<H: FieldHost>(
         let z1 = bytecode[operand + 4].wrapping_add(2);
         let mask = if has_mask { bytecode[operand + 5] } else { 0 };
         host.op4c_n7_tile_flag_bulk(sub, (x0, x1), (z0, z1), mask);
-        if has_mask {
-            StepResult::Advance {
-                next_pc: pc + header_size + 6,
-            }
-        } else {
-            StepResult::Yield {
-                resume_pc: pc + header_size + 5,
-            }
+        // All four paints CONTINUE in the same interpreter call: the masked
+        // subs (2/3) `return param_2 + 7`, and the no-mask subs (0/1) run the
+        // `801df8d8` tail - `addiu s8,s8,0x6` (pc += 6) then fall through to
+        // the shared continue label, NOT a slice exit (the apparent
+        // `FUN_801df8dc()` in the decomp is the intra-function label-call
+        // idiom). Modelling sub-0/1 as a Yield broke the retail install
+        // pre-run one op after the paint - the ropeway P1[30] NPC stayed
+        // parked because its `23 2A 70` seat two ops later never ran.
+        // Not modelled from that tail: the `FUN_8003cf04(actor_list,
+        // FUN_801dd9d4)` lookup whose hit gets `flags |= 8`.
+        StepResult::Advance {
+            next_pc: pc + header_size + if has_mask { 6 } else { 5 },
         }
     }
 }

@@ -122,16 +122,20 @@ fn op_4c_n6_unrecognized_halts_at_pc() {
 }
 
 #[test]
-fn op_4c_n7_sub_0_yields_at_next_pc() {
+fn op_4c_n7_sub_0_advances_at_next_pc() {
     // [4C, 0x70, col0=1, row0=2, col1=3, row1=4]. Sub-0 has no mask
-    // byte, so it is a 6-byte op (yield at pc+6). Columns
-    // [col0, col1+1) = [1, 4); rows [row0+1, row1+2) = [3, 6). The
-    // trailing 0xAA is the next op's first byte, not consumed here.
+    // byte, so it is a 6-byte op. Columns [col0, col1+1) = [1, 4);
+    // rows [row0+1, row1+2) = [3, 6). The trailing 0xAA is the next
+    // op's first byte, not consumed here. Retail CONTINUES in the
+    // same interpreter call after the paint (the `801df8d8` tail is
+    // `pc += 6` + fall-through, not a slice exit), so the step must
+    // Advance - a Yield here ended the install pre-run one op after
+    // the paint and left seat ops (`23 2A 70`) unexecuted.
     let bytecode = [0x4Cu8, 0x70, 1, 2, 3, 4, 0xAA];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Yield { resume_pc: 6 });
+    assert_eq!(r, StepResult::Advance { next_pc: 6 });
     assert_eq!(host.n7_tile_calls, vec![(0u8, (1u8, 4u8), (3u8, 6u8), 0u8)]);
 }
 
