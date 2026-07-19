@@ -944,9 +944,10 @@ mod camera_tests {
         let mut it = CutsceneCameraInterp::new();
         // Snap to beat A.
         it.glide([0.0, 0.0, 0.0], 0.0, 0.0, 512.0, TR0, 0, 1, 1);
-        // Beat B re-targets with apply 100: 25 ticks in = exactly 1/4 of the
-        // positional travel (linear), while the yaw (an angle) is ahead of
-        // linear on its quadratic ease-out.
+        // Beat B re-targets with apply 100: 25 frames in = exactly 1/4 of
+        // the travel on EVERY axis. Retail applies one curve to all ten -
+        // the angles are not a special case (`FUN_801DC0BC` re-reads the
+        // same curve word per axis).
         let (la, _, yaw, h, tr) = it.glide(
             [100.0, 0.0, 0.0],
             0.0,
@@ -964,10 +965,9 @@ mod camera_tests {
         );
         assert!((h - 640.0).abs() < 1e-3, "h linear mid-glide: {h}");
         assert!((tr[2] - 2900.0).abs() < 1e-3, "tr_eye linear: {}", tr[2]);
-        let quad = 1.0 - (1.0 - 0.25) * (1.0 - 0.25);
         assert!(
-            (yaw - quad).abs() < 1e-3,
-            "angle eases out: {yaw} vs {quad}"
+            (yaw - 0.25).abs() < 1e-3,
+            "the angle is linear under mode 1 too: {yaw}"
         );
         // The remaining 75 ticks arrive EXACTLY (no asymptote), and further
         // steps hold there.
@@ -1031,17 +1031,22 @@ mod camera_tests {
     #[test]
     fn cutscene_interp_mode4_eases_in_out() {
         // `45 13 ..` (mode 4): slow-fast-slow (opdeene's crater-rim tableau
-        // dolly starts near-still in the retail capture).
+        // dolly starts near-still in the retail capture). Retail builds it
+        // from a quad-IN half and a quad-OUT half meeting at the midpoint,
+        // NOT from smoothstep - so the first half is `2u^2`.
         let mut it = CutsceneCameraInterp::new();
         it.glide([0.0, 0.0, 0.0], 0.0, 0.0, 512.0, TR0, 0, 1, 1);
         let (la, _, _, _, _) = it.glide([100.0, 0.0, 0.0], 0.0, 0.0, 512.0, TR0, 100, 4, 10);
-        let smooth = 100.0 * (0.1f32 * 0.1 * (3.0 - 0.2));
+        let want = 100.0 * 2.0 * 0.1f32 * 0.1;
         assert!(
-            (la[0] - smooth).abs() < 1e-2,
-            "slow start: {} vs {smooth}",
+            (la[0] - want).abs() < 1e-2,
+            "slow start: {} vs {want}",
             la[0]
         );
         assert!(la[0] < 5.0, "ease-in start is near-still: {}", la[0]);
+        // The halves meet exactly at the midpoint of both time and travel.
+        let (la, _, _, _, _) = it.glide([100.0, 0.0, 0.0], 0.0, 0.0, 512.0, TR0, 100, 4, 40);
+        assert!((la[0] - 50.0).abs() < 1e-2, "midpoint: {}", la[0]);
     }
 
     #[test]
