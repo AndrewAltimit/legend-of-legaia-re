@@ -309,6 +309,7 @@ mod tests {
                 name: None,
                 mp: spell.mp,
                 target: byte_for(spell.target),
+                desc: None,
             };
             assert_eq!(
                 shape_to_target(e.target_shape()),

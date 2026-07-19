@@ -100,6 +100,7 @@ fn spell_menu_completes_heal_cast() {
             hp: 60,
             mp: 30,
             spells: vec![],
+            ..Default::default()
         },
         CasterSlot {
             slot: 1,
@@ -107,6 +108,7 @@ fn spell_menu_completes_heal_cast() {
             hp: 50,
             mp: 30,
             spells: vec![0x10],
+            ..Default::default()
         },
     ];
     let targets = vec![TargetRow {

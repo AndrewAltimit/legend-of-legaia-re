@@ -1196,6 +1196,13 @@ pub struct World {
     /// percent stat boosts inside [`World::seed_party_battle_stats`].
     pub accessory_passives: crate::accessory_passives::AccessoryPassives,
 
+    /// Disc-derived pause-menu text (item names + descriptions, spell
+    /// names / descriptions, accessory passive lines). `None` on a
+    /// PROT.DAT-only load; install via [`World::install_menu_text`] when
+    /// the executable is reachable. The Items / Magic pause screens read
+    /// it through [`crate::pause_screens`].
+    pub menu_text: Option<crate::pause_screens::MenuTextTables>,
+
     /// Party-global 4×u32 ability mask - the engine mirror of retail
     /// `DAT_80074358..0x80074368` (every member's `+0xF4` bitfield OR'd
     /// together each rebuild). Bit-tested via [`World::party_has_ability`]
@@ -2104,6 +2111,7 @@ impl World {
             field_shop_open: false,
             equipment_table: crate::battle_stats::EquipmentTable::new(),
             accessory_passives: Default::default(),
+            menu_text: None,
             party_ability_mask: [0; crate::accessory_passives::ABILITY_WORDS],
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
             active_scene_label: String::new(),

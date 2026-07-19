@@ -20,12 +20,26 @@ id*0xC`.
 | `+1` | u8 | sub-index within the class |
 | `+2` | u8 | target shape (see below) |
 | `+3` | u8 | **MP cost** |
-| `+4` | u8 | animation id |
+| `+4` | u8 | info-window **description index** (see below; `0` = none) |
 | `+5..+8` | - | padding (zero) |
 | `+8` | u32 | `name_ptr` - pointer to the display-name C-string |
 
 The display name string carries a leading MES colour-control prefix (`0xCE`,
 an element-colour byte, a space) before the ASCII name.
+
+### Description index (`+4`) and the `0x80075DB0` pointer table
+
+The pause menu's spell info window (`FUN_801D2E74`, menu overlay - see
+[`../subsystems/field-menu.md`](../subsystems/field-menu.md#magic-screen))
+resolves each spell's description by reading the `+4` byte and indexing a
+flat `u32 string_ptr[]` array at `0x80075DB0`; index `0` means "no
+description" (the internal enemy-attack tiers `0x00..=0x24` carry `0`).
+The strings use the MES `0x7C` line-break token; the retail shape for the
+player block is two lines - a title line then an effect line. (This byte
+was previously recorded as an "animation id"; the summon effect/animation
+is actually dispatched by `spell_id - 0x81` - see the summon section
+below - and the menu decompile pins `+4` as the description index.)
+Parser: `legaia_asset::spell_names` (`SpellEntry::desc`).
 
 ### Target shape (`+2`)
 

@@ -16,23 +16,49 @@
 use crate::input::PadButton;
 use crate::spells::{SpellCatalog, SpellEffect, SpellOutcome};
 
+/// Rows per page of the retail Magic-screen spell list (the capture-pinned
+/// list-page layout, shared with the Items list - see
+/// `docs/subsystems/field-menu.md`).
+pub const SPELL_LIST_PAGE_ROWS: usize = 12;
+
 /// Per-character roster row. Engines feed in the active party with each
 /// character's current MP / HP so the menu can grey out casters who are
 /// dead or out of MP for the cheapest spell.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CasterSlot {
     pub slot: u8,
     pub name: String,
     pub hp: u16,
     pub mp: u16,
+    /// Max HP (retail record `+0x104`; the HP/MP/AP pairs are (max, cur)
+    /// order - `legaia_save::HpMpSp`).
+    pub hp_max: u16,
+    /// Max MP (record `+0x108`) - the Magic screen's caster window draws
+    /// `cur / max` through the MP tier ink (`FUN_801D2C98`).
+    pub mp_max: u16,
+    /// Displayed level (record `+0x130`, [`legaia_save::CharacterRecord::magic_rank`]).
+    pub level: u8,
     /// Spell ids the caster has access to. Engines build this from the
     /// per-character `learned_spells` list.
     pub spells: Vec<u8>,
+    /// Learned spell level per entry of `spells` (record `+0x161` list,
+    /// parallel to `+0x13D` ids - the "Lv n" the spell info window shows).
+    /// May be empty (level defaults to 1).
+    pub spell_levels: Vec<u8>,
 }
 
 impl CasterSlot {
     pub fn alive(&self) -> bool {
         self.hp > 0
+    }
+
+    /// Learned level of the `idx`-th spell (1 when the level list is
+    /// absent / short - a freshly-learned spell is level 1).
+    pub fn spell_level(&self, idx: usize) -> u8 {
+        match self.spell_levels.get(idx).copied() {
+            Some(l) if l > 0 => l,
+            _ => 1,
+        }
     }
 }
 
@@ -308,9 +334,21 @@ impl SpellMenuSession {
                 let rows = self.current_spell_rows();
                 let n = rows.len();
                 let mut new_cursor = cursor;
-                if input.up || input.left {
+                if input.up {
                     new_cursor = Self::step(cursor, -1, n);
-                } else if input.down || input.right {
+                } else if input.down {
+                    new_cursor = Self::step(cursor, 1, n);
+                } else if n > SPELL_LIST_PAGE_ROWS {
+                    // Left/Right flip list pages (12 rows per page - the
+                    // retail list-page layout; clamped at the ends).
+                    if input.left {
+                        new_cursor = cursor.saturating_sub(SPELL_LIST_PAGE_ROWS as u8);
+                    } else if input.right {
+                        new_cursor = (cursor as usize + SPELL_LIST_PAGE_ROWS).min(n - 1) as u8;
+                    }
+                } else if input.left {
+                    new_cursor = Self::step(cursor, -1, n);
+                } else if input.right {
                     new_cursor = Self::step(cursor, 1, n);
                 }
                 if new_cursor != cursor {
@@ -453,6 +491,7 @@ mod tests {
                 hp: 60,
                 mp: 30,
                 spells: vec![],
+                ..Default::default()
             },
             CasterSlot {
                 slot: 1,
@@ -460,6 +499,7 @@ mod tests {
                 hp: 50,
                 mp: 30,
                 spells: vec![0x10, 0x40], // Heal (field-usable), Reseal (battle-only Capture)
+                ..Default::default()
             },
         ]
     }

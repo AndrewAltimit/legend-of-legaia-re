@@ -40,4 +40,20 @@ fn decodes_the_item_name_table_or_skips() {
 
     // id 0 is "no item" (empty slot).
     assert_eq!(table.name(0), None);
+
+    // The record `+8` word is the info-window description string
+    // (FUN_801D0F1C draws it at `WY + 0x10`). Structural checks only -
+    // the strings themselves are Sony text and stay uncommitted.
+    // (Many equipment ids share an empty/class-word slot, so coverage is
+    // partial by design - roughly the consumable/accessory span.)
+    let desc_count = (0..=255u8).filter(|id| table.desc(*id).is_some()).count();
+    assert!(
+        desc_count > 140,
+        "expected a broad described span, got {desc_count}"
+    );
+    // A consumable's description names the restore stat; an accessory's is
+    // its class word. Single line (no 0x7C break) for both.
+    let berry = table.desc(0x79).expect("Healing Berry described");
+    assert!(berry.contains("HP") && !berry.contains('\n'), "{berry:?}");
+    assert!(table.desc(0xF3).is_some(), "accessory described");
 }

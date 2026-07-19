@@ -558,6 +558,10 @@ impl BootSession {
         // where no spell XP accrues. Persists across New Game.
         if let Some(scus) = read_scus(&source) {
             host.world.install_magic_xp_thresholds(&scus);
+            // Pause-menu text: item names + info-window descriptions,
+            // spell names / descriptions, accessory passive lines. The
+            // Items / Magic pause screens resolve their strings here.
+            host.world.install_menu_text(&scus);
             // Install the randomizer's seru-trade config (the `--seru-trade`
             // blob in preserved rodata). No-op / disabled on a vanilla disc;
             // when present, vendors offer seru-for-seru trades. Persists across

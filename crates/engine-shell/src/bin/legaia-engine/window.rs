@@ -813,9 +813,17 @@ impl PlayWindowApp {
 /// Pinned content rects mirroring the disc descriptor table:
 /// `(descriptor id, (x, y, w, h))`.
 #[rustfmt::skip]
-const MENU_WINDOW_FALLBACK: [(usize, (i32, i32, i32, i32)); 15] = {
+const MENU_WINDOW_FALLBACK: [(usize, (i32, i32, i32, i32)); 23] = {
     use legaia_asset::menu_windows::window_ids as w;
     [
+        (w::TAB_ITEMS, (16, 12, 60, 12)),
+        (w::TAB_MAGIC, (16, 12, 60, 12)),
+        (w::ITEMS_COMMAND, (32, 44, 80, 38)),
+        (w::ITEMS_LIST, (174, 22, 132, 182)),
+        (w::ITEMS_INFO, (14, 108, 144, 40)),
+        (w::MAGIC_LIST, (174, 22, 132, 182)),
+        (w::MAGIC_CASTER, (14, 40, 144, 96)),
+        (w::MAGIC_INFO, (14, 152, 144, 52)),
         (w::TAB_EQUIP, (16, 12, 60, 12)),
         (w::TAB_STATUS, (12, 12, 60, 12)),
         (w::TAB_OPTIONS, (16, 12, 60, 12)),

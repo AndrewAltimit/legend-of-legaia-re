@@ -554,7 +554,10 @@ edge - marks further pages (`PAGE 1 / 6` in the capture).
 staged in `DAT_801E46B0`: the 2-digit bag count (CLUT 6) at
 `(WX+0x7C, WY)` (count re-resolved through the bag-slot scan
 `FUN_80042EE0`), then the shared item-info panel `FUN_801D0F1C`: name
-(CLUT 6) at `(WX, WY)`, description (CLUT 7) at `(WX, WY+0x10)`, and -
+(CLUT 6, the item-table `+4` pointer) at `(WX, WY)`, description (CLUT 7,
+the item-table `+8` pointer - see
+[`../formats/item-table.md`](../formats/item-table.md)) at
+`(WX, WY+0x10)`, and -
 for accessories - the passive-effect lines from the `0x8007625C` table
 at `(WX, WY+0x38)` (CLUT 4) and `(WX, WY+0x48)` (CLUT 7), plus a
 single/all-scope icon (`0x84`/`0x85`) at `WX+0x84`. A Point Card
@@ -564,6 +567,15 @@ always emits a second framed widget box `FUN_8002C69C(WX, WY+0x38,
 0x90, 0x28)` under its own window - the empty lower-left box of the
 capture; the passive / points lines land inside it. See
 `overlay_menu_801dcb60.txt` / `overlay_menu_801d0f1c.txt`.
+
+Engine port: `engine-ui::items_screen_draws_for` /
+`items_screen_sprites_for` (window contents + hand / page arrows at the
+pinned pens), fed by `engine-core::pause_screens` (`PauseItemsSession` -
+the command/list focus model over the item-use flow, real bag counts,
+page flip) with names / descriptions / accessory passive lines resolved
+from the executable via `pause_screens::MenuTextTables`
+(`World::install_menu_text`). Both hosts (play-window + the web play
+page) render this screen through the same builders.
 
 ## Magic screen
 
@@ -600,6 +612,14 @@ multi-line at the `0xE` pitch) from `(WX, WY+0xE)`; then "MP Used"
 the base cost `stats[+3]` run through the MP-cost kernel
 `FUN_80035394`, digits drawn in the same green. See
 `overlay_menu_801d2e74.txt`.
+
+Engine port: `engine-ui::magic_screen_draws_for` /
+`magic_screen_sprites_for`, fed by `engine-core::pause_screens::magic_screen_model`
+over the field spell-menu session (caster focus = `CharSelect`, list
+focus = `SpellSelect`; per-caster MP cur/max + learned levels from the
+character records, descriptions via `MenuTextTables` /
+`legaia_asset::spell_names`). The per-caster MP-cost kernel discount is
+not yet applied to the displayed cost (the catalog base cost draws).
 
 ## Dialog reading box (FUN_801D84D0)
 
