@@ -16,12 +16,15 @@ Both are distinct from the other three members of
 [actor VM](actor-vm.md), the [move VM](move-vm.md), and the
 [field VM](script-vm.md).
 
-**What catches people out: the two motion VMs are ported in two different crates.**
-`FUN_8003774C` is [`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs);
-`FUN_80038158` is
+**What catches people out: the two motion VMs are ported in three places.**
+`FUN_8003774C` is [`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs).
+`FUN_80038158` splits: its *static* decode (which stream binds to which
+placement, wander pace, default-move harvest) is
 [`legaia_engine_core::man_field_scripts::npc_motion`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs),
 because its bytecode arrives as MAN tail-section data rather than through the actor
-tick's own buffer.
+tick's own buffer; its *runtime facing channel* - the ambient idle turns of ops
+`0x04` and `0x0D`, plus the ramp scheduler they drive - is
+[`legaia_engine_vm::ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs).
 
 ## Bytecode layout
 
@@ -280,24 +283,130 @@ variants in table order).
 ### The ambient VM's own facing ops
 
 `FUN_80038158` writes `+0x26` from the same `0x80073F04` compass, under the
-same two laws:
+same two laws. Dispatch for both ramp ops is the 32-entry jump table at
+`0x80010FE8` indexed by `op - 1`.
 
 - **Snap.** The directional steps `0x03`/`0x19`/`0x20` and the wander/pad-echo
   ops set the heading from their operand's LUT index as they move.
-- **Ramp.** Op `0x04` `[04, b1, b2]` (body at `0x800385D0`) rotates to
-  `LUT[b1 & 7]` over `b2 & 0x7F` frames, stepping `arc / frames_remaining`
-  and snapping on the terminal frame - the `FUN_8003774C` ramp with a
-  **unit-per-tick cursor** (`+0x8B`) instead of the `_DAT_1F800393` scalar,
-  and with no shortest-arc choice: `b1 & 0x80` alone picks the direction. Op
-  `0x0D` `[0D, b1, b2, b3]` (body at `0x800386A4`) pre-unwraps the current
-  heading past the `0x1000` boundary in the chosen direction and then hands
-  `&actor+0x26` to the generic 16-bit tween channel for `b2 | b3 << 8`
-  frames, so the turn is a plain linear interpolation that crosses the wrap
-  correctly - the tween runs on the pre-unwrap value (raw headings above
-  `0x1000` observed live mid-turn) and only the endpoint lands in `0..0xFFF`.
-  Runtime census of the ambient turns in the town01 prologue: linear ramps
-  whose `arc / frames` rates quantise onto 32 / 64 / 128 units per frame
-  (the op-budget ladder), endpoints always compass points.
+- **Ramp.** Ops `0x04` and `0x0D`, below. Both aim at `LUT[b1 & 7]` and both
+  read the direction from `b1 & 0x80` (set = decreasing). Neither has a
+  shortest-arc override, so an authored turn can deliberately take the long
+  way round - unlike the `FUN_8003774C` `0x38` sibling, which opts into
+  shortest-path on `body0 & 0x80`. Because the LUT index is masked `& 7`,
+  these ops cannot reach the adjacent SCUS data that the sibling VM's
+  `& 0xF` index can.
+
+#### Op `0x04` `[04, b1, b2]` - the in-VM ramp
+
+Case body `0x8003859C`, arithmetic at `0x800385D0..0x800386A0`. Per tick:
+
+```text
+frames    = b2 & 0x7F                        ; frame budget
+remaining = frames - cursor                  ; cursor at actor +0x8B, u8
+target    = LUT[b1 & 7]
+cursor   += 1                                ; unit-per-tick
+if remaining == 0:                           ; terminal
+    heading = target                         ; exact snap
+    cursor  = 0 ; pc += 3 ; next op runs THIS tick
+else:
+    arc      = (target - heading) mod 0x1000 ; or (heading - target)
+    heading += arc / remaining               ; or -=, raw u16 wrapping
+    yield
+```
+
+The **cursor is unit-per-tick** (`addiu a0, a0, 1`), *not*
+`_DAT_1F800393`-scaled the way the `FUN_8003774C` ramps are, so a budget of
+24 is 24 stepping ticks at any frame scalar. The leg therefore always runs
+`(b2 & 0x7F) + 1` ticks: the budget in stepping ticks plus one terminal
+tick, and that terminal tick does **not** consume the frame (retail never
+increments the did-work counter `s8` on that arm), so the snap and the
+following op execute together.
+
+Each tick also reloads the actor's requested-move / anim pair
+(`+0x88`/`+0x5C`) from the per-actor default-move record while it is set -
+the same `0x801C6470` table op `0x17` writes.
+
+#### Op `0x0D` `[0D, b1, b2, b3]` - pre-unwrap + tween
+
+Case body `0x800386A4..0x80038828`. This op never moves the heading itself.
+On its first tick it pre-unwraps the live heading past the `0x1000` boundary
+so that a plain linear interpolation travels the authored way, then hands
+`&actor+0x26` to the generic ramp scheduler (an inlined `FUN_8003C5F0`):
+
+```text
+cursor16 = actor+0x8B | actor+0xB7 << 8
+if cursor16 == 0:                                     ; install tick, once
+    target = LUT[b1 & 7]
+    if b1 & 0x80:  if heading < target: heading += 0x1000   ; go decreasing
+    else:          if target < heading: heading -= 0x1000   ; go increasing
+    install ramp { dest=&heading, start=heading, end=target,
+                   total=(s16)(b2 | b3 << 8), kind=2 }
+if cursor16 >= (s16)(b2 | b3 << 8):                   ; terminal
+    cursor16 = 0 ; pc += 4 ; next op runs THIS tick
+else:
+    cursor16 += _DAT_1F800393 ; yield
+```
+
+`0x0D`'s wait cursor **is** frame-scalar-driven - the opposite of `0x04`'s -
+and that is what keeps it in lockstep with the scheduler, which decrements
+its own countdown by the same scalar. Op and ramp retire together; the op
+outlives its ramp by exactly one tick, so the leg runs
+`ceil(duration / speed) + 1` ticks. A `duration` of `0` is an instant
+compass write.
+
+#### Masking
+
+Neither op normalises the heading per tick. `0x04`'s write-back is raw `u16`
+wrapping, so a decreasing ramp through zero holds `0xFFxx` for its whole run.
+`0x0D` goes further: the pre-unwrap deliberately parks the heading *outside*
+`0..0xFFF` (up to `0x1FFF`, or negative stored as `0xFxxx`) and the scheduler
+interpolates on that raw value, so raw headings above `0x1000` are observable
+live mid-turn. Only the endpoint lands back in range, written as the LUT
+entry verbatim. Renderers consume `+0x26 & 0xFFF`, so none of this shows on
+screen - but a port that masks per tick diverges from the traced `+0x26` on
+every wrap-crossing turn. The arc measurement inside `0x04` *is* taken mod
+`0x1000`, which is why a raw out-of-range heading still feeds back correctly.
+
+#### The generic ramp scheduler
+
+`FUN_80036D80` walks the 64-slot pool at `0x801C66A0` (stride `0x20`; slot 0
+is the intrusive list header, leaving 63 allocatable) once per frame:
+
+```text
+remaining -= _DAT_1F800393
+if remaining <= 0:  value = end ; free the slot
+else:               value = end + (start - end) * remaining / total
+store value to *dest, width per kind (1=u8, 2=u16, 3=packed RGB, 4=u32)
+```
+
+The divide truncates toward zero (MIPS `div`) and `total` is never
+rewritten, so this is a straight lerp off the install-time endpoints rather
+than an incremental accumulation. The heading channel is `kind == 2` (`sh`).
+A slot whose owning actor has `+0x10 & 8` set is freed unticked; an install
+with no free slot bumps the `DAT_80073ED0` overflow counter and is dropped.
+Installers are `FUN_8003C5F0` and this op's inlined copy; the pool is reset
+by `FUN_8003CDA8` at scene entry.
+
+#### Clean-room port
+
+[`legaia_engine_vm::ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs)
+executes both ops plus the `0x05` wait and the `0x01` restart, and carries
+the scheduler as `RampScheduler`. Ops it does not model are stepped over by
+`legaia_asset::man_motion::op_width` without consuming the tick, so the
+module drives the **facing channel** of a stream whose walking is driven
+elsewhere; a per-tick op budget stops a stream whose real yield op is one of
+the stepped-over ones from spinning. The pool is ticked in slot order rather
+than through retail's linked list - observable only if two live ramps shared
+a destination, which one actor's heading channel cannot do.
+
+Disc oracle:
+[`crates/engine-vm/tests/ambient_motion_disc_oracle.rs`](../../crates/engine-vm/tests/ambient_motion_disc_oracle.rs)
+re-derives the disc-wide census (every scene bundle's MAN → tail-section 1 →
+every record → every gated variant → every `0x04`/`0x0D` site) and replays
+each site from four start headings at three frame scalars, asserting the
+compass endpoint, the scalar-invariant `0x04` cadence, the scalar-driven
+`0x0D` cadence, the swept arc equalling the authored (not complementary)
+arc, and the raw out-of-range hold on every wrap-crossing leg.
 
 ### Op `0x17` - the per-actor default-move table
 
@@ -338,6 +447,9 @@ Disc-gated anchor test: `crates/engine-core/tests/motion_flag_census_disc.rs`.
 - [`ghidra/scripts/funcs/8003774c.txt`](../../ghidra/scripts/funcs/8003774c.txt) - full disassembly + decompilation.
 - [`ghidra/scripts/funcs/80038158.txt`](../../ghidra/scripts/funcs/80038158.txt) - the second VM's interpreter.
 - [`ghidra/scripts/funcs/8003a9d4.txt`](../../ghidra/scripts/funcs/8003a9d4.txt) - motion-script installer (record chain + actor binding).
+- [`ghidra/scripts/funcs/8003c5f0.txt`](../../ghidra/scripts/funcs/8003c5f0.txt) - the ramp-scheduler installer op `0x0D` inlines.
+- The scheduler tick `FUN_80036D80` and the pool reset `FUN_8003CDA8` have no
+  standalone dump; both are plain `SCUS_942.54` bodies at those addresses.
 
 ## See also
 

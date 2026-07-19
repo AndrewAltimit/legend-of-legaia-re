@@ -1373,6 +1373,7 @@ dependencies = [
  "legaia-anm",
  "legaia-art",
  "legaia-asset",
+ "legaia-lzs",
  "legaia-prot",
  "libc",
  "serde_json",

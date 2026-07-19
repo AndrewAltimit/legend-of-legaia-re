@@ -29,3 +29,6 @@ libc = "0.2"
 # The camera-mover recomp oracle parses the external frame-tagged JSONL
 # captures (env-gated via LEGAIA_RECOMP_TRACE_DIR; never committed).
 serde_json.workspace = true
+# The ambient-motion disc oracle LZS-decodes each scene bundle's MAN to
+# re-derive the facing-op census (disc-gated; no bytes committed).
+legaia-lzs = { path = "../lzs" }
