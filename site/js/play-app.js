@@ -811,6 +811,43 @@
       try { return rt.play_menu_is_open(); } catch (e) { return false; }
     }
 
+    /* Drive the opening name-entry overlay from this frame's just-pressed edges.
+     *
+     * Like the field shop this has no open/close key of its own: the `town01`
+     * establishing timeline's pinned op-0x49 opens it and the SM's own Select ->
+     * "Is this name okay?" -> Yes closes it, at which point the engine writes the
+     * name into the party record and the suspended opening script resumes. So
+     * there is nothing to toggle - just forward edges while it is up.
+     *
+     * One tick per frame is right: the overlay steps exactly one cell / glyph per
+     * press, and the only frame-counted thing on it (the caret blink) is advanced
+     * inside `name_entry_input` because the field tick is frozen under it.
+     *
+     * Returns `true` while the overlay is up, so `_frame` freezes the field -
+     * the naming prompt is modal, as it is natively. */
+    _updateNameEntry() {
+      const rt = this.rt;
+      if (typeof rt.name_entry_is_active !== 'function') return false;
+      let open;
+      try { open = rt.name_entry_is_active(); } catch (e) { return false; }
+      if (!open) return false;
+      this._ensureMenuBlitters();
+      let edge = 0;
+      for (const k of this.pulse) edge |= (PAD[k] || 0);
+      let committed = false;
+      try { committed = rt.name_entry_input(edge); } catch (e) {}
+      if (committed && typeof this.opts.onNamed === 'function') {
+        let name = '';
+        try { name = rt.party_display_name(0); } catch (e) {}
+        this.opts.onNamed(name);
+      }
+      /* The overlay owns every edge while it is up - clear them so none leak
+       * into the frozen field on the next tick. */
+      this.pulse.clear();
+      this._repack();
+      try { return rt.name_entry_is_active(); } catch (e) { return false; }
+    }
+
     /* Drive an open field shop from this frame's just-pressed edges.
      *
      * Unlike the pause menu this has no open/close key: the field VM opens it
@@ -922,6 +959,25 @@
         if (this._menuFont) this._menuFont.blit(ctx, draws.texts);
         return;
       }
+      /* Opening name-entry overlay (`town01`'s naming prompt). Modal, so it is
+       * checked before the shop / dialog layers - but like them it composites
+       * over the live scene rather than blacking it: retail draws the grid and
+       * name-field windows over the frozen establishing shot. */
+      let naming = null;
+      if (typeof this.rt.name_entry_draws_json === 'function') {
+        try { naming = JSON.parse(this.rt.name_entry_draws_json(ov.width, ov.height)); }
+        catch (e) { naming = null; }
+      }
+      if (naming && naming.open) {
+        this._ensureMenuBlitters();
+        ctx.clearRect(0, 0, ov.width, ov.height);
+        if (this._menuChrome) this._menuChrome.blit(ctx, naming.sprites);
+        if (this._menuFont) this._menuFont.blit(ctx, naming.texts);
+        this._overlayActive = true;
+        this.dialogOnCanvas = false;
+        return;
+      }
+
       /* Field merchant panel + post-action banners (level-up, Seru capture).
        * Same builders as the native window (`shop_draws_for`,
        * `level_up_draws_for`, `capture_banner_draws_for`); like the dialog box
@@ -1071,8 +1127,11 @@
       /* Field merchant (field-VM op 0x49 sub-0). The shop suspends the script
        * on the engine side, so the field must not advance under it either. */
       const shopOpen = menuOpen ? false : this._updateFieldShop();
+      /* Opening name-entry prompt (the `town01` timeline's op 0x49). Suspends
+       * the script the same way, and is modal over everything else. */
+      const namingOpen = (menuOpen || shopOpen) ? false : this._updateNameEntry();
 
-      if (advance && !menuOpen && !shopOpen) {
+      if (advance && !menuOpen && !shopOpen && !namingOpen) {
         /* Run the engine at a fixed 60 Hz regardless of the display refresh
          * (see the `_simAccum` note in the constructor). `Step 1 frame` forces
          * exactly one tick; free play consumes the real elapsed time. */

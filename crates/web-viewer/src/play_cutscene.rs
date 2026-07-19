@@ -22,11 +22,6 @@
 //! - The page has no STR/MDEC playback on the play path, so an FMV the
 //!   timeline triggers is auto-finished ([`LegaiaRuntime::tick_frame`] calls
 //!   `finish_cutscene` when `SceneMode::Cutscene` arms with an FMV pending).
-//! - The `town01` opening timeline (establishing sweep + the name-entry
-//!   overlay it opens at its op-`0x49`) is not run: the browser has no
-//!   name-entry surface yet, and a timeline waiting on it would freeze the
-//!   page. Arrival at `town01` - by skip or natural chain end - lands in
-//!   normal free-roam play.
 //! - The cutscene camera the page builds from
 //!   [`LegaiaRuntime::play_cutscene_camera_json`] is the retail op-`0x45`
 //!   param decode (focus / pitch / yaw / H / eye trio - the native
@@ -151,20 +146,17 @@ impl LegaiaRuntime {
     /// the whole remaining opening to `town01`. Returns the target scene
     /// label once (the page then enters it), else `""`.
     ///
-    /// Browser note: the engine-side handoff marks the upcoming `town01`
-    /// entry as the new-game opening (installing the establishing-sweep
-    /// timeline, which opens the name-entry overlay); the browser has no
-    /// name-entry surface, so that mark is cleared here and `town01` starts
-    /// in normal free-roam play.
+    /// The engine-side handoff marks the upcoming `town01` entry as the
+    /// new-game opening, which installs the establishing-sweep timeline whose
+    /// pinned op-`0x49` opens the name-entry overlay. That mark is kept: the
+    /// page draws the overlay ([`crate::play_name_entry`]), so the skip lands
+    /// in the same naming prompt the native window reaches.
     pub fn play_take_prologue_handoff(&mut self, confirm: bool) -> String {
         let Some(h) = self.scene_host.as_mut() else {
             return String::new();
         };
         match h.world.take_prologue_handoff(confirm) {
-            Some(target) => {
-                h.world.entering_town01_opening = false;
-                target.to_string()
-            }
+            Some(target) => target.to_string(),
             None => String::new(),
         }
     }

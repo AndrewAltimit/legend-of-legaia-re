@@ -83,25 +83,6 @@ place to persist.
 """
 
 [[waiver]]
-builder = "name_entry_draws_for"
-kind = "web_missing"
-reason = """
-The page deliberately drops the `town01` establishing timeline whose pinned
-op-0x49 opens name entry (`crate::runtime::tick_frame`), because a timeline
-suspended on an overlay the page cannot draw would freeze it. Closing this
-means wiring the overlay AND restoring the timeline together - the same
-catalog-plus-screen pairing the field shop needed.
-"""
-
-[[waiver]]
-builder = "name_entry_chrome_sprite_draws_for"
-kind = "web_missing"
-reason = """
-The chrome half of the name-entry overlay; blocked on exactly the same work as
-`name_entry_draws_for` and must land with it.
-"""
-
-[[waiver]]
 builder = "tactical_arts_editor_draws_for"
 kind = "web_missing"
 reason = """
@@ -110,18 +91,6 @@ top-level menu is the 7 rows in `engine-core::field_menu`, and
 `FieldMenuSubsession::Arts` is documented as constructed directly rather than
 navigated to (`engine-core/src/field_menu_dispatch.rs:80`). The native window
 draws it because its match is exhaustive, not because a player can reach it.
-"""
-
-[[waiver]]
-builder = "title_menu_draws_for"
-kind = "web_missing"
-reason = """
-Not a gap - the page draws the *better* source. This builder emits NEW GAME /
-CONTINUE from the menu-glyph atlas, which the native window uses when the title
-art is absent; the browser page composites the real title-TIM bands instead
-(`crate::boot_title::title_band_sprites`, TITLE_BAND_MENU_NEW_GAME /
-TITLE_BAND_MENU_CONTINUE) and only falls back to `title_draws_for` text when
-PROT 0888 does not resolve.
 """
 
 [[waiver]]

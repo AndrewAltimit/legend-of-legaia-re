@@ -2363,7 +2363,17 @@ export class LegaiaRuntime {
     /**
      * Draw lists for the current title state, in surface pixels:
      * `{ "active": true, "sprites": [...title-atlas quads...],
+     *    "glyphs": [...menu-glyph-atlas quads...],
      *    "texts": [...font quads...] }`. Rendered over black by the page.
+     *
+     * The three layers are mutually exclusive by design, and the split
+     * mirrors the native window exactly. With the disc's title art present
+     * the TIM's own NEW GAME / CONTINUE bands carry the menu (`sprites`).
+     * Without it the rows fall back to the shared
+     * [`ui::title_menu_draws_for`] builder sampling the menu-glyph atlas
+     * (`glyphs`) - the same fallback the native window's
+     * `title_menu_glyph_sprite_draws` serves - and only if that atlas is
+     * missing too does the font stand-in (`texts`) draw.
      * @param {number} surface_w
      * @param {number} surface_h
      * @returns {string}
@@ -2379,6 +2389,27 @@ export class LegaiaRuntime {
         } finally {
             wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
         }
+    }
+    /**
+     * `[width, height]` of the menu-glyph atlas; `[0, 0]` when none.
+     * @returns {Uint32Array}
+     */
+    boot_title_glyph_atlas_dims() {
+        const ret = wasm.legaiaruntime_boot_title_glyph_atlas_dims(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * The menu-glyph atlas (RGBA8 stencil) the no-title-art menu rows
+     * sample. Empty when it did not resolve.
+     * @returns {Uint8Array}
+     */
+    boot_title_glyph_atlas_rgba() {
+        const ret = wasm.legaiaruntime_boot_title_glyph_atlas_rgba(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
     }
     /**
      * `true` once the disc title art resolved (else the card renders text-only).
@@ -3010,6 +3041,86 @@ export class LegaiaRuntime {
         const ret = wasm.legaiaruntime_menu_tick(this.__wbg_ptr, button_mask);
         return ret;
     }
+    /**
+     * Draw lists for the overlay, in surface pixels:
+     * `{ "open": bool, "sprites": [...menu-chrome quads...],
+     *    "texts": [...dialog-font quads...] }` - the same two-layer shape
+     * the pause menu / shop / dialog use, blitted by the page's chrome and
+     * font atlas blitters.
+     *
+     * Both layers come from the shared `engine-ui` builders at the
+     * retail-traced stage geometry, then through the common stage transform
+     * so text and chrome stay locked together.
+     * @param {number} surface_w
+     * @param {number} surface_h
+     * @returns {string}
+     */
+    name_entry_draws_json(surface_w, surface_h) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_name_entry_draws_json(this.__wbg_ptr, surface_w, surface_h);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Step the overlay one frame from an edge-triggered PSX pad word (same
+     * bit layout as [`Self::set_pad`]). Cross confirms the cell under the
+     * cursor (or the Yes/No row); Triangle is the backspace shortcut while
+     * editing and cancels the confirm prompt.
+     *
+     * Returns `true` on the frame the name commits - at which point the
+     * entry closes, the name is in the party record, and the op-`0x49` gate
+     * releases the suspended opening script on its next step.
+     *
+     * The world frame counter is advanced here (and only here) while the
+     * overlay is up, because the field tick is frozen under it and the
+     * caret blink is derived from that counter.
+     * @param {number} edge
+     * @returns {boolean}
+     */
+    name_entry_input(edge) {
+        const ret = wasm.legaiaruntime_name_entry_input(this.__wbg_ptr, edge);
+        return ret !== 0;
+    }
+    /**
+     * `true` while the name-entry overlay is up. The page freezes the field
+     * and routes every pad edge into [`Self::name_entry_input`] while this
+     * holds - the overlay is modal, exactly as it is natively.
+     * @returns {boolean}
+     */
+    name_entry_is_active() {
+        const ret = wasm.legaiaruntime_name_entry_is_active(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Live overlay state for the page's status line (and headless checks):
+     * ```text
+     * { "open": true, "name": "Vahn", "default": "Vahn", "cursor": 116,
+     *   "control": 2,        // 0 = BS, 1 = restore default, 2 = Select
+     *   "glyph": "A"|null,   // glyph under a grid cursor
+     *   "confirming": false, "confirm_yes": false }
+     * ```
+     * `{"open":false}` when no entry is up. A read-only projection of the
+     * engine SM - the page never writes name state, it only reports it.
+     * @returns {string}
+     */
+    name_entry_state_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_name_entry_state_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
     constructor() {
         const ret = wasm.legaiaruntime_new();
         this.__wbg_ptr = ret;
@@ -3022,6 +3133,26 @@ export class LegaiaRuntime {
      */
     open_menu() {
         wasm.legaiaruntime_open_menu(this.__wbg_ptr);
+    }
+    /**
+     * The committed display name for a party slot - the name-entry result
+     * once confirmed, else the disc's new-game template default. The page
+     * shows it in the HUD so the naming is visibly *in the save*, not just
+     * on a screen that came and went.
+     * @param {number} slot
+     * @returns {string}
+     */
+    party_display_name(slot) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_party_display_name(this.__wbg_ptr, slot);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
     }
     /**
      * Camera parameters for the cutscene shot, decoded from the timeline's
@@ -3489,11 +3620,11 @@ export class LegaiaRuntime {
      * the whole remaining opening to `town01`. Returns the target scene
      * label once (the page then enters it), else `""`.
      *
-     * Browser note: the engine-side handoff marks the upcoming `town01`
-     * entry as the new-game opening (installing the establishing-sweep
-     * timeline, which opens the name-entry overlay); the browser has no
-     * name-entry surface, so that mark is cleared here and `town01` starts
-     * in normal free-roam play.
+     * The engine-side handoff marks the upcoming `town01` entry as the
+     * new-game opening, which installs the establishing-sweep timeline whose
+     * pinned op-`0x49` opens the name-entry overlay. That mark is kept: the
+     * page draws the overlay ([`crate::play_name_entry`]), so the skip lands
+     * in the same naming prompt the native window reaches.
      * @param {boolean} confirm
      * @returns {string}
      */
@@ -6741,7 +6872,7 @@ function __wbg_get_imports() {
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
             // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 114, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23);
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__hc20c1a455dcd1273);
             return ret;
         },
         __wbindgen_cast_0000000000000002: function(arg0) {
@@ -6771,8 +6902,8 @@ function __wbg_get_imports() {
 }
 
 const lAudioContext = (typeof AudioContext !== 'undefined' ? AudioContext : (typeof webkitAudioContext !== 'undefined' ? webkitAudioContext : undefined));
-function wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23(arg0, arg1, arg2) {
-    wasm.wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23(arg0, arg1, arg2);
+function wasm_bindgen__convert__closures_____invoke__hc20c1a455dcd1273(arg0, arg1, arg2) {
+    wasm.wasm_bindgen__convert__closures_____invoke__hc20c1a455dcd1273(arg0, arg1, arg2);
 }
 
 const LegaiaArtsFinalization = (typeof FinalizationRegistry === 'undefined')

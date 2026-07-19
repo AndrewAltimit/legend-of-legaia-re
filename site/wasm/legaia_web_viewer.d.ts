@@ -1174,9 +1174,28 @@ export class LegaiaRuntime {
     /**
      * Draw lists for the current title state, in surface pixels:
      * `{ "active": true, "sprites": [...title-atlas quads...],
+     *    "glyphs": [...menu-glyph-atlas quads...],
      *    "texts": [...font quads...] }`. Rendered over black by the page.
+     *
+     * The three layers are mutually exclusive by design, and the split
+     * mirrors the native window exactly. With the disc's title art present
+     * the TIM's own NEW GAME / CONTINUE bands carry the menu (`sprites`).
+     * Without it the rows fall back to the shared
+     * [`ui::title_menu_draws_for`] builder sampling the menu-glyph atlas
+     * (`glyphs`) - the same fallback the native window's
+     * `title_menu_glyph_sprite_draws` serves - and only if that atlas is
+     * missing too does the font stand-in (`texts`) draw.
      */
     boot_title_draws_json(surface_w: number, surface_h: number): string;
+    /**
+     * `[width, height]` of the menu-glyph atlas; `[0, 0]` when none.
+     */
+    boot_title_glyph_atlas_dims(): Uint32Array;
+    /**
+     * The menu-glyph atlas (RGBA8 stencil) the no-title-art menu rows
+     * sample. Empty when it did not resolve.
+     */
+    boot_title_glyph_atlas_rgba(): Uint8Array;
     /**
      * `true` once the disc title art resolved (else the card renders text-only).
      */
@@ -1406,12 +1425,64 @@ export class LegaiaRuntime {
      * left<<6 | right<<7`).
      */
     menu_tick(button_mask: number): any;
+    /**
+     * Draw lists for the overlay, in surface pixels:
+     * `{ "open": bool, "sprites": [...menu-chrome quads...],
+     *    "texts": [...dialog-font quads...] }` - the same two-layer shape
+     * the pause menu / shop / dialog use, blitted by the page's chrome and
+     * font atlas blitters.
+     *
+     * Both layers come from the shared `engine-ui` builders at the
+     * retail-traced stage geometry, then through the common stage transform
+     * so text and chrome stay locked together.
+     */
+    name_entry_draws_json(surface_w: number, surface_h: number): string;
+    /**
+     * Step the overlay one frame from an edge-triggered PSX pad word (same
+     * bit layout as [`Self::set_pad`]). Cross confirms the cell under the
+     * cursor (or the Yes/No row); Triangle is the backspace shortcut while
+     * editing and cancels the confirm prompt.
+     *
+     * Returns `true` on the frame the name commits - at which point the
+     * entry closes, the name is in the party record, and the op-`0x49` gate
+     * releases the suspended opening script on its next step.
+     *
+     * The world frame counter is advanced here (and only here) while the
+     * overlay is up, because the field tick is frozen under it and the
+     * caret blink is derived from that counter.
+     */
+    name_entry_input(edge: number): boolean;
+    /**
+     * `true` while the name-entry overlay is up. The page freezes the field
+     * and routes every pad edge into [`Self::name_entry_input`] while this
+     * holds - the overlay is modal, exactly as it is natively.
+     */
+    name_entry_is_active(): boolean;
+    /**
+     * Live overlay state for the page's status line (and headless checks):
+     * ```text
+     * { "open": true, "name": "Vahn", "default": "Vahn", "cursor": 116,
+     *   "control": 2,        // 0 = BS, 1 = restore default, 2 = Select
+     *   "glyph": "A"|null,   // glyph under a grid cursor
+     *   "confirming": false, "confirm_yes": false }
+     * ```
+     * `{"open":false}` when no entry is up. A read-only projection of the
+     * engine SM - the page never writes name state, it only reports it.
+     */
+    name_entry_state_json(): string;
     constructor();
     /**
      * Open the disc-free scaffold menu (the headless [`MenuRuntime`] - the
      * retail pause menu's screens are a native-only draw path today).
      */
     open_menu(): void;
+    /**
+     * The committed display name for a party slot - the name-entry result
+     * once confirmed, else the disc's new-game template default. The page
+     * shows it in the HUD so the naming is visibly *in the save*, not just
+     * on a screen that came and went.
+     */
+    party_display_name(slot: number): string;
     /**
      * Camera parameters for the cutscene shot, decoded from the timeline's
      * executed op-`0x45` Camera Configure params - the browser mirror of
@@ -1639,11 +1710,11 @@ export class LegaiaRuntime {
      * the whole remaining opening to `town01`. Returns the target scene
      * label once (the page then enters it), else `""`.
      *
-     * Browser note: the engine-side handoff marks the upcoming `town01`
-     * entry as the new-game opening (installing the establishing-sweep
-     * timeline, which opens the name-entry overlay); the browser has no
-     * name-entry surface, so that mark is cleared here and `town01` starts
-     * in normal free-roam play.
+     * The engine-side handoff marks the upcoming `town01` entry as the
+     * new-game opening, which installs the establishing-sweep timeline whose
+     * pinned op-`0x49` opens the name-entry overlay. That mark is kept: the
+     * page draws the overlay ([`crate::play_name_entry`]), so the skip lands
+     * in the same naming prompt the native window reaches.
      */
     play_take_prologue_handoff(confirm: boolean): string;
     /**
@@ -3186,6 +3257,8 @@ export interface InitOutput {
     readonly legaiaruntime_boot_title_atlas_rgba: (a: number) => [number, number];
     readonly legaiaruntime_boot_title_close: (a: number) => void;
     readonly legaiaruntime_boot_title_draws_json: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaruntime_boot_title_glyph_atlas_dims: (a: number) => [number, number];
+    readonly legaiaruntime_boot_title_glyph_atlas_rgba: (a: number) => [number, number];
     readonly legaiaruntime_boot_title_has_atlas: (a: number) => number;
     readonly legaiaruntime_boot_title_is_active: (a: number) => number;
     readonly legaiaruntime_boot_title_start: (a: number) => void;
@@ -3232,8 +3305,13 @@ export interface InitOutput {
     readonly legaiaruntime_menu_is_open: (a: number) => number;
     readonly legaiaruntime_menu_label: (a: number) => [number, number];
     readonly legaiaruntime_menu_tick: (a: number, b: number) => any;
+    readonly legaiaruntime_name_entry_draws_json: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaruntime_name_entry_input: (a: number, b: number) => number;
+    readonly legaiaruntime_name_entry_is_active: (a: number) => number;
+    readonly legaiaruntime_name_entry_state_json: (a: number) => [number, number];
     readonly legaiaruntime_new: () => number;
     readonly legaiaruntime_open_menu: (a: number) => void;
+    readonly legaiaruntime_party_display_name: (a: number, b: number) => [number, number];
     readonly legaiaruntime_play_cutscene_camera_json: (a: number) => [number, number];
     readonly legaiaruntime_play_cutscene_state_json: (a: number) => [number, number];
     readonly legaiaruntime_play_cutscene_text_draws_json: (a: number, b: number, c: number) => [number, number];
@@ -3452,7 +3530,7 @@ export interface InitOutput {
     readonly legaiaminigames_dance_bgm_rate: (a: number) => number;
     readonly legaiaminigames_minigame_bgm_rate: (a: number) => number;
     readonly legaiasfx_sample_rate: (a: number) => number;
-    readonly wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen__convert__closures_____invoke__hc20c1a455dcd1273: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;
