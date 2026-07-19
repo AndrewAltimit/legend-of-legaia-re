@@ -618,8 +618,10 @@ Engine port: `engine-ui::magic_screen_draws_for` /
 over the field spell-menu session (caster focus = `CharSelect`, list
 focus = `SpellSelect`; per-caster MP cur/max + learned levels from the
 character records, descriptions via `MenuTextTables` /
-`legaia_asset::spell_names`). The per-caster MP-cost kernel discount is
-not yet applied to the displayed cost (the catalog base cost draws).
+`legaia_asset::spell_names`). The per-caster MP-cost kernel discount
+(`FUN_80035394`: the `+0xF4` ability word's Half bit `0x20` shaves 50%,
+Quarter bit `0x10` shaves 25%, Half winning when both are set) is applied to
+the displayed cost, matching the retail info window and the battle cast path.
 
 ## Dialog reading box (FUN_801D84D0)
 

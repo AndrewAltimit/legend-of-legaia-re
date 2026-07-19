@@ -943,6 +943,17 @@ entry), via the host's `open_dialog` primitive. `0x3F` is now a **live named
 scene-change** (`host.scene_transition_named` → `SceneHost::tick`), no longer a
 dialog opener. The dialog-dismiss gate stays on the `0x4C` nibble-5 sub-4 poll.
 
+**Option-choice effects run to completion.** A MES-embedded option picker's
+confirm advances the PC to `Picker::jump_target(choice)` and keeps stepping, so
+the chosen option's branch reaches its scripted effect. Two refinements keep the
+branch faithful: `step_inline_dialogue` resumes across an `0x4A WAIT_FRAMES` halt
+(it persists the wait PC and resumes on the next tick rather than ending the
+conversation), so effects scripted behind a wait execute - the Rim Elm spar's
+`3E FF 04` scripted-battle install sits behind a `WaitFrames 16`; and the spar
+fight option is disc-derived by scanning each option branch for that `3E FF`
+install rather than matching an English menu label, so it holds under the PAL
+discs and translation packs.
+
 ## Connection to other crates
 
 - [`crates/mdt`](../formats/mdt.md) - opcode `0x22` `EXEC_MOVE` drives the move-table consumer at `FUN_800204F8`. Move IDs in scripts feed straight into the .mdt parsers.

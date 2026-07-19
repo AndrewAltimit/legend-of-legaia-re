@@ -90,6 +90,15 @@ from `seed_field_npc_facings`). Disc + save-library oracle:
 - **Cutscene-timeline cross-context walks** (`C7 <id> <tx> <tz> <mode>`, the targeted `0x47` yield): a spawned partition-2 record walking a cast member. The timeline arms the leg with the op's own speed (`0x80 >> (2 + (mode & 7))`), PARKS on `CutsceneTimeline::walk_wait`, and resumes past the yield when the leg arrives - the retail shape where the yield-op pointer lands in the target's `+0x94` and the walk kernel moves it in place. The player-anchor form (`C7 F8 …`) steps the player actor directly in the same park. Scripted legs keep stepping while a timeline is active; only the autonomous patrol kicks stand down.
 
 The start kernel (`World::start_field_npc_motion`) mirrors the `FUN_800358c0` shape - write the target, reset the glide cursor - and the per-frame consumer is this VM.
+
+On interaction start the host also poses the spoken-to NPC toward the player,
+the live driver for the "face the speaker" posing named above:
+`World::face_field_npc_toward` runs the `0x4C` FaceTarget op for one step,
+rotating the NPC's heading to the player's bearing and settling it into
+`field_npc_headings` (which the renderer reads). Separately, the interacted
+`0x4C 0x51` op's byte-+4 move-anim id (retail actor `+0x5C`, consumed by the
+anim-stream stepper `FUN_800204F8`) is carried onto the started glide leg as a
+`field_npc_anim_cues` entry (`carry_npc_run_anim`) instead of being dropped.
 The retail speed encoding is pinned: the ops carry their own base-step selector (`(op0>>5 & 4)|(op1>>6)` for 0x37/0x41, `b2 & 7` for 0x47; numerator `0x80`, or `0x40` for 0x41)
 and are the field-VM record's yield-class bytes interpreted in place from the pointer parked at actor `+0x94` -
 see [field-locomotion.md](field-locomotion.md#npc-glide-speed) + [script-vm.md](script-vm.md) § 0x37-0x42.
