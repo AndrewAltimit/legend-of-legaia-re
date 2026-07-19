@@ -1197,6 +1197,7 @@ So the blocker (the per-cue enable source) dissolves: there is nothing to trace.
 | Load-screen panel 9-slice geometry | resolved (engine renders byte-perfect) | Pinned in [`subsystems/save-screen.md`](../subsystems/save-screen.md#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2): retail composes the 81×29 panel at dst `(6, 4)` from 14 textured-sprite primitives (GP0 cmd `0x64`) sampling the system-UI sheet with CLUT `(32, 511)`. The exact per-tile rects are exported as `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*` and emitted by `legaia_engine_render::save_select_chrome_draws_for` (covered by `save_select_chrome_emits_9slice_panel_and_pills` test). No interior fill sprite is drawn - the "marbled blue" look is the dimmed title art bleeding through the empty middle of the frame. |
 | Debug flags `0x8007B8C2` / `0x8007B98F` | resolved (static) | `0x8007B98F` has no byte-granular reader: it is byte +3 (MSB, little-endian) of the 32-bit debug-mode word `_DAT_8007B98C`, and *that word* is the consumer surface (grep of `funcs/` for `8007b98f` = 0 hits; `8007b98c` gate-read at `8001822c.txt:500/533` + ~14 field-overlay-0897 gates, sole `sw` writer in the menu/title/save-init routine). Writing `0x8007B98F = 1` sets the MSB so every `_DAT_8007B98C != 0` gate reads active. [details ↓](#debug-flags-0x8007b8c2--0x8007b98f) |
 | Key-item area consumers (`0x800859E8..0x80085A40`) | resolved (static; no OOB amplifier) | The range is inventory slots `>= 72` of `&DAT_80085958`; its readers are the indexed item-menu functions (`FUN_8002ff8c`/`800302e4`/`80032a44`/`80030628`/`80034250`), each masking the slot `& 0x3ff` and using the id byte as an index into 256-entry item tables - inherently bounded; add/find/consume helpers bound their scan by the live item count. No consumer treats a key-item byte as an unguarded index, so the range amplifies to game-state corruption (item possession + displayed ids), not a native index-OOB chain step. The `lb $reg,0x5aXX($zero)` overlay "hits" were mis-decoded data tables. Read-BP probe deprioritized. |
+| Full-window item-add OOB primitive: reachability | open (re-opened; the earlier live confirmation does not hold) | [details ↓](#full-window-item-add-oob-primitive-reachability) |
 | XP-table source + reader | resolved + ported | [details ↓](#xp-table-source--reader) |
 | New-Game opening chain + narration roller | partial (chain + caption + roller resolved; two render-fidelity residuals open) | [details ↓](#new-game-opening-chain--narration-roller) |
 | Overlay identity from the disc (static extraction) | resolved (pipeline landed) | [details ↓](#overlay-identity-from-the-disc-static-extraction) |
@@ -1207,6 +1208,35 @@ So the blocker (the per-cue enable source) dissolves: there is nothing to trace.
 | "world-map / save / shop" overlay PROT entries | resolved (not separate entries) | The world-map / overworld controller `FUN_801E76D4` lives in the **field overlay 0897** (base+0x18EBC), and the save-slot dispatcher `FUN_801DC6B4` + the shop/buy session live in the **menu overlay 0899** (save at base+0xDE9C) - each function's instruction signature byte-matches only that one entry (`asset overlay find-sig`). So "world-map", "save", and "shop" are *subsystems* of existing slot-A overlays, not separate PROT entries; recorded in the 0897 / 0899 map notes. |
 | Slot-B overlay cluster (`0900..0969`) per-entry identity | mostly resolved | [details ↓](#slot-b-overlay-cluster-09000969-per-entry-identity) |
 
+
+### Full-window item-add OOB primitive: reachability
+
+*Status:* open - the primitive is real and statically pinned; the claim that
+normal play reaches it is not.
+
+`FUN_800421D4`'s free-slot pass stores the item id at `slot[i]` before the
+`slt` that guards only the count store, so a scan that exhausts the window
+writes one slot past it. That much is unchanged. Two corrections narrow what is
+actually known:
+
+- **The landing address depends on the active window, and the window is not
+  72 slots.** `FUN_8004313C` is the sole `SCUS_942.54` writer of
+  `gp[+0x2D2]`/`gp[+0x2D4]`, and it only ever installs `[0, 256)`, `[0, 128)`
+  or `[128, 256)` (party-member count at `0x80084594`, story flag 20, and the
+  byte at `0x80084598`). So the OOB target is `0x80085A58` or `0x80085B58`,
+  not the `0x800859E8` an earlier note recorded. The 72 came from the
+  `Have 99 Items` cheat's page span. A live read of a mid-game battle state
+  confirms `(start, end, len) = (0, 256, 256)` with 160 contiguous occupied
+  slots.
+- **The `pc = 0x800422BC` probe hits were not OOB hits.** That store runs on
+  every successful add. The two recorded hits (`id=0x9C` at `0x800859E8`,
+  `id=0xD0` at `0x800859EA`) are consecutive slots 72 and 73 - an ordinary
+  pair of adds into the next free slots of a bag that was not full.
+
+What would close it: a probe on a bag genuinely filled to `gp[+0x2D4]` (read
+the window bounds first, then fill to `end`), watching for a store at
+`base + end*2`. Whether the game can even present a 256-entry-full bag through
+the add call sites in `legaia_save::retail_inventory::AddHelperCaller` is the open half of the question.
 
 ### Slot-B overlay cluster (`0900..0969`) per-entry identity
 

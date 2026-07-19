@@ -9,38 +9,54 @@
 //!
 //! ## Retail layout
 //!
-//! The item window is a fixed array of 2-byte `(id, count)` slots at
-//! [`ITEM_WINDOW_BASE`] (`0x80085958` = SC+0x1818). The window length is
-//! `gp[+0x2D4]` = [`ITEM_WINDOW_SLOTS`] (72 slots for the consumable-item
-//! page). Stacks cap at [`STACK_CAP`] (99).
+//! The item array is a fixed run of 2-byte `(id, count)` slots at
+//! [`ITEM_WINDOW_BASE`] (`0x80085958` = SC+0x1818). Every accessor works
+//! inside an **active window** `[gp[+0x2D2], gp[+0x2D4])` installed by
+//! [`ItemWindow`] (`FUN_8004313C`, the sole `SCUS_942.54` writer of both
+//! halfwords) - the window is context state, not a constant. Stacks cap at
+//! [`STACK_CAP`] (99).
 //!
 //! ## Accessor family (`SCUS_942.54`)
 //!
-//! - `FUN_80042EE0` - find-slot-by-id: linear scan `[0, window)`, returns the
+//! - `FUN_8004313C` - window selector: installs `gp[+0x2D2]` / `gp[+0x2D4]` /
+//!   `gp[+0x2D6]` from the party-member count at SC+0x454 and story flag 20.
+//!   See [`ItemWindow`].
+//! - `FUN_80042EE0` - find-slot-by-id: linear scan `[start, end)`, returns the
 //!   slot index or none. Bounded.
 //! - `FUN_80042F4C` - find-count-by-id: find-slot then return the count byte
 //!   (0 if absent). Bounded.
-//! - `FUN_80042310` - consume-by-id: find-slot; decrement count; when it hits
-//!   0, compact via `FUN_800423E0`. Bounded.
-//! - `FUN_80043048` - consume-by-slot: decrement the count of a slot addressed
-//!   by **index** (not id). When the count reaches 0 it zeroes the id byte
-//!   **in place** - unlike consume-by-id it does **not** compact, so the freed
-//!   slot is left as a hole. Bounded; no-ops (echoing its third argument) when
-//!   the slot index is out of range or the slot is already empty.
-//! - `FUN_800423E0` - compact/merge: shift slots down to fill a freed gap and
-//!   zero the tail. Stack cap 99.
-//! - `FUN_800421D4` - ADD (the OOB primitive). MERGE pass first (existing id →
+//! - `FUN_80042310` - consume-by-id: find-slot; `count = max(count - qty, 0)`;
+//!   when it reaches 0 zero the **id byte in place**. It does **not** compact -
+//!   the freed slot is left as a hole, exactly like consume-by-slot. Bounded.
+//! - `FUN_80043048` - consume-by-slot: the same decrement addressed by
+//!   **index** (not id). Bounded; no-ops (echoing its third argument) when the
+//!   slot index is out of range or the slot is already empty.
+//! - `FUN_800423E0` - **normalize**, not a plain compact: for each occupied
+//!   slot it first merges every *later* stack of the same id into it (capped at
+//!   99, zeroing the donor), then pulls occupied slots down into holes.
+//!   Occupancy is keyed on `id != 0` **alone**, so a zero-count slot with a
+//!   live id survives. Calls `FUN_8004313C` first, so it normalizes whichever
+//!   window that installs.
+//! - `FUN_800421D4` - ADD (the OOB primitive). MERGE pass first (existing id ->
 //!   `count = min(count + qty, 99)`), then a FREE-SLOT pass (first `id == 0`).
 //!
 //! ## The out-of-bounds add primitive
 //!
 //! In `FUN_800421D4` the id store `sb t0,0x1818(a0)` at `0x800422BC` writes the
 //! item id to `slot[i]` **before** the `slt` bound check that guards only the
-//! *count* store. On a FULL bag the free-slot scan reaches `i == window` with
-//! no empty slot, so step 3 writes the id byte **one slot past the window** at
-//! `ITEM_WINDOW_BASE + window * 2 = 0x800859E8`, and the bound check then fails
-//! so the count is never written. `0x800859E8` = SC+0x18A8 = the first byte of
-//! the KEY-ITEM list immediately following the consumable-item window.
+//! *count* store. The free-slot scan runs once and exits either at the first
+//! `id == 0` slot (the ordinary case - the store is in-window and the count
+//! store follows) or, on a FULL window, at `i == end`. Only the second exit is
+//! the primitive: it writes the id byte **one slot past the window** at
+//! `ITEM_WINDOW_BASE + end * 2`, and the bound check then fails so the count is
+//! never written.
+//!
+//! `end` is [`ItemWindow`]'s output, so the landing address is `0x80085A58`
+//! (`end = 128`) or `0x80085B58` (`end = 256`) - **not** the `0x800859E8` an
+//! earlier reading recorded. That address is slot 72, and the probe hits at
+//! `pc = 0x800422BC` that produced it are the *ordinary* id store for a bag
+//! whose first free slot happened to be 72: two different ids landing at slots
+//! 72 then 73 is what a normal pair of adds looks like, not a repeated OOB.
 //!
 //! This model surfaces that primitive as the [`AddOutcome::OobIdWrite`] data
 //! variant (carrying the would-be target address **and** the would-be written
@@ -56,28 +72,133 @@
 //! item pay, the one-shot minigame reward, and the equip swap-back refund. The
 //! written byte is attacker-influenced to varying degrees (the shop catalog id,
 //! the drop id, the captured-monster id), so the primitive is a 1-byte write of
-//! a *partially controllable value* to the *fixed* address `0x800859E8`.
+//! a *partially controllable value* to the address one slot past the active
+//! window.
 //!
 //! See [`docs/reference/memory-map.md`](../../../docs/reference/memory-map.md).
 
 // PORT: FUN_800421D4 (ADD) / FUN_80042EE0 (find-slot) / FUN_80042F4C (find-count)
-// PORT: FUN_80042310 (consume) / FUN_800423E0 (compact)
+// PORT: FUN_80042310 (consume) / FUN_800423E0 (normalize: merge + squeeze)
+// PORT: FUN_8004313C (active-window selector)
 // PORT: FUN_80043048 (consume-by-slot)
 // REF: docs/reference/memory-map.md "Retail inventory accessors (SCUS_942.54)"
 
 /// Base address of the consumable-item window (`= SC+0x1818`).
 pub const ITEM_WINDOW_BASE: u32 = 0x8008_5958;
 
-/// Number of slots in the consumable-item page (`gp[+0x2D4]`).
-pub const ITEM_WINDOW_SLOTS: usize = 72;
+/// Slot span of the general-item **page** the `Have 99 Items` cheat writes
+/// (`0x80085958..0x800859E8`).
+///
+/// This is a UI / cheat-coverage span, **not** the accessor window: retail's
+/// `gp[+0x2D4]` is only ever 128 or 256 (see [`ItemWindow`]). Kept as the
+/// convenience default for [`RetailInventory::new`] callers that just want a
+/// small modelled bag; anything reasoning about retail bounds wants
+/// [`ItemWindow::bounds`].
+pub const GENERAL_ITEM_PAGE_SLOTS: usize = 72;
+
+/// Deprecated alias for [`GENERAL_ITEM_PAGE_SLOTS`]. The old name claimed to
+/// be `gp[+0x2D4]`, which it is not.
+pub const ITEM_WINDOW_SLOTS: usize = GENERAL_ITEM_PAGE_SLOTS;
+
+/// Total addressable item slots (`FUN_8004313C`'s widest window).
+pub const ITEM_SLOTS_TOTAL: usize = 256;
+
+/// Slots in one half of the item array - the boundary `FUN_8004313C` splits
+/// on when the full window isn't installed.
+pub const ITEM_SLOTS_HALF: usize = 128;
+
+/// Story-flag index (`DAT_80085758` bit, via `FUN_8003CE64`) that unlocks the
+/// full 256-slot item window; while it is clear the game addresses one
+/// 128-slot half.
+pub const FULL_WINDOW_STORY_FLAG: u32 = 20;
 
 /// Per-stack count cap enforced by the retail add/merge paths.
 pub const STACK_CAP: u8 = 99;
 
-/// The address one slot past a `(base, window)` window - the byte the retail
-/// add primitive (`FUN_800421D4`) writes the id to on a full bag.
+/// The active accessor window `[gp[+0x2D2], gp[+0x2D4])`, as installed by
+/// `FUN_8004313C` - the only `SCUS_942.54` writer of either halfword (11
+/// callers, all of them the entry hop of an inventory operation; `FUN_800423E0`
+/// calls it before normalizing).
 ///
-/// For the default consumable window this is `0x800859E8` (= SC+0x18A8).
+/// The selector branches on the party-member count at `SC+0x454`
+/// (`0x80084594`):
+///
+/// | members | window |
+/// |---|---|
+/// | `0` | unchanged - the previous window stays installed |
+/// | `1` | story flag [`FULL_WINDOW_STORY_FLAG`] set gives [`Full`](Self::Full); clear falls to the half picked by `SC+0x458` (`0x80084598`) |
+/// | `>= 2` | [`Full`](Self::Full), with no flag test at all |
+///
+/// The half for the solo-member case is [`High`](Self::High) when
+/// `0x80084598` is nonzero, else [`Low`](Self::Low). The window *length* also
+/// lands in `gp[+0x2D6]`.
+///
+/// Live cross-check: a mid-game battle state with a three-member party reads
+/// `3` at `0x80084594` and `(start, end, len) = (0, 256, 256)` at `gp+0x2D2` -
+/// the `>= 2` row - with 160 contiguous occupied slots, which a 72-slot model
+/// would truncate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ItemWindow {
+    /// `[0, 256)` - the whole array.
+    Full,
+    /// `[0, 128)` - the low half.
+    Low,
+    /// `[128, 256)` - the high half.
+    High,
+}
+
+impl ItemWindow {
+    /// `(start, end)` slot indices, i.e. `(gp[+0x2D2], gp[+0x2D4])`.
+    #[must_use]
+    pub fn bounds(self) -> (usize, usize) {
+        match self {
+            ItemWindow::Full => (0, ITEM_SLOTS_TOTAL),
+            ItemWindow::Low => (0, ITEM_SLOTS_HALF),
+            ItemWindow::High => (ITEM_SLOTS_HALF, ITEM_SLOTS_TOTAL),
+        }
+    }
+
+    /// Window length (`gp[+0x2D6]`).
+    #[must_use]
+    pub fn len(self) -> usize {
+        let (s, e) = self.bounds();
+        e - s
+    }
+
+    /// Never empty - present only to satisfy the `len`-without-`is_empty` lint.
+    #[must_use]
+    pub fn is_empty(self) -> bool {
+        false
+    }
+
+    /// Reproduce `FUN_8004313C`'s selection. `members` is the party-member
+    /// count byte at `SC+0x454`, `full_window_flag` is story flag
+    /// [`FULL_WINDOW_STORY_FLAG`], and `high_half` is the byte at `SC+0x458`
+    /// being nonzero.
+    ///
+    /// `None` is the `members == 0` early return: retail leaves whatever
+    /// window was already installed.
+    #[must_use]
+    pub fn select(members: u8, full_window_flag: bool, high_half: bool) -> Option<Self> {
+        match members {
+            0 => None,
+            1 if !full_window_flag => Some(if high_half {
+                ItemWindow::High
+            } else {
+                ItemWindow::Low
+            }),
+            _ => Some(ItemWindow::Full),
+        }
+    }
+}
+
+/// The address one slot past a `(base, window)` window - the byte the retail
+/// add primitive (`FUN_800421D4`) writes the id to when the free-slot scan
+/// exhausts the window.
+///
+/// For retail's own windows this is `ITEM_WINDOW_BASE + end * 2`, i.e.
+/// `0x80085A58` ([`ItemWindow::Low`]) or `0x80085B58` ([`ItemWindow::Full`] /
+/// [`ItemWindow::High`]).
 #[must_use]
 pub fn oob_target(base: u32, window_slots: usize) -> u32 {
     base + (window_slots as u32) * 2
@@ -239,8 +360,15 @@ impl RetailInventory {
     }
 
     /// Consume `qty` of `id`. Returns `true` if the item was present and
-    /// decremented; when a stack hits 0 the window is compacted.
-    // PORT: FUN_80042310 (+ compact via FUN_800423E0)
+    /// decremented.
+    ///
+    /// Faithful to `FUN_80042310`: `count = max(count - qty, 0)`, and when the
+    /// count reaches 0 the **id byte is zeroed in place**, leaving a hole. The
+    /// function does **not** compact - `FUN_800423E0` is a separate entry
+    /// point with no call from here, so any squeezing is the caller's choice.
+    /// (An earlier reading of this port had `consume` compact inline, which
+    /// silently renumbered every following slot.)
+    // PORT: FUN_80042310
     pub fn consume(&mut self, id: u8, qty: u8) -> bool {
         let Some(i) = self.find_slot(id) else {
             return false;
@@ -249,9 +377,21 @@ impl RetailInventory {
         let new_count = count.saturating_sub(qty);
         self.slots[i].1 = new_count;
         if new_count == 0 {
-            self.compact();
+            self.slots[i].0 = 0;
         }
         true
+    }
+
+    /// [`consume`](Self::consume) followed by [`normalize`](Self::normalize) -
+    /// the shape retail produces when an inventory operation is followed by
+    /// its own `FUN_800423E0` hop. Convenience for callers that want a
+    /// hole-free window.
+    pub fn consume_and_normalize(&mut self, id: u8, qty: u8) -> bool {
+        let hit = self.consume(id, qty);
+        if hit {
+            self.normalize();
+        }
+        hit
     }
 
     /// Consume `amount` from the slot at `slot` (a window **index**, not an
@@ -282,19 +422,43 @@ impl RetailInventory {
         remaining
     }
 
-    /// Compact the window: drop emptied slots (`id == 0` *or* `count == 0`),
-    /// shift the survivors down, and zero the tail.
+    /// Normalize the window the way `FUN_800423E0` does: **merge duplicate
+    /// stacks, then squeeze holes**.
+    ///
+    /// Retail walks the window with a write cursor. At each occupied slot it
+    /// first scans the rest of the window for another stack of the same id and
+    /// folds it in - `count += donor_count`, clamped to [`STACK_CAP`], donor
+    /// slot fully zeroed - repeating until no duplicate remains. Only then
+    /// does it advance, pulling the next occupied slot down into the hole it is
+    /// sitting on.
+    ///
+    /// Two details the old "compact" model got wrong, both now reproduced:
+    /// occupancy is keyed on `id != 0` **alone** (a live id with a zero count
+    /// survives rather than being dropped), and duplicate ids are merged rather
+    /// than left as two stacks.
     // PORT: FUN_800423E0
-    pub fn compact(&mut self) {
+    pub fn normalize(&mut self) {
         let window = self.slots.len();
-        let mut survivors: Vec<(u8, u8)> = self
-            .slots
-            .iter()
-            .copied()
-            .filter(|&(id, count)| id != 0 && count != 0)
-            .collect();
+        let mut survivors: Vec<(u8, u8)> = Vec::with_capacity(window);
+        for &(id, count) in &self.slots {
+            if id == 0 {
+                continue;
+            }
+            match survivors.iter_mut().find(|(sid, _)| *sid == id) {
+                Some(slot) => {
+                    slot.1 = slot.1.saturating_add(count).min(STACK_CAP);
+                }
+                None => survivors.push((id, count)),
+            }
+        }
         survivors.resize(window, (0, 0));
         self.slots = survivors;
+    }
+
+    /// Deprecated name for [`normalize`](Self::normalize). Retail's
+    /// `FUN_800423E0` is not a plain compaction - see that method.
+    pub fn compact(&mut self) {
+        self.normalize();
     }
 
     /// Add `qty` of `id`, reproducing the retail order: merge into an existing
@@ -359,10 +523,12 @@ mod tests {
         assert_eq!(inv.add(0x10, 1), AddOutcome::Placed { slot: 0 });
         assert_eq!(inv.add(0x11, 2), AddOutcome::Placed { slot: 1 });
         assert_eq!(inv.add(0x12, 3), AddOutcome::Placed { slot: 2 });
-        // Consuming slot 1 to zero compacts; the next add reuses the lowest gap.
+        // Consuming slot 1 to zero leaves a HOLE (retail FUN_80042310 zeroes
+        // the id in place and does not compact), so the next add reuses it.
         assert!(inv.consume(0x11, 2));
-        // After compaction: [0x10,0x12, empty...] - new id goes to slot 2.
-        assert_eq!(inv.add(0x13, 4), AddOutcome::Placed { slot: 2 });
+        assert_eq!(inv.slots()[1], (0, 0));
+        assert_eq!(inv.slots()[2], (0x12, 3), "slot 2 must not renumber");
+        assert_eq!(inv.add(0x13, 4), AddOutcome::Placed { slot: 1 });
     }
 
     #[test]
@@ -404,6 +570,66 @@ mod tests {
     }
 
     #[test]
+    fn item_window_selector_matches_fun_8004313c() {
+        // 0 members: retail returns before touching gp[+0x2D2]/[+0x2D4].
+        assert_eq!(ItemWindow::select(0, true, false), None);
+        // A solo party gates on story flag 20; when clear, SC+0x458 picks the
+        // half.
+        assert_eq!(ItemWindow::select(1, true, true), Some(ItemWindow::Full));
+        assert_eq!(ItemWindow::select(1, false, false), Some(ItemWindow::Low));
+        assert_eq!(ItemWindow::select(1, false, true), Some(ItemWindow::High));
+        // Two or more members skips the flag test entirely - the live
+        // battle-state read (3 members, window (0, 256, 256)).
+        assert_eq!(ItemWindow::select(2, false, true), Some(ItemWindow::Full));
+        assert_eq!(ItemWindow::select(3, false, true), Some(ItemWindow::Full));
+
+        assert_eq!(ItemWindow::Full.bounds(), (0, 256));
+        assert_eq!(ItemWindow::Low.bounds(), (0, 128));
+        assert_eq!(ItemWindow::High.bounds(), (128, 256));
+        assert_eq!(ItemWindow::High.len(), 128);
+
+        // The full-window OOB lands past slot 255, not at the old slot-72
+        // address the earlier reading recorded.
+        assert_eq!(
+            oob_target(ITEM_WINDOW_BASE, ItemWindow::Full.len()),
+            0x8008_5B58
+        );
+        assert_eq!(
+            oob_target(ITEM_WINDOW_BASE, ItemWindow::Low.len()),
+            0x8008_5A58
+        );
+    }
+
+    #[test]
+    fn normalize_merges_duplicate_stacks_and_squeezes() {
+        // Two stacks of the same id plus a hole between them.
+        let mut inv = RetailInventory::from_slots(
+            ITEM_WINDOW_BASE,
+            vec![(0x30, 40), (0, 0), (0x31, 2), (0x30, 5), (0, 0)],
+        );
+        inv.normalize();
+        // The later 0x30 stack folds into the earlier one; survivors squeeze.
+        assert_eq!(inv.slots()[0], (0x30, 45));
+        assert_eq!(inv.slots()[1], (0x31, 2));
+        assert_eq!(inv.slots()[2], (0, 0));
+        assert_eq!(inv.slots()[3], (0, 0));
+    }
+
+    #[test]
+    fn normalize_caps_merged_stacks_and_keeps_live_zero_counts() {
+        let mut inv = RetailInventory::from_slots(
+            ITEM_WINDOW_BASE,
+            vec![(0x40, 90), (0x40, 30), (0x41, 0), (0, 0)],
+        );
+        inv.normalize();
+        assert_eq!(inv.slots()[0], (0x40, STACK_CAP), "merge clamps at 99");
+        // Retail's occupancy test is `id != 0` alone: a live id with a zero
+        // count survives normalization.
+        assert_eq!(inv.slots()[1], (0x41, 0));
+        assert_eq!(inv.slots()[2], (0, 0));
+    }
+
+    #[test]
     fn find_slot_and_count_bounded() {
         let mut inv = default_inv();
         assert_eq!(inv.find_slot(0x20), None);
@@ -416,17 +642,22 @@ mod tests {
     }
 
     #[test]
-    fn consume_to_zero_compacts() {
+    fn consume_to_zero_leaves_a_hole_in_place() {
         let mut inv = default_inv();
         inv.add(0xA0, 1);
         inv.add(0xA1, 4);
         inv.add(0xA2, 2);
-        // Consume the middle stack to zero; survivors shift down.
+        // Consume the middle stack to zero. Retail (FUN_80042310) zeroes the
+        // id byte in place and returns - the survivors keep their slot indices.
         assert!(inv.consume(0xA1, 4));
         assert_eq!(inv.slots()[0], (0xA0, 1));
-        assert_eq!(inv.slots()[1], (0xA2, 2));
-        assert_eq!(inv.slots()[2], (0, 0));
+        assert_eq!(inv.slots()[1], (0, 0));
+        assert_eq!(inv.slots()[2], (0xA2, 2));
         assert_eq!(inv.find_slot(0xA1), None);
+        // The squeeze is a separate entry point (FUN_800423E0).
+        let mut squeezed = inv.clone();
+        squeezed.normalize();
+        assert_eq!(squeezed.slots()[1], (0xA2, 2));
         // Partial consume leaves the stack in place.
         assert!(inv.consume(0xA2, 1));
         assert_eq!(inv.find_count(0xA2), 1);
