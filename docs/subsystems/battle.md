@@ -101,6 +101,70 @@ the resident scene bundle (below). Engine mirror:
 [`engine-core::overlay_loader::battle_stage_overlay_entry`](../../crates/engine-core/src/overlay_loader.rs);
 oracle `crates/engine-shell/tests/battle_stage_live.rs`.
 
+### The sparring-tutorial prompt machine (overlay 967)
+
+What overlay 967 *does* is emit the in-battle "how to fight" boxes of the Tetsu
+sparring fight. The prompts are neither battle-scene script, MES text, nor part
+of the battle overlay `0898` - they exist **only** inside 967, which is why
+porting the battle SM alone never produces them.
+
+Its tick `FUN_801F6B70` is a jump-table hook on the battle **flow-state byte**
+`ctx[+0x06]` (`ctx = _DAT_8007BD24`), not a linear script:
+
+```
+if ctx[0x6B2] != 0  -> suppressed        // a box is already up
+ctx[0x6B0] = 0
+if ctx[0x6AE] != 0  -> already emitted   // one-shot latch per flow state
+idx = ctx[0x06] - 0x1E                   // 91-entry table at 0x801F69D8
+if idx >= 0x5B      -> no-op
+goto table[idx]
+```
+
+Only **nine** of the 91 slots are live - flow states `30, 40, 50, 60, 80, 90,
+100, 110, 120`; the other 82 point at the shared no-op tail `0x801F718C`.
+
+Each live handler then switches on `ctx[+0x28A]`, the same byte the
+battle-action SM's `case 0xFF` increments (ported as
+`World::advance_battle_mode`), which the tutorial reads as the **lesson index**:
+`0` attacks, `1` items, `2` spirit, `3` hyper arts, `4` → done. The script is
+therefore a `(flow state × lesson)` cross-product, with a "you're learning about
+X now! Try again!" rewind (`FUN_801F7628`) whenever the player picks the action
+the current lesson is not teaching.
+
+| Flow state | Handler | What it prompts |
+|---|---|---|
+| `30` | `0x801F6C00` | Turn start - the per-lesson intro, plus a first-visit vs repeat-visit input explainer selected by `_DAT_801D46C8`. |
+| `40` | `0x801F6CB8` | `[Begin]` chosen - name the category to pick. Lesson 3 has no prompt here. |
+| `50` | `0x801F6CAC` | Run selected - always rejected, always rewinds. |
+| `60` | `0x801F6DCC` | Item window opened - the item lesson explains the two windows; every other lesson rewinds. |
+| `80` | `0x801F6E4C` | Arts command-entry screen - combo hint (lesson 0) or the drill instruction (lesson 3). |
+| `90` | `0x801F6EE4` | Target select; for lesson 3 it first validates the entered command buffer. |
+| `100` | `0x801F7060` | Target confirm - unconditional, lesson-independent. |
+| `110` | `0x801F7088` | Validates the committed `actor[+0x1DE]` category against the lesson (`3` attack, `1` item, `4` spirit; hyper arts expects `3`, since it is reached through Attack). |
+| `120` | `0x801F6D30` | The Auto / Command attack-mode prompt - free choice for lesson 0, forced `[Command]` for lesson 3. |
+
+The hyper-arts drill at flow state `90` asks for `[High] [Low] [High]`
+(`0x0F, 0x0E, 0x0F`) and accepts it at three alignments of the command buffer
+`actor[+0x1DF..=+0x1E3]`, each a differently-masked load at `0x801F6FD8`. When
+`_DAT_801D46C4 == 1` the buffer is auto-filled for the player at `0x801F6FB0`.
+
+The completion tail `0x801F7380` fires once `ctx[0x28A]` reaches `4`: it bumps
+the lesson to `5`, writes `ctx[0x06] = 0xC8` and `ctx[0x07] = 0xFF` to close the
+fight, and emits the sign-off box.
+
+**Box placement.** The emitter `FUN_801F747C(text, style)` takes a style index
+`0..=9` into a jump table at `0x801F6B48`. `x` is either the fixed left margin
+`0x10` or centred at `0xA0 − width/2`; `y` is either the fixed top `0x0E` or
+bottom-anchored at `base − (lines × 14 − 4)` for `base` in `{0x9A, 0xB0, 0xCC}`.
+Styles `0, 1, 8, 9` do not wait for acknowledgement; `2..=7` do.
+
+Engine port: [`engine-core::battle_tutorial`](../../crates/engine-core/src/battle_tutorial.rs).
+The prompt **text is Sony data living in the overlay**, so the port commits only
+the string *addresses* and reads the text off the user's own disc at runtime
+(`BattleTutorialScript::from_overlay`) - the same rule the item / spell / dialog
+parsers follow. Disc-gated oracle
+`crates/engine-core/tests/battle_tutorial_disc.rs`.
+
 The `asset-viewer battle-scene` subcommand drives the engine-side composite end-to-end: loads the same battle bundle TMDs, builds an `engine-core::World` in `SceneMode::Battle`, spawns 3 party + 5 monster actor slots, and ticks the [battle-action state machine](battle-action.md) per frame. HUD shows the current `ActionState` (decoded into the named variant), queued action, per-slot liveness, transition counts, and any `BattleEndCause` the SM emits. Triangle cycles `queued_action`; Cross re-seeds at `ActionState::Begin`.
 
 ## Battle background
