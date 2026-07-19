@@ -12,6 +12,7 @@ pub mod mode_trace_oracle;
 pub mod pcm_oracle;
 pub mod replay;
 pub mod scenarios;
+pub mod sim_trace;
 pub mod tile_board_draws;
 pub mod vram_oracle;
 

@@ -23,6 +23,7 @@ referenced by code, not analysis one-offs:
 | `pcsx-redux/` | PCSX-Redux Lua probe library (`lib/probe`) + `autorun_*.lua` capture scripts + Python decoders, driven by `run_probe.sh` (`run_probe.ps1` on Windows). See [`docs/tooling/pcsx-redux-automation.md`](../docs/tooling/pcsx-redux-automation.md); [`COMMUNITY-CAPTURE.md`](pcsx-redux/COMMUNITY-CAPTURE.md) is the hand-out guide for volunteer playthrough captures. |
 | [`vrc-diorama/`](#vrc-diorama) | Clean-room MIDI transport for the VRChat live battle-diorama: register schema + codegen, the Lua encoder/sink riding the battle-state probe, and the UdonSharp decoder scaffold. No Sony bytes. |
 | `mednafen/` | Mednafen save-state automation: capture, diff, bisect, bulk-terrain resolve, plus `movies/` for optional `.mcm` input recordings. See [`docs/tooling/mednafen-automation.md`](../docs/tooling/mednafen-automation.md). |
+| `recomp/` | Static-recomp differential-oracle tooling: `probe.py` (TCP debug-server client + CLI, protocol traps baked in), `trace_capture.py` (frame-tagged canonical JSONL capture), `trace_diff.py` (per-channel first-divergence report) + its synthetic-fixture unit test. Pairs with `legaia-engine sim-trace`. See [`docs/tooling/recomp-differential.md`](../docs/tooling/recomp-differential.md). |
 | `git-hooks/` | The shipped `pre-commit` hook (installed via `ci/install-hooks.sh`). |
 | `engine/` | Engine-side `scenarios.toml` for the determinism replay harness (distinct from the capture manifest above). |
 | `replays/` | `j-replay-v1` record/replay fixtures for the determinism tests. |
