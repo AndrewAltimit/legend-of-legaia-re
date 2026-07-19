@@ -303,6 +303,22 @@ decode differs per op:
 **No "synthesised motion bytecode" exists** - the record bytes *are* the stream the
 walk kernel reads. See [`motion-vm.md`](motion-vm.md).
 
+The **cross-context form** (`0x80`-flagged op + target byte, e.g.
+`C7 <id> <tx> <tz> <mode>`) parks the *poking record* while the walk kernel
+moves the **target** actor: the dispatcher saves the yield-op pointer into the
+target's `+0x94`, sets its `0x400` walk bit, and the record resumes only when
+the target arrives at the decoded tile. This is how a partition-2 beat
+choreographs its cast - the town01 post-naming Mei beat (`P2[4]`) drives
+`C7 46 11 1B 33` / `C7 46 11 1A 33` to walk Mei (channel `0x46`, placement 34)
+from her door seat to the conversation tile `(17,26)`, and `C7 F8 12 1A 33` to
+walk the player to the beat's camera-focus tile `(18,26)`. The paired
+cross-context `A2 <id> <move_id>` ExecMove (`FUN_80024E08`) selects the clip
+the anim clock (`FUN_800204F8`) plays while the kernel moves the actor - the
+walk cycle (Mei: clip 61 walking, 60 idle). Engine port:
+`CutsceneTimeline::walk_wait` + the motion-VM glide (`engine-core`), with the
+NPC anim cue surfaced from `exec_move`. Dropping the walk playout is what left
+Mei out of the conversation frame for the whole beat.
+
 #### 0x39 GIVE_ITEM
 
 `[39, item_id]` - adds one of inline item `item_id` to the inventory: `func_0x8004313C()` (select the active inventory window/page bounds) then `func_0x800421D4(item_id, 1)` (the capacity-checked add-item-by-id primitive). PC advances by 2 (`addiu s8,s8,0x2` at `0x801E044C`; `lbu a0,0(s6)` reads the inline id at `0x801E0450`). This is the **treasure-chest item-give** path - the **granted** item is this single inline operand byte, **not** a per-scene table. `FUN_800421D4` is the inventory adder (see [`functions.md`](../reference/functions.md)), so the earlier `PLAY_SFX` / `func_0x800421D4(sfx_id, 1)` label was wrong. (The standalone `FUN_801D71F0` add-item copy has zero callers - dead/duplicate;
@@ -722,6 +738,18 @@ randomizer's MAN edits (all `LinearWalker` consumers), while runtime behaviour w
 `legaia_asset::field_disasm::decode_subops`; the general lesson is that a sub-op family whose *width
 depends on the sub* must be decoded per-sub, and the executing VM's port is the reference when the two
 disagree.
+
+One more nibble-7 pin, this time on the *interpreter* side: **none of the four
+paints ends the dispatch slice**. The masked subs return `param_2 + 7` (plain
+advance) and the no-mask subs run the `801df8d8` tail - `addiu s8,s8,0x6`
+(pc += 6) then fall-through to the shared continue label (the apparent
+`FUN_801df8dc()` in the decomp is the intra-function label-call idiom) - so
+retail keeps executing the same record in the same call. Modelling sub-0/1 as
+a yield broke the scene-entry install pre-run one op after a paint (the
+ropeway `P1[30]` NPC's `23 2A 70` seat two ops past its clear-paint never
+ran, leaving it parked while retail seats it at `(5440,14400)`). The tail's
+`FUN_8003cf04(actor_list, FUN_801dd9d4)` lookup (its hit gets actor
+`flags |= 8`) is not yet modelled.
 
 **ASCII dialogue aliases survive the `clean` tag.** The US build's dialogue is plain ASCII, and the wide
 flag ops land exactly on the letter ranges: `Set` leads `0x53..0x57` = `S..W`, `Clear` leads `0x61..0x67` =
