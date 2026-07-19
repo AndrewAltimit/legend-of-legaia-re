@@ -463,6 +463,10 @@ fn build_spell_session(world: &World, catalog: &SpellCatalog) -> SpellMenuSessio
                 level: member.magic_rank(),
                 spells: list.ids[..n].to_vec(),
                 spell_levels: list.levels[..n].to_vec(),
+                // Per-caster MP-cost ability bits (record `+0xF4`, kept live
+                // in `character_ability_bits`) so the Magic screen displays the
+                // MP-saver-discounted cost (`FUN_80035394`).
+                ability_bits: world.character_ability_bits.get(i).copied().unwrap_or(0),
             }
         })
         .collect();

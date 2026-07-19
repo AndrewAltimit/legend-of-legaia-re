@@ -27,6 +27,7 @@
 use crate::input::PadButton;
 use crate::inventory_use::{InventoryUseInput, InventoryUseSession, InventoryUseState};
 use crate::spell_menu::{SpellMenuPhase, SpellMenuSession};
+use legaia_engine_vm::battle_formulas::{MpCostModifier, mp_cost_after_ability_bits};
 
 /// Rows per list page (both retail list windows show 12 rows filling the
 /// 182-px content height at the 0xE pitch).
@@ -472,7 +473,7 @@ pub fn magic_screen_model(s: &SpellMenuSession, text: Option<&MenuTextTables>) -
                 .and_then(|t| t.spell_desc(*id))
                 .unwrap_or_default()
                 .to_string();
-            let mp_cost = s
+            let base_cost = s
                 .catalog()
                 .get(*id)
                 .map(|d| d.mp_cost as u16)
@@ -482,6 +483,19 @@ pub fn magic_screen_model(s: &SpellMenuSession, text: Option<&MenuTextTables>) -
                         .map(u16::from)
                 })
                 .unwrap_or(0);
+            // Route the displayed cost through the per-caster MP-cost kernel
+            // (`FUN_80035394`) so the Magic screen shows the discounted cost
+            // an MP-saver ability actually charges, matching the battle path
+            // (`BattleSpellSession::new` / `World::cast_spell_on_slots`).
+            let ability_bits = s
+                .party()
+                .get(caster_idx)
+                .map(|c| c.ability_bits)
+                .unwrap_or(0);
+            let mp_cost = mp_cost_after_ability_bits(
+                base_cost,
+                MpCostModifier::from_ability_flags(ability_bits),
+            );
             MagicInfoModel {
                 name: spell_name(*id),
                 level,
@@ -619,6 +633,7 @@ mod tests {
                 level: 7,
                 spells: vec![0x81, 0x9c],
                 spell_levels: vec![2, 1],
+                ability_bits: 0,
             },
             CasterSlot {
                 slot: 1,
@@ -630,6 +645,7 @@ mod tests {
                 level: 6,
                 spells: vec![0x83],
                 spell_levels: vec![3],
+                ability_bits: 0,
             },
         ];
         let targets = vec![crate::spell_menu::TargetRow {
@@ -703,5 +719,60 @@ mod tests {
         let m = magic_screen_model(&s, Some(&text));
         let info = m.info.expect("hovered spell staged");
         assert_eq!(info.desc, "Crazy Driver\nAttack enemies.");
+    }
+
+    /// PIN: the Magic screen's displayed MP cost is discounted through the
+    /// per-caster MP-cost kernel (`FUN_80035394`). A caster with the half-MP
+    /// ability bit (`0x20`) shows half cost; the quarter bit (`0x10`) shows a
+    /// quarter shaved off; both set = half wins; no bits = full cost.
+    fn staged_mp_cost(ability_bits: u32) -> u16 {
+        let mut catalog = SpellCatalog::new();
+        catalog.insert(crate::spells::SpellDef {
+            id: 0x81,
+            name: "Costly".into(),
+            mp_cost: 40,
+            ..Default::default()
+        });
+        let party = vec![CasterSlot {
+            slot: 0,
+            name: "Vahn".into(),
+            hp: 60,
+            mp: 120,
+            hp_max: 100,
+            mp_max: 120,
+            level: 7,
+            spells: vec![0x81],
+            spell_levels: vec![1],
+            ability_bits,
+        }];
+        let targets = vec![crate::spell_menu::TargetRow {
+            slot: 0,
+            name: "Vahn".into(),
+            hp: 60,
+            hp_max: 100,
+        }];
+        let mut s = SpellMenuSession::new(party, targets, catalog);
+        // Enter the spell list so the hovered row stages into the info window.
+        let _ = s.tick(SpellMenuInput {
+            cross: true,
+            ..Default::default()
+        });
+        assert!(matches!(s.phase(), SpellMenuPhase::SpellSelect { .. }));
+        magic_screen_model(&s, None)
+            .info
+            .expect("hovered spell staged")
+            .mp_cost
+    }
+
+    #[test]
+    fn magic_model_displays_per_caster_discounted_mp_cost() {
+        // No ability bits: full base cost.
+        assert_eq!(staged_mp_cost(0x00), 40);
+        // Half-MP bit (0x20): cost - (cost >> 1) = 20.
+        assert_eq!(staged_mp_cost(0x20), 20);
+        // Quarter bit (0x10): cost - (cost >> 2) = 30 (shaves 25%, not "to a quarter").
+        assert_eq!(staged_mp_cost(0x10), 30);
+        // Both bits set: Half (0x20) wins the priority - 20, not 30.
+        assert_eq!(staged_mp_cost(0x30), 20);
     }
 }

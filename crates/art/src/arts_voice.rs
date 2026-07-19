@@ -65,6 +65,165 @@ pub const SECOND_HALF_BASE: [u32; 3] = [0x8007_80A4, 0x8007_8104, 0x8007_8154];
 /// Per-channel duration base table (stride `0x10` per character).
 pub const DUR_TABLE_VA: u32 = 0x8007_7A8C;
 
+/// One statically-resolved CD-XA voice-clip cue: a `(clip_id, channel)` pair
+/// fired at a fixed call site of the clip player `FUN_8003D53C(clip_id, chan,
+/// dur)`. `clip_id` is a slot in the clip descriptor table at `0x801C6ED8`;
+/// `channel` is the CD-XA channel inside that clip's interleave; `dur` is the
+/// literal read-span operand where the site supplies one (`None` otherwise).
+///
+/// These are the cues whose `(clip_id, channel)` are compile-time immediates -
+/// distinct from the arts-shout path ([`ArtsVoiceTable`], whose channel is a
+/// runtime pool pick), the Miracle/summon jingle queue (`FUN_8004FCC8` /
+/// `FUN_8004FE5C`, channel from a sound-event id), and the field-VM XA opcode
+/// (operands are per-scene MAN script literals, disc-sourced). See
+/// `docs/subsystems/audio.md` and `ghidra/scripts/funcs/8003d53c.txt`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StaticXaCue {
+    /// Descriptor-table slot (`0x801C6ED8 + clip_id*8`).
+    pub clip_id: u8,
+    /// CD-XA channel within the clip.
+    pub channel: u8,
+    /// Literal `dur` operand at the call site, when the site supplies one.
+    pub dur: Option<u16>,
+    /// Call-site instruction address (in the dump named by [`Self::dump`]).
+    pub site: u32,
+    /// Short cue context.
+    pub context: &'static str,
+    /// Committed Ghidra dump file the call site lives in.
+    pub dump: &'static str,
+}
+
+/// The static `(clip_id, channel)` voice-clip cues recovered by a caller census
+/// of `FUN_8003D53C` over the committed Ghidra dumps - only the sites whose
+/// `(clip_id, channel)` are compile-time immediates. The Baka Fighter duel
+/// (`clip_id 0x20`) supplies the bulk; the two `0x1D` cues are the battle /
+/// field encounter-engage voice, and `0x10` is a scripted-scene/dialog cue.
+/// (Two further duel sites take a runtime channel - `clip_id 0x20` at `801d04ec`
+/// and `0x1F` at `801d5cc4` - and so are not `(clip_id, channel)` pairs.)
+pub const STATIC_XA_CUES: &[StaticXaCue] = &[
+    StaticXaCue {
+        clip_id: 0x10,
+        channel: 7,
+        dur: Some(0x135),
+        site: 0x801d_509c,
+        context: "scripted-scene / dialog fixed voice",
+        dump: "overlay_0897_locomotion_cluster.txt",
+    },
+    StaticXaCue {
+        clip_id: 0x1d,
+        channel: 4,
+        dur: Some(0x26),
+        site: 0x801e_eb44,
+        context: "battle / field encounter-engage cue",
+        dump: "overlay_0898_801ec3e4.txt",
+    },
+    StaticXaCue {
+        clip_id: 0x1d,
+        channel: 6,
+        dur: Some(0x1a),
+        site: 0x801e_eb44,
+        context: "battle / field encounter-engage cue",
+        dump: "overlay_0898_801ec3e4.txt",
+    },
+    // Baka Fighter announcer lines - descriptor slot 0x20, twelve fixed channels.
+    StaticXaCue {
+        clip_id: 0x20,
+        channel: 2,
+        dur: None,
+        site: 0x801d_3968,
+        context: "Baka Fighter announcer",
+        dump: "overlay_baka_fighter_801d3468.txt",
+    },
+    StaticXaCue {
+        clip_id: 0x20,
+        channel: 3,
+        dur: None,
+        site: 0x801d_38e4,
+        context: "Baka Fighter announcer",
+        dump: "overlay_baka_fighter_801d3468.txt",
+    },
+    StaticXaCue {
+        clip_id: 0x20,
+        channel: 4,
+        dur: None,
+        site: 0x801d_38a0,
+        context: "Baka Fighter announcer",
+        dump: "overlay_baka_fighter_801d3468.txt",
+    },
+    StaticXaCue {
+        clip_id: 0x20,
+        channel: 5,
+        dur: None,
+        site: 0x801d_39bc,
+        context: "Baka Fighter announcer",
+        dump: "overlay_baka_fighter_801d3468.txt",
+    },
+    StaticXaCue {
+        clip_id: 0x20,
+        channel: 8,
+        dur: None,
+        site: 0x801d_1264,
+        context: "Baka Fighter announcer",
+        dump: "overlay_baka_fighter_801cf388.txt",
+    },
+    StaticXaCue {
+        clip_id: 0x20,
+        channel: 9,
+        dur: None,
+        site: 0x801d_0df4,
+        context: "Baka Fighter announcer",
+        dump: "overlay_baka_fighter_801cf388.txt",
+    },
+    StaticXaCue {
+        clip_id: 0x20,
+        channel: 0xa,
+        dur: None,
+        site: 0x801d_2220,
+        context: "Baka Fighter announcer",
+        dump: "overlay_baka_fighter_801d21fc.txt",
+    },
+    StaticXaCue {
+        clip_id: 0x20,
+        channel: 0xb,
+        dur: None,
+        site: 0x801d_2258,
+        context: "Baka Fighter announcer",
+        dump: "overlay_baka_fighter_801d21fc.txt",
+    },
+    StaticXaCue {
+        clip_id: 0x20,
+        channel: 0xc,
+        dur: Some(0x5a),
+        site: 0x801d_22fc,
+        context: "Baka Fighter announcer",
+        dump: "overlay_baka_fighter_801d21fc.txt",
+    },
+    StaticXaCue {
+        clip_id: 0x20,
+        channel: 0xd,
+        dur: Some(0x66),
+        site: 0x801d_22fc,
+        context: "Baka Fighter announcer",
+        dump: "overlay_baka_fighter_801d21fc.txt",
+    },
+    StaticXaCue {
+        clip_id: 0x20,
+        channel: 0xe,
+        dur: None,
+        site: 0x801d_5a50,
+        context: "Baka Fighter announcer",
+        dump: "overlay_baka_fighter_801d5a24.txt",
+    },
+    StaticXaCue {
+        clip_id: 0x20,
+        channel: 0xf,
+        dur: None,
+        site: 0x801d_5a98,
+        context: "Baka Fighter announcer",
+        dump: "overlay_baka_fighter_801d5a24.txt",
+    },
+];
+
 /// Arts-voice clip file per 0-based character slot (Vahn/Noa/Gala). `None`
 /// for Terra (slot 3) or out of range.
 pub fn clip_file(cslot: usize) -> Option<&'static str> {
@@ -238,5 +397,51 @@ mod tests {
         );
         // Any member > 15 is not a valid channel -> reject (bounds the tail).
         assert_eq!(record_members(&[31, 41, 43, 0]), None);
+    }
+
+    #[test]
+    fn static_xa_cue_census_is_internally_consistent() {
+        // 3 non-Baka cues + 12 Baka announcer channels.
+        assert_eq!(STATIC_XA_CUES.len(), 15);
+
+        // Every channel is a valid CD-XA channel (<= 15), as FUN_8004C140's
+        // membership guard requires for the pool tables.
+        assert!(STATIC_XA_CUES.iter().all(|c| c.channel <= 15));
+
+        // The two encounter-engage cues share clip_id 0x1D on channels 4 and 6.
+        let engage: Vec<u8> = STATIC_XA_CUES
+            .iter()
+            .filter(|c| c.clip_id == 0x1d)
+            .map(|c| c.channel)
+            .collect();
+        assert_eq!(engage, vec![4, 6]);
+
+        // Baka Fighter fires slot 0x20 across exactly its twelve fixed channels.
+        let mut baka: Vec<u8> = STATIC_XA_CUES
+            .iter()
+            .filter(|c| c.clip_id == 0x20)
+            .map(|c| c.channel)
+            .collect();
+        baka.sort_unstable();
+        assert_eq!(baka, vec![2, 3, 4, 5, 8, 9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf]);
+
+        // The literal-dur cues are exactly the five sites that supply one.
+        let with_dur: Vec<(u8, u8, u16)> = STATIC_XA_CUES
+            .iter()
+            .filter_map(|c| c.dur.map(|d| (c.clip_id, c.channel, d)))
+            .collect();
+        assert_eq!(
+            with_dur,
+            vec![
+                (0x10, 7, 0x135),
+                (0x1d, 4, 0x26),
+                (0x1d, 6, 0x1a),
+                (0x20, 0xc, 0x5a),
+                (0x20, 0xd, 0x66),
+            ]
+        );
+
+        // Every entry cites a dump file for provenance.
+        assert!(STATIC_XA_CUES.iter().all(|c| c.dump.ends_with(".txt")));
     }
 }

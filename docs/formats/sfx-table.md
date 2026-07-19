@@ -161,5 +161,6 @@ the disc bank; the bank varies per scene). CLI: `asset sfx-table <SCUS> [--json]
 ## See also
 
 - [`subsystems/audio.md`](../subsystems/audio.md) - the SFX bank + scheduler and the per-actor SFX trigger.
+- [`subsystems/audio.md`](../subsystems/audio.md#cd-xa-voice-clip-dispatchers-and-static-cue-census) - `FUN_8004FCC8` / `FUN_8004FE5C` are dual-purpose: an id `< 0x100` queues this SFX ring, but an id `>= 0x100` routes the same call to the CD-XA voice-clip player `FUN_8003D53C` (a different table, `0x801C6ED8`), where the census of static `(clip_id, chan)` voice cues lives.
 - [Move-power table](move-power.md) - the `+0x0d` sound cue that feeds this table through `FUN_8004FCC8`.
 - [VAB sound bank](vab.md) - the program / tone data the `p` / `t` fields index.

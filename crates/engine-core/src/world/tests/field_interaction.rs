@@ -318,6 +318,123 @@ fn spar_dialogue() -> Vec<u8> {
     b
 }
 
+/// `spar_menu_of` derives the fight option from the disc op, not the label:
+/// a 4-option picker whose **labels are all non-English** but whose option-2
+/// branch installs a scripted battle (`3E FF 04`) must still resolve to
+/// `fight_option == 2`. This fails against a `"practice"`-label match (the pre-
+/// change behaviour returns `None` here) and passes once the branch scan is in.
+#[test]
+fn spar_menu_of_derives_fight_option_from_the_scripted_battle_install() {
+    // Layout: [1F 'p' 'q' 00] prompt, then the `0x29` open, 4 jump entries, four
+    // immediate-labels segments (non-English "aa"/"bb"/"cc"/"dd"), then four
+    // 8-byte branch regions - only region 2 carries `3E FF 04`.
+    let mut b = vec![0x1F, b'p', b'q', 0x00]; // prompt segment (0x00-terminated)
+    let open = b.len(); // == 4
+    b.push(0x29); // open byte, N=4
+    // Placeholder jump entries (patched below once branch offsets are known).
+    let jt = b.len();
+    b.extend_from_slice(&[0u8; 8]);
+    // Immediate labels - deliberately NOT the English "practice".
+    for lbl in [&b"aa"[..], &b"bb"[..], &b"cc"[..], &b"dd"[..]] {
+        b.push(0x1F);
+        b.extend_from_slice(lbl);
+        b.push(0x00);
+    }
+    // Four branch regions; region 2 is the fight branch.
+    let regions: [usize; 4] = std::array::from_fn(|i| b.len() + i * 8);
+    for i in 0..4 {
+        if i == 2 {
+            b.extend_from_slice(&[0x3E, 0xFF, 0x04, 0, 0, 0, 0, 0]);
+        } else {
+            b.extend_from_slice(&[0u8; 8]);
+        }
+    }
+    // Patch each jump entry so jump_target(i) lands on region i:
+    //   jump_target(i) = (open + 1 + i*2) + rel_jump(i)  =>  rel = region_i - base.
+    for i in 0..4 {
+        let base = (open + 1 + i * 2) as i64;
+        let rel = (regions[i] as i64 - base) as i16;
+        b[jt + i * 2..jt + i * 2 + 2].copy_from_slice(&rel.to_le_bytes());
+    }
+
+    // Sanity: the picker decodes with non-English labels and the right jumps.
+    let p = legaia_mes::scan_pickers(&b)
+        .into_iter()
+        .find(|p| p.n == 4)
+        .expect("4-option picker decodes");
+    assert_eq!(p.options[2].label, b"cc", "option 2 label is non-English");
+    assert_eq!(p.jump_target(2), Some(regions[2]));
+    assert_eq!(&b[regions[2]..regions[2] + 3], &[0x3E, 0xFF, 0x04]);
+
+    let (n, fight_option) =
+        spar_menu_of(&b).expect("a 4-option picker with a scripted-battle branch is a spar menu");
+    assert_eq!(n, 4);
+    assert_eq!(
+        fight_option, 2,
+        "the fight option is derived from the `3E FF 04` install in option 2's branch, \
+         not from any English label"
+    );
+}
+
+/// The faithful inline runner resumes across an op-0x4A `WaitFrames`: an
+/// effect scripted *behind* the wait (a `0x50` SET, standing in for the Tetsu
+/// `3E FF 04` install) must still run once the frames elapse, not be dropped
+/// when the wait first halts. Before the resume fix the WaitFrames halt ended
+/// the conversation and the SET never ran.
+#[test]
+fn inline_runner_resumes_across_wait_frames_to_run_the_post_wait_effect() {
+    // First box "hi", then WaitFrames 16, then SET system flag 7 (the effect),
+    // then reply "ok", then end.
+    let mut buf = vec![0x1F, b'h', b'i', 0x00];
+    buf.extend_from_slice(&[0x4A, 0x10, 0x00]); // WaitFrames 16 (u16 LE target)
+    buf.extend_from_slice(&[0x50, 0x07]); // SET system flag 7 - the gated effect
+    buf.extend_from_slice(&[0x1F, b'o', b'k', 0x00]); // reply box
+    buf.push(0x00); // conversation end
+
+    let mut world = World::new();
+    world.start_inline_dialogue(buf);
+
+    // Tick until the first box is fully revealed, then confirm to dismiss it.
+    let mut guard = 0;
+    while world.inline_dialogue.as_ref().unwrap().page_bytes() != b"hi" {
+        world.step_inline_dialogue(false, false, false);
+        guard += 1;
+        assert!(guard < 50, "first box never typed");
+    }
+    world.step_inline_dialogue(true, false, false); // dismiss "hi"
+
+    // The very next VM step hits WaitFrames: it must NOT end the conversation,
+    // and the effect behind it must not have run yet.
+    world.step_inline_dialogue(false, false, false);
+    assert!(
+        !world.inline_dialogue.as_ref().unwrap().is_done(),
+        "WaitFrames must suspend, not end, the conversation"
+    );
+    assert!(
+        !world.system_flag_test(7),
+        "the post-wait effect has not run while the wait is still counting"
+    );
+
+    // Keep ticking: within the 16-frame window the wait elapses, the SET runs,
+    // and the reply box opens - the conversation never ends early.
+    let mut ran = false;
+    for _ in 0..40 {
+        world.step_inline_dialogue(false, false, false);
+        assert!(
+            !world.inline_dialogue.as_ref().unwrap().is_done(),
+            "conversation ended before the post-wait effect ran"
+        );
+        if world.system_flag_test(7) {
+            ran = true;
+            break;
+        }
+    }
+    assert!(
+        ran,
+        "the effect scripted behind WaitFrames ran once the wait elapsed"
+    );
+}
+
 /// Set up a world with a scripted-encounter carrier whose dialogue is the spar
 /// menu, the player adjacent and facing it (`(slot 5)` at tile (21, 20)).
 fn world_with_spar_carrier() -> World {
