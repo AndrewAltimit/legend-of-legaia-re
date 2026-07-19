@@ -368,13 +368,17 @@ fn rikuroa_stager_and_p2_50_are_blocked_by_the_gate_flag_once_set() {
     );
     // Simulate a stale staged marker (the state a fled/lost fight would leave):
     // the P1[0] arm fires, but P2[50]'s C1 gate `[0x142]` blocks the spawn.
+    // The blocked-spawn observable is P2[50]'s own effect: its `62 89` clears
+    // the staged marker, so the marker STAYING set proves the record never
+    // ran. (Ambient helper contexts from engaged channel windows may
+    // legitimately exist, so "no helper contexts at all" is not the signal.)
     host.world.system_flag_set(CARUBAN_STAGED_MARKER);
     for _ in 0..600 {
         host.tick().expect("tick");
     }
     assert!(
-        host.world.helper_contexts.is_empty(),
-        "P2[50] does not spawn once its C1 gate flag is set"
+        host.world.system_flag_test(CARUBAN_STAGED_MARKER),
+        "P2[50] does not spawn once its C1 gate flag is set (0x289 stays set)"
     );
     // Non-vacuous: drive the gated dispatch directly against the real record
     // (P2[50] = global index 0x5C, partition counts [13, 29, ..]) in both

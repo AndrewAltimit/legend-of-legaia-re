@@ -66,12 +66,19 @@ fn freeroam_channels_seed_and_execute() {
         host.world.field_channels_man.is_some(),
         "the seeded channels carry their MAN buffer so they can step"
     );
-    for c in &host.world.field_channels {
+    for c in host.world.field_channels.iter().filter(|c| !c.object_bind) {
         assert!(
             c.ctx.script_id > 0,
             "script id = partition-0 count + record index (>= 1 for a real placement)"
         );
     }
+    // Object-bind channels (retail `FUN_8003A55C` writes the gate-0
+    // trigger's FLAT record index into `actor+0x50`) ride alongside as
+    // poke targets; their id space starts at 0 (partition-0 record 0).
+    assert!(
+        host.world.field_channels.iter().any(|c| c.object_bind),
+        "town01 seeds `.MAP` object-bind channels (house doors et al.)"
+    );
     let spawn_state: Vec<_> = host
         .world
         .field_channels

@@ -15,10 +15,13 @@ and looking for its opcode table is a dead end - see
 
 The port models the slot pool (`Pool`), the `MasterSlot` / `ChildSlot` /
 `EffectScript` data structures, ports the init (`Pool::init`) and spawn
-(`Pool::spawn`) APIs faithfully, and exposes a state-machine frame (`Pool::tick`)
-that delegates per-state transitions to the host through the
-`EffectHost::advance_state` callback. Engines wire the renderer, RNG, and any
-per-effect transition logic through `EffectHost`.
+(`Pool::spawn`) APIs faithfully, and executes the full pass-1 algebra in
+`Pool::tick_retail` (master spawn cadence + child anim/motion walk) with the
+pass-2 per-child computation exposed as `Pool::child_billboards` (brightness
+envelope, atlas resolution, sprite scaling, UV-mirror corner order). The
+`EffectHost` trait supplies the RNG and the summon routing; a legacy
+host-delegating frame (`Pool::tick` + `EffectHost::advance_state`) remains for
+engines still on the fixed-lifetime model.
 
 Three functions:
 
@@ -38,7 +41,7 @@ There is no opcode byte anywhere: the "state" bytes are **wait counters**, and t
 
 Traced instruction-for-instruction from `overlay_battle_801e0088.txt` (walker) and `overlay_battle_801dfdf8.txt` (spawn). Every wait counter in the system is **5.3 fixed-point**: a frame count is stored `<<3` and decremented by 8 per logic frame (a value already `< 8` clamps to 0), so fractional catch-up ticks stay cheap.
 
-The walker body runs only when the ready flag `DAT_8007BD71` reads `0xFF`. Pass 1 (spawn cadence + child animation/motion) repeats `DAT_1F800393` times per call - the adaptive frame-skip factor, so effect time tracks wall-clock under frame skip - and a sweep that finds zero active masters and zero active children skips the remaining catch-up iterations. Pass 2 (render) runs once per call.
+The walker body runs only when the ready flag `DAT_8007BD71` reads `0xFF`. Pass 1 (spawn cadence + child animation/motion) repeats `DAT_1F800393` times per call - the adaptive frame-skip factor, so effect time tracks wall-clock under frame skip - and a sweep that finds zero active masters and zero active children adds 4 to the sweep counter, skipping the remaining catch-up iterations (fully, at any retail frame-skip factor `<= 5`). Pass 2 (render) runs once per call.
 
 ### Master slot lifecycle (28-byte stride, 32 slots at pool `+0x1010`)
 
@@ -53,13 +56,15 @@ The walker body runs only when the ready flag `DAT_8007BD71` reads `0xFF`. Pass 
 | `+0x14` | - | Never written by the spawn API; its copy into `child[+0x18]` is a dead lane. |
 | `+0x18` | `script_cursor` | pack1 `entry + 4`, advanced `+14` per record. |
 
-The spawn loop: seed the next free child slot from the current 14-byte record (allocation scans forward with a cursor that persists across masters within one sweep; on **pool exhaustion the record is still consumed** with no child - effects degrade rather than stall), then advance - `spawn_cursor += 1`, `script_cursor += 14`, `wait = record.delay << 3` - and repeat while the new wait is zero, so zero-delay records spawn as one burst. When `spawn_cursor` reaches `child_count` the master frees itself (`+0` = 0) and forces `wait = 8` to exit the loop.
+The spawn loop: seed the next free child slot from the current 14-byte record (allocation scans forward with a cursor that persists across masters within one sweep; on **pool exhaustion the record is still consumed** with no child - effects degrade rather than stall), then advance - `spawn_cursor += 1`, `script_cursor += 14`, `wait = record.delay << 3` - and repeat while the new wait is zero, so zero-delay records spawn as one burst. The wait store is a byte, so a delay `>= 32` frames wraps mod 32 (`sb` truncates the `<< 3`); the same truncation applies to the child frame delays below. When `spawn_cursor` reaches `child_count` the master frees itself (`+0` = 0) and forces `wait = 8` to exit the loop.
 
 ### Child slot lifecycle (32-byte stride, 128 slots at pool `+0x10`)
 
 Seeding (walker pass 1, from the spawn record + master): `frame_count`(+0) = pack0 byte 0 (doubles as the active flag); `mirror`(+1) = `rand() % 4` - **random UV flip bits** for sprite variety (bit 0 = horizontal, bit 1 = vertical, consumed by pass 2); `frame_cursor`(+2) = 0; `wait`(+3) = first frame's delay `<<3`; velocity (+4/+6/+8 i16 x/y/z) = the record's planar legs rotated by the master angle (`>>12`) with `vel_y` direct; position (+0xC/+0x10/+0x14, 16.8) = master origin, `y -= height << 8`, x/z offset by the rotated planar legs (`>>4`); anim cursor (+0x1C) = pack0 `entry + 2`.
 
 Tick: `wait` non-zero → decrement by 8 plus one motion step. Zero → loop { advance one anim frame (`anim_cursor += 6`, `frame_cursor += 1`, `wait` = new frame's delay `<<3`; reaching `frame_count` retires the slot), then one motion step } while the new wait is zero. A motion step is `pos += vel * frame.speed * pool_scale_0 * 8 >> 15` per axis - with the retail init scalar `0x1000` at pool `+0` this reduces exactly to `pos += vel * frame.speed`.
+
+Retirement quirk: retiring zeroes both the active flag and the wait, but the frame-advance loop only tests the wait - so retail keeps consuming 6-byte strides past the batch end **on the already-retired slot** until it hits a non-zero byte in the delay position. The extra reads and motion steps touch only the dead slot (the next seed rewrites every field), so the port (`Pool::tick_retail`) breaks at retirement instead.
 
 ### Pass 2 - render
 
@@ -71,21 +76,30 @@ For each live child, one flat textured **semi-transparent quad** (9-word GPU pac
 
 ## Lifetime + render bridge (engine port)
 
-The engine port does not yet execute the algebra above: `EffectHost::advance_state` models the lifecycle as a fixed-frame countdown - each work tick increments `master.field_14`, and the slot retires once it reaches `effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES`. Without this an effect terminated on its first work tick and never persisted to draw. Now that the retail algebra is fully specified, a faithful `Pool::tick` is a mechanical port (tracked in [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)).
+The algebra above is executed by `Pool::tick_retail` (pass 1: master spawn
+cadence over the catalog's pack1 records + child anim/motion walk over the
+pack0 frames, with the `frame_skip` catch-up factor) and `Pool::child_billboards`
+(pass 2: per-child brightness envelope, atlas resolution off the current
+frame, `sprite_scale` sizing, and the random UV-mirror corner order - the GTE
+projection `FUN_800195A8` and the OT insert stay with the renderer). The only
+host callback the faithful walker consumes is `EffectHost::next_random`. Two
+deliberate port-side deltas, both invisible to retail behaviour: the
+retirement-loop overrun is cut at retirement (see the quirk note above), and
+`master.field_14` - a retail dead lane - is bumped once per call per active
+master as an age counter for age-based render fades.
 
-The per-frame walker splits into two host hooks because retail runs two
-distinct passes at different cadences.
-`EffectHost::advance_state` is the `state == 0` *script* work and is gated on
-the state byte.
-`EffectHost::accumulate_child_motion` is the *per-child position integration*
-(`child+0xc/+0x10/+0x14 += velocity * accel * frame_delta`) and runs **every
-frame for every active slot regardless of `state`** - `FUN_801E0088` performs
-that accumulation in both its `state == 0` work loop and its `state != 0`
-wait-countdown branch, so a child billboard keeps drifting during a wait state.
-`Pool::tick` therefore calls `accumulate_child_motion` *before* the state-byte
-gate; gating it behind `advance_state` (the earlier shape) froze waiting
-effects. The hook's default is a no-op until the child-motion renderer lands,
-so the contract is faithful even though no host integrates motion yet.
+A legacy host-delegating frame (`Pool::tick`) predates the algebra extraction
+and remains for compatibility: `EffectHost::advance_state` models the
+lifecycle as a fixed-frame countdown (`master.field_14` up to
+`effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES`), and
+`EffectHost::accumulate_child_motion` is the per-child position integration
+that runs **every frame for every active slot regardless of `state`** -
+retail integrates in both the work loop and the wait-countdown branch, so a
+child billboard keeps drifting during a wait state, and `Pool::tick` calls the
+hook *before* the state-byte gate for the same reason. `engine-core`'s
+`World::tick_effects` still drives this legacy shim; switching it (and the
+`active_effect_sprites` snapshot) onto `tick_retail` / `child_billboards` is
+the remaining consumer wiring.
 
 ### Catalog load
 
@@ -137,7 +151,7 @@ This is distinct from the 2D billboard path here:
 - `World::active_effect_sprites` builds billboards from the `efect.dat` atlas. An earlier reading held that its `0x7680` field was a tpage sampling VRAM **page (0,0), 8bpp** - falsified by the pass-2 consumer.
 - That `0x7680` is the atlas entry's **CLUT**, not its tpage - the `+4`/`+6` fields are CLUT (u16) / tpage (byte), the reverse of an earlier reading (the emit at `~0x801E0980` writes `atlas[4..5]` into the primitive's CLUT field and `atlas[6]` into its tpage field). `0x7680` decodes as CBA fb `(0,474)`, an effect-CLUT row, *not* page `(0,0)`.
 - Confirmed from a melee hit-spark battle capture: no prim samples page (0,0)/8bpp/`0x7680`, and the spark draws as textured quads sampling the loaded effect pages (PROT 870 flame atlas `(320,0)`/`(448,0)`, effect-band CLUTs).
-- The engine's `SpriteAtlasEntry` now reads the fields in the correct order, so `active_effect_sprites` yields the real effect page + CLUT and the billboards sample the resident PROT 870 / `etim` texels. The faithful per-frame cadence is specified above ([pass-1 algebra](#the-extracted-pass-1-state-algebra)) but not yet executed by the port; the render loops each child's anim batch uniformly over the effect lifetime as a stand-in.
+- The engine's `SpriteAtlasEntry` now reads the fields in the correct order, so `active_effect_sprites` yields the real effect page + CLUT and the billboards sample the resident PROT 870 / `etim` texels. The faithful per-frame cadence ([pass-1 algebra](#the-extracted-pass-1-state-algebra)) is executed by `Pool::tick_retail`, with the pass-2 computation exposed as `Pool::child_billboards`; the `engine-core` snapshot `active_effect_sprites` still loops each child's anim batch uniformly over the effect lifetime as a stand-in until it is rewired onto the pool's live child slots.
 
 ## Pool layout (`_DAT_8007BD30`, 5008 bytes total)
 

@@ -7,19 +7,21 @@
 //! resolve to [`Pool::spawn`])
 //!
 //! See [`docs/subsystems/effect-vm.md`](../../../docs/subsystems/effect-vm.md)
-//! for the authoritative byte-level reference. This crate ports the high-
-//! confidence pieces - the slot pool layout, the per-effect script header
-//! parser, and the public spawn API - and exposes a [`EffectHost`] trait that
-//! lets the engine extend the per-frame walker incrementally.
+//! for the authoritative byte-level reference. This crate ports the slot pool
+//! layout, the per-effect script header parser, the public spawn API, and the
+//! full per-frame walker algebra ([`Pool::tick_retail`] pass 1 +
+//! [`Pool::child_billboards`] pass 2). The [`EffectHost`] trait supplies the
+//! RNG and the summon routing; a legacy host-delegating frame
+//! ([`Pool::tick`]) remains for engines still on the fixed-lifetime model.
 //!
 //! ## Why no opcode table
 //!
-//! The retail per-frame walker (`FUN_801E0088`, 600+ instructions) does state
-//! transitions inline - there's no central `switch (state)` to translate into
-//! a clean Rust dispatch. The port models the **walker as a state-machine
-//! frame** (slot iteration + state-byte countdown + child-slot allocation)
-//! and delegates per-state logic to the host. Engines wire whatever runtime
-//! they have for animation playback, GPU primitive emission, and RNG.
+//! The retail per-frame walker (`FUN_801E0088`, 600+ instructions) has no
+//! opcode byte anywhere: the per-slot "state" bytes are 5.3 fixed-point
+//! **wait counters**, and the lifecycle is a pair of countdown-driven cursor
+//! walks - the master spawn cadence over 14-byte pack1 records and the child
+//! anim/motion walk over 6-byte pack0 frames. [`Pool::tick_retail`] executes
+//! that algebra operator-for-operator.
 //!
 //! ## Three retail entry points
 //!
@@ -27,7 +29,7 @@
 //! |---|---|---|
 //! | `0x801DE914` | Init / pack-fixup | Ported as [`Pool::init`] |
 //! | `0x801DFDF8` | Public spawn API: `(byte effect_id, short* world_pos, ushort angle)` | Ported as [`Pool::spawn`] |
-//! | `0x801E0088` | Per-frame walker | [`Pool::tick`] (skeleton) + host hooks |
+//! | `0x801E0088` | Per-frame walker | [`Pool::tick_retail`] (pass 1) + [`Pool::child_billboards`] (pass 2) |
 //!
 //! ## Clean-room boundary
 //!

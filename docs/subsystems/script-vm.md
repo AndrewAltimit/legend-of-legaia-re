@@ -591,6 +591,25 @@ return ((&DAT_80085758)[(int)idx >> 3] & (0x80 >> (idx & 7))) ? 0xFF : 0;
 
 Effective opcode space therefore includes the explicit 0x21-0x4F range *and* any byte whose high nibble is 0x5/0x6/0x7 (potentially 192 more "wide" opcodes routed to three SCUS dispatchers).
 
+The MSB-first bit order is pinned at byte level against a live story beat: across
+the rikuroa pre/post-Caruban save states, bank byte `0x80085780` flips
+`0x43 -> 0x63` exactly when spine flag `0x142` sets - the changed bit is `0x20 =
+0x80 >> (0x142 & 7)`, and no neighbouring byte moves. The same state corpus
+confirms flags are cleared as well as set across the story (e.g. the
+`0x150..0x154` band drops between the Sebucus and Karisto eras). The
+`idx >> 3` shift is an `sra`, but every dispatcher-constructed index is positive
+(`(opcode & 0x8F) << 8 | operand`, max `0x8FFF`), so the arithmetic/logical
+distinction only matters for the move-VM's i16 wait-operand (see
+[memory-map.md](../reference/memory-map.md#debug-flags)).
+
+Not every flag a C1/C2 gate names ever gets written: `0x482` (the `map01`
+mist-wall C1 gate) has no writer that ever fires - a byte write-watch across the
+whole post-Zeto beat (probe `autorun_flag_writer_watch.lua`) sees only the
+`0x484` re-latch touch its byte, and the flag reads clear in every catalogued
+state through the Karisto era. Such gates simply pass forever; see the
+`0x482`/`0x63A` rows in
+[open-rev-eng-threads.md](../reference/open-rev-eng-threads.md).
+
 ### Disc-wide SYSTEM-flag census tooling
 
 An overworld progress gate reads a SYSTEM flag (`0x7x` TEST) in one scene, but the **setter** that opens it (`0x5x` SET / `0x6x` CLEAR) almost always lives in a *different* scene's MAN. To resolve a gate to its writer, `legaia_engine_core::man_field_scripts` walks the flag ops out of the decoded MAN:

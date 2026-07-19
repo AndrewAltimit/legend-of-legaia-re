@@ -66,7 +66,9 @@ fn opdeene_channels_spawn_and_execute() {
             )
         })
         .collect();
-    for c in &host.world.field_channels {
+    // Placement channels only: `.MAP` object-bind channels (flat record ids,
+    // retail `FUN_8003A55C`) ride alongside and may carry ids < N0.
+    for c in host.world.field_channels.iter().filter(|c| !c.object_bind) {
         assert!(
             c.ctx.script_id >= 4,
             "script id = partition-0 count + record index (opdeene P0 count is 3, records 1..)"

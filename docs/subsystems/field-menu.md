@@ -28,6 +28,7 @@ resolved through the window-descriptor table below.
 - [Header row](#header-row-always-drawn) · [Status page](#status-page-submenu-0-or-5)
 - [Magic list](#magic-list-submenu-2) · [Moves list](#moves-list-submenu-3) · [Skills page](#skills-page-submenu-1)
 - [Top-level pause menu](#top-level-pause-menu) · [Equip screen](#equip-screen) · [Options screen](#options-screen)
+- [Items screen](#items-screen) · [Magic screen](#magic-screen)
 - [Draw primitives + CLUT staging](#draw-primitives--clut-staging)
 - [Record fields consumed](#record-fields-consumed)
 
@@ -56,7 +57,13 @@ of the `menu_status_town` capture places each window's 4x4 corner tiles at
 cross-checked against the captures' VRAM framebuffer edge pixels).
 
 Screen window sets, read from the live window lists of the captures (each
-live window carries its descriptor id):
+live window carries its descriptor id). The Status / Equip / Options sets
+come from the six catalogued mednafen states; the Items / Magic sets from
+PCSX-Redux captures pad-walked to each screen
+(`scripts/pcsx-redux/autorun_menu_screen_dump.lua` over the
+`sol_to_karisto_worldmap` scenario state - SELECT opens the menu, the
+walk confirms into each command, and the probe dumps framebuffer + RAM
+at parked checkpoints):
 
 | screen | windows (draw order) |
 |---|---|
@@ -64,6 +71,8 @@ live window carries its descriptor id):
 | Status | tab 3 -> `FUN_801DCAD8`; 26 party list `(14,38,60,38)` -> `FUN_801D2094`; 27 "Condition" pager `(14,92,60,10)` -> `FUN_801D30A4`; 30 summary `(14,134,60,70)` -> `FUN_801D31EC`; 28 **main panel** `(90,16,218,188)` -> `FUN_801D33D8` |
 | Equip | tab 2 -> `FUN_801DCA94`; 21 party `(14,42,80,38)` -> `FUN_801D2094`; 23 item list `(174,22,132,182)` (renderer-less container; its lower span is occluded by 22); 22 main `(14,96,292,108)` -> `FUN_801D21C0` |
 | Options | tab 4 -> `FUN_801DCB1C`; 48 settings `(24,40,256,148)` -> `FUN_801DCEF0`; 47 value popup `(170, *, 128, *)` -> `FUN_801D2B44` (y/h stamped per open - see [Options screen](#options-screen)) |
+| Items | tab 0 -> `FUN_801DCA0C`; 13 command `(32,44,80,38)` -> `FUN_801D0D18`; 15 item list `(174,22,132,182)` (renderer-less); 17 info `(14,108,144,40)` -> `FUN_801DCB60` - see [Items screen](#items-screen) |
+| Magic | tab 1 -> `FUN_801DCA50`; 18 spell list `(174,22,132,182)` (renderer-less); 19 caster `(14,40,144,96)` -> `FUN_801D2C98`; 20 spell info `(14,152,144,52)` -> `FUN_801D2E74` - see [Magic screen](#magic-screen) |
 
 The id-28 rect origin `(90, 16)` is the `(WX, WY)` every offset in the
 status-page sections below hangs off - cross-checked against the captured
@@ -346,7 +355,9 @@ The play-time row draws ICO `0x63` at `(WX, y+0x10)` and the clock from
 the 60 Hz tick counter `0x80084570`: hours 3-wide (clamped 99, then
 minutes/seconds pin 59) at `+0x20`, colon glyphs (`FUN_8003c1f8` code 9)
 at `+0x38`/`+0x50`, zero-padded 2-wide minutes/seconds (`FUN_80034e4c`)
-at `+0x40`/`+0x58`.
+at `+0x40`/`+0x58`. When the coin row shows, the live window grows past
+its descriptor rect - the Items/Magic-era capture holds id 49 at
+`(24,166,104,38)` against the table's `(24,178,104,24)`.
 
 **Party info panel (id 51, `FUN_801D030C`)**: one block per roster
 member (ids `u8[3]` at `0x80084598`, count `0x80084594`; live record
@@ -509,6 +520,86 @@ Engine port: `engine-core::options` (`OPTIONS_DISPLAY_ROWS`,
 `engine-ui::options_draws_for`; the Sound row drives the audio
 mixer's monaural downmix (`engine-audio AudioOut::set_mono`), the other
 settings persist in the engine's options config file.
+
+## Items screen
+
+Four descriptor-table windows (draw order: tab 0, command 13, list 15,
+info 17 - the live-list order of the pad-walked capture). The pause-menu
+submenu word `DAT_801E46A4` holds `5` while the command window has focus
+and `6` once the hand enters the list.
+
+**Command window (id 13, `FUN_801D0D18`)** - three rows at `(WX+0x14,
+WY + row*0xE)`: "Use" / "Throw Out" / "Arrange" (`@`-marker strings in
+the menu-overlay rodata pool at `0x801CEA10..`). Text stages CLUT 7,
+dropping to CLUT 0 when the bag scan (slots `0x80085958 + i*2` =
+`[id, count]` over `_DAT_8007B5EA.._DAT_8007B5EC`) finds no held item.
+The hand cursor (`FUN_8002B994`) draws at `(WX, row_y)` gated by the
+cursor word `DAT_801E46C0`. See
+`ghidra/scripts/funcs/overlay_menu_801d0d18.txt`.
+
+**Item list (id 15)** - renderer-less in the descriptor table; the items
+flow draws the page directly (drawer untraced - layout capture-pinned).
+Rows start at `(WX+0xC, WY+0xC)`, pitch `0xE`, 12 rows per page: item
+name, then the bag count as a 2-digit fixed-cell field at `WX+0x74`. The
+whole page draws CLUT-7 white while the command window has focus and
+drops to CLUT-0 grey once the hand enters the list (the hand at
+`WX-0xC` is the selection highlight - no row tint). The header row sits
+above row 0: a teal-green "PAGE" small-cap tag (ink `(16,181,156)`)
+right of `WX+0x4D` and the gold `cur / total` fraction ending flush at
+the content right edge. A kind-3 right-triangle sprite at
+`(WX+0x84, WY+0x53)` - vertically centred, overlapping the right frame
+edge - marks further pages (`PAGE 1 / 6` in the capture).
+
+**Info window (id 17, `FUN_801DCB60`)** - draws only while an item id is
+staged in `DAT_801E46B0`: the 2-digit bag count (CLUT 6) at
+`(WX+0x7C, WY)` (count re-resolved through the bag-slot scan
+`FUN_80042EE0`), then the shared item-info panel `FUN_801D0F1C`: name
+(CLUT 6) at `(WX, WY)`, description (CLUT 7) at `(WX, WY+0x10)`, and -
+for accessories - the passive-effect lines from the `0x8007625C` table
+at `(WX, WY+0x38)` (CLUT 4) and `(WX, WY+0x48)` (CLUT 7), plus a
+single/all-scope icon (`0x84`/`0x85`) at `WX+0x84`. A Point Card
+(`id 0xFE`) instead draws "Points Left" at `(WX+0x18, WY+0x41)` with the
+8-digit bank `_DAT_800845B4` at `(WX+0x38, WY+0x4E)`. The renderer
+always emits a second framed widget box `FUN_8002C69C(WX, WY+0x38,
+0x90, 0x28)` under its own window - the empty lower-left box of the
+capture; the passive / points lines land inside it. See
+`overlay_menu_801dcb60.txt` / `overlay_menu_801d0f1c.txt`.
+
+## Magic screen
+
+Four descriptor-table windows (draw order: tab 1, list 18, caster 19,
+info 20). Submenu word `0x0E` = caster focus, `0x0F` = list focus.
+
+**Caster window (id 19, `FUN_801D2C98`)** - one block per roster member
+(ids at `0x80084598`, count `0x80084594`, roster byte `< 3` only) at
+`Yb = WY + 1 + i*0x23`: name (CLUT 7, record `+0x2A7`) at `WX+0x14`; LV
+icon (ICO `0x0A`) at `(WX+0x60, Yb+2)` with the 2-digit level
+(`+0x130`) at `WX+0x70`; MP icon (ICO `0x40`) at `(WX+0x24, Yb+0x10)`
+with the 4-digit current (`+0x10A`) / slash (`FUN_8003C1F8` code 6,
+CLUT 7) / 4-digit max (`+0x108`) at `WX+0x34 / +0x54 / +0x5C` on row
+`Yb+0xE` - the numbers stage the `FUN_80035EA8` MP tier ink. Hand
+cursor at `(WX, Yb)`, gated by this screen's cursor word
+`DAT_801E46C8`. See `overlay_menu_801d2c98.txt`.
+
+**Spell list (id 18)** - renderer-less; same capture-pinned page layout
+as the item list (rows from `(WX+0xC, WY+0xC)`, pitch `0xE`, 12 rows,
+PAGE header, white -> grey focus drop, hand at `WX-0xC`). Each row is a
+single string whose leading `0xCE` escape draws the element icon plate,
+so the name ink starts 25 px right of the row pen (the wider winged
+Ra-Seru-magic icon advances 22 px - "Meta" indents differently in the
+capture).
+
+**Info window (id 20, `FUN_801D2E74`)** - draws only while a spell id is
+staged in `DAT_801E46B0`: the spell-name string (CLUT 6, leading element
+icon) at `(WX, WY)`; the learned level - looked up in the highlighted
+character's spell list (`+0x13C` count / `+0x13D` ids / `+0x161`
+levels) - as a "Lv`n`" string at `WX+0x78`; the description string
+(`stats[+4]` index into the pointer table at `0x80075DB0`, CLUT 7,
+multi-line at the `0xE` pitch) from `(WX, WY+0xE)`; then "MP Used"
+(CLUT 4) at `(WX+0x18, WY+0x2A)` with the 3-digit cost at `WX+0x74` -
+the base cost `stats[+3]` run through the MP-cost kernel
+`FUN_80035394`, digits drawn in the same green. See
+`overlay_menu_801d2e74.txt`.
 
 ## Dialog reading box (FUN_801D84D0)
 
@@ -685,7 +776,16 @@ through `equip_screen_draws_for` + `equip_screen_sprites_for` at the
 traced `FUN_801D21C0` / `FUN_801D2094` offsets (see
 [Equip screen](#equip-screen)). The top-level menu renders the traced
 row / money-box / party-panel content (see
-[Top-level pause menu](#top-level-pause-menu)). Still engine-styled:
-the Items / Magic / Equip-picker screens (their content layouts do not
-fill the pinned windows yet, so they keep a generic frame) and the
-HP / MP health-tier inks.
+[Top-level pause menu](#top-level-pause-menu)). The Items and Magic
+screens' retail window sets and content layouts live in
+`engine-ui::pause_lists` (`items_screen_draws_for` /
+`magic_screen_draws_for` + `_sprites_for` siblings, window ids + pinned
+rect fallbacks in the same module): the command / caster / info windows
+at the decompile-pinned pens above, the list pages at the
+capture-pinned rows with the white-to-grey focus drop, hand cursors and
+page arrows from the system-UI atlas. The spell element-icon plates and
+the "PAGE" small-cap tag are not yet ported as sprites - the builders
+hold their measured gaps / text stand-ins. Hosts still frame these
+screens generically pending the play-window / web wiring; the
+HP / MP health-tier inks on the status page remain the other open
+fidelity item.

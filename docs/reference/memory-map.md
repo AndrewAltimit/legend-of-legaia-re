@@ -33,7 +33,7 @@ Plus the PSX-specific scratchpad at `0x1F800000-0x1F8003FF` (1 KB) which Legaia 
 | `0x80084594` | u8 | Party member count. |
 | `0x80084598` | u8[] | Party member IDs (sorted insertion, cap 4). |
 | `0x80084628` | i16 | Set by op 0x4C nibble-8 sub-8. |
-| `0x80085758` | u8[] | **Fourth flag bank** - bitfield accessed via SET / CLEAR / TEST `(idx >> 3, 0x80 >> (idx & 7))` (`FUN_8003CE08`/`_CE34`/`_CE64`). `idx` ranges `0..=0x87FF`, so it is **not** a fixed 256-bit array. The earlier `0x80086D70` was a double-count of the `0x1618` save displacement onto `0x80085758` (which itself already `= 0x80084140 + 0x1618`); see [`subsystems/script-vm.md`](../subsystems/script-vm.md). |
+| `0x80085758` | u8[] | **Fourth flag bank** - bitfield accessed via SET / CLEAR / TEST `(idx >> 3, 0x80 >> (idx & 7))` (`FUN_8003CE08`/`_CE34`/`_CE64`). The field-VM opcode encoding spans `idx = 0x000..=0xFFF` plus `0x8000..=0x8FFF` (extended-prefix opcodes `0xD0..=0xFF`), so it is **not** a fixed 256-bit array. The earlier `0x80086D70` was a double-count of the `0x1618` save displacement onto `0x80085758` (which itself already `= 0x80084140 + 0x1618`); see [`subsystems/script-vm.md`](../subsystems/script-vm.md). |
 | `0x80077828` | u8[] | **Per-monster steal table** (`DAT_80077828`). Indexed by 1-based monster id at `+id*2`; each entry is `[steal_chance_pct: u8, steal_item_id: u8]` (chance first). What the Evil God Icon steals - NOT in the PROT 867 record. See [`docs/formats/steal-table.md`](../formats/steal-table.md); parser `legaia_asset::steal_table`. |
 | `0x80087AF8` | u32 | Result of `FUN_80020224` descriptor walker, set by town-overlay MAIN INIT. |
 | `0x800845DC` | (mirror of `_DAT_80084570`) | Snapshot written by op 0x4C nibble-E sub-E. |
@@ -239,13 +239,16 @@ None of the 557 catalogued GameShark / Pro-Action-Replay codes in
 
 **Not reachable from the script-VM flag ops.** The field-VM SET/CLEAR/TEST flag
 ops (`0x50`/`0x60`/`0x70` → `FUN_8003CE08`/`_CE34`/`_CE64`, shared with the move
-VM) write `(&DAT_80085758)[(int)idx >> 3]` into the single fourth flag bank at
-`0x80085758`, with a 16-bit signed `idx`. The reachable byte window is therefore
-`0x80085758 ± (0x8000 >> 3)` = `[0x80084758, 0x80086757]`, which does **not**
-include `0x8007B8C2` (it lies below the lower bound) - there is no out-of-bounds
-flag-index path from script bytecode to the build-mode selector or the debug-menu
-enable. A clean-room engine should treat both as build-time constants and keep
-its flag-bank writes bounded.
+VM) write `(&DAT_80085758)[(int)idx >> 3]` (`sra`, i.e. arithmetic shift) into
+the single fourth flag bank at `0x80085758`. The field-VM dispatcher constructs
+`idx = (opcode & 0x8F) << 8 | operand` in full-width registers - always positive,
+max `0x8FFF` - so its window is `[0x80085758, 0x80086957]`. The move-VM widget
+wait-op instead reads its flag operand as an **i16**, whose sign-extended
+negatives reach down to `0x80085758 - 0x1000 = 0x80084758`. Neither window
+includes `0x8007B8C2` (it lies below both lower bounds) - there is no
+out-of-bounds flag-index path from script bytecode to the build-mode selector or
+the debug-menu enable. A clean-room engine should treat both as build-time
+constants and keep its flag-bank writes bounded.
 
 ## PSX scratchpad (`0x1F800000-0x1F8003FF`)
 

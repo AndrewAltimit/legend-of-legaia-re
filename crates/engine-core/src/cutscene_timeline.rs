@@ -251,6 +251,17 @@ pub struct CutsceneTimeline {
     /// door record's terminal `0x3F` scene change).
     // REF: FUN_8003BDE0
     pub player_wait: Option<usize>,
+    /// When `true`, completing this timeline un-parks every NPC left at the
+    /// off-map hide box ([`crate::world::World::restore_hidden_field_npcs`]).
+    /// Set ONLY by the `town01` opening install: that record hides the
+    /// townsfolk for its establishing shot and nothing reloads the scene
+    /// before free-roam, so the overrides must be dropped explicitly.
+    /// A mid-scene walk-on beat keeps the default `false` - a record that
+    /// seats an actor at the hide box did so as story choreography (the Mei
+    /// beat's closing `4C 51` walks her out of Vahn's house and despawns
+    /// her; retail leaves her hidden until the next scene entry re-runs her
+    /// spawn prologue), and restoring would resurrect the ghost in-room.
+    pub restore_hidden_on_complete: bool,
     /// PCs of `45 C0 <s16>` camera-apply ops whose backward loop-jump has
     /// already been broken once. Retail's sub-`0xC0` arm applies the camera
     /// solve and RETURNS the operand s16 as the next PC - in the Drake-castle
@@ -297,6 +308,7 @@ impl CutsceneTimeline {
             channel_wait: None,
             player_move_frames: 0,
             player_wait: None,
+            restore_hidden_on_complete: false,
             camera_loop_broken: Vec::new(),
         }
     }

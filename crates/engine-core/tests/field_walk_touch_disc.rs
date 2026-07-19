@@ -101,13 +101,22 @@ fn koin1_portal_walk_touch_queues_the_door_warp() {
     let (slot, pos, target_map) = warps[0];
     eprintln!("[koin1] walking into portal slot {slot} at {pos:?} (target_map {target_map})");
 
-    // Baseline: standing far from every portal posts nothing.
+    // Baseline: standing far from every portal posts no TOUCH. The
+    // assertion is scoped to the walk-touch surface: channel stepping (when
+    // an engaged window - a cutscene timeline or the liveliness opt-in -
+    // has it running) may legitimately emit ambient field events.
     let _ = world.drain_field_events();
     for _ in 0..5 {
         let _ = world.tick();
     }
     assert!(world.pending_scene_transition.is_none());
-    assert!(world.drain_field_events().is_empty());
+    assert!(
+        world
+            .drain_field_events()
+            .iter()
+            .all(|e| !matches!(e, FieldEvent::FieldInteract { .. })),
+        "no touch post while far from every portal"
+    );
 
     // Walk into the portal's contact box: the touch posts once and queues
     // the door-warp transition through the same path the 0x3E op uses.

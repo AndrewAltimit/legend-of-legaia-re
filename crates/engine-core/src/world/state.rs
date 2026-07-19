@@ -1783,6 +1783,21 @@ pub struct World {
     /// `None` outside a channel-targeted step.
     pub executing_channel: Option<u8>,
 
+    /// `true` while [`Self::run_spawned_record_slice`] is stepping a spawned
+    /// partition-2 record context (the modal cutscene timeline or a
+    /// concurrent helper context). Host hooks use it to distinguish a
+    /// spawned record's cross-context channel poke (seat the target exactly -
+    /// the retail run settles on the op target) from the live channel
+    /// stepper's own-script op (glide).
+    pub in_spawned_record_slice: bool,
+
+    /// The scene's `.MAP` object script binds
+    /// (`(flat_record_index, contact_centre)`, retail `FUN_8003A55C`),
+    /// stored at scene entry so a cutscene-timeline install that has to
+    /// respawn the channel set can re-append the object-bind channels
+    /// ([`crate::field_channels::spawn_object_channels`]).
+    pub object_channel_binds: Vec<(usize, (i16, i16))>,
+
     /// Animation cues raised by channel scripts (op `0x4B` ANIMATE):
     /// `placement_index -> (count, base_id, keyframe bytes)`. The windowed
     /// host drains these each frame and re-targets the NPC's clip player.
@@ -2133,6 +2148,8 @@ impl World {
             field_channels: Vec::new(),
             field_channels_man: None,
             executing_channel: None,
+            in_spawned_record_slice: false,
+            object_channel_binds: Vec::new(),
             field_npc_anim_cues: std::collections::HashMap::new(),
             field_player_move_cues: Vec::new(),
             prologue_naming_pending: false,
