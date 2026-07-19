@@ -23,6 +23,11 @@ pub struct World {
     /// nothing until a real catalog is wired. Set via
     /// [`crate::scene::SceneHost::set_effect_catalog`].
     pub effect_catalog: vm::effect_vm::EffectCatalog,
+    /// Dev-spawned synthetic effects ([`World::spawn_debug_effect`] /
+    /// [`World::spawn_debug_effect_model`]) - engine-side visualization
+    /// aids kept outside the retail effect pool, aged by
+    /// [`World::tick_effects`] over a fixed budget.
+    pub debug_effects: Vec<DebugEffect>,
     /// Field VM execution context. Live in `SceneMode::Field` and
     /// `SceneMode::Cutscene` (cutscenes are field scenes that suppress
     /// player input via context flags).
@@ -1191,6 +1196,13 @@ pub struct World {
     /// percent stat boosts inside [`World::seed_party_battle_stats`].
     pub accessory_passives: crate::accessory_passives::AccessoryPassives,
 
+    /// Disc-derived pause-menu text (item names + descriptions, spell
+    /// names / descriptions, accessory passive lines). `None` on a
+    /// PROT.DAT-only load; install via [`World::install_menu_text`] when
+    /// the executable is reachable. The Items / Magic pause screens read
+    /// it through [`crate::pause_screens`].
+    pub menu_text: Option<crate::pause_screens::MenuTextTables>,
+
     /// Party-global 4×u32 ability mask - the engine mirror of retail
     /// `DAT_80074358..0x80074368` (every member's `+0xF4` bitfield OR'd
     /// together each rebuild). Bit-tested via [`World::party_has_ability`]
@@ -1899,6 +1911,7 @@ impl World {
             battle_ctx: BattleActionCtx::new(),
             effect_pool: Pool::new(),
             effect_catalog: vm::effect_vm::EffectCatalog::default(),
+            debug_effects: Vec::new(),
             field_ctx: FieldCtx::default(),
             field_bytecode: Vec::new(),
             field_pc: 0,
@@ -2098,6 +2111,7 @@ impl World {
             field_shop_open: false,
             equipment_table: crate::battle_stats::EquipmentTable::new(),
             accessory_passives: Default::default(),
+            menu_text: None,
             party_ability_mask: [0; crate::accessory_passives::ABILITY_WORDS],
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
             active_scene_label: String::new(),

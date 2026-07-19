@@ -191,63 +191,205 @@ impl PlayWindowApp {
                 ));
                 out
             }
-            FieldMenuSubsession::Spells(s) => {
-                use legaia_engine_core::spell_menu::SpellMenuPhase;
-                let names: Vec<&str> = s.party().iter().map(|c| c.name.as_str()).collect();
-                let hp: Vec<(u16, u16)> = s.party().iter().map(|c| (c.hp, c.hp)).collect();
-                let mp: Vec<(u16, u16)> = s.party().iter().map(|c| (c.mp, c.mp)).collect();
-                let spell_rows = s.current_spell_rows();
-                let spell_views: Vec<legaia_engine_render::SpellRowView<'_>> = spell_rows
-                    .iter()
-                    .map(|sr| legaia_engine_render::SpellRowView {
-                        name: sr.name.as_str(),
-                        mp_cost: sr.mp_cost,
-                        admissible: sr.admissible,
-                    })
-                    .collect();
-                let target_views: Vec<legaia_engine_render::SpellTargetView<'_>> = s
-                    .targets()
-                    .iter()
-                    .map(|t| legaia_engine_render::SpellTargetView {
-                        name: t.name.as_str(),
-                        hp: t.hp,
-                        hp_max: t.hp_max,
-                        alive: t.alive(),
-                    })
-                    .collect();
-                let (selected_caster, selected_spell, phase, cursor) = match s.phase() {
-                    SpellMenuPhase::CharSelect { cursor } => (None, None, 0u8, *cursor),
-                    SpellMenuPhase::SpellSelect { caster, cursor } => {
-                        (Some(*caster), None, 1u8, *cursor)
-                    }
-                    SpellMenuPhase::TargetSelect {
-                        caster,
-                        spell_id,
-                        cursor,
-                    } => (Some(*caster), Some(*spell_id), 2u8, *cursor),
-                    SpellMenuPhase::Done(_) => return Vec::new(),
-                };
-                let names_arr: Vec<&str> = names.to_vec();
-                let args = legaia_engine_render::SpellMenuDrawArgs {
-                    party_names: &names_arr,
-                    party_hp: &hp,
-                    party_mp: &mp,
-                    selected_caster,
-                    spells: &spell_views,
-                    selected_spell,
-                    targets: &target_views,
-                    selected_target: None,
-                    cursor,
-                    phase,
-                };
-                legaia_engine_render::spell_menu_draws_for(&self.font, args, (32, 32))
-            }
-            FieldMenuSubsession::Items(s) => self.items_session_draws(s),
+            FieldMenuSubsession::Spells(s) => self.pause_magic_draws(s),
+            FieldMenuSubsession::Items(s) => self.pause_items_draws(s),
             FieldMenuSubsession::Equip { session, char_slot } => {
                 self.equip_session_draws(session, *char_slot)
             }
             FieldMenuSubsession::Arts(s) => self.arts_session_draws(s),
         }
+    }
+
+    /// Generic spell-menu overlay - the target-select fallback while the
+    /// retail target-pick window layout stays unpinned.
+    fn spell_session_generic_draws(
+        &self,
+        s: &legaia_engine_core::spell_menu::SpellMenuSession,
+    ) -> Vec<TextDraw> {
+        use legaia_engine_core::spell_menu::SpellMenuPhase;
+        {
+            let names: Vec<&str> = s.party().iter().map(|c| c.name.as_str()).collect();
+            let hp: Vec<(u16, u16)> = s.party().iter().map(|c| (c.hp, c.hp)).collect();
+            let mp: Vec<(u16, u16)> = s.party().iter().map(|c| (c.mp, c.mp)).collect();
+            let spell_rows = s.current_spell_rows();
+            let spell_views: Vec<legaia_engine_render::SpellRowView<'_>> = spell_rows
+                .iter()
+                .map(|sr| legaia_engine_render::SpellRowView {
+                    name: sr.name.as_str(),
+                    mp_cost: sr.mp_cost,
+                    admissible: sr.admissible,
+                })
+                .collect();
+            let target_views: Vec<legaia_engine_render::SpellTargetView<'_>> = s
+                .targets()
+                .iter()
+                .map(|t| legaia_engine_render::SpellTargetView {
+                    name: t.name.as_str(),
+                    hp: t.hp,
+                    hp_max: t.hp_max,
+                    alive: t.alive(),
+                })
+                .collect();
+            let (selected_caster, selected_spell, phase, cursor) = match s.phase() {
+                SpellMenuPhase::CharSelect { cursor } => (None, None, 0u8, *cursor),
+                SpellMenuPhase::SpellSelect { caster, cursor } => {
+                    (Some(*caster), None, 1u8, *cursor)
+                }
+                SpellMenuPhase::TargetSelect {
+                    caster,
+                    spell_id,
+                    cursor,
+                } => (Some(*caster), Some(*spell_id), 2u8, *cursor),
+                SpellMenuPhase::Done(_) => return Vec::new(),
+            };
+            let names_arr: Vec<&str> = names.to_vec();
+            let args = legaia_engine_render::SpellMenuDrawArgs {
+                party_names: &names_arr,
+                party_hp: &hp,
+                party_mp: &mp,
+                selected_caster,
+                spells: &spell_views,
+                selected_spell,
+                targets: &target_views,
+                selected_target: None,
+                cursor,
+                phase,
+            };
+            legaia_engine_render::spell_menu_draws_for(&self.font, args, (32, 32))
+        }
+    }
+
+    /// Build draws for the retail **Magic** screen: caster window (id 19),
+    /// spell-list page (id 18), spell info window (id 20) and the "Magic"
+    /// title tab (id 1), each at its disc-parsed descriptor rect via the
+    /// shared engine-ui builder. Session data (mp/mp_max, learned levels,
+    /// descriptions) comes from the engine-core view model; during
+    /// target-select the generic overlay stands in (the retail target-pick
+    /// window layout is unpinned).
+    pub(super) fn pause_magic_draws(
+        &self,
+        s: &legaia_engine_core::spell_menu::SpellMenuSession,
+    ) -> Vec<TextDraw> {
+        use legaia_asset::menu_windows::window_ids;
+        let world = &self.session.host.world;
+        let model =
+            legaia_engine_core::pause_screens::magic_screen_model(s, world.menu_text.as_ref());
+        if model.target_select {
+            return self.spell_session_generic_draws(s);
+        }
+        let casters: Vec<legaia_engine_render::PauseMagicCaster<'_>> = model
+            .casters
+            .iter()
+            .map(
+                |(name, level, mp, mp_max)| legaia_engine_render::PauseMagicCaster {
+                    name,
+                    level: *level as u16,
+                    mp: *mp,
+                    mp_max: *mp_max,
+                },
+            )
+            .collect();
+        let rows: Vec<legaia_engine_render::PauseMagicRow<'_>> = model
+            .page_rows
+            .iter()
+            .map(|(name, ra_seru)| legaia_engine_render::PauseMagicRow {
+                name,
+                ra_seru: *ra_seru,
+            })
+            .collect();
+        let info = model
+            .info
+            .as_ref()
+            .map(|i| legaia_engine_render::PauseMagicInfo {
+                name: &i.name,
+                level: i.level,
+                desc: &i.desc,
+                mp_cost: i.mp_cost,
+            });
+        let view = legaia_engine_render::PauseMagicView {
+            casters: &casters,
+            rows: &rows,
+            page: model.page,
+            pages: model.pages,
+            phase: if model.focus_list {
+                legaia_engine_render::PauseMagicPhase::List
+            } else {
+                legaia_engine_render::PauseMagicPhase::Caster
+            },
+            caster_cursor: model.caster_cursor,
+            list_cursor: model.list_cursor_on_page,
+            info,
+            // LV / MP tags + hand cursor come from the UI-icon atlas when
+            // it's resident (see `field_menu_chrome_sprite_draws`).
+            label_icons: self.save_menu.is_some(),
+            text_cursor: self.save_menu.is_none(),
+        };
+        let mut d = legaia_engine_render::magic_screen_draws_for(
+            &self.font,
+            &view,
+            self.menu_window_pen(window_ids::MAGIC_CASTER),
+            self.menu_window_pen(window_ids::MAGIC_LIST),
+            self.menu_window_pen(window_ids::MAGIC_INFO),
+        );
+        d.extend(self.menu_tab_title_draws(window_ids::TAB_MAGIC, "Magic"));
+        d
+    }
+
+    /// Build draws for the retail **Items** screen: command window (id
+    /// 13), item-list page (id 15), item info window (id 17, plus its
+    /// extra widget box) and the "Items" title tab (id 0). Rows carry the
+    /// real bag counts + disc descriptions from the session; during
+    /// target-select the generic overlay stands in.
+    pub(super) fn pause_items_draws(
+        &self,
+        s: &legaia_engine_core::pause_screens::PauseItemsSession,
+    ) -> Vec<TextDraw> {
+        use legaia_asset::menu_windows::window_ids;
+        let model = legaia_engine_core::pause_screens::items_screen_model(s);
+        if model.target_select {
+            return self.items_session_draws(&s.inner);
+        }
+        let rows: Vec<legaia_engine_render::PauseItemsRow<'_>> = model
+            .page_rows
+            .iter()
+            .map(|(name, count)| legaia_engine_render::PauseItemsRow {
+                name,
+                count: *count,
+            })
+            .collect();
+        let info = model
+            .info
+            .as_ref()
+            .map(|i| legaia_engine_render::PauseItemInfo {
+                name: &i.name,
+                count: i.count,
+                desc: &i.desc,
+                passive: i.passive.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
+            });
+        let view = legaia_engine_render::PauseItemsView {
+            rows: &rows,
+            page: model.page,
+            pages: model.pages,
+            phase: if model.focus_list {
+                legaia_engine_render::PauseItemsPhase::List
+            } else {
+                legaia_engine_render::PauseItemsPhase::Command
+            },
+            command_cursor: model.command_cursor,
+            list_cursor: model.list_cursor_on_page,
+            bag_empty: model.bag_empty,
+            info,
+            text_cursor: self.save_menu.is_none(),
+        };
+        let mut d = legaia_engine_render::items_screen_draws_for(
+            &self.font,
+            &view,
+            self.menu_window_pen(window_ids::ITEMS_COMMAND),
+            self.menu_window_pen(window_ids::ITEMS_LIST),
+            self.menu_window_pen(window_ids::ITEMS_INFO),
+        );
+        d.extend(self.menu_tab_title_draws(window_ids::TAB_ITEMS, "Items"));
+        d
     }
 
     /// Build draws for the inventory item-use overlay. Resolves item

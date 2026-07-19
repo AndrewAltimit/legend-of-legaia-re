@@ -77,9 +77,17 @@ const SUBWINDOW_CONTENT: (i32, i32, i32, i32) = (18, 18, 284, 200);
 /// parsed table is unavailable - byte-identical to the native window's
 /// `MENU_WINDOW_FALLBACK`.
 #[rustfmt::skip]
-const WINDOW_FALLBACK: [(usize, (i32, i32, i32, i32)); 15] = {
+const WINDOW_FALLBACK: [(usize, (i32, i32, i32, i32)); 23] = {
     use legaia_asset::menu_windows::window_ids as w;
     [
+        (w::TAB_ITEMS, (16, 12, 60, 12)),
+        (w::TAB_MAGIC, (16, 12, 60, 12)),
+        (w::ITEMS_COMMAND, (32, 44, 80, 38)),
+        (w::ITEMS_LIST, (174, 22, 132, 182)),
+        (w::ITEMS_INFO, (14, 108, 144, 40)),
+        (w::MAGIC_LIST, (174, 22, 132, 182)),
+        (w::MAGIC_CASTER, (14, 40, 144, 96)),
+        (w::MAGIC_INFO, (14, 152, 144, 52)),
         (w::TAB_EQUIP, (16, 12, 60, 12)),
         (w::TAB_STATUS, (12, 12, 60, 12)),
         (w::TAB_OPTIONS, (16, 12, 60, 12)),
@@ -489,7 +497,7 @@ impl LegaiaRuntime {
                                         apply_equip_outcome(&session, char_slot, world);
                                     }
                                     FieldMenuSubsession::Items(s) => {
-                                        apply_inventory_outcome(&s, world)
+                                        apply_inventory_outcome(&s.inner, world)
                                     }
                                     FieldMenuSubsession::Spells(s) => {
                                         apply_spell_outcome(&s, world)
@@ -1275,35 +1283,132 @@ impl LegaiaRuntime {
         texts.extend(d);
     }
 
-    /// Items sub-screen: the inventory-use overlay + the generic frame chrome.
-    /// Mirrors the native window's `FieldMenuSubsession::Items` path
-    /// (`items_session_draws` -> `inventory_use_draws_for`).
+    /// Items sub-screen: the retail four-window layout (command 13 / list
+    /// 15 / info 17 + the "Items" tab) fed from the engine-core session
+    /// model - identical draw lists to the native window's
+    /// `pause_items_draws`. During target-select the generic overlay
+    /// stands in (its retail window layout is unpinned).
     fn build_items(
         &self,
         assets: &PlayMenuAssets,
-        s: &InventoryUseSession,
+        s: &legaia_engine_core::pause_screens::PauseItemsSession,
         sprites: &mut Vec<SpriteDraw>,
         texts: &mut Vec<TextDraw>,
         origin: (i32, i32),
         scale: u32,
     ) {
-        let mut d = self.items_session_draws(assets, s);
+        use legaia_asset::menu_windows::window_ids;
+        let font = &assets.font;
+        let model = legaia_engine_core::pause_screens::items_screen_model(s);
+        if model.target_select {
+            let mut d = self.items_session_draws(assets, &s.inner);
+            ui::scale_stage_text_draws(&mut d, origin, scale);
+            texts.extend(d);
+            if let Some((_, rects)) = assets.chrome.as_ref() {
+                let (x, y, w, h) = SUBWINDOW_CONTENT;
+                sprites.extend(ui::menu_window_chrome_draws_for(
+                    rects,
+                    (x - 8, y - 8, w + 16, h + 16),
+                    origin,
+                    scale,
+                ));
+            }
+            return;
+        }
+        let rows: Vec<ui::PauseItemsRow<'_>> = model
+            .page_rows
+            .iter()
+            .map(|(name, count)| ui::PauseItemsRow {
+                name,
+                count: *count,
+            })
+            .collect();
+        let info = model.info.as_ref().map(|i| ui::PauseItemInfo {
+            name: &i.name,
+            count: i.count,
+            desc: &i.desc,
+            passive: i.passive.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
+        });
+        let phase = if model.focus_list {
+            ui::PauseItemsPhase::List
+        } else {
+            ui::PauseItemsPhase::Command
+        };
+        let view = ui::PauseItemsView {
+            rows: &rows,
+            page: model.page,
+            pages: model.pages,
+            phase,
+            command_cursor: model.command_cursor,
+            list_cursor: model.list_cursor_on_page,
+            bag_empty: model.bag_empty,
+            info,
+            text_cursor: assets.chrome.is_none(),
+        };
+        let mut d = ui::items_screen_draws_for(
+            font,
+            &view,
+            assets.pen(window_ids::ITEMS_COMMAND),
+            assets.pen(window_ids::ITEMS_LIST),
+            assets.pen(window_ids::ITEMS_INFO),
+        );
+        d.extend(ui::text_draws_for(
+            &font.layout_ascii("Items"),
+            assets.pen(window_ids::TAB_ITEMS),
+            ui::MENU_TEXT_WHITE,
+        ));
         ui::scale_stage_text_draws(&mut d, origin, scale);
         texts.extend(d);
-        if let Some((_, rects)) = assets.chrome.as_ref() {
-            let (x, y, w, h) = SUBWINDOW_CONTENT;
-            sprites.extend(ui::menu_window_chrome_draws_for(
-                rects,
-                (x - 8, y - 8, w + 16, h + 16),
-                origin,
-                scale,
-            ));
+
+        let Some((_, rects)) = assets.chrome.as_ref() else {
+            return;
+        };
+        for &id in &legaia_asset::menu_windows::ITEMS_SCREEN_WINDOWS {
+            if id <= window_ids::TAB_OPTIONS {
+                let (_, _, w, _) = assets.window_rect(id);
+                sprites.extend(ui::tab_banner_draws(
+                    rects,
+                    assets.pen(id),
+                    w,
+                    origin,
+                    scale,
+                ));
+            } else {
+                sprites.extend(ui::menu_window_chrome_draws_for(
+                    rects,
+                    assets.frame_rect(id),
+                    origin,
+                    scale,
+                ));
+            }
         }
+        // The id-17 info renderer's extra widget box below its own window.
+        let (bx, by, bw, bh) = ui::ITEMS_INFO_EXTRA_BOX_RECT;
+        sprites.extend(ui::menu_window_chrome_draws_for(
+            rects,
+            (bx - 8, by - 8, bw + 16, bh + 16),
+            origin,
+            scale,
+        ));
+        sprites.extend(ui::items_screen_sprites_for(
+            rects,
+            phase,
+            model.command_cursor,
+            model.list_cursor_on_page,
+            model.page,
+            model.pages,
+            assets.pen(window_ids::ITEMS_COMMAND),
+            assets.pen(window_ids::ITEMS_LIST),
+            origin,
+            scale,
+        ));
     }
 
-    /// Magic sub-screen: the caster/spell/target list + the generic frame.
-    /// Mirrors the native window's `FieldMenuSubsession::Spells` path
-    /// (`spell_menu_draws_for`).
+    /// Magic sub-screen: the retail four-window layout (list 18 / caster
+    /// 19 / info 20 + the "Magic" tab) fed from the engine-core session
+    /// model - identical draw lists to the native window's
+    /// `pause_magic_draws`. During target-select the generic overlay
+    /// stands in.
     fn build_spells(
         &self,
         assets: &PlayMenuAssets,
@@ -1313,7 +1418,106 @@ impl LegaiaRuntime {
         origin: (i32, i32),
         scale: u32,
     ) {
+        use legaia_asset::menu_windows::window_ids;
         let font = &assets.font;
+        let model = legaia_engine_core::pause_screens::magic_screen_model(
+            s,
+            self.menu_world().and_then(|w| w.menu_text.as_ref()),
+        );
+        if !model.target_select {
+            let casters: Vec<ui::PauseMagicCaster<'_>> = model
+                .casters
+                .iter()
+                .map(|(name, level, mp, mp_max)| ui::PauseMagicCaster {
+                    name,
+                    level: *level as u16,
+                    mp: *mp,
+                    mp_max: *mp_max,
+                })
+                .collect();
+            let rows: Vec<ui::PauseMagicRow<'_>> = model
+                .page_rows
+                .iter()
+                .map(|(name, ra_seru)| ui::PauseMagicRow {
+                    name,
+                    ra_seru: *ra_seru,
+                })
+                .collect();
+            let info = model.info.as_ref().map(|i| ui::PauseMagicInfo {
+                name: &i.name,
+                level: i.level,
+                desc: &i.desc,
+                mp_cost: i.mp_cost,
+            });
+            let phase = if model.focus_list {
+                ui::PauseMagicPhase::List
+            } else {
+                ui::PauseMagicPhase::Caster
+            };
+            let view = ui::PauseMagicView {
+                casters: &casters,
+                rows: &rows,
+                page: model.page,
+                pages: model.pages,
+                phase,
+                caster_cursor: model.caster_cursor,
+                list_cursor: model.list_cursor_on_page,
+                info,
+                label_icons: assets.chrome.is_some(),
+                text_cursor: assets.chrome.is_none(),
+            };
+            let mut d = ui::magic_screen_draws_for(
+                font,
+                &view,
+                assets.pen(window_ids::MAGIC_CASTER),
+                assets.pen(window_ids::MAGIC_LIST),
+                assets.pen(window_ids::MAGIC_INFO),
+            );
+            d.extend(ui::text_draws_for(
+                &font.layout_ascii("Magic"),
+                assets.pen(window_ids::TAB_MAGIC),
+                ui::MENU_TEXT_WHITE,
+            ));
+            ui::scale_stage_text_draws(&mut d, origin, scale);
+            texts.extend(d);
+
+            let Some((_, rects)) = assets.chrome.as_ref() else {
+                return;
+            };
+            for &id in &legaia_asset::menu_windows::MAGIC_SCREEN_WINDOWS {
+                if id <= window_ids::TAB_OPTIONS {
+                    let (_, _, w, _) = assets.window_rect(id);
+                    sprites.extend(ui::tab_banner_draws(
+                        rects,
+                        assets.pen(id),
+                        w,
+                        origin,
+                        scale,
+                    ));
+                } else {
+                    sprites.extend(ui::menu_window_chrome_draws_for(
+                        rects,
+                        assets.frame_rect(id),
+                        origin,
+                        scale,
+                    ));
+                }
+            }
+            sprites.extend(ui::magic_screen_sprites_for(
+                rects,
+                model.casters.len(),
+                phase,
+                model.caster_cursor,
+                model.list_cursor_on_page,
+                model.page,
+                model.pages,
+                assets.pen(window_ids::MAGIC_CASTER),
+                assets.pen(window_ids::MAGIC_LIST),
+                origin,
+                scale,
+            ));
+            return;
+        }
         let names: Vec<&str> = s.party().iter().map(|c| c.name.as_str()).collect();
         let hp: Vec<(u16, u16)> = s.party().iter().map(|c| (c.hp, c.hp)).collect();
         let mp: Vec<(u16, u16)> = s.party().iter().map(|c| (c.mp, c.mp)).collect();

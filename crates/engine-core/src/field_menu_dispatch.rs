@@ -25,10 +25,9 @@ use crate::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
 use crate::equip_session::{EquipInput, EquipOutcome, EquipSession};
 use crate::field_menu::FieldMenuRow;
 use crate::input::PadButton;
-use crate::inventory_use::{
-    InventoryContext, InventoryUseInput, InventoryUseSession, TargetRow as InvTargetRow,
-};
+use crate::inventory_use::{InventoryContext, InventoryUseSession, TargetRow as InvTargetRow};
 use crate::options::{OptionsInput, OptionsSession, OptionsState};
+use crate::pause_screens::{PauseItemRow, PauseItemsSession};
 use crate::save_select::{SaveSelectMode, SaveSelectSession, SelectInput, SlotSnapshot};
 use crate::spell_menu::{
     CasterSlot as SpellCasterSlot, SpellMenuInput, SpellMenuOutcome, SpellMenuSession,
@@ -44,7 +43,11 @@ use crate::world::World;
 /// One of the seven sub-sessions that can be active beneath a suspended
 /// [`crate::field_menu::FieldMenuSession`].
 pub enum FieldMenuSubsession {
-    Items(InventoryUseSession),
+    /// The retail Items screen (command window + 12-row list pages +
+    /// info window) layered over the item-use flow. The inner
+    /// [`InventoryUseSession`] stays the outcome carrier -
+    /// [`apply_inventory_outcome`] takes `&session.inner`.
+    Items(PauseItemsSession),
     /// Equip session paired with the slot of the character whose record is
     /// being edited so the caller can write the result back to the right
     /// roster member.
@@ -79,7 +82,7 @@ impl FieldMenuSubsession {
         // Options / Load / Save).
         let _ = chain_library;
         match row {
-            FieldMenuRow::Items => Self::Items(build_inventory_session(world)),
+            FieldMenuRow::Items => Self::Items(build_pause_items_session(world)),
             FieldMenuRow::Equip => {
                 let leader = active_leader_slot(world);
                 let session = build_equip_session(world, leader, equipment_table);
@@ -126,11 +129,7 @@ impl FieldMenuSubsession {
     /// per-button input bundle.
     pub fn tick_pad_edge(&mut self, pressed: u16) {
         match self {
-            Self::Items(s) => {
-                if let Some(ev) = inventory_input_from_pad(pressed) {
-                    s.input(ev);
-                }
-            }
+            Self::Items(s) => s.input_pad_edge(pressed),
             Self::Equip { session, .. } => {
                 session.input(EquipInput {
                     up: pressed & PadButton::Up.mask() != 0,
@@ -452,13 +451,18 @@ fn build_spell_session(world: &World, catalog: &SpellCatalog) -> SpellMenuSessio
         .enumerate()
         .map(|(i, member)| {
             let hms = member.hp_mp_sp();
-            let spells = member.spell_list().ids[..member.spell_list().count as usize].to_vec();
+            let list = member.spell_list();
+            let n = list.count as usize;
             SpellCasterSlot {
                 slot: i as u8,
                 name: names.get(i).cloned().unwrap_or_default(),
                 hp: hms.hp_cur,
                 mp: hms.mp_cur,
-                spells,
+                hp_max: hms.hp_max,
+                mp_max: hms.mp_max,
+                level: member.magic_rank(),
+                spells: list.ids[..n].to_vec(),
+                spell_levels: list.levels[..n].to_vec(),
             }
         })
         .collect();
@@ -482,11 +486,14 @@ fn build_spell_session(world: &World, catalog: &SpellCatalog) -> SpellMenuSessio
 
 fn build_inventory_session(world: &World) -> InventoryUseSession {
     let names = roster_names(world);
-    let items: Vec<u8> = world
+    // Id-sorted, one entry per distinct held id (the paired PauseItemRow
+    // list is built in the same order - keep these in lockstep).
+    let mut items: Vec<u8> = world
         .inventory
         .iter()
         .filter_map(|(id, qty)| if *qty > 0 { Some(*id) } else { None })
         .collect();
+    items.sort_unstable();
     let targets: Vec<InvTargetRow> = world
         .roster
         .members
@@ -514,6 +521,39 @@ fn build_inventory_session(world: &World) -> InventoryUseSession {
         targets,
         InventoryContext::Field,
     )
+}
+
+/// Build the retail Items screen session: the item-use flow plus the
+/// per-row display data (real bag counts; names / descriptions /
+/// accessory passive lines resolved through the world's disc text tables
+/// with catalog + raw-id fallbacks).
+pub fn build_pause_items_session(world: &World) -> PauseItemsSession {
+    let inner = build_inventory_session(world);
+    let text = world.menu_text.as_ref();
+    let rows: Vec<PauseItemRow> = inner
+        .items
+        .iter()
+        .map(|&id| {
+            let name = text
+                .and_then(|t| t.item_name(id))
+                .map(str::to_string)
+                .or_else(|| world.item_catalog.get(id).map(|e| e.name.to_string()))
+                .unwrap_or_else(|| format!("Item {id:02X}"));
+            let desc = text
+                .and_then(|t| t.item_desc(id))
+                .unwrap_or_default()
+                .to_string();
+            let passive = text.and_then(|t| t.item_passive_lines(id));
+            PauseItemRow {
+                id,
+                name,
+                count: world.inventory.get(&id).copied().unwrap_or(0),
+                desc,
+                passive,
+            }
+        })
+        .collect();
+    PauseItemsSession::new(inner, rows)
 }
 
 fn build_equip_session(world: &World, char_slot: u8, equipment: &EquipmentTable) -> EquipSession {
@@ -545,20 +585,6 @@ fn stat_record_from_character(c: &legaia_save::CharacterRecord) -> StatRecord {
         base_spd: live.spd,
         base_int: live.int,
         equip: eq_bytes,
-    }
-}
-
-fn inventory_input_from_pad(pressed: u16) -> Option<InventoryUseInput> {
-    if pressed & PadButton::Up.mask() != 0 {
-        Some(InventoryUseInput::Up)
-    } else if pressed & PadButton::Down.mask() != 0 {
-        Some(InventoryUseInput::Down)
-    } else if pressed & PadButton::Cross.mask() != 0 {
-        Some(InventoryUseInput::Confirm)
-    } else if pressed & PadButton::Circle.mask() != 0 {
-        Some(InventoryUseInput::Cancel)
-    } else {
-        None
     }
 }
 

@@ -37,7 +37,8 @@ impl World {
     /// `None`.
     ///
     /// Order of operations:
-    ///  1. Effect pool tick - runs every frame regardless of mode.
+    ///  1. Effect pool tick - the faithful retail walker, run on the
+    ///     ~60 Hz retail-frame sub-clock regardless of mode.
     ///  2. Per-actor move-VM tick - only for actors with bytecode loaded.
     ///  3. Per-actor physics tick (`FUN_80021DF4`) - drains timer,
     ///     advances motion, kicks the move-buffer cursor on
@@ -105,7 +106,16 @@ impl World {
         // next-game-mode global one frame after the op writes it, so the flip
         // into the cutscene mode lands here, at the top of the following tick.
         self.maybe_enter_pending_cutscene();
-        self.tick_effects();
+        // Effect-pool walker on the retail-frame sub-clock: retail runs
+        // the per-frame walker once per rendered frame with its vsync
+        // catch-up factor - one sweep per vsync. The sim ticks at 100 Hz,
+        // so gating on the ~60 Hz `field_frame_step` keeps the 5.3
+        // wait-counter cadence at retail wall-speed (ungated it would
+        // drain ~1.7x fast).
+        // REF: FUN_801E0088
+        if self.field_frame_step == 1 {
+            self.tick_effects();
+        }
         self.tick_move_vms();
         self.tick_actor_physics();
         self.tick_actors();

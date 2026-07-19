@@ -17,8 +17,15 @@
 //! | Offset | Type | Field |
 //! |---|---|---|
 //! | `+0` | u32 | `name_ptr` - pointer to the NUL-terminated display name |
-//! | `+4` | u32 | secondary pointer (shared "type" string for some classes) |
+//! | `+4` | u32 | `desc_ptr` - pointer to the info-window description string |
 //! | `+8` | u32 | packed price / id / type metadata |
+//!
+//! The `+4` word is the **item description** the pause menu's item info
+//! window prints: the shared item-info panel `FUN_801D0F1C` draws
+//! `PTR_DAT_8007436C[id*3 + 0]` (the name, staged CLUT 6) at the window
+//! origin and `PTR_DAT_8007436C[id*3 + 1]` (this word, staged CLUT 7) one
+//! text row below (`WY + 0x10`). Description strings use the MES `0x7C`
+//! line-break token; the parser maps it to `'\n'`.
 //!
 //! Ids run `0x00..=0xFF`; the pointers leave the data segment past `0xFF`,
 //! which is how [`ItemNameTable::from_scus`] finds the table's extent. A
@@ -79,6 +86,42 @@ fn read_name(scus: &[u8], map: &ExeMap, va: u32) -> Option<String> {
         }
         if b == 0xCE {
             // 0xCE + control byte (+ an optional trailing space).
+            i += 2;
+            if scus.get(i) == Some(&0x20) {
+                i += 1;
+            }
+            continue;
+        }
+        if (0x20..0x7F).contains(&b) {
+            out.push(b as char);
+        }
+        i += 1;
+    }
+    let trimmed = out.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+/// Read an item **description** string at `va`. Same control-byte handling
+/// as [`read_name`], except the MES `0x7C` line-break token maps to `'\n'`
+/// (the string primitive `FUN_80036888` treats `0x7C` as "new line, x
+/// resets"; descriptions are the only item-table strings that use it).
+///
+/// REF: FUN_801d0f1c (description draw at `WY + 0x10`, staged CLUT 7).
+fn read_desc(scus: &[u8], map: &ExeMap, va: u32) -> Option<String> {
+    let start = map.off(va)?;
+    let mut out = String::new();
+    let mut i = start;
+    while i < scus.len() {
+        let b = scus[i];
+        if b == 0 {
+            break;
+        }
+        if b == 0x7C {
+            out.push('\n');
+            i += 1;
+            continue;
+        }
+        if b == 0xCE {
             i += 2;
             if scus.get(i) == Some(&0x20) {
                 i += 1;
@@ -155,6 +198,9 @@ pub fn file_offset_for_va(scus: &[u8], va: u32) -> Option<usize> {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ItemNameTable {
     names: Vec<Option<String>>,
+    /// Info-window description per id (`desc_ptr` at record `+8` = the word
+    /// at `TABLE_VA + id*0xC + 4`). Empty when built via [`Self::from_names`].
+    descs: Vec<Option<String>>,
 }
 
 impl ItemNameTable {
@@ -163,23 +209,42 @@ impl ItemNameTable {
     pub fn from_scus(scus: &[u8]) -> Option<Self> {
         let map = ExeMap::parse(scus)?;
         let mut names = Vec::with_capacity(ITEM_COUNT);
+        let mut descs = Vec::with_capacity(ITEM_COUNT);
         for id in 0..ITEM_COUNT {
             let rec = map.off(TABLE_VA + (id * RECORD_STRIDE) as u32)?;
             let name_ptr = u32::from_le_bytes(scus.get(rec..rec + 4)?.try_into().ok()?);
+            let desc_ptr = u32::from_le_bytes(scus.get(rec + 4..rec + 8)?.try_into().ok()?);
             names.push(read_name(scus, &map, name_ptr));
+            descs.push(read_desc(scus, &map, desc_ptr));
         }
-        Some(Self { names })
+        Some(Self { names, descs })
     }
 
     /// Build directly from a name list (tests / non-SCUS callers).
     pub fn from_names(names: Vec<Option<String>>) -> Self {
-        Self { names }
+        Self {
+            names,
+            descs: Vec::new(),
+        }
+    }
+
+    /// Build from parallel name + description lists (tests / non-SCUS
+    /// callers).
+    pub fn from_names_and_descs(names: Vec<Option<String>>, descs: Vec<Option<String>>) -> Self {
+        Self { names, descs }
     }
 
     /// Display name for item `id`, or `None` for a reserved / empty slot (and
     /// for `id == 0`, which the game uses as "no item").
     pub fn name(&self, id: u8) -> Option<&str> {
         self.names.get(id as usize)?.as_deref()
+    }
+
+    /// Info-window description for item `id` (the record `+8` string the
+    /// shared item-info panel `FUN_801D0F1C` draws at `WY + 0x10`), or
+    /// `None` for an empty slot. Line breaks are `'\n'`.
+    pub fn desc(&self, id: u8) -> Option<&str> {
+        self.descs.get(id as usize)?.as_deref()
     }
 
     /// Number of id slots the table covers.

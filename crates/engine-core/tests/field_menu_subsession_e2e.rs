@@ -138,7 +138,10 @@ fn field_menu_items_row_drains_to_inventory_session() {
     let mut sub = build(FieldMenuRow::Items, &world, &OptionsState::default());
     if let FieldMenuSubsession::Items(s) = &sub {
         // Player has one item (Healing Leaf) - filtered list should be 1.
-        assert_eq!(s.filtered_items.len(), 1);
+        assert_eq!(s.inner.filtered_items.len(), 1);
+        // The retail screen carries the row's real bag count.
+        assert_eq!(s.rows.len(), 1);
+        assert_eq!(s.rows[0].count, 3);
     } else {
         panic!("expected Items sub");
     }
@@ -197,7 +200,7 @@ fn apply_inventory_outcome_does_nothing_on_cancel() {
     sub.tick_pad_edge(PadButton::Circle.mask());
     assert!(sub.is_done());
     if let FieldMenuSubsession::Items(s) = sub {
-        apply_inventory_outcome(&s, &mut world);
+        apply_inventory_outcome(&s.inner, &mut world);
     }
     assert_eq!(world.money, world_money_before);
 }

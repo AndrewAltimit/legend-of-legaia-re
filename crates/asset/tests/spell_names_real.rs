@@ -71,4 +71,22 @@ fn names_enemy_magic_or_skips() {
         named > 80,
         "expected many named enemy magic ids, got {named}"
     );
+
+    // Info-window descriptions: the stats `+4` byte indexes the 0x80075DB0
+    // pointer table (FUN_801D2E74). Every player Seru-magic spell
+    // (0x81..=0x95) carries one; the retail shape is "<title>|<effect
+    // line>" - two '\n'-separated lines after decode. Structural checks
+    // only (the strings are Sony text and stay uncommitted).
+    for id in 0x81..=0x95u8 {
+        let desc = table
+            .desc(id)
+            .unwrap_or_else(|| panic!("seru spell 0x{id:02x} has no description"));
+        let lines: Vec<&str> = desc.split('\n').collect();
+        assert!(
+            lines.len() == 2 && lines.iter().all(|l| !l.is_empty()),
+            "0x{id:02x} desc shape: {desc:?}"
+        );
+    }
+    // Internal enemy-attack tiers (0x00..=0x24) carry no description index.
+    assert_eq!(table.desc(0x01), None);
 }

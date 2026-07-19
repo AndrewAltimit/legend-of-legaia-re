@@ -285,7 +285,8 @@ impl PlayWindowApp {
         surface_h: u32,
     ) -> Vec<legaia_engine_render::SpriteDraw> {
         use legaia_asset::menu_windows::{
-            EQUIP_SCREEN_WINDOWS, OPTIONS_SCREEN_WINDOWS, STATUS_SCREEN_WINDOWS, TOP_LEVEL_WINDOWS,
+            EQUIP_SCREEN_WINDOWS, ITEMS_SCREEN_WINDOWS, MAGIC_SCREEN_WINDOWS,
+            OPTIONS_SCREEN_WINDOWS, STATUS_SCREEN_WINDOWS, TOP_LEVEL_WINDOWS,
         };
         use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
         let Some(assets) = self.save_menu.as_ref() else {
@@ -304,6 +305,18 @@ impl PlayWindowApp {
             Some(FieldMenuSubsession::Status(_)) => &STATUS_SCREEN_WINDOWS,
             Some(FieldMenuSubsession::Config(_)) => &OPTIONS_SCREEN_WINDOWS,
             Some(FieldMenuSubsession::Equip { .. }) => &EQUIP_SCREEN_WINDOWS,
+            // Items / Magic: the capture-pinned four-window retail sets.
+            // While the use/cast flow is target-selecting the generic
+            // overlay draws instead (its retail window is unpinned).
+            Some(FieldMenuSubsession::Items(s)) if !s.target_select() => &ITEMS_SCREEN_WINDOWS,
+            Some(FieldMenuSubsession::Spells(s))
+                if !matches!(
+                    s.phase(),
+                    legaia_engine_core::spell_menu::SpellMenuPhase::TargetSelect { .. }
+                ) =>
+            {
+                &MAGIC_SCREEN_WINDOWS
+            }
             Some(_) => &[],
         };
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
@@ -427,6 +440,68 @@ impl PlayWindowApp {
                 self.menu_window_pen(window_ids::EQUIP_PARTY),
                 *char_slot as usize,
                 slot_cursor,
+                stage_origin,
+                stage_scale,
+            ));
+        }
+        // Items screen: the extra widget box the id-17 info renderer
+        // emits below itself, plus the pointing-hand cursor + page-turn
+        // arrows (FUN_801D0D18 command hand; list layout capture-pinned).
+        if let Some(FieldMenuSubsession::Items(s)) = sub
+            && !s.target_select()
+        {
+            use legaia_asset::menu_windows::window_ids;
+            let model = legaia_engine_core::pause_screens::items_screen_model(s);
+            let (bx, by, bw, bh) = legaia_engine_render::ITEMS_INFO_EXTRA_BOX_RECT;
+            out.extend(legaia_engine_render::menu_window_chrome_draws_for(
+                &assets.rects,
+                (bx - 8, by - 8, bw + 16, bh + 16),
+                stage_origin,
+                stage_scale,
+            ));
+            out.extend(legaia_engine_render::items_screen_sprites_for(
+                &assets.rects,
+                if model.focus_list {
+                    legaia_engine_render::PauseItemsPhase::List
+                } else {
+                    legaia_engine_render::PauseItemsPhase::Command
+                },
+                model.command_cursor,
+                model.list_cursor_on_page,
+                model.page,
+                model.pages,
+                self.menu_window_pen(window_ids::ITEMS_COMMAND),
+                self.menu_window_pen(window_ids::ITEMS_LIST),
+                stage_origin,
+                stage_scale,
+            ));
+        }
+        // Magic screen: the caster blocks' LV / MP tag sprites, the
+        // pointing-hand cursor and the page-turn arrows (FUN_801D2C98).
+        if let Some(FieldMenuSubsession::Spells(s)) = sub
+            && !matches!(
+                s.phase(),
+                legaia_engine_core::spell_menu::SpellMenuPhase::TargetSelect { .. }
+            )
+        {
+            use legaia_asset::menu_windows::window_ids;
+            let world = &self.session.host.world;
+            let model =
+                legaia_engine_core::pause_screens::magic_screen_model(s, world.menu_text.as_ref());
+            out.extend(legaia_engine_render::magic_screen_sprites_for(
+                &assets.rects,
+                model.casters.len(),
+                if model.focus_list {
+                    legaia_engine_render::PauseMagicPhase::List
+                } else {
+                    legaia_engine_render::PauseMagicPhase::Caster
+                },
+                model.caster_cursor,
+                model.list_cursor_on_page,
+                model.page,
+                model.pages,
+                self.menu_window_pen(window_ids::MAGIC_CASTER),
+                self.menu_window_pen(window_ids::MAGIC_LIST),
                 stage_origin,
                 stage_scale,
             ));

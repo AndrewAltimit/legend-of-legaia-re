@@ -114,6 +114,15 @@ impl World {
         self.accessory_passives = p;
     }
 
+    /// Install the pause-menu text tables (item names/descriptions, spell
+    /// names/descriptions, accessory passive lines) from a `SCUS_942.54`
+    /// image. Boot wires this once when the executable is reachable; the
+    /// Items / Magic pause screens read it through
+    /// [`crate::pause_screens::MenuTextTables`].
+    pub fn install_menu_text(&mut self, scus: &[u8]) {
+        self.menu_text = Some(crate::pause_screens::MenuTextTables::from_scus(scus));
+    }
+
     /// Rebuild every party member's ability bitfield from their equipped
     /// items, plus the party-global mask.
     ///

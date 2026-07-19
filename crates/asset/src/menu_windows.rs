@@ -97,12 +97,33 @@ impl MenuWindowDescriptor {
 /// catalogued menu-open save states (each screen's spawned windows carry
 /// these ids at struct `+0x8`).
 pub mod window_ids {
+    /// "Items" title tab (renderer `FUN_801DCA0C`; live on the Items screen).
+    pub const TAB_ITEMS: usize = 0;
+    /// "Magic" title tab (renderer `FUN_801DCA50`; live on the Magic screen).
+    pub const TAB_MAGIC: usize = 1;
     /// "Equip" title tab (live on the equipment screen).
     pub const TAB_EQUIP: usize = 2;
     /// "Status" title tab (live on the status screen).
     pub const TAB_STATUS: usize = 3;
     /// "Options" title tab (live on the options screen).
     pub const TAB_OPTIONS: usize = 4;
+    /// Items screen: Use / Throw Out / Arrange command window
+    /// (renderer `FUN_801D0D18`).
+    pub const ITEMS_COMMAND: usize = 13;
+    /// Items screen: right item-list page (renderer-less container; the
+    /// items flow draws the page content directly).
+    pub const ITEMS_LIST: usize = 15;
+    /// Items screen: item info window (renderer `FUN_801DCB60` -> the
+    /// shared item-info panel `FUN_801D0F1C`). The renderer also emits a
+    /// second framed widget box below itself
+    /// (`FUN_8002C69C(WX, WY+0x38, 0x90, 0x28)`).
+    pub const ITEMS_INFO: usize = 17;
+    /// Magic screen: right spell-list page (renderer-less container).
+    pub const MAGIC_LIST: usize = 18;
+    /// Magic screen: caster (party) window (renderer `FUN_801D2C98`).
+    pub const MAGIC_CASTER: usize = 19;
+    /// Magic screen: spell info window (renderer `FUN_801D2E74`).
+    pub const MAGIC_INFO: usize = 20;
     /// Equipment screen: party-member window (renderer shared with
     /// [`STATUS_PARTY_LIST`], wider rect).
     pub const EQUIP_PARTY: usize = 21;
@@ -149,6 +170,21 @@ pub const STATUS_SCREEN_WINDOWS: [usize; 5] = [
     window_ids::STATUS_CONDITION,
     window_ids::STATUS_SUMMARY,
     window_ids::STATUS_MAIN,
+];
+/// Items screen window set (draw order of the pad-walked menu captures:
+/// tab, command, list, info - see `docs/subsystems/field-menu.md`).
+pub const ITEMS_SCREEN_WINDOWS: [usize; 4] = [
+    window_ids::TAB_ITEMS,
+    window_ids::ITEMS_COMMAND,
+    window_ids::ITEMS_LIST,
+    window_ids::ITEMS_INFO,
+];
+/// Magic screen window set (draw order: tab, list, caster, info).
+pub const MAGIC_SCREEN_WINDOWS: [usize; 4] = [
+    window_ids::TAB_MAGIC,
+    window_ids::MAGIC_LIST,
+    window_ids::MAGIC_CASTER,
+    window_ids::MAGIC_INFO,
 ];
 /// Equipment screen window set (see [`STATUS_SCREEN_WINDOWS`] on order).
 pub const EQUIP_SCREEN_WINDOWS: [usize; 4] = [

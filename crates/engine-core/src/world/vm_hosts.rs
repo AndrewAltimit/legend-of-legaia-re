@@ -7,7 +7,7 @@ use crate::battle_events::BattleEvent;
 use crate::field_events::FieldEvent;
 use legaia_engine_vm as vm;
 use vm::battle_action::{BattleActionHost, BattleActor, BattleEndCause, Pose};
-use vm::effect_vm::{EffectHost, MasterSlot, StateOutcome};
+use vm::effect_vm::EffectHost;
 use vm::field::{CameraParam, FieldCtx, FieldHost, Op49State, SceneFadeResult};
 use vm::move_vm::{ActorState as MoveActorState, MoveHost};
 use vm::{Host as ActorVmHost, Position as ActorVmPosition};
@@ -300,24 +300,11 @@ pub(super) struct EffectHostImpl<'a> {
 }
 
 impl<'a> EffectHost for EffectHostImpl<'a> {
+    // The faithful walker (`Pool::tick_retail`) derives the whole effect
+    // lifecycle from the catalog's spawn records + animation frames; the
+    // host only supplies the RNG (mirror bits + spawn-offset rewrites).
     fn next_random(&mut self) -> i32 {
         self.world.next_rng() as i32
-    }
-    fn advance_state(&mut self, _slot: usize, master: &mut MasterSlot) -> StateOutcome {
-        // REF: FUN_801e0088
-        // Clean-room lifetime: count elapsed frames in `field_14` (a scratch
-        // word the retail walker manages during state advance) and retire the
-        // effect after a fixed budget. Without this an effect terminates on
-        // its first work tick and never persists long enough to render. The
-        // faithful per-state token walk (retail `FUN_801E0088` pass 1) lands
-        // with the textured-sprite render path; see
-        // `effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES`.
-        master.field_14 = master.field_14.saturating_add(1);
-        if (master.field_14 as u32) >= vm::effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES {
-            StateOutcome::Terminate
-        } else {
-            StateOutcome::Continue
-        }
     }
 }
 
@@ -1299,6 +1286,20 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn exec_move(&mut self, _ctx: &mut FieldCtx, move_id: u8) {
+        // A cross-context ExecMove against an NPC channel (`A2 <id>
+        // <move_id>`): retail is `FUN_80024E08(actor, id)` - the id lands in
+        // the actor's anim slot and the anim-clock (`FUN_800204F8`) plays the
+        // named clip (scene-bundle record `id - 1`, the same `+0x5C` id space
+        // the placement anim byte seeds). Surface it as an anim cue so the
+        // windowed host re-targets the NPC's clip player - this is what makes
+        // Mei visibly WALK (clip 61) then idle (clip 60) through her town01
+        // walk-on beat instead of sliding in a frozen pose.
+        // REF: FUN_80024E08, FUN_800204F8
+        if let Some(slot) = self.world.executing_channel {
+            self.world
+                .field_npc_anim_cues
+                .insert(slot, (1, move_id, Vec::new()));
+        }
         self.world
             .pending_field_events
             .push(FieldEvent::ExecMove { move_id });

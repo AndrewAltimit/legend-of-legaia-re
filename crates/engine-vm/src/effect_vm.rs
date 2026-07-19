@@ -11,8 +11,8 @@
 //! layout, the per-effect script header parser, the public spawn API, and the
 //! full per-frame walker algebra ([`Pool::tick_retail`] pass 1 +
 //! [`Pool::child_billboards`] pass 2). The [`EffectHost`] trait supplies the
-//! RNG and the summon routing; a legacy host-delegating frame
-//! ([`Pool::tick`]) remains for engines still on the fixed-lifetime model.
+//! RNG and the summon routing; the faithful walker is the only per-frame
+//! path (`engine-core::World::tick_effects` drives it each retail frame).
 //!
 //! ## Why no opcode table
 //!

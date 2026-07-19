@@ -153,6 +153,12 @@ impl LegaiaRuntime {
         self.item_names = scus
             .as_ref()
             .and_then(|s| legaia_asset::item_names::ItemNameTable::from_scus(s));
+        // Pause-menu text tables (item names + descriptions, spell names /
+        // descriptions, accessory passive lines) - what the Items / Magic
+        // pause screens' info windows print. Executable-only, like above.
+        if let Some(s) = scus.as_ref() {
+            host.world.install_menu_text(s);
+        }
         // The real retail proportional dialog font, decoded straight from the
         // disc (no save state): the 4bpp font TIM in PROT.DAT + the SCUS width
         // table. This is the exact font the native pause menu draws; without it

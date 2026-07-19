@@ -276,6 +276,33 @@ pub struct CutsceneTimeline {
     /// resident-loop completion the Mei-beat shape relies on).
     // REF: FUN_801dab90 (the case-0x45 sub-0xC0 camera solve)
     pub camera_loop_broken: Vec<usize>,
+    /// `Some` while the timeline is PARKED on a cross-context **walk-to-tile
+    /// yield** (`C7 <id> <tx> <tz> <mode>` = op `0x47` against an NPC channel
+    /// or the player anchor `0xF8`). Retail's dispatcher saves the yield-op
+    /// pointer into the TARGET actor's `+0x94` and sets its `0x400` walk bit;
+    /// the per-frame walk kernel (`FUN_8003774C` case `0x47`) then moves the
+    /// actor toward the decoded tile at `0x80 >> (2 + (mode & 7))` units per
+    /// frame, and the parked record resumes when it arrives. The engine
+    /// mirrors that with a motion-VM glide on the target and this park.
+    // REF: FUN_8003774C (case 0x47: walk-to-tile interpreted in place)
+    pub walk_wait: Option<TimelineWalk>,
+}
+
+/// State of a parked cross-context walk-to-tile yield (see
+/// [`CutsceneTimeline::walk_wait`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TimelineWalk {
+    /// Placement slot of the walking NPC, or `None` for the player anchor
+    /// (`C7 F8 …`).
+    pub slot: Option<u8>,
+    /// Decoded world-coordinate target (tile centre + half-tile bits).
+    pub target: (i16, i16),
+    /// PC to resume at once the walk arrives (`yield pc + 5`).
+    pub resume_pc: usize,
+    /// Per-tick step magnitude (`field_npc_walk_step_speed(0x80, mode & 7)`).
+    pub speed: u16,
+    /// Ticks parked so far, bounded by the walk park timeout.
+    pub frames: u32,
 }
 
 impl CutsceneTimeline {
@@ -310,6 +337,7 @@ impl CutsceneTimeline {
             player_wait: None,
             restore_hidden_on_complete: false,
             camera_loop_broken: Vec::new(),
+            walk_wait: None,
         }
     }
 

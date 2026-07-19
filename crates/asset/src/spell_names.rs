@@ -23,6 +23,12 @@
 
 /// RAM address of the stats base (`DAT_800754C8`).
 pub const STATS_VA: u32 = 0x8007_54C8;
+/// RAM address of the spell-**description** pointer table (`0x80075DB0`):
+/// a flat `u32 string_ptr[]` array the pause menu's spell info window
+/// indexes with the stats record's `+4` byte (`FUN_801D2E74`; index `0` =
+/// no description). Descriptions are multi-line via the MES `0x7C`
+/// line-break token, drawn from `(WX, WY+0xE)` at the `0xE` line pitch.
+pub const DESC_PTR_TABLE_VA: u32 = 0x8007_5DB0;
 /// Per-id stride in bytes.
 pub const RECORD_STRIDE: usize = 0x0C;
 /// Number of spell ids the table covers.
@@ -88,6 +94,39 @@ fn read_name(scus: &[u8], map: &ExeMap, va: u32) -> Option<String> {
     (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
+/// Read a spell **description** string at `va`: like [`read_name`] but the
+/// MES `0x7C` line-break token maps to `'\n'` (the info window draws the
+/// description over multiple `0xE`-pitch rows). REF: FUN_801d2e74.
+fn read_desc(scus: &[u8], map: &ExeMap, va: u32) -> Option<String> {
+    let start = map.off(va)?;
+    let mut out = String::new();
+    let mut i = start;
+    while i < scus.len() {
+        let b = scus[i];
+        if b == 0 {
+            break;
+        }
+        if b == 0x7C {
+            out.push('\n');
+            i += 1;
+            continue;
+        }
+        if b == 0xCE {
+            i += 2;
+            if scus.get(i) == Some(&0x20) {
+                i += 1;
+            }
+            continue;
+        }
+        if (0x20..0x7F).contains(&b) {
+            out.push(b as char);
+        }
+        i += 1;
+    }
+    let trimmed = out.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
 /// Decoded shape of a spell's `+2` target byte.
 ///
 /// The byte is two independent bits over a side/scope pair (pinned against the
@@ -134,6 +173,11 @@ pub struct SpellEntry {
     pub mp: u8,
     /// Target-shape byte (`stats +2`).
     pub target: u8,
+    /// Info-window description (`stats +4` index into the
+    /// [`DESC_PTR_TABLE_VA`] pointer table; index `0` = none). Line
+    /// breaks are `'\n'`. `None` for entries built without a SCUS image.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub desc: Option<String>,
 }
 
 impl SpellEntry {
@@ -168,7 +212,24 @@ impl SpellNameTable {
             let mp = *scus.get(stat + 3)?;
             let name_ptr = u32::from_le_bytes(scus.get(stat + 8..stat + 12)?.try_into().ok()?);
             let name = read_name(scus, &map, name_ptr);
-            entries.push(SpellEntry { name, mp, target });
+            // Description: the `+4` byte indexes the 0x80075DB0 pointer
+            // table (index 0 = no description). REF: FUN_801d2e74.
+            let desc_index = *scus.get(stat + 4)?;
+            let desc = if desc_index != 0 {
+                map.off(DESC_PTR_TABLE_VA + desc_index as u32 * 4)
+                    .and_then(|o| {
+                        let ptr = u32::from_le_bytes(scus.get(o..o + 4)?.try_into().ok()?);
+                        read_desc(scus, &map, ptr)
+                    })
+            } else {
+                None
+            };
+            entries.push(SpellEntry {
+                name,
+                mp,
+                target,
+                desc,
+            });
         }
         Some(Self { entries })
     }
@@ -186,6 +247,12 @@ impl SpellNameTable {
     /// MP cost for spell `id`.
     pub fn mp(&self, id: u8) -> Option<u8> {
         self.entries.get(id as usize).map(|e| e.mp)
+    }
+
+    /// Info-window description for spell `id` (line breaks are `'\n'`), or
+    /// `None` when the entry carries no description.
+    pub fn desc(&self, id: u8) -> Option<&str> {
+        self.entries.get(id as usize)?.desc.as_deref()
     }
 
     /// The full entry for spell `id`.
@@ -264,6 +331,7 @@ mod tests {
                 name: None,
                 mp: 0,
                 target: b,
+                desc: None,
             }
             .target_shape()
         };

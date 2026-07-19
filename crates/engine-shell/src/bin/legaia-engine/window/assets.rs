@@ -863,19 +863,18 @@ impl PlayWindowApp {
                 })
                 .unwrap_or_default();
             for (p, _kind) in &placements {
-                // A header-parked placement (spawn tile = the off-map hide
-                // box) still gets its mesh uploaded: the scene-entry
-                // spawn-prologue pre-run can seat it INTO the town per story
-                // state (retail's `FUN_8003A1E4` install runs the record's
-                // story-flag-tested `MoveTo`s), and the draw pass skips any
-                // NPC whose LIVE position is the hide box - so parked actors
-                // stay invisible and story-placed ones appear from frame one.
-                let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
-                let header_parked = p.world_x == hide && p.world_z == hide;
-                let live_pos = world.field_npc_positions.get(&(p.index as u8));
-                if header_parked && live_pos.is_none_or(|&(x, z)| x == hide && z == hide) {
-                    continue;
-                }
+                // EVERY placement gets its mesh uploaded, including the ones
+                // parked at the off-map hide box: the scene-entry
+                // spawn-prologue pre-run can seat a parked placement INTO the
+                // town per story state (retail's `FUN_8003A1E4` install runs
+                // the record's story-flag-tested `MoveTo`s), and a mid-scene
+                // walk-on timeline can seat one long after `upload_assets`
+                // ran (the town01 Mei beat's `4C 51` / `C7` pokes). The draw
+                // pass skips any NPC whose LIVE position is the hide box, so
+                // parked actors stay invisible until a script places them -
+                // filtering them out HERE instead left a timeline-seated NPC
+                // permanently meshless (invisible while the world said it
+                // stood on stage).
                 let src = if p.special_model {
                     world
                         .global_tmd_pool

@@ -164,3 +164,61 @@ fn opening_timeline_op49_opens_name_entry_then_resumes() {
         "the opening timeline resumes and completes after the name commits"
     );
 }
+
+/// A cross-context walk-to-tile yield against the player anchor
+/// (`C7 F8 <tx> <tz> <mode>`) PARKS the timeline and plays the walk out over
+/// frames - retail saves the yield-op pointer into the target actor and the
+/// per-frame walk kernel (`FUN_8003774C` case 0x47) glides it to the decoded
+/// tile at `0x80 >> (2 + (mode & 7))` units per frame, resuming the record on
+/// arrival. The town01 Mei beat's `C7 F8 12 1A 33` / `C7 46 11 1A 33` pair is
+/// the disc case; this pins the player arm disc-free.
+#[test]
+fn walk_to_tile_yield_parks_and_glides_the_player() {
+    let mut w = World {
+        mode: SceneMode::Field,
+        ..World::default()
+    };
+    w.install_field_player(0);
+    let slot = w.player_actor_slot.expect("player installed") as usize;
+    // Seat two tiles east of the walk target (18,26) = (2368, 3392).
+    w.actors[slot].move_state.world_x = 18 * 128 + 0x40 + 256;
+    w.actors[slot].move_state.world_z = 26 * 128 + 0x40;
+    // `[C7 F8 12 1A 33][GFLAG_SET 16]`: the flag write is the arrival proof.
+    w.cutscene_timeline = Some(CutsceneTimeline::new(
+        vec![0xC7, 0xF8, 0x12, 0x1A, 0x33, 0x2E, 0x10],
+        0,
+    ));
+
+    let _ = w.tick();
+    let tl = w.cutscene_timeline.as_ref().expect("timeline still up");
+    assert!(
+        tl.walk_wait.is_some(),
+        "the walk-to-tile yield parks the timeline on a TimelineWalk"
+    );
+    // mode 0x33 -> bits 3 -> 0x80 >> 5 = 4 units per tick; 256 units takes
+    // ~64 ticks. After a few ticks the player has moved but not arrived.
+    for _ in 0..10 {
+        let _ = w.tick();
+    }
+    let slot = w.player_actor_slot.unwrap() as usize;
+    let mid_x = w.actors[slot].move_state.world_x;
+    assert!(
+        mid_x < 18 * 128 + 0x40 + 256 && mid_x > 18 * 128 + 0x40,
+        "the walk plays out over frames (glide, not a snap): x={mid_x}"
+    );
+    let mut ticks = 0u32;
+    while w.cutscene_timeline.is_some() && ticks < 400 {
+        let _ = w.tick();
+        ticks += 1;
+    }
+    assert!(
+        w.cutscene_timeline.is_none(),
+        "the record resumes past the yield on arrival and completes"
+    );
+    let ms = &w.actors[slot].move_state;
+    assert_eq!(
+        (ms.world_x, ms.world_z),
+        (18 * 128 + 0x40, 26 * 128 + 0x40),
+        "the walk lands exactly on the decoded tile centre"
+    );
+}

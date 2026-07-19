@@ -63,7 +63,7 @@ mod actors;
 mod assets_events;
 mod battle;
 mod effects;
-pub use effects::{ClutCellFx, ClutCellFxPhase};
+pub use effects::{ClutCellFx, ClutCellFxPhase, DEBUG_EFFECT_LIFETIME_FRAMES, MAX_DEBUG_EFFECTS};
 mod encounters;
 pub use encounters::FieldBossStager;
 mod field_carriers;

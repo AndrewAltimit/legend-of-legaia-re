@@ -136,26 +136,52 @@ fn ensure_actor_is_idempotent_and_writes_default_pos() {
 }
 
 #[test]
-fn effect_pool_persists_then_terminates_over_lifetime() {
+fn effect_pool_follows_retail_spawn_cadence() {
+    // Catalog: effect 0 = two spawn records, each arming a 2-frame delay
+    // (2 << 3 = 16 in the 5.3 wait counter); anim batch 0 = one frame with
+    // a long hold so the seeded children persist.
+    let script = vm::effect_vm::EffectScript {
+        child_count: 2,
+        flags: 0,
+        spread: 0,
+        body: vec![],
+    };
+    let recs = vec![
+        vm::effect_vm::ChildSprite {
+            sprite_id: 0,
+            delay: 2,
+            ..Default::default()
+        };
+        2
+    ];
+    let anims = vec![vm::effect_vm::AnimBatch {
+        flags: 0,
+        frames: vec![vm::effect_vm::AnimFrame {
+            atlas_index: 0,
+            timing: [30, 0, 0, 0, 0],
+        }],
+    }];
     let mut world = World::new();
-    // Mark slot 0 active by setting child_count > 0 so the tick walker
-    // visits it.
-    world.effect_pool.master_slots[0].child_count = 4;
+    world.effect_catalog =
+        vm::effect_vm::EffectCatalog::from_parts(vec![(script, recs)], vec![], anims);
+    world.try_spawn_effect(0, [0, 0, 0], 0);
 
-    // The effect must survive each work tick until the fixed lifetime
-    // budget is spent - it no longer terminates on the first tick.
-    let lifetime = vm::effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES;
-    for frame in 1..lifetime {
-        world.tick_effects();
-        assert_eq!(
-            world.effect_pool.master_slots[0].child_count, 4,
-            "effect retired early at frame {frame}"
-        );
-        assert_eq!(world.effect_pool.master_slots[0].field_14, frame as i32);
-    }
-    // The tick that reaches the budget retires the slot.
+    // Tick 1: record 0 consumed (one child seeded), wait armed to 16.
+    world.tick_effects();
+    assert_eq!(world.effect_pool.master_slots[0].spawn_cursor, 1);
+    assert_eq!(world.effect_pool.master_slots[0].state, 16);
+    assert_eq!(world.effect_pool.active_child_count(), 1);
+    // Ticks 2-3: 5.3 countdown (16 -> 8 -> 0), no spawn.
+    world.tick_effects();
+    assert_eq!(world.effect_pool.master_slots[0].state, 8);
+    world.tick_effects();
+    assert_eq!(world.effect_pool.master_slots[0].state, 0);
+    assert_eq!(world.effect_pool.master_slots[0].spawn_cursor, 1);
+    // Tick 4: wait was zero -> final record consumed, master frees itself;
+    // the two children live on through their animation.
     world.tick_effects();
     assert_eq!(world.effect_pool.master_slots[0].child_count, 0);
+    assert_eq!(world.effect_pool.active_child_count(), 2);
 }
 
 #[test]

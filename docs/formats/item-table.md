@@ -30,7 +30,17 @@ the record proper starts 4 bytes earlier, at `DAT_80074368`:
 | `+1` | u8 | (per-kind flags) |
 | `+2` | u16 | **shop price** in gold - what the buy/sell UI charges; `0` = quest / found-only item the shop never prices |
 | `+4` | u32 | `name_ptr` - pointer to the NUL-terminated display name |
-| `+8` | u32 | secondary pointer (a shared "type" / description string for some classes) |
+| `+8` | u32 | `desc_ptr` - pointer to the info-window **description** string |
+
+The `+8` word is the description the pause menu's item info window prints:
+the shared item-info panel `FUN_801D0F1C` draws the `+4` name (staged CLUT 6)
+at the window origin and the `+8` string (staged CLUT 7) one text row below
+(`WY + 0x10`) - see `ghidra/scripts/funcs/overlay_menu_801d0f1c.txt` and
+[`../subsystems/field-menu.md`](../subsystems/field-menu.md#items-screen).
+Consumables carry an effect sentence, accessories their class word, and many
+equipment ids share an empty / `Best:`-class slot (the "shared type string"
+this field was previously described as). Descriptions use the MES `0x7C`
+line-break token; `legaia_asset::item_names` decodes it to `'\n'`.
 
 The shop price at `+2` is decisive (verified live: War God Band = 21000, Healing
 Leaf = 100, the Ra-Seru / quest items = 0). The shop randomizer reads it to drop

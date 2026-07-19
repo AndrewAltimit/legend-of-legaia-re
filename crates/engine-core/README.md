@@ -339,6 +339,12 @@ presentation left to the host:
   accessory / status encounter-rate shifts, refreshed per step.
 - `options` - the engine mirror of the retail options screen, plus the
   engine-only opt-in toggles (e.g. `precise_movement`, default off).
+- `pause_screens` - the retail Items / Magic pause-screen sessions + view
+  models (`PauseItemsSession` command/list focus over the item-use flow,
+  `MenuTextTables` disc text: item + spell names/descriptions, accessory
+  passive lines). Feeds the `engine-ui` `items_screen_draws_for` /
+  `magic_screen_draws_for` builders in both hosts. See
+  [`docs/subsystems/field-menu.md`](../../docs/subsystems/field-menu.md#items-screen).
 - `world_map::WorldMapController` - drives `SceneMode::WorldMap`.
 - `EffectCatalog`, `input::Mapping`, `DefaultMapIdResolver` - effect
   lookup, host-agnostic input binding, and scene-name → map-id
