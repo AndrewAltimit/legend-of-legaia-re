@@ -174,6 +174,52 @@ page clocks `play_menu_input` on its own fixed step rather than once per
 animation frame. Parity is asserted by the disc-gated `tests/menu_parity.rs`
 oracle, which walks the whole card flow.
 
+## Field merchant + banners (`play_shop`)
+
+A field-VM op-`0x49` sub-0 merchant record opens the retail gold shop, and the
+post-battle level-up / Seru-capture banners draw over the live field. Both are
+the shared `legaia-engine-ui` builders (`shop_draws_for`, `level_up_draws_for`,
+`capture_banner_draws_for`) driven by the real
+`legaia_engine_core::menu_runtime::MenuRuntime`; `play_shop_input` forwards pad
+edges and `play_overlay_draws_json` serves the quads.
+
+The shop and its **catalog** have to ship together, and the reason is worth
+knowing before touching either. `World::try_arm_field_shop` sets both
+`field_shop_armed` and `field_shop_open`, and the op-`0x49` tristate then
+reports `Armed`, which *suspends the field VM* until the host calls
+`finish_field_shop`. A host that installs `item_shop_data` without a shop
+screen therefore does not merely lack a screen - it parks the script at the
+first merchant. Before both landed, the page had no catalog at all, so the
+priced-record validation failed and every merchant was silently inert.
+
+Two deliberate divergences from the native window: input is **edge**-triggered
+(`menu_runtime::step` does no edge detection, and the native window feeds it the
+held pad), and the buy/sell rows carry **real item names** off the SCUS table
+the page already parses, where the native rows are placeholder labels.
+
+## Keeping the two hosts in step
+
+The browser play page and `legaia-engine play-window` are two framebuffers over
+one engine, and the failure mode that costs the most is quiet: a wave adds a
+screen, wires it natively, and the web host drifts a release behind with nothing
+in any diff to say so.
+
+`crates/engine-ui` is what makes that checkable. Every screen's geometry is a
+`pub fn ..._draws_for(...) -> Vec<TextDraw>` there, and a host *has* that screen
+exactly when it calls the builder - so the set of engine-ui draw builders is a
+feature surface that can be derived from source rather than maintained by hand.
+
+`scripts/ci/check-ui-host-drift.py` derives it and fails when a builder reaches
+the native window but not this crate. Genuine one-host cases live in
+`scripts/ci/ui-host-drift-waivers.toml`, each with a reason, and the checker
+validates those in both directions: a waiver naming a builder that was renamed
+away, or one whose gap has since been closed, is itself a failure. The file
+cannot decay into a stale list of intentions - it only passes while it describes
+what the two hosts actually do.
+
+The practical consequence for anyone adding a screen: wire it in both hosts, or
+write down why not.
+
 ## Boot title screen (`boot_title`)
 
 The front of the native `--boot-ui` chain (publisher logos -> title ->

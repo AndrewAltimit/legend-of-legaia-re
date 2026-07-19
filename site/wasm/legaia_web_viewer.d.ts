@@ -1604,6 +1604,36 @@ export class LegaiaRuntime {
      */
     play_npc_transforms(): Float32Array;
     /**
+     * Draw lists for the field shop panel and the post-action banners over a
+     * `surface_w` x `surface_h` canvas.
+     *
+     * Same shape as [`Self::play_menu_draws_json`] and
+     * [`Self::play_dialog_draws_json`]: `{ "open", "sprites", "texts" }`,
+     * sampling the atlases the `play_menu_*` accessors upload. `open` is
+     * `false` when neither a shop nor a banner is up this frame.
+     *
+     * Like the dialog box (and unlike the pause menu) these composite over
+     * the live field - retail draws both over the running scene.
+     */
+    play_overlay_draws_json(surface_w: number, surface_h: number): string;
+    /**
+     * Drive the open shop one frame from an edge-triggered PSX pad word
+     * (same bit layout as [`Self::set_pad`]).
+     *
+     * When the session ends (the player picked **Exit**, clearing
+     * `shop_session`), this calls `World::finish_field_shop` so the
+     * suspended op-`0x49` flips Armed -> Done and the field VM advances past
+     * the merchant op on its next step. Without that call the script would
+     * stay parked forever.
+     */
+    play_shop_input(edge: number): void;
+    /**
+     * `true` while a field-VM merchant shop is up. The page freezes field
+     * input and routes pad edges to [`Self::play_shop_input`] while this
+     * holds, the same way it defers to the pause menu.
+     */
+    play_shop_is_open(): boolean;
+    /**
      * Poll the retail prologue intro-skip (`FUN_801D1344`): while the
      * opening chain plays with the handoff bit armed, a confirm press skips
      * the whole remaining opening to `town01`. Returns the target scene
@@ -3232,6 +3262,9 @@ export interface InitOutput {
     readonly legaiaruntime_play_npc_pose_dims: (a: number, b: number) => [number, number];
     readonly legaiaruntime_play_npc_pose_frames: (a: number, b: number) => [number, number];
     readonly legaiaruntime_play_npc_transforms: (a: number) => [number, number];
+    readonly legaiaruntime_play_overlay_draws_json: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaruntime_play_shop_input: (a: number, b: number) => void;
+    readonly legaiaruntime_play_shop_is_open: (a: number) => number;
     readonly legaiaruntime_play_take_prologue_handoff: (a: number, b: number) => [number, number];
     readonly legaiaruntime_player_has_mesh: (a: number) => number;
     readonly legaiaruntime_player_mesh_cba_tsb: (a: number) => [number, number];

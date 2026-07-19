@@ -3433,6 +3433,57 @@ export class LegaiaRuntime {
         return v1;
     }
     /**
+     * Draw lists for the field shop panel and the post-action banners over a
+     * `surface_w` x `surface_h` canvas.
+     *
+     * Same shape as [`Self::play_menu_draws_json`] and
+     * [`Self::play_dialog_draws_json`]: `{ "open", "sprites", "texts" }`,
+     * sampling the atlases the `play_menu_*` accessors upload. `open` is
+     * `false` when neither a shop nor a banner is up this frame.
+     *
+     * Like the dialog box (and unlike the pause menu) these composite over
+     * the live field - retail draws both over the running scene.
+     * @param {number} surface_w
+     * @param {number} surface_h
+     * @returns {string}
+     */
+    play_overlay_draws_json(surface_w, surface_h) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_play_overlay_draws_json(this.__wbg_ptr, surface_w, surface_h);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Drive the open shop one frame from an edge-triggered PSX pad word
+     * (same bit layout as [`Self::set_pad`]).
+     *
+     * When the session ends (the player picked **Exit**, clearing
+     * `shop_session`), this calls `World::finish_field_shop` so the
+     * suspended op-`0x49` flips Armed -> Done and the field VM advances past
+     * the merchant op on its next step. Without that call the script would
+     * stay parked forever.
+     * @param {number} edge
+     */
+    play_shop_input(edge) {
+        wasm.legaiaruntime_play_shop_input(this.__wbg_ptr, edge);
+    }
+    /**
+     * `true` while a field-VM merchant shop is up. The page freezes field
+     * input and routes pad edges to [`Self::play_shop_input`] while this
+     * holds, the same way it defers to the pause menu.
+     * @returns {boolean}
+     */
+    play_shop_is_open() {
+        const ret = wasm.legaiaruntime_play_shop_is_open(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
      * Poll the retail prologue intro-skip (`FUN_801D1344`): while the
      * opening chain plays with the handoff bit armed, a confirm press skips
      * the whole remaining opening to `town01`. Returns the target scene

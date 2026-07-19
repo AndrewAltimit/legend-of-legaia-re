@@ -811,6 +811,35 @@
       try { return rt.play_menu_is_open(); } catch (e) { return false; }
     }
 
+    /* Drive an open field shop from this frame's just-pressed edges.
+     *
+     * Unlike the pause menu this has no open/close key: the field VM opens it
+     * (a merchant's op-0x49 sub-0 record) and the player's **Exit** row closes
+     * it, at which point the engine resumes the suspended script. So there is
+     * nothing to toggle here - just forward edges while it is up.
+     *
+     * Also unlike the pause menu, one tick per frame is right: the shop has no
+     * frame-counted animation to keep on a wall clock, so it needs no catch-up
+     * clock of its own.
+     *
+     * Returns `true` while the shop is up, so `_frame` freezes the field. */
+    _updateFieldShop() {
+      const rt = this.rt;
+      if (typeof rt.play_shop_is_open !== 'function') return false;
+      let open;
+      try { open = rt.play_shop_is_open(); } catch (e) { return false; }
+      if (!open) return false;
+      this._ensureMenuBlitters();
+      let edge = 0;
+      for (const k of this.pulse) edge |= (PAD[k] || 0);
+      try { rt.play_shop_input(edge); } catch (e) {}
+      /* The shop owns every edge while it is up - clear them so none leak into
+       * the frozen field on the next tick. */
+      this.pulse.clear();
+      this._repack();
+      try { return rt.play_shop_is_open(); } catch (e) { return false; }
+    }
+
     /* Start only opens the menu in ordinary field play - not on the world map,
      * in battle, or while a dialogue box is up (Start is inert there in
      * retail). */
@@ -893,6 +922,27 @@
         if (this._menuFont) this._menuFont.blit(ctx, draws.texts);
         return;
       }
+      /* Field merchant panel + post-action banners (level-up, Seru capture).
+       * Same builders as the native window (`shop_draws_for`,
+       * `level_up_draws_for`, `capture_banner_draws_for`); like the dialog box
+       * they composite over the live field rather than blacking it. Sits above
+       * the dialog check because a merchant's box closes before the shop
+       * opens, and a banner should not be hidden by one. */
+      let shop = null;
+      if (typeof this.rt.play_overlay_draws_json === 'function') {
+        try { shop = JSON.parse(this.rt.play_overlay_draws_json(ov.width, ov.height)); }
+        catch (e) { shop = null; }
+      }
+      if (shop && shop.open) {
+        this._ensureMenuBlitters();
+        ctx.clearRect(0, 0, ov.width, ov.height);
+        if (this._menuChrome) this._menuChrome.blit(ctx, shop.sprites);
+        if (this._menuFont) this._menuFont.blit(ctx, shop.texts);
+        this._overlayActive = true;
+        this.dialogOnCanvas = false;
+        return;
+      }
+
       /* Retail dialog reading box (field NPC / event message): the engine
        * serves the byte-pinned chrome + glyph quads; blit them over the live
        * GL view. Falls back to the DOM text box (the page hides it while
@@ -1018,8 +1068,11 @@
       /* Field pause menu (Start): consumes this frame's edges and, while up,
        * freezes the field. Must run before the tick reads the pad. */
       const menuOpen = this._updateFieldMenu();
+      /* Field merchant (field-VM op 0x49 sub-0). The shop suspends the script
+       * on the engine side, so the field must not advance under it either. */
+      const shopOpen = menuOpen ? false : this._updateFieldShop();
 
-      if (advance && !menuOpen) {
+      if (advance && !menuOpen && !shopOpen) {
         /* Run the engine at a fixed 60 Hz regardless of the display refresh
          * (see the `_simAccum` note in the constructor). `Step 1 frame` forces
          * exactly one tick; free play consumes the real elapsed time. */

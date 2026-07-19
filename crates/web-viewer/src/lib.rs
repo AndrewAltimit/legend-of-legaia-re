@@ -24,6 +24,7 @@ pub mod play;
 pub mod play_cutscene;
 pub mod play_dialog;
 pub mod play_menu;
+pub mod play_shop;
 mod player_anm;
 pub mod rom_patcher;
 pub mod runtime;
