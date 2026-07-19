@@ -39,7 +39,7 @@
 //! | 0x38 | 0x800379FC | RotateToAngle    | ramp yaw to a compass LUT entry over a frame budget |
 //! | 0x41 | 0x8003789C | TranslateX       | accumulate X axis by per-frame speed     |
 //! | 0x43 | 0x80037FF0 | NoOp             | tick budget consumed, no actor mutation  |
-//! | 0x47 | 0x80037B84 | MoveTowardTarget | step actor XZ toward `(tx, tz)`, snapping facing per frame |
+//! | 0x47 | 0x80037B84 | MoveTowardTarget | step actor XZ toward `(tx, tz)`, snapping facing per step-direction change |
 //! | 0x4C | 0x80037DE0 | FaceTarget       | ramp yaw to the target's live bearing over a frame budget |
 //! |      | 0x80037FEC | (default arm)    | terminate with `done=true`               |
 //!
@@ -48,16 +48,23 @@
 //! Three of the six opcodes write the actor's 12-bit heading (`+0x26`), and
 //! they split into **two laws**:
 //!
-//! - **Snap.** `0x47` `MoveTowardTarget` quantises the frame's step direction
-//!   to the eight-point compass and writes it outright, every moving frame
-//!   ([`walk_facing_yaw`]). A walking actor therefore never holds an
-//!   in-between angle - retail has no walk-turn interpolation.
+//! - **Snap.** `0x47` `MoveTowardTarget` quantises the step direction to the
+//!   eight-point compass and writes it outright ([`walk_facing_yaw`]) - once
+//!   per leg at the first moving frame, and again whenever the step's axis
+//!   signs change (the dominant-axis → diagonal cut). A walking actor
+//!   therefore never holds an in-between angle and holds one compass heading
+//!   for a whole straight leg - retail has no walk-turn interpolation
+//!   (runtime-pinned per-frame on the Mei dinner walk-on: every leg holds a
+//!   single heading write for its whole run).
 //! - **Ramp.** `0x38` and `0x4C` interpolate toward a target angle over an
 //!   explicit frame budget carried in their own operands, stepping
 //!   `arc * speed / frames_remaining` per tick and snapping to the exact
-//!   target on the terminal frame ([`rotate_step`]). `0x38`'s target is a
-//!   compass LUT index; `0x4C`'s is the *live* bearing to another actor, so
-//!   the ramp tracks a target that is itself moving.
+//!   target on the terminal frame ([`rotate_step`]). The per-tick write-back
+//!   is **raw u16 wrapping, never normalised into `0..0xFFF`** - a
+//!   wrap-crossing turn holds out-of-range headings (`0xFFxx` on a
+//!   decreasing ramp through zero) until the terminal snap lands in range.
+//!   `0x38`'s target is a compass LUT index; `0x4C`'s is the *live* bearing
+//!   to another actor, so the ramp tracks a target that is itself moving.
 //!
 //! Which of the two an NPC is running is a property of the bytecode, not of
 //! the engine - see `docs/subsystems/field-locomotion.md` for the priority
@@ -85,7 +92,7 @@ pub struct MotionTarget {
 
 /// Per-actor motion-VM state, tracking the bytecode pointer and the per-frame
 /// speed scalar (retail `_DAT_1f800393`).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MotionState {
     /// World coords of the actor whose script is being driven. Mutated by
     /// the VM per opcode.
@@ -96,13 +103,28 @@ pub struct MotionState {
     /// per frame; the VM consumes it as the budget for incremental motion.
     pub speed: u16,
     /// Yaw / Y rotation in 12-bit fixed-point (units of `0x1000` = full turn).
-    /// Mutated by op 0x4C `FaceTarget` and consumed by the renderer.
+    /// Mutated by the two rotate ops and the `0x47` walk snap; consumed by
+    /// the renderer **modulo `0x1000`**. Mid-ramp the value is raw u16
+    /// arithmetic - a wrap-crossing rotate leg holds values outside
+    /// `0..0xFFF` (retail `+0x26` does the same; only the terminal snap
+    /// lands in range), so consumers mask, this field does not.
     pub yaw: u16,
     /// Per-script accumulator at retail `actor[0x15]` - number of speed
     /// units already consumed for the current opcode body.
     pub op_accum: u16,
     /// Bytecode-buffer cursor at retail `actor[0x25]` (byte offset).
     pub pc: u16,
+    /// The facing-LUT index the in-flight `0x47` leg last wrote (`None`
+    /// before the leg's first moving frame; cleared when the leg completes).
+    /// The walk snap writes `yaw` only when this changes - once per leg for
+    /// a straight leg, plus once at the dominant-axis → diagonal cut.
+    pub walk_facing: Option<u8>,
+    /// `true` when the step that just ran wrote `yaw` (a walk-snap write, a
+    /// rotate-ramp tick, or a terminal snap). Engines that mirror the VM yaw
+    /// into a render-heading store gate the copy on this, so a heading some
+    /// *other* writer set (the interact arctan bearing, a scripted pose) is
+    /// not clobbered by an idle or unmoved leg's stale VM yaw.
+    pub yaw_written: bool,
 }
 
 /// Opcode tag for the motion VM.
@@ -174,7 +196,10 @@ pub fn heading_lut_engine(idx: u8) -> Option<u16> {
 /// The **walk-direction-implied facing** index retail derives from a step's
 /// axis signs - the tail of the `0x47` `MoveTowardTarget` case at
 /// `0x80037D4C..0x80037DDC`, which writes `actor+0x26` from
-/// [`heading_lut_engine`] on **every** frame the actor moves.
+/// [`heading_lut_engine`]. The written heading holds **one value per walk
+/// leg** (runtime-pinned: a leg's whole run carries a single heading), so
+/// the port issues the write at the leg's first moving frame and on a
+/// step-direction change only.
 ///
 /// This is the reason a walking NPC's facing is always one of eight compass
 /// points and never an arbitrary bearing: retail quantises here, it does not
@@ -205,12 +230,24 @@ pub fn walk_facing_yaw(dx: i32, dz: i32) -> Option<u16> {
 ///
 /// Given the arc still to travel and the frames still budgeted, retail steps
 /// `arc * speed / remaining` - a linear ease whose per-frame magnitude is
-/// recomputed from the *live* heading each tick. The caller handles the
-/// terminal frame, which snaps to the exact target rather than stepping.
+/// recomputed from the *live* heading each tick (the arc is measured modulo
+/// `0x1000`, so raw out-of-range headings feed back correctly). The caller
+/// handles the terminal frame, which snaps to the exact target rather than
+/// stepping.
+///
+/// The write-back is **plain u16 wrapping arithmetic - no `& 0xFFF`
+/// normalisation per tick**. Retail's `+0x26` holds the raw value mid-ramp:
+/// a decreasing ramp through zero runs `0xFFxx` headings frame after frame
+/// and only the terminal snap lands back in `0..0xFFF` (runtime-pinned
+/// frame-exact on the town01 Mei dinner-beat rotate legs, whose per-tick
+/// values this law reproduces bit-for-bit including the wrap crossings).
+/// Renderers consume the heading modulo `0x1000`, so the raw hold is
+/// invisible on screen - but a port that masks every tick diverges from the
+/// traced `+0x26` on any ramp that crosses the wrap.
 ///
 /// `decreasing` selects the rotation direction; the arc is measured the long
 /// way round when it has to be, so a forced direction still lands.
-fn rotate_step(current: u16, target: u16, decreasing: bool, speed: u32, remaining: u32) -> u16 {
+pub fn rotate_step(current: u16, target: u16, decreasing: bool, speed: u32, remaining: u32) -> u16 {
     let (cur, tgt) = (i32::from(current) & 0xFFF, i32::from(target) & 0xFFF);
     let arc = if decreasing { cur - tgt } else { tgt - cur };
     // Retail's `+0x1000` then `& 0xFFF`: normalise a possibly-negative arc
@@ -218,9 +255,9 @@ fn rotate_step(current: u16, target: u16, decreasing: bool, speed: u32, remainin
     let arc = ((arc + 0x1000) & 0xFFF) as u32;
     let inc = (arc * speed / remaining.max(1)) as u16;
     if decreasing {
-        current.wrapping_sub(inc) & 0x0FFF
+        current.wrapping_sub(inc)
     } else {
-        current.wrapping_add(inc) & 0x0FFF
+        current.wrapping_add(inc)
     }
 }
 
@@ -246,6 +283,7 @@ fn bearing_to_yaw(dx: i32, dz: i32) -> u16 {
 /// All six opcodes are implemented and covered by unit tests including full
 /// patrol-leg sequences (move + face-target in order).
 pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> StepResult {
+    state.yaw_written = false;
     let pc = state.pc as usize;
     if pc >= bytecode.len() {
         return StepResult::Done;
@@ -308,6 +346,7 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
             // bit 1 = Z still to close.
             let mut mask = u8::from(dx != 0) | (u8::from(dz != 0) << 1);
             if mask == 0 {
+                state.walk_facing = None;
                 state.pc = body_off as u16;
                 return StepResult::Done;
             }
@@ -338,12 +377,27 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
             };
             state.world_x = (cur_x + step_x) as i16;
             state.world_z = (cur_z + step_z) as i16;
-            // Walk-direction-implied facing: retail snaps `+0x26` to the
-            // 8-way compass every moving frame (`0x80037D4C`).
-            if let Some(yaw) = walk_facing_yaw(step_x, step_z) {
-                state.yaw = yaw;
+            // Walk-direction-implied facing: the `0x47` tail (`0x80037D4C`)
+            // snaps `+0x26` to the 8-way compass from the step's axis signs.
+            // The heading is written **once per leg** at the first moving
+            // frame and again only when the step direction changes (the
+            // dominant-axis → diagonal cut) - runtime-pinned on the Mei
+            // dinner walk-on, where every leg holds a single heading for its
+            // whole run. Re-writing the same compass value every moving
+            // frame is indistinguishable for the walk itself, but would
+            // clobber an interleaved writer (an interact-bearing pose), so
+            // the port writes on change only.
+            if let Some(idx) = walk_facing_index(step_x, step_z)
+                && state.walk_facing != Some(idx)
+            {
+                state.walk_facing = Some(idx);
+                if let Some(yaw) = heading_lut_engine(idx) {
+                    state.yaw = yaw;
+                    state.yaw_written = true;
+                }
             }
             if state.world_x == target.x && state.world_z == target.z {
+                state.walk_facing = None;
                 state.pc = body_off as u16;
                 StepResult::Done
             } else {
@@ -366,7 +420,10 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
             let total_budget = (body1 & 0x7f) as u16;
             let remaining = total_budget.saturating_sub(state.op_accum);
             if remaining <= state.speed {
+                // Terminal frame: exact snap onto the compass entry - the
+                // only write of the ramp guaranteed to land in 0..0xFFF.
                 state.yaw = target_yaw;
+                state.yaw_written = true;
                 state.op_accum = 0;
                 state.pc = (body_off + 2) as u16;
                 StepResult::Done
@@ -389,6 +446,7 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
                     u32::from(state.speed),
                     u32::from(remaining),
                 );
+                state.yaw_written = true;
                 StepResult::Yield
             }
         }
@@ -410,7 +468,11 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
             let dz = target.z as i32 - state.world_z as i32;
             let target_yaw = bearing_to_yaw(dx, dz);
             if remaining <= state.speed {
+                // Terminal snap onto the live arctan bearing - unlike the
+                // 0x38 compass snap this endpoint is NOT compass-aligned
+                // (the interact face-the-player pose lands on e.g. 1075).
                 state.yaw = target_yaw;
+                state.yaw_written = true;
                 state.op_accum = 0;
                 state.pc = (body_off + 4) as u16;
                 StepResult::Done
@@ -430,6 +492,7 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
                     u32::from(state.speed),
                     u32::from(remaining),
                 );
+                state.yaw_written = true;
                 StepResult::Yield
             }
         }
@@ -443,12 +506,9 @@ mod tests {
     fn st(x: i16, z: i16, speed: u16) -> MotionState {
         MotionState {
             world_x: x,
-            world_y: 0,
             world_z: z,
             speed,
-            yaw: 0,
-            op_accum: 0,
-            pc: 0,
+            ..Default::default()
         }
     }
 
@@ -500,13 +560,9 @@ mod tests {
     #[test]
     fn step_translate_y_clamps_at_target() {
         let mut s = MotionState {
-            world_x: 0,
             world_y: 5,
-            world_z: 0,
             speed: 100,
-            yaw: 0,
-            op_accum: 0,
-            pc: 0,
+            ..Default::default()
         };
         let t = tgt(0, 7, 0);
         // 0x37 TranslateY without target byte (no high bit).
@@ -598,10 +654,116 @@ mod tests {
         };
         // body0 = 0x83: shortest-path bit set, LUT index 3 -> engine yaw 0xE00.
         // The increasing arc is 0xE00 > 0x800, so retail rotates decreasing
-        // instead: arc = 0x200, step = 0x200 * 16 / 32 = 0x100, yaw = 0xF00.
+        // instead: arc = 0x200, step = 0x200 * 16 / 32 = 0x100, and the raw
+        // write-back wraps below zero to 0xFF00 (== 0xF00 mod 0x1000) - the
+        // pre-unwrap hold retail's `+0x26` shows on a wrap-crossing ramp.
         let bc = [0x38, 0x83, 0x20];
         assert_eq!(step(&mut s, tgt(0, 0, 0), &bc), StepResult::Yield);
-        assert_eq!(s.yaw, 0x0F00);
+        assert_eq!(s.yaw, 0xFF00);
+        assert_eq!(s.yaw & 0x0FFF, 0x0F00, "renderers mask to the same angle");
+    }
+
+    /// A decreasing ramp that crosses the wrap holds **raw** u16 headings
+    /// outside `0..0xFFF` on every mid-ramp tick and only the terminal snap
+    /// lands back in range - the retail `+0x26` behaviour (runtime-pinned on
+    /// the Mei dinner-beat rotate legs, which run `0xFFxx` values live). A
+    /// per-tick `& 0xFFF` would keep the same angle mod 0x1000 but diverge
+    /// from the traced raw values.
+    #[test]
+    fn rotate_ramp_holds_raw_headings_across_the_wrap() {
+        // From yaw 0, rotate DECREASING (body1 bit 7) to LUT index 0
+        // (engine 0x800), budget 12, speed 2 - the retail cadence of the
+        // traced ramps. arc = (0 - 0x800) mod 0x1000 = 0x800.
+        let bc = [0x38, 0x00, 0x8C];
+        let mut s = MotionState {
+            yaw: 0,
+            speed: 2,
+            ..Default::default()
+        };
+        let mut raws = Vec::new();
+        loop {
+            let r = step(&mut s, tgt(0, 0, 0), &bc);
+            assert!(s.yaw_written, "every ramp tick writes the heading");
+            raws.push(s.yaw);
+            if r == StepResult::Done {
+                break;
+            }
+        }
+        let (last, mid) = raws.split_last().unwrap();
+        assert!(!mid.is_empty(), "ramp has mid-ramp ticks");
+        for &y in mid {
+            assert!(
+                y > 0x0FFF,
+                "mid-ramp heading {y:#06X} should hold the raw wrapped value"
+            );
+        }
+        // First tick: 0x800 * 2 / 12 = 0x155, written as 0 - 0x155 = 0xFEAB.
+        assert_eq!(mid[0], 0xFEAB);
+        assert_eq!(*last, 0x800, "terminal snap lands exactly on the target");
+    }
+
+    /// The walk snap is **once per leg** (plus once per step-direction
+    /// change), not a rewrite on every moving frame: `yaw_written` fires on
+    /// the first moving frame and on the dominant-axis → diagonal cut only,
+    /// so an interleaved writer's pose survives a straight leg.
+    #[test]
+    fn walk_leg_writes_heading_once_per_direction() {
+        let mut s = st(0, 0, 4);
+        let t = tgt(100, 0, 20);
+        let bc = [0x47];
+        // Frame 1: leg start - the write.
+        assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
+        assert!(s.yaw_written, "leg start writes the walk facing");
+        assert_eq!(s.yaw, 0x400, "+X compass");
+        // Frames 2..20: X still dominates - same direction, no rewrite.
+        for i in 0..19 {
+            assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
+            assert!(!s.yaw_written, "straight-leg frame {i} must not rewrite");
+            assert_eq!(s.yaw, 0x400, "held compass heading");
+        }
+        // Deltas equal: the diagonal cut is a direction change - one write.
+        assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
+        assert!(s.yaw_written, "direction change writes again");
+        assert_eq!(s.yaw, 0x200, "+X +Z diagonal");
+        // Next leg re-writes even in the same direction: leg state clears.
+        while step(&mut s, t, &bc) != StepResult::Done {}
+        assert_eq!(s.walk_facing, None, "leg completion clears the leg state");
+        s.pc = 0;
+        let t2 = tgt(200, 0, 120);
+        assert_eq!(step(&mut s, t2, &bc), StepResult::Yield);
+        assert!(s.yaw_written, "a new leg writes at its start");
+    }
+
+    /// The traced per-op ramp rates come from `arc / budget` - the law's
+    /// per-tick floor-divide sequence, at the retail speed scalar 2, matches
+    /// the recomp trace's increments exactly (170 170 170 171 ... for arc
+    /// 0x600 over 18 frames, the Mei beat's first turn: rate 85/frame).
+    #[test]
+    fn rotate_ramp_is_linear_at_the_op_budget_rate() {
+        // Increasing to LUT index 6 (engine 0x400 from a 0xE00 start:
+        // arc (0x400 - 0xE00) mod 0x1000 = 0x600), budget 18, speed 2.
+        let bc = [0x38, 0x06, 0x12];
+        let mut s = MotionState {
+            yaw: 0xE00,
+            speed: 2,
+            ..Default::default()
+        };
+        let mut incs = Vec::new();
+        let mut prev = s.yaw;
+        loop {
+            let r = step(&mut s, tgt(0, 0, 0), &bc);
+            if r == StepResult::Done {
+                break;
+            }
+            incs.push(s.yaw.wrapping_sub(prev));
+            prev = s.yaw;
+        }
+        assert_eq!(
+            incs,
+            vec![170, 170, 170, 171, 171, 171, 171, 171],
+            "per-tick increments follow arc*speed/remaining with floor"
+        );
+        assert_eq!(s.yaw, 0x400, "terminal compass snap");
     }
 
     #[test]
@@ -781,8 +943,8 @@ mod tests {
         );
     }
 
-    /// A walking actor's facing is a **snap**, not a ramp: every moving frame
-    /// writes one of the eight compass headings outright.
+    /// A walking actor's facing is a **snap**, not a ramp: the leg's first
+    /// moving frame writes one of the eight compass headings outright.
     #[test]
     fn move_toward_target_snaps_facing_to_the_compass() {
         for (tx, tz, want) in [

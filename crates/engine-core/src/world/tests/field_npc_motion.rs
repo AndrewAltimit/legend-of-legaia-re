@@ -115,6 +115,39 @@ fn autonomous_legs_pause_during_dialogue_scripted_legs_run() {
     assert!(x > 1000, "patrol resumes once the dialogue clears");
 }
 
+/// The walk kernel writes the heading **once per leg** (plus once per
+/// step-direction change), so a facing another writer poses mid-leg - the
+/// interact face-the-speaker arctan bearing, a scripted `0x38` pose -
+/// survives while the leg keeps stepping in the same direction, instead of
+/// being re-snapped to the compass every moving frame.
+#[test]
+fn walk_leg_heading_write_is_once_per_leg_not_per_frame() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.field_npc_positions.insert(2, (2000, 2000));
+    assert!(world.start_field_npc_motion(2, 2200, 2000));
+    let _ = world.tick();
+    assert_eq!(
+        world.field_npc_headings.get(&2),
+        Some(&0x400),
+        "leg start writes the +X compass heading"
+    );
+    // Mid-leg, another writer poses the NPC onto a NON-compass bearing (the
+    // interact face-the-speaker shape: arctan endpoints like 1075 are not
+    // compass-aligned and must survive).
+    world.field_npc_headings.insert(2, 1075);
+    let _ = world.tick();
+    assert!(
+        world.field_npc_motions.contains_key(&2),
+        "leg still in flight"
+    );
+    assert_eq!(
+        world.field_npc_headings.get(&2),
+        Some(&1075),
+        "a straight leg does not re-snap an interleaved facing write"
+    );
+}
+
 #[test]
 fn start_field_npc_motion_requires_installed_slot() {
     // The retail start kernel's actor-list search miss returns 0: a slot

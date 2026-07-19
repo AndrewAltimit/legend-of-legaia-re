@@ -48,7 +48,7 @@ Dispatch is a 22-entry jump table at `0x80010EE0` indexed by `(op & 0x7F) -
 | 0x38 | 0x800379FC | RotateToAngle    | yaw ramps to a compass-LUT entry over a frame budget; shortest-path (`body0 & 0x80`) or forced-direction (`body1 & 0x80`), 12-bit fixed-point |
 | 0x41 | 0x8003789C | TranslateX       | accumulate X axis by per-frame speed     |
 | 0x43 | 0x80037FF0 | NoOp             | tick budget consumed, no actor mutation  |
-| 0x47 | 0x80037B84 | MoveTowardTarget | step actor XZ toward `(tx, tz)`, snapping facing to the compass each moving frame |
+| 0x47 | 0x80037B84 | MoveTowardTarget | step actor XZ toward `(tx, tz)`, snapping facing to the compass once per leg / step-direction change |
 | 0x4C | 0x80037DE0 | FaceTarget       | yaw ramps to the target's live bearing over a frame budget; sub-mode bytes `0x85` / `0x8E` / `0x8F` are the three retail accepts, and `0x8F` alone forces the decreasing direction instead of the shortest arc |
 |      | 0x80037FEC | (default arm)    | terminate with `Done`                    |
 
@@ -64,9 +64,8 @@ distinct laws** - the distinction that decides whether a turn is instant or
 animated.
 
 **Snap - the walk-direction-implied facing.** The tail of the `0x47` case
-(`0x80037D4C..0x80037DDC`) runs on every frame the actor moved. It reduces the
-step to its axis signs, maps them to an index in the heading LUT at
-`0x80073F04`, and writes the entry outright:
+(`0x80037D4C..0x80037DDC`) reduces the step to its axis signs, maps them to
+an index in the heading LUT at `0x80073F04`, and writes the entry outright:
 
 | index | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |---|---|---|---|---|---|---|---|---|
@@ -75,8 +74,14 @@ step to its axis signs, maps them to an index in the heading LUT at
 Entry `i` is `i * 0x200` in the retail heading space (`0` = -Z), so a walking
 actor's facing is always one of eight compass points and **never an
 in-between angle** - there is no walk-turn interpolation anywhere in retail.
-The ops index the LUT `& 0xF`, but only the first eight slots are direction
-entries; the upper half is unrelated SCUS data.
+The written heading holds **one value per walk leg**: a frame-exact trace of
+the town01 Mei dinner walk-on (per-frame `+0x26` off the static recomp)
+shows every leg - the straight `-Z` runs and the `+X +Z` diagonal walk-off
+alike - carrying a single heading for its whole run, so the port issues the
+write at the leg's first moving frame and on a step-direction change (the
+dominant-axis → diagonal cut) rather than re-writing per frame. The ops
+index the LUT `& 0xF`, but only the first eight slots are direction entries;
+the upper half is unrelated SCUS data.
 
 **Ramp - the two dedicated rotate ops.** `0x38` and `0x4C` interpolate toward
 a target angle over a frame budget carried in their own operands. Both run the
@@ -95,8 +100,31 @@ else:
 `speed` is `_DAT_1F800393`, the per-frame scalar. Because the arc is measured
 from the *live* heading every tick, the step is a linear ease that lands
 exactly on the target, and the terminal frame snaps rather than steps so
-rounding can never leave the actor short. The two differ only in what they
-aim at and how they choose a direction:
+rounding can never leave the actor short. Three properties of that loop are
+runtime-pinned frame-exact (the Mei dinner beat's seven authored `0x38`
+turns, replayed tick-for-tick by the port including the floor-divide
+increment pattern - oracle
+`crates/engine-core/tests/recomp_facing_trace.rs`, gated on
+`LEGAIA_RECOMP_TRACE_DIR`):
+
+- **The ramp is linear at `arc / budget`** - the per-op turn *rate* is op
+  data, not an engine constant. The authored spectrum in one beat alone
+  spans ~16 to ~85 units/frame (a deliberate slow 32-frame quarter-turn sits
+  beside 18-frame near-half-turns), so a port that hardcodes one turn speed
+  is wrong.
+- **The heading write-back is raw u16 wrapping - never normalised into
+  `0..0xFFF` per tick.** Only the *arc* is measured mod `0x1000`; a
+  decreasing ramp through zero holds `0xFFxx` raw headings frame after
+  frame, and only the terminal snap lands back in range. Renderers consume
+  the angle mod `0x1000`, so the raw hold is invisible on screen, but a port
+  that masks every tick diverges from the traced `+0x26` on any
+  wrap-crossing turn.
+- **The `0x38` endpoint is always a compass entry** (the LUT snap); the
+  `0x4C` endpoint is the live arctan bearing and is generally NOT
+  compass-aligned - the interact face-the-player write lands on values like
+  `1075`, and nothing re-snaps it.
+
+The two ops differ only in what they aim at and how they choose a direction:
 
 | | `0x38` RotateToAngle | `0x4C` FaceTarget |
 |---|---|---|
@@ -121,7 +149,7 @@ the port carries the half-turn on the LUT instead.
 
 [`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs) is the clean-room port. All six opcodes are implemented: `0x37` `TranslateY`, `0x38` `RotateToAngle`, `0x41` `TranslateX`, `0x43` `NoOp`, `0x47` `MoveTowardTarget`, `0x4C` `FaceTarget`. Each step returns `StepResult::Yield` (budget consumed, resume next tick) or `StepResult::Done` (terminal op / default arm); there is no fallback path.
 
-The facing law above is `heading_lut_engine` (the eight compass entries, carried in the engine's `0` = +Z space), `walk_facing_index` / `walk_facing_yaw` (the `0x47` sign-to-index table), and `rotate_step` (the shared ramp arithmetic, widened to 32-bit so a large speed cannot overflow the increment). `engine-core`'s `facing_index_to_engine_heading` delegates to the same LUT, so the spawn-prologue facings and the runtime ones cannot drift apart.
+The facing law above is `heading_lut_engine` (the eight compass entries, carried in the engine's `0` = +Z space), `walk_facing_index` / `walk_facing_yaw` (the `0x47` sign-to-index table), and `rotate_step` (the shared ramp arithmetic, widened to 32-bit so a large speed cannot overflow the increment, raw wrapping write-back). `engine-core`'s `facing_index_to_engine_heading` delegates to the same LUT, so the spawn-prologue facings and the runtime ones cannot drift apart. `MotionState` carries the once-per-leg walk-facing latch (`walk_facing`) and a per-step `yaw_written` signal; engine hosts gate their render-heading mirror on the latter, so a heading another writer posed (the interact bearing) is not clobbered by an idle leg's stale VM yaw.
 
 Two deliberate departures: LUT indices `8..=15` are treated as no-ops rather than reproducing retail's overread into adjacent SCUS data, and an unrecognised `0x4C` sub-mode terminates the leg instead of yielding forever the way retail's inert arm does.
 
@@ -157,6 +185,7 @@ from `seed_field_npc_facings`). Disc + save-library oracle:
 - **Interaction-prologue runs**: when the opt-in field-VM dialogue runner executes an NPC's record and the prologue hits a `0x4C 0x51` with the NPC arm, the host hook (`vm_hosts::FieldHostImpl::op4c_n5_sub1_npc_run`) starts the interacted actor's walk leg. These run through the dialogue - they are the interaction's choreography.
 - **Actor-VM `start_motion`** (op `0x09` `MotionAt`, retail `FUN_800358c0`): `World::start_actor_motion` records the glide target and steps the actor's sprite position toward it through the same pursue kernel (`World::tick_actor_motions`).
 - **Cutscene-timeline cross-context walks** (`C7 <id> <tx> <tz> <mode>`, the targeted `0x47` yield): a spawned partition-2 record walking a cast member. The timeline arms the leg with the op's own speed (`0x80 >> (2 + (mode & 7))`), PARKS on `CutsceneTimeline::walk_wait`, and resumes past the yield when the leg arrives - the retail shape where the yield-op pointer lands in the target's `+0x94` and the walk kernel moves it in place. The player-anchor form (`C7 F8 …`) steps the player actor directly in the same park. Scripted legs keep stepping while a timeline is active; only the autonomous patrol kicks stand down.
+- **Cutscene-timeline cross-context turns** (`B8 <id> <dir|flags> <budget|dir>`, the targeted `0x38` yield - the field-VM CAM_CFG halt-acquire arm): same park shape for the rotate op. The timeline arms a `0x38` RotateToAngle leg on the NPC (`CutsceneTimeline::facing_wait`), steps it once per tick writing the raw yaw into `World::field_npc_headings`, and resumes past the yield on the terminal compass snap - one parked tick per budget frame, the 1:1 retail duration. The simple path (`op1 & 0x7F == 0`) is an instant compass write, no park.
 
 The start kernel (`World::start_field_npc_motion`) mirrors the `FUN_800358c0` shape - write the target, reset the glide cursor - and the per-frame consumer is this VM.
 
@@ -264,7 +293,11 @@ same two laws:
   heading past the `0x1000` boundary in the chosen direction and then hands
   `&actor+0x26` to the generic 16-bit tween channel for `b2 | b3 << 8`
   frames, so the turn is a plain linear interpolation that crosses the wrap
-  correctly.
+  correctly - the tween runs on the pre-unwrap value (raw headings above
+  `0x1000` observed live mid-turn) and only the endpoint lands in `0..0xFFF`.
+  Runtime census of the ambient turns in the town01 prologue: linear ramps
+  whose `arc / frames` rates quantise onto 32 / 64 / 128 units per frame
+  (the op-budget ladder), endpoints always compass points.
 
 ### Op `0x17` - the per-actor default-move table
 
