@@ -482,6 +482,58 @@ The engine wires this end-to-end:
 Two timing behaviours model the retail CD/XA sequencing contract (the recomp cross-reference established that the shout **trails** the art animation - the XA response arrives after the animation begins, never before): a fixed response-presentation delay (`SHOUT_CD_RESPONSE_DELAY`, ~150 ms of 44.1 kHz samples - the modeled seek/first-sector latency) gates the clip silent after the animation-start request; and a back-to-back request while a shout is still sounding queues behind it rather than cutting it (only the most recent pending clip is kept), so consecutive arts don't drop the later voice line.
 `OfflineMixer` exposes the same mixing core device-free; the disc-gated oracle `engine-shell/tests/arts_shout_battle.rs` drives an art through the live battle session and asserts the shout PCM lands in the mix only after the delay window, with `engine-core/tests/battle_shout_cue.rs` as the disc-free cue-emission check.
 
+### CD-XA voice-clip dispatchers and static cue census
+
+Two SCUS entry points drive CD-XA voice/clip playback off the clip descriptor
+table at `0x801C6ED8` (stride 8; `[+4]` = slot-valid flag, `[+0]` = the
+descriptor word copied into the CD-read staging window):
+
+- `FUN_8003D53C(clip_id, chan, dur)` - one-shot clip player. `clip_id` is the
+  descriptor slot, `chan` the CD-XA channel inside that clip's interleave, `dur`
+  the physical read span (clamped `<= 0x2A30`). Issues CD command `2`
+  (see `ghidra/scripts/funcs/8003d53c.txt`).
+- `FUN_8003EAE4(_, clip_id)` - streaming / loop start for one descriptor slot
+  (CD command `0x15`); its first argument is unused and it takes no channel or
+  duration (see `ghidra/scripts/funcs/8003eae4.txt`). All of its callers pass
+  `clip_id` from a battle-action / magic-overlay data table, so it contributes
+  no static `(clip_id, chan)` pair.
+
+A caller census of `FUN_8003D53C` across the committed dumps splits into cues
+whose `(clip_id, chan)` are compile-time immediates and cues whose operands are
+computed at runtime.
+
+**Confirmed literal `(clip_id, chan)` cues.** `clip_id` is the `0x801C6ED8`
+descriptor slot; `dur` listed where the site supplies a literal operand.
+
+| clip_id | chan | dur | context | site (dump) |
+|---|---|---|---|---|
+| `0x10` | `7` | `0x135` | scripted-scene / dialog fixed voice | `801d509c` (`overlay_0897_locomotion_cluster.txt`) |
+| `0x1D` | `4` | `0x26` | battle / field encounter-engage cue | `801eeb44` (`overlay_0898_801ec3e4.txt`) |
+| `0x1D` | `6` | `0x1A` | battle / field encounter-engage cue | `801eeb44` (`overlay_0898_801ec3e4.txt`) |
+| `0x20` | `2`,`3`,`4`,`5`,`8`,`9`,`0xA`,`0xB`,`0xC`,`0xD`,`0xE`,`0xF` | `0xC`->`0x5A`, `0xD`->`0x66` | Baka Fighter announcer lines | `overlay_baka_fighter_*.txt` |
+
+The Baka Fighter bank fires descriptor slot `0x20` across the twelve fixed
+channels listed (call sites `801d3468` / `801cf388` / `801d21fc` / `801d5a24`);
+two further duel sites take a runtime channel on slot `0x20` (`801d04ec`) and
+slot `0x1F` (`801d5cc4`). Machine-readable form:
+`legaia_art::arts_voice::STATIC_XA_CUES`.
+
+**Runtime-derived cues** (operands not static; the pair is named by its decode
+rule, not enumerable from the committed corpus):
+
+| caller | clip_id | chan | note |
+|---|---|---|---|
+| `FUN_8004C140` arts shout | char `*2+1` = `1`/`3`/`5` | per-art pool pick | XA2/XA4/XA6; parsed by `arts_voice` |
+| `FUN_8004FCC8` / `FUN_8004FE5C` jingle | `(id-0x100)>>3`, remapped to `0x1A`/`0x1B`/`0x1C` | `(id-0x100)&7` | Miracle / summon fanfare queue |
+| field-VM XA opcode | `op>>3` | `op&7` | site `801e0420`; operands are per-scene MAN script literals |
+| per-character voice | `table[char_id]` | `0` | dur `0x5A`; dance minigame + site `8020a264` |
+| debug sound-test | menu variable | menu variable | site `801cef48` (overlay 0971) |
+
+The field-VM opcode operands (`op>>3`, `op&7`) live in the per-scene MAN
+scripts, which are disc-sourced and outside the committed dump corpus, so those
+cues stay named by their decode rule. The arts-shout and jingle channels are
+runtime pool / event-id picks; only their `clip_id` space is fixed.
+
 ## Audio-trace parity oracle
 
 Mirror of the VRAM-byte and mode-trace parity oracles on a third axis: per-frame voice activity. The retail side has two capture shapes, with the same `AudioTraceFrame` JSONL wire format on both:
