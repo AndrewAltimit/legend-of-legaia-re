@@ -68,6 +68,10 @@ pub struct AdsrConfig {
     pub sustain_step: u8,
     pub release_exp: bool,
     pub release_shift: u8,
+    /// The raw `(adsr1, adsr2)` words this config was decoded from.
+    /// Retained so a note trace can report tone selection in the same
+    /// units the retail SPU registers carry (see [`crate::note_trace`]).
+    pub raw: (u16, u16),
 }
 
 impl AdsrConfig {
@@ -85,6 +89,7 @@ impl AdsrConfig {
             sustain_step: ((adsr2 >> 6) & 0x03) as u8,
             release_exp: (adsr2 >> 5) & 1 != 0,
             release_shift: (adsr2 & 0x1F) as u8,
+            raw: (adsr1, adsr2),
         }
     }
 }
@@ -106,6 +111,7 @@ impl Default for AdsrConfig {
             sustain_step: 0,
             release_exp: false,
             release_shift: 0,
+            raw: (0, 0),
         }
     }
 }

@@ -1248,6 +1248,7 @@ name = "legaia-engine-audio"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "cpal",
  "js-sys",
  "legaia-prot",

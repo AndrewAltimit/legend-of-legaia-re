@@ -131,6 +131,31 @@ sample-clock is reset so the looped body re-fires on the same sample offset
 every pass. `Sequencer::set_loop_to` remains an external fallback for the four
 tracks that carry no markers.
 
+## Stream termination and truncation
+
+A well-formed stream ends on its own `FF 2F` marker. Retail always writes a
+trailing `00` after it, which the parser never reads - it stops at the
+marker - so the byte is invisible to decoding but present on disc.
+
+Two things the parser cannot size stop it early: a meta type other than
+`0x51` / `0x2F`, and a system-common / SysEx status byte (`0xF0..=0xFE`).
+In both cases it appends a **synthetic** `EndOfTrack` so the event list
+stays well-formed for consumers, and the remaining bytes are never decoded.
+
+That synthetic marker is indistinguishable from a real one by inspecting
+the events alone, which makes a half-decoded track look complete and simply
+stop playing partway through. `Seq::termination` (and the `Seq::is_complete`
+shorthand) is the only way to tell them apart, and anything that cares about
+getting a whole track - a player, a note-level parity oracle, a corpus sweep
+- must check it.
+
+Across the disc's SEQ-bearing PROT entries the corpus is almost entirely
+clean; `engine-audio/tests/real_seq_stream_integrity.rs` pins the count of
+non-clean streams so a parser change that starts truncating more tracks
+fails loudly. The one known outlier is PROT entry 1045, which desynchronises
+partway through and halts on a `0xF4` byte; its cause is not yet pinned, and
+it is tracked as an open thread rather than papered over.
+
 ## Tempo math
 
 `tempo` is microseconds per quarter note; `ppqn` is ticks per quarter
@@ -138,6 +163,15 @@ note (always 480 in retail data). Per-tick duration is `tempo / ppqn`
 microseconds, and the runtime accumulates real-world time against this rate.
 A mid-stream `SetTempo` overrides for **future** events only - events that
 already fired at the previous tempo are unaffected.
+
+The three tempo bytes are read raw, with **no** MIDI variable-length
+`length` field between `FF 51` and the payload. The evidence is arithmetic
+rather than structural: read that way, retail tempo events land on exact
+round BPM values (65, 70, 80, 128, 130, 140, 150, 160, 170) across the
+corpus. Consuming a phantom length byte first would shift every payload one
+byte and scatter those into nonsense, so the reading is self-verifying -
+`real_seq_stream_integrity.rs` asserts the roundness precisely to keep that
+falsification standing.
 
 `legaia_seq::us_per_tick(tempo, ppqn)` returns the per-tick duration as
 `f64` for inspection. The engine playback clock (`Sequencer`) does **not**

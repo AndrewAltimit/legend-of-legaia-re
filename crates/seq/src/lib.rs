@@ -155,20 +155,75 @@ pub struct Event {
     pub body: EventBody,
 }
 
+/// How an event stream stopped.
+///
+/// A SEQ that ends on its own `FF 2F` marker is [`Termination::EndOfTrack`].
+/// Every other variant means the parser could not safely continue and the
+/// remainder of the stream was **not** decoded - the events it produced are a
+/// prefix of the real track, not the whole of it.
+///
+/// This distinction is load-bearing. The parser appends a synthetic
+/// `EndOfTrack` in the give-up cases so the event list stays well-formed for
+/// consumers, which makes a truncated parse look exactly like a complete one
+/// from the events alone. Anything that cares whether it got the whole track -
+/// a player, a note-level parity oracle, a corpus sweep - must check
+/// [`Seq::termination`] rather than trusting the trailing `EndOfTrack`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum Termination {
+    /// Clean stop on the stream's own `FF 2F` end-of-track marker.
+    EndOfTrack,
+    /// A meta event whose type - and therefore payload length - is unknown,
+    /// so the stream could not be resynchronised.
+    UnknownMeta(u8),
+    /// A system-common / SysEx status byte (`0xF0..=0xFE`), whose length is
+    /// likewise undefined.
+    SystemMessage(u8),
+    /// The stream ran out of bytes without an end-of-track marker.
+    RanOffEnd,
+}
+
+impl Termination {
+    /// True only for a stream that ended on its own marker.
+    pub fn is_clean(self) -> bool {
+        matches!(self, Termination::EndOfTrack)
+    }
+}
+
 /// Whole-file decoded SEQ.
 #[derive(Debug, Clone, Serialize)]
 pub struct Seq {
     pub header: Header,
     pub events: Vec<Event>,
+    /// How the event stream stopped. Anything other than
+    /// [`Termination::EndOfTrack`] means `events` is a **prefix** of the
+    /// real track - see [`Termination`].
+    pub termination: Termination,
 }
 
 impl Seq {
-    /// Parse a complete SEQ file. Returns the header + every decoded event,
-    /// stopping at the first `End-of-Track` meta (which is required).
+    /// Parse a complete SEQ file. Returns the header + every decoded event.
+    ///
+    /// A stream that ends on its own `FF 2F` marker parses in full. When the
+    /// parser instead hits something it cannot size (an unknown meta type, a
+    /// system message), it stops and appends a synthetic `EndOfTrack` so the
+    /// event list stays well-formed - but the events are then only a
+    /// **prefix** of the track. Check [`Seq::termination`] (or
+    /// [`Seq::is_complete`]) to tell the two apart; the trailing event alone
+    /// cannot.
     pub fn parse(buf: &[u8]) -> Result<Self> {
         let (header, header_len) = parse_header_with_len(buf)?;
-        let events = parse_events(&buf[header_len..])?;
-        Ok(Self { header, events })
+        let (events, termination) = parse_events(&buf[header_len..])?;
+        Ok(Self {
+            header,
+            events,
+            termination,
+        })
+    }
+
+    /// True when the stream ended on its own end-of-track marker, i.e. every
+    /// event was decoded. False means [`Self::events`] is a truncated prefix.
+    pub fn is_complete(&self) -> bool {
+        self.termination.is_clean()
     }
 
     /// Sum of every delta - total length of the sequence in PPQN ticks.
@@ -316,7 +371,7 @@ pub fn read_vlq(buf: &[u8], pos: usize) -> Result<(u32, usize)> {
     Ok((value, consumed))
 }
 
-fn parse_events(stream: &[u8]) -> Result<Vec<Event>> {
+fn parse_events(stream: &[u8]) -> Result<(Vec<Event>, Termination)> {
     let mut events = Vec::new();
     let mut pos = 0;
     let mut running_status: Option<u8> = None;
@@ -371,7 +426,7 @@ fn parse_events(stream: &[u8]) -> Result<Vec<Event>> {
                             delta,
                             body: EventBody::Meta(MetaMessage::EndOfTrack),
                         });
-                        break;
+                        return Ok((events, Termination::UnknownMeta(kind)));
                     }
                 }
             }
@@ -383,7 +438,7 @@ fn parse_events(stream: &[u8]) -> Result<Vec<Event>> {
                     delta,
                     body: EventBody::Meta(MetaMessage::EndOfTrack),
                 });
-                break;
+                return Ok((events, Termination::SystemMessage(s)));
             }
             s if s & 0x80 != 0 => {
                 // Channel voice / mode message. Consume the message-specific
@@ -415,10 +470,10 @@ fn parse_events(stream: &[u8]) -> Result<Vec<Event>> {
         let is_eot = matches!(&body, EventBody::Meta(MetaMessage::EndOfTrack));
         events.push(Event { delta, body });
         if is_eot {
-            break;
+            return Ok((events, Termination::EndOfTrack));
         }
     }
-    Ok(events)
+    Ok((events, Termination::RanOffEnd))
 }
 
 fn decode_channel(high: u8, data: &[u8]) -> ChannelMessage {

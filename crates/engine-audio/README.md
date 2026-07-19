@@ -18,6 +18,38 @@ master gate that zeroes the rendered frames while the sequencer, SPU
 voices, XA stream and fade engine all keep ticking, so unmuting resumes
 playback in sync without tearing down the stream.
 
+## Note-level tracing
+
+The engine half of the note-level BGM differential against the static
+recomp. [`note_trace`](src/note_trace.rs) records every voice key transition
+with the state the voice was programmed with - ADPCM start address, pitch,
+per-voice volumes, raw ADSR words - which is the same thing the recomp
+runtime's semantic key-on ring records, so the two timelines compare
+directly. It is opt-in: `Spu::note_trace` is `None` by default and the
+normal audio path never touches it.
+
+Recording hangs off explicit `Spu::record_key_on` / `record_key_off` calls
+placed next to the real key transitions, **not** off `key_on_mask` - the
+sequencer's voice path keys voices on directly through `Voice`, so a hook on
+the mask API would miss every BGM note.
+
+The `note-trace` binary emits a track's timeline as canonical JSONL:
+
+```bash
+note-trace --extracted extracted --list
+note-trace --extracted extracted --track 0 --frames 1800 --out notes.jsonl
+```
+
+Anything driving the SPU for a trace must call `Spu::tick` per sample even
+when the rendered audio is discarded: `tick` is what advances the ADSR, and
+a voice only becomes reusable once its envelope reaches `Phase::Off`.
+Ticking the sequencer alone leaves every voice permanently busy, which both
+drops notes the allocator can no longer place and flattens the voice
+distribution - an artifact that reads exactly like a voice-allocation bug.
+
+Capture, diff and the retail side are documented in
+[`docs/tooling/recomp-differential.md`](../../docs/tooling/recomp-differential.md).
+
 ## SPU model
 
 | Module | Surface |

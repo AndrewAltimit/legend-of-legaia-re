@@ -22,6 +22,8 @@ log = "0.4"
 legaia-xa = { path = "../xa" }
 legaia-vab = { path = "../vab" }
 legaia-seq = { path = "../seq" }
+legaia-prot = { path = "../prot" }
+clap = { version = "4", features = ["derive"] }
 
 # WebAudio deps - pulled in on all wasm32 builds; only wired up when
 # audio-webaudio feature is enabled (gates the webaudio module).
@@ -41,6 +43,10 @@ features = [
     "AudioParam",
     "GainNode",
 ]
+
+[[bin]]
+name = "note-trace"
+path = "src/bin/note-trace.rs"
 
 [dev-dependencies]
 legaia-prot = { path = "../prot" }

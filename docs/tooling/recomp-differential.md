@@ -216,6 +216,80 @@ locks the alignment + wraparound + tolerance semantics:
 cd scripts/recomp && python3 -m unittest test_trace_diff
 ```
 
+## Note-level audio differential
+
+The same alignment-and-first-divergence shape, applied to BGM instead of
+frame state. Where the state trace compares camera and actor channels per
+frame, this compares *note sequences* - the stream of key-ons a sequencer
+asked the SPU for - which is the level at which "missing notes" is a
+measurable claim rather than an impression.
+
+| Component | Lives in | Role |
+|---|---|---|
+| `audio_note_capture.py` | [`scripts/recomp/`](../../scripts/recomp/audio_note_capture.py) | Retail note timeline from the recomp's SPU rings |
+| `note-trace` | [`crates/engine-audio`](../../crates/engine-audio/src/bin/note-trace.rs) | The same timeline through the engine's own sequencer |
+| `note_diff.py` | [`scripts/recomp/`](../../scripts/recomp/note_diff.py) | Aligns two note traces, reports the first divergence per channel |
+
+Both sides record at the same layer - the instant a voice is keyed on,
+snapshotting the ADPCM start address, pitch, per-voice volumes and raw ADSR
+words - so a divergence localises directly. A missing note-on means the
+sequencer never asked for it; a wrong start address means tone selection
+diverged; a wrong pitch means the note or its bend resolved differently.
+
+```bash
+python3 scripts/recomp/audio_note_capture.py --port 4472 \
+    --seconds 30 --out /tmp/scratch/recomp_notes.jsonl --summary
+./target/release/note-trace --extracted extracted --track 0 \
+    --frames 1800 --out /tmp/scratch/engine_notes.jsonl
+python3 scripts/recomp/note_diff.py /tmp/scratch/recomp_notes.jsonl \
+    /tmp/scratch/engine_notes.jsonl
+```
+
+### The unclocked-SPU trap
+
+`spu_render()` in the recomp runtime is driven by the host audio pump, so a
+runtime started with `--headless` never clocks the SPU: `render_frames`
+stays 0, every voice sits frozen at `env_level == 0`, and no envelope ever
+decays. The retail sound driver picks a free voice by polling CURVOL for
+`env_level == 0`, so against a frozen SPU it believes all 24 voices are free
+forever and keys nearly everything onto voice 0. The resulting capture looks
+plausible and is entirely an artifact.
+
+`audio_note_capture.py` refuses to run unless `render_frames` is advancing.
+To get a clocked instance without an audio device or a desktop:
+
+```bash
+SDL_AUDIODRIVER=dummy xvfb-run -a \
+    ./build-dbg/Legend_of_Legaia_Recompiled --debug-port 4472 \
+    --no-launcher --bios SCPH1001.BIN --game game.toml
+```
+
+Wall-clock speed is irrelevant; what matters is that SPU frames advance at
+735 per guest frame (44100/60), which puts the sequencer and the envelopes
+in the same time base as retail even when the host runs below real time.
+
+### Reading the diff
+
+Each side's allocator lays the VAB's VAGs out in SPU RAM itself, so raw
+addresses never match. Both allocate in bank upload order, ascending, so
+`note_diff.py` maps addresses to dense **VAG ids** by ascending order within
+each trace - allocator-independent tone identity, and the handle back to the
+disc.
+
+That renumbering has a sharp edge worth knowing before trusting a clean
+`vag` column: it is per-trace, so a tone played on one side and never on the
+other shifts every id above it, and two different tones can then share an
+id. The tool warns when the two sides' distinct-VAG counts differ; in that
+case `pitch` is the reliable channel.
+
+Alignment is on note *ordinal*, not wall time - a capture generally starts
+mid-track, and the two sides' frame counters have unrelated origins.
+
+Field BGM is scene-bundle-resident rather than a `music_01` track, so a
+capture taken in a field cannot be matched against the `music_01` corpus by
+`note-trace --track`; identifying the scene's own SEQ is the prerequisite
+for that comparison.
+
 ## See also
 
 - [`determinism-replay.md`](determinism-replay.md) - the engine-vs-itself
@@ -226,3 +300,5 @@ cd scripts/recomp && python3 -m unittest test_trace_diff
   adds cheap frame-tagged structural reads at full speed.
 - [`docs/reference/memory-map.md`](../reference/memory-map.md) - the
   pinned retail globals the address maps read.
+- [`docs/formats/seq.md`](../formats/seq.md) - the SEQ grammar the engine
+  side parses, including how a truncated stream reports itself.

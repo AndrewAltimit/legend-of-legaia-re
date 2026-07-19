@@ -55,6 +55,9 @@ pub struct Spu {
     /// with `reverb_send = true` route their output through this; the wet
     /// signal is mixed back into the master in [`Spu::tick`].
     pub reverb: Reverb,
+    /// Optional note-level recorder. `None` (the default) costs nothing;
+    /// the normal audio path never touches it. See [`crate::note_trace`].
+    pub note_trace: Option<crate::note_trace::NoteTrace>,
     /// Last raw `reverb_mode` value written by libspu - preserved for
     /// debugging / tooling. The active mode in the [`Reverb`] processor
     /// is set via [`Spu::set_reverb_mode`].
@@ -69,6 +72,7 @@ impl Default for Spu {
             master_left: 0x3FFF,
             master_right: 0x3FFF,
             reverb: Reverb::new(ReverbMode::Off),
+            note_trace: None,
             reverb_mode_raw: 0,
         }
     }
@@ -98,6 +102,43 @@ impl Spu {
             if mask & (1u32 << i) != 0 {
                 self.voices[i].key_off();
             }
+        }
+    }
+
+    /// Record a key-on for `voice` into the note trace, if one is attached.
+    ///
+    /// Called next to the real key-on rather than from [`Self::key_on_mask`]:
+    /// the sequencer's voice path keys voices on directly, so a hook on the
+    /// mask API would miss every BGM note.
+    pub fn record_key_on(&mut self, voice: usize) {
+        let Some(v) = self.voices.get(voice) else {
+            return;
+        };
+        let snap = crate::note_trace::VoiceSnapshot {
+            addr: v.start_addr,
+            pitch: v.pitch,
+            voll: v.vol_left,
+            volr: v.vol_right,
+            adsr1: v.adsr_cfg.raw.0,
+            adsr2: v.adsr_cfg.raw.1,
+        };
+        if let Some(t) = self.note_trace.as_mut() {
+            t.push(crate::note_trace::NoteEventKind::On, voice as u8, snap);
+        }
+    }
+
+    /// Record a key-off for `voice` into the note trace, if one is attached.
+    pub fn record_key_off(&mut self, voice: usize) {
+        let addr = self.voices.get(voice).map(|v| v.start_addr).unwrap_or(0);
+        if let Some(t) = self.note_trace.as_mut() {
+            t.push(
+                crate::note_trace::NoteEventKind::Off,
+                voice as u8,
+                crate::note_trace::VoiceSnapshot {
+                    addr,
+                    ..Default::default()
+                },
+            );
         }
     }
 
