@@ -584,6 +584,183 @@ impl StartingInventory {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Template -> live-record expansion (`FUN_800560B4`)
+// ---------------------------------------------------------------------------
+
+/// Record-relative offset of the **current**-stat block: twelve `u16` cells the
+/// seed routine fills from the template (`[hp, hp, mp, mp, cap, _, agl, atk,
+/// udf, ldf, spd, intel]`).
+pub const CURRENT_STATS_OFFSET: u32 = 0x104;
+
+/// Record-relative offset of the **maximum**-stat block: nine contiguous `u16`
+/// cells (`[hp, mp, cap, agl, atk, udf, ldf, spd, intel]`).
+pub const MAX_STATS_OFFSET: u32 = 0x11C;
+
+/// Record-relative offset of the displayed combat level (see [`LEVEL_SEED_VA`]).
+pub const LEVEL_OFFSET: u32 = 0x130;
+
+/// Record-relative offset of the magic-rank counter (`+0x131`).
+pub const MAGIC_RANK_OFFSET: u32 = 0x131;
+
+/// Record-relative offset of the live display name the seed routine `strcpy`s
+/// out of the template's name field.
+pub const NAME_OFFSET: u32 = 0x2A7;
+
+/// The literal the seed routine writes into **both** stat blocks' third cell
+/// (`+0x10C` current, `+0x120` max) for every roster slot.
+///
+/// This is a hardcoded `100` in `FUN_800560B4`, **not** a template field. Vahn's
+/// template `+4` stat is also `100`, which makes the two easy to conflate, but
+/// Noa (`120`) and Gala (`80`) seed this cell at `100` all the same - so a
+/// per-character reading of the cell is wrong.
+pub const SEEDED_CAP_CONSTANT: u16 = 100;
+
+/// A single `u16` store the new-game seed performs, as an `SC`-block offset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SeededHalfword {
+    /// Byte offset from the save-context (`SC`) base (`0x80084140`).
+    pub sc_offset: u32,
+    /// Value stored.
+    pub value: u16,
+}
+
+/// Expand the starting-party template into the live per-character records.
+///
+/// Retail's seed routine walks the four template records in lockstep with the
+/// live records at `SC + 0x5c8 + n*0x414`, fanning each template stat out into
+/// **two** blocks: a current-stat block at [`CURRENT_STATS_OFFSET`] (HP and MP
+/// appear twice - current and max - so a New Game starts at full health) and a
+/// max-stat block at [`MAX_STATS_OFFSET`]. It also writes the
+/// [`SEEDED_CAP_CONSTANT`] into both blocks and seeds level / magic rank at `1`.
+///
+/// Returned in ascending `sc_offset` order. The display-name copy is not a
+/// halfword store and is reported separately by [`seeded_name_offset`].
+///
+// PORT: FUN_800560b4
+pub fn seed_live_records(party: &StartingParty) -> Vec<SeededHalfword> {
+    let mut out = Vec::new();
+    for (slot, m) in party.members().iter().enumerate() {
+        let base = LIVE_RECORD_0_XP_OFFSET + slot as u32 * LIVE_RECORD_STRIDE;
+        let cur = base + CURRENT_STATS_OFFSET;
+        let max = base + MAX_STATS_OFFSET;
+        let mut push = |sc_offset: u32, value: u16| out.push(SeededHalfword { sc_offset, value });
+
+        // Current block: HP and MP each land in a current + max cell pair, then
+        // the cap constant, a gap the routine leaves untouched, then the six
+        // remaining stats.
+        push(cur, m.hp_max);
+        push(cur + 2, m.hp_max);
+        push(cur + 4, m.mp_max);
+        push(cur + 6, m.mp_max);
+        push(cur + 8, SEEDED_CAP_CONSTANT);
+        for (i, v) in [m.agl, m.atk, m.udf, m.ldf, m.spd, m.intel].iter().enumerate() {
+            push(cur + 12 + i as u32 * 2, *v);
+        }
+
+        // Max block: nine contiguous cells, cap constant in the middle.
+        for (i, v) in [
+            m.hp_max,
+            m.mp_max,
+            SEEDED_CAP_CONSTANT,
+            m.agl,
+            m.atk,
+            m.udf,
+            m.ldf,
+            m.spd,
+            m.intel,
+        ]
+        .iter()
+        .enumerate()
+        {
+            push(max + i as u32 * 2, *v);
+        }
+    }
+    out.sort_by_key(|s| s.sc_offset);
+    out
+}
+
+/// `SC`-block offset of roster slot `slot`'s live display-name field - the
+/// destination of the seed routine's template-name `strcpy`.
+///
+// REF: FUN_800560b4
+pub fn seeded_name_offset(slot: usize) -> u32 {
+    LIVE_RECORD_0_XP_OFFSET + slot as u32 * LIVE_RECORD_STRIDE + NAME_OFFSET
+}
+
+// ---------------------------------------------------------------------------
+// New-game world-state seed (`FUN_80034A6C`)
+// ---------------------------------------------------------------------------
+
+/// `SC` offset of the party gold word the new-game seed sets to
+/// [`NEW_GAME_STARTING_GOLD`]; also the cell the battle-victory reward writer
+/// credits.
+pub const GOLD_SC_OFFSET: u32 = 0x45C;
+
+/// Party gold a New Game starts with - a literal in `FUN_80034A6C`, not a field
+/// of the starting-party template.
+pub const NEW_GAME_STARTING_GOLD: u32 = 500;
+
+/// `SC` offset of the story-flag region the new-game seed zeroes.
+pub const STORY_FLAGS_SC_OFFSET: u32 = 0x1618;
+
+/// Byte length of the zeroed story-flag region. The Door-of-Wind warp bitmask
+/// ([`WARP_FLAGS_SC_OFFSET`]) sits inside it, which is why the warp preset runs
+/// *after* this clear.
+pub const STORY_FLAGS_LEN: u32 = 0x200;
+
+/// The fixed `SC`-offset -> `u32` writes `FUN_80034A6C` performs before it calls
+/// the template expander [`seed_live_records`].
+///
+/// These are literals in the routine rather than disc data, so they are the port
+/// itself rather than something parsed. Ordered by offset.
+///
+// PORT: FUN_80034a6c
+pub fn new_game_seed_words() -> Vec<SeededWord> {
+    let w = |sc_offset: u32, value: u32, width: SeedWidth| SeededWord {
+        sc_offset,
+        value,
+        width,
+    };
+    vec![
+        w(0x454, 3, SeedWidth::Byte),
+        w(0x457, 0, SeedWidth::Byte),
+        w(0x458, 0, SeedWidth::Byte),
+        w(0x459, 1, SeedWidth::Byte),
+        w(0x45A, 2, SeedWidth::Byte),
+        w(0x45B, 3, SeedWidth::Byte),
+        w(GOLD_SC_OFFSET, NEW_GAME_STARTING_GOLD, SeedWidth::Word),
+        w(0x460, 0, SeedWidth::Word),
+        w(0x464, 0, SeedWidth::Word),
+        w(0x470, 0, SeedWidth::Word),
+        w(0x478, 0, SeedWidth::Word),
+        w(0x590, 0x44, SeedWidth::Word),
+        w(0x594, 0x21, SeedWidth::Word),
+        w(0x598, 0x10, SeedWidth::Word),
+        w(0x59C, 0x48, SeedWidth::Word),
+    ]
+}
+
+/// Store width of a [`SeededWord`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SeedWidth {
+    /// `sb` - one byte.
+    Byte,
+    /// `sw` - four bytes.
+    Word,
+}
+
+/// One fixed store the new-game world-state seed performs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SeededWord {
+    /// Byte offset from the save-context (`SC`) base.
+    pub sc_offset: u32,
+    /// Value stored.
+    pub value: u32,
+    /// Store width.
+    pub width: SeedWidth,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
