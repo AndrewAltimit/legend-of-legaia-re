@@ -1787,6 +1787,11 @@ impl World {
         self.step_field_channels_inner(true);
         self.field_entry_prerun = false;
         self.field_npc_entry_positions = self.field_npc_positions.clone();
+        // The ambient motion channels installed with the carriers still hold
+        // the raw MAN header tiles; re-seat them on the story-true positions
+        // this pre-run just resolved. The `0x18` wander's containment box is
+        // absolute world space, so a stale seat silently retires it.
+        self.resync_ambient_start_positions();
     }
 
     fn step_field_channels_inner(&mut self, entry_prerun: bool) {

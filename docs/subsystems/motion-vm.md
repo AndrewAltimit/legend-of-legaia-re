@@ -266,19 +266,134 @@ The only disc source of this bytecode is **MAN tail-section 1** (parser
 
 ### Walk-op speed encoding
 
-The walk ops step on the same `0x80 >> (2 + bits)` per-frame ladder as the
-`FUN_8003774C` yield ops, with the base-step selector in their own
-operands: the directional steps `0x03`/`0x19`/`0x20` carry `bits` in
-operand byte 1's low nibble (byte 1's high nibble = the heading-LUT index,
-byte 2 & 0x3F × `4 << bits` = the frame budget; `0x20` halves the budget),
-while the pad-echo step `0x06` and the AABB wander `0x18` scatter a 4-bit
-selector over their four operand bytes' high bits (`(b1&0x80)>>4 |
-(b2&0x80)>>5 | (b3&0x80)>>6 | b4>>7`; the low 7 bits are the pad-echo
-offsets / wander-box tiles). This is the disc source of a town NPC's
-ambient wander pace; the engine decode is
-`man_field_scripts::placement_wander_step` →
+Every walk op steps on the same `0x80 >> (2 + bits)` per-tick ladder as the
+`FUN_8003774C` yield ops, with the base-step selector carried in its own
+operands. The directional steps `0x03`/`0x19`/`0x20` hold `bits` in operand
+byte 1's low nibble; the pad-echo step `0x06` and the AABB wander `0x18`
+scatter the same 4-bit selector over their four operand bytes' high bits
+(`(b1&0x80)>>4 | (b2&0x80)>>5 | (b3&0x80)>>6 | b4>>7`), leaving the low seven
+bits for the pad-echo offsets / wander-box tiles.
+
+This is the disc source of a town NPC's ambient wander pace. The static
+decode is `man_field_scripts::placement_wander_step` →
 `World::field_npc_glide_speeds` (default variant first, then the gated
-variants in table order).
+variants in table order); the runtime semantics are [below](#the-walk-half---the-directional-steps-and-the-aabb-wander).
+
+### The walk half - the directional steps and the AABB wander
+
+These are what a fresh town villager actually runs, and the reason "why does
+nobody move" is a walk question rather than a facing one. Dispatch for all of
+them is the same `0x80010FE8` table: `0x03`, `0x19` and `0x20` share one case
+body at `0x800383F8`, and `0x18` has its own at `0x80038B90`.
+
+Two tables sit back to back at `0x80073F04` and drive every walk op. The
+first is the eight-entry compass LUT the facing ops also use; the second,
+starting sixteen bytes later at `0x80073F14`, is the **axis bitmask** table
+(`1` = `+Z`, `2` = `-Z`, `4` = `+X`, `8` = `-X`) that every walk op reduces
+its heading index through before touching a coordinate. Entry `i` of the
+bitmask table is exactly entry `i` of the compass in bit form, which is why
+diagonal indices move both axes by the same per-tick step. The two tables
+being adjacent is also what a `& 0xF` index overreads into.
+
+#### Ops `0x03` / `0x19` / `0x20` `[op, b1, b2]` - the directional step
+
+```text
+lut    = b1 >> 4                  ; heading-LUT index
+bits   = b1 & 0x0F                ; pace selector
+shift  = bits + 2
+budget = (b2 & 0x3F) << shift     ; ticks - 0x20 halves it
+step   = 0x80 >> shift            ; units per tick
+```
+
+The product `budget * step` is `(b2 & 0x3F) * 0x80` whatever `bits` is, so
+**`b2 & 0x3F` is the leg's length in 128-unit tiles and `bits` only sets the
+pace**. The three ops differ in exactly two flags: `0x03` additionally snaps
+the heading to `LUT[lut]` on every tick, and `0x20` halves the budget (so it
+walks half the authored distance). `0x19` moves without touching the facing.
+Only `0x03` and `0x19` appear in the disc corpus; `0x20` is authored nowhere.
+
+The cursor at `+0x8B` is `+1` per tick, **not** `_DAT_1F800393`-scaled - the
+same asymmetry op `0x04` has against the `FUN_8003774C` ramps, so a leg is
+the same number of ticks and covers the same distance at any frame scalar.
+The cursor is a `u8` compared `& 0xFF`, so a budget of 256 or more could
+never retire; no authored operand reaches it.
+
+#### Op `0x18` `[18, b1, b2, b3, b4]` - the AABB wander
+
+The four operand bytes carry a tile-space box in their low seven bits
+(`min_x`, `min_z`, `max_x`, `max_z`, each read as `tile << 7 | 0x40` - a tile
+*centre*), and the 4-bit pace selector scattered over their high bits. On the
+op's first tick an actor seated outside its own box retires the op
+untouched, so a story-relocated placement simply never wanders.
+
+Inside the box a three-phase machine runs, its phase byte living in the
+actor's default-move record (`0x801C6470[slot]` byte 2) rather than on the
+actor - which is why a `0x17` write and a wander share a record:
+
+1. **Pick.** Draw `rand() & 6` - a cardinal only, never a diagonal - and
+   reject it if a half-tile probe that way would leave the box. A rejected
+   draw **retires the op** rather than redrawing.
+2. **Turn.** Rotate to the picked compass point at `0x1000 >> (bits + 2)`
+   per tick. Skipped outright when the actor already faces that way.
+3. **Walk.** Step `0x80 >> (bits + 2)` units for `2 << bits` ticks - 64
+   units, half a tile, whatever the pace - then flip a coin: half the time
+   the op retires, half the time it drops back to phase 1 and keeps going.
+
+Two things separate the wander's turn from the ambient facing ops. It takes
+the **shortest arc** (measuring the increasing arc against `0x800` and going
+the other way when it is wider), where `0x04` and `0x0D` take the authored
+direction with no override. And it **masks the heading into `0..0xFFF` on
+every tick**, where those two deliberately hold raw out-of-range values
+mid-ramp. A port that generalises either property from the facing ops to the
+wander is wrong.
+
+#### What the walk ops collide with
+
+Both walk ops probe through `FUN_801cf8ac`, and its only subject is the
+**player actor** - not the walkability grid, and not other NPCs. The
+directional steps probe the single `DAT_801F2254` compass point for their
+heading index; the wander probes the three-point fan of `DAT_801F21B4` row
+`dir` through `FUN_801d5a68`, which ORs three `FUN_801cf8ac` calls. Both
+apply the shared `(x + dx, z - dz)` convention around the walking actor and
+accept a hit inside the ±40 moving-actor box. These are the same two tables
+the player's own locomotion reads (see
+[field-locomotion.md](field-locomotion.md)).
+
+So an ambient walker's containment is the AABB its op authored, and the only
+thing that can stop a step is the player standing in it. A blocked
+directional step re-runs its op next tick without advancing the cursor or the
+PC; a blocked wander drops back to the pick phase.
+
+#### Clean-room port + wiring
+
+[`legaia_engine_vm::ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs)
+executes all four walk ops alongside the facing ones, plus `0x17`. The
+collision service is the `AmbientBlocking` trait the host supplies;
+`engine-core`'s implementation is the player box test above, and
+`AlwaysBlocks` is what the host passes when its opt-in liveliness
+(`World::animate_field_npcs` / `play-window --live-npcs`) is off - every
+direction reads blocked, so an actor holds its seat exactly while its facing
+channel and its story-flag writes keep running.
+
+`World::tick_field_npc_ambient` writes the VM's live position back into
+`World::field_npc_positions` on any tick that moved it, so the wandering
+NPC's own collision box and its interact box follow it. Because retail
+dispatches the two motion VMs off *different* actor flag bits (`+0x10 & 0x80`
+here, `& 0x400` for `FUN_8003774C`), no actor is ever walked by both: the
+engine stands its autonomous patrol substitute down for any placement bound
+to a stream that carries a walk op. Scripted legs still outrank both.
+
+One ordering trap the wander's absolute box makes fatal: the ambient
+channels install with the scene carriers, *before* the spawn-prologue pre-run
+relocates the story-parked and story-moved placements. `World::pre_run_field_channel_prologues`
+therefore re-seats every not-yet-started channel
+(`resync_ambient_start_positions`, the position sibling of
+`resync_ambient_start_headings`) - a channel left holding the raw MAN header
+tile retires its wander on the first tick and the villager silently never
+moves.
+
+Disc oracle:
+[`crates/engine-core/tests/field_npc_ambient_wander_disc.rs`](../../crates/engine-core/tests/field_npc_ambient_wander_disc.rs).
 
 ### The ambient VM's own facing ops
 
@@ -390,12 +505,12 @@ by `FUN_8003CDA8` at scene entry.
 #### Clean-room port
 
 [`legaia_engine_vm::ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs)
-executes both ops plus the `0x05` wait and the `0x01` restart, and carries
-the scheduler as `RampScheduler`. Ops it does not model are stepped over by
-`legaia_asset::man_motion::op_width` without consuming the tick, so the
-module drives the **facing channel** of a stream whose walking is driven
-elsewhere; a per-tick op budget stops a stream whose real yield op is one of
-the stepped-over ones from spinning. The pool is ticked in slot order rather
+executes both ops plus the `0x05` wait, the `0x01` restart, the `0x17`
+default-move write and the four [walk ops](#the-walk-half---the-directional-steps-and-the-aabb-wander),
+and carries the scheduler as `RampScheduler`. Ops it still does not model are
+stepped over by `legaia_asset::man_motion::op_width` without consuming the
+tick; a per-tick op budget stops a stream whose real yield op is one of those
+from spinning. The pool is ticked in slot order rather
 than through retail's linked list - observable only if two live ramps shared
 a destination, which one actor's heading channel cannot do.
 
@@ -419,10 +534,12 @@ artefact.
 Where the facing ops sit in the corpus is worth knowing before debugging a
 "nobody turns" report. In `town01` the **default** (fresh-game) variants carry
 no facing op at all - they are `0x17` default-move, `0x05` wait, `0x18` AABB
-wander - so a fresh Rim Elm villager's ambient behaviour is *wandering*. The
-`0x04` ramps live in **flag-gated** variants, i.e. later story states. A fresh
-save showing no turning NPCs is therefore the authored behaviour, not broken
-wiring; the gated path is exercised in
+wander - so a fresh Rim Elm villager's ambient behaviour is *wandering*, and
+the `0x04` ramps live in **flag-gated** variants, i.e. later story states. A
+fresh save showing no turning NPCs is therefore the authored behaviour, not
+broken wiring: the thing to check on that report is the
+[walk half](#the-walk-half---the-directional-steps-and-the-aabb-wander)
+instead. The gated turning path is exercised in
 [`crates/engine-core/tests/field_npc_ambient_idle_disc.rs`](../../crates/engine-core/tests/field_npc_ambient_idle_disc.rs).
 
 The channel's `render_heading()` is mirrored into `World::field_npc_headings`
@@ -481,8 +598,15 @@ Disc-gated anchor test: `crates/engine-core/tests/motion_flag_census_disc.rs`.
 - `ghidra/scripts/funcs/80038158.txt` - the second VM's interpreter.
 - `ghidra/scripts/funcs/8003a9d4.txt` - motion-script installer (record chain + actor binding).
 - `ghidra/scripts/funcs/8003c5f0.txt` - the ramp-scheduler installer op `0x0D` inlines.
+- `ghidra/scripts/funcs/overlay_cutscene_dialogue_801cf8ac.txt` - the walk
+  ops' player box test (field overlay; the `801cf8ac.txt` SCUS-space dump is
+  a different function at an aliased address).
+- `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d5a68.txt` - the
+  wander's three-point fan over the same test.
 - The scheduler tick `FUN_80036D80` and the pool reset `FUN_8003CDA8` have no
   standalone dump; both are plain `SCUS_942.54` bodies at those addresses.
+  The two walk LUTs at `0x80073F04` / `0x80073F14` are plain `SCUS_942.54`
+  rodata.
 
 ## See also
 

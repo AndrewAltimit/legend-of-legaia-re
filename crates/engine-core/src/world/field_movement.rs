@@ -19,6 +19,66 @@ pub(crate) struct PropDirProbe {
     pub touch: Option<(u8, u8)>,
 }
 
+/// The walk half of the ambient motion VM's collision service: retail's
+/// `FUN_801cf8ac` box test, whose only subject is the **player actor**.
+///
+/// Both call sites reduce to "is the player standing where I am about to
+/// step". The directional steps `0x03`/`0x19`/`0x20` probe the single
+/// `DAT_801F2254` compass point ([`FIELD_FACING_PROBES`]) for their
+/// heading-LUT index; the `0x18` wander probes the three-point fan of
+/// `DAT_801F21B4` ([`FIELD_ACTOR_PROBES`]) for its cardinal. Both apply the
+/// shared `(x + dx, z - dz)` convention around the *walking actor* and
+/// accept a hit inside [`FIELD_NPC_BOX_HALF`] on both axes.
+///
+/// Neither probe reads the walkability grid, so a wandering villager is
+/// bounded by its op's authored AABB rather than by walls.
+///
+/// PORT: FUN_801cf8ac
+/// REF: FUN_801d5a68
+struct AmbientPlayerProbe {
+    player: Option<(i16, i16)>,
+}
+
+/// Does this motion stream carry a walk op - a directional step
+/// (`0x03`/`0x19`/`0x20`) or the `0x18` AABB wander?
+fn stream_has_walk_op(code: &[u8]) -> bool {
+    let mut pc = 0usize;
+    while pc < code.len() {
+        let Some(w) = legaia_asset::man_motion::op_width(code[pc]) else {
+            return false;
+        };
+        if matches!(code[pc], 0x03 | 0x19 | 0x20 | 0x18) {
+            return true;
+        }
+        pc += w;
+    }
+    false
+}
+
+impl AmbientPlayerProbe {
+    fn hit(&self, x: i16, z: i16, dx: i16, dz: i16) -> bool {
+        let Some((px, pz)) = self.player else {
+            return false;
+        };
+        let qx = x.saturating_add(dx) as i32;
+        let qz = z.saturating_sub(dz) as i32;
+        (qx - px as i32).abs() < FIELD_NPC_BOX_HALF && (qz - pz as i32).abs() < FIELD_NPC_BOX_HALF
+    }
+}
+
+impl vm::ambient_motion::AmbientBlocking for AmbientPlayerProbe {
+    fn step_blocked(&self, x: i16, z: i16, lut_index: u8) -> bool {
+        let (dx, dz) = FIELD_FACING_PROBES[usize::from(lut_index & 7)];
+        self.hit(x, z, dx, dz)
+    }
+
+    fn wander_blocked(&self, x: i16, z: i16, dir4: u8) -> bool {
+        FIELD_ACTOR_PROBES[usize::from(dir4) & 3]
+            .iter()
+            .any(|&(dx, dz)| self.hit(x, z, dx, dz))
+    }
+}
+
 impl World {
     // --- field collision grid + free-movement locomotion ----------------
 
@@ -841,6 +901,26 @@ impl World {
         }
     }
 
+    /// Re-seat every not-yet-started ambient channel on its NPC's current
+    /// position. The channel install runs with the carriers, *before* the
+    /// spawn-prologue pre-run relocates the story-parked and story-moved
+    /// placements - and the `0x18` wander's AABB guard is absolute world
+    /// space, so a channel left holding the raw MAN header tile retires its
+    /// wander on the first tick and the villager never moves.
+    ///
+    /// Call after [`Self::pre_run_field_channel_prologues`].
+    pub(crate) fn resync_ambient_start_positions(&mut self) {
+        for (slot, chan) in self.field_npc_ambient.iter_mut() {
+            if chan.live.is_some() {
+                continue;
+            }
+            if let Some(&(x, z)) = self.field_npc_positions.get(slot) {
+                chan.vm.x = x;
+                chan.vm.z = z;
+            }
+        }
+    }
+
     /// Seed the per-NPC **ambient facing** channels from the scene MAN's
     /// tail-section-1 motion streams - the idle turn-in-place behaviour of the
     /// second motion VM (`FUN_80038158` ops `0x04` / `0x0D`, ported at
@@ -907,12 +987,31 @@ impl World {
             let engine_heading =
                 (self.field_npc_headings.get(&slot).copied().unwrap_or(0) & 0x0FFF) as u16;
             let retail_heading = engine_heading.wrapping_sub(0x800) & 0x0FFF;
+            // Seat the channel where the spawn prologue left the actor: the
+            // wander op's AABB guard is absolute, so a channel started at
+            // the origin would retire its wander on the first tick.
+            let (px, pz) = self
+                .field_npc_positions
+                .get(&slot)
+                .copied()
+                .unwrap_or((0, 0));
+            let mut vm = vm::ambient_motion::AmbientMotion::new(u32::from(slot), retail_heading)
+                .with_position(px, pz);
+            // Per-actor RNG stream: retail draws from one global `rand()`,
+            // so identical neighbours never step in lockstep. Deriving the
+            // seed from the slot keeps that property and keeps a replay
+            // deterministic.
+            vm.rng = 0x9E37_79B9u32
+                .wrapping_mul(u32::from(slot).wrapping_add(1))
+                .wrapping_add(0x1234_5678);
+            let walks = variants.iter().any(|(_, code)| stream_has_walk_op(code));
             self.field_npc_ambient.insert(
                 slot,
                 FieldNpcAmbient {
                     variants,
                     live: None,
-                    vm: vm::ambient_motion::AmbientMotion::new(u32::from(slot), retail_heading),
+                    vm,
+                    walks,
                 },
             );
         }
@@ -946,6 +1045,24 @@ impl World {
             return;
         }
         let speed = self.frame_step.max(1);
+        // The walk half's collision service. Retail's two probes
+        // (`FUN_801cf8ac` direct for the directional steps, `FUN_801d5a68`'s
+        // three-point fan for the wander) both box-test against the
+        // **player actor only** - not the wall grid, not other NPCs - so an
+        // ambient walker's containment is its op's authored AABB and the
+        // sole thing that can stop a step is the player standing in it.
+        //
+        // With the opt-in liveliness off, every direction reads blocked:
+        // a directional step then re-runs its op and a wander re-picks, so
+        // the actor holds its seat exactly while its facing channel and its
+        // story-flag writes keep running.
+        let blocking: Box<dyn vm::ambient_motion::AmbientBlocking> = if self.animate_field_npcs {
+            Box::new(AmbientPlayerProbe {
+                player: self.player_field_position(),
+            })
+        } else {
+            Box::new(vm::ambient_motion::AlwaysBlocks)
+        };
         let slots: Vec<u8> = self.field_npc_ambient.keys().copied().collect();
         for slot in slots {
             // Re-select against the live system-flag bank before stepping.
@@ -959,7 +1076,9 @@ impl World {
             };
             // Split the borrow across the struct's fields so the bytecode can
             // be read while the VM is stepped - no per-frame clone.
-            let FieldNpcAmbient { variants, live, vm } = chan;
+            let FieldNpcAmbient {
+                variants, live, vm, ..
+            } = chan;
             if *live != Some(pick) {
                 *live = Some(pick);
                 vm.pc = 0;
@@ -969,13 +1088,37 @@ impl World {
                 continue;
             };
             let before = vm.heading;
-            vm.tick(code, speed);
-            if vm.heading == before {
+            vm.tick_with(code, speed, blocking.as_ref());
+            let moved = vm.moved;
+            let (nx, nz) = (vm.x, vm.z);
+            let anim = vm.requested_move;
+            let turned = vm.heading != before;
+            let engine_heading = vm.render_heading().wrapping_add(0x800) & 0x0FFF;
+            if moved {
+                // Retail's walk ops write the live `+0x14`/`+0x18`, which
+                // every downstream probe reads: the NPC's own collision box,
+                // the interact box, and the renderer's placement.
+                self.field_npc_positions.insert(slot, (nx, nz));
+                if let Some(id) = anim {
+                    self.carry_npc_run_anim(slot, id);
+                }
+            }
+            if !turned {
                 continue; // idle op: leave whatever heading is posted standing
             }
-            let engine_heading = vm.render_heading().wrapping_add(0x800) & 0x0FFF;
             self.field_npc_headings.insert(slot, engine_heading as i16);
         }
+    }
+
+    /// The player actor's live field position, or `None` when no player
+    /// actor is seated (a headless scene inspection).
+    pub(crate) fn player_field_position(&self) -> Option<(i16, i16)> {
+        let slot = self.player_actor_slot? as usize;
+        let a = self.actors.get(slot)?;
+        if !a.active {
+            return None;
+        }
+        Some((a.move_state.world_x, a.move_state.world_z))
     }
 
     /// Start a field NPC walking to world `(tx, tz)` through the motion VM -
@@ -1125,6 +1268,11 @@ impl World {
                 .field_npc_routes
                 .iter()
                 .filter(|(slot, _)| !self.field_npc_motions.contains_key(slot))
+                // Retail dispatches the two motion VMs off different actor
+                // flag bits, so a placement bound to a walking ambient
+                // stream is never also pursued by `FUN_8003774C`. Its own
+                // `0x18` / `0x03` legs are the authored behaviour.
+                .filter(|(slot, _)| !self.field_npc_ambient.get(slot).is_some_and(|c| c.walks))
                 .filter_map(|(&slot, route)| {
                     let first = *route.first()?;
                     // A one-waypoint route that has arrived stays put (no
