@@ -30,6 +30,97 @@ pub fn parse_str(text: &str) -> Result<IndexMap> {
     Ok(out)
 }
 
+/// Byte stride of a parsed CDNAME record in the retail in-RAM name table.
+pub const RETAIL_RECORD_STRIDE: usize = 0x10;
+
+/// Offset of the `u16` index within a retail in-RAM CDNAME record. Everything
+/// below this is the name field, so the usable name is
+/// [`RETAIL_NAME_CAPACITY`] bytes.
+pub const RETAIL_INDEX_OFFSET: usize = 0xC;
+
+/// Usable name bytes in a retail in-RAM CDNAME record (see
+/// [`parse_retail_str`] for what happens to longer names).
+pub const RETAIL_NAME_CAPACITY: usize = RETAIL_INDEX_OFFSET;
+
+/// Parse a CDNAME map the way retail's loader does, rather than the way a
+/// tolerant tool would.
+///
+/// The retail routine reads `CDNAME.TXT` into a 4 KB stack buffer and walks it
+/// with three behaviours [`parse_str`] deliberately does not reproduce:
+///
+/// - **It stops at the first line that does not begin with `#`.** There is no
+///   "skip junk and keep going": the loop condition *is* the `#` test, so a
+///   blank or comment line mid-file would truncate the map.
+/// - **Names are capped at [`RETAIL_NAME_CAPACITY`] bytes.** Records are
+///   [`RETAIL_RECORD_STRIDE`] bytes with the index stored at
+///   [`RETAIL_INDEX_OFFSET`], and the index store runs *after* the name copy -
+///   so a longer name has its 13th and 14th bytes overwritten by the index.
+///   The shipped file does carry names past that cap, so this is a live effect
+///   rather than a theoretical one.
+/// - **Index digits are accumulated leniently.** It inspects the four bytes
+///   after the name and folds in each one that is a digit, skipping non-digits
+///   instead of stopping, so run-together spacing still parses.
+///
+/// On the retail `CDNAME.TXT` the two readers agree on every **index**, and on
+/// every name that fits the cap - but the shipped file carries two names that do
+/// not, so the maps are *not* identical:
+///
+/// | `#define` name | Retail in-RAM name |
+/// |---|---|
+/// | `gameover_data` | `gameover_dat` |
+/// | `move_program_no` | `move_program` |
+///
+/// Tooling that matches CDNAME names against the full `#define` spelling is
+/// therefore comparing against something retail never holds. The disc-gated
+/// `cdname_retail_parse_disc` test pins both the index agreement and this exact
+/// truncation set, so a future disc or a changed cap fails loudly rather than
+/// silently renaming a block.
+///
+// PORT: FUN_8001d8fc
+pub fn parse_retail_str(text: &str) -> IndexMap {
+    let mut out = IndexMap::new();
+    let bytes = text.as_bytes();
+    let mut p = 0usize;
+
+    // The loop condition is the '#' test: the first line that fails it ends the
+    // parse, exactly as retail's `while (*p == '#')` does.
+    while bytes.get(p) == Some(&b'#') {
+        // Retail skips a fixed 8 bytes ("#define ") and copies until a space.
+        let name_start = p + 8;
+        let mut n = 0usize;
+        while bytes.get(name_start + n).is_some_and(|&c| c != b' ') {
+            n += 1;
+        }
+        let name_bytes = &bytes[name_start.min(bytes.len())..(name_start + n).min(bytes.len())];
+        // The index store lands on name bytes 12..13, so anything past the cap
+        // is truncated in the table retail actually consults.
+        let kept = name_bytes.len().min(RETAIL_NAME_CAPACITY);
+        let name = String::from_utf8_lossy(&name_bytes[..kept]).into_owned();
+
+        // `p` now sits on the space that terminated the name; retail reads the
+        // four bytes after it, folding in digits and skipping non-digits.
+        p = name_start + n;
+        let mut idx: u32 = 0;
+        for k in 1..=4 {
+            if let Some(&c) = bytes.get(p + k)
+                && c.is_ascii_digit()
+            {
+                idx = idx * 10 + u32::from(c - b'0');
+            }
+        }
+        if !name.is_empty() {
+            out.insert(idx, name);
+        }
+
+        // Advance past the newline that ends this line.
+        match bytes[p..].iter().position(|&c| c == b'\n') {
+            Some(nl) => p += nl + 1,
+            None => break,
+        }
+    }
+    out
+}
+
 /// Find the named block whose start index ≤ entry_index. CDNAME.TXT lists the
 /// first index of each block, so consecutive PROT entries inherit the name of
 /// the most recent declared block.
@@ -135,6 +226,59 @@ not a define
         assert_eq!(map.get(&20).map(String::as_str), Some("dungeon"));
         // malformed / non-numeric lines are skipped, not panicked on.
         assert_eq!(map.len(), 3);
+    }
+
+    #[test]
+    fn retail_parse_stops_at_the_first_non_hash_line() {
+        // The tolerant parser skips the junk line and picks up `after`; retail's
+        // loop condition ends the map there.
+        let text = "#define first 5\nnot a define\n#define after 9\n";
+        let retail = parse_retail_str(text);
+        assert_eq!(retail.get(&5).map(String::as_str), Some("first"));
+        assert_eq!(
+            retail.get(&9),
+            None,
+            "retail must not resume past the break"
+        );
+        assert_eq!(retail.len(), 1);
+        assert_eq!(parse_str(text).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn retail_parse_truncates_names_at_the_index_field() {
+        // 15 bytes: the index store overwrites bytes 12..13, so the table keeps
+        // the first 12 only.
+        let map = parse_retail_str("#define move_program_no 42\n");
+        assert_eq!(map.get(&42).map(String::as_str), Some("move_program"));
+        // A name that fits is untouched.
+        let short = parse_retail_str("#define town01 5\n");
+        assert_eq!(short.get(&5).map(String::as_str), Some("town01"));
+    }
+
+    #[test]
+    fn retail_parse_folds_digits_leniently() {
+        // Up to four bytes after the name are inspected; non-digits are skipped
+        // rather than terminating the scan.
+        assert_eq!(
+            parse_retail_str("#define a 123\n")
+                .get(&123)
+                .map(String::as_str),
+            Some("a")
+        );
+        // Only the first four bytes past the name are read at all.
+        assert_eq!(
+            parse_retail_str("#define a 12345\n")
+                .get(&1234)
+                .map(String::as_str),
+            Some("a")
+        );
+    }
+
+    #[test]
+    fn retail_parse_handles_empty_and_unterminated_input() {
+        assert!(parse_retail_str("").is_empty());
+        // No trailing newline: the walk stops instead of running off the buffer.
+        assert_eq!(parse_retail_str("#define a 1").len(), 1);
     }
 
     #[test]
