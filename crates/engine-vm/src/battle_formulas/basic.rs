@@ -68,6 +68,33 @@ impl MpCostModifier {
 /// right-shifted copy of the cost (`cost -= cost >> 1` for Half, `cost -= cost
 /// >> 2` for Quarter), NOT a floor-divide - so Half rounds *up* on odd costs
 /// (`7 -> 4`, not `3`) and Quarter shaves only 25% off (`40 -> 30`, not `10`).
+///
+/// `FUN_80035394` is the standalone `SCUS_942.54` form of the same routine -
+/// all 19 of its instructions are the record lookup plus this arithmetic:
+///
+/// ```text
+/// 80035398  addiu v1,v1,0x4140    ; 0x80084140
+/// 8003539c..800353b0              ; + caster * 0x414
+/// 800353b4  lw   v1,0x6bc(v0)     ; 0x80084140 + 0x6BC == char record + 0xF4
+/// 800353bc  andi v0,v1,0x20
+/// 800353c0  bne  v0,zero,0x800353d4
+/// 800353c4  _sra v0,a1,0x1        ; Half: cost >> 1
+/// 800353c8  andi v0,v1,0x10
+/// 800353cc  beq  v0,zero,0x800353d8
+/// 800353d0  _sra v0,a1,0x2        ; Quarter: cost >> 2
+/// 800353d4  subu a1,a1,v0
+/// ```
+///
+/// The `0x6BC` displacement off `0x80084140` is what identifies the field: it
+/// lands on `0x800847FC`, which is `0x80084708 + 0xF4` - the per-character
+/// ability bitfield. The `0x20`-before-`0x10` branch order is the same
+/// Half-wins priority [`MpCostModifier::from_ability_flags`] resolves, and it
+/// is visible here in the branch structure rather than inferred. Retail's
+/// shifts are `sra` (signed); a spell cost is never negative, so the port's
+/// unsigned shifts agree over the whole reachable domain.
+///
+/// PORT: FUN_80035394
+/// REF: FUN_801E295C (state `0x28` at `0x801E3D0C` - the inlined copy)
 pub fn mp_cost_after_ability_bits(base_cost: u16, modifier: MpCostModifier) -> u16 {
     match modifier {
         MpCostModifier::Full => base_cost,

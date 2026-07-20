@@ -116,9 +116,13 @@ Which arm fires depends on the actor's action state, and one of the three restor
 - **plain** (`+0x1DE == 3`, or any monster slot `>= 3`): restore to `+0x156`.
 - **otherwise**: `+0x154` is left untouched, so a party actor mid-combo carries its spent AGL into the next round rather than refilling.
 
-The same pass zeroes each actor's `+0x1DF..+0x1EE` action-parameter stream - which is why a stale action id is unreadable once the round ends - and re-picks any party actor's target whose stored slot `+0x1DD` is out of the `0..=6` range or names a dead actor.
+The routine is two loops over the actor pointer table at `DAT_801C9370`, and they cover different bands. Loop A (`801d892c`) walks all seven slots: the gauge arm above, then the zeroing of that actor's `+0x1DF..+0x1EE` action-parameter stream - which is why a stale action id is unreadable once the round ends. Loop B (`801d8a00`) walks the **party band only** (its bound is `s1+0xc`, three pointers): it re-picks any party actor's target whose stored slot `+0x1DD` is out of the `0..=6` range or names a dead actor, then clears the action-category byte `+0x1DE`.
 
-Ported as `battle_formulas::round_reset_agility` / `needs_retarget`.
+The re-pick is `FUN_801DB8B4`, and it is **not** an RNG-backed picker. All 16 of its instructions are a linear scan from slot `3` while `slot < 7`, returning the first candidate whose `+0x14C` is non-zero and the sentinel `7` when the monster band is wiped. A party actor whose target died therefore re-points at the *lowest* living monster slot, deterministically.
+
+The pass runs **before** the initiative seeder, not after it: the battle-flow SM calls `FUN_801D88CC` at `801d0ed0` and `FUN_801DA780` at `801d0ed8`, with the DoT tick (`FUN_801E752C`) after both.
+
+Ported as `battle_formulas::round_reset_agility` / `needs_retarget`, with the caller-side sweep as `engine-core::BattleRound::boundary` - which the live battle loop runs at its round boundary, ahead of the status tick and the reseed. The gauge it maintains is the battle actor's `+0x154`; the enemy swing-budget loop spends it.
 
 ### Spell list (`record +0x4C`)
 

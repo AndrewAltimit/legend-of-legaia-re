@@ -206,6 +206,12 @@ impl World {
                 a.battle.mp = def.mp;
                 a.battle.liveness = 1;
                 a.battle.action_category = 3;
+                // Live + base action gauge (actor `+0x154` / `+0x156`). The
+                // round boundary restores the live one from the base each
+                // round (`FUN_801D88CC` loop A); the swing-budget loop spends
+                // it.
+                a.battle.agl_base = def.agl;
+                a.battle.agl = def.agl;
                 if let Some(s) = self.battle_attack.get_mut(mslot) {
                     *s = def.attack;
                 }

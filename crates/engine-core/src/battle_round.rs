@@ -24,6 +24,7 @@ use crate::battle_stats::{
     BattleStats, EquipmentTable, StatRecord, StatusModifiers, compute_battle_stats,
 };
 use crate::world::World;
+use legaia_engine_vm as vm;
 use legaia_engine_vm::status_effects::StatusKind;
 
 /// One round of battle. Constructed by [`BattleRound::begin`]; consumed
@@ -94,6 +95,108 @@ impl BattleRound {
             world.set_battle_defense_split(i as u8, Some((stats.udf, stats.ldf)));
         }
         round
+    }
+
+    /// The round-boundary actor sweep - the port of `FUN_801D88CC`, the first
+    /// of the two passes retail's battle-flow SM runs when a round ends.
+    ///
+    /// The call site is `FUN_801D0748` at `801d0ec4`, and the order there is
+    /// what pins this routine to the boundary:
+    ///
+    /// ```text
+    /// 801d0ecc  sw   v0,0x880(v1)     ; ctx+0x880 = 0x8000
+    /// 801d0ed0  jal  0x801d88cc       ; this pass
+    /// 801d0ed8  jal  0x801da780       ; then reseed the initiative keys
+    /// 801d0ee4  jal  0x801d388c
+    /// 801d0f04  jal  0x801e752c       ; then the DoT / status tick
+    /// ```
+    ///
+    /// Note the order: the actor sweep runs **before** the initiative seeder,
+    /// not after it.
+    ///
+    /// `FUN_801D88CC` is two loops over the actor pointer table at
+    /// `DAT_801C9370`, and they cover different bands:
+    ///
+    /// - **Loop A** (`801d892c..801d89f4`) walks all 7 slots. Per actor it
+    ///   restores the action gauge `+0x154` through the three arms of
+    ///   [`vm::battle_formulas::round_reset_agility`], then zeroes the 16-byte
+    ///   action-parameter stream at `+0x1DF`
+    ///   ([`vm::battle_formulas::ACTION_STREAM_RANGE`]) - the clear that makes
+    ///   last round's action id unreadable.
+    /// - **Loop B** (`801d8a00..801d8a70`) walks the **party band only** (the
+    ///   loop bound is `s1+0xc`, three pointers). It re-picks a stale target
+    ///   ([`vm::battle_formulas::needs_retarget`]) and clears the action
+    ///   category byte `+0x1DE`.
+    ///
+    /// The re-pick itself is `FUN_801DB8B4`, which is a plain first-living-
+    /// monster scan (`801db8b4`: `v1 = 3`, walk `DAT_801C937C` while
+    /// `v1 < 7`, return on the first slot whose `+0x14C` is non-zero, else
+    /// return `7`). It draws no RNG.
+    ///
+    /// The engine **compacts** its battle seating - the first monster sits at
+    /// `party_count`, not at a fixed slot 3 - so both bands are taken from
+    /// `party_count` here rather than from retail's literal `3`. That is the
+    /// same seating adapter `World::reseed_initiative` applies.
+    ///
+    /// The routine's ctx header writes (`+0x13 = 0xFF`, `+0x1B = 1`,
+    /// `+0x1C = 0x10`, `+0x1F = 0xFF`, and the `FUN_801D32BC(0)` call) stay
+    /// with the host: `+0x1B` / `+0x1C` / `+0x1F` are battle-flow fields the
+    /// engine does not model, and `+0x13` is the active-actor cursor, which the
+    /// engine's boundary hook sits *before* rather than after.
+    ///
+    /// PORT: FUN_801d88cc
+    /// REF: FUN_801db8b4 (loop B's re-pick), FUN_801d0748 (the call site)
+    pub fn boundary(world: &mut World) {
+        let party_count = (world.party_count as usize).max(1);
+        let slots = world.actors.len().min(8);
+
+        // Loop A: every slot - gauge restore + action-stream clear.
+        for slot in 0..slots {
+            let a = &mut world.actors[slot].battle;
+            // `+0x1DE == 4` or the `+0x1F9` charge byte non-zero.
+            let spirit_charged = a.action_category == 4 || a.spirit_shield != 0;
+            // `+0x1DE == 3`, or any monster slot.
+            let plain_reset = a.action_category == 3 || slot >= party_count;
+            a.agl = vm::battle_formulas::round_reset_agility(
+                a.agl,
+                a.agl_base,
+                spirit_charged,
+                plain_reset,
+            );
+            // `+0x1DF..+0x1EE`. `BattleActor::params` is based at `+0x1DF`, so
+            // the retail range indexes it from zero.
+            let len = vm::battle_formulas::ACTION_STREAM_RANGE.len();
+            for b in a.params.iter_mut().take(len) {
+                *b = 0;
+            }
+        }
+
+        // Loop B: party band only - stale-target re-pick + category clear.
+        for slot in 0..party_count.min(slots) {
+            let target = world.actors[slot].battle.active_target;
+            let target_hp = world
+                .actors
+                .get(target as usize)
+                .map(|a| a.battle.hp)
+                .unwrap_or(0);
+            if vm::battle_formulas::needs_retarget(target, target_hp) {
+                world.actors[slot].battle.active_target = Self::first_living_monster(world);
+            }
+            world.actors[slot].battle.action_category = 0;
+        }
+    }
+
+    /// `FUN_801DB8B4`: the first living monster slot, or the one-past-the-end
+    /// sentinel when the monster band is wiped (retail returns `7`, the slot
+    /// count; the engine returns its own band end for the same reason).
+    ///
+    /// PORT: FUN_801db8b4
+    fn first_living_monster(world: &World) -> u8 {
+        let party_count = (world.party_count as usize).max(1);
+        let end = world.actors.len().min(8);
+        (party_count..end)
+            .find(|&i| world.actors[i].battle.liveness != 0)
+            .unwrap_or(end) as u8
     }
 
     /// End-of-round bookkeeping. Ticks every actor's status effects,
@@ -273,6 +376,161 @@ mod tests {
         let deaths = BattleRound::end(&mut world);
         assert_eq!(deaths, 0);
         assert_eq!(world.actors[0].battle.hp, 1);
+    }
+
+    /// Build the 1-vs-1 live-loop battle the round-boundary tests drive: both
+    /// sides carry SPD (the boundary is gated on the initiative path), the
+    /// monster is asleep so it never acts, and both sides carry enough HP to
+    /// survive the tick budget.
+    fn live_round_battle() -> World {
+        use legaia_engine_vm::status_effects::StatusKind;
+        let mut world = World::new();
+        world.enter_battle(1, 1); // slot 0 = party, slot 1 = monster
+        world.live_gameplay_loop = true;
+        world.battle_player_driven = false;
+        world.battle_speed[0] = 10;
+        world.battle_speed[1] = 10;
+        world
+            .status_effects
+            .apply_with_duration(1, StatusKind::Sleep, 255);
+        world.actors[0].battle.max_hp = 800;
+        world.actors[0].battle.hp = 800;
+        world.actors[1].battle.max_hp = 9999;
+        world.actors[1].battle.hp = 9999;
+        world
+    }
+
+    /// `FUN_801D88CC` loop A zeroes each actor's 16-byte action-parameter
+    /// stream (`+0x1DF..+0x1EE`) every round. `+0x1DF` is the action id the
+    /// move-power table is indexed by, so a stale byte surviving the round is
+    /// a stale action staying readable.
+    ///
+    /// This drives the **live loop**, not the pass directly: nothing else in
+    /// the engine clears `params`, so the byte only goes to zero if
+    /// `live_battle_tick` actually reaches `BattleRound::boundary` at its round
+    /// boundary. Removing that call leaves the byte at `0x42` for the whole
+    /// tick budget and this fails.
+    #[test]
+    fn live_loop_clears_the_action_stream_at_the_round_boundary() {
+        use crate::world::SceneMode;
+        let mut world = live_round_battle();
+        world.actors[0].battle.params[0] = 0x42;
+
+        let mut cleared = false;
+        for _ in 0..600 {
+            world.tick();
+            if world.mode != SceneMode::Battle {
+                break;
+            }
+            if world.actors[0].battle.params[0] == 0 {
+                cleared = true;
+                break;
+            }
+        }
+        assert!(
+            cleared,
+            "the round boundary must zero the action-parameter stream"
+        );
+    }
+
+    /// Loop A's gauge restore, end to end. A monster slot always takes the
+    /// plain-reset arm, so a gauge drained during the round is back at its base
+    /// after the boundary. Fails without the `live_battle_tick` wiring - the
+    /// engine has no other writer that raises `agl`.
+    #[test]
+    fn live_loop_restores_the_action_gauge_at_the_round_boundary() {
+        use crate::world::SceneMode;
+        let mut world = live_round_battle();
+        world.actors[1].battle.agl_base = 40;
+        world.actors[1].battle.agl = 0;
+
+        let mut restored = false;
+        for _ in 0..600 {
+            world.tick();
+            if world.mode != SceneMode::Battle {
+                break;
+            }
+            if world.actors[1].battle.agl == 40 {
+                restored = true;
+                break;
+            }
+        }
+        assert!(
+            restored,
+            "the round boundary must restore a monster's AGL to its base"
+        );
+    }
+
+    /// Loop B: a party actor whose stored target (`+0x1DD`) names a dead actor
+    /// re-points at the first living monster slot, and its action category
+    /// (`+0x1DE`) is cleared. `FUN_801DB8B4` picks the **lowest** living
+    /// monster slot deterministically - it draws no RNG - so slot 1 is the
+    /// only correct answer here.
+    #[test]
+    fn boundary_retargets_a_party_actor_off_a_dead_target() {
+        let mut world = World::new();
+        world.enter_battle(1, 3); // slot 0 party, slots 1..=3 monsters
+        world.actors[0].battle.active_target = 3;
+        world.actors[0].battle.action_category = 3;
+        // Slot 3 is dead; slot 1 is the lowest living monster.
+        world.actors[3].battle.hp = 0;
+        world.actors[3].battle.liveness = 0;
+        for slot in 1..=2 {
+            world.actors[slot].battle.hp = 50;
+            world.actors[slot].battle.liveness = 1;
+        }
+
+        BattleRound::boundary(&mut world);
+
+        assert_eq!(world.actors[0].battle.active_target, 1);
+        assert_eq!(world.actors[0].battle.action_category, 0);
+    }
+
+    /// A live target is left alone - the predicate is "still usable", not
+    /// "re-pick every round". Guards the retarget test above from passing for
+    /// the trivial reason that the boundary rewrites every target.
+    #[test]
+    fn boundary_leaves_a_living_target_in_place() {
+        let mut world = World::new();
+        world.enter_battle(1, 3);
+        for slot in 1..=3 {
+            world.actors[slot].battle.hp = 50;
+            world.actors[slot].battle.liveness = 1;
+        }
+        world.actors[0].battle.active_target = 3;
+
+        BattleRound::boundary(&mut world);
+
+        assert_eq!(
+            world.actors[0].battle.active_target, 3,
+            "a living target must survive the boundary"
+        );
+    }
+
+    /// Loop A's third arm: a **party** slot in an action state below `3` that
+    /// is not spirit-charged gets *no* reset at all and carries its remaining
+    /// gauge into the next round. A monster slot in the same state does reset,
+    /// because the slot-band test is an `||` with the state test.
+    #[test]
+    fn boundary_gauge_arms_split_party_from_monster() {
+        let mut world = World::new();
+        world.enter_battle(1, 1);
+        for slot in 0..2 {
+            world.actors[slot].battle.agl_base = 60;
+            world.actors[slot].battle.agl = 5;
+            world.actors[slot].battle.action_category = 1;
+        }
+
+        BattleRound::boundary(&mut world);
+
+        assert_eq!(
+            world.actors[0].battle.agl, 5,
+            "a party actor mid-combo carries its gauge"
+        );
+        assert_eq!(
+            world.actors[1].battle.agl, 60,
+            "a monster slot always resets to base"
+        );
     }
 
     #[test]

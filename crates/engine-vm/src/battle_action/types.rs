@@ -341,6 +341,18 @@ pub struct BattleActor {
     /// `0` = "has acted this round / dead" (the selector zeroes dead actors'
     /// keys). See `docs/subsystems/battle-formulas.md`.
     pub init_key: u16,
+    /// `+0x154` - **live action gauge (AGL)**, the pool a turn's actions are
+    /// paid out of. Restored at every round boundary by `FUN_801D88CC` loop A
+    /// ([`crate::battle_formulas::round_reset_agility`]) from [`Self::agl_base`],
+    /// and spent per swing by the enemy budget loop
+    /// ([`crate::battle_action::enemy_action_budget`]).
+    ///
+    /// Distinct from [`Self::init_key`]: the key decides *when* an actor acts,
+    /// this decides *how much* it can do once it does.
+    pub agl: u16,
+    /// `+0x156` - **base action gauge**, the value [`Self::agl`] is restored to
+    /// each round. Read-only during a battle.
+    pub agl_base: u16,
     /// `+0x170` - **spirit-art gauge** (0..=100). The shared damage finisher
     /// `FUN_801ddb30` accrues this on the *defender* from each hit's
     /// post-mitigation damage (`pct = max(1, over*100/maxhp)`, plus the two

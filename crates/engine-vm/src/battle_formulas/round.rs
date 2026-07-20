@@ -2,10 +2,16 @@
 //! and the agility / action-gauge reset (`FUN_801D88CC`). Split out of
 //! `battle_formulas.rs`.
 //!
-//! These are the two passes that run at a round boundary, in that order: the
-//! seeder assigns every slot the key the turn-order selector
-//! (`FUN_801DABA4`, ported as `World::next_combatant_by_initiative`) sorts on,
-//! and the reset restores each actor's spendable AGL.
+//! These are the two passes that run at a round boundary, and the order is
+//! **reset first**: the battle-flow SM calls `FUN_801D88CC` at `801d0ed0` and
+//! `FUN_801DA780` at `801d0ed8`. So each actor's spendable AGL is restored and
+//! its stale action stream cleared, and only then does the seeder assign every
+//! slot the key the turn-order selector (`FUN_801DABA4`, ported as
+//! `World::next_combatant_by_initiative`) sorts on.
+//!
+//! The caller-side sweep is ported as `engine-core`'s
+//! `BattleRound::boundary`, which the live battle loop runs at its
+//! round boundary.
 
 // ---------------------------------------------------------------------------
 // Initiative key seeding (FUN_801DA780)
@@ -349,13 +355,18 @@ pub fn roll_formation_advantage(
 
 /// Apply the `ctx+0x290` side lockout over a seeded 7-slot key table, in place.
 ///
-/// NOT WIRED: no engine caller. This splits the sides at retail's **fixed**
-/// slot boundary (party `0..=2`, monsters `3..=6`), because retail reserves
-/// three party slots whatever the party size. `engine-core` compacts instead -
-/// `enter_battle` seats the first monster at `party_count`, so slot 1 can be a
-/// monster - and `World::reseed_initiative` therefore applies the same rule
-/// against its own `party_count` boundary rather than calling this. Kept as the
-/// retail-layout reference the engine's adapter is checked against.
+/// NOT WIRED - **and not wirable as written**, which is a statement about the
+/// engine's seating rather than about a missing caller. The round-boundary
+/// pass this belongs to *does* exist (`engine-core`'s `BattleRound::boundary`
+/// plus the reseed that follows it); what cannot be reused is the slot split.
+/// This function hardcodes retail's **fixed** boundary (party `0..=2`,
+/// monsters `3..=6`), because retail reserves three party slots whatever the
+/// party size. `engine-core` compacts instead - `enter_battle` seats the first
+/// monster at `party_count`, so slot 1 can be a monster - and
+/// `World::reseed_initiative` therefore applies the same rule against its own
+/// `party_count` boundary. Calling this instead would lock out the wrong side
+/// for any party smaller than three. Kept as the retail-layout reference the
+/// engine's adapter is checked against.
 ///
 /// PORT: FUN_801da780 (the lockout sweep that runs after the per-slot scoring)
 pub fn apply_side_lockout(keys: &mut [u16; 7], lockout: SideLockout) {
@@ -390,13 +401,17 @@ pub const SPIRIT_AGL_CAP: u16 = 0x120;
 /// That last arm is easy to miss and is the reason a party member who has been
 /// spending AGL mid-combo does not silently refill.
 ///
-/// NOT WIRED: no engine caller. `engine-core`'s battle loop has no per-round
-/// AGL / action-gauge pass yet, so nothing calls this - it is a verified kernel
-/// waiting on the round-boundary hook, not live behaviour.
+/// The caller side - the slot sweep, the `+0x1DF..+0x1EE` action-stream clear
+/// and loop B's dead-target re-pick (see [`needs_retarget`]) - is
+/// `engine-core`'s `BattleRound::boundary`, which the live battle loop runs
+/// when a round ends. The gauge it writes is the battle actor's `+0x154`, and
+/// the enemy swing-budget loop spends it.
 ///
-/// PORT: FUN_801d88cc (loop A's AGL arm; the ctx header writes, the
-/// `+0x1DF..+0x1EE` action-stream clear and loop B's dead-target re-pick stay
-/// with the caller - see [`needs_retarget`])
+/// The ctx header writes stay with retail's own caller; the engine's boundary
+/// hook sits before its active-actor cursor advances, so it has nothing to
+/// reset there.
+///
+/// PORT: FUN_801d88cc (loop A's AGL arm)
 pub fn round_reset_agility(cur: u16, base: u16, spirit_charged: bool, plain_reset: bool) -> u16 {
     if spirit_charged {
         let boosted = (u32::from(base) * 7) / 5 + 8;
@@ -412,11 +427,26 @@ pub fn round_reset_agility(cur: u16, base: u16, spirit_charged: bool, plain_rese
 /// target when the stored slot byte (`+0x1DD`) is out of the `0..=6` slot range
 /// or the actor it names is dead (`+0x14C == 0`).
 ///
-/// Retail re-picks through `FUN_801DB8B4` (the RNG-backed picker); this
-/// predicate is only the "is the stored target still usable" half.
+/// This predicate is only the "is the stored target still usable" half; the
+/// re-pick is `FUN_801DB8B4`. That routine is **not** an RNG-backed picker -
+/// an earlier reading here said it was, and the disassembly falsifies it. All
+/// 16 of its instructions are a linear scan:
 ///
-/// NOT WIRED: no engine caller (same missing round-boundary pass as
-/// [`round_reset_agility`]).
+/// ```text
+/// 801db8b4  li    v1,0x3            ; start at the first monster slot
+/// 801db8bc  addiu v0,v0,-0x6c90     ; &DAT_801C9370
+/// 801db8c0  addiu a0,v0,0xc         ; ... + 3 pointers
+/// 801db8cc  lhu   v0,0x14c(v0)      ; candidate's liveness
+/// 801db8d4  bne   v0,zero,0x801db8ec; first living slot wins
+/// 801db8e0  sltiu v0,v1,0x7         ; while slot < 7
+/// 801db8f0  _move v0,v1             ; returns 7 when the band is wiped
+/// ```
+///
+/// So a party actor whose target died re-points at the **lowest** living
+/// monster slot deterministically, and the routine draws nothing from the RNG.
+///
+/// Wired through `engine-core`'s `BattleRound::boundary` (loop B), which walks
+/// the party band only - retail's loop bound is `s1+0xc`, three pointers.
 pub fn needs_retarget(target_slot: u8, target_hp: u16) -> bool {
     target_slot > 6 || target_hp == 0
 }
@@ -487,9 +517,20 @@ pub const CAMERA_HEIGHT_MAX: i16 = 0x1400;
 /// `size_of(slot)` returns the monster record's `+0x1F` size byte for a
 /// monster slot; it is never called for a party slot.
 ///
-/// NOT WIRED: no engine caller. The engine's battle camera does not yet frame
-/// on monster size class, so neither this nor
-/// [`camera_height_from_size_class`] is reached outside tests.
+/// NOT WIRED: no engine caller - and **not** for want of a round-boundary
+/// pass, which is where this used to be filed. `FUN_801F0348` is not a
+/// round-boundary routine at all: its only callers are `FUN_801DC0A0` (the
+/// battle camera, at `801dc478` and `801dc6f0`) and `FUN_801E295C` (the action
+/// SM). It is per-action framing, and it runs every time an actor is seeded,
+/// not once per round.
+///
+/// The engine already has the matching hook - `BattleActionHost::camera_bounds`
+/// fires at `ActionSeed`, which is the same edge - so the call site is not the
+/// blocker. The blocker is the input: `size_of(slot)` wants the monster
+/// record's `+0x1F` size byte, and `engine-core`'s `MonsterDef` carries no
+/// size-class field, so there is nothing to pass. Wiring this means adding
+/// that field to the catalog and its record parser first; until then neither
+/// this nor [`camera_height_from_size_class`] is reached outside tests.
 ///
 /// PORT: FUN_801f0348
 pub fn camera_height_for_frame(
