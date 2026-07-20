@@ -25,9 +25,11 @@
 //!
 //! So each record is **26 bytes** and its first field (`+0`, signed 16-bit) is
 //! the move's **power**, which the kernel uses as `rand % (((i16)power >> 2) + 1)`.
-//! (`801f3990`/`FUN_801dd0ac` also read `+0` as the half `>> 1` and full `>> 0`
-//! values for the same move, so `+0` is the base power used at full / half /
-//! quarter scale.)
+//! (`FUN_801dd0ac` also reads `+0` as the half `>> 1` and full `>> 0` values for
+//! the same move, so `+0` is the base power used at full / half / quarter
+//! scale. There is only the one damage kernel - `0x801f3990` is a *different*
+//! function that reads no field of this record; see the note on
+//! `MOVE_POWER_TABLE_VA`.)
 //!
 //! ## `param_1` is a *mapped* index, not the raw move id
 //!
@@ -66,17 +68,27 @@
 //!
 //! The per-move record is consumed by three battle-action functions:
 //!
-//! - `FUN_801dd0ac` / `801f3990` (damage kernels) read **only `+0x00`** (power)
-//!   at full / half / quarter scale.
+//! - `FUN_801dd0ac` (the damage kernel) reads **only `+0x00`** (power) at full /
+//!   half / quarter scale. It is the *only* damage kernel over this table.
 //! - `FUN_801dea50` (action setup) computes the record address **once**
 //!   (`&DAT_801f4f5c + map[actor+0x1df]*0x1a`) and stashes it in the per-battle
-//!   context at `ctx+0x1014` (`overlay_battle_action_801dea50.txt:528` →
-//!   `sw v0,0x1014(a0)`), then seeds the move counter from `+0x04`.
+//!   context at `ctx+0x1014` (`sw v0,0x1014(a0)` at `0x801df284`), then seeds
+//!   the move counter from `+0x04`.
 //! - `FUN_801e09f8` (per-frame action tick) dereferences that held pointer
-//!   (`lw …,0x1014(…)`) ~25× and reads the residual fields off it. The byte
-//!   offsets it loads are exactly `+0x02,+0x06,+0x08,+0x09,+0x0a,+0x0b,+0x0d,
-//!   +0x0e,+0x12,+0x16` - **never `+0x0c`** (confirmed: no `lbu …,0xc(…)` off
-//!   the held pointer anywhere).
+//!   (`lw …,0x1014(…)`) ~25× and reads the residual fields off it.
+//!
+//! Across the whole corpus the offsets any consumer touches are exactly
+//! `+0x00,02,04,06,08,09,0a,0b,0d,0e,12,16` - **never `+0x0c`**. That negative
+//! is swept over bytes, not dumps, and over four access shapes rather than one:
+//! absolute `lui`+`addiu` constants landing anywhere inside the table (which
+//! catches a *base-folded* reader, where `+0x0c` is folded into the `addiu` and
+//! the load displacement reads `0`), the `×26` index chain, the `ctx+0x1014`
+//! stashed pointer with offset-tracking propagation, and table-address words
+//! resident in data. The table base `0x801f4f5c` is materialised at exactly two
+//! sites corpus-wide - `0x801dd1a0` (`FUN_801dd0ac`) and `0x801df27c`
+//! (`FUN_801dea50`) - and no reference lands at a shifted offset.
+//! `docs/formats/move-power.md` carries the coverage bound: which images were
+//! swept, and why the ones that were not cannot host a reader.
 //!
 //! ## Decoded record fields (each code-traced to a battle-action reader)
 //!
@@ -90,7 +102,7 @@
 //! | `+0x09` | `u8` | **flag: effect tracks the strike** - when set, the live XY is copied into the spawned effect each frame | Confirmed reader | `_801e09f8.txt:1319` |
 //! | `+0x0a` | `u8` | **impact-effect selector** (enum 1..5) - stored at `actor+0x21f`, indexes the 5-entry packed-config table at `0x801f53d4` (`(x-1)*4`) into `actor+0x04`, and switches (3/4/5) extra status-proc rolls | Confirmed reader | `_801e09f8.txt:1412/1416/1420/1422` |
 //! | `+0x0b` | `u8` | **trail / afterimage texture-page id** - passed to the streak draw helpers; becomes the GP0 texpage word `0x7700 + id` | Confirmed | `_801e09f8.txt:1244` → `_801e1ab0.txt:250` |
-//! | `+0x0c` | `u8` | **designer category tag** (`'C'/'E'/'G'/0`) - present only on the unnamed internal-tier records 1..15; **no runtime reader** (unused at runtime) | Unknown (no reader) | - |
+//! | `+0x0c` | `u8` | **designer category tag** - non-zero only on internal-tier records 1/2/3 (`'C'`), 9 (`'E'`), 12/15 (`'G'`); **no runtime reader** in SCUS or any extracted overlay (unused at runtime) | Unknown (no reader) | - |
 //! | `+0x0d` | `u8` | **sound / voice cue id** → `FUN_8004fcc8` | Confirmed | `_801e09f8.txt:1452` |
 //! | `+0x0e` | `u8` | **list-mode flag / effect-list head** - `0xFF` broadcasts the trail to all four arms; otherwise the head of a small id list the setup loop spawns | Confirmed reader | `_801e09f8.txt:1239`, `_801dea50.txt:983/1007` |
 //! | `+0x12` | `[u8;4]` | **on-contact effect-id list** (`0`/`0xFF`-terminated) dispatched via `0x801f6324`/`0x801f6418` on the hit branch | Confirmed | `_801e09f8.txt:1162/1285/1312/1335` |
@@ -127,6 +139,17 @@
 pub const BATTLE_ACTION_OVERLAY_PROT_INDEX: usize = 898;
 
 /// Runtime virtual address the table is loaded to (the `FUN_801dd0ac` base).
+///
+/// This base is materialised at exactly two sites in the whole disassembled
+/// corpus - `0x801dd1a0` in `FUN_801dd0ac` and `0x801df27c` in `FUN_801dea50`.
+/// `0x801f3990` is **not** a third consumer and **not** a second damage kernel:
+/// in the resident battle overlay (PROT 0898, base [`BATTLE_OVERLAY_BASE`], file
+/// `0x25178`) that address is a clean function prologue (`addiu sp,sp,-0x20`)
+/// for an unrelated cast audio-cue dispatcher, reached by one `jal` at
+/// `0x801e3e04` inside `FUN_801e295c`, and it reads no field of this record.
+/// The historical "second damage kernel" reading came from the aliased
+/// `overlay_0897_801f3990` dump, whose bytes are `FUN_801dd0ac` reached through
+/// PROT 0897's over-read at a wrong load base.
 pub const MOVE_POWER_TABLE_VA: u32 = 0x801F_4F5C;
 
 /// Raw-entry file offset of the table within PROT 0898. Empirically pinned by
@@ -286,10 +309,17 @@ impl MoveRecord {
     }
 
     /// `+0x0c` `u8` - a **designer category tag** (`'C'`/`'E'`/`'G'`/`0`) baked
-    /// into the unnamed internal-tier records only. **No runtime reader exists**
-    /// for this byte in any battle-action function, so it is unused at runtime;
-    /// exposed for completeness / data inspection. Returns `Some(c)` for a
-    /// printable ASCII tag, else `None`.
+    /// into the unnamed internal-tier records only (records 1/2/3 = `'C'`,
+    /// 9 = `'E'`, 12/15 = `'G'`; every other record is `0`).
+    ///
+    /// **No runtime reader exists** for this byte in `SCUS_942.54` or in any
+    /// statically-extracted overlay image, under absolute, base-folded,
+    /// `×26`-indexed or `ctx+0x1014`-pointer-relative addressing - so it is
+    /// authored data that is unused at runtime. This accessor is a
+    /// parser-side descriptor for data inspection and has no engine consumer,
+    /// which is the correct shape for a field with no reader: exposing it lets
+    /// tooling surface the annotation without implying the game acts on it.
+    /// Returns `Some(c)` for a printable ASCII tag, else `None`.
     pub fn annotation_tag(&self) -> Option<char> {
         let b = self.raw[0x0c];
         (b.is_ascii_graphic()).then_some(b as char)

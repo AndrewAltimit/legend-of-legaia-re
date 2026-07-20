@@ -17,8 +17,15 @@ each `+0x12`/`+0x16` effect-id-list byte → an `EffectListEntry` with its
 spawn-prototype param + SFX cue). It is a descriptor surface only - see Open.
 Provenance is the battle-action overlay (PROT entry 0898, CDNAME
 `overlay_battle_action` / `overlay_0898`); dumps under `ghidra/scripts/funcs/`
-are labelled `overlay_battle_action_*` and the byte-identical aliases
-`overlay_0897_*` / `overlay_magic_*` / `overlay_muscle_dome_*`.
+are labelled `overlay_battle_action_*` and the aliases `overlay_0897_*` /
+`overlay_magic_*` / `overlay_muscle_dome_*`. Those aliases carry the same
+*bytes* but not the same *addresses*: PROT 0897's extraction over-reads the
+whole battle overlay at `+0x25000`, and the `overlay_0897_*` dumps were produced
+at a wrong load base, so their printed VAs are wrong by a constant. Take any
+address on this page from the extracted overlay image, never from an
+`overlay_0897_*` dump - see
+[`0x801F3990`](#0x801f3990-is-a-real-function-and-not-a-consumer-of-this-table)
+for what that mistake produced.
 
 ## Location - static overlay data
 
@@ -159,13 +166,13 @@ coverage on disc.)
 ## Record layout (26 bytes)
 
 The record is consumed by three battle-action functions. `FUN_801dd0ac` (the
-damage kernel) reads **only `+0x00`**. `FUN_801dea50` (action
+damage kernel, and the only one) reads **only `+0x00`**. `FUN_801dea50` (action
 setup) computes the record address once and stashes the pointer in the
-per-battle context at `ctx+0x1014` (`overlay_battle_action_801dea50.txt:528`,
-`sw v0,0x1014(a0)`). `FUN_801e09f8` (the per-frame action tick) dereferences
-that held pointer ~25× and reads the residual fields off it - the byte offsets
-it loads are exactly `+0x02,+0x06,+0x08,+0x09,+0x0a,+0x0b,+0x0d,+0x0e,+0x12,
-+0x16`, and **never `+0x0c`**.
+per-battle context at `ctx+0x1014` (`sw v0,0x1014(a0)` at `0x801df284`).
+`FUN_801e09f8` (the per-frame action tick) dereferences that held pointer ~25×
+and reads the residual fields off it. Across the whole corpus the offsets any
+consumer touches are exactly `+0x00,02,04,06,08,09,0a,0b,0d,0e,12,16`, and
+**never `+0x0c`**.
 
 | Off | Type | Field | Meaning | Confidence |
 |---|---|---|---|---|
@@ -177,11 +184,66 @@ it loads are exactly `+0x02,+0x06,+0x08,+0x09,+0x0a,+0x0b,+0x0d,+0x0e,+0x12,
 | `+0x09` | `u8` | effect-tracks-strike flag | When non-zero, the move's live XY is copied into the spawned effect actor each frame (the effect follows the strike). | Confirmed (read); semantic Inferred |
 | `+0x0a` | `u8` | impact-effect selector | Enum (typically 1..5): stored at `actor+0x21f`, indexes the 5-entry packed-config table at `0x801f53d4` (`(value-1)*4`) into `actor+0x04`, and values 3/4/5 branch to extra status-proc rolls. `0` = none. The table holds packed `u32` config words (`0x3FF`-masked lanes), not pointers. | Confirmed (read); enum naming Inferred |
 | `+0x0b` | `u8` | trail texture page | Trail / afterimage sprite-page id; the streak draw helper turns it into the GP0 texpage word `0x7700 + id` (`overlay_battle_action_801e1ab0.txt:250`). | Confirmed |
-| `+0x0c` | `u8` | designer tag | A `'C'/'E'/'G'/0` annotation baked into the data on the internal-tier records (ids 1,2,3,9,12,15) only. **No runtime reader exists** in any battle-action function - unused at runtime. | Unknown (no reader) |
+| `+0x0c` | `u8` | designer tag | A `'C'/'E'/'G'/0` annotation baked into the data on the internal-tier records (1/2/3 = `C`, 9 = `E`, 12/15 = `G`) only. **No runtime reader** - see [the no-reader sweep](#the-0x0c-no-reader-sweep) for what that covers. | Unknown (no reader) |
 | `+0x0d` | `u8` | sound cue id | Handed to the UI/voice cue dispatcher `FUN_8004fcc8`. | Confirmed |
 | `+0x0e` | `u8` | effect-list head | Head of the move's effect-id list. The two consumers frame the list differently - see [effect-list framing](#effect-list-framing) below. | Confirmed (read); framing Confirmed per-consumer |
 | `+0x12` | `[u8;4]` | on-contact effects | Effect-id list dispatched on the hit branch (`0x00`/`0xFF`-terminated). | Confirmed |
 | `+0x16` | `[u8;4]` | launch effects | Effect-id list dispatched at the initial-strike transition; same dispatch as `+0x12`. | Confirmed |
+
+### The `+0x0c` no-reader sweep
+
+`+0x0c` is graded `Unknown (no reader)`, and a negative is only as good as the
+coverage it names. This one is swept over **bytes, not dumps** - a dump sweep
+cannot establish it, because part of the dump corpus carries no disassembly at
+all and a searcher sees zero hits either way
+([dump-corpus-integrity.md](../tooling/dump-corpus-integrity.md)).
+
+**Corpus.** `SCUS_942.54` (text base `0x80010000`, `t_size` from the PSX-EXE
+header, exhaustive over the segment) plus all 25 overlay images in
+[`static-overlays.toml`](../../crates/asset/data/static-overlays.toml), each
+disassembled at its own recorded base. Every 4-byte word is decoded
+*independently*; a streaming disassemble stops at the first data word and
+silently returns nothing.
+
+**Instruction classes the sweep is sound for.** Overall word decode is ~95%; the
+undecodable remainder is data and COP2/GTE ops. Every word in the corpus whose
+primary opcode is a *valid R3000* load or store decoded, so the sweep is sound
+for `lb/lbu/lh/lhu/lw/lwl/lwr/sb/sh/sw/swl/swr` and for `j`/`jal` targets. It is
+not sound for COP2, which cannot address a record.
+
+**Access shapes modelled.** A sweep matching only the literal `0xc(reg)`
+displacement would be a false negative, since the stride is 26 and a reader can
+reach the field several other ways:
+
+| Shape | How it was matched |
+|---|---|
+| Absolute constant | Every `lui`+`addiu`/`ori` pair and `lui`+load-displacement folded and tested against `[table, table + 44*26)`. |
+| Base-folded | Same test - a folded base like `addiu …,0x4f68` puts `+0x0c` in the *constant* and leaves the displacement at `0`, exactly the idiom the `0x801F4E63` map lookup uses. |
+| `×26`-indexed | Taint the register produced by `addu rD, rIdx26, rTableBase`, then report every displacement off it. |
+| Pointer-relative | Taint `rD` in `lw rD, 0x1014(rB)`, propagate through `move`/`addu`/`addiu` with running offset accounting; s-registers survive `jal`. |
+| Straddling load | A `lw`/`lhu`/`lwl`/`lwr` at displacement `0xc` is in the same match set (`+0x08` covers `0x08..0x0b`; `+0x0a` is unaligned). |
+| Data-resident pointer | All corpus words scanned for a literal in-table address, i.e. a pre-linked pointer to one record field. |
+
+**Result.** The table base is materialised at exactly **two** sites corpus-wide,
+`0x801dd1a0` (`FUN_801dd0ac`) and `0x801df27c` (`FUN_801dea50`); no reference
+lands at a shifted offset, and no data word holds an in-table address. Offsets
+touched: `+0x00,02,04,06,08,09,0a,0b,0d,0e,12,16`. Not `+0x0c`. As a backstop,
+PROT 0898 contains only five byte-width loads at literal displacement `0xc`, and
+none is a record - two write `actor[+0x1dd]` from an unrelated struct, and the
+other three sit on a base that is *written* at `+0xc` a few instructions earlier
+(a RAM working struct; the record is read-only overlay data).
+
+**Not swept: PROT 0896, 0965, 0971**, which have never been statically
+extracted. That gap is structurally closed rather than merely small: all three
+are **slot-A** entries, and the move-power table only exists in RAM while the
+battle-action overlay occupies slot A, so none can be co-resident with it. The
+slot-B overlays that *are* battle-co-resident - `battle_tutorial` (0967) and the
+summon stagers - were swept and reference the table nowhere.
+
+**Table extent, independently.** `0x801F4F5C + 44*26 = 0x801F53D4`, which is
+exactly where the `+0x0a` impact-config table begins. The record count is
+therefore pinned by the next referenced address in the overlay, an argument that
+survives any question about the sweep.
 
 ### Effect-id list semantics (`+0x12` / `+0x16`)
 
@@ -271,10 +333,42 @@ at `ctx+0x1184`, which is what makes their effect follow the actor.
 appear only in the retry arm, which re-floors a too-low attacker score rather
 than clamping it.
 
-> `0x801F3990` is **not** a second damage kernel. It is an interior address of
-> `FUN_801DD0AC` surfaced under the aliased `overlay_0897` mapping - the
-> instruction that begins the `*0x1A` stride computation. Treating the two as
-> separate consumers double-counts one function.
+### `0x801F3990` is a real function, and not a consumer of this table
+
+`0x801F3990` is a **distinct battle-overlay function**, not a second damage
+kernel and not an interior address of `FUN_801DD0AC`. In the resident
+battle-action overlay (PROT 0898, base `0x801CE818`, file `0x25178`) the bytes
+there are a clean function prologue - `addiu sp,sp,-0x20` followed by the frame
+saves - reached by exactly one `jal`, at `0x801E3E04` inside `FUN_801E295C`. Its
+body reads `ctx[+0x13]` and the per-slot char-kind table `0x8007BD10`: it is the
+cast **audio-cue dispatcher** described in
+[battle-action.md](../subsystems/battle-action.md#battle-helper-functions). It
+reads **no field of the move-power record**, which is why the corpus sweep above
+finds the table base at only two sites, neither inside it.
+
+The correction worth carrying forward is *where* the old claim went wrong. Its
+diagnosis of the **dump** was right: `overlay_0897_801f3990.txt` really does
+contain `FUN_801DD0AC`'s bytes, because Ghidra was asked for `0x801f3990`,
+answered with the containing function, and printed it at `0x801F3894` from a
+program imported at `0x801C0000` instead of the slot-A base `0x801CE818` - with
+PROT 0897's extraction over-reading the whole battle overlay at `+0x25000`
+(`field[0x33894..]` is byte-identical to `battle[0x0E894..]`, i.e. to
+`FUN_801DD0AC`). The error was **transferring a property of a mis-based dump
+onto the real address**. Inside that dump's address space `0x801F3990` is
+interior to an aliased copy; at the actual runtime VA it is a function entry.
+A dump can be wrong about *which VA* its bytes live at while being perfectly
+right about what the bytes are, and a claim about an address cannot be sourced
+from one.
+
+This page was a live instance of a corollary already recorded elsewhere and not
+yet propagated here: **every `overlay_0897_801fxxxx` dump of the `0x801F` region
+is suspect** - see the falsified-thread entry in
+[open-rev-eng-threads.md](../reference/open-rev-eng-threads.md) and the
+dump-aliasing caution in
+[battle-action.md](../subsystems/battle-action.md#battle-helper-functions).
+Resolve any such address against the extracted overlay bytes
+([dump-corpus-integrity.md](../tooling/dump-corpus-integrity.md)) before citing
+it.
 
 ## Worked example (real disc bytes)
 
