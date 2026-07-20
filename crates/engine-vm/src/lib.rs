@@ -96,6 +96,7 @@ pub mod title_prim;
 pub mod vram_rect_copy;
 pub mod world_map;
 pub mod world_map_draw_vm;
+pub mod world_map_horizon;
 
 /// Width of one bytecode instruction in bytes.
 pub const INSN_SIZE: usize = 4;

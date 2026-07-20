@@ -26,6 +26,8 @@
 //!
 //! `ghidra/scripts/funcs/801e76d4.txt` (decompiled from `overlay_world_map.bin`).
 
+use legaia_engine_vm::world_map_horizon::{HorizonBatch, emit_horizon};
+
 /// Top-view camera control - live when `view_mode != 0`.
 ///
 /// Pad bit masks mirror `FUN_801E76D4`'s literal constants.
@@ -120,6 +122,15 @@ pub struct WorldMapController {
     /// engine parks it on the controller, where the world-map render state
     /// lives.
     pub emitter_gate: EmitterGate,
+    /// Persisted horizon sweep angle (`_DAT_801F3518`). Advanced once per
+    /// armed emission by `frame_step * angle_step`.
+    pub horizon_angle: u32,
+    /// Alternate horizon source-band select (`_DAT_8007B74C != 0`), which
+    /// shifts every band's VRAM blit source row.
+    pub horizon_alt_band: bool,
+    /// Bands produced by the most recent armed emission, for a renderer to
+    /// consume. `None` until the gate first fires.
+    pub horizon: Option<HorizonBatch>,
 }
 
 impl WorldMapController {
@@ -178,6 +189,34 @@ impl WorldMapController {
     /// Returns `true` if the top-view debug overlay is active.
     pub fn is_top_view(&self) -> bool {
         self.view_mode != 0
+    }
+
+    /// Consume an armed [`EmitterGate`] and run the horizon emitter.
+    ///
+    /// This is the retail call pair: the gate check + self-clear that opens
+    /// `FUN_801D7EA0` / `FUN_801C9688`, followed by the emitter body ported
+    /// in [`legaia_engine_vm::world_map_horizon::emit_horizon`]. Returns
+    /// `true` when a batch was emitted (i.e. the gate was armed).
+    ///
+    /// `frame_step` is the adaptive per-frame tick byte `DAT_1F800393`;
+    /// `trig` samples the `0x1000`-entry table behind `_DAT_8007B81C`.
+    pub fn run_horizon_emitter(&mut self, frame_step: u8, trig: &dyn Fn(u16) -> i16) -> bool {
+        let Some((scale, angle_step, ot_layer)) = self.emitter_gate.take() else {
+            self.horizon = None;
+            return false;
+        };
+        let batch = emit_horizon(
+            scale as i32,
+            self.horizon_angle,
+            angle_step,
+            frame_step,
+            ot_layer,
+            self.horizon_alt_band,
+            trig,
+        );
+        self.horizon_angle = batch.angle_after;
+        self.horizon = Some(batch);
+        true
     }
 }
 
@@ -279,6 +318,56 @@ mod tests {
         // The staged params stay readable after the clear (retail leaves
         // _DAT_801F3520..28 in place; only the flag resets).
         assert_eq!(gate.scale, 0x500);
+    }
+
+    /// Flat trig table - keeps the band algebra to its scale-only terms.
+    fn flat(_: u16) -> i16 {
+        0
+    }
+
+    #[test]
+    fn horizon_emitter_only_runs_when_the_gate_is_armed() {
+        let mut ctrl = WorldMapController::new();
+        assert!(
+            !ctrl.run_horizon_emitter(1, &flat),
+            "unarmed gate emits nothing"
+        );
+        assert!(ctrl.horizon.is_none());
+
+        ctrl.emitter_gate.arm(0x500, 0x10, 4);
+        assert!(ctrl.run_horizon_emitter(1, &flat));
+        let batch = ctrl.horizon.as_ref().expect("armed gate emits a batch");
+        assert_eq!(batch.bands.len(), 224);
+        assert_eq!(batch.ot_layer, 4, "the staged OT layer carries through");
+
+        // One-shot: the next frame is unarmed again and drops the batch.
+        assert!(!ctrl.run_horizon_emitter(1, &flat));
+        assert!(ctrl.horizon.is_none());
+    }
+
+    #[test]
+    fn horizon_angle_persists_across_emissions() {
+        let mut ctrl = WorldMapController::new();
+        // Three armed frames at step 0x20 with frame_step 2 advance the
+        // persisted angle by 0x40 each time - and nothing else.
+        for i in 1..=3u32 {
+            ctrl.emitter_gate.arm(0x100, 0x20, 0);
+            assert!(ctrl.run_horizon_emitter(2, &flat));
+            assert_eq!(ctrl.horizon_angle, i * 0x40);
+        }
+    }
+
+    #[test]
+    fn horizon_alt_band_shifts_the_blit_source_rows() {
+        let mut ctrl = WorldMapController {
+            horizon_alt_band: true,
+            ..Default::default()
+        };
+        ctrl.emitter_gate.arm(0x100, 0, 0);
+        ctrl.run_horizon_emitter(0, &flat);
+        let batch = ctrl.horizon.as_ref().unwrap();
+        // First band's source row is the raw counter (4) plus the offset.
+        assert_eq!(batch.bands[0].blit.src_y, 4 + 0xF0);
     }
 
     #[test]
