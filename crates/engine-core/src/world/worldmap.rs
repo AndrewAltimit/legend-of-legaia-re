@@ -37,6 +37,12 @@ impl World {
         let pad_held = pad & !self.input.pad_prev();
         if let Some(ctrl) = &mut self.world_map_ctrl {
             ctrl.tick(pad, pad_held);
+            // Retail runs the top-view screen-dim pass (`FUN_801E75DC`)
+            // immediately after the toggle/camera block, gated on
+            // `view_mode != 0 && anim_flags & 1` - see
+            // `WorldMapController::run_screen_dim`. Walk-mode frames clear it,
+            // so this costs one flag test on the common path.
+            ctrl.run_screen_dim();
         }
         // Player is "walking" on the overworld this frame when any d-pad
         // direction is held. These are the Up/Right/Down/Left bits the

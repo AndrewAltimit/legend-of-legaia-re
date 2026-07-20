@@ -13,6 +13,60 @@ fn enter_world_map_installs_controller() {
     assert_eq!(world.world_map_ctrl.as_ref().unwrap().camera_x, 42);
 }
 
+/// The top-view screen-dim pass (`FUN_801E75DC`) must be produced by the
+/// world-map *tick*, not by a host-side call: retail runs it from inside the
+/// controller `FUN_801E76D4`, immediately after the toggle/camera block.
+///
+/// This test fails if `World::tick_world_map` stops calling
+/// `WorldMapController::run_screen_dim` - the field stays `None` through a
+/// tick that retail would have dimmed.
+#[test]
+fn world_tick_emits_top_view_screen_dim() {
+    let mut world = World::default();
+    world.enter_world_map();
+    world.world_map_ctrl.as_mut().unwrap().debug_enabled = true;
+
+    // Walk mode (view_mode == 0): retail's first branch skips the whole
+    // top-view block, so no dim regardless of the anim flags.
+    world.world_map_ctrl.as_mut().unwrap().anim_flags = 1;
+    world.set_pad(0);
+    let _ = world.tick();
+    assert!(
+        world.world_map_ctrl.as_ref().unwrap().screen_dim.is_none(),
+        "walk mode must not dim"
+    );
+
+    // Flip into top view with the debug combo, keeping anim bit 0 set.
+    world.set_pad(0x4A);
+    let _ = world.tick();
+    assert!(world.world_map_ctrl.as_ref().unwrap().is_top_view());
+
+    world.set_pad(0);
+    let _ = world.tick();
+    let dim = world
+        .world_map_ctrl
+        .as_ref()
+        .unwrap()
+        .screen_dim
+        .expect("top view with anim bit 0 set must emit the dim pass");
+    // The retail packet: black semi-transparent flat quad over the whole
+    // 320x224 draw area, dither bracketed off then on.
+    assert_eq!(dim.quad.cmd, 0x2A);
+    assert_eq!(dim.quad.color, (0, 0, 0));
+    assert_eq!(dim.quad.verts, [(0, -4), (320, -4), (0, 224), (320, 224)]);
+    assert!(!dim.mode_before.dither);
+    assert!(dim.mode_after.dither);
+
+    // Clearing anim bit 0 stops the pass on the very next tick - retail's
+    // second branch - and the stale pass must not linger.
+    world.world_map_ctrl.as_mut().unwrap().anim_flags = 0;
+    let _ = world.tick();
+    assert!(
+        world.world_map_ctrl.as_ref().unwrap().screen_dim.is_none(),
+        "anim bit 0 clear must stop the dim and clear the stale pass"
+    );
+}
+
 #[test]
 fn world_tick_drives_world_map_from_pad() {
     // A pad installed via set_pad() before tick() flows into the

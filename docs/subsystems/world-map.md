@@ -71,11 +71,54 @@ Entry: `(ctx_ptr)`. Handles:
    - `_DAT_8007B850 & 0x2000` / `0x8000` → `_DAT_80089118 -= 8` / `+= 8` (Z scroll)
    - `_DAT_8007B850 & 0x20` / `0x80` → `_DAT_8007B794 += 0x14` / `-= 0x14` (azimuth)
    - `_DAT_8007B850 & 8` / `2` → `_DAT_8007B6F4 -= 4` / `+= 4` (zoom/height)
-   - Bit `DAT_801F2B95 & 1`: enables `FUN_801E75DC` (overlay animation step)
+   - Bit `DAT_801F2B95 & 1`: enables `FUN_801E75DC`, the [screen-dim pass](#fun_801e75dc---top-view-screen-dim-pass-248-bytes)
    - Bit `DAT_801F2B95 & 2`: second animation flag
 
 3. **Normal-walk path** (`DAT_801F2B94 == 0`): standard per-frame world-map update
    (field VM tick, actor step, camera follow via motion VM).
+
+### `FUN_801E75DC` - top-view screen-dim pass (248 bytes)
+
+Takes no arguments and reads no state - every value in the body is a literal.
+It emits three primitives into the OT at `*(0x1F800314 + 0xE0) + 8`, allocated
+off the scratchpad prim-pool cursor at `0x1F800314 + 0x8C`:
+
+| # | Packet | Bytes | Construction |
+|---|---|---|---|
+| 0 | `DR_MODE` | 12 | `SetDrawMode(p, dfe=0, dtd=0, tpage=0x1E, tw=NULL)` via `FUN_80059010` |
+| 1 | `POLY_F4` | 24 | tag `0x05000000`, GP0 word `0x2A808080` whose three colour bytes are then zeroed |
+| 2 | `DR_MODE` | 12 | `SetDrawMode(p, dfe=0, dtd=1, tpage=0x1E, tw=NULL)` |
+
+GP0 command `0x2A` is a flat, untextured, semi-transparent quad, and the
+three `sb zero, 4/5/6` stores at `0x801E7674` leave its colour black.
+`tpage = 0x1E` selects semi-transparency mode `ABR = (0x1E >> 5) & 3 = 0`,
+i.e. `0.5*back + 0.5*front`; against a black front that halves the
+framebuffer. So the pass is a **50% screen darken** drawn behind the top-view
+debug panels, not an animation step. The two `DR_MODE` packets exist to take
+dither off across the blend quad and restore it after.
+
+The quad's four vertices are literals at `0x801E764C..0x801E7670`: `(0, -4)`,
+`(320, -4)`, `(0, 224)`, `(320, 224)` - the full NTSC draw area, started four
+scanlines high so it covers the band row the horizon emitter also starts at.
+
+**Which image.** The bytes live in the **field overlay, PROT 0897**
+(`overlay_field_0897.bin`, base `0x801CE818`, file offset `0x18DC4`). The
+`overlay_world_map_*` capture dumps are byte-identical to that image at the
+same VAs: the world map is a 0897-hosted *mode*, not an overlay of its own -
+the same relationship [`functions.md`](../reference/functions.md) records for
+the move-VM overlay extension. Resolving against the extracted image rather
+than a dump also sidesteps both mis-base clusters in
+[`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md).
+
+**Reachability.** Retail-reachable only behind the top-view debug path. The
+single call site is the branch pair at `0x801E7794..0x801E77B8` inside
+`FUN_801E76D4`: `DAT_801F2B94 != 0` (top view) **and** `DAT_801F2B95 & 1`.
+Entering top view at all additionally needs the debug flag `_DAT_8007B98C`,
+which retail leaves clear.
+
+Port: `legaia_engine_vm::world_map_dim::emit_screen_dim`, gated by
+`WorldMapController::run_screen_dim` and called once per frame from the
+world-map tick.
 
 ### `FUN_801EAD98` - world map debug menu renderer (7280 bytes)
 

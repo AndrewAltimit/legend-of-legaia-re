@@ -97,6 +97,7 @@ pub mod title_prim;
 pub mod vram_rect_copy;
 pub mod world_map;
 
+pub mod world_map_dim;
 pub mod world_map_horizon;
 
 /// Width of one bytecode instruction in bytes.

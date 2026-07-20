@@ -26,6 +26,32 @@
 //! `0x800845AC`) exists in the list but is absent from the display-layout
 //! table - a hidden row the US build doesn't show.
 //!
+//! ## PROT 0896 is not the options overlay this port follows
+//!
+//! An older reading placed the options screen in PROT 0896 (`bat_back_dat`),
+//! whose 0x9000-byte head carries a Shift-JIS options string table
+//! (movement / battle command / battle camera / monaural-stereo) and about
+//! 50 functions, `FUN_801C6C78` among them. That head is a **Japanese-build**
+//! options menu, and it is not what the USA build runs:
+//!
+//! - a signature scan finds PROT 0896 resident in **0 of 140** save states;
+//! - its widely-cited base `0x801C5818` is an over-read artifact - the entry's
+//!   footprint runs into its neighbour, so everything from file offset
+//!   `0x9000` on is the *field* overlay's bytes, which is what fixes the
+//!   whole-file base recovery to `0x801CE818 - 0x9000` by construction. PROT
+//!   0896's own link base is unrecovered (see
+//!   `crates/asset/data/static-overlays.toml`);
+//! - the retail rows this module implements all trace to the **menu overlay
+//!   PROT 0899** functions listed above, which *is* RAM-verified.
+//!
+//! So `FUN_801C6C78` and its 0896 siblings are deliberately **not ported**:
+//! they are unreachable in the retail USA build, and porting them would put
+//! behaviour in the engine that retail never executes. Any dump named
+//! `overlay_0896_*` whose printed VA is at or above `0x801CE818 - 0x9000`
+//! should be re-resolved against the extracted images before being cited -
+//! most such dumps are field-overlay bytes shifted by `+0x5818`
+//! (`docs/tooling/dump-corpus-integrity.md`).
+//!
 //! [`OptionsState`] additionally keeps the engine-only knobs (BGM / SFX
 //! volume, message speed) that retail has no UI for; they round-trip
 //! through the options config file but are **not** part of the

@@ -26,6 +26,7 @@
 //!
 //! `ghidra/scripts/funcs/801e76d4.txt` (decompiled from `overlay_world_map.bin`).
 
+use legaia_engine_vm::world_map_dim::{ScreenDimPass, emit_screen_dim};
 use legaia_engine_vm::world_map_horizon::{HorizonBatch, emit_horizon};
 
 /// Top-view camera control - live when `view_mode != 0`.
@@ -131,6 +132,11 @@ pub struct WorldMapController {
     /// Bands produced by the most recent armed emission, for a renderer to
     /// consume. `None` until the gate first fires.
     pub horizon: Option<HorizonBatch>,
+    /// This frame's top-view screen-dim pass, or `None` on frames where the
+    /// retail gate (`view_mode != 0 && anim_flags & 1`) does not fire. Set by
+    /// [`Self::run_screen_dim`], which the world-map tick calls once per
+    /// frame; a renderer draws it behind the top-view debug panels.
+    pub screen_dim: Option<ScreenDimPass>,
 }
 
 impl WorldMapController {
@@ -216,6 +222,29 @@ impl WorldMapController {
         );
         self.horizon_angle = batch.angle_after;
         self.horizon = Some(batch);
+        true
+    }
+
+    /// Run the retail top-view screen-dim gate for this frame.
+    ///
+    /// This is the branch pair at `0x801E7794..0x801E77B8` inside the
+    /// controller `FUN_801E76D4`: the whole top-view block is skipped when
+    /// `DAT_801F2B94` (`view_mode`) is zero, and within it the dim call is
+    /// skipped unless bit 0 of `DAT_801F2B95` (`anim_flags`) is set. When
+    /// both hold, retail calls `FUN_801E75DC`, whose packets are built by
+    /// [`legaia_engine_vm::world_map_dim::emit_screen_dim`].
+    ///
+    /// Stores the result in [`Self::screen_dim`] and returns `true` when the
+    /// pass fired. Non-firing frames clear the field, so a renderer reading
+    /// it never draws a stale dim over a frame retail left undimmed.
+    ///
+    /// REF: FUN_801E76D4
+    pub fn run_screen_dim(&mut self) -> bool {
+        if self.view_mode == 0 || self.anim_flags & 1 == 0 {
+            self.screen_dim = None;
+            return false;
+        }
+        self.screen_dim = Some(emit_screen_dim());
         true
     }
 }
