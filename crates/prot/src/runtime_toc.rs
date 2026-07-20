@@ -82,6 +82,11 @@ pub fn entry_sector_span(ram_toc: &[u32], ram_index: usize) -> Option<u32> {
 /// `+2` the CDNAME numbering space carries). Substituting both gives
 /// `toc[p + 2]` / `toc[p + 3]` - so this delegates unchanged, on a
 /// different array in a different index space.
+///
+/// This is the production entry point for the port:
+/// [`Archive::parse`](crate::archive::Archive::parse) calls it for every
+/// entry's trailing-gap footprint, so the span arithmetic has exactly one
+/// implementation in the crate.
 pub fn entry_sector_span_from_archive_toc(toc: &[u32], entry_index: usize) -> Option<u32> {
     entry_sector_span(toc, entry_index)
 }

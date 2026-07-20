@@ -20,44 +20,59 @@
 
 [[waiver]]
 builder = "battle_hud_draws_for"
-kind = "web_missing"
+kind = "orphan"
 reason = """
-The browser play page has no battle host at all: it never arms encounters
-(`step_encounters` is left off in `LegaiaRuntime::enter_field`) and exports no
-battle render, camera, or command-menu path. The HUD is the last piece to wire,
-not the first - it needs the battle scene, the actor pointer table, and the
-command/target sessions to exist first.
+NEITHER host draws this. The browser play page has no battle host at all: it
+never arms encounters (`step_encounters` is left off in
+`LegaiaRuntime::enter_field`) and exports no battle render, camera or
+command-menu path. The native window does render a battle HUD, but not this
+one - `engine-shell/.../window/hud.rs` hand-rolls its own text HUD (party HP
+rows, monster rows, status letters, damage popups) and never calls the shared
+builder. That divergence is not cosmetic: the hand-rolled rows colour HP with a
+two-state white/dim pick and print no MP at all, so the ported retail colour law
+(`hp_bar_color_index` / `mp_bar_color_index`, FUN_800349EC / FUN_80035EA8) is
+drawn by nobody. Closing this means the native HUD adopting this builder - and
+therefore its row layout, monster rows and popup anchoring - not a new caller.
 """
 
 [[waiver]]
 builder = "encounter_banner_draws_for"
-kind = "web_missing"
+kind = "orphan"
 reason = """
-Same root cause as the battle HUD: the page does not step encounters, so no
-formation is ever drawn. An ENCOUNTER! banner with no battle behind it would
-report a transition the page cannot perform.
+Same root cause as the battle HUD, on both sides. The browser page does not
+step encounters, so no formation is ever drawn - an ENCOUNTER! banner with no
+battle behind it would report a transition the page cannot perform. The native
+window reaches battle but announces it through its own event log rather than a
+banner, so it does not call this either.
 """
 
 [[waiver]]
 builder = "dialog_box_draws_for"
-kind = "web_missing"
+kind = "orphan"
 reason = """
-This is the plain typewriter fallback the native window uses under
-`--simple-dialogue`. The browser page always runs the field-VM inline dialogue
-runner and draws the retail reading box (`crate::play_dialog`, built from
-`dialog_window_chrome_draws_for` + `text_draws_for`), so it has no use for the
-degraded path. Not a missing screen - a missing *fallback*.
+The plain typewriter fallback, reached by neither host. The browser page always
+runs the field-VM inline dialogue runner and draws the retail reading box
+(`crate::play_dialog`, built from `dialog_window_chrome_draws_for` +
+`text_draws_for`), so it has no use for a degraded path. On the native side its
+only in-tree caller is `dialog_panel_draws_for`, which is itself an orphan (see
+below) - so this is the tail of a two-builder chain whose head nothing calls.
+Not a missing screen: a missing *fallback*, kept because `--simple-dialogue`
+is the documented escape hatch when the retail box misrenders.
 """
 
 [[waiver]]
 builder = "dialog_panel_draws_for"
-kind = "web_missing"
+kind = "orphan"
 reason = """
-The native window's `OwnedDialogPanel` projection. The browser page builds its
-box from its own `DialogSnapshot` at the byte-pinned retail geometry
+The `OwnedDialogPanel` projection, written for the native window but not called
+by it - the native dialogue path draws the retail box directly, and this
+survives only as the entry point of the `--simple-dialogue` fallback chain
+(it delegates to `dialog_box_draws_for`). The browser page builds its box from
+its own `DialogSnapshot` at the byte-pinned retail geometry
 (`crate::play_dialog::dialog_stage_layout`, REF FUN_801D84D0) because it also
-has to place the option picker and the two hand cursors. Same screen, both
-hosts; the shared builder covers only the native panel shape.
+has to place the option picker and the two hand cursors. Closing this means
+deciding whether the fallback chain is still wanted; if it is, the native
+window has to actually route `--simple-dialogue` through it.
 """
 
 [[waiver]]
@@ -77,23 +92,31 @@ Close it with a runtime probe, not by picking a trigger.
 
 [[waiver]]
 builder = "key_rebind_draws_for"
-kind = "web_missing"
+kind = "orphan"
 reason = """
-Native-only by design. The native window rebinds through a `legaia-input.toml`
-config file and an in-engine screen; the browser page's bindings are a JS
-keycode table (`site/js/play-app.js` PAD/BOOT_PAD) owned by the page, not the
-engine. A shared rebind screen would have to write a config the browser has no
-place to persist.
+Web-exempt by design, but unreached on native too. The browser page's bindings
+are a JS keycode table (`site/js/play-app.js` PAD/BOOT_PAD) owned by the page,
+not the engine, and a shared rebind screen would have to write a config the
+browser has no place to persist. On native, rebinding today happens through the
+`legaia-input.toml` config file and the `legaia-engine config set --binding`
+subcommand; the in-engine screen this builder draws is not mounted in the
+window's menu tree. Closing it is a native-only job: give the options menu a
+rebind entry that opens this screen.
 """
 
 [[waiver]]
 builder = "sprite_draws_for"
-kind = "web_missing"
+kind = "orphan"
 reason = """
-A generic anchor-translate helper for `SpriteRequest` batches, not a screen.
-The browser page emits its quads through `crate::play_menu::quad_json` after
-`scale_stage_text_draws`, which already applies the stage transform this helper
-would duplicate.
+A generic anchor-translate helper for `SpriteRequest` batches, not a screen -
+it matches the builder pattern only because it returns `SpriteDraw`. Neither
+host routes through it: the browser page emits its quads through
+`crate::play_menu::quad_json` after `scale_stage_text_draws`, which already
+applies the stage transform this would duplicate, and the native window
+translates its sprite batches at the point of use. A helper with no caller is a
+delete candidate rather than a screen gap; it is kept only while the sprite
+builders that would batch through it (`ap_gauge_sprites` and friends) are
+themselves unwired.
 """
 
 [[waiver]]

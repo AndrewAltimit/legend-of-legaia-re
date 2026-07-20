@@ -190,6 +190,19 @@ pub fn cos_4096(angle: i32) -> i32 {
 
 /// Model-space `y` of the reel cylinder at `angle` (`FUN_801d0fa8`).
 // PORT: FUN_801d0fa8 (reel cylinder y: sin(a) * -0x249 >> 12)
+// NOT WIRED: no Rust host draws the slot cabinet. The browser play page is the
+// only host that renders the machine as the 3D scene it is, and it does the
+// cylinder maths in JavaScript: `slot_marquee_json` exports this module's
+// *constants* (REEL_Y_RADIUS, REEL_Z_SHIFT, REEL_SHADE_*, ANGLE_FULL, PROJ_*)
+// and `slotDrawReels` in site/_content/minigames.html recomputes y / z / shade
+// from them. The native window has no cabinet at all - its slot HUD is three
+// lines of text (payline symbols, coin balance, phase prompt). So these are
+// reimplemented rather than unused, and the reimplementation is NOT
+// equivalent: the JS works in floats, while these carry retail's fixed-point
+// round-toward-zero biases (`(v + 0xFFF) >> 12`, `(v + 7) >> 3`). Wiring wants
+// a Rust-side reel vertex emitter - i.e. the native window growing a real
+// cabinet renderer, or the web page taking its vertices from WASM instead of
+// its own constants-fed maths.
 pub fn reel_y(angle: i32) -> i32 {
     let v = sin_4096(angle) * -REEL_Y_RADIUS;
     // Retail biases negatives before the arithmetic shift (round toward zero).
@@ -198,6 +211,19 @@ pub fn reel_y(angle: i32) -> i32 {
 
 /// Model-space `z` of the reel cylinder at `angle` (`FUN_801d0fa8`).
 // PORT: FUN_801d0fa8 (reel cylinder z: cos(a) >> 3)
+// NOT WIRED: no Rust host draws the slot cabinet. The browser play page is the
+// only host that renders the machine as the 3D scene it is, and it does the
+// cylinder maths in JavaScript: `slot_marquee_json` exports this module's
+// *constants* (REEL_Y_RADIUS, REEL_Z_SHIFT, REEL_SHADE_*, ANGLE_FULL, PROJ_*)
+// and `slotDrawReels` in site/_content/minigames.html recomputes y / z / shade
+// from them. The native window has no cabinet at all - its slot HUD is three
+// lines of text (payline symbols, coin balance, phase prompt). So these are
+// reimplemented rather than unused, and the reimplementation is NOT
+// equivalent: the JS works in floats, while these carry retail's fixed-point
+// round-toward-zero biases (`(v + 0xFFF) >> 12`, `(v + 7) >> 3`). Wiring wants
+// a Rust-side reel vertex emitter - i.e. the native window growing a real
+// cabinet renderer, or the web page taking its vertices from WASM instead of
+// its own constants-fed maths.
 pub fn reel_z(angle: i32) -> i32 {
     let v = cos_4096(angle);
     if v < 0 {
@@ -210,6 +236,19 @@ pub fn reel_z(angle: i32) -> i32 {
 /// The depth-cued gouraud shade of a reel vertex at model-space `z`, clamped to
 /// `0 ..= 0xB4` (`FUN_801d0fa8`). Feed it to a `texel * shade / 128` blend.
 // PORT: FUN_801d0fa8 (reel depth-cue shade)
+// NOT WIRED: no Rust host draws the slot cabinet. The browser play page is the
+// only host that renders the machine as the 3D scene it is, and it does the
+// cylinder maths in JavaScript: `slot_marquee_json` exports this module's
+// *constants* (REEL_Y_RADIUS, REEL_Z_SHIFT, REEL_SHADE_*, ANGLE_FULL, PROJ_*)
+// and `slotDrawReels` in site/_content/minigames.html recomputes y / z / shade
+// from them. The native window has no cabinet at all - its slot HUD is three
+// lines of text (payline symbols, coin balance, phase prompt). So these are
+// reimplemented rather than unused, and the reimplementation is NOT
+// equivalent: the JS works in floats, while these carry retail's fixed-point
+// round-toward-zero biases (`(v + 0xFFF) >> 12`, `(v + 7) >> 3`). Wiring wants
+// a Rust-side reel vertex emitter - i.e. the native window growing a real
+// cabinet renderer, or the web page taking its vertices from WASM instead of
+// its own constants-fed maths.
 pub fn reel_shade(z: i32) -> i32 {
     let v = (z + REEL_SHADE_Z_BIAS) * REEL_SHADE_Z_GAIN;
     let v = if v < 0 { (v + 0x1FF) >> 9 } else { v >> 9 };
@@ -629,6 +668,15 @@ pub fn parse_messages(overlay: &[u8], page3: &[u8], page3_w: usize) -> Result<Ve
 /// Blits `msg` scrolled to `(x, y)`. A dot whose source column falls outside the
 /// message stays unlit, which is what makes the message scroll in and out.
 // PORT: FUN_801d069c (marquee dot-buffer composer)
+// NOT WIRED: same root cause as the reel kernels above - no Rust host draws the
+// dot matrix. This is a complete chain with no consumer at either end:
+// `SlotMachine::marquee_placements` (engine-core) calls `compose_marquee_frame`
+// and nothing calls *it*, and `render_marquee` - the rasteriser the whole chain
+// feeds - has no caller either. The browser play page exports the 21 message
+// bitmaps as JSON and blits them in JavaScript; the native window's slot HUD is
+// text-only and has no marquee. Wiring means a host that owns a dot buffer:
+// either the native cabinet renderer, or the web page moving composition into
+// WASM and taking a rasterised buffer instead of the raw bitmap bank.
 pub fn compose_marquee(msg: &MarqueeMessage, x: i32, y: i32) -> Vec<u8> {
     let mut buf = vec![0u8; DOT_COLS * DOT_STRIDE];
     for row in 0..DOT_ROWS {
@@ -655,6 +703,15 @@ pub fn compose_marquee(msg: &MarqueeMessage, x: i32, y: i32) -> Vec<u8> {
 /// composer opens with exactly that call, so the marquee is rebuilt from scratch
 /// every frame rather than diffed against the previous one.
 // PORT: FUN_801d069c (negative-id clear path)
+// NOT WIRED: same root cause as the reel kernels above - no Rust host draws the
+// dot matrix. This is a complete chain with no consumer at either end:
+// `SlotMachine::marquee_placements` (engine-core) calls `compose_marquee_frame`
+// and nothing calls *it*, and `render_marquee` - the rasteriser the whole chain
+// feeds - has no caller either. The browser play page exports the 21 message
+// bitmaps as JSON and blits them in JavaScript; the native window's slot HUD is
+// text-only and has no marquee. Wiring means a host that owns a dot buffer:
+// either the native cabinet renderer, or the web page moving composition into
+// WASM and taking a rasterised buffer instead of the raw bitmap bank.
 pub fn clear_dots() -> Vec<u8> {
     vec![0u8; DOT_COLS * DOT_STRIDE]
 }
@@ -680,6 +737,15 @@ pub fn clear_dots() -> Vec<u8> {
 /// sub-rect already tightened to `w`, so indexing by `w` reads the same texels -
 /// the equivalence [`compose_marquee`] already relies on.
 // PORT: FUN_801d3230 (dot-buffer placement blit)
+// NOT WIRED: same root cause as the reel kernels above - no Rust host draws the
+// dot matrix. This is a complete chain with no consumer at either end:
+// `SlotMachine::marquee_placements` (engine-core) calls `compose_marquee_frame`
+// and nothing calls *it*, and `render_marquee` - the rasteriser the whole chain
+// feeds - has no caller either. The browser play page exports the 21 message
+// bitmaps as JSON and blits them in JavaScript; the native window's slot HUD is
+// text-only and has no marquee. Wiring means a host that owns a dot buffer:
+// either the native cabinet renderer, or the web page moving composition into
+// WASM and taking a rasterised buffer instead of the raw bitmap bank.
 pub fn place_message(buf: &mut [u8], msg: &MarqueeMessage, col: i32, row: i32) {
     for r in 0..msg.h as i32 {
         let dr = row + r;
@@ -742,6 +808,15 @@ pub struct MarqueePlacement {
 /// re-read `DAT_801d3d3c` - while the digit *values* come off a remainder chain
 /// that runs whether or not its own place was drawn.
 // PORT: FUN_801cfff0 (per-frame marquee composition)
+// NOT WIRED: same root cause as the reel kernels above - no Rust host draws the
+// dot matrix. This is a complete chain with no consumer at either end:
+// `SlotMachine::marquee_placements` (engine-core) calls `compose_marquee_frame`
+// and nothing calls *it*, and `render_marquee` - the rasteriser the whole chain
+// feeds - has no caller either. The browser play page exports the 21 message
+// bitmaps as JSON and blits them in JavaScript; the native window's slot HUD is
+// text-only and has no marquee. Wiring means a host that owns a dot buffer:
+// either the native cabinet renderer, or the web page moving composition into
+// WASM and taking a rasterised buffer instead of the raw bitmap bank.
 pub fn compose_marquee_frame(frame: &MarqueeFrame) -> Vec<MarqueePlacement> {
     let mut out = Vec::new();
     if frame.payout != 0 && frame.payout_frame != 0 {

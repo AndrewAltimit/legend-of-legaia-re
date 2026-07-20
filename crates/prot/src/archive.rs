@@ -123,11 +123,18 @@ impl Archive {
                 continue;
             }
             let indexed_raw = toc[p + 5].wrapping_sub(toc[p + 3]).wrapping_add(4);
-            // Trailing-gap candidate: bytes from start_lba to next entry's
-            // start_lba. Use wrapping_sub so unsorted entries don't blow up
-            // - they fall back to the indexed size.
-            let next_start_lba = toc[p + 3];
-            let footprint_sectors = next_start_lba.wrapping_sub(start_lba);
+            // Trailing-gap candidate: sectors from start_lba to the next
+            // entry's start_lba. This is retail's own span routine, so take it
+            // from the port rather than recomputing it here - the wrapping
+            // subtraction (which keeps unsorted entries from blowing up, so
+            // they fall back to the indexed size) is part of what is ported.
+            // `p + 5 < toc.len()` above already bounds the `p + 3` read, so
+            // the `None` arm is unreachable; treat it as tail padding anyway.
+            let Some(footprint_sectors) =
+                crate::runtime_toc::entry_sector_span_from_archive_toc(&toc, p)
+            else {
+                continue;
+            };
             let footprint_sane =
                 footprint_sectors > 0 && footprint_sectors <= MAX_REASONABLE_FOOTPRINT_SECTORS;
             // The last TOC page rows sit against a zeroed tail: for the final
@@ -287,6 +294,41 @@ mod tests {
             img[off..off + 4].copy_from_slice(&lba.to_le_bytes());
         }
         img
+    }
+
+    /// The trailing-gap footprint is retail's own span routine
+    /// (`FUN_8003E68C`), not a second implementation of it.
+    ///
+    /// This pins the *call*, not the arithmetic: the two agreed by
+    /// construction when the parser was recomputing `toc[p+3] - toc[p+2]`
+    /// inline, so it would not have caught the duplication. What it catches is
+    /// the next edit that re-inlines a formula here and lets the two drift -
+    /// including in the wrapping case, which is where a hand-rolled span is
+    /// most likely to diverge from the port.
+    #[test]
+    fn footprint_comes_from_the_ported_span_routine() {
+        let img = tail_shaped_prot();
+        let arch = Archive::from_bytes(img).expect("synthetic archive parses");
+        for e in &arch.entries {
+            let span =
+                crate::runtime_toc::entry_sector_span_from_archive_toc(&arch.toc, e.index as usize)
+                    .expect("bounded by the parser's own p + 5 < len guard");
+            // Every surviving entry took either the indexed size or the span;
+            // the span must be the one the port computes.
+            assert!(
+                e.size_sectors == e.indexed_size_sectors || e.size_sectors == span,
+                "entry {} size {} is neither the indexed size {} nor the ported span {span}",
+                e.index,
+                e.size_sectors,
+                e.indexed_size_sectors,
+            );
+            // Entry 4's row has a zeroed `toc[p+3]`-side neighbour, so its
+            // size is the span outright - the case that would wrap if the
+            // subtraction were rewritten without `wrapping_sub`.
+            if e.index == 4 {
+                assert_eq!(e.size_sectors, span);
+            }
+        }
     }
 
     /// The last entries before the zeroed TOC tail must resolve via the LBA

@@ -93,6 +93,18 @@ pub type RetailNameMap = BTreeMap<u32, Vec<u8>>;
 /// a record is only zero-filled where the emulation has not already written.
 ///
 // PORT: FUN_8001d8fc
+// NOT WIRED: this port is deliberately the *lossy* reader and wiring it into a
+// host would be a regression. Retail's loader writes names into a 16-byte
+// stride with no bound and no terminator, then stores the entry index over
+// bytes +0xC/+0xD, so every name of 12+ bytes comes back with the index
+// overlaid inside it. Tooling reads CDNAME through the tolerant `parse_str`
+// instead, and must keep doing so. Its job is to be the *other* answer: the
+// disc-gated `cdname_retail_parse_disc` oracle asserts the two readers declare
+// the same index set and that the mangling is exactly what the byte-level
+// record model predicts. It becomes host-callable only if something needs to
+// reproduce a retail-side name buffer verbatim - e.g. a randomizer feature
+// that edits CDNAME.TXT and must predict what the retail loader will read
+// back, including the 16+-byte spill into the following record.
 pub fn retail_name_table(text: &str) -> (Vec<u8>, Vec<u32>) {
     let bytes = text.as_bytes();
     let mut table: Vec<u8> = Vec::new();

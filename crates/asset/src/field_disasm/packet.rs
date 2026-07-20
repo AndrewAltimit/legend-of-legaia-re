@@ -44,6 +44,19 @@ pub fn packet_length(buf: &[u8]) -> usize {
 /// original returns `0` and latches a debug error code when the dev flag is
 /// set; the error path has no engine meaning).
 // PORT: FUN_8003CBF8
+// NOT WIRED: nothing in the engine holds the kind of buffer this locates.
+// Retail calls it as the *locator* half of an in-place string patch: at
+// `overlay_magic_level_up_801d84c0` +0x1E0 the sequence is
+// `li a1, 0xC1; li a2, 1; jal 0x8003cbf8` against three panel text fields
+// (struct +0xA9 / +0x159 / +0x189), and each returned offset is immediately
+// used as `addu v0, v0, a0; sb v1, 0xAA(v0)` - i.e. it finds the first `0xC1`
+// escape in a pre-baked string and overwrites the byte after it, the escape's
+// operand, with a live counter. Same shape at the debug-menu, fishing and Baka
+// Fighter panels. The engine's UI never does this: `engine-ui` builds each
+// string with `format!` from typed state, so there is no baked byte string
+// with an escape operand to go patch. It becomes wireable if a screen is ported
+// by replaying retail's own text buffers rather than re-deriving the text -
+// then this is how the numbers get into them.
 pub fn delimited_field_offset(buf: &[u8], delimiter: u8, nth: u32) -> Option<usize> {
     if nth == 0 {
         // Retail would underflow its down-counter and walk to the

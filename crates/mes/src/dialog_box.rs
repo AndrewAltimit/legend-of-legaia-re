@@ -199,6 +199,18 @@ fn classify_dispatch(buf: &[u8], idx: usize) -> Dispatch {
 /// byte. `World::step_inline_dialogue`'s port of `FUN_80039B7C` drives the
 /// per-segment VM stepping; this is the box-packing half it doesn't cover.
 // PORT: FUN_80039B7C
+// NOT WIRED: the runtime reaches the same bytes by the other half of this
+// function. `World::step_inline_dialogue` ports the per-segment VM stepping of
+// `FUN_80039B7C` and drives the window one `0x1F` segment at a time off
+// `decode_inline_segments`' ungrouped pool, so it never needs the box
+// *grouping* computed ahead of time. Both halves are ports of the same retail
+// SM; only the stepping half has a host. What would have to exist first is a
+// dialog host that pre-packs - one that takes a `DialogBox` list and lays out a
+// whole window (all `LINES_PER_BOX` rows plus its dispatch byte) before drawing
+// it, which is what a page-at-a-time renderer or a MAN dialog *editor* needs
+// and the segment-stepping host does not. Until then this is the decoder the
+// disc-gated `field_dialog_boxpack_disc` oracle checks the segment path
+// against, and the box view the tooling uses.
 pub fn pack_box(buf: &[u8], pc: usize) -> Option<DialogBox> {
     if buf.get(pc) != Some(&0x1F) {
         return None;

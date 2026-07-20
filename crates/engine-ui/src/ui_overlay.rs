@@ -459,6 +459,18 @@ pub struct HudSlotMeta {
 /// `status_active` models retail's per-character status byte (record `+0x36`,
 /// `*(short *)(char*0x414 - 0x7ff7b7ca)`), which forces the caution tier even
 /// above half HP; the engine approximates it with "any active status icon".
+///
+// NOT WIRED: inert one level up. The only caller is `battle_hud_draws_for`,
+// and that builder is an **orphan** - neither host calls it. The browser play
+// page has no battle host at all (it never arms encounters), and the native
+// window does draw a battle HUD but hand-rolls its own in
+// `engine-shell/.../window/hud.rs`, colouring each HP row with a two-state
+// `white` / `down_color` pick instead of this four-tier ratio law. So the
+// retail colour law is ported, correct and drawn by nobody. Closing it is one
+// of two jobs: point the native HUD at `battle_hud_draws_for` (which also
+// means adopting that builder's row layout, monster rows and popup anchoring),
+// or give the browser page a battle host. Note the drift waiver for
+// `battle_hud_draws_for` called this `web_missing`; it is `orphan`.
 pub fn hp_bar_color_index(cur: u16, max: u16, status_active: bool) -> u8 {
     if cur == 0 {
         return 2;
@@ -480,6 +492,10 @@ pub fn hp_bar_color_index(cur: u16, max: u16, status_active: bool) -> u8 {
 /// `cur <= max/4` / `cur <= max/2` ratio tiers (index 9 danger, 6 caution,
 /// 7 normal) but with no K.O. (2) state and no status-flag override - MP has no
 /// "empty = dead" colour, so a depleted bar simply reads as danger.
+///
+// NOT WIRED: same orphaned caller as [`hp_bar_color_index`] - see the note
+// there. The native HUD's MP row is worse off than its HP row: it prints no MP
+// at all, so there is not even an ad-hoc colour for this to replace.
 pub fn mp_bar_color_index(cur: u16, max: u16) -> u8 {
     if (max >> 2) < cur {
         if cur <= (max >> 1) { 6 } else { 7 }
