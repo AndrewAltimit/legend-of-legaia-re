@@ -110,6 +110,7 @@ fn battle_turn_emits_events_into_pending_queue() {
                 BattleEvent::Pose { .. } => "Pose",
                 BattleEvent::UiElement { .. } => "UiElement",
                 BattleEvent::CameraBounds => "CameraBounds",
+                BattleEvent::CameraFrameHeight { .. } => "CameraFrameHeight",
                 BattleEvent::PartySetup { .. } => "PartySetup",
                 BattleEvent::MonsterSetup { .. } => "MonsterSetup",
                 BattleEvent::RecomputeBattleOrder => "RecomputeBattleOrder",

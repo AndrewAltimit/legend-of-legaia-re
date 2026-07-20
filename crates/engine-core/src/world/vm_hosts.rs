@@ -1666,6 +1666,30 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .pending_battle_events
             .push(BattleEvent::CameraBounds);
     }
+    fn monster_size_class(&self, actor_slot: u8) -> u8 {
+        // Retail reads `0x801C9348[slot - 3] + 0x1F`. The engine's equivalent
+        // is the slot's seated monster id resolved through the catalog; a slot
+        // with no monster (party slot, empty slot, or a synthetic catalog with
+        // no disc record) yields 0, which clamps to the default framing.
+        let Some(id) = self
+            .world
+            .actors
+            .get(actor_slot as usize)
+            .and_then(|a| a.battle_monster_id)
+        else {
+            return 0;
+        };
+        self.world
+            .monster_catalog
+            .get(id)
+            .map_or(0, |def| def.size_class)
+    }
+    fn camera_frame_height(&mut self, height: i16) {
+        self.world.battle_camera_frame_height = height;
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::CameraFrameHeight { height });
+    }
     fn party_setup(&mut self, actor_slot: u8) {
         self.world
             .pending_battle_events

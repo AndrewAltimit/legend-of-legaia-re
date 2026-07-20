@@ -234,6 +234,21 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
         host.monster_setup(actor_slot);
     }
 
+    // Per-action camera framing (`FUN_801F0348` at `801e2d2c`). Retail runs
+    // this unconditionally on the seed path, ahead of - and independent of -
+    // the gated `FUN_801EFE44` bounds walk below.
+    // Read `+0x1DD` *after* the setup hooks: `monster_setup` is where the
+    // engine expands a monster's targeting class into a concrete slot, and
+    // retail's `801f0348` reads the live byte.
+    let target_slot = host.actor(actor_slot).map_or(8, |a| a.active_target);
+    let frame_height = crate::battle_formulas::camera_height_for_frame(
+        actor_slot,
+        target_slot,
+        party_count,
+        |slot| host.monster_size_class(slot),
+    );
+    host.camera_frame_height(frame_height);
+
     // Camera bounds (skipped for run actions per docs).
     if !matches!(category, ActionCategory::Run) {
         host.camera_bounds();

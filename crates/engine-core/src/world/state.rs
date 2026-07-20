@@ -314,6 +314,20 @@ pub struct World {
     /// REF: FUN_801DABA4
     pub battle_speed: [u16; 8],
 
+    /// Battle-camera framing height / distance - retail `ctx+0x6D0`. Recomputed
+    /// at every action seed by the port of `FUN_801F0348`
+    /// ([`legaia_engine_vm::battle_formulas::camera_height_for_frame`]) from the
+    /// acting actor's target slot and its own slot, over the monster records'
+    /// `+0x1F` size class ([`crate::monster_catalog::MonsterDef::size_class`]).
+    ///
+    /// Seeded to the retail floor `0x0C00`
+    /// ([`legaia_engine_vm::battle_formulas::CAMERA_HEIGHT_MIN`]), which is also
+    /// where every fight frames when no size classes are loaded - so a
+    /// disc-free battle keeps the default distance.
+    ///
+    /// REF: FUN_801F0348
+    pub battle_camera_frame_height: i16,
+
     /// Per-slot accuracy stat (retail actor `+0x168`, the AGL-derived
     /// hit/dodge seed). Used as the **attacker's** term in the selector-9
     /// accuracy roll ([`legaia_engine_vm::battle_formulas::accuracy_roll`]).
@@ -2094,6 +2108,7 @@ impl World {
             battle_defense: [0; 8],
             battle_defense_split: [None; 8],
             battle_speed: [0; 8],
+            battle_camera_frame_height: legaia_engine_vm::battle_formulas::CAMERA_HEIGHT_MIN,
             battle_accuracy: [0; 8],
             battle_evasion: [0; 8],
             monster_strike_budget: 1,

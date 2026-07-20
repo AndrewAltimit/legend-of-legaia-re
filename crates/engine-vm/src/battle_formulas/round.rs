@@ -514,37 +514,38 @@ pub const CAMERA_HEIGHT_MAX: i16 = 0x1400;
 /// here because "unmodelled" and "unreachable" are different claims and only
 /// the disassembly settles which one this is.
 ///
-/// `size_of(slot)` returns the monster record's `+0x1F` size byte for a
-/// monster slot; it is never called for a party slot.
+/// `size_of(slot)` returns the monster record's `+0x1F` size byte
+/// ([`legaia_asset::monster_archive::MonsterRecord::size_class`]) for a monster
+/// slot; it is never called for a party slot.
 ///
-/// NOT WIRED: no engine caller - and **not** for want of a round-boundary
-/// pass, which is where this used to be filed. `FUN_801F0348` is not a
-/// round-boundary routine at all: its only callers are `FUN_801DC0A0` (the
-/// battle camera, at `801dc478` and `801dc6f0`) and `FUN_801E295C` (the action
-/// SM). It is per-action framing, and it runs every time an actor is seeded,
-/// not once per round.
+/// `monster_slot_base` is the first slot of the monster band - the value the
+/// disassembly hardcodes as `3` ([`RETAIL_MONSTER_SLOT_BASE`], because retail
+/// reserves three party slots whatever the party size). `engine-core` compacts
+/// its seating instead and seats the first monster at `party_count`, so it
+/// passes its own boundary; this is the same split
+/// [`apply_side_lockout`] documents from the other side. Both readings agree
+/// whenever the party is three, which is every retail battle beyond the
+/// prologue.
 ///
-/// The engine already has the matching hook - `BattleActionHost::camera_bounds`
-/// fires at `ActionSeed`, which is the same edge - so the call site is not the
-/// blocker. The blocker is the input: `size_of(slot)` wants the monster
-/// record's `+0x1F` size byte, and `engine-core`'s `MonsterDef` carries no
-/// size-class field, so there is nothing to pass. Wiring this means adding
-/// that field to the catalog and its record parser first; until then neither
-/// this nor [`camera_height_from_size_class`] is reached outside tests.
+/// Called at [`ActionSeed`](crate::battle_action::ActionState), which is where
+/// `FUN_801E295C` calls it (`801e2d2c`, unconditionally, just ahead of the
+/// gated `jal 0x801efe44` that the engine's `BattleActionHost::camera_bounds`
+/// hook stands in for).
 ///
 /// PORT: FUN_801f0348
 pub fn camera_height_for_frame(
     attacker_slot: u8,
     target_slot: u8,
+    monster_slot_base: u8,
     size_of: impl Fn(u8) -> u8,
 ) -> i16 {
     let mut h = CAMERA_HEIGHT_MIN;
     // Outer gate: an out-of-range target byte skips both lookups entirely.
     if target_slot < 8 {
-        if target_slot >= 3 {
+        if target_slot >= monster_slot_base {
             h = i16::from(size_of(target_slot)) << 7;
         }
-        if attacker_slot >= 3 {
+        if attacker_slot >= monster_slot_base {
             // Retail re-reads the acting slot and overwrites the target-derived
             // value - a monster frames on its own bulk.
             h = i16::from(size_of(attacker_slot)) << 7;
@@ -552,3 +553,7 @@ pub fn camera_height_for_frame(
     }
     h.clamp(CAMERA_HEIGHT_MIN, CAMERA_HEIGHT_MAX)
 }
+
+/// The monster-band base slot the disassembly hardcodes (`sltiu v0,v1,0x3` at
+/// `801f0384` / `801f03cc`). Retail reserves party slots `0..=2` unconditionally.
+pub const RETAIL_MONSTER_SLOT_BASE: u8 = 3;

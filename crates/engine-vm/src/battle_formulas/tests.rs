@@ -1200,15 +1200,30 @@ fn camera_height_for_frame_resolves_the_right_actor() {
     };
 
     // Party attacks a monster: framed on the target's bulk.
-    assert_eq!(camera_height_for_frame(0, 3, size), 0x1000);
-    assert_eq!(camera_height_for_frame(1, 4, size), 0x1400);
+    assert_eq!(
+        camera_height_for_frame(0, 3, RETAIL_MONSTER_SLOT_BASE, size),
+        0x1000
+    );
+    assert_eq!(
+        camera_height_for_frame(1, 4, RETAIL_MONSTER_SLOT_BASE, size),
+        0x1400
+    );
     // Party attacks a party member (heal / buff): neither arm runs, default.
-    assert_eq!(camera_height_for_frame(0, 1, size), CAMERA_HEIGHT_MIN);
+    assert_eq!(
+        camera_height_for_frame(0, 1, RETAIL_MONSTER_SLOT_BASE, size),
+        CAMERA_HEIGHT_MIN
+    );
     // Monster attacks a party member: the attacker arm fires on its own bulk.
-    assert_eq!(camera_height_for_frame(4, 0, size), 0x1400);
+    assert_eq!(
+        camera_height_for_frame(4, 0, RETAIL_MONSTER_SLOT_BASE, size),
+        0x1400
+    );
     // Monster attacks a monster: the attacker's store clobbers the target's.
     // Slot 3 (0x1000) attacking slot 4 (0x1400) frames at 0x1000, not 0x1400.
-    assert_eq!(camera_height_for_frame(3, 4, size), 0x1000);
+    assert_eq!(
+        camera_height_for_frame(3, 4, RETAIL_MONSTER_SLOT_BASE, size),
+        0x1000
+    );
 }
 
 /// The `sltiu v0,v1,0x8` outer gate at `0x801F037C` branches to the **clamp**,
@@ -1219,11 +1234,14 @@ fn camera_height_for_frame_resolves_the_right_actor() {
 fn camera_height_for_frame_out_of_range_target_suppresses_both_arms() {
     let size = |_: u8| 0x28u8; // would frame at the 0x1400 ceiling
     // In range: the monster attacker pulls the camera all the way back.
-    assert_eq!(camera_height_for_frame(4, 3, size), 0x1400);
+    assert_eq!(
+        camera_height_for_frame(4, 3, RETAIL_MONSTER_SLOT_BASE, size),
+        0x1400
+    );
     // Target byte 8 or above: gate shuts, default height survives.
     for target in [8u8, 9, 0x7F, 0xFF] {
         assert_eq!(
-            camera_height_for_frame(4, target, size),
+            camera_height_for_frame(4, target, RETAIL_MONSTER_SLOT_BASE, size),
             CAMERA_HEIGHT_MIN,
             "target {target:#x} must skip the attacker arm too"
         );

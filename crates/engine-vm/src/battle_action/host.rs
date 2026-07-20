@@ -40,6 +40,24 @@ pub trait BattleActionHost {
     /// table for min/max. Default no-op.
     fn camera_bounds(&mut self) {}
 
+    /// Body-size / bulk class of the monster seated in `actor_slot` - the
+    /// monster record's `+0x1F` byte that retail reads through the per-enemy
+    /// record-pointer table `0x801C9348[slot - 3]`. Returns `0` for a slot with
+    /// no monster (a party slot, or an empty one), which clamps the framing to
+    /// the retail default [`camera_height_for_frame`] floor.
+    ///
+    /// REF: FUN_801F0348
+    fn monster_size_class(&self, _actor_slot: u8) -> u8 {
+        0
+    }
+
+    /// Receives the battle camera's framing height / distance (`ctx+0x6D0`)
+    /// computed by [`camera_height_for_frame`] at action seed. Default no-op -
+    /// a host that does not draw a camera has nothing to do with it.
+    ///
+    /// REF: FUN_801F0348
+    fn camera_frame_height(&mut self, _height: i16) {}
+
     /// Equivalent of `FUN_801EED1C` - party setup hook (called for actors
     /// with slot < 3). Default no-op.
     fn party_setup(&mut self, _actor_slot: u8) {}

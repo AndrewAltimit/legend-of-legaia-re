@@ -671,8 +671,18 @@ the one path on which a monster attacker's own size is ignored. Live slot bytes 
 `0..=6`, so the gate is a guard against a stale or uninitialised `+0x1DD`.
 
 Ported as `battle_formulas::camera_height_for_frame` (whole routine, gate included) over
-`camera_height_from_size_class` (the `<< 7` + clamp arithmetic). Neither has an engine caller
-yet - the battle camera does not frame on size class.
+`camera_height_from_size_class` (the `<< 7` + clamp arithmetic), and wired: the port runs at
+`ActionSeed` - the same edge as retail's call at `801e2d2c`, ahead of the gated
+`FUN_801EFE44` bounds walk - feeding `BattleActionHost::camera_frame_height` and landing on
+`World::battle_camera_frame_height`. The size input comes from the monster record's `+0x1F`
+([`monster-animation.md`](../formats/monster-animation.md), `MonsterRecord::size_class` ->
+`MonsterDef::size_class`) through the `BattleActionHost::monster_size_class` hook.
+
+Retail's monster-band base is the literal `3` at `0x801F0384` / `0x801F03CC`, because retail
+reserves three party slots whatever the party size. The port takes that base as a parameter
+(`RETAIL_MONSTER_SLOT_BASE` for the retail reading) because `engine-core` compacts its seating
+and seats the first monster at `party_count`; the two agree for any three-member party. This is
+the same seating split `apply_side_lockout` documents from the other side.
 
 > The earlier reading of this address - a 40-slot widget-pool teardown walking ctx `+0x11B4` -
 > came from the aliased `overlay_0897_801f0348.txt` dump and is **falsified**: the

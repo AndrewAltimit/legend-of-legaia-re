@@ -104,6 +104,18 @@ pub struct MonsterDef {
     /// `matrix[attacker][defender]`. Defaults to `7` (neutral) for synthetic
     /// monsters; [`monster_def_from_record`] sets it from the record.
     pub element: u8,
+    /// Body-size / bulk class (monster record `+0x1F`; see
+    /// [`legaia_asset::monster_archive::MonsterRecord::size_class`]). The
+    /// battle camera frames on it - `FUN_801F0348` writes
+    /// `ctx+0x6D0 = clamp(size << 7, 0x0C00, 0x1400)` every time an actor is
+    /// seeded, so a bulkier enemy pulls the camera back.
+    ///
+    /// Defaults to `0` for synthetic monsters, which clamps to the retail
+    /// floor `0x0C00` - i.e. the disc-free catalog frames every fight at the
+    /// default distance and changes no existing behaviour.
+    ///
+    /// REF: FUN_801F0348
+    pub size_class: u8,
 }
 
 impl MonsterDef {
@@ -129,6 +141,7 @@ impl MonsterDef {
             seru_id: None,
             magic_attacks: Vec::new(),
             element: 7,
+            size_class: 0,
         }
     }
 
@@ -239,6 +252,8 @@ pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecor
     // the parser already filters out the empty `<= 1` slots.
     def.magic_attacks = rec.magic_attacks.clone();
     def.element = rec.element;
+    // Record `+0x1F` - the battle camera's framing input (`FUN_801F0348`).
+    def.size_class = rec.size_class;
     def
 }
 
@@ -403,6 +418,7 @@ pub fn vanilla_monster_catalog() -> MonsterCatalog {
             seru_id: None,
             magic_attacks: Vec::new(),
             element: 7,
+            size_class: 0,
         };
         cat.insert(def_struct);
     }
