@@ -307,7 +307,11 @@ canvas.world-canvas {
     /* Let the status paint before the synchronous WASM scene build. */
     await new Promise(r => setTimeout(r, 20));
     try {
-      if (!fsView) fsView = new window.FieldSceneView(viewer, canvas);
+      /* VR button joins the stage-head button row (next to .glb), not the
+       * canvas's parent - the default mount would overlay the viewport edge. */
+      if (!fsView) fsView = new window.FieldSceneView(viewer, canvas, {
+        vrMount: document.querySelector('.world-stage-btns'),
+      });
       fsView.load(label);
       mapStatus.innerHTML = `<b>${label}</b> · ${fsView.summary()} · drag pan / right-drag pivot / wheel zoom`;
       glbBtn.disabled = false;

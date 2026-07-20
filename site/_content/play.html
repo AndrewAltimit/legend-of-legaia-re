@@ -80,6 +80,16 @@
 @media (max-width: 980px) { .play-stage { grid-template-columns: 1fr; } }
 
 .play-canvas-wrap { position: relative; }
+/* Fullscreen keeps the wrap itself at 4:3 and centres it, so the overlay
+   canvas and the dialogue box - both positioned against the wrap - stay
+   pixel-aligned with the GL view without per-child overrides. The letterbox
+   is painted by ::backdrop rather than by growing the wrap. */
+.play-canvas-wrap:fullscreen {
+  inset: 0; margin: auto;
+  width: min(100vw, calc(100vh * 4 / 3));
+  height: min(100vh, calc(100vw * 3 / 4));
+}
+.play-canvas-wrap:fullscreen::backdrop { background: #05070c; }
 .play-canvas {
   width: 100%; aspect-ratio: 4 / 3; display: block;
   background: #05070c; border: 1px solid var(--border); outline: none;
@@ -285,6 +295,7 @@
           <button id="play-pause" type="button">Pause</button>
           <button id="play-step" type="button">Step 1 frame</button>
           <button id="play-recenter" type="button">Reset camera</button>
+          <button id="play-fullscreen" type="button" title="Present the viewport full screen (Esc to exit)">&#9974; Fullscreen</button>
         </div>
       </div>
 
@@ -1250,6 +1261,41 @@
     view.cam.yaw = 0;
     view.cam.pitch = 0.62;
     view.cam.halfWidth = view.cam.halfHeight = 520;
+  });
+
+  /* Fullscreen the canvas wrap (not the canvas itself) so the menu overlay,
+   * focus veil and dialogue box come along - they are positioned against the
+   * wrap. The GL canvas is CSS-sized, so no backing-store resize is needed.
+   * Safari still needs the webkit-prefixed entry points. */
+  const fsBtn = document.getElementById('play-fullscreen');
+  const canvasWrap = document.querySelector('.play-canvas-wrap');
+  const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+  const fsSupported = !!(canvasWrap && (canvasWrap.requestFullscreen
+    || canvasWrap.webkitRequestFullscreen));
+  if (!fsSupported) {
+    fsBtn.disabled = true;
+    fsBtn.title = 'This browser does not expose the Fullscreen API';
+  }
+  fsBtn.addEventListener('click', () => {
+    if (fsElement()) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      return;
+    }
+    const req = canvasWrap.requestFullscreen || canvasWrap.webkitRequestFullscreen;
+    /* Chrome rejects the promise if the gesture is stale; keep it non-fatal. */
+    Promise.resolve(req.call(canvasWrap)).catch(() => {
+      fsBtn.title = 'Fullscreen was blocked by the browser';
+    });
+  });
+  /* Sync on every transition, including Esc and the browser's own controls. */
+  ['fullscreenchange', 'webkitfullscreenchange'].forEach((evt) => {
+    document.addEventListener(evt, () => {
+      const on = !!fsElement();
+      fsBtn.textContent = on ? '✖ Exit fullscreen' : '⛶ Fullscreen';
+      /* Keyboard play only works while the canvas holds focus, and entering
+       * fullscreen moves focus to the wrap. */
+      if (on) canvas.focus();
+    });
   });
 
   /* Headless-verification entry points (see site/_content/play.html tests). */

@@ -867,7 +867,11 @@
 
     let st;
     try {
-      fsView = new window.FieldSceneView(viewer, fresh);
+      /* Park the VR button in the shared control row rather than letting it
+       * default to the canvas's parent, where it overlays the viewport edge. */
+      fsView = new window.FieldSceneView(viewer, fresh, {
+        vrMount: document.getElementById('viewer-controls'),
+      });
       st = fsView.load(label);
     } catch (err) {
       info.innerHTML = `full map: ${err.message || err}`;
