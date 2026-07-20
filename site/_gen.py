@@ -293,6 +293,8 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("reference/gamedata.html",    "Curated game-data tables",      "reference/gamedata",         "reference/gamedata.html"),
     ("reference/music-tracks.html","Music-track disambiguation",     "reference/music-tracks",     "reference/music-tracks.html"),
     ("reference/open-rev-eng-threads.html","Open RE threads",        "reference/open-rev-eng-threads","reference/open-rev-eng-threads.html"),
+    ("reference/re-settled-threads.html","Settled RE threads",       "reference/re-settled-threads","reference/re-settled-threads.html"),
+    ("reference/re-do-not-re-walk.html","Do not re-walk",            "reference/re-do-not-re-walk","reference/re-do-not-re-walk.html"),
 ]
 
 
