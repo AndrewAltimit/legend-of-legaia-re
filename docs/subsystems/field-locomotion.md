@@ -16,7 +16,7 @@ static call site to follow. See [Provenance](#provenance).
 ## Contents
 
 - [Player actor fields used](#player-actor-fields-used) · [spawn position](#spawn-position-on-scene-entry) · [per-frame flow](#per-frame-flow)
-- [Collision - `FUN_801cfe4c`](#collision---fun_801cfe4c) · [where the grid comes from](#where-the-collision-grid-comes-from) · [collision byte](#collision-byte-walls--floor-height) · [floor height](#floor-height-two-models) · [trigger block](#trigger-block-0x10000---four-kind-sub-tables) · [object records](#object-record-format-0x0000-0x20-byte-stride) · [the object bind](#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose) · [the door swing](#the-door-swing-how-a-bind-script-drives-the-clip)
+- [Wall-slide resolution](#wall-slide-resolution-fun_80046494) · [Collision - `FUN_801cfe4c`](#collision---fun_801cfe4c) · [where the grid comes from](#where-the-collision-grid-comes-from) · [collision byte](#collision-byte-walls--floor-height) · [floor height](#floor-height-two-models) · [trigger block](#trigger-block-0x10000---four-kind-sub-tables) · [object records](#object-record-format-0x0000-0x20-byte-stride) · [the object bind](#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose) · [the door swing](#the-door-swing-how-a-bind-script-drives-the-clip)
 - [Provenance](#provenance) · [Town / field parity](#town--field-parity)
 - [Engine port](#engine-port) - [environment geometry](#environment-geometry) · [scene-entry script](#scene-entry-script) · [encounter table](#scene-encounter-table) · [per-step encounter roll](#per-step-encounter-roll-in-the-live-loop) · [input lock during cutscenes](#input-is-locked-during-an-opening-cutscene-timeline)
 - [Field-buffer load chain](#field-buffer-load-chain)
@@ -67,6 +67,8 @@ Provenance: `ghidra/scripts/funcs/overlay_0897_801d6704.txt` (the `func_0x80024c
    | `0x8000` | X − |
 
    (Same bit→direction convention as the tile board, because both call `func_0x800467e8`.)
+
+   `FUN_80046494` is more than a decode - it is the **wall-slide resolver**, and the returned mask can name a direction the pad never asked for. See [below](#wall-slide-resolution-fun_80046494).
 4. **Speed.** The frame's travel distance is
 
    ```text
@@ -97,6 +99,56 @@ The engine ports the probe as `World::tick_field_interaction_probe` (`engine-cor
 This is the input-driven counterpart to the scripted field-interact op; talking to the Rim Elm sparring partner this way starts the Tetsu fight through the dialogue-accept auto-arm.
 
 `World::nav_step_toward(tx, tz, tol)` is the matching auto-navigation primitive: it steps the player one frame toward a world target using the same per-axis collision as the pad path (`advance_with_collision`) but a world-space direction, returning `true` on arrival. A driver loops it along a BFS route over the collision grid to walk the player to a target - e.g. the v0.1 oracle's emergent Battle leg walks from the cold-boot spawn to the sparring partner, then talks to it via the probe. (The partner's *placement* tile (76,65) is its post-tutorial village spot, in a town01 sub-area not walk-reachable from the spawn; the opening repositions it next to Vahn for the tutorial - see `RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS`.)
+
+### Wall-slide resolution (`FUN_80046494`)
+
+Step 3's "direction decode" is really a **wall-slide resolver**. The
+returned mask is not just the pad restated: when the held direction is
+blocked, the function probes along the wall and ORs in a *perpendicular*
+direction, which is what makes the player skid along a wall instead of
+sticking to it. So the mask can name an axis the pad never asked for.
+
+Two paths short-circuit before any of that:
+
+- If the remapped pad has bit `1` set (`mask & 2`), the function returns
+  the raw mask untouched.
+- If the direction is one of the four pure diagonals
+  (`0x9000` / `0xc000` / `0x3000` / `0x6000`), the raw mask is returned
+  as-is. **Diagonals are never slide-resolved** - a diagonal already has
+  two axes for the per-axis collision step to resolve independently.
+
+Otherwise the resolver walks a 4-entry direction table at
+`DAT_800766BC` (8-byte stride: `u32 mask`, `s16 dx`, `s16 dy`). For each
+entry whose bit is present in the held mask:
+
+1. **Three-point block test.** It calls the walkability probe
+   `func_0x801d56c4` three times at the candidate point `(x+dx, z+dy)` -
+   once offset `+0x21` along the axis *perpendicular* to the direction of
+   travel, once `-0x21`, and once dead centre. The three results are
+   collected as bits `1` / `2` / `4`; any non-zero result means blocked.
+   The `0x21` lateral offsets are what give the player a body width
+   rather than a point hull, so a corner clips before the centre does.
+2. **Slide-direction search.** If the candidate is blocked, it sweeps the
+   signed offset table at `DAT_800766EC`, probing sideways along
+   whichever axis the direction of travel leaves free (the `dx == 0` and
+   `dy == 0` arms test the X and Z sweeps respectively) and summing the
+   offsets that come back walkable into a running total.
+3. **Sign picks the slide.** A negative total ORs in
+   `(&DAT_800766DC)[i*2]`, a positive total ORs in
+   `(&DAT_800766DE)[i*2]` - the paired negative / positive slide bits for
+   that direction row. A total of exactly zero adds nothing, so a
+   symmetric dead end leaves the player stopped rather than picking a
+   side arbitrarily.
+
+The original direction bit is ORed in regardless of the outcome, and the
+resolved mask is cached to `gp+0x9c4`. Under the debug flag
+(`gp+0x3b8 & 1`) each stage prints - `HIT`, `chk %d`, `pad %x not %x`,
+`pl_angle %d` - which is the cheapest way to watch the resolver decide.
+
+Provenance: `ghidra/scripts/funcs/80046494.txt`. **Not yet ported** - the
+engine's direction decode (`World::decode_field_direction`) implements
+step 3 of the per-frame flow without the slide resolution, so the port
+stops at a blocked axis instead of sliding along it.
 
 ## Collision - `FUN_801cfe4c`
 

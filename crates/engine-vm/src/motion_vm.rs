@@ -293,6 +293,10 @@ pub const BIND_RECORD_STRIDE: usize = 4;
 ///
 /// `bind_records` is the `DAT_801C6470` table, one [`BIND_RECORD_STRIDE`]
 /// byte record per entry.
+///
+// PORT: FUN_8003d038
+// REF: FUN_801cfc40 (the collision probe that posts), FUN_80038158
+//      (the wait-for-touch consumer at 0x8003882C)
 pub fn post_touch(bind_records: &[u8], index: usize) -> Option<u32> {
     let class = *bind_records.get(index.checked_mul(BIND_RECORD_STRIDE)?)?;
     if class == TOUCH_POST_SUPPRESS_CLASS {

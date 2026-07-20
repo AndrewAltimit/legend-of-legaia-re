@@ -486,6 +486,41 @@ func_0x800468a4(6, signed16(operand[1..3]), signed16(operand[3..5]),
                    signed16(operand[9..11]), signed16(operand[11..13]));
 ```
 
+The shifted call is issued **first**, so the unshifted copy lands over it
+in the ordering table. The three shifts are deliberately asymmetric - the
+source advances `0xF0`, the destination `0x100`, and the width shrinks by
+`0xE0` rather than the `0x100` an even split would use.
+
+`FUN_800468A4` itself guards `0 < slot && slot < _DAT_1F8003A6`, so
+**slot 0 is rejected** along with any overrun, and the guard runs before
+the primitive buffer is advanced - a rejected call allocates nothing. On
+success it biases the **source** Y by `0xF0` when the back-buffer flag
+`DAT_8007B74C` is set (the second framebuffer page starts 240 lines
+down; the destination corner is never biased), then builds the packet.
+
+`FUN_80057914` assembles the six-word primitive - the shape libgpu calls
+`DR_MOVE`:
+
+| Word | Contents |
+|---|---|
+| `+0x00` | OT tag; only byte `+3` is written here (packet length, `5` or `0`) |
+| `+0x04` | constant `0x01000000` |
+| `+0x08` | constant `0x80000000` - GP0 command `0x80` |
+| `+0x0C` | source corner, `y << 16 \| x` |
+| `+0x10` | destination corner, `y << 16 \| x` |
+| `+0x14` | extent, `h << 16 \| w` |
+
+The length byte is `0` when **either** extent is zero - a short-circuit
+`w == 0 || h == 0`, not the `w == 0 && h == 0` its sibling MoveImage
+queue `FUN_80058490` uses, so a zero-width-but-tall rect is dead here and
+live there. A zero-length tag makes the GPU skip the packet while it
+still occupies its ordering-table slot; the coordinate words are written
+either way.
+
+Engine port: `legaia_engine_vm::vram_rect_copy` (`build_packet` /
+`enqueue` / `op43_sub12_calls`). The VM arm resolves the split and hands
+the host the one or two calls in emission order.
+
 ### 0x44-0x4F (record-spawn / camera / render / state / move-block)
 
 | Op | Mnemonic | Notes |
@@ -1024,6 +1059,7 @@ Use this table as the lookup when interpreting the dump:
 | `0x801e35fc` | `LAB_801e35fc` | Join point: `return iVar18 + uVar31 + iVar24` → **PC = pc + 3 + LE_u16(operand[2..4])** for 0x42 mode 0 |
 | `0x801e3614` | `FUN_801e3614()` (lines 7252, 7416) | `addiu v0, v0, -2; j 0x801e3624; addu s8, s8, v0` → **PC = s8 + skip - 2** (= `pc + 5 + skip` in the standard 0x4D / nE sub-4 BBOX outside-box context) |
 | `0x801e3620` | `code_r0x801e3620`, `FUN_801e3620()` (lines 5021, 6606, 6923, 6928) | `iVar45 = param_2 + 4; ... break;` → **PC += 4** |
+| `0x801e3628` | `switchD_801e00f4::default()`, `default` | The **shared epilogue itself** - restores `s0`-`s8` + `ra` and does `addiu sp, sp, 0x108`. Every `j epilogue` above lands here; it is the switch default, not an opcode arm |
 
 Pitfalls when verifying:
 
