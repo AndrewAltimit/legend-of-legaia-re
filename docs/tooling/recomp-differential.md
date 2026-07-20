@@ -24,6 +24,7 @@ scratch directory, never in git. The synthetic fixtures in
 ## Contents
 
 - [The recomp side](#the-recomp-side)
+- [The savestate-resume fix](#the-savestate-resume-fix)
 - [Protocol traps the client bakes in](#protocol-traps-the-client-bakes-in)
 - [Canonical trace shape](#canonical-trace-shape)
 - [Capturing a recomp trace](#capturing-a-recomp-trace)
@@ -67,6 +68,76 @@ picture and the same call succeeds. Screenshot-guided menu navigation
 therefore needs no `xvfb-run`; see
 [Driving the game to an uncovered scene](#driving-the-game-to-an-uncovered-scene).
 
+## The savestate-resume fix
+
+Stock, the recomp runtime cannot resume a savestate. `boot_state.c`'s
+`apply_section` forces `cpu->pc = entry_pc` on load; that entry is the game's
+BSS-clear routine, so every load faithfully restores the RAM image and then
+immediately zeroes the region holding the game-mode word `0x8007B83C`. The
+machine falls back into the boot chain and parks there. The ack is
+`{"ok":true}` either way, so nothing announces the failure.
+
+One line fixes it - honour the PC `savestate_poll` recorded, falling back to
+the entry only for snapshots that predate resume-PC capture:
+
+```c
+cpu->pc = c->pc ? c->pc : entry_pc;
+```
+
+The recomp workspace is an untracked sibling tree, so that edit has no home
+there and has been lost to a stray `git checkout` before. The durable copy
+lives here, as a script that reapplies it to a fresh checkout:
+
+```bash
+python3 scripts/recomp/apply_boot_state_fix.py          # idempotent
+cd "$LEGAIA_RECOMP_DIR/build-dbg" && make psx-runtime
+```
+
+It is a script rather than a `.patch` for two reasons. psxrecomp is PolyForm
+Noncommercial and this repo is `MIT OR Unlicense`, so a context diff would
+vendor third-party source lines under a license this repo does not grant; an
+anchored replacement carries only the line it rewrites. It also survives
+upstream line-number drift that would break a diff, and refuses rather than
+guesses if the anchor is missing or ambiguous. `--check` reports the current
+form, `--revert` restores stock.
+
+Build the `psx-runtime` target, **not** `Legend_of_Legaia_Recompiled`. The
+executable of that name sits in the build directory, so make treats it as an
+already-satisfied file target and does nothing, successfully and silently -
+leaving a stale binary that behaves exactly like an unpatched one.
+
+With the fix built in, the parked slots resume into live scenes rather than
+the boot entry: a battle slot reaches mode `0x15`, town slots reach `town01`
+in field mode `0x3`.
+
+### Preflight
+
+Three different faults all present as "the trace was taken at the boot
+entry", and only one of them is the runtime:
+
+| Fault | Signal | Fix |
+|---|---|---|
+| Self-wiping runtime | `boot_state.c` carries `cpu->pc = entry_pc` | `apply_boot_state_fix.py` |
+| Stale build | runtime binary older than `boot_state.c` | `make psx-runtime` |
+| Stale snapshot | the `.pst` itself records `pc == 0` | recapture that slot |
+
+`scripts/recomp/preflight.py` separates them, reading the runtime form and
+build mtimes from the workspace and the resume PC out of each snapshot's CPU
+section. A slot whose stored PC is zero falls back to the entry even on a
+correct build, so it is reported as a slot fault and never as a runtime one.
+
+```bash
+python3 scripts/recomp/preflight.py            # runtime + every slot found
+python3 scripts/recomp/probe.py preflight --slot 4
+```
+
+It is wired in where a miss is expensive rather than left to be remembered:
+`probe.py launch` refuses to start a runtime that cannot resume,
+`trace_capture.py --savestate` refuses to capture before it connects, and a
+failed `--expect-mode` / `--expect-scene` check attaches the diagnosis to the
+error. When preflight is clean the message says so, so a genuine divergence
+is not written off as a harness problem. Both gates take `--skip-preflight`.
+
 ## Protocol traps the client bakes in
 
 Every one of these is verified against a live server; scripts that bypass
@@ -95,21 +166,13 @@ Every one of these is verified against a live server; scripts that bypass
   `0x8007B83C`). Always pass `--expect-scene` / `--expect-mode` when known;
   a stale slot loads "successfully" into the wrong state.
 - **`savestate` load restores a live scene only if the runtime honours the
-  saved resume PC.** `savestate_poll` serialises the block-leader resume PC
-  into the snapshot, but `boot_state.c`'s `apply_section` has shipped in two
-  forms. The self-wiping form forces `cpu->pc = entry_pc`; that entry is the
-  game's BSS-clear routine, which zeroes the region holding the game-mode
-  word `0x8007B83C`, so the load restores the RAM image and then immediately
-  wipes the state that gives it meaning - the machine falls back into the
-  boot chain and parks there. The working form is
-  `cpu->pc = c->pc ? c->pc : entry_pc;`, which resumes where the snapshot was
-  taken. The ack is `{"ok":true}` under both, so the failure is silent unless
-  the caller verifies - always pass `--expect-scene` / `--expect-mode`.
-  Check which form your runtime has before concluding a slot is dead:
-  `grep -n 'cpu->pc =' runtime/src/boot_state.c` in the recomp workspace.
-  Slots written before resume-PC capture existed carry `c->pc == 0` and fall
-  back to `entry_pc`, so they self-wipe even on a fixed runtime; a slot that
-  loads to mode `0` is a stale snapshot, not necessarily a broken build.
+  saved resume PC.** A stock runtime re-enters at the game entry and wipes
+  the state it just restored, and the ack is `{"ok":true}` either way, so the
+  failure is silent unless the caller verifies - always pass
+  `--expect-scene` / `--expect-mode`. Before concluding a slot is dead, run
+  the preflight: a load that lands at mode `0` is as likely to be a stale
+  snapshot or a stale build as a broken runtime. See
+  [The savestate-resume fix](#the-savestate-resume-fix).
 - **`pause` / `step` / `run_to_frame` are REMOVED.** The debug server
   returns an error explaining the migration: observation goes through ring
   buffers, not synchronous stepping. The frame-exact primitive is the
