@@ -25,7 +25,7 @@ The per-frame driver is `FUN_801cf3bc` (`overlay_fishing_801cf3bc.txt`). It is d
 | `0x20`..`0x22` | Lure-landing / line-sink sequence (camera + line-actor position setup), each advancing to the next. |
 | `0x28` | Auxiliary animation wait keyed on `DAT_801d9164`; returns to `10` when the helper `FUN_801d7528` completes. |
 | `0x2d` | Miss / retry bookkeeping (`DAT_801d9268` countdown via `FUN_801d6f10`), then back to `0x32`. |
-| `0x64`..`0x66` | Shop / point-exchange branch: confirm prompts (`FUN_801d72a0`) gating the buy / sell helpers `FUN_801d06c8` / `FUN_801d092c` / `FUN_801d0c3c`. |
+| `0x64`..`0x66` | Shop / point-exchange branch: confirm prompts (`FUN_801d72a0`, but see [VA aliasing](#va-aliasing-in-this-band)) gating the buy / sell helpers `FUN_801d06c8` / `FUN_801d092c` / `FUN_801d0c3c`. |
 | `0x6e`,`0x78`..`0x7a` | Shop sub-flows that call the same buy / sell helpers and the picker `FUN_801d0474`. |
 | `0x96` | "You have lost the lure" / no-rod end screen; a button edge advances to `200`. |
 | `200` (`0xc8`) | Exit / fade-out: ramps a fade value to white and, once full, plays the leaving XA cue and tears the mode down. |
@@ -64,6 +64,45 @@ The three one-shot animators the tail's timers drive (each takes the timer value
 - `FUN_801d78ec` (`overlay_fishing_801d78ec.txt`, timer `DAT_801d9160`) - a banner (glyph `7`, `y = 0x78`) sliding in from the **left** at 8 px/frame, holding at `x = 0xa0` from frame `0x14`, sliding off from frame `0x8c` (`x = frame*8 - 0x3c0`, joining the hold continuously), active while `frame < 0xc8`. Seeded at the moment the fish hooks (`FUN_801d26cc`, alongside `DAT_801d91b4 = 1`).
 - `FUN_801d75dc` (`overlay_fishing_801d75dc.txt`, timer `DAT_801d915c`) - the mirrored banner (glyph `0xd`) sliding in from the **right**: same ramp, `x = 0x140 -` ramp, holding at the same `x = 0xa0`; same `0xc8` lifetime. Seeded on the hooked fight's reel-in-complete path (`FUN_801d26cc`: `DAT_801d927c` below `0x136` while `DAT_801d91b4` set); while it runs the tail cancels the `FUN_801d78ec` timer.
 - `FUN_801d71d4` (`overlay_fishing_801d71d4.txt`, timer `DAT_801d90f0`) - the strike splash: a two-glyph pair (`0x416` / `0x816`) at `x = 0xa0` rising one pixel every 32 frames from `y = 0x50`, brightness ramping `frame*8` up to a `0x80` hold (frame `0x10`), holding until frame `0x88`, then fading `0x80 - (frame-0x88)*8` to expire at frame `0x98`. Seeded at the strike / hit event before the fish hooks (`FUN_801d26cc`, gated on `DAT_801d91b4 == 0`).
+
+Two further animators ride the same ramp as the pair above, and expire on the
+same `0xc8` lifetime:
+
+- `FUN_801d6f10` (timer `DAT_801d9268`) - the miss / retry banner: a single glyph `0x19` on the mirrored trajectory (`x = 0x140 -` ramp). This is what parks state `0x2d` before it returns to `0x32`.
+- `FUN_801d7528` (timer `DAT_801d9164`) - the auxiliary banner, which emits the *same* glyph `0xc` twice, at the ramp and at its mirror, so the pair converges on the `0xa0` hold from both screen edges and parts again on the way out. State `0x28` waits on it.
+
+## The bar and digit primitives
+
+`FUN_801d1870` and `FUN_801d1a90` are the same gauge bar on the two axes. Each
+emits a three-glyph frame - a start cap, a body stretched by `segments << 12`
+along the bar's axis, and an end cap - at a fixed brightness `0x80`, then
+overlays the fill quad itself. The fill is `segments * value * 8 / 0x1000`
+pixels long and its brightness ramps `value * 0xff / 0x1000`, so the bar
+brightens as it fills. `FUN_801d1870` runs horizontally with glyphs `3`/`4`/`5`
+and fills left-to-right; `FUN_801d1a90` runs vertically with glyphs `0`/`1`/`2`
+and fills *upward* from the bottom cap. `FUN_801d1870`'s first argument selects
+the fill quad's colour ramp only and moves no geometry.
+
+`FUN_801d76e0` lays a number out in a fixed **eight-slot** field: slot `i` holds
+`value / 10^(7-i)` and is emitted only once that quotient is non-zero, so
+leading zeros are blank slots and the number ends up right-aligned. Retail
+seeds the last slot with `0` before the fill loop, which is what makes a value
+of zero draw a single `0` rather than nothing. Its first argument picks the slot
+pitch: `0` = 8 px, anything else = 16 px.
+
+## VA aliasing in this band
+
+The dumps covering `0x801d1xxx` and `0x801d6f00`..`0x801d78ff` are runtime
+captures whose overlay labels are unreliable - a save-state slice can retain
+bytes from a previously-resident overlay, so a file labelled for one minigame
+can hold another's code at some VAs. Attribute by *content*, not by the dump's
+filename: the functions above are pinned by their own reads (the lure item ids
+`0x9d`..`0x9f`, the `DAT_801d9xxx` globals, the shared emitter `FUN_801d63b0`).
+
+`FUN_801d72a0` is the open case: the captured occupant of that VA is a
+help-text screen belonging to another minigame, not the shop confirm prompt the
+state table names. The state-table reading stands on the driver's call site;
+the function body itself is **Unknown** pending a clean static extract.
 
 ## Per-species parameter table
 
@@ -128,13 +167,17 @@ Fishing-specific globals (overlay-resident unless noted; `_DAT_8008xxxx` live in
 - `FUN_801d1580` (`overlay_fishing_801d1580.txt`) - catch HUD: draws tension, casting power, depth, and record values.
 - `FUN_801d13f0` (`overlay_fishing_801d13f0.txt`) - persistent HUD: draws the best-catch value, the fishing-point total (`_DAT_8008444c`, capped), the rod-type label, and the lures-remaining count (item `_DAT_80084450 + 0x9d`).
 - `FUN_801d78ec` / `FUN_801d75dc` / `FUN_801d71d4` (`overlay_fishing_801d78ec.txt` / `..75dc.txt` / `..71d4.txt`) - the three one-shot banner/splash animators (see [HUD and banner animations](#hud-and-banner-animations)).
-- `FUN_801d712c` (`overlay_fishing_801d712c.txt`) - rod-ownership gate; queries inventory item ids `0x9d`..`0x9f` (`func_0x80042f4c`).
+- `FUN_801d712c` (`overlay_fishing_801d712c.txt`) - rod-ownership gate; queries inventory item ids `0x9d`..`0x9f` (`func_0x80042f4c`) and re-points the persistent rod index `_DAT_80084450` onto an owned one.
+- `FUN_801d6f10` / `FUN_801d7528` - the miss-retry and auxiliary banner animators (see [HUD and banner animations](#hud-and-banner-animations)).
+- `FUN_801d1870` / `FUN_801d1a90` / `FUN_801d76e0` - the horizontal bar, vertical bar and digit-field primitives (see [The bar and digit primitives](#the-bar-and-digit-primitives)).
 
 Parser: [`legaia_asset::fishing_species`](../../crates/asset/src/fishing_species.rs) decodes the [per-species table](#per-species-parameter-table) from the disc.
 
 Engine port: [`legaia_engine_core::fishing`](../../crates/engine-core/src/fishing.rs) is the clean-room rules engine over that table. The **Confirmed** numeric kernels are ported directly: the casting-power oscillator (`CastPower`, bounds `0x20..=0x1000`, seed `0x40`; `FUN_801cf3bc` state `0x14`), the tension-gauge tug-of-war (`TensionGauge`, reel divisors `rod*9+0x23` / `rod*6+0x19`, release `(rod*0x40+0x4a)*frame_step`, clamp `[0, 0x1000]`; `FUN_801d4004`), and the catch award + persistent-record credit (`FishingRecord`, `value*(strength+0x9c0)/0x32000`, `999999` cap, best-catch; `FUN_801d5298`).
 
-The HUD / banner cluster is ported as a draw-list layer (`HudDraw`): `persistent_hud_draws` (`FUN_801d13f0`), `catch_hud_draws` plus the `length_display` / `extent_display` / `cast_power_percent` kernels (`FUN_801d1580`), the three animators `banner_from_left_draw` / `banner_from_right_draw` / `strike_splash_draws` (`FUN_801d78ec` / `FUN_801d75dc` / `FUN_801d71d4`), and `BannerTimer` (the tail's timer-service loop).
+The HUD / banner cluster is ported as a draw-list layer (`HudDraw`): `persistent_hud_draws` (`FUN_801d13f0`), `catch_hud_draws` plus the `length_display` / `extent_display` / `cast_power_percent` kernels (`FUN_801d1580`), the five animators `banner_from_left_draw` / `banner_from_right_draw` / `strike_splash_draws` / `banner_miss_draw` / `banner_converge_draws` (`FUN_801d78ec` / `FUN_801d75dc` / `FUN_801d71d4` / `FUN_801d6f10` / `FUN_801d7528`), and `BannerTimer` (the tail's timer-service loop).
+
+The bar and digit primitives are ported as layout builders over that same draw list: `bar_frame` / `power_bar_frame` (`FUN_801d1870` / `FUN_801d1a90`) return the cap/body/cap glyph frame plus the fill extent and its brightness, and `number_digit_cells` (`FUN_801d76e0`) expands a value into its eight-slot digit field. `select_owned_rod` (`FUN_801d712c`) is the rod gate; note it is not read-only - it advances the persistent rod index onto an owned lure, which is why the HUD's rod label can change without the player touching the menu.
 
 The `FishingSession` composes those kernels into a cast → fight → score loop. The win/lose glue (line-snaps-at-max-tension, reel-progress land, the locked-cast species pick, and the steady per-frame fish pull) is an **engine-side reconstruction** of the [Open](#open) items below and is marked as such at each call site - no Sony bytes are baked in.
 

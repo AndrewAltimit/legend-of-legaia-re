@@ -280,8 +280,15 @@ flashing as it grows), the round timer digits (`DAT_801dc110`) and the
 running high score (`DAT_801dbee4`). The **end-of-match tally** is
 `overlay_baka_fighter_801d239c.txt`: it animates four accumulating score
 counters (`DAT_801dbee0`/`ed8`/`edc`/`ee8`) draining into the total
-(`DAT_801dbee4`) and into the player's gold (`_DAT_80084440`), via the digit
-drawer `FUN_801d6710`.
+(`DAT_801dbee4`) and into the player's gold (`_DAT_80084440`).
+
+The drain is paced by `FUN_801d6710`, which draws nothing - it returns the
+per-frame step for a given remainder. The step is proportional, so a counter
+empties fast and then ticks out: `> 5` moves a fifth per frame, `3..=5` a half,
+and `< 3` exactly one, which is what lands the counter on zero instead of
+approaching it. The fast-forward flag `DAT_801dbf00` short-circuits it to the
+whole remainder, so holding the button snaps the tally to its end state. Port:
+`engine-core::baka_fighter::tally_drain_step`. **Confirmed.**
 
 Confidence: **Confirmed** AI roll + scripted-pattern table, the HUD/tally draw
 paths, and the gold payout (a flat per-opponent prize from the record table's
@@ -540,6 +547,7 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `FUN_801d67f0` | per-frame fighter sprite-actor draw callback (`_DAT_8007ba2c`) |
 | `FUN_801d5ed0` | textured-quad GPU emitter for every HUD glyph / banner sprite (indexes the widget table `DAT_801d7160`) |
 | `FUN_801d69e4` / `FUN_801d6a18` | 8px digit drawer (widget `0x13`, `u = digit * 8`) / right-aligned number drawer |
+| `FUN_801d6710` | end-of-match tally drain step (not a drawer - see above) |
 | `FUN_801d553c` | developer dump of the action table (`ot5stat.txt`) |
 
 Provenance: each row corresponds to `ghidra/scripts/funcs/overlay_baka_fighter_<addr>.txt`.

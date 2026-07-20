@@ -849,9 +849,102 @@ impl LadderRun {
     }
 }
 
+// --- End-of-match score tally ----------------------------------------------
+
+/// Remainder above which the tally drains at [`TALLY_DIVISOR_FAST`] per step.
+pub const TALLY_FAST_THRESHOLD: i32 = 5;
+/// Remainder below which the tally drains one unit per step.
+pub const TALLY_SLOW_THRESHOLD: i32 = 3;
+/// Divisor applied to a large remainder (`> TALLY_FAST_THRESHOLD`).
+pub const TALLY_DIVISOR_FAST: i32 = 5;
+/// Divisor applied to a mid-sized remainder.
+pub const TALLY_DIVISOR_MID: i32 = 2;
+
+/// How much the end-of-match tally moves out of a counter this frame, given
+/// the amount still to drain.
+///
+/// The tally screen animates four score counters emptying into the running
+/// total and the player's gold. The step is proportional, not linear, so a big
+/// remainder empties fast and the last few units tick over one at a time:
+/// `> 5` drains a fifth per frame, `3..=5` a half, and `< 3` exactly one - so
+/// the counter always reaches zero rather than asymptotically approaching it.
+///
+/// `skip` is the tally's fast-forward flag (`DAT_801dbf00`): when set the whole
+/// remainder moves in one step, which is what makes holding the button snap
+/// the tally to its end state.
+// PORT: FUN_801d6710 (tally drain step; the doc's "digit drawer" reading is
+// wrong - this function draws nothing, it is the per-frame drain rate)
+pub fn tally_drain_step(remaining: i32, skip: bool) -> i32 {
+    if skip {
+        return remaining;
+    }
+    if remaining > TALLY_FAST_THRESHOLD {
+        return remaining / TALLY_DIVISOR_FAST;
+    }
+    if remaining < TALLY_SLOW_THRESHOLD {
+        return 1;
+    }
+    remaining / TALLY_DIVISOR_MID
+}
+
+/// Run one counter of the tally to empty, returning the per-frame steps it
+/// takes. Each step is [`tally_drain_step`] of what is left; the sum is the
+/// original `amount`.
+///
+/// Retail drains a negative counter by the same rule, which would run away
+/// from zero - no call site produces one, and the port treats it as empty.
+pub fn tally_drain_sequence(amount: i32) -> Vec<i32> {
+    let mut left = amount.max(0);
+    let mut steps = Vec::new();
+    while left > 0 {
+        let step = tally_drain_step(left, false).clamp(1, left);
+        steps.push(step);
+        left -= step;
+    }
+    steps
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tally_drain_accelerates_then_ticks_out_one_at_a_time() {
+        // Large remainder: a fifth per frame.
+        assert_eq!(tally_drain_step(100, false), 20);
+        assert_eq!(tally_drain_step(6, false), 1);
+        // The 3..=5 band halves.
+        assert_eq!(tally_drain_step(5, false), 2);
+        assert_eq!(tally_drain_step(4, false), 2);
+        assert_eq!(tally_drain_step(3, false), 1);
+        // Below 3 the step is exactly one, which is what lands it on zero.
+        assert_eq!(tally_drain_step(2, false), 1);
+        assert_eq!(tally_drain_step(1, false), 1);
+    }
+
+    #[test]
+    fn tally_fast_forward_moves_the_whole_remainder() {
+        assert_eq!(tally_drain_step(1234, true), 1234);
+        assert_eq!(tally_drain_sequence(1234).iter().sum::<i32>(), 1234);
+    }
+
+    #[test]
+    fn tally_sequence_always_terminates_at_exactly_the_total() {
+        for amount in [0, 1, 2, 3, 5, 6, 30, 460, 9999] {
+            let steps = tally_drain_sequence(amount);
+            assert_eq!(
+                steps.iter().sum::<i32>(),
+                amount,
+                "tally of {amount} drains to exactly zero"
+            );
+            assert!(steps.iter().all(|&s| s > 0), "no zero-length step stalls");
+        }
+        assert!(tally_drain_sequence(0).is_empty());
+        assert!(
+            tally_drain_sequence(-5).is_empty(),
+            "negative treated as empty"
+        );
+    }
 
     fn cfg(roster_id: usize, power: i32) -> FighterConfig {
         FighterConfig {

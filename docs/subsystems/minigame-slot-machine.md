@@ -308,7 +308,9 @@ The credit balance the player accumulates while playing lives in the **overlay-l
 
 The casino coin bank is the global `_DAT_800845A4` (u32). The slot machine touches it in exactly two places:
 
-- **Read (entry / HUD):** `FUN_801e6f70` (`overlay_slot_machine_801e6f70.txt`) renders the coin HUD; it reads `_DAT_800845A4` (current bank) for the on-screen coin readout and the sibling word `_DAT_8008459C` for a record/high value, comparing them to flag a new record. It does not modify the bank. **Confirmed** (`func_0x80034b78(_DAT_800845A4, …)`).
+- **Read (exchange counter):** `FUN_801e6f70` (`overlay_slot_machine_801e6f70.txt`) renders the casino's **coin-exchange counter**, where coins are bought with gold. It reads `_DAT_800845A4` (current bank) for the "Your Coins" readout and `_DAT_8008459C` for "Your Gold" - that sibling word is the party's **gold**, not a record/high value. It does not modify either. **Confirmed.**
+
+  The counter's "Coins to Buy" entry field is eight single-digit cells stored least-significant-first; their accumulated value times a flat **100 gold per coin** is the "Total Cost" line. The sale is gated twice - on gold against the total, and on the counter's remaining stock (`_DAT_8007BB90`) against the coin count - and the total is drawn in the alert ink when *either* gate fails. Port: `engine-core::slot_machine::coin_exchange_quote`. **Confirmed.**
 - **Write (cash-out commit):** state `100` of `FUN_801cf0d8` does `_DAT_800845A4 = DAT_801d4114` once the cash-out fade completes (`overlay_slot_machine_801cf0d8.txt`, the `_DAT_800845a4 = DAT_801d4114` store). So the bank is **assigned the final playing balance on exit**, not debited/credited per spin. **Confirmed.**
 
 This is why the "Infinite Coins" cheat (`0x800845A4 = 0x05F5E0FF`, see [`cheats.md`](../reference/cheats.md)) works at the casino but does **not** make individual spins free: per-spin betting decrements the *overlay-local* `DAT_801d4114` (loaded from the bank when the machine opens). The cheat-database pointer noted "near `0x801d3cac`" lands in this overlay's state block - `DAT_801d3cac` is the **feature mode**, and the surrounding `0x801d3c80..0x801d4134` window holds the RNG seed, reel positions, state word, balance, submenu cursor and payout counters described in the table below. **Confirmed** address window from the disassembly; the specific cheat-pointer semantics are **Inferred**.
@@ -392,7 +394,7 @@ The payout table is exactly 10 bytes - one per symbol id, the index range `FUN_8
 | `FUN_800172c0` | the per-frame **scene camera** the machine's 3D emits project through (SCUS) |
 | `FUN_800195a8` | the **billboard projector** (SCUS): view-space centre + half-extent -> projected quad |
 | `FUN_8005bac8` / `FUN_8003d368` | `RotTransPers4` / `RTPS` (SCUS GTE wrappers) |
-| `FUN_801e6f70` | coin HUD render: reads `_DAT_800845A4` + record - `overlay_slot_machine_801e6f70.txt` |
+| `FUN_801e6f70` | coin-exchange counter: cost at 100 gold/coin + gold/stock gates - `overlay_slot_machine_801e6f70.txt` |
 
 The overlay is **extraction PROT 975** (dev module `other4`), loaded by the **mode-24 minigame
 door-warp** as sub-id 3 (field-VM op `0x3E` with `op0 = 103`; `FUN_80025980` →
