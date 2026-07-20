@@ -96,9 +96,12 @@ pub struct World {
     /// tile, `0x80`-byte rows, up to `0x80` rows (`0x4000` bytes). The
     /// **high nibble** holds 4 sub-cell wall bits (a `2x2` quadrant grid of
     /// `64x64` cells); the **low nibble** is a floor-elevation tier
-    /// (unused by the wall check). Painted incrementally by the field-VM
-    /// `0x4C` outer-nibble-7 op as the scene prescript runs; zeroed (all
-    /// walkable) at field entry via [`World::reset_field_collision_grid`].
+    /// (unused by the wall check). Loaded at field entry from the per-scene
+    /// `DATA\FIELD\<scene>.MAP` `+0x4000` region - that disc blob is the
+    /// **base** grid, and the live retail grid byte-matches it with zero
+    /// diffs. The field-VM `0x4C` outer-nibble-7 op then applies
+    /// story-conditional wall *deltas* on top as the scene prescript runs;
+    /// it does not author the grid from scratch.
     /// Empty until the first field scene is entered.
     pub field_collision_grid: Vec<u8>,
     /// Per-scene `.MAP` region-table block (the file's `+0x10000..+0x12000`

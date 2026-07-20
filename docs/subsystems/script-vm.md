@@ -836,16 +836,44 @@ depends on the sub* must be decoded per-sub, and the executing VM's port is the 
 disagree.
 
 One more nibble-7 pin, this time on the *interpreter* side: **none of the four
-paints ends the dispatch slice**. The masked subs return `param_2 + 7` (plain
-advance) and the no-mask subs run the `801df8d8` tail - `addiu s8,s8,0x6`
-(pc += 6) then fall-through to the shared continue label (the apparent
-`FUN_801df8dc()` in the decomp is the intra-function label-call idiom) - so
-retail keeps executing the same record in the same call. Modelling sub-0/1 as
-a yield broke the scene-entry install pre-run one op after a paint (the
-ropeway `P1[30]` NPC's `23 2A 70` seat two ops past its clear-paint never
+paints ends the dispatch slice** - but not for the reason previously recorded
+here. There is **no label-call idiom in the nibble-7 arms at all**. All four
+subs perform an ordinary `return`, and they do not share an advance:
+
+| Sub | Exit | Net |
+|---|---|---|
+| 0 (`0x801e1cb4`) | `j 0x801df8dc` / `addiu fp,fp,6` | `return pc + 6` |
+| 1 (`0x801e1d28`) | `j 0x801df8dc` / `addiu fp,fp,6` | `return pc + 6` |
+| 2 (`0x801e1d9c`) | `j 0x801e3624` / `addiu fp,fp,7` | `return pc + 7` |
+| 3 (`0x801e1e20`) | `j 0x801e3624` / `addiu fp,fp,7` | `return pc + 7` |
+
+`0x801e3624` is not a "shared continue label" - it is `move v0,fp` falling
+straight into the **function epilogue** at `0x801e3628` (`lw ra,0x104(sp)` …
+`jr ra`). `0x801df8dc` is `j 0x801e3628; move v0,fp`, i.e. the same epilogue
+one hop earlier. So every nibble-7 paint genuinely leaves `FUN_801de840`.
+
+The slice continues anyway because the **caller loops**. In the pre-run
+`FUN_8003a1e4` the `jal 0x801de840` at `0x8003a4b8` sits inside a loop that
+re-enters on the returned PC and breaks on only three conditions:
+
+- the executed opcode was `0x21` (`li s4,0x21` at `0x8003a4a8`, tested by
+  `beq s1,s4` at `0x8003a4c4`);
+- the PC did not advance (`beq s2,v0` at `0x8003a4d4`);
+- the **masked** next opcode is below `0x20` - `andi v0,s1,0x7f` then
+  `sltiu v0,v0,0x20` at `0x8003a4ec`. The mask is `& 0x7F`, not a raw
+  comparison, so wide-flag opcodes with the high bit set still continue.
+
+A paint is none of those, so retail keeps executing the same record in the
+same call - the conclusion is unchanged, only its mechanism. Modelling
+sub-0/1 as a yield broke the scene-entry install pre-run one op after a paint
+(the ropeway `P1[30]` NPC's `23 2A 70` seat two ops past its clear-paint never
 ran, leaving it parked while retail seats it at `(5440,14400)`). The tail's
 `FUN_8003cf04(actor_list, FUN_801dd9d4)` lookup (its hit gets actor
 `flags |= 8`) is not yet modelled.
+
+The executing port (`legaia-engine-vm`, field `menu_ctrl` nibble 7) already
+returned the correct `Advance` with the correct 6/7 split; it was the prose
+and the port's own explanatory comment that carried the false mechanism.
 
 **ASCII dialogue aliases survive the `clean` tag.** The US build's dialogue is plain ASCII, and the wide
 flag ops land exactly on the letter ranges: `Set` leads `0x53..0x57` = `S..W`, `Clear` leads `0x61..0x67` =
@@ -1074,7 +1102,8 @@ Use this table as the lookup when interpreting the dump:
 |---|---|---|
 | `0x801df098` | `code_r0x801df098`, `switchD_801e0f24::caseD_4` | `addiu s8, s8, 0x2; j 0x801df09c` → **PC += 2** |
 | `0x801df09c` | `LAB_801df09c`, `switchD_801e00f4::default()` | `j 0x801e3628; move v0, s8` → **PC unchanged** (function epilogue) |
-| `0x801df8dc` | `FUN_801df8dc()` (lines 6250, 6284, 6384, 6449) | `addiu s8, s8, 0x6; j epilogue` → **PC += 6** |
+| `0x801df8d8` | - | `addiu s8, s8, 0x6` then falls into `0x801df8dc` → **PC += 6** |
+| `0x801df8dc` | `FUN_801df8dc()` (lines 6250, 6284, 6384, 6449) | `j 0x801e3628; move v0, s8` → **PC unchanged** (function epilogue). Callers that jump straight here supply their own `addiu s8, s8, N` in the delay slot - the nibble-7 subs 0/1 supply `+6`. The `+6` belongs to `0x801df8d8`, not to this label |
 | `0x801dee50` | `LAB_801dee50` | "halt-acquire failed" path - **halts at PC** (resets to loop start) |
 | `0x801e00b8` | `LAB_801e00b8` | `addiu s8, s8, 0x3; j 0x801e00bc` → **PC += 3** |
 | `0x801e00bc` | `LAB_801e00bc` | `j epilogue` - **PC unchanged** for callers that already did `addiu s8, s8, N` upstream |

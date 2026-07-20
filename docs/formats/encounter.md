@@ -493,6 +493,17 @@ section pointer into `ctrl[+0x20]` before calling `FUN_8003A110`.
 The MAN multi-section header is byte-exact across all 80 retail
 `scene_asset_table` bundles and lives at MAN offset `0`:
 
+> **`+0x22`/`+0x24`/`+0x26` are record *counts*, not section offsets.** They
+> are signed 16-bit counts of the 3-byte records that follow at `+0x2B`, and
+> `+0x28` is a **u24**, not a fourth s16. The header chains **six** sections,
+> not four. Summary tables elsewhere have repeatedly restated this block as
+> "four s16 section offsets at `+0x22..+0x28`" - that reading is wrong, and
+> the layout below (traced through `0x8003B04C..0x8003B120`: `lbu` pairs with
+> `sll 16` / `sra 16` for the counts, a three-byte assembly for the u24) is
+> the one to trust. The recurring shape is worth naming: the **detail page
+> stayed correct while the one-line summary drifted**, so when a summary and a
+> byte-level block disagree, the block wins.
+
 ```text
 +0x00..+0x02   u16 LE  status_flags                 ; return value;
                                                     ; bit 0x400 hints

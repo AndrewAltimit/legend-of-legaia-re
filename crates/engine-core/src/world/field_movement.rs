@@ -93,10 +93,19 @@ impl World {
 
     /// Reset the per-scene field collision grid to "all walkable" (every
     /// byte zero). Called at field entry; the scene prescript repaints the
-    /// wall bits via the field-VM `0x4C` outer-nibble-7 op. Mirrors the
-    /// retail wholesale clear of `*(_DAT_1F8003EC) + 0x4000` at scene boot
-    /// (the exact retail clear site is unpinned; zeroing here is the
-    /// engine-side equivalent - see `docs/subsystems/field-locomotion.md`).
+    /// wall bits via the field-VM `0x4C` outer-nibble-7 op.
+    ///
+    /// This is a **pre-load scrub, not a model of retail**. Retail does not
+    /// author the grid from the script: the base wall + floor data is an
+    /// on-disc blob (the `+0x4000..+0x8000` region of `DATA\FIELD\<scene>.MAP`,
+    /// streamed in by `FUN_8001F7C0`), and the live grid byte-matches PROT
+    /// 0109 with zero diffs. The nibble-7 paints are story-conditional
+    /// *deltas* layered on that base. So the "retail wholesale clear" this
+    /// comment used to claim is not a real retail step, and the long-standing
+    /// hunt for its clear site was a non-question. Zeroing here only
+    /// guarantees a clean buffer before [`Self::load_field_collision_grid`]
+    /// overwrites it with the disc base - see
+    /// `docs/subsystems/field-locomotion.md`.
     pub fn reset_field_collision_grid(&mut self) {
         self.field_collision_grid.clear();
         self.field_collision_grid.resize(FIELD_GRID_LEN, 0);

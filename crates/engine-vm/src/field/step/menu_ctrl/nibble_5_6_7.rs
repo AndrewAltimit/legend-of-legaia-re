@@ -221,15 +221,27 @@ pub(super) fn op_4c_n7<H: FieldHost>(
         let z1 = bytecode[operand + 4].wrapping_add(2);
         let mask = if has_mask { bytecode[operand + 5] } else { 0 };
         host.op4c_n7_tile_flag_bulk(sub, (x0, x1), (z0, z1), mask);
-        // All four paints CONTINUE in the same interpreter call: the masked
-        // subs (2/3) `return param_2 + 7`, and the no-mask subs (0/1) run the
-        // `801df8d8` tail - `addiu s8,s8,0x6` (pc += 6) then fall through to
-        // the shared continue label, NOT a slice exit (the apparent
-        // `FUN_801df8dc()` in the decomp is the intra-function label-call
-        // idiom). Modelling sub-0/1 as a Yield broke the retail install
+        // All four paints CONTINUE the slice - but every one of them
+        // genuinely RETURNS from FUN_801de840. There is no label-call idiom
+        // here; that reading was wrong. Per the disassembly:
+        //   sub 0 (801e1cb4) `j 801df8dc` / `addiu fp,fp,6` -> pc + 6
+        //   sub 1 (801e1d28) `j 801df8dc` / `addiu fp,fp,6` -> pc + 6
+        //   sub 2 (801e1d9c) `j 801e3624` / `addiu fp,fp,7` -> pc + 7
+        //   sub 3 (801e1e20) `j 801e3624` / `addiu fp,fp,7` -> pc + 7
+        // 801e3624 is `move v0,fp` falling into the function epilogue at
+        // 801e3628 (`lw ra,0x104(sp)` .. `jr ra`); 801df8dc is the same
+        // epilogue one hop earlier. Neither is a "continue label".
+        //
+        // The slice continues because the CALLER loops: FUN_8003a1e4's
+        // `jal 801de840` at 8003a4b8 re-enters on the returned PC and breaks
+        // only on an executed 0x21 (8003a4c4), a stalled PC (8003a4d4), or a
+        // next opcode whose MASKED value is < 0x20 (`andi v0,s1,0x7f` then
+        // `sltiu v0,v0,0x20` at 8003a4ec - the mask is & 0x7F, so wide-flag
+        // opcodes with the high bit set still continue). A paint is none of
+        // those. Modelling sub-0/1 as a Yield broke the retail install
         // pre-run one op after the paint - the ropeway P1[30] NPC stayed
         // parked because its `23 2A 70` seat two ops later never ran.
-        // Not modelled from that tail: the `FUN_8003cf04(actor_list,
+        // Not modelled from the 801df8d8 tail: the `FUN_8003cf04(actor_list,
         // FUN_801dd9d4)` lookup whose hit gets `flags |= 8`.
         StepResult::Advance {
             next_pc: pc + header_size + if has_mask { 6 } else { 5 },

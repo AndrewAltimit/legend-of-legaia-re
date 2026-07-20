@@ -155,7 +155,7 @@ SM's special-attack (`+0x28`) and summon-stager (`id - 0x79`) bands, the battle 
 extraction 0900/0901, the summon-render pair - agreeing with 0900's byte-residency in mid-cast
 saves). No site can produce param 0 or 1, so extraction entries 0895/0896 are unreachable from
 any static loader call (see the 0896 row in
-[open-rev-eng-threads.md](../reference/re-settled-threads.md#prot-0896-bat_back_dat-identity)).
+[re-settled-threads.md](../reference/re-settled-threads.md#prot-0896-bat_back_dat-identity)).
 
 | Mode | Init handler | Loader call | PROT idx | Content (verified) |
 |---|---|---|---|---|
