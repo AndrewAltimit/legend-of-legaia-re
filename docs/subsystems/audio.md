@@ -83,6 +83,40 @@ The field VM's opcode `0x35` writes the BGM ID to `_DAT_8007BAC8`. `FUN_800243F0
 
 See [`subsystems/script-vm.md`](script-vm.md) → "BGM lookup table" for the resolver code. For the human-readable map between each track's debug sound-test ID, the scene it plays in, and its official OST title, see [`reference/music-tracks.md`](../reference/music-tracks.md).
 
+### Resolver arithmetic
+
+`FUN_800243F0` reads the id at `_DAT_8007BAC8` and branches on `slti … 0x7d0`:
+
+| Branch | Resolved PROT index | Globals |
+|---|---|---|
+| `bgm_id < 2000` (scene-local) | `*(0x80084540) + 6 + bgm_id` | `0x80084540` = scene block base |
+| `bgm_id >= 2000` (global pool) | `*(0x8007BC64) + (bgm_id - 2000)` | `0x8007BC64` = `music_01` bank base |
+
+The result is stored to `0x8007BAB8` and compared against the currently-loaded
+index at `0x8007BA9C`, so a re-select of the playing track is a no-op. Both
+laws are readable at runtime: on a running retail image `0x8007BC64` holds
+`990`, which is `MUSIC_BANK_EXTRACTION_BASE` in the extraction frame.
+
+### Which track a scene plays
+
+The track is **script-selected, not table-driven**: nothing maps a scene to a
+track. The scene's own event script picks it with an op-`0x35` operand, so the
+resolution is recovered by running the scene's prescript and observing the
+emitted id - `crates/engine-shell/tests/bgm_scene_resolution.rs` does this
+across the CDNAME corpus.
+
+The law that sweep establishes: **every scene that starts BGM selects a
+global-pool id.** The scene-local branch of the resolver is never taken by a
+field scene, and a scene's own `scene_vab_stream`-wrapped SEQ
+(`SceneAssets::seq_in_stream_entries`) is *not* its music source. Attempts to
+identify a playing track by fingerprinting it against the bank fail for this
+reason - the scene-local corpus they search is the wrong one.
+
+A linear disassembly walk over a scene's event records is **not** a substitute
+for running the prescript: it decodes data bytes as instructions and yields
+implausible ids (values far outside the `2000..=2077` band) mixed in with the
+real ones.
+
 The engine port reuses this same dispatch for the **Battle↔Field music swap**: `World::set_battle_bgm` configures a battle track id, and the live gameplay loop queues an ordinary `FieldEvent::Bgm{sub_op: 1}` start for it on encounter (`swap_to_battle_bgm`) and resumes the stashed field track on battle end (`restore_field_bgm`). The host's `AudioBgmDirector` cross-fades both transitions over ~0.5 s through its existing `start_inner` path - no separate battle-audio code path. The battle id must resolve in the current scene's BGM table since the live loop doesn't load a distinct battle audio bundle.
 
 ### Global-pool BGM: the `music_01` bank
