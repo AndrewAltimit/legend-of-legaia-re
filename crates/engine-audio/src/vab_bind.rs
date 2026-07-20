@@ -184,7 +184,16 @@ impl VabBank {
         let vel = velocity as i32;
         // libspu mvol/vol/velocity all scale linearly into the 0..=0x3FFF
         // voice register: vol = bank * prog * vel / (127^3) * 0x3FFF.
-        let combined = ((bank_master * prog_vol * vel) / (127 * 127)).min(0x3FFF) as i16;
+        //
+        // The three inputs are each 0..=127, so the product needs the full
+        // 127^3 divisor AND the widening to 0x3FFF to land in the register's
+        // domain. Dividing by 127^2 alone leaves the result in 0..=127 - a
+        // factor of 0x3FFF/127 (~0x81) below the hardware scale, which reads
+        // as "the engine is quiet" rather than as a unit error. i64 because
+        // 127^3 * 0x3FFF overflows i32.
+        let combined = ((bank_master as i64 * prog_vol as i64 * vel as i64 * 0x3FFF)
+            / (127 * 127 * 127))
+            .min(0x3FFF) as i16;
         let pan = tone.pan as i32; // 0..=127, 64 = center
         let (vol_l, vol_r) = pan_split(combined, pan);
         {
@@ -252,13 +261,30 @@ fn compute_pitch(note: u8, tone: &VagAtr, src_rate: u32, dst_rate: u32) -> u16 {
     pitch.clamp(1, 0x4000) as u16
 }
 
-/// Split a combined volume into (left, right) based on a 0..=127 pan value
-/// (64 = center). Equal-power-ish: linear left/right scaling.
+/// Split a combined volume into (left, right) for a tone's 0..=127 pan value
+/// (0x40 = centre), using libsnd's voice-volume pan law (`FUN_80067550`): a
+/// pan left of centre attenuates the **right** by `pan/0x3f`, a pan right of
+/// centre attenuates the **left** by `(0x7f - pan)/0x3f`. The near side is
+/// left alone - the law only ever attenuates, so it cannot overflow the
+/// register.
+///
+/// This is the same law `sequencer::apply_channel_pan` already applies to the
+/// CC10 channel pan, and deliberately so: libsnd runs this attenuation once
+/// per pan source (channel / sequence / tone), so both sources must share it.
+///
+/// The earlier form here scaled both sides by `/64`, which BOOSTS the near
+/// side to ~2x and clamps. That was invisible while key-on volume was stuck
+/// in 0..=127 - the clamp was unreachable - but at the correct 0..=0x3FFF
+/// scale 836 of the 7724 retail tones would have hit it at full velocity
+/// (census in tests/real_vab_tone_attributes.rs). Widening the volume without
+/// fixing the pan law would have traded a quiet engine for a clipping one.
 fn pan_split(vol: i16, pan: i32) -> (i16, i16) {
-    let pan = pan.clamp(0, 127);
-    let left = (vol as i32 * (127 - pan) / 64).min(0x3FFF) as i16;
-    let right = (vol as i32 * pan / 64).min(0x3FFF) as i16;
-    (left, right)
+    let pan = pan.clamp(0, 0x7f);
+    if pan < 0x40 {
+        (vol, (vol as i32 * pan / 0x3f) as i16)
+    } else {
+        ((vol as i32 * (0x7f - pan) / 0x3f) as i16, vol)
+    }
 }
 
 #[cfg(test)]

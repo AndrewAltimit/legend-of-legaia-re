@@ -436,7 +436,10 @@ the two most-used controllers, and both are **dynamic** - the score swells
 volume and pans voices around mid-note, not just at note-on (a corpus sweep
 finds the majority of CC7 events fire while a note is already sounding). The
 sequencer treats them as channel-expression layered over a per-note base:
-`play_note` leaves the voice at `master × velocity × tone-vol`, tone-panned,
+`play_note` leaves the voice at `master × velocity × tone-vol` (scaled into
+the register's `0..=0x3FFF` domain, not the `0..=127` input domain), tone-panned
+by the same law described below - libsnd applies this attenuation once per pan
+source, so the tone and channel sources share it -
 with **no** channel volume or pan; each `ActiveNote` stores that channel-free
 base L/R (mirroring `base_pitch` for bend). `channel_mix` then folds in the
 channel's CC7 volume (scale both sides by `volume/127`) and CC10 pan, where
@@ -473,7 +476,7 @@ for the implementation; tests use synthetic SEQs + a stubbed `VabBank`.
 | [`spu::adsr`](../../crates/engine-audio/src/spu/adsr.rs) | The 5-phase ADSR envelope (Attack-Decay-Sustain-Release-Off) with linear / exponential / increase / decrease modes per the standard PSX formula. Increasing phases step by the `+7..+4` (`7 - step_bits`) StepValue table; every *decreasing* phase (decay, linear/exponential release, sustain-decrease) steps by the `-8..-5` (`-8 + step_bits`) table - the two sign tables differ by one unit, so a decreasing phase driven from the increase table fades ~one step slow. The `(adsr1, adsr2)` words are read verbatim off the VAB tone metadata (a decoded tone's ADSR word equals the SPU `ADSRControl` register libspu writes at key-on - no transform). |
 | [`spu::adpcm`](../../crates/engine-audio/src/spu/adpcm.rs) | Streaming SPU-ADPCM block decoder (28 samples per 16-byte block). One stateful instance per voice carries the inter-block `prev1`/`prev2` history. |
 | [`spu::ram`](../../crates/engine-audio/src/spu/ram.rs) | 512 KB SPU RAM model + libspu-shaped transfer engine (`SpuRam::set_direction` / `write` / `read` + `SpuAllocator` for `SsSpuMalloc` / `SpuFree`). |
-| [`vab_bind::VabBank`](../../crates/engine-audio/src/vab_bind.rs) | Bridges `legaia_vab::VabReport` into the SPU: `upload(spu, alloc, report, buf)` drops every VAG body into SPU RAM through the allocator, and `play_note(spu, voice, prog, note, velocity)` translates a MIDI key into voice config + key-on. Pitch math matches `_SsKey2Pitch` / libspu key-to-pitch. |
+| [`vab_bind::VabBank`](../../crates/engine-audio/src/vab_bind.rs) | Bridges `legaia_vab::VabReport` into the SPU: `upload(spu, alloc, report, buf)` drops every VAG body into SPU RAM through the allocator, and `play_note(spu, voice, prog, note, velocity)` translates a MIDI key into voice config + key-on. Pitch math matches `_SsKey2Pitch` / libspu key-to-pitch; key-on volume is `bank x prog x vel / 127^3 x 0x3FFF`, and the tone pan applies the same `FUN_80067550` attenuation as the channel pan. |
 | [`AudioOut`](../../crates/engine-audio/src/lib.rs) | Owns a single cpal output stream that drains the `Spu` at 44.1 kHz and resamples to the host device rate (linear). Engines call `with_spu(|spu| ...)` from outside the audio thread to push voice attributes / key-on masks. |
 
 What this **does not** model (out of scope for the first port pass):
