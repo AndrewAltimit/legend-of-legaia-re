@@ -152,14 +152,24 @@ usable:
 - **False positives on `live` are expected.** Method-name collisions (`.tick()`,
   `.step()`, `.push()`) link callers to every same-named method in the
   workspace. Trait-object and closure dispatch resolve the same loose way.
-- **False negatives on `live` are rare**, because every ambiguity resolves
-  *toward* reachability. An unresolved qualifier is the one deliberate
-  exception: `Vec::new` falls back to free functions only, never to methods,
-  because letting external types reach every in-tree `Type::new` wired up whole
-  modules that nothing constructs.
+- **False negatives on `live` are rare *within the name-resolution graph***,
+  because every ambiguity resolves *toward* reachability. An unresolved
+  qualifier is the one deliberate exception: `Vec::new` falls back to free
+  functions only, never to methods, because letting external types reach every
+  in-tree `Type::new` wired up whole modules that nothing constructs.
+- **Dispatch shapes the graph cannot model are a different matter**, and there
+  the false negatives are systematic rather than rare. Two are known: a
+  **trait default method** is never a `.name(...)` call target, because
+  `impl_type` is read from `impl` blocks only; and **winit
+  `ApplicationHandler` callbacks** are dispatched by `event_loop.run_app`, so
+  the whole per-frame GUI tree below `window_event` is unreachable even though
+  `main` and the loop setup are live. Both are enumerated with positive
+  controls in [`live-audit-triage.md`](live-audit-triage.md#analysis-defects-this-triage-found).
 
-So `--not-live` is the trustworthy direction. An address it reports is one that
-no plausible edge - not even a wrong one - could reach. Read `live` as an upper
+So `--not-live` is the trustworthy direction *for edges the graph can express*.
+An address it reports is one that no plausible in-graph edge - not even a wrong
+one - could reach. It is not proof of inertness across the two dispatch shapes
+above: check those by hand before writing a `NOT WIRED:` tag. Read `live` as an upper
 bound on what runs, and `not-live` as a hard floor on what does not.
 
 Two things the axis structurally cannot see, both of which make a *live* verdict
@@ -399,6 +409,10 @@ The point of the table is to make the cross-cuts cheap to read:
   than ports.
 
 ## See also
+
+- [`live-audit-triage.md`](live-audit-triage.md) - per-anchor verdicts for the
+  `engine-core` and `engine-vm` rows of the audit's undisclosed-inert section,
+  plus the analysis defects that triage turned up.
 
 - [`docs/tooling/ghidra.md`](ghidra.md) - produces the `ghidra/scripts/funcs/` dumps that drive the "dumped" column.
 - [`docs/reference/functions.md`](../reference/functions.md) - the curated entry-point directory the "documented" signal draws from.
