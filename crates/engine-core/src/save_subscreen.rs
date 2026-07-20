@@ -202,6 +202,9 @@ pub struct SubScreenInput {
     pub cursor: u16,
     /// The card driver finished this frame.
     pub card_done: bool,
+    /// At least one save block in the scanned range is both present and
+    /// valid. The save-confirm screen refuses to proceed without one.
+    pub save_blocks_available: bool,
     /// The spinner's outcome selector: `2` commits to the quantity
     /// screen, `3` re-runs the spinner's second display script.
     pub spinner_result: u8,
@@ -220,6 +223,8 @@ pub enum SubScreenEffect {
     CardOp(CardOp),
     /// Read the focused inventory entry into the screen's staging cells.
     ReadInventoryEntry,
+    /// Zero the screen's staging cells and reset the list parameter.
+    ClearStaging,
 }
 
 /// Direction of a card transfer.
@@ -359,6 +364,7 @@ impl SaveScreenMachine {
             SaveSubScreen::PartyPicker => self.tick_party_picker(input),
             SaveSubScreen::CardSave => self.tick_card_driver(input, CardOp::Save),
             SaveSubScreen::CardLoad => self.tick_card_driver(input, CardOp::Load),
+            SaveSubScreen::SaveConfirm => self.tick_save_confirm(input),
             SaveSubScreen::QuantitySpinner => self.tick_quantity_spinner(input),
             // Screens with no step machine here park rather than
             // transitioning; a host drives them through `goto`.
@@ -545,6 +551,53 @@ impl SaveScreenMachine {
             3 => {
                 self.goto(SaveSubScreen::SlotSelect);
                 Vec::new()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Sub-screen `0x1A`: the save-slot confirm, a three-row list.
+    ///
+    /// The rows do not share an exit. Row `2` and the cancel button both
+    /// leave for the terminal screen; row `0` leaves for the card-full
+    /// error screen; row `1` is the only one that can *proceed*, and only
+    /// after a scan finds a save block that is both present and valid.
+    /// Failing that scan plays an error cue and leaves the screen where
+    /// it is - retail does not fall through to a transition.
+    ///
+    /// PORT: FUN_801DAFD4
+    fn tick_save_confirm(&mut self, input: SubScreenInput) -> Vec<SubScreenEffect> {
+        match self.step {
+            0 => {
+                self.step = 1;
+                vec![SubScreenEffect::ClearStaging, SubScreenEffect::RunScript]
+            }
+            1 if !input.script_busy => match (input.nav, input.cursor & 0xFFF) {
+                (1, 0) => {
+                    self.goto(SaveSubScreen::Unpinned(0x1B));
+                    vec![SubScreenEffect::ClearStaging]
+                }
+                (1, 1) => {
+                    if input.save_blocks_available {
+                        self.step = 2;
+                        vec![SubScreenEffect::RunScript]
+                    } else {
+                        vec![SubScreenEffect::Sfx(0x23)]
+                    }
+                }
+                (1, _) => {
+                    self.goto(SaveSubScreen::FinalExit);
+                    vec![SubScreenEffect::Sfx(0x37)]
+                }
+                (2, _) => {
+                    self.goto(SaveSubScreen::FinalExit);
+                    Vec::new()
+                }
+                _ => Vec::new(),
+            },
+            2 if !input.script_busy => {
+                self.goto(SaveSubScreen::QuantitySpinner);
+                vec![SubScreenEffect::ClearStaging]
             }
             _ => Vec::new(),
         }
@@ -836,6 +889,68 @@ mod tests {
             m.tick(idle(), 0);
             assert_eq!(m.screen(), SaveSubScreen::SlotSelect);
         }
+    }
+
+    /// The save-confirm's three rows do not share an exit: only row 1
+    /// can proceed, row 0 goes to the error screen, row 2 leaves.
+    #[test]
+    fn save_confirm_rows_have_distinct_exits() {
+        let cases = [
+            (0u16, SaveSubScreen::Unpinned(0x1B)),
+            (2, SaveSubScreen::FinalExit),
+        ];
+        for (cursor, expected) in cases {
+            let mut m = dispatching(SaveEntryContext::MenuSave);
+            m.goto(SaveSubScreen::SaveConfirm);
+            m.tick(idle(), 0);
+            m.tick(
+                SubScreenInput {
+                    nav: 1,
+                    cursor,
+                    ..idle()
+                },
+                0,
+            );
+            assert_eq!(m.screen(), expected, "cursor {cursor}");
+        }
+    }
+
+    /// Row 1 proceeds only when the scan found a usable save block;
+    /// without one it plays the error cue and stays put rather than
+    /// falling through to a transition.
+    #[test]
+    fn save_confirm_row_one_needs_an_available_block() {
+        let mut blocked = dispatching(SaveEntryContext::MenuSave);
+        blocked.goto(SaveSubScreen::SaveConfirm);
+        blocked.tick(idle(), 0);
+        let fx = blocked.tick(
+            SubScreenInput {
+                nav: 1,
+                cursor: 1,
+                save_blocks_available: false,
+                ..idle()
+            },
+            0,
+        );
+        assert_eq!(fx, vec![SubScreenEffect::Sfx(0x23)]);
+        assert_eq!(blocked.screen(), SaveSubScreen::SaveConfirm);
+        assert_eq!(blocked.step(), 1);
+
+        let mut ok = dispatching(SaveEntryContext::MenuSave);
+        ok.goto(SaveSubScreen::SaveConfirm);
+        ok.tick(idle(), 0);
+        ok.tick(
+            SubScreenInput {
+                nav: 1,
+                cursor: 1,
+                save_blocks_available: true,
+                ..idle()
+            },
+            0,
+        );
+        assert_eq!(ok.step(), 2);
+        ok.tick(idle(), 0);
+        assert_eq!(ok.screen(), SaveSubScreen::QuantitySpinner);
     }
 
     /// The spinner reads the focused inventory entry once it settles, and

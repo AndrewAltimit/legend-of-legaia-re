@@ -182,7 +182,7 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 | `0x17` | `FUN_801DD330` | thin wrapper invoking the generic picker `FUN_801DA9F8(start=0, end=9, init=0x30, return_subscreen=1)` |
 | `0x18` | `FUN_801DAE24` | save-card driver entry. State 0 installs the card handle (`_DAT_8007B44C = DAT_801C6EA0`) and invokes actor `&DAT_801E4E28`; state 1 waits `_DAT_8007BB80 == 0`; state 2 calls `FUN_801DD35C(1, 2)` (saving-overlay main; drives `FUN_801E3294` libcd state machine via the per-frame ticker `FUN_801E1114`); state 3 returns to sub-screen `0x01` |
 | `0x19` | `FUN_801DAEF4` | load-from-slot path (entry-context `*ptr == '\x01'`) |
-| `0x1A` | `FUN_801DAFD4` | save-slot confirm / saving-in-progress - advances to `0x1E` on confirm |
+| `0x1A` | `FUN_801DAFD4` | save-slot confirm / saving-in-progress - advances to `0x1E` on confirm. The three rows do **not** share an exit: row `0` leaves for `0x1B`, row `2` and the cancel button both leave for `0x00`, and row `1` is the only one that can proceed. A failed save-block scan plays error sfx `0x23` and leaves the screen in place rather than transitioning |
 | `0x1B` | `FUN_801DB21C` | card-full / error screen |
 | `0x1C` | `FUN_801DB380` | (unknown) |
 | `0x1D` | `FUN_801DB7F4` | (unknown) |
