@@ -12,7 +12,7 @@ The base address depends on which overlay; battle and town both load at `0x801CE
 
 ### Capture status
 
-The dump count column reflects committed function dumps under [`ghidra/scripts/funcs/`](../../ghidra/scripts/funcs/) at the time of writing - see `overlay_<label>_<addr>.txt` per overlay.
+The dump count column reflects committed function dumps under `ghidra/scripts/funcs/` at the time of writing - see `overlay_<label>_<addr>.txt` per overlay.
 
 | Overlay | Captured? | Named program | Subsystems |
 |---|---|---|---|

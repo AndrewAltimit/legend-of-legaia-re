@@ -720,7 +720,7 @@ status / stat caps from the active record - the setup loop caches per-slot
 (`+0x14C/+0x14E/+0x150/+0x152`, 7 slots) when `_DAT_8007B83C == 0x15`, else from the character
 records `0x80084708 + slot*0x414` (`+0x106/+0x104/+0x10A/+0x108`, 3 slots) - and writes a
 per-slot validity bit at `gp + 0x9A8`. Source:
-[`ghidra/scripts/funcs/8003fb10.txt`](../../ghidra/scripts/funcs/8003fb10.txt).
+`ghidra/scripts/funcs/8003fb10.txt`.
 
 Arms (ported wholesale as `legaia_engine_vm::battle_action::validate_action` over the
 `ActionValidatorHost` trait, with the `gp + 0x9A8` byte modelled as an explicit `validity_bits`

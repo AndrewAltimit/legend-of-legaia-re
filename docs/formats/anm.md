@@ -392,7 +392,7 @@ table (labeled "MOVE" in `AssetType`, see [`docs/formats/asset-type.md`
 container with `marker_1 = 0x080C` records.
 
 The mismatch between the asset type byte (`0x05` = "MOVE") and the
-[`FUN_8001f05c` case 6](../../ghidra/scripts/funcs/8001f05c.txt) (which
+`ghidra/scripts/funcs/8001f05c.txt` (which
 allocates `_DAT_8007B7C8` with the `anm_malloc_err` string and labeled
 **ANM** dispatch) is a documented quirk; the runtime case selector indexes
 asset bytes differently than the [`AssetType`] enum's display label
@@ -441,7 +441,7 @@ exactly:
 verified byte-exact across all **296 records** in the 5 pinned scenes (and
 across every other scene's bundle the corpus sweep finds; `f(a,b) == size`
 falls out 100%). The runtime layout (traced through
-[`FUN_8001B964`](../../ghidra/scripts/funcs/8001b964.txt) - the per-actor
+`ghidra/scripts/funcs/8001b964.txt` - the per-actor
 animated character renderer):
 
 ```text
@@ -472,7 +472,7 @@ animated-object count.
   bundle).
 
 Those three header fields are exactly what the playback advancer
-[`FUN_800204F8`](../../ghidra/scripts/funcs/800204f8.txt) reads: it takes the
+`ghidra/scripts/funcs/800204f8.txt` reads: it takes the
 bone count at clip `+0`, the scaling flag at clip `+1`, the **frame count** at
 clip `+2` and the divisor at clip `+6`.
 
@@ -505,7 +505,7 @@ byte-exact across the corpus.
 ### Per-(bone, frame) 8-byte encoding
 
 Each entry decodes to a `(T, R)` transform via
-[`FUN_8001BE80`](../../ghidra/scripts/funcs/8001be80.txt):
+`ghidra/scripts/funcs/8001be80.txt`:
 
 ```text
   byte 0   = low8(T0)
@@ -525,9 +525,9 @@ Each entry decodes to a `(T, R)` transform via
   `TR` registers as the per-object world-space translation.
 - The three u8 rotations build into the GTE rotation matrix in the order
   Z, Y, X (post-multiplication) via the PsyQ-shape rotation builders at
-  [`FUN_8004638C`](../../ghidra/scripts/funcs/8004638c.txt) /
-  [`FUN_8004629C`](../../ghidra/scripts/funcs/8004629c.txt) /
-  [`FUN_800461A4`](../../ghidra/scripts/funcs/800461a4.txt). Each function
+  `ghidra/scripts/funcs/8004638c.txt` /
+  `ghidra/scripts/funcs/8004629c.txt` /
+  `ghidra/scripts/funcs/800461a4.txt`. Each function
   reads from the global sin / cos tables at `DAT_80070A2C` /
   `DAT_8007122C` and composes a single-axis rotation into the current
   matrix.

@@ -477,10 +477,10 @@ Disc-gated anchor test: `crates/engine-core/tests/motion_flag_census_disc.rs`.
 
 ## Provenance
 
-- [`ghidra/scripts/funcs/8003774c.txt`](../../ghidra/scripts/funcs/8003774c.txt) - full disassembly + decompilation.
-- [`ghidra/scripts/funcs/80038158.txt`](../../ghidra/scripts/funcs/80038158.txt) - the second VM's interpreter.
-- [`ghidra/scripts/funcs/8003a9d4.txt`](../../ghidra/scripts/funcs/8003a9d4.txt) - motion-script installer (record chain + actor binding).
-- [`ghidra/scripts/funcs/8003c5f0.txt`](../../ghidra/scripts/funcs/8003c5f0.txt) - the ramp-scheduler installer op `0x0D` inlines.
+- `ghidra/scripts/funcs/8003774c.txt` - full disassembly + decompilation.
+- `ghidra/scripts/funcs/80038158.txt` - the second VM's interpreter.
+- `ghidra/scripts/funcs/8003a9d4.txt` - motion-script installer (record chain + actor binding).
+- `ghidra/scripts/funcs/8003c5f0.txt` - the ramp-scheduler installer op `0x0D` inlines.
 - The scheduler tick `FUN_80036D80` and the pool reset `FUN_8003CDA8` have no
   standalone dump; both are plain `SCUS_942.54` bodies at those addresses.
 
