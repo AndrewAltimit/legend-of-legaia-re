@@ -36,7 +36,7 @@
     </tbody>
   </table>
   <p><code>FUN_8001EBEC</code> looks like a third "mode-aware extension dispatcher" but is not a sound consumer: the decomp shows it is the graphics-side character-TMD equipment-conditional group-transform swap (it reads <code>DAT_8007C018[_DAT_8007B824 + 0..2]</code>, the loaded battle-character TMD pointers). See <a href="../formats/character-mesh.html">character-mesh</a>.</p>
-  <p>Both <code>FUN_8001FA88</code> and <code>FUN_8001FC00</code> carry a dev/retail split via <code>_DAT_8007B8C2</code>. The dev branch loads via PROT indices directly; the retail branch uses dev-style paths through <code>FUN_8003E6BC</code> (the path-based opener) which resolves <code>h:\main\bg\domepack\&hellip;</code> into the appropriate PROT entry through the <a href="../formats/index.html">CDNAME-driven name map</a>. Both paths land at the same files.</p>
+  <p>Both <code>FUN_8001FA88</code> and <code>FUN_8001FC00</code> carry a dev/retail split via <code>_DAT_8007B8C2</code>. <strong>Retail is the <code>!= 0</code> arm</strong> and loads by PROT index directly; the <code>== 0</code> arm is the dev path, opening an <code>h:\</code> path through <code>FUN_8003E6BC</code>. That function does <em>no</em> CDNAME name resolution - its body is <code>strcpy</code> &rarr; <code>break 0x103</code> (a PsyQ dev-station host trap) &rarr; fseek/fread/fclose, on paths absent from a retail disc.</p>
 </section>
 
 <section class="doc-section" id="vab">
@@ -59,7 +59,7 @@
   <h2>Monster sound bank - <code>h:\mpack\monster.snd</code></h2>
   <p>Battle-time monster sound banks live in a single packed <code>monster.snd</code> file. The loader is <code>FUN_8003E104(monster_idx, slot, dst_buf)</code> - called twice from the battle scene loader <code>FUN_800520F0</code> (slots 7 and 8, for the active battle's two monster sound banks). It reads the file's per-monster TOC at <code>0x801C8980 - 0x10</code> (4-byte stride, paired entries giving <code>[start_lba, end_lba+1]</code>), computes the LBA range, and dispatches:</p>
   <ul class="bullets">
-    <li><strong>Dev path</strong> (<code>_DAT_8007B8C2 != 0</code>) - uses the standard library file API: <code>FUN_800608F0</code> (fopen) &rarr; <code>FUN_80060920</code> (fseek to <code>record &times; 0x800</code>) &rarr; <code>FUN_80060944</code> (fread) &rarr; <code>FUN_80060910</code> (fclose). Path string: <code>h:\mpack\monster.snd</code>.</li>
+    <li><strong>Dev path</strong> (<code>_DAT_8007B8C2 == 0</code>) - the host-trap file API: <code>FUN_800608F0</code> &rarr; <code>FUN_80060920</code> (fseek to <code>record &times; 0x800</code>) &rarr; <code>FUN_80060944</code> &rarr; <code>FUN_80060910</code>. Path string: <code>h:\mpack\monster.snd</code>. Retail never takes this arm.</li>
     <li><strong>Retail path</strong> - stages <code>(size, dst)</code> into the gp window at <code>+0x97c / +0x894</code>, kicks the async CD read via <code>FUN_8003F128</code>. Sets a 120-frame timeout at <code>+0x91c</code>.</li>
   </ul>
   <p class="hint">The same pattern (<code>h:\mpack\&hellip;</code> paths + per-record TOC at a small data structure) recurs across the audio loaders - the <code>FUN_8003E104</code> dump is the canonical example.</p>

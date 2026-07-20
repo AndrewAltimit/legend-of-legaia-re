@@ -266,7 +266,7 @@ The `0x801C6ED8` clip-table content is pinned (34 `[CdlLOC][len]` slots = `XA1..
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Debug flags `0x8007B8C2` / `0x8007B98F` | split - `0x8007B98F` resolved; `0x8007B8C2` **open** (polarity) | `0x8007B98F` has no byte-granular reader: it is byte +3 (MSB, little-endian) of the 32-bit debug-mode word `_DAT_8007B98C`, and *that word* is the consumer surface. `0x8007B8C2` is re-opened: the branch sense recorded here was **backwards** - the `== 0` arm is the debug-station host path, the `!= 0` arm the PROT-index resolver - and a writer-less BSS byte therefore boots into the arm retail hardware cannot service. [details ↓](#debug-flags-0x8007b8c2--0x8007b98f) |
+| Debug flag `0x8007B98F` | resolved | `0x8007B98F` has no byte-granular reader: it is byte +3 (MSB, little-endian) of the 32-bit debug-mode word `_DAT_8007B98C`, and *that word* is the consumer surface. Its sibling `0x8007B8C2` is now **settled** - see [`re-settled-threads.md`](re-settled-threads.md#_dat_8007b8c2-polarity-and-its-writer). [details ↓](#debug-flags-0x8007b8c2--0x8007b98f) |
 | Full-window item-add OOB primitive: reachability | open (re-opened; the earlier live confirmation does not hold) - store-order claim graded `decompiled-C`, **re-audit** | [details ↓](#full-window-item-add-oob-primitive-reachability) |
 | New-Game opening chain + narration roller | partial (chain + caption + roller resolved; two render-fidelity residuals open) - roller operand decode graded `decompiled-C`, **re-audit** | [details ↓](#new-game-opening-chain--narration-roller) |
 | Slot-B overlay cluster (`0900..0969`) per-entry identity | mostly resolved | [details ↓](#slot-b-overlay-cluster-09000969-per-entry-identity) |
@@ -335,9 +335,9 @@ self-pointer resolution (`static_overlay::pointer_resolution`, ≥70%). Pinned:
 
 ### Debug flags `0x8007B8C2` / `0x8007B98F`
 
-*Status:* split - `_DAT_8007B98F` is **resolved** (the MSB of the debug-mode word `_DAT_8007B98C`, whose consumer is statically pinned at `FUN_8001822c` + the resident field-overlay gates, no capture required); `_DAT_8007B8C2` is **open** on its polarity, below
+*Status:* `_DAT_8007B98F` is **resolved** (the MSB of the debug-mode word `_DAT_8007B98C`, whose consumer is statically pinned at `FUN_8001822c` + the resident field-overlay gates, no capture required). `_DAT_8007B8C2` is now **settled** and has moved to [`re-settled-threads.md`](re-settled-threads.md#_dat_8007b8c2-polarity-and-its-writer); the corrected branch sense below stands, and the writer that made it self-consistent has been found.
 
-Both addresses are in the SBSS/BSS region (zero-initialised at boot).
+Neither address is BIOS-zeroed: the PS-X EXE header carries `b_addr = 0, b_size = 0`, so no BSS is cleared for this executable at all. The earlier "zero-initialised at boot" framing was wrong independently of the polarity question.
 
 **`_DAT_8007B8C2` - the branch sense, corrected.** `_DAT_8007B8C2` is the dev/retail asset-load selector, and the polarity is the opposite of what this row long recorded. Every site reads it with `lh` and takes the **zero** arm to the host-PC debug station, the **non-zero** arm to the PROT-index resolver:
 
@@ -349,17 +349,18 @@ Both addresses are in the SBSS/BSS region (zero-initialised at boot).
 
 So the old sentence - "routes through ISO9660 when `_DAT_8007B8C2 == 0` (retail) and through the PROT-index loader when non-zero (dev)" - had the two arms swapped, and named ISO9660 for a branch that is the index resolver. The `FUN_8001F7C0` / `FUN_8001FA88` / `FUN_8001FC00` citations were also loose: the sound pair's *opening* gate is the unrelated word `_DAT_8007B868`; they reach `_DAT_8007B8C2` further into the body.
 
-**Why that makes the flag open, not just mislabelled.** A word-aligned scan of
-`SCUS_942.54` finds 40 reads of `0x8007B8C2` and **zero** stores. BSS zero-init
-therefore leaves it `0` at boot - which selects the branch that traps to a debug
-station retail hardware does not have. Either something outside the scanned
-corpus writes it, or retail never takes these paths at all and resolves every
-asset by integer constant. The
-[`summon.dat` row](re-settled-threads.md#summondat--readefdat-side-band-streaming) records
-`_DAT_8007B8C2 != 0` as *verified live*, which is consistent with the corrected
-polarity but not with a writer-less BSS byte - reconciling those two
-observations is the open question. Same framing in
-[`cdname.md`](../formats/cdname.md#is-this-table-populated-on-retail-hardware)
+**The apparent paradox, and its resolution.** A word-aligned scan of `SCUS_942.54`
+finds 40 reads of `0x8007B8C2` and, in the **absolute** `lui`+offset form, zero
+stores - which made the flag look writer-less and therefore stuck on the arm
+retail cannot service. The writer exists and is **gp-relative**: `main()`
+(`FUN_80015E90`) stores it once at cold boot, `0x80015F08 sh v0,0x5aa(gp)` with
+`gp = 0x8007B318`, taking the return of `FUN_8003F084` - a two-instruction leaf
+(`jr ra` / `addiu v0,zero,0x1`) that returns the constant `1`. A sweep searching
+only the absolute form cannot see it. The
+[`summon.dat` row](re-settled-threads.md#summondat--readefdat-side-band-streaming)
+recording `_DAT_8007B8C2 != 0` as *verified live* was right all along. Full
+account, including the 60/60 save-state confirmation:
+[`re-settled-threads.md`](re-settled-threads.md#_dat_8007b8c2-polarity-and-its-writer).
 and [`boot.md`](../subsystems/boot.md#debug-flags).
 
 **Corpus sweep (`_DAT_8007B98F`).** The dump sweep across SCUS + every captured overlay finds zero references - read or write - to `_DAT_8007B98F`.

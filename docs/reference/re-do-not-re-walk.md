@@ -102,6 +102,33 @@ static-call witness in the image that was actually resident. The real undumped-c
 question for 0897 is better served by the [port-catalog dashboard](../tooling/port-catalog.md)
 than by this list.
 
+### `FUN_801F12D0` read from the `overlay_0897` dump
+
+**The claim that doesn't survive:** that the readef/summon applier's slot
+sequencing can be read out of `ghidra/scripts/funcs/overlay_0897_801f12d0.txt`.
+
+`FUN_801F12D0` has dumps under several overlay labels because `0x801F12D0` falls
+inside more than one overlay's load window. The `overlay_0897` one is a
+**mid-function fragment**, and it is a fragment in the way that actually proves it:
+it opens at `801f12d0 lw v1,-0x6c84(v0)` with no `addiu sp,sp,-N` anywhere in the
+window, yet closes restoring `s0`-`s3` and `ra` from a frame it never established.
+Callee-saved reads with no matching save, plus a missing prologue in the
+**disassembly**, is the fragment test.
+
+Its 47 instructions contain none of the slot-streaming logic - no `+0x277`
+base-slot read, no bit-7 file test, no `base+2` / `base+3` staging arms. A reader
+who takes it for the whole function concludes the applier does something else
+entirely, and the `jal 0x801daba4` in its tail is close enough to the real control
+flow to make that conclusion look plausible.
+
+**Read instead:** `overlay_muscle_dome_801f12d0.txt` - 330 instructions, proper
+prologue, carrying the bit-7 test at `801f1644` and both staging arms.
+
+**Generalises to:** any VA that several overlays map. The instruction count in the
+dump header is the cheap first filter - a 47-instruction "function" that restores
+four callee-saved registers is not a function. The corpus-wide picture is in
+[`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md).
+
 ## Related pages
 
 - [`open-rev-eng-threads.md`](open-rev-eng-threads.md) - the live hunts.

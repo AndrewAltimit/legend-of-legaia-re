@@ -253,8 +253,15 @@ at all. The boot-time store is the only thing that sets it. Live save states
 agree: the halfword reads `1` in all 60 captured states, across field, battle,
 world-map, stock-disc and randomized runs.
 
-The companion in-game debug-menu enable `0x8007B98F` is inert in retail (the
-dev branches that gate on it appear stripped at link time; no references remain).
+The companion in-game debug-menu enable `0x8007B98F` is **not** stripped, and an
+earlier claim here that "the dev branches that gate on it appear stripped at link
+time; no references remain" is superseded. It has no *byte-granular* reader because
+it is byte +3 (MSB, little-endian) of the 32-bit debug-mode word `_DAT_8007B98C`,
+and that word is the consumer surface - statically pinned at `FUN_8001822C` plus the
+resident field-overlay gates. Poking `_DAT_8007B98F = 1` brings up the debug menu on
+SELECT+triangle in the NA retail build, which is the direct refutation of "no
+references remain". See
+[`open-rev-eng-threads.md`](open-rev-eng-threads.md#debug-flags-0x8007b8c2--0x8007b98f).
 None of the 557 catalogued GameShark / Pro-Action-Replay codes in
 [`legaia-cheats`](cheats.md) target `0x8007B8C2` or `0x8007B98F`.
 
