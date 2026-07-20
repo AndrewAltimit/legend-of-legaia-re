@@ -166,6 +166,15 @@ subtractive).
 | 18 | `0x80043DD4` | `0x800453BC` (b2 `0x800457C4`) | tri | DPCT/DPCS |
 | 19 | `0x80043F10` | `0x80045584` (b2 `0x80045988`, b3 `0x80045BB4`) | quad | DPCT/DPCS |
 
+Bank 3 (subtractive) is the only bank that selects `0x80045BB4`, and no retail
+world-map caller observed so far sets the flag that reaches it - see
+[`formats/world-map-overlay.md`](../formats/world-map-overlay.md) for the per-bank
+capture counts. **Unreached in one capture is not unreachable**: the handler is a
+real render mode and belongs in any sweep claiming to cover the prim-dispatch
+family. Note also that the bulk-terrain path swaps in eight *overlay-resident*
+replacements for kinds 12..19 (`0x801F7644..0x801F8690`, PROT 0901), so a sweep
+bounded to the contiguous SCUS span misses them entirely.
+
 Structural facts (raw table): slots **0-7 are NULL** in every bank; **8-11 are
 bank-invariant** and the *only* handlers carrying a light source (`NCCS`/`NCCT`);
 **12-19 are bank-dependent** - bank 0 is opaque with no colour op, banks 1/2/3 add
