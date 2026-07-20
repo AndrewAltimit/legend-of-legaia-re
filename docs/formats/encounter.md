@@ -292,21 +292,27 @@ populated. The other is a global **battle-id** at `DAT_8007b7fc` consumed at
 battle-init by `FUN_80055b6c`, which calls `FUN_8005567c` (`SCUS_942.54`) to expand
 the id into the cell:
 
-```c
-DAT_8007bd0c = DAT_8007bd0e = (u8)DAT_8007b7fc;   // slots 0 and 2 seed from the id
-// id ranges 0x07..0x09, 0x49..0x4d, 0x88..0x8b, 0xa2..0xff are the "bespoke"
-// bands: they clear DAT_8007bd0e, collapsing the cell to a lone [id,0,0,0];
-// only 0xa2/0xa3/0xa4 additionally seed DAT_8007bd10.. (with 1 / 3 / 2).
-DAT_8007bd0f = 0;
-if (DAT_8007b7fc == 0) {                          // default-zero fallback
-    DAT_8007bd0c = DAT_8007bd0e = DAT_8007bd0f = 4;
-    DAT_8007b64a = 0;                             // clears the boss-transition arm
-}
-DAT_8007bd0d = DAT_8007bd0e;                      // slot 1 mirrors slot 2, last
-```
+The store order in the disassembly is:
 
-Slot 1 is never written directly - it is copied from slot 2 as the function's
-last act, which is what keeps all three cases self-consistent:
+| Address | Store | Effect |
+|---|---|---|
+| `0x80055690` | `sb zero, DAT_8007BD0F` | slot 3 cleared |
+| `0x80055698` | `sb v0, DAT_8007BD0C` | slot 0 = id |
+| `0x800556A0` | `sb v0, DAT_8007BD0D` | slot 1 = id |
+| `0x800556A8` | `sb v0, DAT_8007BD0E` | slot 2 = id |
+
+Id ranges `0x07..0x09`, `0x49..0x4d`, `0x88..0x8b`, `0xa2..0xff` are the
+"bespoke" bands: they zero slots 1, 2 and 3, collapsing the cell to a lone
+`[id,0,0,0]`. Only `0xa2`/`0xa3`/`0xa4` additionally seed `DAT_8007BD10..`
+(with `1` / `3` / `2`). The `DAT_8007b7fc == 0` fallback writes `4` to all
+four slots with four explicit `sb`s at `0x80055788..0x800557A4`, then clears
+the boss-transition arm at `DAT_8007B64A`.
+
+Slot 1 **is** written directly, in the prologue alongside slots 0 and 2.
+Ghidra's decompiled C ends with a synthesized `DAT_8007bd0d = DAT_8007bd0e;`
+and shows only three stores in the fallback - both are reordering artifacts
+of the same kind, and neither exists in the instruction stream. Read the
+disassembly here, not the decompile. The three cases:
 
 | Battle id | Resulting cell |
 |---|---|

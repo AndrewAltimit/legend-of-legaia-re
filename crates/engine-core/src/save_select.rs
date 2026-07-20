@@ -184,6 +184,17 @@ const CARD_PREFIX_LEN: usize = 16;
 /// is the card's free-block count, which retail queries separately before
 /// the walk.
 ///
+/// One deliberate departure: retail's budget loop is bounded only by the
+/// budget (`bgtz` on the counter, no slot bound) and its match loop
+/// stamps `class[slot]` with no range check, so a malformed card can walk
+/// off the end of the 16-byte array. Both loops are bounded here.
+///
+/// NOT WIRED: no caller outside this module's tests. The engine's save
+/// UI builds its slot list from [`SaveSelectSession`], which
+/// `engine-shell`'s window driver does drive; this classifier is the
+/// retail card-directory mirror and no host reads a physical card
+/// directory through it yet.
+///
 /// PORT: FUN_801E1208
 pub fn classify_card_directory(
     frames: &[&[u8]],
@@ -970,6 +981,32 @@ mod card_directory_tests {
     fn oversized_free_budget_saturates() {
         let classes = classify_card_directory(&[], 999);
         assert!(classes.iter().all(|c| *c == SlotContent::Free));
+    }
+
+    /// The two loops are ordered, and the order is the correctness
+    /// property: every matched filename stamps its slot before any free
+    /// block is spent, so a budget large enough to cover the whole card
+    /// still cannot downgrade a real save to "free". Running the budget
+    /// first - or folding the two into one sweep - would offer an
+    /// occupied slot up for overwrite.
+    #[test]
+    fn matched_slots_survive_a_budget_that_covers_the_card() {
+        let saves = [2u8, 7, 11];
+        let frames: Vec<Vec<u8>> = saves
+            .iter()
+            .map(|s| frame(CARD_SAVE_PREFIXES[0], *s))
+            .collect();
+        let refs: Vec<&[u8]> = frames.iter().map(|f| f.as_slice()).collect();
+
+        let classes = classify_card_directory(&refs, u32::MAX);
+        for (slot, class) in classes.iter().enumerate() {
+            let expected = if saves.contains(&(slot as u8)) {
+                SlotContent::LegaiaSave
+            } else {
+                SlotContent::Free
+            };
+            assert_eq!(*class, expected, "slot {slot}");
+        }
     }
 
     /// The slot number is the two digits after the prefix; a non-digit

@@ -37,7 +37,7 @@ Entry: `()`. Returns `true` when the save flow has terminated (outer state
 | 0 | Init: copies party pointers `_DAT_800846D0/D4` → `DAT_801EF0F0/F4`; decodes `_DAT_8007B450` (entry-context pointer) into `DAT_801E46A4` (sub-screen selector, see below); sets `_DAT_8007B440 = 0xF2` (full fade); advances to state 1. |
 | 1 | Fade-in wait: advances to state 2 once `_DAT_8007B440 < 0x79`. |
 | 2 | Sub-screen dispatch: calls `(*(DAT_801E46A4 * 4 + 0x801E4F40))(_DAT_8007B874)` - indirect function pointer table; pad input masked by `_DAT_8007B874`. |
-| 3/4/5 | Fade-out (`_DAT_8007B9D8 = 2`); gated on `_DAT_8007B460 == 0` before advancing. |
+| 3/4/5 | Fade-out (`_DAT_8007B9D8 = 2`); gated on `_DAT_8007B440 >= 0xF2` **and** `_DAT_8007B460 == 0`, then advances by `+3` into the terminal range. |
 | ≥ 6 | Terminal - returns `true`. |
 
 The **entry-context pointer** `_DAT_8007B450` determines which sub-screen opens:
@@ -50,8 +50,14 @@ The **entry-context pointer** `_DAT_8007B450` determines which sub-screen opens:
 | `*ptr == '\r'` | `0x4` | Post-save return |
 | `*ptr == '\x00'` | `0x1a` | Cancel / back |
 
-Input is suppressed while `_DAT_8007B440 > 0x79` (mid-fade). After state 2
-completes, the fade-out advances states 3 → 4 → 5. The four save-coordinate
+Input is suppressed while `_DAT_8007B440 > 0x79` (mid-fade), and state 1 hands
+over to dispatch one level lower, at `< 0x79` - two distinct constants, not one.
+
+The fade runs in **both directions off the same level word**: `0xF2` is opaque
+and `0` transparent, so the fade-in ramps `0xF2 → 0` under a negative delta and
+the fade-out ramps back `0 → 0xF2` under a positive one. An exiting sub-screen
+writes `0xF2` to the *delta* `DAT_801E46A0`, not to the level - reading that
+write as a level assignment inverts the exit fade. The four save-coordinate
 words `DAT_801E46BC/C0/C4/C8` are zeroed on init and maintained across the
 sub-screen lifetime.
 

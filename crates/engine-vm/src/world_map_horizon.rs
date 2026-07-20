@@ -43,10 +43,11 @@
 //! x_c = x_b + lo + ((lo * c) >> 12) + 0x40
 //! ```
 //!
-//! Quad 0 spans `x_a..x_b`, quad 1 spans `x_b..x_c`. Every term is
-//! truncated to `i16` **individually** before the adds, exactly as the
-//! retail C does - the port keeps the same wrapping so an overflowing
-//! `scale` diverges the same way.
+//! Quad 0 spans `x_a..x_b`, quad 1 spans `x_b..x_c`. Retail accumulates
+//! these in full 32-bit registers and truncates **once**, at the `sh`
+//! that stores each vertex X into the packet - not per term. The port
+//! computes in `i32` and narrows at the same point, so the two agree
+//! including how an overflowing `scale` wraps.
 //!
 //! ## Angle advance
 //!
@@ -191,6 +192,20 @@ pub const BAND_COUNT: usize = (ROW_LIMIT - ROW_FIRST) as usize;
 /// The caller is responsible for the gate itself: retail runs this only
 /// when `_DAT_801F351C != 0` and clears the flag first. Pair it with
 /// `EmitterGate::take()`.
+///
+/// NOT WIRED: reached only from tests. `World::tick_world_map` does call
+/// `run_horizon_emitter` every world-map frame, but the gate it consults
+/// is never armed in production - `EmitterGate::arm` (the port of
+/// `FUN_801D8258`) has no non-test caller because retail's param-prep
+/// wrappers `FUN_801D1344` / `FUN_801C2B2C` are not ported. Nothing
+/// consumes the resulting `HorizonBatch` either: no renderer reads
+/// `WorldMapController::horizon`. So the arithmetic below is verified
+/// against the disassembly and exercised by unit tests, but no frame the
+/// engine draws depends on it.
+///
+/// `FUN_801C9688` is a relocation copy of `FUN_801D7EA0`: the two bodies
+/// are instruction-identical, differing only in three branch targets
+/// that shift by the `0xE818` relocation delta, so one port covers both.
 // PORT: FUN_801d7ea0
 // PORT: FUN_801c9688
 pub fn emit_horizon(

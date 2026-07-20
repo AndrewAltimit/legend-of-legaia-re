@@ -322,14 +322,31 @@ pub const BATTLE_ID_FALLBACK_MONSTER: u8 = 4;
 /// writes three slots for a plain id, whereas the record path writes exactly
 /// as many slots as the record's `count`.
 ///
-/// Retail's slot 1 (`DAT_8007BD0D`) is not written directly - it is copied
-/// from slot 2 (`DAT_8007BD0E`) as the function's last act, which is why the
-/// banded and fallback cases stay self-consistent.
+/// Slot 1 (`DAT_8007BD0D`) is written **directly**, in the prologue,
+/// alongside slots 0 and 2 (`sb` at `0x80055698`, `0x800556A0`,
+/// `0x800556A8`); slot 3 is zeroed first at `0x80055690`. There is no
+/// trailing `slot1 = slot2` copy - the `DAT_8007bd0d = DAT_8007bd0e;`
+/// that appears at the end of the decompiled C is a decompiler
+/// reordering artifact, the same one that hides the fourth store in the
+/// id-0 fallback.
+///
+/// One narrowing the port makes deliberately: retail reads the battle id
+/// twice at different widths - `lbu` for the slot values, `lhu`/`lh` for
+/// every band comparison. This takes a `u8`, which collapses the two. It
+/// only diverges if `0x8007B7FC` ever holds a value above `0xFF`, in
+/// which case retail's band tests would fail where this port's succeed.
+///
+/// NOT WIRED: no caller outside this module's tests. The live encounter
+/// path is [`EncounterRecord::parse`] (used by the field scripts and
+/// `world::encounters`); this scripted-battle-id sibling is ported for
+/// completeness and nothing dispatches to it yet.
 ///
 /// See [`docs/formats/encounter.md`](../../../docs/formats/encounter.md#scripted-battle-id-path-fun_8005567c).
 // PORT: FUN_8005567c
 pub fn expand_battle_id(battle_id: u8) -> BattleIdFormation {
-    // Retail seeds slots 0 and 2 with the raw id, then patches.
+    // Retail seeds slots 0, 1 and 2 with the raw id and zeroes slot 3,
+    // then patches. `slot2` below stands in for both slot 1 and slot 2,
+    // which retail keeps equal on every path.
     let mut slot0 = battle_id;
     let mut slot2 = battle_id;
     let mut expansion = [0u8; 3];
@@ -357,7 +374,8 @@ pub fn expand_battle_id(battle_id: u8) -> BattleIdFormation {
         slot3 = BATTLE_ID_FALLBACK_MONSTER;
     }
 
-    // Slot 1 mirrors slot 2 (retail's trailing `DAT_8007BD0D = DAT_8007BD0E`).
+    // Slots 1 and 2 carry the same value on every retail path, so one
+    // local fills both cells.
     BattleIdFormation {
         cell: [slot0, slot2, slot2, slot3],
         expansion,

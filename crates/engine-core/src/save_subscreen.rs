@@ -28,6 +28,14 @@
 //! in [`SaveSubScreen`] (so the id space stays complete and a transition
 //! into one is expressible) but have no step machine here; ticking one
 //! parks. See `docs/subsystems/save-screen.md` for the table.
+//!
+//! NOT WIRED: nothing constructs a [`SaveScreenMachine`] outside this
+//! module's own tests. The engine's save UI runs on
+//! [`crate::save_select`]'s player-facing phase model, which
+//! `engine-shell`'s window driver does use; this module is the retail
+//! control-flow mirror alongside it and no host keys off it yet. The
+//! step machines below are therefore verified against the disassembly
+//! but exercised only by unit tests.
 
 /// Sub-screen ids, as indexed out of the retail pointer table.
 ///
@@ -148,7 +156,12 @@ impl SaveEntryContext {
             Self::Load => SaveSubScreen::CardLoad,
             Self::AutoSave => SaveSubScreen::AutoSave,
             Self::PostSave => SaveSubScreen::PostSaveReturn,
-            Self::Cancel => SaveSubScreen::Unpinned(0x1A),
+            // `0x1A` is the save-confirm screen, which this module does
+            // carry a step machine for. Naming it `Unpinned(0x1A)` here
+            // would round-trip the id but compare unequal to
+            // `SaveSubScreen::SaveConfirm`, so the dispatcher would park
+            // instead of running the machine.
+            Self::Cancel => SaveSubScreen::SaveConfirm,
         }
     }
 }
@@ -164,23 +177,43 @@ pub enum SavePhase {
     FadeIn,
     /// State 2 - dispatching the current sub-screen every frame.
     Dispatch,
-    /// States 3..5 - fading out, gated on the fade reaching zero.
+    /// States 3..5 - fading out, gated on the fade climbing back to
+    /// [`FADE_OPAQUE`]. Each of the three adds `3` to reach a terminal
+    /// state, which is how the exit code survives into `Done`.
     FadeOut,
     /// State >= 6 - terminal.
     Done,
 }
 
-/// Fade level retail seeds on init: fully opaque.
+/// Fade level retail seeds on init: fully opaque. `0` is transparent, so
+/// the flow fades *in* from `FADE_OPAQUE` down to `0` and back *out* up to
+/// `FADE_OPAQUE` on the way,  which is the direction both phases run.
 pub const FADE_OPAQUE: u8 = 0xF2;
 
-/// Fade level input is suppressed at or above. The fade-in advances once
-/// the level drops below this, which is also the gate on pad reads.
-pub const FADE_INPUT_THRESHOLD: u8 = 0x79;
+/// Fade level pad input is suppressed at or above.
+///
+/// Retail masks the pad globals while the level is `>= 0x7A` (`slti
+/// 0x7a` guarding the mask block), so input reaches the sub-screens from
+/// `0x79` down.
+pub const FADE_INPUT_THRESHOLD: u8 = 0x7A;
 
-/// Exit code a sub-screen writes to end the flow normally.
+/// Fade level the fade-in wait advances to dispatch below (`slti 0x79`).
+///
+/// One below [`FADE_INPUT_THRESHOLD`] - retail really does use two
+/// distinct constants here, so dispatch starts on the first frame after
+/// input has already been let through.
+pub const FADE_DISPATCH_THRESHOLD: u8 = 0x79;
+
+/// Outer state a sub-screen writes to end the flow normally.
+///
+/// Retail's "exit code" is a write to the dispatcher's own state global:
+/// states `3..=5` are the fade-out entries, and each adds `3` to reach a
+/// terminal state `>= 6`. So `3` and `4` are not return values but the
+/// fade-out state the screen jumps the outer machine to, and they survive
+/// into the terminal state as the record of how the flow ended.
 pub const EXIT_CODE_NORMAL: u8 = 3;
 
-/// Exit code the Yes-branch of the confirm-exit screen writes.
+/// Outer state the Yes-branch of the confirm-exit screen writes.
 pub const EXIT_CODE_CONFIRMED: u8 = 4;
 
 /// Per-frame inputs a sub-screen step machine reads.
@@ -330,7 +363,7 @@ impl SaveScreenMachine {
             }
             SavePhase::FadeIn => {
                 self.fade = self.fade.saturating_sub(fade_delta);
-                if self.fade < FADE_INPUT_THRESHOLD {
+                if self.fade < FADE_DISPATCH_THRESHOLD {
                     self.phase = SavePhase::Dispatch;
                 }
                 Vec::new()
@@ -343,8 +376,11 @@ impl SaveScreenMachine {
                 effects
             }
             SavePhase::FadeOut => {
-                self.fade = self.fade.saturating_sub(fade_delta);
-                if self.fade == 0 {
+                // The fade-out ramps back *up* to opaque; retail's exiting
+                // screen flips the fade delta positive and the fade-out
+                // state completes on `fade >= 0xF2`, not on zero.
+                self.fade = self.fade.saturating_add(fade_delta).min(FADE_OPAQUE);
+                if self.fade >= FADE_OPAQUE {
                     self.phase = SavePhase::Done;
                 }
                 Vec::new()
@@ -382,7 +418,10 @@ impl SaveScreenMachine {
                 vec![SubScreenEffect::RunScript]
             }
             1 if !input.script_busy => {
-                self.fade = FADE_OPAQUE;
+                // Retail writes `0xF2` to the fade *delta*, not the fade
+                // level - it flips the ramp positive so the fade-out
+                // phase climbs back to opaque. Slamming the level here
+                // would end the fade-out on its first frame.
                 self.exit_code = Some(EXIT_CODE_NORMAL);
                 Vec::new()
             }
@@ -488,7 +527,8 @@ impl SaveScreenMachine {
                 _ => Vec::new(),
             },
             2 if !input.script_busy => {
-                self.fade = FADE_OPAQUE;
+                // As in `tick_final_exit`: the `0xF2` retail writes here
+                // is the fade delta, not the level.
                 self.exit_code = Some(EXIT_CODE_CONFIRMED);
                 Vec::new()
             }
@@ -523,8 +563,16 @@ impl SaveScreenMachine {
     /// Sub-screens `0x18` / `0x19`: the card drivers.
     ///
     /// The two are the same four-step machine; only the transfer
-    /// direction differs, which is why they share one implementation.
-    /// Both return to the slot selector when the transfer lands.
+    /// direction differs - retail passes it as the card driver's second
+    /// argument (`2` save, `1` load) - which is why they share one
+    /// implementation. Both return to the slot selector when the
+    /// transfer lands.
+    ///
+    /// One retail asymmetry is not modelled: the load driver's final
+    /// step re-tests a status word and leaves for the terminal screen
+    /// instead of the selector when it is clear, where the save driver
+    /// has no such branch. Modelling it needs an input this struct does
+    /// not carry, so the shared machine always takes the selector exit.
     ///
     /// PORT: FUN_801DAE24 (save), FUN_801DAEF4 (load)
     fn tick_card_driver(&mut self, input: SubScreenInput, op: CardOp) -> Vec<SubScreenEffect> {
@@ -564,6 +612,12 @@ impl SaveScreenMachine {
     /// after a scan finds a save block that is both present and valid.
     /// Failing that scan plays an error cue and leaves the screen where
     /// it is - retail does not fall through to a transition.
+    ///
+    /// The row-`2` exit fires *two* audio calls in retail - the same cue
+    /// entry point the other screens use, with id `0`, plus a second
+    /// routine with `0x37`. Only the `0x37` one is modelled here, since
+    /// [`SubScreenEffect::Sfx`] does not distinguish the two entry
+    /// points.
     ///
     /// PORT: FUN_801DAFD4
     fn tick_save_confirm(&mut self, input: SubScreenInput) -> Vec<SubScreenEffect> {
@@ -733,7 +787,10 @@ mod tests {
 
         m.tick(idle(), 0);
         assert_eq!(m.exit_code(), Some(EXIT_CODE_NORMAL));
-        assert_eq!(m.fade(), FADE_OPAQUE);
+        // The screen writes the fade *delta*, so the level is unchanged
+        // at the point the exit lands; the fade-out phase is what walks
+        // it back up to opaque.
+        assert!(m.fade() < FADE_DISPATCH_THRESHOLD);
         assert_eq!(m.phase(), SavePhase::FadeOut);
     }
 
@@ -1030,6 +1087,77 @@ mod tests {
         while !m.is_done() {
             m.tick(idle(), 0x20);
         }
-        assert_eq!(m.fade(), 0);
+        // The fade-out ends opaque, not transparent - it is the reverse
+        // of the fade-in, and retail's terminal state is reached by the
+        // level climbing back to `0xF2`.
+        assert_eq!(m.fade(), FADE_OPAQUE);
+    }
+
+    /// Backing out of the save UI opens on the save-confirm screen, and
+    /// that screen must be the *dispatchable* variant. Naming it as an
+    /// unpinned id would round-trip the number while comparing unequal
+    /// to `SaveConfirm`, so the dispatcher would park on a screen this
+    /// module implements.
+    #[test]
+    fn cancel_context_opens_a_dispatchable_save_confirm() {
+        let start = SaveEntryContext::Cancel.start_screen();
+        assert_eq!(start, SaveSubScreen::SaveConfirm);
+        assert_eq!(start.id(), 0x1A);
+        assert_eq!(start, SaveSubScreen::from_id(0x1A));
+        assert!(start.is_pinned());
+
+        // It really dispatches: step 0 stages and runs the display
+        // script rather than returning nothing.
+        let mut m = dispatching(SaveEntryContext::Cancel);
+        let effects = m.tick(idle(), 0);
+        assert!(effects.contains(&SubScreenEffect::RunScript), "{effects:?}");
+    }
+
+    /// Retail uses two distinct fade constants: pad input is unmasked
+    /// from `0x79` down, but the fade-in only hands over to dispatch
+    /// below `0x79`. Collapsing them into one would let dispatch start a
+    /// frame early.
+    #[test]
+    fn input_unmasks_one_level_before_dispatch_begins() {
+        assert_eq!(FADE_INPUT_THRESHOLD, 0x7A);
+        assert_eq!(FADE_DISPATCH_THRESHOLD, 0x79);
+
+        let mut m = SaveScreenMachine::new(SaveEntryContext::MenuSave);
+        m.tick(idle(), 0); // Init
+        // Land exactly on 0x79: input is already live, dispatch is not.
+        while m.fade() > 0x79 {
+            m.tick(idle(), 1);
+        }
+        assert_eq!(m.fade(), 0x79);
+        assert!(m.input_active());
+        assert_eq!(m.phase(), SavePhase::FadeIn);
+
+        m.tick(idle(), 1);
+        assert_eq!(m.phase(), SavePhase::Dispatch);
+    }
+
+    /// The fade-out climbs to opaque and stops there - it neither
+    /// overshoots nor completes on a transparent screen.
+    #[test]
+    fn fade_out_ramps_up_to_opaque_and_clamps() {
+        let mut m = dispatching(SaveEntryContext::MenuSave);
+        m.goto(SaveSubScreen::FinalExit);
+        m.tick(idle(), 0);
+        m.tick(idle(), 0);
+        assert_eq!(m.phase(), SavePhase::FadeOut);
+        // The exiting screen writes a delta, so the level is still the
+        // transparent one the dispatch phase ran at.
+        assert!(m.fade() < FADE_DISPATCH_THRESHOLD);
+
+        let mut seen = vec![m.fade()];
+        while !m.is_done() {
+            m.tick(idle(), 0x30);
+            seen.push(m.fade());
+        }
+        assert!(
+            seen.windows(2).all(|w| w[1] >= w[0]),
+            "not monotonic: {seen:?}"
+        );
+        assert_eq!(m.fade(), FADE_OPAQUE);
     }
 }
