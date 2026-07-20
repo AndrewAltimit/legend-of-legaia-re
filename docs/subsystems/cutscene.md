@@ -26,7 +26,7 @@ library. The FMV dispatch table is at `0x801D0A6C`.
 ## Contents
 
 - [Game modes](#game-modes) · [STR sector format](#str-sector-format)
-- [Retail playback engine](#retail-playback-engine-str-overlay--scus-st-streaming-library) - [master dispatch](#master-dispatch---fun_801cea3c-overlay) · [play loop](#play-loop---fun_801cf098-overlay) · [frame-demux SM](#frame-demux-state-machine-scus-st-library) · [ring layout](#ring-layout--slot-status) · [ring port](#engine-port---legaia_mdecst_ring) · [bitstream decode + MDEC feed](#bitstream-decode--mdec-feed-overlay)
+- [Retail playback engine](#retail-playback-engine-str-overlay--scus-st-streaming-library) - [master dispatch](#master-dispatch---fun_801cea3c-overlay) · [play loop](#play-loop---fun_801cf098-overlay) · [frame-demux SM](#frame-demux-state-machine-scus-st-library) · [ring layout](#ring-layout--slot-status) · [ring port](#engine-port---legaia_mdecst_ring) · [bitstream decode + MDEC feed](#bitstream-decode--mdec-feed-overlay) · [STRv2 VLC table](#strv2-vlc-lookup-table-fun_801f1a00) · [play-loop port](#engine-port---legaia_mdecstr_player)
 - [XA channel selection](#xa-channel-selection) · [XA audio](#xa-audio) · [A/V sync](#interleaved-cutscene-audio-av-sync)
 - [MDEC decoder (Iki bitstream)](#mdec-decoder-iki-bitstream) - [frame header](#1-frame-header-10-bytes) · [LZSS qscale/DC table](#2-lzss-qscaledc-table) · [AC bitstream](#3-ac-bitstream) · [dequantize + IDCT](#4-dequantize--idct) · [macroblock layout](#5-macroblock-layout) · [upsampling + colour](#6-420-upsampling--bt601-colour-conversion)
 - [Playback loop (`play-str`)](#playback-loop-play-str) · [frame-rate detection](#frame-rate-detection) · [CLI reference](#cli-reference)
@@ -245,10 +245,47 @@ end-frame path. Only bit 0 of `mode` is kept (`_DAT_801CAD98`), readable as `mod
 uses it for the sector-lost check and the DMA attribute word, both hardware-side, so the port only
 records it.
 
-`StRing` is **not wired** into the engine's playback path: `legaia_engine_core::cutscene` and
-`legaia-engine play-str` demux through `StrFrameAssembler`, and nothing outside the crate's own
-tests constructs a ring. It is the faithful reading of retail's back-pressure and seek behaviour
-and the oracle the assembler is checked against, not a live component.
+`StRing` is driven by [`legaia_mdec::str_player::StrPlayer`](#engine-port---legaia_mdecstr_player)
+and through it by `mdec decode-str`, which is what makes a *segment* of a movie playable off the
+CLI. The engine's own hosts (`legaia_engine_core::cutscene`, `legaia-engine play-str`) still demux
+through `StrFrameAssembler`, which stays the right tool where no back-pressure exists.
+
+### Engine port - `legaia_mdec::str_player`
+
+[`str_player`](../../crates/mdec/src/str_player.rs) is the layer between the ring and the
+bitstream decoder - the retail play loop minus its CD, DMA and GPU register pokes:
+
+| Retail | Port |
+|---|---|
+| `FUN_801CF098` play loop | `StrPlayer` + `seek_sector_offset` + `vram_units` + `display_rect` |
+| `FUN_801CF8B0` decode-env init | `DecodeEnv::init` |
+| `FUN_801CF988` ring + stream setup | `StrPlayer::open` |
+| `FUN_801CFA14` frame pump | `StrPlayer::next_frame` |
+| `FUN_801CFD84` MDEC output control word | `mdec_output_control` |
+| `FUN_801CFEBC` slice-callback (un)install | `DecodeEnv::set_slice_callback` |
+| `FUN_801CF56C` MDEC-out slice callback | `DecodeEnv::advance_slice` |
+
+Three details the port pins that a reading of the loop's shape alone would miss:
+
+- **The end frame is inclusive.** The latch is set inside the `StGetNext` wrapper `FUN_801CF740`
+  (`801cf788`) on the frame whose number *reaches* the slot's `+0x0C`, so that frame is decoded
+  and displayed before the loop exits.
+- **The code-buffer toggle runs before use** (`FUN_801CFA14` computes `ctx[8] = (ctx[8] == 0)` and
+  then indexes with the new value), so a movie's first frame decodes into buffer **1**, not 0.
+- **Signed MDEC output is unconditional.** The one `FUN_801CFD84` call site passes flags `3` for a
+  colour slot and `2` otherwise; bit 1 - the `0x02000000` signed-output bit - is set either way,
+  and only the `0x08000000` depth bit tracks the slot. That is the register-level counterpart of
+  the `+128` luma offset in [`MdecDecoder`](#6-420-upsampling--bt601-colour-conversion).
+
+Three ping-pongs run at different rates and are easy to conflate: the **MDEC code buffers**
+(`ctx+0x00`/`+0x04`) flip once per frame, the **frame rects** (`ctx+0x18`/`+0x20`) once per frame
+buffer, and the **slice staging buffers** (`ctx+0x0C`/`+0x10`) once per 16-pixel column.
+
+The slice cursor itself is a small state machine: each MDEC-out completion advances `ctx+0x2C` by
+one column (`0x18` VRAM cells at 24bpp, `0x10` at 16bpp), and when the cursor passes the active
+rect's right edge the two frame rects flip and the cursor restarts on the new origin. A buffer
+whose width is not a whole number of columns takes its remainder as the *leading* step, so the
+last column of every row lands flush on the right edge.
 
 ### Bitstream decode + MDEC feed (overlay)
 
@@ -260,7 +297,27 @@ is selected by `DAT_801E09FC`:
   control-byte LSB-first, length `+3`, 1/2-byte offsets) and converts the AC-only bitstream using
   the GTE leading-zero-count register as the VLC prefix scanner.
 - **STRv2/v3** (`FUN_801D070C`, dev slots 9/10 only): standard VLC with per-block DC deltas,
-  lookup table unpacked at runtime by `FUN_801F1A00` into `DAT_801E0A00`.
+  lookup table unpacked at runtime by `FUN_801F1A00` into `DAT_801E0A00`. The play loop calls the
+  unpacker **unconditionally**, once per FMV (`801cf210`), even for Iki slots that never read the
+  table. Port: [`legaia_mdec::strv2_table`](../../crates/mdec/src/strv2_table.rs), reachable as
+  `mdec strv2-table <overlay>`; no decoder in the port consumes the table yet, because no retail
+  movie uses this path. See [STRv2 VLC table](#strv2-vlc-lookup-table-fun_801f1a00).
+
+#### STRv2 VLC lookup table (`FUN_801F1A00`)
+
+The table is `0x8800` `u16` entries (`0x11000` bytes) at `0x801E0A00`, ending flush against
+`FUN_801F1A00` itself - the abutment is what pins the size, and it matches the `0x87FF` loop bound
+at `801f1ab8`. It is unpacked in two passes from a compressed blob at `0x801F1AE8`, the bytes
+immediately after the unpacker:
+
+1. **Mode-switched LZ77.** A control byte `< 0xF0` emits `n + 1` bytes; `0xF0` selects literal
+   mode; `0xF1..=0xFF` reads one more byte and sets the match distance to
+   `((b << 8) | next) - 0xF0FF`. The distance is *sticky* - it survives across control bytes until
+   the next escape - and copies are byte-at-a-time, so they may overlap. `0xFF 0xFF` ends the
+   stream (distance `0xF00`).
+2. **XOR de-delta at a four-entry stride**: `out[i] ^= out[i - 4]` for every `u16` index
+   `4..=0x87FF`. The eight-byte lag is the table's own record width, which is what makes the table
+   compress at all.
 
 The MDEC feed is register-level in the overlay: `FUN_801CFD84` sets the 24bpp/16bpp control bits
 and starts the DMA-0 code upload (`FUN_801CFFDC`); the MDEC-out slice callback `FUN_801CF56C`
@@ -594,10 +651,11 @@ id, so an FMV cannot carry teleport or story-flag side-effects of its own.
 LZS-compressed section. Every code-bearing class in `PROT/categorize.json`
 (`mips_overlay`, `overlay_data_blob`, `overlay_ptr_table`) is stored uncompressed,
 so no overlay hides there - but that last step is an inference from the
-classifier, not a decode. Separately, `legaia_asset::fmv_dispatch` accounts for 20
-of each slot's 32 bytes (path pointer, `scale_flag`, start/end frame, width,
-height); the remaining 12 bytes have **not** been swept for consumers, so
-"the dispatch record is playback-only" stays an inference on that margin.
+classifier, not a decode. The dispatch record itself is no longer an open margin:
+every one of the slot's eight words is read by the play loop and by nothing else -
+see [the consumer sweep](../formats/str-fmv-table.md#every-word-of-the-record-is-a-play-loop-input).
+`legaia_asset::fmv_dispatch` keeps six of the eight; the two it drops (`fb_x`,
+`fb_y`) are the decode rect's VRAM origin, resolved in `legaia_mdec::str_player`.
 
 The field-VM port handles this op as `op4c_n_e_sub2_fmv_trigger(fmv_id: i16)` in [`legaia_engine_vm::field`](../../crates/engine-vm/src/field.rs) and the world's [`FieldHostImpl`](../../crates/engine-core/src/world.rs) records the request as `World::pending_fmv_trigger` plus a `FieldEvent::FmvTrigger { fmv_id }`.
 

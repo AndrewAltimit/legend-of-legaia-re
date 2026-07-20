@@ -1453,6 +1453,7 @@ dependencies = [
  "anyhow",
  "clap",
  "legaia-iso",
+ "legaia-prot",
  "libc",
  "png",
 ]

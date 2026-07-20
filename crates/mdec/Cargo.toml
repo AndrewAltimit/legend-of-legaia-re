@@ -19,6 +19,7 @@ png = "0.17"
 
 [dev-dependencies]
 legaia-iso = { path = "../iso" }
+legaia-prot = { path = "../prot" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
