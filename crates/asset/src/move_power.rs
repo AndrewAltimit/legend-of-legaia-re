@@ -25,11 +25,24 @@
 //!
 //! So each record is **26 bytes** and its first field (`+0`, signed 16-bit) is
 //! the move's **power**, which the kernel uses as `rand % (((i16)power >> 2) + 1)`.
-//! (`FUN_801dd0ac` also reads `+0` as the half `>> 1` and full `>> 0` values for
-//! the same move, so `+0` is the base power used at full / half / quarter
-//! scale. There is only the one damage kernel - `0x801f3990` is a *different*
-//! function that reads no field of this record; see the note on
-//! `MOVE_POWER_TABLE_VA`.)
+//!
+//! `FUN_801dd0ac` reads `+0x00` at **three** sites and derives four different
+//! shifts from them, and the shifts are not all used the same way - two are roll
+//! moduli, two are additive damage terms:
+//!
+//! | read | derived | at | role |
+//! |---|---|---|---|
+//! | `0x801dd1c0` | `>> 2` | `0x801dd1cc` (`sll 0x10; sra 0x12`) | roll modulus (`rand % (x + 1)`, `div` at `0x801dd1d4`) |
+//! | `0x801dd1c0` | `>> 0` | `0x801dd240` (`sra 0x10` on the same `<<16` value) | additive damage term (`addu` at `0x801dd254`) |
+//! | `0x801dd38c` | `>> 1` | `0x801dd39c` (`sll 0x10; sra 0x11`) | additive threshold term (`addu` at `0x801dd3a0`) |
+//! | `0x801dd3cc` | `>> 3` | `0x801dd3d8` (`sll 0x10; sra 0x13`) | roll modulus (`div` at `0x801dd3e0`) |
+//! | `0x801dd3cc` | `>> 1` | `0x801dd448` (`sra 0x11` on the same `<<16` value) | additive damage term (`addu` at `0x801dd454`) |
+//!
+//! There is no `>> 2`-only "quarter scale" reading and no single full/half/quarter
+//! ladder: the `>> 0` and `>> 1` values are *summed into* the damage accumulator,
+//! while `>> 2` and `>> 3` bound `rand`. There is only the one damage kernel -
+//! `0x801f3990` is a *different* function that reads no field of this record; see
+//! the note on `MOVE_POWER_TABLE_VA`.
 //!
 //! ## `param_1` is a *mapped* index, not the raw move id
 //!
@@ -68,8 +81,9 @@
 //!
 //! The per-move record is consumed by three battle-action functions:
 //!
-//! - `FUN_801dd0ac` (the damage kernel) reads **only `+0x00`** (power) at full /
-//!   half / quarter scale. It is the *only* damage kernel over this table.
+//! - `FUN_801dd0ac` (the damage kernel) reads **only `+0x00`** (power), at three
+//!   load sites yielding the `>>0/1/2/3` shifts tabulated above. It is the *only*
+//!   damage kernel over this table.
 //! - `FUN_801dea50` (action setup) computes the record address **once**
 //!   (`&DAT_801f4f5c + map[actor+0x1df]*0x1a`) and stashes it in the per-battle
 //!   context at `ctx+0x1014` (`sw v0,0x1014(a0)` at `0x801df284`), then seeds
@@ -84,29 +98,54 @@
 //! catches a *base-folded* reader, where `+0x0c` is folded into the `addiu` and
 //! the load displacement reads `0`), the `×26` index chain, the `ctx+0x1014`
 //! stashed pointer with offset-tracking propagation, and table-address words
-//! resident in data. The table base `0x801f4f5c` is materialised at exactly two
-//! sites corpus-wide - `0x801dd1a0` (`FUN_801dd0ac`) and `0x801df27c`
+//! resident in data. The table base `0x801f4f5c` is materialised at **three**
+//! sites - `0x801dd1a0` and `0x801dd36c` (both `FUN_801dd0ac`) and `0x801df27c`
 //! (`FUN_801dea50`) - and no reference lands at a shifted offset.
+//!
+//! `0x801dd36c` is the one a linear `lui`+`addiu` pair matcher misses: its `lui`
+//! sits in the **branch delay slot** at `0x801dd2f8`, belonging to the
+//! `bne s0,v0,0x801dd36c` at `0x801dd2f4` whose target *is* the `addiu`. The two
+//! halves are 0x74 bytes apart with `a0` clobbered in between along the
+//! fall-through path, so only the taken-branch path pairs them. This does not
+//! move the `+0x0c` negative - the third site indexes the same base with the same
+//! `×26` chain and reads `+0x00` - but it is a real hole in any pairing heuristic
+//! that assumes `lui`/`addiu` are adjacent.
 //! `docs/formats/move-power.md` carries the coverage bound: which images were
 //! swept, and why the ones that were not cannot host a reader.
 //!
-//! ## Decoded record fields (each code-traced to a battle-action reader)
+//! ## Decoded record fields (each traced to a battle-action **load instruction**)
 //!
-//! | off | type | meaning | confidence | reader (`overlay_battle_action_*`) |
+//! Every citation below is the VA of the load that reads the field, so it can be
+//! checked against the overlay image byte-for-byte. Except for `+0x00` (read by
+//! `FUN_801dd0ac` off the freshly-indexed base) and `+0x04` (read by
+//! `FUN_801dea50` at the moment it stashes the pointer), every load is off the
+//! `ctx+0x1014` held record pointer.
+//!
+//! | off | load | meaning | confidence | reader VAs |
 //! |---|---|---|---|---|
-//! | `+0x00` | `i16` | **power** - roll modulus (used `>>0/1/2` at full/half/quarter) | Confirmed | `_801dd0ac.txt:299/343/388` |
-//! | `+0x02` | `i16` | **strike-position Y offset** - subtracted from the per-arm Y lane (`ctx + arm*8 + 0x1146`) when the hit point is seeded from the target | Inferred | `_801e09f8.txt:1181/1363` |
-//! | `+0x04` | `u16` | **whole-move timing counter** → `ctx+0x6c6`, decremented per frame | Confirmed | `_801dea50.txt:937` |
-//! | `+0x06` | `u16` | **per-arm phase duration** → `ctx + arm*2 + 0x6c6` at the strike/re-arm transitions | Inferred | `_801e09f8.txt:1175/1357` |
-//! | `+0x08` | `u8` | **homing / approach speed** - scales the per-frame XY step toward the target (`* DAT_1f800393 * 8`); `0x40 - x` reseeds the approach counter | Inferred | `_801e09f8.txt:1277/1282/1316` |
-//! | `+0x09` | `u8` | **flag: effect tracks the strike** - when set, the live XY is copied into the spawned effect each frame | Confirmed reader | `_801e09f8.txt:1319` |
-//! | `+0x0a` | `u8` | **impact-effect selector** (enum 1..5) - stored at `actor+0x21f`, indexes the 5-entry packed-config table at `0x801f53d4` (`(x-1)*4`) into `actor+0x04`, and switches (3/4/5) extra status-proc rolls | Confirmed reader | `_801e09f8.txt:1412/1416/1420/1422` |
-//! | `+0x0b` | `u8` | **trail / afterimage texture-page id** - passed to the streak draw helpers; becomes the GP0 texpage word `0x7700 + id` | Confirmed | `_801e09f8.txt:1244` → `_801e1ab0.txt:250` |
-//! | `+0x0c` | `u8` | **designer category tag** - non-zero only on internal-tier records 1/2/3 (`'C'`), 9 (`'E'`), 12/15 (`'G'`); **no runtime reader** in SCUS or any extracted overlay (unused at runtime) | Unknown (no reader) | - |
-//! | `+0x0d` | `u8` | **sound / voice cue id** → `FUN_8004fcc8` | Confirmed | `_801e09f8.txt:1452` |
-//! | `+0x0e` | `u8` | **list-mode flag / effect-list head** - `0xFF` broadcasts the trail to all four arms; otherwise the head of a small id list the setup loop spawns | Confirmed reader | `_801e09f8.txt:1239`, `_801dea50.txt:983/1007` |
-//! | `+0x12` | `[u8;4]` | **on-contact effect-id list** (`0`/`0xFF`-terminated) dispatched via `0x801f6324`/`0x801f6418` on the hit branch | Confirmed | `_801e09f8.txt:1162/1285/1312/1335` |
-//! | `+0x16` | `[u8;4]` | **launch-strike effect-id list** - same dispatch as `+0x12`, fired at the initial-strike transition | Confirmed | `_801e09f8.txt:1182/1224/1364/1406/1506` |
+//! | `+0x00` | `lhu` | **power** - see the shift table above (`>>2`/`>>3` bound `rand`, `>>0`/`>>1` are additive) | Confirmed | `0x801dd1c0`, `0x801dd38c`, `0x801dd3cc` |
+//! | `+0x02` | `lhu` | **strike-position Y offset** - subtracted from the per-arm Y lane (`ctx + arm*8 + 0x1146`) and stored back, when the hit point is seeded from the target | Inferred | `0x801e0dc4`, `0x801e13b8` |
+//! | `+0x04` | `lhu` | **whole-move timing counter** → `sh` to `ctx+0x6c6`, decremented per frame | Confirmed | `0x801df288` (store `0x801df290`) |
+//! | `+0x06` | `lhu` | **per-arm phase duration** → `sh` to `ctx + arm*2 + 0x6c6` at the strike / re-arm transitions | Inferred | `0x801e0d70` (store `0x801e0d78`), `0x801e1360` |
+//! | `+0x08` | `lbu` | **homing / approach speed** - scales the per-frame XY step toward the target (`* DAT_1f800393 * 8`); `0x40 - x` reseeds the approach counter | Inferred | `0x801e1018`, `0x801e1074`, `0x801e1274` |
+//! | `+0x09` | `lbu` | **flag: effect tracks the strike** - when set, the live XY is copied into the spawned effect each frame | Confirmed reader | `0x801e10d4` |
+//! | `+0x0a` | `lbu` | **impact-effect selector** (enum 1..5) - stored at `actor+0x21f`, indexes the 5-entry packed-config table at `0x801f53d4` (`(x-1)*4`) into `actor+0x04`, and switches (3/4/5) extra status-proc rolls | Confirmed reader | `0x801e1584`, `0x801e15c0`, `0x801e15f8` |
+//! | `+0x0b` | `lbu` | **trail / afterimage texture-page id** - passed to the streak draw helpers; becomes the GP0 texpage word `0x7700 + id` | Confirmed | `0x801e0ca0` (→ `jal 0x801e1ab0`, word formed at `0x801e1d54`), `0x801e0cd0` (→ `jal 0x801e1d98`) |
+//! | `+0x0c` | - | **designer category tag** - non-zero only on internal-tier records 1/2/3 (`'C'`), 9 (`'E'`), 12/15 (`'G'`); **no runtime reader** in SCUS or any extracted overlay (unused at runtime) | Unknown (no reader) | none |
+//! | `+0x0d` | `lbu` | **sound / voice cue id** → `FUN_8004fcc8` | Confirmed | `0x801e184c` (→ `jal 0x8004fcc8` at `0x801e1854`) |
+//! | `+0x0e` | `lbu` | **list-mode flag / effect-list head** - `0xFF` broadcasts the trail to all four arms; otherwise the head of a small id list the setup loop spawns | Confirmed reader | `0x801e0c54` (`0xFF` test at `0x801e0c58`); `0x801df408`, `0x801df4fc` (the indexed setup walk) |
+//! | `+0x12` | `lbu` | **on-contact effect-id list** (`0`/`0xFF`-terminated) dispatched via `0x801f6324`/`0x801f6418` on the hit branch | Confirmed | `0x801e0d00`, `0x801e114c`, `0x801e1250`, `0x801e12ac` |
+//! | `+0x16` | `lbu` | **launch-strike effect-id list** - same dispatch as `+0x12`, fired at the initial-strike transition | Confirmed | `0x801e0ddc`, `0x801e0f54`, `0x801e13d0`, `0x801e1550`, `0x801e1800` |
+//!
+//! The `+0x12` / `+0x16` sites that index the list (`0x801e1250`, `0x801e12ac`,
+//! `0x801e0f54`, `0x801e1550`, `0x801e1800`, and `0x801df4fc` for `+0x0e`) are
+//! preceded by `addu` of a loop counter onto the record pointer - that is what
+//! makes these fields *lists* rather than single bytes.
+//!
+//! Note `+0x02` is loaded with `lhu`, not a sign-extending `lh`; the accessor
+//! [`MoveRecord::strike_y_offset`] exposes it as `i16` for display, and the
+//! difference is unobservable in the halfword subtract-and-store the runtime does
+//! with it.
 //!
 //! The effect-id lists `+0x12`/`+0x16` index two auxiliary tables that live in
 //! the same overlay right after the power table - `0x801f6324` (effect
@@ -140,8 +179,9 @@ pub const BATTLE_ACTION_OVERLAY_PROT_INDEX: usize = 898;
 
 /// Runtime virtual address the table is loaded to (the `FUN_801dd0ac` base).
 ///
-/// This base is materialised at exactly two sites in the whole disassembled
-/// corpus - `0x801dd1a0` in `FUN_801dd0ac` and `0x801df27c` in `FUN_801dea50`.
+/// This base is materialised at three sites in the whole disassembled corpus -
+/// `0x801dd1a0` and `0x801dd36c` in `FUN_801dd0ac` (the latter's `lui` is in the
+/// delay slot at `0x801dd2f8`) and `0x801df27c` in `FUN_801dea50`.
 /// `0x801f3990` is **not** a third consumer and **not** a second damage kernel:
 /// in the resident battle overlay (PROT 0898, base [`BATTLE_OVERLAY_BASE`], file
 /// `0x25178`) that address is a clean function prologue (`addiu sp,sp,-0x20`)
@@ -250,8 +290,11 @@ pub struct MoveRecord {
 }
 
 impl MoveRecord {
-    /// The roll-modulus base `FUN_801dd0ac` derives from `+0`: `(i16)power >> 2`
-    /// (arithmetic shift - preserves sign).
+    /// The first roll-modulus base `FUN_801dd0ac` derives from `+0`:
+    /// `(i16)power >> 2` (arithmetic shift - preserves sign), from the load at
+    /// `0x801dd1c0` / shift at `0x801dd1cc`. The kernel's second roll uses
+    /// `>> 3` and its two additive terms use `>> 1` / `>> 0`; this accessor is
+    /// the `>> 2` one because it is the modulus on the primary branch.
     pub fn power(&self) -> i32 {
         (self.power_raw as i32) >> 2
     }
@@ -262,10 +305,12 @@ impl MoveRecord {
         u16::from_le_bytes([self.raw[4], self.raw[5]])
     }
 
-    /// `+0x02` `i16` - strike-position **Y offset**: subtracted from the per-arm
-    /// Y lane (`ctx + arm*8 + 0x1146`) when the move's hit point is seeded from
-    /// the target's position (`801e09f8`). Inferred semantic; the read is
-    /// confirmed.
+    /// `+0x02` - strike-position **Y offset**: subtracted from the per-arm Y lane
+    /// (`ctx + arm*8 + 0x1146`) and stored back, when the move's hit point is
+    /// seeded from the target's position (loads at `0x801e0dc4` / `0x801e13b8`,
+    /// `subu` at `0x801e0dcc` / `0x801e13c0`). Retail loads it with `lhu`; this
+    /// accessor reports `i16` for display, which the halfword subtract-and-store
+    /// makes indistinguishable. Inferred semantic; the read is confirmed.
     pub fn strike_y_offset(&self) -> i16 {
         i16::from_le_bytes([self.raw[2], self.raw[3]])
     }
@@ -485,7 +530,12 @@ pub fn record_for_move_id<'a>(
 
 /// One decoded entry of a record's `+0x12` (on-contact) / `+0x16` (launch)
 /// effect-id list, classified exactly as the `FUN_801e09f8` dispatch loop reads
-/// the byte (`overlay_battle_action_801e09f8.txt:1182..1225` / `1285..1312`).
+/// the byte. The two loops are the `+0x16` walk entered at the list load
+/// `0x801e0f54` and the `+0x12` walk entered at `0x801e1250`; both reach the same
+/// arms - the `0x80`-bit route `jal 0x801dfdf0` (`0x801e0e2c`, `0x801e1198`,
+/// `0x801e142c`), the prototype table `0x801f6324` (materialised at `0x801e0ea8`,
+/// `0x801e120c`, `0x801e14a8`) and its SFX sibling `0x801f6418` (`0x801e0e4c`,
+/// `0x801e11b0`, `0x801e144c`).
 ///
 /// Both lists dispatch their bytes identically - the only difference is *when*
 /// they fire (on contact vs at the launch transition).
@@ -773,9 +823,12 @@ pub fn parse_effect_proto_records(
 /// fails the move-power structural guard.
 ///
 /// Beyond the pointer, `FUN_801e09f8` rolls a per-impact status proc keyed on the
-/// selector (`overlay_battle_action_801e09f8.txt:1422..1447`): selector `3` has a
-/// `1/8` chance (`rand & 7 == 0`) to set the actor's status bit `0` (`+0x16e |
-/// 1`), selector `4` the same odds for bit `1` (`| 2`), and selector `5` rolls
+/// selector, dispatched from the `+0x0a` load at `0x801e15f8`: selector `3`
+/// (`beq` at `0x801e1610` → `0x801e1630`) has a `1/8` chance (`andi 7` /
+/// `bne` at `0x801e1638`) to set the actor's status bit `0` (`ori 1` at
+/// `0x801e1654`, `sh` to `+0x16e` at `0x801e165c`); selector `4` (`beq` at
+/// `0x801e1600` → `0x801e1660`) has the same odds for bit `1` (`ori 2` at
+/// `0x801e1684`); selector `5` (`beq` at `0x801e1620` → `0x801e1690`) rolls
 /// `rand % 3` to set one of bits `3..=5` on the *target* (gated on the target's
 /// character-record immunity flags). Selectors `1`/`2` carry no extra roll.
 pub fn parse_impact_effect_table(

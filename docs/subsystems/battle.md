@@ -973,9 +973,10 @@ Stride `0x414` bytes per character, base `0x80084708` (so character `n` lives at
 
 | Offset | Use |
 |---|---|
+| `+0x08..+0x98` | u32 per-spell counter array (stride 4), maintained in lockstep with the two byte arrays below. See [the three parallel spell arrays](#the-three-parallel-spell-arrays). |
 | `+0x13C` | u8 spell-list count. |
 | `+0x13D..+0x160` | u8 spell IDs (variable-length; up to 36). |
-| `+0x161..+0x184` | u8 parallel spell-level / experience array. |
+| `+0x161..+0x184` | u8 per-spell **level / rank** (one byte per entry, same index as `+0x13D`). Floored to `1` when a spell is learned; magic-rank up writes `+1` here. |
 | `+0x196..+0x19D` | u8 equipment slot bytes (8 slots; weapon, armour, accessories). |
 | `+0x2A7..+0x2B0` | NUL-padded ASCII display name (`Vahn`/`Noa`/`Gala`/`Terra`/player-entered lead), 9 bytes bounded by the active-spell table at `+0x2B0`. Pinned across six in-game RAM captures for all four roster slots. In the retail SC save block this lands at `game+0x66F + n*0x414` (SC `+0x86F` for slot 0); see [`save-screen.md`](save-screen.md). Accessor `legaia_save::CharacterRecord::name` (`NAME_OFFSET`). |
 | `+0x2B0..+0x37F` | Active spell-slot array (stride `0x14`, up to N entries). Populated by `FUN_80042DBC` from the spell list. |
@@ -985,7 +986,51 @@ Stride `0x414` bytes per character, base `0x80084708` (so character `n` lives at
 | `+0x11A` | Stat-cap field (clamped to `0x3E7`). |
 | `+0x11C..+0x122` | Six adjacent stat bytes (paired) - incremented by small deltas (`+1..+4`) on level-up. Likely the per-stat rank table consumed by the level-up apply path. |
 | `+0x130` | u8 - the **displayed character level** (the byte the status screen reads as "LV"; the `Level 99` cheat target), incremented `+1` per level-up event. See [save-record.md](../formats/save-record.md#0x130-is-the-displayed-character-level). |
-| `+0x161..+0x184` | u8 spell-level array (one byte per spell id; stride matches spell list). Magic-rank up writes here (delta `+1` per learned spell). |
+
+### The three parallel spell arrays
+
+The character record carries a spell list as **three** arrays at the same index,
+not two, and an earlier revision of the table above listed `+0x161..+0x184` twice
+- once as a "spell-level / experience" array and once as a "spell-level" array.
+Both rows described `+0x161` correctly as far as the *level* goes; the
+"experience" half was real data attributed to the wrong offset.
+
+`FUN_800432BC` (learn a spell - insert at the head of the list) settles it. It
+shifts all three arrays up by one in the same loop at `0x80043338..0x80043370`,
+then writes the new entry at index 0:
+
+| Array | Stride | Shift loop | Insert store |
+|---|---|---|---|
+| `+0x13D` spell id | 1 | `lbu 0x13d` `0x80043344` → `sb 0x13d` `0x8004334C` | `sb t3,0x13d(t0)` at `0x80043378` |
+| `+0x161` level | 1 | `lbu 0x161` `0x80043350` → `sb 0x161` `0x80043358` | `sb t1,0x161(t0)` at `0x8004337C` |
+| `+0x08` counter | 4 | `lw 0x8` `0x80043364` → `sw 0x8` `0x80043370` | `sw t2,0x8(t0)` at `0x80043380` |
+
+The count at `+0x13C` is incremented last (`0x80043384` / `0x8004338C`).
+
+Two details separate the byte from the word. The level byte `t1` is read from the
+source spell-slot at `+0x2B5` and **floored to a minimum of 1** (`bne t1,zero` at
+`0x8004331C`, `addiu t1,t1,0x1` at `0x80043324`) - a rank starts at 1, which is
+level semantics and not counter semantics. The u32 `t2` is *assembled* from four
+separate bytes of that same slot, `+0x2B1..+0x2B4`
+(`0x800432F8..0x8004331C`, shifted `<<24/<<16/<<8` and summed), which is the
+shape of an accumulating counter and not of a 1-byte rank.
+
+`FUN_80042DBC` moves the same data the other way, writing `+0x161` back out to
+the slot byte `+0x2B5` (`lbu 0x161` at `0x80042E64` → `sb 0x2b5` at
+`0x80042E6C`), and runs the mirror-image compaction loop at
+`0x80042E84..0x80042E9C` when an entry is removed.
+
+The captured magic-rank-up deltas agree independently: the same event moves
+`+0x161` by `+1` (`0x02 → 0x03`, a rank) and `+0x08` by `+12`
+(`0x30 → 0x3C`, an accumulation). The extent lines up too - 36 entries at stride
+4 from `+0x08` ends at `+0x98`, immediately before the magic-rank counter at
+`+0x9C`.
+
+What the `+0x08` counter *counts* is Inferred, not Confirmed: the disassembly
+pins its structure, lifetime and stride, and the capture pins one `+12` delta on
+a rank-up, but no site was traced that consumes it to decide a threshold. The
+"experience" reading is plausible and is the likeliest origin of the old row's
+wording - it is recorded here as a lead, not as a decoded field.
 
 ### Why the pair order is `(max, cur)`
 
@@ -1027,7 +1072,7 @@ Noa and Gala records are byte-identical across the same pair - the level-up even
 
 | Offset | Width | Pre → Post | Interpretation |
 |---|---|---|---|
-| `+0x08` | u8 | `0x30` → `0x3C` (+12) | Flag word - specific bit TBD. |
+| `+0x08` | u32 | `0x30` → `0x3C` (+12) | `spell_counter[0]` - entry 0 of the per-spell u32 array, not a flag word ([why](#the-three-parallel-spell-arrays)). |
 | `+0x9C` | u8 | `0x09` → `0x0A` (+1) | Magic-rank mirror. |
 | `+0x10A` | u16 lo | `0x1B` → `0x11` (-10) | MP **current** (the `+0x108`/`+0x10A` pair) - the cast that earned the rank-up. Not a TBD field. |
 | `+0x161` | u8 | `0x02` → `0x03` (+1) | Spell-level byte (`+0x161..+0x184` array). Confirms magic-rank up writes here. |
@@ -1460,7 +1505,7 @@ The `mednafen-state diff` toolkit ([`docs/tooling/mednafen-automation.md`](../to
 
 | Event | Offset | Before → After | Interpretation |
 |---|---|---|---|
-| Magic-rank up (pre → post) | `+0x08` | `0x30 → 0x3C` | flag word low byte (+12) |
+| Magic-rank up (pre → post) | `+0x08` | `0x30 → 0x3C` | `spell_counter[0]` (+12), the u32 array entry - not a flag word |
 | Magic-rank up | `+0x9C` | `0x09 → 0x0A` | magic-rank counter (+1) |
 | Magic-rank up | `+0x10A` | `0x1B → 0x11` | low byte of `mp_cur` (cast cost spent) |
 | Magic-rank up | `+0x161` | `0x02 → 0x03` | spell-level array (`spell_levels[0]` +1) |

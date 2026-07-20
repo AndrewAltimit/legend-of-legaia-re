@@ -176,19 +176,42 @@ consumer touches are exactly `+0x00,02,04,06,08,09,0a,0b,0d,0e,12,16`, and
 
 | Off | Type | Field | Meaning | Confidence |
 |---|---|---|---|---|
-| `+0x00` | `i16` | power | Damage roll modulus. The kernel uses it at full / half / quarter scale (`>>0`, `>>1`, `>>2`). | Confirmed |
-| `+0x02` | `i16` | strike Y offset | Subtracted from the per-arm Y lane (`ctx + arm*8 + 0x1146`) when the move's hit point is seeded from the target's position. | Inferred (read confirmed) |
-| `+0x04` | `u16` | move counter | The whole-move timing counter, seeded into `ctx+0x6c6` and decremented each frame. | Confirmed |
-| `+0x06` | `u16` | phase duration | Per-arm phase duration written to `ctx + arm*2 + 0x6c6` at the strike / re-arm transitions (distinct from `+0x04`). | Inferred (read confirmed) |
-| `+0x08` | `u8` | homing speed | Scales the per-frame XY step toward the target (`* DAT_1f800393 * 8`); `0x40 - speed` reseeds the approach counter. | Inferred (read confirmed) |
-| `+0x09` | `u8` | effect-tracks-strike flag | When non-zero, the move's live XY is copied into the spawned effect actor each frame (the effect follows the strike). | Confirmed (read); semantic Inferred |
+| `+0x00` | `i16` | power | Damage magnitude. `FUN_801dd0ac` reads it at `0x801dd1c0` / `0x801dd38c` / `0x801dd3cc` and derives four shifts - see [power shifts](#the-four-power-shifts). | Confirmed |
+| `+0x02` | `u16` (`lhu`) | strike Y offset | Subtracted from the per-arm Y lane (`ctx + arm*8 + 0x1146`) and stored back, when the move's hit point is seeded from the target's position. Loads `0x801e0dc4`, `0x801e13b8`. | Inferred (read confirmed) |
+| `+0x04` | `u16` | move counter | The whole-move timing counter, seeded into `ctx+0x6c6` and decremented each frame. Load `0x801df288`, store `0x801df290`. | Confirmed |
+| `+0x06` | `u16` | phase duration | Per-arm phase duration written to `ctx + arm*2 + 0x6c6` at the strike / re-arm transitions (distinct from `+0x04`). Loads `0x801e0d70`, `0x801e1360`. | Inferred (read confirmed) |
+| `+0x08` | `u8` | homing speed | Scales the per-frame XY step toward the target (`* DAT_1f800393 * 8`); `0x40 - speed` reseeds the approach counter. Loads `0x801e1018`, `0x801e1074`, `0x801e1274`. | Inferred (read confirmed) |
+| `+0x09` | `u8` | effect-tracks-strike flag | When non-zero, the move's live XY is copied into the spawned effect actor each frame (the effect follows the strike). Load `0x801e10d4`. | Confirmed (read); semantic Inferred |
 | `+0x0a` | `u8` | impact-effect selector | Enum (typically 1..5): stored at `actor+0x21f`, indexes the 5-entry packed-config table at `0x801f53d4` (`(value-1)*4`) into `actor+0x04`, and values 3/4/5 branch to extra status-proc rolls. `0` = none. The table holds packed `u32` config words (`0x3FF`-masked lanes), not pointers. | Confirmed (read); enum naming Inferred |
-| `+0x0b` | `u8` | trail texture page | Trail / afterimage sprite-page id; the streak draw helper turns it into the GP0 texpage word `0x7700 + id` (`overlay_battle_action_801e1ab0.txt:250`). | Confirmed |
+| `+0x0b` | `u8` | trail texture page | Trail / afterimage sprite-page id; the streak draw helper turns it into the GP0 texpage word `0x7700 + id` at `0x801e1d54`, reached by the `jal 0x801e1ab0` at `0x801e0ca4`; the field's own loads are `0x801e0ca0` and `0x801e0cd0`). | Confirmed |
 | `+0x0c` | `u8` | designer tag | A `'C'/'E'/'G'/0` annotation baked into the data on the internal-tier records (1/2/3 = `C`, 9 = `E`, 12/15 = `G`) only. **No runtime reader** - see [the no-reader sweep](#the-0x0c-no-reader-sweep) for what that covers. | Unknown (no reader) |
-| `+0x0d` | `u8` | sound cue id | Handed to the UI/voice cue dispatcher `FUN_8004fcc8`. | Confirmed |
-| `+0x0e` | `u8` | effect-list head | Head of the move's effect-id list. The two consumers frame the list differently - see [effect-list framing](#effect-list-framing) below. | Confirmed (read); framing Confirmed per-consumer |
-| `+0x12` | `[u8;4]` | on-contact effects | Effect-id list dispatched on the hit branch (`0x00`/`0xFF`-terminated). | Confirmed |
-| `+0x16` | `[u8;4]` | launch effects | Effect-id list dispatched at the initial-strike transition; same dispatch as `+0x12`. | Confirmed |
+| `+0x0d` | `u8` | sound cue id | Handed to the UI/voice cue dispatcher `FUN_8004fcc8` (load `0x801e184c`, `jal` `0x801e1854`). | Confirmed |
+| `+0x0e` | `u8` | effect-list head | Head of the move's effect-id list. Loads `0x801e0c54` (`0xFF` test at `0x801e0c58`), `0x801df408`, `0x801df4fc`. The two consumers frame the list differently - see [effect-list framing](#effect-list-framing) below. | Confirmed (read); framing Confirmed per-consumer |
+| `+0x12` | `[u8;4]` | on-contact effects | Effect-id list dispatched on the hit branch (`0x00`/`0xFF`-terminated). Loads `0x801e0d00`, `0x801e114c`, `0x801e1250`, `0x801e12ac`. | Confirmed |
+| `+0x16` | `[u8;4]` | launch effects | Effect-id list dispatched at the initial-strike transition; same dispatch as `+0x12`. Loads `0x801e0ddc`, `0x801e0f54`, `0x801e13d0`, `0x801e1550`, `0x801e1800`. | Confirmed |
+
+### The four power shifts
+
+`FUN_801dd0ac` reads `+0x00` at three load sites and derives four shifts from
+them. They are not one full/half/quarter ladder: two bound a random roll, two are
+summed straight into the damage accumulator.
+
+| load | derived | shift site | role |
+|---|---|---|---|
+| `0x801dd1c0` | `>> 2` | `0x801dd1cc` (`sll 0x10; sra 0x12`) | roll modulus, `div` at `0x801dd1d4` |
+| `0x801dd1c0` | `>> 0` | `0x801dd240` (`sra 0x10`, same `<<16` value) | additive damage term, `addu` at `0x801dd254` |
+| `0x801dd38c` | `>> 1` | `0x801dd39c` (`sll 0x10; sra 0x11`) | additive threshold term, `addu` at `0x801dd3a0` |
+| `0x801dd3cc` | `>> 3` | `0x801dd3d8` (`sll 0x10; sra 0x13`) | roll modulus, `div` at `0x801dd3e0` |
+| `0x801dd3cc` | `>> 1` | `0x801dd448` (`sra 0x11`, same `<<16` value) | additive damage term, `addu` at `0x801dd454` |
+
+Both roll moduli are used as `rand % (x + 1)`, so a record with power `< 4` rolls
+a constant `0` on the `>> 2` branch and power `< 8` does the same on `>> 3`.
+
+The branch split is on the kernel's `param_2` (`s3`): `bne a1,0x7` at
+`0x801dd104` takes the **non-summon** path to the first table read, and a second
+`bne s0,0x7` at `0x801dd2f4` takes it on to the second. When `param_2 == 7` the
+magnitude comes from caster/summon actor state (`0x168(s1)` etc.) and no table
+read happens at all.
 
 ### The `+0x0c` no-reader sweep
 
@@ -224,14 +247,30 @@ reach the field several other ways:
 | Straddling load | A `lw`/`lhu`/`lwl`/`lwr` at displacement `0xc` is in the same match set (`+0x08` covers `0x08..0x0b`; `+0x0a` is unaligned). |
 | Data-resident pointer | All corpus words scanned for a literal in-table address, i.e. a pre-linked pointer to one record field. |
 
-**Result.** The table base is materialised at exactly **two** sites corpus-wide,
-`0x801dd1a0` (`FUN_801dd0ac`) and `0x801df27c` (`FUN_801dea50`); no reference
+**Result.** The table base is materialised at **three** sites corpus-wide,
+`0x801dd1a0` and `0x801dd36c` (both `FUN_801dd0ac`) and `0x801df27c`
+(`FUN_801dea50`) - see [the split-pair site](#the-split-lui-addiu-site); no reference
 lands at a shifted offset, and no data word holds an in-table address. Offsets
 touched: `+0x00,02,04,06,08,09,0a,0b,0d,0e,12,16`. Not `+0x0c`. As a backstop,
 PROT 0898 contains only five byte-width loads at literal displacement `0xc`, and
 none is a record - two write `actor[+0x1dd]` from an unrelated struct, and the
 other three sit on a base that is *written* at `+0xc` a few instructions earlier
 (a RAM working struct; the record is read-only overlay data).
+
+### The split lui addiu site
+
+`0x801dd36c` is the base materialisation a linear `lui`+`addiu` pair matcher
+misses. Its `lui a0,0x801f` sits in the **branch delay slot** at `0x801dd2f8`,
+belonging to the `bne s0,v0,0x801dd36c` at `0x801dd2f4` whose branch target *is*
+the `addiu`. The halves are 0x74 bytes apart and `a0` is clobbered in between
+(`0x801dd304`, `0x801dd30c`, `0x801dd314`), so only the taken-branch path pairs
+them; the fall-through path never reaches the `addiu` because `0x801dd364` jumps
+away.
+
+This does not move the `+0x0c` negative - the third site indexes the same base
+with the same `x26` chain and reads only `+0x00` - but any future sweep that
+folds `lui`/`addiu` pairs must follow branch targets, not just adjacency, or it
+will under-count materialisation sites the same way.
 
 **Not swept: PROT 0896, 0965, 0971**, which have never been statically
 extracted. That gap is structurally closed rather than merely small: all three
@@ -249,9 +288,8 @@ survives any question about the sweep.
 
 Both lists are up to 4 ids, walked until a terminator. `0x00` ends the list scan.
 Each remaining byte **multiplexes two distinct id spaces by its bit 7**, dispatched
-per `FUN_801e09f8` (`overlay_battle_action_801e09f8.txt:1182..1225` for `+0x16`,
-`:1285..1312` for `+0x12` - identical dispatch, the only difference is *when* they
-fire):
+per `FUN_801e09f8` (the `+0x16` walk entered at the load `0x801e0f54`, the `+0x12` walk at
+`0x801e1250` - identical dispatch, the only difference is *when* they fire):
 
 | entry | meaning |
 |---|---|
