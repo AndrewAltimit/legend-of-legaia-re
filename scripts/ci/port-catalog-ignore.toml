@@ -138,6 +138,8 @@
 
 # libcd primitives and the ISO9660 / streaming-read stack above them.
 # The engine reads PROT.DAT through `legaia-iso` + `legaia-prot` directly.
+"8005acf8" = "GTE depth-cue coefficient setter: computes `(-a0 * 64) / a1` and loads it into COP2 control register 27 (DQA) via FUN_8005B7C0 (`ctc2 a0,0xd800`), then the fixed literal 0x1400000 into control register 28 (DQB) via FUN_8005B7CC (`ctc2 a0,0xe000`). Pure libgte register setup; the port programs its own depth cue. see ghidra/scripts/funcs/8005acf8.txt"
+"8005ad54" = "Sibling of 8005ACF8 with the screen-height constant baked as 320 rather than 64 (`a0*5 << 6`, negated, divided by a1): the same DQA / DQB control-register pair via FUN_8005B7C0 / FUN_8005B7CC and the same 0x1400000 DQB literal. see ghidra/scripts/funcs/8005ad54.txt"
 [libcd]
 "8005a78c" = "Pad / SIO init (SIO MMIO + RX/TX buffer clear)"
 "8005abd0" = "Pad-protocol-phase handshake (digital-pad protocol selector)"
@@ -274,6 +276,7 @@
 
 # Sony SsAPI sequencer (libsnd). The clean-room `engine-audio::Sequencer`
 # replaces this cluster end-to-end; see `docs/subsystems/audio.md`.
+"8005fde8" = "libapi device-vtable trampoline (slot +0x4 of PTR_PTR_8007A860): the whole body is `lw v0,-0x57a0(0x8008); lw v0,0x4(v0); jalr v0`, forwarding its arguments untouched. Direct sibling of the already-listed 8005fd88 (slot +0xC). see ghidra/scripts/funcs/8005fde8.txt"
 [libsnd]
 "80061c68" = "_SsSeqGetVar (MIDI varint delta-time decoder)"
 "80061d18" = "SsSeqClose (full close - clears bitmap + memsets channels)"
@@ -366,6 +369,7 @@
 # port models each label's PC delta directly inside its dispatcher (see
 # `crates/engine-vm/src/field.rs`), so there is no separate function to port.
 "8003ee7c" = "libspu SPU common-attr / reverb-depth setter shim used by the CD-XA clip path. Thin two-call wrapper: FUN_800643c4(0, depth, depth) (SpuSetCommonAttr-style master/reverb-depth set from the s16 arg) then FUN_80062a0c(0,0,1) (CD/reverb attribute apply). No game logic; REF-listed as out-of-scope in crates/engine-core/src/cd_dma.rs. see ghidra/scripts/funcs/8003ee7c.txt"
+"8006a7c8" = "SpuSetReverbVol-shape 3-mode wrapper (mode 0 = clear, 1 = OR, 8 = write) over the SPU voice-attribute halfword table at DAT_8007AF40, or the shadow copy at 0x801CE390 when DAT_8007AF38 & 1, also ORing the dirty mask DAT_8007AB04. Reverb lives in the clean-room SPU. see ghidra/scripts/funcs/8006a7c8.txt"
 [field_vm_labels]
 "801e3620" = "FUN_801de840 intra-function label (`code_r0x801e3620`): `param_2 + 4; break;` -> PC += 4"
 
@@ -397,6 +401,14 @@
 # clean-room engine replaces raw global pointers with typed Rust fields, so
 # there is no function body to port (the callers' intent - e.g. walking the
 # returned buffer as a CDNAME char* - is modelled where the caller is ported).
+"8003adcc" = "Interior +0x20 of FUN_8003ADAC: the dump resolves the entry to 8003adac, and 8003adcc is that function's `sw s1,0x34(sp)` prologue register-save promoted to a fake FUN_ entry. see ghidra/scripts/funcs/8003adcc.txt"
+"8003d38c" = "Ghidra split of the neighbouring GTE projector: the dump reports `size=1 bytes, 0 instructions` and the decompiled body is entirely `in_at`/`in_v0`/`in_v1` unaffected registers (an RTPT sequence belonging to the enclosing function). No body of its own to port. see ghidra/scripts/funcs/8003d38c.txt"
+"8003ef68" = "Interior +0x54 of the field-buffer per-sector streaming poller (the dump header names `field_buffer_stream_poller` at entry 8003ef14); 8003EF68 is its `lw v0,0x968(gp)` remaining-sector countdown. see ghidra/scripts/funcs/8003ef68.txt"
+"8005a5fc" = "Interior +0x15C of FUN_8005A4A0, the libgpu DrawSync / command-queue drain (polls GPUSTAT bits 0x1000000 and 0x4000000, walks the 0x40-entry 0x60-byte command ring). The dump resolves the entry to 8005a4a0; not a call target. see ghidra/scripts/funcs/8005a5fc.txt"
+"8005b2a4" = "Interior +0x3C of FUN_8005B268 (libgte PushMatrix, already listed under [libgte]) - the `lui t7,0x8008` after the stack-overflow guard. The dump resolves the entry to 8005b268. see ghidra/scripts/funcs/8005b2a4.txt"
+"8005b340" = "Interior +0x38 of FUN_8005B308 (libgte PopMatrix, already listed under [libgte]) - the `addi t6,t6,-0x20` stack decrement after the underflow guard. The dump resolves the entry to 8005b308. see ghidra/scripts/funcs/8005b340.txt"
+"8005d0b8" = "Interior +0x138 of FUN_8005CF80, the libcd command sender (PTR_s_CdlSync_800793D0 command-name table, FUN_8005CA34 critical section). The dump resolves the entry to 8005cf80. see ghidra/scripts/funcs/8005d0b8.txt"
+"801cf5e8" = "Not a function entry in ANY overlay dump: the 0897 copy resolves to entry 801cf5d0 (76 B, starting mid-computation with no prologue) and the baka_fighter copy to entry 801cf388 (11892 B). A phantom split, so the bare VA has no body to port. see ghidra/scripts/funcs/overlay_0897_xxx_dat_801cf5e8.txt"
 [global_accessors]
 "80019788" = "Global-buffer base getter: `lui v0, 0x8009; jr ra; ...` returns the fixed RAM pointer 0x80088758 (callers scan it as a char* for '_'-separator CDNAME names). Engine carries scene/name state as typed Rust fields (active_scene_label etc.); no body to port. See docs/reference/functions.md row 80019788."
 "8004695c" = "Request-latch setter: clears DAT_8007b6cc, arms gp[0x9d4]=1 with payload gp[0x9d0]=a0. A three-store one-shot 'arm this action' latch with no body of its own; the semantic lives in whichever consumer reads the latch. see ghidra/scripts/funcs/8004695c.txt"
@@ -491,3 +503,6 @@
 "801de648" = "VA-aliased across overlays, not one function: baka/dance/debug/fishing/slot copy is the 80 B sized store (value -> *dst as byte/half/word by size 1/2/4; the move-VM tween result-store primitive, REF'd at engine-core summon.rs - a typed Rust field write); muscle_dome 244 B is a different function. No single port site for the bare VA."
 "801de234" = "VA-aliased across overlays, not one function: dialog/minigame family copy (124 B) is the region-type bitmask builder - ported as engine-core field_regions::refresh_region_attributes (PORT: FUN_800180EC, the caller/superset; loops the resumable scan 80017fbc ORing 1<<(kind&0x1F) into the _DAT_8007B8F4 mirror); overlay_menu copy (12104 B) is the title-screen idle state machine (REF'd in engine-vm cutscene_trigger.rs/menu.rs); 0897 92 B differs again. The 26-ref count sums unrelated per-overlay callees."
 "801db510" = "VA-aliased across overlays, not one function: the 988 B copy shared by dialog/cutscene/minigame overlays is the per-frame camera follow-ease + LCG shake (approximated by engine-render CutsceneCameraInterp, REF'd there; dialog and cutscene_dialogue dumps are instruction-identical - the old 'dialog copy = actor sprite emitter' functions.md row was wrong); overlay_menu 1140 B differs; 0897 12 B stub. The 34-ref count sums unrelated per-overlay callees."
+"801c0f48" = "VA-aliased across overlays, not one function: only the 0899 dump resolves 801c0f48 as its own entry (300 B); 0896 resolves to entry 801c0d1c (848 B), 0971 to 801c0f18 (204 B) and 0977 to 801c085c (2044 B). The bare-VA ref count sums unrelated per-overlay callees; no single port site exists."
+"801c2748" = "VA-aliased across overlays, not one function: only the 0977 dump resolves 801c2748 as its own entry (548 B); 0896 resolves to entry 801c2720 (576 B), 0897 to 801c2520 (1268 B) and 0899 to 801c2704 (884 B). The bare-VA ref count sums unrelated per-overlay callees; no single port site exists."
+"801c36b0" = "VA-aliased across overlays, not one function: only the 0971 dump resolves 801c36b0 as its own entry (612 B); 0897 resolves to entry 801c36ac (980 B) and 0899 to 801c3594 (356 B). The bare-VA ref count sums unrelated per-overlay callees; no single port site exists."
