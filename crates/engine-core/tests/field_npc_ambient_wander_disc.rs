@@ -365,3 +365,85 @@ fn town01_villagers_wander_through_the_real_scene_entry() {
         moved.len()
     );
 }
+
+/// With the liveliness flag off, a walking stream must publish **neither**
+/// position nor facing - but its interpreter must still run.
+///
+/// The facing half is the subtle one. A walk op's heading write is
+/// walk-direction-implied facing; publishing it while suppressing the step
+/// makes an NPC pivot on the spot through a motion it never performs. In
+/// `town01` specifically the fresh-game variants author no turning at all
+/// (the sibling test above pins that), so any idle rotation here is pure
+/// artefact rather than retail behaviour.
+///
+/// The interpreter must keep running regardless: a blocked directional step
+/// re-runs forever without advancing its PC, so gating the ops instead of
+/// the mirror would stall a stream and starve any `0x07`/`0x08` story-flag
+/// write further down it.
+#[test]
+fn liveliness_off_publishes_neither_position_nor_walk_facing() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(mut host) = open_host() else {
+        eprintln!("[skip] no extracted/ tree and disc open failed");
+        return;
+    };
+    host.enter_field_scene(legaia_asset::new_game::OPENING_SCENE, 0)
+        .expect("enter town01");
+    assert!(
+        !host.world.animate_field_npcs,
+        "liveliness is off by default"
+    );
+
+    let walkers: Vec<u8> = host
+        .world
+        .field_npc_ambient
+        .iter()
+        .filter(|(_, c)| c.walks)
+        .map(|(&s, _)| s)
+        .collect();
+    assert!(!walkers.is_empty(), "town01 binds walking streams");
+
+    let pos0 = host.world.field_npc_positions.clone();
+    let head0 = host.world.field_npc_headings.clone();
+    // PCs of the walking channels, to prove the interpreter kept running.
+    let pc0: Vec<u16> = walkers
+        .iter()
+        .map(|s| host.world.field_npc_ambient[s].vm.pc)
+        .collect();
+
+    for _ in 0..600 {
+        let _ = host.world.tick();
+    }
+
+    assert_eq!(
+        host.world.field_npc_positions, pos0,
+        "no NPC position is published while liveliness is off"
+    );
+    for &slot in &walkers {
+        assert_eq!(
+            host.world.field_npc_headings.get(&slot),
+            head0.get(&slot),
+            "slot {slot}: a walk op's implied facing must not be published \
+             while its step is suppressed (the pivot-on-the-spot artefact)"
+        );
+    }
+    let pc1: Vec<u16> = walkers
+        .iter()
+        .map(|s| host.world.field_npc_ambient[s].vm.pc)
+        .collect();
+    assert!(
+        pc0 != pc1
+            || walkers
+                .iter()
+                .any(|s| host.world.field_npc_ambient[s].vm.cursor != 0),
+        "the interpreter kept running: some walking channel advanced its PC \
+         or burnt cursor budget (a stalled stream would starve story-flag writes)"
+    );
+    eprintln!(
+        "[town01] liveliness off: {} walking channels ran silently",
+        walkers.len()
+    );
+}

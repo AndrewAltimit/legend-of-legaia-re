@@ -1052,16 +1052,26 @@ impl World {
         // ambient walker's containment is its op's authored AABB and the
         // sole thing that can stop a step is the player standing in it.
         //
-        // With the opt-in liveliness off, every direction reads blocked:
-        // a directional step then re-runs its op and a wander re-picks, so
-        // the actor holds its seat exactly while its facing channel and its
-        // story-flag writes keep running.
-        let blocking: Box<dyn vm::ambient_motion::AmbientBlocking> = if self.animate_field_npcs {
-            Box::new(AmbientPlayerProbe {
-                player: self.player_field_position(),
-            })
-        } else {
-            Box::new(vm::ambient_motion::AlwaysBlocks)
+        // The opt-in liveliness (`Self::animate_field_npcs`) gates the
+        // *mirror*, not the interpreter: with it off the stream still runs
+        // its walk ops at their authored cadence, but neither the position
+        // nor the walk-implied facing is published, so nothing on screen
+        // moves. Suppressing the ops instead would stall the stream on its
+        // first walking op (a blocked step re-runs forever without advancing
+        // the PC) and a `0x07`/`0x08` story-flag write further down it would
+        // then never fire.
+        //
+        // The VM's own position therefore drifts from the published seat
+        // while the flag is off. That only shows if the flag is flipped
+        // mid-scene, which no real entry path does - it is set once at boot
+        // (`play-window --live-npcs`).
+        let live_walk = self.animate_field_npcs;
+        let blocking = AmbientPlayerProbe {
+            player: if live_walk {
+                self.player_field_position()
+            } else {
+                None
+            },
         };
         let slots: Vec<u8> = self.field_npc_ambient.keys().copied().collect();
         for slot in slots {
@@ -1088,11 +1098,19 @@ impl World {
                 continue;
             };
             let before = vm.heading;
-            vm.tick_with(code, speed, blocking.as_ref());
-            let moved = vm.moved;
+            vm.tick_with(code, speed, &blocking);
+            let moved = vm.moved && live_walk;
             let (nx, nz) = (vm.x, vm.z);
             let anim = vm.requested_move;
-            let turned = vm.heading != before;
+            // A walk op's heading write is walk-direction-implied facing: it
+            // only means anything alongside the step it accompanies. With the
+            // walking suppressed it must be suppressed too, or the NPC pivots
+            // on the spot through a motion it never performs - and in the
+            // scene this matters most (`town01`) the fresh-game variants
+            // author no turning at all, so that pivot would be pure artefact.
+            // The `0x04` / `0x0D` ramps are ambient turning in their own
+            // right and keep mirroring either way.
+            let turned = vm.heading != before && (live_walk || !vm.walk_yaw);
             let engine_heading = vm.render_heading().wrapping_add(0x800) & 0x0FFF;
             if moved {
                 // Retail's walk ops write the live `+0x14`/`+0x18`, which

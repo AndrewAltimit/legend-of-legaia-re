@@ -217,10 +217,13 @@ impl AmbientBlocking for NeverBlocks {
     }
 }
 
-/// Every direction blocks. Hosts use this to hold a channel's *facing*
-/// behaviour live while its *walking* is switched off: a blocked directional
-/// step re-runs its op next tick and a blocked wander re-picks, so the actor
-/// stands exactly still with no position drift and no stream corruption.
+/// Every direction blocks - the fully-boxed-in reading.
+///
+/// Note what this does *not* buy: a blocked directional step re-runs its own
+/// op forever without advancing the PC, so a stream held under this never
+/// reaches whatever follows that op (a story-flag write included). A host
+/// that wants an actor to hold its seat should let the ops run normally and
+/// re-pin the position instead.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AlwaysBlocks;
 
@@ -465,6 +468,16 @@ pub struct AmbientMotion {
     /// Set by a tick whose walk op actually moved [`Self::x`] /
     /// [`Self::z`]. The position sibling of the heading's move gate.
     pub moved: bool,
+    /// Set by a tick in which a **walk** op wrote the heading - the `0x03`
+    /// facing snap, or the `0x18` wander's turn and walk phases.
+    ///
+    /// This separates the two facings the VM produces. The `0x04` / `0x0D`
+    /// ramps are ambient turning in their own right; a walk op's heading
+    /// write is *walk-direction-implied* facing and has no meaning apart
+    /// from the step it accompanies. A host that suppresses the walking must
+    /// suppress this facing with it, or an NPC pivots on the spot through a
+    /// motion it never performs.
+    pub walk_yaw: bool,
     /// Retail `0x801C6470[slot]` byte 2 - the `0x18` wander phase
     /// (`0` pick, `1` turn, `2` hand-off, `3` walk). It lives in the
     /// default-move arena rather than on the actor, which is why a `0x17`
@@ -497,6 +510,7 @@ impl AmbientMotion {
             x: 0,
             z: 0,
             moved: false,
+            walk_yaw: false,
             wander_phase: 0,
             wander_dir: 0,
             default_move: [DEFAULT_MOVE_UNSET; 2],
@@ -540,8 +554,7 @@ impl AmbientMotion {
     }
 
     /// [`Self::tick`] with a host-supplied collision service for the walk
-    /// ops. Pass [`AlwaysBlocks`] to keep an actor's facing channel running
-    /// while its walking is switched off.
+    /// ops.
     pub fn tick_with(
         &mut self,
         code: &[u8],
@@ -572,6 +585,7 @@ impl AmbientMotion {
         blocking: &dyn AmbientBlocking,
     ) -> AmbientTick {
         self.moved = false;
+        self.walk_yaw = false;
         for _ in 0..MAX_OPS_PER_TICK {
             let pc = usize::from(self.pc);
             let Some(&op) = code.get(pc) else {
@@ -764,6 +778,7 @@ impl AmbientMotion {
             // Departure: retail's index is unmasked and `8..=15` overread
             // into the adjacent bitmask table. No authored op does it.
             self.heading = heading_lut_retail(lut);
+            self.walk_yaw = true;
         }
         if op == 0x20 {
             budget >>= 1;
@@ -886,6 +901,7 @@ impl AmbientMotion {
             };
             let landed = if overshot { goal } else { stepped };
             self.heading = (landed & 0x0FFF) as u16;
+            self.walk_yaw = true;
             if landed != goal {
                 return;
             }
@@ -906,6 +922,7 @@ impl AmbientMotion {
         // Phase 3 - walk. `0x80038EC8`.
         let dir = self.wander_dir;
         self.heading = heading_lut_retail(dir);
+        self.walk_yaw = true;
         if blocking.wander_blocked(self.x, self.z, dir >> 1) {
             // `0x80038F50`: drop back to the pick phase, PC unchanged.
             self.wander_phase = 0;

@@ -368,12 +368,25 @@ PC; a blocked wander drops back to the pick phase.
 
 [`legaia_engine_vm::ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs)
 executes all four walk ops alongside the facing ones, plus `0x17`. The
-collision service is the `AmbientBlocking` trait the host supplies;
-`engine-core`'s implementation is the player box test above, and
-`AlwaysBlocks` is what the host passes when its opt-in liveliness
-(`World::animate_field_npcs` / `play-window --live-npcs`) is off - every
-direction reads blocked, so an actor holds its seat exactly while its facing
-channel and its story-flag writes keep running.
+collision service is the `AmbientBlocking` trait the host supplies, and
+`engine-core`'s implementation is the player box test above.
+
+The engine's opt-in liveliness (`World::animate_field_npcs` /
+`play-window --live-npcs`) gates the **mirror**, not the interpreter: with it
+off the stream still runs its walk ops at their authored cadence, but neither
+the position nor the walk-implied facing is published, so nothing on screen
+moves. Suppressing the ops instead would stall a stream on its first walking
+op - a blocked directional step re-runs forever without advancing its PC -
+and a `0x07`/`0x08` story-flag write further down it would then never fire.
+
+That gate distinguishes the two facings this VM writes, which is why the VM
+reports them separately (`AmbientMotion::walk_yaw`). The `0x04` / `0x0D`
+ramps are ambient turning in their own right and mirror either way; a walk
+op's heading write is *walk-direction-implied* facing and means nothing apart
+from the step it accompanies. Publishing it while suppressing the step makes
+an NPC pivot on the spot through a motion it never performs - and in the
+scene where it matters most the fresh-game variants author no turning at all,
+so that pivot would be pure artefact rather than retail behaviour.
 
 `World::tick_field_npc_ambient` writes the VM's live position back into
 `World::field_npc_positions` on any tick that moved it, so the wandering
