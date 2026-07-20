@@ -146,6 +146,166 @@ pub fn fmv_post_play_return_scene(fmv_id: i16) -> Option<&'static str> {
     }
 }
 
+/// Which bitstream decoder the master dispatch selects for an `fmv_id`.
+///
+/// `FUN_801CEA3C` presets `DAT_801E09FC = 1` (Iki) and clears it only for the
+/// two dev slots, so every movie on the retail disc decodes as Iki. Anything
+/// reaching for the STRv2/v3 path is decoding a file that isn't shipped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FmvBitstream {
+    /// The Legaia "Iki" bitstream - LZSS qscale/DC table plus an AC-only
+    /// entropy stream. Every retail movie. Decoder: `legaia_mdec::MdecDecoder`.
+    Iki,
+    /// Standard STRv2/v3 VLC with per-block DC deltas; dev slots 9/10 only.
+    Strv2,
+}
+
+/// What the master dispatch does with control once an FMV finishes playing.
+///
+/// Retail writes this straight into the mode/scene globals: the next-scene
+/// CDNAME label at `0x80084548`, the spawn/door word at `0x80084540` and the
+/// next-game-mode byte at `0x8007B83C`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FmvHandoff {
+    /// Enter field mode (2) at `scene` with the given spawn/door word. The
+    /// mid-game FMVs return to a *specific* scene, not the trigger scene.
+    Field {
+        /// CDNAME label from the seven-entry list at `0x801CE8AC`.
+        scene: &'static str,
+        /// Spawn/door word written to `0x80084540`.
+        door: u16,
+    },
+    /// Enter field mode (2) without touching the scene name - resume wherever
+    /// the trigger left off. `fmv_id 5` (the last `MV3.STR` segment).
+    ResumeField,
+    /// Hand off to game mode 22 (card/memory-card init): the intro (`fmv_id 0`)
+    /// and dev slot 9. `card_arg` is the `_DAT_8007BB00` selector.
+    CardInit {
+        /// Value written to `_DAT_8007BB00` (2 for the intro, 1 for slot 9).
+        card_arg: u8,
+    },
+    /// Fall back to game mode 0. Dev slot 10 only.
+    ModeZero,
+    /// No hand-off encoded for this slot (dev slots 11..=22).
+    None,
+}
+
+/// Post-play control transfer for `fmv_id`, per the master dispatch's second
+/// `switch` (`FUN_801CEA3C`).
+///
+/// The scene labels come from the list at `0x801CE8AC`; the door words are the
+/// literals the dispatch stores alongside them.
+// PORT: FUN_801cea3c
+pub fn fmv_post_play_handoff(fmv_id: i16) -> FmvHandoff {
+    match fmv_id {
+        0 => FmvHandoff::CardInit { card_arg: 2 },
+        1 => FmvHandoff::Field {
+            scene: "town0b",
+            door: 0x00C,
+        },
+        2 => FmvHandoff::Field {
+            scene: "map01",
+            door: 0x055,
+        },
+        3 => FmvHandoff::Field {
+            scene: "chitei2",
+            door: 0x2C1,
+        },
+        4 => FmvHandoff::Field {
+            scene: "map02",
+            door: 0x0F4,
+        },
+        5 => FmvHandoff::ResumeField,
+        6 => FmvHandoff::Field {
+            scene: "jou",
+            door: 0x276,
+        },
+        7 => FmvHandoff::Field {
+            scene: "uru2",
+            door: 0x1BC,
+        },
+        8 => FmvHandoff::Field {
+            scene: "town0e",
+            door: 0x2E5,
+        },
+        9 => FmvHandoff::CardInit { card_arg: 1 },
+        10 => FmvHandoff::ModeZero,
+        _ => FmvHandoff::None,
+    }
+}
+
+/// Bitstream decoder the master dispatch selects for `fmv_id`.
+// REF: FUN_801cea3c
+pub fn fmv_bitstream(fmv_id: i16) -> FmvBitstream {
+    match fmv_id {
+        9 | 10 => FmvBitstream::Strv2,
+        _ => FmvBitstream::Iki,
+    }
+}
+
+/// Whether a pad press aborts playback.
+///
+/// The play loop only tests the pad when the dispatch armed `DAT_801E09F4`,
+/// and the dispatch arms it for `fmv_id 0` alone: the intro/attract movie is
+/// skippable, every mid-game FMV plays to its end frame.
+// REF: FUN_801cea3c
+pub fn fmv_is_skippable(fmv_id: i16) -> bool {
+    fmv_id == 0
+}
+
+/// One `ClearImage` rect the master dispatch blanks before playback, in VRAM
+/// coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FmvBand {
+    /// Left edge (always 0 - the rects span the full clear width).
+    pub x: u16,
+    /// Top edge in VRAM scanlines.
+    pub y: u16,
+    /// Width (`0x1E0` = 480, the width the dispatch clears).
+    pub w: u16,
+    /// Height in scanlines.
+    pub h: u16,
+}
+
+/// Clear width of the dispatch's `ClearImage` rects (`0x1E0`).
+const FMV_BAND_W: u16 = 0x1E0;
+
+/// The four rects the master dispatch blanks before calling the play loop.
+///
+/// The play loop decodes into a double-buffered pair of frame rects (the slot's
+/// `(fb_x, fb_y)` and `(fb_x, fb_y + height)`); these rects blank the VRAM
+/// strips bracketing each of the two, so nothing of the previous scene shows
+/// through at the top or bottom of either buffer. They are **not** a
+/// non-overlapping letterbox: the middle pair straddles the seam between the
+/// two decode rects and overlaps by four scanlines.
+///
+/// The wide slot (`fmv_id 3`, which opens on a white flash instead of black)
+/// uses a flat 8-scanline rect at each of the four positions.
+// REF: FUN_801cea3c
+pub fn fmv_clear_rects(fmv_id: i16) -> [FmvBand; 4] {
+    let band = |y: u16, h: u16| FmvBand {
+        x: 0,
+        y,
+        w: FMV_BAND_W,
+        h,
+    };
+    if fmv_id == 3 {
+        [
+            band(0x000, 8),
+            band(0x0E8, 8),
+            band(0x0F0, 8),
+            band(0x1D8, 8),
+        ]
+    } else {
+        [
+            band(0x000, 0x0C),
+            band(0x0E8, 0x0C),
+            band(0x0F0, 0x10),
+            band(0x1D8, 0x0C),
+        ]
+    }
+}
+
 /// Retail's "next game mode = StrInit" constant. The handler at
 /// `0x801E30E4` writes this byte to the next-game-mode global
 /// (`_DAT_8007B83C`) every time it fires; the main mode dispatcher
@@ -248,6 +408,96 @@ mod tests {
         assert_eq!(fmv_post_play_return_scene(0), None);
         assert_eq!(fmv_post_play_return_scene(5), None);
         assert_eq!(fmv_post_play_return_scene(9), None);
+    }
+
+    #[test]
+    fn handoff_agrees_with_the_return_scene_helper() {
+        // The two readers of the same dispatch switch must not drift.
+        for id in 0..=22i16 {
+            match (fmv_post_play_handoff(id), fmv_post_play_return_scene(id)) {
+                (FmvHandoff::Field { scene, .. }, Some(expected)) => assert_eq!(scene, expected),
+                (FmvHandoff::Field { .. }, None) => panic!("fmv {id}: scene missing"),
+                (_, Some(s)) => panic!("fmv {id}: unexpected scene {s} without a field hand-off"),
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn handoff_covers_every_non_field_slot() {
+        assert_eq!(
+            fmv_post_play_handoff(0),
+            FmvHandoff::CardInit { card_arg: 2 }
+        );
+        assert_eq!(fmv_post_play_handoff(5), FmvHandoff::ResumeField);
+        assert_eq!(
+            fmv_post_play_handoff(9),
+            FmvHandoff::CardInit { card_arg: 1 }
+        );
+        assert_eq!(fmv_post_play_handoff(10), FmvHandoff::ModeZero);
+        for id in 11..=22 {
+            assert_eq!(fmv_post_play_handoff(id), FmvHandoff::None);
+        }
+    }
+
+    #[test]
+    fn field_handoff_door_words_match_the_dispatch_literals() {
+        let doors = [
+            (1i16, 0x00Cu16),
+            (2, 0x055),
+            (3, 0x2C1),
+            (4, 0x0F4),
+            (6, 0x276),
+            (7, 0x1BC),
+            (8, 0x2E5),
+        ];
+        for (id, door) in doors {
+            match fmv_post_play_handoff(id) {
+                FmvHandoff::Field { door: got, .. } => assert_eq!(got, door, "fmv {id}"),
+                other => panic!("fmv {id}: expected a field hand-off, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn every_retail_slot_decodes_as_iki() {
+        for id in 0..=8 {
+            assert_eq!(fmv_bitstream(id), FmvBitstream::Iki);
+        }
+        // The two dev slots are the only STRv2/v3 users, and their files are
+        // not on the retail disc.
+        assert_eq!(fmv_bitstream(9), FmvBitstream::Strv2);
+        assert_eq!(fmv_bitstream(10), FmvBitstream::Strv2);
+    }
+
+    #[test]
+    fn only_the_intro_is_pad_skippable() {
+        assert!(fmv_is_skippable(0));
+        for id in 1..=8 {
+            assert!(!fmv_is_skippable(id), "mid-game fmv {id} must play out");
+        }
+    }
+
+    #[test]
+    fn clear_rects_span_the_clear_width_and_bracket_both_decode_buffers() {
+        for id in [0i16, 1, 3, 8] {
+            let rects = fmv_clear_rects(id);
+            assert!(rects.iter().all(|b| b.x == 0 && b.w == FMV_BAND_W));
+            // Ordered top-down; the pair straddling the buffer seam is allowed
+            // to overlap (retail's rects at 0xE8 and 0xF0 do, by 4 lines).
+            for pair in rects.windows(2) {
+                assert!(pair[0].y <= pair[1].y, "fmv {id}: rects out of order");
+            }
+            // One rect brackets the top of each decode buffer (0 and 0xF0).
+            assert_eq!(rects[0].y, 0x000);
+            assert_eq!(rects[2].y, 0x0F0);
+        }
+        // The wide slot uses the flat 8-scanline rects.
+        assert!(fmv_clear_rects(3).iter().all(|b| b.h == 8));
+        assert_eq!(fmv_clear_rects(0)[0].h, 0x0C);
+        // The seam pair overlaps: 0xE8+0xC = 0xF4 > 0xF0.
+        let normal = fmv_clear_rects(0);
+        assert!(normal[1].y + normal[1].h > normal[2].y);
     }
 
     #[test]

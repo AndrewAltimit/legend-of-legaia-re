@@ -7,6 +7,7 @@ PSX MDEC clean-room decoder (Iki bitstream variant) and PSX STR video-sector par
 - `MdecDecoder` - decodes a complete demuxed Iki frame (header + LZSS qscale/DC table + AC bitstream) into RGBA8 pixels.
 - `str_sector::StrFrameAssembler` - collects 2048-byte Mode 2 Form 1 sector data areas (32-byte sector header) and returns the assembled demuxed frame when a full frame is ready.
 - `str_sector::analyze_str_timing` - recovers the playback frame rate from the sector stride at the 2x CD rate (PSX STR carries no fps field). All six Legaia `MV*.STR` measure 10 sectors/frame → 15 fps; `play-str` and the in-flow cutscene driver pace to this.
+- `st_ring::StRing` - the retail `St` streaming-library sector ring: the same demux job as `StrFrameAssembler`, but with the fixed-slot ring bookkeeping (back-pressure, seek-to-start-frame, end-frame latch, wrap handling) a real-time player needs. See [`docs/subsystems/cutscene.md`](../../docs/subsystems/cutscene.md#engine-port---legaia_mdecst_ring).
 - `mdec` CLI - `decode-frame` (raw frame → PPM), `scan-str` (frame inventory + detected fps), `decode-str` (batch decode to PPMs).
 
 ## Algorithm

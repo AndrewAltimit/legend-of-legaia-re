@@ -26,7 +26,7 @@ library. The FMV dispatch table is at `0x801D0A6C`.
 ## Contents
 
 - [Game modes](#game-modes) · [STR sector format](#str-sector-format)
-- [Retail playback engine](#retail-playback-engine-str-overlay--scus-st-streaming-library) - [master dispatch](#master-dispatch---fun_801cea3c-overlay) · [play loop](#play-loop---fun_801cf098-overlay) · [frame-demux SM](#frame-demux-state-machine-scus-st-library) · [bitstream decode + MDEC feed](#bitstream-decode--mdec-feed-overlay)
+- [Retail playback engine](#retail-playback-engine-str-overlay--scus-st-streaming-library) - [master dispatch](#master-dispatch---fun_801cea3c-overlay) · [play loop](#play-loop---fun_801cf098-overlay) · [frame-demux SM](#frame-demux-state-machine-scus-st-library) · [ring layout](#ring-layout--slot-status) · [ring port](#engine-port---legaia_mdecst_ring) · [bitstream decode + MDEC feed](#bitstream-decode--mdec-feed-overlay)
 - [XA channel selection](#xa-channel-selection) · [XA audio](#xa-audio) · [A/V sync](#interleaved-cutscene-audio-av-sync)
 - [MDEC decoder (Iki bitstream)](#mdec-decoder-iki-bitstream) - [frame header](#1-frame-header-10-bytes) · [LZSS qscale/DC table](#2-lzss-qscaledc-table) · [AC bitstream](#3-ac-bitstream) · [dequantize + IDCT](#4-dequantize--idct) · [macroblock layout](#5-macroblock-layout) · [upsampling + colour](#6-420-upsampling--bt601-colour-conversion)
 - [Playback loop (`play-str`)](#playback-loop-play-str) · [frame-rate detection](#frame-rate-detection) · [CLI reference](#cli-reference)
@@ -113,7 +113,15 @@ label** from the table at `0x801CE8AC` (`town0b` / `map01` / `chitei2` / `map02`
 and set game mode 2; slot 0 (the intro) and dev slot 9 hand off to mode `0x16` (22 = CARD init,
 `_DAT_8007BB00` = 2 / 1); slot 5 sets mode 2 with `_DAT_8007B8B8 = 2` and no scene-name write.
 Full table in [`str-fmv-table.md`](../formats/str-fmv-table.md#authoritative-runtime-mapping).
-`see ghidra/scripts/funcs/overlay_cutscene_str_0970_801cea3c.txt`.
+`see ghidra/scripts/funcs/overlay_cutscene_str_0970_801cea3c.txt` (`0x801CECA0` is a body address
+inside this function, not a sibling entry point).
+
+Both `switch`es are ported in `legaia_engine_core::cutscene`: `fmv_post_play_handoff` returns the
+control transfer as an `FmvHandoff` (field scene + spawn word / resume-in-place / card init /
+mode 0), and `fmv_bitstream`, `fmv_is_skippable` and `fmv_clear_rects` carry the three pre-play
+decisions the dispatch makes from the same `fmv_id`. Note the four pre-play `ClearImage` rects
+bracket the tops and bottoms of **both** decode buffers rather than forming a letterbox - the
+middle pair straddles the seam between the two frame rects and overlaps by four scanlines.
 
 ### Play loop - `FUN_801CF098` (overlay)
 
@@ -171,9 +179,43 @@ sector it DMAs the 32-byte STR sector header out of the CD FIFO and walks the as
   headers), status 2 = frame complete.
 
 The overlay consumes frames via `StGetNext` (`FUN_8005EF40`: status 2 -> 4 "in use") and returns
-slots with `StFreeRing` (`FUN_8005EE4C`). This is the retail counterpart of the engine's
-[`StrFrameAssembler`](../../crates/mdec/src/str_sector.rs) - same header fields, same
-arrival-order chunk accumulation, plus the ring bookkeeping the engine doesn't need.
+slots with `StFreeRing` (`FUN_8005EE4C`).
+
+**The frame window does not come from `StSetStream`.** Despite the PsyQ prototype, `FUN_8005EDC4`
+reads only its mode word and its two callback arguments - the `start_frame` / `end_frame`
+arguments are never touched. The window is installed separately by `FUN_8005F004(seek_armed,
+start_frame, end_frame)`, which the play loop calls with the dispatch slot's frame range. Reading
+the window off `StSetStream` is what makes a mid-file segment (`MV3.STR` carries four) appear to
+start on the file's first frame.
+
+### Ring layout + slot status
+
+`StSetRing(base, slots)` hands the library one flat buffer holding two parallel arrays: `slots`
+32-byte slot headers at `base`, then `slots` 2016-byte payload areas at `base + slots * 32`. One
+slot holds one sector - its STR sector header (the `u16` at `+0x00` overwritten in place by the
+slot status once inspected) and its payload. A frame occupies `chunks_per_frame` **consecutive**
+slots, which is what makes an assembled frame a contiguous run the decoder reads without copying,
+and what forces the wrap handling when a frame doesn't fit before the ring end.
+
+| Status | Meaning |
+|---:|---|
+| 0 | free |
+| 1 | wrap marker - the reader restarts at slot 0 on landing here |
+| 2 | frame complete, ready for `StGetNext` |
+| 3 | filling (sectors of this frame still arriving) |
+| 4 | handed to the decoder; released by `StFreeRing` |
+
+### Engine port - `legaia_mdec::st_ring`
+
+[`StRing`](../../crates/mdec/src/st_ring.rs) is the clean-room port of the ring and its
+per-sector state machine, minus the CD/DMA register pokes: `set_ring` / `set_stream` / `set_mask`
+/ `deliver_sector` / `get_next` / `free_ring`, with the demuxer's own trace codes surfaced as
+`StStatus` (ring full, sequence break, end frame, wrap-stop, wrap-blocked, accepted). It is the
+back-pressure-aware sibling of [`StrFrameAssembler`](../../crates/mdec/src/str_sector.rs), which
+stays the right tool for offline extraction where no ring exists to overrun. The disc-gated
+`st_ring_real_str` test streams a real `MV1.STR` through both and asserts they agree
+frame-for-frame and byte-for-byte, and that the armed seek lands exactly on `MV3.STR`'s
+`0xE2` segment boundary.
 
 ### Bitstream decode + MDEC feed (overlay)
 

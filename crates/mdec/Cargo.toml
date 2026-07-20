@@ -17,5 +17,8 @@ anyhow.workspace = true
 clap.workspace = true
 png = "0.17"
 
+[dev-dependencies]
+legaia-iso = { path = "../iso" }
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
