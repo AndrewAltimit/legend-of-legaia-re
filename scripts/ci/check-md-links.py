@@ -131,7 +131,27 @@ def anchors_of(path, cache):
     return found
 
 
-def check_file(path, cache):
+def ignored_targets(dests):
+    """Subset of `dests` that git ignores.
+
+    A link into a gitignored tree resolves on the machine that produced
+    those artifacts and nowhere else, so `os.path.exists` calls it healthy
+    while CI and every fresh clone see a dead link. Ask git instead of the
+    filesystem. One batched call - `check-ignore` per link is slow enough
+    to be felt in the pre-commit hook.
+    """
+    if not dests:
+        return set()
+    proc = subprocess.run(
+        ["git", "check-ignore", "--stdin"],
+        input="\n".join(sorted(dests)),
+        capture_output=True,
+        text=True,
+    )
+    return {os.path.normpath(line) for line in proc.stdout.splitlines() if line}
+
+
+def check_file(path, cache, seen_dests):
     violations = []
     with open(path, encoding="utf-8", errors="replace") as fh:
         text = strip_fences(fh.read())
@@ -146,6 +166,7 @@ def check_file(path, cache):
             if not os.path.exists(dest):
                 violations.append("missing file -> %s" % target)
                 continue
+            seen_dests.setdefault(dest, []).append((path, target))
         if not frag:
             continue
         anchors = anchors_of(dest, cache)
@@ -170,10 +191,19 @@ def main():
 
     files = staged_files() if args.staged else corpus_files()
     cache = {}
+    seen_dests = {}
     total = 0
     for path in files:
-        for msg in check_file(path, cache):
+        for msg in check_file(path, cache, seen_dests):
             print("%s: %s" % (path, msg))
+            total += 1
+
+    for dest in sorted(ignored_targets(seen_dests)):
+        for path, target in seen_dests[dest]:
+            print(
+                "%s: gitignored target -> %s (resolves only where that artifact "
+                "was generated; not in a fresh clone or CI)" % (path, target)
+            )
             total += 1
 
     if total:

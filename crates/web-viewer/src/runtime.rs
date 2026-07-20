@@ -76,6 +76,10 @@ pub struct LegaiaRuntime {
     pub(crate) boot_title: Option<legaia_engine_core::title::TitleSession>,
     /// Disc-sourced title-screen art (PROT 0888), built with the title flow.
     pub(crate) title_atlas: Option<legaia_engine_core::title_screen_atlas::TitleScreenAtlas>,
+    /// Disc-sourced **menu-glyph** atlas (`legaia_asset::menu_glyph_atlas`) -
+    /// the small-caps sheet the title menu's NEW GAME / CONTINUE rows sample
+    /// when the title art is absent, exactly as the native window does.
+    pub(crate) menu_glyph_atlas: Option<legaia_engine_core::menu_glyph_atlas::MenuGlyphAtlas>,
     /// The **memory-card rack**: the player's own card images occupying the
     /// console's two ports ([`crate::cards`]). The in-canvas Load / Save
     /// screens read and write these, and the page exports them back out.
@@ -109,6 +113,7 @@ impl LegaiaRuntime {
             play_menu: None,
             boot_title: None,
             title_atlas: None,
+            menu_glyph_atlas: None,
             cards: [const { None }; crate::cards::CARD_SLOTS],
             #[cfg(target_arch = "wasm32")]
             audio_out: None,
@@ -243,6 +248,7 @@ impl LegaiaRuntime {
         self.play_menu = None;
         self.boot_title = None;
         self.title_atlas = None;
+        self.menu_glyph_atlas = None;
         Ok(count)
     }
 
@@ -361,19 +367,13 @@ impl LegaiaRuntime {
             host.world.finish_cutscene();
         }
         if let SceneTickEvent::SceneEntered { name } = event {
-            // Browser: arriving at town01 from the opening chain would run
-            // the establishing-sweep timeline, whose pinned op-0x49 opens the
-            // name-entry overlay - no browser surface exists for it yet, and
-            // a timeline waiting on it would freeze the page. Drop the
-            // timeline so the opening lands in normal free-roam play.
-            if name == legaia_asset::new_game::OPENING_SCENE
-                && let Some(h) = self.scene_host.as_mut()
-                && h.world.cutscene_timeline.is_some()
-            {
-                h.world.cutscene_timeline = None;
-                h.world.cutscene_narration = None;
-                h.world.cutscene_card = None;
-            }
+            // `town01` keeps its establishing-sweep timeline: the page now
+            // draws the name-entry overlay its pinned op-0x49 opens
+            // (`crate::play_name_entry`), so the suspended script has a
+            // surface to resume from. The screen and the state that closes it
+            // land together - the pairing the field shop's op-0x49 gate
+            // taught (a screen armed with nothing to finish it parks the
+            // script dead).
             self.rebuild_render_state()?;
             return Ok(name);
         }

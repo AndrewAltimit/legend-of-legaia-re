@@ -119,7 +119,7 @@ TMD at 10 live groups. The last two disc groups (10 and 11) are the
 (The "patched group index" and the offset-within-the-equip-byte-window are
 the same three numbers `{0, 3, 5}` - retail's `FUN_8001EBEC` reuses one tiny
 stack table for both roles. See the asm trace in
-[`ghidra/scripts/funcs/8001ebec.txt`](../../ghidra/scripts/funcs/8001ebec.txt).)
+`ghidra/scripts/funcs/8001ebec.txt`.)
 
 The swap is **binary**: each character has exactly one visible mesh group
 that toggles between two pre-baked variants. Different equipped items don't
@@ -409,8 +409,8 @@ separately `tmd_register`s PROT `0x36a` into the **effect/model window
 `DAT_8007C018[3..]`** (`etmd.dat`) - that is the effect window, not the party
 slots. Probe:
 [`autorun_battle_party_mesh_install.lua`](../../scripts/pcsx-redux/autorun_battle_party_mesh_install.lua);
-dumps [`ghidra/scripts/funcs/800513f0.txt`](../../ghidra/scripts/funcs/800513f0.txt)
-+ [`800542c8.txt`](../../ghidra/scripts/funcs/800542c8.txt). (Sibling battle
+dumps `ghidra/scripts/funcs/800513f0.txt`
++ `ghidra/scripts/funcs/800542c8.txt`. (Sibling battle
 files, raw indices → extraction entries: `etim.dat` `0x368` → 0870,
 `efect.dat` `0x36b` → 0873, and the battle-type-conditional pair
 `0x367`/`0x36d` → 0869/0875, both VAB-prefixed streaming files - see
@@ -452,7 +452,7 @@ The **assembled player-file meshes** all author at texpages `0x15`/`0x16` =
 `+3` texpage / `+0x40` CLUT-id rewrite - exactly the residual delta between
 the disc assembly and the live registered blob. Clean-room port:
 [`legaia_asset::battle_char_assembly::relocate_tsb_cba`](../../crates/asset/src/battle_char_assembly.rs)
-(dump [`ghidra/scripts/funcs/80053a28.txt`](../../ghidra/scripts/funcs/80053a28.txt);
+(dump `ghidra/scripts/funcs/80053a28.txt`;
 disc-gated `battle_char_assembly_real::relocates_each_character_into_its_runtime_band`).
 
 There is no involvement of the `0x8007BEC0` texpage→row table for party
@@ -683,7 +683,7 @@ file, spliced in by the assembler (resolved; see
 [§ Battle form](#battle-form---assembled-from-the-player-files)).
 
 `FUN_8001EBEC` is **not** that loader, and it does **not** grow `nobj`. The
-decomp ([`8001ebec.txt`](../../ghidra/scripts/funcs/8001ebec.txt); see also
+decomp (`ghidra/scripts/funcs/8001ebec.txt`; see also
 [§ 10-group cap + equipment-conditional swap](#10-group-cap--equipment-conditional-swap))
 shows it loops over the three party slots and, per a per-character
 equipment-condition byte, copies a **28-byte (7 × u32) transform** from one of
@@ -747,7 +747,7 @@ state offsets.
 | `FUN_800513F0` → `FUN_80026B4C` | **Battle-form party install (lead/active actors).** Battle scene-loader state handler; `while (i<3)` loop registering `*(actor+0x50)+0x18` (`actor = *(0x801C9360 + i*4)`) into `DAT_8007C018[0..]`, after the party-palette decode `FUN_80052FA0`. Pinned by a `DAT_8007C018[0..2]` write-watchpoint at battle entry - full trace in [§ Battle form, Loader provenance](#assembly---object-local-pieces-posed-by-the-characters-own-battle-streams). |
 | `FUN_800542C8` → `FUN_80026B4C` | **Battle-form party install (additional members).** Battle archive loader; per-member loop bounded by `*(rec+0x4a)`, registering `*(*rec+4)`. Dispatched indirectly (no static `0x8007C018` xref). `FUN_800520F0` state `0xc` separately `tmd_register`s PROT `0x36a` into the *effect* window `[3..]`, not the party. |
 | `FUN_8001E890` | "DATA_FIELD player loader" - post-install, caps `entry[+0x08] = 10` for the three active-party slots at `DAT_8007C018[DAT_8007B824 + 0..2]`, then dispatches the per-character equipment-conditional patch to `FUN_8001EBEC`. |
-| `FUN_8001EBEC` | Per-frame group-descriptor patch. Reads the equipment toggle byte and copies one of the two templates over the visible group descriptor. The full asm trace is decoded in [`ghidra/scripts/funcs/8001ebec.txt`](../../ghidra/scripts/funcs/8001ebec.txt). |
+| `FUN_8001EBEC` | Per-frame group-descriptor patch. Reads the equipment toggle byte and copies one of the two templates over the visible group descriptor. The full asm trace is decoded in `ghidra/scripts/funcs/8001ebec.txt`. |
 
 ## CLI
 

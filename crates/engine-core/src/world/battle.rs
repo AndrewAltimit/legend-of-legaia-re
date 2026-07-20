@@ -16,3 +16,4 @@ mod loop_driver;
 mod monster_ai;
 mod stats;
 mod teardown;
+mod tutorial;

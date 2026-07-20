@@ -150,6 +150,7 @@ fn with_ambient(w: &mut World, slot: u8, code: Vec<u8>, retail_heading: u16) {
     w.field_npc_ambient.insert(
         slot,
         FieldNpcAmbient {
+            walks: false,
             variants: vec![(legaia_asset::man_motion::SELECTOR_DEFAULT, code)],
             live: None,
             vm: vm::ambient_motion::AmbientMotion::new(u32::from(slot), retail_heading),
@@ -258,6 +259,7 @@ fn variant_selection_follows_the_live_system_flag_bank() {
     w.field_npc_ambient.insert(
         3,
         FieldNpcAmbient {
+            walks: false,
             variants: vec![
                 // Flag-gated variant (system flag 0x10) turns to lut 4.
                 (0x0010, vec![0x04, 0x04, 0x08]),

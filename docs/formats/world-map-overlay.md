@@ -344,7 +344,7 @@ Within the SCUS table the dispatcher adds a **bank offset** to the
 `kind*4` index based on the caller's `cmd_flags` (`param_2`) and
 `fade_flags` (`param_3`) arguments. The selection is the literal
 disassembly from
-[`ghidra/scripts/funcs/80043390.txt`](../../ghidra/scripts/funcs/80043390.txt)
+`ghidra/scripts/funcs/80043390.txt`
 (lines 230-244):
 
 ```c
@@ -547,9 +547,9 @@ Cross-kingdom picture (now with all entries uncapped):
   reader's body subset.
 
 The captured CSVs land under
-[`captures/slot4_uncapped/`](../../captures/slot4_uncapped/) (per-row
+`captures/slot4_uncapped/` (per-row
 flushed; safe to inspect mid-run). The dispatcher-entry probe CSV at
-[`captures/slot4_dispatcher/`](../../captures/slot4_dispatcher/) gives
+`captures/slot4_dispatcher/` gives
 the first-kind / `cmd_flags` / `fade_flags` per call - see the bank-
 breakdown table above.
 
@@ -949,7 +949,7 @@ object record's `[+0x1E]` flag is set, and OR'd with `0x10000000` if
 > 138-entry pack), not a "kingdom bundle".
 
 RAM dump after the scene load has settled
-([`captures/ram_dumps/drake_world.bin`](../../captures/ram_dumps/) - the `dolk`
+(`captures/ram_dumps/drake_world.bin`, local-only - the `dolk`
 field scene, see correction above):
 
 | Field | Value |
@@ -1011,7 +1011,7 @@ with word offsets in 4-byte units (same convention as
 | 4 | `0xB084` | 2  | 20 348 (trailing padding to pack end) |
 
 Byte-equality check against a settled field-scene RAM snapshot
-([`captures/ram_dumps/drake_world.bin`](../../captures/ram_dumps/),
+(`captures/ram_dumps/drake_world.bin`,
 local-only - the `dolk` field scene, not the Drake world map; see the
 provenance correction in [§ Live snapshot](#live-snapshot-settled-field-scene)).
 The character meshes `[0..4]` are the shared party pack every field scene loads,

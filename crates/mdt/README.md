@@ -57,7 +57,7 @@ Per-frame, `FUN_80021df4` (the actor tick) calls `FUN_80023070`, the
 escapes to `FUN_801D362C` in the field overlay, which runs a 61-sub-op
 extension VM (jump table at `0x801CE868`). See
 [`docs/subsystems/move-vm.md`](../../docs/subsystems/move-vm.md) and
-[`ghidra/scripts/funcs/80023070.txt`](../../ghidra/scripts/funcs/80023070.txt).
+`ghidra/scripts/funcs/80023070.txt`.
 
 ## CLI
 

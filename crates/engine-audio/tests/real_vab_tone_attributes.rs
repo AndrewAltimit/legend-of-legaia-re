@@ -133,3 +133,97 @@ fn vab_tones_have_no_vibrato_or_portamento_but_real_pitch_bend_ranges() {
         "no linear-release tone in the corpus - the linear-decrease step fix would be inert"
     );
 }
+
+/// Key-on volume must land in the SPU voice register's `0..=0x3FFF` domain,
+/// measured against the retail tone corpus rather than a synthetic tone.
+///
+/// This exists because the domain error it guards against was invisible to
+/// every audio oracle we had. `audio_trace` compares voice masks, start
+/// addresses and SPU *master* volume; `pcm_oracle` asserts the engine is
+/// not silent where retail is audible. A per-voice volume short by a factor
+/// of `0x3FFF/127` (~0x81) passes all of them - the engine is quiet, not
+/// silent, and quiet is not a shape any structural oracle looks at.
+///
+/// So the assertion here is deliberately about the *domain*, not a golden
+/// sample: a full-scale tone at full velocity must reach the top of the
+/// register, and a mid-scale one must sit well above the 0..=127 band that
+/// the missing widening would have produced.
+#[test]
+fn keyon_volume_spans_the_spu_register_domain_for_retail_tones() {
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+
+    let mut archive = Archive::open(&extracted.join("PROT.DAT")).expect("open PROT");
+
+    let mut tones = 0u64;
+    let mut max_combined = 0i32;
+    // Pan reachability. The retail law (`FUN_80067550`) only ever attenuates
+    // the far side, so it cannot overflow the register. The superseded `/64`
+    // law boosted the near side to ~2x and clamped - harmless while key-on
+    // volume was stuck in 0..=127, but reachable at the real 0..=0x3FFF
+    // scale. Count what the corpus would have clipped, so the pan law stays
+    // provably load-bearing rather than a tidy-up nobody can justify.
+    let mut pan_off_centre = 0u64;
+    let mut old_law_would_have_clipped = 0u64;
+
+    let entries = archive.entries.clone();
+    for entry in &entries {
+        let mut bytes = Vec::new();
+        if archive.read_entry(entry, &mut bytes).is_err() {
+            continue;
+        }
+        let mut i = 0;
+        while i + 4 <= bytes.len() {
+            if &bytes[i..i + 4] == b"pBAV"
+                && let Ok(report) = legaia_vab::parse(&bytes, i)
+            {
+                let bank_master = report.header.mvol as i32;
+                for program in &report.tones {
+                    for t in program {
+                        if t.vag <= 0 {
+                            continue;
+                        }
+                        tones += 1;
+                        // Same chain as VabBank::fire at full velocity.
+                        let combined = ((bank_master as i64 * t.vol as i64 * 127 * 0x3FFF)
+                            / (127 * 127 * 127))
+                            .min(0x3FFF) as i32;
+                        max_combined = max_combined.max(combined);
+
+                        let pan = (t.pan as i32).clamp(0, 127);
+                        if pan != 64 {
+                            pan_off_centre += 1;
+                        }
+                        let widest = (127 - pan).max(pan);
+                        if combined as i64 * widest as i64 / 64 > 0x3FFF {
+                            old_law_would_have_clipped += 1;
+                        }
+                    }
+                }
+            }
+            i += 1;
+        }
+    }
+
+    eprintln!(
+        "[keyon-vol] tones={tones} max_combined={max_combined:#x} \
+         pan_off_centre={pan_off_centre} \
+         old_law_would_have_clipped={old_law_would_have_clipped}"
+    );
+
+    assert!(tones > 1000, "expected a large VAB tone corpus");
+
+    // The corpus must be able to drive a voice to the top of the register.
+    // Pre-fix this maxed at 127 - three orders of magnitude short.
+    assert!(
+        max_combined > 0x3000,
+        "loudest retail tone only reaches {max_combined:#x} of the 0x3FFF voice \
+         register - the key-on volume chain is missing its widening"
+    );
+}

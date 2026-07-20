@@ -285,10 +285,69 @@ case `pitch` is the reliable channel.
 Alignment is on note *ordinal*, not wall time - a capture generally starts
 mid-track, and the two sides' frame counters have unrelated origins.
 
-Field BGM is scene-bundle-resident rather than a `music_01` track, so a
-capture taken in a field cannot be matched against the `music_01` corpus by
-`note-trace --track`; identifying the scene's own SEQ is the prerequisite
-for that comparison.
+### Matching the two sides to the same track
+
+A note diff is meaningless unless both sides play the same score. The
+earlier reading that field BGM is scene-bundle-resident (and therefore
+unmatchable against the `music_01` corpus) is **falsified**: every scene
+that starts BGM selects a global-pool id, so every track a capture can
+contain is a `music_01` entry and `note-trace --track` can reproduce it.
+See [`subsystems/audio.md`](../subsystems/audio.md#which-track-a-scene-plays).
+
+Pick the track without guessing by reading the resolver's own globals out of
+the running recomp - `0x8007BAC8` is the live BGM id and `0x8007BAB8` the
+PROT index it resolved to:
+
+```bash
+python3 scripts/recomp/probe.py --port 4471 \
+    --json '{"cmd":"read_ram","addr":"0x8007BAC8","len":4}'
+```
+
+Both read `0` until a scene actually starts music, so drive the game to a
+field scene first; the ids in the opening chain only appear once the
+prologue hands off.
+
+**`--track` is not the sound-test slot.** `note-trace` enumerates every
+VAB+SEQ pair in the `music_01` CDNAME block, which begins two entries below
+the bank base the resolver uses: `prot_entry = 988 + track`, so
+`track = bgm_id - 2000 + 2`. Cross-check against the `prot_entry` column of
+`note-trace --list` rather than computing it from the id.
+
+**Verify the 735.0 ratio yourself.** The capture script's guard only checks
+that `render_frames` is *advancing*, not that it advances at the right rate,
+so a throttled or partially-clocked instance passes it. Sample
+`spu_status.render_frames` and `frame` across an interval and confirm the
+quotient is exactly `735.0` before trusting a capture.
+
+Some bank entries carry **more than one** VAB. `note-trace` binds the first
+`pBAV` to the first `pQES`, which is the pairing the resolver uses; a
+second bank later in the entry belongs to a different pair, so a tone-count
+mismatch is not by itself evidence that bank staging picked wrong.
+
+### Divergences a matched run surfaces
+
+Two are structural - they reproduce on any window length, so they are not
+capture-alignment artifacts:
+
+**Per-voice volume is written in the wrong domain.** The engine's key-on
+volumes occupy `0..127` where retail's occupy the SPU's 14-bit `0..0x3FFF`.
+`vab_bind.rs`'s `fire` states the intended chain in its own comment -
+`bank * prog * vel / 127^3 * 0x3FFF` - but divides by `127 * 127` and never
+applies the final widening, leaving the result short by a factor of `0x81`
+(the same `0..127 → 0..16383` constant the libspu command shims use). This
+makes the `vol` channel diverge at the first note of any track.
+
+**Tone selection collapses.** On a bank whose program table offers many
+tones, the engine keys only a few distinct VAGs while retail draws across
+the table; extending the trace window several-fold adds no new tones, so
+this is a program-change / tone-region lookup defect rather than a track
+that simply has not reached its other instruments yet. Because a wrong tone
+carries a wrong base note, the `pitch` channel diverges as a consequence -
+read `vag` first and treat `pitch` as downstream of it.
+
+The `v` (voice index) channel differs whenever either of the above does:
+allocation order is a function of the note stream, so it is an effect, not
+an independent finding.
 
 ## See also
 

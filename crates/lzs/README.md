@@ -3,7 +3,7 @@
 Legend of Legaia LZS decompressor.
 
 Reverse-engineered from `FUN_8001a55c` in `SCUS_942.54` (see
-[`ghidra/scripts/funcs/8001a55c.txt`](../../ghidra/scripts/funcs/8001a55c.txt)).
+`ghidra/scripts/funcs/8001a55c.txt`).
 The algorithm is a sliding-window LZSS variant:
 
 - 4096-byte ring buffer initialised to zero, write position starts at `0xFEE`.

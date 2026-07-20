@@ -106,10 +106,9 @@ cutscene camera decode (`play_cutscene_camera_json`, mapped onto the page's
 orbit projection - an approximation of the native PSX GTE camera), the
 narration input lock, and the retail intro-skip
 (`play_take_prologue_handoff` - Cross skips the whole remaining opening to
-`town01`). Browser deviations, both deliberate: FMV beats are auto-finished
-(no STR/MDEC playback on the play path), and the `town01` establishing-sweep
-timeline is not run (it opens the name-entry overlay, which has no browser
-surface yet) - arrival lands in free-roam play.
+`town01`). One browser deviation, deliberate: FMV beats are auto-finished (no STR/MDEC
+playback on the play path). The `town01` establishing-sweep timeline **does**
+run, through to the name-entry overlay it opens (`play_name_entry` below).
 
 Two things the browser host has to do that the native one gets for free:
 
@@ -233,6 +232,33 @@ controller runs before any scene exists, feeds the title edge-triggered pad
 words, and on the New Game outcome seeds the retail defaults + enters the
 opening prologue chain (`play_cutscene` above). Publisher logos and the
 Continue save-slot grid are not yet wired.
+
+The menu rows have the same two sources the native window has, and exactly one
+draws at a time: with PROT 0888 resolved the title TIM's own NEW GAME /
+CONTINUE bands carry them; without it they fall back to the shared
+`title_menu_draws_for` builder sampling the menu-glyph atlas
+(`boot_title_glyph_atlas_*`), and only if that is missing too does the dialog
+font stand in. Drawing two of them would double-render the rows.
+
+## Name entry (`play_name_entry`)
+
+The last screen of the New Game flow: the opening `town01` naming prompt, at
+the retail-traced geometry, through the shared `name_entry_draws_for` +
+`name_entry_chrome_sprite_draws_for` builders. The state machine is
+`engine-core::name_entry` - the page owns no name logic, only the pad-edge
+bridge (`name_entry_input`) and the draw-list JSON (`name_entry_draws_json`,
+the same two-layer chrome+font shape the pause menu uses).
+
+The screen lands **with its state**, which is the whole point: the
+establishing timeline's pinned op-`0x49` opens it and stays suspended while
+`name_entry_is_active()` holds, so the committed name has to reach
+`World::party_names` for the script to resume at all. It is not an overlay
+that could be skipped - skipping it would park the opening forever, the same
+failure an unclosable field shop produces. Retail behaviours inherited from
+the SM: the middle control button **restores the template default** (it is not
+a space key), the confirm prompt opens on **No**, and Vahn's scripted walk-out
+(scene-ANM records 47/48) plays post-confirm. Disc-gated oracle:
+`tests/new_game_flow_parity.rs`.
 
 ## Assembled full-scene maps (`field_scene`)
 

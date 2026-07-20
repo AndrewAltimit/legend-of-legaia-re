@@ -20,6 +20,7 @@ use serde::Serialize;
 pub mod accessory_passive;
 pub mod anm_detect;
 pub mod baka_opponents;
+pub mod battle_camera_table;
 pub mod battle_char_assembly;
 pub mod battle_char_pack;
 pub mod battle_char_palette;

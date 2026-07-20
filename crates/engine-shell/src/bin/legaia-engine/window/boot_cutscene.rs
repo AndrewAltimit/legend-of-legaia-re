@@ -210,8 +210,19 @@ impl PlayWindowApp {
                     return true;
                 }
                 if let Some(active_sub) = sub.as_mut() {
+                    // Engine extension: Triangle on the Status screen swaps
+                    // it for the Tactical Arts chain editor (retail's seven
+                    // rows carry no Arts row). Consume the edge so the same
+                    // press does not also drive the screen it replaced.
+                    let opened_arts = legaia_engine_core::field_menu_dispatch::try_open_arts_editor(
+                        active_sub,
+                        pressed,
+                        &self.session.host.world,
+                    );
                     // A sub-session is open - route input + check for done.
-                    active_sub.tick_pad_edge(pressed);
+                    if !opened_arts {
+                        active_sub.tick_pad_edge(pressed);
+                    }
                     if active_sub.is_done() {
                         // Drain into world side-effects + handle save.
                         let finished = sub.take().expect("sub was Some");

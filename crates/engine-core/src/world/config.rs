@@ -266,6 +266,18 @@ pub struct FieldNpcAmbient {
     /// The ambient facing interpreter (PC, cursor, raw `+0x26` heading, and
     /// the actor's own slice of the `0x801C66A0` ramp pool).
     pub vm: vm::ambient_motion::AmbientMotion,
+    /// Any variant of this stream carries a walk op (`0x03`/`0x19`/`0x20`
+    /// directional step or `0x18` AABB wander), so this placement's motion
+    /// is the ambient VM's business.
+    ///
+    /// Retail dispatches the two per-actor motion VMs off *different* actor
+    /// flag bits (`+0x10 & 0x80` for this one, `& 0x400` for the pursue VM
+    /// at `FUN_8003774C`), so no actor is ever walked by both. The engine
+    /// keeps that exclusivity by standing the autonomous patrol substitute
+    /// down for the slots this flag marks - scripted legs (interaction
+    /// prologue, cutscene timeline) still win, exactly as they outrank a
+    /// patrol.
+    pub walks: bool,
 }
 
 impl FieldNpcAmbient {

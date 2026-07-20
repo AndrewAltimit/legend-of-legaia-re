@@ -1161,6 +1161,16 @@ pub struct World {
     /// [`crate::scene::SceneHost`].
     pub element_affinity: Option<legaia_asset::element_affinity::ElementAffinity>,
 
+    /// Per-character battle-camera height table
+    /// ([`legaia_asset::battle_camera_table`], runtime VA `0x801F4D2C`) - the
+    /// `TR.y` the submenu close-up framing (`FUN_801D5854` case `0`) reads for
+    /// whichever character is acting. Installed from the same PROT 0898
+    /// overlay as [`Self::move_power`] by [`crate::scene::SceneHost`]; `None`
+    /// on disc-free hosts, which leaves the camera on its single traced
+    /// fallback height so an unpinned character frames like the measured case
+    /// instead of jumping.
+    pub battle_camera_heights: Option<legaia_asset::battle_camera_table::BattleCameraHeights>,
+
     /// Item-table data the gold-shop path needs from `SCUS_942.54` (per-id buy
     /// price + a "names a real item" mask). Installed once at boot by the host
     /// (e.g. `BootSession`); `None` on disc-free builds, which leaves shop stock
@@ -1470,6 +1480,36 @@ pub struct World {
     /// [`Self::art_records`] by `Self::build_battle_arts_rows`. Hosts read it
     /// to draw the arts overlay.
     pub battle_arts_menu: Option<crate::battle_arts::BattleArtsSession>,
+
+    /// The battle **command-flow** cursor - retail `ctx[+0x06]`, the byte the
+    /// menu-half SM `FUN_801D0748` runs on and the key the sparring-tutorial
+    /// hook table indexes. Recomposed each frame from the live command session
+    /// plus submenus by [`crate::battle_flow::flow_state_for`]; the turn-start
+    /// prompt is raised directly by `World::open_battle_command`.
+    pub battle_flow: crate::battle_flow::BattleFlowState,
+
+    /// The sparring-tutorial prompt machine, armed only for the Tetsu
+    /// tutorial fight (battle-stage id
+    /// [`crate::battle_tutorial::TUTORIAL_STAGE_ID`]) via
+    /// [`Self::arm_battle_tutorial`]. `None` in every other battle - which is
+    /// every battle but one, matching retail's stage-overlay dispatch.
+    pub battle_tutorial: Option<crate::battle_tutorial::BattleTutorial>,
+
+    /// Prompt text for [`Self::battle_tutorial`], read off the user's own disc
+    /// copy of overlay 967. Empty when the host had no disc to read - the
+    /// tutorial then emits no boxes rather than inventing text.
+    pub battle_tutorial_script: crate::battle_tutorial::BattleTutorialScript,
+
+    /// Tutorial boxes waiting to be shown, front first. While non-empty the
+    /// whole battle loop is parked - the port of retail's `ctx[+0x6B2]`
+    /// message-box guard, which makes `FUN_801D0748` return early.
+    pub battle_tutorial_boxes: std::collections::VecDeque<crate::battle_flow::ActiveTutorialBox>,
+
+    /// The next [`World::enter_battle`] is the sparring fight and should arm
+    /// [`Self::battle_tutorial`]. Set by
+    /// [`World::prime_battle_tutorial`]; the engine's stand-in for retail's
+    /// per-formation battle-stage id.
+    pub battle_tutorial_pending: bool,
 
     /// Active stat buffs / debuffs applied by battle Magic, one entry per
     /// `(slot, stat)`. Each holds the exact delta written into the per-slot
@@ -2136,6 +2176,7 @@ impl World {
             clut_fx: Vec::new(),
             pending_move_fx_cue: None,
             element_affinity: None,
+            battle_camera_heights: None,
             item_shop_data: None,
             scene_shops: Vec::new(),
             pending_field_shop: None,
@@ -2158,6 +2199,11 @@ impl World {
             battle_item_menu: None,
             battle_spell_menu: None,
             battle_arts_menu: None,
+            battle_flow: crate::battle_flow::BattleFlowState::Idle,
+            battle_tutorial: None,
+            battle_tutorial_script: crate::battle_tutorial::BattleTutorialScript::default(),
+            battle_tutorial_boxes: std::collections::VecDeque::new(),
+            battle_tutorial_pending: false,
             active_formation: None,
             field_boss_stagers: std::collections::HashMap::new(),
             last_battle_rewards: None,

@@ -114,6 +114,14 @@ impl World {
     pub(in crate::world) fn live_battle_tick(&mut self) -> Option<StepOutcome> {
         use vm::battle_action::{ActionState, ActorFlags};
 
+        // Sparring tutorial: a prompt box on screen parks the entire battle -
+        // retail's `FUN_801D0748` returns before it reads the flow state when
+        // `FUN_801D9BBC` reports a box up (`ctx[+0x6B2]`).
+        // REF: FUN_801D0748, FUN_801D9BBC
+        if self.battle_tutorial.is_some() && self.tick_battle_tutorial_boxes() {
+            return None;
+        }
+
         // Player-driven: while the Arts submenu is open the action SM is
         // parked - drive it from the pad and return until the player runs an
         // art (turn cycles) or backs out (reopens the command menu).
@@ -144,6 +152,14 @@ impl World {
         if self.battle_command.is_some() {
             self.tick_battle_command();
             return None;
+        }
+
+        // No command session and no submenu open: the action SM owns the
+        // frame, which is retail's flow band outside the selection states.
+        // Returning to Idle here is what lets the next turn's
+        // `open_battle_command` raise the turn-start prompt again.
+        if self.battle_tutorial.is_some() {
+            self.set_battle_flow(crate::battle_flow::BattleFlowState::Idle);
         }
 
         // Final Heal sweep (FUN_801e6968): retail runs it in the cleanup

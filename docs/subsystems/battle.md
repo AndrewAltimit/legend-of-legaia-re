@@ -13,6 +13,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 
 **Retail battle logic + data**
 - [Battle action state machine (`FUN_801E295C`)](#battle-action-state-machine-fun_801e295c)
+- [Party wipe + the game-over overlay](#party-wipe--the-game-over-overlay)
 - [Battle context struct](#battle-context-struct)
 - [Stage seats (`FUN_800513F0` placement tables)](#stage-seats-fun_800513f0-placement-tables)
 - [Range / line-of-sight (`FUN_8004E2F0`)](#range--line-of-sight-fun_8004e2f0)
@@ -161,9 +162,72 @@ Styles `0, 1, 8, 9` do not wait for acknowledgement; `2..=7` do.
 Engine port: [`engine-core::battle_tutorial`](../../crates/engine-core/src/battle_tutorial.rs).
 The prompt **text is Sony data living in the overlay**, so the port commits only
 the string *addresses* and reads the text off the user's own disc at runtime
-(`BattleTutorialScript::from_overlay`) - the same rule the item / spell / dialog
-parsers follow. Disc-gated oracle
+(`BattleTutorialScript::from_overlay` / `::from_prot`) - the same rule the item /
+spell / dialog parsers follow. Disc-gated oracle
 `crates/engine-core/tests/battle_tutorial_disc.rs`.
+
+### The command-flow byte `ctx[+0x06]` - what the hook table indexes
+
+The hook key is **not** the action SM's `ctx[+0x07]`. It is `ctx[+0x06]`, the
+cursor of the *other* battle state machine: the menu half, `FUN_801D0748`. Both
+are byte cursors through a `jr` table over the same context struct, and their
+value spaces collide - `ctx[7] == 0x64` is `RunBegin`, `ctx[6] == 0x64` is target
+confirm.
+
+Below `0x1E` the command flow is battle entry and turn setup: `0x00` init,
+`0x0A`/`0x0B` the intro timer at `ctx[+0x6D6]`, `0x14` turn start (which opens
+the top menu and falls into `0x1E`). From `0x1E` up it is the player's command
+selection, and the states are regular decimal multiples of ten:
+
+| `ctx[+0x06]` | On screen | Leaves to |
+|---|---|---|
+| `0x1E` = 30 | `[Begin]` / `[Escape]` turn prompt | `0x28` on Begin, `0x32` on Escape |
+| `0x28` = 40 | Action-category menu | `0x3C`/`0x46` per window, `0x6E` on Spirit, `0x50`/`0x5A`/`0x78` on Attack per the attack-mode option |
+| `0x32` = 50 | Flee confirm | `0xFE` on confirm, `0x1E` on cancel |
+| `0x3C` = 60 | Item window | `0x64` once an item is picked |
+| `0x46` = 70 | Magic window | `0x6E` / `0x28` |
+| `0x50` = 80 | Arts command-entry screen | `0x5A` when the sequence is entered |
+| `0x5A` = 90 | Target cursor | `0x6E` on the last member, else `0x28` |
+| `0x64` = 100 | Target confirm (item window's own) | `0x6E` / `0x28` |
+| `0x6E` = 110 | All members committed - begin | `0xFE` on confirm, `0x28`/`0x1E` on cancel |
+| `0x78` = 120 | Auto / Command attack-mode prompt | `0x50` on Command, `0x5A` on Auto |
+
+Above the selection band sit the per-window target sub-cursors (`0x5B..=0x67`),
+`0xFE` ("round armed - run the action SM") and `0xFF` (idle).
+
+That band is what pins the tutorial's table. Its nine live slots are exactly
+these ten states **minus the magic window** - the sparring fight teaches attacks,
+items, spirit and hyper arts, and never magic. Engine mirror
+[`engine-core::battle_flow`](../../crates/engine-core/src/battle_flow.rs), which
+carries that cross-check as a test.
+
+### How the engine raises the flow state
+
+The engine splits what `FUN_801D0748` does in one machine across a
+[`battle_input::BattleCommandSession`](../../crates/engine-core/src/battle_input.rs)
+plus host-owned Item / Magic / Arts submenus, so the flow byte is *recomposed*
+each frame by `battle_flow::flow_state_for` (an open submenu wins over the
+command phase). Three points differ from retail and are deliberate:
+
+- **Turn prompt.** The engine has no separate `[Begin]` screen, so
+  `World::open_battle_command` raises state `30` directly for the frame a turn
+  opens - the same instant retail enters `0x1E`.
+- **Target confirm.** `CommandPhase::Confirmed` is the Attack path, which retail
+  routes `0x5A → 0x6E`; state `100` is the item window's own target step and has
+  no engine hook point yet.
+- **Lesson counter.** Retail shares `ctx[+0x28A]` with the action SM, where the
+  sparring fight's scripted `case 0xFF` bumps it. The engine has no script driver
+  for that fight, so `BattleTutorial::pending_advance` bumps the lesson when the
+  commit hook *accepts* the taught category - one lesson per successful player
+  turn, which is the same observable cadence.
+
+A queued box parks the whole battle tick (`World::live_battle_tick` returns
+early), which is the port of retail returning before it reads the flow state
+while `FUN_801D9BBC` reports a box up (`ctx[+0x6B2]`). A hook that takes the
+rewind exit discards the action and reopens the command menu. Hosts arm the
+machine with `World::prime_battle_tutorial`, the stand-in for retail's stage-id
+dispatch; `legaia-engine play-window --player-battle` primes it in `town01`
+(`LEGAIA_BATTLE_TUTORIAL=1`/`0` forces it either way for hand-testing).
 
 The `asset-viewer battle-scene` subcommand drives the engine-side composite end-to-end: loads the same battle bundle TMDs, builds an `engine-core::World` in `SceneMode::Battle`, spawns 3 party + 5 monster actor slots, and ticks the [battle-action state machine](battle-action.md) per frame. HUD shows the current `ActionState` (decoded into the named variant), queued action, per-slot liveness, transition counts, and any `BattleEndCause` the SM emits. Triangle cycles `queued_action`; Cross re-seeds at `ActionState::Begin`.
 
@@ -353,16 +417,21 @@ catalogued mednafen Tetsu battle states; one camera step spans **2 vsyncs**:
 |---|---|---|---|---|
 | tutorial dialogue up | 0 | 0 | `(0, 1280, 1638)` | held static |
 | dialogue dismiss | 0→32, `+6`/step | orbit resumes | z 1638→7680, `+864`/step | rate-clamped glide |
-| Begin/Run menu | 32 | free | `(0, 1280, 7680)` | idle orbit `-4` yaw/step |
+| Begin/Run menu | 32 | free | `(0, 1280, z)` | idle orbit `-4` yaw/step |
 | command submenu | 32 | **2288** | `(-512, 1152, 2457)` | 6-step glide in, then held |
 | submenu exit | swings 32→256→32 | eases to 0 | via `(0, 1536, 3276)`, back to menu TR | 6-step swing + 7-step return |
 
-`H = 256` and the identity·16384 base hold through every phase. The submenu
-close-up is measured for the solo-Vahn Tetsu fight; how the framing
-generalizes to the other party seats is an open thread. Engine mirror:
-`window/battle_cam.rs` in `play-window` (phase derived from the live dialogue
-/ command-session state, stepped on the retail display-frame clock), with the
-glide-table kernel port at `legaia_engine_vm::battle_camera`
+`H = 256` and the identity·16384 base hold through every phase. The traced
+numbers above are one fight's *instance* of two formulas, not constants: the
+submenu yaw `2288` is `0x8F0 - actor_facing` and the menu depth `z` is the
+formation-sized `max(span * 3, 0x800)`, which lands on `7680` for the solo
+Tetsu seats. Per-seat variation lives in the **focus trio**, which a solo
+trace cannot distinguish from a constant. Both framing laws, the per-character
+height table `0x801F4D2C`, and the focus trio are covered under
+[`battle-action.md`](battle-action.md#case-0---the-submenu-close-up-framing).
+Engine mirror: `window/battle_cam.rs` in `play-window` (phase derived from the
+live dialogue / command-session state, stepped on the retail display-frame
+clock), with the glide-table kernel port at `legaia_engine_vm::battle_camera`
 (`FUN_801D829C`).
 
 **Actor pass: the 4× world-scale base matrix.** The battle base matrix
@@ -453,6 +522,60 @@ Distinct from:
 - The [move-table VM](move-vm.md) (which drives Tactical Arts inputs and per-action keyframe scheduling - a layer below this one).
 
 Found via the `overlay_battle_action.bin` import (a save state captured with the action menu open). Dumped as `ghidra/scripts/funcs/overlay_battle_action_801e295c.txt`. The 78-function inventory of the battle overlay is in `overlay_battle_action_inventory.txt` (top 80 dumped). All 6 captured battle modes (summon / special-move / martial-arts-input / spirit / action / capture) load identical battle overlay code - only data buffers (actor table at `0x801C9370`, ctx struct at `0x800EB654`, GPU OT lists, audio scratch) differ between captures.
+
+## Party wipe + the game-over overlay
+
+The wipe **detection** is pinned; the retail **destination** is not, and
+the two should not be conflated.
+
+Detection is the `0x5A` end-of-action gate of the action SM (see
+[battle-action.md](battle-action.md)). It walks the actor pointer table
+counting party actors that are alive (`+0x14C != 0`) and not
+counts-as-defeated (`+0x16E & 4`, e.g. Stone). With no survivor it sets
+the battle-end signal `DAT_8007BD71 = 0xFE` and the wipe cause
+`_DAT_8007BD2C = 5`; the mirror-image monster scan sets cause `0`.
+
+The battle-exit mode selector is `FUN_80046A20` (SCUS, `0x80046A20`).
+Its three `game_mode` stores pick between `0` (debug-battle id set),
+`0x18` / mode 24 OTHER (arena / Muscle Dome, `_DAT_8007BAC0 & 0x100`)
+and `2` / mode 2 MAIN INIT, i.e. back to the field. It **never reads
+`_DAT_8007BD2C`** - the wipe cause is consumed only by
+`FUN_801D5854` (battle-camera framing) and `FUN_8004E568`. So on the
+statically-reachable exit path, a party wipe returns to the field like
+any other battle end.
+
+A game-over screen nevertheless exists as real disc content. Mode-table
+rows 18 / 19 (table at `0x8007078C`, 0x18 stride) hand off to
+`FUN_80025B30`, which loads **PROT 0902** at base `0x801CE818` with its
+entry at `0x801CE844`. The overlay carries the source path
+`h:\prot\field\gameover\gameover.pak`, 29 TIMs (the artwork), a
+self-advance to mode 19 and a **single, unconditional** exit that writes
+`game_mode = 0`.
+
+Two things follow. First, retail's game over is **not a menu**: 0902's
+only readable string is `GAME OVER`, it has no Continue / Retry / Quit
+vocabulary, and one exit store cannot express three outcomes. The port's
+three-row `engine-core::game_over::GameOverSession` is therefore an
+**engine invention**, not a port of retail behaviour, and it is
+deliberately left unreachable rather than wired to a trigger nobody has
+pinned. Second, the mode-18 entry has no static writer anywhere on the
+disc: a scan of every `sb`/`sh`/`sw` to `game_mode` across
+`SCUS_942.54` and every PROT entry finds the value `0x12` written
+nowhere, no mode-table `next` field chains into 18, and the only
+`jal 0x80025B30` is inside `FUN_80025B30` itself. That 0902 exits to
+mode 0 - the **debug menu** - is further circumstantial evidence that
+the 18/19 pair is a dev harness.
+
+What that scan cannot rule out is the nine register-indirect
+`game_mode` stores, which remain the search space. Resolving them is a
+runtime question rather than a static one; see
+[open-rev-eng-threads.md](../reference/open-rev-eng-threads.md).
+
+Mode numbers are decimal in these docs and hex in the dumps, which is a
+standing trap here: `_DAT_8007B83C = 0x18` is mode **24** (OTHER /
+minigame), not game over. Game over is `0x12`. Relatedly,
+`extracted/PROT/0002_gameover_data.BIN` is *not* game-over art - the +2
+CDNAME filename shift makes it town01's table.
 
 ## Battle context struct
 

@@ -45,10 +45,10 @@ pub(super) fn op_4c_n8<H: FieldHost>(
             }
         }
         2 => {
-            let Some(&page) = bytecode.get(operand + 1) else {
+            let Some(&slot) = bytecode.get(operand + 1) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            host.op4c_n8_sub2_party_page_mirror(page);
+            host.op4c_n8_sub2_restore_party_slot(slot);
             StepResult::Advance {
                 next_pc: pc + header_size + 2,
             }

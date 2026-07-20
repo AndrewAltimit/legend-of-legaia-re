@@ -485,6 +485,8 @@ The control row (grid row 6) tiles those sentinel bytes across its columns: `00 
 
 **Clean-room engine port.** The whole SM is ported as a standalone overlay in [`legaia_engine_core::name_entry`](../../crates/engine-core/src/name_entry.rs) (`NameEntry` + `NameEntryState` + `Control`), driven on the world by `World::open_name_entry` / `step_name_entry` (committing into `World::party_names`) and rendered through [`legaia_engine_render::name_entry_draws_for`](../../crates/engine-render/src/lib.rs). In `legaia-engine play-window`, the NEW GAME flow reaches the prompt through the scene's own bytecode - the `town01` opening timeline's pinned op `0x49` (above) - whether the player rode the natural chain or skipped; the P2[3] C1 gate (flag `0x225`) keeps a normal later `town01` visit from re-prompting. A dev `N` key also opens it for testing outside the new-game flow.
 
+**Both hosts reach it.** The browser play page runs the same SM and the same shared [`legaia_engine_ui`](../../crates/engine-ui/README.md) builders (`name_entry_draws_for` + `name_entry_chrome_sprite_draws_for`) through [`legaia_web_viewer::play_name_entry`](../../crates/web-viewer/README.md); the page freezes the field and forwards pad edges while the overlay is up, exactly as the native window's redraw loop does. Neither host owns name logic - only the pad bridge and the draw target - which is what keeps the two from drifting (`scripts/ci/check-ui-host-drift.py`).
+
 ### Sprite-emit helpers
 
 The title-tick body reaches into three SCUS-side helpers to emit GPU primitives. All three are ported clean-room in [`legaia_engine_vm::title_prim`](../../crates/engine-vm/src/title_prim.rs):

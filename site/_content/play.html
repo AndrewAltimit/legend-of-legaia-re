@@ -253,7 +253,8 @@
         <span class="play-mode-name">New game</span>
         <span class="play-mode-desc">Boots the retail title card off your disc's own art, then plays
           the opening prologue - the cutscene tableaux with the narration crawl, in the retail sepia
-          grade (Z/Space skips to Rim Elm, retail's intro skip). The pre-title FMV movie and the
+          grade (Z/Space skips to Rim Elm, retail's intro skip) - and lands on the naming prompt,
+          where the name you pick goes into your party for good. The pre-title FMV movie and the
           Continue save-slot grid are native-only for now.</span>
       </button>
       <button class="play-mode" type="button" data-mode="scene">
@@ -342,6 +343,11 @@
       and the <a href="subsystems/script-vm.html">field VM</a> plays out their dialogue, branches
       and all.</li>
     <li><strong>Doors.</strong> Walk into one and the engine loads the destination scene under you.</li>
+    <li><strong>The New Game flow, end to end.</strong> Title card, New Game, the prologue, and
+      then Rim Elm's establishing sweep running into the <em>"Select your name."</em> grid - the
+      real screen, opened by the scene's own script, which stays suspended until you confirm. The
+      name you commit is written into the party record, so the status panel and your saves carry
+      it (<a href="subsystems/boot.html">boot chain</a>).</li>
     <li><strong>The pause menu and every screen behind it.</strong> Press <kbd>Enter</kbd> for the
       real retail menu - chrome and glyphs off your disc, every rectangle placed by the ported
       window-descriptor code (<a href="subsystems/field-menu.html">field menu</a>). Items, Magic,
@@ -578,6 +584,11 @@
           onState: onState,
           menuOverlay: menuCanvas,
           onScene: (name) => { active = name; renderList(searchEl.value); },
+          /* The opening naming prompt committed: the name is in the party
+           * record from here on (status panel, dialogue, saves), so say so. */
+          onNamed: (name) => {
+            statusEl.textContent = `Named the hero ${name}. Walk with the arrow keys.`;
+          },
           /* The in-game Load screen read a save off an inserted memory card:
            * the party is already in the world, so all that is left is to walk
            * into the scene it was saved in - retail resumes there. */
@@ -625,12 +636,19 @@
     stageEl.style.display = 'grid';
     statusEl.textContent = 'Press Start (Enter). Up/Down to choose, Z to confirm.';
     const ctx = menuCanvas.getContext('2d');
-    /* Blitters: title art for the bands, the dialog font for any text stand-in. */
-    let titleBlit = null, fontBlit = null;
+    /* Blitters, in the engine's own fallback order: the title art carries the
+     * card + menu bands; without it the menu rows come off the menu-glyph
+     * atlas; without that too, the dialog font stands in. */
+    let titleBlit = null, glyphBlit = null, fontBlit = null;
     try {
       const td = runtime.boot_title_atlas_dims();
       if (runtime.boot_title_has_atlas() && td[0] > 0)
         titleBlit = new window.LegaiaAtlasBlitter(runtime.boot_title_atlas_rgba(), td[0], td[1]);
+      if (typeof runtime.boot_title_glyph_atlas_dims === 'function') {
+        const gd = runtime.boot_title_glyph_atlas_dims();
+        if (gd[0] > 0)
+          glyphBlit = new window.LegaiaAtlasBlitter(runtime.boot_title_glyph_atlas_rgba(), gd[0], gd[1]);
+      }
       const fd = runtime.play_menu_font_dims();
       if (fd[0] > 0) fontBlit = new window.LegaiaAtlasBlitter(runtime.play_menu_font_rgba(), fd[0], fd[1]);
     } catch (e) { console.warn('boot title atlas', e); }
@@ -665,6 +683,7 @@
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, menuCanvas.width, menuCanvas.height);
         if (titleBlit) titleBlit.blit(ctx, draws.sprites);
+        if (glyphBlit && draws.glyphs) glyphBlit.blit(ctx, draws.glyphs);
         if (fontBlit) fontBlit.blit(ctx, draws.texts);
       }
       if (outcome) finish(outcome);   /* new_game / continue / options */

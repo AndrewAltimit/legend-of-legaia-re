@@ -62,6 +62,29 @@ impl LegaiaRuntime {
         }
         self.title_atlas = atlas;
     }
+
+    /// Build the menu-glyph atlas (the small-caps sheet at
+    /// [`legaia_asset::menu_glyph_atlas`]) off the loaded PROT, best-effort.
+    /// Only the no-title-art path needs it, but it is cheap and stable, so it
+    /// is built alongside the title art.
+    fn ensure_menu_glyph_atlas(&mut self) {
+        if self.menu_glyph_atlas.is_some() {
+            return;
+        }
+        let Some(host) = self.scene_host.as_ref() else {
+            return;
+        };
+        self.menu_glyph_atlas = host
+            .index
+            .prot_dat_raw_bytes(
+                legaia_asset::menu_glyph_atlas::PROT_DAT_OFFSET,
+                legaia_asset::menu_glyph_atlas::TIM_SIZE,
+            )
+            .ok()
+            .and_then(|b| {
+                legaia_engine_core::menu_glyph_atlas::build_atlas_from_prot_dat_slice(&b).ok()
+            });
+    }
 }
 
 #[wasm_bindgen]
@@ -76,6 +99,7 @@ impl LegaiaRuntime {
         // Reuse the pause-menu font atlas for the text draws.
         let _ = self.ensure_menu_assets();
         self.ensure_title_atlas();
+        self.ensure_menu_glyph_atlas();
         let mut session = TitleSession::without_save_data();
         session.skip_fade_in();
         self.boot_title = Some(session);
@@ -142,15 +166,43 @@ impl LegaiaRuntime {
             .unwrap_or_else(|| vec![0, 0])
     }
 
+    /// The menu-glyph atlas (RGBA8 stencil) the no-title-art menu rows
+    /// sample. Empty when it did not resolve.
+    pub fn boot_title_glyph_atlas_rgba(&self) -> Vec<u8> {
+        self.menu_glyph_atlas
+            .as_ref()
+            .map(|a| a.rgba.clone())
+            .unwrap_or_default()
+    }
+
+    /// `[width, height]` of the menu-glyph atlas; `[0, 0]` when none.
+    pub fn boot_title_glyph_atlas_dims(&self) -> Vec<u32> {
+        self.menu_glyph_atlas
+            .as_ref()
+            .map(|a| vec![a.width, a.height])
+            .unwrap_or_else(|| vec![0, 0])
+    }
+
     /// Draw lists for the current title state, in surface pixels:
     /// `{ "active": true, "sprites": [...title-atlas quads...],
+    ///    "glyphs": [...menu-glyph-atlas quads...],
     ///    "texts": [...font quads...] }`. Rendered over black by the page.
+    ///
+    /// The three layers are mutually exclusive by design, and the split
+    /// mirrors the native window exactly. With the disc's title art present
+    /// the TIM's own NEW GAME / CONTINUE bands carry the menu (`sprites`).
+    /// Without it the rows fall back to the shared
+    /// [`ui::title_menu_draws_for`] builder sampling the menu-glyph atlas
+    /// (`glyphs`) - the same fallback the native window's
+    /// `title_menu_glyph_sprite_draws` serves - and only if that atlas is
+    /// missing too does the font stand-in (`texts`) draw.
     pub fn boot_title_draws_json(&self, surface_w: u32, surface_h: u32) -> String {
         let Some(session) = self.boot_title.as_ref() else {
-            return r#"{"active":false,"sprites":[],"texts":[]}"#.to_string();
+            return r#"{"active":false,"sprites":[],"glyphs":[],"texts":[]}"#.to_string();
         };
         let (origin, scale) = stage_transform(surface_w.max(1), surface_h.max(1));
         let sprites = self.title_band_sprites(session, origin, scale);
+        let glyphs = self.title_menu_glyph_sprites(session, surface_w.max(1), surface_h.max(1));
         // Text stand-ins only when the disc art is missing (atlas_present =
         // false makes the builder emit ASCII fallbacks); with art present the
         // bands carry the wordmark / menu, so the font layer is empty.
@@ -163,6 +215,15 @@ impl LegaiaRuntime {
                 TitlePhase::MainMenu { cursor } => (2u8, cursor),
                 TitlePhase::Done(_) => (2u8, 0u8),
             };
+            // The menu rows are the glyph layer's job whenever that atlas
+            // resolved; the font only ever stands in for a row nothing else
+            // can draw. (The Press Start prompt has no glyph-atlas form, so
+            // phase 1 always falls to the font here.)
+            let phase = if phase == 2 && !glyphs.is_empty() {
+                0
+            } else {
+                phase
+            };
             let blink_on = matches!(session.phase(), TitlePhase::PressStart { blink_phase } if blink_phase < 30);
             let mut d = ui::title_draws_for(font, phase, cursor, false, blink_on, false, (96, 96));
             ui::scale_stage_text_draws(&mut d, origin, scale);
@@ -171,6 +232,7 @@ impl LegaiaRuntime {
         serde_json::json!({
             "active": true,
             "sprites": sprites.iter().map(quad_json).collect::<Vec<_>>(),
+            "glyphs": glyphs.iter().map(quad_json).collect::<Vec<_>>(),
             "texts": texts.iter().map(quad_json).collect::<Vec<_>>(),
         })
         .to_string()
@@ -178,6 +240,45 @@ impl LegaiaRuntime {
 }
 
 impl LegaiaRuntime {
+    /// The title menu's NEW GAME / CONTINUE rows drawn from the **menu-glyph
+    /// atlas** through the shared [`ui::title_menu_draws_for`] builder - the
+    /// no-title-art fallback, and a port of the native window's
+    /// `title_menu_glyph_sprite_draws` down to the anchor math.
+    ///
+    /// Empty unless the session is in `MainMenu`, the glyph atlas resolved,
+    /// and the title art did **not**: with the title TIM present its own
+    /// bands carry the rows, and drawing both would double-render them.
+    fn title_menu_glyph_sprites(
+        &self,
+        session: &TitleSession,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<SpriteDraw> {
+        if self.menu_glyph_atlas.is_none() || self.title_atlas.is_some() {
+            return Vec::new();
+        }
+        let TitlePhase::MainMenu { cursor } = session.phase() else {
+            return Vec::new();
+        };
+        // Anchor inside the same centred + integer-scaled 256x256 title stage
+        // the art path uses. The rows sit between the wordmark band (ends at
+        // src y=140) and the copyright bands (start at src y=195).
+        let atlas_w: u32 = 256;
+        let atlas_h: u32 = 256;
+        let title_scale = (surface_w / atlas_w).min(surface_h / atlas_h).clamp(1, 4);
+        let ts = title_scale as i32;
+        let stage_x0 = (surface_w as i32 - atlas_w as i32 * ts) / 2;
+        let stage_y0 = (surface_h as i32 - atlas_h as i32 * ts) / 2;
+        // "NEW GAME" is 8 cells x 8 px wide at a 1x glyph multiplier; centre
+        // that inside the 256-wide stage.
+        let menu_w_src = 8 * 8;
+        let pen = (
+            stage_x0 + (atlas_w as i32 - menu_w_src) / 2 * ts,
+            stage_y0 + 152 * ts,
+        );
+        ui::title_menu_draws_for(2, cursor, session.continue_enabled, pen, title_scale)
+    }
+
     /// Compose the title-TIM bands (wordmark, Press Start, NEW GAME / CONTINUE,
     /// copyright lines) into surface-pixel sprite quads - a faithful port of the
     /// native window's `title_screen_sprite_draws`.

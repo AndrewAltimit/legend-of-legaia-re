@@ -496,6 +496,17 @@ pub struct BattleTutorial {
     pub inputs: TutorialInputs,
     /// Set once the completion tail has run.
     pub finished: bool,
+    /// The commit hook accepted the action this lesson teaches, so the lesson
+    /// counter is due to advance. Consumed at the next turn start
+    /// ([`HOOK_STATES`] slot `30`) so the state-`110` validator still sees the
+    /// lesson it validated against.
+    ///
+    /// Retail has no such field: there the counter is bumped by the sparring
+    /// fight's scripted `case 0xFF` pseudo-action, which the engine's battle
+    /// loop has no script driver for. Advancing on an accepted commit puts the
+    /// bump at the same observable place - one lesson per successful player
+    /// turn.
+    pub pending_advance: bool,
 }
 
 /// What a [`BattleTutorial::tick`] asks the battle host to do.
@@ -543,6 +554,13 @@ impl BattleTutorial {
         }
 
         let mut tick = TutorialTick::default();
+
+        // A lesson accepted at the commit hook lands at the next turn start,
+        // before that turn's intro box is chosen.
+        if flow_state == HOOK_STATES[0] && self.pending_advance {
+            self.pending_advance = false;
+            self.advance_lesson();
+        }
 
         // ctx[0x6AE] != 0 -> already emitted for this flow state.
         if self.latch == 0 {
@@ -640,6 +658,32 @@ impl BattleTutorialScript {
             strings.insert(va, text);
         }
         Self { strings }
+    }
+
+    /// Read the prompt corpus straight off the booted disc.
+    ///
+    /// Resolves the `battle_tutorial` row of the static-overlay map (extraction
+    /// PROT [`OVERLAY_967_PROT_INDEX`], base [`OVERLAY_967_BASE_VA`]), reads
+    /// that entry through the host's PROT index, slices it to its as-loaded
+    /// form and parses the strings. This is what a host calls to prime
+    /// [`crate::world::World::prime_battle_tutorial`] with real text; the bytes
+    /// never leave the user's own disc.
+    ///
+    /// Returns an empty script (not an error) when the entry can't be read, so
+    /// a host booted against a partial disc still runs the battle - it just
+    /// shows no boxes.
+    pub fn from_prot(index: &crate::scene::ProtIndex) -> Self {
+        let Some(rec) = legaia_asset::static_overlay::overlay_map().by_label("battle_tutorial")
+        else {
+            return Self::default();
+        };
+        let Ok(bytes) = index.entry_bytes(rec.prot_index) else {
+            return Self::default();
+        };
+        match legaia_asset::static_overlay::as_loaded(&bytes, rec) {
+            Ok(loaded) => Self::from_overlay(&loaded, rec.base_va),
+            Err(_) => Self::default(),
+        }
     }
 
     /// Resolve a message to its text, if the disc supplied it.

@@ -685,6 +685,14 @@ impl World {
         // Effect pool is reused across scenes - reset to a fresh instance
         // (per-battle the head/free-list rebuilds from scratch).
         self.effect_pool = vm::effect_vm::Pool::new();
+        // Sparring fight: arm the tutorial prompt machine, the engine's stand-in
+        // for retail paging stage overlay 967 in at battle load.
+        self.battle_tutorial = None;
+        self.battle_tutorial_boxes.clear();
+        self.battle_flow = crate::battle_flow::BattleFlowState::Idle;
+        if self.battle_tutorial_pending {
+            self.arm_battle_tutorial();
+        }
     }
 
     /// Place the world into [`SceneMode::WorldMap`] and install a
