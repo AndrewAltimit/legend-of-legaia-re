@@ -77,11 +77,29 @@ def corpus_files():
 
 
 def staged_files():
-    out = subprocess.run(
+    # The return code is checked deliberately. If `git diff --cached` fails --
+    # no repo, git missing, a contended index lock -- `.stdout` is empty, the
+    # scoped file list is empty, and the gate scans nothing and exits 0. That is
+    # a *vacuous pass* in a hard pre-commit gate: the observer failed, and its
+    # failure was indistinguishable from "the corpus is clean". Do not "simplify"
+    # this back to a bare `.stdout.split()`; an empty staged set is a legitimate
+    # result only when git actually said so.
+    proc = subprocess.run(
         ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"],
         capture_output=True,
         text=True,
-    ).stdout.split()
+    )
+    if proc.returncode != 0:
+        sys.stderr.write(
+            "check-doc-density: `git diff --cached` failed (rc="
+            f"{proc.returncode}); refusing to report a pass from an empty file "
+            "list.\n"
+        )
+        if proc.stderr.strip():
+            first = proc.stderr.strip().splitlines()[0]
+            sys.stderr.write(f"  git: {first}\n")
+        sys.exit(2)
+    out = proc.stdout.split()
     return sorted(f for f in out if in_scope(f) and os.path.exists(f))
 
 
