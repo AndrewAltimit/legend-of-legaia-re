@@ -52,6 +52,35 @@ pub struct FieldPropCollider {
     pub solid: bool,
 }
 
+/// A ledge hop started by [`World::try_field_ledge_hop`] - the argument
+/// triple retail builds on the stack and hands to `FUN_801d2404`.
+///
+/// The hop is posted, not simulated here: retail's `FUN_801d2404` owns the
+/// arc animation, and this record is what the engine's motion layer would
+/// consume to drive it.
+// REF: FUN_801d1878, FUN_801d2404
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FieldLedgeHop {
+    /// Landing X - three step-deltas ahead (`x + 3 * dx * 4`).
+    pub target_x: i16,
+    /// Landing height, sampled by the floor sampler at one step-delta ahead
+    /// (retail stashes it in the scratch half-word `0x8007BDE2`).
+    pub target_y: i16,
+    /// Landing Z - three step-deltas ahead (`z + 3 * dz * 4`).
+    pub target_z: i16,
+    /// Retail's hop-class selector: `0x10` when the landing floor is at
+    /// least `0x61` units **above** the actor (hop up), `0x18` when it is
+    /// more than `0x60` units **below** (hop down).
+    pub kind: u16,
+}
+
+impl FieldLedgeHop {
+    /// `true` for the upward class (`kind == 0x10`).
+    pub fn is_up(&self) -> bool {
+        self.kind == 0x10
+    }
+}
+
 /// Render-agnostic snapshot of one live effect-pool master slot, produced by
 /// [`World::active_effect_markers`] - one entry per effect (effect origin +
 /// age). [`World::active_effect_sprites`] is the richer per-child billboard

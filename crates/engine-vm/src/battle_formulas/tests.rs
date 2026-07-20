@@ -912,3 +912,409 @@ fn escape_flags_fold_ability_word1_bits_52_and_55() {
     f.fold_ability_word1(0);
     assert!(f.escape_boost && f.assured);
 }
+
+// ---------------------------------------------------------------------------
+// Per-round bookkeeping (FUN_801DA780 / FUN_801D88CC / FUN_801F0348)
+// ---------------------------------------------------------------------------
+
+/// The base roll with every modifier absent: `speed + roll + 1`.
+#[test]
+fn seed_initiative_base_roll() {
+    let a = InitiativeActor {
+        speed: 40,
+        hp: 100,
+        max_hp: 100,
+        is_party: true,
+        ..Default::default()
+    };
+    // Undamaged: the wounded term is 0 regardless of side.
+    assert_eq!(seed_initiative(&a, 0), 41);
+    assert_eq!(seed_initiative(&a, 20), 61);
+    // The modulus is speed/2 + 1, so it is never zero even at speed 0.
+    assert_eq!(initiative_roll_modulus(0), 1);
+    assert_eq!(initiative_roll_modulus(40), 21);
+}
+
+/// The wounded bonus is the term the aliased-dump reading dropped, and the
+/// party's schedule is three bands deep against the monsters' flat one.
+#[test]
+fn wounded_bonus_party_bands_beat_monster_flat_shift() {
+    let hurt = |hp: u16, is_party: bool| InitiativeActor {
+        speed: 0,
+        hp,
+        max_hp: 1024,
+        is_party,
+        ..Default::default()
+    };
+    // Party, below max/4 (256): deficit 924 >> 4.
+    assert_eq!(wounded_bonus(&hurt(100, true)), 924 >> 4);
+    // Party, below max/2 (512) but not max/4: deficit 524 >> 5.
+    assert_eq!(wounded_bonus(&hurt(500, true)), 524 >> 5);
+    // Party, healthy band: deficit 24 >> 6 = 0.
+    assert_eq!(wounded_bonus(&hurt(1000, true)), 0);
+    // A monster at the same 100 HP gets >> 10 instead of >> 4 - nearly nothing.
+    assert_eq!(wounded_bonus(&hurt(100, false)), 924 >> 10);
+    assert!(wounded_bonus(&hurt(100, true)) > wounded_bonus(&hurt(100, false)));
+    // Corrupt hp > max_hp saturates to 0 rather than wrapping huge.
+    assert_eq!(
+        wounded_bonus(&InitiativeActor {
+            hp: 900,
+            max_hp: 100,
+            is_party: true,
+            ..Default::default()
+        }),
+        0
+    );
+}
+
+/// Slow halves the finished key; the ability bits override it outright.
+#[test]
+fn seed_initiative_slow_and_ability_arms() {
+    let base = InitiativeActor {
+        speed: 40,
+        hp: 100,
+        max_hp: 100,
+        is_party: true,
+        ..Default::default()
+    };
+    // Slow status halves (41 >> 1 = 20).
+    let slowed = InitiativeActor {
+        slowed: true,
+        ..base
+    };
+    assert_eq!(seed_initiative(&slowed, 0), 20);
+
+    // A slow ability bit pins the key to 1 regardless of speed.
+    for bit in [InitiativeAbility::SLOW_A, InitiativeAbility::SLOW_B] {
+        let a = InitiativeActor {
+            ability_bits: bit,
+            ..base
+        };
+        assert_eq!(seed_initiative(&a, 0), INITIATIVE_SLOW_KEY);
+    }
+    // The fast bit adds 0x1000 - above any reachable rolled key.
+    let fast = InitiativeActor {
+        ability_bits: InitiativeAbility::FAST,
+        ..base
+    };
+    assert_eq!(seed_initiative(&fast, 0), 41 + INITIATIVE_FAST_BONUS);
+    // Both classes present: each arm is gated on the other being absent, so
+    // the plain rolled key survives.
+    let both = InitiativeActor {
+        ability_bits: InitiativeAbility::FAST | InitiativeAbility::SLOW_A,
+        ..base
+    };
+    assert_eq!(seed_initiative(&both, 0), 41);
+}
+
+/// The `ctx+0x290` lockout zeroes exactly one side's keys.
+#[test]
+fn side_lockout_zeroes_the_disadvantaged_side() {
+    let seeded: [u16; 7] = [10, 11, 12, 20, 21, 22, 23];
+
+    let mut back = seeded;
+    apply_side_lockout(&mut back, FormationAdvantage::BackAttack);
+    assert_eq!(back, [0, 0, 0, 20, 21, 22, 23]);
+
+    let mut pre = seeded;
+    apply_side_lockout(&mut pre, FormationAdvantage::Preemptive);
+    assert_eq!(pre, [10, 11, 12, 0, 0, 0, 0]);
+
+    let mut none = seeded;
+    apply_side_lockout(&mut none, FormationAdvantage::None);
+    assert_eq!(none, seeded);
+}
+
+#[test]
+fn formation_advantage_byte_roundtrips_and_faces_the_loser() {
+    for adv in [
+        FormationAdvantage::None,
+        FormationAdvantage::BackAttack,
+        FormationAdvantage::Preemptive,
+    ] {
+        assert_eq!(FormationAdvantage::from_byte(adv.to_byte()), adv);
+    }
+    // Unmapped bytes decode as None.
+    assert_eq!(
+        FormationAdvantage::from_byte(0xFF),
+        FormationAdvantage::None
+    );
+    // A back attack spins the party to face backwards; a pre-emptive strike
+    // faces the monsters to 0.
+    assert_eq!(FormationAdvantage::BackAttack.loser_facing(), Some(0x800));
+    assert_eq!(FormationAdvantage::Preemptive.loser_facing(), Some(0));
+    assert_eq!(FormationAdvantage::None.loser_facing(), None);
+}
+
+/// A fixed draw sequence pins the formation roll's arithmetic and draw order.
+#[test]
+fn roll_formation_advantage_scores_and_gates() {
+    let inputs = FormationInputs::default();
+    // Party mean 40, enemy mean 10. |40-10|*2 = 60 spread for `a`.
+    // draws: [0] -> a = 40; then |40-10|*2 = 60 for b -> [0] -> b = 10.
+    // b < a, so the pre-emptive gate draws: 0 % 16 == 0 -> Preemptive.
+    let mut draws = [0u32, 0, 0].into_iter();
+    let got =
+        roll_formation_advantage(&[40, 40], &[10, 10], &inputs, &mut || draws.next().unwrap());
+    assert_eq!(got, FormationAdvantage::Preemptive);
+
+    // Same scores, but the rarity gate fails (1 % 16 != 0) -> None.
+    let mut draws = [0u32, 0, 1].into_iter();
+    let got =
+        roll_formation_advantage(&[40, 40], &[10, 10], &inputs, &mut || draws.next().unwrap());
+    assert_eq!(got, FormationAdvantage::None);
+
+    // Dead-level sides: both spreads are zero, so no rand is drawn for them
+    // (a `% 0` would trap on hardware) and neither side wins.
+    let mut draws = [7u32].into_iter();
+    let got = roll_formation_advantage(&[20], &[20], &inputs, &mut || draws.next().unwrap());
+    assert_eq!(got, FormationAdvantage::None);
+}
+
+/// The two scripted ambushes force a back attack whatever the scores say.
+#[test]
+fn roll_formation_advantage_scripted_ambushes() {
+    // Monster 0xA7 ambushes on any map.
+    let inputs = FormationInputs {
+        monster_id: 0xA7,
+        ..Default::default()
+    };
+    let mut draws = std::iter::repeat(0u32);
+    let got = roll_formation_advantage(&[99], &[1], &inputs, &mut || draws.next().unwrap());
+    assert_eq!(got, FormationAdvantage::BackAttack);
+
+    // Ids 0x3D..=0x3F ambush only on maps 0x0C / 0x15.
+    let on_map = FormationInputs {
+        monster_id: 0x3E,
+        map_id: 0x0C,
+        ..Default::default()
+    };
+    let mut draws = std::iter::repeat(0u32);
+    let got = roll_formation_advantage(&[99], &[1], &on_map, &mut || draws.next().unwrap());
+    assert_eq!(got, FormationAdvantage::BackAttack);
+
+    // Same id on another map is not scripted - the scores decide instead.
+    let off_map = FormationInputs {
+        monster_id: 0x3E,
+        map_id: 0x01,
+        ..Default::default()
+    };
+    let mut draws = std::iter::repeat(0u32);
+    let got = roll_formation_advantage(&[99], &[1], &off_map, &mut || draws.next().unwrap());
+    assert_eq!(got, FormationAdvantage::Preemptive);
+}
+
+/// The ability bits move both the score and the rarity gate.
+#[test]
+fn roll_formation_advantage_ability_bits_swap_the_moduli() {
+    // Preemptive bit: gate modulus drops 16 -> 2, so a draw of 4 (4 % 2 == 0)
+    // now passes where it would have failed at 16.
+    let inputs = FormationInputs {
+        ability_bits: FormationAbility::PREEMPTIVE,
+        ..Default::default()
+    };
+    let mut draws = [0u32, 0, 4].into_iter();
+    let got = roll_formation_advantage(&[40], &[10], &inputs, &mut || draws.next().unwrap());
+    assert_eq!(got, FormationAdvantage::Preemptive);
+    assert_eq!(FORMATION_MOD_PREEMPTIVE, 2);
+    assert_eq!(FORMATION_MOD_GUARD_BACK, 64);
+    assert_eq!(FORMATION_MOD_DEFAULT, 16);
+}
+
+/// The three arms of the per-round AGL restore - including the one that does
+/// nothing, which is the easiest to miss.
+#[test]
+fn round_reset_agility_three_arms() {
+    // Spirit-charged: (base*7/5)+8, capped at 0x120.
+    assert_eq!(round_reset_agility(5, 100, true, false), 148);
+    assert_eq!(round_reset_agility(5, 200, true, false), SPIRIT_AGL_CAP);
+    // Plain reset: straight back to base.
+    assert_eq!(round_reset_agility(5, 100, false, true), 100);
+    // Neither: the actor carries its spent AGL into the next round.
+    assert_eq!(round_reset_agility(5, 100, false, false), 5);
+    // Spirit-charged wins over plain reset when both would apply.
+    assert_eq!(round_reset_agility(5, 100, true, true), 148);
+}
+
+/// The spirit arm's arithmetic, checked against values worked from the
+/// disassembly rather than against a sibling port.
+///
+/// `FUN_801D88CC` at `0x801D8954` computes `base*7` as `(base<<3) - base`,
+/// divides by 5 through the signed magic constant `0x66666667`, adds `8`, and
+/// then clamps with `sltiu v0,<value>,0x121` - i.e. the value passes through
+/// untouched while it is **below** `0x121`, so `0x120` itself is a legal
+/// result and only `0x121+` is pulled down.
+///
+/// The previous form of this check asserted `round_reset_agility(0, 100, true,
+/// false) == spirit_damage(100, SPIRIT_AGL_CAP)`. Both sides are ports of the
+/// same `base*7/5 + 8` shape with identical bodies, so it could not fail for
+/// any reason connected to retail - it only restated that two functions in this
+/// crate agree with each other. The literals below are the actual oracle.
+#[test]
+fn round_reset_agility_spirit_arm_matches_the_retail_arithmetic() {
+    // base*7/5 + 8, worked by hand.
+    assert_eq!(round_reset_agility(0, 0, true, false), 8); // 0 + 8
+    assert_eq!(round_reset_agility(0, 1, true, false), 9); // 7/5=1, +8
+    assert_eq!(round_reset_agility(0, 5, true, false), 15); // 35/5=7, +8
+    assert_eq!(round_reset_agility(0, 100, true, false), 148); // 700/5=140, +8
+    assert_eq!(round_reset_agility(0, 137, true, false), 199); // 959/5=191, +8
+
+    // The clamp boundary: `sltiu ..,0x121` lets 0x120 through untouched.
+    assert_eq!(SPIRIT_AGL_CAP, 0x120);
+    assert_eq!(round_reset_agility(0, 200, true, false), 0x120); // 1400/5+8 = 288 exactly
+    assert_eq!(round_reset_agility(0, 201, true, false), 0x120); // 289 -> clamped
+    assert_eq!(round_reset_agility(0, 1000, true, false), 0x120); // far over -> clamped
+
+    // The `*7` is integer-truncating per step, not a float scale: 3*7/5 = 4,
+    // not 4.2 rounded.
+    assert_eq!(round_reset_agility(0, 3, true, false), 12); // 21/5=4, +8
+}
+
+#[test]
+fn needs_retarget_on_dead_or_out_of_range_target() {
+    assert!(!needs_retarget(3, 50)); // in range, alive
+    assert!(needs_retarget(3, 0)); // alive slot, dead target
+    assert!(needs_retarget(7, 50)); // out of the 0..=6 slot range
+    assert!(needs_retarget(0xFF, 50)); // the unset sentinel
+}
+
+/// The camera clamp bottoms out at its own default, so only large monsters
+/// move it at all.
+#[test]
+fn camera_height_from_size_class_clamps() {
+    assert_eq!(camera_height_from_size_class(0), 0x0C00);
+    assert_eq!(camera_height_from_size_class(0x18), 0x0C00); // 0x18<<7 == floor
+    assert_eq!(camera_height_from_size_class(0x20), 0x1000); // in band
+    assert_eq!(camera_height_from_size_class(0x28), 0x1400); // hits the ceiling
+    assert_eq!(camera_height_from_size_class(0xFF), 0x1400); // saturates
+}
+
+/// `FUN_801F0348`'s slot gating: which actor's size the shot is framed on.
+#[test]
+fn camera_height_for_frame_resolves_the_right_actor() {
+    // Sizes: monster slots 3..=6 get distinct classes; party slots never asked.
+    let size = |slot: u8| match slot {
+        3 => 0x20u8, // -> 0x1000
+        4 => 0x28,   // -> 0x1400
+        _ => 0x1E,   // -> 0x0F00
+    };
+
+    // Party attacks a monster: framed on the target's bulk.
+    assert_eq!(
+        camera_height_for_frame(0, 3, RETAIL_MONSTER_SLOT_BASE, size),
+        0x1000
+    );
+    assert_eq!(
+        camera_height_for_frame(1, 4, RETAIL_MONSTER_SLOT_BASE, size),
+        0x1400
+    );
+    // Party attacks a party member (heal / buff): neither arm runs, default.
+    assert_eq!(
+        camera_height_for_frame(0, 1, RETAIL_MONSTER_SLOT_BASE, size),
+        CAMERA_HEIGHT_MIN
+    );
+    // Monster attacks a party member: the attacker arm fires on its own bulk.
+    assert_eq!(
+        camera_height_for_frame(4, 0, RETAIL_MONSTER_SLOT_BASE, size),
+        0x1400
+    );
+    // Monster attacks a monster: the attacker's store clobbers the target's.
+    // Slot 3 (0x1000) attacking slot 4 (0x1400) frames at 0x1000, not 0x1400.
+    assert_eq!(
+        camera_height_for_frame(3, 4, RETAIL_MONSTER_SLOT_BASE, size),
+        0x1000
+    );
+}
+
+/// The `sltiu v0,v1,0x8` outer gate at `0x801F037C` branches to the **clamp**,
+/// not to the attacker arm, so an out-of-range target byte suppresses both
+/// lookups - the one path where a monster attacker's own size is ignored and
+/// the shot stays at the bare `0x0C00` seed.
+#[test]
+fn camera_height_for_frame_out_of_range_target_suppresses_both_arms() {
+    let size = |_: u8| 0x28u8; // would frame at the 0x1400 ceiling
+    // In range: the monster attacker pulls the camera all the way back.
+    assert_eq!(
+        camera_height_for_frame(4, 3, RETAIL_MONSTER_SLOT_BASE, size),
+        0x1400
+    );
+    // Target byte 8 or above: gate shuts, default height survives.
+    for target in [8u8, 9, 0x7F, 0xFF] {
+        assert_eq!(
+            camera_height_for_frame(4, target, RETAIL_MONSTER_SLOT_BASE, size),
+            CAMERA_HEIGHT_MIN,
+            "target {target:#x} must skip the attacker arm too"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Battle-load stat init (FUN_80053CB8)
+// ---------------------------------------------------------------------------
+
+/// Equipment folds UDF / LDF / SPD and *nothing else* - the ATK and INT
+/// columns of the equipment table never reach the battle actor.
+#[test]
+fn equip_stat_bonuses_fold_only_udf_ldf_spd() {
+    let gear = EquipBonus {
+        udf: 3,
+        ldf: 4,
+        spd: 5,
+    };
+    let mut slots: [Option<EquipBonus>; EQUIP_SLOTS] = Default::default();
+    slots[0] = Some(gear);
+    slots[2] = Some(gear);
+    assert_eq!(equip_stat_bonuses(&slots), (6, 8, 10));
+    // Empty loadout contributes nothing.
+    assert_eq!(equip_stat_bonuses(&Default::default()), (0, 0, 0));
+}
+
+#[test]
+fn init_party_battle_stats_bonuses_reach_the_working_copies() {
+    let record = RecordStats {
+        hp_max: 200,
+        hp_cur: 150,
+        mp_max: 60,
+        mp_cur: 40,
+        spirit: 25,
+        agl: 30,
+        atk: 70,
+        udf: 10,
+        ldf: 12,
+        spd: 18,
+        int: 22,
+    };
+    let mut slots: [Option<EquipBonus>; EQUIP_SLOTS] = Default::default();
+    slots[0] = Some(EquipBonus {
+        udf: 5,
+        ldf: 6,
+        spd: 7,
+    });
+    let s = init_party_battle_stats(&record, &slots);
+
+    // Bonused stats: base AND working carry the bonus (the mirror happens
+    // after the fold, not before).
+    assert_eq!((s.udf_base, s.udf), (15, 15));
+    assert_eq!((s.ldf_base, s.ldf), (18, 18));
+    assert_eq!((s.spd_base, s.spd), (25, 25));
+    // Un-bonused stats pass through untouched - notably ATK.
+    assert_eq!((s.atk_base, s.atk), (70, 70));
+    assert_eq!((s.agl_base, s.agl), (30, 30));
+    assert_eq!((s.int_base, s.int), (22, 22));
+    // HP/MP are copied, not paired, and snapshotted for the results screen.
+    assert_eq!((s.hp, s.hp_max, s.hp_at_entry), (150, 200, 150));
+    assert_eq!((s.mp, s.mp_max, s.mp_at_entry), (40, 60, 40));
+    assert_eq!(s.spirit, 25);
+    // Working == base at round zero for every paired stat.
+    assert_eq!(
+        [s.agl, s.atk, s.udf, s.ldf, s.spd, s.int],
+        [
+            s.agl_base, s.atk_base, s.udf_base, s.ldf_base, s.spd_base, s.int_base
+        ]
+    );
+}
+
+#[test]
+fn party_reaction_map_is_the_identity_family() {
+    assert_eq!(PARTY_REACTION_MAP, [2, 3, 4, 5, 0x0B]);
+}

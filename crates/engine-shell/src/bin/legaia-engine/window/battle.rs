@@ -2,6 +2,120 @@
 
 use super::*;
 
+/// Numeric half of one battle-HUD row, staged while the world is still
+/// borrowed and applied to the HUD model afterwards.
+struct SlotRow {
+    is_party: bool,
+    alive: bool,
+    hp: u16,
+    hp_max: u16,
+    mp: u16,
+    mp_max: u16,
+    /// Index into `World::ap_gauges` for party rows; `None` for monsters.
+    ap_slot: Option<usize>,
+}
+
+/// Fold the live battle-actor table into `hud`'s per-slot rows, so the shared
+/// `battle_hud_draws_for` builder has something to draw.
+///
+/// Without this the HUD model carries only popups and status icons and every
+/// slot reads `active == false`, so the builder emits an empty draw list -
+/// which is exactly the state the window was in while it hand-rolled its own
+/// HP rows straight off `World::actors`.
+///
+/// Slot indices are **absolute actor-table indices**, not a compacted list:
+/// party ordinals `0..party_count`, monsters above that. The renderer keys
+/// popup anchoring off the same index space, so compacting here would
+/// mis-anchor every damage number.
+pub(super) fn sync_battle_hud_rows(
+    hud: &mut legaia_engine_core::battle_hud::BattleHud,
+    world: &legaia_engine_core::world::World,
+) {
+    use legaia_engine_core::battle_hud::SlotSyncInfo;
+
+    let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
+    let party_names = legaia_engine_core::field_menu_dispatch::roster_names(world);
+
+    // Party rows. `character_max_mp` is the only MP ceiling the world carries
+    // (`BattleActor` has live `mp` but no max), and it is keyed by battle
+    // ordinal - the same index `build_battle_item_session` uses.
+    let mut rows: Vec<(u8, String, SlotRow)> = Vec::new();
+    for (i, a) in world.actors.iter().take(pc).enumerate() {
+        let name = party_names
+            .get(world.party_roster_slot(i))
+            .filter(|n| !n.is_empty())
+            .cloned()
+            .unwrap_or_else(|| format!("P{}", i + 1));
+        rows.push((
+            i as u8,
+            name,
+            SlotRow {
+                is_party: true,
+                alive: a.battle.liveness != 0,
+                hp: a.battle.hp,
+                hp_max: a.battle.max_hp,
+                mp: a.battle.mp,
+                mp_max: world.character_max_mp.get(i).copied().unwrap_or(0),
+                ap_slot: (i < world.ap_gauges.len()).then_some(i),
+            },
+        ));
+    }
+
+    // Monster rows. Named from the live catalog when the formation resolved
+    // one; `M<n>` otherwise. Monsters have no MP ceiling in the model, so the
+    // builder draws no MP field for them.
+    let mut cleared: Vec<u8> = Vec::new();
+    for slot in pc..world.actors.len().min(hud.slots.len()) {
+        let a = &world.actors[slot];
+        if a.battle.max_hp == 0 {
+            cleared.push(slot as u8);
+            continue;
+        }
+        let name = a
+            .battle_monster_id
+            .and_then(|id| world.monster_catalog.get(id))
+            .map(|d| d.name.clone())
+            .unwrap_or_else(|| format!("M{}", slot - pc + 1));
+        rows.push((
+            slot as u8,
+            name,
+            SlotRow {
+                is_party: false,
+                alive: a.battle.liveness != 0,
+                hp: a.battle.hp,
+                hp_max: a.battle.max_hp,
+                mp: 0,
+                mp_max: 0,
+                ap_slot: None,
+            },
+        ));
+    }
+    // Slots past the actor table are stale from a previous formation.
+    for slot in world.actors.len()..hud.slots.len() {
+        cleared.push(slot as u8);
+    }
+
+    for (slot, name, row) in &rows {
+        let ap = row.ap_slot.map(|i| &world.ap_gauges[i]);
+        hud.sync_slot(
+            *slot,
+            SlotSyncInfo {
+                name,
+                is_party: row.is_party,
+                alive: row.alive,
+                hp: row.hp,
+                hp_max: row.hp_max,
+                mp: row.mp,
+                mp_max: row.mp_max,
+                ap,
+            },
+        );
+    }
+    for slot in cleared {
+        hud.clear_slot(slot);
+    }
+}
+
 impl PlayWindowApp {
     /// Drain world battle events, fold each into HP / status state, and
     /// append a one-line summary to the HUD ring. Called once per simulation
@@ -91,14 +205,22 @@ impl PlayWindowApp {
             }
         }
 
-        // Refresh per-slot status icons + age the popups one frame.
+        // Refresh per-slot rows + status icons, then age the popups one frame.
         if self.session.host.world.mode == SceneMode::Battle {
+            self.sync_battle_hud_rows();
             for slot in 0..self.battle_hud.slots.len() as u8 {
                 self.battle_hud
                     .sync_status(slot, &self.session.host.world.status_effects);
             }
         }
         self.battle_hud.tick();
+    }
+
+    /// Fold the live battle-actor table into [`Self::battle_hud`]'s per-slot
+    /// rows. Thin wrapper over [`sync_battle_hud_rows`], which is a free
+    /// function so it can be exercised against a bare `World`.
+    pub(super) fn sync_battle_hud_rows(&mut self) {
+        sync_battle_hud_rows(&mut self.battle_hud, &self.session.host.world);
     }
 
     /// The lead roster character's four weapon-swing AP costs (runtime slots

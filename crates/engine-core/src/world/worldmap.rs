@@ -37,6 +37,12 @@ impl World {
         let pad_held = pad & !self.input.pad_prev();
         if let Some(ctrl) = &mut self.world_map_ctrl {
             ctrl.tick(pad, pad_held);
+            // Retail runs the top-view screen-dim pass (`FUN_801E75DC`)
+            // immediately after the toggle/camera block, gated on
+            // `view_mode != 0 && anim_flags & 1` - see
+            // `WorldMapController::run_screen_dim`. Walk-mode frames clear it,
+            // so this costs one flag test on the common path.
+            ctrl.run_screen_dim();
         }
         // Player is "walking" on the overworld this frame when any d-pad
         // direction is held. These are the Up/Right/Down/Left bits the
@@ -70,6 +76,11 @@ impl World {
             }
             self.world_map_entities = entities;
         }
+
+        // Run the one-shot horizon / sky band emitter if something armed its
+        // gate this frame (retail `FUN_801D7EA0`, or its 0897 relocation copy
+        // `FUN_801C9688`). Unarmed frames cost a flag test.
+        self.tick_world_map_horizon();
 
         // The region-keyed random-encounter roll (the `FUN_801D9E1C` path): on
         // each 128-unit tile crossing, roll the active region. No-op without a
@@ -379,6 +390,27 @@ impl World {
     /// talk-to), without entity positions, or without a player actor. An NPC
     /// with an interaction but no inline text is left to the SM's
     /// [`FieldEvent::FieldInteract`] path unchanged.
+    /// Consume the world-map emitter gate and, when armed, build this
+    /// frame's horizon bands.
+    ///
+    /// The trig samples come from [`Self::cos_lut`] - the engine's copy of
+    /// the `0x1000`-entry table retail reaches through `_DAT_8007B81C`. An
+    /// empty LUT (no disc loaded) samples as zero, which degrades the bands
+    /// to their scale-only extents rather than panicking.
+    ///
+    /// REF: FUN_801d7ea0
+    /// REF: FUN_801c9688
+    fn tick_world_map_horizon(&mut self) {
+        // Take the controller out so the emitter can borrow `self.cos_lut`.
+        let Some(mut ctrl) = self.world_map_ctrl.take() else {
+            return;
+        };
+        let frame_step = self.frame_step;
+        let lut = &self.cos_lut;
+        ctrl.run_horizon_emitter(frame_step, &|i| lut.get(i as usize).copied().unwrap_or(0));
+        self.world_map_ctrl = Some(ctrl);
+    }
+
     fn tick_world_map_npc_dialog(&mut self) {
         // A box is up: a confirm/cancel press dismisses it (and the locomotion
         // + auto-engage steps stay gated off `current_dialog` meanwhile).

@@ -1,0 +1,279 @@
+addr,class,reason
+80016230,REAL,self-entry body of 133 instructions returning `jr ra`
+80016444,REAL,self-entry body of 338 instructions returning `jr ra`
+8001698c,REAL,self-entry body of 120 instructions returning `jr ra`
+80016b6c,REAL,self-entry body of 469 instructions returning `jr ra`
+80017714,REAL,self-entry body of 93 instructions returning `jr ra`
+800179c0,REAL,self-entry body of 59 instructions returning `jr ra`
+80017bec,UNCERTAIN,dump carries a decompiled body but no disassembly (Ghidra reports 1 bytes) - function bounds never established
+8001822c,REAL,self-entry body of 423 instructions returning `jr ra`
+800188c8,REAL,self-entry body of 314 instructions returning `jr ra`
+800196a4,REAL,self-entry body of 57 instructions returning `jr ra`
+80019898,REAL,self-entry body of 18 instructions returning `jr ra`
+80019d50,REAL,self-entry body of 198 instructions returning `jr ra`
+8001b73c,REAL,self-entry body of 138 instructions returning `jr ra`
+8001c204,REAL,self-entry body of 100 instructions returning `jr ra`
+8001c394,REAL,self-entry body of 156 instructions returning `jr ra`
+8001c604,REAL,self-entry body of 103 instructions returning `jr ra`
+8001cf50,REAL,self-entry body of 66 instructions returning `jr ra`
+8001d058,REAL,self-entry body of 12 instructions returning `jr ra`
+8001d088,REAL,self-entry body of 46 instructions returning `jr ra`
+8001d140,REAL,self-entry body of 17 instructions returning `jr ra`
+8001d424,REAL,self-entry body of 245 instructions returning `jr ra`
+8001e1b4,REAL,self-entry body of 129 instructions returning `jr ra`
+8001e890,REAL,self-entry body of 215 instructions returning `jr ra`
+8001fa34,UNCERTAIN,dump carries a decompiled body but no disassembly (Ghidra reports 1 bytes) - function bounds never established
+8001fa88,REAL,self-entry body of 81 instructions returning `jr ra`
+8001ffa4,REAL,self-entry body of 37 instructions returning `jr ra`
+80020038,REAL,self-entry body of 6 instructions returning `jr ra`
+80020050,REAL,self-entry body of 50 instructions returning `jr ra`
+80020118,REAL,self-entry body of 67 instructions returning `jr ra`
+80020224,REAL,self-entry body of 57 instructions returning `jr ra`
+80020f88,REAL,self-entry body of 176 instructions returning `jr ra`
+80021248,REAL,self-entry body of 149 instructions returning `jr ra`
+80021940,REAL,self-entry body of 25 instructions returning `jr ra`
+8002519c,REAL,self-entry body of 82 instructions returning `jr ra`
+80025980,REAL,self-entry body of 100 instructions returning `jr ra`
+80025b30,REAL,self-entry body of 13 instructions returning `jr ra`
+80025b64,REAL,self-entry body of 15 instructions returning `jr ra`
+80025c68,REAL,self-entry body of 19 instructions returning `jr ra`
+80025cb4,REAL,self-entry body of 59 instructions returning `jr ra`
+80025da0,REAL,self-entry body of 50 instructions returning `jr ra`
+80025e68,REAL,self-entry body of 33 instructions returning `jr ra`
+80025eec,REAL,self-entry body of 16 instructions returning `jr ra`
+80025f2c,REAL,self-entry body of 18 instructions returning `jr ra`
+80025f74,REAL,self-entry body of 16 instructions returning `jr ra`
+80025fb4,REAL,self-entry body of 25 instructions returning `jr ra`
+800267fc,REAL,self-entry body of 40 instructions returning `jr ra`
+80026ce4,REAL,self-entry body of 155 instructions returning `jr ra`
+80026f50,REAL,self-entry body of 150 instructions returning `jr ra`
+80028158,REAL,self-entry body of 1395 instructions returning `jr ra`
+80029888,REAL,self-entry body of 340 instructions returning `jr ra`
+8002a5a4,REAL,self-entry body of 183 instructions returning `jr ra`
+8002bdc4,REAL,self-entry body of 187 instructions returning `jr ra`
+8002c2e4,REAL,self-entry body of 105 instructions returning `jr ra`
+80030104,REAL,self-entry body of 120 instructions returning `jr ra`
+80030628,REAL,self-entry body of 1248 instructions returning `jr ra`
+80031ae4,REAL,self-entry body of 135 instructions returning `jr ra`
+80032434,REAL,self-entry body of 158 instructions returning `jr ra`
+80034250,REAL,self-entry body of 66 instructions returning `jr ra`
+800353e0,REAL,self-entry body of 11 instructions returning `jr ra`
+8003a024,REAL,self-entry body of 59 instructions returning `jr ra`
+8003bc08,REAL,self-entry body of 118 instructions returning `jr ra`
+8003c764,REAL,self-entry body of 34 instructions returning `jr ra`
+8003c7ec,REAL,self-entry body of 20 instructions returning `jr ra`
+8003d26c,REAL,self-entry body of 22 instructions returning `jr ra`
+8003d3c4,REAL,self-entry body of 94 instructions returning `jr ra`
+8003d764,REAL,self-entry body of 209 instructions returning `jr ra`
+8003e104,REAL,self-entry body of 151 instructions returning `jr ra`
+8003ee00,REAL,self-entry body of 31 instructions returning `jr ra`
+8003ef14,REAL,self-entry body of 53 instructions returning `jr ra`
+8003efe8,REAL,self-entry body of 15 instructions returning `jr ra`
+8003f08c,REAL,self-entry body of 35 instructions returning `jr ra`
+8003f348,REAL,self-entry body of 45 instructions returning `jr ra`
+8003f3fc,REAL,self-entry body of 271 instructions returning `jr ra`
+8003f838,REAL,self-entry body of 13 instructions returning `jr ra`
+8003f86c,REAL,self-entry body of 148 instructions returning `jr ra`
+800430ac,REAL,self-entry body of 36 instructions returning `jr ra`
+80046494,REAL,self-entry body of 213 instructions returning `jr ra`
+80046978,REAL,self-entry body of 42 instructions returning `jr ra`
+80046a20,REAL,self-entry body of 644 instructions returning `jr ra`
+800480d8,REAL,self-entry body of 142 instructions returning `jr ra`
+80048310,REAL,self-entry body of 171 instructions returning `jr ra`
+800485bc,REAL,self-entry body of 275 instructions returning `jr ra`
+800495c8,REAL,self-entry body of 164 instructions returning `jr ra`
+80049858,REAL,self-entry body of 77 instructions returning `jr ra`
+8004a908,REAL,self-entry body of 286 instructions returning `jr ra`
+8004c650,REAL,self-entry body of 89 instructions returning `jr ra`
+8004ccd4,REAL,self-entry body of 86 instructions returning `jr ra`
+8004ce2c,REAL,self-entry body of 757 instructions returning `jr ra`
+8004fe5c,REAL,self-entry body of 177 instructions returning `jr ra`
+800508dc,REAL,self-entry body of 183 instructions returning `jr ra`
+80050e00,REAL,self-entry body of 11 instructions returning `jr ra`
+8005112c,REAL,self-entry body of 80 instructions returning `jr ra`
+800542c8,REAL,self-entry body of 489 instructions returning `jr ra`
+80055854,REAL,self-entry body of 42 instructions returning `jr ra`
+80055b20,REAL,self-entry body of 11 instructions returning `jr ra`
+80055b6c,REAL,self-entry body of 338 instructions returning `jr ra`
+8005ea84,REAL,self-entry body of 51 instructions returning `jr ra`
+8005eb68,REAL,self-entry body of 37 instructions returning `jr ra`
+801c6c78,REAL,self-entry body of 441 instructions returning `jr ra`
+801cee80,REAL,self-entry body of 59 instructions returning `jr ra`
+801cf00c,REAL,self-entry body of 223 instructions returning `jr ra`
+801cf388,REAL,self-entry body of 2973 instructions returning `jr ra`
+801cf5bc,UNCERTAIN,no `jr ra` and no trailing unconditional jump - body may be truncated
+801cf5d0,REAL,self-entry body of 32 instructions returning `jr ra`
+801cf730,REAL,every dump at this VA is of debug_menu(971) (captures: debug_menu); no second dumped body here
+801cf740,REAL,self-entry body of 92 instructions returning `jr ra`
+801cf88c,REAL,self-entry body of 311 instructions returning `jr ra`
+801cfa48,REAL,self-entry body of 530 instructions returning `jr ra`
+801cfb94,REAL,every dump at this VA is of cutscene_str(970) (captures: str_fmv); no second dumped body here
+801cfbb4,REAL,self-entry body of 123 instructions returning `jr ra`
+801cfda0,REAL,self-entry body of 241 instructions returning `jr ra`
+801cfee0,REAL,self-entry body of 63 instructions returning `jr ra`
+801cffdc,REAL,every dump at this VA is of cutscene_str(970) (captures: str_fmv); no second dumped body here
+801d0100,VA_ALIASED,"2 overlays hold distinct code at this VA (cutscene_str(970), fishing(972)) - confirmed against the extracted images, not the dump image tags"
+801d0198,VA_ALIASED,"2 overlays hold distinct code at this VA (cutscene_str(970), fishing(972)) - confirmed against the extracted images, not the dump image tags"
+801d0248,REAL,self-entry body of 76 instructions returning `jr ra`
+801d02c0,REAL,every dump at this VA is of battle_action(898) (captures: battle_action); no second dumped body here
+801d0370,REAL,"duplicate claim withdrawn: peer 801c2b58 is a printed address from a mis-based dump, not a body at that VA"
+801d03c4,REAL,every dump at this VA is of dance(980) (captures: dance); no second dumped body here
+801d0474,REAL,self-entry body of 149 instructions returning `jr ra`
+801d070c,REAL,self-entry body of 207 instructions returning `jr ra`
+801d0750,REAL,self-entry body of 770 instructions returning `jr ra`
+801d081c,REAL,"duplicate claim withdrawn: peer 801c3004 is a printed address from a mis-based dump, not a body at that VA"
+801d08e4,REAL,self-entry body of 334 instructions returning `jr ra`
+801d0e1c,REAL,self-entry body of 99 instructions returning `jr ra`
+801d0f1c,REAL,self-entry body of 221 instructions returning `jr ra`
+801d11d0,REAL,"duplicate claim withdrawn: peer 801c39b8 is a printed address from a mis-based dump, not a body at that VA"
+801d1344,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview/dialog_mc4/dialog_mc4 == overlay_world_map_walk/dialog_typing/world_map/world_map_top/world_map_walk); no second dumped body here
+801d21fc,REAL,self-entry body of 104 instructions returning `jr ra`
+801d231c,REAL,every dump at this VA is of dance(980) (captures: dance); no second dumped body here
+801d2404,REAL,every dump at this VA is of field(897) (captures: 0897/cutscene_dialogue/cutscene_mapview); no second dumped body here
+801d2524,REAL,every dump at this VA is of dance(980) (captures: dance); no second dumped body here
+801d26cc,REAL,"duplicate claim withdrawn: peer 801c56b4 is a printed address from a mis-based dump, not a body at that VA"
+801d2914,REAL,self-entry body of 100 instructions returning `jr ra`
+801d2a10,REAL,self-entry body of 226 instructions returning `jr ra`
+801d2aa4,REAL,self-entry body of 135 instructions returning `jr ra`
+801d2afc,REAL,self-entry body of 549 instructions returning `jr ra`
+801d2cc0,REAL,self-entry body of 259 instructions returning `jr ra`
+801d2cfc,UNCERTAIN,"every dump at this VA is mis-based: the bytes live at field(897) 0x801e1514 (delta +0xe818), and at this VA in no image - so nothing attests the address. Not an un-extracted overlay; no extraction closes it"
+801d2d1c,UNCERTAIN,"every dump at this VA has a gapped instruction stream (2 hole(s) in 0897), so it matches no image as a contiguous window - re-dump before classifying"
+801d2d2c,UNCERTAIN,"every dump at this VA is mis-based: the bytes live at field(897) 0x801e1544 (delta +0xe818), and at this VA in no image - so nothing attests the address. Not an un-extracted overlay; no extraction closes it"
+801d2d98,REAL,self-entry body of 104 instructions returning `jr ra`
+801d2e74,REAL,self-entry body of 140 instructions returning `jr ra`
+801d2ebc,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview/world_map_top); no second dumped body here
+801d2f38,REAL,self-entry body of 240 instructions returning `jr ra`
+801d32f8,REAL,self-entry body of 132 instructions returning `jr ra`
+801d3380,REAL,self-entry body of 63 instructions returning `jr ra`
+801d33d8,REAL,every dump at this VA is of menu(899) (captures: menu/save_ui_saving/save_ui_select/shop_save); no second dumped body here
+801d3444,REAL,self-entry body of 193 instructions returning `jr ra`
+801d3a2c,REAL,self-entry body of 211 instructions returning `jr ra`
+801d3d78,REAL,every dump at this VA is of dance(980) (captures: dance); no second dumped body here
+801d3e28,REAL,every dump at this VA is of dance(980) (captures: dance); no second dumped body here
+801d3fd0,REAL,every dump at this VA is of dance(980) (captures: dance); no second dumped body here
+801d4098,REAL,self-entry body of 17 instructions returning `jr ra`
+801d40dc,REAL,self-entry body of 28 instructions returning `jr ra`
+801d4868,REAL,self-entry body of 134 instructions returning `jr ra`
+801d49e8,REAL,self-entry body of 154 instructions returning `jr ra`
+801d4c50,REAL,self-entry body of 106 instructions returning `jr ra`
+801d4df8,REAL,self-entry body of 116 instructions returning `jr ra`
+801d5510,REAL,"duplicate claim withdrawn: peer 801c6cf8 is a printed address from a mis-based dump, not a body at that VA"
+801d553c,REAL,self-entry body of 160 instructions returning `jr ra`
+801d56c4,UNCERTAIN,dump carries a decompiled body but no disassembly (Ghidra reports 1 bytes) - function bounds never established
+801d57bc,REAL,self-entry body of 73 instructions returning `jr ra`
+801d5a68,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview); no second dumped body here
+801d5ae8,REAL,self-entry body of 190 instructions returning `jr ra`
+801d5de0,REAL,self-entry body of 151 instructions returning `jr ra`
+801d5e20,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview); no second dumped body here
+801d5ed0,REAL,self-entry body of 268 instructions returning `jr ra`
+801d6704,REAL,self-entry body of 901 instructions returning `jr ra`
+801d67f0,REAL,every dump at this VA is of baka_fighter(976) (captures: baka_fighter); no second dumped body here
+801d69e4,REAL,self-entry body of 13 instructions returning `jr ra`
+801d6a18,REAL,self-entry body of 104 instructions returning `jr ra`
+801d6b20,REAL,every dump at this VA is of menu(899) (captures: menu/save_ui_select/shop_save); no second dumped body here
+801d6e04,REAL,self-entry body of 22 instructions returning `jr ra`
+801d6e18,REAL,every dump at this VA is of menu(899) (captures: menu/save_ui_saving/save_ui_select/shop_save); no second dumped body here
+801d6e5c,REAL,self-entry body of 47 instructions returning `jr ra`
+801d6f44,REAL,self-entry body of 96 instructions returning `jr ra`
+801d71b8,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
+801d71f0,REAL,"duplicate claim withdrawn: peer 801e01f0 is a printed address from a mis-based dump, not a body at that VA"
+801d72a0,REAL,self-entry body of 70 instructions returning `jr ra`
+801d7a5c,REAL,every dump at this VA is of fishing(972) (captures: dance/debug_menu/fishing/slot_machine); no second dumped body here
+801d7b50,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview); no second dumped body here
+801d7c00,REAL,self-entry body of 148 instructions returning `jr ra`
+801d7e50,REAL,self-entry body of 106 instructions returning `jr ra`
+801d7ff8,REAL,self-entry body of 196 instructions returning `jr ra`
+801d8308,REAL,self-entry body of 267 instructions returning `jr ra`
+801d8450,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview); no second dumped body here
+801d8734,REAL,self-entry body of 201 instructions returning `jr ra`
+801d8b90,REAL,self-entry body of 129 instructions returning `jr ra`
+801d8d94,REAL,self-entry body of 95 instructions returning `jr ra`
+801d8f10,REAL,self-entry body of 128 instructions returning `jr ra`
+801d9110,REAL,self-entry body of 92 instructions returning `jr ra`
+801d9280,REAL,self-entry body of 197 instructions returning `jr ra`
+801d9594,REAL,self-entry body of 215 instructions returning `jr ra`
+801d99f0,REAL,self-entry body of 137 instructions returning `jr ra`
+801d9ae8,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
+801d9bbc,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
+801d9c14,REAL,self-entry body of 419 instructions returning `jr ra`
+801d9d3c,REAL,self-entry body of 388 instructions returning `jr ra`
+801da2a0,REAL,self-entry body of 470 instructions returning `jr ra`
+801da34c,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
+801da59c,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
+801da6b4,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
+801da7f0,REAL,self-entry body of 80 instructions returning `jr ra`
+801db21c,REAL,self-entry body of 89 instructions returning `jr ra`
+801db318,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
+801db380,REAL,self-entry body of 285 instructions returning `jr ra`
+801db7f4,REAL,self-entry body of 282 instructions returning `jr ra`
+801db8f4,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
+801db9c4,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
+801dbd04,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
+801dbd94,REAL,self-entry body of 270 instructions returning `jr ra`
+801dbddc,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
+801dbe9c,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview/dance/debug_menu/fishing/slot_machine); no second dumped body here
+801dc1cc,REAL,self-entry body of 314 instructions returning `jr ra`
+801dcb60,REAL,self-entry body of 48 instructions returning `jr ra`
+801dcef0,REAL,self-entry body of 9 instructions returning `jr ra`
+801dd330,REAL,self-entry body of 11 instructions returning `jr ra`
+801dea50,REAL,self-entry body of 712 instructions returning `jr ra`
+801df098,UNCERTAIN,no `jr ra` and no trailing unconditional jump - body may be truncated
+801df6b8,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
+801df8dc,REAL,self-entry body of 21 instructions returning `jr ra`
+801e0080,REAL,every dump at this VA is of battle_action(898) (captures: battle_action); no second dumped body here
+801e00b8,REAL,self-entry body of 15 instructions returning `jr ra`
+801e01f0,UNCERTAIN,"every dump at this VA is mis-based: the bytes live at field(897) 0x801e5a08 (delta +0x5818), and at this VA in no image - so nothing attests the address. Not an un-extracted overlay; no extraction closes it"
+801e02a4,REAL,self-entry body of 93 instructions returning `jr ra`
+801e0418,REAL,self-entry body of 96 instructions returning `jr ra`
+801e0598,REAL,self-entry body of 74 instructions returning `jr ra`
+801e06c0,REAL,self-entry body of 134 instructions returning `jr ra`
+801e09f8,REAL,"duplicate claim withdrawn: peer 801f71e0 is a printed address from a mis-based dump, not a body at that VA"
+801e1114,REAL,self-entry body of 61 instructions returning `jr ra`
+801e13b8,REAL,self-entry body of 202 instructions returning `jr ra`
+801e1d98,REAL,"duplicate claim withdrawn: peer 801f8580 is a printed address from a mis-based dump, not a body at that VA"
+801e2524,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
+801e2650,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
+801e3294,REAL,self-entry body of 259 instructions returning `jr ra`
+801e39a8,REAL,self-entry body of 22 instructions returning `jr ra`
+801e3ff0,REAL,self-entry body of 82 instructions returning `jr ra`
+801e4404,UNCERTAIN,every dump at this VA decodes data as code (Ghidra reports bad instruction data over a 5-instruction body in 0897) - no valid body to classify
+801e4d8c,REAL,self-entry body of 242 instructions returning `jr ra`
+801e5154,UNCERTAIN,every dump at this VA decodes data as code (239 of 243 instructions are $zero-absolute loads/stores in 0897_xxx_dat) - no valid body to classify
+801e5338,REAL,self-entry body of 201 instructions returning `jr ra`
+801e5b4c,REAL,self-entry body of 557 instructions returning `jr ra`
+801e805c,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
+801e91e8,REAL,self-entry body of 61 instructions returning `jr ra`
+801e92dc,REAL,self-entry body of 59 instructions returning `jr ra`
+801ea9b0,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview); no second dumped body here
+801ead98,REAL,self-entry body of 1820 instructions returning `jr ra`
+801ec0dc,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
+801ec3e4,REAL,self-entry body of 2502 instructions returning `jr ra`
+801eca08,REAL,self-entry body of 193 instructions returning `jr ra`
+801ed710,REAL,every dump at this VA is of field(897) (captures: 0897/baka_fighter/cutscene_dialogue/cutscene_mapview/dance/debug_menu/dialog_mc4/dialog_mc4 == overlay_world_map_walk/dialog_typing/field_battle_intro/fishing/slot_machine/world_map/world_map_top/world_map_walk); no second dumped body here
+801ee094,REAL,self-entry body of 165 instructions returning `jr ra`
+801ee328,REAL,self-entry body of 171 instructions returning `jr ra`
+801ee90c,REAL,self-entry body of 275 instructions returning `jr ra`
+801ef014,REAL,self-entry body of 167 instructions returning `jr ra`
+801f0450,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/muscle_dome); no second dumped body here
+801f0adc,REAL,every dump at this VA is of field(897) (captures: baka_fighter/dance/debug_menu/fishing/slot_machine); no second dumped body here
+801f1278,REAL,self-entry body of 201 instructions returning `jr ra`
+801f138c,UNCERTAIN,"every dump at this VA is mis-based: the bytes live at battle_action(898) 0x801daba4 (delta -0x167e8), and at this VA in no image - so nothing attests the address. Not an un-extracted overlay; no extraction closes it"
+801f159c,REAL,self-entry body of 73 instructions returning `jr ra`
+801f16a0,REAL,self-entry body of 91 instructions returning `jr ra`
+801f17f8,REAL,self-entry body of 125 instructions returning `jr ra`
+801f1ed4,REAL,every dump at this VA is of battle_action(898) (captures: muscle_dome); no second dumped body here
+801f20b0,REAL,every dump at this VA is of field(897) (captures: baka_fighter/dance/debug_menu/fishing/slot_machine); no second dumped body here
+801f2160,REAL,every dump at this VA is of battle_action(898) (captures: muscle_dome); no second dumped body here
+801f2d68,REAL,self-entry body of 26 instructions returning `jr ra`
+801f36a0,REAL,"duplicate claim withdrawn: peer 801f16a0 is a printed address from a mis-based dump, not a body at that VA"
+801f3990,REAL,every dump at this VA is of battle_action(898) (captures: baka_fighter/dance/debug_menu/fishing/muscle_dome/slot_machine); no second dumped body here
+801f452c,REAL,self-entry body of 30 instructions returning `jr ra`
+801f45a4,REAL,every dump at this VA is of battle_action(898) (captures: baka_fighter/dance/debug_menu/fishing/muscle_dome/slot_machine); no second dumped body here
+801f4dd0,REAL,self-entry body of 138 instructions returning `jr ra`
+801f5748,REAL,self-entry body of 2777 instructions returning `jr ra`
+801f69d8,REAL,self-entry body of 643 instructions returning `jr ra`
+801f6d48,REAL,self-entry body of 208 instructions returning `jr ra`
+801f7088,REAL,every dump at this VA is of summon_render(900) (captures: baka_fighter/dance/debug_menu/fishing/muscle_dome/slot_machine); no second dumped body here
+801f71e0,REAL,every dump at this VA is of battle_tutorial(967) (captures: PROT 0967 @ base 0x801F69D8); no second dumped body here
+8020e748,UNCERTAIN,"every dump at this VA is mis-based: the bytes live at menu(899) 0x801cf760 (delta -0x3efe8), and at this VA in no image - so nothing attests the address. Not an un-extracted overlay; no extraction closes it"

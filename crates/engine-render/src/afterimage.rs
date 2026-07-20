@@ -2,12 +2,23 @@
 //!
 //! PORT: FUN_801e1ab0 (battle move-FX afterimage streak draw)
 //!
-//! **Wired through the screen-space overlay pass.** The quad this builds is
-//! consumed by [`crate::screen_overlay::afterimage_screen_quad`], which links
-//! it into the screen-space ordering table
-//! ([`crate::screen_overlay::build_geometry`]) that the wgpu renderer draws
-//! via [`crate::RenderTarget::ScreenOverlay`]. See the note at the end of this
-//! module doc.
+//! NOT WIRED: no host builds a streak quad. The *destination* exists - a quad
+//! converts through [`crate::screen_overlay::afterimage_screen_quad`] and
+//! would draw via [`crate::RenderTarget::ScreenOverlay`] - but that converter
+//! has no non-test caller either, so the pass is a road with nothing on it.
+//! Two concrete gaps sit between here and a visible trail:
+//!
+//! * **The half-width has no source.** [`streak_half_width`] reads the retail
+//!   move-FX state halfword at `+0x6c6`, and `legaia_engine_core`'s move-FX
+//!   scene-graph does not model that word - there is no value to pass.
+//! * **The host consumes the trail id as a log line.** engine-shell reads
+//!   [`legaia_engine_core::World::active_move_fx_trail_texpage`] and prints
+//!   it; nothing turns it into a per-frame streak pass over the move-FX part
+//!   positions, which is what emits one quad per call the way retail does.
+//!
+//! The arithmetic below is unit-tested against the retail draw order and is
+//! the part that would be reused unchanged once a caller exists; do not
+//! delete it.
 //!
 //! Each call to the retail `FUN_801e1ab0` emits **one** semi-transparent
 //! textured quad (a PSX `POLY_FT4`) into the depth-sorted primitive buffer;
@@ -37,17 +48,17 @@
 //! is the retail software OT, which engine-render replaces with its own draw
 //! ordering.
 //!
-//! **Wiring.** The screen-space `POLY_FT4` / ordering-table primitive path
-//! the retail streak needs now exists as [`crate::screen_overlay`]: an
-//! [`AfterimageQuad`] converts to a
+//! **What the draw path would be.** The screen-space `POLY_FT4` /
+//! ordering-table primitive path the retail streak needs exists as
+//! [`crate::screen_overlay`]: an [`AfterimageQuad`] converts to a
 //! [`crate::screen_overlay::ScreenQuad`] via
-//! [`crate::screen_overlay::afterimage_screen_quad`], is ordered back-to-front
-//! with the rest of the frame's screen primitives, and drawn through
-//! [`crate::RenderTarget::ScreenOverlay`] against the shared PSX VRAM. The
-//! trail texpage this consumes is surfaced by
-//! [`legaia_engine_core::World::active_move_fx_trail_texpage`]; the engine
-//! shell chooses per frame whether to push the streak (3D billboard mesh) or
-//! this 2D overlay path.
+//! [`crate::screen_overlay::afterimage_screen_quad`], would be ordered
+//! back-to-front with the rest of the frame's screen primitives, and drawn
+//! through [`crate::RenderTarget::ScreenOverlay`] against the shared PSX VRAM.
+//! That machinery is built and tested; what is missing is the per-frame
+//! emitter described in the NOT WIRED note above. Live effect billboards
+//! currently draw as 3D meshes via engine-shell's `effect_billboard_mesh`
+//! instead, which is why nothing has needed this 2D path yet.
 
 /// Units the source point is pushed down (+Y) before projection
 /// (retail adds `0x120` to the Y of `*(_DAT_8007bd24 + 0x1144)`). Applied

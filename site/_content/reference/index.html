@@ -10,7 +10,9 @@
     <li>You have an <strong>address or a <code>FUN_</code> symbol</strong> and want to know what it does &rarr; <a href="functions.html">key functions</a>, then <a href="memory-map.html">the RAM map</a> for globals.</li>
     <li>You have a <strong>binary record</strong> and want to know what the values mean &rarr; <a href="gamedata.html">curated game-data tables</a> are the ground-truth labels; <a href="cheats.html">cheat databases</a> anchor the RAM offsets.</li>
     <li>You have an <strong>extracted track</strong> and want its name &rarr; <a href="music-tracks.html">music-track disambiguation</a>.</li>
-    <li>You have a <strong>question</strong> and want to know if it is already answered - or already disproved &rarr; <a href="open-rev-eng-threads.html">open RE threads</a>. Check here before starting a hunt.</li>
+    <li>You have a <strong>question</strong> and want to know whether it is still contested &rarr; <a href="open-rev-eng-threads.html">open RE threads</a>. Check here before starting a hunt.</li>
+    <li>You want the <strong>answer</strong> to a question, and how firmly it is pinned &rarr; <a href="re-settled-threads.html">settled threads</a>, where every row carries an evidence grade.</li>
+    <li>A reading of the bytes looks <strong>obvious</strong> and you want to be sure it has not already been disproved &rarr; <a href="re-do-not-re-walk.html">do not re-walk</a>.</li>
   </ul>
 </section>
 
@@ -43,7 +45,15 @@
     </a>
     <a class="card" href="open-rev-eng-threads.html">
       <div class="card-title">Open RE threads</div>
-      <div class="card-body">The live list of unsolved mysteries - and the already-disproved dead ends, kept so nobody re-walks them. If you want to contribute to the reverse-engineering, start here. Question-level companion to the <a href="../tooling/port-catalog.html">port catalog</a>'s function-level worklist.</div>
+      <div class="card-body">The live list of unsolved mysteries, each with the concrete next step that would close it. If you want to contribute to the reverse-engineering, start here. Question-level companion to the <a href="../tooling/port-catalog.html">port catalog</a>'s function-level worklist.</div>
+    </a>
+    <a class="card" href="re-settled-threads.html">
+      <div class="card-title">Settled RE threads</div>
+      <div class="card-body">The questions that have an answer, and how firmly each one is pinned. Every row is graded by what its own evidence rests on - instructions, a runtime capture, Ghidra's decompiled C, or inference - so you can tell a byte-pinned fact from one nobody has checked against the disassembly yet.</div>
+    </a>
+    <a class="card" href="re-do-not-re-walk.html">
+      <div class="card-title">Do not re-walk</div>
+      <div class="card-body">Falsified hypotheses with their reasoning intact. Each is a plausible reading of the bytes that turned out wrong; knowing <em>why</em> is worth more than the row it occupies. Check here before committing to a reading that looks obvious.</div>
     </a>
   </div>
 </section>

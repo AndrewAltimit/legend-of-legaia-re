@@ -116,7 +116,8 @@ The overlay loaders manage two independently swappable slots (`*DAT_8001038C`
 and `*DAT_80010390`; see [`prot.md`](../formats/prot.md#overlay-loaders-parallel-slots)).
 
 - **Slot A** (`~0x801CE818`) holds the big scene overlays - field (0897), battle
-  (0898), menu (0899), the STR/MDEC **cutscene** overlay (0970), and the
+  (0898), menu (0899), the STR/MDEC **cutscene** overlay (0970), the mode-0
+  **DEBUG MODE** overlay (0971), and the
   **minigame** overlays (fishing 0972, slot machine 0975, baka fighter 0976,
   dance 0980 - the mode-24 door-warp sub-id slots, see
   [`script-vm.md § 0x3E WARP`](../subsystems/script-vm.md#0x3e-warp-mode-24-minigame-door-warp)).
@@ -170,6 +171,37 @@ and `*DAT_80010390`; see [`prot.md`](../formats/prot.md#overlay-loaders-parallel
   table, `Puera` + `Damage`/`Recover`/`Both` effect labels, NOT a dance song;
   correcting an earlier `overlay-ptr-table` reading). See
   [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
+
+### A small overlay does not clear the slot
+
+Slot A is a buffer, not a container: a load DMAs `size` bytes to `0x801CE818`
+and nothing zeroes the remainder. An overlay smaller than its predecessor
+therefore leaves that predecessor's tail resident and executable-looking, and a
+save state taken while it is up captures a **stack of strata** rather than one
+overlay.
+
+PROT 0971 (`debug_menu`) is the clear case, because its own content is only
+`0x1800` bytes. Resolving every function dump from a DEBUG MODE capture against
+the extracted images, address-ordered, reads:
+
+| Capture VA range | Bytes belong to |
+|---|---|
+| `0x801CE818` .. `+0x1800` | PROT 0971, the overlay actually loaded |
+| `+0x1800` .. `+0xB000` | PROT 0972 (fishing), a previous load |
+| `+0xB000` .. | PROT 0897 (field), an older load still |
+
+Each boundary is exactly the previous occupant's length, which is what makes
+the reading structural rather than a guess. Two consequences worth carrying:
+
+- **A capture's slot-A bytes are not one overlay's**, so "this dump came from
+  the DEBUG MODE capture" bounds nothing. Resolve the bytes per VA.
+- **The strata are also why whole-file jal-recovery mis-fires here.** PROT
+  0971's footprint over-reads PROT 0972 from `+0x1800`, and 0972's code is
+  self-consistent at `0x801CE818`, so the recovery lands on
+  `0x801CE818 - 0x1800 = 0x801CD018` with a comfortable 29 votes. Same
+  mechanism as the PROT 0896 cautionary tale above; the map records
+  `base_source = "capture"` for 0971 precisely so the reproducibility test does
+  not assert the phantom.
 
 ## CLI
 
@@ -237,6 +269,27 @@ anchors are asserted against the disc bytes in
 and against live RAM in the clean-copy test.
 
 ## Scope + limits
+
+- **An extracted image is a footprint, not an overlay.** `read_entry` returns
+  `[entry start, entry start + footprint)`, which runs into the following
+  entries' sectors; the runtime slice is only `[entry start, next entry
+  start)`. The tail is harmless while you are reading a function at its own
+  address, and actively misleading the moment you ask *which overlay owns this
+  VA* - the tail answers, with a neighbour's code, at an address its own
+  overlay never occupies.
+
+  The own-content length is measurable without the TOC: it is where another
+  entry's head appears inside the image, and it comes out sector-aligned.
+  PROT 0897 owns `0x25000` (to VA `0x801F3818`), 0898 `0x28800`, 0899
+  `0x25000`, 0971 `0x1800`, 0972 `0xB000`. Note 0898's `0x28800` is exactly
+  its recorded `clean_copy_bytes`, so its "trailing `0x1000` diverges in RAM"
+  is simply PROT 0899's head, which was never loaded.
+
+  The cost of skipping this: `FUN_801F5748` was read as the field overlay's
+  inventory hub for a long time. `0x801F5748 - 0x801CE818 = 0x26F30` is
+  `0x1F30` past where 0897 ends, so those bytes are PROT 0898's battle
+  dispatcher `FUN_801D0748` - a real routine at a phantom address. The dump is
+  correctly *based*; the image simply answered for a VA it does not own.
 
 - Static extraction is for overlays that are **clean copies**. The byte-match
   catches the exceptions: an overlay whose on-disc bytes do not match the

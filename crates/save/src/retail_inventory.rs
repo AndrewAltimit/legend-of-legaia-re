@@ -1,5 +1,18 @@
 //! Faithful, memory-safe model of the retail consumable-item inventory window.
 //!
+//! NOT WIRED: nothing outside this file constructs a [`RetailInventory`], and
+//! that is deliberate - the engine's gameplay inventory is
+//! `legaia_engine_core`'s typed item list, which is what the grant / consume /
+//! shop kernels operate on. This module exists to answer questions *about*
+//! retail's array (what the accessor family does to which slot, in what order,
+//! and where the out-of-bounds add primitive lands), and it answers them by
+//! being read and unit-tested, not by being on the frame path. Wiring it would
+//! mean replacing the engine's inventory representation with the fixed
+//! `(id, count)` window, which would trade a safe growable list for a
+//! bug-compatible one; the ACE analysis below is the reason to keep the model,
+//! not a reason to run it. Every `// PORT:` tag in this file is covered by
+//! this note.
+//!
 //! This is a *reverse-engineering / preservation* model of the fixed-window
 //! item inventory used by `SCUS_942.54`, not the engine's gameplay inventory.
 //! It reproduces the retail accessor family's exact slot order and stack-cap

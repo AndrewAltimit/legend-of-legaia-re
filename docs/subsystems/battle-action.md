@@ -44,7 +44,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 
 | `ctx[7]` | Phase | What runs | Next state |
 |---|---|---|---|
-| `0x00` | Action begin | Resets ctx counters at `+0x6DA..+0x6DB`; copies `ctx[+0x274]` (the active-actor index set by `recompute_battle_order`) → `actor[+0x1A]`; clears `ctx[+0x290]`. | `0x0A` (or `0x0B` if `ctx[+0x276] != 0` is set, i.e. action queued from menu). |
+| `0x00` | Action begin | Resets ctx counters at `+0x6DA..+0x6DB`; copies `ctx[+0x274]` (the active-actor index set by `recompute_battle_order`) → `actor[+0x1A]`; **latches** `ctx[+0x290]` → `ctx[+0x291]` and *then* clears `ctx[+0x290]` (`0x801E2B30`). The latch is what the escape roll reads all battle - see [the escape roll](#the-escape-roll-fun_801e791c). | `0x0A` (or `0x0B` if `ctx[+0x276] != 0` is set, i.e. action queued from menu). |
 | `0x0A` | Pre-action wait | Calls `func_0x8003F2B8(1)` (likely a "pause until previous animation cleared" gate). | `0x0C` when ready, else stays. |
 | `0x0B` | Action queued from menu | Holds while `ctx[+0x276] != 0` (menu still open). | `0x0A` once cleared. |
 | `0x0C` | **Action seed** - reads `actor[+0x1DE]` (action category) and dispatches into the appropriate band. Calls `FUN_801EED1C` (party setup; slot < 3 unconditionally) or, for a monster slot with the `+0x16E & 0x380` bits, `FUN_801E7320` (random-retarget: the rolled action - including a Magic cast - is kept, only its target re-rolls to the opposite side; see the [`0x380` notes](#ai-delegated-0x380-party-members---what-is-and-isnt-pinned)). Reads RNG via `func_0x80056798()`. Calls `FUN_801EFE44` (camera bounds) and `FUN_801D5854(actor_id, 6)` (idle pose) unless `+0x1DE == 5` (run). The inner switch on `actor[+0x1DE]` is the "action category" dispatch - see [Inner dispatch](#inner-dispatch---actor-action-category). | `0x14`/`0x28`/`0x3C`/`0x46`/`0x50`/`0x64`/`0x68` per category. |
@@ -546,8 +546,9 @@ included. The two ability bits are read from the *living* party members' second
 accessory-passive word (character record `+0xF8`): bit 52 = passive `0x34` **Escape Boost**
 (Chicken Heart, roll x1.5), bit 55 = passive `0x37` **Great Escape** (Chicken King) - the
 assured bit forces the party roll equal to the enemy roll so the compare cannot fail, but
-the scripted no-escape flag `ctx[+0x287]` still blocks it, which is why Chicken King is
-"assured escape (non-boss)" (see the
+the scripted no-escape flag `ctx[+0x287]` is tested *after* that (`0x801E7AF0` sets the tie,
+`0x801E7B14` reads `+0x287`) and still blocks it - "assured" describes only the compare, never
+the outcome, which is why Chicken King is "assured escape (non-boss)" (see the
 [accessory-passive table](../formats/accessory-passive-table.md)). The battle flag
 `_DAT_8007BAC0 & 0x100` forces the flee outright - it bypasses even `ctx[+0x287]` and skips
 the "No. of Escapes" Records counter (`_DAT_800846A8`) the normal success path increments.
@@ -561,9 +562,14 @@ it; `see ghidra/scripts/funcs/800513f0.txt`). `ctx[+0x291]` is not written direc
 **latch** of `ctx[+0x290]`: the SM's state-`0x00` action-begin does `ctx[+0x291] = ctx[+0x290]`
 then clears `+0x290` (`0x801E2B38`). `ctx[+0x290]` itself is written by the formation-setup
 routine `FUN_80051D84` - `1` under a monster-id-range test, or `2` on a `func_0x80056798()`
-(BIOS-rand) roll - so `ctx[+0x291] == 2` (which forces the party roll equal to the enemy roll) is
-a per-formation "escape assured" flag set at battle setup (`see
-ghidra/scripts/funcs/80051d84.txt`).
+(BIOS-rand) roll - so `ctx[+0x291] == 2` is a per-formation flag set at battle setup (`see
+ghidra/scripts/funcs/80051d84.txt`) that reaches the *same* forced-tie store as the Great Escape
+bit, and carries the same caveat: it makes the compare unfailable, not the escape certain, since
+`ctx[+0x287]` is read afterwards. Note also that `1` (back attack) is never compared here - the
+roll only ever tests against `2`, so a back attack costs the party its round-one initiative keys
+and nothing else. Because the roll reads only the *latched* copy, a state-`0x00` that clears
+`+0x290` without copying it - or an engine that stores the latch and never reads it back -
+silently disables pre-emptive-strike escapes for the whole battle.
 
 On success the routine also stages the flee scene: every party actor is marked fleeing
 (`+0x1DA`/`+0x1DC` = 1, facing `+0x46` = `0x800`, pose byte `+0x1DD` = 9), positions are
@@ -642,16 +648,45 @@ an artifact of the same shift). `0x801F3990` is re-pinned below from battle-resi
 other three descriptions are retained but **need re-verification** against a battle-resident
 dump (`overlay_battle_action_*`) before being relied on.
 
-**`0x801F0348` - battle-UI widget-pool teardown.** *Decoded from the aliased
-`overlay_0897_801f0348.txt` dump - identity, entry address, and body need re-verification
-against battle-resident bytes.* Walks the 40-slot (`0x28`) tracked-widget table
-at ctx `+0x11B4` (stride `0xC`): for each slot whose flag byte `+0x11B7` is set and whose parallel
-live-widget pointer at ctx `+0x1074 + slot*4` is non-null, releases the widget via
-`func_0x800319A8(widget[+8])` (the UI-element free call, id at `widget+0x8`), then zeroes the
-widget pointer and the `+0x11B4`/`+0x11B7` flag bytes; finally clears 16 words of scratch at
-`0x801C8FA0`. Called at action-begin (`0x0C`) and capture-finalize (`0x70`/`0x71`) to drop
-leftover damage-popup / label widgets. It is a general widget-pool sweep, not a capture-specific
-routine.
+**`0x801F0348` - target-size camera framing.** Pinned from battle-resident bytes
+(`overlay_battle_action_801f0348.txt`). It writes the camera height/distance at ctx `+0x6D0`
+(i16) from a monster's **size class**, the byte at monster record `+0x1F`:
+
+```text
+ctx+0x6D0 = clamp(size_class << 7, 0x0C00, 0x1400)
+```
+
+The default `0x0C00` is also the floor, so only monsters with a size class above `0x18` pull the
+camera back at all and everything from `0x28` up saturates. The slot it reads the size from is
+resolved twice: first from the acting actor's target slot (`+0x1DD`, when `>= 3`), then - when the
+acting actor is *itself* a monster (`ctx+0x13 >= 3`) - overwritten with the acting actor's own
+size. The second store really does clobber the first, so a monster's attack frames on the
+attacker's bulk rather than the target's. Record pointers come from the monster table at
+`0x801C9348 + (slot-3)*4`.
+
+Both lookups sit behind an **outer gate** on the target byte, `sltiu v0,v1,0x8` at `0x801F037C`,
+and its branch target is the *clamp* rather than the attacker arm. A target slot of `8` or above
+therefore suppresses the attacker-side store as well, leaving `ctx+0x6D0` at the `0x0C00` seed -
+the one path on which a monster attacker's own size is ignored. Live slot bytes are only ever
+`0..=6`, so the gate is a guard against a stale or uninitialised `+0x1DD`.
+
+Ported as `battle_formulas::camera_height_for_frame` (whole routine, gate included) over
+`camera_height_from_size_class` (the `<< 7` + clamp arithmetic), and wired: the port runs at
+`ActionSeed` - the same edge as retail's call at `801e2d2c`, ahead of the gated
+`FUN_801EFE44` bounds walk - feeding `BattleActionHost::camera_frame_height` and landing on
+`World::battle_camera_frame_height`. The size input comes from the monster record's `+0x1F`
+([`monster-animation.md`](../formats/monster-animation.md), `MonsterRecord::size_class` ->
+`MonsterDef::size_class`) through the `BattleActionHost::monster_size_class` hook.
+
+Retail's monster-band base is the literal `3` at `0x801F0384` / `0x801F03CC`, because retail
+reserves three party slots whatever the party size. The port takes that base as a parameter
+(`RETAIL_MONSTER_SLOT_BASE` for the retail reading) because `engine-core` compacts its seating
+and seats the first monster at `party_count`; the two agree for any three-member party. This is
+the same seating split `apply_side_lockout` documents from the other side.
+
+> The earlier reading of this address - a 40-slot widget-pool teardown walking ctx `+0x11B4` -
+> came from the aliased `overlay_0897_801f0348.txt` dump and is **falsified**: the
+> battle-resident body contains no widget table, no free call and no `0x801C8FA0` clear.
 
 **`0x801F1ED4` - summon actor/camera re-frame.** *Decoded from the aliased
 `overlay_0897_801f1ed4.txt` dump - identity, entry address, and body need re-verification

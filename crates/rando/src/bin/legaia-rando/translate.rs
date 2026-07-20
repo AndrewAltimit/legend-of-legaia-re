@@ -341,10 +341,22 @@ pub(crate) fn cmd_diff_disc(input: &Path, other: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn cmd_lift_official(from: &Path, target: &Path, output: &Path) -> Result<()> {
+pub(crate) fn cmd_lift_official(
+    from: &Path,
+    target: &Path,
+    output: &Path,
+    fold_accents: bool,
+) -> Result<()> {
     let source = DiscPatcher::open(load_image(from)?).context("parse source (PAL) disc image")?;
     let usa = DiscPatcher::open(load_image(target)?).context("parse target (USA) disc image")?;
-    let (pack, rep) = lift::lift_official(&usa, &source)?;
+    let (mut pack, rep) = lift::lift_official(&usa, &source)?;
+    if fold_accents {
+        let f = lift::fold_pack_accents(&mut pack);
+        println!(
+            "accents: {} folded to ASCII, {} high glyph(s) left raw (need a font patch)",
+            f.folded, f.unmapped
+        );
+    }
     write_pack(&pack, output)?;
 
     println!("lifted {} localization from {}", rep.language, rep.exe_name);

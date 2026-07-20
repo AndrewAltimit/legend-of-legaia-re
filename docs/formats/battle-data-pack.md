@@ -308,8 +308,9 @@ built by `FUN_80052FA0`) is wider than the 12 disc words:
   `+0x5C == clut_a_off − 4`, the **zero word immediately before record[0]'s
   first image block**. But the paired field is **vestigial**: `+0x58` has a
   reader (`FUN_8004AD80`, `8004ad80.txt:1492`, `base+0x58+4` = the art-bank
-  skip count), whereas an exhaustive sweep of the dumped corpus finds **no
-  reader of a fixed `+0x5C`** - every action-table consumer indexes
+  skip count), whereas **no reader of a fixed `+0x5C` exists in the code
+  searched** - see [the sweep and its coverage](#the-0x5c-no-reader-sweep)
+  for exactly what that covers. Every action-table consumer indexes
   `base + index*4` for its slots or reads `+0x58`/`+0xAC`, and the word
   `+0x5C` (= slot `0x17`) falls outside every consumer's range. The CLUT
   upload uses the file-header fields `file+0x04`/`+0x08`, not `+0x5C`. So it
@@ -317,7 +318,80 @@ built by `FUN_80052FA0`) is wider than the 12 disc words:
   earlier "it points at the art `"ME"` stream archive" hypothesis is
   separately **disc-refuted** - those archives live in `readef.DAT`
   ([below](#me-stream-archives-readefdat)), and no `"ME"` archive exists
-  anywhere in a player file's footprint or its decoded record[0].
+  anywhere in a player file's footprint or its decoded record[0]. Coverage
+  and the positive control that makes that negative load-bearing:
+  [the ME footprint sweep](#the-me-footprint-sweep).
+
+### The ME footprint sweep
+
+The negative is disc-measured: scanning the 2-byte `"ME"` magic at every byte
+offset of all four player-file footprints (0863 `0xA9000` / 0864 `0x97800` /
+0865 `0x6F000` / 0866 `0x17800`, 1,863,680 raw bytes) **and** of every LZS
+stream they contain - each file's decoded `record[0]` plus all 152 descriptor
+slots, 3,277,604 decompressed bytes, 5,141,284 bytes searched in total - yields
+5 incidental `0x4D45` hits, all in compressed slot bytes, and zero that validate
+as archives: three run their body chain past the footprint, one fails the
+channel-delta codec, one decodes to no length-exact `2 + parts*frames*9` stream.
+
+The footprint is the true TOC sector run, not the extractor's over-read window:
+0865 / 0866 extract as ~16 MB but their real footprints are `0x6F000` /
+`0x17800`, and the slot region tiles each footprint exactly.
+`battle_char_palette::derive_sub_offsets` establishes that record[0]'s
+sub-records *are* the descriptor slots, so no compressed region is left
+unopened. All 152 slots decode without error. A scan reading only compressed
+bytes would be a false negative; the decompressed layers are the clean ones -
+all 5 raw hits are in the compressed layer, and no decoded stream has any.
+
+**The positive control is the evidence.** "0 hits" is indistinguishable from a
+broken detector, so the same scanner and validator run over `readef.DAT`
+(extraction 894, 5,271,552 bytes, 78 slots), where the archives are known
+present: 151 raw `0x4D45` hits, of which **exactly 8** validate - one at offset
+`0x0` of each documented slot `3*char+1` / `3*char+2`, with the documented entry
+counts (Vahn 17/8, Noa 18/8, Gala 19/8, Terra 1/8). Zero false positives, zero
+false negatives. A validator that stopped at structural fit would not support
+either result: **2 of the 5** player-file hits pass the size-table fit test, and
+143 of the 151 `readef.DAT` hits reject.
+
+### The 0x5C no-reader sweep
+
+The relocation itself is instruction-pinned, in `80052fa0.txt`:
+
+```text
+800532b4  lw   a0,0x0(v1)         ; v1 = 0x801C9360 + sel*4  -> record[0] base
+800532bc  lw   v0,0x58(a0)
+800532c4  addu v0,v0,a0
+800532c8  sw   v0,0x58(a0)        ; self-relative -> absolute
+800532d4  lw   v0,0x5c(a0)
+800532e0  addu v0,v0,a0
+800532e4  sw   v0,0x5c(a0)        ; ... and the paired word, same shape
+```
+
+The **negative** is the part that needs its coverage stated, because a
+"no reader anywhere" claim is only as exhaustive as the thing it swept. This
+one was re-derived word-wise from bytes with capstone, not from the Ghidra dump
+corpus:
+
+- **`SCUS_942.54`: exhaustive.** All 110,080 words of the `t_size = 0x6B800`
+  text decoded individually (102,684 decode as instructions; the remainder are
+  data / COP2 words, and no `lw` encoding is undecodable, so the sweep is sound
+  for loads). The whole executable contains **31** loads at offset `0x5c`, of
+  which exactly one has a non-`sp` base: `800532d4`, the relocation above.
+  Every other non-`sp` `0x5c` access is an `lh`/`lhu`, which cannot read a
+  32-bit relocated pointer.
+- **Overlays: 15 of 26 images.** The 15 binaries in `extracted/overlays/`
+  (278,267 words) yield two non-`sp` word loads at `0x5c`, both in
+  `overlay_summon_render_0900.bin` (`801f7984`, `801f9af4`). Both sit inside a
+  contiguous `+0x44..+0x60` eight-word block copy whose base register is set by
+  `801f7090 lui s1,0x1f80` - the **scratchpad**, not a `0x801C9360` record.
+  Not readers.
+
+**What is not covered:** `crates/asset/data/static-overlays.toml` carries 26
+overlay identities; 11 of them - mostly summon stagers sharing the
+`0x801F69D8` window - are not extracted locally and were seen only through
+Ghidra dumps. To close the negative completely, extract those with
+`asset overlay` and re-run the same word-wise sweep. Until then the honest
+statement is "no reader in SCUS or the 15 extracted overlays", **not**
+"no reader anywhere".
 
 ### Swing records (equipment sections → slots 0xC..0xF)
 
@@ -346,6 +420,22 @@ attach record's `+0x07` **attach key** against the action entries'
 `+0x77` bytes (then the art bank's `+0x9B` keys) and links the attach copy
 into the matching entry's `+0x04`/`+0x08` pointer pair (copy helper
 `FUN_80055854`).
+
+The copy helper pins the attach-object record's shape, because its length is
+discovered by walking rather than read from a header:
+
+```text
+[word][word][u32 outer_count]
+  outer_count × ( [word][word][u32 pair_count] + pair_count × 2 words )
+```
+
+Everything is word-granular and both counts are treated as **signed** (a
+negative count copies nothing rather than wrapping), source and destination
+strides are identical, and no pointer inside the copied bytes is relocated -
+it is a plain `memcpy` whose extent the two nested counts define. The helper
+returns the advanced destination pointer, which the caller uses as the bump
+allocator's new high-water mark. Note `pair_count` is doubled before the copy,
+so it counts **pairs**, not words.
 
 Parser: `legaia_asset::battle_char_assembly::swing_battle_animations`
 (slots `0xC..=0xF` for a given equipped-id set, sharing the monster-archive
@@ -901,8 +991,10 @@ on the player files.)
 - ~~**record[0] `+0x5C` consumer**~~ **reframed - vestigial**: the word is
   rebased self-relative→absolute at load by `FUN_80052FA0` (`:561`)
   **alongside** the `+0x58` art-bank pointer (`:558`), but unlike `+0x58` (read
-  by `FUN_8004AD80`) it has **no traced reader** - an exhaustive corpus sweep
-  finds none, and the word (slot `0x17`) sits outside every action-table
+  by `FUN_8004AD80`) it has **no reader in the code searched** - word-wise
+  exhaustive over `SCUS_942.54` plus the 15 extracted overlay binaries, with 11
+  overlay images still dump-only ([coverage](#the-0x5c-no-reader-sweep)) - and
+  the word (slot `0x17`) sits outside every action-table
   consumer's range. Target is `clut_a_off − 4` (zero on disc), and the CLUT
   upload uses `file+0x04`/`+0x08`, not this field. So it is a rebased-at-load
   paired-relocation field, not untraced-dead; a read-watchpoint would only

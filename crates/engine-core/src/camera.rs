@@ -20,8 +20,75 @@
 
 use crate::field_events::FieldEvent;
 use crate::world::World;
+use legaia_engine_vm::camera_mover::{AXIS_COUNT, CameraMover};
 use legaia_engine_vm::motion_vm::{MotionState, MotionTarget, StepResult, step};
 use serde::{Deserialize, Serialize};
+
+/// The ten live retail camera globals, in the order the op-`0x45` param mask
+/// and the camera mover both use them.
+///
+/// This is the state the retail engine actually renders from, and the state a
+/// state trace samples - not a world-space `(eye, look_at)` pair. Keeping it
+/// verbatim is what makes the engine comparable to a recomp capture channel
+/// for channel:
+///
+/// | axis | global | role |
+/// |---|---|---|
+/// | 0 / 1 / 2 | `_DAT_8007B790/92/94` | pitch / yaw / roll (12-bit, `4096` = full turn) |
+/// | 3 / 4 / 5 | `_DAT_800840B8/BC/C0` | eye-space translation trio `tr_eye`; axis 5 is the eye-back depth |
+/// | 6 / 7 / 8 | `_DAT_80089118/1C/20` | camera focus, stored **negated** in X and Z |
+/// | 9 | `_DAT_8007B6F4` | GTE `H` projection register |
+///
+/// The focus storage convention is the one that catches people out: the
+/// globals hold `(-X, +Y, -Z)` of the world focus point (`FUN_801DAB90`), so
+/// a retail capture of a shot focused on world `(8640, 0, 10304)` reads
+/// `(-8640, 0, -10304)`. See
+/// [`cutscene.md`](../../../docs/subsystems/cutscene.md).
+///
+/// REF: FUN_801DE084
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetailCamGlobals(pub [i32; AXIS_COUNT]);
+
+impl RetailCamGlobals {
+    /// The field-entry reset values written by `FUN_80025C24` (caller
+    /// `FUN_801D6704`, field init): angles `(0x1B8, 0x64, 0)` and
+    /// `tr_eye = (0, -256, 16420)`. Focus and `H` are left as the scene
+    /// establishes them.
+    ///
+    /// PORT: FUN_80025C24
+    pub const FIELD_RESET: Self = Self([0x1B8, 0x64, 0, 0, -256, 16420, 0, 0, 0, 0]);
+
+    /// Pitch / yaw / roll, 12-bit units.
+    pub fn angles(&self) -> [i32; 3] {
+        [self.0[0], self.0[1], self.0[2]]
+    }
+
+    /// The eye-space translation trio (`_DAT_800840B8`).
+    pub fn tr_eye(&self) -> [i32; 3] {
+        [self.0[3], self.0[4], self.0[5]]
+    }
+
+    /// The focus trio exactly as retail stores it - X and Z **negated**.
+    pub fn focus_stored(&self) -> [i32; 3] {
+        [self.0[6], self.0[7], self.0[8]]
+    }
+
+    /// The focus as a world-space point: `(-axis6, axis7, -axis8)`.
+    pub fn focus_world(&self) -> [i32; 3] {
+        [-self.0[6], self.0[7], -self.0[8]]
+    }
+
+    /// GTE `H`.
+    pub fn h(&self) -> i32 {
+        self.0[9]
+    }
+}
+
+impl Default for RetailCamGlobals {
+    fn default() -> Self {
+        Self::FIELD_RESET
+    }
+}
 
 /// Discrete camera-distance preset for the field follow camera. `Retail`
 /// is the faithful framing; `Far` / `Farther` are engine enhancements that
@@ -148,6 +215,26 @@ pub struct Camera {
     pub motion_state: MotionState,
     /// Latest cinematic target - set when an op `0x45` apply event fires.
     pub motion_target: MotionTarget,
+    /// The live retail camera globals - the pose retail actually renders and
+    /// a state trace samples. Driven by op-`0x45` Configure beats through
+    /// [`Self::globals`] / [`Self::mover`], and by the follow camera in
+    /// [`Self::tick`].
+    pub globals: RetailCamGlobals,
+    /// The single in-flight camera-mover glide, when a beat staged one with
+    /// `apply != 0`. `None` once it has arrived (the retail actor marks
+    /// itself dead and frees its pair block).
+    pub mover: Option<CameraMover>,
+    /// Display-frame counter the mover was last advanced to, so a glide
+    /// advances in retail display frames rather than sim ticks (retail's
+    /// `DAT_1F800393` credit - see `camera_mover`'s module docs).
+    last_field_frame: u64,
+    /// Latched once this scene has executed an op-`0x45` Configure: from then
+    /// on the script owns the focus globals and the follow camera stops
+    /// writing them. A scripted scene seizes the camera in retail, and the
+    /// focus it stages is meant to survive the settled gaps between beats -
+    /// retail holds two distinct focus values across the whole of `opdeene`.
+    /// Cleared by [`Self::reset_globals_for_scene_entry`].
+    script_owns_focus: bool,
 }
 
 impl Default for Camera {
@@ -166,6 +253,10 @@ impl Default for Camera {
             distance: CameraDistance::Retail,
             motion_state: MotionState::default(),
             motion_target: MotionTarget::default(),
+            globals: RetailCamGlobals::default(),
+            mover: None,
+            last_field_frame: 0,
+            script_owns_focus: false,
         }
     }
 }
@@ -232,7 +323,38 @@ impl Camera {
                     if let Some(fz) = slot(8) {
                         self.look_at[2] = -((fz as i16) as f32);
                     }
-                    let _ = (apply_trigger, mode);
+                    // The ten retail globals. Every masked slot writes its
+                    // axis; an absent slot holds its prior value, which is
+                    // what `FUN_801DE084` does by writing only the slots the
+                    // mask selects. `apply_trigger` then chooses between the
+                    // two commit behaviours:
+                    //
+                    // - `apply == 0` - SNAP. Write straight through and mark
+                    //   every live mover dead, cancelling a glide in flight.
+                    // - `apply != 0` - GLIDE. Hand the one mover actor ten
+                    //   `(start, end)` pairs, `start` from the LIVE globals,
+                    //   and let it interpolate over `apply` display frames
+                    //   with `mode` as the shared ease curve.
+                    //
+                    // This is the half the camera was missing entirely: the
+                    // eye-space translation trio (slots 3/4/5) had no engine
+                    // representation at all, so every scripted shot rendered
+                    // and traced from the follow orbit's fixed height.
+                    self.script_owns_focus = true;
+                    let mut target = self.globals;
+                    for p in &params {
+                        if (p.slot as usize) < AXIS_COUNT {
+                            target.0[p.slot as usize] = (p.value as i16) as i32;
+                        }
+                    }
+                    if apply_trigger == 0 {
+                        self.globals = target;
+                        self.mover = None;
+                    } else {
+                        let mut mv = self.mover.take().unwrap_or_default();
+                        mv.arm(self.globals.0, target.0, apply_trigger, mode);
+                        self.mover = Some(mv);
+                    }
                     if std::env::var_os("LEGAIA_DIAG_CAMERA").is_some() {
                         eprintln!(
                             "DIAG camera configure: params={params:?} -> pitch={:.3} yaw={:.3} look_at={:?}",
@@ -277,6 +399,7 @@ impl Camera {
     ///
     /// [`World::tick`]: crate::world::World::tick
     pub fn tick(&mut self, world: &World) {
+        self.tick_globals(world);
         match self.mode {
             CameraMode::Follow => {
                 let actor = world
@@ -307,6 +430,71 @@ impl Camera {
                 // event configured.
             }
         }
+    }
+
+    /// Advance the retail camera globals one frame: run any in-flight mover
+    /// glide, then let the follow camera write the focus it owns.
+    ///
+    /// The mover is clocked in **display frames**, not sim ticks - retail
+    /// credits `DAT_1F800393` (the adaptive frame-skip factor) per logic tick,
+    /// which banks exactly one unit per display frame, making every authored
+    /// `apply` a duration in 60 Hz frames. `World::field_frames` is the
+    /// engine's display-frame counter, so diffing it is the faithful clock
+    /// (the same thing the renderer's glide does).
+    ///
+    /// In [`CameraMode::Follow`] with no glide in flight, the follow camera
+    /// owns the focus globals: `FUN_801DBE9C` stores the **negated** anchor
+    /// position (`_DAT_80089118 = -(anchor+0x14)`,
+    /// `_DAT_80089120 = -(anchor+0x18)`). Writing it here is what makes a
+    /// free-roam field frame comparable against a retail capture, which
+    /// samples those same globals whether a cutscene is running or not.
+    ///
+    /// PORT: FUN_801DC0BC
+    /// REF: FUN_801DBE9C
+    fn tick_globals(&mut self, world: &World) {
+        let now = world.field_frames;
+        let dt = now.saturating_sub(self.last_field_frame) as i32;
+        self.last_field_frame = now;
+
+        let gliding = if let Some(mv) = self.mover.as_mut() {
+            let arrived = mv.tick(dt);
+            self.globals.0 = mv.values();
+            if arrived {
+                self.mover = None;
+            }
+            true
+        } else {
+            false
+        };
+
+        // The follow camera only owns the focus in free-roam. A cutscene's
+        // staged focus must survive the gaps BETWEEN its beats, not just the
+        // frames a glide happens to be in flight: retail's `opdeene` holds two
+        // distinct focus values across the whole scene, so a writeback gated
+        // only on `!gliding` re-pins the focus to the player on every settled
+        // frame and turns those two values into ~1000.
+        let scripted = gliding || self.script_owns_focus || world.cutscene_timeline_active();
+        if !scripted
+            && self.mode == CameraMode::Follow
+            && let Some(a) = world
+                .actors
+                .get(self.follow_slot as usize)
+                .filter(|a| a.active)
+        {
+            self.globals.0[6] = -(a.move_state.world_x as i32);
+            self.globals.0[8] = -(a.move_state.world_z as i32);
+        }
+    }
+
+    /// Reset the retail camera globals to their field-entry values and drop
+    /// any glide in flight - the engine side of `FUN_80025C24`, called when a
+    /// scene is entered so a previous scene's shot can't leak into the next.
+    ///
+    /// PORT: FUN_80025C24
+    pub fn reset_globals_for_scene_entry(&mut self) {
+        self.globals = RetailCamGlobals::FIELD_RESET;
+        self.mover = None;
+        self.script_owns_focus = false;
     }
 
     /// The camera azimuth to feed
@@ -526,6 +714,108 @@ mod tests {
             [100.0, 55.0, 200.0],
             "X/Z retarget from slots 6/8; Y kept from the prior look-at (slot 7 absent)"
         );
+    }
+
+    /// A snap beat (`apply == 0`) writes every masked slot straight into the
+    /// retail globals, and an absent slot holds. The focus lands in retail's
+    /// STORED convention (negated X/Z) - the trace channel compares against
+    /// that word, not against a world-space point.
+    #[test]
+    fn snap_beat_writes_all_ten_globals_in_retail_convention() {
+        use legaia_engine_vm::field::CameraParam;
+        let mut w = World::default();
+        let p = |slot: u8, value: i16| CameraParam {
+            slot,
+            value: value as u16,
+        };
+        w.pending_field_events = vec![FieldEvent::CameraConfigure {
+            // Pitch/yaw, the full eye-space trio, focus X/Z (no slot 7), H.
+            params: vec![
+                p(0, 240),
+                p(1, -455),
+                p(3, 280),
+                p(4, 5462),
+                p(5, 832),
+                p(6, -8568),
+                p(8, -8944),
+                p(9, 776),
+            ],
+            apply_trigger: 0,
+            mode: 0,
+        }];
+        let mut c = Camera::default();
+        c.route_camera_events(&mut w);
+        assert_eq!(
+            c.globals.angles(),
+            [240, -455, 0],
+            "pitch/yaw set, roll held"
+        );
+        assert_eq!(c.globals.tr_eye(), [280, 5462, 832], "eye-space trio");
+        assert_eq!(
+            c.globals.focus_stored(),
+            [-8568, 0, -8944],
+            "focus stored negated in X/Z; absent slot 7 holds its prior 0"
+        );
+        assert_eq!(c.globals.focus_world(), [8568, 0, 8944], "world focus");
+        assert_eq!(c.globals.h(), 776);
+        assert!(c.mover.is_none(), "a snap cancels any glide in flight");
+    }
+
+    /// A glide beat (`apply != 0`) arms the mover instead of snapping, and the
+    /// globals interpolate toward the target over the beat's duration in
+    /// display frames, arriving exactly.
+    #[test]
+    fn glide_beat_arms_the_mover_and_arrives_exactly() {
+        use legaia_engine_vm::field::CameraParam;
+        let mut w = World {
+            // Slot 5 (eye-back depth) from the field reset 16420 -> 17420.
+            pending_field_events: vec![FieldEvent::CameraConfigure {
+                params: vec![CameraParam {
+                    slot: 5,
+                    value: 17420,
+                }],
+                apply_trigger: 100,
+                mode: 1, // linear
+            }],
+            ..World::default()
+        };
+        let mut c = Camera::default();
+        c.route_camera_events(&mut w);
+        assert!(c.mover.is_some(), "apply != 0 arms a glide, does not snap");
+        assert_eq!(
+            c.globals.tr_eye()[2],
+            16420,
+            "arming alone does not move the global"
+        );
+
+        // Advance 50 of the 100 display frames - halfway on a linear curve.
+        w.field_frames = 50;
+        c.tick(&w);
+        let mid = c.globals.tr_eye()[2];
+        assert!(
+            (16420..17420).contains(&mid),
+            "midpoint {mid} interpolates between start and target"
+        );
+
+        // Run out the duration: exact arrival, and the one-shot mover retires.
+        w.field_frames = 100;
+        c.tick(&w);
+        assert_eq!(c.globals.tr_eye()[2], 17420, "glide arrives exactly");
+        assert!(c.mover.is_none(), "the mover is one-shot");
+    }
+
+    /// Scene entry restores the `FUN_80025C24` field defaults so a departing
+    /// scene's shot cannot leak into the next one.
+    #[test]
+    fn scene_entry_resets_globals_to_field_defaults() {
+        let mut c = Camera {
+            globals: RetailCamGlobals([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
+            ..Default::default()
+        };
+        c.reset_globals_for_scene_entry();
+        assert_eq!(c.globals, RetailCamGlobals::FIELD_RESET);
+        assert_eq!(c.globals.angles(), [0x1B8, 0x64, 0]);
+        assert_eq!(c.globals.tr_eye(), [0, -256, 16420]);
     }
 
     #[test]

@@ -65,6 +65,33 @@ accumulator `DAT_801EF088` takes no equipment add). The earlier "agility /
 speed pair" reading of `+0`/`+4` is **falsified**: `+0` is the INT bonus
 (head gear), `+4` is the SPD bonus (footwear).
 
+### The five adds, in instruction order
+
+`FUN_801CF650` walks five equipment slots (`a2 = 0..4`, bounded by
+`slti v0,a2,0x5`), gates each on the item-table kind byte being `1`, and then
+performs exactly five `lbu` / `lw` / `addu` / `sw` add-backs. Taken straight from
+the instruction stream (`overlay_menu_801cf650.txt`; `overlay_shop_save_*` is
+byte-identical, which is what rules out a VA-aliasing mix-up):
+
+```text
+801cf6c0  lbu v1,0x0(a0)   ->  sw 0x1c(a1)    equip +0  ->  record +0x6E2  INT
+801cf6f0  lbu v1,0x1(a0)   ->  sw 0x0c(a1)    equip +1  ->  record +0x6DA  ATK
+801cf704  lbu v1,0x2(a0)   ->  sw 0x10(a1)    equip +2  ->  record +0x6DC  UDF
+801cf718  lbu v1,0x3(a0)   ->  sw 0x14(a1)    equip +3  ->  record +0x6DE  LDF
+801cf72c  lbu v1,0x4(a0)   ->  sw 0x18(a1)    equip +4  ->  record +0x6E0  SPD
+```
+
+**`equip +0` lands on the *last* accumulator**, out of sequence with `+1..+4`,
+which march in step. That asymmetry is the load-bearing detail: it is present in
+the instructions and would not survive a reading lifted from linearised
+decompiled C, where the five adds render as a uniform run. It is also why the
+INT target is easy to lose - anyone who assumes the five bytes map to the five
+accumulators in order gets every stat wrong by one.
+
+There is **no** store to `0x8(a1)` anywhere in the function's 68 instructions,
+which is the positive form of the "never AGL" claim above rather than an
+absence-of-evidence argument.
+
 ### What is pinned vs. best-effort
 
 All five `+0..+4` stat *targets* are **pinned** from the accumulator ->

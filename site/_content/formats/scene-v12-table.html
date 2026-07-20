@@ -199,7 +199,7 @@
     live in the field overlay 0897 (field-VM op <code>0x3F</code> at <code>0x801DEB14</code> plus four controller sites).</li>
     <li><strong>Case 0</strong> seeds a 70-frame countdown (<code>gp+0x710 = 0x46</code>); cases 1/3 poll stream progress
     (<code>FUN_8003DE7C(1)</code>).</li>
-    <li><strong>Case 2</strong> (dev flag <code>_DAT_8007B8C2</code> set): streams <strong>raw TOC entry
+    <li><strong>Case 2</strong> (<code>_DAT_8007B8C2 != 0</code> - the <em>retail</em> arm): streams <strong>raw TOC entry
     <code>DAT_8007B768 + 3</code></strong> - the destination scene's block base + 3, the
     <code>.LZS</code>/<code>scene_asset_table</code> slot - into <code>_DAT_8007B85C</code> by index
     (<code>FUN_8001EEF0</code> &rarr; <code>FUN_8003EB98</code>; see <code>ghidra/scripts/funcs/8001eef0.txt</code>,

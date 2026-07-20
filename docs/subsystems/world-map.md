@@ -71,11 +71,54 @@ Entry: `(ctx_ptr)`. Handles:
    - `_DAT_8007B850 & 0x2000` / `0x8000` → `_DAT_80089118 -= 8` / `+= 8` (Z scroll)
    - `_DAT_8007B850 & 0x20` / `0x80` → `_DAT_8007B794 += 0x14` / `-= 0x14` (azimuth)
    - `_DAT_8007B850 & 8` / `2` → `_DAT_8007B6F4 -= 4` / `+= 4` (zoom/height)
-   - Bit `DAT_801F2B95 & 1`: enables `FUN_801E75DC` (overlay animation step)
+   - Bit `DAT_801F2B95 & 1`: enables `FUN_801E75DC`, the [screen-dim pass](#fun_801e75dc---top-view-screen-dim-pass-248-bytes)
    - Bit `DAT_801F2B95 & 2`: second animation flag
 
 3. **Normal-walk path** (`DAT_801F2B94 == 0`): standard per-frame world-map update
    (field VM tick, actor step, camera follow via motion VM).
+
+### `FUN_801E75DC` - top-view screen-dim pass (248 bytes)
+
+Takes no arguments and reads no state - every value in the body is a literal.
+It emits three primitives into the OT at `*(0x1F800314 + 0xE0) + 8`, allocated
+off the scratchpad prim-pool cursor at `0x1F800314 + 0x8C`:
+
+| # | Packet | Bytes | Construction |
+|---|---|---|---|
+| 0 | `DR_MODE` | 12 | `SetDrawMode(p, dfe=0, dtd=0, tpage=0x1E, tw=NULL)` via `FUN_80059010` |
+| 1 | `POLY_F4` | 24 | tag `0x05000000`, GP0 word `0x2A808080` whose three colour bytes are then zeroed |
+| 2 | `DR_MODE` | 12 | `SetDrawMode(p, dfe=0, dtd=1, tpage=0x1E, tw=NULL)` |
+
+GP0 command `0x2A` is a flat, untextured, semi-transparent quad, and the
+three `sb zero, 4/5/6` stores at `0x801E7674` leave its colour black.
+`tpage = 0x1E` selects semi-transparency mode `ABR = (0x1E >> 5) & 3 = 0`,
+i.e. `0.5*back + 0.5*front`; against a black front that halves the
+framebuffer. So the pass is a **50% screen darken** drawn behind the top-view
+debug panels, not an animation step. The two `DR_MODE` packets exist to take
+dither off across the blend quad and restore it after.
+
+The quad's four vertices are literals at `0x801E764C..0x801E7670`: `(0, -4)`,
+`(320, -4)`, `(0, 224)`, `(320, 224)` - the full NTSC draw area, started four
+scanlines high so it covers the band row the horizon emitter also starts at.
+
+**Which image.** The bytes live in the **field overlay, PROT 0897**
+(`overlay_field_0897.bin`, base `0x801CE818`, file offset `0x18DC4`). The
+`overlay_world_map_*` capture dumps are byte-identical to that image at the
+same VAs: the world map is a 0897-hosted *mode*, not an overlay of its own -
+the same relationship [`functions.md`](../reference/functions.md) records for
+the move-VM overlay extension. Resolving against the extracted image rather
+than a dump also sidesteps both mis-base clusters in
+[`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md).
+
+**Reachability.** Retail-reachable only behind the top-view debug path. The
+single call site is the branch pair at `0x801E7794..0x801E77B8` inside
+`FUN_801E76D4`: `DAT_801F2B94 != 0` (top view) **and** `DAT_801F2B95 & 1`.
+Entering top view at all additionally needs the debug flag `_DAT_8007B98C`,
+which retail leaves clear.
+
+Port: `legaia_engine_vm::world_map_dim::emit_screen_dim`, gated by
+`WorldMapController::run_screen_dim` and called once per frame from the
+world-map tick.
 
 ### `FUN_801EAD98` - world map debug menu renderer (7280 bytes)
 
@@ -97,13 +140,38 @@ menu list for the world map developer menu. String table at `0x801CF344..`:
 Called by `FUN_801ECA08` when the debug menu panel is active
 (`ctx[+0x54]` mod-6 dispatch resolves to cases 1 or 3).
 
-### `FUN_801CA08` - world map panel sizer / menu caller (256 bytes)
+### `FUN_801ECA08` - world map panel sizer / list picker (256 bytes)
 
-Entry: `(ctx_ptr, row_start, row_end, col_idx, ...)`. Computes panel height
-`= (row_end - row_start + 1) * 8`; vertical offset `= 0xD0 - height` (centres
-a 208-pixel viewport). Writes height/offset into a panel descriptor at
-`0x801F2B98 + col_idx * 28`. Dispatches on `ctx[+0x54]` (6-way JT at
-`0x801CF4CC`); cases 1 and 3 call `FUN_801EAD98` to draw the menu list.
+Entry: `(ctx_ptr, row_start, row_end, col_idx)`. Sizes the panel, then runs a
+vertical list picker over rows `row_start..=row_end`.
+
+Sizing, with `rows = row_end - row_start + 1`, into the 28-byte panel
+descriptor at `0x801F2B98 + col_idx * 28`:
+
+| Descriptor field | Value |
+|---|---|
+| `+0x08` | Panel x (read back, used as `x + 4` for the cursor sprite). |
+| `+0x0A` | Panel y = `0xD0 - rows * 8` (bottom-anchors a 208-pixel viewport). |
+| `+0x0E` | Panel height = `rows * 8`. |
+
+The picker's cursor row lives at `ctx[+0x9E]`, the phase at `ctx[+0x54]`
+(6-way JT at `0x801CF4CC`):
+
+| Phase | Behaviour |
+|---|---|
+| 0 | Seed cursor `= row_start`, open the panel, `phase++` - then **falls through** into phase 1. |
+| 1 | Cursor up (`0x1000`) / down (`0x4000`) with SFX `0x21`, wrapping at both ends; confirm → SFX `0x37`, phase 2; cancel → SFX `0x36`, phase 3. |
+| 2 | Confirm settle - clears `DAT_801C6EA4[+0x3E]`. |
+| 3 | Cancel unwind via `FUN_801EA9B0`. |
+| 4 | Teardown - restores the saved selection and resets phase to 0. |
+
+Cursor wrap is a **swap, not a clamp**: below `row_start` jumps to `row_end`
+and above `row_end` jumps back to `row_start`.
+
+The menu list is drawn by `FUN_801EAD98(ctx, x, y, row_start, row_end)`, gated
+on the phase / helper product being `1` or `3` - so phase 1 always draws, phase
+3 draws only while `FUN_801EA9B0` reports the unwind still running, and phases
+2 and 4 never draw. Input is suppressed entirely while `_DAT_8007BB80 != 0`.
 
 ### `FUN_801EE90C` - world map text-box dispatcher (128 bytes)
 
@@ -1380,10 +1448,8 @@ if (_DAT_801F351C != 0) {
     local_34 = _DAT_801F3520 / 5;
     local_38 = _DAT_801F3520 - local_34;
     do {
-        iVar10 = cos_table[(uVar6 & 0xFFF)];   // 0x8007B81C cos LUT
-        // emit 2x POLY_FT4 (chain tag 0x9000000) + 1 small prim
-        // (chain tag 0x3000000); vertex coords are cos-rotation-
-        // projected with local_3c/local_38 as scale moduli.
+        iVar10 = trig[(uVar6 & 0xFFF)];   // table behind _DAT_8007B81C
+        // emit one scanline band - see the packet table below.
         ...
         uVar6 += 0x10;
         iVar11++;
@@ -1391,12 +1457,50 @@ if (_DAT_801F351C != 0) {
 }
 ```
 
-`_DAT_8007B81C` is the cos lookup table (`docs/reference/memory-map.md`).
-The function emits ~670 prims per call (2 POLY_FT4 + 1 small per iter
-across 224 iters). Vertex coordinates project via the cos table, so
-the rendered output rotates with the camera angle - consistent with
-a horizon / sky / animated-background plane, not a fixed continent
-mesh.
+`_DAT_8007B81C` is a **pointer** to a `0x1000`-entry `i16` trig table
+(`docs/reference/memory-map.md`), indexed `(angle & 0xFFF)` - the same
+pointer the [move VM](move-vm.md) and [effect VM](effect-vm.md) index.
+
+#### Per-iteration packets
+
+Each of the 224 iterations emits a **one-pixel-tall horizontal band** at
+`y_top = i - 4`, `y_bottom = i - 3`, so the loop paints scanlines `0..=223`:
+
+| Packet | Chain tag | Contents |
+|---|---|---|
+| `POLY_FT4` | `0x09000000` | Band's left half. Code+colour `0x2C808080`, tpage `0x0100`, `u` 0/0xFF, `v` 1/2. |
+| `POLY_FT4` | `0x09000000` | Band's right half. Same code+colour, tpage `0x0103`, `u` 0x3F/0x7F, `v` 1/2. |
+| `LINE_F2` | `0x03000000` | Full-width (`0..0x140`) near-black scanline at `y_top`; code+colour `0x40010101`. |
+| `MoveImage` | 6-word `DR_MOVE` | VRAM row blit, source `(0, i + band_off)` sized `0x140 x 1`, destination `(0, 1)`. |
+
+So **four** prims per iteration, 896 per call. `band_off` is `0` normally
+and `0xF0` when `_DAT_8007B74C != 0` - an alternate source band, the only
+thing that flag changes.
+
+#### Horizontal extents
+
+Three x coordinates per band, from the staged scale and the per-row trig
+sample `c`. Every term is truncated to `i16` individually before the adds:
+
+```text
+half = scale >> 1;  lo = scale / 5;  hi = scale - lo
+x_a  = -half - ((half * c) >> 12)
+x_b  = x_a + ((hi * c) >> 12) + hi + 0xFF
+x_c  = x_b + lo + ((lo * c) >> 12) + 0x40
+```
+
+Quad 0 spans `x_a..x_b`, quad 1 spans `x_b..x_c` - they tile without a gap.
+Because the extents track the trig sample, the plane appears to rotate with
+the camera angle: a horizon / sky / animated-background plane, not a fixed
+continent mesh.
+
+The persisted angle (`_DAT_801F3518`) is stored **before** the loop, so it
+advances only by `tick * step` per call - the per-row `+= 0x10` is loop
+scratch and never written back.
+
+Ported clean-room as `legaia_engine_vm::world_map_horizon::emit_horizon`,
+driven from the world-map controller's gate consumer
+(`WorldMapController::run_horizon_emitter`).
 
 The case-5 path of the [per-actor render dispatcher `FUN_8001ADA4`](#per-actor-render-dispatcher---fun_8001ada4)
 draws every **landmark** TMD (castle, towers, bridges, gates) - each

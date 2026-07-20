@@ -308,7 +308,9 @@ The credit balance the player accumulates while playing lives in the **overlay-l
 
 The casino coin bank is the global `_DAT_800845A4` (u32). The slot machine touches it in exactly two places:
 
-- **Read (entry / HUD):** `FUN_801e6f70` (`overlay_slot_machine_801e6f70.txt`) renders the coin HUD; it reads `_DAT_800845A4` (current bank) for the on-screen coin readout and the sibling word `_DAT_8008459C` for a record/high value, comparing them to flag a new record. It does not modify the bank. **Confirmed** (`func_0x80034b78(_DAT_800845A4, …)`).
+- **Read (exchange counter):** `FUN_801e6f70` (`overlay_slot_machine_801e6f70.txt`) renders the casino's **coin-exchange counter**, where coins are bought with gold. It reads `_DAT_800845A4` (current bank) for the "Your Coins" readout and `_DAT_8008459C` for "Your Gold" - that sibling word is the party's **gold**, not a record/high value. It does not modify either. **Confirmed.**
+
+  The counter's "Coins to Buy" entry field is eight single-digit cells stored least-significant-first; their accumulated value times a flat **100 gold per coin** is the "Total Cost" line. The sale is gated twice - on gold against the total, and on the counter's remaining stock (`_DAT_8007BB90`) against the coin count - and the total is drawn in the alert ink when *either* gate fails. Port: `engine-core::slot_machine::coin_exchange_quote`. **Confirmed.** The port is not wired - the host has no casino exchange screen, so nothing calls the quote outside the crate's tests.
 - **Write (cash-out commit):** state `100` of `FUN_801cf0d8` does `_DAT_800845A4 = DAT_801d4114` once the cash-out fade completes (`overlay_slot_machine_801cf0d8.txt`, the `_DAT_800845a4 = DAT_801d4114` store). So the bank is **assigned the final playing balance on exit**, not debited/credited per spin. **Confirmed.**
 
 This is why the "Infinite Coins" cheat (`0x800845A4 = 0x05F5E0FF`, see [`cheats.md`](../reference/cheats.md)) works at the casino but does **not** make individual spins free: per-spin betting decrements the *overlay-local* `DAT_801d4114` (loaded from the bank when the machine opens). The cheat-database pointer noted "near `0x801d3cac`" lands in this overlay's state block - `DAT_801d3cac` is the **feature mode**, and the surrounding `0x801d3c80..0x801d4134` window holds the RNG seed, reel positions, state word, balance, submenu cursor and payout counters described in the table below. **Confirmed** address window from the disassembly; the specific cheat-pointer semantics are **Inferred**.
@@ -392,7 +394,7 @@ The payout table is exactly 10 bytes - one per symbol id, the index range `FUN_8
 | `FUN_800172c0` | the per-frame **scene camera** the machine's 3D emits project through (SCUS) |
 | `FUN_800195a8` | the **billboard projector** (SCUS): view-space centre + half-extent -> projected quad |
 | `FUN_8005bac8` / `FUN_8003d368` | `RotTransPers4` / `RTPS` (SCUS GTE wrappers) |
-| `FUN_801e6f70` | coin HUD render: reads `_DAT_800845A4` + record - `overlay_slot_machine_801e6f70.txt` |
+| `FUN_801e6f70` | coin-exchange counter: cost at 100 gold/coin + gold/stock gates - `overlay_slot_machine_801e6f70.txt` |
 
 The overlay is **extraction PROT 975** (dev module `other4`), loaded by the **mode-24 minigame
 door-warp** as sub-id 3 (field-VM op `0x3E` with `op0 = 103`; `FUN_80025980` →
@@ -416,6 +418,7 @@ over-read tail - mode 0 actually loads the debug-menu overlay PROT 971. See [`sc
 - the flat spin charge + net-take accrual (3/+6 normal, 1/+1 feature);
 - the per-mode stop plan + landing search, including mode 6's **free stop** (depth `0`, no target) (`stop_plan` / `land_row`; `FUN_801d2114` / `FUN_801d2440`);
 - the per-reel **claimed latch** and the marquee tally over it (`SlotMachine::claimed` / `tally` / `tally_product`; `FUN_801d0554` + `FUN_801cfff0`);
+- the **marquee composition** itself (`SlotMachine::marquee` / `marquee_placements` over [`legaia_asset::minigame_slot_scene`]'s `compose_marquee_frame` / `place_message` / `clear_dots` / `render_marquee`; `FUN_801cfff0` + `FUN_801d3230` + `FUN_801d069c`) - see [the dot matrix's two blits](#the-dot-matrix-has-two-blits-not-one);
 - the **five**-payline / payout / bonus-round evaluation - the bonus product over the payline `(value - 0xf)` factors, the centre winning line, the product subtracted from the net take (`SlotMachine::evaluate_spin`, per-reel row offsets from [`legaia_asset::minigame_slot_scene`], payout via [`legaia_asset::slot_payout`]; `FUN_801d13e8`);
 - the entry constants (`ENTRY_DEFAULT_BALANCE` = 70, `ENTRY_LCG_SEED` = `0x6C0A2AF0`; `FUN_801cec94`);
 - the coin economy (balance seeded from the bank, `9999999` tally cap, cash-out **assignment** back into the bank).
@@ -562,6 +565,41 @@ multiplication sign, the two round pips and the word "coin" - by the ids
 [the message bank's roles](#the-message-banks-roles). This is where the bonus
 round's `0 x 0 x 0` tally and its `48 coin` payout caption are drawn: the marquee
 is not decoration, it is the machine's readout.
+
+### The dot matrix has two blits, not one
+
+`FUN_801d069c` and `FUN_801d3230` are not variants of one copy loop, and the
+difference decides what the marquee can express. They clip opposite ends of the
+copy:
+
+| | `FUN_801d069c` | `FUN_801d3230` |
+|---|---|---|
+| Offsets | the **source** `(x, y)` | the **destination** `(col, row)` |
+| Clips | source coords, signed | dest coords, **unsigned** |
+| Buys | scrolling one message through a fixed window | placing a message at a spot |
+
+The unsigned clip is how one `sltiu` covers both bounds at once: a negative
+offset fails the compare as a huge unsigned value, so there is no separate `< 0`
+test. That is not a micro-optimisation to gloss over in a port - the payout
+caption is composed at `row = min(frame - 0xD, 0)`, i.e. it *starts* 13 rows
+above the matrix and counts up to 0, and the unsigned clip is the only thing
+hiding the rows that have not arrived. Port the bound as a bare
+`row < DOT_ROWS` and the caption appears fully formed on its first frame.
+
+A negative `msg` id is `FUN_801d069c`'s **clear** command rather than a lookup:
+the `bgez $a0` at its head skips the scroll body into a `78 x 13` zero-fill of
+`DAT_801d37a0`. `FUN_801cfff0` opens every frame with that call, so the marquee
+is rebuilt from scratch each frame and never diffed.
+
+`FUN_801cfff0` then picks the frame's one occupant. The payout caption wins the
+strip whenever it is up - retail gates it on **both** the figure `DAT_801d3d3c`
+and the frame clock `DAT_801d3c94` being non-zero - and only when it is down do
+the bonus tally / round pips draw, and then only in feature modes `4..=6` and
+reel states `1..=4`. The caption's leading-zero suppression tests the **whole
+figure** at each of its four places, not the running remainder: all four guards
+re-read `DAT_801d3d3c`, while the digit values come off a remainder chain that
+runs whether or not its own place drew. So `405` prints `4`, `0`, `5` - an
+interior zero is kept - and `7` prints a bare `7` in the units column.
 
 ### The two screen-space draws - `FUN_801d2cc0`
 

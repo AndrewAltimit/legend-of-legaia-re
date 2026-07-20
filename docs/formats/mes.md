@@ -116,7 +116,14 @@ The crate-level Rust port of this pager lives in [`crates/engine-vm`](../../crat
 
 ### Box geometry
 
-Max lines per box is stored at `_DAT_801F2740`. The overlay's `case 6` / `case 9` init arms (the two box-open states) **both pin this to 3** - the standard dialog box scrolls in up to three lines, then state `0xD` advances to the "page full, wait for input" state `0xE`. Other consumers (status / quantity panels) reach the pager with different values written in by their own setup.
+Max lines per box is stored at `_DAT_801F2740`. **Three** init arms pin it to 3, not two: states `0` (`0x801D90BC`), `6` (`0x801D9174`) and `9` (`0x801D920C`) each carry their own `li v0,0x3; sw v0,0x2740(v1)`. State `3` (`0x801D9154`) is not one of them - it runs a four-store prologue and jumps away at `0x801D916C` before reaching the tail. The standard dialog box scrolls in up to three lines, then state `0xD` advances to the "page full, wait for input" state `0xE`. Other consumers (status / quantity panels) reach the pager with different values written in by their own setup.
+
+The three arms are near-copies but **not** byte-identical: over their 0x98-byte extent they differ in exactly one word, the successor state each writes to `_DAT_801F2734` - state `0` hands off to `1`, state `6` to `7`, state `9` to `0xA`. That one word is the whole behavioural difference between the box-open control bytes, so read it before treating any two of these arms as interchangeable.
+
+Where those successors go is what separates teardown from a fresh box:
+
+- States `1`, `4` and `7` share handler `0x801D8708`. It tests `_DAT_801F2734 == 4` and returns immediately when true - so state `4` (reached from `0x24`) **preserves** the row array, which is what makes "next line, same box" work. States `1` and `7` fall through and **clear** the 16-entry row buffer at `_DAT_801F3540`, tearing the box down. States `1` and `7` are otherwise indistinguishable.
+- State `0xA` is a different handler, `0x801D92A4`: a per-frame ramp on `_DAT_801F274C` toward `0x1000` (the box-open animation), which on completion sets `_DAT_801F273C = 0x18` and drops into state `1`.
 
 The picker arms write their box rect literally: `x = 0x26`, `y = 0x94 + ((4-N)*0xF)/2`, `w = 0xF4`, `h = 0x38 - (4-N)*0xF` - a 244-wide box whose height shrinks 15 px per absent option, recentred on the 4-option anchor `y = 0x94`. Fields `+0x3C/+0x3E` are the slide-animation start position (the resize state `0x11` uses the same pair).
 
@@ -150,14 +157,16 @@ When the page is full and the user presses confirm (`_DAT_800846D0` / `_DAT_8008
 
 | Control byte | Next pager state | Effect |
 |---|---|---|
-| `0x25` | `0` (idle) | end conversation |
-| `0x24` | `3` (next-line) | continue text on the next line, same box |
-| `0x48` | `9` (init new box) | open a fresh box for the next page |
-| `0x4C` followed by `0xFF` | `6` (terminate) | close the dialog |
+| `0x25` | `0` -> `1` | box reset, then row buffer cleared (teardown) |
+| `0x24` | `3` -> `4` | continue text on the next line, same box (rows preserved) |
+| `0x48` | `9` -> `0xA` | box reset, then the open animation - a fresh box |
+| `0x4C` followed by `0xFF` | `6` -> `7` | box reset, then row buffer cleared (teardown) |
 | `0x2A` | `0x11` (box resize) | start the box geometry animation |
 | `0x27` | `0x13` -> `0x12` (init -> 2-option picker) | 2-option `Yes`/`No`-style menu |
 | `0x28` | `0x15` -> `0x14` (init -> 3-option picker) | 3-option menu |
 | `0x29` | `0x17` -> `0x16` (init -> 4-option picker) | 4-option menu |
+
+**What the pager does and does not decide.** The state numbers above are read straight off the dispatch chain at `0x801D8FDC` and the jump table at `0x801CEBC0`, and the teardown-vs-fresh-box split is settled by the successor handlers. What is *not* in these instructions is the end of the **conversation**: `0x25` and `0x4C 0xFF` clear the row buffer and stop there - the pager neither returns a status nor signals its caller. Whether the dialogue session ends is decided caller-side, in the actor dialog SM `FUN_80039B7C` and the field VM. Treat "end conversation" / "close the dialog" as a reading of the box teardown, not as a property the pager byte carries; the session-level semantics are open.
 
 So the picker controls are MES `0x27` / `0x28` / `0x29`:
 

@@ -20,8 +20,9 @@ Baka Fighter lets you fight *as* a battle-form party member, so it reuses the
 **battle-form character pack** rather than shipping its own roster. The overlay
 initializer `overlay_baka_fighter_801cf00c.txt` loads `data_field/other5.lzs`
 (the LZS-compressed battle pack, PROT 1204) when the streaming-mode flag
-`_DAT_8007b8c2 == 0`, otherwise it loads the equivalent uncompressed PROT entry
-`0x4b5` (1205) directly. It then calls the per-fighter mesh installer
+`_DAT_8007b8c2 == 0` - the dev arm - and otherwise loads the equivalent
+uncompressed PROT entry `0x4b5` (1205) directly. Retail boots that flag at `1`,
+so the raw-PROT load is the path that actually runs. It then calls the per-fighter mesh installer
 `overlay_baka_fighter_801d4c50.txt` twice (`FUN_801d4c50(0)` for the player,
 `FUN_801d4c50(1)` for the opponent). That installer either streams a
 `data_field` body or loads PROT entry `char_index + 0x4b6` (1206, 1207, ...) and
@@ -88,10 +89,15 @@ poses). Per record the fields that the fight code reads are:
 | `+0x18` | base attack power for this action (used by the damage formula) |
 | `+0x1c` | sub-keyframe count for this action |
 | `+0x20`/`+0x22`/`+0x24` | per-keyframe XYZ translation (TRS), `0x08`-byte stride |
-| `+0x26` | keyframe's frame index (`<< 4` fixed point) |
+| `+0x26` | keyframe's frame index, in **whole frames** |
 
-`FUN_801d6e5c` finds the sub-keyframe whose frame index falls in a `[from,to]`
-range; `FUN_801d57bc` / `FUN_801d58e0` are leftover developer "add frame" /
+`FUN_801d6e5c(char, action, from, to)` returns the index of the first
+sub-keyframe whose frame index falls in the `[from, to]` range, or `-1` when
+the range is inverted, the action has no sub-keyframes, or none match. The
+fixed point sits on the **query**, not on the record: the function shifts
+`from` and `to` right by 4 (rounding toward zero) and compares the `+0x26`
+field raw, so callers pass a `<< 4` fixed-point frame range against
+whole-frame keyframe indices. `FUN_801d57bc` / `FUN_801d58e0` are leftover developer "add frame" /
 "delete frame" editor helpers, and `FUN_801d553c` writes a human-readable dump
 of the whole action table to a debug file (`ot5stat.txt`, "ot5" = `other5`).
 There are 0x11 (17) table entries of 9 actions each in the dump loop.
@@ -123,7 +129,12 @@ frame, while active, it:
 
 A separate timer/ready sequence lives in `overlay_baka_fighter_801d21fc.txt`
 ("READY/FIGHT" banner + countdown via the state global `DAT_801dc134` and timer
-`DAT_801dc138`; uses `DAT_801dc110 == 0xe` to detect the final round). The
+`DAT_801dc138`; uses `DAT_801dc110 == 0xe` to detect the final round). It is
+**presentation only** and does not gate the fight: `DAT_801dc134` is read and
+written nowhere else in the overlay, so the resolution SM never waits on the
+banner. Its own gate is the banner brightness `DAT_801dbeb4` reaching `0x11` -
+the same fade threshold the score tally uses per row - after which the timer
+decays by the frame step and the sequence advances to its final state. The
 per-frame sprite-actor draw callback is `FUN_801d67f0`, installed into the
 overlay's actor-draw hook `_DAT_8007ba2c` during init.
 
@@ -280,8 +291,28 @@ flashing as it grows), the round timer digits (`DAT_801dc110`) and the
 running high score (`DAT_801dbee4`). The **end-of-match tally** is
 `overlay_baka_fighter_801d239c.txt`: it animates four accumulating score
 counters (`DAT_801dbee0`/`ed8`/`edc`/`ee8`) draining into the total
-(`DAT_801dbee4`) and into the player's gold (`_DAT_80084440`), via the digit
-drawer `FUN_801d6710`.
+(`DAT_801dbee4`) and into the player's gold (`_DAT_80084440`).
+
+The drain is paced by `FUN_801d6710`, which draws nothing - it returns the
+per-frame step for a given remainder. The step is proportional, so a counter
+empties fast and then ticks out: `> 5` moves a fifth per frame, `3..=5` a half,
+and `< 3` exactly one, which is what lands the counter on zero instead of
+approaching it. Port: `engine-core::baka_fighter::tally_drain_step`.
+**Confirmed.**
+
+The four counters drain **strictly in sequence**, and each row carries its own
+fade-in counter that only advances once every earlier row has emptied. A row
+starts draining when its fade reaches `0x11` frame steps, moves one
+`FUN_801d6710` step per frame and writes the tick blip (`0x21`) to the cue ring
+on every step. The first three counters feed the on-screen total
+`DAT_801dbee4`; the fourth (`DAT_801dbee8`, the coin prize) is added straight
+into party gold at `_DAT_80084440`. The fast-forward flag `DAT_801dbf00` is
+latched at the top of `FUN_801d239c` from `_DAT_8007b874 & 0xf0` (any face
+button) and short-circuits the step to the whole remainder, so holding a button
+snaps the tally to its end state; nothing inside the tally clears the latch.
+Port: `engine-core::baka_fighter::BakaTally`, driven by `BakaFight::tick` once
+the player takes a match and banked into party money by the world's Baka
+Fighter tick. **Confirmed.**
 
 Confidence: **Confirmed** AI roll + scripted-pattern table, the HUD/tally draw
 paths, and the gold payout (a flat per-opponent prize from the record table's
@@ -517,7 +548,7 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `DAT_801d71cc` | widget 5's `u` field, patched to `stage * 0x18` (the 24px stage digit) |
 | `DAT_801dbc34` | runtime-built VITAL bar-frame cell table (3 cells per side) |
 | `DAT_801d7684` | special-attack effect-actor template |
-| `_DAT_8007b8c2` | streaming-mode flag (selects LZS `other5` vs raw PROT load) |
+| `_DAT_8007b8c2` | streaming-mode flag; `0` = dev LZS `other5`, non-zero (retail) = raw PROT load |
 | `_DAT_8007ba2c` | actor-draw hook (set to `FUN_801d67f0`) |
 
 ## Key functions
@@ -540,6 +571,7 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `FUN_801d67f0` | per-frame fighter sprite-actor draw callback (`_DAT_8007ba2c`) |
 | `FUN_801d5ed0` | textured-quad GPU emitter for every HUD glyph / banner sprite (indexes the widget table `DAT_801d7160`) |
 | `FUN_801d69e4` / `FUN_801d6a18` | 8px digit drawer (widget `0x13`, `u = digit * 8`) / right-aligned number drawer |
+| `FUN_801d6710` | end-of-match tally drain step (not a drawer - see above) |
 | `FUN_801d553c` | developer dump of the action table (`ot5stat.txt`) |
 
 Provenance: each row corresponds to `ghidra/scripts/funcs/overlay_baka_fighter_<addr>.txt`.
@@ -555,9 +587,13 @@ picker (`FUN_801d487c`, BIOS-rand stream) and the best-of-3 bookkeeping,
 built from the parsed roster + action tables
 (`legaia_asset::baka_opponents::parse` / `parse_actions`). The world hosts it
 as the suspending `SceneMode::BakaFighter` (play-window `B` key;
-Left/Right/Up = the three attacks, Down charges the special); a player match
-win banks the opponent's parsed gold prize into the party money, mirroring
-the retail tally drain into `_DAT_80084440`. Disc-gated oracle:
+Left/Right/Up = the three attacks, Down charges the special). A player match
+win installs the score tally (`BakaTally`, the `FUN_801d239c` port), which the
+world's Baka Fighter tick runs frame by frame, adding each drained step into
+the party money exactly as retail adds it into `_DAT_80084440`; leaving the
+duel before the tally finishes banks the remainder, so the total paid is the
+prize either way. Disc-free oracle for that path:
+`engine-core/tests/baka_tally_world.rs`. Disc-gated oracle:
 `engine-core/tests/baka_minigame_real.rs` (counter-play through the world
 tick beats a real ladder opponent and banks the parsed prize). Host
 simplifications, documented in the module: exchange recovery is immediate

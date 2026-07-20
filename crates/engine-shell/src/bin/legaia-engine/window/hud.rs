@@ -187,13 +187,47 @@ impl PlayWindowApp {
             };
             let ly = self.font.layout_ascii(&line);
             out.extend(text_draws_for(&ly, (8, 62), white));
-            let pts = format!(
-                "points {}   best {}   (L = quit, P = prizes)",
-                s.record().points,
-                s.record().best_points
-            );
-            let ly2 = self.font.layout_ascii(&pts);
+            let ly2 = self.font.layout_ascii("(L = quit, P = prizes)");
             out.extend(text_draws_for(&ly2, (8, 80), dim));
+
+            // The retail persistent HUD rows (best-catch, capped point total,
+            // rod label, lures remaining) at their traced stage-pixel pens,
+            // through the ported layout + its draw-list consumer. The rod
+            // index comes from the retail ownership gate, which re-points a
+            // stale selection at the next owned lure.
+            use legaia_engine_core::fishing::{lure_item_id, select_owned_rod};
+            let inventory = &self.session.host.world.inventory;
+            let count_of = |id: u32| *inventory.get(&(id as u8)).unwrap_or(&0) as i32;
+            let mut rod_index = 0;
+            let has_rod = select_owned_rod(&mut rod_index, count_of);
+            let items = legaia_engine_render::persistent_hud_draws(
+                s.record().points,
+                s.record().best_points,
+                rod_index,
+                if has_rod {
+                    count_of(lure_item_id(rod_index))
+                } else {
+                    0
+                },
+            );
+            // No fishing sprite page is uploaded, so the glyph ids and the
+            // gauge fills resolve to nothing; the number / caption rows are
+            // font-atlas text and render as-is.
+            let hud_atlas = legaia_engine_render::FishingHudAtlas {
+                solid_src: None,
+                glyph_src: &|_| None,
+                bar_thickness: 8,
+            };
+            let mut draws = legaia_engine_render::fishing_hud_draws_for(
+                &self.font,
+                &items,
+                &legaia_engine_render::FishingCaptions::placeholder(),
+                &hud_atlas,
+                (0, 0),
+            );
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+            out.extend(draws);
         }
         // Fishing point-exchange list: the venue's prize rows with the retail
         // gating (row 0 hidden until affordable, greyed unavailable rows,
@@ -521,113 +555,23 @@ impl PlayWindowApp {
             use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
             use legaia_engine_core::target_picker::{CursorRow, PickerState};
             let bw = &self.session.host.world;
-            let pc = (bw.party_count.clamp(1, 3) as usize).min(bw.actors.len());
+            // Greyed-out row tint, used by the target lists in the Arts /
+            // Magic / Item submenus below for a K.O.'d target.
             let down_color = [0.6f32, 0.6, 0.6, 1.0];
-            let enemy_color = [1.0f32, 0.7, 0.6, 1.0];
 
-            // Per-actor-index row Y, recorded as rows are drawn so popups +
-            // status icons anchor to the right slot even though the monster
-            // loop skips empty slots.
-            let mut row_y: [Option<i32>; 8] = [None; 8];
-            let mut y = 60i32;
-            // Row label = the occupying character's roster name (the
-            // present-party composition maps battle ordinal -> character);
-            // "P<n>" when the roster has no record for the slot.
-            let party_names = legaia_engine_core::field_menu_dispatch::roster_names(bw);
-            for (i, a) in bw.actors.iter().take(pc).enumerate() {
-                let name = party_names
-                    .get(bw.party_roster_slot(i))
-                    .filter(|n| !n.is_empty())
-                    .map(|n| format!("{n:<8}"))
-                    .unwrap_or_else(|| format!("P{:<7}", i + 1));
-                let line = format!("{name}HP {:>4}/{:<4}", a.battle.hp, a.battle.max_hp);
-                let color = if a.battle.liveness != 0 {
-                    white
-                } else {
-                    down_color
-                };
-                out.extend(text_draws_for(
-                    &self.font.layout_ascii(&line),
-                    (8, y),
-                    color,
-                ));
-                if i < row_y.len() {
-                    row_y[i] = Some(y);
-                }
-                y += 16;
-            }
-            y += 8;
-            for (mi, a) in bw.actors.iter().skip(pc).enumerate() {
-                if a.battle.max_hp == 0 {
-                    continue;
-                }
-                let alive = a.battle.liveness != 0;
-                let line = format!(
-                    "M{}  HP {:>4}/{:<4}{}",
-                    mi + 1,
-                    a.battle.hp,
-                    a.battle.max_hp,
-                    if alive { "" } else { "  DOWN" }
-                );
-                let color = if alive { enemy_color } else { down_color };
-                out.extend(text_draws_for(
-                    &self.font.layout_ascii(&line),
-                    (8, y),
-                    color,
-                ));
-                let actor_idx = pc + mi;
-                if actor_idx < row_y.len() {
-                    row_y[actor_idx] = Some(y);
-                }
-                y += 16;
-            }
-
-            // Status-effect icon strip per slot (single-letter abbreviations
-            // from the live tracker), drawn to the right of the HP row.
-            let status_color = [1.0f32, 0.95, 0.4, 1.0];
-            for (slot, anchor) in row_y.iter().enumerate() {
-                let Some(ry) = anchor else { continue };
-                let letters = self.battle_hud.slots[slot].status_letters();
-                for (k, letter) in letters.iter().enumerate() {
-                    let s = (*letter as char).to_string();
-                    out.extend(text_draws_for(
-                        &self.font.layout_ascii(&s),
-                        (170 + k as i32 * 8, *ry),
-                        status_color,
-                    ));
-                }
-            }
-
-            // Floating damage / heal numbers, anchored just above each slot's
-            // HP row and fading with the popup's remaining lifetime.
-            let dmg_color = [0.5f32, 0.85, 1.0, 1.0];
-            let heal_color = [0.5f32, 1.0, 0.5, 1.0];
-            let crit_color = [1.0f32, 0.95, 0.4, 1.0];
-            for p in self.battle_hud.popup_views() {
-                let Some(Some(ry)) = row_y.get(p.slot as usize) else {
-                    continue;
-                };
-                let base = if p.is_heal {
-                    heal_color
-                } else if p.is_crit {
-                    crit_color
-                } else {
-                    dmg_color
-                };
-                let color = [base[0], base[1], base[2], base[3] * p.alpha.clamp(0.0, 1.0)];
-                let text = if let Some(letter) = p.status_letter {
-                    format!("[{}]", letter as char)
-                } else if p.is_heal {
-                    format!("+{}", p.amount)
-                } else {
-                    format!("-{}", p.amount)
-                };
-                out.extend(text_draws_for(
-                    &self.font.layout_ascii(&text),
-                    (120, *ry - 14),
-                    color,
-                ));
-            }
+            // Per-slot rows, status strip and floating popups all come from
+            // the shared builder, which carries the ported retail HP / MP
+            // colour law (`hp_bar_color_index` / `mp_bar_color_index`,
+            // FUN_800349EC / FUN_80035EA8). The rows are fed from the
+            // `BattleHud` model, refreshed each tick by
+            // `sync_battle_hud_rows`.
+            out.extend(battle_hud_draws_for(
+                &self.font,
+                &battle_hud_slot_views(&self.battle_hud, &self.battle_hud_status_letters()),
+                &battle_hud_popup_views(&self.battle_hud),
+                &[],
+                BATTLE_HUD_PEN,
+            ));
 
             // Player-driven submenus (opened from the Arts / Magic / Item
             // commands). Each parks both the SM and the command session while
@@ -1243,4 +1187,254 @@ pub(super) struct DialogStageLayout {
     pub main: (i32, i32, i32, i32),
     /// Option-picker box rect when a menu is open.
     pub picker: Option<(i32, i32, i32, i32)>,
+}
+
+/// Top-left anchor of the battle HUD's slot-row block, in surface pixels.
+pub(super) const BATTLE_HUD_PEN: (i32, i32) = (8, 60);
+
+impl PlayWindowApp {
+    /// Per-slot status-letter strips, one entry per HUD slot. Kept separate
+    /// from [`battle_hud_slot_views`] because `HudSlotView` borrows the strip
+    /// and the caller has to own the backing buffer.
+    pub(super) fn battle_hud_status_letters(&self) -> Vec<Vec<u8>> {
+        self.battle_hud
+            .slots
+            .iter()
+            .map(|s| s.status_letters())
+            .collect()
+    }
+}
+
+/// Project the HUD model's slot array into the shared builder's view type.
+///
+/// Every slot is emitted, **including inactive ones** (as empty-name rows the
+/// builder skips). That is deliberate: `battle_hud_draws_for` derives both a
+/// row's Y and a popup's anchor from the slice index, so the index has to stay
+/// the absolute actor-table slot. Compacting to active slots only would shift
+/// every monster row up and anchor damage numbers to the wrong actor.
+pub(super) fn battle_hud_slot_views<'a>(
+    hud: &'a legaia_engine_core::battle_hud::BattleHud,
+    letters: &'a [Vec<u8>],
+) -> Vec<HudSlotView<'a>> {
+    hud.slots
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let meta = HudSlotMeta {
+                is_party: s.is_party,
+                alive: s.alive,
+                hp: s.hp,
+                hp_max: s.hp_max,
+                mp: s.mp,
+                mp_max: s.mp_max,
+                ap_filled: s.ap_filled,
+                ap_max: s.ap_max,
+            };
+            let name = if s.active { s.name.as_str() } else { "" };
+            let strip: &'a [u8] = letters.get(i).map(|v| v.as_slice()).unwrap_or(&[]);
+            HudSlotView::from_plain(meta, name, strip)
+        })
+        .collect()
+}
+
+/// Project the HUD model's popup queue into the shared builder's view type.
+pub(super) fn battle_hud_popup_views(
+    hud: &legaia_engine_core::battle_hud::BattleHud,
+) -> Vec<HudPopupView> {
+    hud.popup_views()
+        .into_iter()
+        .map(|p| HudPopupView {
+            slot: p.slot,
+            amount: p.amount,
+            is_heal: p.is_heal,
+            is_crit: p.is_crit,
+            status_letter: p.status_letter,
+            alpha: p.alpha,
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod battle_hud_wiring_tests {
+    use super::{BATTLE_HUD_PEN, battle_hud_popup_views, battle_hud_slot_views};
+    use legaia_engine_core::battle_hud::{BattleHud, DamagePopup, SlotSyncInfo};
+    use legaia_engine_render::battle_hud_draws_for;
+
+    fn hud_with_party_row(hp: u16, hp_max: u16, mp: u16, mp_max: u16) -> BattleHud {
+        let mut hud = BattleHud::new();
+        hud.sync_slot(
+            0,
+            SlotSyncInfo {
+                name: "Vahn",
+                is_party: true,
+                alive: true,
+                hp,
+                hp_max,
+                mp,
+                mp_max,
+                ap: None,
+            },
+        );
+        hud
+    }
+
+    /// The window's battle block must produce an MP field. The hand-rolled HUD
+    /// this replaced printed HP only, so this assertion is what pins the MP
+    /// readout as wired rather than merely available.
+    ///
+    /// MP is drawn at `pen.x + 140`; HP at `pen.x + 70`. Counting glyphs at or
+    /// past the MP column is therefore a positional test that cannot pass off
+    /// an HP-only row as an MP one.
+    #[test]
+    fn native_battle_hud_draws_an_mp_field() {
+        let font = legaia_font::synthetic_for_tests();
+        let hud = hud_with_party_row(250, 300, 12, 30);
+        let letters = vec![Vec::new(); hud.slots.len()];
+        let draws = battle_hud_draws_for(
+            &font,
+            &battle_hud_slot_views(&hud, &letters),
+            &battle_hud_popup_views(&hud),
+            &[],
+            BATTLE_HUD_PEN,
+        );
+        let mp_x = BATTLE_HUD_PEN.0 + 140;
+        assert!(
+            draws.iter().any(|d| d.dst.0 >= mp_x),
+            "no glyph reached the MP column at x={mp_x}"
+        );
+    }
+
+    /// The four-tier retail HP colour law has to reach the surface, not just
+    /// exist in engine-ui. Normal / caution / danger / K.O. must produce three
+    /// distinct tints plus the dim K.O. row.
+    #[test]
+    fn native_battle_hud_hp_tints_span_all_four_retail_tiers() {
+        let font = legaia_font::synthetic_for_tests();
+        let letters = vec![Vec::new(); 8];
+        let hp_x = BATTLE_HUD_PEN.0 + 70;
+        let mp_x = BATTLE_HUD_PEN.0 + 140;
+        // First glyph of the HP field, per HP value.
+        let hp_tint = |hp: u16| -> [f32; 4] {
+            let hud = hud_with_party_row(hp, 100, 0, 0);
+            let draws = battle_hud_draws_for(
+                &font,
+                &battle_hud_slot_views(&hud, &letters),
+                &[],
+                &[],
+                BATTLE_HUD_PEN,
+            );
+            draws
+                .iter()
+                .filter(|d| d.dst.0 >= hp_x && d.dst.0 < mp_x)
+                .map(|d| d.color)
+                .next()
+                .expect("HP field produced no glyph")
+        };
+        let normal = hp_tint(90); // > max/2  -> index 7
+        let caution = hp_tint(40); // <= max/2 -> index 6
+        let danger = hp_tint(20); // <= max/4 -> index 9
+        assert_ne!(
+            normal, caution,
+            "caution tier not distinguished from normal"
+        );
+        assert_ne!(
+            caution, danger,
+            "danger tier not distinguished from caution"
+        );
+        assert_ne!(normal, danger, "danger tier not distinguished from normal");
+        // Caution is yellow (r ~= g, both high); danger is red (r > g).
+        assert!(danger[0] > danger[1], "danger tier is not red-dominant");
+        assert!(
+            caution[1] > danger[1],
+            "caution tier is not the lighter tint"
+        );
+    }
+
+    /// The end-to-end wiring: a live `World` battle state must reach the
+    /// shared builder's draw list, MP included.
+    ///
+    /// This is the assertion that fails if `sync_battle_hud_rows` is dropped
+    /// from the tick - the HUD model's slots stay `active == false`, the
+    /// builder skips every empty-name row, and `draws` comes back empty.
+    /// Confirmed by commenting the `hud.sync_slot` loop out of
+    /// `sync_battle_hud_rows`: the row assertion below then fails with an
+    /// empty draw list, and the two MP assertions with it.
+    #[test]
+    fn live_world_battle_state_reaches_the_shared_builder() {
+        use legaia_engine_core::world::World;
+
+        let font = legaia_font::synthetic_for_tests();
+        let mut world = World::new();
+        world.party_count = 1;
+        world.actors[0].active = true;
+        world.actors[0].battle.liveness = 1;
+        world.actors[0].battle.hp = 250;
+        world.actors[0].battle.max_hp = 300;
+        world.actors[0].battle.mp = 12;
+        world.set_character_max_mp(0, 30);
+
+        let mut hud = legaia_engine_core::battle_hud::BattleHud::new();
+        super::super::battle::sync_battle_hud_rows(&mut hud, &world);
+        assert!(hud.slots[0].active, "party slot 0 did not sync");
+        assert_eq!(
+            hud.slots[0].mp_max, 30,
+            "MP ceiling did not reach the model"
+        );
+
+        let letters = vec![Vec::new(); hud.slots.len()];
+        let draws = battle_hud_draws_for(
+            &font,
+            &battle_hud_slot_views(&hud, &letters),
+            &battle_hud_popup_views(&hud),
+            &[],
+            BATTLE_HUD_PEN,
+        );
+        assert!(!draws.is_empty(), "synced battle state produced no draws");
+        let mp_x = BATTLE_HUD_PEN.0 + 140;
+        assert!(
+            draws.iter().any(|d| d.dst.0 >= mp_x),
+            "live world state produced no MP field"
+        );
+    }
+
+    /// Popups carry an absolute actor slot. The builder anchors them by slice
+    /// index, so the projection must keep inactive slots in place - a
+    /// compacted list would put a monster's damage number on a party row.
+    #[test]
+    fn popup_anchors_track_absolute_actor_slot() {
+        let font = legaia_font::synthetic_for_tests();
+        let mut hud = hud_with_party_row(100, 100, 0, 0);
+        // Slots 1 and 2 stay empty; the monster occupies slot 3.
+        hud.sync_slot(
+            3,
+            SlotSyncInfo {
+                name: "Goblin",
+                is_party: false,
+                alive: true,
+                hp: 40,
+                hp_max: 100,
+                mp: 0,
+                mp_max: 0,
+                ap: None,
+            },
+        );
+        hud.push_popup(DamagePopup::damage(3, 25));
+        let letters = vec![Vec::new(); hud.slots.len()];
+        let draws = battle_hud_draws_for(
+            &font,
+            &battle_hud_slot_views(&hud, &letters),
+            &battle_hud_popup_views(&hud),
+            &[],
+            BATTLE_HUD_PEN,
+        );
+        // Row stride is 14; slot 3's row sits at pen.y + 42, popups 16 above.
+        let want_y = BATTLE_HUD_PEN.1 + 3 * 14 - 16;
+        let popup_x = BATTLE_HUD_PEN.0 + 80;
+        assert!(
+            draws
+                .iter()
+                .any(|d| d.dst.1 == want_y && d.dst.0 >= popup_x),
+            "no popup glyph at slot 3's anchor (y={want_y})"
+        );
+    }
 }

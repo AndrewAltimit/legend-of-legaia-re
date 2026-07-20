@@ -100,6 +100,23 @@ if [[ "$SITE_TOUCHED" == "1" ]] && command -v python3 >/dev/null 2>&1 \
     fi
 fi
 
+# Shell observer-trap gate. Three defect shapes -- a pipeline whose exit status
+# is read off the wrong stage, a pkill/pgrep pattern that matches the caller's
+# own command line, and an unguarded grep whose no-match exit-1 is the clean
+# result -- have each produced a false result in this project's workflow more
+# than once, in every case after the author had read a warning naming that exact
+# trap. A committed script carrying one of them runs in CI and on users'
+# machines, so this is a hard gate. The checker self-tests its own detectors on
+# every run and refuses to report a pass if a positive control fails.
+if command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ci/check-shell-observer-traps.py" ]]; then
+    printf '[pre-commit] shell observer-trap check\n'
+    if ! python3 scripts/ci/check-shell-observer-traps.py --quiet; then
+        printf '[pre-commit] shell observer traps above -- see scripts/lib/proc.sh for the safe forms (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
 # If the commit only touches files outside the Rust workspace (e.g. docs,
 # site/, ghidra/scripts/), skip the cargo gates -- they're slow and would
 # add nothing.
@@ -131,12 +148,23 @@ if ! cargo fmt --all -- --check; then
 
     # Refuse to auto-fix files that also have unstaged changes -- re-staging
     # them would silently include the unstaged diff in the commit.
+    #
+    # The `(( ${#staged_rs[@]} > 0 ))` guard is load-bearing, not defensive
+    # noise. Under `set -u` the idiomatic-looking `"${staged_rs[@]:-}"` expands
+    # an EMPTY array to one empty-string element, so the loop body runs once
+    # with f="", `git diff --quiet -- ""` fails with "empty string is not a
+    # valid pathspec", and `dirty` gains a bogus entry -- aborting the commit
+    # with a blank filename in the error list. Reachable whenever fmt drift
+    # exists but no .rs file is staged (a docs-only or Cargo.lock-only commit).
+    # A failing observer must not be read as an observation.
     dirty=()
-    for f in "${staged_rs[@]:-}"; do
-        if ! git diff --quiet -- "$f"; then
-            dirty+=("$f")
-        fi
-    done
+    if (( ${#staged_rs[@]} > 0 )); then
+        for f in "${staged_rs[@]}"; do
+            if ! git diff --quiet -- "$f"; then
+                dirty+=("$f")
+            fi
+        done
+    fi
     if (( ${#dirty[@]} > 0 )); then
         printf '[pre-commit] cannot auto-fix; these staged files have unstaged changes:\n' >&2
         printf '             %s\n' "${dirty[@]}" >&2

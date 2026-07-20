@@ -15,13 +15,17 @@
 -- See docs/reference/builds.md "Debug flags" + docs/subsystems/boot.md.
 --
 --   0x8007B8C2  _DAT_8007B8C2  dev/retail LOADER-PATH flag.
---       Retail boots this = 0. Read by ~26 SCUS functions as `== 0` (retail
---       mode). Setting it to 1 flips asset loaders to the dev PROT-TOC-index
---       path (h:\PROT\FIELD\<stage>\...). This does NOT by itself open a debug
---       menu. WARNING: with this set, the NEXT scene load takes the dev path;
---       on most loaders that lands at the same files, but it can desync or
---       hang a transition. Prefer observing from a stable scene, and reload a
---       fresh state before walking through a door.
+--       Retail boots this = 1 (main() stores the constant returned by
+--       FUN_8003F084 via `sh v0,0x5aa(gp)` at 0x80015F08). All 40 SCUS reads
+--       are `lh`; the `!= 0` arm is the retail PROT-TOC-index path, the `== 0`
+--       arm opens h:\... through FUN_800608F0, whose body is `break 0x103` - a
+--       dev-station host trap that real hardware cannot service. So CLEARING
+--       this to 0 is the interesting poke, not setting it, and it will send the
+--       next asset load into a branch that traps. This does NOT by itself open
+--       a debug menu. WARNING: with this cleared, the NEXT scene load takes the
+--       host-trap path; expect a hang or garbage rather than a clean fallback.
+--       Prefer observing from a stable scene, and reload a fresh state before
+--       walking through a door.
 --
 --   0x8007B98F  _DAT_8007B98F  in-game DEBUG-MENU enable (NA offset).
 --       This is the high byte of the master word at 0x8007B98C. The input
@@ -41,7 +45,10 @@
 -- ── Which flag this run pokes ───────────────────────────────────────────────
 -- Preset via LEGAIA_DEBUG_POKE (default "loader" to match the task's stated
 -- default; use "menu" for the debug-menu gate, "both" to set both at once):
---     loader  -> 0x8007B8C2 = 1
+--     loader  -> 0x8007B8C2 = 1   (NOTE: retail already boots this at 1, so
+--                                  this preset is a no-op against a stock run.
+--                                  Use LEGAIA_DEBUG_ADDR=0x8007B8C2 with
+--                                  LEGAIA_DEBUG_VAL=0 to actually flip it.)
 --     menu    -> 0x8007B98F = 1   (sets the 0x8007B98C master word non-zero)
 --     both    -> both of the above
 -- Raw override: set LEGAIA_DEBUG_ADDR (hex, e.g. 0x8007B98F) and optionally
@@ -65,7 +72,7 @@ local probe = require("probe")
 local mem   = require("probe.mem")
 
 -- ── addresses ──────────────────────────────────────────────────────────────
-local LOADER_FLAG   = 0x8007B8C2  -- dev/retail loader-path selector (==0 retail)
+local LOADER_FLAG   = 0x8007B8C2  -- dev/retail loader-path selector (!=0 retail)
 local DEBUG_MENU_HI = 0x8007B98F  -- high byte of the master word at 0x8007B98C
 local DEBUG_WORD    = 0x8007B98C  -- master debug gate word (FUN_8001822C reads it)
 local GAME_MODE     = 0x8007B83C  -- u16; 0x03 = field-run

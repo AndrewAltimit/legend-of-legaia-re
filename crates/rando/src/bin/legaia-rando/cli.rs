@@ -331,6 +331,11 @@ pub(crate) enum TranslateCmd {
         /// Where to write the filled working pack (YAML). Scratchpad only.
         #[arg(long, short)]
         output: PathBuf,
+        /// ASCII-fold the accented glyphs the NTSC font lacks (`Epee` for
+        /// `Épée`). Without it the lifted text keeps the PAL accent bytes,
+        /// which render blank until the font atlas is patched.
+        #[arg(long)]
+        fold_accents: bool,
     },
     /// Measure how much of an official localization fits the USA target under
     /// the per-string vs per-MAN (generalized rewriter) budget, and how many

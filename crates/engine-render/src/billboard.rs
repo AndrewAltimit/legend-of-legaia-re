@@ -2,17 +2,21 @@
 //!
 //! PORT: FUN_800195a8
 //!
-//! **Wiring status.** [`psx_sin`] / [`psx_cos`] (the clean-room trig LUT) are
-//! live: the disc-gated oracle `crates/engine-shell/tests/gte_sin_lut_real.rs`
-//! pins them entry-for-entry against the retail table, and other GTE matrix
-//! builders reuse them. [`project_billboard`] feeds
-//! [`crate::afterimage::project_streak_corners`], whose emitted
-//! [`crate::afterimage::AfterimageQuad`] now flows through the screen-space
-//! `POLY_FT4` / ordering-table draw pass ([`crate::screen_overlay`]) and is
-//! drawn via [`crate::RenderTarget::ScreenOverlay`]. (Live effect billboards
-//! can still draw as 3D meshes via engine-shell's `effect_billboard_mesh`;
-//! this is the 2D-overlay alternative.) Exercised by unit tests; do not
-//! delete.
+//! **Wiring status.** Split, so read it per item. [`psx_sin`] / [`psx_cos`]
+//! (the clean-room trig LUT) are live: the disc-gated oracle
+//! `crates/engine-shell/tests/gte_sin_lut_real.rs` pins them entry-for-entry
+//! against the retail table, and other GTE matrix builders reuse them.
+//!
+//! NOT WIRED: [`project_billboard`] and its `rot_z_psx` / `apply_rot_z`
+//! helpers. Its one non-test caller is
+//! [`crate::afterimage::project_streak_corners`], and the afterimage streak
+//! has no per-frame emitter - see the NOT WIRED note on
+//! [`crate::afterimage`] for the two gaps. The other retail riders of
+//! `FUN_800195a8` (cutscene and world-map sprite emitters such as
+//! `FUN_800485BC`) are not ported, and engine-shell draws its live effect
+//! billboards as 3D meshes (`effect_billboard_mesh`) rather than through a
+//! projected screen quad, so nothing else reaches for it. Exercised by unit
+//! tests; do not delete.
 //!
 //! The retail SCUS helper `FUN_800195a8` projects a sprite quad about a 3D
 //! center point and hands the four screen-space corners back through caller

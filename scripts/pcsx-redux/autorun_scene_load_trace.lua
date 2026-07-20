@@ -4,13 +4,18 @@
 -- decisively whether the scene event-scripts prescript entry (v12 / scene_event_
 -- scripts) is ever loaded at all on this build's actual loader path.
 --
--- This build takes the retail path branch in the field loader FUN_8001F7C0
--- (`_DAT_8007b8c2 == 0`): it loads via `path_opener` = FUN_8003E6BC (resolves a
--- dev path string through the CDNAME name map to a PROT index, then the LBA
--- resolver FUN_8003E8A8). So FUN_8003E6BC's path STRING names each file loaded.
+-- This build takes the RETAIL branch in the field loader FUN_8001F7C0
+-- (`_DAT_8007b8c2 != 0` - retail boots the flag at 1): it resolves by PROT-TOC
+-- index through FUN_8003E8A8, then reads via FUN_8003E800. FUN_8003E6BC is the
+-- `== 0` DEV arm and does no name resolution at all - it is strcpy, then
+-- FUN_800608F0 (`break 0x103`, a dev-station host trap), then fseek/fread/
+-- fclose. It will not fire on a stock run, so the PROT index - not a path
+-- string - is what names each file loaded.
 --
 -- Hooks (all low-frequency = per-file, no interpreter crawl), armed POST-load:
---   FUN_8003E6BC(path_ptr, dest)   -> log the path string (the file name)
+--   FUN_8003E6BC(path_ptr, dest)   -> dev arm only; expected to log NOTHING on
+--                                     a stock retail run. A hit here means the
+--                                     flag got cleared.
 --   FUN_8003E8A8(prot_index, flag) -> log the raw PROT index (extraction = a0-2)
 --   FUN_8001F7C0(dest, name, rec)  -> log the scene name + field record
 -- Plus the load-path flags `_DAT_8007b8c2` / `_DAT_8007b868`.

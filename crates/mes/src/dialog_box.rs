@@ -26,6 +26,31 @@
 //! (`FUN_801D84D0`); the box-packing side just reaches it after up to three
 //! plain lines instead of after the option list.
 //!
+//! ## Why `End`/`Terminate` are grouped apart from `NewBox`
+//!
+//! The three box-open bytes all route through near-identical reset arms, which
+//! makes them look interchangeable in the decompiled C. They are not, and the
+//! difference is one word. Verified against the disassembly of PROT 0897 at base
+//! `0x801CE818` (jump table `0x801CEBC0`, dispatch chain `0x801D8FDC`):
+//!
+//! - `0x25` -> state `0` (`0x801D90BC`) -> successor `1`
+//! - `0x4C 0xFF` -> state `6` (`0x801D9174`) -> successor `7`
+//! - `0x48` -> state `9` (`0x801D920C`) -> successor `0xA`
+//!
+//! Those three arms are byte-identical over their 0x98-byte extent *except* the
+//! `li v0,N` that picks the successor. States `1`, `4` and `7` share handler
+//! `0x801D8708`, which returns early when the state is `4` (so `0x24` keeps its
+//! rows) and otherwise clears the row buffer - so `0x25` and `0x4C 0xFF` tear the
+//! box down and are indistinguishable from each other. State `0xA` is a separate
+//! handler (`0x801D92A4`) that runs the box-open animation. Hence
+//! `End`/`Terminate` ending a packed run while `NewBox` continues it is the
+//! faithful grouping; do not "fix" it by merging the three.
+//!
+//! What the pager does *not* decide is whether the conversation is over - it
+//! clears the rows and returns no status. That call is caller-side
+//! (`FUN_80039B7C` / the field VM), so these two names describe box teardown,
+//! not a session-level end. See `docs/formats/mes.md` § Post-page dispatch.
+//!
 //! ## `0xC?` two-byte escapes
 //!
 //! When the SM advances past a line it has shown (`FUN_80039B7C` state `0x2`,
@@ -57,13 +82,17 @@ pub enum Dispatch {
     /// `0x24` - advance to the next page of the same conversation (the window
     /// stays open; the next up-to-3 lines follow).
     NextPage,
-    /// `0x48` - open a fresh box.
+    /// `0x48` - open a fresh box (pager state `9` -> `0xA`, the open animation).
     NewBox,
     /// `0x2A` - box-geometry resize, then continue.
     Resize,
-    /// `0x25` - end the conversation.
+    /// `0x25` - box teardown (pager state `0` -> `1`, row buffer cleared).
+    /// Named `End` because it ends a packed box run; whether the *conversation*
+    /// ends is a caller-side decision, not something this byte carries.
     End,
-    /// `0x4C 0xFF` - terminate / close the window.
+    /// `0x4C 0xFF` - box teardown (pager state `6` -> `7`). Reaches the same
+    /// successor handler as [`Dispatch::End`] and is indistinguishable from it
+    /// in the pager; kept separate only because the on-disc encoding differs.
     Terminate,
     /// `0x27`/`0x28`/`0x29` - open a 2/3/4-option menu (the count is carried).
     Picker(usize),
@@ -170,6 +199,18 @@ fn classify_dispatch(buf: &[u8], idx: usize) -> Dispatch {
 /// byte. `World::step_inline_dialogue`'s port of `FUN_80039B7C` drives the
 /// per-segment VM stepping; this is the box-packing half it doesn't cover.
 // PORT: FUN_80039B7C
+// NOT WIRED: the runtime reaches the same bytes by the other half of this
+// function. `World::step_inline_dialogue` ports the per-segment VM stepping of
+// `FUN_80039B7C` and drives the window one `0x1F` segment at a time off
+// `decode_inline_segments`' ungrouped pool, so it never needs the box
+// *grouping* computed ahead of time. Both halves are ports of the same retail
+// SM; only the stepping half has a host. What would have to exist first is a
+// dialog host that pre-packs - one that takes a `DialogBox` list and lays out a
+// whole window (all `LINES_PER_BOX` rows plus its dispatch byte) before drawing
+// it, which is what a page-at-a-time renderer or a MAN dialog *editor* needs
+// and the segment-stepping host does not. Until then this is the decoder the
+// disc-gated `field_dialog_boxpack_disc` oracle checks the segment path
+// against, and the box view the tooling uses.
 pub fn pack_box(buf: &[u8], pc: usize) -> Option<DialogBox> {
     if buf.get(pc) != Some(&0x1F) {
         return None;

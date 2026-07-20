@@ -37,6 +37,11 @@
 //! +0x1A  u16  stat5=SPD     ; -> actor +0x164/+0x166  (turn-order speed)
 //! +0x1D  u8   element       ; element id 0..7; read record-DIRECT by affinity scale
 //!                           ; FUN_801dd864 (record-ptr table 0x801C9348, NOT copied to actor)
+//! +0x1F  u8   size_class    ; body-size / bulk class; read record-DIRECT through the
+//!                           ; same 0x801C9348 table by the battle-camera framing
+//!                           ; FUN_801f0348 (`ctx+0x6D0 = size << 7`, clamped
+//!                           ; 0x0C00..0x1400) and by the enemy stager FUN_800513f0
+//!                           ; (`actor+0x58 = size << 5`). Not copied to the actor.
 //! +0x44  u16  gold          ; base gold reward (victory spoils)
 //! +0x46  u16  exp           ; base EXP reward (victory spoils)
 //! +0x48  u8   drop_item     ; drop item id (0 = no drop)

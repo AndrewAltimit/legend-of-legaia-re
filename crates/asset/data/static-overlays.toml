@@ -80,7 +80,7 @@ base_va = 0x801CE818
 form = "raw"
 eligibility = "static"
 fingerprint_sha256 = "216f846db5ab085a295cef4064747380a06c995caa3e1b2773e78a1d349f126b"
-notes = "Town / field / dialog / inventory / OVERWORLD overlay. Field/event VM FUN_801DE840 (base+0x10028), MAIN INIT FUN_801D6704 (base+0x07eec, clean prologue), MES renderer, inventory hub FUN_801F5748. Also hosts the WORLD-MAP / overworld controller FUN_801E76D4 (base+0x18EBC) + the player free-movement controller FUN_801d01b0 + collision FUN_801cfe4c -- i.e. 'world-map' is a SUBSYSTEM of this overlay, not a separate PROT entry (its signature byte-matches PROT 0897 file 0x18EBC, implied base 0x801CE818; `asset overlay find-sig`). The same bytes alias into PROT 0896's over-read footprint at that overlay's own base. Data-section-first (leading EVC debug strings); a live town capture has runtime-mutated globals so the clean region is not a single prefix, but the head (7844 B) is byte-identical in RAM and both function anchors align. Base recovered statically (60 corroborating call targets)."
+notes = "Town / field / dialog / inventory / OVERWORLD overlay. OWN CONTENT IS 0x25000 BYTES (VA 0x801CE818..0x801F3818): PROT 0898's image is byte-identical to this entry's file from +0x25000 for its whole length, so everything above 0x801F3818 in this extraction is over-read, not field code. The long-cited 'inventory hub FUN_801F5748' is a casualty of that: file 0x26F30 sits 0x1F30 into the tail, i.e. it is PROT 0898's battle dispatcher FUN_801D0748 (2777 vs 2781 instructions, same body, dumped from four independent captures at 0x801D0748) printed at a phantom VA. Where the FIELD inventory hub lives is open. Field/event VM FUN_801DE840 (base+0x10028), MAIN INIT FUN_801D6704 (base+0x07eec, clean prologue), MES renderer. Also hosts the WORLD-MAP / overworld controller FUN_801E76D4 (base+0x18EBC) + the player free-movement controller FUN_801d01b0 + collision FUN_801cfe4c -- i.e. 'world-map' is a SUBSYSTEM of this overlay, not a separate PROT entry (its signature byte-matches PROT 0897 file 0x18EBC, implied base 0x801CE818; `asset overlay find-sig`). The same bytes alias into PROT 0896's over-read footprint at that overlay's own base. Data-section-first (leading EVC debug strings); a live town capture has runtime-mutated globals so the clean region is not a single prefix, but the head (7844 B) is byte-identical in RAM and both function anchors align. Base recovered statically (60 corroborating call targets)."
 
 [[overlays]]
 prot_index = 899
@@ -116,6 +116,17 @@ form = "raw"
 eligibility = "static"
 fingerprint_sha256 = "366f76dd7371e69309aeb8038f7fa63922d4f6018d6cbb2392d7acf6886bedc3"
 notes = "STR / MDEC FMV cutscene overlay (game modes 26/27 STR INIT/MODE). Decisive identity from the leading ISO9660 movie paths (\\DATA\\MOV.STR;1, \\MOV\\MV1..MV6.STR) + the MDEC decoder strings (MDEC_in_sync / MDEC_out_sync / 'MDEC_rest:bad option(%d)' / the DMA + FIFO trace). This is the overlay behind the long-capture-blocked F-FMV hunt -- now Ghidra-importable straight from the disc (`asset overlay ghidra`), so the static-analysis half of the STR-mode master-dispatch + per-scene FMV-id trigger work no longer needs a capture. Base recovered statically (16 corroborating call targets); the overlay was never captured resident, so the strings + jal-recovery are the evidence (no anchor_va)."
+
+[[overlays]]
+prot_index = 971
+label = "debug_menu"
+base_va = 0x801CE818
+form = "raw"
+eligibility = "static"
+base_source = "capture"
+anchor_va = 0x801CF730
+fingerprint_sha256 = "d9c976bfbc65d5522774d1271d5dbeb701b9ffe76792df4ed48d46f615df272d"
+notes = "DEBUG MODE overlay -- the mode-0 slot-A occupant (loader index param + 0x37F in extraction space). Leading dev string is 'DEBUG MODE'. This entry's OWN content is only 0x1800 bytes: PROT 0972's head is byte-identical to this file from +0x1800 onward, so everything past that is over-read. The init routine at base+0x0f18 (the anchor, FUN_801cf730) is what pins the base: its head signature byte-matches PROT 0971 at file 0xf18 and nowhere else outside 0968/0969's own over-read tails (`asset overlay find-sig`), and the 24-instruction window of its capture dump matches this entry at 0x801CE818 and no other extracted image. Whole-file jal-recovery instead returns 0x801CD018 (29 votes) -- the documented over-read artifact, exactly 0x801CE818 - 0x1800, produced by 0972's bytes being self-consistent at the slot-A base; head-only there is no landslide, which is why base_source is not `jal`. Because the overlay is only 6 KB it does not clear the rest of slot A: a live DEBUG MODE capture shows this overlay to +0x1800, then the previously resident fishing overlay (0972) to +0xB000, then field-overlay (0897) remains above."
 
 [[overlays]]
 prot_index = 972

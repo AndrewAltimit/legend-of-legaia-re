@@ -42,7 +42,10 @@
 
 #![deny(missing_docs)]
 
+pub mod st_ring;
+pub mod str_player;
 pub mod str_sector;
+pub mod strv2_table;
 
 // ── Tables ─────────────────────────────────────────────────────────────────
 
@@ -210,6 +213,7 @@ const ESCAPE_CODE: u32 = 0b000001;
 /// is `+1`, relative to the current output position). Overlapping copies are
 /// allowed (the window is the output produced so far). Stops once `out_len`
 /// bytes have been produced.
+// PORT: FUN_801d0604
 fn iki_lzss_decompress(src: &[u8], out_len: usize) -> Vec<u8> {
     let mut out = Vec::with_capacity(out_len);
     let mut sp = 0usize;
@@ -468,6 +472,16 @@ impl MdecDecoder {
     ///
     /// Returns `width x height x 4` bytes. Regions the bitstream doesn't reach
     /// (truncated/garbled input) are left zero-filled rather than panicking.
+    ///
+    /// This is the port of retail's Iki bitstream converter `FUN_801D0378`,
+    /// fused with the MDEC hardware stage it fed. Retail splits the work in
+    /// two: `FUN_801D0378` walks the LZSS-decompressed qscale/DC table and the
+    /// AC-only bitstream into a list of MDEC codes (using the GTE
+    /// leading-zero-count register as its VLC prefix scanner), then DMAs that
+    /// list into the MDEC, which does the dequantize/IDCT/colour stages. The
+    /// port runs the same bitstream walk but resolves each run/level through
+    /// [`AC_VLC`] and finishes the block in software.
+    // PORT: FUN_801d0378
     pub fn decode_frame(&self, frame: &[u8]) -> anyhow::Result<Vec<u8>> {
         use anyhow::bail;
 

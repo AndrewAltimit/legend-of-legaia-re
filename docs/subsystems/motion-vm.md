@@ -589,6 +589,36 @@ N0`).
 No op writes `DAT_8007B7FC`-class globals - op-`9` only posts to the 4-slot
 `DAT_8007B6D8` ring, so the battle-id write has no motion-VM analogue.
 
+### The touch post - `FUN_8003D038`
+
+The field collision probe `FUN_801CFC40` calls `func_0x8003d038` with the
+touched actor's bind-record index (`other[+0x50]`) whenever two actors
+overlap. The body is one guarded store into `DAT_80073F1C`, the one-slot
+mailbox the motion VM's wait-for-touch arm (`0x8003882C`, inside
+`FUN_80038158`) consumes and resets.
+
+The guard reads the record's **class byte** - the first byte of the
+4-byte record at `DAT_801C6470 + index*4`, the same table op `0x17`
+writes - and drops the post when it is `0x8C`. Since `0x8C` is the
+"unset" sentinel the variant-swap preamble reseeds a record to, the
+filter means a placement with **no move assigned** can be walked into
+without ever waking a script waiting on a touch. The mailbox keeps its
+previous contents in that case; the post is dropped, not cleared.
+
+Retail does no bounds check on the index. The port
+(`legaia_engine_vm::motion_vm::post_touch`) returns "no post" for an
+out-of-range index rather than reading past the table, which is the safe
+reading of the same outcome.
+
+That port is **not wired**: the engine's field collision path resolves
+per-axis walls and stops without identifying which actor it hit, so
+nothing calls `post_touch` and no script can currently wake on a touch.
+Wiring it needs an actor-vs-actor overlap test standing in for
+`FUN_801CFC40`.
+
+Provenance: `ghidra/scripts/funcs/8003d038.txt`; the consumer at
+`0x8003882C` is inside `ghidra/scripts/funcs/80038158.txt`.
+
 ### Flag census
 
 `legaia-engine man-scripts --motion-flag-census` sweeps every scene MAN

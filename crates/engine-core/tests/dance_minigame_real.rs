@@ -254,3 +254,67 @@ fn playwindow_load_path_enters_and_scores_a_dance() {
         "expected a scoring run off the real dance chart"
     );
 }
+
+/// The four modes are four **floors**, not four gradings of one floor.
+///
+/// `FUN_801d0190` picks both the spawn table and how many of its records to
+/// spawn, so the cast size differs per mode: six dancers in free play, one in
+/// the how-to demo, three in the two competitive modes. A host that always
+/// loads the qualifier's three is wrong in half the modes, and that is exactly
+/// what this pins - off the real table, not a fixture.
+#[test]
+fn each_mode_spawns_its_own_floor() {
+    use legaia_engine_core::dance::DanceMode;
+
+    let Some(overlay) = dance_overlay() else {
+        eprintln!("[skip] dance overlay unavailable (disc-gated)");
+        return;
+    };
+
+    let cast = |mode: DanceMode| {
+        let g =
+            DanceGame::from_overlay_for_mode(&overlay, mode, true).expect("real cast table loads");
+        (0..g.dancer_count())
+            .map(|i| g.dancer_kind(i))
+            .collect::<Vec<_>>()
+    };
+
+    let qualifier = cast(DanceMode::Qualifier);
+    let finals = cast(DanceMode::Finals);
+    let how_to = cast(DanceMode::HowTo);
+    let free_play = cast(DanceMode::FreePlay);
+
+    // The sizes are the retail per-mode spawn counts.
+    assert_eq!(qualifier.len(), 3, "qualifier floor");
+    assert_eq!(finals.len(), 3, "finals floor");
+    assert_eq!(how_to.len(), 1, "the how-to demo dances alone");
+    assert_eq!(free_play.len(), 6, "free play fills the floor");
+
+    // Every floor is led by the human (kind 0 = Noa).
+    for (name, roster) in [
+        ("qualifier", &qualifier),
+        ("finals", &finals),
+        ("how-to", &how_to),
+        ("free play", &free_play),
+    ] {
+        assert_eq!(roster[0], 0, "{name} is led by Noa");
+    }
+
+    // The competitive floors are genuinely different rosters, not the same
+    // three dancers regraded - the finals swap in a rival the qualifier lacks.
+    assert_ne!(
+        qualifier, finals,
+        "the finals floor is a different cast from the qualifier"
+    );
+
+    // The how-to demo is the qualifier table truncated to its first record.
+    assert_eq!(how_to[..], qualifier[..1]);
+
+    // Mode 2 forces the short song regardless of the caller's request.
+    let demo = DanceGame::from_overlay_for_mode(&overlay, DanceMode::HowTo, true).unwrap();
+    assert_eq!(
+        demo.song_len(),
+        legaia_engine_core::dance::SONG_LEN_SHORT,
+        "the how-to demo's song length is fixed short"
+    );
+}

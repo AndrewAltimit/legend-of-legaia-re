@@ -6434,6 +6434,49 @@ export function export_lang_pack(image, language) {
 }
 
 /**
+ * Lift the **official** French / German / Italian localization off a PAL disc
+ * the user also owns, re-keyed onto their USA disc's coordinate space.
+ *
+ * Same user-supplied-asset model as the base disc: `source_image` is the
+ * user's own PAL `.bin` (`SCES_019.44` FR / `.45` DE / `.46` IT), it is read
+ * in this tab, and neither image is uploaded anywhere. The result is a
+ * **working** pack (`source:` = USA text, `translation:` = official text) that
+ * the page feeds straight back into [`patch_rom`]'s `lang_pack` argument, so
+ * the official text goes through the exact same two-phase import - and the
+ * same per-section coverage report - as any community pack. Both discs are
+ * consumed and dropped when this returns, so the caller can re-supply the USA
+ * image for the patch run without holding two copies at once.
+ *
+ * The pack is filled with the game's copyrighted text: it belongs in the
+ * user's browser (or their own scratchpad), never in the repo.
+ *
+ * `fold_accents` (recommended) rewrites the accented glyph cells the NTSC font
+ * leaves empty onto plain ASCII - `Epee` for `Épée`. With it off the raw PAL
+ * accent bytes are kept, which is byte-faithful but renders blank until the
+ * font atlas is patched; either way the count is reported, never silent.
+ *
+ * Returns `{ yaml, language, exe, summary, tables: [{name, located, pal_base,
+ * valid_pct, paired}], names_filled, names_unmapped, party_filled,
+ * party_total, man_total, man_paired, raw_total, raw_paired, folded,
+ * unfolded }`.
+ * @param {Uint8Array} target_image
+ * @param {Uint8Array} source_image
+ * @param {boolean} fold_accents
+ * @returns {any}
+ */
+export function lift_official_pack(target_image, source_image, fold_accents) {
+    const ptr0 = passArray8ToWasm0(target_image, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(source_image, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.lift_official_pack(ptr0, len0, ptr1, len1, fold_accents);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
  * Patch a user-supplied disc image with the chosen randomizer settings.
  *
  * `drops` / `encounters` / `chests` / `shops` / `casino` / `steals` / `arts` /
@@ -6871,7 +6914,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 114, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 115, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__hc20c1a455dcd1273);
             return ret;
         },

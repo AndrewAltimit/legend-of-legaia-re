@@ -137,6 +137,47 @@ pub const WIN_THRESHOLD_SOLO: u32 = 300;
 /// off the disc.
 pub const QUALIFIER_KINDS: [usize; DANCER_SLOTS] = [0, 2, 3];
 
+/// Which floor a run is on - the mode global `DAT_801d514c`, `0..=3`.
+///
+/// The mode is normally chosen by the *caller*: a field script sets one of the
+/// story flags `0x134` / `0x135` / `0x133` / `0x428` before entering, and the
+/// overlay's state 1 maps it here and clears it. The on-screen cursor menu in
+/// state 0 is the debug selector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DanceMode {
+    /// `0` yosenn - the qualifier. Graded against score slot 2.
+    Qualifier,
+    /// `1` hosenn - the finals. Graded against score slot 1.
+    Finals,
+    /// `2` setumei - the how-to demo: one dancer, short song, graded on
+    /// [`WIN_THRESHOLD_SOLO`].
+    HowTo,
+    /// `3` asobi - free play: six dancers, and no win/lose flag at all.
+    FreePlay,
+}
+
+impl DanceMode {
+    /// The mode global's value.
+    pub fn value(self) -> u32 {
+        match self {
+            DanceMode::Qualifier => 0,
+            DanceMode::Finals => 1,
+            DanceMode::HowTo => 2,
+            DanceMode::FreePlay => 3,
+        }
+    }
+
+    /// How many dancers this mode spawns (`FUN_801d0190`'s per-mode count -
+    /// the `$s3` the spawn loop counts down).
+    pub fn cast_size(self) -> usize {
+        match self {
+            DanceMode::Qualifier | DanceMode::Finals => 3,
+            DanceMode::HowTo => 1,
+            DanceMode::FreePlay => 6,
+        }
+    }
+}
+
 /// One of the three dance buttons. The retail judge compares the chart symbol
 /// against `(pressed & 0xf) + 1`, so direction index `d` matches chart symbol
 /// `d + 1`; [`DanceChart`] stores symbols `1`/`2`/`3` and `FUN_801d4040` maps
@@ -369,16 +410,47 @@ impl DanceGame {
     /// Parse the baked step chart + scoring tables + qualifier cast out of the
     /// dance overlay image (PROT 0980) and start a run. `None` when the chart
     /// doesn't decode (see [`legaia_asset::dance_chart::parse`]).
+    ///
+    /// Starts the **qualifier** floor; [`DanceGame::from_overlay_for_mode`] is
+    /// the per-mode entry point.
     pub fn from_overlay(overlay: &[u8], long_song: bool) -> Option<Self> {
+        Self::from_overlay_for_mode(overlay, DanceMode::Qualifier, long_song)
+    }
+
+    /// Start a run on `mode`'s floor.
+    ///
+    /// The mode picks the cast **and its size**, which is the part that is easy
+    /// to miss: the three spawn tables are not three arrangements of one roster.
+    /// Free play puts **six** dancers on the floor and the how-to demo puts a
+    /// single one, so a host that always spawns the qualifier's three is wrong
+    /// in two of the four modes.
+    ///
+    /// `long_song` stays a parameter because the caller owns the song choice;
+    /// the how-to demo is the one mode whose length retail fixes, and it forces
+    /// [`SONG_LEN_SHORT`] regardless.
+    // PORT: FUN_801d0190 (per-mode spawn-table + cast-size selection)
+    pub fn from_overlay_for_mode(overlay: &[u8], mode: DanceMode, long_song: bool) -> Option<Self> {
         let chart = legaia_asset::dance_chart::parse(overlay)?;
         let tables = legaia_asset::dance_chart::parse_tables(overlay).unwrap_or_default();
-        // The qualifier floor's cast (`FUN_801d0190` mode-0 spawn table): Noa
-        // plus the two competitor NPCs, in floor order.
         let kinds: Vec<usize> = legaia_asset::dance_cast::parse(overlay)
-            .map(|c| c.qualifier.iter().map(|s| s.kind as usize).collect())
+            .map(|c| {
+                let table = match mode {
+                    // The how-to demo reads the qualifier table but spawns only
+                    // its first record - one dancer, not three.
+                    DanceMode::Qualifier | DanceMode::HowTo => &c.qualifier,
+                    DanceMode::Finals => &c.finals,
+                    DanceMode::FreePlay => &c.free_play,
+                };
+                table
+                    .iter()
+                    .take(mode.cast_size())
+                    .map(|s| s.kind as usize)
+                    .collect()
+            })
             .filter(|k: &Vec<usize>| !k.is_empty())
-            .unwrap_or_else(|| QUALIFIER_KINDS.to_vec());
-        Some(Self::with_tables(chart, tables, &kinds, long_song))
+            .unwrap_or_else(|| QUALIFIER_KINDS[..mode.cast_size().min(DANCER_SLOTS)].to_vec());
+        let long = long_song && mode != DanceMode::HowTo;
+        Some(Self::with_tables(chart, tables, &kinds, long))
     }
 
     // ---------------------------------------------------------------- clock

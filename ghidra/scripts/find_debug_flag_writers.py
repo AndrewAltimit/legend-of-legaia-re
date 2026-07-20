@@ -17,6 +17,23 @@
 # We resolve effective addresses by tracking the most-recent lui per register
 # within each function (resets at function boundary). Catches lui+addiu+sw
 # combos that Ghidra's reference manager skips.
+#
+# !! KNOWN BLIND SPOT - READ BEFORE TRUSTING A NEGATIVE RESULT !!
+# Both passes only see the ABSOLUTE lui+offset addressing form. MIPS also
+# reaches these same addresses GP-RELATIVE, with a completely different
+# immediate, and this script is blind to that form. That is not hypothetical:
+# 0x8007B8C2 was reported writer-less by this script across the whole corpus,
+# and its actual (and only) writer is
+#     0x80015F08  sh v0,0x5aa(gp)      # gp = 0x8007B318
+# which set the flag to 1 at cold boot. The bogus "zero writers" result was
+# then used to infer BSS-zero-init, and inverted the documented polarity of the
+# flag across a dozen docs pages.
+#
+# So: this script can prove a writer EXISTS. It CANNOT prove one is absent.
+# To make an absence claim, resolve gp first (lui/addiu gp in the entry stub -
+# 0x8007B318 in the NA build) and re-scan for base-register-28 stores whose
+# gp+imm lands in [LO, HI). See docs/tooling/ghidra.md, "Decompiler artifacts
+# that have produced false claims".
 
 prog = currentProgram
 af = prog.getAddressFactory()

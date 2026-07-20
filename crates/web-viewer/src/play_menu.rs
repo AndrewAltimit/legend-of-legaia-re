@@ -807,10 +807,10 @@ impl LegaiaRuntime {
             assets.pen(window_ids::STATUS_SUMMARY),
             has_chrome,
         ));
-        d.extend(ui::text_draws_for(
-            &font.layout_ascii("Status"),
+        d.extend(ui::tab_label_draws(
+            font,
+            "Status",
             assets.pen(window_ids::TAB_STATUS),
-            ui::MENU_TEXT_WHITE,
         ));
         ui::scale_stage_text_draws(&mut d, origin, scale);
         texts.extend(d);
@@ -897,10 +897,10 @@ impl LegaiaRuntime {
             popup.as_ref(),
             assets.pen(window_ids::OPTIONS_MAIN),
         );
-        d.extend(ui::text_draws_for(
-            &font.layout_ascii("Options"),
+        d.extend(ui::tab_label_draws(
+            font,
+            "Options",
             assets.pen(window_ids::TAB_OPTIONS),
-            ui::MENU_TEXT_WHITE,
         ));
         ui::scale_stage_text_draws(&mut d, origin, scale);
         texts.extend(d);
@@ -1399,10 +1399,10 @@ impl LegaiaRuntime {
             assets.pen(window_ids::ITEMS_LIST),
             assets.pen(window_ids::ITEMS_INFO),
         );
-        d.extend(ui::text_draws_for(
-            &font.layout_ascii("Items"),
+        d.extend(ui::tab_label_draws(
+            font,
+            "Items",
             assets.pen(window_ids::TAB_ITEMS),
-            ui::MENU_TEXT_WHITE,
         ));
         ui::scale_stage_text_draws(&mut d, origin, scale);
         texts.extend(d);
@@ -1520,10 +1520,10 @@ impl LegaiaRuntime {
                 assets.pen(window_ids::MAGIC_LIST),
                 assets.pen(window_ids::MAGIC_INFO),
             );
-            d.extend(ui::text_draws_for(
-                &font.layout_ascii("Magic"),
+            d.extend(ui::tab_label_draws(
+                font,
+                "Magic",
                 assets.pen(window_ids::TAB_MAGIC),
-                ui::MENU_TEXT_WHITE,
             ));
             ui::scale_stage_text_draws(&mut d, origin, scale);
             texts.extend(d);
@@ -1907,10 +1907,10 @@ impl LegaiaRuntime {
             assets.pen(window_ids::EQUIP_LIST),
             assets.pen(window_ids::EQUIP_MAIN),
         );
-        d.extend(ui::text_draws_for(
-            &font.layout_ascii("Equip"),
+        d.extend(ui::tab_label_draws(
+            font,
+            "Equip",
             assets.pen(window_ids::TAB_EQUIP),
-            ui::MENU_TEXT_WHITE,
         ));
         d
     }

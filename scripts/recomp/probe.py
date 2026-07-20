@@ -21,6 +21,11 @@ the protocol traps baked in so probe scripts don't re-discover them:
     builds (they return errors); frame-exact observation goes through the
     per-frame ring buffer instead (``set_snapshot`` + ``read_frame_ram`` -
     see ``trace_capture.py``).
+  * ``screenshot`` WORKS on a ``--headless`` instance (no X server needed).
+    Its ``display disabled`` error reports the GUEST GPU's display-enable
+    bit, not the host - it means the game is mid-boot or between attract
+    segments, so retry once a picture is up. Screenshot-guided menu
+    navigation needs no ``xvfb-run``.
   * Never kill instances via ``pkill -f <pattern>`` (the pattern matches
     your own shell). ``launch`` records the PID; ``kill`` kills by PID.
   * Two instances on one port silently share it and fake responses -
@@ -42,6 +47,11 @@ import socket
 import subprocess
 import sys
 import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import preflight  # noqa: E402
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = int(os.environ.get("LEGAIA_RECOMP_PORT", "4370"))
@@ -264,15 +274,46 @@ class RecompClient:
                 if time.monotonic() > deadline:
                     raise
                 time.sleep(0.5)
+        mismatch = None
         if expect_scene is not None and scene != expect_scene:
+            mismatch = f"scene {scene!r} != expected {expect_scene!r}"
+        elif expect_mode is not None and mode != expect_mode:
+            mismatch = f"mode 0x{mode:X} != expected 0x{expect_mode:X}"
+        if mismatch is not None:
             raise RecompError(
-                f"savestate slot {slot}: scene {scene!r} != expected {expect_scene!r}"
-            )
-        if expect_mode is not None and mode != expect_mode:
-            raise RecompError(
-                f"savestate slot {slot}: mode 0x{mode:X} != expected 0x{expect_mode:X}"
+                f"savestate slot {slot}: {mismatch}"
+                + self._resume_diagnosis(slot, mode)
             )
         return scene, mode
+
+    def _resume_diagnosis(self, slot: int, mode: int) -> str:
+        """Explain a failed load in harness terms when the harness is at
+        fault. Mode 0 specifically means the machine is sitting at the boot
+        entry, which is a self-wiping runtime or a stale slot far more often
+        than it is a real divergence - saying so here stops that being
+        mis-read as an engine/retail finding."""
+        recomp = os.environ.get("LEGAIA_RECOMP_DIR")
+        if not recomp:
+            if mode == 0:
+                return (
+                    "\n  mode 0 = parked at the boot entry. Set LEGAIA_RECOMP_DIR "
+                    "and run scripts/recomp/preflight.py to tell a self-wiping "
+                    "runtime from a stale slot."
+                )
+            return ""
+        try:
+            problems = preflight.diagnose(os.path.expanduser(recomp), slot)
+        except preflight.PreflightError as e:
+            return f"\n  preflight could not run: {e}"
+        if not problems:
+            if mode == 0:
+                return (
+                    "\n  preflight is clean (runtime honours the saved resume PC, "
+                    "slot has a non-zero PC), so mode 0 is not a known harness "
+                    "fault - treat it as a real result."
+                )
+            return "\n  preflight is clean - not a known harness fault."
+        return "\n  preflight: " + "\n  preflight: ".join(problems)
 
     def save_savestate(self, slot: int) -> dict:
         return self.call("savestate", op="save", slot=slot)
@@ -363,13 +404,25 @@ def launch_instance(
     bios: str | None = None,
     game: str | None = None,
     log_path: str | None = None,
+    skip_preflight: bool = False,
 ) -> int:
     """Launch a headless recomp instance. Refuses if the port already
-    answers (two instances silently share a port and fake responses).
-    Returns the PID - record it and kill by PID, never by pattern."""
+    answers (two instances silently share a port and fake responses), and
+    refuses a runtime that cannot resume a savestate at all - a whole capture
+    run against such a build produces boot-entry data that reads like an
+    engine divergence. Returns the PID - record it and kill by PID, never by
+    pattern."""
     if port_answers(DEFAULT_HOST, port):
         raise SystemExit(f"port {port} already answers - refusing to double-launch")
     root = recomp_dir(recomp_root)
+    if not skip_preflight:
+        problems = preflight.check_runtime(root)
+        if problems:
+            raise SystemExit(
+                "refusing to launch - recomp runtime cannot resume savestates:\n  - "
+                + "\n  - ".join(problems)
+                + "\n(override with --skip-preflight if you only need a cold boot)"
+            )
     binary = os.path.join(root, "build-dbg", "Legend_of_Legaia_Recompiled")
     game_toml = game or os.path.join(root, "game.toml")
     bios_path = bios or os.environ.get("LEGAIA_RECOMP_BIOS")
@@ -455,15 +508,40 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--cache-dir", required=True, help="PSX_OVERLAY_CACHE_DIR value")
     p.add_argument("--log", help="append stdout/stderr to this file")
     p.add_argument("--wait-tcp", action="store_true", help="block until TCP answers")
+    p.add_argument(
+        "--skip-preflight",
+        action="store_true",
+        help="launch even if the runtime cannot resume savestates (cold boot only)",
+    )
 
     p = sub.add_parser("kill", help="kill an instance by PID (never by pattern)")
     p.add_argument("pid", type=int)
 
+    p = sub.add_parser(
+        "preflight", help="check the runtime form, build freshness, and slot PCs"
+    )
+    p.add_argument("--recomp-dir", help="recomp workspace (default $LEGAIA_RECOMP_DIR)")
+    p.add_argument("--slot", type=int, help="check this slot (default: all found)")
+
     args = ap.parse_args(argv)
+
+    if args.cmd == "preflight":
+        pf_argv = []
+        if args.recomp_dir:
+            pf_argv += ["--recomp-dir", args.recomp_dir]
+        if args.slot is not None:
+            pf_argv += ["--slot", str(args.slot)]
+        return preflight.main(pf_argv)
 
     if args.cmd == "launch":
         pid = launch_instance(
-            args.port, args.cache_dir, args.recomp_dir, args.bios, args.game, args.log
+            args.port,
+            args.cache_dir,
+            args.recomp_dir,
+            args.bios,
+            args.game,
+            args.log,
+            skip_preflight=args.skip_preflight,
         )
         print(f"PID={pid}")
         if args.wait_tcp:

@@ -43,10 +43,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import struct
 import sys
 import time
 
+import preflight
 import probe
 
 CAM_ROT_ADDR = 0x8007B790  # u16 pitch / yaw / roll
@@ -265,7 +267,34 @@ def main(argv=None) -> int:
     ap.add_argument("--expect-scene", help="verify scene after savestate load")
     ap.add_argument("--expect-mode", help="verify mode after savestate load (hex ok)")
     ap.add_argument("--out", default="-", help="output JSONL path (default stdout)")
+    ap.add_argument(
+        "--skip-preflight",
+        action="store_true",
+        help="capture even if the savestate-resume preflight fails",
+    )
     args = ap.parse_args(argv)
+
+    # Check before capturing, not after: a self-wiping runtime or a stale slot
+    # yields a full trace taken at the boot entry, which reads like an
+    # engine/retail divergence rather than a harness fault.
+    if args.savestate is not None and not args.skip_preflight:
+        recomp = os.environ.get("LEGAIA_RECOMP_DIR")
+        if recomp:
+            problems = preflight.diagnose(os.path.expanduser(recomp), args.savestate)
+            if problems:
+                print(
+                    "refusing to capture - savestate-resume preflight failed:\n  - "
+                    + "\n  - ".join(problems)
+                    + "\n(override with --skip-preflight)",
+                    file=sys.stderr,
+                )
+                return 1
+        else:
+            print(
+                "warning: LEGAIA_RECOMP_DIR unset - skipping the savestate-resume "
+                "preflight; a boot-entry trace will not be diagnosed for you.",
+                file=sys.stderr,
+            )
 
     maps = args.map or ["camera"]
     client = probe.RecompClient(args.host, args.port)

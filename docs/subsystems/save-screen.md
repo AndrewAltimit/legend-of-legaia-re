@@ -37,7 +37,7 @@ Entry: `()`. Returns `true` when the save flow has terminated (outer state
 | 0 | Init: copies party pointers `_DAT_800846D0/D4` → `DAT_801EF0F0/F4`; decodes `_DAT_8007B450` (entry-context pointer) into `DAT_801E46A4` (sub-screen selector, see below); sets `_DAT_8007B440 = 0xF2` (full fade); advances to state 1. |
 | 1 | Fade-in wait: advances to state 2 once `_DAT_8007B440 < 0x79`. |
 | 2 | Sub-screen dispatch: calls `(*(DAT_801E46A4 * 4 + 0x801E4F40))(_DAT_8007B874)` - indirect function pointer table; pad input masked by `_DAT_8007B874`. |
-| 3/4/5 | Fade-out (`_DAT_8007B9D8 = 2`); gated on `_DAT_8007B460 == 0` before advancing. |
+| 3/4/5 | Fade-out (`_DAT_8007B9D8 = 2`); gated on `_DAT_8007B440 >= 0xF2` **and** `_DAT_8007B460 == 0`, then advances by `+3` into the terminal range. |
 | ≥ 6 | Terminal - returns `true`. |
 
 The **entry-context pointer** `_DAT_8007B450` determines which sub-screen opens:
@@ -50,8 +50,14 @@ The **entry-context pointer** `_DAT_8007B450` determines which sub-screen opens:
 | `*ptr == '\r'` | `0x4` | Post-save return |
 | `*ptr == '\x00'` | `0x1a` | Cancel / back |
 
-Input is suppressed while `_DAT_8007B440 > 0x79` (mid-fade). After state 2
-completes, the fade-out advances states 3 → 4 → 5. The four save-coordinate
+Input is suppressed while `_DAT_8007B440 > 0x79` (mid-fade), and state 1 hands
+over to dispatch one level lower, at `< 0x79` - two distinct constants, not one.
+
+The fade runs in **both directions off the same level word**: `0xF2` is opaque
+and `0` transparent, so the fade-in ramps `0xF2 → 0` under a negative delta and
+the fade-out ramps back `0 → 0xF2` under a positive one. An exiting sub-screen
+writes `0xF2` to the *delta* `DAT_801E46A0`, not to the level - reading that
+write as a level assignment inverts the exit fade. The four save-coordinate
 words `DAT_801E46BC/C0/C4/C8` are zeroed on init and maintained across the
 sub-screen lifetime.
 
@@ -160,7 +166,7 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 | `0x01` | `FUN_801D6B20` | `FUN_801DAEF4` slot selector path |
 | `0x02` | `FUN_801D6E18` | save entry (from menu entry-context `(char*)1`) |
 | `0x03` | `FUN_801D6D38` | 2-state Yes/No confirm with default cursor `1`: actor `&DAT_801E4BD4`, picker `FUN_801D688C(&DAT_801E46D0, 2, 1)`; cursor `1` returns to current sub-screen (`0x01`), cursor `0` advances to `0x00` (exit), cancel returns to `0x01` |
-| `0x04` | `FUN_801DD1B8` | post-save return path |
+| `0x04` | `FUN_801DD1B8` | post-save "press any button" return: state 0 invokes actor `&DAT_801E4BE0`; state 1 waits `_DAT_8007BB80 == 0` AND a button **held** (`_DAT_8007B874 & (_DAT_800846D0 \| _DAT_800846D4) != 0`), plays sfx `0x20` and returns to `0x01`. Mirror of `0x08`, which waits for the same mask to read **zero** |
 | `0x05` | `FUN_801D7C00` | (unknown) |
 | `0x06` | `FUN_801D7E50` | (unknown) |
 | `0x07` | `FUN_801D8734` | (unknown) |
@@ -174,7 +180,7 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 | `0x0F` | `FUN_801D9110` | (unknown) |
 | `0x10` | `FUN_801D9280` | (unknown) |
 | `0x11` | `FUN_801D9594` | (unknown) |
-| `0x12` | `FUN_801D98F0` | 2-state scrollable picker: state 0 sets `_DAT_8007BB94 = 4`, actor `&DAT_801E4D88`; state 1 picker `FUN_801D688C(&DAT_801E46C4, DAT_80084594, 1)` (count from save-block existence table). Confirm → `0x13`, cancel → `0x01` |
+| `0x12` | `FUN_801D98F0` | 2-state scrollable picker: state 0 sets `_DAT_8007BB94 = 4`, clears `DAT_801E48A8`, masks the cursor to its index bits (`DAT_801E46C4 &= 0xFFF`) and raises flag `0x4000` on `DAT_801E46C0`, then actor `&DAT_801E4D88`; state 1 picker `FUN_801D688C(&DAT_801E46C4, DAT_80084594, 1)` (count from save-block existence table). Confirm → sfx `0x20` + `0x13`, cancel → `0x01` |
 | `0x13` | `FUN_801D99F0` | (unknown) |
 | `0x14` | `FUN_801D9C14` | per-character record serialisation (0x414 bytes, `char_id` stride) |
 | `0x15` | `FUN_801DA2A0` | (unknown) |
@@ -182,16 +188,49 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 | `0x17` | `FUN_801DD330` | thin wrapper invoking the generic picker `FUN_801DA9F8(start=0, end=9, init=0x30, return_subscreen=1)` |
 | `0x18` | `FUN_801DAE24` | save-card driver entry. State 0 installs the card handle (`_DAT_8007B44C = DAT_801C6EA0`) and invokes actor `&DAT_801E4E28`; state 1 waits `_DAT_8007BB80 == 0`; state 2 calls `FUN_801DD35C(1, 2)` (saving-overlay main; drives `FUN_801E3294` libcd state machine via the per-frame ticker `FUN_801E1114`); state 3 returns to sub-screen `0x01` |
 | `0x19` | `FUN_801DAEF4` | load-from-slot path (entry-context `*ptr == '\x01'`) |
-| `0x1A` | `FUN_801DAFD4` | save-slot confirm / saving-in-progress - advances to `0x1E` on confirm |
+| `0x1A` | `FUN_801DAFD4` | save-slot confirm / saving-in-progress - advances to `0x1E` on confirm. The three rows do **not** share an exit: row `0` leaves for `0x1B`, row `2` and the cancel button both leave for `0x00`, and row `1` is the only one that can proceed. A failed save-block scan plays error sfx `0x23` and leaves the screen in place rather than transitioning |
 | `0x1B` | `FUN_801DB21C` | card-full / error screen |
 | `0x1C` | `FUN_801DB380` | (unknown) |
 | `0x1D` | `FUN_801DB7F4` | (unknown) |
-| `0x1E` | `FUN_801DBC5C` | 4-state spinner: state 0 inits + calls `FUN_801D6628(&DAT_801E4EE4)`; state 1 waits for `_DAT_8007BB80 == 0`; state 2 reads two inventory bytes at `0x80084140 + 0x1818 + _DAT_8007BB88*2` and advances to `0x1F` on user-confirm (`_DAT_8007BB94 == 2`) or back to `0x1A` on cancel; state 3 returns to `0x1A` |
+| `0x1E` | `FUN_801DBC5C` | 4-state spinner: state 0 raises flag `0x1000` on `DAT_801E46BC` + calls `FUN_801D6628(&DAT_801E4EE4)`; state 1 waits `_DAT_8007BB80 == 0`, sets `_DAT_8007BB94 = 1` and falls into state 2. States 1-settling and 2 **share** the staging read of the two inventory bytes at `0x80084140 + 0x1818 + _DAT_8007BB88*2` into `DAT_801E46B0/B4`, then branch on `_DAT_8007BB94`: `3` re-runs actor `&DAT_801E4EFC` and parks at state 3, `2` advances to `0x1F`. State 3 waits `_DAT_8007BB80 == 0`, then returns to `0x1A` |
 | `0x1F` | `FUN_801DBD94` | D-pad quantity-input screen (state 0 init + actor invoke; state 1 ±1/±10 on the dpad clamped to `[1, DAT_801E46B8]`, on confirm applies money delta `_DAT_8008459C += (price * qty) >> 1` and walks live inventory at `0x80084140 + 0x1818` for a non-empty slot; state 2 returns to `0x1A` after a brief delay). NOT the save-card writer - actual libcd I/O lives in `FUN_801E3294` (see "Libcd I/O state machine" section below); `FUN_8001A8B0(SC_base=0x80084140, staging=0x801E5120, 0x1A18)` is plain memcpy used in both directions (post-read or pre-write staging copy) |
 | `0x20` | `FUN_801DC1CC` | auto-save path (entry-context `*ptr == '\x07'`) |
 
 The table ends at `0x1F`; entries past `0x20` are the start of the MES bytecode
 section (`0x85826B82` etc.) and are not function pointers.
+
+### Engine port of the sub-screen graph
+
+`legaia_engine_core::save_subscreen` lifts the graph out of the
+pointer-table indirection into a plain state machine. `SaveScreenMachine`
+is the outer dispatcher: it holds the phase, the current `SaveSubScreen`,
+that screen's step counter and the fade level, and `tick` runs one frame.
+A sub-screen transition is a write to the screen field, exactly as retail
+writes the id global - the step counter resets with it.
+
+Two shapes recur across the sub-screens and the port keeps them explicit:
+
+- **Script-then-wait.** Step 0 emits `SubScreenEffect::RunScript` and
+  advances; the next step blocks until the display script goes idle.
+  Every pinned screen opens this way.
+- **Transition-by-write.** A screen never returns a destination; it
+  writes one. `ConfirmYesNo` is the case worth reading twice - retail
+  stores the exit screen *first* and overwrites it when the cursor sits
+  on the default row, so the exit is the fallthrough rather than the
+  choice.
+
+`SaveSubScreen` covers the whole id space, with `Unpinned(id)` for table
+slots whose behaviour is not yet traced, so a transition into one is
+expressible and round-trips. Ticking an unpinned screen parks rather than
+guessing. The card drivers `0x18` / `0x19` share one implementation
+parameterised by `CardOp`, which is what the decompile shows: identical
+four-step machines differing only in the op selector.
+
+The module is control flow only. Screen *content* is
+[`save_select`](#relationship-to-legaia_save)'s `SaveSelectSession`,
+which models the same UI as player-facing phases; a host drives the
+session for content and can key retail-exact chrome off the sub-screen
+id.
 
 ### Load/save dispatch (`FUN_801DD35C`)
 
@@ -233,6 +272,44 @@ printed during the loop (`"NOT_CARD"`, `"card_sts:%d old:%d"`,
 `FUN_8006EE34` is the actual write helper: it calls BIOS-B(0x50) via
 `FUN_8006EE7C`, then BIOS-B(0x4E) via `FUN_8006EE6C` with `(chan, 0x3F, 0)`.
 
+#### The per-frame status poll (`FUN_801E3900`)
+
+States 1 and 3 both branch on `FUN_801E3900`, which is where the "Now
+checking" beat actually ends. It calls the `TestEvent` thunk
+`FUN_80056658` on four card event handles (`0x8007B9F0`, `..F4`, `..F8`,
+`..FC`) in turn and overwrites its running status with `1`, `2`, `3`, `4`
+respectively whenever a handle reports `1`. The overwrites are
+unconditional, so the **last handle to fire wins** - the priority is call
+order, not severity, and only handle 0 can leave the status at `0`.
+
+It then applies a backstop against the frame counter `DAT_801EF17C`,
+which state 0 clears on the way in:
+
+```
+lw   v1, counter        ; v1 = value on ENTRY
+addiu v1, v1, 1
+slti a0, <entry>, 0x78  ; entry < 120 ?
+bne  a0, zero, skip
+ sw  v1, counter        ; delay slot - the store happens either way
+li   s0, 0x2            ; else force status 2
+```
+
+Two details the shape depends on. The comparison is against the value the
+call was *entered* with, so the first frame to force the timeout is the
+one entered at `120` - the 121st poll. And the increment sits in the
+branch's delay slot, so the counter advances on both paths.
+
+Status `2` therefore has two distinct origins - handle 1 firing, and the
+timeout - and `FUN_801E3294` treats them identically (tear the read down
+with result `-3`). Status `3` is the "NOT CARD" failure (result `-1`),
+`4` completes the read.
+
+Ported as `legaia_engine_core::save_select::card_status_poll`, which the
+save-select session runs on every frame of its `NowChecking` phase.
+`FUN_801E39A8` is the sibling drain - the same four `TestEvent` calls with
+their results discarded - and has no port, since a Rust caller that passes
+the event states in has nothing left to drain.
+
 ### Save-block directory enumeration (`FUN_801E1208`)
 
 After `FUN_801E3294` finishes a directory scan, `FUN_801E1208` walks the
@@ -254,8 +331,64 @@ count from the prior `FUN_801E3BA0` call.
 The per-frame ticker `FUN_801E1114` is the single static caller wiring
 the trio together: it calls `FUN_801E3294(DAT_801EF18C, 0)` every frame
 to advance the libcd state machine, and when `_DAT_801F021C == 3` (save
-commit) it sequences `FUN_801E3AF0` (open `"bu%d_%d"` channel) →
-`FUN_801E3BA0` (block-count query) → `FUN_801E1208` (directory walk).
+commit) it sequences `FUN_801E3AF0` → `FUN_801E3BA0` → `FUN_801E1208`.
+
+#### Filling the table (`FUN_801E3AF0`) and costing it (`FUN_801E3BA0`)
+
+`FUN_801E3AF0` is a **directory enumeration**, not a channel open. It
+formats `"bu%1d%1d:*"` from its two arguments - the wildcard makes the
+pattern select a *device*, not a name, so every file on the chosen card
+matches - then zeroes all fifteen table slots (name bytes `0x13..=0x0`
+and the size word at `+0x18`; the other `DIRENTRY` fields are left as
+they lie) and walks the BIOS-B `firstfile` / `nextfile` thunks
+(`FUN_800566F8` / `FUN_80056708`) across the table. It returns the file
+count, which is what bounds every later pass over the table.
+
+Its count loop increments in the `beq`'s delay slot, so the increment
+runs on the exiting iteration too and the function subtracts one before
+returning. The net result is a plain file count; the correction is not
+an off-by-one to reproduce.
+
+`FUN_801E3BA0` is not a query either - it is arithmetic over the table
+`FUN_801E3AF0` just filled. It sums each entry's `size` word over the
+first `count` entries, applies the MIPS signed-division bias
+(`if (sum < 0) sum += 0x1fff`) so the following arithmetic `>> 13`
+truncates toward zero, and returns `0xf - blocks`: fifteen usable blocks
+minus the blocks the files occupy, at `0x2000` bytes per block. The
+result is **not clamped**, so an over-full card returns a negative count.
+Its first argument is dead - overwritten before use.
+
+Ported as `card_directory_scan` and `card_free_blocks`;
+`SaveSelectSession::from_card_directory` chains both into
+`classify_card_directory` so the free-block budget below comes from the
+card rather than from a caller's guess.
+
+#### Classification order is load-bearing
+
+The walk is what *writes* the class byte `FUN_801E3F74` later reads, and
+the order it writes in is the reason a foreign save is never mistaken
+for a free block:
+
+1. Clear both per-slot arrays. Class `0` is the cleared state, and class
+   `0` means "occupied by something unreadable".
+2. Walk the directory. Every frame whose filename matches a regional
+   prefix stamps class `1` on the slot its two digits name.
+3. **Only then** spend the card's reported free-block count
+   (`_DAT_801F01F0`, from the preceding `FUN_801E3BA0` query) marking
+   still-unclassified slots class `2`.
+
+Step 3 is a budget, not a sweep: it decrements a counter rather than
+testing a bound, so it stops when the card's free blocks run out. A slot
+the walk neither matched nor could afford to call free keeps class `0`.
+Absence of a match is therefore never by itself evidence that a block is
+free - which is what stops the Save path inviting an overwrite into a
+block whose contents were never read.
+
+Ported as `legaia_engine_core::save_select::classify_card_directory`,
+returning the per-slot `SlotContent` the info-panel mode selector already
+consumes; `card_directory_slots` pairs it with the content-keyed
+`SlotSnapshot` constructors to build a session's slot list straight off a
+directory.
 
 ### Per-character status preview (`FUN_801D9C14`, sub-screen `0x14`)
 

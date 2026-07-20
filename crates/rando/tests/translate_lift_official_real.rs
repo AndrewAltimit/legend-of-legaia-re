@@ -72,3 +72,80 @@ fn lift_official_pairs_and_locates() {
         "expected a substantial filled pack, got {filled}"
     );
 }
+
+/// The accent fold the in-browser official-localization transfer applies by
+/// default: every PAL accent cell becomes a plain-ASCII glyph the unmodified
+/// NTSC font can actually draw, and the folded pack encodes without a single
+/// glyph-set error. Counts only - no text is printed or asserted on.
+#[test]
+fn folded_lift_is_encodable_on_the_ntsc_glyph_set() {
+    let (Some(usa_bytes), Some(pal_bytes)) = (load("LEGAIA_DISC_BIN"), load("LEGAIA_PAL_DISC_BIN"))
+    else {
+        eprintln!("[skip] LEGAIA_DISC_BIN / LEGAIA_PAL_DISC_BIN unset");
+        return;
+    };
+    let usa = DiscPatcher::open(usa_bytes).expect("open USA disc");
+    let pal = DiscPatcher::open(pal_bytes).expect("open PAL disc");
+    let (mut pack, _) = lift::lift_official(&usa, &pal).expect("lift official");
+
+    // Unfolded, a PAL lift necessarily carries high-glyph bytes.
+    let high_before = count_high_escapes(&pack);
+    assert!(
+        high_before > 0,
+        "a PAL lift should carry accented glyph bytes"
+    );
+
+    let fold = lift::fold_pack_accents(&mut pack);
+    assert!(fold.folded > 0, "nothing folded");
+    // The residual is the high cells that are *not* accents: the retail glyph
+    // atlas also uses a handful of symbol cells above 0x7E (they occur in the
+    // USA disc's own spell names), plus the odd byte in a marginal raw-carrier
+    // segment. Those are left verbatim - the USA font draws them - so the fold
+    // is not expected to reach zero, only to dominate.
+    assert!(
+        fold.unmapped * 10 < fold.folded,
+        "unexpectedly many unfoldable high cells: {} raw vs {} folded",
+        fold.unmapped,
+        fold.folded
+    );
+    assert_eq!(
+        count_high_escapes(&pack),
+        fold.unmapped,
+        "an accent cell survived the fold"
+    );
+
+    // Folded text is plain ASCII plus those symbol cells, so it encodes for
+    // both target policies.
+    use legaia_rando::translation::markup::{self, Target};
+    for (_, entries) in pack.sections.iter() {
+        for e in entries {
+            if e.translation.is_empty() {
+                continue;
+            }
+            let target = if e.key.starts_with("scus:") {
+                Target::CString
+            } else {
+                Target::Segment
+            };
+            assert!(
+                markup::encode(&e.translation, target).is_ok(),
+                "folded entry {} does not encode",
+                e.key
+            );
+        }
+    }
+}
+
+/// Count bare `{xx}` escapes with `xx >= 0x80` that are not 2-byte opcodes -
+/// i.e. accented / high glyph cells. Counts only, never text.
+fn count_high_escapes(pack: &legaia_rando::translation::LanguagePack) -> usize {
+    use legaia_rando::translation::markup;
+    let mut n = 0;
+    for (_, entries) in pack.sections.iter() {
+        for e in entries {
+            let (_, stats) = markup::fold_high_glyphs(&e.translation);
+            n += stats.folded + stats.unmapped;
+        }
+    }
+    n
+}

@@ -261,6 +261,55 @@ pub fn rotate_step(current: u16, target: u16, decreasing: bool, speed: u32, rema
     }
 }
 
+/// Bind-record class byte that suppresses a touch post.
+///
+/// Read as an unsigned byte in retail (`lbu` against the immediate
+/// `0x8C`); the Ghidra C renders the comparison as the signed `-0x74`,
+/// which is the same bit pattern.
+pub const TOUCH_POST_SUPPRESS_CLASS: u8 = 0x8C;
+
+/// Stride of the bind-record table at `DAT_801C6470`, in bytes. The class
+/// byte the filter tests is the record's first byte.
+pub const BIND_RECORD_STRIDE: usize = 4;
+
+/// Post a collision touch to the motion VM's pending-touch slot - port of
+/// `FUN_8003D038`.
+///
+/// The field collision probe (`FUN_801CFC40`) calls this with the touched
+/// actor's bind-record index (`other[+0x50]`) whenever two actors overlap.
+/// The retail body is a single guarded store into `DAT_80073F1C`, the
+/// one-slot mailbox the motion VM's wait-for-touch opcode
+/// (`0x8003882C`, inside `FUN_80038158`) consumes and resets.
+///
+/// The guard reads the class byte of `bind_records[index]` and drops the
+/// post when it is [`TOUCH_POST_SUPPRESS_CLASS`] - so a record of that
+/// class can be walked into without ever waking a script waiting on a
+/// touch. Returns the value to store, or `None` when the post is
+/// suppressed and the previous mailbox contents must be left alone.
+///
+/// Retail does **no** bounds check on `index`; an out-of-range index reads
+/// whatever follows the table. This port returns `None` instead, which is
+/// the safe reading of the same "don't post" outcome.
+///
+/// `bind_records` is the `DAT_801C6470` table, one [`BIND_RECORD_STRIDE`]
+/// byte record per entry.
+///
+// PORT: FUN_8003d038
+// REF: FUN_801cfc40 (the collision probe that posts), FUN_80038158
+//      (the wait-for-touch consumer at 0x8003882C)
+// NOT WIRED: the port's field collision path does not post touches - it
+// resolves per-axis walls and stops, without identifying the actor it hit.
+// A wired caller would be the actor-vs-actor overlap test standing in for
+// FUN_801cfc40, storing this function's result into the mailbox the motion
+// VM's wait-for-touch opcode reads. Reachable only from tests.
+pub fn post_touch(bind_records: &[u8], index: usize) -> Option<u32> {
+    let class = *bind_records.get(index.checked_mul(BIND_RECORD_STRIDE)?)?;
+    if class == TOUCH_POST_SUPPRESS_CLASS {
+        return None;
+    }
+    Some(index as u32)
+}
+
 /// Convert a 2D displacement `(dx, dz)` to a 12-bit fixed-point yaw
 /// (0x000..0xFFF, clockwise, 0x000 = +Z). Retail calls `FUN_80019b28`.
 fn bearing_to_yaw(dx: i32, dz: i32) -> u16 {
@@ -1028,5 +1077,52 @@ mod tests {
         assert_eq!(s.yaw, 0x0200, "final yaw must equal table entry");
         assert_eq!(s.op_accum, 0, "accumulator must reset on Done");
         assert_eq!(s.pc, 3, "PC advanced past 3-byte op");
+    }
+
+    /// Four bind records, stride 4. Record 2 carries the suppress class.
+    fn bind_records() -> Vec<u8> {
+        let mut t = vec![0u8; 4 * BIND_RECORD_STRIDE];
+        t[0] = 0x01;
+        t[BIND_RECORD_STRIDE] = 0x00;
+        t[2 * BIND_RECORD_STRIDE] = TOUCH_POST_SUPPRESS_CLASS;
+        t[3 * BIND_RECORD_STRIDE] = 0xFF;
+        t
+    }
+
+    #[test]
+    fn touch_post_stores_index_for_ordinary_records() {
+        let t = bind_records();
+        assert_eq!(post_touch(&t, 0), Some(0));
+        // A zero class byte is ordinary - only 0x8C suppresses.
+        assert_eq!(post_touch(&t, 1), Some(1));
+        assert_eq!(post_touch(&t, 3), Some(3));
+    }
+
+    #[test]
+    fn touch_post_suppressed_by_class_8c() {
+        let t = bind_records();
+        assert_eq!(
+            post_touch(&t, 2),
+            None,
+            "class 0x8C must leave the mailbox untouched"
+        );
+    }
+
+    #[test]
+    fn touch_post_reads_class_at_record_stride() {
+        // Only the first byte of each 4-byte record is the class; a 0x8C
+        // sitting in a later byte of record 0 must not suppress it.
+        let mut t = vec![0u8; 2 * BIND_RECORD_STRIDE];
+        t[1] = TOUCH_POST_SUPPRESS_CLASS;
+        t[2] = TOUCH_POST_SUPPRESS_CLASS;
+        t[3] = TOUCH_POST_SUPPRESS_CLASS;
+        assert_eq!(post_touch(&t, 0), Some(0));
+    }
+
+    #[test]
+    fn touch_post_out_of_range_does_not_post() {
+        let t = bind_records();
+        assert_eq!(post_touch(&t, 4), None);
+        assert_eq!(post_touch(&t, usize::MAX), None);
     }
 }

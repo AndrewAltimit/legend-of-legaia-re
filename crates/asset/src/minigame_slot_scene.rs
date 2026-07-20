@@ -190,6 +190,19 @@ pub fn cos_4096(angle: i32) -> i32 {
 
 /// Model-space `y` of the reel cylinder at `angle` (`FUN_801d0fa8`).
 // PORT: FUN_801d0fa8 (reel cylinder y: sin(a) * -0x249 >> 12)
+// NOT WIRED: no Rust host draws the slot cabinet. The browser play page is the
+// only host that renders the machine as the 3D scene it is, and it does the
+// cylinder maths in JavaScript: `slot_marquee_json` exports this module's
+// *constants* (REEL_Y_RADIUS, REEL_Z_SHIFT, REEL_SHADE_*, ANGLE_FULL, PROJ_*)
+// and `slotDrawReels` in site/_content/minigames.html recomputes y / z / shade
+// from them. The native window has no cabinet at all - its slot HUD is three
+// lines of text (payline symbols, coin balance, phase prompt). So these are
+// reimplemented rather than unused, and the reimplementation is NOT
+// equivalent: the JS works in floats, while these carry retail's fixed-point
+// round-toward-zero biases (`(v + 0xFFF) >> 12`, `(v + 7) >> 3`). Wiring wants
+// a Rust-side reel vertex emitter - i.e. the native window growing a real
+// cabinet renderer, or the web page taking its vertices from WASM instead of
+// its own constants-fed maths.
 pub fn reel_y(angle: i32) -> i32 {
     let v = sin_4096(angle) * -REEL_Y_RADIUS;
     // Retail biases negatives before the arithmetic shift (round toward zero).
@@ -198,6 +211,19 @@ pub fn reel_y(angle: i32) -> i32 {
 
 /// Model-space `z` of the reel cylinder at `angle` (`FUN_801d0fa8`).
 // PORT: FUN_801d0fa8 (reel cylinder z: cos(a) >> 3)
+// NOT WIRED: no Rust host draws the slot cabinet. The browser play page is the
+// only host that renders the machine as the 3D scene it is, and it does the
+// cylinder maths in JavaScript: `slot_marquee_json` exports this module's
+// *constants* (REEL_Y_RADIUS, REEL_Z_SHIFT, REEL_SHADE_*, ANGLE_FULL, PROJ_*)
+// and `slotDrawReels` in site/_content/minigames.html recomputes y / z / shade
+// from them. The native window has no cabinet at all - its slot HUD is three
+// lines of text (payline symbols, coin balance, phase prompt). So these are
+// reimplemented rather than unused, and the reimplementation is NOT
+// equivalent: the JS works in floats, while these carry retail's fixed-point
+// round-toward-zero biases (`(v + 0xFFF) >> 12`, `(v + 7) >> 3`). Wiring wants
+// a Rust-side reel vertex emitter - i.e. the native window growing a real
+// cabinet renderer, or the web page taking its vertices from WASM instead of
+// its own constants-fed maths.
 pub fn reel_z(angle: i32) -> i32 {
     let v = cos_4096(angle);
     if v < 0 {
@@ -210,6 +236,19 @@ pub fn reel_z(angle: i32) -> i32 {
 /// The depth-cued gouraud shade of a reel vertex at model-space `z`, clamped to
 /// `0 ..= 0xB4` (`FUN_801d0fa8`). Feed it to a `texel * shade / 128` blend.
 // PORT: FUN_801d0fa8 (reel depth-cue shade)
+// NOT WIRED: no Rust host draws the slot cabinet. The browser play page is the
+// only host that renders the machine as the 3D scene it is, and it does the
+// cylinder maths in JavaScript: `slot_marquee_json` exports this module's
+// *constants* (REEL_Y_RADIUS, REEL_Z_SHIFT, REEL_SHADE_*, ANGLE_FULL, PROJ_*)
+// and `slotDrawReels` in site/_content/minigames.html recomputes y / z / shade
+// from them. The native window has no cabinet at all - its slot HUD is three
+// lines of text (payline symbols, coin balance, phase prompt). So these are
+// reimplemented rather than unused, and the reimplementation is NOT
+// equivalent: the JS works in floats, while these carry retail's fixed-point
+// round-toward-zero biases (`(v + 0xFFF) >> 12`, `(v + 7) >> 3`). Wiring wants
+// a Rust-side reel vertex emitter - i.e. the native window growing a real
+// cabinet renderer, or the web page taking its vertices from WASM instead of
+// its own constants-fed maths.
 pub fn reel_shade(z: i32) -> i32 {
     let v = (z + REEL_SHADE_Z_BIAS) * REEL_SHADE_Z_GAIN;
     let v = if v < 0 { (v + 0x1FF) >> 9 } else { v >> 9 };
@@ -629,6 +668,15 @@ pub fn parse_messages(overlay: &[u8], page3: &[u8], page3_w: usize) -> Result<Ve
 /// Blits `msg` scrolled to `(x, y)`. A dot whose source column falls outside the
 /// message stays unlit, which is what makes the message scroll in and out.
 // PORT: FUN_801d069c (marquee dot-buffer composer)
+// NOT WIRED: same root cause as the reel kernels above - no Rust host draws the
+// dot matrix. This is a complete chain with no consumer at either end:
+// `SlotMachine::marquee_placements` (engine-core) calls `compose_marquee_frame`
+// and nothing calls *it*, and `render_marquee` - the rasteriser the whole chain
+// feeds - has no caller either. The browser play page exports the 21 message
+// bitmaps as JSON and blits them in JavaScript; the native window's slot HUD is
+// text-only and has no marquee. Wiring means a host that owns a dot buffer:
+// either the native cabinet renderer, or the web page moving composition into
+// WASM and taking a rasterised buffer instead of the raw bitmap bank.
 pub fn compose_marquee(msg: &MarqueeMessage, x: i32, y: i32) -> Vec<u8> {
     let mut buf = vec![0u8; DOT_COLS * DOT_STRIDE];
     for row in 0..DOT_ROWS {
@@ -647,6 +695,217 @@ pub fn compose_marquee(msg: &MarqueeMessage, x: i32, y: i32) -> Vec<u8> {
     buf
 }
 
+/// Clear the whole dot buffer.
+///
+/// A **negative** message id is `FUN_801d069c`'s clear command, not a lookup: the
+/// `bgez $a0` at its head skips the scroll body entirely and falls into a
+/// `DOT_COLS x DOT_ROWS` store loop that zeroes `DAT_801d37a0`. The per-frame
+/// composer opens with exactly that call, so the marquee is rebuilt from scratch
+/// every frame rather than diffed against the previous one.
+// PORT: FUN_801d069c (negative-id clear path)
+// NOT WIRED: same root cause as the reel kernels above - no Rust host draws the
+// dot matrix. This is a complete chain with no consumer at either end:
+// `SlotMachine::marquee_placements` (engine-core) calls `compose_marquee_frame`
+// and nothing calls *it*, and `render_marquee` - the rasteriser the whole chain
+// feeds - has no caller either. The browser play page exports the 21 message
+// bitmaps as JSON and blits them in JavaScript; the native window's slot HUD is
+// text-only and has no marquee. Wiring means a host that owns a dot buffer:
+// either the native cabinet renderer, or the web page moving composition into
+// WASM and taking a rasterised buffer instead of the raw bitmap bank.
+pub fn clear_dots() -> Vec<u8> {
+    vec![0u8; DOT_COLS * DOT_STRIDE]
+}
+
+/// Blit `msg` into `buf` with its top-left at dot cell `(col, row)`.
+///
+/// This is the **placement** sibling of [`compose_marquee`], and the difference
+/// between them is which end of the copy gets clipped. [`compose_marquee`]
+/// (`FUN_801d069c`) offsets the *source* and clips it signed, which scrolls one
+/// message through a fixed window. `FUN_801d3230` offsets the *destination* and
+/// clips it **unsigned** - `sltiu $v0, $t0, 0x4e` on the column and
+/// `sltiu $v0, $a2, 0xd` on the row.
+///
+/// The unsigned compare is how one instruction enforces *both* bounds: a
+/// negative offset fails `sltiu` as a huge unsigned value, so retail needs no
+/// separate `< 0` test. Negative offsets are not a corner case here - the payout
+/// caption starts at `row = -PAYOUT_SLIDE_ROWS` and counts up to `0`, and it is
+/// this clip that hides the rows still above the matrix while it slides in. Port
+/// the bound as a bare `dr < DOT_ROWS` and every one of those rows lands.
+///
+/// Retail walks the source at the decoded page's `0x100` stride from a pointer
+/// the message record caches at `+4`; [`MarqueeMessage::bitmap`] is that same
+/// sub-rect already tightened to `w`, so indexing by `w` reads the same texels -
+/// the equivalence [`compose_marquee`] already relies on.
+// PORT: FUN_801d3230 (dot-buffer placement blit)
+// NOT WIRED: same root cause as the reel kernels above - no Rust host draws the
+// dot matrix. This is a complete chain with no consumer at either end:
+// `SlotMachine::marquee_placements` (engine-core) calls `compose_marquee_frame`
+// and nothing calls *it*, and `render_marquee` - the rasteriser the whole chain
+// feeds - has no caller either. The browser play page exports the 21 message
+// bitmaps as JSON and blits them in JavaScript; the native window's slot HUD is
+// text-only and has no marquee. Wiring means a host that owns a dot buffer:
+// either the native cabinet renderer, or the web page moving composition into
+// WASM and taking a rasterised buffer instead of the raw bitmap bank.
+pub fn place_message(buf: &mut [u8], msg: &MarqueeMessage, col: i32, row: i32) {
+    for r in 0..msg.h as i32 {
+        let dr = row + r;
+        if (dr as u32) >= DOT_ROWS as u32 {
+            continue;
+        }
+        for c in 0..msg.w as i32 {
+            let dc = col + c;
+            if (dc as u32) >= DOT_COLS as u32 {
+                continue;
+            }
+            let src = r as usize * msg.w as usize + c as usize;
+            if let Some(&texel) = msg.bitmap.get(src) {
+                buf[dc as usize * DOT_STRIDE + dr as usize] = texel;
+            }
+        }
+    }
+}
+
+/// The per-frame inputs of the marquee composer - the six overlay globals
+/// `FUN_801cfff0` reads before it decides what the dot matrix says.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MarqueeFrame {
+    /// `DAT_801d3d3c`: the coin figure the payout caption prints. `0` = no caption.
+    pub payout: i32,
+    /// `DAT_801d3c94`: frames since the caption started. `0` = no caption.
+    pub payout_frame: i32,
+    /// `DAT_801d3cac`: feature mode. The tally / pip strip draws only in `4..=6`.
+    pub feature_mode: u8,
+    /// `DAT_801d3c84`: the reel state machine's state word.
+    pub reel_state: i32,
+    /// `DAT_801d3cb0`: bonus rounds still owed.
+    pub bonus_rounds: i32,
+    /// `DAT_801d3d20[]`: per-reel claimed value (payline value + 1); `0` = unclaimed.
+    pub claimed: [i32; 3],
+}
+
+/// One message blitted into the dot matrix this frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MarqueePlacement {
+    /// Index into the 21-record message bank.
+    pub msg: usize,
+    /// Dot column of the blit's left edge.
+    pub col: i32,
+    /// Dot row of the blit's top edge; negative while a caption slides in.
+    pub row: i32,
+}
+
+/// Decide what the dot matrix shows this frame.
+///
+/// The matrix has one occupant at a time and the priority is fixed: while the
+/// payout caption is up it owns the whole strip, and only once it is down does
+/// the bonus tally / round-pip strip get to draw. Retail gates the caption on
+/// **both** the figure and the frame counter being non-zero, and falls straight
+/// through to the tally when either is `0`.
+///
+/// The caption is a right-aligned four-digit figure at [`PAYOUT_DIGIT_COLS`]
+/// followed by [`MSG_COINS`]. Its leading-zero suppression tests the **whole
+/// figure** at every place rather than the running remainder - all four guards
+/// re-read `DAT_801d3d3c` - while the digit *values* come off a remainder chain
+/// that runs whether or not its own place was drawn.
+// PORT: FUN_801cfff0 (per-frame marquee composition)
+// NOT WIRED: same root cause as the reel kernels above - no Rust host draws the
+// dot matrix. This is a complete chain with no consumer at either end:
+// `SlotMachine::marquee_placements` (engine-core) calls `compose_marquee_frame`
+// and nothing calls *it*, and `render_marquee` - the rasteriser the whole chain
+// feeds - has no caller either. The browser play page exports the 21 message
+// bitmaps as JSON and blits them in JavaScript; the native window's slot HUD is
+// text-only and has no marquee. Wiring means a host that owns a dot buffer:
+// either the native cabinet renderer, or the web page moving composition into
+// WASM and taking a rasterised buffer instead of the raw bitmap bank.
+pub fn compose_marquee_frame(frame: &MarqueeFrame) -> Vec<MarqueePlacement> {
+    let mut out = Vec::new();
+    if frame.payout != 0 && frame.payout_frame != 0 {
+        // `min(frame - 0xD, 0)`: composed one row per frame from 13 rows above
+        // the matrix down to row 0, then held there.
+        let row = (frame.payout_frame - PAYOUT_SLIDE_ROWS).min(0);
+        let n = frame.payout;
+        let digits = [n / 1000, (n % 1000) / 100, (n % 100) / 10, n % 10];
+        // Place 3 (the units) is unconditional; the rest need the figure to
+        // reach their own decade.
+        let thresholds = [1000, 100, 10, 0];
+        for ((&digit, &col), &threshold) in digits
+            .iter()
+            .zip(PAYOUT_DIGIT_COLS.iter())
+            .zip(thresholds.iter())
+        {
+            if n >= threshold {
+                out.push(MarqueePlacement {
+                    msg: MSG_NUMBER_BASE + digit as usize,
+                    col: col as i32,
+                    row,
+                });
+            }
+        }
+        out.push(MarqueePlacement {
+            msg: MSG_COINS,
+            col: PAYOUT_COINS_COL as i32,
+            row,
+        });
+        return out;
+    }
+    if !(4..=6).contains(&frame.feature_mode) {
+        return out;
+    }
+    match frame.reel_state {
+        // States 1-2 (idle / spinning up): the pips count the rounds still owed.
+        1 | 2 => {
+            for (i, &col) in ROUND_PIP_COLS.iter().enumerate() {
+                let lit = frame.bonus_rounds > i as i32;
+                out.push(MarqueePlacement {
+                    msg: if lit {
+                        MSG_ROUND_PIP_ON
+                    } else {
+                        MSG_ROUND_PIP_OFF
+                    },
+                    col: col as i32,
+                    row: 0,
+                });
+            }
+        }
+        // States 3-4 (stopping / payout): the tally reads `n x n x n`.
+        3 | 4 => {
+            for (reel, &col) in TALLY_NUMBER_COLS.iter().enumerate() {
+                let claimed = frame.claimed[reel];
+                // An unclaimed reel - and any value below the bonus base - prints
+                // a plain "0" rather than being skipped.
+                let number = if claimed < 0x10 { 0 } else { claimed - 0x10 };
+                out.push(MarqueePlacement {
+                    msg: MSG_NUMBER_BASE + number as usize,
+                    col: col as i32,
+                    row: 0,
+                });
+            }
+            for &col in TALLY_TIMES_COLS.iter() {
+                out.push(MarqueePlacement {
+                    msg: MSG_TIMES,
+                    col: col as i32,
+                    row: 0,
+                });
+            }
+        }
+        _ => {}
+    }
+    out
+}
+
+/// Rasterise a frame's placements into a dot buffer. A placement whose record is
+/// outside the bank is dropped rather than panicking: retail's digit arithmetic
+/// is unclamped, so a figure past the bank's range would index off the end of it.
+pub fn render_marquee(placements: &[MarqueePlacement], messages: &[MarqueeMessage]) -> Vec<u8> {
+    let mut buf = clear_dots();
+    for placement in placements {
+        if let Some(msg) = messages.get(placement.msg) {
+            place_message(&mut buf, msg, placement.col, placement.row);
+        }
+    }
+    buf
+}
+
 /// The CLUT the medallion whose record carries `art` samples.
 pub fn medallion_clut(art: i16) -> ClutId {
     ClutId(MEDALLION_CLUT_BASE.wrapping_add(art as u16))
@@ -655,6 +914,174 @@ pub fn medallion_clut(art: i16) -> ClutId {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn msg(w: u8, h: u8, fill: u8) -> MarqueeMessage {
+        MarqueeMessage {
+            u: 0,
+            v: 0,
+            w,
+            h,
+            bitmap: vec![fill; w as usize * h as usize],
+        }
+    }
+
+    /// The placement blit clips its **destination**, and it clips it unsigned -
+    /// which is the whole reason a negative row hides a caption instead of
+    /// wrapping it to the bottom of the matrix.
+    #[test]
+    fn the_placement_blit_clips_negative_offsets_away_entirely() {
+        let m = msg(4, 4, 7);
+
+        // Fully on-matrix: every texel lands, at `col * stride + row`.
+        let mut buf = clear_dots();
+        place_message(&mut buf, &m, 2, 3);
+        assert_eq!(buf[2 * DOT_STRIDE + 3], 7);
+        assert_eq!(buf[5 * DOT_STRIDE + 6], 7);
+        assert_eq!(buf.iter().filter(|&&b| b == 7).count(), 16);
+
+        // Pushed two rows above the matrix: the top two source rows are dropped
+        // and the rest land from row 0 - a slide-in, not a wrap.
+        let mut buf = clear_dots();
+        place_message(&mut buf, &m, 0, -2);
+        assert_eq!(
+            buf.iter().filter(|&&b| b == 7).count(),
+            8,
+            "two rows clipped"
+        );
+        assert_eq!(buf[0], 7, "the surviving rows start at row 0");
+        assert_eq!(
+            buf[DOT_ROWS - 1],
+            0,
+            "nothing wrapped round to the bottom row"
+        );
+
+        // Entirely above the matrix: nothing at all.
+        let mut buf = clear_dots();
+        place_message(&mut buf, &m, 0, -4);
+        assert!(buf.iter().all(|&b| b == 0));
+
+        // Right edge: a message running past the last column loses its tail,
+        // which is how the "coin" word clips in retail.
+        let mut buf = clear_dots();
+        place_message(&mut buf, &msg(8, 1, 3), DOT_COLS as i32 - 3, 0);
+        assert_eq!(buf.iter().filter(|&&b| b == 3).count(), 3);
+    }
+
+    /// The two composers are not interchangeable: one scrolls the source through
+    /// a fixed window, the other places the destination. Same message, same
+    /// offset, different picture.
+    #[test]
+    fn scrolling_and_placing_are_opposite_operations() {
+        let m = msg(4, 4, 5);
+        // Placed at column 3, the message occupies columns 3..7.
+        let mut placed = clear_dots();
+        place_message(&mut placed, &m, 3, 0);
+        assert_eq!(placed[3 * DOT_STRIDE], 5);
+        assert_eq!(placed[0], 0);
+        // Scrolled by 3, the message's own column 3 sits at matrix column 0.
+        let scrolled = compose_marquee(&m, 3, 0);
+        assert_eq!(scrolled[0], 5);
+        assert_eq!(scrolled[3 * DOT_STRIDE], 0);
+    }
+
+    /// Leading-zero suppression tests the whole figure at each place, so a
+    /// four-digit payout prints four digits and a two-digit payout prints two -
+    /// never a zero-padded field.
+    #[test]
+    fn the_payout_caption_suppresses_leading_zeros_only() {
+        let caption = |payout: i32| {
+            compose_marquee_frame(&MarqueeFrame {
+                payout,
+                payout_frame: 0xFF,
+                ..Default::default()
+            })
+        };
+
+        // 1000: all four places plus the word.
+        let p = caption(1000);
+        assert_eq!(p.len(), 5);
+        assert_eq!(p[0].msg, MSG_NUMBER_BASE + 1);
+        for digit in &p[1..4] {
+            assert_eq!(digit.msg, MSG_NUMBER_BASE, "the three trailing zeros print");
+        }
+        assert_eq!(p[4].msg, MSG_COINS);
+
+        // 7: the units place and the word, nothing else.
+        let p = caption(7);
+        assert_eq!(p.len(), 2);
+        assert_eq!(p[0].msg, MSG_NUMBER_BASE + 7);
+        assert_eq!(p[0].col, PAYOUT_DIGIT_COLS[3] as i32);
+        assert_eq!(p[1].msg, MSG_COINS);
+
+        // 405: the hundreds, the interior zero, and the units.
+        let p = caption(405);
+        assert_eq!(p.len(), 4);
+        assert_eq!(p[0].msg, MSG_NUMBER_BASE + 4);
+        assert_eq!(
+            p[1].msg, MSG_NUMBER_BASE,
+            "an interior zero is NOT suppressed"
+        );
+        assert_eq!(p[2].msg, MSG_NUMBER_BASE + 5);
+
+        // A caption needs both a figure and a running clock.
+        assert!(caption(0).is_empty());
+        assert!(
+            compose_marquee_frame(&MarqueeFrame {
+                payout: 500,
+                payout_frame: 0,
+                ..Default::default()
+            })
+            .is_empty()
+        );
+    }
+
+    /// The round pips light one per round still owed, left to right.
+    #[test]
+    fn the_round_pips_count_the_rounds_still_owed() {
+        let pips = |rounds: i32| {
+            compose_marquee_frame(&MarqueeFrame {
+                feature_mode: 6,
+                reel_state: 1,
+                bonus_rounds: rounds,
+                ..Default::default()
+            })
+            .iter()
+            .map(|p| p.msg == MSG_ROUND_PIP_ON)
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(pips(3), [true, true, true]);
+        assert_eq!(pips(1), [true, false, false]);
+        assert_eq!(pips(0), [false, false, false]);
+    }
+
+    /// Outside the bonus feature modes the strip stays dark - the attract legend
+    /// scrolls there instead, and it is not a placement.
+    #[test]
+    fn the_tally_strip_only_draws_in_the_bonus_feature_modes() {
+        for mode in 0u8..=6 {
+            let out = compose_marquee_frame(&MarqueeFrame {
+                feature_mode: mode,
+                reel_state: 3,
+                ..Default::default()
+            });
+            assert_eq!(
+                !out.is_empty(),
+                (4..=6).contains(&mode),
+                "feature mode {mode}"
+            );
+        }
+        // ...and only in the reel states 1-4.
+        for state in [0i32, 5, 100] {
+            assert!(
+                compose_marquee_frame(&MarqueeFrame {
+                    feature_mode: 6,
+                    reel_state: state,
+                    ..Default::default()
+                })
+                .is_empty()
+            );
+        }
+    }
 
     #[test]
     fn trig_matches_the_scus_tables() {

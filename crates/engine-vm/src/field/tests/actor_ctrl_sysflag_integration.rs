@@ -234,10 +234,17 @@ fn op_43_sub_12_split_call_no_split() {
     ];
     let r = step(&mut host, &mut ctx, &bc, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 14 });
-    assert_eq!(
-        host.emitter_split_calls,
-        vec![([0x10i16, 0x20, 0x80, 0x40, 0x50, 0x60], false)]
-    );
+    // No split: exactly one call, passed through unshifted.
+    assert_eq!(host.emitter_split_calls.len(), 1);
+    let calls = &host.emitter_split_calls[0];
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].ot_slot, 6);
+    assert_eq!(calls[0].src_x, 0x10);
+    assert_eq!(calls[0].src_y, 0x20);
+    assert_eq!(calls[0].w, 0x80);
+    assert_eq!(calls[0].h, 0x40);
+    assert_eq!(calls[0].dst_x, 0x50);
+    assert_eq!(calls[0].dst_y, 0x60);
 }
 
 #[test]
@@ -250,9 +257,17 @@ fn op_43_sub_12_split_call_with_split() {
     ];
     let r = step(&mut host, &mut ctx, &bc, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 14 });
+    // Split: the shifted far-page call is emitted first, then the main
+    // copy clamped to 0x100 wide at the original corner.
     assert_eq!(host.emitter_split_calls.len(), 1);
-    assert!(host.emitter_split_calls[0].1);
-    assert_eq!(host.emitter_split_calls[0].0[2], 0x0200i16);
+    let calls = &host.emitter_split_calls[0];
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[0].src_x, 0x10 + 0xF0);
+    assert_eq!(calls[0].w, 0x200 - 0xE0);
+    assert_eq!(calls[0].dst_x, 0x50 + 0x100);
+    assert_eq!(calls[1].src_x, 0x10);
+    assert_eq!(calls[1].w, 0x100);
+    assert_eq!(calls[1].dst_x, 0x50);
 }
 
 #[test]

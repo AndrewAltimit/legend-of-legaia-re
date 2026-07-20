@@ -23,8 +23,9 @@ referenced by code, not analysis one-offs:
 | `pcsx-redux/` | PCSX-Redux Lua probe library (`lib/probe`) + `autorun_*.lua` capture scripts + Python decoders, driven by `run_probe.sh` (`run_probe.ps1` on Windows). See [`docs/tooling/pcsx-redux-automation.md`](../docs/tooling/pcsx-redux-automation.md); [`COMMUNITY-CAPTURE.md`](pcsx-redux/COMMUNITY-CAPTURE.md) is the hand-out guide for volunteer playthrough captures. |
 | [`vrc-diorama/`](#vrc-diorama) | Clean-room MIDI transport for the VRChat live battle-diorama: register schema + codegen, the Lua encoder/sink riding the battle-state probe, and the UdonSharp decoder scaffold. No Sony bytes. |
 | `mednafen/` | Mednafen save-state automation: capture, diff, bisect, bulk-terrain resolve, plus `movies/` for optional `.mcm` input recordings. See [`docs/tooling/mednafen-automation.md`](../docs/tooling/mednafen-automation.md). |
-| `recomp/` | Static-recomp differential-oracle tooling: `probe.py` (TCP debug-server client + CLI, protocol traps baked in), `trace_capture.py` (frame-tagged canonical JSONL capture), `trace_diff.py` (per-channel first-divergence report) + its synthetic-fixture unit test. Pairs with `legaia-engine sim-trace`. See [`docs/tooling/recomp-differential.md`](../docs/tooling/recomp-differential.md). |
+| `recomp/` | Static-recomp differential-oracle tooling: `probe.py` (TCP debug-server client + CLI, protocol traps baked in), `trace_capture.py` (frame-tagged canonical JSONL capture), `trace_diff.py` (per-channel first-divergence report), `apply_boot_state_fix.py` (reapplies the savestate-resume fix to a fresh runtime checkout) and `preflight.py` (tells a self-wiping runtime, a stale build and a stale snapshot apart before a capture runs) + synthetic-fixture unit tests. Pairs with `legaia-engine sim-trace`. See [`docs/tooling/recomp-differential.md`](../docs/tooling/recomp-differential.md). |
 | `git-hooks/` | The shipped `pre-commit` hook (installed via `ci/install-hooks.sh`). |
+| [`lib/`](#lib) | Sourced bash helpers shared by the shell scripts: process control that cannot match the caller, and run-and-capture that reports the real exit code. |
 | `engine/` | Engine-side `scenarios.toml` for the determinism replay harness (distinct from the capture manifest above). |
 | `replays/` | `j-replay-v1` record/replay fixtures for the determinism tests. |
 
@@ -39,11 +40,28 @@ invoke them by `scripts/ci/<name>` path.
 - `check-md-links.py` - Markdown intra-repo link + heading-anchor gate (the docs-side sibling of `check-site-links.py`).
 - `check-site-links.py` - static-site internal-link + anchor gate.
 - `check-port-tags.py` - `// PORT:` / `// REF:` tag drift checker (warn-only in the hook).
+- `check-shell-observer-traps.py` - hard gate over the shell corpus for the three "observer inside the observed" defects (pipe exit status, self-matching `pkill`/`pgrep`, `grep`'s no-match exit 1). Self-tests its detectors on every run. See [`docs/tooling/shell-observer-traps.md`](../docs/tooling/shell-observer-traps.md).
 - `port-catalog.py` (+ `port-catalog-ignore.toml`, `features.toml`) - per-function port worklist + `--dashboard`.
 - `function-coverage.py` - Ghidra-dump citation coverage report.
 - `build-wasm.sh` / `check-wasm.sh` - web-viewer WASM build + CI smoke.
 - `setup-cross-toolchain.sh` - provision one release target's cross toolchain (rustup std, zig + `cargo-zigbuild`, the amd64 ALSA sysroot); idempotent, root-free except mingw-w64, which it only checks for. See [`docs/tooling/releases.md`](../docs/tooling/releases.md).
 - `release-build.sh` - build + package one release target into `target/dist` (archive + `.sha256`). Driven per target by `.github/workflows/release.yml`.
+
+### lib/
+
+Sourced, not executed:
+
+```bash
+source "$(git rev-parse --show-toplevel)/scripts/lib/proc.sh"
+```
+
+- `proc.sh` - `proc_kill_tree` / `proc_spawn_group` / `proc_group_alive` /
+  `proc_kill_group` / `proc_wait_pid` replace `pkill -f` and `pgrep -f`, which
+  match the caller's own command line; `run_capture` replaces
+  `cmd | tail && echo OK`, which reports the tail's exit status rather than the
+  command's; `grep_count` / `grep_found` keep `grep`'s no-match exit 1 from
+  aborting a script under `set -e`. Rationale and the failure history:
+  [`docs/tooling/shell-observer-traps.md`](../docs/tooling/shell-observer-traps.md).
 
 ### ghidra-analysis/
 

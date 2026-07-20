@@ -1,6 +1,14 @@
 //! Save-slot select session.
 //!
-//! PORT: FUN_801DD35C (save-UI dispatcher), FUN_801E08D8 (info-panel renderer), FUN_801E1C1C (slide-in animator)
+//! PORT: FUN_801E08D8 (info-panel renderer), FUN_801E1C1C (slide-in animator)
+//! REF: FUN_801DD35C (the sub-mode dispatcher this session runs under)
+//!
+//! `FUN_801DD35C` is `REF:` here, not `PORT:` - `menu.rs` carries the one
+//! `PORT:` for that address, and the catalog counts occurrences. The
+//! `overlay_menu`, `overlay_title`, `overlay_save_ui_*` and
+//! `overlay_shop_save` dumps of it are the same function (byte-identical
+//! bodies), so which overlay hosts it is an open question rather than a
+//! per-subsystem variant; see the note in `engine-vm/src/title_overlay.rs`.
 //!
 //! Drives the slot-list UI (read save metadata, browse, Load/Save/Delete
 //! confirmations). Renderer-agnostic - engines render the slot list
@@ -36,7 +44,20 @@
 //! Engines call [`SaveSelectSession::tick`] each frame and react to
 //! returned [`SelectEvent`]s. The session never reads the save data
 //! itself - engines pre-load slot metadata into [`SlotSnapshot`] entries
-//! and feed them through `set_slots`.
+//! and hand them to [`SaveSelectSession::new`]. A host reading an actual
+//! memory card can instead use [`SaveSelectSession::from_card_directory`],
+//! which derives the whole slot list from the card's directory.
+//!
+//! ## The card-read beat
+//!
+//! Retail does not time the "Now checking" dialog out; it polls four
+//! memory-card kernel events every frame (`FUN_801E3900`) and branches on
+//! what comes back, with a 120-frame backstop. [`card_status_poll`] is
+//! that poll and it runs on every frame of
+//! [`SelectPhase::NowChecking`]. A host with card hardware latches the
+//! events through [`SaveSelectSession::set_card_events`]; leaving them
+//! alone (the default) reduces the beat to the frame countdown a
+//! disk-backed host expects.
 
 use crate::menu_input::{CURSOR_INDEX_MASK, CursorNav, NavButtons, menu_cursor_nav};
 
@@ -144,6 +165,348 @@ impl SlotSnapshot {
 pub enum SaveSelectMode {
     Load,
     Save,
+}
+
+/// Number of memory-card directory frames retail's card walk visits.
+///
+/// The card holds 15 usable blocks; the class array retail writes is 16
+/// entries wide because a parsed slot number is a two-digit field.
+pub const CARD_DIR_FRAMES: usize = 15;
+
+/// Width of the per-slot class array retail clears before each walk.
+pub const CARD_SLOT_CLASSES: usize = 16;
+
+/// Save-filename prefixes retail matches a directory frame against, one
+/// per region. Both are 16 bytes - the exact `strncmp` length retail
+/// passes - and the two digits that follow are the slot number.
+pub const CARD_SAVE_PREFIXES: [&[u8]; 2] = [b"BASCUS-94254PRO_", b"BISCPS-10059PRO_"];
+
+/// Length retail compares a directory filename over.
+const CARD_PREFIX_LEN: usize = 16;
+
+/// Classify a memory card's directory into per-slot [`SlotContent`].
+///
+/// This is the producer for the class byte [`SlotContent`] models: retail
+/// clears the array, walks the 15 directory frames matching each filename
+/// against either regional save prefix, and stamps class `1` on every slot
+/// a matched filename names. Only *after* that does it spend the card's
+/// reported free-block count marking still-unclassified slots class `2`
+/// (free) - so a block the walk neither matched nor could afford to call
+/// free stays class `0`, which is [`SlotContent::Foreign`].
+///
+/// That ordering is the whole point: absence of a match is not evidence a
+/// block is free. Retail only calls a block free when the card's own
+/// free-block count pays for it, which is why an unreadable foreign save
+/// captions as "not a Legend of Legaia save" rather than inviting an
+/// overwrite.
+///
+/// `frames` are the raw directory frames (retail reads a `0x28`-byte
+/// stride; only the leading filename field matters here). `avail_blocks`
+/// is the card's free-block count, which retail queries separately before
+/// the walk.
+///
+/// One deliberate departure: retail's budget loop is bounded only by the
+/// budget (`bgtz` on the counter, no slot bound) and its match loop
+/// stamps `class[slot]` with no range check, so a malformed card can walk
+/// off the end of the 16-byte array. Both loops are bounded here.
+///
+/// Reached from [`SaveSelectSession::from_card_directory`], which pairs
+/// it with the free-block count [`card_free_blocks`] computes off the
+/// same directory - so `avail_blocks` no longer has to be guessed by a
+/// caller.
+///
+/// PORT: FUN_801E1208
+pub fn classify_card_directory(
+    frames: &[&[u8]],
+    avail_blocks: u32,
+) -> [SlotContent; CARD_SLOT_CLASSES] {
+    // Retail clears the class array (and its sibling scanned-flag array)
+    // before every walk. Class 0 is Foreign - "occupied by something
+    // unreadable" - which is what an untouched entry means here.
+    let mut classes = [SlotContent::Foreign; CARD_SLOT_CLASSES];
+
+    for frame in frames.iter().take(CARD_DIR_FRAMES) {
+        let Some(slot) = card_dir_slot_of(frame) else {
+            continue;
+        };
+        if let Some(cell) = classes.get_mut(slot) {
+            *cell = SlotContent::LegaiaSave;
+        }
+    }
+
+    // Spend the card's free-block budget on slots the walk left unclaimed.
+    // Retail decrements a counter rather than testing a bound, so a card
+    // reporting more free blocks than there are unclaimed slots simply
+    // runs out of slots first.
+    let mut avail = avail_blocks;
+    for cell in classes.iter_mut() {
+        if avail == 0 {
+            break;
+        }
+        if *cell == SlotContent::Foreign {
+            *cell = SlotContent::Free;
+            avail -= 1;
+        }
+    }
+
+    classes
+}
+
+/// Parse the slot number a directory frame's filename encodes, or `None`
+/// when the filename is not one of this game's saves.
+///
+/// Retail reads the two bytes straight after the 16-byte prefix as ASCII
+/// digits. The second digit is optional: it only folds into the number
+/// when it actually is a digit, so a one-digit name parses as its single
+/// digit rather than being rejected.
+///
+/// REF: FUN_801E1208 (the filename match + digit parse it inlines).
+fn card_dir_slot_of(frame: &[u8]) -> Option<usize> {
+    if frame.len() < CARD_PREFIX_LEN + 2 {
+        return None;
+    }
+    let matched = CARD_SAVE_PREFIXES
+        .iter()
+        .any(|p| &frame[..CARD_PREFIX_LEN] == *p);
+    if !matched {
+        return None;
+    }
+    let hi = frame[CARD_PREFIX_LEN].wrapping_sub(b'0');
+    let lo = frame[CARD_PREFIX_LEN + 1].wrapping_sub(b'0');
+    let slot = if lo < 10 {
+        hi as usize * 10 + lo as usize
+    } else {
+        hi as usize
+    };
+    Some(slot)
+}
+
+/// Build the session's slot list straight off a card directory.
+///
+/// Pairs [`classify_card_directory`] with the two content-keyed
+/// [`SlotSnapshot`] constructors so a card-backed host gets a slot list
+/// whose captions already follow the retail class byte. Slots the walk
+/// classified as [`SlotContent::LegaiaSave`] come back marked `present`
+/// but without preview data - a host fills those in by reading the block
+/// itself, which is a separate card read in retail too.
+pub fn card_directory_slots(frames: &[&[u8]], avail_blocks: u32) -> Vec<SlotSnapshot> {
+    classify_card_directory(frames, avail_blocks)
+        .into_iter()
+        .take(CARD_DIR_FRAMES)
+        .enumerate()
+        .map(|(i, content)| {
+            let slot = i as u8;
+            match content {
+                SlotContent::Free => SlotSnapshot::empty(slot),
+                SlotContent::Foreign => SlotSnapshot::foreign(slot),
+                SlotContent::LegaiaSave => SlotSnapshot {
+                    present: true,
+                    content,
+                    label: format!("Slot {slot}"),
+                    ..SlotSnapshot::empty(slot)
+                },
+            }
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------
+// Memory-card directory table + free-block arithmetic
+// ---------------------------------------------------------------------
+
+/// Byte stride of one PSX BIOS directory entry (`DIRENTRY`).
+pub const CARD_DIRENTRY_STRIDE: usize = 0x28;
+
+/// Filename field width inside a `DIRENTRY`.
+///
+/// `FUN_801E3AF0` clears exactly `0x13..=0x0` - twenty bytes - before
+/// each walk, which is what fixes this width.
+pub const CARD_DIRENTRY_NAME_LEN: usize = 0x14;
+
+/// Offset of the `size` field inside a `DIRENTRY`.
+pub const CARD_DIRENTRY_SIZE_OFFSET: usize = 0x18;
+
+/// Bytes in one memory-card block. `FUN_801E3BA0` divides the summed
+/// file sizes by this (as an arithmetic `>> 13`) to get blocks used.
+pub const CARD_BLOCK_BYTES: i32 = 0x2000;
+
+/// Blocks a standard PSX memory card exposes. `FUN_801E3BA0` subtracts
+/// the used count from this literal `0xf`.
+pub const CARD_TOTAL_BLOCKS: i32 = 0xf;
+
+/// One entry of the directory table retail fills at `0x801F32A8`.
+///
+/// Only the two fields retail itself touches are modelled: the filename
+/// (which the classifier matches a save prefix against) and the byte
+/// size (which the free-block count sums). The BIOS `DIRENTRY`'s
+/// `attr` / `next` / `system` fields are never read by either function.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CardDirEntry {
+    pub name: [u8; CARD_DIRENTRY_NAME_LEN],
+    pub size: u32,
+}
+
+impl Default for CardDirEntry {
+    fn default() -> Self {
+        Self {
+            name: [0; CARD_DIRENTRY_NAME_LEN],
+            size: 0,
+        }
+    }
+}
+
+impl CardDirEntry {
+    /// Build an entry from a raw `0x28`-byte directory frame. Frames
+    /// shorter than the stride are rejected rather than zero-extended -
+    /// retail never sees a short frame because the BIOS writes the whole
+    /// struct.
+    pub fn from_frame(frame: &[u8]) -> Option<Self> {
+        if frame.len() < CARD_DIRENTRY_STRIDE {
+            return None;
+        }
+        let mut name = [0u8; CARD_DIRENTRY_NAME_LEN];
+        name.copy_from_slice(&frame[..CARD_DIRENTRY_NAME_LEN]);
+        let size = u32::from_le_bytes([
+            frame[CARD_DIRENTRY_SIZE_OFFSET],
+            frame[CARD_DIRENTRY_SIZE_OFFSET + 1],
+            frame[CARD_DIRENTRY_SIZE_OFFSET + 2],
+            frame[CARD_DIRENTRY_SIZE_OFFSET + 3],
+        ]);
+        Some(Self { name, size })
+    }
+}
+
+/// Fill the fixed 15-entry directory table from an enumeration of the
+/// card's files, and return how many entries it holds.
+///
+/// Retail formats `"bu%1d%1d:*"` from the port + card digits, zeroes all
+/// fifteen `0x28`-byte table slots (name bytes `0x13..=0x0` and the size
+/// word at `+0x18` - the other `DIRENTRY` fields are left as they lie),
+/// then walks `firstfile` / `nextfile` over the table. The count it
+/// returns is what the caller feeds [`card_free_blocks`].
+///
+/// The wildcard is `*`, so the pattern selects a *device*, not a name -
+/// every file on the chosen card matches. The BIOS does the matching, so
+/// what is ported here is the table clear, the fifteen-slot bound and the
+/// count. `entries` is the enumeration the BIOS would have produced.
+///
+/// One faithful subtlety worth keeping: retail's count loop increments in
+/// the `beq`'s **delay slot**, so the increment happens on the exiting
+/// iteration too and the function subtracts one at the end. The net
+/// result is a plain "number of files", which is what this returns.
+///
+/// PORT: FUN_801E3AF0
+pub fn card_directory_scan(entries: &[CardDirEntry]) -> ([CardDirEntry; CARD_DIR_FRAMES], usize) {
+    // Retail clears every slot before the walk, so a shorter enumeration
+    // than the previous one cannot leave stale names behind.
+    let mut table: [CardDirEntry; CARD_DIR_FRAMES] = Default::default();
+    let mut count = 0usize;
+    for (slot, entry) in entries.iter().take(CARD_DIR_FRAMES).enumerate() {
+        table[slot] = entry.clone();
+        count = slot + 1;
+    }
+    (table, count)
+}
+
+/// Blocks still free on the card, from the first `count` table entries.
+///
+/// Retail sums each entry's `size` word, applies the standard MIPS
+/// signed-division bias (`if (sum < 0) sum += 0x1fff`) so the following
+/// arithmetic `>> 13` truncates toward zero, and returns `0xf - blocks`.
+///
+/// The result is **not clamped** - a card whose files sum past fifteen
+/// blocks yields a negative count, exactly as retail does, so callers
+/// decide what an impossible card means. [`SaveSelectSession::from_card_directory`]
+/// floors it at zero before spending it as a budget.
+///
+/// PORT: FUN_801E3BA0
+pub fn card_free_blocks(table: &[CardDirEntry], count: usize) -> i32 {
+    let mut used: i32 = 0;
+    for entry in table.iter().take(count) {
+        used = used.wrapping_add(entry.size as i32);
+    }
+    let biased = if used < 0 {
+        used.wrapping_add(CARD_BLOCK_BYTES - 1)
+    } else {
+        used
+    };
+    CARD_TOTAL_BLOCKS - (biased >> 13)
+}
+
+// ---------------------------------------------------------------------
+// Memory-card status poll
+// ---------------------------------------------------------------------
+
+/// Number of kernel event handles retail's card poll tests each frame.
+pub const CARD_STATUS_EVENTS: usize = 4;
+
+/// Frames the card poll waits before it forces [`CardStatus::Aborted`].
+///
+/// `FUN_801E3900` compares the counter against `0x78` **before**
+/// incrementing it, so the first frame that trips the timeout is the one
+/// entered with the counter already at 120 - i.e. the 121st poll.
+pub const CARD_STATUS_TIMEOUT_FRAMES: u16 = 0x78;
+
+/// Outcome of one frame of retail's memory-card status poll.
+///
+/// The discriminants are the integers `FUN_801E3900` returns, and the
+/// names are what its caller `FUN_801E3294` does with each: `1` proceeds,
+/// `2` tears the read down with result `-3`, `3` prints "NOT CARD" and
+/// fails with result `-1`, `4` completes the read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CardStatus {
+    /// `0` - no event has fired yet; keep waiting.
+    #[default]
+    Pending,
+    /// `1` - the card responded and the read may proceed.
+    Ready,
+    /// `2` - the read was torn down, or the poll timed out.
+    Aborted,
+    /// `3` - no card in the slot.
+    NoCard,
+    /// `4` - the read completed.
+    Complete,
+}
+
+/// Poll the four card kernel events for one frame and advance `counter`.
+///
+/// Retail calls `TestEvent` on each of the four handles in turn and
+/// overwrites its running status whenever a handle reports `1`, so the
+/// **last** handle to fire wins - the priority is fixed by call order,
+/// not by comparison. Only handle 0 can leave the status at
+/// [`CardStatus::Pending`]; the other three unconditionally overwrite.
+///
+/// `counter` is retail's `DAT_801EF17C`. It is incremented on every call
+/// regardless of which branch the timeout test takes (the store sits in
+/// the `bne`'s delay slot), and once it enters a call at
+/// [`CARD_STATUS_TIMEOUT_FRAMES`] or above the returned status is forced
+/// to [`CardStatus::Aborted`] whatever the events said.
+///
+/// PORT: FUN_801E3900
+pub fn card_status_poll(events: [bool; CARD_STATUS_EVENTS], counter: &mut u16) -> CardStatus {
+    // `xori v0,v0,1; sltiu s0,v0,1` - status starts at 1 iff handle 0
+    // reported 1, else 0.
+    let mut status = if events[0] {
+        CardStatus::Ready
+    } else {
+        CardStatus::Pending
+    };
+    if events[1] {
+        status = CardStatus::Aborted;
+    }
+    if events[2] {
+        status = CardStatus::NoCard;
+    }
+    if events[3] {
+        status = CardStatus::Complete;
+    }
+
+    let entered_at = *counter;
+    *counter = counter.saturating_add(1);
+    if entered_at >= CARD_STATUS_TIMEOUT_FRAMES {
+        status = CardStatus::Aborted;
+    }
+    status
 }
 
 /// What the bottom info panel shows for the focused grid cell.
@@ -276,8 +639,14 @@ pub enum SelectEvent {
     EnteredNowChecking {
         slot: u8,
     },
-    /// "Now checking" timer expired; slot-preview phase entered.
+    /// "Now checking" beat finished; slot-preview phase entered.
     EnteredSlotPreview {
+        slot: u8,
+    },
+    /// The card-read beat failed: retail's status `3`, which prints
+    /// "NOT CARD" and abandons the read. The session returns to
+    /// browsing with the cursor still on the slot that was picked.
+    CardReadFailed {
         slot: u8,
     },
     /// User confirmed the load from the slot-preview screen (X on
@@ -373,6 +742,17 @@ pub struct SaveSelectSession {
     /// mode does before the host can show the card's block grid. See the
     /// module docs. Default `false` = the flat block-list model.
     card_slots_mode: bool,
+    /// The four memory-card kernel events [`card_status_poll`] tests on
+    /// every frame of the `NowChecking` beat. A host with a real card
+    /// reader latches them through [`Self::set_card_events`]; the
+    /// default all-`false` means "no card hardware is reporting", which
+    /// leaves the beat to run its full [`Self::now_checking_frames`]
+    /// count exactly as a disk-backed host expects.
+    card_events: [bool; CARD_STATUS_EVENTS],
+    /// Retail's `DAT_801EF17C`. Cleared on entry to `NowChecking`
+    /// (retail clears it in `FUN_801E3294`'s state 0) and advanced by
+    /// [`card_status_poll`] on every frame of the beat.
+    card_poll_counter: u16,
 }
 
 impl SaveSelectSession {
@@ -390,7 +770,43 @@ impl SaveSelectSession {
             slide_anim_t: 0,
             info_panel_slide_anim_t: 0,
             card_slots_mode: false,
+            card_events: [false; CARD_STATUS_EVENTS],
+            card_poll_counter: 0,
         }
+    }
+
+    /// Build a session whose slot list comes straight off a memory
+    /// card's directory.
+    ///
+    /// Chains the three retail pieces the way retail chains them:
+    /// [`card_directory_scan`] fills the fifteen-entry table and counts
+    /// the files, [`card_free_blocks`] turns the summed file sizes into
+    /// a free-block budget, and [`classify_card_directory`] spends that
+    /// budget deciding which unmatched blocks are genuinely free rather
+    /// than merely unreadable. The negative free-block count retail can
+    /// return for an over-full card is floored at zero here, since it is
+    /// consumed as a budget.
+    pub fn from_card_directory(mode: SaveSelectMode, entries: &[CardDirEntry]) -> Self {
+        let (table, count) = card_directory_scan(entries);
+        let avail = card_free_blocks(&table, count).max(0) as u32;
+        let names: Vec<&[u8]> = table[..count].iter().map(|e| e.name.as_slice()).collect();
+        Self::new(mode, card_directory_slots(&names, avail))
+    }
+
+    /// Latch this frame's four memory-card kernel events.
+    ///
+    /// A host driving real card hardware sets these before each
+    /// [`Self::tick`]; the `NowChecking` beat then ends as soon as the
+    /// card reports rather than sitting out its full frame count, and a
+    /// missing card fails the beat instead of silently succeeding. Hosts
+    /// with no card reader leave them alone.
+    pub fn set_card_events(&mut self, events: [bool; CARD_STATUS_EVENTS]) {
+        self.card_events = events;
+    }
+
+    /// The events last latched by [`Self::set_card_events`].
+    pub fn card_events(&self) -> [bool; CARD_STATUS_EVENTS] {
+        self.card_events
     }
 
     /// Opt into the retail two-stage memory-card flow (see the module
@@ -583,6 +999,9 @@ impl SaveSelectSession {
                     // "Now checking. Do not remove MEMORY CARD" dialog
                     // for ~2 seconds, then transitions to the slot
                     // preview (portrait grid + info panel).
+                    // Retail clears `DAT_801EF17C` in `FUN_801E3294`'s
+                    // state 0, on the way into the poll.
+                    self.card_poll_counter = 0;
                     self.phase = SelectPhase::NowChecking {
                         slot: cursor,
                         frames_remaining: self.now_checking_frames,
@@ -595,6 +1014,9 @@ impl SaveSelectSession {
                 // card's block grid. `present` here means "a card is in
                 // this slot" - an empty slot is nothing to save into.
                 (SaveSelectMode::Save, true) if self.card_slots_mode => {
+                    // Retail clears `DAT_801EF17C` in `FUN_801E3294`'s
+                    // state 0, on the way into the poll.
+                    self.card_poll_counter = 0;
                     self.phase = SelectPhase::NowChecking {
                         slot: cursor,
                         frames_remaining: self.now_checking_frames,
@@ -643,12 +1065,46 @@ impl SaveSelectSession {
         }
     }
 
+    /// Run one frame of the "Now checking" card-read beat.
+    ///
+    /// Retail does not sit on a fixed timer here: `FUN_801E3294`'s state
+    /// 1 polls the card every frame through `FUN_801E3900` and branches
+    /// on what comes back. That poll is [`card_status_poll`], and it runs
+    /// on every frame of this phase.
+    ///
+    /// * [`CardStatus::Ready`] / [`CardStatus::Complete`] - the card
+    ///   answered, so the beat ends early and the slot preview opens.
+    /// * [`CardStatus::NoCard`] - retail prints "NOT CARD" and fails the
+    ///   read; the session drops back to browsing with
+    ///   [`SelectEvent::CardReadFailed`].
+    /// * [`CardStatus::Pending`] / [`CardStatus::Aborted`] - nothing
+    ///   conclusive, so the frame countdown decides. With no card events
+    ///   latched (the default) this is the only path taken, and the beat
+    ///   lasts exactly [`Self::now_checking_frames`] frames.
     fn tick_now_checking(
         &mut self,
         slot: u8,
         frames_remaining: u16,
         events: &mut Vec<SelectEvent>,
     ) {
+        let mut counter = self.card_poll_counter;
+        let status = card_status_poll(self.card_events, &mut counter);
+        self.card_poll_counter = counter;
+
+        match status {
+            CardStatus::Ready | CardStatus::Complete => {
+                self.phase = SelectPhase::SlotPreview { slot };
+                events.push(SelectEvent::EnteredSlotPreview { slot });
+                return;
+            }
+            CardStatus::NoCard => {
+                self.phase = SelectPhase::Browsing { cursor: slot };
+                events.push(SelectEvent::CardReadFailed { slot });
+                return;
+            }
+            CardStatus::Pending | CardStatus::Aborted => {}
+        }
+
         if frames_remaining == 0 {
             self.phase = SelectPhase::SlotPreview { slot };
             events.push(SelectEvent::EnteredSlotPreview { slot });
@@ -776,6 +1232,330 @@ impl SaveSelectSession {
         let mut cur = from as i16;
         cur = (cur + dir as i16).rem_euclid(n);
         cur as u8
+    }
+}
+
+#[cfg(test)]
+mod card_directory_tests {
+    use super::*;
+
+    /// Build a directory frame naming `slot` with the given prefix.
+    fn frame(prefix: &[u8], slot: u8) -> Vec<u8> {
+        let mut f = prefix.to_vec();
+        f.extend_from_slice(format!("{slot:02}").as_bytes());
+        f.resize(0x28, 0);
+        f
+    }
+
+    fn junk_frame() -> Vec<u8> {
+        let mut f = b"BESLES-01234SOME".to_vec();
+        f.extend_from_slice(b"07");
+        f.resize(0x28, 0);
+        f
+    }
+
+    /// A matched filename stamps its slot as a Legaia save, and both
+    /// regional prefixes match.
+    #[test]
+    fn matched_frames_classify_as_legaia_saves() {
+        for prefix in CARD_SAVE_PREFIXES {
+            let f = frame(prefix, 3);
+            let classes = classify_card_directory(&[&f], 0);
+            assert_eq!(classes[3], SlotContent::LegaiaSave, "prefix {prefix:?}");
+        }
+    }
+
+    /// Absence of a match is not evidence of a free block: with no free
+    /// blocks reported, every unmatched slot stays Foreign rather than
+    /// inviting an overwrite.
+    #[test]
+    fn unmatched_slots_stay_foreign_without_free_blocks() {
+        let junk = junk_frame();
+        let classes = classify_card_directory(&[&junk], 0);
+        assert!(classes.iter().all(|c| *c == SlotContent::Foreign));
+    }
+
+    /// The free-block budget is spent on unclaimed slots in order, and
+    /// runs out - it never overwrites a matched slot's class.
+    #[test]
+    fn free_block_budget_fills_unclaimed_slots_in_order() {
+        let f = frame(CARD_SAVE_PREFIXES[0], 0);
+        let classes = classify_card_directory(&[&f], 2);
+        assert_eq!(classes[0], SlotContent::LegaiaSave);
+        assert_eq!(classes[1], SlotContent::Free);
+        assert_eq!(classes[2], SlotContent::Free);
+        assert_eq!(classes[3], SlotContent::Foreign);
+    }
+
+    /// A card reporting more free blocks than there are unclaimed slots
+    /// simply runs out of slots.
+    #[test]
+    fn oversized_free_budget_saturates() {
+        let classes = classify_card_directory(&[], 999);
+        assert!(classes.iter().all(|c| *c == SlotContent::Free));
+    }
+
+    /// The two loops are ordered, and the order is the correctness
+    /// property: every matched filename stamps its slot before any free
+    /// block is spent, so a budget large enough to cover the whole card
+    /// still cannot downgrade a real save to "free". Running the budget
+    /// first - or folding the two into one sweep - would offer an
+    /// occupied slot up for overwrite.
+    #[test]
+    fn matched_slots_survive_a_budget_that_covers_the_card() {
+        let saves = [2u8, 7, 11];
+        let frames: Vec<Vec<u8>> = saves
+            .iter()
+            .map(|s| frame(CARD_SAVE_PREFIXES[0], *s))
+            .collect();
+        let refs: Vec<&[u8]> = frames.iter().map(|f| f.as_slice()).collect();
+
+        let classes = classify_card_directory(&refs, u32::MAX);
+        for (slot, class) in classes.iter().enumerate() {
+            let expected = if saves.contains(&(slot as u8)) {
+                SlotContent::LegaiaSave
+            } else {
+                SlotContent::Free
+            };
+            assert_eq!(*class, expected, "slot {slot}");
+        }
+    }
+
+    /// The slot number is the two digits after the prefix; a non-digit
+    /// in the second position leaves a one-digit number rather than
+    /// rejecting the name.
+    #[test]
+    fn slot_number_parses_one_and_two_digit_names() {
+        let mut two = CARD_SAVE_PREFIXES[0].to_vec();
+        two.extend_from_slice(b"12");
+        two.resize(0x28, 0);
+        assert_eq!(card_dir_slot_of(&two), Some(12));
+
+        let mut one = CARD_SAVE_PREFIXES[0].to_vec();
+        one.extend_from_slice(b"5_");
+        one.resize(0x28, 0);
+        assert_eq!(card_dir_slot_of(&one), Some(5));
+    }
+
+    /// Only the first fifteen frames are walked - the sixteenth class
+    /// cell exists for the digit space, not for a block.
+    #[test]
+    fn walk_stops_after_fifteen_frames() {
+        let f = frame(CARD_SAVE_PREFIXES[0], 15);
+        let frames: Vec<&[u8]> = std::iter::repeat_n(f.as_slice(), 16).collect();
+        let classes = classify_card_directory(&frames, 0);
+        // All sixteen frames name slot 15, so it is claimed either way;
+        // what matters is that the walk itself is bounded.
+        assert_eq!(classes[15], SlotContent::LegaiaSave);
+    }
+
+    /// The snapshot builder keys each slot's constructor off its class,
+    /// so captions follow the retail class byte without a second scan.
+    #[test]
+    fn snapshots_follow_the_class_byte() {
+        let f = frame(CARD_SAVE_PREFIXES[0], 1);
+        let snaps = card_directory_slots(&[&f], 1);
+        assert_eq!(snaps.len(), CARD_DIR_FRAMES);
+        assert_eq!(snaps[0].content, SlotContent::Free);
+        assert!(!snaps[0].present);
+        assert_eq!(snaps[1].content, SlotContent::LegaiaSave);
+        assert!(snaps[1].present);
+        assert_eq!(snaps[2].content, SlotContent::Foreign);
+        assert!(!snaps[2].present);
+    }
+
+    /// A foreign block captions as "not a Legaia save" rather than as a
+    /// free block - the whole reason the class byte is kept.
+    #[test]
+    fn foreign_blocks_do_not_caption_as_free() {
+        let snaps = card_directory_slots(&[], 0);
+        let mode = SlotInfoMode::for_slot(&snaps[0]);
+        assert_eq!(mode, SlotInfoMode::NotLegaiaSave);
+    }
+
+    // -- FUN_801E3AF0 / FUN_801E3BA0 -----------------------------------
+
+    /// Build a `CardDirEntry` for a save in `slot` occupying `blocks`
+    /// blocks.
+    fn entry(prefix: &[u8], slot: u8, blocks: u32) -> CardDirEntry {
+        let f = frame(prefix, slot);
+        let mut e = CardDirEntry::from_frame(&f).expect("frame is a full stride");
+        e.size = blocks * CARD_BLOCK_BYTES as u32;
+        e
+    }
+
+    /// The table is fifteen entries wide and the count saturates there:
+    /// a card claiming more files than the table holds cannot overrun it.
+    #[test]
+    fn directory_scan_is_bounded_at_fifteen() {
+        let entries: Vec<CardDirEntry> = (0..40)
+            .map(|i| entry(CARD_SAVE_PREFIXES[0], i as u8, 1))
+            .collect();
+        let (table, count) = card_directory_scan(&entries);
+        assert_eq!(count, CARD_DIR_FRAMES);
+        assert_eq!(table.len(), CARD_DIR_FRAMES);
+    }
+
+    /// Retail clears every slot before the walk. A shorter second scan
+    /// must not be able to see the first scan's names - which is only
+    /// observable because the table is returned whole, not truncated.
+    #[test]
+    fn directory_scan_clears_slots_it_does_not_fill() {
+        let (table, count) = card_directory_scan(&[entry(CARD_SAVE_PREFIXES[0], 3, 1)]);
+        assert_eq!(count, 1);
+        for slot in table.iter().skip(1) {
+            assert_eq!(*slot, CardDirEntry::default());
+        }
+    }
+
+    /// `0xf - used`, with the divide truncating toward zero.
+    #[test]
+    fn free_blocks_is_fifteen_minus_used() {
+        let entries = [
+            entry(CARD_SAVE_PREFIXES[0], 0, 1),
+            entry(CARD_SAVE_PREFIXES[0], 1, 3),
+        ];
+        let (table, count) = card_directory_scan(&entries);
+        assert_eq!(card_free_blocks(&table, count), 15 - 4);
+    }
+
+    /// An empty card is all fifteen blocks.
+    #[test]
+    fn free_blocks_on_an_empty_card() {
+        let (table, count) = card_directory_scan(&[]);
+        assert_eq!(card_free_blocks(&table, count), CARD_TOTAL_BLOCKS);
+    }
+
+    /// A partial block still costs a whole block only once it crosses
+    /// the boundary - retail truncates, it does not round up. A file one
+    /// byte short of two blocks reads as one block used.
+    #[test]
+    fn free_blocks_truncates_rather_than_rounding_up() {
+        let mut e = entry(CARD_SAVE_PREFIXES[0], 0, 2);
+        e.size -= 1;
+        let (table, count) = card_directory_scan(&[e]);
+        assert_eq!(card_free_blocks(&table, count), 15 - 1);
+    }
+
+    /// Retail does not clamp: an over-full card returns a negative
+    /// count, and callers decide what that means.
+    #[test]
+    fn free_blocks_goes_negative_for_an_impossible_card() {
+        let entries: Vec<CardDirEntry> = (0..15)
+            .map(|i| entry(CARD_SAVE_PREFIXES[0], i, 2))
+            .collect();
+        let (table, count) = card_directory_scan(&entries);
+        assert_eq!(card_free_blocks(&table, count), 15 - 30);
+    }
+
+    /// The three ports chain, and the budget is the one the card's own
+    /// file sizes pay for - not "every slot without a save".
+    ///
+    /// Two multi-block saves are used deliberately: they leave thirteen
+    /// unmatched slots but only five free blocks, so a session that
+    /// skipped [`card_free_blocks`] and assumed a full card would report
+    /// thirteen free blocks instead of five.
+    #[test]
+    fn session_from_card_directory_derives_its_own_free_budget() {
+        let entries = [
+            entry(CARD_SAVE_PREFIXES[0], 0, 5),
+            entry(CARD_SAVE_PREFIXES[0], 4, 5),
+        ];
+        let s = SaveSelectSession::from_card_directory(SaveSelectMode::Load, &entries);
+        let slots = s.slots();
+        assert_eq!(slots.len(), CARD_DIR_FRAMES);
+        assert!(slots[0].present);
+        assert!(slots[4].present);
+        // 15 - 10 used = 5 free blocks, spent on 5 of the 13 unmatched
+        // slots; the other 8 stay unreadable rather than inviting an
+        // overwrite the card cannot afford.
+        let free = slots
+            .iter()
+            .filter(|s| s.content == SlotContent::Free)
+            .count();
+        let foreign = slots
+            .iter()
+            .filter(|s| s.content == SlotContent::Foreign)
+            .count();
+        assert_eq!((free, foreign), (5, 8));
+    }
+
+    /// A card whose saves this game cannot read spends its budget on the
+    /// blocks the card says are free, and leaves the rest Foreign - the
+    /// ordering property `classify_card_directory` documents, now
+    /// reached through the real free-block count.
+    #[test]
+    fn foreign_saves_eat_blocks_and_stay_foreign() {
+        let mut junk = CardDirEntry::from_frame(&junk_frame()).unwrap();
+        junk.size = 4 * CARD_BLOCK_BYTES as u32;
+        let s = SaveSelectSession::from_card_directory(SaveSelectMode::Load, &[junk]);
+        let free = s
+            .slots()
+            .iter()
+            .filter(|s| s.content == SlotContent::Free)
+            .count();
+        // 4 blocks used by an unreadable save -> 11 free.
+        assert_eq!(free, 11);
+        assert!(s.slots().iter().any(|s| s.content == SlotContent::Foreign));
+    }
+
+    // -- FUN_801E3900 --------------------------------------------------
+
+    /// Handle 0 is the only one that can leave the status Pending; each
+    /// later handle overwrites unconditionally, so the last to fire wins.
+    #[test]
+    fn card_poll_last_event_wins() {
+        let mut c = 0;
+        assert_eq!(
+            card_status_poll([false, false, false, false], &mut c),
+            CardStatus::Pending
+        );
+        let mut c = 0;
+        assert_eq!(
+            card_status_poll([true, false, false, false], &mut c),
+            CardStatus::Ready
+        );
+        let mut c = 0;
+        assert_eq!(
+            card_status_poll([false, false, true, false], &mut c),
+            CardStatus::NoCard
+        );
+        // Handle 3 fires after handle 2, so Complete beats NoCard even
+        // though NoCard is the "worse" outcome. Order, not severity.
+        let mut c = 0;
+        assert_eq!(
+            card_status_poll([true, true, true, true], &mut c),
+            CardStatus::Complete
+        );
+    }
+
+    /// The counter advances on every call, whichever way the timeout
+    /// test goes - retail's store sits in the branch's delay slot.
+    #[test]
+    fn card_poll_counter_always_advances() {
+        let mut c = 0;
+        card_status_poll([true, false, false, false], &mut c);
+        assert_eq!(c, 1);
+        let mut c = CARD_STATUS_TIMEOUT_FRAMES;
+        card_status_poll([true, false, false, false], &mut c);
+        assert_eq!(c, CARD_STATUS_TIMEOUT_FRAMES + 1);
+    }
+
+    /// The timeout is tested against the counter's value on *entry*, so
+    /// the poll entered at 119 still reports its events and the poll
+    /// entered at 120 is forced to Aborted even on a Complete event.
+    #[test]
+    fn card_poll_timeout_boundary() {
+        let mut c = CARD_STATUS_TIMEOUT_FRAMES - 1;
+        assert_eq!(
+            card_status_poll([false, false, false, true], &mut c),
+            CardStatus::Complete
+        );
+        let mut c = CARD_STATUS_TIMEOUT_FRAMES;
+        assert_eq!(
+            card_status_poll([false, false, false, true], &mut c),
+            CardStatus::Aborted
+        );
     }
 }
 
@@ -940,6 +1720,113 @@ mod tests {
                 ..
             } => {}
             other => panic!("input must not skip NowChecking; got {other:?}"),
+        }
+    }
+
+    /// Enter the NowChecking beat on slot 0 of a three-slot list.
+    fn enter_now_checking(frames: u16) -> SaveSelectSession {
+        let mut s = SaveSelectSession::new(SaveSelectMode::Load, slots(&[true, false, false]));
+        s.set_now_checking_frames(frames);
+        s.tick(SelectInput {
+            cross: true,
+            ..Default::default()
+        });
+        s
+    }
+
+    /// Retail's beat is a per-frame card poll, not a timer: a card that
+    /// answers on the first frame ends the beat there. Without
+    /// `card_status_poll` driving `tick_now_checking` this sits in
+    /// NowChecking for all 120 frames.
+    #[test]
+    fn card_ready_event_ends_the_beat_early() {
+        let mut s = enter_now_checking(120);
+        s.set_card_events([true, false, false, false]);
+        let events = s.tick(SelectInput::default());
+        match s.phase() {
+            SelectPhase::SlotPreview { slot: 0 } => {}
+            other => panic!("a ready card must end the beat at once; got {other:?}"),
+        }
+        assert!(events.contains(&SelectEvent::EnteredSlotPreview { slot: 0 }));
+    }
+
+    /// Handle 3 (`Complete`) ends the beat the same way handle 0 does.
+    #[test]
+    fn card_complete_event_ends_the_beat_early() {
+        let mut s = enter_now_checking(120);
+        s.set_card_events([false, false, false, true]);
+        s.tick(SelectInput::default());
+        assert!(matches!(s.phase(), SelectPhase::SlotPreview { slot: 0 }));
+    }
+
+    /// Retail status `3` prints "NOT CARD" and abandons the read. The
+    /// session must fail back to browsing rather than opening a preview
+    /// of a card that is not there.
+    #[test]
+    fn missing_card_fails_the_beat_instead_of_succeeding() {
+        let mut s = enter_now_checking(120);
+        s.set_card_events([false, false, true, false]);
+        let events = s.tick(SelectInput::default());
+        match s.phase() {
+            SelectPhase::Browsing { cursor: 0 } => {}
+            other => panic!("a missing card must not reach SlotPreview; got {other:?}"),
+        }
+        assert!(events.contains(&SelectEvent::CardReadFailed { slot: 0 }));
+        assert!(!events.contains(&SelectEvent::EnteredSlotPreview { slot: 0 }));
+    }
+
+    /// The default - no card hardware reporting - must be byte-identical
+    /// to the plain frame countdown, so a disk-backed host sees no
+    /// change from the poll being wired in.
+    #[test]
+    fn no_card_events_leaves_the_frame_countdown_alone() {
+        let mut s = enter_now_checking(5);
+        for expected in (0..5).rev() {
+            s.tick(SelectInput::default());
+            match s.phase() {
+                SelectPhase::NowChecking {
+                    frames_remaining, ..
+                } => assert_eq!(frames_remaining, expected),
+                other => panic!("beat ended early with no card events; got {other:?}"),
+            }
+        }
+        s.tick(SelectInput::default());
+        assert!(matches!(s.phase(), SelectPhase::SlotPreview { slot: 0 }));
+    }
+
+    /// The poll counter is retail's `DAT_801EF17C`, which state 0 clears
+    /// on the way into the poll. A second visit must therefore start its
+    /// timeout window again.
+    ///
+    /// The beat is stretched past the 120-frame timeout so the first
+    /// visit leaves the counter well over the limit. Without the reset
+    /// the second visit's poll is forced to `Aborted` before it can look
+    /// at the events, and a card reporting Complete would be ignored.
+    #[test]
+    fn poll_counter_resets_between_visits() {
+        let mut s = enter_now_checking(200);
+        // Run the first visit right through to the preview, well past
+        // CARD_STATUS_TIMEOUT_FRAMES, then back out to browsing.
+        for _ in 0..201 {
+            s.tick(SelectInput::default());
+        }
+        assert!(matches!(s.phase(), SelectPhase::SlotPreview { slot: 0 }));
+        s.tick(SelectInput {
+            circle: true,
+            ..Default::default()
+        });
+        assert!(matches!(s.phase(), SelectPhase::Browsing { cursor: 0 }));
+
+        // Second visit: a card that answers must still be heard.
+        s.tick(SelectInput {
+            cross: true,
+            ..Default::default()
+        });
+        s.set_card_events([false, false, false, true]);
+        s.tick(SelectInput::default());
+        match s.phase() {
+            SelectPhase::SlotPreview { slot: 0 } => {}
+            other => panic!("stale poll counter swallowed the card event; got {other:?}"),
         }
     }
 

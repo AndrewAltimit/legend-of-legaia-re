@@ -78,6 +78,21 @@ pub struct MonsterRecord {
     /// reproduce exactly; water/earth/light/dark corroborate per-element), and
     /// by the byte taking *only* values `0..=7` across every populated record.
     pub element: u8,
+    /// Body-size / bulk class (`+0x1F`). Like [`Self::element`] this byte is
+    /// read **record-direct** through the per-enemy record-pointer table
+    /// `0x801C9348[slot-3]` and is never copied into a live-actor field.
+    ///
+    /// Two consumers, both scaling the same magnitude:
+    /// - battle-camera framing `FUN_801F0348` (`overlay_battle_action_801f0348.txt`,
+    ///   `0x801f03ac` / `0x801f03f4`): `ctx+0x6D0 = size << 7`, clamped to
+    ///   `0x0C00..=0x1400`, so only `0x18..=0x28` is an active band.
+    /// - the enemy stager `FUN_800513F0` (`0x800518c4`): `actor+0x58 = size << 5`.
+    ///
+    /// Across the retail roster the byte spans `14..=48` with no zero and no
+    /// outlier, and it tracks model bulk rather than any stat: the bee / bat
+    /// family sits at `14`, Caruban at `46` and Koru at `48`, while Lapis
+    /// (64800 HP) sits at `20`.
+    pub size_class: u8,
     /// Spell-slot count (`+0x4A`).
     pub magic_count: u8,
     /// The `magic_count` spell entries the `+0x4C` offset array points at.
@@ -217,6 +232,7 @@ fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
         legaia_bytes::u16_le(block, 0x1A)?,
     ];
     let element = *block.get(0x1D)?;
+    let size_class = *block.get(0x1F)?;
     let gold = legaia_bytes::u16_le(block, 0x44)?;
     let exp = legaia_bytes::u16_le(block, 0x46)?;
     let drop_item = *block.get(0x48)?;
@@ -236,6 +252,7 @@ fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
         mp,
         stats,
         element,
+        size_class,
         gold,
         exp,
         drop_item,
@@ -442,6 +459,7 @@ mod tests {
             mp: 1200,
             stats: [128, 288, 222, 200, 220, 146],
             element: 6,
+            size_class: 26,
             gold: 30000,
             exp: 42000,
             drop_item: 0,

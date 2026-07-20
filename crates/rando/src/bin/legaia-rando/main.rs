@@ -111,7 +111,8 @@ fn main() -> Result<()> {
                 from,
                 target,
                 output,
-            } => translate::cmd_lift_official(&from, &target, &output),
+                fold_accents,
+            } => translate::cmd_lift_official(&from, &target, &output, fold_accents),
             cli::TranslateCmd::FitReport { from, target } => {
                 translate::cmd_fit_report(&from, &target)
             }

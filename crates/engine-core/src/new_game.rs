@@ -14,9 +14,10 @@
 //! each character is later introduced, so [`World::seed_starting_party`] seeds
 //! Vahn alone.
 
-use legaia_asset::new_game::{StartingChar, StartingInventory, StartingParty};
-use legaia_save::character::{LiveStats, RECORD_CAP_CONSTANT, RecordStats};
-use legaia_save::{CharacterRecord, HpMpSp, Party};
+use legaia_asset::new_game::{
+    LIVE_RECORD_0_XP_OFFSET, StartingChar, StartingInventory, StartingParty, seed_live_records,
+};
+use legaia_save::{CharacterRecord, Party};
 
 use crate::world::World;
 
@@ -37,42 +38,35 @@ pub struct NewGameDefaults {
 }
 
 /// Build a live 0x414-byte character record from one starting-party template
-/// row. The mapping is validated against an early `town01` save state (Vahn):
-/// the template's eight `u16` stats fill the HP/MP/SP triplet, the live-stat
-/// window, and the record-side stat window; the per-stat cap is the constant
-/// the runtime uses ([`RECORD_CAP_CONSTANT`]), and the spirit gauge's *max*
-/// (`+0x10C` - AP max is AGL-sized) starts at the template's agility value
-/// (Vahn: `100`, the capture-pinned `+0x10C` byte) with the current
-/// (`+0x10E`, the status-page AP gauge cell) zeroed.
+/// row.
+///
+/// The stat halfwords are **not** re-derived here: they come from
+/// [`seed_live_records`], the port of retail's seed routine `FUN_800560B4`,
+/// applied at their record-relative offsets. That routine's stores are the
+/// specification for which template field lands in which live cell, so routing
+/// through it keeps the engine's record byte-identical to a retail New Game
+/// record without this module re-stating the mapping.
+///
+/// The one cell where re-stating it went wrong is `+0x10C` (and its max-block
+/// twin `+0x120`): retail writes the **literal** `100` there for every roster
+/// slot (`800561b8 li v0,0x64` / `800561bc sh v0,0x6d4(s0)` /
+/// `800561c0 sh v0,0x6e8(s0)`, inside the four-iteration loop), not the
+/// template's agility field. Vahn's agility is also `100`, so a Vahn-only
+/// capture cannot tell the two apart - Noa (`120`) and Gala (`80`) can, and
+/// they seed `100`.
+///
+/// The seed routine's non-halfword writes stay here, because
+/// [`seed_live_records`] deliberately does not carry them: the level /
+/// magic-rank bytes, the XP pair, and the template-name `strcpy`.
 pub fn starting_record(c: &StartingChar) -> CharacterRecord {
     let mut rec = CharacterRecord::zeroed();
-    rec.set_hp_mp_sp(HpMpSp {
-        hp_cur: c.hp_max,
-        hp_max: c.hp_max,
-        mp_cur: c.mp_max,
-        mp_max: c.mp_max,
-        sp_cur: 0,
-        sp_max: c.agl,
-    });
-    rec.set_live_stats(LiveStats {
-        agl: c.agl,
-        atk: c.atk,
-        udf: c.udf,
-        ldf: c.ldf,
-        spd: c.spd,
-        int: c.intel,
-    });
-    rec.set_record_stats(RecordStats {
-        hp_max: c.hp_max,
-        mp_max: c.mp_max,
-        cap_constant: RECORD_CAP_CONSTANT,
-        agl: c.agl,
-        atk: c.atk,
-        udf: c.udf,
-        ldf: c.ldf,
-        spd: c.spd,
-        int: c.intel,
-    });
+    // Slot 0's live record base is `SC + LIVE_RECORD_0_XP_OFFSET`, so a
+    // record-relative offset is the seed's SC offset less that base.
+    let one = StartingParty::from_members(vec![c.clone()]);
+    for store in seed_live_records(&one) {
+        let off = (store.sc_offset - LIVE_RECORD_0_XP_OFFSET) as usize;
+        rec.raw[off..off + 2].copy_from_slice(&store.value.to_le_bytes());
+    }
     // Seru magic rank starts at 1 (Vahn, validated); gates the first spell tier.
     // (+0x130 doubles as the retail displayed level - LV 1 at a New Game.)
     rec.set_magic_rank(1);
@@ -171,6 +165,7 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use legaia_save::character::RECORD_CAP_CONSTANT;
 
     fn vahn() -> StartingChar {
         StartingChar {
@@ -194,7 +189,10 @@ mod tests {
         assert_eq!(hms.hp_max, 180);
         assert_eq!(hms.mp_cur, 20);
         assert_eq!(hms.mp_max, 20);
-        assert_eq!(hms.sp_max, 100, "AP max (+0x10C) is AGL-sized at seed");
+        // +0x10C is the seed routine's literal 100, not Vahn's agility - which
+        // happens to be 100 too. `cap_cells_take_the_retail_literal` is the
+        // test that can actually tell those apart.
+        assert_eq!(hms.sp_max, 100);
         assert_eq!(hms.sp_cur, 0, "status-page AP gauge (+0x10E) seeds to 0");
         let ls = rec.live_stats();
         assert_eq!(
@@ -209,6 +207,69 @@ mod tests {
         // Retail New Game: Experience 0, Next Level 121 (Status-menu capture).
         assert_eq!(rec.cumulative_xp(), 0);
         assert_eq!(rec.next_level_xp(), 121);
+    }
+
+    /// Non-Vahn template rows are the only ones that can distinguish the
+    /// seed routine's cap literal from the template's agility field, because
+    /// Vahn's agility *is* `100`. Retail writes `100` into both cap cells for
+    /// every roster slot (`FUN_800560B4`, `li v0,0x64` inside the loop), so
+    /// Noa's record must read `100` at `+0x10C` / `+0x120` and `120` only in
+    /// the agility cells.
+    #[test]
+    fn cap_cells_take_the_retail_literal_not_agility() {
+        let noa = StartingChar {
+            name: "Noa".into(),
+            hp_max: 150,
+            mp_max: 10,
+            agl: 120,
+            atk: 21,
+            udf: 13,
+            ldf: 11,
+            spd: 30,
+            intel: 3,
+        };
+        let rec = starting_record(&noa);
+        assert_eq!(
+            rec.hp_mp_sp().sp_max,
+            legaia_asset::new_game::SEEDED_CAP_CONSTANT,
+            "+0x10C is the seed literal, not the template agility"
+        );
+        assert_eq!(
+            rec.stat_cap(),
+            legaia_asset::new_game::SEEDED_CAP_CONSTANT,
+            "+0x120 is the same literal"
+        );
+        assert_eq!(rec.live_stats().agl, 120, "agility still lands at +0x110");
+        assert_eq!(rec.record_stats().agl, 120, "and at +0x122");
+    }
+
+    /// The record's stat halfwords must be exactly the seed model's stores -
+    /// this is what makes [`seed_live_records`] the source of truth rather
+    /// than a parallel description of it.
+    #[test]
+    fn every_seeded_halfword_lands_in_the_record() {
+        let noa = StartingChar {
+            name: "Noa".into(),
+            hp_max: 150,
+            mp_max: 10,
+            agl: 120,
+            atk: 21,
+            udf: 13,
+            ldf: 11,
+            spd: 30,
+            intel: 3,
+        };
+        for c in [vahn(), noa] {
+            let rec = starting_record(&c);
+            let one = StartingParty::from_members(vec![c.clone()]);
+            let stores = seed_live_records(&one);
+            assert!(!stores.is_empty());
+            for s in stores {
+                let off = (s.sc_offset - LIVE_RECORD_0_XP_OFFSET) as usize;
+                let got = u16::from_le_bytes([rec.raw[off], rec.raw[off + 1]]);
+                assert_eq!(got, s.value, "record +{off:#x} disagrees with the seed");
+            }
+        }
     }
 
     #[test]

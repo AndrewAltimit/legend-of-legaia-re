@@ -276,6 +276,119 @@ pub const ACTOR_STATE_FLAG_OFFSET: usize = 0x10;
 /// `actor[+ACTOR_ENCOUNTER_RECORD_PTR_OFFSET]`.
 pub const ACTOR_ENCOUNTER_ARMED_BIT: u32 = 0x400;
 
+/// Formation-cell fill produced by the **battle-id** path.
+///
+/// The `actor[+0x94]` record above is one of two ways the formation cell at
+/// `0x8007BD0C` gets populated. The other is a global battle id
+/// (`DAT_8007B7FC`) expanded by [`expand_battle_id`]. This type carries both
+/// halves of that expansion: the four-slot cell, and the separate 3-byte
+/// staging block at `DAT_8007BD10..0x12` that only the three "bespoke"
+/// ids write.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct BattleIdFormation {
+    /// The four formation slots (`DAT_8007BD0C..0x0F`).
+    pub cell: [u8; FORMATION_SLOTS],
+    /// The expansion staging block (`DAT_8007BD10..0x12`).
+    pub expansion: [u8; 3],
+    /// `true` when the id-`0` fallback fired, which also clears the
+    /// boss-transition arm `DAT_8007B64A`.
+    pub clears_boss_arm: bool,
+}
+
+/// Battle-id bands that take the "bespoke" expansion branch.
+///
+/// Ids inside any of these ranges collapse the cell to a **lone** id
+/// (`[id, 0, 0, 0]`) instead of the plain 3-slot fill, and the three ids
+/// `0xA2..=0xA4` additionally seed the expansion block.
+pub const BATTLE_ID_EXPANSION_BANDS: [core::ops::RangeInclusive<u8>; 4] =
+    [0x07..=0x09, 0x49..=0x4D, 0x88..=0x8B, 0xA2..=0xFF];
+
+/// Monster id the id-`0` fallback fills every slot with.
+pub const BATTLE_ID_FALLBACK_MONSTER: u8 = 4;
+
+/// Expand a battle id into the formation cell.
+///
+/// The **alternate** formation source to the `actor[+0x94]` record path.
+/// Retail reads the transient global `DAT_8007B7FC` and writes
+/// `0x8007BD0C..0x0F`:
+///
+/// | Battle id | Resulting cell | Notes |
+/// |---|---|---|
+/// | `0` | `[4, 4, 4, 4]` | Fallback; also clears `DAT_8007B64A`. |
+/// | in an [expansion band](BATTLE_ID_EXPANSION_BANDS) | `[id, 0, 0, 0]` | Lone monster / boss. |
+/// | any other non-zero | `[id, id, id, 0]` | Plain 3-slot fill. |
+///
+/// The **cell shape** is what distinguishes the two paths at a glance: this
+/// writes three slots for a plain id, whereas the record path writes exactly
+/// as many slots as the record's `count`.
+///
+/// Slot 1 (`DAT_8007BD0D`) is written **directly**, in the prologue,
+/// alongside slots 0 and 2 (`sb` at `0x80055698`, `0x800556A0`,
+/// `0x800556A8`); slot 3 is zeroed first at `0x80055690`. There is no
+/// trailing `slot1 = slot2` copy - the `DAT_8007bd0d = DAT_8007bd0e;`
+/// that appears at the end of the decompiled C is a decompiler
+/// reordering artifact, the same one that hides the fourth store in the
+/// id-0 fallback.
+///
+/// One narrowing the port makes deliberately: retail reads the battle id
+/// twice at different widths - `lbu` for the slot values, `lhu`/`lh` for
+/// every band comparison. This takes a `u8`, which collapses the two. It
+/// only diverges if `0x8007B7FC` ever holds a value above `0xFF`, in
+/// which case retail's band tests would fail where this port's succeed.
+///
+/// NOT WIRED: no caller outside this module's tests. The live encounter
+/// path is [`EncounterRecord::parse`] (used by the field scripts and
+/// `world::encounters`); this scripted-battle-id sibling is ported for
+/// completeness and nothing dispatches to it yet.
+///
+/// See [`docs/formats/encounter.md`](../../../docs/formats/encounter.md#scripted-battle-id-path-fun_8005567c).
+// PORT: FUN_8005567c
+pub fn expand_battle_id(battle_id: u8) -> BattleIdFormation {
+    // Retail seeds slots 0, 1 and 2 with the raw id and zeroes slot 3,
+    // then patches. `slot2` below stands in for both slot 1 and slot 2,
+    // which retail keeps equal on every path.
+    let mut slot0 = battle_id;
+    let mut slot2 = battle_id;
+    let mut expansion = [0u8; 3];
+
+    if BATTLE_ID_EXPANSION_BANDS
+        .iter()
+        .any(|b| b.contains(&battle_id))
+    {
+        slot2 = 0;
+        // Only these three ids seed the expansion block; the rest of the
+        // banded ids leave it untouched.
+        match battle_id {
+            0xA2 => expansion = [1, 0, 0],
+            0xA3 => expansion = [3, 0, 0],
+            0xA4 => expansion = [2, 0, 0],
+            _ => {}
+        }
+    }
+
+    let mut slot3 = 0u8;
+    let clears_boss_arm = battle_id == 0;
+    if clears_boss_arm {
+        slot0 = BATTLE_ID_FALLBACK_MONSTER;
+        slot2 = BATTLE_ID_FALLBACK_MONSTER;
+        slot3 = BATTLE_ID_FALLBACK_MONSTER;
+    }
+
+    // Slots 1 and 2 carry the same value on every retail path, so one
+    // local fills both cells.
+    BattleIdFormation {
+        cell: [slot0, slot2, slot2, slot3],
+        expansion,
+        clears_boss_arm,
+    }
+}
+
+/// Monster id that arms the scripted boss transition when it lands in slot 0.
+///
+/// Battle-init checks the cell's first slot against this id (retail compares
+/// the signed `char` against `-0x4B`) and sets `DAT_8007B64A = 2`.
+pub const BOSS_TRANSITION_MONSTER_ID: u8 = 0xB5;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -444,5 +557,96 @@ mod tests {
             monster_ids: [0x0A, 0x0D, 0, 0],
         };
         assert_ne!(a.synthetic_formation_id(), b.synthetic_formation_id());
+    }
+
+    // --- battle-id path (FUN_8005567c) ---
+
+    #[test]
+    fn plain_battle_id_fills_three_slots() {
+        // The signature shape of the battle-id path: slots 0/1/2 all carry
+        // the id, slot 3 stays clear.
+        let f = expand_battle_id(0x4F);
+        assert_eq!(f.cell, [0x4F, 0x4F, 0x4F, 0]);
+        assert_eq!(f.expansion, [0, 0, 0]);
+        assert!(!f.clears_boss_arm);
+    }
+
+    #[test]
+    fn battle_id_zero_falls_back_to_all_fours() {
+        let f = expand_battle_id(0);
+        assert_eq!(f.cell, [4, 4, 4, 4], "every slot, slot 1 included");
+        assert!(f.clears_boss_arm);
+    }
+
+    #[test]
+    fn banded_ids_collapse_to_a_lone_monster() {
+        // One id from each of the four bespoke bands.
+        for id in [0x07, 0x49, 0x88, 0xA2] {
+            let f = expand_battle_id(id);
+            assert_eq!(f.cell, [id, 0, 0, 0], "id {id:#04x} is a lone spawn");
+        }
+    }
+
+    #[test]
+    fn band_edges_are_inclusive_and_neighbours_are_not_banded() {
+        // 0x07..=0x09 - check both edges and both neighbours.
+        assert_eq!(expand_battle_id(0x06).cell, [0x06, 0x06, 0x06, 0]);
+        assert_eq!(expand_battle_id(0x07).cell, [0x07, 0, 0, 0]);
+        assert_eq!(expand_battle_id(0x09).cell, [0x09, 0, 0, 0]);
+        assert_eq!(expand_battle_id(0x0A).cell, [0x0A, 0x0A, 0x0A, 0]);
+        // 0x49..=0x4D
+        assert_eq!(expand_battle_id(0x48).cell, [0x48, 0x48, 0x48, 0]);
+        assert_eq!(expand_battle_id(0x4D).cell, [0x4D, 0, 0, 0]);
+        assert_eq!(expand_battle_id(0x4E).cell, [0x4E, 0x4E, 0x4E, 0]);
+        // 0x88..=0x8B
+        assert_eq!(expand_battle_id(0x87).cell, [0x87, 0x87, 0x87, 0]);
+        assert_eq!(expand_battle_id(0x8B).cell, [0x8B, 0, 0, 0]);
+        assert_eq!(expand_battle_id(0x8C).cell, [0x8C, 0x8C, 0x8C, 0]);
+        // 0xA2..=0xFF runs to the top of the id space.
+        assert_eq!(expand_battle_id(0xA1).cell, [0xA1, 0xA1, 0xA1, 0]);
+        assert_eq!(expand_battle_id(0xFF).cell, [0xFF, 0, 0, 0]);
+    }
+
+    #[test]
+    fn only_three_ids_seed_the_expansion_block() {
+        assert_eq!(expand_battle_id(0xA2).expansion, [1, 0, 0]);
+        assert_eq!(expand_battle_id(0xA3).expansion, [3, 0, 0]);
+        assert_eq!(expand_battle_id(0xA4).expansion, [2, 0, 0]);
+        // Still banded, but no expansion seed.
+        assert_eq!(expand_battle_id(0xA5).expansion, [0, 0, 0]);
+        assert_eq!(expand_battle_id(0x49).expansion, [0, 0, 0]);
+    }
+
+    #[test]
+    fn zeto_id_is_in_band_but_retail_uses_the_record_path() {
+        // Zeto (0x4B) falls inside the 0x49..=0x4D boss band, so the
+        // battle-id path *would* produce a lone spawn - but retail installs
+        // Zeto through the actor[+0x94] record instead. Both paths agree on
+        // the resulting cell, which is why the band membership alone never
+        // proved the mechanism.
+        let via_id = expand_battle_id(0x4B);
+        assert_eq!(via_id.cell, [0x4B, 0, 0, 0]);
+
+        let record = EncounterRecord {
+            count: 1,
+            monster_ids: [0x4B, 0, 0, 0],
+        };
+        let mut cell = [0u8; FORMATION_SLOTS];
+        record.apply_to_formation_cell(&mut cell);
+        assert_eq!(cell, via_id.cell);
+    }
+
+    #[test]
+    fn record_and_battle_id_paths_differ_in_shape_for_a_plain_id() {
+        // The distinguishing signature from the docs: a count-1 record
+        // writes one slot, the battle-id path writes three.
+        let record = EncounterRecord {
+            count: 1,
+            monster_ids: [0x4F, 0, 0, 0],
+        };
+        let mut cell = [0u8; FORMATION_SLOTS];
+        record.apply_to_formation_cell(&mut cell);
+        assert_eq!(cell, [0x4F, 0, 0, 0]);
+        assert_ne!(cell, expand_battle_id(0x4F).cell);
     }
 }

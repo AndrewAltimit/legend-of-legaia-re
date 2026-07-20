@@ -265,10 +265,22 @@ for tests that don't exercise memory.
 `Vec<TextDraw>` for the in-battle HUD. The view types `HudSlotView` /
 `HudPopupView` / `HudLogView` keep the renderer agnostic to engine-core /
 engine-vm types (matches the existing `ShopRow` / `level_up_draws_for`
-pattern). HP rows pulse red when ≤25%; status icons render at row_y - 12
-with 8 px stride; popups sit at slot_y - 16 (heal = green, crit =
-yellow, plain damage = cyan); fade alpha multiplies into the text
-colour's alpha channel.
+pattern). Status icons render at row_y - 12 with 8 px stride; popups sit at
+slot_y - 16 (heal = green, crit = yellow, plain damage = cyan); fade alpha
+multiplies into the text colour's alpha channel.
+
+HP and MP readouts are tinted by the **four-tier retail colour law**
+(`hp_bar_color_index` / `mp_bar_color_index`, ports of FUN_800349EC /
+FUN_80035EA8): danger at `cur <= max >> 2`, caution at `cur <= max >> 1` or any
+active status flag, normal above that, and - HP only - a K.O. tier at zero. The
+native window is the consumer: `engine-shell/.../window/hud.rs` calls this
+builder for every battle frame from the `BattleHud` model that
+`window/battle.rs::sync_battle_hud_rows` refreshes.
+
+Column offsets are sized from measured retail-dialog-font advances rather than
+guessed - see the doc comment on the builder for the table and for the
+overlap bug that the first, narrower draft shipped while the builder still had
+no caller.
 
 ## Menu chrome
 

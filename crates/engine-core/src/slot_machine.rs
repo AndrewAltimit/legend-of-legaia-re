@@ -74,6 +74,7 @@
 //! `FUN_801d13e8` (win eval).
 
 use crate::levelup::BiosRand;
+use legaia_asset::minigame_slot_scene::{MarqueeFrame, MarqueePlacement, compose_marquee_frame};
 use legaia_asset::slot_payout::{self, SlotPayoutTable};
 
 /// Reels on the machine.
@@ -441,6 +442,13 @@ pub struct SlotMachine {
     bonus_just_ended: bool,
     /// The last evaluated spin, latched through [`SlotPhase::Payout`].
     last_result: Option<SpinResult>,
+    /// `DAT_801d3d3c`: the coin figure the marquee's payout caption prints.
+    /// Latched the frame the third reel locks; cleared on collect.
+    caption_payout: i32,
+    /// `DAT_801d3c94`: frames since the caption came up. The composer slides the
+    /// caption in over the first [`PAYOUT_SLIDE_ROWS`] frames, so this has to
+    /// advance for the caption to finish arriving.
+    caption_frame: i32,
 }
 
 /// Spin-up frames before the reels may be stopped (visual pacing constant;
@@ -498,6 +506,8 @@ impl SlotMachine {
             richer_odds: false,
             bonus_just_ended: false,
             last_result: None,
+            caption_payout: 0,
+            caption_frame: 0,
         }
     }
 
@@ -735,6 +745,12 @@ impl SlotMachine {
     /// reel keeps its row (the refill runs ahead of the payline, never on it).
     // PORT: FUN_801cf0d8 tail (reel advance + display-strip row refill) + state 2
     pub fn tick(&mut self) {
+        // The caption's slide-in clock. It only runs while a caption is up, and
+        // the composer reads `min(frame - PAYOUT_SLIDE_ROWS, 0)` off it, so
+        // without this advance the caption would sit one row short forever.
+        if self.caption_frame != 0 {
+            self.caption_frame += 1;
+        }
         for reel in 0..REEL_COUNT {
             if self.stopped[reel].is_none() {
                 self.reel_pos[reel] =
@@ -796,6 +812,11 @@ impl SlotMachine {
             let result = self.evaluate_spin();
             self.last_result = Some(result);
             self.phase = SlotPhase::Payout;
+            // Raise the marquee's payout caption on a paying spin. Retail gates
+            // the caption on the figure being non-zero, so a losing spin leaves
+            // the matrix to the tally / attract strip.
+            self.caption_payout = result.payout;
+            self.caption_frame = i32::from(result.payout != 0);
         }
         true
     }
@@ -910,7 +931,40 @@ impl SlotMachine {
         let credit = self.last_result.map(|r| r.payout).unwrap_or(0);
         self.balance = (self.balance + credit).min(BALANCE_CAP);
         self.phase = SlotPhase::Idle;
+        // The caption comes down with the tally it was captioning.
+        self.caption_payout = 0;
+        self.caption_frame = 0;
         credit
+    }
+
+    /// The marquee's per-frame inputs, read off this machine's live state.
+    ///
+    /// Every field but the caption pair is a global the machine already keeps:
+    /// the feature mode, the reel state word, the bonus-round counter and the
+    /// per-reel claimed values are the same storage the payout arithmetic uses,
+    /// so the marquee cannot disagree with what the machine actually paid.
+    pub fn marquee(&self) -> MarqueeFrame {
+        MarqueeFrame {
+            payout: self.caption_payout,
+            payout_frame: self.caption_frame,
+            feature_mode: self.feature_mode,
+            reel_state: match self.phase {
+                SlotPhase::Idle => 1,
+                SlotPhase::Spinning => 2,
+                SlotPhase::Stopping => 3,
+                SlotPhase::Payout => 4,
+                SlotPhase::CashedOut => 100,
+            },
+            bonus_rounds: self.bonus_spins,
+            claimed: self.claimed,
+        }
+    }
+
+    /// What the dot matrix shows this frame, as blit placements. Pair with
+    /// [`legaia_asset::minigame_slot_scene::render_marquee`] and a parsed message
+    /// bank to rasterise it.
+    pub fn marquee_placements(&self) -> Vec<MarqueePlacement> {
+        compose_marquee_frame(&self.marquee())
     }
 
     /// Commit the cash-out (state `100`): the machine is done and the final
@@ -923,9 +977,127 @@ impl SlotMachine {
     }
 }
 
+// --- Coin exchange counter --------------------------------------------------
+
+/// Gold price of one casino coin at the exchange counter (`Total Cost` is the
+/// requested coin count times this).
+pub const COIN_PRICE_GOLD: i32 = 100;
+
+/// Digit slots in the counter's "Coins to Buy" entry field.
+pub const COIN_ENTRY_DIGITS: usize = 8;
+
+/// A quote from the casino's coin-exchange counter: what the entered coin
+/// count costs and whether the purchase is allowed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CoinQuote {
+    /// Coin count decoded from the entry field.
+    pub coins: i32,
+    /// `coins * COIN_PRICE_GOLD`.
+    pub cost: i32,
+    /// The party can pay: `gold >= cost`.
+    pub affordable: bool,
+    /// The counter can serve it: `stock >= coins`.
+    pub in_stock: bool,
+}
+
+impl CoinQuote {
+    /// Whether the counter will accept this purchase - retail draws the total
+    /// in the normal ink only when both gates pass, and in the alert ink when
+    /// either fails.
+    pub fn is_valid(&self) -> bool {
+        self.affordable && self.in_stock
+    }
+}
+
+/// Decode the counter's per-digit entry field into a coin count.
+///
+/// The field is [`COIN_ENTRY_DIGITS`] single-digit cells stored
+/// **least-significant first** (the accumulator starts at 1 and multiplies by
+/// ten each cell), so `digits[0]` is the units place.
+// PORT: FUN_801e6f70 entry-field half (digit accumulation). The gate half of
+// the same function is `coin_exchange_quote`; the two together cover it.
+// NOT WIRED: as coin_exchange_quote - no host casino exchange screen.
+pub fn coin_entry_value(digits: &[u8]) -> i32 {
+    let mut place = 1i32;
+    let mut total = 0i32;
+    for &d in digits.iter().take(COIN_ENTRY_DIGITS) {
+        total += place * i32::from(d);
+        place *= 10;
+    }
+    total
+}
+
+/// Quote the coin-exchange counter for the entered `digits`, against the
+/// party's `gold` and the counter's remaining coin `stock`.
+///
+/// Coins cost a flat [`COIN_PRICE_GOLD`] each. Retail gates the sale twice -
+/// on the party's gold (`_DAT_8008459C`) against the total, and on the
+/// counter's stock (`_DAT_8007BB90`) against the coin count - and recolours
+/// the total to the alert ink when *either* fails. The bank word this feeds
+/// (`_DAT_800845A4`) is the same one [`SlotMachine::cash_out`] assigns back,
+/// so buying coins here and cashing out of a machine write the same global.
+///
+/// This function is the quote/validation half only; retail commits the sale on
+/// the counter's confirm path, not in the screen routine.
+// PORT: FUN_801e6f70 (coin-exchange counter: total cost + gold/stock gates)
+// NOT WIRED: the coin-exchange counter is a casino *screen*, and the host
+// has no such screen - the engine enters a machine directly. A wired caller
+// would be that screen's per-frame quote refresh, feeding the digit entry
+// and recolouring the total on a failed gate. Reachable only from tests.
+pub fn coin_exchange_quote(digits: &[u8], gold: i32, stock: i32) -> CoinQuote {
+    let coins = coin_entry_value(digits);
+    let cost = coins * COIN_PRICE_GOLD;
+    CoinQuote {
+        coins,
+        cost,
+        affordable: gold >= cost,
+        in_stock: stock >= coins,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn coin_entry_field_is_least_significant_first() {
+        // Units in slot 0: 1234 = 4,3,2,1 then blanks.
+        assert_eq!(coin_entry_value(&[4, 3, 2, 1, 0, 0, 0, 0]), 1234);
+        assert_eq!(coin_entry_value(&[0; 8]), 0);
+        // Every slot filled with 9 = the widest enterable count.
+        assert_eq!(coin_entry_value(&[9; 8]), 99_999_999);
+    }
+
+    #[test]
+    fn coin_exchange_charges_a_hundred_gold_each() {
+        let q = coin_exchange_quote(&[5, 0, 0, 0, 0, 0, 0, 0], 1000, 100);
+        assert_eq!(q.coins, 5);
+        assert_eq!(q.cost, 500);
+        assert!(q.is_valid());
+    }
+
+    #[test]
+    fn coin_exchange_gates_on_gold_and_on_stock_independently() {
+        // Affordable but the counter is short: stock gate alone fails.
+        let q = coin_exchange_quote(&[9, 0, 0, 0, 0, 0, 0, 0], 100_000, 5);
+        assert!(q.affordable, "gold covers 900");
+        assert!(!q.in_stock, "counter only holds 5");
+        assert!(!q.is_valid());
+
+        // In stock but the party is short: gold gate alone fails.
+        let q = coin_exchange_quote(&[9, 0, 0, 0, 0, 0, 0, 0], 100, 100);
+        assert!(!q.affordable);
+        assert!(q.in_stock);
+        assert!(!q.is_valid());
+    }
+
+    #[test]
+    fn coin_exchange_allows_exactly_affordable_and_exact_stock() {
+        // Both gates are `>=`, so an exact match still sells.
+        let q = coin_exchange_quote(&[3, 0, 0, 0, 0, 0, 0, 0], 300, 3);
+        assert_eq!(q.cost, 300);
+        assert!(q.is_valid());
+    }
 
     fn payouts() -> SlotPayoutTable {
         // Synthetic table: symbol id i pays (i+1)*2 coins.
@@ -1368,5 +1540,135 @@ mod tests {
             hits(2500) > hits(500) * 2,
             "high net take is far more generous"
         );
+    }
+
+    /// The marquee is driven by the machine, not decoration beside it: a paying
+    /// spin has to put that spin's own figure on the dot matrix.
+    ///
+    /// Symbol 6 pays `(6+1)*2 = 14` in the synthetic table, so the caption is a
+    /// two-digit figure - which pins the leading-zero suppression too: the
+    /// thousands and hundreds places must be absent, and the tens and units
+    /// present at their own columns.
+    #[test]
+    fn a_paying_spin_puts_its_own_figure_on_the_marquee() {
+        use legaia_asset::minigame_slot_scene as scene;
+
+        let mut m = SlotMachine::new(payouts(), 42, 200);
+        // Nothing is captioned before a spin resolves.
+        assert!(
+            m.marquee_placements().is_empty(),
+            "an idle machine in the normal game captions nothing"
+        );
+
+        win_on(&mut m, 6);
+        let payout = m.last_result().unwrap().payout;
+        assert_eq!(payout, 14, "synthetic table pays (6+1)*2");
+
+        let p = m.marquee_placements();
+        let at = |col: usize| {
+            p.iter()
+                .find(|q| q.col == col as i32)
+                .map(|q| q.msg)
+                .unwrap_or_else(|| panic!("nothing placed at dot column {col}: {p:?}"))
+        };
+        // "14 coin": tens then units then the word, at the retail columns.
+        assert_eq!(at(scene::PAYOUT_DIGIT_COLS[2]), scene::MSG_NUMBER_BASE + 1);
+        assert_eq!(at(scene::PAYOUT_DIGIT_COLS[3]), scene::MSG_NUMBER_BASE + 4);
+        assert_eq!(at(scene::PAYOUT_COINS_COL), scene::MSG_COINS);
+        // Leading zeros are suppressed, not drawn as "0".
+        for place in [0usize, 1] {
+            assert!(
+                !p.iter()
+                    .any(|q| q.col == scene::PAYOUT_DIGIT_COLS[place] as i32),
+                "place {place} is above the figure and must not draw"
+            );
+        }
+
+        // The caption comes down with the tally it captioned.
+        m.collect();
+        assert!(
+            m.marquee_placements().is_empty(),
+            "collecting the payout clears the caption"
+        );
+    }
+
+    /// The caption slides in over its first frames, and the clock that moves it
+    /// is the machine's own tick. A caption that never advances is the failure
+    /// this pins: every row would stay clipped above the matrix.
+    #[test]
+    fn the_payout_caption_slides_down_one_row_per_tick() {
+        use legaia_asset::minigame_slot_scene as scene;
+
+        let mut m = SlotMachine::new(payouts(), 42, 200);
+        win_on(&mut m, 6);
+
+        // Frame 1 of the caption: 12 rows above the matrix.
+        let first = m.marquee_placements()[0].row;
+        assert_eq!(first, 1 - scene::PAYOUT_SLIDE_ROWS);
+        assert!(first < 0, "the caption starts above the matrix");
+
+        // It descends exactly one row per tick...
+        for expected in (first + 1)..=0 {
+            m.tick();
+            assert_eq!(
+                m.marquee_placements()[0].row,
+                expected,
+                "the caption advances one row per tick"
+            );
+        }
+        // ...and then holds at row 0 rather than running off the bottom.
+        for _ in 0..5 {
+            m.tick();
+            assert_eq!(m.marquee_placements()[0].row, 0, "the caption holds");
+        }
+    }
+
+    /// The bonus tally's marquee columns come off the same `claimed` array the
+    /// payout multiplies, so the strip cannot show a different spin than it paid.
+    #[test]
+    fn the_bonus_tally_marquee_reads_the_claimed_reels() {
+        use legaia_asset::minigame_slot_scene as scene;
+
+        let mut m = SlotMachine::new(payouts(), 0x51075, 200);
+        win_on(&mut m, slot_payout::KICK_SYMBOL_ID);
+        m.collect();
+
+        // Mid-bonus-spin, with the reels stopping: the tally strip is up.
+        assert!(m.spin());
+        while m.phase() != SlotPhase::Stopping {
+            m.tick();
+        }
+        m.stop_reel(0);
+        let p = m.marquee_placements();
+        // Three numerals and two multiplication signs, at the retail columns.
+        for &col in scene::TALLY_TIMES_COLS.iter() {
+            assert!(
+                p.iter()
+                    .any(|q| q.col == col as i32 && q.msg == scene::MSG_TIMES),
+                "a multiplication sign belongs at column {col}"
+            );
+        }
+        // Reel 0 is claimed, so its column shows that reel's landed number;
+        // the unclaimed reels read "0".
+        let claimed = m.claimed(0);
+        let want = scene::MSG_NUMBER_BASE + (claimed - 0x10).max(0) as usize;
+        let got = p
+            .iter()
+            .find(|q| q.col == scene::TALLY_NUMBER_COLS[0] as i32)
+            .unwrap()
+            .msg;
+        assert_eq!(got, want, "the tally's first column is reel 0's claim");
+        for reel in 1..REEL_COUNT {
+            let got = p
+                .iter()
+                .find(|q| q.col == scene::TALLY_NUMBER_COLS[reel] as i32)
+                .unwrap()
+                .msg;
+            assert_eq!(
+                got,
+                scene::MSG_NUMBER_BASE,
+                "reel {reel} is unclaimed and reads 0"
+            );
+        }
     }
 }

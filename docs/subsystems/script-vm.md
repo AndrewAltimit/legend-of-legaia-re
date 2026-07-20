@@ -393,6 +393,17 @@ Sub-id → overlay dispatch (init VAs are entries in the loaded overlay at slot-
 | 5 | `0x801CEA6C` | 0977 | Monster-roster minigame (dev `other6`; arena monster-name table - NOT the Muscle Dome SM, whose `FUN_801D0748` does not land in this image) |
 | 6 | `0x801CEF54` | 0980 | Noa dance rhythm minigame (Disco King) |
 
+**These VAs alias.** Every sub-id loads into the *same* slot-A base
+`0x801CE818`, so a single init VA names a different function in each
+overlay image - and in the field overlay it usually names no function at
+all, just bytes inside an unrelated one. A `ghidra/scripts/funcs/` dump
+filed under one of these addresses is only the minigame's code if it was
+produced against that sub-id's PROT entry; a dump taken from the field
+image decompiles to a fragment with uninitialised `in_v0`-style inputs.
+Check the dump header's overlay tag before reading one as the minigame
+init, and see [`static-overlay-pipeline.md`](../tooling/static-overlay-pipeline.md)
+for extracting the right image.
+
 The PROT indices follow the corrected overlay-loader arithmetic - `prot_index = param + 0x37F` in extraction index space (see [boot.md § overlay loaders](boot.md#game-mode-state-machine)): the in-RAM TOC at `0x801C70F0` is raw `PROT.DAT` from byte 0 (byte-verified against the `door_warp_town01_to_map01` save state), so the resolver's `toc[idx+2]` start-LBA read sits 2 entries above the extraction's per-entry indexing. The runtime image for each sub-id is the slice `[entry_start, next_entry_start)` (the resolver's size return), which is why the minigame entries' larger extraction footprints over-read into their neighbours.
 
 ### 0x43 ACTOR_CTRL - sub-dispatcher
@@ -485,6 +496,53 @@ func_0x800468a4(6, signed16(operand[1..3]), signed16(operand[3..5]),
                    c_clamped, signed16(operand[7..9]),
                    signed16(operand[9..11]), signed16(operand[11..13]));
 ```
+
+The shifted call is issued **first**, so the unshifted copy lands over it
+in the ordering table. The three shifts are deliberately asymmetric - the
+source advances `0xF0`, the destination `0x100`, and the width shrinks by
+`0xE0` rather than the `0x100` an even split would use.
+
+`FUN_800468A4` itself guards `0 < slot && slot < _DAT_1F8003A6`, so
+**slot 0 is rejected** along with any overrun, and the guard runs before
+the primitive buffer is advanced - a rejected call allocates nothing. On
+success it biases the **source** Y by `0xF0` when the back-buffer flag
+`DAT_8007B74C` is set (the second framebuffer page starts 240 lines
+down; the destination corner is never biased), then builds the packet.
+
+`FUN_80057914` assembles the six-word primitive - the shape libgpu calls
+`DR_MOVE`:
+
+| Word | Contents |
+|---|---|
+| `+0x00` | OT tag; only byte `+3` is written here (packet length, `5` or `0`) |
+| `+0x04` | constant `0x01000000` |
+| `+0x08` | constant `0x80000000` - GP0 command `0x80` |
+| `+0x0C` | source corner, `y << 16 \| x` |
+| `+0x10` | destination corner, `y << 16 \| x` |
+| `+0x14` | extent, `h << 16 \| w` |
+
+The length byte is `0` when **either** extent is zero. Both this builder
+and its sibling MoveImage queue `FUN_80058490` kill on the same
+predicate, `w == 0 || h == 0`; in each the disassembly is a pair of
+branches (`beq w,0` to the dead path, then `bne h,0` to the live path),
+which the decompiler renders as short-circuit `||` in one and nested
+`if`s in the other. They differ only in **failure behaviour**:
+`FUN_80057914` still writes the whole packet body and merely tags it
+zero-length, while `FUN_80058490` queues nothing and returns `-1`.
+
+A zero-length tag makes the GPU skip the packet while it still occupies
+its ordering-table slot; the coordinate words are written either way.
+
+Engine port: `legaia_engine_vm::vram_rect_copy` (`build_packet` /
+`enqueue` / `op43_sub12_calls`). The VM arm resolves the split and hands
+the host the one or two calls in emission order.
+
+Only `op43_sub12_calls` is wired. The host trait method that receives the
+calls has a no-op default body and no renderer implements it, so
+`build_packet` and `enqueue` are exercised by tests alone - wiring them
+needs a GP0-level host owning an ordering table and the back-buffer flag.
+No on-disc scene script uses sub-op `0x12`, so the arm never fires on
+retail data either way.
 
 ### 0x44-0x4F (record-spawn / camera / render / state / move-block)
 
@@ -778,16 +836,44 @@ depends on the sub* must be decoded per-sub, and the executing VM's port is the 
 disagree.
 
 One more nibble-7 pin, this time on the *interpreter* side: **none of the four
-paints ends the dispatch slice**. The masked subs return `param_2 + 7` (plain
-advance) and the no-mask subs run the `801df8d8` tail - `addiu s8,s8,0x6`
-(pc += 6) then fall-through to the shared continue label (the apparent
-`FUN_801df8dc()` in the decomp is the intra-function label-call idiom) - so
-retail keeps executing the same record in the same call. Modelling sub-0/1 as
-a yield broke the scene-entry install pre-run one op after a paint (the
-ropeway `P1[30]` NPC's `23 2A 70` seat two ops past its clear-paint never
+paints ends the dispatch slice** - but not for the reason previously recorded
+here. There is **no label-call idiom in the nibble-7 arms at all**. All four
+subs perform an ordinary `return`, and they do not share an advance:
+
+| Sub | Exit | Net |
+|---|---|---|
+| 0 (`0x801e1cb4`) | `j 0x801df8dc` / `addiu fp,fp,6` | `return pc + 6` |
+| 1 (`0x801e1d28`) | `j 0x801df8dc` / `addiu fp,fp,6` | `return pc + 6` |
+| 2 (`0x801e1d9c`) | `j 0x801e3624` / `addiu fp,fp,7` | `return pc + 7` |
+| 3 (`0x801e1e20`) | `j 0x801e3624` / `addiu fp,fp,7` | `return pc + 7` |
+
+`0x801e3624` is not a "shared continue label" - it is `move v0,fp` falling
+straight into the **function epilogue** at `0x801e3628` (`lw ra,0x104(sp)` …
+`jr ra`). `0x801df8dc` is `j 0x801e3628; move v0,fp`, i.e. the same epilogue
+one hop earlier. So every nibble-7 paint genuinely leaves `FUN_801de840`.
+
+The slice continues anyway because the **caller loops**. In the pre-run
+`FUN_8003a1e4` the `jal 0x801de840` at `0x8003a4b8` sits inside a loop that
+re-enters on the returned PC and breaks on only three conditions:
+
+- the executed opcode was `0x21` (`li s4,0x21` at `0x8003a4a8`, tested by
+  `beq s1,s4` at `0x8003a4c4`);
+- the PC did not advance (`beq s2,v0` at `0x8003a4d4`);
+- the **masked** next opcode is below `0x20` - `andi v0,s1,0x7f` then
+  `sltiu v0,v0,0x20` at `0x8003a4ec`. The mask is `& 0x7F`, not a raw
+  comparison, so wide-flag opcodes with the high bit set still continue.
+
+A paint is none of those, so retail keeps executing the same record in the
+same call - the conclusion is unchanged, only its mechanism. Modelling
+sub-0/1 as a yield broke the scene-entry install pre-run one op after a paint
+(the ropeway `P1[30]` NPC's `23 2A 70` seat two ops past its clear-paint never
 ran, leaving it parked while retail seats it at `(5440,14400)`). The tail's
 `FUN_8003cf04(actor_list, FUN_801dd9d4)` lookup (its hit gets actor
 `flags |= 8`) is not yet modelled.
+
+The executing port (`legaia-engine-vm`, field `menu_ctrl` nibble 7) already
+returned the correct `Advance` with the correct 6/7 split; it was the prose
+and the port's own explanatory comment that carried the false mechanism.
 
 **ASCII dialogue aliases survive the `clean` tag.** The US build's dialogue is plain ASCII, and the wide
 flag ops land exactly on the letter ranges: `Set` leads `0x53..0x57` = `S..W`, `Clear` leads `0x61..0x67` =
@@ -1016,7 +1102,8 @@ Use this table as the lookup when interpreting the dump:
 |---|---|---|
 | `0x801df098` | `code_r0x801df098`, `switchD_801e0f24::caseD_4` | `addiu s8, s8, 0x2; j 0x801df09c` → **PC += 2** |
 | `0x801df09c` | `LAB_801df09c`, `switchD_801e00f4::default()` | `j 0x801e3628; move v0, s8` → **PC unchanged** (function epilogue) |
-| `0x801df8dc` | `FUN_801df8dc()` (lines 6250, 6284, 6384, 6449) | `addiu s8, s8, 0x6; j epilogue` → **PC += 6** |
+| `0x801df8d8` | - | `addiu s8, s8, 0x6` then falls into `0x801df8dc` → **PC += 6** |
+| `0x801df8dc` | `FUN_801df8dc()` (lines 6250, 6284, 6384, 6449) | `j 0x801e3628; move v0, s8` → **PC unchanged** (function epilogue). Callers that jump straight here supply their own `addiu s8, s8, N` in the delay slot - the nibble-7 subs 0/1 supply `+6`. The `+6` belongs to `0x801df8d8`, not to this label |
 | `0x801dee50` | `LAB_801dee50` | "halt-acquire failed" path - **halts at PC** (resets to loop start) |
 | `0x801e00b8` | `LAB_801e00b8` | `addiu s8, s8, 0x3; j 0x801e00bc` → **PC += 3** |
 | `0x801e00bc` | `LAB_801e00bc` | `j epilogue` - **PC unchanged** for callers that already did `addiu s8, s8, N` upstream |
@@ -1024,6 +1111,7 @@ Use this table as the lookup when interpreting the dump:
 | `0x801e35fc` | `LAB_801e35fc` | Join point: `return iVar18 + uVar31 + iVar24` → **PC = pc + 3 + LE_u16(operand[2..4])** for 0x42 mode 0 |
 | `0x801e3614` | `FUN_801e3614()` (lines 7252, 7416) | `addiu v0, v0, -2; j 0x801e3624; addu s8, s8, v0` → **PC = s8 + skip - 2** (= `pc + 5 + skip` in the standard 0x4D / nE sub-4 BBOX outside-box context) |
 | `0x801e3620` | `code_r0x801e3620`, `FUN_801e3620()` (lines 5021, 6606, 6923, 6928) | `iVar45 = param_2 + 4; ... break;` → **PC += 4** |
+| `0x801e3628` | `switchD_801e00f4::default()`, `default` | The **shared epilogue itself** - restores `s0`-`s8` + `ra` and does `addiu sp, sp, 0x108`. Every `j epilogue` above lands here; it is the switch default, not an opcode arm |
 
 Pitfalls when verifying:
 

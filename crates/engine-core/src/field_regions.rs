@@ -40,9 +40,15 @@
 //! `FUN_801DBA20`).
 //!
 //! Provenance: `ghidra/scripts/funcs/80017fbc.txt`,
-//! `ghidra/scripts/funcs/800180ec.txt`, `ghidra/scripts/funcs/801dba20.txt`
-//! (field-overlay copy re-confirmed in
-//! `overlay_0897_locomotion_cluster.txt`).
+//! `ghidra/scripts/funcs/800180ec.txt`, and the field-overlay copy in
+//! `overlay_0897_locomotion_cluster.txt`.
+//!
+//! NB: `ghidra/scripts/funcs/801dba20.txt` was previously cited here and is
+//! **not** a dump of `FUN_801DBA20` - its own header reads
+//! `entry=801db7f4`, a different function. Do not use it as provenance for
+//! this port. The tile quantisation above was re-confirmed against the
+//! instruction stream at `0x801DBEEC..0x801DBEFC` (signed `lh`, `-0x40`,
+//! then `sra` by 7).
 //!
 //! REF: FUN_801DBEC4, FUN_801DBC20
 

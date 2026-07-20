@@ -21,7 +21,7 @@
 //! |---|---|---|
 //! | `+0`  | u16 | `hp_max` |
 //! | `+2`  | u16 | `mp_max` |
-//! | `+4`  | u16 | `agl` (also seeds the spirit gauge + cap; see below) |
+//! | `+4`  | u16 | `agl` |
 //! | `+6`  | u16 | `atk` |
 //! | `+8`  | u16 | `udf` (upper / physical defence) |
 //! | `+10` | u16 | `ldf` (lower / magical defence) |
@@ -33,11 +33,16 @@
 //! (`Vahn`, `Noa`, `Gala`, `Terra`). At a true New Game only Vahn has joined;
 //! the rest are the templates the game uses when each character is introduced.
 //!
-//! The `+4` stat is a single value the seed routine fans out to several live
-//! fields. Cross-validated against an early `town01` save state, Vahn's `+4`
-//! (`100`) lands in the live record as `agl`, `cap_constant`, and the initial
-//! spirit-gauge value all at once; the per-character archetypes
-//! (`Noa = 120`, `Gala = 80`) read as agility, so this module names it `agl`.
+//! The `+4` stat lands in the live record's agility cell in both the current and
+//! the maximum stat block (see [`seed_live_records`]); the per-character
+//! archetypes (`Vahn = 100`, `Noa = 120`, `Gala = 80`) read as agility, so this
+//! module names it `agl`.
+//!
+//! The neighbouring cap cells (`+0x10C` current / `+0x120` max) are **not** fed
+//! from this field: the seed routine writes the literal
+//! [`SEEDED_CAP_CONSTANT`] there for every roster slot. Vahn's `+4` is also
+//! `100`, which makes the two easy to conflate when reading Vahn's record alone,
+//! but Noa and Gala seed the cap at `100` while their agility differs.
 //!
 //! A New Game's first scene is the prologue cutscene `opdeene`
 //! ([`OPENING_CUTSCENE_SCENE`]) - the in-engine 3D "It was the Seru."
@@ -74,14 +79,21 @@ pub const PARTY_TEMPLATE_VA: u32 = 0x8007_8C4C;
 /// correction is re-applied by the applier on each character's first post-seed
 /// level-up.
 ///
-/// The displayed combat level is **derived from the cumulative experience at `+0x0`**
-/// (the "Max Exp" cheat target), *not* stored: across a captured 4-level jump the
-/// `+0x130` byte rose by only `+1` (it is the magic-rank counter, one tick per
-/// level-up event; `+0x100` stays zero and is unrelated). So a New Game always shows
-/// level 1 because the seed leaves `+0x0 = 0`, regardless of the seeded `+0x4`. The
-/// starting-level randomizer therefore seeds the **experience** cell `+0x0`
-/// ([`CURRENT_XP_PRELOAD_VA`] / [`CURRENT_XP_STORE_VA`]) so the derived level becomes
-/// `N`, and leaves the magic-rank byte alone.
+/// A New Game shows level 1 because the seed leaves both the cumulative-experience
+/// cell `+0x0` at `0` and the level cell `+0x130` at `1`, regardless of the seeded
+/// next-level threshold at `+0x4` (`+0x100` stays zero and is unrelated). The
+/// starting-level randomizer therefore seeds **both**: the experience cell `+0x0`
+/// ([`CURRENT_XP_PRELOAD_VA`] / [`CURRENT_XP_STORE_VA`]) so the record carries
+/// in-band level-`N` experience, and the displayed level `+0x130` itself
+/// ([`LEVEL_SEED_VA`] / [`LEVEL_STORE_VA`]).
+///
+/// `+0x130` is the **displayed combat level**, not a magic-rank counter - magic rank
+/// is the adjacent byte `+0x131`, which [`LEVEL_SEED_VA`]'s packed halfword
+/// deliberately leaves at `1`. The shown level is read from `+0x130` directly and is
+/// *not* re-derived from `+0x0`: a record with level-10 experience and stats but
+/// `+0x130 == 1` still displays "LV 1". See
+/// [`save-record.md`](../../../docs/formats/save-record.md), which records the older
+/// "`+0x130` = Magic Rank" reading as superseded.
 pub const STARTING_XP_SEED_VA: u32 = 0x8005_60F0;
 
 /// RAM address of the slot-3 / Terra next-level-threshold store in `FUN_800560B4`
@@ -343,7 +355,9 @@ pub struct StartingChar {
     pub hp_max: u16,
     /// Maximum (and starting) MP.
     pub mp_max: u16,
-    /// Agility; also seeds the spirit-gauge value and stat cap at New Game.
+    /// Agility. It lands in the live agility cells only - the neighbouring
+    /// cap cells take the seed routine's literal `100`, not this field (see
+    /// [`SEEDED_CAP_CONSTANT`]).
     pub agl: u16,
     /// Physical attack.
     pub atk: u16,
@@ -582,6 +596,219 @@ impl StartingInventory {
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Template -> live-record expansion (`FUN_800560B4`)
+// ---------------------------------------------------------------------------
+
+/// Record-relative offset of the **current**-stat block: twelve `u16` cells the
+/// seed routine fills from the template (`[hp, hp, mp, mp, cap, _, agl, atk,
+/// udf, ldf, spd, intel]`).
+pub const CURRENT_STATS_OFFSET: u32 = 0x104;
+
+/// Record-relative offset of the **maximum**-stat block: nine contiguous `u16`
+/// cells (`[hp, mp, cap, agl, atk, udf, ldf, spd, intel]`).
+pub const MAX_STATS_OFFSET: u32 = 0x11C;
+
+/// Record-relative offset of the displayed combat level (see [`LEVEL_SEED_VA`]).
+pub const LEVEL_OFFSET: u32 = 0x130;
+
+/// Record-relative offset of the magic-rank counter (`+0x131`).
+pub const MAGIC_RANK_OFFSET: u32 = 0x131;
+
+/// Record-relative offset of the live display name the seed routine `strcpy`s
+/// out of the template's name field.
+pub const NAME_OFFSET: u32 = 0x2A7;
+
+/// The literal the seed routine writes into **both** stat blocks' third cell
+/// (`+0x10C` current, `+0x120` max) for every roster slot.
+///
+/// This is a hardcoded `100` in `FUN_800560B4`, **not** a template field. Vahn's
+/// template `+4` stat is also `100`, which makes the two easy to conflate, but
+/// Noa (`120`) and Gala (`80`) seed this cell at `100` all the same - so a
+/// per-character reading of the cell is wrong.
+pub const SEEDED_CAP_CONSTANT: u16 = 100;
+
+/// A single `u16` store the new-game seed performs, as an `SC`-block offset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SeededHalfword {
+    /// Byte offset from the save-context (`SC`) base (`0x80084140`).
+    pub sc_offset: u32,
+    /// Value stored.
+    pub value: u16,
+}
+
+/// Expand the starting-party template into the live per-character records.
+///
+/// Retail's seed routine walks the four template records in lockstep with the
+/// live records at `SC + 0x5c8 + n*0x414`, fanning each template stat out into
+/// **two** blocks: a current-stat block at [`CURRENT_STATS_OFFSET`] (HP and MP
+/// appear twice - current and max - so a New Game starts at full health) and a
+/// max-stat block at [`MAX_STATS_OFFSET`]. It also writes the
+/// [`SEEDED_CAP_CONSTANT`] into both blocks.
+///
+/// Returned in ascending `sc_offset` order. The display-name copy is not a
+/// halfword store and is reported separately by [`seeded_name_offset`].
+///
+/// This is the specification the engine's record builder
+/// (`legaia_engine_core::new_game::starting_record`) applies, rather than
+/// re-deriving the template-field -> live-cell mapping itself: slot 0's stores
+/// less [`LIVE_RECORD_0_XP_OFFSET`] are the record-relative offsets.
+///
+/// **Halfword stores only.** The routine also performs writes this return type
+/// cannot carry, and callers must not treat the list as the full effect of a
+/// New Game seed: the level / magic-rank bytes at `+0x130` / `+0x131`
+/// (`800561c4`..`800561cc`, both `sb` of literal `1`), the per-slot `sb 0xFF`
+/// at `0x8007BDBC + n` (`80056124`..`80056134`), and the pre-loop
+/// `sw zero,0xa9c(gp)` plus the `sb zero` pair at `0x8007B64A` / `0x8007B64C`.
+///
+// PORT: FUN_800560b4 (halfword stores only)
+pub fn seed_live_records(party: &StartingParty) -> Vec<SeededHalfword> {
+    let mut out = Vec::new();
+    for (slot, m) in party.members().iter().enumerate() {
+        let base = LIVE_RECORD_0_XP_OFFSET + slot as u32 * LIVE_RECORD_STRIDE;
+        let cur = base + CURRENT_STATS_OFFSET;
+        let max = base + MAX_STATS_OFFSET;
+        let mut push = |sc_offset: u32, value: u16| out.push(SeededHalfword { sc_offset, value });
+
+        // Current block: HP and MP each land in a current + max cell pair, then
+        // the cap constant, a gap the routine leaves untouched, then the six
+        // remaining stats.
+        push(cur, m.hp_max);
+        push(cur + 2, m.hp_max);
+        push(cur + 4, m.mp_max);
+        push(cur + 6, m.mp_max);
+        push(cur + 8, SEEDED_CAP_CONSTANT);
+        for (i, v) in [m.agl, m.atk, m.udf, m.ldf, m.spd, m.intel]
+            .iter()
+            .enumerate()
+        {
+            push(cur + 12 + i as u32 * 2, *v);
+        }
+
+        // Max block: nine contiguous cells, cap constant in the middle.
+        for (i, v) in [
+            m.hp_max,
+            m.mp_max,
+            SEEDED_CAP_CONSTANT,
+            m.agl,
+            m.atk,
+            m.udf,
+            m.ldf,
+            m.spd,
+            m.intel,
+        ]
+        .iter()
+        .enumerate()
+        {
+            push(max + i as u32 * 2, *v);
+        }
+    }
+    out.sort_by_key(|s| s.sc_offset);
+    out
+}
+
+/// `SC`-block offset of roster slot `slot`'s live display-name field - the
+/// destination of the seed routine's template-name `strcpy`.
+///
+// REF: FUN_800560b4
+pub fn seeded_name_offset(slot: usize) -> u32 {
+    LIVE_RECORD_0_XP_OFFSET + slot as u32 * LIVE_RECORD_STRIDE + NAME_OFFSET
+}
+
+// ---------------------------------------------------------------------------
+// New-game world-state seed (`FUN_80034A6C`)
+// ---------------------------------------------------------------------------
+
+/// `SC` offset of the party gold word the new-game seed sets to
+/// [`NEW_GAME_STARTING_GOLD`]; also the cell the battle-victory reward writer
+/// credits.
+pub const GOLD_SC_OFFSET: u32 = 0x45C;
+
+/// Party gold a New Game starts with - a literal in `FUN_80034A6C`, not a field
+/// of the starting-party template.
+pub const NEW_GAME_STARTING_GOLD: u32 = 500;
+
+/// `SC` offset of the story-flag region the new-game seed zeroes.
+pub const STORY_FLAGS_SC_OFFSET: u32 = 0x1618;
+
+/// Byte length of the zeroed story-flag region. The Door-of-Wind warp bitmask
+/// ([`WARP_FLAGS_SC_OFFSET`]) sits inside it, which is why the warp preset runs
+/// *after* this clear.
+pub const STORY_FLAGS_LEN: u32 = 0x200;
+
+/// The fixed `SC`-offset -> `u32` writes `FUN_80034A6C` performs before it calls
+/// the template expander [`seed_live_records`].
+///
+/// These are literals in the routine rather than disc data, so they are the port
+/// itself rather than something parsed. Ordered by offset.
+///
+/// **Provenance.** Every width below is the opcode field of the instruction
+/// that performs the store, decoded out of `SCUS_942.54`: the routine loads
+/// `$s0 = 0x80084140` (the `SC` base) with a `lui`/`addiu` pair and then issues
+/// each seed write as an `sb` or `sw` off it. Ghidra's `DAT_` / `_DAT_` naming
+/// is a heuristic and is *not* evidence of width, so the disc-gated test
+/// `new_game_seed_disc::world_state_seed_matches_the_routines_stores` re-derives
+/// this whole table from the instruction encodings on every run.
+///
+/// Not modelled here, because they are not `SC`-relative: the three absolute
+/// `sw`s `0x80073EF4 = 0xE40`, `0x80073EF8 = 0x2DC0`, `0x80073EFC = 0`, and the
+/// `_DAT_8007B868` tail branch. The two stores the decompiler renders as the
+/// absolute globals `DAT_80085958 = 0x77` / `DAT_80085959 = 5` are in fact
+/// `sb $v0, 0x1818($s0)` / `sb $v0, 0x1819($s0)` - the starting-item seed at
+/// [`INVENTORY_SC_OFFSET`], and they run *after* the template expander, so they
+/// are outside this pre-expander set.
+///
+// PORT: FUN_80034a6c
+// NOT WIRED (by design, not by omission): this returns *code literals*, not
+// anything decoded from the disc, so routing the engine through it would move a
+// constant rather than improve fidelity. Fourteen of its fifteen offsets name
+// `SC` cells the typed engine `World` has no model for, and the one it does
+// model (gold) already carries the same 500.
+pub fn new_game_seed_words() -> Vec<SeededWord> {
+    let w = |sc_offset: u32, value: u32, width: SeedWidth| SeededWord {
+        sc_offset,
+        value,
+        width,
+    };
+    vec![
+        w(0x454, 3, SeedWidth::Byte),
+        w(0x457, 0, SeedWidth::Byte),
+        w(0x458, 0, SeedWidth::Byte),
+        w(0x459, 1, SeedWidth::Byte),
+        w(0x45A, 2, SeedWidth::Byte),
+        w(0x45B, 3, SeedWidth::Byte),
+        w(GOLD_SC_OFFSET, NEW_GAME_STARTING_GOLD, SeedWidth::Word),
+        w(0x460, 0, SeedWidth::Word),
+        w(0x464, 0, SeedWidth::Word),
+        w(0x470, 0, SeedWidth::Word),
+        w(0x478, 0, SeedWidth::Word),
+        w(0x590, 0x44, SeedWidth::Word),
+        w(0x594, 0x21, SeedWidth::Word),
+        w(0x598, 0x10, SeedWidth::Word),
+        w(0x59C, 0x48, SeedWidth::Word),
+    ]
+}
+
+/// Store width of a [`SeededWord`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SeedWidth {
+    /// `sb` - one byte.
+    Byte,
+    /// `sw` - four bytes.
+    Word,
+}
+
+/// One fixed store the new-game world-state seed performs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SeededWord {
+    /// Byte offset from the save-context (`SC`) base.
+    pub sc_offset: u32,
+    /// Value stored.
+    pub value: u32,
+    /// Store width.
+    pub width: SeedWidth,
 }
 
 #[cfg(test)]

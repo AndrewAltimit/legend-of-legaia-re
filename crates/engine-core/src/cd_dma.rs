@@ -32,8 +32,8 @@
 //! | `gp+0x958`      | libcd CdSync timeout (set to `0xB4` by FUN_8003F128)  |
 //! | `gp+0x8B8`      | MSF + sector-count target                             |
 //! | `gp+0x8C8`      | start MSF (BCD)                                       |
-//! | `_DAT_8007B8C2` | retail/dev branch selector (0 = retail ISO9660 path,  |
-//! |                 |  != 0 = debug PROT-index path)                        |
+//! | `_DAT_8007B8C2` | retail/dev branch selector (0 = dev host-trap path,   |
+//! |                 |  != 0 = retail PROT-index path; retail boots at 1)    |
 //!
 //! Engines port these as opaque host state - the trait abstracts the
 //! call surface so re-hosting the gp scratchpad is invisible to
@@ -113,8 +113,8 @@ impl std::ops::BitOr for LoadFlags {
 /// Mirrors the retail return convention of `FUN_8003DE7C`:
 /// - `0` -> `Ready` (read complete, consumer can use the buffer).
 /// - `1` -> `InProgress` (still streaming sectors).
-/// - `2` -> the retail `Idle` (no read pending; gated by
-///   `_DAT_8007BA70 == 0` and `_DAT_8007B8C2 == 0`).
+/// - `2` -> `Idle` (no read pending; gated by `_DAT_8007BA70 == 0`
+///   and `_DAT_8007B8C2 == 0`, i.e. only reachable on the dev arm).
 ///
 /// Engines treat `Ready` as the green light for consuming the
 /// destination buffer; `InProgress` is the wait-state; `Idle` is the
@@ -247,11 +247,12 @@ pub trait CdDmaHost {
     ///   `Ready` after draining.
     ///
     /// Dual-mode branching on `_DAT_8007B8C2`:
-    /// - retail (0): the state machine doesn't touch libcd; the read
+    /// - dev (0): the state machine doesn't touch libcd; the read
     ///   completion is signalled by the per-IRQ callback chain set
     ///   up via `FUN_8005E788`.
-    /// - debug (!= 0): the state machine drives libcd directly via
-    ///   `FUN_8003F2B8` + `FUN_8005FB84` (VSync poll).
+    /// - retail (!= 0, the value retail boots with): the state machine
+    ///   drives libcd directly via `FUN_8003F2B8` + `FUN_8005FB84`
+    ///   (VSync poll).
     fn read_wait_poll(&mut self, gated: bool) -> ReadWaitOutcome;
 }
 
@@ -331,9 +332,11 @@ enum PollState {
 /// | `gp+0x91C`      | `timeout`         | read-wait countdown                 |
 /// | `gp+0x95C..+0x95E` | `last_msf`     | per-request BCD MSF (Some when set) |
 ///
-/// The synthetic host always operates in the "retail" (`_DAT_8007B8C2 == 0`)
-/// branch of `read_wait_poll` - the offline replacement for libcd doesn't
-/// expose the dev-build state machine.
+/// The synthetic host always takes the non-libcd (`_DAT_8007B8C2 == 0`) shape
+/// of `read_wait_poll`. Retail runs the `!= 0` arm, which drives libcd
+/// directly; the offline replacement has no libcd to drive, so it mirrors the
+/// callback-completion shape instead. That is a host-substitution difference,
+/// not a claim about which arm retail takes.
 pub struct ProtCdDmaHost {
     prot: std::sync::Arc<crate::scene::ProtIndex>,
     main_ram: Vec<u8>,
@@ -573,8 +576,8 @@ impl CdDmaHost for ProtCdDmaHost {
     ///   off, return `Ready` unconditionally.
     ///
     /// The offline host never returns [`ReadWaitOutcome::Idle`]: that
-    /// return is reserved for the retail dev-build state machine gated
-    /// on `_DAT_8007BA70` / `_DAT_8007B8C2`, neither of which exist in
+    /// return is reserved for the dev-arm state machine gated on
+    /// `_DAT_8007BA70` / `_DAT_8007B8C2`, neither of which exist in
     /// the offline replacement.
     fn read_wait_poll(&mut self, gated: bool) -> ReadWaitOutcome {
         if !gated {

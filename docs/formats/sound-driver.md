@@ -34,10 +34,10 @@ Two SCUS functions touch the cluster (located via [`ghidra/scripts/find_sound_pa
 
 Both `FUN_8001FA88` and `FUN_8001FC00` carry a `_DAT_8007B8C2` (debug-flag) carve-out:
 
-- **Dev branch** (`_DAT_8007B8C2 != 0`) loads sound data via PROT indices. `FUN_8001FA88`'s dev branch loads index `0x37A` (= `sound_data2`) plus `param_1 + 5` for per-scene variations, via the index-based loader (`FUN_8003EB98`).
-- **Retail branch** (`_DAT_8007B8C2 == 0`) loads via dev-style paths through the path-based opener (`FUN_8003E6BC`), which resolves `h:\main\bg\domepack\…` into the appropriate PROT entry through the CDNAME-driven name map.
+- **Retail branch** (`_DAT_8007B8C2 != 0`, the value retail boots with) loads sound data via PROT indices. `FUN_8001FA88`'s retail branch loads index `0x37A` (= `sound_data2`) plus `param_1 + 5` for per-scene variations, via the index-based loader (`FUN_8003EB98`).
+- **Dev branch** (`_DAT_8007B8C2 == 0`) opens an `h:\` path through `FUN_8003E6BC`. That helper does no name resolution - it is `strcpy`, then `FUN_800608F0` (`break 0x103`, a dev-station host trap), then fseek/fread/fclose. Retail hardware cannot service it.
 
-Both paths land at the same files; only the indirection differs. The same dev/retail split appears in [`FUN_800255B8`](../subsystems/asset-loader.md), so it's a pattern that repeats across asset-loading subsystems.
+Only the retail branch runs on a real disc; the dev branch is a build-time artefact whose paths are not present in the filesystem. The same dev/retail split appears in [`FUN_800255B8`](../subsystems/asset-loader.md), so it's a pattern that repeats across asset-loading subsystems.
 
 ## `bse.dat` master-bank header (from `FUN_8001FA88`)
 

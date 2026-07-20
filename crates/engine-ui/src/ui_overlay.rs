@@ -459,6 +459,11 @@ pub struct HudSlotMeta {
 /// `status_active` models retail's per-character status byte (record `+0x36`,
 /// `*(short *)(char*0x414 - 0x7ff7b7ca)`), which forces the caution tier even
 /// above half HP; the engine approximates it with "any active status icon".
+///
+// Reached on native through [`battle_hud_draws_for`], which
+// `engine-shell/.../window/hud.rs` calls for every battle frame. The browser
+// play page has no battle host, so this law does not reach that host - see the
+// `battle_hud_draws_for` entry in `scripts/ci/ui-host-drift-waivers.toml`.
 pub fn hp_bar_color_index(cur: u16, max: u16, status_active: bool) -> u8 {
     if cur == 0 {
         return 2;
@@ -480,6 +485,11 @@ pub fn hp_bar_color_index(cur: u16, max: u16, status_active: bool) -> u8 {
 /// `cur <= max/4` / `cur <= max/2` ratio tiers (index 9 danger, 6 caution,
 /// 7 normal) but with no K.O. (2) state and no status-flag override - MP has no
 /// "empty = dead" colour, so a depleted bar simply reads as danger.
+///
+// Same reach as [`hp_bar_color_index`] - see the note there. The MP field it
+// tints is drawn only when the slot carries a non-zero `mp_max`, which in the
+// native window means party rows: `World` keeps the MP ceiling in
+// `character_max_mp` (keyed by battle ordinal) and monsters have none.
 pub fn mp_bar_color_index(cur: u16, max: u16) -> u8 {
     if (max >> 2) < cur {
         if cur <= (max >> 1) { 6 } else { 7 }
@@ -492,15 +502,15 @@ pub fn mp_bar_color_index(cur: u16, max: u16) -> u8 {
 ///
 /// Layout (anchored at `pen`):
 /// ```text
-/// pen.x                                                pen.x + 240
-///   ┌─────────────────────────────────────────────────────┐
-///   │ Vahn          HP 250/300    MP  10/30   AP ●●●○○    │
-///   │ Noa           HP 180/220    MP   5/20   AP ●●●●○    │
-///   │ Gala          HP  90/280    MP   0/15   AP ○○○○○    │
-///   │                                                     │
-///   │ M Goblin      HP  50/100                            │
-///   │ M Goblin      HP   0/100  K.O.                      │
-///   └─────────────────────────────────────────────────────┘
+/// pen.x     +78         +161       +240        +319  +359
+///   ┌──────────────────────────────────────────────────────┐
+///   │ Vahn      HP 250/300  MP  10/30  APoooo----       T C│
+///   │ Noa       HP 180/220  MP   5/20  APoooo----          │
+///   │ Gala      HP  90/280  MP   0/15  AP--------          │
+///   │                                                      │
+///   │ Goblin    HP  50/100                                 │
+///   │ Goblin    HP   0/100                         K.O.    │
+///   └──────────────────────────────────────────────────────┘
 ///
 /// pen.y + 80   [popup]  -25
 ///              [popup]  HEAL +50
@@ -509,10 +519,31 @@ pub fn mp_bar_color_index(cur: u16, max: u16) -> u8 {
 /// The log column uses `pen.x` and stacks downward from `pen.y +
 /// slot_count * LINE_H`. Popups are drawn over each slot's row.
 ///
+/// ## Column offsets
+///
+/// The columns are sized from **measured advances of the retail dialog font**
+/// (`legaia_font::Font::load_from_extracted`), not guessed - every field is
+/// given its widest realistic string plus an 8 px gutter:
+///
+/// | Field | Widest case | Measured px |
+/// |---|---|---|
+/// | name | longest monster name (`"Juggernaut"`) | 69 |
+/// | HP | `"HP 250/300"` | 75 |
+/// | MP | `"MP  10/ 30"` | 71 |
+/// | AP | `"AP"` + 8 pips | 71 |
+/// | K.O. | `"K.O."` | 32 |
+///
+/// This matters because the first draft of these offsets (HP `+70`, K.O.
+/// `+110`, MP `+140`, AP `+200`, status `+220`) was narrower than the font:
+/// four of the five columns overlapped their neighbour at three-digit HP, and
+/// the K.O. label painted directly over the HP digits. Nothing caught it while
+/// the builder had no caller. Widen a field here and the neighbour's offset
+/// moves with it.
+///
 /// Constants:
 /// - `LINE_H` = 14
-/// - Status icons are tiled at x + 220 with 8 px stride
-/// - Damage popups are placed at `pen.x + 80, slot_y - 16`
+/// - Status icons are tiled at `x + STATUS_X` with 8 px stride
+/// - Damage popups are placed at `pen.x + POPUP_X, slot_y - 16`
 pub fn battle_hud_draws_for(
     font: &legaia_font::Font,
     slots: &[HudSlotView<'_>],
@@ -521,8 +552,14 @@ pub fn battle_hud_draws_for(
     pen: (i32, i32),
 ) -> Vec<TextDraw> {
     const LINE_H: i32 = 14;
-    const STATUS_X: i32 = 220;
+    // Column origins, relative to `pen.x`. See the table above.
+    const HP_X: i32 = 78;
+    const MP_X: i32 = 161;
+    const AP_X: i32 = 240;
+    const KO_X: i32 = 319;
+    const STATUS_X: i32 = 359;
     const STATUS_STEP: i32 = 8;
+    const POPUP_X: i32 = 80;
 
     let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
     let monster: [f32; 4] = [1.0, 0.7, 0.7, 1.0];
@@ -574,7 +611,7 @@ pub fn battle_hud_draws_for(
                 !slot.status_letters.is_empty(),
             ))
         };
-        out.extend(text_draws_for(&hp_layout, (pen.0 + 70, row_y), hp_color));
+        out.extend(text_draws_for(&hp_layout, (pen.0 + HP_X, row_y), hp_color));
 
         if slot.mp_max > 0 {
             let mp_text = format!("MP {:>3}/{:>3}", slot.mp, slot.mp_max);
@@ -584,7 +621,7 @@ pub fn battle_hud_draws_for(
             } else {
                 bar_color(mp_bar_color_index(slot.mp, slot.mp_max))
             };
-            out.extend(text_draws_for(&mp_layout, (pen.0 + 140, row_y), mp_color));
+            out.extend(text_draws_for(&mp_layout, (pen.0 + MP_X, row_y), mp_color));
         }
 
         if slot.ap_max > 0 {
@@ -598,12 +635,12 @@ pub fn battle_hud_draws_for(
                 }
             }
             let ap_layout = font.layout_ascii(&ap_text);
-            out.extend(text_draws_for(&ap_layout, (pen.0 + 200, row_y), row_color));
+            out.extend(text_draws_for(&ap_layout, (pen.0 + AP_X, row_y), row_color));
         }
 
         if !slot.alive {
             let ko_layout = font.layout_ascii("K.O.");
-            out.extend(text_draws_for(&ko_layout, (pen.0 + 110, row_y), red));
+            out.extend(text_draws_for(&ko_layout, (pen.0 + KO_X, row_y), red));
         }
 
         for (k, letter) in slot.status_letters.iter().enumerate() {
@@ -648,7 +685,7 @@ pub fn battle_hud_draws_for(
         let layout = font.layout_ascii(&text);
         out.extend(text_draws_for(
             &layout,
-            (pen.0 + 80, slot_y - 16),
+            (pen.0 + POPUP_X, slot_y - 16),
             popup_color,
         ));
     }

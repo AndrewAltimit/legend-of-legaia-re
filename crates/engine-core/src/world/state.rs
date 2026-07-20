@@ -96,9 +96,12 @@ pub struct World {
     /// tile, `0x80`-byte rows, up to `0x80` rows (`0x4000` bytes). The
     /// **high nibble** holds 4 sub-cell wall bits (a `2x2` quadrant grid of
     /// `64x64` cells); the **low nibble** is a floor-elevation tier
-    /// (unused by the wall check). Painted incrementally by the field-VM
-    /// `0x4C` outer-nibble-7 op as the scene prescript runs; zeroed (all
-    /// walkable) at field entry via [`World::reset_field_collision_grid`].
+    /// (unused by the wall check). Loaded at field entry from the per-scene
+    /// `DATA\FIELD\<scene>.MAP` `+0x4000` region - that disc blob is the
+    /// **base** grid, and the live retail grid byte-matches it with zero
+    /// diffs. The field-VM `0x4C` outer-nibble-7 op then applies
+    /// story-conditional wall *deltas* on top as the scene prescript runs;
+    /// it does not author the grid from scratch.
     /// Empty until the first field scene is entered.
     pub field_collision_grid: Vec<u8>,
     /// Per-scene `.MAP` region-table block (the file's `+0x10000..+0x12000`
@@ -310,6 +313,20 @@ pub struct World {
     ///
     /// REF: FUN_801DABA4
     pub battle_speed: [u16; 8],
+
+    /// Battle-camera framing height / distance - retail `ctx+0x6D0`. Recomputed
+    /// at every action seed by the port of `FUN_801F0348`
+    /// ([`legaia_engine_vm::battle_formulas::camera_height_for_frame`]) from the
+    /// acting actor's target slot and its own slot, over the monster records'
+    /// `+0x1F` size class ([`crate::monster_catalog::MonsterDef::size_class`]).
+    ///
+    /// Seeded to the retail floor `0x0C00`
+    /// ([`legaia_engine_vm::battle_formulas::CAMERA_HEIGHT_MIN`]), which is also
+    /// where every fight frames when no size classes are loaded - so a
+    /// disc-free battle keeps the default distance.
+    ///
+    /// REF: FUN_801F0348
+    pub battle_camera_frame_height: i16,
 
     /// Per-slot accuracy stat (retail actor `+0x168`, the AGL-derived
     /// hit/dodge seed). Used as the **attacker's** term in the selector-9
@@ -764,6 +781,43 @@ pub struct World {
     /// step, so contact must be tested ahead of the player, not at the
     /// player's feet.
     pub last_move_dir_bits: u16,
+
+    /// The last **committed** locomotion sub-step direction, one entry per
+    /// axis at retail's fixed magnitude 8 - the engine's stand-in for the
+    /// retail global pair `0x8007BDE0` (X) / `0x8007BDE4` (Z).
+    ///
+    /// Retail writes these inside the locomotion controller `FUN_801d01b0`
+    /// (`0x801d0550` clears the pair on a no-input frame; `0x801d07bc` and
+    /// its per-axis siblings record `+-8` alongside each committed 2-unit
+    /// sub-step). The magnitude is a fixed probe scale, **not** the frame
+    /// speed: the ledge-hop probe multiplies it by 4 and samples at 2x and
+    /// 3x that, i.e. 64 and 96 world units ahead - one and one-and-a-half
+    /// collision sub-cells.
+    ///
+    /// A wall-blocked axis records `0`, so a hop is only ever attempted
+    /// along an axis the walk actually moved on.
+    pub field_step_delta: (i16, i16),
+
+    /// Run the retail vertical settle (`FUN_801d1ba0`'s rate-clamped glide
+    /// toward the floor) instead of leaving the actor's Y alone.
+    ///
+    /// Default **off**, and deliberately separate from
+    /// [`Self::follow_terrain_height`]: that flag *snaps* Y to the sampled
+    /// floor in one frame, and the engine's flat-Y default (Y untouched when
+    /// the snap is off) is an invariant the locomotion oracles pin. Retail
+    /// does neither - it glides at `delta_scalar * 12` units per frame, so a
+    /// tall drop takes several frames. Enabling this replaces "untouched"
+    /// with the retail glide; it does not override the snap, which stays
+    /// authoritative when set.
+    ///
+    /// The ledge-hop trigger is **not** gated on this - a hop is posted off
+    /// the step delta whether or not the settle runs.
+    pub field_vertical_settle: bool,
+
+    /// The ledge hop [`Self::try_field_ledge_hop`] posted this frame, if any
+    /// (retail hands the same triple to `FUN_801d2404`). `None` on every
+    /// frame that did not start a hop.
+    pub field_ledge_hop: Option<FieldLedgeHop>,
 
     /// While [`Self::step_inline_dialogue`] is stepping the field VM over an
     /// NPC's interaction record, this carries that NPC's placement slot so the
@@ -1575,6 +1629,24 @@ pub struct World {
     /// spawn unearned). Cleared by [`World::finish_battle`].
     pub battle_no_escape: bool,
 
+    /// `ctx+0x290` - the formation advantage `FUN_80051D84` rolls at battle
+    /// setup. Live only until the first battle-action pass latches it; the
+    /// initiative seeder is the one consumer that reads *this* copy, to zero
+    /// the disadvantaged side's keys.
+    ///
+    /// REF: FUN_80051D84
+    pub battle_formation: vm::battle_formulas::FormationAdvantage,
+
+    /// `ctx+0x291` - the latched copy of [`Self::battle_formation`]. Retail's
+    /// `FUN_801E295C` state `0x00` copies `+0x290` here and then clears the
+    /// original; this is the copy that survives the battle and the one
+    /// [`World::roll_battle_escape`] reads (`== 2` -> the escape compare cannot
+    /// fail). Latching is what makes a pre-emptive strike affect escapes at
+    /// all - clearing `+0x290` without copying it silently disables them.
+    ///
+    /// REF: FUN_801E791C
+    pub battle_formation_latched: vm::battle_formulas::FormationAdvantage,
+
     /// Formation currently being fought, captured at the `Field -> Battle`
     /// transition. Drives [`World::apply_battle_loot`] on victory. `None`
     /// outside battle.
@@ -2036,6 +2108,7 @@ impl World {
             battle_defense: [0; 8],
             battle_defense_split: [None; 8],
             battle_speed: [0; 8],
+            battle_camera_frame_height: legaia_engine_vm::battle_formulas::CAMERA_HEIGHT_MIN,
             battle_accuracy: [0; 8],
             battle_evasion: [0; 8],
             monster_strike_budget: 1,
@@ -2090,6 +2163,9 @@ impl World {
             field_walk_touch_records: std::collections::BTreeMap::new(),
             active_walk_touch: None,
             last_move_dir_bits: 0,
+            field_step_delta: (0, 0),
+            field_vertical_settle: false,
+            field_ledge_hop: None,
             stepping_inline_npc: None,
             active_inline_slot: None,
             actor_motions: std::collections::BTreeMap::new(),
@@ -2151,6 +2227,8 @@ impl World {
             magic_level_ups: Vec::new(),
             battle_escaped: false,
             battle_no_escape: false,
+            battle_formation: vm::battle_formulas::FormationAdvantage::None,
+            battle_formation_latched: vm::battle_formulas::FormationAdvantage::None,
             character_max_mp: Vec::new(),
             encounter: None,
             per_char_ext: Vec::new(),

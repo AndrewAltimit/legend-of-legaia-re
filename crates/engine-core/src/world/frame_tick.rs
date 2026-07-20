@@ -280,6 +280,13 @@ impl World {
                 // player cell (retail's per-frame board render pass).
                 self.refresh_tile_board_draw_list();
                 self.step_field_locomotion();
+                // Vertical settle + ledge-hop trigger. Retail runs this as a
+                // separate per-frame controller after the walk commits, so
+                // it reads the step-delta pair the walk just wrote.
+                // PORT: FUN_801d1ba0
+                if let Some(pslot) = self.player_actor_slot {
+                    self.step_field_vertical(pslot as usize);
+                }
                 // Locomotion animation: idle vs walk off the movement flag
                 // the step above just set, folded into the player's
                 // `pose_frame` for the host's posed-mesh rebuild.
@@ -989,7 +996,12 @@ impl World {
         if let Some(f) = fight.as_ref()
             && f.winner() == Some(0)
         {
-            let new_money = (self.money as i64).saturating_add(f.gold_reward() as i64);
+            // The tally (`FUN_801d239c`) pays the prize into gold a step at a
+            // time while the result screen is up, so only what it has NOT yet
+            // drained is still owed here. Leaving early banks the remainder,
+            // which keeps the total paid equal to the prize either way.
+            let owed = f.tally_gold_remaining() as i64;
+            let new_money = (self.money as i64).saturating_add(owed);
             self.money = new_money.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
         }
         fight
@@ -1018,6 +1030,27 @@ impl World {
             return;
         };
         if fight.match_over() {
+            // The result screen: run the score tally, banking each drained
+            // step into party gold as retail's `FUN_801d239c` adds it into
+            // `_DAT_80084440`. Any face button latches its fast-forward.
+            let face = [
+                input::PadButton::Triangle,
+                input::PadButton::Circle,
+                input::PadButton::Cross,
+                input::PadButton::Square,
+            ]
+            .iter()
+            .any(|&b| self.input.just_pressed(b));
+            if let Some(f) = self.baka_fighter.as_mut() {
+                f.tick_with_input(1, face);
+                let paid = f.take_tally_gold() as i64;
+                if paid != 0 {
+                    self.money = (self.money as i64)
+                        .saturating_add(paid)
+                        .clamp(i32::MIN as i64, i32::MAX as i64)
+                        as i32;
+                }
+            }
             if self.input.just_pressed(input::PadButton::Cross) {
                 self.exit_baka_fighter();
             }

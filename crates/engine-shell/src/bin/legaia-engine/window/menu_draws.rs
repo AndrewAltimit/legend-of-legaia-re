@@ -11,14 +11,12 @@ impl PlayWindowApp {
     /// white.
     ///
     /// REF: FUN_801DCAD8 - the Status tab's content renderer (label
-    /// string at `(a0+0xa, a0+0xc)`, staged text CLUT 7).
+    /// string at `(a0+0xa, a0+0xc)`, staged text CLUT 7). The five tab
+    /// renderers share one shape, so the draw itself lives in the shared
+    /// builder `tab_label_draws` and this method only resolves the pen.
     fn menu_tab_title_draws(&self, tab_id: usize, label: &str) -> Vec<TextDraw> {
         let pen = self.menu_window_pen(tab_id);
-        legaia_engine_render::text_draws_for(
-            &self.font.layout_ascii(label),
-            pen,
-            legaia_engine_render::MENU_TEXT_WHITE,
-        )
+        legaia_engine_render::tab_label_draws(&self.font, label, pen)
     }
 
     /// Build [`TextDraw`]s for an active field-menu sub-session. Each

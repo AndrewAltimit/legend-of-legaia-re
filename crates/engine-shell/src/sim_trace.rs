@@ -17,15 +17,22 @@
 //!
 //! Retail-unit mapping on the engine side:
 //!
-//! - `cam.pitch` / `cam.yaw`: the [`Camera`](legaia_engine_core::camera::Camera)
-//!   controller's radians converted back to 12-bit units (4096 = full turn) -
-//!   the inverse of the op-`0x45` decode in `Camera::route_camera_events`.
-//! - `cam.roll` / `cam.h`: read raw from the last op-`0x45` Camera Configure
-//!   payload ([`World::camera_state`] slots 2 / 9 - the engine camera keeps
-//!   no roll and the projection H is a retail-global the port doesn't model
-//!   outside the configure payload). Absent until a configure carries them.
-//! - `cam.eye` / `cam.focus`: the runtime camera's `eye` / `look_at` in
-//!   world units, rounded to integers.
+//! - Every `cam.*` channel is the corresponding **live retail camera global**
+//!   off [`Camera::globals`](legaia_engine_core::camera::Camera), which is the
+//!   same word `trace_capture.py` reads out of the recomp:
+//!
+//!   | channel | global | note |
+//!   |---|---|---|
+//!   | `pitch` / `yaw` / `roll` | `0x8007B790/92/94` | 12-bit, masked to `0xFFF` |
+//!   | `eye` | `0x800840B8` | the eye-**space** translation trio, *not* a world eye position |
+//!   | `focus` | `0x80089118` | the focus as retail stores it - X and Z **negated** |
+//!   | `h` | `0x8007B6F4` | GTE projection H; absent until a configure carries slot 9 |
+//!
+//!   The `eye` / `focus` rows are the ones worth reading twice. Emitting the
+//!   runtime camera's world-space `eye` / `look_at` here instead - as this
+//!   module originally did - compares different quantities in different
+//!   coordinate frames, which reads as a total divergence on every scene and
+//!   cannot be closed by any change to the camera itself.
 //! - `player` / `actors[i]`: `move_state.world_x` / `world_z` (retail world
 //!   units) + `render_26` (the retail `+0x26` heading) masked to 12 bits.
 //! - `mode`: the retail game-mode word (`_DAT_8007B83C` space) mapped from
@@ -143,13 +150,23 @@ pub fn sample_frame(session: &BootSession) -> SimTraceFrame {
             .find(|p| p.slot == s)
             .map(|p| p.value)
     };
+    // Every camera channel is read from the engine's live retail camera
+    // globals - the same ten words `trace_capture.py` reads out of the recomp
+    // (`0x8007B790/92/94`, `0x800840B8`, `0x80089118`, `0x8007B6F4`). Emitting
+    // the runtime camera's world-space `eye` / `look_at` instead made these
+    // channels incomparable by construction: retail's `eye` is the eye-SPACE
+    // translation trio and its `focus` is stored negated in X/Z, so the two
+    // sides were reporting different quantities in different frames and the
+    // diff read as a total divergence no camera fix could ever have closed.
+    let g = &cam.globals;
+    let angles = g.angles();
     let cam_sample = CamSample {
-        pitch: radians_to_units(cam.pitch),
-        yaw: radians_to_units(cam.yaw),
-        roll: slot(2).map(|v| v & 0xFFF),
-        h: slot(9),
-        eye: cam.eye.map(|v| v.round() as i32),
-        focus: cam.look_at.map(|v| v.round() as i32),
+        pitch: (angles[0] as u16) & 0xFFF,
+        yaw: (angles[1] as u16) & 0xFFF,
+        roll: Some((angles[2] as u16) & 0xFFF),
+        h: slot(9).map(|_| g.h() as u16),
+        eye: g.tr_eye(),
+        focus: g.focus_stored(),
     };
 
     let actor_sample = |i: usize, a: &legaia_engine_core::world::Actor| ActorSample {

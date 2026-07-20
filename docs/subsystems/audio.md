@@ -52,7 +52,7 @@ The string cluster at `0x8007B380` holds the file extensions the sound subsystem
 
 `FUN_8001EBEC` was previously listed here as a third "mode-aware extension dispatcher"; that is a misread. The decomp shows it is the graphics-side character-TMD equipment-conditional group-transform swap (it reads `DAT_8007C018[_DAT_8007B824 + 0..2]`, the loaded battle-character TMD pointers), not a sound consumer - see [`formats/sound-driver.md`](../formats/sound-driver.md#consumers) and [`formats/character-mesh.md`](../formats/character-mesh.md#10-group-cap--equipment-conditional-swap).
 
-Both `FUN_8001FA88` and `FUN_8001FC00` carry a dev/retail split via `_DAT_8007B8C2`. The dev branch loads via PROT indices directly; the retail branch uses dev-style paths through `FUN_8003E6BC` (the path-based opener that resolves `h:\main\bg\domepack\…` into the appropriate PROT entry through the [CDNAME-driven name map](../formats/cdname.md)). Both paths land at the same files.
+Both `FUN_8001FA88` and `FUN_8001FC00` carry a dev/retail split via `_DAT_8007B8C2`. The **retail** branch (`!= 0`, the value retail boots with) loads via PROT indices directly. The **dev** branch (`== 0`) opens an `h:\` path through `FUN_8003E6BC`, which is a plain host-trap wrapper - `strcpy`, then `FUN_800608F0` (`break 0x103`), then fseek/fread/fclose. It performs no name resolution of any kind, and the paths it opens do not exist on the disc, so retail never takes it. Note the opening gate in both functions is the unrelated word `_DAT_8007B868`; they reach `_DAT_8007B8C2` further into the body.
 
 ## VAB sound banks
 
@@ -72,8 +72,10 @@ The static `&DAT_8006F198` table is **100 8-byte descriptors** (sound ids `0x00.
 
 Battle-time monster sound banks live in a single packed `monster.snd` file. The loader is `FUN_8003E104(monster_idx, slot, dst_buf)` - called twice from the battle scene loader `FUN_800520F0` (slots 7 and 8, for the active battle's two monster sound banks). It reads the file's per-monster TOC at `0x801C8980 - 0x10` (4-byte stride, paired entries giving `[start_lba, end_lba+1]`), computes the LBA range, and dispatches:
 
-- **Dev path** (`_DAT_8007B8C2 != 0`) - uses the standard library file API: `FUN_800608F0` (fopen) → `FUN_80060920` (fseek to record × 0x800) → `FUN_80060944` (fread) → `FUN_80060910` (fclose). Path string: `h:\mpack\monster.snd`.
-- **Retail path** - stages `(size, dst)` into the gp window at `+0x97c` / `+0x894`, kicks the async CD read via `FUN_8003F128`. Sets a 120-frame timeout at `+0x91c`.
+The gate is `beq v0,zero,0x8003E25C` at `0x8003E1FC`, so the **zero** arm is the one that jumps to the path-based open:
+
+- **Dev path** (`_DAT_8007B8C2 == 0`) - `0x8003E25C` onward, using the host-trap file API: `FUN_800608F0` (`break 0x103`) → `FUN_80060920` (fseek to record × 0x800) → `FUN_80060944` (fread) → `FUN_80060910` (fclose). Path string: `h:\mpack\monster.snd`.
+- **Retail path** (`_DAT_8007B8C2 != 0`, the fall-through) - runs `FUN_8003EE7C` / `FUN_8003ED04`, stages `(size, dst)` into the gp window at `+0x97c` / `+0x894`, kicks the async CD read via `FUN_8003F128`. Sets a 120-frame timeout at `+0x91c`.
 
 The same pattern (`h:\mpack\…` paths + per-record TOC at a small data structure) is the shape we expect for the rest of the still-TBD audio formats - read the `FUN_8003E104` dump as the canonical example.
 

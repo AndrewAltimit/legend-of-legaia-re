@@ -1,5 +1,16 @@
 //! Camera-frame actor projector + visibility cull.
 //!
+//! NOT WIRED: the port draws every loaded body every frame - no frustum cull,
+//! no draw distance, no per-object radius test (see `docs/subsystems/renderer.md`,
+//! "No distance culling: every loaded body is drawn"). A `+/-0x180`
+//! window around the camera is a *tighter* bound than retail's own draw set,
+//! so calling this from the render path would blink out bodies retail shows;
+//! it models the dialog overlay's own 0x20-entry actor table, not the scene
+//! draw list. Two things would have to exist before it has a caller: an
+//! engine-side actor carrying the retail layout this reads (state bits at
+//! `+0x10`, flag word `+0x52`, tile slot `+0x60`), and a consumer that wants
+//! the dialog overlay's capped visible-actor table rather than the full scene.
+//!
 //! PORT: FUN_801CF754 - dialog-overlay camera-frame projector: walks the
 //! linked actor list, computes each actor's screen-space `(X, Y)` (either
 //! from its tile descriptor or directly from its local position), culls to a

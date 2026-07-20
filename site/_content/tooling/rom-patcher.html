@@ -37,12 +37,43 @@
             <option value="it">Italian / Italiano</option>
             <option value="pl">Polish / Polski</option>
             <option value="__custom">Import my own pack (.yaml) ...</option>
+            <option value="__official">Official translation from my own PAL disc ...</option>
           </select>
         </label>
         <label class="rom-row" id="rom-lang-file-row" hidden>
           <span class="rom-label">Pack file (<code>legaia-text-pack-v1</code> YAML)</span>
           <input type="file" id="rom-lang-file" accept=".yaml,.yml,text/yaml,application/x-yaml">
         </label>
+
+        <!-- ---- Official-localization transfer (second user-supplied disc) ---- -->
+        <div class="rom-group-body" id="rom-lang-official-row" hidden>
+          <p class="rom-legend-item" style="margin:0 0 .6rem">
+            If you also own an official European release, this transfers <em>its</em>
+            translation onto your USA disc. Both discs are read here in your browser
+            and neither is uploaded - same as the disc above. The official text is
+            yours, from your own disc; it is never bundled with this site.
+          </p>
+          <p class="rom-legend-item" style="margin:0 0 .6rem">
+            <strong>Not all of it will fit.</strong> The USA disc's scenes are packed
+            to the sector with no spare room, so the shorter lines transfer and the
+            rest stay English. The coverage report after patching says exactly how
+            many landed and why the others did not.
+          </p>
+          <label class="rom-row">
+            <span class="rom-label">PAL disc image (<code>.bin</code> - French, German or Italian)</span>
+            <input type="file" id="rom-lang-pal-file" accept=".bin,application/octet-stream">
+          </label>
+          <label class="rom-check-row">
+            <input type="checkbox" id="rom-lang-fold" checked>
+            <span>Fold accents to plain ASCII (<code>Epee</code> for <code>&Eacute;p&eacute;e</code>)
+              <span class="rom-hint">- the USA font has no accent glyphs; unfold only if you are also patching the font</span></span>
+          </label>
+          <div class="rom-row">
+            <button type="button" id="rom-lang-lift" class="rom-button rom-button-ghost">Read the official text from my PAL disc</button>
+            <button type="button" id="rom-lang-lift-save" class="rom-button rom-button-ghost" hidden>Download the lifted pack (.yaml)</button>
+          </div>
+        </div>
+
         <div class="rom-row">
           <button type="button" id="rom-lang-validate" class="rom-button rom-button-ghost">Check pack against my disc</button>
           <button type="button" id="rom-lang-export" class="rom-button rom-button-ghost">Export a starter pack from my disc</button>

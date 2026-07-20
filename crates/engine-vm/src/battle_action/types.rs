@@ -341,6 +341,18 @@ pub struct BattleActor {
     /// `0` = "has acted this round / dead" (the selector zeroes dead actors'
     /// keys). See `docs/subsystems/battle-formulas.md`.
     pub init_key: u16,
+    /// `+0x154` - **live action gauge (AGL)**, the pool a turn's actions are
+    /// paid out of. Restored at every round boundary by `FUN_801D88CC` loop A
+    /// ([`crate::battle_formulas::round_reset_agility`]) from [`Self::agl_base`],
+    /// and spent per swing by the enemy budget loop
+    /// ([`crate::battle_action::enemy_action_budget`]).
+    ///
+    /// Distinct from [`Self::init_key`]: the key decides *when* an actor acts,
+    /// this decides *how much* it can do once it does.
+    pub agl: u16,
+    /// `+0x156` - **base action gauge**, the value [`Self::agl`] is restored to
+    /// each round. Read-only during a battle.
+    pub agl_base: u16,
     /// `+0x170` - **spirit-art gauge** (0..=100). The shared damage finisher
     /// `FUN_801ddb30` accrues this on the *defender* from each hit's
     /// post-mitigation damage (`pct = max(1, over*100/maxhp)`, plus the two
@@ -475,8 +487,21 @@ pub struct BattleActionCtx {
     /// `AttackReturn`.
     pub counter_attack_a: u8,
     pub counter_attack_b: u8,
-    /// `[+0x290]` - cleared at `Begin` (purpose unknown beyond reset).
-    pub clear_at_begin: u8,
+    /// `[+0x290]` - the formation advantage the battle-setup roll
+    /// (`FUN_80051D84`) wrote: `1` back attack, `2` pre-emptive strike. `Begin`
+    /// **latches** it into [`Self::formation_latched`] and then clears it, so
+    /// this field is only live for the first pass through state `0x00`.
+    ///
+    /// REF: FUN_80051D84
+    pub formation_advantage: u8,
+    /// `[+0x291]` - the latched copy of [`Self::formation_advantage`], written
+    /// by `Begin`. This is the copy that survives the battle, and it is what
+    /// the escape roll reads: `== 2` (pre-emptive strike) means escape is
+    /// assured. Clearing `+0x290` without latching it here silently disables
+    /// pre-emptive-strike escapes.
+    ///
+    /// REF: FUN_801E791C
+    pub formation_latched: u8,
     /// `[+0x269]` - multi-cast queue gate read at `DoneFadeDown`. Non-zero
     /// routes to `DoneMultiCast`; zero routes to `EndOfAction`.
     pub multi_cast_gate: u8,

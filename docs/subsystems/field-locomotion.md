@@ -16,7 +16,8 @@ static call site to follow. See [Provenance](#provenance).
 ## Contents
 
 - [Player actor fields used](#player-actor-fields-used) · [spawn position](#spawn-position-on-scene-entry) · [per-frame flow](#per-frame-flow)
-- [Collision - `FUN_801cfe4c`](#collision---fun_801cfe4c) · [where the grid comes from](#where-the-collision-grid-comes-from) · [collision byte](#collision-byte-walls--floor-height) · [floor height](#floor-height-two-models) · [trigger block](#trigger-block-0x10000---four-kind-sub-tables) · [object records](#object-record-format-0x0000-0x20-byte-stride) · [the object bind](#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose) · [the door swing](#the-door-swing-how-a-bind-script-drives-the-clip)
+- [Wall-slide resolution](#wall-slide-resolution-fun_80046494) · [Collision - `FUN_801cfe4c`](#collision---fun_801cfe4c) · [where the grid comes from](#where-the-collision-grid-comes-from) · [collision byte](#collision-byte-walls--floor-height) · [floor height](#floor-height-two-models) · [trigger block](#trigger-block-0x10000---four-kind-sub-tables) · [object records](#object-record-format-0x0000-0x20-byte-stride) · [the object bind](#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose) · [the door swing](#the-door-swing-how-a-bind-script-drives-the-clip)
+- [Vertical settle + ledge hop](#vertical-settle--ledge-hop---fun_801d1ba0--fun_801d1878) - [step-delta globals](#the-step-delta-globals) · [`FUN_801d1ba0`](#fun_801d1ba0---settle-then-trigger) · [`FUN_801d1878`](#fun_801d1878---probe-and-post) · [engine port](#engine-port-2)
 - [Provenance](#provenance) · [Town / field parity](#town--field-parity)
 - [Engine port](#engine-port) - [environment geometry](#environment-geometry) · [scene-entry script](#scene-entry-script) · [encounter table](#scene-encounter-table) · [per-step encounter roll](#per-step-encounter-roll-in-the-live-loop) · [input lock during cutscenes](#input-is-locked-during-an-opening-cutscene-timeline)
 - [Field-buffer load chain](#field-buffer-load-chain)
@@ -67,6 +68,8 @@ Provenance: `ghidra/scripts/funcs/overlay_0897_801d6704.txt` (the `func_0x80024c
    | `0x8000` | X − |
 
    (Same bit→direction convention as the tile board, because both call `func_0x800467e8`.)
+
+   `FUN_80046494` is more than a decode - it is the **wall-slide resolver**, and the returned mask can name a direction the pad never asked for. See [below](#wall-slide-resolution-fun_80046494).
 4. **Speed.** The frame's travel distance is
 
    ```text
@@ -97,6 +100,56 @@ The engine ports the probe as `World::tick_field_interaction_probe` (`engine-cor
 This is the input-driven counterpart to the scripted field-interact op; talking to the Rim Elm sparring partner this way starts the Tetsu fight through the dialogue-accept auto-arm.
 
 `World::nav_step_toward(tx, tz, tol)` is the matching auto-navigation primitive: it steps the player one frame toward a world target using the same per-axis collision as the pad path (`advance_with_collision`) but a world-space direction, returning `true` on arrival. A driver loops it along a BFS route over the collision grid to walk the player to a target - e.g. the v0.1 oracle's emergent Battle leg walks from the cold-boot spawn to the sparring partner, then talks to it via the probe. (The partner's *placement* tile (76,65) is its post-tutorial village spot, in a town01 sub-area not walk-reachable from the spawn; the opening repositions it next to Vahn for the tutorial - see `RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS`.)
+
+### Wall-slide resolution (`FUN_80046494`)
+
+Step 3's "direction decode" is really a **wall-slide resolver**. The
+returned mask is not just the pad restated: when the held direction is
+blocked, the function probes along the wall and ORs in a *perpendicular*
+direction, which is what makes the player skid along a wall instead of
+sticking to it. So the mask can name an axis the pad never asked for.
+
+Two paths short-circuit before any of that:
+
+- If the remapped pad has bit `1` set (`mask & 2`), the function returns
+  the raw mask untouched.
+- If the direction is one of the four pure diagonals
+  (`0x9000` / `0xc000` / `0x3000` / `0x6000`), the raw mask is returned
+  as-is. **Diagonals are never slide-resolved** - a diagonal already has
+  two axes for the per-axis collision step to resolve independently.
+
+Otherwise the resolver walks a 4-entry direction table at
+`DAT_800766BC` (8-byte stride: `u32 mask`, `s16 dx`, `s16 dy`). For each
+entry whose bit is present in the held mask:
+
+1. **Three-point block test.** It calls the walkability probe
+   `func_0x801d56c4` three times at the candidate point `(x+dx, z+dy)` -
+   once offset `+0x21` along the axis *perpendicular* to the direction of
+   travel, once `-0x21`, and once dead centre. The three results are
+   collected as bits `1` / `2` / `4`; any non-zero result means blocked.
+   The `0x21` lateral offsets are what give the player a body width
+   rather than a point hull, so a corner clips before the centre does.
+2. **Slide-direction search.** If the candidate is blocked, it sweeps the
+   signed offset table at `DAT_800766EC`, probing sideways along
+   whichever axis the direction of travel leaves free (the `dx == 0` and
+   `dy == 0` arms test the X and Z sweeps respectively) and summing the
+   offsets that come back walkable into a running total.
+3. **Sign picks the slide.** A negative total ORs in
+   `(&DAT_800766DC)[i*2]`, a positive total ORs in
+   `(&DAT_800766DE)[i*2]` - the paired negative / positive slide bits for
+   that direction row. A total of exactly zero adds nothing, so a
+   symmetric dead end leaves the player stopped rather than picking a
+   side arbitrarily.
+
+The original direction bit is ORed in regardless of the outcome, and the
+resolved mask is cached to `gp+0x9c4`. Under the debug flag
+(`gp+0x3b8 & 1`) each stage prints - `HIT`, `chk %d`, `pad %x not %x`,
+`pl_angle %d` - which is the cheapest way to watch the resolver decide.
+
+Provenance: `ghidra/scripts/funcs/80046494.txt`. **Not yet ported** - the
+engine's direction decode (`World::decode_field_direction`) implements
+step 3 of the per-frame flow without the slide resolution, so the port
+stops at a blocked axis instead of sliding along it.
 
 ## Collision - `FUN_801cfe4c`
 
@@ -216,6 +269,87 @@ The derivation and the footprint rest positions are pinned by two cheat-free Rim
 
 Capture note: both wall-press captures park in the **`town0c`** Rim Elm variant. The live grid byte-matches the town01 map's base + paints - which is exactly what a town0c session *should* hold: under the universal `define−2` `.MAP` resolution (see "Engine port" below) town0c's own `.MAP` is PROT 0019, **byte-identical** to town01's (0001/0010 - the Rim Elm variants share one map). The earlier reading that PROT 0028 was "town0c's own different `.MAP`" mis-attributed the next block's map (0028 is `izumi`'s, `define 30 − 2`); the cold-vs-variant question this raised is dissolved.
 
+## Vertical settle + ledge hop - `FUN_801d1ba0` / `FUN_801d1878`
+
+The walk controller only ever writes X and Z. Height, and the step up onto a
+ledge, belong to a **second per-frame controller**, `FUN_801d1ba0`, which runs
+after the walk commits and reads what the walk left behind.
+
+### The step-delta globals
+
+`FUN_801d01b0` records the last **committed** sub-step direction into a global
+pair - `0x8007BDE0` (X) and `0x8007BDE4` (Z) - alongside each 2-unit position
+write. `0x801d0550` clears the pair before the direction decode; `0x801d07bc`
+and its per-axis siblings write `+-8`.
+
+The magnitude is a **probe scale, not a distance**. Nothing moves 8 units in a
+sub-step; the value exists so the hop probe can derive its sample points. A
+wall-blocked axis records `0`, which is what keeps a hop from being attempted
+along an axis the walk never moved on.
+
+### `FUN_801d1ba0` - settle, then trigger
+
+Gates, in order (`0x801d1bb4..0x801d1bec`): the movement-disabled flag
+`+0x10 & 0x80000`; a pad-latch bit `0x400`; and `+0x9e != 0x10`, the grounded
+state - an actor already mid-hop or in a scripted motion yields the frame.
+
+It then glides `+0x16` toward the floor beneath the actor at
+`delta_scalar * 12` units per frame, halved for the `+0x10 & 0x2000` slow-fall
+class. The step is **clamped to that rate**, so a tall drop takes several
+frames. That clamp is the whole reason this is a controller rather than an
+assignment.
+
+With the settle done and the step delta non-zero, it calls the hop probe.
+
+### `FUN_801d1878` - probe and post
+
+Scales the step delta by 4 (`s1 = dx << 2`) and tests two forward points
+against the collision grid:
+
+| Point | Offset from the actor | Body |
+|---|---|---|
+| near | `pos + 2 * delta * 4` (64 units) | `0x801d18b0..0x801d1984` |
+| far | `pos + 3 * delta * 4` (96 units) | `0x801d198c..0x801d1a5c` |
+
+**Both must be clear**; a wall at either returns `0` untouched. 64 units is
+exactly one collision sub-cell, 96 one and a half.
+
+The wall test here is not merely similar to `FUN_801cfe4c` - it is that
+routine inlined, instruction for instruction: the same `(z >> 6) + 2` and
+`((x + 0x3f) >> 6) - 1` biases, the same `row = (zc + sign) >> 1` stride-`0x80`
+index, the same `quad = (zc & 1) << 1 | (xc & 1)` selector, the same
+high-nibble read.
+
+Both clear, it samples the floor one delta ahead and classifies the rise:
+
+| Rise vs `+0x16` | Class | Meaning |
+|---|---|---|
+| `>= +0x61` | `0x10` | hop up |
+| `< -0x60` | `0x18` | hop down |
+| otherwise | - | flat ground; no hop |
+
+The landing triple (`x + 3 * s1`, sampled height, `z + 3 * s0`) plus the class
+goes to `FUN_801d2404`, which owns the arc. `FUN_801d1878` returns `1`.
+
+### Engine port
+
+`World::step_field_vertical` (`FUN_801d1ba0`) runs in the field frame tick
+after `step_field_locomotion`; it calls `World::try_field_ledge_hop`
+(`FUN_801d1878`), which posts a `FieldLedgeHop` into `World::field_ledge_hop`.
+The step-delta pair is `World::field_step_delta`.
+
+Two deliberate divergences:
+
+- The **settle is opt-in** (`World::field_vertical_settle`, default off). The
+  engine's default is that Y is left untouched unless
+  `World::follow_terrain_height` snaps it, and the locomotion oracles pin that
+  flat-Y behaviour. The hop trigger is *not* gated on it.
+- Retail additionally clears the two forward points through the actor/prop
+  sweep `FUN_801cfc40` before sampling. The engine's port of that routine is
+  keyed by compass direction rather than by an arbitrary delta pair, so the
+  clearance test runs at direction granularity - a collider inside the hop
+  lane but outside the direction probes is a sub-tile discrepancy.
+
 ## Where the collision grid comes from
 
 `_DAT_1f8003ec` is the base of the **per-scene field buffer** (a scratchpad-resident pointer at `0x1F8003EC`). Its sub-regions:
@@ -249,7 +383,7 @@ Each `+0x4000` byte packs two nibbles for its 128-unit tile:
 
 Engine port: `World::sample_field_floor_height(world_x, world_z)` carries both branches. Its inputs are the per-scene LUT (`World::field_floor_height_lut`), the collision grid, the object-grid cell words (`World::field_object_cells`, tested against `world::CELL_ELEVATION_OVERRIDE`), and the parsed kind-2 records (`World::field_elevation_overrides`, `world::field_elevation`) - all installed at field entry. The pad locomotion path follows the sample: with `World::follow_terrain_height` set (on by default in `play-window`; `--flat-y` opts out), each committed step snaps the player actor's `world_y` to it, so the player rides slopes and stairs. Field NPCs and props are floor-snapped through the same sampler.
 
-The **base wall + floor data is an on-disc blob**: it is the `+0x4000..+0x8000` region of the per-scene field map file (`DATA\FIELD\<scene>.MAP`), streamed into the field buffer at scene load by `FUN_8001f7c0` (see [Field-buffer load chain](#field-buffer-load-chain)). On top of that base, the field VM's `0x4C` (MENU_CTRL) opcode with outer-nibble 7 (`op0` ∈ `0x70..0x7F`, 7-byte op `[4C, 0x7s, b1, b2, b3, b4, mask]`) applies **story-conditional deltas** - a rectangular paint that sets/clears the high-nibble wall bits over a tile range (`col ∈ [b1, b3+1)`, `row ∈ [b2+1, b4+2)`; sub-op `s` = clear-walkable / block-all / clear-mask / set-mask), gated behind system-flag tests in the prescript.
+The **base wall + floor data is an on-disc blob**: it is the `+0x4000..+0x8000` region of the per-scene field map file (`DATA\FIELD\<scene>.MAP`), streamed into the field buffer at scene load by `FUN_8001f7c0` (see [Field-buffer load chain](#field-buffer-load-chain)). On top of that base, the field VM's `0x4C` (MENU_CTRL) opcode with outer-nibble 7 (`op0` ∈ `0x70..0x7F`, `[4C, 0x7s, b1, b2, b3, b4 (, mask)]` - **6 bytes** for subs 0/1, **7** for the masked subs 2/3) applies **story-conditional deltas** - a rectangular paint that sets/clears the high-nibble wall bits over a tile range (`col ∈ [b1, b3+1)`, `row ∈ [b2+1, b4+2)`; sub-op `s` = clear-walkable / block-all / clear-mask / set-mask), gated behind system-flag tests in the prescript.
 The nibble-7 op is the same dispatch row in [`script-vm.md`](script-vm.md#0x4c-menu_ctrl---outer-nibble-dispatch).
 
 The `+0x8000` map is a per-tile object/attribute word, not a terrain-flag grid: its low 9 bits index the `+0x0000` object-record table, which `FUN_8003a55c` walks at scene entry to spawn the NPCs/objects occupying each tile. `FUN_8003aeb0` (the field/town scene-entry map-init - note its `town_mode` / `baria_mode` debug strings) ORs the `0x400` footprint flag into these cells from the fallback trigger window's kind-1 records (`+0x12000`, offset/count at `+0x12006` / `+0x12008`, 4-byte records - the gate-0 object-bind entries of the trigger block below).
@@ -550,7 +684,7 @@ the entry script's `0x4C` nibble-7 wall-paint deltas are gated behind system-fla
 Tracing `map03`'s entry script pins the gate flags directly: `TEST` flag `0x6C2` (at script offset `0x2c`) routes into a sub-1 "block all" paint over tile (col 66, row 102), and `TEST` flag `0x378` (at `0x4f`) routes into a contiguous three-paint cluster (sub-0 "clear walls" at offsets `0x56` / `0x5c` / `0x62`). At a fresh boot both flags are clear, so the entry script skips all four paints and the grid stays at its disc-loaded base - which is correct: these are story-conditional terrain changes, not the base walls. Seeding the matching system flags (in real gameplay, loading a save whose story-flag block has them set) makes the paints fire. The flag-bank base is `0x80085758` (= SC offset `0x1618`); see [`script-vm.md`](script-vm.md#0x4c-menu_ctrl---outer-nibble-dispatch).
 Disc-gated coverage: `crates/engine-core/tests/map03_conditional_walls_disc.rs` (with flag `0x6C2` seeded, the wall at tile (66, 102) appears; without it, it does not).
 
-The nibble-7 paint format (retail handler `0x801e1c64`): the **row** range is `[row0+1, row1+2)`, and sub-0/1 paints are **6-byte** ops with no mask byte while sub-2/3 are 7-byte.
+The nibble-7 paint format (retail handler at `0x801e1c64` - **entry [7] of the `0x4C` outer-nibble jump table at `0x801CEE60`**, i.e. an intra-function label inside `FUN_801de840`, not a standalone function): the **row** range is `[row0+1, row1+2)` while the **column** range carries no such `+1` bias, and sub-0/1 paints are **6-byte** ops with no mask byte while sub-2/3 are 7-byte.
 
 ### Scene encounter table
 
@@ -574,8 +708,8 @@ Across the transition the grid jumped 2093 → 6805 wall tiles while only **6** 
 
 `FUN_8001f7c0(dest, scene_name, field_record)` fills the field buffer at `dest` (the `_DAT_1f8003ec` base). Two transports converge on shared streaming machinery:
 
-- *Retail*: builds `DATA\FIELD\<scene>.MAP`, opens it by ISO9660 name (`FUN_800608f0`), streams into `dest` via `FUN_8003e6bc`.
-- *Debug* (`_DAT_8007b8c2 != 0`): `FUN_8003e8a8(field_record, 1)` sets the `CdlLOC` at `0x8007bc5c` from the in-RAM PROT TOC (`target_sector = CdPosToInt(base_loc@0x8007bc50) + toc[field_record + 2]`, the documented `start_lba = toc[p+2]`); `FUN_8003e800(dest, 0x28, 1)` issues a 40-sector (`0x14000`-byte) read.
+- *Dev* (`_DAT_8007b8c2 == 0`): builds `DATA\FIELD\<scene>.MAP` and opens it by name via `FUN_8003e6bc` / `FUN_800608f0` - the latter is `break 0x103`, a dev-station host trap, so this arm cannot run on retail hardware.
+- *Retail* (`_DAT_8007b8c2 != 0`, the value retail boots with): `FUN_8003e8a8(field_record, 1)` sets the `CdlLOC` at `0x8007bc5c` from the in-RAM PROT TOC (`target_sector = CdPosToInt(base_loc@0x8007bc50) + toc[field_record + 2]`, the documented `start_lba = toc[p+2]`); `FUN_8003e800(dest, 0x28, 1)` issues a 40-sector (`0x14000`-byte) read.
 - Shared core: `FUN_8003e800` → `FUN_8003f128` (copies dest/count into `gp+0x940`/`gp+0x968`, issues `CdControl(CdlSetloc)`, registers the data-ready callback) → `FUN_8003EF14` per-sector poller → `FUN_8005C2C4` → `FUN_8005D9A0`. The same generic entry serves other clients (`FUN_8003e104` = the `monster_snd` pack loader), so `FUN_8003e800`/`FUN_8003f128` are shared streaming infrastructure. See [`boot.md`](boot.md) for the CD-read API.
 
 **For the engine, base collision is a load step, not a script step**: slice bytes `0x4000..0x8000` of the per-scene `.MAP` file; no script execution is needed for the base walls. The nibble-7 ops ride the scene's field-VM scripts - which run multi-context at load (`FUN_8003aeb0` scene-entry init → `FUN_8003ab2c` MAN system-script runner, the `0xFB` system context being the conditional-delta painter) - and only matter for story-conditional terrain changes.

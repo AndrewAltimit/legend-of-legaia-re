@@ -8,7 +8,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 ## Contents
 
 **Retail scene + render**
-- [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0) - [stage-overlay dispatch](#stage-overlay-dispatch-the-0x47-loader-band)
+- [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0) - [stage-overlay dispatch](#stage-overlay-dispatch-the-0x47-loader-band) · [sparring-tutorial prompts](#the-sparring-tutorial-prompt-machine-overlay-967) · [command-flow byte](#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes)
 - [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [dome](#backdrop-dome---sky--distant-mountains-prot-88-for-map01) · [camera](#battle-camera-exact) · [party meshes](#battle-party-meshes-assembled)
 
 **Retail battle logic + data**
@@ -20,9 +20,9 @@ clean-room engine systems. Use the contents below to jump to a section.
 - [Monster init (`FUN_80054CB0`)](#monster-init-fun_80054cb0) - [record layout](#monster-record-source-layout) · [archive (PROT 867)](#monster-archive-prot-entry-867) · [mesh](#monster-mesh-record-0x04) · [native bridge](#native-renderer-bridge-clean-room-engine) · [AI](#monster-ai-fun_801e9fd4-action-picker--fun_801e7320-target-resolver)
 - [Stat aggregator (`FUN_80042558`)](#stat-aggregator-fun_80042558)
 - [Battle archive (`FUN_80052FA0` / `FUN_800542C8`)](#battle-archive-fun_80052fa0--fun_800542c8)
-- [Character record layout](#character-record-layout)
+- [Character record layout](#character-record-layout) - [why the pair order is `(max, cur)`](#why-the-pair-order-is-max-cur)
 - [Battle main dispatcher (`FUN_801D0748`)](#battle-main-dispatcher-fun_801d0748) · [hottest utility (`FUN_801D8DE8`)](#hottest-battle-utility-fun_801d8de8) · [weapon trail builder](#weapon--effect-trail-builder-fun_80048310--fun_800485bc)
-- [Per-frame actor maintenance (`FUN_8004CE30`)](#per-frame-actor-maintenance-fun_8004ce30)
+- [Per-frame actor maintenance (`FUN_8004CE2C`)](#per-frame-actor-maintenance-fun_8004ce2c)
 
 **Clean-room engine systems**
 - [Inventory (page-banked)](#inventory-cratesasset-page-banked-layout) · [Status effects](#status-effects) · [AP / Spirit gauge](#ap--spirit-gauge) · [Battle stat aggregator](#battle-stat-aggregator) · [Item catalog](#item-catalog)
@@ -72,14 +72,22 @@ The asset-viewer's `--bundle battle` mode mirrors this loader's PROT 865–890 s
 
 ### Stage-overlay dispatch (the `+0x47` loader band)
 
-Sub-state `0x11` reads the **battle-stage id** byte `_DAT_8007B64A` and, only
-when it is non-zero, pages a per-stage code overlay into slot B:
+Sub-states `0x0E` and `0x10` read the **battle-stage id** byte `_DAT_8007B64A`
+and, only when it is non-zero, page a per-stage code overlay into slot B. Both
+arrive at the same block: the loader's sub-state dispatcher routes `0x0E` at
+`0x80052198` and `0x10` at `0x800521EC` into `0x8005266C`/`0x80052670`, which
+fall through to the id read at `0x80052678`.
 
 ```
-stage_id = *(u8 *)0x8007B64A;
+stage_id = *(u8 *)0x8007B64A;                     // lbu v1,-0x49b6(v1) @ 0x8005267C
 if (stage_id == 0) goto no_stage;                 // beq v1, zero  @ 0x80052688
+sub_state = 0x11;                                 // sb v0,0xa59(gp) @ 0x80052698
 FUN_8003EC70(stage_id + 0x47, 0);                 // addiu a0,a0,0x47 @ 0x800526A0
 ```
+
+`0x11` is written on the way *out*, as the state entered once the load has been
+issued - it is the load-wait state, not the reader. Dispatched at `0x800521D0`,
+it joins the shared wait block `0x800526C8` that polls `FUN_8003DE7C`.
 
 Overlay loader B resolves extraction entry `param + 0x37F`, so a stage overlay
 lives at **extraction `stage_id + 966`**. This is the `+0x47` computed-parameter
@@ -105,24 +113,34 @@ oracle `crates/engine-shell/tests/battle_stage_live.rs`.
 ### The sparring-tutorial prompt machine (overlay 967)
 
 What overlay 967 *does* is emit the in-battle "how to fight" boxes of the Tetsu
-sparring fight. The prompts are neither battle-scene script, MES text, nor part
-of the battle overlay `0898` - they exist **only** inside 967, which is why
-porting the battle SM alone never produces them.
+sparring fight. The hook table and every prompt string address are resident in
+967, and neither the battle-scene script, MES text, nor the battle overlay
+`0898` carries them - which is why porting the battle SM alone never produces
+the boxes. **Exclusivity itself is a corpus claim, not an instruction claim:**
+what the disassembly shows is where these prompts *are*, not that no other
+overlay could emit a prompt. Read it as consistent with 967-only, not as proof.
 
 Its tick `FUN_801F6B70` is a jump-table hook on the battle **flow-state byte**
 `ctx[+0x06]` (`ctx = _DAT_8007BD24`), not a linear script:
 
 ```
-if ctx[0x6B2] != 0  -> suppressed        // a box is already up
-ctx[0x6B0] = 0
-if ctx[0x6AE] != 0  -> already emitted   // one-shot latch per flow state
+ctx[0x6B0] = 0                           // sh zero,0x6b0(v1) @ 0x801F6BB8
+if ctx[0x6B2] != 0  -> suppressed        // bnez @ 0x801F6BB4 - a box is up
+if ctx[0x6AE] != 0  -> already emitted   // bnez @ 0x801F6BC4 - one-shot latch
 idx = ctx[0x06] - 0x1E                   // 91-entry table at 0x801F69D8
-if idx >= 0x5B      -> no-op
-goto table[idx]
+if idx >= 0x5B      -> no-op             // sltiu 0x5b @ 0x801F6BD8
+goto table[idx]                          // jr v0 @ 0x801F6BF8
 ```
 
+The `ctx[0x6B0]` clear is written first here on purpose: it lives in the
+**branch delay slot** of the suppression test, so it executes on both paths -
+including the suppressed one. Ghidra's C prints it after the guard, which is the
+reordered-store artifact.
+
 Only **nine** of the 91 slots are live - flow states `30, 40, 50, 60, 80, 90,
-100, 110, 120`; the other 82 point at the shared no-op tail `0x801F718C`.
+100, 110, 120`; the other 82 point at the shared no-op tail `0x801F718C`. The
+table decodes straight out of the disc image: it begins at overlay file offset
+`0`, since its base `0x801F69D8` *is* the overlay load base.
 
 Each live handler then switches on `ctx[+0x28A]`, the same byte the
 battle-action SM's `case 0xFF` increments (ported as
@@ -150,8 +168,15 @@ The hyper-arts drill at flow state `90` asks for `[High] [Low] [High]`
 `_DAT_801D46C4 == 1` the buffer is auto-filled for the player at `0x801F6FB0`.
 
 The completion tail `0x801F7380` fires once `ctx[0x28A]` reaches `4`: it bumps
-the lesson to `5`, writes `ctx[0x06] = 0xC8` and `ctx[0x07] = 0xFF` to close the
-fight, and emits the sign-off box.
+the lesson to `5`, writes `ctx[0x06] = 0xC8` (`0x801F73DC`) and `ctx[0x07] =
+0xFF` (`0x801F73E8`) to close the fight, and emits the sign-off box.
+
+The tail opens on an idempotence guard the C flattens away. At
+`0x801F7390..0x801F73B4` an `sltiu ctx[0x28A], 5` skips ahead when the lesson is
+still below `5`; a lesson **already** at or past `5` re-pins it to `5` and
+re-issues the same `0xC8`/`0xFF` close writes before reaching the `== 4` arm. So
+the close is safe to re-enter, and `5` is a terminal value rather than a
+one-frame transient.
 
 **Box placement.** The emitter `FUN_801F747C(text, style)` takes a style index
 `0..=9` into a jump table at `0x801F6B48`. `x` is either the fixed left margin
@@ -170,30 +195,53 @@ spell / dialog parsers follow. Disc-gated oracle
 
 The hook key is **not** the action SM's `ctx[+0x07]`. It is `ctx[+0x06]`, the
 cursor of the *other* battle state machine: the menu half, `FUN_801D0748`. Both
-are byte cursors through a `jr` table over the same context struct, and their
-value spaces collide - `ctx[7] == 0x64` is `RunBegin`, `ctx[6] == 0x64` is target
-confirm.
+are byte cursors over the same context struct, and their value spaces collide -
+`ctx[7] == 0x64` is `RunBegin`, `ctx[6] == 0x64` is target confirm.
+
+**They do not share a dispatch shape, and it is worth not carrying the opposite
+forward.** `FUN_801D0748` has no jump table at all: it dispatches `ctx[+0x06]`
+through a binary-search `beq`/`slti` comparison tree at
+`0x801D0C84..0x801D0DC8`, and the only `jr` in its 2781 instructions is the
+`jr ra` at `0x801D32B4`. The `jr`-table shape belongs to the tutorial hook
+`FUN_801F6B70` (`jr v0` at `0x801F6BF8`) and to the action SM `FUN_801E295C`,
+not to the menu SM. Reading the menu half as table-driven invents a dense index
+space it does not have - its live cases are exactly the 22 constants below,
+everything else falling to the default at `0x801D3290`.
 
 Below `0x1E` the command flow is battle entry and turn setup: `0x00` init,
 `0x0A`/`0x0B` the intro timer at `ctx[+0x6D6]`, `0x14` turn start (which opens
 the top menu and falls into `0x1E`). From `0x1E` up it is the player's command
 selection, and the states are regular decimal multiples of ten:
 
-| `ctx[+0x06]` | On screen | Leaves to |
-|---|---|---|
-| `0x1E` = 30 | `[Begin]` / `[Escape]` turn prompt | `0x28` on Begin, `0x32` on Escape |
-| `0x28` = 40 | Action-category menu | `0x3C`/`0x46` per window, `0x6E` on Spirit, `0x50`/`0x5A`/`0x78` on Attack per the attack-mode option |
-| `0x32` = 50 | Flee confirm | `0xFE` on confirm, `0x1E` on cancel |
-| `0x3C` = 60 | Item window | `0x64` once an item is picked |
-| `0x46` = 70 | Magic window | `0x6E` / `0x28` |
-| `0x50` = 80 | Arts command-entry screen | `0x5A` when the sequence is entered |
-| `0x5A` = 90 | Target cursor | `0x6E` on the last member, else `0x28` |
-| `0x64` = 100 | Target confirm (item window's own) | `0x6E` / `0x28` |
-| `0x6E` = 110 | All members committed - begin | `0xFE` on confirm, `0x28`/`0x1E` on cancel |
-| `0x78` = 120 | Auto / Command attack-mode prompt | `0x50` on Command, `0x5A` on Auto |
+| `ctx[+0x06]` | Handler | On screen | Leaves to |
+|---|---|---|---|
+| `0x1E` = 30 | `0x801D102C` | `[Begin]` / `[Escape]` turn prompt | `0x28`, `0x32`, `0x6E` |
+| `0x28` = 40 | `0x801D1188` | Action-category menu | `0x1E`, `0x3C`, `0x46`, `0x5A`, `0x6E`, `0x78` |
+| `0x32` = 50 | `0x801D10F8` | Flee confirm | `0x1E`, `0xFE` |
+| `0x3C` = 60 | `0x801D17DC` | Item window | `0x28`, `0x5B`, `0x5D`, `0x64` |
+| `0x46` = 70 | `0x801D19F8` | Magic window | `0x28`, `0x5C`, `0x65`, `0x67` |
+| `0x50` = 80 | `0x801D1D84` | Arts command-entry screen | `0x28`, `0x5A`, `0x78` |
+| `0x5A` = 90 | `0x801D21CC` | Target cursor | `0x28`, `0x50`, `0x6E`, `0x78` |
+| `0x64` = 100 | `0x801D2A00` | Target confirm (item window's own) | `0x28`, `0x3C`, `0x6E` |
+| `0x6E` = 110 | `0x801D3024` | All members committed - begin | `0x1E`, `0x28`, `0xFE` |
+| `0x78` = 120 | `0x801D16E8` | Auto / Command attack-mode prompt | `0x28`, `0x50`, `0x5A` |
 
-Above the selection band sit the per-window target sub-cursors (`0x5B..=0x67`),
-`0xFE` ("round armed - run the action SM") and `0xFF` (idle).
+**How to read the "Leaves to" column.** It is the exhaustive set of
+`sb <reg>,0x0(s3)` stores inside each handler's address range (`s3 = ctx+6`,
+loaded at `0x801D0780`), resolved by constant propagation over the `li` / `move`
+/ `clear` that feed the stored register - not a per-branch narration. Every
+handler can also fall through without storing, which is the implicit "stay put".
+Two earlier readings do not survive that sweep: state `0x28` never stores `0x50`
+(Attack reaches the arts screen via the `0x78` attack-mode prompt), and state
+`0x46` never stores `0x6E`. Both were nested-`if` renderings, not stores.
+
+Above the selection band sit the per-window target sub-cursors. They are two
+disjoint runs, `0x5B..0x5E` and `0x64..0x67` - there is no case for
+`0x5F..0x63`, and treating the sub-cursors as one contiguous `0x5B..=0x67` range
+invents five states. `0xFE` is a real dispatched case ("round armed - run the
+action SM"). `0xFF` (idle) is **not**: no comparison tests for it, so it reaches
+the default at `0x801D3290` like every other unlisted value - idle by falling
+through rather than by being handled.
 
 That band is what pins the tutorial's table. Its nine live slots are exactly
 these ten states **minus the magic window** - the sparring fight teaches attacks,
@@ -678,6 +726,7 @@ This is the canonical "monster spawn" path. Engine port reads the record once, p
 | `+0x16` | u16 | **LDF** (lower defense) → actor `+0x160/+0x162` (defender defense, low facet). |
 | `+0x18` | u16 | **INT** → actor `+0x168/+0x16A` (magical damage / magic defense in the summon/arts kernel + the accuracy/evasion seed; the bestiary INT column. Meth962: INT "affects your magical damage and defense against other magical spells"). |
 | `+0x1A` | u16 | **SPD** → actor `+0x164/+0x166` (turn-order initiative seed; buffable). |
+| `+0x1F` | u8 | **Size class** - body bulk. Read **record-direct** through the same `0x801C9348` pointer table, never copied to the actor: the battle camera's per-action framing `FUN_801F0348` computes `ctx+0x6D0 = clamp(size << 7, 0x0C00, 0x1400)` and the enemy stager `FUN_800513F0` writes `actor+0x58 = size << 5`. Spans `14..=48` across the roster with no zero and no outlier, and it tracks model bulk rather than any stat - Lapis is 64800 HP at size class `20` against Koru's `48`, so a byte tracking HP could not produce the column. Parser: `MonsterRecord::size_class`. |
 | `+0x21` | u8[3] | **Magic-attack ids** (`+0x21..+0x23`): up to three **global** spell ids the enemy casts. A slot is live when its value is `> 1`. The AI spell picker `FUN_801E9FD4` (`overlay_0898`) reads `record[0x21 + slot]`, writes it into the live actor at `+0x1DF`, and the battle-action SM names it via `&DAT_800754D0 + id*0xC` (`0x27` → `Tail Fire`). These global ids are **distinct** from the local `+0x4C` entry ids (which only gate the AGL cost); they are the names that appear on screen. Parser: `MonsterRecord::magic_attacks` + `legaia_asset::spell_names`. |
 | `+0x44` | u16 | **gold** (base victory-spoils gold). |
 | `+0x46` | u16 | **EXP** (base victory-spoils experience). |
@@ -899,7 +948,7 @@ and the capture-archive preload for spell ids `0x2E/0x2F`.
 
 Per-frame helper that walks the 3 active party members (stride `0x414` - see [character record layout](#character-record-layout)) and:
 
-1. Caps each character's stats at `0x3E7` (999, the in-game stat ceiling).
+1. Clamps each character's stat fields to a per-field ceiling. It is a **ladder, not one blanket `0x3E7`**: at `0x80042C0C..0x80042CE0` the caps are `+0x104` → `9999`, `+0x108` → `999`, `+0x10C` → `100`, `+0x110` → `280`, then `999` each for `+0x112/+0x114/+0x116/+0x118/+0x11A`. Only the maxima are capped; the paired currents are handled by the clamp triple that follows ([pair order ↓](#why-the-pair-order-is-max-cur)).
 2. ORs the character's "active abilities" 16-byte block at `+0xF4..0x100` into a global 4×u32 bitmask at `0x80074358..0x80074368`. This is the "currently-active accessory effects" register read by every other game system.
 3. For each character, calls `FUN_800432BC` / `FUN_80042DBC` to add/remove temporary spells per the active spell-slot layout at `+0x2B0`.
 
@@ -925,19 +974,88 @@ Stride `0x414` bytes per character, base `0x80084708` (so character `n` lives at
 
 | Offset | Use |
 |---|---|
+| `+0x08..+0x98` | u32 per-spell counter array (stride 4), maintained in lockstep with the two byte arrays below. See [the three parallel spell arrays](#the-three-parallel-spell-arrays). |
 | `+0x13C` | u8 spell-list count. |
 | `+0x13D..+0x160` | u8 spell IDs (variable-length; up to 36). |
-| `+0x161..+0x184` | u8 parallel spell-level / experience array. |
+| `+0x161..+0x184` | u8 per-spell **level / rank** (one byte per entry, same index as `+0x13D`). Floored to `1` when a spell is learned; magic-rank up writes `+1` here. |
 | `+0x196..+0x19D` | u8 equipment slot bytes (8 slots; weapon, armour, accessories). |
 | `+0x2A7..+0x2B0` | NUL-padded ASCII display name (`Vahn`/`Noa`/`Gala`/`Terra`/player-entered lead), 9 bytes bounded by the active-spell table at `+0x2B0`. Pinned across six in-game RAM captures for all four roster slots. In the retail SC save block this lands at `game+0x66F + n*0x414` (SC `+0x86F` for slot 0); see [`save-screen.md`](save-screen.md). Accessor `legaia_save::CharacterRecord::name` (`NAME_OFFSET`). |
 | `+0x2B0..+0x37F` | Active spell-slot array (stride `0x14`, up to N entries). Populated by `FUN_80042DBC` from the spell list. |
 | `+0xF4..0x100` | "Active abilities" 16-byte block - OR'd into the global 4×u32 bitmask at `0x80074358..0x80074368` by `FUN_80042558`. |
-| `+0x104..0x110` | HP / MP / AP `(max, cur)` u16 pairs - `+0x104/+0x108/+0x10C` effective maxima, `+0x106/+0x10A/+0x10E` currents (see [save-record.md](../formats/save-record.md)); AP = the arts / action-point gauge, its max sized by AGL - the AGL stat itself is the adjacent "Max AGL" field at `+0x110`/`+0x122`, see [save-record.md](../formats/save-record.md)). |
+| `+0x104..0x110` | HP / MP / AP `(max, cur)` u16 pairs - `+0x104/+0x108/+0x10C` effective maxima, `+0x106/+0x10A/+0x10E` currents ([pair order ↓](#why-the-pair-order-is-max-cur)); AP = the arts / action-point gauge, its max sized by AGL - the AGL stat itself is the adjacent "Max AGL" field at `+0x110`/`+0x122`, see [save-record.md](../formats/save-record.md)). |
 | `+0x10E` | u8 - written on level-up (delta `+8` for Vahn slot in the captured pre→post pair): the live AP pair's current cell refilling to the raised max. |
 | `+0x11A` | Stat-cap field (clamped to `0x3E7`). |
 | `+0x11C..+0x122` | Six adjacent stat bytes (paired) - incremented by small deltas (`+1..+4`) on level-up. Likely the per-stat rank table consumed by the level-up apply path. |
 | `+0x130` | u8 - the **displayed character level** (the byte the status screen reads as "LV"; the `Level 99` cheat target), incremented `+1` per level-up event. See [save-record.md](../formats/save-record.md#0x130-is-the-displayed-character-level). |
-| `+0x161..+0x184` | u8 spell-level array (one byte per spell id; stride matches spell list). Magic-rank up writes here (delta `+1` per learned spell). |
+
+### The three parallel spell arrays
+
+The character record carries a spell list as **three** arrays at the same index,
+not two, and an earlier revision of the table above listed `+0x161..+0x184` twice
+- once as a "spell-level / experience" array and once as a "spell-level" array.
+Both rows described `+0x161` correctly as far as the *level* goes; the
+"experience" half was real data attributed to the wrong offset.
+
+`FUN_800432BC` (learn a spell - insert at the head of the list) settles it. It
+shifts all three arrays up by one in the same loop at `0x80043338..0x80043370`,
+then writes the new entry at index 0:
+
+| Array | Stride | Shift loop | Insert store |
+|---|---|---|---|
+| `+0x13D` spell id | 1 | `lbu 0x13d` `0x80043344` → `sb 0x13d` `0x8004334C` | `sb t3,0x13d(t0)` at `0x80043378` |
+| `+0x161` level | 1 | `lbu 0x161` `0x80043350` → `sb 0x161` `0x80043358` | `sb t1,0x161(t0)` at `0x8004337C` |
+| `+0x08` counter | 4 | `lw 0x8` `0x80043364` → `sw 0x8` `0x80043370` | `sw t2,0x8(t0)` at `0x80043380` |
+
+The count at `+0x13C` is incremented last (`0x80043384` / `0x8004338C`).
+
+Two details separate the byte from the word. The level byte `t1` is read from the
+source spell-slot at `+0x2B5` and **floored to a minimum of 1** (`bne t1,zero` at
+`0x8004331C`, `addiu t1,t1,0x1` at `0x80043324`) - a rank starts at 1, which is
+level semantics and not counter semantics. The u32 `t2` is *assembled* from four
+separate bytes of that same slot, `+0x2B1..+0x2B4`
+(`0x800432F8..0x8004331C`, shifted `<<24/<<16/<<8` and summed), which is the
+shape of an accumulating counter and not of a 1-byte rank.
+
+`FUN_80042DBC` moves the same data the other way, writing `+0x161` back out to
+the slot byte `+0x2B5` (`lbu 0x161` at `0x80042E64` → `sb 0x2b5` at
+`0x80042E6C`), and runs the mirror-image compaction loop at
+`0x80042E84..0x80042E9C` when an entry is removed.
+
+The captured magic-rank-up deltas agree independently: the same event moves
+`+0x161` by `+1` (`0x02 → 0x03`, a rank) and `+0x08` by `+12`
+(`0x30 → 0x3C`, an accumulation). The extent lines up too - 36 entries at stride
+4 from `+0x08` ends at `+0x98`, immediately before the magic-rank counter at
+`+0x9C`.
+
+What the `+0x08` counter *counts* is Inferred, not Confirmed: the disassembly
+pins its structure, lifetime and stride, and the capture pins one `+12` delta on
+a rank-up, but no site was traced that consumes it to decide a threshold. The
+"experience" reading is plausible and is the likeliest origin of the old row's
+wording - it is recorded here as a lead, not as a decoded field.
+
+### Why the pair order is `(max, cur)`
+
+The decisive sequence is the clamp triple that closes the stat aggregator
+`FUN_80042558` at `0x80042CE4..0x80042D34`. For each of the three pairs it loads
+the low halfword, loads the high halfword, and writes the **low** one into the
+**high** slot when the high slot is larger:
+
+```
+80042ce4  lhu  v1,0x104(s0)     ; max
+80042ce8  lhu  v0,0x106(s0)     ; cur
+80042cf0  sltu v0,v1,v0         ; max < cur ?
+80042cfc  sh   v1,0x106(s0)     ; cur := max
+```
+
+Repeated verbatim for `0x108`/`0x10A` and `0x10C`/`0x10E`. A value that gets
+clamped *down to* its neighbour is the current; the neighbour is the maximum.
+Two more instruction-level corroborations sit either side of it: the hard caps
+just above (`0x80042C0C..0x80042C50`) apply to `+0x104`, `+0x108`, `+0x10C`
+only, at `9999` / `999` / `100` - a `100` ceiling on `+0x10C` is unambiguously
+the AP *maximum* - and the walk-regen tick `FUN_801D0B90` (dialog overlay) bumps
+`+0x106` by `8` and clamps it at `+0x104` (`0x801D0C00..0x801D0C20`), with the
+same shape for MP and AP. Consumers: `legaia_save::HpMpSp`,
+`engine-core::walk_regen`.
 
 **Level-up captured deltas (Vahn, pre/post a single character-level event).** Diff captured via `mednafen-state` shows the per-character side-effects:
 
@@ -955,9 +1073,9 @@ Noa and Gala records are byte-identical across the same pair - the level-up even
 
 | Offset | Width | Pre → Post | Interpretation |
 |---|---|---|---|
-| `+0x08` | u8 | `0x30` → `0x3C` (+12) | Flag word - specific bit TBD. |
+| `+0x08` | u32 | `0x30` → `0x3C` (+12) | `spell_counter[0]` - entry 0 of the per-spell u32 array, not a flag word ([why](#the-three-parallel-spell-arrays)). |
 | `+0x9C` | u8 | `0x09` → `0x0A` (+1) | Magic-rank mirror. |
-| `+0x10A` | u8 | `0x1B` → `0x11` (-10) | TBD (transient battle state, possibly post-strike). |
+| `+0x10A` | u16 lo | `0x1B` → `0x11` (-10) | MP **current** (the `+0x108`/`+0x10A` pair) - the cast that earned the rank-up. Not a TBD field. |
 | `+0x161` | u8 | `0x02` → `0x03` (+1) | Spell-level byte (`+0x161..+0x184` array). Confirms magic-rank up writes here. |
 
 ## Battle main dispatcher (`FUN_801D0748`)
@@ -972,11 +1090,13 @@ Noa and Gala records are byte-identical across the same pair - the level-up even
 
 Visual-only helpers that build the swept geometry behind a moving battle actor (sword trails, dash plumes, particle ribbons). `FUN_80048310` iterates the 16-slot per-actor frame buffer at `actor[+0x68]`, copies vertex triplets from the per-actor pose pool at `gp[0xa0c] + 0x6f4` (stride `0xC`), and calls `FUN_800485BC` twice - once for the outline, once for the base - blending two endpoint colours over N steps via a `0..N` gradient loop.
 
-`FUN_800485BC` is a 275-instruction quad-strip emitter. It looks up the actor pose from `*(int*)(0x801C9370 + actor[+0x5A]*4) + 0x34/+0x38` (re-confirms the battle actor pointer table), reads sin/cos LUTs at `_DAT_8007B81C` / `_DAT_8007B7F8` keyed on `actor[+0x26] * 0xFFF`, runs each vertex through `FUN_800195A8` for GTE projection, and drops `0x3B808080` (GP0 G3 textured-quad) packets into the OT.
+`FUN_800485BC` is a 275-instruction quad-strip emitter. It looks up the actor pose from `*(int*)(0x801C9370 + actor[+0x5A]*4) + 0x34/+0x38` (re-confirms the battle actor pointer table), reads sin/cos LUTs at `_DAT_8007B81C` / `_DAT_8007B7F8` keyed on `actor[+0x26] & 0xFFF` (a 12-bit angle **mask**, not a multiply - the LUTs are 4096-entry, `s16` 1.12 fixed point), runs each vertex through `FUN_800195A8` for GTE projection, and drops `0x3B808080` packets into the OT.
+
+That code word is a **`POLY_G4`** - four-point gouraud, semi-transparent, *untextured*: the texture bit `0x04` is clear, and `0x808080` is a neutral placeholder colour the fill immediately overwrites. Vertex products carry a `+0xFFF` bias when negative before the `>> 12`, emulating round-toward-zero, and the OT slot is the average of the four corner depths with the same fixup.
 
 These are pure rendering helpers - no gameplay state changes. Engine reimpl can defer them until visuals matter.
 
-## Per-frame actor maintenance (`FUN_8004CE30`)
+## Per-frame actor maintenance (`FUN_8004CE2C`)
 
 The SCUS-resident per-frame sweep over the battle actor table - one of the
 largest SCUS functions with no static caller (it is reached from the battle
@@ -993,20 +1113,30 @@ byte `*(_DAT_8007BD24)[0]`:
    animation timers and effect pointers from the overlay globals
    `_DAT_801F53D4` / `_DAT_801F53D8` into `actor+0x4`, `+0x21B..+0x21F`;
    the `action == 24` low-speed arm calls overlay `FUN_801E1D98`.
-3. **Gauge + tint refresh.** Gated on the sequence sub-phase byte
-   `_DAT_8007BCEC` (138/170/180 bands) and the active action id
-   `*(_DAT_8007BD24)[7]`: recomputes AP/HP gauge geometry - the `0x51EB851F`
-   magic multiply is a fixed-point ÷100 (percent-of-max), and the `0x1F80`
-   constant is the gauge bar-width base (`8064 - n*18`), **not** a hardware
-   register - then, for actors with status bit `0x0004` and a live fade byte
-   `+0x220`, averages the RGB555 channels and writes the damage-flash tint to
-   `actor+0xE34`.
+3. **Per-encounter boss hooks.** Gated on `DAT_8007BD0C` - the **monster /
+   formation id**, not a sequence sub-phase byte, and `0x8A`/`0xA7`/`0xAA`/`0xB4`
+   (138/167/170/180) are **boss ids**, not phase bands. Each arm applies
+   hand-written camera / pose / scale overrides to the first monster actor:
+   the `0x51EB851F` magic multiply is a fixed-point **÷50** (the spirit value is
+   clamped to 50 first), and `0x1F80 - frame*0x12` is a triangular angle ramp
+   written to `+0x1BA`, **not** a gauge bar width and **not** a hardware
+   register.
+4. **CLUT status recolour.** For actors with status bit `0x04` (Stone, latched
+   via `+0x220`) or bits `0x08`/`0x10`/`0x20` (latched via `+0x221..+0x223`),
+   it recolours the actor's **240-entry palette row** - not its texels - staging
+   through `ctx+0xE34` and uploading a `1`-pixel-tall rect, so each actor owns
+   VRAM CLUT row `481 + slot`. Stone averages the three BGR555 channels
+   (`l = (r+g+b) >> 2`, clamped to 31) into a grey; the other three build the
+   same luminance plus `b = (l*3) >> 1` and set the STP bit, giving a blue
+   tint over a per-character index window from the 3-pair table at
+   `DAT_80078630` (stride 6). This is status tinting latched once per
+   affliction, not a per-frame damage flash.
 
 Calls the actor-spawn/move-VM invoker `FUN_80021B04` and helpers
 `FUN_8004FE5C` / `FUN_800583C8` / `FUN_80031D00` / RNG `FUN_80056798`.
 Despite its size and shape it is **not a mode dispatcher**: the master mode
 word `_DAT_8007B83C` never appears; every global it touches is battle-domain.
-`see ghidra/scripts/funcs/8004ce30.txt`.
+`see ghidra/scripts/funcs/8004ce2c.txt` (`0x8004CE30` is the function's second instruction, not its entry).
 
 ## Inventory (`crates/asset` page-banked layout)
 
@@ -1176,7 +1306,11 @@ The HUD is fed by `World` events:
 
 Damage popups carry a 60-frame default lifetime and an `alpha()` helper for fade-out renders. The log column rings the most recent N entries (default 6, matching the retail scrolling-log column).
 
-Implementation: [`crates/engine-core::battle_hud`](../../crates/engine-core/src/battle_hud.rs).
+Slot indices are **absolute actor-table indices** - party ordinals below `party_count`, monsters above - and stay absolute through the draw list. `battle_hud_draws_for` derives both a row's Y and a popup's anchor from the slice position, so a host that hands it a compacted "active slots only" list shifts every monster row up and anchors damage numbers to the wrong actor. Inactive slots are passed through as empty-name rows, which the builder skips while still consuming their Y.
+
+HP and MP readouts are tinted by the four-tier retail colour law (`hp_bar_color_index` / `mp_bar_color_index`, ports of `FUN_800349EC` / `FUN_80035EA8`). MP has no ceiling on the battle actor: `World::character_max_mp`, keyed by battle ordinal, is the only source, so monster rows carry `mp_max = 0` and the builder draws them no MP field.
+
+Implementation: [`crates/engine-core::battle_hud`](../../crates/engine-core/src/battle_hud.rs). The native window folds the live actor table into it each tick in `engine-shell`'s `window/battle.rs::sync_battle_hud_rows`.
 
 ## SFX bank + scheduler
 
@@ -1376,7 +1510,7 @@ The `mednafen-state diff` toolkit ([`docs/tooling/mednafen-automation.md`](../to
 
 | Event | Offset | Before → After | Interpretation |
 |---|---|---|---|
-| Magic-rank up (pre → post) | `+0x08` | `0x30 → 0x3C` | flag word low byte (+12) |
+| Magic-rank up (pre → post) | `+0x08` | `0x30 → 0x3C` | `spell_counter[0]` (+12), the u32 array entry - not a flag word |
 | Magic-rank up | `+0x9C` | `0x09 → 0x0A` | magic-rank counter (+1) |
 | Magic-rank up | `+0x10A` | `0x1B → 0x11` | low byte of `mp_cur` (cast cost spent) |
 | Magic-rank up | `+0x161` | `0x02 → 0x03` | spell-level array (`spell_levels[0]` +1) |

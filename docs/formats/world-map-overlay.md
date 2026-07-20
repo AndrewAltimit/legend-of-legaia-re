@@ -165,16 +165,13 @@ The 4th `i16` is genuinely **per-vertex** (not constant within a `count_a` group
 (`corr(attr, x/y/z) ≈ 0.1`), and is not a copy of a neighbouring vertex's
 coordinate. It varies smoothly across the `count_b` groups (consecutive groups'
 `attr` at the same slot track closely - e.g. Drake body 0 group 0 vs 1:
-`29953→30465`, `1286→1286`). It rides in the high half of the `VZn` word, which
-the GTE vertex load discards, so its consumer is **not** the prim renderer
-(`FUN_80044c14`). **Resolved (render-unused).** A full sweep of the cluster-A
-handler family finds **no reader** of the pool word's high half anywhere in the
-corpus: the 43 `>> 0x10` hits in the family are all **command-word index
-extraction** (forming pool pointers), and every place a record's `word1` is
-loaded, it goes **whole** into the GTE `VZn` register and the high half is
-discarded (`grep puVar[1] >> 0x10` = zero). So `attr` is real per-vertex data
-(135 distinct values in one Sebucus body) that the engine never reads -
-reserved / authoring data, render-unused.
+`29953→30465`, `1286→1286`). It rides in the high half of the `VZn` word, and
+`VZ0`/`VZ1`/`VZ2` (cop2r1/3/5) are **16-bit** registers - so that half is
+dropped by the register width on write. `attr` cannot reach the GTE whatever
+the surrounding code does. It is real per-vertex data (135 distinct values in
+one Sebucus body) that the renderer is structurally unable to see: reserved /
+authoring data. The argument is made in full under "`attr` - render-unused"
+below.
 
 **`kind`/`count` consumer - pinned.** A Read-watchpoint on body 0's header
 (`0x8011A664`, the `count`/`kind` words) during the Drake warp catches the
@@ -189,17 +186,46 @@ place**, dispatching per `count_b`-derived prim-kind and consuming the header in
 the same pass. (This is the same handler family as `FUN_80044c14`, whose tail
 reads the next body's header to chain - consistent with an in-place body walk.)
 
-**`attr` - render-unused (full handler sweep).** The prim handlers load a
-record's second word (`z | attr<<16`) into the GTE `VZn` register and use only
-the low 16 bits (`z`). Sweeping **every** cluster-A handler
-(`FUN_80043658`..`FUN_80045988`) confirms none extract the pool word's high half:
-every `>> 0x10` in the family is either a **vertex-index** extraction
-(`param_3 + (cmd_word >> 0x10)`, forming a pool pointer) or an output-packet /
-RTPT-screen-coordinate write - never a read of the pool `word1` high half. So
-`attr` is **not consumed by the world-map render path at all**. It is real
-per-vertex data (135 distinct in one Sebucus body) that the renderer ignores -
-either reserved/authoring data or consumed by some non-render subsystem; nothing
-in the (now fully swept) render family reads it.
+**`attr` - render-unused.** The load-bearing fact is a register width, not a
+sweep result. The prim handlers load a record's second word (`z | attr<<16`)
+into the GTE as `VZ0`/`VZ1`/`VZ2` (cop2r1/3/5) or `IR0` (cop2r8). **Every one
+of those is a 16-bit register**, so the high half is discarded on write. No
+sweep can be incomplete enough to overturn that: `attr` is unreachable by the
+render path by construction, independent of what any handler does with it.
+
+The byte-level sweep is corroboration, and it agrees. Word-wise disassembly of
+`SCUS_942.54` (`0x80043390..0x80046498`) and of the whole PROT 0901
+`world_map_render` overlay (`0x801F69D8..0x801FA1D8`) covers all 23 handlers in
+the four SCUS banks at `0x8007657C` (including bank-3 kind-19 `0x80045BB4`) and
+all eight overlay-resident replacements at `0x801F8968`
+(`0x801F7644..0x801F8690`). Pool pointers are formed as
+`addu rX, a2, idx & 0x7ff8`, hence always 8-byte aligned, so displacement
+mod 8 **is** the record field offset. Across the family every pool-derived load
+is at field +0 (99 loads) or +4 (118 loads), always a full word; there are **no
+loads at field +6/+7** and **no shift or mask is ever applied to a pool-loaded
+value**.
+
+The instructions that most resemble an `attr` access are `lhu 0xE($a1)` and
+`lhu 0x16($a1)` - displacement `8+6` and `16+6`, exactly the shape a reader of
+`attr` through an advanced pointer would take. All 12 of them (10 in SCUS, 2 in
+0901) are on `$a1`, the **command stream**, and all feed `addu rX, $a2, rX`:
+they are vertex indices, not field reads. Anyone re-deriving this claim should
+expect to meet them and should check the base register before concluding.
+
+**Scope.** This bounds the **render path only**. The slot-4 base is held in a
+runtime pointer with no static `LUI+ADDIU` reference and varies per kingdom
+(see [RAM layout](#ram-layout-confirmed)), so no byte sweep can enumerate
+non-render holders of it. A non-render consumer of `attr` remains
+**unexcluded**.
+
+**The existing capture does not close that gap, and should not be read as if
+it does.** The `autorun_slot4_source_map.lua` Read watchpoints tile at
+`base + k*0x800`: 16 sampled addresses out of 32304 bytes, none of them on
+`+6`/`+7` alignment within a record. That capture is good evidence for *where
+the buffer is read from* and worthless as evidence about *which field* is read.
+What would settle the residual question: a Read-watchpoint capture armed
+specifically on record `+6`/`+7` addresses across a full world-map session,
+asserting zero hits outside the render PCs.
 
 ## Per-kingdom body inventory
 
@@ -366,7 +392,7 @@ set. And bank 0 / bank 1 are gated by `fade_flags`, not by
 | `== 0` | (ignored) | `0x00` | bank 0 - `kind ∈ [12..19]` use the small `0x80043658..0x80043F10` handler set |
 | `!= 0` | neither `0x04000000` nor `0x20000000` | `0x50` | bank 1 - `kind 12..19` swap to the `0x800448B0..0x80045584` set |
 | `!= 0` | `0x04000000` set, `0x20000000` clear | `0xA0` | bank 2 - `kind 12..17` same as bank 1; `kind 18` / `19` swap to `0x800457C4` / `0x80045988` |
-| `!= 0` | `0x20000000` set | `0xF0` | bank 3 - likely dev / debug mode; never observed in retail world-map render |
+| `!= 0` | `0x20000000` set | `0xF0` | bank 3 - subtractive blend; `kind 19` swaps to `0x80045BB4`. Never observed in retail world-map render |
 
 `kind ∈ [0..7]` and `kind ≥ 20` are NULL slots in every bank -
 encountering them ends the primitive stream. `kind ∈ [8..11]` is
@@ -390,6 +416,12 @@ during retail Drake world-map gameplay; banks 2 and 3 are reachable in
 the dispatcher but no caller passes the flags that select them. The
 sole bank distinction is `fade_flags != 0` (bank 0 ↔ bank 1).
 
+"Never selected in this capture" is not "not a real render mode": the four
+banks are the PSX semi-transparency states, and bank 3 is **subtractive**
+blend. See [`subsystems/renderer.md`](../subsystems/renderer.md) for the
+per-bank alpha semantics, which is the authority on what a bank *means*; this
+page only records which ones the world-map capture exercised.
+
 #### Per-kind primitive types
 
 Every handler has the same shape: read N command-stream words, transform
@@ -397,7 +429,7 @@ Every handler has the same shape: read N command-stream words, transform
 primitive-pool pointer (`_DAT_8007BB04`-shaped global, advanced by `M`
 each emit). The strides give away the PSX primitive type:
 
-| Kind | Bank 0 entry | Banks 1,2 entry | cmd stride | GP0 stride | Likely primitive |
+| Kind | Bank 0 entry | Banks 1,2,3 entry | cmd stride | GP0 stride | Likely primitive |
 |---:|---|---|---:|---:|---|
 | 8 | `0x8004409c` (shared) | (shared) | 0x14 (20B) | 0x20 (32B) | `POLY_G4` (gouraud quad) |
 | 9 | `0x8004423c` (shared) | (shared) | 0x18 (24B) | 0x28 (40B) | `POLY_GT4` (gouraud-textured quad) |
@@ -409,8 +441,8 @@ each emit). The strides give away the PSX primitive type:
 | 15 | `0x80043c6c` | `0x80045194` | 0x18 (24B) | 0x24 (36B) | `POLY_GT3` (gouraud-textured triangle) |
 | 16 | `0x800438b8` | `0x80044c14` | 0x14 (20B) | 0x20 (32B) | `POLY_G4` |
 | 17 | `0x800439e4` | `0x80044dc8` | 0x18 (24B) | 0x28 (40B) | `POLY_GT4` |
-| 18 | `0x80043dd4` | `0x800453bc` (b1) / `0x800457c4` (b2) | 0x1c (28B) | 0x28 (40B) (b1) / 0x20 (b2) | `POLY_GT4` extended (per-vertex tag word) |
-| 19 | `0x80043f10` | `0x80045584` (b1) / `0x80045988` (b2) | 0x24 (36B) | 0x34 (52B) (b1) / 0x28 (b2) | `POLY_GT4` extended-plus (sub-poly) |
+| 18 | `0x80043dd4` | `0x800453bc` (b1, b3) / `0x800457c4` (b2) | 0x1c (28B) | 0x28 (40B) (b1) / 0x20 (b2) | `POLY_GT4` extended (per-vertex tag word) |
+| 19 | `0x80043f10` | `0x80045584` (b1) / `0x80045988` (b2) / `0x80045bb4` (b3) | 0x24 (36B) | 0x34 (52B) (b1) / 0x28 (b2) | `POLY_GT4` extended-plus (sub-poly) |
 
 Decomp dumps for each handler live at
 `ghidra/scripts/funcs/slot4_<kind>_<bank>_<addr>.txt`; the SCUS table is
@@ -418,6 +450,30 @@ at `ghidra/scripts/funcs/slot4_handler_table_scus_0x8007657C.txt`.
 Each handler decodes the per-command words as two packed vertex indices
 per `u32` (low-16 `& 0x7FF8`, high-16 also `& 0x7FF8` - a `>>3` divisor
 plus 8-byte vertex stride from `param_3` = the vertex pool base).
+
+##### Sweeping the render path - what the range must cover
+
+Decoding all four banks of `0x8007657C` yields **23 distinct handler entries**,
+and a sweep scoped to the contiguous span `0x80043658..0x80045988` silently
+misses two disjoint pieces of the render path:
+
+- **`0x80045BB4`** - bank-3 `kind 19`, whose body runs past the end of that
+  span to roughly `0x80046488`. It is the only handler reachable solely
+  through bank 3.
+- **The eight overlay-resident replacements** in PROT 0901 at
+  `0x801F7644..0x801F8690`, reached through the second dispatch table
+  `0x801F8968` when `_DAT_1F800394 & 1` is set. These **replace** kinds 12..19
+  while the world-map overlay is paged in, so they are the bulk-terrain render
+  path - not an optional extra. They live in a different image at a different
+  base and cannot be reached by extending any SCUS address range.
+
+A sweep that means "the whole world-map render path" therefore has to cover
+`SCUS 0x80043390..0x80046498` **and** the PROT 0901 image
+(`0x801F69D8..0x801FA1D8`, base from
+[`static-overlays.toml`](../../crates/asset/data/static-overlays.toml)). Note
+also that ~6% of words in this family are COP2/GTE ops that a stock MIPS32
+disassembler declines to decode; confirm such words are opcode `0x12` rather
+than assuming a failed decode is a data word.
 
 #### Mapping captured LW PCs to kinds
 
@@ -1066,10 +1122,14 @@ into `piVar2`. The downstream LZS calls then interpret
 `piVar2[2..7]` as three `(size, offset)` pairs - but PROT 876's
 bytes there are streaming-format chunk data (the start of a VABp
 header inside chunk 0), not LZS descriptors. That branch is
-therefore **incompatible with PROT 876's actual layout** in retail
-and either (a) is gated off by `DAT_8007B8C2 == 0` in retail or (b)
-is dead code. The `data\field\player.lzs` string and PROT-876 fast
-path both fall over the same shape mismatch.
+therefore **incompatible with PROT 876's actual layout** in retail.
+The escape hatch once offered here - that the branch might be gated
+off by `DAT_8007B8C2 == 0` in retail - is **falsified**: retail boots
+that flag at `1`, so the `!= 0` branch is precisely the one retail
+takes. Either the branch is genuinely unreached for another reason,
+or the shape analysis above is wrong; it is not resolved by the flag.
+The `data\field\player.lzs` string and PROT-876 fast path both fall
+over the same shape mismatch.
 
 Among the **static SCUS** sites, `FUN_800520F0` (the battle scene
 loader) loads PROT 873+874 contiguously, but its two install loops

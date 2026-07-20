@@ -22,42 +22,62 @@
 builder = "battle_hud_draws_for"
 kind = "web_missing"
 reason = """
-The browser play page has no battle host at all: it never arms encounters
-(`step_encounters` is left off in `LegaiaRuntime::enter_field`) and exports no
-battle render, camera, or command-menu path. The HUD is the last piece to wire,
-not the first - it needs the battle scene, the actor pointer table, and the
-command/target sessions to exist first.
+Native draws it: `engine-shell/.../window/hud.rs` calls this for every
+`SceneMode::Battle` frame, fed by `window/battle.rs::sync_battle_hud_rows`,
+which folds the live actor table into the `BattleHud` model each tick. The
+window's own hand-rolled HP rows are gone, so this is the only battle HUD the
+native host has - and the retail HP / MP colour law (`hp_bar_color_index` /
+`mp_bar_color_index`, FUN_800349EC / FUN_80035EA8) reaches a surface.
+
+The browser play page has no battle host to draw into. It never arms
+encounters - none of `tick_encounter`, `arm_scripted_encounter`,
+`install_encounter_*` or `drain_encounter_formation` is referenced anywhere in
+`crates/web-viewer/src`, and no code path there sets `SceneMode::Battle` - and
+it exports no battle render, camera or command-menu path. There is also no
+battle HUD in the page's JS: `site/js/play-app.js` mentions battle only in a
+comment about Start being inert. Wiring the HUD would draw a readout of state
+the page never produces. Closing this is a battle-host job, not a draw-call
+one.
 """
 
 [[waiver]]
 builder = "encounter_banner_draws_for"
-kind = "web_missing"
+kind = "orphan"
 reason = """
-Same root cause as the battle HUD: the page does not step encounters, so no
-formation is ever drawn. An ENCOUNTER! banner with no battle behind it would
-report a transition the page cannot perform.
+Same root cause as the battle HUD, on both sides. The browser page does not
+step encounters, so no formation is ever drawn - an ENCOUNTER! banner with no
+battle behind it would report a transition the page cannot perform. The native
+window reaches battle but announces it through its own event log rather than a
+banner, so it does not call this either.
 """
 
 [[waiver]]
 builder = "dialog_box_draws_for"
-kind = "web_missing"
+kind = "orphan"
 reason = """
-This is the plain typewriter fallback the native window uses under
-`--simple-dialogue`. The browser page always runs the field-VM inline dialogue
-runner and draws the retail reading box (`crate::play_dialog`, built from
-`dialog_window_chrome_draws_for` + `text_draws_for`), so it has no use for the
-degraded path. Not a missing screen - a missing *fallback*.
+The plain typewriter fallback, reached by neither host. The browser page always
+runs the field-VM inline dialogue runner and draws the retail reading box
+(`crate::play_dialog`, built from `dialog_window_chrome_draws_for` +
+`text_draws_for`), so it has no use for a degraded path. On the native side its
+only in-tree caller is `dialog_panel_draws_for`, which is itself an orphan (see
+below) - so this is the tail of a two-builder chain whose head nothing calls.
+Not a missing screen: a missing *fallback*, kept because `--simple-dialogue`
+is the documented escape hatch when the retail box misrenders.
 """
 
 [[waiver]]
 builder = "dialog_panel_draws_for"
-kind = "web_missing"
+kind = "orphan"
 reason = """
-The native window's `OwnedDialogPanel` projection. The browser page builds its
-box from its own `DialogSnapshot` at the byte-pinned retail geometry
+The `OwnedDialogPanel` projection, written for the native window but not called
+by it - the native dialogue path draws the retail box directly, and this
+survives only as the entry point of the `--simple-dialogue` fallback chain
+(it delegates to `dialog_box_draws_for`). The browser page builds its box from
+its own `DialogSnapshot` at the byte-pinned retail geometry
 (`crate::play_dialog::dialog_stage_layout`, REF FUN_801D84D0) because it also
-has to place the option picker and the two hand cursors. Same screen, both
-hosts; the shared builder covers only the native panel shape.
+has to place the option picker and the two hand cursors. Closing this means
+deciding whether the fallback chain is still wanted; if it is, the native
+window has to actually route `--simple-dialogue` through it.
 """
 
 [[waiver]]
@@ -77,31 +97,60 @@ Close it with a runtime probe, not by picking a trigger.
 
 [[waiver]]
 builder = "key_rebind_draws_for"
-kind = "web_missing"
+kind = "orphan"
 reason = """
-Native-only by design. The native window rebinds through a `legaia-input.toml`
-config file and an in-engine screen; the browser page's bindings are a JS
-keycode table (`site/js/play-app.js` PAD/BOOT_PAD) owned by the page, not the
-engine. A shared rebind screen would have to write a config the browser has no
-place to persist.
+Web-exempt by design, but unreached on native too. The browser page's bindings
+are a JS keycode table (`site/js/play-app.js` PAD/BOOT_PAD) owned by the page,
+not the engine, and a shared rebind screen would have to write a config the
+browser has no place to persist. On native, rebinding today happens through the
+`legaia-input.toml` config file and the `legaia-engine config set --binding`
+subcommand; the in-engine screen this builder draws is not mounted in the
+window's menu tree. Closing it is a native-only job: give the options menu a
+rebind entry that opens this screen.
 """
 
 [[waiver]]
 builder = "sprite_draws_for"
-kind = "web_missing"
+kind = "orphan"
 reason = """
-A generic anchor-translate helper for `SpriteRequest` batches, not a screen.
-The browser page emits its quads through `crate::play_menu::quad_json` after
-`scale_stage_text_draws`, which already applies the stage transform this helper
-would duplicate.
+A generic anchor-translate helper for `SpriteRequest` batches, not a screen -
+it matches the builder pattern only because it returns `SpriteDraw`. Neither
+host routes through it: the browser page emits its quads through
+`crate::play_menu::quad_json` after `scale_stage_text_draws`, which already
+applies the stage transform this would duplicate, and the native window
+translates its sprite batches at the point of use. A helper with no caller is a
+delete candidate rather than a screen gap; it is kept only while the sprite
+builders that would batch through it (`ap_gauge_sprites` and friends) are
+themselves unwired.
 """
 
 [[waiver]]
 builder = "ap_gauge_sprites"
 kind = "orphan"
 reason = """
-Built for the battle Arts AP gauge (see docs/subsystems/arts-command-gauge.md)
-ahead of its consumer; no host draws a gauge yet. Kept rather than deleted
-because the native battle HUD is the intended caller. If the battle HUD lands
-without it, delete the builder instead of re-waiving.
+Not a screen gap and not unreached: this is an interior widget both hosts
+already draw, one call deep. `field_menu_icon_sprites_for` (the party info
+panel, per member) and `status_screen_draws_for` (the status main panel) both
+fold it in, and both of those are `native,web`. The checker only counts
+references from the host source roots, so an engine-ui builder that composes
+into another engine-ui builder always reads as unused - the same reason
+`sprite_draws_for` is waived.
+
+The previous reason here claimed no host drew a gauge and named the native
+battle HUD as the intended caller, instructing a future wave to delete the
+builder if the HUD landed without it. Both halves were wrong: the gauge was
+already reaching both hosts through the menu panels, and the battle HUD
+(`battle_hud_draws_for`) draws its AP field as text pips rather than this
+atlas widget, so its landing says nothing about this builder either way.
+"""
+
+[[waiver]]
+builder = "fishing_hud_draws_for"
+kind = "web_missing"
+reason = """
+The browser play page has no fishing host: it exposes no fishing minigame
+entry, so there is no session, no cast/reel input path and no point record for
+a HUD to read. Wiring the HUD first would draw a readout of state the page
+never produces. The native window renders it from the live `World::fishing`
+session.
 """

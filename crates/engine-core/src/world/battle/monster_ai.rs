@@ -168,16 +168,45 @@ impl World {
     ///
     /// PORT: FUN_801E9FD4
     pub(in crate::world) fn arm_monster_strike_budget(&mut self, slot: u8) {
-        let (agl, costs) = self
+        let (catalog_agl, costs) = self
             .actors
             .get(slot as usize)
             .and_then(|a| a.battle_monster_id)
             .and_then(|id| self.monster_catalog.get(id))
             .map(|d| (d.agl, d.action_costs.clone()))
             .unwrap_or((0, Vec::new()));
+        // The gauge retail spends is the actor's **live** `+0x154`, which the
+        // round boundary (`BattleRound::boundary`, the port of `FUN_801D88CC`)
+        // restores from `+0x156` once per round. A slot whose base `+0x156` was
+        // never seeded is not on that maintenance path at all - a synthetic
+        // battle assembled without the formation seeder - so it keeps reading
+        // the catalog stat directly and behaves exactly as it did before the
+        // gauge existed.
+        let base_seeded = self
+            .actors
+            .get(slot as usize)
+            .is_some_and(|a| a.battle.agl_base != 0);
+        let agl = if base_seeded {
+            self.actors[slot as usize].battle.agl
+        } else {
+            catalog_agl
+        };
         self.monster_strike_budget = if agl > 0 && !costs.is_empty() {
             let stream =
                 vm::battle_action::enemy_action_budget(agl, &costs, &mut || self.next_rng());
+            // Retail's budget loop spends the gauge it walked. Only do so on
+            // the SPD-seeded path: the round-robin fallback has no round
+            // boundary to restore it, so an unrestorable gauge would drain to
+            // a single swing and stay there.
+            if base_seeded && self.any_battle_speed() {
+                let spent: u16 = stream
+                    .iter()
+                    .map(|&pick| u16::from(costs.get(pick as usize).copied().unwrap_or(0)))
+                    .sum();
+                if let Some(a) = self.actors.get_mut(slot as usize) {
+                    a.battle.agl = a.battle.agl.saturating_sub(spent);
+                }
+            }
             (stream.len() as u8).max(1)
         } else {
             1

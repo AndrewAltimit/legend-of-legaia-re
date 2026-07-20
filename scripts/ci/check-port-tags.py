@@ -111,7 +111,16 @@ def list_staged_rust_files() -> list[Path]:
             capture_output=True,
             text=True,
         )
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as exc:
+        # Swallowing this to an empty list makes a failed observer look exactly
+        # like "nothing staged needs a port tag". This checker is warn-only, so
+        # the empty return stays -- but it must SAY it failed, or a broken git
+        # invocation reads as a clean staged set forever.
+        print(
+            f"check-port-tags: `git diff --cached` failed (rc={exc.returncode}); "
+            "staged scope is unknown, not empty -- reporting no findings.",
+            file=sys.stderr,
+        )
         return []
     out: list[Path] = []
     for line in proc.stdout.splitlines():

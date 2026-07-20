@@ -54,6 +54,8 @@ Choose by what you're trying to do:
 | Cross-reference against a different region's build | [`reference/builds.md`](reference/builds.md) |
 | Patch your own disc (randomizer / translation) | [`tooling/randomizer.md`](tooling/randomizer.md), [`tooling/translation.md`](tooling/translation.md) |
 | Find an open question to work on | [`reference/open-rev-eng-threads.md`](reference/open-rev-eng-threads.md) |
+| Look up an answered question, and how firmly it is pinned | [`reference/re-settled-threads.md`](reference/re-settled-threads.md) |
+| Check whether a plausible reading was already disproved | [`reference/re-do-not-re-walk.md`](reference/re-do-not-re-walk.md) |
 
 ## Workspace
 

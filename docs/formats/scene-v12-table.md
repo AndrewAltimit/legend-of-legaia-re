@@ -240,7 +240,8 @@ bundle during the transition fade:
   op `0x3F` at `0x801DEB14` plus four controller sites).
 - **Case 0** seeds a 70-frame countdown (`gp+0x710 = 0x46`); cases 1/3
   poll stream progress (`FUN_8003DE7C(1)`).
-- **Case 2** (dev flag `_DAT_8007B8C2` set): streams **raw TOC entry
+- **Case 2** (`_DAT_8007B8C2` set - the retail path, since retail boots the flag
+  at `1`): streams **raw TOC entry
   `DAT_8007B768 + 3`** - the destination scene's block base + 3, the
   `.LZS`/`scene_asset_table` slot - into `_DAT_8007B85C` by index
   (`FUN_8001EEF0` → `FUN_8003EB98`; `see ghidra/scripts/funcs/8001eef0.txt`,

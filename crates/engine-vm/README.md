@@ -16,6 +16,7 @@ original executable.
 - [`world_map` - `FUN_801DA51C`](#world_map---fun_801da51c)
 - [`actor_tick` - `FUN_80021DF4`](#actor_tick---fun_80021df4)
 - [`status_effects`](#status_effects)
+- [`scus_core_helpers`](#scus_core_helpers)
 - [`battle_formulas`](#battle_formulas)
 - [See also](#see-also)
 
@@ -83,7 +84,7 @@ only supplies the RNG and the summon routing.
 `0x80022B94..0x80022BBC` inside that function's body)
 (skip when wait_timer ≥ 0, run VM, check HALT flag). Op `0x2F` escapes
 into the overlay-resident `FUN_801D362C` extension VM (61 sub-opcodes);
-the dispatch table is ported in `world_map_draw_vm.rs`.
+the dispatch table is ported in `move_vm_overlay_ext.rs`.
 
 ## `world_map` - `FUN_801DA51C`
 
@@ -130,6 +131,22 @@ the byte map follows the pinned appliers (3 = Venom, 4 = Toxic, 5 = Rot,
 `rot_limb`) whose attack command the battle session refuses.
 Damage-over-time formulas (Toxic = `max_hp / 16`, Venom = `current_hp /
 8`) live alongside.
+
+## `scus_core_helpers`
+
+Five leaf helpers in `SCUS_942.54`. `ActorNodePool` is the per-scene
+actor node pool: a LIFO free-stack over 143 fixed-stride nodes
+(`FUN_800203EC` init, `FUN_80020424` pop-as-list-head, `FUN_80020454`
+pop-and-append, `FUN_800204A4` unlink-and-free), with the retail link
+words `next` / `prev` / `owner` / `tail` at node offsets `+0x00` /
+`+0x04` / `+0x08` / `+0x0C`. Allocation descends from the highest node
+index and a freed node returns to the top of the stack, so the pool
+reproduces retail's actor ordering. `list_append_u16` is the sprite
+path's pre-increment u16 append (`FUN_8001FA68`), which indexes at the
+*new* count and ignores the capacity its caller passes in `a2`.
+
+Nothing in the engine calls either yet - both carry a `NOT WIRED` note
+naming the reason.
 
 ## `battle_formulas`
 

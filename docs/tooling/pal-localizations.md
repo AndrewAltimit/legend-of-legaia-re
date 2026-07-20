@@ -146,12 +146,44 @@ the importer patches (`legaia_rando::translation::lift`):
    dialog by the `diff-disc` Nth-segment-per-entry pairing, party names by fixed
    field.
 
+`--fold-accents` additionally rewrites the accent cells onto plain ASCII, so the
+lifted text renders on an unmodified NTSC font (see
+[Accent folding](#accent-folding) below).
+
 It emits a **filled working pack** (source = USA text, translation = official
 localized text, USA byte budgets) - Sony text, kept local, never committed.
 Across FR/DE/IT all four pooled tables locate at 100% valid fraction with zero
 unmapped strings, and the dialog corpus pairs at **98.5-99.8%** per PROT entry.
 Accents decode to single-byte `{xx}` markup escapes the codec round-trips
 exactly; they still need a font patch to render.
+
+### Accent folding
+
+Lifted text keeps the PAL accent bytes verbatim (the markup codec round-trips
+them as `{82}`-style escapes), and they encode onto the USA disc without
+complaint - but the NTSC build has no glyph in those cells, so they draw blank
+until the atlas is patched. `translate lift-official --fold-accents` (and the
+in-browser transfer, where it is the default) folds the accent block onto the
+plain-ASCII glyphs the USA font does have: `é` -> `e`, `ß` -> `ss`, `Ü` -> `U`,
+across the CP437 layout above plus the `0xD0..=0xD6` capitals. Folding is
+one-byte-for-one-byte except `ß`, which grows a line by one byte and can push a
+tight line over budget.
+
+The fold deliberately leaves the **non-accent** high cells alone: the retail
+atlas uses a few symbol cells above `0x7E` (they occur in the USA disc's own
+spell names), so those bytes already render and rewriting them would lose a
+glyph. Both counts are reported - folded and left-raw - so nothing changes
+silently. Implementation: `translation::markup::fold_high_glyphs` /
+`translation::lift::fold_pack_accents`; disc-gated oracle
+`crates/rando/tests/translate_lift_official_real.rs`.
+
+### What a lift does not cover
+
+The overlay-resident `ui_menu` pools (pause-menu / options / shop / battle
+system labels) are **not** lifted. They are pinned by USA-coordinate VA windows
+(`translation::ui`) and the PAL overlays place their pools elsewhere, so a lift
+leaves those entries empty and the labels stay English. The name tables, the
+party roster, and the whole `0x1F` dialog corpus are covered.
 
 ## Fit rate against the USA target
 
@@ -227,6 +259,23 @@ The 22 scene MANs the generalized rewriter cannot grow at all (an absolute-ref o
 / section-region segment / validate divergence in `apply_text_edits`) still fall
 back to abbreviation - a limitation of the in-MAN rewriter, orthogonal to the
 relayout, which supplies the room but cannot produce grown bytes for them.
+
+### In the browser
+
+The site's [ROM patcher](../../site/_content/tooling/rom-patcher.html) exposes
+the same lift as a second language path: the visitor picks *"Official
+translation from my own PAL disc"*, supplies their PAL `.bin` alongside their
+USA one, and the WASM entry point `lift_official_pack(usa, pal, fold_accents)`
+runs the lift **in the tab** - neither disc is uploaded, and the lifted pack
+lives in page memory (downloadable, since it is the visitor's own disc text).
+The result is handed straight back to `patch_rom`'s `lang_pack` argument, so it
+inherits the documented dialog-before-randomizer / names-after ordering and the
+same per-section coverage report every other pack gets. Accent folding is on by
+default there; the relayout path is CLI-only (it grows the image).
+
+The honest headline for that path is this page's fit numbers: roughly a third of
+the dialog corpus lands in place, the rest is reported as over-budget or
+non-recompressing rather than dropped quietly.
 
 ### Recommended path to a distributable pack
 

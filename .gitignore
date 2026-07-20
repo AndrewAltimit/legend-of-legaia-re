@@ -138,3 +138,9 @@ Thumbs.db
 # stray mednafen-state vram-dump default output (Sony VRAM bytes)
 /vram.png
 legaia-options.toml
+
+# Recomp / sim-trace differential captures. These are Sony-derived: a retail
+# trace is a recording of the retail program's state. They belong in scratch,
+# but an `--out` pointed at the repo would otherwise be committable.
+*.jsonl
+!ghidra/scripts/**/*.jsonl

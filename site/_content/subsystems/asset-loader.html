@@ -107,8 +107,8 @@
   <h3>Name-based scene change (<code>FUN_8001FD44</code>) + the transition streamer (<code>FUN_80021934</code>)</h3>
   <p>Distinct from the door-warp above, the engine has a <strong>name-based scene-change packet</strong>: <code>FUN_8001FD44(name_ptr)</code>
     copies the target CDNAME string into <code>0x8007050C</code>, syncs it to the active buffer <code>0x80084548</code>
-    (<code>FUN_8001D7F8</code>), and stages the destination index (retail: <code>_DAT_8007B9A0</code> at <code>gp+0x688</code>; dev flag
-    <code>_DAT_8007B8C2</code> set: directly into <code>DAT_8007B768</code>), both from the resolved halfword at <code>0x80084540</code>;
+    (<code>FUN_8001D7F8</code>), and stages the destination index (<code>_DAT_8007B8C2 != 0</code>, the retail arm: directly into <code>DAT_8007B768</code>;
+    the <code>== 0</code> dev arm: <code>_DAT_8007B9A0</code> at <code>gp+0x688</code>), both from the resolved halfword at <code>0x80084540</code>;
     <code>s_ERR_CHANGE_PACKET</code> guards re-entry while a packet is pending (<code>_DAT_8007BA3C</code>). The field VM reaches it through
     <strong>opcode <code>0x3F</code></strong>, which carries the destination name <em>inline in the bytecode</em> (<code>[0x3F][i16 index][u8
     name_len][name][entry_x][entry_z][dir]</code>) - so most in-game scene transitions, including overworld town/dungeon entry, carry a

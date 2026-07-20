@@ -66,9 +66,63 @@ The per-actor stat block runs `+0x14C..+0x16A`, each stat stored as a **pair** o
 
 HP/MP/AGL/SPD are copied unchanged in both. Both profiles boost - the raw record always understates the fight. A live international-retail capture reproduces profile **B** byte-for-byte (Gaza Sim-Seru id 166: raw ATK 288 / UDF 222 / LDF 200 / INT 220 → in-battle 360 / 444 / 400 / 247), which is also what the curated `enemies.toml` holds and what `MonsterRecord::battle_stats()` returns. This cross-region difficulty difference was first surfaced by **Zetopheonix**; the [enemy table](../../site/_content/monsters.html) shows the boosted stats by default with a raw-record toggle.
 
-**SPD** (`+0x164`): `overlay_0897_801e23ec` seeds each actor's per-turn initiative key from it: `+0x16C = speed + (rand() % (speed/2 + 1)) + 1`. It has a dedicated "Speed Up" buff (selector 7 sub 1) and is reset to its base each round (`FUN_80053CB8`: `+0x164 = +0x166`). Distinct from INT, which governs the hit/dodge roll rather than turn order, and from AGL, which is the per-round action gauge. The next-actor selector `recompute_battle_order` (`FUN_801daba4`) reads the seeded `+0x16C` keys: it picks the living actor with the highest key (random tiebreak via `rand % tie_count`), zeroing dead actors' keys first. Ported as `World::next_combatant_by_initiative`; see [turn order in battle.md](battle.md#auto-resolve-vs-player-driven).
+**SPD** (`+0x164`): `FUN_801DA780` seeds each actor's per-turn initiative key from it. It has a dedicated "Speed Up" buff (selector 7 sub 1) and is reset to its base each round (`FUN_80053CB8`: `+0x164 = +0x166`). Distinct from INT, which governs the hit/dodge roll rather than turn order, and from AGL, which is the per-round action gauge. The next-actor selector `recompute_battle_order` (`FUN_801daba4`) reads the seeded `+0x16C` keys: it picks the living actor with the highest key (random tiebreak via `rand % tie_count`), zeroing dead actors' keys first. Ported as `World::next_combatant_by_initiative`; see [turn order in battle.md](battle.md#auto-resolve-vs-player-driven).
 
-**AGL** (`+0x154` current / `+0x156` base): the per-round agility / action gauge. Every action draws it down; the enemy-AI action picker (`overlay_0898_801e9fd4`) deducts each candidate action's `+0x74` cost from `+0x154` and only queues actions it can still afford. Each round `FUN_801D88CC` resets `+0x154` to its base (`+0x156`), or, when spirit-charged (`+0x1DE == 4`), to `(base*7/5)+8` capped at `0x120` (the same shape as the [spirit-damage formula](#spirit-damage-formula)). Live-RAM confirmed by Zetopheonix: the "Power Up" buff prints *"agility increased!"* and raises this cur/base pair. The damage popup (`_DAT_80076D7E`) reads `+0x154`; this is the HP/MP/AGL triplet at `+0x14C..+0x156` in [battle.md](battle.md).
+#### Initiative key seeding (`FUN_801DA780`)
+
+The seeder is the direct caller of `FUN_801DABA4` and runs once per round over the seven combat slots. The base roll is `+0x16C = speed + (rand() % (speed/2 + 1)) + 1`, but three further terms land on top of it:
+
+- **Wounded bonus.** The party's schedule is three bands deep against the monsters' flat one - `hp < max/4` adds `(max-hp)>>4`, `hp < max/2` adds `>>5`, otherwise `>>6`; every monster adds `>>10` regardless. A near-dead party member gains more turn order from this term than from its whole SPD roll, while a wounded monster gains essentially nothing.
+- **Slow.** Status word `+0x16E == 0x1000` halves the finished key.
+- **Ability arms** (`+0xF4`). Bits `0x8000` and `0x40000` pin the key to `1` (always act last); bit `0x20000` adds `0x1000` (always act first). Each arm is gated on the *other* class being absent, so a character carrying both keeps the plain rolled key.
+
+Finally the `ctx+0x290` formation advantage zeroes one side's keys outright (see [formation advantage](#formation-advantage-fun_80051d84)), and two scripted boss orders override the result: monster id `0xB4` with `ctx+0x28A == 0` keys slot 3 at `30000`, and monster id `0x4F` fixes slots 0 and 3 to a hand-written order.
+
+Ported as `battle_formulas::seed_initiative` / `wounded_bonus` / `apply_side_lockout`, and driven by `World::reseed_initiative`. The engine has no `+0x16E` status word yet, so the Slow halving never fires there; the wounded bonus, the lockout and the `+0xF4` ability arms all do.
+
+> **Address caution.** The base roll was long attributed to `overlay_0897_801e23ec`. That is an **aliased VA**: PROT 0897's extraction over-reads into 0898 and the Ghidra program maps the file at `0x801C0000` instead of the true slot-A base `0x801CE818`, so every `0x801Exxxx`/`0x801Fxxxx` function it surfaces is a different battle-overlay routine. The aliased reading recovered only the base roll and dropped all three modifier terms above.
+
+#### Formation advantage (`FUN_80051D84`)
+
+Battle setup rolls for a **back attack** or a **pre-emptive strike** and records the result in `ctx+0x290` (`1` = back attack, `2` = pre-emptive). Both sides' *mean* SPD is compared, each blurred by a random spread:
+
+```text
+p = mean(party SPD);  e = mean(enemy SPD)
+a = p + rand() % (2*|p - e|)      // party score
+b = e + rand() % (2*|a - e|)      // enemy score, spread about the already-rolled a
+a += a >> 1        if +0xF8 bit 0x40000     // pre-emptive passive
+b -= b >> 1        if +0xF8 bit 0x80000     // back-attack guard passive
+back attack   if a < b && rand() % mod_back == 0     // mod_back 16, or 64 with the guard bit
+pre-emptive   if b < a && rand() % mod_pre  == 0     // mod_pre  16, or  2 with the pre-emptive bit
+```
+
+The two draws are **correlated**: `b`'s spread is taken about `|a - e|`, the already-rolled party score, not about `|p - e|`. Each ability bit moves both the score and the rarity gate. Two scripted arms force a back attack outright - monster ids `0x3D..=0x3F` on maps `0x0C` / `0x15` (which also sets `_DAT_8007BAC0 |= 0x200`), and monster id `0xA7` anywhere. The whole roll is skipped when the battle carries the scripted no-escape flag `ctx+0x287`.
+
+The disadvantaged side is turned to face the wrong way (`+0x46 = 0x800` for the party on a back attack, `0` for the monsters on a pre-emptive strike) and loses its keys for round one.
+
+`FUN_801E295C` state `0x00` **latches** `+0x290` into `+0x291` and then clears the original (`0x801E2B30`: `lbu v0,0x290(v1)` / `sb v0,0x291(v1)` / `sb zero,0x290(v0)`), and the two consumers read different copies: the initiative seeder reads `+0x290`, the [escape roll](#run--escape-roll---fun_801e791c) reads the latched `+0x291`. The ordering is load-bearing in both directions - latching before the seeder runs disables the side lockout, and never latching at all disables pre-emptive-strike escapes for the whole battle. A latch written but never read back is the same bug as no latch.
+
+The pre-emptive arm is commonly shorthanded "escape assured", which overstates it. `FUN_801E791C` sets the party roll equal to the enemy roll at `0x801E7AF0` and only *then* tests the scripted no-escape flag `ctx+0x287` at `0x801E7B14`, so a pre-emptive strike into a no-flee battle is still caught. What the arm actually guarantees is that the `roll_p < roll_e` compare cannot fail.
+
+Ported as `battle_formulas::roll_formation_advantage` / `FormationAdvantage`, wired through `World::roll_battle_formation` (battle setup) → `World::seed_battle_initiative` (lockout) → `World::latch_battle_formation` → `World::roll_battle_escape` (the latched read).
+
+**AGL** (`+0x154` current / `+0x156` base): the per-round agility / action gauge. Every action draws it down; the enemy-AI action picker (`overlay_0898_801e9fd4`) deducts each candidate action's `+0x74` cost from `+0x154` and only queues actions it can still afford. Each round `FUN_801D88CC` restores it. Live-RAM confirmed by Zetopheonix: the "Power Up" buff prints *"agility increased!"* and raises this cur/base pair. The damage popup (`_DAT_80076D7E`) reads `+0x154`; this is the HP/MP/AGL triplet at `+0x14C..+0x156` in [battle.md](battle.md).
+
+#### Per-round AGL restore (`FUN_801D88CC`)
+
+Which arm fires depends on the actor's action state, and one of the three restores nothing:
+
+- **spirit-charged** (`+0x1DE == 4`, or the `+0x1F9` charge byte non-zero): restore to `(base*7/5)+8` capped at `0x120` - the same shape as the [spirit-damage formula](#spirit-damage-formula).
+- **plain** (`+0x1DE == 3`, or any monster slot `>= 3`): restore to `+0x156`.
+- **otherwise**: `+0x154` is left untouched, so a party actor mid-combo carries its spent AGL into the next round rather than refilling.
+
+The routine is two loops over the actor pointer table at `DAT_801C9370`, and they cover different bands. Loop A (`801d892c`) walks all seven slots: the gauge arm above, then the zeroing of that actor's `+0x1DF..+0x1EE` action-parameter stream - which is why a stale action id is unreadable once the round ends. Loop B (`801d8a00`) walks the **party band only** (its bound is `s1+0xc`, three pointers): it re-picks any party actor's target whose stored slot `+0x1DD` is out of the `0..=6` range or names a dead actor, then clears the action-category byte `+0x1DE`.
+
+The re-pick is `FUN_801DB8B4`, and it is **not** an RNG-backed picker. All 16 of its instructions are a linear scan from slot `3` while `slot < 7`, returning the first candidate whose `+0x14C` is non-zero and the sentinel `7` when the monster band is wiped. A party actor whose target died therefore re-points at the *lowest* living monster slot, deterministically.
+
+The pass runs **before** the initiative seeder, not after it: the battle-flow SM calls `FUN_801D88CC` at `801d0ed0` and `FUN_801DA780` at `801d0ed8`, with the DoT tick (`FUN_801E752C`) after both.
+
+Ported as `battle_formulas::round_reset_agility` / `needs_retarget`, with the caller-side sweep as `engine-core::BattleRound::boundary` - which the live battle loop runs at its round boundary, ahead of the status tick and the reseed. The gauge it maintains is the battle actor's `+0x154`; the enemy swing-budget loop spends it.
 
 ### Spell list (`record +0x4C`)
 
@@ -237,8 +291,11 @@ enemy_score = Σ_enemy   SPD      + (maxHP - curHP)>>5
 roll_p = rand() % party_score ;  roll_e = rand() % enemy_score
 Escape Boost (ability bit 52):  roll_p += roll_p >> 1
 Great Escape (bit 55):          roll_p = roll_e            // forced tie
+  or ctx[+0x291] == 2           roll_p = roll_e            // pre-emptive strike
 caught iff  roll_p < roll_e  or  ctx[+0x287] != 0          // strict <
 ```
+
+The forced-tie arm has **two** sources, and the second is the latched [formation advantage](#formation-advantage-fun_80051d84): `0x801E7AD8` loads `ctx+0x291`, compares it against `2`, and branches to the same `move s2,s3` the Great Escape bit reaches. A back attack (`1`) is not the mirror image - it is never compared here, and costs the party only its round-one initiative keys. Both arms are applied before the `ctx+0x287` test, so neither is an unconditional escape.
 
 Missing HP raises *both* sides' scores (a hurt party escapes more easily, a hurt
 enemy pursues harder) and the party's SPD is weighted 1.5x the enemies'. Full

@@ -91,7 +91,7 @@ struct TestHost {
     emitter_5_words: Vec<[u16; 5]>,
     emitter_struct12_payloads: Vec<Vec<u8>>,
     // 0x43 sub-0x12/0x13/0x14.
-    emitter_split_calls: Vec<([i16; 6], bool)>,
+    emitter_split_calls: Vec<Vec<crate::vram_rect_copy::RectCopyCall>>,
     emitter_func13_payloads: Vec<[u8; 13]>,
     emitter_4_words: Vec<[i16; 4]>,
     // 0x4C sub-3 sub-9 / sub-E / sub-F.
@@ -416,8 +416,8 @@ impl FieldHost for TestHost {
     fn op43_widget_letterbox(&mut self, payload: &[u8]) {
         self.emitter_struct12_payloads.push(payload.to_vec());
     }
-    fn op43_vram_rect_copy(&mut self, words: [i16; 6], did_split: bool) {
-        self.emitter_split_calls.push((words, did_split));
+    fn op43_vram_rect_copy(&mut self, calls: &[crate::vram_rect_copy::RectCopyCall]) {
+        self.emitter_split_calls.push(calls.to_vec());
     }
     fn op43_widget_panel_spawn(&mut self, payload: &[u8; 13]) {
         self.emitter_func13_payloads.push(*payload);

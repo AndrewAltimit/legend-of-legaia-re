@@ -277,3 +277,78 @@ fn apply_alpha_scales_only_alpha_channel() {
     let scaled = apply_alpha(c, 0.5);
     assert_eq!(scaled, [0.5, 0.6, 0.7, 0.5]);
 }
+
+/// The HUD's column offsets have to be wider than the retail dialog font's
+/// actual advances, or fields overlap on screen. Skips and passes when
+/// `extracted/font/` is absent (same gating as every other artifact-dependent
+/// test), so CI does not need redistributed Sony bytes.
+///
+/// This is the regression guard for the first draft of the offsets, which was
+/// narrower than the font in four of five columns - the K.O. label landed on
+/// top of the HP digits. It went unnoticed because the builder had no caller.
+#[test]
+fn column_offsets_clear_the_retail_font_or_skips() {
+    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let Some(root) = manifest
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|w| w.join("extracted"))
+        .filter(|c| c.join("font").is_dir())
+    else {
+        eprintln!("extracted/font not present - skipping");
+        return;
+    };
+    let font = legaia_font::Font::load_from_extracted(&root).expect("load extracted font");
+    let width = |s: &str| -> i32 {
+        font.layout_ascii(s)
+            .glyphs
+            .last()
+            .map(|g| g.dst_x + g.width as i32)
+            .unwrap_or(0)
+    };
+
+    let slot = HudSlotView {
+        name: "Juggernaut",
+        is_party: true,
+        alive: false,
+        hp: 250,
+        hp_max: 300,
+        mp: 10,
+        mp_max: 30,
+        ap_filled: 4,
+        ap_max: 8,
+        status_letters: b"TC",
+    };
+    let pen = (0, 0);
+    let draws = battle_hud_draws_for(&font, &[slot], &[], &[], pen);
+
+    // Column origins the builder documents, paired with the widest string it
+    // can place there. Each field must end before the next one starts.
+    let columns: [(i32, i32, &str); 5] = [
+        (0, width("Juggernaut"), "name"),
+        (78, width("HP 250/300"), "HP"),
+        (161, width("MP  10/ 30"), "MP"),
+        (240, width("APoooo----"), "AP"),
+        (319, width("K.O."), "K.O."),
+    ];
+    for pair in columns.windows(2) {
+        let (x, w, label) = pair[0];
+        let (next_x, _, next_label) = pair[1];
+        assert!(
+            x + w <= next_x,
+            "{label} field ends at {} but {next_label} starts at {next_x}",
+            x + w
+        );
+    }
+    // And the drawn row must not run past the status strip's first cell.
+    let last_field_end = columns[4].0 + columns[4].1;
+    assert!(
+        last_field_end <= 359,
+        "row fields end at {last_field_end}, past the status strip at 359"
+    );
+    // Non-vacuous: the row really did draw every field.
+    assert!(
+        draws.iter().any(|d| d.dst.0 >= 359),
+        "status strip produced no glyph - the fixture is not exercising a full row"
+    );
+}

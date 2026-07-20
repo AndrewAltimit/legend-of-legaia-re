@@ -266,6 +266,14 @@ impl World {
             && self.any_battle_speed()
             && !self.any_living_initiative_key()
         {
+            // The actor sweep (`FUN_801D88CC`): action-gauge restore, the
+            // `+0x1DF` action-stream clear, and the party band's stale-target
+            // re-pick. Retail's flow SM runs it here, *before* the initiative
+            // reseed and before the DoT tick (`FUN_801D0748` at `801d0ec4`),
+            // so it goes ahead of `tick_status_effects` below and ahead of the
+            // reseed the picker performs. It draws no RNG, so the reseed's
+            // stream is unchanged.
+            crate::battle_round::BattleRound::boundary(self);
             self.tick_status_effects();
             party_alive = (0..party_count).any(|i| !self.actor_effectively_defeated(i));
             monsters_alive = (party_count..n).any(|i| !self.actor_effectively_defeated(i));

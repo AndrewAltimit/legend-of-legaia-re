@@ -80,6 +80,36 @@ DRAW_RET_RE = re.compile(r"->[^;{]*(?:TextDraw|SpriteDraw)")
 
 LINE_COMMENT_RE = re.compile(r"//.*$", re.MULTILINE)
 
+# A host "has" a screen when its *shipped* code draws it. Both native roots
+# carry `#[cfg(test)]` modules inside `src/` - `engine-render/src/tests/` is a
+# whole directory of them - and a builder exercised only by a unit test is
+# precisely the not-wired case this gate exists to surface. Counting those
+# references made the gate report test coverage as wiring, which let four
+# `web_missing` waivers assert "native calls it" about builders no host called.
+# The two-directional waiver validation could not catch that: it re-derives the
+# bucket from the same over-counted signal.
+
+
+def is_test_source(path: Path) -> bool:
+    """Is this file test-only code rather than shipped host code?
+
+    Deliberately **path-only**: a `tests/` directory component or a `tests.rs`
+    file name, which is the split-out `mod tests;` convention every test module
+    under these roots follows (`engine-render/src/tests/` is a whole directory
+    of them, and it is where all six mis-bucketed references lived).
+
+    Sniffing file *contents* for `#[cfg(test)]` was tried and rejected: plenty
+    of shipped files carry an inline test module, so a content rule drops real
+    host code from the scan - it excluded `engine-render/src/lib.rs`,
+    `engine-render/src/renderer.rs` and `engine-shell/.../window.rs` among
+    others. That direction is the dangerous one. Over-counting "used" only
+    makes the gate nag about a screen that is in fact wired; under-counting it
+    invents ORPHANs and, worse, lets a waiver be written asserting a gap that
+    does not exist. The path rule cannot do that, because a file under
+    `src/tests/` is never a host draw site.
+    """
+    return "tests" in path.parts or path.name == "tests.rs"
+
 
 def strip_comments(text: str) -> str:
     """Drop `//`-style comments.
@@ -121,6 +151,8 @@ def collect_uses(names: set[str]) -> dict[str, set[str]]:
             if not root.is_dir():
                 continue
             for path in root.rglob("*.rs"):
+                if is_test_source(path):
+                    continue
                 body = strip_comments(path.read_text(encoding="utf-8"))
                 for name in names:
                     if name in uses and re.search(rf"\b{re.escape(name)}\b", body):

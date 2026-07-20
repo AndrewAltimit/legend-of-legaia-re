@@ -431,6 +431,9 @@ pub(crate) fn cmd_save_select(mode: &str, slots: &str, script: &str) -> Result<(
                 SelectEvent::SlotPreviewCancelled { slot } => {
                     println!("  tick {i}: slot preview cancelled on slot {slot}")
                 }
+                SelectEvent::CardReadFailed { slot } => {
+                    println!("  tick {i}: card read failed on slot {slot}")
+                }
                 SelectEvent::Cancelled => println!("  tick {i}: cancelled"),
             }
         }

@@ -78,11 +78,29 @@ def corpus_files():
 
 
 def staged_files():
-    out = subprocess.run(
+    # The return code is checked deliberately. If `git diff --cached` fails --
+    # no repo, git missing, a contended index lock -- `.stdout` is empty, the
+    # scoped file list is empty, and the gate scans nothing and exits 0. That is
+    # a *vacuous pass* in a hard pre-commit gate: the observer failed, and its
+    # failure was indistinguishable from "every link resolves". Do not
+    # "simplify" this back to a bare `.stdout.split()`; an empty staged set is a
+    # legitimate result only when git actually said so.
+    proc = subprocess.run(
         ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"],
         capture_output=True,
         text=True,
-    ).stdout.split()
+    )
+    if proc.returncode != 0:
+        sys.stderr.write(
+            "check-md-links: `git diff --cached` failed (rc="
+            f"{proc.returncode}); refusing to report a pass from an empty file "
+            "list.\n"
+        )
+        if proc.stderr.strip():
+            first = proc.stderr.strip().splitlines()[0]
+            sys.stderr.write(f"  git: {first}\n")
+        sys.exit(2)
+    out = proc.stdout.split()
     return sorted(f for f in out if in_scope(f) and os.path.exists(f))
 
 
@@ -148,6 +166,20 @@ def ignored_targets(dests):
         capture_output=True,
         text=True,
     )
+    # `git check-ignore` uses grep's exit convention: 0 = something matched,
+    # 1 = nothing matched (a legitimate empty result), >=2 = the command itself
+    # failed. Only 0 and 1 mean "the answer is trustworthy". Treating >=2 as an
+    # empty set would silently drop every gitignored-target violation -- the
+    # observer's failure reading as "no findings", which is the same vacuity the
+    # staged_files() check above guards.
+    if proc.returncode >= 2:
+        sys.stderr.write(
+            f"check-md-links: `git check-ignore` failed (rc={proc.returncode}); "
+            "cannot tell which link targets are gitignored.\n"
+        )
+        if proc.stderr.strip():
+            sys.stderr.write(f"  git: {proc.stderr.strip().splitlines()[0]}\n")
+        sys.exit(2)
     return {os.path.normpath(line) for line in proc.stdout.splitlines() if line}
 
 

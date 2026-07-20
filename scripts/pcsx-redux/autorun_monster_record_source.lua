@@ -7,9 +7,10 @@
 --   FUN_800542C8 (battle archive loader) streams per-monster 0x14000-byte
 --   LZS blocks from a monster archive; the decoded block's head is the stat
 --   record. It then calls FUN_80054CB0(record_ptr, slot) to populate the
---   battle actor. The retail-vs-debug source transport is gated by
---   _DAT_8007B8C2: ==0 -> FUN_800608F0("data\battle\<name>") host trap;
---   !=0 -> FUN_8003E8A8(0x365=869) disc seek (in-RAM PROT TOC). The on-disc
+--   battle actor. The dev-vs-retail source transport is gated by
+--   _DAT_8007B8C2: ==0 (dev) -> FUN_800608F0("data\battle\<name>") host trap;
+--   !=0 (retail, the boot value) -> FUN_8003E8A8(0x365=869) disc seek
+--   (in-RAM PROT TOC). The on-disc
 --   archive bytes are NOT located statically (PROT 869 is a stub); this
 --   probe captures them live.
 --
@@ -43,8 +44,8 @@ local FUN_800542C8 = 0x800542C8 -- battle archive loader
 local FUN_8003E8A8 = 0x8003E8A8 -- debug disc-seek (sets CdlLOC, absolute index)
 local FUN_8003E964 = 0x8003E964 -- relative disc-seek (a0 = sector delta)
 local FUN_8003E800 = 0x8003E800 -- generic disc read (a0=dest, a1=sector count)
-local FUN_800608F0 = 0x800608F0 -- retail host-trap file open
-local DAT_8007B8C2 = 0x8007B8C2 -- retail(0)/debug(!=0) gate
+local FUN_800608F0 = 0x800608F0 -- dev-arm host-trap file open (`break 0x103`)
+local DAT_8007B8C2 = 0x8007B8C2 -- dev(0)/retail(!=0) gate; retail boots at 1
 local DAT_8007BC5C = 0x8007BC5C -- CdlLOC (BCD MSF)
 local DAT_8007B728 = 0x8007B728 -- decoded-block base ptr
 

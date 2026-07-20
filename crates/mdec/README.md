@@ -7,7 +7,10 @@ PSX MDEC clean-room decoder (Iki bitstream variant) and PSX STR video-sector par
 - `MdecDecoder` - decodes a complete demuxed Iki frame (header + LZSS qscale/DC table + AC bitstream) into RGBA8 pixels.
 - `str_sector::StrFrameAssembler` - collects 2048-byte Mode 2 Form 1 sector data areas (32-byte sector header) and returns the assembled demuxed frame when a full frame is ready.
 - `str_sector::analyze_str_timing` - recovers the playback frame rate from the sector stride at the 2x CD rate (PSX STR carries no fps field). All six Legaia `MV*.STR` measure 10 sectors/frame → 15 fps; `play-str` and the in-flow cutscene driver pace to this.
-- `mdec` CLI - `decode-frame` (raw frame → PPM), `scan-str` (frame inventory + detected fps), `decode-str` (batch decode to PPMs).
+- `st_ring::StRing` - the retail `St` streaming-library sector ring: the same demux job as `StrFrameAssembler`, but with the fixed-slot ring bookkeeping (back-pressure, seek-to-start-frame, end-frame latch, wrap handling) a real-time player needs. See [`docs/subsystems/cutscene.md`](../../docs/subsystems/cutscene.md#engine-port---legaia_mdecst_ring).
+- `str_player::StrPlayer` - the retail play loop over the ring: the FMV dispatch slot's frame window, the frame pump, the MDEC output-control word and the slice cursor. It is what makes a *segment* of a multi-cutscene movie playable (`MV3.STR` carries four). See [`docs/subsystems/cutscene.md`](../../docs/subsystems/cutscene.md#engine-port---legaia_mdecstr_player).
+- `strv2_table` - unpacker for the STRv2/v3 VLC lookup table the play loop expands into `0x801E0A00`. No retail movie uses that decoder path, so nothing here consumes the table yet.
+- `mdec` CLI - `decode-frame` (raw frame → image), `scan-str` (frame inventory + detected fps), `decode-str` (batch decode, with an optional `--start-frame`/`--end-frame` segment window), `strv2-table` (unpack + report the VLC table).
 
 ## Algorithm
 

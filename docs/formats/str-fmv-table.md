@@ -85,6 +85,26 @@ Each 32-byte record:
 
 The play loop opens the file at `path_ptr`, seeks `(start_frame - 1) * 10` sectors in (the 15 fps cadence), and streams until the demuxed frame number reaches `end_frame` - which is how one `MVn.STR` carries several cutscenes by frame range. `path_ptr` resolves into the path-string table at the **overlay start** (`0x801CE818`).
 
+### Every word of the record is a play-loop input
+
+The record has no field reserved for another subsystem and no undecoded margin: `FUN_801CF098`
+reads all eight words itself, and each one is traceable to the instruction that consumes it.
+
+| Offset | Consumed at | For |
+|---|---|---|
+| `+0x00` | `801cf0d0` | `CdSearchFile` on the path string |
+| `+0x04` | `801cf100`, `801cf27c`, `801cf2f4`, `801cf478` | the `* 3/2` VRAM scaling, the MDEC depth bit, `DISPENV.isrgb24` |
+| `+0x08` | `801cf1b8`, `801cf9e0` | the `(start - 1) * 10` seek, and `StSetStream`'s armed seek |
+| `+0x0C` | `801cf788` (in `FUN_801CF740`) | the end-of-stream latch, tested per demuxed frame |
+| `+0x10` | `801cf110`, `801cf144` | the decode rect's VRAM x |
+| `+0x14` | `801cf168`, `801cf180` | the decode rect's VRAM y |
+| `+0x18` | `801cf28c` | the `DISPENV` width |
+| `+0x1C` | `801cf168`, `801cf2c8` | the sibling rect at `fb_y + height`, and the display rect's `h = height * 2` |
+
+`FmvEntry` keeps six of the eight; `fb_x` / `fb_y` land in `legaia_mdec::str_player::FmvSlot`,
+which builds the two decode rects from them. So the record **is** playback-only, on disassembly
+rather than on inference.
+
 This table is **static initialised data** in the cutscene overlay (PROT 0970), not a runtime-built structure, so it decodes straight from the disc: `legaia_asset::fmv_dispatch::FmvTable::from_str_overlay` reads it (per-`fmv_id` path + frame range + dimensions), pinned by the disc-gated `fmv_dispatch_real` test. The windowed-cutscene player uses the frame range to seek to the right segment (`cutscene_av::fmv_segment_window`).
 
 An earlier reading used a 64-byte stride (a `sll v0,v0,6` transcription error), pairing wrong slot halves - it concluded `MV2`/`MV5` were never referenced and slots 5..11 pointed at cut files. The disc bytes and the resident RAM capture both encode `sll v0,v0,0x5`; under the 32-byte stride every movie on the disc is dispatched. That reading is **superseded**. The engine resolver `legaia_engine_core::cutscene::fmv_index_to_str_filename` mirrors the corrected nine-slot map; the disc-parsed `FmvTable` remains the authoritative source.

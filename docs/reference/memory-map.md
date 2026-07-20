@@ -200,7 +200,7 @@ map, but the table layout is scene-independent.)
 
 | Address | Purpose |
 |---|---|
-| `0x8007B8C2` | Dev/retail loader-path flag. Read by 26 SCUS functions; no static writers. |
+| `0x8007B8C2` | Dev/retail loader-path flag. 40 `lh` reads in SCUS; written once, at cold boot, to `1`. |
 | `0x8007B98F` | In-game debug menu enable. Accessed as the high byte of the word at `0x8007B98C`. |
 | `0x8007B7C0` | Debug-dispatch trigger. |
 | `0x8007B450` | Debug-dispatch parameter slot. Also used by the field-VM `STATE_RESUME` opcode (`0x49`) as its tristate state register. |
@@ -213,27 +213,55 @@ JP retail uses build-shifted addresses (`0x07D51F` for the in-game debug menu en
 
 ### `0x8007B8C2` - build-mode (dev/retail) loader selector
 
-This byte is the single most-consulted build-mode switch in the executable: it
-selects between the **dev** asset-load path (open by PROT-TOC index from the
-in-RAM table at `0x801C70F0`) and the **retail** path (filename open via the
-`break 0x103` host trap), across the asset loader, the battle-data archive
-open, field locomotion's streaming read, and the world-map overlay's pool fill:
+This halfword is the single most-consulted build-mode switch in the executable.
+Every one of its 40 read sites is an `lh` (signed halfword) at `0x8007B8C2`, and
+every one splits the same way:
 
-- `FUN_8001FD44` scene-change packet stages the load gated on `_DAT_8007B8C2`
-  (see [`subsystems/asset-loader.md`](../subsystems/asset-loader.md)).
-- Field streaming read (`_DAT_8007b8c2 != 0` → `FUN_8003E8A8` PROT-TOC path,
-  see [`subsystems/field-locomotion.md`](../subsystems/field-locomotion.md)).
-- Battle-data archive open (`_DAT_8007B8C2 != 0` → `FUN_8003E8A8(0x365)`, see
-  [`subsystems/battle.md`](../subsystems/battle.md)).
-- World-map overlay pool fill (`FUN_8001E890` retail-PROT branch, see
-  [`formats/world-map-overlay.md`](../formats/world-map-overlay.md)).
+- **`!= 0` - retail.** Open by PROT-TOC index from the in-RAM table at
+  `0x801C70F0` (`FUN_8003E8A8` + `FUN_8003E800`, or `FUN_8003EB98`).
+- **`== 0` - dev.** Open by filename through `FUN_800608F0`, whose entire body
+  is `break 0x103` - a PsyQ dev-station host trap. Retail hardware cannot
+  service it, and the `h:\` paths it opens are not on the disc.
 
-It is **BSS-resident and initialises to 0 (= retail)**, and a SCUS + all-overlay
-write sweep finds **zero code writers** - the shipped build only ever *reads* it
-(26 read sites, all comparisons). So in retail the value flips only by **external
-poke** (GameShark/cheat device or save-state edit), never through gameplay. The
-companion in-game debug-menu enable `0x8007B98F` is likewise inert in retail (the
-dev branches that gate on it appear stripped at link time; no references remain).
+Read sites include the `FUN_8001FD44` scene-change packet
+([`subsystems/asset-loader.md`](../subsystems/asset-loader.md)), field
+locomotion's streaming read
+([`subsystems/field-locomotion.md`](../subsystems/field-locomotion.md)), the
+battle-data archive open at `FUN_8003E8A8(0x365)`
+([`subsystems/battle.md`](../subsystems/battle.md)), and the world-map overlay
+pool fill ([`formats/world-map-overlay.md`](../formats/world-map-overlay.md)).
+
+**Retail boots with the halfword at `1`.** `main()` (`FUN_80015E90`) writes it
+once during cold-boot init:
+
+```
+80015f00  jal  0x8003F084      ; body is `jr ra` / `addiu v0,zero,0x1` - returns 1
+80015f04  nop
+80015f08  sh   v0,0x5aa(gp)    ; gp = 0x8007B318, so EA = 0x8007B8C2
+```
+
+`FUN_8003F084` is a two-instruction leaf that returns the constant `1`
+unconditionally, and `0x80015F00` is its only caller - a stubbed-out build-mode
+predicate the dev build presumably returned `0` from. The store is **gp-relative**,
+which is why address sweeps that searched only the absolute `lui 0x8008` /
+`-0x473e` form reported "zero writers" (see
+[`tooling/ghidra.md`](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims)).
+
+The flag is **not** established by BSS zero-init: `SCUS_942.54`'s PS-X EXE header
+carries `b_addr = 0, b_size = 0`, so the BIOS clears no BSS for this executable
+at all. The boot-time store is the only thing that sets it. Live save states
+agree: the halfword reads `1` in all 60 captured states, across field, battle,
+world-map, stock-disc and randomized runs.
+
+The companion in-game debug-menu enable `0x8007B98F` is **not** stripped, and an
+earlier claim here that "the dev branches that gate on it appear stripped at link
+time; no references remain" is superseded. It has no *byte-granular* reader because
+it is byte +3 (MSB, little-endian) of the 32-bit debug-mode word `_DAT_8007B98C`,
+and that word is the consumer surface - statically pinned at `FUN_8001822C` plus the
+resident field-overlay gates. Poking `_DAT_8007B98F = 1` brings up the debug menu on
+SELECT+triangle in the NA retail build, which is the direct refutation of "no
+references remain". See
+[`open-rev-eng-threads.md`](open-rev-eng-threads.md#debug-flags-0x8007b8c2--0x8007b98f).
 None of the 557 catalogued GameShark / Pro-Action-Replay codes in
 [`legaia-cheats`](cheats.md) target `0x8007B8C2` or `0x8007B98F`.
 

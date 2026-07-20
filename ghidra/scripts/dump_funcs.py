@@ -11,6 +11,14 @@ from ghidra.util.task import ConsoleTaskMonitor
 
 PROGRAM = "SCUS_942.54"  # default; override with OVERLAY_PROGRAM=overlay.bin per-run
 
+# Overlay-resident addresses (VA >= 0x801C0000) do NOT belong in TARGETS below.
+# This script writes to funcs/<addr>.txt with no overlay prefix, so two
+# overlays resident at the same VA would silently overwrite each other's dump
+# -- and slot-A / slot-B VA aliasing is routine in this game. Add those to the
+# per-overlay script instead (dump_<label>_overlay.py, out_path_for() prefixes
+# the output as overlay_<label>_<addr>.txt). Examples: the battle sparring
+# tutorial lives in dump_effect_overlay_0967.py (PROT 0967 @ base 0x801F69D8).
+
 TARGETS = [
     # Effect-texture (flame) atlas loader: loads PROT entry 0x366 (870) into
     # VRAM via FUN_8001fc00 -> FUN_8003e8a8, gated on _DAT_8007b868 == 0.
@@ -82,6 +90,12 @@ TARGETS = [
     "80025fb4",  # mode 26 (STR) init
     "8001dcf8",  # boot-time mode initializer
     "8001c93c",  # mode-table reader / per-frame dispatcher candidate
+
+    # New-game seed pair. The world-state seed's store widths are only legible
+    # in the disassembly -- Ghidra's DAT_ / _DAT_ naming is a heuristic, not a
+    # width measurement -- so both belong in this (disassembly-emitting) script.
+    "80034a6c",  # new-game world-state seed ($s0 = SC base 0x80084140)
+    "800560b4",  # starting-party template expander, called by FUN_80034A6C
 
     # Default-handler call chain (FUN_80025eec)
     "8001698c",  # first call; returns nonzero to skip frame

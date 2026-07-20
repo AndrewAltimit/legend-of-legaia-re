@@ -238,9 +238,150 @@ pub fn encode(markup: &str, target: Target) -> Result<Vec<u8>, Vec<EncodeIssue>>
     }
 }
 
+/// ASCII fold for the accented high-glyph cells of the **PAL** atlas, keyed by
+/// the raw byte the official discs use. The layout is IBM CP437 for the cells
+/// CP437 carries, plus the game-specific capital block around `0xD0..=0xD6`
+/// (see `docs/tooling/pal-localizations.md`).
+///
+/// This exists for the official-localization lift: the NTSC font has no glyph
+/// in those cells, so lifted FR/DE/IT text either needs a font patch or must be
+/// folded onto the plain-ASCII glyphs the USA disc does have.
+///
+/// Every fold is one byte in, one byte out except `ss` for `0xE1` (sharp s),
+/// which grows the line by one byte and may therefore push a tight line over
+/// its budget.
+fn high_glyph_fold(b: u8) -> Option<&'static str> {
+    Some(match b {
+        0x80 => "C", // C-cedilla
+        0x81 => "u", // u-diaeresis
+        0x82 => "e", // e-acute
+        0x83 => "a", // a-circumflex
+        0x84 => "a", // a-diaeresis
+        0x85 => "a", // a-grave
+        0x86 => "a", // a-ring
+        0x87 => "c", // c-cedilla
+        0x88 => "e", // e-circumflex
+        0x89 => "e", // e-diaeresis
+        0x8A => "e", // e-grave
+        0x8B => "i", // i-diaeresis
+        0x8C => "i", // i-circumflex
+        0x8D => "i", // i-grave
+        0x8E => "A", // A-diaeresis
+        0x8F => "A", // A-ring
+        0x90 => "E", // E-acute
+        0x91 => "ae",
+        0x92 => "AE",
+        0x93 => "o", // o-circumflex
+        0x94 => "o", // o-diaeresis
+        0x95 => "o", // o-grave
+        0x96 => "u", // u-circumflex
+        0x97 => "u", // u-grave
+        0x98 => "y", // y-diaeresis
+        0x99 => "O", // O-diaeresis
+        0x9A => "U", // U-diaeresis
+        0xA0 => "a", // a-acute
+        0xA1 => "i", // i-acute
+        0xA2 => "o", // o-acute
+        0xA3 => "u", // u-acute
+        0xA4 => "n", // n-tilde
+        0xA5 => "N", // N-tilde
+        0xD0 => "A", // game-specific capital block
+        0xD1 => "A",
+        0xD2 => "E",
+        0xD3 => "E",
+        0xD4 => "E", // Italian E-grave
+        0xD5 => "I",
+        0xD6 => "I",
+        0xE1 => "ss", // sharp s - the one fold that grows the line
+        _ => return None,
+    })
+}
+
+/// Outcome of [`fold_high_glyphs`] - counts only, never text.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FoldStats {
+    /// High-glyph escapes replaced with an ASCII equivalent.
+    pub folded: usize,
+    /// High-cell escapes with no accent fold, left as raw bytes. Mostly the
+    /// retail atlas's own non-accent symbol cells (which the USA disc uses in
+    /// its spell names, so they render as-is); the remainder is the odd byte in
+    /// a marginal raw-carrier segment.
+    pub unmapped: usize,
+}
+
+impl FoldStats {
+    pub fn merge(&mut self, other: FoldStats) {
+        self.folded += other.folded;
+        self.unmapped += other.unmapped;
+    }
+}
+
+/// Fold a markup string's accented high-glyph escapes onto plain ASCII.
+///
+/// Operates on the escape form ([`decode`]'s output), so `{82}` becomes `e`
+/// and every 2-byte control token (`{c1:00}`, `{cf:31}`) is left untouched -
+/// only bare single-byte escapes in the accent cells are rewritten.
+pub fn fold_high_glyphs(markup: &str) -> (String, FoldStats) {
+    let chars: Vec<char> = markup.chars().collect();
+    let mut out = String::with_capacity(markup.len());
+    let mut stats = FoldStats::default();
+    let mut i = 0;
+    while i < chars.len() {
+        // Only bare `{xx}` escapes are candidates; `{xx:yy}` is a control token.
+        if chars[i] == '{'
+            && let [h1, h2, '}', ..] = &chars[i + 1..]
+            && let Some(b) = hex_val(*h1).zip(hex_val(*h2)).map(|(a, b)| (a << 4) | b)
+            && b >= 0x80
+            && !is_two_byte_op(b)
+        {
+            match high_glyph_fold(b) {
+                Some(ascii) => {
+                    out.push_str(ascii);
+                    stats.folded += 1;
+                }
+                None => {
+                    out.push_str(&format!("{{{b:02x}}}"));
+                    stats.unmapped += 1;
+                }
+            }
+            i += 4;
+            continue;
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    (out, stats)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fold_maps_accents_and_leaves_controls_alone() {
+        // "Ep{82}e" - the e-acute cell folds; the color token survives verbatim.
+        let (s, st) = fold_high_glyphs("{cf:31}Ep{82}e{c2:79}");
+        assert_eq!(s, "{cf:31}Epee{c2:79}");
+        assert_eq!(st.folded, 1);
+        assert_eq!(st.unmapped, 0);
+        // Sharp s folds to two characters.
+        let (s, _) = fold_high_glyphs("Gru{e1}");
+        assert_eq!(s, "Gruss");
+        // An unknown high cell is preserved as a raw byte, and counted.
+        let (s, st) = fold_high_glyphs("x{b3}");
+        assert_eq!(s, "x{b3}");
+        assert_eq!(st.unmapped, 1);
+    }
+
+    #[test]
+    fn folded_text_is_encodable() {
+        let bytes = [b'E', b'p', 0x82, b'e'];
+        let (folded, _) = fold_high_glyphs(&decode(&bytes));
+        assert_eq!(encode(&folded, Target::Segment).unwrap(), b"Epee");
+        // Unfolded, the same line still encodes - as the raw high byte, which
+        // needs a font patch to render.
+        assert_eq!(encode(&decode(&bytes), Target::Segment).unwrap(), bytes);
+    }
 
     #[test]
     fn ascii_round_trips_identity() {

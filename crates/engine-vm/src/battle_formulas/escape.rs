@@ -68,6 +68,33 @@ impl EscapeFlags {
         self.escape_boost |= word1 & Self::ESCAPE_BOOST_WORD1 != 0;
         self.assured |= word1 & Self::GREAT_ESCAPE_WORD1 != 0;
     }
+
+    /// Fold the **latched formation advantage** (`ctx+0x291`) into the flags -
+    /// the second, non-accessory source of [`Self::assured`].
+    ///
+    /// `FUN_801E791C` reads the latched byte directly and compares it against
+    /// `2`:
+    ///
+    /// ```text
+    /// 801e7ad8  lbu v1,0x291(v0)      ; v0 = ctx (_DAT_8007bd24)
+    /// 801e7adc  li  v0,0x2
+    /// 801e7ae0  beq v1,v0,0x801e7af0  ; -> move s2,s3  (roll_p = roll_e)
+    /// ```
+    ///
+    /// So only [`FormationAdvantage::Preemptive`] qualifies - a back attack
+    /// (`1`) does **not** penalise the escape roll here, it only cost the party
+    /// its first round through the initiative lockout.
+    ///
+    /// "Assured" overstates it: setting `roll_p = roll_e` only makes the
+    /// `roll_p < roll_e` compare unsatisfiable. The `ctx+0x287` no-escape flag
+    /// is tested *after* that compare (`801e7b14`) and still fails the escape,
+    /// so a pre-emptive strike into a scripted no-flee battle does not get away.
+    /// Only the forced-flee arm bypasses `+0x287`.
+    ///
+    /// REF: FUN_801E791C (the `ctx+0x291 == 2` arm)
+    pub fn fold_formation_latch(&mut self, latched: super::FormationAdvantage) {
+        self.assured |= latched == super::FormationAdvantage::Preemptive;
+    }
 }
 
 /// The party side of the escape compare (`FUN_801E791C` first loop): each

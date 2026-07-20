@@ -58,7 +58,7 @@
 //! [`FrameCadence`].
 //! REF: FUN_80016B6C, FUN_800173BC
 //! Per-mode `DAT_8007B9D8` cadence-floor installers.
-//! REF: FUN_801D6704, FUN_801C6C78, FUN_801CFDA0, FUN_801DC6B4, FUN_801DE234, FUN_801DD35C, FUN_801CF678, FUN_801D362C
+//! REF: FUN_801D6704, FUN_801CFDA0, FUN_801DC6B4, FUN_801DE234, FUN_801DD35C, FUN_801CF678, FUN_801D362C
 
 use crate::anim_vm::DispatchByte;
 
@@ -166,11 +166,20 @@ impl FrameCadence {
     /// the field floor survives a pause-menu round trip. Cutscene dialogue
     /// (`FUN_801D362C`) takes its floor from a script operand at
     /// `param_2 + 4`, so that one is data-driven and has no fixed entry.
+    ///
+    /// `FUN_801C6C78` is **not** on this list, and should not be re-added: it
+    /// installs no floor. Its 441-instruction disassembly writes exactly one
+    /// global - `0x8007AA14`, via 17 copies of `sw t0,-0x55ec(at)` - and
+    /// contains no store to `DAT_8007B9D8` at all. The `_DAT_8007b9d8 = 2`
+    /// that once put it here appears only in the *decompiled* half of
+    /// `overlay_0896_801c6c78.txt`, spliced in from the field-overlay bytes
+    /// PROT 0896's footprint over-reads into; it is `FUN_801D6704`'s store,
+    /// already tabulated above. See `docs/subsystems/actor-vm.md`.
     pub const MODE_FLOORS: &'static [(&'static str, u8)] = &[
         // Field scene loader - ordinary field/town play.
+        // Store `sw s0,-0x4628(v0)` at 0x801D6990, with `li s0,0x2` at
+        // 0x801D6988 (overlay_0897, base 0x801CE818).
         ("FUN_801D6704", 2),
-        // Options screen overlay (PROT 0896).
-        ("FUN_801C6C78", 2),
         // Field->battle intro transition.
         ("FUN_801CFDA0", 3),
         // Menu family: drops to 1 on entry, restores DAT_801EF19C on exit.

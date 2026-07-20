@@ -406,6 +406,220 @@ fn escape_accessories_fold_from_the_ability_bitfield() {
     );
 }
 
+/// **Wiring oracle for the `ctx+0x290` -> `ctx+0x291` formation latch.**
+///
+/// A pre-emptive strike (`ctx+0x291 == 2`) makes `FUN_801E791C` set the party
+/// roll equal to the enemy roll, so the `roll_p < roll_e` compare can no longer
+/// fail. The worst possible matchup - party score pinned at ~1 against an enemy
+/// score of 1000 - is caught on essentially every seed without it, so if
+/// `roll_battle_escape` stops folding [`World::battle_formation_latched`] into
+/// the escape flags this flips from 50/50 escapes to ~0/50.
+///
+/// This is the assertion that was missing while the latch existed as a
+/// write-only field: latching `+0x290` into `+0x291` and never reading it back
+/// is indistinguishable from not latching at all.
+#[test]
+fn latched_preemptive_strike_makes_the_escape_compare_unfailable() {
+    use legaia_engine_vm::battle_formulas::FormationAdvantage;
+
+    let mut caught_without = 0;
+    let mut escaped_with = 0;
+    for seed in 0..50u32 {
+        let mut w = escape_world(1, 1000, None);
+        w.rng_state = seed;
+        caught_without += u32::from(!w.roll_battle_escape());
+
+        let mut w = escape_world(1, 1000, None);
+        w.rng_state = seed;
+        w.battle_formation_latched = FormationAdvantage::Preemptive;
+        escaped_with += u32::from(w.roll_battle_escape());
+    }
+    assert!(
+        caught_without >= 48,
+        "baseline: the hopeless matchup is caught (got {caught_without}/50)"
+    );
+    assert_eq!(
+        escaped_with, 50,
+        "a latched pre-emptive strike escapes every seed"
+    );
+}
+
+/// A **back attack** (`ctx+0x291 == 1`) is not the mirror of a pre-emptive
+/// strike: `FUN_801E791C` compares the latched byte against `2` only, so a back
+/// attack has no effect on the escape roll at all. Its cost is paid entirely in
+/// the initiative lockout.
+#[test]
+fn latched_back_attack_does_not_touch_the_escape_roll() {
+    use legaia_engine_vm::battle_formulas::FormationAdvantage;
+
+    for seed in 0..50u32 {
+        let mut plain = escape_world(30, 45, None);
+        plain.rng_state = seed;
+        let a = plain.roll_battle_escape();
+
+        let mut backed = escape_world(30, 45, None);
+        backed.rng_state = seed;
+        backed.battle_formation_latched = FormationAdvantage::BackAttack;
+        let b = backed.roll_battle_escape();
+
+        assert_eq!(a, b, "seed {seed}: back attack must not change the roll");
+    }
+}
+
+/// "Escape assured" overstates the pre-emptive arm. Retail sets `roll_p =
+/// roll_e` *before* testing `ctx+0x287` (`801e7af0` then `801e7b14`), so a
+/// scripted no-flee battle still catches the party even after a pre-emptive
+/// strike. Only the forced-flee arm bypasses `+0x287`.
+#[test]
+fn latched_preemptive_strike_still_loses_to_the_no_escape_flag() {
+    use legaia_engine_vm::battle_formulas::FormationAdvantage;
+
+    for seed in 0..25u32 {
+        let mut w = escape_world(1000, 1, None);
+        w.rng_state = seed;
+        w.battle_formation_latched = FormationAdvantage::Preemptive;
+        w.battle_no_escape = true;
+        assert!(
+            !w.roll_battle_escape(),
+            "seed {seed}: ctx+0x287 outranks the pre-emptive arm"
+        );
+    }
+}
+
+/// **Wiring oracle for the latch ordering.** The initiative seeder is the only
+/// reader of the *unlatched* `ctx+0x290`, and the escape roll is the only
+/// reader of the latched `ctx+0x291`, so the two passes must run in that order.
+/// This drives the real sequence and checks both consumers saw their copy:
+/// the monsters lose their round-one keys (the lockout ran against `+0x290`)
+/// **and** the advantage survives into `+0x291` (the latch ran after it).
+#[test]
+fn seed_then_latch_feeds_both_formation_consumers() {
+    use legaia_engine_vm::battle_formulas::FormationAdvantage;
+
+    let mut w = escape_world(40, 40, None);
+    w.party_count = 3;
+    for slot in 0..7 {
+        w.actors[slot].battle.liveness = 1;
+        w.actors[slot].battle.hp = 100;
+        w.actors[slot].battle.max_hp = 100;
+        w.battle_speed[slot] = 40;
+    }
+    w.battle_formation = FormationAdvantage::Preemptive;
+
+    w.seed_battle_initiative();
+    // Lockout consumer: monster slots 3..=6 sat out round one.
+    for slot in 3..7 {
+        assert_eq!(
+            w.actors[slot].battle.init_key, 0,
+            "slot {slot}: pre-emptive strike zeroes the monster keys"
+        );
+    }
+    // Party slots 1 and 2 keep real keys (slot 0's is consumed to open).
+    assert!(w.actors[1].battle.init_key > 0);
+    assert!(w.actors[2].battle.init_key > 0);
+
+    w.latch_battle_formation();
+    assert_eq!(
+        w.battle_formation_latched,
+        FormationAdvantage::Preemptive,
+        "the advantage must survive into +0x291"
+    );
+    assert_eq!(
+        w.battle_formation,
+        FormationAdvantage::None,
+        "+0x290 is cleared by the latch"
+    );
+    // And the escape roll now sees it.
+    w.rng_state = 7;
+    assert!(w.roll_battle_escape());
+}
+
+/// The side lockout splits on the engine's `party_count`, not on retail's fixed
+/// slot-3 boundary. Retail always reserves three party slots, so
+/// `apply_side_lockout` can hardcode `0..=2` / `3..=6`; the engine compacts and
+/// seats the first monster at `party_count`. With a one-member party, slot 1 is
+/// a **monster**, and a back attack must lock out slot 0 alone - the fixed
+/// split would zero the monsters' keys instead, handing round one to the side
+/// that was supposed to lose it.
+#[test]
+fn side_lockout_follows_party_count_not_the_fixed_retail_boundary() {
+    use legaia_engine_vm::battle_formulas::FormationAdvantage;
+
+    for (advantage, party_locked) in [
+        (FormationAdvantage::BackAttack, true),
+        (FormationAdvantage::Preemptive, false),
+    ] {
+        let mut w = escape_world(40, 40, None);
+        w.party_count = 1; // slot 0 party, slots 1..=6 monsters
+        for slot in 0..7 {
+            w.actors[slot].battle.liveness = 1;
+            w.actors[slot].battle.hp = 100;
+            w.actors[slot].battle.max_hp = 100;
+            w.battle_speed[slot] = 40;
+        }
+        w.battle_formation = advantage;
+        w.rng_state = 3;
+        w.reseed_initiative();
+
+        assert_eq!(
+            w.actors[0].battle.init_key == 0,
+            party_locked,
+            "{advantage:?}: party slot 0 lockout"
+        );
+        for slot in 1..7 {
+            assert_eq!(
+                w.actors[slot].battle.init_key == 0,
+                !party_locked,
+                "{advantage:?}: monster slot {slot} lockout"
+            );
+        }
+    }
+}
+
+/// **Wiring oracle for the initiative kernel.** `FUN_801DA780` adds a
+/// wounded-HP bonus to the rolled key, and for a party slot below a quarter HP
+/// that bonus is `(max_hp - hp) >> 4` - far larger than the whole SPD roll.
+///
+/// With both slots at SPD 10 the rolled key spans `[11, 16]` (`rand % 6`); a party member at
+/// 1/1000 HP adds `999 >> 4 = 62`, so its key lands in `[73, 78]` and beats the
+/// healthy slot on *every* seed. The pre-remediation
+/// `speed + rng % (speed/2 + 1) + 1` inline formula has no such term, so both
+/// slots drew from the same `[11, 16]` band and this assertion fails on most
+/// seeds.
+#[test]
+fn initiative_keys_carry_the_wounded_bonus_from_the_kernel() {
+    for seed in 0..40u32 {
+        let mut w = escape_world(10, 10, None);
+        w.party_count = 2;
+        w.rng_state = seed;
+        for slot in 0..2 {
+            w.actors[slot].battle.liveness = 1;
+            w.actors[slot].battle.max_hp = 1000;
+            w.battle_speed[slot] = 10;
+        }
+        w.actors[0].battle.hp = 1; // near death
+        w.actors[1].battle.hp = 1000; // untouched
+        w.battle_formation = legaia_engine_vm::battle_formulas::FormationAdvantage::None;
+
+        w.reseed_initiative();
+
+        let wounded = w.actors[0].battle.init_key;
+        let healthy = w.actors[1].battle.init_key;
+        assert!(
+            (73..=78).contains(&wounded),
+            "seed {seed}: wounded key {wounded} outside the kernel's [73,78] band"
+        );
+        assert!(
+            (11..=16).contains(&healthy),
+            "seed {seed}: healthy key {healthy} outside the plain [11,16] band"
+        );
+        assert!(
+            wounded > healthy,
+            "seed {seed}: the wounded bonus must win ({wounded} vs {healthy})"
+        );
+    }
+}
+
 /// Retail folds the escape accessories only over party members with live HP
 /// (`+0x14C != 0`): a downed Chicken King wearer contributes nothing.
 #[test]

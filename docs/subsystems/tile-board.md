@@ -34,12 +34,30 @@ The mutable runtime board is a separate `width × height` byte buffer at `DAT_80
 
 ### Always procedural (no inline-cell boards)
 
-Sub-op-5 boards are **always procedurally generated** - there is no fixed inline-cell board variant. The proof is structural: the op `0x49` case in `overlay_0897_801de840.txt` advances the script cursor by a **constant `+0xe` (14 bytes)** independent of `width * height`, so the cell array can never be part of the operand stream. The cells are instead `malloc`'d at install and rand-filled by `overlay_0897_801e0b1c`: every cell `rand()%6 + 2` (BIOS `rand`, `func_0x80056798` = A0(0x2F)), then **4 animated tiles** (value `0xB`) and **3 event tiles** (values `8` / `9` / `0xA`) scattered into the bottom half-board.
+Sub-op-5 boards are **always procedurally generated** - there is no fixed inline-cell board variant. The proof is structural: the op `0x49` case advances the script cursor by a **constant `+0xe` (14 bytes)** independent of `width * height`, so the cell array can never be part of the operand stream. Confirmed in the instruction stream at `0x801e093c..0x801e0948`: the sub-op-5 arm is `beq v1,v0` (v0 = 5) then `j 0x801e3624` with delay slot `addiu fp,fp,0xe`.
+
+The cells are filled at install by the procedural fill at **`0x801EF334`** (see the address note below): every cell `rand()%6 + 2`, then **4 animated tiles** and **3 event tiles** scattered in. Read from the disassembly:
+
+| Phase | Addresses | Behaviour |
+|---|---|---|
+| Base fill | `0x801ef418..0x801ef450` | `rand()%6 + 2` per cell, for `width * height` cells. The `%6` is a magic-multiplier divide (`lui s1,0x2aaa; ori s1,s1,0xaaab`), multiply-back `x6`, `subu`, then `addiu v0,v0,2`. |
+| Animated tiles | `0x801ef484..0x801ef500` | Four cells, values **`0xB`, `0xC`, `0xD`, `0xE`** (`addiu a0,s3,0xb` with `s3` = 0..3), each placed at `rand() % (width * height)` - anywhere on the **whole** board. |
+| Event tiles | `0x801ef508..0x801ef5b0` | Three cells, values `8` / `9` / `0xA`, placed at `col = rand() % width`, `row = rand() % ((height+1)>>1) + (height>>1)` - the **bottom half** only. |
+
+Two corrections this table carries against an earlier reading of these bytes: the four animated tiles are **not** all value `0xB`, and only the *event* tiles use the half-height modulus - the animated ones scatter over the full board. `legaia_engine_core::tile_board::procedural_fill` already implements both correctly; it was the prose that drifted.
+
+Whether the cell buffer is `malloc`'d at install is **unverified** - the cells are reached through a pointer at `DAT_801f35c0`, which is consistent with a heap allocation, but no allocation site has been traced. (`func_0x800204f8`, called on the install path, is the move-table consumer, not an allocator.)
+
+#### Address note: there is no `FUN_801e0b1c`
+
+The procedural fill was previously cited as `FUN_801e0b1c`. **That address does not exist as a function.** The dump filed under that name was produced against the field overlay loaded at base `0x801C0000` instead of its correct base `0x801CE818`, so every address in it is short by exactly `0xE818`. The real code is at **`0x801EF334`**, which is not a function entry either - it is an **interior label of `FUN_801ef2b0`** (the tile-board walk SM, extent `0x801ef2b0..0x801efe9c`), promoted to a fake `FUN_` entry by the label-call idiom.
+
+The alias is recorded rather than silently renumbered because the old address appears in older notes: `FUN_801e0b1c` + `0xE818` = `0x801EF334`. At VA `0x801e0b1c` the field overlay actually holds `addiu v0,v0,-5`, part of an unrelated operand-nibble table lookup.
 
 Provenance:
 - Install: field-VM op `0x49` in `overlay_0897_801de840.txt` (a multi-subtype map-command opcode; `_DAT_8007b450 = pbVar47` arms the header pointer).
 - Walk SM: `overlay_0897_801ef2b0.txt`.
-- Procedural fill: `overlay_0897_801e0b1c.txt`.
+- Procedural fill: `0x801EF334`, an interior label of `FUN_801ef2b0` (see the address note above - the old `FUN_801e0b1c` citation was a wrong-base alias).
 - Board renderer: `overlay_0897_801e0f3c.txt` (draws each cell value > 1 as `DAT_801f35bc[cell]` at the cell's world position).
 
 **Roster: the tile board is a field-overlay (`0897`) construct only.** Every install / walk-SM / fill / render site lives in `0897` and is reached from the field/event VM (op `0x49`). So the board is used by field/puzzle scenes, not by the hub minigames. **Confirmed** (`overlay_0897_801de840.txt` / `..._801ef2b0.txt`).
@@ -116,9 +134,10 @@ The install is wired to the field VM: op `0x49` **sub-op 5** hands the host the
 13-byte inline header (`TileBoardHeader::parse`, the window retail points
 `_DAT_8007b450` at - the sub-op byte plus the `+1..+0xC` fields above);
 `World::try_install_tile_board` fills the cells with the ported procedural
-fill (`tile_board::procedural_fill`, the `overlay_0897_801e0b1c` algorithm:
-every cell `rand()%6 + 2`, four animated tiles `0xB..0xE` at random cells,
-three event tiles `8..0xA` scattered into the bottom half-board), seats the
+fill (`tile_board::procedural_fill`, the `0x801EF334` algorithm:
+every cell `rand()%6 + 2`, four animated tiles `0xB..0xE` at random cells
+anywhere on the board, three event tiles `8..0xA` scattered into the bottom
+half-board), seats the
 player at the start-cell centre, and holds the script suspended through the
 op-49 tristate. The arrival pass mirrors the walk SM's case 3: an event /
 transition cell (`8..=0xA`) exits the board mode - the suspended script reads
@@ -149,7 +168,7 @@ table + draw list so they don't leak into the next scene; the player actor
 
 ## Open
 
-- ~~Whether any board is *fixed* (inline-script cells) rather than procedurally filled.~~ **Resolved (negative):** sub-op-5 boards are **always procedural**. The install op advances the script cursor a constant `+0xe` regardless of `width × height`, so a cell array cannot ride the operand stream, and the cells are `malloc`'d + rand-filled by `overlay_0897_801e0b1c`. There is no fixed-board variant to lift. See [always procedural](#always-procedural-no-inline-cell-boards).
+- ~~Whether any board is *fixed* (inline-script cells) rather than procedurally filled.~~ **Resolved (negative):** sub-op-5 boards are **always procedural**. The install op advances the script cursor a constant `+0xe` regardless of `width × height` (`addiu fp,fp,0xe` at `0x801e0948`), so a cell array cannot ride the operand stream, and the cells are rand-filled at `0x801EF334`. There is no fixed-board variant to lift. See [always procedural](#always-procedural-no-inline-cell-boards).
 - ~~The event-cell arrival's header `+7`/`+9` flag-operand consumption.~~ **Resolved:** `+7` (base A) is the event-SET base and `+9` (base B) the TEST/gate base, both into the system-flag bank `DAT_80085758` (SET `func_0x8003ce08` / TEST `func_0x8003ce64`, reader `func_0x8003ce9c`), consumed in walk SM case 8. See [event-flag bases](#cell-value-semantics). The engine still surfaces only the exit through the op-49 resume.
 - ~~Per-cell tile-actor **rendering**.~~ **Resolved:** the engine draw path is complete - `legaia_engine_shell::tile_board_draws` assembles per-cell draws from `World::tile_board_draw_list` (floor-snapped Y, one mesh instance per drawable cell) and the play-window redraw pass uploads each board slot's template once per install and skips board-owned slots in the generic actor loop; unresolved templates degrade to no-draw. Confirmed via offscreen screenshot diff (13 tile-actor meshes instanced per cell). Disc-gated coverage: `crates/engine-shell/tests/tile_board_draw_live.rs`.
 - **No retail scene installs a board.** A disc-wide census (every partition record of all scene MANs, scripted-table + v12-embedded forms, walked with the field-VM disassembler, plus a raw byte-pair sweep) finds zero op-`0x49` sub-5 sites - the board is a script-reachable but retail-unused mode (pinned by the negative census test in `tile_board_draw_live.rs`). The play-window `LEGAIA_TILE_BOARD_DEMO=1` env var synthesizes a retail-shaped 14-byte install near the player for that reason. Consequences: the intended per-cell tile *art* (retail header `+0xc` template base into `DAT_801f35bc`) and the board-plane Y behaviour have no retail reference to compare against - only a live capture of a debug-menu entry into the mode could pin them.

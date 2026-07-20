@@ -989,6 +989,72 @@ pub fn tab_banner_draws(
     out
 }
 
+/// Build the [`TextDraw`]s for a field-menu title tab's **label** - the
+/// word that lands on the plaque [`tab_banner_draws`] composes.
+///
+/// The five title tabs share one renderer shape: stage the text ink to
+/// index 7 (white), then emit the label at the window's content origin
+/// with no offset of its own. They differ only in which string they
+/// pass, which is why one function serves all five - the tab identity
+/// lives in the caller's `label`, exactly as it lives in the retail
+/// renderer's string operand.
+///
+/// `pen` is the tab window's content origin, the same `pen`
+/// [`tab_banner_draws`] takes, so a caller frames the plaque and labels
+/// it from one pair of coordinates.
+///
+/// PORT: FUN_801DCA0C (Items), FUN_801DCA50 (Magic), FUN_801DCA94 (Equip),
+/// PORT: FUN_801DCAD8 (Status), FUN_801DCB1C (Options)
+pub fn tab_label_draws(font: &legaia_font::Font, label: &str, pen: (i32, i32)) -> Vec<TextDraw> {
+    text_draws_for(&font.layout_ascii(label), pen, MENU_TEXT_WHITE)
+}
+
+#[cfg(test)]
+mod tab_label_tests {
+    use super::*;
+
+    /// The label lands at the window content origin with no offset of
+    /// its own - the plaque is positioned around it, not the other way
+    /// round.
+    #[test]
+    fn label_starts_at_the_content_origin() {
+        let font = legaia_font::synthetic_for_tests();
+        let draws = tab_label_draws(&font, "Status", (90, 16));
+        assert!(!draws.is_empty());
+        assert_eq!(draws[0].dst.0, 90);
+        assert_eq!(draws[0].dst.1, 16);
+    }
+
+    /// All five tabs ink white (retail staging index 7); none of them
+    /// stages a different colour.
+    #[test]
+    fn every_tab_label_inks_white() {
+        let font = legaia_font::synthetic_for_tests();
+        for label in ["Items", "Magic", "Equip", "Status", "Options"] {
+            let draws = tab_label_draws(&font, label, (0, 0));
+            assert!(
+                draws.iter().all(|d| d.color == MENU_TEXT_WHITE),
+                "{label} inked off-white"
+            );
+        }
+    }
+
+    /// Each tab's label is the only thing that differs between the five
+    /// renderers, so a different word must produce a different run of
+    /// glyphs at the same pen.
+    #[test]
+    fn tab_identity_lives_in_the_label() {
+        let font = legaia_font::synthetic_for_tests();
+        let items = tab_label_draws(&font, "Items", (90, 16));
+        let magic = tab_label_draws(&font, "Magic", (90, 16));
+        assert_eq!(items[0].dst.0, magic[0].dst.0);
+        assert_ne!(
+            items.iter().map(|d| d.src).collect::<Vec<_>>(),
+            magic.iter().map(|d| d.src).collect::<Vec<_>>()
+        );
+    }
+}
+
 #[cfg(test)]
 mod health_tier_ink_tests {
     use super::*;

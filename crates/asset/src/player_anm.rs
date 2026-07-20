@@ -361,6 +361,16 @@ impl BoneTransform {
     // PORT: FUN_8001BE80 - the per-(bone, frame) entry decoder: unpacks the
     // three nibble-packed signed 12-bit translations (sign-extend on bit 0x800)
     // and the three u8 rotation angles (each << 4 into a 12-bit PSX angle).
+    //
+    // `t_z`'s high nibble is the LOW nibble of byte 4 (`andi v0,v0,0xf` at
+    // 0x8001BF38); byte 4's high nibble is never read. Prose elsewhere has
+    // said "high nibble" - the instructions say otherwise, and
+    // `bone_transform_decode_signed_12bit` below is what keeps this honest.
+    //
+    // Scope limit: retail `FUN_8001BE80` also blends two frames using the
+    // 4-bit sub-frame fraction at `actor+0x68` (gated on `*(a2+1) & 1`,
+    // angles via `FUN_8001D088`). This decodes a single entry and does no
+    // interpolation - see `docs/formats/anm.md`.
     pub fn decode(bytes: &[u8]) -> Self {
         let unpack = |lo: u8, hi4: u8| -> i32 {
             let mut v = (lo as u32) | (((hi4 & 0x0F) as u32) << 8);

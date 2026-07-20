@@ -292,12 +292,36 @@ populated. The other is a global **battle-id** at `DAT_8007b7fc` consumed at
 battle-init by `FUN_80055b6c`, which calls `FUN_8005567c` (`SCUS_942.54`) to expand
 the id into the cell:
 
-```c
-DAT_8007bd0c = DAT_8007bd0d = DAT_8007bd0e = (u8)DAT_8007b7fc;   // lone / paired id
-// id ranges 0x07..0x09, 0x49..0x4d, 0x88..0x8b, 0xa2..0xff get bespoke multi-monster
-// / boss expansions (DAT_8007bd0e cleared; DAT_8007bd10.. set per id);
-if (DAT_8007b7fc == 0) { cell = [4, _, 4, 4]; }                 // default-zero fallback
-```
+The store order in the disassembly is:
+
+| Address | Store | Effect |
+|---|---|---|
+| `0x80055690` | `sb zero, DAT_8007BD0F` | slot 3 cleared |
+| `0x80055698` | `sb v0, DAT_8007BD0C` | slot 0 = id |
+| `0x800556A0` | `sb v0, DAT_8007BD0D` | slot 1 = id |
+| `0x800556A8` | `sb v0, DAT_8007BD0E` | slot 2 = id |
+
+Id ranges `0x07..0x09`, `0x49..0x4d`, `0x88..0x8b`, `0xa2..0xff` are the
+"bespoke" bands: they zero slots 1, 2 and 3, collapsing the cell to a lone
+`[id,0,0,0]`. Only `0xa2`/`0xa3`/`0xa4` additionally seed `DAT_8007BD10..`
+(with `1` / `3` / `2`). The `DAT_8007b7fc == 0` fallback writes `4` to all
+four slots with four explicit `sb`s at `0x80055788..0x800557A4`, then clears
+the boss-transition arm at `DAT_8007B64A`.
+
+Slot 1 **is** written directly, in the prologue alongside slots 0 and 2.
+Ghidra's decompiled C ends with a synthesized `DAT_8007bd0d = DAT_8007bd0e;`
+and shows only three stores in the fallback - both are reordering artifacts
+of the same kind, and neither exists in the instruction stream. Read the
+disassembly here, not the decompile. The three cases:
+
+| Battle id | Resulting cell |
+|---|---|
+| `0` | `[4, 4, 4, 4]` - every slot, slot 1 included |
+| in a bespoke band | `[id, 0, 0, 0]` |
+| any other non-zero | `[id, id, id, 0]` |
+
+Ported clean-room as `legaia_engine_core::encounter_record::expand_battle_id`,
+alongside the `actor[+0x94]` record path it is the alternate of.
 
 `DAT_8007b7fc` is a **transient** parameter: it is `0` in every captured Tetsu
 frame (the id is consumed and cleared by the time the battle is resident). The
@@ -468,6 +492,17 @@ section pointer into `ctrl[+0x20]` before calling `FUN_8003A110`.
 
 The MAN multi-section header is byte-exact across all 80 retail
 `scene_asset_table` bundles and lives at MAN offset `0`:
+
+> **`+0x22`/`+0x24`/`+0x26` are record *counts*, not section offsets.** They
+> are signed 16-bit counts of the 3-byte records that follow at `+0x2B`, and
+> `+0x28` is a **u24**, not a fourth s16. The header chains **six** sections,
+> not four. Summary tables elsewhere have repeatedly restated this block as
+> "four s16 section offsets at `+0x22..+0x28`" - that reading is wrong, and
+> the layout below (traced through `0x8003B04C..0x8003B120`: `lbu` pairs with
+> `sll 16` / `sra 16` for the counts, a three-byte assembly for the u24) is
+> the one to trust. The recurring shape is worth naming: the **detail page
+> stayed correct while the one-line summary drifted**, so when a summary and a
+> byte-level block disagree, the block wins.
 
 ```text
 +0x00..+0x02   u16 LE  status_flags                 ; return value;

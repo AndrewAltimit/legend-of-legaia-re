@@ -1,6 +1,16 @@
 //! Title-overlay sub-mode dispatcher.
 //!
-//! PORT: FUN_801DD35C
+//! REF: FUN_801DD35C
+//!
+//! Tagged `REF:` rather than `PORT:` because `menu.rs` carries the
+//! `PORT:` for this address and the catalog counts occurrences - one
+//! address cannot have two port sites. The two dumps are the same
+//! function: `overlay_menu_801dd35c.txt` and `overlay_title_801ddccc.txt`
+//! differ in zero lines (both 12104 bytes / 3026 instructions), and
+//! `overlay_save_ui_*` / `overlay_shop_save` carry it too. **Which
+//! overlay actually hosts it is an open question** - the dump evidence
+//! points at one shared slot-A generation, but settling it needs the
+//! disc-image check the move-VM `0x2F` thread used, not dump inference.
 //!
 //! The title-overlay per-frame tick `FUN_801DD35C` (in
 //! `ghidra/scripts/funcs/overlay_title_801ddccc.txt`) fans out via a

@@ -89,12 +89,17 @@ pub mod motion_pause;
 pub mod motion_vm;
 pub mod move_buffer;
 pub mod move_vm;
+pub mod move_vm_overlay_ext;
 pub mod prim_dispatch;
+pub mod scus_core_helpers;
 pub mod status_effects;
 pub mod title_overlay;
 pub mod title_prim;
+pub mod vram_rect_copy;
 pub mod world_map;
-pub mod world_map_draw_vm;
+
+pub mod world_map_dim;
+pub mod world_map_horizon;
 
 /// Width of one bytecode instruction in bytes.
 pub const INSN_SIZE: usize = 4;

@@ -689,11 +689,19 @@ pub trait FieldHost {
     /// `func_0x800468a4(6, …)` enqueues a GP0 `0x80` VRAM->VRAM rectangle
     /// copy into OT slot 6 (packet builder `FUN_80057914`; `src_y += 0xF0`
     /// under the back-buffer flag) - the >256-wide dual call is the same
-    /// two-page split the panel widget does. The VM passes the six raw words
-    /// plus a `did_split` boolean (set when the `c > 0xFF` branch fired).
-    /// No on-disc scene script uses this sub-op. PC += 14.
-    fn op43_vram_rect_copy(&mut self, words: [i16; 6], did_split: bool) {
-        let _ = (words, did_split);
+    /// two-page split the panel widget does. No on-disc scene script uses
+    /// this sub-op. PC += 14.
+    ///
+    /// The VM resolves the split here (see
+    /// [`vram_rect_copy::op43_sub12_calls`]) and hands the host the one or
+    /// two calls in emission order, so a host only has to run each through
+    /// [`vram_rect_copy::enqueue`] with its own ordering-table length and
+    /// back-buffer flag.
+    ///
+    /// [`vram_rect_copy::op43_sub12_calls`]: crate::vram_rect_copy::op43_sub12_calls
+    /// [`vram_rect_copy::enqueue`]: crate::vram_rect_copy::enqueue
+    fn op43_vram_rect_copy(&mut self, calls: &[crate::vram_rect_copy::RectCopyCall]) {
+        let _ = calls;
     }
 
     /// Op 0x43 sub-0x13 (image-panel spawn, FUN_801F88FC).

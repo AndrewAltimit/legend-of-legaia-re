@@ -400,3 +400,133 @@ fn load_field_script_resets_pc_and_ctx() {
     assert_eq!(world.field_ctx.flags, 0);
     assert_eq!(world.field_bytecode.len(), 8);
 }
+
+// ---------------------------------------------------------------------------
+// Ledge hop: FUN_801d1878 (probe + post) driven by FUN_801d1ba0 (per-frame
+// vertical settle + trigger), wired into the field frame tick.
+// ---------------------------------------------------------------------------
+
+/// A field world whose collision grid is all-floor (high nibble `0` = no
+/// walls) with the 2x2 tile block covering the hop's floor-sample point
+/// raised to elevation tier `1`. The LUT puts tier `1` at `height` world
+/// units, so walking +Z off tier `0` faces a `height`-unit step up.
+///
+/// The player starts at the centre of tile (2, 2) facing +Z.
+fn ledge_world(height: i16) -> World {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.install_field_player(0);
+    world.actors[0].move_state.world_x = 320;
+    world.actors[0].move_state.world_z = 320;
+    world.field_collision_grid = vec![0u8; FIELD_GRID_LEN];
+    // Opt into the retail glide so the settle is observable; it is off by
+    // default so the flat-Y locomotion oracles keep their exact positions.
+    world.field_vertical_settle = true;
+    world.field_floor_height_lut = [0i16; 16];
+    world.field_floor_height_lut[1] = height;
+    // The floor sampler reads the 2x2 corner block at tile (2, 2).
+    for (tx, tz) in [(2usize, 2usize), (3, 2), (2, 3), (3, 3)] {
+        world.field_collision_grid[tz * FIELD_GRID_STRIDE + tx] = 0x01;
+    }
+    world
+}
+
+#[test]
+fn ledge_hop_posted_through_frame_tick() {
+    // A tier-1 step up of 200 units clears retail's +0x61 up-threshold, so
+    // one walking frame posts an upward hop. Driven through `tick()` rather
+    // than by calling the controller directly - this is the wiring test.
+    let mut world = ledge_world(200);
+    world.set_pad(input::PadButton::Up.mask());
+    let _ = world.tick();
+    assert_eq!(
+        world.field_step_delta,
+        (0, 8),
+        "the committed +Z sub-step records the retail probe delta"
+    );
+    let hop = world
+        .field_ledge_hop
+        .expect("the frame tick runs the vertical controller and it posts the hop");
+    assert_eq!(hop.kind, 0x10, "a step up is retail hop class 0x10");
+    assert!(hop.is_up());
+    // Landing point is three step-deltas ahead: z + 3 * (8 * 4) = z + 96.
+    assert_eq!(
+        hop.target_z,
+        world.actors[0].move_state.world_z + 96,
+        "the landing point sits 96 units ahead, retail's 3x probe scale"
+    );
+    assert_eq!(hop.target_x, world.actors[0].move_state.world_x);
+}
+
+#[test]
+fn ledge_hop_refused_on_flat_ground() {
+    // Tier 1 at 8 units is inside retail's [-0x60, 0x61) dead band: flat
+    // ground, so the probe runs and declines rather than posting a hop.
+    let mut world = ledge_world(8);
+    world.set_pad(input::PadButton::Up.mask());
+    let _ = world.tick();
+    assert_eq!(world.field_step_delta, (0, 8), "the walk still committed");
+    assert!(
+        world.field_ledge_hop.is_none(),
+        "a sub-threshold rise is flat ground - no hop"
+    );
+    // Non-vacuous: `is_none()` is trivially true if the controller never
+    // ran, so pin the settle it *did* perform. The 8-unit floor is inside
+    // one frame's glide rate, so the height arrives exactly.
+    assert_eq!(
+        world.actors[0].move_state.world_y, 8,
+        "the vertical settle still ran and reached the tier-1 floor"
+    );
+}
+
+#[test]
+fn ledge_hop_refused_when_wall_ahead() {
+    // Same geometry, but the cell the two forward probes land in is a wall.
+    // Retail returns 0 without sampling the floor: the actor is walking into
+    // a wall, not up a step.
+    let mut world = ledge_world(200);
+    let (px, pz) = (320i16, 424i16);
+    let xc = (((px as i32) + 0x3F) >> 6) - 1;
+    let zc = ((pz as i32) >> 6) + 2;
+    let idx = ((xc / 2) & 0x7F) as usize + (zc >> 1) as usize * FIELD_GRID_STRIDE;
+    let quad = ((zc & 1) << 1 | (xc & 1)) as u32;
+    world.field_collision_grid[idx] |= 0x10 << quad;
+    assert!(
+        world.field_tile_is_wall(px, pz),
+        "the forward probe point now reads as a wall"
+    );
+    world.set_pad(input::PadButton::Up.mask());
+    let _ = world.tick();
+    assert!(
+        world.field_ledge_hop.is_none(),
+        "a wall at the forward probe refuses the hop"
+    );
+    // Non-vacuous, as above: the settle ran, rate-clamped to 12 units of the
+    // 200-unit rise, proving the refusal came from the probe and not from
+    // the controller being absent.
+    assert_eq!(
+        world.actors[0].move_state.world_y, 12,
+        "the vertical settle still ran, one glide step toward the floor"
+    );
+}
+
+#[test]
+fn step_delta_clears_on_an_input_free_frame() {
+    // Retail's `0x801d0550` clears the pair before the direction decode, so
+    // a released pad leaves no stale delta for the hop trigger to act on.
+    let mut world = ledge_world(200);
+    world.set_pad(input::PadButton::Up.mask());
+    let _ = world.tick();
+    assert_eq!(world.field_step_delta, (0, 8));
+    world.set_pad(0);
+    let _ = world.tick();
+    assert_eq!(
+        world.field_step_delta,
+        (0, 0),
+        "an input-free frame clears the step delta"
+    );
+    assert!(
+        world.field_ledge_hop.is_none(),
+        "and posts no hop, since nothing walked"
+    );
+}

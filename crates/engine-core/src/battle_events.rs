@@ -24,6 +24,11 @@ pub enum BattleEvent {
     UiElement { effect_id: u8, mode: u8 },
     /// `BattleActionHost::camera_bounds` - recompute camera framing.
     CameraBounds,
+    /// `BattleActionHost::camera_frame_height` - the per-action camera framing
+    /// height / distance (`ctx+0x6D0`) the port of `FUN_801F0348` resolved from
+    /// the acting actor's and target's monster size class. Mirrored on
+    /// [`crate::world::World::battle_camera_frame_height`].
+    CameraFrameHeight { height: i16 },
     /// `BattleActionHost::party_setup` - per-party-slot init hook
     /// (`FUN_801EED1C` in retail).
     PartySetup { actor_slot: u8 },
@@ -161,6 +166,9 @@ impl BattleEvent {
                 format!("UiElement(effect={effect_id}, mode={mode})")
             }
             BattleEvent::CameraBounds => "CameraBounds".into(),
+            BattleEvent::CameraFrameHeight { height } => {
+                format!("CameraFrameHeight({height:#x})")
+            }
             BattleEvent::PartySetup { actor_slot } => format!("PartySetup({actor_slot})"),
             BattleEvent::MonsterSetup { actor_slot } => format!("MonsterSetup({actor_slot})"),
             BattleEvent::RecomputeBattleOrder => "RecomputeBattleOrder".into(),
@@ -277,6 +285,7 @@ mod tests {
                 mode: 0,
             },
             BattleEvent::CameraBounds,
+            BattleEvent::CameraFrameHeight { height: 0x0C00 },
             BattleEvent::PartySetup { actor_slot: 0 },
             BattleEvent::MonsterSetup { actor_slot: 0 },
             BattleEvent::RecomputeBattleOrder,

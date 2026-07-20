@@ -97,7 +97,11 @@ id <  0x9A:  base = 3 * (id - 1)    (mod 256)
 id >= 0x9A:  base = 4 * id + 0x63   (mod 256)
 ```
 
-Bit 7 of `base` selects the file; `base & 0x7F` is the starting slot.
+Bit 7 of `base` selects the file; `base & 0x7F` is the starting slot. Both
+forms above are the *byte-truncated* result - the instructions compute
+something that looks different but is congruent mod 256, see
+[the slot map in instructions](#the-slot-map-in-instructions).
+
 The id bands tile both files exactly:
 
 | Action ids | File | Group shape | Slots |
@@ -112,6 +116,54 @@ the second texture upload is also skipped for `base < 0x0C` and
 `base 0x37..=0x41`. Summon group 0 (spell id `0x81`, Gimard) carries the
 "Burning Attack" actor record - consistent with the
 [spell table](spell-table.md)'s player Seru-magic block.
+
+### The slot map in instructions
+
+`FUN_801E295C` splits on `sltiu v0,v0,0x9a` and stores the result with `sb`,
+so both arms are only ever meaningful modulo 256:
+
+```text
+801e499c  lbu   v0,0x1df(s3)      ; the action id
+801e49a4  sltiu v0,v0,0x9a
+801e49a8  beq   v0,zero,0x801e49d0
+
+; low arm (id < 0x9A)
+801e49b8  addiu v1,v1,-0x81
+801e49bc  sll   v0,v1,0x1
+801e49c0  addu  v0,v0,v1          ; 3 * (id - 0x81)
+801e49cc  addiu v0,v0,-0x80       ; ... minus 0x80
+
+; high arm (id >= 0x9A)
+801e49dc  sll   v0,v0,0x2
+801e49e0  addiu v0,v0,-0x29d      ; 4 * id - 0x29D
+
+801e49e4  sb    v0,0x277(v1)      ; stored as a BYTE
+```
+
+The two documented forms follow by congruence, and the check matters because
+the instruction constants share no digits with them:
+
+- Low arm: `3*(id - 0x81) - 0x80 ≡ 3*(id - 1)  (mod 256)`, since the two differ
+  by `3*0x80 - (-0x80) = 0x200`. Spot-check `id = 0x81 → 0x80` and
+  `id = 0x99 → 0xC8` from either form.
+- High arm: `4*id - 0x29D ≡ 4*id + 0x63  (mod 256)`, since `0x29D + 0x63 = 0x300`.
+
+The `-0x80` on the low arm is also **where bit 7 comes from**. The file-select
+bit is not a separate flag the code sets; it falls out of the same expression,
+which is why the whole `0x81..=0x99` band lands in `summon.dat` automatically.
+The applier reads the byte back signed (`lb`) precisely to test that bit:
+
+```text
+801f1644  lb   v0,0x277(a0)
+801f164c  bltz v0,0x801f17e4      ; bit 7 set -> summon.dat, keep streaming
+801f1650  li   v0,0x36
+801f1654  beq  v1,v0,0x801f17e4   ; the one readef four-slot group
+801f1660  sb   zero,0x276(a0)     ; otherwise stop after base+1
+```
+
+(`FUN_801F12D0`, from `overlay_muscle_dome_801f12d0.txt` - see the dump warning
+in [Tooling](#tooling).) The `base+2` and `base+3` arms at `801f1678` /
+`801f179c` both `jal 0x80055b4c`, the staging arm.
 
 ## Slot formats
 
@@ -211,6 +263,15 @@ target. The attack-name sequence across the `summon.dat` actor records follows
 the spell-id order exactly (slot group 0 = the `0x81` cast, group 1 = `0x82`,
 …), independently corroborating the case-`0x32` banding; `readef.DAT` slot 0's
 page decodes to a legible dev "back read test" texture.
+
+> **Which `FUN_801F12D0` dump to read.** Use
+> `ghidra/scripts/funcs/overlay_muscle_dome_801f12d0.txt` (330 instructions,
+> proper prologue). The sibling `overlay_0897_801f12d0.txt` is a **VA-aliased
+> mid-function fragment**: it opens with `lw v1,-0x6c84(v0)` and no
+> `addiu sp,sp,-N`, yet closes restoring `s0`-`s3` and `ra` it never saved. Its
+> body contains none of the slot-streaming logic described above, so anyone
+> re-walking this thread from it will conclude the applier does something else
+> entirely.
 
 ## See also
 

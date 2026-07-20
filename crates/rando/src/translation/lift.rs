@@ -498,6 +498,32 @@ pub fn lift_official(
     Ok((pack, report))
 }
 
+/// ASCII-fold every lifted `translation` in `pack`, in place.
+///
+/// The official PAL text uses accented glyph cells the NTSC font leaves empty,
+/// so a lifted pack imported as-is renders blanks where the accents were unless
+/// the font atlas is patched too (a separate deliverable - see
+/// `docs/tooling/pal-localizations.md`). Folding trades the accents for text
+/// that renders correctly on an unmodified USA disc: `{82}` (e-acute) becomes
+/// `e`, and so on across the CP437-aligned accent block.
+///
+/// Returns counts only. `source` fields are untouched (they are USA text and
+/// already plain ASCII).
+pub fn fold_pack_accents(pack: &mut LanguagePack) -> markup::FoldStats {
+    let mut stats = markup::FoldStats::default();
+    for entries in pack.sections.each_mut() {
+        for e in entries.iter_mut() {
+            if e.translation.is_empty() {
+                continue;
+            }
+            let (folded, s) = markup::fold_high_glyphs(&e.translation);
+            e.translation = folded;
+            stats.merge(s);
+        }
+    }
+    stats
+}
+
 /// Extractor of a PROT entry's ordered segment texts (offset + bytes) in one
 /// dialog domain (MAN or raw), given the PAL-tolerant `allow_high` flag.
 type SegTexts = fn(&[u8], bool) -> Vec<(usize, Vec<u8>)>;

@@ -46,6 +46,23 @@ pub(crate) const FIELD_BASE_STEP: i32 = 8;
 /// Per-iteration advance of the locomotion step loop (retail commits in
 /// 2-unit increments per axis).
 pub(crate) const FIELD_STEP_UNIT: i32 = 2;
+/// Magnitude retail records into the step-delta globals `0x8007BDE0` /
+/// `0x8007BDE4` alongside each committed [`FIELD_STEP_UNIT`] sub-step
+/// (`0x801d07bc`: `addiu v0, zero, -8` next to the `-= 2` position write).
+///
+/// It is a **probe scale, not a distance**: nothing moves 8 units per
+/// sub-step. The ledge-hop probe `FUN_801d1878` multiplies it by 4 and
+/// samples the collision grid at 2x and 3x the product, putting its two
+/// probes 64 and 96 world units ahead - exactly one and one-and-a-half
+/// 64-unit collision sub-cells.
+pub(crate) const FIELD_PROBE_DELTA: i16 = 8;
+/// Retail's ledge-hop floor-height thresholds (`FUN_801d1878`, the
+/// `slti 0x61` / `slti -0x60` pair). A landing floor `>= +0x61` above the
+/// actor hops **up** (`kind 0x10`); one `< -0x60` below hops **down**
+/// (`kind 0x18`); anything between is flat ground and starts no hop.
+pub(crate) const FIELD_HOP_UP_THRESHOLD: i32 = 0x61;
+/// Downward companion of [`FIELD_HOP_UP_THRESHOLD`].
+pub(crate) const FIELD_HOP_DOWN_THRESHOLD: i32 = -0x60;
 /// Retail player speed multiplier installed by the scene-entry map-init
 /// `FUN_8003aeb0` (`player[+0x72] = 0x1000`, a `12.0` fixed-point `1.0`).
 pub(crate) const FIELD_PLAYER_SPEED_MULT: u16 = 0x1000;

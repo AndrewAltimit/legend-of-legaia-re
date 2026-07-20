@@ -143,7 +143,7 @@ falling back to the field-character-pack preview mesh
 - **The summon stager overlays (extraction PROT 903..913) *do* contain real move-VM part records** (recovered under the corrected link base `0x801F69D8` by `legaia_asset::summon_overlay` - superseding the wrong-link-base "PROT 905 has zero `jal 0x80023070` → no move VM" reading, where the `jal` actually lives in the SCUS stager `FUN_80021B04`, not inside the overlay), and the engine drives them as a **stand-in** (`summon::SummonScene`); but the live trace shows that scene-graph is not the player summon's per-frame render path.
 - **SCOPE:** the trace covers the **player** "Burning Attack" only - the **enemy** Gimard *Fire Tail* boss move is untraced and may still use the overlay/move-VM path.
 
-See [`battle-action.md`](battle-action.md#seru-magic-summon-overlay-dispatch) and the open-rev-eng-threads "Seru-magic summon visual" row for the full reconciliation.
+See [`battle-action.md`](battle-action.md#seru-magic-summon-overlay-dispatch) and the [`re-settled-threads.md`](../reference/re-settled-threads.md) "Seru-magic summon visual" row for the full reconciliation.
 
 This is distinct from the 2D billboard path here:
 

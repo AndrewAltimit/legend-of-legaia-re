@@ -83,6 +83,7 @@ pub mod register_ramp;
 pub mod retail_magic;
 pub mod save_menu_atlas;
 pub mod save_select;
+pub mod save_subscreen;
 pub mod scene;
 pub mod scene_assets;
 pub mod scene_bundle;

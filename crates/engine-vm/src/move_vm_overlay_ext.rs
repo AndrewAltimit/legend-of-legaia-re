@@ -7,16 +7,19 @@
 //! extension). It walks one inner sub-opcode and returns an advance
 //! count (in u16 halfwords) that the move-VM adds to its PC.
 //!
-//! The same function exists in **many** overlays at the same RAM
-//! address (`overlay_world_map`, `overlay_world_map_top`,
-//! `overlay_world_map_walk`, `overlay_0897` field, `overlay_dialog_mc4`,
-//! `overlay_dialog_typing`, `overlay_cutscene_dialogue`,
-//! `overlay_cutscene_mapview`); each overlay supplies its own
-//! contents in the 61-entry JT at `0x801CE868`. This file ports the
-//! `overlay_world_map` flavour - the JT-advance counts here are
-//! derived from that overlay's handlers. Other overlays share most
-//! advance counts (the JT structure is the same) but may dispatch to
-//! different sub-handler bodies.
+//! There is exactly **one** copy, in the field overlay (0897). The
+//! several capture dumps that carry it under `overlay_world_map`,
+//! `overlay_dialog_*` and `overlay_cutscene_*` labels are that same
+//! 0897 image observed under different scenario labels - the static
+//! 0897 dump is a strict subset of the capture-derived ones (no
+//! address appears only in 0897), and no other mapped slot-A overlay
+//! carries a jump table at `0x801CE868` at all. So op `0x2F` executes
+//! only while 0897 is resident, and battle-side move records cannot
+//! reach it. The earlier "one flavour per overlay" reading is
+//! falsified: see the move-VM extension row in
+//! `docs/reference/open-rev-eng-threads.md` and
+//! [`docs/subsystems/move-vm-overlay-ext.md`].
+
 //!
 //! ## Bytecode layout
 //!
@@ -197,7 +200,7 @@ pub fn canonical_size(sub_op: u16) -> Option<u16> {
 /// opcodes (0x2B..0x2E); default impls are no-ops so an engine can
 /// run the VM in "advance-only" mode (validating that every byte
 /// parses) before wiring up the renderer.
-pub trait WorldMapDrawHost {
+pub trait MoveVmExtHost {
     /// Sub-op 0x2B - set slab UV bounds.
     ///
     /// Writes `args` directly to the slab descriptor at offsets
@@ -262,7 +265,7 @@ pub fn peek_word0(bytecode: &[u8]) -> Option<u16> {
 /// current move-VM PC (i.e. the outer `0x2F` byte is at `bytecode[0]`).
 /// Sub-op handlers read args from `+4(s3), +6(s3), ...` in the
 /// original, which corresponds to `bytecode[4..]` here.
-pub fn step<H: WorldMapDrawHost + ?Sized>(host: &mut H, bytecode: &[u8]) -> StepResult {
+pub fn step<H: MoveVmExtHost + ?Sized>(host: &mut H, bytecode: &[u8]) -> StepResult {
     let Some(sub_op) = peek_sub_op(bytecode) else {
         return StepResult {
             size_u16: 1,
@@ -340,13 +343,13 @@ pub fn step<H: WorldMapDrawHost + ?Sized>(host: &mut H, bytecode: &[u8]) -> Step
 /// Useful for "does this buffer parse end-to-end" validation and for
 /// counting render-class ops. For real execution the engine should
 /// model branch flow + the move-VM bridge.
-pub fn walk<H: WorldMapDrawHost + ?Sized>(host: &mut H, bytecode: &[u8]) -> WalkSummary {
+pub fn walk<H: MoveVmExtHost + ?Sized>(host: &mut H, bytecode: &[u8]) -> WalkSummary {
     walk_with_limit(host, bytecode, bytecode.len())
 }
 
 /// As [`walk`], but with an explicit step cap (some bytecodes have
 /// terminator opcodes we haven't decoded; the cap stops runaway).
-pub fn walk_with_limit<H: WorldMapDrawHost + ?Sized>(
+pub fn walk_with_limit<H: MoveVmExtHost + ?Sized>(
     host: &mut H,
     bytecode: &[u8],
     max_steps: usize,
@@ -398,7 +401,7 @@ mod tests {
         DrawMode([u16; 11]),
     }
 
-    impl WorldMapDrawHost for RecHost {
+    impl MoveVmExtHost for RecHost {
         fn slab_uv_set(&mut self, a: [u16; 4]) {
             self.events.borrow_mut().push(Event::SlabSet(a));
         }

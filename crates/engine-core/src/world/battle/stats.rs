@@ -43,6 +43,14 @@ impl World {
     /// rand draws in retail order; the Chicken Heart (Escape Boost, ability
     /// bit 52) and Chicken King (Great Escape, bit 55) accessory bits fold
     /// from the *living* party members' second ability word (`record+0xF8`).
+    ///
+    /// The second source of the assured arm is the **latched formation
+    /// advantage** [`World::battle_formation_latched`] (`ctx+0x291`): after a
+    /// pre-emptive strike the party roll is set equal to the enemy roll, so the
+    /// compare cannot fail. "Assured" is still the wrong word for it - retail
+    /// tests `ctx+0x287` *after* that compare, so a pre-emptive strike into a
+    /// scripted no-flee battle is caught anyway.
+    ///
     /// The scripted no-escape flag (`ctx+0x287`) is the engine's
     /// [`World::battle_no_escape`], set at scripted-battle entry
     /// ([`World::trigger_scripted_battle`] - the boss fights); the forced
@@ -67,6 +75,12 @@ impl World {
             no_escape: self.battle_no_escape,
             ..EscapeFlags::default()
         };
+        // `ctx+0x291` - the latched formation advantage. A pre-emptive strike
+        // sets `roll_p = roll_e` so the `roll_p < roll_e` compare cannot fail.
+        // Note this is the *latched* copy: it is only non-`None` because
+        // `World::latch_battle_formation` copied it out of `+0x290` at battle
+        // start, before the seeder's lockout cleared it.
+        flags.fold_formation_latch(self.battle_formation_latched);
         for slot in 0..party_n {
             if self.actors[slot].battle.liveness == 0 {
                 continue;

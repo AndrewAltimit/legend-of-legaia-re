@@ -69,11 +69,41 @@ DAT_1F800393 = max(adaptive, DAT_8007B9D8);
 | Installer | Floor | Mode |
 |---|---|---|
 | `FUN_801D6704` | 2 | Field scene loader - ordinary field / town play |
-| `FUN_801C6C78` | 2 | Options screen (PROT 0896) |
 | `FUN_801CFDA0` | 3 | Field-to-battle intro transition |
 | `FUN_801DC6B4` / `FUN_801DE234` / `FUN_801DD35C` | 1 | Menu family; save/restore idiom |
 | `FUN_801CF678` | 1 / 4 | Baka Fighter duel / scripted beat |
 | `FUN_801D362C` | script | Cutscene dialogue; operand at `param_2 + 4` |
+
+`FUN_801D6704`'s install is `sw s0,-0x4628(v0)` at `0x801D6990`, with `li s0,0x2`
+in the preceding instruction at `0x801D6988` (`overlay_0897`, base `0x801CE818`).
+
+**`FUN_801C6C78` is not an installer, despite an earlier row here saying so.**
+Its own 441-instruction disassembly (`0x801C6C78..0x801C7358`) writes exactly one
+global - `0x8007AA14`, via 17 copies of `sw t0,-0x55ec(at)` - and has no store to
+`DAT_8007B9D8` under any addressing form, absolute or `gp`-relative. The
+`_DAT_8007b9d8 = 2` that produced the row exists only in the *decompiled* half of
+`overlay_0896_801c6c78.txt`, and it is `FUN_801D6704`'s own store, pulled in
+because Ghidra decompiled past the function into the field-overlay bytes that
+PROT 0896's footprint over-reads. The same C body cites strings (`MAP_NAME`,
+`field_read_size`) and unreachable blocks (`0x801D6844`, `0x801D6854`) that all
+belong to the field scene loader.
+
+The offsets close exactly, which is what makes this diagnosable rather than a
+guess. PROT 0896 dumps are printed at `0x801C5818` and PROT 0897 at `0x801CE818`,
+`0x9000` apart, and 0896's bytes from file offset `0x9000` on *are* 0897's. So
+for any 0896 file offset `X >= 0x9000` the printed VA `0x801C5818 + X` equals the
+field overlay's true VA `0x801CE818 + (X - 0x9000)` - the over-read region prints
+correct addresses by accident, which is precisely why the spliced-in code looked
+legitimate. `FUN_801C6C78` itself sits at file offset `0x1460`, *below* that
+seam, so its bytes are PROT 0896's own head at a base that is unrecovered
+([`static-overlays.toml`](../../crates/asset/data/static-overlays.toml)) - the
+label `0x801C6C78` is not a runtime VA. It also falls inside the window
+[`call-target-integrity.md`](../tooling/call-target-integrity.md#scope-the-overlay_0896-window-below-0x801ce818)
+marks untrustworthy, and it shows the documented signature: 18 of its 42 `jal`s
+target `0x8002CDD0` and `0x8002D988`, the two non-enterable addresses that page
+names. Separately, PROT 0896's head is a Japanese-build options menu the USA
+build never runs (`crates/engine-core/src/options.rs`), so even a correct reading
+of it would not describe a retail mode.
 
 The menu family drops the floor to `1` on entry and writes the saved value back from `DAT_801EF19C` on exit, which is why the field floor survives a pause-menu round trip.
 

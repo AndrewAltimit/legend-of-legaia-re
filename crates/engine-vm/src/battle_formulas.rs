@@ -30,8 +30,25 @@
 //! state-mutating tail - damage-popup accumulator, AI revenge table, MP drain,
 //! and the per-element stat-debuff switch - reads/writes ~20 battle globals and
 //! stays in the live battle context; see the REF below + `damage_finish` docs.)
+//! The four routines below carry their `// PORT:` tag on the individual `pub
+//! fn` that ports them (in `round.rs` / `stat_init.rs`), so they are listed
+//! here as `REF:` only - a second `PORT:` line would double-count them in
+//! `scripts/ci/port-catalog.py`, which counts tag occurrences.
+//!
+//! REF: FUN_801DA780 (per-round initiative-key seeding - `seed_initiative` /
+//! `wounded_bonus` / `apply_side_lockout`. This is the battle-resident seeder;
+//! the `overlay_0897_801e23ec` VA the base roll was long attributed to is an
+//! aliased dump of it, and the alias dropped the wounded / Slow / ability-bit
+//! terms.)
+//! REF: FUN_801D88CC (per-round AGL restore - `round_reset_agility` /
+//! `needs_retarget`.)
+//! REF: FUN_801F0348 (target-size camera framing - `camera_height_for_frame`.)
+//! REF: FUN_80053CB8 (party battle-actor stat init - `init_party_battle_stats` /
+//! `equip_stat_bonuses`.)
 //! REF: FUN_801E295C, FUN_801EED1C (the action-SM glue that drives the kernels
 //! and applies the finisher's coupled global side effects).
+//! REF: FUN_801DABA4 (the turn-order selector that consumes the seeded keys;
+//! ported as `engine-core::World::next_combatant_by_initiative`).
 
 #![allow(clippy::too_many_arguments)]
 
@@ -39,6 +56,8 @@ mod arts;
 mod basic;
 mod damage_finish;
 mod escape;
+mod round;
+mod stat_init;
 mod summon;
 mod victory;
 
@@ -46,6 +65,8 @@ pub use arts::*;
 pub use basic::*;
 pub use damage_finish::*;
 pub use escape::*;
+pub use round::*;
+pub use stat_init::*;
 pub use summon::*;
 pub use victory::*;
 

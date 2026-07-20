@@ -41,6 +41,14 @@ random blobs).
   still confirm an attribution with the loader-call constant or the
   file's magic bytes.
 
+- `runtime_toc` - queries against the in-RAM TOC copy the boot loader
+  installs at `0x801C70F0`. `entry_sector_span` is the port of
+  `FUN_8003E68C` (`TABLE[i+3] - TABLE[i+2]`), the entry's on-disc sector
+  footprint - the same `next_start - start_lba` quantity `archive`
+  computes when extending an entry over a trailing gap, and *not* the
+  TOC-indexed payload size. The module also pins the `+2` word skew
+  between the RAM word array and `Archive::toc`.
+
 - `timpack` - the standalone TIM-pack subformat used by some PROT
   entries (notably `tim.dat`). Header is
   `(magic_lo, magic_hi, count<16, marker=0x01)` followed by word offsets;
