@@ -50,8 +50,8 @@ live in that artifact rather than on this page.
 
 | Class | What it means | How it is detected |
 |---|---|---|
-| `REAL` | A distinct, portable function entry. | A dump whose `entry=` equals the queried VA, whose disassembly begins at that VA, and whose body contains `jr ra`. |
-| `INTERIOR` | The VA sits inside another function. | The dump resolves `entry=` to a different address, is an explicit citation stub, or another dumped body in the same image disassembles an instruction at this exact VA. |
+| `REAL` | A distinct, portable function entry. | A dump whose `entry=` equals the queried VA, whose disassembly begins at that VA, whose body contains `jr ra`, and which owns the frame that `jr ra` returns from. |
+| `INTERIOR` | The VA sits inside another function. | The dump resolves `entry=` to a different address, is an explicit citation stub, another dumped body in the same image disassembles an instruction at this exact VA, or the body carries the [tail-fragment signature](#jr-ra-does-not-prove-a-function). |
 | `PHANTOM` | No body of its own. | The only dump body is a degenerate stub, or the decompiled body is a Ghidra `caseD_` switch-case fragment. |
 | `SHARED_TAIL` | A distinct body that is not independently callable. | The body has no `jr ra` and ends on an unconditional jump into code it does not own. |
 | `DATA` | Not code. | The dump is a data-region, hex-blob or pointer-table listing. |
@@ -59,6 +59,40 @@ live in that artifact rather than on this page.
 | `VA_ALIASED` | Not one port site. | Two or more images dump distinct bodies at this VA. |
 | `REAL_BUT_VENDOR` | Real, but not game logic. | A BIOS vector thunk shape, or a decompiled body naming PsyQ library infrastructure. |
 | `UNCERTAIN` | Needs a human. | Evidence is thin, missing, or the heuristics disagree. |
+
+### `jr ra` does not prove a function
+
+The obvious test for "is this a callable entry" - does the body return? - is
+wrong on its own, and it fails in the direction that costs the most. Ghidra
+promotes intra-function jump labels to `FUN_` entries, and a label near the
+*end* of a routine yields a **tail fragment**: a body that runs to the parent's
+epilogue and therefore contains that epilogue's `jr ra`. It returns, but it
+returns from a frame it never built, using registers it never set.
+
+Register and stack liveness separate the two cases. A fragment reads
+callee-saved registers without ever writing them - Ghidra renders those reads
+`unaff_s0..s8` / `unaff_fp` / `unaff_retaddr` - and reads the parent's frame
+through slots it never wrote, rendered `in_stack_<offset>`. The classifier
+requires all three conditions together before calling a body a fragment:
+
+1. no `addiu sp,sp,-N` within the first few instructions (the body builds no
+   frame of its own - one or two independent loads may be scheduled ahead of
+   the allocation, but not a prologue's worth);
+2. at least one `unaff_` read of a callee-saved register;
+3. at least one `in_stack_` read.
+
+Each condition alone is a false positive. `unaff_gp` is normal throughout this
+codebase because of gp-relative addressing, so it is excluded from the callee-
+saved set entirely. An `in_stack_` read alone is an ordinary stack-passed
+argument. And a large real function can pick up a stray `unaff_` from an
+incomplete decompile - the 2777-instruction body at `0x801F5748` reads eight of
+them, yet opens `addiu sp,sp,-0x48` and saves `s0..s7`, so the frame test keeps
+it `REAL`. That is why the frame test is the one read out of the disassembly
+rather than the decompiled C.
+
+The check runs before the `SHARED_TAIL` test, because a frameless body that
+reads its parent's registers is interior to that parent whether it exits on
+`jr ra` or on a jump.
 
 ### Instruction-stream normalisation
 
@@ -144,3 +178,18 @@ the `INTERIOR` count is a floor.
 carrying its class and mechanical reason. It is a proposal for review, not a
 drop-in: merge the sections into the real ignore list after spot-checking, and
 note that `VA_ALIASED` and `UNCERTAIN` rows are deliberately excluded from it.
+
+Reviewed rows land in `port-catalog-ignore.toml` under the same
+`worklist_*` section names, which keeps a merged row traceable back to the
+classifier that proposed it. A row whose mechanical reason under- or over-states
+what the dump shows is rewritten on merge rather than accepted verbatim: the
+`0x801F0000` and `0x801F4000` rows, for instance, read as data-region listings
+to the classifier, but every doc citing them names a region boundary, and that
+is what the merged reason says.
+
+The proposal file therefore always means *outstanding* proposals: once its rows
+are merged, the next run writes it back empty. The committed CSV beside the
+script is the other half of the record - it is the classification taken *before*
+the merge, so it keeps the per-address verdict for rows the ignore list has since
+absorbed. Re-running the classifier after a merge reports only the residue,
+which is `REAL`, `VA_ALIASED` and `UNCERTAIN`.

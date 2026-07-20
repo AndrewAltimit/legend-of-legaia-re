@@ -1637,9 +1637,9 @@ Recorded so the same entries aren't re-flagged:
   box, the sole source of `8001CE34`'s in-degree-12 - the "most-called boot
   utility" reading is falsified) / `FUN_8001CCFC` (2-D line) / `FUN_8001C7A0`
   (4x8 digit printer); `FUN_800430AC` (whose Ghidra auto-analysis body was
-  degenerate until force-created); and `FUN_8004CE30`, the largest undumped SCUS
+  degenerate until force-created); and `FUN_8004CE2C`, the largest undumped SCUS
   function - the per-frame battle actor maintenance pass
-  ([`battle.md` § Per-frame actor maintenance](../subsystems/battle.md#per-frame-actor-maintenance-fun_8004ce30)),
+  ([`battle.md` § Per-frame actor maintenance](../subsystems/battle.md#per-frame-actor-maintenance-fun_8004ce2c)),
   **not** a mode dispatcher.
 - **Still open from the same inventory:** the general-game band (never
   per-address catalogued), headed by `0x8002A9F8` (2.2 KB table-driven logic,

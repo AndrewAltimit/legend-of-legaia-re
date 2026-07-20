@@ -534,3 +534,134 @@
 "801db81c" = "VA-aliased across overlays, not one function: the 0897 copy (40 B) is field-camera cluster code that tests field flag 0x2000, bumps the counter at 0x801F2E8C and exits `j 0x801ea074`; the 0898 copy (152 B) is the next-valid-target scan over party slots (alive +0x14C != 0, +0x16E & 0xF84 == 0). The ref count sums unrelated per-overlay callees."
 "801dbec4" = "VA-aliased across overlays, not one function: the 0897 copy is the field camera-arrival handler calling FUN_801DBA20 at tile = (pos - 0x40) >> 7, the 0898 copy a 216 B battle-HUD quad emitter (GP0 0x2C textured semi-transparent quad, CLUT 0x7700, gated on ctx+0x6CE == 0) cited as FUN_801dbec4(0xf8, 0x42) by docs/subsystems/arts-command-gauge.md. Two documented, divergent residents."
 "801ecd0c" = "VA-aliased across overlays, not one function: the field/dialog family shares a 1532 B per-frame init path (its case 0 drives the list-head allocator FUN_80032434) while the minigame family shares a 168 B six-way jump table on actor[+0x54]. Both are real code and neither is the other, so the bare VA has no single port site."
+
+# Worklist addresses that are interior to another function, not entries of their
+# own. Produced by `scripts/ghidra-analysis/classify-worklist.py`; each reason
+# restates the mechanical evidence read out of the Ghidra dump - the dump's own
+# `entry=` resolving elsewhere, an explicit mid-function citation stub naming
+# its host, another dumped body in the same image disassembling an instruction
+# at this exact VA, or the tail-fragment liveness signature (no
+# `addiu sp,sp,-N` prologue, plus reads of callee-saved registers and caller
+# stack slots the body never writes). A tail fragment ends in its parent's
+# epilogue, so `jr ra` in the stream is not evidence of a callable entry.
+# See `docs/tooling/worklist-classification.md`.
+[worklist_interior]
+"8001b47c" = "INTERIOR: dump resolves entry=8001ada4, not 8001b47c"
+"8001e928" = "INTERIOR: dump resolves entry=8001e890, not 8001e928"
+"8002cdd0" = "INTERIOR: dump resolves entry=8002c69c, not 8002cdd0"
+"8002d988" = "INTERIOR: dump resolves entry=8002c69c, not 8002d988"
+"8002daa4" = "INTERIOR: dump resolves entry=8002c69c, not 8002daa4"
+"8003789c" = "INTERIOR: dump resolves entry=8003774c, not 8003789c"
+"8004ce30" = "INTERIOR: dump resolves entry=8004ce2c, not 8004ce30"
+"8004f0e8" = "INTERIOR: dump resolves entry=8004e568, not 8004f0e8"
+"8005c2d4" = "INTERIOR: dump resolves entry=8005c2c4, not 8005c2d4"
+"8005da50" = "INTERIOR: dump resolves entry=8005d9a0, not 8005da50"
+"801ce850" = "INTERIOR: dump is a citation stub for 801cd8a4"
+"801ce8cc" = "INTERIOR: dump is a citation stub for 801ce8a0"
+"801cea6c" = "INTERIOR: dump is a citation stub for 801cd8a4"
+"801ceca0" = "INTERIOR: dump resolves entry=801cea3c, not 801ceca0"
+"801cef54" = "INTERIOR: VA lies inside the dumped body of 801cee80 in SCUS"
+"801cf070" = "INTERIOR: no `addiu sp,sp,-N` prologue; body reads s3 and a caller stack slot it never writes - a tail fragment reaching the parent's epilogue"
+"801cf4ac" = "INTERIOR: dump is a citation stub for 801cf408"
+"801cf678" = "INTERIOR: dump resolves entry=801cf388/801cf650, not 801cf678"
+"801cfb94" = "INTERIOR: VA lies inside the dumped body of 801cfa48 in battle_action"
+"801d0684" = "INTERIOR: dump resolves entry=801d01b0, not 801d0684"
+"801d0fe4" = "INTERIOR: dump resolves entry=801cf388/801d0d38, not 801d0fe4"
+"801d231c" = "INTERIOR: VA lies inside the dumped body of 801d2298 in 0897"
+"801d2524" = "INTERIOR: VA lies inside the dumped body of 801d2404 in 0897"
+"801d3d78" = "INTERIOR: VA lies inside the dumped body of 801d362c in 0897"
+"801d52d0" = "INTERIOR: dump resolves entry=801d516c, not 801d52d0"
+"801d6b20" = "INTERIOR: VA lies inside the dumped body of 801d6704 in 0897"
+"801dd260" = "INTERIOR: no `addiu sp,sp,-N` prologue; body reads s6 and a caller stack slot it never writes - a tail fragment reaching the parent's epilogue"
+"801ddccc" = "INTERIOR: dump resolves entry=801dd35c, not 801ddccc"
+"801df09c" = "INTERIOR: dump resolves entry=801df098, not 801df09c"
+"801e0080" = "INTERIOR: VA lies inside the dumped body of 801de840 in 0897"
+"801e0c3c" = "INTERIOR: dump resolves entry=801de840/801e0b1c, not 801e0c3c"
+"801e1c64" = "INTERIOR: VA lies inside the dumped body of 801de840 in 0897"
+"801e212c" = "INTERIOR: dump resolves entry=801e1c64, not 801e212c"
+"801e3578" = "INTERIOR: VA lies inside the dumped body of 801de840 in 0897"
+"801e3628" = "INTERIOR: VA lies inside the dumped body of 801e3578 in 0897"
+"801e5154" = "INTERIOR: dump resolves entry=801e5134, not 801e5154"
+"801eccac" = "INTERIOR: no `addiu sp,sp,-N` prologue; body reads s0/s1/s2 and a caller stack slot it never writes - a tail fragment reaching the parent's epilogue"
+"801f02d0" = "INTERIOR: dump is a citation stub for 801eff30"
+"801f7088" = "INTERIOR: VA lies inside the dumped body of 801f5748 in 0897"
+"801f71e0" = "INTERIOR: VA lies inside the dumped body of 801f5748 in 0897"
+"801f7628" = "INTERIOR: dump resolves entry=801f5748/801f71e0, not 801f7628"
+
+# Entries into multi-entry assembly routines: the body has no `jr ra` and exits
+# by jumping into code it does not own. The `0x80043580` family below is the
+# slot-4 / world-map primitive dispatch loop and its per-primitive arms,
+# including the relocated copies that overlay_world_map_top_ext carries at
+# 0x801F7xxx. These are real code, but they port as arms of the enclosing
+# routine rather than as separate sites - the row is not a port site, the work
+# behind it is not deleted.
+[worklist_shared_tail]
+"80043658" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"80043768" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"800438b8" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"800439e4" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"80043b58" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"80043c6c" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"80043dd4" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"80043f10" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"8004409c" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"8004423c" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"80044434" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"800445b0" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"800448b0" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"80044a3c" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"80044c14" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"80044dc8" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"80044fdc" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"80045194" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"800453bc" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"80045584" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"800457c4" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"80045988" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"801ce8a0" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801d4a3c`, inside 801d4a3c - an entry into a multi-entry routine, not a standalone function"
+"801ec964" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801d6274`, inside 801d6274 - an entry into a multi-entry routine, not a standalone function"
+"801f1cc8" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801d31d8`, inside 801d31d8 - an entry into a multi-entry routine, not a standalone function"
+"801f6c70" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801f71f0`, inside 801f71e0 - an entry into a multi-entry routine, not a standalone function"
+"801f7644" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580` - an entry into a multi-entry routine, not a standalone function"
+"801f7838" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580` - an entry into a multi-entry routine, not a standalone function"
+"801f7aa4" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580` - an entry into a multi-entry routine, not a standalone function"
+"801f7ccc" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580` - an entry into a multi-entry routine, not a standalone function"
+"801f7f78" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580` - an entry into a multi-entry routine, not a standalone function"
+"801f8198" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580` - an entry into a multi-entry routine, not a standalone function"
+"801f8454" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580` - an entry into a multi-entry routine, not a standalone function"
+"801f8690" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580` - an entry into a multi-entry routine, not a standalone function"
+
+# Worklist addresses whose relocation-masked instruction stream equals another
+# entry's: one routine linked into several overlays at several bases. Porting
+# the peer covers them. Where the peer VA is itself aliased across images, the
+# reason names which of that VA's bodies was compared.
+[worklist_duplicate]
+"801c2b2c" = "DUPLICATE: 333-instruction stream identical modulo relocation to 801d1344"
+"801d0370" = "DUPLICATE: 299-instruction stream identical modulo relocation to 801c2b58"
+"801d081c" = "DUPLICATE: 322-instruction stream identical modulo relocation to 801c3004"
+"801d11d0" = "DUPLICATE: 229-instruction stream identical modulo relocation to 801c39b8"
+"801d26cc" = "DUPLICATE: 1466-instruction stream identical modulo relocation to 801c56b4"
+"801d3ec0" = "DUPLICATE: 37-instruction stream identical modulo relocation to the body dumped at 801d5630 in overlay_cutscene_dialogue / cutscene_mapview, which carries a // PORT: tag. The 0897 dump at 801d5630 is a different 9-instruction body at the same VA."
+"801d3f54" = "DUPLICATE: 31-instruction stream identical modulo relocation to the body dumped at 801d5ae0 in overlay_cutscene_dialogue / cutscene_mapview, which carries a // PORT: tag. The 0896 dump at 801d5ae0 is a different 130-instruction body at the same VA."
+"801d5510" = "DUPLICATE: 123-instruction stream identical modulo relocation to 801c6cf8"
+"801d71f0" = "DUPLICATE: 81-instruction stream identical modulo relocation to 801e01f0"
+"801e1d98" = "DUPLICATE: 332-instruction stream identical modulo relocation to 801f8580"
+"801f36a0" = "DUPLICATE: truncated 88-instruction dump; stream is a strict prefix of 801f16a0"
+"801f3894" = "DUPLICATE: 257-instruction stream identical modulo relocation to the 257-instruction body dumped at 801dd0ac in overlay_battle_action / magic_capture / magic_level_up / muscle_dome, which carries a // PORT: tag. NB the 0897 dump at 801dd0ac is a different, 5-instruction body at the same VA - compare against the 257-instruction one."
+"801fa38c" = "DUPLICATE: 352-instruction stream identical modulo relocation to the 352-instruction body dumped at 801daba4 in overlay_battle_action / magic_capture / magic_level_up / muscle_dome, which carries a // PORT: tag. The 0897 dump at 801daba4 is a different 8-instruction body at the same VA."
+
+# Worklist addresses with no body of their own: Ghidra reports a size but emits
+# no usable instruction stream, or the only body is a degenerate jump pad in the
+# image that was dumped. Nothing to port until a dump with a body exists.
+[worklist_phantom]
+"80021934" = "PHANTOM: only dump body is a 3-instruction stub"
+"80035c10" = "PHANTOM: only dump body is a 4-instruction stub"
+"80055b4c" = "PHANTOM: only dump body is a 0-instruction stub"
+"801d58e0" = "PHANTOM: only dump body is a 4-instruction stub"
+"801f5d90" = "PHANTOM: only dump body is a 0-instruction stub"
+
+# Worklist addresses that name data or a region boundary rather than code.
+[worklist_data]
+"801e473c" = "DATA: the menu window-descriptor table (52 records), not code - see docs/subsystems/field-menu.md. The dump is a 256-byte hex listing; the table is parsed by legaia_asset::menu_windows."
+"801f0000" = "Region boundary, not a function entry: the docs citing 0x801F0000 (boot.md, world-map.md, memory-map.md, battle-action.md) all name it as the base of the persistent post-overlay region, never as a call target. The only dump covering the VA is a 4 KB window listing from overlay_magic_level_up_full.bin."
+"801f4000" = "Region boundary, not a function entry: the sole citation (docs/subsystems/battle.md) names 0x801CE800..0x801F4000 as the encounter-trigger overlay residency window. The only dump covering the VA is a 4 KB window listing."

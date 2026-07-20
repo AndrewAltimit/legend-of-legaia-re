@@ -22,7 +22,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 - [Battle archive (`FUN_80052FA0` / `FUN_800542C8`)](#battle-archive-fun_80052fa0--fun_800542c8)
 - [Character record layout](#character-record-layout)
 - [Battle main dispatcher (`FUN_801D0748`)](#battle-main-dispatcher-fun_801d0748) · [hottest utility (`FUN_801D8DE8`)](#hottest-battle-utility-fun_801d8de8) · [weapon trail builder](#weapon--effect-trail-builder-fun_80048310--fun_800485bc)
-- [Per-frame actor maintenance (`FUN_8004CE30`)](#per-frame-actor-maintenance-fun_8004ce30)
+- [Per-frame actor maintenance (`FUN_8004CE2C`)](#per-frame-actor-maintenance-fun_8004ce2c)
 
 **Clean-room engine systems**
 - [Inventory (page-banked)](#inventory-cratesasset-page-banked-layout) · [Status effects](#status-effects) · [AP / Spirit gauge](#ap--spirit-gauge) · [Battle stat aggregator](#battle-stat-aggregator) · [Item catalog](#item-catalog)
@@ -978,7 +978,7 @@ That code word is a **`POLY_G4`** - four-point gouraud, semi-transparent, *untex
 
 These are pure rendering helpers - no gameplay state changes. Engine reimpl can defer them until visuals matter.
 
-## Per-frame actor maintenance (`FUN_8004CE30`)
+## Per-frame actor maintenance (`FUN_8004CE2C`)
 
 The SCUS-resident per-frame sweep over the battle actor table - one of the
 largest SCUS functions with no static caller (it is reached from the battle

@@ -72,6 +72,11 @@ HDR_DASH = re.compile(
 # A pointer/handler table dump: `Base: 0x... Entries: 0x...`.
 HDR_TABLE = re.compile(r"^Base:\s*0x[0-9a-fA-F]+\s+Entries:", re.IGNORECASE)
 HDR_CITE_PTR = re.compile(r"^==\s+citation pointer\s+0x([0-9a-fA-F]{8})", re.IGNORECASE)
+# A citation stub's body names the function it sits inside:
+#   "Mid-function citation. Enclosing function dumped as <file>_<addr>.txt"
+CITE_HOST_RE = re.compile(
+    r"Enclosing function dumped as\s+\S*?([0-9a-fA-F]{8})\.txt", re.IGNORECASE
+)
 HDR_CITE_OF = re.compile(
     r"^==\s+([0-9a-fA-F]{8})\s+\(cite of\s+FUN_([0-9a-fA-F]{8})\)", re.IGNORECASE
 )
@@ -87,6 +92,17 @@ ANY_IMM_RE = re.compile(r"-?0x[0-9a-f]+")
 
 # Ghidra's synthetic switch-case labels.
 CASE_LABEL_RE = re.compile(r"\bcaseD_[0-9a-fA-F]+\b")
+
+# Interior-fragment liveness signature. Callee-saved registers the body reads
+# without ever setting them; `unaff_gp` is deliberately excluded - gp-relative
+# addressing makes it normal in this codebase and it carries no signal.
+UNAFF_SAVED_RE = re.compile(r"\bunaff_(s[0-8]|fp|retaddr|ra)\b")
+# A read through the caller's frame: a stack slot this body never wrote.
+IN_STACK_RE = re.compile(r"\bin_stack_[0-9a-fA-F]+\b")
+# `addiu sp,sp,-N` - the body allocating a frame of its own.
+FRAME_ALLOC_RE = re.compile(r"^sp,sp,-")
+# How far into the body the frame allocation may be scheduled.
+PROLOGUE_WINDOW = 8
 
 # BIOS thunk shape: li tN, 0xA0/0xB0/0xC0 then jr tN.
 BIOS_VEC_RE = re.compile(r"\b(?:li|addiu)\s+t\d,(?:\s*\w+,)?\s*0x[abc]0\b")
@@ -149,6 +165,10 @@ def parse_dump(path):
 
     section = None
     for ln in lines[1:]:
+        if rec["kind"] == "cite" and not rec["cite_of"]:
+            em = CITE_HOST_RE.search(ln)
+            if em:
+                rec["cite_of"] = em.group(1).lower()
         sm = SECTION_RE.match(ln)
         if sm:
             section = sm.group(1).upper()
@@ -218,6 +238,44 @@ def has_own_return(insns):
         if mn == "jr" and ops.replace("$", "").strip() in ("ra", "ra,"):
             return True
     return False
+
+
+def establishes_frame(insns):
+    """True if the body opens by building its own stack frame.
+
+    A genuine non-leaf entry starts with `addiu sp,sp,-N` within the first few
+    instructions - the compiler may schedule one or two independent loads ahead
+    of it, but not more. A tail fragment that Ghidra promoted to a `FUN_` entry
+    never adjusts `sp`: the frame belongs to the routine it was cut out of.
+    """
+    for _, mn, ops in insns[:PROLOGUE_WINDOW]:
+        if mn in ("addiu", "addi") and FRAME_ALLOC_RE.match(ops.replace(" ", "")):
+            return True
+    return False
+
+
+def fragment_host(rec):
+    """Interior-fragment evidence, or None.
+
+    `jr ra` in the stream is not proof of a self-contained function: a *tail*
+    fragment ends in the parent's epilogue, and an epilogue restores `ra` and
+    returns. What separates the two is register and stack liveness. A fragment
+    reads callee-saved registers it never sets - Ghidra renders those
+    `unaff_s0..s8` / `unaff_fp` / `unaff_retaddr` - and reads the parent's frame
+    through slots it never wrote, rendered `in_stack_<offset>`.
+
+    All three conditions are required together. `unaff_gp` alone is normal here
+    (gp-relative addressing), an `in_stack_` read alone is an ordinary
+    stack-passed argument, and a large real function can pick up a stray
+    `unaff_` from an incomplete decompile - so the frame test decides last.
+    """
+    if not rec["insns"] or establishes_frame(rec["insns"]):
+        return None
+    body = "\n".join(rec["decomp"])
+    saved = sorted(set(UNAFF_SAVED_RE.findall(body)))
+    if not saved or not IN_STACK_RE.search(body):
+        return None
+    return saved
 
 
 def exit_jump_target(insns):
@@ -399,6 +457,17 @@ def classify(addr, dumps, dup_groups, ported, owners=None):
         return (
             "PHANTOM",
             "Ghidra caseD_ switch-case stub, %d instructions" % len(rec["insns"]),
+        )
+
+    # 5b. Tail fragment: the body reaches the parent's epilogue, so it contains
+    #     `jr ra` without owning the frame that epilogue tears down.
+    frag = fragment_host(rec)
+    if frag:
+        return (
+            "INTERIOR",
+            "no `addiu sp,sp,-N` prologue; body reads %s and a caller stack slot "
+            "it never writes - a tail fragment reaching the parent's epilogue"
+            % "/".join(frag),
         )
 
     # 6. No return of its own: the body exits by jumping into code it does not
