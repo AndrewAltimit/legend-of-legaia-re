@@ -1204,12 +1204,45 @@ So the blocker (the per-cue enable source) dissolves: there is nothing to trace.
 | Load-screen panel 9-slice geometry | resolved (engine renders byte-perfect) | `capture` | Pinned in [`subsystems/save-screen.md`](../subsystems/save-screen.md#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2): retail composes the 81×29 panel at dst `(6, 4)` from 14 textured-sprite primitives (GP0 cmd `0x64`) sampling the system-UI sheet with CLUT `(32, 511)`. The exact per-tile rects are exported as `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*` and emitted by `legaia_engine_render::save_select_chrome_draws_for` (covered by `save_select_chrome_emits_9slice_panel_and_pills` test). No interior fill sprite is drawn - the "marbled blue" look is the dimmed title art bleeding through the empty middle of the frame. |
 | Key-item area consumers (`0x800859E8..0x80085A40`) | resolved (narrow negative); reader list incomplete | `disassembly` (enumeration `inference`) | [details ↓](#key-item-area-consumers) |
 | XP-table source + reader | resolved + ported | `capture` | [details ↓](#xp-table-source--reader) |
+| New-game world-state seed store widths (`FUN_80034A6C`) | resolved (port confirmed, no change) | `disassembly` | [details ↓](#new-game-world-state-seed-store-widths) |
 | Overlay identity from the disc (static extraction) | resolved (pipeline landed) | `capture` | [details ↓](#overlay-identity-from-the-disc-static-extraction) |
 | SCUS recomp gap - render/GTE + boot/init clusters | resolved (aliases + libgte residue + dev tooling; `main()` documented) | `disassembly` | [details ↓](#scus-recomp-gap---rendergte--bootinit-clusters) |
 | Options/menu overlay PROT entry | resolved (RAM-verified; PROT 0899 @ `0x801CE818`) | `capture` | The options/pause/inventory-equipment-status menu overlay is **PROT 0899**, not 0896: `FUN_801CF650`'s signature byte-matches PROT 0899 file `0xe38`, and the `.text`+`.rodata` prefix is byte-identical across six menu-open saves. VA-alias sibling of the field overlay 0897 in slot A - the menu overlay replaces the field overlay at the base. The earlier "0896 = menu" label is falsified. |
 | PROT 0896 (`bat_back_dat`) identity | resolved | `capture` | The unique ~`0x9000`-byte head is the **vestigial Japanese-build field-menu / config / status overlay** - the debug-string sibling of the English retail menu overlay PROT 0899 (same `~0x801D0000` window-renderer VA family, a `"FWIN ERR %d"` printf at file `0x3D4`, `0x414`-byte char-record indexing). 0899 ships the English label set with zero `FWIN`; a signature scan finds 0896 resident in **0** of 140 states (control: English "Battle Voices" resident in 10), so the USA build never loads it. [details ↓](#prot-0896-bat_back_dat-identity) |
 | Slot-A scene-overlay family beyond field/battle/menu | resolved (in the static map) | `disassembly` | The rest of the slot-A (`0x801CE818`) VA-alias family is pinned from the disc: **0970 cutscene_str** (STR/MDEC FMV, modes 26/27) and the minigame overlays **0972 fishing / 0975 slot_machine / 0976 baka_fighter / 0980 dance** (the mode-24 `0x3E` door-warp sub-id slots 0/3/4/6), each cross-checked by a documented function landing on a prologue at the base. Minigame entries over-read each other (phantom-base risk); the canonical entry recovers `0x801CE818` and is the entry the warp streams (the historical "slot_machine = 0973 @ `0x801CA818`" was the phantom - the image inside 0973's over-read tail). Found via `asset overlay scan` + the leading dev string. |
 | "world-map / save / shop" overlay PROT entries | resolved (not separate entries) | `disassembly` | The world-map / overworld controller `FUN_801E76D4` lives in the **field overlay 0897** (base+0x18EBC), and the save-slot dispatcher `FUN_801DC6B4` + the shop/buy session live in the **menu overlay 0899** (save at base+0xDE9C) - each function's instruction signature byte-matches only that one entry (`asset overlay find-sig`). So "world-map", "save", and "shop" are *subsystems* of existing slot-A overlays, not separate PROT entries; recorded in the 0897 / 0899 map notes. |
+
+### New-game world-state seed store widths
+
+*Status:* resolved - the port was already right; the evidence under it was not
+
+The widths in `legaia_asset::new_game::new_game_seed_words` rested on Ghidra's
+`DAT_` / `_DAT_` naming convention, which is a heuristic over symbol size and
+carries no width measurement. The dump behind them reported no instructions and
+carried only decompiled C - one of the catalogued artifact shapes in
+[`tooling/ghidra.md`](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims).
+
+Re-decoding `FUN_80034A6C` out of `SCUS_942.54` confirms every entry. The routine
+holds the save-context base in `$s0` (`lui $s0, 0x8008` / `addiu $s0, $s0, 0x4140`
+= `0x80084140`) and issues each seed write as an `sb` or `sw` at `$s0 + off`; the
+decoded `(offset, width, value)` set matches the port exactly, so nothing changed
+in the table. The full listing is in
+[`formats/new-game-table.md`](../formats/new-game-table.md#world-state-seed-code-literals-not-a-table).
+
+Two corrections to the C's rendering, neither affecting the port:
+
+- The absolute globals `DAT_80085958` / `DAT_80085959` are really
+  `sb $v0, 0x1818($s0)` / `sb $v0, 0x1819($s0)` - the starting-item pair at
+  `INVENTORY_SC_OFFSET`, `SC`-relative and issued *after* the template expander,
+  so they were never part of the pre-expander set.
+- The story-flag clear is a downward walk from `$s0 + 0x1FF` over
+  `sb $zero, 0x1618($v1)`, covering `SC + 0x1618..0x1817` - `0x200` bytes, which
+  is what the port's `STORY_FLAGS_LEN` already said.
+
+The reading no longer rests on a dump at all: the disc-gated
+`new_game_seed_disc::world_state_seed_matches_the_routines_stores` re-derives the
+whole table from the instruction encodings in the user's own executable on every
+run, and fails on a wrong offset, value or width.
 
 ### `_DAT_8007B8C2` polarity, and its writer
 

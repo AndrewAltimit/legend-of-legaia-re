@@ -91,6 +91,12 @@ TARGETS = [
     "8001dcf8",  # boot-time mode initializer
     "8001c93c",  # mode-table reader / per-frame dispatcher candidate
 
+    # New-game seed pair. The world-state seed's store widths are only legible
+    # in the disassembly -- Ghidra's DAT_ / _DAT_ naming is a heuristic, not a
+    # width measurement -- so both belong in this (disassembly-emitting) script.
+    "80034a6c",  # new-game world-state seed ($s0 = SC base 0x80084140)
+    "800560b4",  # starting-party template expander, called by FUN_80034A6C
+
     # Default-handler call chain (FUN_80025eec)
     "8001698c",  # first call; returns nonzero to skip frame
     "800172c0",  # called from FUN_80016444 mid-pipeline

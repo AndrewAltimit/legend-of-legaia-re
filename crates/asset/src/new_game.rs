@@ -744,22 +744,28 @@ pub const STORY_FLAGS_LEN: u32 = 0x200;
 /// These are literals in the routine rather than disc data, so they are the port
 /// itself rather than something parsed. Ordered by offset.
 ///
-/// **Provenance caveat.** `ghidra/scripts/funcs/80034a6c.txt` carries a
-/// decompiled body but **no disassembly section**, so the store *widths* here
-/// rest on Ghidra's `DAT_` / `_DAT_` naming convention rather than on observed
-/// `sb` / `sh` / `sw` opcodes. Re-dump the function with disassembly before
-/// relying on the widths. Unmodelled: `0x80073EF4 = 0xE40`,
-/// `0x80073EF8 = 0x2DC0`, `0x80073EFC = 0`, `DAT_80085958 = 0x77`,
-/// `DAT_80085959 = 5`, and the `_DAT_8007B868` branch.
+/// **Provenance.** Every width below is the opcode field of the instruction
+/// that performs the store, decoded out of `SCUS_942.54`: the routine loads
+/// `$s0 = 0x80084140` (the `SC` base) with a `lui`/`addiu` pair and then issues
+/// each seed write as an `sb` or `sw` off it. Ghidra's `DAT_` / `_DAT_` naming
+/// is a heuristic and is *not* evidence of width, so the disc-gated test
+/// `new_game_seed_disc::world_state_seed_matches_the_routines_stores` re-derives
+/// this whole table from the instruction encodings on every run.
+///
+/// Not modelled here, because they are not `SC`-relative: the three absolute
+/// `sw`s `0x80073EF4 = 0xE40`, `0x80073EF8 = 0x2DC0`, `0x80073EFC = 0`, and the
+/// `_DAT_8007B868` tail branch. The two stores the decompiler renders as the
+/// absolute globals `DAT_80085958 = 0x77` / `DAT_80085959 = 5` are in fact
+/// `sb $v0, 0x1818($s0)` / `sb $v0, 0x1819($s0)` - the starting-item seed at
+/// [`INVENTORY_SC_OFFSET`], and they run *after* the template expander, so they
+/// are outside this pre-expander set.
 ///
 // PORT: FUN_80034a6c
 // NOT WIRED (by design, not by omission): this returns *code literals*, not
 // anything decoded from the disc, so routing the engine through it would move a
 // constant rather than improve fidelity. Fourteen of its fifteen offsets name
 // `SC` cells the typed engine `World` has no model for, and the one it does
-// model (gold) already carries the same 500. The store widths are additionally
-// unverified - see the provenance caveat above. Re-dump `FUN_80034A6C` with a
-// disassembly section before treating this as a wiring candidate.
+// model (gold) already carries the same 500.
 pub fn new_game_seed_words() -> Vec<SeededWord> {
     let w = |sc_offset: u32, value: u32, width: SeedWidth| SeededWord {
         sc_offset,

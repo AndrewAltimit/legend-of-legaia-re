@@ -157,6 +157,40 @@ See [`subsystems/level-up.md`](../subsystems/level-up.md) for the XP thresholds 
 growth curves and [`tooling/randomizer.md`](../tooling/randomizer.md) for the
 feature.
 
+## World-state seed (code literals, not a table)
+
+Before `FUN_80034A6C` calls the template expander it writes a fixed set of `SC`
+cells from immediates in its own instruction stream. It holds the save-context
+base in `$s0` for the whole routine (`lui $s0, 0x8008` / `addiu $s0, $s0, 0x4140`
+= `0x80084140`), so every seed write is an `sb` or `sw` at `$s0 + off`:
+
+| `SC` offset | Width | Value |
+|---|---|---|
+| `+0x454` | `sb` | `3` |
+| `+0x457` / `+0x458` | `sb` | `0` |
+| `+0x459` / `+0x45A` / `+0x45B` | `sb` | `1` / `2` / `3` |
+| `+0x45C` | `sw` | `0x1F4` = **500**, the party's starting gold |
+| `+0x460` / `+0x464` / `+0x470` / `+0x478` | `sw` | `0` |
+| `+0x590` / `+0x594` / `+0x598` / `+0x59C` | `sw` | `0x44` / `0x21` / `0x10` / `0x48` |
+
+Three further `sw`s are absolute rather than `SC`-relative and so are not part of
+this set: `0x80073EF4 = 0xE40`, `0x80073EF8 = 0x2DC0`, `0x80073EFC = 0`.
+
+After the expander returns, the routine writes the starting-item pair at
+`SC + 0x1818` (above) and then clears `SC + 0x1618..0x1817` - `0x200` bytes of
+story flags, walked downward by `sb $zero, 0x1618($v1)` with `$v1` starting at
+`$s0 + 0x1FF`. The Door-of-Wind warp bitmask at `SC + 0x161C` is inside that
+range, which is why any warp preset has to be applied *after* the clear.
+
+**Widths come from the opcodes, not from Ghidra's naming.** The decompiled body
+renders these as `DAT_` / `_DAT_` globals, and that prefix is a Ghidra heuristic
+with no width meaning - it also hides that the two starting-item stores are
+`$s0`-relative rather than absolute. `legaia_asset::new_game::new_game_seed_words`
+mirrors the table above, and the disc-gated
+`new_game_seed_disc::world_state_seed_matches_the_routines_stores` re-decodes the
+routine out of the user's own `SCUS_942.54` and fails on any offset, value or
+width the port gets wrong.
+
 ## Provenance + parser
 
 The table base + stride are pinned by byte-search of `SCUS_942.54` for Vahn's
