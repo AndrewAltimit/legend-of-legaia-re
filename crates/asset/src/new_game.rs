@@ -637,12 +637,21 @@ pub struct SeededHalfword {
 /// **two** blocks: a current-stat block at [`CURRENT_STATS_OFFSET`] (HP and MP
 /// appear twice - current and max - so a New Game starts at full health) and a
 /// max-stat block at [`MAX_STATS_OFFSET`]. It also writes the
-/// [`SEEDED_CAP_CONSTANT`] into both blocks and seeds level / magic rank at `1`.
+/// [`SEEDED_CAP_CONSTANT`] into both blocks.
 ///
 /// Returned in ascending `sc_offset` order. The display-name copy is not a
 /// halfword store and is reported separately by [`seeded_name_offset`].
 ///
-// PORT: FUN_800560b4
+/// **Halfword stores only.** The routine also performs writes this return type
+/// cannot carry, and callers must not treat the list as the full effect of a
+/// New Game seed: the level / magic-rank bytes at `+0x130` / `+0x131`
+/// (`800561c4`..`800561cc`, both `sb` of literal `1`), the per-slot `sb 0xFF`
+/// at `0x8007BDBC + n` (`80056124`..`80056134`), and the pre-loop
+/// `sw zero,0xa9c(gp)` plus the `sb zero` pair at `0x8007B64A` / `0x8007B64C`.
+///
+// PORT: FUN_800560b4 (halfword stores only)
+// NOT WIRED: no caller outside the disc-gated test; the engine's own New Game
+// path does not route through this.
 pub fn seed_live_records(party: &StartingParty) -> Vec<SeededHalfword> {
     let mut out = Vec::new();
     for (slot, m) in party.members().iter().enumerate() {
@@ -723,7 +732,16 @@ pub const STORY_FLAGS_LEN: u32 = 0x200;
 /// These are literals in the routine rather than disc data, so they are the port
 /// itself rather than something parsed. Ordered by offset.
 ///
+/// **Provenance caveat.** `ghidra/scripts/funcs/80034a6c.txt` carries a
+/// decompiled body but **no disassembly section**, so the store *widths* here
+/// rest on Ghidra's `DAT_` / `_DAT_` naming convention rather than on observed
+/// `sb` / `sh` / `sw` opcodes. Re-dump the function with disassembly before
+/// relying on the widths. Unmodelled: `0x80073EF4 = 0xE40`,
+/// `0x80073EF8 = 0x2DC0`, `0x80073EFC = 0`, `DAT_80085958 = 0x77`,
+/// `DAT_80085959 = 5`, and the `_DAT_8007B868` branch.
+///
 // PORT: FUN_80034a6c
+// NOT WIRED: no caller outside the disc-gated test.
 pub fn new_game_seed_words() -> Vec<SeededWord> {
     let w = |sc_offset: u32, value: u32, width: SeedWidth| SeededWord {
         sc_offset,

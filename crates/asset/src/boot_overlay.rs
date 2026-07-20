@@ -29,6 +29,31 @@
 //! [`docs/formats/cdname.md`](../../../docs/formats/cdname.md) and the
 //! disc-gated tests in `tests/boot_overlay_disc.rs`.
 //!
+//! ## `FUN_8003E6BC` is not a name resolver
+//!
+//! Several loaders here pick between two branches on `_DAT_8007B8C2`, and the
+//! branch that does *not* use a PROT index calls `FUN_8003E6BC`. Ghidra labels
+//! that `path_opener` and annotates it "dev path -> PROT index via CDNAME map".
+//! **That annotation is false.** Its body is a host-PC open (`FUN_800608F0`,
+//! entirely `break 0x103` - the SN/PsyQ debug-station trap), then lseek / read /
+//! close over the same link, then a zero-fill of the tail. There is no CDNAME
+//! lookup and no TOC resolution in it, and it is not ISO9660 either - the real
+//! ISO path is `FUN_8003D3C4`, which goes through the CD stack.
+//!
+//! So the two branches are a **disc-index load** versus a **host-PC file read**,
+//! not two routes to the same entry. Any doc or comment claiming the non-index
+//! branch resolves a name onto the same PROT entry is repeating the bad
+//! annotation.
+//!
+//! Which polarity ships is genuinely **open**: `0x8007B8C2` is BSS-resident
+//! (the executable's image ends at `0x8007B800`) and a byte-level scan of
+//! `SCUS_942.54` for stores with the matching immediate finds 40 loads and
+//! **zero** stores - a scan that does not rely on Ghidra's xref manager, so the
+//! LUI+ADDIU trap does not explain it away. Taken at face value that means the
+//! flag is `0` on hardware and these loaders take the host branch, which cannot
+//! succeed with no host attached. Something has to give; until it is pinned,
+//! this module names branches by **mechanism**, never by `retail` / `debug`.
+//!
 //! See [`docs/subsystems/boot.md`](../../../docs/subsystems/boot.md) for the
 //! mode state machine these loaders serve.
 
@@ -94,10 +119,20 @@ pub struct SlotBChoice {
 /// resident one. The suppression word is cleared unconditionally on the way out,
 /// so it only ever suppresses a single frame.
 ///
-/// `resident_param` is the loader's current-id tracker for slot B; pass `None`
-/// when nothing is resident.
+/// `resident_param` is the word this routine compares against
+/// (`80025bec lw v1,-0x43b4(v1)` = **`0x8007BC4C`**); pass `None` when it holds
+/// no matching id. It is **not** the overlay loader's own resident tracker -
+/// `FUN_8003EC70` keeps that at `gp+0x934` (`8003ecb4` / `8003ecec`). The two
+/// are independent skip-checks against different globals, and what maintains
+/// `0x8007BC4C` is not yet pinned; do not treat this as the loader's tracker
+/// when wiring it.
+///
+/// Also unmodelled: `FUN_8003EC70` short-circuits entirely when
+/// `_DAT_8007B868 != 0` (`8003ec88`), so a caller can request a load that the
+/// loader then declines.
 ///
 // PORT: FUN_80025ba0
+// NOT WIRED: no caller outside the disc-gated test.
 pub fn slot_b_default_overlay(
     summon_render_flag: bool,
     suppressed: bool,
@@ -136,29 +171,46 @@ pub const EFFECT_DATA_EXTRACTION_INDEX: u32 = EFFECT_DATA_RAW_INDEX - RAW_TO_EXT
 /// targets in both of its branches.
 pub const EFFECT_DATA_BUFFER_OFFSET: u32 = 0x59400;
 
-/// Where the effect-data loader sources its bytes for a given build.
+/// Where the effect-data loader sources its bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EffectDataSource {
-    /// Retail: open the effect file through the ISO9660 filesystem.
-    IsoFile,
-    /// Debug: resolve [`EFFECT_DATA_EXTRACTION_INDEX`] through the PROT TOC.
+    /// Flag clear: open a **host-PC** file over the SN/PsyQ debug-station link.
+    ///
+    /// Not ISO9660 and not the disc at all. The branch calls `FUN_800608F0`,
+    /// whose entire body is `break 0x103` - the debug-station host trap - and
+    /// then its lseek / read / close siblings (`FUN_80060920`, `FUN_80060944`,
+    /// `FUN_80060910`). The path operand it opens is a literal PC drive letter.
+    /// On hardware with no host attached the open returns `-1`, the routine
+    /// bumps the failure counter at `0x8007B86E` and loads nothing.
+    HostFile,
+    /// Flag set: resolve [`EFFECT_DATA_EXTRACTION_INDEX`] through the PROT TOC.
     ProtEntry(u32),
 }
 
-/// Pick the effect-data source for a build.
+/// Pick the effect-data source from the `_DAT_8007B8C2` flag.
 ///
-/// The routine is keyed on the dev/retail flag: a **retail** image opens the
-/// effect file by name through the ISO9660 filesystem, zero-fills the tail up to
-/// the next 2 KB boundary, and records the padded length; a **debug** image
-/// resolves the same content through the PROT TOC instead. Both branches land
-/// the bytes at [`EFFECT_DATA_BUFFER_OFFSET`] past the streaming-buffer base.
+/// `8003e37c bne v0,zero,0x8003e49c` branches on the flag: **non-zero** takes
+/// the PROT-TOC branch (`8003e4a4 li a0,0x3d5`), **zero** falls through to the
+/// host-PC quartet described on [`EffectDataSource::HostFile`]. Both branches
+/// target [`EFFECT_DATA_BUFFER_OFFSET`] past the streaming-buffer base.
+///
+/// The parameter is the raw flag, deliberately not a `retail`/`debug` boolean:
+/// which polarity is the shipped configuration is an **open question**, and
+/// naming it either way here would bake in an unverified claim. The mechanism
+/// above is certain; the build identity is not. See the module docs.
+///
+/// The Ghidra dump's hand-written header comment on this function
+/// (`retail ISO9660 vs debug PROT TOC`) is wrong on both halves - neither
+/// branch touches ISO9660 - and is not evidence for anything.
 ///
 // PORT: FUN_8003e360
-pub fn effect_data_source(debug_build: bool) -> EffectDataSource {
-    if debug_build {
+// NOT WIRED: no caller outside this module's tests; the engine does not yet
+// load the effect-data side band.
+pub fn effect_data_source(dev_flag_set: bool) -> EffectDataSource {
+    if dev_flag_set {
         EffectDataSource::ProtEntry(EFFECT_DATA_EXTRACTION_INDEX)
     } else {
-        EffectDataSource::IsoFile
+        EffectDataSource::HostFile
     }
 }
 
@@ -180,15 +232,27 @@ pub const CARD_TIM_EXTRACTION_INDEX: u32 = CARD_TIM_RAW_INDEX - RAW_TO_EXTRACTIO
 /// Scratch-buffer size the CARD-mode init allocates for the TIM pack.
 pub const CARD_TIM_BUFFER_LEN: u32 = 0x19000;
 
-/// Where the CARD-mode init sources its TIM pack for a given build.
+/// Extraction index of the TIM pack the CARD-mode init loads by constant.
 ///
-/// Retail opens the pack by dev path through the path-based resolver, which maps
-/// the name onto the same entry the debug branch resolves by index; the returned
-/// [`CARD_TIM_EXTRACTION_INDEX`] is the entry either branch ends up reading. The
-/// loaded bundle is then walked as an `asset::pack` and each TIM uploaded to
+/// `800257e4 bne v1,zero,0x80025804` branches on the same `_DAT_8007B8C2` flag
+/// as [`effect_data_source`]: **non-zero** reaches `li a0,0x37e` and loads the
+/// entry by index. The **zero** branch opens a literal host-PC path through the
+/// same `break 0x103` quartet, so it is not "retail by dev path through the
+/// path-based resolver" - `FUN_8003E6BC` performs no name resolution at all
+/// (see the module docs). The two branches are therefore *not* two routes to
+/// one entry, and only the by-index branch has an extraction index to return.
+///
+/// The by-index branch is additionally gated on `gp+0x7E8 == 1`
+/// (`800257c0`); the other path draws two rects and loads no pack. Neither
+/// that gate nor the host branch is modelled here - this function only reports
+/// the constant.
+///
+/// The loaded bundle is walked as an [`crate::pack`] and each TIM uploaded to
 /// VRAM.
 ///
 // PORT: FUN_8002574c
+// NOT WIRED: no caller outside the disc-gated test; nothing in the engine
+// loads the CARD-mode TIM pack yet.
 pub fn card_tim_pack_extraction_index() -> u32 {
     CARD_TIM_EXTRACTION_INDEX
 }
@@ -209,7 +273,20 @@ pub const SECTOR_BYTES: i32 = 0x800;
 /// would otherwise give - so an error return stays an error rather than becoming
 /// `-1` worth of sectors.
 ///
-// PORT: FUN_8001eef0
+/// **Scope: this is the six-instruction arithmetic tail only**
+/// (`8001f030`..`8001f050`), not the whole of `FUN_8001EEF0`. The function's
+/// dual-mode dispatch, its `0x20` bias, the `FUN_80020310` sizing path and the
+/// unconditional `DAT_8007B730 = 0` clear at `8001f02c` are all unmodelled.
+///
+/// The negative branch only triggers below `-0x7FF`, so small negative inputs
+/// still go through the positive path.
+///
+/// Note `engine-core::stream_file` has its own `bytes_to_sectors_floor`, which
+/// is plain floor division with no round-up and no signed path. The two
+/// disagree; reconcile them before wiring either into a shared path.
+///
+// PORT: FUN_8001eef0 (arithmetic tail only)
+// NOT WIRED: no caller anywhere in the tree.
 pub fn bytes_to_sectors(bytes: i32) -> i32 {
     let biased = bytes.wrapping_add(SECTOR_BYTES - 1);
     let biased = if biased < 0 {
@@ -264,8 +341,10 @@ mod tests {
     fn side_band_indices_match_their_loader_constants() {
         assert_eq!(EFFECT_DATA_EXTRACTION_INDEX, 979);
         assert_eq!(CARD_TIM_EXTRACTION_INDEX, 892);
+        // Flag non-zero -> PROT TOC by index; flag zero -> host-PC file over
+        // the debug-station link (NOT ISO9660, and not the disc).
         assert_eq!(effect_data_source(true), EffectDataSource::ProtEntry(979));
-        assert_eq!(effect_data_source(false), EffectDataSource::IsoFile);
+        assert_eq!(effect_data_source(false), EffectDataSource::HostFile);
         assert_eq!(card_tim_pack_extraction_index(), 892);
     }
 

@@ -30,75 +30,105 @@ pub fn parse_str(text: &str) -> Result<IndexMap> {
     Ok(out)
 }
 
-/// Byte stride of a parsed CDNAME record in the retail in-RAM name table.
+/// Byte stride of a record in the retail in-RAM CDNAME name table
+/// (`0x80088758`), from `sll v0,v0,0x4` in the copy loop.
 pub const RETAIL_RECORD_STRIDE: usize = 0x10;
 
-/// Offset of the `u16` index within a retail in-RAM CDNAME record. Everything
-/// below this is the name field, so the usable name is
-/// [`RETAIL_NAME_CAPACITY`] bytes.
+/// Offset of the little-endian `u16` index within a retail in-RAM CDNAME
+/// record - `sb a0,0xc(v0)` / `sb v1,0xd(v0)`.
 pub const RETAIL_INDEX_OFFSET: usize = 0xC;
 
-/// Usable name bytes in a retail in-RAM CDNAME record (see
-/// [`parse_retail_str`] for what happens to longer names).
-pub const RETAIL_NAME_CAPACITY: usize = RETAIL_INDEX_OFFSET;
+/// Longest name that survives into the retail table as a clean C string:
+/// [`RETAIL_INDEX_OFFSET`] − 1 = **11** bytes.
+///
+/// This is *not* a cap the loader enforces - the copy loop has no bound at all
+/// (see [`retail_name_table`]). It is the longest name whose terminating byte
+/// is still a table zero after the index store lands on `+0xC`/`+0xD`. A
+/// 12-byte name is not "just fitting": it loses its terminator to the index's
+/// low byte and reads back with the index bytes appended.
+pub const RETAIL_NAME_CLEAN_CAPACITY: usize = RETAIL_INDEX_OFFSET - 1;
 
-/// Parse a CDNAME map the way retail's loader does, rather than the way a
-/// tolerant tool would.
+/// A retail-parsed CDNAME map. Names are **bytes**, not `String`: the loader
+/// can leave raw index bytes inside a name (see [`retail_name_table`]), and
+/// those are routinely not valid UTF-8.
+pub type RetailNameMap = BTreeMap<u32, Vec<u8>>;
+
+/// Emulate the retail loader's writes into the in-RAM name table at
+/// `0x80088758`, returning `(table, indices_in_declaration_order)`.
 ///
-/// The retail routine reads `CDNAME.TXT` into a 4 KB stack buffer and walks it
-/// with three behaviours [`parse_str`] deliberately does not reproduce:
+/// The table is a flat array of [`RETAIL_RECORD_STRIDE`]-byte records that
+/// starts zeroed (it is BSS). Per `#define` line the loader does exactly two
+/// things to it:
 ///
-/// - **It stops at the first line that does not begin with `#`.** There is no
-///   "skip junk and keep going": the loop condition *is* the `#` test, so a
-///   blank or comment line mid-file would truncate the map.
-/// - **Names are capped at [`RETAIL_NAME_CAPACITY`] bytes.** Records are
-///   [`RETAIL_RECORD_STRIDE`] bytes with the index stored at
-///   [`RETAIL_INDEX_OFFSET`], and the index store runs *after* the name copy -
-///   so a longer name has its 13th and 14th bytes overwritten by the index.
-///   The shipped file does carry names past that cap, so this is a live effect
-///   rather than a theoretical one.
-/// - **Index digits are accumulated leniently.** It inspects the four bytes
-///   after the name and folds in each one that is a digit, skipping non-digits
-///   instead of stopping, so run-together spacing still parses.
+/// 1. **Copy the name, unbounded and unterminated.** The loop at `0x8001d980`
+///    is `sb v1,0x0(v0)` with `v0 = base + count*0x10 + i`, running while the
+///    source byte is not `' '`. There is no length check and **no NUL is ever
+///    written** - a name is only terminated by table bytes the copy did not
+///    reach.
+/// 2. **Store the index over `+0xC`/`+0xD`.** `sb a0,0xc(v0)` /
+///    `sb v1,0xd(v0)` run *after* the copy, so they overwrite name bytes 12
+///    and 13 if the name got that far.
 ///
-/// On the retail `CDNAME.TXT` the two readers agree on every **index**, and on
-/// every name that fits the cap - but the shipped file carries two names that do
-/// not, so the maps are *not* identical:
+/// The consequences, which the previous "names are capped at 12 bytes" reading
+/// got wrong in both directions:
 ///
-/// | `#define` name | Retail in-RAM name |
-/// |---|---|
-/// | `gameover_data` | `gameover_dat` |
-/// | `move_program_no` | `move_program` |
+/// - **Bytes `+0xE` and `+0xF` survive.** They are past the index store, so a
+///   name of 15 bytes keeps its byte 14. `move_program_no` does **not** become
+///   `move_program`; it reads back as `move_program` + the two index bytes +
+///   `o`.
+/// - **A 12- or 13-byte name is not cleanly truncated either.** With no NUL of
+///   its own it runs straight into the index bytes, so `monster_data` reads
+///   back as `monster_data` + the index's two bytes. It is clean only in the
+///   accidental case where the index's low byte is zero.
+/// - **Clean C-string capacity is 11**, not 12 - see
+///   [`RETAIL_NAME_CLEAN_CAPACITY`].
+/// - **A name of 16+ bytes spills into the following record.** Indexing is flat
+///   from the table base, so the overflow lands on the next record's bytes and
+///   is then partly overwritten when that record is parsed. Whatever sits
+///   between the next name's end and its index store survives. No shipped name
+///   is long enough to trigger this (the longest is 15), but a modded
+///   `CDNAME.TXT` can, and retail has no bounds check to stop it.
 ///
-/// Tooling that matches CDNAME names against the full `#define` spelling is
-/// therefore comparing against something retail never holds. The disc-gated
-/// `cdname_retail_parse_disc` test pins both the index agreement and this exact
-/// truncation set, so a future disc or a changed cap fails loudly rather than
-/// silently renaming a block.
+/// Growing the table as records are appended reproduces the spill faithfully:
+/// a record is only zero-filled where the emulation has not already written.
 ///
 // PORT: FUN_8001d8fc
-pub fn parse_retail_str(text: &str) -> IndexMap {
-    let mut out = IndexMap::new();
+pub fn retail_name_table(text: &str) -> (Vec<u8>, Vec<u32>) {
     let bytes = text.as_bytes();
+    let mut table: Vec<u8> = Vec::new();
+    let mut indices: Vec<u32> = Vec::new();
     let mut p = 0usize;
 
     // The loop condition is the '#' test: the first line that fails it ends the
-    // parse, exactly as retail's `while (*p == '#')` does.
+    // parse, exactly as retail's `while (*p == '#')` does. There is no
+    // "skip junk and keep going".
     while bytes.get(p) == Some(&b'#') {
-        // Retail skips a fixed 8 bytes ("#define ") and copies until a space.
+        let rec = indices.len() * RETAIL_RECORD_STRIDE;
+        // Zero-fill only what a previous record's spill has not already
+        // written - shrinking here would destroy the spill retail keeps.
+        if table.len() < rec + RETAIL_RECORD_STRIDE {
+            table.resize(rec + RETAIL_RECORD_STRIDE, 0);
+        }
+
+        // Retail skips a fixed 8 bytes ("#define ") and copies until a space,
+        // with no bound and no terminator.
         let name_start = p + 8;
         let mut n = 0usize;
-        while bytes.get(name_start + n).is_some_and(|&c| c != b' ') {
+        while let Some(&c) = bytes.get(name_start + n) {
+            if c == b' ' {
+                break;
+            }
+            let dst = rec + n;
+            if table.len() <= dst {
+                table.resize(dst + 1, 0);
+            }
+            table[dst] = c;
             n += 1;
         }
-        let name_bytes = &bytes[name_start.min(bytes.len())..(name_start + n).min(bytes.len())];
-        // The index store lands on name bytes 12..13, so anything past the cap
-        // is truncated in the table retail actually consults.
-        let kept = name_bytes.len().min(RETAIL_NAME_CAPACITY);
-        let name = String::from_utf8_lossy(&name_bytes[..kept]).into_owned();
 
         // `p` now sits on the space that terminated the name; retail reads the
-        // four bytes after it, folding in digits and skipping non-digits.
+        // four bytes after it, folding in each digit and skipping non-digits
+        // rather than stopping at the first one.
         p = name_start + n;
         let mut idx: u32 = 0;
         for k in 1..=4 {
@@ -108,17 +138,66 @@ pub fn parse_retail_str(text: &str) -> IndexMap {
                 idx = idx * 10 + u32::from(c - b'0');
             }
         }
-        if !name.is_empty() {
-            out.insert(idx, name);
-        }
 
-        // Advance past the newline that ends this line.
+        // The index store runs last and lands on top of the name.
+        table[rec + RETAIL_INDEX_OFFSET] = idx as u8;
+        table[rec + RETAIL_INDEX_OFFSET + 1] = (idx >> 8) as u8;
+        indices.push(idx);
+
+        // Advance past the newline that ends this line. Retail scans forward
+        // unbounded; stopping at end-of-input is the one deliberate deviation,
+        // since running off the buffer is not a behaviour worth reproducing.
         match bytes[p..].iter().position(|&c| c == b'\n') {
             Some(nl) => p += nl + 1,
             None => break,
         }
     }
-    out
+    (table, indices)
+}
+
+/// Read a record back out of a [`retail_name_table`] table as retail does:
+/// a C string from the record base, stopping at the first zero byte. A name
+/// with no zero inside its own record keeps running into the next one.
+pub fn retail_name_at(table: &[u8], record: usize) -> Vec<u8> {
+    let start = record * RETAIL_RECORD_STRIDE;
+    let tail = &table[start.min(table.len())..];
+    let end = tail.iter().position(|&c| c == 0).unwrap_or(tail.len());
+    tail[..end].to_vec()
+}
+
+/// Parse a CDNAME map the way retail's loader does, rather than the way a
+/// tolerant tool would, and read each record back as the C string retail would
+/// see. See [`retail_name_table`] for the write semantics and
+/// [`retail_name_at`] for the read.
+///
+/// Two behaviours [`parse_str`] deliberately does not reproduce, beyond the
+/// name mangling: retail **stops at the first line that does not begin with
+/// `#`**, and it emits a record even for an empty name (the copy loop is
+/// simply skipped; the index store still runs).
+///
+/// On the shipped `CDNAME.TXT` the two readers agree on every **index**, so no
+/// block is gained, lost or renumbered - but they disagree on every name of 12
+/// bytes or more, of which the file has five. Tooling that matches CDNAME names
+/// against the full `#define` spelling is comparing against something this
+/// loader never produces. The disc-gated `cdname_retail_parse_disc` test pins
+/// the index agreement and the exact per-name divergence.
+///
+/// Whether retail ever populates this table at all is a separate **open
+/// question** - the loader's source branch is selected by a flag whose shipped
+/// value is not settled. See `docs/formats/cdname.md` and
+/// `docs/subsystems/boot.md`.
+///
+// REF: FUN_8001d8fc
+// NOT WIRED: the crate's own consumers (`block_for`, `prot-extract` labels,
+// scene windows) all use the tolerant `parse_str`. This retail model is
+// exercised only by `tests/cdname_retail_parse_disc.rs`.
+pub fn parse_retail_str(text: &str) -> RetailNameMap {
+    let (table, indices) = retail_name_table(text);
+    indices
+        .iter()
+        .enumerate()
+        .map(|(n, &idx)| (idx, retail_name_at(&table, n)))
+        .collect()
 }
 
 /// Find the named block whose start index ≤ entry_index. CDNAME.TXT lists the
@@ -234,7 +313,7 @@ not a define
         // loop condition ends the map there.
         let text = "#define first 5\nnot a define\n#define after 9\n";
         let retail = parse_retail_str(text);
-        assert_eq!(retail.get(&5).map(String::as_str), Some("first"));
+        assert_eq!(retail.get(&5).map(Vec::as_slice), Some(&b"first"[..]));
         assert_eq!(
             retail.get(&9),
             None,
@@ -245,14 +324,62 @@ not a define
     }
 
     #[test]
-    fn retail_parse_truncates_names_at_the_index_field() {
-        // 15 bytes: the index store overwrites bytes 12..13, so the table keeps
-        // the first 12 only.
-        let map = parse_retail_str("#define move_program_no 42\n");
-        assert_eq!(map.get(&42).map(String::as_str), Some("move_program"));
-        // A name that fits is untouched.
-        let short = parse_retail_str("#define town01 5\n");
-        assert_eq!(short.get(&5).map(String::as_str), Some("town01"));
+    fn retail_name_bytes_past_the_index_store_survive() {
+        // 15 bytes with index 972 (lo 0xCC, hi 0x03). The index store lands on
+        // name bytes 12 and 13 only - byte 14 ('o') is past it and survives, so
+        // the name does NOT truncate to "move_program".
+        let map = parse_retail_str("#define move_program_no 972\n");
+        assert_eq!(
+            map.get(&972).map(Vec::as_slice),
+            Some(&b"move_program\xcc\x03o"[..])
+        );
+    }
+
+    #[test]
+    fn retail_name_of_exactly_twelve_bytes_loses_its_terminator() {
+        // 12 bytes fills 0..0xB, so the record has no zero of its own and the
+        // read runs straight into the index bytes. "Fits in 12" is not clean.
+        let map = parse_retail_str("#define monster_data 869\n");
+        assert_eq!(
+            map.get(&869).map(Vec::as_slice),
+            Some(&b"monster_data\x65\x03"[..])
+        );
+        // ...unless the index's low byte happens to be zero, which terminates
+        // it by accident.
+        let lucky = parse_retail_str("#define monster_data 768\n");
+        assert_eq!(
+            lucky.get(&768).map(Vec::as_slice),
+            Some(&b"monster_data"[..]),
+            "index low byte 0 terminates the name by coincidence"
+        );
+    }
+
+    #[test]
+    fn retail_names_up_to_eleven_bytes_are_clean() {
+        // 11 bytes is the longest that keeps a table zero as its terminator.
+        let text = "#define abcdefghijk 999\n#define town01 5\n";
+        let map = parse_retail_str(text);
+        assert_eq!(map.get(&999).map(Vec::as_slice), Some(&b"abcdefghijk"[..]));
+        assert_eq!(map.get(&5).map(Vec::as_slice), Some(&b"town01"[..]));
+        assert_eq!(RETAIL_NAME_CLEAN_CAPACITY, 11);
+    }
+
+    #[test]
+    fn retail_name_of_sixteen_plus_bytes_spills_into_the_next_record() {
+        // Indexing is flat from the table base and there is no bound check, so
+        // an 18-byte name writes over the next record's bytes 0 and 1. That
+        // record's own (shorter) name then overwrites byte 0 only, leaving the
+        // spilled byte at index 1 in place.
+        let text = "#define abcdefghijklmnopqr 1\n#define x 2\n";
+        let (table, indices) = retail_name_table(text);
+        assert_eq!(indices, vec![1, 2]);
+        // Record 1 byte 1 is the 18th byte of the first name ('r'), not a zero.
+        assert_eq!(table[RETAIL_RECORD_STRIDE + 1], b'r');
+        // So the second record reads back as its name plus the surviving spill.
+        assert_eq!(
+            parse_retail_str(text).get(&2).map(Vec::as_slice),
+            Some(&b"xr"[..])
+        );
     }
 
     #[test]
@@ -262,16 +389,32 @@ not a define
         assert_eq!(
             parse_retail_str("#define a 123\n")
                 .get(&123)
-                .map(String::as_str),
-            Some("a")
+                .map(Vec::as_slice),
+            Some(&b"a"[..])
         );
         // Only the first four bytes past the name are read at all.
         assert_eq!(
             parse_retail_str("#define a 12345\n")
                 .get(&1234)
-                .map(String::as_str),
-            Some("a")
+                .map(Vec::as_slice),
+            Some(&b"a"[..])
         );
+        // A non-digit in the middle is skipped, not a terminator.
+        assert_eq!(
+            parse_retail_str("#define a 1x2\n")
+                .get(&12)
+                .map(Vec::as_slice),
+            Some(&b"a"[..])
+        );
+    }
+
+    #[test]
+    fn retail_parse_emits_a_record_for_an_empty_name() {
+        // The copy loop is skipped when the first name byte is already a space,
+        // but the index store and the record counter still run.
+        let map = parse_retail_str("#define  7\n");
+        assert_eq!(map.get(&7).map(Vec::as_slice), Some(&b""[..]));
+        assert_eq!(map.len(), 1);
     }
 
     #[test]

@@ -57,8 +57,14 @@ dev-string formatter `FUN_800567A8` - `main.exe` / `pad_init` / `init_mem` /
 5. Boot-scene name: the default scene string is `opdeene`; when the dev flag
    halfword at `gp+0x5AA` (from `FUN_8003F084`) is set it is copied over the
    scene-name slot at `0x8007050C` instead (dev boot-into-scene override).
-   The retail path also primes the CDNAME map from `PROT\CDNAME.DAT` via the
-   path-opener (`FUN_8003E6BC` family).
+   The CDNAME map is primed here too, by `FUN_8001D8FC` (its only caller is
+   `0x8001D6FC`). It picks its source on `_DAT_8007B8C2`: flag **zero** opens
+   `h:\prot\cdname.txt` through `FUN_8003E6BC`, flag **non-zero** loads
+   `cdname.txt` through the ISO file loader `FUN_8003D3C4`. It then fills the
+   16-byte-record name table at `0x80088758` - a copy loop with no bound and no
+   terminator, so long names come back mangled rather than truncated
+   ([`formats/cdname.md`](../formats/cdname.md#the-loader-mangles-long-names)).
+   Which branch ships is **not settled** - see the flag note below.
 6. Display env + mode machine: `FUN_8001DAF8(0x400)` (DISPENV/DRAWENV pair),
    `FUN_8001DCF8(10)` (the boot mode-init), `FUN_8001E3B8(0xC800)`
    (primitive-packet + OT allocator), one priming `FUN_8001698C` /
@@ -88,7 +94,13 @@ The on-disc TOC and the in-RAM TOC have **different strides** - see [`formats/pr
 After this completes, two resolvers are usable:
 
 - `FUN_8003E8A8` - index-based; consumed directly by the streaming loader and the dev-build sound branch.
-- `FUN_8003E6BC` - path-based; resolves dev paths (`data\battle\efect.dat`, `h:\PROT\FIELD\<scene>\…`) into an index via the [CDNAME.TXT name map](../formats/cdname.md), then delegates to the LBA resolver. Most retail-build code paths land here.
+- `FUN_8003E6BC` - **not a resolver at all.** Ghidra labels it `path_opener` and annotates it "dev path -> PROT index via CDNAME map". Reading the body refutes that annotation.
+
+  It calls `FUN_800608F0`, whose whole body is `break 0x103` - the SN/PsyQ debug-station host trap - then the lseek / read / close siblings `FUN_80060920` / `FUN_80060944` / `FUN_80060910`, then zero-fills to the next 2 KB boundary. On a `-1` open it bumps the failure counter at `0x8007B86E` and returns.
+
+  There is no CDNAME lookup, no TOC index and no LBA delegation anywhere in it. It reads a **host-PC file over the debug link**, which is why its operands are literal `h:\…` drive-letter paths. The genuine ISO9660 path is `FUN_8003D3C4`, which goes through the CD stack (`FUN_8005DBB4`, `FUN_8005BEFC`, `FUN_8005E9A4`, `FUN_8005EA84`, `FUN_8005FB84`).
+
+  Retail asset loads therefore go by **integer constant** through `FUN_8003E8A8`, which is what the hardcoded-index call sites below already show. Any claim that a `h:\…` string is resolved onto a PROT entry by name traces back to the bad annotation, not to the code.
 
 ## Asset-type dispatcher (`FUN_8001F05C`)
 
@@ -645,7 +657,13 @@ The TIM-upload helper for these (and for the title overlay's per-frame sprites) 
 
 ## Debug flags
 
-- `_DAT_8007B8C2` - dev/retail build toggle. Several subsystems (sound init, field loader, save-card path, scene-change packet, title overlay) carry an "if dev" branch keyed on this byte. **Read-only at runtime**: every captured caller (`FUN_8001D424`, `FUN_8001D8FC`, `FUN_8001FA88`, `FUN_8001FC00`, `FUN_80020118`, `FUN_8003DE7C`, `overlay_menu_801DE234`, `overlay_field_battle_intro_801CF5BC`, `overlay_save_ui_*_801DD35C`, `overlay_title_801DD6B8/CCC`, ...) does a `_DAT_8007B8C2 == 0` retail-mode test; a sweep across the entire dump corpus (`SCUS_942.54` + 2660 overlay function dumps) returns **zero writes**. So the flag is BSS-resident (initialised to 0 = retail at boot) and is only mutated via external POKE - the TCRF GameShark codes that flip it to dev mode are the only known writers.
+- `_DAT_8007B8C2` - dev/build toggle. Several subsystems (sound init, field loader, save-card path, scene-change packet, title overlay) branch on it.
+
+  **Read-only at runtime**: every captured caller (`FUN_8001D424`, `FUN_8001D8FC`, `FUN_8001FA88`, `FUN_8001FC00`, `FUN_80020118`, `FUN_8003DE7C`, `overlay_menu_801DE234`, `overlay_field_battle_intro_801CF5BC`, `overlay_save_ui_*_801DD35C`, `overlay_title_801DD6B8/CCC`, ...) tests it, and no caller writes it. That holds up under a check independent of Ghidra's xref manager: scanning `SCUS_942.54` for store instructions whose immediate matches the address finds **40 loads and 0 stores**, so the LUI+ADDIU xref trap does not explain the absence away. It is BSS-resident - the executable image ends at `0x8007B800`, below the flag - so it is `0` at boot and only mutated by external POKE (the TCRF GameShark codes).
+
+  **Which polarity means "retail" is an open question, and the older reading that `== 0` is retail does not survive the branch evidence.** In `FUN_8001D8FC` the `== 0` branch opens `h:\prot\cdname.txt` through `FUN_8003E6BC`, which is a **host-PC read over the debug-station link** (see the resolver note above), while `!= 0` reads `cdname.txt` off the disc through the ISO stack - and `cdname.txt` *is* a real file on the retail disc. `FUN_8003E360` and `FUN_8002574C` split the same way: `!= 0` loads a PROT entry by constant, `== 0` opens a literal `h:\…` path through the same host trap. On every one of these the `== 0` side is the branch retail hardware cannot service.
+
+  That leaves a genuine contradiction - BSS-zero with no writers, yet the zero branch is unrunnable on hardware - and it is not resolved here. Do not label either branch `retail` or `dev` on the strength of the flag alone; describe the mechanism (disc index vs host file) and cite the branch. Candidate resolutions worth testing: a writer living outside the scanned corpus, a runtime-patched image, or these paths simply never executing in a retail boot.
 - `_DAT_8007B98F` - the most-significant byte (offset +3, little-endian) of the
   32-bit debug-mode word `_DAT_8007B98C` (NA build offset; JP retail uses
   `0x07D51F`, an `0x1B90` build-shift). The dump-corpus sweep returns zero reads

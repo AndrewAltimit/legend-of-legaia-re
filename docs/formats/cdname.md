@@ -24,6 +24,86 @@ Each `#define name N` marks **the start of a block** of N entries. Subsequent PR
 
 `prot-extract` uses these names to produce filenames like `0148_retock.BIN`.
 
+## The loader mangles long names
+
+`FUN_8001D8FC` reads `CDNAME.TXT` into a 4 KB stack buffer and fills a table of
+16-byte records at `0x80088758`. The table is BSS, so it starts zeroed. Per
+`#define` line the loader touches it exactly twice, and the order matters:
+
+1. **Copy the name - unbounded, unterminated.** The loop at `0x8001D980` stores
+   `sb v1,0x0(v0)` with `v0 = 0x80088758 + count*0x10 + i`, advancing while the
+   source byte is not `' '`. There is no length check anywhere in the function
+   and **no NUL is ever written**. A name is terminated only by table bytes the
+   copy did not reach.
+2. **Store the index over `+0xC`/`+0xD`.** `sb a0,0xc(v0)` and `sb v1,0xd(v0)`
+   at `0x8001DA78`/`0x8001DA90` run *after* the copy, so they land on top of
+   name bytes 12 and 13 whenever the name is that long.
+
+Reading a record back as a C string therefore gives this, and **not** a name
+truncated to the index offset:
+
+| Name length | What the record holds |
+|---|---|
+| ≤ 11 | The name, terminated by a table zero. Clean. |
+| 12–13 | The name with the index's two bytes overlaid at 12..13 and no terminator of its own, so the read runs into them. |
+| 14–15 | As above, plus every byte from `+0xE` on, which is past the index store and survives it. |
+| ≥ 16 | Spills into the next record; see below. |
+
+**Clean C-string capacity is 11 bytes, not 12.** A 12-byte name is not "just
+fitting" - it loses its terminator to the index's low byte. It comes back clean
+only in the accidental case where that low byte is zero.
+
+Five shipped names exceed 11 bytes, and none of them round-trips:
+
+| `#define` name | Index | In-RAM C string |
+|---|---|---|
+| `gameover_data` | 1 | `gameover_dat` + `01` |
+| `monster_data` | 869 | `monster_data` + `65 03` |
+| `bat_back_dat` | 895 | `bat_back_dat` + `7F 03` |
+| `move_program_no` | 972 | `move_program` + `CC 03` + `o` |
+| `monster_test` | 980 | `monster_test` + `D4 03` |
+
+`move_program_no` is the case that most clearly refutes a truncation reading:
+its byte 14 (`o`) sits past the index store and is still there.
+
+Names of 16 bytes or more spill into the following record, because indexing is
+flat from the table base with no bounds check. The next record's own name
+overwrites the spill from byte 0, and its index store overwrites bytes 12..13 -
+so whatever the spill left between those two ranges survives. No shipped name is
+long enough to trigger this, but a modded `CDNAME.TXT` can.
+
+Two further divergences from a tolerant reader: the loop condition **is** the
+`#` test, so the first line not starting with `#` ends the map (there is no
+skip-and-continue); and a line whose name is empty still emits a record, since
+only the copy loop is skipped while the index store and record counter run.
+
+Tooling in this repo uses the tolerant `parse_str`, which keeps the full
+`#define` spelling. Anything comparing a CDNAME name against what retail holds
+in RAM must go through `retail_name_table` / `parse_retail_str` instead - those
+return names as **bytes**, since the index bytes left inside a name are
+routinely not valid UTF-8. The disc-gated `cdname_retail_parse_disc` test pins
+each shipped name against an independent byte-level record model.
+
+### Is this table populated on retail hardware?
+
+Open question, and worth knowing before leaning on the mangled names as "what
+retail holds". `FUN_8001D8FC` has exactly one caller (`0x8001D6FC`) and picks
+its source on `_DAT_8007B8C2`: flag **non-zero** reads `cdname.txt` off the disc
+through the ISO stack (`FUN_8003D3C4`), flag **zero** reads
+`h:\prot\cdname.txt` through `FUN_8003E6BC` - which is a host-PC read over the
+SN/PsyQ debug-station link, not a name resolver
+([`boot.md`](../subsystems/boot.md#debug-flags)). The flag is BSS-resident and
+has no writer anywhere in `SCUS_942.54`, so it is `0` at boot, which selects the
+branch that cannot succeed without a host PC attached.
+
+So either the flag is set by something outside the scanned corpus, or retail
+never populates this table at all and resolves assets purely by integer
+constant. Both readings are live. Until one is settled, treat the byte layout
+above as the semantics of *the loader* - which is certain from its disassembly -
+rather than as a description of retail RAM contents.
+
+Implementation: `crates/prot/src/cdname.rs`; see `ghidra/scripts/funcs/8001d8fc.txt`.
+
 ## Numbering space
 
 The `#define` numbers are **raw in-RAM PROT-TOC indices** - the index space `FUN_8003E8A8` consumes - **not** extraction-entry indices. The boot TOC loader copies `PROT.DAT` verbatim (8-byte header included) into `0x801C70F0`, so `raw index = extraction index + 2` (see [`prot.md` § In-RAM TOC](prot.md#in-ram-toc)). The content `#define name N` actually names lives at **extraction entry `N − 2`**, and the extractor's filename labels (which apply define numbers as extraction indices directly) are systematically shifted +2.
@@ -97,6 +177,8 @@ unshifted legacy windows.
 ## Block names can be misleading
 
 A block name describes the developer's organisation, not the runtime semantics of every entry inside the block - and any name read off an extraction *filename* must first be corrected by the +2 numbering shift above (several historical "mislabeled block" findings - `vab_01` "without VAB headers", the `move_program_no` layout mismatch, `0895_bat_back_dat` = init.pak - were the filename shift, not dev mislabeling). When the block name conflicts with what the bytes actually look like, trust the bytes: re-derive structure from the leading magic + the loader-call constant in SCUS, not from the CDNAME label.
+
+A name can also mislead in the opposite direction - by not being what retail holds. Any comparison against an in-RAM name has to account for the loader's [record mangling](#the-loader-mangles-long-names) first; five shipped names are affected.
 
 ## Per-scene asset reservations
 
