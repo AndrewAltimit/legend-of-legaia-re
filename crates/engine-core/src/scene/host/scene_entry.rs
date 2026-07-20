@@ -131,6 +131,16 @@ impl SceneHost {
                         "[scene] element-affinity tables (PROT {entry}) parse failed - neutral affinity stays active"
                     );
                 }
+                // The battle camera's per-character height table (0x801F4D2C)
+                // is sibling static data in the same overlay. A failure leaves
+                // the camera on its single traced fallback height.
+                if let Some(heights) = legaia_asset::battle_camera_table::parse(&bytes) {
+                    self.world.battle_camera_heights = Some(heights);
+                } else {
+                    eprintln!(
+                        "[scene] battle-camera height table (PROT {entry}) parse failed - fallback height stays active"
+                    );
+                }
             }
             Err(err) => {
                 eprintln!("[scene] battle-action overlay (PROT {entry}) load skipped: {err:#}");

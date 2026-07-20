@@ -197,13 +197,37 @@ impl PlayWindowApp {
         };
         let frames = world.field_frames;
         // Retail rebuilds the submenu close-up from the acting actor's own
-        // record on every open (`FUN_801D5854` case 0), so the framing has
-        // to follow whoever owns the menu rather than staying pinned to the
-        // measured solo-Vahn pose. `party_slot` stands in for retail's
-        // `DAT_8007BD10[slot] - 1` character id, which keys the per-model
-        // camera height; facing and world position keep their defaults
-        // until the battle actor transform is exposed to the window.
-        let acting = world.battle_command.as_ref().map(|c| c.party_slot);
+        // record on every open (`FUN_801D5854` case 0), so the framing has to
+        // follow whoever owns the menu rather than staying pinned to the
+        // measured solo-Vahn pose: facing drives the yaw, the character id
+        // keys the per-model height table, and the actor's world position is
+        // the focus the camera orbits.
+        let acting = world.battle_command.as_ref().and_then(|c| {
+            let a = world.actors.get(c.actor as usize)?;
+            // Retail's height key is `DAT_8007BD10[slot]`, the 1-based
+            // party-record selector; the engine's party rows are that record
+            // order, so the row index + 1 is the same id.
+            let height = world
+                .battle_camera_heights
+                .as_ref()
+                .and_then(|t| t.height_for_char_id(c.party_slot + 1))
+                .map(|h| h as f32);
+            Some(super::battle_cam::BattleCamActor {
+                // The port's actors carry their heading in `render_26` (the
+                // retail `+0x26` 12-bit angle); it stands in for the battle
+                // actor record's `+0x46` the framing formula subtracts.
+                facing: (a.move_state.render_26 as u16 & 0xFFF) as i32,
+                world: [
+                    a.move_state.world_x as f32,
+                    a.move_state.world_y as f32,
+                    a.move_state.world_z as f32,
+                ],
+                height,
+            })
+        });
+        // The far menu framing sizes its depth to - and centres on - the live
+        // formation's X/Z bounding box (`FUN_801D5854` case 9).
+        let formation = Self::battle_formation_box(world);
         // Entry snap: a battle that opens on dialogue starts in the held
         // close-up; anything else starts at the far menu framing (retail's
         // loading pose resolves there) and glides out to whichever menu
@@ -216,14 +240,46 @@ impl PlayWindowApp {
         let cam = self
             .battle_camera
             .get_or_insert_with(|| BattleCamera::new(entry, frames));
-        if let Some(char_id) = acting {
-            cam.set_actor(super::battle_cam::BattleCamActor {
-                char_id,
-                ..Default::default()
-            });
+        if let Some(actor) = acting {
+            cam.set_actor(actor);
         }
+        cam.set_formation(formation);
         cam.set_phase(phase);
         cam.advance_to(frames);
+    }
+
+    /// The X/Z bounding box of the actors the far battle framing encloses -
+    /// retail's `min`/`max` walk over `actor[+0x34]` / `actor[+0x38]` for
+    /// every **present** actor (`FUN_801D5854` case 9 gates on the presence
+    /// halfword `actor[+0x14c]`; the port's equivalent is an active actor
+    /// that is either a party row or a mesh-bound monster). `None` when no
+    /// actor qualifies, which is retail's un-entered accumulator case.
+    fn battle_formation_box(
+        world: &legaia_engine_core::world::World,
+    ) -> Option<super::battle_cam::FormationBox> {
+        let pc = world.party_count as usize;
+        let mut bbox: Option<super::battle_cam::FormationBox> = None;
+        for (i, a) in world.actors.iter().enumerate() {
+            if !(i < pc || a.tmd_binding.is_some()) {
+                continue;
+            }
+            let (x, z) = (a.move_state.world_x as f32, a.move_state.world_z as f32);
+            match &mut bbox {
+                None => {
+                    bbox = Some(super::battle_cam::FormationBox {
+                        min: [x, z],
+                        max: [x, z],
+                    })
+                }
+                Some(b) => {
+                    b.min[0] = b.min[0].min(x);
+                    b.min[1] = b.min[1].min(z);
+                    b.max[0] = b.max[0].max(x);
+                    b.max[1] = b.max[1].max(z);
+                }
+            }
+        }
+        bbox
     }
 
     /// The **exact** retail overworld-battle camera (game mode `0x15`), pinned
@@ -336,12 +392,20 @@ impl PlayWindowApp {
     pub(super) fn battle_dome_camera_mvp(&self, aspect: f32) -> Mat4 {
         let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
         let pose = self.battle_camera.as_ref().map(|c| c.pose());
-        let (pitch, yaw, tr) = match pose {
-            Some(p) => (p.pitch, p.yaw, Vec3::from(p.tr)),
-            // First frame before the tick armed the state: the far framing.
-            None => (32.0, 0.0, Vec3::new(0.0, 1280.0, 7680.0)),
+        let (pitch, yaw, tr, focus) = match pose {
+            Some(p) => (p.pitch, p.yaw, Vec3::from(p.tr), Vec3::from(p.focus)),
+            // First frame before the tick armed the state: the far framing at
+            // its minimum depth, on the origin.
+            None => (32.0, 0.0, Vec3::new(0.0, 1280.0, 3276.0), Vec3::ZERO),
         };
-        Self::psx_camera_mvp(to_rad(pitch), to_rad(yaw), 256.0, tr, Vec3::ZERO, aspect)
+        // The focus trio is the world point the camera orbits (retail stores
+        // it negated at `0x80089118/1C/20`). Retail folds the battle world
+        // scale into the camera rotation, so the focus is scaled with the
+        // geometry it targets; the engine composes [`BATTLE_WORLD_SCALE`] on
+        // the actor draws *after* this camera, so the focus has to be
+        // pre-scaled by the same factor to land on the same eye-space point.
+        let focus = focus * super::BATTLE_WORLD_SCALE;
+        Self::psx_camera_mvp(to_rad(pitch), to_rad(yaw), 256.0, tr, focus, aspect)
     }
 
     /// Camera parameters for the cutscene shot, decoded from the cutscene

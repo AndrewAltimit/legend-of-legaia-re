@@ -353,16 +353,21 @@ catalogued mednafen Tetsu battle states; one camera step spans **2 vsyncs**:
 |---|---|---|---|---|
 | tutorial dialogue up | 0 | 0 | `(0, 1280, 1638)` | held static |
 | dialogue dismiss | 0→32, `+6`/step | orbit resumes | z 1638→7680, `+864`/step | rate-clamped glide |
-| Begin/Run menu | 32 | free | `(0, 1280, 7680)` | idle orbit `-4` yaw/step |
+| Begin/Run menu | 32 | free | `(0, 1280, z)` | idle orbit `-4` yaw/step |
 | command submenu | 32 | **2288** | `(-512, 1152, 2457)` | 6-step glide in, then held |
 | submenu exit | swings 32→256→32 | eases to 0 | via `(0, 1536, 3276)`, back to menu TR | 6-step swing + 7-step return |
 
-`H = 256` and the identity·16384 base hold through every phase. The submenu
-close-up is measured for the solo-Vahn Tetsu fight; how the framing
-generalizes to the other party seats is an open thread. Engine mirror:
-`window/battle_cam.rs` in `play-window` (phase derived from the live dialogue
-/ command-session state, stepped on the retail display-frame clock), with the
-glide-table kernel port at `legaia_engine_vm::battle_camera`
+`H = 256` and the identity·16384 base hold through every phase. The traced
+numbers above are one fight's *instance* of two formulas, not constants: the
+submenu yaw `2288` is `0x8F0 - actor_facing` and the menu depth `z` is the
+formation-sized `max(span * 3, 0x800)`, which lands on `7680` for the solo
+Tetsu seats. Per-seat variation lives in the **focus trio**, which a solo
+trace cannot distinguish from a constant. Both framing laws, the per-character
+height table `0x801F4D2C`, and the focus trio are covered under
+[`battle-action.md`](battle-action.md#case-0---the-submenu-close-up-framing).
+Engine mirror: `window/battle_cam.rs` in `play-window` (phase derived from the
+live dialogue / command-session state, stepped on the retail display-frame
+clock), with the glide-table kernel port at `legaia_engine_vm::battle_camera`
 (`FUN_801D829C`).
 
 **Actor pass: the 4× world-scale base matrix.** The battle base matrix

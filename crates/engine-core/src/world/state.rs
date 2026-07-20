@@ -1161,6 +1161,16 @@ pub struct World {
     /// [`crate::scene::SceneHost`].
     pub element_affinity: Option<legaia_asset::element_affinity::ElementAffinity>,
 
+    /// Per-character battle-camera height table
+    /// ([`legaia_asset::battle_camera_table`], runtime VA `0x801F4D2C`) - the
+    /// `TR.y` the submenu close-up framing (`FUN_801D5854` case `0`) reads for
+    /// whichever character is acting. Installed from the same PROT 0898
+    /// overlay as [`Self::move_power`] by [`crate::scene::SceneHost`]; `None`
+    /// on disc-free hosts, which leaves the camera on its single traced
+    /// fallback height so an unpinned character frames like the measured case
+    /// instead of jumping.
+    pub battle_camera_heights: Option<legaia_asset::battle_camera_table::BattleCameraHeights>,
+
     /// Item-table data the gold-shop path needs from `SCUS_942.54` (per-id buy
     /// price + a "names a real item" mask). Installed once at boot by the host
     /// (e.g. `BootSession`); `None` on disc-free builds, which leaves shop stock
@@ -2136,6 +2146,7 @@ impl World {
             clut_fx: Vec::new(),
             pending_move_fx_cue: None,
             element_affinity: None,
+            battle_camera_heights: None,
             item_shop_data: None,
             scene_shops: Vec::new(),
             pending_field_shop: None,

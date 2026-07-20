@@ -27,6 +27,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
   - [`baka_opponents`](#baka_opponents)
   - [`muscle_dome`](#muscle_dome)
   - [`element_affinity`](#element_affinity)
+  - [`battle_camera_table`](#battle_camera_table)
   - [`befect_cluster`](#befect_cluster)
   - [Character meshes, textures, animation](#character-meshes-textures-animation) - `character_pack`, `battle_char_pack`, `battle_char_palette`, `field_char_textures`, `player_anm`
   - [World map](#world-map) - `kingdom_bundle`, `world_map_overlay`, `ocean`, `worldmap_menu`
@@ -294,6 +295,21 @@ the attacker roll.
 PROT 0898, same link base as `move_power`. CLI `asset element-affinity <PROT 0898
 .BIN>` (`--json` emits the matrix + per-character + summon-power tables). See
 [`battle-formulas.md`](../../docs/subsystems/battle-formulas.md#element-affinity-matrix-fun_801dd864-0x801f53e8).
+
+### `battle_camera_table`
+
+Per-character **battle-camera height** table (runtime VA `0x801F4D2C`), the
+`TR.y` the command-submenu close-up framing `FUN_801D5854` case `0` reads for
+whichever character is acting.
+
+- `parse` → `height_for_char_id(char_id_1based)` / `height_for_index` over one
+  entry per playable character. Vahn's entry is the value the solo-Vahn camera
+  trace pins, so it doubles as the base/stride check.
+- The framing keys on **character identity** (`DAT_8007BD10[slot]`), not on
+  seat, so this is a per-model eye height rather than a per-position offset.
+
+PROT 0898, same link base as `move_power`. See
+[`battle-action.md`](../../docs/subsystems/battle-action.md#case-0---the-submenu-close-up-framing).
 
 ### `befect_cluster`
 
