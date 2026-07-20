@@ -1306,7 +1306,11 @@ The HUD is fed by `World` events:
 
 Damage popups carry a 60-frame default lifetime and an `alpha()` helper for fade-out renders. The log column rings the most recent N entries (default 6, matching the retail scrolling-log column).
 
-Implementation: [`crates/engine-core::battle_hud`](../../crates/engine-core/src/battle_hud.rs).
+Slot indices are **absolute actor-table indices** - party ordinals below `party_count`, monsters above - and stay absolute through the draw list. `battle_hud_draws_for` derives both a row's Y and a popup's anchor from the slice position, so a host that hands it a compacted "active slots only" list shifts every monster row up and anchors damage numbers to the wrong actor. Inactive slots are passed through as empty-name rows, which the builder skips while still consuming their Y.
+
+HP and MP readouts are tinted by the four-tier retail colour law (`hp_bar_color_index` / `mp_bar_color_index`, ports of `FUN_800349EC` / `FUN_80035EA8`). MP has no ceiling on the battle actor: `World::character_max_mp`, keyed by battle ordinal, is the only source, so monster rows carry `mp_max = 0` and the builder draws them no MP field.
+
+Implementation: [`crates/engine-core::battle_hud`](../../crates/engine-core/src/battle_hud.rs). The native window folds the live actor table into it each tick in `engine-shell`'s `window/battle.rs::sync_battle_hud_rows`.
 
 ## SFX bank + scheduler
 

@@ -11,8 +11,9 @@ use legaia_engine_core::scene_resources::{
 };
 use legaia_engine_core::world::{AnimPlayer, SceneMode};
 use legaia_engine_render::{
-    CaptureImage, ColorSceneDraw, RenderTarget, Scene as RenderScene, SceneDraw, ShopRow, TextDraw,
-    TextOverlay, UploadedColorMesh, UploadedFontAtlas, UploadedVram, UploadedVramMesh,
+    CaptureImage, ColorSceneDraw, HudPopupView, HudSlotMeta, HudSlotView, RenderTarget,
+    Scene as RenderScene, SceneDraw, ShopRow, TextDraw, TextOverlay, UploadedColorMesh,
+    UploadedFontAtlas, UploadedVram, UploadedVramMesh, battle_hud_draws_for,
     capture_banner_draws_for, level_up_draws_for, shop_draws_for, text_draws_for,
     window::{EngineWindow, orbit_camera_mvp},
 };

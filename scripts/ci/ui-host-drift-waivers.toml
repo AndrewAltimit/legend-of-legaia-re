@@ -20,19 +20,24 @@
 
 [[waiver]]
 builder = "battle_hud_draws_for"
-kind = "orphan"
+kind = "web_missing"
 reason = """
-NEITHER host draws this. The browser play page has no battle host at all: it
-never arms encounters (`step_encounters` is left off in
-`LegaiaRuntime::enter_field`) and exports no battle render, camera or
-command-menu path. The native window does render a battle HUD, but not this
-one - `engine-shell/.../window/hud.rs` hand-rolls its own text HUD (party HP
-rows, monster rows, status letters, damage popups) and never calls the shared
-builder. That divergence is not cosmetic: the hand-rolled rows colour HP with a
-two-state white/dim pick and print no MP at all, so the ported retail colour law
-(`hp_bar_color_index` / `mp_bar_color_index`, FUN_800349EC / FUN_80035EA8) is
-drawn by nobody. Closing this means the native HUD adopting this builder - and
-therefore its row layout, monster rows and popup anchoring - not a new caller.
+Native draws it: `engine-shell/.../window/hud.rs` calls this for every
+`SceneMode::Battle` frame, fed by `window/battle.rs::sync_battle_hud_rows`,
+which folds the live actor table into the `BattleHud` model each tick. The
+window's own hand-rolled HP rows are gone, so this is the only battle HUD the
+native host has - and the retail HP / MP colour law (`hp_bar_color_index` /
+`mp_bar_color_index`, FUN_800349EC / FUN_80035EA8) reaches a surface.
+
+The browser play page has no battle host to draw into. It never arms
+encounters - none of `tick_encounter`, `arm_scripted_encounter`,
+`install_encounter_*` or `drain_encounter_formation` is referenced anywhere in
+`crates/web-viewer/src`, and no code path there sets `SceneMode::Battle` - and
+it exports no battle render, camera or command-menu path. There is also no
+battle HUD in the page's JS: `site/js/play-app.js` mentions battle only in a
+comment about Start being inert. Wiring the HUD would draw a readout of state
+the page never produces. Closing this is a battle-host job, not a draw-call
+one.
 """
 
 [[waiver]]
@@ -123,10 +128,20 @@ themselves unwired.
 builder = "ap_gauge_sprites"
 kind = "orphan"
 reason = """
-Built for the battle Arts AP gauge (see docs/subsystems/arts-command-gauge.md)
-ahead of its consumer; no host draws a gauge yet. Kept rather than deleted
-because the native battle HUD is the intended caller. If the battle HUD lands
-without it, delete the builder instead of re-waiving.
+Not a screen gap and not unreached: this is an interior widget both hosts
+already draw, one call deep. `field_menu_icon_sprites_for` (the party info
+panel, per member) and `status_screen_draws_for` (the status main panel) both
+fold it in, and both of those are `native,web`. The checker only counts
+references from the host source roots, so an engine-ui builder that composes
+into another engine-ui builder always reads as unused - the same reason
+`sprite_draws_for` is waived.
+
+The previous reason here claimed no host drew a gauge and named the native
+battle HUD as the intended caller, instructing a future wave to delete the
+builder if the HUD landed without it. Both halves were wrong: the gauge was
+already reaching both hosts through the menu panels, and the battle HUD
+(`battle_hud_draws_for`) draws its AP field as text pips rather than this
+atlas widget, so its landing says nothing about this builder either way.
 """
 
 [[waiver]]
