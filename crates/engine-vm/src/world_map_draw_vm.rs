@@ -7,16 +7,21 @@
 //! extension). It walks one inner sub-opcode and returns an advance
 //! count (in u16 halfwords) that the move-VM adds to its PC.
 //!
-//! The same function exists in **many** overlays at the same RAM
-//! address (`overlay_world_map`, `overlay_world_map_top`,
-//! `overlay_world_map_walk`, `overlay_0897` field, `overlay_dialog_mc4`,
-//! `overlay_dialog_typing`, `overlay_cutscene_dialogue`,
-//! `overlay_cutscene_mapview`); each overlay supplies its own
-//! contents in the 61-entry JT at `0x801CE868`. This file ports the
-//! `overlay_world_map` flavour - the JT-advance counts here are
-//! derived from that overlay's handlers. Other overlays share most
-//! advance counts (the JT structure is the same) but may dispatch to
-//! different sub-handler bodies.
+//! There is exactly **one** copy, in the field overlay (0897). The
+//! several capture dumps that carry it under `overlay_world_map`,
+//! `overlay_dialog_*` and `overlay_cutscene_*` labels are that same
+//! 0897 image observed under different scenario labels - the static
+//! 0897 dump is a strict subset of the capture-derived ones (no
+//! address appears only in 0897), and no other mapped slot-A overlay
+//! carries a jump table at `0x801CE868` at all. So op `0x2F` executes
+//! only while 0897 is resident, and battle-side move records cannot
+//! reach it. The earlier "one flavour per overlay" reading is
+//! falsified: see the move-VM extension row in
+//! `docs/reference/open-rev-eng-threads.md` and
+//! [`docs/subsystems/move-vm-overlay-ext.md`].
+//!
+//! NB the module name is historical - this is the move-VM extension
+//! dispatcher, which is neither world-map-specific nor a draw VM.
 //!
 //! ## Bytecode layout
 //!

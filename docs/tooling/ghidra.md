@@ -314,6 +314,21 @@ h:\prot\battle\etim.dat
 
 The `h:\` prefix indicates a Windows dev box. The runtime doesn't actually open these paths in retail (no real `h:\` drive on a PSX); the strings are leftover format artefacts that point at where each subsystem's data lives in PROT.
 
+## Decompiler artifacts that have produced false claims
+
+Ghidra's C output is a *rendering* of the instruction stream, and each artifact below has already put a wrong statement into this repo's committed docs. Port and document from the disassembly; treat the C as a hint that tells you where to look.
+
+| Artifact | What it looks like | What settles it |
+|---|---|---|
+| Dropped register arguments | A call printed `f(1)` whose callee reads three arguments. Ghidra infers the signature from one call site, so arguments left untouched in `a1`/`a2` never appear. | Read the `jal` and its delay slot; check whether `a1`/`a2` are written between the caller's prologue and the call. |
+| `\|\|` rendered as nested `if`s | Two siblings that share one branch pair look like they use different operators, inventing a behavioural difference. | Compare the branch pairs themselves, not the C. De Morgan makes `if (w) { if (h) }` and `w == 0 \|\| h == 0` the same predicate. |
+| Reordered or dropped stores | A store hoisted above its neighbours, or omitted entirely - so "field X is copied from field Y" and "only three of four slots are written" both come out wrong. | Take store order and store count from the instruction stream. |
+| Hand-written annotations | A Ghidra label or plate comment (`path_opener`, "dev path -> PROT index via CDNAME map") read as fact. It is somebody's earlier guess. | Read the body. An annotation is provenance-free. |
+| `size=1 bytes, 0 instructions` | A dump with decompiled C but an empty disassembly section - nothing to cross-check the C against. | Disassemble from `SCUS_942.54` directly: text VA `0x80010000`, file offset `0x800 + va - base`. |
+| `unaff_*` / `in_stack_*` | Read as proof the address is a mid-function fragment. But leaf functions legitimately open on `lw`, `unaff_gp` is ordinary gp-relative addressing, and a prologue can sit several instructions in. | A fragment is proven by a missing `addiu sp,sp,-N` in the **disassembly**, plus callee-saved reads with no matching save.  |
+
+The label-call idiom (intra-function labels promoted to fake `FUN_` entries) is the seventh member of this family; it has its own catalogue in [`script-vm.md`](../subsystems/script-vm.md#intra-function-label-catalogue).
+
 ## See also
 
 - [`docs/reference/functions.md`](../reference/functions.md) - the canonical directory of Ghidra-traced entry points these scripts dump.

@@ -1,6 +1,14 @@
 //! Save-slot select session.
 //!
-//! PORT: FUN_801DD35C (save-UI dispatcher), FUN_801E08D8 (info-panel renderer), FUN_801E1C1C (slide-in animator)
+//! PORT: FUN_801E08D8 (info-panel renderer), FUN_801E1C1C (slide-in animator)
+//! REF: FUN_801DD35C (the sub-mode dispatcher this session runs under)
+//!
+//! `FUN_801DD35C` is `REF:` here, not `PORT:` - `menu.rs` carries the one
+//! `PORT:` for that address, and the catalog counts occurrences. The
+//! `overlay_menu`, `overlay_title`, `overlay_save_ui_*` and
+//! `overlay_shop_save` dumps of it are the same function (byte-identical
+//! bodies), so which overlay hosts it is an open question rather than a
+//! per-subsystem variant; see the note in `engine-vm/src/title_overlay.rs`.
 //!
 //! Drives the slot-list UI (read save metadata, browse, Load/Save/Delete
 //! confirmations). Renderer-agnostic - engines render the slot list
