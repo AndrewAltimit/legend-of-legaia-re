@@ -272,8 +272,10 @@ pub(super) fn op_43<H: FieldHost>(
                     bytecode[operand + 2 + i * 2],
                 ]) as i16;
             }
-            let did_split = words[2] > 0xFF;
-            host.op43_vram_rect_copy(words, did_split);
+            // The >256-wide two-page split lives in `vram_rect_copy`
+            // alongside the packet builder it feeds.
+            let calls = crate::vram_rect_copy::op43_sub12_calls(words);
+            host.op43_vram_rect_copy(&calls);
             StepResult::Advance {
                 next_pc: pc + header_size + 13,
             }
