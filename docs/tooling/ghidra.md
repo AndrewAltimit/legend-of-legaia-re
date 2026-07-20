@@ -334,6 +334,48 @@ The label-call idiom (intra-function labels promoted to fake `FUN_` entries) is 
 
 The absolute-only-sweep row is worth dwelling on, because it is the one that compounds. "Zero writers" became "BSS zero-init establishes the value", which became "retail runs with the flag at 0", which inverted the documented polarity of `_DAT_8007B8C2` across a dozen pages and two crates. Neither downstream inference was independently checked - and the second was wrong on its own terms too, since `SCUS_942.54`'s PS-X EXE header has `b_size = 0` and the BIOS therefore clears no BSS here at all. Treat a negative result about writers as a claim needing the same evidence bar as a positive one.
 
+### Two rules for any negative, code or data
+
+The artifacts above are about misreading what a sweep *found*. These two are about
+misreading what a sweep *didn't* find, and they are not specific to dumps - they
+bite equally on negatives over disc bytes, where the range is bounded and the sweep
+really can be exhaustive.
+
+**A negative needs a positive control.** Before reporting "0 hits", run the *same
+scanner and the same validator* over a corpus where the thing is known present, and
+show it finds exactly the known instances - no more, no fewer. A negative produced
+by an unvalidated detector is not evidence of absence; it is indistinguishable from
+a detector that finds nothing anywhere. State the control's numbers next to the
+negative's, because the control is what makes the negative load-bearing.
+
+The worked example is the `"ME"` archive negative in
+[`battle-data-pack.md`](../formats/battle-data-pack.md#the-me-footprint-sweep): 5 raw
+magic hits across the player files, 0 validating. On its own that is unfalsifiable.
+The same scanner over `readef.DAT`, where the archives are documented, accepts
+exactly 8 out of 151 raw hits - one per documented slot, with the documented entry
+counts, zero false positives and zero false negatives. 143 of 151 hits reject, so
+the validator is doing real work, which is precisely what licenses reading the
+player-file zero as absence.
+
+**Structural fit is not validation.** Size tables that fit, offsets that align,
+counts that look plausible - these produce convincing intermediate numbers that
+survive a shallow check, and they are the reason a sweep reports a hit it should
+have rejected. Decompose every near-miss before calling it one. Two hits from the
+same sweep pass the `"ME"` size-table fit test and still fail on the body chain and
+the codec; a validator stopping at "the sizes fit" would have reported false
+positives in the very corpus used to prove it works.
+
+The mirror case is a near-miss that is really pool overlap. Scanning the PROT 867
+monster record for the steal table, byte offset `0x48` agrees with the SCUS steal
+item for 31 of 185 ids - far above the noise floor of 7, and readable as "nearly the
+field". It is not: `0x48` is `drop_item`, and steal and drop draw from the same
+39-item consumable pool, so the agreement is expected and none of those 31 also
+agree on chance at `0x49`. A rate well above chance is a prompt to explain the
+mechanism, not evidence of a hit.
+
+Both rules cut the same way as the rest of this page: the artifact is in the
+*rendering* of the result, not the bytes. A sweep's output is a rendering too.
+
 ## See also
 
 - [`docs/reference/functions.md`](../reference/functions.md) - the canonical directory of Ghidra-traced entry points these scripts dump.
