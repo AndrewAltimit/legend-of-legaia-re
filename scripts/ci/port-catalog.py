@@ -250,6 +250,14 @@ TEST_ATTR_RE = re.compile(r"#\[\s*(?:\w+\s*::\s*)*test\s*\]")
 WASM_EXPORT_RE = re.compile(r"#\[\s*wasm_bindgen")
 FN_DEF_RE = re.compile(r"\bfn\s+([A-Za-z_]\w*)")
 IMPL_KW_RE = re.compile(r"\bimpl\b")
+TRAIT_DEF_RE = re.compile(r"\btrait\s+([A-Za-z_]\w*)")
+# Traits whose methods are invoked by an external crate rather than by any
+# in-tree call site. winit's `event_loop.run_app(&mut app)` takes the app by
+# value and then calls `window_event` / `about_to_wait` / `resumed` on it, so
+# no in-tree edge names those methods and the whole per-frame GUI tree below
+# them - redraw, input, HUD build - reads as unreachable. Their bodies are
+# entry points in the same sense `fn main` is, so they join the root set.
+EXTERNAL_DISPATCH_TRAITS = frozenset({"ApplicationHandler"})
 QUAL_CALL_RE = re.compile(r"\b([A-Za-z_]\w*)\s*::\s*([A-Za-z_]\w*)")
 # A method *call*, not a field access: `.foo(` and not `.foo`. Without the
 # trailing paren every struct field named `id` / `step` / `phase` links to
@@ -267,7 +275,12 @@ NOT_WIRED_RE = re.compile(r"NOT\s+WIRED")
 # mention the marker while describing where the per-item notes live ("Individual
 # items carry a `NOT WIRED:` note"), and reading that as a blanket disclosure
 # would suppress every real gap in the file.
-MODULE_NOT_WIRED_RE = re.compile(r"^\s*//!\s*\**\s*NOT\s+WIRED", re.MULTILINE)
+# The leading run allows the three spellings a module disclosure is written
+# in: `//! NOT WIRED:`, `//! **NOT WIRED**` and the markdown-heading form
+# `//! # NOT WIRED`. Only `#`, `*` and space may precede it, so a sentence
+# that merely mentions the marker still does not count as a blanket
+# disclosure.
+MODULE_NOT_WIRED_RE = re.compile(r"^\s*//!\s*[#*\s]*NOT\s+WIRED", re.MULTILINE)
 NEXT_ITEM_RE = re.compile(
     r"^\s*(?:pub\s*(?:\([^)]*\)\s*)?)?"
     r"(?:default\s+|const\s+|async\s+|unsafe\s+|extern\s+\"[^\"]*\"\s+)*"
@@ -382,6 +395,7 @@ class RustFn:
         "body_end",
         "line",
         "is_test",
+        "is_trait_default",
     )
 
     def __init__(self, **kw):
@@ -389,9 +403,14 @@ class RustFn:
             setattr(self, k, v)
 
 
-def _impl_spans(stripped: str) -> list[tuple[int, int, str]]:
-    """`(body_start, body_end, type_name)` for every `impl` block."""
-    spans: list[tuple[int, int, str]] = []
+def _impl_spans(stripped: str) -> list[tuple[int, int, str, str | None]]:
+    """`(body_start, body_end, type_name, trait_name)` for every `impl` block.
+
+    `trait_name` is `None` for an inherent `impl Ty { }` and the trait's name
+    for `impl Trait for Ty { }`. It is what lets the root set pick out the
+    externally-dispatched callback traits.
+    """
+    spans: list[tuple[int, int, str, str | None]] = []
     n = len(stripped)
     for m in IMPL_KW_RE.finditer(stripped):
         i, angle, header_end = m.end(), 0, None
@@ -413,10 +432,47 @@ def _impl_spans(stripped: str) -> list[tuple[int, int, str]]:
         for _ in range(3):  # peel nested generic args
             header = re.sub(r"<[^<>]*>", " ", header)
         header = header.split(" where ")[0]
-        ty = header.split(" for ", 1)[1] if " for " in header else header
+        tr = None
+        if " for " in header:
+            tr, ty = header.split(" for ", 1)
+            tr = tr.strip().split("::")[-1].strip()
+            tr = (re.split(r"\W", tr)[0] or None) if tr else None
+        else:
+            ty = header
         ty = ty.strip().split("::")[-1].strip()
         ty = re.split(r"\W", ty)[0] if ty else ""
-        spans.append((header_end, match_brace(stripped, header_end), ty or "?"))
+        spans.append((header_end, match_brace(stripped, header_end), ty or "?", tr))
+    return spans
+
+
+def _trait_spans(stripped: str) -> list[tuple[int, int, str]]:
+    """`(body_start, body_end, trait_name)` for every `trait Name { }` block.
+
+    A default method in a trait body is a real call target: hosts that do not
+    override it run exactly this code. Without these spans such a function has
+    `impl_type = None`, lands among the free functions, and is never matched
+    by a `.name(...)` call site - so it shows zero in-edges no matter how many
+    hosts run it.
+    """
+    spans: list[tuple[int, int, str]] = []
+    n = len(stripped)
+    for m in TRAIT_DEF_RE.finditer(stripped):
+        i, angle, header_end = m.end(), 0, None
+        while i < n:
+            ch = stripped[i]
+            if ch == "<":
+                angle += 1
+            elif ch == ">":
+                angle -= 1
+            elif ch == "{" and angle <= 0:
+                header_end = i
+                break
+            elif ch == ";" and angle <= 0:
+                break
+            i += 1
+        if header_end is None:
+            continue
+        spans.append((header_end, match_brace(stripped, header_end), m.group(1)))
     return spans
 
 
@@ -433,9 +489,9 @@ def _cfg_test_spans(stripped: str) -> list[tuple[int, int]]:
     return spans
 
 
-def _innermost_impl(spans: list[tuple[int, int, str]], pos: int) -> str | None:
+def _innermost_impl(spans: list[tuple], pos: int) -> str | None:
     best: tuple[int, str] | None = None
-    for start, end, ty in spans:
+    for start, end, ty, *_ in spans:
         if start <= pos < end and (best is None or start > best[0]):
             best = (start, ty)
     return best[1] if best else None
@@ -451,6 +507,7 @@ class RustSource:
         self.stripped = strip_rust_noise(text)
         self.is_test_file = path.stem == "tests" or "tests" in path.parts
         self.impl_spans = _impl_spans(self.stripped)
+        self.trait_spans = _trait_spans(self.stripped)
         self.test_spans = _cfg_test_spans(self.stripped)
         self.line_starts = [0]
         for i, ch in enumerate(text):
@@ -504,13 +561,20 @@ class RustSource:
                 s[max(0, m.start() - 400) : m.start()]
             ):
                 is_test = True
+            # A trait body's default method carries the trait's name as its
+            # `impl_type`, so `.name(...)` and `Trait::name` both resolve to
+            # it. An `impl` block nested inside the trait body still wins.
+            impl_ty = _innermost_impl(self.impl_spans, m.start())
+            trait_ty = _innermost_impl(self.trait_spans, m.start())
+            is_trait_default = impl_ty is None and trait_ty is not None
             self.fns.append(
                 RustFn(
                     uid=-1,
                     crate=self.crate,
                     path=self.path,
                     name=m.group(1),
-                    impl_type=_innermost_impl(self.impl_spans, m.start()),
+                    impl_type=impl_ty or trait_ty,
+                    is_trait_default=is_trait_default,
                     def_pos=m.start(),
                     body_start=body_start,
                     body_end=match_brace(s, body_start),
@@ -587,7 +651,7 @@ def _is_bin_target(path: Path) -> bool:
 def collect_roots(srcs: dict[Path, RustSource]) -> list[RustFn]:
     """The declared host entry points the reachability BFS starts from.
 
-    Three families, and nothing else - a `pub fn` that no host reaches is
+    Four families, and nothing else - a `pub fn` that no host reaches is
     exactly the inert-port case this axis exists to find:
 
     1. `fn main` in a `[[bin]]` target (`src/bin/**` or `src/main.rs`). Covers
@@ -595,17 +659,27 @@ def collect_roots(srcs: dict[Path, RustSource]) -> list[RustFn]:
        tick / render entry, and the `asset-viewer` GUI.
     2. `#[wasm_bindgen]` exports in the WASM crates - the browser's entry
        points into the static site's viewer / play / patcher pages.
-    3. Anything reachable from those, transitively.
+    3. Methods of an `impl <ExternalDispatchTrait> for T` block. `fn main` does
+       reach the loop *setup* - `cmd_play_window` builds the app - but the
+       chain dies at `event_loop.run_app(&mut app)`, because winit calls back
+       into `impl ApplicationHandler` from outside the tree. Without these the
+       whole per-frame, redraw and input surface reads as inert.
+    4. Anything reachable from those, transitively.
     """
     roots: list[RustFn] = []
     for path, src in srcs.items():
         if _is_bin_target(path):
             roots += [f for f in src.fns if f.name == "main" and not f.is_test]
+        for a, b, _ty, tr in src.impl_spans:
+            if tr in EXTERNAL_DISPATCH_TRAITS:
+                roots += [
+                    f for f in src.fns if a <= f.def_pos < b and not f.is_test
+                ]
         for m in WASM_EXPORT_RE.finditer(src.stripped):
             impl_hit = next(
                 (
                     (a, b)
-                    for a, b, _ in src.impl_spans
+                    for a, b, *_ in src.impl_spans
                     if 0 <= a - m.end() < 200 and src.raw.find("impl", m.end(), a) != -1
                 ),
                 None,
@@ -658,6 +732,13 @@ def build_rust_graph(
     free_by_name: dict[str, list[RustFn]] = defaultdict(list)
     for f in fns:
         (methods_by_name if f.impl_type else free_by_name)[f.name].append(f)
+        # A trait default method is reachable both ways: as `.name(...)` on a
+        # host that does not override it, and - since it was a free function
+        # to every earlier pass - through the bare-identifier edge. Listing it
+        # in both tables is purely additive, so it cannot introduce a new
+        # false negative.
+        if f.is_trait_default:
+            free_by_name[f.name].append(f)
 
     # Note on a rule that was tried and removed: restricting `.method(` edges
     # to types the calling crate names by hand. It does not help - the
@@ -862,6 +943,15 @@ def compute_live(
     for f in fns:
         if f.impl_type and not f.is_test and f.uid in reach:
             type_live[(f.path, f.impl_type)] = True
+    # Which types the file gives an `impl` block to at all. A tag on a plain
+    # data struct - no `impl`, its behaviour in free functions or in an `impl`
+    # of some *other* type in the same file - has no method for the rule above
+    # to find, so it could never be live however wired the port is. Those fall
+    # back to the file's module scope.
+    typed_in_file: dict[Path, set[str]] = defaultdict(set)
+    for p, s in srcs.items():
+        for _a, _b, ty, _tr in s.impl_spans:
+            typed_in_file[p].add(ty)
     out: dict[str, dict] = {}
     for addr, entries in anchors.items():
         for e in entries:
@@ -869,6 +959,8 @@ def compute_live(
                 e["live"] = e["fn_uid"] in reach
             elif e["kind"] == "type":
                 e["live"] = type_live.get((e["path"], e["type_name"]), False)
+                if not e["live"] and e["type_name"] not in typed_in_file[e["path"]]:
+                    e["live"] = module_live.get(e["path"], False)
             else:
                 e["live"] = module_live.get(e["path"], False)
         out[addr] = {

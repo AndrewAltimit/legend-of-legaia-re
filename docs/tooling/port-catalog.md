@@ -116,8 +116,23 @@ root:
 
 | Root family | What it covers |
 |---|---|
-| `fn main` in a `[[bin]]` target (`src/bin/**`, `src/main.rs`) | Every CLI subcommand across the 20-odd tool binaries, plus `legaia-engine`'s `play-window` loop - which is where the `World` tick, the render entry and the audio mixer hang. |
+| `fn main` in a `[[bin]]` target (`src/bin/**`, `src/main.rs`) | Every CLI subcommand across the 20-odd tool binaries, plus each GUI binary's command dispatch and window-loop *setup*. |
 | `#[wasm_bindgen]` exports in the WASM crates | The browser's entry points into the static site's viewer, play and patcher pages. |
+| Methods of an `impl ApplicationHandler for T` block | The whole per-frame native GUI surface - redraw, input, HUD build - and everything in `engine-core` / `engine-vm` those reach. |
+
+The third family exists because the second call in the chain leaves the tree.
+`fn main` reaches `cmd_play_window`, which builds the app and hands it to
+`event_loop.run_app(&mut app)`; winit then calls `window_event` /
+`about_to_wait` / `resumed` back into the tree from outside it. Without those
+methods in the root set the BFS stops at `run_app`, and every per-frame,
+redraw and input path below it reads as inert. The trait set is a literal in
+`EXTERNAL_DISPATCH_TRAITS`; add to it when another externally-dispatched
+callback trait appears.
+
+Treating these as roots is deliberately over-permissive: an
+`impl ApplicationHandler` block counts even if nothing constructs the app. That
+is the same direction every other ambiguity resolves in, and it is what keeps
+`--not-live` a floor.
 
 Test code is excluded on purpose: `crates/*/tests/`, `benches/`, `examples/`,
 `#[cfg(test)]` modules, `#[test]` functions, and files named `tests.rs`. "Called
@@ -130,13 +145,18 @@ A tag is resolved to the symbol it sits on, most precise form first:
 | Tag form | Anchor | Live when |
 |---|---|---|
 | `///` / `//` above a `fn` | that function | the function is reachable |
-| `///` / `//` above a `struct` / `enum` / `impl` | that type | any method in the type's `impl` blocks is reachable |
+| `///` / `//` above a `struct` / `enum` / `impl` | that type | any method in the type's `impl` blocks is reachable, or - when the file gives that type no `impl` block at all - any non-test `fn` in the file is |
 | `//` inside a function body | the enclosing function | that function is reachable |
 | `//! PORT:` (module doc) | the file, widened to its submodule subtree when the file declares no functions of its own | any non-test function in scope is reachable |
 
 Module-level tags are the coarse case and the main source of over-reporting: a
 `//!` block on a crate root claims the whole crate, so one wired function in it
 reports every address on that block as live.
+
+The type anchor's fallback covers the tag that sits on a plain data struct
+whose behaviour lives in free functions, or in an `impl` of a *different* type
+in the same file. Without it such a tag could never be live however wired the
+port is, because the rule has no method to look at.
 
 ### Precision
 
@@ -146,31 +166,37 @@ The graph resolves calls by **name**, not by type. Qualified calls (`Type::f`,
 resolves against every function of that name. There is no type inference, no
 trait-impl selection and no monomorphisation.
 
+A **trait default method** counts as a method of its trait, so `.f(...)` finds
+it. It stays listed among the free functions too, which is purely additive: a
+host that does not override the default runs exactly that body, and the port
+tag on it is a claim about code that really executes.
+
 The consequences are asymmetric, and the asymmetry is what makes the axis
 usable:
 
 - **False positives on `live` are expected.** Method-name collisions (`.tick()`,
   `.step()`, `.push()`) link callers to every same-named method in the
   workspace. Trait-object and closure dispatch resolve the same loose way.
-- **False negatives on `live` are rare *within the name-resolution graph***,
-  because every ambiguity resolves *toward* reachability. An unresolved
-  qualifier is the one deliberate exception: `Vec::new` falls back to free
-  functions only, never to methods, because letting external types reach every
-  in-tree `Type::new` wired up whole modules that nothing constructs.
-- **Dispatch shapes the graph cannot model are a different matter**, and there
-  the false negatives are systematic rather than rare. Two are known: a
-  **trait default method** is never a `.name(...)` call target, because
-  `impl_type` is read from `impl` blocks only; and **winit
-  `ApplicationHandler` callbacks** are dispatched by `event_loop.run_app`, so
-  the whole per-frame GUI tree below `window_event` is unreachable even though
-  `main` and the loop setup are live. Both are enumerated with positive
-  controls in [`live-audit-triage.md`](live-audit-triage.md#analysis-defects-this-triage-found).
+- **False negatives on `live` are rare**, because every ambiguity resolves
+  *toward* reachability. An unresolved qualifier is the one deliberate
+  exception: `Vec::new` falls back to free functions only, never to methods,
+  because letting external types reach every in-tree `Type::new` wired up whole
+  modules that nothing constructs.
 
-So `--not-live` is the trustworthy direction *for edges the graph can express*.
-An address it reports is one that no plausible in-graph edge - not even a wrong
-one - could reach. It is not proof of inertness across the two dispatch shapes
-above: check those by hand before writing a `NOT WIRED:` tag. Read `live` as an upper
-bound on what runs, and `not-live` as a hard floor on what does not.
+Dispatch shapes the graph cannot model used to be a third bullet, and a
+systematic one: trait default methods and winit `ApplicationHandler` callbacks
+each hid a whole tree of live code. Both are modelled now - the first as a
+method of its trait, the second as a root family - and
+[`live-audit-triage.md`](live-audit-triage.md#analysis-defects-this-triage-found)
+keeps the positive controls that pinned them. The lesson generalises: a
+dispatch edge that leaves the tree and comes back is invisible until something
+names it, so a new external-callback trait needs adding to
+`EXTERNAL_DISPATCH_TRAITS` before the audit can be believed about the code
+under it.
+
+So `--not-live` is the trustworthy direction. An address it reports is one that
+no plausible in-graph edge - not even a wrong one - could reach. Read `live` as
+an upper bound on what runs, and `not-live` as a hard floor on what does not.
 
 Two things the axis structurally cannot see, both of which make a *live* verdict
 weaker than it looks:

@@ -19,25 +19,27 @@ python3 scripts/ci/port-catalog.py --live-audit   # -> target/port-catalog/live-
 
 | Verdict | Meaning |
 |---|---|
-| `FALSE INERT` | The port **is** on a production path. The audit cannot see the edge; the existing tag is right and no source change is wanted. |
+| `FALSE INERT` | The port **is** on a production path. The uncorrected audit could not see the edge; no source change is wanted, and the corrected audit agrees. |
 | `WIRE` | Genuinely unreached, and a host call site should exist. The row names that call site. |
 | `DISCLOSE` | Genuinely unreached for a structural reason. The row supplies the exact `// NOT WIRED:` text to paste. |
 | `DELETE` | Redundant with an existing symbol that already covers the same retail routine. |
-| `VERIFY` | Inertness could not be settled here. The row says what was checked and what is still open. Do not paste a tag on these. |
+| `VERIFY` | Inertness could not be settled here, usually because a concurrent lane held the file. The row says what was checked and what is still open. Do not paste a tag on these. No row carries it now. |
 
 A `DISCLOSE` reason must say *why* there is no caller. "No caller" restates the
 audit. The useful form names what must exist first - a host screen, a state
 shape, an id space the engine does not carry.
 
-**Fix the tool before acting on the `DISCLOSE` rows.** Two of the four defects
-below are systematic mis-classifications, not granularity quirks. Acting on the
-audit as it stands writes false `NOT WIRED:` tags into the tree, which is the
-failure direction hardest to detect later: a wrong disclosure looks exactly like
-a correct one, and the next audit will agree with it.
+**The four analysis defects this triage found are fixed in the tool**, and the
+verdicts below are stated against the corrected audit. The order mattered:
+acting on the uncorrected audit would have written false `NOT WIRED:` tags into
+the tree, which is the failure direction hardest to detect later - a wrong
+disclosure looks exactly like a correct one, and the next audit agrees with it.
+The `FALSE INERT` rows are kept as the regression set that any future change to
+the reachability pass has to keep green.
 
 ### How each verdict was settled
 
-Three independent checks, because the audit's own graph is what is under
+Three independent checks, because the audit's own graph was what stood under
 suspicion:
 
 1. **Reverse-edge walk** over the audit's graph, to the point where each chain
@@ -48,25 +50,24 @@ suspicion:
    known host references to `confirm_menu`, `select_owned_rod`, `step_clut_fx`,
    `score_percent`, `persistent_hud_draws` and `exit_slot_machine`, so a zero is
    a real zero.
-3. **Corrected-reachability re-run**: the audit's own pass with the two
-   dispatch defects patched in a throwaway analysis script - trait default
-   methods made resolvable from `.name(` call sites, and `impl
-   ApplicationHandler` methods added to the root set. `scripts/ci/port-catalog.py`
-   itself was not modified.
+3. **Corrected-reachability re-run** of `port-catalog.py --live-audit` with all
+   four defects fixed, diffed against the uncorrected run section by section.
 
 Check 3 flipped one row that checks 1 and 2 had left as `DISCLOSE`
-(`from_model_sel`), which is the reason it is worth running before the next
-wave writes any tag.
+(`from_model_sel`) - the reason a corrected graph, not hand-tracing, is what a
+tag should be written against.
+
+The correction moves anchors in one direction only. Every anchor the corrected
+audit calls inert was called inert before it, so nothing became a *newly*
+claimed wiring gap and `--not-live` stayed a floor.
 
 ## Analysis defects this triage found
 
-Four classes of audit false negative, each verified against a positive control.
-Together they account for every `FALSE INERT` row below, so read this section
-before treating a `--not-live` row as a defect in the tree.
-
-[`port-catalog.md`](port-catalog.md#precision) states that false negatives on
-`live` are rare. That holds for the name-resolution graph itself; it does not
-hold for the four dispatch shapes below, which are systematic.
+Four classes of audit false negative, each verified against a positive control,
+and all four now fixed in `scripts/ci/port-catalog.py`. Together they account
+for every `FALSE INERT` row below. The mechanisms are kept here because each one
+is a shape that can recur - a new externally-dispatched trait, a new tag on a
+struct with no `impl` - and because they are what the regression set tests.
 
 ### Trait default methods are invisible as call targets
 
@@ -83,6 +84,10 @@ Positive control: `op4c_n5_sub0_set_actor_model` has two definitions. The
 is reachable; the `trait FieldHost` default copy at
 `crates/engine-vm/src/field/host.rs:1226` has zero in-edges from the same call.
 
+**Fixed** by scanning `trait Name { }` bodies alongside `impl` blocks and giving
+a default method its trait's name as `impl_type`. It is listed among both the
+methods and the free functions, so the change only ever adds edges.
+
 ### winit `ApplicationHandler` callbacks are unreachable from `main`
 
 The GUI hosts hand a struct to `event_loop.run_app(&mut app)`. winit then calls
@@ -96,27 +101,22 @@ terminates at an `impl ApplicationHandler` method and at nothing else. This
 affects `crates/engine-shell/src/bin/legaia-engine/window/` and every
 `asset-viewer` GUI app.
 
-This one contradicts the root table in
-[`port-catalog.md`](port-catalog.md#roots), which credits `fn main` in a
-`[[bin]]` target with covering "`legaia-engine`'s `play-window` loop - which is
-where the `World` tick, the render entry and the audio mixer hang". `main`
-reaches the command dispatch and the loop *setup*; it does not reach the
-per-frame callbacks.
-
-**It is not a root-set gap.** The `[[bin]]` root is followed correctly:
+**It was not a root-set gap.** The `[[bin]]` root is followed correctly:
 `main` is reachable and so is `cmd_play_window`, the function that builds the
-app. The chain dies one call later, at `event_loop.run_app(&mut app)` - an
+app. The chain died one call later, at `event_loop.run_app(&mut app)` - an
 external winit call the graph cannot follow into the `impl ApplicationHandler`
-block. So the fix is a synthetic edge (or extra roots) for
-`ApplicationHandler` methods, not a change to how `[[bin]]` targets are
-discovered.
+block.
 
 This is the same defect behind the `engine-audio` and `engine-shell` rows
 reported from the other triage lane - `classify_cue` and `SfxScheduler::enqueue`
 reached from `handle_redraw`, and `advance_ocean_animation` reached from
 `redraw.rs`. All three chains terminate at `PlayWindowApp::window_event`.
-Correcting the root set for `ApplicationHandler` resolves those rows and the
-`FALSE INERT` rows below in one change.
+
+**Fixed** by adding the methods of an `impl ApplicationHandler for T` block to
+the root set, which resolves those rows and the `FALSE INERT` rows below in one
+change. `EXTERNAL_DISPATCH_TRAITS` names the traits treated this way; the root
+table in [`port-catalog.md`](port-catalog.md#roots) carries the family and why
+it is deliberately over-permissive.
 
 ### Type anchors need an `impl` block in the same file
 
@@ -129,20 +129,32 @@ Three anchors below hit this: `MapObject` and `ClutCellFx` have no `impl` block
 at all, and `OptionsPhase` is a phase enum whose state machine is
 `OptionsSession::tick`.
 
+**Fixed** by falling back to the file's module scope when the file gives the
+tagged type no `impl` block at all. A type that *does* have one keeps the
+precise rule, so the fallback only reaches the anchors the precise rule could
+never have settled.
+
 ### The module-disclosure regex misses the markdown-heading form
 
-`MODULE_NOT_WIRED_RE` is `^\s*//!\s*\**\s*NOT\s+WIRED`. It accepts
+`MODULE_NOT_WIRED_RE` was `^\s*//!\s*\**\s*NOT\s+WIRED`. It accepted
 `//! NOT WIRED:` and `//! **NOT WIRED**` but not `//! # NOT WIRED`, because `#`
 is not in the `\**` class. `crates/engine-vm/src/scus_core_helpers.rs` carries a
-thorough module-level disclosure under exactly that heading.
+thorough module-level disclosure under exactly that heading, and its four
+function anchors were therefore reported as undisclosed gaps.
 
 The sibling `NOT_WIRED_RE` (no anchoring) does match it, which is why that
-file's *module* anchors land in the audit's first section while its *function*
-anchors land in the undisclosed section. Per-function `// NOT WIRED:` lines are
-still the fix, since the audit compares per anchor.
+file's *module* anchors landed in the audit's first section while its *function*
+anchors landed in the undisclosed section - a split that is itself the tell.
 
-A related near-miss: `// PARTLY WIRED:` (used on `select_owned_rod`) matches
-neither regex.
+**Fixed** by widening the leading run to `[#*\s]*`. The four
+`scus_core_helpers.rs` functions move to *disclosed inert*, where the module doc
+already put them in prose, and need no per-function line. One knock-on: `new` in
+the same file is analysed live, so the widened disclosure now shows it in the
+audit's first section - a granularity row, not a wrong tag.
+
+A related near-miss, left alone: `// PARTLY WIRED:` (used on `select_owned_rod`)
+matches neither regex. It is moot for that anchor, which the corrected audit
+resolves live, but a second use of the spelling would go unrecognised.
 
 ## `engine-core` anchors
 
@@ -196,24 +208,27 @@ neither regex.
 | `8003c9ac` | `motion_pause_kick` | `crates/engine-vm/src/motion_pause.rs:77` | DISCLOSE |
 | `8003fb10` | `validate_action` | `crates/engine-vm/src/battle_action/validator.rs:178` | WIRE |
 | `80046898` | `item_count_gate` | `crates/engine-vm/src/battle_action/validator.rs:160` | WIRE |
-| `801d829c` | `(module)` | `crates/engine-vm/src/battle_camera.rs:4` | VERIFY |
-| `801d829c` | `build_camera_angle_tween` | `crates/engine-vm/src/battle_camera.rs:63` | VERIFY |
-| `801d9d30` | `(module)` | `crates/engine-vm/src/battle_camera.rs:5` | VERIFY |
-| `801d9d30` | `apply_shake` | `crates/engine-vm/src/battle_camera.rs:131` | VERIFY |
+| `801d829c` | `(module)` | `crates/engine-vm/src/battle_camera.rs:4` | DISCLOSE |
+| `801d829c` | `build_camera_angle_tween` | `crates/engine-vm/src/battle_camera.rs:85` | DISCLOSE |
+| `801d9d30` | `(module)` | `crates/engine-vm/src/battle_camera.rs:5` | WIRE |
+| `801d9d30` | `apply_shake` | `crates/engine-vm/src/battle_camera.rs:156` | WIRE |
 | `801e0088` | `child_billboards` | `crates/engine-vm/src/effect_vm/pool.rs:742` | FALSE INERT |
 | `801e0088` | `pass2_brightness` | `crates/engine-vm/src/effect_vm/pool.rs:287` | FALSE INERT |
 | `801e36c4` | `exec_centered_bar` | `crates/engine-vm/src/title_prim.rs:407` | DISCLOSE |
 | `801e373c` | `init_card_state` | `crates/engine-vm/src/title_prim.rs:307` | DISCLOSE |
 | `801e373c` | `exec_card_init` | `crates/engine-vm/src/title_prim.rs:470` | DISCLOSE |
 | `801e3ee0` | `exec_centered_text` | `crates/engine-vm/src/title_prim.rs:437` | DISCLOSE |
-| `801f0348` | `camera_height_from_size_class` | `crates/engine-vm/src/battle_formulas/round.rs:480` | VERIFY |
+| `801f0348` | `camera_height_from_size_class` | `crates/engine-vm/src/battle_formulas/round.rs:481` | DELETE |
 
-`VERIFY` rows sit in files under concurrent edit; see
-[`VERIFY` rows](#verify-rows).
+The four battle-camera rows were unsettleable while that lane held the files;
+see [the battle-camera rows](#the-battle-camera-rows) for how they resolved.
 
 ## `FALSE INERT` evidence
 
-Grouped by which defect hides the edge. None of these want a source change.
+Grouped by which defect hid the edge. None of these want a source change, and
+all of them resolve live against the corrected audit - which is what makes this
+section the regression set. A reachability change that flips any row here back
+to inert has reintroduced one of the four defects.
 
 **winit dispatch.** Each of these is reached from an `impl ApplicationHandler`
 callback in `crates/engine-shell/src/bin/legaia-engine/window/`:
@@ -264,7 +279,8 @@ and the `engine-core` remainder is the rules half. Every `engine-core`
 is `build_hud`, which sits under the winit callback tree.
 
 `select_owned_rod` additionally already carries a `// PARTLY WIRED:` note
-stating precisely this. The audit does not recognise that spelling.
+stating precisely this. The audit still does not recognise that spelling; it is
+moot here only because the anchor now resolves live on its own.
 
 The `ui_fishing.rs` anchors in the `engine-ui` block of the same audit are the
 same situation - `persistent_hud_draws` is called from `window/hud.rs`. That
@@ -390,25 +406,59 @@ anchor. Wrap to the file's comment width.
   module's "What's deferred" section still lists these three addresses as not
   yet ported; that paragraph is stale and should be corrected in the same edit.
 
-## `VERIFY` rows
+## The battle-camera rows
 
+These five carried a `VERIFY` verdict while the battle-camera lane held
 `crates/engine-vm/src/battle_camera.rs` and
-`crates/engine-vm/src/battle_formulas/round.rs` are under concurrent edit by the
-battle-camera lane, so inertness cannot be settled from this side.
+`crates/engine-vm/src/battle_formulas/round.rs`. That lane has landed. All five
+are still inert against the corrected audit - every caller is `#[cfg(test)]` in
+the same file or in `battle_formulas/tests.rs`, and the host-crate sweep returns
+zero, the same sweep that finds `battle_render_mesh`'s two real host call sites.
+What the lane landed touched neither symbol, so each now settles on its own
+reason.
 
-What was checked: every caller of `build_camera_angle_tween`, `apply_shake` and
-`camera_height_from_size_class` found by all three checks is a `#[cfg(test)]`
-function in the same file, and the host-crate sweep returns zero. On the tree as
-it stands they are inert.
+**`camera_height_from_size_class`** (`801f0348`) is `DELETE`, on the
+`symbol_pad_bit` precedent. Its sibling `camera_height_for_frame` in the same
+file is the whole of `FUN_801F0348`, is wired through
+`BattleActionHost::camera_bounds`, carries its own `PORT: FUN_801f0348` tag, and
+inlines the `<< 7` + clamp rather than calling the helper. Deleting the helper
+loses no coverage and costs the address no anchor.
 
-What is open: the lane that owns those files may be adding the battle-camera
-consumer that turns them live, and this triage cannot see work in another
-worktree. Re-run the audit against those files after that lane lands, and only
-then choose between `WIRE` and `DISCLOSE`. Do not paste a tag on the current
-evidence.
+**`build_camera_angle_tween`** (`801d829c`) is `DISCLOSE`. The builder emits a
+9-record `{step_count, endpoint}` step table that retail's per-frame walker then
+advances; the engine frames the battle camera by a per-action snap at action
+seed and has no per-frame angle walker, and the routine that arms retail's
+(`FUN_80021248`) is documented but unported. Nothing exists to consume a step
+table.
+
+**`apply_shake`** (`801d9d30`) is `WIRE`, and the call site is already half
+built. `BattleActionHost::screen_shake` posts `BattleEvent::ScreenShake`, and
+the handler arm in `crates/engine-core/src/battle_session/events.rs` pushes a
+HUD log line and applies no jitter. Route that arm through `apply_shake`,
+keeping the accumulator and offset pairs on the session so the camera can read
+the offset. Small, but it moves the camera, so land it against the battle
+oracles.
 
 `round.rs` already carries `NOT WIRED` disclosures on two neighbouring
 functions, so the house style for that file is established either way.
+
+## Known false positives the correction introduces
+
+Both are the accepted over-approximation direction, and both are named here
+because a reader looking for the row will otherwise not find it.
+
+**`arm`** (`801d8258`, `crates/engine-core/src/world_map.rs:78`) keeps the
+`DISCLOSE` verdict above but no longer appears in the audit at all. Making the
+winit tree reachable made `route_camera_events` in `engine-core/src/camera.rs`
+reachable, and its `.arm(` call on a `CameraMover` resolves by name to
+`EmitterGate::arm` as well, because receiver types are not inferred. That is
+audit cause 2 - a method-name collision - and it hides a genuine gap. The
+verdict stands on the hand evidence, not on the tool.
+
+**`new`** (`crates/engine-vm/src/scus_core_helpers.rs:135`) now shows in the
+audit's *first* section, tagged `NOT WIRED` by the widened module disclosure yet
+analysed live. `new` is the most collision-prone name in the workspace, so read
+it as audit cause 4 - anchor granularity - and not as a wired port.
 
 ## See also
 
