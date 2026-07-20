@@ -17,6 +17,7 @@
     <li><span class="tag tag-done">falsified</span> - hypothesis disproved; the row is kept so the path isn't re-walked.</li>
   </ul>
   <p>Many statuses are qualified in parentheses - <code>resolved (structural)</code>, <code>resolved + ported</code>, <code>falsified (VA-aliasing artifact)</code> - naming <em>how</em> the thread was settled. Read the parenthetical: <code>resolved (static)</code> and <code>resolved (RAM-verified)</code> are different strengths of evidence.</p>
+  <p><strong><code>resolved</code> is a claim, not a warranty.</strong> Rows have been marked resolved on the strength of Ghidra's decompiled C, and the C is a rendering: dropped register arguments, <code>||</code> printed as nested <code>if</code>s, reordered or omitted stores, and hand-written annotations read as fact have each already put a wrong statement on this page. Three row shapes carry most of that risk - evidence citing a <code>FUN_x(a, b)</code> call signature or a per-function dump rather than instructions; any claim about store <em>order</em> or store <em>count</em>; and any claim about which boolean operator a predicate uses. When a row of one of those shapes is load-bearing for something you are about to build, re-derive it from the disassembly first.</p>
 </section>
 
 <section class="doc-section" id="world-map">
@@ -75,7 +76,7 @@
       <tr>
         <td>"<code>FUN_801F3894</code> spirit/magic damage roll" (state-<code>0x3D</code> chain caller)</td>
         <td><span class="tag tag-done">falsified</span></td>
-        <td>The <code>overlay_0897_801f3894</code> dump is <code>FUN_801DD0AC</code> byte-for-byte under a double VA shift (0897's extraction over-reads into 0898; the program maps the file at <code>0x801C0000</code>, not the slot-A base <code>0x801CE818</code>), so the already-ported damage kernel surfaces at a fake entry VA. The real state-<code>0x3D</code> callee <code>FUN_801F3990</code> is a cast audio-cue dispatcher; spirit damage is state <code>0x3E</code>'s inline formula (<code>battle_formulas::spirit_damage</code>). Corollary: every <code>overlay_0897_801fxxxx</code> dump of the <code>0x801F</code> region is suspect &mdash; verify vs battle-resident bytes (<code>0x801F0348</code>/<code>0x801F1ED4</code>/<code>0x801F45A4</code> pending).</td>
+        <td>The <code>overlay_0897_801f3894</code> dump is <code>FUN_801DD0AC</code> byte-for-byte under a double VA shift (0897's extraction over-reads into 0898; the program maps the file at <code>0x801C0000</code>, not the slot-A base <code>0x801CE818</code>), so the already-ported damage kernel surfaces at a fake entry VA. The real state-<code>0x3D</code> callee <code>FUN_801F3990</code> is a cast audio-cue dispatcher; spirit damage is state <code>0x3E</code>'s inline formula (<code>battle_formulas::spirit_damage</code>). Corollary, widened: every <code>overlay_0897_801Exxxx</code> <em>and</em> <code>801Fxxxx</code> dump is suspect - the band is not just <code>0x801F</code>. Two further casualties are settled: <code>801f0348</code> (escape roll) and <code>801e23ec</code>, whose aliased reading recovered only the base initiative roll and silently dropped all three modifier terms. <code>0x801F1ED4</code>/<code>0x801F45A4</code> remain unverified.</td>
         <td><a href="../subsystems/battle-formulas.html">battle-formulas</a></td>
       </tr>
       <tr>
@@ -87,7 +88,7 @@
       <tr>
         <td>Move-VM op <code>0x2F</code> extension dispatcher &mdash; per-overlay copies?</td>
         <td><span class="tag tag-done">falsified</span></td>
-        <td>One copy, field overlay 0897 only. The seven <code>_801d362c</code> capture dumps are byte-identical (0897 observed under world-map / dialog / cutscene scenario labels); every other mapped slot-A overlay + the title overlay carries unrelated bytes at the fixed call VA and no jump table at <code>0x801CE868</code>. So op <code>0x2F</code> is executable only while 0897 is resident, and battle-side move records cannot use it.</td>
+        <td>One copy, field overlay 0897 only. The <em>capture-derived</em> <code>_801d362c</code> dumps are identical to each other (0897 observed under world-map / dialog / cutscene scenario labels); the 0897 <em>static</em> dump is a strict subset of them rather than a byte-identical twin, carrying no address the captures lack. Substance is unchanged: every other mapped slot-A overlay + the title overlay carries unrelated bytes at the fixed call VA and no jump table at <code>0x801CE868</code>, so op <code>0x2F</code> is executable only while 0897 is resident and battle-side move records cannot use it.</td>
         <td><a href="../subsystems/move-vm.html">move-vm</a></td>
       </tr>
       <tr>
@@ -573,7 +574,7 @@
       <tr>
         <td>Title screen mode-table PROT</td>
         <td><span class="tag tag-done">resolved</span></td>
-        <td>No such entry: a pre-mode-dispatch boot routine loads the title overlay (tick <code>FUN_801DD35C</code>, in the unindexed PROT.DAT gap between TOC entries 899 and 900); NEW GAME crosses into mode 2.</td>
+        <td>No such entry: a pre-mode-dispatch boot routine loads the title overlay (tick <code>FUN_801DD35C</code>, in the unindexed PROT.DAT gap between TOC entries 899 and 900); NEW GAME crosses into mode 2. Open sub-question: <em>which</em> overlay owns <code>FUN_801DD35C</code> - its disassembly is identical across the menu, title, save-UI and shop-save dumps, and the engine ports it twice under incompatible descriptions. Closing it needs the residency check the op-<code>0x2F</code> thread used.</td>
         <td><a href="../subsystems/boot.html">boot</a></td>
       </tr>
       <tr>
@@ -584,8 +585,8 @@
       </tr>
       <tr>
         <td>Debug flags <code>0x8007B8C2</code> / <code>0x8007B98F</code></td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><code>0x8007B8C2</code> is the dev/retail asset-load selector, read-only at runtime. <code>0x8007B98F</code> has no byte-granular reader: it is byte +3 (MSB) of the 32-bit debug word <code>0x8007B98C</code>, whose gate readers (<code>FUN_8001822c</code> + ~14 field-overlay 0897 gates) and writer are statically pinned; poking it to 1 sets the MSB so every <code>!= 0</code> gate reads debug active. <a href="#d-debug-flags">details &darr;</a></td>
+        <td><span class="tag tag-partial">split</span></td>
+        <td><code>0x8007B98F</code> is <strong>resolved</strong>: it has no byte-granular reader because it is byte +3 (MSB) of the 32-bit debug word <code>0x8007B98C</code>, whose gate readers (<code>FUN_8001822c</code> + the resident field-overlay 0897 gates) and writer are statically pinned; poking it to 1 sets the MSB so every <code>!= 0</code> gate reads debug active. <code>0x8007B8C2</code> is <strong>re-opened</strong>: the branch sense recorded here was backwards, and a writer-less BSS byte boots into the arm retail hardware cannot service. <a href="#d-debug-flags">details &darr;</a></td>
         <td><a href="../subsystems/boot.html">boot</a></td>
       </tr>
       <tr>
@@ -657,8 +658,10 @@
     </tbody>
   </table>
 
-  <h3 id="d-debug-flags">Debug flags - resolved</h3>
-  <p>An exhaustive corpus sweep finds zero writers of <code>0x8007B8C2</code> and zero <em>byte</em>-granular references to <code>0x8007B98F</code> - the latter because it is the most-significant byte (offset +3, little-endian) of the 32-bit debug-mode word <code>0x8007B98C</code>, and code reads the word. <code>_DAT_8007B98C</code> is the debug gate tested by the input dispatcher <code>FUN_8001822c</code> plus ~14 resident field-overlay (0897) gates, written by the shared menu/title/save-init routine. Poking <code>0x8007B98F = 1</code> sets the MSB, so every <code>_DAT_8007B98C != 0</code> gate reads debug active and SELECT+&#9651; opens the debug menu. Statically pinned; no uncaptured-overlay reader needed.</p>
+  <h3 id="d-debug-flags">Debug flags - <code>0x8007B98F</code> resolved, <code>0x8007B8C2</code> open</h3>
+  <p><code>0x8007B98F</code> has zero <em>byte</em>-granular references because it is the most-significant byte (offset +3, little-endian) of the 32-bit debug-mode word <code>0x8007B98C</code>, and code reads the word. <code>_DAT_8007B98C</code> is the debug gate tested by the input dispatcher <code>FUN_8001822c</code> plus the resident field-overlay (0897) gates, written by the shared menu/title/save-init routine. Poking <code>0x8007B98F = 1</code> sets the MSB, so every <code>_DAT_8007B98C != 0</code> gate reads debug active and SELECT+&#9651; opens the debug menu. Statically pinned; no uncaptured-overlay reader needed.</p>
+  <p><strong><code>0x8007B8C2</code> - the branch sense was backwards.</strong> This page long recorded the flag as routing "through ISO9660 when <code>== 0</code> (retail) and through the PROT-index loader when non-zero (dev)". The disassembly has the arms the other way round, and names the wrong loader for one of them. Every site reads the flag with <code>lh</code> and takes the <strong>zero</strong> arm to the host-PC debug station, the <strong>non-zero</strong> arm to the PROT-index resolver: <code>FUN_8003E360</code> falls through to <code>jal 0x800608F0</code>, whose body is <code>break 0x103</code>, while its non-zero arm loads index <code>0x3D5</code> into <code>FUN_8003E8A8</code>; <code>FUN_8001D8FC</code> and <code>FUN_800558FC</code> branch the same way. The <code>FUN_8001FA88</code> / <code>FUN_8001FC00</code> citations were loose too - the sound pair's opening gate is the unrelated word <code>_DAT_8007B868</code>.</p>
+  <p>That is what re-opens the thread rather than merely relabelling it. A word-aligned scan of <code>SCUS_942.54</code> finds 40 reads of <code>0x8007B8C2</code> and <strong>zero</strong> stores, so BSS zero-init leaves it <code>0</code> at boot - selecting the branch that traps to a debug station retail hardware does not have. Either something outside the scanned corpus writes it, or retail never takes these paths and resolves every asset by integer constant. The <code>summon.dat</code> thread records <code>!= 0</code> as verified live, which fits the corrected polarity but not a writer-less BSS byte; reconciling the two is the open question.</p>
 
   <h3 id="d-prot0896">PROT 0896 - resolved</h3>
   <p>Host-capstone decode of the head (extraction entry 896, located by the <code>"FWIN ERR"</code> bytes) identifies it as the vestigial Japanese-build field-menu / config / status overlay: a Shift-JIS config/menu/status label pool, the <code>"FWIN ERR %d"</code> (Field WINdow) debug printf at file offset <code>0x3D4</code>, real MIPS at link base <code>~0x801D0000</code> indexing the <code>0x414</code>-byte character records, and head function-pointer tables across <code>0x801D81C0..0x801DC700</code> - the same window-renderer VA family as the live English menu overlay PROT 0899, which ships the English equivalents of the identical label set with zero <code>FWIN</code>. A distinctive-signature scan across 140 catalogued RAM states finds 0896 resident in none (positive control: the English "Battle Voices" is resident in 10 menu-phase states), so the USA build never loads it - a vestigial JP-build overlay carried on the disc.</p>

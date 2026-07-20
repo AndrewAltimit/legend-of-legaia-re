@@ -25,6 +25,18 @@ Nothing here counts ports, tests, or coverage. Detailed captures and decompiler 
 
 Many rows qualify the status in parentheses - `resolved (structural)`, `resolved + ported`, `falsified (VA-aliasing artifact)` - naming *how* it was settled. Read the parenthetical: `resolved (static)` and `resolved (RAM-verified)` are different strengths of evidence.
 
+**`resolved` is a claim, not a warranty.** Rows have been marked resolved on the
+strength of Ghidra's decompiled C, and the C is a rendering: dropped register
+arguments, `||` printed as nested `if`s, reordered or omitted stores, and
+hand-written annotations read as fact have each already put a wrong statement on
+this page. Three row shapes carry most of that risk - evidence citing a
+`FUN_x(a, b)` call signature or a `funcs/<addr>.txt` dump rather than
+instructions; any claim about store *order* or store *count*; and any claim
+about which boolean operator a predicate uses. When a row of one of those shapes
+is load-bearing for something you are about to build, re-derive it from the
+disassembly first. The artifact catalogue is
+[`ghidra.md` § decompiler artifacts](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims).
+
 ## How a thread is laid out
 
 Each area below opens with a table of one-line rows. A thread whose write-up outgrows a table cell keeps its one-liner in the table and links to a `###` section immediately after that table via **[details ↓]**; the full analysis - every address, capture, and falsification - lives in that section, under its own *Status:* line.
@@ -103,8 +115,8 @@ The per-prim dispatcher `FUN_80043390` owns four `NCCS`/`NCCT` **light** handler
 |---|---|---|
 | Encounter MAN sub-section layout | resolved | [details ↓](#encounter-man-sub-section-layout) |
 | Effect-VM pass-1 "state token algebra" (`FUN_801E0088`) | resolved + ported | The "state" bytes are 5.3 fixed-point **wait counters**, not opcodes: two countdown-driven cursor walks (master spawn cadence over 14-byte pack1 records; child anim/motion over 6-byte pack0 frames). `Pool::tick_retail` executes the algebra operator-for-operator (pass 2 = `Pool::child_billboards`), disc-verified over all 33 `efect.dat` scripts. Full algebra: [effect-vm.md](../subsystems/effect-vm.md#the-extracted-pass-1-state-algebra). The engine's live path runs it: `engine-core::World::tick_effects` sweeps `tick_retail` per retail frame and `active_effect_sprites` maps `child_billboards` one-for-one (the legacy fixed-lifetime shim is deleted; dev debug spawns live outside the pool). |
-| Move-VM op `0x2F` extension dispatcher - per-overlay copies? | falsified (one copy, field overlay 0897 only) | The seven `_801d362c` capture dumps are byte-identical (0897 observed under world-map / dialog / cutscene scenario labels); every other mapped slot-A overlay + the title overlay carries unrelated bytes at the fixed call VA and no JT at `0x801CE868`. So op `0x2F` is executable only while 0897 is resident, and battle-side move records cannot use it. See [move-vm-overlay-ext.md](../subsystems/move-vm-overlay-ext.md#overlay-residency---one-copy-in-the-field-overlay-only). |
-| "`FUN_801F3894` spirit/magic damage roll" (state-`0x3D` chain caller) | falsified (VA-aliased dump) | The `overlay_0897_801f3894` dump is `FUN_801DD0AC` byte-for-byte under a double VA shift (0897's extraction over-reads into 0898; the Ghidra program maps the file at `0x801C0000`, not the slot-A base `0x801CE818`), so the already-ported damage kernel surfaces at a fake entry VA. The real state-`0x3D` callee `FUN_801F3990` is a cast **audio-cue dispatcher**; spirit damage is state `0x3E`'s inline formula (`battle_formulas::spirit_damage`). **Corollary: every `overlay_0897_801fxxxx` dump of the `0x801F` region is suspect** — verify vs battle-resident bytes (`0x801F0348`/`0x801F1ED4`/`0x801F45A4` pending). See [battle-formulas.md](../subsystems/battle-formulas.md#whats-still-open). |
+| Move-VM op `0x2F` extension dispatcher - per-overlay copies? | falsified (one copy, field overlay 0897 only) | The **capture-derived** `_801d362c` dumps are identical to each other (0897 observed under world-map / dialog / cutscene scenario labels); the `0897` **static** dump is a strict *subset* of them, not a byte-identical twin (Ghidra could not follow the JT flow). Substance is unchanged: every other mapped slot-A overlay + the title overlay carries unrelated bytes at the fixed call VA and no JT at `0x801CE868`, so op `0x2F` is executable only while 0897 is resident and battle-side move records cannot use it. See [move-vm-overlay-ext.md](../subsystems/move-vm-overlay-ext.md#overlay-residency---one-copy-in-the-field-overlay-only). |
+| "`FUN_801F3894` spirit/magic damage roll" (state-`0x3D` chain caller) | falsified (VA-aliased dump) | The `overlay_0897_801f3894` dump is `FUN_801DD0AC` byte-for-byte under a double VA shift, so the already-ported damage kernel surfaces at a fake entry VA. The real state-`0x3D` callee `FUN_801F3990` is a cast **audio-cue dispatcher**; spirit damage is state `0x3E`'s inline formula. **Corollary, widened: `801Exxxx` dumps are suspect too, not just the `0x801F` band** - `801f0348` and `801e23ec` are settled casualties, the latter's aliased reading having dropped all three initiative modifier terms; `0x801F1ED4`/`0x801F45A4` unverified. See [battle-formulas.md](../subsystems/battle-formulas.md#initiative-key-seeding-fun_801da780). |
 | Super / Miracle Arts trigger logic | partial | [details ↓](#super--miracle-arts-trigger-logic) |
 | Seru-magic summon visual (e.g. Tail Fire) | resolved (player visual; wired) | [details ↓](#seru-magic-summon-visual-eg-tail-fire) |
 | `summon.dat` / `readef.DAT` side-band streaming | resolved (entries + format) | [details ↓](#summondat--readefdat-side-band-streaming) |
@@ -1159,7 +1171,7 @@ The retail SM `FUN_80039B7C` state 0 calls the field-VM dispatcher `FUN_801DE840
 
 Pinned by `field_disasm::LinearWalker` decoding the prologue cleanly across every classified town01 dialog NPC once nibble-5 sub-1/sub-2 are covered (disc-gated `field_actor_placements_disc::dialog_prefix_decodes_as_field_vm_bytecode`); the earlier "candidate decoder among `FUN_8003AB2C` / `FUN_8003BDE0`" framing is falsified - both are known: `FUN_8003AB2C` is the per-frame field-VM driver and `FUN_8003BDE0` is the partition-record dispatcher (both already ported).
 
-**`FUN_8001ebec` is not the renderer** - disassembly shows it's a per-character TMD-pose copier (party slots 0..2, indexed by the slot-4 freeze flag `_DAT_8007B824`, copies 7 u32s of pose data from TMD offsets `+0x124..+0x140` or `+0x140..+0x158` gated on a record flag at `+0x75E`); the earlier reference to it as the dialog-box renderer in the engine + this thread is wrong (corrected in [`subsystems/script-vm.md`](../subsystems/script-vm.md) op `0x4C` sub-3 sub-F note). The real per-actor dialog SM is `FUN_80039b7c` (advances `actor[+0x9c]` 0→1→2 through `0x1F`-lead segments, consumes the `0xC?` 2-byte escapes); the pager is `FUN_801D84D0`.
+**`FUN_8001ebec` is not the renderer** - disassembly shows it's a per-character TMD-pose copier (party slots 0..2, indexed by the slot-4 freeze flag `_DAT_8007B824`, copies 7 u32s of pose data from TMD offsets `+0x124..+0x140` or `+0x140..+0x15C` gated on a record flag at `+0x75E`; both arms load seven words, so the second range ends at `+0x15C`, not `+0x158`); the earlier reference to it as the dialog-box renderer in the engine + this thread is wrong (corrected in [`subsystems/script-vm.md`](../subsystems/script-vm.md) op `0x4C` sub-3 sub-F note). The real per-actor dialog SM is `FUN_80039b7c` (advances `actor[+0x9c]` 0→1→2 through `0x1F`-lead segments, consumes the `0xC?` 2-byte escapes); the pager is `FUN_801D84D0`.
 
 **Pager-side dispatch now decoded:** the box geometry is fixed at `_DAT_801F2740 = 3` lines per box at both init arms (`case 6` / `case 9`), and the post-page state `0x19` reads the **next control byte past the box** to pick the follow-on state - `0x25` -> end, `0x24` -> next-line same-box, `0x48` -> new box, `0x4C 0xFF` -> terminate, `0x2A` -> resize, **`0x27` -> 2-option picker** (state `0x13` -> `0x12`), **`0x28` -> 3-option picker** (`0x15` -> `0x14`), **`0x29` -> 4-option picker** (`0x17` -> `0x16`). The open byte is matched as `byte & 0x7F`, so both `0x27..0x29` and the high-bit `0xA7..0xA9` forms are accepted; the field corpus stores the bare form.
 
@@ -1240,7 +1252,7 @@ So the blocker (the per-cue enable source) dissolves: there is nothing to trace.
 | `title.pak` PROT entry | resolved | [details ↓](#titlepak-prot-entry) |
 | Title screen mode-table PROT | resolved (no such entry) | [details ↓](#title-screen-mode-table-prot) |
 | Load-screen panel 9-slice geometry | resolved (engine renders byte-perfect) | Pinned in [`subsystems/save-screen.md`](../subsystems/save-screen.md#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2): retail composes the 81×29 panel at dst `(6, 4)` from 14 textured-sprite primitives (GP0 cmd `0x64`) sampling the system-UI sheet with CLUT `(32, 511)`. The exact per-tile rects are exported as `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*` and emitted by `legaia_engine_render::save_select_chrome_draws_for` (covered by `save_select_chrome_emits_9slice_panel_and_pills` test). No interior fill sprite is drawn - the "marbled blue" look is the dimmed title art bleeding through the empty middle of the frame. |
-| Debug flags `0x8007B8C2` / `0x8007B98F` | resolved (static + runtime-confirmed) | `0x8007B98F` has no byte-granular reader: it is byte +3 (MSB, little-endian) of the 32-bit debug-mode word `_DAT_8007B98C`, and *that word* is the consumer surface (grep of `funcs/` for `8007b98f` = 0 hits; `8007b98c` gate-read at `8001822c.txt:500/533` + ~14 field-overlay-0897 gates, sole `sw` writer in the menu/title/save-init routine). Writing `0x8007B98F = 1` sets the MSB so every `_DAT_8007B98C != 0` gate reads active. [details ↓](#debug-flags-0x8007b8c2--0x8007b98f) |
+| Debug flags `0x8007B8C2` / `0x8007B98F` | split - `0x8007B98F` resolved; `0x8007B8C2` **open** (polarity) | `0x8007B98F` has no byte-granular reader: it is byte +3 (MSB, little-endian) of the 32-bit debug-mode word `_DAT_8007B98C`, and *that word* is the consumer surface. `0x8007B8C2` is re-opened: the branch sense recorded here was **backwards** - the `== 0` arm is the debug-station host path, the `!= 0` arm the PROT-index resolver - and a writer-less BSS byte therefore boots into the arm retail hardware cannot service. [details ↓](#debug-flags-0x8007b8c2--0x8007b98f) |
 | Key-item area consumers (`0x800859E8..0x80085A40`) | resolved (static; no OOB amplifier) | The range is inventory slots `>= 72` of `&DAT_80085958`; its readers are the indexed item-menu functions (`FUN_8002ff8c`/`800302e4`/`80032a44`/`80030628`/`80034250`), each masking the slot `& 0x3ff` and using the id byte as an index into 256-entry item tables - inherently bounded; add/find/consume helpers bound their scan by the live item count. No consumer treats a key-item byte as an unguarded index, so the range amplifies to game-state corruption (item possession + displayed ids), not a native index-OOB chain step. The `lb $reg,0x5aXX($zero)` overlay "hits" were mis-decoded data tables. Read-BP probe deprioritized. |
 | Full-window item-add OOB primitive: reachability | open (re-opened; the earlier live confirmation does not hold) | [details ↓](#full-window-item-add-oob-primitive-reachability) |
 | XP-table source + reader | resolved + ported | [details ↓](#xp-table-source--reader) |
@@ -1319,16 +1331,51 @@ and the **options/config-menu bundle** is **PROT 899** (`xxx_dat`) - its indexed
 
 *Status:* resolved (no such entry)
 
-**The premise is wrong**: there is no title-screen entry in the 28-entry mode table at `0x8007078C`. Per [`subsystems/boot.md`](../subsystems/boot.md#title-screen-is-not-in-the-mode-table) the title overlay is loaded by a **pre-mode-dispatch boot routine** ahead of the mode table being consulted at all - its tick `FUN_801DD35C` lives in the unindexed 60-sector PROT.DAT gap between TOC entries 899 and 900 ([`legaia_asset::title_pak`](https://github.com/altimit-mii/legend-of-legaia-re/tree/main/crates/asset/src/title_pak.rs) reads the wordmark TIM out of PROT 888/890; PROT 899 carries the options-menu config bundle). NEW GAME is how control crosses from the title overlay into the mode table at mode 2. Row kept so the "title entry is unresolved" framing isn't re-opened.
+**The premise is wrong**: there is no title-screen entry in the 28-entry mode table at `0x8007078C`. Per [`subsystems/boot.md`](../subsystems/boot.md#title-screen-is-not-in-the-mode-table) the title overlay is loaded by a **pre-mode-dispatch boot routine** ahead of the mode table being consulted at all - its tick `FUN_801DD35C` lives in the unindexed 60-sector PROT.DAT gap between TOC entries 899 and 900
+
+**Open sub-question - which overlay owns `FUN_801DD35C`.** That function's
+disassembly is identical across the `overlay_menu`, `overlay_title`,
+`overlay_save_ui_*` and `overlay_shop_save` dumps - the same
+one-resident-function-under-many-scenario-labels shape that settled the `0x2F`
+residency thread - and `crates/engine-vm` ports it twice under incompatible
+descriptions (`menu.rs` as the menu overlay's dispatcher, `title_overlay.rs` as
+the title tick). The residency evidence points at one shared slot-A overlay
+generation rather than separate copies, but that is an inference from dumps, not
+a capture. Closing it needs the same check the `0x2F` thread used: read the fixed
+VA out of each candidate overlay's disc image. See
+[vm-inventory.md](../subsystems/vm-inventory.md#one-function-two-ports) ([`legaia_asset::title_pak`](https://github.com/altimit-mii/legend-of-legaia-re/tree/main/crates/asset/src/title_pak.rs) reads the wordmark TIM out of PROT 888/890; PROT 899 carries the options-menu config bundle). NEW GAME is how control crosses from the title overlay into the mode table at mode 2. Row kept so the "title entry is unresolved" framing isn't re-opened.
 
 
 ### Debug flags `0x8007B8C2` / `0x8007B98F`
 
-*Status:* resolved (static + runtime-confirmed) - `_DAT_8007B8C2` resolved (read-only retail-mode selector); `_DAT_8007B98F` is the MSB of the debug-mode word `_DAT_8007B98C`, whose consumer is statically pinned (`FUN_8001822c` + the resident field-overlay gates), no capture required - and the static model has since been exercised end-to-end under the recomp
+*Status:* split - `_DAT_8007B98F` is **resolved** (the MSB of the debug-mode word `_DAT_8007B98C`, whose consumer is statically pinned at `FUN_8001822c` + the resident field-overlay gates, no capture required); `_DAT_8007B8C2` is **open** on its polarity, below
 
-Both addresses are in the SBSS/BSS region (zero-initialised at boot). `_DAT_8007B8C2` is the dev/retail asset-load selector: `FUN_8003E360`'s dual-mode loader pattern routes through ISO9660 when `_DAT_8007B8C2 == 0` (retail) and through the PROT-index loader when non-zero (dev); same shape at `FUN_8001FA88` / `FUN_8001FC00` (sound) and `FUN_8001F7C0` (per-scene field-asset loader). Zero code writers across the full corpus - BSS init establishes the retail config.
+Both addresses are in the SBSS/BSS region (zero-initialised at boot).
 
-**Exhaustive corpus sweep (2661 dump files across SCUS + every captured overlay) confirms zero writes to `_DAT_8007B8C2` and zero references - read or write - to `_DAT_8007B98F`.** `_DAT_8007B8C2` is read-only at runtime (10+ `== 0` retail-mode tests, no writers anywhere).
+**`_DAT_8007B8C2` - the branch sense, corrected.** `_DAT_8007B8C2` is the dev/retail asset-load selector, and the polarity is the opposite of what this row long recorded. Every site reads it with `lh` and takes the **zero** arm to the host-PC debug station, the **non-zero** arm to the PROT-index resolver:
+
+| Site | `== 0` arm | `!= 0` arm |
+|---|---|---|
+| `FUN_8003E360` (`bnez` at `0x8003E37C`) | `jal 0x800608F0`, whose body is `break 0x103` | `0x8003E49C`: index `0x3D5` into `FUN_8003E8A8` |
+| `FUN_8001D8FC` (`bnez` at `0x8001D91C`) | `jal 0x8003E6BC` on an `h:\` path | the ISO loader `FUN_8003D3C4` |
+| `FUN_800558FC` (`bnez` at `0x80055938`) | `jal 0x800608F0` | `sll/sra a3` → `FUN_8003E8A8` |
+
+So the old sentence - "routes through ISO9660 when `_DAT_8007B8C2 == 0` (retail) and through the PROT-index loader when non-zero (dev)" - had the two arms swapped, and named ISO9660 for a branch that is the index resolver. The `FUN_8001F7C0` / `FUN_8001FA88` / `FUN_8001FC00` citations were also loose: the sound pair's *opening* gate is the unrelated word `_DAT_8007B868`; they reach `_DAT_8007B8C2` further into the body.
+
+**Why that makes the flag open, not just mislabelled.** A word-aligned scan of
+`SCUS_942.54` finds 40 reads of `0x8007B8C2` and **zero** stores. BSS zero-init
+therefore leaves it `0` at boot - which selects the branch that traps to a debug
+station retail hardware does not have. Either something outside the scanned
+corpus writes it, or retail never takes these paths at all and resolves every
+asset by integer constant. The
+[`summon.dat` row](#summondat--readefdat-side-band-streaming) records
+`_DAT_8007B8C2 != 0` as *verified live*, which is consistent with the corrected
+polarity but not with a writer-less BSS byte - reconciling those two
+observations is the open question. Same framing in
+[`cdname.md`](../formats/cdname.md#is-this-table-populated-on-retail-hardware)
+and [`boot.md`](../subsystems/boot.md#debug-flags).
+
+**Corpus sweep (`_DAT_8007B98F`).** The dump sweep across SCUS + every captured overlay finds zero references - read or write - to `_DAT_8007B98F`.
 
 `_DAT_8007B98F` has zero references in the captured corpus because it is **not
 read byte-granularly at all**: it is byte +3 (the MSB, little-endian) of the
@@ -1662,3 +1709,7 @@ When the thread closes, rewrite the row to a `falsified` or `done - kept for ref
 - [`docs/tooling/port-catalog.md`](../tooling/port-catalog.md) - per-function dumped × documented × ported × ignored axes. `port-catalog.py --missing-ports` is the function-level companion to this page's question-level index.
 - [`docs/reference/functions.md`](functions.md) - canonical function directory; the place to learn what a `FUN_<addr>` mentioned in a row actually does.
 - [`scripts/ci/port-catalog-ignore.toml`](../../scripts/ci/port-catalog-ignore.toml) - addresses explicitly *not* worth investigating (statically-linked PsyQ infra). Disjoint from this page.
+- [`docs/tooling/worklist-classification.md`](../tooling/worklist-classification.md) - classifies each `--missing-ports` row by whether it is a portable function entry at all. Read it before treating a bare address on the worklist as an open question: `INTERIOR`, `SHARED_TAIL`, `DUPLICATE` and `VA_ALIASED` rows are not work.
+- [`docs/tooling/call-target-integrity.md`](../tooling/call-target-integrity.md) - why a decoded `jal` target is a property of the bytes, not the load base, and the one dump window whose targets are therefore untrustworthy.
+- [`docs/subsystems/vm-inventory.md`](../subsystems/vm-inventory.md) - every VM-shaped subsystem with its op space, port status and whether anything live calls the port. Several rows on this page are questions about one of its entries.
+- [`docs/tooling/ghidra.md` § decompiler artifacts](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims) - the seven C-rendering artifacts that have each already put a false claim into these docs. A `resolved` row whose evidence is decompiled C rather than instructions has not been audited against this list.
