@@ -751,6 +751,43 @@ pub fn lure_item_id(rod_index: u32) -> u32 {
     0x9d + rod_index
 }
 
+/// How many rod / lure kinds the selector cycles through
+/// (items `0x9d..=0x9f`, i.e. [`lure_item_id`] over `0..ROD_KINDS`).
+pub const ROD_KINDS: u32 = 3;
+
+/// The rod-ownership gate the driver runs before letting a cast start: `false`
+/// parks it in the "no rod" state, `true` lets it into the main loop.
+///
+/// Retail sums the inventory counts of all three lure items and bails when the
+/// total is zero; otherwise it *advances the persistent rod index*
+/// (`_DAT_80084450`, wrapping at [`ROD_KINDS`]) until it lands on a kind the
+/// player actually holds. So the gate is not read-only - selling the selected
+/// lure silently re-points the selection at the next owned one, which is why
+/// the HUD's rod label can change without the player touching the menu.
+///
+/// `count_of` supplies the live inventory count for an item id. The sum
+/// guarantees termination in retail; the port bounds the scan at
+/// [`ROD_KINDS`] anyway so a caller with an out-of-range index cannot hang it.
+// PORT: FUN_801d712c (rod-ownership gate + persistent rod-index re-point)
+pub fn select_owned_rod(rod_index: &mut u32, mut count_of: impl FnMut(u32) -> i32) -> bool {
+    let owned: i32 = (0..ROD_KINDS).map(|k| count_of(lure_item_id(k))).sum();
+    if owned == 0 {
+        return false;
+    }
+    for _ in 0..ROD_KINDS {
+        if count_of(lure_item_id(*rod_index)) != 0 {
+            return true;
+        }
+        *rod_index += 1;
+        if *rod_index >= ROD_KINDS {
+            *rod_index = 0;
+        }
+    }
+    // Unreachable while `owned != 0` and the index is in range; a stale
+    // out-of-range index lands here instead of spinning.
+    false
+}
+
 /// The persistent fishing HUD (drawn every frame by the mode driver's shared
 /// tail): the best-catch row (glyph `0x1a`), the capped point-total row
 /// (glyph `0x1c`), the selected rod/lure label, and the lures-remaining
@@ -1039,6 +1076,47 @@ pub fn banner_from_right_draw(frame: i32) -> Option<HudDraw> {
     })
 }
 
+/// One frame of the miss / retry banner (glyph `0x19` at `y = 0x78`), the
+/// mirrored trajectory of [`banner_from_left_draw`] over the shared ramp. Its
+/// timer (`DAT_801d9268`) is the retry countdown the driver runs in state
+/// `0x2d` before returning to the cast state. `None` once the frame count
+/// reaches [`BANNER_FRAMES`] (retail returns the active flag, which is what
+/// keeps the state machine parked).
+// PORT: FUN_801d6f10 (miss/retry banner: right slide-in, hold, slide-off)
+pub fn banner_miss_draw(frame: i32) -> Option<HudDraw> {
+    if frame >= BANNER_FRAMES {
+        return None;
+    }
+    Some(HudDraw::Glyph {
+        layer: 0,
+        id: 0x19,
+        x: 0x140 - banner_slide(frame),
+        y: 0x78,
+        brightness: HUD_BRIGHTNESS_FULL,
+    })
+}
+
+/// One frame of the auxiliary two-sided banner: the *same* glyph (`0xc`)
+/// emitted twice, once at the ramp and once mirrored at `0x140 -` the ramp, so
+/// the pair converges on the `0xa0` hold from both edges and parts again on
+/// the way out. Its timer (`DAT_801d9164`) is what the driver's state `0x28`
+/// waits on before returning to the main loop.
+// PORT: FUN_801d7528 (auxiliary banner: mirrored converging glyph pair)
+pub fn banner_converge_draws(frame: i32) -> Option<[HudDraw; 2]> {
+    if frame >= BANNER_FRAMES {
+        return None;
+    }
+    let x = banner_slide(frame);
+    let glyph = |x: i32| HudDraw::Glyph {
+        layer: 0,
+        id: 0xc,
+        x,
+        y: 0x78,
+        brightness: HUD_BRIGHTNESS_FULL,
+    };
+    Some([glyph(x), glyph(0x140 - x)])
+}
+
 /// The strike-splash brightness ramp: `frame * 8` up to the `0x80` hold
 /// (reached at frame `0x10`), held until frame `0x88`, then
 /// `0x80 - (frame - 0x88) * 8` fading out (zero exactly at the `0x98`
@@ -1075,6 +1153,141 @@ pub fn strike_splash_draws(frame: i32) -> Option<[HudDraw; 2]> {
         brightness,
     };
     Some([glyph(0x416), glyph(0x816)])
+}
+
+/// One digit cell of an expanded [`HudDraw::Number`]: the digit value and the
+/// screen slot it occupies. Retail draws these through a digit primitive
+/// (`FUN_801d7dd8` / `FUN_801d7d44`) that is separate from the glyph emitter,
+/// so they are their own draw type rather than a [`HudDraw::Glyph`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DigitCell {
+    /// Screen x of this digit's slot.
+    pub x: i32,
+    /// Screen y (constant across the field).
+    pub y: i32,
+    /// The digit, `0..=9`.
+    pub digit: i32,
+}
+
+/// Horizontal slot pitch of the two digit-field styles (`FUN_801d76e0`):
+/// style `0` advances 8 px per slot, any other style 16 px.
+pub const DIGIT_PITCH_NARROW: i32 = 8;
+/// Wide digit-field pitch - see [`DIGIT_PITCH_NARROW`].
+pub const DIGIT_PITCH_WIDE: i32 = 0x10;
+
+/// The digit field is a fixed 8 slots wide; the value is right-aligned in it.
+pub const DIGIT_FIELD_SLOTS: usize = 8;
+
+/// Expand a number into its digit cells - the layout half of the digit blitter
+/// behind [`HudDraw::Number`].
+///
+/// The field is a fixed [`DIGIT_FIELD_SLOTS`]-slot row: slot `i` holds
+/// `value / 10^(7 - i)` and is emitted only once that quotient is non-zero, so
+/// leading zeros are *blank slots*, not drawn zeros, and the number ends up
+/// right-aligned. Retail seeds the last slot with `0` before the fill loop,
+/// which is what makes a `value` of zero draw a single `0` instead of nothing.
+/// `style` selects the slot pitch ([`DIGIT_PITCH_NARROW`] /
+/// [`DIGIT_PITCH_WIDE`]).
+///
+/// Retail applies no negative guard; a negative `value` there yields negative
+/// quotients. The port clamps at zero instead, since every call site passes a
+/// count or a score.
+// PORT: FUN_801d76e0 (8-slot right-aligned digit field: leading-zero blanking)
+pub fn number_digit_cells(style: i32, x: i32, y: i32, value: i32) -> Vec<DigitCell> {
+    let value = value.max(0);
+    let pitch = if style == 0 {
+        DIGIT_PITCH_NARROW
+    } else {
+        DIGIT_PITCH_WIDE
+    };
+
+    // Slot contents: `-1` = blank, else the quotient at that power of ten.
+    let mut slots = [-1i32; DIGIT_FIELD_SLOTS];
+    slots[DIGIT_FIELD_SLOTS - 1] = 0;
+    let mut pow = 10_000_000i32;
+    for slot in slots.iter_mut() {
+        let q = value / pow;
+        if q != 0 {
+            *slot = q;
+        }
+        pow /= 10;
+    }
+
+    slots
+        .iter()
+        .enumerate()
+        .filter_map(|(i, &q)| {
+            (q >= 0).then_some(DigitCell {
+                x: x + i as i32 * pitch,
+                y,
+                digit: q % 10,
+            })
+        })
+        .collect()
+}
+
+/// The three-glyph frame of a gauge bar: a start cap, a body stretched over
+/// the segment count, and an end cap. Both bar animators emit this triple
+/// through the shared glyph emitter, then overlay the fill quad themselves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BarFrame {
+    /// The start-cap / body / end-cap glyph ids, in emit order.
+    pub glyphs: [u32; 3],
+    /// Screen position of each of the three glyphs.
+    pub positions: [(i32, i32); 3],
+    /// The body glyph's stretch factor in 12.4 fixed point (`segments << 12`),
+    /// applied along the bar's axis.
+    pub body_scale: i32,
+    /// Length in pixels of the filled portion of the bar,
+    /// `segments * value * 8 / 0x1000`.
+    pub fill_len: i32,
+    /// The fill quad's brightness ramp, `value * 0xff / 0x1000` - the bar
+    /// brightens as it fills. Note the *glyph* frame is emitted at a fixed
+    /// `0x80`; only the fill tracks the value.
+    pub fill_brightness: i32,
+}
+
+/// Emit brightness of the bar frame glyphs - fixed, unlike the fill.
+pub const BAR_FRAME_BRIGHTNESS: i32 = 0x80;
+
+/// Fixed-point unit of the bar `value` (`0x1000` = completely full).
+pub const BAR_VALUE_ONE: i32 = 0x1000;
+
+/// The **horizontal** gauge bar behind [`HudDraw::Bar`] (depth / tension at
+/// the retail call sites): caps at `x` and `x + segments*8 + 8` with the body
+/// stretched between them, filling left-to-right.
+///
+/// `style` selects the fill quad's colour ramp only - `0` holds a constant
+/// channel against the brightness ramp, `1` runs the ramp against its own
+/// complement - and does not move any geometry.
+///
+/// The retail `>> 12` carries a `+0xfff` negative bias, which is just C
+/// division truncating toward zero; the port divides directly.
+// PORT: FUN_801d1870 (horizontal gauge bar: cap/body/cap frame + fill extent)
+pub fn bar_frame(x: i32, y: i32, value: i32, segments: i32) -> BarFrame {
+    BarFrame {
+        glyphs: [3, 4, 5],
+        positions: [(x, y), (x + 8, y), (x + segments * 8 + 8, y)],
+        body_scale: segments << 12,
+        fill_len: segments * value * 8 / BAR_VALUE_ONE,
+        fill_brightness: value * 0xff / BAR_VALUE_ONE,
+    }
+}
+
+/// The **vertical** gauge bar behind [`HudDraw::PowerBar`] (the casting-power
+/// meter): the same cap/body/cap frame rotated onto the y axis, with glyph ids
+/// `0`/`1`/`2` and the body stretched vertically. It fills *upward* - the fill
+/// quad grows from the bottom cap at `y + segments*8 + 8` back toward the top.
+// PORT: FUN_801d1a90 (vertical power bar: cap/body/cap frame + upward fill)
+pub fn power_bar_frame(x: i32, y: i32, value: i32, segments: i32) -> BarFrame {
+    let end = y + segments * 8 + 8;
+    BarFrame {
+        glyphs: [0, 1, 2],
+        positions: [(x, y), (x, y + 8), (x, end)],
+        body_scale: segments << 12,
+        fill_len: segments * value * 8 / BAR_VALUE_ONE,
+        fill_brightness: value * 0xff / BAR_VALUE_ONE,
+    }
 }
 
 /// One of the driver tail's auxiliary one-shot animation timers
@@ -1141,6 +1354,120 @@ mod tests {
             roll_cutoff_c: 90,
             strike_gate,
         }
+    }
+
+    #[test]
+    fn rod_gate_rejects_an_empty_tacklebox() {
+        let mut idx = 0;
+        assert!(!select_owned_rod(&mut idx, |_| 0));
+        assert_eq!(idx, 0, "index untouched when nothing is owned");
+    }
+
+    #[test]
+    fn rod_gate_repoints_the_index_at_the_next_owned_lure() {
+        // Only the third lure (0x9f) is held; a selection sitting on the first
+        // must walk forward to it.
+        let mut idx = 0;
+        assert!(select_owned_rod(&mut idx, |id| i32::from(id == 0x9f)));
+        assert_eq!(idx, 2);
+        // Already on an owned kind: no movement.
+        let mut idx = 2;
+        assert!(select_owned_rod(&mut idx, |id| i32::from(id == 0x9f)));
+        assert_eq!(idx, 2);
+    }
+
+    #[test]
+    fn rod_gate_wraps_past_the_last_kind() {
+        // Only the first lure is held, selection parked on the last -> wraps.
+        let mut idx = 2;
+        assert!(select_owned_rod(&mut idx, |id| i32::from(id == 0x9d)));
+        assert_eq!(idx, 0);
+    }
+
+    #[test]
+    fn banner_variants_share_the_slide_ramp_and_expire_together() {
+        // All four banner animators ride `banner_slide`; the two mirrored ones
+        // hold at the same 0xa0 centre as the from-left banner.
+        let hold = 0x20;
+        assert_eq!(banner_slide(hold), 0xa0);
+        let miss = banner_miss_draw(hold).expect("active mid-hold");
+        match miss {
+            HudDraw::Glyph { id, x, .. } => {
+                assert_eq!(id, 0x19);
+                assert_eq!(x, 0x140 - 0xa0);
+            }
+            _ => panic!("miss banner is a glyph draw"),
+        }
+        let pair = banner_converge_draws(hold).expect("active mid-hold");
+        match (pair[0], pair[1]) {
+            (HudDraw::Glyph { x: a, id: ia, .. }, HudDraw::Glyph { x: b, id: ib, .. }) => {
+                assert_eq!((ia, ib), (0xc, 0xc), "same glyph both sides");
+                assert_eq!(a + b, 0x140, "mirrored about the screen centre");
+            }
+            _ => panic!("converge banner is a glyph pair"),
+        }
+        // Both expire exactly at the shared lifetime.
+        assert!(banner_miss_draw(BANNER_FRAMES - 1).is_some());
+        assert!(banner_miss_draw(BANNER_FRAMES).is_none());
+        assert!(banner_converge_draws(BANNER_FRAMES).is_none());
+    }
+
+    #[test]
+    fn digit_field_blanks_leading_zeros_and_right_aligns() {
+        let cells = number_digit_cells(0, 100, 50, 42);
+        let digits: Vec<i32> = cells.iter().map(|c| c.digit).collect();
+        assert_eq!(digits, vec![4, 2], "only significant digits are emitted");
+        // Right-aligned in the 8-slot field: '4' lands in slot 6, '2' in 7.
+        assert_eq!(cells[0].x, 100 + 6 * DIGIT_PITCH_NARROW);
+        assert_eq!(cells[1].x, 100 + 7 * DIGIT_PITCH_NARROW);
+        assert!(cells.iter().all(|c| c.y == 50));
+    }
+
+    #[test]
+    fn digit_field_draws_a_lone_zero() {
+        // The seeded last slot is what keeps a zero total visible.
+        let cells = number_digit_cells(0, 0, 0, 0);
+        assert_eq!(cells.len(), 1);
+        assert_eq!(cells[0].digit, 0);
+        assert_eq!(cells[0].x, 7 * DIGIT_PITCH_NARROW);
+    }
+
+    #[test]
+    fn digit_field_style_selects_the_slot_pitch() {
+        let wide = number_digit_cells(1, 0, 0, 7);
+        assert_eq!(wide[0].x, 7 * DIGIT_PITCH_WIDE);
+    }
+
+    #[test]
+    fn digit_field_fills_every_slot_at_eight_digits() {
+        let cells = number_digit_cells(0, 0, 0, 12_345_678);
+        let digits: Vec<i32> = cells.iter().map(|c| c.digit).collect();
+        assert_eq!(digits, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn bar_frames_span_their_segments_and_track_the_fill() {
+        let segs = 8;
+        let h = bar_frame(20, 40, BAR_VALUE_ONE, segs);
+        assert_eq!(h.glyphs, [3, 4, 5]);
+        // Caps bracket the body along x; y is constant.
+        assert_eq!(h.positions[0], (20, 40));
+        assert_eq!(h.positions[2], (20 + segs * 8 + 8, 40));
+        assert_eq!(h.fill_len, segs * 8, "full value fills every segment");
+        assert_eq!(h.fill_brightness, 0xff);
+
+        let v = power_bar_frame(20, 40, BAR_VALUE_ONE / 2, segs);
+        assert_eq!(v.glyphs, [0, 1, 2]);
+        // The vertical bar brackets along y instead, at a constant x.
+        assert_eq!(v.positions[0], (20, 40));
+        assert_eq!(v.positions[2], (20, 40 + segs * 8 + 8));
+        assert_eq!(v.fill_len, segs * 8 / 2, "half value fills half the bar");
+        assert_eq!(v.fill_brightness, 0x7f);
+        assert_eq!(v.body_scale, segs << 12);
+
+        // An empty bar still draws its frame, with nothing lit.
+        let empty = bar_frame(0, 0, 0, segs);
+        assert_eq!((empty.fill_len, empty.fill_brightness), (0, 0));
     }
 
     #[test]

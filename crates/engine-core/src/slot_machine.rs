@@ -923,9 +923,121 @@ impl SlotMachine {
     }
 }
 
+// --- Coin exchange counter --------------------------------------------------
+
+/// Gold price of one casino coin at the exchange counter (`Total Cost` is the
+/// requested coin count times this).
+pub const COIN_PRICE_GOLD: i32 = 100;
+
+/// Digit slots in the counter's "Coins to Buy" entry field.
+pub const COIN_ENTRY_DIGITS: usize = 8;
+
+/// A quote from the casino's coin-exchange counter: what the entered coin
+/// count costs and whether the purchase is allowed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CoinQuote {
+    /// Coin count decoded from the entry field.
+    pub coins: i32,
+    /// `coins * COIN_PRICE_GOLD`.
+    pub cost: i32,
+    /// The party can pay: `gold >= cost`.
+    pub affordable: bool,
+    /// The counter can serve it: `stock >= coins`.
+    pub in_stock: bool,
+}
+
+impl CoinQuote {
+    /// Whether the counter will accept this purchase - retail draws the total
+    /// in the normal ink only when both gates pass, and in the alert ink when
+    /// either fails.
+    pub fn is_valid(&self) -> bool {
+        self.affordable && self.in_stock
+    }
+}
+
+/// Decode the counter's per-digit entry field into a coin count.
+///
+/// The field is [`COIN_ENTRY_DIGITS`] single-digit cells stored
+/// **least-significant first** (the accumulator starts at 1 and multiplies by
+/// ten each cell), so `digits[0]` is the units place.
+// REF: FUN_801e6f70 (entry-field digit accumulation)
+pub fn coin_entry_value(digits: &[u8]) -> i32 {
+    let mut place = 1i32;
+    let mut total = 0i32;
+    for &d in digits.iter().take(COIN_ENTRY_DIGITS) {
+        total += place * i32::from(d);
+        place *= 10;
+    }
+    total
+}
+
+/// Quote the coin-exchange counter for the entered `digits`, against the
+/// party's `gold` and the counter's remaining coin `stock`.
+///
+/// Coins cost a flat [`COIN_PRICE_GOLD`] each. Retail gates the sale twice -
+/// on the party's gold (`_DAT_8008459C`) against the total, and on the
+/// counter's stock (`_DAT_8007BB90`) against the coin count - and recolours
+/// the total to the alert ink when *either* fails. The bank word this feeds
+/// (`_DAT_800845A4`) is the same one [`SlotMachine::cash_out`] assigns back,
+/// so buying coins here and cashing out of a machine write the same global.
+///
+/// This function is the quote/validation half only; retail commits the sale on
+/// the counter's confirm path, not in the screen routine.
+// PORT: FUN_801e6f70 (coin-exchange counter: total cost + gold/stock gates)
+pub fn coin_exchange_quote(digits: &[u8], gold: i32, stock: i32) -> CoinQuote {
+    let coins = coin_entry_value(digits);
+    let cost = coins * COIN_PRICE_GOLD;
+    CoinQuote {
+        coins,
+        cost,
+        affordable: gold >= cost,
+        in_stock: stock >= coins,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn coin_entry_field_is_least_significant_first() {
+        // Units in slot 0: 1234 = 4,3,2,1 then blanks.
+        assert_eq!(coin_entry_value(&[4, 3, 2, 1, 0, 0, 0, 0]), 1234);
+        assert_eq!(coin_entry_value(&[0; 8]), 0);
+        // Every slot filled with 9 = the widest enterable count.
+        assert_eq!(coin_entry_value(&[9; 8]), 99_999_999);
+    }
+
+    #[test]
+    fn coin_exchange_charges_a_hundred_gold_each() {
+        let q = coin_exchange_quote(&[5, 0, 0, 0, 0, 0, 0, 0], 1000, 100);
+        assert_eq!(q.coins, 5);
+        assert_eq!(q.cost, 500);
+        assert!(q.is_valid());
+    }
+
+    #[test]
+    fn coin_exchange_gates_on_gold_and_on_stock_independently() {
+        // Affordable but the counter is short: stock gate alone fails.
+        let q = coin_exchange_quote(&[9, 0, 0, 0, 0, 0, 0, 0], 100_000, 5);
+        assert!(q.affordable, "gold covers 900");
+        assert!(!q.in_stock, "counter only holds 5");
+        assert!(!q.is_valid());
+
+        // In stock but the party is short: gold gate alone fails.
+        let q = coin_exchange_quote(&[9, 0, 0, 0, 0, 0, 0, 0], 100, 100);
+        assert!(!q.affordable);
+        assert!(q.in_stock);
+        assert!(!q.is_valid());
+    }
+
+    #[test]
+    fn coin_exchange_allows_exactly_affordable_and_exact_stock() {
+        // Both gates are `>=`, so an exact match still sells.
+        let q = coin_exchange_quote(&[3, 0, 0, 0, 0, 0, 0, 0], 300, 3);
+        assert_eq!(q.cost, 300);
+        assert!(q.is_valid());
+    }
 
     fn payouts() -> SlotPayoutTable {
         // Synthetic table: symbol id i pays (i+1)*2 coins.
