@@ -418,6 +418,7 @@ over-read tail - mode 0 actually loads the debug-menu overlay PROT 971. See [`sc
 - the flat spin charge + net-take accrual (3/+6 normal, 1/+1 feature);
 - the per-mode stop plan + landing search, including mode 6's **free stop** (depth `0`, no target) (`stop_plan` / `land_row`; `FUN_801d2114` / `FUN_801d2440`);
 - the per-reel **claimed latch** and the marquee tally over it (`SlotMachine::claimed` / `tally` / `tally_product`; `FUN_801d0554` + `FUN_801cfff0`);
+- the **marquee composition** itself (`SlotMachine::marquee` / `marquee_placements` over [`legaia_asset::minigame_slot_scene`]'s `compose_marquee_frame` / `place_message` / `clear_dots` / `render_marquee`; `FUN_801cfff0` + `FUN_801d3230` + `FUN_801d069c`) - see [the dot matrix's two blits](#the-dot-matrix-has-two-blits-not-one);
 - the **five**-payline / payout / bonus-round evaluation - the bonus product over the payline `(value - 0xf)` factors, the centre winning line, the product subtracted from the net take (`SlotMachine::evaluate_spin`, per-reel row offsets from [`legaia_asset::minigame_slot_scene`], payout via [`legaia_asset::slot_payout`]; `FUN_801d13e8`);
 - the entry constants (`ENTRY_DEFAULT_BALANCE` = 70, `ENTRY_LCG_SEED` = `0x6C0A2AF0`; `FUN_801cec94`);
 - the coin economy (balance seeded from the bank, `9999999` tally cap, cash-out **assignment** back into the bank).
@@ -564,6 +565,41 @@ multiplication sign, the two round pips and the word "coin" - by the ids
 [the message bank's roles](#the-message-banks-roles). This is where the bonus
 round's `0 x 0 x 0` tally and its `48 coin` payout caption are drawn: the marquee
 is not decoration, it is the machine's readout.
+
+### The dot matrix has two blits, not one
+
+`FUN_801d069c` and `FUN_801d3230` are not variants of one copy loop, and the
+difference decides what the marquee can express. They clip opposite ends of the
+copy:
+
+| | `FUN_801d069c` | `FUN_801d3230` |
+|---|---|---|
+| Offsets | the **source** `(x, y)` | the **destination** `(col, row)` |
+| Clips | source coords, signed | dest coords, **unsigned** |
+| Buys | scrolling one message through a fixed window | placing a message at a spot |
+
+The unsigned clip is how one `sltiu` covers both bounds at once: a negative
+offset fails the compare as a huge unsigned value, so there is no separate `< 0`
+test. That is not a micro-optimisation to gloss over in a port - the payout
+caption is composed at `row = min(frame - 0xD, 0)`, i.e. it *starts* 13 rows
+above the matrix and counts up to 0, and the unsigned clip is the only thing
+hiding the rows that have not arrived. Port the bound as a bare
+`row < DOT_ROWS` and the caption appears fully formed on its first frame.
+
+A negative `msg` id is `FUN_801d069c`'s **clear** command rather than a lookup:
+the `bgez $a0` at its head skips the scroll body into a `78 x 13` zero-fill of
+`DAT_801d37a0`. `FUN_801cfff0` opens every frame with that call, so the marquee
+is rebuilt from scratch each frame and never diffed.
+
+`FUN_801cfff0` then picks the frame's one occupant. The payout caption wins the
+strip whenever it is up - retail gates it on **both** the figure `DAT_801d3d3c`
+and the frame clock `DAT_801d3c94` being non-zero - and only when it is down do
+the bonus tally / round pips draw, and then only in feature modes `4..=6` and
+reel states `1..=4`. The caption's leading-zero suppression tests the **whole
+figure** at each of its four places, not the running remainder: all four guards
+re-read `DAT_801d3d3c`, while the digit values come off a remainder chain that
+runs whether or not its own place drew. So `405` prints `4`, `0`, `5` - an
+interior zero is kept - and `7` prints a bare `7` in the units column.
 
 ### The two screen-space draws - `FUN_801d2cc0`
 

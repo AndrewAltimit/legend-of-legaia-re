@@ -74,6 +74,7 @@
 //! `FUN_801d13e8` (win eval).
 
 use crate::levelup::BiosRand;
+use legaia_asset::minigame_slot_scene::{MarqueeFrame, MarqueePlacement, compose_marquee_frame};
 use legaia_asset::slot_payout::{self, SlotPayoutTable};
 
 /// Reels on the machine.
@@ -441,6 +442,13 @@ pub struct SlotMachine {
     bonus_just_ended: bool,
     /// The last evaluated spin, latched through [`SlotPhase::Payout`].
     last_result: Option<SpinResult>,
+    /// `DAT_801d3d3c`: the coin figure the marquee's payout caption prints.
+    /// Latched the frame the third reel locks; cleared on collect.
+    caption_payout: i32,
+    /// `DAT_801d3c94`: frames since the caption came up. The composer slides the
+    /// caption in over the first [`PAYOUT_SLIDE_ROWS`] frames, so this has to
+    /// advance for the caption to finish arriving.
+    caption_frame: i32,
 }
 
 /// Spin-up frames before the reels may be stopped (visual pacing constant;
@@ -498,6 +506,8 @@ impl SlotMachine {
             richer_odds: false,
             bonus_just_ended: false,
             last_result: None,
+            caption_payout: 0,
+            caption_frame: 0,
         }
     }
 
@@ -735,6 +745,12 @@ impl SlotMachine {
     /// reel keeps its row (the refill runs ahead of the payline, never on it).
     // PORT: FUN_801cf0d8 tail (reel advance + display-strip row refill) + state 2
     pub fn tick(&mut self) {
+        // The caption's slide-in clock. It only runs while a caption is up, and
+        // the composer reads `min(frame - PAYOUT_SLIDE_ROWS, 0)` off it, so
+        // without this advance the caption would sit one row short forever.
+        if self.caption_frame != 0 {
+            self.caption_frame += 1;
+        }
         for reel in 0..REEL_COUNT {
             if self.stopped[reel].is_none() {
                 self.reel_pos[reel] =
@@ -796,6 +812,11 @@ impl SlotMachine {
             let result = self.evaluate_spin();
             self.last_result = Some(result);
             self.phase = SlotPhase::Payout;
+            // Raise the marquee's payout caption on a paying spin. Retail gates
+            // the caption on the figure being non-zero, so a losing spin leaves
+            // the matrix to the tally / attract strip.
+            self.caption_payout = result.payout;
+            self.caption_frame = i32::from(result.payout != 0);
         }
         true
     }
@@ -910,7 +931,40 @@ impl SlotMachine {
         let credit = self.last_result.map(|r| r.payout).unwrap_or(0);
         self.balance = (self.balance + credit).min(BALANCE_CAP);
         self.phase = SlotPhase::Idle;
+        // The caption comes down with the tally it was captioning.
+        self.caption_payout = 0;
+        self.caption_frame = 0;
         credit
+    }
+
+    /// The marquee's per-frame inputs, read off this machine's live state.
+    ///
+    /// Every field but the caption pair is a global the machine already keeps:
+    /// the feature mode, the reel state word, the bonus-round counter and the
+    /// per-reel claimed values are the same storage the payout arithmetic uses,
+    /// so the marquee cannot disagree with what the machine actually paid.
+    pub fn marquee(&self) -> MarqueeFrame {
+        MarqueeFrame {
+            payout: self.caption_payout,
+            payout_frame: self.caption_frame,
+            feature_mode: self.feature_mode,
+            reel_state: match self.phase {
+                SlotPhase::Idle => 1,
+                SlotPhase::Spinning => 2,
+                SlotPhase::Stopping => 3,
+                SlotPhase::Payout => 4,
+                SlotPhase::CashedOut => 100,
+            },
+            bonus_rounds: self.bonus_spins,
+            claimed: self.claimed,
+        }
+    }
+
+    /// What the dot matrix shows this frame, as blit placements. Pair with
+    /// [`legaia_asset::minigame_slot_scene::render_marquee`] and a parsed message
+    /// bank to rasterise it.
+    pub fn marquee_placements(&self) -> Vec<MarqueePlacement> {
+        compose_marquee_frame(&self.marquee())
     }
 
     /// Commit the cash-out (state `100`): the machine is done and the final
@@ -1486,5 +1540,135 @@ mod tests {
             hits(2500) > hits(500) * 2,
             "high net take is far more generous"
         );
+    }
+
+    /// The marquee is driven by the machine, not decoration beside it: a paying
+    /// spin has to put that spin's own figure on the dot matrix.
+    ///
+    /// Symbol 6 pays `(6+1)*2 = 14` in the synthetic table, so the caption is a
+    /// two-digit figure - which pins the leading-zero suppression too: the
+    /// thousands and hundreds places must be absent, and the tens and units
+    /// present at their own columns.
+    #[test]
+    fn a_paying_spin_puts_its_own_figure_on_the_marquee() {
+        use legaia_asset::minigame_slot_scene as scene;
+
+        let mut m = SlotMachine::new(payouts(), 42, 200);
+        // Nothing is captioned before a spin resolves.
+        assert!(
+            m.marquee_placements().is_empty(),
+            "an idle machine in the normal game captions nothing"
+        );
+
+        win_on(&mut m, 6);
+        let payout = m.last_result().unwrap().payout;
+        assert_eq!(payout, 14, "synthetic table pays (6+1)*2");
+
+        let p = m.marquee_placements();
+        let at = |col: usize| {
+            p.iter()
+                .find(|q| q.col == col as i32)
+                .map(|q| q.msg)
+                .unwrap_or_else(|| panic!("nothing placed at dot column {col}: {p:?}"))
+        };
+        // "14 coin": tens then units then the word, at the retail columns.
+        assert_eq!(at(scene::PAYOUT_DIGIT_COLS[2]), scene::MSG_NUMBER_BASE + 1);
+        assert_eq!(at(scene::PAYOUT_DIGIT_COLS[3]), scene::MSG_NUMBER_BASE + 4);
+        assert_eq!(at(scene::PAYOUT_COINS_COL), scene::MSG_COINS);
+        // Leading zeros are suppressed, not drawn as "0".
+        for place in [0usize, 1] {
+            assert!(
+                !p.iter()
+                    .any(|q| q.col == scene::PAYOUT_DIGIT_COLS[place] as i32),
+                "place {place} is above the figure and must not draw"
+            );
+        }
+
+        // The caption comes down with the tally it captioned.
+        m.collect();
+        assert!(
+            m.marquee_placements().is_empty(),
+            "collecting the payout clears the caption"
+        );
+    }
+
+    /// The caption slides in over its first frames, and the clock that moves it
+    /// is the machine's own tick. A caption that never advances is the failure
+    /// this pins: every row would stay clipped above the matrix.
+    #[test]
+    fn the_payout_caption_slides_down_one_row_per_tick() {
+        use legaia_asset::minigame_slot_scene as scene;
+
+        let mut m = SlotMachine::new(payouts(), 42, 200);
+        win_on(&mut m, 6);
+
+        // Frame 1 of the caption: 12 rows above the matrix.
+        let first = m.marquee_placements()[0].row;
+        assert_eq!(first, 1 - scene::PAYOUT_SLIDE_ROWS);
+        assert!(first < 0, "the caption starts above the matrix");
+
+        // It descends exactly one row per tick...
+        for expected in (first + 1)..=0 {
+            m.tick();
+            assert_eq!(
+                m.marquee_placements()[0].row,
+                expected,
+                "the caption advances one row per tick"
+            );
+        }
+        // ...and then holds at row 0 rather than running off the bottom.
+        for _ in 0..5 {
+            m.tick();
+            assert_eq!(m.marquee_placements()[0].row, 0, "the caption holds");
+        }
+    }
+
+    /// The bonus tally's marquee columns come off the same `claimed` array the
+    /// payout multiplies, so the strip cannot show a different spin than it paid.
+    #[test]
+    fn the_bonus_tally_marquee_reads_the_claimed_reels() {
+        use legaia_asset::minigame_slot_scene as scene;
+
+        let mut m = SlotMachine::new(payouts(), 0x51075, 200);
+        win_on(&mut m, slot_payout::KICK_SYMBOL_ID);
+        m.collect();
+
+        // Mid-bonus-spin, with the reels stopping: the tally strip is up.
+        assert!(m.spin());
+        while m.phase() != SlotPhase::Stopping {
+            m.tick();
+        }
+        m.stop_reel(0);
+        let p = m.marquee_placements();
+        // Three numerals and two multiplication signs, at the retail columns.
+        for &col in scene::TALLY_TIMES_COLS.iter() {
+            assert!(
+                p.iter()
+                    .any(|q| q.col == col as i32 && q.msg == scene::MSG_TIMES),
+                "a multiplication sign belongs at column {col}"
+            );
+        }
+        // Reel 0 is claimed, so its column shows that reel's landed number;
+        // the unclaimed reels read "0".
+        let claimed = m.claimed(0);
+        let want = scene::MSG_NUMBER_BASE + (claimed - 0x10).max(0) as usize;
+        let got = p
+            .iter()
+            .find(|q| q.col == scene::TALLY_NUMBER_COLS[0] as i32)
+            .unwrap()
+            .msg;
+        assert_eq!(got, want, "the tally's first column is reel 0's claim");
+        for reel in 1..REEL_COUNT {
+            let got = p
+                .iter()
+                .find(|q| q.col == scene::TALLY_NUMBER_COLS[reel] as i32)
+                .unwrap()
+                .msg;
+            assert_eq!(
+                got,
+                scene::MSG_NUMBER_BASE,
+                "reel {reel} is unclaimed and reads 0"
+            );
+        }
     }
 }

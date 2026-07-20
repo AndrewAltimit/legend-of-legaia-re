@@ -218,10 +218,18 @@ the per-dancer handler (`FUN_801d1358`: latch decay, chain-cursor reset,
 combo-slot banking, the CPU auto-feed), the timing-window hit judge
 (`FUN_801d1960`), the CPU chart lookup (`FUN_801d1820`), the symbol→pad-bit
 map (`FUN_801d4040`), and the score / gauge / triangle award (`FUN_801d1af4`),
-all with the Confirmed constants above. It runs the **whole three-dancer
-floor**: `DanceGame::press` judges the human, `advance` steps the clock and
-runs the competitors' auto-fed presses through the same award path, and
+all with the Confirmed constants above. It runs the **whole floor**:
+`DanceGame::press` judges the human, `advance` steps the clock and runs the
+competitors' auto-fed presses through the same award path, and
 `dancer_score(i)` / `dancer_triangles(i)` expose their live runs.
+
+The floor's size is a property of the **mode**, not a constant.
+`DanceGame::from_overlay_for_mode` ports `FUN_801d0190`'s selection: each mode
+picks a spawn table *and* how many of its records to spawn, so free play seats
+**six** dancers and the how-to demo a single one, against three in the two
+competitive modes. `DanceMode` carries that mapping, and the how-to mode also
+forces the short song. `DanceGame::from_overlay` stays the qualifier entry
+point.
 
 Runtime wiring: the engine host installs the rules engine as a suspending scene mode (`SceneMode::Dance`; `World::enter_dance` / `tick_dance` / `exit_dance`). The `play-window` viewer starts it from the `K` key (loads the dance overlay PROT 0980, `DanceGame::from_overlay`), maps the three arrows to the retail pad bits (Left/Right/Up = symbols `1`/`2`/`3`), and draws the score / groove-gauge / active-lane HUD; the song timer ends the run and restores the interrupted scene.
 
@@ -297,6 +305,10 @@ The overlay issues no mesh load, but it *names* every dancer: the spawner
 `FUN_801d0190` reads a per-mode **spawn table** (`0x801D4D5C` mode 0/2,
 `0x801D4D8C` mode 1, `0x801D4DBC` mode 3; 0x10-byte records
 `[u32 kind, x, y, z]`) and a 5-record × `0x80`-byte **kind descriptor table**
+(the table alone does not fix the cast: the same switch also loads the spawn
+**count** into `$s3` - 3 for modes 0/1, **1** for mode 2, **6** for mode 3 -
+so mode 2 takes only the qualifier table's first record and free play seats
+six)
 at `0x801D4E1C`. Parser: [`legaia_asset::dance_cast`]. Per descriptor: `+0xC`
 mesh id, `+0x10`/`+0x14` pre-game idle anim + rate, `+0x18`/`+0x1C` the
 in-play dance-groove loop, `+0x28..+0x80` eleven `[anim | flags, rate]` **move
