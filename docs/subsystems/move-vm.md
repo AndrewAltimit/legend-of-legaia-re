@@ -397,6 +397,32 @@ draw and the mode-`6` keyframe-mesh interpolation run: for each of `*(+0x44)`
 vertices it LERPs two keyframes by the 12-bit cursor `+0x22`
 (`a + ((b - a) * cursor >> 12)`) into the GTE-packed output buffer at `+0x4C`.
 
+#### Mode 3's `FUN_80019D50` is an HSV recolour, not a particle spawner
+
+The mode-`3` callee is named "particle setup" above for where it is
+*called from*; what it actually does is recolour an image. It walks
+`w * h` little-endian RGB555 texels, converts each through
+`FUN_8001A78C` / `FUN_8001A6C8` (RGB↔HSV, both ported in
+`move_vm::color`), applies a per-call `(hue, sat, val)` shift, repacks,
+and ends with a `FUN_800583C8` `LoadImage` of the destination rect. Hue
+wraps modulo `0x168` (= 360, so the channel is degrees); saturation and
+value clamp to `0..=0xFF`.
+
+Two details do not follow from the "particle" label:
+
+- **Texel `0x0000` is copied through untouched**, checked on the whole
+  16-bit word before any unpack - fully-zero is transparent on the PSX,
+  so recolouring it would turn transparent pixels into opaque black. The
+  semi-transparency bit `0x8000` is likewise carried from source to
+  result.
+- **The optional blend targets the colour's inverse, not white.** The
+  expression is `c + (((~c & 0xFF) - c) * amount >> 8)`; since
+  `~c & 0xFF` is `255 - c`, the lerp target is `255 - c`. At full weight
+  the image is a photographic negative.
+
+Not ported - its only caller is the mode dispatch below, which is a
+deliberate non-port, so the leaf would be unreachable.
+
 **Port boundary (deliberate).** `FUN_80021DF4` is a host-emission-heavy
 dispatcher (GP0 packets, SPU SE triggers, libgpu VRAM copies, and ~30 part-struct
 fields the clean-room engine abstracts), so it is **not** transcribed wholesale -

@@ -393,6 +393,17 @@ Sub-id → overlay dispatch (init VAs are entries in the loaded overlay at slot-
 | 5 | `0x801CEA6C` | 0977 | Monster-roster minigame (dev `other6`; arena monster-name table - NOT the Muscle Dome SM, whose `FUN_801D0748` does not land in this image) |
 | 6 | `0x801CEF54` | 0980 | Noa dance rhythm minigame (Disco King) |
 
+**These VAs alias.** Every sub-id loads into the *same* slot-A base
+`0x801CE818`, so a single init VA names a different function in each
+overlay image - and in the field overlay it usually names no function at
+all, just bytes inside an unrelated one. A `ghidra/scripts/funcs/` dump
+filed under one of these addresses is only the minigame's code if it was
+produced against that sub-id's PROT entry; a dump taken from the field
+image decompiles to a fragment with uninitialised `in_v0`-style inputs.
+Check the dump header's overlay tag before reading one as the minigame
+init, and see [`static-overlay-pipeline.md`](../tooling/static-overlay-pipeline.md)
+for extracting the right image.
+
 The PROT indices follow the corrected overlay-loader arithmetic - `prot_index = param + 0x37F` in extraction index space (see [boot.md § overlay loaders](boot.md#game-mode-state-machine)): the in-RAM TOC at `0x801C70F0` is raw `PROT.DAT` from byte 0 (byte-verified against the `door_warp_town01_to_map01` save state), so the resolver's `toc[idx+2]` start-LBA read sits 2 entries above the extraction's per-entry indexing. The runtime image for each sub-id is the slice `[entry_start, next_entry_start)` (the resolver's size return), which is why the minigame entries' larger extraction footprints over-read into their neighbours.
 
 ### 0x43 ACTOR_CTRL - sub-dispatcher
