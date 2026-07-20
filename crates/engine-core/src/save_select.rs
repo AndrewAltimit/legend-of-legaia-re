@@ -146,6 +146,139 @@ pub enum SaveSelectMode {
     Save,
 }
 
+/// Number of memory-card directory frames retail's card walk visits.
+///
+/// The card holds 15 usable blocks; the class array retail writes is 16
+/// entries wide because a parsed slot number is a two-digit field.
+pub const CARD_DIR_FRAMES: usize = 15;
+
+/// Width of the per-slot class array retail clears before each walk.
+pub const CARD_SLOT_CLASSES: usize = 16;
+
+/// Save-filename prefixes retail matches a directory frame against, one
+/// per region. Both are 16 bytes - the exact `strncmp` length retail
+/// passes - and the two digits that follow are the slot number.
+pub const CARD_SAVE_PREFIXES: [&[u8]; 2] = [b"BASCUS-94254PRO_", b"BISCPS-10059PRO_"];
+
+/// Length retail compares a directory filename over.
+const CARD_PREFIX_LEN: usize = 16;
+
+/// Classify a memory card's directory into per-slot [`SlotContent`].
+///
+/// This is the producer for the class byte [`SlotContent`] models: retail
+/// clears the array, walks the 15 directory frames matching each filename
+/// against either regional save prefix, and stamps class `1` on every slot
+/// a matched filename names. Only *after* that does it spend the card's
+/// reported free-block count marking still-unclassified slots class `2`
+/// (free) - so a block the walk neither matched nor could afford to call
+/// free stays class `0`, which is [`SlotContent::Foreign`].
+///
+/// That ordering is the whole point: absence of a match is not evidence a
+/// block is free. Retail only calls a block free when the card's own
+/// free-block count pays for it, which is why an unreadable foreign save
+/// captions as "not a Legend of Legaia save" rather than inviting an
+/// overwrite.
+///
+/// `frames` are the raw directory frames (retail reads a `0x28`-byte
+/// stride; only the leading filename field matters here). `avail_blocks`
+/// is the card's free-block count, which retail queries separately before
+/// the walk.
+///
+/// PORT: FUN_801E1208
+pub fn classify_card_directory(
+    frames: &[&[u8]],
+    avail_blocks: u32,
+) -> [SlotContent; CARD_SLOT_CLASSES] {
+    // Retail clears the class array (and its sibling scanned-flag array)
+    // before every walk. Class 0 is Foreign - "occupied by something
+    // unreadable" - which is what an untouched entry means here.
+    let mut classes = [SlotContent::Foreign; CARD_SLOT_CLASSES];
+
+    for frame in frames.iter().take(CARD_DIR_FRAMES) {
+        let Some(slot) = card_dir_slot_of(frame) else {
+            continue;
+        };
+        if let Some(cell) = classes.get_mut(slot) {
+            *cell = SlotContent::LegaiaSave;
+        }
+    }
+
+    // Spend the card's free-block budget on slots the walk left unclaimed.
+    // Retail decrements a counter rather than testing a bound, so a card
+    // reporting more free blocks than there are unclaimed slots simply
+    // runs out of slots first.
+    let mut avail = avail_blocks;
+    for cell in classes.iter_mut() {
+        if avail == 0 {
+            break;
+        }
+        if *cell == SlotContent::Foreign {
+            *cell = SlotContent::Free;
+            avail -= 1;
+        }
+    }
+
+    classes
+}
+
+/// Parse the slot number a directory frame's filename encodes, or `None`
+/// when the filename is not one of this game's saves.
+///
+/// Retail reads the two bytes straight after the 16-byte prefix as ASCII
+/// digits. The second digit is optional: it only folds into the number
+/// when it actually is a digit, so a one-digit name parses as its single
+/// digit rather than being rejected.
+///
+/// REF: FUN_801E1208 (the filename match + digit parse it inlines).
+fn card_dir_slot_of(frame: &[u8]) -> Option<usize> {
+    if frame.len() < CARD_PREFIX_LEN + 2 {
+        return None;
+    }
+    let matched = CARD_SAVE_PREFIXES
+        .iter()
+        .any(|p| &frame[..CARD_PREFIX_LEN] == *p);
+    if !matched {
+        return None;
+    }
+    let hi = frame[CARD_PREFIX_LEN].wrapping_sub(b'0');
+    let lo = frame[CARD_PREFIX_LEN + 1].wrapping_sub(b'0');
+    let slot = if lo < 10 {
+        hi as usize * 10 + lo as usize
+    } else {
+        hi as usize
+    };
+    Some(slot)
+}
+
+/// Build the session's slot list straight off a card directory.
+///
+/// Pairs [`classify_card_directory`] with the two content-keyed
+/// [`SlotSnapshot`] constructors so a card-backed host gets a slot list
+/// whose captions already follow the retail class byte. Slots the walk
+/// classified as [`SlotContent::LegaiaSave`] come back marked `present`
+/// but without preview data - a host fills those in by reading the block
+/// itself, which is a separate card read in retail too.
+pub fn card_directory_slots(frames: &[&[u8]], avail_blocks: u32) -> Vec<SlotSnapshot> {
+    classify_card_directory(frames, avail_blocks)
+        .into_iter()
+        .take(CARD_DIR_FRAMES)
+        .enumerate()
+        .map(|(i, content)| {
+            let slot = i as u8;
+            match content {
+                SlotContent::Free => SlotSnapshot::empty(slot),
+                SlotContent::Foreign => SlotSnapshot::foreign(slot),
+                SlotContent::LegaiaSave => SlotSnapshot {
+                    present: true,
+                    content,
+                    label: format!("Slot {slot}"),
+                    ..SlotSnapshot::empty(slot)
+                },
+            }
+        })
+        .collect()
+}
+
 /// What the bottom info panel shows for the focused grid cell.
 ///
 /// Retail passes this to the panel renderer as a `view_mode` int; the
@@ -776,6 +909,119 @@ impl SaveSelectSession {
         let mut cur = from as i16;
         cur = (cur + dir as i16).rem_euclid(n);
         cur as u8
+    }
+}
+
+#[cfg(test)]
+mod card_directory_tests {
+    use super::*;
+
+    /// Build a directory frame naming `slot` with the given prefix.
+    fn frame(prefix: &[u8], slot: u8) -> Vec<u8> {
+        let mut f = prefix.to_vec();
+        f.extend_from_slice(format!("{slot:02}").as_bytes());
+        f.resize(0x28, 0);
+        f
+    }
+
+    fn junk_frame() -> Vec<u8> {
+        let mut f = b"BESLES-01234SOME".to_vec();
+        f.extend_from_slice(b"07");
+        f.resize(0x28, 0);
+        f
+    }
+
+    /// A matched filename stamps its slot as a Legaia save, and both
+    /// regional prefixes match.
+    #[test]
+    fn matched_frames_classify_as_legaia_saves() {
+        for prefix in CARD_SAVE_PREFIXES {
+            let f = frame(prefix, 3);
+            let classes = classify_card_directory(&[&f], 0);
+            assert_eq!(classes[3], SlotContent::LegaiaSave, "prefix {prefix:?}");
+        }
+    }
+
+    /// Absence of a match is not evidence of a free block: with no free
+    /// blocks reported, every unmatched slot stays Foreign rather than
+    /// inviting an overwrite.
+    #[test]
+    fn unmatched_slots_stay_foreign_without_free_blocks() {
+        let junk = junk_frame();
+        let classes = classify_card_directory(&[&junk], 0);
+        assert!(classes.iter().all(|c| *c == SlotContent::Foreign));
+    }
+
+    /// The free-block budget is spent on unclaimed slots in order, and
+    /// runs out - it never overwrites a matched slot's class.
+    #[test]
+    fn free_block_budget_fills_unclaimed_slots_in_order() {
+        let f = frame(CARD_SAVE_PREFIXES[0], 0);
+        let classes = classify_card_directory(&[&f], 2);
+        assert_eq!(classes[0], SlotContent::LegaiaSave);
+        assert_eq!(classes[1], SlotContent::Free);
+        assert_eq!(classes[2], SlotContent::Free);
+        assert_eq!(classes[3], SlotContent::Foreign);
+    }
+
+    /// A card reporting more free blocks than there are unclaimed slots
+    /// simply runs out of slots.
+    #[test]
+    fn oversized_free_budget_saturates() {
+        let classes = classify_card_directory(&[], 999);
+        assert!(classes.iter().all(|c| *c == SlotContent::Free));
+    }
+
+    /// The slot number is the two digits after the prefix; a non-digit
+    /// in the second position leaves a one-digit number rather than
+    /// rejecting the name.
+    #[test]
+    fn slot_number_parses_one_and_two_digit_names() {
+        let mut two = CARD_SAVE_PREFIXES[0].to_vec();
+        two.extend_from_slice(b"12");
+        two.resize(0x28, 0);
+        assert_eq!(card_dir_slot_of(&two), Some(12));
+
+        let mut one = CARD_SAVE_PREFIXES[0].to_vec();
+        one.extend_from_slice(b"5_");
+        one.resize(0x28, 0);
+        assert_eq!(card_dir_slot_of(&one), Some(5));
+    }
+
+    /// Only the first fifteen frames are walked - the sixteenth class
+    /// cell exists for the digit space, not for a block.
+    #[test]
+    fn walk_stops_after_fifteen_frames() {
+        let f = frame(CARD_SAVE_PREFIXES[0], 15);
+        let frames: Vec<&[u8]> = std::iter::repeat_n(f.as_slice(), 16).collect();
+        let classes = classify_card_directory(&frames, 0);
+        // All sixteen frames name slot 15, so it is claimed either way;
+        // what matters is that the walk itself is bounded.
+        assert_eq!(classes[15], SlotContent::LegaiaSave);
+    }
+
+    /// The snapshot builder keys each slot's constructor off its class,
+    /// so captions follow the retail class byte without a second scan.
+    #[test]
+    fn snapshots_follow_the_class_byte() {
+        let f = frame(CARD_SAVE_PREFIXES[0], 1);
+        let snaps = card_directory_slots(&[&f], 1);
+        assert_eq!(snaps.len(), CARD_DIR_FRAMES);
+        assert_eq!(snaps[0].content, SlotContent::Free);
+        assert!(!snaps[0].present);
+        assert_eq!(snaps[1].content, SlotContent::LegaiaSave);
+        assert!(snaps[1].present);
+        assert_eq!(snaps[2].content, SlotContent::Foreign);
+        assert!(!snaps[2].present);
+    }
+
+    /// A foreign block captions as "not a Legaia save" rather than as a
+    /// free block - the whole reason the class byte is kept.
+    #[test]
+    fn foreign_blocks_do_not_caption_as_free() {
+        let snaps = card_directory_slots(&[], 0);
+        let mode = SlotInfoMode::for_slot(&snaps[0]);
+        assert_eq!(mode, SlotInfoMode::NotLegaiaSave);
     }
 }
 

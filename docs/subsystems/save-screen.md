@@ -160,7 +160,7 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 | `0x01` | `FUN_801D6B20` | `FUN_801DAEF4` slot selector path |
 | `0x02` | `FUN_801D6E18` | save entry (from menu entry-context `(char*)1`) |
 | `0x03` | `FUN_801D6D38` | 2-state Yes/No confirm with default cursor `1`: actor `&DAT_801E4BD4`, picker `FUN_801D688C(&DAT_801E46D0, 2, 1)`; cursor `1` returns to current sub-screen (`0x01`), cursor `0` advances to `0x00` (exit), cancel returns to `0x01` |
-| `0x04` | `FUN_801DD1B8` | post-save return path |
+| `0x04` | `FUN_801DD1B8` | post-save "press any button" return: state 0 invokes actor `&DAT_801E4BE0`; state 1 waits `_DAT_8007BB80 == 0` AND a button **held** (`_DAT_8007B874 & (_DAT_800846D0 \| _DAT_800846D4) != 0`), plays sfx `0x20` and returns to `0x01`. Mirror of `0x08`, which waits for the same mask to read **zero** |
 | `0x05` | `FUN_801D7C00` | (unknown) |
 | `0x06` | `FUN_801D7E50` | (unknown) |
 | `0x07` | `FUN_801D8734` | (unknown) |
@@ -174,7 +174,7 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 | `0x0F` | `FUN_801D9110` | (unknown) |
 | `0x10` | `FUN_801D9280` | (unknown) |
 | `0x11` | `FUN_801D9594` | (unknown) |
-| `0x12` | `FUN_801D98F0` | 2-state scrollable picker: state 0 sets `_DAT_8007BB94 = 4`, actor `&DAT_801E4D88`; state 1 picker `FUN_801D688C(&DAT_801E46C4, DAT_80084594, 1)` (count from save-block existence table). Confirm → `0x13`, cancel → `0x01` |
+| `0x12` | `FUN_801D98F0` | 2-state scrollable picker: state 0 sets `_DAT_8007BB94 = 4`, clears `DAT_801E48A8`, masks the cursor to its index bits (`DAT_801E46C4 &= 0xFFF`) and raises flag `0x4000` on `DAT_801E46C0`, then actor `&DAT_801E4D88`; state 1 picker `FUN_801D688C(&DAT_801E46C4, DAT_80084594, 1)` (count from save-block existence table). Confirm → sfx `0x20` + `0x13`, cancel → `0x01` |
 | `0x13` | `FUN_801D99F0` | (unknown) |
 | `0x14` | `FUN_801D9C14` | per-character record serialisation (0x414 bytes, `char_id` stride) |
 | `0x15` | `FUN_801DA2A0` | (unknown) |
@@ -186,12 +186,45 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 | `0x1B` | `FUN_801DB21C` | card-full / error screen |
 | `0x1C` | `FUN_801DB380` | (unknown) |
 | `0x1D` | `FUN_801DB7F4` | (unknown) |
-| `0x1E` | `FUN_801DBC5C` | 4-state spinner: state 0 inits + calls `FUN_801D6628(&DAT_801E4EE4)`; state 1 waits for `_DAT_8007BB80 == 0`; state 2 reads two inventory bytes at `0x80084140 + 0x1818 + _DAT_8007BB88*2` and advances to `0x1F` on user-confirm (`_DAT_8007BB94 == 2`) or back to `0x1A` on cancel; state 3 returns to `0x1A` |
+| `0x1E` | `FUN_801DBC5C` | 4-state spinner: state 0 raises flag `0x1000` on `DAT_801E46BC` + calls `FUN_801D6628(&DAT_801E4EE4)`; state 1 waits `_DAT_8007BB80 == 0`, sets `_DAT_8007BB94 = 1` and falls into state 2. States 1-settling and 2 **share** the staging read of the two inventory bytes at `0x80084140 + 0x1818 + _DAT_8007BB88*2` into `DAT_801E46B0/B4`, then branch on `_DAT_8007BB94`: `3` re-runs actor `&DAT_801E4EFC` and parks at state 3, `2` advances to `0x1F`. State 3 waits `_DAT_8007BB80 == 0`, then returns to `0x1A` |
 | `0x1F` | `FUN_801DBD94` | D-pad quantity-input screen (state 0 init + actor invoke; state 1 ±1/±10 on the dpad clamped to `[1, DAT_801E46B8]`, on confirm applies money delta `_DAT_8008459C += (price * qty) >> 1` and walks live inventory at `0x80084140 + 0x1818` for a non-empty slot; state 2 returns to `0x1A` after a brief delay). NOT the save-card writer - actual libcd I/O lives in `FUN_801E3294` (see "Libcd I/O state machine" section below); `FUN_8001A8B0(SC_base=0x80084140, staging=0x801E5120, 0x1A18)` is plain memcpy used in both directions (post-read or pre-write staging copy) |
 | `0x20` | `FUN_801DC1CC` | auto-save path (entry-context `*ptr == '\x07'`) |
 
 The table ends at `0x1F`; entries past `0x20` are the start of the MES bytecode
 section (`0x85826B82` etc.) and are not function pointers.
+
+### Engine port of the sub-screen graph
+
+`legaia_engine_core::save_subscreen` lifts the graph out of the
+pointer-table indirection into a plain state machine. `SaveScreenMachine`
+is the outer dispatcher: it holds the phase, the current `SaveSubScreen`,
+that screen's step counter and the fade level, and `tick` runs one frame.
+A sub-screen transition is a write to the screen field, exactly as retail
+writes the id global - the step counter resets with it.
+
+Two shapes recur across the sub-screens and the port keeps them explicit:
+
+- **Script-then-wait.** Step 0 emits `SubScreenEffect::RunScript` and
+  advances; the next step blocks until the display script goes idle.
+  Every pinned screen opens this way.
+- **Transition-by-write.** A screen never returns a destination; it
+  writes one. `ConfirmYesNo` is the case worth reading twice - retail
+  stores the exit screen *first* and overwrites it when the cursor sits
+  on the default row, so the exit is the fallthrough rather than the
+  choice.
+
+`SaveSubScreen` covers the whole id space, with `Unpinned(id)` for table
+slots whose behaviour is not yet traced, so a transition into one is
+expressible and round-trips. Ticking an unpinned screen parks rather than
+guessing. The card drivers `0x18` / `0x19` share one implementation
+parameterised by `CardOp`, which is what the decompile shows: identical
+four-step machines differing only in the op selector.
+
+The module is control flow only. Screen *content* is
+[`save_select`](#relationship-to-legaia_save)'s `SaveSelectSession`,
+which models the same UI as player-facing phases; a host drives the
+session for content and can key retail-exact chrome off the sub-screen
+id.
 
 ### Load/save dispatch (`FUN_801DD35C`)
 
@@ -256,6 +289,33 @@ the trio together: it calls `FUN_801E3294(DAT_801EF18C, 0)` every frame
 to advance the libcd state machine, and when `_DAT_801F021C == 3` (save
 commit) it sequences `FUN_801E3AF0` (open `"bu%d_%d"` channel) →
 `FUN_801E3BA0` (block-count query) → `FUN_801E1208` (directory walk).
+
+#### Classification order is load-bearing
+
+The walk is what *writes* the class byte `FUN_801E3F74` later reads, and
+the order it writes in is the reason a foreign save is never mistaken
+for a free block:
+
+1. Clear both per-slot arrays. Class `0` is the cleared state, and class
+   `0` means "occupied by something unreadable".
+2. Walk the directory. Every frame whose filename matches a regional
+   prefix stamps class `1` on the slot its two digits name.
+3. **Only then** spend the card's reported free-block count
+   (`_DAT_801F01F0`, from the preceding `FUN_801E3BA0` query) marking
+   still-unclassified slots class `2`.
+
+Step 3 is a budget, not a sweep: it decrements a counter rather than
+testing a bound, so it stops when the card's free blocks run out. A slot
+the walk neither matched nor could afford to call free keeps class `0`.
+Absence of a match is therefore never by itself evidence that a block is
+free - which is what stops the Save path inviting an overwrite into a
+block whose contents were never read.
+
+Ported as `legaia_engine_core::save_select::classify_card_directory`,
+returning the per-slot `SlotContent` the info-panel mode selector already
+consumes; `card_directory_slots` pairs it with the content-keyed
+`SlotSnapshot` constructors to build a session's slot list straight off a
+directory.
 
 ### Per-character status preview (`FUN_801D9C14`, sub-screen `0x14`)
 

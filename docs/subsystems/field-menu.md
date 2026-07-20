@@ -106,10 +106,16 @@ sprites (RAM prim scan over the `menu_status_town` capture, all CLUT row
 | body tile | `(192, 64, 16, 20)` | tiled from `WX` across the content width `w` (partial remainder) |
 | right cap | `(216, 64, 8, 20)` | `(WX+w, WY-4)` |
 
-The tab's content renderer (`FUN_801DCAD8` for Status; siblings
-`FUN_801DCA94` / `FUN_801DCB1C`) draws only the label string at the
-content origin `(WX, WY)` with staged text CLUT 7. Engine primitive:
-`engine-ui::tab_banner_draws`.
+All five tab content renderers - `FUN_801DCA0C` (Items), `FUN_801DCA50`
+(Magic), `FUN_801DCA94` (Equip), `FUN_801DCAD8` (Status), `FUN_801DCB1C`
+(Options) - are the same two-instruction shape: stage text CLUT 7, then
+draw the label string at the content origin `(WX, WY)` with no offset of
+its own. The tab's identity is entirely the string operand, which is why
+one engine function serves all five.
+
+Engine primitives: `engine-ui::tab_banner_draws` composes the plaque and
+`engine-ui::tab_label_draws` puts the word on it. Both take the same
+`pen`, so framing and labelling a tab need one pair of coordinates.
 
 ## Status satellite windows
 
