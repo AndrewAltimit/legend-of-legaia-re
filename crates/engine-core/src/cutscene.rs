@@ -1,6 +1,13 @@
 //! FMV / pre-rendered cutscene helpers.
 //!
-//! PORT: FUN_801E30E4, FUN_801CF098
+//! REF: FUN_801cf098 (the play loop, whose dispatch-slot field reads these
+//! lookups mirror), FUN_801de840 (the field VM; the `0x4C 0xE2` FMV-trigger
+//! handler is the interior region at `0x801e30e4`, not a function of its own).
+//!
+//! Neither is *ported* here. This module is the table-lookup half only: it
+//! resolves an `fmv_id` to a filename, a return scene, a bitstream flavour and
+//! the play loop's clear rects. The play loop itself - CD reads, the sector
+//! ring, the MDEC feed, frame pacing - is not in this crate.
 //!
 //! The retail field VM triggers an FMV via opcode `0x4C 0xE2`
 //! (handler at `0x801E30E4` in the cutscene-dialogue overlay). The

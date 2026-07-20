@@ -37,10 +37,12 @@ fn ring_demux_matches_the_frame_assembler_on_a_real_movie() {
     let sector_count = (size as usize).div_ceil(2048) as u32;
 
     let mut ring = StRing::retail();
-    ring.set_stream(1);
-    // No end frame: play to the ring's own wrap-stop, which is what the intro
-    // slot does (its end frame is the movie's last frame).
-    ring.set_mask(false, 0, 0xFFFF);
+    // Retail's `StSetStream(mode, start_frame, end_frame, ...)`. `FUN_801CF988`
+    // passes the dispatch slot's `start_frame` and a literal `-1` for the end,
+    // so the St library never stops on an end frame; the play loop enforces the
+    // segment end itself. `start_frame = 0` short-circuits the seek comparison,
+    // which is how the intro slot plays from the first frame that arrives.
+    ring.set_stream(1, 0, 0xFFFF_FFFF);
 
     let mut assembler = StrFrameAssembler::new();
     let mut ring_frames: Vec<(u32, Vec<u8>)> = Vec::new();
@@ -128,8 +130,9 @@ fn seek_to_start_frame_lands_on_a_mid_file_segment() {
     // fmv_id 3's segment starts at frame 0xE2 per the dispatch table.
     const START: u32 = 0xE2;
     let mut ring = StRing::retail();
-    ring.set_stream(1);
-    ring.set_mask(true, START, 0xFFFF);
+    // The armed seek is not an extra call - it is what `StSetStream` itself
+    // installs, via `FUN_8005f004(1, start_frame, end_frame)`.
+    ring.set_stream(1, START, 0xFFFF_FFFF);
 
     let mut first_frame = None;
     for i in 0..sector_count {

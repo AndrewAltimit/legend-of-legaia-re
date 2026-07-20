@@ -37,20 +37,51 @@
 //!
 //! ## Frame window
 //!
-//! The frame window is **not** set by [`StRing::set_stream`]: retail's
-//! `StSetStream` (`FUN_8005EDC4`) reads only its mode word and its two callback
-//! arguments and discards the start/end frame arguments its PsyQ prototype
-//! implies. The window is installed separately by `FUN_8005F004`, ported here
-//! as [`StRing::set_mask`], which the play loop calls with the dispatch slot's
-//! `start_frame` / `end_frame`.
+//! [`StRing::set_stream`] **does** install the frame window, exactly as its PsyQ
+//! prototype implies. Retail's `StSetStream` (`FUN_8005EDC4`) opens with
+//!
+//! ```text
+//! 8005ede4  jal 0x8005f004
+//! 8005ede8  _li a0,0x1        <- the delay slot writes a0 and nothing else
+//! ```
+//!
+//! and never writes `a1` or `a2` before that call (only `a3` is saved into
+//! `s1`), so its own `start_frame` / `end_frame` arguments fall straight through
+//! into the callee. Retail is `FUN_8005f004(1, start_frame, end_frame)`: the
+//! seek arm is hard-coded on, and the window comes from `StSetStream`.
+//!
+//! Ghidra prints that call as `FUN_8005f004(1)` because it infers a
+//! one-argument signature for the callee from this one call site - the dropped
+//! arguments are a decompiler artefact, not retail behaviour. `FUN_8005F004`
+//! (ported as [`StRing::set_mask`]) has no other caller in any dump; it is
+//! `StSetStream`'s window-installer helper, not a separate entry point the play
+//! loop drives.
+//!
+//! The one retail call site, `FUN_801CF988`, is
+//! `StSetStream(slot[+0x04], slot[+0x08], -1, 0, 0)`: mode and `start_frame`
+//! come from the FMV dispatch slot, but `end_frame` is a literal `-1`. So the
+//! St library's end-frame stop is effectively disabled in retail, and a
+//! segment's end is enforced one level up by the play loop `FUN_801CF098`,
+//! which compares the demuxed frame number against the slot's own `+0x0C`
+//! (`801cf384 lw v0,0xc(s3)` / `801cf38c slt v0,v0,s0`).
 //!
 //! ## Provenance
 //!
 //! `see ghidra/scripts/funcs/8005bbf8.txt` (`StSetRing`), `8005edc4.txt`
 //! (`StSetStream`), `8005ee4c.txt` (`StFreeRing`), `8005ef40.txt`
 //! (`StGetNext`), `8005ecd4.txt` (the CD data-ready frame latch) and
-//! `8005f024.txt` (the per-sector demux state machine). Subsystem write-up:
+//! `8005f004.txt` (the frame-window installer) and `8005f024.txt` (the
+//! per-sector demux state machine). Subsystem write-up:
 //! [`docs/subsystems/cutscene.md`](../../../docs/subsystems/cutscene.md).
+//!
+//! ## Wiring status
+//!
+//! NOT WIRED: this module is a standalone kernel. The engine's own cutscene
+//! path (`legaia_engine_core::cutscene`, `legaia-engine play-str`) demuxes
+//! through [`StrFrameAssembler`](crate::str_sector::StrFrameAssembler) instead,
+//! and nothing outside this crate's tests constructs an [`StRing`]. It exists
+//! as the faithful reading of retail's back-pressure and seek behaviour, and as
+//! the oracle the assembler is cross-checked against.
 
 use crate::str_sector::{SECTOR_HEADER_BYTES, SECTOR_PAYLOAD_BYTES, VIDEO_SECTOR_MAGIC};
 
@@ -169,6 +200,8 @@ pub struct StRing {
     /// The last sector of a frame has landed; the completion latch is pending
     /// (`_DAT_801CADB4`).
     frame_pending: bool,
+    /// Low bit of `StSetStream`'s mode word (`_DAT_801CAD98`).
+    mode_flag: bool,
 }
 
 impl StRing {
@@ -193,6 +226,7 @@ impl StRing {
             start_frame: 0,
             end_frame: 0,
             frame_pending: false,
+            mode_flag: false,
         }
     }
 
@@ -201,36 +235,64 @@ impl StRing {
         Self::set_ring(RETAIL_RING_SLOTS)
     }
 
-    /// `StSetStream` - reset the demux cursors for a fresh stream.
+    /// `StSetStream` - install the frame window and reset the demux cursors for
+    /// a fresh stream.
     ///
-    /// `mode` is retail's first argument masked to its low bit; it selects the
-    /// DMA transfer attributes for the payload copy, which the port has no use
-    /// for, but it is also the flag the sector-lost check keys on, so the port
-    /// keeps it. Retail's remaining arguments are the two completion callbacks
-    /// (surfaced here as [`StStep::frame_ready`] / [`StStep::end_of_stream`])
-    /// and two arguments it discards - see the module note on the frame window.
+    /// Retail's first act is `FUN_8005f004(1, start_frame, end_frame)`, so the
+    /// seek is **always** armed here and both bounds are this function's own
+    /// arguments falling through in `a1`/`a2` - see the module note on the frame
+    /// window for the delay-slot evidence. Pass `start_frame = 0` for "start at
+    /// the first frame that arrives" (retail's own `0` short-circuits the seek
+    /// comparison) and `end_frame = 0` to play to EOF; the one retail call site
+    /// passes `-1` for the latter, which behaves the same way for any real
+    /// movie.
+    ///
+    /// `mode` is retail's mode word, of which only bit 0 is kept
+    /// (`_DAT_801CAD98 = param_1 & 1`); see [`StRing::mode_flag`]. Retail's
+    /// remaining two arguments are the frame-complete and end-of-stream
+    /// callbacks, surfaced here as [`StStep::frame_ready`] /
+    /// [`StStep::end_of_stream`] rather than as function pointers.
     // PORT: FUN_8005edc4
-    // REF: FUN_8005f004
-    pub fn set_stream(&mut self, mode: u32) {
-        self.set_mask(false, 0, 0);
+    pub fn set_stream(&mut self, mode: u32, start_frame: u32, end_frame: u32) {
+        self.set_mask(true, start_frame, end_frame);
         self.stream_filter = 0;
         self.pending_filter = 0;
         self.next_chunk = 0;
         self.cur_frame = 0;
+        // Retail leaves `_DAT_801CADB4` alone here; the port clears it because
+        // its completion latch runs inline instead of from a DMA interrupt, so
+        // a half-delivered frame can never be left pending across a restart.
         self.frame_pending = false;
-        let _ = mode & 1;
+        self.mode_flag = mode & 1 != 0;
     }
 
-    /// `FUN_8005F004` - install the frame window the play loop takes from its
-    /// FMV dispatch slot.
+    /// `FUN_8005F004` - install the frame window: seek arm, `start_frame`,
+    /// `end_frame`.
     ///
-    /// With `seek_armed` set, every sector before `start_frame` is discarded,
-    /// so a segment inside a multi-cutscene movie (`MV3.STR` carries four)
-    /// starts exactly on its first frame. `end_frame` of `0` plays to EOF.
+    /// With `seek_armed` set and a non-zero `start_frame`, every sector before
+    /// that frame is discarded, so a segment inside a multi-cutscene movie
+    /// (`MV3.STR` carries four) starts exactly on its first frame. `end_frame`
+    /// of `0` plays to EOF.
+    ///
+    /// In retail this is reached only through [`StRing::set_stream`], which is
+    /// its sole caller; it stays public here because the demuxer re-arms the
+    /// same three globals itself on the end-frame path.
+    // PORT: FUN_8005f004
     pub fn set_mask(&mut self, seek_armed: bool, start_frame: u32, end_frame: u32) {
         self.seek_armed = seek_armed;
         self.start_frame = start_frame;
         self.end_frame = end_frame;
+    }
+
+    /// Bit 0 of the mode word [`StRing::set_stream`] was given
+    /// (`_DAT_801CAD98`).
+    ///
+    /// Retail reads it in two places, both hardware-side: it gates the
+    /// sector-lost check against the CD status word, and it selects between the
+    /// two DMA attribute words used for the payload transfer. The port has no
+    /// CD or DMA registers to poke, so it only records the flag.
+    pub fn mode_flag(&self) -> bool {
+        self.mode_flag
     }
 
     /// Number of ring slots.
@@ -498,7 +560,7 @@ mod tests {
     #[test]
     fn a_complete_frame_becomes_readable_and_frees() {
         let mut ring = StRing::retail();
-        ring.set_stream(1);
+        ring.set_stream(1, 0, 0);
         let steps = push_frame(&mut ring, 1, 3, 0xAB);
         assert!(steps.iter().all(|s| s.status == StStatus::Accepted));
         assert!(!steps[0].frame_ready && !steps[1].frame_ready);
@@ -518,7 +580,7 @@ mod tests {
     #[test]
     fn frames_occupy_consecutive_slots_so_payloads_are_contiguous() {
         let mut ring = StRing::retail();
-        ring.set_stream(1);
+        ring.set_stream(1, 0, 0);
         for (i, fill) in [(1u32, 0x11u8), (2, 0x22)] {
             push_frame(&mut ring, i, 2, fill);
             let f = ring.get_next().expect("frame ready");
@@ -531,7 +593,7 @@ mod tests {
     #[test]
     fn non_video_and_filtered_sectors_are_dropped_silently() {
         let mut ring = StRing::retail();
-        ring.set_stream(1);
+        ring.set_stream(1, 0, 0);
         let mut audio = sector(1, 0, 1, 0);
         audio[0..2].copy_from_slice(&0x0100u16.to_le_bytes());
         assert_eq!(
@@ -553,7 +615,7 @@ mod tests {
     #[test]
     fn out_of_order_chunk_discards_the_partial_frame() {
         let mut ring = StRing::retail();
-        ring.set_stream(1);
+        ring.set_stream(1, 0, 0);
         ring.deliver_sector(&sector(1, 0, 3, 0x01));
         ring.deliver_sector(&sector(1, 1, 3, 0x01));
         // Chunk 2 is expected; chunk 0 of the next frame breaks sequence.
@@ -568,8 +630,7 @@ mod tests {
     #[test]
     fn seek_to_start_frame_skips_earlier_sectors() {
         let mut ring = StRing::retail();
-        ring.set_stream(1);
-        ring.set_mask(true, 5, 0);
+        ring.set_stream(1, 5, 0);
         for f in 1..5 {
             for c in 0..2 {
                 assert_eq!(
@@ -583,11 +644,41 @@ mod tests {
         assert_eq!(ring.get_next().expect("frame").frame_number, 5);
     }
 
+    /// `set_stream` alone must arm the seek and carry both bounds, because
+    /// retail's `StSetStream` tail-passes its untouched `a1`/`a2` into
+    /// `FUN_8005f004(1, start_frame, end_frame)`. A port that dropped them
+    /// would still pass every other test here while never seeking, so this is
+    /// the guard for exactly that regression.
+    #[test]
+    fn set_stream_alone_installs_the_window_no_set_mask_needed() {
+        let mut ring = StRing::retail();
+        ring.set_stream(1, 5, 9);
+        assert_eq!(
+            ring.deliver_sector(&sector(4, 0, 1, 0x00)).status,
+            StStatus::NotForStream,
+            "the seek is armed by set_stream, not by a separate set_mask call"
+        );
+        assert!(push_frame(&mut ring, 5, 1, 0x77)[0].frame_ready);
+        assert_eq!(ring.get_next().expect("frame").frame_number, 5);
+        // The end bound came through the same call.
+        let step = ring.deliver_sector(&sector(9, 0, 1, 0x00));
+        assert_eq!(step.status, StStatus::EndFrame);
+        assert!(step.end_of_stream);
+    }
+
+    #[test]
+    fn mode_word_keeps_only_its_low_bit() {
+        let mut ring = StRing::retail();
+        ring.set_stream(1, 0, 0);
+        assert!(ring.mode_flag());
+        ring.set_stream(2, 0, 0);
+        assert!(!ring.mode_flag(), "_DAT_801CAD98 = param_1 & 1");
+    }
+
     #[test]
     fn end_frame_terminates_the_stream_and_rearms_the_seek() {
         let mut ring = StRing::retail();
-        ring.set_stream(1);
-        ring.set_mask(false, 0, 3);
+        ring.set_stream(1, 0, 3);
         push_frame(&mut ring, 1, 1, 0x01);
         let f = ring.get_next().expect("frame 1");
         ring.free_ring(f.slot);
@@ -607,7 +698,7 @@ mod tests {
         // Four slots, and the decoder never frees: the fifth sector has
         // nowhere to go.
         let mut ring = StRing::set_ring(4);
-        ring.set_stream(1);
+        ring.set_stream(1, 0, 0);
         push_frame(&mut ring, 1, 1, 0x01);
         push_frame(&mut ring, 2, 1, 0x02);
         push_frame(&mut ring, 3, 1, 0x03);
@@ -622,8 +713,7 @@ mod tests {
     #[test]
     fn wrap_is_blocked_while_slot_zero_is_still_held() {
         let mut ring = StRing::set_ring(4);
-        ring.set_stream(1);
-        ring.set_mask(false, 0, 0xFFFF);
+        ring.set_stream(1, 0, 0xFFFF);
         push_frame(&mut ring, 1, 1, 0x01);
         // Hand frame 1 out but never free it, so slot 0 stays in use.
         let held = ring.get_next().expect("frame 1");
@@ -643,7 +733,7 @@ mod tests {
     #[test]
     fn free_ring_rejects_a_slot_the_decoder_does_not_hold() {
         let mut ring = StRing::retail();
-        ring.set_stream(1);
+        ring.set_stream(1, 0, 0);
         assert!(
             !ring.free_ring(0),
             "a free slot is not the decoder's to give back"

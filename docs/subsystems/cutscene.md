@@ -172,21 +172,43 @@ sector it DMAs the 32-byte STR sector header out of the CD FIFO and walks the as
   `frame_number == start_frame`, so a mid-file segment starts exactly on its first frame;
 - **sequence check**: `chunk_number` must equal the running counter `_DAT_801CAD94` within the
   current `frame_number` (`_DAT_801CAD90`); chunk 0 latches a new frame;
-- **end check**: on chunk 0, `end_frame` reached -> raise the end latch, wrap the ring, fire the
-  optional end callback; **ring-full** -> mark the frame slot dropped (status 1) rather than
-  overrun;
+- **end check**: on chunk 0, `end_frame` reached -> rewind the partial frame, re-arm the seek, fire
+  the optional end callback; a frame that no longer fits before the ring end leaves a **wrap
+  marker** (status 1) in the slot and restarts the write cursor at slot 0;
+- **ring-full**: the target slot is still held by the decoder -> the sector is dropped rather than
+  overrunning it, and the slot is left untouched;
 - payloads DMA into per-frame ring slots (2016 bytes per sector after the 32-byte per-slot status
   headers), status 2 = frame complete.
 
 The overlay consumes frames via `StGetNext` (`FUN_8005EF40`: status 2 -> 4 "in use") and returns
 slots with `StFreeRing` (`FUN_8005EE4C`).
 
-**The frame window does not come from `StSetStream`.** Despite the PsyQ prototype, `FUN_8005EDC4`
-reads only its mode word and its two callback arguments - the `start_frame` / `end_frame`
-arguments are never touched. The window is installed separately by `FUN_8005F004(seek_armed,
-start_frame, end_frame)`, which the play loop calls with the dispatch slot's frame range. Reading
-the window off `StSetStream` is what makes a mid-file segment (`MV3.STR` carries four) appear to
-start on the file's first frame.
+#### The frame window comes from `StSetStream`
+
+`FUN_8005EDC4` installs the window exactly as its PsyQ prototype implies. Its first act is
+
+```
+8005ede4  jal 0x8005f004
+8005ede8  _li a0,0x1        <- the delay slot writes a0 and nothing else
+```
+
+`a1` and `a2` are never written before that call (only `a3` is saved into `s1`), so `StSetStream`'s
+own `start_frame` / `end_frame` arguments fall straight through into the callee. Retail is
+`FUN_8005F004(1, start_frame, end_frame)`, which stores them to `_DAT_801CADD0` (seek arm, forced
+to 1), `_DAT_801CADAC` (`start_frame`) and `_DAT_801CADCC` (`end_frame`). `FUN_8005F004` has no
+other caller in any dump - it is `StSetStream`'s helper, not a separate entry point.
+
+Ghidra's decompiler prints that call as `FUN_8005f004(1)` because it infers a one-argument
+signature for the callee. **The dropped arguments are a decompiler artefact.** Reading the C
+instead of the disassembly here yields the false conclusion that the window arrives from somewhere
+else, and a port built on it never seeks - so every mid-file segment starts on the file's first
+frame.
+
+What *is* true is that the St library's end-frame stop is unused in retail. The one call site,
+`FUN_801CF988`, is `StSetStream(slot[+0x04], slot[+0x08], -1, 0, 0)`: mode and `start_frame` come
+from the FMV dispatch slot, but `end_frame` is a literal `-1`. The segment end is enforced one
+level up, by the play loop `FUN_801CF098` comparing the demuxed frame number against the slot's
+`+0x0C` (`801cf384 lw v0,0xc(s3)` / `801cf38c slt v0,v0,s0`).
 
 ### Ring layout + slot status
 
@@ -216,6 +238,17 @@ stays the right tool for offline extraction where no ring exists to overrun. The
 `st_ring_real_str` test streams a real `MV1.STR` through both and asserts they agree
 frame-for-frame and byte-for-byte, and that the armed seek lands exactly on `MV3.STR`'s
 `0xE2` segment boundary.
+
+`set_stream(mode, start_frame, end_frame)` mirrors retail's argument list and installs the window
+itself; `set_mask` stays exposed because the demuxer re-arms the same three globals on its
+end-frame path. Only bit 0 of `mode` is kept (`_DAT_801CAD98`), readable as `mode_flag()` - retail
+uses it for the sector-lost check and the DMA attribute word, both hardware-side, so the port only
+records it.
+
+`StRing` is **not wired** into the engine's playback path: `legaia_engine_core::cutscene` and
+`legaia-engine play-str` demux through `StrFrameAssembler`, and nothing outside the crate's own
+tests constructs a ring. It is the faithful reading of retail's back-pressure and seek behaviour
+and the oracle the assembler is checked against, not a live component.
 
 ### Bitstream decode + MDEC feed (overlay)
 
