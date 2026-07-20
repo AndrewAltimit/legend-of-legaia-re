@@ -1328,6 +1328,32 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.spawn_clut_cell_fx(&payload);
     }
 
+    /// Op `0x4C 0x82 <slot>` - full HP/MP restore of one party slot.
+    ///
+    /// Retail's inn / rest heal. There is no inn opcode and no native inn
+    /// routine: the scene script composes a stay out of dialogue, a
+    /// 2-option picker, an op-0x4E gold gate, an op-0x3A `ADD_MONEY` with
+    /// the negative charge and the fades, then emits one of these per
+    /// party slot. The charge and the restore are decoupled, which is why
+    /// a free rest (a bed, an infirmary) is the same tail with the gate
+    /// and debit dropped - and why `legaia_asset::inn_costs` finds the
+    /// prices scripted per scene rather than in a table.
+    ///
+    /// Retail addresses the slot by *literal operand*, so a script that
+    /// heals slots 0/1/2 heals exactly those records - it does not walk
+    /// "every active member". The port keeps that: an operand past the end
+    /// of the roster is a no-op, matching a write into a record the game
+    /// never populated.
+    fn op4c_n8_sub2_restore_party_slot(&mut self, slot: u8) {
+        let Some(member) = self.world.roster.members.get_mut(slot as usize) else {
+            return;
+        };
+        let mut hms = member.hp_mp_sp();
+        hms.hp_cur = hms.hp_max;
+        hms.mp_cur = hms.mp_max;
+        member.set_hp_mp_sp(hms);
+    }
+
     fn op4c_n8_sub_0_actor_allocator(&mut self, _ctx: &mut FieldCtx, count: u8, tail: &[u8]) {
         // In the spawned opening-cutscene context (target 0xF8) this op is the
         // inline-narration text-draw, not an actor spawn - the separate

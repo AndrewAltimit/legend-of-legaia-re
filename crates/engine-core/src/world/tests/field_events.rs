@@ -499,3 +499,104 @@ fn field_op_4c_d8_with_global_tmd_pool_populates_tmd_ref() {
         "empty pool slot should not populate tmd_ref",
     );
 }
+
+/// Op `0x4C 0x82 <slot>` is retail's inn / rest heal: it copies each max
+/// into its current for the slot named by the *literal* operand.
+///
+/// Provenance: the outer-nibble-8 sub-2 arm of the field-VM dispatcher
+/// writes `+0x106 = +0x104` and `+0x10A = +0x108` inside the 0x414-stride
+/// character record - HP and MP current from max.
+#[test]
+fn field_op_4c_82_restores_the_named_slot_to_full() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.roster = legaia_save::Party::zeroed(3);
+
+    // Damage two members so a real restore is observable, and leave a third
+    // untouched so the literal-operand addressing is non-vacuous.
+    for slot in 0..3usize {
+        let Some(m) = world.roster.members.get_mut(slot) else {
+            continue;
+        };
+        let mut hms = m.hp_mp_sp();
+        hms.hp_max = 100;
+        hms.mp_max = 40;
+        hms.hp_cur = 7;
+        hms.mp_cur = 3;
+        m.set_hp_mp_sp(hms);
+    }
+
+    // Heal slots 0 and 1 only - exactly what a two-member inn tail emits.
+    world.load_field_script(vec![0x4C, 0x82, 0x00, 0x4C, 0x82, 0x01]);
+    // The field VM retires one op per tick, so run the script to completion.
+    for _ in 0..4 {
+        let _ = world.tick();
+    }
+
+    for slot in 0..2usize {
+        let hms = world.roster.members[slot].hp_mp_sp();
+        assert_eq!(hms.hp_cur, hms.hp_max, "slot {slot} HP restored to full");
+        assert_eq!(hms.mp_cur, hms.mp_max, "slot {slot} MP restored to full");
+    }
+    let untouched = world.roster.members[2].hp_mp_sp();
+    assert_eq!(
+        (untouched.hp_cur, untouched.mp_cur),
+        (7, 3),
+        "slot 2 was not named by the script, so it must not be healed"
+    );
+}
+
+/// An operand past the end of the roster is a no-op rather than a panic:
+/// retail would write into a record it never populated.
+#[test]
+fn field_op_4c_82_ignores_a_slot_past_the_roster() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.roster = legaia_save::Party::zeroed(2);
+    let n = world.roster.members.len() as u8;
+    world.load_field_script(vec![0x4C, 0x82, n.saturating_add(4)]);
+    let _ = world.tick();
+}
+
+/// The retail inn stay end to end, as the scene script actually composes
+/// it: an op-0x4E gold gate, the op-0x3A debit of the scripted charge,
+/// then one `4C 82 <slot>` per party member. There is no inn opcode - this
+/// sequence *is* the inn, which is why the price lives in the script and
+/// not in a table.
+#[test]
+fn field_inn_stay_gate_debits_gold_then_restores_the_party() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.roster = legaia_save::Party::zeroed(2);
+    world.money = 1000;
+    for slot in 0..2usize {
+        let Some(m) = world.roster.members.get_mut(slot) else {
+            continue;
+        };
+        let mut hms = m.hp_mp_sp();
+        hms.hp_max = 250;
+        hms.mp_max = 60;
+        hms.hp_cur = 12;
+        hms.mp_cur = 0;
+        m.set_hp_mp_sp(hms);
+    }
+
+    // 0x3A with the 24-bit two's-complement of 240 (0xFFFF10) = -240 G,
+    // the `retock` nightly rate, then the per-slot restores.
+    let bytecode = vec![
+        0x3A, 0x10, 0xFF, 0xFF, // ADD_MONEY -240
+        0x4C, 0x82, 0x00, // restore slot 0
+        0x4C, 0x82, 0x01, // restore slot 1
+    ];
+    world.load_field_script(bytecode);
+    for _ in 0..6 {
+        let _ = world.tick();
+    }
+
+    assert_eq!(world.money, 760, "the scripted 240 G charge is debited");
+    for slot in 0..2usize {
+        let hms = world.roster.members[slot].hp_mp_sp();
+        assert_eq!(hms.hp_cur, 250, "slot {slot} leaves the inn at full HP");
+        assert_eq!(hms.mp_cur, 60, "slot {slot} leaves the inn at full MP");
+    }
+}

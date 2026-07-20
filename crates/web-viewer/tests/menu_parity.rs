@@ -380,3 +380,81 @@ fn load_screen_with_no_card_inserted_renders_and_refuses() {
         "nothing was loaded"
     );
 }
+
+/// The Tactical Arts chain editor is an **engine extension** with no retail
+/// pause-menu row, reached by Triangle on the Status screen
+/// (`field_menu_dispatch::try_open_arts_editor`). This asserts the browser
+/// page actually reaches it - the gap the UI host-drift waiver used to cover -
+/// and that the editor has live state behind it rather than a static frame.
+#[test]
+fn triangle_on_status_opens_the_arts_editor_on_the_play_page() {
+    const TRIANGLE: u16 = 0x1000;
+    const ROW_STATUS: usize = 3;
+
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+
+    rt.play_menu_open();
+    open_row(&mut rt, ROW_STATUS);
+    let (status_sprites, status_texts) = draw_counts(&rt);
+    assert!(
+        status_texts > 8,
+        "Status must render its retail layout first (got {status_texts})"
+    );
+
+    // Triangle swaps the Status sub-session for the chain editor.
+    rt.play_menu_input(TRIANGLE);
+    assert!(
+        rt.play_menu_is_open(),
+        "the menu stays open across the swap"
+    );
+    let (arts_sprites, arts_texts) = draw_counts(&rt);
+    eprintln!("arts editor: sprites={arts_sprites} texts={arts_texts}");
+    assert!(
+        (arts_sprites, arts_texts) != (status_sprites, status_texts),
+        "Triangle must change the screen - identical draw lists mean the \
+         editor never opened"
+    );
+    // Browse phase is "ARTS - <name>", the "+ New" row and the footer hint.
+    assert!(
+        arts_texts > 20,
+        "the browse screen draws its header, rows and footer (got {arts_texts})"
+    );
+
+    // The editor is stateful, not a static frame: Cross on "+ New" enters the
+    // Editing phase, and each direction appends to the working sequence.
+    rt.play_menu_input(CROSS);
+    let (_, editing_texts) = draw_counts(&rt);
+    assert_ne!(
+        editing_texts, arts_texts,
+        "Cross on + New must enter the Editing phase"
+    );
+
+    // Appends below the 3-input minimum only grow the printed sequence...
+    let mut prev = editing_texts;
+    for dir in [LEFT, RIGHT] {
+        rt.play_menu_input(dir);
+        let (_, texts) = draw_counts(&rt);
+        assert!(
+            texts > prev,
+            "appending below min length lengthens the sequence ({prev} -> {texts})"
+        );
+        prev = texts;
+    }
+    // ...and the append that REACHES the minimum shrinks the list, because the
+    // "(need 3+ inputs)" tail is dropped from the Cross hint once the chain is
+    // long enough to save. That drop is the min-length rule made visible.
+    rt.play_menu_input(DOWN);
+    let (_, at_min_texts) = draw_counts(&rt);
+    assert!(
+        at_min_texts < prev,
+        "reaching min length drops the 'need 3+ inputs' hint ({prev} -> \
+         {at_min_texts})"
+    );
+
+    // Circle backs out of the editor rather than leaving the page stranded.
+    rt.play_menu_input(CIRCLE);
+    assert!(rt.play_menu_is_open(), "backing out keeps the menu up");
+}

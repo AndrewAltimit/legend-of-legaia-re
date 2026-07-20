@@ -64,11 +64,15 @@ hosts; the shared builder covers only the native panel shape.
 builder = "game_over_draws_for"
 kind = "web_missing"
 reason = """
-Unreachable on BOTH hosts, so there is nothing for the page to mirror: the
-native window declares `BootUiState::GameOver` but never constructs it (the
-variant carries `#[allow(dead_code)]`), and no party-wipe path routes into it.
-Wiring the browser side ahead of the native side would invent behaviour rather
-than close drift.
+Unreachable on BOTH hosts, and deliberately so. The native window declares
+`BootUiState::GameOver` but never constructs it, because retail's trigger is
+not pinned: the action-SM `0x5A` gate detects the wipe, but the battle-exit
+selector never reads the wipe cause, and no static mode-0x12 writer exists on
+the disc (see docs/subsystems/battle.md § party wipe). Worse, retail's game
+over is not a menu at all - PROT 0902 carries one string and one unconditional
+exit - so this builder's Continue/Retry/Quit rows are an engine invention.
+Wiring either host would commit the port to behaviour nobody has observed.
+Close it with a runtime probe, not by picking a trigger.
 """
 
 [[waiver]]
@@ -80,17 +84,6 @@ config file and an in-engine screen; the browser page's bindings are a JS
 keycode table (`site/js/play-app.js` PAD/BOOT_PAD) owned by the page, not the
 engine. A shared rebind screen would have to write a config the browser has no
 place to persist.
-"""
-
-[[waiver]]
-builder = "tactical_arts_editor_draws_for"
-kind = "web_missing"
-reason = """
-An engine extension with no retail pause-menu row on either host: retail's
-top-level menu is the 7 rows in `engine-core::field_menu`, and
-`FieldMenuSubsession::Arts` is documented as constructed directly rather than
-navigated to (`engine-core/src/field_menu_dispatch.rs:80`). The native window
-draws it because its match is exhaustive, not because a player can reach it.
 """
 
 [[waiver]]

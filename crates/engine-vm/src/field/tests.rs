@@ -128,7 +128,7 @@ struct TestHost {
     n6_sub0_calls: Vec<[i16; 6]>,
     #[allow(clippy::type_complexity)]
     n7_tile_calls: Vec<(u8, (u8, u8), (u8, u8), u8)>,
-    n8_party_mirrors: Vec<u8>,
+    n8_restored_slots: Vec<u8>,
     n8_b630_writes: Vec<u8>,
     n8_callback_regs: u32,
     n8_global_writes: Vec<(i16, u8, u8)>,
@@ -555,8 +555,8 @@ impl FieldHost for TestHost {
     fn op4c_n7_tile_flag_bulk(&mut self, sub: u8, x_range: (u8, u8), z_range: (u8, u8), mask: u8) {
         self.n7_tile_calls.push((sub, x_range, z_range, mask));
     }
-    fn op4c_n8_sub2_party_page_mirror(&mut self, page: u8) {
-        self.n8_party_mirrors.push(page);
+    fn op4c_n8_sub2_restore_party_slot(&mut self, slot: u8) {
+        self.n8_restored_slots.push(slot);
     }
     fn op4c_n8_sub4_set_b630(&mut self, value: u8) {
         self.n8_b630_writes.push(value);

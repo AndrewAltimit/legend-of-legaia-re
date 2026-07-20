@@ -29,6 +29,7 @@ resolved through the window-descriptor table below.
 - [Magic list](#magic-list-submenu-2) · [Moves list](#moves-list-submenu-3) · [Skills page](#skills-page-submenu-1)
 - [Top-level pause menu](#top-level-pause-menu) · [Equip screen](#equip-screen) · [Options screen](#options-screen)
 - [Items screen](#items-screen) · [Magic screen](#magic-screen)
+- [Inn stay](#inn-stay-there-is-no-inn-screen)
 - [Draw primitives + CLUT staging](#draw-primitives--clut-staging)
 - [Record fields consumed](#record-fields-consumed)
 
@@ -733,6 +734,64 @@ equipment stats `0x80074f68`, item effects `0x800752c0`, accessory passives
 `0x8007625c`, arts `0x80075ec4`. These are the same records documented under
 the per-format pages.
 
+## Inn stay (there is no inn screen)
+
+An inn stay is not a menu, a session, or a native routine. Retail composes
+it **inline in the scene's MAN script** out of ops this page's sibling
+[`script-vm.md`](script-vm.md) already documents, and the only
+inn-specific thing in the whole engine is one opcode that heals.
+
+The restore is `0x4C` outer-nibble-8 sub-2:
+
+```text
+4C 82 <slot>        ; 3 bytes, PC += 3
+```
+
+Against the 0x414-stride character record based at `0x80084708`, the
+dispatcher arm writes each max into its current:
+
+```text
+*(u16 *)(record + 0x106) = *(u16 *)(record + 0x104);   ; hp_cur = hp_max
+*(u16 *)(record + 0x10A) = *(u16 *)(record + 0x108);   ; mp_cur = mp_max
+```
+
+The max/current roles are corroborated by the level-up routine, which
+grows `+0x104`/`+0x108`, clamps them to 9999/999, then clamps
+`+0x106`/`+0x10A` against them (see `ghidra/scripts/funcs/80042558.txt`).
+The slot is a **literal operand**: a script that heals slots 0/1/2 heals
+exactly those records rather than walking the active party.
+
+A paid stay wraps that restore in generic ops:
+
+| Step | Op |
+|---|---|
+| Innkeeper's greeting + the price line | `0x1F` dialogue segments |
+| Yes / No | MES-embedded option picker |
+| Can the player afford it? | `0x4E` gold gate, jumping to the refusal line |
+| Take the money | `0x3A` `ADD_MONEY` with the negative charge |
+| Fade out, wait, fade in | `0x34` / `0x35` / `0x36` + `0x4A` |
+| Heal | one `4C 82 <slot>` per party member |
+
+Two consequences fall out of that shape. The charge and the restore are
+**fully decoupled**, so a free rest (a bed, an infirmary) is the same tail
+with the gate and the debit dropped - which is why restore triples appear
+in many more scenes than gold gates do. And the price lives in the script,
+which is why `legaia_asset::inn_costs` locates the charges per scene and
+why there is no inn cost table to find.
+
+Scenes carrying a gate + debit pair include `retock` (240 G), `ropeway`
+and `rayman2` (200 G), `koin1` (280 G) and `koin2` (200 G); `koin4` and
+`koin1b` carry several sites each. Some inns append a story-flag-gated
+tail that sets a system flag and `0x3F`-warps to a `DREAM` scene - the
+restore still runs first, unconditionally.
+
+The engine hosts the opcode at
+`engine-core::world::vm_hosts::op4c_n8_sub2_restore_party_slot`, so retail
+inn scripts heal the live party on both hosts. `MenuRuntime::open_inn`
+remains an engine-side convenience (a yes/no session with an explicit
+cost) for tests and tooling - it is **not** a port of a retail screen,
+because retail has none.
+
 ## Engine port
 
 Every draw builder named on this page lives in **`legaia-engine-ui`**, not in
@@ -811,3 +870,29 @@ hold their measured gaps / text stand-ins. Hosts still frame these
 screens generically pending the play-window / web wiring; the
 HP / MP health-tier inks on the status page remain the other open
 fidelity item.
+
+
+### Tactical Arts chain editor (engine extension)
+
+The chain editor (`engine-ui::tactical_arts_editor_draws_for`, backed by
+`engine-core::tactical_arts_editor::ChainEditor`) has **no retail
+pause-menu row**: retail's top-level list is the seven rows above, and
+composing a named command chain outside battle is not a retail feature.
+It is an opt-in engine extension, and it needs an entry point that does
+not invent an eighth row.
+
+That entry is Triangle on the **Status** screen, which swaps the status
+sub-session for a chain editor on the character the panel is currently
+showing (`engine-core::field_menu_dispatch::try_open_arts_editor`).
+Status is the retail surface that lists a character's arts, and retail's
+status panel reads Left / Right / L1 / R1 / Circle / Start only - so
+Triangle is unclaimed there and the extension costs no retail input.
+Closing the editor parks the resume cursor back on Status.
+
+Both hosts reach it through the same seam, and both project the live
+editor through the shared `field_menu_dispatch::arts_editor_view` - the
+character-name lookup, the pretty-printed sequences, the phase mapping
+and the "+ New" room check are one implementation, so the two hosts
+cannot drift apart on them. Saving folds the edit back into the world's
+saved chains via `World::chain_library` / `store_chain_library`, so the
+next battle's Arts rows reflect it.

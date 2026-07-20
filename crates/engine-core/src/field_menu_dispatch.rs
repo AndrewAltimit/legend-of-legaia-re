@@ -311,6 +311,170 @@ pub fn apply_arts_outcome(
 }
 
 // ---------------------------------------------------------------------------
+// Tactical Arts chain editor - engine-extension entry point + view
+// ---------------------------------------------------------------------------
+
+/// Pad button that opens the Tactical Arts chain editor from the Status
+/// screen. Retail's status panel (`FUN_801D33D8`) reads Left / Right /
+/// L1 / R1 / Circle / Start only, so Triangle is unclaimed there and the
+/// extension costs no retail input.
+pub const ARTS_EDITOR_OPEN_BUTTON: PadButton = PadButton::Triangle;
+
+/// Phase tag of an [`ArtsEditorView`], mirroring
+/// [`crate::tactical_arts_editor::EditorPhase`] without the payloads so
+/// renderer crates can match on it without depending on `engine-core`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArtsEditorPhaseTag {
+    Browsing,
+    Editing,
+    Naming,
+}
+
+/// Everything the Tactical Arts editor screen draws, projected out of a
+/// live [`ChainEditor`] plus the [`World`] it belongs to.
+///
+/// Both hosts (the native `play-window` and the browser play page) build
+/// their `engine-ui` draw args from this one projection, so the character
+/// name lookup, the pretty-printed sequences, the phase mapping and the
+/// "+ New" room check cannot drift apart between them.
+#[derive(Debug, Clone)]
+pub struct ArtsEditorView {
+    /// Roster name of the character whose library is being edited.
+    pub character_name: String,
+    pub phase: ArtsEditorPhaseTag,
+    /// One `(name, pretty_sequence)` pair per saved chain, in library order.
+    pub saved: Vec<(String, String)>,
+    /// Cursor row in the browse list (meaningful in `Browsing`).
+    pub browse_cursor: u8,
+    /// Pretty-printed working sequence (`Editing` / `Naming`).
+    pub editing_pretty: String,
+    pub editing_len: usize,
+    pub min_len: usize,
+    pub max_len: usize,
+    /// Name being picked in the `Naming` phase.
+    pub naming_name: String,
+    /// `true` while the library has room for one more chain - the browse
+    /// list only shows its trailing "+ New" row then.
+    pub can_add_new: bool,
+}
+
+/// Project a live [`ChainEditor`] into the renderer-agnostic
+/// [`ArtsEditorView`] both hosts draw from.
+///
+/// The editor's `library_view` is the authoritative saved-chain list until
+/// the engine calls [`apply_arts_outcome`] - it is the snapshot the editor
+/// took at construction, so the screen stays consistent with the edits in
+/// flight rather than with the world's not-yet-updated records.
+pub fn arts_editor_view(editor: &ChainEditor, world: &World) -> ArtsEditorView {
+    use crate::tactical_arts_editor::EditorPhase;
+
+    let char_slot = editor.char_slot();
+    let character_name = roster_names(world)
+        .get(char_slot as usize)
+        .cloned()
+        .unwrap_or_else(|| format!("Slot {}", char_slot + 1));
+
+    let library = editor.library_view();
+    let saved: Vec<(String, String)> = library
+        .iter()
+        .map(|c| (c.name.clone(), c.pretty_sequence()))
+        .collect();
+
+    let pretty_of = |working: &[legaia_art::queue::Command]| -> String {
+        working
+            .iter()
+            .map(|c| match c {
+                legaia_art::queue::Command::Left => "L",
+                legaia_art::queue::Command::Right => "R",
+                legaia_art::queue::Command::Up => "U",
+                legaia_art::queue::Command::Down => "D",
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+
+    let (phase, browse_cursor, editing_pretty, editing_len, naming_name) = match editor.phase() {
+        EditorPhase::Browsing { cursor } => (
+            ArtsEditorPhaseTag::Browsing,
+            *cursor,
+            String::new(),
+            0usize,
+            String::new(),
+        ),
+        EditorPhase::Editing { working } => (
+            ArtsEditorPhaseTag::Editing,
+            0,
+            pretty_of(working),
+            working.len(),
+            String::new(),
+        ),
+        EditorPhase::Naming { working, name } => (
+            ArtsEditorPhaseTag::Naming,
+            0,
+            pretty_of(working),
+            working.len(),
+            name.clone(),
+        ),
+        // Terminal state: the host is about to drain the outcome, so draw
+        // the browse frame rather than a half-torn editing one.
+        EditorPhase::Done(_) => (
+            ArtsEditorPhaseTag::Browsing,
+            0,
+            String::new(),
+            0usize,
+            String::new(),
+        ),
+    };
+
+    ArtsEditorView {
+        character_name,
+        phase,
+        can_add_new: saved.len() < ChainLibrary::MAX_SLOTS,
+        saved,
+        browse_cursor,
+        editing_pretty,
+        editing_len,
+        min_len: ChainLibrary::MIN_LEN,
+        max_len: ChainLibrary::MAX_LEN,
+        naming_name,
+    }
+}
+
+/// Engine-extension entry point for the Tactical Arts chain editor.
+///
+/// Retail's pause menu is the seven rows in [`FieldMenuRow::ALL`] and has
+/// no Arts row, so the editor needs an entry that does not invent an
+/// eighth: pressing [`ARTS_EDITOR_OPEN_BUTTON`] while the **Status**
+/// screen is up swaps that sub-session for a [`ChainEditor`] on the
+/// character the panel is currently showing. Status is the retail surface
+/// that lists a character's arts, which is why
+/// [`FieldMenuSubsession::row`] already parks the Arts resume cursor
+/// there.
+///
+/// Hosts call this once per frame *before* [`FieldMenuSubsession::tick_pad_edge`]
+/// and skip that tick when it returns `true`, so the same edge does not
+/// also drive the screen it just replaced. Returns `false` (and leaves
+/// `sub` alone) for every other sub-session and every other button.
+pub fn try_open_arts_editor(sub: &mut FieldMenuSubsession, pressed: u16, world: &World) -> bool {
+    if pressed & ARTS_EDITOR_OPEN_BUTTON.mask() == 0 {
+        return false;
+    }
+    let FieldMenuSubsession::Status(status) = sub else {
+        return false;
+    };
+    // The status panel filters out unclaimed roster slots, so its cursor
+    // indexes the *shown* list - map back through the snapshot's own slot
+    // so the editor edits the right character's library.
+    let char_slot = status
+        .current()
+        .map(|snap| snap.slot)
+        .unwrap_or_else(|| status.cursor());
+    let library = world.chain_library();
+    *sub = FieldMenuSubsession::Arts(ChainEditor::new(char_slot, &library));
+    true
+}
+
+// ---------------------------------------------------------------------------
 // Builders
 // ---------------------------------------------------------------------------
 
@@ -717,6 +881,94 @@ mod tests {
         assert!(!s.is_done());
         s.tick_pad_edge(PadButton::Circle.mask());
         assert!(s.is_done());
+    }
+
+    #[test]
+    fn triangle_on_status_opens_the_arts_editor_for_the_shown_character() {
+        let w = fresh_world();
+        let mut s = build(FieldMenuRow::Status, &w);
+        assert!(try_open_arts_editor(&mut s, PadButton::Triangle.mask(), &w));
+        match &s {
+            FieldMenuSubsession::Arts(editor) => {
+                // The status panel opens on its first shown snapshot, so the
+                // editor must target that member's slot - not a fixed 0.
+                let expected = status_snapshots(&w).first().map(|s| s.slot).unwrap_or(0);
+                assert_eq!(editor.char_slot(), expected);
+            }
+            _ => panic!("expected the Status session to be swapped for Arts"),
+        }
+        // The resume cursor parks back on Status, so closing the editor
+        // returns the player where the extension was entered.
+        assert_eq!(s.row(), FieldMenuRow::Status);
+    }
+
+    #[test]
+    fn arts_editor_open_button_is_inert_outside_the_status_screen() {
+        let w = fresh_world();
+        for row in [FieldMenuRow::Items, FieldMenuRow::Equip, FieldMenuRow::Save] {
+            let mut s = build(row, &w);
+            assert!(
+                !try_open_arts_editor(&mut s, PadButton::Triangle.mask(), &w),
+                "{row:?} must not open the arts editor"
+            );
+            assert_eq!(s.row(), row);
+        }
+        // ...and Status itself only reacts to the documented button.
+        let mut s = build(FieldMenuRow::Status, &w);
+        assert!(!try_open_arts_editor(&mut s, PadButton::Cross.mask(), &w));
+        assert!(matches!(s, FieldMenuSubsession::Status(_)));
+    }
+
+    #[test]
+    fn arts_editor_view_projects_live_library_and_phase() {
+        use crate::tactical_arts_editor::SavedChain;
+        use legaia_art::queue::Command;
+
+        let w = fresh_world();
+        let mut lib = ChainLibrary::new();
+        lib.save(
+            0,
+            SavedChain::new(
+                "Combo A",
+                vec![Command::Left, Command::Right, Command::Down],
+            ),
+        )
+        .expect("in-range chain saves");
+        let editor = ChainEditor::new(0, &lib);
+
+        let view = arts_editor_view(&editor, &w);
+        assert_eq!(view.phase, ArtsEditorPhaseTag::Browsing);
+        assert_eq!(view.saved.len(), 1);
+        assert_eq!(view.saved[0].0, "Combo A");
+        // The pretty sequence is the shared one-line stringification both
+        // hosts print, so it is asserted rather than re-derived per host.
+        assert_eq!(view.saved[0].1, "L R D");
+        assert_eq!(view.character_name, "Vahn");
+        assert_eq!(view.min_len, ChainLibrary::MIN_LEN);
+        assert_eq!(view.max_len, ChainLibrary::MAX_LEN);
+        assert!(view.can_add_new, "1 of 8 slots used leaves room for + New");
+    }
+
+    #[test]
+    fn arts_editor_view_hides_new_row_once_the_library_is_full() {
+        use crate::tactical_arts_editor::SavedChain;
+        use legaia_art::queue::Command;
+
+        let w = fresh_world();
+        let mut lib = ChainLibrary::new();
+        for i in 0..ChainLibrary::MAX_SLOTS {
+            lib.save(
+                0,
+                SavedChain::new(
+                    format!("C{i}"),
+                    vec![Command::Up, Command::Up, Command::Down],
+                ),
+            )
+            .expect("library has room until MAX_SLOTS");
+        }
+        let view = arts_editor_view(&ChainEditor::new(0, &lib), &w);
+        assert_eq!(view.saved.len(), ChainLibrary::MAX_SLOTS);
+        assert!(!view.can_add_new);
     }
 
     #[test]

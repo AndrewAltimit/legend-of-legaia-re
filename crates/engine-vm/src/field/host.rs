@@ -1267,21 +1267,34 @@ pub trait FieldHost {
         let _ = (sub, x_range, z_range, mask);
     }
 
-    /// Op 0x4C outer-nibble-8 sub-2 - party-page mirror write.
+    /// Op 0x4C outer-nibble-8 sub-2 - full HP/MP restore of one party slot.
     ///
-    /// 3-byte instruction `[4C, 0x82, page]`. The original mirrors two `u16`
-    /// values within the per-page inventory struct at
-    /// `&DAT_8008480C + page * 0x414`:
+    /// 3-byte instruction `[4C, 0x82, slot]`. The original copies each
+    /// max into its matching current, inside the 0x414-stride character
+    /// record based at `0x80084708`:
     ///
     /// ```text
-    ///   *(short *)(0x8008480E + page * 0x414) = *(short *)(0x8008480C + page * 0x414);
-    ///   *(short *)(0x80084812 + page * 0x414) = *(short *)(0x80084810 + page * 0x414);
+    ///   *(short *)(0x8008480E + slot * 0x414) = *(short *)(0x8008480C + slot * 0x414);
+    ///   *(short *)(0x80084812 + slot * 0x414) = *(short *)(0x80084810 + slot * 0x414);
     /// ```
     ///
-    /// Hosts model their own inventory layout - the hook receives only
-    /// `page`. PC += 3.
-    fn op4c_n8_sub2_party_page_mirror(&mut self, page: u8) {
-        let _ = page;
+    /// `+0x104`/`+0x106` are HP max/current and `+0x108`/`+0x10A` are MP
+    /// max/current, so the arm is exactly `hp_cur = hp_max; mp_cur =
+    /// mp_max`. The max/current roles are corroborated by the level-up
+    /// routine, which grows `+0x104`/`+0x108`, clamps them to 9999/999,
+    /// then clamps `+0x106`/`+0x10A` against them.
+    ///
+    /// This is **retail's inn/rest heal**. There is no inn opcode and no
+    /// native inn routine: a stay is composed inline in the scene script
+    /// out of generic ops (dialogue, a 2-option picker, an op-0x4E gold
+    /// gate, op-0x3A `ADD_MONEY` with the negative charge, screen fades)
+    /// and then one of these per party slot. Charge and restore are fully
+    /// decoupled - a free rest is the same tail minus the gate and debit.
+    /// See `docs/subsystems/field-menu.md`.
+    ///
+    /// PC += 3.
+    fn op4c_n8_sub2_restore_party_slot(&mut self, slot: u8) {
+        let _ = slot;
     }
 
     /// Op 0x4C outer-nibble-8 sub-4 - write `_DAT_8007B630`.

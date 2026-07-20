@@ -152,13 +152,13 @@ fn op_4c_n7_sub_2_advances() {
 }
 
 #[test]
-fn op_4c_n8_sub2_party_mirror_advances_three_bytes() {
+fn op_4c_n8_sub2_restore_party_slot_advances_three_bytes() {
     let bytecode = [0x4Cu8, 0x82, 0x03];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 3 });
-    assert_eq!(host.n8_party_mirrors, vec![3u8]);
+    assert_eq!(host.n8_restored_slots, vec![3u8]);
 }
 
 #[test]

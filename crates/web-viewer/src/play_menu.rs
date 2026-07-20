@@ -45,8 +45,8 @@ use crate::runtime::LegaiaRuntime;
 use legaia_engine_core::equip_session::{EquipSession, EquipState};
 use legaia_engine_core::field_menu::FieldMenuRow;
 use legaia_engine_core::field_menu_dispatch::{
-    self, FieldMenuSubsession, apply_equip_outcome, apply_inventory_outcome, apply_spell_outcome,
-    status_snapshots,
+    self, ArtsEditorPhaseTag, FieldMenuSubsession, apply_arts_outcome, apply_equip_outcome,
+    apply_inventory_outcome, apply_spell_outcome, status_snapshots,
 };
 use legaia_engine_core::input::PadButton;
 use legaia_engine_core::inventory_use::{InventoryUseSession, InventoryUseState};
@@ -467,7 +467,21 @@ impl LegaiaRuntime {
                         _ => {}
                     }
                 }
-                session.tick_pad_edge(edge);
+                // Engine extension: Triangle on the Status screen swaps it
+                // for the Tactical Arts chain editor (retail's seven rows
+                // carry no Arts row). The edge is consumed, so the same
+                // press does not also drive the screen it replaced.
+                let opened_arts = match self.scene_host.as_ref() {
+                    Some(host) => field_menu_dispatch::try_open_arts_editor(
+                        session.as_mut(),
+                        edge,
+                        &host.world,
+                    ),
+                    None => false,
+                };
+                if !opened_arts {
+                    session.tick_pad_edge(edge);
+                }
                 session_done = session.is_done();
             }
             if session_done {
@@ -502,8 +516,19 @@ impl LegaiaRuntime {
                                     FieldMenuSubsession::Spells(s) => {
                                         apply_spell_outcome(&s, world)
                                     }
-                                    // Status / Options / Arts carry no
-                                    // world-mutating outcome on close.
+                                    // Persist the edited chain back into the
+                                    // world's saved chains so the next
+                                    // battle's Arts rows reflect it - the
+                                    // same chain_library <-> store_chain_library
+                                    // bridge the native window uses.
+                                    FieldMenuSubsession::Arts(editor) => {
+                                        let mut library = world.chain_library();
+                                        if apply_arts_outcome(editor, &mut library).is_ok() {
+                                            world.store_chain_library(&library);
+                                        }
+                                    }
+                                    // Status / Options carry no world-mutating
+                                    // outcome on close.
                                     _ => {}
                                 }
                             }
@@ -615,16 +640,9 @@ impl LegaiaRuntime {
                     origin,
                     scale,
                 ),
-                // Arts has no retail pause-menu row, so it is never built
-                // here - keep the generic frame as an exhaustive fallback.
-                FieldMenuSubsession::Arts(_) => self.build_placeholder(
-                    assets,
-                    sub.row(),
-                    &mut sprites,
-                    &mut texts,
-                    origin,
-                    scale,
-                ),
+                FieldMenuSubsession::Arts(s) => {
+                    self.build_arts_editor(assets, s, &mut sprites, &mut texts, origin, scale)
+                }
             },
         }
 
@@ -931,18 +949,26 @@ impl LegaiaRuntime {
         }
     }
 
-    /// Generic near-fullscreen frame + a centred label - byte-identical to the
-    /// native window's treatment of a screen whose retail window set is not
-    /// capture-pinned.
-    fn build_placeholder(
+    /// Tactical Arts chain editor, inside the generic sub-window frame.
+    ///
+    /// The engine extension reached by Triangle on the Status screen (see
+    /// `field_menu_dispatch::try_open_arts_editor`). The live editor state
+    /// is projected by the shared `arts_editor_view`, so the character
+    /// name, the pretty-printed sequences and the "+ New" room check are
+    /// the same code the native window runs - only the borrow into
+    /// `ArtsEditorDrawArgs` and the stage transform are per host.
+    fn build_arts_editor(
         &self,
         assets: &PlayMenuAssets,
-        row: FieldMenuRow,
+        editor: &legaia_engine_core::tactical_arts_editor::ChainEditor,
         sprites: &mut Vec<SpriteDraw>,
         texts: &mut Vec<TextDraw>,
         origin: (i32, i32),
         scale: u32,
     ) {
+        let Some(world) = self.menu_world() else {
+            return;
+        };
         if let Some((_, rects)) = assets.chrome.as_ref() {
             let (x, y, w, h) = SUBWINDOW_CONTENT;
             sprites.extend(ui::menu_window_chrome_draws_for(
@@ -952,11 +978,32 @@ impl LegaiaRuntime {
                 scale,
             ));
         }
-        let mut d = ui::text_draws_for(
-            &assets.font.layout_ascii(row.label()),
-            (140, 108),
-            ui::MENU_TEXT_WHITE,
-        );
+        let view = field_menu_dispatch::arts_editor_view(editor, world);
+        let saved_rows: Vec<ui::ArtsChainRow<'_>> = view
+            .saved
+            .iter()
+            .map(|(name, pretty)| ui::ArtsChainRow {
+                name,
+                pretty_sequence: pretty,
+            })
+            .collect();
+        let args = ui::ArtsEditorDrawArgs {
+            character_name: &view.character_name,
+            phase: match view.phase {
+                ArtsEditorPhaseTag::Browsing => ui::ArtsEditorPhase::Browsing,
+                ArtsEditorPhaseTag::Editing => ui::ArtsEditorPhase::Editing,
+                ArtsEditorPhaseTag::Naming => ui::ArtsEditorPhase::Naming,
+            },
+            saved: &saved_rows,
+            browse_cursor: view.browse_cursor,
+            editing_pretty: &view.editing_pretty,
+            editing_len: view.editing_len,
+            min_len: view.min_len,
+            max_len: view.max_len,
+            naming_name: &view.naming_name,
+            can_add_new: view.can_add_new,
+        };
+        let mut d = ui::tactical_arts_editor_draws_for(&assets.font, args, (16, 32));
         ui::scale_stage_text_draws(&mut d, origin, scale);
         texts.extend(d);
     }

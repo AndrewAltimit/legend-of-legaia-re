@@ -639,101 +639,37 @@ impl PlayWindowApp {
         d
     }
 
-    /// Build draws for the Tactical Arts editor overlay. Pulls the
-    /// saved-chain library snapshot the editor took at construction; the
-    /// editor's `library_view` is the authoritative source until the
-    /// engine calls `apply_outcome`.
+    /// Build draws for the Tactical Arts editor overlay.
+    ///
+    /// The projection out of the live `ChainEditor` (character name, the
+    /// pretty-printed sequences, the phase tag, the "+ New" room check)
+    /// is `field_menu_dispatch::arts_editor_view`, shared with the browser
+    /// play page - only the borrow into `ArtsEditorDrawArgs` is per host.
     pub(super) fn arts_session_draws(
         &self,
         s: &legaia_engine_core::tactical_arts_editor::ChainEditor,
     ) -> Vec<TextDraw> {
-        use legaia_engine_core::tactical_arts_editor::{ChainLibrary, EditorPhase};
-        let char_slot = s.char_slot();
-        let names = legaia_engine_core::field_menu_dispatch::roster_names(&self.session.host.world);
-        let character_name = names
-            .get(char_slot as usize)
-            .cloned()
-            .unwrap_or_else(|| format!("Slot {}", char_slot + 1));
-
-        let saved = s.library_view();
-        let pretty_buf: Vec<String> = saved.iter().map(|c| c.pretty_sequence()).collect();
-        let saved_rows: Vec<legaia_engine_render::ArtsChainRow<'_>> = saved
+        let view =
+            legaia_engine_core::field_menu_dispatch::arts_editor_view(s, &self.session.host.world);
+        let saved_rows: Vec<legaia_engine_render::ArtsChainRow<'_>> = view
+            .saved
             .iter()
-            .enumerate()
-            .map(|(i, c)| legaia_engine_render::ArtsChainRow {
-                name: &c.name,
-                pretty_sequence: &pretty_buf[i],
+            .map(|(name, pretty)| legaia_engine_render::ArtsChainRow {
+                name,
+                pretty_sequence: pretty,
             })
             .collect();
-
-        let (phase_tag, browse_cursor, editing_pretty_owned, editing_len, naming_name_owned) =
-            match s.phase() {
-                EditorPhase::Browsing { cursor } => (
-                    legaia_engine_render::ArtsEditorPhase::Browsing,
-                    *cursor,
-                    String::new(),
-                    0usize,
-                    String::new(),
-                ),
-                EditorPhase::Editing { working } => {
-                    let pretty = working
-                        .iter()
-                        .map(|c| match c {
-                            legaia_art::queue::Command::Left => "L",
-                            legaia_art::queue::Command::Right => "R",
-                            legaia_art::queue::Command::Up => "U",
-                            legaia_art::queue::Command::Down => "D",
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    (
-                        legaia_engine_render::ArtsEditorPhase::Editing,
-                        0u8,
-                        pretty,
-                        working.len(),
-                        String::new(),
-                    )
-                }
-                EditorPhase::Naming { working, name } => {
-                    let pretty = working
-                        .iter()
-                        .map(|c| match c {
-                            legaia_art::queue::Command::Left => "L",
-                            legaia_art::queue::Command::Right => "R",
-                            legaia_art::queue::Command::Up => "U",
-                            legaia_art::queue::Command::Down => "D",
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    (
-                        legaia_engine_render::ArtsEditorPhase::Naming,
-                        0u8,
-                        pretty,
-                        working.len(),
-                        name.clone(),
-                    )
-                }
-                EditorPhase::Done(_) => (
-                    legaia_engine_render::ArtsEditorPhase::Browsing,
-                    0u8,
-                    String::new(),
-                    0usize,
-                    String::new(),
-                ),
-            };
-
-        let can_add_new = saved.len() < ChainLibrary::MAX_SLOTS;
         let args = legaia_engine_render::ArtsEditorDrawArgs {
-            character_name: &character_name,
-            phase: phase_tag,
+            character_name: &view.character_name,
+            phase: arts_phase_tag(view.phase),
             saved: &saved_rows,
-            browse_cursor,
-            editing_pretty: &editing_pretty_owned,
-            editing_len,
-            min_len: ChainLibrary::MIN_LEN,
-            max_len: ChainLibrary::MAX_LEN,
-            naming_name: &naming_name_owned,
-            can_add_new,
+            browse_cursor: view.browse_cursor,
+            editing_pretty: &view.editing_pretty,
+            editing_len: view.editing_len,
+            min_len: view.min_len,
+            max_len: view.max_len,
+            naming_name: &view.naming_name,
+            can_add_new: view.can_add_new,
         };
         legaia_engine_render::tactical_arts_editor_draws_for(&self.font, args, (16, 32))
     }
@@ -827,5 +763,20 @@ impl PlayWindowApp {
             }
             _ => {}
         }
+    }
+}
+
+/// Map the shared `engine-core` arts-editor phase tag onto the `engine-ui`
+/// one. Two enums exist because `engine-ui` is the wgpu-free leaf and does
+/// not depend on `engine-core`; this is the only place they meet on the
+/// native side.
+fn arts_phase_tag(
+    phase: legaia_engine_core::field_menu_dispatch::ArtsEditorPhaseTag,
+) -> legaia_engine_render::ArtsEditorPhase {
+    use legaia_engine_core::field_menu_dispatch::ArtsEditorPhaseTag as Tag;
+    match phase {
+        Tag::Browsing => legaia_engine_render::ArtsEditorPhase::Browsing,
+        Tag::Editing => legaia_engine_render::ArtsEditorPhase::Editing,
+        Tag::Naming => legaia_engine_render::ArtsEditorPhase::Naming,
     }
 }

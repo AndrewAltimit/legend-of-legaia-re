@@ -13,6 +13,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 
 **Retail battle logic + data**
 - [Battle action state machine (`FUN_801E295C`)](#battle-action-state-machine-fun_801e295c)
+- [Party wipe + the game-over overlay](#party-wipe--the-game-over-overlay)
 - [Battle context struct](#battle-context-struct)
 - [Stage seats (`FUN_800513F0` placement tables)](#stage-seats-fun_800513f0-placement-tables)
 - [Range / line-of-sight (`FUN_8004E2F0`)](#range--line-of-sight-fun_8004e2f0)
@@ -521,6 +522,60 @@ Distinct from:
 - The [move-table VM](move-vm.md) (which drives Tactical Arts inputs and per-action keyframe scheduling - a layer below this one).
 
 Found via the `overlay_battle_action.bin` import (a save state captured with the action menu open). Dumped as `ghidra/scripts/funcs/overlay_battle_action_801e295c.txt`. The 78-function inventory of the battle overlay is in `overlay_battle_action_inventory.txt` (top 80 dumped). All 6 captured battle modes (summon / special-move / martial-arts-input / spirit / action / capture) load identical battle overlay code - only data buffers (actor table at `0x801C9370`, ctx struct at `0x800EB654`, GPU OT lists, audio scratch) differ between captures.
+
+## Party wipe + the game-over overlay
+
+The wipe **detection** is pinned; the retail **destination** is not, and
+the two should not be conflated.
+
+Detection is the `0x5A` end-of-action gate of the action SM (see
+[battle-action.md](battle-action.md)). It walks the actor pointer table
+counting party actors that are alive (`+0x14C != 0`) and not
+counts-as-defeated (`+0x16E & 4`, e.g. Stone). With no survivor it sets
+the battle-end signal `DAT_8007BD71 = 0xFE` and the wipe cause
+`_DAT_8007BD2C = 5`; the mirror-image monster scan sets cause `0`.
+
+The battle-exit mode selector is `FUN_80046A20` (SCUS, `0x80046A20`).
+Its three `game_mode` stores pick between `0` (debug-battle id set),
+`0x18` / mode 24 OTHER (arena / Muscle Dome, `_DAT_8007BAC0 & 0x100`)
+and `2` / mode 2 MAIN INIT, i.e. back to the field. It **never reads
+`_DAT_8007BD2C`** - the wipe cause is consumed only by
+`FUN_801D5854` (battle-camera framing) and `FUN_8004E568`. So on the
+statically-reachable exit path, a party wipe returns to the field like
+any other battle end.
+
+A game-over screen nevertheless exists as real disc content. Mode-table
+rows 18 / 19 (table at `0x8007078C`, 0x18 stride) hand off to
+`FUN_80025B30`, which loads **PROT 0902** at base `0x801CE818` with its
+entry at `0x801CE844`. The overlay carries the source path
+`h:\prot\field\gameover\gameover.pak`, 29 TIMs (the artwork), a
+self-advance to mode 19 and a **single, unconditional** exit that writes
+`game_mode = 0`.
+
+Two things follow. First, retail's game over is **not a menu**: 0902's
+only readable string is `GAME OVER`, it has no Continue / Retry / Quit
+vocabulary, and one exit store cannot express three outcomes. The port's
+three-row `engine-core::game_over::GameOverSession` is therefore an
+**engine invention**, not a port of retail behaviour, and it is
+deliberately left unreachable rather than wired to a trigger nobody has
+pinned. Second, the mode-18 entry has no static writer anywhere on the
+disc: a scan of every `sb`/`sh`/`sw` to `game_mode` across
+`SCUS_942.54` and every PROT entry finds the value `0x12` written
+nowhere, no mode-table `next` field chains into 18, and the only
+`jal 0x80025B30` is inside `FUN_80025B30` itself. That 0902 exits to
+mode 0 - the **debug menu** - is further circumstantial evidence that
+the 18/19 pair is a dev harness.
+
+What that scan cannot rule out is the nine register-indirect
+`game_mode` stores, which remain the search space. Resolving them is a
+runtime question rather than a static one; see
+[open-rev-eng-threads.md](../reference/open-rev-eng-threads.md).
+
+Mode numbers are decimal in these docs and hex in the dumps, which is a
+standing trap here: `_DAT_8007B83C = 0x18` is mode **24** (OTHER /
+minigame), not game over. Game over is `0x12`. Relatedly,
+`extracted/PROT/0002_gameover_data.BIN` is *not* game-over art - the +2
+CDNAME filename shift makes it town01's table.
 
 ## Battle context struct
 
