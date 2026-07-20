@@ -804,7 +804,8 @@ pub fn hud_tint(brightness: i32) -> [f32; 4] {
     [v, v, v, 1.0]
 }
 
-/// Quads for one resolved [`BarFrame`]: the three frame glyphs at the fixed
+/// Quads for one resolved [`BarFrame`], the bar step of
+/// [`fishing_hud_draws_for`]: the three frame glyphs at the fixed
 /// [`BAR_FRAME_BRIGHTNESS`], then the fill quad stretched over
 /// [`BarFrame::fill_len`] along the frame's axis. The vertical bar fills
 /// *upward* from its bottom cap, matching `FUN_801d1a90`.
@@ -813,7 +814,7 @@ pub fn hud_tint(brightness: i32) -> [f32; 4] {
 /// triple is already the brightness ramp, so it is not tinted a second time.
 /// A frame whose `fill_rgb` is `None` (retail's third style arm, which writes
 /// no colour at all) emits its glyphs and no fill.
-pub fn bar_frame_draws(
+fn bar_frame_draws(
     frame: &BarFrame,
     atlas: &FishingHudAtlas<'_>,
     origin: (i32, i32),

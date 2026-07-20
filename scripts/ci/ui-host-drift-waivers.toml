@@ -105,3 +105,14 @@ ahead of its consumer; no host draws a gauge yet. Kept rather than deleted
 because the native battle HUD is the intended caller. If the battle HUD lands
 without it, delete the builder instead of re-waiving.
 """
+
+[[waiver]]
+builder = "fishing_hud_draws_for"
+kind = "web_missing"
+reason = """
+The browser play page has no fishing host: it exposes no fishing minigame
+entry, so there is no session, no cast/reel input path and no point record for
+a HUD to read. Wiring the HUD first would draw a readout of state the page
+never produces. The native window renders it from the live `World::fishing`
+session.
+"""

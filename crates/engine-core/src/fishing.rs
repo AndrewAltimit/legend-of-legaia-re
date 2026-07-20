@@ -703,8 +703,10 @@ pub const ROD_KINDS: u32 = 3;
 /// guarantees termination in retail; the port bounds the scan at
 /// [`ROD_KINDS`] anyway so a caller with an out-of-range index cannot hang it.
 // PORT: FUN_801d712c (rod-ownership gate + persistent rod-index re-point)
-// NOT WIRED: belongs to the rod/lure selection screen's cursor handler.
-// That screen has no host UI, so nothing calls this outside tests.
+// PARTLY WIRED: the play window calls this to resolve the rod index its
+// persistent HUD rows display. Its other retail role - the rod/lure
+// selection screen's cursor handler, which is what lets the player *change*
+// the selection - has no host UI, so that path is still unreached.
 pub fn select_owned_rod(rod_index: &mut u32, mut count_of: impl FnMut(u32) -> i32) -> bool {
     let owned: i32 = (0..ROD_KINDS).map(|k| count_of(lure_item_id(k))).sum();
     if owned == 0 {
