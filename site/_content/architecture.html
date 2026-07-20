@@ -100,7 +100,8 @@
         <dt>Where</dt>       <dd>Title-screen overlay (0971)</dd>
         <dt>Opcodes</dt>     <dd>13</dd>
         <dt>Operands</dt>    <dd>byte stream</dd>
-        <dt>Status</dt>      <dd><span class="tag tag-done">ported</span></dd>
+        <dt>Status</dt>      <dd><span class="tag tag-done">ported</span> <span class="tag tag-partial">not wired</span></dd>
+        <dt>Note</dt>        <dd>All 13 opcodes are ported, but nothing in the engine calls the interpreter yet - it is inert.</dd>
       </dl>
     </a>
     <a class="vm-card" href="subsystems/move-vm.html" title="Driver: FUN_80023070 - details on the move-VM subsystem page">
@@ -114,13 +115,23 @@
       </dl>
     </a>
     <a class="vm-card" href="subsystems/motion-vm.html" title="Driver: FUN_8003774C - details on the motion-VM subsystem page">
-      <div class="vm-card-num">VM 3</div>
-      <div class="vm-card-title">Motion VM</div>
+      <div class="vm-card-num">VM 3a</div>
+      <div class="vm-card-title">Motion VM - pursue / patrol</div>
       <dl>
         <dt>Where</dt>       <dd>SCUS_942.54</dd>
-        <dt>Opcodes</dt>     <dd>6</dd>
+        <dt>Opcodes</dt>     <dd>22 (JT <code>0x80010EE0</code>)</dd>
         <dt>Operands</dt>    <dd>byte stream</dd>
         <dt>Status</dt>      <dd><span class="tag tag-done">ported</span></dd>
+      </dl>
+    </a>
+    <a class="vm-card" href="subsystems/motion-vm.html" title="Driver: FUN_80038158 - details on the motion-VM subsystem page">
+      <div class="vm-card-num">VM 3b</div>
+      <div class="vm-card-title">Motion VM - scripted motion</div>
+      <dl>
+        <dt>Where</dt>       <dd>SCUS_942.54 (MAN tail-section 1)</dd>
+        <dt>Opcodes</dt>     <dd>32 (JT <code>0x80010FE8</code>, <code>0x01..=0x20</code>)</dd>
+        <dt>Operands</dt>    <dd>byte stream</dd>
+        <dt>Status</dt>      <dd><span class="tag tag-partial">partial</span> - table decoded, port split across three crates</dd>
       </dl>
     </a>
     <a class="vm-card" href="subsystems/script-vm.html" title="Driver: FUN_801DE840 - details on the field/event-VM subsystem page">
@@ -208,7 +219,7 @@
 
       <rect x="320" y="384" width="240" height="58" class="vm-box-soft"/>
       <text x="336" y="406" class="vm-title">Motion VM</text>
-      <text x="336" y="424" class="vm-sub">FUN_8003774C - 6 opcodes</text>
+      <text x="336" y="424" class="vm-sub">FUN_8003774C - 22 opcodes</text>
       <text x="336" y="437" class="vm-sub">NPC pathing, camera follow</text>
 
       <rect x="600" y="384" width="240" height="58" class="vm-box-soft"/>

@@ -44,6 +44,13 @@
         <td>Structural: <code>DAT_8007C018[i]</code> is meaningful only for <code>i &lt;= DAT_8007BB38</code> (the walker counter); entries above it - including <code>45..53</code> in small field scenes - are stale carryover, never dereferenced. No per-index "vertex-pool" semantic.</td>
         <td><a href="memory-map.html">memory-map</a></td>
       </tr>
+      <tr>
+        <td>Field decoration path - does it dispatch the NCC light handlers?</td>
+        <td><span class="tag tag-done">resolved (no field light; depth-cue only)</span></td>
+        <td><span class="tag tag-done">capture</span></td>
+        <td>It does not. The field decoration path never reaches the NCC light handlers - field shading is the GTE depth cue alone, with no light source applied.</td>
+        <td><a href="../subsystems/renderer.html">renderer</a></td>
+      </tr>
     </tbody>
   </table>
 </section>
@@ -68,7 +75,7 @@
         <td><a href="../subsystems/effect-vm.html">effect-vm</a></td>
       </tr>
       <tr>
-        <td>Seru-magic summon visual (e.g. Burning Attack)</td>
+        <td>Seru-magic summon visual (e.g. Tail Fire)</td>
         <td><span class="tag tag-done">resolved</span></td>
         <td><span class="tag tag-done">capture</span></td>
         <td>The player summon renders as its namesake <code>battle_data</code> creature (Gimard <code>0x81</code> &rarr; monster 10; disc-pinned through <code>0x95</code>) via the ordinary rigid TRS-keyframe battle draw - not the move-VM stager scene-graph, and not PROT 0900.</td>
@@ -97,7 +104,7 @@
       </tr>
       <tr>
         <td>Per-spell magic power / multiplier</td>
-        <td><span class="tag tag-partial">partial</span></td>
+        <td><span class="tag tag-done">resolved</span> (mechanism + roll ported)</td>
         <td><span class="tag tag-partial">decompiled-C</span></td>
         <td>Summon power is battle-state-derived, not a static scalar: roll <code>FUN_801dd0ac</code> &rarr; affinity scale <code>FUN_801dd864</code> &rarr; finisher <code>FUN_801ddb30</code>, all ported. Arts/specials read the 26-byte move-power table at <code>0x801F4F5C</code> (PROT 0898). <a href="#d-move-power">details &darr;</a></td>
         <td><a href="../formats/move-power.html">move-power</a></td>
@@ -125,7 +132,7 @@
       </tr>
       <tr>
         <td>Character-record HP/MP/AP pair order is <code>(max, cur)</code></td>
-        <td><span class="tag tag-done">resolved (relabel pending)</span></td>
+        <td><span class="tag tag-done">resolved</span> (relabeled throughout)</td>
         <td><span class="tag tag-partial">decompiled-C</span></td>
         <td>Three independent sources - the walk-regen tick <code>FUN_801D0B90</code> (bumps <code>+0x106</code>, clamps at <code>+0x104</code>), the per-frame stat aggregator <code>FUN_80042558</code> (rewrites <code>+0x104</code> from base stats + passives), and the GameShark "Infinite HP" codes (write <code>+0x106</code> at every character stride) - agree <code>+0x104/+0x108/+0x10C</code> are the effective maxima and <code>+0x106/+0x10A/+0x10E</code> the currents. Beware: fresh-save fixtures mask a swap (cur == max at seed).</td>
         <td><a href="cheats.html">cheats</a></td>
@@ -185,9 +192,9 @@
       </tr>
       <tr>
         <td>Spine flag <code>0x482</code> (Drake mist-wall) writer</td>
-        <td><span class="tag tag-open">open</span> - capture target; the static "other7-pool writers" reading is falsified</td>
+        <td><span class="tag tag-done">resolved</span> (writer-less; the "direct code path" presumption falsified)</td>
         <td><span class="tag tag-done">capture</span></td>
-        <td>No script writer exists: every census site for <code>0x482</code> is a <strong>desynced-walker alias of Shift-JIS text</strong> - the <code>other7</code> "SETs" are the full-width digit run <code>82 54 82 4F</code> read one byte off as <code>54 82</code>, the <code>edbalden</code>/<code>eddoman</code> "CLEARs" are a repeating full-width <code>EXIT</code> label table, the <code>edbylon</code> "TEST" is dialogue with a garbage branch target. The census carries a per-site decode-coherence flag (<code>GFlagSite::clean</code>) and the anchor asserts all 37 sites non-clean (<code>man_variant_carrier_census_disc.rs</code>); motion-VM + op-0x49 censuses find no site either, so the writer is presumed a <strong>direct code path</strong>. Next: a write-watch on the <code>0x482</code> byte across the post-Zeto Drake-revival beat. (Flag 549's identical verdict was overturned by the <code>4C 0xE_</code> width fix; <code>0x482</code> stays all-noise under the fixed widths.) Reader side is solid: <code>map01</code> <code>P2[34..36]</code> C1 force-walk bands (header gates, not disasm). Bonus identity: <code>other7</code> = a dev-leftover <strong>earlier revision of koin3's MAN</strong> (its 8 P2 records are a name-exact prefix subset of koin3's 12; no loader in any captured code).</td>
+        <td>No script writer exists: every census site for <code>0x482</code> is a <strong>desynced-walker alias of Shift-JIS text</strong> - the <code>other7</code> "SETs" are the full-width digit run <code>82 54 82 4F</code> read one byte off as <code>54 82</code>, the <code>edbalden</code>/<code>eddoman</code> "CLEARs" are a repeating full-width <code>EXIT</code> label table, the <code>edbylon</code> "TEST" is dialogue with a garbage branch target. The census carries a per-site decode-coherence flag (<code>GFlagSite::clean</code>) and the anchor asserts all 37 sites non-clean (<code>man_variant_carrier_census_disc.rs</code>); motion-VM + op-0x49 censuses find no site either. The named capture then ran: a byte write-watch on <code>0x800857E8</code> (<code>autorun_flag_writer_watch.lua</code>) across the whole post-Zeto beat (battle exit, mist-clear FMV, <code>map01</code> arrival). The only write to the byte is the SET helper re-latching <code>0x484</code>; <code>0x482</code> never flips, every catalogued state through the Karisto era holds it clear, and all 37 census sites stay desynced. Verdict: <strong>no writer ever fires</strong> - the presumed direct code path is falsified, the <code>map01</code> <code>P2[34..36]</code> C1 spawn-block never latches, and wall despawn is not flag-driven. (Flag 549's identical verdict was overturned by the <code>4C 0xE_</code> width fix; <code>0x482</code> stays all-noise under the fixed widths.) Reader side is solid: <code>map01</code> <code>P2[34..36]</code> C1 force-walk bands (header gates, not disasm). Bonus identity: <code>other7</code> = a dev-leftover <strong>earlier revision of koin3's MAN</strong> (its 8 P2 records are a name-exact prefix subset of koin3's 12; no loader in any captured code).</td>
         <td><a href="../subsystems/world-map.html">world-map</a></td>
       </tr>
       <tr>
@@ -227,9 +234,9 @@
       </tr>
       <tr>
         <td>Flag <code>0x63A</code> - the vell/vozz <code>P2[7]</code> gate with NO script writer</td>
-        <td>open (small)</td>
+        <td><span class="tag tag-done">resolved</span> (script writers exist)</td>
         <td><span class="tag tag-done">capture</span></td>
-        <td>vell <code>P2[7]</code> and vozz <code>P2[7]</code> carry byte-identical <code>C1=[0x63A, 0x7]</code> gates, but <code>0x63A</code> has no script sites disc-wide (no Set/Clear/Test anywhere else; <code>chapter1_hub_breadth_oracle</code> part E). Either an engine/SCUS-side writer exists (runtime-computed, like the spine writers) or the flag is never set and the requires-clear condition always passes. A write-watchpoint on bank byte <code>0x800858C7</code> during the vell/vozz beats would settle it; low stakes since the gate passes either way on a fresh game.</td>
+        <td>vell <code>P2[7]</code> and vozz <code>P2[7]</code> carry byte-identical <code>C1=[0x63A, 0x7]</code> gates. The "no script sites disc-wide" premise was the CDNAME +2 skew: under the fixed scene windows the census shows eight <strong>clean</strong> sites - Set/Clear pairs in the rikuroa post-Caruban variant MAN (PROT 0157 <code>P2[29]</code>/<code>[30]</code>, op <code>0x56</code>/<code>0x66</code>), rikuroa2 (PROT 0122), retockin (PROT 0281 <code>P2[7]</code>/<code>[8]</code>) and edretoin (PROT 0800 <code>P2[7]</code>/<code>[8]</code>) - all late-game beats, so the vell/vozz spawn-block passes for the whole first visit. Retail states corroborate: <code>0x63A</code> reads clear through the Karisto era while its bank byte already holds <code>0x0C</code>. NB the old row's watch target <code>0x800858C7</code> was <strong>mis-derived</strong>; the byte for <code>0x63A</code> is <code>0x80085758 + (0x63A &gt;&gt; 3) = 0x8008581F</code>.</td>
         <td><a href="../subsystems/world-map.html">world-map</a></td>
       </tr>
       <tr>
@@ -241,14 +248,14 @@
       </tr>
       <tr>
         <td>Drake Castle deep interiors (<code>jouinc</code>/<code>jouind</code>) depth decode</td>
-        <td>resolved (door-choreography families, not story gates)</td>
+        <td><span class="tag tag-done">resolved</span> (door-choreography families, not story gates)</td>
         <td><span class="tag tag-done">capture</span></td>
         <td><code>jouinc</code>'s 58-record <code>C1=[0x00F]</code> P2 family (SJIS names J01..J58) is a <strong>busy-mutex door family</strong> - each record SETs <code>0x00F</code> first / CLEARs it last, a mutual-exclusion lock, not story content; bodies are per-door walk-through choreography. <code>jouind</code> P2[10..13]'s <code>0x4BE..0x4C2</code> band is <strong>per-visit door/lift state</strong> (cleared by <code>jouina</code> P1[0] on entry), not a later-chapter revisit gate pair; <code>jouinb P2[6..8]</code> is the interior beat band (<code>0x44E</code>/<code>0x44F</code>/<code>0x450</code> + the jouinb-local <code>0x461</code>). See <a href="../subsystems/script-vm.html">script-vm</a> &sect; door-choreography record families.</td>
         <td><a href="../subsystems/world-map.html">world-map</a></td>
       </tr>
       <tr>
         <td><code>scene_destinations</code> P1-table scan misses P2-only door names</td>
-        <td>resolved (P2 pass folded in)</td>
+        <td><span class="tag tag-done">resolved</span> (P2 pass folded in)</td>
         <td><span class="tag tag-done">capture</span></td>
         <td>The P2-only class is the town/dungeon <strong>exit door</strong> (a P2 door-choreography record): <code>town01</code>&rarr;<code>map01</code> (the P1 pass alone sees <em>zero</em> town01 destinations), <code>retockin</code>&rarr;<code>retona</code>, <code>geremi</code>&rarr;<code>map02</code>/<code>tower</code> &mdash; 13 scenes / 14 destinations disc-wide. The suspected <code>jouinb</code>&rarr;<code>jouina</code> exemplar is falsified: it is P1-visible. Merged kernel <code>legaia_asset::man_edit::scene_destinations</code>; disc pins <code>scene_destinations_p2_disc.rs</code>.</td>
         <td><a href="../subsystems/world-map.html">world-map</a></td>
@@ -273,6 +280,34 @@
         <td><span class="tag tag-partial">decompiled-C</span></td>
         <td>Each flag is one destination row of the Uru Mais dream-shrine teleport-pad picker: the pad records (kor <code>P2[17..20]</code>, kor3 <code>P2[9..12]</code>, kor4 <code>P2[4..7]</code>) clear the window, pre-set <strong>their own row</strong> (kor &rarr; <code>0x138..0x13B</code>, kor3 &rarr; <code>0x13C</code>/<code>0x13D</code>, kor4 &rarr; <code>0x13E</code>/<code>0x13F</code>), run the <code>FUN_801EF014</code> picker, then an 8-way test ladder executes a named <code>0x3F</code> SceneChange per row (4 KOR entries, 2 KOR3, 2 KOR4). Descriptor <code>+2</code> = first visible row, <code>+3</code> = visible row count, so the paired descriptors are the full 8-row menu vs the rows-4..7 chambers-only menu (state flags <code>0x136</code>/<code>0x137</code>). Confirming a different row sets <code>base + selection</code>; picking the current row or cancelling sets nothing, so the ladder falls through to the stay-put arm.</td>
         <td><a href="functions.html">functions</a></td>
+      </tr>
+      <tr>
+        <td>Battle stage backdrop: which <code>scene_tmd_stream</code> a scene fights in</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><span class="tag tag-done">capture</span></td>
+        <td>A scene bundle carries one stage stream per sub-area, and the battle's is not uniformly the block's first - <code>map01</code> uses bundle slot 5 (entry 88), Rim Elm <code>town01</code> slot 6 (entry <strong>7</strong>). Engine <code>ProtIndex::battle_stage_entry_for_scene</code>.</td>
+        <td><a href="../subsystems/battle.html">battle</a></td>
+      </tr>
+      <tr>
+        <td>Battle-stage overlay band (<code>+0x47</code>)</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><span class="tag tag-partial">decompiled-C</span></td>
+        <td><code>FUN_800520F0</code> pages a per-stage slot-B overlay via <code>FUN_8003EC70(_DAT_8007B64A + 0x47)</code>, skipped when the id is <code>0</code> - which every catalogued battle but the Tetsu tutorial reads.</td>
+        <td><a href="../subsystems/battle.html">battle</a></td>
+      </tr>
+      <tr>
+        <td>Battle-intro tutorial boxes (Tetsu sparring fight)</td>
+        <td><span class="tag tag-done">resolved (machine pinned, ported and wired)</span></td>
+        <td><span class="tag tag-partial">decompiled-C</span></td>
+        <td>The prompts live <strong>only</strong> in stage overlay 967, so porting the battle SM alone could never emit them. <code>FUN_801F6B70</code> is a 91-entry jump-table hook on the flow-state byte <code>ctx[+0x06]</code> with just nine live slots.</td>
+        <td><a href="../subsystems/battle.html">battle</a></td>
+      </tr>
+      <tr>
+        <td>Battle command-flow byte <code>ctx[+0x06]</code></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><span class="tag tag-partial">decompiled-C</span></td>
+        <td>The <em>other</em> battle SM - <code>FUN_801D0748</code>, the menu half, distinct from the action SM's <code>ctx[+0x07]</code> and overlapping its value space. Its selection band is regular decimal tens <code>30..120</code>.</td>
+        <td><a href="../subsystems/battle-action.html">battle-action</a></td>
       </tr>
     </tbody>
   </table>
@@ -326,7 +361,7 @@
       </tr>
       <tr>
         <td>Engine VRAM byte-exactness for town01</td>
-        <td><span class="tag tag-partial">partial</span></td>
+        <td><span class="tag tag-done">resolved</span> (major source); minor residue</td>
         <td><span class="tag tag-done">capture</span></td>
         <td>Single-snapshot byte-exactness is unachievable (much of the texpage band is dynamic/residual); the oracle asserts the static mask and passes on every static pixel uploaded. Residue: the <code>x=896..1024</code> character-texture region + small UI residue (the <code>(960,256..511)</code> part is the boot-resident system-UI band).</td>
         <td></td>
@@ -347,14 +382,14 @@
       </tr>
       <tr>
         <td>World-map CLUT cycling beyond the ocean head</td>
-        <td><span class="tag tag-partial">partial</span></td>
+        <td><span class="tag tag-done">closed</span> (operand table + emitter + cadence pinned)</td>
         <td><span class="tag tag-done">capture</span></td>
         <td>A per-column census pins the runtime-touched CLUT cells (rows 500/506/508/509); the writers are the field overlay's script-driven CLUT-cell effects (<code>FUN_801E4C58</code> / <code>FUN_801E4794</code>) copying from strips parked at rows 498/501..505. <a href="#d-clut-cycle">details &darr;</a></td>
         <td><a href="../subsystems/world-map.html">world-map</a></td>
       </tr>
       <tr>
         <td><code>init_data</code> UI-tile pages / map03 texture column</td>
-        <td><span class="tag tag-partial">partial</span></td>
+        <td><span class="tag tag-done">resolved</span> (both premises falsified)</td>
         <td><span class="tag tag-done">capture</span></td>
         <td>The <code>(704, 0)</code>/<code>(704, 256)</code> UI-tile rects are journey-dependent residency (overworld transit leaves kingdom-bundle content behind). The map03 column at <code>x=576..640</code> is resolved: the "engine fails to upload PROT 0392" premise is <strong>falsified</strong> - a direct prepass measurement shows real terrain (only 37 stray <code>0x3332</code> cells, an old-build artifact), and PROT 0392 slot-0 is byte-identical to 0391 slot-0 which the engine already uploads. Residual (low): a map03-resident capture would fully close it.</td>
         <td></td>
@@ -396,10 +431,38 @@
       </tr>
       <tr>
         <td>Writer of the Rim Elm opening flag (<code>549</code>)</td>
-        <td><span class="tag tag-resolved">resolved</span> - self-latching script SET; the census was width-blind, not carrier-blind</td>
+        <td><span class="tag tag-done">resolved</span> - self-latching script SET; the census was width-blind, not carrier-blind</td>
         <td><span class="tag tag-done">capture</span></td>
         <td><code>549</code> (<code>0x225</code>) is the Rim Elm opening one-shot; its writer is <strong>town01 <code>P2[3]</code> itself</strong> - a plain <code>52 25</code> SET at body <code>+0x3</code> in the very record its C1 gates (the same self-latch shape as rikuroa's <code>0x142</code>), plus the <code>gameover_data</code> dev-copy sibling. Reader: the C1/C2 gate evaluator <code>FUN_8003BDE0</code> across <code>town01</code>/<code>town0b</code>/<code>town0c</code>/<code>gameover_data</code>. Trap worth keeping: the census had missed the SET because the preceding <code>4C ED</code> op had no width in the disassembler, desyncing the walk one byte short - the earlier "direct code path, capture-only" verdict was <strong>width blindness</strong>, and the whole <code>4C 0xE_</code> sub-op width family is pinned from the retail <code>param_2 + N</code> advances. Anchors <code>flag_549_reader_is_the_rim_elm_p2_gate</code> / <code>flag_549_writer_is_the_rim_elm_p2_3_self_latch</code>.</td>
         <td><a href="../subsystems/world-map.html">world-map</a></td>
+      </tr>
+      <tr>
+        <td>How an NPC's facing changes <strong>after</strong> spawn - snap vs ramp, and which writer wins</td>
+        <td><span class="tag tag-done">resolved (two laws; order-of-execution priority)</span></td>
+        <td><span class="tag tag-done">disassembly</span></td>
+        <td>Two distinct facing laws coexist; which one is visible is decided by order of execution rather than by precedence in the data.</td>
+        <td><a href="../subsystems/motion-vm.html">motion-vm</a></td>
+      </tr>
+      <tr>
+        <td>What opens an inn stay in retail?</td>
+        <td><span class="tag tag-done">resolved (the premise was wrong)</span></td>
+        <td><span class="tag tag-done">capture</span></td>
+        <td>There is no inn trigger, because there is no inn <em>session</em>: retail composes a stay inline in the scene MAN out of generic ops (dialogue, an MES picker, an op-<code>0x4E</code> gold gate, op-<code>0x3A</code> <code>ADD_MONEY</code>, fades) and then one <code>4C 82 &lt;slot&gt;</code> per member.</td>
+        <td><a href="../subsystems/field-menu.html">field-menu</a></td>
+      </tr>
+      <tr>
+        <td>Retail-vs-engine NPC + story-flag state parity across the capture library</td>
+        <td><span class="tag tag-done">resolved (breadth oracle)</span></td>
+        <td><span class="tag tag-done">capture</span></td>
+        <td>The sweep oracle <code>field_npc_state_parity_disc.rs</code> compares every catalogued field-mode capture against a cold engine entry with the capture's <code>DAT_80085758</code> bank seeded byte-for-byte. Residuals are filed as their own rows.</td>
+        <td><a href="../subsystems/script-vm.html">script-vm</a></td>
+      </tr>
+      <tr>
+        <td>Entry pre-run channel slice ends on a no-mask <code>4C 70</code> wall paint</td>
+        <td><span class="tag tag-done">resolved (slice-continue landed)</span></td>
+        <td><span class="tag tag-partial">decompiled-C</span></td>
+        <td>All four nibble-7 tile-flag paints continue in the same interpreter call; the apparent <code>Yield</code> was the label-call idiom. The pre-run and runner break a slice only on a real yield.</td>
+        <td><a href="../subsystems/script-vm.html">script-vm</a></td>
       </tr>
     </tbody>
   </table>

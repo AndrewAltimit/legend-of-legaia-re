@@ -25,6 +25,7 @@
   --accent-hi:     #7ad3c4;
   --accent-soft:   #1c2a2a;
   --done:          #58c4b3;
+  --mostly:        #77b851;
   --partial:       #c19a4d;
   --open:          #b56b6b;
   --planned:       #6e7681;
@@ -540,8 +541,12 @@ section.doc-section > p {
 }
 
 .tag-done    { color: var(--done);    border-color: var(--done); }
+/* "mostly resolved" is a live-hunt status, not a done one: it must read as
+   closer to done than partial while staying visibly unfinished. */
+.tag-mostly  { color: var(--mostly);  border-color: var(--mostly); }
 .tag-partial { color: var(--partial); border-color: var(--partial); }
 .tag-open    { color: var(--open);    border-color: var(--open); }
+.tag-confirmed { color: var(--done); border-color: var(--done); }
 .tag-planned { color: var(--planned); border-color: var(--planned); }
 .tag-stub    { color: var(--text-dim); border-color: var(--border-hi); font-weight: 500; }
 

@@ -10,7 +10,7 @@
   <table>
     <thead><tr><th>Page</th><th>Holds</th><th>Read it when</th></tr></thead>
     <tbody>
-      <tr><td>This page</td><td>Live hunts: <strong>open</strong>, <span class="tag tag-partial">partial</span>, mostly resolved</td><td>You are picking up work, or want to know whether a question is still contested.</td></tr>
+      <tr><td>This page</td><td>Live hunts: <span class="tag tag-open">open</span>, <span class="tag tag-partial">partial</span>, <span class="tag tag-mostly">mostly resolved</span></td><td>You are picking up work, or want to know whether a question is still contested.</td></tr>
       <tr><td><a href="re-settled-threads.html">Settled threads</a></td><td>Answered questions, each carrying an evidence grade</td><td>You need the answer to something, or you are about to build on a claim and want to know how firmly it is pinned.</td></tr>
       <tr><td><a href="re-do-not-re-walk.html">Do not re-walk</a></td><td>Falsified hypotheses, reasoning intact</td><td>A reading of the bytes looks obvious and you want to check nobody has already spent a week disproving it.</td></tr>
     </tbody>
@@ -50,7 +50,7 @@
   </table>
 
   <h3 id="d-slot4-attr">Kingdom slot 4 - residual: the <code>attr</code> consumer</h3>
-  <p>Settled: the records are an object-local GTE vertex pool walked in place; <code>kind 1</code> bodies are byte-identical across all three kingdoms (a shared mesh library). Residual: <code>attr</code> is genuinely per-vertex yet the full handler-family sweep finds no reader - authoring data or a non-render consumer. Next step: a read-watchpoint on a pool word's high half outside the render path, or accept it as reserved.</p>
+  <p>Settled: the records are an object-local GTE vertex pool walked in place; <code>kind 1</code> bodies are byte-identical across all three kingdoms (a shared mesh library). Residual: <code>attr</code> is genuinely per-vertex yet the full handler-family sweep finds no reader - authoring data or a non-render consumer. The transcode question is closed (there is none - the pool is read in place), and with the consumer sweep exhausted there is <strong>no actionable next step</strong>; the row stays open only because the residual semantic is unproven, not because work is queued.</p>
 </section>
 
 <section class="doc-section" id="battle">
@@ -66,7 +66,7 @@
       </tr>
       <tr>
         <td>First boss trigger &rarr; Battle</td>
-        <td><span class="tag tag-partial">partial</span> (both bosses pinned; one vestigial-flag question open)</td>
+        <td><span class="tag tag-mostly">mostly resolved</span> (mechanism pinned for both bosses; one vestigial-flag question open)</td>
         <td>The scripted-battle arm is the field-VM op <code>3E FF &lt;formation_row&gt;</code> (case-0x3E: <code>entity[+0x8A]=1</code>, <code>entity[+0x94] = ctrl[+0x20] + row*stride + 1</code> &mdash; see <a href="../subsystems/battle.html#scripted-battle-entry">battle.html</a>). Zeto: garmel beat record <code>P2[12]</code> ends <code>3E FF 09</code> &rarr; formation row 9 = lone <code>0x4B</code> (live-confirmed). Caruban: rikuroa stager <code>P1[3]</code> ends <code>3E FF 11</code> &rarr; row 17 = lone <code>0x49</code> &mdash; the <strong>same record path</strong>; the engine enters both organically (<code>World::run_boss_stager_record</code>). Open: does any retail battle write <code>DAT_8007b7fc</code> (reads <code>0</code> everywhere; may be vestigial)?</td>
         <td><a href="../formats/encounter.html">encounter</a></td>
       </tr>
@@ -78,7 +78,7 @@
       </tr>
       <tr>
         <td>Battle-actor <code>+0x16E</code> bit <code>0x400</code> applier (guard-disabling status)</td>
-        <td>open (low value)</td>
+        <td><span class="tag tag-open">open</span> (low value)</td>
         <td>Bit <code>0x400</code> of the battle-actor flags word <code>+0x16E</code> reads as a guard-disabling Sleep/Numb-like status. The sibling AI-delegated bits <code>0x380</code> in the same word are pinned (the enemy-ally charm hook sets them via <code>FUN_801E7320</code> retarget), but the <em>setter</em> that raises <code>0x400</code> is not in the decompiled corpus - readers only. Low value. Closes with a before/after RAM capture around a battle turn that inflicts the status, diffing the <code>+0x16E</code> word to catch the byte that raises <code>0x400</code>.</td>
         <td></td>
       </tr>
@@ -95,10 +95,22 @@
     <thead><tr><th>Thread</th><th>Status</th><th>Current answer</th><th>Detail</th></tr></thead>
     <tbody>
       <tr>
+        <td>What transitions retail into game over?</td>
+        <td><span class="tag tag-open">open</span> (narrowed)</td>
+        <td>Wipe <em>detection</em> is pinned (action-SM <code>0x5A</code> gate) and so is the content (PROT <strong>0902</strong>); the link between them is not. The battle-exit selector never reads the wipe cause and <strong>no static mode-<code>0x12</code> writer exists on the disc</strong>, leaving the nine register-indirect <code>game_mode</code> stores as the search space - which needs a runtime probe. Two corrections: retail's game over is <strong>not</strong> a Continue/Retry/Quit menu, so the port's three-row session is an engine invention; and mode <code>0x18</code> is mode 24 OTHER, not game over.</td>
+        <td><a href="../subsystems/battle.html">battle</a></td>
+      </tr>
+      <tr>
         <td>Extraction-0874 &sect;2 F-variant pixels</td>
-        <td><span class="tag tag-partial">partial</span></td>
+        <td><span class="tag tag-mostly">mostly resolved</span> (corpus-pinned)</td>
         <td>Pause-menu-lineage, not boot: the intro chain holds the disc bytes, every pause-menu capture holds the 3-word row-271 F-variant, and the first battle effect use restores the disc value. Residue: the exact writer PC (low value).</td>
         <td></td>
+      </tr>
+      <tr>
+        <td>Mid-visit NPC re-arrangement beats (dolk2 market crowd; garmel pre-Zeto staging)</td>
+        <td><span class="tag tag-open">open</span></td>
+        <td>Something re-seats a scene's cast mid-visit through a path that is not the staging record's own <code>SpawnRecord</code>. dolk2: the <code>dolk2_market_noa</code> capture holds the post-swap arrangement while its bank still has <code>P1[2]</code>'s spawn latch <code>0x2FE</code> clear. garmel: the pre-Zeto capture stands <code>P1[3]</code>/<code>P1[4]</code> beside the player where cold entry parks them. Closing either: a fresh-entry capture of the same scene, or tracing which record's choreography performs the seats.</td>
+        <td><a href="../subsystems/script-vm.html">script-vm</a></td>
       </tr>
       <tr>
         <td>Region story-flag gate families (record-header C1/C2 gates)</td>
@@ -151,6 +163,21 @@
   </table>
 </section>
 
+<section class="doc-section" id="text-dialog">
+  <h2>Text / fonts / dialog</h2>
+  <table>
+    <thead><tr><th>Thread</th><th>Status</th><th>Current answer</th><th>Detail</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Pause Items/Magic screens: remaining sub-flows</td>
+        <td><span class="tag tag-open">open</span></td>
+        <td>The faithful screens are wired end-to-end. Still open: the <strong>Throw Out / Arrange</strong> sub-flows (<code>FUN_801D0D18</code>'s non-Use branches, untraced); the <strong>field target-pick window</strong> the Use/cast flows open (layout unpinned - the engine overlays its generic picker); the "PAGE" small-cap tag <strong>sprite source</strong>; and the displayed MP cost through the per-caster kernel <code>FUN_80035394</code> (catalog base cost draws today). A pad-walked capture into each sub-flow would close the first two.</td>
+        <td><a href="../subsystems/field-menu.html">field-menu</a></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
 <section class="doc-section" id="title-boot-overlays">
   <h2>Title / boot / overlays</h2>
   <table>
@@ -163,14 +190,20 @@
         <td><a href="../subsystems/boot.html">boot</a></td>
       </tr>
       <tr>
-        <td>Opening-prologue tail (<code>opdeene</code>)</td>
-        <td><span class="tag tag-partial">partial</span></td>
-        <td>The <code>opdeene</code> &rarr; <code>town01</code> hand-off is data-driven (partition-2 <code>GFLAG_SET 26</code>); the intro cutscene runs in-engine, the camera op <code>0x45</code> map and name-entry auto-open are pinned. Remaining: only the camera eye distance.</td>
+        <td>New-Game opening chain + narration roller</td>
+        <td><span class="tag tag-partial">partial</span> (chain + caption + roller resolved; two render-fidelity residuals open) - roller operand decode graded <code>decompiled-C</code>, <strong>re-audit</strong></td>
+        <td>The opening is a five-scene chain (<code>opdeene</code> &rarr; <code>opstati</code> &rarr; <code>opurud</code> &rarr; <code>map01</code> &rarr; <code>town01</code>, all master mode 3, zero input), live-probe + pixel-capture pinned; the narration is a bottom-up scrolling crawl on a child-context roller actor (<code>FUN_80037174</code>), the "It was the Seru." caption is a pre-rendered TIM in PROT 0749 (not text), and the camera op <code>0x45</code> map, name-entry auto-open and the eye-back depth (offset-trio slot 5, <code>0x800840B8</code> &mdash; there is <strong>no</strong> separate eye-distance scalar) are all pinned. Residuals, both render-fidelity: the prologue per-node depth-cue crush, and the tableau ground-texture chroma.</td>
         <td><a href="../subsystems/cutscene.html">cutscene</a></td>
       </tr>
       <tr>
+        <td>Full-window item-add OOB primitive: reachability</td>
+        <td><span class="tag tag-open">open</span> (re-opened; the earlier live confirmation does not hold) - store-order claim graded <code>decompiled-C</code>, <strong>re-audit</strong></td>
+        <td>The primitive is real and statically pinned; the claim that normal play reaches it is not. Two corrections: the landing address depends on the active window and the window is <strong>not</strong> 72 slots (<code>FUN_8004313C</code> only ever installs <code>[0,256)</code>, <code>[0,128)</code> or <code>[128,256)</code>), and the recorded <code>pc = 0x800422BC</code> probe hits were ordinary adds, not OOB hits. The load-bearing claim is one of <em>store order</em> - exactly the shape Ghidra's C reorders - and no instruction sequence backs it. Re-derive <code>FUN_800421D4</code>'s <code>sh</code>/<code>slt</code>/branch order before building on this row.</td>
+        <td><a href="memory-map.html">memory-map</a></td>
+      </tr>
+      <tr>
         <td>Slot-B overlay cluster (<code>0900..0969</code>) identity</td>
-        <td><span class="tag tag-partial">partial</span></td>
+        <td><span class="tag tag-mostly">mostly resolved</span></td>
         <td>0900/0901 = the default move-FX pair, 0902 = GAME OVER, 0903..0913 = player summon stagers (capture-pinned per spell id), 0957 = summon-effect strings. Open: action-id assignment for the attack-titled 0924/0925. <a href="#d-slot-b">details &darr;</a></td>
         <td><a href="../tooling/static-overlay-pipeline.html">static-overlay-pipeline</a></td>
       </tr>
