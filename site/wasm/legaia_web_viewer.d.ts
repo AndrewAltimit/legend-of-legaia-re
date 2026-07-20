@@ -2994,6 +2994,35 @@ export function disc_portrait_rgba(bytes: Uint8Array, char_id: number): Uint8Arr
 export function export_lang_pack(image: Uint8Array, language: string): string;
 
 /**
+ * Lift the **official** French / German / Italian localization off a PAL disc
+ * the user also owns, re-keyed onto their USA disc's coordinate space.
+ *
+ * Same user-supplied-asset model as the base disc: `source_image` is the
+ * user's own PAL `.bin` (`SCES_019.44` FR / `.45` DE / `.46` IT), it is read
+ * in this tab, and neither image is uploaded anywhere. The result is a
+ * **working** pack (`source:` = USA text, `translation:` = official text) that
+ * the page feeds straight back into [`patch_rom`]'s `lang_pack` argument, so
+ * the official text goes through the exact same two-phase import - and the
+ * same per-section coverage report - as any community pack. Both discs are
+ * consumed and dropped when this returns, so the caller can re-supply the USA
+ * image for the patch run without holding two copies at once.
+ *
+ * The pack is filled with the game's copyrighted text: it belongs in the
+ * user's browser (or their own scratchpad), never in the repo.
+ *
+ * `fold_accents` (recommended) rewrites the accented glyph cells the NTSC font
+ * leaves empty onto plain ASCII - `Epee` for `Épée`. With it off the raw PAL
+ * accent bytes are kept, which is byte-faithful but renders blank until the
+ * font atlas is patched; either way the count is reported, never silent.
+ *
+ * Returns `{ yaml, language, exe, summary, tables: [{name, located, pal_base,
+ * valid_pct, paired}], names_filled, names_unmapped, party_filled,
+ * party_total, man_total, man_paired, raw_total, raw_paired, folded,
+ * unfolded }`.
+ */
+export function lift_official_pack(target_image: Uint8Array, source_image: Uint8Array, fold_accents: boolean): any;
+
+/**
  * Patch a user-supplied disc image with the chosen randomizer settings.
  *
  * `drops` / `encounters` / `chests` / `shops` / `casino` / `steals` / `arts` /
@@ -3518,6 +3547,7 @@ export interface InitOutput {
     readonly legaiaviewer_walk_placement_rot_y: (a: number) => [number, number];
     readonly legaiaviewer_walk_placement_slots: (a: number) => [number, number];
     readonly legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
+    readonly lift_official_pack: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly music01render_loop_end: (a: number) => number;
     readonly music01render_ok: (a: number) => number;
     readonly music01render_pcm: (a: number) => [number, number];

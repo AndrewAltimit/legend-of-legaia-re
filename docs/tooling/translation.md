@@ -100,7 +100,14 @@ an *import my own pack* path and an *export a starter pack from my disc* button.
 It applies the language pack in **two phases around** the randomizer passes
 (see the ordering note below) via `patch_rom`'s `lang_pack` argument, and
 validates a chosen pack against the user's disc with `validate_lang_pack`
-before patching. After a patch (and on validate) the page shows the
+before patching. A third path, *official translation from my own PAL disc*,
+takes a second user-supplied disc (`SCES_019.44`/`.45`/`.46`) and runs
+`translate lift-official` in the tab via `lift_official_pack` - neither disc is
+uploaded - then feeds the lifted pack through the same `lang_pack` argument. It
+is honest about the fit: most of the official dialog does **not** fit the USA
+disc's sector-aligned scenes, and the coverage report says how much landed and
+why the rest did not. See [`pal-localizations.md`](pal-localizations.md#in-the-browser).
+After a patch (and on validate) the page shows the
 **per-section coverage report** - applied / skipped counts per section plus a
 skip-reason breakdown (over budget, scene does not recompress, not on this
 disc, not encodable) - from the `lang` / `report` object `patch_rom` /
@@ -212,7 +219,11 @@ dashes, ellipsis, NBSP) are folded automatically. **Accented Latin, Cyrillic
 and CJK are not encodable** - the retail font simply has no such glyphs. A
 full non-Latin translation needs a font patch (new glyph tiles + width table),
 which this pipeline does not attempt; French/Italian/etc. must be written
-unaccented (`Epee` not `Épée`).
+unaccented (`Epee` not `Épée`). Text lifted off an official PAL disc is the one
+exception - it arrives as raw `{xx}` accent bytes, which *encode* fine but draw
+blank on the NTSC font, so the lift offers the same ASCII fold
+(`--fold-accents`; see
+[`pal-localizations.md`](pal-localizations.md#accent-folding)).
 
 ## Budgets (the same-size constraint)
 

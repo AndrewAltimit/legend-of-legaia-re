@@ -425,6 +425,7 @@ export const legaiaviewer_walk_placement_positions: (a: number) => [number, numb
 export const legaiaviewer_walk_placement_rot_y: (a: number) => [number, number];
 export const legaiaviewer_walk_placement_slots: (a: number) => [number, number];
 export const legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
+export const lift_official_pack: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
 export const music01render_loop_end: (a: number) => number;
 export const music01render_ok: (a: number) => number;
 export const music01render_pcm: (a: number) => [number, number];

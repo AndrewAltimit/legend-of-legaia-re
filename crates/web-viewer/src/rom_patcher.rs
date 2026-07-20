@@ -20,7 +20,7 @@ use legaia_rando::drops::DropMode;
 use legaia_rando::items::valid_item_pool;
 use legaia_rando::rng::seed_from_str;
 use legaia_rando::translation::{
-    ImportPhase, ImportReport, LanguagePack, export_pack, import_pack, import_pack_phase,
+    ImportPhase, ImportReport, LanguagePack, export_pack, import_pack, import_pack_phase, lift,
 };
 
 fn parse_mode(s: &str) -> Option<DropMode> {
@@ -771,6 +771,138 @@ pub fn validate_lang_pack(image: Vec<u8>, pack_yaml: &str) -> Result<JsValue, Js
         &"report".into(),
         &lang_report_json(&pack.language, &report, &sections)?,
     )?;
+    Ok(out.into())
+}
+
+/// Lift the **official** French / German / Italian localization off a PAL disc
+/// the user also owns, re-keyed onto their USA disc's coordinate space.
+///
+/// Same user-supplied-asset model as the base disc: `source_image` is the
+/// user's own PAL `.bin` (`SCES_019.44` FR / `.45` DE / `.46` IT), it is read
+/// in this tab, and neither image is uploaded anywhere. The result is a
+/// **working** pack (`source:` = USA text, `translation:` = official text) that
+/// the page feeds straight back into [`patch_rom`]'s `lang_pack` argument, so
+/// the official text goes through the exact same two-phase import - and the
+/// same per-section coverage report - as any community pack. Both discs are
+/// consumed and dropped when this returns, so the caller can re-supply the USA
+/// image for the patch run without holding two copies at once.
+///
+/// The pack is filled with the game's copyrighted text: it belongs in the
+/// user's browser (or their own scratchpad), never in the repo.
+///
+/// `fold_accents` (recommended) rewrites the accented glyph cells the NTSC font
+/// leaves empty onto plain ASCII - `Epee` for `Épée`. With it off the raw PAL
+/// accent bytes are kept, which is byte-faithful but renders blank until the
+/// font atlas is patched; either way the count is reported, never silent.
+///
+/// Returns `{ yaml, language, exe, summary, tables: [{name, located, pal_base,
+/// valid_pct, paired}], names_filled, names_unmapped, party_filled,
+/// party_total, man_total, man_paired, raw_total, raw_paired, folded,
+/// unfolded }`.
+#[wasm_bindgen]
+pub fn lift_official_pack(
+    target_image: Vec<u8>,
+    source_image: Vec<u8>,
+    fold_accents: bool,
+) -> Result<JsValue, JsValue> {
+    let target =
+        DiscPatcher::open(target_image).map_err(|e| err(format!("parse USA disc: {e}")))?;
+    let source =
+        DiscPatcher::open(source_image).map_err(|e| err(format!("parse PAL disc: {e}")))?;
+    let (mut pack, rep) =
+        lift::lift_official(&target, &source).map_err(|e| err(format!("lift: {e}")))?;
+    // Free the source disc as early as possible - two full images plus the pack
+    // is the peak allocation of the whole page.
+    drop(source);
+    drop(target);
+
+    let fold = if fold_accents {
+        lift::fold_pack_accents(&mut pack)
+    } else {
+        Default::default()
+    };
+    let yaml = pack.to_yaml().map_err(|e| err(format!("emit YAML: {e}")))?;
+
+    let num = |v: usize| JsValue::from_f64(v as f64);
+    let out = Object::new();
+    Reflect::set(&out, &"yaml".into(), &yaml.as_str().into())?;
+    Reflect::set(&out, &"language".into(), &rep.language.as_str().into())?;
+    Reflect::set(&out, &"exe".into(), &rep.exe_name.as_str().into())?;
+    let tables = js_sys::Array::new();
+    for t in &rep.tables {
+        let row = Object::new();
+        Reflect::set(&row, &"name".into(), &t.name.into())?;
+        Reflect::set(&row, &"located".into(), &JsValue::from_bool(t.located))?;
+        Reflect::set(
+            &row,
+            &"pal_base".into(),
+            &format!("0x{:08x}", t.pal_base).into(),
+        )?;
+        Reflect::set(
+            &row,
+            &"valid_pct".into(),
+            &JsValue::from_f64(t.valid_fraction * 100.0),
+        )?;
+        Reflect::set(&row, &"paired".into(), &num(t.paired))?;
+        tables.push(&row);
+    }
+    Reflect::set(&out, &"tables".into(), &tables)?;
+    Reflect::set(&out, &"names_filled".into(), &num(rep.names_filled))?;
+    Reflect::set(&out, &"names_unmapped".into(), &num(rep.names_unmapped))?;
+    Reflect::set(&out, &"party_filled".into(), &num(rep.party_filled))?;
+    Reflect::set(&out, &"party_total".into(), &num(rep.party_total))?;
+    Reflect::set(&out, &"man_total".into(), &num(rep.man_total))?;
+    Reflect::set(&out, &"man_paired".into(), &num(rep.man_paired))?;
+    Reflect::set(&out, &"raw_total".into(), &num(rep.raw_total))?;
+    Reflect::set(&out, &"raw_paired".into(), &num(rep.raw_paired))?;
+    Reflect::set(&out, &"folded".into(), &num(fold.folded))?;
+    Reflect::set(&out, &"unfolded".into(), &num(fold.unmapped))?;
+
+    // A short text block for the status panel. Counts only - no game text.
+    let mut summary = format!(
+        "lifted the official {} localization from {}\n",
+        rep.language, rep.exe_name
+    );
+    for t in &rep.tables {
+        summary.push_str(&if t.located {
+            format!(
+                "  {}: located @ 0x{:08x} ({:.0}% valid), {} names paired\n",
+                t.name,
+                t.pal_base,
+                t.valid_fraction * 100.0,
+                t.paired
+            )
+        } else {
+            format!("  {}: NOT located - left English\n", t.name)
+        });
+    }
+    summary.push_str(&format!(
+        "  party names: {}/{} paired\n  scene dialog: {}/{} lines paired\n  \
+         event-script text: {}/{} lines paired\n",
+        rep.party_filled,
+        rep.party_total,
+        rep.man_paired,
+        rep.man_total,
+        rep.raw_paired,
+        rep.raw_total
+    ));
+    summary.push_str(&if fold_accents {
+        format!(
+            "  accents: {} folded to ASCII ({} non-accent symbol cell(s) left as-is)\n",
+            fold.folded, fold.unmapped
+        )
+    } else {
+        "  accents: kept as PAL bytes - they render blank without a font patch\n".to_string()
+    });
+    summary.push_str(
+        "  menu / system UI strings: not lifted - the overlay string pools sit at \
+         region-specific addresses, so those labels stay English\n",
+    );
+    summary.push_str(
+        "Lifting only re-keys the text; how much of it fits the USA disc's \
+         sector-aligned scenes is the coverage report after patching.\n",
+    );
+    Reflect::set(&out, &"summary".into(), &summary.as_str().into())?;
     Ok(out.into())
 }
 

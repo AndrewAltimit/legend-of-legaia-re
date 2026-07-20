@@ -11,7 +11,12 @@
  * solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru)
  * -> { data, summary, seed, lang }`, `resolve_seed(str)`,
  * `validate_lang_pack(image, yaml) -> { ok, language, applied, skipped, message, report }`,
- * and `export_lang_pack(image, language) -> yaml_string`. `lang` / `report`
+ * `export_lang_pack(image, language) -> yaml_string`, and
+ * `lift_official_pack(usa_image, pal_image, fold_accents) -> { yaml, language,
+ * exe, summary, tables, ... }` (the official-localization transfer: the user
+ * supplies their OWN PAL disc as a second file, it is read in this tab, and the
+ * lifted YAML is fed back through the normal `lang_pack` path so it gets the
+ * same two-phase ordering and the same coverage report). `lang` / `report`
  * carry the per-section language-patch coverage: `{ language, applied,
  * already_applied, skipped, untranslated, sections: [{name, total, filled,
  * applied, already_applied, skipped}], reasons: [{reason, count}] }` (null
@@ -61,6 +66,11 @@ function readFileText(file) {
   });
 }
 
+// The pack lifted from the user's own PAL disc this session (YAML string), or
+// null. Held in memory only - it carries the official localized script, so it
+// is never persisted and only leaves the tab if the user downloads it.
+let liftedPack = null;
+
 // The YAML for the currently-selected language, or '' for none. `customFile`
 // is the <input type=file> for an imported pack.
 async function resolveLangPack(langSel, customFile) {
@@ -70,6 +80,12 @@ async function resolveLangPack(langSel, customFile) {
     const f = customFile.files && customFile.files[0];
     if (!f) throw new Error('choose a pack .yaml file (or pick a language)');
     return readFileText(f);
+  }
+  if (v === '__official') {
+    if (!liftedPack) {
+      throw new Error('read the official text from your PAL disc first (button above)');
+    }
+    return liftedPack;
   }
   return fetchShippedPack(v);
 }
@@ -221,6 +237,11 @@ function init() {
   const langSel = $('rom-lang');
   const langFileRow = $('rom-lang-file-row');
   const langFile = $('rom-lang-file');
+  const langOfficialRow = $('rom-lang-official-row');
+  const langPalFile = $('rom-lang-pal-file');
+  const langFoldChk = $('rom-lang-fold');
+  const langLiftBtn = $('rom-lang-lift');
+  const langLiftSaveBtn = $('rom-lang-lift-save');
   const langValidateBtn = $('rom-lang-validate');
   const langExportBtn = $('rom-lang-export');
   const langStatusEl = $('rom-lang-status');
@@ -245,6 +266,7 @@ function init() {
   // chosen; the group is opt-in and defaults to None.
   function syncLangRow() {
     if (langFileRow) langFileRow.hidden = langSel.value !== '__custom';
+    if (langOfficialRow) langOfficialRow.hidden = langSel.value !== '__official';
   }
   langSel.addEventListener('change', () => { syncLangRow(); setLangStatus(''); });
   syncLangRow();
@@ -273,6 +295,63 @@ function init() {
       setLangStatus('Error: ' + (e && e.message ? e.message : e), 'err');
     }
   });
+
+  // "Read the official text from my PAL disc": the official-localization
+  // transfer. The user supplies a SECOND disc they own (a PAL SCES build); it
+  // is read in this tab exactly like the USA one, lifted onto USA coordinates,
+  // and kept in memory as an ordinary language pack. Patching then goes through
+  // the normal lang_pack path, so the ordering and the coverage report are the
+  // same as for any community pack.
+  //
+  // A lift holds both disc images in WASM memory at once, so it is done as its
+  // own call and both are dropped before the patch run re-supplies the USA disc.
+  langLiftBtn.addEventListener('click', async () => {
+    const palFile = langPalFile.files && langPalFile.files[0];
+    if (!palFile) {
+      setLangStatus('Choose your PAL disc image (.bin) first.', 'err');
+      return;
+    }
+    langLiftBtn.disabled = true;
+    try {
+      setLangStatus('Reading both discs (nothing is uploaded) ...');
+      const mod = await ensureWasm(setStatus);
+      const usa = await discBytes();
+      const pal = new Uint8Array(await palFile.arrayBuffer());
+      setLangStatus('Reading the official text (this takes a moment) ...');
+      await new Promise((r) => setTimeout(r, 30));
+      const r = mod.lift_official_pack(usa, pal, langFoldChk.checked);
+      liftedPack = r.yaml;
+      langLiftSaveBtn.hidden = false;
+      langLiftSaveBtn.dataset.lang = r.language;
+      setLangStatus(
+        `Official ${r.language.toUpperCase()} text read from ${r.exe}. ` +
+        'Now press "Patch my disc" below - the coverage report will say how much of it fits.',
+        'ok');
+      summaryEl.textContent = r.summary || '';
+    } catch (e) {
+      setLangStatus('Error: ' + (e && e.message ? e.message : e), 'err');
+    } finally {
+      langLiftBtn.disabled = false;
+    }
+  });
+
+  // Keep the lifted pack (it is the user's own disc text, so it is theirs to
+  // keep - and it can be edited and re-imported through the pack path).
+  langLiftSaveBtn.addEventListener('click', () => {
+    if (!liftedPack) return;
+    const code = langLiftSaveBtn.dataset.lang || 'xx';
+    triggerDownload(new TextEncoder().encode(liftedPack), `legaia_${code}.official.yaml`);
+    setLangStatus(`Downloaded legaia_${code}.official.yaml - it holds the game's script, so keep it to yourself.`, 'ok');
+  });
+
+  // Re-lifting is required when the PAL disc or the accent choice changes.
+  const invalidateLift = () => {
+    liftedPack = null;
+    langLiftSaveBtn.hidden = true;
+    setLangStatus('');
+  };
+  langPalFile.addEventListener('change', invalidateLift);
+  langFoldChk.addEventListener('change', invalidateLift);
 
   // "Export a starter pack from my disc": dump a source-bearing working pack the
   // user can edit. Uses the chosen language code as the header stamp (or en).
@@ -362,7 +441,8 @@ function init() {
   formEl.addEventListener('change', (e) => {
     // Seed, disc-file and the language selection are orthogonal to the
     // randomization config, so editing them must not flip the preset to "Custom".
-    if (e.target && ['rom-seed', 'rom-file', 'rom-lang', 'rom-lang-file'].includes(e.target.id)) return;
+    if (e.target && ['rom-seed', 'rom-file', 'rom-lang', 'rom-lang-file',
+      'rom-lang-pal-file', 'rom-lang-fold'].includes(e.target.id)) return;
     markCustom();
     syncDependents();
   });
