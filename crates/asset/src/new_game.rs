@@ -21,7 +21,7 @@
 //! |---|---|---|
 //! | `+0`  | u16 | `hp_max` |
 //! | `+2`  | u16 | `mp_max` |
-//! | `+4`  | u16 | `agl` (also seeds the spirit gauge + cap; see below) |
+//! | `+4`  | u16 | `agl` |
 //! | `+6`  | u16 | `atk` |
 //! | `+8`  | u16 | `udf` (upper / physical defence) |
 //! | `+10` | u16 | `ldf` (lower / magical defence) |
@@ -33,11 +33,16 @@
 //! (`Vahn`, `Noa`, `Gala`, `Terra`). At a true New Game only Vahn has joined;
 //! the rest are the templates the game uses when each character is introduced.
 //!
-//! The `+4` stat is a single value the seed routine fans out to several live
-//! fields. Cross-validated against an early `town01` save state, Vahn's `+4`
-//! (`100`) lands in the live record as `agl`, `cap_constant`, and the initial
-//! spirit-gauge value all at once; the per-character archetypes
-//! (`Noa = 120`, `Gala = 80`) read as agility, so this module names it `agl`.
+//! The `+4` stat lands in the live record's agility cell in both the current and
+//! the maximum stat block (see [`seed_live_records`]); the per-character
+//! archetypes (`Vahn = 100`, `Noa = 120`, `Gala = 80`) read as agility, so this
+//! module names it `agl`.
+//!
+//! The neighbouring cap cells (`+0x10C` current / `+0x120` max) are **not** fed
+//! from this field: the seed routine writes the literal
+//! [`SEEDED_CAP_CONSTANT`] there for every roster slot. Vahn's `+4` is also
+//! `100`, which makes the two easy to conflate when reading Vahn's record alone,
+//! but Noa and Gala seed the cap at `100` while their agility differs.
 //!
 //! A New Game's first scene is the prologue cutscene `opdeene`
 //! ([`OPENING_CUTSCENE_SCENE`]) - the in-engine 3D "It was the Seru."
@@ -654,7 +659,10 @@ pub fn seed_live_records(party: &StartingParty) -> Vec<SeededHalfword> {
         push(cur + 4, m.mp_max);
         push(cur + 6, m.mp_max);
         push(cur + 8, SEEDED_CAP_CONSTANT);
-        for (i, v) in [m.agl, m.atk, m.udf, m.ldf, m.spd, m.intel].iter().enumerate() {
+        for (i, v) in [m.agl, m.atk, m.udf, m.ldf, m.spd, m.intel]
+            .iter()
+            .enumerate()
+        {
             push(cur + 12 + i as u32 * 2, *v);
         }
 

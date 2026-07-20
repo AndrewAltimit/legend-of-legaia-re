@@ -47,7 +47,7 @@ fn is_tim_pack(data: &[u8]) -> bool {
         return false;
     }
     entries.iter().all(|e| {
-        let off = e.byte_offset as usize;
+        let off = e.byte_offset;
         data.get(off..off + 4)
             .map(|w| u32::from_le_bytes(w.try_into().unwrap()) == 0x10)
             .unwrap_or(false)
@@ -107,9 +107,8 @@ fn effect_module_index_carries_the_effect_dev_strings() {
     // claimed end into this same payload (see the trailing-gap note in
     // docs/formats/prot.md), so a plain "contains" check matches 977 and 978
     // as well. What is unique to 979 is that the module sits at its head.
-    let find = |data: &[u8], needle: &[u8]| {
-        (0..data.len()).find(|&i| data[i..].starts_with(needle))
-    };
+    let find =
+        |data: &[u8], needle: &[u8]| (0..data.len()).find(|&i| data[i..].starts_with(needle));
 
     let data = read(&mut archive, idx);
     let at = find(&data, b"efect init").expect("entry 979 carries `efect init`");

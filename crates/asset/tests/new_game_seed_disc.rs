@@ -150,7 +150,12 @@ fn stat_blocks_are_disjoint_and_inside_the_record() {
             s.sc_offset
         );
         // Halfword stores must not straddle an odd address.
-        assert_eq!(s.sc_offset % 2, 0, "unaligned halfword at {:#x}", s.sc_offset);
+        assert_eq!(
+            s.sc_offset % 2,
+            0,
+            "unaligned halfword at {:#x}",
+            s.sc_offset
+        );
     }
 }
 
@@ -166,10 +171,7 @@ fn the_cap_constant_is_a_literal_not_a_template_field() {
     for (slot, m) in party.members().iter().enumerate() {
         agls.insert(m.agl);
         let base = LIVE_RECORD_0_XP_OFFSET + slot as u32 * new_game::LIVE_RECORD_STRIDE;
-        for cell in [
-            base + CURRENT_STATS_OFFSET + 8,
-            base + MAX_STATS_OFFSET + 4,
-        ] {
+        for cell in [base + CURRENT_STATS_OFFSET + 8, base + MAX_STATS_OFFSET + 4] {
             let got = seeds
                 .iter()
                 .find(|s| s.sc_offset == cell)

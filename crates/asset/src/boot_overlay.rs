@@ -27,7 +27,7 @@
 //! Every entry named here is pinned by its loader-call constant and confirmed
 //! against the entry's own magic bytes or embedded strings - see
 //! [`docs/formats/cdname.md`](../../../docs/formats/cdname.md) and the
-//! disc-gated tests in `tests/boot_overlay_real.rs`.
+//! disc-gated tests in `tests/boot_overlay_disc.rs`.
 //!
 //! See [`docs/subsystems/boot.md`](../../../docs/subsystems/boot.md) for the
 //! mode state machine these loaders serve.
@@ -174,7 +174,7 @@ pub const CARD_TIM_RAW_INDEX: u32 = 0x37E;
 /// The entry is an [`crate::pack`] bundle of PSX TIMs. Its CDNAME-inherited
 /// filename label names a neighbouring block, so the label is not the
 /// attribution - the loader constant plus the entry's pack header and TIM magic
-/// are (see `tests/boot_overlay_real.rs`).
+/// are (see `tests/boot_overlay_disc.rs`).
 pub const CARD_TIM_EXTRACTION_INDEX: u32 = CARD_TIM_RAW_INDEX - RAW_TO_EXTRACTION;
 
 /// Scratch-buffer size the CARD-mode init allocates for the TIM pack.
@@ -264,10 +264,7 @@ mod tests {
     fn side_band_indices_match_their_loader_constants() {
         assert_eq!(EFFECT_DATA_EXTRACTION_INDEX, 979);
         assert_eq!(CARD_TIM_EXTRACTION_INDEX, 892);
-        assert_eq!(
-            effect_data_source(true),
-            EffectDataSource::ProtEntry(979)
-        );
+        assert_eq!(effect_data_source(true), EffectDataSource::ProtEntry(979));
         assert_eq!(effect_data_source(false), EffectDataSource::IsoFile);
         assert_eq!(card_tim_pack_extraction_index(), 892);
     }

@@ -201,6 +201,22 @@ The fresh-state seed is the new-game data-init `FUN_80034A6C` (called via the bo
 - **Gold.** Party gold (`_DAT_8008459C`, the word the battle-victory reward writer `FUN_8004F0E8` credits) is set to a hardcoded **`500`** - a constant in the init routine, not a field of the starting-party template. Mirror: `NEW_GAME_STARTING_GOLD` in `crates/engine-core/src/world.rs`.
 - **Story flags.** The routine zeroes a ~`0x200`-byte story-flag region, so a New Game starts with every story flag clear. (`World::begin_new_game` matches this.)
 - **Starting party.** `FUN_80034A6C` calls `FUN_800560B4`, which expands a static `SCUS_942.54` template into the live per-character records (stride `0x414`). The template is `[8×u16 stats][10-byte name]` per record (Vahn, Noa, Gala, Terra), parsed by [`legaia_asset::new_game`](../formats/new-game-table.md). Vahn's row (HP 180 / MP 20 / AGL 100 / ATK 24 / uDEF 16 / lDEF 12 / SPD 19 / INT 9) is byte-validated against an early `town01` save state. `FUN_800560B4` copies the template's **default name** (`Vahn`) into the record. This default is what the downstream **name-entry** screen (the *"Select your name."* character grid, save-state `name_input_ui`) pre-fills and lets the player overwrite - that screen fires in the field/event flow after the opening, not here.
+
+  The expansion (ported as `legaia_asset::new_game::seed_live_records`) fans each
+  template row into **two** stat blocks per live record: a current-stat block at
+  record `+0x104`, where HP and MP each occupy a current *and* a max cell so a New
+  Game starts at full health, and a max-stat block at `+0x11C`. Level and magic
+  rank are seeded to `1` at `+0x130` / `+0x131`, and the display name is copied to
+  `+0x2A7`. That is twenty `sh` stores per slot, all `$s0`-relative with `$s0` at
+  the save-context base - which is what the disc-gated `new_game_seed_disc` oracle
+  re-derives from the executable's own encodings rather than trusting the
+  transcription.
+
+  **The cap cells are a literal, not a template field.** Record `+0x10C` (current)
+  and `+0x120` (max) take a hardcoded `100` for every roster slot. Vahn's template
+  agility is also `100`, so a reading taken from Vahn's record alone cannot tell
+  the two apart - but Noa (`120`) and Gala (`80`) seed the cap at `100` while
+  their agility cells carry the per-character value.
   (The front-end launcher's `s_opdeene` write is the opening *scene id*, not a name - see the sub-mode dispatcher section.)
 - **Opening scene.** The default map-name buffer holds the literal `"town01"` (Rim Elm) - the interactive scene a New Game enters. `FUN_8001D424` (the global reset/init) leaves the buffer at `town01` and reads an optional dev `initmap.txt` override when the debug flag `_DAT_8007B8C2` is clear. The data seed does not itself set the scene.
 
@@ -233,7 +249,23 @@ The SCUS-side CD I/O is layered. Bottom-up:
 | `FUN_8003E8A8` | PROT TOC index resolver: `(prot_index, flag)` → LBA. Reads `*(0x801C70F0 + (index+2)*4)` matching the [PROT TOC math](../formats/prot.md). |
 | `FUN_8003EBE4` / `FUN_8003EC70` | Parallel overlay loaders A/B (see Game-mode state machine section). Both call `FUN_8003E8A8(param + 0x381)`; in extraction index space that is **entry `param + 0x37F`** (the resolver indexes the raw in-RAM `PROT.DAT` head, 2 entries above the extraction indexing - see the index-spaces note above the mode table). Differ only in destination buffer pointer (`*DAT_8001038C` vs `*DAT_80010390`) and current-id tracker (`gp+0x924` vs `gp+0x934`; `gp = 0x8007B318`, so `0x8007BC3C` / `0x8007BC4C`). |
 
-`FUN_8003E360` shows a **dual-mode loader pattern** keyed on the dev/retail flag `_DAT_8007B8C2`: retail branch uses ISO9660 file system (`FUN_800608F0` open + `FUN_80060944` read), debug branch uses PROT TOC index (`FUN_8003E8A8` + `FUN_8003E800`). The two branches load the same data from different on-disc locations.
+`FUN_8003E360` shows a **dual-mode loader pattern** keyed on the dev/retail flag `_DAT_8007B8C2`: retail branch uses ISO9660 file system (`FUN_800608F0` open + `FUN_80060944` read), debug branch uses PROT TOC index (`FUN_8003E8A8` + `FUN_8003E800`). The two branches load the same data from different on-disc locations. The retail branch zero-fills the tail up to the next 2 KB boundary, so the padded length - not the file length - is what it records.
+
+#### Side-band loader constants
+
+Three boot-path call sites resolve a specific entry from a hardcoded constant rather than from a scene name. `legaia_asset::boot_overlay` ports the arithmetic; each index below is pinned by its **content**, because CDNAME filename labels inherit forward and name a neighbouring block on two of these three entries.
+
+| Call site | Constant | Extraction entry | Pinned by |
+|---|---|---|---|
+| `FUN_8003E360` (effect data) | raw `0x3D5` | 979 | `efect init` / `battle bgm %d` at the entry's head |
+| `FUN_8002574C` (CARD-mode init) | raw `0x37E` | 892 | parses as an `asset::pack` of PSX TIMs |
+| `FUN_80025BA0` (slot-B default) | param `5` / `6` | 900 / 901 | the summon-render pair |
+
+Reading either raw constant *as* an extraction index lands two entries high and picks up unrelated content, so the shift is load-bearing rather than cosmetic - `boot_overlay_disc` asserts the off-by-two neighbour fails the same content check.
+
+**Entry over-read confounds a plain byte search.** The effect strings are findable inside entries 977 and 978 as well, because the per-entry size formula covers only an indexed subset of each entry's disc footprint and the extractor's read runs past it into the following payload (see [`formats/prot.md`](../formats/prot.md)). What distinguishes 979 is that the module begins at *its* head; in 977 / 978 the same bytes sit thousands of bytes into an over-read tail. Any "which entry owns this string" question on adjacent entries has to compare offsets, not membership.
+
+`FUN_80025BA0` is the only one of the three that makes a runtime decision: it mirrors the summon-render flag `DAT_8007B6A8` into a work word, picks param `6` when set and `5` otherwise, skips the load when that overlay is already resident, and clears its one-frame suppression word unconditionally on the way out.
 
 ### Pre-`init_data` system-UI gap (menu-glyph atlas + boot cursors)
 
