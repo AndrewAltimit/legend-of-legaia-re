@@ -79,14 +79,21 @@ pub const PARTY_TEMPLATE_VA: u32 = 0x8007_8C4C;
 /// correction is re-applied by the applier on each character's first post-seed
 /// level-up.
 ///
-/// The displayed combat level is **derived from the cumulative experience at `+0x0`**
-/// (the "Max Exp" cheat target), *not* stored: across a captured 4-level jump the
-/// `+0x130` byte rose by only `+1` (it is the magic-rank counter, one tick per
-/// level-up event; `+0x100` stays zero and is unrelated). So a New Game always shows
-/// level 1 because the seed leaves `+0x0 = 0`, regardless of the seeded `+0x4`. The
-/// starting-level randomizer therefore seeds the **experience** cell `+0x0`
-/// ([`CURRENT_XP_PRELOAD_VA`] / [`CURRENT_XP_STORE_VA`]) so the derived level becomes
-/// `N`, and leaves the magic-rank byte alone.
+/// A New Game shows level 1 because the seed leaves both the cumulative-experience
+/// cell `+0x0` at `0` and the level cell `+0x130` at `1`, regardless of the seeded
+/// next-level threshold at `+0x4` (`+0x100` stays zero and is unrelated). The
+/// starting-level randomizer therefore seeds **both**: the experience cell `+0x0`
+/// ([`CURRENT_XP_PRELOAD_VA`] / [`CURRENT_XP_STORE_VA`]) so the record carries
+/// in-band level-`N` experience, and the displayed level `+0x130` itself
+/// ([`LEVEL_SEED_VA`] / [`LEVEL_STORE_VA`]).
+///
+/// `+0x130` is the **displayed combat level**, not a magic-rank counter - magic rank
+/// is the adjacent byte `+0x131`, which [`LEVEL_SEED_VA`]'s packed halfword
+/// deliberately leaves at `1`. The shown level is read from `+0x130` directly and is
+/// *not* re-derived from `+0x0`: a record with level-10 experience and stats but
+/// `+0x130 == 1` still displays "LV 1". See
+/// [`save-record.md`](../../../docs/formats/save-record.md), which records the older
+/// "`+0x130` = Magic Rank" reading as superseded.
 pub const STARTING_XP_SEED_VA: u32 = 0x8005_60F0;
 
 /// RAM address of the slot-3 / Terra next-level-threshold store in `FUN_800560B4`
