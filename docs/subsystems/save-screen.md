@@ -272,6 +272,44 @@ printed during the loop (`"NOT_CARD"`, `"card_sts:%d old:%d"`,
 `FUN_8006EE34` is the actual write helper: it calls BIOS-B(0x50) via
 `FUN_8006EE7C`, then BIOS-B(0x4E) via `FUN_8006EE6C` with `(chan, 0x3F, 0)`.
 
+#### The per-frame status poll (`FUN_801E3900`)
+
+States 1 and 3 both branch on `FUN_801E3900`, which is where the "Now
+checking" beat actually ends. It calls the `TestEvent` thunk
+`FUN_80056658` on four card event handles (`0x8007B9F0`, `..F4`, `..F8`,
+`..FC`) in turn and overwrites its running status with `1`, `2`, `3`, `4`
+respectively whenever a handle reports `1`. The overwrites are
+unconditional, so the **last handle to fire wins** - the priority is call
+order, not severity, and only handle 0 can leave the status at `0`.
+
+It then applies a backstop against the frame counter `DAT_801EF17C`,
+which state 0 clears on the way in:
+
+```
+lw   v1, counter        ; v1 = value on ENTRY
+addiu v1, v1, 1
+slti a0, <entry>, 0x78  ; entry < 120 ?
+bne  a0, zero, skip
+ sw  v1, counter        ; delay slot - the store happens either way
+li   s0, 0x2            ; else force status 2
+```
+
+Two details the shape depends on. The comparison is against the value the
+call was *entered* with, so the first frame to force the timeout is the
+one entered at `120` - the 121st poll. And the increment sits in the
+branch's delay slot, so the counter advances on both paths.
+
+Status `2` therefore has two distinct origins - handle 1 firing, and the
+timeout - and `FUN_801E3294` treats them identically (tear the read down
+with result `-3`). Status `3` is the "NOT CARD" failure (result `-1`),
+`4` completes the read.
+
+Ported as `legaia_engine_core::save_select::card_status_poll`, which the
+save-select session runs on every frame of its `NowChecking` phase.
+`FUN_801E39A8` is the sibling drain - the same four `TestEvent` calls with
+their results discarded - and has no port, since a Rust caller that passes
+the event states in has nothing left to drain.
+
 ### Save-block directory enumeration (`FUN_801E1208`)
 
 After `FUN_801E3294` finishes a directory scan, `FUN_801E1208` walks the
@@ -293,8 +331,37 @@ count from the prior `FUN_801E3BA0` call.
 The per-frame ticker `FUN_801E1114` is the single static caller wiring
 the trio together: it calls `FUN_801E3294(DAT_801EF18C, 0)` every frame
 to advance the libcd state machine, and when `_DAT_801F021C == 3` (save
-commit) it sequences `FUN_801E3AF0` (open `"bu%d_%d"` channel) →
-`FUN_801E3BA0` (block-count query) → `FUN_801E1208` (directory walk).
+commit) it sequences `FUN_801E3AF0` → `FUN_801E3BA0` → `FUN_801E1208`.
+
+#### Filling the table (`FUN_801E3AF0`) and costing it (`FUN_801E3BA0`)
+
+`FUN_801E3AF0` is a **directory enumeration**, not a channel open. It
+formats `"bu%1d%1d:*"` from its two arguments - the wildcard makes the
+pattern select a *device*, not a name, so every file on the chosen card
+matches - then zeroes all fifteen table slots (name bytes `0x13..=0x0`
+and the size word at `+0x18`; the other `DIRENTRY` fields are left as
+they lie) and walks the BIOS-B `firstfile` / `nextfile` thunks
+(`FUN_800566F8` / `FUN_80056708`) across the table. It returns the file
+count, which is what bounds every later pass over the table.
+
+Its count loop increments in the `beq`'s delay slot, so the increment
+runs on the exiting iteration too and the function subtracts one before
+returning. The net result is a plain file count; the correction is not
+an off-by-one to reproduce.
+
+`FUN_801E3BA0` is not a query either - it is arithmetic over the table
+`FUN_801E3AF0` just filled. It sums each entry's `size` word over the
+first `count` entries, applies the MIPS signed-division bias
+(`if (sum < 0) sum += 0x1fff`) so the following arithmetic `>> 13`
+truncates toward zero, and returns `0xf - blocks`: fifteen usable blocks
+minus the blocks the files occupy, at `0x2000` bytes per block. The
+result is **not clamped**, so an over-full card returns a negative count.
+Its first argument is dead - overwritten before use.
+
+Ported as `card_directory_scan` and `card_free_blocks`;
+`SaveSelectSession::from_card_directory` chains both into
+`classify_card_directory` so the free-block budget below comes from the
+card rather than from a caller's guess.
 
 #### Classification order is load-bearing
 
