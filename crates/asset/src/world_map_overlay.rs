@@ -35,9 +35,10 @@
 //! shared mesh library plus kingdom-specific bodies. The `kind`/`count`
 //! consumer is the cluster-A handler chain, which walks each body (header +
 //! indexed vertex records) **in place** (`ra 0x801F78D4`, no separate builder);
-//! `attr` is render-unused (a full sweep of the cluster-A handler family finds
-//! no read of the pool word's high half; loaded with `z` into the GTE `VZn`,
-//! only `z` used). See world-map-overlay.md. The `top_down_*` /
+//! `attr` is render-unused - the word carrying it is loaded into a 16-bit GTE
+//! register (`VZn`/`IR0`), so its high half is discarded by the register width
+//! and is unreachable by the render path by construction, not merely unread in
+//! the handlers swept. See world-map-overlay.md. The `top_down_*` /
 //! `Wireframe*` helpers below render record geometry for inspection only.
 
 /// One slot-4 record: a model-space GTE vertex `(x, y, z)` plus a 4th `i16`.
@@ -49,13 +50,21 @@ pub struct Slot4Record {
     pub y: i16,
     /// Model-space Z - GTE `VZn` (low 16 bits).
     pub z: i16,
-    /// 4th `i16`, the high half of the `VZn` word - **not** a coordinate (the
-    /// GTE vertex load ignores it). Characterized as a genuine per-vertex value
-    /// (not constant within a `count_a` group; not position-correlated,
-    /// `corr(attr, x/y/z) ≈ 0.1`; varies smoothly across the `count_b` groups;
-    /// 135 distinct in one Sebucus body, up to 214 in Drake body 12). Read by
-    /// some path other than the prim renderer; consumer unpinned (see
-    /// world-map-overlay.md).
+    /// 4th `i16`, the high half of the `VZn` word - **not** a coordinate.
+    /// Characterized as a genuine per-vertex value (not constant within a
+    /// `count_a` group; not position-correlated, `corr(attr, x/y/z) ≈ 0.1`;
+    /// varies smoothly across the `count_b` groups; 135 distinct in one Sebucus
+    /// body, up to 214 in Drake body 12).
+    ///
+    /// **Render-unused, and deliberately never read.** The prim handlers load
+    /// the containing word into `VZ0`/`VZ1`/`VZ2` (cop2r1/3/5) or `IR0`
+    /// (cop2r8), all of which are 16-bit GTE registers - so this half is
+    /// discarded by the register width, not merely left unread. Retail cannot
+    /// see it and neither should the port. Do not "fix" the renderer by
+    /// feeding this field into geometry: doing so diverges from retail. It is
+    /// parsed because it is real disc data worth round-tripping, not because
+    /// anything consumes it. Scope: this bounds the render path only; a
+    /// non-render consumer is unexcluded (see `docs/formats/world-map-overlay.md`).
     pub attr: i16,
 }
 
@@ -205,6 +214,9 @@ pub fn parse(decoded: &[u8]) -> Result<KingdomSlot4, Slot4Error> {
             let x = i16::from_le_bytes(body[off..off + 2].try_into().unwrap());
             let y = i16::from_le_bytes(body[off + 2..off + 4].try_into().unwrap());
             let z = i16::from_le_bytes(body[off + 4..off + 6].try_into().unwrap());
+            // `attr` is parsed for round-trip fidelity and then deliberately
+            // never read - retail discards it in the 16-bit GTE `VZn`/`IR0`
+            // register it lands in. See the field docs on `Slot4Record::attr`.
             let attr = i16::from_le_bytes(body[off + 6..off + 8].try_into().unwrap());
             records.push(Slot4Record { x, y, z, attr });
         }
