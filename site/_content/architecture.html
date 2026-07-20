@@ -140,12 +140,12 @@
         <dt>Where</dt>       <dd>Battle overlay (0898)</dd>
         <dt>Shape</dt>       <dd>per-slot state machine (no central opcode table)</dd>
         <dt>Pool</dt>        <dd>32 master + 128 child slots</dd>
-        <dt>Status</dt>      <dd><span class="tag tag-partial">partial</span></dd>
+        <dt>Status</dt>      <dd><span class="tag tag-done">done</span></dd>
       </dl>
     </a>
   </div>
 
-  <p style="margin-top: 1rem;"><strong>How they wire together:</strong> field-VM op <code>0x22 EXEC_MOVE</code> stages a move record into the actor; the per-frame actor tick steps the move VM; move-VM opcode <code>0x2F</code> escapes to an overlay-resident extension dispatcher (the same 61-sub-opcode dispatcher is loaded by town, world-map, dialog, and cutscene overlays; each supplies its own jump-table contents). The motion VM runs independently per actor for NPC pathing and camera-follow paths. The effect VM is on a different track - battle-only - but shares the same actor model: every effect is bound to a master-slot actor that the script-VM and battle-action SM can reference. The linked subsystem pages carry the driver function addresses and traces.</p>
+  <p style="margin-top: 1rem;"><strong>How they wire together:</strong> field-VM op <code>0x22 EXEC_MOVE</code> stages a move record into the actor; the per-frame actor tick steps the move VM; move-VM opcode <code>0x2F</code> escapes to an overlay-resident extension dispatcher - a single 61-sub-opcode copy that lives in the field overlay (0897) only, so op <code>0x2F</code> executes only while that overlay is resident and battle-side move records cannot reach it. The motion VM runs independently per actor for NPC pathing and camera-follow paths. The effect VM is on a different track - battle-only - but shares the same actor model: every effect is bound to a master-slot actor that the script-VM and battle-action SM can reference. The linked subsystem pages carry the driver function addresses and traces.</p>
 
   <figure class="vm-graph">
     <svg viewBox="0 0 880 460" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="vm-graph-title">
