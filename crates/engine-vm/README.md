@@ -83,7 +83,7 @@ only supplies the RNG and the summon routing.
 `0x80022B94..0x80022BBC` inside that function's body)
 (skip when wait_timer ≥ 0, run VM, check HALT flag). Op `0x2F` escapes
 into the overlay-resident `FUN_801D362C` extension VM (61 sub-opcodes);
-the dispatch table is ported in `world_map_draw_vm.rs`.
+the dispatch table is ported in `move_vm_overlay_ext.rs`.
 
 ## `world_map` - `FUN_801DA51C`
 

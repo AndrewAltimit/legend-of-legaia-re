@@ -1,5 +1,5 @@
 //! Disc-gated smoke test: walk a real PROT block through the
-//! `world_map_draw_vm` port and assert the dispatch table parses every
+//! `move_vm_overlay_ext` port and assert the dispatch table parses every
 //! byte we encounter without hitting an out-of-range opcode.
 //!
 //! PROT 0085 (`map01`) is the closest disc-resident analogue to the
@@ -12,7 +12,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_vm::world_map_draw_vm::{WorldMapDrawHost, walk};
+use legaia_engine_vm::move_vm_overlay_ext::{MoveVmExtHost, walk};
 
 fn map01_prot() -> Option<PathBuf> {
     for prefix in ["extracted/PROT", "../../extracted/PROT"] {
@@ -32,7 +32,7 @@ struct CountingHost {
     n_draw_mode: usize,
 }
 
-impl WorldMapDrawHost for CountingHost {
+impl MoveVmExtHost for CountingHost {
     fn slab_uv_set(&mut self, _args: [u16; 4]) {
         self.n_slab_set += 1;
     }
@@ -48,7 +48,7 @@ impl WorldMapDrawHost for CountingHost {
 }
 
 #[test]
-fn world_map_draw_vm_walks_real_map01_bytecode() {
+fn move_vm_overlay_ext_walks_real_map01_bytecode() {
     let Some(path) = map01_prot() else {
         eprintln!("[skip] extracted/PROT/0085_map01.BIN missing; run legaia-extract");
         return;

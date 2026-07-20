@@ -30,7 +30,7 @@ disassembly (`sltiu` immediate before the `jr`), not off the port.
 |---|---|---|---|---|---|
 | [Actor / sprite VM](actor-vm.md) | `FUN_801D6628` | 13 opcodes, JT `0x801CED70` | resolved | yes - `legaia_engine_vm` root | **inert** |
 | [Move VM](move-vm.md) | `FUN_80023070` | 71 opcodes `0x00..0x46`, JT `0x80010778` | resolved | yes - `move_vm` | yes |
-| [Move-VM `0x2F` extension](move-vm-overlay-ext.md) | `FUN_801D362C` | 61 sub-opcodes `0x00..0x3C`, JT `0x801CE868` | resolved | yes - `world_map_draw_vm` | **inert** |
+| [Move-VM `0x2F` extension](move-vm-overlay-ext.md) | `FUN_801D362C` | 61 sub-opcodes `0x00..0x3C`, JT `0x801CE868` | resolved | yes - `move_vm_overlay_ext` | **inert** |
 | [Motion VM - pursue / patrol](motion-vm.md) | `FUN_8003774C` | 22-slot JT `0x80010EE0`, index `(op & 0x7F) - 0x37` | resolved | yes - `motion_vm` | yes |
 | [Motion VM - scripted](motion-vm.md#the-second-motion-vm---fun_80038158) | `FUN_80038158` | 32-slot JT `0x80010FE8`, ops `0x01..=0x20` | partial | split - see [below](#the-scripted-motion-vm-is-ported-in-three-pieces) | yes |
 | [Field / event VM](script-vm.md) | `FUN_801DE840` | 43 opcodes `0x21..0x4F` with gaps | resolved | yes - `field` | yes |
@@ -100,25 +100,24 @@ calls them. Inert is a reachability statement, not a correctness one.
 - **Actor / sprite VM** (`legaia_engine_vm::run`) - the first VM ported, and
   the `Host`-trait shape every later VM port follows. Only its `Position` type
   is imported elsewhere; the interpreter itself has no caller.
-- **Move-VM `0x2F` extension** (`world_map_draw_vm`) - the engine's move VM
+- **Move-VM `0x2F` extension** (`move_vm_overlay_ext`) - the engine's move VM
   never dispatches op `0x2F`.
 - **`title_overlay`** - superseded in practice by `menu`, which ports the same
   function and does have callers.
 - **`title_prim`**, **`vram_rect_copy`**, **`cutscene_trigger`** - supporting
   primitive and catalogue modules on the same footing.
 
-## Where the status claims drifted
+## How many copies of `FUN_801D362C` exist
 
-Two corrections that a reader arriving from the code will hit first:
+One, in field overlay `0897`. The reading that each overlay carries its own
+flavour with its own 61-entry jump table is falsified: the six capture-derived
+dumps are identical to each other, and the `0897` static dump is a strict
+*subset* of them - no address appears only in `0897`, while 135 appear only in
+the captures, which are JT paths Ghidra could not follow statically. That subset
+relation is what the "byte-identical" shorthand in the open-threads register
+compresses, and it is worth stating precisely: a reader diffing the dump sizes
+will otherwise think the shorthand is broken.
 
-- The `world_map_draw_vm` module header still carries the **falsified**
-  per-overlay-copies reading of `FUN_801D362C` - "the same function exists in
-  many overlays … each overlay supplies its own contents in the 61-entry JT" -
-  and claims to port the `overlay_world_map` flavour specifically. There is one
-  copy, in field overlay `0897`. The six capture-derived dumps are identical to
-  each other and the `0897` static dump is a strict subset of them (coverage
-  gaps where Ghidra could not follow the JT flow), which is what the
-  "byte-identical" shorthand in the open-threads register is compressing.
-- The module name `world_map_draw_vm` is itself misleading: the file ports the
-  move-VM extension dispatcher, which is neither world-map-specific nor a draw
-  VM.
+The consequence is a real constraint on the engine, not just a documentation
+detail - op `0x2F` is executable only while `0897` is resident, so battle-side
+move records cannot reach the extension dispatcher at all.

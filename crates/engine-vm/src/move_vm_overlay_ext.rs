@@ -19,9 +19,7 @@
 //! falsified: see the move-VM extension row in
 //! `docs/reference/open-rev-eng-threads.md` and
 //! [`docs/subsystems/move-vm-overlay-ext.md`].
-//!
-//! NB the module name is historical - this is the move-VM extension
-//! dispatcher, which is neither world-map-specific nor a draw VM.
+
 //!
 //! ## Bytecode layout
 //!
@@ -202,7 +200,7 @@ pub fn canonical_size(sub_op: u16) -> Option<u16> {
 /// opcodes (0x2B..0x2E); default impls are no-ops so an engine can
 /// run the VM in "advance-only" mode (validating that every byte
 /// parses) before wiring up the renderer.
-pub trait WorldMapDrawHost {
+pub trait MoveVmExtHost {
     /// Sub-op 0x2B - set slab UV bounds.
     ///
     /// Writes `args` directly to the slab descriptor at offsets
@@ -267,7 +265,7 @@ pub fn peek_word0(bytecode: &[u8]) -> Option<u16> {
 /// current move-VM PC (i.e. the outer `0x2F` byte is at `bytecode[0]`).
 /// Sub-op handlers read args from `+4(s3), +6(s3), ...` in the
 /// original, which corresponds to `bytecode[4..]` here.
-pub fn step<H: WorldMapDrawHost + ?Sized>(host: &mut H, bytecode: &[u8]) -> StepResult {
+pub fn step<H: MoveVmExtHost + ?Sized>(host: &mut H, bytecode: &[u8]) -> StepResult {
     let Some(sub_op) = peek_sub_op(bytecode) else {
         return StepResult {
             size_u16: 1,
@@ -345,13 +343,13 @@ pub fn step<H: WorldMapDrawHost + ?Sized>(host: &mut H, bytecode: &[u8]) -> Step
 /// Useful for "does this buffer parse end-to-end" validation and for
 /// counting render-class ops. For real execution the engine should
 /// model branch flow + the move-VM bridge.
-pub fn walk<H: WorldMapDrawHost + ?Sized>(host: &mut H, bytecode: &[u8]) -> WalkSummary {
+pub fn walk<H: MoveVmExtHost + ?Sized>(host: &mut H, bytecode: &[u8]) -> WalkSummary {
     walk_with_limit(host, bytecode, bytecode.len())
 }
 
 /// As [`walk`], but with an explicit step cap (some bytecodes have
 /// terminator opcodes we haven't decoded; the cap stops runaway).
-pub fn walk_with_limit<H: WorldMapDrawHost + ?Sized>(
+pub fn walk_with_limit<H: MoveVmExtHost + ?Sized>(
     host: &mut H,
     bytecode: &[u8],
     max_steps: usize,
@@ -403,7 +401,7 @@ mod tests {
         DrawMode([u16; 11]),
     }
 
-    impl WorldMapDrawHost for RecHost {
+    impl MoveVmExtHost for RecHost {
         fn slab_uv_set(&mut self, a: [u16; 4]) {
             self.events.borrow_mut().push(Event::SlabSet(a));
         }
