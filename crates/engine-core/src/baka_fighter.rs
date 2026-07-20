@@ -290,6 +290,10 @@ pub struct BakaFight {
     phase: MatchPhase,
     rng: BiosRand,
     last_exchange: Option<ExchangeReport>,
+    /// The end-of-match score tally, installed once the player takes the
+    /// match (`FUN_801d239c`'s screen). `None` until then, and on a loss -
+    /// a beaten player is paid nothing.
+    tally: Option<BakaTally>,
 }
 
 impl BakaFight {
@@ -316,6 +320,7 @@ impl BakaFight {
             phase: MatchPhase::Fighting,
             rng: BiosRand::new(seed),
             last_exchange: None,
+            tally: None,
         }
     }
 
@@ -396,6 +401,27 @@ impl BakaFight {
 
     pub fn last_exchange(&self) -> Option<ExchangeReport> {
         self.last_exchange
+    }
+
+    /// The end-of-match tally, once the player has taken the match.
+    pub fn tally(&self) -> Option<&BakaTally> {
+        self.tally.as_ref()
+    }
+
+    /// Take the coins the tally has drained since the last call, for the
+    /// host to add to party gold. `0` while no tally is running.
+    pub fn take_tally_gold(&mut self) -> i32 {
+        self.tally.as_mut().map(BakaTally::take_gold).unwrap_or(0)
+    }
+
+    /// Coins the tally has not paid out yet - what a host owes the player if
+    /// the duel is left before the tally finishes. `0` when no prize is due
+    /// (a lost match) or the tally has fully drained.
+    pub fn tally_gold_remaining(&self) -> i32 {
+        self.tally
+            .as_ref()
+            .map(BakaTally::gold_remaining)
+            .unwrap_or(0)
     }
 
     /// Gold prize for beating the slot-1 opponent (roster record `+0x20`).
@@ -576,6 +602,13 @@ impl BakaFight {
         }
         if self.f[winner].round_wins >= ROUND_WIN_TARGET {
             self.phase = MatchPhase::MatchOver(winner);
+            if winner == 0 {
+                // The retail end-of-match tally screen comes up on a player
+                // win and drains the prize into gold. The engine has no
+                // score channel, so the three score rows start empty and
+                // only the coin row carries a value.
+                self.tally = Some(BakaTally::new([0, 0, 0, self.cfg[1].gold_reward as i32]));
+            }
         } else {
             self.phase = MatchPhase::RoundOver(winner);
         }
@@ -587,8 +620,22 @@ impl BakaFight {
     ///
     /// PORT: FUN_801d3468 (round / match resolution state machine)
     pub fn tick(&mut self, frame_step: i32) {
+        self.tick_with_input(frame_step, false);
+    }
+
+    /// [`Self::tick`] with the tally's fast-forward input: `face_button` is
+    /// this frame's edge-triggered face-button test (`_DAT_8007b874 & 0xf0`),
+    /// which snaps the end-of-match tally to its end state.
+    pub fn tick_with_input(&mut self, frame_step: i32, face_button: bool) {
         match self.phase {
-            MatchPhase::MatchOver(_) => return,
+            MatchPhase::MatchOver(_) => {
+                // The match is decided: the tally screen runs (FUN_801d239c).
+                if let Some(t) = self.tally.as_mut() {
+                    t.tick(frame_step, face_button);
+                    self.cues.extend(t.take_cues());
+                }
+                return;
+            }
             MatchPhase::RoundOver(_) => {
                 // Next round starts on the following tick (the retail banner
                 // sequence sits here).
@@ -874,11 +921,9 @@ pub const TALLY_DIVISOR_MID: i32 = 2;
 /// the tally to its end state.
 // PORT: FUN_801d6710 (tally drain step; the doc's "digit drawer" reading is
 // wrong - this function draws nothing, it is the per-frame drain rate)
-// NOT WIRED: this is the end-of-match prize-tally *animation* rate. The
-// port settles the match and awards the gold in one step (see BakaMatch),
-// so there is no frame-paced tally for this to drive. A wired caller would
-// be a host result screen animating the prize counter down to zero.
-// Reachable only from tests.
+// Wired: [`BakaTally::tick`] (the port of `FUN_801d239c`) calls this for
+// every counter step, and [`BakaFight`] runs a tally once the match is
+// decided, so the drain rate paces the prize actually reaching party gold.
 pub fn tally_drain_step(remaining: i32, skip: bool) -> i32 {
     if skip {
         return remaining;
@@ -909,9 +954,208 @@ pub fn tally_drain_sequence(amount: i32) -> Vec<i32> {
     steps
 }
 
+/// Frame-steps a tally row must have been on screen before its counter is
+/// allowed to drain (`fade < 0x11` stalls the row in `FUN_801d239c`).
+pub const TALLY_FADE_GATE: i32 = 0x11;
+
+/// Number of counters the end-of-match tally drains.
+pub const TALLY_COUNTERS: usize = 4;
+
+/// Index of the tally counter that pays into the player's gold rather than
+/// into the on-screen score total (`DAT_801dbee8` → `_DAT_80084440`).
+pub const TALLY_GOLD_COUNTER: usize = 3;
+
+/// The end-of-match **score tally**: four counters draining, strictly in
+/// order, into the running total and the player's gold.
+///
+/// PORT: FUN_801d239c (end-of-match score tally). The retail screen holds
+/// four counters (`DAT_801dbee0` / `DAT_801dbed8` / `DAT_801dbedc` for the
+/// score rows and `DAT_801dbee8` for the coin prize). Each row has its own
+/// fade counter that advances by the frame step only once every *earlier*
+/// row has emptied; a row starts draining when its fade reaches
+/// [`TALLY_FADE_GATE`], moves [`tally_drain_step`] out per frame and queues
+/// the tick blip ([`BAKA_CUE_CURSOR`]) on every step. The first three rows
+/// feed the score total (`DAT_801dbee4`); the fourth feeds party gold.
+///
+/// The fast-forward latch is the retail one: `FUN_801d239c` opens by testing
+/// the edge-triggered pad word `_DAT_8007b874 & 0xf0` (any face button) and
+/// setting `DAT_801dbf00`, which makes [`tally_drain_step`] move each whole
+/// remainder in a single step - so holding a button snaps the tally to its
+/// end state. The latch is never cleared inside the tally, matching retail.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BakaTally {
+    counters: [i32; TALLY_COUNTERS],
+    fade: [i32; TALLY_COUNTERS],
+    total: i32,
+    gold_drained: i32,
+    gold_pending: i32,
+    fast_forward: bool,
+    cues: Vec<u8>,
+}
+
+impl BakaTally {
+    /// Start a tally over the four counters, in retail row order (the three
+    /// score rows first, the coin prize last).
+    pub fn new(counters: [i32; TALLY_COUNTERS]) -> Self {
+        Self {
+            counters: counters.map(|c| c.max(0)),
+            fade: [0; TALLY_COUNTERS],
+            total: 0,
+            gold_drained: 0,
+            gold_pending: 0,
+            fast_forward: false,
+            cues: Vec::new(),
+        }
+    }
+
+    /// Advance the tally one frame. `frame_step` is the global frame-rate
+    /// step; `face_button` is this frame's edge-triggered face-button mask
+    /// test (`_DAT_8007b874 & 0xf0`), which latches the fast-forward.
+    pub fn tick(&mut self, frame_step: i32, face_button: bool) {
+        if face_button {
+            self.fast_forward = true;
+        }
+        for i in 0..TALLY_COUNTERS {
+            // A row is only reached once every earlier row has emptied.
+            if self.counters[..i].iter().any(|&c| c != 0) {
+                break;
+            }
+            self.fade[i] += frame_step;
+            if self.counters[i] == 0 {
+                continue;
+            }
+            if self.fade[i] < TALLY_FADE_GATE {
+                break;
+            }
+            let step =
+                tally_drain_step(self.counters[i], self.fast_forward).clamp(1, self.counters[i]);
+            self.cues.push(BAKA_CUE_CURSOR);
+            self.counters[i] -= step;
+            if i == TALLY_GOLD_COUNTER {
+                self.gold_drained += step;
+                self.gold_pending += step;
+            } else {
+                self.total += step;
+            }
+            // No break: retail falls straight through into the next row's
+            // section, so the frame that empties a row also advances the
+            // following row's fade. That row cannot drain on the same frame
+            // (its fade is still under the gate), but it does start a frame
+            // earlier than a break here would allow. If this row did *not*
+            // empty, the next iteration's own guard stops the sweep.
+        }
+    }
+
+    /// `true` once every counter has emptied.
+    pub fn done(&self) -> bool {
+        self.counters.iter().all(|&c| c == 0)
+    }
+
+    /// The counters still to drain.
+    pub fn counters(&self) -> [i32; TALLY_COUNTERS] {
+        self.counters
+    }
+
+    /// The on-screen score total accumulated so far (`DAT_801dbee4`).
+    pub fn total(&self) -> i32 {
+        self.total
+    }
+
+    /// Coins moved out of the prize counter so far.
+    pub fn gold_drained(&self) -> i32 {
+        self.gold_drained
+    }
+
+    /// Coins the prize counter has not paid out yet.
+    pub fn gold_remaining(&self) -> i32 {
+        self.counters[TALLY_GOLD_COUNTER]
+    }
+
+    /// Take the coins drained since the last call, for the host to add to
+    /// party gold (retail adds each step straight into `_DAT_80084440`).
+    pub fn take_gold(&mut self) -> i32 {
+        std::mem::take(&mut self.gold_pending)
+    }
+
+    /// Drain the tick blips queued since the last call.
+    pub fn take_cues(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.cues)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tally_stalls_each_row_until_it_has_faded_in() {
+        let mut t = BakaTally::new([10, 0, 0, 0]);
+        // Below the fade gate nothing moves.
+        for _ in 0..(TALLY_FADE_GATE - 1) {
+            t.tick(1, false);
+        }
+        assert_eq!(t.counters()[0], 10, "row stalls while it fades in");
+        assert!(t.take_cues().is_empty(), "a stalled row is silent");
+        t.tick(1, false);
+        assert!(t.counters()[0] < 10, "row drains once faded in");
+        assert_eq!(t.take_cues(), vec![BAKA_CUE_CURSOR]);
+    }
+
+    #[test]
+    fn tally_drains_rows_strictly_in_order_and_splits_score_from_gold() {
+        let mut t = BakaTally::new([7, 5, 3, 100]);
+        for _ in 0..4000 {
+            if t.done() {
+                break;
+            }
+            t.tick(1, false);
+        }
+        assert!(t.done(), "every row empties");
+        assert_eq!(t.total(), 7 + 5 + 3, "score rows feed the total");
+        assert_eq!(t.gold_drained(), 100, "the prize row feeds gold");
+        // Later rows only start after earlier ones finish, so each row needs
+        // its own fade-in: the run is longer than a single row's would be.
+        let mut solo = BakaTally::new([0, 0, 0, 100]);
+        let mut solo_frames = 0;
+        while !solo.done() {
+            solo.tick(1, false);
+            solo_frames += 1;
+        }
+        assert!(solo_frames > TALLY_FADE_GATE);
+    }
+
+    #[test]
+    fn tally_fast_forward_latches_and_snaps_to_the_end() {
+        let mut t = BakaTally::new([0, 0, 0, 460]);
+        for _ in 0..TALLY_FADE_GATE {
+            t.tick(1, false);
+        }
+        // One face-button frame latches the fast-forward for good.
+        t.tick(1, true);
+        assert!(t.done(), "the whole remainder moves in one step");
+        assert_eq!(t.gold_drained(), 460);
+    }
+
+    #[test]
+    fn tally_gold_is_taken_incrementally_and_sums_to_the_prize() {
+        let mut t = BakaTally::new([0, 0, 0, 100]);
+        let mut banked = 0;
+        let mut takes = 0;
+        while !t.done() {
+            t.tick(1, false);
+            let got = t.take_gold();
+            if got > 0 {
+                banked += got;
+                takes += 1;
+            }
+        }
+        assert_eq!(banked, 100, "every coin reaches the host exactly once");
+        assert!(
+            takes > 1,
+            "the prize arrives over several frames, not at once"
+        );
+        assert_eq!(t.take_gold(), 0, "nothing left to take");
+    }
 
     #[test]
     fn tally_drain_accelerates_then_ticks_out_one_at_a_time() {
