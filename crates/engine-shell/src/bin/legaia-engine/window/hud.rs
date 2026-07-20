@@ -187,13 +187,47 @@ impl PlayWindowApp {
             };
             let ly = self.font.layout_ascii(&line);
             out.extend(text_draws_for(&ly, (8, 62), white));
-            let pts = format!(
-                "points {}   best {}   (L = quit, P = prizes)",
-                s.record().points,
-                s.record().best_points
-            );
-            let ly2 = self.font.layout_ascii(&pts);
+            let ly2 = self.font.layout_ascii("(L = quit, P = prizes)");
             out.extend(text_draws_for(&ly2, (8, 80), dim));
+
+            // The retail persistent HUD rows (best-catch, capped point total,
+            // rod label, lures remaining) at their traced stage-pixel pens,
+            // through the ported layout + its draw-list consumer. The rod
+            // index comes from the retail ownership gate, which re-points a
+            // stale selection at the next owned lure.
+            use legaia_engine_core::fishing::{lure_item_id, select_owned_rod};
+            let inventory = &self.session.host.world.inventory;
+            let count_of = |id: u32| *inventory.get(&(id as u8)).unwrap_or(&0) as i32;
+            let mut rod_index = 0;
+            let has_rod = select_owned_rod(&mut rod_index, count_of);
+            let items = legaia_engine_render::persistent_hud_draws(
+                s.record().points,
+                s.record().best_points,
+                rod_index,
+                if has_rod {
+                    count_of(lure_item_id(rod_index))
+                } else {
+                    0
+                },
+            );
+            // No fishing sprite page is uploaded, so the glyph ids and the
+            // gauge fills resolve to nothing; the number / caption rows are
+            // font-atlas text and render as-is.
+            let hud_atlas = legaia_engine_render::FishingHudAtlas {
+                solid_src: None,
+                glyph_src: &|_| None,
+                bar_thickness: 8,
+            };
+            let mut draws = legaia_engine_render::fishing_hud_draws_for(
+                &self.font,
+                &items,
+                &legaia_engine_render::FishingCaptions::placeholder(),
+                &hud_atlas,
+                (0, 0),
+            );
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+            out.extend(draws);
         }
         // Fishing point-exchange list: the venue's prize rows with the retail
         // gating (row 0 hidden until affordable, greyed unavailable rows,

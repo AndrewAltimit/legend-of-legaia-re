@@ -11,6 +11,8 @@
 //! Modules:
 //! * [`ui_overlay`] - dialog box, cutscene narration, battle HUD, encounter
 //!   banner, stage-scale text, per-glyph sprite emit helpers.
+//! * [`ui_fishing`] - fishing-minigame HUD: the ported draw-list layout plus
+//!   the consumer that renders it.
 //! * [`ui_menu`] - pause-menu field/status/spell/inventory/equipment panels,
 //!   options + key-rebind, name entry, game-over, tactical-arts editor.
 //! * [`ui_title_save`] - title menu, 9-slice window chrome, save-select,
@@ -26,10 +28,12 @@
 pub use legaia_font;
 pub use legaia_tim;
 
+mod ui_fishing;
 mod ui_menu;
 mod ui_overlay;
 mod ui_title_save;
 
+pub use ui_fishing::*;
 pub use ui_menu::*;
 pub use ui_overlay::*;
 pub use ui_title_save::*;

@@ -19,6 +19,15 @@ navigation logic depends on the GPU backend.
   options + key-rebind, name entry, game-over, tactical-arts editor.
 - `ui_title_save` - title menu, 9-slice window chrome, save-select, save-slot
   grid + info panel, "Now checking" dialog.
+- `ui_fishing` - fishing-minigame HUD: the ported persistent / catch HUD
+  layout, gauge bars, digit field and banner animators, plus
+  `fishing_hud_draws_for`, the consumer that renders that draw list.
+
+`ui_fishing` is the one module that owns both halves. The fishing overlay's
+HUD helpers are ports in their own right (`FUN_801d13f0`, `FUN_801d1580`,
+`FUN_801d1870`, `FUN_801d76e0`, the banner animators), and they decide layout
+rather than simulation state, so they sit beside their consumer here instead
+of in `engine-core`, which keeps the minigame's numeric kernels.
 
 ## Composition
 
