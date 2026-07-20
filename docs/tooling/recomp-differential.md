@@ -27,6 +27,7 @@ scratch directory, never in git. The synthetic fixtures in
 - [Protocol traps the client bakes in](#protocol-traps-the-client-bakes-in)
 - [Canonical trace shape](#canonical-trace-shape)
 - [Capturing a recomp trace](#capturing-a-recomp-trace)
+- [Driving the game to an uncovered scene](#driving-the-game-to-an-uncovered-scene)
 - [The engine side: `legaia-engine sim-trace`](#the-engine-side-legaia-engine-sim-trace)
 - [Diffing](#diffing)
 - [See also](#see-also)
@@ -56,8 +57,15 @@ The recomp workspace itself is a separate untracked tree - nothing from it
 is committed here.
 
 Headless instances (`--headless --debug-port N`) serve TCP in tens of
-seconds and cannot screenshot ("display disabled") - the harness is
-structural reads only, which is exactly what the differential needs.
+seconds. They **can** screenshot: `{"cmd":"screenshot","path":"..."}`
+writes a 24-bit BMP of the guest display with no host window and no X
+server. The `display disabled` error some calls return is not a statement
+about the host - `screenshot` reads `gpu_get_display_info`, so the error
+means the *guest* GPU's display-enable bit is off, which it is during early
+boot and between attract-demo segments. Retry once the game is showing a
+picture and the same call succeeds. Screenshot-guided menu navigation
+therefore needs no `xvfb-run`; see
+[Driving the game to an uncovered scene](#driving-the-game-to-an-uncovered-scene).
 
 ## Protocol traps the client bakes in
 
@@ -86,16 +94,22 @@ Every one of these is verified against a live server; scripts that bypass
   scene name (8 bytes at `0x8007050C`) and game mode (u16 at
   `0x8007B83C`). Always pass `--expect-scene` / `--expect-mode` when known;
   a stale slot loads "successfully" into the wrong state.
-- **`savestate` load cannot restore a live scene.** The load path forces
-  `cpu->pc = entry_pc`, and that entry is the game's BSS-clear routine,
-  which zeroes the region holding the game-mode word `0x8007B83C`. A load
-  therefore restores the RAM image and then immediately wipes the state
-  that gives it meaning: the machine falls back into the boot chain
-  (mode `0x10`) and parks there. The ack is `{"ok":true}` either way, so
-  the failure is silent unless the caller verifies. **Cold boot is the only
-  path to a live field scene**, which makes reaching an uncovered scene a
-  pad-driven playthrough, not a slot load. `--savestate` remains wired for
-  the day the load path honours the saved resume PC.
+- **`savestate` load restores a live scene only if the runtime honours the
+  saved resume PC.** `savestate_poll` serialises the block-leader resume PC
+  into the snapshot, but `boot_state.c`'s `apply_section` has shipped in two
+  forms. The self-wiping form forces `cpu->pc = entry_pc`; that entry is the
+  game's BSS-clear routine, which zeroes the region holding the game-mode
+  word `0x8007B83C`, so the load restores the RAM image and then immediately
+  wipes the state that gives it meaning - the machine falls back into the
+  boot chain and parks there. The working form is
+  `cpu->pc = c->pc ? c->pc : entry_pc;`, which resumes where the snapshot was
+  taken. The ack is `{"ok":true}` under both, so the failure is silent unless
+  the caller verifies - always pass `--expect-scene` / `--expect-mode`.
+  Check which form your runtime has before concluding a slot is dead:
+  `grep -n 'cpu->pc =' runtime/src/boot_state.c` in the recomp workspace.
+  Slots written before resume-PC capture existed carry `c->pc == 0` and fall
+  back to `entry_pc`, so they self-wipe even on a fixed runtime; a slot that
+  loads to mode `0` is a stale snapshot, not necessarily a broken build.
 - **`pause` / `step` / `run_to_frame` are REMOVED.** The debug server
   returns an error explaining the migration: observation goes through ring
   buffers, not synchronous stepping. The frame-exact primitive is the
@@ -148,12 +162,11 @@ python3 scripts/recomp/trace_capture.py --port 4494 \
     --frames 100 --map camera --out /tmp/scratch/recomp_cam.jsonl
 ```
 
-The instance must already be in the scene of interest. Because savestate
-load cannot restore one (above), getting there means cold-booting and
-driving the pad - title, `CONTINUE`, memory-card slot, confirm - then
-walking to the scene. Budget for it: the pre-title attract demo runs at a
-fraction of real speed under `--headless`, and a tight polling loop starves
-the emulator further, so throttle any wait loop to a few samples a second.
+The instance must already be in the scene of interest. Budget for it: the
+pre-title attract demo runs at a fraction of real speed under `--headless`,
+and a tight polling loop starves the emulator further, so throttle any wait
+loop to a few samples a second. Getting there is the subject of the next
+section.
 
 Built-in maps: `camera` (rotation trio + H + eye + focus), `player`
 (position + heading through the player pointer), `scene` (scene name +
@@ -178,6 +191,75 @@ Capture guidance: right after a savestate load the camera can sit static
 for a settle window (the battle idle auto-orbit resumes a few seconds in) -
 a capture that needs motion should start after the settle, or capture
 longer and let alignment find the first change.
+
+## Driving the game to an uncovered scene
+
+Two routes reach a scene the opening chain does not contain. Prefer the
+first; it costs seconds rather than minutes.
+
+### Route 1 - load a parked savestate
+
+On a runtime that honours the saved resume PC (above), a slot load drops
+straight into a live scene:
+
+```bash
+python3 scripts/recomp/probe.py --port 4497 load-state 4 \
+    --expect-scene 'jou ene' --expect-mode 0x15
+```
+
+Verify liveness before capturing - sample `{"cmd":"frame"}` twice a few
+seconds apart and confirm the counter advances. A slot that reports its
+expected scene but a frozen frame counter is not usable.
+
+Slot contents drift: anyone pressing F1-F12 in a windowed run overwrites
+one, so the slot number is a hint and the verification is the evidence.
+Read scene + mode after every load rather than trusting an inventory, and
+take a screenshot when the mode alone is ambiguous - a slot reported as a
+field scene can turn out to be parked on the name-entry screen, which
+shares the field mode word.
+
+### Route 2 - cold boot and load a memory-card save
+
+Route 2 reaches anywhere a save file reaches, including late-game areas no
+savestate covers. It needs a card with a save on it, which is the part that
+silently fails: the runtime resolves the card next to the **executable**
+(`default_memcard_dir` is the exe's directory, deliberately never the cwd),
+and a freshly formatted `card1.mcd` there has every directory frame set to
+`0xA0` (free). `CONTINUE` on a blank card offers nothing to load, so the
+title screen simply re-arms and the mode word never leaves `0x17`.
+
+Seed it from a real card, backing up first, and restore afterwards - the
+file is shared state:
+
+```bash
+B=<recomp-workspace>/build-dbg
+cp "$B/card1.mcd" "$B/card1.mcd.backup"
+cp ~/.mednafen/sav/<a Legaia card>.0.mcr "$B/card1.mcd"
+# ... run the capture ...
+cp "$B/card1.mcd.backup" "$B/card1.mcd"
+```
+
+Confirm the card carries a save before booting: an active block's directory
+frame starts `0x51` and the block name reads `BASCUS-94254...`.
+`save-tool saves <card>` reports the same thing, and `save-tool party` reads
+the party out so a lane can pick a save deep enough for the scene it wants.
+
+Then boot headless and drive the pad, checking each screen with a
+screenshot rather than pressing blind. The navigation is
+`START` (skip attract) -> `DOWN` (move off `NEW GAME`) -> `CROSS`
+(`CONTINUE`) -> `CROSS` (card port) -> `CROSS` (save block) -> `UP` ->
+`CROSS` (confirm). Four traps sit on that path:
+
+- **`CONTINUE` is not the default.** The title cursor starts on `NEW GAME`;
+  a bare `CROSS` starts a new game instead.
+- **The load confirm defaults to `No`.** The `Yes`/`No` box opens on `No`,
+  so a blind `CROSS` cancels back to the title - indistinguishable, from
+  the mode word alone, from never having pressed anything.
+- **The title times out back to the attract demo.** A screenshot round-trip
+  costs seconds, so poll for mode `0x17` and issue the pad input
+  immediately on seeing it; save the confirming screenshot for after.
+- **`START` does not always skip the attract demo.** The field-demo segment
+  plays out on its own; poll gently for mode `0x17` rather than mashing.
 
 ## The engine side: `legaia-engine sim-trace`
 

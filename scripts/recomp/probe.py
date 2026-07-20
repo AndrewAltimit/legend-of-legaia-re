@@ -21,6 +21,11 @@ the protocol traps baked in so probe scripts don't re-discover them:
     builds (they return errors); frame-exact observation goes through the
     per-frame ring buffer instead (``set_snapshot`` + ``read_frame_ram`` -
     see ``trace_capture.py``).
+  * ``screenshot`` WORKS on a ``--headless`` instance (no X server needed).
+    Its ``display disabled`` error reports the GUEST GPU's display-enable
+    bit, not the host - it means the game is mid-boot or between attract
+    segments, so retry once a picture is up. Screenshot-guided menu
+    navigation needs no ``xvfb-run``.
   * Never kill instances via ``pkill -f <pattern>`` (the pattern matches
     your own shell). ``launch`` records the PID; ``kill`` kills by PID.
   * Two instances on one port silently share it and fake responses -
