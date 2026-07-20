@@ -280,6 +280,13 @@ impl World {
                 // player cell (retail's per-frame board render pass).
                 self.refresh_tile_board_draw_list();
                 self.step_field_locomotion();
+                // Vertical settle + ledge-hop trigger. Retail runs this as a
+                // separate per-frame controller after the walk commits, so
+                // it reads the step-delta pair the walk just wrote.
+                // PORT: FUN_801d1ba0
+                if let Some(pslot) = self.player_actor_slot {
+                    self.step_field_vertical(pslot as usize);
+                }
                 // Locomotion animation: idle vs walk off the movement flag
                 // the step above just set, folded into the player's
                 // `pose_frame` for the host's posed-mesh rebuild.

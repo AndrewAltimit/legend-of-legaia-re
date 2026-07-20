@@ -17,6 +17,7 @@ static call site to follow. See [Provenance](#provenance).
 
 - [Player actor fields used](#player-actor-fields-used) · [spawn position](#spawn-position-on-scene-entry) · [per-frame flow](#per-frame-flow)
 - [Wall-slide resolution](#wall-slide-resolution-fun_80046494) · [Collision - `FUN_801cfe4c`](#collision---fun_801cfe4c) · [where the grid comes from](#where-the-collision-grid-comes-from) · [collision byte](#collision-byte-walls--floor-height) · [floor height](#floor-height-two-models) · [trigger block](#trigger-block-0x10000---four-kind-sub-tables) · [object records](#object-record-format-0x0000-0x20-byte-stride) · [the object bind](#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose) · [the door swing](#the-door-swing-how-a-bind-script-drives-the-clip)
+- [Vertical settle + ledge hop](#vertical-settle--ledge-hop---fun_801d1ba0--fun_801d1878) - [step-delta globals](#the-step-delta-globals) · [`FUN_801d1ba0`](#fun_801d1ba0---settle-then-trigger) · [`FUN_801d1878`](#fun_801d1878---probe-and-post) · [engine port](#engine-port-2)
 - [Provenance](#provenance) · [Town / field parity](#town--field-parity)
 - [Engine port](#engine-port) - [environment geometry](#environment-geometry) · [scene-entry script](#scene-entry-script) · [encounter table](#scene-encounter-table) · [per-step encounter roll](#per-step-encounter-roll-in-the-live-loop) · [input lock during cutscenes](#input-is-locked-during-an-opening-cutscene-timeline)
 - [Field-buffer load chain](#field-buffer-load-chain)
@@ -267,6 +268,87 @@ The derivation and the footprint rest positions are pinned by two cheat-free Rim
   message, and swings shut when the box is dismissed).
 
 Capture note: both wall-press captures park in the **`town0c`** Rim Elm variant. The live grid byte-matches the town01 map's base + paints - which is exactly what a town0c session *should* hold: under the universal `define−2` `.MAP` resolution (see "Engine port" below) town0c's own `.MAP` is PROT 0019, **byte-identical** to town01's (0001/0010 - the Rim Elm variants share one map). The earlier reading that PROT 0028 was "town0c's own different `.MAP`" mis-attributed the next block's map (0028 is `izumi`'s, `define 30 − 2`); the cold-vs-variant question this raised is dissolved.
+
+## Vertical settle + ledge hop - `FUN_801d1ba0` / `FUN_801d1878`
+
+The walk controller only ever writes X and Z. Height, and the step up onto a
+ledge, belong to a **second per-frame controller**, `FUN_801d1ba0`, which runs
+after the walk commits and reads what the walk left behind.
+
+### The step-delta globals
+
+`FUN_801d01b0` records the last **committed** sub-step direction into a global
+pair - `0x8007BDE0` (X) and `0x8007BDE4` (Z) - alongside each 2-unit position
+write. `0x801d0550` clears the pair before the direction decode; `0x801d07bc`
+and its per-axis siblings write `+-8`.
+
+The magnitude is a **probe scale, not a distance**. Nothing moves 8 units in a
+sub-step; the value exists so the hop probe can derive its sample points. A
+wall-blocked axis records `0`, which is what keeps a hop from being attempted
+along an axis the walk never moved on.
+
+### `FUN_801d1ba0` - settle, then trigger
+
+Gates, in order (`0x801d1bb4..0x801d1bec`): the movement-disabled flag
+`+0x10 & 0x80000`; a pad-latch bit `0x400`; and `+0x9e != 0x10`, the grounded
+state - an actor already mid-hop or in a scripted motion yields the frame.
+
+It then glides `+0x16` toward the floor beneath the actor at
+`delta_scalar * 12` units per frame, halved for the `+0x10 & 0x2000` slow-fall
+class. The step is **clamped to that rate**, so a tall drop takes several
+frames. That clamp is the whole reason this is a controller rather than an
+assignment.
+
+With the settle done and the step delta non-zero, it calls the hop probe.
+
+### `FUN_801d1878` - probe and post
+
+Scales the step delta by 4 (`s1 = dx << 2`) and tests two forward points
+against the collision grid:
+
+| Point | Offset from the actor | Body |
+|---|---|---|
+| near | `pos + 2 * delta * 4` (64 units) | `0x801d18b0..0x801d1984` |
+| far | `pos + 3 * delta * 4` (96 units) | `0x801d198c..0x801d1a5c` |
+
+**Both must be clear**; a wall at either returns `0` untouched. 64 units is
+exactly one collision sub-cell, 96 one and a half.
+
+The wall test here is not merely similar to `FUN_801cfe4c` - it is that
+routine inlined, instruction for instruction: the same `(z >> 6) + 2` and
+`((x + 0x3f) >> 6) - 1` biases, the same `row = (zc + sign) >> 1` stride-`0x80`
+index, the same `quad = (zc & 1) << 1 | (xc & 1)` selector, the same
+high-nibble read.
+
+Both clear, it samples the floor one delta ahead and classifies the rise:
+
+| Rise vs `+0x16` | Class | Meaning |
+|---|---|---|
+| `>= +0x61` | `0x10` | hop up |
+| `< -0x60` | `0x18` | hop down |
+| otherwise | - | flat ground; no hop |
+
+The landing triple (`x + 3 * s1`, sampled height, `z + 3 * s0`) plus the class
+goes to `FUN_801d2404`, which owns the arc. `FUN_801d1878` returns `1`.
+
+### Engine port
+
+`World::step_field_vertical` (`FUN_801d1ba0`) runs in the field frame tick
+after `step_field_locomotion`; it calls `World::try_field_ledge_hop`
+(`FUN_801d1878`), which posts a `FieldLedgeHop` into `World::field_ledge_hop`.
+The step-delta pair is `World::field_step_delta`.
+
+Two deliberate divergences:
+
+- The **settle is opt-in** (`World::field_vertical_settle`, default off). The
+  engine's default is that Y is left untouched unless
+  `World::follow_terrain_height` snaps it, and the locomotion oracles pin that
+  flat-Y behaviour. The hop trigger is *not* gated on it.
+- Retail additionally clears the two forward points through the actor/prop
+  sweep `FUN_801cfc40` before sampling. The engine's port of that routine is
+  keyed by compass direction rather than by an arbitrary delta pair, so the
+  clearance test runs at direction granularity - a collider inside the hop
+  lane but outside the direction probes is a sub-tile discrepancy.
 
 ## Where the collision grid comes from
 

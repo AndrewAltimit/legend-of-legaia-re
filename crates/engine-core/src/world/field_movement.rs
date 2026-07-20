@@ -1746,6 +1746,10 @@ impl World {
     /// / cutscene owns the player). Reads only pad bits + grid + actor
     /// state, so it is deterministic across identical pad streams.
     pub fn step_field_locomotion(&mut self) {
+        // Retail `0x801d0550` clears the step-delta pair before the frame's
+        // direction decode, so an input-free (or fully wall-blocked) frame
+        // leaves `(0, 0)` behind and the ledge-hop trigger stays quiet.
+        self.field_step_delta = (0, 0);
         if self.current_dialog.is_some() || self.tile_board.is_some() {
             return;
         }
@@ -1840,6 +1844,200 @@ impl World {
         }
     }
 
+    /// Ledge-hop probe + post: retail `FUN_801d1878` (field overlay
+    /// `overlay_0897`, 202 instructions at file offset `0x3060`).
+    ///
+    /// PORT: FUN_801d1878
+    /// REF: FUN_801cfe4c, FUN_80019278, FUN_801d2404
+    ///
+    /// Decides whether the actor may hop onto (or down off) the ledge it is
+    /// walking into, and posts the hop into [`World::field_ledge_hop`].
+    /// Returns `true` when a hop was started - retail's `v0`.
+    ///
+    /// The probe direction is [`World::field_step_delta`], the last
+    /// *committed* sub-step direction, scaled by 4 (retail `s1 = dx << 2`).
+    /// Two forward points are tested against the collision grid through
+    /// [`Self::field_tile_is_wall`]:
+    ///
+    /// | Point | Offset | Retail |
+    /// |---|---|---|
+    /// | near | `pos + 2 * delta * 4` (64 units) | `0x801d18b0..0x801d1984` |
+    /// | far | `pos + 3 * delta * 4` (96 units) | `0x801d198c..0x801d1a5c` |
+    ///
+    /// **Both must be clear.** A wall at either kills the hop - the actor is
+    /// walking into a wall, not up a step, and retail returns `0` without
+    /// touching anything.
+    ///
+    /// The wall test is the same sub-cell derivation as `FUN_801cfe4c`, not
+    /// merely a similar one: retail inlines it here, and the inlined copy is
+    /// instruction-for-instruction identical to the standalone routine -
+    /// same `(z >> 6) + 2` / `((x + 0x3f) >> 6) - 1` biases, same
+    /// `row = (zc + sign) >> 1` stride-`0x80` index, same
+    /// `quad = (zc & 1) << 1 | (xc & 1)` selector, same high-nibble read.
+    /// So [`Self::field_tile_is_wall`] is reused rather than re-derived.
+    ///
+    /// With both points clear the near point's floor height decides the
+    /// class, against [`FIELD_HOP_UP_THRESHOLD`] /
+    /// [`FIELD_HOP_DOWN_THRESHOLD`]; a height inside that band is flat
+    /// ground and starts no hop.
+    ///
+    /// **Not modelled:** retail additionally clears the two forward points
+    /// through the actor/prop sweep `FUN_801cfc40` before sampling the
+    /// floor. The engine's port of that routine
+    /// ([`Self::field_npc_dir_blocked`] / [`Self::field_prop_dir_probe`]) is
+    /// keyed by compass direction rather than by an arbitrary delta pair, so
+    /// this port reuses it at the *direction* granularity: an NPC or solid
+    /// prop standing in the hop lane blocks the hop, but the box is tested
+    /// along the quantised heading rather than at retail's two exact points.
+    /// The difference only shows when a collider sits inside the lane yet
+    /// outside the direction probes - a sub-tile discrepancy on a mechanic
+    /// that authored ledges keep clear.
+    pub fn try_field_ledge_hop(&mut self, slot: usize) -> bool {
+        if slot >= self.actors.len() || !self.actors[slot].active {
+            return false;
+        }
+        let (dx, dz) = self.field_step_delta;
+        if dx == 0 && dz == 0 {
+            return false;
+        }
+        // retail `s1 = dx << 2` / `s0 = dz << 2`
+        let sx = dx as i32 * 4;
+        let sz = dz as i32 * 4;
+        let (x, z) = {
+            let ms = &self.actors[slot].move_state;
+            (ms.world_x as i32, ms.world_z as i32)
+        };
+        let clamp = |v: i32| v.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+        // Near (2x) then far (3x); either wall refuses the hop.
+        for mul in [2, 3] {
+            let px = clamp(x + mul * sx);
+            let pz = clamp(z + mul * sz);
+            if self.field_tile_is_wall(px, pz) {
+                return false;
+            }
+        }
+        // Actor / prop clearance along the hop lane (see the caveat above).
+        if let Some(dir) = Self::dir_index_for_delta(dx, dz) {
+            let (cx, cz) = (clamp(x), clamp(z));
+            if (self.solid_field_npcs && self.field_npc_dir_blocked(cx, cz, dir))
+                || self.field_prop_dir_probe(cx, cz, dir).blocked
+            {
+                return false;
+            }
+        }
+        // Retail samples the floor one step-delta ahead by temporarily
+        // moving the actor, calling `FUN_80019278`, and restoring the
+        // position; the engine's sampler takes the point directly.
+        let probe_y = self.sample_field_floor_height(clamp(x + sx) as i32, clamp(z + sz) as i32);
+        let cur_y = self.actors[slot].move_state.world_y as i32;
+        let rise = probe_y - cur_y;
+        let kind = if rise >= FIELD_HOP_UP_THRESHOLD {
+            0x10
+        } else if rise < FIELD_HOP_DOWN_THRESHOLD {
+            0x18
+        } else {
+            return false; // flat ground - nothing to hop
+        };
+        self.field_ledge_hop = Some(FieldLedgeHop {
+            target_x: clamp(x + 3 * sx),
+            target_y: clamp(probe_y),
+            target_z: clamp(z + 3 * sz),
+            kind,
+        });
+        true
+    }
+
+    /// Map a step-delta pair onto the engine's compass probe index
+    /// (`0` = Z-, `1` = X-, `2` = Z+, `3` = X+), matching the row order
+    /// [`Self::field_dir_blocked`] indexes. The dominant axis wins; retail
+    /// probes both exact points instead, so this is only the granularity
+    /// reduction documented on [`Self::try_field_ledge_hop`].
+    fn dir_index_for_delta(dx: i16, dz: i16) -> Option<usize> {
+        if dx == 0 && dz == 0 {
+            return None;
+        }
+        Some(if (dz as i32).abs() >= (dx as i32).abs() {
+            if dz > 0 { 2 } else { 0 }
+        } else if dx > 0 {
+            3
+        } else {
+            1
+        })
+    }
+
+    /// Per-frame vertical settle + ledge-hop trigger: retail `FUN_801d1ba0`
+    /// (field overlay `overlay_0897`, 74 instructions at file offset
+    /// `0x3388`).
+    ///
+    /// PORT: FUN_801d1ba0
+    /// REF: FUN_80019278, FUN_801d1878
+    ///
+    /// Glides the actor's height toward the floor beneath it at a
+    /// frame-rate-scaled rate, then - once settled and still walking - asks
+    /// [`Self::try_field_ledge_hop`] whether the step ahead is a ledge.
+    ///
+    /// Retail's gates, in order (`0x801d1bb4..0x801d1bec`):
+    ///
+    /// - `+0x10 & 0x80000` set: the movement-disabled flag. The same bit
+    ///   [`Self::step_field_locomotion`] honours - a cutscene or queued
+    ///   encounter owns the actor, so no settle and no hop.
+    /// - the pad-latch bit `0x400`: retail reads it out of the live pad
+    ///   word, and it suppresses the settle for that frame.
+    /// - `+0x9e != 0x10`: the actor is not in the grounded state (already
+    ///   mid-hop, or in a scripted motion), so the controller yields.
+    ///
+    /// The glide rate is `delta_scalar * 12`, halved when `+0x10 & 0x2000`
+    /// is set (retail `sra s0, 1` - the slow-fall class). The height step is
+    /// clamped to `+-rate`, so a tall drop takes several frames rather than
+    /// snapping; that clamp is the whole reason this is a controller and not
+    /// a one-line assignment.
+    ///
+    /// This is the retail sibling of [`World::follow_terrain_height`], which
+    /// snaps instead of gliding. The snap stays authoritative when set, and
+    /// the glide runs only behind its own opt-in
+    /// [`World::field_vertical_settle`] - the engine's default is that Y is
+    /// left untouched, an invariant the locomotion oracles pin, so the
+    /// retail glide cannot become the default without rewriting them.
+    ///
+    /// The **ledge-hop trigger below is not gated on any of that**: it runs
+    /// off the step delta on every field frame, which is what makes this
+    /// controller worth having wired even at the engine's flat-Y default.
+    pub fn step_field_vertical(&mut self, slot: usize) {
+        self.field_ledge_hop = None;
+        if slot >= self.actors.len() || !self.actors[slot].active {
+            return;
+        }
+        let flags = self.actors[slot].move_state.flags;
+        if flags & 0x0008_0000 != 0 {
+            return;
+        }
+        // Retail rate: `delta_scalar * 3 << 2`, halved for the `0x2000`
+        // slow-fall class.
+        let scalar = self.move_ramp_ratio.max(1) as i32;
+        let mut rate = scalar * 12;
+        if flags & 0x2000 != 0 {
+            rate >>= 1;
+        }
+        if self.field_vertical_settle && !self.follow_terrain_height {
+            let (x, z, y) = {
+                let ms = &self.actors[slot].move_state;
+                (ms.world_x as i32, ms.world_z as i32, ms.world_y as i32)
+            };
+            let floor = self.sample_field_floor_height(x, z);
+            let step = (floor - y).clamp(-rate, rate);
+            if step != 0 {
+                let ny = (y + step).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+                self.actors[slot].move_state.world_y = ny;
+            }
+        }
+        // Retail gates the hop on the step-delta pair being non-zero - i.e.
+        // the actor actually walked this frame.
+        let (dx, dz) = self.field_step_delta;
+        if dx != 0 || dz != 0 {
+            self.try_field_ledge_hop(slot);
+        }
+    }
+
     /// Advance actor `slot` by `speed` world units in the direction encoded by
     /// `dir_bits` (post-remap convention: `0x1000`=Z+, `0x4000`=Z-,
     /// `0x2000`=X+, `0x8000`=X-), stepping `FIELD_STEP_UNIT` at a time and
@@ -1889,6 +2087,7 @@ impl World {
                     || prop;
                 if !blocked {
                     self.actors[slot].move_state.world_z = nz;
+                    self.field_step_delta.1 = FIELD_PROBE_DELTA;
                 }
             } else if dir_bits & 0x4000 != 0 {
                 let nz = cz.saturating_sub(FIELD_STEP_UNIT as i16);
@@ -1901,6 +2100,7 @@ impl World {
                     || prop;
                 if !blocked {
                     self.actors[slot].move_state.world_z = nz;
+                    self.field_step_delta.1 = -FIELD_PROBE_DELTA;
                 }
             }
             // X axis (re-read X in case Z committed; X collision uses the
@@ -1917,6 +2117,7 @@ impl World {
                     || prop;
                 if !blocked {
                     self.actors[slot].move_state.world_x = nx;
+                    self.field_step_delta.0 = FIELD_PROBE_DELTA;
                 }
             } else if dir_bits & 0x8000 != 0 {
                 let nx = cx.saturating_sub(FIELD_STEP_UNIT as i16);
@@ -1929,6 +2130,7 @@ impl World {
                     || prop;
                 if !blocked {
                     self.actors[slot].move_state.world_x = nx;
+                    self.field_step_delta.0 = -FIELD_PROBE_DELTA;
                 }
             }
             remaining -= FIELD_STEP_UNIT;

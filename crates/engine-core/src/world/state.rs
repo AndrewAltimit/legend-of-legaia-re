@@ -768,6 +768,43 @@ pub struct World {
     /// player's feet.
     pub last_move_dir_bits: u16,
 
+    /// The last **committed** locomotion sub-step direction, one entry per
+    /// axis at retail's fixed magnitude 8 - the engine's stand-in for the
+    /// retail global pair `0x8007BDE0` (X) / `0x8007BDE4` (Z).
+    ///
+    /// Retail writes these inside the locomotion controller `FUN_801d01b0`
+    /// (`0x801d0550` clears the pair on a no-input frame; `0x801d07bc` and
+    /// its per-axis siblings record `+-8` alongside each committed 2-unit
+    /// sub-step). The magnitude is a fixed probe scale, **not** the frame
+    /// speed: the ledge-hop probe multiplies it by 4 and samples at 2x and
+    /// 3x that, i.e. 64 and 96 world units ahead - one and one-and-a-half
+    /// collision sub-cells.
+    ///
+    /// A wall-blocked axis records `0`, so a hop is only ever attempted
+    /// along an axis the walk actually moved on.
+    pub field_step_delta: (i16, i16),
+
+    /// Run the retail vertical settle (`FUN_801d1ba0`'s rate-clamped glide
+    /// toward the floor) instead of leaving the actor's Y alone.
+    ///
+    /// Default **off**, and deliberately separate from
+    /// [`Self::follow_terrain_height`]: that flag *snaps* Y to the sampled
+    /// floor in one frame, and the engine's flat-Y default (Y untouched when
+    /// the snap is off) is an invariant the locomotion oracles pin. Retail
+    /// does neither - it glides at `delta_scalar * 12` units per frame, so a
+    /// tall drop takes several frames. Enabling this replaces "untouched"
+    /// with the retail glide; it does not override the snap, which stays
+    /// authoritative when set.
+    ///
+    /// The ledge-hop trigger is **not** gated on this - a hop is posted off
+    /// the step delta whether or not the settle runs.
+    pub field_vertical_settle: bool,
+
+    /// The ledge hop [`Self::try_field_ledge_hop`] posted this frame, if any
+    /// (retail hands the same triple to `FUN_801d2404`). `None` on every
+    /// frame that did not start a hop.
+    pub field_ledge_hop: Option<FieldLedgeHop>,
+
     /// While [`Self::step_inline_dialogue`] is stepping the field VM over an
     /// NPC's interaction record, this carries that NPC's placement slot so the
     /// `0x4C 0x51` NPC-run host hook can route the walk to the right actor
@@ -2111,6 +2148,9 @@ impl World {
             field_walk_touch_records: std::collections::BTreeMap::new(),
             active_walk_touch: None,
             last_move_dir_bits: 0,
+            field_step_delta: (0, 0),
+            field_vertical_settle: false,
+            field_ledge_hop: None,
             stepping_inline_npc: None,
             active_inline_slot: None,
             actor_motions: std::collections::BTreeMap::new(),
