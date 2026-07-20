@@ -141,6 +141,35 @@ on one machine and silently mis-attributes every dump taken from it. **Delete
 and regenerate `extracted/overlays/` after any change to
 `static-overlays.toml`.** A filename that disagrees with the map is the tell.
 
+### Measured: what a stale extraction directory actually looked like
+
+The trap above is not hypothetical. A regeneration of a working checkout - 15
+images on disk against 25 map rows - produced this:
+
+- **10 images byte-identical** to the fresh extraction. The bytes on disk were
+  never the problem.
+- **15 images absent entirely**, including `overlay_world_map_render_0901.bin`
+  and `overlay_battle_tutorial_0967.bin` - both needed by live analysis, both
+  re-extracted by hand at the time rather than being noticed as missing.
+- **5 images carrying the wrong identity**: `overlay_dance_dark_eclipse_0927`
+  held summon Juggernaut, `overlay_dance_hells_music_0907` held summon Nighto,
+  `overlay_dance_ultimate_rave_0924` held the stager, `overlay_summon_gimard_0905`
+  held `summon_stager_x83` (gimard is 0903), and `overlay_slot_machine_0973` held
+  0975.
+
+The mis-identified five are the dangerous class, and they fail in the same shape
+as a mis-based dump: **plausible bytes under a wrong label**. Anyone porting the
+dance minigame would have opened `overlay_dance_dark_eclipse_0927.bin`, found
+valid MIPS, and ported summon code into the dance module. No gate in this
+repository can catch that - not `fmt`, not `clippy`, not the doc gates, not the
+tests, because the resulting code is internally consistent and merely wrong about
+what game system it implements.
+
+`asset overlay verify <PROT.DAT>` is the cheap check: it re-extracts from the
+disc and asserts every committed fingerprint reproduces. If it passes while the
+local directory disagrees, the map and the disc are fine and the *directory* is
+stale. Run it before any work that reads `extracted/overlays/` in bulk.
+
 ## The five hand-verified dumps
 
 Confirmed instruction-by-instruction against `overlay_field_0897.bin` at base
