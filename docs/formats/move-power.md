@@ -130,7 +130,7 @@ it loads are exactly `+0x02,+0x06,+0x08,+0x09,+0x0a,+0x0b,+0x0d,+0x0e,+0x12,
 | `+0x0b` | `u8` | trail texture page | Trail / afterimage sprite-page id; the streak draw helper turns it into the GP0 texpage word `0x7700 + id` (`overlay_battle_action_801e1ab0.txt:250`). | Confirmed |
 | `+0x0c` | `u8` | designer tag | A `'C'/'E'/'G'/0` annotation baked into the data on the internal-tier records (ids 1,2,3,9,12,15) only. **No runtime reader exists** in any battle-action function - unused at runtime. | Unknown (no reader) |
 | `+0x0d` | `u8` | sound cue id | Handed to the UI/voice cue dispatcher `FUN_8004fcc8`. | Confirmed |
-| `+0x0e` | `u8` | list mode | `0xFF` broadcasts the move's trail/effect to all four party arms (a sweeping / multi-target move); otherwise it is the head of a small effect-id list the setup loop spawns. | Confirmed (read); semantic Inferred |
+| `+0x0e` | `u8` | effect-list head | Head of the move's effect-id list. The two consumers frame the list differently - see [effect-list framing](#effect-list-framing) below. | Confirmed (read); framing Confirmed per-consumer |
 | `+0x12` | `[u8;4]` | on-contact effects | Effect-id list dispatched on the hit branch (`0x00`/`0xFF`-terminated). | Confirmed |
 | `+0x16` | `[u8;4]` | launch effects | Effect-id list dispatched at the initial-strike transition; same dispatch as `+0x12`. | Confirmed |
 
@@ -193,6 +193,25 @@ only by its `(space, id)`). `legaia_asset::move_power::effect_trigger_index`
 builds this inverse map (`EffectKey` = `Proto3D(id)` / `Efect2D(id)` / `Flash`,
 each key carrying the triggering `Trigger`s), and `asset move-power
 --effect-index` emits it directly from the disc.
+
+### Effect-list framing
+
+The two consumers of the effect-id list **disagree on how it is framed**, so a
+parser has to say which one it is modelling.
+
+- **`FUN_801DEA50`** (action setup) walks a single contiguous run starting at
+  `+0x0E`, indexing `+0x0E + i` and stopping only on a **zero** byte. `0xFF` is
+  *not* a terminator here: it has bit 7 set, so it routes to the 2D sprite path
+  (`FUN_801dfdf0` with id `0x7F`) like any other high-bit id.
+- **`FUN_801E09F8`** (the per-frame action tick) reads `+0x12` and `+0x16` as two
+  separate 4-byte lists and treats `+0x0E == 0xFF` as a broadcast to all four
+  party arms.
+
+Per entry, bit 7 clear routes the id through the effect prototype table at
+`0x801F6324` (with the SFX byte at `0x801F6418 + id`); bit 7 set routes
+`id & 0x7F` to the 2D sprite path. Ids `0x0A`, `0x2D` and `0x2E` additionally
+latch the spawned handle into `ctx+0x1028` and seed the per-frame delta triple
+at `ctx+0x1184`, which is what makes their effect follow the actor.
 
 ### `+0x00` at full / half / quarter
 
