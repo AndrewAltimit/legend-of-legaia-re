@@ -11,5 +11,9 @@
 #
 # Merge into the main ignore list after review - do not consume directly.
 
-[worklist_duplicate]
-"801e09f8" = "DUPLICATE: 1070-instruction stream identical modulo relocation to 801f71e0"
+[worklist_interior]
+"801e23ec" = "INTERIOR: VA lies inside the dumped body of 801de840 in 0897"
+"801e30e4" = "INTERIOR: dump resolves entry=801de840, not 801e30e4"
+
+[worklist_shared_tail]
+"801d3290" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801df8dc`, inside 801df8dc - an entry into a multi-entry routine, not a standalone function"

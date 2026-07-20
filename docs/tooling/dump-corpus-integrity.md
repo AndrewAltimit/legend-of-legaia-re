@@ -43,17 +43,44 @@ Default pass, 10-instruction signature, 3624 dumps:
 
 | Class | Count | What it means | Usable for |
 |---|---|---|---|
-| `MATCH` | 1783 | Printed VA equals the VA the bytes resolve to. | Everything. Addresses, provenance citations, port tags. |
-| `SHIFTED` | 215 | Bytes resolve at a constant non-zero delta. The dump was produced at the wrong load base. | Instruction *text* and decoded `jal` targets only. Never its addresses, and never as provenance for a function identity. |
-| `NOT_FOUND` | 1007 | Bytes are in no extracted image. | Unresolved - see below. Not known-bad. |
+| `MATCH` | 2603 | Printed VA equals the VA the bytes resolve to. | Everything. Addresses, provenance citations, port tags. |
+| `SHIFTED` | 290 | Bytes resolve at a constant non-zero delta. The dump was produced at the wrong load base. | Instruction *text* and decoded `jal` targets only. Never its addresses, and never as provenance for a function identity. |
+| `NOT_FOUND` | 112 | Bytes are in no extracted image. | Unresolved - see below. Not known-bad. |
 | `SHORT` | 619 | Fewer than 10 instructions; too short to sign. | No verdict either way. |
 
 Those four numbers are what the committed script prints at its default
 threshold, and they are the ones to quote.
 
+### `canon()` must fold register spellings, not just mnemonics
+
+The sweep compares Ghidra's rendering against capstone's, so every spelling the
+two disassemblers disagree on has to be folded or the comparison fails on
+identical machine code. Mnemonics are the obvious case. **Registers are the one
+that bites**: the two name r30 differently - Ghidra `s8`, capstone `fp` - and
+every function that saves a frame pointer touches r30.
+
+Left unfolded, such a dump can never match any image, and it lands in
+`NOT_FOUND`. That is the dangerous direction, because `NOT_FOUND` reads as
+"this dump is of an overlay we never extracted" - a fact about the game -
+when it is really a fact about the comparison. A quieter sibling rides along:
+register names carry digits (`s7`, `a1`), so an immediate extractor run over
+the raw operand string picks those digits up as operand values, and a register
+spelled two ways then perturbs the immediate list as well as the register list.
+Both are handled - `s8`/`s9`/`r30` fold to one name, and register tokens are
+stripped before immediates are read - and together they account for roughly a
+quarter of the corpus.
+
+The generalisable point: **a resolver's negative class is where its own bugs
+accumulate**, because a false negative there looks like missing data rather
+than a broken comparison. Validate any change to `canon()` against a dump known
+to be correctly based - a tagged one whose bytes you can confirm by hand -
+before trusting the counts. A sweep that cannot resolve a dump it should is
+indistinguishable, from the outside, from a corpus that genuinely lacks the
+image.
+
 Lowering the threshold trades coverage for certainty. At `--min-insns 4` the
-`SHORT` class shrinks to 468 and the sweep returns 2333 `MATCH` / 336
-`SHIFTED` / 487 `NOT_FOUND` - but a 4-instruction signature also matches
+`SHORT` class shrinks to 468 and the sweep returns 2695 `MATCH` / 372
+`SHIFTED` / 89 `NOT_FOUND` - but a 4-instruction signature also matches
 *ambiguously*, so part of that growth is the method resolving dumps it should
 have declined. Treat a multi-hit resolution as weaker than a single-hit one.
 The clusters below are quoted at both thresholds for exactly this reason: the
@@ -69,11 +96,15 @@ overlays that have never been statically extracted, or of runtime-mutated
 memory that no longer matches its on-disc form. Those dumps have no source
 image to resolve against and land here by construction.
 
-About 120 of them carry `base=0x801C0000` in their own header tag, which is the
-same suspect base as the `+0xE818` cluster below - so some fraction of
-`NOT_FOUND` is probably mis-based too. It cannot be shown statically either
-way. Treat `NOT_FOUND` as "unproven", verify against a capture before relying
-on its addresses, and do not delete it.
+Some of them carry `base=0x801C0000` in their own header tag, which is the same
+suspect base as the `+0xE818` cluster below - so a fraction of `NOT_FOUND` is
+probably mis-based too. It cannot be shown statically either way. Treat
+`NOT_FOUND` as "unproven", verify against a capture before relying on its
+addresses, and do not delete it.
+
+The class is now small enough to enumerate, which is itself the useful check:
+when it was large, it was hiding a resolver bug rather than describing the
+corpus.
 
 ## The shift clusters
 
@@ -83,17 +114,16 @@ overwhelming majority, and both point at one mistake. Counts are given as
 
 | Delta | Count | Program | Reading |
 |---|---|---|---|
-| `+0xE818` | 137 / 187 | field overlay (PROT 0897) | Imported at base `0x801C0000` instead of `0x801CE818`. `0x801CE818 - 0x801C0000 = 0xE818`. |
-| `+0x5818` | 35 / 43 | `overlay_0896_*` | Same field-overlay bytes, reached at PROT 0896's over-read base. |
-| `+0xD018` | 6 / 8 | `overlay_0971` | Uncertain - see below. |
+| `+0xE818` | 208 / 221 | field overlay (PROT 0897) | Imported at base `0x801C0000` instead of `0x801CE818`. `0x801CE818 - 0x801C0000 = 0xE818`. |
+| `+0x5818` | 50 / 55 | `overlay_0896_*` | Same field-overlay bytes, reached at PROT 0896's over-read base. |
+| `+0xD018` | 8 / 8 | `overlay_0971` | Uncertain - see below. |
 
 **`+0xE818` is a single mis-based batch run.** Every member resolves
 single-hit into `overlay_field_0897.bin`, with a median of 35 consecutive
 exactly-matching instructions. A constant delta shared by well over a hundred
 dumps is not coincidence; it is one import performed at the wrong base, and
-every dump taken from that program inherited it. Of the default-threshold
-members, 119 of 137 are untagged - the untagged class is where this
-concentrates.
+every dump taken from that program inherited it. Most members are untagged -
+the untagged class is where this concentrates.
 
 **`+0x5818` corroborates the PROT 0896 over-read.** These dumps are labelled
 `overlay_0896_*` yet their bytes resolve into the *field* overlay. That is

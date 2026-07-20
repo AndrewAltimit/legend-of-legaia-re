@@ -64,7 +64,7 @@ live in that artifact rather than on this page.
 | `SHARED_TAIL` | A distinct body that is not independently callable. | The body has no `jr ra` and ends on an unconditional jump into code it does not own. |
 | `DATA` | Not code. | The dump is a data-region, hex-blob or pointer-table listing. |
 | `DUPLICATE` | The same routine as another address. | The relocation-masked instruction stream equals another entry's, or is a strict prefix of one. |
-| `VA_ALIASED` | Not one port site. | Two or more images dump distinct bodies at this VA. |
+| `VA_ALIASED` | Not one port site. | Two or more extracted images hold distinct code at this VA. Dump image tags do not establish this - see [below](#an-image-tag-is-a-program-name-not-an-overlay-identity). |
 | `REAL_BUT_VENDOR` | Real, but not game logic. | A BIOS vector thunk shape, or a decompiled body naming PsyQ library infrastructure. |
 | `UNCERTAIN` | Needs a human. | Evidence is thin, missing, or the heuristics disagree. |
 
@@ -162,6 +162,69 @@ the classifier treats the instruction stream as the authority. When at least one
 dump at a VA has disassembly, only the disassembly dumps decide aliasing. C
 bodies decide only when no dump at that VA carries instructions.
 
+### An image tag is a program name, not an overlay identity
+
+This is the single largest source of false `VA_ALIASED` verdicts, and it is not
+a dump defect - it is a category error in reading a correct dump.
+
+A dump's `[overlay_foo.bin]` tag names the **Ghidra program** it was taken
+from. Most programs in this corpus are live-RAM captures named after a game
+scenario: `overlay_cutscene_dialogue`, `overlay_shop_save`, `overlay_muscle_dome`,
+`overlay_magic_level_up`, `overlay_save_ui_select`. None of those is a PROT
+entry. A RAM capture spans the whole overlay region - slot A at `0x801CE818`,
+slot B at `0x801F69D8`, and the always-resident executable - so the tag records
+which capture the bytes came from and says nothing about which overlay owns the
+queried VA.
+
+Two consequences, and they point opposite ways:
+
+- **One overlay, many tags.** `menu`, `save_ui_select`, `save_ui_saving` and
+  `shop_save` are four captures of PROT 0899; `magic_level_up`, `magic_capture`
+  and `muscle_dome` are captures whose slot A holds PROT 0898. Counting tags
+  reports an alias where there is one routine.
+- **One tag, many overlays.** A capture tagged for a 32 KB minigame overlay
+  still covers `0x801F7088`, far past that overlay's footprint, where the
+  bytes belong to whichever slot-B image was resident.
+
+Neither error is visible in the dump. Both are settled by the bytes.
+
+### Static-image arbitration
+
+Where `extracted/` is populated, the classifier resolves each dump against the
+statically extracted images before any image-name test runs. A dump testifies
+about a VA only if its opening instructions match some image **at that VA**;
+one that matches at a different VA is mis-based and its printed address is
+fiction ([`dump-corpus-integrity.md`](dump-corpus-integrity.md)).
+
+It runs only on rows the metadata tests call `VA_ALIASED` or `DUPLICATE` -
+the two verdicts that turn on which image a dump came from - and yields:
+
+| Outcome | Verdict |
+|---|---|
+| Exactly one image holds the dumped bytes at this VA | `REAL`, naming the owning overlay |
+| Two or more images hold distinct code there | `VA_ALIASED`, naming the overlays rather than the capture programs |
+| No dump testifies | `UNCERTAIN` - the owning overlay is un-extracted or the dumps are mis-based, so the alias can be neither confirmed nor refuted |
+| A `DUPLICATE` peer has no matching body at its own VA | `REAL`, duplicate claim withdrawn |
+
+The `REAL` reason is deliberately narrow. "Every dump at this VA is of PROT
+0899" is not "no other overlay has code at this VA" - several do, since eight
+overlays share the slot-A base. It says only that nothing has dumped them, so
+they are not worklist rows. A row can therefore be a single port *site* in the
+worklist's sense while the VA is aliased in the machine.
+
+Comparison is over the canonicalised token stream shared with
+`check-dump-base-integrity.py`, and each word is decoded independently: a
+streaming disassembly stops at the first word capstone rejects, which would
+silently truncate the compare and match a prefix.
+
+Two guards keep the arbiter from asserting more than it knows. A window
+dominated by `$zero`-absolute loads is the data-decoded-as-code signature and
+is refused outright - otherwise a dump matches an image's *data* and two images
+agreeing on nothing but a table read as a genuine alias. And without
+`extracted/`, arbitration is skipped entirely (`--no-static-arbitration` forces
+this): the classifier falls back to dump metadata and prints a warning, because
+every verdict it then reaches carries the image-tag caveat above.
+
 ### Containment is a per-image fact
 
 The containment test - another dumped body in the same image disassembles an
@@ -196,6 +259,14 @@ smaller than it looks":
   a bad-base or gapped dump inflates it, and a per-image containment hit used to
   hide inside `INTERIOR`. Treat an alias verdict as a claim to check, not a
   conclusion, and never ignore the row.
+
+  The contamination is the common case rather than the exception, which is why
+  [static-image arbitration](#static-image-arbitration) exists: read against
+  the extracted images, the overwhelming majority of alias verdicts resolve to
+  one overlay's routine plus a mis-based or non-testifying dump. Almost every
+  such row's "other image" turns out to be a capture program at the documented
+  `+0xE818` or `+0x5818` base offset. Rows that survive arbitration name two
+  real overlays and are genuinely two port sites.
 - **`SHARED_TAIL` is real code that is not an independent port site.** These are
   the per-case branches of a multi-entry assembly routine - the family that ends
   by jumping back into a common loop or epilogue. They port as arms of the
@@ -258,7 +329,11 @@ risk:
 
 The `DUPLICATE` rule is not hypothetical: a cross-image relocated match can name
 a peer whose own row stands for two routines, in which case the match identifies
-neither.
+neither. The sharper form of the same failure is a peer address that is not a
+body at all - the matching stream came from a mis-based dump *printed* at that
+VA, while the VA itself hosts an unrelated routine in some other overlay. Both
+are checked mechanically now: a peer qualifies only when a dump at the peer VA
+carries the same body and resolves against an image there.
 
 Reviewed rows land in `port-catalog-ignore.toml` under the same
 `worklist_*` section names, which keeps a merged row traceable back to the

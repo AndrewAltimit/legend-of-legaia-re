@@ -417,13 +417,233 @@ NON_PORTABLE = (
 )
 
 
-def classify(addr, dumps, dup_groups, ported, owners=None):
+class StaticArbiter:
+    """Resolve dumps against the statically extracted overlay images.
+
+    The classifier's other tests read dump metadata. This one reads the bytes,
+    which is the only evidence that survives a wrong load base. It answers two
+    questions per dump: does it testify about the queried VA at all, and if so
+    which overlay's code is it.
+
+    Needs `extracted/` populated. That directory is gitignored, so the
+    arbiter is optional and the classifier degrades to its metadata-only
+    behaviour without it.
+    """
+
+    WINDOW = 24  # instructions compared; long enough that a match is not chance
+
+    def __init__(self, repo):
+        import importlib.util
+
+        import capstone
+
+        helper = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "check-dump-base-integrity.py",
+        )
+        spec = importlib.util.spec_from_file_location("_cdbi", helper)
+        self._cdbi = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self._cdbi)
+        self._md = capstone.Cs(
+            capstone.CS_ARCH_MIPS,
+            capstone.CS_MODE_MIPS32 + capstone.CS_MODE_LITTLE_ENDIAN,
+        )
+        self.images = []
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib
+        mp = os.path.join(repo, "crates", "asset", "data", "static-overlays.toml")
+        ovl = os.path.join(repo, "extracted", "overlays")
+        with open(mp, "rb") as fh:
+            spec_map = tomllib.load(fh)
+        for o in spec_map["overlays"]:
+            p = os.path.join(ovl, "overlay_%s_%04d.bin" % (o["label"], o["prot_index"]))
+            if os.path.exists(p):
+                with open(p, "rb") as fh:
+                    self.images.append(
+                        ("%s(%d)" % (o["label"], o["prot_index"]), o["base_va"], 0, fh.read())
+                    )
+        scus = os.path.join(repo, "extracted", "SCUS_942.54")
+        if os.path.exists(scus):
+            with open(scus, "rb") as fh:
+                self.images.append(("SCUS", 0x80010000, 0x800, fh.read()))
+
+    def available(self):
+        return bool(self.images)
+
+    def _img_tokens(self, data, off, n):
+        out = []
+        for k in range(n):
+            w = data[off + 4 * k : off + 4 * k + 4]
+            if len(w) < 4:
+                return None
+            tok = None
+            # Decode each word independently: a streaming disassembly stops at
+            # the first word capstone rejects, silently truncating the compare.
+            for ins in self._md.disasm(w, 0x80000000):
+                tok = self._cdbi.canon(ins.mnemonic, ins.op_str)
+            out.append(tok or "BAD||")
+        return out
+
+    def _dump_tokens(self, d, n):
+        return [self._cdbi.canon(mn, ops) for _, mn, ops in d["insns"][:n]]
+
+    @staticmethod
+    def _looks_like_data(insns):
+        """The `$zero`-absolute signature: a table being decoded as opcodes.
+
+        Real MIPS reaches statics through `gp` or a `lui`/`addiu` pair, so a
+        run of `lb rN,0xNNNN(zero)` is a table of `0x80`-high bytes read as
+        instructions. An image window that matches a dump here is matching
+        that image's DATA, and two images agreeing on nothing but data must
+        not be reported as holding distinct code.
+        """
+        if not insns:
+            return False
+        zero_abs = sum(
+            1
+            for mn, ops in insns
+            if mn in MEM_MNEMONICS and ZERO_ABS_RE.search("," + ops)
+        )
+        return zero_abs * 2 >= len(insns)
+
+    def owner_at(self, addr_int, d):
+        """Images whose bytes equal this dump's opening instructions at this VA."""
+        toks = self._dump_tokens(d, self.WINDOW)
+        if len(toks) < 8:
+            return None
+        if self._looks_like_data([(mn, ops) for _, mn, ops in d["insns"][: self.WINDOW]]):
+            return None
+        hits = []
+        for label, base, hdr, data in self.images:
+            off = hdr + (addr_int - base)
+            if addr_int < base or off < 0 or off + 4 * len(toks) > len(data):
+                continue
+            if self._img_tokens(data, off, len(toks)) == toks:
+                hits.append(label)
+        return hits
+
+    def testifying(self, addr, funcs):
+        """Dumps that both start at this VA and match some image there."""
+        va = int(addr, 16)
+        out = []
+        for d in funcs:
+            if d["entry"] != addr:
+                continue
+            if self.owner_at(va, d):
+                out.append(d)
+        return out
+
+    def arbitrate(self, addr, funcs):
+        """(class, reason) when the bytes settle the row, else None."""
+        va = int(addr, 16)
+        owners = {}
+        for d in funcs:
+            if d["entry"] != addr:
+                continue
+            for label in self.owner_at(va, d) or []:
+                owners.setdefault(label, []).append(d["image"])
+        if len(owners) == 1:
+            label, seen = next(iter(owners.items()))
+            # Deliberately narrow: this says every DUMP here is of `label`, not
+            # that no other co-based overlay holds code at this VA. Nothing has
+            # dumped those, so they are not worklist rows.
+            return (
+                "REAL",
+                "every dump at this VA is of %s (captures: %s); no second "
+                "dumped body here" % (label, "/".join(sorted(set(seen)))),
+            )
+        if len(owners) > 1:
+            return (
+                "VA_ALIASED",
+                "%d overlays hold distinct code at this VA (%s) - confirmed "
+                "against the extracted images, not the dump image tags"
+                % (len(owners), ", ".join(sorted(owners))),
+            )
+        return None
+
+    def peer_is_real(self, peer_addr, by_addr, key):
+        """Does the MATCHING body at `peer_addr` actually live at that VA?
+
+        Testing "some routine exists at the peer VA" is too weak: a VA can
+        host a real function in one overlay while the stream that matched came
+        from a mis-based dump printed at the same address. Only a dump whose
+        body_key equals this one's, and which resolves at the peer VA, makes
+        the peer a stable name for the routine.
+        """
+        va = int(peer_addr, 16)
+        for d in by_addr.get(peer_addr, []):
+            if d["kind"] != "func" or d["entry"] != peer_addr:
+                continue
+            if body_key(d) != key:
+                continue
+            if self.owner_at(va, d):
+                return True
+        return False
+
+    UNSUPPORTED_ALIAS = (
+        "UNCERTAIN",
+        "no extracted image holds the dumped bytes at this VA - the owning "
+        "overlay is either un-extracted or the dumps are mis-based; alias "
+        "cannot be confirmed or refuted",
+    )
+
+
+def classify(addr, dumps, dup_groups, ported, owners=None, arb=None,
+             all_dumps_by_addr=None):
     """Return (class, reason) for one worklist address."""
     owners = owners or {}
     if not dumps:
         return ("UNCERTAIN", "no dump file matches this address")
 
     funcs = [d for d in dumps if d["kind"] == "func"]
+
+    # 0. Static-image arbitration. A dump's `[overlay_foo.bin]` tag is a Ghidra
+    #    PROGRAM name, and most programs in this corpus are live-RAM captures
+    #    named after a game scenario rather than an overlay. A capture spans
+    #    slot A + slot B + the resident executable, so the tag says which
+    #    capture the bytes came from, never which overlay owns the VA. Two
+    #    differently-tagged dumps routinely hold one overlay's code, which the
+    #    image-name test reads as an alias.
+    #    Where the extracted images are available, ask the bytes instead: a
+    #    dump testifies about this VA only if its opening instructions match
+    #    some image AT this VA. A dump that matches at a different VA is
+    #    mis-based and its printed address is fiction.
+    if arb is not None and funcs:
+        cls, why = classify(addr, dumps, dup_groups, ported, owners, None, all_dumps_by_addr)
+        if cls == "DUPLICATE":
+            # A relocated-stream match names a peer ADDRESS. If no dump at that
+            # peer VA actually holds those bytes there, the peer is a printed
+            # address from a mis-based dump and identifies no routine, so the
+            # duplicate claim is withdrawn rather than acted on.
+            peer = re.search(r"\b([0-9a-f]{8})\b", why)
+            mine = next((d for d in funcs if d["entry"] == addr and substantial(d)), None)
+            if (
+                peer
+                and mine is not None
+                and not arb.peer_is_real(
+                    peer.group(1), all_dumps_by_addr or {}, body_key(mine)
+                )
+            ):
+                return (
+                    "REAL",
+                    "duplicate claim withdrawn: peer %s is a printed address "
+                    "from a mis-based dump, not a body at that VA"
+                    % peer.group(1),
+                )
+            return (cls, why)
+        if cls != "VA_ALIASED":
+            # Nothing to arbitrate: the metadata tests reached a verdict that
+            # does not turn on which image a dump came from.
+            return (cls, why)
+        verdict = arb.arbitrate(addr, funcs)
+        if verdict is not None:
+            return verdict
+        # No dump testifies about this VA, so the alias rests on image tags
+        # that are capture-program names. Downgrade to the class that is
+        # never ignored rather than delete or assert the row.
+        return StaticArbiter.UNSUPPORTED_ALIAS
 
     # Drop dumps whose body is a misdecoded data region before any comparison.
     # One such dump at a VA a dozen other images agree on would otherwise read
@@ -679,6 +899,12 @@ def main():
     ap.add_argument("--ignore-out", help="proposed ignore-list TOML to write")
     ap.add_argument("--explain", help="print full evidence for one address")
     ap.add_argument(
+        "--no-static-arbitration",
+        action="store_true",
+        help="classify from dump metadata alone, without resolving dump bytes "
+        "against the extracted overlay images",
+    )
+    ap.add_argument(
         "--audit-ignored",
         action="store_true",
         help="re-classify the rows the ignore list already absorbed under a "
@@ -748,8 +974,40 @@ def main():
         for a, _, _ in rec["insns"]:
             owners.setdefault((rec["image"], a), rec["entry"])
 
+    # The byte-level arbiter is optional: it needs `extracted/`, which is
+    # gitignored. Without it the classifier falls back to dump metadata, and
+    # the image-tag caveat in worklist-classification.md applies in full.
+    arb = None
+    if not args.no_static_arbitration:
+        try:
+            cand = StaticArbiter(args.repo)
+            if cand.available():
+                arb = cand
+        except Exception as exc:  # missing capstone, missing images, bad map
+            sys.stderr.write("static arbitration unavailable: %s\n" % exc)
+    if arb is None:
+        sys.stderr.write(
+            "note: classifying from dump metadata only - image tags are Ghidra "
+            "program names, not overlay identities\n"
+        )
+
     if args.explain:
         a = args.explain.lower()
+        if arb is not None:
+            va = int(a, 16)
+            for d in by_addr.get(a, []):
+                if d["kind"] != "func":
+                    continue
+                owns = arb.owner_at(va, d) if d["entry"] == a else None
+                sys.stdout.write(
+                    "  bytes(%s): %s\n"
+                    % (
+                        d["stem"],
+                        ",".join(owns) if owns else
+                        ("does not start at this VA (entry=%s)" % d["entry"]
+                         if d["entry"] != a else "match no extracted image here"),
+                    )
+                )
         for d in by_addr.get(a, []):
             sys.stdout.write(
                 "%s kind=%s entry=%s image=%s size=%s ninsn=%d jr_ra=%s exit=%s\n"
@@ -766,7 +1024,7 @@ def main():
             )
         sys.stdout.write(
             "=> %s\n"
-            % (classify(a, by_addr.get(a, []), dup_groups, ported, owners),)
+            % (classify(a, by_addr.get(a, []), dup_groups, ported, owners, arb, by_addr),)
         )
         return 0
 
@@ -774,7 +1032,7 @@ def main():
         by_cat = {r["addr"].lower(): r["ignore_category"] for r in rows}
         bad = 0
         for a in absorbed:
-            cls, why = classify(a, by_addr.get(a, []), dup_groups, ported, owners)
+            cls, why = classify(a, by_addr.get(a, []), dup_groups, ported, owners, arb, by_addr)
             if cls in NON_PORTABLE:
                 continue
             bad += 1
@@ -789,7 +1047,7 @@ def main():
         return 1 if bad else 0
 
     results = [
-        (a,) + classify(a, by_addr.get(a, []), dup_groups, ported, owners)
+        (a,) + classify(a, by_addr.get(a, []), dup_groups, ported, owners, arb, by_addr)
         for a in worklist
     ]
 

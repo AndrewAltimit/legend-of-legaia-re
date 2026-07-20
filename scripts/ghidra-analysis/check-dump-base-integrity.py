@@ -69,11 +69,20 @@ SCUS_HEADER = 0x800
 MCLASS = {
     "li": "IMM", "addiu": "IMM", "ori": "IMM", "addi": "IMM",
     "move": "MOVE", "addu": "MOVE", "or": "MOVE", "add": "MOVE",
+    "clear": "MOVE",
     "nop": "SHIFT", "sll": "SHIFT",
     "b": "BR", "beq": "BR", "beqz": "BR", "bnez": "BR", "bne": "BR",
     "bal": "BAL", "bgezal": "BAL",
     "negu": "SUBU", "subu": "SUBU", "not": "NOR", "nor": "NOR",
+    "neg": "SUBU",
 }
+
+# Register aliases. Ghidra and capstone disagree on two ABI spellings, and an
+# unfolded disagreement is invisible: the token differs, the dump silently
+# fails to resolve, and it lands in NOT_FOUND looking like a capture of an
+# un-extracted image. r30 is the one that bites - every function that saves a
+# frame pointer touches it.
+RCLASS = {"s8": "fp", "r30": "fp", "s9": "fp"}
 
 # Branch/jump operands are PC-relative or absolute and therefore move with
 # the load base - they must not enter the signature.
@@ -97,10 +106,15 @@ def canon(mnem, ops):
     mnem = mnem.lower().lstrip("_")
     ops = ops.replace("$", "").replace(" ", "").lower()
     cls = MCLASS.get(mnem, mnem.upper())
-    regs = [t for t in TOK.findall(ops) if t in REGS and t != "zero"]
+    regs = [RCLASS.get(t, t) for t in TOK.findall(ops) if t in REGS and t != "zero"]
+    # Strip register names before reading immediates: `s8` and `a1` carry
+    # digits that NUM would otherwise pick up as operand values, so a register
+    # spelled two ways would perturb the immediate list as well as the
+    # register list.
+    imm_src = TOK.sub(lambda m: "" if m.group(0) in REGS else m.group(0), ops)
     imms = []
     if mnem not in BRANCH:
-        for m in NUM.findall(ops):
+        for m in NUM.findall(imm_src):
             if m.startswith("-0x"):
                 v = -int(m[3:], 16)
             elif m.lower().startswith("0x"):

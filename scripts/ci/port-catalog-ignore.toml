@@ -647,18 +647,20 @@
 # entry's: one routine linked into several overlays at several bases. Porting
 # the peer covers them. Where the peer VA is itself aliased across images, the
 # reason names which of that VA's bodies was compared.
+# Rows removed from this section after re-reading each peer against the
+# extracted images: 801d0370, 801d081c, 801d11d0, 801d26cc, 801d5510,
+# 801d71f0, 801e1d98 and 801f36a0 each named a peer ADDRESS that is not a body
+# at that VA. The matching stream came from a mis-based dump merely *printed*
+# there - 801c56b4 and 801c6cf8 resolve, at +0xD018 and +0xE818, onto 801d26cc
+# and 801d5510 themselves, so those two rows were reported as duplicates of
+# their own mis-based copy. Ignoring them deleted the only copy of the routine.
+# A peer now qualifies only when a dump at the peer VA carries the same body
+# AND resolves against an image there; see docs/tooling/worklist-classification.md.
+
 [worklist_duplicate]
 "801c2b2c" = "DUPLICATE: 333-instruction stream identical modulo relocation to 801d1344"
-"801d0370" = "DUPLICATE: 299-instruction stream identical modulo relocation to 801c2b58"
-"801d081c" = "DUPLICATE: 322-instruction stream identical modulo relocation to 801c3004"
-"801d11d0" = "DUPLICATE: 229-instruction stream identical modulo relocation to 801c39b8"
-"801d26cc" = "DUPLICATE: 1466-instruction stream identical modulo relocation to 801c56b4"
 "801d3ec0" = "DUPLICATE: 37-instruction stream identical modulo relocation to the body dumped at 801d5630 in overlay_cutscene_dialogue / cutscene_mapview, which carries a // PORT: tag. The 0897 dump at 801d5630 is a different 9-instruction body at the same VA."
 "801d3f54" = "DUPLICATE: 31-instruction stream identical modulo relocation to the body dumped at 801d5ae0 in overlay_cutscene_dialogue / cutscene_mapview, which carries a // PORT: tag. The 0896 dump at 801d5ae0 is a different 130-instruction body at the same VA."
-"801d5510" = "DUPLICATE: 123-instruction stream identical modulo relocation to 801c6cf8"
-"801d71f0" = "DUPLICATE: 81-instruction stream identical modulo relocation to 801e01f0"
-"801e1d98" = "DUPLICATE: 332-instruction stream identical modulo relocation to 801f8580"
-"801f36a0" = "DUPLICATE: truncated 88-instruction dump; stream is a strict prefix of 801f16a0"
 "801f3894" = "DUPLICATE: 257-instruction stream identical modulo relocation to the 257-instruction body dumped at 801dd0ac in overlay_battle_action / magic_capture / magic_level_up / muscle_dome, which carries a // PORT: tag. NB the 0897 dump at 801dd0ac is a different, 5-instruction body at the same VA - compare against the 257-instruction one."
 "801fa38c" = "DUPLICATE: 352-instruction stream identical modulo relocation to the 352-instruction body dumped at 801daba4 in overlay_battle_action / magic_capture / magic_level_up / muscle_dome, which carries a // PORT: tag. The 0897 dump at 801daba4 is a different 8-instruction body at the same VA."
 
