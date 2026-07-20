@@ -308,8 +308,9 @@ built by `FUN_80052FA0`) is wider than the 12 disc words:
   `+0x5C == clut_a_off − 4`, the **zero word immediately before record[0]'s
   first image block**. But the paired field is **vestigial**: `+0x58` has a
   reader (`FUN_8004AD80`, `8004ad80.txt:1492`, `base+0x58+4` = the art-bank
-  skip count), whereas an exhaustive sweep of the dumped corpus finds **no
-  reader of a fixed `+0x5C`** - every action-table consumer indexes
+  skip count), whereas **no reader of a fixed `+0x5C` exists in the code
+  searched** - see [the sweep and its coverage](#the-0x5c-no-reader-sweep)
+  for exactly what that covers. Every action-table consumer indexes
   `base + index*4` for its slots or reads `+0x58`/`+0xAC`, and the word
   `+0x5C` (= slot `0x17`) falls outside every consumer's range. The CLUT
   upload uses the file-header fields `file+0x04`/`+0x08`, not `+0x5C`. So it
@@ -318,6 +319,47 @@ built by `FUN_80052FA0`) is wider than the 12 disc words:
   separately **disc-refuted** - those archives live in `readef.DAT`
   ([below](#me-stream-archives-readefdat)), and no `"ME"` archive exists
   anywhere in a player file's footprint or its decoded record[0].
+
+### The 0x5C no-reader sweep
+
+The relocation itself is instruction-pinned, in `80052fa0.txt`:
+
+```text
+800532b4  lw   a0,0x0(v1)         ; v1 = 0x801C9360 + sel*4  -> record[0] base
+800532bc  lw   v0,0x58(a0)
+800532c4  addu v0,v0,a0
+800532c8  sw   v0,0x58(a0)        ; self-relative -> absolute
+800532d4  lw   v0,0x5c(a0)
+800532e0  addu v0,v0,a0
+800532e4  sw   v0,0x5c(a0)        ; ... and the paired word, same shape
+```
+
+The **negative** is the part that needs its coverage stated, because a
+"no reader anywhere" claim is only as exhaustive as the thing it swept. This
+one was re-derived word-wise from bytes with capstone, not from the Ghidra dump
+corpus:
+
+- **`SCUS_942.54`: exhaustive.** All 110,080 words of the `t_size = 0x6B800`
+  text decoded individually (102,684 decode as instructions; the remainder are
+  data / COP2 words, and no `lw` encoding is undecodable, so the sweep is sound
+  for loads). The whole executable contains **31** loads at offset `0x5c`, of
+  which exactly one has a non-`sp` base: `800532d4`, the relocation above.
+  Every other non-`sp` `0x5c` access is an `lh`/`lhu`, which cannot read a
+  32-bit relocated pointer.
+- **Overlays: 15 of 26 images.** The 15 binaries in `extracted/overlays/`
+  (278,267 words) yield two non-`sp` word loads at `0x5c`, both in
+  `overlay_summon_render_0900.bin` (`801f7984`, `801f9af4`). Both sit inside a
+  contiguous `+0x44..+0x60` eight-word block copy whose base register is set by
+  `801f7090 lui s1,0x1f80` - the **scratchpad**, not a `0x801C9360` record.
+  Not readers.
+
+**What is not covered:** `crates/asset/data/static-overlays.toml` carries 26
+overlay identities; 11 of them - mostly summon stagers sharing the
+`0x801F69D8` window - are not extracted locally and were seen only through
+Ghidra dumps. To close the negative completely, extract those with
+`asset overlay` and re-run the same word-wise sweep. Until then the honest
+statement is "no reader in SCUS or the 15 extracted overlays", **not**
+"no reader anywhere".
 
 ### Swing records (equipment sections → slots 0xC..0xF)
 
@@ -917,8 +959,10 @@ on the player files.)
 - ~~**record[0] `+0x5C` consumer**~~ **reframed - vestigial**: the word is
   rebased self-relative→absolute at load by `FUN_80052FA0` (`:561`)
   **alongside** the `+0x58` art-bank pointer (`:558`), but unlike `+0x58` (read
-  by `FUN_8004AD80`) it has **no traced reader** - an exhaustive corpus sweep
-  finds none, and the word (slot `0x17`) sits outside every action-table
+  by `FUN_8004AD80`) it has **no reader in the code searched** - word-wise
+  exhaustive over `SCUS_942.54` plus the 15 extracted overlay binaries, with 11
+  overlay images still dump-only ([coverage](#the-0x5c-no-reader-sweep)) - and
+  the word (slot `0x17`) sits outside every action-table
   consumer's range. Target is `clut_a_off − 4` (zero on disc), and the CLUT
   upload uses `file+0x04`/`+0x08`, not this field. So it is a rebased-at-load
   paired-relocation field, not untraced-dead; a read-watchpoint would only

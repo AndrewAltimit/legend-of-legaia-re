@@ -48,6 +48,9 @@ id → index map, and indexes the table with the result:
 record = &table[ map[ actor[0x1df] ] ]      (FUN_801dd0ac(*(byte*)(actor+0x1df) + 0x801F4E63, ...))
 ```
 
+Both halves of that expression are disassembly-pinned - see
+[the instruction sequences](#indexing-and-power-read-in-instructions) below.
+
 A map byte of `0x00` or `0xFF` means "this move id has no power record". The map
 resolves move ids `0x04..=0x74` to power indices `0x01..=0x2b`. The move id is
 the **same id space as the SCUS spell-name table** (`DAT_800754C8`,
@@ -85,6 +88,52 @@ the **unused "Freeze Thunder" enemy spell** - a dummied-out attack
 move-power record survived (power 37, `sfx 0x4A`) but its on-contact/launch
 effect lists are empty and no production formation casts it - so it shows up as
 the single mapped record the roster never uses.
+
+### Indexing and power read in instructions
+
+Both the `0x801F4E63` map lookup and the 26-byte stride are read directly off
+the instruction stream, not off decompiled C. The map lookup, at the call site
+in `overlay_battle_801e09f8.txt`:
+
+```text
+801e1874  lui  v0,0x801f
+801e1878  addiu v0,v0,0x4e64      ; note 0x4E64 - the base is one BELOW this
+801e187c  lbu  v1,0x1df(v1)       ; v1 = actor[+0x1DF], the move id
+801e1884  addu v1,v1,v0
+801e1888  lbu  a0,-0x1(v1)        ; a0 = map[move_id], map base = 0x801F4E63
+801e188c  jal  0x801dd0ac         ; ... passed as param_1
+```
+
+The odd `0x801F4E63` base is an artifact of that `addiu 0x4e64` / `lbu -0x1`
+pair; the constant `0x4e63` appears nowhere in the disassembly, so grepping for
+it finds nothing. The stride and power read, in `FUN_801dd0ac`'s non-summon arm
+(`overlay_battle_action_801dd0ac.txt`):
+
+```text
+801dd19c  lui  a1,0x801f
+801dd1a0  addiu a1,a1,0x4f5c      ; table base 0x801F4F5C
+801dd1a4  andi a0,s5,0xff         ; a0 = param_1 = map[move_id]
+801dd1a8  sll  v1,a0,0x1
+801dd1ac  addu v1,v1,a0           ; 3a
+801dd1b0  sll  v1,v1,0x2          ; 12a
+801dd1b4  addu v1,v1,a0           ; 13a
+801dd1b8  sll  v1,v1,0x1          ; 26a  <- the stride, as 13*2
+801dd1bc  addu v1,v1,a1
+801dd1c0  lhu  a1,0x0(v1)         ; power, HALFWORD
+801dd1c8  sll  a1,a1,0x10
+801dd1cc  sra  v1,a1,0x12         ; (i16)power >> 2
+801dd1d0  addiu v1,v1,0x1
+801dd1d4  div  s0,v1              ; rand % ((power>>2) + 1)
+```
+
+The `26` stride is never a literal in the code - it is built as `13a << 1`, so
+a search for `0x1a` immediates will not find it either.
+
+**`+0x00` is a signed halfword, not a byte.** The read is `lhu` followed by
+`sll 0x10` / `sra 0x12` - a 16-bit load, sign-extended, then shifted right two.
+A byte-wide reading would silently truncate every power above 255, which is most
+of the table (the worked example below is `power 1500`). The parser types it
+`i16` accordingly; do not "correct" it to `u8`.
 
 ### This table is special-attack-only - a party member's basic attacks / arts do *not* use it
 
