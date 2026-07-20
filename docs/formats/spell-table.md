@@ -191,8 +191,9 @@ they split cleanly into damage vs. heal:
 a 26-byte-stride per-move power table at **`0x801F4F5C`** - that is where a genuine
 per-move "power" scalar lives, but it feeds melee/arts, not summon magic. The kernel reads
 the record's `+0` signed-16-bit field and uses `(i16)power >> 2` as the attacker-roll
-modulus (`sll 0x10` then `sra 0x12`); `801f3990` also reads the same `+0` at full (`>> 0`)
-and half (`>> 1`) scale.
+modulus (`sll 0x10` then `sra 0x12`); the same `+0` is also read at full, half and eighth
+scale within that one kernel. (`0x801F3990` is an interior address of `FUN_801DD0AC` under
+the aliased `overlay_0897` mapping, not a second reader.)
 
 `param_1` is **not** the raw move id - it is looked up through a 128-byte **id → index
 map** at `0x801F4E63` (immediately before the table): the setup site passes

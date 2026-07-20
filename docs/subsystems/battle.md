@@ -972,7 +972,9 @@ Noa and Gala records are byte-identical across the same pair - the level-up even
 
 Visual-only helpers that build the swept geometry behind a moving battle actor (sword trails, dash plumes, particle ribbons). `FUN_80048310` iterates the 16-slot per-actor frame buffer at `actor[+0x68]`, copies vertex triplets from the per-actor pose pool at `gp[0xa0c] + 0x6f4` (stride `0xC`), and calls `FUN_800485BC` twice - once for the outline, once for the base - blending two endpoint colours over N steps via a `0..N` gradient loop.
 
-`FUN_800485BC` is a 275-instruction quad-strip emitter. It looks up the actor pose from `*(int*)(0x801C9370 + actor[+0x5A]*4) + 0x34/+0x38` (re-confirms the battle actor pointer table), reads sin/cos LUTs at `_DAT_8007B81C` / `_DAT_8007B7F8` keyed on `actor[+0x26] * 0xFFF`, runs each vertex through `FUN_800195A8` for GTE projection, and drops `0x3B808080` (GP0 G3 textured-quad) packets into the OT.
+`FUN_800485BC` is a 275-instruction quad-strip emitter. It looks up the actor pose from `*(int*)(0x801C9370 + actor[+0x5A]*4) + 0x34/+0x38` (re-confirms the battle actor pointer table), reads sin/cos LUTs at `_DAT_8007B81C` / `_DAT_8007B7F8` keyed on `actor[+0x26] & 0xFFF` (a 12-bit angle **mask**, not a multiply - the LUTs are 4096-entry, `s16` 1.12 fixed point), runs each vertex through `FUN_800195A8` for GTE projection, and drops `0x3B808080` packets into the OT.
+
+That code word is a **`POLY_G4`** - four-point gouraud, semi-transparent, *untextured*: the texture bit `0x04` is clear, and `0x808080` is a neutral placeholder colour the fill immediately overwrites. Vertex products carry a `+0xFFF` bias when negative before the `>> 12`, emulating round-toward-zero, and the OT slot is the average of the four corner depths with the same fixup.
 
 These are pure rendering helpers - no gameplay state changes. Engine reimpl can defer them until visuals matter.
 
@@ -993,20 +995,30 @@ byte `*(_DAT_8007BD24)[0]`:
    animation timers and effect pointers from the overlay globals
    `_DAT_801F53D4` / `_DAT_801F53D8` into `actor+0x4`, `+0x21B..+0x21F`;
    the `action == 24` low-speed arm calls overlay `FUN_801E1D98`.
-3. **Gauge + tint refresh.** Gated on the sequence sub-phase byte
-   `_DAT_8007BCEC` (138/170/180 bands) and the active action id
-   `*(_DAT_8007BD24)[7]`: recomputes AP/HP gauge geometry - the `0x51EB851F`
-   magic multiply is a fixed-point ÷100 (percent-of-max), and the `0x1F80`
-   constant is the gauge bar-width base (`8064 - n*18`), **not** a hardware
-   register - then, for actors with status bit `0x0004` and a live fade byte
-   `+0x220`, averages the RGB555 channels and writes the damage-flash tint to
-   `actor+0xE34`.
+3. **Per-encounter boss hooks.** Gated on `DAT_8007BD0C` - the **monster /
+   formation id**, not a sequence sub-phase byte, and `0x8A`/`0xA7`/`0xAA`/`0xB4`
+   (138/167/170/180) are **boss ids**, not phase bands. Each arm applies
+   hand-written camera / pose / scale overrides to the first monster actor:
+   the `0x51EB851F` magic multiply is a fixed-point **÷50** (the spirit value is
+   clamped to 50 first), and `0x1F80 - frame*0x12` is a triangular angle ramp
+   written to `+0x1BA`, **not** a gauge bar width and **not** a hardware
+   register.
+4. **CLUT status recolour.** For actors with status bit `0x04` (Stone, latched
+   via `+0x220`) or bits `0x08`/`0x10`/`0x20` (latched via `+0x221..+0x223`),
+   it recolours the actor's **240-entry palette row** - not its texels - staging
+   through `ctx+0xE34` and uploading a `1`-pixel-tall rect, so each actor owns
+   VRAM CLUT row `481 + slot`. Stone averages the three BGR555 channels
+   (`l = (r+g+b) >> 2`, clamped to 31) into a grey; the other three build the
+   same luminance plus `b = (l*3) >> 1` and set the STP bit, giving a blue
+   tint over a per-character index window from the 3-pair table at
+   `DAT_80078630` (stride 6). This is status tinting latched once per
+   affliction, not a per-frame damage flash.
 
 Calls the actor-spawn/move-VM invoker `FUN_80021B04` and helpers
 `FUN_8004FE5C` / `FUN_800583C8` / `FUN_80031D00` / RNG `FUN_80056798`.
 Despite its size and shape it is **not a mode dispatcher**: the master mode
 word `_DAT_8007B83C` never appears; every global it touches is battle-domain.
-`see ghidra/scripts/funcs/8004ce30.txt`.
+`see ghidra/scripts/funcs/8004ce2c.txt` (`0x8004CE30` is the function's second instruction, not its entry).
 
 ## Inventory (`crates/asset` page-banked layout)
 

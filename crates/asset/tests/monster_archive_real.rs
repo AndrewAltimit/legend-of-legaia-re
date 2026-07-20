@@ -544,3 +544,91 @@ fn spell_effect_offsets_resolve_through_the_effect_table() {
     );
     assert_eq!(aux, 24, "spell entries with a resolved +0x08 aux offset");
 }
+
+/// The hit-reaction tag map (`FUN_80054CB0`) over real monster archives.
+///
+/// The battle engine addresses animations by **raw entry index**, so this
+/// exercises [`monster_archive::action_tags`] (every entry, including ones with
+/// no decodable keyframe stream) rather than `animations` (which drops those and
+/// would shift every index). What this catches:
+///
+/// - the `+0x4C` entry-pointer array or its `+0x4A` count drifts, so tags stop
+///   resolving;
+/// - the tag-4 → tag-2 knockdown fallback regresses, which would leave monsters
+///   with no heavy-hit reaction to queue;
+/// - `action_tags` and `animations` silently disagree on table length.
+#[test]
+fn monster_reaction_maps_resolve_over_real_archives() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+
+    let mut checked = 0usize;
+    let mut with_knockdown = 0usize;
+    let mut via_fallback = 0usize;
+
+    for id in 1..=120u16 {
+        let Ok(Some(tags)) = monster_archive::action_tags(&entry, id) else {
+            continue;
+        };
+        if tags.is_empty() {
+            continue;
+        }
+        checked += 1;
+
+        // Entry 0 is the idle loop for every monster in the archive.
+        assert_eq!(tags[0], 0, "monster {id}: entry 0 should be the idle tag");
+
+        let map = monster_archive::reaction_map(&tags);
+
+        // Every resolved index must be a real entry in the same table.
+        for (slot, idx) in map.iter().enumerate() {
+            if let Some(i) = idx {
+                assert!(
+                    (*i as usize) < tags.len(),
+                    "monster {id}: reaction slot {slot} -> index {i} past the {} entry table",
+                    tags.len()
+                );
+            }
+        }
+
+        // The light flinch (tag 2) is the reaction every monster needs, and it
+        // is what the knockdown slot falls back to.
+        if let Some(flinch) = map[0] {
+            assert_eq!(
+                tags[flinch as usize], 2,
+                "monster {id}: slot 0 should point at a tag-2 entry"
+            );
+            // Slot 2 is either a real tag-4 entry or the tag-2 fallback.
+            let knock = map[2].expect("knockdown resolves when a flinch exists");
+            match tags[knock as usize] {
+                4 => with_knockdown += 1,
+                2 => {
+                    via_fallback += 1;
+                    assert_eq!(Some(knock), map[0], "fallback must reuse the flinch index");
+                }
+                other => panic!("monster {id}: knockdown slot points at tag {other:#x}"),
+            }
+        }
+    }
+
+    assert!(
+        checked > 20,
+        "expected many monsters to decode, got {checked}"
+    );
+    // Non-vacuous on both arms: the archive carries monsters with a real
+    // knockdown animation and monsters that rely on the fallback.
+    assert!(
+        with_knockdown > 0,
+        "no monster resolved a real tag-4 knockdown entry"
+    );
+    // Retail data never needs the fallback: every monster that carries a
+    // light flinch also carries a real knockdown entry. The fallback is
+    // defensive code on the retail disc, and this pins that - if a future
+    // archive change starts exercising it, that is a signal worth seeing.
+    assert_eq!(
+        via_fallback, 0,
+        "retail monsters all carry a real tag-4 knockdown; {via_fallback} fell back"
+    );
+}

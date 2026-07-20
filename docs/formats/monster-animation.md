@@ -158,7 +158,11 @@ cue fired at install.
 - `FUN_80047430` - per-frame anim-node tick: cursor advance, end-of-clip detect, commit dispatch (`ghidra/scripts/funcs/80047430.txt`). Its own caller is not in the dump corpus (open).
 - `FUN_8004AD80` - anim commit/transition: id → entry install, `+0x1D9` convergence, reaction chaining, dynamic party art slots (`ghidra/scripts/funcs/8004ad80.txt`).
 - `FUN_800402F4` - damage primitive; stages the target's hit reaction from the `+0x1EF` map (`ghidra/scripts/funcs/800402f4.txt`).
-- `FUN_80050E2C` - first-byte tag search over the entry-pointer array (`ghidra/scripts/funcs/80050e2c.txt`).
+- `FUN_80050E2C` - first-byte tag search over the entry-pointer array (`ghidra/scripts/funcs/80050e2c.txt`). Signature `(table, tag, count) -> idx_or_0xFF`; both `count` and the result are byte-truncated, so a table longer than 255 entries is unrepresentable and index `0xFF` is indistinguishable from the "not found" sentinel. Ported as `legaia_asset::monster_archive::find_action_by_tag` (sentinel surfaced as `None`), with the tag map at `reaction_map`.
+
+Both take their tags from `action_tags`, which walks **every** entry in the `+0x4C` array. That matters: `animations` skips entries whose keyframe stream is empty or malformed, and since the engine addresses animations by raw entry index (`+0x1DA`), pairing an index against the filtered list mis-maps it.
+
+On the retail disc every monster carrying a light-flinch entry also carries a real tag-4 knockdown, so the tag-4 → tag-2 fallback never fires - it is defensive code, pinned by the disc-gated `monster_reaction_maps_resolve_over_real_archives`.
 
 ## Engine playback
 

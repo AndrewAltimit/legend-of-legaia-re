@@ -109,8 +109,8 @@ coverage on disc.)
 
 ## Record layout (26 bytes)
 
-The record is consumed by three battle-action functions. `FUN_801dd0ac` /
-`801f3990` (the damage kernels) read **only `+0x00`**. `FUN_801dea50` (action
+The record is consumed by three battle-action functions. `FUN_801dd0ac` (the
+damage kernel) reads **only `+0x00`**. `FUN_801dea50` (action
 setup) computes the record address once and stashes the pointer in the
 per-battle context at `ctx+0x1014` (`overlay_battle_action_801dea50.txt:528`,
 `sw v0,0x1014(a0)`). `FUN_801e09f8` (the per-frame action tick) dereferences
@@ -196,9 +196,17 @@ each key carrying the triggering `Trigger`s), and `asset move-power
 
 ### `+0x00` at full / half / quarter
 
-`FUN_801dd0ac` / `801f3990` read `+0x00` three ways for the same move: `>>0x10`
-(full), `>>0x11` (half), `>>0x12` (quarter) after the `lhu << 0x10` sign-extend.
-The roll the kernel performs is `rand % ((power >> 2) + 1)` at the quarter scale.
+`FUN_801dd0ac` reads `+0x00` four ways for the same move: `>>0x10` (full),
+`>>0x11` (half), `>>0x12` (quarter) and `>>0x13` (eighth) after the
+`lhu << 0x10` sign-extend. The roll the kernel performs is
+`rand % ((power >> 2) + 1)` at the quarter scale; the half and eighth scales
+appear only in the retry arm, which re-floors a too-low attacker score rather
+than clamping it.
+
+> `0x801F3990` is **not** a second damage kernel. It is an interior address of
+> `FUN_801DD0AC` surfaced under the aliased `overlay_0897` mapping - the
+> instruction that begins the `*0x1A` stride computation. Treating the two as
+> separate consumers double-counts one function.
 
 ## Worked example (real disc bytes)
 

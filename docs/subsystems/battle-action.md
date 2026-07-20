@@ -642,16 +642,25 @@ an artifact of the same shift). `0x801F3990` is re-pinned below from battle-resi
 other three descriptions are retained but **need re-verification** against a battle-resident
 dump (`overlay_battle_action_*`) before being relied on.
 
-**`0x801F0348` - battle-UI widget-pool teardown.** *Decoded from the aliased
-`overlay_0897_801f0348.txt` dump - identity, entry address, and body need re-verification
-against battle-resident bytes.* Walks the 40-slot (`0x28`) tracked-widget table
-at ctx `+0x11B4` (stride `0xC`): for each slot whose flag byte `+0x11B7` is set and whose parallel
-live-widget pointer at ctx `+0x1074 + slot*4` is non-null, releases the widget via
-`func_0x800319A8(widget[+8])` (the UI-element free call, id at `widget+0x8`), then zeroes the
-widget pointer and the `+0x11B4`/`+0x11B7` flag bytes; finally clears 16 words of scratch at
-`0x801C8FA0`. Called at action-begin (`0x0C`) and capture-finalize (`0x70`/`0x71`) to drop
-leftover damage-popup / label widgets. It is a general widget-pool sweep, not a capture-specific
-routine.
+**`0x801F0348` - target-size camera framing.** Pinned from battle-resident bytes
+(`overlay_battle_action_801f0348.txt`). It writes the camera height/distance at ctx `+0x6D0`
+(i16) from a monster's **size class**, the byte at monster record `+0x1F`:
+
+```text
+ctx+0x6D0 = clamp(size_class << 7, 0x0C00, 0x1400)
+```
+
+The default `0x0C00` is also the floor, so only monsters with a size class above `0x18` pull the
+camera back at all and everything from `0x28` up saturates. The slot it reads the size from is
+resolved twice: first from the acting actor's target slot (`+0x1DD`, when `>= 3`), then - when the
+acting actor is *itself* a monster (`ctx+0x13 >= 3`) - overwritten with the acting actor's own
+size. The second store really does clobber the first, so a monster's attack frames on the
+attacker's bulk rather than the target's. Record pointers come from the monster table at
+`0x801C9348 + (slot-3)*4`. Ported as `battle_formulas::camera_height_from_size_class`.
+
+> The earlier reading of this address - a 40-slot widget-pool teardown walking ctx `+0x11B4` -
+> came from the aliased `overlay_0897_801f0348.txt` dump and is **falsified**: the
+> battle-resident body contains no widget table, no free call and no `0x801C8FA0` clear.
 
 **`0x801F1ED4` - summon actor/camera re-frame.** *Decoded from the aliased
 `overlay_0897_801f1ed4.txt` dump - identity, entry address, and body need re-verification

@@ -180,8 +180,14 @@ pub(super) fn begin<H: BattleActionHost + ?Sized>(
     if let Some(actor) = host.actor_mut(ctx.active_actor) {
         actor.action_queue_counter = ctx.queued_action;
     }
-    // Clear ctx[+0x290].
-    ctx.clear_at_begin = 0;
+    // Latch ctx[+0x290] into ctx[+0x291], then clear the original. The latched
+    // copy is what the escape roll reads as "escape assured" (value 2 = the
+    // party opened with a pre-emptive strike), so the copy must happen before
+    // the clear - see `BattleActionCtx::formation_latched`.
+    //
+    // PORT: FUN_801E295C state 0x00 (the +0x290 -> +0x291 latch)
+    ctx.formation_latched = ctx.formation_advantage;
+    ctx.formation_advantage = 0;
     // Branch to QueuedFromMenu if menu still open, otherwise PreActionWait.
     if ctx.menu_open != 0 {
         transition(ctx, ActionState::QueuedFromMenu)

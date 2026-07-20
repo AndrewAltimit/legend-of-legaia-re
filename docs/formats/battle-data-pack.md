@@ -347,6 +347,22 @@ attach record's `+0x07` **attach key** against the action entries'
 into the matching entry's `+0x04`/`+0x08` pointer pair (copy helper
 `FUN_80055854`).
 
+The copy helper pins the attach-object record's shape, because its length is
+discovered by walking rather than read from a header:
+
+```text
+[word][word][u32 outer_count]
+  outer_count × ( [word][word][u32 pair_count] + pair_count × 2 words )
+```
+
+Everything is word-granular and both counts are treated as **signed** (a
+negative count copies nothing rather than wrapping), source and destination
+strides are identical, and no pointer inside the copied bytes is relocated -
+it is a plain `memcpy` whose extent the two nested counts define. The helper
+returns the advanced destination pointer, which the caller uses as the bump
+allocator's new high-water mark. Note `pair_count` is doubled before the copy,
+so it counts **pairs**, not words.
+
 Parser: `legaia_asset::battle_char_assembly::swing_battle_animations`
 (slots `0xC..=0xF` for a given equipped-id set, sharing the monster-archive
 stream decoder).
