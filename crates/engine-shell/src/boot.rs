@@ -872,6 +872,13 @@ impl BootSession {
         }
         // After events: camera tick + scene-transition BGM rebind.
         self.camera.tick(&self.host.world);
+        if let SceneTickEvent::SceneEntered { .. } = &event {
+            // Field entry resets the camera globals (`FUN_80025C24`) and kills
+            // any mover in flight, so a departing scene's shot can't leak its
+            // eye-space depth or focus into the next one. The sibling reset of
+            // the op-0x45 param set lives in `SceneHost`'s scene entry.
+            self.camera.reset_globals_for_scene_entry();
+        }
         if let SceneTickEvent::SceneEntered { .. } = &event
             && let (Some(bgm), Some(audio)) = (self.bgm.as_mut(), self.audio.as_ref())
         {

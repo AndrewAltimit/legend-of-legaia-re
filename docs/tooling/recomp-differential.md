@@ -145,6 +145,24 @@ Units are retail on both sides: angles in the PSX 12-bit space (4096 = full
 turn, masked to `0xFFF`), positions in retail world units, `mode` in the
 retail game-mode word space (`_DAT_8007B83C`).
 
+**`cam.eye` and `cam.focus` are not a world-space eye / look-at pair.** They
+are the retail camera globals verbatim, and both carry a convention that a
+reader who assumes "eye position, focus point" will get wrong:
+
+- `cam.eye` is the **eye-space translation trio** `_DAT_800840B8` - the
+  post-rotation `(dx, dy, depth)` of `screen = H·(R·(v − focus) + tr_eye)/Ze`.
+  Its Z is the eye-back depth (order `10^4`), in a space carrying retail's
+  `6×` world scale. It is not a position in the world.
+- `cam.focus` is `_DAT_80089118`, which stores the focus **negated in X and
+  Z**: a shot focused on world `(8640, 0, 10304)` reads `(-8640, 0, -10304)`.
+  `focus.y` is un-negated and is `0` through the opening chain.
+
+An engine side that emits a world-space `(eye, look_at)` here compares
+different quantities in different coordinate frames. That produces a total,
+permanent divergence on both channels in every scene - one that looks exactly
+like a camera defect and cannot be closed by any change to the camera. Check
+the convention before reading a camera divergence as a camera bug.
+
 The recomp-side address map is the pinned retail globals (provenance:
 [`memory-map.md`](../reference/memory-map.md),
 [`field-locomotion.md`](../subsystems/field-locomotion.md),
@@ -277,11 +295,12 @@ the windowed host arms them; `--no-field-live` samples the plain
 only - the subcommand adds no simulation features.
 
 Retail-unit mapping (see [`sim_trace.rs`](../../crates/engine-shell/src/sim_trace.rs)
-module docs for the full table): the camera controller's radians convert
-back to 12-bit units (the exact inverse of the op-`0x45` decode); roll and
-H are read raw from the last Camera Configure payload (the engine camera
-models neither); player/actor samples come from `move_state.world_x/z` +
-`render_26`. `mode` maps `SceneMode` onto the retail game-mode word (Field
+module docs for the full table): every `cam.*` channel is read from the
+engine's live retail camera globals
+([`Camera::globals`](../../crates/engine-core/src/camera.rs)), which are the
+same ten words the recomp-side address map reads, so the two sides report the
+same quantity in the same frame; player/actor samples come from
+`move_state.world_x/z` + `render_26`. `mode` maps `SceneMode` onto the retail game-mode word (Field
 3, WorldMap 13, Battle 21 / `0x15`, Menu 23 / `0x17`, Cutscene 27) and is
 omitted for modes with no retail equivalent (Title, minigame sessions) so
 a diff flags them as absent rather than faking a match.
@@ -342,28 +361,44 @@ shape of result on every one of them, and the strongest evidence is the
 part that needs no alignment at all - comparing each channel's *range* over
 a window sidesteps the offset question entirely.
 
-**The engine's camera never leaves a fixed height.** `cam.eye.y` is
-constant at 80 in every scene measured. Retail's moves continuously over
-hundreds of distinct values per scene, climbing past 5000 and dropping
-below -3000 as the scripted shots play. Nothing about this depends on
-frame alignment: the two value sets are disjoint.
+**The camera-position divergence had two stacked causes, and the outer one
+was a measurement artifact.** The engine originally emitted its runtime
+camera's world-space `eye` / `look_at` on channels whose retail side is the
+eye-space translation trio and the negated focus globals ([above](#canonical-trace-shape)).
+Those value sets are disjoint by construction, so the reading "the engine's
+camera never leaves a fixed height" (`cam.eye.y` constant at 80) was
+measuring `follow_height`, not a camera that refused to move.
 
-**Camera position tracks the player instead of the script.** The engine's
-`cam.focus` sits on the player's world X/Z at that same height 80, and
-`cam.eye` a short fixed distance off it - a follow orbit. Retail's focus is
-an absolute scripted point far outside the player's neighbourhood, with
-`focus.y` identically 0. So the op-`0x45` Configure *angle* slots and `h`
-do reach the engine camera - `cam.pitch` / `cam.yaw` / `cam.h` take
-plausible per-beat values in the scenes where a Configure runs - while the
-eye and focus position slots do not survive into the pose the camera
-renders from.
+Underneath it sat a real defect: [`Camera`](../../crates/engine-core/src/camera.rs)
+modelled no eye-space translation trio at all. The op-`0x45` Configure
+angle slots and `h` reached it, but slots 3/4/5 had nowhere to land and the
+controller stayed in its follow orbit through scripted shots, so scenes
+rendered and traced from the follow pose. The retail-faithful decode existed
+only in the shell's `cutscene_view`, which `sim-trace` does not go through.
 
-**Pose changes are held, not interpolated.** Across a 3000-frame window the
-engine emits a handful of distinct camera poses, holding each for hundreds
-of frames; retail's camera state changes every few frames throughout. This
-is consistent with the position half above rather than independent of it,
-and a beat's curve mode cannot be attributed from the state trace alone -
-treat it as a symptom pointing at the same defect, not a separate one.
+Both are closed: `Camera` now carries the ten globals, applies each masked
+slot per-axis, and runs [`camera_mover`](../../crates/engine-vm/src/camera_mover.rs)
+for `apply != 0` beats. Measured alignment-free over the opening chain, the
+angle channels reproduce retail exactly (`opstati` mid-window pitch/yaw
+`4066` / `3706` against retail's `65506` / `65146` masked to 12 bits) and
+the eye channels overlap where they previously could not (`opstati`
+`eye.x` shares 308 of retail's 323 distinct values).
+
+**Pose changes are held, not interpolated** - same root cause, now confirmed
+rather than assumed. With no mover and no translation trio the engine held
+2-6 distinct poses per 3000-frame window; with both, the same windows carry
+769-1313. The residual is not a camera defect but the direct-boot confound
+below.
+
+**The remaining position gap is a timeline-phase difference, not a pose
+error.** `sim-trace` boots a scene cold at its frame 0 while a retail capture
+of the same scene arrives through the prologue chain already several beats
+in, so an aligned frame compares the engine's beat 0 against retail's beat 5.
+`opdeene` is the clear case: the engine's staged focus values walk
+`-10816 → -5824 → -8568 → -8640`, and retail's capture window contains only
+the last two. Distinguishing a pose error from this needs the engine driven
+through the chain, not booted into the scene - the same confound as the
+"scenes run no camera script at all" reading below.
 
 **Some scenes run no camera script at all.** In the scenes the engine
 enters cold at record 0, `cam.h` never appears and the angles never leave
