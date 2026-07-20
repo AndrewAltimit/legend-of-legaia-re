@@ -293,11 +293,29 @@ battle-init by `FUN_80055b6c`, which calls `FUN_8005567c` (`SCUS_942.54`) to exp
 the id into the cell:
 
 ```c
-DAT_8007bd0c = DAT_8007bd0d = DAT_8007bd0e = (u8)DAT_8007b7fc;   // lone / paired id
-// id ranges 0x07..0x09, 0x49..0x4d, 0x88..0x8b, 0xa2..0xff get bespoke multi-monster
-// / boss expansions (DAT_8007bd0e cleared; DAT_8007bd10.. set per id);
-if (DAT_8007b7fc == 0) { cell = [4, _, 4, 4]; }                 // default-zero fallback
+DAT_8007bd0c = DAT_8007bd0e = (u8)DAT_8007b7fc;   // slots 0 and 2 seed from the id
+// id ranges 0x07..0x09, 0x49..0x4d, 0x88..0x8b, 0xa2..0xff are the "bespoke"
+// bands: they clear DAT_8007bd0e, collapsing the cell to a lone [id,0,0,0];
+// only 0xa2/0xa3/0xa4 additionally seed DAT_8007bd10.. (with 1 / 3 / 2).
+DAT_8007bd0f = 0;
+if (DAT_8007b7fc == 0) {                          // default-zero fallback
+    DAT_8007bd0c = DAT_8007bd0e = DAT_8007bd0f = 4;
+    DAT_8007b64a = 0;                             // clears the boss-transition arm
+}
+DAT_8007bd0d = DAT_8007bd0e;                      // slot 1 mirrors slot 2, last
 ```
+
+Slot 1 is never written directly - it is copied from slot 2 as the function's
+last act, which is what keeps all three cases self-consistent:
+
+| Battle id | Resulting cell |
+|---|---|
+| `0` | `[4, 4, 4, 4]` - every slot, slot 1 included |
+| in a bespoke band | `[id, 0, 0, 0]` |
+| any other non-zero | `[id, id, id, 0]` |
+
+Ported clean-room as `legaia_engine_core::encounter_record::expand_battle_id`,
+alongside the `actor[+0x94]` record path it is the alternate of.
 
 `DAT_8007b7fc` is a **transient** parameter: it is `0` in every captured Tetsu
 frame (the id is consumed and cleared by the time the battle is resident). The

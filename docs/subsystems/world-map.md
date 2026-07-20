@@ -1380,10 +1380,8 @@ if (_DAT_801F351C != 0) {
     local_34 = _DAT_801F3520 / 5;
     local_38 = _DAT_801F3520 - local_34;
     do {
-        iVar10 = cos_table[(uVar6 & 0xFFF)];   // 0x8007B81C cos LUT
-        // emit 2x POLY_FT4 (chain tag 0x9000000) + 1 small prim
-        // (chain tag 0x3000000); vertex coords are cos-rotation-
-        // projected with local_3c/local_38 as scale moduli.
+        iVar10 = trig[(uVar6 & 0xFFF)];   // table behind _DAT_8007B81C
+        // emit one scanline band - see the packet table below.
         ...
         uVar6 += 0x10;
         iVar11++;
@@ -1391,12 +1389,50 @@ if (_DAT_801F351C != 0) {
 }
 ```
 
-`_DAT_8007B81C` is the cos lookup table (`docs/reference/memory-map.md`).
-The function emits ~670 prims per call (2 POLY_FT4 + 1 small per iter
-across 224 iters). Vertex coordinates project via the cos table, so
-the rendered output rotates with the camera angle - consistent with
-a horizon / sky / animated-background plane, not a fixed continent
-mesh.
+`_DAT_8007B81C` is a **pointer** to a `0x1000`-entry `i16` trig table
+(`docs/reference/memory-map.md`), indexed `(angle & 0xFFF)` - the same
+pointer the [move VM](move-vm.md) and [effect VM](effect-vm.md) index.
+
+#### Per-iteration packets
+
+Each of the 224 iterations emits a **one-pixel-tall horizontal band** at
+`y_top = i - 4`, `y_bottom = i - 3`, so the loop paints scanlines `0..=223`:
+
+| Packet | Chain tag | Contents |
+|---|---|---|
+| `POLY_FT4` | `0x09000000` | Band's left half. Code+colour `0x2C808080`, tpage `0x0100`, `u` 0/0xFF, `v` 1/2. |
+| `POLY_FT4` | `0x09000000` | Band's right half. Same code+colour, tpage `0x0103`, `u` 0x3F/0x7F, `v` 1/2. |
+| `LINE_F2` | `0x03000000` | Full-width (`0..0x140`) near-black scanline at `y_top`; code+colour `0x40010101`. |
+| `MoveImage` | 6-word `DR_MOVE` | VRAM row blit, source `(0, i + band_off)` sized `0x140 x 1`, destination `(0, 1)`. |
+
+So **four** prims per iteration, 896 per call. `band_off` is `0` normally
+and `0xF0` when `_DAT_8007B74C != 0` - an alternate source band, the only
+thing that flag changes.
+
+#### Horizontal extents
+
+Three x coordinates per band, from the staged scale and the per-row trig
+sample `c`. Every term is truncated to `i16` individually before the adds:
+
+```text
+half = scale >> 1;  lo = scale / 5;  hi = scale - lo
+x_a  = -half - ((half * c) >> 12)
+x_b  = x_a + ((hi * c) >> 12) + hi + 0xFF
+x_c  = x_b + lo + ((lo * c) >> 12) + 0x40
+```
+
+Quad 0 spans `x_a..x_b`, quad 1 spans `x_b..x_c` - they tile without a gap.
+Because the extents track the trig sample, the plane appears to rotate with
+the camera angle: a horizon / sky / animated-background plane, not a fixed
+continent mesh.
+
+The persisted angle (`_DAT_801F3518`) is stored **before** the loop, so it
+advances only by `tick * step` per call - the per-row `+= 0x10` is loop
+scratch and never written back.
+
+Ported clean-room as `legaia_engine_vm::world_map_horizon::emit_horizon`,
+driven from the world-map controller's gate consumer
+(`WorldMapController::run_horizon_emitter`).
 
 The case-5 path of the [per-actor render dispatcher `FUN_8001ADA4`](#per-actor-render-dispatcher---fun_8001ada4)
 draws every **landmark** TMD (castle, towers, bridges, gates) - each
