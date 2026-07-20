@@ -348,7 +348,9 @@ pub struct StartingChar {
     pub hp_max: u16,
     /// Maximum (and starting) MP.
     pub mp_max: u16,
-    /// Agility; also seeds the spirit-gauge value and stat cap at New Game.
+    /// Agility. It lands in the live agility cells only - the neighbouring
+    /// cap cells take the seed routine's literal `100`, not this field (see
+    /// [`SEEDED_CAP_CONSTANT`]).
     pub agl: u16,
     /// Physical attack.
     pub atk: u16,
@@ -642,6 +644,11 @@ pub struct SeededHalfword {
 /// Returned in ascending `sc_offset` order. The display-name copy is not a
 /// halfword store and is reported separately by [`seeded_name_offset`].
 ///
+/// This is the specification the engine's record builder
+/// (`legaia_engine_core::new_game::starting_record`) applies, rather than
+/// re-deriving the template-field -> live-cell mapping itself: slot 0's stores
+/// less [`LIVE_RECORD_0_XP_OFFSET`] are the record-relative offsets.
+///
 /// **Halfword stores only.** The routine also performs writes this return type
 /// cannot carry, and callers must not treat the list as the full effect of a
 /// New Game seed: the level / magic-rank bytes at `+0x130` / `+0x131`
@@ -650,8 +657,6 @@ pub struct SeededHalfword {
 /// `sw zero,0xa9c(gp)` plus the `sb zero` pair at `0x8007B64A` / `0x8007B64C`.
 ///
 // PORT: FUN_800560b4 (halfword stores only)
-// NOT WIRED: no caller outside the disc-gated test; the engine's own New Game
-// path does not route through this.
 pub fn seed_live_records(party: &StartingParty) -> Vec<SeededHalfword> {
     let mut out = Vec::new();
     for (slot, m) in party.members().iter().enumerate() {
@@ -741,7 +746,13 @@ pub const STORY_FLAGS_LEN: u32 = 0x200;
 /// `DAT_80085959 = 5`, and the `_DAT_8007B868` branch.
 ///
 // PORT: FUN_80034a6c
-// NOT WIRED: no caller outside the disc-gated test.
+// NOT WIRED (by design, not by omission): this returns *code literals*, not
+// anything decoded from the disc, so routing the engine through it would move a
+// constant rather than improve fidelity. Fourteen of its fifteen offsets name
+// `SC` cells the typed engine `World` has no model for, and the one it does
+// model (gold) already carries the same 500. The store widths are additionally
+// unverified - see the provenance caveat above. Re-dump `FUN_80034A6C` with a
+// disassembly section before treating this as a wiring candidate.
 pub fn new_game_seed_words() -> Vec<SeededWord> {
     let w = |sc_offset: u32, value: u32, width: SeedWidth| SeededWord {
         sc_offset,

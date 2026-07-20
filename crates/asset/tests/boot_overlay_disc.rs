@@ -66,7 +66,7 @@ fn card_tim_pack_index_is_pinned_by_content_not_label() {
     }
     let mut archive = Archive::open(&prot_dat).expect("open PROT.DAT");
 
-    let idx = bo::card_tim_pack_extraction_index();
+    let idx = bo::CARD_TIM_EXTRACTION_INDEX;
     assert_eq!(idx, 892, "loader constant 0x37E minus the index shift");
 
     let data = read(&mut archive, idx);

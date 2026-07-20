@@ -25,7 +25,7 @@ when the debug flag `_DAT_8007B8C2` is clear. Retail boots with that flag set to
 |---|---|---|
 | `+0`  | u16 | `hp_max` (also the starting HP) |
 | `+2`  | u16 | `mp_max` (also the starting MP) |
-| `+4`  | u16 | `agl` - also seeds the spirit-gauge value + stat cap |
+| `+4`  | u16 | `agl` - the live agility cells only, not the cap cells |
 | `+6`  | u16 | `atk` |
 | `+8`  | u16 | `udf` (upper / physical defence) |
 | `+10` | u16 | `ldf` (lower / magical defence) |
@@ -46,10 +46,17 @@ string (`"I will show you how to fight…"`) sits immediately after the table.
 | 2 | Gala  | 210 | 40  | 80  | 30 | 43 | 30 | 15 | 20 |
 | 3 | Terra | 400 | 200 | 200 | 45 | 20 | 17 | 45 | 25 |
 
-The `+4` stat is one value the seed fans out to several live fields. Cross-validated
-against an early `town01` save state, Vahn's `+4` (`100`) lands in the live record
-as `agl`, `cap_constant`, and the initial spirit-gauge value all at once; the
-per-character archetypes (`Noa = 120`, `Gala = 80`) read as agility.
+The `+4` stat lands in the live agility cells of both stat blocks (`+0x110`
+current, `+0x122` max). The per-character archetypes (`Vahn = 100`,
+`Noa = 120`, `Gala = 80`) are what make it read as agility.
+
+The neighbouring cap cells (`+0x10C` current, `+0x120` max) are **not** fed
+from `+4`. The seed routine writes the literal `100` into both, for every
+roster slot: `800561b8 li v0,0x64` / `800561bc sh v0,0x6d4(s0)` /
+`800561c0 sh v0,0x6e8(s0)`, inside the four-iteration loop. Vahn's `+4` is
+also `100`, so a Vahn-only save-state cross-validation cannot separate the
+literal from the template field - Noa and Gala can, and they seed `100` while
+their agility differs.
 
 ## Starting inventory (code-built, not a table)
 
@@ -162,6 +169,11 @@ the engine can seed a faithful New Game from the user's own disc without
 committing any Sony bytes. The disc-gated `new_game_real` test pins the four
 rows against the real executable. CLI: `asset new-game <SCUS> [--json]` (dumps
 the party template + the code-built starting inventory).
+
+`legaia_asset::new_game::seed_live_records` ports the seed routine's halfword
+stores, and the engine's record builder
+(`legaia_engine_core::new_game::starting_record`) applies them rather than
+restating the template-field → live-cell mapping, so the two cannot drift.
 
 ## See also
 

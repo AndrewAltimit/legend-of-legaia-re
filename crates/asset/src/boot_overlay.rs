@@ -146,7 +146,11 @@ pub struct SlotBChoice {
 /// loader then declines.
 ///
 // PORT: FUN_80025ba0
-// NOT WIRED: no caller outside the disc-gated test.
+// NOT WIRED (by design): the choice this models is *which MIPS overlay to DMA
+// into slot B*, and the clean-room engine installs no retail overlays - it
+// reimplements 900 / 901's contents in Rust. There is no engine state for this
+// to drive. Its consumer is the preservation track: `boot_overlay_disc` asserts
+// each param resolves to an entry whose bytes match the documented content.
 pub fn slot_b_default_overlay(
     summon_render_flag: bool,
     suppressed: bool,
@@ -218,8 +222,12 @@ pub enum EffectDataSource {
 /// branch touches ISO9660 - and is not evidence for anything.
 ///
 // PORT: FUN_8003e360
-// NOT WIRED: no caller outside this module's tests; the engine does not yet
-// load the effect-data side band.
+// NOT WIRED (by design): both branches end in a load the engine does not
+// perform - the flag-set branch DMAs PROT 979 into a retail streaming buffer at
+// a fixed offset, and the flag-clear branch is the debug-station host trap,
+// dead on hardware. The engine's effect subsystem parses `efect.dat`
+// (extraction 0870..0873) through `crate::effect` instead, so there is no path
+// here for this to select between.
 pub fn effect_data_source(dev_flag_set: bool) -> EffectDataSource {
     if dev_flag_set {
         EffectDataSource::ProtEntry(EFFECT_DATA_EXTRACTION_INDEX)
@@ -241,12 +249,6 @@ pub const CARD_TIM_RAW_INDEX: u32 = 0x37E;
 /// filename label names a neighbouring block, so the label is not the
 /// attribution - the loader constant plus the entry's pack header and TIM magic
 /// are (see `tests/boot_overlay_disc.rs`).
-pub const CARD_TIM_EXTRACTION_INDEX: u32 = CARD_TIM_RAW_INDEX - RAW_TO_EXTRACTION;
-
-/// Scratch-buffer size the CARD-mode init allocates for the TIM pack.
-pub const CARD_TIM_BUFFER_LEN: u32 = 0x19000;
-
-/// Extraction index of the TIM pack the CARD-mode init loads by constant.
 ///
 /// `800257e4 bne v1,zero,0x80025804` branches on the same `_DAT_8007B8C2` flag
 /// as [`effect_data_source`]: **non-zero** reaches `li a0,0x37e` and loads the
@@ -254,22 +256,25 @@ pub const CARD_TIM_BUFFER_LEN: u32 = 0x19000;
 /// same `break 0x103` quartet, so it is not "retail by dev path through the
 /// path-based resolver" - `FUN_8003E6BC` performs no name resolution at all
 /// (see the module docs). The two branches are therefore *not* two routes to
-/// one entry, and only the by-index branch has an extraction index to return.
+/// one entry, and only the by-index branch has an extraction index at all.
 ///
-/// The by-index branch is additionally gated on `gp+0x7E8 == 1`
-/// (`800257c0`); the other path draws two rects and loads no pack. Neither
-/// that gate nor the host branch is modelled here - this function only reports
-/// the constant.
+/// The by-index branch is additionally gated on `gp+0x7E8 == 1` (`800257c0`);
+/// the other path draws two rects and loads no pack. Neither that gate nor the
+/// host branch is modelled - this constant is the whole of what the call site
+/// contributes. The loaded bundle is walked as an [`crate::pack`] and each TIM
+/// uploaded to VRAM.
 ///
-/// The loaded bundle is walked as an [`crate::pack`] and each TIM uploaded to
-/// VRAM.
+/// **Not an engine art source.** Retail's CARD mode is a standalone
+/// memory-card-management screen; the engine's save / load UI is a different
+/// screen and its art is capture-pinned to PROT 899's embedded TIMs plus the
+/// system-UI sprite sheet (see [`crate::title_pak`]). Wiring 892 would mean
+/// implementing CARD mode, not retargeting an existing screen.
 ///
-// PORT: FUN_8002574c
-// NOT WIRED: no caller outside the disc-gated test; nothing in the engine
-// loads the CARD-mode TIM pack yet.
-pub fn card_tim_pack_extraction_index() -> u32 {
-    CARD_TIM_EXTRACTION_INDEX
-}
+// PORT: FUN_8002574c (loader constant only)
+pub const CARD_TIM_EXTRACTION_INDEX: u32 = CARD_TIM_RAW_INDEX - RAW_TO_EXTRACTION;
+
+/// Scratch-buffer size the CARD-mode init allocates for the TIM pack.
+pub const CARD_TIM_BUFFER_LEN: u32 = 0x19000;
 
 // ---------------------------------------------------------------------------
 // Sector-count rounding (`FUN_8001EEF0`)
@@ -295,12 +300,20 @@ pub const SECTOR_BYTES: i32 = 0x800;
 /// The negative branch only triggers below `-0x7FF`, so small negative inputs
 /// still go through the positive path.
 ///
-/// Note `engine-core::stream_file` has its own `bytes_to_sectors_floor`, which
-/// is plain floor division with no round-up and no signed path. The two
-/// disagree; reconcile them before wiring either into a shared path.
+/// `engine-core::stream_file::bytes_to_sectors_floor` is **not** a rival
+/// spelling of this to be reconciled with: it is the `srl a1, 0xB` of a
+/// *different* pair of routines (`FUN_80055A5C` seek / `FUN_800559EC` read),
+/// where discarding a sub-sector remainder is the retail behaviour. Round-up
+/// here and floor there are both faithful; a shared helper would break one of
+/// them.
 ///
 // PORT: FUN_8001eef0 (arithmetic tail only)
-// NOT WIRED: no caller anywhere in the tree.
+// NOT WIRED (by design): retail needs this conversion because its loader talks
+// to the CD in sectors; the engine's asset path reads whole PROT entries
+// through `legaia_prot` and never converts a byte length to a sector count on
+// the retail path, so there is no site for it. Cited from
+// `docs/subsystems/asset-loader.md` as the documented shape of the return
+// value.
 pub fn bytes_to_sectors(bytes: i32) -> i32 {
     let biased = bytes.wrapping_add(SECTOR_BYTES - 1);
     let biased = if biased < 0 {
@@ -359,7 +372,7 @@ mod tests {
         // the debug-station link (NOT ISO9660, and not the disc).
         assert_eq!(effect_data_source(true), EffectDataSource::ProtEntry(979));
         assert_eq!(effect_data_source(false), EffectDataSource::HostFile);
-        assert_eq!(card_tim_pack_extraction_index(), 892);
+        assert_eq!(CARD_TIM_EXTRACTION_INDEX, 892);
     }
 
     #[test]
