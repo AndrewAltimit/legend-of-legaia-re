@@ -318,7 +318,39 @@ built by `FUN_80052FA0`) is wider than the 12 disc words:
   earlier "it points at the art `"ME"` stream archive" hypothesis is
   separately **disc-refuted** - those archives live in `readef.DAT`
   ([below](#me-stream-archives-readefdat)), and no `"ME"` archive exists
-  anywhere in a player file's footprint or its decoded record[0].
+  anywhere in a player file's footprint or its decoded record[0]. Coverage
+  and the positive control that makes that negative load-bearing:
+  [the ME footprint sweep](#the-me-footprint-sweep).
+
+### The ME footprint sweep
+
+The negative is disc-measured: scanning the 2-byte `"ME"` magic at every byte
+offset of all four player-file footprints (0863 `0xA9000` / 0864 `0x97800` /
+0865 `0x6F000` / 0866 `0x17800`, 1,863,680 raw bytes) **and** of every LZS
+stream they contain - each file's decoded `record[0]` plus all 152 descriptor
+slots, 3,277,604 decompressed bytes, 5,141,284 bytes searched in total - yields
+5 incidental `0x4D45` hits, all in compressed slot bytes, and zero that validate
+as archives: three run their body chain past the footprint, one fails the
+channel-delta codec, one decodes to no length-exact `2 + parts*frames*9` stream.
+
+The footprint is the true TOC sector run, not the extractor's over-read window:
+0865 / 0866 extract as ~16 MB but their real footprints are `0x6F000` /
+`0x17800`, and the slot region tiles each footprint exactly.
+`battle_char_palette::derive_sub_offsets` establishes that record[0]'s
+sub-records *are* the descriptor slots, so no compressed region is left
+unopened. All 152 slots decode without error. A scan reading only compressed
+bytes would be a false negative; the decompressed layers are the clean ones -
+all 5 raw hits are in the compressed layer, and no decoded stream has any.
+
+**The positive control is the evidence.** "0 hits" is indistinguishable from a
+broken detector, so the same scanner and validator run over `readef.DAT`
+(extraction 894, 5,271,552 bytes, 78 slots), where the archives are known
+present: 151 raw `0x4D45` hits, of which **exactly 8** validate - one at offset
+`0x0` of each documented slot `3*char+1` / `3*char+2`, with the documented entry
+counts (Vahn 17/8, Noa 18/8, Gala 19/8, Terra 1/8). Zero false positives, zero
+false negatives. A validator that stopped at structural fit would not support
+either result: **2 of the 5** player-file hits pass the size-table fit test, and
+143 of the 151 `readef.DAT` hits reject.
 
 ### The 0x5C no-reader sweep
 

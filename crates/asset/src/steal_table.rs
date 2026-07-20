@@ -1,12 +1,30 @@
 //! Per-monster **steal-item** table parser (`DAT_80077828` in `SCUS_942.54`).
 //!
 //! What the player steals from an enemy with the **Evil God Icon** equipped is
-//! looked up here, NOT in the PROT 867 `battle_data` monster record. An
-//! exhaustive offset scan of the record (correlated against ground-truth steal
-//! data) finds no steal field there - the reward block at `+0x44..+0x49` holds
-//! only gold / exp / drop. The steal item lives in this separate static
-//! `SCUS_942.54` table instead, which is why every record-only search came up
-//! empty (see `docs/reference/open-rev-eng-threads.md`).
+//! looked up here, NOT in the PROT 867 `battle_data` monster record. The reward
+//! block at `+0x44..+0x49` holds only gold / exp / drop; the steal item lives in
+//! this separate static `SCUS_942.54` table instead, which is why every
+//! record-only search came up empty.
+//!
+//! That negative is disc-measured over the whole archive: for the 185 monster
+//! ids that are both populated in PROT 867 and stealable in the SCUS table, no
+//! byte offset carries the steal pair in either field order - not in the
+//! 13,030,964 bytes of LZS-decoded monster block (every offset, full block
+//! length, not just the `0x4C` stat head), nor in the 15,155,200 raw bytes of
+//! the `0x14000` slots that hold them. Best agreement in any layer is
+//! `[chance,item]` 2/185 and `[item,chance]` 2/185.
+//!
+//! Do not read the one elevated offset as a near-miss: single-byte offset `0x48`
+//! scores 31/185, but `0x48` is the `drop_item` field, and steal and drop draw
+//! from the same 39-item consumable pool, so incidental agreement is expected -
+//! none of those 31 also agree on chance at `0x49`, and the best non-drop offset
+//! anywhere is 7/185. A drop-order (`[item, chance]`) scan could not have faked
+//! the negative either; it tops out at 2/185.
+//!
+//! Independent of any scan: monster ids `187..190` are stealable here but have
+//! **no archive slot at all** (PROT 867 is 194 slots of `0x14000`, 186
+//! populated), so the record cannot be the source for those ids.
+//! See `docs/reference/re-settled-threads.md`.
 //!
 //! ## Record layout (2 bytes, stride `0x02`)
 //!

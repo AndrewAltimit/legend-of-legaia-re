@@ -566,9 +566,32 @@ order - **chance first, item second**, which is the reverse of the `[item,
 chance]` drop fields in the monster record. Reading it in drop order silently
 swaps every value.
 
-The table is **not** in the PROT 867 monster record at all. The prior exhaustive
-record scan was correct: the data simply isn't there. It lives in the
-executable, which is why every record-only search came up empty.
+The table is **not** in the PROT 867 monster record at all. It lives in the
+executable, which is why every record-only search came up empty. The negative is
+disc-measured over the whole archive: for the 185 monster ids that are both
+populated in PROT 867 and stealable in the SCUS table, no byte offset carries the
+steal pair in either field order - not in the 13,030,964 bytes of LZS-decoded
+monster block (every offset, full block length, not just the `0x4C` stat head),
+nor in the 15,155,200 raw bytes of the `0x14000` slots that hold them. Best
+agreement in any layer is `[chance,item]` 2/185 and `[item,chance]` 2/185.
+
+Two properties of that measurement are worth keeping, because each would mislead
+a re-derivation:
+
+- **The one elevated offset is not a near-miss.** Single-byte offset `0x48`
+  scores 31/185 - but `0x48` is the `drop_item` field, and steal and drop draw
+  from the same 39-item consumable pool, so incidental agreement is expected.
+  None of those 31 also agree on chance at `0x49`, and the best non-drop offset
+  anywhere is 7/185, the noise floor.
+- **Drop-order field order could not have faked this negative.** A scan looking
+  for `[item, chance]` (the drop order, the reverse of this table's) still tops
+  out at 2/185. The field-order hazard is real for a *positive* reading; it
+  cannot manufacture the negative.
+
+Independent of any scan: monster ids `187..190` are stealable in the SCUS table
+but have **no archive slot at all** - PROT 867 is 194 slots of `0x14000` with
+only 186 populated. The record cannot be the source for those ids under any
+reading.
 
 Pinned from a live player-steal RAM capture - Skeleton, id 13, reads `1e 8a` =
 30% Incense, matching the on-screen banner - and then verified **byte-exact
