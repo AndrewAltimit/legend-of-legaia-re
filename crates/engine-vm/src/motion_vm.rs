@@ -297,6 +297,11 @@ pub const BIND_RECORD_STRIDE: usize = 4;
 // PORT: FUN_8003d038
 // REF: FUN_801cfc40 (the collision probe that posts), FUN_80038158
 //      (the wait-for-touch consumer at 0x8003882C)
+// NOT WIRED: the port's field collision path does not post touches - it
+// resolves per-axis walls and stops, without identifying the actor it hit.
+// A wired caller would be the actor-vs-actor overlap test standing in for
+// FUN_801cfc40, storing this function's result into the mailbox the motion
+// VM's wait-for-touch opcode reads. Reachable only from tests.
 pub fn post_touch(bind_records: &[u8], index: usize) -> Option<u32> {
     let class = *bind_records.get(index.checked_mul(BIND_RECORD_STRIDE)?)?;
     if class == TOUCH_POST_SUPPRESS_CLASS {

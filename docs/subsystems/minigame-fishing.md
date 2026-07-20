@@ -80,8 +80,21 @@ overlays the fill quad itself. The fill is `segments * value * 8 / 0x1000`
 pixels long and its brightness ramps `value * 0xff / 0x1000`, so the bar
 brightens as it fills. `FUN_801d1870` runs horizontally with glyphs `3`/`4`/`5`
 and fills left-to-right; `FUN_801d1a90` runs vertically with glyphs `0`/`1`/`2`
-and fills *upward* from the bottom cap. `FUN_801d1870`'s first argument selects
-the fill quad's colour ramp only and moves no geometry.
+and fills *upward* from the bottom cap.
+
+`FUN_801d1870`'s first argument selects the fill quad's colour ramp only and
+moves no geometry. It branches three ways over the four vertex-colour triples,
+where `g` is the brightness byte `value * 0xff >> 12`:
+
+| `param_1` | Fill RGB | Used by |
+|---|---|---|
+| `0` | `(0xbc, g, 0)` - constant red against the ramp | depth gauge |
+| `1` | `(g, ~g, 0)` - the ramp against its own complement | tension gauge |
+| other | colour stores jumped entirely; the buffer keeps its previous contents | no call site |
+
+`FUN_801d1a90` takes **no** style argument - it is a four-argument function
+that stores `0xbc` into red unconditionally, so the vertical bar is
+permanently the `0` ramp.
 
 `FUN_801d76e0` lays a number out in a fixed **eight-slot** field: slot `i` holds
 `value / 10^(7-i)` and is emitted only once that quotient is non-zero, so
@@ -178,6 +191,8 @@ Engine port: [`legaia_engine_core::fishing`](../../crates/engine-core/src/fishin
 The HUD / banner cluster is ported as a draw-list layer (`HudDraw`): `persistent_hud_draws` (`FUN_801d13f0`), `catch_hud_draws` plus the `length_display` / `extent_display` / `cast_power_percent` kernels (`FUN_801d1580`), the five animators `banner_from_left_draw` / `banner_from_right_draw` / `strike_splash_draws` / `banner_miss_draw` / `banner_converge_draws` (`FUN_801d78ec` / `FUN_801d75dc` / `FUN_801d71d4` / `FUN_801d6f10` / `FUN_801d7528`), and `BannerTimer` (the tail's timer-service loop).
 
 The bar and digit primitives are ported as layout builders over that same draw list: `bar_frame` / `power_bar_frame` (`FUN_801d1870` / `FUN_801d1a90`) return the cap/body/cap glyph frame plus the fill extent and its brightness, and `number_digit_cells` (`FUN_801d76e0`) expands a value into its eight-slot digit field. `select_owned_rod` (`FUN_801d712c`) is the rod gate; note it is not read-only - it advances the persistent rod index onto an owned lure, which is why the HUD's rod label can change without the player touching the menu.
+
+These layout builders are **not wired**: no host draws a fishing HUD, so nothing outside the crate's tests consumes a `HudDraw`, `BarFrame` or `DigitCell`. They pin the retail layout constants; they are not evidence that the HUD is rendered.
 
 The `FishingSession` composes those kernels into a cast → fight → score loop. The win/lose glue (line-snaps-at-max-tension, reel-progress land, the locked-cast species pick, and the steady per-frame fish pull) is an **engine-side reconstruction** of the [Open](#open) items below and is marked as such at each call site - no Sony bytes are baked in.
 

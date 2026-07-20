@@ -112,12 +112,6 @@ impl Rect12 {
         let [h0, h1] = self.h.to_le_bytes();
         [x0, x1, y0, y1, w0, w1, h0, h1]
     }
-
-    /// `true` when both `w == 0` and `h == 0` (the early-out condition
-    /// inside [`exec_move_image`]).
-    pub const fn is_zero_size(self) -> bool {
-        self.w == 0 && self.h == 0
-    }
 }
 
 /// Result code mirrored from `FUN_80058490` (`MoveImage` queue). The
@@ -611,13 +605,6 @@ mod tests {
     #[test]
     fn rect12_from_le_bytes_rejects_short_input() {
         assert!(Rect12::from_le_bytes(&[0u8; 7]).is_none());
-    }
-
-    #[test]
-    fn rect12_is_zero_size_only_when_both_dimensions_zero() {
-        assert!(Rect12::new(0, 0, 0, 0).is_zero_size());
-        assert!(!Rect12::new(0, 0, 1, 0).is_zero_size());
-        assert!(!Rect12::new(0, 0, 0, 1).is_zero_size());
     }
 
     #[test]

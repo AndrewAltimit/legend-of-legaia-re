@@ -19,6 +19,20 @@
 //! See [`docs/subsystems/script-vm.md`](../../../../docs/subsystems/script-vm.md)
 //! for the sub-op encoding, and `ghidra/scripts/funcs/80057914.txt` /
 //! `800468a4.txt` for the traced bodies.
+//!
+//! # Wiring status
+//!
+//! [`op43_sub12_calls`] is live: the field VM's sub-op `0x43`/`0x12` arm
+//! calls it and hands the resolved calls to `FieldHost::op43_vram_rect_copy`.
+//!
+//! [`build_packet`] and [`enqueue`] are **NOT WIRED**. The host trait method
+//! that receives the calls has a no-op default body and no renderer
+//! implements it, so no real host runs a `RectCopyCall` through
+//! [`enqueue`] - they are reachable only from this module's unit tests. A
+//! wired caller would be a GP0-level host in `engine-render` that owns an
+//! ordering table and a back-buffer flag to pass in. This costs nothing in
+//! practice: no on-disc scene script uses sub-op `0x12`, so the arm never
+//! fires on retail data.
 
 /// A source rectangle for a VRAM-to-VRAM copy, in VRAM pixel coordinates.
 ///
@@ -100,9 +114,13 @@ const fn pack_yx(x: i16, y: i16) -> u32 {
 /// Build the GP0 `0x80` packet - port of `FUN_80057914`.
 ///
 /// The length byte is `5` for a real copy and `0` when **either** extent
-/// is zero. Note the retail test is a short-circuiting `w == 0 || h == 0`,
-/// not the `w == 0 && h == 0` used by the sibling `MoveImage` queue in
-/// [`crate::title_prim`] - a zero-width-but-tall rect is dead here.
+/// is zero (`w == 0 || h == 0`). The sibling `MoveImage` queue
+/// `FUN_80058490` in [`crate::title_prim`] kills on the *same* predicate -
+/// its disassembly is the same `beq w,0` / `bne h,0` branch pair, only
+/// spelled as nested `if`s by the decompiler. What differs is the
+/// failure behaviour: this builder writes the packet body anyway and
+/// tags it zero-length, whereas `FUN_80058490` does nothing and returns
+/// `-1`.
 ///
 /// Every other word is written unconditionally, so a skipped packet still
 /// carries well-formed coordinates.
@@ -285,9 +303,12 @@ mod tests {
     }
 
     #[test]
-    fn zero_extent_is_short_circuit_or_not_and() {
-        // Retail: `w == 0 || h == 0` kills the packet. Each alone is
-        // enough - this is the difference from FUN_80058490's `&&`.
+    fn zero_extent_in_either_dimension_kills_the_tag() {
+        // Retail: `w == 0 || h == 0` kills the packet - each alone is
+        // enough. FUN_80058490 kills on the same predicate; it differs
+        // only in that it queues nothing and returns -1, while this
+        // builder writes the body with a zero-length tag (asserted
+        // below).
         let zero_w = build_packet(
             SrcRect {
                 x: 1,

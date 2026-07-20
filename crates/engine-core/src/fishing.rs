@@ -30,6 +30,26 @@
 //!
 //! Chain: retail `FUN_801cf3bc` (mode SM) -> `FUN_801d4004` (fish-AI + tension)
 //! -> `FUN_801d5298` (catch scoring).
+//!
+//! # Wiring status
+//!
+//! The **rules** half is live: [`FishingSession`] and the kernels it drives
+//! ([`CastPower`], [`Tension`], [`FishingRecord`]) are called from
+//! `world`'s minigame dispatch, which is how the fishing minigame runs.
+//!
+//! The **presentation** half is not. Everything below producing a
+//! [`HudDraw`], [`BarFrame`] or [`DigitCell`] - [`persistent_hud_draws`],
+//! [`catch_hud_draws`], the four banner animators, [`strike_splash_draws`],
+//! [`number_digit_cells`], [`bar_frame`], [`power_bar_frame`] - is
+//! reachable only from this module's unit tests. Nothing renders a fishing
+//! HUD yet: the host would need a fishing-mode draw pass in
+//! `engine-render` / the play page, the sibling of `engine-ui`'s
+//! `battle_hud_draws_for`, to consume these lists. The ports are kept
+//! because they pin the retail layout constants; they are **not** evidence
+//! that the HUD is drawn. Individual items carry a `NOT WIRED:` note.
+//!
+//! [`select_owned_rod`] is likewise unwired: it belongs to the rod/lure
+//! selection screen, which has no host UI.
 
 use legaia_asset::fishing_species::FishingSpecies;
 
@@ -680,9 +700,14 @@ pub const SPLASH_FRAMES: i32 = 0x98;
 /// and brightness values are the retail call-site constants. Rendering is the
 /// host's job - this module only decides *what* is drawn where.
 // REF: FUN_801d76e0 (digit blitter), FUN_801d63b0 (shared sprite-quad emitter)
-// REF: FUN_801d1870 (depth/tension gauge bar), FUN_801d1a90 (cast-power bar)
 // REF: FUN_801d26cc (the driver whose seed sites arm the banner timers)
-// (the helpers themselves are unported - each is a HudDraw variant instead)
+// The variants above name their retail helper; the two gauge-bar helpers
+// `FUN_801d1870` / `FUN_801d1a90` *are* ported, as `bar_frame` /
+// `power_bar_frame` (see their own PORT tags) - a `HudDraw::Bar` or
+// `PowerBar` is resolved through those. The digit blitter and the shared
+// sprite-quad emitter remain unported: they are pure VRAM emitters with no
+// decision content, so the variant carries their call-site arguments and
+// the host does the drawing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HudDraw {
     /// A number via the digit blitter `FUN_801d76e0`.
@@ -732,6 +757,28 @@ pub enum HudDraw {
     },
 }
 
+impl HudDraw {
+    /// Resolve a bar variant into the concrete frame + fill its retail
+    /// helper would build, routing [`HudDraw::Bar`] through [`bar_frame`]
+    /// and [`HudDraw::PowerBar`] through [`power_bar_frame`].
+    ///
+    /// Returns `None` for every non-bar variant - those name emitters that
+    /// carry no decision content and are left to the host.
+    pub fn resolve_bar(self) -> Option<BarFrame> {
+        match self {
+            HudDraw::Bar {
+                style,
+                x,
+                y,
+                value,
+                step,
+            } => Some(bar_frame(x, y, value, step, style)),
+            HudDraw::PowerBar { x, y, power, step } => Some(power_bar_frame(x, y, power, step)),
+            _ => None,
+        }
+    }
+}
+
 /// Which overlay-rodata caption a [`HudDraw::Caption`] refers to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HudCaption {
@@ -769,6 +816,8 @@ pub const ROD_KINDS: u32 = 3;
 /// guarantees termination in retail; the port bounds the scan at
 /// [`ROD_KINDS`] anyway so a caller with an out-of-range index cannot hang it.
 // PORT: FUN_801d712c (rod-ownership gate + persistent rod-index re-point)
+// NOT WIRED: belongs to the rod/lure selection screen's cursor handler.
+// That screen has no host UI, so nothing calls this outside tests.
 pub fn select_owned_rod(rod_index: &mut u32, mut count_of: impl FnMut(u32) -> i32) -> bool {
     let owned: i32 = (0..ROD_KINDS).map(|k| count_of(lure_item_id(k))).sum();
     if owned == 0 {
@@ -1083,6 +1132,8 @@ pub fn banner_from_right_draw(frame: i32) -> Option<HudDraw> {
 /// reaches [`BANNER_FRAMES`] (retail returns the active flag, which is what
 /// keeps the state machine parked).
 // PORT: FUN_801d6f10 (miss/retry banner: right slide-in, hold, slide-off)
+// NOT WIRED: no host consumes the fishing HUD draw list - see the module
+// header's "Wiring status".
 pub fn banner_miss_draw(frame: i32) -> Option<HudDraw> {
     if frame >= BANNER_FRAMES {
         return None;
@@ -1102,6 +1153,7 @@ pub fn banner_miss_draw(frame: i32) -> Option<HudDraw> {
 /// the way out. Its timer (`DAT_801d9164`) is what the driver's state `0x28`
 /// waits on before returning to the main loop.
 // PORT: FUN_801d7528 (auxiliary banner: mirrored converging glyph pair)
+// NOT WIRED: same fishing-HUD draw list as the other banner animators.
 pub fn banner_converge_draws(frame: i32) -> Option<[HudDraw; 2]> {
     if frame >= BANNER_FRAMES {
         return None;
@@ -1193,6 +1245,8 @@ pub const DIGIT_FIELD_SLOTS: usize = 8;
 /// quotients. The port clamps at zero instead, since every call site passes a
 /// count or a score.
 // PORT: FUN_801d76e0 (8-slot right-aligned digit field: leading-zero blanking)
+// NOT WIRED: would be driven by the HUD's Number/Count draws once a host
+// renders them.
 pub fn number_digit_cells(style: i32, x: i32, y: i32, value: i32) -> Vec<DigitCell> {
     let value = value.max(0);
     let pitch = if style == 0 {
@@ -1245,6 +1299,35 @@ pub struct BarFrame {
     /// brightens as it fills. Note the *glyph* frame is emitted at a fixed
     /// `0x80`; only the fill tracks the value.
     pub fill_brightness: i32,
+    /// The RGB written to all four fill-quad vertices, selected by the
+    /// `style` argument. `None` when retail writes no colour at all
+    /// (see [`bar_frame`]); the four vertices always share one triple.
+    pub fill_rgb: Option<(u8, u8, u8)>,
+}
+
+/// Constant red channel of the style-0 fill ramp (`li v0, 0xbc`).
+pub const BAR_FILL_STYLE0_RED: u8 = 0xbc;
+
+/// Resolve `FUN_801d1870`'s `param_1` style selector into the fill-quad
+/// vertex colour, given the already-scaled brightness byte.
+///
+/// Retail branches three ways, and only the first two write anything:
+///
+/// - `0` - `(0xbc, brightness, 0)`: a constant red against the ramp.
+/// - `1` - `(brightness, !brightness, 0)`: the ramp against its own
+///   bitwise complement, so the bar crossfades as it fills.
+/// - anything else - the colour stores are jumped over entirely
+///   (`j LAB_801d1974`), leaving whatever the primitive buffer held.
+///
+/// The retail call sites use `0` for the depth gauge and `1` for the
+/// tension gauge; the third arm is unreachable from them.
+fn bar_fill_rgb(style: i32, brightness: i32) -> Option<(u8, u8, u8)> {
+    let b = brightness as u8;
+    match style {
+        0 => Some((BAR_FILL_STYLE0_RED, b, 0)),
+        1 => Some((b, !b, 0)),
+        _ => None,
+    }
 }
 
 /// Emit brightness of the bar frame glyphs - fixed, unlike the fill.
@@ -1257,20 +1340,24 @@ pub const BAR_VALUE_ONE: i32 = 0x1000;
 /// the retail call sites): caps at `x` and `x + segments*8 + 8` with the body
 /// stretched between them, filling left-to-right.
 ///
-/// `style` selects the fill quad's colour ramp only - `0` holds a constant
-/// channel against the brightness ramp, `1` runs the ramp against its own
-/// complement - and does not move any geometry.
+/// `style` (retail `param_1`) selects the fill quad's colour ramp only - see
+/// [`bar_fill_rgb`] - and moves no geometry.
 ///
 /// The retail `>> 12` carries a `+0xfff` negative bias, which is just C
 /// division truncating toward zero; the port divides directly.
-// PORT: FUN_801d1870 (horizontal gauge bar: cap/body/cap frame + fill extent)
-pub fn bar_frame(x: i32, y: i32, value: i32, segments: i32) -> BarFrame {
+// PORT: FUN_801d1870 (horizontal gauge bar: cap/body/cap frame + fill extent
+// PORT: + the param_1 style ramp)
+// NOT WIRED: reached in-crate only through HudDraw::resolve_bar, and no
+// host renders the fishing HUD draw list yet.
+pub fn bar_frame(x: i32, y: i32, value: i32, segments: i32, style: i32) -> BarFrame {
+    let fill_brightness = value * 0xff / BAR_VALUE_ONE;
     BarFrame {
         glyphs: [3, 4, 5],
         positions: [(x, y), (x + 8, y), (x + segments * 8 + 8, y)],
         body_scale: segments << 12,
         fill_len: segments * value * 8 / BAR_VALUE_ONE,
-        fill_brightness: value * 0xff / BAR_VALUE_ONE,
+        fill_brightness,
+        fill_rgb: bar_fill_rgb(style, fill_brightness),
     }
 }
 
@@ -1278,15 +1365,22 @@ pub fn bar_frame(x: i32, y: i32, value: i32, segments: i32) -> BarFrame {
 /// meter): the same cap/body/cap frame rotated onto the y axis, with glyph ids
 /// `0`/`1`/`2` and the body stretched vertically. It fills *upward* - the fill
 /// quad grows from the bottom cap at `y + segments*8 + 8` back toward the top.
+///
+/// Unlike [`bar_frame`] this helper takes **no** style argument: retail's
+/// `FUN_801d1a90` is a four-argument function that stores `0xbc` into the
+/// red channel unconditionally, i.e. it is permanently the style-0 ramp.
 // PORT: FUN_801d1a90 (vertical power bar: cap/body/cap frame + upward fill)
+// NOT WIRED: as bar_frame - resolve_bar routes to it, nothing renders it.
 pub fn power_bar_frame(x: i32, y: i32, value: i32, segments: i32) -> BarFrame {
     let end = y + segments * 8 + 8;
+    let fill_brightness = value * 0xff / BAR_VALUE_ONE;
     BarFrame {
         glyphs: [0, 1, 2],
         positions: [(x, y), (x, y + 8), (x, end)],
         body_scale: segments << 12,
         fill_len: segments * value * 8 / BAR_VALUE_ONE,
-        fill_brightness: value * 0xff / BAR_VALUE_ONE,
+        fill_brightness,
+        fill_rgb: Some((BAR_FILL_STYLE0_RED, fill_brightness as u8, 0)),
     }
 }
 
@@ -1448,7 +1542,7 @@ mod tests {
     #[test]
     fn bar_frames_span_their_segments_and_track_the_fill() {
         let segs = 8;
-        let h = bar_frame(20, 40, BAR_VALUE_ONE, segs);
+        let h = bar_frame(20, 40, BAR_VALUE_ONE, segs, 0);
         assert_eq!(h.glyphs, [3, 4, 5]);
         // Caps bracket the body along x; y is constant.
         assert_eq!(h.positions[0], (20, 40));
@@ -1466,8 +1560,89 @@ mod tests {
         assert_eq!(v.body_scale, segs << 12);
 
         // An empty bar still draws its frame, with nothing lit.
-        let empty = bar_frame(0, 0, 0, segs);
+        let empty = bar_frame(0, 0, 0, segs, 0);
         assert_eq!((empty.fill_len, empty.fill_brightness), (0, 0));
+    }
+
+    #[test]
+    fn bar_style_selects_the_fill_ramp_without_moving_geometry() {
+        let segs = 8;
+        let value = BAR_VALUE_ONE / 2; // brightness byte 0x7f
+        let s0 = bar_frame(20, 40, value, segs, 0);
+        let s1 = bar_frame(20, 40, value, segs, 1);
+
+        // Style 0 holds the constant red against the ramp...
+        assert_eq!(s0.fill_rgb, Some((BAR_FILL_STYLE0_RED, 0x7f, 0)));
+        // ...style 1 runs the ramp against its own complement.
+        assert_eq!(s1.fill_rgb, Some((0x7f, 0x80, 0)));
+        // Blue is zero in both, and the geometry is identical.
+        assert_eq!(s0.positions, s1.positions);
+        assert_eq!(
+            (s0.fill_len, s0.body_scale, s0.glyphs),
+            (s1.fill_len, s1.body_scale, s1.glyphs)
+        );
+
+        // The complement tracks the ramp across its range.
+        let full = bar_frame(0, 0, BAR_VALUE_ONE, segs, 1);
+        assert_eq!(full.fill_rgb, Some((0xff, 0x00, 0)));
+        let dark = bar_frame(0, 0, 0, segs, 1);
+        assert_eq!(dark.fill_rgb, Some((0x00, 0xff, 0)));
+
+        // Any other style jumps the colour stores entirely.
+        assert_eq!(bar_frame(0, 0, value, segs, 2).fill_rgb, None);
+
+        // The power bar is permanently the style-0 ramp.
+        assert_eq!(
+            power_bar_frame(0, 0, value, segs).fill_rgb,
+            Some((BAR_FILL_STYLE0_RED, 0x7f, 0))
+        );
+    }
+
+    #[test]
+    fn hud_bar_variants_resolve_through_the_ported_helpers() {
+        // The retail HUD uses style 0 for depth and style 1 for tension,
+        // so the draw list exercises both ramps.
+        let depth = HudDraw::Bar {
+            style: 0,
+            x: 0x10,
+            y: 0x90,
+            value: BAR_VALUE_ONE,
+            step: 10,
+        };
+        let tension = HudDraw::Bar {
+            style: 1,
+            x: 0x10,
+            y: 0xb0,
+            value: BAR_VALUE_ONE,
+            step: 10,
+        };
+        assert_eq!(
+            depth.resolve_bar().unwrap(),
+            bar_frame(0x10, 0x90, BAR_VALUE_ONE, 10, 0)
+        );
+        assert_eq!(
+            tension.resolve_bar().unwrap().fill_rgb,
+            Some((0xff, 0x00, 0))
+        );
+
+        let power = HudDraw::PowerBar {
+            x: 0x120,
+            y: 0x40,
+            power: 0,
+            step: 0xc,
+        };
+        assert_eq!(power.resolve_bar().unwrap().glyphs, [0, 1, 2]);
+
+        // Non-bar variants carry no frame.
+        assert!(
+            HudDraw::Caption {
+                text: HudCaption::LuresLeft,
+                x: 0,
+                y: 0,
+            }
+            .resolve_bar()
+            .is_none()
+        );
     }
 
     #[test]

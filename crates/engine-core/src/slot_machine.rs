@@ -984,6 +984,10 @@ pub fn coin_entry_value(digits: &[u8]) -> i32 {
 /// This function is the quote/validation half only; retail commits the sale on
 /// the counter's confirm path, not in the screen routine.
 // PORT: FUN_801e6f70 (coin-exchange counter: total cost + gold/stock gates)
+// NOT WIRED: the coin-exchange counter is a casino *screen*, and the host
+// has no such screen - the engine enters a machine directly. A wired caller
+// would be that screen's per-frame quote refresh, feeding the digit entry
+// and recolouring the total on a failed gate. Reachable only from tests.
 pub fn coin_exchange_quote(digits: &[u8], gold: i32, stock: i32) -> CoinQuote {
     let coins = coin_entry_value(digits);
     let cost = coins * COIN_PRICE_GOLD;

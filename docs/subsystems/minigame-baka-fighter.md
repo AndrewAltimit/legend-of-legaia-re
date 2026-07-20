@@ -288,7 +288,9 @@ empties fast and then ticks out: `> 5` moves a fifth per frame, `3..=5` a half,
 and `< 3` exactly one, which is what lands the counter on zero instead of
 approaching it. The fast-forward flag `DAT_801dbf00` short-circuits it to the
 whole remainder, so holding the button snaps the tally to its end state. Port:
-`engine-core::baka_fighter::tally_drain_step`. **Confirmed.**
+`engine-core::baka_fighter::tally_drain_step`. **Confirmed.** The port is not
+wired - the engine settles a match and awards the gold in one step, so there
+is no frame-paced tally for the drain rate to drive.
 
 Confidence: **Confirmed** AI roll + scripted-pattern table, the HUD/tally draw
 paths, and the gold payout (a flat per-opponent prize from the record table's

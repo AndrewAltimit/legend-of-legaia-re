@@ -610,6 +610,12 @@ Retail does no bounds check on the index. The port
 out-of-range index rather than reading past the table, which is the safe
 reading of the same outcome.
 
+That port is **not wired**: the engine's field collision path resolves
+per-axis walls and stops without identifying which actor it hit, so
+nothing calls `post_touch` and no script can currently wake on a touch.
+Wiring it needs an actor-vs-actor overlap test standing in for
+`FUN_801CFC40`.
+
 Provenance: `ghidra/scripts/funcs/8003d038.txt`; the consumer at
 `0x8003882C` is inside `ghidra/scripts/funcs/80038158.txt`.
 

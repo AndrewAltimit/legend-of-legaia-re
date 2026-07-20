@@ -1,9 +1,17 @@
 //! Field footstep + ambient cue cadence.
 //!
 //! The per-frame ticker that decides **when** the field player's footstep
-//! cue fires and when the periodic ambient cue retriggers. It runs every
-//! field-mode frame and owns three counters plus the two per-voice trigger
-//! bytes the SPU side reads (`0x800915DA` / `0x800915DB`).
+//! cue fires and when the periodic ambient cue retriggers. In retail it runs
+//! every field-mode frame, owning three counters plus the two per-voice
+//! trigger bytes the SPU side reads (`0x800915DA` / `0x800915DB`).
+//!
+//! **NOT WIRED.** This port is not on the engine's frame path - nothing
+//! calls [`FootstepCadence::tick`] outside this module's unit tests. A wired
+//! caller would be the field-mode per-frame audio update in `engine-shell`,
+//! feeding it the player's movement magnitude and turning a returned
+//! [`CadenceTick`] into voice starts on the `engine-audio` mixer. Until that
+//! exists the type is a pinned model of the retail cadence, not a running
+//! part of the engine.
 //!
 //! The interesting part is the step interval, which is derived from the
 //! player's movement magnitude rather than from a fixed timer: a faster
@@ -115,9 +123,18 @@ fn step_interval(speed: i32) -> i32 {
 impl FootstepCadence {
     /// Advance one field frame.
     ///
-    /// `speed_primary` / `speed_secondary` are the two movement magnitudes
-    /// retail reads from `gp+0x614` and `gp+0x618`. This function only
-    /// reads them - it does not age them.
+    /// `speed_primary` / `speed_secondary` are the two values retail reads
+    /// from `gp+0x614` and `gp+0x618`. This function only reads them - it
+    /// does not age them.
+    ///
+    /// Those two addresses are **not pinned**: Ghidra could not resolve `$gp`
+    /// for this function, so the dump renders them as `unaff_gp + 0x614` /
+    /// `+ 0x618` and their absolute addresses are unknown. "Movement
+    /// magnitude" is an inference from how they are consumed - they feed the
+    /// speed -> interval curve and nothing else - not a resolved identity.
+    /// Every other global this port names (`_DAT_8007BC70`, `_DAT_8007B8A4`,
+    /// `_DAT_8007B8AC`, `DAT_8007B79C`, `DAT_800915DA/DB`) *is* absolute in
+    /// the disassembly.
     ///
     /// The two branches differ in more than which speed they use, and the
     /// asymmetry is deliberate in retail:

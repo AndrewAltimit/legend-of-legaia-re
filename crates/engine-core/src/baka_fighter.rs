@@ -874,6 +874,11 @@ pub const TALLY_DIVISOR_MID: i32 = 2;
 /// the tally to its end state.
 // PORT: FUN_801d6710 (tally drain step; the doc's "digit drawer" reading is
 // wrong - this function draws nothing, it is the per-frame drain rate)
+// NOT WIRED: this is the end-of-match prize-tally *animation* rate. The
+// port settles the match and awards the gold in one step (see BakaMatch),
+// so there is no frame-paced tally for this to drive. A wired caller would
+// be a host result screen animating the prize counter down to zero.
+// Reachable only from tests.
 pub fn tally_drain_step(remaining: i32, skip: bool) -> i32 {
     if skip {
         return remaining;

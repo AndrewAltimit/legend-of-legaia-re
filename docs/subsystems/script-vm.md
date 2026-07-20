@@ -521,16 +521,28 @@ down; the destination corner is never biased), then builds the packet.
 | `+0x10` | destination corner, `y << 16 \| x` |
 | `+0x14` | extent, `h << 16 \| w` |
 
-The length byte is `0` when **either** extent is zero - a short-circuit
-`w == 0 || h == 0`, not the `w == 0 && h == 0` its sibling MoveImage
-queue `FUN_80058490` uses, so a zero-width-but-tall rect is dead here and
-live there. A zero-length tag makes the GPU skip the packet while it
-still occupies its ordering-table slot; the coordinate words are written
-either way.
+The length byte is `0` when **either** extent is zero. Both this builder
+and its sibling MoveImage queue `FUN_80058490` kill on the same
+predicate, `w == 0 || h == 0`; in each the disassembly is a pair of
+branches (`beq w,0` to the dead path, then `bne h,0` to the live path),
+which the decompiler renders as short-circuit `||` in one and nested
+`if`s in the other. They differ only in **failure behaviour**:
+`FUN_80057914` still writes the whole packet body and merely tags it
+zero-length, while `FUN_80058490` queues nothing and returns `-1`.
+
+A zero-length tag makes the GPU skip the packet while it still occupies
+its ordering-table slot; the coordinate words are written either way.
 
 Engine port: `legaia_engine_vm::vram_rect_copy` (`build_packet` /
 `enqueue` / `op43_sub12_calls`). The VM arm resolves the split and hands
 the host the one or two calls in emission order.
+
+Only `op43_sub12_calls` is wired. The host trait method that receives the
+calls has a no-op default body and no renderer implements it, so
+`build_packet` and `enqueue` are exercised by tests alone - wiring them
+needs a GP0-level host owning an ordering table and the back-buffer flag.
+No on-disc scene script uses sub-op `0x12`, so the arm never fires on
+retail data either way.
 
 ### 0x44-0x4F (record-spawn / camera / render / state / move-block)
 
