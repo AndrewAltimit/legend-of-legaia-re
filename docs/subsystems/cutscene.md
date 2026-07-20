@@ -570,6 +570,35 @@ The two globals it writes are the only side-effects:
 - **`_DAT_8007BA78`** - FMV index. Read by the str_fmv overlay's master dispatch to select a 32-byte dispatch-table slot from `0x801D0A6C`. On retail USA the table has 23 slots; the nine retail movies occupy `fmv_id 0..=8` - exactly the range the per-STR FMV trigger corpus observes - and every `MVn.STR` on the disc is dispatched (`MV3.STR` carries four segments by frame range; slots 9+ are dev files absent from the disc). The table is static overlay data, decoded from the disc by `legaia_asset::fmv_dispatch`; see [`str-fmv-table.md`](../formats/str-fmv-table.md#fmv-dispatch-table-0x801d0a6c-23--32-b) for the mapping.
 - **`_DAT_8007B83C`** - next-game-mode global. Setting it to `0x1A` (decimal 26) kicks the main mode dispatcher (`FUN_80017714`) into `StrInit` on the next frame, which loads the str_fmv overlay and reads `_DAT_8007BA78` to pick the file.
 
+#### `_DAT_8007BA78` has exactly two writers
+
+An instruction-level sweep - not a search over decompiled-C text - finds every
+access to `0x8007BA78` across `SCUS_942.54` and all 1233 extracted `PROT` entries,
+matching any `lb/lh/lw/lbu/lhu/sb/sh/sw` whose effective address resolves through a
+`lui` / `lui`+`addiu` base. The result is six distinct sites:
+
+| Site | Kind | Where |
+|---|---|---|
+| `0x801E30F4` | store | field overlay, the `4C E2` FMV-trigger op |
+| `0x801DDCE8` | store | menu overlay, the title attract-countdown tick |
+| `0x801CEA74`, `0x801CEC94`, `0x801CECA8`, `0x801CF4E0` | loads | STR overlay dispatch + play loop |
+
+`SCUS_942.54` itself never touches it. Two apparent extra hits are duplicate
+on-disc copies, not new sites: PROT 0896 carries the same field overlay as 0897
+shifted by `0x9000` (a 0x46800-byte identical span straddles the store), and the
+STR overlay is replicated across PROT 0967/0968/0969/0970. This is what rules out
+a per-FMV event table: nothing but the trigger op and the attract tick can set the
+id, so an FMV cannot carry teleport or story-flag side-effects of its own.
+
+**Coverage limit.** The sweep reads raw bytes, so it cannot see code inside an
+LZS-compressed section. Every code-bearing class in `PROT/categorize.json`
+(`mips_overlay`, `overlay_data_blob`, `overlay_ptr_table`) is stored uncompressed,
+so no overlay hides there - but that last step is an inference from the
+classifier, not a decode. Separately, `legaia_asset::fmv_dispatch` accounts for 20
+of each slot's 32 bytes (path pointer, `scale_flag`, start/end frame, width,
+height); the remaining 12 bytes have **not** been swept for consumers, so
+"the dispatch record is playback-only" stays an inference on that margin.
+
 The field-VM port handles this op as `op4c_n_e_sub2_fmv_trigger(fmv_id: i16)` in [`legaia_engine_vm::field`](../../crates/engine-vm/src/field.rs) and the world's [`FieldHostImpl`](../../crates/engine-core/src/world.rs) records the request as `World::pending_fmv_trigger` plus a `FieldEvent::FmvTrigger { fmv_id }`.
 
 The world drives the Field → Cutscene → Field flow itself, mirroring the retail next-game-mode dispatch: the **next** `World::tick` consumes `pending_fmv_trigger` at the top of the frame (one frame after the op fires, exactly as `FUN_80017714` reads the next-game-mode global a frame late), and if the id resolves to a playable slot (`cutscene::fmv_index_to_str_filename` is `Some`) it flips `World::mode` into `SceneMode::Cutscene` and records the active FMV (`World::active_fmv()`). While the FMV plays the world **suspends the field VM** (the STR overlay owns the frame in retail); the host polls `World::active_fmv_str_filename()`, plays the resolved `MV*.STR`, and calls `World::finish_cutscene()` when playback ends,

@@ -512,7 +512,10 @@ Each entry decodes to a `(T, R)` transform via
   byte 1   = low8(T1)
   byte 2   = (high4(T1) << 4) | high4(T0)     ; nibble-packed sign bits
   byte 3   = low8(T2)
-  byte 4   = ??                | high4(T2)    ; high nibble unused
+  byte 4   = (unused)          | high4(T2)    ; T2's high nibble is the LOW
+                                              ; nibble of byte 4 (`andi 0xf`
+                                              ; at 0x8001BF38); byte 4's high
+                                              ; nibble is never read
   byte 5   = u8 rot-X (left-shifted by 4 to make a 12-bit PSX angle)
   byte 6   = u8 rot-Y
   byte 7   = u8 rot-Z
@@ -537,6 +540,33 @@ places each TMD object at its joint position with its rest-pose
 orientation. For Vahn's field form (nobj=12, bone_count=10) the rest
 pose decodes to a bilaterally symmetric humanoid with joint centroids
 distributed where you'd expect torso / head / arms / legs.
+
+**Which nibble carries `high4(T2)` is a place prose has already got wrong.**
+The instruction is `lbu v0,0x4(t3); andi v0,v0,0xf; sll v0,v0,0x8` at
+`0x8001BF30..0x8001BF3C` - unambiguously the **low** nibble. A "byte 4 high
+nibble" phrasing has appeared elsewhere in this repo's docs; the code was
+never wrong, because the disc-gated unit test
+`bone_transform_decode_signed_12bit` (`crates/asset/src/player_anm.rs`, town01
+record 17) pins the byte-exact decode and would have failed the moment anyone
+"corrected" `bytes[4] & 0x0F` to match the prose. That is the test doing its
+real job: containing a documentation error so it cannot reach the port.
+
+### The interpreter interpolates - the decoder does not
+
+`FUN_8001BE80` is not a pure per-entry decoder. It reads **two** entries and
+blends them: the sub-frame fraction is `*(u16*)(actor + 0x68) & 0xF` (a 4-bit
+weight, `s3` in the dump), and the blend runs only when the gate
+`*(u8*)(a2 + 1) & 1` is set - otherwise the current frame is emitted as-is.
+Translations lerp as `a + (((b - a) * frac) >> 4)`; the three angles go through
+the dedicated angle interpolator `FUN_8001D088` (which handles wraparound, so
+it is not a plain lerp). Results are written to scratchpad `0x1F8002C0`
+(`T` at `+0x0..0x6`, angles at `+0x8..0xE`) before the GTE load.
+
+`BoneTransform::decode` models only the **un-interpolated** arm - it decodes one
+`(bone, frame)` entry and does no blending. That is the right shape for a
+format decoder and matches what the asset tooling and the site's character
+viewer need, but a consumer chasing frame-exact runtime parity has to add the
+sub-frame blend itself.
 
 The decoder helper `legaia_asset::player_anm::BoneTransform::decode`
 returns `(t_x, t_y, t_z, r_x, r_y, r_z)` directly; the WASM
