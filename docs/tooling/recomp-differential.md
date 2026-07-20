@@ -86,6 +86,16 @@ Every one of these is verified against a live server; scripts that bypass
   scene name (8 bytes at `0x8007050C`) and game mode (u16 at
   `0x8007B83C`). Always pass `--expect-scene` / `--expect-mode` when known;
   a stale slot loads "successfully" into the wrong state.
+- **`savestate` load cannot restore a live scene.** The load path forces
+  `cpu->pc = entry_pc`, and that entry is the game's BSS-clear routine,
+  which zeroes the region holding the game-mode word `0x8007B83C`. A load
+  therefore restores the RAM image and then immediately wipes the state
+  that gives it meaning: the machine falls back into the boot chain
+  (mode `0x10`) and parks there. The ack is `{"ok":true}` either way, so
+  the failure is silent unless the caller verifies. **Cold boot is the only
+  path to a live field scene**, which makes reaching an uncovered scene a
+  pad-driven playthrough, not a slot load. `--savestate` remains wired for
+  the day the load path honours the saved resume PC.
 - **`pause` / `step` / `run_to_frame` are REMOVED.** The debug server
   returns an error explaining the migration: observation goes through ring
   buffers, not synchronous stepping. The frame-exact primitive is the
@@ -135,9 +145,15 @@ apply handler `FUN_801DE084` writes): camera rotation trio u16 at
 
 ```bash
 python3 scripts/recomp/trace_capture.py --port 4494 \
-    --savestate 4 --expect-mode 0x15 \
     --frames 100 --map camera --out /tmp/scratch/recomp_cam.jsonl
 ```
+
+The instance must already be in the scene of interest. Because savestate
+load cannot restore one (above), getting there means cold-booting and
+driving the pad - title, `CONTINUE`, memory-card slot, confirm - then
+walking to the scene. Budget for it: the pre-title attract demo runs at a
+fraction of real speed under `--headless`, and a tight polling loop starves
+the emulator further, so throttle any wait loop to a few samples a second.
 
 Built-in maps: `camera` (rotation trio + H + eye + focus), `player`
 (position + heading through the player pointer), `scene` (scene name +
@@ -201,6 +217,27 @@ boot from arbitrary frame counters, but the first scripted camera cut is
 the same event on both. Falls back to aligning first frames when neither
 trace has a camera change.
 
+Two things make an auto-aligned offset worth checking before believing a
+report:
+
+- **`sim-trace`'s first record is a pre-tick boot sample**, so the engine
+  camera always "changes" between its first two lines as the controller
+  initialises. Aligning retail's first real cut onto that artifact throws
+  the offset off by the whole lead-in. `--skip-lead-b` (default 1) drops
+  it; `--skip-lead-a` is the same knob for the reference trace.
+- **The reported first-divergence frame can be the first frame of the
+  overlap.** When the offset places trace B's start before trace A's, the
+  aligned region begins mid-trace, and a divergence "at B frame 595" may
+  simply be the earliest frame that exists on both sides - not a run of
+  595 matching frames. Read the context window: if the divergence has no
+  rows above it, nothing was compared before it.
+
+Angle channels reduce both values mod 4096 *before* measuring wraparound
+distance, so a capture that forwards retail's raw u16 angle word (rather
+than masking to 12 bits, as `trace_capture` does) still compares correctly.
+Without that reduction the wraparound term goes negative and the channel
+reports OK on every frame - the reason the reduction is not optional.
+
 Comparison is per-channel over the aligned overlap (`cam.yaw`,
 `player.x`, `actors[2].heading`, `scene`, `mode`, ...). Angle channels use
 4096-wraparound distance; position channels absolute distance; `scene` /
@@ -215,6 +252,48 @@ locks the alignment + wraparound + tolerance semantics:
 ```bash
 cd scripts/recomp && python3 -m unittest test_trace_diff
 ```
+
+### Divergences a matched run surfaces
+
+Run against the opening-chain scenes, the state oracle reports the same
+shape of result on every one of them, and the strongest evidence is the
+part that needs no alignment at all - comparing each channel's *range* over
+a window sidesteps the offset question entirely.
+
+**The engine's camera never leaves a fixed height.** `cam.eye.y` is
+constant at 80 in every scene measured. Retail's moves continuously over
+hundreds of distinct values per scene, climbing past 5000 and dropping
+below -3000 as the scripted shots play. Nothing about this depends on
+frame alignment: the two value sets are disjoint.
+
+**Camera position tracks the player instead of the script.** The engine's
+`cam.focus` sits on the player's world X/Z at that same height 80, and
+`cam.eye` a short fixed distance off it - a follow orbit. Retail's focus is
+an absolute scripted point far outside the player's neighbourhood, with
+`focus.y` identically 0. So the op-`0x45` Configure *angle* slots and `h`
+do reach the engine camera - `cam.pitch` / `cam.yaw` / `cam.h` take
+plausible per-beat values in the scenes where a Configure runs - while the
+eye and focus position slots do not survive into the pose the camera
+renders from.
+
+**Pose changes are held, not interpolated.** Across a 3000-frame window the
+engine emits a handful of distinct camera poses, holding each for hundreds
+of frames; retail's camera state changes every few frames throughout. This
+is consistent with the position half above rather than independent of it,
+and a beat's curve mode cannot be attributed from the state trace alone -
+treat it as a symptom pointing at the same defect, not a separate one.
+
+**Some scenes run no camera script at all.** In the scenes the engine
+enters cold at record 0, `cam.h` never appears and the angles never leave
+0, meaning no Configure executes across the whole window, while retail runs
+a full sequence of beats in the same scene. This one carries a real
+confound: retail reached the scene through the prologue chain with its
+story flags set, and `sim-trace` boots the scene directly. A camera beat
+gated on arrival state would produce exactly this reading without any
+camera-system defect. Distinguishing the two needs the engine driven
+through the chain, not booted into the scene.
+
+`cam.roll` matches (both sides hold 0), as do `scene` and `mode`.
 
 ## Note-level audio differential
 

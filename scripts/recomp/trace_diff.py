@@ -90,10 +90,21 @@ def channel_distance(channel: str, a, b):
         return None if a == b else float("inf")
     if channel == "mode":
         return None if a == b else float("inf")
-    d = abs(a - b)
     if is_angle(channel):
-        d = min(d, ANGLE_MOD - d)
-    return d
+        # Reduce into the 12-bit space FIRST. A raw capture can carry values
+        # outside it - retail's camera-angle words are u16 and the op-0x0D
+        # heading tween deliberately pre-unwraps past 0x1000 - so a capture
+        # that forwards the raw word instead of masking (as trace_capture
+        # does) arrives here with a value >= 4096. Without the reduction
+        # ``ANGLE_MOD - d`` goes negative, ``min`` picks the negative, and
+        # every comparison lands under tolerance: the channel reports OK on
+        # every frame. A silent false pass is the one failure mode an
+        # oracle must not have, so reduce before measuring distance.
+        a %= ANGLE_MOD
+        b %= ANGLE_MOD
+        d = abs(a - b)
+        return min(d, ANGLE_MOD - d)
+    return abs(a - b)
 
 
 def tolerance_for(channel: str, args) -> float:
@@ -106,10 +117,20 @@ def tolerance_for(channel: str, args) -> float:
     return args.tol_pos
 
 
-def first_cam_change_frame(frames: dict[int, dict]) -> int | None:
+def first_cam_change_frame(frames: dict[int, dict], skip_lead: int = 0) -> int | None:
     """Frame of the first change in the cam tuple, or None when the trace
-    has no cam channel / never changes."""
-    order = sorted(frames)
+    has no cam channel / never changes.
+
+    ``skip_lead`` drops that many leading records before looking. It exists
+    because a trace's opening records are often not comparable events: the
+    engine's ``sim-trace`` emits one boot-state record before its first
+    tick, so its camera *always* "changes" between the first two records
+    as the controller initialises. Auto-aligning on that lands retail's
+    first scripted cut on an initialisation artifact and every channel then
+    diverges from the first aligned frame. ``--skip-lead 1`` on the engine
+    side is the usual correction; check the reported offset for plausibility
+    whenever a diff diverges everywhere at once."""
+    order = sorted(frames)[skip_lead:]
     initial = None
     for f in order:
         cam = frames[f].get("cam")
@@ -123,9 +144,11 @@ def first_cam_change_frame(frames: dict[int, dict]) -> int | None:
     return None
 
 
-def auto_offset(a: dict[int, dict], b: dict[int, dict]) -> int | None:
-    fa = first_cam_change_frame(a)
-    fb = first_cam_change_frame(b)
+def auto_offset(
+    a: dict[int, dict], b: dict[int, dict], skip_lead_a: int = 0, skip_lead_b: int = 0
+) -> int | None:
+    fa = first_cam_change_frame(a, skip_lead_a)
+    fb = first_cam_change_frame(b, skip_lead_b)
     if fa is None or fb is None:
         return None
     return fb - fa
@@ -219,6 +242,21 @@ def main(argv=None) -> int:
         "the two traces' first frames",
     )
     ap.add_argument(
+        "--skip-lead-a",
+        type=int,
+        default=0,
+        help="drop this many leading records of trace A before auto-aligning",
+    )
+    ap.add_argument(
+        "--skip-lead-b",
+        type=int,
+        default=1,
+        help="drop this many leading records of trace B before auto-aligning "
+        "(default 1: sim-trace's pre-tick boot record always 'changes' the "
+        "camera on the next line, which is an initialisation artifact, not an "
+        "event that exists on the retail side)",
+    )
+    ap.add_argument(
         "--tol-angle",
         type=float,
         default=0.0,
@@ -242,7 +280,7 @@ def main(argv=None) -> int:
         offset = args.offset
         how = "explicit"
     else:
-        offset = auto_offset(a, b)
+        offset = auto_offset(a, b, args.skip_lead_a, args.skip_lead_b)
         how = "auto (first camera change)"
         if offset is None:
             offset = min(b) - min(a)

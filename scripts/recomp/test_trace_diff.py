@@ -118,6 +118,21 @@ class ChannelCompareTest(unittest.TestCase):
         self.assertEqual(divergent, 1)
         self.assertIn("DIVERGE scene at B frame 5", out.getvalue())
 
+    def test_angle_distance_reduces_before_measuring(self):
+        # A capture that forwards retail's raw u16 angle word (rather than
+        # masking to 12 bits) must still measure correctly. Before the
+        # reduction, ``ANGLE_MOD - d`` went negative and min() picked it, so
+        # the channel silently reported OK for every frame.
+        d_same = trace_diff.channel_distance("cam.yaw", 65081, 65081 & 0xFFF)
+        self.assertEqual(d_same, 0)
+        # Genuinely different angles must still register a real distance.
+        d_diff = trace_diff.channel_distance("cam.yaw", 65081, 3000)
+        self.assertGreater(d_diff, 0)
+        self.assertLessEqual(d_diff, trace_diff.ANGLE_MOD // 2)
+        # No angle distance may ever be negative, whatever the input.
+        for a, b in ((0, 0), (65535, 1), (4096, 0), (100000, 7)):
+            self.assertGreaterEqual(trace_diff.channel_distance("cam.yaw", a, b), 0)
+
     def test_absent_fields_are_skipped_not_divergent(self):
         # A has player, B doesn't: player.* is A-only, reported as skipped.
         a = synth_trace(0, 10, cam_change_at=2, yaw_fn=lambda i: 0)
