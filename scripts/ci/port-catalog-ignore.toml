@@ -546,6 +546,14 @@
 # epilogue, so `jr ra` in the stream is not evidence of a callable entry.
 # See `docs/tooling/worklist-classification.md`.
 [worklist_interior]
+# Rows removed from this section after a per-image re-read: 801d231c, 801d2524,
+# 801d3d78 (dance), 801e0080 (battle_action), 801f7088 (six images) each carry a
+# self-entry body with its own `addiu sp,sp,-N` prologue and `jr ra` in an image
+# other than the one the interior reading came from - they are VA-aliased, not
+# interior, and ignoring them deleted real port sites. 801e5154 came off because
+# every dump at that VA decodes a data region as code, so the ignore rested on
+# no evidence at all, and 801cfb94 has a whole 33-instruction body with its own
+# frame in str_fmv. `--audit-ignored` re-runs this check.
 "8001b47c" = "INTERIOR: dump resolves entry=8001ada4, not 8001b47c"
 "8001e928" = "INTERIOR: dump resolves entry=8001e890, not 8001e928"
 "8002cdd0" = "INTERIOR: dump resolves entry=8002c69c, not 8002cdd0"
@@ -564,28 +572,31 @@
 "801cf070" = "INTERIOR: no `addiu sp,sp,-N` prologue; body reads s3 and a caller stack slot it never writes - a tail fragment reaching the parent's epilogue"
 "801cf4ac" = "INTERIOR: dump is a citation stub for 801cf408"
 "801cf678" = "INTERIOR: dump resolves entry=801cf388/801cf650, not 801cf678"
-"801cfb94" = "INTERIOR: VA lies inside the dumped body of 801cfa48 in battle_action"
 "801d0684" = "INTERIOR: dump resolves entry=801d01b0, not 801d0684"
 "801d0fe4" = "INTERIOR: dump resolves entry=801cf388/801d0d38, not 801d0fe4"
-"801d231c" = "INTERIOR: VA lies inside the dumped body of 801d2298 in 0897"
-"801d2524" = "INTERIOR: VA lies inside the dumped body of 801d2404 in 0897"
-"801d3d78" = "INTERIOR: VA lies inside the dumped body of 801d362c in 0897"
 "801d52d0" = "INTERIOR: dump resolves entry=801d516c, not 801d52d0"
-"801d6b20" = "INTERIOR: VA lies inside the dumped body of 801d6704 in 0897"
+# 801d6b20 is NOT ignored: the `INTERIOR in 0897` reading is one image's. The
+# base-tagged `overlay_save_ui_select base=0x801C0000` dump holds a self-entry
+# 134-instruction body at this VA that opens `addiu sp,sp,-0x20`, saves s0/s1
+# and returns `jr ra` - a real save-UI function. The row is VA-aliased, and an
+# aliased VA is more work than one port site, not less.
 "801dd260" = "INTERIOR: no `addiu sp,sp,-N` prologue; body reads s6 and a caller stack slot it never writes - a tail fragment reaching the parent's epilogue"
 "801ddccc" = "INTERIOR: dump resolves entry=801dd35c, not 801ddccc"
 "801df09c" = "INTERIOR: dump resolves entry=801df098, not 801df09c"
-"801e0080" = "INTERIOR: VA lies inside the dumped body of 801de840 in 0897"
 "801e0c3c" = "INTERIOR: dump resolves entry=801de840/801e0b1c, not 801e0c3c"
 "801e1c64" = "INTERIOR: VA lies inside the dumped body of 801de840 in 0897"
 "801e212c" = "INTERIOR: dump resolves entry=801e1c64, not 801e212c"
 "801e3578" = "INTERIOR: VA lies inside the dumped body of 801de840 in 0897"
 "801e3628" = "INTERIOR: VA lies inside the dumped body of 801e3578 in 0897"
-"801e5154" = "INTERIOR: dump resolves entry=801e5134, not 801e5154"
 "801eccac" = "INTERIOR: no `addiu sp,sp,-N` prologue; body reads s0/s1/s2 and a caller stack slot it never writes - a tail fragment reaching the parent's epilogue"
 "801f02d0" = "INTERIOR: dump is a citation stub for 801eff30"
-"801f7088" = "INTERIOR: VA lies inside the dumped body of 801f5748 in 0897"
-"801f71e0" = "INTERIOR: VA lies inside the dumped body of 801f5748 in 0897"
+# 801f71e0 is NOT ignored: the `INTERIOR in 0897` reading is the 0x801CE818
+# base's. At the co-resident overlay PROT 0967's own base 0x801F69D8 the dump
+# `overlay_effect_0967_801f71e0` is a self-entry 167-instruction body - the
+# sparring-tutorial message-pacing driver, and a hot hit in the S5 trace. The
+# row is VA-aliased; ignoring it deleted a real port site.
+"801e23ec" = "INTERIOR: VA lies inside the dumped body of 801de840 in 0897 - `801e23ec  lh v0,0x68(s5)` is an instruction of the field VM"
+"801e30e4" = "INTERIOR: dump resolves entry=801de840, not 801e30e4; `801e30e4  jal 0x8003ce9c` is an instruction of the field VM in 0897 too"
 "801f7628" = "INTERIOR: dump resolves entry=801f5748/801f71e0, not 801f7628"
 
 # Entries into multi-entry assembly routines: the body has no `jr ra` and exits
@@ -596,7 +607,8 @@
 # routine rather than as separate sites - the row is not a port site, the work
 # behind it is not deleted.
 [worklist_shared_tail]
-"80043658" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
+"801d3290" = "SHARED_TAIL: 5 instructions, no `jr ra`; reads s5 it never writes, ends `addiu s8,s8,0x6` + `j 0x801df8dc` - the field-VM label-call idiom (s8 = script PC), not a function. Ghidra renders it as two calls and a return."
+"80043658" ="SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
 "80043768" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
 "800438b8" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
 "800439e4" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"

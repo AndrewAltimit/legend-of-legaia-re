@@ -5,13 +5,12 @@ addr,class,reason
 80016b6c,REAL,self-entry body of 469 instructions returning `jr ra`
 80017714,REAL,self-entry body of 93 instructions returning `jr ra`
 800179c0,REAL,self-entry body of 59 instructions returning `jr ra`
-80017bec,REAL,self-entry body of 0 instructions returning `jr ra`
+80017bec,UNCERTAIN,dump carries a decompiled body but no disassembly (Ghidra reports 1 bytes) - function bounds never established
 8001822c,REAL,self-entry body of 423 instructions returning `jr ra`
 800188c8,REAL,self-entry body of 314 instructions returning `jr ra`
 800196a4,REAL,self-entry body of 57 instructions returning `jr ra`
 80019898,REAL,self-entry body of 18 instructions returning `jr ra`
 80019d50,REAL,self-entry body of 198 instructions returning `jr ra`
-8001b47c,INTERIOR,"dump resolves entry=8001ada4, not 8001b47c"
 8001b73c,REAL,self-entry body of 138 instructions returning `jr ra`
 8001c204,REAL,self-entry body of 100 instructions returning `jr ra`
 8001c394,REAL,self-entry body of 156 instructions returning `jr ra`
@@ -23,8 +22,7 @@ addr,class,reason
 8001d424,REAL,self-entry body of 245 instructions returning `jr ra`
 8001e1b4,REAL,self-entry body of 129 instructions returning `jr ra`
 8001e890,REAL,self-entry body of 215 instructions returning `jr ra`
-8001e928,INTERIOR,"dump resolves entry=8001e890, not 8001e928"
-8001fa34,REAL,self-entry body of 0 instructions returning `jr ra`
+8001fa34,UNCERTAIN,dump carries a decompiled body but no disassembly (Ghidra reports 1 bytes) - function bounds never established
 8001fa68,REAL,self-entry body of 8 instructions returning `jr ra`
 8001fa88,REAL,self-entry body of 81 instructions returning `jr ra`
 8001ffa4,REAL,self-entry body of 37 instructions returning `jr ra`
@@ -38,13 +36,12 @@ addr,class,reason
 800204a4,REAL,self-entry body of 21 instructions returning `jr ra`
 80020f88,REAL,self-entry body of 176 instructions returning `jr ra`
 80021248,REAL,self-entry body of 149 instructions returning `jr ra`
-80021934,PHANTOM,only dump body is a 3-instruction stub
 80021940,REAL,self-entry body of 25 instructions returning `jr ra`
 8002519c,REAL,self-entry body of 82 instructions returning `jr ra`
 80025980,REAL,self-entry body of 100 instructions returning `jr ra`
 80025b30,REAL,self-entry body of 13 instructions returning `jr ra`
 80025b64,REAL,self-entry body of 15 instructions returning `jr ra`
-80025c24,REAL,self-entry body of 0 instructions returning `jr ra`
+80025c24,UNCERTAIN,dump carries a decompiled body but no disassembly (Ghidra reports 1 bytes) - function bounds never established
 80025c68,REAL,self-entry body of 19 instructions returning `jr ra`
 80025cb4,REAL,self-entry body of 59 instructions returning `jr ra`
 80025da0,REAL,self-entry body of 50 instructions returning `jr ra`
@@ -61,21 +58,13 @@ addr,class,reason
 8002a5a4,REAL,self-entry body of 183 instructions returning `jr ra`
 8002bdc4,REAL,self-entry body of 187 instructions returning `jr ra`
 8002c2e4,REAL,self-entry body of 105 instructions returning `jr ra`
-8002cdd0,INTERIOR,"dump resolves entry=8002c69c, not 8002cdd0"
-8002d988,INTERIOR,"dump resolves entry=8002c69c, not 8002d988"
-8002daa4,INTERIOR,"dump resolves entry=8002c69c, not 8002daa4"
-8002ff8c,REAL,self-entry body of 94 instructions returning `jr ra`
 80030104,REAL,self-entry body of 120 instructions returning `jr ra`
-800302e4,REAL,self-entry body of 86 instructions returning `jr ra`
 80030628,REAL,self-entry body of 1248 instructions returning `jr ra`
 80031ae4,REAL,self-entry body of 135 instructions returning `jr ra`
 80032434,REAL,self-entry body of 158 instructions returning `jr ra`
-80032a44,REAL,self-entry body of 859 instructions returning `jr ra`
 80034250,REAL,self-entry body of 66 instructions returning `jr ra`
 80035394,REAL,self-entry body of 19 instructions returning `jr ra`
 800353e0,REAL,self-entry body of 11 instructions returning `jr ra`
-80035c10,PHANTOM,only dump body is a 4-instruction stub
-8003789c,INTERIOR,"dump resolves entry=8003774c, not 8003789c"
 8003a024,REAL,self-entry body of 59 instructions returning `jr ra`
 8003bc08,REAL,self-entry body of 118 instructions returning `jr ra`
 8003c764,REAL,self-entry body of 34 instructions returning `jr ra`
@@ -94,28 +83,6 @@ addr,class,reason
 8003f838,REAL,self-entry body of 13 instructions returning `jr ra`
 8003f86c,REAL,self-entry body of 148 instructions returning `jr ra`
 800430ac,REAL,self-entry body of 36 instructions returning `jr ra`
-80043658,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
-80043768,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
-800438b8,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
-800439e4,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
-80043b58,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
-80043c6c,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
-80043dd4,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
-80043f10,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
-8004409c,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
-8004423c,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
-80044434,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
-800445b0,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
-800448b0,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
-80044a3c,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
-80044c14,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
-80044dc8,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
-80044fdc,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
-80045194,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
-800453bc,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
-80045584,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
-800457c4,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
-80045988,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
 80046494,REAL,self-entry body of 213 instructions returning `jr ra`
 80046978,REAL,self-entry body of 42 instructions returning `jr ra`
 80046a20,REAL,self-entry body of 644 instructions returning `jr ra`
@@ -128,8 +95,6 @@ addr,class,reason
 8004c650,REAL,self-entry body of 89 instructions returning `jr ra`
 8004ccd4,REAL,self-entry body of 86 instructions returning `jr ra`
 8004ce2c,REAL,self-entry body of 757 instructions returning `jr ra`
-8004ce30,INTERIOR,"dump resolves entry=8004ce2c, not 8004ce30"
-8004f0e8,INTERIOR,"dump resolves entry=8004e568, not 8004f0e8"
 8004fe5c,REAL,self-entry body of 177 instructions returning `jr ra`
 800508dc,REAL,self-entry body of 183 instructions returning `jr ra`
 80050e00,REAL,self-entry body of 11 instructions returning `jr ra`
@@ -137,67 +102,40 @@ addr,class,reason
 800542c8,REAL,self-entry body of 489 instructions returning `jr ra`
 80055854,REAL,self-entry body of 42 instructions returning `jr ra`
 80055b20,REAL,self-entry body of 11 instructions returning `jr ra`
-80055b4c,PHANTOM,only dump body is a 0-instruction stub
 80055b6c,REAL,self-entry body of 338 instructions returning `jr ra`
-8005c2d4,INTERIOR,"dump resolves entry=8005c2c4, not 8005c2d4"
-8005da50,INTERIOR,"dump resolves entry=8005d9a0, not 8005da50"
+8005ea84,REAL,self-entry body of 51 instructions returning `jr ra`
 8005eb68,REAL,self-entry body of 37 instructions returning `jr ra`
-8005f004,REAL,self-entry body of 8 instructions returning `jr ra`
-801c2b2c,DUPLICATE,333-instruction stream identical modulo relocation to 801d1344
 801c6c78,REAL,self-entry body of 441 instructions returning `jr ra`
-801ce850,INTERIOR,dump is a citation stub for 801cd8a4
-801ce8a0,SHARED_TAIL,"no `jr ra`; body exits `j 0x801d4a3c`, inside 801d4a3c - an entry into a multi-entry routine, not a standalone function"
-801ce8cc,INTERIOR,dump is a citation stub for 801ce8a0
-801cea6c,INTERIOR,dump is a citation stub for 801cd8a4
-801ceca0,INTERIOR,"dump resolves entry=801cea3c, not 801ceca0"
 801cee80,REAL,self-entry body of 59 instructions returning `jr ra`
-801cef54,INTERIOR,VA lies inside the dumped body of 801cee80 in SCUS
 801cf00c,REAL,self-entry body of 223 instructions returning `jr ra`
-801cf070,INTERIOR,"no `addiu sp,sp,-N` prologue; body reads s3 and a caller stack slot it never writes - a tail fragment reaching the parent's epilogue"
 801cf388,REAL,self-entry body of 2973 instructions returning `jr ra`
-801cf4ac,INTERIOR,dump is a citation stub for 801cf408
-801cf56c,REAL,self-entry body of 117 instructions returning `jr ra`
 801cf5bc,UNCERTAIN,no `jr ra` and no trailing unconditional jump - body may be truncated
-801cf5d0,VA_ALIASED,"2 overlays dump distinct bodies at this VA (battle_action, shop_save)"
-801cf678,INTERIOR,"dump resolves entry=801cf388/801cf650, not 801cf678"
+801cf5d0,REAL,self-entry body of 32 instructions returning `jr ra`
 801cf730,VA_ALIASED,"self-entry body in debug_menu, but entry=801cf650 in another image"
+801cf740,REAL,self-entry body of 92 instructions returning `jr ra`
 801cf88c,REAL,self-entry body of 311 instructions returning `jr ra`
-801cf8b0,REAL,self-entry body of 54 instructions returning `jr ra`
-801cf988,REAL,self-entry body of 35 instructions returning `jr ra`
-801cfa14,REAL,self-entry body of 48 instructions returning `jr ra`
 801cfa48,REAL,self-entry body of 530 instructions returning `jr ra`
-801cfb94,INTERIOR,VA lies inside the dumped body of 801cfa48 in battle_action
+801cfb94,VA_ALIASED,"interior to 801cfa48 in battle_action, but a whole self-entry body in str_fmv"
 801cfbb4,REAL,self-entry body of 123 instructions returning `jr ra`
-801cfd84,REAL,self-entry body of 31 instructions returning `jr ra`
 801cfda0,REAL,self-entry body of 241 instructions returning `jr ra`
-801cfebc,REAL,self-entry body of 9 instructions returning `jr ra`
 801cfee0,REAL,self-entry body of 63 instructions returning `jr ra`
 801cffdc,VA_ALIASED,"2 overlays dump distinct bodies at this VA (debug_menu, str_fmv)"
 801d0100,VA_ALIASED,"2 overlays dump distinct bodies at this VA (debug_menu, str_fmv)"
-801d0190,REAL,self-entry body of 141 instructions returning `jr ra`
 801d0198,VA_ALIASED,"2 overlays dump distinct bodies at this VA (debug_menu, str_fmv)"
 801d0248,REAL,self-entry body of 76 instructions returning `jr ra`
 801d02c0,VA_ALIASED,"self-entry body in battle_action, but entry=801d02a8 in another image"
-801d0370,DUPLICATE,299-instruction stream identical modulo relocation to 801c2b58
 801d03c4,VA_ALIASED,"self-entry body in dance, but entry=801d03a4 in another image"
-801d0474,VA_ALIASED,"2 overlays dump distinct bodies at this VA (debug_menu, fishing)"
-801d0684,INTERIOR,"dump resolves entry=801d01b0, not 801d0684"
+801d0474,REAL,self-entry body of 149 instructions returning `jr ra`
 801d070c,REAL,self-entry body of 207 instructions returning `jr ra`
 801d0750,REAL,self-entry body of 770 instructions returning `jr ra`
-801d081c,DUPLICATE,322-instruction stream identical modulo relocation to 801c3004
-801d08e4,VA_ALIASED,"2 overlays dump distinct bodies at this VA (0896, slot_machine)"
+801d08e4,REAL,self-entry body of 334 instructions returning `jr ra`
 801d0e1c,REAL,self-entry body of 99 instructions returning `jr ra`
 801d0f1c,REAL,self-entry body of 221 instructions returning `jr ra`
-801d0fe4,INTERIOR,"dump resolves entry=801cf388/801d0d38, not 801d0fe4"
-801d11d0,DUPLICATE,229-instruction stream identical modulo relocation to 801c39b8
 801d1344,VA_ALIASED,"self-entry body in cutscene_dialogue, but entry=801d1314 in another image"
-801d1878,REAL,self-entry body of 202 instructions returning `jr ra`
-801d1ba0,VA_ALIASED,"2 overlays dump distinct bodies at this VA (0897_xxx_dat, dialog_mc4)"
 801d21fc,REAL,self-entry body of 104 instructions returning `jr ra`
-801d231c,INTERIOR,VA lies inside the dumped body of 801d2298 in 0897
-801d239c,REAL,self-entry body of 419 instructions returning `jr ra`
-801d2524,INTERIOR,VA lies inside the dumped body of 801d2404 in 0897
-801d26cc,DUPLICATE,1466-instruction stream identical modulo relocation to 801c56b4
+801d231c,VA_ALIASED,"interior to 801d2298 in 0897, but a whole self-entry body in dance"
+801d2404,VA_ALIASED,"2 overlays dump distinct bodies at this VA (0897, cutscene_mapview)"
+801d2524,VA_ALIASED,"interior to 801d2404 in 0897, but a whole self-entry body in dance"
 801d2914,REAL,self-entry body of 100 instructions returning `jr ra`
 801d2a10,REAL,self-entry body of 226 instructions returning `jr ra`
 801d2aa4,REAL,self-entry body of 135 instructions returning `jr ra`
@@ -210,16 +148,13 @@ addr,class,reason
 801d2e74,REAL,self-entry body of 140 instructions returning `jr ra`
 801d2ebc,VA_ALIASED,"self-entry body in cutscene_dialogue, but entry=801d2e74 in another image"
 801d2f38,REAL,self-entry body of 240 instructions returning `jr ra`
-801d3230,REAL,self-entry body of 38 instructions returning `jr ra`
 801d32f8,REAL,self-entry body of 132 instructions returning `jr ra`
 801d3380,REAL,self-entry body of 63 instructions returning `jr ra`
 801d33d8,VA_ALIASED,"self-entry body in menu, but entry=801d31b0 in another image"
 801d3444,REAL,self-entry body of 193 instructions returning `jr ra`
 801d3a2c,REAL,self-entry body of 211 instructions returning `jr ra`
-801d3d78,INTERIOR,VA lies inside the dumped body of 801d362c in 0897
+801d3d78,VA_ALIASED,"interior to 801d362c in 0897, but a whole self-entry body in dance"
 801d3e28,VA_ALIASED,"self-entry body in dance, but entry=801d3df0 in another image"
-801d3ec0,DUPLICATE,37-instruction stream identical modulo relocation to the already-ported 801d5630
-801d3f54,DUPLICATE,31-instruction stream identical modulo relocation to the already-ported 801d5ae0
 801d3fd0,VA_ALIASED,"self-entry body in dance, but entry=801d3f24 in another image"
 801d4098,REAL,self-entry body of 17 instructions returning `jr ra`
 801d40dc,REAL,self-entry body of 28 instructions returning `jr ra`
@@ -227,28 +162,24 @@ addr,class,reason
 801d49e8,REAL,self-entry body of 154 instructions returning `jr ra`
 801d4c50,REAL,self-entry body of 106 instructions returning `jr ra`
 801d4df8,REAL,self-entry body of 116 instructions returning `jr ra`
-801d52d0,INTERIOR,"dump resolves entry=801d516c, not 801d52d0"
-801d5510,DUPLICATE,123-instruction stream identical modulo relocation to 801c6cf8
 801d553c,REAL,self-entry body of 160 instructions returning `jr ra`
-801d56c4,REAL,self-entry body of 0 instructions returning `jr ra`
+801d56c4,UNCERTAIN,dump carries a decompiled body but no disassembly (Ghidra reports 1 bytes) - function bounds never established
 801d57bc,REAL,self-entry body of 73 instructions returning `jr ra`
-801d58e0,PHANTOM,only dump body is a 4-instruction stub
 801d5a68,VA_ALIASED,"self-entry body in cutscene_dialogue, but entry=801d5944 in another image"
 801d5ae8,REAL,self-entry body of 190 instructions returning `jr ra`
 801d5de0,REAL,self-entry body of 151 instructions returning `jr ra`
 801d5e20,VA_ALIASED,"self-entry body in cutscene_dialogue, but entry=801d5de0 in another image"
 801d5ed0,REAL,self-entry body of 268 instructions returning `jr ra`
-801d6704,VA_ALIASED,"2 overlays dump distinct bodies at this VA (0897, world_map_walk)"
+801d6704,REAL,self-entry body of 901 instructions returning `jr ra`
 801d67f0,VA_ALIASED,"2 overlays dump distinct bodies at this VA (baka_fighter, dance)"
 801d69e4,REAL,self-entry body of 13 instructions returning `jr ra`
 801d6a18,REAL,self-entry body of 104 instructions returning `jr ra`
-801d6b20,INTERIOR,VA lies inside the dumped body of 801d6704 in 0897
+801d6b20,VA_ALIASED,"interior to 801d6704 in 0897, but a whole self-entry body in menu/save_ui_select/shop_save"
 801d6e04,REAL,self-entry body of 22 instructions returning `jr ra`
 801d6e18,VA_ALIASED,"self-entry body in menu, but entry=801d6704 in another image"
 801d6e5c,REAL,self-entry body of 47 instructions returning `jr ra`
 801d6f44,REAL,self-entry body of 96 instructions returning `jr ra`
 801d71b8,VA_ALIASED,"2 overlays dump distinct bodies at this VA (0897, muscle_dome)"
-801d71f0,DUPLICATE,81-instruction stream identical modulo relocation to 801e01f0
 801d72a0,REAL,self-entry body of 70 instructions returning `jr ra`
 801d7a5c,VA_ALIASED,"self-entry body in dance, but entry=801d79e8 in another image"
 801d7b50,VA_ALIASED,"self-entry body in cutscene_dialogue, but entry=801d7b40 in another image"
@@ -287,61 +218,43 @@ addr,class,reason
 801dc1cc,REAL,self-entry body of 314 instructions returning `jr ra`
 801dcb60,REAL,self-entry body of 48 instructions returning `jr ra`
 801dcef0,REAL,self-entry body of 9 instructions returning `jr ra`
-801dd260,INTERIOR,"no `addiu sp,sp,-N` prologue; body reads s6 and a caller stack slot it never writes - a tail fragment reaching the parent's epilogue"
 801dd330,REAL,self-entry body of 11 instructions returning `jr ra`
-801ddccc,INTERIOR,"dump resolves entry=801dd35c, not 801ddccc"
 801dea50,REAL,self-entry body of 712 instructions returning `jr ra`
 801df098,UNCERTAIN,no `jr ra` and no trailing unconditional jump - body may be truncated
-801df09c,INTERIOR,"dump resolves entry=801df098, not 801df09c"
 801df6b8,VA_ALIASED,"self-entry body in battle_action, but entry=801df570 in another image"
 801df8dc,REAL,self-entry body of 21 instructions returning `jr ra`
-801e0080,INTERIOR,VA lies inside the dumped body of 801de840 in 0897
+801e0080,VA_ALIASED,"interior to 801de840 in 0897, but a whole self-entry body in battle_action"
 801e00b8,REAL,self-entry body of 15 instructions returning `jr ra`
 801e01f0,VA_ALIASED,"self-entry body in 0896_bat_back_dat, but entry=801e015c in another image"
 801e02a4,REAL,self-entry body of 93 instructions returning `jr ra`
 801e0418,REAL,self-entry body of 96 instructions returning `jr ra`
 801e0598,REAL,self-entry body of 74 instructions returning `jr ra`
 801e06c0,REAL,self-entry body of 134 instructions returning `jr ra`
-801e09f8,VA_ALIASED,"2 overlays dump distinct bodies at this VA (battle, muscle_dome)"
-801e0c3c,INTERIOR,"dump resolves entry=801de840/801e0b1c, not 801e0c3c"
+801e09f8,DUPLICATE,1070-instruction stream identical modulo relocation to 801f71e0
 801e1114,REAL,self-entry body of 61 instructions returning `jr ra`
-801e1c64,INTERIOR,VA lies inside the dumped body of 801de840 in 0897
-801e1d98,DUPLICATE,332-instruction stream identical modulo relocation to 801f8580
-801e212c,INTERIOR,"dump resolves entry=801e1c64, not 801e212c"
 801e2524,VA_ALIASED,"self-entry body in battle_action, but entry=801e23ec in another image"
 801e2650,VA_ALIASED,"2 overlays dump distinct bodies at this VA (0897, muscle_dome)"
 801e3294,REAL,self-entry body of 259 instructions returning `jr ra`
-801e3578,INTERIOR,VA lies inside the dumped body of 801de840 in 0897
-801e3628,INTERIOR,VA lies inside the dumped body of 801e3578 in 0897
-801e3900,REAL,self-entry body of 42 instructions returning `jr ra`
 801e39a8,REAL,self-entry body of 22 instructions returning `jr ra`
-801e3af0,REAL,self-entry body of 44 instructions returning `jr ra`
-801e3ba0,REAL,self-entry body of 19 instructions returning `jr ra`
 801e3ff0,REAL,self-entry body of 82 instructions returning `jr ra`
-801e4404,UNCERTAIN,no `jr ra` and no trailing unconditional jump - body may be truncated
-801e473c,DATA,the dump covering this VA is a data-region listing
+801e4404,UNCERTAIN,every dump at this VA decodes data as code (Ghidra reports bad instruction data over a 5-instruction body in 0897) - no valid body to classify
 801e4d8c,REAL,self-entry body of 242 instructions returning `jr ra`
-801e5154,INTERIOR,"dump resolves entry=801e5134, not 801e5154"
+801e5154,UNCERTAIN,every dump at this VA decodes data as code (239 of 243 instructions are $zero-absolute loads/stores in 0897_xxx_dat) - no valid body to classify
 801e5338,REAL,self-entry body of 201 instructions returning `jr ra`
-801e5b4c,VA_ALIASED,"self-entry body in baka_fighter, but entry=801e573c in another image"
-801e75dc,VA_ALIASED,"2 overlays dump distinct bodies at this VA (0896, slot_machine)"
+801e5b4c,REAL,self-entry body of 557 instructions returning `jr ra`
 801e805c,VA_ALIASED,"2 overlays dump distinct bodies at this VA (0897, muscle_dome)"
-801e91e8,VA_ALIASED,"2 overlays dump distinct bodies at this VA (0897, muscle_dome)"
+801e91e8,REAL,self-entry body of 61 instructions returning `jr ra`
 801e92dc,REAL,self-entry body of 59 instructions returning `jr ra`
-801ea9b0,VA_ALIASED,"3 overlays dump distinct bodies at this VA (0896, cutscene_mapview, slot_machine)"
-801ead98,VA_ALIASED,"3 overlays dump distinct bodies at this VA (0897, world_map_top, world_map_walk)"
+801ea9b0,VA_ALIASED,"2 overlays dump distinct bodies at this VA (0896, cutscene_mapview)"
+801ead98,REAL,self-entry body of 1820 instructions returning `jr ra`
 801ec0dc,VA_ALIASED,"2 overlays dump distinct bodies at this VA (0896, muscle_dome)"
 801ec3e4,REAL,self-entry body of 2502 instructions returning `jr ra`
-801ec964,SHARED_TAIL,"no `jr ra`; body exits `j 0x801d6274`, inside 801d6274 - an entry into a multi-entry routine, not a standalone function"
-801eca08,VA_ALIASED,"2 overlays dump distinct bodies at this VA (cutscene_mapview, slot_machine)"
-801eccac,INTERIOR,"no `addiu sp,sp,-N` prologue; body reads s0/s1/s2 and a caller stack slot it never writes - a tail fragment reaching the parent's epilogue"
+801eca08,REAL,self-entry body of 193 instructions returning `jr ra`
 801ed710,VA_ALIASED,"2 overlays dump distinct bodies at this VA (0897, world_map_walk)"
 801ee094,REAL,self-entry body of 165 instructions returning `jr ra`
 801ee328,REAL,self-entry body of 171 instructions returning `jr ra`
-801ee90c,VA_ALIASED,"2 overlays dump distinct bodies at this VA (cutscene_mapview, slot_machine)"
+801ee90c,REAL,self-entry body of 275 instructions returning `jr ra`
 801ef014,REAL,self-entry body of 167 instructions returning `jr ra`
-801f0000,DATA,the dump covering this VA is a data-region listing
-801f02d0,INTERIOR,dump is a citation stub for 801eff30
 801f0450,VA_ALIASED,"self-entry body in battle_action, but entry=801f03b0 in another image"
 801f0adc,VA_ALIASED,"self-entry body in baka_fighter, but entry=801f07ac in another image"
 801f1278,REAL,self-entry body of 201 instructions returning `jr ra`
@@ -349,34 +262,17 @@ addr,class,reason
 801f159c,REAL,self-entry body of 73 instructions returning `jr ra`
 801f16a0,REAL,self-entry body of 91 instructions returning `jr ra`
 801f17f8,REAL,self-entry body of 125 instructions returning `jr ra`
-801f1a00,REAL,self-entry body of 58 instructions returning `jr ra`
-801f1cc8,SHARED_TAIL,"no `jr ra`; body exits `j 0x801d31d8`, inside 801d31d8 - an entry into a multi-entry routine, not a standalone function"
 801f1ed4,VA_ALIASED,"self-entry body in muscle_dome, but entry=801f1cc8 in another image"
 801f20b0,VA_ALIASED,"2 overlays dump distinct bodies at this VA (0897_xxx_dat, slot_machine)"
 801f2160,VA_ALIASED,"self-entry body in muscle_dome, but entry=801f20dc in another image"
 801f2d68,REAL,self-entry body of 26 instructions returning `jr ra`
-801f36a0,DUPLICATE,truncated 88-instruction dump; stream is a strict prefix of 801f16a0
-801f3894,DUPLICATE,257-instruction stream identical modulo relocation to the already-ported 801dd0ac
-801f3990,VA_ALIASED,"2 overlays dump distinct bodies at this VA (muscle_dome, slot_machine)"
-801f4000,DATA,the dump covering this VA is a data-region listing
-801f452c,VA_ALIASED,"2 overlays dump distinct bodies at this VA (0896, slot_machine)"
+801f3990,VA_ALIASED,"self-entry body in muscle_dome, but entry=801f3894 in another image"
+801f452c,REAL,self-entry body of 30 instructions returning `jr ra`
 801f45a4,VA_ALIASED,"self-entry body in baka_fighter, but entry=801f452c in another image"
 801f4dd0,REAL,self-entry body of 138 instructions returning `jr ra`
 801f5748,REAL,self-entry body of 2777 instructions returning `jr ra`
-801f5d90,PHANTOM,only dump body is a 0-instruction stub
 801f69d8,REAL,self-entry body of 643 instructions returning `jr ra`
-801f6c70,SHARED_TAIL,"no `jr ra`; body exits `j 0x801f71f0`, inside 801f71e0 - an entry into a multi-entry routine, not a standalone function"
-801f6d48,VA_ALIASED,"2 overlays dump distinct bodies at this VA (PROT 0967 @ base 0x801F69D8, slot_machine)"
-801f7088,INTERIOR,VA lies inside the dumped body of 801f5748 in 0897
-801f71e0,INTERIOR,VA lies inside the dumped body of 801f5748 in 0897
-801f7628,INTERIOR,"dump resolves entry=801f5748/801f71e0, not 801f7628"
-801f7644,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580` - an entry into a multi-entry routine, not a standalone function"
-801f7838,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580` - an entry into a multi-entry routine, not a standalone function"
-801f7aa4,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580` - an entry into a multi-entry routine, not a standalone function"
-801f7ccc,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580` - an entry into a multi-entry routine, not a standalone function"
-801f7f78,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580` - an entry into a multi-entry routine, not a standalone function"
-801f8198,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580` - an entry into a multi-entry routine, not a standalone function"
-801f8454,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580` - an entry into a multi-entry routine, not a standalone function"
-801f8690,SHARED_TAIL,"no `jr ra`; body exits `j 0x80043580` - an entry into a multi-entry routine, not a standalone function"
-801fa38c,DUPLICATE,352-instruction stream identical modulo relocation to the already-ported 801daba4
+801f6d48,REAL,self-entry body of 208 instructions returning `jr ra`
+801f7088,VA_ALIASED,"interior to 801f5748 in 0897, but a whole self-entry body in baka_fighter/dance/debug_menu/fishing/muscle_dome/slot_machine"
+801f71e0,VA_ALIASED,"interior to 801f5748 in 0897, but a whole self-entry body in PROT 0967 @ base 0x801F69D8"
 8020e748,VA_ALIASED,"self-entry body in 0897_xxx_dat, but entry=8020e504 in another image"

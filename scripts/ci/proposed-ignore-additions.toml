@@ -10,3 +10,6 @@
 # more work than one port site, not less, and UNCERTAIN needs a human.
 #
 # Merge into the main ignore list after review - do not consume directly.
+
+[worklist_duplicate]
+"801e09f8" = "DUPLICATE: 1070-instruction stream identical modulo relocation to 801f71e0"

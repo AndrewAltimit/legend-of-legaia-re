@@ -117,6 +117,14 @@ MIN_DUP_INSNS = 6
 
 VENDOR_HINTS = ("libgte", "libspu", "libsnd", "libcd", "psyq")
 
+# Signatures of a dump taken at a VA the image holds no code for - data decoded
+# as instructions. See `decode_failure`.
+MEM_MNEMONICS = frozenset(
+    ("lb", "lbu", "lh", "lhu", "lw", "lwl", "lwr", "sb", "sh", "sw", "swl", "swr")
+)
+ZERO_ABS_RE = re.compile(r",-?0x[0-9a-fA-F]+\(zero\)\s*$")
+BAD_INSN_RE = re.compile(r"bad instruction data")
+
 
 def parse_dump(path):
     """Parse one dump file into a record dict."""
@@ -300,6 +308,50 @@ def substantial(rec):
     return not rec["insns"] and len(norm_c(rec["decomp"]).splitlines()) > 5
 
 
+def decode_failure(rec):
+    """True when this dump's body is a data region decoded as instructions.
+
+    A dump's printed addresses are a property of the load base it was taken at
+    (`docs/tooling/dump-corpus-integrity.md`). Point a dump at a VA the image
+    does not hold code for and Ghidra still emits a disassembly - of whatever
+    bytes are there. Two signatures identify the result mechanically:
+
+    * a body dominated by loads/stores off `$zero`. Real MIPS reaches statics
+      through `gp` or a `lui`/`addiu` pair; a long run of `lb rN,0xNNNN(zero)`
+      is a table of `0x80`-high bytes being read as opcodes.
+    * Ghidra's own bad-instruction warning over a body too short to be a
+      function.
+
+    Such a body is not evidence of a distinct routine, so it must not enter the
+    alias or duplicate comparison - otherwise one bad-base dump splits a VA that
+    every other image agrees on.
+    """
+    n = len(rec["insns"])
+    if not n:
+        return None
+    zero = sum(
+        1
+        for _, mn, ops in rec["insns"]
+        if mn.lstrip("_") in MEM_MNEMONICS and ZERO_ABS_RE.search(ops)
+    )
+    if zero >= 8 and zero * 5 >= n * 2:
+        return "%d of %d instructions are $zero-absolute loads/stores" % (zero, n)
+    if n <= STUB_INSNS + 4 and any(BAD_INSN_RE.search(ln) for ln in rec["decomp"]):
+        return "Ghidra reports bad instruction data over a %d-instruction body" % n
+    return None
+
+
+def stream_gaps(rec):
+    """Count holes in this dump's instruction-address sequence.
+
+    MIPS instructions are four bytes and a dumped body is contiguous, so a
+    jump in the address column means Ghidra failed to disassemble part of the
+    range and the dump under-reports the routine.
+    """
+    addrs = [int(a, 16) for a, _, _ in rec["insns"]]
+    return sum(1 for i in range(len(addrs) - 1) if addrs[i + 1] != addrs[i] + 4)
+
+
 def body_key(rec):
     """The comparison key for alias / duplicate grouping."""
     if rec["insns"]:
@@ -372,6 +424,22 @@ def classify(addr, dumps, dup_groups, ported, owners=None):
         return ("UNCERTAIN", "no dump file matches this address")
 
     funcs = [d for d in dumps if d["kind"] == "func"]
+
+    # Drop dumps whose body is a misdecoded data region before any comparison.
+    # One such dump at a VA a dozen other images agree on would otherwise read
+    # as an alias, which is the wrong direction of error: it turns a single
+    # port site into "needs per-image identity work".
+    bad = [(d, decode_failure(d)) for d in funcs]
+    rejected = [(d, why) for d, why in bad if why]
+    funcs = [d for d, why in bad if not why]
+    if rejected and not funcs:
+        d, why = rejected[0]
+        return (
+            "UNCERTAIN",
+            "every dump at this VA decodes data as code (%s in %s) - no valid "
+            "body to classify" % (why, d["image"]),
+        )
+
     self_funcs = [d for d in funcs if d["entry"] == addr]
     other_funcs = [d for d in funcs if d["entry"] != addr]
     datas = [d for d in dumps if d["kind"] == "data"]
@@ -415,13 +483,31 @@ def classify(addr, dumps, dup_groups, ported, owners=None):
     # 3b. Containment: some other dumped function in the same image owns a body
     #     that strictly covers this VA. That is the Ghidra label-call idiom -
     #     the address is a jump label promoted to a fake FUN_ entry.
-    for d in self_sub:
-        enc = enclosing(addr, d["image"], owners)
-        if enc:
-            return (
-                "INTERIOR",
-                "VA lies inside the dumped body of %s in %s" % (enc, d["image"]),
-            )
+    #     Containment is a per-image fact, so it only settles the row when it
+    #     holds in every image that dumps a body here. An address that is a
+    #     jump label in one overlay and a function entry in another is aliased,
+    #     not interior, and ignoring it would delete the second overlay's
+    #     routine - the failure this test used to produce.
+    #     Containment is read per image and is independent of any one dump's
+    #     completeness. What must be complete is the dump on the other side of
+    #     the disagreement: only a stream with no holes testifies that the VA
+    #     is a function entry rather than a jump pad Ghidra mis-bounded.
+    contained = [(d, enclosing(addr, d["image"], owners)) for d in self_sub]
+    hits = [(d, enc) for d, enc in contained if enc]
+    free = [d for d, enc in contained if not enc and not stream_gaps(d)]
+    if hits and not free:
+        d, enc = hits[0]
+        return (
+            "INTERIOR",
+            "VA lies inside the dumped body of %s in %s" % (enc, d["image"]),
+        )
+    if hits:
+        d, enc = hits[0]
+        return (
+            "VA_ALIASED",
+            "interior to %s in %s, but a whole self-entry body in %s"
+            % (enc, d["image"], "/".join(sorted({o["image"] for o in free}))),
+        )
 
     # 4. VA aliasing across overlays: distinct substantial bodies at one VA.
     #    Compare like with like - some dump generations carry decompiled C only,
@@ -431,6 +517,14 @@ def classify(addr, dumps, dup_groups, ported, owners=None):
     #    whose variable naming and inferred signature drift with analysis state,
     #    so C bodies only decide when no dump at this VA has disassembly.
     with_insns = [d for d in self_sub if d["insns"]]
+    # A dump whose instruction addresses are non-contiguous did not disassemble
+    # the whole body: Ghidra left holes, and every instruction after a hole is
+    # offset against a complete dump of the same routine. Comparing a gapped
+    # stream against a contiguous one reports a difference that is an artifact
+    # of the dump, not of the code, so a contiguous dump outranks it.
+    contiguous = [d for d in with_insns if not stream_gaps(d)]
+    if contiguous and len(contiguous) < len(with_insns):
+        with_insns = contiguous
     if with_insns:
         streams = {body_key(d): d for d in with_insns}
         self_sub = with_insns
@@ -518,7 +612,25 @@ def classify(addr, dumps, dup_groups, ported, owners=None):
     if v:
         return ("REAL_BUT_VENDOR", v)
 
-    return ("REAL", "self-entry body of %d instructions returning `jr ra`" % len(rec["insns"]))
+    # 9. `REAL` is the class the worklist acts on, so it is the one verdict that
+    #    must not rest on a decompiled body alone. A dump reporting
+    #    `size=1 bytes, 0 instructions` under a full C rendering is a catalogued
+    #    Ghidra artifact - function bounds were never established, so the C is a
+    #    guess about where the routine ends and there is no evidence the VA is
+    #    an entry rather than a label. Every earlier test that could have caught
+    #    that (own return, exit jump, fragment shape) reads the instruction
+    #    stream and silently passes an empty one.
+    if not rec["insns"]:
+        return (
+            "UNCERTAIN",
+            "dump carries a decompiled body but no disassembly (Ghidra reports "
+            "%s bytes) - function bounds never established" % rec["size"],
+        )
+
+    return (
+        "REAL",
+        "self-entry body of %d instructions returning `jr ra`" % len(rec["insns"]),
+    )
 
 
 IGNORE_CATEGORY = {
@@ -566,6 +678,12 @@ def main():
     ap.add_argument("--out", required=True, help="classification CSV to write")
     ap.add_argument("--ignore-out", help="proposed ignore-list TOML to write")
     ap.add_argument("--explain", help="print full evidence for one address")
+    ap.add_argument(
+        "--audit-ignored",
+        action="store_true",
+        help="re-classify the rows the ignore list already absorbed under a "
+        "worklist_* category and report any that no longer read non-portable",
+    )
     args = ap.parse_args()
 
     funcs_dir = os.path.join(args.repo, "ghidra", "scripts", "funcs")
@@ -602,6 +720,15 @@ def main():
         and r["ignored"] == "0"
     ]
     ported = {r["addr"].lower() for r in rows if r["ported"] == "1"}
+    # Rows the ignore list already absorbed under a `worklist_*` category. The
+    # classifier proposed each of them, so re-classifying them is the only way
+    # a later dump - one taken at a base the earlier run did not have - can
+    # overturn a verdict that has since deleted a real port site.
+    absorbed = [
+        r["addr"].lower()
+        for r in rows
+        if r["ignored"] == "1" and r["ignore_category"].startswith("worklist_")
+    ]
 
     # Duplicate index over every self-entry function body in the dump corpus,
     # keyed by relocation-masked body -> set of entry addresses.
@@ -611,6 +738,9 @@ def main():
     owners = {}
     for rec in all_dumps:
         if rec["entry"] != rec["file_addr"] or not substantial(rec):
+            continue
+        # A misdecoded data region owns no instructions and duplicates nothing.
+        if decode_failure(rec):
             continue
         if rec["insns"] and len(rec["insns"]) < MIN_DUP_INSNS:
             continue
@@ -639,6 +769,24 @@ def main():
             % (classify(a, by_addr.get(a, []), dup_groups, ported, owners),)
         )
         return 0
+
+    if args.audit_ignored:
+        by_cat = {r["addr"].lower(): r["ignore_category"] for r in rows}
+        bad = 0
+        for a in absorbed:
+            cls, why = classify(a, by_addr.get(a, []), dup_groups, ported, owners)
+            if cls in NON_PORTABLE:
+                continue
+            bad += 1
+            sys.stdout.write(
+                "%s ignored as %s but now classifies %s: %s\n"
+                % (a, by_cat[a], cls, why)
+            )
+        sys.stdout.write(
+            "\n%d of %d absorbed rows no longer classify non-portable\n"
+            % (bad, len(absorbed))
+        )
+        return 1 if bad else 0
 
     results = [
         (a,) + classify(a, by_addr.get(a, []), dup_groups, ported, owners)

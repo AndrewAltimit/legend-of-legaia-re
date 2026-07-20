@@ -39,6 +39,14 @@ files cover the VA, each one's resolved `entry=`, image, instruction count,
 whether the body contains `jr ra`, and the trailing jump target if any. That is
 the fastest way to audit a verdict without opening the dumps.
 
+`--audit-ignored` re-classifies the rows the ignore list has already absorbed
+under a `worklist_*` category and reports any that no longer read non-portable,
+exiting non-zero if there are any. Once a row is ignored it leaves the worklist,
+so nothing else would ever re-examine it - and an ignore is exactly the verdict
+that costs a real port site when it is wrong. Re-run it whenever the dump corpus
+gains an image, because the usual way a merged verdict goes stale is a later
+dump taken at a base the earlier run did not have.
+
 The generated CSV holds addresses, class names and one-line reasons. It carries
 no dump text, so it is safe to commit; the dumps themselves are Sony-derived and
 are not. A checked-in copy of the current run lives beside the script at
@@ -107,6 +115,44 @@ A looser mask over every hex immediate is available in the script but is not
 used for classification: it also collapses genuine constant and struct-offset
 differences, so it produces candidates rather than evidence.
 
+### Dumps that do not testify
+
+Three kinds of dump are evidence about the dump rather than about the code, and
+the classifier refuses to let any of them decide a verdict. The first two are
+discarded before comparison: left in, each splits a VA that every other image
+agrees on, and a false split reads as `VA_ALIASED` - the class that says "this
+needs per-image identity work" about a routine that needs none. The third is
+checked last, and it guards the opposite error.
+
+- **Data decoded as code.** A dump's printed addresses are a property of the
+  load base it was taken at ([`dump-corpus-integrity.md`](dump-corpus-integrity.md)).
+  Aim a dump at a VA whose image holds no code there and Ghidra still emits a
+  disassembly - of whatever bytes are present. The signature is a body dominated
+  by `$zero`-absolute loads and stores: real MIPS reaches statics through `gp`
+  or a `lui`/`addiu` pair, so a long run of `lb rN,0xNNNN(zero)` is a table of
+  `0x80`-high bytes being read as opcodes. Ghidra's own bad-instruction warning
+  over a body too short to be a function is the second signature.
+- **Gapped instruction streams.** MIPS instructions are four bytes and a dumped
+  body is contiguous, so a jump in the address column means Ghidra left holes.
+  Every instruction after a hole is offset against a complete dump of the same
+  routine, so the two streams differ from the first hole onward whatever the
+  code says. A contiguous dump outranks a gapped one.
+
+- **Bodies with no disassembly at all.** A dump that reports `size=1 bytes, 0
+  instructions` under a full C rendering is the artifact
+  [`ghidra.md`](ghidra.md#decompiler-artifacts-that-have-produced-false-claims)
+  catalogues: Ghidra never established the function's bounds, so the C is a
+  guess about where the routine ends and nothing in the dump says the VA is an
+  entry rather than a label. Such a dump cannot yield `REAL`. This one matters
+  most, because every test that would otherwise catch a non-function - own
+  return, exit jump, fragment shape - reads the instruction stream, and an
+  empty stream passes all three silently. A false `REAL` is the classifier's
+  most expensive error: `REAL` is the class the worklist acts on.
+
+Containment is read per image and is unaffected by any of the three, so it is
+evaluated over every dump; what has to be whole is the dump on the other side
+of a disagreement. See [below](#containment-is-a-per-image-fact).
+
 ### Instruction streams outrank decompiled C
 
 Some dump generations carry decompiled C with no `--- DISASSEMBLY ---` section.
@@ -115,6 +161,22 @@ inferred signature can differ between two dumps of identical machine code - so
 the classifier treats the instruction stream as the authority. When at least one
 dump at a VA has disassembly, only the disassembly dumps decide aliasing. C
 bodies decide only when no dump at that VA carries instructions.
+
+### Containment is a per-image fact
+
+The containment test - another dumped body in the same image disassembles an
+instruction at this exact VA - is what catches the label-call idiom, and it is
+sound only within one image. Overlays load different code at the same virtual
+address, so an address can be a jump label inside a dispatcher in one overlay
+and a function entry in another. That is the definition of `VA_ALIASED`, and
+reading it as `INTERIOR` deletes the second overlay's routine from the worklist
+with a reason that is true about the first.
+
+The classifier therefore requires containment to hold in *every* image that
+dumps a whole self-entry body here. Where one image contains the VA and another
+carries a body with its own `addiu sp,sp,-N` prologue and `jr ra`, the row is
+aliased. `--audit-ignored` exists because this rule was added after the ignore
+list had already absorbed rows decided the other way.
 
 ## Interpreting the result
 
@@ -130,6 +192,10 @@ smaller than it looks":
   bodies that happen to share a virtual address across overlays. Removing the
   row would delete real work; splitting it needs the per-image identity that
   [`static-overlay-pipeline.md`](static-overlay-pipeline.md) exists to supply.
+  It is also the class the dump corpus contaminates hardest in both directions -
+  a bad-base or gapped dump inflates it, and a per-image containment hit used to
+  hide inside `INTERIOR`. Treat an alias verdict as a claim to check, not a
+  conclusion, and never ignore the row.
 - **`SHARED_TAIL` is real code that is not an independent port site.** These are
   the per-case branches of a multi-entry assembly routine - the family that ends
   by jumping back into a common loop or epilogue. They port as arms of the
@@ -168,8 +234,9 @@ fires when two dumps agree on which image they came from, and images are named
 several ways across dump generations - bracketed, with a `base=` suffix, or
 inferred from the filename prefix. The script normalises these, but a spelling
 it does not recognise splits one image into two and the containment test then
-misses. This direction is safe (a missed `INTERIOR` stays `REAL`), but it means
-the `INTERIOR` count is a floor.
+misses. A missed containment leaves the row `REAL` rather than dropping it, so
+the direction is safe, but it means the `INTERIOR` count is a floor and some of
+what reads `REAL` is really aliased.
 
 ## Proposed ignore entries
 
@@ -178,6 +245,20 @@ the `INTERIOR` count is a floor.
 carrying its class and mechanical reason. It is a proposal for review, not a
 drop-in: merge the sections into the real ignore list after spot-checking, and
 note that `VA_ALIASED` and `UNCERTAIN` rows are deliberately excluded from it.
+
+What "after spot-checking" means per class, since the classes do not carry equal
+risk:
+
+| Class | Merge policy |
+|---|---|
+| `PHANTOM`, `DATA`, `INTERIOR` | Merge once the disassembly agrees. |
+| `SHARED_TAIL` | Merge only for a frameless body whose exit jump lands *inside* another routine - the label-call idiom. A `j` to another function's entry is a tail call and the row is `REAL`. |
+| `DUPLICATE` | Merge only when a peer is ported, or is a live worklist row that names the routine stably. A peer that is itself aliased does not qualify - ignoring both ends deletes the routine. |
+| `VA_ALIASED`, `UNCERTAIN` | Never merged. |
+
+The `DUPLICATE` rule is not hypothetical: a cross-image relocated match can name
+a peer whose own row stands for two routines, in which case the match identifies
+neither.
 
 Reviewed rows land in `port-catalog-ignore.toml` under the same
 `worklist_*` section names, which keeps a merged row traceable back to the
@@ -188,8 +269,13 @@ to the classifier, but every doc citing them names a region boundary, and that
 is what the merged reason says.
 
 The proposal file therefore always means *outstanding* proposals: once its rows
-are merged, the next run writes it back empty. The committed CSV beside the
-script is the other half of the record - it is the classification taken *before*
-the merge, so it keeps the per-address verdict for rows the ignore list has since
-absorbed. Re-running the classifier after a merge reports only the residue,
-which is `REAL`, `VA_ALIASED` and `UNCERTAIN`.
+are merged, the next run writes it back empty. Rows that stay in it are rows a
+reviewer declined under the table above.
+
+The committed CSV beside the script is a snapshot of the *open* worklist, so a
+row the ignore list has absorbed leaves it. That is what `--audit-ignored` is
+for: the absorbed verdicts stay checkable from the ignore list's own reason
+strings plus a re-run, rather than from a CSV that would otherwise have to be
+kept as a growing archive. Re-running the classifier after a merge reports only
+the residue - `REAL`, `VA_ALIASED`, `UNCERTAIN`, and any `DUPLICATE` the merge
+policy held back.
