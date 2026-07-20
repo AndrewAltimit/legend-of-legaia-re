@@ -97,13 +97,38 @@ menu list for the world map developer menu. String table at `0x801CF344..`:
 Called by `FUN_801ECA08` when the debug menu panel is active
 (`ctx[+0x54]` mod-6 dispatch resolves to cases 1 or 3).
 
-### `FUN_801CA08` - world map panel sizer / menu caller (256 bytes)
+### `FUN_801ECA08` - world map panel sizer / list picker (256 bytes)
 
-Entry: `(ctx_ptr, row_start, row_end, col_idx, ...)`. Computes panel height
-`= (row_end - row_start + 1) * 8`; vertical offset `= 0xD0 - height` (centres
-a 208-pixel viewport). Writes height/offset into a panel descriptor at
-`0x801F2B98 + col_idx * 28`. Dispatches on `ctx[+0x54]` (6-way JT at
-`0x801CF4CC`); cases 1 and 3 call `FUN_801EAD98` to draw the menu list.
+Entry: `(ctx_ptr, row_start, row_end, col_idx)`. Sizes the panel, then runs a
+vertical list picker over rows `row_start..=row_end`.
+
+Sizing, with `rows = row_end - row_start + 1`, into the 28-byte panel
+descriptor at `0x801F2B98 + col_idx * 28`:
+
+| Descriptor field | Value |
+|---|---|
+| `+0x08` | Panel x (read back, used as `x + 4` for the cursor sprite). |
+| `+0x0A` | Panel y = `0xD0 - rows * 8` (bottom-anchors a 208-pixel viewport). |
+| `+0x0E` | Panel height = `rows * 8`. |
+
+The picker's cursor row lives at `ctx[+0x9E]`, the phase at `ctx[+0x54]`
+(6-way JT at `0x801CF4CC`):
+
+| Phase | Behaviour |
+|---|---|
+| 0 | Seed cursor `= row_start`, open the panel, `phase++` - then **falls through** into phase 1. |
+| 1 | Cursor up (`0x1000`) / down (`0x4000`) with SFX `0x21`, wrapping at both ends; confirm → SFX `0x37`, phase 2; cancel → SFX `0x36`, phase 3. |
+| 2 | Confirm settle - clears `DAT_801C6EA4[+0x3E]`. |
+| 3 | Cancel unwind via `FUN_801EA9B0`. |
+| 4 | Teardown - restores the saved selection and resets phase to 0. |
+
+Cursor wrap is a **swap, not a clamp**: below `row_start` jumps to `row_end`
+and above `row_end` jumps back to `row_start`.
+
+The menu list is drawn by `FUN_801EAD98(ctx, x, y, row_start, row_end)`, gated
+on the phase / helper product being `1` or `3` - so phase 1 always draws, phase
+3 draws only while `FUN_801EA9B0` reports the unwind still running, and phases
+2 and 4 never draw. Input is suppressed entirely while `_DAT_8007BB80 != 0`.
 
 ### `FUN_801EE90C` - world map text-box dispatcher (128 bytes)
 
