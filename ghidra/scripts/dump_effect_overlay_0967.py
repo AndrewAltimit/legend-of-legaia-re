@@ -25,6 +25,32 @@ from ghidra.util.task import ConsoleTaskMonitor
 # 0967 render-tail hits (VA >= 0x801F69D8), with S5 hit counts.
 HITS = [0x801f71e0, 0x801f7624, 0x801f6c70, 0x801f6d48]
 
+# Sparring-tutorial prompt machine (docs/subsystems/battle.md). The tick
+# FUN_801F6B70 had no dump at all, so the tutorial audit had to disassemble it
+# out of extracted/PROT/0967_xxx_dat.BIN by hand; these targets exist so the
+# next reader gets a dump instead. The nine handler addresses are the LIVE
+# slots of the 91-entry jump table based at 0x801F69D8 (= the overlay load
+# base, so the table is at file offset 0). They are jr-table destinations, so
+# several may resolve into the containing function -- the `done` map below
+# dedupes by entry point, which is the point: what resolves to its own entry
+# is a real function, what folds into a neighbour is a label.
+HITS += [
+    0x801f6b70,  # tick: guards + ctx[+0x06] jump-table dispatch
+    0x801f6c00,  # flow state 30  - turn start / per-lesson intro
+    0x801f6cb8,  # flow state 40  - category prompt
+    0x801f6cac,  # flow state 50  - run selected (always rewinds)
+    0x801f6dcc,  # flow state 60  - item window
+    0x801f6e4c,  # flow state 80  - arts command entry
+    0x801f6ee4,  # flow state 90  - target select / hyper-arts drill validate
+    0x801f7060,  # flow state 100 - target confirm
+    0x801f7088,  # flow state 110 - committed-category validator
+    0x801f6d30,  # flow state 120 - auto/command attack-mode prompt
+    0x801f718c,  # shared no-op tail (the other 82 table slots)
+    0x801f7380,  # completion tail: lesson>=5 clamp + ctx[6]=0xC8 / ctx[7]=0xFF
+    0x801f7628,  # "you're learning about X now" rewind
+    0x801f747c,  # box emitter (style index 0..9 -> table at 0x801F6B48)
+]
+
 OUT_DIR = "/scripts/funcs"
 prog = currentProgram
 af = prog.getAddressFactory()
