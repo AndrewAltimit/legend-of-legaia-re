@@ -632,3 +632,92 @@ fn monster_reaction_maps_resolve_over_real_archives() {
         "retail monsters all carry a real tag-4 knockdown; {via_fallback} fell back"
     );
 }
+
+/// Differential oracle for [`monster_archive::reaction_map`] over every real
+/// archive: rebuild the map here with an independently written transcription of
+/// `FUN_80054CB0`'s loop and require the port to agree entry-for-entry.
+///
+/// This exists because the sibling test above can only check *shape* invariants
+/// (index in range, slot 0 points at a tag-2 entry), which a first-match scan
+/// satisfies just as well as retail's last-match one. The two differ only on a
+/// duplicated reaction tag, and the census below records whether the retail
+/// archive contains that case at all - if it does not, this test says so out
+/// loud rather than leaving the reader to assume it was covered. Either way the
+/// mechanism itself is pinned CI-side by the synthetic-table unit tests in
+/// `monster_archive::animation` (`reaction_map_takes_the_last_entry_for_a_...`
+/// and `..._zero_sentinel_swallows_an_index_zero_knockdown`), which run without
+/// a disc.
+#[test]
+fn monster_reaction_maps_match_an_independent_last_wins_transcription() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+
+    // Transcribed straight from the disassembly at 0x80055338..0x80055440:
+    // one forward pass, five unconditional stores, no break; then the
+    // knockdown fallback tested against a *zero* byte.
+    fn retail_map(tags: &[u8]) -> [Option<u8>; 5] {
+        const FAMILY: [u8; 5] = [2, 3, 4, 5, 0x0B];
+        let mut out = [0u8; 5];
+        for (i, &tag) in tags.iter().enumerate().take(256) {
+            for (slot, &want) in FAMILY.iter().enumerate() {
+                if tag == want {
+                    out[slot] = i as u8;
+                }
+            }
+        }
+        if out[2] == 0 {
+            out[2] = out[0];
+        }
+        // Retail's zero doubles as "unset"; the port spells that `None`.
+        let present = FAMILY.map(|t| tags.contains(&t));
+        let mut map = [None; 5];
+        for slot in 0..5 {
+            let live = present[slot] || (slot == 2 && present[0]);
+            if live && out[slot] != 0 {
+                map[slot] = Some(out[slot]);
+            } else if live && out[slot] == 0 && tags.first() == Some(&FAMILY[slot]) {
+                map[slot] = Some(0);
+            }
+        }
+        map
+    }
+
+    let mut checked = 0usize;
+    let mut dup_tag_monsters = 0usize;
+
+    for id in 1..=120u16 {
+        let Ok(Some(tags)) = monster_archive::action_tags(&entry, id) else {
+            continue;
+        };
+        if tags.is_empty() {
+            continue;
+        }
+        checked += 1;
+
+        // Census: does this monster carry the same reaction tag twice? That is
+        // the only input on which last-wins and first-wins disagree.
+        if [2u8, 3, 4, 5, 0x0B]
+            .iter()
+            .any(|t| tags.iter().filter(|&x| x == t).count() > 1)
+        {
+            dup_tag_monsters += 1;
+        }
+
+        assert_eq!(
+            monster_archive::reaction_map(&tags),
+            retail_map(&tags),
+            "monster {id}: reaction_map diverges from the transcribed loop \
+             (tags {tags:?})"
+        );
+    }
+
+    assert!(checked > 20, "expected many monsters, got {checked}");
+    eprintln!(
+        "[reaction_map] {checked} monsters checked; {dup_tag_monsters} carry a \
+         duplicated reaction tag (the last-wins-vs-first-wins discriminator). \
+         A zero here means retail data cannot distinguish the two scan orders \
+         and the CI-side synthetic tests are what pin it."
+    );
+}

@@ -78,7 +78,7 @@ The seeder is the direct caller of `FUN_801DABA4` and runs once per round over t
 
 Finally the `ctx+0x290` formation advantage zeroes one side's keys outright (see [formation advantage](#formation-advantage-fun_80051d84)), and two scripted boss orders override the result: monster id `0xB4` with `ctx+0x28A == 0` keys slot 3 at `30000`, and monster id `0x4F` fixes slots 0 and 3 to a hand-written order.
 
-Ported as `battle_formulas::seed_initiative` / `wounded_bonus` / `apply_side_lockout`.
+Ported as `battle_formulas::seed_initiative` / `wounded_bonus` / `apply_side_lockout`, and driven by `World::reseed_initiative`. The engine has no `+0x16E` status word yet, so the Slow halving never fires there; the wounded bonus, the lockout and the `+0xF4` ability arms all do.
 
 > **Address caution.** The base roll was long attributed to `overlay_0897_801e23ec`. That is an **aliased VA**: PROT 0897's extraction over-reads into 0898 and the Ghidra program maps the file at `0x801C0000` instead of the true slot-A base `0x801CE818`, so every `0x801Exxxx`/`0x801Fxxxx` function it surfaces is a different battle-overlay routine. The aliased reading recovered only the base roll and dropped all three modifier terms above.
 
@@ -100,9 +100,11 @@ The two draws are **correlated**: `b`'s spread is taken about `|a - e|`, the alr
 
 The disadvantaged side is turned to face the wrong way (`+0x46 = 0x800` for the party on a back attack, `0` for the monsters on a pre-emptive strike) and loses its keys for round one.
 
-`FUN_801E295C` state `0x00` **latches** `+0x290` into `+0x291` and then clears the original, and the two consumers read different copies: the initiative seeder reads `+0x290`, while the [escape roll](#run--escape-roll---fun_801e791c) reads the latched `+0x291` and treats `== 2` as "escape assured". The latch is therefore load-bearing - clearing `+0x290` without copying it first silently disables pre-emptive-strike escapes for the whole battle.
+`FUN_801E295C` state `0x00` **latches** `+0x290` into `+0x291` and then clears the original (`0x801E2B30`: `lbu v0,0x290(v1)` / `sb v0,0x291(v1)` / `sb zero,0x290(v0)`), and the two consumers read different copies: the initiative seeder reads `+0x290`, the [escape roll](#run--escape-roll---fun_801e791c) reads the latched `+0x291`. The ordering is load-bearing in both directions - latching before the seeder runs disables the side lockout, and never latching at all disables pre-emptive-strike escapes for the whole battle. A latch written but never read back is the same bug as no latch.
 
-Ported as `battle_formulas::roll_formation_advantage` / `FormationAdvantage`.
+The pre-emptive arm is commonly shorthanded "escape assured", which overstates it. `FUN_801E791C` sets the party roll equal to the enemy roll at `0x801E7AF0` and only *then* tests the scripted no-escape flag `ctx+0x287` at `0x801E7B14`, so a pre-emptive strike into a no-flee battle is still caught. What the arm actually guarantees is that the `roll_p < roll_e` compare cannot fail.
+
+Ported as `battle_formulas::roll_formation_advantage` / `FormationAdvantage`, wired through `World::roll_battle_formation` (battle setup) → `World::seed_battle_initiative` (lockout) → `World::latch_battle_formation` → `World::roll_battle_escape` (the latched read).
 
 **AGL** (`+0x154` current / `+0x156` base): the per-round agility / action gauge. Every action draws it down; the enemy-AI action picker (`overlay_0898_801e9fd4`) deducts each candidate action's `+0x74` cost from `+0x154` and only queues actions it can still afford. Each round `FUN_801D88CC` restores it. Live-RAM confirmed by Zetopheonix: the "Power Up" buff prints *"agility increased!"* and raises this cur/base pair. The damage popup (`_DAT_80076D7E`) reads `+0x154`; this is the HP/MP/AGL triplet at `+0x14C..+0x156` in [battle.md](battle.md).
 
@@ -285,8 +287,11 @@ enemy_score = Σ_enemy   SPD      + (maxHP - curHP)>>5
 roll_p = rand() % party_score ;  roll_e = rand() % enemy_score
 Escape Boost (ability bit 52):  roll_p += roll_p >> 1
 Great Escape (bit 55):          roll_p = roll_e            // forced tie
+  or ctx[+0x291] == 2           roll_p = roll_e            // pre-emptive strike
 caught iff  roll_p < roll_e  or  ctx[+0x287] != 0          // strict <
 ```
+
+The forced-tie arm has **two** sources, and the second is the latched [formation advantage](#formation-advantage-fun_80051d84): `0x801E7AD8` loads `ctx+0x291`, compares it against `2`, and branches to the same `move s2,s3` the Great Escape bit reaches. A back attack (`1`) is not the mirror image - it is never compared here, and costs the party only its round-one initiative keys. Both arms are applied before the `ctx+0x287` test, so neither is an unconditional escape.
 
 Missing HP raises *both* sides' scores (a hurt party escapes more easily, a hurt
 enemy pursues harder) and the party's SPD is weighted 1.5x the enemies'. Full

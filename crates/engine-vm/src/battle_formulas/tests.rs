@@ -1134,11 +1134,40 @@ fn round_reset_agility_three_arms() {
     assert_eq!(round_reset_agility(5, 100, false, false), 5);
     // Spirit-charged wins over plain reset when both would apply.
     assert_eq!(round_reset_agility(5, 100, true, true), 148);
-    // The spirit arm shares the spirit-damage shape.
-    assert_eq!(
-        round_reset_agility(0, 100, true, false),
-        spirit_damage(100, SPIRIT_AGL_CAP)
-    );
+}
+
+/// The spirit arm's arithmetic, checked against values worked from the
+/// disassembly rather than against a sibling port.
+///
+/// `FUN_801D88CC` at `0x801D8954` computes `base*7` as `(base<<3) - base`,
+/// divides by 5 through the signed magic constant `0x66666667`, adds `8`, and
+/// then clamps with `sltiu v0,<value>,0x121` - i.e. the value passes through
+/// untouched while it is **below** `0x121`, so `0x120` itself is a legal
+/// result and only `0x121+` is pulled down.
+///
+/// The previous form of this check asserted `round_reset_agility(0, 100, true,
+/// false) == spirit_damage(100, SPIRIT_AGL_CAP)`. Both sides are ports of the
+/// same `base*7/5 + 8` shape with identical bodies, so it could not fail for
+/// any reason connected to retail - it only restated that two functions in this
+/// crate agree with each other. The literals below are the actual oracle.
+#[test]
+fn round_reset_agility_spirit_arm_matches_the_retail_arithmetic() {
+    // base*7/5 + 8, worked by hand.
+    assert_eq!(round_reset_agility(0, 0, true, false), 8); // 0 + 8
+    assert_eq!(round_reset_agility(0, 1, true, false), 9); // 7/5=1, +8
+    assert_eq!(round_reset_agility(0, 5, true, false), 15); // 35/5=7, +8
+    assert_eq!(round_reset_agility(0, 100, true, false), 148); // 700/5=140, +8
+    assert_eq!(round_reset_agility(0, 137, true, false), 199); // 959/5=191, +8
+
+    // The clamp boundary: `sltiu ..,0x121` lets 0x120 through untouched.
+    assert_eq!(SPIRIT_AGL_CAP, 0x120);
+    assert_eq!(round_reset_agility(0, 200, true, false), 0x120); // 1400/5+8 = 288 exactly
+    assert_eq!(round_reset_agility(0, 201, true, false), 0x120); // 289 -> clamped
+    assert_eq!(round_reset_agility(0, 1000, true, false), 0x120); // far over -> clamped
+
+    // The `*7` is integer-truncating per step, not a float scale: 3*7/5 = 4,
+    // not 4.2 rounded.
+    assert_eq!(round_reset_agility(0, 3, true, false), 12); // 21/5=4, +8
 }
 
 #[test]
@@ -1158,6 +1187,47 @@ fn camera_height_from_size_class_clamps() {
     assert_eq!(camera_height_from_size_class(0x20), 0x1000); // in band
     assert_eq!(camera_height_from_size_class(0x28), 0x1400); // hits the ceiling
     assert_eq!(camera_height_from_size_class(0xFF), 0x1400); // saturates
+}
+
+/// `FUN_801F0348`'s slot gating: which actor's size the shot is framed on.
+#[test]
+fn camera_height_for_frame_resolves_the_right_actor() {
+    // Sizes: monster slots 3..=6 get distinct classes; party slots never asked.
+    let size = |slot: u8| match slot {
+        3 => 0x20u8, // -> 0x1000
+        4 => 0x28,   // -> 0x1400
+        _ => 0x1E,   // -> 0x0F00
+    };
+
+    // Party attacks a monster: framed on the target's bulk.
+    assert_eq!(camera_height_for_frame(0, 3, size), 0x1000);
+    assert_eq!(camera_height_for_frame(1, 4, size), 0x1400);
+    // Party attacks a party member (heal / buff): neither arm runs, default.
+    assert_eq!(camera_height_for_frame(0, 1, size), CAMERA_HEIGHT_MIN);
+    // Monster attacks a party member: the attacker arm fires on its own bulk.
+    assert_eq!(camera_height_for_frame(4, 0, size), 0x1400);
+    // Monster attacks a monster: the attacker's store clobbers the target's.
+    // Slot 3 (0x1000) attacking slot 4 (0x1400) frames at 0x1000, not 0x1400.
+    assert_eq!(camera_height_for_frame(3, 4, size), 0x1000);
+}
+
+/// The `sltiu v0,v1,0x8` outer gate at `0x801F037C` branches to the **clamp**,
+/// not to the attacker arm, so an out-of-range target byte suppresses both
+/// lookups - the one path where a monster attacker's own size is ignored and
+/// the shot stays at the bare `0x0C00` seed.
+#[test]
+fn camera_height_for_frame_out_of_range_target_suppresses_both_arms() {
+    let size = |_: u8| 0x28u8; // would frame at the 0x1400 ceiling
+    // In range: the monster attacker pulls the camera all the way back.
+    assert_eq!(camera_height_for_frame(4, 3, size), 0x1400);
+    // Target byte 8 or above: gate shuts, default height survives.
+    for target in [8u8, 9, 0x7F, 0xFF] {
+        assert_eq!(
+            camera_height_for_frame(4, target, size),
+            CAMERA_HEIGHT_MIN,
+            "target {target:#x} must skip the attacker arm too"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

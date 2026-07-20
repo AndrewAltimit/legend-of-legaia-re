@@ -235,6 +235,24 @@ pub fn action_tags(entry: &[u8], id: u16) -> Result<Option<Vec<u8>>> {
 /// monster may carry several entries sharing a tag (the search takes the first)
 /// and may omit a tag entirely.
 ///
+/// Provenance note: `ghidra/scripts/funcs/80050e2c.txt` carries decompiled C
+/// but an **empty** disassembly section (`size=1 bytes, 0 instructions`), so it
+/// is not on its own evidence for anything. The first-match-wins shape and the
+/// `0xFF` sentinel below are read off the executable directly - `SCUS_942.54`
+/// text VA `0x80010000`, so file offset `0x800 + (0x80050e2c - 0x80010000)`:
+///
+/// ```text
+/// 80050e2c  andi a2,a2,0xff      ; count
+/// 80050e30  beqz a2,0x80050e64   ; empty table -> 0xFF
+/// 80050e3c  lw   v0,(a0)         ; record pointer
+/// 80050e44  lbu  v0,(v0)         ; tag byte = record[0]
+/// 80050e4c  beq  v0,a1,0x80050e6c ; match -> return index
+/// 80050e5c  bnez v0,0x80050e3c
+/// 80050e68  addiu v0,zero,0xff   ; not found
+/// ```
+///
+/// NOT WIRED: no engine caller - see [`reaction_map`].
+///
 /// PORT: FUN_80050e2c
 pub fn find_action_by_tag(tags: &[u8], tag: u8) -> Option<u8> {
     tags.iter()
@@ -254,28 +272,78 @@ pub const NO_ACTION_ENTRY: u8 = 0xFF;
 pub const REACTION_TAGS: [u8; 5] = [2, 3, 4, 5, 0x0B];
 
 /// The hit-reaction tag → entry-index map the monster loader builds at actor
-/// `+0x1EF..+0x1F3`.
+/// `+0x1EF..+0x1F3` (`{2, 3, 4, 5, 0x0B}` = light flinch, second flinch,
+/// knockdown, get-up, block).
 ///
-/// Retail scans the `+0x4C` action-record array once per tag in
-/// [`REACTION_TAGS`] (`{2, 3, 4, 5, 0x0B}` = light flinch, second flinch,
-/// knockdown, get-up, block) and stores the matching entry index. The one
-/// special case is **tag 4 falls back to tag 2**: a monster with no knockdown
-/// entry reuses its light-flinch animation, so the damage primitive always has
-/// a heavy-hit reaction to queue.
+/// Retail makes **one** pass over the `+0x4C` action-record array, testing all
+/// five tags per entry, and every match stores unconditionally:
+///
+/// ```text
+/// 80055338  loop:  a0 = &record[i]
+/// 80055348         lbu v1,0x0(v0)     ; entry tag
+/// 80055350         bne v1,2, +0x14
+/// 80055360         sb  a1,0x1ef(v0)   ; <- store, NO break
+/// 80055374         bne v1,3, +0x14
+/// 80055384         sb  a1,0x1f0(v0)
+/// ...                                  ; tags 4, 5, 0x0B likewise
+/// 80055404         bne v0,zero,0x80055338
+/// ```
+///
+/// There is no `break` and no "already set" test, so when a monster carries
+/// two entries with the same tag the map keeps the **last** one, not the
+/// first. This is the opposite of the entry search
+/// [`find_action_by_tag`] (`FUN_80050E2C`) performs, which returns on its
+/// first match - the two routines are not the same mechanism and must not be
+/// built out of each other.
+///
+/// The sentinel is likewise different. `FUN_80050E2C` returns `0xFF` when
+/// nothing matches; this loop pre-initialises nothing at all (the actor block
+/// arrives zeroed) and the knockdown fallback tests against **zero**:
+///
+/// ```text
+/// 80055428  lbu v0,0x1f1(v1)
+/// 80055430  bne v0,zero, done
+/// 80055438  lbu v0,0x1ef(v1)
+/// 80055440  sb  v0,0x1f1(v1)     ; knockdown <- light flinch
+/// ```
+///
+/// So a monster with no knockdown entry reuses its light-flinch animation and
+/// the damage primitive always has a heavy-hit reaction to queue - but note
+/// the quirk that falls out of the zero sentinel: a monster whose knockdown
+/// entry really is at **index 0** is indistinguishable from "absent" and gets
+/// the fallback applied over a perfectly good entry. Entry 0 is the idle loop
+/// for every monster in the archive, so this never fires on retail data; it is
+/// modelled because the mechanism, not the data, is what the port owes.
 ///
 /// Party actors take the sibling path (`FUN_80053CB8`), which hardcodes
 /// `[2, 3, 4, 5, 0xB]` because the player battle files store this family
 /// identity-ordered - index equals tag. That is a property of those files, not
 /// a general rule, and it does **not** hold for monster archives.
 ///
-/// Entries are `None` where retail leaves the sentinel `0xFF`.
+/// `None` is this port's spelling of retail's zero: "no entry claimed this
+/// slot".
+///
+/// NOT WIRED: no engine caller. Nothing in `engine-core` / `engine-vm` queues a
+/// monster hit reaction from this map yet; its only consumers are the unit tests
+/// and the disc-gated archive oracles in `crates/asset/tests`.
 ///
 /// PORT: FUN_80054cb0 (the `+0x1EF..+0x1F3` tag-map half; the stat-block copy
 /// and battle-load stat boost live in `engine-vm::battle_formulas`)
 pub fn reaction_map(tags: &[u8]) -> [Option<u8>; 5] {
-    let mut map = REACTION_TAGS.map(|tag| find_action_by_tag(tags, tag));
-    // Tag 4 (knockdown) falls back to tag 2 (light flinch) when absent.
-    if map[2].is_none() {
+    let mut map: [Option<u8>; 5] = [None; 5];
+    // Single forward pass, last write wins - retail's loop has no `break`.
+    for (i, &tag) in tags.iter().enumerate() {
+        let Ok(i) = u8::try_from(i) else { break };
+        for (slot, &want) in REACTION_TAGS.iter().enumerate() {
+            if tag == want {
+                map[slot] = Some(i);
+            }
+        }
+    }
+    // Knockdown (tag 4) falls back to light flinch (tag 2). Retail tests the
+    // stored byte against zero, so an index-0 knockdown also takes the
+    // fallback - see the doc comment.
+    if map[2].is_none_or(|i| i == 0) {
         map[2] = map[0];
     }
     map
@@ -438,8 +506,39 @@ mod tests {
         // With neither tag present the slot stays empty rather than
         // fabricating an index.
         assert_eq!(reaction_map(&[0, 1])[2], None);
-        // The fallback is one-way: a present tag 4 is never overwritten.
+        // A present tag 4 at a non-zero index is never overwritten.
         assert_eq!(reaction_map(&[2, 4])[2], Some(1));
+    }
+
+    /// `FUN_80054CB0`'s tag loop stores without a `break`, so a duplicated tag
+    /// resolves to the **last** matching entry. This is the one behaviour that
+    /// separates the port from a `position()`-style first-match scan, and it is
+    /// not observable on retail archives (no shipped monster duplicates a
+    /// reaction tag), so only a synthetic table can pin it.
+    #[test]
+    fn reaction_map_takes_the_last_entry_for_a_duplicated_tag() {
+        // Tag 2 at indices 1 and 4; tag 0x0B at indices 2 and 5.
+        let tags = [0u8, 2, 0x0B, 3, 2, 0x0B];
+        let map = reaction_map(&tags);
+        assert_eq!(map[0], Some(4), "light flinch keeps the last tag-2 entry");
+        assert_eq!(map[4], Some(5), "block keeps the last tag-0x0B entry");
+        // A first-wins scan would answer Some(1) / Some(2) here.
+        assert_ne!(map[0], Some(1));
+        assert_ne!(map[4], Some(2));
+        // The single-match slots are unaffected.
+        assert_eq!(map[1], Some(3));
+    }
+
+    /// Retail's knockdown fallback tests the stored byte against **zero**, not
+    /// against a `0xFF` sentinel, so a tag-4 entry sitting at index 0 reads as
+    /// "absent" and gets overwritten by the light flinch.
+    #[test]
+    fn reaction_map_zero_sentinel_swallows_an_index_zero_knockdown() {
+        let tags = [4u8, 2];
+        let map = reaction_map(&tags);
+        assert_eq!(map[2], Some(1), "index-0 knockdown loses to the fallback");
+        // Sanity: it really did find the tag-4 entry first.
+        assert_eq!(find_action_by_tag(&tags, 4), Some(0));
     }
 
     #[test]

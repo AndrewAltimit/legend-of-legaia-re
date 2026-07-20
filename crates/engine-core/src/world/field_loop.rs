@@ -230,6 +230,16 @@ impl World {
         self.shiny_captures.clear();
         self.roll_shiny_enemy(first_monster);
 
+        // Roll this battle's formation advantage (`FUN_80051D84` -> `ctx+0x290`)
+        // now that both sides' SPD is final. Retail skips the roll entirely for
+        // a scripted no-escape battle, so the boss fights never open on a back
+        // attack or a pre-emptive strike.
+        self.battle_formation = vm::battle_formulas::FormationAdvantage::None;
+        self.battle_formation_latched = vm::battle_formulas::FormationAdvantage::None;
+        if !self.battle_no_escape {
+            self.roll_battle_formation(formation);
+        }
+
         self.battle_ctx.queued_action = 3;
         self.battle_ctx.active_actor = 0;
         // Fresh battle: clear the monster-AI cooldowns / phase counter / ring.
@@ -240,6 +250,11 @@ impl World {
         // turns order by initiative. A no-SPD battle leaves every key at 0 and
         // stays on the round-robin fallback.
         self.seed_battle_initiative();
+        // Latch `+0x290` into `+0x291` and clear the original - retail does
+        // this in battle-action state `0x00`, and it must run *after* the
+        // seeder, which is the only reader of the unlatched copy. The latched
+        // copy is what `roll_battle_escape` reads for the rest of the battle.
+        self.latch_battle_formation();
         // Switch to the battle track (if configured) - the host's BGM
         // director cross-fades from the field music.
         self.swap_to_battle_bgm();

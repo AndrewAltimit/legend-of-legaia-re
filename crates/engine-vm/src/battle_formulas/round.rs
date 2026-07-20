@@ -142,9 +142,16 @@ pub fn initiative_roll_modulus(speed: u16) -> u32 {
 ///
 /// - the initiative seeder ([`apply_side_lockout`]) reads `+0x290` and zeroes
 ///   the disadvantaged side's keys, so that side sits out round one;
-/// - the escape roll reads the latched `+0x291` and treats
-///   [`FormationAdvantage::Preemptive`] as "escape assured" - having got the
-///   drop on the enemy, the party can always walk away.
+/// - the escape roll reads the latched `+0x291` and, on
+///   [`FormationAdvantage::Preemptive`], sets the party roll equal to the enemy
+///   roll so the `roll_p < roll_e` compare cannot fail.
+///
+/// The shorthand for that second arm is "escape assured", and it overstates
+/// what the code does. `FUN_801E791C` applies it at `801e7af0` and only *then*
+/// tests the scripted no-escape flag `ctx+0x287` at `801e7b14`, so a pre-emptive
+/// strike into a no-flee battle is still caught. Only the forced-flee arm
+/// (`_DAT_8007bac0 & 0x100`, which sets the routine's mode word to `2`) bypasses
+/// `+0x287`.
 ///
 /// Because the escape roll reads the *latched* copy, the latch in state `0x00`
 /// is load-bearing: dropping it (clearing `+0x290` without copying it first)
@@ -294,8 +301,16 @@ pub fn roll_formation_advantage(
     let p = mean(party_spd);
     let e = mean(enemy_spd);
 
-    // `rand % 0` traps on the R3000 divide; a zero spread means the sides are
-    // dead level, so contribute nothing.
+    // Zero-spread guard. This is a **port-side** decision, not a retail one:
+    // the two spread divides at `80051f04` / `80051f28` are bare `div v0,v1`
+    // with no divisor test and no `break`, unlike the escape roll's divides
+    // (`801e7a90` / `801e7aac`), which the compiler *did* guard with
+    // `bne <divisor>,zero` + `break 0x1c00`. A zero divisor on the R3000 does
+    // not trap - it is architecturally UNPREDICTABLE, and on the hardware
+    // leaves `HI` = the dividend, so retail would fold the raw `rand()` draw
+    // in as the spread. Rust's `%` would panic instead, so the port returns a
+    // deterministic `0`: a zero spread means the two sides are dead level and
+    // contributing the full draw would be noise, not fidelity.
     let spread = |lo: u32, hi: u32, rand: &mut dyn FnMut() -> u32| -> u32 {
         let span = lo.abs_diff(hi) * 2;
         if span == 0 { 0 } else { rand() % span }
@@ -334,6 +349,14 @@ pub fn roll_formation_advantage(
 
 /// Apply the `ctx+0x290` side lockout over a seeded 7-slot key table, in place.
 ///
+/// NOT WIRED: no engine caller. This splits the sides at retail's **fixed**
+/// slot boundary (party `0..=2`, monsters `3..=6`), because retail reserves
+/// three party slots whatever the party size. `engine-core` compacts instead -
+/// `enter_battle` seats the first monster at `party_count`, so slot 1 can be a
+/// monster - and `World::reseed_initiative` therefore applies the same rule
+/// against its own `party_count` boundary rather than calling this. Kept as the
+/// retail-layout reference the engine's adapter is checked against.
+///
 /// PORT: FUN_801da780 (the lockout sweep that runs after the per-slot scoring)
 pub fn apply_side_lockout(keys: &mut [u16; 7], lockout: SideLockout) {
     for (slot, key) in keys.iter_mut().enumerate() {
@@ -367,6 +390,10 @@ pub const SPIRIT_AGL_CAP: u16 = 0x120;
 /// That last arm is easy to miss and is the reason a party member who has been
 /// spending AGL mid-combo does not silently refill.
 ///
+/// NOT WIRED: no engine caller. `engine-core`'s battle loop has no per-round
+/// AGL / action-gauge pass yet, so nothing calls this - it is a verified kernel
+/// waiting on the round-boundary hook, not live behaviour.
+///
 /// PORT: FUN_801d88cc (loop A's AGL arm; the ctx header writes, the
 /// `+0x1DF..+0x1EE` action-stream clear and loop B's dead-target re-pick stay
 /// with the caller - see [`needs_retarget`])
@@ -387,6 +414,9 @@ pub fn round_reset_agility(cur: u16, base: u16, spirit_charged: bool, plain_rese
 ///
 /// Retail re-picks through `FUN_801DB8B4` (the RNG-backed picker); this
 /// predicate is only the "is the stored target still usable" half.
+///
+/// NOT WIRED: no engine caller (same missing round-boundary pass as
+/// [`round_reset_agility`]).
 pub fn needs_retarget(target_slot: u8, target_hp: u16) -> bool {
     target_slot > 6 || target_hp == 0
 }
@@ -414,9 +444,70 @@ pub const ACTION_STREAM_RANGE: std::ops::Range<usize> = 0x1DF..0x1EF;
 /// bulk, not the target's. That second store really does clobber the first; it
 /// is not a decompiler artifact.
 ///
-/// PORT: FUN_801f0348
+/// This is only the arithmetic; [`camera_height_for_frame`] is the whole
+/// routine including the slot gating.
+///
+/// PORT: FUN_801f0348 (the `<< 7` + clamp arithmetic)
 pub fn camera_height_from_size_class(size_class: u8) -> i16 {
-    const MIN: i16 = 0x0C00;
-    const MAX: i16 = 0x1400;
-    (i16::from(size_class) << 7).clamp(MIN, MAX)
+    (i16::from(size_class) << 7).clamp(CAMERA_HEIGHT_MIN, CAMERA_HEIGHT_MAX)
+}
+
+/// Floor for `ctx+0x6D0`, and also the value the routine seeds it with before
+/// any lookup runs.
+pub const CAMERA_HEIGHT_MIN: i16 = 0x0C00;
+/// Ceiling for `ctx+0x6D0`.
+pub const CAMERA_HEIGHT_MAX: i16 = 0x1400;
+
+/// The whole of `FUN_801F0348`: resolve the battle camera's height/distance
+/// (`ctx+0x6D0`) from the acting actor's slot and its target slot.
+///
+/// ```text
+/// 801f0358  sh   v0,0x6d0(a1)        ; seed 0x0C00 unconditionally
+/// 801f0374  lbu  v1,0x1dd(a0)        ; target slot
+/// 801f037c  sltiu v0,v1,0x8
+/// 801f0380  beq  v0,zero,0x801f0404  ; target >= 8 -> straight to the clamp
+/// 801f0384  _sltiu v0,v1,0x3
+/// 801f0388  bne  v0,zero,0x801f03bc  ; target < 3 (party) -> skip target arm
+/// ...       ctx+0x6D0 = monster[target-3].size << 7
+/// 801f03cc  sltiu v0,v0,0x3
+/// 801f03d0  bne  v0,zero,0x801f0404  ; attacker < 3 (party) -> clamp
+/// ...       ctx+0x6D0 = monster[attacker-3].size << 7   (clobbers the above)
+/// ```
+///
+/// The `< 8` test is the routine's **outer gate**, and it is wider than it
+/// looks: its branch target is the clamp, so a target slot of `8` or above
+/// skips the attacker-side lookup as well. A monster attacking with a
+/// nonsense target byte therefore frames at the bare `0x0C00` default rather
+/// than on its own bulk - the one path where the attacker's size is ignored.
+/// Slot bytes are only ever `0..=6` in a live battle, so the gate is a
+/// robustness guard against a stale or uninitialised `+0x1DD`; it is modelled
+/// here because "unmodelled" and "unreachable" are different claims and only
+/// the disassembly settles which one this is.
+///
+/// `size_of(slot)` returns the monster record's `+0x1F` size byte for a
+/// monster slot; it is never called for a party slot.
+///
+/// NOT WIRED: no engine caller. The engine's battle camera does not yet frame
+/// on monster size class, so neither this nor
+/// [`camera_height_from_size_class`] is reached outside tests.
+///
+/// PORT: FUN_801f0348
+pub fn camera_height_for_frame(
+    attacker_slot: u8,
+    target_slot: u8,
+    size_of: impl Fn(u8) -> u8,
+) -> i16 {
+    let mut h = CAMERA_HEIGHT_MIN;
+    // Outer gate: an out-of-range target byte skips both lookups entirely.
+    if target_slot < 8 {
+        if target_slot >= 3 {
+            h = i16::from(size_of(target_slot)) << 7;
+        }
+        if attacker_slot >= 3 {
+            // Retail re-reads the acting slot and overwrites the target-derived
+            // value - a monster frames on its own bulk.
+            h = i16::from(size_of(attacker_slot)) << 7;
+        }
+    }
+    h.clamp(CAMERA_HEIGHT_MIN, CAMERA_HEIGHT_MAX)
 }

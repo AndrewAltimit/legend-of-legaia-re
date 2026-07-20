@@ -41,6 +41,10 @@ pub struct EquipBonus {
 ///
 /// Adds wrap like retail (`u16`, no clamp).
 ///
+/// NOT WIRED: no engine caller. `engine-core` seeds party battle stats through
+/// its own `seed_party_battle_stats`, which has not been moved onto this kernel;
+/// until it is, this is a verified transcription with no runtime effect.
+///
 /// PORT: FUN_80053cb8 (the equipment-bonus loop)
 pub fn equip_stat_bonuses(equipped: &[Option<EquipBonus>; EQUIP_SLOTS]) -> (u16, u16, u16) {
     let mut udf: u16 = 0;
@@ -137,6 +141,8 @@ pub struct BattleActorStats {
 /// constant `[2, 3, 4, 5, 0x0B]` - the player battle files store that family
 /// identity-ordered, so no search is needed. Monster actors take the scanning
 /// path instead; see `legaia_asset::monster_archive::reaction_map`.
+///
+/// NOT WIRED: no engine caller - see [`equip_stat_bonuses`].
 ///
 /// PORT: FUN_80053cb8 (the stat-block half)
 pub fn init_party_battle_stats(

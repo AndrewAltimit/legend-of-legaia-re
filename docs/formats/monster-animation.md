@@ -48,9 +48,26 @@ The entry's first byte (`+0x00`) is a semantic **tag**, not just an index:
 
 At battle init the monster installer `FUN_80054CB0` scans the entry table and
 caches the **entry index** of each tag in `{2,3,4,5,0x0B}` into battle-actor
-bytes `+0x1EF..+0x1F3` (with a tag-4 → tag-2 fallback when no knockdown entry
-exists); the party installer `FUN_80053CB8` hardcodes `[2,3,4,5,0xB]` because
-the player files store the family identity-ordered. Consumers:
+bytes `+0x1EF..+0x1F3`; the party installer `FUN_80053CB8` hardcodes
+`[2,3,4,5,0xB]` because the player files store the family identity-ordered.
+
+The scan is a **single forward pass with no `break`**: one loop over the entry
+array (`0x80055338`..`0x80055408`), five independent tag compares per entry, and
+every match stores unconditionally. A monster carrying the same reaction tag
+twice therefore resolves to the **last** matching entry, not the first. Do not
+build this out of `FUN_80050E2C` (the entry search below), which returns on its
+first match - the two routines are different mechanisms, and the shared `0xFF`
+sentinel belongs only to the search.
+
+The "no entry claimed this slot" value here is **zero**, not `0xFF`: nothing
+pre-initialises `+0x1EF..+0x1F3` (the actor block arrives zeroed) and the
+knockdown fallback at `0x80055428` tests `+0x1F1` against zero before copying
+`+0x1EF` over it. So a monster with no knockdown entry reuses its light flinch -
+and a monster whose knockdown entry sits at index `0` is indistinguishable from
+"absent" and takes the fallback anyway. Entry `0` is the idle loop for every
+monster in the archive, so that second case never fires on retail data.
+
+Consumers:
 
 - the damage primitive `FUN_800402F4` stages the target's reaction from the
   map - a surviving target with no get-up entry queues `+0x1EF` (light
@@ -158,11 +175,13 @@ cue fired at install.
 - `FUN_80047430` - per-frame anim-node tick: cursor advance, end-of-clip detect, commit dispatch (`ghidra/scripts/funcs/80047430.txt`). Its own caller is not in the dump corpus (open).
 - `FUN_8004AD80` - anim commit/transition: id → entry install, `+0x1D9` convergence, reaction chaining, dynamic party art slots (`ghidra/scripts/funcs/8004ad80.txt`).
 - `FUN_800402F4` - damage primitive; stages the target's hit reaction from the `+0x1EF` map (`ghidra/scripts/funcs/800402f4.txt`).
-- `FUN_80050E2C` - first-byte tag search over the entry-pointer array (`ghidra/scripts/funcs/80050e2c.txt`). Signature `(table, tag, count) -> idx_or_0xFF`; both `count` and the result are byte-truncated, so a table longer than 255 entries is unrepresentable and index `0xFF` is indistinguishable from the "not found" sentinel. Ported as `legaia_asset::monster_archive::find_action_by_tag` (sentinel surfaced as `None`), with the tag map at `reaction_map`.
+- `FUN_80050E2C` - **first-match** tag search over the entry-pointer array. Signature `(table, tag, count) -> idx_or_0xFF`; both `count` and the result are byte-truncated, so a table longer than 255 entries is unrepresentable and index `0xFF` is indistinguishable from the "not found" sentinel. Ported as `legaia_asset::monster_archive::find_action_by_tag` (sentinel surfaced as `None`).
+
+Provenance caution for `FUN_80050E2C`: its dump `ghidra/scripts/funcs/80050e2c.txt` carries decompiled C but an **empty** disassembly section (`size=1 bytes, 0 instructions`), so it is not evidence on its own. The first-match shape and the `0xFF` sentinel are read off `SCUS_942.54` directly at file offset `0x800 + (0x80050e2c - 0x80010000)`; the returning `addiu v0,zero,0xff` at `0x80050e68` is the sentinel. This is the one routine in the family whose behaviour cannot be checked from the committed dump.
 
 Both take their tags from `action_tags`, which walks **every** entry in the `+0x4C` array. That matters: `animations` skips entries whose keyframe stream is empty or malformed, and since the engine addresses animations by raw entry index (`+0x1DA`), pairing an index against the filtered list mis-maps it.
 
-On the retail disc every monster carrying a light-flinch entry also carries a real tag-4 knockdown, so the tag-4 → tag-2 fallback never fires - it is defensive code, pinned by the disc-gated `monster_reaction_maps_resolve_over_real_archives`.
+Two properties of the map are **not observable on the retail disc**, so no disc-gated test can pin them and the CI-side synthetic tests in `legaia_asset::monster_archive::animation` are what hold them: no shipped monster duplicates a reaction tag (so last-wins and first-wins agree everywhere on disc), and every monster carrying a light-flinch entry also carries a real tag-4 knockdown (so the fallback never fires). The disc-gated `monster_reaction_maps_match_an_independent_last_wins_transcription` checks the port against a separate transcription of the loop over all 120 archives and reports the duplicate-tag census rather than asserting a behaviour it cannot reach.
 
 ## Engine playback
 
