@@ -96,7 +96,7 @@ Two paired wrappers on top of `FUN_8003E8A8` + `FUN_8003E800` (async LBA-based l
 
 This means two overlays can be RAM-resident at the same time (e.g., a title-overlay code blob in slot A and a sister asset blob in slot B). Mode-init handlers use one or the other depending on what they're loading. The full CD-read API stack that backs these is documented in [`subsystems/boot.md` § CD-read API stack](../subsystems/boot.md#cd-read-api-stack).
 
-`FUN_8003E360` shows a **dual-mode loader pattern**: in retail (`_DAT_8007B8C2 == 0`) it loads via the ISO9660 file system (`FUN_800608F0` / `FUN_80060944`); in debug (`_DAT_8007B8C2 != 0`) it loads via the PROT TOC index. Both branches reach the same data through different on-disc locations.
+`FUN_8003E360` shows a **dual-mode loader pattern**: in retail (`_DAT_8007B8C2 != 0`, the value retail boots with) it loads via the PROT TOC index (`FUN_8003E8A8` / `FUN_8003E800`); in dev (`_DAT_8007B8C2 == 0`) it opens an `h:\` path through `FUN_800608F0` / `FUN_80060944`, where `FUN_800608F0` is a `break 0x103` dev-station host trap. Only the retail branch runs on a real disc.
 
 ## See also
 

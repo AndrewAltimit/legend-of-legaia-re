@@ -92,15 +92,17 @@ its source on `_DAT_8007B8C2`: flag **non-zero** reads `cdname.txt` off the disc
 through the ISO stack (`FUN_8003D3C4`), flag **zero** reads
 `h:\prot\cdname.txt` through `FUN_8003E6BC` - which is a host-PC read over the
 SN/PsyQ debug-station link, not a name resolver
-([`boot.md`](../subsystems/boot.md#debug-flags)). The flag is BSS-resident and
-has no writer anywhere in `SCUS_942.54`, so it is `0` at boot, which selects the
-branch that cannot succeed without a host PC attached.
+([`boot.md`](../subsystems/boot.md#debug-flags)). `main()` writes the flag to
+`1` at cold boot (`0x80015F08 sh v0,0x5aa(gp)`, storing the constant returned by
+`FUN_8003F084`), so retail takes the **non-zero** arm and does read `cdname.txt`
+off the disc through the ISO stack. The table is populated on retail hardware,
+and the mangling described above is what retail RAM actually holds.
 
-So either the flag is set by something outside the scanned corpus, or retail
-never populates this table at all and resolves assets purely by integer
-constant. Both readings are live. Until one is settled, treat the byte layout
-above as the semantics of *the loader* - which is certain from its disassembly -
-rather than as a description of retail RAM contents.
+The earlier framing here - that the flag was writer-less and therefore `0` at
+boot, leaving it unclear whether the table was populated at all - rested on an
+address sweep that searched only the absolute `lui`+offset form and so never saw
+the gp-relative store
+([`tooling/ghidra.md`](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims)).
 
 Implementation: `crates/prot/src/cdname.rs`; see `ghidra/scripts/funcs/8001d8fc.txt`.
 

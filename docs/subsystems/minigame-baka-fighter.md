@@ -20,8 +20,9 @@ Baka Fighter lets you fight *as* a battle-form party member, so it reuses the
 **battle-form character pack** rather than shipping its own roster. The overlay
 initializer `overlay_baka_fighter_801cf00c.txt` loads `data_field/other5.lzs`
 (the LZS-compressed battle pack, PROT 1204) when the streaming-mode flag
-`_DAT_8007b8c2 == 0`, otherwise it loads the equivalent uncompressed PROT entry
-`0x4b5` (1205) directly. It then calls the per-fighter mesh installer
+`_DAT_8007b8c2 == 0` - the dev arm - and otherwise loads the equivalent
+uncompressed PROT entry `0x4b5` (1205) directly. Retail boots that flag at `1`,
+so the raw-PROT load is the path that actually runs. It then calls the per-fighter mesh installer
 `overlay_baka_fighter_801d4c50.txt` twice (`FUN_801d4c50(0)` for the player,
 `FUN_801d4c50(1)` for the opponent). That installer either streams a
 `data_field` body or loads PROT entry `char_index + 0x4b6` (1206, 1207, ...) and
@@ -526,7 +527,7 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `DAT_801d71cc` | widget 5's `u` field, patched to `stage * 0x18` (the 24px stage digit) |
 | `DAT_801dbc34` | runtime-built VITAL bar-frame cell table (3 cells per side) |
 | `DAT_801d7684` | special-attack effect-actor template |
-| `_DAT_8007b8c2` | streaming-mode flag (selects LZS `other5` vs raw PROT load) |
+| `_DAT_8007b8c2` | streaming-mode flag; `0` = dev LZS `other5`, non-zero (retail) = raw PROT load |
 | `_DAT_8007ba2c` | actor-draw hook (set to `FUN_801d67f0`) |
 
 ## Key functions

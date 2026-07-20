@@ -50,7 +50,7 @@ Two distinct flags in the same RAM page:
 
 | Flag | NA address | JP address | Effect |
 |---|---|---|---|
-| `_DAT_8007B8C2` | `0x8007B8C2` | (build-shifted by 0x1B90) | Dev/retail loader-path flag. Read by 26 SCUS functions. Controls `h:\PROT\FIELD\<stage>\…` dev-path branch in `FUN_800255B8` (and 25 sister branches in other loaders). |
+| `_DAT_8007B8C2` | `0x8007B8C2` | (build-shifted by 0x1B90) | Dev/retail loader-path flag; 40 `lh` reads in SCUS. Retail boots it to `1` (`0x80015F08`), selecting the PROT-index arm; the `== 0` arm is the `h:\PROT\FIELD\<stage>\…` dev-path branch in `FUN_800255B8` and its sisters. |
 | `_DAT_8007B98F` | `0x8007B98F` | `0x8007D51F` | In-game debug menu enable. Accessed as the high byte of the word at `0x8007B98C` - the GameShark byte-write `8007B98F 0001` makes the LE word non-zero (`0x01000000`), enabling every debug branch with one check. |
 
 Both have **zero static writers in `SCUS_942.54`**. The writers must live in an unswept overlay or come from external POKE - TCRF GameShark codes prove both flags are runtime-writable.

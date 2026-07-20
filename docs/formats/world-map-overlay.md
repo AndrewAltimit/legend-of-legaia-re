@@ -1066,10 +1066,14 @@ into `piVar2`. The downstream LZS calls then interpret
 `piVar2[2..7]` as three `(size, offset)` pairs - but PROT 876's
 bytes there are streaming-format chunk data (the start of a VABp
 header inside chunk 0), not LZS descriptors. That branch is
-therefore **incompatible with PROT 876's actual layout** in retail
-and either (a) is gated off by `DAT_8007B8C2 == 0` in retail or (b)
-is dead code. The `data\field\player.lzs` string and PROT-876 fast
-path both fall over the same shape mismatch.
+therefore **incompatible with PROT 876's actual layout** in retail.
+The escape hatch once offered here - that the branch might be gated
+off by `DAT_8007B8C2 == 0` in retail - is **falsified**: retail boots
+that flag at `1`, so the `!= 0` branch is precisely the one retail
+takes. Either the branch is genuinely unreached for another reason,
+or the shape analysis above is wrong; it is not resolved by the flag.
+The `data\field\player.lzs` string and PROT-876 fast path both fall
+over the same shape mismatch.
 
 Among the **static SCUS** sites, `FUN_800520F0` (the battle scene
 loader) loads PROT 873+874 contiguously, but its two install loops

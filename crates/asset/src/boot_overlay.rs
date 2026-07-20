@@ -45,14 +45,28 @@
 //! branch resolves a name onto the same PROT entry is repeating the bad
 //! annotation.
 //!
-//! Which polarity ships is genuinely **open**: `0x8007B8C2` is BSS-resident
-//! (the executable's image ends at `0x8007B800`) and a byte-level scan of
-//! `SCUS_942.54` for stores with the matching immediate finds 40 loads and
-//! **zero** stores - a scan that does not rely on Ghidra's xref manager, so the
-//! LUI+ADDIU trap does not explain it away. Taken at face value that means the
-//! flag is `0` on hardware and these loaders take the host branch, which cannot
-//! succeed with no host attached. Something has to give; until it is pinned,
-//! this module names branches by **mechanism**, never by `retail` / `debug`.
+//! ## Which polarity ships: settled, `!= 0` is retail
+//!
+//! `main()` (`FUN_80015E90`) writes the flag once at cold boot:
+//!
+//! ```text
+//! 80015f00  jal  0x8003F084   ; `jr ra` / `addiu v0,zero,0x1` - returns 1
+//! 80015f08  sh   v0,0x5aa(gp) ; gp = 0x8007B318, so EA = 0x8007B8C2
+//! ```
+//!
+//! So retail runs with the flag at `1` and takes the **disc-index** branch
+//! everywhere; the host-PC branch is dead on real hardware. All 60 captured
+//! save states read `1`, agreeing with the static read.
+//!
+//! The earlier "genuinely open" framing here came from a scan that searched
+//! only the absolute `lui 0x8008` / `-0x473e` form and so reported 40 loads and
+//! zero stores. The store is **gp-relative** and was invisible to it. The
+//! companion inference - that BSS zero-init left the flag at `0` - was wrong
+//! independently: the PS-X EXE header has `b_addr = 0, b_size = 0`, so the BIOS
+//! clears no BSS for this executable at all.
+//!
+//! This module still names branches by **mechanism** rather than by
+//! `retail` / `debug`, because the mechanism is what the byte layout depends on.
 //!
 //! See [`docs/subsystems/boot.md`](../../../docs/subsystems/boot.md) for the
 //! mode state machine these loaders serve.

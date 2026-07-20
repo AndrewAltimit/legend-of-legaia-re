@@ -10,7 +10,8 @@ live per-character records at `0x80084708 + n*0x414`.
 The interactive scene a New Game enters is `town01` (Rim Elm) - the executable's
 default map-name buffer at `0x8007050C` holds the literal `"town01"`, and the
 global reset/init `FUN_8001D424` reads an optional dev `initmap.txt` override
-when the debug flag `_DAT_8007B8C2` is clear.
+when the debug flag `_DAT_8007B8C2` is clear. Retail boots with that flag set to
+`1`, so the override never fires and a retail New Game always enters `town01`.
 
 ## Table base + record layout
 
