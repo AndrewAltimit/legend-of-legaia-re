@@ -960,7 +960,9 @@ impl CoinQuote {
 /// The field is [`COIN_ENTRY_DIGITS`] single-digit cells stored
 /// **least-significant first** (the accumulator starts at 1 and multiplies by
 /// ten each cell), so `digits[0]` is the units place.
-// REF: FUN_801e6f70 (entry-field digit accumulation)
+// PORT: FUN_801e6f70 entry-field half (digit accumulation). The gate half of
+// the same function is `coin_exchange_quote`; the two together cover it.
+// NOT WIRED: as coin_exchange_quote - no host casino exchange screen.
 pub fn coin_entry_value(digits: &[u8]) -> i32 {
     let mut place = 1i32;
     let mut total = 0i32;

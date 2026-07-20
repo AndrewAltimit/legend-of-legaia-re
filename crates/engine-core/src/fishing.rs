@@ -699,15 +699,16 @@ pub const SPLASH_FRAMES: i32 = 0x98;
 /// into one of the overlay's shared draw helpers; the coordinates, glyph ids,
 /// and brightness values are the retail call-site constants. Rendering is the
 /// host's job - this module only decides *what* is drawn where.
-// REF: FUN_801d76e0 (digit blitter), FUN_801d63b0 (shared sprite-quad emitter)
+// REF: FUN_801d63b0 (shared sprite-quad emitter)
 // REF: FUN_801d26cc (the driver whose seed sites arm the banner timers)
-// The variants above name their retail helper; the two gauge-bar helpers
-// `FUN_801d1870` / `FUN_801d1a90` *are* ported, as `bar_frame` /
-// `power_bar_frame` (see their own PORT tags) - a `HudDraw::Bar` or
-// `PowerBar` is resolved through those. The digit blitter and the shared
-// sprite-quad emitter remain unported: they are pure VRAM emitters with no
-// decision content, so the variant carries their call-site arguments and
-// the host does the drawing.
+// Each variant names the retail helper it stands for. Three of those
+// helpers are themselves ported and carry their own PORT tags, so a
+// variant resolves into them rather than replacing them: FUN_801d1870 /
+// FUN_801d1a90 -> `bar_frame` / `power_bar_frame` (via
+// `HudDraw::resolve_bar`), and FUN_801d76e0 -> `number_digit_cells`.
+// FUN_801d63b0 is genuinely unported: it is a pure VRAM quad emitter with
+// no decision content, so the variant just carries its call-site
+// arguments and the host does the drawing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HudDraw {
     /// A number via the digit blitter `FUN_801d76e0`.
