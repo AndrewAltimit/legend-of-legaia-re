@@ -43,9 +43,9 @@ Default pass, 10-instruction signature, 3624 dumps:
 
 | Class | Count | What it means | Usable for |
 |---|---|---|---|
-| `MATCH` | 2603 | Printed VA equals the VA the bytes resolve to. | Everything. Addresses, provenance citations, port tags. |
-| `SHIFTED` | 290 | Bytes resolve at a constant non-zero delta. The dump was produced at the wrong load base. | Instruction *text* and decoded `jal` targets only. Never its addresses, and never as provenance for a function identity. |
-| `NOT_FOUND` | 112 | Bytes are in no extracted image. | Unresolved - see below. Not known-bad. |
+| `MATCH` | 2606 | Printed VA equals the VA the bytes resolve to. | Everything. Addresses, provenance citations, port tags. |
+| `SHIFTED` | 292 | Bytes resolve at a constant non-zero delta. The dump was produced at the wrong load base. | Instruction *text* and decoded `jal` targets only. Never its addresses, and never as provenance for a function identity. |
+| `NOT_FOUND` | 107 | Bytes are in no extracted image. | Unresolved - see below. Not known-bad. |
 | `SHORT` | 619 | Fewer than 10 instructions; too short to sign. | No verdict either way. |
 
 Those four numbers are what the committed script prints at its default
@@ -79,8 +79,8 @@ indistinguishable, from the outside, from a corpus that genuinely lacks the
 image.
 
 Lowering the threshold trades coverage for certainty. At `--min-insns 4` the
-`SHORT` class shrinks to 468 and the sweep returns 2695 `MATCH` / 372
-`SHIFTED` / 89 `NOT_FOUND` - but a 4-instruction signature also matches
+`SHORT` class shrinks to 468 and the sweep returns 2698 `MATCH` / 372
+`SHIFTED` / 86 `NOT_FOUND` - but a 4-instruction signature also matches
 *ambiguously*, so part of that growth is the method resolving dumps it should
 have declined. Treat a multi-hit resolution as weaker than a single-hit one.
 The clusters below are quoted at both thresholds for exactly this reason: the
@@ -116,7 +116,7 @@ overwhelming majority, and both point at one mistake. Counts are given as
 |---|---|---|---|
 | `+0xE818` | 208 / 221 | field overlay (PROT 0897) | Imported at base `0x801C0000` instead of `0x801CE818`. `0x801CE818 - 0x801C0000 = 0xE818`. |
 | `+0x5818` | 50 / 55 | `overlay_0896_*` | Same field-overlay bytes, reached at PROT 0896's over-read base. |
-| `+0xD018` | 8 / 8 | `overlay_0971` | Uncertain - see below. |
+| `+0xD018` | 8 / 8 | `overlay_0971` | The same mistake again, read through an over-read tail - see below. |
 
 **`+0xE818` is a single mis-based batch run.** Every member resolves
 single-hit into `overlay_field_0897.bin`, with a median of 35 consecutive
@@ -135,14 +135,23 @@ seam: PROT 0896's footprint runs into its neighbour, so dumps taken at its
 widely-cited base are reading field-overlay code. `0x801CE818 - 0x5818 =
 0x801C9000`, the over-read base. PROT 0896's own link base remains unrecovered.
 
-**`+0xD018` is unresolved.** A handful of `overlay_0971` dumps share it. PROT 0971 has
-never been statically extracted, so there is no image to resolve them against;
-the delta is inferred from partial hits and is the weakest row here. What would
-settle it: extract PROT 0971 (`asset overlay ...`, see
+**`+0xD018` is a third mis-based batch, seen through an over-read tail.** It was
+settled the way this page proposed: extract PROT 0971 (now mapped as
+`debug_menu` at `0x801CE818`, see
 [static-overlay-pipeline.md](static-overlay-pipeline.md)) and re-run the sweep.
-If they then resolve single-hit at a constant delta, it is a third
-mis-based batch; if they resolve at zero, the delta was an artifact of matching
-against the wrong image.
+
+The whole `overlay_0971` program was imported at `0x801C0000`, so its true delta
+is the same `+0xE818` as the field batch. Only two of its dumps report that,
+because PROT 0971's own content is `0x1800` bytes and the rest of the entry's
+footprint is PROT **0972** (fishing). Dumps landing in that tail resolve into
+`overlay_fishing_0972.bin`, whose base is `0x1800` lower, so the reported delta
+comes out `0xE818 - 0x1800 = 0xD018`. One import error, two deltas, because two
+images legitimately hold the bytes at bases that differ by the over-read offset.
+
+The generalisable form: **a reported delta is relative to whichever image the
+resolver matched.** Where entry footprints overlap, the same mis-based batch
+splits across histogram rows, and the rows are not independent findings. Read a
+delta together with the image named beside it.
 
 ## Two false positives of the method
 

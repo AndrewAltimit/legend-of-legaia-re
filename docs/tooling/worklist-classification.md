@@ -186,7 +186,13 @@ Two consequences, and they point opposite ways:
   still covers `0x801F7088`, far past that overlay's footprint, where the
   bytes belong to whichever slot-B image was resident.
 
-Neither error is visible in the dump. Both are settled by the bytes.
+Neither error is visible in the dump. Both are settled by the bytes. Resolving
+a capture's whole dump set against the extracted images says what it really
+held: `overlay_cutscene_dialogue` is a **field-overlay** (0897) capture, and
+`overlay_muscle_dome` is a **battle-overlay** (0898) capture with the summon
+render overlay (0900) in slot B. Neither names an overlay that could be
+extracted, because neither is an overlay - so a row those tags disagree about
+is not waiting on the extraction pipeline.
 
 ### Static-image arbitration
 
@@ -203,8 +209,39 @@ the two verdicts that turn on which image a dump came from - and yields:
 |---|---|
 | Exactly one image holds the dumped bytes at this VA | `REAL`, naming the owning overlay |
 | Two or more images hold distinct code there | `VA_ALIASED`, naming the overlays rather than the capture programs |
-| No dump testifies | `UNCERTAIN` - the owning overlay is un-extracted or the dumps are mis-based, so the alias can be neither confirmed nor refuted |
+| No dump testifies | `UNCERTAIN`, with the reason narrowed by the follow-up below |
 | A `DUPLICATE` peer has no matching body at its own VA | `REAL`, duplicate claim withdrawn |
+
+#### "No dump testifies" is two different problems
+
+The bare form of that verdict - *un-extracted overlay, or mis-based dumps* -
+names two causes with opposite remedies, and reads as the first. Only one of
+them is closed by extracting an overlay; the other is closed by re-dumping, and
+no amount of extraction will touch it. So the arbiter asks one more question
+before it settles: **if the bytes are not at this VA, are they anywhere?**
+
+It re-checks the dump's window against every image at every offset, the same
+way [`check-dump-base-integrity.py`](dump-corpus-integrity.md) does, and reports
+what it finds:
+
+| Follow-up | Reason recorded |
+|---|---|
+| Bytes resolve elsewhere, single site | mis-based; names the real overlay, VA and delta |
+| Bytes resolve elsewhere, several sites | mis-based; names each, since one routine is linked into several overlays |
+| Body too short to sign, but its Ghidra program has a measured batch delta | re-checked at that delta only, and reported if it lands |
+| The dump's address column has holes | gapped stream - it can match no image as a contiguous window, so the failure says nothing about the corpus |
+| Nothing resolves | the original bare reason, which now really does mean "un-extracted or unverifiable" |
+
+The batch-delta step is worth separating from the image-tag inference this
+section otherwise forbids. It uses the program name only to *propose* an
+offset, measured from that program's other dumps; the verdict still comes from
+comparing bytes at that offset. A program with no single dominant delta
+proposes nothing.
+
+A row that ends up `mis-based` is not port work at the address it names. The
+address came from a dump printed at the wrong base, so there is no function
+there to port - the routine is real, but it lives at the VA the reason names,
+where it is usually already a separate row.
 
 The `REAL` reason is deliberately narrow. "Every dump at this VA is of PROT
 0899" is not "no other overlay has code at this VA" - several do, since eight
@@ -216,6 +253,14 @@ Comparison is over the canonicalised token stream shared with
 `check-dump-base-integrity.py`, and each word is decoded independently: a
 streaming disassembly stops at the first word capstone rejects, which would
 silently truncate the compare and match a prefix.
+
+Each image is first cut down to the bytes its entry actually **owns**. An
+extracted image is the entry's `read_entry` footprint and runs into its
+neighbours' sectors ([`static-overlay-pipeline.md`](static-overlay-pipeline.md)),
+so left whole it answers for VAs its overlay never loads - with a neighbour's
+code. The cut is where another image's head appears, which is that neighbour's
+sector-aligned start. Without it, one routine appears at several VAs across
+several images and the arbiter reports overlays that hold nothing there.
 
 Two guards keep the arbiter from asserting more than it knows. A window
 dominated by `$zero`-absolute loads is the data-decoded-as-code signature and

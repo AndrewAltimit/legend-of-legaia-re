@@ -464,10 +464,49 @@ class StaticArbiter:
                     self.images.append(
                         ("%s(%d)" % (o["label"], o["prot_index"]), o["base_va"], 0, fh.read())
                     )
+        self._trim_over_read()
         scus = os.path.join(repo, "extracted", "SCUS_942.54")
         if os.path.exists(scus):
             with open(scus, "rb") as fh:
                 self.images.append(("SCUS", 0x80010000, 0x800, fh.read()))
+
+    # A PROT entry's head, long enough that finding it inside another entry is
+    # the over-read and not a coincidence.
+    OVER_READ_PROBE = 256
+
+    def _trim_over_read(self):
+        """Cut each image down to the bytes that entry actually owns.
+
+        An extracted image is the entry's `read_entry` FOOTPRINT, which runs
+        past the entry into its neighbours' sectors; the runtime slice is only
+        `[entry start, next entry start)`. Left whole, an image answers for
+        VAs its overlay never occupies, with its neighbour's code - so the
+        arbiter would attribute a routine to the wrong overlay at an address
+        that overlay never loads. The field overlay is the case that bites:
+        PROT 0898's image is byte-identical to PROT 0897's from file
+        `0x25000`, so the battle dispatcher `FUN_801D0748` also appears at a
+        phantom `0x801F5748` inside 0897's tail.
+
+        The cut is where some other image's head appears, which is that
+        neighbour's start; sector alignment keeps a chance byte-run from
+        truncating a real overlay.
+        """
+        heads = [
+            (label, data[: self.OVER_READ_PROBE])
+            for label, _, _, data in self.images
+            if len(data) >= self.OVER_READ_PROBE
+        ]
+        trimmed = []
+        for label, base, hdr, data in self.images:
+            cut = len(data)
+            for other, head in heads:
+                if other == label:
+                    continue
+                at = data.find(head)
+                if 0 < at < cut and at % 0x800 == 0:
+                    cut = at
+            trimmed.append((label, base, hdr, data[:cut]))
+        self.images = trimmed
 
     def available(self):
         return bool(self.images)
@@ -589,6 +628,172 @@ class StaticArbiter:
         "cannot be confirmed or refuted",
     )
 
+    # Signature length for the relocation index. Shorter than WINDOW so the
+    # index stays affordable; every candidate is then re-checked over the full
+    # WINDOW before it is reported.
+    RELOC_SIG = 10
+
+    def _reloc_index(self):
+        """Lazy {token-signature: [(label, base, file_offset)]} over every image.
+
+        Built only when a row has reached UNSUPPORTED_ALIAS, which is a handful
+        of rows per run; it costs a full canonical disassembly of every image.
+        """
+        if getattr(self, "_reloc", None) is None:
+            idx = defaultdict(list)
+            for label, base, hdr, data in self.images:
+                toks = self._cdbi.canon_bytes(data, len(data) // 4)
+                for i in range(len(toks) - self.RELOC_SIG):
+                    key = "\x00".join(toks[i : i + self.RELOC_SIG])
+                    idx[key].append((label, base, hdr, i * 4))
+            self._reloc = idx
+        return self._reloc
+
+    def relocate(self, addr, funcs):
+        """Where a mis-based dump's bytes actually live.
+
+        `owner_at` asks whether a dump's bytes are at the VA it prints. This
+        asks the complementary question the dump-base-integrity sweep asks:
+        are they anywhere at all? A single consistent answer means the printed
+        VA is fiction rather than the overlay being un-extracted, which is a
+        different piece of work - and one no extraction will ever close.
+
+        Returns the sorted `[(label, real_va)]` the bytes resolve to, when
+        every self-entry dump here resolves somewhere; otherwise None. A
+        routine that is linked into several overlays resolves several times -
+        that is still a resolution, and it still means the printed VA is not
+        one of them.
+        """
+        idx = self._reloc_index()
+        by_label = {label: data for label, _, _, data in self.images}
+        found = set()
+        for d in funcs:
+            if d["entry"] != addr:
+                continue
+            toks = self._dump_tokens(d, self.WINDOW)
+            if len(toks) < self.RELOC_SIG:
+                return None
+            hits = idx.get("\x00".join(toks[: self.RELOC_SIG]), [])
+            resolved = set()
+            for label, base, hdr, off in hits:
+                if base is None:
+                    continue
+                # Re-check over the full window: a 10-token signature can
+                # collide, and a prefix match is not a resolution.
+                if self._img_tokens(by_label[label], off, len(toks)) != toks:
+                    continue
+                resolved.add((label, base + off - hdr))
+            if not resolved:
+                return None
+            found |= resolved
+        return sorted(found, key=lambda t: (t[1], t[0])) or None
+
+    def batch_delta(self, image, by_addr):
+        """The modal base error of the Ghidra program `image`, if it has one.
+
+        A wrong load base is a property of one import, so every dump taken
+        from that program inherits the same delta. Establishing it from the
+        program's *other* dumps gives a candidate offset to re-check a dump
+        too short to sign on its own - which is a byte test seeded by a
+        measurement, not the image-tag inference this class exists to avoid.
+        """
+        cache = getattr(self, "_batch", None)
+        if cache is None:
+            cache = self._batch = {}
+        if image in cache:
+            return cache[image]
+        seen = Counter()
+        for a, dumps in (by_addr or {}).items():
+            for d in dumps:
+                if d["kind"] != "func" or d["entry"] != a or d["image"] != image:
+                    continue
+                if len(self._dump_tokens(d, self.WINDOW)) < self.WINDOW:
+                    continue
+                if self.owner_at(int(a, 16), d):
+                    continue  # correctly based; contributes no delta
+                hits = self.relocate(a, [d]) or []
+                if len(hits) == 1:
+                    seen[hits[0][1] - int(a, 16)] += 1
+        # One delta shared by an outright majority of the program's resolved
+        # dumps is a mis-based batch; a split vote is not evidence of
+        # anything. A minority delta is expected even in a clean batch, since
+        # a dump landing in an entry's over-read tail resolves against the
+        # neighbour it was read from. The proposal is a candidate either way -
+        # `relocate_short` still has to match the bytes at it.
+        got = None
+        if seen:
+            delta, votes = seen.most_common(1)[0]
+            if votes >= 3 and votes * 2 > sum(seen.values()):
+                got = delta
+        cache[image] = got
+        return got
+
+    def relocate_short(self, addr, funcs, by_addr):
+        """Resolve a body too short to sign, via its program's batch delta."""
+        va = int(addr, 16)
+        by_label = {label: data for label, _, _, data in self.images}
+        out = set()
+        for d in funcs:
+            if d["entry"] != addr:
+                continue
+            toks = self._dump_tokens(d, self.WINDOW)
+            if not toks:
+                return None
+            delta = self.batch_delta(d["image"], by_addr)
+            if delta is None:
+                return None
+            hit = None
+            for label, base, hdr, data in self.images:
+                off = hdr + (va + delta - base)
+                if off < 0 or off + 4 * len(toks) > len(data):
+                    continue
+                if self._img_tokens(by_label[label], off, len(toks)) == toks:
+                    if hit is not None:
+                        return None
+                    hit = (label, va + delta)
+            if hit is None:
+                return None
+            out.add(hit)
+        return sorted(out) or None
+
+    def unsupported_alias(self, addr, funcs, by_addr=None):
+        """UNSUPPORTED_ALIAS, sharpened when the bytes resolve elsewhere."""
+        try:
+            hits = self.relocate(addr, funcs) or self.relocate_short(
+                addr, funcs, by_addr
+            )
+        except Exception:  # index build failure must not decide a verdict
+            hits = None
+        if not hits:
+            # A gapped stream cannot match any image as a contiguous window,
+            # so failing to resolve says nothing about the overlay corpus.
+            gapped = [
+                d
+                for d in funcs
+                if d["entry"] == addr and d["insns"] and stream_gaps(d)
+            ]
+            if gapped and len(gapped) == len([d for d in funcs if d["entry"] == addr]):
+                return (
+                    "UNCERTAIN",
+                    "every dump at this VA has a gapped instruction stream "
+                    "(%d hole(s) in %s), so it matches no image as a "
+                    "contiguous window - re-dump before classifying"
+                    % (stream_gaps(gapped[0]), gapped[0]["image"]),
+                )
+            return self.UNSUPPORTED_ALIAS
+        va = int(addr, 16)
+        where = ", ".join("%s 0x%08x" % (lbl, v) for lbl, v in hits[:3])
+        if len(hits) > 1:
+            where += " (the same routine linked into each)"
+        else:
+            where += " (delta %+#x)" % (hits[0][1] - va)
+        return (
+            "UNCERTAIN",
+            "every dump at this VA is mis-based: the bytes live at %s, and at "
+            "this VA in no image - so nothing attests the address. Not an "
+            "un-extracted overlay; no extraction closes it" % where,
+        )
+
 
 def classify(addr, dumps, dup_groups, ported, owners=None, arb=None,
              all_dumps_by_addr=None):
@@ -642,8 +847,9 @@ def classify(addr, dumps, dup_groups, ported, owners=None, arb=None,
             return verdict
         # No dump testifies about this VA, so the alias rests on image tags
         # that are capture-program names. Downgrade to the class that is
-        # never ignored rather than delete or assert the row.
-        return StaticArbiter.UNSUPPORTED_ALIAS
+        # never ignored rather than delete or assert the row - and say which
+        # of the two causes it is, when the bytes resolve somewhere else.
+        return arb.unsupported_alias(addr, funcs, all_dumps_by_addr)
 
     # Drop dumps whose body is a misdecoded data region before any comparison.
     # One such dump at a VA a dozen other images agree on would otherwise read
