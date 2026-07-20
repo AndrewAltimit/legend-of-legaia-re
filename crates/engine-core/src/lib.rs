@@ -13,6 +13,7 @@ pub mod baka_fighter;
 pub mod battle_anim;
 pub mod battle_arts;
 pub mod battle_events;
+pub mod battle_flow;
 pub mod battle_hud;
 pub mod battle_input;
 pub mod battle_magic;

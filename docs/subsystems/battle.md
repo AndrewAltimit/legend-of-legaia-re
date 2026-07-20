@@ -161,9 +161,72 @@ Styles `0, 1, 8, 9` do not wait for acknowledgement; `2..=7` do.
 Engine port: [`engine-core::battle_tutorial`](../../crates/engine-core/src/battle_tutorial.rs).
 The prompt **text is Sony data living in the overlay**, so the port commits only
 the string *addresses* and reads the text off the user's own disc at runtime
-(`BattleTutorialScript::from_overlay`) - the same rule the item / spell / dialog
-parsers follow. Disc-gated oracle
+(`BattleTutorialScript::from_overlay` / `::from_prot`) - the same rule the item /
+spell / dialog parsers follow. Disc-gated oracle
 `crates/engine-core/tests/battle_tutorial_disc.rs`.
+
+### The command-flow byte `ctx[+0x06]` - what the hook table indexes
+
+The hook key is **not** the action SM's `ctx[+0x07]`. It is `ctx[+0x06]`, the
+cursor of the *other* battle state machine: the menu half, `FUN_801D0748`. Both
+are byte cursors through a `jr` table over the same context struct, and their
+value spaces collide - `ctx[7] == 0x64` is `RunBegin`, `ctx[6] == 0x64` is target
+confirm.
+
+Below `0x1E` the command flow is battle entry and turn setup: `0x00` init,
+`0x0A`/`0x0B` the intro timer at `ctx[+0x6D6]`, `0x14` turn start (which opens
+the top menu and falls into `0x1E`). From `0x1E` up it is the player's command
+selection, and the states are regular decimal multiples of ten:
+
+| `ctx[+0x06]` | On screen | Leaves to |
+|---|---|---|
+| `0x1E` = 30 | `[Begin]` / `[Escape]` turn prompt | `0x28` on Begin, `0x32` on Escape |
+| `0x28` = 40 | Action-category menu | `0x3C`/`0x46` per window, `0x6E` on Spirit, `0x50`/`0x5A`/`0x78` on Attack per the attack-mode option |
+| `0x32` = 50 | Flee confirm | `0xFE` on confirm, `0x1E` on cancel |
+| `0x3C` = 60 | Item window | `0x64` once an item is picked |
+| `0x46` = 70 | Magic window | `0x6E` / `0x28` |
+| `0x50` = 80 | Arts command-entry screen | `0x5A` when the sequence is entered |
+| `0x5A` = 90 | Target cursor | `0x6E` on the last member, else `0x28` |
+| `0x64` = 100 | Target confirm (item window's own) | `0x6E` / `0x28` |
+| `0x6E` = 110 | All members committed - begin | `0xFE` on confirm, `0x28`/`0x1E` on cancel |
+| `0x78` = 120 | Auto / Command attack-mode prompt | `0x50` on Command, `0x5A` on Auto |
+
+Above the selection band sit the per-window target sub-cursors (`0x5B..=0x67`),
+`0xFE` ("round armed - run the action SM") and `0xFF` (idle).
+
+That band is what pins the tutorial's table. Its nine live slots are exactly
+these ten states **minus the magic window** - the sparring fight teaches attacks,
+items, spirit and hyper arts, and never magic. Engine mirror
+[`engine-core::battle_flow`](../../crates/engine-core/src/battle_flow.rs), which
+carries that cross-check as a test.
+
+### How the engine raises the flow state
+
+The engine splits what `FUN_801D0748` does in one machine across a
+[`battle_input::BattleCommandSession`](../../crates/engine-core/src/battle_input.rs)
+plus host-owned Item / Magic / Arts submenus, so the flow byte is *recomposed*
+each frame by `battle_flow::flow_state_for` (an open submenu wins over the
+command phase). Three points differ from retail and are deliberate:
+
+- **Turn prompt.** The engine has no separate `[Begin]` screen, so
+  `World::open_battle_command` raises state `30` directly for the frame a turn
+  opens - the same instant retail enters `0x1E`.
+- **Target confirm.** `CommandPhase::Confirmed` is the Attack path, which retail
+  routes `0x5A → 0x6E`; state `100` is the item window's own target step and has
+  no engine hook point yet.
+- **Lesson counter.** Retail shares `ctx[+0x28A]` with the action SM, where the
+  sparring fight's scripted `case 0xFF` bumps it. The engine has no script driver
+  for that fight, so `BattleTutorial::pending_advance` bumps the lesson when the
+  commit hook *accepts* the taught category - one lesson per successful player
+  turn, which is the same observable cadence.
+
+A queued box parks the whole battle tick (`World::live_battle_tick` returns
+early), which is the port of retail returning before it reads the flow state
+while `FUN_801D9BBC` reports a box up (`ctx[+0x6B2]`). A hook that takes the
+rewind exit discards the action and reopens the command menu. Hosts arm the
+machine with `World::prime_battle_tutorial`, the stand-in for retail's stage-id
+dispatch; `legaia-engine play-window --player-battle` primes it in `town01`
+(`LEGAIA_BATTLE_TUTORIAL=1`/`0` forces it either way for hand-testing).
 
 The `asset-viewer battle-scene` subcommand drives the engine-side composite end-to-end: loads the same battle bundle TMDs, builds an `engine-core::World` in `SceneMode::Battle`, spawns 3 party + 5 monster actor slots, and ticks the [battle-action state machine](battle-action.md) per frame. HUD shows the current `ActionState` (decoded into the named variant), queued action, per-slot liveness, transition counts, and any `BattleEndCause` the SM emits. Triangle cycles `queued_action`; Cross re-seeds at `ActionState::Begin`.
 

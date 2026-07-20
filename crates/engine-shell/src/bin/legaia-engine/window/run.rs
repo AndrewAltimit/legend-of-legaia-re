@@ -400,6 +400,48 @@ pub(super) fn cmd_play_window_with_record(
     // a player-driven battle is requested but the boot save carries no items /
     // saved chains, seed a couple so the Item / Arts submenus are exercisable
     // by hand. No-ops when the save already has inventory / chains.
+    // Sparring tutorial: prime the in-battle "how to fight" prompt machine
+    // (stage overlay 967) for the next battle. Retail arms it off the battle's
+    // stage id, which only the Tetsu fight in `town01` carries; the engine has
+    // no per-formation stage id yet, so the scene stands in. `LEGAIA_BATTLE_TUTORIAL`
+    // forces / suppresses it (`1` / `0`) for hand-testing in any scene.
+    if player_battle {
+        let forced = std::env::var("LEGAIA_BATTLE_TUTORIAL").ok();
+        let want = match forced.as_deref() {
+            Some("0") => false,
+            Some(_) => true,
+            None => scene == "town01",
+        };
+        if want {
+            let script = legaia_engine_core::battle_tutorial::BattleTutorialScript::from_prot(
+                &session.host.index,
+            );
+            let n = script.len();
+            session.host.world.prime_battle_tutorial(script);
+            log::info!(
+                "play-window: sparring tutorial primed for the next battle ({n} prompt(s) off the disc)"
+            );
+            // `LEGAIA_BATTLE_TUTORIAL=now` drops straight into the sparring
+            // fight instead of waiting for a step-driven encounter, so the
+            // prompt boxes are reachable in one run. Debug affordance only -
+            // retail reaches this fight through the town01 story script.
+            if forced.as_deref() == Some("now") {
+                let world = &mut session.host.world;
+                let pc = world.party_count.clamp(1, 3);
+                world.enter_battle(pc, 1);
+                // Seed only the combatant slots - the field scene's other
+                // actors keep whatever the scene gave them.
+                for a in world.actors.iter_mut().take(pc as usize + 1) {
+                    if a.battle.max_hp == 0 {
+                        a.battle.max_hp = 100;
+                        a.battle.hp = 100;
+                    }
+                }
+                log::info!("play-window: LEGAIA_BATTLE_TUTORIAL=now entered the sparring fight");
+            }
+        }
+    }
+
     if player_battle {
         let world = &mut session.host.world;
         if world.inventory.is_empty() {

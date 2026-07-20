@@ -841,6 +841,41 @@ impl PlayWindowApp {
                     _ => {}
                 }
             }
+
+            // Sparring-tutorial prompt box. Placed by the retail style table
+            // (`FUN_801F747C`): the engine-core box carries the style index, we
+            // supply the measured text width and it returns the corner. Drawn
+            // last inside the battle block so it sits over the menus, which is
+            // where retail's message box lands too.
+            if let Some(tbox) = bw.battle_tutorial_box() {
+                let layouts: Vec<_> = tbox
+                    .text
+                    .lines()
+                    .map(|l| self.font.layout_ascii(l))
+                    .collect();
+                let width = layouts
+                    .iter()
+                    .map(|l| l.advance_x as i16)
+                    .max()
+                    .unwrap_or(0);
+                let (bx, by) = tbox.position(width).unwrap_or((0x10, 0x0E));
+                // Retail box coordinates are 320x240 screen space; the window
+                // draws in the same space as the rest of this HUD.
+                for (i, l) in layouts.iter().enumerate() {
+                    out.extend(text_draws_for(
+                        l,
+                        (bx as i32, by as i32 + (i as i32) * 14),
+                        white,
+                    ));
+                }
+                if tbox.waits_for_input {
+                    out.extend(text_draws_for(
+                        &self.font.layout_ascii("Cross=continue"),
+                        (bx as i32, by as i32 + (layouts.len() as i32) * 14),
+                        dim,
+                    ));
+                }
+            }
         }
         // Level-up banner: rendered near the top when active after a battle win.
         if let Some(banner) = &self.session.host.world.current_level_up_banner {

@@ -229,6 +229,18 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   one per party turn and parks the action SM until the player confirms;
   otherwise the loop auto-resolves with a physical Attack. v0.1 enables
   only the Attack command. See `docs/subsystems/battle.md#auto-resolve-vs-player-driven`.
+- `battle_flow` - the retail command-flow byte `ctx[+0x06]`, the cursor of
+  the battle's *menu* SM `FUN_801D0748` (not the action SM's `ctx[+0x07]`,
+  whose value space it overlaps). `flow_state_for` recomposes it each frame
+  from the live `BattleCommandSession` phase plus whichever host submenu is
+  open. It is the key the sparring-tutorial hook table indexes.
+- `battle_tutorial` - the Tetsu sparring fight's in-battle prompt machine
+  (stage overlay 967), a `(flow state × lesson)` cross-product with a
+  wrong-lesson rewind. `World::prime_battle_tutorial` arms it for the next
+  battle; a queued box parks the whole battle tick. Prompt **text is read
+  off the user's disc** (`BattleTutorialScript::from_prot`) - only the
+  string addresses are committed. See
+  `docs/subsystems/battle.md#the-sparring-tutorial-prompt-machine-overlay-967`.
 - `battle_hud` - renderer-agnostic UI model. Holds per-slot HP / MP /
   AP / status icons, a queue of `DamagePopup`s with fade timers, and a
   ringed log column. Engines feed it from `BattleEvent::ApplyArtStrike`

@@ -1481,6 +1481,36 @@ pub struct World {
     /// to draw the arts overlay.
     pub battle_arts_menu: Option<crate::battle_arts::BattleArtsSession>,
 
+    /// The battle **command-flow** cursor - retail `ctx[+0x06]`, the byte the
+    /// menu-half SM `FUN_801D0748` runs on and the key the sparring-tutorial
+    /// hook table indexes. Recomposed each frame from the live command session
+    /// plus submenus by [`crate::battle_flow::flow_state_for`]; the turn-start
+    /// prompt is raised directly by `World::open_battle_command`.
+    pub battle_flow: crate::battle_flow::BattleFlowState,
+
+    /// The sparring-tutorial prompt machine, armed only for the Tetsu
+    /// tutorial fight (battle-stage id
+    /// [`crate::battle_tutorial::TUTORIAL_STAGE_ID`]) via
+    /// [`Self::arm_battle_tutorial`]. `None` in every other battle - which is
+    /// every battle but one, matching retail's stage-overlay dispatch.
+    pub battle_tutorial: Option<crate::battle_tutorial::BattleTutorial>,
+
+    /// Prompt text for [`Self::battle_tutorial`], read off the user's own disc
+    /// copy of overlay 967. Empty when the host had no disc to read - the
+    /// tutorial then emits no boxes rather than inventing text.
+    pub battle_tutorial_script: crate::battle_tutorial::BattleTutorialScript,
+
+    /// Tutorial boxes waiting to be shown, front first. While non-empty the
+    /// whole battle loop is parked - the port of retail's `ctx[+0x6B2]`
+    /// message-box guard, which makes `FUN_801D0748` return early.
+    pub battle_tutorial_boxes: std::collections::VecDeque<crate::battle_flow::ActiveTutorialBox>,
+
+    /// The next [`World::enter_battle`] is the sparring fight and should arm
+    /// [`Self::battle_tutorial`]. Set by
+    /// [`World::prime_battle_tutorial`]; the engine's stand-in for retail's
+    /// per-formation battle-stage id.
+    pub battle_tutorial_pending: bool,
+
     /// Active stat buffs / debuffs applied by battle Magic, one entry per
     /// `(slot, stat)`. Each holds the exact delta written into the per-slot
     /// scalar so expiry can undo it, plus the remaining turn count (decremented
@@ -2169,6 +2199,11 @@ impl World {
             battle_item_menu: None,
             battle_spell_menu: None,
             battle_arts_menu: None,
+            battle_flow: crate::battle_flow::BattleFlowState::Idle,
+            battle_tutorial: None,
+            battle_tutorial_script: crate::battle_tutorial::BattleTutorialScript::default(),
+            battle_tutorial_boxes: std::collections::VecDeque::new(),
+            battle_tutorial_pending: false,
             active_formation: None,
             field_boss_stagers: std::collections::HashMap::new(),
             last_battle_rewards: None,

@@ -230,6 +230,7 @@ mod battle_loot_use_item;
 mod battle_special_ai;
 mod battle_status;
 mod battle_turns_items;
+mod battle_tutorial_flow;
 mod battle_xp_attack;
 mod core;
 mod dialogue_runner_fx;

@@ -15,6 +15,15 @@ impl World {
         }
         self.battle_ctx.active_actor = actor;
         self.battle_command = Some(crate::battle_input::BattleCommandSession::new(actor, actor));
+        // A turn opening from rest is retail flow state 0x1E - the
+        // `[Begin]`/`[Escape]` prompt, where the sparring tutorial shows the
+        // lesson intro. Reopening mid-turn (a submenu backed out of, or a
+        // tutorial rewind) is *not* a new turn: the flow is still parked on the
+        // hook state it bounced from and syncs back to the category menu next
+        // frame, which is where retail's rewind lands too.
+        if self.battle_flow == crate::battle_flow::BattleFlowState::Idle {
+            self.set_battle_flow(crate::battle_flow::BattleFlowState::TurnPrompt);
+        }
     }
 
     /// Drive the open command session one frame from [`World::input`]. When the
@@ -56,6 +65,38 @@ impl World {
             circle: self.input.just_pressed(PadButton::Circle),
         };
         session.input(ev, party, monsters);
+
+        // Sparring tutorial: the hook for the state this resolution enters can
+        // reject it (the wrong-lesson rewind), in which
+        // case the action is discarded and the command menu reopens. Resolved
+        // phases are gated here; unresolved ones (menu cursor / target cursor)
+        // just mirror onto the retail command-flow byte `ctx[+0x06]`.
+        let resolution = session.resolved();
+        if resolution.is_none() {
+            self.sync_battle_flow(Some(&session.phase));
+        }
+        if self.battle_tutorial.is_some()
+            && let Some(res) = resolution
+        {
+            use crate::battle_flow::BattleFlowState as Flow;
+            let rejected = match res {
+                // Attack is the only command that reaches Confirmed with a
+                // target in the engine; it commits category 3.
+                Resolution::Confirmed { .. } => self.battle_tutorial_commit(3),
+                Resolution::SpiritGuard => self.battle_tutorial_commit(4),
+                Resolution::OpenItemMenu => self.set_battle_flow(Flow::ItemWindow),
+                Resolution::OpenArtsMenu => self.set_battle_flow(Flow::ArtsCommandEntry),
+                Resolution::OpenSpellMenu => self.set_battle_flow(Flow::MagicWindow),
+                // Retail's state-50 handler rejects Run unconditionally for the
+                // whole sparring fight.
+                Resolution::RunAway => self.set_battle_flow(Flow::EscapePrompt),
+                Resolution::Aborted => false,
+            };
+            if rejected {
+                self.open_battle_command(session.actor);
+                return;
+            }
+        }
 
         match session.resolved() {
             Some(Resolution::Confirmed {

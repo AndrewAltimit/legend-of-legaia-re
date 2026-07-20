@@ -156,6 +156,113 @@ fn a_full_four_lesson_run_emits_a_prompt_at_every_hook() {
     );
 }
 
+/// The host-facing loader reads the same corpus the raw-archive path does, so
+/// `play-window` arms the machine with real text and not an empty script.
+#[test]
+fn the_prot_index_loader_returns_the_same_corpus() {
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let index = legaia_engine_core::scene::ProtIndex::open_extracted(&extracted)
+        .expect("open extracted PROT index");
+    let via_host = BattleTutorialScript::from_prot(&index);
+    let via_archive =
+        BattleTutorialScript::from_overlay(&overlay_967().unwrap(), tut::OVERLAY_967_BASE_VA);
+    assert_eq!(via_host.len(), via_archive.len());
+    for id in BattleTutorialScript::MESSAGE_IDS {
+        assert_eq!(via_host.text(id), via_archive.text(id), "{id:#010X}");
+    }
+}
+
+/// End-to-end: a real disc's prompt corpus driving a real player-driven battle
+/// through `World::live_battle_tick`. Asserts the boxes actually reach the
+/// screen queue in retail order, that they park the loop, and that following the
+/// lesson walks the machine forward.
+#[test]
+fn a_live_battle_shows_the_real_prompts_in_order() {
+    use legaia_engine_core::battle_flow::BattleFlowState;
+    use legaia_engine_core::input::PadButton;
+    use legaia_engine_core::world::World;
+
+    let Some(bytes) = overlay_967() else {
+        eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let script = BattleTutorialScript::from_overlay(&bytes, tut::OVERLAY_967_BASE_VA);
+    let intro = script.text(tut::msg::LESSON0_INTRO).unwrap().to_string();
+    let pick_attack = script.text(tut::msg::PICK_ATTACK).unwrap().to_string();
+    let no_running = script.text(tut::msg::NO_RUNNING).unwrap().to_string();
+
+    let mut world = World::new();
+    world.live_gameplay_loop = true;
+    world.battle_player_driven = true;
+    world.prime_battle_tutorial(script);
+    world.enter_battle(3, 2);
+    for i in 0..5 {
+        world.actors[i].battle.hp = 100;
+        world.actors[i].battle.max_hp = 100;
+    }
+    assert!(world.battle_tutorial.is_some(), "armed at battle entry");
+
+    // Drive the public per-frame tick until the loop reaches the first party
+    // turn and the tutorial puts its lesson-0 intro up.
+    for _ in 0..600 {
+        world.tick();
+        if world.battle_tutorial_box_up() {
+            break;
+        }
+    }
+    assert_eq!(world.battle_flow, BattleFlowState::TurnPrompt);
+    assert_eq!(
+        world.battle_tutorial_box().map(|b| b.text.as_str()),
+        Some(intro.as_str()),
+        "the lesson-0 intro opens the fight"
+    );
+    let parked = world.battle_ctx.action_state;
+    world.tick();
+    assert_eq!(
+        world.battle_ctx.action_state, parked,
+        "a box on screen parks the action SM"
+    );
+
+    // Acknowledge every queued box; the loop stays parked until the last one
+    // clears, then the category prompt for this lesson comes up.
+    for _ in 0..600 {
+        if world.battle_flow != BattleFlowState::TurnPrompt {
+            break;
+        }
+        world.input.set_pad(PadButton::Cross.mask());
+        world.tick();
+        world.input.set_pad(0);
+        world.tick();
+    }
+    assert_eq!(world.battle_flow, BattleFlowState::CategoryMenu);
+    assert_eq!(
+        world.battle_tutorial_box().map(|b| b.text.as_str()),
+        Some(pick_attack.as_str()),
+        "lesson 0 names [Attack] next"
+    );
+
+    // Running is refused for the whole sparring fight.
+    world.battle_tutorial_boxes.clear();
+    world.battle_command = Some(legaia_engine_core::battle_input::BattleCommandSession {
+        actor: 0,
+        party_slot: 0,
+        phase: legaia_engine_core::battle_input::CommandPhase::RunAway,
+    });
+    world.tick();
+    assert_eq!(
+        world.battle_tutorial_box().map(|b| b.text.as_str()),
+        Some(no_running.as_str()),
+        "Run is rejected"
+    );
+    assert!(
+        world.battle_command.is_some(),
+        "and the command menu comes back"
+    );
+}
+
 #[test]
 fn following_the_lesson_never_rewinds() {
     // Pure-logic companion: when the player does exactly what the current
