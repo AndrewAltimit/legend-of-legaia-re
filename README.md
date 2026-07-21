@@ -89,6 +89,27 @@ cargo build --release
 
 Binaries land in `target/release/`. Note that `legaia-engine` is the *binary* name while the *package* is `legaia-engine-shell`, so `cargo build -p legaia-engine-shell` builds just that crate.
 
+### Iterating on tests
+
+`release` carries `lto = "thin"` and `codegen-units = 1`, which is right for a
+shipped binary and wrong for a test binary built once and run once. Cross-module
+optimisation runs at link time, and the workspace links several hundred test
+binaries. The `release-test` profile keeps `release`'s optimisation level but
+drops LTO:
+
+```bash
+cargo test --workspace --profile release-test
+```
+
+Measured on `legaia-engine-core` (156 test binaries), rebuilding after a
+one-line source change: **490 s on `release`, 62 s on `release-test`**. The
+tradeoff is a second set of artifacts in `target/`, and test binaries whose
+codegen no longer matches a release build.
+
+CI stays on `--release`: its `ci` job runs `cargo build --release` alongside the
+test step and the runner's target directory persists, so there the two profiles
+would be built rather than one substituted for the other.
+
 Optional extras, only needed for the reverse-engineering workflows:
 
 - Docker + docker-compose, for headless Ghidra runs.
