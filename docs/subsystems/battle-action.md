@@ -724,11 +724,12 @@ final damage/HP settle + ability-effect application, not a bare teardown.
 
 ### Actor-pool leaf helpers
 
-Four small self-contained routines the SM and its round driver call over the
+Small self-contained routines the SM and its round driver call over the
 8-slot battle-actor pool (`&DAT_801C9370`) and the ctx target queue. Each is
 ported as a pure function in `engine-vm::battle_action` (`pool_ops`); all are
 transcribed from the disassembly (`overlay_battle_action_801db9c4.txt` /
-`_801db318.txt` / `_801d8d00.txt` / `_801db124.txt`).
+`_801db318.txt` / `_801d8a88.txt` / `_801d8d00.txt` / `_801db124.txt` /
+`_801db8b4.txt` / `_801dba04.txt` / `_801db81c.txt`, plus `80019b28.txt`).
 
 - **`FUN_801DB9C4` - end-of-action flag scrub.** AND-masks the `+0x8` flag word
   of pool slots 0..=6 with `0x7CFFFFFF` (clears bit 31 and bits 25/24). This is
@@ -741,11 +742,37 @@ transcribed from the disassembly (`overlay_battle_action_801db9c4.txt` /
   likewise; then it recomputes the extents and subtracts the centroid
   `((max + min) as u32) >> 1` from every included slot, shifting the focus
   accumulators back by the same centroid. Port: `normalize_formation_span`.
+- **`FUN_801D8A88` - attack target-queue builder.** Builds the ring the cycle
+  accessor steps through. Counts live monsters (slots 3..=6) into `ctx[+0x244]`,
+  takes the acting actor's `+0x1DD` current target as the wrap slot `+0x245`,
+  then computes each monster's bearing offset from the current-target direction
+  (via `FUN_80019B28`, each result `+0x800 & 0xFFF`, expressed as a positive
+  angle in `[0, 0x1000)`) and appends the three nearest *alive, non-target*
+  monster slots to `+0x246..` in ascending order, consuming each pick. Port:
+  `build_attack_target_queue` / `AttackTargetQueue` (the bearing is a closure so
+  the ordering ports without the retail arctan LUT).
 - **`FUN_801D8D00` - attack target-cycle accessor.** Locates the active actor's
   current target inside the multi-target ring built by `FUN_801D8A88`
   (`ctx[+0x244]` count, `+0x245` wrap slot, `+0x246..` ordered slots) and steps
   to the next (`param 0`) or previous (`param 1`) entry, wrapping at the ends.
   Port: `cycle_attack_target` / `TargetCycle`.
+- **`FUN_801DB8B4` - first live monster slot.** Scans pool slots 3,4,5,6 and
+  returns the first with a non-zero `+0x14C` liveness halfword; falls through to
+  `7` when none is alive. Port: `first_live_monster_slot`.
+- **`FUN_801DBA04` / `FUN_801DB81C` - selectable-participant scans.** Both walk
+  the pool over `0..ctx[0]` applying the same three predicates - action-state
+  byte `!= 4`, alive (`+0x14C`), and no can't-select ailment (`+0x16E & 0xF84`).
+  `FUN_801DBA04` starts at slot 0 (first selectable target); `FUN_801DB81C`
+  starts at `ctx[+0x13] + 1` (next participant after the current actor). Each
+  returns `ctx[0]` when nothing qualifies. Ports: `first_selectable_target` /
+  `next_selectable_actor`.
+- **`FUN_80019B28` - 12-bit bearing (atan2).** Folds the displacement
+  `(p2 - p1)` into a quadrant by sign, divides the shorter leg into the longer
+  (`(min << 11) / max`), indexes the retail arctan LUT at `0x8006F4C8`, and adds
+  the per-octant `0x000/0x400/0x800/0xC00` base to reassemble a clockwise 12-bit
+  heading (`0x000` = `-Z`, `0x400` = `+X`). Port: `bearing_12bit` (LUT is
+  caller-supplied Sony data; no table bytes embedded). The motion VM keeps a
+  separate `f32` approximation for its face-target ramp.
 - **`FUN_801DB124` - dead-target redirect roll.** When a queued action's chosen
   target (`actor[+0x1DD]`) is dead, and the category qualifies (Attack always;
   Magic when the spell class byte `>= 0xA` or the target is an enemy slot; Item
