@@ -1171,13 +1171,39 @@ beat: the ground lands **identically** at `G/R 0.890` / `B/R 0.46..0.48` on both
 The superseded engine approximations are retained as dormant plumbing: `apply_grade`'s pixel
 multiply and the [`fade::DepthCueRamp`](../../crates/engine-core/src/fade.rs) view-depth ramp
 (`Renderer::set_depth_cue_ramp`) still exist and are staged by the host, but the palette mode
-bypasses both while active. Known residual: the far geometry (spires / wings) reads brighter
-and slightly blue-rich in the engine - retail measures `B/R ≈ 0.15..0.16` at average
-brightness `~51` where the engine holds `B/R ≈ 0.27` at `~80`. The direction of the gap is
-explained by the law's integer floor (`(L >> 1) / L` falls toward `1/3` at the small `L`
-retail's darker far texels sit at) compounding with darker authored gouraud words on the far
-prims; what sets the retail far geometry that much darker than the engine's draw of the same
-meshes is the remaining open question.
+bypasses both while active.
+
+**Far-geometry brightness - not a separable law (resolved-negative).** The far geometry
+(spires / wings) reads brighter and slightly blue-rich in the engine - the villager-tableau
+matched-region capture measured retail at `B/R ≈ 0.15..0.16` / brightness `~51` vs the engine
+at `B/R ≈ 0.27` / `~80`. This is **not** a missing far-field palette or depth law, and there
+is no such law to port:
+
+- **No load-time gold-law CPU pass is statically visible.** A signature scan (the law's
+  `>>10/11` blue-field extract + `andi 0x1f` + `>>1` reconstruct + a `max`) across the STR
+  host overlay 0970 (`overlay_cutscene_str_0970`, 28 functions), the field overlay 0897 (690)
+  and `SCUS_942.54` (945) finds **no** CLUT-rewrite loop. Overlay 0970 is MDEC/STR play code
+  only - its sole law-shaped shifts are frame-position sign-extract (`>>31`) and `/2` in the
+  play loop `FUN_801CF098`; the strong `SCUS` hits are the SFX driver (`setbl`, `DAT_8006F198`)
+  and the arts-gauge path (`DAT_801C9370`), neither a palette pass. The **"cutscene-host
+  overlay 0970 load hooks are the candidates"** reading is therefore **falsified** - the CLUT
+  rewrite the capture observed is a table / DMA upload, not a scannable arithmetic loop (the
+  same shape as the XA-clip-table writer under "Open items").
+- **The palette grade is faithful; the gap is source colour + region.** With `IR0 = 0` on
+  every node (above), no DPCS pull acts on the far prims, and both halves of the grade are
+  capture-pinned (CLUT law in VRAM, amber packet in the GP0 list) and reproduced by the
+  engine. A far prim drawn with a baked amber packet lands `B/R ≈ 0.44 × 0.43 ≈ 0.19` on both
+  sides. The engine's `0.27` excess is un-darkened **neutral** packets in the sampled region:
+  lit-descriptor prims (rows 0/1 of `DAT_8007326C`, `byte1 = 0`, no baked colour block) are
+  fed neutral `0x80` by the mesh builder (`prim.colors...unwrap_or([128,128,128])` in
+  `crates/tmd/src/mesh/{color,vram}.rs`), so `palette_collapse_prim`'s neutral guard leaves
+  them un-graded. Retail draws those same lit prims through the scene GTE back/far colour that
+  its field renderer `FUN_80029888` loads (opdeene's ambient `DAT_8007B788 = 0x00202020`, dim,
+  vs `town01`'s `0x00FFFFFF`; writer `FUN_80043390`) - the field-path GTE colour the engine
+  deliberately omits (no field light source). That omission is a scene-wide boundary that only
+  *shows* in the prologue because opdeene's ambient is unusually dim, and the port's absence of
+  distance culling widens the sampled far region. Both are engine boundaries, not palette-law
+  defects; there is no faithful separable palette / depth law to add.
 
 ## Open items
 
