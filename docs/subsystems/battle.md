@@ -610,12 +610,19 @@ wipe and one plain-formation wipe on the `map01` overworld):
    (`0x80085758` bit `0x80`) is clear, the store at `0x8003B5D4`
    writes `game_mode = 0x16` (22, CARD INIT) and sets the CARD
    entry-context word `_DAT_8007BB00 = 1`. Mode 22 loads the menu
-   overlay 0899 and self-advances to mode 23 (`0x80025974`) - the
-   memory-card / continue surface. That screen **is** retail's game
-   over.
-3. `DAT_8007BD60` bit `0x80` is the battle overlay's survivors latch
-   (set at `0x801E802C` in 0898 on the surviving exit path), so a won
-   or escaped battle skips the gate.
+   overlay 0899 and self-advances to mode 23 (`0x80025974`). With that
+   entry context the CARD surface presents the **title screen with the
+   cursor on CONTINUE** (framebuffer captured live at the wipe
+   destination) - retail's game over is a silent return to the title /
+   Continue flow, no GAME OVER art, no menu of its own.
+3. `DAT_8007BD60` bit `0x80` is a **party-survived latch**: seeded at
+   battle load (`FUN_8001822C` body, `0x80018670` / `0x8001869C`, next
+   to its `game_mode = 0x14` store), cleared by the `0x5A` end-of-action
+   wipe scans (0898 `0x801E65F0` / `0x801E6694`, beside their
+   `_DAT_8007BD2C` cause writes), then re-set on the surviving exits:
+   the victory reward path `FUN_80026018` (`ori 0x80` at `0x800260AC`)
+   and the successful-escape arm of the escape roll `FUN_801E791C`
+   (`0x801E802C`). A wipe is the only battle end that leaves it clear.
 4. Story-flag index 0 is the **scripted-loss latch**: in the scripted
    Rim Elm ambush loss the scene script raises it at battle start, the
    gate reads it set, the wipe returns to field mode 3 like any battle

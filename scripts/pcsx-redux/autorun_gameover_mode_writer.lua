@@ -118,7 +118,9 @@ end
 
 -- Screenshot the wipe destination screen (mode LEGAIA_SHOT_MODE, default
 -- the CARD per-frame mode 0x17) LEGAIA_SHOT_DELAY vsyncs after it commits
--- with the wipe cause still 5. Decode via decode_pcsx_screen.py.
+-- with the wipe cause still 5. Decode via decode_pcsx_screen.py. The
+-- captured destination is the title screen with the cursor on CONTINUE
+-- (the CARD surface under entry context _DAT_8007BB00 = 1).
 local SHOT_MODE  = probe.getenv_num("LEGAIA_SHOT_MODE", 0x17)
 local SHOT_DELAY = probe.getenv_num("LEGAIA_SHOT_DELAY", 150)
 
