@@ -87,6 +87,7 @@ impl Renderer {
                         light_dir: self.dyn_light_dir_uniform(),
                         light_color: self.dyn_light_color_uniform(),
                         cue_ramp: self.cue_ramp.get(),
+                        palette: self.palette_grade.get(),
                     }]),
                 );
             }
@@ -606,6 +607,7 @@ impl Renderer {
         let light_dir = self.dyn_light_dir_uniform();
         let light_color = self.dyn_light_color_uniform();
         let cue_ramp = self.cue_ramp.get();
+        let palette = self.palette_grade.get();
         let push = |bytes: &mut [u8], slot: usize, mvp: Mat4| {
             let u = MeshUniforms {
                 mvp: mvp.to_cols_array_2d(),
@@ -617,6 +619,7 @@ impl Renderer {
                 light_dir,
                 light_color,
                 cue_ramp,
+                palette,
             };
             let off = slot * stride;
             let n = std::mem::size_of::<MeshUniforms>();

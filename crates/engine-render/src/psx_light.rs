@@ -104,6 +104,40 @@ pub fn depth_cue(rgb: [f32; 3], far: [f32; 3], ir0: f32) -> [f32; 3] {
     out
 }
 
+/// The prologue **palette-collapse law** applied to one BGR555 word - the
+/// retail gold grade's asset half, mirrored from the `palette_law_word` WGSL
+/// helper.
+///
+/// Capture-pinned: during the retail opening (recomp, cold boot) every CLUT
+/// entry the `opdeene` scene uploaded reads back as this function of the disc
+/// TIM's entry - `L = max(r, g, b)`, output `(L, max(L - 1, 0), L >> 1)`,
+/// STP bit preserved - with zero mismatches across the graded terrain rows.
+/// Because a 4/8bpp texel *is* a palette entry, applying the law per decoded
+/// texel is exactly equivalent to the CLUT rewrite.
+pub fn palette_law(word: u16) -> u16 {
+    let r = word & 0x1F;
+    let g = (word >> 5) & 0x1F;
+    let b = (word >> 10) & 0x1F;
+    let l = r.max(g).max(b);
+    (word & 0x8000) | ((l >> 1) << 10) | (l.saturating_sub(1) << 5) | l
+}
+
+/// The packet-colour half of the palette grade: collapse a loaded TMD colour
+/// word (`0..=255` byte units) to `gold * max(r, g, b)`, leaving the exact
+/// neutral `0x80` word untouched. Mirrors `palette_collapse_prim` (WGSL).
+///
+/// The retail opening's GP0 stream shows loaded-TMD prims drawing an amber
+/// family `~(M, 0.94*M, 0.43*M)` while the runtime-emitted ground quads keep
+/// their neutral `0x80,0x80,0x80` modulation - the two facts this split
+/// reproduces.
+pub fn palette_collapse(colour: [u8; 3], gold: [f32; 3]) -> [f32; 3] {
+    if colour == [NEUTRAL; 3] {
+        return [f32::from(NEUTRAL); 3];
+    }
+    let m = f32::from(colour[0].max(colour[1]).max(colour[2]));
+    [gold[0] * m, gold[1] * m, gold[2] * m]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,6 +205,62 @@ mod tests {
         approx(depth_cue([0.0; 3], [1.0, 0.5, 0.25], 1.0), [1.0, 0.5, 0.25]);
         // Half-way is a plain lerp.
         approx(depth_cue([0.0; 3], [1.0, 1.0, 1.0], 0.5), [0.5; 3]);
+    }
+
+    /// The palette-collapse law's fixed points and shape: black and the
+    /// STP-only word are unchanged (transparency judgements survive the law),
+    /// a pure green entry collapses to the warm `(L, L-1, L/2)` gold, and a
+    /// grey ramp keeps its luminance while gaining the gold chroma.
+    #[test]
+    fn palette_law_shape() {
+        assert_eq!(palette_law(0x0000), 0x0000);
+        assert_eq!(palette_law(0x8000), 0x8000);
+        // Pure green, L = 20: -> (20, 19, 10).
+        let w = 20u16 << 5;
+        let out = palette_law(w);
+        assert_eq!(out & 0x1F, 20);
+        assert_eq!((out >> 5) & 0x1F, 19);
+        assert_eq!((out >> 10) & 0x1F, 10);
+        // Grey keeps its level on the R channel (L = the grey level).
+        for l in 0u16..32 {
+            let grey = l | (l << 5) | (l << 10);
+            let g = palette_law(grey);
+            assert_eq!(g & 0x1F, l, "R carries the luminance");
+            assert_eq!((g >> 5) & 0x1F, l.saturating_sub(1));
+            assert_eq!((g >> 10) & 0x1F, l >> 1);
+        }
+        // STP bit rides through on a coloured entry too.
+        assert_eq!(palette_law(0x8000 | w) & 0x8000, 0x8000);
+    }
+
+    /// Packet-colour collapse: exact neutral is the fixed point (the ground
+    /// tile kernel's runtime-emitted word), everything else lands on the
+    /// gold ray scaled by the max component - the amber family the retail
+    /// opening's GP0 stream carries.
+    #[test]
+    fn palette_collapse_neutral_fixed_point_and_gold_ray() {
+        let gold = [1.0, 0.94, 0.43];
+        approx(palette_collapse([NEUTRAL; 3], gold), [128.0; 3]);
+        // A full-colour authored word collapses to max * gold.
+        let out = palette_collapse([0x38, 0x60, 0x18], gold);
+        approx(out, [96.0, 90.24, 41.28]);
+        // One-off from neutral is NOT the fixed point - only the exact
+        // synthetic word is.
+        let off = palette_collapse([0x80, 0x80, 0x7F], gold);
+        assert!((off[2] - 128.0 * 0.43).abs() < 1e-3);
+    }
+
+    /// The WGSL twins of the palette law must stay present and in shape.
+    #[test]
+    fn wgsl_carries_the_palette_law() {
+        let src = crate::shaders::PSX_DITHER_WGSL;
+        assert!(src.contains("fn palette_law_word"));
+        assert!(src.contains("fn palette_collapse_prim"));
+        // The law's three channel expressions.
+        assert!(src.contains("let l = max(r, max(g, b));"));
+        assert!(src.contains("((l >> 1u) << 10u)"));
+        // The neutral fixed point on the packet side.
+        assert!(src.contains("prim.r == 128.0 && prim.g == 128.0 && prim.b == 128.0"));
     }
 
     /// The WGSL and the CPU mirror must not drift: the shader has to carry the

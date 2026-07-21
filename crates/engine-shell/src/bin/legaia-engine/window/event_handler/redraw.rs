@@ -460,19 +460,27 @@ impl PlayWindowApp {
             // is retail's look (the creation crawl scrolls over the fades).
             let tint = self.session.host.world.scene_screen_tint();
             match (self.session.host.world.scene_color_grade(), tint) {
-                (Some(g), None) => r.set_color_grade(g.gold, g.strength),
-                (grade, Some(t)) => {
-                    let (gold, s) = grade
-                        .map(|g| (g.gold, g.strength))
-                        .unwrap_or(([1.0; 3], 0.0));
-                    let eff = [
-                        t[0] * ((1.0 - s) + gold[0] * s),
-                        t[1] * ((1.0 - s) + gold[1] * s),
-                        t[2] * ((1.0 - s) + gold[2] * s),
-                    ];
-                    r.set_color_grade(eff, 1.0);
+                // Prologue grade: staged as the renderer's PALETTE-COLLAPSE
+                // mode - the retail mechanism's true altitude (the scene's
+                // uploaded CLUTs + TMD colour words are rewritten to the gold
+                // law at load; the engine's shaders apply the identical law
+                // per texel / packet colour). `set_color_grade` carries the
+                // gold coefficients for the packet collapse; the screen tint
+                // rides the palette slot so the ground's neutral modulation
+                // still fades. The view-depth cue ramp is inert in this mode
+                // (retail's prologue nodes hold `IR0 = 0`).
+                (Some(g), t) => {
+                    r.set_color_grade(g.gold, g.strength);
+                    r.set_palette_grade(t.unwrap_or([1.0; 3]), true);
                 }
-                (None, None) => r.set_color_grade([1.0, 1.0, 1.0], 0.0),
+                (None, Some(t)) => {
+                    r.set_color_grade(t, 1.0);
+                    r.set_palette_grade([1.0; 3], false);
+                }
+                (None, None) => {
+                    r.set_color_grade([1.0, 1.0, 1.0], 0.0);
+                    r.set_palette_grade([1.0; 3], false);
+                }
             }
             // The grade's second half: the per-render-node DPCS far-colour
             // pull (gold far colour + depth-graded IR0 in retail), staged as

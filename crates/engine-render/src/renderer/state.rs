@@ -151,6 +151,14 @@ pub struct Renderer {
     /// [`Renderer::clear_depth_cue_ramp`]; drives the opening prologue's
     /// per-render-node far-colour crush.
     pub(super) cue_ramp: std::cell::Cell<[f32; 4]>,
+    /// Prologue palette-collapse grade `(tint_r, tint_g, tint_b, enable)`
+    /// staged into every field `MeshUniforms.palette`. Defaults to all-zero =
+    /// disabled (the bit-identical multiply-grade path). Set with
+    /// [`Renderer::set_palette_grade`]; drives the opening prologue's gold
+    /// look at the retail mechanism's true altitude (CLUT/texel law + packet
+    /// collapse), superseding the view-depth cue-ramp approximation while
+    /// active.
+    pub(super) palette_grade: std::cell::Cell<[f32; 4]>,
     /// Backface-cull mode staged into `MeshUniforms.flags[0]` (see there).
     /// `0.0` (default) = draw both sides; `1.0` / `2.0` = discard back /
     /// front-facing fragments. Set with [`Renderer::set_backface_cull`].
@@ -385,6 +393,34 @@ impl Renderer {
     /// Read the current cue ramp `(near_z, inv_range, max_ir0, enable)`.
     pub fn depth_cue_ramp(&self) -> [f32; 4] {
         self.cue_ramp.get()
+    }
+
+    /// Enable/disable the prologue **palette-collapse grade** - the retail
+    /// gold-prologue mechanism at its true altitude. A live capture of the
+    /// retail opening (recomp VRAM peek vs the disc TIMs) shows the scene's
+    /// uploaded CLUT rows rewritten entry-for-entry to
+    /// `L = max(r, g, b) -> (L, max(L-1, 0), L >> 1)` (5-bit, STP kept, zero
+    /// mismatches across the graded rows), the loaded TMD packet colours
+    /// collapsed to the amber family `~(M, 0.94*M, 0.43*M)` with
+    /// runtime-emitted neutral `0x80` words untouched, and **no** render node
+    /// carrying a DPCS `IR0` (node `+0x78` holds `0` all prologue). When
+    /// `enable` is on the mesh shaders apply exactly that: the texel law +
+    /// packet collapse (coefficients from [`Self::set_color_grade`]'s gold),
+    /// a global screen `tint` multiply (the op `0x4C 0x12` fade), and an
+    /// inert view-depth cue ramp. When off (the default) every path is
+    /// bit-identical to the multiply-grade render.
+    pub fn set_palette_grade(&self, tint: [f32; 3], enable: bool) {
+        self.palette_grade.set([
+            tint[0].max(0.0),
+            tint[1].max(0.0),
+            tint[2].max(0.0),
+            if enable { 1.0 } else { 0.0 },
+        ]);
+    }
+
+    /// Read the current palette grade `(tint_r, tint_g, tint_b, enable)`.
+    pub fn palette_grade(&self) -> [f32; 4] {
+        self.palette_grade.get()
     }
 
     /// Enable/disable the shader-side backface cull on the VRAM / colour
