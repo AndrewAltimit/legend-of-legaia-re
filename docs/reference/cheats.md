@@ -120,10 +120,12 @@ the `Detail` strings drop in via the field-name table there.
 
 ### Inventory
 
-Inventory array at `0x80085958` + 2-byte stride, 72 slots. The
-`Have 99 Items` cheat stamps `0x63` into every count byte; the
-`Have Max Items` cheat stamps `0xFF`; `Item Modifier` zeroes the ID
-byte. The stride alternates `(id, count)`.
+Inventory array at `0x80085958`, 2-byte stride alternating `(id, count)`. The
+`Have 99 Items` cheat stamps `0x63` into every count byte across its **72-slot
+general-item page** - the 72 is the cheat's span, not an engine bound; the live
+inventory window is 128 or 256 slots (see
+[memory-map](memory-map.md#0x80085958---item-inventory)). The `Have Max Items`
+cheat stamps `0xFF`; `Item Modifier` zeroes the ID byte.
 
 ### BattleActor
 

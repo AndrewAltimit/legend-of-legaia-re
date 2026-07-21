@@ -27,6 +27,7 @@ pub mod play_menu;
 pub mod play_name_entry;
 pub mod play_shop;
 mod player_anm;
+mod prot_locate;
 pub mod rom_patcher;
 pub mod runtime;
 mod scene_export;

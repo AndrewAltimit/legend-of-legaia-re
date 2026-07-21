@@ -16,7 +16,10 @@ navigation logic depends on the GPU backend.
 - `ui_overlay` - dialog box, cutscene narration, battle HUD, encounter banner,
   stage-scale text, per-glyph sprite emit helpers.
 - `ui_menu` - pause-menu field / status / spell / inventory / equipment panels,
-  options + key-rebind, name entry, game-over, tactical-arts editor.
+  options + key-rebind, name entry, game-over, tactical-arts editor, the
+  world-map battle-records screen (`records_screen_draws_for`, `FUN_801ED710`)
+  and the dev-menu list-body geometry (`dev_menu_list_draws_for`,
+  `FUN_801EAD98`).
 - `ui_title_save` - title menu, 9-slice window chrome, save-select, save-slot
   grid + info panel, "Now checking" dialog.
 - `ui_fishing` - fishing-minigame HUD: the ported persistent / catch HUD

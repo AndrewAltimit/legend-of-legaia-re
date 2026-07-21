@@ -79,6 +79,14 @@ separately; `--anim` lists the decoded actions. Formats:
 [battle-data-pack.md](../formats/battle-data-pack.md),
 [monster-animation.md](../formats/monster-animation.md).
 
+Enemy stats are **not** LZS-compressible text you can spot in a hex editor,
+and they are **not** in the player-battle files `0865`/`0866`. If you open
+those in a hex editor you will see enemy names like `Evil Fly` near the end -
+that is an *over-read* (see below), not their real home. Always read enemy
+data through `asset monster-archive` on entry `0867`, which starts each
+monster's LZS stream at the right slot base; a raw `lzs-decode` of the whole
+file only expands the first stream it meets.
+
 ## Streamed audio (voice + ambience) → WAV
 
 The pipeline already demuxes this into `extracted/XA_WAV/`. To run just that
@@ -228,6 +236,36 @@ random input decodes to plausible-looking bytes. Always check the *decoded*
 output for the expected magic ([lzs.md](../formats/lzs.md)). This is why
 `lzs-decode probe` reports `no plausible sections` on a non-container entry
 rather than emitting garbage - a clean "this isn't LZS" is the useful answer.
+
+### The over-read trap, and which file owns a byte offset
+
+Some PROT entries declare a TOC window far larger than their real on-disc
+footprint (the sector gap to the next entry). `prot-extract` writes the full
+declared window, so those `.BIN` files carry the *next* entry's bytes in their
+tail. The clearest case is the battle-data cluster: entries `0865` (Gala) and
+`0866` (Terra) each declare ~16 MB but really own `0x6F000` / `0x17800`, and
+their oversized windows both spill into the monster archive `0867`. That is
+why enemy text shows up at the end of a player-battle file.
+
+`prot-extract list` now flags every such entry with an `OVR` column and shows
+its true `footprint` next to the declared `decl_size`. To resolve a specific
+offset - "which file really owns the bytes my hex editor is showing at
+`0x17855` of `0866`?" - use `locate`:
+
+```bash
+prot-extract locate extracted/PROT.DAT 0x17855 --in-entry 866 --cdname extracted/CDNAME.TXT
+```
+
+It translates the in-file offset to an absolute PROT.DAT offset, names the
+**true owning entry** (here `0867`), and warns when the offset lands in an
+over-read tail rather than the entry's own data. Drop `--in-entry` to pass an
+absolute PROT.DAT offset directly.
+
+To avoid the trap entirely, re-extract with `prot-extract extract
+--clamp-footprint`: every `.BIN` is trimmed to its true footprint, so no file
+carries a neighbour's bytes (trailing overlays are kept - they sit inside the
+footprint). The default stays un-clamped because in-`.BIN` offsets then match
+the TOC-declared windows that `locate --in-entry` and older notes assume.
 
 ## Related docs
 

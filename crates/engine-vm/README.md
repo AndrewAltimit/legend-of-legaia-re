@@ -148,6 +148,26 @@ path's pre-increment u16 append (`FUN_8001FA68`), which indexes at the
 Nothing in the engine calls either yet - both carry a `NOT WIRED` note
 naming the reason.
 
+## `battle_action` - `FUN_801E295C`
+
+The per-actor battle action state machine (see
+[`docs/subsystems/battle-action.md`](../../docs/subsystems/battle-action.md)),
+split across `dispatch` / `attack` / `magic` / `summon` / `spirit` / `done` /
+`run` / `enemy_budget` / `validator`. `pool_ops` collects the small
+self-contained leaves over the 8-slot actor pool and the ctx target queue:
+`clear_end_of_action_flags` (`FUN_801DB9C4`, the state-`0x5A` `+0x8 &=
+0x7CFFFFFF` scrub), `normalize_formation_span` (`FUN_801DB318`, the formation
+span-squash + centroid recentre with camera-focus compensation),
+`build_attack_target_queue` (`FUN_801D8A88`, the multi-target ring *builder* -
+counts live monsters, sorts the alternates by bearing offset from the current
+target) and its `cycle_attack_target` (`FUN_801D8D00`, the next/prev accessor),
+`bearing_12bit` (`FUN_80019B28`, the faithful arctan-LUT atan2 the builder
+sorts by), `first_live_monster_slot` (`FUN_801DB8B4`),
+`first_selectable_target` / `next_selectable_actor` (`FUN_801DBA04` /
+`FUN_801DB81C`, the participant scans), and `redirect_dead_target`
+(`FUN_801DB124`, re-roll a queued action's target to a living same-side slot
+when the chosen target has died).
+
 ## `battle_formulas`
 
 Damage / MP-cost / accuracy / RNG / escape arithmetic kernels.

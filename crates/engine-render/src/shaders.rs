@@ -94,6 +94,38 @@ fn apply_grade(rgb: vec3<f32>, grade: vec4<f32>) -> vec3<f32> {
     return mix(rgb, rgb * grade.rgb, grade.a);
 }
 
+// Prologue palette-collapse law - the retail gold grade's ASSET half,
+// capture-pinned against the recomp's live VRAM during the opdeene opening:
+// every terrain/prop CLUT entry the scene uploaded had been rewritten from
+// the disc TIM's entry `(r, g, b)` to
+//     L = max(r, g, b);  (L, max(L - 1, 0), L >> 1)
+// in 5-bit BGR555 space, STP bit preserved (0 mismatches across the graded
+// rows - see docs/subsystems/cutscene.md "full-scene sepia grade"). Because
+// a CLUT rewrite is per palette entry and a 4/8bpp texel IS a palette entry,
+// applying the law to the decoded texel word is exactly equivalent.
+fn palette_law_word(w: u32) -> u32 {
+    let r = w & 0x1Fu;
+    let g = (w >> 5u) & 0x1Fu;
+    let b = (w >> 10u) & 0x1Fu;
+    let l = max(r, max(g, b));
+    let g2 = max(l, 1u) - 1u;
+    return (w & 0x8000u) | ((l >> 1u) << 10u) | (g2 << 5u) | l;
+}
+
+// The packet-colour half of the same grade: retail's prologue draw list
+// carries a small amber family of modulation words - each the collapse of a
+// full-colour authored TMD word to `max(rgb)` scaled by the gold ratio
+// (`~(1.0, 0.94, 0.43)` - the staged `grade.rgb`) - while runtime-emitted
+// neutral `0x80,0x80,0x80` words (the ground tile kernel) stay neutral.
+// `prim` is in 0..255 colour-byte units.
+fn palette_collapse_prim(prim: vec3<f32>, gold: vec3<f32>) -> vec3<f32> {
+    if (prim.r == 128.0 && prim.g == 128.0 && prim.b == 128.0) {
+        return prim;
+    }
+    let m = max(prim.r, max(prim.g, prim.b));
+    return gold * m;
+}
+
 // PSX GPU texture blending - THE field lighting model.
 //
 // A textured primitive's texel is modulated by the packet colour:
@@ -268,6 +300,13 @@ struct MeshUniforms {
     // `cue_ramp_ir0` in the prelude): (near_z, inv_range, max_ir0, enable).
     // enable 0 (the default) = constant `depth_cue.a` (identity when 0).
     cue_ramp: vec4<f32>,
+    // Prologue palette-collapse grade (see `palette_law_word` in the
+    // prelude): .xyz = the global screen tint (neutral 1,1,1), .w = enable.
+    // When enabled the textured/colour paths collapse texels + packet
+    // colours to gold instead of the `apply_grade` multiply, and the
+    // view-depth cue ramp is inert (the capture shows no node carries a
+    // depth cue during the prologue).
+    palette: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 
@@ -346,6 +385,13 @@ struct MeshUniforms {
     // `cue_ramp_ir0` in the prelude): (near_z, inv_range, max_ir0, enable).
     // enable 0 (the default) = constant `depth_cue.a` (identity when 0).
     cue_ramp: vec4<f32>,
+    // Prologue palette-collapse grade (see `palette_law_word` in the
+    // prelude): .xyz = the global screen tint (neutral 1,1,1), .w = enable.
+    // When enabled the textured/colour paths collapse texels + packet
+    // colours to gold instead of the `apply_grade` multiply, and the
+    // view-depth cue ramp is inert (the capture shows no node carries a
+    // depth cue during the prologue).
+    palette: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 @group(1) @binding(0) var t_color: texture_2d<f32>;
@@ -435,6 +481,13 @@ struct MeshUniforms {
     // `cue_ramp_ir0` in the prelude): (near_z, inv_range, max_ir0, enable).
     // enable 0 (the default) = constant `depth_cue.a` (identity when 0).
     cue_ramp: vec4<f32>,
+    // Prologue palette-collapse grade (see `palette_law_word` in the
+    // prelude): .xyz = the global screen tint (neutral 1,1,1), .w = enable.
+    // When enabled the textured/colour paths collapse texels + packet
+    // colours to gold instead of the `apply_grade` multiply, and the
+    // view-depth cue ramp is inert (the capture shows no node carries a
+    // depth cue during the prologue).
+    palette: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 @group(1) @binding(0) var t_vram: texture_2d<u32>;
@@ -575,7 +628,16 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     }
     let tsb = in.cba_tsb.y;
     let cba = in.cba_tsb.x;
-    let word = fetch_vram_word(in.uv_affine, cba, tsb);
+    var word = fetch_vram_word(in.uv_affine, cba, tsb);
+    // Prologue palette-collapse grade: retail rewrites the scene's uploaded
+    // CLUTs (and TMD colour words) to the gold law at load; the engine's
+    // VRAM carries the disc palettes, so the law applies per decoded texel
+    // (exactly equivalent - see `palette_law_word`). Transparency is judged
+    // on the raw word below, which the law preserves (0 -> 0, STP kept).
+    let palette_on = u.palette.w > 0.5;
+    if palette_on {
+        word = palette_law_word(word);
+    }
     let color = bgr555_to_rgba(word);
 
     // Discard fully transparent texels (PSX STP=0 with all-zero pixel) so
@@ -599,7 +661,14 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     // the vertex (the lit descriptor rows do author them) but retail never
     // feeds them to the GTE on the field path; only the OPT-IN dynamic-light
     // enhancement below consumes them (identity when disabled, the default).
-    let lit = psx_modulate(color.rgb, in.prim_color);
+    // In palette mode the packet colour is the gold collapse of the authored
+    // word (retail grades the loaded TMD colour words alongside the CLUTs;
+    // runtime-emitted neutral words stay neutral).
+    var prim = in.prim_color;
+    if palette_on {
+        prim = palette_collapse_prim(prim, u.grade.rgb);
+    }
+    let lit = psx_modulate(color.rgb, prim);
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
     let enhanced = dyn_light(
         lit, in.normal, geo_n, in.clip_pos.xy, u.psx_params.xy, u.light_dir, u.light_color,
@@ -610,8 +679,22 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     // colour-byte units). The grade tint models the amber modulation colour
     // and belongs to the near term only; the far colour is staged in absolute
     // display units and is not re-tinted.
-    let graded = apply_grade(enhanced, u.grade);
-    let ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
+    //
+    // Palette mode replaces the pixel multiply with the texel/packet collapse
+    // above (`apply_grade` would double-grade), carries the global screen
+    // tint in `palette.rgb`, and makes the view-depth cue ramp inert - the
+    // opening capture shows every render node holds `IR0 = 0` across the
+    // prologue, so the far-field crush is entirely the palette law + the
+    // amber packet words, not a depth cue.
+    var graded: vec3<f32>;
+    var ir0: f32;
+    if palette_on {
+        graded = enhanced * u.palette.rgb;
+        ir0 = u.depth_cue.a;
+    } else {
+        graded = apply_grade(enhanced, u.grade);
+        ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
+    }
     let cued = psx_depth_cue(graded, psx_modulate(color.rgb, u.depth_cue.rgb * 255.0), ir0);
     let rgb = psx_dither(cued, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, color.a);
@@ -630,26 +713,43 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
 fn blend_pass_color(in: VsOut, f_scale: f32) -> vec4<f32> {
     let tsb = in.cba_tsb.y;
     let cba = in.cba_tsb.x;
-    let word = fetch_vram_word(in.uv_affine, cba, tsb);
+    var word = fetch_vram_word(in.uv_affine, cba, tsb);
     // Texel 0x0000 never draws; STP=0 texels were already drawn opaque by
     // the first pass. 0x8000 (black + STP) correctly blends.
     if word == 0u || ((word >> 15u) & 1u) == 0u {
         discard;
+    }
+    // Same prologue palette-collapse as the opaque pass (STP preserved, so
+    // the discard test above is unaffected by ordering).
+    let palette_on = u.palette.w > 0.5;
+    if palette_on {
+        word = palette_law_word(word);
     }
     let color = bgr555_to_rgba(word);
     // Semi-transparent prims are texture-blended by the GPU exactly like the
     // opaque ones - the modulation happens before the blend equation, so it
     // applies here too, and the opt-in dynamic light matches the opaque pass
     // (identity when disabled) so lit water/glass composites consistently.
-    let lit = psx_modulate(color.rgb, in.prim_color);
+    var prim = in.prim_color;
+    if palette_on {
+        prim = palette_collapse_prim(prim, u.grade.rgb);
+    }
+    let lit = psx_modulate(color.rgb, prim);
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
     let enhanced = dyn_light(
         lit, in.normal, geo_n, in.clip_pos.xy, u.psx_params.xy, u.light_dir, u.light_color,
     );
     // Same grade-then-cue order as the opaque pass (see fs_main): the far
     // term is the texel-modulated far colour, un-tinted.
-    let graded = apply_grade(enhanced, u.grade);
-    let ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
+    var graded: vec3<f32>;
+    var ir0: f32;
+    if palette_on {
+        graded = enhanced * u.palette.rgb;
+        ir0 = u.depth_cue.a;
+    } else {
+        graded = apply_grade(enhanced, u.grade);
+        ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
+    }
     let cued = psx_depth_cue(graded, psx_modulate(color.rgb, u.depth_cue.rgb * 255.0), ir0);
     return vec4<f32>(cued * f_scale, 1.0);
 }
@@ -701,6 +801,13 @@ struct MeshUniforms {
     // `cue_ramp_ir0` in the prelude): (near_z, inv_range, max_ir0, enable).
     // enable 0 (the default) = constant `depth_cue.a` (identity when 0).
     cue_ramp: vec4<f32>,
+    // Prologue palette-collapse grade (see `palette_law_word` in the
+    // prelude): .xyz = the global screen tint (neutral 1,1,1), .w = enable.
+    // When enabled the textured/colour paths collapse texels + packet
+    // colours to gold instead of the `apply_grade` multiply, and the
+    // view-depth cue ramp is inert (the capture shows no node carries a
+    // depth cue during the prologue).
+    palette: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 
@@ -745,16 +852,33 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     // opt-in dynamic light (identity when disabled) layers over it; this
     // vertex format carries no normals, so the helper falls back to the
     // screen-space geometric normal (flat per-face shading on props).
+    // In prologue palette mode the authored colour word collapses to gold
+    // (retail grades the loaded TMD colour words at load - see the prelude).
+    let palette_on = u.palette.w > 0.5;
+    var base = in.color.rgb;
+    if palette_on {
+        let m = max(base.r, max(base.g, base.b));
+        base = u.grade.rgb * m;
+    }
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
     let enhanced = dyn_light(
-        in.color.rgb, vec3<f32>(0.0), geo_n, in.clip_pos.xy, u.psx_params.xy,
+        base, vec3<f32>(0.0), geo_n, in.clip_pos.xy, u.psx_params.xy,
         u.light_dir, u.light_color,
     );
     // An untextured prim is filled with the packet colour, so its DPCS far
     // term is the far colour itself (no texel multiply). Grade-then-cue,
-    // matching the textured path; the far colour is not re-tinted.
-    let graded = apply_grade(enhanced, u.grade);
-    let ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
+    // matching the textured path; the far colour is not re-tinted. Palette
+    // mode carries the global tint in `palette.rgb` and holds the cue ramp
+    // inert, exactly as the textured path does.
+    var graded: vec3<f32>;
+    var ir0: f32;
+    if palette_on {
+        graded = enhanced * u.palette.rgb;
+        ir0 = u.depth_cue.a;
+    } else {
+        graded = apply_grade(enhanced, u.grade);
+        ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
+    }
     let cued = psx_depth_cue(graded, u.depth_cue.rgb, ir0);
     let rgb = psx_dither(cued, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, 1.0);
@@ -771,15 +895,29 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
 fn blend_pass_color(in: VsOut, f_scale: f32) -> vec4<f32> {
     // Opt-in dynamic light first (identity when disabled), matching the
     // opaque colour pass so a semi prim blends against equally-lit pixels.
+    // Prologue palette mode mirrors the opaque colour pass exactly.
+    let palette_on = u.palette.w > 0.5;
+    var base = in.color.rgb;
+    if palette_on {
+        let m = max(base.r, max(base.g, base.b));
+        base = u.grade.rgb * m;
+    }
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
     let enhanced = dyn_light(
-        in.color.rgb, vec3<f32>(0.0), geo_n, in.clip_pos.xy, u.psx_params.xy,
+        base, vec3<f32>(0.0), geo_n, in.clip_pos.xy, u.psx_params.xy,
         u.light_dir, u.light_color,
     );
     // Grade-then-cue, matching the opaque colour pass (far colour direct -
     // an untextured prim has no texel multiply).
-    let graded = apply_grade(enhanced, u.grade);
-    let ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
+    var graded: vec3<f32>;
+    var ir0: f32;
+    if palette_on {
+        graded = enhanced * u.palette.rgb;
+        ir0 = u.depth_cue.a;
+    } else {
+        graded = apply_grade(enhanced, u.grade);
+        ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
+    }
     let cued = psx_depth_cue(graded, u.depth_cue.rgb, ir0);
     let rgb = psx_dither(cued, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb * f_scale, 1.0);
@@ -831,6 +969,13 @@ struct MeshUniforms {
     // `cue_ramp_ir0` in the prelude): (near_z, inv_range, max_ir0, enable).
     // enable 0 (the default) = constant `depth_cue.a` (identity when 0).
     cue_ramp: vec4<f32>,
+    // Prologue palette-collapse grade (see `palette_law_word` in the
+    // prelude): .xyz = the global screen tint (neutral 1,1,1), .w = enable.
+    // When enabled the textured/colour paths collapse texels + packet
+    // colours to gold instead of the `apply_grade` multiply, and the
+    // view-depth cue ramp is inert (the capture shows no node carries a
+    // depth cue during the prologue).
+    palette: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 

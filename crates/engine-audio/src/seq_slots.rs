@@ -4,13 +4,14 @@
 //!
 //! Each retail record carries two host pointers (`+0x0` destination,
 //! `+0x4` staging - owned by the loader, not modeled here), a sign-extended
-//! id byte at `+0x8` (which doubles as the SsSeqClose access id), and a
+//! id byte at `+0x8` (which doubles as the VAB-close access id), and a
 //! loaded flag at `+0xB`. The installer walker (`FUN_8001E54C`, ported as
 //! `engine-core::chunk_install`) sets the flag when a VAB/SEQ upload lands
 //! in the slot; the release below is its teardown counterpart. The hardware
-//! side of the close (SsSeqClose = `FUN_80068C80`: `SpuFree` the resident
-//! body, drop the open-sequence count) stays behind a caller-supplied
-//! closure so this table stays a pure bookkeeping model.
+//! side of the close (the VAB close `FUN_80068C80`: `SpuFree` the resident
+//! body, clear the bank's open-state slot, drop the open-bank count) stays
+//! behind a caller-supplied closure so this table stays a pure bookkeeping
+//! model.
 //! // REF: FUN_8001E54C // REF: FUN_80068C80
 
 /// One record of the `0x80091508` table, reduced to the two fields the
@@ -19,7 +20,7 @@
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SeqResourceSlot {
     /// SEQ handle / access id byte (record `+0x8`, read sign-extended).
-    /// This is the value handed to SsSeqClose on release.
+    /// This is the value handed to the VAB close on release.
     pub handle: i8,
     /// Loaded flag (record `+0xB`): set by the installer's VAB-upload
     /// types (1 / 3), cleared here on release.
@@ -53,7 +54,7 @@ impl SeqResourceTable {
 
     // PORT: FUN_8001FF58 - SEQ resource-slot release: index the 12-byte-
     // stride table at 0x80091508; when the loaded flag (+0xB) is set, clear
-    // it and SsSeqClose (FUN_80068C80) the slot's handle byte (+0x8).
+    // it and VAB-close (FUN_80068C80) the slot's handle byte (+0x8).
     /// Release slot `index`'s open SEQ handle. When the slot is loaded the
     /// flag is cleared **first** (retail stores the zero in the `jal` delay
     /// slot) and `close` runs with the slot's handle byte; an unloaded or

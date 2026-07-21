@@ -434,6 +434,65 @@ pub fn card_free_blocks(table: &[CardDirEntry], count: usize) -> i32 {
 }
 
 // ---------------------------------------------------------------------
+// Save-block checksum
+// ---------------------------------------------------------------------
+
+/// A save block is exactly one memory-card block ([`CARD_BLOCK_BYTES`] =
+/// `0x2000` bytes), read as `0x800` little-endian u32 words.
+pub const SAVE_BLOCK_WORDS: usize = 0x800;
+
+/// Word index of the stored checksum inside a save block: the last word,
+/// at byte offset `0x1FFC`. The checksum covers only the words *before*
+/// it (`0..SAVE_BLOCK_CHECKSUM_WORD`).
+pub const SAVE_BLOCK_CHECKSUM_WORD: usize = 0x7FF;
+
+/// Additive checksum over a save block, matching retail's `FUN_801E38D8`.
+///
+/// The retail routine walks `0x7FF` (2047) little-endian u32 words from
+/// the block base, wrapping the running total (`addu`), and returns it:
+///
+/// ```text
+/// 801e38d8  clear a1            ; sum = 0
+/// 801e38dc  move  v1,a1         ; i   = 0
+/// 801e38e0  lw    v0,0x0(a0)    ; w   = block[i]
+/// 801e38e4  addiu v1,v1,0x1     ; i  += 1
+/// 801e38e8  addu  a1,a1,v0      ; sum = sum +. w   (wrapping)
+/// 801e38ec  slti  v0,v1,0x7ff   ; loop while i < 0x7ff
+/// 801e38f0  bne   v0,zero,...
+/// 801e38f4  _addiu a0,a0,0x4    ; block ptr += 4  (delay slot, always)
+/// 801e38f8  jr    ra
+/// 801e38fc  _move v0,a1         ; return sum
+/// ```
+///
+/// The word it stops before ([`SAVE_BLOCK_CHECKSUM_WORD`], byte `0x1FFC`)
+/// is where the write path stores this value; the load path
+/// (`FUN_801DD35C` body at `0x801df888`) reloads that word and compares it
+/// against a fresh sum to decide block validity - see
+/// [`save_block_checksum_valid`]. Words past index `0x7FF` in a full
+/// `0x800`-word block are ignored.
+// PORT: FUN_801E38D8
+pub fn save_block_checksum(block: &[u32]) -> u32 {
+    block
+        .iter()
+        .take(SAVE_BLOCK_CHECKSUM_WORD)
+        .fold(0u32, |sum, &w| sum.wrapping_add(w))
+}
+
+/// Whether a save block's stored checksum word matches a fresh
+/// [`save_block_checksum`], the retail load-validity test.
+///
+/// Retail loads the stored word at byte `0x1FFC` and branches on
+/// `stored == computed` (`0x801df888`: `lw v1,0x1ffc(s1); beq v1,v0`);
+/// a match routes the slot to the "valid save" state, a mismatch to the
+/// "corrupt" state. A block too short to hold the checksum word can never
+/// be valid.
+// REF: FUN_801DD35C (0x801df888 stored-vs-computed compare)
+pub fn save_block_checksum_valid(block: &[u32]) -> bool {
+    block.len() > SAVE_BLOCK_CHECKSUM_WORD
+        && save_block_checksum(block) == block[SAVE_BLOCK_CHECKSUM_WORD]
+}
+
+// ---------------------------------------------------------------------
 // Memory-card status poll
 // ---------------------------------------------------------------------
 
@@ -1446,6 +1505,45 @@ mod card_directory_tests {
             .collect();
         let (table, count) = card_directory_scan(&entries);
         assert_eq!(card_free_blocks(&table, count), 15 - 30);
+    }
+
+    #[test]
+    fn checksum_sums_the_first_2047_words_only() {
+        // A full 0x800-word block: every word = 1 except the stored
+        // checksum word. The sum covers 0x7FF words -> 0x7FF.
+        let mut block = vec![1u32; SAVE_BLOCK_WORDS];
+        block[SAVE_BLOCK_CHECKSUM_WORD] = 0xDEAD_BEEF; // must be ignored
+        assert_eq!(save_block_checksum(&block), 0x7FF);
+    }
+
+    #[test]
+    fn checksum_wraps_on_overflow() {
+        // Two words summing past u32::MAX wrap, matching `addu`.
+        let mut block = vec![0u32; SAVE_BLOCK_WORDS];
+        block[0] = 0xFFFF_FFFF;
+        block[1] = 3;
+        assert_eq!(save_block_checksum(&block), 2); // 0xFFFF_FFFF + 3 = 2 (wrapped)
+    }
+
+    #[test]
+    fn checksum_valid_matches_stored_word() {
+        let mut block = vec![0u32; SAVE_BLOCK_WORDS];
+        block[0] = 0x1000;
+        block[1] = 0x0234;
+        block[2] = 0x0001;
+        let sum = save_block_checksum(&block);
+        block[SAVE_BLOCK_CHECKSUM_WORD] = sum;
+        assert!(save_block_checksum_valid(&block));
+        // Corrupt one covered word: the stored checksum no longer matches.
+        block[0] = block[0].wrapping_add(1);
+        assert!(!save_block_checksum_valid(&block));
+    }
+
+    #[test]
+    fn checksum_valid_rejects_a_short_block() {
+        // A block too short to even hold the checksum word is never valid.
+        let block = vec![0u32; SAVE_BLOCK_CHECKSUM_WORD];
+        assert!(!save_block_checksum_valid(&block));
     }
 
     /// The three ports chain, and the budget is the one the card's own

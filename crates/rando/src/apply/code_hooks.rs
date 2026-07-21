@@ -106,10 +106,17 @@ pub struct EnemyAllyReport {
 /// including bosses. A companion one-word widen of the victory check stops a
 /// charmed enemy from counting as an enemy you must defeat.
 ///
-/// Three same-size edits: the setup detour + the routine blob in preserved
+/// The victory-mask widen desyncs the state-`0x5A` wipe scan from the initiative
+/// scheduler, which can let a living charmed monster be the acting actor at
+/// victory and drive the win-pose staging out of bounds (the charm battle
+/// softlock). So this **always** applies the [`crate::charm_fix`] guard alongside
+/// the charm edits: the widen and its softlock fix ship together.
+///
+/// Five same-size edits: the setup detour + the routine blob in preserved
 /// `SCUS_942.54` rodata padding, and the victory-mask widen in the battle-action
-/// overlay's raw PROT entry. Fails (without touching the disc) if the build isn't
-/// the recognized US layout.
+/// overlay's raw PROT entry (the charm feature); plus the victory-arm guard
+/// detour (overlay) + guard blob (SCUS) that closes the softlock. Fails (without
+/// touching the disc) if the build isn't the recognized US layout.
 pub fn inject_enemy_ally(patcher: &mut DiscPatcher, pct: u8) -> Result<EnemyAllyReport> {
     let scus = patcher
         .read_named_file(SCUS_NAME)
@@ -118,6 +125,9 @@ pub fn inject_enemy_ally(patcher: &mut DiscPatcher, pct: u8) -> Result<EnemyAlly
         .read_entry(crate::enemy_ally::BATTLE_ACTION_OVERLAY_PROT_INDEX)
         .context("read battle-action overlay for enemy-ally injection")?;
     let plan = crate::enemy_ally::EnemyAllyInjection::plan(&scus, &overlay, pct)?;
+    // Plan the softlock guard against the *pristine* build before any write, so a
+    // partial patch never lands (both features validate the known US layout first).
+    let fix = crate::charm_fix::CharmVictoryFix::plan(&scus, &overlay)?;
 
     // Setup detour + routine live in SCUS; the victory-mask widen lives in the
     // battle-action overlay PROT entry (raw, linear from base).
@@ -135,6 +145,18 @@ pub fn inject_enemy_ally(patcher: &mut DiscPatcher, pct: u8) -> Result<EnemyAlly
             &plan.victory_word.to_le_bytes(),
         )
         .context("write victory-mask widen")?;
+
+    // Softlock fix: the one-word overlay detour + the guard blob in SCUS.
+    patcher
+        .patch_prot_entry(
+            crate::charm_fix::BATTLE_ACTION_OVERLAY_PROT_INDEX,
+            fix.overlay_hook_off as u64,
+            &fix.detour.to_le_bytes(),
+        )
+        .context("write charm victory-arm guard detour")?;
+    patcher
+        .patch_named_file(SCUS_NAME, fix.routine_off as u64, &fix.blob)
+        .context("write charm victory-arm guard routine")?;
 
     Ok(EnemyAllyReport { pct: plan.pct })
 }

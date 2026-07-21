@@ -67,6 +67,9 @@
     <li><code>BISCPS-10059PRO_</code> - JP (Legend of Legaia, SCPS-10059)</li>
   </ul>
   <p>The actual BIOS card-write thunk is <code>FUN_8006EE34</code>: it calls <code>FUN_8006EE7C</code> (BIOS-B(0x50)) then <code>FUN_8006EE6C</code> (BIOS-B(0x4E)) with channel argument <code>(port, 0x3F, 0)</code>. The channel encoding is <code>chan = port * 16 + sub_op</code>.</p>
+
+  <h3>Save-block checksum (<code>FUN_801E38D8</code>)</h3>
+  <p>A save block is exactly one card block (<code>0x2000</code> bytes = <code>0x800</code> u32 words). <code>FUN_801E38D8</code> is the block's additive checksum: it sums the first <code>0x7FF</code> little-endian words with a wrapping accumulator, stopping one word short of the block's final word at byte <code>0x1FFC</code> - the word where the write path stores the sum. The load direction of <code>FUN_801DD35C</code> reloads it (<code>lw v1,0x1ffc(s1); beq v1,v0</code> at <code>0x801df888</code>) and branches on stored-equals-computed to route the slot to the valid or the corrupt state. Ported as <code>save_select::save_block_checksum</code> with the compose helper <code>save_block_checksum_valid</code> mirroring the load-path compare.</p>
 </section>
 
 <section class="doc-section" id="slot-list-id-spaces">

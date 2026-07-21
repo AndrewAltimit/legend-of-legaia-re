@@ -159,6 +159,7 @@ const NAV = [
       { href: 'tooling/static-overlay-pipeline.html', text: 'Static overlay pipeline',  key: 'tooling/static-overlay-pipeline' },
       { href: 'tooling/mednafen-automation.html',    text: 'Mednafen automation',      key: 'tooling/mednafen-automation' },
       { href: 'tooling/pcsx-redux-automation.html',  text: 'PCSX-Redux automation',    key: 'tooling/pcsx-redux-automation' },
+      { href: 'tooling/recomp-differential.html',    text: 'Recomp differential',      key: 'tooling/recomp-differential' },
       { href: 'tooling/port-catalog.html',           text: 'Port catalog',             key: 'tooling/port-catalog' },
       { href: 'tooling/determinism-replay.html',     text: 'Determinism replay',       key: 'tooling/determinism-replay' },
       { href: 'tooling/randomizer.html',             text: 'Randomizer / disc patcher', key: 'tooling/randomizer' },

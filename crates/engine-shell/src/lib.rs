@@ -15,6 +15,7 @@ pub mod scenarios;
 pub mod sim_trace;
 pub mod tile_board_draws;
 pub mod vram_oracle;
+pub mod xa_clip;
 
 pub use bgm::AudioBgmDirector;
 pub use boot::{BootConfig, BootSession};

@@ -155,6 +155,57 @@ pub(crate) const FIELD_INTERACT_BOX_HALF: i32 = 0x40 + 0x20 - 0x18;
 /// moving-actor box) - ±80 units around the record-derived footprint centre.
 pub(crate) const FIELD_PROP_BOX_HALF: i32 = 0x40 + 0x10;
 
+/// Retail camera-relative pad-direction ring (`DAT_800766fc`, static
+/// `SCUS_942.54` file offset `0x66EFC`, eight `u32` masks), decoded from the
+/// disc. The eight 45° compass directions in rotation order: `Z+`, `Z+/X+`,
+/// `X+`, `X+/Z-`, `Z-`, `Z-/X-`, `X-`, `X-/Z+`. `func_0x800467e8` remaps a
+/// held direction `d` by the camera's rotation index (`gp+0x2d8`, 0..7 eighth
+/// -turns) to `RING[(index_of(d) + rot) & 7]` - see
+/// [`World::remap_pad_direction`].
+pub(crate) const FIELD_DIR_RING: [u16; 8] = [
+    0x1000, 0x3000, 0x2000, 0x6000, 0x4000, 0xC000, 0x8000, 0x9000,
+];
+
+/// Retail wall-slide direction rows (`DAT_800766bc`, static `SCUS_942.54`
+/// file offset `0x66EBC`, four 8-byte `{u32 mask, s16 dx, s16 dy}` records),
+/// decoded from the disc. One per cardinal direction: the direction bit and
+/// the ±62-unit forward probe offset the slide resolver tests. Same axis
+/// convention as [`FIELD_WALL_PROBES`] (`0x1000`=Z+, `0x4000`=Z-,
+/// `0x2000`=X+, `0x8000`=X-), applied as `(x + dx, z + dy)`. See
+/// [`World::resolve_field_slide`] (`FUN_80046494`).
+pub(crate) const FIELD_SLIDE_DIRS: [(u16, i32, i32); 4] = [
+    (0x4000, 0, -62), // Z-
+    (0x8000, -62, 0), // X-
+    (0x1000, 0, 62),  // Z+
+    (0x2000, 62, 0),  // X+
+];
+
+/// Retail wall-slide lateral sweep offsets (`DAT_800766ec`, static
+/// `SCUS_942.54` file offset `0x66EEC`; the resolver reads the first **seven**
+/// `s16` entries - the eighth is padding), decoded from the disc. Probed
+/// perpendicular to the travel axis from the blocked candidate point; the
+/// signed sum of the offsets that come back walkable picks the slide side.
+pub(crate) const FIELD_SLIDE_SWEEP: [i32; 7] = [-96, -64, -32, 0, 32, 64, 96];
+
+/// Retail wall-slide result bits (`DAT_800766dc`/`DAT_800766de`, static
+/// `SCUS_942.54` file offset `0x66EDC`), decoded from the disc: per direction
+/// row, `(negative_total_bit, positive_total_bit)` - the perpendicular
+/// direction ORed into the resolved mask when the sweep sum is negative /
+/// positive respectively (a symmetric dead end sums to zero and slides
+/// nowhere). Z-travel rows slide sideways in X, X-travel rows slide in Z.
+pub(crate) const FIELD_SLIDE_BITS: [(u16, u16); 4] = [
+    (0x8000, 0x2000), // row0 Z-: X- / X+
+    (0x4000, 0x1000), // row1 X-: Z- / Z+
+    (0x8000, 0x2000), // row2 Z+: X- / X+
+    (0x4000, 0x1000), // row3 X+: Z- / Z+
+];
+
+/// The lateral half-spread of the wall-slide resolver's three-point block
+/// test (`0x21` = 33 units): retail probes the candidate point at
+/// `±FIELD_SLIDE_LATERAL` along the axis perpendicular to travel plus dead
+/// centre, so a corner clips before the centre does.
+pub(crate) const FIELD_SLIDE_LATERAL: i32 = 0x21;
+
 /// Per-frame world-unit budget for one field-NPC motion-VM step.
 ///
 /// Retail derivation (static, `FUN_8003774C` in `overlay_0897`, cases 0x37 /

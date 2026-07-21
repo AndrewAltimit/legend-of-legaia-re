@@ -83,8 +83,11 @@ Three sites feed the SMs (decomps `overlay_battle_action_801daba4.txt`,
 - **At battle end** the win-pose staging requests slot `3*char + 2` (the
   **base "ME" archive**) directly through `FUN_80055B4C`, bypassing the
   applier: `FUN_801DABA4`'s no-living-enemy branch and `FUN_801E295C`'s
-  victory arm (which first re-rolls `ctx+0x13` onto a living party member,
-  with per-formation overrides). See
+  victory arm, which re-rolls `ctx+0x13` onto a living party member **only when
+  the acting actor is dead** - a living acting actor skips the re-pick at
+  `0x801E6690` (the hole behind the enemy-ally charm softlock; see
+  [`battle.md`](../subsystems/battle.md#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock)).
+  See
   [`battle-data-pack.md` § "ME" stream archives](battle-data-pack.md#me-stream-archives-readefdat)
   for the archive-side consequence (win-pose records read the base archive,
   everything else the main).

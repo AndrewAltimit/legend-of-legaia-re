@@ -85,6 +85,16 @@ pub(super) struct MeshUniforms {
     /// Set with [`Renderer::set_depth_cue_ramp`]. Drives the opening
     /// prologue's far-field gold crush.
     pub(super) cue_ramp: [f32; 4],
+    /// Prologue **palette-collapse grade** - `(tint_r, tint_g, tint_b,
+    /// enable)`. When enabled (`[3] > 0.5`) the textured / colour mesh
+    /// shaders reproduce the retail gold prologue at its true altitude: the
+    /// capture-pinned CLUT law `(L, L-1, L>>1), L = max(r,g,b)` applied per
+    /// decoded texel, the gold collapse of non-neutral packet colours, the
+    /// global screen tint in `[0..3]`, and an inert view-depth cue ramp.
+    /// `apply_grade`'s pixel multiply is bypassed. All-zero (the default)
+    /// keeps every path bit-identical. Set with
+    /// [`Renderer::set_palette_grade`].
+    pub(super) palette: [f32; 4],
 }
 
 pub struct UploadedTexture {

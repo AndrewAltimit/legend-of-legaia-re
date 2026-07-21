@@ -45,6 +45,7 @@
 pub mod st_ring;
 pub mod str_player;
 pub mod str_sector;
+pub mod strv2_decode;
 pub mod strv2_table;
 
 // ── Tables ─────────────────────────────────────────────────────────────────

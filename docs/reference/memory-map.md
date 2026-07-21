@@ -342,8 +342,13 @@ exits either at the first `id == 0` slot (ordinary, in-window) or at
 `i == end` (the primitive). The probe's two hits - casino prize-exchange
 `id=0x9C` at `0x800859E8` and equip-unequip `id=0xD0` at `0x800859EA` - are
 consecutive slots 72 and 73, i.e. exactly the ordinary id store for a bag whose
-first free slot was 72. **Reachability of the primitive itself is therefore
-unproven**: it needs a bag full to `gp[+0x2D4]`, which the probe scene was not.
+first free slot was 72. **Reachability of the primitive: unreachable through the
+retail add call sites in normal play.** A `[0,256)` window holds at most 255
+distinct ids (the merge pass keys on the id byte, `0` is the empty sentinel), so
+a hole always remains and the free-slot scan exits in-window; the half-windows
+are a transient solo phase whose real item population is well below 128. Only a
+non-add path (debug menu / cheat / crafted save) can force the `i == end` exit.
+See [`re-settled-threads.md`](re-settled-threads.md#full-window-item-add-oob-reachability).
 
 A memory-safe RE model of this accessor family (incl. the primitive surfaced as
 `AddOutcome::OobIdWrite { oob_target, written_id }`) lives in

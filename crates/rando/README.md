@@ -27,7 +27,7 @@ full design.
   - [Bonus equipment drop](#bonus-equipment-drop)
   - [Encounters](#encounters)
   - [Run-away EXP](#run-away-exp)
-  - [Enemy ally (charm)](#enemy-ally-charm)
+  - [Enemy ally (charm)](#enemy-ally-charm) - [Charm softlock fix](#charm-softlock-fix-charm_fix-module)
   - [Shiny Seru](#shiny-seru)
   - [Seru trading](#seru-trading)
   - [Chests](#chests)
@@ -37,6 +37,7 @@ full design.
   - [Element affinity](#element-affinity)
   - [Spell cost](#spell-cost)
   - [Equipment bonuses](#equipment-bonuses)
+  - [Equip mask](#equip-mask)
   - [Weapon specialty](#weapon-specialty)
   - [Arts](#arts)
   - [Doors](#doors)
@@ -256,7 +257,8 @@ scripted fight, and solo bosses are likewise set-pieces. Retail can't host a gen
 party combatant (battles are hard-wired to 3 party + 4 monster slots), so this
 rides the stock **AI-delegated** flag: setting an actor's `+0x16E |= 0x380` makes
 the action SM retarget it to the opposite side, so a flagged *monster* attacks the
-other monsters. `apply::inject_enemy_ally` performs three same-size edits:
+other monsters. `apply::inject_enemy_ally` performs five same-size edits - the
+three charm edits plus the two-edit softlock guard below:
 
 - a **setup detour** at `FUN_800513F0` `0x80051990` (after the monster loop) into
   a routine at `0x8007ACA0` - the gap window between the equipment-drop
@@ -268,6 +270,23 @@ other monsters. `apply::inject_enemy_ally` performs three same-size edits:
 
 Same guards as the other hooks (known build at both sites, all-zero dead space at
 the routine). On a solo-enemy boss the lone enemy turns on itself.
+
+### Charm softlock fix (`charm_fix` module)
+
+The victory-mask widen desyncs the state-`0x5A` monster-wipe scan (`0x384`) from
+the initiative scheduler `FUN_801DABA4` (still `0x4`), so a living charmed ally can
+be the acting actor at victory. The win-pose staging then reads the acting slot's
+character id from the **3-byte** party roster `DAT_8007BD10` (`0x801E6770`); for a
+monster slot (`3..6`) that is out of bounds and arms a garbage "ME" archive
+request - the pinned cause of the charm battle hard-freeze. `charm_fix` mirrors the
+engine `victory_pose_fixup`: a **single-word overlay detour** at the victory-arm
+keep-branch (`0x801E6690`, `bne a0,zero,0x801E6728`) into a 10-instruction guard in
+the SCUS rodata gap (`0x8007AB50`, the unused window between the Seru-Bell name
+string and the bonus-equipment routine). The guard keeps the acting slot only when
+it is a **living party slot** (`alive && slot < 3`) and otherwise routes into
+retail's own bounded valid-slot re-pick, so the roster read is always in range. The
+`j`'s delay slot leaves the original `sb v0,-0x42a0(v1)` store in place. Applied
+automatically with the charm feature; same known-build / all-zero guards.
 
 ## Shiny Seru
 
@@ -462,6 +481,29 @@ Equipment passive stat-bonus randomizer (`equip_bonus` module).
 - The apply path emits a same-size in-place SCUS patch via `patch_named_file`.
   The public `equip_stats::bonus_table_file_offset` + `EquipStatTable::rows`
   resolve the table.
+
+## Equip mask
+
+Equip-character-mask randomizer (`equip_mask` module) - **who** can wear each
+piece of gear.
+
+- Redistributes the `+6` equip-character mask of that same bonus table (`1`
+  Vahn, `2` Noa, `4` Gala, `7` = any). `plan_mask_shuffle` groups the rows by
+  their `+7` slot category and permutes the masks within each category
+  (`Shuffle`, multiset-preserving) or draws each from the category pool
+  (`Random`). Only the `+6` byte moves - disjoint from the [equipment
+  bonuses](#equipment-bonuses) stat pass, so the two compose (run both and a
+  shuffled-stat sword also lands on a shuffled owner).
+- Grouping by slot category keeps each character's *count* of equippable weapons
+  / body / head / footwear constant, so a character can never be left with zero
+  equippable gear in a slot. Operates on bonus **rows** (not item ids) and skips
+  rows no equippable item references, so a garbage row can't hand a real item an
+  unequippable (zero) mask.
+- The apply path (`apply::randomize_equip_masks`) emits a same-size in-place SCUS
+  patch via `patch_named_file`. The engine reads the same `+6` byte
+  (`engine-core::equipment::DiscEquipInfo::can_equip`), so a patched disc re-gates
+  each character's equip picker. `legaia-rando equip-bonuses` lists the current
+  mask (`V/N/G` / `any`) beside each row.
 
 ## Weapon specialty
 
@@ -807,7 +849,7 @@ a randomize entry that emits a per-feature `*ApplyReport`.
 | Drops | `current_drops` | `apply_drop_plan` / `randomize_drops` | a `DropApplyReport` records any slot too tight to re-pack. |
 | Equipment drops | - | `inject_equipment_bonus_drop` | injects a code hook into the battle-end reward routine that grants one extra random equipment piece on a low per-battle chance - additive, leaving the normal drop untouched (two same-size `SCUS_942.54` edits via `bonus_drop`). |
 | Run-away EXP | - | `inject_flee_exp` | injects a code hook into the battle-action escape teardown that banks a slice of a fled fight's experience into the party on a successful escape - vanilla gives nothing for fleeing (a raw overlay-entry detour + a `SCUS_942.54` routine via `flee_exp`). |
-| Enemy ally (charm) | - | `inject_enemy_ally` | injects a code hook into battle setup that, on a per-battle chance, sets the AI-delegated bits (`0x380`) on the frontmost enemy so it fights on the player's side, plus a one-word widen of the victory check so the ally isn't an enemy you must defeat (a `SCUS_942.54` detour + gap routine + an overlay-0898 edit via `enemy_ally`). |
+| Enemy ally (charm) | - | `inject_enemy_ally` | injects a code hook into battle setup that, on a per-battle chance, sets the AI-delegated bits (`0x380`) on the frontmost enemy so it fights on the player's side, plus a one-word widen of the victory check so the ally isn't an enemy you must defeat (a `SCUS_942.54` detour + gap routine + an overlay-0898 edit via `enemy_ally`). Always ships the `charm_fix` victory-arm guard alongside it (a one-word overlay detour + a SCUS-gap guard) so the widen can't drive the win-pose staging out of bounds - the charm battle softlock fix. |
 | Shiny Seru | - | `inject_shiny_seru` | injects nine code hooks so that, on a per-battle chance, a capturable enemy spawns with +35% stats (translucent) and its captured Seru deals +35% damage forever, plus cosmetics (translucent summon + a "+35% DMG!" caption below the effect box); the persistent flag is a parallel per-spell shiny byte at `record+0x1C0` (not the spell-level byte), with a grant-shift hook keeping it slot-aligned; all routines/data live in six verified-dead SCUS arenas **outside every live table** (an earlier layout squatted in the victory mouth-override + move-power tables - corrupted mouth + 6 broken moves - now guarded by `assert_not_in_tables`) via `shiny_seru`. |
 | Shops | `current_shops` | `randomize_shops` | `ShopApplyReport`; first `apply_item_price_edits` prices the chest-found equipment, then `Random` draws from the priced sellable pool so no quest item is sold. |
 | Casino | `current_casino` | `randomize_casino` | the casino prize exchange. |
@@ -935,9 +977,11 @@ legaia-rando verify --input DISC.bin --patch run.ppf
 
 - `--drops` / `--encounters` / `--chests` / `--shops` / `--casino` / `--steals` /
   `--arts` / `--doors` each take `shuffle` / `random` / `none`.
-- The battle-tuning + equipment-bonus passes - `--monster-stats` / `--move-power` /
-  `--element-affinity` / `--spell-cost` / `--equip-bonus` - each also take
-  `shuffle` / `random` / `none`.
+- The battle-tuning + equipment passes - `--monster-stats` / `--move-power` /
+  `--element-affinity` / `--spell-cost` / `--equip-bonus` / `--equip-mask` - each
+  also take `shuffle` / `random` / `none`. `--equip-bonus` and `--equip-mask` edit
+  disjoint bytes of the equipment table (stat tuple vs. equip mask), so they
+  compose.
 - `--equipment-drops` injects a low-chance bonus equipment drop into the
   battle-end reward routine - granted on top of `--drops`, never disturbing it.
   `--equipment-drop-chance N` sets the per-battle percent (default 5).
@@ -1036,9 +1080,12 @@ directory record moves.
   enumerate, shuffle preserves the multiset/counts, casino preserves the
   prize set); and the item-price edits (the 13 chest-equipment items get their
   reviewed values, the sellable pool excludes quest ids, and a shop `Random`
-  pass only stocks priced items); and an equipment-bonus shuffle asserting each
+  pass only stocks priced items); an equipment-bonus shuffle asserting each
   slot category's stat-tuple multiset is preserved while every row's
-  passive/mask/slot tail stays byte-identical.
+  passive/mask/slot tail stays byte-identical; and an equip-mask shuffle
+  asserting each slot category's `+6` mask multiset is preserved, every non-`+6`
+  byte untouched, no referenced row left unequippable, and that it composes with
+  the stat pass.
 
 ```bash
 cargo test -p legaia-rando                                   # synthetic only

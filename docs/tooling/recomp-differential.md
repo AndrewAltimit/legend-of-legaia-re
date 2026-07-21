@@ -585,24 +585,38 @@ mismatch is not by itself evidence that bank staging picked wrong.
 
 ### Divergences a matched run surfaces
 
-Two are structural - they reproduce on any window length, so they are not
-capture-alignment artifacts:
+Two structural engine defects surfaced here - both reproduced on any window
+length, so neither was a capture-alignment artifact - and both are closed:
 
-**Per-voice volume is written in the wrong domain.** The engine's key-on
-volumes occupy `0..127` where retail's occupy the SPU's 14-bit `0..0x3FFF`.
-`vab_bind.rs`'s `fire` states the intended chain in its own comment -
-`bank * prog * vel / 127^3 * 0x3FFF` - but divides by `127 * 127` and never
-applies the final widening, leaving the result short by a factor of `0x81`
-(the same `0..127 → 0..16383` constant the libspu command shims use). This
-makes the `vol` channel diverge at the first note of any track.
+**Per-voice volume was written in the wrong domain.** The engine's key-on
+volumes occupied `0..127` where retail's occupy the SPU's 14-bit
+`0..0x3FFF` - `vab_bind.rs`'s `fire` divided by `127^2` and never applied
+the final `×0x3FFF` widening, leaving every key-on short by a factor of
+`0x81` (the same `0..127 → 0..16383` constant the libspu command shims
+use), which made the `vol` channel diverge at the first note of any track.
+`fire` now carries the retail chain of `FUN_80067550` with its staged
+truncation points - `vel × bank_mvol × 0x3FFF / 0x3F01`, then
+`× prog_mvol × tone_vol / 0x3F01` (the program-level `ProgAtr.mvol` /
+`.mpan` factors included), and the sequencer path's closing square taper
+(`v²/0x3FFF` per side) lands in `sequencer.rs`'s `channel_mix`.
 
-**Tone selection collapses.** On a bank whose program table offers many
-tones, the engine keys only a few distinct VAGs while retail draws across
-the table; extending the trace window several-fold adds no new tones, so
-this is a program-change / tone-region lookup defect rather than a track
-that simply has not reached its other instruments yet. Because a wrong tone
-carries a wrong base note, the `pitch` channel diverges as a consequence -
-read `vag` first and treat `pitch` as downstream of it.
+**Tone selection collapsed.** On a bank whose program table offers many
+tones, the engine keyed only a few distinct VAGs while retail draws across
+the whole table, and extending the trace window several-fold added no new
+tones - a program-change lookup defect, not a track that had not reached
+its other instruments. Root cause: the VAB file packs one tone page per
+*used* program, and the engine indexed those packed pages with the raw
+program number. Retail resolves a program number to its page by **rank
+among the used `ProgAtr` slots** (`FUN_80068d94` writes the rank table at
+VAB open, `FUN_80068b98` reads it at program change), and 66 of the 217
+disc banks - 43 of the 77 music banks - author sparse program sets, so on
+those banks most program numbers landed on the wrong page or (309 program
+numbers corpus-wide) fell off the packed table and dropped outright.
+`VabBank::upload` now expands the pages into program-number space; the law
+is pinned corpus-wide by `engine-audio/tests/real_vab_program_mapping.rs`.
+Because a wrong tone carries a wrong base note, the `pitch` channel
+diverged as a consequence of `vag` - read `vag` first and treat `pitch` as
+downstream of it.
 
 The `v` (voice index) channel differs whenever either of the above does:
 allocation order is a function of the note stream, so it is an effect, not

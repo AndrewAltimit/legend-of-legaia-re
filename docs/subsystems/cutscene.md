@@ -299,9 +299,17 @@ is selected by `DAT_801E09FC`:
 - **STRv2/v3** (`FUN_801D070C`, dev slots 9/10 only): standard VLC with per-block DC deltas,
   lookup table unpacked at runtime by `FUN_801F1A00` into `DAT_801E0A00`. The play loop calls the
   unpacker **unconditionally**, once per FMV (`801cf210`), even for Iki slots that never read the
-  table. Port: [`legaia_mdec::strv2_table`](../../crates/mdec/src/strv2_table.rs), reachable as
-  `mdec strv2-table <overlay>`; no decoder in the port consumes the table yet, because no retail
-  movie uses this path. See [STRv2 VLC table](#strv2-vlc-lookup-table-fun_801f1a00).
+  table. Ports: [`legaia_mdec::strv2_table`](../../crates/mdec/src/strv2_table.rs) (the unpacker,
+  reachable as `mdec strv2-table <overlay>`) and its consumer
+  [`legaia_mdec::strv2_decode::decode_frame`](../../crates/mdec/src/strv2_decode.rs). The table is
+  not a run/level table - it stores the **pre-baked MDEC output codes** (one to three per hit, plus
+  a per-entry bit length), carved into four regions: luma DC (`+0x0000`) and chroma DC (`+0x0400`)
+  indexed by `acc >> 24`; AC primary (`+0x0800`, 8-byte, `acc >> 19`); AC secondary (`+0x10800`,
+  `acc >> 23`). So `FUN_801D070C` is a bit-prefix lookup: only the DC coefficients (raw 10-bit in
+  v2, size-prefixed predicted differences chained per channel in v3), the `0x7C1F`-escape raw codes
+  and the 65-code `0xFE00` end padding are computed. Dead in retail (no released movie uses it), so
+  the port has no golden decode to check against; the tests pin the distinct code paths against the
+  disassembly. See [STRv2 VLC table](#strv2-vlc-lookup-table-fun_801f1a00).
 
 #### STRv2 VLC lookup table (`FUN_801F1A00`)
 
@@ -353,7 +361,11 @@ holds **no** channel selector):
   the hard-coded file byte; the **channel is caller-supplied** - e.g. the menu voice dispatcher
   `FUN_8004FCC8` derives `clip slot = (id - 0x100) >> 3` (remapped `1/3/5 -> 0x1A/0x1B/0x1C`) and
   `chan = id & 7`. `FUN_8003EAE4` is the by-index sibling starter; `FUN_8003ED04` the stop.
-  `see ghidra/scripts/funcs/8003d764.txt` / `8003d53c.txt`.
+  `see ghidra/scripts/funcs/8003d764.txt` / `8003d53c.txt`. The pure computations of that dispatch
+  chain - the id -> `(clip_slot, channel)` mapping, the length-field -> `duration_sectors` scale
+  `(len*60+99)/100`, and the starter's end-LBA offset `(duration*150+149)/60` clamped at `0x2A30` -
+  are ported in [`legaia_engine_shell::xa_clip`](../../crates/engine-shell/src/xa_clip.rs); the CD
+  control / `CdlSetfilter` state machines around them stay hardware-side and unported.
 
 So the complete channel map is: **movies** = one track per file at `(1, 0)`, selected by
 `fmv_id -> MVn.STR + frame range`; **XA files** = `(1, chan)` inside `XA<clip_id + 1>.XA`, with
@@ -1109,72 +1121,101 @@ white narration text stays white. It is distinct from the transient colour fade 
 cold-boot pixel capture pins its scope: the grade **persists across `opdeene` / `opstati` /
 `opurud`** and drops for the full-colour `map01` fly-in and `town01`.
 
-**Retail mechanism (traced two ways).** The grade is a GTE render-time effect, not baked
-geometry and not a `MES`/texture change:
-- The TMD renderer `FUN_8002735C` runs the GTE **DPCS** depth-cue per primitive:
-  `out = base + IR0·(far − base)`, where the **far colour** (GTE control regs 21/22/23 = RFC/GFC/BFC)
-  comes from each render node's `+0x74` and `IR0` from `+0x78`. Setting a gold far colour with a
-  non-zero IR0 pulls every object uniformly toward gold - the exact tool for a scene-wide grade.
-- The GTE **back/ambient colour** `DAT_8007B788` ("light_back_color") is `0x00202020` (dim,
-  R=G=B=32) in `opdeene` vs `0x00FFFFFF` (white) in `town01`, staged into GTE cr13-15 by
-  `FUN_80043390` - the darkening half of the look. (Byte-exact across save states.)
+**Retail mechanism (capture-pinned).** The grade is applied to the **loaded scene assets**,
+not per frame: a live capture of the retail opening (recomp cold boot; VRAM peeked against the
+disc TIMs) shows every CLUT row the `opdeene` bundle uploads rewritten **entry-for-entry** from
+the disc value `(r, g, b)` (5-bit BGR555) to
 
-The `opdeene` MAN itself carries **no** colour op (no op `0x4C 0x8A` ambient, no `0x4C 0x81` far
-colour); it drives op `0x46` depth-fog and the op `0x4C 0x12` screen fade only. So the gold is set
-by the **cutscene-host overlay during the narration beats**, not the field script.
+```
+L = max(r, g, b)   →   (R, G, B) = (L, max(L − 1, 0), L >> 1)
+```
 
-A GP0 draw-list capture of the retail opening chain refines what "the grade" actually is, per
-primitive class:
-- **Lit gouraud + modulated-texture prims** carry amber colour words ≈ `255:240:110`
-  (`G/R ≈ 0.94`, `B/R ≈ 0.43`), consistent across `opdeene` and `opurud` - the dim ambient and
-  the gold far-colour depth cue folded into the drawn modulation colour. The near-field surfaces
-  of the retail tableau framebuffer measure `B/R ≈ 0.44`, i.e. the modulation ratio almost
-  unblended.
-- **Far-field geometry** (sky planes, distant spires) measures `B/R ≈ 0.12..0.18` in the
-  framebuffer - pulled hard toward the gold **far colour** (`255:230:62`, `B/R ≈ 0.24` whole-frame
-  average RGB `(61, 55, 15)`) by the per-render-node DPCS depth cue.
-- **Bulk backdrop textures** draw at *neutral* `0x808080` modulation: their amber is pre-baked
-  in the texels and retail preserves that chroma - the grade is **not** a whole-frame hue
-  collapse.
+with the STP bit preserved - zero mismatches across the graded terrain rows (the green
+foliage/ground page's row 509, the amber-rock row 508, the grey-scree row 501; 768 entries).
+The gold prologue is a **palette-space luminance collapse to a gold ray**, not a render-time
+tint: the same texel indices draw through gold-monochrome palettes. Two companion facts from
+the same capture close the older readings:
 
-**Engine port.** Rather than replicate the per-object GTE far-colour plumbing, the engine
-reproduces the modulation half with a per-channel **multiply tint**:
-[`fade::ColorGrade`](../../crates/engine-core/src/fade.rs) holds the tint + strength
-([`ColorGrade::PROLOGUE_SEPIA`](../../crates/engine-core/src/fade.rs), gold
-`(1.0, 0.94, 0.43)` = the measured on-geometry modulation ratio), and
-[`World::scene_color_grade`](../../crates/engine-core/src/world/narration.rs) returns it while
-the active scene is one of the prologue cutscene legs (`opdeene` / `opstati` / `opurud`) and
-`None` for every other scene (including `map01` / `town01`). `play-window` stages
-it into the renderer each frame ([`Renderer::set_color_grade`](../../crates/engine-render/src/renderer.rs));
-the field mesh shaders' `apply_grade` cross-fades each shaded pixel toward `rgb · gold` by
-`strength` (the text/UI overlays use separate shaders, so the narration stays white). A multiply -
-not a luminance collapse - because that is retail's mechanism: neutral-modulation backdrop chroma
-survives it exactly as on hardware. The coefficients are the **display** ratios as-is: the shader
-multiplies into a pixel that is already a PSX framebuffer value and the attachment is UNORM, so
-nothing re-encodes the product (see
-[`renderer.md`](renderer.md#colour-space-psx-framebuffer-values-end-to-end)).
-Pixel-verified against the retail tableau framebuffer on matched regions: gold geometry lands
-`G/R 0.91..0.93` (retail ~`0.89`) with near-field `B/R ≈ 0.37` against retail's `0.44`.
-`scene_color_grade_only_on_the_prologue_cutscene` (engine-core) guards the scene gate.
+- **No depth cue runs.** Walking every render node (the seven list heads at `0x8007C34C..`)
+  across the whole opening: node `+0x78` (`IR0`, the DPCS blend factor `FUN_8002735C` loads
+  per node, far colour packed at `+0x74` → GTE cr21-23) holds **0** on every node at every
+  beat - the only non-zero sightings are momentary `far = black, IR0 = 0x1000` fades on
+  vignette/text actors. The earlier "gold far colour + per-node depth-graded IR0" model of
+  the grade is **falsified**; the far-field crush is the palette law seen through dark
+  authored gouraud words, not a DPCS pull.
+- **Packet colours split by source.** The GP0 draw list's textured prims carry either the
+  runtime-emitted neutral `0x80,0x80,0x80` (the ground tile kernel's quads - drawn gold
+  purely by their law-collapsed CLUT) or a small **amber family** `≈ (M, 0.94·M, 0.43·M)` -
+  the collapse of each loaded TMD's authored full-colour word (the `0749` pack authors these
+  meshes in green/blue) to the same gold ray. Near-field graded surfaces land `B/R ≈ 0.44`
+  (`(L >> 1) / L`), matching the law.
 
-The far-field crush (retail `B/R 0.12..0.18`) is the tint's second half: the **per-render-node
-depth-cue pull**, which a uniform multiply cannot reproduce. The engine stages it as a
-view-depth `IR0` ramp ([`fade::DepthCueRamp`](../../crates/engine-core/src/fade.rs)
-`PROLOGUE_GOLD`, staged by `Renderer::set_depth_cue_ramp` on the same prologue scene gate via
-[`World::scene_depth_cue`](../../crates/engine-core/src/world/narration.rs)): each fragment's
-projected view depth maps to `ir0 = clamp((z - near_z) / (far_z - near_z), 0, 1) * max_ir0`,
-and the shaders blend toward the far term **in retail's order** - DPCS runs on the packet
-colour *before* the GPU's texel multiply, so a textured prim's far term arrives as
-`texel * far / 128` (texture detail survives the crush, exactly as the retail framebuffer
-shows) while an untextured prim pulls to the far colour directly. Calibrated against the
-retail tableau on matched regions: the far cave wall lands within a few percent of retail per
-channel (engine `B/R 0.126` vs retail `0.131`, `G/R 0.895` vs `0.893`) and the gold spires
-hold `G/R 0.87..0.90`. Interactive scenes stage no ramp, and the ramp-off shader path is
-pixel-identical to the pre-ramp render (verified on a `town01` A/B capture). Known residual:
-retail's staging is truly per node - the spire nodes combine a strong pull with a brighter
-far colour than the backdrop nodes - so a shared ramp leaves the spires' `B/R` at ~`0.26`
-against retail's ~`0.15`; closing it needs a capture of the per-node `+0x74`/`+0x78` values
-during the opening beats. `scene_depth_cue_tracks_the_prologue_grade_gate` guards the gate.
+The `opdeene` MAN itself carries **no** colour op (no op `0x4C 0x8A` ambient, no op
+`0x4C 0x81` far colour), and its motion-VM section carries no per-actor depth-cue op `0x0C`
+either; the grade is applied by the cutscene host to the scene's decoded assets at load. The
+GTE back/ambient colour `DAT_8007B788` is `0x00202020` in `opdeene` vs `0x00FFFFFF` in
+`town01` (`FUN_80043390`), but the field path issues no light op, so it is not the grade
+mechanism.
+
+**Engine port.** The engine keeps the disc palettes in its software VRAM and applies the law
+in the mesh shaders instead - exactly equivalent, because a 4/8bpp texel *is* a palette entry:
+[`Renderer::set_palette_grade`](../../crates/engine-render/src/renderer/state.rs) arms the
+**palette-collapse mode** (`palette_law_word` / `palette_collapse_prim` in
+[`shaders.rs`](../../crates/engine-render/src/shaders.rs), CPU mirrors + lockstep tests in
+[`psx_light.rs`](../../crates/engine-render/src/psx_light.rs)): each decoded texel word goes
+through the exact 5-bit law, each non-neutral packet colour collapses to
+`gold · max(r, g, b)` (gold = the staged
+[`ColorGrade::PROLOGUE_SEPIA`](../../crates/engine-core/src/fade.rs) coefficients
+`(1.0, 0.94, 0.43)`, the measured amber-family ratio), exact-neutral words stay neutral (the
+ground tile kernel's runtime word, retail-verified), and the view-depth cue ramp is inert
+(no node carries `IR0` in the capture). The op `0x4C 0x12` screen tint rides the palette
+uniform's `rgb` so scene fades still multiply every graded pixel.
+[`World::scene_color_grade`](../../crates/engine-core/src/world/narration.rs) still owns the
+scene gate (the prologue legs `opdeene` / `opstati` / `opurud`, `None` elsewhere);
+`play-window` stages the mode whenever the grade is active. With the mode off (every
+interactive scene) all shader paths are bit-identical to the multiply-grade render.
+Pixel-verified on the villager tableau against a matched-region retail capture of the same
+beat: the ground lands **identically** at `G/R 0.890` / `B/R 0.46..0.48` on both sides
+(retail `0.890` / `0.471`; the pre-law multiply grade left the engine ground green at
+`G/R ≈ 1.07`), and the text/UI overlays keep their own shaders, so the narration stays white.
+`scene_color_grade_only_on_the_prologue_cutscene` (engine-core) guards the gate.
+
+The superseded engine approximations are retained as dormant plumbing: `apply_grade`'s pixel
+multiply and the [`fade::DepthCueRamp`](../../crates/engine-core/src/fade.rs) view-depth ramp
+(`Renderer::set_depth_cue_ramp`) still exist and are staged by the host, but the palette mode
+bypasses both while active.
+
+**Far-geometry brightness - not a separable law (resolved-negative).** The far geometry
+(spires / wings) reads brighter and slightly blue-rich in the engine - the villager-tableau
+matched-region capture measured retail at `B/R ≈ 0.15..0.16` / brightness `~51` vs the engine
+at `B/R ≈ 0.27` / `~80`. This is **not** a missing far-field palette or depth law, and there
+is no such law to port:
+
+- **No load-time gold-law CPU pass is statically visible.** A signature scan (the law's
+  `>>10/11` blue-field extract + `andi 0x1f` + `>>1` reconstruct + a `max`) across the STR
+  host overlay 0970 (`overlay_cutscene_str_0970`, 28 functions), the field overlay 0897 (690)
+  and `SCUS_942.54` (945) finds **no** CLUT-rewrite loop. Overlay 0970 is MDEC/STR play code
+  only - its sole law-shaped shifts are frame-position sign-extract (`>>31`) and `/2` in the
+  play loop `FUN_801CF098`; the strong `SCUS` hits are the SFX driver (`setbl`, `DAT_8006F198`)
+  and the arts-gauge path (`DAT_801C9370`), neither a palette pass. The **"cutscene-host
+  overlay 0970 load hooks are the candidates"** reading is therefore **falsified** - the CLUT
+  rewrite the capture observed is a table / DMA upload, not a scannable arithmetic loop (the
+  same shape as the XA-clip-table writer under "Open items").
+- **The palette grade is faithful; the gap is source colour + region.** With `IR0 = 0` on
+  every node (above), no DPCS pull acts on the far prims, and both halves of the grade are
+  capture-pinned (CLUT law in VRAM, amber packet in the GP0 list) and reproduced by the
+  engine. A far prim drawn with a baked amber packet lands `B/R ≈ 0.44 × 0.43 ≈ 0.19` on both
+  sides. The engine's `0.27` excess is un-darkened **neutral** packets in the sampled region:
+  lit-descriptor prims (rows 0/1 of `DAT_8007326C`, `byte1 = 0`, no baked colour block) are
+  fed neutral `0x80` by the mesh builder (`prim.colors...unwrap_or([128,128,128])` in
+  `crates/tmd/src/mesh/{color,vram}.rs`), so `palette_collapse_prim`'s neutral guard leaves
+  them un-graded. Retail draws those same lit prims through the scene GTE back/far colour that
+  its field renderer `FUN_80029888` loads (opdeene's ambient `DAT_8007B788 = 0x00202020`, dim,
+  vs `town01`'s `0x00FFFFFF`; writer `FUN_80043390`) - the field-path GTE colour the engine
+  deliberately omits (no field light source). That omission is a scene-wide boundary that only
+  *shows* in the prologue because opdeene's ambient is unusually dim, and the port's absence of
+  distance culling widens the sampled far region. Both are engine boundaries, not palette-law
+  defects; there is no faithful separable palette / depth law to add.
 
 ## Open items
 

@@ -60,11 +60,21 @@ random blobs).
 
 ```bash
 prot-extract list    <PROT.DAT> [--cdname <CDNAME.TXT>]
-prot-extract extract <PROT.DAT> <out_dir> [--cdname <CDNAME.TXT>]
+prot-extract locate  <PROT.DAT> <offset> [--in-entry N] [--cdname <CDNAME.TXT>]
+prot-extract extract <PROT.DAT> <out_dir> [--cdname <CDNAME.TXT>] [--clamp-footprint]
 ```
 
 Names from `CDNAME.TXT` propagate to the extracted filenames
 (`0865_battle_data.BIN`, etc.) so downstream tools stay self-describing.
+
+`list` shows each entry's declared size next to its true `footprint` (the
+sector span to the next entry) and flags an `OVR` when the extracted `.BIN`
+over-reads that footprint. `locate` is the reverse lookup: given a PROT.DAT
+byte offset (or an in-`.BIN` offset via `--in-entry`), it names the entry
+whose footprint actually owns those bytes and warns when the offset lands in
+an over-read tail. The footprint/owner logic is `legaia_prot::locate`
+(unit-tested); it shares the `next_start - start` span arithmetic with
+`runtime_toc`.
 
 ## See also
 

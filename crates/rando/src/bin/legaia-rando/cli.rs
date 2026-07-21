@@ -529,6 +529,15 @@ pub(crate) struct RandomizeArgs {
     /// never move. `legaia-rando equip-bonuses` lists the current table.
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     pub(crate) equip_bonus: DropArg,
+    /// How the equip-character mask is reassigned (who can wear each piece of
+    /// gear - the `+6` byte of the SCUS bonus table). `shuffle` permutes the
+    /// masks within each slot category (each character keeps the same count of
+    /// equippable weapons / body / head / footwear, just on different items);
+    /// `random` draws each row's mask from its category pool. Stat bonuses and
+    /// slot type never move, so this composes with `--equip-bonus`.
+    /// `legaia-rando equip-bonuses` lists the current masks.
+    #[arg(long, value_enum, default_value_t = DropArg::None)]
+    pub(crate) equip_mask: DropArg,
     /// Reassign which weapon class each character specializes in (Vahn blades,
     /// Noa claws, Gala clubs/axes by default). Permutes the three favored
     /// families among the characters and rewrites the per-(character, weapon)

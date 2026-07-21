@@ -14,9 +14,29 @@
 //!   finisher action constant for multi-hit Super Arts (e.g. Tri-Somersault
 //!   appends `0x2B` three times).
 //!
-//! Source: ZetaPhoenix's public "Legaia Arts Data" Google Sheets
-//! spreadsheet (Super Arts tab). See the README's Acknowledgments
-//! section for the link.
+//! Source: originally ZetaPhoenix's public "Legaia Arts Data" Google Sheets
+//! spreadsheet (Super Arts tab; see the README's Acknowledgments section for
+//! the link). Every `find` and `replace` string below is now additionally
+//! **capture-validated byte-exact** against the resident battle-overlay
+//! trigger table, read out of live battle RAM via the static recomp's
+//! `read_ram` (endgame battle savestate, scene `jou ene`, mode `0x15`):
+//!
+//! - 15 `find` entries at `0x801F6524`, fixed 13-byte stride
+//!   (`[len u8][bytes][zero pad]`), in exactly this table's order
+//!   (Vahn ×5, Noa ×5, Gala ×5);
+//! - 15 `replace` strings at `0x801F65E8`, 16-byte stride, zero-padded,
+//!   same order;
+//! - immediately preceded by the three Miracle-Art trigger entries at
+//!   `0x801F64F4/0x6504/0x6514` (the VAs `docs/formats/art-data.md` pins),
+//!   whose masked replacement strings match `miracle.rs`.
+//!
+//! Each resident `replace` preserves its `find` minus the final
+//! `[0x19, art]` pair and appends `[0x1A, finisher...]` - the structural
+//! pairing check locked by `replace_preserves_find_prefix_and_finisher_tail`
+//! below. The runtime *queue effect* of the same strings is separately
+//! capture-pinned at `actor[+0x1DF]` for Vahn's Tri-Somersault and Noa's
+//! Miracle Art (PCSX-Redux probe; runbook
+//! `docs/tooling/super-art-queue-capture.md`).
 
 use crate::queue::{ActionConstant, ActionQueue, Character};
 
@@ -40,10 +60,11 @@ impl SuperArt {
     /// **combo-specific** - the same art appears with different connectors
     /// across Supers (Vahn's `0x27` is followed by `0F` in Tri-Somersault but
     /// `0E` in Power Slash) - so it cannot be reconstructed from each art's own
-    /// command string. The exact runtime queue-builder that emits those
-    /// connectors (`ctx[+0x274]`) is unpinned. This art-only projection is the
-    /// part of the pattern that *is* pinned, and is what the live Arts submenu
-    /// matches a recognized art chain against (see
+    /// command string. The connectors are per-combo *data*: they live in the
+    /// resident battle-overlay trigger table (find `0x801F6524` / replace
+    /// `0x801F65E8`, capture-validated for all 15 entries - see the module
+    /// doc), not in any derivation rule. This art-only projection is what the
+    /// live Arts submenu matches a recognized art chain against (see
     /// [`SuperMatcher::trigger_by_art_sequence`]).
     ///
     /// [`find`]: SuperArt::find
@@ -183,13 +204,20 @@ impl SuperMatcher {
 }
 
 // ---------------------------------------------------------------------------
-// Per-character Super Art tables (matches the researcher's spreadsheet).
+// Per-character Super Art tables. Table order = the resident battle-RAM
+// trigger-table order (find 0x801F6524 / replace 0x801F65E8; see module doc).
+// Per-entry citations give each entry's resident find/replace VAs from that
+// capture; every string below is byte-exact against them.
 // ---------------------------------------------------------------------------
 
 /// Combined Super Art table. 5 entries per character × 3 characters = 15.
 pub const SUPER_ARTS: &[SuperArt] = &[
     // ---- Vahn ----
     SuperArt {
+        // Capture: find 0x801F6524 / replace 0x801F65E8 (recomp battle RAM);
+        // also live-queue validated at actor[+0x1DF] by the PCSX-Redux
+        // battle_vahn_tri_somersault_super capture (runbook
+        // docs/tooling/super-art-queue-capture.md).
         character: Character::Vahn,
         name: "Tri-Somersault",
         finisher: 0x2B,
@@ -197,6 +225,7 @@ pub const SUPER_ARTS: &[SuperArt] = &[
         replace: &[0x19, 0x27, 0x0F, 0x19, 0x1F, 0x0E, 0x1A, 0x2B, 0x2B, 0x2B],
     },
     SuperArt {
+        // Capture: find 0x801F6531 / replace 0x801F65F8 (recomp battle RAM).
         character: Character::Vahn,
         name: "Maximum Blow",
         finisher: 0x2C,
@@ -204,6 +233,7 @@ pub const SUPER_ARTS: &[SuperArt] = &[
         replace: &[0x19, 0x28, 0x0E, 0x19, 0x26, 0x0C, 0x1A, 0x2C],
     },
     SuperArt {
+        // Capture: find 0x801F653E / replace 0x801F6608 (recomp battle RAM).
         character: Character::Vahn,
         name: "Fire Tackle",
         finisher: 0x2D,
@@ -211,6 +241,7 @@ pub const SUPER_ARTS: &[SuperArt] = &[
         replace: &[0x19, 0x29, 0x0C, 0x19, 0x25, 0x0D, 0x1A, 0x2D],
     },
     SuperArt {
+        // Capture: find 0x801F654B / replace 0x801F6618 (recomp battle RAM).
         character: Character::Vahn,
         name: "Power Slash",
         finisher: 0x2E,
@@ -218,6 +249,8 @@ pub const SUPER_ARTS: &[SuperArt] = &[
         replace: &[0x19, 0x28, 0x0E, 0x19, 0x27, 0x0E, 0x1A, 0x2E],
     },
     SuperArt {
+        // Capture: find 0x801F6558 / replace 0x801F6628 (recomp battle RAM).
+        // Two-part finisher: the resident replace really ends `1A 2F 30`.
         character: Character::Vahn,
         name: "Rolling Combo",
         finisher: 0x2F,
@@ -226,6 +259,7 @@ pub const SUPER_ARTS: &[SuperArt] = &[
     },
     // ---- Noa ----
     SuperArt {
+        // Capture: find 0x801F6565 / replace 0x801F6638 (recomp battle RAM).
         character: Character::Noa,
         name: "Triple Lizard",
         finisher: 0x2E,
@@ -233,6 +267,7 @@ pub const SUPER_ARTS: &[SuperArt] = &[
         replace: &[0x19, 0x25, 0x0F, 0x19, 0x24, 0x0E, 0x1A, 0x2E, 0x2E, 0x2E],
     },
     SuperArt {
+        // Capture: find 0x801F6572 / replace 0x801F6648 (recomp battle RAM).
         character: Character::Noa,
         name: "Super Javelin",
         finisher: 0x2F,
@@ -240,6 +275,7 @@ pub const SUPER_ARTS: &[SuperArt] = &[
         replace: &[0x19, 0x22, 0x0E, 0x1A, 0x2F],
     },
     SuperArt {
+        // Capture: find 0x801F657F / replace 0x801F6658 (recomp battle RAM).
         character: Character::Noa,
         name: "Super Tempest",
         finisher: 0x30,
@@ -247,6 +283,7 @@ pub const SUPER_ARTS: &[SuperArt] = &[
         replace: &[0x19, 0x26, 0x0D, 0x0C, 0x0F, 0x0F, 0x1A, 0x30],
     },
     SuperArt {
+        // Capture: find 0x801F658C / replace 0x801F6668 (recomp battle RAM).
         character: Character::Noa,
         name: "Love You",
         finisher: 0x31,
@@ -254,6 +291,7 @@ pub const SUPER_ARTS: &[SuperArt] = &[
         replace: &[0x19, 0x27, 0x0E, 0x19, 0x2B, 0x0E, 0x0C, 0x1A, 0x31],
     },
     SuperArt {
+        // Capture: find 0x801F6599 / replace 0x801F6678 (recomp battle RAM).
         character: Character::Noa,
         name: "Dragon Fangs",
         finisher: 0x32,
@@ -262,6 +300,7 @@ pub const SUPER_ARTS: &[SuperArt] = &[
     },
     // ---- Gala ----
     SuperArt {
+        // Capture: find 0x801F65A6 / replace 0x801F6688 (recomp battle RAM).
         character: Character::Gala,
         name: "Back Punch x3",
         finisher: 0x2B,
@@ -269,6 +308,7 @@ pub const SUPER_ARTS: &[SuperArt] = &[
         replace: &[0x19, 0x27, 0x0F, 0x19, 0x29, 0x0D, 0x1A, 0x2B, 0x2B, 0x2B],
     },
     SuperArt {
+        // Capture: find 0x801F65B3 / replace 0x801F6698 (recomp battle RAM).
         character: Character::Gala,
         name: "Super Ironhead",
         finisher: 0x2C,
@@ -276,6 +316,7 @@ pub const SUPER_ARTS: &[SuperArt] = &[
         replace: &[0x19, 0x29, 0x0F, 0x19, 0x24, 0x0E, 0x1A, 0x2C],
     },
     SuperArt {
+        // Capture: find 0x801F65C0 / replace 0x801F66A8 (recomp battle RAM).
         character: Character::Gala,
         name: "Rushing Crush",
         finisher: 0x2D,
@@ -283,6 +324,7 @@ pub const SUPER_ARTS: &[SuperArt] = &[
         replace: &[0x19, 0x28, 0x0F, 0x19, 0x29, 0x0F, 0x1A, 0x2D],
     },
     SuperArt {
+        // Capture: find 0x801F65CD / replace 0x801F66B8 (recomp battle RAM).
         character: Character::Gala,
         name: "Heaven's Drop",
         finisher: 0x2E,
@@ -290,6 +332,7 @@ pub const SUPER_ARTS: &[SuperArt] = &[
         replace: &[0x19, 0x29, 0x0F, 0x19, 0x24, 0x0C, 0x0E, 0x1A, 0x2E],
     },
     SuperArt {
+        // Capture: find 0x801F65DA / replace 0x801F66C8 (recomp battle RAM).
         character: Character::Gala,
         name: "Neo Static Raising",
         finisher: 0x2F,
@@ -434,6 +477,67 @@ mod tests {
         assert_eq!(hits, 1);
         // Running again on the post-trigger queue should be a no-op.
         assert_eq!(matcher.expand_to_fixpoint(Character::Noa, &mut q), 0);
+    }
+
+    #[test]
+    fn replace_preserves_find_prefix_and_finisher_tail() {
+        // Structural law observed in the resident battle-RAM trigger table
+        // (find 0x801F6524 / replace 0x801F65E8; see module doc): every
+        // replace string preserves its find string minus the final
+        // [0x19, art] pair, then appends [0x1A, finisher, ...extra arts].
+        // This is the pairing check that ties each replace to its find
+        // independent of table order.
+        for entry in SUPER_ARTS {
+            let find = entry.find;
+            let replace = entry.replace;
+            assert!(find.len() >= 2, "{}: find too short", entry.name);
+            let (prefix, tail_pair) = find.split_at(find.len() - 2);
+            assert_eq!(
+                tail_pair[0], 0x19,
+                "{}: find must end Starter+art",
+                entry.name
+            );
+            assert!(
+                (0x1B..=0x32).contains(&tail_pair[1]),
+                "{}: find's last byte must be an art constant",
+                entry.name
+            );
+            assert!(
+                replace.starts_with(prefix),
+                "{}: replace must preserve the find prefix",
+                entry.name
+            );
+            assert_eq!(
+                replace[prefix.len()],
+                0x1A,
+                "{}: SpecialStarter after the preserved prefix",
+                entry.name
+            );
+            let finishers = &replace[prefix.len() + 1..];
+            assert!(!finishers.is_empty(), "{}: empty finisher tail", entry.name);
+            assert_eq!(
+                finishers[0], entry.finisher,
+                "{}: finisher byte",
+                entry.name
+            );
+            assert!(
+                finishers.iter().all(|b| (0x1B..=0x32).contains(b)),
+                "{}: finisher tail must be art constants",
+                entry.name
+            );
+            // Resident cell sizes: find fits a 13-byte [len][bytes] cell,
+            // replace a 16-byte zero-padded cell.
+            assert!(
+                find.len() <= 12,
+                "{}: find exceeds resident cell",
+                entry.name
+            );
+            assert!(
+                replace.len() <= 16,
+                "{}: replace exceeds resident cell",
+                entry.name
+            );
+        }
     }
 
     #[test]

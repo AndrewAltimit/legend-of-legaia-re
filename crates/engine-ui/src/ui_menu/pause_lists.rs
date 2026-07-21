@@ -21,10 +21,14 @@
 //! Frames come from the caller (`menu_window_chrome_draws_for`); this module
 //! builds the window *content* in 320x240 stage pixels off each window's
 //! content-origin pen. Command / caster / info offsets are byte-pinned from
-//! the menu-overlay decompiles; the list-page layout (rows, PAGE header,
-//! page arrow) is pixel-pinned from the same captures (the retail list
-//! drawer is untraced - both list windows are renderer-less in the
-//! descriptor table).
+//! the menu-overlay decompiles; the list pages (both windows renderer-less
+//! in the descriptor table) are drawn in retail by the SCUS kind-4 list
+//! kernel `FUN_80032A44` - rows, PAGE header (the "PAGE" tag is UI-icon
+//! sprite `0x76`, digits `0x7A..0x83`, slash `0x79`) and the blink-gated
+//! page triangles (ICO `0x27`/`0x28`). This module keeps the
+//! capture-pinned pen positions; the kernel's navigation half is ported at
+//! `engine-core::pause_screens::list_kernel_navigate`. See
+//! `docs/subsystems/field-menu.md` for the traced kernel.
 
 use super::field_panels::{MENU_TEXT_GOLD, MENU_TEXT_WHITE, menu_mp_ink, num_field_draws};
 use crate::*;
@@ -227,8 +231,10 @@ fn list_page_header_draws(
 ///   empty (PORT: FUN_801d0d18);
 /// - list page: rows from `(X+0xC, Y+0xC)` at the 0xE pitch, count as a
 ///   2-digit fixed-cell field at `X+0x74`; the whole page draws white
-///   while the command window has focus and grey once the hand enters
-///   the list (capture-pinned - the retail drawer is untraced);
+///   while the command window has focus (the kernel is parked - mode 4
+///   forces staging 7) and grey once the hand enters the list
+///   (capture-pinned; drawn in retail by the kind-4 list kernel
+///   `FUN_80032A44` - REF: FUN_80032A44);
 /// - info window: item name (staging 6 gold) at `(X, Y)`, bag count
 ///   2-digit gold at `X+0x7C`, description white at `(X, Y+0x10)`, and
 ///   the accessory passive lines in the extra widget box at `(X,

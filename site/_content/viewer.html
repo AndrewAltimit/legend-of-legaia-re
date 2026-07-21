@@ -115,6 +115,64 @@
 }
 .viewer-info b { color: var(--accent); font-weight: 500; }
 
+/* --- Locate-offset panel -------------------------------------------- */
+.locate-form {
+  display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end;
+  font-family: var(--font-mono); font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+.locate-field { display: flex; flex-direction: column; gap: 0.25rem; }
+.locate-field label { color: var(--text-dim); font-size: 0.75rem; }
+.locate-field input {
+  background: var(--bg-code); color: var(--text);
+  border: 1px solid var(--border); padding: 0.4rem 0.5rem;
+  font-family: inherit; font-size: 0.85rem;
+}
+.locate-form button {
+  background: var(--bg-card); color: var(--text);
+  border: 1px solid var(--border); padding: 0.45rem 0.9rem;
+  cursor: pointer; font-family: inherit; font-size: 0.85rem;
+}
+.locate-form button:hover { border-color: var(--accent); color: var(--accent); }
+.locate-card {
+  border: 1px solid var(--border); background: var(--bg-card);
+  padding: 0.75rem 1rem; font-family: var(--font-mono); font-size: 0.82rem;
+  line-height: 1.6;
+}
+.locate-card .owner-line { font-size: 0.95rem; }
+.locate-card b { color: var(--accent); font-weight: 500; }
+.locate-card .mono-dim { color: var(--text-dim); }
+.locate-warn {
+  border: 1px solid #7a5a1c; background: #1e1708;
+  color: #e6c884; padding: 0.6rem 0.85rem; margin-top: 0.6rem;
+  border-radius: 3px;
+}
+.locate-warn b { color: #f0c060; }
+.locate-cover { margin-top: 0.6rem; }
+.locate-cover ul { list-style: none; margin: 0.3rem 0 0; padding: 0; }
+.locate-cover li { padding: 0.15rem 0; }
+.locate-cover .role-src { color: #9ccc7a; }
+.locate-cover .role-copy { color: var(--text-dim); }
+.locate-hint-link { margin-top: 0.6rem; }
+.ovr-scroll {
+  max-height: 420px; overflow-y: auto;
+  border: 1px solid var(--border);
+}
+.ovr-table {
+  width: 100%; border-collapse: collapse;
+  font-family: var(--font-mono); font-size: 0.78rem;
+}
+.ovr-table th, .ovr-table td {
+  border: 1px solid var(--border); padding: 0.3rem 0.55rem; text-align: right;
+}
+.ovr-table th {
+  color: var(--text-dim); background: var(--bg-raised); text-align: right;
+  position: sticky; top: 0; z-index: 1;
+}
+.ovr-table td.ovr-block, .ovr-table th.ovr-block { text-align: left; color: var(--text); }
+.ovr-table td.ovr-mark { color: #f0c060; text-align: center; font-weight: 600; }
+.ovr-table tr.ovr-monster td { background: var(--accent-soft); }
+
 </style>
 <script src="js/rom-cache.js"></script>
 <script src="js/load-progress.js"></script>-->
@@ -187,6 +245,40 @@
     <div id="camera-hint" style="display: none; font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-dim); padding: 0.25rem 0;">
       <strong>3D controls:</strong> drag to orbit · scroll to zoom · WASD to pan · space = pause/resume spin · R / double-click = reset
     </div>
+  </div>
+</section>
+
+<section class="doc-section" id="locate-offset">
+  <h2>Locate a PROT.DAT offset</h2>
+  <p class="lede">Type a byte offset and this tells you which entry <em>really</em> owns those bytes - and warns when you're reading a neighbour's data out of an entry's over-read tail.</p>
+  <p>
+    Several entries declare a table window larger than their true on-disc footprint, so
+    <a href="tooling/extraction.html"><code>prot-extract</code></a> writes <code>.BIN</code> files
+    whose tails hold the <em>next</em> entry's bytes. That's why enemy text turns up at the end of
+    <code>0866_battle_data.BIN</code>: entries 865/866 over-read into the monster archive (entry 867).
+    This finder resolves the confusion - it's the browser twin of <code>prot-extract locate</code>.
+  </p>
+  <div id="locate-pane" style="display: none;">
+    <div class="locate-form">
+      <div class="locate-field">
+        <label for="locate-off">Offset (decimal or 0x-hex)</label>
+        <input type="text" id="locate-off" placeholder="0x17855" size="14">
+      </div>
+      <div class="locate-field">
+        <label for="locate-entry">Inside entry # <span class="mono-dim">(optional)</span></label>
+        <input type="number" id="locate-entry" placeholder="866" min="0" max="9999" style="width: 8rem;">
+      </div>
+      <button id="locate-btn" type="button">Locate</button>
+    </div>
+    <p class="hint" style="margin-top: -0.5rem;">Leave <em>inside entry</em> blank for an absolute <code>PROT.DAT</code> offset. Fill it in to ask "0x&hellip; into <code>0866_*.BIN</code> - whose bytes are these?"</p>
+    <div id="locate-result"></div>
+  </div>
+  <p id="locate-empty" class="hint">Load a disc (or raw <code>PROT.DAT</code>) above to use the offset finder.</p>
+
+  <h3 style="margin-top: 1.5rem;">Over-read entries</h3>
+  <p>The entries whose extracted window over-reads its true footprint - the ones whose <code>.BIN</code> tail carries a neighbour's bytes. Everything else declares exactly its footprint.</p>
+  <div id="overread-wrap">
+    <p id="overread-empty" class="hint">Load a disc above to list the over-read entries.</p>
   </div>
 </section>
 
@@ -530,6 +622,180 @@
   });
 
   function initCatalog() { rawCatalog.init(); deepCatalog.init(); }
+
+  /* ---------- Locate a PROT.DAT offset -> owning entry ------------------
+   * Browser twin of `prot-extract locate`, backed by the WASM
+   * `viewer.locate_offset_json` / `viewer.prot_over_read_json` accessors
+   * (which run the exact `legaia_prot::locate` code). Surfaces the true
+   * owning entry, warns on over-read tails, and links a monster-archive
+   * (entry 867) hit straight to the enemies page. */
+  const locate = {
+    pane:   () => document.getElementById('locate-pane'),
+    empty:  () => document.getElementById('locate-empty'),
+    off:    () => document.getElementById('locate-off'),
+    entry:  () => document.getElementById('locate-entry'),
+    result: () => document.getElementById('locate-result'),
+  };
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"]/g, c =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+  function fmtBytes(n) {
+    n = Number(n);
+    if (n >= 1024 * 1024) return (n / 1024 / 1024).toFixed(2) + ' MB';
+    if (n >= 1024) return (n / 1024).toFixed(1) + ' KB';
+    return n + ' B';
+  }
+  function blockName(b) { return b ? escapeHtml(b) : '<span class="mono-dim">(unnamed)</span>'; }
+  function monsterLink() {
+    return `<div class="locate-hint-link">&#128126; This is the <b>enemy / monster archive</b> `
+      + `(entry 867). Browse every enemy's stats, drops and 3D model on the `
+      + `<a href="monsters.html">Enemies page</a> (or run <code>asset monster-archive</code>).</div>`;
+  }
+
+  function renderLocate(res) {
+    const out = locate.result();
+    if (res.error) {
+      out.innerHTML = `<div class="locate-card">Couldn't locate: ${escapeHtml(res.error)}</div>`;
+      return;
+    }
+    let html = '<div class="locate-card">';
+    html += `<div>query <b>${escapeHtml(res.query)}</b>`;
+    if (res.in_entry != null) {
+      html += ` <span class="mono-dim">(offset inside entry ${res.in_entry}'s .BIN)</span>`
+        + ` &rarr; absolute <b>${escapeHtml(res.abs_offset_hex)}</b>`;
+    } else {
+      html += ` <span class="mono-dim">(absolute PROT.DAT offset)</span>`;
+    }
+    html += '</div>';
+
+    if (res.owner) {
+      const o = res.owner;
+      html += `<div class="owner-line" style="margin-top:0.5rem;">true owner: `
+        + `<b>entry ${o.index}</b> ${blockName(o.block)} `
+        + `<span class="mono-dim">start ${escapeHtml(o.start_hex)}, footprint `
+        + `${escapeHtml(o.footprint_hex)} (${fmtBytes(o.footprint)})</span></div>`;
+      html += `<div class="mono-dim">offset ${escapeHtml(o.local_offset_hex)} into that `
+        + `entry's own data</div>`;
+    } else {
+      html += `<div class="owner-line" style="margin-top:0.5rem;">true owner: `
+        + `<span class="mono-dim">(none) - past every entry's footprint (tail padding)</span></div>`;
+    }
+
+    if (res.over_read) {
+      html += `<div class="locate-warn"><b>Over-read.</b> ${escapeHtml(res.over_read.message)}</div>`;
+    }
+
+    if (res.covering && res.covering.length > 1) {
+      html += '<div class="locate-cover">also present in these extracted files '
+        + '<span class="mono-dim">(declared windows overlap here):</span><ul>';
+      for (const c of res.covering) {
+        const cls = c.role === 'true source' ? 'role-src' : 'role-copy';
+        html += `<li class="${cls}">entry ${c.index} ${blockName(c.block)} `
+          + `&middot; ${escapeHtml(c.role)}</li>`;
+      }
+      html += '</ul></div>';
+    }
+
+    /* Link to the enemies page when the true owner (or any covering file) is
+     * the monster archive. */
+    const touchesMonster = (res.owner && res.owner.is_monster_archive)
+      || (res.covering || []).some(c => c.is_monster_archive);
+    if (touchesMonster) html += monsterLink();
+
+    html += '</div>';
+    out.innerHTML = html;
+  }
+
+  function doLocate() {
+    if (!viewer) return;
+    const offRaw = locate.off().value.trim();
+    if (!offRaw) { locate.result().innerHTML = ''; return; }
+    const eRaw = locate.entry().value.trim();
+    const inEntry = eRaw === '' ? undefined : parseInt(eRaw, 10);
+    let jsonStr;
+    try {
+      jsonStr = viewer.locate_offset_json(
+        offRaw, (inEntry === undefined || Number.isNaN(inEntry)) ? undefined : inEntry);
+    } catch (e) {
+      renderLocate({ error: String(e) });
+      return;
+    }
+    try { renderLocate(JSON.parse(jsonStr)); }
+    catch (e) { renderLocate({ error: 'bad response: ' + e }); }
+  }
+
+  function renderOverRead() {
+    const wrap = document.getElementById('overread-wrap');
+    if (!viewer || !wrap) return;
+    let data;
+    try { data = JSON.parse(viewer.prot_over_read_json()); }
+    catch (e) { wrap.innerHTML = `<p class="hint">over-read scan failed: ${escapeHtml(String(e))}</p>`; return; }
+    if (data.error) { wrap.innerHTML = `<p class="hint">${escapeHtml(data.error)}</p>`; return; }
+    const rows = data.entries || [];
+    if (rows.length === 0) {
+      wrap.innerHTML = `<p class="hint">No over-read entries in this archive `
+        + `(${data.total_entries} entries, all declare exactly their footprint).</p>`;
+      return;
+    }
+    let html = `<p class="hint">${data.over_read_count} of ${data.total_entries} entries over-read. `
+      + `Click a row to locate its first over-read byte.</p>`;
+    html += '<div class="ovr-scroll"><table class="ovr-table"><thead><tr>'
+      + '<th>idx</th><th class="ovr-block">block</th><th>byte offset</th>'
+      + '<th>declared</th><th>footprint</th><th>over-read</th><th>ovr</th>'
+      + '</tr></thead><tbody>';
+    for (const e of rows) {
+      const cls = e.is_monster_archive ? ' class="ovr-monster"' : '';
+      /* First over-read byte = start + footprint (absolute). */
+      const firstOvr = Number(e.byte_offset) + Number(e.footprint);
+      html += `<tr${cls} data-first="${firstOvr}" style="cursor:pointer">`
+        + `<td>${e.index}</td>`
+        + `<td class="ovr-block">${blockName(e.block)}</td>`
+        + `<td>${escapeHtml(e.byte_offset_hex)}</td>`
+        + `<td>${fmtBytes(e.declared_size)}</td>`
+        + `<td>${fmtBytes(e.footprint)}</td>`
+        + `<td>${fmtBytes(e.over_read_bytes)}</td>`
+        + `<td class="ovr-mark">OVR</td></tr>`;
+    }
+    html += '</tbody></table></div>';
+    wrap.innerHTML = html;
+    wrap.querySelectorAll('tr[data-first]').forEach(tr => {
+      tr.addEventListener('click', () => {
+        locate.off().value = '0x' + Number(tr.dataset.first).toString(16).toUpperCase();
+        locate.entry().value = '';
+        doLocate();
+        document.getElementById('locate-offset').scrollIntoView({ block: 'start' });
+      });
+    });
+  }
+
+  function initLocate() {
+    if (!viewer) return;
+    /* Only usable when a PROT.DAT actually parsed (a raw disc / PROT load, not
+     * the standalone-TIM path). Probe the over-read scan: an error means no
+     * archive, so keep the panel in its "load a disc" empty state. */
+    let probe;
+    try { probe = JSON.parse(viewer.prot_over_read_json()); }
+    catch (e) { probe = { error: String(e) }; }
+    if (probe.error) {
+      locate.pane().style.display = 'none';
+      locate.empty().style.display = 'block';
+      return;
+    }
+    locate.empty().style.display = 'none';
+    locate.pane().style.display = 'block';
+    locate.result().innerHTML = '';
+    const btn = document.getElementById('locate-btn');
+    if (btn && !btn.dataset.wired) {
+      btn.dataset.wired = '1';
+      btn.addEventListener('click', doLocate);
+      const enter = (e) => { if (e.key === 'Enter') doLocate(); };
+      locate.off().addEventListener('keydown', enter);
+      locate.entry().addEventListener('keydown', enter);
+    }
+    renderOverRead();
+  }
 
   let viewer = null;
   let allEntries = [];      /* entry-list-json output */
@@ -1102,6 +1368,7 @@
       }
 
       initCatalog();
+      initLocate();
 
       const texturedToggle = document.getElementById('textured-toggle');
       if (texturedToggle) texturedToggle.addEventListener('change', refreshInfo);

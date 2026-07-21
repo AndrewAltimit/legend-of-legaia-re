@@ -36,6 +36,8 @@
 //!   drop slot into a rare random weapon / armor / accessory drop.
 //! - [`equip_bonus`] - redistribute the equipment passive stat tuples within
 //!   each slot category (the SCUS `DAT_80074F68` bonus table).
+//! - [`equip_mask`] - redistribute the equip-character mask (`+6`) of that same
+//!   bonus table - who can wear each piece of gear - disjoint from the stat pass.
 //! - [`shop`] - reassign what town stores sell (the gold-merchant stock is
 //!   inline in each scene's field-VM script, op `0x49`).
 //! - [`casino`] - reassign the casino prize-exchange table (a static overlay
@@ -54,6 +56,7 @@ pub mod apply;
 pub mod arts;
 pub mod bonus_drop;
 pub mod casino;
+pub mod charm_fix;
 pub mod chest;
 pub mod disc;
 pub mod door;
@@ -62,6 +65,7 @@ pub mod element_affinity;
 pub mod encounter;
 pub mod enemy_ally;
 pub mod equip_bonus;
+pub mod equip_mask;
 pub mod equipment;
 pub mod flee_exp;
 pub mod house_door;

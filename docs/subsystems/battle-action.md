@@ -722,6 +722,64 @@ performs - clears status-word `actor[+0x16E]` bits, resets brightness/screen glo
 per-actor jump-table dispatch keyed on `actor[+0x1D]`. Called at battle-complete (`0xFF`); it is the
 final damage/HP settle + ability-effect application, not a bare teardown.
 
+### Actor-pool leaf helpers
+
+Small self-contained routines the SM and its round driver call over the
+8-slot battle-actor pool (`&DAT_801C9370`) and the ctx target queue. Each is
+ported as a pure function in `engine-vm::battle_action` (`pool_ops`); all are
+transcribed from the disassembly (`overlay_battle_action_801db9c4.txt` /
+`_801db318.txt` / `_801d8a88.txt` / `_801d8d00.txt` / `_801db124.txt` /
+`_801db8b4.txt` / `_801dba04.txt` / `_801db81c.txt`, plus `80019b28.txt`).
+
+- **`FUN_801DB9C4` - end-of-action flag scrub.** AND-masks the `+0x8` flag word
+  of pool slots 0..=6 with `0x7CFFFFFF` (clears bit 31 and bits 25/24). This is
+  the state-`0x5A` per-actor anim-flag clear. Port: `clear_end_of_action_flags`.
+- **`FUN_801DB318` - formation span-normalise + recentre.** Over the included
+  slots (0..2 always, 3.. gated on `+0x14C`), takes the X/Z extents; if an axis
+  spans more than `0x800` it rescales every included coordinate by
+  `(coord << 11) / span` (`span` is the extent narrowed to i16) and divides the
+  matching camera-focus accumulator (`_DAT_80089118` X / `_DAT_80089120` Z)
+  likewise; then it recomputes the extents and subtracts the centroid
+  `((max + min) as u32) >> 1` from every included slot, shifting the focus
+  accumulators back by the same centroid. Port: `normalize_formation_span`.
+- **`FUN_801D8A88` - attack target-queue builder.** Builds the ring the cycle
+  accessor steps through. Counts live monsters (slots 3..=6) into `ctx[+0x244]`,
+  takes the acting actor's `+0x1DD` current target as the wrap slot `+0x245`,
+  then computes each monster's bearing offset from the current-target direction
+  (via `FUN_80019B28`, each result `+0x800 & 0xFFF`, expressed as a positive
+  angle in `[0, 0x1000)`) and appends the three nearest *alive, non-target*
+  monster slots to `+0x246..` in ascending order, consuming each pick. Port:
+  `build_attack_target_queue` / `AttackTargetQueue` (the bearing is a closure so
+  the ordering ports without the retail arctan LUT).
+- **`FUN_801D8D00` - attack target-cycle accessor.** Locates the active actor's
+  current target inside the multi-target ring built by `FUN_801D8A88`
+  (`ctx[+0x244]` count, `+0x245` wrap slot, `+0x246..` ordered slots) and steps
+  to the next (`param 0`) or previous (`param 1`) entry, wrapping at the ends.
+  Port: `cycle_attack_target` / `TargetCycle`.
+- **`FUN_801DB8B4` - first live monster slot.** Scans pool slots 3,4,5,6 and
+  returns the first with a non-zero `+0x14C` liveness halfword; falls through to
+  `7` when none is alive. Port: `first_live_monster_slot`.
+- **`FUN_801DBA04` / `FUN_801DB81C` - selectable-participant scans.** Both walk
+  the pool over `0..ctx[0]` applying the same three predicates - action-state
+  byte `!= 4`, alive (`+0x14C`), and no can't-select ailment (`+0x16E & 0xF84`).
+  `FUN_801DBA04` starts at slot 0 (first selectable target); `FUN_801DB81C`
+  starts at `ctx[+0x13] + 1` (next participant after the current actor). Each
+  returns `ctx[0]` when nothing qualifies. Ports: `first_selectable_target` /
+  `next_selectable_actor`.
+- **`FUN_80019B28` - 12-bit bearing (atan2).** Folds the displacement
+  `(p2 - p1)` into a quadrant by sign, divides the shorter leg into the longer
+  (`(min << 11) / max`), indexes the retail arctan LUT at `0x8006F4C8`, and adds
+  the per-octant `0x000/0x400/0x800/0xC00` base to reassemble a clockwise 12-bit
+  heading (`0x000` = `-Z`, `0x400` = `+X`). Port: `bearing_12bit` (LUT is
+  caller-supplied Sony data; no table bytes embedded). The motion VM keeps a
+  separate `f32` approximation for its face-target ramp.
+- **`FUN_801DB124` - dead-target redirect roll.** When a queued action's chosen
+  target (`actor[+0x1DD]`) is dead, and the category qualifies (Attack always;
+  Magic when the spell class byte `>= 0xA` or the target is an enemy slot; Item
+  only for ids `0xFE`/`0x98`), it re-rolls a **living** slot on the same side
+  (`rand % party_count`, or `rand % monster_count + 3`), retrying until alive.
+  Port: `redirect_dead_target` / `RedirectQuery`.
+
 ## Notes for the engine port
 
 - The state graph is **flat** within each band: `0x14 → 0x15 → 0x16 → 0x17 → 0x18 → 0x1E` is the attack-strike chain. There are no jumps backward except from `0x5A` (which restarts at `0x0A` for the next actor).
@@ -729,6 +787,7 @@ final damage/HP settle + ability-effect application, not a bare teardown.
 - The state machine does **not** own the animation. It writes `actor[+0x1DA]` (queued anim) and waits on `actor[+0x1D9]` (current anim) to converge. The convergence is performed by the SCUS anim trio - the per-frame anim-node tick `FUN_80047430` (cursor advance + end-of-clip detect) calls the commit `FUN_8004AD80` (id → action-record install, `+0x1D9 = +0x1DA` snap, reaction/end chains), and the decoder `FUN_8004998C` cross-blends the last frame toward the queued clip's frame 0. `FUN_801D5854` never touches the anim fields (see [pose driver](#fun_801d5854---per-actor-pose-driver)); the earlier note attributing the tween to it and to `FUN_80021DF4` was wrong.
 - Actions are **interruptible** only at `0x1E` (counter-attack steal). Every other transition is unconditional once the precondition fires.
 - Battle-end (`DAT_8007BD71 = 0xFE`) is set from `0x5A` (post-cleanup count of survivors, with `_DAT_8007BD2C` carrying the wipe cause) or `0x66` (the successful-escape teardown - no wipe cause byte). The mode-state-machine then unloads the battle overlay.
+- The `0x5A` **monster-wipe victory arm** stages the win pose off the acting actor's party slot, re-picking a living party member only when the acting actor is dead (the alive-skip at `0x801E6690`). Retail is safe because the wipe scan and the scheduler share the `+0x14C != 0 && !(+0x16E & 0x4)` predicate, so an alive acting actor is always a party member - but the randomizer's enemy-ally charm widens that mask to `0x384` and breaks the invariant. Full chain + the randomizer's disc-side fix (`legaia_rando::charm_fix`, a single-word `0x801E6690` detour widening the keep-condition to a living party slot): [battle.md](battle.md#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock).
 
 ## Decompile quirks worth knowing
 
@@ -832,10 +891,18 @@ The player-driven battle Arts submenu (`legaia_engine_core::battle_arts`) models
   1. **Recognize the named-art sequence.** `legaia_art::recognize_art_sequence` tokenizes a saved chain's flat directional `Command` string into the ordered named arts it performs, identifying each by its own `ArtRecord::commands` (greedy longest-match). `battle_arts::super_for_chain` runs this over the caster's loaded art catalog.
   2. **Tail-match the pinned art ordering.** `SuperMatcher::trigger_by_art_sequence` compares the recognized ordering against each Super's `SuperArt::art_sequence()` - the `find` pattern projected to its art constants only (`[0x27, 0x1F, 0x27]` for Tri-Somersault), with the `0x19` starters and the interleaved connector directions stripped. A tail match flags the menu row (`ArtRow::super_art = Some(name)`), and `World::build_battle_arts_rows` resolves the per-strike profile from the Super's finisher-replacement queue (`SuperArt::replace`) through the same `art_actions_strike_profile` helper the Miracle path uses. The `play-window` HUD shows the Super name on the row. Super is checked *after* Miracle, matching the retail "Miracle replacement runs before Super tail expansion" order.
 
-  The match is deliberately **connector-abstracted**. The connector direction after each art is *combo-specific* - the same art appears with different connectors across Supers (Vahn's `0x27` is followed by `0F` in Tri-Somersault but `0E` in Power Slash), so it can't be derived from each art's own commands, so the live path matches only the pinned named-art ordering - faithful to *which* combination triggers *which* Super, without yet reproducing the byte-exact queue.
+  The match is deliberately **connector-abstracted**. The connector direction after each art is *combo-specific* - the same art appears with different connectors across Supers (Vahn's `0x27` is followed by `0F` in Tri-Somersault but `0E` in Power Slash), so it can't be derived from each art's own commands. The connectors are per-combo *data* in the resident trigger table (below); the live submenu matches the named-art ordering because a saved chain carries no connector bytes, not because the byte-exact strings are unknown.
 
   **The queue location is now pinned by capture:** it is the per-actor action-parameter byte stream at `actor[+0x1DF..+0x1F2]` - **not** `ctx[+0x274]`, which a capture showed is the turn-order active-actor index written by `recompute_battle_order` (`FUN_801DABA4`: `lbu v0,0x11(v1); sb v0,0x274`).
   Direction/connector bytes encode as `0x0C/0x0D/0x0E/0x0F` = Left/Right/Down/Up and `0x1A` = `SpecialStarter`; a Noa Miracle Art capture read that stream and it matched the engine's modeled replacement string byte-exact (probe `autorun_super_art_action_queue.lua`; runbook [`super-art-queue-capture.md`](../tooling/super-art-queue-capture.md)). A Vahn **Tri-Somersault** capture likewise confirmed the Super path: its resident queue tail `19 27 0F 19 1F 0E 1A 2B 2B 2B` is byte-identical to `super_art.rs`'s `Tri-Somersault` `replace`, validating the combo-specific connectors (`0x27 → 0F`, `0x1F → 0E`) and the finisher tail; the dequeue site is pc `0x801D89D8`.
+
+  **All 15 Supers' `find`/`replace` strings are capture-validated.** The battle overlay keeps the whole trigger table resident; read out of live battle RAM (static-recomp endgame battle state, scene `jou ene`, mode `0x15`) it is:
+
+  - `0x801F64F4` / `0x801F6504` / `0x801F6514` - the three Miracle-Art replacement strings ([art-data.md](../formats/art-data.md#miracle-arts)'s pinned trigger-entry VAs), leading `0x8C/0x8D/0x8E/0x8F` masked-direction bytes intact, byte-exact against `miracle.rs`;
+  - `0x801F6524` - the 15 Super `find` entries, fixed 13-byte stride (`[len u8][bytes][zero pad]`), in `super_art.rs` table order (Vahn ×5, Noa ×5, Gala ×5);
+  - `0x801F65E8` - the 15 Super `replace` strings, 16-byte stride, zero-padded, word-aligned, same order.
+
+  Every resident string is byte-identical to `super_art.rs`'s modeled `find` / `replace` fields, and every resident replace preserves its find minus the final `[19, art]` pair then appends `[1A, finisher…]` - the pairing law locked by `super_art.rs`'s `replace_preserves_find_prefix_and_finisher_tail` test. So the byte-exact connector strings are no longer spreadsheet-only: the two live-queue captures above validate the *runtime effect* for one Miracle and one Super, and the resident-table read validates the *strings* for all 15.
   The byte-exact matcher itself (`SuperMatcher::try_trigger_at_tail`) is also ported and exercised by `resolve_action_queue`'s tail pass + `battle.rs`'s `commit_turn`.
 
 When the active actor's `chosen_art` is set and `art_record` returns a record, `attack_chain` (state `0x1A`) calls a second host hook `apply_art_strike(ArtStrikeInfo)` alongside the existing `apply_damage`. `ArtStrikeInfo` carries the strike-indexed power byte, dmg_timing, hit cue, and the art's flat status effect. Engines drive HP deduction, status application, sound-effect scheduling, and visual hit-cue dispatch off this struct; tests feed synthetic `ArtRecord` instances and assert the per-strike `(power, timing, effect, cue)` resolution rather than going through `apply_damage`'s legacy `(icon, page, target, slot)` parameter pack.

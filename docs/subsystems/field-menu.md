@@ -528,6 +528,37 @@ Engine port: `engine-core::options` (`OPTIONS_DISPLAY_ROWS`,
 mixer's monaural downmix (`engine-audio AudioOut::set_mono`), the other
 settings persist in the engine's options config file.
 
+### Dev-menu EVENT FLAG editor (debug build only)
+
+The retail *debug* build's developer menu lives in overlay 0897 (the
+warp-applier + flag-editor toolset), not in the retail pause menu. Its
+EVENT FLAG editor is a raw index/value poke tool - it is what produced the
+capture states once misread as a mystery `_DAT_8007BA78` writer
+(`docs/reference/re-settled-threads.md`). Two value-adjust kernels are
+ported for completeness, faithful to the disassembly (`FUN_801dbd04` /
+`FUN_801db8f4` in `ghidra/scripts/funcs/overlay_0897_*`):
+
+- **Value step** (`FUN_801dbd04`): the edited flag index/value
+  `DAT_801f2aa0` moves by Up/Down (fine `0x8`, coarse `0x80` while
+  Triangle is held) and Left/Right (`±1`), then clamps to `[0, 0xFFF]`.
+- **List cursor** (`FUN_801db8f4` / `FUN_801db8b4`): the flag-list row
+  cursor `DAT_801f2e90` decrements (prev) or increments (next), each
+  wrapping across the `'X'` (0x58) end sentinel in the stride-`0xA` table
+  at `DAT_801f2e94` - prev lands on the last real entry, next wraps to the
+  top.
+
+These read the **packed** pad words (`_DAT_8007bb84` edge, `_DAT_8007b850`
+held) from `FUN_8001822C` - `0x10` Triangle … `0x1000` Up / `0x2000`
+Right / `0x4000` Down / `0x8000` Left - not the raw-BIOS `PadButton`
+layout. The two sibling worklist rows are decompiler fragments of the same
+dispatcher, not standalone functions: `FUN_801d3444` is the PC-delta
+entry-pointer advance (`addiu s8,s8,0x10; j …`), and `FUN_801d9bbc` is a
+menu-row text emit (`func(0x801cf1ec, s3, s5+0x10)`, reusing caller
+registers) left as an `engine-ui` draw seam. Engine port:
+`engine-core::dev_menu` (`edit_flag_value`, `flag_list_prev`,
+`flag_list_next`, `EventFlagEditor`); no draw-list code, so the row render
+stays with the UI crates.
+
 ## Submenu state machines
 
 Every pause-menu screen's input handling is one per-submenu tick
@@ -545,16 +576,96 @@ apply/target flows; 0xE/0xF = the Magic screen's caster/list handlers,
 0x13 = the Equip screen (the `DAT_801E46A4 == 0x13` gate of
 `FUN_801D21C0`).
 
-The list windows themselves (descriptor kind 4) are paged by a
-SCUS-resident window kernel the overlay talks to through a small global
-protocol: `_DAT_8007BB94` = list mode/result (0 idle, 1 browsing, 2 =
-row confirmed, 3 = cancelled, 4 = parked behind the command window),
-`_DAT_8007BB88` = the selected bag-slot index, `_DAT_8007BB90` /
-`_DAT_8007BB98` / `_DAT_8007BBA0` = scroll top / selected row / row
-count. The overlay SMs set mode 1 and poll for 2/3; the kernel's own
-navigation internals (and the descriptor `f1` word it consumes - `0x622`
-on list 15, `0` on the Throw Out variant 16) stay untraced - a
-menu-open capture stepping the list would close them.
+The list windows themselves (descriptor kind 4) are paged by the
+SCUS-resident **kind-4 list kernel `FUN_80032A44`** (below), which the
+overlay talks to through a small global protocol: `_DAT_8007BB94` =
+list mode/result (0 idle, 1 browsing, 2 = row confirmed, 3 =
+cancelled, 4 = parked behind the command window), `_DAT_8007BB88` = the
+selected row's payload (low 12 bits of the row entry - the bag-slot
+index on the item lists), `_DAT_8007BB9C` = the selected row's class
+nibble (`entry & 0xF000`, the screen-id key `FUN_80034250` dispatches
+descriptions on), `_DAT_8007BB90` / `_DAT_8007BB98` / `_DAT_8007BBA0` =
+scroll top / selected row / row count. The overlay SMs set mode 1 and
+poll for 2/3, gating every phase step on the window-slide latch
+`_DAT_8007BB80 == 0`.
+
+### The kind-4 list kernel (SCUS `FUN_80032A44`)
+
+Runs per frame per live list window whose id byte (live window `+0x1C`)
+is in the allowlist at `0x80073E1C` (`02 03 22 07 08 09 0A 0E 0F 10 0B
+05 19`, `0x23`-terminated). The list node (live window `+0x18`, built
+by the allocator `FUN_80030104`: `count*2 + 0x2A` bytes) holds `+0x0`
+scroll top, `+0x2` visible rows (`(content_h - 4) / 0xE`), `+0x4` row
+count, `+0x6` selected row, and per-row u16 entries from `+0x28`. A row
+entry packs `[class: high nibble][0x800 = disabled][0x400 = alt-ink]
+[payload: low 12 bits]`; the overlay's content builder (`FUN_80030628`)
+rebuilds the entries, the kernel only reads them.
+
+**Navigation** (held pad `_DAT_8007BB84`, mode 1 only): Up (`0x1000`,
+`80032ae8..80032c74`) steps the selection up, wrapping to the page's
+last row at the page top (`80032b28`); Down (`0x4000`,
+`80032b44..80032b84`) steps down, wrapping to the page top past the
+page bottom or the last row; Left (`0x8000`, `80032b90`) pages up while
+`top > 0`; Right (`0x2000`, `80032c1c`) pages down while `top + visible
+< count`, clamping the selection to `count - 1`. Up/Down never scroll -
+Left/Right are the only scroll, which is why the lists read as fixed
+12-row pages. Confirm (edge mask `0x800846D0 & _DAT_8007B874`,
+`80032ccc..`): a disabled row (`entry & 0x800`, `80032d04`) buzzes
+(cue `0x23`); otherwise mode = 2 + cue `0x20` (`80032d34`). Cancel
+(mask `0x800846D4`): cue `0x37`, mode = 3 (`80032dcc`). Move cues
+(`0x21`) enqueue into the 4-slot UI ring at `0x8007B6D8`.
+
+**PAGE header** (`80032e18..80032f20`, drawn while the count is
+non-zero): the current page number is recovered by walking `visible`
+-sized steps until the accumulator hits the scroll top. All glyphs are
+`FUN_8002C488` UI-icon sprites from the `0x800732A4` table: the "PAGE"
+small-cap tag is **ICO `0x76`** (atlas UV `(80,136)`, 24x8, CLUT byte
+1 - the teal ink) at `(WX + W - 0x38, WY - 2)`; the gold page digits
+are **ICO `0x7A + digit`** (6x8, UV `(64 + 6*digit, 144)`) - current
+page at `WX + W - 0x20` (tens; ones at `+6`), the slash **ICO `0x79`**
+(UV `(120,136)`) at `+0xD`, the page total at `+0x14`/`+0x1A`. The
+digit-sprite path leading-zero-suppresses the tens cell.
+
+**Rows** (`80033050..`): the row block vertically centres -
+`row0_y = WY + (content_h - visible*0xE)/2 + 5`, pitch `0xE` (12 rows
+at `WY + 0xC` for the item-list rect). Per-row draw switches on the
+entry's class nibble: `0x1000` = bag row (name via the row-name
+resolver `FUN_8002FF8C` at `WX+0xC`; bag count from `0x80085959 +
+slot*2` as 8-px digit cells from `WX+0x6C` with skip-advance
+leading-zero logic - a 1-digit count inks the `WX+0x74` cell, which is
+the capture-pinned field); `0x6000` = bag row with an equip-slot
+pictogram (icon id via equip record `+7` bits `0x60` through the
+halfword table `0x80073A90`, name at `WX+0x1C`) - the Equip screen's
+candidate list; `0x9000` = passive row (ICO `0x46` + name at
+`WX+0x1C`); `0x7000` = ICO `0x21` + name (payload used as the id
+directly); `0x3000`/`0xA000` = shop rows (name from item record `+4` at
+`WX+0x18`, 5-digit price from record `+2` at `WX+0x80`; `0xA000`
+stages ink 5); `0x8000` = fixed-advance name (monospace override byte
+`0x80073F20`); `0x2000`/`0x5000`/`0x4000` = plain name rows.
+
+**Row ink** (`8003312c..80033154` and per-class clones): each row
+stages ink 7 (white), dropping to 0 (grey) when the row's `0x800`
+disabled bit is set and to 1 when `0x400` is set - **unless the list is
+parked** (mode 4), which keeps every row white. The pad-walked captures
+show the whole Use-list page grey once the hand enters it, so the
+overlay's row rebuild is setting `0x800` across the field list in that
+state - which bit-set path the rebuild takes there is the one remaining
+untraced half; the engine keeps the capture behaviour (white parked,
+grey browsing).
+
+**Hand + page arrows** (`80032f5c..8003304c`): hand
+`FUN_8002B994(0, browsing, WX - 6, row_y)` (suppressed when parked, and
+in mode 0 for window 11 - the Door of Wind list); blink-gated page
+triangles (frame word `0x80084570 & 0x18`) - ICO `0x27` at
+`(WX - 0xC, WY + h/2 - 3)` while scrolled, ICO `0x28` at
+`(WX + w + 4, WY + h/2 - 3)` while rows remain. Against the live list
+rect the capture-pinned right-arrow spot `(WX + 0x84, WY + 0x53)`
+resolves these formulas at `w = 128, h = 172` - the live rect trims the
+descriptor's `132x182`.
+
+Engine port: `engine-core::pause_screens::list_kernel_navigate` (the
+navigation phase, page-local wrap + page flip); the row/header draws
+stay in `engine-ui::pause_lists` at the capture-pinned pens.
 
 Shared helpers, both menu-overlay resident:
 
@@ -593,18 +704,23 @@ The hand cursor (`FUN_8002B994`) draws at `(WX, row_y)` gated by the
 cursor word `DAT_801E46C0`. See
 `ghidra/scripts/funcs/overlay_menu_801d0d18.txt`.
 
-**Item list (id 15)** - renderer-less in the descriptor table; the items
-flow draws the page directly (drawer untraced - layout capture-pinned).
-Rows start at `(WX+0xC, WY+0xC)`, pitch `0xE`, 12 rows per page: item
-name, then the bag count as a 2-digit fixed-cell field at `WX+0x74`. The
-whole page draws CLUT-7 white while the command window has focus and
-drops to CLUT-0 grey once the hand enters the list (the hand at
-`WX-0xC` is the selection highlight - no row tint). The header row sits
-above row 0: a teal-green "PAGE" small-cap tag (ink `(16,181,156)`)
-right of `WX+0x4D` and the gold `cur / total` fraction ending flush at
-the content right edge. A kind-3 right-triangle sprite at
-`(WX+0x84, WY+0x53)` - vertically centred, overlapping the right frame
-edge - marks further pages (`PAGE 1 / 6` in the capture).
+**Item list (id 15)** - renderer-less in the descriptor table; the page
+is drawn by the SCUS **kind-4 list kernel `FUN_80032A44`** (see [the
+kernel section](#the-kind-4-list-kernel-scus-fun_80032a44)) over
+class-`0x1000` bag rows. Rows start at `(WX+0xC, WY+0xC)`, pitch `0xE`,
+12 rows per page: item name, then the bag count as 8-px digit cells
+whose 2-digit field spans `WX+0x6C..0x7C` (a 1-digit count inks the
+`WX+0x74` cell - the capture-pinned spot). The whole page draws CLUT-7
+white while the command window has focus (the kernel is *parked*, mode
+4, which forces white) and drops to CLUT-0 grey once the hand enters
+the list (the per-row `0x800` dim bit; the hand at `WX-0xC` is the
+selection highlight - no row tint). The header row sits above row 0:
+the "PAGE" small-cap tag - ICO sprite `0x76`, atlas UV `(80,136)` 24x8,
+teal ink `(16,181,156)` - at `WX+W-0x38`, and the gold `cur / total`
+fraction (digit sprites ICO `0x7A..0x83`, slash `0x79`) from
+`WX+W-0x20`, ending flush at the content right edge. Blink-gated page
+triangles (ICO `0x27`/`0x28`) mark further pages - the right one at the
+capture-pinned `(WX+0x84, WY+0x53)` (`PAGE 1 / 6` in the capture).
 
 **Info window (id 17, `FUN_801DCB60`)** - draws only while an item id is
 staged in `DAT_801E46B0`: the 2-digit bag count (CLUT 6) at
@@ -659,45 +775,137 @@ place, snapping windows 13/17), phase 1 arms the list kernel
 returns to submenu 5; a pick (2) dispatches on the picked item's
 effect-class byte (item record `+1` indexes the `0x800752C0`
 item-effect table - see
-[`item-effect-table.md`](../formats/item-effect-table.md)): class
-`0x80` -> submenu 0xB, `0x81` -> 0xC, `0x82` -> 0xD, anything else ->
-submenu 9 when the effect's `+2` flag bit `0x20` is set, else 0xA (the
-target-pick / apply flows; their handlers sit in the same dispatch
-table and stay untraced).
+[`item-effect-table.md`](../formats/item-effect-table.md)) at
+`801d7f80..801d7fd8`: class `0x80` -> submenu 0xB, `0x81` -> 0xC,
+`0x82` -> 0xD, anything else -> submenu 9 (the all-party apply) when
+the effect's `+2` flag bit `0x20` is set, else 0xA (the single-target
+apply). All five routes are traced below; engine kernel
+`engine-core::pause_screens::use_route_for_effect`.
 
-**Single-target apply `FUN_801D7FF8`** (submenu 9, the default
-effect-class route): phase 0 stages the pick - `FUN_801D6A54(item_id)`
+**All-party apply `FUN_801D7FF8`** (submenu 9, the flag-`0x20`
+effect route): phase 0 stages the pick - `FUN_801D6A54(item_id)`
 derives the target-panel preview mode `DAT_801E46CC` from the picked
-item's record (kind byte 2 + effect class 6 map the effect arg
-`0..=5` onto preview modes `1..=5`; anything else = mode 0) - then
-sets the target cursor `DAT_801E46C4` to preview mode (`| 0x2000`) and
-runs the window script at `0x801E4C30` - close-all, reopen the tab,
-snap windows 13/17 and **open window 14, the party target panel**.
-Phase 1 polls confirm/cancel (`FUN_801D688C(&DAT_801E46C4, 0, 0)` -
-row navigation is not this helper's; cancel returns to submenu 6).
-Confirm applies the pick: SFX `0x25`, the SCUS item-effect applier
-`FUN_800402F4(effect_class, effect_arg, roster_id[cursor], 0)`, the
-ability-bit rebuild `FUN_80042558`, then consumes one copy from the
-bag slot (`FUN_80043048(slot, 1)`); when the stack runs out (or the
-item stops resolving, `FUN_8003043C`) a ~20-frame timer phase
-(`DAT_801E46D0` reused as the accumulator against the scratchpad frame
-delta `DAT_1F800393`) runs before dropping back to the list - to
-submenu 5 when the bag emptied.
+item's record (below) - then sets the target cursor `DAT_801E46C4` to
+preview mode (`| 0x2000` - the all-row hand) and runs the window
+script at `0x801E4C30` - close-all, reopen the tab, snap windows
+13/17 and **open window 14, the party target panel**. Phase 1 polls
+confirm/cancel (`FUN_801D688C(&DAT_801E46C4, 0, 0)` - count 0, so no
+row navigation: the whole party is the target; cancel returns to
+submenu 6). Confirm applies the pick: SFX `0x25`, the SCUS
+item-effect applier `FUN_800402F4(effect_class, effect_arg,
+roster_id[cursor], 0)`, the ability-bit rebuild `FUN_80042558`, then
+consumes one copy from the bag slot (`FUN_80043048(slot, 1)`); when
+the stack runs out (or the item stops resolving, `FUN_8003043C`) a
+~20-frame timer phase (`DAT_801E46D0` reused as the accumulator
+against the scratchpad frame delta `DAT_1F800393`) runs before
+dropping back to the list - to submenu 5 when the bag emptied.
+
+**Single-target apply `FUN_801D8308`** (submenu 0xA, the default
+route): same shape with a navigable hand - phase 0 stages the preview
+mode, clears the cursor's high bits and runs the script at
+`0x801E4C48` (identical to submenu 9's - same window set); phase 1
+navigates the party rows (`FUN_801D688C(&DAT_801E46C4,
+party_count(0x80084594), 1)`, gated on `_DAT_8007BB80 == 0`); a
+confirm first re-checks usability through the SCUS validator
+`FUN_8003FB10(effect_class, effect_arg, roster_id[cursor])` - failure
+buzzes (`801d8480`, cue `0x23`) - then sets cursor bit `0x1000`
+(static hand) and applies via the same
+`FUN_800402F4`/`FUN_80042558`/`FUN_80043048` chain (`801d84b0..`).
+When the applier reports a result through `_DAT_8007BB78` (seeded
+`0xFF` before the call, `801d850c`), a notify window opens (script
+`0x801E4C60` = open window 8, renderer `FUN_801DCD58`) and waits for a
+confirm press before closing (`0x801E4C68`). Exhaustion runs the same
+20-frame timer + bag rescan.
+
+**Preview-mode derivation `FUN_801D6A54`**: mode 0 unless the item's
+record kind byte is `2` **and** its effect class is `6` - the
+permanent-stat Waters. The effect arg maps `0 -> 1` (Life Water),
+`5 -> 1` (Magic Water - shares the HP/MP panel), `1 -> 2` (Power
+Water), `2 -> 3` (Guardian Water), `3 -> 4` (Swift Water), `4 -> 5`
+(Wisdom Water). Engine kernel
+`engine-core::pause_screens::target_panel_mode`.
 
 **Party target panel (window id 14, rect `(174,28,132,176)`, renderer
-`FUN_801D0520`)** - replaces the item list column during target pick:
-per roster member the name (record `+0x2A7`) at `WX+0x14`, the LV icon
-(ICO `0x0A`) at `WX+0x58` with the 2-digit level at `WX+0x68`, then
-HP / MP rows whose shape switches on the panel mode word
-`DAT_801E46CC` (mode 1 - the HP-restore preview - draws before ->
-after values with the `FUN_8003C1F8` code-7/8 arrows; other modes draw
-plain cur/max pairs with the health-tier inks `FUN_800349EC` /
-`FUN_80035EA8`); each block
-also runs the equip-stat aggregator `FUN_801CF650`. Hand cursor from
-`DAT_801E46C4`. Row pens beyond these are not yet fully traced - see
-`overlay_menu_801d0520.txt`. The class-`0x80`/`0x81`/`0x82` routes
-(submenus 0xB / 0xC / 0xD) and the no-target class route (submenu 0xA)
-follow the same shape and stay untraced.
+`FUN_801D0520`)** - replaces the item list column during target pick.
+One block per roster member (ids `0x80084598`, count `0x80084594`,
+roster byte `< 3` only), pitch `0x3E`. Header: name (record `+0x2A7`)
+at `WX+0x14`, LV icon (ICO `0x0A`) at `(WX+0x58, Yb+2)`, 2-digit level
+(`+0x130`) at `WX+0x68`. Body switches on the preview word
+`DAT_801E46CC`:
+
+- **Plain rows** (mode 0, and modes 2/4/5): HP icon (ICO `0x3F`) at
+  `(WX+0x1C, Yb+0x11)`; 4-digit current HP (`+0x106`) at `(WX+0x2C,
+  Yb+0xF)` staged with the `FUN_800349EC` tier ink; slash
+  (`FUN_8003C1F8` cell 6, white) at `WX+0x4C`; 4-digit max (`+0x104`)
+  at `WX+0x54` (`801d0764..801d07d4`). MP row (ICO `0x40`, `+0x10A` /
+  `+0x108`, `FUN_80035EA8` tier) mirrors it at `Yb+0x1E`/`Yb+0x1C`
+  (`801d07ec..801d0850`) - skipped in mode 3 (`801d07e4`).
+- **Mode 1** (Life/Magic Water): both HP and MP rows draw
+  `eff_max ( base_max )` - tags ICO `0x64`/`0x3F` (HP) and
+  `0x65`/`0x40` (MP) at `WX+0x14`/`WX+0x28`; the effective maximum
+  (`+0x104`/`+0x108`) white at `WX+0x38`; the teal paren group
+  (`FUN_8003C1F8` cells 7/8, staged 5 - the status screen's
+  parenthesised-value ink) at `WX+0x58`/`WX+0x80` around the
+  record-side base maximum (`+0x11C`/`+0x11E`) at `WX+0x60`
+  (`801d0658..801d0850`).
+- **Stat rows** (modes 2..5, after running the equip-stat aggregator
+  `FUN_801CF650(roster_id)` at `801d0854`): `LBL eff ( base )` -
+  label ("ATK"/"UDF"/"LDF"/"SPD"/"INT", overlay rodata
+  `0x801CE9A0..B0`) at `WX+0x1C`; the aggregator word
+  (`DAT_801EF08C/90/94/98/9C`, clamped 999) 3-digit at `WX+0x44`;
+  paren cells at `WX+0x5C`/`WX+0x7C` around the record base stat
+  (`+0x124/+0x126/+0x128/+0x12A/+0x12C`) at `WX+0x64`. Modes 2/4/5
+  draw one row at `Yb+0x29` (ATK/SPD/INT); mode 3 draws UDF at
+  `Yb+0x1C` **and** LDF at `Yb+0x29` in the skipped MP row's place
+  (`801d08a4..801d0c38`).
+
+The earlier "HP-restore preview" reading of mode 1 is superseded: the
+modes are the permanent-stat **Water previews** (effective vs base
+maxima/stats); restore items use the plain mode-0 panel. Hand cursor
+(`801d0c40..801d0c94`) decodes `DAT_801E46C4`: bit `0x4000` hides it,
+bit `0x2000` draws it on every row (all-party), else the low 12 bits
+pick the row; bit `0x1000` drops it to the static sprite variant.
+Drawn `FUN_8002B994(0, variant, WX, Yb)`. Engine port:
+`engine-ui::target_panel_draws_for` / `target_panel_sprites_for`, fed
+by `engine-core::pause_screens::target_panel_model`. See
+`overlay_menu_801d0520.txt`.
+
+**Door of Light route `FUN_801D8A58`** (submenu 0xB, effect class
+`0x80`): phase 0 zeroes the confirm cursor `DAT_801E46D0` (**Yes** is
+the default - unlike the Throw Out confirm) and opens window 10
+(script `0x801E4CBC`; renderer `FUN_801D1DAC`, rect `(76,100,168,40)`).
+Yes consumes one **`0x88` Door of Light** (`FUN_80042310(0x88, 1)`,
+`801d8b20`) and exits the menu: `DAT_801E46A0 = 0xF2` (fade) +
+outer-SM exit code `_DAT_8007B43C = 4` (`801d8b5c..801d8b6c`) - the
+field-side dungeon-escape handoff. No or cancel returns to submenu 6.
+
+**Door of Wind route `FUN_801D8B90`** (submenu 0xC, class `0x81`):
+phase 0 parks the kernel and saves the Use-list scroll
+(`_DAT_8007BB98/90 -> DAT_801EF070/74`, `801d8bd8..801d8bf8`); phase 1
+zeroes the scroll and opens **window 11** - the destination list, same
+rect as list 15, renderer-less, kernel-driven (the kernel hides its
+hand for window `0xB` while idle); phase 2 re-arms the kernel; phase 3
+on a pick reads the 6-byte quick-travel placement record
+`0x80073A98 + slot*6` (the `FUN_80030628` case-`0x19` landmark table -
+`legaia_asset::worldmap_menu`) and stages `+2 -> 0x80084628`,
+`+4 -> 0x80084624`, `+5 -> 0x8008462C` (`801d8c88..801d8ccc`), consumes
+one **`0x89` Door of Wind** and exits with code `_DAT_8007B43C = 5` -
+the world-map warp. Cancel restores the saved scroll and returns to
+submenu 6.
+
+**Incense route `FUN_801D8D94`** (submenu 0xD, class `0x82`): window
+12 Yes/No confirm (script `0x801E4CE4`; renderer `FUN_801D1F10`, rect
+`(76,88,168,54)`), cursor seeded Yes. Yes consumes one **`0x8A`
+Incense** and applies the encounter suppression through the standard
+applier - `FUN_800402F4(class, arg, roster_id[target-cursor], 0)` with
+the class/arg read live from Incense's own item-effect record (the
+`lbu 0x49e1(0x8007xxxx)` at `801d8e78` is item record `0x8A`'s `+1`
+effect-index byte), then returns to the Use list (submenu 6). No
+menu exit - the flow stays on the Items screen.
+
+Engine port of the three special routes:
+`engine-core::pause_screens::SpecialUseSession` (+ the fixed consume
+ids `0x88/0x89/0x8A` and exit codes 4/5 as named constants).
 
 **Throw Out list `FUN_801D8734`** (submenu 7): phase 0 re-points the
 live list window from descriptor 15 to descriptor 16 (live-window
