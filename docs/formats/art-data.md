@@ -248,7 +248,7 @@ Full per-character tables (5 entries each for Vahn / Noa / Gala = 15 total) are 
 The interleaved connector direction after each art (the `0F` / `0E` above) is **combo-specific**, not derivable from each art's own command string:
 
 - The same art appears with different connectors across Supers (Vahn's `0x27` is followed by `0F` in Tri-Somersault but `0E` in Power Slash).
-- The runtime queue-builder that emits those connectors (`ctx[+0x274]`) is not yet pinned.
+- Those connectors are **resident table data**, not derived: the battle overlay keeps the full replace-string table at `0x801F65E8` (15 entries, 16-byte stride), read byte-exact for all 15 Supers from a battle-RAM capture, so `super_art.rs`'s `replace` strings are runtime-validated. (`ctx[+0x274]`, once suspected as the queue-builder, is the turn-order active-actor index; the live action queue is `actor[+0x1DF]`.)
 - The live player-driven Arts submenu therefore matches a recognized art *ordering* against `SuperArt::art_sequence()` - the Find pattern projected to its art constants only (`[0x27, 0x1F, 0x27]` for Tri-Somersault) - via `legaia_art::recognize_art_sequence` + `SuperMatcher::trigger_by_art_sequence`, which is faithful to *which* combination triggers *which* Super without reproducing the byte-exact queue. See [`subsystems/battle-action.md`](../subsystems/battle-action.md#miracle--super-in-the-live-player-driven-arts-submenu).
 
 ## Arts-name table (`DAT_80075EC4`)
