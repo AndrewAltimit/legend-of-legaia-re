@@ -28,7 +28,7 @@ resolved through the window-descriptor table below.
 - [Header row](#header-row-always-drawn) · [Status page](#status-page-submenu-0-or-5)
 - [Magic list](#magic-list-submenu-2) · [Moves list](#moves-list-submenu-3) · [Skills page](#skills-page-submenu-1)
 - [Top-level pause menu](#top-level-pause-menu) · [Equip screen](#equip-screen) · [Options screen](#options-screen)
-- [Items screen](#items-screen) · [Magic screen](#magic-screen)
+- [Submenu state machines](#submenu-state-machines) · [Items screen](#items-screen) · [Magic screen](#magic-screen)
 - [Inn stay](#inn-stay-there-is-no-inn-screen)
 - [Draw primitives + CLUT staging](#draw-primitives--clut-staging)
 - [Record fields consumed](#record-fields-consumed)
@@ -528,12 +528,61 @@ Engine port: `engine-core::options` (`OPTIONS_DISPLAY_ROWS`,
 mixer's monaural downmix (`engine-audio AudioOut::set_mono`), the other
 settings persist in the engine's options config file.
 
+## Submenu state machines
+
+Every pause-menu screen's input handling is one per-submenu tick
+function, dispatched from the master menu tick (inside `FUN_801DC1CC`,
+menu overlay) through the function-pointer table at VA `0x801E4F40`,
+indexed by the submenu word `DAT_801E46A4`. The master tick keeps a
+requested/settled pair: a handler *requests* a switch by writing
+`DAT_801E46A4`; the master tick compares it against the settled copy
+`DAT_801E46A8` and, on a change, zeroes the shared per-submenu phase
+word `DAT_801E46AC` before dispatching - every submenu entered starts at
+phase 0. Items-screen slots of the table: 5 = command window
+(`FUN_801D7C00`), 6 = the Use list (`FUN_801D7E50`), 7 = the Throw Out
+list (`FUN_801D8734`), 9/0xA/0xB/0xC/0xD = the Use flow's per-effect-class
+apply/target flows; 0xE/0xF = the Magic screen's caster/list handlers,
+0x13 = the Equip screen (the `DAT_801E46A4 == 0x13` gate of
+`FUN_801D21C0`).
+
+The list windows themselves (descriptor kind 4) are paged by a
+SCUS-resident window kernel the overlay talks to through a small global
+protocol: `_DAT_8007BB94` = list mode/result (0 idle, 1 browsing, 2 =
+row confirmed, 3 = cancelled, 4 = parked behind the command window),
+`_DAT_8007BB88` = the selected bag-slot index, `_DAT_8007BB90` /
+`_DAT_8007BB98` / `_DAT_8007BBA0` = scroll top / selected row / row
+count. The overlay SMs set mode 1 and poll for 2/3; the kernel's own
+navigation internals (and the descriptor `f1` word it consumes - `0x622`
+on list 15, `0` on the Throw Out variant 16) stay untraced - a
+menu-open capture stepping the list would close them.
+
+Shared helpers, both menu-overlay resident:
+
+- **Cursor navigate `FUN_801D688C(cursor_ptr, rows, wrap)`** - held-pad
+  confirm/cancel masks (`DAT_801EF0F0`/`F4`) return 1 (SFX `0x36`) / 2
+  (SFX `0x37`); pad-edge Up/Down (`_DAT_8007BB84` bits `0x1000`/`0x4000`)
+  move the cursor word's low 12 bits (SFX `0x21`), wrapping when `wrap`
+  is set, and return 3. The high cursor-word bits pass through
+  untouched (`0x4000` hide, `0x2000` dim variant, `0x1000` editing).
+- **Window-script runner `FUN_801D6628(script)`** (this VA is the menu
+  overlay's runner - the actor VM of `actor-vm.md` is a different
+  overlay at the same base). A script is 4-byte entries
+  `[op: u8][window_id: u8][arg: u16]`, op 0 terminates; the op jump
+  table sits at `0x801CED70`. Ops used by the pause screens: 1 =
+  create-if-absent + slide to the descriptor home rect, 2 = open at a
+  packed position, 3 = poke live-window byte `+0x1D`, 4 = close
+  (slide out), 5 = close all, 6 = zero live-window `+0x20` (snap the
+  slide motion), 8 = destroy, 9 = create + slide to `arg`, 0x0A =
+  destroy + re-create in place (content refresh keeping the animated
+  position). The live windows are `0x5C`-stride structs (descriptor id
+  at `+0x8`, rect at `+0xA`) - see the window-table notes above.
+
 ## Items screen
 
 Four descriptor-table windows (draw order: tab 0, command 13, list 15,
 info 17 - the live-list order of the pad-walked capture). The pause-menu
 submenu word `DAT_801E46A4` holds `5` while the command window has focus
-and `6` once the hand enters the list.
+and `6` once the hand enters the list (`7` for the Throw Out list).
 
 **Command window (id 13, `FUN_801D0D18`)** - three rows at `(WX+0x14,
 WY + row*0xE)`: "Use" / "Throw Out" / "Arrange" (`@`-marker strings in
@@ -575,14 +624,131 @@ always emits a second framed widget box `FUN_8002C69C(WX, WY+0x38,
 capture; the passive / points lines land inside it. See
 `overlay_menu_801dcb60.txt` / `overlay_menu_801d0f1c.txt`.
 
+### Command sub-flows (Use / Throw Out / Arrange)
+
+The command SM `FUN_801D7C00` (submenu 5) phases through the shared
+phase word `DAT_801E46AC`: phase 0 zeroes the staged item id/count
+(`DAT_801E46B0`/`B4`), parks the list (`_DAT_8007BB94 = 4`) and re-runs
+the screen's window script; phase 1 navigates the three rows with
+`FUN_801D688C(&DAT_801E46C0, 3, 1)`. Every confirm first re-runs the
+bag scan (slots `0x80085958 + i*2` over `_DAT_8007B5EA.._DAT_8007B5EC`,
+a slot counts only when **both** id and count bytes are non-zero) and
+buzzes (SFX `0x23`) on an empty bag. Then, by row: **Use** requests
+submenu 6 (SFX `0x20`), **Throw Out** requests submenu 7 (SFX `0x20`),
+**Arrange** stays in submenu 5 and jumps to phase 2, which calls the
+sort kernel `FUN_801D64A8`, zeroes the list scroll
+(`_DAT_8007BB90`/`BB98`), re-opens the list window and returns to
+phase 1 (SFX `0x36`). Cancel (result 2) requests submenu 1 - back to
+the top-level pause menu.
+
+**Arrange kernel `FUN_801D64A8`** - the bag sort behind the Arrange row:
+allocates a 256-byte scratch and inverts the menu overlay's
+display-order table at `0x801E4A88` (`table[rank] = item_id`, file
+offset `0x16270` in PROT 0899) into an id -> rank map (ascending fill -
+a duplicated id keeps its last rank), then selection-sorts the bag slot
+pairs by that rank, considering only occupied slots and breaking once
+none remain - emptied slots sink behind the occupied run. See
+`ghidra/scripts/funcs/overlay_menu_801d64a8.txt`; engine
+`engine-core::menu_arrange` (parser + kernel).
+
+**Use list `FUN_801D7E50`** (submenu 6): phase 0 hides the command hand
+(cursor `|= 0x1000`), runs the window script (re-creating list 15 in
+place, snapping windows 13/17), phase 1 arms the list kernel
+(`_DAT_8007BB94 = 1`), phase 2 stages the hovered slot's id/count into
+`DAT_801E46B0`/`B4` every frame and polls the kernel: cancel (3)
+returns to submenu 5; a pick (2) dispatches on the picked item's
+effect-class byte (item record `+1` indexes the `0x800752C0`
+item-effect table - see
+[`item-effect-table.md`](../formats/item-effect-table.md)): class
+`0x80` -> submenu 0xB, `0x81` -> 0xC, `0x82` -> 0xD, anything else ->
+submenu 9 when the effect's `+2` flag bit `0x20` is set, else 0xA (the
+target-pick / apply flows; their handlers sit in the same dispatch
+table and stay untraced).
+
+**Single-target apply `FUN_801D7FF8`** (submenu 9, the default
+effect-class route): phase 0 stages the pick - `FUN_801D6A54(item_id)`
+derives the target-panel preview mode `DAT_801E46CC` from the picked
+item's record (kind byte 2 + effect class 6 map the effect arg
+`0..=5` onto preview modes `1..=5`; anything else = mode 0) - then
+sets the target cursor `DAT_801E46C4` to preview mode (`| 0x2000`) and
+runs the window script at `0x801E4C30` - close-all, reopen the tab,
+snap windows 13/17 and **open window 14, the party target panel**.
+Phase 1 polls confirm/cancel (`FUN_801D688C(&DAT_801E46C4, 0, 0)` -
+row navigation is not this helper's; cancel returns to submenu 6).
+Confirm applies the pick: SFX `0x25`, the SCUS item-effect applier
+`FUN_800402F4(effect_class, effect_arg, roster_id[cursor], 0)`, the
+ability-bit rebuild `FUN_80042558`, then consumes one copy from the
+bag slot (`FUN_80043048(slot, 1)`); when the stack runs out (or the
+item stops resolving, `FUN_8003043C`) a ~20-frame timer phase
+(`DAT_801E46D0` reused as the accumulator against the scratchpad frame
+delta `DAT_1F800393`) runs before dropping back to the list - to
+submenu 5 when the bag emptied.
+
+**Party target panel (window id 14, rect `(174,28,132,176)`, renderer
+`FUN_801D0520`)** - replaces the item list column during target pick:
+per roster member the name (record `+0x2A7`) at `WX+0x14`, the LV icon
+(ICO `0x0A`) at `WX+0x58` with the 2-digit level at `WX+0x68`, then
+HP / MP rows whose shape switches on the panel mode word
+`DAT_801E46CC` (mode 1 - the HP-restore preview - draws before ->
+after values with the `FUN_8003C1F8` code-7/8 arrows; other modes draw
+plain cur/max pairs with the health-tier inks `FUN_800349EC` /
+`FUN_80035EA8`); each block
+also runs the equip-stat aggregator `FUN_801CF650`. Hand cursor from
+`DAT_801E46C4`. Row pens beyond these are not yet fully traced - see
+`overlay_menu_801d0520.txt`. The class-`0x80`/`0x81`/`0x82` routes
+(submenus 0xB / 0xC / 0xD) and the no-target class route (submenu 0xA)
+follow the same shape and stay untraced.
+
+**Throw Out list `FUN_801D8734`** (submenu 7): phase 0 re-points the
+live list window from descriptor 15 to descriptor 16 (live-window
+`+0x8` id write; descriptor 16 shares list 15's rect with a zeroed `f1`
+word) and runs the enter script; phase 1 arms the kernel; phase 2
+stages the hovered slot and polls - cancel restores descriptor 15 and
+returns to submenu 5; a pick opens the **confirm window** (script: close
+command window 13, open window 9) with the confirm cursor
+`DAT_801E46D0` seeded to **1 ("No")**, phase 3. Phase 3 navigates the
+two rows (`FUN_801D688C(&DAT_801E46D0, 2, 1)`); confirming row 0 (Yes,
+SFX `0x37`) **zeroes both bytes of the selected bag slot pair** - the
+whole stack is discarded, no compaction - then applies a scroll fix-up
+(deleting the last row steps the selection and scroll back one) and
+closes the confirm; if the bag rescan comes up empty the flow restores
+descriptor 15 and drops back to submenu 5, otherwise the list re-arms.
+"No" or cancel just closes the confirm back to the list.
+
+**Confirm window (id 9, rect `(14,38,144,54)`, renderer
+`FUN_801D1B20`)** - drawn from the staged slot (`_DAT_8007BB88`): the
+item name (CLUT 7; the item-table `+4` string, whose leading byte is
+its glyph count) at `(WX, WY)`; the bag count (min-1-digit
+`FUN_80034B78`) at `WX + 8 + glyphs*0xC`; "You are about to" 8 px past
+the count (16 px for a 2-digit count) on the same row; "Throw out?" at
+`(WX+6, WY+0xE)`; then CLUT 5: "Yes" at `(WX+0x3C, WY+0x1C)` and "No"
+at `(WX+0x3C, WY+0x2A)` with the hand at `WX+0x28` on the focused row
+(cursor word `DAT_801E46D0`, the standard hide/dim bit layout). The
+name renderer also honors a `0xF1` second-byte escape substituting a
+character-record name (`record+0x2A7`). The four strings live in the
+menu overlay's leading rodata pool (`@You are about to` at
+`0x801CEA60`, `@Throw out?` / `@Yes` / `@No` following). See
+`overlay_menu_801d1b20.txt` / `overlay_menu_801d8734.txt` /
+`overlay_menu_801d7c00.txt` / `overlay_menu_801d7e50.txt`.
+
 Engine port: `engine-ui::items_screen_draws_for` /
 `items_screen_sprites_for` (window contents + hand / page arrows at the
-pinned pens), fed by `engine-core::pause_screens` (`PauseItemsSession` -
-the command/list focus model over the item-use flow, real bag counts,
-page flip) with names / descriptions / accessory passive lines resolved
+pinned pens) plus `items_throw_confirm_draws_for` /
+`items_throw_confirm_sprites_for` (the id-9 confirm window), fed by
+`engine-core::pause_screens` (`PauseItemsSession` - the
+command/list/throw-out focus model over the item-use flow, real bag
+counts, page flip, the Yes/No confirm defaulting to No, whole-stack
+discard) with names / descriptions / accessory passive lines resolved
 from the executable via `pause_screens::MenuTextTables`
-(`World::install_menu_text`). Both hosts (play-window + the web play
-page) render this screen through the same builders.
+(`World::install_menu_text`) and the Arrange ranks via
+`World::install_menu_overlay_tables` (`engine-core::menu_arrange`,
+id-order fallback without the overlay). Discards reach the world bag
+through `field_menu_dispatch::apply_inventory_outcome`. The engine
+draws the Throw Out list with the same paged layout as the Use list -
+whether the retail descriptor-16 variant pages or row-scrolls hangs on
+the untraced `f1` word (the deletion fix-up's pitch subtraction hints
+at row scrolling). Both hosts (play-window + the web play page) render
+this screen through the same builders.
 
 ## Magic screen
 
