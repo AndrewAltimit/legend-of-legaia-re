@@ -74,9 +74,11 @@ Walks ISO9660 and writes every file. See [disc + ISO9660](../formats/disc.md).
 
 ```bash
 prot-extract extract extracted/PROT.DAT extracted/PROT/ --cdname extracted/CDNAME.TXT
+prot-extract list   extracted/PROT.DAT --cdname extracted/CDNAME.TXT
+prot-extract locate extracted/PROT.DAT 0x17855 --in-entry 866 --cdname extracted/CDNAME.TXT
 ```
 
-Splits PROT.DAT into 1233 numbered entries with CDNAME-derived filenames. Each extracted file's size is the entry's full on-disc footprint - `max(indexed_size, next_start - this_start)` - so trailing-overlay sectors past the TOC-indexed end (e.g. PROT 899's title-screen overlay code) are visible. See [PROT TOC](../formats/prot.md).
+Splits PROT.DAT into 1233 numbered entries with CDNAME-derived filenames. Each extracted file's size is `max(indexed_size, next_start - this_start)`, so trailing-overlay sectors past the TOC-indexed end (e.g. PROT 899's title-screen overlay code) are visible. But where the TOC *declares* a window larger than the sector gap to the next entry, that same rule makes the file **over-read** into its neighbour - its tail holds the next entry's bytes (entries 865/866 spill into the monster archive 867). `list` flags these with an `OVR` column and prints each entry's true `footprint`; `locate` maps a byte offset (absolute, or in-`.BIN` via `--in-entry`) to the entry that really owns it and warns on an over-read tail. See [PROT TOC](../formats/prot.md).
 
 ### LZS decode (`lzs-decode`)
 
