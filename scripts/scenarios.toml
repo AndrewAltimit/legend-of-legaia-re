@@ -2165,3 +2165,15 @@ expected_game_mode = 2
 expected_active_scene = "garmel"
 description = "Second-kingdom run, immediately after the boss fight resolves. Scene garmel, mode 0x02 (post-battle transition). Formation DAT_8007BD0C=[4B,00,00,00] - lone-boss id 0x4B (labelled Zeto by the capture, but the id->name lookup + the garmel-vs-jou scene scoping are unverified; see the open reconcile thread). Clean disc. Closes the pre/post bracket."
 topics = ["chapter-2", "garmel", "zeto", "boss", "capture-bracket", "pcsx-redux"]
+
+[[scenarios]]
+label = "flute_lippian_midcast"
+slot = 255
+backup_fingerprint = "da0da66d0ee4ca2fbab82120c36ecfcf850d7dfabab983aa5f109ce04e220765"
+description = "Mid-cast Lippian Flute summon (spell 0x96) vs Gobu Gobu; loader-B id 0x1D, slot-B resident = extraction 0924 (head title 'Ultimate Rave' = the failed-kill banner; the landed kill shows 'Ultimate Death'). Pinned the 0924 binding."
+
+[[scenarios]]
+label = "flute_spikefish_midcast"
+slot = 255
+backup_fingerprint = "506c35707fc97431dffe8e4483ed687e6a9dbb60c3e805f3a8f4d1be721dd27f"
+description = "Mid-cast Spikefish Flute summon (spell 0x97, attack 'Blowfish') vs Gobu Gobu; loader-B id 0x1E, slot-B resident = extraction 0925 (untitled pre-linked head). Pinned the 0925 binding."

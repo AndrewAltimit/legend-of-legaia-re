@@ -1304,6 +1304,72 @@ submenu - `World::build_battle_spell_session` returns `None` for a `blocks_magic
 caster, so the caller bounces back to the command menu (the same graceful
 fallback it uses when there's no caster record).
 
+### The `+0x16E` status halfword - retail writer inventory
+
+The per-actor status halfword `actor[+0x16E]` has a fully-enumerated writer set in the static
+images (`SCUS_942.54` plus every overlay in `crates/asset/data/static-overlays.toml`, swept for
+every `sh`/`sb`/`sw`/`swl`/`swr` whose offset window covers `+0x16C..+0x171`, every pointer
+precompute `addiu r,r,0x16E`, and every `ori`/`sllv`-shaped bit-set within reach of a `+0x16E`
+access). Lifecycle writers:
+
+- **Battle-start seed** - `0x80051720` copies the persistent per-character status word (char
+  record `+0x6F6` off `0x80084140`) into `+0x16E`. The mirror runs the other way per frame
+  (`sh v0,0x6f6` sites paired with each cure in `FUN_8004CE2C`, and the conditional persist
+  `0x80047680` in `FUN_80047430`, gated on bits `0x404`); `+0x6F6` itself is only ever written
+  as a copy of `+0x16E` or by those same cure masks, so it originates nothing.
+- **Battle-exit / KO clears** - `sh zero,0x16e` at `0x80046EB0` (`FUN_80046A20` per-party exit
+  clear), `0x80040EB8`/`0x80040FDC` (death cleanup).
+
+**Infliction appliers.** Two overlay-resident legs share one kind→bit map, keyed by a
+status-kind byte (`see ghidra/scripts/funcs/overlay_battle_action_801ec3e4.txt` /
+`overlay_battle_action_801e09f8.txt`):
+
+- the on-hit leg inside `FUN_801EC3E4` reads the action descriptor's kind byte
+  (`lbu v0,0x7a(t4)` at `0x801EE3D4`) and dispatches at `0x801EE448`;
+- the cast leg inside `FUN_801E09F8` reads the spell descriptor byte `+0x0A` off `ctx[+0x1014]`
+  (`0x801E1584`) and dispatches at `0x801E1600`.
+
+| kind | bit written | writer PCs (hit leg / cast leg) | gate |
+|---|---|---|---|
+| `1`, `2` | none directly - only the `+0x21F` latch (below) | consumed by `FUN_80047430`: `ori 0x380` + `sh` at `0x80047F88`/`0x80047F90`, then `+0x21F` cleared | `+0x21F != 0` |
+| `3` | `ori v0,v0,0x1` | `0x801EE4C4` / `0x801E1654` | `rng & 7 == 0` |
+| `4` | `ori v0,v0,0x2` | `0x801EE508` / `0x801E1684` | `rng & 7 == 0` |
+| `5` | one random bit of `0x38` - `1 << ((rng % 3) + 3)` via `sllv`/`or` | `0x801EE618`/`0x801EE61C` / `0x801E1738`/`0x801E173C` | accessory-passive immunity bits `0x01000000`/`0x10000000` of char `+0x6BC` skip |
+| `6` | `ori v0,v0,0x1000` | `0x801EE6C8` / (cast leg routes to the same band) | - |
+| `>= 7` | nothing - falls through with no bit write | - | - |
+
+Kinds `1..5` additionally latch `actor[+0x21F] = kind` and stage the effect word `actor[+0x4]`
+from the table `0x801F53D4[kind-1]` (hit leg `0x801EE3E8..0x801EE430`, guard `sltiu v0,v0,6`
+at `0x801EE3E0`; cast leg `0x801E15A4..0x801E15EC`).
+
+Other setters: `ori 0x4` at `0x80041CF4`/`0x80041DE4` and `ori 0x1000` at
+`0x80041EE8`/`0x80041F84` (SCUS band `0x80041...`), the each-frame delegation `ori 0x380` at
+`0x8004D118` (`FUN_8004CE2C`) and `0x80047F88` (`FUN_80047430`), plus `ori 0x380` / `ori 0x1`
+copies of the same shapes in the slot-B battle-support images (PROT 0902/0903/0905/0907, e.g.
+`0x801F7F50` in 0907's image).
+
+**Bit `0x400` has no retail setter.** The sweep above finds *no* instruction in any static
+image that sets bit `0x400` (or `0x800`, or `0x40`) of `+0x16E` - not by immediate, not through
+the `sllv` appliers (whose shift ranges are `(rng%3)+3` → bits 3..5 only), not via the kind
+switch (kinds `>= 7` write nothing), not through `+0x6F6`, and not by any unaligned store
+(zero `swl`/`swr` hits near the offset). Every `0x400`-touching write is a **clear**:
+
+- the accessory-passive cure `andi 0xFBFF` at `0x8004CFCC` (`FUN_8004CE2C`, keyed on char
+  passive word `+0x6C0` bit `0x08000000`);
+- a dedicated per-round waker: `FUN_801F452C` loops the 7 actor slots and clears exactly bit
+  `0x400` behind a `rng & 7 == 0` roll (`andi v0,v0,0xfbff` at `0x801F4610`, `sh` `0x801F4614`);
+- item/spell cure masks `andi 0xFB84` / `0xFF84` / `0xFFFC` in the slot-B battle-support
+  images (e.g. `0x801FC6AC` in 0902's image);
+- the on-hit strip `andi 0xF07F` at `0x801EDA5C` (`FUN_801EC3E4`) and its bit-`0x4`-gated
+  sibling at `0x801DE2E8..0x801DE2FC` (`FUN_801DDB30`);
+- the battle-exit and KO clears above.
+
+So bit `0x400` is **latent content**: it has a complete consumer/curer lifecycle (hit-strip
+class membership, a dedicated RNG waker, an accessory immunity, item cures, a battle-exit
+clear) but no infliction path in the shipped static images - it can only enter play through
+the persistent `+0x6F6` mirror, which nothing in the images seeds with it. The "which function
+sets `0x400`" question dissolves into this negative.
+
 ## AP / Spirit gauge
 
 Each character has a per-turn AP budget that limits how many art commands they can chain. The retail engine reads this from the character record's `+0xC9` (`current_ap`) and `+0xCA` (`bonus_ap`) bytes. Pressing the Spirit button during command input adds `+5` AP exactly once per turn.

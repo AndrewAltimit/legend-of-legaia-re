@@ -720,7 +720,10 @@ whole post-Zeto beat (probe `autorun_flag_writer_watch.lua`) sees only the
 `0x484` re-latch touch its byte, and the flag reads clear in every catalogued
 state through the Karisto era. Such gates simply pass forever; see the
 `0x482`/`0x63A` rows in
-[open-rev-eng-threads.md](../reference/open-rev-eng-threads.md).
+[open-rev-eng-threads.md](../reference/open-rev-eng-threads.md). `0x5D6` (the
+`koin4` gate) is the same class; `0x50A` is **not** - its writer is native
+minigame-overlay code the script census cannot see
+([below](#native-flag-bank-writers-the-minigame-result-toggle-0x50a--the-0x5d6-negative)).
 
 ### Disc-wide SYSTEM-flag census tooling
 
@@ -734,6 +737,7 @@ CLI: `legaia-engine man-scripts --scene <name> --gflag-partition <N>` lists both
 ### A second script-byte carrier: the streaming variant MAN
 
 A live whole-playthrough capture (PCSX-Redux exec-bps on `0x8003CE08`/`0x8003CE34`, probe `autorun_flag_firehose.lua`) shows every story-flag write across the chapter-1 scenes returning to the dispatcher's own `0x5x`/`0x6x` arms (`ra 0x801E3598` / `0x801E35C0`, field overlay resident) - the ops above are the **only** story-flag writers observed. The remaining callers touch only low system indices: `0`/`3` staged by the world-map entity SM (`FUN_801DA51C`), `0x35` set at battle-end victory (`FUN_8004E568`) and cleared by the entity SM, `0xB`/`0xC`/`0x18` interaction/engagement locks, `0xE` by two dispatcher spawn ops.
+That result is chapter-1-scoped: the mode-24 minigame overlays add native story-flag writers that are simply not resident in chapter 1 ([below](#native-flag-bank-writers-the-minigame-result-toggle-0x50a--the-0x5d6-negative)).
 
 The executed script bytes at the Mt. Rikuroa post-Caruban beat live in a heap-resident carrier that is **not** the scene's asset-table bundle MAN: it is a second, plain MAN shipped as the type-3 chunk of a standalone `data_field_streaming` PROT entry (the chunk header is the ordinary sub-asset descriptor `[u24 size][u8 type=0x03]`; the payload parses with `legaia_asset::man_section` like any MAN).
 The resident copy byte-matches PROT `0157_rikuroa`'s chunk, and it carries the story-flag `0x142` SET (`51 42`) at four record sites - `P1[10..12]` plus the post-victory cutscene record `P2[50]`, whose C1 gate is `0x142` itself (the self-latching one-shot).
@@ -750,6 +754,30 @@ Thirteen retail blocks ship such a **streaming variant MAN** (extraction indices
 Every census site therefore carries `GFlagSite::clean`: `true` only when at least `CLEAN_RESYNC_INSNS` instructions decoded error-free between the walker's last decode error (or record start) and the site.
 The CLI prints `DESYNCED?` on non-clean rows - treat those as byte noise until verified by hand disasm or a live capture.
 This falsified the earlier "`0x482` set by the `other7` pool / cleared by the `edbalden`/`eddoman` epilogue variants" reading: all 37 of `0x482`'s census sites are non-clean text aliases, while the live-confirmed `0x142` writer arms decode clean.
+
+### Native flag-bank writers: the minigame result toggle `0x50A` + the `0x5D6` negative
+
+The script censuses cover script-op operand spaces only. The bank's helpers are also called from **native overlay code**, and that space is statically enumerable: a decoded `jal`/`j` word is a property of the bytes, not of the load base (see [call-target-integrity.md](../tooling/call-target-integrity.md)), so a disc-wide sweep of every call word targeting `FUN_8003CE08`/`_CE34`/`_CE64` across `SCUS_942.54` + every PROT entry, with the `a0` operand classified at each site (constant `li` vs computed), enumerates every native caller. Constant-operand story-flag writers exist in exactly one family: the mode-24 minigame overlays.
+
+**`0x50A` is the "won the last minigame session" result toggle of the Sol game-hall venues.** Its writers:
+
+- **Muscle Dome** (PROT 0977, dev module `other6`; the file carries the mastering path `h:\prot\field\koin1\efect.dat`, pinning `koin1` as its host scene). The post-match settle routine CLEARs `0x50A` (`jal` at `0x801CE818`-based VA `0x801D0FF8`, file `0977+0x27E8`) and re-SETs it (`0x801D101C`) iff the win global `0x801D1ADC` is set - the overlay's `WIn on` / `WIn off` debug strings label exactly this pair. The same routine mirrors the battle-victory low flag `0x35`, SETs the per-class victory latches `0x130`/`0x131`/`0x132`, pays prize gold from the table at `0x801D1860`, and past round 13 grants item `0xCD` once, gated on flag `0x6CB`.
+- **The dance overlays** (PROT 0978/0979/0980 - the three dance-song variants sharing one code image; canonical static-overlay row is 0980). Session setup SETs `0x50A` unconditionally (`0x801CF968`, file `0980+0x1150`) after decoding the song select from flags `0x133`/`0x134`/`0x135` (alt `0x428`) and clearing the three; the result path CLEARs it (`0x801CFF10`) when the performance misses its score goal.
+
+The venue linkage closes the loop: `koin1`'s scripts carry the mode-24 door-warp `3E 69` (Muscle Dome) at three sites plus `3E 68` (Baka Fighter) at three, and `koin3` carries `3E 6A` (dance) at four. On return from mode 24 the venue scene re-enters and its gates re-evaluate: `koin1 P2[9]` (C2=`[0x50A]`, spawns while set) is the returned-victorious beat, `P2[10]` (C1=`[0x50A]`) the default arrangement, and `koin3`'s `P2[9]`/`P2[10]` clean TESTs branch the same way. This is why the script census correctly reports no script writer: the writers are native code, resident only while the minigame overlay occupies slot A. Anchor test: `man_variant_carrier_census_disc.rs::koin_gates_0x50a_0x5d6_remain_script_writer_less` (still true as stated - *script*-writer-less).
+
+**`0x5D6` (the `koin4` C1 gate + `P1[15]` dialog/position variant) has no writer in any enumerable space:**
+
+- Script ops: the census holds only the two `koin4 P1[15]` clean TESTs; a raw scan of every decompressed MAN for the LE operand bytes `D6 05` finds nothing else but text/offset-table noise.
+- Native code: zero constant-operand call sites disc-wide. Every computed-operand site is bounded elsewhere: the dispatcher's own `0x5x`/`0x6x`/`0x7x` arms (script space),
+  the move-VM overlay-extension flag sub-ops `0x13`/`0x14`/`0x1C`/`0x1D` (operand = u16 at op `+4` in the move-record stream; disc-wide scan of that space is negative for both flags),
+  the motion-VM op-7/8 census (negative), the party-select family (`0x10`+`n`, `n` in `0..=2`, at `0x801D2B1C`/`0x801D2E80`),
+  the timer-expiry stager (flags staged from script operands into `0x800845C0`/`0x800845C2`, consumed at `0x801D2F60`/`0x801D2F84` - operands live in script space, covered by the raw scan),
+  the tile-board event bases (script-embedded headers, see [tile-board.md](tile-board.md)),
+  and a menu-overlay record-driven SET (`0x801DC580`) whose operand table is PROT 0899 static data that contains neither flag id anywhere in the file.
+- The one remaining writer is the debug flag editor resident in the field overlay: a pad-driven index cell at `0x801F2AA0` (steps `±0x80`/`±8`/`±1`, clamped to `0..=0xFFF`) with SET/CLEAR of the indexed flag on demand (`0x801EA52C`/`0x801EA4F8`) - it can write any flag, including these two, but only under the debug gate.
+
+Verdict: `0x5D6` is the `0x482` class - dev residue whose gated content (`koin4 P2[3]` beat; the `P1[15]` `MoveTo`/camera/dialog variant) is unreachable in retail play without the debug editor.
 
 ### Door-choreography record families: the `0x00F` busy-mutex + the jouind per-visit band
 
@@ -957,6 +985,60 @@ records) each end in a one-shot latch - `P2[6]` SETs `0x44E`, `P2[7]` `0x44F`, `
 to the already-done arm at `+0x1BC`, which starts with `Clear 0x461`), a second `Test` at `+0x70C`, and
 `Set 0x461` at `+0xBC2` inside the closing camera choreography. All four flags are jouinb-local; the
 census's wide `0x461` reader list across other scenes is the `ta` bigram (see the alias rules above).
+
+### Mid-visit NPC re-arrangement beats: dolk2 market swap + garmel boss staging
+
+A scene's NPC arrangement can change **mid-visit** without a scene reload. The mechanism is always a
+partition-2 beat record re-seating the partition-1 placement actors through three cross-context
+primitives (all in `overlay_0897_801de840.txt`; channel id = partition-0 count + placement index,
+per [cutscene.md § per-actor channels](cutscene.md#per-actor-channels---the-vignette-actors)):
+
+- **Position-copy teleport `CC <dst> E3 <src>`** (op `0x4C` nE sub-3, asm `0x801E3108`): copies the
+  resolved `src` actor's `+0x14/+0x16/+0x18` position and `+0x26` facing into the `dst` context -
+  "stand exactly where that actor stands". See
+  [script-vm-menuctrl § nE sub-3](script-vm-menuctrl.md#0x4c-nibble-0xe00xef---misc-scene-writes--emitter-helpers).
+- **Player-coord copy `CC <id> 37`** (op `0x4C` n3 sub-7, asm `0x801E0FB0..0x801E1044`): copies the
+  **player's** position + facing into the target context - the "materialize a parked companion at
+  the player" primitive that precedes a walk-out choreography.
+- **Off-map park**: `A3 <id> 7F 7F` (cross-context MoveTo) or `CC <id> 51 7F 7F ..` (n5 sub-1
+  run-to-tile) sends an actor to tile `(127,127)` = world `(16320,16320)`, the corner sentinel every
+  cold-parked placement also rests at. Parked actors stay resident (their contexts keep ticking);
+  only their position removes them from view.
+
+Two spawn paths deliver the beat, and both leave the re-arrangement persistent for the rest of the
+visit (nothing re-seats a placement until the next scene load):
+
+**dolk2 market swap - walk-on trigger.** The `.MAP` fallback trigger table (`+0x12000` block) rows
+`(69..71, 94) → record 11 gate 1` spawn `P2[11]` when the player crosses the market threshold, header-gated
+C2=[`0x142`] (the post-Caruban story flag) + C1=[`0x27C`] (its own one-shot latch, SET at body `+0x14`
+together with the post-swap state flag `0x27D`). The record then runs eight position-copy/park pairs -
+`CC 52 E3 2C / A3 2C 7F 7F` through `CC 59 E3 23 / A3 23 7F 7F` - seating the crowd cohort `P1[53..60]`
+(channels `0x52..0x59`, bare idle-loop prologues parked by header) on the day cohort's market tiles and
+parking the day cohort (channels `0x20..0x24`, `0x26`, `0x27`, `0x2C` = `P1[3..7]`, `P1[9]`, `P1[10]`,
+`P1[15]`) at `(127,127)`, then materializes Noa (`CC 1F 37`, channel `0x1F` = `P1[2]`) and walks her and
+the player to the market (`C7 1F 46 5B 32` / `C7 F8 46 5D 33`). The `dolk2_market_noa` capture
+(`scripts/scenarios.toml`) confirms every piece: `0x142/0x27C/0x27D` set, day cohort at `(127,127)`, crowd
+at market tiles, Noa at tile `(70,91)` and the player at `(70,93)` - the two walk targets. `P1[2]`'s own
+`44 72`/`44 73`/`44 74` SpawnRecord ladder (latches `0x2FE`/`0x2FF`, both still clear in that capture) is
+a separate, later follow-up chain spawning `P2[12..14]`, **not** the swap path; `0x27D` is what the
+post-swap state reads (`P1[2]`'s seat selector at `+0x18`, the exit door `P2[0]`'s divert-to-`P2[16]` arm).
+
+**garmel boss staging - entry-script flag-consume arms.** The entry system script `P1[0]` ends in three
+one-shot arms that *consume* a story flag and spawn a re-arrangement beat: `Test 0x196 → Clear + 44 40`
+(`P2[13]`), `Test 0x199 → Clear + 44 41` (`P2[14]`), `Test 0x2C5 → Clear + 44 42` (`P2[15]`), at body
+`+0x5E4`/`+0x5F9`/`+0x60B`. The setters are the boss stagers themselves: the Songi beat `P2[11]` SETs
+`0x196` and the Zeto beat `P2[12]` SETs `0x199` immediately after their `3E FF 08`/`3E FF 09`
+scripted-battle entries ([battle.md § scripted-battle entry](battle.md#scripted-battle-entry-3e-ff-row)),
+so the post-battle scene re-entry replays the companions into the room; `P2[14]` SETs `0x2C5` to chain
+`P2[15]` on the following entry. The companion actors are `P1[3]`/`P1[4]` (channels `0x1B`/`0x1C`),
+header-parked at `(127,127)` on cold entry: the Zeto stager `P2[12]` (walk-on trigger `(23,42)`, C1
+latch `0x198`) runs the player onto the trigger tile (`CC F8 51 17 2A 84 02`), materializes both with
+`CC 1B 37` / `CC 1C 37`, and glide-steps them to flanking marks; `P2[13]` re-stages the trio at the
+Songi site (`(23,104)/(23,105)/(22,106)`) and ends with the **dismissal idiom** - `C7` walk both onto
+the player's tile, then run-to-`(127,127)` - so a later walk through the dungeon shows no companions
+until the next beat re-materializes them. Capture brackets: `chapter2_garmel_pre_songi` (`0x195` set,
+`0x1B/0x1C` still at `(127,127)`) and `chapter2_garmel_pre_zeto` (`0x198` set, `0x199` clear, pair
+flanking the player at `(23,43)`/`(22,42)` around tile `(23,42)`).
 
 ## BGM lookup table
 

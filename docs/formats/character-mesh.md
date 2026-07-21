@@ -32,6 +32,7 @@ share.)
 - [TMD shape (per slot)](#tmd-shape-per-slot)
 - [10-group cap + equipment-conditional swap](#10-group-cap--equipment-conditional-swap)
 - [Textures (field form)](#textures-field-form)
+  - [Runtime scroll-cell residue](#runtime-scroll-cell-residue-why-a-live-vram-dump-can-differ-from-the-tim)
   - [CLUT upload semantic (`FUN_800198e0`)](#clut-upload-semantic-fun_800198e0)
   - [Hybrid render (textured + untextured prims)](#hybrid-render-textured--untextured-prims)
 - [Battle form - assembled from the player files](#battle-form---assembled-from-the-player-files)
@@ -170,6 +171,72 @@ carry (Vahn 0/16/32/48, Noa 64/80, Gala 128/144). The textures are
 character-intrinsic and resident: byte-identical across every field scene, kept
 across transitions by the [`FIELD_SHARED_BLOCKS`](../subsystems/asset-loader.md#field-shared-cdname-blocks)
 residency, not re-uploaded per scene.
+
+### Runtime scroll-cell residue (why a live VRAM dump can differ from the TIM)
+
+"Resident" is not "immutable": two runtime mechanisms write into the atlas
+band, and either can leave a live VRAM dump differing from the disc TIM.
+
+**Face-frame stamps (field-VM op `4C 60`).** Each strip carries, below the
+live texel rows, small **authored alternate-face frames** (blink / mouth
+variants), and cutscene scripts stamp them over the live cell with the
+field-VM op `4C 60` - a literal-operand `MoveImage`: 14-byte instruction
+`[4C, 60, src_x, src_y, w, h, dst_x, dst_y]` (six little-endian u16s read
+via the misaligned-u16 helper `FUN_8003CE9C`, so the operands sit at
+arbitrary byte parity - a u16-aligned scan does not find them). Handler:
+the sub-`0x60` arm at `0x801E1B28..0x801E1B90` inside the field-VM
+dispatcher `FUN_801DE840` (`jal FUN_80058490` at `0x801E1B84`); sibling
+sub-`0x61` is the 16x1 CLUT-cell family. The recurring cells: Vahn blink
+pair `(837|832, 328, 5, 20) -> (832, 264)` + `(832, 368, 3, 12) ->
+(832, 300)`, Noa `(852, 336, 6, 16) -> (852, 268)` + `(852, 368, 4, 8) ->
+(853, 284)`; most scene MANs carry dozens of these ops. A script that
+stamps a cell once and never stamps back leaves the cell **parked on the
+alternate frame**.
+
+The extraction-0874 s2 3-word variant at VRAM row 271 (Noa strip x
+`853/856/857`) is exactly such a parked stamp, and its installing event is
+named: **town01 MAN partition-2 record 3 (`★ＯＰ`, the Rim Elm opening
+timeline record), body offsets `+0x392`/`+0x3A0`** - after the opening's
+white flash (`Effect ColorIntensity [255,255,255]` + 60-frame wait) it runs
+the two Noa stamps above, once, during the post-name-entry opening playout.
+The frame parked at `(852, 336)` differs from the boot cell at exactly
+strip row 15 columns 1/4/5 = VRAM `(853, 271)`, `(856, 271)`, `(857, 271)`
+(every other cell of the 6x16 stamp is authored identical), which is why
+only three halfwords visibly change. That those three values also equal the
+disc words two rows down at `(x, 273)` is frame-content coincidence - the
+same variant pixels recur inside the cell - and it is what made the residue
+masquerade as a "+2-row scroll phase". A full-strip diff falsifies the
+scroll reading: a 2-row shift would visibly move most rows of the strip,
+and replaying the flip window with the wrap-scroll installer and dispatch-4
+tick trapped shows both silent while the `MoveImage` pair fires from the
+`4C 60` arm and the end state reproduces the variant byte-exact
+(`scripts/pcsx-redux/autorun_s2s3_scroll_installer.lua` /
+`autorun_s2s3_atlas_stamp.lua`). Not an upload defect, and not written by
+the pause menu (the menu-mode frame issues no image transfers at all). A
+later re-upload of the band (the battle effect-texture path) restores the
+disc bytes. Engine side: `field-disasm` decodes the op as `MenuCtrl op0=0x60`
+with the six words; the `FieldHost::op4c_n6_sub0_emitter6` hook receives
+them (the world host does not yet forward the stamp into its VRAM model).
+
+**Wrap-scroll cells (actor dispatch-4).** The per-actor anim tick
+`FUN_80021DF4` (dispatch byte `+0x5A == 4`, block `0x80022CB8..0x80022EE4`,
+`ghidra/scripts/funcs/80021df4.txt`) carries a VRAM texture-rect scroller:
+rect at actor `+0xD0..+0xD6`, per-axis step at `+0xCC`/`+0xCE`, countdown
+`+0xC6` reloaded from `+0xC4` and decremented by the adaptive frame-skip
+byte `0x1F800393`. Each fire `StoreImage`s the leading band (step x
+frame-skip rows/columns), `MoveImage`s the rest of the rect toward the
+origin, and `LoadImage`s the saved band back at the far edge - a wrapping
+scroll (capture-pinned in a live market scene: two dispatch-4 actors,
+`vel (0,1)`, 16x2-row bands shifting `(x, y+2) -> (x, y)` every game
+tick from the `MoveImage` call at `0x80022EA4`). The installer is
+**move-VM opcode `0x1E`** (JT `0x80010778[0x1E]`, body `0x80023694`):
+`[1E, reload, step_x, step_y, x, y, w, h]` writes `+0x5A = 4` and the
+seven registers above; opcode `0x45` (body `0x8002409C`) is the dispatch-7
+sibling over the same rect fields. The scroll records live as data in scene
+carriers (e.g. the dolk market pair `(736|752, 224, 16, 32)`, step
+`(0,1|2)`), not in code. A scene that despawns a scroll actor mid-cycle
+parks its rect at a non-zero rotation phase - real for water/ambient cells,
+but **not** the mechanism behind the 0874 atlas residue above.
 
 ### CLUT upload semantic (`FUN_800198e0`)
 
