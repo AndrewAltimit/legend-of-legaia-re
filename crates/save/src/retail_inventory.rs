@@ -76,17 +76,48 @@
 //! id byte) and performs **no** write, leaving the modelled inventory
 //! unchanged.
 //!
-//! ## Reachability: the known add-helper call sites
+//! ## Reachability: real-but-unreachable via the add path
 //!
-//! The primitive only fires if normal play can reach `FUN_800421D4` with a full
-//! window. The reverse-engineered call sites that do not pre-check inventory
-//! room are catalogued in [`AddHelperCaller`]; each is a candidate trigger:
-//! battle-loot drops, shop buy-confirm (variable quantity), captured-monster
-//! item pay, the one-shot minigame reward, and the equip swap-back refund. The
-//! written byte is attacker-influenced to varying degrees (the shop catalog id,
-//! the drop id, the captured-monster id), so the primitive is a 1-byte write of
-//! a *partially controllable value* to the address one slot past the active
-//! window.
+//! The primitive only fires if some path can reach `FUN_800421D4` with a window
+//! *genuinely filled to `gp[+0x2D4]`* - i.e. the free-slot scan
+//! (`0x80042254..0x8004229C`) must find **no** `id == 0` slot in `[start, end)`
+//! and the merge scan (`0x800421FC..0x80042238`) must find **no** existing stack
+//! of the incoming id, so `a2 == end` at the store. None of the add call sites
+//! pre-check inventory room - they load an item id and `jal 0x800421D4`
+//! directly (shop buy-confirm at `0x801C38A4` loads `a0 = rec+8`; battle-loot at
+//! `0x8004F380` / `0x8004F608`) - so the only thing that can stop the OOB is the
+//! scan itself running out of holes. It cannot, under normal play, for either
+//! window class:
+//!
+//! - **Full window `[0, 256)`** (installed by [`ItemWindow`] for any party of
+//!   `>= 2` members - the normal mid/late-game state, live-verified at 3
+//!   members -> `(0, 256)`): the merge pass keys on the item id byte
+//!   (`andi a3,t0,0xff` at `0x800421F4`, match at `0x80042214`), so a given
+//!   non-zero id occupies **at most one** slot; the id byte is a `u8` and `0` is
+//!   the empty sentinel (free-slot break at `0x80042284`), so under the
+//!   add/consume/normalize accessors (none of which ever creates a duplicate
+//!   *live* id) the window holds at most [`MAX_DISTINCT_ITEM_IDS`] `= 255`
+//!   occupied slots. `255 < 256`, so a hole always remains -> `a2 < end` -> the
+//!   store lands in-window and the guarded count store at `0x80042300` runs. The
+//!   `a2 == end` exit is **mathematically unreachable** here.
+//! - **Half windows `[0, 128)` / `[128, 256)`**: installed only in the single
+//!   playable-member + story-flag-[`FULL_WINDOW_STORY_FLAG`]-clear state
+//!   (`FUN_8004313C` `0x80043150..0x80043170`). 128 slots is `<= 255`, so the id
+//!   ceiling alone does **not** forbid a fill - but that selector state is a
+//!   transient early/solo phase, and the real disc item population is far below
+//!   128 (the item-name table's live entries; the curated corpus is ~70), so the
+//!   free-slot scan still terminates on a hole. No normal-play path presents a
+//!   genuinely 128-full half-window.
+//!
+//! **Verdict: the OOB id store at `0x800422BC` is a real primitive but is
+//! unreachable through the retail add call sites in normal play** - the add path
+//! caps occupancy below `end`, so `i == end` never occurs. The written byte
+//! would still be attacker-influenced (shop catalog id, drop id, captured-monster
+//! id) *if* a non-add path (debug menu, cheat, or a crafted save that seeds
+//! duplicate live ids, or a full 256-distinct-id window) forced the full-bag
+//! exit; that is outside "normal play". The call sites are catalogued in
+//! [`AddHelperCaller`] and the machine-checkable half of the verdict lives in
+//! [`ItemWindow::oob_reachability`] / [`OobReachability`].
 //!
 //! See [`docs/reference/memory-map.md`](../../../docs/reference/memory-map.md).
 
@@ -127,6 +158,22 @@ pub const FULL_WINDOW_STORY_FLAG: u32 = 20;
 
 /// Per-stack count cap enforced by the retail add/merge paths.
 pub const STACK_CAP: u8 = 99;
+
+/// The maximum number of *distinct* occupiable item ids, and hence the maximum
+/// number of live-occupied slots the add/consume/normalize accessors can ever
+/// produce in a window.
+///
+/// The item id byte is a `u8` stored/loaded by `FUN_800421D4`
+/// (`sb t0,0x1818(a0)` / `lbu ...`) and `0` is the empty-slot sentinel (the
+/// free-slot pass breaks on `id == 0` at `0x80042284`). The add helper's merge
+/// pass (`0x800421FC..0x80042238`) collapses a repeat id into its existing
+/// stack, so a given non-zero id never occupies two slots; `FUN_800423E0`
+/// (normalize) likewise merges duplicates, and `FUN_80042310` /
+/// `FUN_80043048` (consume) only ever zero ids. So the count of live-occupied
+/// slots equals the count of distinct non-zero ids held, which is at most
+/// `255`. This is the ceiling that makes the full `[0, 256)` window's OOB exit
+/// unreachable.
+pub const MAX_DISTINCT_ITEM_IDS: u16 = 255;
 
 /// The active accessor window `[gp[+0x2D2], gp[+0x2D4])`, as installed by
 /// `FUN_8004313C` - the only `SCUS_942.54` writer of either halfword (11
@@ -184,6 +231,35 @@ impl ItemWindow {
         false
     }
 
+    /// Whether the full-bag OOB id store (`FUN_800421D4` at `0x800422BC`) can be
+    /// reached through the retail *add* call sites while this window is
+    /// installed - the machine-checkable half of the reachability verdict in the
+    /// module docs.
+    ///
+    /// Reaching the OOB requires filling every slot of this window with a
+    /// distinct live id (so the free-slot scan finds no `id == 0` hole). Since
+    /// the accessors keep at most [`MAX_DISTINCT_ITEM_IDS`] distinct ids alive,
+    /// a window wider than that ceiling can never be filled by the add path:
+    ///
+    /// - [`Full`](Self::Full) (`len == 256 > 255`): [`Unreachable`] - a hole
+    ///   always remains.
+    /// - [`Low`](Self::Low) / [`High`](Self::High) (`len == 128 <= 255`): not
+    ///   forbidden by the ceiling, but the half window is only installed in the
+    ///   transient single-member / story-flag-clear state and the real disc item
+    ///   population is far below 128, so no normal-play path fills it -
+    ///   [`GatedBySelectorState`].
+    ///
+    /// [`Unreachable`]: OobReachability::Unreachable
+    /// [`GatedBySelectorState`]: OobReachability::GatedBySelectorState
+    #[must_use]
+    pub fn oob_reachability(self) -> OobReachability {
+        if (self.len() as u16) > MAX_DISTINCT_ITEM_IDS {
+            OobReachability::Unreachable
+        } else {
+            OobReachability::GatedBySelectorState
+        }
+    }
+
     /// Reproduce `FUN_8004313C`'s selection. `members` is the party-member
     /// count byte at `SC+0x454`, `full_window_flag` is story flag
     /// [`FULL_WINDOW_STORY_FLAG`], and `high_half` is the byte at `SC+0x458`
@@ -203,6 +279,26 @@ impl ItemWindow {
             _ => Some(ItemWindow::Full),
         }
     }
+}
+
+/// The reachability verdict for the full-bag OOB id store, per [`ItemWindow`].
+///
+/// See [`ItemWindow::oob_reachability`] and the module-level "Reachability"
+/// section. Neither variant says the primitive is *fake* - the unconditional
+/// store before the guard is confirmed from disassembly (`0x800422BC` vs the
+/// `slt`/`beq` at `0x800422C8`/`0x800422CC`). They classify whether the retail
+/// *add path* can ever present the required full window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OobReachability {
+    /// The window is wider than [`MAX_DISTINCT_ITEM_IDS`], so the free-slot scan
+    /// always finds a hole: the OOB exit is mathematically unreachable through
+    /// the add path (the `[0, 256)` full window).
+    Unreachable,
+    /// The window is narrow enough to be filled in principle, but retail only
+    /// installs it in a transient game state whose reachable inventory is far
+    /// smaller than the window, so no normal-play path fills it (the `[0, 128)`
+    /// / `[128, 256)` half windows).
+    GatedBySelectorState,
 }
 
 /// The address one slot past a `(base, window)` window - the byte the retail
@@ -248,9 +344,14 @@ pub enum AddOutcome {
 }
 
 /// The reverse-engineered call sites that invoke the unchecked add helper
-/// [`FUN_800421D4`] without pre-checking inventory room - i.e. the normal-play
-/// paths through which the full-window OOB id store ([`AddOutcome::OobIdWrite`])
-/// is reachable. Each carries its source function address for provenance.
+/// `FUN_800421D4` without pre-checking inventory room. Each loads an item id and
+/// `jal`s the helper directly, so the *only* backstop against the full-bag OOB
+/// id store ([`AddOutcome::OobIdWrite`]) is the helper's own free-slot scan.
+/// Per [`ItemWindow::oob_reachability`] that scan cannot exhaust the `[0, 256)`
+/// full window (the [`MAX_DISTINCT_ITEM_IDS`] ceiling) and does not exhaust the
+/// half windows in normal play, so these sites reach the helper but not the OOB
+/// exit - the primitive is real-but-unreachable via this path. Each carries its
+/// source function address for provenance.
 ///
 /// See `docs/reference/functions.md` (`800421D4` caller list) and the per-site
 /// entries (`8004E568`, `801C36B0`, `801F138C`, `801C2748`, `8020E748`).
@@ -808,6 +909,66 @@ mod tests {
                 },
                 "caller {caller:?} (FUN_{:08X}) should reach the OOB on a full bag",
                 caller.source_addr(),
+            );
+        }
+    }
+
+    #[test]
+    fn full_window_oob_is_unreachable_by_id_ceiling() {
+        // The full [0, 256) window has 256 slots but only 255 distinct non-zero
+        // ids exist (id 0 is the empty sentinel), and FUN_800421D4's merge pass
+        // keeps at most one slot per id - so a hole always remains and the OOB
+        // exit (a2 == end at 0x800422BC) can never be taken by the add path.
+        assert_eq!(ItemWindow::Full.len(), 256);
+        assert!(ItemWindow::Full.len() as u16 > MAX_DISTINCT_ITEM_IDS);
+        assert_eq!(
+            ItemWindow::Full.oob_reachability(),
+            OobReachability::Unreachable,
+        );
+    }
+
+    #[test]
+    fn half_windows_are_gated_by_selector_state_not_the_id_ceiling() {
+        // 128 <= 255, so the id ceiling alone does not forbid a fill; retail
+        // only installs these in the single-member / flag-20-clear state, whose
+        // reachable inventory is far below 128.
+        for w in [ItemWindow::Low, ItemWindow::High] {
+            assert_eq!(w.len(), 128);
+            assert!(w.len() as u16 <= MAX_DISTINCT_ITEM_IDS);
+            assert_eq!(w.oob_reachability(), OobReachability::GatedBySelectorState);
+        }
+    }
+
+    /// The reachability verdict, exercised as a data assertion: build the
+    /// densest full `[0, 256)` window the add path could ever produce - every
+    /// one of the 255 distinct non-zero ids present exactly once - and show that
+    /// slot 255 is a forced hole, so no add of any real id `1..=255` reaches the
+    /// OOB (each either merges or places into the hole). The mechanical
+    /// counterpart to `ItemWindow::Full.oob_reachability() == Unreachable`.
+    #[test]
+    fn full_window_built_from_every_id_still_has_a_hole() {
+        // ids 1..=255 in slots 0..=254; slot 255 is empty because there is no
+        // 256th distinct non-zero id to occupy it.
+        let slots: Vec<(u8, u8)> = (0..ItemWindow::Full.len())
+            .map(|i| {
+                let id = u8::try_from(i + 1).unwrap_or(0); // i == 255 -> id 0 (hole)
+                (id, u8::from(id != 0))
+            })
+            .collect();
+        assert_eq!(slots.len(), 256);
+        assert_eq!(
+            slots.iter().filter(|&&(id, _)| id == 0).count(),
+            1,
+            "exactly one forced hole"
+        );
+        assert_eq!(slots[255], (0, 0), "the hole is the last slot");
+
+        let inv = RetailInventory::from_slots(ITEM_WINDOW_BASE, slots);
+        for id in 1u8..=255 {
+            let outcome = inv.clone().add(id, 1);
+            assert!(
+                !matches!(outcome, AddOutcome::OobIdWrite { .. }),
+                "id {id:#04x} must never reach the OOB in a 256-window built from real ids: {outcome:?}",
             );
         }
     }
