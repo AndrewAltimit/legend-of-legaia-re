@@ -532,6 +532,14 @@ pub struct BattleActionCtx {
     pub hp_bar_target: i16,
     /// `[+0x6E6 + i*2]` - per-actor facing offsets (one per slot 0..7).
     pub per_actor_facing: [u16; ACTOR_SLOTS],
+    /// Models the randomizer's enemy-ally ("charm") **victory widen**: the
+    /// one-word overlay edit at `0x801E6638` that turns the monster-wipe
+    /// scan's down-mask from `andi 0x4` into `andi 0x384`, so a living
+    /// charmed monster (`+0x16E & 0x380`) counts as "down" and the player
+    /// does not have to kill their own ally to win. `false` = retail mask
+    /// `0x4`. See `docs/subsystems/battle.md` § enemy-ally charm at the
+    /// end-of-action gate.
+    pub charm_widen: bool,
 }
 
 impl BattleActionCtx {

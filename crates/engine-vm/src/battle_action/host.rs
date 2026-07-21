@@ -69,6 +69,26 @@ pub trait BattleActionHost {
     /// no-op.
     fn recompute_battle_order(&mut self) {}
 
+    /// First monster id of the battle formation (`DAT_8007BD0C[0]`). The
+    /// monster-wipe victory arm special-cases ids `0xB3` / `0xB4` (retail
+    /// `0x801E6728..0x801E676C`): those formations force the victory-pose
+    /// actor to party slot `2` / `1` respectively. Default `0` = no
+    /// override.
+    fn first_monster_id(&self) -> u8 {
+        0
+    }
+
+    /// Victory staging at the monster-wipe branch of the end-of-action gate
+    /// (retail `0x801E6770..0x801E6790`): retail reads the acting slot's
+    /// roster character id `DAT_8007BD10[slot]` and arms the win-pose "ME"
+    /// archive side-band request `FUN_80055B4C(char_id * 3 - 1)` (see
+    /// `docs/formats/summon-readef.md` § streaming state machine). The
+    /// engine hands the host the **party slot** instead of the char id;
+    /// `end_of_action` guarantees it is a living party slot - retail does
+    /// not (see `docs/subsystems/battle.md` § enemy-ally charm at the
+    /// end-of-action gate). Default no-op.
+    fn victory_stage(&mut self, _party_slot: u8) {}
+
     /// Capture-pose animation pick for the captured monster: retail
     /// `FUN_80050E2C(record + 0x4C, 1, record[0x4A])` selects an anim id
     /// from the monster archive record's action table

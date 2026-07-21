@@ -108,6 +108,69 @@ pub(super) fn done_multi_cast<H: BattleActionHost + ?Sized>(
     transition(ctx, ActionState::EndOfAction)
 }
 
+/// Monster-wipe victory arm of the end-of-action gate.
+///
+/// Retail (`overlay_battle_action_801e295c.txt`, `0x801E6688..0x801E6790`)
+/// fixes up the acting slot before staging the win pose:
+///
+/// - `0x801E6688/0x801E6690`: `lhu a0,0x14c(s3)` / `bne a0,zero,0x801E6728` -
+///   only a **dead** acting actor triggers the re-pick;
+/// - `0x801E66A4..0x801E6724`: rejection-sample `rand % party_count` until a
+///   slot with `+0x14C != 0` and `(+0x16E & 0x404) == 0` comes up (the loop
+///   back-edges at `0x801E670C` / `0x801E6720` are unbounded);
+/// - `0x801E6728..0x801E676C`: formation override - first monster id `0xB3`
+///   forces slot `2`, `0xB4` forces slot `1` (the Songi battles);
+/// - `0x801E6770..0x801E6790`: read `DAT_8007BD10[slot]` (the 3-byte party
+///   roster) and arm the win-pose stream `FUN_80055B4C(char*3 - 1)`.
+///
+/// Retail's alive-skip is sound only because the scheduler (`FUN_801DABA4`)
+/// and the wipe scan agree on the same living predicate (`+0x14C != 0 &&
+/// !(+0x16E & 0x4)`) - so an *alive* acting actor at monster-wipe victory is
+/// always a party slot. The enemy-ally charm widen (mask `0x384`) breaks
+/// that agreement: a living charmed monster can be the acting actor here,
+/// and retail then indexes the roster out of bounds (the charm battle
+/// softlock - see `docs/subsystems/battle.md`). The port therefore triggers
+/// the re-pick whenever the acting slot is **not a living party slot**, and
+/// picks uniformly among eligible slots instead of rejection-sampling, so it
+/// cannot spin.
+fn victory_pose_fixup<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCtx) -> u8 {
+    let party_count = host.party_count();
+    let acting = ctx.active_actor;
+    // Retail keeps an alive acting actor unconditionally; the port also
+    // requires it to be a party slot (the corrected invariant).
+    let keep = acting < party_count && host.actor(acting).is_some_and(|a| a.liveness != 0);
+    let mut slot = if keep {
+        acting
+    } else {
+        // Uniform pick over living, non-0x404 party slots - the same
+        // distribution retail's rejection loop converges to, but bounded.
+        let eligible: Vec<u8> = (0..party_count)
+            .filter(|&s| {
+                host.actor(s)
+                    .is_some_and(|a| a.liveness != 0 && a.field_flags & 0x404 == 0)
+            })
+            .collect();
+        if eligible.is_empty() {
+            // Retail's rejection loop would spin forever here (every living
+            // party member 0x404-flagged). Bounded fallback: first living
+            // party slot - one exists, the party-wipe branch already ran.
+            (0..party_count)
+                .find(|&s| host.actor(s).is_some_and(|a| a.liveness != 0))
+                .unwrap_or(0)
+        } else {
+            eligible[host.rng() as usize % eligible.len()]
+        }
+    };
+    // Formation override (retail 0x801E6728..0x801E676C).
+    match host.first_monster_id() {
+        0xB3 => slot = 2,
+        0xB4 => slot = 1,
+        _ => {}
+    }
+    ctx.active_actor = slot;
+    slot
+}
+
 pub(super) fn end_of_action<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
@@ -115,27 +178,36 @@ pub(super) fn end_of_action<H: BattleActionHost + ?Sized>(
     let party_count = host.party_count();
     let total = host.slot_count();
 
-    // Count alive party + monsters.
-    let mut party_alive = 0u8;
-    let mut monsters_alive = 0u8;
-    for s in 0..total {
-        let alive = host.actor(s).map(|a| a.liveness != 0).unwrap_or(false);
-        if !alive {
-            continue;
-        }
-        if s < party_count {
-            party_alive += 1;
-        } else {
-            monsters_alive += 1;
-        }
-    }
+    // Wipe scans (retail 0x801E6510..0x801E664C). A combatant counts as
+    // standing while alive (`+0x14C != 0`) and not carrying the down-mask
+    // bits of `+0x16E`: retail masks both sides with `0x4`
+    // (non-targetable, e.g. a captured monster); the enemy-ally charm
+    // widen turns the monster-side mask into `0x384` (the one-word edit at
+    // `0x801E6638`) so a living charmed ally counts as down.
+    let party_alive = (0..party_count)
+        .filter(|&s| {
+            host.actor(s)
+                .is_some_and(|a| a.liveness != 0 && a.field_flags & 0x4 == 0)
+        })
+        .count();
+    let monster_mask: u16 = if ctx.charm_widen { 0x384 } else { 0x4 };
+    let monsters_alive = (party_count..total)
+        .filter(|&s| {
+            host.actor(s)
+                .is_some_and(|a| a.liveness != 0 && a.field_flags & monster_mask == 0)
+        })
+        .count();
 
     if party_alive == 0 {
         host.battle_end(BattleEndCause::PartyWipe);
         return StepOutcome::BattleComplete;
     }
     if monsters_alive == 0 {
+        // Retail order: end signal (0x801E6670..0x801E6680), then the
+        // victory-pose fix-up, then the win-pose stream request.
         host.battle_end(BattleEndCause::MonsterWipe);
+        let pose_slot = victory_pose_fixup(host, ctx);
+        host.victory_stage(pose_slot);
         return StepOutcome::BattleComplete;
     }
 
@@ -148,7 +220,7 @@ pub(super) fn end_of_action<H: BattleActionHost + ?Sized>(
     } else {
         0
     };
-    let alive_total = party_alive + monsters_alive;
+    let alive_total = (party_alive + monsters_alive) as u8;
     if bumped < alive_total {
         return transition(ctx, ActionState::PreActionWait);
     }

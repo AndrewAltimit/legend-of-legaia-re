@@ -17,7 +17,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 - [Battle context struct](#battle-context-struct)
 - [Stage seats (`FUN_800513F0` placement tables)](#stage-seats-fun_800513f0-placement-tables)
 - [Range / line-of-sight (`FUN_8004E2F0`)](#range--line-of-sight-fun_8004e2f0)
-- [Monster init (`FUN_80054CB0`)](#monster-init-fun_80054cb0) - [record layout](#monster-record-source-layout) · [archive (PROT 867)](#monster-archive-prot-entry-867) · [mesh](#monster-mesh-record-0x04) · [native bridge](#native-renderer-bridge-clean-room-engine) · [AI](#monster-ai-fun_801e9fd4-action-picker--fun_801e7320-target-resolver)
+- [Monster init (`FUN_80054CB0`)](#monster-init-fun_80054cb0) - [record layout](#monster-record-source-layout) · [archive (PROT 867)](#monster-archive-prot-entry-867) · [mesh](#monster-mesh-record-0x04) · [native bridge](#native-renderer-bridge-clean-room-engine) · [AI](#monster-ai-fun_801e9fd4-action-picker--fun_801e7320-target-resolver) · [charm at the end-of-action gate](#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock)
 - [Stat aggregator (`FUN_80042558`)](#stat-aggregator-fun_80042558)
 - [Battle archive (`FUN_80052FA0` / `FUN_800542C8`)](#battle-archive-fun_80052fa0--fun_800542c8)
 - [Character record layout](#character-record-layout) - [why the pair order is `(max, cur)`](#why-the-pair-order-is-max-cur)
@@ -986,6 +986,83 @@ all-enemies cast and the gauge is clamped back to `0x32`
 (`MonsterAiCtx::spirit_gauge` + `AiCast::spirit_gauge_writeback`, drawing no
 RNG). Still unwired: the `'O'` (`0x4F`) boss that rewrites another actor slot,
 and the capture-archive preload for spell ids `0x2E/0x2F`.
+
+### Enemy-ally charm at the end-of-action gate (the charm battle softlock)
+
+The randomizer's enemy-ally ("charm") feature rides the stock `0x380`
+delegation flag plus one overlay word: the monster-wipe scan's down-mask at
+`0x801E6638` widens from `andi v0,v0,0x4` to `andi v0,v0,0x384`, so a living
+charmed monster counts as "down" and the player does not have to kill their
+own ally to win (`legaia_rando::enemy_ally`). That widen interacts with a
+retail invariant inside the end-of-action gate (state `0x5A` of
+`FUN_801E295C`), and the interaction is the pinned cause of the charm battle
+hard-freeze.
+
+**The retail invariant.** The state-`0x5A` wipe scans count a combatant as
+standing while `+0x14C != 0 && (+0x16E & 0x4) == 0` (party loop
+`0x801E6538..0x801E6570`, monster loop `0x801E6614..0x801E664C` with the
+mask test at `0x801E6638`), and the initiative scheduler `FUN_801DABA4`
+gates on the same predicate (dead-key zeroing `0x801DABD8..0x801DABF8`;
+living-side scans `0x801DAD94..0x801DADC8` / `0x801DAE18..0x801DAE54` with
+the identical `andi 0x4`). So under the retail mask an **alive** acting
+actor at monster-wipe victory is always a party member: an alive, acting
+monster would have been counted as standing by the very scan that fired the
+wipe (`0x4` retail-marks a captured monster, an actor staged out of the
+fight - never one mid-action).
+
+**The victory arm leans on that invariant.** After the monster-wipe branch
+sets the end signal (`0x801E6670..0x801E6680`: `DAT_8007BD71 = 0xFE`,
+`_DAT_8007BD2C = 0`), it stages the win pose:
+
+- `0x801E6688/0x801E6690` - `lhu a0,0x14C(s3)` / `bne a0,zero,0x801E6728`:
+  a **living** acting actor keeps the acting slot unconditionally;
+- `0x801E66A4..0x801E6724` - only a dead acting actor re-rolls
+  `rand % ctx[+0]` (party count) until a slot with `+0x14C != 0` and
+  `(+0x16E & 0x404) == 0` comes up (back-edges `0x801E670C`/`0x801E6720`);
+- `0x801E6728..0x801E676C` - formation override: first monster id
+  (`DAT_8007BD0C[0]`) `0xB3` forces the pose slot to `2`, `0xB4` to `1`
+  (the Songi fights);
+- `0x801E6770..0x801E6790` - reads the pose slot's character id from the
+  **3-byte party roster** `DAT_8007BD10[slot]` and arms the win-pose "ME"
+  archive side-band request `FUN_80055B4C(char_id*3 - 1)`
+  (see [`summon-readef.md`](../formats/summon-readef.md#streaming-state-machine)).
+
+**What the widen breaks.** With the `0x384` mask the two predicates
+disagree: the scheduler still picks the living charmed ally, but the wipe
+scan no longer counts it. When the ally's own action kills the last real
+enemy, victory fires with a living **monster** (slot `3..6`) as the acting
+actor - the alive-skip keeps the slot, and the roster read indexes past
+`DAT_8007BD10[0..2]` into the adjacent globals (`0x8007BD13` pad byte,
+`0x8007BD14..` the damage-popup accumulator). The stream request arm then
+receives a garbage slot: char byte `0` arms request `0` (no transfer ever
+starts for the win-pose staging), any other byte seeks
+`((req-1) & 0x7F) * 0x10800` into `readef.DAT`/`summon.dat` - far past
+either file for roster-adjacent values. Either way the battle wedges at the
+victory hand-off. This state is unreachable in retail; it is a
+randomizer-interaction defect, not a retail bug.
+
+**What the softlock is *not*.** The long-standing "unbounded reroll in
+`FUN_801E7320`" theory is falsified as the cause. Both reroll loops
+(`0x801E7370..0x801E73D8` over the monster band, `0x801E7418..0x801E747C`
+over the party band) are structurally unbounded, but the scheduler's
+living-actor predicate guarantees the acting `0x380` actor is alive - and
+for the monster-band loop the acting charmed monster is itself an in-band
+exit (a self-pick clears `+0x1DE`, turning the action into a no-op), while
+the party band always holds a living member or the previous action's `0x5A`
+would already have fired the party wipe. The resolver terminates with
+probability 1 in every reachable state.
+
+**Engine port.** `engine-vm::battle_action` `end_of_action` carries the
+full gate: both wipe scans mask `0x4` (a captured, non-targetable monster
+counts as down), `BattleActionCtx::charm_widen` models the `0x384` widen,
+and `victory_pose_fixup` ports the victory arm with the corrected
+invariant - the re-pick triggers whenever the acting slot is not a living
+party slot (dead **or** a monster slot, the state the widen makes
+reachable) and picks uniformly among eligible slots instead of
+rejection-sampling, so it cannot spin. The win-pose staging surfaces as
+`BattleActionHost::victory_stage(party_slot)` with the slot guaranteed
+valid, and the Songi override as `BattleActionHost::first_monster_id`.
+Dump: `ghidra/scripts/funcs/overlay_battle_action_801e295c.txt`.
 
 ## Stat aggregator (`FUN_80042558`)
 

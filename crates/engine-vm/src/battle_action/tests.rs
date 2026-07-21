@@ -21,6 +21,7 @@ enum Event {
     BattleEnd(BattleEndCause),
     LoadCapture(u8),
     Recompute,
+    VictoryStage(u8),
 }
 
 #[derive(Default)]
@@ -37,6 +38,7 @@ struct RecHost {
     rng_pos: RefCell<usize>,
     party_count: u8,
     slot_count: u8,
+    first_monster_id: u8,
     /// Pre-staged art records returned by `art_record(character, action)`
     /// - keyed by `(character_byte, action_byte)`.
     art_records: std::collections::HashMap<(u8, u8), legaia_art::ArtRecord>,
@@ -88,6 +90,12 @@ impl BattleActionHost for RecHost {
     }
     fn recompute_battle_order(&mut self) {
         self.record(Event::Recompute);
+    }
+    fn first_monster_id(&self) -> u8 {
+        self.first_monster_id
+    }
+    fn victory_stage(&mut self, party_slot: u8) {
+        self.record(Event::VictoryStage(party_slot));
     }
     fn rng(&mut self) -> u32 {
         let mut p = self.rng_pos.borrow_mut();
@@ -642,6 +650,149 @@ fn end_of_action_monster_wipe_signals_battle_end() {
     for i in 3..ACTOR_SLOTS {
         host.actors[i].liveness = 0;
     }
+    let out = step(&mut host, &mut ctx);
+    assert_eq!(out, StepOutcome::BattleComplete);
+    assert!(
+        host.take()
+            .contains(&Event::BattleEnd(BattleEndCause::MonsterWipe))
+    );
+}
+
+#[test]
+fn end_of_action_monster_wipe_stages_victory_for_acting_party_slot() {
+    // Retail baseline: a living party member dealt the kill - the victory
+    // arm keeps the acting slot (0x801E6690 alive-skip) and stages the win
+    // pose for it (0x801E6770..0x801E6790).
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::EndOfAction.as_byte();
+    for i in 3..ACTOR_SLOTS {
+        host.actors[i].liveness = 0;
+    }
+    let out = step(&mut host, &mut ctx);
+    assert_eq!(out, StepOutcome::BattleComplete);
+    let events = host.take();
+    assert!(events.contains(&Event::BattleEnd(BattleEndCause::MonsterWipe)));
+    assert!(events.contains(&Event::VictoryStage(1)));
+    assert_eq!(ctx.active_actor, 1);
+}
+
+#[test]
+fn end_of_action_monster_wipe_repicks_pose_actor_when_acting_actor_dead() {
+    // Retail re-pick (0x801E66A4..0x801E6724): the acting actor died during
+    // its own action; the pose actor re-rolls onto a living, non-0x404
+    // party slot. Slot 0 is dead and slot 1 carries 0x404, so slot 2 is the
+    // only eligible pick.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    ctx.action_state = ActionState::EndOfAction.as_byte();
+    for i in 3..ACTOR_SLOTS {
+        host.actors[i].liveness = 0;
+    }
+    host.actors[0].liveness = 0;
+    host.actors[1].field_flags = 0x404;
+    let out = step(&mut host, &mut ctx);
+    assert_eq!(out, StepOutcome::BattleComplete);
+    assert!(host.take().contains(&Event::VictoryStage(2)));
+    assert_eq!(ctx.active_actor, 2);
+}
+
+#[test]
+fn end_of_action_retail_mask_keeps_living_charmed_ally_blocking_victory() {
+    // Without the widen (retail mask 0x4), a living charmed monster
+    // (`+0x16E & 0x380`) still counts as standing - the battle continues.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 3);
+    ctx.action_state = ActionState::EndOfAction.as_byte();
+    for i in 4..ACTOR_SLOTS {
+        host.actors[i].liveness = 0;
+    }
+    host.actors[3].field_flags = 0x380;
+    let out = step(&mut host, &mut ctx);
+    assert!(matches!(
+        out,
+        StepOutcome::Transition { to, .. } if to == ActionState::PreActionWait.as_byte()
+    ));
+    assert!(!host.take().iter().any(|e| matches!(e, Event::BattleEnd(_))));
+}
+
+#[test]
+fn charm_widen_victory_with_living_charmed_acting_ally_repicks_party_slot() {
+    // The charm-softlock wedge condition: the charmed ally (slot 3, alive,
+    // `0x380`) dealt the killing blow to the last real enemy, and the
+    // randomizer's widened wipe mask (0x384) counts the ally itself as
+    // down - victory fires with a living MONSTER as the acting actor.
+    // Retail's alive-skip would then index the 3-byte party roster
+    // `DAT_8007BD10` with slot 3 and arm a garbage win-pose stream (the
+    // pinned softlock). The port must re-pick a living party slot and
+    // terminate.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 3);
+    ctx.action_state = ActionState::EndOfAction.as_byte();
+    ctx.charm_widen = true;
+    for i in 4..ACTOR_SLOTS {
+        host.actors[i].liveness = 0;
+    }
+    host.actors[3].field_flags = 0x380;
+    host.rng_seq = vec![1];
+    let out = step(&mut host, &mut ctx);
+    assert_eq!(out, StepOutcome::BattleComplete);
+    let events = host.take();
+    assert!(events.contains(&Event::BattleEnd(BattleEndCause::MonsterWipe)));
+    // Pose slot re-picked into the party band - never the monster slot.
+    let staged = events.iter().find_map(|e| match e {
+        Event::VictoryStage(s) => Some(*s),
+        _ => None,
+    });
+    assert_eq!(staged, Some(1), "rng picks uniformly among 3 living slots");
+    assert!(ctx.active_actor < 3);
+}
+
+#[test]
+fn charm_widen_victory_terminates_even_when_no_party_slot_is_eligible() {
+    // Where retail's rejection loop is unbounded: every living party member
+    // carries 0x404. The port falls back to the first living party slot
+    // instead of spinning.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 3);
+    ctx.action_state = ActionState::EndOfAction.as_byte();
+    ctx.charm_widen = true;
+    for i in 4..ACTOR_SLOTS {
+        host.actors[i].liveness = 0;
+    }
+    host.actors[3].field_flags = 0x380;
+    host.actors[0].liveness = 0;
+    host.actors[1].field_flags = 0x404;
+    host.actors[2].field_flags = 0x400;
+    let out = step(&mut host, &mut ctx);
+    assert_eq!(out, StepOutcome::BattleComplete);
+    // Slot 1 is alive but 0x404 (non-targetable): the party-alive scan
+    // masks 0x4, so slot 2 (0x400 - targetable) kept the party standing,
+    // and the fallback picks the first living slot (1).
+    assert!(host.take().contains(&Event::VictoryStage(1)));
+}
+
+#[test]
+fn victory_pose_formation_override_forces_songi_slot() {
+    // Retail 0x801E6728..0x801E676C: first monster id 0xB3 forces the
+    // victory pose onto party slot 2 regardless of who acted.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    ctx.action_state = ActionState::EndOfAction.as_byte();
+    host.first_monster_id = 0xB3;
+    for i in 3..ACTOR_SLOTS {
+        host.actors[i].liveness = 0;
+    }
+    let out = step(&mut host, &mut ctx);
+    assert_eq!(out, StepOutcome::BattleComplete);
+    assert!(host.take().contains(&Event::VictoryStage(2)));
+    assert_eq!(ctx.active_actor, 2);
+}
+
+#[test]
+fn end_of_action_captured_monster_counts_as_down_under_retail_mask() {
+    // Retail mask 0x4: an alive but non-targetable monster (captured) does
+    // not block the monster-wipe victory.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    ctx.action_state = ActionState::EndOfAction.as_byte();
+    for i in 4..ACTOR_SLOTS {
+        host.actors[i].liveness = 0;
+    }
+    host.actors[3].field_flags = 0x4;
     let out = step(&mut host, &mut ctx);
     assert_eq!(out, StepOutcome::BattleComplete);
     assert!(
