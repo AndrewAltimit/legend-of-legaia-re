@@ -32,6 +32,7 @@ share.)
 - [TMD shape (per slot)](#tmd-shape-per-slot)
 - [10-group cap + equipment-conditional swap](#10-group-cap--equipment-conditional-swap)
 - [Textures (field form)](#textures-field-form)
+  - [Runtime scroll-cell residue](#runtime-scroll-cell-residue-why-a-live-vram-dump-can-differ-from-the-tim)
   - [CLUT upload semantic (`FUN_800198e0`)](#clut-upload-semantic-fun_800198e0)
   - [Hybrid render (textured + untextured prims)](#hybrid-render-textured--untextured-prims)
 - [Battle form - assembled from the player files](#battle-form---assembled-from-the-player-files)
@@ -170,6 +171,33 @@ carry (Vahn 0/16/32/48, Noa 64/80, Gala 128/144). The textures are
 character-intrinsic and resident: byte-identical across every field scene, kept
 across transitions by the [`FIELD_SHARED_BLOCKS`](../subsystems/asset-loader.md#field-shared-cdname-blocks)
 residency, not re-uploaded per scene.
+
+### Runtime scroll-cell residue (why a live VRAM dump can differ from the TIM)
+
+"Resident" is not "immutable": scene events can park a small **wrap-scroll
+residue** inside the atlas band. The per-actor anim tick `FUN_80021DF4`
+(dispatch byte `+0x5A == 4`, block `0x80022CB8..0x80022EE4`,
+`ghidra/scripts/funcs/80021df4.txt`) carries a VRAM texture-rect scroller:
+rect at actor `+0xD0..+0xD6`, per-axis step at `+0xCC`/`+0xCE`, countdown
+`+0xC6` reloaded from `+0xC4` and decremented by the adaptive frame-skip
+byte `0x1F800393`. Each fire `StoreImage`s the leading band (step x
+frame-skip rows/columns), `MoveImage`s the rest of the rect toward the
+origin, and `LoadImage`s the saved band back at the far edge - a wrapping
+scroll (capture-pinned in a live market scene: two dispatch-4 actors,
+`vel (0,1)`, 16x2-row bands shifting `(x, y+2) -> (x, y)` every game
+tick from the `MoveImage` call at `0x80022EA4`).
+
+When such a cell sits inside a character atlas, a scene that despawns the
+actor mid-cycle leaves the cell parked at a non-zero scroll phase: the
+VRAM rows then read as the disc TIM's rows shifted by the phase, visible
+only at the pattern's seam. The extraction-0874 s2 3-word variant at VRAM
+row 271 (Noa strip columns `853/856/857` holding the disc words from row
+273) is exactly such a parked +2-row phase - a scroll residue of this
+mechanism, not an upload defect and not written by the pause menu (the
+menu-mode frame issues no image transfers at all; every pause-menu-open
+GPU-op trace shows the band untouched, and plain field saves carry the
+same variant). A later re-upload of the band (the battle effect-texture
+path) restores the disc bytes.
 
 ### CLUT upload semantic (`FUN_800198e0`)
 

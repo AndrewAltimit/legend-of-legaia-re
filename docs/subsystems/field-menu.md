@@ -36,16 +36,33 @@ resolved through the window-descriptor table below.
 ## Window descriptor table
 
 Every pause-menu window (rect + content renderer) comes from a 52-entry
-table in the menu overlay's data segment at VA `0x801E473C` (PROT 0899 file
-offset `0x15F24`; parser `legaia_asset::menu_windows`). Records are 0x10
-bytes, indexed by window id:
+table in the menu overlay's data segment. The record base the **engine
+consumes** is VA `0x801E4738` (PROT 0899 file offset `0x15F20`): the
+window-script runner `FUN_801D6628` passes `0x801E4738 + id*0x10` to the
+SCUS window creator `FUN_800326AC`, whose field reads (`lbu 0x0(s4)` /
+`lbu 0x1(s4)` / `lhu 0x2(s4)` / `lh 0x4..0xa(s4)` at `0x800326dc..`,
+`0x80032874..0x8003288c`) fix the layout. Records are 0x10 bytes, indexed
+by window id:
 
 | off | type | field |
 |---|---|---|
-| `+0x0..+0x7` | 4 × i16 | `x, y, w, h` - the **content** rect (the `a0+0xa..+0x10` rect the content renderer receives) |
-| `+0x8` | u32 | content-renderer VA (menu-overlay function), 0 = frame-only window |
-| `+0xc` | u16 | style/param word (low bits are per-renderer params; runtime-mutated on some windows) |
-| `+0xe` | u16 | window class: 2 = title tab, 3 = standard, 4 = list page |
+| `+0x0` | u8 | **content id** - copied into live window `+0x1C` at create (`sb` at `0x80032990`); selects the SCUS content-builder case and the kind-4 kernel behaviour (below) |
+| `+0x1` | u8 | slide-home variant (the `< 8` switch at `0x800326e8`: which screen edge the closed window parks against) |
+| `+0x2` | u16 | window class word: 2 = title tab, 3 = standard, 4 = list page (low byte lands in live `+0x1D`) |
+| `+0x4..+0xb` | 4 × i16 | `x, y, w, h` - the **content** rect (the `a0+0xa..+0x10` rect the content renderer receives) |
+| `+0xc` | u32 | content-renderer VA (menu-overlay function), 0 = content-builder-driven list window |
+| | | |
+
+Content ids observed non-zero exactly on the renderer-less list windows:
+window 15 (Items **Use** list) = `3`, 16 (Throw Out list) = `0x22`,
+18 (Magic spell list) = `5`, 11 (Door of Wind list) = `0x19`, 23 (Equip
+candidate list) = `0x15`, 38 = `2` (the price-gated bag list), 40 = `0xB`
+(shop list) - the same id space as the kernel allowlist at `0x80073E1C`.
+
+NB the parser `legaia_asset::menu_windows` reads the same bytes at base
+`0x801E473C` (`+4` from the engine's), so its `f1`/`kind` fields are the
+**next** record's content-id/class head; its rect and renderer fields land
+on the same absolute bytes and are unaffected.
 
 The table extent is structural: record 52 fails the rect/renderer validity
 envelope. Provenance: byte-matched between the disc entry and the resident
@@ -593,13 +610,21 @@ poll for 2/3, gating every phase step on the window-slide latch
 
 Runs per frame per live list window whose id byte (live window `+0x1C`)
 is in the allowlist at `0x80073E1C` (`02 03 22 07 08 09 0A 0E 0F 10 0B
-05 19`, `0x23`-terminated). The list node (live window `+0x18`, built
-by the allocator `FUN_80030104`: `count*2 + 0x2A` bytes) holds `+0x0`
-scroll top, `+0x2` visible rows (`(content_h - 4) / 0xE`), `+0x4` row
-count, `+0x6` selected row, and per-row u16 entries from `+0x28`. A row
-entry packs `[class: high nibble][0x800 = disabled][0x400 = alt-ink]
-[payload: low 12 bits]`; the overlay's content builder (`FUN_80030628`)
-rebuilds the entries, the kernel only reads them.
+05 19`, `0x23`-terminated). The id byte is the descriptor's **content
+id** (record byte `+0x0` - see [the descriptor
+table](#window-descriptor-table)), copied at window create
+(`FUN_800326AC`, `sb` at `0x80032990`). The list node (live window
+`+0x18`, built by the allocator `FUN_80030104`: `count*2 + 0x2A` bytes)
+holds `+0x0` scroll top, `+0x2` visible rows (`(content_h - 4) / 0xE`),
+`+0x4` row count, `+0x6` selected row, and per-row u16 entries from
+`+0x28`. A row entry packs `[class: high nibble][0x800 = disabled]
+[0x400 = alt-ink][payload: low 12 bits]`; the **SCUS-resident** content
+builder `FUN_80030628` (a per-content-id switch, jump table
+`0x80010D38`, index = `id - 2`) builds the entries at create /
+content-refresh, the kernel only reads them. The dim/alt-ink bits are
+decided **per row at build time** - there is no state-dependent bit
+rewrite (capture-pinned: the row words are bit-identical between
+command focus and Use-list focus - `autorun_use_list_rows_dump.lua`).
 
 **Navigation** (held pad `_DAT_8007BB84`, mode 1 only): Up (`0x1000`,
 `80032ae8..80032c74`) steps the selection up, wrapping to the page's
@@ -646,12 +671,17 @@ stages ink 5); `0x8000` = fixed-advance name (monospace override byte
 **Row ink** (`8003312c..80033154` and per-class clones): each row
 stages ink 7 (white), dropping to 0 (grey) when the row's `0x800`
 disabled bit is set and to 1 when `0x400` is set - **unless the list is
-parked** (mode 4), which keeps every row white. The pad-walked captures
-show the whole Use-list page grey once the hand enters it, so the
-overlay's row rebuild is setting `0x800` across the field list in that
-state - which bit-set path the rebuild takes there is the one remaining
-untraced half; the engine keeps the capture behaviour (white parked,
-grey browsing).
+parked** (mode 4), which keeps every row white. The white-to-grey flip
+the pad-walked captures show when the hand enters the Use list is
+purely this park override lifting: the row bits themselves are built
+once by `FUN_80030628` and do not change with focus (capture-pinned -
+the content-id-3 row words are bit-identical across command focus, list
+focus, and 60 vsyncs of browsing). A "whole page grey" capture is a
+page whose rows are each individually disabled - see [the Use-list
+build](#use-list-row-build-content-id-3-fun_80030628) for the per-row
+law. The engine's all-grey-when-focused model in
+`engine-core::pause_screens` is an approximation of that capture, not
+the retail rule.
 
 **Hand + page arrows** (`80032f5c..8003304c`): hand
 `FUN_8002B994(0, browsing, WX - 6, row_y)` (suppressed when parked, and
@@ -666,6 +696,41 @@ descriptor's `132x182`.
 Engine port: `engine-core::pause_screens::list_kernel_navigate` (the
 navigation phase, page-local wrap + page flip); the row/header draws
 stay in `engine-ui::pause_lists` at the capture-pinned pens.
+
+### Use-list row build (content id 3, `FUN_80030628`)
+
+The Items **Use** list (window 15, content id `3`) is built by the
+content builder's id-3 case (`0x80030828..0x80030A88`,
+`ghidra/scripts/funcs/80030628.txt`). Per bag slot (`0x80085958 +
+i*2` over the window `gp[+0x2D2]..gp[+0x2D4]`), the item record
+(`0x80074368 + id*0xC`) kind byte `+0x0` routes the row:
+
+- **kind 2 with item-effect flag `0x8`** (`0x800752C0[eff*4+2]`,
+  `0x800308B8..0x800308F8`): entry `slot | 0x1C00` (dim + alt-ink),
+  collected in a third buffer and appended **last**.
+- **kind 1** (equipment / key items, `beq` at `0x80030918`):
+  unconditionally `slot | 0x1800` (dim), collected in a second buffer
+  and appended **after** the in-place rows - equipment sorts to the
+  page tail rather than interleaving.
+- otherwise, in the field context (`gp[+0x85C] == 0`): Door of Light /
+  Door of Wind (ids `0x88`/`0x89`, `0x80030930..0x80030974`) gate on
+  scratchpad word `0x1F800394` bits `0x100000`/`0x200000` (the scene
+  class that makes the door usable); then the effect **field-usable**
+  bit `0x2` (`0x80030990`, clear = dim); then the applicability probe
+  `FUN_8003043C` (`0x800309A4`) - a party scan through the action
+  validator `FUN_8003FB10` that returns 0 when the item would affect
+  nobody (everyone at full HP for a heal), which dims the row
+  (`0x800309BC`). These rows stay **in place** (dim rows interleave
+  with white ones). In the battle context (`gp[+0x85C] == 1`) the gate
+  is the effect **battle-usable** bit `0x4` (`0x800309E0`) instead.
+
+So a Healing Leaf row greys out at full party HP through the
+applicability probe - the capture-pinned dim row (`0x1800`, item
+`0x77`) of the single-item Use list. The **Throw Out** list (window 16,
+content id `0x22`, case `0x80030AF8`) reuses the shapes with a
+discardability gate (kind-1 rows dim on equip-record `+0x7` bit `0x1`);
+the price-gated bag list is content id `2` (window 38: rows with item
+price `+0x2 == 0` dim and sort last, `0x8003071C`/`0x80030734`).
 
 Shared helpers, both menu-overlay resident:
 
@@ -704,17 +769,23 @@ The hand cursor (`FUN_8002B994`) draws at `(WX, row_y)` gated by the
 cursor word `DAT_801E46C0`. See
 `ghidra/scripts/funcs/overlay_menu_801d0d18.txt`.
 
-**Item list (id 15)** - renderer-less in the descriptor table; the page
-is drawn by the SCUS **kind-4 list kernel `FUN_80032A44`** (see [the
-kernel section](#the-kind-4-list-kernel-scus-fun_80032a44)) over
-class-`0x1000` bag rows. Rows start at `(WX+0xC, WY+0xC)`, pitch `0xE`,
-12 rows per page: item name, then the bag count as 8-px digit cells
-whose 2-digit field spans `WX+0x6C..0x7C` (a 1-digit count inks the
-`WX+0x74` cell - the capture-pinned spot). The whole page draws CLUT-7
-white while the command window has focus (the kernel is *parked*, mode
-4, which forces white) and drops to CLUT-0 grey once the hand enters
-the list (the per-row `0x800` dim bit; the hand at `WX-0xC` is the
-selection highlight - no row tint). The header row sits above row 0:
+**Item list (id 15, content id 3)** - renderer-less in the descriptor
+table; the page is drawn by the SCUS **kind-4 list kernel
+`FUN_80032A44`** (see [the kernel
+section](#the-kind-4-list-kernel-scus-fun_80032a44)) over
+class-`0x1000` bag rows built by [the content-id-3
+case](#use-list-row-build-content-id-3-fun_80030628) of
+`FUN_80030628`. Rows start at `(WX+0xC, WY+0xC)`, pitch `0xE`, 12 rows
+per page: item name, then the bag count as 8-px digit cells whose
+2-digit field spans `WX+0x6C..0x7C` (a 1-digit count inks the `WX+0x74`
+cell - the capture-pinned spot). The page draws CLUT-7 white while the
+command window has focus (the kernel is *parked*, mode 4, which forces
+white); once the hand enters the list each row shows its own build-time
+ink - white usable, CLUT-0 grey for rows the builder dimmed (`0x800`:
+equipment, field-unusable consumables, and heals with nobody to heal).
+The row words do not change with focus; a page can read all-grey simply
+because every row on it dimmed. The hand at `WX-0xC` is the selection
+highlight - no row tint. The header row sits above row 0:
 the "PAGE" small-cap tag - ICO sprite `0x76`, atlas UV `(80,136)` 24x8,
 teal ink `(16,181,156)` - at `WX+W-0x38`, and the gold `cur / total`
 fraction (digit sprites ICO `0x7A..0x83`, slash `0x79`) from
@@ -909,8 +980,9 @@ ids `0x88/0x89/0x8A` and exit codes 4/5 as named constants).
 
 **Throw Out list `FUN_801D8734`** (submenu 7): phase 0 re-points the
 live list window from descriptor 15 to descriptor 16 (live-window
-`+0x8` id write; descriptor 16 shares list 15's rect with a zeroed `f1`
-word) and runs the enter script; phase 1 arms the kernel; phase 2
+`+0x8` id write; descriptor 16 shares list 15's rect but carries
+content id `0x22` - the discardability row build, vs 15's Use build
+`3`) and runs the enter script; phase 1 arms the kernel; phase 2
 stages the hovered slot and polls - cancel restores descriptor 15 and
 returns to submenu 5; a pick opens the **confirm window** (script: close
 command window 13, open window 9) with the confirm cursor
