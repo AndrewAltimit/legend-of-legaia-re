@@ -573,8 +573,10 @@ Found via the `overlay_battle_action.bin` import (a save state captured with the
 
 ## Party wipe + the game-over overlay
 
-The wipe **detection** is pinned; the retail **destination** is not, and
-the two should not be conflated.
+Both halves are pinned: the wipe **detection** in the action SM, and
+the retail **destination** - the CARD (menu / memory-card) continue
+screen, reached through a gate in MAIN INIT, not through the mode-18
+"GAME OVER" overlay.
 
 Detection is the `0x5A` end-of-action gate of the action SM (see
 [battle-action.md](battle-action.md)). It walks the actor pointer table
@@ -588,36 +590,66 @@ Its three `game_mode` stores pick between `0` (debug-battle id set),
 `0x18` / mode 24 OTHER (arena / Muscle Dome, `_DAT_8007BAC0 & 0x100`)
 and `2` / mode 2 MAIN INIT, i.e. back to the field. It **never reads
 `_DAT_8007BD2C`** - the wipe cause is consumed only by
-`FUN_801D5854` (battle-camera framing) and `FUN_8004E568`. So on the
-statically-reachable exit path, a party wipe returns to the field like
-any other battle end.
+`FUN_801D5854` (battle-camera framing) and `FUN_8004E568`. So the
+battle itself always exits the same way; the wipe fork lives one mode
+later, in MAIN INIT.
 
-A game-over screen nevertheless exists as real disc content. Mode-table
-rows 18 / 19 (table at `0x8007078C`, 0x18 stride) hand off to
-`FUN_80025B30`, which loads **PROT 0902** at base `0x801CE818` with its
-entry at `0x801CE844`. The overlay carries the source path
+### The retail wipe destination is the CARD continue screen
+
+What actually happens after the wipe cause is set is pinned by a
+write-watch on the game-mode word across live party wipes (probe
+`scripts/pcsx-redux/autorun_gameover_mode_writer.lua`; one scripted-loss
+wipe and one plain-formation wipe on the `map01` overworld):
+
+1. The battle tears down through `FUN_80046A20`'s ordinary store
+   (`0x80046E0C`): `game_mode = 2` (MAIN INIT), wipe or no wipe. The
+   selector also leaves the battle-return marker `_DAT_8007B8B8 = 2`.
+2. MAIN INIT's scene-setup flow `FUN_8003AEB0` carries the game-over
+   gate, in its `_DAT_8007B8B8 == 2` back-from-battle arm: when
+   `DAT_8007BD60 & 0x80` is clear **and** story-flag index 0
+   (`0x80085758` bit `0x80`) is clear, the store at `0x8003B5D4`
+   writes `game_mode = 0x16` (22, CARD INIT) and sets the CARD
+   entry-context word `_DAT_8007BB00 = 1`. Mode 22 loads the menu
+   overlay 0899 and self-advances to mode 23 (`0x80025974`) - the
+   memory-card / continue surface. That screen **is** retail's game
+   over.
+3. `DAT_8007BD60` bit `0x80` is the battle overlay's survivors latch
+   (set at `0x801E802C` in 0898 on the surviving exit path), so a won
+   or escaped battle skips the gate.
+4. Story-flag index 0 is the **scripted-loss latch**: in the scripted
+   Rim Elm ambush loss the scene script raises it at battle start, the
+   gate reads it set, the wipe returns to field mode 3 like any battle
+   end, and MAIN INIT consumes the latch (both captured live - the flag
+   byte walks `0x41 -> 0xC1` at battle entry and back to `0x01` on
+   return). Flag index 1 (bit `0x40`) is managed by the same block.
+5. Scripts can invoke the same handoff directly: `FUN_8003C7EC` is a
+   helper twin of the inline gate body (same three stores), and the
+   field-VM op `4C EA` (MENU_CTRL nibble-E sub-A, see
+   [script-vm-menuctrl.md](script-vm-menuctrl.md#0x4c-nibble-0xe00xef---misc-scene-writes--emitter-helpers))
+   calls it and halts - the scripted game-over trigger.
+
+### The mode-18/19 overlay is a dev harness
+
+A game-over *artwork* screen nevertheless exists as real disc content.
+Mode-table rows 18 / 19 (table at `0x8007078C`, 0x18 stride) hand off
+to `FUN_80025B30`, which loads **PROT 0902** at base `0x801CE818` with
+its entry at `0x801CE844`. The overlay carries the source path
 `h:\prot\field\gameover\gameover.pak`, 29 TIMs (the artwork), a
 self-advance to mode 19 and a **single, unconditional** exit that writes
 `game_mode = 0`.
 
-Two things follow. First, retail's game over is **not a menu**: 0902's
-only readable string is `GAME OVER`, it has no Continue / Retry / Quit
-vocabulary, and one exit store cannot express three outcomes. The port's
-three-row `engine-core::game_over::GameOverSession` is therefore an
-**engine invention**, not a port of retail behaviour, and it is
-deliberately left unreachable rather than wired to a trigger nobody has
-pinned. Second, the mode-18 entry has no static writer anywhere on the
-disc: a scan of every `sb`/`sh`/`sw` to `game_mode` across
-`SCUS_942.54` and every PROT entry finds the value `0x12` written
-nowhere, no mode-table `next` field chains into 18, and the only
-`jal 0x80025B30` is inside `FUN_80025B30` itself. That 0902 exits to
-mode 0 - the **debug menu** - is further circumstantial evidence that
-the 18/19 pair is a dev harness.
-
-What that scan cannot rule out is the nine register-indirect
-`game_mode` stores, which remain the search space. Resolving them is a
-runtime question rather than a static one; see
-[open-rev-eng-threads.md](../reference/open-rev-eng-threads.md).
+That pair is unreachable in retail. The mode-18 entry has no static
+writer anywhere on the disc: a scan of every `sb`/`sh`/`sw` to
+`game_mode` across `SCUS_942.54` and every PROT entry finds the value
+`0x12` written nowhere, no mode-table `next` field chains into 18, and
+the only `jal 0x80025B30` is inside `FUN_80025B30` itself. The live
+wipe captures close the register-indirect remainder: a real party wipe
+routes through the CARD gate above and mode 18 never fires. That 0902
+exits to mode 0 - the **debug menu** - fits the same reading: the 18/19
+pair is a dev harness around dev art. Relatedly, retail's game over is
+**not a menu**: 0902's only readable string is `GAME OVER`, and the
+port's three-row `engine-core::game_over::GameOverSession` is an
+**engine invention**, deliberately left unreachable.
 
 Mode numbers are decimal in these docs and hex in the dumps, which is a
 standing trap here: `_DAT_8007B83C = 0x18` is mode **24** (OTHER /
@@ -1377,6 +1409,30 @@ This dissolves the "boss battle-id global" hypothesis for these fights: the
 formation is the scene's own MAN encounter-section row, selected by index from
 script bytes (live-capture pinned for Zeto - the formation writer `ra` sits in
 `FUN_801DA51C`'s record-copy body while `0x8007B7FC` stays silent).
+
+#### `DAT_8007b7fc` is a writer-less debug forced-battle id
+
+No retail code writes `DAT_8007b7fc`. A capstone sweep of `SCUS_942.54` plus
+every extracted static overlay (`crates/asset/data/static-overlays.toml` set)
+covering absolute lui/addiu/ori-tracked stores, gp-relative stores against the
+SCUS `gp = 0x8007B318` (`0x4e4($gp)`), and constant address-materialisation
+into any register finds **no store and no materialised address** - only
+readers. The same sweep pointed at the game-mode word reproduces its known
+static stores, so the null result is not a tool artifact.
+
+The readers give the global its role. Battle init `FUN_80055b6c` reads it
+after clearing the per-battle state block: non-zero routes through
+`FUN_80055b20` + `FUN_8005567c`, which seed the battle formation cells
+`DAT_8007BD0C..0F` (and the sibling `DAT_8007BD10` array) **from the id
+itself** - bypassing the encounter record entirely, with special-case
+formations for ids `0xA2..0xA4` and a canned default when the id reads zero
+at the final check. And the battle-exit mode selector `FUN_80046A20` reads it
+(at `0x80046ddc`) before its three-way mode store: non-zero routes to the
+`game_mode = 0` store - the **debug menu** - instead of the field/arena
+returns. A set id would enter a forced formation and exit to the debug menu;
+retail never sets it, so it reads `0` everywhere and both arms are
+dev-harness residue (the same harness the mode-18/19 game-over rows belong
+to; see [Party wipe + the game-over overlay](#party-wipe--the-game-over-overlay)).
 
 The carrier differs per boss. The garmel fights ride **partition-2 beat
 records** (spawned by the gated record dispatch). The Caruban op instead lives
