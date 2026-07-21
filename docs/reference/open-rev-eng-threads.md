@@ -124,7 +124,7 @@ none reading the pool `word1` high half. So `attr` (real per-vertex data) is ign
 |---|---|---|
 | Super / Miracle Arts trigger logic | mostly resolved | [details ↓](#super--miracle-arts-trigger-logic) |
 | First boss trigger -> Battle | resolved | The scripted-battle arm is the field-VM op `3E FF <formation_row>` ([battle.md](../subsystems/battle.md#scripted-battle-entry-3e-ff-row)): Zeto = garmel `P2[12]` row 9 (lone `0x4B`), Caruban = rikuroa stager `P1[3]` row 17 (lone `0x49`, `World::run_boss_stager_record`). `DAT_8007b7fc` closed: writer-less across `SCUS_942.54` + every static overlay (validated absolute + gp-relative + address-materialisation sweep); readers pin it as the debug forced-battle formation id - battle init `FUN_80055b6c` -> `FUN_8005567c` seeds the formation cells `DAT_8007BD0C+` from it, and `FUN_80046A20` routes a nonzero value to its mode-0 debug-menu exit. Retail never sets it. See [battle.md](../subsystems/battle.md). |
-| Enemy-ally charm battle softlock | mostly resolved (cause pinned; one live repro left) | The freeze is the state-`0x5A` victory arm's party-slot assumption, **not** the `FUN_801E7320` reroll (falsified - [`re-do-not-re-walk.md`](re-do-not-re-walk.md#battle--arts--level-up)). The charm-victory widen (`0x801E6638` -> mask `0x384`) desyncs the wipe scan from the scheduler's `0x4` predicate, so a living charmed ally can be the acting actor at victory; the alive-skip at `0x801E6690` keeps the monster slot and `0x801E6770` indexes the 3-byte roster `DAT_8007BD10` OOB, arming a garbage win-pose stream. Chain + port: [battle.md](../subsystems/battle.md#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock). Open: live repro + disc-side rando fix. |
+| Enemy-ally charm battle softlock | resolved (both tracks fixed; grade `disassembly`) | The state-`0x5A` victory arm's party-slot assumption OOB-indexes the win-pose roster `DAT_8007BD10` (via `0x801E6770`) when a living charmed ally is the acting actor at monster-wipe victory - the `FUN_801E7320` reroll theory is falsified ([`re-do-not-re-walk.md`](re-do-not-re-walk.md#battle--arts--level-up)). Fixed on both tracks: engine `victory_pose_fixup`/`charm_widen`, and the disc-side `legaia_rando::charm_fix` guard - a single-word detour at the `0x801E6690` keep-branch into a SCUS dead-space liveness guard. Full chain + port: [battle.md](../subsystems/battle.md#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock). |
 | Battle-actor `+0x16E` bit `0x400` applier (guard-disabling status) | open (low value; two consumers pinned) | Bit `0x400` of the battle-actor flags word `+0x16E` reads as a guard-disabling Sleep/Numb-like status; the sibling AI-delegated bits `0x380` are pinned (enemy-ally charm hook, `FUN_801E7320`). Two *consumers* of the `0x80..0x800` class are pinned live: the on-hit strip `0x801EDA60` in overlay 0898 (`andi 0xF07F` clears the class on any hit, so `0x400` is a volatile hit-cleared status) and the battle-exit per-party clear `0x80046EB0` in `FUN_80046A20`. The *setter* is still uncaught (no infliction in the wipe capture); probe `autorun_status_word_writer.lua` is armed for a status-inflicting battle state. |
 
 ### Super / Miracle Arts trigger logic
@@ -286,7 +286,7 @@ A caller census of `FUN_8003D53C`/`FUN_8003EAE4` names each `(clip_id, chan)` cu
 |---|---|---|
 | Debug flag `0x8007B98F` | resolved | `0x8007B98F` has no byte-granular reader: it is byte +3 (MSB, little-endian) of the 32-bit debug-mode word `_DAT_8007B98C`, and *that word* is the consumer surface. Its sibling `0x8007B8C2` is now **settled** - see [`re-settled-threads.md`](re-settled-threads.md#_dat_8007b8c2-polarity-and-its-writer). [details ↓](#debug-flags-0x8007b8c2--0x8007b98f) |
 | Full-window item-add OOB primitive: reachability | resolved (moved to re-settled) | Primitive real (grade `disassembly`): id store `sb t0,0x1818(a0)` @ `0x800422BC` is unconditional, before the guard that gates only the count store. But **unreachable through the retail add call sites in normal play** - each caller `jal`s the helper with no room pre-check, and the helper's free-slot scan cannot reach the `i == end` OOB exit (a `[0,256)` window holds ≤255 distinct ids, so a hole always remains). See [`re-settled-threads.md`](re-settled-threads.md#full-window-item-add-oob-reachability). |
-| New-Game opening chain + narration roller | partial (chain + caption + roller + prologue gold grade resolved; one far-geometry-brightness residual open) - the gold grade is a capture-pinned palette-space collapse, superseding the per-node depth-cue reading | [details ↓](#new-game-opening-chain--narration-roller) |
+| New-Game opening chain + narration roller | resolved (chain + caption + roller + prologue gold grade; far-geometry residual closed resolved-negative) - the gold grade is a capture-pinned palette-space collapse, superseding the per-node depth-cue reading | [details ↓](#new-game-opening-chain--narration-roller) |
 | Slot-B overlay cluster (`0900..0969`) per-entry identity | mostly resolved | [details ↓](#slot-b-overlay-cluster-09000969-per-entry-identity) |
 | Overlay-loader index off-by-2 - remaining ripple | partial (core finding resolved; two stager bindings unpinned) | One mid-cast capture each for the attack-titled stagers 0924 / 0925 binds them to their casts. [details ↓](#overlay-loader-index-off-by-2---remaining-ripple) |
 
@@ -384,7 +384,7 @@ rather than contradicting it:
 
 ### New-Game opening chain + narration roller
 
-*Status:* partial - the chain, caption, roller, and prologue gold grade are resolved; one far-geometry-brightness residual below is open
+*Status:* resolved - the chain, caption, roller, and prologue gold grade are resolved; the far-geometry-brightness residual below closed resolved-negative
 
 **One sub-claim was graded `decompiled-C` and flagged for re-audit: the roller
 config op's operand decode. It has now been re-derived from the field-overlay
@@ -459,7 +459,26 @@ within ~6 % - a per-leg thread in the world-map fly-in choreography, not a globa
   staged by play-window when `World::scene_color_grade` is active; tableau
   ground lands `G/R 0.890` vs retail `0.88` (was `~1.07`). See
   [`cutscene.md`](../subsystems/cutscene.md#full-scene-sepia-grade-the-gold-prologue-look).
-- **Far-geometry brightness (open).** Matched-region measures: the tableau ground is identical both sides, but the retail spires/wings read `B/R ≈ 0.15..0.16` at brightness `~51` vs the engine's `0.27` at `~80`. The `B/R` direction is the law's integer floor at small `L`; the open question is why retail's far geometry draws that much darker. Also open: pinning the retail load-time asset-grade pass to a function (cutscene-host overlay 0970 load hooks are the candidates).
+- **Far-geometry brightness (resolved-negative, grade `disassembly`+`capture`).**
+  Matched-region measures: the tableau ground is identical both sides, but the
+  retail spires/wings read `B/R ≈ 0.15..0.16` at brightness `~51` vs the engine's
+  `0.27` at `~80`. This is **not** a missing separable palette/depth law. A
+  signature scan for the collapse arithmetic across overlay 0970 (28 funcs), field
+  0897 (690), and `SCUS_942.54` (945) finds **no CLUT-rewrite loop** - 0970 is pure
+  MDEC/STR code, so the earlier "0970 load hooks are the candidate grade host" is
+  **falsified**; the load-time CLUT rewrite is a table/DMA upload, not a pinnable
+  CPU pass (same shape as the XA-clip-table writer). With `IR0 = 0` on every node
+  and both grade halves reproduced, the residual gap is un-darkened neutral packets
+  on lit-descriptor prims (the mesh builder feeds `0x80`, and
+  `palette_collapse_prim`'s neutral guard leaves them alone) vs retail drawing those
+  same prims through the scene GTE far/back colour `FUN_80029888` loads - opdeene's
+  dim ambient `DAT_8007B788 = 0x00202020` vs town01's `0x00FFFFFF`. That GTE ambient
+  is the port's standing **no-field-light-op boundary** (see
+  [`re-settled-threads.md`](re-settled-threads.md#field-decoration-path---does-it-dispatch-the-ncc-light-handlers)),
+  made visible only by opdeene's unusually dim ambient plus the port's lack of
+  distance culling widening the sampled far region. Reproducing it faithfully would
+  mean porting a GTE ambient/light op that contradicts that boundary, so no engine
+  change was warranted.
 
 ### Overlay-loader index off-by-2 - remaining ripple
 
