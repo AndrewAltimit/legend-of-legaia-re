@@ -419,7 +419,8 @@ pub enum Bitstream {
     Iki,
     /// `FUN_801D070C` - standard STRv2/v3 VLC against the table
     /// `FUN_801F1A00` unpacks to `0x801E0A00`. Dev slots 9/10 only, whose
-    /// files are not on the released disc.
+    /// files are not on the released disc. Decoder:
+    /// [`crate::strv2_decode::decode_frame`].
     Strv2,
 }
 

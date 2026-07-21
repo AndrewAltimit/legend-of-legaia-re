@@ -299,9 +299,17 @@ is selected by `DAT_801E09FC`:
 - **STRv2/v3** (`FUN_801D070C`, dev slots 9/10 only): standard VLC with per-block DC deltas,
   lookup table unpacked at runtime by `FUN_801F1A00` into `DAT_801E0A00`. The play loop calls the
   unpacker **unconditionally**, once per FMV (`801cf210`), even for Iki slots that never read the
-  table. Port: [`legaia_mdec::strv2_table`](../../crates/mdec/src/strv2_table.rs), reachable as
-  `mdec strv2-table <overlay>`; no decoder in the port consumes the table yet, because no retail
-  movie uses this path. See [STRv2 VLC table](#strv2-vlc-lookup-table-fun_801f1a00).
+  table. Ports: [`legaia_mdec::strv2_table`](../../crates/mdec/src/strv2_table.rs) (the unpacker,
+  reachable as `mdec strv2-table <overlay>`) and its consumer
+  [`legaia_mdec::strv2_decode::decode_frame`](../../crates/mdec/src/strv2_decode.rs). The table is
+  not a run/level table - it stores the **pre-baked MDEC output codes** (one to three per hit, plus
+  a per-entry bit length), carved into four regions: luma DC (`+0x0000`) and chroma DC (`+0x0400`)
+  indexed by `acc >> 24`; AC primary (`+0x0800`, 8-byte, `acc >> 19`); AC secondary (`+0x10800`,
+  `acc >> 23`). So `FUN_801D070C` is a bit-prefix lookup: only the DC coefficients (raw 10-bit in
+  v2, size-prefixed predicted differences chained per channel in v3), the `0x7C1F`-escape raw codes
+  and the 65-code `0xFE00` end padding are computed. Dead in retail (no released movie uses it), so
+  the port has no golden decode to check against; the tests pin the distinct code paths against the
+  disassembly. See [STRv2 VLC table](#strv2-vlc-lookup-table-fun_801f1a00).
 
 #### STRv2 VLC lookup table (`FUN_801F1A00`)
 
@@ -353,7 +361,11 @@ holds **no** channel selector):
   the hard-coded file byte; the **channel is caller-supplied** - e.g. the menu voice dispatcher
   `FUN_8004FCC8` derives `clip slot = (id - 0x100) >> 3` (remapped `1/3/5 -> 0x1A/0x1B/0x1C`) and
   `chan = id & 7`. `FUN_8003EAE4` is the by-index sibling starter; `FUN_8003ED04` the stop.
-  `see ghidra/scripts/funcs/8003d764.txt` / `8003d53c.txt`.
+  `see ghidra/scripts/funcs/8003d764.txt` / `8003d53c.txt`. The pure computations of that dispatch
+  chain - the id -> `(clip_slot, channel)` mapping, the length-field -> `duration_sectors` scale
+  `(len*60+99)/100`, and the starter's end-LBA offset `(duration*150+149)/60` clamped at `0x2A30` -
+  are ported in [`legaia_engine_shell::xa_clip`](../../crates/engine-shell/src/xa_clip.rs); the CD
+  control / `CdlSetfilter` state machines around them stay hardware-side and unported.
 
 So the complete channel map is: **movies** = one track per file at `(1, 0)`, selected by
 `fmv_id -> MVn.STR + frame range`; **XA files** = `(1, chan)` inside `XA<clip_id + 1>.XA`, with

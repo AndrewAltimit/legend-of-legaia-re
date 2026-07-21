@@ -38,13 +38,14 @@
 //! table's own record width, so the packed form stores each record as a delta
 //! against its predecessor - which is what makes it compress at all.
 //!
-//! ## Not wired to a decoder
+//! ## The decoder it feeds
 //!
-//! `crates/mdec` implements the **Iki** bitstream only, because that is what
-//! every retail movie uses (`FUN_801CEA3C` presets `DAT_801E09FC = 1` and clears
-//! it for dev slots 9/10 alone, whose files are not on the released disc). The
-//! unpacker is ported and exposed - `mdec strv2-table` runs it - but no decoder
-//! in this crate consumes its output yet.
+//! Every retail movie uses the **Iki** bitstream instead ([`crate::MdecDecoder`]),
+//! because `FUN_801CEA3C` presets `DAT_801E09FC = 1` and clears it for dev slots
+//! 9/10 alone, whose files are not on the released disc. The table this unpacker
+//! produces is nonetheless the exact input of the STRv2/v3 decoder
+//! [`crate::strv2_decode::decode_frame`] (`FUN_801D070C`), which carves it into
+//! the DC and AC lookup regions described there.
 
 use anyhow::{Result, bail};
 
