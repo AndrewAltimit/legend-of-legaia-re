@@ -1277,6 +1277,12 @@ pub struct World {
     /// it through [`crate::pause_screens`].
     pub menu_text: Option<crate::pause_screens::MenuTextTables>,
 
+    /// The Items screen's Arrange sort ranks, parsed from the menu
+    /// overlay (PROT 0899 VA `0x801E4A88`,
+    /// [`crate::menu_arrange::parse_arrange_rank_table`]). `None` on a
+    /// load without the overlay - Arrange then falls back to id order.
+    pub menu_arrange_rank: Option<crate::menu_arrange::ArrangeRankTable>,
+
     /// Party-global 4×u32 ability mask - the engine mirror of retail
     /// `DAT_80074358..0x80074368` (every member's `+0xF4` bitfield OR'd
     /// together each rebuild). Bit-tested via [`World::party_has_ability`]
@@ -2263,6 +2269,7 @@ impl World {
             equipment_table: crate::battle_stats::EquipmentTable::new(),
             accessory_passives: Default::default(),
             menu_text: None,
+            menu_arrange_rank: None,
             party_ability_mask: [0; crate::accessory_passives::ABILITY_WORDS],
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
             active_scene_label: String::new(),

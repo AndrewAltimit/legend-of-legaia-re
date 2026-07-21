@@ -121,13 +121,20 @@ pub struct PauseItemRow {
 }
 
 /// Focus of the Items screen (the retail submenu word `DAT_801E46A4`:
-/// `5` = command window, `6` = list).
+/// `5` = command window, `6` = the Use list, `7` = the Throw Out list;
+/// the Throw Out confirm is submenu 7's phase 3, `FUN_801D8734`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PauseItemsFocus {
     /// Hand on the Use / Throw Out / Arrange command window.
     Command,
-    /// Hand inside the item list.
+    /// Hand inside the item list (the Use flow, submenu 6).
     List,
+    /// Hand inside the item list picking a stack to discard (submenu 7,
+    /// `FUN_801D8734` phases 0..2).
+    ThrowOutList,
+    /// The Yes / No throw-out confirm window (descriptor id 9, renderer
+    /// `FUN_801D1B20`; `FUN_801D8734` phase 3).
+    ThrowOutConfirm,
 }
 
 /// The retail Items screen session: the command-window/list focus model
@@ -149,6 +156,14 @@ pub struct PauseItemsSession {
     pub focus: PauseItemsFocus,
     /// Command-window row (0 = Use, 1 = Throw Out, 2 = Arrange).
     pub command_cursor: u8,
+    /// Throw-out confirm row (0 = Yes, 1 = No). Retail seeds the confirm
+    /// cursor word `DAT_801E46D0` to `1` on open - "No" is the default.
+    pub confirm_cursor: u8,
+    /// Arrange sort ranks (id -> rank). `None` falls back to the id-order
+    /// identity ([`crate::menu_arrange::ArrangeRankTable::id_order`]).
+    /// Boxed to keep the session (and the `FieldMenuSubsession` enum
+    /// carrying it) small.
+    arrange_rank: Option<Box<crate::menu_arrange::ArrangeRankTable>>,
     /// Flat hand position over [`Self::rows`] (all bag rows).
     cursor: usize,
     /// Set when the player backs out of the command window (Circle /
@@ -163,9 +178,21 @@ impl PauseItemsSession {
             rows,
             focus: PauseItemsFocus::Command,
             command_cursor: 0,
+            confirm_cursor: 1,
+            arrange_rank: None,
             cursor: 0,
             closed: false,
         }
+    }
+
+    /// Attach the disc-parsed Arrange rank table
+    /// ([`crate::menu_arrange::parse_arrange_rank_table`]).
+    pub fn with_arrange_rank(
+        mut self,
+        rank: Option<crate::menu_arrange::ArrangeRankTable>,
+    ) -> Self {
+        self.arrange_rank = rank.map(Box::new);
+        self
     }
 
     /// The retail command-window grey-out: the bag scan found no held
@@ -206,19 +233,29 @@ impl PauseItemsSession {
 
     /// Drive one frame from an edge-triggered PSX pad word.
     ///
-    /// - **Command focus**: Up/Down cycle the three rows; Cross on "Use"
-    ///   moves the hand into the list (bag permitting); Circle/Triangle
-    ///   close the screen. Throw Out / Arrange are not yet modelled
-    ///   (retail sub-flows; held).
-    /// - **List focus**: Up/Down move the hand, Left/Right flip 12-row
-    ///   pages, Cross confirms into the use flow, Circle returns the hand
+    /// - **Command focus** (retail submenu 5, `FUN_801D7C00`): Up/Down
+    ///   cycle the three rows; the bag scan gates every confirm (empty =
+    ///   buzz no-op). Cross on "Use" enters the list (submenu 6), on
+    ///   "Throw Out" enters the discard list (submenu 7), on "Arrange"
+    ///   runs the bag sort (`FUN_801D64A8`) and resets the list scroll.
+    ///   Circle/Triangle close the screen.
+    /// - **List focus** (Use): Up/Down move the hand, Left/Right flip
+    ///   12-row pages, Cross confirms into the use flow, Circle returns
     ///   to the command window.
+    /// - **Throw Out list** (`FUN_801D8734` phase 2): same navigation;
+    ///   Cross opens the Yes/No confirm seeded on "No"; Circle returns
+    ///   to the command window.
+    /// - **Throw Out confirm** (phase 3): Up/Down toggle Yes/No; Cross
+    ///   on Yes discards the whole stack (the retail delete zeroes both
+    ///   bag-slot bytes) and returns to the list - or to the command
+    ///   window when the bag empties; Cross on No / Circle back out.
     /// - **Target select**: everything forwards to the inner flow.
+    //
+    // PORT: FUN_801D7C00 (items command SM: submenu routing + Arrange phase)
+    // PORT: FUN_801D8734 (throw-out list + confirm SM)
     pub fn input_pad_edge(&mut self, pressed: u16) {
         let up = pressed & PadButton::Up.mask() != 0;
         let down = pressed & PadButton::Down.mask() != 0;
-        let left = pressed & PadButton::Left.mask() != 0;
-        let right = pressed & PadButton::Right.mask() != 0;
         let cross = pressed & PadButton::Cross.mask() != 0;
         let circle = pressed & PadButton::Circle.mask() != 0;
         let triangle = pressed & PadButton::Triangle.mask() != 0;
@@ -241,42 +278,22 @@ impl PauseItemsSession {
                 if down {
                     self.command_cursor = (self.command_cursor + 1) % 3;
                 }
-                if cross && self.command_cursor == 0 && !self.bag_empty() {
-                    self.focus = PauseItemsFocus::List;
+                // Retail scans the bag before dispatching any command row
+                // and buzzes (SFX 0x23) on an empty bag.
+                if cross && !self.bag_empty() {
+                    match self.command_cursor {
+                        0 => self.focus = PauseItemsFocus::List,
+                        1 => self.focus = PauseItemsFocus::ThrowOutList,
+                        _ => self.arrange(),
+                    }
                 }
-                // Throw Out (1) / Arrange (2): retail sub-flows not yet
-                // modelled - the confirm is a no-op.
             }
             PauseItemsFocus::List => {
                 if circle {
                     self.focus = PauseItemsFocus::Command;
                     return;
                 }
-                let n = self.rows.len();
-                if n == 0 {
-                    return;
-                }
-                if up {
-                    self.cursor = if self.cursor == 0 {
-                        n - 1
-                    } else {
-                        self.cursor - 1
-                    };
-                }
-                if down {
-                    self.cursor = if self.cursor + 1 >= n {
-                        0
-                    } else {
-                        self.cursor + 1
-                    };
-                }
-                if left {
-                    // Page flip: jump the hand by one page, clamped.
-                    self.cursor = self.cursor.saturating_sub(LIST_PAGE_ROWS);
-                }
-                if right {
-                    self.cursor = (self.cursor + LIST_PAGE_ROWS).min(n - 1);
-                }
+                self.list_navigate(pressed);
                 if cross {
                     // Map the hand row into the inner flow's filtered
                     // cursor space; a non-usable row has no mapping and
@@ -294,7 +311,122 @@ impl PauseItemsSession {
                     }
                 }
             }
+            PauseItemsFocus::ThrowOutList => {
+                if circle {
+                    // Retail: list result 3 -> restore the id-15 list
+                    // window and return to submenu 5.
+                    self.focus = PauseItemsFocus::Command;
+                    return;
+                }
+                self.list_navigate(pressed);
+                if cross && self.cursor < self.rows.len() {
+                    // Confirm window opens seeded on "No"
+                    // (`DAT_801E46D0 = 1`).
+                    self.confirm_cursor = 1;
+                    self.focus = PauseItemsFocus::ThrowOutConfirm;
+                }
+            }
+            PauseItemsFocus::ThrowOutConfirm => {
+                if circle {
+                    self.focus = PauseItemsFocus::ThrowOutList;
+                    return;
+                }
+                // FUN_801D688C over 2 rows with wrap.
+                if up || down {
+                    self.confirm_cursor ^= 1;
+                }
+                if cross {
+                    if self.confirm_cursor == 0 {
+                        self.throw_out_selected();
+                    } else {
+                        self.focus = PauseItemsFocus::ThrowOutList;
+                    }
+                }
+            }
         }
+    }
+
+    /// Shared list navigation: Up/Down move the hand (wrapping),
+    /// Left/Right flip 12-row pages (clamped).
+    fn list_navigate(&mut self, pressed: u16) {
+        let n = self.rows.len();
+        if n == 0 {
+            return;
+        }
+        if pressed & PadButton::Up.mask() != 0 {
+            self.cursor = if self.cursor == 0 {
+                n - 1
+            } else {
+                self.cursor - 1
+            };
+        }
+        if pressed & PadButton::Down.mask() != 0 {
+            self.cursor = if self.cursor + 1 >= n {
+                0
+            } else {
+                self.cursor + 1
+            };
+        }
+        if pressed & PadButton::Left.mask() != 0 {
+            self.cursor = self.cursor.saturating_sub(LIST_PAGE_ROWS);
+        }
+        if pressed & PadButton::Right.mask() != 0 {
+            self.cursor = (self.cursor + LIST_PAGE_ROWS).min(n - 1);
+        }
+    }
+
+    /// The Arrange command: sort the bag rows by the rank table and
+    /// reset the list scroll (retail zeroes `_DAT_8007BB90` /
+    /// `_DAT_8007BB98` before re-opening the list window).
+    ///
+    /// The engine's bag rows carry no holes (one row per held id), so
+    /// the kernel's empty-slot sink never engages here; the visible
+    /// effect is the rank reorder.
+    // REF: FUN_801D64A8 (kernel lives in crate::menu_arrange)
+    fn arrange(&mut self) {
+        let rank = self
+            .arrange_rank
+            .as_deref()
+            .cloned()
+            .unwrap_or_else(crate::menu_arrange::ArrangeRankTable::id_order);
+        // Sort rows and the inner parallel id list together via the
+        // shared kernel over (id, count) pairs.
+        let mut pairs: Vec<(u8, u8)> = self.rows.iter().map(|r| (r.id, r.count.max(1))).collect();
+        crate::menu_arrange::arrange_bag_slots(&mut pairs, &rank);
+        let mut reordered = Vec::with_capacity(self.rows.len());
+        let mut remaining: Vec<PauseItemRow> = std::mem::take(&mut self.rows);
+        for (id, _) in pairs {
+            if let Some(at) = remaining.iter().position(|r| r.id == id) {
+                reordered.push(remaining.remove(at));
+            }
+        }
+        reordered.extend(remaining);
+        self.rows = reordered;
+        self.inner.items = self.rows.iter().map(|r| r.id).collect();
+        self.inner.refresh_filter();
+        self.cursor = 0;
+    }
+
+    /// The throw-out delete: discard the selected row's whole stack
+    /// (retail zeroes both bytes of the bag slot pair), step the hand
+    /// back when it sat on the last row, and drop back to the command
+    /// window when the bag scan comes up empty.
+    fn throw_out_selected(&mut self) {
+        if self.cursor >= self.rows.len() {
+            self.focus = PauseItemsFocus::ThrowOutList;
+            return;
+        }
+        let row = self.rows.remove(self.cursor);
+        self.inner.thrown_items.push(row.id);
+        self.inner.remove_item_at(self.cursor);
+        // Retail scroll fix-up: deleting the last list entry steps the
+        // selection (and scroll) back one row.
+        self.cursor = self.cursor.min(self.rows.len().saturating_sub(1));
+        self.focus = if self.rows.is_empty() {
+            PauseItemsFocus::Command
+        } else {
+            PauseItemsFocus::ThrowOutList
+        };
     }
 }
 
@@ -332,6 +464,23 @@ pub struct ItemsScreenModel {
     /// `true` while the use flow is picking a target - hosts overlay the
     /// target picker.
     pub target_select: bool,
+    /// The Throw Out confirm window content (descriptor id 9, renderer
+    /// `FUN_801D1B20`) - `Some` while the Yes/No prompt is open. Hosts
+    /// draw it with `engine-ui::items_throw_confirm_draws_for` over the
+    /// command window (the retail confirm slides the command window out
+    /// and window 9 in).
+    pub throw_confirm: Option<ThrowConfirmModel>,
+}
+
+/// Throw Out confirm window content (`FUN_801D1B20`).
+#[derive(Debug, Clone, Default)]
+pub struct ThrowConfirmModel {
+    /// Name of the stack about to be discarded.
+    pub name: String,
+    /// Its bag count (the whole stack is discarded).
+    pub count: u16,
+    /// 0 = Yes, 1 = No (retail defaults to No).
+    pub cursor: u8,
 }
 
 /// Item info window content (`FUN_801DCB60` / `FUN_801D0F1C`).
@@ -355,22 +504,46 @@ pub fn items_screen_model(s: &PauseItemsSession) -> ItemsScreenModel {
         .take(LIST_PAGE_ROWS)
         .map(|r| (r.name.clone(), r.count as u16))
         .collect();
-    let info = s.rows.get(cursor).map(|r| ItemsInfoModel {
-        name: r.name.clone(),
-        count: r.count as u16,
-        desc: r.desc.clone(),
-        passive: r.passive.clone(),
-    });
+    // Retail gates the info window on the staged id `DAT_801E46B0`: the
+    // command SM's init phase zeroes it, the Use / Throw Out list phases
+    // restage it from the hovered slot every frame.
+    let info = if s.focus == PauseItemsFocus::Command {
+        None
+    } else {
+        s.rows.get(cursor).map(|r| ItemsInfoModel {
+            name: r.name.clone(),
+            count: r.count as u16,
+            desc: r.desc.clone(),
+            passive: r.passive.clone(),
+        })
+    };
+    let throw_confirm = if s.focus == PauseItemsFocus::ThrowOutConfirm {
+        s.rows.get(cursor).map(|r| ThrowConfirmModel {
+            name: r.name.clone(),
+            count: r.count as u16,
+            cursor: s.confirm_cursor,
+        })
+    } else {
+        None
+    };
     ItemsScreenModel {
         page_rows,
         page: s.page(),
         pages: s.pages(),
-        focus_list: s.focus == PauseItemsFocus::List,
+        // The hand sits inside the list for the Use list and both Throw
+        // Out phases (rows drop to the grey staging-0 ink in all three).
+        focus_list: matches!(
+            s.focus,
+            PauseItemsFocus::List
+                | PauseItemsFocus::ThrowOutList
+                | PauseItemsFocus::ThrowOutConfirm
+        ),
         command_cursor: s.command_cursor,
         list_cursor_on_page: (cursor - start) as u8,
         bag_empty: s.bag_empty(),
         info,
         target_select: s.target_select(),
+        throw_confirm,
     }
 }
 
@@ -606,6 +779,137 @@ mod tests {
         s.input_pad_edge(edge(PadButton::Left));
         let m = items_screen_model(&s);
         assert_eq!(m.page, 2);
+    }
+
+    /// Throw Out walk (FUN_801D8734): command row 1 enters the discard
+    /// list; Cross opens the confirm seeded on "No"; confirming "No"
+    /// returns to the list; confirming "Yes" discards the whole stack,
+    /// records it on the inner session and returns to the list.
+    #[test]
+    fn items_throw_out_confirm_defaults_no_and_discards_stack() {
+        let mut s = items_session(&[(0x77, 3), (0x78, 2)]);
+        s.input_pad_edge(edge(PadButton::Down)); // -> Throw Out
+        s.input_pad_edge(edge(PadButton::Cross));
+        assert_eq!(s.focus, PauseItemsFocus::ThrowOutList);
+        s.input_pad_edge(edge(PadButton::Cross));
+        assert_eq!(s.focus, PauseItemsFocus::ThrowOutConfirm);
+        assert_eq!(s.confirm_cursor, 1, "retail seeds the confirm on No");
+        // Confirm "No": nothing discarded, back to the list.
+        s.input_pad_edge(edge(PadButton::Cross));
+        assert_eq!(s.focus, PauseItemsFocus::ThrowOutList);
+        assert_eq!(s.rows.len(), 2);
+        // Re-open, toggle to "Yes", confirm: stack 0x77 goes.
+        s.input_pad_edge(edge(PadButton::Cross));
+        s.input_pad_edge(edge(PadButton::Up));
+        assert_eq!(s.confirm_cursor, 0);
+        s.input_pad_edge(edge(PadButton::Cross));
+        assert_eq!(s.focus, PauseItemsFocus::ThrowOutList);
+        assert_eq!(s.rows.len(), 1);
+        assert_eq!(s.rows[0].id, 0x78);
+        assert_eq!(s.inner.thrown_items, vec![0x77]);
+        assert_eq!(s.inner.items, vec![0x78]);
+    }
+
+    /// The throw-out view model stages the confirm window content, and
+    /// the confirm phases keep the list focus (grey rows).
+    #[test]
+    fn items_throw_confirm_model_content() {
+        let mut s = items_session(&[(0x77, 12)]);
+        s.input_pad_edge(edge(PadButton::Down));
+        s.input_pad_edge(edge(PadButton::Cross));
+        let m = items_screen_model(&s);
+        assert!(m.focus_list);
+        assert!(m.throw_confirm.is_none());
+        s.input_pad_edge(edge(PadButton::Cross));
+        let m = items_screen_model(&s);
+        let confirm = m.throw_confirm.expect("confirm open");
+        assert_eq!(confirm.name, "Item 77");
+        assert_eq!(confirm.count, 12);
+        assert_eq!(confirm.cursor, 1);
+        assert!(m.focus_list);
+    }
+
+    /// Discarding the last remaining stack drops the hand back onto the
+    /// command window (the retail bag rescan finds nothing and returns
+    /// to submenu 5); discarding the last *row* steps the hand back.
+    #[test]
+    fn items_throw_out_empties_bag_back_to_command() {
+        let mut s = items_session(&[(0x77, 1), (0x78, 1)]);
+        s.input_pad_edge(edge(PadButton::Down));
+        s.input_pad_edge(edge(PadButton::Cross));
+        // Hand on the last row.
+        s.input_pad_edge(edge(PadButton::Down));
+        assert_eq!(s.list_cursor(), 1);
+        s.input_pad_edge(edge(PadButton::Cross));
+        s.input_pad_edge(edge(PadButton::Up)); // Yes
+        s.input_pad_edge(edge(PadButton::Cross));
+        // Last-row fix-up: the hand stepped back onto the remaining row.
+        assert_eq!(s.focus, PauseItemsFocus::ThrowOutList);
+        assert_eq!(s.list_cursor(), 0);
+        // Discard the final stack: back to the command window.
+        s.input_pad_edge(edge(PadButton::Cross));
+        s.input_pad_edge(edge(PadButton::Up));
+        s.input_pad_edge(edge(PadButton::Cross));
+        assert_eq!(s.focus, PauseItemsFocus::Command);
+        assert!(s.bag_empty());
+        assert_eq!(s.inner.thrown_items, vec![0x78, 0x77]);
+        assert!(!s.is_done(), "the screen stays open on the command window");
+    }
+
+    /// Circle backs out of the confirm and out of the throw-out list
+    /// without discarding.
+    #[test]
+    fn items_throw_out_circle_backs_out() {
+        let mut s = items_session(&[(0x77, 3)]);
+        s.input_pad_edge(edge(PadButton::Down));
+        s.input_pad_edge(edge(PadButton::Cross));
+        s.input_pad_edge(edge(PadButton::Cross));
+        s.input_pad_edge(edge(PadButton::Circle));
+        assert_eq!(s.focus, PauseItemsFocus::ThrowOutList);
+        s.input_pad_edge(edge(PadButton::Circle));
+        assert_eq!(s.focus, PauseItemsFocus::Command);
+        assert!(s.inner.thrown_items.is_empty());
+        assert_eq!(s.rows.len(), 1);
+    }
+
+    /// Arrange (FUN_801D64A8): rows re-sort by the rank table and the
+    /// list scroll resets; the inner id list stays parallel.
+    #[test]
+    fn items_arrange_sorts_rows_by_rank_table() {
+        use crate::menu_arrange::ArrangeRankTable;
+        let mut s = items_session(&[(0x10, 1), (0x20, 2), (0x30, 3)]);
+        // Rank order reverses the id order: 0x30 first, 0x10 last.
+        let mut order = [0u8; 0x100];
+        order[0] = 0x30;
+        order[1] = 0x20;
+        order[2] = 0x10;
+        s = s.with_arrange_rank(Some(ArrangeRankTable::from_display_order(&order)));
+        // Park the hand mid-list first (via Use focus), then back out and
+        // Arrange: the cursor resets to the top.
+        s.input_pad_edge(edge(PadButton::Cross));
+        s.input_pad_edge(edge(PadButton::Down));
+        s.input_pad_edge(edge(PadButton::Circle));
+        s.input_pad_edge(edge(PadButton::Down));
+        s.input_pad_edge(edge(PadButton::Down)); // -> Arrange
+        s.input_pad_edge(edge(PadButton::Cross));
+        assert_eq!(s.focus, PauseItemsFocus::Command);
+        let ids: Vec<u8> = s.rows.iter().map(|r| r.id).collect();
+        assert_eq!(ids, vec![0x30, 0x20, 0x10]);
+        assert_eq!(s.inner.items, ids);
+        assert_eq!(s.list_cursor(), 0, "retail zeroes the list scroll");
+    }
+
+    /// An empty bag buzzes every command row (the FUN_801D7C00 bag scan
+    /// gates the dispatch, not just "Use").
+    #[test]
+    fn items_empty_bag_refuses_throw_and_arrange() {
+        let mut s = items_session(&[]);
+        s.input_pad_edge(edge(PadButton::Down));
+        s.input_pad_edge(edge(PadButton::Cross));
+        assert_eq!(s.focus, PauseItemsFocus::Command);
+        s.input_pad_edge(edge(PadButton::Down));
+        s.input_pad_edge(edge(PadButton::Cross));
+        assert_eq!(s.focus, PauseItemsFocus::Command);
     }
 
     /// The info model carries the hovered row's real count + description.

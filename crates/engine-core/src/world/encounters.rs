@@ -123,6 +123,17 @@ impl World {
         self.menu_text = Some(crate::pause_screens::MenuTextTables::from_scus(scus));
     }
 
+    /// Install the menu-overlay data tables (PROT 0899 as-loaded image):
+    /// currently the Items screen's Arrange sort ranks
+    /// (`DAT_801E4A88`, [`crate::menu_arrange`]). Best-effort - a short
+    /// image leaves the fallback in place. Boot wires this alongside the
+    /// window-descriptor parse when the overlay entry is reachable.
+    pub fn install_menu_overlay_tables(&mut self, overlay: &[u8]) {
+        if let Ok(rank) = crate::menu_arrange::parse_arrange_rank_table(overlay) {
+            self.menu_arrange_rank = Some(rank);
+        }
+    }
+
     /// Rebuild every party member's ability bitfield from their equipped
     /// items, plus the party-global mask.
     ///
