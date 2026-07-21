@@ -239,9 +239,10 @@ impl PauseItemsSession {
     ///   "Throw Out" enters the discard list (submenu 7), on "Arrange"
     ///   runs the bag sort (`FUN_801D64A8`) and resets the list scroll.
     ///   Circle/Triangle close the screen.
-    /// - **List focus** (Use): Up/Down move the hand, Left/Right flip
-    ///   12-row pages, Cross confirms into the use flow, Circle returns
-    ///   to the command window.
+    /// - **List focus** (Use): Up/Down move the hand with the retail
+    ///   kernel's page-local wrap, Left/Right flip 12-row pages (the
+    ///   only scroll - [`list_kernel_navigate`]), Cross confirms into
+    ///   the use flow, Circle returns to the command window.
     /// - **Throw Out list** (`FUN_801D8734` phase 2): same navigation;
     ///   Cross opens the Yes/No confirm seeded on "No"; Circle returns
     ///   to the command window.
@@ -346,33 +347,10 @@ impl PauseItemsSession {
         }
     }
 
-    /// Shared list navigation: Up/Down move the hand (wrapping),
-    /// Left/Right flip 12-row pages (clamped).
+    /// Shared list navigation - the retail kind-4 list kernel's pad
+    /// decode (see [`list_kernel_navigate`]).
     fn list_navigate(&mut self, pressed: u16) {
-        let n = self.rows.len();
-        if n == 0 {
-            return;
-        }
-        if pressed & PadButton::Up.mask() != 0 {
-            self.cursor = if self.cursor == 0 {
-                n - 1
-            } else {
-                self.cursor - 1
-            };
-        }
-        if pressed & PadButton::Down.mask() != 0 {
-            self.cursor = if self.cursor + 1 >= n {
-                0
-            } else {
-                self.cursor + 1
-            };
-        }
-        if pressed & PadButton::Left.mask() != 0 {
-            self.cursor = self.cursor.saturating_sub(LIST_PAGE_ROWS);
-        }
-        if pressed & PadButton::Right.mask() != 0 {
-            self.cursor = (self.cursor + LIST_PAGE_ROWS).min(n - 1);
-        }
+        self.cursor = list_kernel_navigate(self.cursor, self.rows.len(), pressed);
     }
 
     /// The Arrange command: sort the bag rows by the rank table and
@@ -428,6 +406,66 @@ impl PauseItemsSession {
             PauseItemsFocus::ThrowOutList
         };
     }
+}
+
+/// The retail list-window pad decode - the SCUS kind-4 list kernel
+/// `FUN_80032A44`'s navigation phase, in flat-cursor form (the kernel
+/// keeps `scroll top` (`node+0x0`) and `selected` (`node+0x6`)
+/// separately; page starts stay `LIST_PAGE_ROWS`-aligned under these
+/// moves, so `top = cursor - cursor % ROWS` is an invariant):
+///
+/// - **Up** (held `0x1000`, `80032ae8..80032c74`): selection `-1` while
+///   above the page top; at the page top it wraps to the page's last
+///   row (`80032b28`: `sel = top + visible - 1`, clamped to the row
+///   count at `80032c5c..80032c6c`).
+/// - **Down** (`0x4000`, `80032b44..80032b84`): selection `+1`; stepping
+///   past the page bottom (`sel+1 == top+visible`, `80032b68`) or past
+///   the last row (`sel+1 == count`, `80032b78` fallthrough) wraps back
+///   to the page top (`80032b80` restores `node+0x0`).
+/// - **Left** (`0x8000`, `80032b90..80032c0c`): page up - only while
+///   `top > 0`; both top and selection step back one page.
+/// - **Right** (`0x2000`, `80032c1c..80032c50`): page down - only while
+///   `top + visible < count`; selection clamps to the last row.
+///
+/// Up/Down never scroll - the only scrolling is the Left/Right page
+/// flip, which is why the retail lists read as fixed 12-row pages.
+///
+/// PORT: FUN_80032A44 (kind-4 list kernel - navigation phase)
+pub fn list_kernel_navigate(cursor: usize, n: usize, pressed: u16) -> usize {
+    if n == 0 {
+        return 0;
+    }
+    let mut c = cursor.min(n - 1);
+    let rows = LIST_PAGE_ROWS;
+    let top = c - c % rows;
+    if pressed & PadButton::Up.mask() != 0 {
+        c = if c > top {
+            c - 1
+        } else {
+            (top + rows).min(n) - 1
+        };
+    }
+    if pressed & PadButton::Down.mask() != 0 {
+        let top = c - c % rows;
+        c = if (c + 1).is_multiple_of(rows) || c + 1 == n {
+            top
+        } else {
+            c + 1
+        };
+    }
+    if pressed & PadButton::Left.mask() != 0 {
+        let top = c - c % rows;
+        if top > 0 {
+            c -= rows;
+        }
+    }
+    if pressed & PadButton::Right.mask() != 0 {
+        let top = c - c % rows;
+        if top + rows < n {
+            c = (c + rows).min(n - 1);
+        }
+    }
+    c
 }
 
 fn simple_inventory_input(pressed: u16) -> Option<InventoryUseInput> {
@@ -692,6 +730,283 @@ pub fn magic_screen_model(s: &SpellMenuSession, text: Option<&MenuTextTables>) -
         info,
         target_select,
     }
+}
+
+/// The window-14 target-panel preview mode for a picked item - the
+/// retail preview word `DAT_801E46CC` derivation: only an item whose
+/// record kind byte (`0x80074368 + id*0xC + 0`) is `2` **and** whose
+/// item-effect class (`0x800752C0 + eff*4 + 0`) is `6` (the
+/// permanent-stat Waters) previews; the effect arg (`+1`) maps `0 -> 1`
+/// (Life Water), `1 -> 2` (Power Water / ATK), `2 -> 3` (Guardian
+/// Water / UDF+LDF), `3 -> 4` (Swift Water / SPD), `4 -> 5` (Wisdom
+/// Water / INT), `5 -> 1` (Magic Water shares the HP/MP panel).
+/// Everything else is mode `0` - the plain `cur/max` panel.
+///
+/// PORT: FUN_801D6A54 (target-panel preview-mode derivation)
+pub fn target_panel_mode(item_kind: u8, effect_class: u8, effect_arg: u8) -> u32 {
+    if item_kind != 2 || effect_class != 6 {
+        return 0;
+    }
+    match effect_arg {
+        0 | 5 => 1,
+        1 => 2,
+        2 => 3,
+        3 => 4,
+        4 => 5,
+        _ => 0,
+    }
+}
+
+/// Fixed bag ids the three special Use routes consume (`FUN_80042310` /
+/// `FUN_80043048` calls with literal ids in the submenu handlers).
+pub const DOOR_OF_LIGHT_ITEM_ID: u8 = 0x88;
+pub const DOOR_OF_WIND_ITEM_ID: u8 = 0x89;
+pub const INCENSE_ITEM_ID: u8 = 0x8A;
+
+/// Menu exit codes the special routes hand to the outer menu state
+/// machine (`_DAT_8007B43C`, with the `DAT_801E46A0 = 0xF2` fade): `4` =
+/// the Door of Light dungeon-escape handoff, `5` = the Door of Wind
+/// world-map warp.
+pub const MENU_EXIT_CODE_FIELD_ESCAPE: u32 = 4;
+pub const MENU_EXIT_CODE_WORLD_MAP_WARP: u32 = 5;
+
+/// Which submenu a confirmed Use-list pick routes to - the
+/// `FUN_801D7E50` phase-2 dispatch on the picked item's effect class
+/// (`801d7f80..801d7fd8`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UseRoute {
+    /// Effect flag bit `0x20` set (all-party): submenu 9
+    /// (`FUN_801D7FF8`) - the target panel opens in all-row hand mode
+    /// with no row navigation.
+    ApplyAll,
+    /// Default route: submenu 0xA (`FUN_801D8308`) - single-target pick
+    /// over the party rows.
+    ApplySingle,
+    /// Effect class `0x80` (Door of Light): submenu 0xB
+    /// (`FUN_801D8A58`).
+    DoorOfLight,
+    /// Effect class `0x81` (Door of Wind): submenu 0xC
+    /// (`FUN_801D8B90`).
+    DoorOfWind,
+    /// Effect class `0x82` (Incense): submenu 0xD (`FUN_801D8D94`).
+    Incense,
+}
+
+/// Route a confirmed Use pick by its item-effect record: class byte
+/// `0x80`/`0x81`/`0x82` take the dedicated flows; anything else goes to
+/// the all-party apply when the flag byte (`+2`) has bit `0x20`, else
+/// the single-target apply.
+///
+/// PORT: FUN_801D7E50 (Use-list phase-2 effect-class dispatch)
+pub fn use_route_for_effect(effect_class: u8, effect_flags: u8) -> UseRoute {
+    match effect_class {
+        0x80 => UseRoute::DoorOfLight,
+        0x81 => UseRoute::DoorOfWind,
+        0x82 => UseRoute::Incense,
+        _ if effect_flags & 0x20 != 0 => UseRoute::ApplyAll,
+        _ => UseRoute::ApplySingle,
+    }
+}
+
+/// Terminal result of a special Use route.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SpecialUseOutcome {
+    /// Backed out - retail returns to the Use list (submenu 6) without
+    /// consuming anything.
+    Cancelled,
+    /// Door of Light confirmed: one `0x88` consumed; the menu closes
+    /// with exit code [`MENU_EXIT_CODE_FIELD_ESCAPE`] (the field-side
+    /// dungeon-escape handoff).
+    FieldEscape,
+    /// Door of Wind destination picked: one `0x89` consumed; the menu
+    /// closes with exit code [`MENU_EXIT_CODE_WORLD_MAP_WARP`].
+    /// `landmark` indexes the quick-travel placement table (retail
+    /// `0x80073A98`, 6-byte records - `legaia_asset::worldmap_menu`);
+    /// retail stages record `+2`/`+4`/`+5` into the world-state words
+    /// `0x80084628`/`0x80084624`/`0x8008462C` before the handoff.
+    Warp { landmark: usize },
+    /// Incense confirmed: one `0x8A` consumed and the class-`0x82`
+    /// encounter-suppression effect applied through the SCUS item-effect
+    /// applier (`FUN_800402F4`); the flow drops back to the Use list.
+    EncounterSuppress,
+}
+
+/// Phase of a [`SpecialUseSession`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SpecialUsePhase {
+    /// Yes/No confirm (Door of Light / Incense). Unlike the Throw Out
+    /// confirm, retail seeds the cursor to **0 - "Yes"**
+    /// (`801d8ab4` / `801d8df0` zero `DAT_801E46D0`).
+    Confirm,
+    /// Door of Wind destination list (window 11, driven by the kind-4
+    /// list kernel; the hand hides while the kernel idles).
+    PickDestination,
+    Done(SpecialUseOutcome),
+}
+
+/// State machine for the three special Use routes (submenus
+/// 0xB / 0xC / 0xD). The session is pure routing - the host applies the
+/// outcome (consume the fixed item id, close the menu with the exit
+/// code, or apply the encounter suppression).
+///
+/// PORT: FUN_801D8A58 (Door of Light confirm + exit-code 4 handoff)
+/// PORT: FUN_801D8B90 (Door of Wind destination list + exit-code 5 warp)
+/// PORT: FUN_801D8D94 (Incense confirm + class-0x82 apply)
+pub struct SpecialUseSession {
+    pub route: UseRoute,
+    /// Destination names for the Door of Wind list (unlocked landmarks,
+    /// in placement-table order).
+    pub landmarks: Vec<String>,
+    /// Confirm row (0 = Yes) or destination row.
+    pub cursor: usize,
+    pub phase: SpecialUsePhase,
+}
+
+impl SpecialUseSession {
+    /// Start the route's flow. `DoorOfWind` opens the destination list;
+    /// `DoorOfLight` / `Incense` open the Yes/No confirm seeded on Yes.
+    /// (`ApplyAll` / `ApplySingle` are not special routes - they keep
+    /// the target-panel flow and construct no session here.)
+    pub fn new(route: UseRoute, landmarks: Vec<String>) -> Self {
+        let phase = match route {
+            UseRoute::DoorOfWind => SpecialUsePhase::PickDestination,
+            _ => SpecialUsePhase::Confirm,
+        };
+        Self {
+            route,
+            landmarks,
+            cursor: 0,
+            phase,
+        }
+    }
+
+    /// The fixed bag id the finished route consumed, if any.
+    pub fn consumed_item_id(&self) -> Option<u8> {
+        match &self.phase {
+            SpecialUsePhase::Done(SpecialUseOutcome::FieldEscape) => Some(DOOR_OF_LIGHT_ITEM_ID),
+            SpecialUsePhase::Done(SpecialUseOutcome::Warp { .. }) => Some(DOOR_OF_WIND_ITEM_ID),
+            SpecialUsePhase::Done(SpecialUseOutcome::EncounterSuppress) => Some(INCENSE_ITEM_ID),
+            _ => None,
+        }
+    }
+
+    /// The menu exit code the finished route hands to the outer menu SM
+    /// (`_DAT_8007B43C`), if the route exits the menu.
+    pub fn exit_code(&self) -> Option<u32> {
+        match &self.phase {
+            SpecialUsePhase::Done(SpecialUseOutcome::FieldEscape) => {
+                Some(MENU_EXIT_CODE_FIELD_ESCAPE)
+            }
+            SpecialUsePhase::Done(SpecialUseOutcome::Warp { .. }) => {
+                Some(MENU_EXIT_CODE_WORLD_MAP_WARP)
+            }
+            _ => None,
+        }
+    }
+
+    /// Drive one frame from an edge-triggered PSX pad word.
+    pub fn input_pad_edge(&mut self, pressed: u16) {
+        let up = pressed & PadButton::Up.mask() != 0;
+        let down = pressed & PadButton::Down.mask() != 0;
+        let cross = pressed & PadButton::Cross.mask() != 0;
+        let circle = pressed & PadButton::Circle.mask() != 0;
+        match self.phase {
+            SpecialUsePhase::Confirm => {
+                if circle {
+                    self.phase = SpecialUsePhase::Done(SpecialUseOutcome::Cancelled);
+                    return;
+                }
+                // FUN_801D688C over 2 rows with wrap.
+                if up || down {
+                    self.cursor ^= 1;
+                }
+                if cross {
+                    self.phase = if self.cursor == 0 {
+                        match self.route {
+                            UseRoute::Incense => {
+                                SpecialUsePhase::Done(SpecialUseOutcome::EncounterSuppress)
+                            }
+                            _ => SpecialUsePhase::Done(SpecialUseOutcome::FieldEscape),
+                        }
+                    } else {
+                        // "No" confirms back to the Use list.
+                        SpecialUsePhase::Done(SpecialUseOutcome::Cancelled)
+                    };
+                }
+            }
+            SpecialUsePhase::PickDestination => {
+                if circle {
+                    // Retail restores the saved Use-list scroll
+                    // (`DAT_801EF070/74`) on the way back.
+                    self.phase = SpecialUsePhase::Done(SpecialUseOutcome::Cancelled);
+                    return;
+                }
+                self.cursor = list_kernel_navigate(self.cursor, self.landmarks.len(), pressed);
+                if cross && self.cursor < self.landmarks.len() {
+                    self.phase = SpecialUsePhase::Done(SpecialUseOutcome::Warp {
+                        landmark: self.cursor,
+                    });
+                }
+            }
+            SpecialUsePhase::Done(_) => {}
+        }
+    }
+}
+
+/// One roster row of the window-14 target panel view model.
+#[derive(Debug, Clone, Default)]
+pub struct TargetPanelMemberModel {
+    pub name: String,
+    /// Record `+0x130`. The inner use-flow's target rows carry no level;
+    /// hosts with party records overwrite this (0 draws as a blank-ish
+    /// `0` otherwise).
+    pub level: u8,
+    pub hp: u16,
+    pub hp_max: u16,
+    pub mp: u16,
+    pub mp_max: u16,
+}
+
+/// Owned view model of the window-14 party target panel - maps onto the
+/// engine-ui `TargetPanelView` (renderer `FUN_801D0520`).
+#[derive(Debug, Clone, Default)]
+pub struct TargetPanelModel {
+    pub members: Vec<TargetPanelMemberModel>,
+    /// The preview word `DAT_801E46CC` value (0..=5, see
+    /// [`target_panel_mode`]).
+    pub mode: u32,
+    pub cursor_row: u8,
+    /// All-party pick (retail cursor bit `0x2000` - hand on every row).
+    pub all_targets: bool,
+}
+
+/// Assemble the target-panel view model while the Items screen's use
+/// flow is in target select. `mode` is the retail preview word for the
+/// staged item ([`target_panel_mode`]; pass 0 without disc effect
+/// tables - the plain `cur/max` panel).
+pub fn target_panel_model(s: &PauseItemsSession, mode: u32) -> Option<TargetPanelModel> {
+    let InventoryUseState::TargetSelect { cursor, .. } = &s.inner.state else {
+        return None;
+    };
+    let members = s
+        .inner
+        .targets
+        .iter()
+        .map(|t| TargetPanelMemberModel {
+            name: t.name.clone(),
+            level: 0,
+            hp: t.hp,
+            hp_max: t.hp_max,
+            mp: t.mp,
+            mp_max: t.mp_max,
+        })
+        .collect();
+    Some(TargetPanelModel {
+        members,
+        mode,
+        cursor_row: *cursor as u8,
+        all_targets: false,
+    })
 }
 
 #[cfg(test)]
@@ -1066,6 +1381,142 @@ mod tests {
             .info
             .expect("hovered spell staged")
             .mp_cost
+    }
+
+    /// The kind-4 list kernel's pad decode (FUN_80032A44): Up/Down wrap
+    /// within the visible page, Left/Right are the only scroll.
+    #[test]
+    fn list_kernel_navigate_page_local_wrap() {
+        let n = 30; // pages: 0..12, 12..24, 24..30
+        let up = edge(PadButton::Up);
+        let down = edge(PadButton::Down);
+        let left = edge(PadButton::Left);
+        let right = edge(PadButton::Right);
+        // Up above the page top steps back one row.
+        assert_eq!(list_kernel_navigate(13, n, up), 12);
+        // Up at a page top wraps to that page's last row.
+        assert_eq!(list_kernel_navigate(12, n, up), 23);
+        // ...clamped to the row count on the last partial page.
+        assert_eq!(list_kernel_navigate(24, n, up), 29);
+        // Down steps forward; past the page bottom wraps to the page top.
+        assert_eq!(list_kernel_navigate(10, n, down), 11);
+        assert_eq!(list_kernel_navigate(11, n, down), 0);
+        // Down past the last row wraps to the last page's top.
+        assert_eq!(list_kernel_navigate(29, n, down), 24);
+        // Left only pages while scrolled; Right only while rows remain.
+        assert_eq!(list_kernel_navigate(5, n, left), 5);
+        assert_eq!(list_kernel_navigate(17, n, left), 5);
+        assert_eq!(list_kernel_navigate(5, n, right), 17);
+        assert_eq!(list_kernel_navigate(26, n, right), 26);
+        // Right clamps the selection to the last row.
+        assert_eq!(list_kernel_navigate(23, n, right), 29);
+        // Empty list is inert.
+        assert_eq!(list_kernel_navigate(0, 0, down), 0);
+    }
+
+    /// FUN_801D7E50 phase-2 dispatch: classes 0x80..0x82 take the
+    /// dedicated routes, flag bit 0x20 picks the all-party apply.
+    #[test]
+    fn use_route_dispatch_matches_retail() {
+        assert_eq!(use_route_for_effect(0x80, 0x82), UseRoute::DoorOfLight);
+        assert_eq!(use_route_for_effect(0x81, 0x82), UseRoute::DoorOfWind);
+        assert_eq!(use_route_for_effect(0x82, 0x82), UseRoute::Incense);
+        assert_eq!(use_route_for_effect(0x00, 0xA2), UseRoute::ApplyAll);
+        assert_eq!(use_route_for_effect(0x00, 0x82), UseRoute::ApplySingle);
+        assert_eq!(use_route_for_effect(0x06, 0x86), UseRoute::ApplySingle);
+    }
+
+    /// FUN_801D6A54: only kind-2 items with effect class 6 preview;
+    /// args 0/5 share the HP/MP panel, 1..=4 map onto modes 2..=5.
+    #[test]
+    fn target_panel_mode_matches_retail_map() {
+        assert_eq!(target_panel_mode(2, 6, 0), 1); // Life Water
+        assert_eq!(target_panel_mode(2, 6, 5), 1); // Magic Water
+        assert_eq!(target_panel_mode(2, 6, 1), 2); // Power Water
+        assert_eq!(target_panel_mode(2, 6, 2), 3); // Guardian Water
+        assert_eq!(target_panel_mode(2, 6, 3), 4); // Swift Water
+        assert_eq!(target_panel_mode(2, 6, 4), 5); // Wisdom Water
+        assert_eq!(target_panel_mode(2, 6, 6), 0);
+        assert_eq!(target_panel_mode(2, 0, 0), 0); // healing item
+        assert_eq!(target_panel_mode(0, 6, 0), 0); // wrong kind byte
+    }
+
+    /// Door of Light (FUN_801D8A58): Yes/No confirm seeded on Yes;
+    /// confirming Yes consumes 0x88 and exits with code 4; "No" and
+    /// Circle cancel without consuming.
+    #[test]
+    fn special_use_door_of_light_confirm() {
+        let mut s = SpecialUseSession::new(UseRoute::DoorOfLight, vec![]);
+        assert_eq!(s.phase, SpecialUsePhase::Confirm);
+        assert_eq!(s.cursor, 0, "retail seeds the confirm on Yes");
+        s.input_pad_edge(edge(PadButton::Cross));
+        assert_eq!(
+            s.phase,
+            SpecialUsePhase::Done(SpecialUseOutcome::FieldEscape)
+        );
+        assert_eq!(s.consumed_item_id(), Some(DOOR_OF_LIGHT_ITEM_ID));
+        assert_eq!(s.exit_code(), Some(MENU_EXIT_CODE_FIELD_ESCAPE));
+
+        let mut s = SpecialUseSession::new(UseRoute::DoorOfLight, vec![]);
+        s.input_pad_edge(edge(PadButton::Down)); // -> No
+        s.input_pad_edge(edge(PadButton::Cross));
+        assert_eq!(s.phase, SpecialUsePhase::Done(SpecialUseOutcome::Cancelled));
+        assert_eq!(s.consumed_item_id(), None);
+        assert_eq!(s.exit_code(), None);
+    }
+
+    /// Incense (FUN_801D8D94): Yes consumes 0x8A and applies the
+    /// encounter suppression without exiting the menu.
+    #[test]
+    fn special_use_incense_confirm() {
+        let mut s = SpecialUseSession::new(UseRoute::Incense, vec![]);
+        s.input_pad_edge(edge(PadButton::Cross));
+        assert_eq!(
+            s.phase,
+            SpecialUsePhase::Done(SpecialUseOutcome::EncounterSuppress)
+        );
+        assert_eq!(s.consumed_item_id(), Some(INCENSE_ITEM_ID));
+        assert_eq!(s.exit_code(), None, "Incense drops back to the Use list");
+    }
+
+    /// Door of Wind (FUN_801D8B90): the destination list opens directly;
+    /// a pick consumes 0x89 and exits with the world-map warp code;
+    /// Circle cancels back to the Use list.
+    #[test]
+    fn special_use_door_of_wind_pick() {
+        let towns = vec!["Rim Elm".to_string(), "Drake Castle".to_string()];
+        let mut s = SpecialUseSession::new(UseRoute::DoorOfWind, towns.clone());
+        assert_eq!(s.phase, SpecialUsePhase::PickDestination);
+        s.input_pad_edge(edge(PadButton::Down));
+        s.input_pad_edge(edge(PadButton::Cross));
+        assert_eq!(
+            s.phase,
+            SpecialUsePhase::Done(SpecialUseOutcome::Warp { landmark: 1 })
+        );
+        assert_eq!(s.consumed_item_id(), Some(DOOR_OF_WIND_ITEM_ID));
+        assert_eq!(s.exit_code(), Some(MENU_EXIT_CODE_WORLD_MAP_WARP));
+
+        let mut s = SpecialUseSession::new(UseRoute::DoorOfWind, towns);
+        s.input_pad_edge(edge(PadButton::Circle));
+        assert_eq!(s.phase, SpecialUsePhase::Done(SpecialUseOutcome::Cancelled));
+    }
+
+    /// The target-panel model assembles from the inner flow's target
+    /// rows while (and only while) the use flow is in target select.
+    #[test]
+    fn target_panel_model_from_target_select() {
+        let mut s = items_session(&[(0x77, 3)]);
+        assert!(target_panel_model(&s, 0).is_none());
+        s.input_pad_edge(edge(PadButton::Cross)); // -> list
+        s.input_pad_edge(edge(PadButton::Cross)); // confirm -> target select
+        assert!(s.target_select());
+        let m = target_panel_model(&s, 1).expect("target select stages the panel");
+        assert_eq!(m.mode, 1);
+        assert_eq!(m.members.len(), 1);
+        assert_eq!(m.members[0].name, "Vahn");
+        assert_eq!(m.members[0].hp, 50);
+        assert_eq!(m.members[0].hp_max, 100);
+        assert!(!m.all_targets);
     }
 
     #[test]

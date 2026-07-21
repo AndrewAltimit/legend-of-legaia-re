@@ -23,5 +23,8 @@ pub use pause_lists::*;
 mod equipment;
 pub use equipment::*;
 
+mod target_panel;
+pub use target_panel::*;
+
 mod arts_editor;
 pub use arts_editor::*;
