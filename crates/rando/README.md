@@ -37,6 +37,7 @@ full design.
   - [Element affinity](#element-affinity)
   - [Spell cost](#spell-cost)
   - [Equipment bonuses](#equipment-bonuses)
+  - [Equip mask](#equip-mask)
   - [Weapon specialty](#weapon-specialty)
   - [Arts](#arts)
   - [Doors](#doors)
@@ -480,6 +481,29 @@ Equipment passive stat-bonus randomizer (`equip_bonus` module).
 - The apply path emits a same-size in-place SCUS patch via `patch_named_file`.
   The public `equip_stats::bonus_table_file_offset` + `EquipStatTable::rows`
   resolve the table.
+
+## Equip mask
+
+Equip-character-mask randomizer (`equip_mask` module) - **who** can wear each
+piece of gear.
+
+- Redistributes the `+6` equip-character mask of that same bonus table (`1`
+  Vahn, `2` Noa, `4` Gala, `7` = any). `plan_mask_shuffle` groups the rows by
+  their `+7` slot category and permutes the masks within each category
+  (`Shuffle`, multiset-preserving) or draws each from the category pool
+  (`Random`). Only the `+6` byte moves - disjoint from the [equipment
+  bonuses](#equipment-bonuses) stat pass, so the two compose (run both and a
+  shuffled-stat sword also lands on a shuffled owner).
+- Grouping by slot category keeps each character's *count* of equippable weapons
+  / body / head / footwear constant, so a character can never be left with zero
+  equippable gear in a slot. Operates on bonus **rows** (not item ids) and skips
+  rows no equippable item references, so a garbage row can't hand a real item an
+  unequippable (zero) mask.
+- The apply path (`apply::randomize_equip_masks`) emits a same-size in-place SCUS
+  patch via `patch_named_file`. The engine reads the same `+6` byte
+  (`engine-core::equipment::DiscEquipInfo::can_equip`), so a patched disc re-gates
+  each character's equip picker. `legaia-rando equip-bonuses` lists the current
+  mask (`V/N/G` / `any`) beside each row.
 
 ## Weapon specialty
 
@@ -953,9 +977,11 @@ legaia-rando verify --input DISC.bin --patch run.ppf
 
 - `--drops` / `--encounters` / `--chests` / `--shops` / `--casino` / `--steals` /
   `--arts` / `--doors` each take `shuffle` / `random` / `none`.
-- The battle-tuning + equipment-bonus passes - `--monster-stats` / `--move-power` /
-  `--element-affinity` / `--spell-cost` / `--equip-bonus` - each also take
-  `shuffle` / `random` / `none`.
+- The battle-tuning + equipment passes - `--monster-stats` / `--move-power` /
+  `--element-affinity` / `--spell-cost` / `--equip-bonus` / `--equip-mask` - each
+  also take `shuffle` / `random` / `none`. `--equip-bonus` and `--equip-mask` edit
+  disjoint bytes of the equipment table (stat tuple vs. equip mask), so they
+  compose.
 - `--equipment-drops` injects a low-chance bonus equipment drop into the
   battle-end reward routine - granted on top of `--drops`, never disturbing it.
   `--equipment-drop-chance N` sets the per-battle percent (default 5).
@@ -1054,9 +1080,12 @@ directory record moves.
   enumerate, shuffle preserves the multiset/counts, casino preserves the
   prize set); and the item-price edits (the 13 chest-equipment items get their
   reviewed values, the sellable pool excludes quest ids, and a shop `Random`
-  pass only stocks priced items); and an equipment-bonus shuffle asserting each
+  pass only stocks priced items); an equipment-bonus shuffle asserting each
   slot category's stat-tuple multiset is preserved while every row's
-  passive/mask/slot tail stays byte-identical.
+  passive/mask/slot tail stays byte-identical; and an equip-mask shuffle
+  asserting each slot category's `+6` mask multiset is preserved, every non-`+6`
+  byte untouched, no referenced row left unequippable, and that it composes with
+  the stat pass.
 
 ```bash
 cargo test -p legaia-rando                                   # synthetic only

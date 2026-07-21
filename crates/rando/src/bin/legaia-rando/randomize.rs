@@ -46,6 +46,7 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     let element_affinity_mode = args.element_affinity.mode();
     let spell_cost_mode = args.spell_cost.mode();
     let equip_bonus_mode = args.equip_bonus.mode();
+    let equip_mask_mode = args.equip_mask.mode();
 
     println!("seed: {seed} (0x{seed:016X})");
     // Manifest lines accumulate the run's options + outcome for reproducibility.
@@ -467,6 +468,16 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     } else {
         println!("equip bonuses: untouched");
         manifest.push("equip_bonus = \"none\"".to_string());
+    }
+
+    if let Some(equip_mask_mode) = equip_mask_mode {
+        let changed = apply::randomize_equip_masks(&mut patcher, seed, equip_mask_mode)?;
+        println!("equip masks: {changed} bonus row(s) changed ({equip_mask_mode:?})");
+        manifest.push(format!("equip_mask = {:?}", mode_str(equip_mask_mode)));
+        manifest.push(format!("equip_mask_changed = {changed}"));
+    } else {
+        println!("equip masks: untouched");
+        manifest.push("equip_mask = \"none\"".to_string());
     }
 
     if let Some(steal_mode) = steal_mode {

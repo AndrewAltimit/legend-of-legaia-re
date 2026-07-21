@@ -210,6 +210,8 @@ pub struct EquipBonusRow {
     pub slot: &'static str,
     /// The five stat bonuses `[INT, ATK, UDF, LDF, SPD]` (`+0..+4`).
     pub stats: [u8; 5],
+    /// Equip-character mask (`+6`): bit `1` Vahn, `2` Noa, `4` Gala; `7` = any.
+    pub mask: u8,
     /// 1-based item ids that resolve to this row (a row can be shared).
     pub items: Vec<u8>,
 }
@@ -245,6 +247,7 @@ pub fn current_equip_bonuses(patcher: &DiscPatcher) -> Result<Option<Vec<EquipBo
             row: i,
             slot: equip_slot_name(b.slot()),
             stats: b.stat_bonus(),
+            mask: b.equip_mask(),
             items: items.get(i).cloned().unwrap_or_default(),
         })
         .collect();
@@ -307,5 +310,66 @@ pub fn randomize_equip_bonuses(
     patcher
         .patch_named_file(SCUS_NAME, off as u64, &bytes)
         .context("write equipment stat-bonus table")?;
+    Ok(changed)
+}
+
+/// Randomize the equip-character mask (`+6`) of each bonus row (see
+/// [`crate::equip_mask`]) - who can wear each piece of gear. Rewrites only the
+/// `+6` byte of each bonus row that at least one equippable item references,
+/// reassigning it **within its slot category** (so a character keeps the same
+/// count of equippable weapons / body / head / footwear), a same-size in-place
+/// SCUS patch. Stat bonuses, accessory passive, and slot type stay put, so this
+/// composes with [`randomize_equip_bonuses`] (they touch disjoint bytes).
+/// Returns the number of rows changed.
+///
+/// Operates on bonus rows (not item ids): several items can share one record.
+/// Rows no equippable item reaches are left untouched, so a garbage row can't
+/// hand a real item an unequippable (zero) mask.
+pub fn randomize_equip_masks(
+    patcher: &mut DiscPatcher,
+    seed: u64,
+    mode: DropMode,
+) -> Result<usize> {
+    use legaia_asset::equip_stats::{BONUS_STRIDE, EquipStatTable, bonus_table_file_offset};
+    let Some(scus) = patcher.read_named_file(SCUS_NAME) else {
+        return Ok(0);
+    };
+    let Some(table) = EquipStatTable::from_scus(&scus) else {
+        return Ok(0);
+    };
+    let Some(off) = bonus_table_file_offset(&scus) else {
+        return Ok(0);
+    };
+
+    let all_rows: Vec<[u8; 8]> = table.rows().iter().map(|b| b.raw).collect();
+    let items = table.items_for_rows();
+    // Only rows an equippable item actually resolves to participate.
+    let participating: Vec<usize> = (0..all_rows.len())
+        .filter(|&i| !items[i].is_empty())
+        .collect();
+    if participating.is_empty() {
+        return Ok(0);
+    }
+    let sub: Vec<[u8; 8]> = participating.iter().map(|&i| all_rows[i]).collect();
+    let planned = crate::equip_mask::plan_mask_shuffle(&sub, seed, mode);
+
+    let mut new_rows = all_rows.clone();
+    let mut changed = 0usize;
+    for (k, &i) in participating.iter().enumerate() {
+        if planned[k] != all_rows[i] {
+            new_rows[i] = planned[k];
+            changed += 1;
+        }
+    }
+    if changed == 0 {
+        return Ok(0);
+    }
+    let mut bytes = Vec::with_capacity(all_rows.len() * BONUS_STRIDE);
+    for r in &new_rows {
+        bytes.extend_from_slice(r);
+    }
+    patcher
+        .patch_named_file(SCUS_NAME, off as u64, &bytes)
+        .context("write equipment equip-mask table")?;
     Ok(changed)
 }

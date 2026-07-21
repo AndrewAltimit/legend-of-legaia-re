@@ -62,6 +62,7 @@ CI runs without a disc. There is also a
   - [Element-affinity matrix](#element-affinity-matrix)
   - [Spell MP costs](#spell-mp-costs)
   - [Equipment stat bonuses](#equipment-stat-bonuses)
+  - [Equip mask (who can equip what)](#equip-mask-who-can-equip-what)
   - [Weapon specialty](#weapon-specialty)
   - [Arts button combos](#arts-button-combos)
   - [Doors (scene transitions)](#doors-scene-transitions)
@@ -220,8 +221,11 @@ the multiset is preserved), `random` (draw each slot from the valid pool), or
 | `--element-affinity` | the element-affinity matrix | [Element-affinity matrix](#element-affinity-matrix) |
 | `--spell-cost` | spell MP costs | [Spell MP costs](#spell-mp-costs) |
 | `--equip-bonus` | equipment stat bonuses | [Equipment stat bonuses](#equipment-stat-bonuses) |
+| `--equip-mask` | who can equip each item | [Equip mask](#equip-mask-who-can-equip-what) |
 
-The last four are the **battle-tuning** group.
+The monster-stats / move-power / element-affinity / spell-cost passes are the
+**battle-tuning** group; `--equip-bonus` and `--equip-mask` edit the equipment
+table's stat tuple and equip mask respectively (disjoint bytes, so they compose).
 
 **Code-hook features.** Each of these injects a same-size machine-code hook into
 the retail executable to add behaviour the game has no table for. They are off
@@ -1005,6 +1009,23 @@ hand a real item a junk tuple. The table is in `SCUS_942.54`, so the edit is a
 same-size in-place SCUS patch. `legaia-rando equip-bonuses` lists the table,
 grouped by slot category, with the items that reference each row.
 
+### Equip mask (who can equip what)
+
+`--equip-mask` randomizes the `+6` equip-character mask of that same bonus table
+(`1` Vahn, `2` Noa, `4` Gala, `7` = any) - **who** can wear each piece of gear.
+It moves only the `+6` byte, disjoint from the stat pass, so the two compose: run
+both and a shuffled-stat sword also lands on a shuffled owner. The reassignment is
+**within a slot category** (`+7 & 0x60`), so `Shuffle` preserves each category's
+mask multiset - a character keeps exactly the same *count* of equippable weapons /
+body / head / footwear it had in retail (it can never be left with zero equippable
+gear in a slot); `Random` draws each row's mask from its category pool. Like the
+stat pass it edits bonus **rows** (not item ids) and skips rows no equippable item
+references, so a garbage row can't hand a real item an unequippable (zero) mask.
+The engine reads the same `+6` byte
+(`legaia_engine_core::equipment::DiscEquipInfo::can_equip`), so a patched disc
+re-gates each character's equip picker. `legaia-rando equip-bonuses` lists the
+current mask (`V/N/G` / `any`) beside each row.
+
 ### Weapon specialty
 
 `--weapon-specialty` (a toggle, not a mode) reassigns which weapon **class** each
@@ -1566,6 +1587,7 @@ bit-for-bit.
 | `crates/rando` `element_affinity_real` | disc-gated | element-affinity shuffle: re-parse the patched PROT 0898 matrix, assert the scale-percent multiset preserved + the per-character element + summon-power sibling tables untouched + deterministic |
 | `crates/rando` `spell_cost_real` | disc-gated | spell MP-cost shuffle: re-read the patched `SCUS_942.54` spell table, assert the MP-cost multiset + the named/costed-spell id set preserved + the table sector EDC/ECC-valid + deterministic |
 | `crates/rando` `equip_bonuses_real` | disc-gated | equipment stat-bonus shuffle: re-read the patched `SCUS_942.54` bonus table, assert each slot category's `+0..+4` stat-tuple multiset preserved (no tuple crosses categories) + every row's `+5/+6/+7` tail (passive/mask/slot) byte-identical + the table sectors EDC/ECC-valid + deterministic |
+| `crates/rando` `equip_masks_real` | disc-gated | equip-mask shuffle: re-read the patched bonus table, assert each slot category's `+6` equip-mask multiset preserved (no mask crosses categories) + every non-`+6` byte untouched + no referenced row left unequippable + sectors EDC/ECC-valid + deterministic + composes with the stat pass |
 | `crates/rando` `seru_trade_real` | disc-gated | seru-trade config write: assert an unpatched disc reports no config, then off the patched image the embedded blob decodes back to the written `(enabled, seed, offer cap)`, the write is same-size + a tiny localized edit, re-running with a new seed overwrites the prior blob, and a fixed seed is byte-deterministic |
 | `crates/engine-core` `seru_trade_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch the seru-trade config onto the disc, re-decode it from the patched SCUS, install it into a `World` holding a known party, open a vendor session, confirm the first offer, assert the owner's spell list swaps give→receive, and that advancing past a two-in-game-hour boundary reseeds the offers (baseline: an unpatched disc reports trading disabled) |
 | `crates/engine-core` `chest_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one chest, re-decode the MAN off the patched image, drive its inline interaction script through the real field VM, assert the runtime grants the patched id (not the original) |

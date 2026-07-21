@@ -184,6 +184,21 @@ pub(crate) fn cmd_spell_costs(input: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Render an equip-character mask (`+6`) as a compact `V/N/G` string
+/// (bit `1` Vahn, `2` Noa, `4` Gala); `7` prints `any`.
+fn equip_mask_label(mask: u8) -> String {
+    if mask & 0x7 == 0x7 {
+        return "any".to_string();
+    }
+    let mut s = String::new();
+    for (bit, ch) in [(1u8, 'V'), (2, 'N'), (4, 'G')] {
+        if mask & bit != 0 {
+            s.push(ch);
+        }
+    }
+    if s.is_empty() { "-".to_string() } else { s }
+}
+
 pub(crate) fn cmd_equip_bonuses(input: &Path) -> Result<()> {
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
@@ -208,13 +223,14 @@ pub(crate) fn cmd_equip_bonuses(input: &Path) -> Result<()> {
                 let [int, atk, udf, ldf, spd] = r.stats;
                 let items: Vec<String> = r.items.iter().map(|&id| nm(id)).collect();
                 println!(
-                    "  row {:>2}  INT {:>3} ATK {:>3} UDF {:>3} LDF {:>3} SPD {:>3}  [{}]",
+                    "  row {:>2}  INT {:>3} ATK {:>3} UDF {:>3} LDF {:>3} SPD {:>3}  {:<5}  [{}]",
                     r.row,
                     int,
                     atk,
                     udf,
                     ldf,
                     spd,
+                    equip_mask_label(r.mask),
                     items.join(", ")
                 );
             }
