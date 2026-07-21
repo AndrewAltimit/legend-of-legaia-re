@@ -1249,12 +1249,17 @@ run, and fails on a wrong offset, value or width.
 *Status:* resolved - **`!= 0` is retail, `== 0` is dev**, the reverse of what the
 docs long carried
 
-Every read is an `lh` of the halfword at `0x8007B8C2`, and the two arms split
-identically at all 40 sites in `SCUS_942.54` (57 across the dump corpus including
-overlays): the `!= 0` arm resolves assets by **PROT-TOC index** (`FUN_8003E8A8` +
+Every read is an `lh` of the halfword at `0x8007B8C2` - 43 sites in
+`SCUS_942.54`: 40 in the absolute `lui 0x8008` / `lh -0x473e` form, plus **three
+gp-relative** `lh v0,0x5aa(gp)` reads at `0x80015FD4` / `0x80016038` /
+`0x8001631C` that an absolute-only sweep misses exactly as it missed the store
+(the dump corpus including overlays carries 57 sites in total). The two arms split
+identically: the `!= 0` arm resolves assets by **PROT-TOC index** (`FUN_8003E8A8` +
 `FUN_8003E800`, or `FUN_8003EB98`), while the `== 0` arm opens a path through
 `FUN_800608F0` - whose entire body is `break 0x103`, a PsyQ dev-station host trap,
-on `h:\` paths that do not exist on a retail disc. Not one site dissents.
+on `h:\` paths that do not exist on a retail disc. Not one site dissents; the
+gp-relative read at `0x80016038` is its own witness (`bnez v0` at `0x80016040`
+skips the `jal FUN_8003E6BC` dev-path call when the flag is nonzero).
 
 **The flag is not writer-less.** `main()` (`FUN_80015E90`) stores it once at cold
 boot: `0x80015F08 sh v0,0x5aa(gp)` with `gp = 0x8007B318`, taking the return of
@@ -1264,7 +1269,8 @@ predicate; the dev build presumably returned `0`.
 
 **Why the inversion survived so long** is worth recording, because the failure was
 structural rather than a misreading. The store is **gp-relative**, invisible to a
-sweep searching only the absolute `lui 0x8008` / `-0x473e` form. That false
+sweep searching only the absolute `lui 0x8008` / `-0x473e` form - as are the
+three gp-relative reads above, which the same sweep undercounts to 40. That false
 negative produced "zero writers", which produced the inference "BSS zero-init
 therefore leaves it `0`, therefore `0` is retail" - and that inference was itself
 unfounded twice over, since the PS-X EXE header carries `b_addr = 0, b_size = 0`
