@@ -47,6 +47,10 @@
       <div class="card-title">PCSX-Redux automation</div>
       <div class="card-body">Closed-loop Lua probes layered on PCSX-Redux's breakpoint debugger. Save-state load &rarr; arm probes &rarr; capture N VSyncs &rarr; CSV / snapshot. Catalogue of committed probes.</div>
     </a>
+    <a class="card" href="recomp-differential.html">
+      <div class="card-title">Recomp differential oracle</div>
+      <div class="card-body">Frame-tagged parity measurement between the clean-room engine and a static recomp of the retail game: both sides emit the same JSONL state trace in retail units, and <code>trace_diff.py</code> reports the first frame each channel diverges. A note-level variant does the same for BGM key-ons.</div>
+    </a>
     <a class="card" href="spine-flag-writers-capture.html">
       <div class="card-title">Spine flag-writers capture</div>
       <div class="card-body">A worked example of a live writer hunt: one PCSX-Redux session watches the chapter-1 story-progression flags (Zeto battle-id + flags <code>0x142</code>/<code>0x482</code>) and logs which code writes each one. Save-slot-to-story-beat mapping + derived watch addresses.</div>

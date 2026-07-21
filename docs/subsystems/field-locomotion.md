@@ -119,8 +119,10 @@ Two paths short-circuit before any of that:
   two axes for the per-axis collision step to resolve independently.
 
 Otherwise the resolver walks a 4-entry direction table at
-`DAT_800766BC` (8-byte stride: `u32 mask`, `s16 dx`, `s16 dy`). For each
-entry whose bit is present in the held mask:
+`DAT_800766BC` (8-byte stride: `u32 mask`, `s16 dx`, `s16 dy`; the four
+cardinals, each with `(dx, dy)` = ±62 units along its travel axis - the
+candidate point is 62 units *ahead* of the player). For each entry whose
+bit is present in the held mask:
 
 1. **Three-point block test.** It calls the walkability probe
    `func_0x801d56c4` three times at the candidate point `(x+dx, z+dy)` -
@@ -152,8 +154,12 @@ static `SCUS_942.54` data. Ported as
 [`World::resolve_field_slide`](../../crates/engine-core/src/world/field_movement.rs)
 - a pure resolver over [`World::field_tile_is_wall`] (retail's walkability
 probe `func_0x801d56c4`), with the same no-clip / pure-diagonal
-short-circuits, the ±62-unit three-point block test, the seven-entry
-perpendicular sweep, and the strict-sign slide-bit selection. It is a
+short-circuits, the three-point block test at the 62-unit-forward
+candidate point (centre plus ±0x21 lateral - two different axes, not one
+figure: 62 is the look-ahead *along* travel from `DAT_800766bc`, `0x21`
+the body-width spread *perpendicular* to it, an immediate in the
+function body), the seven-entry perpendicular sweep, and the strict-sign
+slide-bit selection. It is a
 standalone resolver: the default `World::decode_field_direction` still
 stops at a blocked axis rather than sliding, so wiring the resolver into
 the live pad path is a separate step.
