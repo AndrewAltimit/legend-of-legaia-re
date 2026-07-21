@@ -122,9 +122,9 @@ none reading the pool `word1` high half. So `attr` (real per-vertex data) is ign
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Super / Miracle Arts trigger logic | partial | [details ↓](#super--miracle-arts-trigger-logic) |
+| Super / Miracle Arts trigger logic | mostly resolved | [details ↓](#super--miracle-arts-trigger-logic) |
 | First boss trigger -> Battle | resolved | The scripted-battle arm is the field-VM op `3E FF <formation_row>` ([battle.md](../subsystems/battle.md#scripted-battle-entry-3e-ff-row)): Zeto = garmel `P2[12]` row 9 (lone `0x4B`), Caruban = rikuroa stager `P1[3]` row 17 (lone `0x49`, `World::run_boss_stager_record`). `DAT_8007b7fc` closed: writer-less across `SCUS_942.54` + every static overlay (validated absolute + gp-relative + address-materialisation sweep); readers pin it as the debug forced-battle formation id - battle init `FUN_80055b6c` -> `FUN_8005567c` seeds the formation cells `DAT_8007BD0C+` from it, and `FUN_80046A20` routes a nonzero value to its mode-0 debug-menu exit. Retail never sets it. See [battle.md](../subsystems/battle.md). |
-| Enemy-ally charm battle softlock | open (cause unconfirmed) | A charm fight can hard-freeze (user-reported live; once after a Gimard cast, once an arts combo). Cause not pinned. The `FUN_801E7320` "unbounded reroll at `0x801E7370`" theory is unsettled - loop-1 rerolls while `monster[a0].HP == 0` over `a0 = 3 + rand % monster_count`, but the alive charmed ally is itself a slot in that range and can be picked (exit via self-target `0x801E73E0`). Two Lua-forced-battle-end workarounds were tried and reverted: forcing the end mid-action tears the SM down -> game-over, then garbage writes / freeze (the game only writes the end signal at the safe `0x5A` gate). Next: observe with `autorun_charm_win_softlock.lua`, then a disc-side fix. |
+| Enemy-ally charm battle softlock | mostly resolved (cause pinned; one live repro left) | The freeze is the state-`0x5A` victory arm's party-slot assumption, **not** the `FUN_801E7320` reroll (falsified - [`re-do-not-re-walk.md`](re-do-not-re-walk.md#battle--arts--level-up)). The charm-victory widen (`0x801E6638` -> mask `0x384`) desyncs the wipe scan from the scheduler's `0x4` predicate, so a living charmed ally can be the acting actor at victory; the alive-skip at `0x801E6690` keeps the monster slot and `0x801E6770` indexes the 3-byte roster `DAT_8007BD10` OOB, arming a garbage win-pose stream. Chain + port: [battle.md](../subsystems/battle.md#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock). Open: live repro + disc-side rando fix. |
 | Battle-actor `+0x16E` bit `0x400` applier (guard-disabling status) | open (low value; two consumers pinned) | Bit `0x400` of the battle-actor flags word `+0x16E` reads as a guard-disabling Sleep/Numb-like status; the sibling AI-delegated bits `0x380` are pinned (enemy-ally charm hook, `FUN_801E7320`). Two *consumers* of the `0x80..0x800` class are pinned live: the on-hit strip `0x801EDA60` in overlay 0898 (`andi 0xF07F` clears the class on any hit, so `0x400` is a volatile hit-cleared status) and the battle-exit per-party clear `0x80046EB0` in `FUN_80046A20`. The *setter* is still uncaught (no infliction in the wipe capture); probe `autorun_status_word_writer.lua` is armed for a status-inflicting battle state. |
 
 ### Super / Miracle Arts trigger logic
@@ -137,7 +137,22 @@ The find/replace matcher **is** ported (`legaia_art::{MiracleMatcher,SuperMatche
 
 **Super is now wired into the live submenu, with the queue connectors abstracted.** `legaia_art::recognize_art_sequence` tokenizes a saved chain's flat directional string into its ordered named arts (each identified by its own `ArtRecord::commands`), and `SuperMatcher::trigger_by_art_sequence` tail-matches that ordering against each Super's `SuperArt::art_sequence()` - the `find` pattern projected to art constants only (`[0x27,0x1F,0x27]` for Tri-Somersault), with starters + connectors stripped. `battle_arts::super_for_chain` / `World::build_battle_arts_rows` flag the row (`ArtRow::super_art`) and resolve the `replace`-queue strike profile (shared with the Miracle path).
 
-**What stays open:** the *byte-exact* queue connectors. The connector direction after each art is **combo-specific** (Vahn's `0x27` → `0F` in Tri-Somersault but `0E` in Power Slash), so it can't be derived from each art's commands; the runtime queue-builder that emits them (`ctx[+0x274]`) is **unpinned** (no queue-write watchpoint trace yet). The live match is therefore faithful to *which* combination triggers *which* Super but does not reproduce the literal queue bytes. The byte-exact matcher (`SuperMatcher::try_trigger_at_tail`) is also ported, exercised by `resolve_action_queue`. See `docs/subsystems/battle-action.md` § "Miracle / Super in the live player-driven Arts submenu".
+**Byte-exact queue strings: closed (capture).** The other-13-Supers residue is
+retired. The battle overlay keeps the full Miracle/Super trigger table resident,
+and a live battle-RAM read (static-recomp endgame battle savestate, scene
+`jou ene`, mode `0x15`) captured all of it: `0x801F64F4/6504/6514` = the 3
+Miracle replacement strings (art-data.md's pinned VAs), byte-exact vs
+`miracle.rs`; `0x801F6524` = 15 Super `find` entries (13-byte stride) in
+`super_art.rs` order; `0x801F65E8` = 15 Super `replace` strings (16-byte
+stride). All 30 are byte-identical to the modeled tables, and every replace
+obeys `replace = find[..len-2] ++ [1A, finisher…]` (locked by test
+`replace_preserves_find_prefix_and_finisher_tail`). So the combo-specific
+connectors are established as **resident table data**, not derivation. The
+byte-exact matcher (`SuperMatcher::try_trigger_at_tail`) is ported, exercised by
+`resolve_action_queue`. See `docs/subsystems/battle-action.md` § "Miracle /
+Super in the live player-driven Arts submenu".
+
+**What (narrowly) stays open:** per-Super *live-executed* queue captures for the other 13 (driving each combo and watching the tail-replace at `actor[+0x1DF]`) - now purely confirmatory, since the resident strings, queue location, dequeue site (`0x801D89D8`), and two end-to-end executions (Noa Miracle + Vahn Tri-Somersault) are all pinned. The connector-emitting queue-builder function entry is still unpinned as a code address.
 
 **Queue location pinned; Miracle path validated (capture).**
 The action queue is the per-actor **`actor[+0x1DF..+0x1F2]`** action-parameter byte stream (not `ctx[+0x274]` - a capture showed that is the turn-order active-actor index written by `recompute_battle_order` `FUN_801DABA4`).
@@ -249,7 +264,7 @@ The variant is exactly **3 words** of row 271 (`(853, 271)` `3333→ffff`, `(856
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Pause Items/Magic screens: remaining sub-flows | partial | **Throw Out / Arrange** are traced from disassembly and ported (`FUN_801D7C00`/`FUN_801D8734`/`FUN_801D64A8`/`FUN_801D1B20` - [field-menu.md](../subsystems/field-menu.md#items-screen); engine `pause_screens` + `menu_arrange` + id-9 confirm builders), and the displayed MP cost already runs the per-caster kernel `FUN_80035394` (that clause was stale). Still open: the field target-pick window layout (window 14 / `FUN_801D0520` identified, preview word `DAT_801E46CC` pinned; row pens untraced), the "PAGE" sprite source, the SCUS kind-4 list kernel, and the class-`0x80..0x82` Use routes (submenus 0xA..0xD). A menu-open capture stepping each list would close these. |
+| Pause Items/Magic screens: remaining sub-flows | resolved (one capture-diff residual) | All four sub-flows traced from disassembly and ported: the **window-14 target panel** (`FUN_801D0520`; the preview modes are the permanent-stat Water previews, superseding the "HP-restore" reading), the **PAGE sprite** (UI-icon `0x76`), the **SCUS kind-4 list kernel** (`FUN_80032A44` + allocator `FUN_80030104`), and the **class-`0x80..0x82` Use routes** (submenus 0xA..0xD: single-target apply `FUN_801D8308`, Door of Light/Wind `FUN_801D8A58`/`FUN_801D8B90`, Incense `FUN_801D8D94`). Engine `engine-ui`/`pause_screens`. See [field-menu.md](../subsystems/field-menu.md#items-screen). Residual: which overlay path sets the row `0x800` dim bit across a focused Use-list page (one capture diff). |
 
 ## Audio
 
@@ -268,48 +283,10 @@ The `0x801C6ED8` clip-table content is pinned (34 `[CdlLOC][len]` slots = `XA1..
 | Thread | Status | What would close it |
 |---|---|---|
 | Debug flag `0x8007B98F` | resolved | `0x8007B98F` has no byte-granular reader: it is byte +3 (MSB, little-endian) of the 32-bit debug-mode word `_DAT_8007B98C`, and *that word* is the consumer surface. Its sibling `0x8007B8C2` is now **settled** - see [`re-settled-threads.md`](re-settled-threads.md#_dat_8007b8c2-polarity-and-its-writer). [details ↓](#debug-flags-0x8007b8c2--0x8007b98f) |
-| Full-window item-add OOB primitive: reachability | open (re-opened; the earlier live confirmation does not hold) - store-order claim now **re-audited from disassembly and confirmed** (grade `disassembly`); the *reachability* half stays open | [details ↓](#full-window-item-add-oob-primitive-reachability) |
-| New-Game opening chain + narration roller | partial (chain + caption + roller resolved; two render-fidelity residuals open) - roller operand decode **re-audited from disassembly and confirmed** (grade `disassembly`; the four-words/word3-selector shape is genuine, not a dropped-slot artifact) | [details ↓](#new-game-opening-chain--narration-roller) |
+| Full-window item-add OOB primitive: reachability | resolved (moved to re-settled) | Primitive real (grade `disassembly`): id store `sb t0,0x1818(a0)` @ `0x800422BC` is unconditional, before the guard that gates only the count store. But **unreachable through the retail add call sites in normal play** - each caller `jal`s the helper with no room pre-check, and the helper's free-slot scan cannot reach the `i == end` OOB exit (a `[0,256)` window holds ≤255 distinct ids, so a hole always remains). See [`re-settled-threads.md`](re-settled-threads.md#full-window-item-add-oob-reachability). |
+| New-Game opening chain + narration roller | partial (chain + caption + roller + prologue gold grade resolved; one far-geometry-brightness residual open) - the gold grade is a capture-pinned palette-space collapse, superseding the per-node depth-cue reading | [details ↓](#new-game-opening-chain--narration-roller) |
 | Slot-B overlay cluster (`0900..0969`) per-entry identity | mostly resolved | [details ↓](#slot-b-overlay-cluster-09000969-per-entry-identity) |
 | Overlay-loader index off-by-2 - remaining ripple | partial (core finding resolved; two stager bindings unpinned) | One mid-cast capture each for the attack-titled stagers 0924 / 0925 binds them to their casts. [details ↓](#overlay-loader-index-off-by-2---remaining-ripple) |
-
-### Full-window item-add OOB primitive: reachability
-
-*Status:* open - the primitive is real and statically pinned; the claim that
-normal play reaches it is not.
-
-**Evidence: `disassembly` - re-audited and confirmed.** The load-bearing claim
-here is one of *store order*: that the id store happens before the guard. It has
-now been re-derived from `FUN_800421D4`'s instructions (`ghidra/scripts/funcs/800421d4.txt`
-disasm section): the free-slot scan returns index `== end` (`gp+0x2d4`) when the
-window `[gp+0x2d2, gp+0x2d4)` into `DAT_80085958` is full; the id store
-`sb t0, 0x1818(a0)` at `0x800422BC` is **unconditional**, and the following
-`slt`/`beq` guard (`0x800422C8`/`0x800422CC`) gates only the count store at
-`0x80042300`. So a full window writes the item id to `slot[end]`, one slot past
-the window, with the count store suppressed - the OOB write primitive is real.
-
-`FUN_800421D4`'s free-slot pass stores the item id at `slot[i]` before the
-`slt` that guards only the count store, so a scan that exhausts the window
-writes one slot past it. Two corrections narrow what is actually known:
-
-- **The landing address depends on the active window, and the window is not
-  72 slots.** `FUN_8004313C` is the sole `SCUS_942.54` writer of
-  `gp[+0x2D2]`/`gp[+0x2D4]`, and it only ever installs `[0, 256)`, `[0, 128)`
-  or `[128, 256)` (party-member count at `0x80084594`, story flag 20, and the
-  byte at `0x80084598`). So the OOB target is `0x80085A58` or `0x80085B58`,
-  not the `0x800859E8` an earlier note recorded. The 72 came from the
-  `Have 99 Items` cheat's page span. A live read of a mid-game battle state
-  confirms `(start, end, len) = (0, 256, 256)` with 160 contiguous occupied
-  slots.
-- **The `pc = 0x800422BC` probe hits were not OOB hits.** That store runs on
-  every successful add. The two recorded hits (`id=0x9C` at `0x800859E8`,
-  `id=0xD0` at `0x800859EA`) are consecutive slots 72 and 73 - an ordinary
-  pair of adds into the next free slots of a bag that was not full.
-
-What would close it: a probe on a bag genuinely filled to `gp[+0x2D4]` (read
-the window bounds first, then fill to `end`), watching for a store at
-`base + end*2`. Whether the game can even present a 256-entry-full bag through
-the add call sites in `legaia_save::retail_inventory::AddHelperCaller` is the open half of the question.
 
 ### Slot-B overlay cluster (`0900..0969`) per-entry identity
 
@@ -405,7 +382,7 @@ rather than contradicting it:
 
 ### New-Game opening chain + narration roller
 
-*Status:* partial - the chain, caption, and roller are resolved; two render-fidelity residuals below are open
+*Status:* partial - the chain, caption, roller, and prologue gold grade are resolved; one far-geometry-brightness residual below is open
 
 **One sub-claim was graded `decompiled-C` and flagged for re-audit: the roller
 config op's operand decode. It has now been re-derived from the field-overlay
@@ -459,10 +436,28 @@ within ~6 % - a per-leg thread in the world-map fly-in choreography, not a globa
 1. **The *"It was the Seru."* caption's data source - it is not text.** The caption is a **pre-rendered 112×32 4bpp TIM** (two CLUT palettes = the fade steps) baked into the `opdeene` geometry pack **PROT entry 0749** at LZS-decoded offset `0x01EC30` (VRAM `fb=(384,0)`), drawn by the scene renderer as a screen-space textured quad - not a `4C E1` balloon, not a MES id, not any font string. Pinned by cold-boot probes (`autorun_text_census.lua` + `autorun_seru_blit_probe.lua` + a full-RAM dump): every UI text/image draw path fires **zero** times in the caption window and the string is in RAM in **no** encoding. `tim-scan extracted/PROT/0749_opdeene.BIN` renders it. See [`cutscene.md`](../subsystems/cutscene.md#narration-playback---the-crawl-roller-fun_80037174).
 2. **The retail roller config op's parameter decode - decoded (Ghidra-traced).** Two sub-ops of field-VM op `0x4C`: the spawner `CC F8 80 N` (`N` = page count) allocates the roller child on `FUN_80037174`, and `CC F8 E8 …` (four signed-16 LE words) seeds the per-scene crawl globals at `_DAT_801C6EA4`: `+0x4C` = window top Y, `+0x4E` = visible line count, `+0x50` = scroll-cadence divisor (`word3` selects seed/pause/resume/kill). The earlier `4C 88`-shaped label was a **mis-attribution** (op0 `0x88` writes `_DAT_80084628/…`, not the crawl geometry; the seed is the nibble-`E` sub-8 `0xE8` form). So `RollerParams::for_scene` is derivable from the scene bytecode, not just the pixel capture. Full decode in [`cutscene.md`](../subsystems/cutscene.md#roller-op-operands-ghidra-traced).
 
-**Render-fidelity residuals (open):**
+**Render-fidelity residuals (mostly resolved):**
 
-- **Prologue per-node depth-cue crush.** The engine's sepia grade is the retail modulation multiply (`(1.0, 0.94, 0.43)`, see [`cutscene.md`](../subsystems/cutscene.md#full-scene-sepia-grade-the-gold-prologue-look)); retail additionally pulls each render node toward the gold far colour by its per-node `IR0` (`+0x74`/`+0x78`), so far-field blue crushes to `B/R 0.12..0.18` where the engine holds the uniform `~0.31..0.36`. Closing it means staging the DPCS depth cue per mesh (the engine's `psx_depth_cue` uniform already exists but is scene-global and identity); the next step is a per-mesh `IR0` computed from view depth in the field render loop, gated on the prologue grade.
-- **Tableau ground texture chroma.** In the retail `opdeene` villager-tableau framebuffer the ground is warm grey-brown (`G/R 0.88`); the engine draws the same beat's ground vivid green (`G/R ~1.07` after the tint), so the whole-frame ratio diverges. The `0749` pack carries both a green 256×256 page and a neutral-grey one - the engine likely resolves a different page/CLUT for the ground quads than retail's draw list binds. Next step: dump the engine's texture binding for the tableau ground mesh and compare against the retail GP0 texpage/CLUT words for the neutral-modulation `0x2C` quads.
+- **Prologue gold grade = palette-space collapse (settled, grade `capture`).**
+  Both former residuals ("per-node depth-cue crush", "tableau ground texture
+  chroma") had one root cause, and it is neither a depth cue nor a texture
+  binding. A live recomp capture (cold boot, VRAM-peek vs the disc TIMs) shows
+  the cutscene host rewrites every CLUT the `opdeene` bundle uploads,
+  entry-for-entry, to `L = max(r,g,b) → (L, max(L-1,0), L>>1)` (5-bit, STP
+  preserved; 0 mismatches across graded terrain rows 509/508/501, 768 entries),
+  and collapses the loaded TMDs' authored colour packets to the amber family
+  `~(M, 0.94M, 0.43M)`, while runtime-emitted neutral `0x80` ground quads stay
+  neutral. Walking all render-node heads (`0x8007C34C..`) across the whole
+  opening, node `+0x78` (`IR0`) is **0 on every node at every beat** - the
+  per-node depth-graded-IR0 model is **falsified** (see
+  [`re-do-not-re-walk.md`](re-do-not-re-walk.md#field--locomotion)). The ground
+  divergence was the same law: retail binds the same green page / row-509 CLUT
+  the engine binds, seen through the collapsed palette. Engine port
+  `Renderer::set_palette_grade` (`palette_law_word` / `palette_collapse_prim`),
+  staged by play-window when `World::scene_color_grade` is active; tableau
+  ground lands `G/R 0.890` vs retail `0.88` (was `~1.07`). See
+  [`cutscene.md`](../subsystems/cutscene.md#full-scene-sepia-grade-the-gold-prologue-look).
+- **Far-geometry brightness (open).** Matched-region measures: the tableau ground is identical both sides, but the retail spires/wings read `B/R ≈ 0.15..0.16` at brightness `~51` vs the engine's `0.27` at `~80`. The `B/R` direction is the law's integer floor at small `L`; the open question is why retail's far geometry draws that much darker. Also open: pinning the retail load-time asset-grade pass to a function (cutscene-host overlay 0970 load hooks are the candidates).
 
 ### Overlay-loader index off-by-2 - remaining ripple
 

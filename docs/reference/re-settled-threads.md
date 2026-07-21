@@ -1528,6 +1528,47 @@ Recorded so the same entries aren't re-flagged:
   globals the way this thread's entries were closed. The PsyQ sound-driver
   cluster is tracked separately under Audio.
 
+### Full-window item-add OOB reachability
+
+*Status:* resolved - the write primitive is real; normal play cannot reach it.
+Grade: `disassembly` (full window) + `inference` (the half-window sub-case).
+
+The OOB *write* is confirmed from `FUN_800421D4`'s disassembly: the id store
+`sb t0,0x1818(a0)` at `0x800422BC` is unconditional and precedes the `slt`/`beq`
+guard (`0x800422C8`/`0x800422CC`) that gates only the count store at
+`0x80042300`. When the free-slot scan (`0x80042254..0x8004229C`) exhausts the
+window it leaves the index `== end`, so the id lands one slot past the window
+(`base + end*2` = `0x80085A58` for `end=128`, `0x80085B58` for `end=256`). The
+window is installed only by `FUN_8004313C`, which installs `[0,256)`, `[0,128)`
+or `[128,256)` - never the 72-slot span an earlier note recorded.
+
+**Reachability verdict: unreachable through the retail add call sites in normal
+play.** No add caller pre-checks room - each loads an item id and `jal`s the
+helper directly (shop buy-confirm `0x801C38A4` loads `a0 = rec+8`; battle-loot
+`0x8004F380`/`0x8004F608`; plus the menu/save/fishing/world-map/minigame/
+equip-refund helpers) - so the helper's own scan is the only backstop, and it
+holds:
+
+- **Full window `[0,256)`** (installed for any party of `>= 2`, the normal
+  mid/late state; live-verified at 3 members). The merge pass keys on the id
+  byte (`andi a3,t0,0xff` @ `0x800421F4`), so each non-zero id occupies at most
+  one slot and `0` is the empty sentinel; under the add/consume/normalize
+  accessors at most **255** distinct ids occupy the 256 slots, so a hole always
+  remains and the scan exits in-window. The OOB store is mathematically
+  unreachable here.
+- **Half windows `[0,128)` / `[128,256)`** (installed only for a single
+  playable member with story flag 20 clear; a transient early/solo phase). 128
+  `<= 255` so the id ceiling alone does not forbid a fill, but the real disc item
+  population is far below 128, so the scan still terminates on a hole.
+
+A non-add path (debug menu, cheat engine, or a crafted save seeding duplicate
+live ids) could still force the exit with an attacker-influenced byte - outside
+"normal play", which is what the thread asked. Port + machine-checkable verdict:
+`legaia_save::retail_inventory` (`ItemWindow::oob_reachability`,
+`MAX_DISTINCT_ITEM_IDS`, `OobReachability`). Provenance:
+`ghidra/scripts/funcs/{800421d4,8004313c,8004e568,8003ce64}.txt`,
+`overlay_0971_801c36b0.txt`.
+
 ## Related pages
 
 - [`open-rev-eng-threads.md`](open-rev-eng-threads.md) - the live hunts, and the page to move a row back to if new evidence reopens it.
