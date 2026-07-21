@@ -1404,6 +1404,26 @@ impl LegaiaRuntime {
             "Items",
             assets.pen(window_ids::TAB_ITEMS),
         ));
+        // Throw Out confirm prompt (descriptor id 9, renderer FUN_801D1B20):
+        // the Yes/No window over the command window. Text overlay at the
+        // descriptor pen (frame chrome still caller-pending), pinned-rect
+        // fallback when the descriptor table is unavailable.
+        if let Some(confirm) = model.throw_confirm.as_ref() {
+            let pen = assets.pen(9);
+            let pen = if pen == (0, 0) {
+                let (x, y, _, _) = ui::ITEMS_THROW_CONFIRM_RECT;
+                (x, y)
+            } else {
+                pen
+            };
+            let view = ui::PauseThrowConfirmView {
+                name: &confirm.name,
+                count: confirm.count,
+                cursor: confirm.cursor,
+                text_cursor: assets.chrome.is_none(),
+            };
+            d.extend(ui::items_throw_confirm_draws_for(font, &view, pen));
+        }
         ui::scale_stage_text_draws(&mut d, origin, scale);
         texts.extend(d);
 
