@@ -958,6 +958,60 @@ to the already-done arm at `+0x1BC`, which starts with `Clear 0x461`), a second 
 `Set 0x461` at `+0xBC2` inside the closing camera choreography. All four flags are jouinb-local; the
 census's wide `0x461` reader list across other scenes is the `ta` bigram (see the alias rules above).
 
+### Mid-visit NPC re-arrangement beats: dolk2 market swap + garmel boss staging
+
+A scene's NPC arrangement can change **mid-visit** without a scene reload. The mechanism is always a
+partition-2 beat record re-seating the partition-1 placement actors through three cross-context
+primitives (all in `overlay_0897_801de840.txt`; channel id = partition-0 count + placement index,
+per [cutscene.md § per-actor channels](cutscene.md#per-actor-channels---the-vignette-actors)):
+
+- **Position-copy teleport `CC <dst> E3 <src>`** (op `0x4C` nE sub-3, asm `0x801E3108`): copies the
+  resolved `src` actor's `+0x14/+0x16/+0x18` position and `+0x26` facing into the `dst` context -
+  "stand exactly where that actor stands". See
+  [script-vm-menuctrl § nE sub-3](script-vm-menuctrl.md#0x4c-nibble-0xe00xef---misc-scene-writes--emitter-helpers).
+- **Player-coord copy `CC <id> 37`** (op `0x4C` n3 sub-7, asm `0x801E0FB0..0x801E1044`): copies the
+  **player's** position + facing into the target context - the "materialize a parked companion at
+  the player" primitive that precedes a walk-out choreography.
+- **Off-map park**: `A3 <id> 7F 7F` (cross-context MoveTo) or `CC <id> 51 7F 7F ..` (n5 sub-1
+  run-to-tile) sends an actor to tile `(127,127)` = world `(16320,16320)`, the corner sentinel every
+  cold-parked placement also rests at. Parked actors stay resident (their contexts keep ticking);
+  only their position removes them from view.
+
+Two spawn paths deliver the beat, and both leave the re-arrangement persistent for the rest of the
+visit (nothing re-seats a placement until the next scene load):
+
+**dolk2 market swap - walk-on trigger.** The `.MAP` fallback trigger table (`+0x12000` block) rows
+`(69..71, 94) → record 11 gate 1` spawn `P2[11]` when the player crosses the market threshold, header-gated
+C2=[`0x142`] (the post-Caruban story flag) + C1=[`0x27C`] (its own one-shot latch, SET at body `+0x14`
+together with the post-swap state flag `0x27D`). The record then runs eight position-copy/park pairs -
+`CC 52 E3 2C / A3 2C 7F 7F` through `CC 59 E3 23 / A3 23 7F 7F` - seating the crowd cohort `P1[53..60]`
+(channels `0x52..0x59`, bare idle-loop prologues parked by header) on the day cohort's market tiles and
+parking the day cohort (channels `0x20..0x24`, `0x26`, `0x27`, `0x2C` = `P1[3..7]`, `P1[9]`, `P1[10]`,
+`P1[15]`) at `(127,127)`, then materializes Noa (`CC 1F 37`, channel `0x1F` = `P1[2]`) and walks her and
+the player to the market (`C7 1F 46 5B 32` / `C7 F8 46 5D 33`). The `dolk2_market_noa` capture
+(`scripts/scenarios.toml`) confirms every piece: `0x142/0x27C/0x27D` set, day cohort at `(127,127)`, crowd
+at market tiles, Noa at tile `(70,91)` and the player at `(70,93)` - the two walk targets. `P1[2]`'s own
+`44 72`/`44 73`/`44 74` SpawnRecord ladder (latches `0x2FE`/`0x2FF`, both still clear in that capture) is
+a separate, later follow-up chain spawning `P2[12..14]`, **not** the swap path; `0x27D` is what the
+post-swap state reads (`P1[2]`'s seat selector at `+0x18`, the exit door `P2[0]`'s divert-to-`P2[16]` arm).
+
+**garmel boss staging - entry-script flag-consume arms.** The entry system script `P1[0]` ends in three
+one-shot arms that *consume* a story flag and spawn a re-arrangement beat: `Test 0x196 → Clear + 44 40`
+(`P2[13]`), `Test 0x199 → Clear + 44 41` (`P2[14]`), `Test 0x2C5 → Clear + 44 42` (`P2[15]`), at body
+`+0x5E4`/`+0x5F9`/`+0x60B`. The setters are the boss stagers themselves: the Songi beat `P2[11]` SETs
+`0x196` and the Zeto beat `P2[12]` SETs `0x199` immediately after their `3E FF 08`/`3E FF 09`
+scripted-battle entries ([battle.md § scripted-battle entry](battle.md#scripted-battle-entry-3e-ff-row)),
+so the post-battle scene re-entry replays the companions into the room; `P2[14]` SETs `0x2C5` to chain
+`P2[15]` on the following entry. The companion actors are `P1[3]`/`P1[4]` (channels `0x1B`/`0x1C`),
+header-parked at `(127,127)` on cold entry: the Zeto stager `P2[12]` (walk-on trigger `(23,42)`, C1
+latch `0x198`) runs the player onto the trigger tile (`CC F8 51 17 2A 84 02`), materializes both with
+`CC 1B 37` / `CC 1C 37`, and glide-steps them to flanking marks; `P2[13]` re-stages the trio at the
+Songi site (`(23,104)/(23,105)/(22,106)`) and ends with the **dismissal idiom** - `C7` walk both onto
+the player's tile, then run-to-`(127,127)` - so a later walk through the dungeon shows no companions
+until the next beat re-materializes them. Capture brackets: `chapter2_garmel_pre_songi` (`0x195` set,
+`0x1B/0x1C` still at `(127,127)`) and `chapter2_garmel_pre_zeto` (`0x198` set, `0x199` clear, pair
+flanking the player at `(23,43)`/`(22,42)` around tile `(23,42)`).
+
 ## BGM lookup table
 
 There isn't really a "BGM → file" lookup table - the BGM ID is a PROT-relative offset. From `FUN_800243F0` (the per-frame BGM/asset poller):

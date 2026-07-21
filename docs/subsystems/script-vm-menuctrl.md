@@ -101,7 +101,16 @@ Misc scene writes + emitter helpers. Ported sub-ops:
 - **0** (3-byte 3-way state write `[4C, 0xE0, b1]`: `b1 == 0` sets `DAT_801F2744 = 1`, `b1 < 100` writes `DAT_801F2740 = b1`, `b1 >= 100` writes `picker[+0xE] = b1 - 100`; PC += 3 - the raw asm at `0x801E306C` exits every path through the `addiu s8,s8,0x3` entry at `0x801E00B8`, which the decompile hides as a no-advance `goto LAB_801e00bc`)
 - **1** (variable-length text balloon spawn - the field VM's most user-visible opcode, drives the in-game text-encoding pipeline alongside [`crates/mes`](../formats/mes.md); PC = `pc + 3 + packet_length(operand+1)` via [`packet_length`](script-vm.md#helper-functions))
 - **2 (FMV trigger, 7-byte: `[4C, 0xE2, lo, hi, _, _, _]`** - reads `(s16)bytecode[2..3]` as the FMV index, writes to `_DAT_8007BA78`, and pokes `_DAT_8007B83C = 0x1A` (next game mode = 26 = `StrInit`); the runtime str_fmv overlay then plays the resolved `MV*.STR`. The trailing 3 bytes are reserved by the dispatcher's PC math but unused. See [`subsystems/cutscene.md`](cutscene.md#field-vm-fmv-trigger-op) for the full Ghidra trace.)
-- **3** (3-byte camera-anchored teleport: `[4C, 0xE3, actor_id]` syncs the resolved actor's position to the active camera; PC += 3 - the raw asm at `0x801E3108` advances in the `j 0x801E00BC` branch-delay slot on the player path and via the `0x801E00B8` +3 entry on the NPC path)
+- **3** (3-byte actor position-copy teleport: `[4C, 0xE3, actor_id]` resolves `actor_id` via
+  `FUN_8003C83C` and copies that actor's `+0x14`/`+0x16`/`+0x18` position and `+0x26` facing **into
+  the executing context** - in the ext form `CC <target> E3 <src>` this teleports the target actor
+  onto the source actor's spot, the dolk2 market-swap seat primitive
+  ([script-vm § mid-visit re-arrangement](script-vm.md#mid-visit-npc-re-arrangement-beats-dolk2-market-swap--garmel-boss-staging)).
+  A ctx with the inverted-Y bit `0x20000000` also gets `+0x8E = -src_y`, and only a **player** ctx
+  additionally refreshes the camera scroll (`0x801E3178..0x801E31AC` - the source of the earlier,
+  superseded "syncs to the active camera" reading). Raw asm `0x801E3108..0x801E31B0` in
+  `ghidra/scripts/funcs/overlay_0897_801de840.txt`; PC += 3 - advances in the `j 0x801E00BC`
+  branch-delay slot on the player path and via the `0x801E00B8` +3 entry on the NPC path)
 - **4** (9-byte BBox collision query - each operand byte goes through [`tile_center`](script-vm.md#helper-functions); halts via `FUN_801E3614` when the actor is outside the bbox, otherwise PC += 9)
 - **5** (5-byte XP add - reads a 24-bit signed delta via [`load_u24_le`](script-vm.md#helper-functions) + `sign_extend_24`, then host clamps to `[0, 9999999]` and triggers party-stats refresh)
 - **6** (FUN_801D8280, 8-byte)
