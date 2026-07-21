@@ -27,7 +27,7 @@ full design.
   - [Bonus equipment drop](#bonus-equipment-drop)
   - [Encounters](#encounters)
   - [Run-away EXP](#run-away-exp)
-  - [Enemy ally (charm)](#enemy-ally-charm)
+  - [Enemy ally (charm)](#enemy-ally-charm) - [Charm softlock fix](#charm-softlock-fix-charm_fix-module)
   - [Shiny Seru](#shiny-seru)
   - [Seru trading](#seru-trading)
   - [Chests](#chests)
@@ -256,7 +256,8 @@ scripted fight, and solo bosses are likewise set-pieces. Retail can't host a gen
 party combatant (battles are hard-wired to 3 party + 4 monster slots), so this
 rides the stock **AI-delegated** flag: setting an actor's `+0x16E |= 0x380` makes
 the action SM retarget it to the opposite side, so a flagged *monster* attacks the
-other monsters. `apply::inject_enemy_ally` performs three same-size edits:
+other monsters. `apply::inject_enemy_ally` performs five same-size edits - the
+three charm edits plus the two-edit softlock guard below:
 
 - a **setup detour** at `FUN_800513F0` `0x80051990` (after the monster loop) into
   a routine at `0x8007ACA0` - the gap window between the equipment-drop
@@ -268,6 +269,23 @@ other monsters. `apply::inject_enemy_ally` performs three same-size edits:
 
 Same guards as the other hooks (known build at both sites, all-zero dead space at
 the routine). On a solo-enemy boss the lone enemy turns on itself.
+
+### Charm softlock fix (`charm_fix` module)
+
+The victory-mask widen desyncs the state-`0x5A` monster-wipe scan (`0x384`) from
+the initiative scheduler `FUN_801DABA4` (still `0x4`), so a living charmed ally can
+be the acting actor at victory. The win-pose staging then reads the acting slot's
+character id from the **3-byte** party roster `DAT_8007BD10` (`0x801E6770`); for a
+monster slot (`3..6`) that is out of bounds and arms a garbage "ME" archive
+request - the pinned cause of the charm battle hard-freeze. `charm_fix` mirrors the
+engine `victory_pose_fixup`: a **single-word overlay detour** at the victory-arm
+keep-branch (`0x801E6690`, `bne a0,zero,0x801E6728`) into a 10-instruction guard in
+the SCUS rodata gap (`0x8007AB50`, the unused window between the Seru-Bell name
+string and the bonus-equipment routine). The guard keeps the acting slot only when
+it is a **living party slot** (`alive && slot < 3`) and otherwise routes into
+retail's own bounded valid-slot re-pick, so the roster read is always in range. The
+`j`'s delay slot leaves the original `sb v0,-0x42a0(v1)` store in place. Applied
+automatically with the charm feature; same known-build / all-zero guards.
 
 ## Shiny Seru
 
@@ -807,7 +825,7 @@ a randomize entry that emits a per-feature `*ApplyReport`.
 | Drops | `current_drops` | `apply_drop_plan` / `randomize_drops` | a `DropApplyReport` records any slot too tight to re-pack. |
 | Equipment drops | - | `inject_equipment_bonus_drop` | injects a code hook into the battle-end reward routine that grants one extra random equipment piece on a low per-battle chance - additive, leaving the normal drop untouched (two same-size `SCUS_942.54` edits via `bonus_drop`). |
 | Run-away EXP | - | `inject_flee_exp` | injects a code hook into the battle-action escape teardown that banks a slice of a fled fight's experience into the party on a successful escape - vanilla gives nothing for fleeing (a raw overlay-entry detour + a `SCUS_942.54` routine via `flee_exp`). |
-| Enemy ally (charm) | - | `inject_enemy_ally` | injects a code hook into battle setup that, on a per-battle chance, sets the AI-delegated bits (`0x380`) on the frontmost enemy so it fights on the player's side, plus a one-word widen of the victory check so the ally isn't an enemy you must defeat (a `SCUS_942.54` detour + gap routine + an overlay-0898 edit via `enemy_ally`). |
+| Enemy ally (charm) | - | `inject_enemy_ally` | injects a code hook into battle setup that, on a per-battle chance, sets the AI-delegated bits (`0x380`) on the frontmost enemy so it fights on the player's side, plus a one-word widen of the victory check so the ally isn't an enemy you must defeat (a `SCUS_942.54` detour + gap routine + an overlay-0898 edit via `enemy_ally`). Always ships the `charm_fix` victory-arm guard alongside it (a one-word overlay detour + a SCUS-gap guard) so the widen can't drive the win-pose staging out of bounds - the charm battle softlock fix. |
 | Shiny Seru | - | `inject_shiny_seru` | injects nine code hooks so that, on a per-battle chance, a capturable enemy spawns with +35% stats (translucent) and its captured Seru deals +35% damage forever, plus cosmetics (translucent summon + a "+35% DMG!" caption below the effect box); the persistent flag is a parallel per-spell shiny byte at `record+0x1C0` (not the spell-level byte), with a grant-shift hook keeping it slot-aligned; all routines/data live in six verified-dead SCUS arenas **outside every live table** (an earlier layout squatted in the victory mouth-override + move-power tables - corrupted mouth + 6 broken moves - now guarded by `assert_not_in_tables`) via `shiny_seru`. |
 | Shops | `current_shops` | `randomize_shops` | `ShopApplyReport`; first `apply_item_price_edits` prices the chest-found equipment, then `Random` draws from the priced sellable pool so no quest item is sold. |
 | Casino | `current_casino` | `randomize_casino` | the casino prize exchange. |

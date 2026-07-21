@@ -120,29 +120,44 @@ fn injection_writes_the_detour_routine_and_victory_widen() {
         "victory mask widened to 0x384"
     );
 
-    // 4. Surgical: only the 8-byte hook + the routine blob region of SCUS changed.
+    // 4. Surgical: only the 8-byte hook + the routine blob region + the charm-fix
+    //    guard blob of SCUS changed (the softlock guard ships with the charm edits).
     let hook_off = file_offset_for_va(&scus0, HOOK_VA).unwrap();
     let blob_off = file_offset_for_va(&scus0, ROUTINE_VA).unwrap();
     let blob_len = plan.blob.len();
+    let guard_off = file_offset_for_va(&scus0, legaia_rando::charm_fix::ROUTINE_VA).unwrap();
+    let guard_len = legaia_rando::charm_fix::assemble_routine().len() * 4;
     assert_eq!(scus.len(), scus0.len(), "SCUS size unchanged");
     for (i, (&a, &b)) in scus0.iter().zip(scus.iter()).enumerate() {
         let in_hook = (hook_off..hook_off + 8).contains(&i);
         let in_blob = (blob_off..blob_off + blob_len).contains(&i);
-        if !in_hook && !in_blob {
-            assert_eq!(a, b, "SCUS byte {i:#x} changed outside the hook/routine");
+        let in_guard = (guard_off..guard_off + guard_len).contains(&i);
+        if !in_hook && !in_blob && !in_guard {
+            assert_eq!(
+                a, b,
+                "SCUS byte {i:#x} changed outside the hook/routine/guard"
+            );
         }
     }
 
-    // 5. Surgical: only the 4-byte victory word of the overlay entry changed.
+    // 5. Surgical: only the 4-byte victory word + the 4-byte charm-fix guard detour
+    //    of the overlay entry changed.
     let victory_off = (VICTORY_VA - OVERLAY_BASE_VA) as usize;
+    let guard_hook_off =
+        (legaia_rando::charm_fix::HOOK_VA - legaia_rando::charm_fix::OVERLAY_BASE_VA) as usize;
     assert_eq!(
         overlay.len(),
         overlay0.len(),
         "overlay entry size unchanged"
     );
     for (i, (&a, &b)) in overlay0.iter().zip(overlay.iter()).enumerate() {
-        if !(victory_off..victory_off + 4).contains(&i) {
-            assert_eq!(a, b, "overlay byte {i:#x} changed outside the victory word");
+        let in_victory = (victory_off..victory_off + 4).contains(&i);
+        let in_guard_hook = (guard_hook_off..guard_hook_off + 4).contains(&i);
+        if !in_victory && !in_guard_hook {
+            assert_eq!(
+                a, b,
+                "overlay byte {i:#x} changed outside the victory/guard word"
+            );
         }
     }
 
