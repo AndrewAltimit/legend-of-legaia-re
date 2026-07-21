@@ -352,6 +352,7 @@ export const legaiaviewer_fog_lut_bytes: (a: number) => [number, number];
 export const legaiaviewer_init_pak_logo_rgba: (a: number, b: number) => [number, number];
 export const legaiaviewer_init_pak_logos_json: (a: number) => [number, number];
 export const legaiaviewer_load_disc: (a: number, b: number, c: number) => [number, number, number];
+export const legaiaviewer_locate_offset_json: (a: number, b: number, c: number, d: number) => [number, number];
 export const legaiaviewer_mesh_bounds: (a: number) => [number, number];
 export const legaiaviewer_mesh_cba_tsb: (a: number) => [number, number];
 export const legaiaviewer_mesh_indices: (a: number) => [number, number];
@@ -395,6 +396,7 @@ export const legaiaviewer_player_anm_record_frames: (a: number, b: number, c: nu
 export const legaiaviewer_player_anm_record_header: (a: number, b: number, c: number) => [number, number];
 export const legaiaviewer_player_anm_record_pose_frames: (a: number, b: number, c: number, d: number) => [number, number];
 export const legaiaviewer_prev_entry: (a: number) => [number, number, number];
+export const legaiaviewer_prot_over_read_json: (a: number) => [number, number];
 export const legaiaviewer_render_catalog_tim: (a: number, b: number, c: number, d: number, e: number) => [number, number];
 export const legaiaviewer_render_deep_catalog_tim: (a: number, b: number, c: number, d: number, e: number) => [number, number];
 export const legaiaviewer_render_tmd_triangles: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];

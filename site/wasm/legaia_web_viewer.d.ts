@@ -2314,6 +2314,37 @@ export class LegaiaViewer {
      */
     load_disc(bytes: Uint8Array): number;
     /**
+     * Locate a `PROT.DAT` byte offset -> the entry that truly owns it.
+     *
+     * `offset` is decimal or `0x`-hex text (as a hex editor / the CLI shows).
+     * When `in_entry` is `Some(n)`, `offset` is instead read as an offset
+     * inside entry `n`'s extracted `.BIN` file and first translated to an
+     * absolute `PROT.DAT` offset - the common "my hex editor is 0x… into
+     * `0866_*.BIN`" case.
+     *
+     * Shape (all `*_hex` are strings; byte quantities are also given raw):
+     * ```json
+     * { "query": "0x17855", "in_entry": 866,
+     *   "abs_offset": 96341, "abs_offset_hex": "0x17855",
+     *   "owner": { "index": 867, "block": "battle_data",
+     *              "start": 96256, "start_hex": "0x17800",
+     *              "footprint": 15622144, "footprint_hex": "0xEE6000",
+     *              "local_offset": 85, "local_offset_hex": "0x55",
+     *              "is_monster_archive": true },
+     *   "over_read": { "queried_entry": 866, "queried_footprint": 2048,
+     *                  "queried_footprint_hex": "0x800",
+     *                  "message": "0x17855 is past entry 866's footprint ...",
+     *                  "true_owner_label": "entry 867 battle_data" },
+     *   "covering": [ { "index": 866, "block": "battle_data", "role": "over-read copy" },
+     *                 { "index": 867, "block": "battle_data", "role": "true source" } ] }
+     * ```
+     * `owner` is `null` when the offset is past every entry's footprint (tail
+     * padding). `over_read` is `null` unless the offset sits in more than one
+     * extracted window (i.e. at least one file carries it as a neighbour's
+     * over-read copy). `{ "error": "..." }` on a bad offset / unparsable disc.
+     */
+    locate_offset_json(offset: string, in_entry?: number | null): string;
+    /**
      * Returns the model's bounding sphere center (`[cx, cy, cz]`) and radius
      * `r` packed as `[cx, cy, cz, r]`. JS uses this to build the MVP matrix
      * without re-parsing the TMD each frame.
@@ -2602,6 +2633,24 @@ export class LegaiaViewer {
      */
     player_anm_record_pose_frames(prot_index: number, record_index: number, target_part_count: number): Int32Array;
     prev_entry(): number;
+    /**
+     * Every entry whose extracted `.BIN` window over-reads its true footprint -
+     * i.e. its tail carries the next entry's bytes. Mirrors the `OVR` column of
+     * `prot-extract list`, but returns only the flagged rows (the trap-bearing
+     * ones); the vast majority of entries declare exactly their footprint.
+     *
+     * Shape:
+     * ```json
+     * { "total_entries": 1231, "over_read_count": 2,
+     *   "entries": [ { "index": 865, "block": "battle_data", "lba": 76288,
+     *                  "byte_offset": 156237824, "byte_offset_hex": "0x9500000",
+     *                  "declared_size": 16777216, "declared_size_hex": "0x1000000",
+     *                  "footprint": 2048, "footprint_hex": "0x800",
+     *                  "over_read_bytes": 16775168 }, ... ] }
+     * ```
+     * `{ "error": "..." }` when no disc is loaded / the TOC won't parse.
+     */
+    prot_over_read_json(): string;
     /**
      * Render cataloged TIM `id` with CLUT `clut` into the 2D canvas named
      * `canvas_id`. The catalog browser uses its own canvas (separate from
@@ -3474,6 +3523,7 @@ export interface InitOutput {
     readonly legaiaviewer_init_pak_logo_rgba: (a: number, b: number) => [number, number];
     readonly legaiaviewer_init_pak_logos_json: (a: number) => [number, number];
     readonly legaiaviewer_load_disc: (a: number, b: number, c: number) => [number, number, number];
+    readonly legaiaviewer_locate_offset_json: (a: number, b: number, c: number, d: number) => [number, number];
     readonly legaiaviewer_mesh_bounds: (a: number) => [number, number];
     readonly legaiaviewer_mesh_cba_tsb: (a: number) => [number, number];
     readonly legaiaviewer_mesh_indices: (a: number) => [number, number];
@@ -3517,6 +3567,7 @@ export interface InitOutput {
     readonly legaiaviewer_player_anm_record_header: (a: number, b: number, c: number) => [number, number];
     readonly legaiaviewer_player_anm_record_pose_frames: (a: number, b: number, c: number, d: number) => [number, number];
     readonly legaiaviewer_prev_entry: (a: number) => [number, number, number];
+    readonly legaiaviewer_prot_over_read_json: (a: number) => [number, number];
     readonly legaiaviewer_render_catalog_tim: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly legaiaviewer_render_deep_catalog_tim: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly legaiaviewer_render_tmd_triangles: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];

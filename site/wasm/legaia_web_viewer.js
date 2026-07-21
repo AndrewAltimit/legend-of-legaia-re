@@ -5028,6 +5028,53 @@ export class LegaiaViewer {
         return ret[0] >>> 0;
     }
     /**
+     * Locate a `PROT.DAT` byte offset -> the entry that truly owns it.
+     *
+     * `offset` is decimal or `0x`-hex text (as a hex editor / the CLI shows).
+     * When `in_entry` is `Some(n)`, `offset` is instead read as an offset
+     * inside entry `n`'s extracted `.BIN` file and first translated to an
+     * absolute `PROT.DAT` offset - the common "my hex editor is 0x… into
+     * `0866_*.BIN`" case.
+     *
+     * Shape (all `*_hex` are strings; byte quantities are also given raw):
+     * ```json
+     * { "query": "0x17855", "in_entry": 866,
+     *   "abs_offset": 96341, "abs_offset_hex": "0x17855",
+     *   "owner": { "index": 867, "block": "battle_data",
+     *              "start": 96256, "start_hex": "0x17800",
+     *              "footprint": 15622144, "footprint_hex": "0xEE6000",
+     *              "local_offset": 85, "local_offset_hex": "0x55",
+     *              "is_monster_archive": true },
+     *   "over_read": { "queried_entry": 866, "queried_footprint": 2048,
+     *                  "queried_footprint_hex": "0x800",
+     *                  "message": "0x17855 is past entry 866's footprint ...",
+     *                  "true_owner_label": "entry 867 battle_data" },
+     *   "covering": [ { "index": 866, "block": "battle_data", "role": "over-read copy" },
+     *                 { "index": 867, "block": "battle_data", "role": "true source" } ] }
+     * ```
+     * `owner` is `null` when the offset is past every entry's footprint (tail
+     * padding). `over_read` is `null` unless the offset sits in more than one
+     * extracted window (i.e. at least one file carries it as a neighbour's
+     * over-read copy). `{ "error": "..." }` on a bad offset / unparsable disc.
+     * @param {string} offset
+     * @param {number | null} [in_entry]
+     * @returns {string}
+     */
+    locate_offset_json(offset, in_entry) {
+        let deferred2_0;
+        let deferred2_1;
+        try {
+            const ptr0 = passStringToWasm0(offset, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len0 = WASM_VECTOR_LEN;
+            const ret = wasm.legaiaviewer_locate_offset_json(this.__wbg_ptr, ptr0, len0, isLikeNone(in_entry) ? Number.MAX_SAFE_INTEGER : (in_entry) >>> 0);
+            deferred2_0 = ret[0];
+            deferred2_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+        }
+    }
+    /**
      * Returns the model's bounding sphere center (`[cx, cy, cz]`) and radius
      * `r` packed as `[cx, cy, cz, r]`. JS uses this to build the MVP matrix
      * without re-parsing the TMD each frame.
@@ -5644,6 +5691,36 @@ export class LegaiaViewer {
             throw takeFromExternrefTable0(ret[1]);
         }
         return ret[0] >>> 0;
+    }
+    /**
+     * Every entry whose extracted `.BIN` window over-reads its true footprint -
+     * i.e. its tail carries the next entry's bytes. Mirrors the `OVR` column of
+     * `prot-extract list`, but returns only the flagged rows (the trap-bearing
+     * ones); the vast majority of entries declare exactly their footprint.
+     *
+     * Shape:
+     * ```json
+     * { "total_entries": 1231, "over_read_count": 2,
+     *   "entries": [ { "index": 865, "block": "battle_data", "lba": 76288,
+     *                  "byte_offset": 156237824, "byte_offset_hex": "0x9500000",
+     *                  "declared_size": 16777216, "declared_size_hex": "0x1000000",
+     *                  "footprint": 2048, "footprint_hex": "0x800",
+     *                  "over_read_bytes": 16775168 }, ... ] }
+     * ```
+     * `{ "error": "..." }` when no disc is loaded / the TOC won't parse.
+     * @returns {string}
+     */
+    prot_over_read_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaviewer_prot_over_read_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
     }
     /**
      * Render cataloged TIM `id` with CLUT `clut` into the 2D canvas named
@@ -6914,7 +6991,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 115, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 117, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__hc20c1a455dcd1273);
             return ret;
         },
