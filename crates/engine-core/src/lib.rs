@@ -34,6 +34,7 @@ pub mod cutscene_caption;
 pub mod cutscene_narration;
 pub mod cutscene_timeline;
 pub mod dance;
+pub mod dev_menu;
 pub mod dialog;
 pub mod encounter;
 pub mod encounter_man;
