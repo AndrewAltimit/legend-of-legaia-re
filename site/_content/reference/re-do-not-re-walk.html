@@ -66,6 +66,27 @@
         <td>The two addresses host different code in different overlays (byte-verified: 80/228/124/308/1 B and 208/1036 B across 0897/baka/cutscene/debug-menu/fishing/slot/dance) - the port-catalog's bare-VA keying aggregated their refs into phantom top blockers. Tracked per-overlay via <code>overlay_&lt;label&gt;_&lt;addr&gt;</code> identities; catalog ignore category <code>va_aliased_overlay_local</code>.</td>
         <td><a href="../tooling/port-catalog.html">port-catalog</a></td>
       </tr>
+      <tr>
+        <td>Charm battle softlock = unbounded reroll in <code>FUN_801E7320</code></td>
+        <td><span class="tag tag-done">falsified</span> (cannot spin from any reachable state)</td>
+        <td>The reroll loops are unbounded in isolation, but every reachable caller state has an exit: the scheduler <code>FUN_801DABA4</code> never seeds a dead actor (predicate <code>+0x14C != 0 &amp;&amp; !(+0x16E &amp; 0x4)</code>), the acting <code>0x380</code> monster is itself an in-band self-pick exit (<code>0x801E73E8</code> clears <code>+0x1DE</code>), and a band with zero living members means the previous <code>0x5A</code> already fired the wipe. The real defect is downstream in the <code>0x5A</code> victory arm's roster indexing. Lesson: an unbounded loop hangs only under a reachable all-invalid state - check the predicates feeding it first.</td>
+        <td><a href="../subsystems/battle.html">battle</a></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="audio">
+  <h2>Audio / sound driver</h2>
+  <table>
+    <thead><tr><th>Thread</th><th>Verdict</th><th>Why</th><th>Detail</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>FUN_80068D94</code> as "<code>SsSepOpen</code> / SEP loader" (with <code>FUN_80068B98</code> as "<code>SsSeqOpen</code>")</td>
+        <td><span class="tag tag-done">falsified</span> (it is the VAB-open head)</td>
+        <td>The plausible part: it validates a magic, reads a count at <code>+0x12</code>, <code>SsSpuMalloc</code>s, and patches a pointer table - the shape of a SEP/track loader, with the magic read as 'VAP'. The disassembly refutes it: the compare is <code>0x564142</code> against <code>word &gt;&gt; 8</code> plus low byte <code>0x70</code> - <code>pBAV</code>, the <strong>VAB</strong> magic - and <code>+0x12</code> is <code>ps</code>. The "per-track pointer table" is the ProgAtr table receiving the program &rarr; packed-tone-page rank map; the mislabel hid that map, and with it the engine's tone collapse on sparse banks. Correct roles: <a href="../subsystems/audio.html">audio</a>.</td>
+        <td><a href="../formats/vab.html">vab</a></td>
+      </tr>
     </tbody>
   </table>
 </section>
@@ -80,6 +101,12 @@
         <td><span class="tag tag-done">falsified</span> (not a function inventory gap)</td>
         <td>Not a function inventory. The recomp capture's seed PCs are interpreter <em>dispatch entries</em> &mdash; return sites, interrupt-resume PCs and <code>jr</code>-table labels &mdash; accumulated across every overlay generation of the session (title / FMV / menu / field) while only the byte snapshot is per-dump. Dozens of listed addresses land in 0897's <em>data</em> head, one source capture's resident bytes match disc 0897 at only ~16%, and only two coincidental hits verify at all (both in the never-resident slot-machine image), the rest being <code>j</code>-target labels rather than function entries. Seed lists need per-hit resident-image resolution before any identity claim.</td>
         <td><a href="#d-270-functions">details &darr;</a></td>
+      </tr>
+      <tr>
+        <td>Prologue gold grade = per-node <code>+0x74</code>/<code>+0x78</code> depth-cue crush</td>
+        <td><span class="tag tag-done">falsified</span> (grade is a palette-space collapse; the nodes carry no <code>IR0</code>)</td>
+        <td>Plausible because <code>FUN_8002735C</code> really does load per-node DPCS far colour + <code>IR0</code>, and the motion/move VMs carry op <code>0x0C</code> writers of those fields - but the opening never uses them: a live recomp capture reads node <code>+0x78</code> (<code>IR0</code>) = <strong>0 on every node at every beat</strong>, and the <code>opdeene</code> MAN motion section has no op <code>0x0C</code>. The real mechanism is a load-time CLUT/TMD palette collapse <code>L=max(r,g,b) &rarr; (L, max(L-1,0), L&gt;&gt;1)</code>; the far-field crush is that law seen through dark authored gouraud.</td>
+        <td><a href="../subsystems/cutscene.html">cutscene</a></td>
       </tr>
     </tbody>
   </table>

@@ -80,6 +80,10 @@
       <span class="memmap-addr">0x80084708 + n*0x414</span>
       <span class="memmap-label">Per-character record (4 slots; display name at internal +0x2A7). Slot 3 (Terra) runs into the story-flag bitmap at 0x80085600, so its tail (+0x2BC..) aliases the globals.</span>
     </div>
+    <div class="memmap-row" data-key="inventory">
+      <span class="memmap-addr">0x80085958</span>
+      <span class="memmap-label">Item inventory (2-byte stride, alternating id/count; live window is 128 or 256 slots, not the 72 the cheat corpus spans)</span>
+    </div>
     <div class="memmap-row" data-key="ability-bitmask">
       <span class="memmap-addr">0x80074358 - 0x80074367</span>
       <span class="memmap-label">4×u32 active-ability bitmask</span>
@@ -179,6 +183,10 @@ const DETAILS = {
   'char-records': {
     title: 'Character records',
     body: `<p>Stride <code>0x414</code> bytes per character. Notable fields: <code>+0x13C</code> spell-list count, <code>+0x196</code> equipment slots, <code>+0x2B0</code> active spell-slot array, <code>+0xF4..0x100</code> 16-byte active-abilities block (OR'd into the global ability bitmask each frame).</p>`
+  },
+  'inventory': {
+    title: 'Item inventory',
+    body: `<p>2-byte stride alternating <code>(id, count)</code> at <code>0x80085958</code>. The active window <code>[start, end)</code> is installed only by <code>FUN_8004313C</code>: <code>[0,256)</code>, <code>[0,128)</code> or <code>[128,256)</code> - never 72 slots (the 72 is the "Have 99 Items" cheat's page span).</p><p>The add helper <code>FUN_800421D4</code> carries a real OOB id-store primitive at <code>0x800422BC</code> (unconditional store before the guard that gates only the count store), but it is <strong>unreachable through the retail add call sites in normal play</strong>: the merge pass keys on the id byte and <code>0</code> is the empty sentinel, so a <code>[0,256)</code> window holds at most 255 distinct ids and a hole always remains for the free-slot scan; only a non-add path (debug menu / cheat / crafted save) can force the <code>i == end</code> exit. See <a href="re-settled-threads.html#d-item-add-oob">settled threads</a>.</p>`
   },
   'ability-bitmask': {
     title: 'Active-ability bitmask',

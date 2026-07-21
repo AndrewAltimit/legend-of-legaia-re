@@ -210,7 +210,7 @@
 
 <section class="doc-section" id="seq-management">
   <h2>SsApi seq-management layer (above libspu)</h2>
-  <p>The bank/track bookkeeping layer: VAB open/close by id, the SEP multi-track loader, and the status/callback accessors the game polls. Chain: slot bitmap @ <code>_DAT_801CD2B8</code> &rarr; ptr table @ <code>0x801CD2C0</code> &rarr; per-slot record (stride <code>0x36</code>) at <code>0x801CDB60</code> &rarr; VAB program-attr (stride <code>0xB0</code>).</p>
+  <p>The bank/track bookkeeping layer: VAB open/close by id, the VAB-open head + program-change pair, and the status/callback accessors the game polls. Chain: slot bitmap @ <code>_DAT_801CD2B8</code> &rarr; ptr table @ <code>0x801CD2C0</code> &rarr; per-slot record (stride <code>0x36</code>) at <code>0x801CDB60</code> &rarr; VAB program-attr (stride <code>0xB0</code>).</p>
   <details class="disclosure">
   <summary>Function catalog</summary>
   <table>

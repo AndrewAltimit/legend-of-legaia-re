@@ -60,33 +60,33 @@
     <tbody>
       <tr>
         <td>Super / Miracle Arts trigger logic</td>
-        <td><span class="tag tag-partial">partial</span></td>
-        <td>Ported <strong>and live-wired</strong>: <code>engine-vm</code>'s <code>battle_action</code> applies <code>MiracleMatcher</code>/<code>SuperMatcher</code> and the Arts submenu flags Miracle/Super chains; Miracle + Tri-Somersault queues capture-validated byte-exact. Residue: byte-exact queue connectors for the remaining Supers. <a href="#d-super-miracle">details &darr;</a></td>
+        <td><span class="tag tag-mostly">mostly resolved</span></td>
+        <td>Ported <strong>and live-wired</strong>: <code>engine-vm</code>'s <code>battle_action</code> applies <code>MiracleMatcher</code>/<code>SuperMatcher</code> and the Arts submenu flags Miracle/Super chains. The byte-exact question is closed by capture: the battle overlay keeps the full trigger table resident, and a live battle-RAM read captured all 30 find/replace strings byte-identical to the modeled tables (<code>0x801F64F4/6504/6514</code> = the 3 Miracle strings, <code>0x801F6524</code> = 15 Super <code>find</code> entries, <code>0x801F65E8</code> = 15 Super <code>replace</code> strings) - the combo-specific connectors are <strong>resident table data</strong>, not a derivation. <a href="#d-super-miracle">details &darr;</a></td>
         <td><a href="../subsystems/battle-action.html">battle-action</a></td>
       </tr>
       <tr>
         <td>First boss trigger &rarr; Battle</td>
-        <td><span class="tag tag-mostly">mostly resolved</span> (mechanism pinned for both bosses; one vestigial-flag question open)</td>
-        <td>The scripted-battle arm is the field-VM op <code>3E FF &lt;formation_row&gt;</code> (case-0x3E: <code>entity[+0x8A]=1</code>, <code>entity[+0x94] = ctrl[+0x20] + row*stride + 1</code> &mdash; see <a href="../subsystems/battle.html#scripted-battle-entry">battle.html</a>). Zeto: garmel beat record <code>P2[12]</code> ends <code>3E FF 09</code> &rarr; formation row 9 = lone <code>0x4B</code> (live-confirmed). Caruban: rikuroa stager <code>P1[3]</code> ends <code>3E FF 11</code> &rarr; row 17 = lone <code>0x49</code> &mdash; the <strong>same record path</strong>; the engine enters both organically (<code>World::run_boss_stager_record</code>). Open: does any retail battle write <code>DAT_8007b7fc</code> (reads <code>0</code> everywhere; may be vestigial)?</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>The scripted-battle arm is the field-VM op <code>3E FF &lt;formation_row&gt;</code> (case-0x3E: <code>entity[+0x8A]=1</code>, <code>entity[+0x94] = ctrl[+0x20] + row*stride + 1</code> &mdash; see <a href="../subsystems/battle.html#scripted-battle-entry">battle.html</a>). Zeto: garmel beat record <code>P2[12]</code> ends <code>3E FF 09</code> &rarr; formation row 9 = lone <code>0x4B</code> (live-confirmed). Caruban: rikuroa stager <code>P1[3]</code> ends <code>3E FF 11</code> &rarr; row 17 = lone <code>0x49</code> &mdash; the <strong>same record path</strong>; the engine enters both organically (<code>World::run_boss_stager_record</code>). <code>DAT_8007b7fc</code> is closed: writer-less across <code>SCUS_942.54</code> + every static overlay (absolute + gp-relative + address-materialisation sweep); readers pin it as the <strong>debug forced-battle formation id</strong> - battle init <code>FUN_80055b6c</code> &rarr; <code>FUN_8005567c</code> seeds the formation cells <code>DAT_8007BD0C+</code> from it, and <code>FUN_80046A20</code> routes a nonzero value to its mode-0 debug-menu exit. Retail never sets it.</td>
         <td><a href="../formats/encounter.html">encounter</a></td>
       </tr>
       <tr>
         <td>Enemy-ally charm battle softlock</td>
-        <td><span class="tag tag-open">open</span> (cause unconfirmed)</td>
-        <td>A charm fight can hard-freeze (user-reported; once after a Gimard cast, once after an arts combo); the cause is not yet pinned. The <code>FUN_801E7320</code> "unbounded reroll at <code>0x801E7370</code>" theory is unsettled: the reroll loop while <code>monster[a0].HP == 0</code> can legally pick the alive charmed ally and exit (self-target branch <code>0x801E73E0</code>). Trap: forcing battle-end at runtime tears the SM down mid-action - game-over, then garbage writes / freeze; the game only writes the end signal at the safe <code>0x5A</code> gate. Next: the observe-only probe <code>autorun_charm_win_softlock.lua</code>, then a disc-side fix.</td>
-        <td></td>
+        <td><span class="tag tag-done">resolved</span> (both tracks fixed; grade <span class="tag tag-done">disassembly</span>)</td>
+        <td>The state-<code>0x5A</code> victory arm's party-slot assumption OOB-indexes the win-pose roster <code>DAT_8007BD10</code> (via <code>0x801E6770</code>) when a living charmed ally is the acting actor at monster-wipe victory. The <code>FUN_801E7320</code> "unbounded reroll" theory is falsified (<a href="re-do-not-re-walk.html">do not re-walk</a>). Fixed on both tracks: engine <code>victory_pose_fixup</code>/<code>charm_widen</code>, and the disc-side <code>legaia_rando::charm_fix</code> guard - a single-word detour at the <code>0x801E6690</code> keep-branch into a SCUS dead-space liveness guard. Full chain: <a href="../subsystems/battle.html">battle</a>.</td>
+        <td><a href="../subsystems/battle.html">battle</a></td>
       </tr>
       <tr>
         <td>Battle-actor <code>+0x16E</code> bit <code>0x400</code> applier (guard-disabling status)</td>
-        <td><span class="tag tag-open">open</span> (low value)</td>
-        <td>Bit <code>0x400</code> of the battle-actor flags word <code>+0x16E</code> reads as a guard-disabling Sleep/Numb-like status. The sibling AI-delegated bits <code>0x380</code> in the same word are pinned (the enemy-ally charm hook sets them via <code>FUN_801E7320</code> retarget), but the <em>setter</em> that raises <code>0x400</code> is not in the decompiled corpus - readers only. Low value. Closes with a before/after RAM capture around a battle turn that inflicts the status, diffing the <code>+0x16E</code> word to catch the byte that raises <code>0x400</code>.</td>
+        <td><span class="tag tag-open">open</span> (low value; two consumers pinned)</td>
+        <td>Bit <code>0x400</code> of the battle-actor flags word <code>+0x16E</code> reads as a guard-disabling Sleep/Numb-like status; the sibling AI-delegated bits <code>0x380</code> are pinned (enemy-ally charm hook, <code>FUN_801E7320</code>). Two <em>consumers</em> of the <code>0x80..0x800</code> class are pinned live: the on-hit strip <code>0x801EDA60</code> in overlay 0898 (<code>andi 0xF07F</code> clears the class on any hit, so <code>0x400</code> is a volatile hit-cleared status) and the battle-exit per-party clear <code>0x80046EB0</code> in <code>FUN_80046A20</code>. The <em>setter</em> is still uncaught (no infliction in the wipe capture); probe <code>autorun_status_word_writer.lua</code> is armed for a status-inflicting battle state.</td>
         <td></td>
       </tr>
     </tbody>
   </table>
 
   <h3 id="d-super-miracle">Super / Miracle Arts - residual</h3>
-  <p>The queue is the per-actor <code>actor[+0x1DF..+0x1F2]</code> action-parameter byte stream; captures validate Noa's Miracle queue and Vahn's Tri-Somersault Super byte-exact against the modeled replace strings. Residual: the connector direction after each art is combo-specific, so the remaining Supers' replace strings each need one capture through <code>autorun_super_art_action_queue.lua</code>.</p>
+  <p>The queue is the per-actor <code>actor[+0x1DF..+0x1F2]</code> action-parameter byte stream; captures validate Noa's Miracle queue and Vahn's Tri-Somersault Super byte-exact against the modeled replace strings, and every replace obeys <code>replace = find[..len-2] ++ [1A, finisher&hellip;]</code> (test-locked). What (narrowly) stays open: per-Super <em>live-executed</em> queue captures for the other 13 (driving each combo and watching the tail-replace at <code>actor[+0x1DF]</code>) - now purely confirmatory, since the resident strings, queue location, dequeue site (<code>0x801D89D8</code>) and two end-to-end executions are all pinned. The connector-emitting queue-builder function entry is still unpinned as a code address.</p>
 </section>
 
 <section class="doc-section" id="field">
@@ -155,9 +155,9 @@
     <tbody>
       <tr>
         <td>XA clip-table writer + <code>(clip_id, chan)</code> cue census</td>
-        <td><span class="tag tag-open">open</span></td>
-        <td>The <code>0x801C6ED8</code> clip-table content is pinned (34 <code>[CdlLOC][len]</code> slots = <code>XA1..XA34</code>, title-capture byte-exact vs the disc files), but its filler is a DMA/computed write (both <code>lui 0x801c</code> sites in SCUS are readers). A boot write-watchpoint would pin the filler; a caller census of <code>FUN_8003D53C</code>/<code>FUN_8003EAE4</code> would name each cue (only the menu voice dispatcher <code>FUN_8004FCC8</code> is decoded).</td>
-        <td><a href="../subsystems/cutscene.html#xa-channel-selection">cutscene</a></td>
+        <td><span class="tag tag-done">resolved</span> (writer pinned; cue census decoded)</td>
+        <td>The <code>0x801C6ED8</code> clip-table content is pinned (34 <code>[CdlLOC][len]</code> slots = <code>XA1..XA34</code>, title-capture byte-exact vs the disc files). The filler is <strong><code>FUN_801CFA78</code></strong> in PROT 0895 <code>init.pak</code> (base <code>0x801CE818</code>): it sprintf-generates <code>\XA\XA%d.XA;1</code> per slot and fills <code>[BCD-MSF][size]</code> via the ISO9660 lookup <code>FUN_8005DBB4</code>, called once from the init boot tick <code>0x801CF500</code>. The earlier "untraceable DMA/computed write" framing was the SCUS-only sweep's blind spot - the two <code>lui 0x801c</code> sites in SCUS (<code>FUN_8003D53C</code>/<code>FUN_8003EAE4</code>) are the <strong>readers</strong>; the writer is overlay-resident. Cue census (callers of those readers): menu voice <code>FUN_8004FCC8</code>; the normal-move grunt (<code>XA30</code> chan 0/4/6, overlay <code>0x801EEB44</code>); the arts shout (<code>FUN_8004C140</code> &rarr; <code>XA2</code>/<code>XA4</code>/<code>XA6</code> per character); SM state-<code>0x6E</code> (<code>XA9</code>); slot machine <code>XA1</code>. Full deduped census in <a href="../subsystems/audio.html">audio</a>; dedupe by true entry extent - PROT over-read aliases callsites into neighbouring overlays.</td>
+        <td><a href="../subsystems/audio.html">audio</a></td>
       </tr>
     </tbody>
   </table>
@@ -170,8 +170,8 @@
     <tbody>
       <tr>
         <td>Pause Items/Magic screens: remaining sub-flows</td>
-        <td><span class="tag tag-open">open</span></td>
-        <td>The faithful screens are wired end-to-end. Still open: the <strong>Throw Out / Arrange</strong> sub-flows (<code>FUN_801D0D18</code>'s non-Use branches, untraced); the <strong>field target-pick window</strong> the Use/cast flows open (layout unpinned - the engine overlays its generic picker); the "PAGE" small-cap tag <strong>sprite source</strong>; and the displayed MP cost through the per-caster kernel <code>FUN_80035394</code> (catalog base cost draws today). A pad-walked capture into each sub-flow would close the first two.</td>
+        <td><span class="tag tag-done">resolved</span> (one capture-diff residual)</td>
+        <td>All four sub-flows traced from disassembly and ported: the <strong>window-14 target panel</strong> (<code>FUN_801D0520</code>; the preview modes are the permanent-stat Water previews, superseding the "HP-restore" reading), the <strong>PAGE sprite</strong> (UI-icon <code>0x76</code>), the <strong>SCUS kind-4 list kernel</strong> (<code>FUN_80032A44</code> + allocator <code>FUN_80030104</code>), and the <strong>class-<code>0x80..0x82</code> Use routes</strong> (submenus 0xA..0xD: single-target apply <code>FUN_801D8308</code>, Door of Light/Wind <code>FUN_801D8A58</code>/<code>FUN_801D8B90</code>, Incense <code>FUN_801D8D94</code>). Throw Out / Arrange are likewise traced and ported. Engine <code>engine-ui</code>/<code>pause_screens</code>. Residual: which overlay path sets the row <code>0x800</code> dim bit across a focused Use-list page (one capture diff).</td>
         <td><a href="../subsystems/field-menu.html">field-menu</a></td>
       </tr>
     </tbody>
@@ -191,14 +191,14 @@
       </tr>
       <tr>
         <td>New-Game opening chain + narration roller</td>
-        <td><span class="tag tag-partial">partial</span> (chain + caption + roller resolved; two render-fidelity residuals open) - roller operand decode graded <code>decompiled-C</code>, <strong>re-audit</strong></td>
-        <td>The opening is a five-scene chain (<code>opdeene</code> &rarr; <code>opstati</code> &rarr; <code>opurud</code> &rarr; <code>map01</code> &rarr; <code>town01</code>, all master mode 3, zero input), live-probe + pixel-capture pinned; the narration is a bottom-up scrolling crawl on a child-context roller actor (<code>FUN_80037174</code>), the "It was the Seru." caption is a pre-rendered TIM in PROT 0749 (not text), and the camera op <code>0x45</code> map, name-entry auto-open and the eye-back depth (offset-trio slot 5, <code>0x800840B8</code> &mdash; there is <strong>no</strong> separate eye-distance scalar) are all pinned. Residuals, both render-fidelity: the prologue per-node depth-cue crush, and the tableau ground-texture chroma.</td>
+        <td><span class="tag tag-done">resolved</span> (chain + caption + roller + prologue gold grade; far-geometry residual closed resolved-negative)</td>
+        <td>The opening is a five-scene chain (<code>opdeene</code> &rarr; <code>opstati</code> &rarr; <code>opurud</code> &rarr; <code>map01</code> &rarr; <code>town01</code>, all master mode 3, zero input), live-probe + pixel-capture pinned; the narration is a bottom-up scrolling crawl on a child-context roller actor (<code>FUN_80037174</code>), the "It was the Seru." caption is a pre-rendered TIM in PROT 0749 (not text), and the camera op <code>0x45</code> map, name-entry auto-open and the eye-back depth (offset-trio slot 5, <code>0x800840B8</code> &mdash; there is <strong>no</strong> separate eye-distance scalar) are all pinned. Both former render-fidelity residuals had one root cause: the <strong>prologue gold grade is a capture-pinned palette-space collapse</strong> - the cutscene host rewrites every uploaded CLUT to <code>L = max(r,g,b) &rarr; (L, max(L-1,0), L&gt;&gt;1)</code> and collapses the TMDs' authored colour packets to the amber family, while node <code>+0x78</code> (<code>IR0</code>) is 0 on every node at every beat, so the per-node depth-cue reading is falsified (<a href="re-do-not-re-walk.html">do not re-walk</a>). Engine port <code>Renderer::set_palette_grade</code>. The far-geometry-brightness residual closed <strong>resolved-negative</strong>: the remaining gap is retail's scene GTE far/back-colour ambient (<code>opdeene</code>'s dim <code>0x00202020</code>) on neutral packets - reproducing it would mean porting a GTE field-light op that contradicts the port's standing no-field-light boundary, so no engine change was warranted.</td>
         <td><a href="../subsystems/cutscene.html">cutscene</a></td>
       </tr>
       <tr>
         <td>Full-window item-add OOB primitive: reachability</td>
-        <td><span class="tag tag-open">open</span> (re-opened; the earlier live confirmation does not hold) - store-order claim graded <code>decompiled-C</code>, <strong>re-audit</strong></td>
-        <td>The primitive is real and statically pinned; the claim that normal play reaches it is not. Two corrections: the landing address depends on the active window and the window is <strong>not</strong> 72 slots (<code>FUN_8004313C</code> only ever installs <code>[0,256)</code>, <code>[0,128)</code> or <code>[128,256)</code>), and the recorded <code>pc = 0x800422BC</code> probe hits were ordinary adds, not OOB hits. The load-bearing claim is one of <em>store order</em> - exactly the shape Ghidra's C reorders - and no instruction sequence backs it. Re-derive <code>FUN_800421D4</code>'s <code>sh</code>/<code>slt</code>/branch order before building on this row.</td>
+        <td><span class="tag tag-done">resolved</span> (moved to settled threads)</td>
+        <td>Primitive real (grade <span class="tag tag-done">disassembly</span>): the id store <code>sb t0,0x1818(a0)</code> at <code>0x800422BC</code> is unconditional, before the guard that gates only the count store. But <strong>unreachable through the retail add call sites in normal play</strong> - each caller <code>jal</code>s the helper with no room pre-check, and the helper's free-slot scan cannot reach the <code>i == end</code> OOB exit (a <code>[0,256)</code> window holds &le;255 distinct ids, so a hole always remains). See <a href="re-settled-threads.html#d-item-add-oob">settled threads</a>.</td>
         <td><a href="memory-map.html">memory-map</a></td>
       </tr>
       <tr>

@@ -598,6 +598,13 @@
         <td></td>
       </tr>
       <tr>
+        <td>Full-window item-add OOB reachability</td>
+        <td><span class="tag tag-done">resolved</span> (write primitive real; normal play cannot reach it)</td>
+        <td><span class="tag tag-done">disassembly</span></td>
+        <td>The id store <code>sb t0,0x1818(a0)</code> at <code>0x800422BC</code> in <code>FUN_800421D4</code> is unconditional and precedes the <code>slt</code>/<code>beq</code> guard that gates only the count store, so an exhausted free-slot scan writes one slot past the window - but the retail add call sites can never present a full window. <a href="#d-item-add-oob">details &darr;</a></td>
+        <td><a href="memory-map.html">memory-map</a></td>
+      </tr>
+      <tr>
         <td>XP-table source + reader</td>
         <td><span class="tag tag-done">resolved</span></td>
         <td><span class="tag tag-done">capture</span></td>
@@ -648,6 +655,16 @@
       </tr>
     </tbody>
   </table>
+
+  <h3 id="d-item-add-oob">Full-window item-add OOB reachability - resolved</h3>
+  <p><em>Grade:</em> <code>disassembly</code> for the full window; <code>inference</code> for the half-window sub-case.</p>
+  <p>The OOB <em>write</em> is confirmed from <code>FUN_800421D4</code>'s disassembly: the id store <code>sb t0,0x1818(a0)</code> at <code>0x800422BC</code> is unconditional and precedes the <code>slt</code>/<code>beq</code> guard (<code>0x800422C8</code>/<code>0x800422CC</code>) that gates only the count store at <code>0x80042300</code>. When the free-slot scan exhausts the window it leaves the index <code>== end</code>, so the id lands one slot past the window (<code>base + end*2</code> = <code>0x80085A58</code> for <code>end=128</code>, <code>0x80085B58</code> for <code>end=256</code>). The window is installed only by <code>FUN_8004313C</code>, which installs <code>[0,256)</code>, <code>[0,128)</code> or <code>[128,256)</code> - never the 72-slot span an earlier note recorded.</p>
+  <p><strong>Reachability verdict: unreachable through the retail add call sites in normal play.</strong> No add caller pre-checks room - each loads an item id and <code>jal</code>s the helper directly (shop buy-confirm <code>0x801C38A4</code>, battle-loot <code>0x8004F380</code>/<code>0x8004F608</code>, plus the menu/save/fishing/world-map/minigame/equip-refund helpers) - so the helper's own scan is the only backstop, and it holds:</p>
+  <ul class="bullets">
+    <li><strong>Full window <code>[0,256)</code></strong> (installed for any party of &ge;2, the normal mid/late state). The merge pass keys on the id byte (<code>andi a3,t0,0xff</code> @ <code>0x800421F4</code>), so each non-zero id occupies at most one slot and <code>0</code> is the empty sentinel; at most <strong>255</strong> distinct ids occupy the 256 slots, so a hole always remains and the scan exits in-window. The OOB store is mathematically unreachable here.</li>
+    <li><strong>Half windows <code>[0,128)</code> / <code>[128,256)</code></strong> (a single playable member with story flag 20 clear - a transient early/solo phase). 128 &le; 255 so the id ceiling alone does not forbid a fill, but the real disc item population is far below 128, so the scan still terminates on a hole.</li>
+  </ul>
+  <p>A non-add path (debug menu, cheat engine, or a crafted save seeding duplicate live ids) could still force the exit with an attacker-influenced byte - outside "normal play", which is what the thread asked. Port + machine-checkable verdict: <code>legaia_save::retail_inventory</code> (<code>ItemWindow::oob_reachability</code>, <code>MAX_DISTINCT_ITEM_IDS</code>, <code>OobReachability</code>).</p>
 
   <h3 id="d-prot0896">PROT 0896 - resolved</h3>
   <p>Host-capstone decode of the head (extraction entry 896, located by the <code>"FWIN ERR"</code> bytes) identifies it as the vestigial Japanese-build field-menu / config / status overlay: a Shift-JIS config/menu/status label pool, the <code>"FWIN ERR %d"</code> (Field WINdow) debug printf at file offset <code>0x3D4</code>, real MIPS at link base <code>~0x801D0000</code> indexing the <code>0x414</code>-byte character records, and head function-pointer tables across <code>0x801D81C0..0x801DC700</code> - the same window-renderer VA family as the live English menu overlay PROT 0899, which ships the English equivalents of the identical label set with zero <code>FWIN</code>. A distinctive-signature scan across 140 catalogued RAM states finds 0896 resident in none (positive control: the English "Battle Voices" is resident in 10 menu-phase states), so the USA build never loads it - a vestigial JP-build overlay carried on the disc.</p>

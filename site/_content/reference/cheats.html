@@ -43,7 +43,7 @@ cargo run -p legaia-cheats --bin cheat-tool -- offset-table data/cheats/legaia-n
 <section class="doc-section" id="citations">
   <h2>Notable citations the cheat database pinned</h2>
   <ul class="bullets">
-    <li><strong>Inventory layout</strong>: <code>0x80085958</code> + 2-byte stride, 72 slots, alternating <code>(id, count)</code>. Pinned by the "Have 99 Items" / "Have Max Items" / "Item Modifier" cheat triplet.</li>
+    <li><strong>Inventory layout</strong>: <code>0x80085958</code>, 2-byte stride alternating <code>(id, count)</code>. Pinned by the "Have 99 Items" / "Have Max Items" / "Item Modifier" cheat triplet - but note the "Have 99 Items" span of 72 slots is the <em>cheat's</em> general-item page, not an engine bound; the live inventory window is 128 or 256 slots (see <a href="memory-map.html">RAM map</a>).</li>
     <li><strong>Battle actor pool stride</strong>: <code>0x800EC9E8</code> + <code>0x2D4</code> per party slot. Vahn HP at <code>+0x14C</code> / Noa at base+<code>0x2D4</code>+<code>0x14C</code> = <code>0x800ECE08</code>. The "Infinite HP/MP" cheats target both the live (<code>+0x14C/+0x150</code>) and settled (<code>+0x172/+0x174</code>) sites.</li>
     <li><strong>Story flag bitmap</strong>: <code>0x80085600..0x80085800</code> holds town-visited / Door of Wind state. "Access All Towns" writes <code>0xF77F / 0xF8FF</code> at <code>0x8008575C/E</code>.</li>
     <li><strong>Code-patch sites</strong>: cheats writing <code>0x2400</code> (MIPS <code>nop</code>) flag specific instructions: inventory-add (<code>0x800422F4</code>), count-decrement (<code>0x8004309E</code>), Vahn chest draw (<code>0x80043910</code>), HP-write branch (<code>0x8007EA96</code>). Useful Ghidra anchors.</li>

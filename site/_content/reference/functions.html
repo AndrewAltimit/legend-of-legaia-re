@@ -122,7 +122,7 @@
         <li><code>FUN_801D8DE8</code> - HUD element renderer; switches on <code>elem_id</code> (80-entry table) to draw each on-screen element (HP bars, Spirit names, hand-card portraits, victory banner). Shared by the battle HUD and Muscle Dome.</li>
         <li><code>FUN_801DA6B4</code> - battle actor display-state controller; opacity + pose flags for alive actors</li>
         <li><code>FUN_801DB81C</code> - next-valid-target scan; <code>actor[+0x14C] != 0</code> &amp; no death/stone</li>
-        <li><code>FUN_801ED710</code> - records / stats screen renderer (battles, escapes, play-time, max-hits)</li>
+        <li><code>FUN_801ED710</code> - records / stats screen renderer: nine label-heading rows - battles + escapes (cap 99999), play time (<code>H:MM:SS</code>), six per-character stat categories iterating the record at <code>0x80084140 + n*0x414</code> (<code>+0x6B4</code>/<code>+0x6B0</code>, <code>+0x660</code>/<code>+0x664</code>, <code>+0x74D</code>/<code>+0x704</code>), and a final averages row over the <code>0x801C6460</code> counters</li>
         <li><code>FUN_800520F0</code> - battle scene loader; sequential state machine that pulls the <code>befect_data</code> cluster (etim texels, etmd effect models registered via <code>FUN_80026B4C</code>, vdf, efect.dat) and the PROT 871 effect-model library into <code>DAT_8007C018[3..32]</code></li>
         <li><code>FUN_80020050</code> - <strong>flame / effect-texture atlas loader (SCUS)</strong>. Uploads PROT entry <code>0x366</code> (870 - the flame TIMs) into VRAM <strong>twice</strong> via <code>FUN_8001fc00</code> (&rarr; <code>FUN_8003e8a8</code>, the PROT-index/TOC resolver); the VRAM region is set up by <code>FUN_80017888</code> / <code>FUN_8001e54c</code> (arg <code>0xf000</code>). Gated on <code>_DAT_8007b868 == 0</code>. This is the VRAM blit site for PROT 870 - it is <strong>not</strong> loaded by the battle-bundle path <code>FUN_800520F0</code> (which pulls <code>0x367..0x36d</code>).</li>
         <li><code>FUN_80026B4C</code> - TMD validate + register (asserts magic <code>0x80000002</code>); stores into the global TMD table <code>DAT_8007C018</code></li>
@@ -158,6 +158,7 @@
         <li><code>FUN_800243F0</code> - BGM lookup (PROT-relative)</li>
         <li><code>FUN_8003E104</code> - monster.snd loader</li>
         <li><code>0x80061-0x80067</code> - libsnd SsAPI sequencer cluster</li>
+        <li><code>FUN_80068D94</code> - <code>SsVabOpenHead</code> core: validates the <code>pBAV</code> VAB magic, builds the program-number &rarr; packed-tone-page rank map into the ProgAtr <code>+8</code> reserved words, allocates SPU memory, stashes per-VAG SPU addresses (the earlier "<code>SsSepOpen</code> / 'VAP' loader" reading is corrected from the disassembly - see <a href="re-do-not-re-walk.html">do not re-walk</a>). Engine port: <code>engine-audio::VabBank::upload</code></li>
         <li><code>0x80068-0x6D</code> - libspu SPU control cluster</li>
         <li><code>FUN_80069B18</code> - SPU DMA transfer state machine</li>
       </ul>
@@ -167,7 +168,7 @@
       <h3>World map</h3>
       <ul class="fnref-list">
         <li><code>FUN_801E76D4</code> - world-map controller (9320 B); top-view debug toggle + camera scroll/azimuth/zoom</li>
-        <li><code>FUN_801EAD98</code> - world-map developer menu renderer (7280 B); 24-entry scrollable list incl. MAP CHANGE / EVENT FLAG / PLAY POS / GET ITEM (display-only; the tools live in field overlay 0897)</li>
+        <li><code>FUN_801EAD98</code> - world-map developer menu renderer (7280 B); 24-entry scrollable list incl. MAP CHANGE / EVENT FLAG / PLAY POS / GET ITEM (display-only; the tools live in field overlay 0897). Row model + digit formatter ported at <code>legaia_engine_vm::world_map_overlay</code>; draws stay render-side</li>
         <li><code>FUN_801EE094</code> / <code>FUN_801EE328</code> (0897) - dev-menu warp appliers ("ON RIREMITO," / "ON RULA,"): map-table walk on <code>_DAT_80084628</code>, scene load via <code>func_0x8001fd44</code>, player teleport - the MAP CHANGE half of the debug "jump to beat" behaviour</li>
         <li><code>FUN_801DBD04</code> (0897) - dev-menu EVENT FLAG editor: cursor <code>DAT_801f2aa0</code> over flag ids <code>0..0xFFF</code>, SET/CLEAR appliers at <code>0x801EA4F8/52C</code> - the debug path that can set any story flag incl. the spine gates; also the register-pointer editor that produced the FMV trigger corpus</li>
         <li><code>FUN_801EF014</code> (0897) - flag-window picker widget (descriptor via <code>_DAT_8007B450</code>, op-<code>0x49</code>-installed: <code>+2</code> = first visible row, <code>+3</code> = visible row count; confirm on a <em>different</em> row sets <code>base + selection</code>, re-picking the remembered current row or cancelling sets nothing). Disc usage (<code>man-scripts --op49-window-census</code>, 209 sites): the ONLY genuine flag-window family is kor/kor3/kor4 sub-4 <code>base=0x138 count=8</code> (24 sites) - the Uru Mais warp-pad destination memory; no window contains a spine flag.</li>

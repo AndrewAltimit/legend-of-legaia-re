@@ -37,6 +37,7 @@
 <pre><code>./asset monster-archive extracted/PROT/0867_battle_data.BIN          # list all 186
 ./asset monster-archive extracted/PROT/0867_battle_data.BIN --id 1 --glb monster1.glb</code></pre>
   <p>The listing prints every monster's name and battle stats; the <code>.glb</code> drags straight into Blender (or any glTF viewer) with geometry, material, and animation tracks intact. <code>--obj</code> / <code>--texture-png</code> export the pieces separately; <code>--anim</code> lists the decoded actions. Formats: <a href="../formats/battle-data-pack.html">battle-data pack</a>, <a href="../formats/monster-animation.html">monster animation</a>.</p>
+  <p>Enemy stats are <strong>not</strong> in the player-battle files <code>0865</code>/<code>0866</code>. If a hex editor shows enemy names like <code>Evil Fly</code> near the end of one of those files, that is an <em>over-read tail</em> (<a href="#over-read">see below</a>), not their real home. Always read enemy data through <code>asset monster-archive</code> on entry <code>0867</code>, which starts each monster's LZS stream at the right slot base - a raw <code>lzs-decode</code> of the whole file only expands the first stream it meets.</p>
 </section>
 
 <section class="doc-section" id="xa-audio">
@@ -113,6 +114,11 @@
   </ul>
 
   <p>One trap worth knowing: LZS "decompresses without error" is <strong>not</strong> a validity signal - the decoder's ring buffer initialises to zeros, so most random input decodes to plausible-looking bytes. Always check the <em>decoded</em> output for the expected magic (<a href="../formats/lzs.html">LZS</a>). This is why <code>lzs-decode probe</code> reports <code>no plausible sections</code> on a non-container entry rather than emitting garbage - a clean "this isn't LZS" is the useful answer.</p>
+
+  <h3 id="over-read">The over-read trap: which file owns a byte offset?</h3>
+  <p>Some PROT entries declare a TOC window far larger than their real on-disc footprint (the sector gap to the next entry), and <code>prot-extract</code> writes the full declared window - so those <code>.BIN</code> files carry the <em>next</em> entry's bytes in their tail. The clearest case is the battle-data cluster: entries <code>0865</code> (Gala) and <code>0866</code> (Terra) each declare ~16 MB but really own <code>0x6F000</code> / <code>0x17800</code>, and both oversized windows spill into the monster archive <code>0867</code> - which is why enemy text shows up at the end of a player-battle file. <code>prot-extract list</code> flags every such entry with an <code>OVR</code> column and shows its true <code>footprint</code> next to the declared size. To resolve a specific offset - "which file really owns the bytes my hex editor is showing at <code>0x17855</code> of <code>0866</code>?" - use <code>locate</code>:</p>
+<pre><code>./prot-extract locate extracted/PROT.DAT 0x17855 --in-entry 866 --cdname extracted/CDNAME.TXT</code></pre>
+  <p>It translates the in-file offset to an absolute <code>PROT.DAT</code> offset, names the <strong>true owning entry</strong> (here <code>0867</code>), and warns when the offset lands in an over-read tail rather than the entry's own data. Drop <code>--in-entry</code> to pass an absolute <code>PROT.DAT</code> offset directly. Browser equivalent: the <a href="../viewer.html">asset viewer</a>'s "Locate a PROT.DAT offset" panel does the same lookup client-side against your own disc.</p>
 </section>
 
 <section class="doc-section" id="see-also">
