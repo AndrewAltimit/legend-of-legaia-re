@@ -100,6 +100,7 @@ pub mod world_map;
 
 pub mod world_map_dim;
 pub mod world_map_horizon;
+pub mod world_map_overlay;
 
 /// Width of one bytecode instruction in bytes.
 pub const INSN_SIZE: usize = 4;

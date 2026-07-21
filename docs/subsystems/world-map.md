@@ -173,6 +173,21 @@ on the phase / helper product being `1` or `3` - so phase 1 always draws, phase
 3 draws only while `FUN_801EA9B0` reports the unwind still running, and phases
 2 and 4 never draw. Input is suppressed entirely while `_DAT_8007BB80 != 0`.
 
+#### Engine port
+
+The renderer-free half of the dev-menu leaves lives in
+`legaia_engine_vm::world_map_overlay`: `panel_geometry`, `cursor_step`
+(swap-wrap), `list_body_draws` (the phase×gate draw gate), `DevMenuRow` +
+`is_closed` (the 24-row model incl. the `MAP_CHANGE` / `CARD_OPTION` CLOSED
+gating), `format_fixed_decimal` (the zero-padded digit kernel `FUN_801EAD98`
+inlines per numeric readout), and `decode_camera_readout`. The GPU-packet
+emitters (`FUN_8001AA68` / `FUN_80034B78` / `FUN_8002C69C`) stay on the render
+side. The module also ports the escape-timer scheduler (`EscapeTimer`, from
+`FUN_801D2EBC`), the battle-records data model (`records_screen`, from
+`FUN_801ED710`), and the equipment stat-comparison preview
+(`aggregate_slot_stats` / `resolve_equip_slot` / `stat_deltas`, from
+`FUN_801E5B4C`).
+
 ### `FUN_801EE90C` - world map text-box dispatcher (128 bytes)
 
 Entry: `(ctx_ptr)`. Dispatches on `ctx[+0x54]` via a 15-entry jump table at
