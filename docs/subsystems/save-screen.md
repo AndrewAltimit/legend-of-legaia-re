@@ -390,6 +390,19 @@ consumes; `card_directory_slots` pairs it with the content-keyed
 `SlotSnapshot` constructors to build a session's slot list straight off a
 directory.
 
+#### Save-block checksum (`FUN_801E38D8`)
+
+A save block is exactly one card block (`0x2000` bytes = `0x800` u32
+words). `FUN_801E38D8` is the block's additive checksum: it sums the first
+`0x7FF` little-endian words with a wrapping (`addu`) accumulator and
+returns the total, stopping one word short of the block's final word at
+byte `0x1FFC`. That final word is where the write path stores the sum; the
+load direction of `FUN_801DD35C` reloads it (`0x801df888`:
+`lw v1,0x1ffc(s1); beq v1,v0`) and branches on stored-equals-computed to
+route the slot to the valid or the corrupt state. Ported as
+`save_select::save_block_checksum` with the compose helper
+`save_block_checksum_valid` mirroring that load-path compare.
+
 ### Per-character status preview (`FUN_801D9C14`, sub-screen `0x14`)
 
 Per-character menu preview function. Reads from the character record at

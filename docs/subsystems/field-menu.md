@@ -541,9 +541,11 @@ ported for completeness, faithful to the disassembly (`FUN_801dbd04` /
 - **Value step** (`FUN_801dbd04`): the edited flag index/value
   `DAT_801f2aa0` moves by Up/Down (fine `0x8`, coarse `0x80` while
   Triangle is held) and Left/Right (`±1`), then clamps to `[0, 0xFFF]`.
-- **List cursor** (`FUN_801db8f4`): the flag-list row cursor
-  `DAT_801f2e90` decrements, wrapping past the `'X'` (0x58) end sentinel
-  in the stride-`0xA` table at `DAT_801f2e94` to the last real entry.
+- **List cursor** (`FUN_801db8f4` / `FUN_801db8b4`): the flag-list row
+  cursor `DAT_801f2e90` decrements (prev) or increments (next), each
+  wrapping across the `'X'` (0x58) end sentinel in the stride-`0xA` table
+  at `DAT_801f2e94` - prev lands on the last real entry, next wraps to the
+  top.
 
 These read the **packed** pad words (`_DAT_8007bb84` edge, `_DAT_8007b850`
 held) from `FUN_8001822C` - `0x10` Triangle … `0x1000` Up / `0x2000`
@@ -551,10 +553,11 @@ Right / `0x4000` Down / `0x8000` Left - not the raw-BIOS `PadButton`
 layout. The two sibling worklist rows are decompiler fragments of the same
 dispatcher, not standalone functions: `FUN_801d3444` is the PC-delta
 entry-pointer advance (`addiu s8,s8,0x10; j …`), and `FUN_801d9bbc` is a
-menu-row text emit left as an `engine-ui` draw seam. Engine port:
+menu-row text emit (`func(0x801cf1ec, s3, s5+0x10)`, reusing caller
+registers) left as an `engine-ui` draw seam. Engine port:
 `engine-core::dev_menu` (`edit_flag_value`, `flag_list_prev`,
-`EventFlagEditor`); no draw-list code, so the row render stays with the UI
-crates.
+`flag_list_next`, `EventFlagEditor`); no draw-list code, so the row render
+stays with the UI crates.
 
 ## Submenu state machines
 

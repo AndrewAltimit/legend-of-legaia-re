@@ -352,9 +352,9 @@ presentation left to the host:
 - `options` - the engine mirror of the retail options screen, plus the
   engine-only opt-in toggles (e.g. `precise_movement`, default off).
 - `dev_menu` - the debug-build dev-menu (overlay 0897) EVENT FLAG editor
-  value/list kernels (`edit_flag_value` / `flag_list_prev`,
-  `FUN_801dbd04` / `FUN_801db8f4`). Logic only; row render stays an
-  `engine-ui` seam. See
+  value/list kernels (`edit_flag_value` / `flag_list_prev` /
+  `flag_list_next`, `FUN_801dbd04` / `FUN_801db8f4` / `FUN_801db8b4`).
+  Logic only; row render stays an `engine-ui` seam. See
   [`docs/subsystems/field-menu.md`](../../docs/subsystems/field-menu.md#options-screen).
 - `pause_screens` - the retail Items / Magic pause-screen sessions + view
   models (`PauseItemsSession` command/list/throw-out focus over the

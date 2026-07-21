@@ -10,14 +10,16 @@
 //!
 //! ## What lives here vs. what is a seam
 //!
-//! The four worklist rows this module was asked to port are all VA-aliased
-//! **slices of one giant dev-menu dispatcher**, not four independent
-//! functions. Only two carry portable game-state logic:
+//! The worklist rows this module was asked to port are all VA-aliased
+//! **slices of one giant dev-menu dispatcher**, not independent functions.
+//! Three carry portable game-state logic:
 //!
 //! - `FUN_801dbd04` - the value-adjust arithmetic for the edited flag
 //!   index/value `DAT_801f2aa0` ([`edit_flag_value`]).
 //! - `FUN_801db8f4` - the flag-list cursor `DAT_801f2e90` decrement with
 //!   the `'X'`-sentinel wrap-to-bottom search ([`flag_list_prev`]).
+//! - `FUN_801db8b4` - the same cursor's increment with the `'X'`-sentinel
+//!   wrap-to-top ([`flag_list_next`]).
 //!
 //! The other two are decompiler fragments of the same dispatcher and are
 //! **not** standalone ports (documented as `// REF:` below):
@@ -131,6 +133,35 @@ pub fn flag_list_prev(cursor: i32, tags: &[u8]) -> i32 {
     i as i32 - 1
 }
 
+/// Move the flag-list cursor `DAT_801f2e90` to the next entry.
+///
+/// Faithful to the disassembly at `0x801db8b4`
+/// (`ghidra/scripts/funcs/overlay_0897_801db8b4.txt`), the increment
+/// sibling of [`flag_list_prev`] on the same cursor + stride-`0xA` table
+/// `DAT_801f2e94`. The retail slice unconditionally stores `cursor + 1`,
+/// then - if the newly-landed entry carries the `'X'` end tag
+/// ([`FLAG_LIST_END_TAG`]) - resets the cursor to `0`:
+///
+/// ```text
+/// 801db8bc  addiu v1,v1,0x1     ; next = cursor + 1
+/// 801db8d0  sw    v1,0x2e90(a1) ; cursor = next
+/// 801db8d4  lbu   v1,0x2(v0)    ; tag = table[next].byte[2]  (v0 = table + next*0xA)
+/// 801db8dc  bne   v1,0x58,...   ; if tag != 'X' keep next
+/// 801db8e4  sw    zero,0x2e90(a1) ; else cursor = 0  (wrap to top)
+/// ```
+///
+/// The `'X'` sentinel always sits one past the last real entry, so `next`
+/// stays in range for every real cursor; an out-of-range `next` (never
+/// reached in retail flow) is treated as a non-sentinel and kept.
+// PORT: FUN_801db8b4
+pub fn flag_list_next(cursor: i32, tags: &[u8]) -> i32 {
+    let next = cursor + 1;
+    match tags.get(next as usize) {
+        Some(&FLAG_LIST_END_TAG) => 0,
+        _ => next,
+    }
+}
+
 /// The two live editor cursors: the raw flag index/value `DAT_801f2aa0`
 /// and the flag-list row cursor `DAT_801f2e90`. A thin state wrapper so
 /// hosts can drive [`edit_flag_value`] / [`flag_list_prev`] as a unit; the
@@ -157,6 +188,12 @@ impl EventFlagEditor {
     /// sentinel).
     pub fn list_prev(&mut self, tags: &[u8]) {
         self.list_cursor = flag_list_prev(self.list_cursor, tags);
+    }
+
+    /// Move the list cursor to the next entry (wrap to top on the `'X'`
+    /// sentinel).
+    pub fn list_next(&mut self, tags: &[u8]) {
+        self.list_cursor = flag_list_next(self.list_cursor, tags);
     }
 }
 
@@ -235,6 +272,38 @@ mod tests {
     }
 
     #[test]
+    fn list_next_plain_increment() {
+        // 'A' = 0x41 entries, 'X' = end at index 4. Cursor 1 -> 2.
+        let tags = [0x41, 0x41, 0x41, 0x41, FLAG_LIST_END_TAG];
+        assert_eq!(flag_list_next(1, &tags), 2);
+        assert_eq!(flag_list_next(0, &tags), 1);
+    }
+
+    #[test]
+    fn list_next_wraps_to_top_on_sentinel() {
+        // From the last real entry (index 3), the next slot (index 4) is
+        // the 'X' sentinel, so the cursor wraps back to 0.
+        let tags = [0x41, 0x41, 0x41, 0x41, FLAG_LIST_END_TAG];
+        assert_eq!(flag_list_next(3, &tags), 0);
+    }
+
+    #[test]
+    fn list_next_single_entry_wraps() {
+        // One real entry then the sentinel: next always wraps to 0.
+        let tags = [0x41, FLAG_LIST_END_TAG];
+        assert_eq!(flag_list_next(0, &tags), 0);
+    }
+
+    #[test]
+    fn list_prev_next_round_trip() {
+        // prev then next (and vice-versa) returns to the start away from
+        // the wrap edges.
+        let tags = [0x41, 0x41, 0x41, 0x41, FLAG_LIST_END_TAG];
+        assert_eq!(flag_list_next(flag_list_prev(2, &tags), &tags), 2);
+        assert_eq!(flag_list_prev(flag_list_next(1, &tags), &tags), 1);
+    }
+
+    #[test]
     fn editor_state_wrapper_drives_both_cursors() {
         let mut ed = EventFlagEditor {
             value: 0x100,
@@ -249,5 +318,8 @@ mod tests {
         ed.list_cursor = 0;
         ed.list_prev(&tags);
         assert_eq!(ed.list_cursor, 2);
+        // list_next steps forward and wraps to top off the last entry.
+        ed.list_next(&tags);
+        assert_eq!(ed.list_cursor, 0);
     }
 }
