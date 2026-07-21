@@ -64,5 +64,8 @@ pub use enemy_budget::*;
 mod validator;
 pub use validator::*;
 
+mod pool_ops;
+pub use pool_ops::*;
+
 #[cfg(test)]
 mod tests;

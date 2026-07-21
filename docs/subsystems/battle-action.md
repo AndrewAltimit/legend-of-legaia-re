@@ -722,6 +722,37 @@ performs - clears status-word `actor[+0x16E]` bits, resets brightness/screen glo
 per-actor jump-table dispatch keyed on `actor[+0x1D]`. Called at battle-complete (`0xFF`); it is the
 final damage/HP settle + ability-effect application, not a bare teardown.
 
+### Actor-pool leaf helpers
+
+Four small self-contained routines the SM and its round driver call over the
+8-slot battle-actor pool (`&DAT_801C9370`) and the ctx target queue. Each is
+ported as a pure function in `engine-vm::battle_action` (`pool_ops`); all are
+transcribed from the disassembly (`overlay_battle_action_801db9c4.txt` /
+`_801db318.txt` / `_801d8d00.txt` / `_801db124.txt`).
+
+- **`FUN_801DB9C4` - end-of-action flag scrub.** AND-masks the `+0x8` flag word
+  of pool slots 0..=6 with `0x7CFFFFFF` (clears bit 31 and bits 25/24). This is
+  the state-`0x5A` per-actor anim-flag clear. Port: `clear_end_of_action_flags`.
+- **`FUN_801DB318` - formation span-normalise + recentre.** Over the included
+  slots (0..2 always, 3.. gated on `+0x14C`), takes the X/Z extents; if an axis
+  spans more than `0x800` it rescales every included coordinate by
+  `(coord << 11) / span` (`span` is the extent narrowed to i16) and divides the
+  matching camera-focus accumulator (`_DAT_80089118` X / `_DAT_80089120` Z)
+  likewise; then it recomputes the extents and subtracts the centroid
+  `((max + min) as u32) >> 1` from every included slot, shifting the focus
+  accumulators back by the same centroid. Port: `normalize_formation_span`.
+- **`FUN_801D8D00` - attack target-cycle accessor.** Locates the active actor's
+  current target inside the multi-target ring built by `FUN_801D8A88`
+  (`ctx[+0x244]` count, `+0x245` wrap slot, `+0x246..` ordered slots) and steps
+  to the next (`param 0`) or previous (`param 1`) entry, wrapping at the ends.
+  Port: `cycle_attack_target` / `TargetCycle`.
+- **`FUN_801DB124` - dead-target redirect roll.** When a queued action's chosen
+  target (`actor[+0x1DD]`) is dead, and the category qualifies (Attack always;
+  Magic when the spell class byte `>= 0xA` or the target is an enemy slot; Item
+  only for ids `0xFE`/`0x98`), it re-rolls a **living** slot on the same side
+  (`rand % party_count`, or `rand % monster_count + 3`), retrying until alive.
+  Port: `redirect_dead_target` / `RedirectQuery`.
+
 ## Notes for the engine port
 
 - The state graph is **flat** within each band: `0x14 → 0x15 → 0x16 → 0x17 → 0x18 → 0x1E` is the attack-strike chain. There are no jumps backward except from `0x5A` (which restarts at `0x0A` for the next actor).
