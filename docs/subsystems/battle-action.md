@@ -47,7 +47,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x00` | Action begin | Resets ctx counters at `+0x6DA..+0x6DB`; copies `ctx[+0x274]` (the active-actor index set by `recompute_battle_order`) → `actor[+0x1A]`; **latches** `ctx[+0x290]` → `ctx[+0x291]` and *then* clears `ctx[+0x290]` (`0x801E2B30`). The latch is what the escape roll reads all battle - see [the escape roll](#the-escape-roll-fun_801e791c). | `0x0A` (or `0x0B` if `ctx[+0x276] != 0` is set, i.e. action queued from menu). |
 | `0x0A` | Pre-action wait | Calls `func_0x8003F2B8(1)` (likely a "pause until previous animation cleared" gate). | `0x0C` when ready, else stays. |
 | `0x0B` | Action queued from menu | Holds while `ctx[+0x276] != 0` (menu still open). | `0x0A` once cleared. |
-| `0x0C` | **Action seed** - reads `actor[+0x1DE]` (action category) and dispatches into the appropriate band. Calls `FUN_801EED1C` (party setup; slot < 3 unconditionally) or, for a monster slot with the `+0x16E & 0x380` bits, `FUN_801E7320` (random-retarget: the rolled action - including a Magic cast - is kept, only its target re-rolls to the opposite side; see the [`0x380` notes](#ai-delegated-0x380-party-members---what-is-and-isnt-pinned)). Reads RNG via `func_0x80056798()`. Calls `FUN_801EFE44` (camera bounds) and `FUN_801D5854(actor_id, 6)` (idle pose) unless `+0x1DE == 5` (run). The inner switch on `actor[+0x1DE]` is the "action category" dispatch - see [Inner dispatch](#inner-dispatch---actor-action-category). | `0x14`/`0x28`/`0x3C`/`0x46`/`0x50`/`0x64`/`0x68` per category. |
+| `0x0C` | **Action seed** - reads `actor[+0x1DE]` (action category) and dispatches into the appropriate band. Calls `FUN_801EED1C` (the arts queue-builder; slot < 3) or, for a monster slot with the `+0x16E & 0x380` bits, `FUN_801E7320` (random-retarget: the rolled action - including a Magic cast - is kept, only its target re-rolls to the opposite side; see the [`0x380` notes](#ai-delegated-0x380-party-members---what-is-and-isnt-pinned)). Reads RNG via `func_0x80056798()`. Calls `FUN_801EFE44` (camera bounds) and `FUN_801D5854(actor_id, 6)` (idle pose) unless `+0x1DE == 5` (run). The inner switch on `actor[+0x1DE]` is the "action category" dispatch - see [Inner dispatch](#inner-dispatch---actor-action-category). | `0x14`/`0x28`/`0x3C`/`0x46`/`0x50`/`0x64`/`0x68` per category. |
 | `0x14` | **Attack - face target** | `FUN_801D5854(actor, 6)` (ready pose); computes target bearing via `func_0x80019B28(s8 X/Z, actor X/Z)` and writes facing into `actor[+0x46]`; iterates the 8-actor table at `0x801C9370` writing AI-side facing offsets at `ctx[+0x6E6 + i*2]`; calls `FUN_8004E2F0(actor, target)` for [range/LOS](battle.md). If range = 0 → `0x1E` (skip approach). Party arm: stages approach anim `+0x1DA = 1` (the walk entry) → short-step. Monster arm: first-byte tag search over its action-record array (`FUN_80050E2C`, tag `0x20`, retry `1`) stages the returned entry index. | `0x15` (monster, tag-0x20 found); `0x19` (party); `0x1E` (out of range). |
 | `0x15` | Attack - windup | Same idle pose + facing update; advances anim cursor `actor[+0x1DA]` until it matches `actor[+0x1D9]`, then re-queries swing table. | `0x16`. |
 | `0x16` | Attack - advance | Same pose; rechecks range with `FUN_8004E2F0`. While out of range, advances `actor[+0x38/+0x34]` along bearing using sin/cos LUTs `_DAT_8007B7F8` / `_DAT_8007B81C` (steps both attacker and target s8 by `>> 9`); re-tests every iteration. When in range, queries the next entry from the per-character swing table. | `0x17`. |
@@ -875,7 +875,7 @@ does **not** call the ability bit-test `FUN_800431D0` (an earlier attribution in
 
 ## Action queue and Tactical Arts trigger ordering
 
-Before `FUN_801E295C` reaches the inner-state machinery, the battle code resolves the player's command-input sequence into a flat **action queue** of [`ActionConstant`](../formats/art-data.md#action-constants) bytes. The queue is built incrementally from directional inputs and accumulated arts; once the player commits, the runtime applies two trigger passes in order:
+Before `FUN_801E295C` reaches the inner-state machinery, the battle code resolves the player's command-input sequence into a flat **action queue** of [`ActionConstant`](../formats/art-data.md#action-constants) bytes. The queue is built incrementally from directional inputs and accumulated arts; once the player commits, the runtime applies two trigger passes in order (retail: both inside the queue-builder `FUN_801EED1C` - see [the retail queue-builder](#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4)):
 
 1. **Miracle Art match** - if the input command sequence equals the character's Miracle Art command string, the entire queue is replaced with the Miracle Art's replacement string (`L`/`R`/`D`/`U` × 4 → `SpecialStarter` → `art1, art2, ...`). The first 4 directional bytes carry the on-disc MSB-set quirk and are masked to `0x0C..=0x0F`.
 2. **Super Art find/replace at tail** - for each chained art the runtime walks all the character's Super Art `find` patterns and replaces the matched tail with a `replace` tail ending in the Super Art's finisher action constant. Triggers require: the last art of `find` is the last action in the queue, and all participating arts paid AP.
@@ -904,6 +904,60 @@ The player-driven battle Arts submenu (`legaia_engine_core::battle_arts`) models
 
   Every resident string is byte-identical to `super_art.rs`'s modeled `find` / `replace` fields, and every resident replace preserves its find minus the final `[19, art]` pair then appends `[1A, finisher…]` - the pairing law locked by `super_art.rs`'s `replace_preserves_find_prefix_and_finisher_tail` test. So the byte-exact connector strings are no longer spreadsheet-only: the two live-queue captures above validate the *runtime effect* for one Miracle and one Super, and the resident-table read validates the *strings* for all 15.
   The byte-exact matcher itself (`SuperMatcher::try_trigger_at_tail`) is also ported and exercised by `resolve_action_queue`'s tail pass + `battle.rs`'s `commit_turn`.
+
+### The retail queue-builder (`FUN_801EED1C`) and Super applier (`FUN_801EF9E4`)
+
+The function that turns the player's committed directional chain into the final token stream at
+`actor[+0x1DF..]` - emitting the art constants over the raw arrows and applying both trigger
+passes against the resident tables above - is **`FUN_801EED1C`** in the battle overlay
+(PROT 0898, file `+0x20504`; `see ghidra/scripts/funcs/overlay_battle_action_801eed1c.txt`).
+The ActionSeed state `0x0C` of `FUN_801E295C` calls it for the acting party slot
+(`jal 0x801EED1C` at `0x801E2C7C`, slot from `ctx[+0x274]`; a second site at `0x801E369C`
+re-invokes it for the next queued actor of a multi-actor turn). The full retail chain:
+
+1. **Preseed from the saved chain.** `FUN_801DA34C` (leaf, no frame; called from the round
+   driver `FUN_801D0748` at `0x801D15C8`/`0x801D1734`) copies one of the character's two saved
+   16-byte arts-input strings - char record `+0x76F` or `+0x77F` off `0x80084140 + (id-1)*0x414`
+   (`lbu v0,0x76f(v1)` `0x801DA3F8`, `lbu v0,0x77f(v0)` `0x801DA4F8`) - byte-for-byte into
+   `actor[+0x1DF..+0x1EE]` (`sb v0,0x1df(v1)` at `0x801DA404` / `0x801DA454` / `0x801DA504`),
+   or zero-fills the queue when the selected slot is empty (`sb zero,0x1df` at
+   `0x801DA490`/`0x801DA540`/`0x801DA584`). Live pad edits during the Arts gauge then mutate the
+   same bytes in place.
+2. **Normalize arrows into art constants.** `FUN_801EED1C`'s player path walks the queue,
+   matches each token run against the character's art command table (token compare via
+   `addiu v1,v1,-0xb` at `0x801EF3E8` - the queue's `0x0C..0x0F` arrows against the art table's
+   `0x01..0x04` direction bytes), and rewrites a fully-matched run to its art action constant:
+   `addiu v1,t3,0x18; sb v1,0x1df(v0)` at `0x801EF6F0`/`0x801EF6F8` (art row index + `0x18` →
+   the `0x1B..` constant band), compacting the remaining bytes down and keeping the 16-entry
+   per-token side array at `0x801F6990` in sync (shift loops `0x801EF69C..0x801EF6B0` and
+   `0x801EF730..0x801EF744`). Each accepted art is validated against the character's learned
+   list by `FUN_801EFBFC` (`jal` at `0x801EF44C`; count at char record `+0x74D`, ids at
+   `+0x74E..`), pays its AP (`lhu/subu/sh +0x170` at `0x801EF490..0x801EF49C`) and accrues the
+   spent counter `+0x224` (`0x801EF4B4`).
+3. **Miracle replacement (inline).** When the slot's Miracle marker `ctx[+0x25F + slot]` is set
+   (`lbu v0,0x25f(v0)` at `0x801EF4C8`), the builder overwrites the whole 16-byte queue from the
+   character's Miracle replacement string - the loop at `0x801EF4E8..0x801EF524` copies from
+   `0x801F64F4 + (char_id-1)*0x10` (`addiu a1,v0,0x64f4` at `0x801EF4EC`; `sb v0,0x1df(v1)` at
+   `0x801EF518`), i.e. the three resident strings at `0x801F64F4/0x6504/0x6514`, then flags
+   `ctx[+0x28D + slot] = 1` and the shared trigger flag `0x801F696C = 1` (`0x801EF5A8`/`0x801EF5B4`).
+4. **Super find→tail-replace (helper call).** At its end (`jal 0x801EF9E4` at `0x801EF9AC`) the
+   builder invokes **`FUN_801EF9E4`** (file `+0x211CC`;
+   `see ghidra/scripts/funcs/overlay_battle_action_801ef9e4.txt`), which measures the queue
+   (zero-terminator scan over `+0x1DF..` at `0x801EFA14..0x801EFA30`), then for each of the
+   character's five Super rows compares the `find` pattern - `0x801F6524 + row*13 + char*65`
+   (`addiu t6,v0,0x6524` at `0x801EFA3C`; 13-byte `[len][bytes...]` entries) - against the
+   queue **tail** (`queue[len - find_len + j]`, the `subu v0,t4,a3` indexing at `0x801EFAC8`).
+   On a full match it overwrites that tail from the `replace` table `0x801F65E8 + row*16 + char*80`
+   (`addiu t8,v0,0x65e8` at `0x801EFA5C`; `sb a1,0x1df(v0)` at `0x801EFB7C`), marks the side
+   array `0x801F6990[pos] = 4` for each written `0x1A` SpecialStarter (`0x801EFB84..0x801EFBA8`)
+   and sets `0x801F696C = 1` (`0x801EFBD4`). Miracle-before-Super ordering is therefore
+   structural: the Miracle branch runs inside the builder body, the Super applier only at its end.
+
+The consuming side is unchanged: the strike loop reads `actor[+0x1DF + +0x15]` and the round
+driver's queue clear runs the `sb zero,0x1df(v0)` loop at `0x801D89D8` inside `FUN_801D88CC`
+(called from `FUN_801D0748` at `0x801D0E84`/`0x801D0ED0`). `FUN_801EED1C`'s non-player heads
+(the Tetsu-tutorial forced chain `0E 0F 0E 0F` at `0x801EEDE0..0x801EEE04`, the char-id-4
+auto-AI block below) share the same emission sites.
 
 When the active actor's `chosen_art` is set and `art_record` returns a record, `attack_chain` (state `0x1A`) calls a second host hook `apply_art_strike(ArtStrikeInfo)` alongside the existing `apply_damage`. `ArtStrikeInfo` carries the strike-indexed power byte, dmg_timing, hit cue, and the art's flat status effect. Engines drive HP deduction, status application, sound-effect scheduling, and visual hit-cue dispatch off this struct; tests feed synthetic `ArtRecord` instances and assert the per-strike `(power, timing, effect, cue)` resolution rather than going through `apply_damage`'s legacy `(icon, page, target, slot)` parameter pack.
 
