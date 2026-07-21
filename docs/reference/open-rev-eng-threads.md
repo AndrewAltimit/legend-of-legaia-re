@@ -169,7 +169,7 @@ A `battle_noa_miracle_art_combo` capture (probe `autorun_super_art_action_queue.
 | What transitions retail into game over? | resolved | Retail has **no** mode-`0x12` transition. A party wipe exits battle to mode 2; MAIN INIT `FUN_8003AEB0`'s back-from-battle arm (gated on the `DAT_8007BD60 & 0x80` survivor latch **and** story-flag idx 0 = the scripted-loss latch, raised by field-VM op `4C EA`) stores `game_mode = 0x16` (CARD INIT) with `_DAT_8007BB00 = 1` at `0x8003B5D4`, landing on the **title screen with CONTINUE preselected** - no GAME OVER art, no dedicated menu. Every store PC captured live (`autorun_gameover_mode_writer.lua`). Mode 18/19 + PROT 0902 confirmed an unreachable dev harness. The port's three-row session stays an engine invention. [details](../subsystems/battle.md#party-wipe--the-game-over-overlay) |
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure mapped across the chapter-2/3 regions; play order for the dungeons the capture corpus never walked is still owed | [details ↓](#region-story-flag-gate-families) |
 | Mid-visit NPC re-arrangement beats (dolk2 market crowd; garmel pre-Zeto staging) | resolved (grade `disassembly`+`capture`) | dolk2: the swap is `P2[11]`, spawned by the `.MAP` fallback walk-on-trigger rows (C1=[`0x27C`], C2=[`0x142`]) - eight `CC <crowd> E3 <day>` seats (op `4C` nE sub-3, `0x801E3108`) put P1[53..60] on the day cohort's tiles and `A3` parks the day cohort at `(127,127)`. garmel: the Zeto stager `P2[12]` materializes P1[3]/P1[4] beside the player (n3 sub-7 player-coord copy `0x801E0FB0`); post-battle re-entries run `P1[0]`'s flag-consume arms. See [script-vm.md](../subsystems/script-vm.md#mid-visit-npc-re-arrangement-beats-dolk2-market-swap--garmel-boss-staging); pinned by `engine-core/tests/man_midvisit_rearrangement_disc.rs`. |
-| Extraction-0874 §2 (`player.lzs`) F-variant pixels | mostly resolved (mechanism pinned; installing event unnamed) | Name the opening-scene actor/event that installs the scroll record (replay the s2→s3 name-entry walk with the MoveImage-RA probe). [details ↓](#extraction-0874-2-playerlzs-f-variant-pixels---a-parked-vram-wrap-scroll-phase-not-a-menu-writer) |
+| Extraction-0874 §2 (`player.lzs`) F-variant pixels | resolved - installing event named (grade `capture`+`disassembly`) | The variant is a one-shot face-frame stamp from the town01 opening record, not a scroll phase and not a menu writer. [details ↓](#extraction-0874-2-playerlzs-f-variant-pixels---a-one-shot-opening-face-frame-stamp-not-a-menu-writer) |
 
 ### Region story-flag gate families
 
@@ -225,7 +225,22 @@ their doors on the same flag. `kor5` is a three-step chain `0x43A → 0x436 → 
 toggle pair; it owns the `0x3DA` SET koin1 gates on); koin1's `P2[9..10]` are a `0x50A` set/clear **toggle pair**. `chitei2` holds the `0x470`/`0x4F0` and
 `0x4C4`/`0x4C6`/`0x4C8`/`0x4C9` families — `0x4C8` is co-written by `map03 P2[19]` (the hub co-writes the underground beat). `korb2`/`koin2`/`koin6` are gateless.
 `koin3 P2[8]` and its stale sibling copy `other7 P2[5]` co-latch `0x430` (`koin3` body `+0xA40`, a `JmpRel` branch-arm set inside `CC` camera choreography), read by the ending scene `edlast` — an epilogue-visible castle beat.
-Writer-less gates worth a capture: `0x50A` (koin1 toggle) and `0x5D6` (koin4) — no clean script SET disc-wide even under the fixed `4C 0xE_` widths **and** the full-nibble decoder audit (all sixteen `0x4C` outer nibbles now decode; see [script-vm.md](../subsystems/script-vm.md) § width blindness), so the static path is exhausted: a reader-watch burst during a Karisto-castle walk is what settles them. Guarded by `man_variant_carrier_census_disc.rs::koin_gates_0x50a_0x5d6_remain_script_writer_less`, which fails loudly if a future decoder fix surfaces a static writer. (Nivora's `0x370` left this list — its writer surfaced statically under the pinned widths; see the Nivora Ravine row.)
+`0x50A` is **resolved** - the Sol game-hall minigame result toggle, written **natively by
+the mode-24 minigame overlays** (a space the MAN script census is structurally blind to):
+the Muscle Dome module (PROT 0977) CLEARs it in the post-match settle (`0x801D0FF8`) and
+win-re-SETs it (`0x801D101C`, labeled by the overlay's own `WIn on`/`WIn off` debug
+strings), and the dance trio (0978..0980) SETs it at session start (`0x801CF968`) / CLEARs
+on a missed goal (`0x801CFF10`); koin1 hosts the Muscle Dome + Baka doors (`3E 69`/`3E
+68`), koin3 the dance doors (`3E 6A`), and koin1 `P2[9]` (C2=[`0x50A`]) is the returned-
+victorious beat. `0x5D6` is **resolved as writer-less** (the `0x482` class): negative
+across the script census, a disc-wide operand-classified sweep of every native flag-helper
+caller (`scripts/asset-investigation/flag_helper_call_sweep.py`), the move-VM ext flag
+sub-ops, the motion-VM census and raw MAN operand scans; only the dev-menu flag editor
+(index cell `0x801F2AA0`) reaches it, so koin4's `0x5D6` content is dev residue,
+unreachable in retail. See [script-vm.md](../subsystems/script-vm.md) § native flag-bank
+writers. The guard `koin_gates_0x50a_0x5d6_remain_script_writer_less` stays correct as
+stated (script-writer-less).
+(Nivora's `0x370` left this list — its writer surfaced statically under the pinned widths; see the Nivora Ravine row.)
 Anchors `chapter3_karisto_castle_gate_families` + `chapter3_koin_family_and_writer_pins`. Runtime oracle: `chapter3_karisto_spine_oracle.rs` — the Conkram→deroa→chitei2
 bridge, the kor5 chain, the door arm-then-consume, and the koin toggle all sequence through `p2_record_gates_pass` + `install_gated_p2_record` with no
 chapter-specific engine code (the chapter-2 shape holds).
@@ -254,37 +269,41 @@ Two traps when reading the census against these families: the story-numbered ban
 
 **Residual.** The families for the dungeons the capture corpus never walked (`taiku`/`doman`/`rayman`, `station`, `dohaty`/`retock`, the Karisto spokes) are proven as structure, but their in-game play order is not yet confirmed against a live capture. The generic C1/C2 seeder already drives them, so one dungeon-walk capture per region would close the residual.
 
-### Extraction-0874 §2 (`player.lzs`) F-variant pixels - a parked VRAM wrap-scroll phase, not a menu writer
+### Extraction-0874 §2 (`player.lzs`) F-variant pixels - a one-shot opening face-frame stamp, not a menu writer
 
-*Status:* mostly resolved (mechanism pinned; the installing scene event is unnamed)
+*Status:* resolved - the installing event is named
 
 The earlier "a freshly booted game holds the `0xFFFF` variant" premise was already refuted
-(title screen holds the band all-zero; the mode-2 field-entry load uploads the disc
-bytes). The successor "pause-menu-path writer" premise is now **falsified too** (grade
-`capture`, exhaustive): with every DMA2 kick chain-walked for `A0/80/E3/E4/E5` packets
-*and* GP0 PIO stores hooked, the pause path (SELECT → top menu → Items → Use list;
-separately → Equip → Status; two scenes) issues **zero** image transfers and the band is
-byte-identical before and after. A 49-state library census shows plain **field** saves
-carry the F-variant with no menu in their lineage (`mei_house_door`, `s3/s4/s5`,
-`dolk2_market_noa`, …) while `s1/s2` hold disc bytes - the flip is bracketed inside the
-town01 opening sequence (s2→s3), and the 6/6 pause-capture correlation was session
-history, not causation.
+(title screen all-zero; the mode-2 field-entry load uploads the disc bytes). The successor
+"pause-menu-path writer" premise is **falsified** (grade `capture`, exhaustive): with
+every DMA2 kick chain-walked for `A0/80/E3/E4/E5` packets *and* GP0 PIO stores hooked, the
+whole pause walk issues **zero** image transfers and the band is byte-identical before and
+after; a 49-state library census shows plain field saves carrying the F-variant with no
+menu in their lineage while `s1/s2` hold disc bytes - the flip brackets inside the town01
+opening (s2→s3), and the 6/6 pause-capture correlation was session history, not causation.
 
-The mechanism (grade `disassembly`+`capture`): **`FUN_80021DF4`'s dispatch-4 arm** (`+0x5A
-== 4`, block `0x80022CB8..0x80022EE4`) is a **VRAM texture-rect wrap-scroll** - countdown
-`+0xC6` decremented by frame-skip `0x1F800393`, rect `+0xD0..+0xD6`, per-axis step
-`+0xCC/+0xCE`, executed as StoreImage leading band → MoveImage remainder (`jal` at
-`0x80022DB0`/`0x80022EA4`) → LoadImage re-insert at the far edge. Live-pinned in
-`dolk2_market_noa`: MoveImage RA `0x80022EAC`, `(736/752, 226, 16, 30) → (x, 224)` every
-game tick. The 3-word variant (`(853, 271)` `3333→ffff`, `(856, 271)` `3333→fff3`, `(857,
-271)` `1e33→1e3f`, each equal to the disc word at `(x, 273)`) sits in the **Noa strip** of
-§2 (TIM 2 at `(852,256)` 20×128; VRAM rows 271/273 are its rows 15/17) - a scroll cell
-parked at a +2-row phase after its actor despawned; the first battle effect-texture re-
-upload restores the disc bytes. See [character-mesh.md](../formats/character-
-mesh.md#runtime-scroll-cell-residue-why-a-live-vram-dump-can-differ-from-the-tim).
-Remaining: name the opening-scene actor/event that installs the scroll record - replay the
-s2→s3 name-entry walk with the MoveImage-RA probe (`autorun_pause_fvariant_dma_trace.lua`
-family).
+The wrap-scroll-phase reading fell next. The 3 words (`(853,271)` `3333→ffff`, `(856,271)`
+`3333→fff3`, `(857,271)` `1e33→1e3f`) equal the disc words at `(x,273)` by **frame-content
+coincidence only**: the Noa strip (TIM 2 at `(852,256)` 20×128; rows 271/273 = its rows
+15/17) is not shift-invariant, so a parked +2-row rotation would move dozens of rows, and
+the wrap-scroll installer ops (move-VM op `0x1E`, body `0x80023694`; op `0x45` sibling)
+plus the `FUN_80021DF4` dispatch-4 arm never fire across a full s2→s3 replay while the
+flip reproduces (`autorun_s2s3_scroll_installer.lua`).
+
+The installer is **town01 MAN `P2[3]` (`★ＯＰ`, the Rim Elm opening timeline record,
+C1-gated on the opening latch `0x225`)**, body `+0x392`/`+0x3A0`: after the opening's
+white flash + 60-frame wait it stamps the Noa face cell once via field-VM op **`4C 60`**
+(literal-operand MoveImage `[4C 60 src_x src_y w h dst_x dst_y]`, six misaligned u16s via
+`FUN_8003CE9C`, handler arm `0x801E1B28..0x801E1B90`, `jal FUN_80058490` at `0x801E1B84`)
+- `MoveImage (852,336,6,16) → (852,268)` and `(852,368,4,8) → (853,284)`. The parked
+alternate frame differs from the boot cell at exactly the three F-variant halfwords (row
+271 cols 1/4/5); the live catch at `ra = 0x801E1B8C` reproduces the s3 anchor band byte-
+exact (`autorun_s2s3_atlas_stamp.lua`), and the two ops sit on the disc at MAN offsets
+`0x735A`/`0x7368` (PROT 0004 §1, LZS at container `0x25BEB`) - the misaligned-u16 operands
+are why every aligned scan missed them. The `0x225` C1 gate fires once per game, which is
+why every post-opening save carries the variant; the first battle effect-texture re-upload
+restores the disc bytes. See [character-mesh.md](../formats/character-mesh.md#runtime-
+scroll-cell-residue-why-a-live-vram-dump-can-differ-from-the-tim).
 
 ## Text / fonts / dialog
 
@@ -329,7 +348,7 @@ A caller census of `FUN_8003D53C`/`FUN_8003EAE4` names each `(clip_id, chan)` cu
 | Full-window item-add OOB primitive: reachability | resolved (moved to re-settled) | Primitive real (grade `disassembly`): id store `sb t0,0x1818(a0)` @ `0x800422BC` is unconditional, before the guard that gates only the count store. But **unreachable through the retail add call sites in normal play** - each caller `jal`s the helper with no room pre-check, and the helper's free-slot scan cannot reach the `i == end` OOB exit (a `[0,256)` window holds ≤255 distinct ids, so a hole always remains). See [`re-settled-threads.md`](re-settled-threads.md#full-window-item-add-oob-reachability). |
 | New-Game opening chain + narration roller | resolved (chain + caption + roller + prologue gold grade; far-geometry residual closed resolved-negative) - the gold grade is a capture-pinned palette-space collapse, superseding the per-node depth-cue reading | [details ↓](#new-game-opening-chain--narration-roller) |
 | Slot-B overlay cluster (`0900..0969`) per-entry identity | mostly resolved | [details ↓](#slot-b-overlay-cluster-09000969-per-entry-identity) |
-| Overlay-loader index off-by-2 - remaining ripple | partial (core finding resolved; two stager bindings unpinned) | One mid-cast capture each for the attack-titled stagers 0924 / 0925 binds them to their casts. [details ↓](#overlay-loader-index-off-by-2---remaining-ripple) |
+| Overlay-loader index off-by-2 - remaining ripple | resolved | Slot A reconciled; slot-B per-spell identity fully capture-pinned across every block, incl. the flute summons 0924/0925 (Lippian/Spikefish) and the 0926 unused-`0x98` stub; engine mirrors carry the extraction-space constant. [details ↓](#overlay-loader-index-off-by-2---remaining-ripple) |
 
 ### Slot-B overlay cluster (`0900..0969`) per-entry identity
 
@@ -349,9 +368,14 @@ self-pointer resolution (`static_overlay::pointer_resolution`, ≥70%). Pinned:
   dance-song reading is refuted).
 - **0902** = GAME OVER (content pin, corroborated by the loader census: `FUN_8003EBE4(7)`
   inside the mode-18 init).
-- **0924/0927** = attack-titled stager-shaped overlays ("Ultimate Rave" / "Dark Eclipse");
-  loader callsites computed, action-id assignment open. **0957** summon-effect strings
-  (**NOT** a dance song).
+- **0924/0925/0926** = the rare-Seru **flute summon** block, capture-pinned (states
+  `flute_lippian_midcast` / `flute_spikefish_midcast`): 0924 = **Lippian** (spell `0x96`;
+  head title "Ultimate Rave" is the attack's failed-kill banner - the landed 1/128 kill
+  shows "Ultimate Death", the summon.dat slot-65 actor name), 0925 = **Spikefish** (spell
+  `0x97`, attack "Blowfish", untitled pre-linked head), 0926 = the unused `0x98` slot (one
+  sector, a `jr ra` stub). The "Dark Eclipse" text inside 0925/0926 extractions is 0927's
+  head bleeding through the over-read. **0957** summon-effect strings (**NOT** a dance
+  song).
 
 
 ### Debug flags `0x8007B8C2` / `0x8007B98F`
@@ -523,7 +547,7 @@ within ~6 % - a per-leg thread in the world-map fly-in choreography, not a globa
 
 ### Overlay-loader index off-by-2 - remaining ripple
 
-*Status:* core finding resolved; per-spell summon identity + engine mirrors open
+*Status:* resolved - slot A reconciled, per-spell summon identity capture-pinned across every block (player, evolved, flutes, enemy), engine mirrors updated
 
 The overlay loaders (`FUN_8003EBE4`/`FUN_8003EC70` → `FUN_8003E8A8(param + 0x381)`) resolve against the in-RAM TOC at `0x801C70F0`, which is **raw `PROT.DAT` from byte 0** (byte-verified vs the `door_warp_town01_to_map01` state); the extraction index space slices entry starts 2 words higher, so the loaded entry is **extraction `param + 0x37F`** - every historical `param + 0x381` PROT attribution is 2 high. Slot A is fully reconciled (field 0897 = mode 2, battle 0898, menu 0899 = mode 22, STR-path 0969, cutscene 0970, debug menu 0971 = mode 0, the seven `0x3E` minigame slots, efect-test 0979 = mode 8 - each content/prologue-anchored; see [`boot.md`](../subsystems/boot.md)). Open:
 
@@ -569,10 +593,17 @@ The overlay loaders (`FUN_8003EBE4`/`FUN_8003EC70` → `FUN_8003E8A8(param + 0x3
    `0x91 → 919` stay arithmetic-predicted (no mid-cast captured). The two `0x4000`
    render-mode carriers (`0x8E → 916` Aluru, `0x93 → 921` Iota) are both pinned as player
    casts - so neither seats a live render-mode part (still the F-RENDERMODE blocker below).
-   The attack-titled 0924 "Ultimate Rave" + 0925 are likewise confirmed stager-shaped
-   (arithmetic ids `0x1D..0x1F` under the enemy `895 + id` formula - likeliest **other
-   enemies'** specials; one mid-cast each still pins the binding), while **0926 is a
-   single-sector non-stager** (1 spawn site, 0 records - no real scene-graph there).
+   The attack-titled 0924 + 0925 are **capture-pinned as the rare-Seru flute summons**
+   (states `flute_lippian_midcast` / `flute_spikefish_midcast`, probe
+   `autorun_flute_cast.lua`): loader-B `0x1D`/`0x1E` mid-cast with the slot-B head
+   byte-identical to the disc entry - **Lippian** (spell `0x96`; "Ultimate Rave" = the
+   failed-kill banner, the landed kill shows "Ultimate Death") and **Spikefish** (spell
+   `0x97`, attack "Blowfish"). They extend the *player* run `loader = spell − 0x79`
+   unbroken (Gilium `0x95→923`, Lippian `0x96→924`, Spikefish `0x97→925`, unused
+   `0x98→926`, Evil Seru Magic `0x99→927`) - the earlier "likeliest other enemies'
+   specials" guess is refuted, and **0926** is the unused-`0x98` one-sector `jr ra` stub.
+   SummonFlute items (effect classes 126/127) enqueue the spell id directly, so the
+   flutes ride the same stager mechanism as Seru magic.
 2. **The 0977 sub-id-5 minigame - resolved.** `0977` ("Ronginus") is the mode-24 case-5 **door/init** slot: the `0x801CEA6C` init prologue + the arena monster-name roster + `other6` dev paths. The Muscle Dome **match SM `FUN_801D0748` + all its data lives in the battle-action overlay (PROT 0898)**, not in `0977` and not in a separate aliasing overlay - the arena is a *mode of the battle engine* (fighters are battle actors, cards resolve through the battle-action path).
    Pinned by `asset overlay find-sig` of the controller prologue (`lui v0,0x8008; lw v0,-0x42dc(v0)` reading the ctx `_DAT_8007bd24`) → 0898 @ base `0x801CE818` file offset `0x1F30`, plus the deck/sub-draw/victory tables resolving in-overlay (`legaia_asset::muscle_dome::verify_resident`; the Duckstation `overlay_muscle_dome.bin` capture was that overlay's slot).
 3. **Engine mirrors - resolved.** `OVERLAY_PROT_BASE` now carries the extraction-space `0x37F` (the engine host chain - `prot_one_shot_load` → `entry_start_lba_retail`, whose `toc` array starts at raw dword 2 - consumes extraction indices, so the raw `+ 0x381` loaded entries 2 high); `summon.rs` maps `0x81..=0x8B → 903..=913` directly. The constant's unit test documents the raw-vs-extraction shift.
