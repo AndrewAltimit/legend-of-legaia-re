@@ -33,6 +33,23 @@ use crate::spu::{
 };
 use legaia_vab::{VabReport, VagAtr};
 
+/// One program slot of a bank: the program-level attributes retail stages at
+/// key-on, plus the program's tone page. Indexed by **program number** (the
+/// `ProgAtr` slot a SEQ ProgramChange or an SFX descriptor names) - see
+/// [`VabBank::programs`]. An unused slot carries an empty page and neutral
+/// attributes; its notes never resolve.
+#[derive(Debug, Clone)]
+pub struct VabProgram {
+    /// Program master volume 0..=127 (`ProgAtr.mvol`). Factors into the
+    /// key-on volume chain alongside the bank and tone volumes.
+    pub mvol: u8,
+    /// Program pan 0..=127, 0x40 = centre (`ProgAtr.mpan`). Applied as its
+    /// own attenuation stage after the tone pan.
+    pub mpan: u8,
+    /// The program's tone page (up to 16 `VagAtr` rows).
+    pub tones: Vec<VagAtr>,
+}
+
 /// Default sample rate of Legaia VAG bodies. The bank header doesn't carry
 /// a per-sample rate; the engine has historically used 22.05 kHz across the
 /// extracted corpus (see `crates/vab` extractor + the WAV writer that hard-
@@ -54,10 +71,14 @@ pub struct UploadedVag {
 pub struct VabBank {
     pub master_vol: u8,
     pub samples: Vec<Option<UploadedVag>>,
-    /// Per-program tone table. Index is program 0..=ps-1; each entry is
-    /// the same `Vec<VagAtr>` that VabReport carries, copied so we don't
-    /// need to keep VabReport alive.
-    pub programs: Vec<Vec<VagAtr>>,
+    /// Per-program table indexed by **program number** - the `ProgAtr` slot
+    /// a SEQ ProgramChange or an SFX descriptor names - NOT by packed
+    /// tone-page order. The file stores one 16-tone page per *used* program
+    /// (`ProgAtr.tones != 0`), packed in slot order; `upload` expands those
+    /// pages back into slot space the way retail does at VAB open (see
+    /// there). Unused slots hold an empty page; trailing unused slots are
+    /// trimmed, so `len()` reads "last used program + 1".
+    pub programs: Vec<VabProgram>,
 }
 
 impl VabBank {
@@ -98,10 +119,51 @@ impl VabBank {
                 }
             }
         }
+        // Expand the packed tone pages into program-number space. The file's
+        // tone region carries one page per *used* program, packed in slot
+        // order, so a program number resolves to its page by rank among the
+        // used slots.
+        //
+        // PORT: FUN_80068d94 - retail computes exactly this mapping at VAB
+        // open: it walks the full ProgAtr table writing the running count of
+        // used programs seen so far into each entry's +8 reserved word, and
+        // the program-change consumer FUN_80068b98 reads that byte back as
+        // the tone-page index. Indexing the packed pages with the raw
+        // program number instead mis-tones every program past the first
+        // unused slot and drops every program number >= ps outright - on a
+        // sparse bank (most music banks) that collapses the whole score onto
+        // a few low pages.
+        //
+        // Divergence kept deliberate: retail stores the counter *before* the
+        // used check, so a program-change to an unused slot aliases onto the
+        // next used slot's page (and past the last used slot, reads garbage
+        // beyond the tone region). The engine gives unused slots an empty
+        // page instead, so their notes simply don't resolve.
+        let mut programs = Vec::with_capacity(report.programs.len());
+        let mut page = 0usize;
+        for prog in &report.programs {
+            if prog.tones != 0 && page < report.tones.len() {
+                programs.push(VabProgram {
+                    mvol: prog.mvol,
+                    mpan: prog.mpan,
+                    tones: report.tones[page].clone(),
+                });
+                page += 1;
+            } else {
+                programs.push(VabProgram {
+                    mvol: 0x7F,
+                    mpan: 0x40,
+                    tones: Vec::new(),
+                });
+            }
+        }
+        while programs.last().is_some_and(|p| p.tones.is_empty()) {
+            programs.pop();
+        }
         Self {
             master_vol: report.header.mvol,
             samples,
-            programs: report.tones.clone(),
+            programs,
         }
     }
 
@@ -118,13 +180,13 @@ impl VabBank {
         note: u8,
         velocity: u8,
     ) -> bool {
-        let Some(tones) = self.programs.get(program) else {
+        let Some(prog) = self.programs.get(program) else {
             return false;
         };
-        let Some(tone) = tones.iter().find(|t| note >= t.min && note <= t.max) else {
+        let Some(tone) = prog.tones.iter().find(|t| note >= t.min && note <= t.max) else {
             return false;
         };
-        self.fire(spu, voice, tone, note, velocity)
+        self.fire(spu, voice, prog, tone, note, velocity)
     }
 
     /// Play the tone at an **explicit index** inside `program`, rather than
@@ -149,10 +211,13 @@ impl VabBank {
         note: u8,
         velocity: u8,
     ) -> bool {
-        let Some(tone) = self.programs.get(program).and_then(|t| t.get(tone_index)) else {
+        let Some(prog) = self.programs.get(program) else {
             return false;
         };
-        self.fire(spu, voice, tone, note, velocity)
+        let Some(tone) = prog.tones.get(tone_index) else {
+            return false;
+        };
+        self.fire(spu, voice, prog, tone, note, velocity)
     }
 
     /// Configure + key on `voice` for one resolved tone. Shared by
@@ -162,6 +227,7 @@ impl VabBank {
         &self,
         spu: &mut Spu,
         voice: usize,
+        prog: &VabProgram,
         tone: &legaia_vab::VagAtr,
         note: u8,
         velocity: u8,
@@ -179,23 +245,25 @@ impl VabBank {
             return false;
         }
         let pitch = compute_pitch(note, tone, VAB_SAMPLE_RATE, SPU_INTERNAL_RATE);
-        let bank_master = self.master_vol as i32;
-        let prog_vol = tone.vol as i32;
-        let vel = velocity as i32;
-        // libspu mvol/vol/velocity all scale linearly into the 0..=0x3FFF
-        // voice register: vol = bank * prog * vel / (127^3) * 0x3FFF.
+        // PORT: FUN_80067550 (head) - the key-on volume chain, retail's
+        // staged integer arithmetic with its truncation points:
         //
-        // The three inputs are each 0..=127, so the product needs the full
-        // 127^3 divisor AND the widening to 0x3FFF to land in the register's
-        // domain. Dividing by 127^2 alone leaves the result in 0..=127 - a
-        // factor of 0x3FFF/127 (~0x81) below the hardware scale, which reads
-        // as "the engine is quiet" rather than as a unit error. i64 because
-        // 127^3 * 0x3FFF overflows i32.
-        let combined = ((bank_master as i64 * prog_vol as i64 * vel as i64 * 0x3FFF)
-            / (127 * 127 * 127))
-            .min(0x3FFF) as i16;
-        let pan = tone.pan as i32; // 0..=127, 64 = center
-        let (vol_l, vol_r) = pan_split(combined, pan);
+        //   step = vel * bank_mvol * 0x3FFF / 0x3F01
+        //   vol  = step * prog_mvol * tone_vol / 0x3F01
+        //
+        // Four 0..=127 factors (velocity, bank master, program master, tone)
+        // against 127^2 twice widen the product into the SPU's 14-bit
+        // register domain; a full-scale product lands exactly on 0x3FFF.
+        // All intermediates fit i32 (max 0x3FFF * 127 * 127 < 2^31).
+        let vel = velocity as i32;
+        let bank_master = self.master_vol as i32;
+        let step = (vel * bank_master * 0x3FFF) / 0x3F01;
+        let combined = ((step * prog.mvol as i32 * tone.vol as i32) / 0x3F01).min(0x3FFF) as i16;
+        // Retail attenuates once per pan source, in order: tone pan, then
+        // program pan. The channel pan is the sequencer's own source,
+        // applied on top by `channel_mix`.
+        let (l, r) = pan_split(combined, tone.pan as i32);
+        let (vol_l, vol_r) = pan_attenuate(l, r, prog.mpan as i32);
         {
             let v = &mut spu.voices[voice];
             v.start_addr = vag.addr;
@@ -226,7 +294,7 @@ impl VabBank {
     pub fn pitch_bend_range(&self, program: usize, note: u8) -> (u8, u8) {
         self.programs
             .get(program)
-            .and_then(|tones| tones.iter().find(|t| note >= t.min && note <= t.max))
+            .and_then(|p| p.tones.iter().find(|t| note >= t.min && note <= t.max))
             .map(|t| (t.pbmin, t.pbmax))
             .unwrap_or((0, 0))
     }
@@ -245,7 +313,7 @@ impl VabBank {
     pub fn tone_prior(&self, program: usize, note: u8) -> Option<u8> {
         self.programs
             .get(program)
-            .and_then(|tones| tones.iter().find(|t| note >= t.min && note <= t.max))
+            .and_then(|p| p.tones.iter().find(|t| note >= t.min && note <= t.max))
             .map(|t| t.prior)
     }
 }
@@ -279,11 +347,19 @@ fn compute_pitch(note: u8, tone: &VagAtr, src_rate: u32, dst_rate: u32) -> u16 {
 /// (census in tests/real_vab_tone_attributes.rs). Widening the volume without
 /// fixing the pan law would have traded a quiet engine for a clipping one.
 fn pan_split(vol: i16, pan: i32) -> (i16, i16) {
+    pan_attenuate(vol, vol, pan)
+}
+
+/// One application of the same pan law over an already-split `(left, right)`
+/// pair. Retail runs this once per pan source in order - tone pan, then
+/// program pan (`ProgAtr.mpan`), then the sequencer's channel pan - each
+/// stage only ever attenuating its far side.
+fn pan_attenuate(left: i16, right: i16, pan: i32) -> (i16, i16) {
     let pan = pan.clamp(0, 0x7f);
     if pan < 0x40 {
-        (vol, (vol as i32 * pan / 0x3f) as i16)
+        (left, (right as i32 * pan / 0x3f) as i16)
     } else {
-        ((vol as i32 * (0x7f - pan) / 0x3f) as i16, vol)
+        ((left as i32 * (0x7f - pan) / 0x3f) as i16, right)
     }
 }
 

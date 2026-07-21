@@ -126,8 +126,8 @@
   <table>
     <thead><tr><th>Function</th><th>Role</th></tr></thead>
     <tbody>
-      <tr><td><code>FUN_80067550</code></td><td><code>_SsVoNoteOn</code> - master-vol &times; velocity &times; channel vol/pan &times; four expression sliders &times; stereo-pan square law (<code>uV*uV/0x3FFF</code>).</td></tr>
-      <tr><td><code>FUN_80067E9C</code></td><td><code>_SsSeqNoteOn</code> - sequence-driven keyon. Iterates <code>DAT_801CE344</code>, calls <code>FUN_80068B98</code> (program-change?).</td></tr>
+      <tr><td><code>FUN_80067550</code></td><td><code>_SsVoNoteOn</code> - the key-on volume chain: velocity &times; bank mvol &times; program mvol &times; tone vol widened into the 14-bit register domain (<code>/0x3F01</code> twice), channel vol fold, one pan attenuation per source (tone / program / channel), and - sequencer path only - a closing square taper (<code>v&sup2;/0x3FFF</code> per side). Engine port: <code>VabBank::fire</code> + <code>sequencer::channel_mix</code>.</td></tr>
+      <tr><td><code>FUN_80067E9C</code></td><td><code>_SsSeqNoteOn</code> - sequence-driven keyon. Iterates <code>DAT_801CE344</code>, calls <code>FUN_80068B98</code> (the VAB program-change).</td></tr>
       <tr><td><code>FUN_80065978</code></td><td><code>_SsVoKeyOnDirect</code> - allocates a voice from <code>_DAT_801CE208</code>, looks up region in <code>_DAT_801CE334</code> (stride <code>0x10</code>), writes pitch + base note.</td></tr>
       <tr><td><code>FUN_80066E50(key, fine)</code></td><td><code>_SsPitchFromKey</code> - indexes 12-entry pitch table <code>&amp;DAT_8007A940</code>, octave-shift by <code>(oct-5)</code>. Returns 16-bit SPU PITCH register value.</td></tr>
       <tr><td><code>FUN_80065B88</code></td><td><code>SsResetTranspose</code> - single-store stub: zeros <code>_DAT_801CE2E8</code> (a base-note offset shifted in by <code>FUN_80065978</code>).</td></tr>
@@ -217,7 +217,8 @@
     <thead><tr><th>Function</th><th>Role</th></tr></thead>
     <tbody>
       <tr><td><code>FUN_800684CC(vab_id)</code></td><td><code>SsVabClose</code> (by VAB-ID search) - iterates <code>0x801CDB60 + i*0x36</code>, matches <code>+0x0</code>, calls <code>FUN_80067480(0)</code>.</td></tr>
-      <tr><td><code>FUN_80068D94(seq_data, mode)</code></td><td><strong><code>SsSepOpen</code> / SEP loader core.</strong> Validates <code>0x564150</code> ('VAP' magic), reads SEQ header <code>numTracks</code> at <code>+0x12</code>, calls <code>SsSpuMalloc</code>, patches per-track pointer table, writes MIDI body to SPU.</td></tr>
+      <tr><td><code>FUN_80068B98(vab_id, program)</code></td><td><strong>VAB program-change.</strong> Bounds-checks the bank + program slot, installs the current-bank globals, and reads <code>ProgAtr[program]+8</code> - the packed tone-page index the open wrote below.</td></tr>
+      <tr><td><code>FUN_80068D94(hdr, vab_id, sticky, addr)</code></td><td><strong><code>SsVabOpenHead</code> core.</strong> Validates <code>pBAV</code> magic, registers the bank's per-vab table pointers, builds the <strong>program-number &rarr; packed-tone-page rank map</strong> into the ProgAtr <code>+8</code> reserved words, allocates SPU memory, stashes per-VAG SPU addresses in ProgAtr <code>+0xC/+0xE</code>. (An earlier "SsSepOpen / 'VAP' SEP loader" reading is falsified - the magic is the VAB's, and <code>+0x12</code> is <code>ps</code>.) Engine port: <code>VabBank::upload</code>.</td></tr>
       <tr><td><code>FUN_8006CA7C</code></td><td><code>SsSeqGetStatus</code> - resolves ctx via <code>_DAT_801CE564</code>, returns ctx <code>+0x49</code> with state-code normalisation.</td></tr>
       <tr><td><code>FUN_8006CDB0</code></td><td><code>SsSeqSetCallback</code> - resolves ctx via <code>_DAT_801CE564</code>, tail-calls <code>FUN_8006DDC8</code>.</td></tr>
       <tr><td><code>FUN_8006DDC8</code></td><td><code>SsSeqSetMarkCallback</code> - installs trampolines at ctx <code>+0x14/+0x18</code>, sets active-flag at <code>+0x46</code>.</td></tr>

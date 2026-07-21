@@ -96,15 +96,24 @@ fn apply_channel_pan(left: i16, right: i16, pan: u8) -> (i16, i16) {
 
 /// Combine a note's channel-expression - channel volume (CC7) then channel
 /// pan (CC10) - over its channel-free base `(left, right)` (master × velocity
-/// × tone vol, tone-panned). Volume scales both sides by `volume/127`; pan
-/// then attenuates the opposite side. Both are dynamic: a mid-note CC7 or
-/// CC10 recomputes the live voice volume from this same base, so successive
-/// changes don't compound. A centered, full-volume channel is the identity.
+/// × bank/program/tone vol, tone- and program-panned), then apply the
+/// sequencer path's final square taper. Both controllers are dynamic: a
+/// mid-note CC7 or CC10 recomputes the live voice volume from this same
+/// base, so successive changes don't compound.
+///
+/// PORT: FUN_80067550 (tail) - after every volume factor and pan stage,
+/// retail squares each side (`v * v / 0x3FFF`) on the sequencer path only
+/// (the SFX direct path, retail slot `0x21`, skips both the channel fold
+/// and the square). The taper maps the 14-bit domain onto itself - full
+/// scale stays 0x3FFF, half scale lands at a quarter - so it must sit
+/// after the channel fold, not in the key-on base.
 fn channel_mix(base: (i16, i16), volume: u8, pan: u8) -> (i16, i16) {
     let v = volume.min(127) as i32;
     let left = (base.0 as i32 * v / 127) as i16;
     let right = (base.1 as i32 * v / 127) as i16;
-    apply_channel_pan(left, right, pan)
+    let (l, r) = apply_channel_pan(left, right, pan);
+    let sq = |v: i16| ((v as i32 * v as i32) / 0x3FFF) as i16;
+    (sq(l), sq(r))
 }
 
 /// Per-channel state carried across events.
@@ -568,10 +577,12 @@ impl Sequencer {
                 let (down, up) = bend_range;
                 v.pitch = bend_pitch(base_pitch, pitch_bend_factor(cs.pitch_bend, down, up));
             }
-            // play_note left the voice at master × velocity × tone vol, tone-
-            // panned, with NO channel volume/pan; capture that as the channel-
-            // free base, then fold in the channel's current CC7 volume + CC10
-            // pan. A later CC7/CC10 re-derives from this same base.
+            // play_note left the voice at master × velocity × bank/program/
+            // tone vol, tone- and program-panned, with NO channel volume/pan
+            // and NO square taper; capture that as the channel-free base,
+            // then fold in the channel's current CC7 volume + CC10 pan (and
+            // the taper) via channel_mix. A later CC7/CC10 re-derives from
+            // this same base.
             let base_vol = spu
                 .voices
                 .get(voice as usize)
@@ -1289,7 +1300,9 @@ mod tests {
             base_vol: base,
         });
 
-        // Halve the channel volume: both sides scale by ~63/127, pan centered.
+        // Halve the channel volume: both sides scale by ~63/127, pan
+        // centered, then pass through the retail square taper.
+        let sq = |v: i32| ((v * v) / 0x3FFF) as i16;
         seq.fire_channel(
             &mut spu,
             0,
@@ -1299,10 +1312,11 @@ mod tests {
             },
         );
         assert_eq!(seq.channels[0].volume, 63);
-        assert_eq!(spu.voices[0].vol_left, (0x3000 * 63 / 127) as i16);
-        assert_eq!(spu.voices[0].vol_right, (0x2000 * 63 / 127) as i16);
+        assert_eq!(spu.voices[0].vol_left, sq(0x3000 * 63 / 127));
+        assert_eq!(spu.voices[0].vol_right, sq(0x2000 * 63 / 127));
 
-        // Back to full restores the base exactly (re-derives from base).
+        // Back to full re-derives from the base (no compounding): the result
+        // is the squared base, not the halved value rescaled.
         seq.fire_channel(
             &mut spu,
             0,
@@ -1313,7 +1327,7 @@ mod tests {
         );
         assert_eq!(
             (spu.voices[0].vol_left, spu.voices[0].vol_right),
-            (base.0, base.1)
+            (sq(base.0 as i32), sq(base.1 as i32))
         );
     }
 
@@ -1333,8 +1347,9 @@ mod tests {
             base_vol: base,
         });
 
-        // Pan hard left: the right side is silenced, left untouched, channel
-        // state updated.
+        // Pan hard left: the right side is silenced, the left passes through
+        // the square taper untouched by pan, channel state updated.
+        let sq = |v: i32| ((v * v) / 0x3FFF) as i16;
         seq.fire_channel(
             &mut spu,
             0,
@@ -1344,11 +1359,11 @@ mod tests {
             },
         );
         assert_eq!(seq.channels[0].pan, 0);
-        assert_eq!(spu.voices[0].vol_left, base.0);
+        assert_eq!(spu.voices[0].vol_left, sq(base.0 as i32));
         assert_eq!(spu.voices[0].vol_right, 0);
 
-        // Returning to center restores the full base (re-pans the base, not
-        // the already-panned value).
+        // Returning to center re-pans the base, not the already-panned value:
+        // both sides come back as the squared base.
         seq.fire_channel(
             &mut spu,
             0,
@@ -1359,7 +1374,7 @@ mod tests {
         );
         assert_eq!(
             (spu.voices[0].vol_left, spu.voices[0].vol_right),
-            (base.0, base.1)
+            (sq(base.0 as i32), sq(base.1 as i32))
         );
     }
 }

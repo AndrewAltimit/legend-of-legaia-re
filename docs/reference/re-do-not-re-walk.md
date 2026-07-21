@@ -58,6 +58,12 @@ label-call idiom). Disassembler + executing VM corrected: `field_disasm::decode_
 0..=9 compare arm), `engine-vm` `field/step/flow.rs` + `FieldHost::op4e_char_level` /
 `slot_table_read`. cave01's `P2[12]` spawn gate is the live sub-5 exemplar.
 
+## Audio / sound driver
+
+| Thread | Verdict | Why |
+|---|---|---|
+| `FUN_80068D94` as "`SsSepOpen` / SEP loader" (with `FUN_80068B98` as "`SsSeqOpen`") | falsified (it is the VAB-open head) | The plausible part: it validates a magic, reads a count at `+0x12`, `SsSpuMalloc`s, and patches a pointer table - the shape of a SEP/track loader, with the magic read as 'VAP'. The disassembly refutes it: the compare is `0x564142` against `word >> 8` plus low byte `0x70` - `pBAV`, the **VAB** magic - and `+0x12` is `ps`. The "per-track pointer table" is the ProgAtr table receiving the program → packed-tone-page rank map ([`vab.md`](../formats/vab.md#program-slots-vs-packed-tone-pages)); the mislabel hid that map, and with it the engine's tone collapse on sparse banks. Correct roles: [`audio.md`](../subsystems/audio.md#ssapi-seq-management-layer-above-libspu). |
+
 ## Field / locomotion
 
 | Thread | Verdict | Why |

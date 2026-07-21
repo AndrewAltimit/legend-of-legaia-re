@@ -727,7 +727,7 @@ mod tests {
     #[test]
     fn play_one_shot_keys_on_a_voice_through_an_uploaded_bank() {
         use crate::spu::Spu;
-        use crate::vab_bind::{UploadedVag, VabBank};
+        use crate::vab_bind::{UploadedVag, VabBank, VabProgram};
         use legaia_vab::VagAtr;
 
         // Minimal one-program bank: a single tone covering every note, bound
@@ -761,7 +761,11 @@ mod tests {
                 addr: 0x1010,
                 size: 0x20,
             })],
-            programs: vec![vec![tone]],
+            programs: vec![VabProgram {
+                mvol: 0x7F,
+                mpan: 0x40,
+                tones: vec![tone],
+            }],
         };
         let mut spu = Spu::new();
 
@@ -785,7 +789,7 @@ mod tests {
     #[test]
     fn play_one_shot_resolves_tone_by_index_not_key_range() {
         use crate::spu::Spu;
-        use crate::vab_bind::{UploadedVag, VabBank};
+        use crate::vab_bind::{UploadedVag, VabBank, VabProgram};
         use legaia_vab::VagAtr;
 
         let mk = |center: u8, min: u8, max: u8| VagAtr {
@@ -819,7 +823,11 @@ mod tests {
                 addr: 0x1010,
                 size: 0x20,
             })],
-            programs: vec![vec![mk(60, 50, 60), mk(30, 0, 40)]],
+            programs: vec![VabProgram {
+                mvol: 0x7F,
+                mpan: 0x40,
+                tones: vec![mk(60, 50, 60), mk(30, 0, 40)],
+            }],
         };
         let bank = SfxBank::from_descriptors([(0x1A, 0, 1, 67, 1)]);
 
@@ -842,7 +850,7 @@ mod tests {
     #[test]
     fn play_one_shot_multi_voice_keys_consecutive_regions() {
         use crate::spu::Spu;
-        use crate::vab_bind::{UploadedVag, VabBank};
+        use crate::vab_bind::{UploadedVag, VabBank, VabProgram};
         use legaia_vab::VagAtr;
 
         let tone = |center: u8| VagAtr {
@@ -874,7 +882,11 @@ mod tests {
                 addr: 0x1010,
                 size: 0x20,
             })],
-            programs: vec![vec![tone(60), tone(48), tone(72)]],
+            programs: vec![VabProgram {
+                mvol: 0x7F,
+                mpan: 0x40,
+                tones: vec![tone(60), tone(48), tone(72)],
+            }],
         };
         let mut spu = Spu::new();
         // Cue 0x4C: program 0, tone base 0, note 64, 2 voices -> regions 0 & 1
