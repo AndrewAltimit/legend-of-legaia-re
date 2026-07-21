@@ -623,6 +623,10 @@ wipe and one plain-formation wipe on the `map01` overworld):
    the victory reward path `FUN_80026018` (`ori 0x80` at `0x800260AC`)
    and the successful-escape arm of the escape roll `FUN_801E791C`
    (`0x801E802C`). A wipe is the only battle end that leaves it clear.
+   Captured live on both sides: a victory walks the byte to `0x80`
+   before the mode-2 exit and returns to field even with a stale wipe
+   cause `5` in `_DAT_8007BD2C` (the gate never reads the cause); the
+   plain wipe carries `0` into the CARD handoff.
 4. Story-flag index 0 is the **scripted-loss latch**: in the scripted
    Rim Elm ambush loss the scene script raises it at battle start, the
    gate reads it set, the wipe returns to field mode 3 like any battle
