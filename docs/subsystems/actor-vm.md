@@ -142,7 +142,7 @@ The `crates/engine-vm` constants `ACTOR_RECORD_PTR_OFFSET`, `ACTOR_DISPATCH_BYTE
 | `0x01` | `Plain` | none - no `== 1` test exists anywhere in the function | Common stages only (pre-update, default movement, late-update): plain kinematics with no keyframe / path / SFX / damp / spline arm. The earlier "pose-snap variant with a to-be-found handler block" reading is retired - the comparison ladder tests `2/6`, `5`, `3`, `3\|\|5`, `7`, `4`, `6` and never `1`. `see ghidra/scripts/funcs/80021df4.txt`. |
 | `0x02` | `KeyframeAlt` | shares with `0x06` at `0x80021E90..` | Per-bone keyframe-style. |
 | `0x03` | `Path` | `0x800226DC..` | State-write logic shared with `0x05`. |
-| `0x04` | `Damp` | `0x80022CBC..0x80022EE4` | Damping / spring-decay variant. |
+| `0x04` | `VramScroll` | `0x80022CBC..0x80022EE4` | VRAM texture-rect wrap-scroll: StoreImage leading band → MoveImage remainder → LoadImage re-insert on the actor's `+0xD0` rect (countdown `+0xC6`, per-axis step `+0xCC/+0xCE`). The earlier "damping / spring-decay" label was a decompiled-C-era reading; the block carries three libgpu image calls and no damping arithmetic. See [character-mesh.md](../formats/character-mesh.md#runtime-scroll-cell-residue-why-a-live-vram-dump-can-differ-from-the-tim). |
 | `0x05` | `PathAlt` | `0x800228B0..0x80022B80` | Reads geometry from `actor[+0x80]` and writes pose state. |
 | `0x06` | `Keyframe` | `0x80021EA0..0x80021FA4` and `0x80022F00..0x80023040` | The dominant path. Per-bone keyframe interpolation; **fully ported in [`legaia_anm::AnimPlayer`]**. |
 | `0x07` | `Spline` | `0x80022C24..0x80022CC0` | Spline / curve-driven variant. |

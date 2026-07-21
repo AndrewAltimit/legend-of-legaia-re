@@ -66,7 +66,7 @@
       <tr><td><code>0x01</code></td><td><code>Snap</code></td><td>Pose-snap variant (handler block TBD).</td></tr>
       <tr><td><code>0x02</code></td><td><code>KeyframeAlt</code></td><td>Per-bone keyframe-style; shares with <code>0x06</code>.</td></tr>
       <tr><td><code>0x03</code></td><td><code>Path</code></td><td>State-write logic shared with <code>0x05</code>.</td></tr>
-      <tr><td><code>0x04</code></td><td><code>Damp</code></td><td>Damping / spring-decay variant.</td></tr>
+      <tr><td><code>0x04</code></td><td><code>VramScroll</code></td><td>VRAM texture-rect wrap-scroll (StoreImage band &rarr; MoveImage remainder &rarr; LoadImage re-insert on the actor's <code>+0xD0</code> rect); the earlier "damping / spring-decay" label was a decompiled-C-era reading.</td></tr>
       <tr><td><code>0x05</code></td><td><code>PathAlt</code></td><td>Reads geometry from <code>actor[+0x80]</code> and writes pose state.</td></tr>
       <tr><td><code>0x06</code></td><td><code>Keyframe</code></td><td>The dominant path. Per-bone keyframe interpolation; <strong>fully ported in <code>legaia_anm::AnimPlayer</code></strong>.</td></tr>
       <tr><td><code>0x07</code></td><td><code>Spline</code></td><td>Spline / curve-driven variant.</td></tr>

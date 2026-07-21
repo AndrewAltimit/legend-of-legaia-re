@@ -125,7 +125,7 @@ none reading the pool `word1` high half. So `attr` (real per-vertex data) is ign
 | Super / Miracle Arts trigger logic | mostly resolved | [details ↓](#super--miracle-arts-trigger-logic) |
 | First boss trigger -> Battle | resolved | The scripted-battle arm is the field-VM op `3E FF <formation_row>` ([battle.md](../subsystems/battle.md#scripted-battle-entry-3e-ff-row)): Zeto = garmel `P2[12]` row 9 (lone `0x4B`), Caruban = rikuroa stager `P1[3]` row 17 (lone `0x49`, `World::run_boss_stager_record`). `DAT_8007b7fc` closed: writer-less across `SCUS_942.54` + every static overlay (validated absolute + gp-relative + address-materialisation sweep); readers pin it as the debug forced-battle formation id - battle init `FUN_80055b6c` -> `FUN_8005567c` seeds the formation cells `DAT_8007BD0C+` from it, and `FUN_80046A20` routes a nonzero value to its mode-0 debug-menu exit. Retail never sets it. See [battle.md](../subsystems/battle.md). |
 | Enemy-ally charm battle softlock | resolved (both tracks fixed; grade `disassembly`) | The state-`0x5A` victory arm's party-slot assumption OOB-indexes the win-pose roster `DAT_8007BD10` (via `0x801E6770`) when a living charmed ally is the acting actor at monster-wipe victory - the `FUN_801E7320` reroll theory is falsified ([`re-do-not-re-walk.md`](re-do-not-re-walk.md#battle--arts--level-up)). Fixed on both tracks: engine `victory_pose_fixup`/`charm_widen`, and the disc-side `legaia_rando::charm_fix` guard - a single-word detour at the `0x801E6690` keep-branch into a SCUS dead-space liveness guard. Full chain + port: [battle.md](../subsystems/battle.md#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock). |
-| Battle-actor `+0x16E` bit `0x400` applier (guard-disabling status) | open (low value; two consumers pinned) | Bit `0x400` of the battle-actor flags word `+0x16E` reads as a guard-disabling Sleep/Numb-like status; the sibling AI-delegated bits `0x380` are pinned (enemy-ally charm hook, `FUN_801E7320`). Two *consumers* of the `0x80..0x800` class are pinned live: the on-hit strip `0x801EDA60` in overlay 0898 (`andi 0xF07F` clears the class on any hit, so `0x400` is a volatile hit-cleared status) and the battle-exit per-party clear `0x80046EB0` in `FUN_80046A20`. The *setter* is still uncaught (no infliction in the wipe capture); probe `autorun_status_word_writer.lua` is armed for a status-inflicting battle state. |
+| Battle-actor `+0x16E` bit `0x400` applier (guard-disabling status) | resolved - exhaustive negative (grade `disassembly`) | Bit `0x400` has **no retail setter**: a word-level decode of `SCUS_942.54` + every static-overlay image (all stores covering `+0x16C..+0x171` incl. `swl`/`swr`, pointer precomputes, `ori`/`sllv` bit-set shapes, the `+0x6F6` persistent mirror, the `+0x21F` deferral) finds only clears - accessory cure `FUN_8004CE2C`, the per-round RNG waker `FUN_801F452C`, item cures, the on-hit strip `0x801EDA5C`, the battle-exit clear. The infliction appliers (hit leg `FUN_801EC3E4`, cast leg `FUN_801E09F8`) map kinds 3/4/5/6 → bits `0x1`/`0x2`/random-`0x38`/`0x1000` and kinds 1-2 → the `+0x21F`→`0x380` deferral; no kind reaches `0x400`. Latent content. Writer inventory: [battle.md](../subsystems/battle.md#the-0x16e-status-halfword---retail-writer-inventory). |
 
 ### Super / Miracle Arts trigger logic
 
@@ -152,7 +152,9 @@ byte-exact matcher (`SuperMatcher::try_trigger_at_tail`) is ported, exercised by
 `resolve_action_queue`. See `docs/subsystems/battle-action.md` § "Miracle /
 Super in the live player-driven Arts submenu".
 
-**What (narrowly) stays open:** per-Super *live-executed* queue captures for the other 13 (driving each combo and watching the tail-replace at `actor[+0x1DF]`) - now purely confirmatory, since the resident strings, queue location, dequeue site (`0x801D89D8`), and two end-to-end executions (Noa Miracle + Vahn Tri-Somersault) are all pinned. The connector-emitting queue-builder function entry is still unpinned as a code address.
+**What (narrowly) stays open:** per-Super *live-executed* queue captures for the other 13 (driving each combo and watching the tail-replace at `actor[+0x1DF]`) - now purely confirmatory, since the resident strings, queue location, dequeue site (`0x801D89D8`), and two end-to-end executions (Noa Miracle + Vahn Tri-Somersault) are all pinned.
+
+**The queue-builder is pinned (grade `disassembly`): `FUN_801EED1C`** (battle overlay PROT 0898, file `+0x20504`), called from ActionSeed state `0x0C` of `FUN_801E295C` at `0x801E2C7C`. The saved chain is preseeded from the char record `+0x76F`/`+0x77F` by `FUN_801DA34C`; the builder rewrites arrow runs to art constants, validates each art via `FUN_801EFBFC`, applies the Miracle replacement inline (`0x801EF4E8..0x801EF524` from `0x801F64F4`), and delegates the Super find→tail-replace to **`FUN_801EF9E4`** (find `0x801F6524`, replace `0x801F65E8`, tail write `sb` at `0x801EFB7C`) - Miracle-before-Super is structural. Full chain: [battle-action.md](../subsystems/battle-action.md#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4).
 
 **Queue location pinned; Miracle path validated (capture).**
 The action queue is the per-actor **`actor[+0x1DF..+0x1F2]`** action-parameter byte stream (not `ctx[+0x274]` - a capture showed that is the turn-order active-actor index written by `recompute_battle_order` `FUN_801DABA4`).
@@ -166,8 +168,8 @@ A `battle_noa_miracle_art_combo` capture (probe `autorun_super_art_action_queue.
 |---|---|---|
 | What transitions retail into game over? | resolved | Retail has **no** mode-`0x12` transition. A party wipe exits battle to mode 2; MAIN INIT `FUN_8003AEB0`'s back-from-battle arm (gated on the `DAT_8007BD60 & 0x80` survivor latch **and** story-flag idx 0 = the scripted-loss latch, raised by field-VM op `4C EA`) stores `game_mode = 0x16` (CARD INIT) with `_DAT_8007BB00 = 1` at `0x8003B5D4`, landing on the **title screen with CONTINUE preselected** - no GAME OVER art, no dedicated menu. Every store PC captured live (`autorun_gameover_mode_writer.lua`). Mode 18/19 + PROT 0902 confirmed an unreachable dev harness. The port's three-row session stays an engine invention. [details](../subsystems/battle.md#party-wipe--the-game-over-overlay) |
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure mapped across the chapter-2/3 regions; play order for the dungeons the capture corpus never walked is still owed | [details ↓](#region-story-flag-gate-families) |
-| Mid-visit NPC re-arrangement beats (dolk2 market crowd; garmel pre-Zeto staging) | open | dolk2: a mid-visit record parks the day cohort (prologue-seated at market tiles) and seats the crowd cohort P1[53..60] (bare idle-loop prologues, header parks) - the `dolk2_market_noa` capture holds the post-swap arrangement while its bank still has P1[2]'s `44 72` spawn latch `0x2FE` clear, so the swap runs through a different path than P1[2]'s own `SpawnRecord`. garmel: the pre-Zeto capture stands P1[3]/P1[4] beside the player; cold entry parks them. Closing either: a fresh-entry capture of the same scene (enter, save state before any beat fires), or tracing which record's choreography performs the seats. |
-| Extraction-0874 §2 (`player.lzs`) F-variant pixels | mostly resolved (corpus-pinned) | The exact pause-menu-path writer PC; a `LoadImage`/draw trace would pin it. [details ↓](#extraction-0874-2-playerlzs-f-variant-pixels---pause-menu-lineage-not-boot) |
+| Mid-visit NPC re-arrangement beats (dolk2 market crowd; garmel pre-Zeto staging) | resolved (grade `disassembly`+`capture`) | dolk2: the swap is `P2[11]`, spawned by the `.MAP` fallback walk-on-trigger rows `(69..71, 94)` (C1=[`0x27C`] one-shot, C2=[`0x142`]) - eight `CC <crowd> E3 <day>` position-copy seats (op `4C` nE sub-3, `0x801E3108`) put P1[53..60] on the day cohort's tiles and `A3 <day> 7F 7F` parks the day cohort at `(127,127)`; P1[2]'s `44 72` ladder is a separate talk-chain (latches `0x2FE`/`0x2FF`, both clear post-swap). garmel: the Zeto stager `P2[12]` (walk-on `(23,42)`, C1=[`0x198`]) materializes P1[3]/P1[4] beside the player via `CC 1B 37`/`CC 1C 37` (n3 sub-7 player-coord copy, `0x801E0FB0`); post-battle re-entries run `P1[0]`'s flag-consume arms (`0x196`/`0x199`/`0x2C5` → spawn `P2[13..15]`). See [script-vm.md](../subsystems/script-vm.md#mid-visit-npc-re-arrangement-beats-dolk2-market-swap--garmel-boss-staging); pinned by `engine-core/tests/man_midvisit_rearrangement_disc.rs`. |
+| Extraction-0874 §2 (`player.lzs`) F-variant pixels | mostly resolved (mechanism pinned; installing event unnamed) | Name the opening-scene actor/event that installs the scroll record (replay the s2→s3 name-entry walk with the MoveImage-RA probe). [details ↓](#extraction-0874-2-playerlzs-f-variant-pixels---a-parked-vram-wrap-scroll-phase-not-a-menu-writer) |
 
 ### Region story-flag gate families
 
@@ -252,19 +254,48 @@ Two traps when reading the census against these families: the story-numbered ban
 
 **Residual.** The families for the dungeons the capture corpus never walked (`taiku`/`doman`/`rayman`, `station`, `dohaty`/`retock`, the Karisto spokes) are proven as structure, but their in-game play order is not yet confirmed against a live capture. The generic C1/C2 seeder already drives them, so one dungeon-walk capture per region would close the residual.
 
-### Extraction-0874 §2 (`player.lzs`) F-variant pixels - pause-menu-lineage, not boot
+### Extraction-0874 §2 (`player.lzs`) F-variant pixels - a parked VRAM wrap-scroll phase, not a menu writer
 
-*Status:* mostly resolved (corpus-pinned; exact writer PC needs a GPU trace)
+*Status:* mostly resolved (mechanism pinned; the installing scene event is unnamed)
 
-The earlier "a freshly booted game holds the `0xFFFF` variant" premise is **refuted** by a full save-catalog bisect: the title screen holds the band all-zero (not yet uploaded), and the new-game field-entry load (the mode-2 `FUN_80025B64` → `FUN_801D6704` stage) uploads the **disc** bytes - the whole intro chain through name entry holds `0x3333`. The F-variant is **pause-menu-lineage** instead: every pause-menu capture (CARD-mode init from field, six of six) holds it, the casino prize shop (also mode `0x17`, but hosted via the dialog/door path rather than the pause-menu init) holds the disc bytes, and the first battle **effect use** (not battle entry itself) restores the disc value.
+The earlier "a freshly booted game holds the `0xFFFF` variant" premise was already refuted (title screen holds the band all-zero; the mode-2 field-entry load uploads the disc bytes). The successor "pause-menu-path writer" premise is now **falsified too** (grade `capture`, exhaustive): with every DMA2 kick chain-walked for `A0/80/E3/E4/E5` packets *and* GP0 PIO stores hooked, the pause path (SELECT → top menu → Items → Use list; separately → Equip → Status; two scenes) issues **zero** image transfers and the band is byte-identical before and after. A 49-state library census shows plain **field** saves carry the F-variant with no menu in their lineage (`mei_house_door`, `s3/s4/s5`, `dolk2_market_noa`, …) while `s1/s2` hold disc bytes - the flip is bracketed inside the town01 opening sequence (s2→s3), and the 6/6 pause-capture correlation was session history, not causation.
 
-The variant is exactly **3 words** of row 271 (`(853, 271)` `3333→ffff`, `(856, 271)` `3333→fff3`, `(857, 271)` `1e33→1e3f`), each equal to the disc word two rows down at `(x, 273)` - both row variants are consecutive rows of the *same* disc TIM (no sibling copy involved). Remaining residue: the exact pause-menu-path writer (a `LoadImage`/draw trace would pin the PC - low value; the oracle handles the band via the cross-scene shared-band refinement).
+The mechanism (grade `disassembly`+`capture`): **`FUN_80021DF4`'s dispatch-4 arm** (`+0x5A
+== 4`, block `0x80022CB8..0x80022EE4`) is a **VRAM texture-rect wrap-scroll** - countdown
+`+0xC6` decremented by frame-skip `0x1F800393`, rect `+0xD0..+0xD6`, per-axis step
+`+0xCC/+0xCE`, executed as StoreImage leading band → MoveImage remainder (`jal` at
+`0x80022DB0`/`0x80022EA4`) → LoadImage re-insert at the far edge. Live-pinned in
+`dolk2_market_noa`: MoveImage RA `0x80022EAC`, `(736/752, 226, 16, 30) → (x, 224)` every
+game tick. The 3-word variant (`(853, 271)` `3333→ffff`, `(856, 271)` `3333→fff3`, `(857,
+271)` `1e33→1e3f`, each equal to the disc word at `(x, 273)`) sits in the **Noa strip** of
+§2 (TIM 2 at `(852,256)` 20×128; VRAM rows 271/273 are its rows 15/17) - a scroll cell
+parked at a +2-row phase after its actor despawned; the first battle effect-texture re-
+upload restores the disc bytes. See [character-mesh.md](../formats/character-
+mesh.md#runtime-scroll-cell-residue-why-a-live-vram-dump-can-differ-from-the-tim).
+Remaining: name the opening-scene actor/event that installs the scroll record - replay the
+s2→s3 name-entry walk with the MoveImage-RA probe (`autorun_pause_fvariant_dma_trace.lua`
+family).
 
 ## Text / fonts / dialog
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Pause Items/Magic screens: remaining sub-flows | resolved (one capture-diff residual) | All four sub-flows traced from disassembly and ported: the **window-14 target panel** (`FUN_801D0520`; the preview modes are the permanent-stat Water previews, superseding the "HP-restore" reading), the **PAGE sprite** (UI-icon `0x76`), the **SCUS kind-4 list kernel** (`FUN_80032A44` + allocator `FUN_80030104`), and the **class-`0x80..0x82` Use routes** (submenus 0xA..0xD: single-target apply `FUN_801D8308`, Door of Light/Wind `FUN_801D8A58`/`FUN_801D8B90`, Incense `FUN_801D8D94`). Engine `engine-ui`/`pause_screens`. See [field-menu.md](../subsystems/field-menu.md#items-screen). Residual: which overlay path sets the row `0x800` dim bit across a focused Use-list page (one capture diff). |
+| Pause Items/Magic screens: remaining sub-flows | resolved (one capture-diff residual) |
+All four sub-flows traced from disassembly and ported: the **window-14 target panel**
+(`FUN_801D0520`; the preview modes are the permanent-stat Water previews, superseding the
+"HP-restore" reading), the **PAGE sprite** (UI-icon `0x76`), the **SCUS kind-4 list
+kernel** (`FUN_80032A44` + allocator `FUN_80030104`), and the **class-`0x80..0x82` Use
+routes** (submenus 0xA..0xD: single-target apply `FUN_801D8308`, Door of Light/Wind
+`FUN_801D8A58`/`FUN_801D8B90`, Incense `FUN_801D8D94`). Engine `engine-
+ui`/`pause_screens`. See [field-menu.md](../subsystems/field-menu.md#items-screen). The
+`0x800` dim-bit residual is closed (grade `disassembly`+`capture`): it is set at **build
+time** by the SCUS content builder `FUN_80030628`'s content-id-3 case (dispatch on live
+window `+0x1C`, copied from descriptor byte `+0x0` at create, `0x80032990`) - equipment
+always-dim, Door ids `0x88/0x89` scratchpad-gated, field-usable bit `0x2`, then the
+`FUN_8003043C` applicability probe (battle context gates bit `0x4`). No focus-dependent
+write exists - the white→grey flip is the kernel mode-4 park override; a capture shows the
+row words bit-identical across focus states. See [field-menu.md](../subsystems/field-
+menu.md#use-list-row-build-content-id-3-fun_80030628). |
 
 ## Audio
 

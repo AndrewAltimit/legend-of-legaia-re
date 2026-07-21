@@ -78,15 +78,15 @@
       </tr>
       <tr>
         <td>Battle-actor <code>+0x16E</code> bit <code>0x400</code> applier (guard-disabling status)</td>
-        <td><span class="tag tag-open">open</span> (low value; two consumers pinned)</td>
-        <td>Bit <code>0x400</code> of the battle-actor flags word <code>+0x16E</code> reads as a guard-disabling Sleep/Numb-like status; the sibling AI-delegated bits <code>0x380</code> are pinned (enemy-ally charm hook, <code>FUN_801E7320</code>). Two <em>consumers</em> of the <code>0x80..0x800</code> class are pinned live: the on-hit strip <code>0x801EDA60</code> in overlay 0898 (<code>andi 0xF07F</code> clears the class on any hit, so <code>0x400</code> is a volatile hit-cleared status) and the battle-exit per-party clear <code>0x80046EB0</code> in <code>FUN_80046A20</code>. The <em>setter</em> is still uncaught (no infliction in the wipe capture); probe <code>autorun_status_word_writer.lua</code> is armed for a status-inflicting battle state.</td>
-        <td></td>
+        <td><span class="tag tag-done">resolved</span> (exhaustive negative)</td>
+        <td>Bit <code>0x400</code> has <strong>no retail setter</strong>: a word-level decode of <code>SCUS_942.54</code> plus every static-overlay image (all stores covering <code>+0x16C..+0x171</code>, pointer precomputes, <code>ori</code>/<code>sllv</code> bit-set shapes, the <code>+0x6F6</code> mirror, the <code>+0x21F</code> deferral) finds only clears. The infliction appliers (hit leg <code>FUN_801EC3E4</code>, cast leg <code>FUN_801E09F8</code>) map kinds 3/4/5/6 to bits <code>0x1</code>/<code>0x2</code>/random-<code>0x38</code>/<code>0x1000</code> and kinds 1-2 to the <code>0x380</code> deferral; no kind reaches <code>0x400</code>. Latent content with a full consumer/cure lifecycle.</td>
+        <td><a href="../subsystems/battle.html">battle</a></td>
       </tr>
     </tbody>
   </table>
 
   <h3 id="d-super-miracle">Super / Miracle Arts - residual</h3>
-  <p>The queue is the per-actor <code>actor[+0x1DF..+0x1F2]</code> action-parameter byte stream; captures validate Noa's Miracle queue and Vahn's Tri-Somersault Super byte-exact against the modeled replace strings, and every replace obeys <code>replace = find[..len-2] ++ [1A, finisher&hellip;]</code> (test-locked). What (narrowly) stays open: per-Super <em>live-executed</em> queue captures for the other 13 (driving each combo and watching the tail-replace at <code>actor[+0x1DF]</code>) - now purely confirmatory, since the resident strings, queue location, dequeue site (<code>0x801D89D8</code>) and two end-to-end executions are all pinned. The connector-emitting queue-builder function entry is still unpinned as a code address.</p>
+  <p>The queue is the per-actor <code>actor[+0x1DF..+0x1F2]</code> action-parameter byte stream; captures validate Noa's Miracle queue and Vahn's Tri-Somersault Super byte-exact against the modeled replace strings, and every replace obeys <code>replace = find[..len-2] ++ [1A, finisher&hellip;]</code> (test-locked). What (narrowly) stays open: per-Super <em>live-executed</em> queue captures for the other 13 (driving each combo and watching the tail-replace at <code>actor[+0x1DF]</code>) - now purely confirmatory, since the resident strings, queue location, dequeue site (<code>0x801D89D8</code>) and two end-to-end executions are all pinned. The connector-emitting queue-builder is pinned: <code>FUN_801EED1C</code> (battle overlay 0898, ActionSeed state <code>0x0C</code>), with the saved-chain preseed <code>FUN_801DA34C</code>, the Miracle replacement inline from <code>0x801F64F4</code>, and the Super find&rarr;tail-replace in <code>FUN_801EF9E4</code> (<code>0x801F6524</code>/<code>0x801F65E8</code>) - see <a href="../subsystems/battle-action.html">battle-action</a>.</p>
 </section>
 
 <section class="doc-section" id="field">
@@ -96,20 +96,20 @@
     <tbody>
       <tr>
         <td>What transitions retail into game over?</td>
-        <td><span class="tag tag-open">open</span> (narrowed)</td>
-        <td>Wipe <em>detection</em> is pinned (action-SM <code>0x5A</code> gate) and so is the content (PROT <strong>0902</strong>); the link between them is not. The battle-exit selector never reads the wipe cause and <strong>no static mode-<code>0x12</code> writer exists on the disc</strong>, leaving the nine register-indirect <code>game_mode</code> stores as the search space - which needs a runtime probe. Two corrections: retail's game over is <strong>not</strong> a Continue/Retry/Quit menu, so the port's three-row session is an engine invention; and mode <code>0x18</code> is mode 24 OTHER, not game over.</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Retail has <strong>no</strong> mode-<code>0x12</code> transition. A party wipe exits battle to mode 2; MAIN INIT <code>FUN_8003AEB0</code>'s back-from-battle arm (gated on the <code>DAT_8007BD60 &amp; 0x80</code> survivor latch and the scripted-loss story-flag latch) stores <code>game_mode = 0x16</code> (CARD INIT) at <code>0x8003B5D4</code>, landing on the title screen with CONTINUE preselected - no GAME OVER art, no dedicated menu. Mode 18/19 + PROT 0902 are an unreachable dev harness; the port's three-row session stays an engine invention.</td>
         <td><a href="../subsystems/battle.html">battle</a></td>
       </tr>
       <tr>
         <td>Extraction-0874 &sect;2 F-variant pixels</td>
-        <td><span class="tag tag-mostly">mostly resolved</span> (corpus-pinned)</td>
-        <td>Pause-menu-lineage, not boot: the intro chain holds the disc bytes, every pause-menu capture holds the 3-word row-271 F-variant, and the first battle effect use restores the disc value. Residue: the exact writer PC (low value).</td>
-        <td></td>
+        <td><span class="tag tag-mostly">mostly resolved</span> (mechanism pinned)</td>
+        <td>The pause-menu-writer premise is <strong>falsified</strong> (the whole pause walk issues zero image transfers; plain field saves carry the variant). The variant is a parked phase of <code>FUN_80021DF4</code>'s dispatch-4 <strong>VRAM texture-rect wrap-scroll</strong> arm (StoreImage band &rarr; MoveImage &rarr; LoadImage re-insert, live-pinned at MoveImage RA <code>0x80022EAC</code>), on rows 15/17 of the Noa strip TIM at <code>(852,256)</code>. Residue: name the opening-scene event that installs the scroll record (s2&rarr;s3 replay).</td>
+        <td><a href="../formats/character-mesh.html">character-mesh</a></td>
       </tr>
       <tr>
         <td>Mid-visit NPC re-arrangement beats (dolk2 market crowd; garmel pre-Zeto staging)</td>
-        <td><span class="tag tag-open">open</span></td>
-        <td>Something re-seats a scene's cast mid-visit through a path that is not the staging record's own <code>SpawnRecord</code>. dolk2: the <code>dolk2_market_noa</code> capture holds the post-swap arrangement while its bank still has <code>P1[2]</code>'s spawn latch <code>0x2FE</code> clear. garmel: the pre-Zeto capture stands <code>P1[3]</code>/<code>P1[4]</code> beside the player where cold entry parks them. Closing either: a fresh-entry capture of the same scene, or tracing which record's choreography performs the seats.</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>dolk2: the swap is <code>P2[11]</code>, spawned by <code>.MAP</code> fallback walk-on-trigger rows (C1=<code>0x27C</code>, C2=<code>0x142</code>) - eight <code>CC &lt;crowd&gt; E3 &lt;day&gt;</code> position-copy seats put <code>P1[53..60]</code> on the day cohort's market tiles and park the day cohort at <code>(127,127)</code>. garmel: the Zeto stager <code>P2[12]</code> materializes <code>P1[3]</code>/<code>P1[4]</code> beside the player; post-battle re-entries run <code>P1[0]</code>'s flag-consume arms. Both confirmed against the catalogued captures.</td>
         <td><a href="../subsystems/script-vm.html">script-vm</a></td>
       </tr>
       <tr>
@@ -171,7 +171,7 @@
       <tr>
         <td>Pause Items/Magic screens: remaining sub-flows</td>
         <td><span class="tag tag-done">resolved</span> (one capture-diff residual)</td>
-        <td>All four sub-flows traced from disassembly and ported: the <strong>window-14 target panel</strong> (<code>FUN_801D0520</code>; the preview modes are the permanent-stat Water previews, superseding the "HP-restore" reading), the <strong>PAGE sprite</strong> (UI-icon <code>0x76</code>), the <strong>SCUS kind-4 list kernel</strong> (<code>FUN_80032A44</code> + allocator <code>FUN_80030104</code>), and the <strong>class-<code>0x80..0x82</code> Use routes</strong> (submenus 0xA..0xD: single-target apply <code>FUN_801D8308</code>, Door of Light/Wind <code>FUN_801D8A58</code>/<code>FUN_801D8B90</code>, Incense <code>FUN_801D8D94</code>). Throw Out / Arrange are likewise traced and ported. Engine <code>engine-ui</code>/<code>pause_screens</code>. Residual: which overlay path sets the row <code>0x800</code> dim bit across a focused Use-list page (one capture diff).</td>
+        <td>All four sub-flows traced from disassembly and ported: the <strong>window-14 target panel</strong> (<code>FUN_801D0520</code>; the preview modes are the permanent-stat Water previews, superseding the "HP-restore" reading), the <strong>PAGE sprite</strong> (UI-icon <code>0x76</code>), the <strong>SCUS kind-4 list kernel</strong> (<code>FUN_80032A44</code> + allocator <code>FUN_80030104</code>), and the <strong>class-<code>0x80..0x82</code> Use routes</strong> (submenus 0xA..0xD: single-target apply <code>FUN_801D8308</code>, Door of Light/Wind <code>FUN_801D8A58</code>/<code>FUN_801D8B90</code>, Incense <code>FUN_801D8D94</code>). Throw Out / Arrange are likewise traced and ported. Engine <code>engine-ui</code>/<code>pause_screens</code>. The <code>0x800</code> dim-bit residual is closed: it is set at build time by the SCUS content builder <code>FUN_80030628</code>'s content-id-3 case (equipment always-dim, field-usable bit <code>0x2</code>, then the <code>FUN_8003043C</code> applicability probe); no focus-dependent write exists - the white&rarr;grey flip is the kernel mode-4 park override.</td>
         <td><a href="../subsystems/field-menu.html">field-menu</a></td>
       </tr>
     </tbody>
