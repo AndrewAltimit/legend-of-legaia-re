@@ -85,10 +85,11 @@ cheapest place to look for a claim that is still wrong.
 - **`FUN_8001EBEC`'s second pose-copy arm loads seven words**, so its range ends
   at `+0x15C`, not `+0x158`.
 
-Two rows carry an evidence grade even though they are not settled, because a
-prior audit flagged them as the highest-risk claims on the register and could
-not verify either. Both are marked **re-audit** below: the narration-roller
-op's operand decode, and the item-add OOB store-order claim.
+Two rows a prior audit flagged as the highest-risk `decompiled-C` claims on the
+register - the narration-roller op's operand decode and the item-add OOB
+store-order claim - have both now been **re-derived from the disassembly and
+confirmed** (grade `disassembly`). The store orders and operand shapes stand as
+written; the instruction evidence is cited on each row below.
 
 ---
 
@@ -122,9 +123,9 @@ none reading the pool `word1` high half. So `attr` (real per-vertex data) is ign
 | Thread | Status | What would close it |
 |---|---|---|
 | Super / Miracle Arts trigger logic | partial | [details ↓](#super--miracle-arts-trigger-logic) |
-| First boss trigger -> Battle | mostly resolved (mechanism pinned for both bosses; one vestigial-flag question open) | The scripted-battle arm is the field-VM op `3E FF <formation_row>` ([battle.md](../subsystems/battle.md#scripted-battle-entry-3e-ff-row)). Zeto: garmel `P2[12]` ends `3E FF 09` -> row 9 = lone `0x4B` (firehose-confirmed; `0x8007b7fc` stayed silent) - organic in the engine (`organic_zeto_encounter_disc.rs`). Caruban: rikuroa stager `P1[3]` ends `3E FF 11` -> row 17 = lone `0x49` - same record path; the engine runs `P1[3]` on approach (`World::run_boss_stager_record`; `SCRIPTED_SCENE_BOSSES` deleted). Open: does any retail battle write `DAT_8007b7fc` (reads `0` everywhere; may be vestigial)? |
+| First boss trigger -> Battle | resolved | The scripted-battle arm is the field-VM op `3E FF <formation_row>` ([battle.md](../subsystems/battle.md#scripted-battle-entry-3e-ff-row)): Zeto = garmel `P2[12]` row 9 (lone `0x4B`), Caruban = rikuroa stager `P1[3]` row 17 (lone `0x49`, `World::run_boss_stager_record`). `DAT_8007b7fc` closed: writer-less across `SCUS_942.54` + every static overlay (validated absolute + gp-relative + address-materialisation sweep); readers pin it as the debug forced-battle formation id - battle init `FUN_80055b6c` -> `FUN_8005567c` seeds the formation cells `DAT_8007BD0C+` from it, and `FUN_80046A20` routes a nonzero value to its mode-0 debug-menu exit. Retail never sets it. See [battle.md](../subsystems/battle.md). |
 | Enemy-ally charm battle softlock | open (cause unconfirmed) | A charm fight can hard-freeze (user-reported live; once after a Gimard cast, once an arts combo). Cause not pinned. The `FUN_801E7320` "unbounded reroll at `0x801E7370`" theory is unsettled - loop-1 rerolls while `monster[a0].HP == 0` over `a0 = 3 + rand % monster_count`, but the alive charmed ally is itself a slot in that range and can be picked (exit via self-target `0x801E73E0`). Two Lua-forced-battle-end workarounds were tried and reverted: forcing the end mid-action tears the SM down -> game-over, then garbage writes / freeze (the game only writes the end signal at the safe `0x5A` gate). Next: observe with `autorun_charm_win_softlock.lua`, then a disc-side fix. |
-| Battle-actor `+0x16E` bit `0x400` applier (guard-disabling status) | open (low value) | Bit `0x400` of the battle-actor flags word `+0x16E` reads as a guard-disabling Sleep/Numb-like status. The sibling AI-delegated bits `0x380` in the same word are pinned (the enemy-ally charm hook sets them via `FUN_801E7320` retarget), but the *setter* that raises `0x400` is not in the decompiled corpus - readers only. Low value. Closes with a before/after RAM capture around a battle turn that inflicts the status, diffing the `+0x16E` word to catch the byte that raises `0x400`. |
+| Battle-actor `+0x16E` bit `0x400` applier (guard-disabling status) | open (low value; two consumers pinned) | Bit `0x400` of the battle-actor flags word `+0x16E` reads as a guard-disabling Sleep/Numb-like status; the sibling AI-delegated bits `0x380` are pinned (enemy-ally charm hook, `FUN_801E7320`). Two *consumers* of the `0x80..0x800` class are pinned live: the on-hit strip `0x801EDA60` in overlay 0898 (`andi 0xF07F` clears the class on any hit, so `0x400` is a volatile hit-cleared status) and the battle-exit per-party clear `0x80046EB0` in `FUN_80046A20`. The *setter* is still uncaught (no infliction in the wipe capture); probe `autorun_status_word_writer.lua` is armed for a status-inflicting battle state. |
 
 ### Super / Miracle Arts trigger logic
 
@@ -148,7 +149,7 @@ A `battle_noa_miracle_art_combo` capture (probe `autorun_super_art_action_queue.
 
 | Thread | Status | What would close it |
 |---|---|---|
-| What transitions retail into game over? | open (narrowed) | Wipe *detection* is pinned (action-SM `0x5A` gate) and so is the content (PROT **0902**). The link between them is not: the battle-exit selector never reads the wipe cause, and **no static mode-`0x12` writer exists on the disc**. Remaining search space = the nine register-indirect `game_mode` stores, which needs a runtime probe. Two corrections: retail's game over is **not** a Continue/Retry/Quit menu, so the port's three-row session is an engine invention and stays unreachable; and mode `0x18` is mode 24 OTHER, not game over. [details](../subsystems/battle.md#party-wipe--the-game-over-overlay) |
+| What transitions retail into game over? | resolved | Retail has **no** mode-`0x12` transition. A party wipe exits battle to mode 2; MAIN INIT `FUN_8003AEB0`'s back-from-battle arm (gated on the `DAT_8007BD60 & 0x80` survivor latch **and** story-flag idx 0 = the scripted-loss latch, raised by field-VM op `4C EA`) stores `game_mode = 0x16` (CARD INIT) with `_DAT_8007BB00 = 1` at `0x8003B5D4`, landing on the **title screen with CONTINUE preselected** - no GAME OVER art, no dedicated menu. Every store PC captured live (`autorun_gameover_mode_writer.lua`). Mode 18/19 + PROT 0902 confirmed an unreachable dev harness. The port's three-row session stays an engine invention. [details](../subsystems/battle.md#party-wipe--the-game-over-overlay) |
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure mapped across the chapter-2/3 regions; play order for the dungeons the capture corpus never walked is still owed | [details ↓](#region-story-flag-gate-families) |
 | Mid-visit NPC re-arrangement beats (dolk2 market crowd; garmel pre-Zeto staging) | open | dolk2: a mid-visit record parks the day cohort (prologue-seated at market tiles) and seats the crowd cohort P1[53..60] (bare idle-loop prologues, header parks) - the `dolk2_market_noa` capture holds the post-swap arrangement while its bank still has P1[2]'s `44 72` spawn latch `0x2FE` clear, so the swap runs through a different path than P1[2]'s own `SpawnRecord`. garmel: the pre-Zeto capture stands P1[3]/P1[4] beside the player; cold entry parks them. Closing either: a fresh-entry capture of the same scene (enter, save state before any beat fires), or tracing which record's choreography performs the seats. |
 | Extraction-0874 §2 (`player.lzs`) F-variant pixels | mostly resolved (corpus-pinned) | The exact pause-menu-path writer PC; a `LoadImage`/draw trace would pin it. [details ↓](#extraction-0874-2-playerlzs-f-variant-pixels---pause-menu-lineage-not-boot) |
@@ -248,13 +249,13 @@ The variant is exactly **3 words** of row 271 (`(853, 271)` `3333→ffff`, `(856
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Pause Items/Magic screens: remaining sub-flows | open | The faithful screens are wired end-to-end ([field-menu.md](../subsystems/field-menu.md#items-screen)). Still open: the **Throw Out / Arrange** sub-flows (`FUN_801D0D18`'s non-Use branches, untraced); the **field target-pick window** the Use/cast flows open (layout unpinned - the engine overlays its generic picker); the "PAGE" small-cap tag **sprite source**; and the displayed MP cost through the per-caster kernel `FUN_80035394` (catalog base cost draws today). A pad-walked PCSX-Redux capture into each sub-flow would close the first two. |
+| Pause Items/Magic screens: remaining sub-flows | partial | **Throw Out / Arrange** are traced from disassembly and ported (`FUN_801D7C00`/`FUN_801D8734`/`FUN_801D64A8`/`FUN_801D1B20` - [field-menu.md](../subsystems/field-menu.md#items-screen); engine `pause_screens` + `menu_arrange` + id-9 confirm builders), and the displayed MP cost already runs the per-caster kernel `FUN_80035394` (that clause was stale). Still open: the field target-pick window layout (window 14 / `FUN_801D0520` identified, preview word `DAT_801E46CC` pinned; row pens untraced), the "PAGE" sprite source, the SCUS kind-4 list kernel, and the class-`0x80..0x82` Use routes (submenus 0xA..0xD). A menu-open capture stepping each list would close these. |
 
 ## Audio
 
 | Thread | Status | What would close it |
 |---|---|---|
-| XA clip-table writer + `(clip_id, chan)` cue census | open | [details ↓](#xa-clip-table-writer--clip_id-chan-cue-census) |
+| XA clip-table writer + `(clip_id, chan)` cue census | resolved | Writer pinned statically: `FUN_801CFA78` in PROT 0895 `init.pak` (base `0x801CE818`, recovered from four in-blob string refs) sprintf-generates `\XA\XA%d.XA;1` per slot and fills `[BCD-MSF][size]` via ISO9660 lookup `FUN_8005DBB4`; called once from the init boot tick `0x801CF500`. Full deduped one-shot + streamed cue census in [`audio.md`](../subsystems/audio.md); grade `disassembly` (byte-level, base self-consistent). Census note: PROT-entry over-read aliases callsites into neighbouring overlays - dedupe by true entry extent (gameover 0902 / world-map 0901 have zero genuine XA calls). [details ↓](#xa-clip-table-writer--clip_id-chan-cue-census) |
 
 ### XA clip-table writer + `(clip_id, chan)` cue census
 
@@ -267,8 +268,8 @@ The `0x801C6ED8` clip-table content is pinned (34 `[CdlLOC][len]` slots = `XA1..
 | Thread | Status | What would close it |
 |---|---|---|
 | Debug flag `0x8007B98F` | resolved | `0x8007B98F` has no byte-granular reader: it is byte +3 (MSB, little-endian) of the 32-bit debug-mode word `_DAT_8007B98C`, and *that word* is the consumer surface. Its sibling `0x8007B8C2` is now **settled** - see [`re-settled-threads.md`](re-settled-threads.md#_dat_8007b8c2-polarity-and-its-writer). [details ↓](#debug-flags-0x8007b8c2--0x8007b98f) |
-| Full-window item-add OOB primitive: reachability | open (re-opened; the earlier live confirmation does not hold) - store-order claim graded `decompiled-C`, **re-audit** | [details ↓](#full-window-item-add-oob-primitive-reachability) |
-| New-Game opening chain + narration roller | partial (chain + caption + roller resolved; two render-fidelity residuals open) - roller operand decode graded `decompiled-C`, **re-audit** | [details ↓](#new-game-opening-chain--narration-roller) |
+| Full-window item-add OOB primitive: reachability | open (re-opened; the earlier live confirmation does not hold) - store-order claim now **re-audited from disassembly and confirmed** (grade `disassembly`); the *reachability* half stays open | [details ↓](#full-window-item-add-oob-primitive-reachability) |
+| New-Game opening chain + narration roller | partial (chain + caption + roller resolved; two render-fidelity residuals open) - roller operand decode **re-audited from disassembly and confirmed** (grade `disassembly`; the four-words/word3-selector shape is genuine, not a dropped-slot artifact) | [details ↓](#new-game-opening-chain--narration-roller) |
 | Slot-B overlay cluster (`0900..0969`) per-entry identity | mostly resolved | [details ↓](#slot-b-overlay-cluster-09000969-per-entry-identity) |
 | Overlay-loader index off-by-2 - remaining ripple | partial (core finding resolved; two stager bindings unpinned) | One mid-cast capture each for the attack-titled stagers 0924 / 0925 binds them to their casts. [details ↓](#overlay-loader-index-off-by-2---remaining-ripple) |
 
@@ -277,19 +278,19 @@ The `0x801C6ED8` clip-table content is pinned (34 `[CdlLOC][len]` slots = `XA1..
 *Status:* open - the primitive is real and statically pinned; the claim that
 normal play reaches it is not.
 
-**Evidence: `decompiled-C` - flagged for re-audit.** The load-bearing claim here
-is one of *store order*: that the id store happens before the guard. That is
-exactly the shape Ghidra's C reorders and drops (see
-[`ghidra.md` § decompiler artifacts](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims)),
-and no instruction sequence is cited below. A prior audit could not verify it.
-Read `FUN_800421D4`'s disassembly and record the `sh`/`slt`/branch order before
-building anything on this row - including the conclusion that a primitive exists
-at all.
+**Evidence: `disassembly` - re-audited and confirmed.** The load-bearing claim
+here is one of *store order*: that the id store happens before the guard. It has
+now been re-derived from `FUN_800421D4`'s instructions (`ghidra/scripts/funcs/800421d4.txt`
+disasm section): the free-slot scan returns index `== end` (`gp+0x2d4`) when the
+window `[gp+0x2d2, gp+0x2d4)` into `DAT_80085958` is full; the id store
+`sb t0, 0x1818(a0)` at `0x800422BC` is **unconditional**, and the following
+`slt`/`beq` guard (`0x800422C8`/`0x800422CC`) gates only the count store at
+`0x80042300`. So a full window writes the item id to `slot[end]`, one slot past
+the window, with the count store suppressed - the OOB write primitive is real.
 
 `FUN_800421D4`'s free-slot pass stores the item id at `slot[i]` before the
 `slt` that guards only the count store, so a scan that exhausts the window
-writes one slot past it. That much is unchanged. Two corrections narrow what is
-actually known:
+writes one slot past it. Two corrections narrow what is actually known:
 
 - **The landing address depends on the active window, and the window is not
   72 slots.** `FUN_8004313C` is the sole `SCUS_942.54` writer of
@@ -406,16 +407,19 @@ rather than contradicting it:
 
 *Status:* partial - the chain, caption, and roller are resolved; two render-fidelity residuals below are open
 
-**One sub-claim graded `decompiled-C` and flagged for re-audit: the roller
-config op's operand decode.** Sub-thread 2 below says `CC F8 E8 …` carries
-**four** signed-16 LE words and describes **three** globals being written
-(`+0x4C`, `+0x4E`, `+0x50`), with the fourth word said to select a mode. That is
-the "only N of M slots" shape, and it has already produced one mis-attribution
-on this very row - the earlier `4C 88` label was the wrong op. No store sequence
-is cited. Re-derive the handler's stores from the disassembly before treating
-`RollerParams::for_scene`'s operand mapping as pinned; the rest of the row (the
-five-scene chain, the caption TIM, the camera-mover law) rests on captures and
-is unaffected.
+**One sub-claim was graded `decompiled-C` and flagged for re-audit: the roller
+config op's operand decode. It has now been re-derived from the field-overlay
+disassembly and confirmed** (handler `0x801E3378` in `overlay_0897_801e0c3c.txt`;
+reader `80037174.txt`; grade `disassembly`). Sub-thread 2 below says `CC F8 E8 …`
+carries **four** signed-16 LE words and describes **three** globals being written
+(`+0x4C`, `+0x4E`, `+0x50`), with the fourth word said to select a mode. `word3`
+is a pure selector that is never stored, and the handler writes exactly three
+`_DAT_801C6EA4` globals (`sh` at `0x801E34B0`/`34B4`/`34BC`) - so the
+four-read/three-write shape is genuine, **not** the "only N of M slots" artifact.
+The earlier `4C 88` label was the wrong op (see sub-thread 2); the confirmed
+handler is the nibble-`E` sub-8 `0xE8` form, and `RollerParams::for_scene`'s
+operand mapping is pinned. The five-scene chain, the caption TIM, and the
+camera-mover law rest on captures and are unaffected.
 
 **The opening is a five-scene chain, live-probe + pixel-capture pinned** - `opdeene` → `opstati` → `opurud` → `map01` → `town01`, all master mode 3, zero input; the `FUN_801D1344` `town01` packet is the **intro skip** (its earlier reading as the required hand-off gate is superseded). Each leg's record spawn is pinned (exec-BP on `FUN_8003BDE0`, exactly 5 hits): op `0x44` SPAWN_RECORD in the first three legs' entry scripts (the old op-`0x44` "COUNTER" reading is superseded), the walk-on tile trigger (`FUN_801D1EC4` → `FUN_801D5630`) for `map01`/`town01`. Full mechanics: [`cutscene.md`](../subsystems/cutscene.md#in-engine-3d-opening-the-five-scene-new-game-chain).
 

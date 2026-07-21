@@ -62,7 +62,16 @@ pub mod pause_list_window_ids {
     pub const MAGIC_CASTER: usize = 19;
     /// Magic screen: spell info window (renderer `FUN_801D2E74`).
     pub const MAGIC_INFO: usize = 20;
+    /// Items screen: Throw Out Yes/No confirm window (renderer
+    /// `FUN_801D1B20`; opened by the throw-out SM `FUN_801D8734`
+    /// phase 3, sliding the command window out and this one in).
+    pub const ITEMS_THROW_CONFIRM: usize = 9;
 }
+
+/// Content rect of the Throw Out confirm window (descriptor id 9). It
+/// overlays the command window's area - retail closes id 13 while the
+/// confirm is open and reopens it on close.
+pub const ITEMS_THROW_CONFIRM_RECT: (i32, i32, i32, i32) = (14, 38, 144, 54);
 
 /// Items screen window set with the pinned descriptor content rects, in
 /// retail draw order. The rects double as a disc-free fallback for hosts
@@ -361,6 +370,112 @@ pub fn items_screen_sprites_for(
         stage_origin,
         stage_scale,
     ));
+    out
+}
+
+/// Throw Out confirm window content for
+/// [`items_throw_confirm_draws_for`].
+pub struct PauseThrowConfirmView<'a> {
+    /// Name of the stack about to be discarded.
+    pub name: &'a str,
+    /// Its bag count (the whole stack goes).
+    pub count: u16,
+    /// 0 = Yes, 1 = No (retail seeds `DAT_801E46D0` to 1 - No).
+    pub cursor: u8,
+    /// Emit an ASCII `>` cursor instead of the hand sprite.
+    pub text_cursor: bool,
+}
+
+/// Y offset of the "Yes" row from the confirm window's content origin.
+pub const THROW_CONFIRM_YES_Y: i32 = 0x1c;
+/// Y offset of the "No" row.
+pub const THROW_CONFIRM_NO_Y: i32 = 0x2a;
+/// X offset of the Yes / No labels.
+pub const THROW_CONFIRM_CHOICE_X: i32 = 0x3c;
+/// X offset of the Yes / No hand cursor.
+pub const THROW_CONFIRM_HAND_X: i32 = 0x28;
+
+/// Build [`TextDraw`]s for the Throw Out confirm window (descriptor
+/// id 9, rect [`ITEMS_THROW_CONFIRM_RECT`]). Retail layout, all from the
+/// window's content origin `(WX, WY)`:
+///
+/// - item name (staging 7 white) at `(WX, WY)`, the bag count right of
+///   the name (the retail pen is `WX + 8 + name_glyphs*0xC`; the port
+///   uses the proportional name advance + 8), then "You are about to"
+///   8 px past the count (16 px for a 2-digit count);
+/// - "Throw out?" at `(WX+6, WY+0xE)`;
+/// - "Yes" / "No" (staging 5 teal) at `WX+0x3C` on rows `WY+0x1C` /
+///   `WY+0x2A`, hand cursor at `WX+0x28` on the focused row.
+///
+/// PORT: FUN_801D1B20
+pub fn items_throw_confirm_draws_for(
+    font: &legaia_font::Font,
+    view: &PauseThrowConfirmView<'_>,
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    let (wx, wy) = pen;
+    let mut out = Vec::new();
+    let str_at = |out: &mut Vec<TextDraw>, s: &str, x: i32, y: i32, c: [f32; 4]| {
+        out.extend(text_draws_for(&font.layout_ascii(s), (x, y), c));
+    };
+    let name_layout = font.layout_ascii(view.name);
+    out.extend(text_draws_for(&name_layout, (wx, wy), MENU_TEXT_WHITE));
+    let count_x = wx + 8 + name_layout.advance_x as i32;
+    out.extend(num_field_draws(
+        font,
+        view.count as u64,
+        count_x,
+        wy,
+        1,
+        MENU_TEXT_WHITE,
+    ));
+    let after_count = count_x + if view.count >= 10 { 0x10 } else { 0x8 };
+    str_at(
+        &mut out,
+        "You are about to",
+        after_count,
+        wy,
+        MENU_TEXT_WHITE,
+    );
+    str_at(&mut out, "Throw out?", wx + 6, wy + 0x0e, MENU_TEXT_WHITE);
+    let teal = super::system_menus::OPTIONS_INK_TEAL;
+    for (label, y, row) in [
+        ("Yes", wy + THROW_CONFIRM_YES_Y, 0u8),
+        ("No", wy + THROW_CONFIRM_NO_Y, 1u8),
+    ] {
+        if view.text_cursor && view.cursor == row {
+            str_at(&mut out, ">", wx + THROW_CONFIRM_HAND_X, y, MENU_TEXT_GOLD);
+        }
+        str_at(&mut out, label, wx + THROW_CONFIRM_CHOICE_X, y, teal);
+    }
+    out
+}
+
+/// The confirm window's hand-cursor sprite at `(WX+0x28, rowY)` for the
+/// focused Yes / No row.
+///
+/// PORT: FUN_801D1B20 (hand placement; the cursor word is `DAT_801E46D0`)
+pub fn items_throw_confirm_sprites_for(
+    rects: &SaveMenuAtlasRects,
+    cursor: u8,
+    pen: (i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let (wx, wy) = pen;
+    let y = if cursor == 0 {
+        wy + THROW_CONFIRM_YES_Y
+    } else {
+        wy + THROW_CONFIRM_NO_Y
+    };
+    let mut out = Vec::new();
+    push_stage_sprite(
+        &mut out,
+        rects.cursor,
+        (wx + THROW_CONFIRM_HAND_X, y),
+        stage_origin,
+        stage_scale,
+    );
     out
 }
 
@@ -1024,6 +1139,47 @@ mod pause_list_tests {
             .map(|d| d.color)
             .unwrap();
         assert_eq!(cost_ink, MENU_TEXT_GREEN);
+    }
+
+    /// Throw Out confirm window (FUN_801D1B20): name at the content
+    /// origin, count right of the name, "Throw out?" at `(X+6, Y+0xE)`,
+    /// Yes / No teal at `X+0x3C` on rows `Y+0x1C` / `Y+0x2A`, hand at
+    /// `X+0x28` on the focused row.
+    #[test]
+    fn throw_confirm_draws_at_pinned_pens() {
+        let font = legaia_font::synthetic_for_tests();
+        let (wx, wy) = (14, 38);
+        let view = PauseThrowConfirmView {
+            name: "Medicine",
+            count: 12,
+            cursor: 1,
+            text_cursor: true,
+        };
+        let draws = items_throw_confirm_draws_for(&font, &view, (wx, wy));
+        assert!(draw_at(&draws, wx, wy)); // name
+        assert!(draw_at(&draws, wx + 6, wy + 0x0e)); // Throw out?
+        assert!(draw_at(&draws, wx + 0x3c, wy + 0x1c)); // Yes
+        assert!(draw_at(&draws, wx + 0x3c, wy + 0x2a)); // No
+        // Hand cursor (ASCII stand-in) on the "No" row (retail default).
+        assert!(draw_at(&draws, wx + 0x28, wy + 0x2a));
+        assert!(!draw_at(&draws, wx + 0x28, wy + 0x1c));
+        // Yes / No stage the retail teal ink 5.
+        let yes_ink = draws
+            .iter()
+            .find(|d| d.dst.0 >= wx + 0x3c && d.dst.1 == wy + 0x1c)
+            .map(|d| d.color)
+            .unwrap();
+        assert_eq!(yes_ink, super::super::system_menus::OPTIONS_INK_TEAL);
+        // The count sits right of the proportional name advance.
+        let name_w = font.layout_ascii("Medicine").advance_x as i32;
+        assert!(draw_at(&draws, wx + 8 + name_w, wy));
+        // Sprite variant: hand at (X+0x28, rowY) for the focused row.
+        let sprites = items_throw_confirm_sprites_for(&test_rects(), 0, (wx, wy), (0, 0), 1);
+        assert!(
+            sprites
+                .iter()
+                .any(|d| d.dst.0 == wx + 0x28 && d.dst.1 == wy + 0x1c)
+        );
     }
 
     /// Sprite placement: command hand at `(X, rowY)`, list hand at

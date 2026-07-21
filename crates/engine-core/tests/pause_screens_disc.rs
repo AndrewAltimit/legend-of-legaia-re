@@ -140,3 +140,47 @@ fn magic_screen_resolves_disc_descriptions_levels_and_mp_max() {
     assert_eq!(lines.len(), 2, "retail desc shape: title | effect line");
     assert!(lines.iter().all(|l| !l.is_empty()));
 }
+
+/// The Items screen's Arrange rank table parses from the menu overlay
+/// (PROT 0899, `DAT_801E4A88` - `legaia_engine_core::menu_arrange`) and
+/// carries the retail ordering invariants: a full permutation of the
+/// 8-bit id space, the empty id (0) ordered last, and the healing
+/// consumables leading (Healing Berry before Healing Leaf).
+#[test]
+fn arrange_rank_table_parses_from_menu_overlay() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let extracted = ["extracted", "../extracted", "../../extracted"]
+        .iter()
+        .map(PathBuf::from)
+        .find(|d| d.join("PROT.DAT").exists());
+    let Some(extracted) = extracted else {
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return;
+    };
+    let prot =
+        legaia_engine_core::scene::ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
+    let overlay = prot
+        .entry_bytes_extended(legaia_asset::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
+        .expect("menu overlay entry bytes");
+    let rank = legaia_engine_core::menu_arrange::parse_arrange_rank_table(&overlay).expect("parse");
+    // Full permutation: every id owns exactly one rank slot.
+    let mut seen = [false; 0x100];
+    for id in 0..=0xFFu8 {
+        let r = rank.rank(id) as usize;
+        assert!(!seen[r], "rank {r} claimed twice");
+        seen[r] = true;
+    }
+    // Retail order: id 0 (the empty slot id) sorts last; the healing
+    // consumables lead, Berry (0x79) before Leaf (0x77).
+    assert_eq!(rank.rank(0), 0xFF);
+    assert!(rank.rank(0x79) < rank.rank(0x77));
+    assert_eq!(rank.rank(0x79), 0);
+
+    // The kernel over a synthetic bag honors the retail order.
+    let mut bag = [(0x77u8, 2u8), (0x00, 0), (0x79, 5)];
+    legaia_engine_core::menu_arrange::arrange_bag_slots(&mut bag, &rank);
+    assert_eq!(&bag[..2], &[(0x79, 5), (0x77, 2)]);
+}

@@ -533,45 +533,135 @@ descriptor word copied into the CD-read staging window):
   (see `ghidra/scripts/funcs/8003d53c.txt`).
 - `FUN_8003EAE4(_, clip_id)` - streaming / loop start for one descriptor slot
   (CD command `0x15`); its first argument is unused and it takes no channel or
-  duration (see `ghidra/scripts/funcs/8003eae4.txt`). All of its callers pass
-  `clip_id` from a battle-action / magic-overlay data table, so it contributes
-  no static `(clip_id, chan)` pair.
+  duration (see `ghidra/scripts/funcs/8003eae4.txt`). Most callsites pass a
+  compile-time literal `clip_id` - see the streamed-cue census below.
+- `FUN_80019794(clip_id)` - SCUS wrapper around `FUN_8003EAE4`: a resumable
+  five-state starter SM (state word `0x8007B9C8`, jump table `0x800103E4`) that
+  arms the CD-busy byte, stops any in-flight read (`FUN_8003DE7C`), issues
+  `FUN_8003EAE4(0, clip_id)` and finishes via `FUN_8003F2B8(1)`. Returns 1
+  while in progress, 0 when the stream is running. The field overlay is its
+  only caller (both sites below).
 
-A caller census of `FUN_8003D53C` across the committed dumps splits into cues
-whose `(clip_id, chan)` are compile-time immediates and cues whose operands are
-computed at runtime.
+#### The clip-table writer - `FUN_801CFA78` (PROT 0895 `init.pak`)
 
-**Confirmed literal `(clip_id, chan)` cues.** `clip_id` is the `0x801C6ED8`
-descriptor slot; `dur` listed where the site supplies a literal operand.
+The filler is not in `SCUS_942.54` and not baked into any disc file - it lives
+in the **boot init overlay**, PROT entry 0895 (`init.pak`, CDNAME-labelled
+`bat_back_dat`), which links at the slot-A base `0x801CE818`. Base recovery is
+capture-free: the blob's own format strings (`\XA\XA%d.XA;1` at file `+0x124`,
+`xa %s` `+0x134`, `not xa file %d` `+0x13C`, `\LEGAIA\MOV\MV2.STR;1` `+0x14C`)
+are addressed by the code as `0x801CE93C`/`0x801CE94C`/`0x801CE954`/`0x801CE964`,
+all four consistent with `base = 0x801CE818`, and every internal `j`/`jal`
+resolves in-file under that base.
 
-| clip_id | chan | dur | context | site (dump) |
+`FUN_801CFA78` (file `+0x1260`) fills all 34 slots at boot:
+
+1. Zero-clears every slot's `+4` length word (loop from slot 33 down) and the
+   counters `_DAT_8007BC20` / `_DAT_8007BBF8`.
+2. For `i = 0..=0x21`: `sprintf(buf, "\XA\XA%d.XA;1", i+1)` (`FUN_800567B8`),
+   debug-log `xa %s` (`FUN_800567A8`), then ISO9660 directory lookup
+   `FUN_8005DBB4(&file_info, buf)` - the CdSearchFile-shape resolver that fills
+   `{msf[3], size}` from the disc directory (its per-directory `CdlFILE` cache
+   at `0x801CAE08` is why a title capture shows the `XA` directory resident).
+3. On success, stores the three BCD-MSF bytes at slot `+0..+2` (byte `+3` stays
+   zero) and the byte size at `+4`, then increments `_DAT_8007BBF8`. On a miss
+   it logs `not xa file %d` and retries (retry budget 4; the retail flag
+   `_DAT_8007B8C2` gates an immediate-retry variant).
+4. After the loop, one extra lookup of `\LEGAIA\MOV\MV2.STR;1` - a dev-disc
+   path that misses on the retail layout; it only re-targets the directory
+   cache.
+
+Caller: the init overlay's boot tick at `0x801CF500` (phase word == 3, one-shot
+guarded by `_DAT_8007B868`), followed by `FUN_8003F120`. This closes the loop
+on three earlier observations: the table is title-capture byte-exact vs the
+disc's `XA/XA1.XA..XA34.XA` because it is *built from* the ISO directory at
+boot (slot `i` = file `XA<i+1>.XA` by constructed name, not directory order -
+the raw directory is alphabetical: `XA1, XA10, XA11, ...`); no `XA` filename
+exists anywhere in SCUS because the names are `sprintf`-generated inside the
+overlay; and a disc relayout stays safe because no absolute XA LBA is stored
+anywhere on the disc (see [`formats/disc.md`](../formats/disc.md)).
+
+#### One-shot cue census (`FUN_8003D53C`)
+
+Byte-level `jal` sweep over `SCUS_942.54` + the full static-overlay corpus
+(a decoded `jal` target is a property of the bytes - see
+[`call-target-integrity.md`](../tooling/call-target-integrity.md)), deduplicated
+against PROT entry over-read: a site only counts for the entry whose **true
+extent** (`next_start_lba - start_lba`) contains it, because consecutive
+entries' extraction footprints over-read into each other (the field-overlay
+file carries PROT 0898's bytes from `+0x25000`, the slot-machine file carries
+PROT 0976's from `+0x6000` - see
+[`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md)). Every
+"field" hit above `+0x25000` and every "slot machine" `FUN_8003D53C` hit is
+such an alias; the historical per-character-voice site "`0x8020a264`" is the
+same double-shift (PROT 0897 file `+0x4A264` mapped at `0x801C0000`) and is
+really battle-overlay VA `0x801F3A7C`.
+
+**Literal `(clip_id, chan, dur)` cues** (`clip_id` = `0x801C6ED8` slot; slot
+`i` = `XA<i+1>.XA`):
+
+| clip | chan | dur | context | callsite |
 |---|---|---|---|---|
-| `0x10` | `7` | `0x135` | scripted-scene / dialog fixed voice | `801d509c` (`overlay_0897_locomotion_cluster.txt`) |
-| `0x1D` | `4` | `0x26` | battle / field encounter-engage cue | `801eeb44` (`overlay_0898_801ec3e4.txt`) |
-| `0x1D` | `6` | `0x1A` | battle / field encounter-engage cue | `801eeb44` (`overlay_0898_801ec3e4.txt`) |
-| `0x20` | `2`,`3`,`4`,`5`,`8`,`9`,`0xA`,`0xB`,`0xC`,`0xD`,`0xE`,`0xF` | `0xC`->`0x5A`, `0xD`->`0x66` | Baka Fighter announcer lines | `overlay_baka_fighter_*.txt` |
+| `0x10` (XA17) | `7` | `0x135` | scripted-scene fixed voice | field 0897 `0x801D509C` |
+| `0x1D` (XA30) | `0` | `0x26` | normal-move grunt | battle 0898 `0x801EEB44` |
+| `0x1D` (XA30) | `4` | `0x2E` | normal-move grunt | battle 0898 `0x801EEB44` |
+| `0x1D` (XA30) | `6` | `0x1A` | normal-move grunt | battle 0898 `0x801EEB44` |
+| `0x20` (XA33) | `1` | `0x36` | Baka Fighter duel line | 0976 `0x801D04EC` |
+| `0x20` (XA33) | `2` | `0x45` | Baka Fighter announcer | 0976 `0x801D3968` |
+| `0x20` (XA33) | `3` | `0x6D` | Baka Fighter announcer | 0976 `0x801D38E4` |
+| `0x20` (XA33) | `4` | `0x35` | Baka Fighter announcer | 0976 `0x801D38A0` |
+| `0x20` (XA33) | `5` | `0x39` | Baka Fighter announcer | 0976 `0x801D39BC` |
+| `0x20` (XA33) | `8` | `0x4A` | Baka Fighter announcer | 0976 `0x801D1264` |
+| `0x20` (XA33) | `9` | `0x4E` | Baka Fighter announcer | 0976 `0x801D0DF4` |
+| `0x20` (XA33) | `0xA` | `0x46` | Baka Fighter announcer | 0976 `0x801D2220` |
+| `0x20` (XA33) | `0xB` | `0x4D` | Baka Fighter announcer | 0976 `0x801D2258` |
+| `0x20` (XA33) | `0xC` | `0x5A` | Baka Fighter announcer | 0976 `0x801D22FC` |
+| `0x20` (XA33) | `0xE` | `0x3F` | Baka Fighter announcer | 0976 `0x801D5A50` |
+| `0x20` (XA33) | `0xF` | `0x76` | Baka Fighter announcer | 0976 `0x801D5A98` |
+| `0x1F` (XA32) | runtime (`0x801DBF8C`) | `0x48` | Baka Fighter duel line | 0976 `0x801D5CC4` |
 
-The Baka Fighter bank fires descriptor slot `0x20` across the twelve fixed
-channels listed (call sites `801d3468` / `801cf388` / `801d21fc` / `801d5a24`);
-two further duel sites take a runtime channel on slot `0x20` (`801d04ec`) and
-slot `0x1F` (`801d5cc4`). Machine-readable form:
-`legaia_art::arts_voice::STATIC_XA_CUES`.
+Machine-readable form: `legaia_art::arts_voice::STATIC_XA_CUES`.
 
-**Runtime-derived cues** (operands not static; the pair is named by its decode
-rule, not enumerable from the committed corpus):
+**Runtime-derived cues** (operands computed; the pair is named by its decode
+rule):
 
 | caller | clip_id | chan | note |
 |---|---|---|---|
-| `FUN_8004C140` arts shout | char `*2+1` = `1`/`3`/`5` | per-art pool pick | XA2/XA4/XA6; parsed by `arts_voice` |
-| `FUN_8004FCC8` / `FUN_8004FE5C` jingle | `(id-0x100)>>3`, remapped to `0x1A`/`0x1B`/`0x1C` | `(id-0x100)&7` | Miracle / summon fanfare queue |
-| field-VM XA opcode | `op>>3` | `op&7` | site `801e0420`; operands are per-scene MAN script literals |
-| per-character voice | `table[char_id]` | `0` | dur `0x5A`; dance minigame + site `8020a264` |
-| debug sound-test | menu variable | menu variable | site `801cef48` (overlay 0971) |
+| `FUN_8004C140` arts shout | char `*2-1` = `1`/`3`/`5` | per-art pool pick | XA2/XA4/XA6; sites `0x8004C45C`/`0x8004C5B4`; parsed by `arts_voice` |
+| `FUN_8004FCC8` / `FUN_8004FE5C` jingle | `(id-0x100)>>3`, remapped to `0x1A`/`0x1B`/`0x1C` | `(id-0x100)&7` | Miracle / summon fanfare queue; sites `0x8004FD74`/`0x8004FF18` |
+| field-VM XA opcode, `dur != 0` | `op>>3` | `op&7` | site `0x801E0420`; operands are per-scene MAN script literals |
+| per-character voice | `char_byte + 0x19` = `0x1A`..`0x1C` (XA27..29) | `0` | dur `0x5A`; battle 0898 `0x801F3A7C` |
+| debug sound-test | menu variable | menu variable | site `0x801CEF48` (overlay 0971) |
 
 The field-VM opcode operands (`op>>3`, `op&7`) live in the per-scene MAN
 scripts, which are disc-sourced and outside the committed dump corpus, so those
 cues stay named by their decode rule. The arts-shout and jingle channels are
 runtime pool / event-id picks; only their `clip_id` space is fixed.
+
+#### Streamed cue census (`FUN_8003EAE4` / `FUN_80019794`)
+
+Same sweep + dedupe. A streamed cue plays the whole clip (no channel filter).
+The world-map-render (0901) and gameover (0902) raw hits are pure over-read
+aliases - neither overlay starts an XA stream of its own.
+
+| clip | file | context | callsite |
+|---|---|---|---|
+| `0` (XA1) | slot-machine ambience | casino slot machine entry | 0975 `0x801CF0AC` |
+| `0x1F` (XA32) | Baka Fighter crowd/bed | duel start + round restart | 0976 `0x801CF6CC` / `0x801CFD90` |
+| `0x21` (XA34) | long battle stream | battle actions `0x2E`/`0x2F` | battle 0898 `0x801EBDD4` |
+| `0x800787AF` table (heroes `0x08` = XA9) | battle voice stream | `FUN_801E295C` SM state `0x6E` | battle 0898 `0x801E4F40`; same table in SCUS `FUN_8004DA08` |
+| `(char-1)*2` = `0`/`2`/`4` (XA1/3/5) | per-character long bank | `FUN_8004DA08` battle stream selector | SCUS `0x8004DAFC` |
+| `char + 0x19` = `0x1A`..`0x1C` (XA27..29) | per-character fanfare stream | `FUN_8004DA08` (spell-table class `< 0x14`) | SCUS `0x8004DB70` / `0x8004DBC4` |
+| `7` (XA8) | fallback battle stream | `FUN_8004DA08` (other spell classes) | SCUS `0x8004DB9C` |
+| `0x10` (XA17) | scripted-scene voice stream | field voice player, whole-clip variant | field 0897 `0x801D4FCC` via `FUN_80019794` |
+| `op>>3` | MAN-script literal | field-VM XA opcode, `dur == 0` path | field 0897 `0x801E0430` via `FUN_80019794` |
+| `7` (XA8) | Ra-Seru summon stream | summon overlays 0903/0904/0905/0906/0907/0908 | each at its own `0x801F6Cxx`-`0x801F71xx` site (slot-B base `0x801F69D8`) |
+| `6` (XA7) | summon stream | PROT 0909 (outside the static corpus; head decoded from PROT.DAT) | 0909 file `+0x218` |
+| `0x11` (XA18) | attack-art stager stream | stagers 0924/0925/0926 | 0924 `0x801F6C80`; 0925/0926 file `+0x240` |
+| `0xE` (XA15) | high-summon / evil-god stream | summons 0927..0934 | each at its own `0x801F6Cxx`-`0x801F6Dxx` site |
+
+The field-VM XA opcode thus has **two shapes**: a non-zero third operand plays
+one channel one-shot (`FUN_8003D53C(op>>3, op&7, dur)`); a zero operand streams
+the whole clip (`FUN_80019794(op>>3)`).
 
 ## Audio-trace parity oracle
 

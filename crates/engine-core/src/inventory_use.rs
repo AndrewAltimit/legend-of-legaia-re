@@ -207,6 +207,12 @@ pub struct InventoryUseSession {
     /// (or if the session aborts). Set explicitly because [`Self::current_item`]
     /// returns `None` once the session reaches [`InventoryUseState::Done`].
     pub used_item: Option<u8>,
+    /// Item ids the pause-menu Throw Out sub-flow discarded (whole stacks -
+    /// the retail confirm zeroes both bytes of the bag slot pair,
+    /// `FUN_801D8734`). Applied to the world by
+    /// [`crate::field_menu_dispatch::apply_inventory_outcome`] regardless of
+    /// whether a use also completed.
+    pub thrown_items: Vec<u8>,
 }
 
 impl InventoryUseSession {
@@ -234,6 +240,29 @@ impl InventoryUseSession {
             catalog,
             used_slots: Vec::new(),
             used_item: None,
+            thrown_items: Vec::new(),
+        }
+    }
+
+    /// Remove the item at flat index `idx` from the session's list (the
+    /// pause-menu Throw Out delete), re-derive the context filter and
+    /// clamp a browsing cursor back into the filtered range. No-op when
+    /// `idx` is out of range.
+    pub fn remove_item_at(&mut self, idx: usize) {
+        if idx >= self.items.len() {
+            return;
+        }
+        self.items.remove(idx);
+        self.refresh_filter();
+    }
+
+    /// Re-derive [`Self::filtered_items`] after an external edit of
+    /// [`Self::items`] (throw-out delete, Arrange reorder) and clamp a
+    /// browsing cursor back into the filtered range.
+    pub fn refresh_filter(&mut self) {
+        self.filtered_items = filter_items(&self.items, &self.catalog, self.context, &self.targets);
+        if let InventoryUseState::Browsing { cursor } = &mut self.state {
+            *cursor = (*cursor).min(self.filtered_items.len().saturating_sub(1));
         }
     }
 

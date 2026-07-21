@@ -248,6 +248,13 @@ pub fn apply_equip_outcome(
 /// [`crate::world::World::use_item`] uses: HP / MP / status / SP gain.
 pub fn apply_inventory_outcome(session: &InventoryUseSession, world: &mut World) {
     use crate::inventory_use::InventoryUseState;
+    // Throw Out discards apply regardless of how the session ended - the
+    // retail delete zeroes the whole bag-slot pair (id + count) the moment
+    // the player confirms "Yes" (`FUN_801D8734` phase 3).
+    // REF: FUN_801D8734
+    for id in &session.thrown_items {
+        world.inventory.remove(id);
+    }
     let InventoryUseState::Done(_) = session.state else {
         return;
     };
@@ -721,7 +728,7 @@ pub fn build_pause_items_session(world: &World) -> PauseItemsSession {
             }
         })
         .collect();
-    PauseItemsSession::new(inner, rows)
+    PauseItemsSession::new(inner, rows).with_arrange_rank(world.menu_arrange_rank.clone())
 }
 
 fn build_equip_session(world: &World, char_slot: u8, equipment: &EquipmentTable) -> EquipSession {
@@ -802,6 +809,33 @@ mod tests {
         let s = build(FieldMenuRow::Items, &w);
         assert_eq!(s.row(), FieldMenuRow::Items);
         assert!(matches!(s, FieldMenuSubsession::Items(_)));
+    }
+
+    /// A Throw Out discard reaches the world bag through
+    /// `apply_inventory_outcome` even when the session ends without a
+    /// completed use (the retail delete zeroes the whole bag-slot pair).
+    #[test]
+    fn throw_out_discard_applies_to_world_inventory() {
+        use crate::input::PadButton;
+        let mut w = fresh_world();
+        let FieldMenuSubsession::Items(mut s) = build(FieldMenuRow::Items, &w) else {
+            panic!("items session");
+        };
+        let press = |s: &mut crate::pause_screens::PauseItemsSession, b: PadButton| {
+            s.input_pad_edge(b.mask());
+        };
+        press(&mut s, PadButton::Down); // -> Throw Out
+        press(&mut s, PadButton::Cross); // into the discard list
+        press(&mut s, PadButton::Cross); // open the confirm (No)
+        press(&mut s, PadButton::Up); // -> Yes
+        press(&mut s, PadButton::Cross); // discard the 0x77 stack
+        press(&mut s, PadButton::Circle); // back off the command window
+        assert!(s.is_done());
+        apply_inventory_outcome(&s.inner, &mut w);
+        assert!(
+            !w.inventory.contains_key(&0x77),
+            "the whole stack is discarded"
+        );
     }
 
     #[test]

@@ -707,11 +707,17 @@ pub(super) fn cmd_play_window_with_record(
         // the extended footprint (the same read the save-menu pill TIM uses).
         .entry_bytes_extended(legaia_asset::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
         .ok()
-        .and_then(|b| match legaia_asset::menu_windows::parse(&b) {
-            Ok(t) => Some(t),
-            Err(e) => {
-                log::warn!("play-window: menu window table parse failed: {e:#}");
-                None
+        .and_then(|b| {
+            // The same overlay carries the Arrange display-order table
+            // (FUN_801D64A8): install it so the Items screen's Arrange
+            // command sorts by the retail rank rather than id order.
+            session.host.world.install_menu_overlay_tables(&b);
+            match legaia_asset::menu_windows::parse(&b) {
+                Ok(t) => Some(t),
+                Err(e) => {
+                    log::warn!("play-window: menu window table parse failed: {e:#}");
+                    None
+                }
             }
         });
 

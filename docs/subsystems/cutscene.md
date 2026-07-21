@@ -794,6 +794,8 @@ The spawner and the crawl-geometry config are two distinct sub-ops of field-VM o
   - `word3 == 1` finds the live roller by handler `FUN_80037174` (`FUN_8003CF04`) and either **pauses** it (`word0 == 0` sets actor `+0x10 |= 0x80000`) or writes the stop trigger `_DAT_801C6EA4 +0x52 = word0`.
   - `word3 == 2` **resumes** the roller (clears `+0x10 & ~0x80000`); `word3 == 3` unlinks the child and raises the terminal-kill flag (`+0x10 |= 8`).
 
+  Re-audited from the disassembly (not the decompiled C), the four-words / `word3`-selector shape holds and is **not** a dropped-slot artifact: the handler at `overlay_0897_801e0c3c.txt` `0x801E3378` advances the PC by `0xa`, then fetches `word0..word3` at operand `+1/+3/+5/+7` via `FUN_8003CE9C` (signed-16 LE). The `word3 == 0` seed writes exactly three stores - `sh` to `+0x4C/+0x4E/+0x50` of `_DAT_801C6EA4` at `0x801E34B0/B4/BC` (defaults `0x40/0x08/0x04` applied at `0x801E348C/98/A4` when the source word is `0`). The stop-trigger store `sh word0, +0x52` is at `0x801E3414`, the pause `+0x10 |= 0x80000` at `0x801E3408`, the resume clear at `0x801E343C`, the kill `+0x10 |= 8` at `0x801E347C`. `word3` is a selector only - it is never itself stored.
+
   The task-name "`4C 88`" is a **different** op (op0 `0x88`, nibble-8 sub-8): it writes `_DAT_80084628/80084624/8008462C`, not the crawl geometry. The crawl-geometry seed op is specifically the nibble-E sub-8 (`0xE8`) form.
 
 **Seed meaning** (from the roller's reads, `see ghidra/scripts/funcs/80037174.txt`):

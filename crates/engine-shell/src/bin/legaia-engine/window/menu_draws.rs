@@ -387,6 +387,28 @@ impl PlayWindowApp {
             self.menu_window_pen(window_ids::ITEMS_INFO),
         );
         d.extend(self.menu_tab_title_draws(window_ids::TAB_ITEMS, "Items"));
+        // Throw Out confirm prompt (descriptor id 9, renderer FUN_801D1B20):
+        // the Yes/No window that slides in over the command window. The
+        // window frame is chrome (still caller-pending); the text overlay
+        // sits at the descriptor pen, falling back to the pinned rect.
+        if let Some(confirm) = model.throw_confirm.as_ref() {
+            let pen = self.menu_window_pen(9);
+            let pen = if pen == (0, 0) {
+                let (x, y, _, _) = legaia_engine_render::ITEMS_THROW_CONFIRM_RECT;
+                (x, y)
+            } else {
+                pen
+            };
+            let view = legaia_engine_render::PauseThrowConfirmView {
+                name: &confirm.name,
+                count: confirm.count,
+                cursor: confirm.cursor,
+                text_cursor: self.save_menu.is_none(),
+            };
+            d.extend(legaia_engine_render::items_throw_confirm_draws_for(
+                &self.font, &view, pen,
+            ));
+        }
         d
     }
 

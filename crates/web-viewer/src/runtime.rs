@@ -164,6 +164,15 @@ impl LegaiaRuntime {
         if let Some(s) = scus.as_ref() {
             host.world.install_menu_text(s);
         }
+        // The menu overlay (PROT 0899) also carries the Arrange display-order
+        // table (FUN_801D64A8): install it so the Items screen's Arrange
+        // command sorts by the retail rank rather than id order.
+        if let Ok(overlay) = host
+            .index
+            .entry_bytes_extended(legaia_asset::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
+        {
+            host.world.install_menu_overlay_tables(&overlay);
+        }
         // The real retail proportional dialog font, decoded straight from the
         // disc (no save state): the 4bpp font TIM in PROT.DAT + the SCUS width
         // table. This is the exact font the native pause menu draws; without it
