@@ -197,3 +197,31 @@ host follow-up. Neither host draws the retail target column yet, so nothing
 calls it; it lands with its text sibling when a host routes the item
 target-select through the window-14 panel.
 """
+
+[[waiver]]
+builder = "records_screen_draws_for"
+kind = "orphan"
+reason = """
+The retail world-map Records screen renderer (`FUN_801ED710`), ported as a
+render seam in the world-map dev-menu lane together with its list sibling
+`dev_menu_list_draws_for` (waived below for the same reason). Neither host
+opens the Records screen yet - routing it in is a host-side change (native
+`window/menu_draws.rs`, web `play_menu.rs`) that also needs the host to feed
+the per-character record base `0x80084140 + n*0x414` fields into the screen
+model. The model half (`world_map_overlay::records_screen`) is wired and
+unit-tested; this builder lands with the host follow-up that surfaces the
+screen.
+"""
+
+[[waiver]]
+builder = "dev_menu_list_draws_for"
+kind = "orphan"
+reason = """
+The world-map dev-menu list renderer (`FUN_801EAD98` row-loop geometry), the
+list sibling of `records_screen_draws_for` above and gated on the same host
+follow-up. The dev menu is a debug-flag surface retail only shows under
+`_DAT_8007B98C`, and neither host exposes a debug-menu route yet - the model
+half (`world_map_overlay` `DevMenuRow`/`cursor_step`/`list_body_draws`) is
+wired and unit-tested, so this builder waits for a host debug toggle rather
+than inventing one.
+"""

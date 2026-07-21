@@ -62,6 +62,14 @@ enum Cmd {
         /// name each entry file after its block, e.g. `0004_town01.BIN`.
         #[arg(long)]
         cdname: Option<PathBuf>,
+        /// Trim each `.BIN` to its true on-disc footprint (the sector span to
+        /// the next entry) instead of the TOC-declared window, so over-reading
+        /// entries don't carry a neighbour's bytes in their tail. Trailing
+        /// overlays past the TOC-indexed end are kept - they sit inside the
+        /// footprint. Default off: the full declared window matches what the
+        /// TOC says and what `locate` expects for `--in-entry` offsets.
+        #[arg(long)]
+        clamp_footprint: bool,
     },
 }
 
@@ -84,7 +92,12 @@ fn main() -> Result<()> {
             in_entry,
             cdname,
         } => locate_cmd(&prot, &offset, in_entry, cdname.as_deref()),
-        Cmd::Extract { prot, out, cdname } => extract(&prot, &out, cdname.as_deref()),
+        Cmd::Extract {
+            prot,
+            out,
+            cdname,
+            clamp_footprint,
+        } => extract(&prot, &out, cdname.as_deref(), clamp_footprint),
     }
 }
 
@@ -244,7 +257,12 @@ fn list(prot: &Path, cdname_path: Option<&Path>) -> Result<()> {
     Ok(())
 }
 
-fn extract(prot: &Path, out: &Path, cdname_path: Option<&Path>) -> Result<()> {
+fn extract(
+    prot: &Path,
+    out: &Path,
+    cdname_path: Option<&Path>,
+    clamp_footprint: bool,
+) -> Result<()> {
     let mut archive = open_archive(prot)?;
     print_header(
         &archive.header,
@@ -264,8 +282,16 @@ fn extract(prot: &Path, out: &Path, cdname_path: Option<&Path>) -> Result<()> {
     let mut manifest_entries = Vec::with_capacity(archive.entries.len());
 
     let entries = archive.entries.clone();
+    let mut trimmed = 0usize;
     for entry in &entries {
         archive.read_entry(entry, &mut buf)?;
+        if clamp_footprint {
+            let footprint = legaia_prot::locate::footprint_bytes(&archive.toc, entry) as usize;
+            if buf.len() > footprint {
+                buf.truncate(footprint);
+                trimmed += 1;
+            }
+        }
 
         let block = names
             .as_ref()
@@ -298,7 +324,7 @@ fn extract(prot: &Path, out: &Path, cdname_path: Option<&Path>) -> Result<()> {
             index: entry.index,
             block: block.map(str::to_owned),
             byte_offset: format!("0x{:08X}", entry.byte_offset),
-            size: entry.size_bytes,
+            size: buf.len() as u64,
             lba: entry.start_lba,
             size_sectors: entry.size_sectors,
             is_tim_pack: is_tim,
@@ -311,6 +337,7 @@ fn extract(prot: &Path, out: &Path, cdname_path: Option<&Path>) -> Result<()> {
         source: prot.display().to_string(),
         header: archive.header.clone(),
         toc_len: archive.toc.len(),
+        clamp_footprint,
         entries: manifest_entries,
     };
     let json = serde_json::to_string_pretty(&manifest)?;
@@ -322,6 +349,9 @@ fn extract(prot: &Path, out: &Path, cdname_path: Option<&Path>) -> Result<()> {
         archive.entries.len(),
         out.display()
     );
+    if clamp_footprint {
+        println!("clamped {trimmed} over-reading entries to their true footprint");
+    }
     Ok(())
 }
 
@@ -337,6 +367,9 @@ struct Manifest {
     source: String,
     header: Header,
     toc_len: usize,
+    /// True when `--clamp-footprint` trimmed over-reading entries, so each
+    /// `size` below is the written length, not the TOC-declared window.
+    clamp_footprint: bool,
     entries: Vec<ManifestEntry>,
 }
 

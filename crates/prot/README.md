@@ -61,7 +61,7 @@ random blobs).
 ```bash
 prot-extract list    <PROT.DAT> [--cdname <CDNAME.TXT>]
 prot-extract locate  <PROT.DAT> <offset> [--in-entry N] [--cdname <CDNAME.TXT>]
-prot-extract extract <PROT.DAT> <out_dir> [--cdname <CDNAME.TXT>]
+prot-extract extract <PROT.DAT> <out_dir> [--cdname <CDNAME.TXT>] [--clamp-footprint]
 ```
 
 Names from `CDNAME.TXT` propagate to the extracted filenames

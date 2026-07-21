@@ -261,6 +261,12 @@ It translates the in-file offset to an absolute PROT.DAT offset, names the
 over-read tail rather than the entry's own data. Drop `--in-entry` to pass an
 absolute PROT.DAT offset directly.
 
+To avoid the trap entirely, re-extract with `prot-extract extract
+--clamp-footprint`: every `.BIN` is trimmed to its true footprint, so no file
+carries a neighbour's bytes (trailing overlays are kept - they sit inside the
+footprint). The default stays un-clamped because in-`.BIN` offsets then match
+the TOC-declared windows that `locate --in-entry` and older notes assume.
+
 ## Related docs
 
 - [docs/tooling/extraction.md](../tooling/extraction.md) - the full per-stage reference.
