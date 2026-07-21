@@ -119,6 +119,13 @@ yaw + user drag-orbit + the renderer's framing bias). `Camera::distance`
 is the discrete follow-camera distance preset (retail / far / farther) -
 render framing only.
 
+Two faithful direction-decode leaves are ported standalone (not yet on the
+hot path): `World::remap_pad_direction` (the retail 45° eighth-turn ring
+remap `FUN_800467e8`) and `World::resolve_field_slide` (the wall-slide
+resolver `FUN_80046494` - skids the player along a blocked wall toward the
+open side, over `field_tile_is_wall`). See
+[`docs/subsystems/field-locomotion.md`](../../docs/subsystems/field-locomotion.md).
+
 The collision grid (one byte per 128-unit tile, high nibble = 4 sub-cell
 wall bits) is zeroed at field entry and painted by the field-VM `0x4C`
 outer-nibble-7 op as the prescript runs.

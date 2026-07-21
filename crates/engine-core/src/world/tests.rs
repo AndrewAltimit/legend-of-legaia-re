@@ -252,6 +252,7 @@ mod physics_steal_shop;
 mod save_state;
 mod script_teleport;
 mod shiny;
+mod slide;
 mod summon_final_heal;
 mod tile_board;
 mod worldmap;

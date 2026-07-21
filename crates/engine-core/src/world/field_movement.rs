@@ -665,6 +665,137 @@ impl World {
             .any(|&(dx, dz)| self.field_tile_is_wall(x.saturating_add(dx), z.saturating_sub(dz)))
     }
 
+    /// Camera-relative pad-direction remap: rotate a held direction mask by
+    /// the field camera's rotation index `rot` (0..7 eighth-turns) around the
+    /// eight-direction ring [`FIELD_DIR_RING`], so "screen up" always walks
+    /// away from the camera regardless of azimuth. Returns the input mask
+    /// unchanged when `rot == 0` (identity camera) or no direction is held.
+    ///
+    /// PORT: FUN_800467e8
+    ///
+    /// Faithful to the retail path (`func_0x800467e8(&_DAT_8007b850)`, called
+    /// at the top of the free-movement controller `FUN_801d01b0` before the
+    /// wall-slide resolve): retail finds the held direction's index in the
+    /// ring, adds the camera step (`gp+0x2d8`), wraps `& 7`, and writes the
+    /// rotated mask back over the direction nibble (`held & 0xffff0fff | new`).
+    /// This is a **45°** remap - it rotates diagonals as first-class ring
+    /// entries, unlike [`World::decode_field_direction`]'s 90°-quantised
+    /// screen-vector rotation, which the two agree on for even `rot` (the
+    /// axis-aligned cameras every retail field scene actually uses).
+    pub fn remap_pad_direction(held: u16, rot: u32) -> u16 {
+        if rot == 0 {
+            return held;
+        }
+        let dir = held & 0xF000;
+        if dir == 0 {
+            return held;
+        }
+        // Locate the held direction in the ring (retail's linear scan; a valid
+        // direction mask is always one of the eight entries).
+        let idx = FIELD_DIR_RING.iter().position(|&m| m == dir).unwrap_or(8);
+        let rotated = FIELD_DIR_RING[(idx as u32).wrapping_add(rot) as usize & 7];
+        // Retail rewrites the 0xf000 direction nibble in place (32-bit
+        // `held & 0xffff0fff`); on the 16-bit mask that clears the top nibble.
+        (held & 0x0FFF) | rotated
+    }
+
+    /// Retail's wall-slide direction resolver: given the post-remap held mask
+    /// and the player's current position, return the mask the per-axis step
+    /// loop actually walks on - the held direction, plus a perpendicular
+    /// **slide** bit when the held direction is blocked but there is open
+    /// space to one side, so the player skids along a wall instead of
+    /// sticking to it.
+    ///
+    /// PORT: FUN_80046494
+    /// REF: FUN_801d56c4
+    ///
+    /// Two short-circuits return the raw mask untouched, exactly as retail:
+    /// the no-clip pad bit (`held & 0x2`), and any of the four pure diagonals
+    /// (`0x9000`/`0xc000`/`0x3000`/`0x6000`) - a diagonal already offers two
+    /// axes for the collision step to resolve independently. Otherwise, for
+    /// each held cardinal ([`FIELD_SLIDE_DIRS`]):
+    ///
+    /// 1. **Three-point block test** at the ±62-unit candidate point: the
+    ///    point offset `±FIELD_SLIDE_LATERAL` perpendicular to travel, plus
+    ///    dead centre, sampled through [`World::field_tile_is_wall`] (retail's
+    ///    walkability probe `func_0x801d56c4`). Clear on all three -> just OR
+    ///    the direction bit and move on.
+    /// 2. **Slide search**: sweep the perpendicular axis over
+    ///    [`FIELD_SLIDE_SWEEP`], summing the offsets that come back walkable.
+    /// 3. **Sign picks the slide**: a negative sum ORs the row's negative
+    ///    slide bit, a positive sum the positive one ([`FIELD_SLIDE_BITS`]); a
+    ///    sum of exactly zero (symmetric dead end) adds nothing. The original
+    ///    direction bit is ORed in regardless.
+    ///
+    /// This is a pure resolver over the collision grid; wiring it into the
+    /// live pad path is separate (the default [`World::decode_field_direction`]
+    /// stops at a blocked axis rather than sliding).
+    pub fn resolve_field_slide(&self, held: u16, x: i16, z: i16) -> u16 {
+        // No-clip pad bit: pass the raw mask through untouched.
+        if held & 0x2 != 0 {
+            return held;
+        }
+        // Pure diagonals are never slide-resolved.
+        if matches!(held & 0xF000, 0x9000 | 0xC000 | 0x3000 | 0x6000) {
+            return held;
+        }
+        let px = x as i32;
+        let pz = z as i32;
+        // The walkability probe: retail `func_0x801d56c4` returns "blocked"
+        // for a wall sub-cell, which is exactly `field_tile_is_wall` (same
+        // `+2` Z / `ceil-1` X biased sub-cell derivation). Coords stay well
+        // inside i16 for field-sized worlds; clamp defensively.
+        let wall = |wx: i32, wz: i32| -> bool {
+            self.field_tile_is_wall(
+                wx.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+                wz.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+            )
+        };
+        let mut out = 0u16;
+        for (i, &(mask, dx, dy)) in FIELD_SLIDE_DIRS.iter().enumerate() {
+            if held & mask == 0 {
+                continue;
+            }
+            // Lateral offset perpendicular to the travel axis.
+            let (latx, latz) = if dx != 0 {
+                (0, FIELD_SLIDE_LATERAL)
+            } else {
+                (FIELD_SLIDE_LATERAL, 0)
+            };
+            let (cx, cz) = (px + dx, pz + dy);
+            let blocked = wall(cx + latx, cz + latz) || wall(cx - latx, cz - latz) || wall(cx, cz);
+            if !blocked {
+                out |= mask;
+                continue;
+            }
+            // Sweep the perpendicular axis; sum the walkable offsets.
+            let mut total = 0i32;
+            for &off in FIELD_SLIDE_SWEEP.iter() {
+                if dx == 0 {
+                    // Z-travel -> sweep in X.
+                    if !wall(cx + off, cz) {
+                        total += off;
+                    }
+                }
+                if dy == 0 {
+                    // X-travel -> sweep in Z.
+                    if !wall(cx, cz + off) {
+                        total += off;
+                    }
+                }
+            }
+            let (neg_bit, pos_bit) = FIELD_SLIDE_BITS[i];
+            if total < 0 {
+                out |= neg_bit;
+            }
+            if total > 0 {
+                out |= pos_bit;
+            }
+            out |= mask;
+        }
+        out
+    }
+
     /// Retail's actor-collision direction test: from the CURRENT position
     /// `(x, z)`, take the three probe points of `FIELD_ACTOR_PROBES` row
     /// `dir` (same `(x + dx, z - dz)` convention as the wall probes) and

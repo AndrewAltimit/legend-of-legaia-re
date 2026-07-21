@@ -146,10 +146,24 @@ resolved mask is cached to `gp+0x9c4`. Under the debug flag
 (`gp+0x3b8 & 1`) each stage prints - `HIT`, `chk %d`, `pad %x not %x`,
 `pl_angle %d` - which is the cheapest way to watch the resolver decide.
 
-Provenance: `ghidra/scripts/funcs/80046494.txt`. **Not yet ported** - the
-engine's direction decode (`World::decode_field_direction`) implements
-step 3 of the per-frame flow without the slide resolution, so the port
-stops at a blocked axis instead of sliding along it.
+Provenance: `ghidra/scripts/funcs/80046494.txt`; the direction / sweep /
+slide-bit tables (`DAT_800766bc` / `DAT_800766ec` / `DAT_800766dc`) are
+static `SCUS_942.54` data. Ported as
+[`World::resolve_field_slide`](../../crates/engine-core/src/world/field_movement.rs)
+- a pure resolver over [`World::field_tile_is_wall`] (retail's walkability
+probe `func_0x801d56c4`), with the same no-clip / pure-diagonal
+short-circuits, the ±62-unit three-point block test, the seven-entry
+perpendicular sweep, and the strict-sign slide-bit selection. It is a
+standalone resolver: the default `World::decode_field_direction` still
+stops at a blocked axis rather than sliding, so wiring the resolver into
+the live pad path is a separate step.
+
+The camera-relative pad remap that feeds it (`func_0x800467e8`, the
+`gp+0x2d8` eighth-turn rotation over the 8-direction ring `DAT_800766fc`)
+is ported as `World::remap_pad_direction`. It is the faithful **45°**
+remap; `World::decode_field_direction`'s 90°-quantised screen-vector
+rotation agrees with it for the axis-aligned cameras every retail field
+scene uses.
 
 ## Collision - `FUN_801cfe4c`
 
