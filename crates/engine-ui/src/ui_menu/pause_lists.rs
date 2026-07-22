@@ -238,8 +238,14 @@ fn list_page_header_draws(
 /// - info window: item name (staging 6 gold) at `(X, Y)`, bag count
 ///   2-digit gold at `X+0x7C`, description white at `(X, Y+0x10)`, and
 ///   the accessory passive lines in the extra widget box at `(X,
-///   Y+0x38)` (staging 4 green) / `(X, Y+0x48)` (white)
-///   (PORT: FUN_801dcb60; PORT: FUN_801d0f1c).
+///   Y+0x38)` (staging 4 green) / `(X, Y+0x48)` (white).
+///
+/// PORT: FUN_801dcb60 (info window: staged-id gate, bag-count echo at
+/// `X+0x7C`, widget-box frame)
+/// PORT: FUN_801d0f1c (info window: name / description at `+0x10` /
+/// passive name+desc at `+0x38`/`+0x48`; the kind-2 scope pictogram
+/// (ICO `0x84`/`0x85` at `X+0x84`) and the id-`0xFE` gold panel stay
+/// undrawn)
 pub fn items_screen_draws_for(
     font: &legaia_font::Font,
     view: &PauseItemsView<'_>,

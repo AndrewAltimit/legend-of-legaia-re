@@ -254,6 +254,13 @@ impl PauseItemsSession {
     //
     // PORT: FUN_801D7C00 (items command SM: submenu routing + Arrange phase)
     // PORT: FUN_801D8734 (throw-out list + confirm SM)
+    // PORT: FUN_801D8308 (single-target apply SM, phases 0..2: preview-mode
+    //   staging via target_panel_mode, party-row navigate, confirm
+    //   revalidation buzz (retail FUN_8003FB10 -> InvalidConfirm), one
+    //   apply. The post-apply repeat-stay (retail phase 7 returns the hand
+    //   to the party rows while stock and applicability hold), the notify
+    //   window (script 0x801E4C60) and the 20-frame exhaustion timer
+    //   collapse into the session's single-apply Done.)
     pub fn input_pad_edge(&mut self, pressed: u16) {
         let up = pressed & PadButton::Up.mask() != 0;
         let down = pressed & PadButton::Down.mask() != 0;

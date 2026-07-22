@@ -2014,6 +2014,13 @@ pub struct World {
     /// texture rather than rendering a string. See [`crate::cutscene_caption`].
     pub cutscene_caption: Option<crate::cutscene_caption::CaptionImage>,
 
+    /// The live `4C E1` single-line text balloon, spawned by the field-VM
+    /// menu-ctrl sub-op (`FUN_8003C764`) and ticked per frame
+    /// ([`crate::text_balloon::TextBalloon::tick`], the `FUN_801DA7F0`
+    /// handler). Spawning replaces any live balloon - the retail
+    /// predecessor-kill. Hosts render `text` at `(x, y)` while it runs.
+    pub text_balloon: Option<crate::text_balloon::TextBalloon>,
+
     /// Fade level (0..=1) of [`Self::cutscene_caption`], ramped each
     /// [`Self::tick`]. Target-visible in the gap after the first narration
     /// crawl block scrolls out and before the second opens (retail shows the
@@ -2347,6 +2354,7 @@ impl World {
             entering_town01_opening: false,
             cutscene_card: None,
             cutscene_caption: None,
+            text_balloon: None,
             cutscene_caption_alpha: 0.0,
             cutscene_caption_shown_frames: 0,
             pending_record_spawns: Vec::new(),
@@ -2410,6 +2418,7 @@ impl World {
         self.helper_contexts.clear();
         self.cutscene_narration = None;
         self.cutscene_card = None;
+        self.text_balloon = None;
         self.prologue_naming_pending = false;
         self.prologue_naming_armed = false;
         self.entering_town01_opening = false;

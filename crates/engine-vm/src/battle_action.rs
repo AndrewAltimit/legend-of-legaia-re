@@ -67,5 +67,8 @@ pub use validator::*;
 mod pool_ops;
 pub use pool_ops::*;
 
+mod queue_applier;
+pub use queue_applier::*;
+
 #[cfg(test)]
 mod tests;

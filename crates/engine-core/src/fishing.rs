@@ -726,6 +726,163 @@ pub fn select_owned_rod(rod_index: &mut u32, mut count_of: impl FnMut(u32) -> i3
     false
 }
 
+/// One text line of the fishing help panel: which overlay string-table
+/// row to draw, and where.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HelpPanelLine {
+    /// Index into the active page's string-pointer table
+    /// (page 0 table at overlay VA `0x801D8130`, page 1 at `0x801D8168`).
+    pub string_index: u8,
+    /// Screen X (the panel's `x` argument, passed through per line).
+    pub x: i16,
+    /// Screen Y (`y + 13 * index` - the 13 px line pitch).
+    pub y: i16,
+}
+
+/// Renderer-agnostic layout of the fishing **help panel** - the
+/// two-page line-list screen the fishing overlay draws at `0x801D72A0`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HelpPanelLayout {
+    pub lines: Vec<HelpPanelLine>,
+    /// Footer line position (retail constants `x = 0xE0`, `y = 0xCA`;
+    /// the footer string differs per page: overlay VA `0x801CF048` /
+    /// `0x801CF050`).
+    pub footer: (i16, i16),
+    /// The widget-frame emit that closes the draw
+    /// (`FUN_8002C69C(x, y, 0x119, 0xC3)`).
+    pub frame: (i16, i16, i16, i16),
+}
+
+/// PORT: overlay_fishing_801d72a0
+///
+/// Fishing help-panel layout - the static-extract resolution of the VA
+/// `0x801D72A0` open case (see `docs/subsystems/minigame-fishing.md`).
+/// The fishing overlay's own bytes at that VA (PROT 0972 file `0x8A88`,
+/// base `0x801CE818`) are a clean `(x, y, page)` panel renderer:
+///
+/// - page 0: 14 lines from the string-pointer table at `0x801D8130`;
+/// - page != 0: 15 lines from the sibling table at `0x801D8168`;
+/// - both: 13 px line pitch, a per-page footer at `(0xE0, 0xCA)`, a
+///   widget-frame emit `FUN_8002C69C(x, y, 0x119, 0xC3)`, and the
+///   field-subsystem mode byte `DAT_80073F20 = 0x10` stored on entry.
+///
+/// The line **strings** are overlay bytes (Sony text) and are not
+/// modeled; hosts resolve `string_index` against the user's disc.
+pub fn help_panel_layout(x: i16, y: i16, second_page: bool) -> HelpPanelLayout {
+    let count = if second_page { 15 } else { 14 };
+    let lines = (0..count)
+        .map(|i| HelpPanelLine {
+            string_index: i,
+            x,
+            y: y + 13 * i as i16,
+        })
+        .collect();
+    HelpPanelLayout {
+        lines,
+        footer: (0xE0, 0xCA),
+        frame: (x, y, 0x119, 0xC3),
+    }
+}
+
+/// Outcome of one [`FishingMenu::tick`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FishingMenuTick {
+    /// SFX request this frame (`sh id, 0x8007B6D8`): `0x37` cancel,
+    /// `0x21` cursor move, `0x20` confirm. `None` when no pad edge hit.
+    pub sfx: Option<u16>,
+    /// New fishing-SM state (`0x801D926C`) when a transition fired:
+    /// cancel -> `0x0A`; confirm row 0..4 -> `0x0A` / `0x65` / `0x6E` /
+    /// `0x78` / `0xC8`.
+    pub next_state: Option<u32>,
+    /// Rows 2 / 3 snapshot the fishing-points bank (`_DAT_80084450`)
+    /// into the overlay session global `0x801D90DC` on confirm.
+    pub snapshot_points: bool,
+    /// Row 4 (leave) clears the scene-load flag `_DAT_8007BC20` and sets
+    /// the overlay exit latch `0x801D90CC = 1`.
+    pub leave_venue: bool,
+}
+
+/// PORT: overlay_fishing_801d0474
+///
+/// Fishing **main-menu picker** - static extract from PROT 0972 (file
+/// `0x1C5C`, base `0x801CE818`). One call per frame:
+///
+/// - `interactive` (retail `a0 != 0`) gates both the pad handling and
+///   the cursor icon; a zero call draws the row text only.
+/// - Pad edges (pressed global `0x801D90D8`): `& 0x21` cancel (state
+///   `0x0A`, SFX `0x37`); `& 0x1000` up / `& 0x4000` down move the
+///   cursor (`0x801D912C`) with SFX `0x21`.
+/// - The cursor clamps by **snapping**: `< 0` -> 4, `>= 5` -> 0 (with
+///   the ±1 steps that is a 5-row wrap).
+/// - Draw: 5 row strings at `x = 0x6C`, `y = 0x58 + 0x10 * row`; the
+///   cursor icon (`FUN_8002C488`) at `(0x5B, 0x58 + 0x10 * cursor)`;
+///   panel frame via `FUN_801D74B0(0xA0, 0x50, 0x68, 0x50)`.
+/// - Confirm (`& 0x44`, SFX `0x20`): jump table over the cursor row ->
+///   next SM state (see [`FishingMenuTick::next_state`]); rows 2/3 also
+///   snapshot the points bank, row 4 arms the venue exit.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FishingMenu {
+    /// Cursor row (`0x801D912C`).
+    pub cursor: i32,
+}
+
+/// Row text x / first-row y / row pitch, from the draw calls.
+pub const FISHING_MENU_ROW_X: i16 = 0x6C;
+pub const FISHING_MENU_ROW_Y0: i16 = 0x58;
+pub const FISHING_MENU_ROW_PITCH: i16 = 0x10;
+/// Confirm-row -> next-state map (jump table at overlay VA `0x801CEF58`).
+pub const FISHING_MENU_ROW_STATES: [u32; 5] = [0x0A, 0x65, 0x6E, 0x78, 0xC8];
+
+impl FishingMenu {
+    pub fn tick(&mut self, pad_pressed: u16, interactive: bool) -> FishingMenuTick {
+        let mut out = FishingMenuTick {
+            sfx: None,
+            next_state: None,
+            snapshot_points: false,
+            leave_venue: false,
+        };
+        if interactive {
+            if pad_pressed & 0x21 != 0 {
+                out.next_state = Some(0x0A);
+                out.sfx = Some(0x37);
+            }
+            if pad_pressed & 0x1000 != 0 {
+                out.sfx = Some(0x21);
+                self.cursor -= 1;
+            }
+            if pad_pressed & 0x4000 != 0 {
+                out.sfx = Some(0x21);
+                self.cursor += 1;
+            }
+        }
+        // Snap clamp (retail: bgez / slti 5 pair - not a modulo).
+        if self.cursor < 0 {
+            self.cursor = 4;
+        }
+        if self.cursor >= 5 {
+            self.cursor = 0;
+        }
+        if interactive && pad_pressed & 0x44 != 0 {
+            out.sfx = Some(0x20);
+            let row = self.cursor as usize;
+            if row < 5 {
+                out.next_state = Some(FISHING_MENU_ROW_STATES[row]);
+                out.snapshot_points = row == 2 || row == 3;
+                out.leave_venue = row == 4;
+            }
+        }
+        out
+    }
+
+    /// The cursor icon position for this frame (interactive draws only).
+    pub fn cursor_pos(&self) -> (i16, i16) {
+        (
+            0x5B,
+            FISHING_MENU_ROW_Y0 + FISHING_MENU_ROW_PITCH * self.cursor as i16,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1011,5 +1168,72 @@ mod tests {
         // Over-quantity and unavailable rows refuse.
         assert!(ex.buy(2, 6, 1_000, 0, 0).is_none());
         assert!(ex.buy(1, 1, 6_500, 0, 1 << 9).is_none());
+    }
+
+    // -- help_panel_layout (overlay_fishing 0x801D72A0) ----------------
+
+    #[test]
+    fn help_panel_page0_has_14_lines_at_13px_pitch() {
+        let l = help_panel_layout(0x20, 0x18, false);
+        assert_eq!(l.lines.len(), 14);
+        assert_eq!(
+            l.lines[0],
+            HelpPanelLine {
+                string_index: 0,
+                x: 0x20,
+                y: 0x18
+            }
+        );
+        assert_eq!(l.lines[13].y, 0x18 + 13 * 13);
+        assert_eq!(l.footer, (0xE0, 0xCA));
+        assert_eq!(l.frame, (0x20, 0x18, 0x119, 0xC3));
+    }
+
+    #[test]
+    fn help_panel_page1_has_15_lines() {
+        let l = help_panel_layout(0, 0, true);
+        assert_eq!(l.lines.len(), 15);
+        assert_eq!(l.lines[14].y, 13 * 14);
+    }
+
+    // -- FishingMenu (overlay_fishing 0x801D0474) ----------------------
+
+    #[test]
+    fn fishing_menu_cursor_wraps_by_snapping() {
+        let mut m = FishingMenu::default();
+        // Up from row 0: cursor goes -1, snap to 4.
+        let t = m.tick(0x1000, true);
+        assert_eq!(m.cursor, 4);
+        assert_eq!(t.sfx, Some(0x21));
+        // Down from row 4: cursor goes 5, snap to 0.
+        m.tick(0x4000, true);
+        assert_eq!(m.cursor, 0);
+        assert_eq!(m.cursor_pos(), (0x5B, 0x58));
+    }
+
+    #[test]
+    fn fishing_menu_confirm_maps_rows_to_states() {
+        for (row, want) in FISHING_MENU_ROW_STATES.iter().enumerate() {
+            let mut m = FishingMenu { cursor: row as i32 };
+            let t = m.tick(0x40, true);
+            assert_eq!(t.next_state, Some(*want), "row {row}");
+            assert_eq!(t.sfx, Some(0x20));
+            assert_eq!(t.snapshot_points, row == 2 || row == 3, "row {row}");
+            assert_eq!(t.leave_venue, row == 4, "row {row}");
+        }
+    }
+
+    #[test]
+    fn fishing_menu_cancel_and_non_interactive() {
+        let mut m = FishingMenu { cursor: 2 };
+        let t = m.tick(0x20, true);
+        assert_eq!(t.next_state, Some(0x0A));
+        assert_eq!(t.sfx, Some(0x37));
+        // Non-interactive: pad ignored entirely.
+        let mut m = FishingMenu { cursor: 2 };
+        let t = m.tick(0xFFFF, false);
+        assert_eq!(t.next_state, None);
+        assert_eq!(t.sfx, None);
+        assert_eq!(m.cursor, 2);
     }
 }
