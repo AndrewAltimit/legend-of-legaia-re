@@ -207,6 +207,7 @@ pub mod view_rot_flags {
 ///
 /// PORT: FUN_8001CF50
 /// REF: FUN_8003D178, FUN_800461A4, FUN_8004629C, FUN_8004638C, FUN_8003D1A4
+/// REF: FUN_8005B4E8
 ///
 /// Returns the composed rotation, or `None` when the node asks for the saved
 /// camera matrix instead ([`view_rot_flags::USE_SAVED_MATRIX`]).

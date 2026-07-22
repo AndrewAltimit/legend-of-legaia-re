@@ -786,7 +786,7 @@ pub enum FrameBody {
 /// What mode 23 CARD runs in place of the master frame driver.
 ///
 /// PORT: FUN_80017978
-/// REF: FUN_800179C0, FUN_800188C8
+/// REF: FUN_800179C0, FUN_800188C8, FUN_80020DE0
 ///
 /// The whole body is three calls and a `move v0, zero`
 /// (`0x80017978..0x800179BC`):
