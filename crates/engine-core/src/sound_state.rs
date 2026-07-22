@@ -12,6 +12,9 @@
 //! portable is the **scheduling**, which is where the behaviour lives.
 //! REF: FUN_80065440, FUN_80062AA0, FUN_8002657C, FUN_80064370
 //! REF: FUN_8001698C
+//! The mode-0 CONFIG INIT caller of the detach, and the frame-end driver +
+//! boot init that between them own the `_DAT_8007BA66` dither byte.
+//! REF: FUN_80025C68, FUN_80016B6C, FUN_8001D424
 
 /// Timed auto-release of the bound sound source (`FUN_800267FC`).
 ///
