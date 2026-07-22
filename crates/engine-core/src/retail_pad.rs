@@ -234,6 +234,17 @@ impl RetailPadState {
         if !debug_mode {
             held &= 0xFFFF;
         }
+        self.pump_packed(held, vsync_delta);
+    }
+
+    /// The second half of [`Self::pump`], entered with the held word already
+    /// packed (`0x800184E0` onward - everything after the two-port decode).
+    ///
+    /// This is the entry a host with an already-assembled button mask uses:
+    /// it skips the libpad report decode - which is host-specific anyway, the
+    /// engine reads a keyboard or a gamepad, not a PSX controller port - and
+    /// still gets the retail edge words and the 32-vsync auto-repeat window.
+    pub fn pump_packed(&mut self, held: u32, vsync_delta: u32) {
         self.held = held;
         self.changed = held ^ self.prev;
         self.pressed = held & !self.prev;

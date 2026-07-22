@@ -119,6 +119,14 @@ pub struct InputState {
     /// Per-button "first time held" timestamp. Reset when the button is
     /// released. Used by [`Self::held_for`].
     pressed_at: [Option<Instant>; 16],
+    /// The retail per-frame pad pump ([`crate::retail_pad::RetailPadState`],
+    /// `FUN_8001822C`). Driven by **both** setters - [`Self::set_pad_reports`]
+    /// runs the full pump from raw libpad reports, [`Self::set_pad`] runs its
+    /// packed half - so the 32-vsync auto-repeat window retail's menus key
+    /// off, which the plain edge pair cannot express, is live for every host.
+    ///
+    /// REF: FUN_8001822C
+    retail: crate::retail_pad::RetailPadState,
 }
 
 /// Wall-clock read for the held-duration bookkeeping.
@@ -146,10 +154,61 @@ impl InputState {
         Self::default()
     }
 
+    /// Drive the pad from **raw libpad reports**, the way retail does.
+    ///
+    /// PORT: FUN_8001822c - the per-frame pad handler, via
+    /// [`crate::retail_pad::RetailPadState::pump`]. Where [`Self::set_pad`]
+    /// takes an already-packed mask, this runs the retail pump: the two-port
+    /// pack, the analog stick fold-ins, the SOCD cancels, the debug-mode
+    /// truncation, and the 32-vsync held-history ring behind menu auto-repeat.
+    /// The resulting held word feeds [`Self::set_pad`], so every existing edge
+    /// query keeps working unchanged.
+    ///
+    /// `vsync_delta` is `DAT_1F800393` - the adaptive frame step
+    /// ([`crate::world::World::frame_step`]), not a constant `1`. That is what
+    /// keeps the auto-repeat rate wall-clock-constant across a cadence change.
+    pub fn set_pad_reports(
+        &mut self,
+        port0: &crate::retail_pad::PadReport,
+        port1: &crate::retail_pad::PadReport,
+        debug_mode: bool,
+        vsync_delta: u32,
+    ) {
+        self.retail.pump(port0, port1, debug_mode, vsync_delta);
+        let held = self.retail.held as u16;
+        // Publish the mask without re-running the pump (set_pad would pump
+        // again at one vsync and double-advance the history ring).
+        self.publish_pad(held);
+    }
+
+    /// The retail pad pump's full state - held / changed / pressed words plus
+    /// the auto-repeat window. Live for **every** host: [`Self::set_pad`]
+    /// feeds the pump's packed half too, so the window is populated whether
+    /// the host supplies raw reports or an assembled mask.
+    pub fn retail_pad(&self) -> &crate::retail_pad::RetailPadState {
+        &self.retail
+    }
+
     /// Replace the pad mask. The previous frame's mask is rotated into
     /// `pad_prev` so edge queries reflect the transition between the last
     /// and current call.
     pub fn set_pad(&mut self, mask: u16) {
+        // Feed the retail pump's second half (`FUN_8001822C` from
+        // `0x800184E0`) so every host - including the ones that assemble a
+        // mask themselves rather than decoding libpad reports - gets the
+        // retail edge words and the 32-vsync auto-repeat window through
+        // [`Self::retail_pad`]. A host with no cadence to supply implies one
+        // vsync per call; [`Self::set_pad_reports`] takes the real
+        // `DAT_1F800393`.
+        self.retail.pump_packed(u32::from(mask), 1);
+        self.publish_pad(mask);
+    }
+
+    /// Rotate `mask` into the current/previous pair and refresh the
+    /// held-duration timestamps. The half of [`Self::set_pad`] that does not
+    /// touch the retail pump, so a caller that already pumped can publish
+    /// without double-advancing the history ring.
+    fn publish_pad(&mut self, mask: u16) {
         self.pad_prev = self.pad;
         self.pad = mask;
         let now = now();
@@ -367,6 +426,57 @@ impl Mapping {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::retail_pad::{PadReport, REPEAT_PERIOD, REPEAT_WINDOW};
+
+    /// Driving from raw reports must produce the same edge queries as the
+    /// packed-mask path, so wiring the retail pump in changes nothing for
+    /// existing callers.
+    #[test]
+    fn raw_reports_feed_the_same_edge_queries_as_a_packed_mask() {
+        let mut s = InputState::new();
+        let cross = PadReport::digital(PadButton::Cross.mask());
+        s.set_pad_reports(&cross, &PadReport::DISCONNECTED, false, 1);
+        assert!(s.just_pressed(PadButton::Cross));
+        assert_eq!(s.pad(), PadButton::Cross.mask());
+        s.set_pad_reports(&cross, &PadReport::DISCONNECTED, false, 1);
+        assert!(s.pressed(PadButton::Cross) && !s.just_pressed(PadButton::Cross));
+        s.set_pad_reports(&PadReport::DISCONNECTED, &PadReport::DISCONNECTED, false, 1);
+        assert!(s.just_released(PadButton::Cross));
+    }
+
+    /// The retail pump carries state the packed path cannot: a button held
+    /// for the whole 32-vsync window pulses the auto-repeat, and the window
+    /// is counted in VSYNCS, so a cadence of 2 reaches it in half the ticks.
+    #[test]
+    fn the_auto_repeat_window_is_counted_in_vsyncs() {
+        let up = PadReport::digital(PadButton::Up.mask());
+        let mut fast = InputState::new();
+        for _ in 0..REPEAT_WINDOW {
+            fast.set_pad_reports(&up, &PadReport::DISCONNECTED, false, 1);
+        }
+        assert_eq!(
+            fast.retail_pad().held_32,
+            u32::from(PadButton::Up.mask()),
+            "held across the whole window"
+        );
+
+        // At cadence 2 the same wall-clock span takes half the ticks.
+        let mut slow = InputState::new();
+        for _ in 0..(REPEAT_WINDOW / 2) {
+            slow.set_pad_reports(&up, &PadReport::DISCONNECTED, false, 2);
+        }
+        assert_eq!(slow.retail_pad().held_32, fast.retail_pad().held_32);
+
+        // And the repeat pulse rearms on the documented period.
+        let mut pulses = 0;
+        for _ in 0..(REPEAT_PERIOD * 4) {
+            fast.set_pad_reports(&up, &PadReport::DISCONNECTED, false, 1);
+            if fast.retail_pad().repeat_pulse != 0 {
+                pulses += 1;
+            }
+        }
+        assert_eq!(pulses, 4, "one pulse every REPEAT_PERIOD vsyncs");
+    }
 
     #[test]
     fn pressed_just_pressed_cycle() {
