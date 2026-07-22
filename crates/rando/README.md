@@ -140,7 +140,7 @@ the opening scene.
   (default `DEFAULT_CHANCE_PCT` = 5, via the battle RNG `FUN_80056798`), then
   `rand() % table_len` to index an embedded equipment-id table, calls
   `FUN_800421d4(id, 1)` (an unguarded add, like the minigame reward
-  `FUN_801C2748`), replays the two displaced instructions, and `j`s back. The
+  `FUN_801D0F60`), replays the two displaced instructions, and `j`s back. The
   join is reached once per battle, so the roll fires once per battle.
 - The routine + id table live in the 1028-byte preserved rodata gap at
   `0x8007AB38` (the same loaded-and-preserved padding [name injection](#name-injection)

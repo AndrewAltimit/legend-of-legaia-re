@@ -50,7 +50,7 @@
 //! 2. `rand() % table_len` indexes the embedded equipment-id table.
 //! 3. `FUN_800421d4(id, 1)` ([`ADD_ITEM_FN`]) adds the gear to the bag - the
 //!    same helper the normal drop, shop, and minigame rewards use (an unguarded
-//!    add, like the minigame completion reward `FUN_801C2748`).
+//!    add, like the minigame completion reward `FUN_801D0F60`).
 //!
 //! The grant is silent (it doesn't push a victory-screen "received" line); the
 //! item simply appears in the bag after the battle.

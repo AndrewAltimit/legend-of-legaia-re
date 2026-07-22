@@ -354,7 +354,7 @@ pub enum AddOutcome {
 /// source function address for provenance.
 ///
 /// See `docs/reference/functions.md` (`800421D4` caller list) and the per-site
-/// entries (`8004E568`, `801C36B0`, `801F138C`, `801C2748`, `8020E748`).
+/// entries (`8004E568`, `801C36B0`, `801F138C`, `801D0F60`, `8020E748`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AddHelperCaller {
     /// Battle-end reward resolution (`FUN_8004E568`, add at `0x8004F380` /
@@ -367,7 +367,7 @@ pub enum AddHelperCaller {
     /// Captured-monster item pay (`FUN_801F138C`, overlay 0897): on a resolved
     /// capture, pays `actor[+0x1DF]` into the bag. Written id = captured id.
     CaptureItemPay,
-    /// One-shot minigame completion reward (`FUN_801C2748`, overlay 0977):
+    /// One-shot minigame completion reward (`FUN_801D0F60`, overlay 0977 at slot-A base `0x801CE818`; formerly mis-cited as `FUN_801C2748` off a `0x801C0000`-band import):
     /// awards a single fixed item `0xCD`. Written id = `0xCD` (fixed).
     MinigameReward,
     /// Equip swap-back refund (`FUN_8020E748` / `FUN_801E01F0`): refunds the

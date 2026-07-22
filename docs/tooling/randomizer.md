@@ -348,7 +348,7 @@ injected routine:
 2. rolls `rand() % table_len` to index an embedded equipment-id table;
 3. calls `FUN_800421d4(id, 1)` to add the gear - the same helper the normal
    drop, shops, and minigame rewards use (an unguarded add, like the minigame
-   completion reward `FUN_801C2748`);
+   completion reward `FUN_801D0F60`);
 4. replays the two displaced instructions and `j`s back to `0x8004f618`.
 
 The join is reached once per battle, so the roll fires once per battle. The

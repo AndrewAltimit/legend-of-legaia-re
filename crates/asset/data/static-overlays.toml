@@ -170,6 +170,28 @@ fingerprint_sha256 = "0a3da15ea4d5e921c30943c4efb76465a77310394ce6725182254da7bd
 notes = "Noa dance rhythm minigame overlay (docs/subsystems/minigame-dance.md). Beat-clock SM FUN_801cf470 (the anchor), timing-window judge FUN_801d1960 -- 6 of 8 documented dance functions land on prologues at this base. Leading strings are the 'Disco King' help text ('how to dance?', 'buttons to dance', 'you can try more advanced steps'). Base recovered statically (17 corroborating call targets)."
 
 [[overlays]]
+prot_index = 977
+label = "arena_init"
+base_va = 0x801CE818
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801D0F60
+fingerprint_sha256 = "49c8f73b78ae0ff3e2745e988c60d731abfcdf79ff2e0e2565785941e829f613"
+notes = "Muscle Dome arena roster/init slot-A overlay (mode-24 door-warp sub-id path, dev module 'other6'; the arena MATCH SM lives in the battle-action overlay 0898, see docs/subsystems/minigame-muscle-dome.md). Head is the sim-battle opponent name roster ('Ronginus', 'Viguro Lv2', ...); 5 in-file string anchors into that roster corroborate the base (pointer_resolution 89/93; the anchor prologue is the decisive check -- the raw two-slot string-vote count is confounded here because 0977's code also references the CO-RESIDENT slot-B field_back_read module's head strings at 0x801F69D8+{0,0x20,0x84}, which alias onto the roster's own head offsets). Carries the contest settlement + one-shot War God Icon prize FUN_801D0F60 (file +0x2748, the anchor; historically mis-cited as FUN_801C2748 from a 0x801C0000-band import). Own content ~0x4800; the extraction footprint over-reads into 0979 from +0x4800."
+
+[[overlays]]
+prot_index = 979
+label = "field_battle_intro"
+base_va = 0x801CE818
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801D0370
+fingerprint_sha256 = "0c21e79d998dae5ec32a849cf2c6fa8aa5845ce6379c5d95a0a2fbedc168998e"
+notes = "Field->battle transition (battle intro) slot-A overlay: head strings 'efect init' / 'battle bgm %d' / 'brule.xxx'. The static home of the overlay_field_battle_intro capture dumps -- the capture program's 0x801C0000-window RAM image byte-matches this entry's code at the same VAs (FUN_801CF1B0..FUN_801D1D9C band; anchor FUN_801D0370 = file +0x1B58 prologue). pointer_resolution 206/207 at this base. Own content 0x4000; the footprint over-reads into the dance overlay 0980 from +0x4000 (0979[0x4000:] == 0980[0:])."
+
+[[overlays]]
 prot_index = 902
 label = "gameover"
 base_va = 0x801CE818
@@ -365,3 +387,13 @@ eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "410d6faa825846aea70902f35bcab2f134d2dbc16b077e5eac0a4462f36b7766"
 notes = "Slot-B summon-effect overlay. Head is a string table ['Dies','Puera','Both','Damage','Recover'] followed by an absolute-pointer table and code -- 'Puera' is a summon, Damage/Recover/Both are effect/target labels. NOT a dance song (corrects an earlier overlay-ptr-table reading that grouped 0957 with the Disco King songs). No FUN_80021B04 part-spawn calls (not a stager). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (93%); the precise role (per-summon effect descriptor vs a debug/test table) is open."
+
+[[overlays]]
+prot_index = 978
+label = "field_back_read"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "fc384892a1bb4c9d53ad12f00dcfaf7dcada51fd6931afa82e867e3ed6277253"
+notes = "Slot-B 'FIELD BACK READ' staged-loader overlay: head strings 'f_read %d size %d KB' / 'h:\\prot\\field\\other6\\tim\\int.tim' / 'FIELD BACK READ NOW'. Entry FUN_801F6B24 (file +0x14C, a leaf -- no addiu-sp prologue, so no anchor_va) is called from SCUS FUN_80025358 state 2, which pins the base externally; 12 in-file string anchors into its own dev-path strings corroborate (string_anchor_votes 12 at slot B, 1 at slot A; pointer_resolution 25/25). Own content < 0x1000; the 0xE000 footprint over-reads into 0979 (field_battle_intro, from +0x1000) and 0980 (dance, from +0x5000) -- dumps of that tail printed under a 0x801C0000-band import carry wrong-base addresses (docs/tooling/dump-corpus-integrity.md)."

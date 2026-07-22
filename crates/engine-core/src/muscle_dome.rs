@@ -303,6 +303,85 @@ impl MuscleDomeSession {
     }
 }
 
+/// Fixed item id of the one-shot Master-course first-clear prize (the
+/// War God Icon; `FUN_800421D4(0xCD, 1)`).
+pub const CONTEST_PRIZE_ITEM_ID: u8 = 0xCD;
+
+/// Story-flag id of the one-shot prize latch (`FUN_8003CE64(0x6CB)` - once
+/// set, the prize never re-awards).
+pub const CONTEST_PRIZE_FLAG: u16 = 0x6CB;
+
+/// The Master-course fight index the prize gates on (`round >= 0xD`, i.e.
+/// the 13th and final fight of the Master course row).
+pub const CONTEST_PRIZE_ROUND: u32 = 0xD;
+
+/// Outcome of the arena contest settlement kernel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContestSettlement {
+    /// The score tally (`_DAT_80084440`) after settlement.
+    pub score: i32,
+    /// The continue latch (`DAT_801d1adc`) after settlement.
+    pub continuing: bool,
+    /// The one-shot prize item is awarded this settlement
+    /// (`FUN_800421D4(0xCD, 1)`).
+    pub award_prize: bool,
+}
+
+/// Arena contest settlement - the score/prize half of the minigame
+/// completion routine in the arena roster/init overlay (PROT 0977 at
+/// slot-A base `0x801CE818`, file `+0x2748`).
+///
+/// Retail runs this after a contest leg: it restores the SC block, then
+/// settles the running score tally and, exactly once per save, awards the
+/// Master-course first-clear prize. The decision order is:
+///
+/// 1. Not continuing -> the tally is halved (signed `/ 2`); continuing
+///    keeps it intact.
+/// 2. A finished contest (`contest_over`) zeroes the tally and drops the
+///    continue latch.
+/// 3. A still-live continue adds the per-`(course, round)` score-table
+///    entry (`DAT_801d1860 + course*0x40 + (round-1)*4`) and, when the
+///    round counter has reached the Master-course final fight and the
+///    one-shot flag `0x6CB` is still clear, awards item `0xCD` (the War
+///    God Icon).
+///
+/// `score_table_entry` is the caller-resolved `DAT_801d1860` cell for
+/// `(course, round)`; `prize_already_awarded` is the `0x6CB` flag-bank
+/// bit.
+///
+/// PORT: FUN_801d0f60
+pub fn settle_contest(
+    score: i32,
+    continuing: bool,
+    contest_over: bool,
+    round: u32,
+    score_table_entry: i32,
+    prize_already_awarded: bool,
+) -> ContestSettlement {
+    // 801d1014..801d1038: halve the tally unless the continue latch is up.
+    let mut score = if continuing { score } else { score / 2 };
+    let mut continuing = continuing;
+    // 801d1044..801d1060: a finished contest zeroes both.
+    if contest_over {
+        continuing = false;
+        score = 0;
+    }
+    // 801d10d4..801d1144: live continue -> add the score-table cell; the
+    // prize is gated on the Master-course final fight + the one-shot flag.
+    let mut award_prize = false;
+    if continuing {
+        score += score_table_entry;
+        if round >= CONTEST_PRIZE_ROUND && !prize_already_awarded {
+            award_prize = true;
+        }
+    }
+    ContestSettlement {
+        score,
+        continuing,
+        award_prize,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -409,5 +488,42 @@ mod tests {
         s.end_selection();
         s.resolve_round(|attacker, _| if attacker == 1 { 1000 } else { 0 });
         assert_eq!(s.phase(), MusclePhase::Lost);
+    }
+
+    #[test]
+    fn settlement_halves_the_tally_when_not_continuing() {
+        // 801d102c..801d1034: signed /2, rounding toward zero.
+        let s = settle_contest(101, false, false, 5, 40, false);
+        assert_eq!(s.score, 50);
+        assert!(!s.continuing);
+        assert!(!s.award_prize);
+        let s = settle_contest(-101, false, false, 5, 40, false);
+        assert_eq!(s.score, -50, "MIPS srl/addu/sra idiom rounds toward zero");
+    }
+
+    #[test]
+    fn settlement_adds_the_score_table_cell_on_continue() {
+        let s = settle_contest(100, true, false, 5, 40, false);
+        assert_eq!(s.score, 140);
+        assert!(s.continuing);
+        assert!(!s.award_prize, "prize gates on the Master-course final");
+    }
+
+    #[test]
+    fn contest_over_zeroes_score_and_latch() {
+        let s = settle_contest(100, true, true, 13, 40, false);
+        assert_eq!(s.score, 0);
+        assert!(!s.continuing);
+        assert!(!s.award_prize, "dropped latch skips the prize branch");
+    }
+
+    #[test]
+    fn prize_awards_once_at_the_master_course_final() {
+        let s = settle_contest(100, true, false, 13, 40, false);
+        assert!(s.award_prize);
+        assert_eq!(s.score, 140);
+        // One-shot: the 0x6CB flag suppresses the re-award.
+        let s = settle_contest(100, true, false, 13, 40, true);
+        assert!(!s.award_prize);
     }
 }

@@ -169,8 +169,14 @@ and `*DAT_80010390`; see [`prot.md`](../formats/prot.md#overlay-loaders-parallel
   pointer that decodes to the **start of one of the file's own NUL-terminated
   string literals** only does so at the true base, so the reproducibility test
   compares votes at the committed base against the rival slot base and fails
-  any row the rival wins (0902 scores 2 at slot A vs 0 at slot B; every
-  committed row wins or ties its rival).
+  any anchor-less row the rival wins (0902 scores 2 at slot A vs 0 at slot
+  B). One caveat bounds the metric: references to a **co-resident** overlay's
+  head string table alias onto this file's own head strings when both keep
+  string tables at matching small offsets (PROT 0977's arena code passes the
+  slot-B `field_back_read` module's dev strings at `0x801F69D8+{0, 0x20,
+  0x84}`, which alias onto its own roster strings at the same offsets), so a
+  pinned prologue anchor outranks the raw vote count and exempts the row from
+  the comparison.
 
   **The slot-B cluster is heterogeneous.** The summon-stager arithmetic range
   `0903..=0913` (spell ids `0x81..=0x8B` under the corrected loader index math

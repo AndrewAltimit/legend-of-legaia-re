@@ -6,6 +6,16 @@ Instead, the Muscle Dome runs **inside the battle-action overlay** (PROT entry *
 
 This matches the design - the arena reuses the battle engine wholesale (its fighters are battle actors, card plays resolve through the battle-action path). The "`overlay_muscle_dome.bin`" Duckstation capture was that battle-overlay slot resident during the arena, **not** a separate overlay; the `0977` "Ronginus" entry is only the mode-24 sub-id-5 door/init slot (arena roster + `other6` paths), not the match SM.
 
+## Contest settlement + the one-shot prize
+
+The `0977` door/init slot (a slot-A overlay at base `0x801CE818` - the base is pinned by string anchors into its own monster-name roster) carries the **contest settlement** routine `FUN_801D0F60` (file `+0x2748`; historically mis-cited as `FUN_801C2748` from a `0x801C0000`-band import). After a contest leg it restores the SC block (`FUN_8001A8B0`) and settles the running score tally `_DAT_80084440`:
+
+- **Not continuing** halves the tally (signed `/2`); continuing keeps it and adds the per-`(course, round)` score-table cell `DAT_801d1860 + course*0x40 + (round-1)*4`.
+- **Contest over** zeroes the tally and drops the continue latch `DAT_801d1adc`.
+- On the **Master-course final fight** (round counter `DAT_801d1a94 >= 0xD`) with the one-shot flag-bank bit `FUN_8003CE64(0x6CB)` still clear, it awards item `0xCD` (the **War God Icon**) via `FUN_800421D4(0xCD, 1)` - the once-per-save first-clear prize.
+
+Engine port: `engine-core::muscle_dome::settle_contest`. `see ghidra/scripts/funcs/overlay_0977_slotA_801d0f60.txt`.
+
 The whole contest runs on a shared context block at `_DAT_8007bd24` (referred to below as **ctx**). The fighters are ordinary battle actors reached through the global actor pointer table `&DAT_801c9370` (the same table the main battle system uses), so a "card play" ultimately resolves through the battle action machinery against actor records.
 
 **BGM.** The arena loads **no BGM track of its own** - a full sweep of the muscle-dome function dumps finds no streaming-loader call (`8001fc00`) and no BGM-id write. It inherits the **battle theme** its entry set, exactly as it reuses the battle engine wholesale: the music is whichever `music_01` battle track the mode-24 sub-id-5 arena setup (the `0977` door/init slot) had playing when the contest starts. There is no dedicated muscle-dome cue to pin; this is the same "host-scene-inherited BGM" shape as the [slot machine](minigame-slot-machine.md), one class up (battle rather than field). The engine/site can represent it with the standard battle theme (`M26B1`, global BGM `2026`).
