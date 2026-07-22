@@ -1,7 +1,7 @@
 //! Disc-gated runtime oracle for the **seru-trade** feature - the engine-side
-//! counterpart to the rando crate's `seru_trade_real` config round-trip.
+//! counterpart to the patcher crate's `seru_trade_real` config round-trip.
 //!
-//! The rando test proves the config blob (enabled flag + master seed) is
+//! The patcher test proves the config blob (enabled flag + master seed) is
 //! *written* to the disc faithfully. What it can't prove is that a runtime
 //! *reads it and lets the player swap a seru*. This test closes that: it patches
 //! the seru-trade config onto a scratch copy of the real disc (the surgical

@@ -255,7 +255,7 @@ legend-of-legaia-re/
 │   ├── pcsxr/                    # PCSX-Redux save-state main-RAM reader
 │   ├── gamedata/                 # Curated walkthrough-mined tables (ground-truth labels)
 │   ├── cheats/                   # GameShark / Mednafen cheat-database parser + classifier
-│   ├── rando/                    # Randomizer / disc patcher for a user-supplied .bin
+│   ├── patcher/                  # Randomizer / translation / disc patcher for a user-supplied .bin
 │   │   # Track 2 - engine reimplementation (clean-room Rust)
 │   ├── engine-core/              # World, scene host, camera, menu runtime, save round-trip
 │   ├── engine-ui/                # Renderer-agnostic UI draw-list builders
