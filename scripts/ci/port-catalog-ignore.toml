@@ -177,11 +177,13 @@
 "8005ca34" = "CdSync (libcd): polls the CD IRQ status (8005fedc) with a VSync-based timeout, prints sync/timeout diagnostics on overrun, drains pending CD results and dispatches the ready / data-ready callbacks. The poll loop 8005be8c tail-calls and 8005c160 completes through; engine reads PROT.DAT via legaia-iso/legaia-prot, no CD-drive poll. see ghidra/scripts/funcs/8005ca34.txt"
 "8005cf80" = "CdControl / CdControlB (libcd): writes a CD command + parameter bytes to the drive command/param registers, then (blocking form) reuses the CdSync poll loop to await completion and read back the result. The drive-issue primitive the 8005c034 / 8005c160 retry wrappers call; engine issues no PSX CD commands. see ghidra/scripts/funcs/8005cf80.txt"
 "8005fedc" = "Leaf accessor returning the 16-bit CD status/IRQ word (*0x800797da); polled by CdSync (8005ca34) and CdControl (8005cf80). libcd internal; no engine equivalent. see ghidra/scripts/funcs/8005fedc.txt"
+"8005beac" = "CdSync(mode, result) pass-through wrapper: 8 instructions, `addiu sp,-0x18; sw ra; jal 0x8005CCB4; nop; lw ra; addiu sp; jr ra` - neither a0 nor a1 is touched, so both register arguments reach the already-listed CdSync body 8005ccb4 unchanged. (Its decompiled C drops both arguments - the 'dropped register arguments' artifact; the disassembly is what settles it.) The drive-status delivery tail of the streaming sync FUN_8005EA84; engine reads PROT.DAT via legaia-iso/legaia-prot. see ghidra/scripts/funcs/8005beac.txt"
 [libgs]
 "8003d2c4" = "addPrim / linkPrim (OT-linker primitive; swap low-24 preserve high-8). Inlined function, not a PsyQ library entry."
 "80059010" = "SetDrawMode primitive constructor: fills a DR_MODE primitive (GP0 0xE1 texture-page word via 80059510, GP0 0xE2 texture-window word via 80059744). 1:1 PsyQ libgpu shape; engine-render emits its own GP0 draw-mode / tpage state"
 "80057c44" = "ResetGraph (vtable dispatch + dev-string printf wrapper)"
 "80057fec" = "GetGraphDebug (returns DAT_80078d54)"
+"80057edc" = "SetGraphDebug(level): latches the u8 arg into the libgpu debug-level byte 0x80078D56, returns the previous value, and on a non-zero level calls the diagnostic handler through the function pointer at 0x80078D50 with (dev format string 0x80015620, level, 0x80078D54, 0x80078D57). Sibling of the already-listed GetGraphDebug 80057fec; no game state, and retail runs at level 0 so the jalr never fires. see ghidra/scripts/funcs/80057edc.txt"
 "8005800c" = "DrawSyncCallback"
 "80058068" = "SetDispMask"
 "80058104" = "DrawSync"
@@ -272,6 +274,7 @@
 "800178f0" = "Profiling checkpoint: captures a VSync timestamp (8005fb84(1)) into gp+0x428, later rendered by the debug HUD 800173bc. Dev instrumentation; engine uses tracing spans. see ghidra/scripts/funcs/800178f0.txt"
 "8001a89c" = "Per-frame reset of a profiling counter pair (gp+0x664/0x668 := 0x10). Dev-instrumentation bookkeeping behind the 800173bc debug HUD; no engine equivalent. see ghidra/scripts/funcs/8001a89c.txt"
 "8001abc8" = "Debug-HUD decimal-number drawer: renders an integer right-to-left as textured digit-sprite primitives (digit = value%10, leading '-' for negatives) into the scratchpad OT cursor. The number-drawing half of the 800173bc profiler HUD; engine renders text via the legaia-font overlay. see ghidra/scripts/funcs/8001abc8.txt"
+"800188c8" = "Dev pad-driven debug readout HUD (314 instructions, the largest member of the 800173bc dev-text family). Its first two instructions load _DAT_8007B98C and `beq v0,zero,0x80018D9C` straight to the epilogue - so on the retail leg (_DAT_8007B98C == 0, the same leg FUN_80025CB4 documents) the entire body is a no-op. Inside, a second gate on the debug bit `_DAT_8007B6D0 & 2` guards the readouts, and the only three call targets in the whole function are the already-listed dev-text emitters 8001aa68 / 8001a068 / 8001abc8. Its u16 arg is a pad mask (bits 0x20 / 0x10 nudge the on-screen cursor at 0x8007B792 by +-0x14). Engine uses tracing + its own debug overlay. see ghidra/scripts/funcs/800188c8.txt"
 
 
 # libapi file API + device-vtable trampoline. These back the dev branch's
@@ -336,6 +339,9 @@
 "8006d7b4" = "_SsSeqSetUserDataInner"
 "8006ddc8" = "SsSeqSetMarkCallback"
 "8002630c" = "Game-side VAB-bank upload wrapper (gated on _DAT_8007B868==0): drives the libsnd load sequence SsVabOpenHead (80068d34) -> SsVabTransBody (80069170) / SsVabTransBodyPartly (80069230) -> SsVabClose (80069390), with the literal 'SsVabOpenHead/SsVabTransBody/SsVabTransBodyPartly' dev error strings. Pure SsAPI orchestration; engine loads banks clean-room via legaia-vab + vab_bind"
+"800644c0" = "SsSetTableSize(table, s_max, t_max): latches the two counts into the libsnd BSS halfwords _DAT_801CDB40 / _DAT_801CDB42 then fills the slot-pointer array at _DAT_801CD2C0 with `table + slot * 0xB0` (the (v1*2+v1)*4-v1 <<4 chain is a x176 multiply - the libsnd SEQ_TABLE record stride), one entry per sep x seq. Touches nothing but the libsnd table BSS; engine-audio's Sequencer owns its own slot vector. see ghidra/scripts/funcs/800644c0.txt"
+"80065fe8" = "libsnd all-voice reset / calc-top: installs the SPU transfer-callback block (8006bc70), clears the 0xC0-entry u16 array at 0x801CE080, the 24-byte voice-flag array at 0x801CE060 (0x18 = the SPU voice count) and the 0x10-byte mask block at 0x801CE368, clamps its u8 arg to 0x18 voices, then sweeps 80065bac / 80065978 / 80067480 / 8006c048 (SpuSetVoiceAttr). Every store lands in the 0x801Cxxxx-0x801Dxxxx libsnd BSS. engine-audio maps the whole tier to a Spu reset + one Sequencer pass (docs/subsystems/audio.md). see ghidra/scripts/funcs/80065fe8.txt"
+"80066308" = "libsnd note-trigger dispatch: per-slot status bytes _DAT_801CE34x, the x0x81 velocity scale, then the voice-allocation scan 80066b00 -> _SsVoKeyOnDirect 80065978 / _SsVoNoteOn 80067550 with 80066f4c / 80066d8c / 80068568 as the pitch + envelope helpers. Sits entirely below the SsAPI surface (its only non-libsnd input is the sequencer event already decoded by 8006320c/8006352c); engine-audio's sequencer.rs is the clean-room replacement. see ghidra/scripts/funcs/80066308.txt"
 
 
 # libspu primitives + SPU DMA transfer engine. Replaced by clean-room
@@ -467,6 +473,7 @@
 "80026c18" = "Empty stub (`jr ra; nop`). A stubbed scene-init hook (mode-0x02 loader chain) that does nothing."
 "8002b92c" = "Two-instruction stub (`jr ra; _clear v0` - returns 0). Retail-stubbed hook, genuine jal target from main; classified PHANTOM in the worklist CSV."
 "8003f084" = "Two-instruction stub (`jr ra; _li v0,1` - returns 1). Retail-stubbed hook, genuine jal target from main; classified PHANTOM in the worklist CSV."
+"8003cc90" = "Two-instruction stub (`jr ra; _clear v0` - returns 0). Retail-stubbed hook in the 8003cxxx dialog-text family, genuine jal target; classified PHANTOM in the worklist CSV. Sibling of 8002b92c."
 "8002b96c" = "Empty stub (`jr ra; nop`). The retail-stripped per-cell tile-sprite emitter of the 8002b9xx family (siblings 8002b93c/944/94c/954); the scene-load tile-window pass 80017ec8 polls it once per cell (1024x in the trace) but it emits nothing. The genuine tile draw is the engine's wgpu field-background path."
 
 

@@ -206,7 +206,7 @@ Between the SEQ event dispatch above and the documented 24-voice SPU broadcaster
 
 **engine-audio port.** `sequencer.rs`'s `alloc_voice` implements the retail scan order (`// PORT: FUN_80066B00`): first-idle-ascending with early stop, the tightening-threshold steal tier keyed on the VAB tone `prior` byte (`VabBank::tone_prior`), the envelope-then-age tie-breaks (with the retail signedness quirk - challenger age sign-extends, incumbent zero-extends), the drop-when-outranked case, and the age bookkeeping.
 Engine stand-ins: "reserved" = bound to an active sequencer note; "envelope" = the live ADSR level. The engine keeps no 16-frame silent-history ring - a released voice unreserves when its owning note drops, and its decaying tail stays steal-visible through the envelope tie-break.
-Provenance: per-instruction read of the decompiled reference for `FUN_80066B00` / `FUN_80065BAC` / `FUN_80065978` / `FUN_80066308`; no Ghidra dump exists for this tier.
+Provenance: per-instruction read of `FUN_80066B00` / `FUN_80065BAC` / `FUN_80065978` / `FUN_80066308`. The "no Ghidra dump exists for this tier" caveat this line used to carry is **stale** - all four now have dumps carrying full disassembly sections (163 / 271 / 132 / 353 instructions), so the readings above are checkable against the instruction stream rather than a C rendering. `see ghidra/scripts/funcs/80066b00.txt`, `80065bac.txt`, `80065978.txt`, `80066308.txt`.
 
 ### SPU command shims (`*0x81` scaling = 0..127 → 0..16383)
 

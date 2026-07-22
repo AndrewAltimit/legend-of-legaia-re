@@ -278,3 +278,4 @@ addr,class,reason
 801f7088,REAL,every dump at this VA is of summon_render(900) (captures: baka_fighter/dance/debug_menu/fishing/muscle_dome/slot_machine); no second dumped body here
 801f71e0,REAL,every dump at this VA is of battle_tutorial(967) (captures: PROT 0967 @ base 0x801F69D8); no second dumped body here
 8020e748,PHANTOM,"mis-based print: the 75-instruction body resolves at menu(899) 0x801cf760 (delta -0x3efe8) and at this VA in no image; corroborated by `j 0x801cf7d0`, an intra-body label jump inside 0x801cf760..0x801cf88c - and 0x801cf88c is the next documented entry, so the body ends exactly where its neighbour begins. 0x801cf760 is the equip applier"
+8003cc90,PHANTOM,"2-instruction stub (`jr ra; _clear v0`) - returns 0 and touches nothing. Retail-stripped hook in the 8003cxxx dialog-text family; sibling of 8002b92c/8003f084"
