@@ -8,6 +8,11 @@
 //! offset and dispatches when the per-frame tick reaches the firing
 //! frame.
 //!
+//! [`SfxScheduler::tick_frame`] additionally drives the byte-faithful retail
+//! cue ring in [`crate::sfx_ring`], whose two halves live in the frame-begin
+//! and frame-end drivers.
+//! REF: FUN_8001698C, FUN_80016B6C
+//!
 //! ## Cue ID conventions
 //!
 //! - `0x1A` - generic SFX trigger (the canonical `HitCue` "play sound"

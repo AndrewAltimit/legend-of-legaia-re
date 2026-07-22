@@ -2,6 +2,11 @@
 //!
 //! Split out of `world.rs` as additional `impl World` blocks; no logic
 //! change from the original inline definitions.
+//!
+//! The frame-time sampler behind the adaptive cadence
+//! ([`World::resolve_frame_step`]) - retail's `VSync(1)` reading, returned by
+//! the dev profiler HUD.
+//! REF: FUN_800173BC
 
 use super::*;
 
@@ -11,6 +16,29 @@ impl World {
     /// retail "play time" field shown on the save screen.
     pub fn advance_play_time(&mut self, delta_seconds: u32) {
         self.play_time_seconds = self.play_time_seconds.saturating_add(delta_seconds);
+    }
+
+    /// Arm the timed sound-source auto-release for `deadline` vsyncs
+    /// (`gp+0x814`). [`Self::tick`] counts it down by the frame step.
+    ///
+    /// REF: FUN_800267FC
+    pub fn arm_sound_release(&mut self, deadline_vsyncs: i32) {
+        self.sound_release.arm(deadline_vsyncs);
+        self.pending_sound_release = false;
+    }
+
+    /// Drain the "the sound-release deadline expired" event.
+    pub fn take_pending_sound_release(&mut self) -> bool {
+        std::mem::take(&mut self.pending_sound_release)
+    }
+
+    /// Run the one-shot sound detach (`FUN_8002689C`). Returns `true` only on
+    /// the first call - retail's `gp+0x804` latch gates every later one out,
+    /// which is why the mode-INIT chain can call it freely.
+    ///
+    /// PORT: FUN_8002689c
+    pub fn detach_sound(&mut self) -> bool {
+        self.sound_detach.detach()
     }
 
     /// Consume the frame-begin skip request, returning whether this frame
@@ -142,6 +170,21 @@ impl World {
             if self.clut_vsync_accum >= self.frame_step.max(1) {
                 self.clut_vsync_accum = 0;
                 self.clut_pending_game_ticks = (self.clut_pending_game_ticks + 1).min(600);
+            }
+        }
+        // Retail's frame-begin driver services the timed sound-source
+        // auto-release before anything else in the frame (`FUN_800267FC`,
+        // called at `0x800169FC`). Its accumulator advances by the frame step,
+        // so drive it on the sim ticks that map to a retail vsync.
+        if self.field_frame_step == 1 {
+            let step = self.frame_step.max(1);
+            // The teardown gates (`record[+8]` active, `_DAT_8007B868`) live
+            // in the libsnd voice binding the engine replaces, so the engine
+            // arm is "release when it fires" unconditionally.
+            if let crate::sound_state::SoundReleaseTick::Fired { .. } =
+                self.sound_release.tick(step, true, false)
+            {
+                self.pending_sound_release = true;
             }
         }
         // Step the active full-screen fade (escape teardown ramp); drop it

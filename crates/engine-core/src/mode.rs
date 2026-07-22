@@ -566,6 +566,18 @@ impl ModeDriver {
         // (odd-indexed) modes have that shape; INIT modes tick unconditionally.
         let skipped = per_frame_stage(self.current).is_some() && world.take_frame_begin_skip();
         self.last_stage = per_frame_stage(self.current);
+        // Mode 0 CONFIG INIT runs the sound detach (`FUN_8002689C`) ahead of
+        // its staging - the same call the `runs_core_reset` flag records for
+        // `FUN_80025CB4`. The latch makes repeat frames in the mode free.
+        if matches!(
+            mode_init_stage(self.current),
+            Some(ModeInitStage {
+                runs_core_reset: true,
+                ..
+            })
+        ) {
+            world.detach_sound();
+        }
         if !skipped {
             // Tick the World after the handler, so a Continue runs the VMs
             // for this mode every frame. Init modes that flip to the run
@@ -974,6 +986,48 @@ mod tests {
         // With the gate on, a spike raises past the floor for one frame.
         assert_eq!(w.resolve_frame_step(0x400, true), 4);
         assert_eq!(w.resolve_frame_step(0x10, true), 3, "then decays to it");
+    }
+
+    /// Mode 0 CONFIG INIT is the sound-detach caller, and the `gp+0x804`
+    /// latch makes every frame after the first a no-op.
+    #[test]
+    fn config_init_runs_the_sound_detach_exactly_once() {
+        struct Noop;
+        impl ModeHandler for Noop {
+            fn run(&mut self, _m: GameMode, _w: &mut World, _i: &InputState) -> HandlerResult {
+                HandlerResult::Continue
+            }
+        }
+        let mut d = ModeDriver::new(GameMode::ConfigInit);
+        let mut w = World::default();
+        assert!(!w.sound_detach.is_detached());
+        d.tick(&mut Noop, &mut w, &InputState::default());
+        assert!(w.sound_detach.is_detached());
+        // A second frame in the same mode must not re-run it.
+        assert!(!w.detach_sound());
+
+        // MAIN INIT does not (its stage plan has runs_core_reset = false).
+        let mut d = ModeDriver::new(GameMode::MainInit);
+        let mut w = World::default();
+        d.tick(&mut Noop, &mut w, &InputState::default());
+        assert!(!w.sound_detach.is_detached());
+    }
+
+    /// The sound-release deadline is counted in vsyncs by `World::tick`, so
+    /// it survives a cadence change unchanged.
+    #[test]
+    fn the_sound_release_timer_fires_through_the_world_tick() {
+        let mut w = World::default();
+        w.arm_sound_release(2);
+        let mut fired = 0;
+        for _ in 0..40 {
+            w.tick();
+            if w.take_pending_sound_release() {
+                fired += 1;
+            }
+        }
+        assert_eq!(fired, 1, "the deadline fires once and disarms");
+        assert!(!w.sound_release.armed);
     }
 
     #[test]

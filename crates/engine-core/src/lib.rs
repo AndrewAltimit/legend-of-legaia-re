@@ -102,6 +102,7 @@ pub mod sfx_cue;
 pub mod shop;
 pub mod shop_catalog;
 pub mod slot_machine;
+pub mod sound_state;
 pub mod spell_menu;
 pub mod spells;
 pub mod status_screen;

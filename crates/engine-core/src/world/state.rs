@@ -1422,6 +1422,24 @@ pub struct World {
     ///
     /// REF: FUN_80016B6C, FUN_801D6704
     pub frame_step_floor: u8,
+    /// Retail's timed sound-source auto-release (`gp+0x808`/`0x814`/`0x81C`),
+    /// serviced by the frame-begin driver. Advanced by [`World::tick`] on the
+    /// sim ticks that map to a retail vsync, by [`Self::frame_step`] - the
+    /// same cadence-invariant clock every other retail duration uses.
+    ///
+    /// REF: FUN_800267FC, FUN_8001698C
+    pub sound_release: crate::sound_state::SoundReleaseTimer,
+    /// Set by [`World::tick`] on the frame [`Self::sound_release`] expires;
+    /// hosts drain it with [`World::take_pending_sound_release`] and stop the
+    /// bound voice. Retail does the stop inline through libsnd
+    /// (`FUN_8002657C` + `FUN_80064370`), which the engine replaces with its
+    /// own voice pool - so the port surfaces the *event*, not the teardown.
+    pub pending_sound_release: bool,
+    /// The one-shot sound-detach latch (`gp+0x804`). Idempotent: the mode-INIT
+    /// chain can call it repeatedly and only the first has any effect.
+    ///
+    /// REF: FUN_8002689C
+    pub sound_detach: crate::sound_state::SoundDetachLatch,
     /// Set to request that the next per-frame mode handler skip its frame.
     ///
     /// Retail's frame-begin pass `FUN_8001698C` returns `1` when `gp+0x3D8`
@@ -2298,6 +2316,9 @@ impl World {
             // Field/town baseline; scene entry re-pins (`mapNN` -> 3).
             frame_step: 2,
             frame_step_floor: 2,
+            sound_release: crate::sound_state::SoundReleaseTimer::default(),
+            pending_sound_release: false,
+            sound_detach: crate::sound_state::SoundDetachLatch::default(),
             frame_begin_skip: false,
             frame_step_telemetry: vm::actor_tick::FrameStepTelemetry::new(),
             clut_vsync_accum: 0,

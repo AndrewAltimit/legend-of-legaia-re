@@ -3,6 +3,12 @@
 //! PORT: FUN_8001698c - the per-frame ring **aging** half.
 //! PORT: FUN_80016b6c - the per-frame ring **drain** half.
 //!
+//! The producers that arm a slot, the mid-frame driver and the per-frame mode
+//! handler that sequences the pair.
+//! REF: FUN_80035B50, FUN_8004FE5C, FUN_80016444, FUN_80025EEC
+//! The libsnd calls a drained cue makes, factored out of [`CueVoicePlan`].
+//! REF: FUN_80065034, FUN_800653C8
+//!
 //! Retail's SFX cue ring is two parallel fixed arrays, not a queue:
 //!
 //! | Retail | Contents |
