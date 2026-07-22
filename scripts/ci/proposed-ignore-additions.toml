@@ -11,9 +11,13 @@
 #
 # Merge into the main ignore list after review - do not consume directly.
 
-[worklist_interior]
-"801e23ec" = "INTERIOR: VA lies inside the dumped body of 801de840 in 0897"
-"801e30e4" = "INTERIOR: dump resolves entry=801de840, not 801e30e4"
+[worklist_duplicate]
+"80062310" = "DUPLICATE: 12-instruction stream identical modulo relocation to 8006ef18"
 
-[worklist_shared_tail]
-"801d3290" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801df8dc`, inside 801df8dc - an entry into a multi-entry routine, not a standalone function"
+[worklist_interior]
+"801ef9b4" = "INTERIOR: dump is a citation stub for 801ef6e0"
+
+[worklist_phantom]
+"8002b92c" = "PHANTOM: only dump body is a 2-instruction stub"
+"8003f084" = "PHANTOM: only dump body is a 2-instruction stub"
+"801ecc00" = "PHANTOM: only dump body is a 0-instruction stub"

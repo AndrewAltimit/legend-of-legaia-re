@@ -58,7 +58,7 @@ Provenance:
 - Install: field-VM op `0x49` in `overlay_0897_801de840.txt` (a multi-subtype map-command opcode; `_DAT_8007b450 = pbVar47` arms the header pointer).
 - Walk SM: `overlay_0897_801ef2b0.txt`.
 - Procedural fill: `0x801EF334`, an interior label of `FUN_801ef2b0` (see the address note above - the old `FUN_801e0b1c` citation was a wrong-base alias).
-- Board renderer: `overlay_0897_801e0f3c.txt` (draws each cell value > 1 as `DAT_801f35bc[cell]` at the cell's world position).
+- Board renderer: `FUN_801E0F3C` in `overlay_0897_801e0f3c.txt` (draws each cell value > 1 as `DAT_801f35bc[cell]` at the cell's world position).
 
 **Roster: the tile board is a field-overlay (`0897`) construct only.** Every install / walk-SM / fill / render site lives in `0897` and is reached from the field/event VM (op `0x49`). So the board is used by field/puzzle scenes, not by the hub minigames. **Confirmed** (`overlay_0897_801de840.txt` / `..._801ef2b0.txt`).
 
