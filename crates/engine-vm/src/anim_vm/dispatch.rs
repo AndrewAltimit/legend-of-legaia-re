@@ -4,7 +4,7 @@ use legaia_anm::RecordHeader;
 
 /// Maximum actor pool size - matches the retail per-scene actor count
 /// observed in the field overlay (`actor[+0x*]` table at
-/// `0x801E473C`, 16-byte stride, ≤ 32 entries used).
+/// `0x801E4738`, 16-byte stride, ≤ 32 entries used).
 pub const MAX_ACTOR_SLOTS: usize = 32;
 
 /// Field offset of the per-record byte pointer on a retail actor record

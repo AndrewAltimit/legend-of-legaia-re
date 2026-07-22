@@ -363,7 +363,7 @@ See [`character-mesh.md`](../../docs/formats/character-mesh.md) and
 | `init_pak` | The four publisher-logo TIMs from PROT 0895 (CDNAME says `bat_back_dat`; actually init.pak). |
 | `title_pak` | The "Legend of Legaia" title-screen TIM + the system-UI sheet (load-screen panel / slot pills). |
 | `menu_glyph_atlas` | The small-caps menu font atlas (title menu rows + shared menu UI). |
-| `menu_windows` | The menu overlay's 52-entry **window descriptor table** (PROT 0899 file `0x15F24`, VA `0x801E473C`): per-window content rect + content-renderer VA + style/class - the caller-supplied rects behind every pause-menu screen (status main panel = id 28 -> `FUN_801D33D8`), plus the per-screen window-id sets pinned from the menu-open captures. See [`docs/subsystems/field-menu.md`](../../docs/subsystems/field-menu.md#window-descriptor-table). |
+| `menu_windows` | The menu overlay's 52-entry **window descriptor table** (PROT 0899 file `0x15F20`, VA `0x801E4738`): per-window content id / park edge / class + content rect + content-renderer VA - the caller-supplied rects behind every pause-menu screen (status main panel = id 28 -> `FUN_801D33D8`), plus the per-screen window-id sets pinned from the menu-open captures. See [`docs/subsystems/field-menu.md`](../../docs/subsystems/field-menu.md#window-descriptor-table). |
 
 ### SCUS static tables
 

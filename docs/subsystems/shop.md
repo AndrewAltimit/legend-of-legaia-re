@@ -130,7 +130,7 @@ confirmed constants. The cost prompt and Yes/No cursor are rendered in
 ## Mode-select panel (Buy / Sell / Quit)
 
 The mode selector is menu-overlay **window 0x2A** in the window-descriptor
-table at `0x801E473C` (see [field-menu.md](field-menu.md)): content rect
+table at `0x801E4738` (see [field-menu.md](field-menu.md)): content rect
 `(x 42, y 46, w 80, h 38)`, renderer VA `0x801D4868`. Like every window
 content renderer it receives the live window struct and reads its content
 origin from `+0xa` / `+0xc` (`WX` / `WY`); the 9-slice frame is caller-drawn.

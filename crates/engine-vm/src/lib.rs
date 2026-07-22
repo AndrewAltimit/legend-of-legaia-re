@@ -229,7 +229,7 @@ pub trait Host {
     fn actor_exists(&self, actor_id: u8) -> bool;
 
     /// Lookup the per-actor "default position" entry. The original consults a
-    /// 16-byte-stride table at `0x801E473C` indexed by `actor_id` and reads
+    /// 16-byte-stride table at `0x801E4738` indexed by `actor_id` and reads
     /// two `i16` shorts at offsets `+4` and `+6` of that entry.
     ///
     /// The byte layout of that table is overlay-resident Sony data; engines

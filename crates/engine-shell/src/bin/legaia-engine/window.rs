@@ -353,7 +353,7 @@ struct PlayWindowApp {
     /// CPU-side save-menu atlas waiting for renderer upload. Moved
     /// into `save_menu` on the first frame the renderer is available.
     pending_save_menu_atlas: Option<legaia_engine_core::save_menu_atlas::SaveMenuAtlas>,
-    /// The menu overlay's window-descriptor table (PROT 0899 @0x15F24,
+    /// The menu overlay's window-descriptor table (PROT 0899 @0x15F20,
     /// `legaia_asset::menu_windows`), parsed once at boot: the retail
     /// window rect + content-renderer dispatch behind every pause-menu
     /// screen. `None` when the disc isn't loaded (pinned fallback rects
@@ -811,7 +811,7 @@ impl PlayWindowApp {
 //
 // The field-menu text builders lay glyphs out in stage pixels; the window
 // rects come from the menu overlay's **window-descriptor table** (PROT
-// 0899 @0x15F24, VA 0x801E473C - `legaia_asset::menu_windows`), parsed
+// 0899 @0x15F20, VA 0x801E4738 - `legaia_asset::menu_windows`), parsed
 // from the user's disc at boot into `PlayWindowApp::menu_window_table`.
 // Each descriptor rect is the window's *content* origin/extent (the
 // `a0+0xa..+0x10` rect the retail content renderers receive, e.g.

@@ -5,7 +5,7 @@
 //! `legaia_asset::menu_windows::MENU_OVERLAY_BASE_VA`) carries a small
 //! zero-terminated byte-pair table at VA `0x801E4B88` (file offset
 //! `0x16370`, computed with the same VA-to-file map as the window
-//! descriptor table at `0x801E473C`):
+//! descriptor table at `0x801E4738`):
 //!
 //! ```text
 //! [item_id: u8][mask: u8]  ...repeated...  [0x00 terminator]

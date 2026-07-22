@@ -2,26 +2,45 @@
 //! rects + content-renderer dispatch behind every field pause-menu screen.
 //!
 //! The menu overlay (PROT 0899, base `0x801CE818`) holds a 52-entry table at
-//! VA `0x801E473C` (file offset `0x15F24`). Each 0x10-byte record describes
-//! one UI window:
+//! VA `0x801E4738` (file offset `0x15F20`): the overlay's window-script
+//! runner `FUN_801D6628` computes `0x801E4738 + id*0x10` (`lui 0x801e` /
+//! `addiu 0x4738` at `0x801D6658..0x801D665C`) and hands the record to the
+//! SCUS window creator `FUN_800326AC`, whose field reads fix the layout.
+//! Each 0x10-byte record describes one UI window:
 //!
 //! ```text
-//! +0x0  i16  x        window-content origin X (the `a0+0xa` rect the
-//! +0x2  i16  y        content renderers receive - `WX`/`WY` in
-//! +0x4  i16  w        docs/subsystems/field-menu.md)
-//! +0x6  i16  h
-//! +0x8  u32  renderer content-renderer VA (menu-overlay function), or 0
-//! +0xc  u16  f1       style/param word (low bits are per-renderer params;
-//!                     runtime-mutated for some windows)
-//! +0xe  u16  kind     window class (2 = title tab, 3 = standard window,
-//!                     4 = list-page window, 0 seen once on id 51)
+//! +0x0  u8   content_id  copied into live window `+0x1C` at create (`sb`
+//!                        at `0x80032990`); selects the SCUS content-builder
+//!                        case (`FUN_80030628` dispatches on it, accepting
+//!                        `2..=0x22`; 0 = no built content)
+//! +0x1  u8   park_edge   the `< 8` create switch at `0x800326E8`: which
+//!                        screen edge the closed window parks against
+//!                        (0 = bottom, 2 = left, 4 = top, 6 = right; odd
+//!                        values are the corner combos, unused on disc)
+//! +0x2  u16  kind        window class word: 2 = title tab, 3 = standard,
+//!                        4 = list page. Low byte lands in live `+0x1D`
+//!                        (staged into `gp+0x14C` for the frame drawer
+//!                        `FUN_8002C69C` by the walker `FUN_80031D00`)
+//! +0x4  i16  x           window-content origin (the `a0+0xa` rect the
+//! +0x6  i16  y           content renderers receive - `WX`/`WY` in
+//! +0x8  i16  w           docs/subsystems/field-menu.md)
+//! +0xa  i16  h
+//! +0xc  u32  renderer    content-renderer VA (menu-overlay function), or
+//!                        0 = content-builder-driven list window
 //! ```
+//!
+//! NB the decompiled C of `FUN_801D6628` renders the base as
+//! `&DAT_801e473c + id*0x10` (folding the x-field offset into the symbol) -
+//! reading that rendering instead of the disassembly yields a `+4`-skewed
+//! table whose head fields belong to the *next* record. The x/y/w/h and
+//! renderer bytes land on the same absolute file offsets either way.
 //!
 //! The live engine spawns windows as a doubly-linked list of 0x5C-stride
 //! structs (rect at `+0xa`, descriptor id at `+0x8`); the live rect is the
-//! window's *animated* position - closed windows slide toward the nearest
-//! screen edge and park offscreen (x = 332 right, x = -124 left, y = 240
-//! bottom in the captured states). The descriptor holds the home position.
+//! window's *animated* position - closed windows slide toward the
+//! [`MenuWindowDescriptor::park_edge`] screen edge and park offscreen
+//! (x = 332 right, x = -124 left, y = 240 bottom in the captured states).
+//! The descriptor holds the home position.
 //!
 //! The rect is the **content/pen** rect: the caller-drawn 9-slice frame art
 //! extends past it by 8 px on every side (pinned by the RAM GPU-prim scan of
@@ -32,20 +51,22 @@
 //! Provenance: rect + renderer values byte-matched between the disc image
 //! and the resident menu overlay across the `menu_status_field` /
 //! `menu_equipment_field` / `menu_options_field` mednafen captures (only
-//! id 22's `f1` low bits and id 49's `y` differ at runtime). Renderer
+//! id 23's `content_id` and id 49's `y` differ at runtime). Renderer
 //! attribution: id 28 carries `0x801D33D8`, the Ghidra-traced status-panel
 //! renderer of docs/subsystems/field-menu.md, and its rect `(90,16,218,188)`
 //! reproduces every pinned content offset against the captured framebuffer.
 
 use anyhow::{Result, anyhow, bail};
-use legaia_bytes::{i16_le, u16_le, u32_le};
+use legaia_bytes::{i16_le, u8_at, u16_le, u32_le};
 
 /// PROT entry (extraction index) of the menu overlay hosting the table.
 pub const MENU_OVERLAY_PROT_INDEX: usize = 899;
 /// Menu-overlay link base.
 pub const MENU_OVERLAY_BASE_VA: u32 = 0x801C_E818;
-/// VA of the window-descriptor table inside the resident overlay.
-pub const MENU_WINDOW_TABLE_VA: u32 = 0x801E_473C;
+/// VA of the window-descriptor table inside the resident overlay (the base
+/// `FUN_801D6628` indexes; see the module doc on the `+4`-skewed decompiler
+/// rendering of the same address math).
+pub const MENU_WINDOW_TABLE_VA: u32 = 0x801E_4738;
 /// File offset of the table inside the as-loaded overlay image.
 pub const MENU_WINDOW_TABLE_OFFSET: usize = (MENU_WINDOW_TABLE_VA - MENU_OVERLAY_BASE_VA) as usize;
 /// Number of descriptor records (the record after the last one fails the
@@ -55,6 +76,20 @@ pub const MENU_WINDOW_COUNT: usize = 52;
 /// One window descriptor: content rect + content-renderer dispatch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MenuWindowDescriptor {
+    /// Content id (`+0x0` -> live window `+0x1C`): the SCUS content-builder
+    /// dispatch selector (`FUN_80030628` accepts `2..=0x22`; 0 = no built
+    /// content). Non-zero exactly on the renderer-less list windows
+    /// (e.g. id 15 Items Use list = `0x03`, id 16 Throw Out list = `0x22`,
+    /// id 23 equip candidate list = `0x15`).
+    pub content_id: u8,
+    /// Park-edge class (`+0x1`): the `FUN_800326AC` create switch (0..7)
+    /// picking which screen edge the closed window slides toward
+    /// (0 = bottom, 2 = left, 4 = top, 6 = right on every disc record).
+    pub park_edge: u8,
+    /// Window class word (`+0x2`): 2 = title tab, 3 = standard, 4 = list
+    /// page. Low byte lands in live window `+0x1D` (the frame drawer's
+    /// style byte, staged into `gp+0x14C` by `FUN_80031D00`).
+    pub kind: u16,
     /// Content-origin X (`WX` - the `a0+0xa` the renderer receives).
     pub x: i16,
     /// Content-origin Y (`WY` - `a0+0xc`).
@@ -63,12 +98,9 @@ pub struct MenuWindowDescriptor {
     pub w: i16,
     /// Content height (`a0+0x10`).
     pub h: i16,
-    /// Content-renderer VA in the menu overlay, or 0 (frame-only window).
+    /// Content-renderer VA in the menu overlay, or 0 (content-builder-driven
+    /// list window; see [`MenuWindowDescriptor::content_id`]).
     pub renderer_va: u32,
-    /// Style/param word (low bits are per-renderer params).
-    pub f1: u16,
-    /// Window class: 2 = title tab, 3 = standard, 4 = list page.
-    pub kind: u16,
 }
 
 impl MenuWindowDescriptor {
@@ -143,7 +175,8 @@ pub mod window_ids {
     pub const STATUS_SUMMARY: usize = 30;
     /// Options screen: the value-choice popup (renderer `FUN_801D2B44`).
     /// Its descriptor x/w are the home position; the options input SM
-    /// (`FUN_801DA9F8`) stamps y (`+0x2`) and h (`+0x6`) per open -
+    /// (`FUN_801DA9F8`) stamps y (record `+0x6`, `sh 0x2F6(a0)` off the
+    /// table base) and h (record `+0xA`, `sh 0x2FA(a0)`) per open -
     /// `y = id-48 y + 0x16 + the cursor row's layout offset`,
     /// `h = choices*13 - 4`, flipped above the anchor when the bottom
     /// would pass y = 0xB0.
@@ -225,7 +258,8 @@ fn record_is_valid(d: &MenuWindowDescriptor) -> bool {
         && (-240..480).contains(&(d.y as i32))
         && (1..=320).contains(&(d.w as i32))
         && (1..=240).contains(&(d.h as i32));
-    renderer_ok && rect_ok
+    // The create-time park switch dispatches on `< 8` only.
+    renderer_ok && rect_ok && d.park_edge < 8
 }
 
 /// Parse the window-descriptor table out of the **as-loaded** menu-overlay
@@ -244,13 +278,14 @@ pub fn parse(overlay: &[u8]) -> Result<MenuWindowTable> {
     for id in 0..MENU_WINDOW_COUNT {
         let at = MENU_WINDOW_TABLE_OFFSET + id * 0x10;
         let d = MenuWindowDescriptor {
-            x: i16_le(overlay, at).ok_or_else(short)?,
-            y: i16_le(overlay, at + 2).ok_or_else(short)?,
-            w: i16_le(overlay, at + 4).ok_or_else(short)?,
-            h: i16_le(overlay, at + 6).ok_or_else(short)?,
-            renderer_va: u32_le(overlay, at + 8).ok_or_else(short)?,
-            f1: u16_le(overlay, at + 12).ok_or_else(short)?,
-            kind: u16_le(overlay, at + 14).ok_or_else(short)?,
+            content_id: u8_at(overlay, at).ok_or_else(short)?,
+            park_edge: u8_at(overlay, at + 1).ok_or_else(short)?,
+            kind: u16_le(overlay, at + 2).ok_or_else(short)?,
+            x: i16_le(overlay, at + 4).ok_or_else(short)?,
+            y: i16_le(overlay, at + 6).ok_or_else(short)?,
+            w: i16_le(overlay, at + 8).ok_or_else(short)?,
+            h: i16_le(overlay, at + 10).ok_or_else(short)?,
+            renderer_va: u32_le(overlay, at + 12).ok_or_else(short)?,
         };
         if !record_is_valid(&d) {
             bail!("menu window descriptor {id} fails the validity envelope: {d:?}");
@@ -268,15 +303,16 @@ mod tests {
         let mut v = vec![0u8; MENU_WINDOW_TABLE_OFFSET + MENU_WINDOW_COUNT * 0x10 + 4];
         for id in 0..MENU_WINDOW_COUNT {
             let off = MENU_WINDOW_TABLE_OFFSET + id * 0x10;
+            v[off] = 0x15; // content id
+            v[off + 1] = 4; // park edge (top)
+            v[off + 2..off + 4].copy_from_slice(&2u16.to_le_bytes());
             let (x, y, w, h): (i16, i16, i16, i16) = (16 + id as i16, 12, 60, 12);
-            v[off..off + 2].copy_from_slice(&x.to_le_bytes());
-            v[off + 2..off + 4].copy_from_slice(&y.to_le_bytes());
-            v[off + 4..off + 6].copy_from_slice(&w.to_le_bytes());
-            v[off + 6..off + 8].copy_from_slice(&h.to_le_bytes());
+            v[off + 4..off + 6].copy_from_slice(&x.to_le_bytes());
+            v[off + 6..off + 8].copy_from_slice(&y.to_le_bytes());
+            v[off + 8..off + 10].copy_from_slice(&w.to_le_bytes());
+            v[off + 10..off + 12].copy_from_slice(&h.to_le_bytes());
             let va: u32 = 0x801D_0000 + id as u32 * 0x40;
-            v[off + 8..off + 12].copy_from_slice(&va.to_le_bytes());
-            v[off + 12..off + 14].copy_from_slice(&0x0400u16.to_le_bytes());
-            v[off + 14..off + 16].copy_from_slice(&2u16.to_le_bytes());
+            v[off + 12..off + 16].copy_from_slice(&va.to_le_bytes());
         }
         v
     }
@@ -288,6 +324,8 @@ mod tests {
         let d = table.window(3).unwrap();
         assert_eq!(d.rect(), (19, 12, 60, 12));
         assert_eq!(d.frame_rect(), (11, 4, 76, 28));
+        assert_eq!(d.content_id, 0x15);
+        assert_eq!(d.park_edge, 4);
         assert_eq!(d.kind, 2);
     }
 
@@ -295,8 +333,16 @@ mod tests {
     fn rejects_out_of_envelope_records() {
         let mut v = synthetic_overlay();
         // Corrupt record 5's width to an impossible span.
-        let off = MENU_WINDOW_TABLE_OFFSET + 5 * 0x10 + 4;
+        let off = MENU_WINDOW_TABLE_OFFSET + 5 * 0x10 + 8;
         v[off..off + 2].copy_from_slice(&5000i16.to_le_bytes());
+        assert!(parse(&v).is_err());
+    }
+
+    #[test]
+    fn rejects_out_of_domain_park_edge() {
+        let mut v = synthetic_overlay();
+        // The create-time park switch only dispatches on values < 8.
+        v[MENU_WINDOW_TABLE_OFFSET + 7 * 0x10 + 1] = 8;
         assert!(parse(&v).is_err());
     }
 
