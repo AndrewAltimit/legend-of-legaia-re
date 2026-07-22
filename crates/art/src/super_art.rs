@@ -33,10 +33,14 @@
 //! Each resident `replace` preserves its `find` minus the final
 //! `[0x19, art]` pair and appends `[0x1A, finisher...]` - the structural
 //! pairing check locked by `replace_preserves_find_prefix_and_finisher_tail`
-//! below. The runtime *queue effect* of the same strings is separately
-//! capture-pinned at `actor[+0x1DF]` for Vahn's Tri-Somersault and Noa's
-//! Miracle Art (PCSX-Redux probe; runbook
-//! `docs/tooling/super-art-queue-capture.md`).
+//! below. The runtime *queue effect* is capture-pinned at `actor[+0x1DF]`
+//! for **every entry**: in-the-wild executions for Vahn's Tri-Somersault
+//! and Noa's Miracle Art, plus a per-Super sweep that drives the retail
+//! applier `FUN_801EF9E4` over each `find` and reads back the tail-replaced
+//! queue - all 15 byte-identical to the `replace` fields below (PCSX-Redux
+//! probe `autorun_super_art_queue_inject.lua`; runbook
+//! `docs/tooling/super-art-queue-capture.md`; re-checkable via
+//! `crates/pcsxr/tests/super_art_queue_replace.rs`).
 
 use crate::queue::{ActionConstant, ActionQueue, Character};
 

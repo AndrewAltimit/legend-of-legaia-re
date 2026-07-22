@@ -2191,3 +2191,43 @@ slot = 255
 backup_fingerprint = "59eb763bbbf748d46f585d8b4ef94f9a7df559e1782f7003deee5cbad603e794"
 description = "Mid-cast Spoon summon (evolved-Seru spell 0x91, attack 'Holy Eyes') vs Gobu Gobu, cast injected into Vahn's record spell list (autorun_evolved_cast.lua); loader-B id 0x18, slot-B resident = extraction 0919 (MIPS-prologue head), 100% byte-match over the 5-sector LBA footprint. Pinned the 0919 binding - closed the last arithmetic-predicted evolved leg."
 topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x91", "evolved-Seru", "pcsx-redux"]
+
+# ----------------------------------------------------------------------
+# Super-Art queue tail-replace captures (probe
+# autorun_super_art_queue_inject.lua; runbook
+# docs/tooling/super-art-queue-capture.md). Each state is
+# party_basic_attack_vs_gobu_gobu one vsync after the retail Super
+# applier FUN_801EF9E4 ran over an injected queue: the acting slot-0
+# actor's queue at actor[+0x1DF] holds the Super's byte-exact `replace`
+# string (find injected at the applier entry breakpoint, register a1
+# retargeted to the owning character's table index). One state per
+# character, each a previously-unexecuted Super; the full 15/15 sweep's
+# CSV lives with the capture run. Checked by
+# crates/pcsxr/tests/super_art_queue_replace.rs.
+# ----------------------------------------------------------------------
+[[scenarios]]
+label = "super_queue_replace_vahn_rolling_combo"
+backup_fingerprint = "bfe53a9fafdfde84374050f72618bec765cc6c7dc0b49b5537e0d84e2cda3db8"
+slot = 255
+phase = "battle"
+expected_game_mode = 0x15
+description = "Post-applier battle state: slot-0 actor queue at +0x1DF = Vahn's Rolling Combo replace string 19 22 0C 19 25 0F 0F 1A 2F 30 (two-part finisher), written live by FUN_801EF9E4 over the injected find; zero fill to +0x1EE."
+topics = ["battle", "super art", "arts", "Vahn", "Rolling Combo", "action queue", "FUN_801EF9E4", "pcsx-redux"]
+
+[[scenarios]]
+label = "super_queue_replace_noa_triple_lizard"
+backup_fingerprint = "cc470e28b1a44d60cfafcf85b7f77b8e8afa5b4117ada34481a26eb601f2f1d0"
+slot = 255
+phase = "battle"
+expected_game_mode = 0x15
+description = "Post-applier battle state: slot-0 actor queue at +0x1DF = Noa's Triple Lizard replace string 19 25 0F 19 24 0E 1A 2E 2E 2E (x3 finisher), written live by FUN_801EF9E4 with a1 retargeted to char index 1; zero fill to +0x1EE."
+topics = ["battle", "super art", "arts", "Noa", "Triple Lizard", "action queue", "FUN_801EF9E4", "pcsx-redux"]
+
+[[scenarios]]
+label = "super_queue_replace_gala_back_punch"
+backup_fingerprint = "01c8b1f893a4c8a38016852afad6e7281fc146436d5fe5ee1bdadbba9f9dbce6"
+slot = 255
+phase = "battle"
+expected_game_mode = 0x15
+description = "Post-applier battle state: slot-0 actor queue at +0x1DF = Gala's Back Punch x3 replace string 19 27 0F 19 29 0D 1A 2B 2B 2B (x3 finisher), written live by FUN_801EF9E4 with a1 retargeted to char index 2; zero fill to +0x1EE."
+topics = ["battle", "super art", "arts", "Gala", "Back Punch x3", "action queue", "FUN_801EF9E4", "pcsx-redux"]
