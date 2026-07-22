@@ -268,8 +268,8 @@ addr,class,reason
 801f2160,REAL,every dump at this VA is of battle_action(898) (captures: muscle_dome); no second dumped body here
 801f2d68,REAL,self-entry body of 26 instructions returning `jr ra`
 801f36a0,REAL,"duplicate claim withdrawn: peer 801f16a0 is a printed address from a mis-based dump, not a body at that VA"
-801f452c,REAL,self-entry body of 30 instructions returning `jr ra`
-801f45a4,REAL,every dump at this VA is of battle_action(898) (captures: baka_fighter/dance/debug_menu/fishing/muscle_dome/slot_machine); no second dumped body here
+801f452c,REAL,"real entry only in battle_action(898): the 30-instruction magic-level-increased banner composer (overlay_0898_static_801f452c, ported engine-core magic_xp). The other two dumped bodies at this printed VA are wrong-base prints of 0x801C0000-band imports whose files carry 0898's image shifted: overlay_0896 print = 0898 file +0x652C = interior of FUN_801D388C at true VA 801d4d44; overlay_0897 print = 0898 file +0xF52C = interior of FUN_801DDB30 at true VA 801ddd44. The historical 'real entry <= 801f4498, unfound' note was those fragments' backward branches read in print coordinates; re-based, the entries are 801d388c and 801ddb30 (both already documented)"
+801f45a4,REAL,"every dump at this VA is of battle_action(898) (captures: baka_fighter/dance/debug_menu/fishing/muscle_dome/slot_machine); no second dumped body here. This 152-byte entry is the per-round RNG waker for status bit 0x400 (loops 7 actor slots, rng&7==0 clears +0x16E via andi 0xfbff at 801f4610) - the clear battle.md historically attributed to FUN_801F452C. Ported engine-vm battle_formulas::status_0x400_wakes"
 801f4dd0,REAL,self-entry body of 138 instructions returning `jr ra`
 801f5748,REAL,self-entry body of 2777 instructions returning `jr ra`
 801f69d8,REAL,self-entry body of 643 instructions returning `jr ra`

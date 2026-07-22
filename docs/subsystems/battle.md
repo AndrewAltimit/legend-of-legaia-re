@@ -1356,8 +1356,11 @@ switch (kinds `>= 7` write nothing), not through `+0x6F6`, and not by any unalig
 
 - the accessory-passive cure `andi 0xFBFF` at `0x8004CFCC` (`FUN_8004CE2C`, keyed on char
   passive word `+0x6C0` bit `0x08000000`);
-- a dedicated per-round waker: `FUN_801F452C` loops the 7 actor slots and clears exactly bit
-  `0x400` behind a `rng & 7 == 0` roll (`andi v0,v0,0xfbff` at `0x801F4610`, `sh` `0x801F4614`);
+- a dedicated per-round waker: `FUN_801F45A4` loops the 7 actor slots and clears exactly bit
+  `0x400` behind a `rng & 7 == 0` roll (`andi v0,v0,0xfbff` at `0x801F4610`, `sh` `0x801F4614`;
+  the instruction PCs sit inside `FUN_801F45A4` - the neighbouring `FUN_801F452C` this clear
+  was once attributed to is the 30-instruction magic-level-increased banner composer that
+  ends at `0x801F45A0`. `see ghidra/scripts/funcs/overlay_0898_static_801f45a4.txt`);
 - item/spell cure masks `andi 0xFB84` / `0xFF84` / `0xFFFC` in the slot-B battle-support
   images (e.g. `0x801FC6AC` in 0902's image);
 - the on-hit strip `andi 0xF07F` at `0x801EDA5C` (`FUN_801EC3E4`) and its bit-`0x4`-gated

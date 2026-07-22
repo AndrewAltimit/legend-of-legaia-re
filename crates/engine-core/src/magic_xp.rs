@@ -107,6 +107,22 @@ pub fn add_spell_xp(record: &mut CharacterRecord, slot: usize, gain: u32) {
     record.raw[off..off + 4].copy_from_slice(&cur.saturating_add(gain).to_le_bytes());
 }
 
+/// The banner suffix retail appends after the spell name (battle-action
+/// overlay rodata at `0x801F6840 + 4` - the `+4` skips a 4-byte glyph-prefix
+/// chain, leaving the possessive suffix).
+pub const MAGIC_LEVEL_INCREASED_SUFFIX: &str = "'s magic level increased.";
+
+/// Compose the "magic level increased" banner shown when a Seru spell levels
+/// up: the cast spell's name (`DAT_800754D0[actor[+0x1DF]]`, the shared
+/// spell-name table) followed by [`MAGIC_LEVEL_INCREASED_SUFFIX`]. Retail
+/// builds it into the shared context message buffer `_DAT_8007BD24 + 0x1F9`
+/// (string copy `FUN_8003CA78` + append `FUN_8003CAC4`).
+///
+/// PORT: FUN_801F452C
+pub fn magic_level_increased_message(spell_name: &str) -> String {
+    format!("{spell_name}{MAGIC_LEVEL_INCREASED_SUFFIX}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,5 +195,13 @@ mod tests {
         list.ids[0x21] = 0x8B;
         rec.set_spell_list(list);
         assert_eq!(spell_slot(&rec, 0x8B), None);
+    }
+
+    #[test]
+    fn level_up_banner_appends_the_retail_suffix() {
+        assert_eq!(
+            magic_level_increased_message("Gimard"),
+            "Gimard's magic level increased."
+        );
     }
 }
