@@ -169,6 +169,17 @@ anchor_va = 0x801CF470
 fingerprint_sha256 = "0a3da15ea4d5e921c30943c4efb76465a77310394ce6725182254da7bd718295"
 notes = "Noa dance rhythm minigame overlay (docs/subsystems/minigame-dance.md). Beat-clock SM FUN_801cf470 (the anchor), timing-window judge FUN_801d1960 -- 6 of 8 documented dance functions land on prologues at this base. Leading strings are the 'Disco King' help text ('how to dance?', 'buttons to dance', 'you can try more advanced steps'). Base recovered statically (17 corroborating call targets)."
 
+[[overlays]]
+prot_index = 902
+label = "gameover"
+base_va = 0x801CE818
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801CE844
+fingerprint_sha256 = "c29b748513cb6bf85017892d2f35e97b3da828d7552289d4b1c3a7b884025522"
+notes = "GAME OVER overlay (game-mode 18/19 GAMEOVER INIT/MODE -- retail-unreachable dev harness; a party wipe routes to the CARD/CONTINUE title flow instead, see docs/subsystems/battle.md). A SLOT-A overlay: the mode-18 handler FUN_80025B30 is overlay_loader_a(7,0) -> PROT 902 followed by jal 0x801CE844 = file +0x2C, the first prologue (the anchor). String anchors corroborate the base: in-file pointers 0x801CE820 -> the 'gameover.pak' source-path string at +0x8 and 0x801CEC48 -> the 'GAME OVER' caption at +0x430 decode to string starts only under 0x801CE818 (static_overlay::string_anchor_votes: 2 at slot A, 0 at slot B). Its high-band jals (0x801D5854..0x801F8B84) are external calls into the co-resident battle-band images, which is what mis-scored the old slot-B row: pointer_resolution counted 44/48 external references to fixed 0x801F7724..0x801F90FC structures as in-file self-pointers under the slot-B base. Sparse internal jal graph -- base is loader-chain cross_ref, not jal-recovered."
+
 # --- Slot-B overlays (the second swappable overlay slot, *DAT_80010390; link
 #     base 0x801F69D8, summon_overlay::SUMMON_OVERLAY_LINK_BASE). These are the
 #     player-summon / effect / minigame-data blobs from the 0900..0969 PROT
@@ -186,10 +197,14 @@ notes = "Noa dance rhythm minigame overlay (docs/subsystems/minigame-dance.md). 
 #     refuted: the dance overlay 0980 has no slot-B loader callsite, its music
 #     is sequenced BGM), further attack-titled stager-shaped entries whose
 #     loader callsites are computed (0924 "Ultimate Rave", 0927 "Dark Eclipse"),
-#     the GAME OVER overlay (0902), and summon-effect data (0957 -- head is a
-#     summon string table, "Puera" + Damage/Recover/Both effect labels).
+#     and summon-effect data (0957 -- head is a summon string table, "Puera" +
+#     Damage/Recover/Both effect labels). NOT in this cluster: the GAME OVER
+#     overlay 0902 is a slot-A row above -- its old slot-B row was a
+#     pointer_resolution false positive (external battle-band references
+#     landing inside the slot-B window; see the 0902 row notes).
 #     Identity is from the leading dev string + capture pinning + the in-file
-#     pointer-resolution base check. ---
+#     pointer-resolution base check, hardened by the two-slot
+#     string_anchor_votes comparison (the true base wins or ties). ---
 
 [[overlays]]
 prot_index = 900
@@ -240,16 +255,6 @@ eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "7e0740575be7f7798c053e675903d465ebdcc4fe7a954fa153df5470989c6f4a"
 notes = "Summon spawn stager on the spell-0x83 arithmetic slot (38 FUN_80021B04 part-spawn calls; the deep-dived file in docs/subsystems/battle-action.md -- previously labelled 'summon_gimard' via the +0x381 off-by-2). First function at base 0x801F69D8 (head is an addiu sp prologue). Base cross-referenced from summon_overlay::SUMMON_OVERLAY_LINK_BASE: the record pointers (lui 0x8020/addiu immediates) resolve in-file only under this base (disc-gated summon_overlay_real). Overwritten by the 0900 render overlay mid-cast, so not byte-resident in the capture."
-
-[[overlays]]
-prot_index = 902
-label = "gameover"
-base_va = 0x801F69D8
-form = "raw"
-eligibility = "static"
-base_source = "cross_ref"
-fingerprint_sha256 = "c29b748513cb6bf85017892d2f35e97b3da828d7552289d4b1c3a7b884025522"
-notes = "GAME OVER overlay (game-mode 18/19 GAMEOVER INIT/MODE). Head string is the source path 'h:\\prot\\field\\gameover\\gameover.pak' + the 'GAME OVER' caption. A slot-B overlay: 91% of its internal absolute pointers resolve in-file under the summon link base 0x801F69D8 (static_overlay::pointer_resolution), pinning the base; its internal jal graph is too sparse to triangulate."
 
 [[overlays]]
 prot_index = 907

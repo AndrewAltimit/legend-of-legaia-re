@@ -126,6 +126,34 @@ fn committed_overlays_reproduce_from_disc() {
                 rec.base_va
             );
         }
+
+        // (5) Two-slot string-anchor cross-check. pointer_resolution alone is
+        // one-sided: an overlay that densely references fixed structures in
+        // the RIVAL slot's VA band can score high at a base it never loads to
+        // (the falsified 0902-as-slot-B row). A pointer that decodes to the
+        // start of one of the file's own string literals only does so at the
+        // true base, so the committed base must win or tie the rival slot base
+        // on string-anchor votes.
+        if rec.base_va == legaia_asset::summon_overlay::SUMMON_OVERLAY_LINK_BASE
+            || rec.base_va == static_overlay::SLOT_A_BASE
+        {
+            let rival = if rec.base_va == static_overlay::SLOT_A_BASE {
+                legaia_asset::summon_overlay::SUMMON_OVERLAY_LINK_BASE
+            } else {
+                static_overlay::SLOT_A_BASE
+            };
+            let own = static_overlay::string_anchor_votes(&as_loaded, rec.base_va);
+            let rival_votes = static_overlay::string_anchor_votes(&as_loaded, rival);
+            assert!(
+                own >= rival_votes,
+                "{} (PROT {}): string anchors favour the RIVAL slot base \
+                 ({own} at committed 0x{:08x} vs {rival_votes} at 0x{rival:08x}) - \
+                 the committed slot is falsified",
+                rec.label,
+                rec.prot_index,
+                rec.base_va
+            );
+        }
         checked += 1;
     }
     assert!(
