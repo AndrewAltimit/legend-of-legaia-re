@@ -122,45 +122,10 @@ none reading the pool `word1` high half. So `attr` (real per-vertex data) is ign
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Super / Miracle Arts trigger logic | mostly resolved | [details ↓](#super--miracle-arts-trigger-logic) |
+| Super / Miracle Arts trigger logic | resolved (grade `disassembly`+`capture`) | The full chain is pinned (preseed `FUN_801DA34C`, queue-builder `FUN_801EED1C`, Super applier `FUN_801EF9E4`) and all 15 Supers are **live-executed**: an applier-entry injection probe (`autorun_super_art_queue_inject.lua`) drives the retail applier over each `find` string and reads the tail-replace at `actor[+0x1DF]` back byte-exact, 15/15; per-character library states re-checked by `crates/pcsxr/tests/super_art_queue_replace.rs`. Full chain + derived pins: [`re-settled-threads.md`](re-settled-threads.md#super--miracle-arts-trigger-chain) and [battle-action.md](../subsystems/battle-action.md#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4). |
 | First boss trigger -> Battle | resolved | The scripted-battle arm is the field-VM op `3E FF <formation_row>` ([battle.md](../subsystems/battle.md#scripted-battle-entry-3e-ff-row)): Zeto = garmel `P2[12]` row 9 (lone `0x4B`), Caruban = rikuroa stager `P1[3]` row 17 (lone `0x49`, `World::run_boss_stager_record`). `DAT_8007b7fc` closed: writer-less across `SCUS_942.54` + every static overlay (validated absolute + gp-relative + address-materialisation sweep); readers pin it as the debug forced-battle formation id - battle init `FUN_80055b6c` -> `FUN_8005567c` seeds the formation cells `DAT_8007BD0C+` from it, and `FUN_80046A20` routes a nonzero value to its mode-0 debug-menu exit. Retail never sets it. See [battle.md](../subsystems/battle.md). |
 | Enemy-ally charm battle softlock | resolved (both tracks fixed; grade `disassembly`) | The state-`0x5A` victory arm's party-slot assumption OOB-indexes the win-pose roster `DAT_8007BD10` (via `0x801E6770`) when a living charmed ally is the acting actor at monster-wipe victory - the `FUN_801E7320` reroll theory is falsified ([`re-do-not-re-walk.md`](re-do-not-re-walk.md#battle--arts--level-up)). Fixed on both tracks: engine `victory_pose_fixup`/`charm_widen`, and the disc-side `legaia_rando::charm_fix` guard - a single-word detour at the `0x801E6690` keep-branch into a SCUS dead-space liveness guard. Full chain + port: [battle.md](../subsystems/battle.md#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock). |
 | Battle-actor `+0x16E` bit `0x400` applier (guard-disabling status) | resolved - exhaustive negative (grade `disassembly`) | Bit `0x400` has **no retail setter**: a word-level decode of `SCUS_942.54` + every static-overlay image (all stores covering `+0x16C..+0x171`, pointer precomputes, `ori`/`sllv` bit-set shapes, the `+0x6F6` mirror, the `+0x21F` deferral) finds only clears - accessory cure `FUN_8004CE2C`, the per-round RNG waker `FUN_801F452C`, item cures, the on-hit strip, battle-exit. The appliers (hit leg `FUN_801EC3E4`, cast leg `FUN_801E09F8`) map kinds 3/4/5/6 → `0x1`/`0x2`/random-`0x38`/`0x1000`, kinds 1-2 → the `0x380` deferral; none reaches `0x400`. Latent content. Writer inventory: [battle.md](../subsystems/battle.md#the-0x16e-status-halfword---retail-writer-inventory). |
-
-### Super / Miracle Arts trigger logic
-
-*Status:* partial
-
-The find/replace matcher **is** ported (`legaia_art::{MiracleMatcher,SuperMatcher}`, applied by `legaia_engine_vm::battle_action::resolve_action_queue`).
-
-**Miracle is now wired into the live player-driven Arts submenu**: `battle_arts::miracle_for_chain` flags a saved chain whose directional string is the caster's Miracle Art, and `World::build_battle_arts_rows` resolves the finisher-replacement queue into a per-strike profile (real `ArtRecord` power where staged, synthetic `x12` per component art otherwise).
-
-**Super is now wired into the live submenu, with the queue connectors abstracted.** `legaia_art::recognize_art_sequence` tokenizes a saved chain's flat directional string into its ordered named arts (each identified by its own `ArtRecord::commands`), and `SuperMatcher::trigger_by_art_sequence` tail-matches that ordering against each Super's `SuperArt::art_sequence()` - the `find` pattern projected to art constants only (`[0x27,0x1F,0x27]` for Tri-Somersault), with starters + connectors stripped. `battle_arts::super_for_chain` / `World::build_battle_arts_rows` flag the row (`ArtRow::super_art`) and resolve the `replace`-queue strike profile (shared with the Miracle path).
-
-**Byte-exact queue strings: closed (capture).** The other-13-Supers residue is
-retired. The battle overlay keeps the full Miracle/Super trigger table resident,
-and a live battle-RAM read (static-recomp endgame battle savestate, scene
-`jou ene`, mode `0x15`) captured all of it: `0x801F64F4/6504/6514` = the 3
-Miracle replacement strings (art-data.md's pinned VAs), byte-exact vs
-`miracle.rs`; `0x801F6524` = 15 Super `find` entries (13-byte stride) in
-`super_art.rs` order; `0x801F65E8` = 15 Super `replace` strings (16-byte
-stride). All 30 are byte-identical to the modeled tables, and every replace
-obeys `replace = find[..len-2] ++ [1A, finisher…]` (locked by test
-`replace_preserves_find_prefix_and_finisher_tail`). So the combo-specific
-connectors are established as **resident table data**, not derivation. The
-byte-exact matcher (`SuperMatcher::try_trigger_at_tail`) is ported, exercised by
-`resolve_action_queue`. See `docs/subsystems/battle-action.md` § "Miracle /
-Super in the live player-driven Arts submenu".
-
-**What (narrowly) stays open:** per-Super *live-executed* queue captures for the other 13 (driving each combo and watching the tail-replace at `actor[+0x1DF]`) - now purely confirmatory, since the resident strings, queue location, dequeue site (`0x801D89D8`), and two end-to-end executions (Noa Miracle + Vahn Tri-Somersault) are all pinned.
-
-**The queue-builder is pinned (grade `disassembly`): `FUN_801EED1C`** (battle overlay PROT 0898, file `+0x20504`), called from ActionSeed state `0x0C` of `FUN_801E295C` at `0x801E2C7C`. The saved chain is preseeded from the char record `+0x76F`/`+0x77F` by `FUN_801DA34C`; the builder rewrites arrow runs to art constants, validates each art via `FUN_801EFBFC`, applies the Miracle replacement inline (`0x801EF4E8..0x801EF524` from `0x801F64F4`), and delegates the Super find→tail-replace to **`FUN_801EF9E4`** (find `0x801F6524`, replace `0x801F65E8`, tail write `sb` at `0x801EFB7C`) - Miracle-before-Super is structural. Full chain: [battle-action.md](../subsystems/battle-action.md#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4).
-
-**Queue location pinned; Miracle path validated (capture).**
-The action queue is the per-actor **`actor[+0x1DF..+0x1F2]`** action-parameter byte stream (not `ctx[+0x274]` - a capture showed that is the turn-order active-actor index written by `recompute_battle_order` `FUN_801DABA4`).
-The directions/connectors encode as `0x0C/0x0D/0x0E/0x0F` = Left/Right/Down/Up, `0x1A` = `SpecialStarter`, `0x1B..0x32` = art constants.
-A `battle_noa_miracle_art_combo` capture (probe `autorun_super_art_action_queue.lua`, runbook [`docs/tooling/super-art-queue-capture.md`](../tooling/super-art-queue-capture.md)) read Noa's resident Miracle queue and it matches `crates/art/src/miracle.rs`'s modeled replacement string **byte-exact** - runtime-validating the queue + `ActionConstant` encoding that were previously spreadsheet-sourced.
-**Super path also validated:** a `battle_vahn_tri_somersault_super` capture read Vahn's resident Tri-Somersault queue (`…19 27 0F 19 1F 0E 1A 2B 2B 2B`) whose matched/replaced tail is **byte-identical** to `super_art.rs`'s `Tri-Somersault` `replace` - confirming the combo-specific connectors (`Somersault 0x27 → 0F`, `Cyclone 0x1F → 0E`) and the finisher tail. The dequeue site is pc `0x801D89D8`. The only residue is the other 13 Supers' replace strings (each a one-capture check through the same probe).
 
 ## Field / locomotion
 
@@ -494,9 +459,18 @@ context already gets one run-until-yield slice per frame
 a units error: record durations count retail **display** frames (op-`0x4A` and the mover both
 accumulate `DAT_1F800393`), and the engine stepped its timeline once per 100 Hz sim tick. Pacing the
 timeline off the existing 60 Hz sub-clock moved the whole zero-input opening chain from ~10 % short
-of retail wall-time to within ~4 %, pinned by `opening_chain_wall_time`. **Residual:** the `map01`
-fly-in leg now runs ~22 % long against a headless retail capture while the other three legs sit
-within ~6 % - a per-leg thread in the world-map fly-in choreography, not a global rate.
+of retail wall-time to within ~4 %, pinned by `opening_chain_wall_time`. **The `map01` fly-in
+overhang is closed** (grade `capture` - frame-tagged recomp camera trace of the whole chain): the
+engine was serializing the final narration crawl against the record's authored tail - it parked at
+the last crawl's *open* op until the roller drained, then ran the authored `4A` waits, double-
+counting. Retail opens every crawl non-blocking and holds only at the record's **terminal `0x3F`
+SceneChange** while narration is active; the retail leg decomposes exactly into scene-load/init +
+the authored waits with the 3-page crawl scrolling concurrently. The other three legs hid the
+misplacement because their last crawl sits directly before the SceneChange - `map01` was the
+discriminating case. With the hold moved to the SceneChange, every leg runs one-sidedly *short* by
+its un-modeled retail scene-load window (the engine loads scenes instantly by design), and
+`opening_chain_wall_time` pins asymmetric bands so running long is the hard regression signal. See
+[`cutscene.md`](../subsystems/cutscene.md#narration-playback---the-crawl-roller-fun_80037174).
 
 **Data-source sub-threads - both resolved:**
 
@@ -581,7 +555,7 @@ The overlay loaders (`FUN_8003EBE4`/`FUN_8003EC70` → `FUN_8003E8A8(param + 0x3
    `0x42`/`0x43` → **961/962**, and Cort's Evil Seru Magic `0x47` → **966**, *distinct*
    from the player-side Juggernaut stager 0927 - the player and enemy arms of the same
    spell ship separate stagers, and the enemy-special id band sits at `0x2B..0x47` →
-   `938..966`. **Evolved-Seru block - resolved (8/10 capture-pinned).** All ten
+   `938..966`. **Evolved-Seru block - resolved (10/10 capture-pinned).** All ten
    evolved-Seru entries (`0x8C..0x95` - Gola Gola / Mushura / …) → `914..923` trim to
    clean move-VM stagers (4..67 spawn sites; `EVOLVED_SUMMON_STAGER_PROT`, disc-gated
    `summon_overlay_block`), so the "they may be move-FX-path casts instead" alternative is
@@ -589,8 +563,17 @@ The overlay loaders (`FUN_8003EBE4`/`FUN_8003EC70` → `FUN_8003E8A8(param + 0x3
    base block. **Eight legs are now capture-pinned** by mid-cast states (loader-B id +
    slot-B residency; disc+library-gated `evolved_summon_binding`): `0x8C` Gola Gola → 914,
    `0x8D` Mushura → 915, `0x8E` Aluru → 916, `0x8F` Barra → 917, `0x92` Slippery → 920,
-   `0x93` Iota → 921, `0x94` Puera → 922, `0x95` Gilium → 923; only `0x90 → 918` and
-   `0x91 → 919` stay arithmetic-predicted (no mid-cast captured). The two `0x4000`
+   `0x93` Iota → 921, `0x94` Puera → 922, `0x95` Gilium → 923, and the last two legs
+   are pinned by *injected* casts (probe `autorun_evolved_cast.lua` writes the spell
+   into the caster's record spell list + MP into record and battle-actor `+0x150`,
+   then pad-scripts the cast; states `evolved_0x90_midcast` / `evolved_0x91_midcast`):
+   `0x90` Kemaro ("Canine Fangs") → 918 and `0x91` Spoon ("Holy Eyes") → 919, each
+   loader-B-id-confirmed mid-cast with the slot-B image a 100 % byte-match over the
+   entry's full LBA footprint. Capture nuance the probe encodes: loader-B flips when
+   the slot-B load is *queued*, so an at-flip save holds a partial image - the probe
+   saves 90 frames after the flip, when both stagers are fully resident. A side pin
+   from the injection: the battle Magic submenu reads the character-record spell list
+   live, while the MP gate reads battle-actor `+0x150`. The two `0x4000`
    render-mode carriers (`0x8E → 916` Aluru, `0x93 → 921` Iota) are both pinned as player
    casts - so neither seats a live render-mode part (still the F-RENDERMODE blocker below).
    The attack-titled 0924 + 0925 are **capture-pinned as the rare-Seru flute summons**

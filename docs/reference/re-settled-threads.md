@@ -95,6 +95,7 @@ The per-prim dispatcher `FUN_80043390` owns four `NCCS`/`NCCT` **light** handler
 | Thread | Status | Evidence | Answer |
 |---|---|---|---|
 | Encounter MAN sub-section layout | resolved (header shape corrected) | `disassembly` | [details ↓](#encounter-man-sub-section-layout) |
+| Super / Miracle Arts trigger chain | resolved (all 15 Supers live-executed) | `disassembly` + `capture` | [details ↓](#super--miracle-arts-trigger-chain) |
 | Effect-VM pass-1 "state token algebra" (`FUN_801E0088`) | resolved + ported | `capture` | [details ↓](#effect-vm-pass-1-state-token-algebra-fun_801e0088) |
 | Seru-magic summon visual (e.g. Tail Fire) | resolved (player visual; wired) | `capture` | [details ↓](#seru-magic-summon-visual-eg-tail-fire) |
 | `summon.dat` / `readef.DAT` side-band streaming | resolved (entries + format) | `disassembly` | [details ↓](#summondat--readefdat-side-band-streaming) |
@@ -130,6 +131,30 @@ The per-prim dispatcher `FUN_80043390` owns four `NCCS`/`NCCT` **light** handler
 | How an NPC's facing changes **after** spawn - snap vs ramp, and which writer wins | resolved (two laws; order-of-execution priority) | `disassembly` | [details ↓](#npc-dynamic-facing---two-laws-and-an-execution-order) |
 | dolk2/rikuroa MAN source (the "v12-embedded MAN" was an over-read) | resolved (streaming carrier) | `capture` | Their own `base+3` bundles are the MAN-less count=4 form `[1,2,6,0x14]`; the "embedded MAN at 0x1000" inside their SceneV12Table entries is an over-read onto the next scene's bundle (suimon's / geremi's; [scene-v12-table.md](../formats/scene-v12-table.md) § over-read). Retail sources their partition scripts from the block's standalone `data_field_streaming` entry's type-3 chunk (`dolk2` ext 70 `[29,73,17]`, `rikuroa` ext 157 `[13,29,64]`; live script-heap byte-match at the Caruban beat). Engine: `field_man_payload` streaming fallback (`streaming_man_payloads`) + retail-frame `Scene::load` windows; pins `v12_bundle_man_disc.rs`. |
 | kor-family op-0x49 flag window `[0x138..0x13F]` - what the 8 flags gate | resolved (Uru Mais warp-pad destination memory) | `disassembly` | [details ↓](#kor-family-op-0x49-flag-window-0x1380x13f---uru-mais-warp-pad-picker) |
+
+### Super / Miracle Arts trigger chain
+
+*Status:* resolved - matcher, tables, builder chain and runtime effect all pinned
+
+The full retail chain: the saved chain is preseeded from the char record `+0x76F`/`+0x77F` by
+`FUN_801DA34C` (a verbatim `lbu +0x76F → sb +0x1DF` copy - the char-record chain uses the
+queue-space encoding directly, `0x0C/0x0D/0x0E/0x0F` = L/R/D/U, `0x1A` starter, `0x1B..0x32` art
+constants); the queue-builder **`FUN_801EED1C`** (battle overlay 0898, ActionSeed state `0x0C`)
+rewrites arrow runs to art constants, applies the Miracle replacement inline, then delegates the
+Super find→tail-replace to **`FUN_801EF9E4`** - table-driven off `(actor slot, char index)`, find
+cells `[len][bytes]` at `0x801F6524 + char*65 + row*13`, replace at `0x801F65E8 + char*80 + row*16`,
+first-match-wins. The queue proper is exactly 16 bytes (`actor[+0x1DF..+0x1EE]`; `+0x1EF..` is
+neighbouring data). Miracle-before-Super is structural.
+
+The resident find/replace tables were captured byte-exact against the modeled
+`crates/art/src/{miracle,super_art}.rs`, and **every one of the 15 Supers is live-executed**: an
+applier-entry injection probe (`scripts/pcsx-redux/autorun_super_art_queue_inject.lua`) breakpoints
+`FUN_801EF9E4`, writes the target Super's `find` bytes into the queue, retargets the char-index
+register, and reads the tail-replaced queue back at the return site - 15/15 byte-exact (the two
+combos previously driven by hand, Noa's Miracle and Vahn's Tri-Somersault, served as positive
+controls). One post-applier library state per character is re-checked by
+`crates/pcsxr/tests/super_art_queue_replace.rs`. Full chain + port:
+[battle-action.md](../subsystems/battle-action.md#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4).
 
 ### Character-record HP/MP/AP pair order
 

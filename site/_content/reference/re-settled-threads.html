@@ -68,6 +68,13 @@
         <td><a href="../formats/encounter.html#camera-region-table">encounter</a></td>
       </tr>
       <tr>
+        <td>Super / Miracle Arts trigger chain</td>
+        <td><span class="tag tag-done">resolved</span> (all 15 Supers live-executed)</td>
+        <td><span class="tag tag-done">disassembly</span> + <span class="tag tag-done">capture</span></td>
+        <td>Saved-chain preseed <code>FUN_801DA34C</code> (verbatim <code>+0x76F &rarr; +0x1DF</code> copy - the char-record chain uses the queue-space encoding), queue-builder <code>FUN_801EED1C</code> (ActionSeed <code>0x0C</code>), Miracle replacement inline, Super find&rarr;tail-replace in <code>FUN_801EF9E4</code> (table-driven off <code>(actor slot, char index)</code>; find <code>0x801F6524 + char*65 + row*13</code>, replace <code>0x801F65E8 + char*80 + row*16</code>, first-match-wins). The queue proper is 16 bytes at <code>actor[+0x1DF..+0x1EE]</code>. All 30 resident find/replace strings byte-exact vs the modeled tables, and all 15 Supers live-executed via applier-entry injection, each tail-replace byte-exact; per-character library states re-checked by <code>crates/pcsxr/tests/super_art_queue_replace.rs</code>.</td>
+        <td><a href="../subsystems/battle-action.html">battle-action</a></td>
+      </tr>
+      <tr>
         <td>Effect-VM pass-1 "state token algebra" (<code>FUN_801E0088</code>)</td>
         <td><span class="tag tag-done">resolved</span></td>
         <td><span class="tag tag-done">capture</span></td>
