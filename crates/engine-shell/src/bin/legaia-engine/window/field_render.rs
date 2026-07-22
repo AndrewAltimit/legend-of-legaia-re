@@ -600,24 +600,29 @@ impl PlayWindowApp {
         }
     }
 
-    /// Apply the world's scripted CLUT-cell effects (field-VM `0x4C` n6
-    /// sub-`0x61` one-shots + cross-fades, `World::step_clut_fx`) against the
-    /// CPU VRAM and re-upload when anything changed. `World::tick` banks the
-    /// retail game ticks (every `frame_step` vsyncs); this drains them once
-    /// per sim tick. Battle-guarded for the same reason as
+    /// Apply the world's scripted VRAM effects - the field-VM `0x4C` n6
+    /// sub-`0x60` `MoveImage` stamps (`World::apply_script_vram_moves`, e.g.
+    /// the town01 opening's Noa face-frame stamps) and the sub-`0x61`
+    /// CLUT-cell one-shots + cross-fades (`World::step_clut_fx`) - against
+    /// the CPU VRAM and re-upload when anything changed. `World::tick` banks
+    /// the retail game ticks (every `frame_step` vsyncs); this drains them
+    /// once per sim tick. Battle-guarded for the same reason as
     /// [`Self::advance_ocean_animation`]: while a battle is up the GPU
     /// texture holds the battle VRAM and a field re-upload would clobber it.
     pub(super) fn apply_world_clut_fx(&mut self) {
         if self.session.host.world.mode == SceneMode::Battle {
             return;
         }
-        if self.session.host.world.clut_fx.is_empty() {
+        if self.session.host.world.clut_fx.is_empty()
+            && self.session.host.world.script_vram_moves.is_empty()
+        {
             return;
         }
         let Some(base) = self.cpu_vram_base.as_mut() else {
             return;
         };
-        if !self.session.host.world.step_clut_fx(base) {
+        let moved = self.session.host.world.apply_script_vram_moves(base);
+        if !self.session.host.world.step_clut_fx(base) && !moved {
             return;
         }
         if let Some(r) = self.win.renderer.as_ref() {

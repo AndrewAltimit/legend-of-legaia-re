@@ -114,12 +114,13 @@ pub(super) fn op_4c_n5<H: FieldHost>(
     }
 }
 
-// Outer nibble 6 - emitter call families.
-// Only op0 == 0x60 (6-word emitter) is ported. op0 == 0x61
-// is a halt-acquire variant whose 16-byte encoding interacts
-// with cross-context dispatch; remaining values (0x62..=0x6F)
-// hit `else { return param_2; }` in the original at line
-// 6330 of the dump - halt at PC.
+// Outer nibble 6 - the two VRAM-write families. op0 == 0x60
+// is the literal-operand VRAM MoveImage (six misaligned LE16
+// words, `jal FUN_80058490`); op0 == 0x61 is the halt-acquire
+// CLUT-cell effect (one-shot cell write / cross-fade spawn,
+// FUN_801E4C58). Remaining values (0x62..=0x6F) hit
+// `else { return param_2; }` in the original at line 6330 of
+// the dump - halt at PC.
 pub(super) fn op_4c_n6<H: FieldHost>(
     host: &mut H,
     ctx: &mut FieldCtx,

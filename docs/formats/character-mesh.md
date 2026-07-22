@@ -215,8 +215,12 @@ tick trapped shows both silent while the `MoveImage` pair fires from the
 the pause menu (the menu-mode frame issues no image transfers at all). A
 later re-upload of the band (the battle effect-texture path) restores the
 disc bytes. Engine side: `field-disasm` decodes the op as `MenuCtrl op0=0x60`
-with the six words; the `FieldHost::op4c_n6_sub0_emitter6` hook receives
-them (the world host does not yet forward the stamp into its VRAM model).
+with the six words; the world host's `FieldHost::op4c_n6_sub0_emitter6` hook
+queues them (`World::queue_script_vram_move`) and the windowed host drains
+the queue into its software VRAM as the rect copy
+(`World::apply_script_vram_moves`, the `Vram::move_image` primitive that
+also serves the battle facial animator), so the port stamps the same cells
+retail does.
 
 **Wrap-scroll cells (actor dispatch-4).** The per-actor anim tick
 `FUN_80021DF4` (dispatch byte `+0x5A == 4`, block `0x80022CB8..0x80022EE4`,

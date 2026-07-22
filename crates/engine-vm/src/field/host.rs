@@ -1245,11 +1245,19 @@ pub trait FieldHost {
         false
     }
 
-    /// Op 0x4C outer-nibble-6 op0 == 0x60 - 6-word emitter call.
+    /// Op 0x4C outer-nibble-6 op0 == 0x60 - literal-operand VRAM `MoveImage`.
     ///
-    /// 14-byte instruction `[4C, 0x60, lo0, hi0, lo1, hi1, lo2, hi2, lo3, hi3,
-    /// lo4, hi4, lo5, hi5]`. Reads six signed-16-bit words and calls
-    /// `func_0x80058490(words[0..4], words[4], words[5])`. PC += 14.
+    /// 14-byte instruction `[4C, 0x60, src_x, src_y, w, h, dst_x, dst_y]` -
+    /// six little-endian signed-16-bit words at arbitrary byte parity (retail
+    /// reads them via the misaligned-u16 helper `FUN_8003CE9C`). The handler
+    /// arm (0x801E1B28..0x801E1B90 in the field overlay) hands them straight
+    /// to the libgpu `MoveImage` wrapper (`jal FUN_80058490` at 0x801E1B84):
+    /// copy `w x h` VRAM halfwords from `(src_x, src_y)` to `(dst_x, dst_y)`.
+    /// PC += 14. Retail scripts use it for one-shot face-frame stamps onto
+    /// the player texture atlas (`docs/formats/character-mesh.md`, "Runtime
+    /// scroll-cell residue"). Hosts that own a software VRAM override this
+    /// to queue/apply the copy (engine-core queues on the world and drains
+    /// via `World::apply_script_vram_moves`).
     fn op4c_n6_sub0_emitter6(&mut self, words: [i16; 6]) {
         let _ = words;
     }

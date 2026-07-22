@@ -1328,6 +1328,21 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.spawn_clut_cell_fx(&payload);
     }
 
+    /// Op `0x4C 0x60` - literal-operand VRAM `MoveImage`. The six words are
+    /// `[src_x, src_y, w, h, dst_x, dst_y]`; retail's handler arm hands them
+    /// straight to the libgpu `MoveImage` wrapper. Queued on the world;
+    /// [`World::apply_script_vram_moves`] drains the queue against the
+    /// host's software VRAM. Retail's known user: the one-shot face-frame
+    /// stamps onto the player texture atlas (town01's opening record stamps
+    /// the Noa blink/mouth cells - see `docs/formats/character-mesh.md`).
+    ///
+    /// PORT: FUN_80058490 (consumer: `jal` at 0x801E1B84)
+    /// REF: FUN_801DE840 (sub-0x60 handler arm 0x801E1B28..0x801E1B90),
+    /// FUN_8003CE9C (misaligned-u16 operand reads)
+    fn op4c_n6_sub0_emitter6(&mut self, words: [i16; 6]) {
+        self.world.queue_script_vram_move(words);
+    }
+
     /// Op `0x4C 0x82 <slot>` - full HP/MP restore of one party slot.
     ///
     /// Retail's inn / rest heal. There is no inn opcode and no native inn

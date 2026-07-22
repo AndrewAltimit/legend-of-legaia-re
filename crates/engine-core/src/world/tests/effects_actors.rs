@@ -311,3 +311,77 @@ fn banner_countdown_clears_after_frames() {
         "banner should have cleared"
     );
 }
+
+// ---- scripted VRAM MoveImage stamps (field-VM 4C 60) ----
+
+/// Field-VM `4C 60` (literal-operand VRAM `MoveImage`): the executing VM
+/// decodes the six LE16 words, the world host queues the stamp
+/// (`op4c_n6_sub0_emitter6` -> `queue_script_vram_move`), and
+/// `apply_script_vram_moves` performs the `w x h` halfword rect copy against
+/// software VRAM. Operands are the retail town01 opening-record Noa
+/// face-frame stamp `(852, 336, 6, 16) -> (852, 268)`.
+#[test]
+fn op_4c_60_move_image_queues_and_stamps_vram() {
+    let mut world = World::new();
+    let words: [i16; 6] = [852, 336, 6, 16, 852, 268];
+    let mut op = vec![0x4C, 0x60];
+    for w in words {
+        op.extend_from_slice(&w.to_le_bytes());
+    }
+    let mut ctx = FieldCtx::default();
+    let mut host = FieldHostImpl { world: &mut world };
+    match vm::field::step(&mut host, &mut ctx, &op, 0) {
+        FieldStepResult::Advance { next_pc } => assert_eq!(next_pc, 14),
+        other => panic!("4C 60 should advance 14 bytes, got {other:?}"),
+    }
+    assert_eq!(
+        world.script_vram_moves,
+        vec![ScriptVramMove {
+            src: (852, 336),
+            size: (6, 16),
+            dst: (852, 268),
+        }]
+    );
+
+    // Seed a recognisable source rect and apply the queued stamp.
+    let mut vram = legaia_tim::Vram::new();
+    let mut bytes = Vec::new();
+    for row in 0..16u16 {
+        for col in 0..6u16 {
+            bytes.extend_from_slice(&(0x1000 + row * 16 + col).to_le_bytes());
+        }
+    }
+    vram.write_block(852, 336, 6, 16, &bytes);
+    assert!(world.apply_script_vram_moves(&mut vram), "stamp wrote VRAM");
+    assert!(world.script_vram_moves.is_empty(), "queue drained");
+    for row in 0..16usize {
+        for col in 0..6usize {
+            assert_eq!(
+                vram.pixel(852 + col, 268 + row),
+                0x1000 + row as u16 * 16 + col as u16,
+                "dst ({col},{row})"
+            );
+        }
+    }
+    // Source rect intact (copy, not move).
+    assert_eq!(vram.pixel(852, 336), 0x1000);
+}
+
+/// Degenerate `4C 60` rects (zero / negative width or height, negative
+/// coordinates) are dropped rather than alias-wrapped, and a drained /
+/// empty queue reports no write.
+#[test]
+fn script_vram_move_rejects_degenerate_rects() {
+    let mut world = World::new();
+    let mut vram = legaia_tim::Vram::new();
+    assert!(!world.apply_script_vram_moves(&mut vram), "empty queue");
+    world.queue_script_vram_move([10, 10, 0, 4, 20, 20]); // w == 0
+    world.queue_script_vram_move([10, 10, 4, -1, 20, 20]); // h < 0
+    world.queue_script_vram_move([-1, 10, 4, 4, 20, 20]); // src x < 0
+    world.queue_script_vram_move([10, 10, 4, 4, 20, -3]); // dst y < 0
+    assert!(
+        !world.apply_script_vram_moves(&mut vram),
+        "all rects dropped"
+    );
+    assert!(world.script_vram_moves.is_empty());
+}

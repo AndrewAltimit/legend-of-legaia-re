@@ -195,6 +195,9 @@ impl SceneHost {
         self.world.clut_fx.clear();
         self.world.clut_vsync_accum = 0;
         self.world.clut_pending_game_ticks = 0;
+        // Same scene-scoping for the sibling `4C 60` MoveImage stamps: any
+        // still-queued rect operands belong to the previous scene's MAN.
+        self.world.script_vram_moves.clear();
         self.world.frame_step = if crate::scene::is_world_map_scene(name) {
             3
         } else {
