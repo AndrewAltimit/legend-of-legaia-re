@@ -222,7 +222,7 @@ addr,class,reason
 801dcef0,REAL,self-entry body of 9 instructions returning `jr ra`
 801dd330,REAL,self-entry body of 11 instructions returning `jr ra`
 801dea50,REAL,self-entry body of 712 instructions returning `jr ra`
-801df098,UNCERTAIN,no `jr ra` and no trailing unconditional jump - body may be truncated
+801df098,INTERIOR,"tail fragment, read off the disassembly: across all 146 instructions there is no `addiu sp,sp,-N` prologue and no `jr ra`, and s2/s3/s4 appear only as base registers and branch operands - never a destination - so the body reads a frame and callee-saved registers it never establishes. The decompiled C's `unaff_s2/s3/s4` locals are the known artifact and are not the evidence"
 801df6b8,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
 801df8dc,INTERIOR,"interior slice, not an entry: dump begins in a delay slot (`_li v0,0x63`), branches on live v1, and the debug-print tail restores s0..s5/ra from a 0x50-byte frame it never built"
 801e0080,REAL,every dump at this VA is of battle_action(898) (captures: battle_action); no second dumped body here

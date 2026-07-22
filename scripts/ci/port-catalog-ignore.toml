@@ -569,6 +569,7 @@
 "8001b47c" = "INTERIOR: dump resolves entry=8001ada4, not 8001b47c"
 "801ce8ec" = "INTERIOR: the only dump is an explicit citation stub - `801ce8ec (cite of FUN_801ce8a0)`, resolving entry=801ce8a0. Port 801ce8a0."
 "801ef9b4" = "INTERIOR: the only dump is an explicit citation stub - `801ef9b4 (cite of FUN_801ef6e0)`, resolving entry=801ef6e0. Port 801ef6e0."
+"801df098" = "INTERIOR: full tail-fragment signature, read off the disassembly and not the decompiled C (its `unaff_s2/s3/s4` locals are the artifact, not the evidence). Across all 146 instructions there is no `addiu sp,sp,-N` prologue and no `jr ra`; s2/s3/s4 appear only as base registers and branch operands and are never a destination, so the body reads a frame and callee-saved registers it never establishes. It is a slice of the routine that owns them."
 "801d8450" = "INTERIOR: non-ABI dispatcher-private subroutine of the field overlay - no prologue, first insn `lh a0,0xc(s7)` reads the enclosing dispatcher's live saved regs (s2/s5/s6/s7/s8); wave-16 non-portable claim verified from the dump"
 "801d2404" = "INTERIOR: 8-instruction field-VM opcode slice - no prologue, reads live v0/v1/s6, exits `j 0x801e3624` (FUN_801DE840 op-advance epilogue, the label-call idiom)"
 "801cf5d0" = "INTERIOR: tail slice - first insn stores through live t0, reads unaffected t2/t3/t4, restores ra from a 0x18-byte frame it never built"
