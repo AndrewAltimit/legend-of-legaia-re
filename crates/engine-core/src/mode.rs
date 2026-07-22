@@ -665,6 +665,53 @@ pub struct ModeInitStage {
     pub runs_core_reset: bool,
 }
 
+/// The mode-24 OTHER/warp INIT dispatcher's per-sub-id staging plan.
+///
+/// PORT: FUN_80025980
+///
+/// `FUN_80025980` (mode 24 "OTHER INIT") stages one of the seven
+/// "other game" overlays by the warp sub-id `_DAT_8007BA34`: overlay-A
+/// param = `0x4D + sel` with `sel += 2` first when `sel > 5` (recomp:
+/// `slti 6` + `addiu 2` at `0x80025A1C..0x80025A28`) - so sub 0..5 map to
+/// extraction PROT 972..977 and sub 6 skips to PROT 980. Confirmed pins:
+/// sub 0 = fishing (PROT 972), sub 3 = casino slot machine (PROT 975),
+/// sub 6 = dance (PROT 980). After the load it `jalr`s the per-sub-id
+/// overlay init from the SCUS table at `0x80010AE4` and hands the mode
+/// word to 0x19 (OTHER MODE).
+///
+/// Before staging it resets the warp-shared state: scene-name snapshot
+/// (`0x8007BAE8` <- `0x80084548`, 8 bytes), DATA_FIELD staged index
+/// `DAT_8007B768 = 0xFFFF`, the `B9C4`/`B6C8`/`B6A8` counters, entity
+/// words `_DAT_8007BC3C`/`BC4C = -1`, kingdom-base snapshot
+/// (`gp+0x7AC` <- `_DAT_80084540`), and a `FUN_80058104(0)` teardown call.
+// REF: FUN_80058104
+pub fn other_warp_init_stage(sub_id: i16) -> Option<ModeInitStage> {
+    /// Per-sub-id overlay init entries (jump table at `0x80010AE4`).
+    const OTHER_WARP_ENTRIES: [u32; 7] = [
+        0x801C_F070,
+        0x801C_E8A0,
+        0x801C_EE80,
+        0x801C_EC94,
+        0x801C_F00C,
+        0x801C_EA6C,
+        0x801C_EF54,
+    ];
+    if !(0..7).contains(&i32::from(sub_id)) {
+        // Retail's `sltiu 7` bound skips only the entry dispatch (the
+        // overlay request still fires with the biased param); no retail
+        // caller passes an out-of-range sub-id, so the engine returns no
+        // stage at all.
+        return None;
+    }
+    let sel = i32::from(sub_id);
+    let biased = if sel < 6 { sel } else { sel + 2 };
+    Some(ModeInitStage {
+        overlay_a_param: biased + 0x4D,
+        overlay_entry: OTHER_WARP_ENTRIES[sel as usize],
+        runs_core_reset: false,
+    })
+}
+
 /// Staging plan for the three thin INIT handlers (see [`ModeInitStage`]).
 /// Returns `None` for modes whose INIT is not this wrapper shape.
 pub fn mode_init_stage(mode: GameMode) -> Option<ModeInitStage> {
@@ -723,6 +770,35 @@ mod tests {
         // Non-wrapper modes have no plan.
         assert!(mode_init_stage(GameMode::MainMode).is_none());
         assert!(mode_init_stage(GameMode::BattleInit).is_none());
+    }
+
+    #[test]
+    fn other_warp_stage_maps_sub_ids_to_overlays() {
+        // sub 0..5 -> overlay params 0x4D..0x52 (PROT 972..977); sub 6
+        // skips by 2 -> 0x55 (PROT 980, the dance overlay).
+        let params: Vec<i32> = (0..7)
+            .map(|s| other_warp_init_stage(s).unwrap().overlay_a_param)
+            .collect();
+        assert_eq!(params, vec![0x4D, 0x4E, 0x4F, 0x50, 0x51, 0x52, 0x55]);
+        // Pinned attributions: fishing / slot / dance.
+        assert_eq!(
+            other_warp_init_stage(0).unwrap().overlay_a_param + 0x37F,
+            972
+        );
+        assert_eq!(
+            other_warp_init_stage(3).unwrap().overlay_a_param + 0x37F,
+            975
+        );
+        assert_eq!(
+            other_warp_init_stage(6).unwrap().overlay_a_param + 0x37F,
+            980
+        );
+        // Entry table matches the 0x80010AE4 jump table.
+        assert_eq!(other_warp_init_stage(2).unwrap().overlay_entry, 0x801C_EE80);
+        assert_eq!(other_warp_init_stage(4).unwrap().overlay_entry, 0x801C_F00C);
+        // Out-of-range sub-ids miss the retail `sltiu 7` bound.
+        assert!(other_warp_init_stage(7).is_none());
+        assert!(other_warp_init_stage(-1).is_none());
     }
 
     #[test]

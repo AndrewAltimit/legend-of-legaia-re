@@ -91,7 +91,6 @@
 "8005ba1c" = "GTE sqrt / normalise (mtc2 0xF000 / mfc2 0xF800)"
 "8005afb0" = "InitGeom-adjacent GTE control-reg init: enables cop2 in Status, then setCopControlWord(2, 0xE800/0xF000, ..) seeds the GTE projection/ZSF control regs (sibling of 8005bb48 InitGeom). Pure libgte; engine carries projection in Camera"
 "8005ba68" = "GTE 3-point transform helper (RTPT)"
-"8005b038" = "GTE RTPS (perspective-transform-single) vertex-batch loop (cop2 0x198003D in a per-vertex stride-8 loop)"
 "8003d344" = "GTE ApplyMatrix (cop2 0x480012 = MVMVA, rotation x V0 + TR, sf=1): loads VXY0/VZ0 from param_1, reads MAC1..3 back into param_2[0..3] - the view-space transform the billboard projector 800195a8 centers on. Pure COP2 plumbing; engine reproduces it as engine-render gte::rot_trans"
 "80026988" = "Euler-angle (x,y,z) -> 3x3 rotation matrix via sin/cos LUTs at DAT_8007B7F8 / DAT_8007B81C; engine uses glam::Mat3::from_euler"
 "800460ac" = "GTE NCDS (cop2 0x280030) - 3-iter normal color-depth color single loop; engine emits lighting via wgpu fragment shader"
@@ -327,6 +326,9 @@
 "80069170" = "SsSeqPlayResolved (final play-start stage)"
 "80069230" = "Streaming SEP feeder (partial-buffer continuation)"
 "80069390" = "SsIsEos (tail-call to 8006bbc8)"
+"80065bac" = "SsAPI per-voice status sweep: advances the 16-slot snapshot ring _DAT_801CE204/DAT_801CE208, polls each of DAT_801CE344 voices through the 8006c9a8 field reader (results into a 0x36-stride scratch) and sets the ring word's bit for every idle voice; libsnd voice-pool bookkeeping replaced by engine-audio's own voice pool. see ghidra/scripts/funcs/80065bac.txt"
+"8006c9a8" = "SsAPI per-voice field reader: 7 instructions, copies u16 +0xC of record a0*0x10 in the *DAT_8007AF40 table into *a1; the accessor under the 80065bac status sweep. Pure libsnd table plumbing. see ghidra/scripts/funcs/8006c9a8.txt"
+"80062310" = "Sound-system teardown wrapper: three jals - the libapi device-vtable trampoline 8005fd88, 800693b8, and the SsEnd-family 80062228. 12-instruction stream identical modulo relocation to 8006ef18 (the libspu init trio wrapper); PsyQ libsnd/libspu glue, replaced by engine-audio. see ghidra/scripts/funcs/80062310.txt"
 "8006ca7c" = "SsSeqGetStatus"
 "8006cb3c" = "SsSeqGetAttr (attr_id switch)"
 "8006cdb0" = "SsSeqSetCallback"
@@ -463,6 +465,8 @@
 "8003e7f0" = "Empty-bodied stub: `addiu sp,sp,-0x90; addiu sp,sp,0x90; jr ra` - sets up and tears down a stack frame with no body (retail-stripped, near the dev host-FS reader 8003e6bc). Does nothing."
 "80019890" = "Empty stub (`jr ra; nop`). A stubbed per-frame field hook that does nothing (surfaced by the playthrough gap-set trace running every field frame)."
 "80026c18" = "Empty stub (`jr ra; nop`). A stubbed scene-init hook (mode-0x02 loader chain) that does nothing."
+"8002b92c" = "Two-instruction stub (`jr ra; _clear v0` - returns 0). Retail-stubbed hook, genuine jal target from main; classified PHANTOM in the worklist CSV."
+"8003f084" = "Two-instruction stub (`jr ra; _li v0,1` - returns 1). Retail-stubbed hook, genuine jal target from main; classified PHANTOM in the worklist CSV."
 "8002b96c" = "Empty stub (`jr ra; nop`). The retail-stripped per-cell tile-sprite emitter of the 8002b9xx family (siblings 8002b93c/944/94c/954); the scene-load tile-window pass 80017ec8 polls it once per cell (1024x in the trace) but it emits nothing. The genuine tile draw is the engine's wgpu field-background path."
 
 

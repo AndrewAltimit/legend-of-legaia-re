@@ -97,6 +97,7 @@ pub mod scus_core_helpers;
 pub mod status_effects;
 pub mod title_overlay;
 pub mod title_prim;
+pub mod vdf_morph;
 pub mod vram_rect_copy;
 pub mod world_map;
 
