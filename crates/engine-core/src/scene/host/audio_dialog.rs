@@ -107,7 +107,8 @@ impl SceneHost {
     /// Drain the world's pending BGM events through `director`, resolving
     /// each `Bgm{text_id, sub_op}` into the right director hook. Mirrors
     /// the field-VM op `0x35` sub-op table: `1` = start (resolve SEQ
-    /// bytes), `2` = pause, `3` = resume, `4` = stop, `9` = queue.
+    /// bytes), `2` = pause, `3` = resume, `4` = stop, `8` = re-attach +
+    /// volume re-apply (`FUN_80019898`), `9` = queue.
     /// Other sub-ops are passed through as no-ops (the host already
     /// surfaced them on the world's event queue for richer engines to
     /// consume).
@@ -151,8 +152,14 @@ impl SceneHost {
                         director.stop();
                         acted += 1;
                     }
+                    8 => {
+                        // FUN_80019898: re-attach the BGM sound source and
+                        // re-apply the field volume global (DAT_8007B6EC).
+                        director.reattach_volume(super::bgm_reattach_volume(self.bgm_volume_raw));
+                        acted += 1;
+                    }
                     _ => {
-                        // Other sub-ops (5/6/7/8/10/11) are control words -
+                        // Other sub-ops (5/6/7/10/11) are control words -
                         // surface them back on the queue for richer engines.
                         leftover.push(crate::field_events::FieldEvent::Bgm { text_id, sub_op });
                     }

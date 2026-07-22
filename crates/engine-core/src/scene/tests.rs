@@ -572,6 +572,45 @@ fn route_bgm_handles_control_subops_without_scene() {
     assert_eq!(d.log, vec!["pause", "resume", "stop"]);
 }
 
+/// `bgm_reattach_volume` (FUN_80019898) - the `(raw << 15) >> 16` level
+/// arithmetic: bits [16:1] of the raw global, sign-extended.
+#[test]
+fn bgm_reattach_volume_matches_retail_shift_pair() {
+    // Boot value: FUN_8001FFA4 stores -1 into DAT_8007B6EC.
+    assert_eq!(bgm_reattach_volume(-1), -1);
+    // Plain halving for small positives.
+    assert_eq!(bgm_reattach_volume(0x7F), 0x3F);
+    assert_eq!(bgm_reattach_volume(0x100), 0x80);
+    assert_eq!(bgm_reattach_volume(0), 0);
+    // 16-bit sign carried through bit 16: 0xFFFF halves to 0x7FFF
+    // (positive - the sign bit of the *shifted* value is bit 16 of raw).
+    assert_eq!(bgm_reattach_volume(0xFFFF), 0x7FFF);
+    // Bit 16 set makes the result negative.
+    assert_eq!(bgm_reattach_volume(0x1FFFF), -1);
+    // High bits above 16 are discarded by the << 15 (mod 2^17 window).
+    assert_eq!(bgm_reattach_volume(0x7FFE_0100), 0x80);
+}
+
+/// Sub-op 8 routes through `BgmDirector::reattach_volume` with the level
+/// derived from the host's raw volume mirror.
+#[test]
+fn bgm_reattach_subop_dispatches_level() {
+    #[derive(Default)]
+    struct Rec {
+        levels: Vec<i16>,
+    }
+    impl BgmDirector for Rec {
+        fn reattach_volume(&mut self, level: i16) {
+            self.levels.push(level);
+        }
+    }
+    let mut d = Rec::default();
+    // Mimic the route_bgm_events sub-op 8 branch with the boot raw value.
+    d.reattach_volume(bgm_reattach_volume(-1));
+    d.reattach_volume(bgm_reattach_volume(0x7F));
+    assert_eq!(d.levels, vec![-1, 0x3F]);
+}
+
 /// `class_counts` reports a histogram in CDNAME order.
 #[test]
 fn class_counts_matches_entries() {

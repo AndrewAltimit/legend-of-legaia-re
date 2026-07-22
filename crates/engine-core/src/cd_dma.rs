@@ -1,8 +1,9 @@
 //! CD-DMA streaming reader host-trait abstractions.
 //!
 //! PORT: FUN_8003DE7C, FUN_8003E800, FUN_8003E8A8, FUN_8003EB98, FUN_8003F128
+//! PORT: FUN_8005EA84
 //!
-//! Five SCUS-resident helpers around the CD streaming reader. They
+//! SCUS-resident helpers around the CD streaming reader. They
 //! sit one layer above the libcd primitives at `0x8005Dxxx` and one
 //! layer below the per-format loaders ([`scene_resources`],
 //! [`battle_session`], etc.) The trait exposed here lets the engine
@@ -628,6 +629,130 @@ impl crate::overlay_loader::OverlayLoaderHost for ProtCdDmaHost {
     }
 }
 
+// =========================================================================
+// Streaming-read completion sync - FUN_8005EA84
+// =========================================================================
+
+/// Overall streaming-read timeout in vsyncs (`0x4B0` = 1200 frames = 20
+/// seconds NTSC). Measured from the read-start timestamp `DAT_800796E0`;
+/// once exceeded, [`stream_read_sync`] reports [`STREAM_SYNC_TIMED_OUT`].
+pub const STREAM_SYNC_TIMEOUT_VSYNCS: i32 = 0x4B0;
+
+/// Per-sector stall window in vsyncs (`0x3C` = 60 frames = 1 second NTSC).
+/// Measured from the last-sector-IRQ timestamp `DAT_800796DC`; once
+/// exceeded, [`stream_read_sync`] restarts the streaming read.
+pub const STREAM_SYNC_STALL_VSYNCS: i32 = 0x3C;
+
+/// Return value of [`stream_read_sync`] when the overall timeout expired
+/// (the `li s0,-0x1` delay-slot default at `0x8005EAC8` that survives to
+/// the return when the timeout branch is taken).
+pub const STREAM_SYNC_TIMED_OUT: i32 = -1;
+
+/// Host surface for the streaming-read completion sync
+/// ([`stream_read_sync`], the port of `FUN_8005EA84`). Maps 1:1 onto the
+/// retail globals + callees the function touches:
+///
+/// | Method                    | Retail                                        |
+/// |---------------------------|-----------------------------------------------|
+/// | `vsync_now`               | `FUN_8005FB84(-1)` (VSync counter read)       |
+/// | `read_start_vsync`        | `DAT_800796E0` (read-start timestamp)         |
+/// | `last_sector_vsync`       | `DAT_800796DC` (last-sector-IRQ timestamp)    |
+/// | `sectors_remaining`       | `DAT_800796D8` (negative = error state)       |
+/// | `total_sector_count`      | `DAT_800796C4` (request's full sector count)  |
+/// | `restart_streaming_read`  | `FUN_8005E788(1)` (re-arm the IRQ chain)      |
+/// | `deliver_status`          | `FUN_8005BEAC(1, result)` (CdSync-shape poll) |
+pub trait StreamReadSyncHost {
+    /// Current vsync counter (`FUN_8005FB84(-1)` - absolute count, no wait).
+    fn vsync_now(&mut self) -> i32;
+    /// Vsync timestamp at which the streaming read started (`DAT_800796E0`).
+    fn read_start_vsync(&self) -> i32;
+    /// Vsync timestamp of the most recent sector-IRQ (`DAT_800796DC`).
+    fn last_sector_vsync(&self) -> i32;
+    /// Sectors still outstanding (`DAT_800796D8`). Negative marks the
+    /// error state the IRQ callback leaves behind on a failed read.
+    fn sectors_remaining(&self) -> i32;
+    /// Full sector count of the current request (`DAT_800796C4`).
+    fn total_sector_count(&self) -> i32;
+    /// Restart the streaming read (`FUN_8005E788(1)`): re-copies the
+    /// source globals and re-registers the per-IRQ callback.
+    fn restart_streaming_read(&mut self);
+    /// Deliver the drive status (`FUN_8005BEAC(1, result)`, which forwards
+    /// both register arguments into the CdSync-shaped poller
+    /// `FUN_8005CCB4`). `result` receives the status bytes when the host
+    /// has them; retail callers pass a small stack buffer.
+    fn deliver_status(&mut self, result: Option<&mut [u8]>);
+}
+
+/// PORT: FUN_8005EA84
+///
+/// Streaming-read completion sync - the libcd-layer `CdReadSync`-shaped
+/// poll/block primitive above the
+/// per-IRQ streaming reader (`FUN_8005E574` / `FUN_8005E788`). Two modes,
+/// selected by `poll_once` (retail `a0`):
+///
+/// - `poll_once = true` (retail `a0 = 1`): one health-check pass, then
+///   return. Used by the boot TOC loader `FUN_8003E4E8` and the path
+///   loader `FUN_8003D3C4`, which loop at the call site.
+/// - `poll_once = false` (retail `a0 = 0`): block until the read
+///   completes (`sectors_remaining` reaches 0) or the overall timeout
+///   expires. Used by the sync LBA reader `FUN_8005E4D4`.
+///
+/// Each pass (loop head `0x8005EAAC`):
+///
+/// 1. Default the report to [`STREAM_SYNC_TIMED_OUT`].
+/// 2. If `vsync_now() > read_start + 0x4B0`, the whole read timed out -
+///    keep the `-1` and fall through to the exit check.
+/// 3. Otherwise, a negative `sectors_remaining` (IRQ-side error state)
+///    or a stalled transfer (`last_sector + 0x3C < vsync_now()`, i.e.
+///    more than 1 s without a sector IRQ) restarts the stream via
+///    `restart_streaming_read` and reports the full
+///    `total_sector_count`; a healthy transfer reports
+///    `sectors_remaining` as-is.
+/// 4. Exit when `poll_once` is set, or when the report is `<= 0`
+///    (complete, or timed out).
+///
+/// On exit the drive status is delivered into `result` via
+/// `deliver_status` (retail `FUN_8005BEAC(1, result)`), and the last
+/// report is returned: sectors remaining, `0` on completion, or
+/// [`STREAM_SYNC_TIMED_OUT`].
+pub fn stream_read_sync(
+    host: &mut impl StreamReadSyncHost,
+    poll_once: bool,
+    result: Option<&mut [u8]>,
+) -> i32 {
+    let mut report;
+    loop {
+        // Delay-slot default at 0x8005EAC8: s0 = -1 (timed out).
+        report = STREAM_SYNC_TIMED_OUT;
+        let now = host.vsync_now();
+        if now <= host.read_start_vsync() + STREAM_SYNC_TIMEOUT_VSYNCS {
+            let stalled = if host.sectors_remaining() < 0 {
+                // bltz at 0x8005EAD4: IRQ-side error state.
+                true
+            } else {
+                // Second vsync read at 0x8005EADC: per-sector stall check.
+                let now = host.vsync_now();
+                host.last_sector_vsync() + STREAM_SYNC_STALL_VSYNCS < now
+            };
+            if stalled {
+                host.restart_streaming_read();
+                report = host.total_sector_count();
+            } else {
+                // Fresh re-read at 0x8005EB10 - the IRQ chain may have
+                // delivered sectors between the two loads.
+                report = host.sectors_remaining();
+            }
+        }
+        // Exit check at 0x8005EB14: poll mode returns after one pass;
+        // block mode loops while the report stays positive.
+        if poll_once || report <= 0 {
+            break;
+        }
+    }
+    host.deliver_status(result);
+    report
+}
+
 /// LBA → BCD `(minutes, seconds, frames)` triple. Mirrors the retail
 /// helper at `FUN_8005c42c` + `FUN_8005c328` chain used inside
 /// `FUN_8003e8a8` to materialise the per-request MSF into
@@ -965,6 +1090,154 @@ mod tests {
             last_dst_before,
             "dev branch must not trigger a CD-DMA read"
         );
+    }
+
+    // -- stream_read_sync (FUN_8005EA84) tests -------------------------
+
+    /// Scripted host for the streaming-read sync: the vsync counter
+    /// advances by one per read, and `sectors_remaining` counts down by
+    /// one per vsync read past `complete_at` (simulating the IRQ chain
+    /// delivering sectors while the CPU polls).
+    struct FakeSyncHost {
+        vsync: i32,
+        start_vsync: i32,
+        last_sector_vsync: i32,
+        sectors: i32,
+        total: i32,
+        restarts: u32,
+        delivered: u32,
+        /// When `Some(n)`, each `vsync_now` call past `n` decrements
+        /// `sectors` (floor 0) and refreshes `last_sector_vsync`.
+        drain_after: Option<i32>,
+    }
+
+    impl FakeSyncHost {
+        fn healthy(sectors: i32) -> Self {
+            Self {
+                vsync: 100,
+                start_vsync: 100,
+                last_sector_vsync: 100,
+                sectors,
+                total: sectors,
+                restarts: 0,
+                delivered: 0,
+                drain_after: None,
+            }
+        }
+    }
+
+    impl StreamReadSyncHost for FakeSyncHost {
+        fn vsync_now(&mut self) -> i32 {
+            self.vsync += 1;
+            if let Some(n) = self.drain_after
+                && self.vsync > n
+                && self.sectors > 0
+            {
+                self.sectors -= 1;
+                self.last_sector_vsync = self.vsync;
+            }
+            self.vsync
+        }
+        fn read_start_vsync(&self) -> i32 {
+            self.start_vsync
+        }
+        fn last_sector_vsync(&self) -> i32 {
+            self.last_sector_vsync
+        }
+        fn sectors_remaining(&self) -> i32 {
+            self.sectors
+        }
+        fn total_sector_count(&self) -> i32 {
+            self.total
+        }
+        fn restart_streaming_read(&mut self) {
+            self.restarts += 1;
+            self.sectors = self.total;
+            self.last_sector_vsync = self.vsync;
+        }
+        fn deliver_status(&mut self, result: Option<&mut [u8]>) {
+            self.delivered += 1;
+            if let Some(buf) = result
+                && let Some(b) = buf.first_mut()
+            {
+                *b = 0x02; // "ready" status marker for the test
+            }
+        }
+    }
+
+    #[test]
+    fn stream_sync_poll_reports_remaining_without_restart() {
+        let mut h = FakeSyncHost::healthy(5);
+        let n = stream_read_sync(&mut h, true, None);
+        assert_eq!(n, 5, "healthy in-flight read reports sectors remaining");
+        assert_eq!(h.restarts, 0);
+        assert_eq!(h.delivered, 1, "status delivered exactly once on exit");
+    }
+
+    #[test]
+    fn stream_sync_poll_reports_zero_when_complete() {
+        let mut h = FakeSyncHost::healthy(0);
+        assert_eq!(stream_read_sync(&mut h, true, None), 0);
+        assert_eq!(h.restarts, 0);
+    }
+
+    #[test]
+    fn stream_sync_block_loops_until_drained() {
+        let mut h = FakeSyncHost::healthy(3);
+        h.drain_after = Some(100); // sectors arrive from the first poll on
+        let n = stream_read_sync(&mut h, false, None);
+        assert_eq!(n, 0, "block mode returns only once the read completes");
+        assert_eq!(h.restarts, 0);
+        assert_eq!(h.delivered, 1);
+    }
+
+    #[test]
+    fn stream_sync_overall_timeout_reports_minus_one() {
+        let mut h = FakeSyncHost::healthy(4);
+        // Jump the clock past start + 0x4B0: the next vsync read exceeds
+        // the overall window, so even block mode exits with -1.
+        h.vsync = h.start_vsync + STREAM_SYNC_TIMEOUT_VSYNCS;
+        assert_eq!(stream_read_sync(&mut h, false, None), STREAM_SYNC_TIMED_OUT);
+        assert_eq!(h.restarts, 0, "timeout path does not restart the read");
+        assert_eq!(h.delivered, 1, "status still delivered on the way out");
+    }
+
+    #[test]
+    fn stream_sync_error_state_restarts_and_reports_total() {
+        let mut h = FakeSyncHost::healthy(6);
+        h.sectors = -1; // IRQ-side error state (DAT_800796D8 < 0)
+        let n = stream_read_sync(&mut h, true, None);
+        assert_eq!(n, 6, "restart reports the request's full sector count");
+        assert_eq!(h.restarts, 1);
+    }
+
+    #[test]
+    fn stream_sync_stall_restarts_and_reports_total() {
+        let mut h = FakeSyncHost::healthy(2);
+        // Last sector arrived long ago: > 0x3C vsyncs before "now".
+        h.last_sector_vsync = h.vsync - STREAM_SYNC_STALL_VSYNCS - 2;
+        let n = stream_read_sync(&mut h, true, None);
+        assert_eq!(n, 2, "total == remaining here; restart path taken");
+        assert_eq!(h.restarts, 1, "stalled transfer is re-armed");
+    }
+
+    #[test]
+    fn stream_sync_fresh_transfer_is_not_stalled() {
+        let mut h = FakeSyncHost::healthy(2);
+        // Exactly at the stall boundary: last + 0x3C == now is NOT a
+        // stall (retail slt is strict less-than).
+        h.last_sector_vsync = h.vsync + 2 - STREAM_SYNC_STALL_VSYNCS;
+        let n = stream_read_sync(&mut h, true, None);
+        assert_eq!(n, 2);
+        assert_eq!(h.restarts, 0, "boundary case must not restart");
+    }
+
+    #[test]
+    fn stream_sync_writes_status_into_result_buffer() {
+        let mut h = FakeSyncHost::healthy(0);
+        let mut status = [0u8; 8];
+        stream_read_sync(&mut h, true, Some(&mut status));
+        assert_eq!(status[0], 0x02, "deliver_status saw the result buffer");
     }
 
     #[test]

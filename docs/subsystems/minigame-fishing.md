@@ -26,7 +26,7 @@ The per-frame driver is `FUN_801cf3bc` (`overlay_fishing_801cf3bc.txt`). It is d
 | `0x28` | Auxiliary animation wait keyed on `DAT_801d9164`; returns to `10` when the helper `FUN_801d7528` completes. |
 | `0x2d` | Miss / retry bookkeeping (`DAT_801d9268` countdown via `FUN_801d6f10`), then back to `0x32`. |
 | `0x64`..`0x66` | Shop / point-exchange branch: confirm prompts (`FUN_801d72a0`, but see [VA aliasing](#va-aliasing-in-this-band)) gating the buy / sell helpers `FUN_801d06c8` / `FUN_801d092c` / `FUN_801d0c3c`. |
-| `0x6e`,`0x78`..`0x7a` | Shop sub-flows that call the same buy / sell helpers and the picker `FUN_801d0474`. |
+| `0x6e`,`0x78`..`0x7a` | Shop sub-flows that call the same buy / sell helpers and the picker `FUN_801d0474` (static extract: the five-row main-menu picker - snap-wrap cursor, confirm jump table to states `0x0A`/`0x65`/`0x6E`/`0x78`/`0xC8`, rows 2/3 snapshot the points bank, row 4 arms the venue exit; port `engine-core::fishing::FishingMenu`). |
 | `0x96` | "You have lost the lure" / no-rod end screen; a button edge advances to `200`. |
 | `200` (`0xc8`) | Exit / fade-out: ramps a fade value to white and, once full, plays the leaving XA cue and tears the mode down. |
 
@@ -112,10 +112,18 @@ can hold another's code at some VAs. Attribute by *content*, not by the dump's
 filename: the functions above are pinned by their own reads (the lure item ids
 `0x9d`..`0x9f`, the `DAT_801d9xxx` globals, the shared emitter `FUN_801d63b0`).
 
-`FUN_801d72a0` is the open case: the captured occupant of that VA is a
-help-text screen belonging to another minigame, not the shop confirm prompt the
-state table names. The state-table reading stands on the driver's call site;
-the function body itself is **Unknown** pending a clean static extract.
+`FUN_801d72a0` is settled by the clean static extract (PROT entry 0972 file
+offset `0x8A88` at base `0x801CE818`): the fishing overlay's own occupant of
+that VA is a **two-page help-panel renderer** `(x, y, page)`. Page 0 draws 14
+text lines from the string-pointer table at `0x801D8130`, page 1 draws 15
+lines from the sibling table at `0x801D8168` (which starts exactly 14 words
+later, bounding table 0); both use a 13 px line pitch through the glyph
+renderer `FUN_80036888`, draw a per-page footer string (`0x801CF048` /
+`0x801CF050`) at `(0xE0, 0xCA)`, emit the widget frame
+`FUN_8002C69C(x, y, 0x119, 0xC3)`, and store the field-subsystem mode byte
+`DAT_80073F20 = 0x10` on entry. So the state table's "confirm prompt" naming
+described the call site, not this body - the confirm gating lives in the
+buy / sell helpers. Layout port: `engine-core::fishing::help_panel_layout`.
 
 ## Per-species parameter table
 

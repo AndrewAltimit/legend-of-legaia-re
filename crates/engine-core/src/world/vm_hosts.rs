@@ -820,6 +820,32 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.pending_scripted_encounter = Some(window.to_vec());
     }
 
+    // PORT: FUN_8003C7EC
+    fn op4c_n_e_sub_a_call_c7ec(&mut self) {
+        // Field-VM op `4C EA` - the scripted game-over trigger. Retail
+        // stores master mode 0x16 (22 = CARD INIT, the CARD/CONTINUE
+        // title flow) + `_DAT_8007BB00 = 1` + clears `DAT_8007B750` bit 1,
+        // then pauses the BGM (`FUN_800266E0(0x8007052C)` - the same
+        // primitive as BGM sub-op 2). The engine's CARD/CONTINUE flow is
+        // its defeat state: raise `game_over` and route a BGM pause.
+        self.world.game_over = true;
+        self.world.pending_field_events.push(FieldEvent::Bgm {
+            text_id: 0,
+            sub_op: 2,
+        });
+    }
+
+    fn op4c_n_e_sub_1_text_actor(&mut self, text_buf: &[u8], script_id: u16) {
+        // Field-VM op `4C E1` - spawn the single-line text balloon
+        // (`FUN_8003C764`). Replacing the Option is the retail
+        // predecessor-kill (the handler's first lines kill any live
+        // sibling balloon). The X centering waits for a host-side font
+        // measurement; the tick lives in `World::tick`
+        // (`crate::text_balloon::TextBalloon::tick`).
+        let _ = script_id;
+        self.world.text_balloon = Some(crate::text_balloon::TextBalloon::spawn(text_buf));
+    }
+
     fn op4c_n_e_sub2_fmv_trigger(&mut self, fmv_id: i16) {
         // Field-VM op `0x4C 0xE2` - retail handler at 0x801E30E4 writes
         // the resolved s16 to `_DAT_8007BA78` (FMV index) and pokes
