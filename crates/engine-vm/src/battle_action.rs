@@ -70,5 +70,8 @@ pub use pool_ops::*;
 mod queue_applier;
 pub use queue_applier::*;
 
+mod flash_ramp;
+pub use flash_ramp::*;
+
 #[cfg(test)]
 mod tests;
