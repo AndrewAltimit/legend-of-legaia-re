@@ -60,6 +60,15 @@ off either end is a silent no-op:
   list. Port: `engine-core::shop::SellQuantitySession` (+
   `sell_credit` / `apply_sale_gold` / `sell_list_fixup`).
 
+Their sibling is the **buy recipient picker** (`FUN_801DB380`): before
+the quantity screen the buy flow asks who the purchase is for - row 0
+buys one copy into the bag, a party row runs an equippability check
+(equip-record `+6` mask vs the per-character mask byte
+`0x801E43F0[char]`; mismatch buzzes) and on a match buys **and equips
+immediately**, returning the replaced piece to the bag; the purchase
+itself never enters the bag. Same Point Card accrual and toast. Port:
+`engine-core::shop::BuyRecipientSession`.
+
 Both prices are the **item table's** halfword (`0x80074368 + id*0xC +
 2`) - the retail item shop carries no per-shop gold price, which is
 why the sell-side proceeds derive from the same table the buy list

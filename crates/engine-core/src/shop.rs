@@ -566,6 +566,167 @@ impl BuyQuantitySession {
     }
 }
 
+/// What a [`BuyRecipientSession`] frame produced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuyRecipientEvent {
+    None,
+    /// Cursor moved between the rows (SFX `0x21`).
+    Moved,
+    /// Row 0 confirmed: a plain single-unit buy into the bag (SFX
+    /// `0x2C`) - add one copy, debit `cost`, credit `point_credit`.
+    BoughtToBag {
+        item_id: u8,
+        cost: i32,
+        point_credit: i32,
+    },
+    /// A party row confirmed (SFX `0x24`): buy **and equip now**. The
+    /// previously equipped piece in the target slot (if any) returns to
+    /// the bag (`FUN_800421D4(old, 1)` at `0x801db6a4`), the purchase
+    /// equips directly - it never enters the bag - then the gold debit
+    /// and Point Card accrual run and the ability bits rebuild
+    /// (`FUN_80042558`).
+    BoughtAndEquipped {
+        /// 0-based party index (`cursor - 1`).
+        party_index: u8,
+        item_id: u8,
+        cost: i32,
+        point_credit: i32,
+    },
+    /// Confirmed a party member who cannot equip the item (SFX `0x23`).
+    Buzz,
+    /// Backed out (SFX `0x37`) - back to the buy list.
+    Cancelled,
+    /// Session finished (post-toast) - back to the buy list.
+    ExitToBuyList,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BuyRecipientPhase {
+    Init,
+    Interactive,
+    /// Point Card toast (script `0x801E4EA8`): waits for a press.
+    ToastWait,
+    Exit,
+    Done,
+}
+
+/// PORT: FUN_801DB380 (menu-overlay shop **buy recipient picker**
+/// sub-screen; `see ghidra/scripts/funcs/overlay_menu_801db380.txt`).
+///
+/// Navigates `party_count + 1` rows through the shared cursor
+/// primitive (`FUN_801D688C`, wrap - port
+/// [`crate::menu_input::menu_cursor_nav`]): row 0 buys one copy into
+/// the bag, a party row buys **and equips immediately** after an
+/// equippability check (item subtype -> equip-record `+6` mask vs the
+/// per-character mask byte `0x801E43F0[char]`; a mismatch buzzes and
+/// stays). Both purchase paths debit the item-table price, accrue the
+/// Point Card ([`point_card_credit`], gated on holding item `0xFE`)
+/// and - only when the accrual ran - hold a toast for a button press
+/// (SFX `0x20`) before returning to the buy list.
+///
+/// NOT WIRED: the hosts' shop flow buys into the bag only; equip-now
+/// needs the equip-session bridge.
+#[derive(Debug, Clone)]
+pub struct BuyRecipientSession {
+    pub item_id: u8,
+    /// Item-record price halfword.
+    pub price: u16,
+    pub point_card_held: bool,
+    /// Cursor row: 0 = the bag, `1..=party` = party members.
+    pub cursor: u32,
+    /// Per-party-member equippability (index 0 = party member 0 = row 1).
+    pub can_equip: Vec<bool>,
+    phase: BuyRecipientPhase,
+}
+
+impl BuyRecipientSession {
+    pub fn new(item_id: u8, price: u16, can_equip: Vec<bool>, point_card_held: bool) -> Self {
+        Self {
+            item_id,
+            price,
+            point_card_held,
+            cursor: 0,
+            can_equip,
+            phase: BuyRecipientPhase::Init,
+        }
+    }
+
+    /// Drive one frame from the menu nav-button edges.
+    pub fn tick(&mut self, buttons: crate::menu_input::NavButtons) -> BuyRecipientEvent {
+        use crate::menu_input::CursorNav;
+        match self.phase {
+            BuyRecipientPhase::Init => {
+                self.cursor = 0;
+                self.phase = BuyRecipientPhase::Interactive;
+                BuyRecipientEvent::None
+            }
+            BuyRecipientPhase::Interactive => {
+                let rows = self.can_equip.len() as u32 + 1;
+                match crate::menu_input::menu_cursor_nav(&mut self.cursor, rows, true, buttons) {
+                    CursorNav::Confirm => {
+                        let row = self.cursor & 0xFFF;
+                        let point_credit = if self.point_card_held {
+                            point_card_credit(self.price, 1)
+                        } else {
+                            0
+                        };
+                        if row == 0 {
+                            self.phase = if self.point_card_held {
+                                BuyRecipientPhase::ToastWait
+                            } else {
+                                BuyRecipientPhase::Exit
+                            };
+                            BuyRecipientEvent::BoughtToBag {
+                                item_id: self.item_id,
+                                cost: self.price as i32,
+                                point_credit,
+                            }
+                        } else if self.can_equip.get(row as usize - 1) == Some(&true) {
+                            self.phase = if self.point_card_held {
+                                BuyRecipientPhase::ToastWait
+                            } else {
+                                BuyRecipientPhase::Exit
+                            };
+                            BuyRecipientEvent::BoughtAndEquipped {
+                                party_index: (row - 1) as u8,
+                                item_id: self.item_id,
+                                cost: self.price as i32,
+                                point_credit,
+                            }
+                        } else {
+                            // Retail buzzes and stays on this sub-screen.
+                            BuyRecipientEvent::Buzz
+                        }
+                    }
+                    CursorNav::Cancel => {
+                        self.phase = BuyRecipientPhase::Done;
+                        BuyRecipientEvent::Cancelled
+                    }
+                    CursorNav::Moved => BuyRecipientEvent::Moved,
+                    CursorNav::None => BuyRecipientEvent::None,
+                }
+            }
+            BuyRecipientPhase::ToastWait => {
+                if buttons.confirm || buttons.cancel {
+                    self.phase = BuyRecipientPhase::Done;
+                    BuyRecipientEvent::ExitToBuyList
+                } else {
+                    BuyRecipientEvent::None
+                }
+            }
+            BuyRecipientPhase::Exit => {
+                self.phase = BuyRecipientPhase::Done;
+                BuyRecipientEvent::ExitToBuyList
+            }
+            BuyRecipientPhase::Done => BuyRecipientEvent::None,
+        }
+    }
+
+    pub fn is_done(&self) -> bool {
+        self.phase == BuyRecipientPhase::Done
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -789,6 +950,90 @@ mod tests {
         let mut s = SellQuantitySession::new(0x40, 100, 5);
         s.tick(0, 1);
         assert_eq!(s.tick(PadButton::Circle.mask(), 1), SellQtyEvent::Cancelled);
+        assert!(s.is_done());
+    }
+
+    use crate::menu_input::NavButtons;
+
+    fn nav(confirm: bool, cancel: bool, left: bool, right: bool) -> NavButtons {
+        NavButtons {
+            confirm,
+            cancel,
+            left,
+            right,
+        }
+    }
+
+    #[test]
+    fn buy_recipient_row0_buys_into_bag() {
+        let mut s = BuyRecipientSession::new(0x30, 200, vec![true, false], false);
+        assert_eq!(
+            s.tick(nav(false, false, false, false)),
+            BuyRecipientEvent::None
+        );
+        assert_eq!(
+            s.tick(nav(true, false, false, false)),
+            BuyRecipientEvent::BoughtToBag {
+                item_id: 0x30,
+                cost: 200,
+                point_credit: 0,
+            }
+        );
+        assert_eq!(
+            s.tick(nav(false, false, false, false)),
+            BuyRecipientEvent::ExitToBuyList
+        );
+        assert!(s.is_done());
+    }
+
+    #[test]
+    fn buy_recipient_party_row_equips_or_buzzes() {
+        let mut s = BuyRecipientSession::new(0x30, 200, vec![true, false], true);
+        s.tick(nav(false, false, false, false));
+        assert_eq!(
+            s.tick(nav(false, false, false, true)),
+            BuyRecipientEvent::Moved
+        );
+        assert_eq!(
+            s.tick(nav(false, false, false, true)),
+            BuyRecipientEvent::Moved
+        );
+        // Row 2 = party member 1, cannot equip -> buzz, stays.
+        assert_eq!(
+            s.tick(nav(true, false, false, false)),
+            BuyRecipientEvent::Buzz
+        );
+        assert!(!s.is_done());
+        // Back to row 1 = party member 0 (can equip).
+        s.tick(nav(false, false, true, false));
+        assert_eq!(
+            s.tick(nav(true, false, false, false)),
+            BuyRecipientEvent::BoughtAndEquipped {
+                party_index: 0,
+                item_id: 0x30,
+                cost: 200,
+                point_credit: 10,
+            }
+        );
+        // Point Card toast holds for a press.
+        assert_eq!(
+            s.tick(nav(false, false, false, false)),
+            BuyRecipientEvent::None
+        );
+        assert_eq!(
+            s.tick(nav(true, false, false, false)),
+            BuyRecipientEvent::ExitToBuyList
+        );
+    }
+
+    #[test]
+    fn buy_recipient_cancel_returns_to_list() {
+        let mut s = BuyRecipientSession::new(0x30, 200, vec![true], false);
+        s.tick(nav(false, false, false, false));
+        assert_eq!(
+            s.tick(nav(false, true, false, false)),
+            BuyRecipientEvent::Cancelled
+        );
         assert!(s.is_done());
     }
 
