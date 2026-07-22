@@ -42,6 +42,9 @@
 //! The four single-slot arms shift with `srl` and the five-slot arm with
 //! `sra`. Both operate on non-negative values here (a sum of five `u8`s), so
 //! the results agree; the port uses one unsigned shift.
+//!
+//! REF: FUN_80053CB8 (the battle-load seeder whose skipped ATK byte this
+//! path supplies - ported in `stat_init`, referenced here only)
 
 use super::stat_init::EQUIP_SLOTS;
 

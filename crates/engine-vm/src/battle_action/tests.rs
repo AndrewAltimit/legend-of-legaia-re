@@ -1517,7 +1517,9 @@ fn attack_chain_no_art_strike_when_record_missing() {
     );
 }
 
-// --- arms execution-time weapon fold (FUN_801EC3E4) -------------------------
+// --- arms execution-time weapon fold ----------------------------------------
+// REF: FUN_801EC3E4 (kernel + `// PORT:` tags live in
+// `battle_formulas::arms_fold`; these drive it through the state machine)
 
 #[test]
 fn arms_command_folds_the_equipped_weapon_into_atk_working() {

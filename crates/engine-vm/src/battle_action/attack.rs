@@ -163,6 +163,7 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
     // (ctx[7], the command byte, the actor's +0x1F4 cursor, the slot), with
     // this strike as the record's last step.
     // PORT: FUN_801EC3E4 (call site for the ATK-working weapon fold)
+    // REF: FUN_801E295C (the state machine this call site sits in)
     let (input_cursor, current_command) = host
         .actor(slot)
         .map(|a| (a.input_cursor, a.current_anim))
