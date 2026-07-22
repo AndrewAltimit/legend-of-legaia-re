@@ -614,6 +614,7 @@
 "801e23ec" = "INTERIOR: VA lies inside the dumped body of 801de840 in 0897 - `801e23ec  lh v0,0x68(s5)` is an instruction of the field VM"
 "801e30e4" = "INTERIOR: dump resolves entry=801de840, not 801e30e4; `801e30e4  jal 0x8003ce9c` is an instruction of the field VM in 0897 too"
 "801f7628" = "INTERIOR: dump resolves entry=801f5748/801f71e0, not 801f7628"
+"801ecc00" = "INTERIOR: an equipped-weapon sub-read inside FUN_801EC3E4 (the Arms execution resolver, PROT 0898, body 0x2718 bytes from 0x801EC3E4). Verified from 0898 image bytes: the nearest preceding `addiu sp,sp,-0x50` is 0x801EC3EC with no intervening `jr ra`, and 0x801ECC00 itself is `lbu v1,0x760(v0)` with v0/s6 live on entry - no prologue of its own. Ported as part of 801ec3e4. NB an earlier PHANTOM reading (`only dump body is a 0-instruction stub`) came from the VA-aliased overlay_0896_bat_back_dat dump, where the same VA is data and decodes to one undecodable word; the two overlay_battle_action dumps at this VA carry the real body and agree with the image byte-for-byte."
 
 # Entries into multi-entry assembly routines: the body has no `jr ra` and exits
 # by jumping into code it does not own. The `0x80043580` family below is the
@@ -690,6 +691,10 @@
 "80055b4c" = "PHANTOM: only dump body is a 0-instruction stub"
 "801d58e0" = "PHANTOM: only dump body is a 4-instruction stub"
 "801f5d90" = "PHANTOM: only dump body is a 0-instruction stub"
+"801f16a0" = "PHANTOM: printed address of a mis-based import. The dump program 0905_xxx_dat.BIN was loaded at 0x801F0000, but the slot-B link base is 0x801F69D8, so every printed address is 0x69D8 low. The body is real stager code whose true entry is 0x801F8078 (0905 file +0x16A0 = 27bdffd0, addiu sp,sp,-0x30). No image holds an entry at 801f16a0 itself: PROT 0898's word there (file +0x22E88) is sltiu, mid-function."
+"801f2d68" = "PHANTOM: same mis-based 0905 import as 801f16a0 (loaded 0x801F0000, true base 0x801F69D8). True entry 0x801F9740 (0905 file +0x2D68 = 27bdffd0). PROT 0898's word at 801f2d68 (file +0x24550) is beq, mid-function."
+"801f36a0" = "PHANTOM: same mis-based 0905 import as 801f16a0. True entry 0x801FA078 (0905 file +0x36A0 = 27bdffd0). PROT 0898's word at 801f36a0 (file +0x24E88) is sh, mid-function."
+"801f4dd0" = "PHANTOM: same mis-based 0905 import as 801f16a0. True entry 0x801FB7A8 (0905 file +0x4DD0 = 27bdffd0). PROT 0898's word at 801f4dd0 (file +0x265B8) is the pointer literal 801f4a98, not an instruction."
 
 # Worklist addresses that name data or a region boundary rather than code.
 [worklist_data]

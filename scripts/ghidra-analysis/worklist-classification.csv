@@ -250,7 +250,7 @@ addr,class,reason
 801ea9b0,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview); no second dumped body here
 801ec0dc,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
 801ec3e4,REAL,self-entry body of 2502 instructions returning `jr ra`
-801ecc00,PHANTOM,only dump body is a 0-instruction stub
+801ecc00,INTERIOR,"equipped-weapon sub-read inside FUN_801EC3E4 (Arms execution resolver, PROT 0898). Verified from 0898 image bytes: nearest preceding `addiu sp,sp,-0x50` is 0x801EC3EC, no intervening `jr ra`; 0x801ECC00 is `lbu v1,0x760(v0)` with v0/s6 live. The earlier PHANTOM `0-instruction stub` reading came from the VA-aliased overlay_0896_bat_back_dat dump, where the VA is data"
 801ee094,REAL,self-entry body of 165 instructions returning `jr ra`
 801ee328,REAL,self-entry body of 171 instructions returning `jr ra`
 801ee90c,REAL,self-entry body of 275 instructions returning `jr ra`
