@@ -204,8 +204,9 @@ const MIN_RECORD_BYTES: usize = 0x4C;
 /// Returns `Ok(None)` for an out-of-range id or an empty / filler slot (one
 /// whose `dec_size` header fails the plausibility bounds). Returns `Err` only
 /// when the slot claims a valid `dec_size` but the LZS stream fails to decode
-/// to that length. Shared by [`record`] and [`mesh`].
-fn decode_block(entry: &[u8], id: u16) -> Result<Option<Vec<u8>>> {
+/// to that length. Shared by [`record`] and [`mesh`]; the raw block is also
+/// the modder-facing edit surface (see [`encode_slot`] for the way back).
+pub fn decode_block(entry: &[u8], id: u16) -> Result<Option<Vec<u8>>> {
     if id == 0 {
         return Ok(None);
     }
@@ -230,4 +231,37 @@ fn decode_block(entry: &[u8], id: u16) -> Result<Option<Vec<u8>>> {
         );
     }
     Ok(Some(block))
+}
+
+/// Re-pack a decoded monster block into a full [`SLOT_STRIDE`]-byte archive
+/// slot: `[u32 block_len][LZS stream]`, zero-padded. The encoder is not
+/// byte-identical to Sony's, but the retail decoder accepts any valid stream;
+/// errors when the re-packed stream would overflow the fixed slot.
+pub fn encode_slot(block: &[u8]) -> Result<Vec<u8>> {
+    let stream = legaia_lzs::compress(block);
+    if 4 + stream.len() > SLOT_STRIDE {
+        bail!(
+            "re-packed stream does not fit a monster slot: 4 + {} > {SLOT_STRIDE}",
+            stream.len()
+        );
+    }
+    let mut out = Vec::with_capacity(SLOT_STRIDE);
+    out.extend_from_slice(&(block.len() as u32).to_le_bytes());
+    out.extend_from_slice(&stream);
+    out.resize(SLOT_STRIDE, 0);
+    Ok(out)
+}
+
+#[cfg(test)]
+mod slot_tests {
+    #[test]
+    fn encode_slot_roundtrips_through_the_retail_decoder_shape() {
+        let block: Vec<u8> = (0..2048u32).map(|i| (i % 251) as u8).collect();
+        let slot = super::encode_slot(&block).unwrap();
+        assert_eq!(slot.len(), super::SLOT_STRIDE);
+        let declared = u32::from_le_bytes(slot[0..4].try_into().unwrap()) as usize;
+        assert_eq!(declared, block.len());
+        let decoded = legaia_lzs::decompress(&slot[4..], declared).unwrap();
+        assert_eq!(decoded, block);
+    }
 }

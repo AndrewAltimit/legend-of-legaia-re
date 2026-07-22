@@ -13,6 +13,7 @@
 
 mod cli;
 mod commands;
+mod monster_block;
 mod randomize;
 mod translate;
 mod util;
@@ -46,6 +47,21 @@ fn main() -> Result<()> {
         Cmd::Shops { input } => commands::cmd_shops(&input),
         Cmd::Casino { input } => commands::cmd_casino(&input),
         Cmd::MonsterStats { input } => commands::cmd_monster_stats(&input),
+        Cmd::MonsterBlock {
+            input,
+            id,
+            dump,
+            write,
+            output,
+            patch,
+        } => monster_block::cmd_monster_block(
+            &input,
+            id,
+            dump.as_deref(),
+            write.as_deref(),
+            output.as_deref(),
+            patch.as_deref(),
+        ),
         Cmd::MovePowers { input } => commands::cmd_move_powers(&input),
         Cmd::Affinity { input } => commands::cmd_affinity(&input),
         Cmd::SpellCosts { input } => commands::cmd_spell_costs(&input),

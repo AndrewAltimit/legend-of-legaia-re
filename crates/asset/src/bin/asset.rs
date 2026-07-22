@@ -530,6 +530,17 @@ enum Cmd {
         /// geometry, material, and animation together. Requires `--id`.
         #[arg(long)]
         glb: Option<PathBuf>,
+        /// LZS-decode the monster's whole slot and write the raw decoded block
+        /// (stat record head + name string + mesh + animations) to this path.
+        /// Edit it there, then put it back with `--write-block`. Requires
+        /// `--id`.
+        #[arg(long)]
+        dump_block: Option<PathBuf>,
+        /// Re-pack an edited decoded block (from `--dump-block`) into the
+        /// monster's `0x14000`-byte slot and rewrite the input archive file in
+        /// place. Requires `--id`.
+        #[arg(long)]
+        write_block: Option<PathBuf>,
     },
     /// Decode the player-character mesh pack at PROT entry `0874_befect_data`
     /// (§0). Prints the 5-slot shape (Vahn / Noa / Gala / + 2 auxiliary slots)
@@ -1176,6 +1187,8 @@ fn main() -> Result<()> {
             palette,
             anim,
             glb,
+            dump_block,
+            write_block,
         } => monster_archive_one(
             &input,
             id,
@@ -1184,6 +1197,8 @@ fn main() -> Result<()> {
             palette,
             anim,
             glb.as_deref(),
+            dump_block.as_deref(),
+            write_block.as_deref(),
         ),
         Cmd::CharacterPack {
             input,

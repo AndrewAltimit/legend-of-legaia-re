@@ -129,7 +129,10 @@ CLI `asset monster-archive --id N --obj <out>` exports the mesh, `--texture-png
 <out>` bakes the texture page, `--anim` lists the action animations, and `--glb
 <out>` exports the whole thing - mesh + baked texture + every action animation - as
 a binary glTF (`monster_gltf::export_glb`; per-object animated nodes + a per-palette
-texture atlas).
+texture atlas). For editing rather than exporting, `--dump-block` writes the
+monster's whole LZS-decoded block to a file and `--write-block` re-packs an
+edited block into its slot in place (`decode_block` / `encode_slot`); the
+disc-image equivalent is `legaia-rando monster-block`.
 
 `scene_gltf::build_scene_glb` is the sibling exporter for assembled
 VRAM-textured scenes (kingdom continents, full town maps, single scene
@@ -502,7 +505,7 @@ asset field-pack / field-pack-scan
 asset effect-bundle / effect-bundle-scan
 asset battle-data-pack / battle-data-pack-scan
 asset befect-cluster   <PROT.DAT> --cdname <CDNAME.TXT> --out <dir>
-asset monster-archive  [--id N --obj/--texture-png/--anim/--glb]
+asset monster-archive  [--id N --obj/--texture-png/--anim/--glb/--dump-block/--write-block]
 asset character-pack / battle-char-pack / field-char-tex
 asset player-anm / player-anm-scan
 asset scene-v12 / scene-v12-scan

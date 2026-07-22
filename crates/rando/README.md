@@ -93,6 +93,8 @@ Re-pack a monster slot in the `battle_data` archive (PROT 867).
   an in-place mutator, recompresses with `legaia_lzs::compress`, and zero-pads back
   to the original slot size so no offset moves.
 - `set_drop` is the drop-id + chance wrapper.
+- CLI: `legaia-rando monster-block --dump/--write` exposes the same loop for
+  hand edits (dump the decoded block, hex-edit, re-pack onto a copy with a PPF).
 
 ### `disc`
 

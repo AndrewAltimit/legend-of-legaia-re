@@ -69,7 +69,38 @@ and re-parses the result. The same region guard applies here - that is what
 catches "this patch was built against a different disc" before anyone plays a
 corrupt hybrid.
 
-## 4. Translate the game
+## 4. Hand-edit one monster (stats / element / name)
+
+The randomizer shuffles monster stats wholesale; for a curated rebalance you
+edit records directly. Every monster lives in the `battle_data` archive (PROT
+entry 867) as an LZS-compressed block - `monster-block` does the slot math and
+the compression for you, so the edit loop is dump → hex-edit → write:
+
+```bash
+# 1. Dump the decoded block (monster-stats lists the 1-based ids).
+./legaia-rando monster-block --input "/path/to/disc.bin" --id 10 --dump m10.bin
+
+# 2. Edit m10.bin in any hex editor. The stat record starts at +0x00:
+#    HP +0x0C, AGL +0x0E, MP +0x10, ATK +0x12, DEF +0x14/+0x16, INT +0x18,
+#    SPD +0x1A (u16 little-endian each), element +0x1D (u8), gold +0x44,
+#    exp +0x46, drop item/chance +0x48/+0x49. The name string is in the same
+#    block at the offset the u32 at +0x00 points to.
+
+# 3. Re-pack onto a copy (and emit a shareable PPF).
+./legaia-rando monster-block --input "/path/to/disc.bin" --id 10 \
+    --write m10.bin --output edited.bin --patch m10.ppf
+```
+
+The write is the same machinery as the randomizer - the block is recompressed
+(the encoder need not match Sony's bytes; the retail decoder accepts any valid
+stream), padded back into its fixed `0x14000`-byte slot, and the touched
+sectors get their EDC/ECC re-encoded. With `--output` the tool re-parses the
+patched image and confirms the record still decodes before declaring success.
+Full record layout: [battle.md](../subsystems/battle.md); the equivalent flags
+on the extracted tree are `asset monster-archive --dump-block` /
+`--write-block` ([extracting-assets.md](extracting-assets.md)).
+
+## 5. Translate the game
 
 The `translate` family exports the disc's text as an editable YAML **language
 pack** and imports a filled pack back as a same-size in-place patch
@@ -115,7 +146,7 @@ onto USA coordinates instead of translating from scratch:
 well the two discs align and how much official text fits the USA budgets. See
 [pal-localizations.md](../tooling/pal-localizations.md).
 
-## 5. Inspect saves
+## 6. Inspect saves
 
 `save-tool` reads PSX memory-card images (`.mcr` and friends, e.g. from an
 emulator's card directory):
@@ -134,7 +165,7 @@ record-relative `+0x2A7`. `--offset` / `--block` accept `0x`-hex or decimal.
 `sc-diff` diffs the save block of two cards to pin what a gameplay change
 wrote. Record layout: [save-record.md](../formats/save-record.md).
 
-## 6. Look things up without a disc
+## 7. Look things up without a disc
 
 `gamedata-tool` bakes in the curated game-data tables (arts, magic, items,
 weapons, armor, accessories, enemies, shops, casino, fishing) - handy as
@@ -150,7 +181,7 @@ ground truth beside the randomizer's read-only listings:
 
 Sources and caveats: [gamedata.md](../reference/gamedata.md).
 
-## 7. Cheat databases
+## 8. Cheat databases
 
 `cheat-tool` parses GameShark / Pro-Action-Replay cheat collections and
 classifies each code by the RAM region it targets. The community Legaia

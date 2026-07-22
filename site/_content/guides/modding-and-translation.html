@@ -40,8 +40,26 @@
   <p><code>verify</code> applies the patch to a copy, confirms every record applied cleanly, and re-parses the result. The same region guard applies here - that is what catches "this patch was built against a different disc" before anyone plays a corrupt hybrid.</p>
 </section>
 
+<section class="doc-section" id="monster-block">
+  <h2>4 &middot; Hand-edit one monster (stats / element / name)</h2>
+  <p>The randomizer shuffles monster stats wholesale; for a curated rebalance you edit records directly. Every monster lives in the <code>battle_data</code> archive (PROT entry 867) as an LZS-compressed block - <code>monster-block</code> does the slot math and the compression for you, so the edit loop is dump &rarr; hex-edit &rarr; write:</p>
+<pre><code># 1. Dump the decoded block (monster-stats lists the 1-based ids).
+./legaia-rando monster-block --input "/path/to/disc.bin" --id 10 --dump m10.bin
+
+# 2. Edit m10.bin in any hex editor. The stat record starts at +0x00:
+#    HP +0x0C, AGL +0x0E, MP +0x10, ATK +0x12, DEF +0x14/+0x16, INT +0x18,
+#    SPD +0x1A (u16 little-endian each), element +0x1D (u8), gold +0x44,
+#    exp +0x46, drop item/chance +0x48/+0x49. The name string is in the same
+#    block at the offset the u32 at +0x00 points to.
+
+# 3. Re-pack onto a copy (and emit a shareable PPF).
+./legaia-rando monster-block --input "/path/to/disc.bin" --id 10 \
+    --write m10.bin --output edited.bin --patch m10.ppf</code></pre>
+  <p>The write is the same machinery as the randomizer - the block is recompressed (the encoder need not match Sony's bytes; the retail decoder accepts any valid stream), padded back into its fixed <code>0x14000</code>-byte slot, and the touched sectors get their EDC/ECC re-encoded. With <code>--output</code> the tool re-parses the patched image and confirms the record still decodes before declaring success. Full record layout: <a href="../subsystems/battle.html">battle system</a>; the equivalent flags on the extracted tree are <code>asset monster-archive --dump-block</code> / <code>--write-block</code> (<a href="extracting-assets.html">extracting assets</a>).</p>
+</section>
+
 <section class="doc-section" id="translate">
-  <h2>4 &middot; Translate the game</h2>
+  <h2>5 &middot; Translate the game</h2>
   <p>The <code>translate</code> family exports the disc's text as an editable YAML <strong>language pack</strong> and imports a filled pack back as a same-size in-place patch (<a href="../tooling/translation.html">translation / language packs</a> is the full reference):</p>
 <pre><code># 1. Export the text (working pack - contains game text, keep it private).
 ./legaia-rando translate export --input "/path/to/disc.bin" -o legaia_en.yaml
@@ -65,7 +83,7 @@
 </section>
 
 <section class="doc-section" id="save-tool">
-  <h2>5 &middot; Inspect saves</h2>
+  <h2>6 &middot; Inspect saves</h2>
   <p><code>save-tool</code> reads PSX memory-card images (<code>.mcr</code> and friends, e.g. from an emulator's card directory):</p>
 <pre><code>./save-tool dir   card.mcr                 # directory entries (magic-checked)
 ./save-tool saves card.mcr                 # active save blocks + product codes
@@ -75,7 +93,7 @@
 </section>
 
 <section class="doc-section" id="gamedata">
-  <h2>6 &middot; Look things up without a disc</h2>
+  <h2>7 &middot; Look things up without a disc</h2>
   <p><code>gamedata-tool</code> bakes in the curated game-data tables (arts, magic, items, weapons, armor, accessories, enemies, shops, casino, fishing) - handy as ground truth beside the randomizer's read-only listings:</p>
 <pre><code>./gamedata-tool find "Healing Leaf"
 ./gamedata-tool list arts --character Vahn
@@ -86,7 +104,7 @@
 </section>
 
 <section class="doc-section" id="cheats">
-  <h2>7 &middot; Cheat databases</h2>
+  <h2>8 &middot; Cheat databases</h2>
   <p><code>cheat-tool</code> parses GameShark / Pro-Action-Replay cheat collections and classifies each code by the RAM region it targets. The community Legaia NTSC-U databases are embedded, so no input file is needed:</p>
 <pre><code>./cheat-tool list                    # built-in databases
 ./cheat-tool classify                # per-category roll-up

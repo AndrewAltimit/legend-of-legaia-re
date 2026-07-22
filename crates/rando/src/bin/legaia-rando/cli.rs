@@ -122,6 +122,37 @@ pub(crate) enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Dump one monster's LZS-decoded `battle_data` block (PROT entry 867) to
+    /// a file, or re-pack an edited block onto a copy of the disc - the manual
+    /// monster-edit loop (stats / element / name) with no slot-offset or LZS
+    /// math. `monster-stats` lists the 1-based ids; the decoded record layout
+    /// is pinned in `docs/subsystems/battle.md` (element byte at `+0x1D`).
+    MonsterBlock {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references). Never
+        /// modified.
+        #[arg(long)]
+        input: PathBuf,
+        /// 1-based monster id.
+        #[arg(long)]
+        id: u16,
+        /// Write the decoded block (stat record head + name string + mesh +
+        /// animations) here for editing.
+        #[arg(long)]
+        dump: Option<PathBuf>,
+        /// Re-pack this edited block into the monster's slot on a copy of the
+        /// disc (same-size in-place write, EDC/ECC re-encoded). Requires
+        /// `--output` and/or `--patch`.
+        #[arg(long)]
+        write: Option<PathBuf>,
+        /// Write the patched image here (contains Sony bytes - local play
+        /// only, never redistribute).
+        #[arg(long)]
+        output: Option<PathBuf>,
+        /// Write a portable PPF 3.0 patch here (safe to share).
+        #[arg(long)]
+        patch: Option<PathBuf>,
+    },
     /// Read-only: list the special-attack move-power table (the 44 power values
     /// the `--move-power` randomizer redistributes), each tagged with the
     /// spell-table name of a move id that resolves to it.

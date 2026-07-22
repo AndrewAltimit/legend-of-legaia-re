@@ -112,6 +112,9 @@ legaia-rando spell-costs   --input DISC.bin                   # read-only: spell
 legaia-rando arts          --input DISC.bin                   # read-only: arts button combos
 legaia-rando equip-bonuses --input DISC.bin                   # read-only: equipment stat-bonus table
 legaia-rando weapon-specialty --input DISC.bin                # read-only: favored weapon class per character
+legaia-rando monster-block --input DISC.bin --id 10 --dump m10.bin      # dump one monster's decoded block
+legaia-rando monster-block --input DISC.bin --id 10 --write m10.bin \
+    --output edited.bin --patch m10.ppf                       # re-pack an edited block onto a copy
 legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle \
     --encounters shuffle --chests shuffle --shops shuffle --casino shuffle \
     --steals shuffle --doors shuffle --door-coupling coupled --starting-items 3 \
@@ -156,6 +159,7 @@ legaia-rando verify    --input DISC.bin --patch run.ppf       # apply + sanity-c
     </tbody>
   </table>
   <p>The read-only subcommands in the listing above print the randomizable populations (with item / scene names off the disc's own SCUS + CDNAME tables) without writing anything - <code>chests</code> is where you audit the treasure pool, <code>shops</code> what each store sells, <code>steals</code> the Evil God Icon table, <code>doors</code> the scene-transition graph. The seed resolves from a number or a hashed string and is always printed, so a run reproduces exactly - the same seed yields a byte-identical patched image and PPF. <code>verify</code> applies a PPF to a copy of the user's disc and confirms the result still parses end to end - a recipient's check that a shared patch matches their own disc.</p>
+  <p><code>monster-block</code> is the one manual-edit subcommand: <code>--dump</code> LZS-decodes a single monster's <code>battle_data</code> block (PROT 867) to a file for hex editing, and <code>--write</code> re-packs the edited block into its fixed <code>0x14000</code>-byte slot on a copy of the disc, through the same patch path the stat randomizer uses. The walkthrough lives in the <a href="../guides/modding-and-translation.html">modding guide</a>.</p>
 </section>
 
 <section class="doc-section" id="equipment">

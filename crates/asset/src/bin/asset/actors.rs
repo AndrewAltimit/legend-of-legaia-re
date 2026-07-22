@@ -317,6 +317,7 @@ pub(crate) fn player_anm_scan(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn monster_archive_one(
     input: &Path,
     id: Option<u16>,
@@ -325,6 +326,8 @@ pub(crate) fn monster_archive_one(
     palette: Option<usize>,
     anim: bool,
     glb: Option<&Path>,
+    dump_block: Option<&Path>,
+    write_block: Option<&Path>,
 ) -> Result<()> {
     use legaia_asset::monster_archive;
     let bytes = crate::common::read_input(input)?;
@@ -474,6 +477,45 @@ pub(crate) fn monster_archive_one(
             }
             None => println!("  id {id}: no exportable mesh (out of range / filler slot)"),
         }
+    }
+    if let Some(block_path) = dump_block {
+        let Some(id) = id else {
+            anyhow::bail!("--dump-block requires --id <N>");
+        };
+        match monster_archive::decode_block(&bytes, id)? {
+            Some(block) => {
+                std::fs::write(block_path, &block)?;
+                println!(
+                    "  wrote decoded block -> {} ({} bytes; stat record head at +0x00, \
+                     element byte at +0x1D)",
+                    block_path.display(),
+                    block.len(),
+                );
+            }
+            None => println!("  id {id}: no block (out of range / filler slot)"),
+        }
+    }
+    if let Some(block_path) = write_block {
+        let Some(id) = id else {
+            anyhow::bail!("--write-block requires --id <N>");
+        };
+        let block = std::fs::read(block_path)?;
+        let slot = monster_archive::encode_slot(&block)?;
+        let off = (id as usize)
+            .checked_sub(1)
+            .map(|n| n * monster_archive::SLOT_STRIDE)
+            .ok_or_else(|| anyhow::anyhow!("monster ids are 1-based"))?;
+        if bytes.len() < off + slot.len() {
+            anyhow::bail!("archive too small for id {id}'s slot");
+        }
+        let mut out = bytes.clone();
+        out[off..off + slot.len()].copy_from_slice(&slot);
+        std::fs::write(input, &out)?;
+        println!(
+            "  re-packed id {id} ({} bytes decoded) into its slot and rewrote {} in place",
+            block.len(),
+            input.display(),
+        );
     }
     Ok(())
 }

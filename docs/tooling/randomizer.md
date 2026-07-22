@@ -157,6 +157,9 @@ legaia-rando move-powers   --input DISC.bin                   # read-only: speci
 legaia-rando affinity      --input DISC.bin                   # read-only: element-affinity matrix
 legaia-rando spell-costs   --input DISC.bin                   # read-only: spell MP costs
 legaia-rando equip-bonuses --input DISC.bin                   # read-only: equipment stat-bonus table
+legaia-rando monster-block --input DISC.bin --id 10 --dump m10.bin      # dump one monster's decoded block
+legaia-rando monster-block --input DISC.bin --id 10 --write m10.bin \
+    --output edited.bin --patch m10.ppf                       # re-pack an edited block onto a copy
 legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
 legaia-rando randomize --input DISC.bin --seed brutal --monster-stats shuffle \
     --move-power shuffle --element-affinity shuffle --spell-cost shuffle    # battle-tuning shuffle
@@ -282,6 +285,14 @@ The `drops`, `chests`, `shops`, `casino`, `steals`, `arts`, `doors`,
 decode the randomizable populations off the user's disc and print them, with item
 ids and names resolved from the disc's own SCUS table, and chests and doors
 grouped by scene via CDNAME.
+
+`monster-block` is the one manual-edit subcommand: `--dump` LZS-decodes a
+single monster's `battle_data` block (PROT 867) to a file for hex editing, and
+`--write` re-packs the edited block into its fixed `0x14000`-byte slot on a
+copy of the disc (`--output` / `--patch`), through the same
+`DiscPatcher::patch_monster_slot` path the stat randomizer uses. The
+walkthrough lives in the
+[modding guide](../guides/modding-and-translation.md).
 
 Two are worth knowing about specifically. `chests` lists the exact 275-site
 treasure population the chest randomizer reassigns - the natural place to audit

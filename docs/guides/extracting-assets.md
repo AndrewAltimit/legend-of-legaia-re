@@ -87,6 +87,13 @@ data through `asset monster-archive` on entry `0867`, which starts each
 monster's LZS stream at the right slot base; a raw `lzs-decode` of the whole
 file only expands the first stream it meets.
 
+To *edit* a monster, `--dump-block` writes one monster's whole decoded block
+(stat record + name + mesh + animations) to a file and `--write-block` re-packs
+your edited copy into the archive in place - no slot-offset or LZS math. To do
+the same directly against a disc image (with a shareable PPF out the other
+end), use `legaia-rando monster-block` instead
+([modding-and-translation.md](modding-and-translation.md)).
+
 ## Streamed audio (voice + ambience) → WAV
 
 The pipeline already demuxes this into `extracted/XA_WAV/`. To run just that
