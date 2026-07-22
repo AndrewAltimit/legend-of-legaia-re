@@ -626,6 +626,51 @@ still corroborates the *id labelling* - the four party-table ids reproduce
 exactly, water/earth/light/dark corroborate, and the byte takes only `0..=7`
 across every populated record.)
 
+**The slot-7 attacker is literal, and its element is the streamed cast-body
+record's.** Every per-spell summon overlay module (PROT 0902..0934) contains
+its own `jal FUN_801DD0AC` with `li a1, 7` immediately before it (byte-scan of
+the extracted entries for the call word `0x0C07742B`), so a cast's damage roll
+is issued by the spell's own overlay with the attacker slot hardcoded to 7
+while the acting seat `ctx+0x13` stays on the caster - the battle-action
+overlay itself carries exactly one static roll call site (`0x801E188C`, which
+passes `ctx+0x13`). Slot 7 resolves through `0x801C9348[4]` = `0x801C9358`,
+the pointer `FUN_801F19EC` installs when a group's actor-record slot streams
+([`summon-readef.md`](../formats/summon-readef.md#actor-record-slot-last-streamed-slot-of-a-group) -
+the record's `+0x1D` element byte is tabulated there). `0x801C9358` is **zero
+at battle init** and is written *only* by that installer, so a cast whose
+readef group streams no actor record resolves its element through whatever
+the slot last held (null → the `lbu` lands on `main_ram[0x1D]` via the KUSEG
+mirror). Live-confirmed on a Gimard cast: `FUN_801DD0AC(_, 7, target)` with
+the element read from the installed Burning Attack record
+(`scripts/pcsx-redux/autorun_element_attribution_trace.lua`).
+
+**Enemy capture-class casts pass the caster's seat - but choose whether the
+resist ladder runs at all.** A spell whose table record's first byte is `'c'`
+(the boss cinematic casts - see
+[spell-table.md § cast classes](../formats/spell-table.md#cast-classes-record-byte-0))
+streams its own per-spell code module (`FUN_8003EC70(record[+1] + 0x28)` →
+PROT `944..966`) whose damage calls carry **baked-in power constants** and go
+through one of two SCUS wrappers around scale + finish:
+
+| Wrapper | Finisher `param_5` | Effect |
+|---|---|---|
+| `FUN_801DD4B0` | `0` | resist ladder runs (jewels / elemental guards / All Guard apply) |
+| `FUN_801DD6B4` | `1` | **whole party-defender resist block skipped** |
+
+Both pass `a1 = ctx+0x13` (the caster's seat), so the affinity scale reads the
+caster's true record element either way - the bypass is purely the finisher's
+`param_5 == 0` gate around the resist ladder. Which wrapper a given cast uses
+is hand-written per module: Xain's **Bloody Horns** (PROT 952: hits `0x1D0` /
+`0x274` via `FUN_801DD6B4`, plus one `0x80` component via `FUN_801DD4B0`) and
+**Terio Punch** (PROT 953: `0x274` via `FUN_801DD6B4`) bypass the ladder -
+**this is why Earth Jewels do not reduce them** despite Xain's element byte
+being 0 (Earth) and being read by the scale - while the enemy-side
+**Evil Seru Magic** module (PROT 966: `0x327` / `0x100` via `FUN_801DD4B0`)
+respects it, which is why Cort's ESM behaves as Dark. Guilty Cross (PROT 944,
+`0x38E`) and the module disasm sites are recoverable by scanning the extracted
+entries for the `jal` words (`0x0C07752C` / `0x0C0775AD`). The engine finisher
+models the gate as `damage_finish::bypass_party_resist`.
+
 **Engine wiring.** The matrix + per-character table load from the same PROT 0898
 overlay as the move-power table (`World::element_affinity`), and the monster
 special-attack path scales by `matrix[enemy_element][party_member_element]`

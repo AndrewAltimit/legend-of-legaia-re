@@ -208,11 +208,35 @@ adds the buffer base to each):
 +0x04  u32  TMD offset     - Legaia TMD, magic 0x80000002 (every record
                              in the corpus passes the magic check)
 +0x08  u32  texture-pool offset
++0x0C  ..   monster-record-shaped stat head (same offsets as the
+            [monster archive record](../subsystems/battle-formulas.md):
+            +0x0C "HP" = the attack's power stat feeding the summon
+            damage roll, +0x18 INT, ...)
++0x1D  u8   ELEMENT of the cast (0=earth 1=water 2=fire 3=wind
+            4=thunder 5=light 6=dark 7=none)
 +0x4A  u8   part count
 +0x4C  u32[part_count]  per-part offsets (each part gets *(p+0x88) = p+0x8C
        and indirection fixups at p+4 / p+8 through the table that follows
        the part offsets)
 ```
+
+The `+0x1D` byte is the **element the damage pipeline attributes to the
+cast**: `FUN_801F19EC` installs the record pointer at `0x801C9358`
+(= record-pointer table `0x801C9348[4]`, i.e. battle slot 7), the per-spell
+summon overlay modules (PROT 0902..0934) call the damage roll
+`FUN_801DD0AC` with a **hardcoded attacker slot 7** (`li a1, 7` before the
+`jal` in every module), and the scale / finisher kernels
+(`FUN_801DD864` / `FUN_801DDB30`) resolve any slot `>= 3` element as
+`0x801C9348[slot - 3] + 0x1D` - so a cast's element is this record byte,
+never the caster's element and never a spell-table field. Across the
+corpus the byte matches the spells' known elements (Burning Attack = 2
+fire, Sonicsizer = 3 wind, Hell's Music = 6 dark, ...), and the
+Evil-Seru-Magic body (`^H Juggernaut`) carries **7 = non-elemental**,
+which is why player ESM damage matches no elemental guard. Confirmed
+live: a Gimard cast rolls `FUN_801DD0AC(_, 7, target)` with the element
+read from the installed Burning Attack record while the acting seat
+(`ctx+0x13`) stays on the caster
+(`scripts/pcsx-redux/autorun_element_attribution_trace.lua`).
 
 `FUN_801F19EC` then routes the TMD + texture pool through `FUN_80055468` - the
 same mesh/texture installer the [monster archive](../formats/monster-animation.md)
