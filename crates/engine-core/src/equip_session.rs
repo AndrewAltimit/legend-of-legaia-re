@@ -581,6 +581,8 @@ pub struct EquipCandidate {
 /// `see ghidra/scripts/funcs/overlay_menu_801cf88c.txt`)
 /// REF: FUN_801cf650 (the stat aggregator the retail body re-runs twice
 /// around the trial equip)
+/// REF: FUN_801dd0c0 (the category check `weapon_category_score` binds;
+/// ported as `crate::menu_item_category::category_check`)
 pub fn best_equipment_candidates(
     equipped: [u8; 4],
     char_mask: u8,

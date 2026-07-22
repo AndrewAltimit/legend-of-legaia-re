@@ -180,8 +180,28 @@ width is chosen from the magnitude of the **unit price**, not of the total
 is what keeps the number right-aligned as the quantity climbs. Ported as
 `engine-core::shop::{shop_buy_quantity_panel, shop_total_digit_field}`.
 
-The sell-item detail panel (`FUN_801d5ae8`) shows item name, type description,
-and sell price (buy price ÷ 2) at y+43 (`0x2b`) with an icon at x+84.
+### Item detail / sell panel (`FUN_801D5AE8`)
+
+Rows off the window content origin: item name (record `+4`, ink `6`) at
+`(WX, WY)`, description (record `+8`) at `WY + 0xE`, then the price row at
+`WY + 0x2B` - the "Price" label at `WX + 0x24` (ink `5`), the currency glyph
+at `WX + 0x54`, and the value at `WX + 0x64` as a **5-digit** field. The sell
+price is `buy_price >> 1`, exactly half; a `0` price replaces the whole row
+with a "Cannot sell" string at `WX + 0x50` in ink `9`.
+
+Below it the item's accessory passive prints twice over: its name (accessory
+record `+4`, ink `4`) at `WY + 0x45` and its description (record `+8`, ink
+`7`) at `WY + 0x55`. The index is **re-derived for each of the two draws**
+rather than cached, through the same two-table chain both times - item record
+`+0 == 1` reads the passive index from equipment record `+5`, anything else
+from item-effect record `+3`, and an index `>= 0x40` is the no-passive
+sentinel that suppresses the draw.
+
+The whole body is gated on the staged id word `DAT_801E46B0` being
+**positive**, with one exception: the `0x90 x 0x28` shade box at
+`(WX, WY + 0x45)` draws unconditionally, so an empty panel is not an empty
+rectangle. Ported as `engine-core::shop::{shop_sell_detail_panel,
+item_passive_index}`.
 
 `engine-render::shop_draws_for` implements the above layout using these
 confirmed constants. The cost prompt and Yes/No cursor are rendered in

@@ -990,6 +990,120 @@ pub fn shop_buy_quantity_panel(
     }
 }
 
+/// The accessory-passive index space is 64 slots; `0x40` is the
+/// no-passive sentinel every non-passive row carries.
+pub const PASSIVE_NONE: u8 = 0x40;
+
+/// Resolve an item's accessory-passive index the way the shop / menu info
+/// panels do: the item record's `+1` byte is an index into **one of two**
+/// tables, chosen by the record's `+0` class byte.
+///
+/// * class `1` (equipment) - equipment record `+5`
+///   (`0x80074F68 + idx*8`);
+/// * anything else - item-effect record `+3` (`0x800752C0 + idx*4`).
+///
+/// A resolved index `>= 0x40` is the sentinel and yields `None`.
+///
+/// PORT: FUN_801d5ae8 (`0x801D5C5C..0x801D5CC8` - the panel runs this exact
+/// chain **twice**, once for the passive's name and again for its
+/// description, rather than caching the index)
+pub fn item_passive_index(
+    kind: u8,
+    subtype: u8,
+    equip_passive: impl Fn(u8) -> u8,
+    effect_passive: impl Fn(u8) -> u8,
+) -> Option<u8> {
+    let idx = if kind == 1 {
+        equip_passive(subtype)
+    } else {
+        effect_passive(subtype)
+    };
+    (idx < PASSIVE_NONE).then_some(idx)
+}
+
+/// The price row of [`SellDetailPanel`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SellPriceRow {
+    /// The sell price - exactly `buy_price >> 1`, printed as a 5-digit field.
+    pub price: u16,
+    /// "Price" label pen (ink `5`) at `(WX + 0x24, row_y)`.
+    pub label_pen: (i16, i16),
+    /// Currency glyph pen at `(WX + 0x54, row_y + 2)`.
+    pub icon_pen: (i16, i16),
+    /// Value pen (ink `7`) at `(WX + 0x64, row_y)`.
+    pub value_pen: (i16, i16),
+}
+
+/// The item detail / sell panel's data-derived content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SellDetailPanel {
+    /// Item-name pen (item record `+4`, ink `6`) at `(WX, WY)`.
+    pub name_pen: (i16, i16),
+    /// Description pen (item record `+8`, ink `7`) at `(WX, WY + 0xE)`.
+    pub desc_pen: (i16, i16),
+    /// Baseline of the price row, `WY + 0x2B`.
+    pub price_row_y: i16,
+    /// The price row when the item has a non-zero buy price. `None` renders
+    /// the "Cannot sell" string at [`Self::cannot_sell_pen`] in ink `9`
+    /// instead.
+    pub sell: Option<SellPriceRow>,
+    /// Pen of the "Cannot sell" string, `(WX + 0x50, price_row_y)`.
+    pub cannot_sell_pen: (i16, i16),
+    /// The item's accessory-passive index, when it has one.
+    pub passive: Option<u8>,
+    /// Passive-name pen (accessory record `+4`, ink `4`) at `(WX, WY + 0x45)`.
+    pub passive_name_pen: (i16, i16),
+    /// Passive-description pen (accessory record `+8`, ink `7`) at
+    /// `(WX, WY + 0x55)`.
+    pub passive_desc_pen: (i16, i16),
+    /// The `0x90 x 0x28` shade box at `(WX, WY + 0x45)`. Drawn
+    /// **unconditionally** - it is the one element that still appears when
+    /// no item is staged.
+    pub shade_box: ((i16, i16), (u16, u16)),
+}
+
+/// Build the **item detail / sell panel** content (menu-overlay window
+/// renderer `FUN_801D5AE8`).
+///
+/// `staged` is the highlighted item id word `DAT_801E46B0`; retail gates the
+/// whole body on it being **positive**, so id `0` (and any negative word)
+/// leaves only the shade box. `price` is the item record's `+2` halfword.
+///
+/// PORT: FUN_801d5ae8 (menu-overlay item detail / sell panel content renderer)
+pub fn shop_sell_detail_panel(
+    window: (i16, i16),
+    staged: i32,
+    price: u16,
+    passive: Option<u8>,
+) -> SellDetailPanel {
+    let (wx, wy) = window;
+    let price_row_y = wy + 0x2B;
+    let mut panel = SellDetailPanel {
+        name_pen: (wx, wy),
+        desc_pen: (wx, wy + SHOP_ROW_PITCH),
+        price_row_y,
+        sell: None,
+        cannot_sell_pen: (wx + 0x50, price_row_y),
+        passive: None,
+        passive_name_pen: (wx, wy + 0x45),
+        passive_desc_pen: (wx, wy + 0x55),
+        shade_box: ((wx, wy + 0x45), (0x90, 0x28)),
+    };
+    if staged <= 0 {
+        return panel;
+    }
+    if price != 0 {
+        panel.sell = Some(SellPriceRow {
+            price: price >> 1,
+            label_pen: (wx + 0x24, price_row_y),
+            icon_pen: (wx + 0x54, price_row_y + 2),
+            value_pen: (wx + 0x64, price_row_y),
+        });
+    }
+    panel.passive = passive;
+    panel
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1496,5 +1610,56 @@ mod tests {
         let p = shop_buy_quantity_panel((10, 20), None, 1, 10);
         assert_eq!(p.have, None);
         assert_eq!(p.have_tail_pen, (10, 20));
+    }
+
+    #[test]
+    fn passive_index_picks_its_table_off_the_class_byte() {
+        let equip = |i: u8| i + 1;
+        let effect = |i: u8| i + 2;
+        // class 1 goes through the equipment record.
+        assert_eq!(item_passive_index(1, 3, equip, effect), Some(4));
+        // anything else goes through the item-effect record.
+        assert_eq!(item_passive_index(2, 3, equip, effect), Some(5));
+        assert_eq!(item_passive_index(0, 3, equip, effect), Some(5));
+        // 0x40 is the sentinel, and so is anything above it.
+        assert_eq!(item_passive_index(1, 0, |_| PASSIVE_NONE, effect), None);
+        assert_eq!(item_passive_index(2, 0, equip, |_| 0xFF), None);
+        assert_eq!(item_passive_index(2, 0, equip, |_| 0x3F), Some(0x3F));
+    }
+
+    #[test]
+    fn sell_detail_panel_halves_the_price_and_falls_back_to_cannot_sell() {
+        let p = shop_sell_detail_panel((6, 8), 0x1A, 101, Some(3));
+        assert_eq!(p.name_pen, (6, 8));
+        assert_eq!(p.desc_pen, (6, 8 + 0x0E));
+        assert_eq!(p.price_row_y, 8 + 0x2B);
+        // Exactly half, rounded down by the shift.
+        assert_eq!(
+            p.sell,
+            Some(SellPriceRow {
+                price: 50,
+                label_pen: (6 + 0x24, 8 + 0x2B),
+                icon_pen: (6 + 0x54, 8 + 0x2D),
+                value_pen: (6 + 0x64, 8 + 0x2B),
+            })
+        );
+        assert_eq!(p.passive, Some(3));
+        assert_eq!(p.passive_name_pen, (6, 8 + 0x45));
+        assert_eq!(p.passive_desc_pen, (6, 8 + 0x55));
+
+        // Price 0 -> the "Cannot sell" arm.
+        let p = shop_sell_detail_panel((6, 8), 0x1A, 0, None);
+        assert_eq!(p.sell, None);
+        assert_eq!(p.cannot_sell_pen, (6 + 0x50, 8 + 0x2B));
+    }
+
+    #[test]
+    fn sell_detail_panel_with_no_staged_item_still_draws_the_shade_box() {
+        for staged in [0, -1] {
+            let p = shop_sell_detail_panel((6, 8), staged, 500, Some(1));
+            assert_eq!(p.sell, None);
+            assert_eq!(p.passive, None);
+            assert_eq!(p.shade_box, ((6, 8 + 0x45), (0x90, 0x28)));
+        }
     }
 }
