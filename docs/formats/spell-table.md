@@ -16,7 +16,7 @@ id*0xC`.
 
 | Offset | Type | Field |
 |---|---|---|
-| `+0` | u8 | class byte - `'c'` (`0x63`) marks a capture-class spell |
+| `+0` | u8 | **cast-class** byte (see below) |
 | `+1` | u8 | sub-index within the class |
 | `+2` | u8 | target shape (see below) |
 | `+3` | u8 | **MP cost** |
@@ -26,6 +26,18 @@ id*0xC`.
 
 The display name string carries a leading MES colour-control prefix (`0xCE`,
 an element-colour byte, a space) before the ASCII name.
+
+### Cast classes (record byte `+0`)
+
+The class byte selects which battle-action band executes the cast
+(`FUN_801E295C` state `0x28`, dump `overlay_battle_action_801e295c.txt`
+`0x801E44CC` / `0x801E4614`):
+
+| `+0` | Class | Flow |
+|---|---|---|
+| `0x32` (`'2'`) | Player summon | Summon band `0x32..0x38`; pages the per-summon overlay `FUN_8003EC70(id - 0x79)` (PROT 903..); damage attributed to the slot-7 cast body ([battle-formulas.md](../subsystems/battle-formulas.md)). |
+| `0x14` | Plain cast | Ordinary magic band `0x28..0x2E`, caster-anim playout (Tail Fire `0x27`, Astral Wave `0x6A`, ...). |
+| `0x63` (`'c'`) | Capture-class | Routes `0x28 → 0x6E..0x71`; pages the per-spell module `FUN_8003EC70(record[+1] + 0x28)` (→ PROT `944..966`) and starts the XA cue `FUN_8003EAE4(0, record[+1])`. Covers Seru capture, the item-capture Amulet, **and the boss cinematic casts** - Guilty Cross `0x37` (`+1 = 0x09` → 944), Call Wave `0x55` (`0x0B` → 946), **Bloody Horns `0x5C`** (`0x11` → 952), **Terio Punch `0x5D`** (`0x12` → 953), enemy Evil Seru Magic `0xAD` (`0x1F` → 966). The module carries its own baked damage constants and picks the guard-respecting or guard-bypassing finisher wrapper ([battle-formulas.md](../subsystems/battle-formulas.md)). |
 
 ### Description index (`+4`) and the `0x80075DB0` pointer table
 
