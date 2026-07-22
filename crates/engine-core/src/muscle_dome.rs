@@ -382,6 +382,84 @@ pub fn settle_contest(
     }
 }
 
+/// One animated-sprite glide record (`ctx + 0x11B4 + i*0xC`, up to 0x28
+/// handles): a sprite easing from `start` to `target` over `total` frames.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SpriteGlide {
+    /// `+0x00` total frame count; `0` = slot inactive.
+    pub total: u8,
+    /// `+0x01` elapsed frames.
+    pub elapsed: u8,
+    /// `+0x04`/`+0x06` target screen position.
+    pub target: (i16, i16),
+    /// `+0x08`/`+0x0A` start screen position.
+    pub start: (i16, i16),
+}
+
+/// One step's outcome for a glide handle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlideStep {
+    /// Slot inactive - nothing written.
+    Idle,
+    /// The step reached the target: the sprite snaps to `target` and the
+    /// record deactivates (`total = 0`).
+    Arrived { pos: (i16, i16) },
+    /// Still in flight: linear interpolation `start + (target - start) *
+    /// elapsed / total` (signed division), plus the remaining-frames count
+    /// retail folds into its return (`total - elapsed + 1`).
+    Moving { pos: (i16, i16), remaining: u32 },
+}
+
+impl SpriteGlide {
+    /// PORT: FUN_801d9bbc (one handle's step; retail loops all 0x28 handles
+    /// per frame with the frame delta from scratchpad `0x1F800393`).
+    ///
+    /// Arrival test is `dt >= total - elapsed` **before** accumulating;
+    /// otherwise `elapsed += dt` first and the eased position uses the new
+    /// elapsed count.
+    pub fn step(&mut self, dt: u8) -> GlideStep {
+        if self.total == 0 {
+            return GlideStep::Idle;
+        }
+        if dt as i32 >= self.total as i32 - self.elapsed as i32 {
+            self.total = 0;
+            return GlideStep::Arrived { pos: self.target };
+        }
+        self.elapsed += dt;
+        let lerp = |s: i16, t: i16| {
+            let d = (t as i32 - s as i32) * self.elapsed as i32 / self.total as i32;
+            (s as i32 + d) as i16
+        };
+        GlideStep::Moving {
+            pos: (
+                lerp(self.start.0, self.target.0),
+                lerp(self.start.1, self.target.1),
+            ),
+            remaining: (self.total - self.elapsed) as u32 + 1,
+        }
+    }
+}
+
+/// The round time meter's counter ceiling (`0xC` ticks = a full bar).
+pub const TIME_METER_MAX: u8 = 0xC;
+
+/// PORT: FUN_801d3444 (core ramp + bar mapping) - the round **time meter**:
+/// while the phase tag is `'P'` (0x50, the selection phase) and the ramp
+/// flag is up, the 0..=0xC counter climbs by the frame delta (clamped at
+/// [`TIME_METER_MAX`]); otherwise it drains by the delta (floored at 0).
+/// The bar sprite's Y offset is `counter * 160 / 12 - 0x92` (the
+/// `0x2AAAAAAB` reciprocal-multiply divide) - `-0x92` empty, `+0xE` full.
+/// Returns `(new_counter, bar_y)`.
+pub fn time_meter_step(counter: u8, dt: u8, in_select_phase: bool, ramp_up: bool) -> (u8, i16) {
+    let new = if ramp_up && in_select_phase {
+        (counter as u32 + dt as u32).min(TIME_METER_MAX as u32) as u8
+    } else {
+        counter.saturating_sub(dt)
+    };
+    let bar_y = (new as i32 * 160 / 12 - 0x92) as i16;
+    (new, bar_y)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -515,6 +593,48 @@ mod tests {
         assert_eq!(s.score, 0);
         assert!(!s.continuing);
         assert!(!s.award_prize, "dropped latch skips the prize branch");
+    }
+
+    #[test]
+    fn glide_arrives_snaps_and_deactivates() {
+        let mut g = SpriteGlide {
+            total: 10,
+            elapsed: 8,
+            target: (100, 50),
+            start: (0, 0),
+        };
+        // dt >= total - elapsed: snap to target, slot deactivates.
+        assert_eq!(g.step(2), GlideStep::Arrived { pos: (100, 50) });
+        assert_eq!(g.total, 0);
+        assert_eq!(g.step(1), GlideStep::Idle);
+    }
+
+    #[test]
+    fn glide_eases_linearly_with_signed_division() {
+        let mut g = SpriteGlide {
+            total: 10,
+            elapsed: 0,
+            target: (-100, 40),
+            start: (0, 0),
+        };
+        assert_eq!(
+            g.step(5),
+            GlideStep::Moving {
+                pos: (-50, 20),
+                remaining: 6
+            }
+        );
+        assert_eq!(g.elapsed, 5);
+    }
+
+    #[test]
+    fn time_meter_ramps_in_select_phase_and_drains_otherwise() {
+        // Ramp clamps at 0xC.
+        assert_eq!(time_meter_step(0xB, 3, true, true), (0xC, 0xE));
+        // Outside the select phase the same flags drain.
+        assert_eq!(time_meter_step(5, 2, false, true).0, 3);
+        // Drain floors at zero; empty bar sits at -0x92.
+        assert_eq!(time_meter_step(1, 3, true, false), (0, -0x92));
     }
 
     #[test]

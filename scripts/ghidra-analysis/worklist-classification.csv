@@ -261,20 +261,20 @@ addr,class,reason
 801f1278,REAL,self-entry body of 201 instructions returning `jr ra`
 801f138c,UNCERTAIN,"every dump at this VA is mis-based: the bytes live at battle_action(898) 0x801daba4 (delta -0x167e8), and at this VA in no image - so nothing attests the address. Not an un-extracted overlay; no extraction closes it"
 801f159c,REAL,self-entry body of 73 instructions returning `jr ra`
-801f16a0,REAL,self-entry body of 91 instructions returning `jr ra`
+801f16a0,PHANTOM,"printed address of a mis-based import: program 0905_xxx_dat.BIN loads the x83 stager at 0x801F0000 but its true base is 0x801F69D8 (static-overlays row summon_stager_x83). The dumped body is real stager code whose true entry is 0x801F8078 (file +0x16A0, addiu-sp prologue); no image holds an entry at 801f16a0 itself (0898's bytes there are mid-function)"
 801f17f8,REAL,self-entry body of 125 instructions returning `jr ra`
 801f1ed4,REAL,every dump at this VA is of battle_action(898) (captures: muscle_dome); no second dumped body here
 801f20b0,REAL,every dump at this VA is of field(897) (captures: baka_fighter/dance/debug_menu/fishing/slot_machine); no second dumped body here
 801f2160,REAL,every dump at this VA is of battle_action(898) (captures: muscle_dome); no second dumped body here
-801f2d68,REAL,self-entry body of 26 instructions returning `jr ra`
-801f36a0,REAL,"duplicate claim withdrawn: peer 801f16a0 is a printed address from a mis-based dump, not a body at that VA"
+801f2d68,PHANTOM,"printed address of a mis-based import (0905_xxx_dat.BIN at 0x801F0000; true base 0x801F69D8): true entry 0x801F9740 (file +0x2D68) inside the x83 stager; no image holds an entry at 801f2d68 itself"
+801f36a0,PHANTOM,"printed address of a mis-based import (0905_xxx_dat.BIN at 0x801F0000; true base 0x801F69D8): true entry 0x801FA078 (file +0x36A0) inside the x83 stager; no image holds an entry at 801f36a0 itself"
 801f452c,REAL,"real entry only in battle_action(898): the 30-instruction magic-level-increased banner composer (overlay_0898_static_801f452c, ported engine-core magic_xp). The other two dumped bodies at this printed VA are wrong-base prints of 0x801C0000-band imports whose files carry 0898's image shifted: overlay_0896 print = 0898 file +0x652C = interior of FUN_801D388C at true VA 801d4d44; overlay_0897 print = 0898 file +0xF52C = interior of FUN_801DDB30 at true VA 801ddd44. The historical 'real entry <= 801f4498, unfound' note was those fragments' backward branches read in print coordinates; re-based, the entries are 801d388c and 801ddb30 (both already documented)"
 801f45a4,REAL,"every dump at this VA is of battle_action(898) (captures: baka_fighter/dance/debug_menu/fishing/muscle_dome/slot_machine); no second dumped body here. This 152-byte entry is the per-round RNG waker for status bit 0x400 (loops 7 actor slots, rng&7==0 clears +0x16E via andi 0xfbff at 801f4610) - the clear battle.md historically attributed to FUN_801F452C. Ported engine-vm battle_formulas::status_0x400_wakes"
-801f4dd0,REAL,self-entry body of 138 instructions returning `jr ra`
+801f4dd0,PHANTOM,"printed address of a mis-based import (0905_xxx_dat.BIN at 0x801F0000; true base 0x801F69D8): true entry 0x801FB7A8 (file +0x4DD0) inside the x83 stager; no image holds an entry at 801f4dd0 itself"
 801f5748,REAL,self-entry body of 2777 instructions returning `jr ra`
 801f69d8,REAL,self-entry body of 643 instructions returning `jr ra`
 801f6b24,REAL,self-entry body of 82 instructions returning `jr ra`
-801f6d48,REAL,self-entry body of 208 instructions returning `jr ra`
+801f6d48,REAL,"self-entry body of 208 instructions returning `jr ra`. Owner pinned by bytes: the minigame-capture dumps at this VA match PROT 0900 (field render library, file +0x370 at slot-B base 0x801F69D8) not the battle-action image (0898 file +0x28530 differs) - it is 0900's per-cell ground/tile GT3 emitter (see the summon_render row notes in static-overlays.toml), resident under the minigame as field-mode slot-B strata"
 801f7088,REAL,every dump at this VA is of summon_render(900) (captures: baka_fighter/dance/debug_menu/fishing/muscle_dome/slot_machine); no second dumped body here
 801f71e0,REAL,every dump at this VA is of battle_tutorial(967) (captures: PROT 0967 @ base 0x801F69D8); no second dumped body here
 8020e748,UNCERTAIN,"every dump at this VA is mis-based: the bytes live at menu(899) 0x801cf760 (delta -0x3efe8), and at this VA in no image - so nothing attests the address. Not an un-extracted overlay; no extraction closes it"

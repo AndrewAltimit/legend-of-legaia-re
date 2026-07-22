@@ -931,6 +931,12 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
    never on a `+0x76F` copy). The whole copy is gated on the stage byte `DAT_8007BD04`
    (zero → zero-fill, `0x801DA378`). Live pad edits during the Arts gauge then mutate the
    same bytes in place. Byte-level port: `legaia_engine_vm::battle_action::preseed_action_queue`.
+   The **write-back twin** is `FUN_801DA59C`: after an arts action (category `+0x1DE == 3`,
+   live actor), it copies `actor[+0x1DF..+0x1EF]` back into the char record's chain slot -
+   the same `[+0x156] < [+0x154]` predicate picks `+0x76F` vs `+0x77F` (`sb` loops at
+   `0x801DA638`/`0x801DA69C`), with no head-byte fallback: exactly one slot is overwritten.
+   That is what the next preseed replays. Port:
+   `legaia_engine_vm::battle_action::save_action_queue`.
 2. **Normalize arrows into art constants.** `FUN_801EED1C`'s player path walks the queue,
    matches each token run against the character's art command table (token compare via
    `addiu v1,v1,-0xb` at `0x801EF3E8` - the queue's `0x0C..0x0F` arrows against the art table's

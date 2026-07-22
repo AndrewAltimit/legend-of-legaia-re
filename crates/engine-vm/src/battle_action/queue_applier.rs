@@ -185,6 +185,37 @@ pub fn preseed_action_queue(
     }
 }
 
+/// PORT: FUN_801DA59C - the write-back twin of [`preseed_action_queue`]:
+/// saves the actor's executed 16-byte arts-input string back into the
+/// character record so the next battle's preseed can replay it.
+///
+/// Retail walks one actor slot (`&DAT_801C9370 + slot`): a dead/empty actor
+/// (`+0x14C == 0`) or a non-arts action category (`+0x1DE != 3`) writes
+/// nothing. Otherwise the 16 bytes at `actor[+0x1DF..+0x1EF]` are copied
+/// into the char record's chain slot - the same `actor.u16[+0x156] <
+/// u16[+0x154]` predicate the preseed uses picks the destination (`+0x76F`
+/// first slot / `+0x77F` second slot, off `0x80084140 + (id-1)*0x414`;
+/// `sb` loops at `0x801DA638` / `0x801DA69C`). Unlike the preseed there is
+/// no head-byte fallback: exactly one slot is overwritten.
+pub fn save_action_queue(
+    queue: &[u8; QUEUE_SCAN_LEN],
+    alive: bool,
+    category_is_arts: bool,
+    prefer_second: bool,
+    chain_first: &mut [u8; QUEUE_SCAN_LEN],
+    chain_second: &mut [u8; QUEUE_SCAN_LEN],
+) -> bool {
+    if !alive || !category_is_arts {
+        return false;
+    }
+    if prefer_second {
+        chain_second.copy_from_slice(queue);
+    } else {
+        chain_first.copy_from_slice(queue);
+    }
+    true
+}
+
 /// Result band of [`check_and_learn_art`] (the retail return register).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArtUseCheck {
@@ -457,6 +488,27 @@ mod queue_applier_tests {
         let mut q = [0xFFu8; ACTION_QUEUE_CAP];
         preseed_action_queue(&mut q, false, false, &a, &b);
         assert_eq!(&q[..QUEUE_SCAN_LEN], &[0u8; QUEUE_SCAN_LEN]);
+    }
+
+    #[test]
+    fn save_action_queue_writes_exactly_one_slot() {
+        let q = [3u8; QUEUE_SCAN_LEN];
+        let mut a = [0u8; QUEUE_SCAN_LEN];
+        let mut b = [0u8; QUEUE_SCAN_LEN];
+        // First-slot leg (+0x156 < +0x154).
+        assert!(save_action_queue(&q, true, true, false, &mut a, &mut b));
+        assert_eq!(a, q);
+        assert_eq!(b, [0u8; QUEUE_SCAN_LEN]);
+        // Second-slot leg.
+        let mut a2 = [0u8; QUEUE_SCAN_LEN];
+        assert!(save_action_queue(&q, true, true, true, &mut a2, &mut b));
+        assert_eq!(b, q);
+        assert_eq!(a2, [0u8; QUEUE_SCAN_LEN]);
+        // Guards: dead actor / non-arts category write nothing.
+        let mut c = [0u8; QUEUE_SCAN_LEN];
+        assert!(!save_action_queue(&q, false, true, false, &mut c, &mut b));
+        assert!(!save_action_queue(&q, true, false, false, &mut c, &mut b));
+        assert_eq!(c, [0u8; QUEUE_SCAN_LEN]);
     }
 
     #[test]

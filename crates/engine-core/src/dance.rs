@@ -865,6 +865,36 @@ impl DanceGame {
     }
 }
 
+/// PORT: FUN_801d3fd0 - the dance overlay's cell-placed effect spawn (the
+/// step-mark flash): retail zero-fills a spawn record, spawns through the
+/// shared part-spawn API `FUN_80021B04` at scale `0x1000`, stamps
+/// `sprite_id` into the part's `+0x50` and places it at the dance-grid cell
+/// (`x << 3`, `y << 3` into `+0x14`/`+0x16`). The Baka Fighter's
+/// screen-centre twin is [`crate::baka_fighter::center_effect_spawn`]
+/// (`FUN_801d6e04`).
+pub fn step_mark_effect_spawn(
+    cell_x: i16,
+    cell_y: i16,
+    sprite_id: u16,
+) -> crate::baka_fighter::EffectSpawnSpec {
+    crate::baka_fighter::EffectSpawnSpec {
+        x: cell_x << 3,
+        y: cell_y << 3,
+        scale: 0x1000,
+        sprite_id,
+    }
+}
+
+/// PORT: FUN_801d3e28 - the score-banner thousands-digit glyph selector:
+/// retail stores `(score / 1000) * 8 - 0x30` into the banner widget's
+/// texture-U byte (`DAT_801d4760`) - each digit glyph is 8 texels wide and
+/// the cell base sits `0x30` texels left of digit `0` - then draws widget
+/// ids 6 and 7 (the two banner halves, 8 px apart) through the hub sprite
+/// emitter `FUN_801d2f38` at brightness `0x80`, scale `0x1000`.
+pub fn score_thousands_glyph_u(score: i32) -> i8 {
+    ((score / 1000) * 8 - 0x30) as i8
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1218,5 +1248,21 @@ mod tests {
         // Mid-groovy-move presses fold to Miss but apply no penalty.
         assert_eq!(g.judge_press(DanceDir::A), Judge::Miss);
         assert_eq!(g.dancers[0].misses, 0);
+    }
+
+    #[test]
+    fn step_mark_spawns_at_the_grid_cell() {
+        let s = step_mark_effect_spawn(20, 15, 7);
+        assert_eq!((s.x, s.y), (160, 120));
+        assert_eq!((s.scale, s.sprite_id), (0x1000, 7));
+    }
+
+    #[test]
+    fn score_glyph_u_steps_eight_texels_per_thousand() {
+        assert_eq!(score_thousands_glyph_u(0), -0x30);
+        assert_eq!(score_thousands_glyph_u(999), -0x30);
+        assert_eq!(score_thousands_glyph_u(1000), -0x28);
+        assert_eq!(score_thousands_glyph_u(6000), 0);
+        assert_eq!(score_thousands_glyph_u(9999), 0x18);
     }
 }

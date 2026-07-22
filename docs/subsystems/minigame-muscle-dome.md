@@ -34,8 +34,8 @@ A small number of phase arms are confirmed by content:
 - Phase `0x6e` arm (`FUN_801d0748` near `0x801d0f24`): when a sub-result tag equals `0xb6` it computes a percentage `actor[+0x14c]*0x6c/actor[+0x14e]` (current/max ratio ×108) and renders it as a number - the **score / HP-percentage readout**.
 
 Auxiliary per-frame helpers the controller calls every frame:
-- `FUN_801d3444` - animates the round **time meter**: ramps a 0..0xc counter `DAT_801f4e0a` up while the phase tag `ctx+6 == 'P'` (0x50) and an enable flag is set, down otherwise, and maps it to a bar Y position. (`overlay_muscle_dome_801d3444.txt`.)
-- `FUN_801d9bbc` - advances every **active animated sprite handle** (`ctx+0x1074[]`, up to 0x28 entries) one step toward its target screen position over a per-handle frame count; returns the count still in flight. (`overlay_muscle_dome_801d9bbc.txt`.)
+- `FUN_801d3444` - animates the round **time meter**: ramps a 0..0xc counter `DAT_801f4e0a` up by the frame delta while the phase tag `ctx+6 == 'P'` (0x50) and an enable flag is set, drains it otherwise, and maps it to the bar Y `counter * 160 / 12 - 0x92`. Core ramp + mapping ported as `engine-core::muscle_dome::time_meter_step`. (`overlay_muscle_dome_801d3444.txt`.)
+- `FUN_801d9bbc` - advances every **active animated sprite handle** (`ctx+0x1074[]`, up to 0x28 entries) one linear-ease step toward its target screen position over a per-handle frame count (`ctx+0x11B4 + i*0xC` records: total/elapsed frames + target/start positions; arrival snaps and deactivates). Per-handle step ported as `engine-core::muscle_dome::SpriteGlide::step`. (`overlay_muscle_dome_801d9bbc.txt`.)
 
 ## Card / move representation + selection
 
