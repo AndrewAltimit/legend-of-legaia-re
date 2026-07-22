@@ -116,7 +116,7 @@ addr,class,reason
 801cf388,REAL,self-entry body of 2973 instructions returning `jr ra`
 801cf5bc,UNCERTAIN,no `jr ra` and no trailing unconditional jump - body may be truncated
 801cf5d0,INTERIOR,"tail slice, not an entry: first instruction stores through live t0 and the body reads unaffected t2/t3/t4 before restoring a frame it never built (lw ra,0x10(sp) / sp+0x18) - a mid-function window of the enclosing 0897 routine"
-801cf730,REAL,every dump at this VA is of debug_menu(971) (captures: debug_menu); no second dumped body here
+801cf730,REAL,"identified: debug-menu(971) overlay screen init - mode init FUN_8001DCF8, geometry/global seeding; dev-tool overlay, outside the retail menu port surface"
 801cf740,REAL,self-entry body of 92 instructions returning `jr ra`
 801cf88c,REAL,self-entry body of 311 instructions returning `jr ra`
 801cfa48,REAL,self-entry body of 530 instructions returning `jr ra`
@@ -145,7 +145,7 @@ addr,class,reason
 801d231c,REAL,every dump at this VA is of dance(980) (captures: dance); no second dumped body here
 801d2404,INTERIOR,"field-VM opcode slice, not an entry: 8 instructions with no prologue, reads live v0/v1/s6, exits `j 0x801e3624` (the FUN_801DE840 op-advance epilogue - the label-call idiom)"
 801d2524,REAL,every dump at this VA is of dance(980) (captures: dance); no second dumped body here
-801d26cc,REAL,"duplicate claim withdrawn: peer 801c56b4 is a printed address from a mis-based dump, not a body at that VA"
+801d26cc,REAL,"identified: debug-menu(971) overlay widget SM (1466 instr, states on struct +0x22); dev-tool overlay, outside the retail menu port surface"
 801d2914,REAL,self-entry body of 100 instructions returning `jr ra`
 801d2a10,REAL,self-entry body of 226 instructions returning `jr ra`
 801d2aa4,REAL,self-entry body of 135 instructions returning `jr ra`
@@ -167,11 +167,11 @@ addr,class,reason
 801d3fd0,REAL,every dump at this VA is of dance(980) (captures: dance); no second dumped body here
 801d4098,REAL,self-entry body of 17 instructions returning `jr ra`
 801d40dc,REAL,self-entry body of 28 instructions returning `jr ra`
-801d4868,REAL,self-entry body of 134 instructions returning `jr ra`
+801d4868,REAL,"identified: menu window content renderer - string at (WX+0x14, WY) ink 7 + hand off cursor word DAT_801E46BC + values from the bag-scan range globals 0x8007B5EA/B5EC; not yet ported"
 801d49e8,REAL,self-entry body of 154 instructions returning `jr ra`
 801d4c50,REAL,self-entry body of 106 instructions returning `jr ra`
 801d4df8,REAL,self-entry body of 116 instructions returning `jr ra`
-801d5510,REAL,"duplicate claim withdrawn: peer 801c6cf8 is a printed address from a mis-based dump, not a body at that VA"
+801d5510,REAL,"identified: shop quantity-window info renderer - Have-count row via bag scan FUN_80042EE0 (bag count 2-digit at WX+0x20), quantity DAT_801E46B4 at the lower row; not yet ported"
 801d553c,REAL,self-entry body of 160 instructions returning `jr ra`
 801d56c4,UNCERTAIN,dump carries a decompiled body but no disassembly (Ghidra reports 1 bytes) - function bounds never established
 801d57bc,REAL,self-entry body of 73 instructions returning `jr ra`
@@ -192,7 +192,7 @@ addr,class,reason
 801d71b8,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
 801d71f0,REAL,"duplicate claim withdrawn: peer 801e01f0 is a printed address from a mis-based dump, not a body at that VA"
 801d72a0,REAL,self-entry body of 70 instructions returning `jr ra`
-801d7a5c,REAL,every dump at this VA is of fishing(972) (captures: dance/debug_menu/fishing/slot_machine); no second dumped body here
+801d7a5c,VA_ALIASED,"cited from overlay 0971 (801c7930) but the only dumped body at this VA is the fishing(972) occupant - a GPU prim shrink/blend helper (minigame overlay family); the 0971 occupant is undumped, needs a Ghidra-lane dump before any port"
 801d7b50,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview); no second dumped body here
 801d7ff8,REAL,self-entry body of 196 instructions returning `jr ra`
 801d8308,REAL,self-entry body of 267 instructions returning `jr ra`
@@ -206,7 +206,7 @@ addr,class,reason
 801d9bbc,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
 801d9c14,REAL,self-entry body of 419 instructions returning `jr ra`
 801d9d3c,REAL,self-entry body of 388 instructions returning `jr ra`
-801da2a0,REAL,self-entry body of 470 instructions returning `jr ra`
+801da2a0,REAL,"identified in part: sub-screen 0x15 - multi-state 2D picker walking a per-character record bitfield (bit>>5 word / bit&0x1F) with left/right grid cursor; screen identity unpinned, not yet ported"
 801da59c,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
 801da6b4,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
 801da7f0,REAL,self-entry body of 80 instructions returning `jr ra`
@@ -218,7 +218,7 @@ addr,class,reason
 801dbe9c,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview/dance/debug_menu/fishing/slot_machine); no second dumped body here
 801dc1cc,REAL,self-entry body of 314 instructions returning `jr ra`
 801dcb60,REAL,self-entry body of 48 instructions returning `jr ra`
-801dcd58,REAL,self-entry body of 50 instructions returning `jr ra`
+801dcd58,REAL,"identified: menu window content renderer - formatted counter string (markup tokens 0xC1/0xC5 off 0x8007BB70/78) in ink 7 + hand-cursor kind 1 at (WX+0xE6, WY+0xD); quantity-window chrome, not yet ported"
 801dcef0,REAL,self-entry body of 9 instructions returning `jr ra`
 801dd330,REAL,self-entry body of 11 instructions returning `jr ra`
 801dea50,REAL,self-entry body of 712 instructions returning `jr ra`
@@ -230,11 +230,11 @@ addr,class,reason
 801e01f0,UNCERTAIN,"every dump at this VA is mis-based: the bytes live at field(897) 0x801e5a08 (delta +0x5818), and at this VA in no image - so nothing attests the address. Not an un-extracted overlay; no extraction closes it"
 801e02a4,REAL,self-entry body of 93 instructions returning `jr ra`
 801e0418,REAL,self-entry body of 96 instructions returning `jr ra`
-801e0598,REAL,self-entry body of 74 instructions returning `jr ra`
+801e0598,REAL,"identified: save-UI card-session init - zeroes ~20 session globals, raises the directory-rebuild request _DAT_801F0224, stages the SC base 0x80084140 into 0x801F32A0; not yet ported"
 801e06c0,REAL,self-entry body of 134 instructions returning `jr ra`
 801e09f8,REAL,"duplicate claim withdrawn: peer 801f71e0 is a printed address from a mis-based dump, not a body at that VA"
 801e1114,REAL,self-entry body of 61 instructions returning `jr ra`
-801e13b8,REAL,self-entry body of 202 instructions returning `jr ra`
+801e13b8,REAL,"per-frame sibling call of the card ticker FUN_801E1114 (display-list side); not yet read in depth, not yet ported"
 801e1d98,REAL,"duplicate claim withdrawn: peer 801f8580 is a printed address from a mis-based dump, not a body at that VA"
 801e2524,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
 801e2650,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here

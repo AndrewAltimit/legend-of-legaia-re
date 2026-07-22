@@ -638,6 +638,11 @@ fn build_spell_session(world: &World, catalog: &SpellCatalog) -> SpellMenuSessio
                 // in `character_ability_bits`) so the Magic screen displays the
                 // MP-saver-discounted cost (`FUN_80035394`).
                 ability_bits: world.character_ability_bits.get(i).copied().unwrap_or(0),
+                // Retail resolves the Ra-Seru slot through the
+                // per-character offset table at 0x8007B424; the engine's
+                // roster always carries the Ra-Seru equipped, so the
+                // gate stays open here.
+                ra_seru_missing: false,
             }
         })
         .collect();

@@ -85,7 +85,9 @@ pub const OPTIONS_INK_TEAL: [f32; 4] = [0.26, 0.87, 0.87, 1.0];
 /// origin. No footer hint - retail has none.
 // PORT: FUN_801d2910
 // PORT: FUN_801d2b44
-// REF: FUN_801dcef0
+// PORT: FUN_801dcef0 - the id-48 window renderer is a 9-instruction
+// wrapper (`FUN_801d2910(win, 0, 9)`); drawing all ten rows through the
+// row renderer *is* its whole body.
 pub fn options_draws_for(
     font: &legaia_font::Font,
     rows: &[OptionsRowView<'_>],
@@ -227,4 +229,74 @@ pub fn key_rebind_draws_for(
         dim,
     ));
     out
+}
+
+/// Menu ink 5 - the teal the confirm-prompt option rows stage
+/// (`DAT_8007B454 = 5` before each option string).
+pub const CONFIRM_OPTION_INK: [f32; 4] = OPTIONS_INK_TEAL;
+
+/// Row pitch of the confirm-prompt windows.
+pub const CONFIRM_PROMPT_PITCH_Y: i32 = 0xE;
+/// X inset of the option strings (`WX + 0x44`).
+pub const CONFIRM_OPTION_X: i32 = 0x44;
+/// X inset of the pointing-hand cursor on the focused option row
+/// (`WX + 0x30`).
+pub const CONFIRM_HAND_X: i32 = 0x30;
+/// Second-prompt-line indent of the 3-line variant (`WX + 0xC`).
+pub const CONFIRM_PROMPT_LINE2_X: i32 = 0xC;
+
+/// Build [`TextDraw`]s for the pause-menu save-flow Yes/No prompt
+/// windows: `prompt` lines from the window origin (line 2, when
+/// present, indents [`CONFIRM_PROMPT_LINE2_X`]), then the two option
+/// rows at `WX + 0x44` in menu ink 5, each a [`CONFIRM_PROMPT_PITCH_Y`]
+/// step down. The pointing-hand cursor belongs on the focused option
+/// row at `WX + 0x30` ([`confirm_prompt_hand_pos`]); the retail cursor
+/// word (`DAT_801E46D0`) hides it under bit `0x4000`.
+///
+/// PORT: FUN_801d1dac (1 prompt line + 2 options; see
+/// `ghidra/scripts/funcs/overlay_menu_801d1dac.txt`)
+/// PORT: FUN_801d1f10 (the 3-line variant - a second, indented prompt
+/// line shifts the option block one pitch down)
+pub fn confirm_prompt_draws(
+    font: &legaia_font::Font,
+    prompt: &[&str],
+    options: &[&str],
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    let mut out = Vec::new();
+    let mut y = pen.1;
+    for (i, line) in prompt.iter().enumerate() {
+        let x = if i == 0 {
+            pen.0
+        } else {
+            pen.0 + CONFIRM_PROMPT_LINE2_X
+        };
+        out.extend(text_draws_for(
+            &font.layout_ascii(line),
+            (x, y),
+            OPTIONS_INK_WHITE,
+        ));
+        y += CONFIRM_PROMPT_PITCH_Y;
+    }
+    for opt in options {
+        out.extend(text_draws_for(
+            &font.layout_ascii(opt),
+            (pen.0 + CONFIRM_OPTION_X, y),
+            CONFIRM_OPTION_INK,
+        ));
+        y += CONFIRM_PROMPT_PITCH_Y;
+    }
+    out
+}
+
+/// Stage position of the hand cursor for option row `cursor` of a
+/// [`confirm_prompt_draws`] window with `prompt_lines` prompt rows.
+///
+/// REF: FUN_801d1dac / FUN_801d1f10 (the `FUN_8002B994(kind 0, blink,
+/// WX + 0x30, row_y)` calls)
+pub fn confirm_prompt_hand_pos(pen: (i32, i32), prompt_lines: usize, cursor: u8) -> (i32, i32) {
+    (
+        pen.0 + CONFIRM_HAND_X,
+        pen.1 + (prompt_lines as i32 + cursor as i32) * CONFIRM_PROMPT_PITCH_Y,
+    )
 }

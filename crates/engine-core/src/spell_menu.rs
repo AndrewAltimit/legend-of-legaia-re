@@ -12,6 +12,37 @@
 //! Each state honours Circle as "back one step"; Circle from CharSelect
 //! cancels out (Done(Cancelled)). The session never mutates the world -
 //! it returns a typed [`SpellMenuOutcome`] and engines apply it.
+//!
+//! ## Retail sub-screen mapping
+//!
+//! Retail runs the same chain as four menu-overlay sub-screens off the
+//! `0x801E4F40` pointer table:
+//!
+//! - `0x0E` caster picker (`FUN_801D8F10`): `FUN_801D688C` over the
+//!   roster; confirm gated on the spell count `record[0x13C]` **and** the
+//!   Ra-Seru equip slot, buzz `0x23` on either, SFX `0x20` + sub-screen
+//!   `0x0F` on pass.
+//! - `0x0F` spell list (`FUN_801D9110`): the kind-4 list window (content
+//!   id `5`); cancel parks the list (mode 4) back to `0x0E`; confirm
+//!   routes on the spell-stat flag ([`spell_targets_group`]) to `0x10`
+//!   or `0x11`.
+//! - `0x10` group-cast flow (`FUN_801D9280`): no target rows
+//!   (`FUN_801D688C(count = 0)` - confirm/cancel only), SFX `0x25` on
+//!   commit, cancel returns to `0x0F` with the editing bit raised.
+//! - `0x11` single-target pick + apply (`FUN_801D9594`): target rows over
+//!   the party count; the commit revalidates through the target-relevance
+//!   probe (`FUN_8003FB10`, buzz on nobody-affected), costs MP through
+//!   the per-caster kernel (`FUN_80035394`) and applies through the
+//!   shared field applier (`FUN_800402F4`).
+//!
+//! PORT: FUN_801d8f10 (CharSelect phase incl. both confirm gates)
+//! PORT: FUN_801d9110 (SpellSelect phase + [`spell_targets_group`])
+//! PORT: FUN_801d9280 (group-target confirm/cancel shape)
+//! PORT: FUN_801d9594 (TargetSelect + resolve; the engine folds the two
+//! retail target flows into one `TargetSelect` phase and resolves group
+//! spells against every live row - see `dispatch` on the outcome side)
+//! REF: FUN_801d688c (cursor navigator) / FUN_8003fb10 (relevance probe)
+//! / FUN_80035394 (MP-cost kernel) / FUN_800402f4 (field applier)
 
 use crate::input::PadButton;
 use crate::spells::{SpellCatalog, SpellEffect, SpellOutcome};
@@ -51,6 +82,11 @@ pub struct CasterSlot {
     /// (`FUN_80035394`): bit `0x20` = half cost, bit `0x10` = quarter off,
     /// Half winning when both are set. Defaults to `0` (no discount).
     pub ability_bits: u32,
+    /// `true` when the caster's Ra-Seru equip slot (`record[0x196 +
+    /// *(i16*)(0x8007B424 + char*2)]`) is empty - retail refuses such a
+    /// caster with a buzz (`InvalidReason::NoRaSeru`). Default `false`
+    /// (equipped), matching the retail party's normal state.
+    pub ra_seru_missing: bool,
 }
 
 impl CasterSlot {
@@ -171,6 +207,22 @@ pub enum InvalidReason {
     DeadTarget,
     InvalidTarget,
     UnknownSpell,
+    /// Caster's Ra-Seru equip slot is empty - retail's second confirm
+    /// gate on the Magic caster picker (`record[0x196 +
+    /// *(i16*)(0x8007B424 + char*2)] == 0` buzzes `0x23` at
+    /// `0x801d908c..0x801d90b8`).
+    NoRaSeru,
+}
+
+/// Spell-table flag deciding which target flow a confirmed spell opens:
+/// stats byte `+2` bit `0x20` set routes to the no-pick **group** flow
+/// (retail sub-screen `0x10`), clear to the per-member **target picker**
+/// (sub-screen `0x11`).
+///
+/// PORT: FUN_801d9110 (the state-2 confirm dispatch,
+/// `0x801d9220..0x801d9260`: `lbu 0x2(spell_stats); andi 0x20`)
+pub fn spell_targets_group(stats_flag_byte: u8) -> bool {
+    stats_flag_byte & 0x20 != 0
 }
 
 /// Returns true if the spell's effect kind is meaningful in the field.
@@ -321,6 +373,14 @@ impl SpellMenuSession {
                     if c.spells.is_empty() {
                         events.push(SpellMenuEvent::InvalidConfirm {
                             reason: InvalidReason::EmptySpellList,
+                        });
+                        return events;
+                    }
+                    // Retail's second gate: an empty Ra-Seru slot buzzes
+                    // (FUN_801d8f10 at 0x801d908c..0x801d90b8).
+                    if c.ra_seru_missing {
+                        events.push(SpellMenuEvent::InvalidConfirm {
+                            reason: InvalidReason::NoRaSeru,
                         });
                         return events;
                     }
@@ -746,5 +806,42 @@ mod tests {
                 reason: InvalidReason::DeadTarget
             }
         )));
+    }
+
+    #[test]
+    fn missing_ra_seru_buzzes_the_caster_confirm() {
+        // FUN_801d8f10's second gate: spell list present but the Ra-Seru
+        // slot empty -> refuse with a buzz, stay on the picker.
+        let mut p = party();
+        p[1].ra_seru_missing = true; // Noa: has spells, Ra-Seru unequipped
+        let mut s = SpellMenuSession::new(p, targets(), SpellCatalog::vanilla());
+        let _ = s.tick(SpellMenuInput {
+            down: true,
+            ..Default::default()
+        });
+        let evs = s.tick(SpellMenuInput {
+            cross: true,
+            ..Default::default()
+        });
+        assert!(evs.iter().any(|e| matches!(
+            e,
+            SpellMenuEvent::InvalidConfirm {
+                reason: InvalidReason::NoRaSeru
+            }
+        )));
+        assert!(matches!(
+            s.phase(),
+            SpellMenuPhase::CharSelect { cursor: 1 }
+        ));
+    }
+
+    #[test]
+    fn spell_stat_flag_0x20_routes_to_the_group_flow() {
+        // FUN_801d9110 state-2 dispatch: stats byte +2 bit 0x20 set ->
+        // sub-screen 0x10 (group), clear -> 0x11 (target picker).
+        assert!(spell_targets_group(0x20));
+        assert!(spell_targets_group(0xFF));
+        assert!(!spell_targets_group(0x00));
+        assert!(!spell_targets_group(0xDF));
     }
 }

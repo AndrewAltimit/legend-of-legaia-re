@@ -261,6 +261,15 @@ impl PauseItemsSession {
     //   to the party rows while stock and applicability hold), the notify
     //   window (script 0x801E4C60) and the 20-frame exhaustion timer
     //   collapse into the session's single-apply Done.)
+    // PORT: FUN_801D7FF8 (the sibling ALL-party apply SM - retail submenu
+    //   9, the `flags & 0x20` arm of use_route_for_effect: same preview
+    //   staging via FUN_801D6A54, but its picker runs with count 0
+    //   (`FUN_801D688C(&DAT_801E46C4, 0, 0)` at 0x801d80a4 - confirm /
+    //   cancel only, no target rows), cancel drops to the Use list
+    //   (submenu 6), confirm cues SFX 0x25 and applies to every member
+    //   through the same FUN_800402F4 + FUN_80042558 chain with one bag
+    //   decrement (FUN_80043048) and the FUN_8003043C applicability
+    //   re-probe. The session's ApplyAll arm is this flow.)
     pub fn input_pad_edge(&mut self, pressed: u16) {
         let up = pressed & PadButton::Up.mask() != 0;
         let down = pressed & PadButton::Down.mask() != 0;
@@ -1260,6 +1269,7 @@ mod tests {
                 spells: vec![0x81, 0x9c],
                 spell_levels: vec![2, 1],
                 ability_bits: 0,
+                ra_seru_missing: false,
             },
             CasterSlot {
                 slot: 1,
@@ -1272,6 +1282,7 @@ mod tests {
                 spells: vec![0x83],
                 spell_levels: vec![3],
                 ability_bits: 0,
+                ra_seru_missing: false,
             },
         ];
         let targets = vec![crate::spell_menu::TargetRow {
@@ -1370,6 +1381,7 @@ mod tests {
             spells: vec![0x81],
             spell_levels: vec![1],
             ability_bits,
+            ra_seru_missing: false,
         }];
         let targets = vec![crate::spell_menu::TargetRow {
             slot: 0,

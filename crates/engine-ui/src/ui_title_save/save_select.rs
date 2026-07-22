@@ -11,6 +11,95 @@ pub struct SaveSelectRow<'a> {
     pub location: &'a str,
 }
 
+/// Width of the left sprite of the retail backdrop pair - the title
+/// art's 320 columns straddle two 256-wide texture pages, so retail
+/// redraws it as a 192-wide sprite off page 8 plus a 128-wide sprite
+/// off page 9 (`0x64` prims at `(0,0,192,192)` UV `(0,0)` and
+/// `(192,0,128,255)` UV `(64,0)`).
+pub const BACKDROP_SPLIT_X: u32 = 0xC0;
+
+/// The save-UI backdrop redraw: the title art re-emitted with every RGB
+/// modulation byte set to `brightness` - the dim behind the Load/Save
+/// chrome. `0x80` is the PSX neutral level, so the engine tint is
+/// `brightness / 128`. The retail two-sprite split is a VRAM-paging
+/// artifact; the engine samples one `title_src` atlas rect and splits it
+/// at the same [`BACKDROP_SPLIT_X`] column so the seam (and any texel
+/// bleed a host pipeline shows there) lands where retail's did.
+///
+/// PORT: FUN_801e02a4 (see
+/// `ghidra/scripts/funcs/overlay_menu_801e02a4.txt`: two `0x64` sprite
+/// prims, `sb param` into the three RGB bytes of each)
+pub fn backdrop_dim_sprites(
+    title_src: (u32, u32, u32, u32),
+    brightness: u8,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let scale = stage_scale.max(1);
+    let tint = brightness as f32 / 128.0;
+    let color = [tint, tint, tint, 1.0];
+    let (sx, sy, sw, sh) = title_src;
+    let split = BACKDROP_SPLIT_X.min(sw);
+    let mut out = Vec::with_capacity(2);
+    out.push(SpriteDraw {
+        dst: (stage_origin.0, stage_origin.1, split * scale, sh * scale),
+        src: (sx, sy, split, sh),
+        color,
+    });
+    if sw > split {
+        out.push(SpriteDraw {
+            dst: (
+                stage_origin.0 + (split * scale) as i32,
+                stage_origin.1,
+                (sw - split) * scale,
+                sh * scale,
+            ),
+            src: (sx + split, sy, sw - split, sh),
+            color,
+        });
+    }
+    out
+}
+
+/// Draw one record of the save-UI sprite-record table as a quad at
+/// `(x, y)` with an RGB modulation.
+///
+/// Retail's drawer takes a record index into the 12-byte-stride table at
+/// menu-overlay VA `0x801E5048` (`[+2` u][`+4` v][`+6` w][`+8` h]`) and
+/// builds a GP0 `0x2C` textured quad at the pen with the caller's RGB
+/// word folded into the command - which is how the save UI stamps its
+/// pills / tabs / chrome pieces at arbitrary brightness. The engine's
+/// record is the `(u, v, w, h)` rect its atlas parse recovered
+/// (`SaveMenuAtlasRects` fields); `rgb` maps `0x80` to neutral.
+///
+/// PORT: FUN_801e3ff0 (see
+/// `ghidra/scripts/funcs/overlay_menu_801e3ff0.txt`)
+pub fn save_ui_record_quad(
+    record: (u32, u32, u32, u32),
+    rgb: (u8, u8, u8),
+    pen: (i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> SpriteDraw {
+    let scale = stage_scale.max(1);
+    let (_, _, w, h) = record;
+    SpriteDraw {
+        dst: (
+            stage_origin.0 + pen.0 * scale as i32,
+            stage_origin.1 + pen.1 * scale as i32,
+            w * scale,
+            h * scale,
+        ),
+        src: record,
+        color: [
+            rgb.0 as f32 / 128.0,
+            rgb.1 as f32 / 128.0,
+            rgb.2 as f32 / 128.0,
+            1.0,
+        ],
+    }
+}
+
 /// **Canonical PSX framebuffer stage for the boot UI**. All retail-
 /// pinned positions (panel, pills, cursor, title art) are expressed
 /// in 320×240 framebuffer coords; the boot-UI stage maps 1:1 to

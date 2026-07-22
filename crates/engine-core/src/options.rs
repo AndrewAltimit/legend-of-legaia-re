@@ -399,6 +399,22 @@ pub const OPTIONS_DISPLAY_ROWS: [OptionsRowDef; 10] = [
     },
 ];
 
+/// The options screen's row span when it runs as menu sub-screen `0x17`:
+/// retail's table slot is a thin wrapper handing the generic picker
+/// `FUN_801DA9F8` the fixed argument tuple `(start = 0, end = 9,
+/// init = 0x30, return_subscreen = 1)` - all ten display rows, the
+/// `0x30` init word, and the `0x01` slot-selector sub-screen as the
+/// exit destination.
+///
+/// PORT: FUN_801dd330 (see
+/// `ghidra/scripts/funcs/overlay_menu_801dd330.txt` - 11 instructions,
+/// nothing but the call)
+pub const OPTIONS_SUBSCREEN_ROW_SPAN: (u8, u8) = (0, 9);
+/// The wrapper's `init` argument (`li a2, 0x30`).
+pub const OPTIONS_SUBSCREEN_INIT: u32 = 0x30;
+/// The wrapper's exit destination (`li a3, 0x1` - the slot selector).
+pub const OPTIONS_SUBSCREEN_RETURN: u8 = 0x01;
+
 /// Phase of the SM. Mirrors the retail flow: browse over the display
 /// rows, Cross opens the value popup (retail window id 47), Cross inside
 /// commits, Circle exits (edits already committed - retail never

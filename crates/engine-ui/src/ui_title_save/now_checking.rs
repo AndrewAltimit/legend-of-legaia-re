@@ -47,6 +47,63 @@ pub const NOW_CHECKING_TEXT_LINE2_Y: i32 = 118;
 pub const NOW_CHECKING_TEXT_LINE1: (i32, i32) = (122, NOW_CHECKING_TEXT_LINE1_Y);
 pub const NOW_CHECKING_TEXT_LINE2: (i32, i32) = (78, NOW_CHECKING_TEXT_LINE2_Y);
 
+/// One row of the save-UI card-message / two-choice text stack:
+/// `y` in stage pixels, the message-table slot the retail drawer is
+/// handed, and whether the row draws at **half** the caller's
+/// brightness (the unselected choice).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CardMessageRow {
+    pub y: i32,
+    /// Retail string-table slot (`FUN_801E2EE4`'s 4th argument).
+    pub msg_slot: u8,
+    pub half_bright: bool,
+}
+
+/// The card-message screen's five-row text stack: a prompt at y = 0x50,
+/// the two choice rows at y = 0xA0 / 0xAE, and two trailing message
+/// rows at 0xBE / 0xCC - all centred on x = 0xA0. `second_selected`
+/// mirrors the retail selector word (`_DAT_8007B820`): the selected
+/// choice row keeps the caller's brightness, the other draws at half
+/// (`param >> 1` folded into the draw call).
+///
+/// Retail also computes a triangle-wave pulse off the frame counter
+/// `DAT_801F3294 % 0xFFF` here and then never reads it - the value is
+/// dead at every use site (the delay-slot `li a0, 2` overwrites the
+/// only register it lived in), so the port omits it deliberately. The
+/// counter itself still advances `0x20 * frame_skip` per call.
+///
+/// PORT: FUN_801e0418 (see
+/// `ghidra/scripts/funcs/overlay_menu_801e0418.txt`)
+pub fn card_message_rows(second_selected: bool) -> [CardMessageRow; 5] {
+    [
+        CardMessageRow {
+            y: 0x50,
+            msg_slot: 0,
+            half_bright: false,
+        },
+        CardMessageRow {
+            y: 0xA0,
+            msg_slot: 3,
+            half_bright: second_selected,
+        },
+        CardMessageRow {
+            y: 0xAE,
+            msg_slot: 4,
+            half_bright: !second_selected,
+        },
+        CardMessageRow {
+            y: 0xBE,
+            msg_slot: 2,
+            half_bright: false,
+        },
+        CardMessageRow {
+            y: 0xCC,
+            msg_slot: 5,
+            half_bright: false,
+        },
+    ]
+}
+
 /// Build [`SpriteDraw`]s for the "Now checking" dialog's 9-slice
 /// panel only (no text). `slide_offset` is added to the panel
 /// position so callers can drive the retail slide-in animation

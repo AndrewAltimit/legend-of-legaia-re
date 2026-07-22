@@ -29,11 +29,59 @@ pub struct SlotGridCell {
     pub portrait_char_id: Option<u8>,
 }
 
+/// Retail park base of a cell quad's slide x: `0x15A` plus the cell
+/// drawer's `+8` content inset (`ghidra/scripts/funcs/overlay_menu_801e06c0.txt`
+/// at `0x801e0738`).
+pub const SLOT_GRID_QUAD_PARK_X: i32 = 0x15A + 8;
+/// Retail landed base of a cell quad's slide x: interp target `0x5A`
+/// plus the same `+8` inset - row 0 col 0 quad at x = 98.
+pub const SLOT_GRID_QUAD_LANDED_X: i32 = 0x5A + 8;
+/// Per-slot-index extra park stagger (`sll s5, 6` into the slide base at
+/// `0x801e0734`): parked cells fan out 64 px per block-slot on top of the
+/// 40 px column pitch - the GP0-visible 104 px stagger between parked
+/// row-mates.
+pub const SLOT_GRID_PARK_SLOT_STAGGER_X: i32 = 64;
+
+/// A cell quad's x for one frame of the commit slide - the retail grid
+/// dispatcher's per-cell placement law.
+///
+/// Retail computes `base = 0x15A + slot * 64`, interpolates it toward
+/// `0x5A` in 12-bit fixed point (`(0x5A - base) * t`, `+0xFFF` bias on a
+/// negative product, `>> 12` - the same rounding as the slide-in
+/// primitive `FUN_801E1C1C`), then adds the column pitch (`col * 40`)
+/// and the row slant (`row * 4`); the cell drawer `FUN_801E0FD0` adds
+/// its `+8` content inset. At `t = 0x1000` this lands on the pinned
+/// grid (`98 + col*40 + row*4`); at `t = 0` the cells park off-screen
+/// right from x = 354 with the 104 px per-slot fan-out.
+///
+/// PORT: FUN_801e06c0 (per-cell x of the grid loop, `0x801e0734..0x801e0784`)
+/// REF: FUN_801e0fd0 (the per-cell drawer whose `+8` inset is folded in)
+pub fn slot_grid_quad_x(col: u32, row: u32, slot: u32, t: u16) -> i32 {
+    let base = 0x15A + (slot as i32) * SLOT_GRID_PARK_SLOT_STAGGER_X;
+    let mut delta = (0x5A - base) * (t.min(0x1000) as i32);
+    if delta < 0 {
+        delta += 0xFFF;
+    }
+    let slid = base + (delta >> 12);
+    slid + (col as i32) * SLOT_GRID_PITCH_X + (row as i32) * SLOT_GRID_ROW_STAGGER_X + 8
+}
+
 /// Build [`SpriteDraw`]s for the 5×3 slot-preview grid. Each cell
 /// gets the empty-frame sprite (32×32 with 20×20 visible border).
 /// Filled cells additionally get a 16×16 portrait centred in the
 /// frame. The cursor sprite sits to the left of the currently
 /// selected cell.
+///
+/// PORT: FUN_801e06c0 (the landed grid: quad x = `98 + col*40 + row*4`,
+/// y = `28 + row*20`; focused cell full `0x80` modulation, every other
+/// cell dimmed - the `mode 0 / mode 3` split its per-cell calls pass;
+/// hand cursor at quad `(-10, +4)` = the `FUN_8002C488(x-2, y-4, 0x4E)`
+/// call against the pre-inset pen). The commit slide's per-frame x is
+/// [`slot_grid_quad_x`].
+/// PORT: FUN_801e0fd0 (the per-cell drawer the loop calls: the 32x32
+/// cell quad at the `+8 / -8` content inset, the portrait inside the
+/// frame, and the full-vs-dim modulation by the caller's mode - this
+/// builder emits the same per-cell draws).
 pub fn slot_preview_grid_draws_for(
     rects: &SaveMenuAtlasRects,
     cells: &[SlotGridCell],
@@ -124,4 +172,26 @@ pub fn slot_preview_grid_draws_for(
     push(&mut out, rects.cursor, cursor_x, cursor_y, 16, 16, white);
 
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn slot_grid_quad_x_lands_on_the_gp0_pinned_grid() {
+        // t = 0x1000: quad x = 98 + col*40 + row*4 (the landed pin).
+        assert_eq!(slot_grid_quad_x(0, 0, 0, 0x1000), 98);
+        assert_eq!(slot_grid_quad_x(1, 0, 1, 0x1000), 138);
+        assert_eq!(slot_grid_quad_x(4, 2, 14, 0x1000), 98 + 4 * 40 + 2 * 4);
+    }
+
+    #[test]
+    fn slot_grid_quad_x_parks_offscreen_with_the_104px_fanout() {
+        // t = 0: slot 0 parks at 354; row-mates fan out 64 (slot) + 40
+        // (column) = 104 px apart.
+        assert_eq!(slot_grid_quad_x(0, 0, 0, 0), 354);
+        assert_eq!(slot_grid_quad_x(1, 0, 1, 0), 354 + 104);
+        assert_eq!(slot_grid_quad_x(4, 0, 4, 0), 354 + 4 * 104);
+    }
 }

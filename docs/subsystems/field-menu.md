@@ -468,6 +468,29 @@ Second pass only when the submenu id is settled on the equip screen
 the descriptor table (frame-only container); its picker content is drawn by
 the equip flow outside these window renderers.
 
+**Sub-screen chain**: the Equip screen runs as three sub-screens of the
+`0x801E4F40` table. `0x12` (`FUN_801D98F0`) picks the character; `0x13`
+(`FUN_801D99F0`) browses the 8 rows (Best Equipment + 7 slots) - confirm
+on row 0 recomputes the best-candidate ids (`FUN_801CF88C` →
+`DAT_801EF0C0`) and applies them through `FUN_801CF760` (per armament
+slot: skip when candidate == equipped or the bag lacks the candidate,
+else take one from the bag, return the old item, write the slot; SFX
+`0x24` on any change, buzz `0x23` on none), other rows hand off to
+`0x14`; cancel returns to `0x12`. `0x14` (`FUN_801D9C14`) drives the
+candidate list through the kind-4 kernel protocol: per frame it resolves
+the hovered row's candidate id (class `0x4000` payload 0 = the Remove
+row, `0x7000` = the equipped item itself, else the bag slot), derives
+the stat-compare preview by **trial-equipping** - the record's 8 equip
+bytes at `+0x196` save into `DAT_801EF0C8`, the candidate (or 0) is
+written, `FUN_801CF650` re-aggregates, the array restores - and on
+confirm commits: Remove returns the equipped item to the bag (buzz
+`0x37` on an empty slot), a bag row takes one copy (`FUN_80042EE0` find
++ `FUN_80043048` remove), returns the old item (`FUN_800421D4`) and
+writes the slot, then the hand advances to the next slot row and the
+screen returns to `0x13`. Engine ports:
+`equip_session::{preview_candidate, unequip, slot_browse_confirm,
+apply_best_equipment}`.
+
 Engine port: `engine-ui::equip_screen_draws_for` (window contents at
 the offsets above; the candidate list fills the id-23 rect at the shared
 `0xD` list pitch) + `equip_screen_sprites_for` (pictogram column + hand
@@ -591,10 +614,14 @@ requested/settled pair: a handler *requests* a switch by writing
 word `DAT_801E46AC` before dispatching - every submenu entered starts at
 phase 0. Items-screen slots of the table: 5 = command window
 (`FUN_801D7C00`), 6 = the Use list (`FUN_801D7E50`), 7 = the Throw Out
-list (`FUN_801D8734`), 9/0xA/0xB/0xC/0xD = the Use flow's per-effect-class
-apply/target flows; 0xE/0xF = the Magic screen's caster/list handlers,
-0x13 = the Equip screen (the `DAT_801E46A4 == 0x13` gate of
-`FUN_801D21C0`).
+list (`FUN_801D8734`), 9 = the all-party apply (`FUN_801D7FF8` - its
+picker runs with count 0, confirm/cancel only), 0xA = the single-target
+apply (`FUN_801D8308`), 0xB/0xC/0xD = the Door of Light / Door of Wind /
+Incense special routes; 0xE/0xF = the Magic screen's caster/list
+handlers, 0x10/0x11 = the group-cast and single-target Magic apply flows
+(spell-stat byte `+2` bit `0x20` picks between them), 0x12/0x13/0x14 =
+the Equip screen chain (character picker → slot browse → candidate
+list; the `DAT_801E46A4 == 0x13` gate of `FUN_801D21C0`).
 
 The list windows themselves (descriptor kind 4) are paged by the
 SCUS-resident **kind-4 list kernel `FUN_80032A44`** (below), which the

@@ -454,6 +454,10 @@ pub(crate) fn num_field_draws(
 /// proportional text - retail renders them through the string primitive
 /// `FUN_80036888`, not the icon atlas (no `0x800732a4` record exists for
 /// them), so there is no icon sprite to stand in for.
+///
+/// PORT: FUN_801d33d8 (the status / party panel content renderer - every
+/// pen below is its instruction-pinned offset; the submenu list pages it
+/// also serves draw through the sibling builders in this module)
 pub fn status_screen_draws_for(
     font: &legaia_font::Font,
     panel: &StatusPanelView<'_>,

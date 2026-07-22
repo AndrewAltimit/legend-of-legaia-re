@@ -410,7 +410,7 @@ mod tests {
         assert_eq!(coins, 4000);
         assert_eq!(inv.get(&0x20), Some(&1));
         assert!(set.contains(&0x36));
-        s.rebuild(|g| set.contains(&(g as u16)));
+        s.rebuild(|g| set.contains(&g));
         assert_eq!(s.rows().count(), 2);
     }
 

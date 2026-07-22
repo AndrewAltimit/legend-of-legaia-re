@@ -12,7 +12,7 @@ both confirmed as the menu overlay by function-address identity; decompiled func
 ## Contents
 
 - [Overlay structure](#overlay-structure) · [Key functions](#key-functions) · [Globals used](#globals-used)
-- [Sub-screen function pointer table](#sub-screen-function-pointer-table) - [load/save dispatch](#loadsave-dispatch-fun_801dd35c) · [libcd I/O state machine](#libcd-io-state-machine-fun_801e3294) · [save-block directory enumeration](#save-block-directory-enumeration-fun_801e1208) · [per-character status preview](#per-character-status-preview-fun_801d9c14-sub-screen-0x14)
+- [Sub-screen function pointer table](#sub-screen-function-pointer-table) - [load/save dispatch](#loadsave-dispatch-fun_801dd35c) · [libcd I/O state machine](#libcd-io-state-machine-fun_801e3294) · [save-block directory enumeration](#save-block-directory-enumeration-fun_801e1208) · [equip-candidate list handler](#equip-candidate-list-handler-fun_801d9c14-sub-screen-0x14)
 - [Relationship to `legaia_save`](#relationship-to-legaia_save) · [story-flag persistence vs. scratchpad word](#story-flag-persistence-vs-scratchpad-word) · [retail SC block layout](#retail-sc-block-layout)
 - [Sprite asset sources (Continue → Load screen)](#sprite-asset-sources-continue--load-screen) - [9-slice tile rects](#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2) · [how the panel TIM was pinned](#how-the-panel-tim-was-pinned)
 - [Slide-in UI primitive (`FUN_801E1C1C`)](#slide-in-ui-primitive-fun_801e1c1c) · [messagebox panel geometry (`FUN_801E36C4`)](#messagebox-panel-geometry-fun_801e36c4) · [bottom info panel renderer (`FUN_801E08D8`)](#bottom-info-panel-renderer-fun_801e08d8)
@@ -167,32 +167,32 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 | `0x02` | `FUN_801D6E18` | save entry (from menu entry-context `(char*)1`) |
 | `0x03` | `FUN_801D6D38` | 2-state Yes/No confirm with default cursor `1`: actor `&DAT_801E4BD4`, picker `FUN_801D688C(&DAT_801E46D0, 2, 1)`; cursor `1` returns to current sub-screen (`0x01`), cursor `0` advances to `0x00` (exit), cancel returns to `0x01` |
 | `0x04` | `FUN_801DD1B8` | post-save "press any button" return: state 0 invokes actor `&DAT_801E4BE0`; state 1 waits `_DAT_8007BB80 == 0` AND a button **held** (`_DAT_8007B874 & (_DAT_800846D0 \| _DAT_800846D4) != 0`), plays sfx `0x20` and returns to `0x01`. Mirror of `0x08`, which waits for the same mask to read **zero** |
-| `0x05` | `FUN_801D7C00` | (unknown) |
-| `0x06` | `FUN_801D7E50` | (unknown) |
-| `0x07` | `FUN_801D8734` | (unknown) |
+| `0x05` | `FUN_801D7C00` | pause-menu **Items command window** SM (Use / Throw Out / Arrange) - see [field-menu.md](field-menu.md#items-screen); port `engine-core::pause_screens` |
+| `0x06` | `FUN_801D7E50` | Items **Use list** + effect-class dispatch - see [field-menu.md](field-menu.md#items-screen) |
+| `0x07` | `FUN_801D8734` | Items **Throw Out** list + confirm - see [field-menu.md](field-menu.md#items-screen) |
 | `0x08` | `FUN_801DD26C` | 2-state actor + pad-release-wait: state 0 invokes actor `&DAT_801E4CA4`; state 1 waits `_DAT_8007BB80 == 0` AND no button held (`_DAT_8007B874 & (_DAT_800846D4 \| _DAT_800846D0) == 0`), advances to `0x05` |
-| `0x09` | `FUN_801D7FF8` | (unknown) |
-| `0x0A` | `FUN_801D8308` | (unknown) |
+| `0x09` | `FUN_801D7FF8` | Use flow **all-party apply** (`FUN_801D688C(&DAT_801E46C4, 0, 0)` - confirm/cancel only, no target rows; preview via `FUN_801D6A54`, apply loop through `FUN_800402F4` + `FUN_80042558`, one bag decrement, cancel → `0x06`). Port `engine-core::pause_screens` (the `ApplyAll` route) |
+| `0x0A` | `FUN_801D8308` | Use flow **single-target apply** (party-row picker + `FUN_8003FB10` revalidation buzz). Port `engine-core::pause_screens` (the `ApplySingle` route) |
 | `0x0B` | `FUN_801D8A58` | 3-state Yes/No confirm with exit branch: state 0 invokes actor `&DAT_801E4CBC`; state 1 picker on cursor `0` invokes second actor `&DAT_801E4A78` + sfx via `func_0x80042310(0x88, 1)` and advances to state 2, otherwise goes to `0x06`; state 2 waits `_DAT_8007BB80 == 0`, then sets `DAT_801E46A0 = 0xF2`, exit code `_DAT_8007B43C = 4` |
-| `0x0C` | `FUN_801D8B90` | (unknown) |
-| `0x0D` | `FUN_801D8D94` | (unknown) |
-| `0x0E` | `FUN_801D8F10` | (unknown) |
-| `0x0F` | `FUN_801D9110` | (unknown) |
-| `0x10` | `FUN_801D9280` | (unknown) |
-| `0x11` | `FUN_801D9594` | (unknown) |
+| `0x0C` | `FUN_801D8B90` | Door of Wind destination list (port `pause_screens::SpecialUseSession`) |
+| `0x0D` | `FUN_801D8D94` | Incense confirm + class-`0x82` apply (port `pause_screens::SpecialUseSession`) |
+| `0x0E` | `FUN_801D8F10` | Magic screen **caster picker**: `FUN_801D688C` over the roster; confirm gated on spell count `record[0x13C]` AND the Ra-Seru equip slot (`record[0x196 + *(i16*)(0x8007B424 + char*2)]`), buzz `0x23` on either; pass → SFX `0x20` + `0x0F`. Port `engine-core::spell_menu` |
+| `0x0F` | `FUN_801D9110` | Magic **spell list** (kind-4 list window, content id `5`); cancel parks the list back to `0x0E`; confirm routes on spell-stat byte `+2` bit `0x20`: set → `0x10`, clear → `0x11` (`spell_menu::spell_targets_group`) |
+| `0x10` | `FUN_801D9280` | Magic **group-cast flow** (`FUN_801D688C(count = 0)` - confirm/cancel only); SFX `0x25` on commit; cancel → `0x0F` |
+| `0x11` | `FUN_801D9594` | Magic **single-target pick + apply**: target rows over the party count; commit revalidates via `FUN_8003FB10`, costs MP through `FUN_80035394` and applies through `FUN_800402F4` + `FUN_80042558` |
 | `0x12` | `FUN_801D98F0` | 2-state scrollable picker: state 0 sets `_DAT_8007BB94 = 4`, clears `DAT_801E48A8`, masks the cursor to its index bits (`DAT_801E46C4 &= 0xFFF`) and raises flag `0x4000` on `DAT_801E46C0`, then actor `&DAT_801E4D88`; state 1 picker `FUN_801D688C(&DAT_801E46C4, DAT_80084594, 1)` (count from save-block existence table). Confirm → sfx `0x20` + `0x13`, cancel → `0x01` |
 | `0x13` | `FUN_801D99F0` | Equip screen **slot browse** (8 rows: Best Equipment + 7 slots via `FUN_801D688C(&DAT_801E46C0, 8, 1)`; confirm row 0 auto-equips best - `FUN_801CF88C` candidates + `FUN_801CF760` applier, SFX `0x24`/buzz `0x23`; rows 1..7 → `0x14`; cancel → `0x12` character picker) - see [field-menu.md](field-menu.md#equip-screen) |
 | `0x14` | `FUN_801D9C14` | Equip screen **candidate list + commit** (see [field-menu.md](field-menu.md#equip-screen); the old "record serialisation" label is falsified - the `0x414`-stride reads are the live party record, the `DAT_801EF0C8` staging is the trial-equip save/restore) |
-| `0x15` | `FUN_801DA2A0` | (unknown) |
+| `0x15` | `FUN_801DA2A0` | multi-state 2D picker walking a per-character bitfield (`record` word array indexed `bit >> 5` / `bit & 0x1F`) with a left/right grid cursor - body identified, screen identity not yet pinned |
 | `0x16` | `FUN_801DD310` | no-op tick: tail-calls `func_0x80031D00` (frame-end / actor-tick flush) with no other work |
 | `0x17` | `FUN_801DD330` | thin wrapper invoking the generic picker `FUN_801DA9F8(start=0, end=9, init=0x30, return_subscreen=1)` |
 | `0x18` | `FUN_801DAE24` | save-card driver entry. State 0 installs the card handle (`_DAT_8007B44C = DAT_801C6EA0`) and invokes actor `&DAT_801E4E28`; state 1 waits `_DAT_8007BB80 == 0`; state 2 calls `FUN_801DD35C(1, 2)` (saving-overlay main; drives `FUN_801E3294` libcd state machine via the per-frame ticker `FUN_801E1114`); state 3 returns to sub-screen `0x01` |
 | `0x19` | `FUN_801DAEF4` | load-from-slot path (entry-context `*ptr == '\x01'`) |
-| `0x1A` | `FUN_801DAFD4` | save-slot confirm / saving-in-progress - advances to `0x1E` on confirm. The three rows do **not** share an exit: row `0` leaves for `0x1B`, row `2` and the cancel button both leave for `0x00`, and row `1` is the only one that can proceed. A failed save-block scan plays error sfx `0x23` and leaves the screen in place rather than transitioning |
-| `0x1B` | `FUN_801DB21C` | card-full / error screen |
-| `0x1C` | `FUN_801DB380` | (unknown) |
-| `0x1D` | `FUN_801DB7F4` | (unknown) |
-| `0x1E` | `FUN_801DBC5C` | 4-state spinner: state 0 raises flag `0x1000` on `DAT_801E46BC` + calls `FUN_801D6628(&DAT_801E4EE4)`; state 1 waits `_DAT_8007BB80 == 0`, sets `_DAT_8007BB94 = 1` and falls into state 2. States 1-settling and 2 **share** the staging read of the two inventory bytes at `0x80084140 + 0x1818 + _DAT_8007BB88*2` into `DAT_801E46B0/B4`, then branch on `_DAT_8007BB94`: `3` re-runs actor `&DAT_801E4EFC` and parks at state 3, `2` advances to `0x1F`. State 3 waits `_DAT_8007BB80 == 0`, then returns to `0x1A` |
+| `0x1A` | `FUN_801DAFD4` | shop **Buy / Sell / Quit mode select** (the earlier "save-slot confirm" reading is superseded - the "existence table at `0x80084140 + 0x1818`" its row-1 validation scans is the **inventory array** at `0x80085958`, i.e. "own anything to sell"). Row `0` → `0x1B` buy list; row `1` → the sell list `0x1E` on a non-empty bag (empty bag buzzes `0x23` in place); row `2` / cancel → `0x00` exit. See [shop.md](shop.md) |
+| `0x1B` | `FUN_801DB21C` | shop **buy list** (the earlier "card-full / error screen" label is falsified): kind-4 shop list; confirm checks gold `0x8008459C` against the item price (buzz `0x23` + stay), then routes on the item **kind** byte - `1` → `0x1C` recipient picker, `2` → `0x1D` quantity picker, else back to `0x1A`; cancel → `0x1A`. Port `engine-core::shop::buy_list_confirm_route` |
+| `0x1C` | `FUN_801DB380` | shop **buy recipient picker** (equipment buys; port `engine-core::shop`) |
+| `0x1D` | `FUN_801DB7F4` | shop **buy quantity + commit** (port `shop::BuyQuantitySession`; quantity law `min(gold/price, 99, 99-held)`) |
+| `0x1E` | `FUN_801DBC5C` | 4-state spinner: state 0 raises flag `0x1000` on `DAT_801E46BC` + calls `FUN_801D6628(&DAT_801E4EE4)`; state 1 waits `_DAT_8007BB80 == 0`, sets `_DAT_8007BB94 = 1` and falls into state 2. States 1-settling and 2 **share** the staging read of the two inventory bytes at `0x80084140 + 0x1818 + _DAT_8007BB88*2` into `DAT_801E46B0/B4`, then branch on `_DAT_8007BB94`: `3` re-runs actor `&DAT_801E4EFC` and parks at state 3, `2` advances to `0x1F`. State 3 waits `_DAT_8007BB80 == 0`, then returns to `0x1A`. In context this is the shop **sell list** - the "inventory bytes" it stages are the bag slot `[id, count]` the sell-quantity screen consumes |
 | `0x1F` | `FUN_801DBD94` | D-pad quantity-input screen (state 0 init + actor invoke; state 1 ±1/±10 on the dpad clamped to `[1, DAT_801E46B8]`, on confirm applies money delta `_DAT_8008459C += (price * qty) >> 1` and walks live inventory at `0x80084140 + 0x1818` for a non-empty slot; state 2 returns to `0x1A` after a brief delay). NOT the save-card writer - actual libcd I/O lives in `FUN_801E3294` (see "Libcd I/O state machine" section below); `FUN_8001A8B0(SC_base=0x80084140, staging=0x801E5120, 0x1A18)` is plain memcpy used in both directions (post-read or pre-write staging copy) |
 | `0x20` | `FUN_801DC1CC` | **casino prize-exchange session** (entry-context `*ptr == '\x07'`; `ptr+1` = prize block). 4-state SM: build visible rows from the `0x801E4518` table (walk stops at the first zero id; a non-zero gate flag already set hides the one-shot row), browse (`FUN_801D688C`; confirm gated on coin bank `0x800845A4 >= price` and held `< 0x63`, buzz `0x23`), Yes/No with **No default** (`DAT_801E46D0 = 1`), commit (SFX `0x25`, grant 1, debit coins, `FUN_8003CE08(gate)`, rebuild). Port `engine-core::prize_exchange`. The earlier "auto-save path" label is falsified - nothing here touches the card |
 
@@ -272,6 +272,16 @@ printed during the loop (`"NOT_CARD"`, `"card_sts:%d old:%d"`,
 `FUN_8006EE34` is the actual write helper: it calls BIOS-B(0x50) via
 `FUN_8006EE7C`, then BIOS-B(0x4E) via `FUN_8006EE6C` with `(chan, 0x3F, 0)`.
 
+Beyond the 5-state skeleton the machine carries a shared **retry budget**
+(`DAT_801E4FC4`): a failing phase re-runs the whole two-op cycle with
+result `0` until the budget hits 5, then commits `-1` (no card, with the
+`"not card count"` print), `-2` (a stray complete event in phase two) or
+`-3` (abort / timeout). A `both-acked` latch (`DAT_801EED20`) records
+that phase two acknowledged, letting the next cycle short-circuit to the
+success result `1` off the first ack alone. Ported as
+`save_select::CardIoMachine` (states, retry law, latch, result codes;
+the BIOS thunk calls surface as `CardIoEffect` values).
+
 #### The per-frame status poll (`FUN_801E3900`)
 
 States 1 and 3 both branch on `FUN_801E3900`, which is where the "Now
@@ -307,8 +317,10 @@ with result `-3`). Status `3` is the "NOT CARD" failure (result `-1`),
 Ported as `legaia_engine_core::save_select::card_status_poll`, which the
 save-select session runs on every frame of its `NowChecking` phase.
 `FUN_801E39A8` is the sibling drain - the same four `TestEvent` calls with
-their results discarded - and has no port, since a Rust caller that passes
-the event states in has nothing left to drain.
+their results discarded. Since `TestEvent` consumes the pending event as it
+tests it, the drain is exactly a clear of all four flags: ported as
+`save_select::card_events_drain`, which the second-op step of the I/O
+machine runs before arming the next BIOS call.
 
 ### Save-block directory enumeration (`FUN_801E1208`)
 
@@ -330,8 +342,13 @@ count from the prior `FUN_801E3BA0` call.
 
 The per-frame ticker `FUN_801E1114` is the single static caller wiring
 the trio together: it calls `FUN_801E3294(DAT_801EF18C, 0)` every frame
-to advance the libcd state machine, and when `_DAT_801F021C == 3` (save
-commit) it sequences `FUN_801E3AF0` → `FUN_801E3BA0` → `FUN_801E1208`.
+to advance the libcd state machine (gated on `_DAT_801F329C < 3`,
+latching any non-zero result into `0x801F3800/3804`), and when
+`_DAT_801F021C == 3` (save commit) and the rebuild request
+`_DAT_801F0224` is up it sequences `FUN_801E3AF0` → `FUN_801E3BA0` →
+`FUN_801E1208` and clears the request. Ported as
+`save_select::card_frame_tick`, which chains the three ported stages
+(`card_directory_scan` / `card_free_blocks` / the classify walk).
 
 #### Filling the table (`FUN_801E3AF0`) and costing it (`FUN_801E3BA0`)
 
@@ -591,7 +608,23 @@ rects the GPU actually receives) pin the remaining layout:
   (cell quads parked at x = 354..1386 with a 104px stagger) and slides left
   on commit. Landed: 32x32 cell quads with row 0 at `(98, 28)`, pitch
   `(40, 20)`, and each successive row shifted **+4 px right** (the grid
-  slants). The focused cell draws at full `0x80` modulation, every other
+  slants). The grid renderer is `FUN_801E06C0`: per cell it interpolates a
+  slide base `0x15A + slot*64 → 0x5A` in 12-bit fixed point (same rounding
+  as `FUN_801E1C1C`), adds `col*40 + row*4`, and the cell drawer
+  `FUN_801E0FD0` adds a `+8` content inset - which resolves both the
+  landed pins and the parked 104 px fan-out (`64` slot + `40` column).
+  Ported as `engine-ui` `slot_grid_quad_x` / `slot_preview_grid_draws_for`.
+  Sibling draw helpers under `FUN_801DD35C`: `FUN_801E02A4` re-emits the
+  title art dimmed (two `0x64` sprites split at x = 192 across texture
+  pages 8/9, RGB = the brightness parameter; port
+  `backdrop_dim_sprites`), `FUN_801E3FF0` stamps one record of the
+  12-byte sprite-record table at `0x801E5048` as a `0x2C` quad at a pen
+  with an RGB word (port `save_ui_record_quad`), and `FUN_801E0418`
+  draws the five-row card-message / two-choice text stack (prompt at
+  y = 0x50, choices at 0xA0/0xAE - the unselected choice at half
+  brightness off the selector `_DAT_8007B820` - trailing rows at
+  0xBE/0xCC; port `card_message_rows`, which also documents the
+  function's dead triangle-wave pulse computation). The focused cell draws at full `0x80` modulation, every other
   cell dimmed to `0x60` (75%); portraits are 16x16 quads at cell `+8, +8`;
   the pointing-finger cursor sits at cell quad `+(-10, +4)`.
 - **The bottom info panel** footprint lands at `(8, 136, 300, 80)`

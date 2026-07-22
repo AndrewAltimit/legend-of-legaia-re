@@ -404,6 +404,44 @@ pub fn apply_point_card(points: i32, credit: i32) -> i32 {
     (points + credit).min(POINT_CARD_CAP)
 }
 
+/// Where a confirmed buy-list row routes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuyListRoute {
+    /// Gold short of the item price: buzz SFX `0x23` and stay on the
+    /// list (retail re-arms list mode 1).
+    Refused,
+    /// Equipment (item kind `1`): the buy-recipient picker (retail
+    /// sub-screen `0x1C` = `FUN_801DB380`).
+    RecipientPicker,
+    /// Stackable (item kind `2`): the buy-quantity picker (retail
+    /// sub-screen `0x1D` = `FUN_801DB7F4`).
+    QuantityPicker,
+    /// Any other kind byte falls back to the Buy/Sell/Quit mode select
+    /// (retail sub-screen `0x1A` - the default store the kind tests
+    /// overwrite).
+    ModeSelect,
+}
+
+/// Route a confirmed buy-list row - the shop buy-list sub-screen's
+/// state-2 confirm dispatch. The affordability test reads the item
+/// record's price halfword against the purse (`0x8008459C`); the kind
+/// byte (item record `+0`) picks the follow-up screen.
+///
+/// PORT: FUN_801DB21C (menu-overlay sub-screen `0x1B`, the shop buy
+/// list; see `ghidra/scripts/funcs/overlay_menu_801db21c.txt` -
+/// `slt gold, price` + buzz at `0x801db314..0x801db328`, the kind
+/// dispatch at `0x801db334..0x801db364`)
+pub fn buy_list_confirm_route(kind: u8, gold: i32, price: u16) -> BuyListRoute {
+    if gold < price as i32 {
+        return BuyListRoute::Refused;
+    }
+    match kind {
+        1 => BuyListRoute::RecipientPicker,
+        2 => BuyListRoute::QuantityPicker,
+        _ => BuyListRoute::ModeSelect,
+    }
+}
+
 /// The buy-quantity maximum (`FUN_801DB7F4` phase 0): `gold / price`,
 /// clamped to [`BUY_QTY_CAP`], further clamped to `99 - held` when the
 /// bag already holds a stack of the item (`FUN_80042EE0` slot scan at
@@ -1061,6 +1099,26 @@ mod tests {
         assert_eq!(buy_qty_max(100_000, 100, Some(95)), 4);
         // Poorer than one copy -> 0.
         assert_eq!(buy_qty_max(50, 100, None), 0);
+    }
+
+    #[test]
+    fn buy_list_confirm_routes_by_item_kind() {
+        // FUN_801DB21C state-2 dispatch: affordability first (buzz +
+        // stay), then kind 1 -> recipient picker, kind 2 -> quantity
+        // picker, anything else -> the mode-select fallback.
+        assert_eq!(buy_list_confirm_route(2, 99, 100), BuyListRoute::Refused);
+        assert_eq!(
+            buy_list_confirm_route(1, 100, 100),
+            BuyListRoute::RecipientPicker
+        );
+        assert_eq!(
+            buy_list_confirm_route(2, 100, 100),
+            BuyListRoute::QuantityPicker
+        );
+        assert_eq!(
+            buy_list_confirm_route(0, 100, 100),
+            BuyListRoute::ModeSelect
+        );
     }
 
     #[test]
