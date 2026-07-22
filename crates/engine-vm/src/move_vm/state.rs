@@ -1,5 +1,34 @@
 //! Core move-VM value types: per-actor state, opcode enum, step/ext results.
 
+/// u16 slots covered by [`ActorState::anim_block`], counted from `+0xAC`.
+/// Covers every byte offset the ported opcodes address (the deepest is
+/// `0xF8`, op `0x38`).
+pub const ANIM_BLOCK_SLOTS: usize = 128;
+
+/// The `+0xAC..` u16 window as a newtype, purely so [`ActorState`] can keep
+/// deriving `Default` past the 32-element array limit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnimBlock(pub [u16; ANIM_BLOCK_SLOTS]);
+
+impl Default for AnimBlock {
+    fn default() -> Self {
+        Self([0; ANIM_BLOCK_SLOTS])
+    }
+}
+
+impl core::ops::Deref for AnimBlock {
+    type Target = [u16; ANIM_BLOCK_SLOTS];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl core::ops::DerefMut for AnimBlock {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 /// Per-actor move-VM state. One instance per actor that's running a move.
 ///
 /// Field naming uses the byte-offset convention from `docs/subsystems/move-vm.md`
@@ -74,6 +103,10 @@ pub struct ActorState {
     pub field_78: u16,
     /// `+0x7A` - generic slot (op 0x12).
     pub field_7a: u16,
+    /// `+0x7C` - the per-lane morph completion bitfield the ramp
+    /// envelope owns (`legaia_engine_vm::move_buffer::MoveBufferState::done_mask`).
+    /// The move VM only ever **clears** it, from op `0x0A`'s reset arm.
+    pub field_7c: u32,
     /// `+0x80` - animation bank 2 slot 0 (op 0x04, `v << 3`).
     pub anim_80: i16,
     /// `+0x82` - animation bank 2 slot 1.
@@ -110,10 +143,17 @@ pub struct ActorState {
     pub keyframe_desc: [u16; 4],
     /// `+0xA8` - heap or inline keyframe pointer / value (op 0x2C / 0x26).
     pub field_a8: i32,
-    /// `+0xAC..0xCA` - per-frame anim slot block. Modeled as a flat array
+    /// `+0xAC..` - per-frame anim slot block. Modeled as a flat array
     /// addressable by byte-offset for opcodes that touch deep into it.
     /// Indices are in u16 units relative to `+0xAC`.
-    pub anim_block: [u16; 16],
+    ///
+    /// Sized to the **highest byte offset any ported opcode writes**
+    /// (`0xF8`, from op `0x38`) rather than to the `+0xCA` slot names
+    /// alone: a short array silently swallowed the per-slot writes of
+    /// the variable-length opcodes (op `0x0A` walks `0x0C + 2*i` and
+    /// `0x1C + 2*i`), which reads as "the opcode ran" while the data
+    /// went nowhere.
+    pub anim_block: AnimBlock,
     /// `+0xCA` - duration slot (op 0x1C, `v << 3`).
     pub field_ca: u16,
 }
@@ -134,6 +174,52 @@ impl ActorState {
     pub fn anim_block_u16_set(&mut self, byte_off: usize, value: u16) {
         if let Some(slot) = self.anim_block.get_mut(byte_off / 2) {
             *slot = value;
+        }
+    }
+
+    /// Read a **byte** in `anim_block` by byte-offset relative to `+0xAC`.
+    /// The window is stored as u16 slots, so an even offset is the low half
+    /// of its slot and an odd offset the high half (little-endian, as the
+    /// PSX record is).
+    pub fn anim_block_u8(&self, byte_off: usize) -> u8 {
+        let word = self.anim_block_u16(byte_off);
+        if byte_off.is_multiple_of(2) {
+            (word & 0xFF) as u8
+        } else {
+            (word >> 8) as u8
+        }
+    }
+
+    /// Write a **byte** in `anim_block` by byte-offset relative to `+0xAC`,
+    /// leaving the other half of the slot alone. Byte-stride arrays in the
+    /// retail record (op `0x0A`'s `+0xB0 + lane` morph indices) need this -
+    /// writing them through the u16 setter makes consecutive lanes
+    /// overwrite each other.
+    pub fn anim_block_u8_set(&mut self, byte_off: usize, value: u8) {
+        let word = self.anim_block_u16(byte_off);
+        let merged = if byte_off.is_multiple_of(2) {
+            (word & 0xFF00) | u16::from(value)
+        } else {
+            (word & 0x00FF) | (u16::from(value) << 8)
+        };
+        self.anim_block_u16_set(byte_off, merged);
+    }
+
+    /// Zero the morph-weight halfword at `actor + 0xA0 + lane*2` - op
+    /// `0x0A`'s `sh zero, 0xa0(a1)` with `a1 = actor + lane*2`.
+    ///
+    /// That address range is the ramp envelope's lane array
+    /// (`move_buffer::MoveBufferState::lanes`), and in the retail record it
+    /// **overlaps** the op-`0x2C` keyframe buffer descriptor at `+0xA0..+0xA8`
+    /// and the pointer slot at `+0xA8`. This port keeps that overlap rather
+    /// than giving the weights a private array, because the overlap is the
+    /// retail layout, not a modelling shortcut.
+    pub fn zero_keyframe_weight(&mut self, lane: usize) {
+        match 0xA0 + lane * 2 {
+            off @ 0xA0..=0xA6 => self.keyframe_desc[(off - 0xA0) / 2] = 0,
+            0xA8 => self.field_a8 = ((self.field_a8 as u32) & 0xFFFF_0000) as i32,
+            0xAA => self.field_a8 = ((self.field_a8 as u32) & 0x0000_FFFF) as i32,
+            off => self.anim_block_u16_set(off - 0xAC, 0),
         }
     }
 }

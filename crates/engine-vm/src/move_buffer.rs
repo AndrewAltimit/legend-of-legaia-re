@@ -156,12 +156,22 @@ pub struct MoveBufferState {
     /// Only `lanes[..bone_count]` are read; lanes past that are
     /// reserved.
     pub lanes: [u16; MAX_BONES],
-    /// `actor[+0xB8]` per-frame up-ramp velocity (scaled by
+    /// `actor[+0xB0 + lane]` per-lane VDF sub-entry index - the morph
+    /// record the lane's weight drives. Written a **byte** per lane by
+    /// move-VM op `0x0A`, read back by the morph stager `FUN_8001C604`
+    /// alongside [`Self::lanes`]; see [`crate::vdf_morph`].
+    pub vdf_slot: [u8; MAX_BONES],
+    /// `actor[+0xB8 + lane*2]` per-lane up-ramp velocity (scaled by
     /// `frame_delta`).
-    pub up_velocity: i16,
-    /// `actor[+0xC8]` per-frame down-ramp velocity (scaled by
-    /// `frame_delta`).
-    pub down_velocity: i16,
+    ///
+    /// This is **per lane**, not one global rate: `FUN_80020740` reads
+    /// it at `0xb8(a1)` with `a1 = actor + lane*2`, and move-VM op
+    /// `0x0A` writes one value per morph slot from its operand stream.
+    pub up_velocity: [i16; MAX_BONES],
+    /// `actor[+0xC8 + lane*2]` per-lane down-ramp velocity (scaled by
+    /// `frame_delta`). Per lane for the same reason as
+    /// [`Self::up_velocity`] (`0xc8(a1)`).
+    pub down_velocity: [i16; MAX_BONES],
 }
 
 impl Default for MoveBufferState {
@@ -178,8 +188,9 @@ impl Default for MoveBufferState {
             bone_count: 0,
             done_mask: 0,
             lanes: [0; MAX_BONES],
-            up_velocity: 0,
-            down_velocity: 0,
+            vdf_slot: [0; MAX_BONES],
+            up_velocity: [0; MAX_BONES],
+            down_velocity: [0; MAX_BONES],
         }
     }
 }
@@ -187,6 +198,19 @@ impl Default for MoveBufferState {
 impl MoveBufferState {
     /// Convenience: read the `0x1000`-saturated peak value.
     pub const PEAK: u16 = 0x1000;
+
+    /// Set the same up-ramp velocity on every lane. Retail authors one
+    /// value per morph slot (move-VM op `0x0A`); this is only a
+    /// convenience for callers and tests that drive a uniform ramp.
+    pub fn set_uniform_up_velocity(&mut self, v: i16) {
+        self.up_velocity = [v; MAX_BONES];
+    }
+
+    /// Set the same down-ramp velocity on every lane. See
+    /// [`Self::set_uniform_up_velocity`].
+    pub fn set_uniform_down_velocity(&mut self, v: i16) {
+        self.down_velocity = [v; MAX_BONES];
+    }
 }
 
 /// Resolves a move-buffer record by id. Implementations live in the
@@ -234,16 +258,16 @@ pub trait MoveBufferHost {
 /// 1. **Frozen** ([`FROZEN`]): bail immediately.
 /// 2. **Init** ([`INIT`]): prime every lane to `0x1000`, set every
 ///    bit in `done_mask` plus the finishing sign-bit, clear
-///    [`INIT`]. (The retail body also clears every lane's `up_velocity`
-///    fields, but the per-frame velocity stays in `up_velocity` /
-///    `down_velocity`; that's a global rate, not per-lane.)
+///    [`INIT`]. (Init touches the lane weights and `done_mask` only -
+///    the per-lane velocities are authored by move-VM op `0x0A` and
+///    are not reset here.)
 /// 3. **Up-ramp**: each frame, every lane that hasn't peaked steps
-///    up by `up_velocity * frame_delta`. When a lane peaks the
+///    up by `up_velocity[lane] * frame_delta`. When a lane peaks the
 ///    corresponding bit in `done_mask` is set; when the last lane
 ///    peaks the finishing sign-bit is set (or [`ENVELOPE_ADVANCE`] is
 ///    OR'd in if [`HOLD`] was set).
 /// 4. **Down-ramp** (skipped when [`HOLD`] is set): each frame, every
-///    peaked lane steps down by `down_velocity * frame_delta`. When
+///    peaked lane steps down by `down_velocity[lane] * frame_delta`. When
 ///    lane 0 wraps below zero, the envelope either clears the
 ///    finishing bit ([`LANE0_SNAP_DOWN`] set) or OR's in
 ///    [`ENVELOPE_ADVANCE`] (clear).
@@ -300,7 +324,7 @@ pub fn envelope_tick(state: &mut MoveBufferState, frame_delta: u8) {
             // Lane 0 always ramps when not yet peaked; later lanes
             // ramp only after the previous lane peaked (cascade).
             if lane == 0 || prev_peaked {
-                let step = i32::from(state.up_velocity) * i32::from(frame_delta);
+                let step = i32::from(state.up_velocity[lane]) * i32::from(frame_delta);
                 let new = i32::from(state.lanes[lane]) + step;
                 state.lanes[lane] = new as u16;
             }
@@ -335,7 +359,7 @@ pub fn envelope_tick(state: &mut MoveBufferState, frame_delta: u8) {
                 let next_drained =
                     lane == bc - 1 || (state.done_mask & (1u32 << ((lane + 1) & 0x1F))) == 0;
                 if next_drained {
-                    let step = i32::from(state.down_velocity) * i32::from(frame_delta);
+                    let step = i32::from(state.down_velocity[lane]) * i32::from(frame_delta);
                     let new = i32::from(state.lanes[lane] as i16) - step;
                     state.lanes[lane] = new as u16;
                 }
@@ -513,10 +537,52 @@ mod tests {
     }
 
     #[test]
+    fn ramp_velocities_are_per_lane_not_one_global_rate() {
+        // Retail reads the up-ramp velocity at `0xb8(a1)` with
+        // `a1 = actor + lane*2`, and move-VM op 0x0A authors one value
+        // per morph slot. Give lane 0 and lane 1 different rates and
+        // check each lane ramps at its own.
+        let mut up = [0i16; MAX_BONES];
+        up[0] = 0xC00;
+        up[1] = 0x100;
+        let mut s = MoveBufferState {
+            bone_count: 2,
+            up_velocity: up,
+            ..Default::default()
+        };
+        envelope_tick(&mut s, 1);
+        assert_eq!(s.lanes[0], 0xC00);
+        assert_eq!(s.lanes[1], 0);
+        // Lane 0 peaks, cascading to lane 1 in the same pass - lane 1
+        // must move by its own 0x100, not by lane 0's 0x800.
+        envelope_tick(&mut s, 1);
+        assert_eq!(s.lanes[0], MoveBufferState::PEAK);
+        assert_eq!(s.lanes[1], 0x100);
+    }
+
+    #[test]
+    fn down_ramp_velocity_is_per_lane_too() {
+        let mut down = [0i16; MAX_BONES];
+        down[0] = 0x400;
+        down[1] = 0x900;
+        let mut s = MoveBufferState {
+            bone_count: 2,
+            env_flags: INIT,
+            down_velocity: down,
+            ..Default::default()
+        };
+        // INIT primes both lanes to peak and arms the finishing bit;
+        // the down-ramp then drains the top lane first.
+        envelope_tick(&mut s, 1);
+        assert_eq!(s.lanes[1], MoveBufferState::PEAK - 0x900);
+        assert_eq!(s.lanes[0], MoveBufferState::PEAK);
+    }
+
+    #[test]
     fn up_ramp_cascades_lane_0_first() {
         let mut s = MoveBufferState {
             bone_count: 3,
-            up_velocity: 0xC00,
+            up_velocity: [0xC00; MAX_BONES],
             ..Default::default()
         };
         // Frame 1: lane 0 moves; lane 1 / 2 wait for lane 0 to peak.
@@ -543,7 +609,7 @@ mod tests {
     fn up_ramp_full_completion_arms_finishing_bit() {
         let mut s = MoveBufferState {
             bone_count: 2,
-            up_velocity: 0x1000,
+            up_velocity: [0x1000; MAX_BONES],
             ..Default::default()
         };
         // 4 frames is enough to peak both lanes (2 frames each
@@ -561,7 +627,7 @@ mod tests {
     fn hold_flag_skips_down_ramp() {
         let mut s = MoveBufferState {
             bone_count: 1,
-            up_velocity: 0x1000,
+            up_velocity: [0x1000; MAX_BONES],
             env_flags: HOLD,
             ..Default::default()
         };
@@ -579,7 +645,7 @@ mod tests {
     fn down_ramp_drains_lane_signals_advance() {
         let mut s = MoveBufferState {
             bone_count: 1,
-            down_velocity: 0x400,
+            down_velocity: [0x400; MAX_BONES],
             // Lane already at peak + done_mask peaked + finishing.
             done_mask: 0x1 | DONE_MASK_FINISHING,
             ..Default::default()
@@ -600,7 +666,7 @@ mod tests {
     fn down_ramp_lane0_snap_down_clears_finishing_bit() {
         let mut s = MoveBufferState {
             bone_count: 1,
-            down_velocity: 0x400,
+            down_velocity: [0x400; MAX_BONES],
             done_mask: 0x1 | DONE_MASK_FINISHING,
             env_flags: LANE0_SNAP_DOWN,
             ..Default::default()
@@ -626,7 +692,7 @@ mod tests {
         // wrap-handler).
         let mut s = MoveBufferState {
             bone_count: 1,
-            down_velocity: 0x400,
+            down_velocity: [0x400; MAX_BONES],
             done_mask: 0x1 | DONE_MASK_FINISHING,
             env_flags: 0,
             ..Default::default()
