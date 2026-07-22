@@ -835,6 +835,17 @@ spells spell-entry blobs       ; each carries its own attack-effect geometry
 +0x08→ texture / CLUT pool     ; per-monster palettes + 4bpp texture pages
 ```
 
+The name string carries a two-byte **element-icon escape**: a `^` + letter
+prefix (`^A Gimard`, `^F Aluru`) the battle UI renders as the element badge,
+in the fixed order `^A`=Fire, `^B`=Thunder, `^C`=Wind, `^D`=Water, `^E`=Earth,
+`^F`=Light, `^G`=Dark, `^H`=Evil (the icon-glyph row `0x1D..0x24` in the same
+order - **not** the element-id order of the [`+0x1D` element byte](#monster-record-source-layout)).
+Across the roster every carrying monster's caret letter agrees with its
+element byte, with one deliberate exception: `^H Cort` (the final boss) wears
+the Evil icon over element byte `7` - the no-affinity id whose matrix row and
+column are all-100. Boss-tier `$2`/`$3` name suffixes are literal ASCII, not
+markup.
+
 The mesh's primitives are textured: they reference a CLUT + a 4bpp texture page
 via per-prim CBA/TSB. The matching palette + pixel bytes live in the **texture
 pool at record `+0x08`**, whose layout is pinned from the battle loader
