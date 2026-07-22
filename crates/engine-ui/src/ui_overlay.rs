@@ -75,6 +75,31 @@ pub struct ShopRow<'a> {
     /// Optional right-aligned price or value in gold. `None` for confirm /
     /// quantity rows where no price is shown.
     pub price: Option<u32>,
+    /// Retail text ink for this row - the value the menu overlay stages into
+    /// `_DAT_8007B454` before the string draw. `7` is normal white, `0` the
+    /// greyed/unavailable pen and `6` the accent pen a stock row takes from
+    /// its record's "already owned / restricted" marker. Callers derive it
+    /// with `legaia_engine_core::shop::shop_stock_row_ink`; rows with no
+    /// retail ink of their own pass [`SHOP_INK_NORMAL`].
+    pub ink: u8,
+}
+
+/// Normal white text ink (retail `_DAT_8007B454 == 7`).
+pub const SHOP_INK_NORMAL: u8 = 7;
+/// Greyed / unavailable text ink (retail `_DAT_8007B454 == 0`).
+pub const SHOP_INK_GREY: u8 = 0;
+/// Accent text ink (retail `_DAT_8007B454 == 6`).
+pub const SHOP_INK_MARKED: u8 = 6;
+
+impl<'a> ShopRow<'a> {
+    /// A row at the normal white ink.
+    pub fn new(label: &'a str, price: Option<u32>) -> Self {
+        Self {
+            label,
+            price,
+            ink: SHOP_INK_NORMAL,
+        }
+    }
 }
 
 /// Build [`TextDraw`]s for a 2-D shop / confirmation panel.
@@ -95,6 +120,9 @@ pub struct ShopRow<'a> {
 ///
 /// Rows where `gold < price` are rendered dim; selected row has a
 /// gold-coloured price. `gold = None` suppresses the gold footer line.
+/// A row whose [`ShopRow::ink`] is not [`SHOP_INK_NORMAL`] overrides that
+/// affordability derivation with its retail pen - `0` dim, `6` the accent
+/// colour the retail stock list uses for owned/restricted stock.
 ///
 /// A natural anchor for a PSX-style 320×240 surface is `(8, 140)`.
 pub fn shop_draws_for<'a>(
@@ -114,6 +142,7 @@ pub fn shop_draws_for<'a>(
     let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
     let dim: [f32; 4] = [0.55, 0.55, 0.55, 1.0];
     let gold_col: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
+    let marked: [f32; 4] = [0.45, 0.68, 1.0, 1.0];
 
     let mut out = Vec::new();
 
@@ -131,7 +160,15 @@ pub fn shop_draws_for<'a>(
             (Some(g), Some(p)) => g >= p as i32,
             _ => true,
         };
-        let fg = if !can_afford || !selected { dim } else { white };
+        // A retail ink other than the normal pen wins over the affordability
+        // derivation: the stock list's `6` accent marks owned / restricted
+        // stock the player *can* afford, and its `0` also covers a full stack.
+        let (can_afford, ink_fg) = match row.ink {
+            SHOP_INK_GREY => (false, Some(dim)),
+            SHOP_INK_MARKED => (can_afford, Some(marked)),
+            _ => (can_afford, None),
+        };
+        let fg = ink_fg.unwrap_or(if !can_afford || !selected { dim } else { white });
 
         if selected {
             let cur_layout = font.layout_ascii(">");

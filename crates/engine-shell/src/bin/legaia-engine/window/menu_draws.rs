@@ -784,10 +784,7 @@ impl PlayWindowApp {
                 }
                 let rows: Vec<ShopRow<'_>> = labels
                     .iter()
-                    .map(|l| ShopRow {
-                        label: l.as_str(),
-                        price: None,
-                    })
+                    .map(|l| ShopRow::new(l.as_str(), None))
                     .collect();
                 out.extend(shop_draws_for(
                     &self.font,
@@ -807,16 +804,7 @@ impl PlayWindowApp {
                     ),
                     None => "Trade?".to_string(),
                 };
-                let rows = vec![
-                    ShopRow {
-                        label: "Yes",
-                        price: None,
-                    },
-                    ShopRow {
-                        label: "No",
-                        price: None,
-                    },
-                ];
+                let rows = vec![ShopRow::new("Yes", None), ShopRow::new("No", None)];
                 out.extend(shop_draws_for(
                     &self.font,
                     &title,

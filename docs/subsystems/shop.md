@@ -148,19 +148,37 @@ row rendered at a fixed vertical stride:
 
 | Element | X offset (px) | Y stride (px) | Notes |
 |---|---|---|---|
-| Cursor `>` | +0 | - | Drawn only on the selected row |
+| Cursor | +0 | - | Hand sprite `FUN_8002B994`, gated by `_DAT_8007BB98` |
 | Item name | +20 (`0x14`) | +14 (`0x0E`) per row | `func_0x80036888` |
 | Price | +112 (`0x70`) | same row | `func_0x80034b78`, 6-digit field |
-| Gold footer | +0 | below last row | `func_0x80034b78`, 8-digit field |
 
-Row colour logic (retail `_DAT_8007b454` palette index):
-- **White** - normal affordable item.
-- **Dim** - item is unaffordable (`price > gold`) or held count exceeds 98.
-- **Blue** - item has an "equipped-comparison" flag set.
+The row count is the byte at `DAT_801EF0D0` and each row indexes the stock
+table through the row-order byte array at `DAT_801EF0E0`; the window renderer
+draws **no gold footer** - the purse is its own window, and `FUN_801D5DE0`
+reads `_DAT_800845A4` only to decide a row's ink.
+
+### Row ink is last-rule-wins, not first-match
+
+Three tests run in a fixed order and each one **overwrites** the previous
+verdict, so the ink is not a priority list:
+
+1. ink starts at `7` (white);
+2. held count not `< 0x63` (a stack at 99) -> `0`, grey;
+3. stock record `+2` non-zero (the "already owned / restricted" marker)
+   -> `6`, the accent pen - **even when the stack is full**;
+4. `_DAT_800845A4 < price` -> `0`, grey - **even when the marker set `6`**.
+
+Ported with the geometry constants as
+`engine-core::shop::{shop_stock_row_ink, shop_cursor_mode}`; both hosts feed
+the resulting ink into `engine-ui::shop_draws_for` through `ShopRow::ink`.
 
 The quantity-selector sub-screen (`FUN_801d5510`) uses the same 14 px line
 height, showing "Have N [item]" + "How many will you buy?" + a quantity×price
-line at y+34 (`0x22`) from the panel top.
+line at y+34 (`0x22`) from the panel top. The running total's digit-field
+width is chosen from the magnitude of the **unit price**, not of the total
+(cascading compares against `99` / `999` / `9999` giving 4..7 columns), which
+is what keeps the number right-aligned as the quantity climbs. Ported as
+`engine-core::shop::{shop_buy_quantity_panel, shop_total_digit_field}`.
 
 The sell-item detail panel (`FUN_801d5ae8`) shows item name, type description,
 and sell price (buy price ÷ 2) at y+43 (`0x2b`) with an icon at x+84.
@@ -197,6 +215,12 @@ the Sell row the function scans the inventory id/count pair array at
 and, when no slot has both a non-zero id **and** a non-zero count, clears the
 global to `0` so **Sell renders dim when the bag is empty**.
 
+The scan sits *between* the Buy draw and the Sell draw, and nothing restores
+the global afterwards, so an empty bag greys **Sell and Quit together** - Buy
+is the only row that is always white. Ported as
+`engine-core::shop::shop_root_command_rows`, which both hosts consult for the
+Sell row's ink.
+
 After each row the cursor sprite `func_0x8002b994(0, mode, WX, rowY)` (the
 16x16 bobbing menu cursor, drawn at the window origin X - the same "+0"
 cursor column as the buy list) is gated on the picker cursor word
@@ -209,6 +233,10 @@ cursor column as the buy list) is gated on the picker cursor word
 - bit `0x2000` - parked/unfocused presentation: the row-index gate is
   bypassed and every row gets a mode-4/0 draw keyed to the blink bit;
 - bit `0x4000` - cursor suppressed entirely.
+
+The stock list `FUN_801D5DE0` re-runs the identical four-way decode against
+its own word `_DAT_8007BB98`; the shared kernel is
+`engine-core::shop::shop_cursor_mode`.
 
 Input lives in the picker dispatcher `FUN_801dafd4` (its sub-state var is
 `DAT_801E46AC`): the cursor clamp is a literal `li a1,0x3` at `0x801DB098`

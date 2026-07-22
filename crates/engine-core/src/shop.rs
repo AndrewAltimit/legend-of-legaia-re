@@ -771,6 +771,224 @@ impl BuyRecipientSession {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Shop window *content* renderers (menu overlay).
+//
+// The shop panels are descriptor-table windows: the 9-slice frame is drawn by
+// the window host, and each window's renderer VA draws content only, reading
+// its content origin from the live window record's `+0xa` / `+0xc` (`WX`/`WY`).
+// The kernels below are the data-derived halves of three of those renderers -
+// ink selection, row geometry, cursor gating and the digit-field width law -
+// with the retail glyph pushes left to the host's own text layer.
+// ---------------------------------------------------------------------------
+
+/// Normal white text ink staged into `_DAT_8007B454` before a string draw.
+pub const SHOP_INK_NORMAL: u8 = 7;
+/// Greyed / unavailable text ink.
+pub const SHOP_INK_GREY: u8 = 0;
+/// Accent ink a stock row takes when its record carries the non-zero
+/// "already owned / restricted" marker at `+2`.
+pub const SHOP_INK_MARKED: u8 = 6;
+
+/// Vertical pitch between shop rows (retail `0xE`).
+pub const SHOP_ROW_PITCH: i16 = 0x0E;
+/// Text indent from the window content origin (retail `0x14`).
+pub const SHOP_TEXT_INDENT: i16 = 0x14;
+/// Price-field indent from the window content origin (retail `0x14 + 0x5C`).
+pub const SHOP_PRICE_INDENT: i16 = 0x70;
+/// Digit count of a stock row's price field.
+pub const SHOP_PRICE_DIGITS: u8 = 6;
+
+/// Decode a shop picker's cursor-state word into the hand-sprite mode for
+/// `row`, or `None` when no hand draws on that row.
+///
+/// The word (`DAT_801E46BC` for the root picker, `_DAT_8007BB98` for the
+/// stock list) packs the selection in its low 12 bits plus three flags, and
+/// every shop renderer re-runs the same four-way decode per row:
+///
+/// * bit `0x4000` - cursor suppressed entirely (no row draws a hand);
+/// * bit `0x2000` - parked/unfocused: the row-index gate is **bypassed**, so
+///   every row draws, mode `4` or `0` by the blink bit;
+/// * otherwise the low 12 bits must equal `row`, and the mode is the
+///   inverted blink bit (`1` animated / `0` static).
+///
+/// PORT: FUN_801d4868 (per-row cursor gate, `0x801D48B4..0x801D4910`)
+/// PORT: FUN_801d5de0 (same decode, `0x801D5E40..0x801D5E9C`)
+pub fn shop_cursor_mode(word: u32, row: u16) -> Option<u8> {
+    if word & 0x4000 != 0 {
+        return None;
+    }
+    let blink_off = (word & 0x1000) == 0;
+    if word & 0x2000 != 0 {
+        return Some(if blink_off { 4 } else { 0 });
+    }
+    if (word & 0xFFF) as u16 != row {
+        return None;
+    }
+    Some(u8::from(blink_off))
+}
+
+/// One row of the shop root command window as retail lays it out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShopRootRow {
+    /// Row index (`0` Buy, `1` Sell, `2` Quit).
+    pub row: u16,
+    /// Text pen, content-origin relative: `(WX + 0x14, WY + row * 0xE)`.
+    pub text: (i16, i16),
+    /// Text ink staged into `_DAT_8007B454` before the string draw.
+    pub ink: u8,
+    /// Hand-sprite mode + pen when the cursor draws on this row. The hand
+    /// sits at the window origin X, not the text indent.
+    pub cursor: Option<(u8, (i16, i16))>,
+}
+
+/// Build the three rows of the shop **root command window** (menu-overlay
+/// window `0x2A`): Buy / Sell / Quit.
+///
+/// `bag_has_sellable` is the outcome of retail's inventory scan over the
+/// `[id, count]` pair array at `0x80085958` across the active slot window
+/// `_DAT_8007B5EA.._DAT_8007B5EC` - true when some slot has **both** bytes
+/// non-zero. The subtlety the disassembly settles: the ink global is staged
+/// to `7` once on entry and cleared to `0` *after* the Buy row has already
+/// been drawn, so an empty bag greys **Sell and Quit together** - Buy always
+/// renders white.
+///
+/// PORT: FUN_801d4868 (menu-overlay shop root command window content renderer)
+pub fn shop_root_command_rows(
+    window: (i16, i16),
+    cursor_word: u32,
+    bag_has_sellable: bool,
+) -> [ShopRootRow; 3] {
+    let (wx, wy) = window;
+    let mut rows = [ShopRootRow {
+        row: 0,
+        text: (0, 0),
+        ink: SHOP_INK_NORMAL,
+        cursor: None,
+    }; 3];
+    for (i, out) in rows.iter_mut().enumerate() {
+        let row = i as u16;
+        let y = wy + row as i16 * SHOP_ROW_PITCH;
+        out.row = row;
+        out.text = (wx + SHOP_TEXT_INDENT, y);
+        out.ink = if row == 0 || bag_has_sellable {
+            SHOP_INK_NORMAL
+        } else {
+            SHOP_INK_GREY
+        };
+        out.cursor = shop_cursor_mode(cursor_word, row).map(|mode| (mode, (wx, y)));
+    }
+    rows
+}
+
+/// Text ink for one row of the shop **stock list** (menu-overlay window
+/// renderer `FUN_801D5DE0`).
+///
+/// `held` is the party's held count of the row's item (retail's bag scan
+/// `FUN_80042F4C`), `marker` the stock record's `+2` halfword, `gold` the
+/// party purse `_DAT_800845A4` and `price` the record's `+4` word.
+///
+/// The three tests are applied in a fixed order and each **overwrites** the
+/// previous verdict, so the precedence is not the "first rule wins" reading
+/// the bullet list of colours suggests: a full stack greys, a non-zero marker
+/// then re-inks it to `6` *even though the stack is full*, and an
+/// unaffordable price finally greys it again regardless of the marker.
+///
+/// PORT: FUN_801d5de0 (stock-row ink selection, `0x801D5EA0..0x801D5F6C`)
+pub fn shop_stock_row_ink(held: i16, marker: i16, gold: i32, price: i32) -> u8 {
+    let mut ink = SHOP_INK_NORMAL;
+    if held >= SHOP_HELD_CAP as i16 {
+        ink = SHOP_INK_GREY;
+    }
+    if marker != 0 {
+        ink = SHOP_INK_MARKED;
+    }
+    if gold < price {
+        ink = SHOP_INK_GREY;
+    }
+    ink
+}
+
+/// Digit-field width the buy-quantity panel prints the running total
+/// `qty * price` with.
+///
+/// The width is chosen from the magnitude of the **unit price**, not of the
+/// total, through three cascading compares against `99` / `999` / `9999`, so
+/// the number stays right-aligned in the box as the quantity climbs.
+///
+/// PORT: FUN_801d5510 (total digit-field width, `0x801D5654..0x801D56A4`)
+pub fn shop_total_digit_field(price: u16) -> u8 {
+    let mut n: u8 = if price > 9999 { 5 } else { 4 };
+    if price > 999 {
+        n += 1;
+    }
+    if price > 99 {
+        n += 1;
+    }
+    n
+}
+
+/// The buy-quantity prompt panel's data-derived content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BuyQuantityPanel {
+    /// `Some(count)` when the party already holds the highlighted item -
+    /// retail prints the "Have" label plus this 2-digit count. `None` is the
+    /// bag-scan sentinel `0x100` (nothing held) and prints the "None" string
+    /// at the window origin instead.
+    pub have: Option<u8>,
+    /// Pen of the held-count digits, `(WX + 0x20, WY)`. Unused when `have`
+    /// is `None`.
+    pub have_count_pen: (i16, i16),
+    /// Pen of the label that follows the count, `(WX + 0x30, WY)` when a
+    /// count printed and `(WX, WY)` when it did not.
+    pub have_tail_pen: (i16, i16),
+    /// Pen of the "How many will you buy?" prompt, `(WX, WY + 0xE)`.
+    pub prompt_pen: (i16, i16),
+    /// Baseline of the quantity row, `WY + 0x22`.
+    pub value_row_y: i16,
+    /// Chosen quantity + its 2-digit pen `(WX + 0x18, value_row_y)`.
+    pub quantity: (u8, (i16, i16)),
+    /// Unit price + its 2-digit pen `(WX + 0x30, value_row_y)`.
+    pub unit: (u16, (i16, i16)),
+    /// Running total `qty * price`, its digit-field width and its pen
+    /// `(WX + 0x62, value_row_y)`.
+    pub total: (u32, u8, (i16, i16)),
+    /// Hand-sprite pen `(WX + 4, value_row_y)`; the mode is always `1`.
+    pub cursor_pen: (i16, i16),
+}
+
+/// Build the **buy-quantity prompt panel** content (menu-overlay window
+/// renderer `FUN_801D5510`).
+///
+/// `held` is the bag-scan result for the highlighted item id: `Some(slot
+/// count)` or `None` for retail's `0x100` "not held" sentinel.
+///
+/// PORT: FUN_801d5510 (menu-overlay buy-quantity prompt window content renderer)
+pub fn shop_buy_quantity_panel(
+    window: (i16, i16),
+    held: Option<u8>,
+    quantity: u8,
+    unit_price: u16,
+) -> BuyQuantityPanel {
+    let (wx, wy) = window;
+    let value_row_y = wy + 0x22;
+    BuyQuantityPanel {
+        have: held,
+        have_count_pen: (wx + 0x20, wy),
+        have_tail_pen: (if held.is_some() { wx + 0x30 } else { wx }, wy),
+        prompt_pen: (wx, wy + SHOP_ROW_PITCH),
+        value_row_y,
+        quantity: (quantity, (wx + 0x18, value_row_y)),
+        unit: (unit_price, (wx + 0x30, value_row_y)),
+        total: (
+            quantity as u32 * unit_price as u32,
+            shop_total_digit_field(unit_price),
+            (wx + 0x62, value_row_y),
+        ),
+        cursor_pen: (wx + 4, value_row_y),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1191,5 +1409,91 @@ mod tests {
         };
         sell_list_fixup(&mut sel, 1, 12);
         assert_eq!((sel.scroll_top, sel.selected), (0, 0));
+    }
+
+    #[test]
+    fn cursor_word_suppress_park_and_select() {
+        // bit 0x4000 kills the hand on every row.
+        assert_eq!(shop_cursor_mode(0x4000 | 1, 1), None);
+        // bit 0x2000 parks it: every row draws, mode by the blink bit.
+        assert_eq!(shop_cursor_mode(0x2000, 0), Some(4));
+        assert_eq!(shop_cursor_mode(0x2000, 2), Some(4));
+        assert_eq!(shop_cursor_mode(0x2000 | 0x1000, 2), Some(0));
+        // Focused: only the selected row, mode = inverted blink bit.
+        assert_eq!(shop_cursor_mode(1, 0), None);
+        assert_eq!(shop_cursor_mode(1, 1), Some(1));
+        assert_eq!(shop_cursor_mode(0x1000 | 1, 1), Some(0));
+    }
+
+    #[test]
+    fn root_command_rows_grey_sell_and_quit_together() {
+        let rows = shop_root_command_rows((40, 50), 0, false);
+        assert_eq!(rows[0].text, (40 + 0x14, 50));
+        assert_eq!(rows[1].text, (40 + 0x14, 50 + 0x0E));
+        assert_eq!(rows[2].text, (40 + 0x14, 50 + 0x1C));
+        // The ink is cleared after the Buy row draws, so Buy stays white and
+        // both later rows grey.
+        assert_eq!(rows[0].ink, SHOP_INK_NORMAL);
+        assert_eq!(rows[1].ink, SHOP_INK_GREY);
+        assert_eq!(rows[2].ink, SHOP_INK_GREY);
+
+        let rows = shop_root_command_rows((40, 50), 0, true);
+        assert!(rows.iter().all(|r| r.ink == SHOP_INK_NORMAL));
+    }
+
+    #[test]
+    fn root_command_cursor_sits_at_the_window_origin() {
+        let rows = shop_root_command_rows((40, 50), 1, true);
+        assert_eq!(rows[0].cursor, None);
+        assert_eq!(rows[1].cursor, Some((1, (40, 50 + 0x0E))));
+        assert_eq!(rows[2].cursor, None);
+    }
+
+    #[test]
+    fn stock_row_ink_precedence_is_last_rule_wins() {
+        // Plain affordable row.
+        assert_eq!(shop_stock_row_ink(0, 0, 1000, 100), SHOP_INK_NORMAL);
+        // Full stack greys.
+        assert_eq!(shop_stock_row_ink(99, 0, 1000, 100), SHOP_INK_GREY);
+        // ...but a non-zero marker re-inks it even at a full stack.
+        assert_eq!(shop_stock_row_ink(99, 1, 1000, 100), SHOP_INK_MARKED);
+        // ...and an unaffordable price greys it again, marker or not.
+        assert_eq!(shop_stock_row_ink(0, 1, 50, 100), SHOP_INK_GREY);
+        assert_eq!(shop_stock_row_ink(0, 0, 50, 100), SHOP_INK_GREY);
+        // Exactly affordable is affordable (`gold < price` is strict).
+        assert_eq!(shop_stock_row_ink(0, 0, 100, 100), SHOP_INK_NORMAL);
+        // 98 held is still under the cap.
+        assert_eq!(shop_stock_row_ink(98, 0, 1000, 100), SHOP_INK_NORMAL);
+    }
+
+    #[test]
+    fn total_digit_field_steps_on_the_unit_price() {
+        assert_eq!(shop_total_digit_field(0), 4);
+        assert_eq!(shop_total_digit_field(99), 4);
+        assert_eq!(shop_total_digit_field(100), 5);
+        assert_eq!(shop_total_digit_field(999), 5);
+        assert_eq!(shop_total_digit_field(1000), 6);
+        assert_eq!(shop_total_digit_field(9999), 6);
+        assert_eq!(shop_total_digit_field(10000), 7);
+    }
+
+    #[test]
+    fn buy_quantity_panel_geometry_and_total() {
+        let p = shop_buy_quantity_panel((10, 20), Some(3), 5, 250);
+        assert_eq!(p.have, Some(3));
+        assert_eq!(p.have_count_pen, (10 + 0x20, 20));
+        assert_eq!(p.have_tail_pen, (10 + 0x30, 20));
+        assert_eq!(p.prompt_pen, (10, 20 + 0x0E));
+        assert_eq!(p.value_row_y, 20 + 0x22);
+        assert_eq!(p.quantity, (5, (10 + 0x18, 20 + 0x22)));
+        assert_eq!(p.unit, (250, (10 + 0x30, 20 + 0x22)));
+        assert_eq!(p.total, (1250, 5, (10 + 0x62, 20 + 0x22)));
+        assert_eq!(p.cursor_pen, (10 + 4, 20 + 0x22));
+
+        // Nothing held: the "None" string takes the window origin and no
+        // count row prints.
+        let p = shop_buy_quantity_panel((10, 20), None, 1, 10);
+        assert_eq!(p.have, None);
+        assert_eq!(p.have_tail_pen, (10, 20));
     }
 }
