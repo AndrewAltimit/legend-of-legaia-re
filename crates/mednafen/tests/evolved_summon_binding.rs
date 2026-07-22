@@ -16,10 +16,18 @@
 //! through the gap exactly as the bracket-pinned base and high blocks
 //! predicted. Both `0x4000` render-mode-node carriers (`0x8E → 916` Aluru,
 //! `0x93 → 921` Iota) are among them, confirming those carriers are player
-//! casts. Only `0x90 → 918` and `0x91 → 919` stay arithmetic-predicted.
+//! casts.
+//!
+//! The final two legs - `0x90` Kemaro → `918` and `0x91` Spoon → `919` -
+//! are pinned by two PCSX-Redux mid-cast states captured with an *injected*
+//! cast (`scripts/pcsx-redux/autorun_evolved_cast.lua`: the spell is written
+//! into Vahn's record spell list `+0x13C/+0x13D/+0x161` plus an MP grant, then
+//! a pad script drives the battle Magic submenu); loader-B id read mid-cast +
+//! the stager 100% byte-resident at slot B over its LBA footprint. The whole
+//! evolved-Seru block `0x8C..=0x95 → 914..=923` is now capture-pinned.
 //!
 //! Disc + library gated: needs the extracted PROT (stager bytes) and the
-//! mednafen save backups (mid-cast RAM). Skip-passes otherwise.
+//! mednafen / pcsx-redux save backups (mid-cast RAM). Skip-passes otherwise.
 
 use std::path::PathBuf;
 
@@ -29,8 +37,8 @@ use legaia_engine_core::summon::summon_stager_prot_entry;
 use legaia_mednafen::{SaveState, ScenarioManifest, extract::ram_slice};
 
 /// `(scenario label, loader-B id, extraction entry, spell id)` for the
-/// catalogued evolved-Seru player casts. Eight of the ten legs are pinned; only
-/// `0x90 → 918` and `0x91 → 919` remain arithmetic-predicted (no mid-cast yet).
+/// catalogued evolved-Seru player casts backed by **mednafen** states (eight of
+/// the ten legs; the other two are PCSX-Redux states in [`EVOLVED_CASTS_PCSX`]).
 const EVOLVED_CASTS: &[(&str, u16, u32, u8)] = &[
     ("gola_gola_summon_mid_cast", 19, 914, 0x8C), // Vahn, fire, "Spinning Flare"
     ("mushura_summon_mid_cast", 20, 915, 0x8D),   // Noa, earth, "Crazy Driver"
@@ -40,6 +48,14 @@ const EVOLVED_CASTS: &[(&str, u16, u32, u8)] = &[
     ("iota_summon_mid_cast", 26, 921, 0x93),      // Vahn, earth, "Odd Dimension" (0x4000 carrier)
     ("puera_summon_mid_cast", 27, 922, 0x94),     // Noa, dark, "Dream Illusion"
     ("gilium_summon_mid_cast", 28, 923, 0x95),    // Noa, thunder, "Space Cannon"
+];
+
+/// The two legs with **PCSX-Redux** mid-cast states (injected casts vs Gobu
+/// Gobu, probe `autorun_evolved_cast.lua`): same tuple shape as
+/// [`EVOLVED_CASTS`].
+const EVOLVED_CASTS_PCSX: &[(&str, u16, u32, u8)] = &[
+    ("evolved_0x90_midcast", 23, 918, 0x90), // Kemaro, earth, "Canine Fangs"
+    ("evolved_0x91_midcast", 24, 919, 0x91), // Spoon, light, "Holy Eyes"
 ];
 
 /// Battle overlay loader-B current-id (`*DAT_8007BC4C`, the last stager id the
@@ -80,6 +96,82 @@ fn extracted_root() -> Option<PathBuf> {
     None
 }
 
+/// The shared per-leg assertion body: arithmetic, live loader-B id, engine
+/// map, slot-B byte-residency over the LBA footprint, and stager parse.
+fn check_leg(
+    ram: &[u8],
+    index: &ProtIndex,
+    label: &str,
+    loader_b: u16,
+    extraction: u32,
+    spell_id: u8,
+) {
+    // The arithmetic the whole run rides: extraction = loader_b + 895,
+    // spell = loader_b + 0x79. Encode it so the constants can't drift.
+    assert_eq!(
+        extraction,
+        loader_b as u32 + 895,
+        "{label}: extraction must be loader_b + 895"
+    );
+    assert_eq!(
+        spell_id,
+        loader_b as u8 + 0x79,
+        "{label}: spell id must be loader_b + 0x79"
+    );
+
+    // Loader-B current-id read mid-cast == the predicted leg.
+    let lb = ram_slice(ram, LOADER_B_VA, LOADER_B_VA + 2).expect("loader-B window");
+    let live = u16::from_le_bytes([lb[0], lb[1]]);
+    assert_eq!(
+        live, loader_b,
+        "{label}: loader-B id {live} (0x{live:x}) != predicted {loader_b}",
+    );
+
+    // The engine maps the spell to the same entry.
+    assert_eq!(
+        summon_stager_prot_entry(spell_id),
+        Some(extraction),
+        "{label}: engine summon_stager_prot_entry(0x{spell_id:02x}) must map to {extraction}",
+    );
+
+    // The predicted stager is byte-resident at slot B (a genuine mid-cast,
+    // not a stale loader-B tracker): trim the disc entry to its TOC-gap
+    // footprint and compare against the resident slot-B window.
+    let bytes = index
+        .entry_bytes_lba_footprint(extraction)
+        .expect("read stager footprint");
+    let resident = ram_slice(
+        ram,
+        SUMMON_OVERLAY_LINK_BASE,
+        SUMMON_OVERLAY_LINK_BASE + bytes.len() as u32,
+    )
+    .expect("resident stager window");
+    let match_pct =
+        resident.iter().zip(&bytes).filter(|(a, b)| a == b).count() as f64 / bytes.len() as f64;
+    assert!(
+        match_pct > 0.99,
+        "{label}: predicted stager {extraction} not resident at slot B \
+         (only {:.1}% byte-match)",
+        match_pct * 100.0,
+    );
+
+    // And the entry is a stager (move-VM scene-graph), not some other asset.
+    let overlay = summon_overlay::parse(&bytes, SUMMON_OVERLAY_LINK_BASE);
+    assert!(
+        overlay.spawn_sites >= 4 && overlay.parts.len() >= 3,
+        "{label}: PROT {extraction} should parse as a stager (got {} sites, {} parts)",
+        overlay.spawn_sites,
+        overlay.parts.len(),
+    );
+
+    eprintln!(
+        "{label}: spell 0x{spell_id:02x} loader-B {live} -> PROT {extraction}; \
+         resident {:.1}%, {} parts",
+        match_pct * 100.0,
+        overlay.parts.len(),
+    );
+}
+
 #[test]
 fn evolved_seru_casts_byte_pin_their_predicted_stager() {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -107,75 +199,78 @@ fn evolved_seru_casts_byte_pin_their_predicted_stager() {
         };
         let save = SaveState::from_path(&save_path).expect("parse save");
         let ram = save.main_ram().expect("main RAM");
-
-        // The arithmetic the whole run rides: extraction = loader_b + 895,
-        // spell = loader_b + 0x79. Encode it so the constants can't drift.
-        assert_eq!(
-            extraction,
-            loader_b as u32 + 895,
-            "{label}: extraction must be loader_b + 895"
-        );
-        assert_eq!(
-            spell_id,
-            loader_b as u8 + 0x79,
-            "{label}: spell id must be loader_b + 0x79"
-        );
-
-        // Loader-B current-id read mid-cast == the predicted leg.
-        let lb = ram_slice(ram, LOADER_B_VA, LOADER_B_VA + 2).expect("loader-B window");
-        let live = u16::from_le_bytes([lb[0], lb[1]]);
-        assert_eq!(
-            live, loader_b,
-            "{label}: loader-B id {live} (0x{live:x}) != predicted {loader_b}",
-        );
-
-        // The engine maps the spell to the same entry.
-        assert_eq!(
-            summon_stager_prot_entry(spell_id),
-            Some(extraction),
-            "{label}: engine summon_stager_prot_entry(0x{spell_id:02x}) must map to {extraction}",
-        );
-
-        // The predicted stager is byte-resident at slot B (a genuine mid-cast,
-        // not a stale loader-B tracker): trim the disc entry to its TOC-gap
-        // footprint and compare against the resident slot-B window.
-        let bytes = index
-            .entry_bytes_lba_footprint(extraction)
-            .expect("read stager footprint");
-        let resident = ram_slice(
-            ram,
-            SUMMON_OVERLAY_LINK_BASE,
-            SUMMON_OVERLAY_LINK_BASE + bytes.len() as u32,
-        )
-        .expect("resident stager window");
-        let match_pct =
-            resident.iter().zip(&bytes).filter(|(a, b)| a == b).count() as f64 / bytes.len() as f64;
-        assert!(
-            match_pct > 0.99,
-            "{label}: predicted stager {extraction} not resident at slot B \
-             (only {:.1}% byte-match)",
-            match_pct * 100.0,
-        );
-
-        // And the entry is a stager (move-VM scene-graph), not some other asset.
-        let overlay = summon_overlay::parse(&bytes, SUMMON_OVERLAY_LINK_BASE);
-        assert!(
-            overlay.spawn_sites >= 4 && overlay.parts.len() >= 3,
-            "{label}: PROT {extraction} should parse as a stager (got {} sites, {} parts)",
-            overlay.spawn_sites,
-            overlay.parts.len(),
-        );
-
-        eprintln!(
-            "{label}: spell 0x{spell_id:02x} loader-B {live} -> PROT {extraction}; \
-             resident {:.1}%, {} parts",
-            match_pct * 100.0,
-            overlay.parts.len(),
-        );
+        check_leg(ram, &index, label, loader_b, extraction, spell_id);
         pinned += 1;
     }
 
     if pinned == 0 {
         eprintln!("[skip] no evolved-Seru mid-cast states available");
+    }
+}
+
+/// The two injected-cast legs (`0x90` Kemaro / `0x91` Spoon) live in
+/// **PCSX-Redux** `.sstate` backups (raw or gzipped protobuf), not mednafen
+/// states - resolve them via the pcsx-redux library and locate main RAM by
+/// the SCUS anchor search.
+#[test]
+fn evolved_seru_0x90_0x91_injected_casts_byte_pin_their_predicted_stager() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let (Some(mpath), Some(lib), Some(root)) = (manifest_path(), library_dir(), extracted_root())
+    else {
+        eprintln!("[skip] scenarios.toml / saves/library / extracted missing");
+        return;
+    };
+    let scus = match std::fs::read(root.join("SCUS_942.54")) {
+        Ok(b) => b,
+        Err(_) => {
+            eprintln!("[skip] extracted SCUS_942.54 missing (anchor search needs it)");
+            return;
+        }
+    };
+    let manifest = ScenarioManifest::from_path(&mpath).expect("parse manifest");
+    let index = ProtIndex::open_extracted(&root).expect("open ProtIndex");
+
+    let mut pinned = 0usize;
+
+    for &(label, loader_b, extraction, spell_id) in EVOLVED_CASTS_PCSX {
+        let Some(scn) = manifest.scenarios.iter().find(|s| s.label == label) else {
+            eprintln!("[skip] scenario {label} absent");
+            continue;
+        };
+        let Some(fp) = scn.backup_fingerprint.as_deref() else {
+            eprintln!("[skip] {label}: no backup fingerprint");
+            continue;
+        };
+        let Some(save_path) =
+            legaia_mednafen::scenarios::library_backup_for("pcsx-redux", &lib, fp)
+        else {
+            eprintln!("[skip] {label}: no pcsx-redux library backup");
+            continue;
+        };
+        let raw = std::fs::read(&save_path).expect("read .sstate");
+        // Probe-side autosaves (`sstate.save`) are RAW protobuf; states saved
+        // through the emulator UI are gzipped. Accept both.
+        let payload = if raw.starts_with(&[0x1F, 0x8B]) {
+            let mut out = Vec::new();
+            std::io::Read::read_to_end(
+                &mut flate2::read::GzDecoder::new(std::io::Cursor::new(&raw)),
+                &mut out,
+            )
+            .expect("gunzip .sstate");
+            out
+        } else {
+            raw
+        };
+        let ram = legaia_mednafen::extract::main_ram_via_anchor_with_scus(&payload, &scus)
+            .expect("locate main RAM (anchor search)");
+        check_leg(ram, &index, label, loader_b, extraction, spell_id);
+        pinned += 1;
+    }
+
+    if pinned == 0 {
+        eprintln!("[skip] no injected-cast evolved-Seru states available");
     }
 }

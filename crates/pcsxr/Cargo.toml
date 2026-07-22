@@ -12,3 +12,6 @@ path = "src/lib.rs"
 anyhow.workspace = true
 flate2.workspace = true
 legaia-mednafen = { path = "../mednafen" }
+
+[dev-dependencies]
+legaia-art = { path = "../art" }

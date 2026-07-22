@@ -984,3 +984,78 @@ impl World {
         wrote
     }
 }
+
+// --- scripted VRAM MoveImage stamps (field-VM 0x4C n6 sub-0x60) ------------
+
+/// One queued literal-operand VRAM rect copy - the field-VM op `4C 60`.
+///
+/// The 14-byte instruction `[4C, 60, src_x, src_y, w, h, dst_x, dst_y]`
+/// carries six little-endian u16s (read via the misaligned-u16 helper
+/// `FUN_8003CE9C`); the handler arm at `0x801E1B28..0x801E1B90` inside the
+/// field-VM dispatcher `FUN_801DE840` hands them straight to the libgpu
+/// `MoveImage` wrapper (`jal FUN_80058490` at `0x801E1B84`) - a `w x h`
+/// halfword VRAM-to-VRAM rect copy. Retail scripts use it for the one-shot
+/// face-frame stamps onto the player texture atlas (blink / mouth variants;
+/// see `docs/formats/character-mesh.md` "Runtime scroll-cell residue").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScriptVramMove {
+    /// Source rect origin `(x, y)` in VRAM halfword coordinates.
+    pub src: (i16, i16),
+    /// Rect size `(w, h)` - halfwords x rows.
+    pub size: (i16, i16),
+    /// Destination rect origin `(x, y)`.
+    pub dst: (i16, i16),
+}
+
+impl ScriptVramMove {
+    /// Build from the six decoded operand words in instruction order
+    /// `[src_x, src_y, w, h, dst_x, dst_y]` - the payload the field VM hands
+    /// the `FieldHost::op4c_n6_sub0_emitter6` host hook.
+    pub fn from_words(words: [i16; 6]) -> Self {
+        Self {
+            src: (words[0], words[1]),
+            size: (words[2], words[3]),
+            dst: (words[4], words[5]),
+        }
+    }
+}
+
+impl World {
+    /// Queue a field-VM `4C 60` VRAM `MoveImage` (the `op4c_n6_sub0_emitter6`
+    /// host hook). Applied against the host's software VRAM by
+    /// [`Self::apply_script_vram_moves`] - the queue keeps `World`
+    /// renderer-free, mirroring the [`Self::spawn_clut_cell_fx`] /
+    /// [`Self::step_clut_fx`] split of the sibling sub-`0x61` family.
+    pub fn queue_script_vram_move(&mut self, words: [i16; 6]) {
+        self.script_vram_moves
+            .push(ScriptVramMove::from_words(words));
+    }
+
+    /// Drain the queued `4C 60` stamps into `vram` (the host's software
+    /// VRAM: play-window's `cpu_vram_base`, a test's scratch
+    /// [`legaia_tim::Vram`]). Returns `true` when anything was copied (the
+    /// host re-uploads its GPU copy).
+    ///
+    /// Retail hands the literal operands to libgpu unchecked, but no retail
+    /// script emits a negative or empty rect - one here is a decode fault,
+    /// dropped rather than alias-wrapped.
+    ///
+    /// PORT: FUN_80058490 (the sub-0x60 consumer: `jal` at 0x801E1B84 in the
+    /// handler arm 0x801E1B28..0x801E1B90 of FUN_801DE840)
+    pub fn apply_script_vram_moves(&mut self, vram: &mut legaia_tim::Vram) -> bool {
+        let mut wrote = false;
+        for mv in std::mem::take(&mut self.script_vram_moves) {
+            let (sx, sy) = mv.src;
+            let (w, h) = mv.size;
+            let (dx, dy) = mv.dst;
+            if w <= 0 || h <= 0 || sx < 0 || sy < 0 || dx < 0 || dy < 0 {
+                continue;
+            }
+            vram.move_image(
+                sx as u16, sy as u16, w as u16, h as u16, dx as u16, dy as u16,
+            );
+            wrote = true;
+        }
+        wrote
+    }
+}

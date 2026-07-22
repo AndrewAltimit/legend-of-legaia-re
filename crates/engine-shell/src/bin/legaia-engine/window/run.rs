@@ -698,12 +698,12 @@ pub(super) fn cmd_play_window_with_record(
     };
 
     // Parse the menu overlay's window-descriptor table (PROT 0899
-    // @0x15F24): the retail window rects behind every pause-menu screen.
+    // @0x15F20): the retail window rects behind every pause-menu screen.
     // Falls back to the pinned mirror consts when unavailable.
     let menu_window_table = session
         .host
         .index
-        // The table sits at file 0x15F24, past the entry's TOC size - read
+        // The table sits at file 0x15F20, past the entry's TOC size - read
         // the extended footprint (the same read the save-menu pill TIM uses).
         .entry_bytes_extended(legaia_asset::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
         .ok()

@@ -102,12 +102,13 @@ pub const SERU_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x81..=0x8B;
 /// (`0x8C → 914 .. 0x95 → 923`, `summon_overlay::EVOLVED_SUMMON_STAGER_PROT`).
 /// Every entry is statically confirmed stager-shaped, and the arithmetic is
 /// capture-pinned on **both** sides of the gap (`0x8B → 913`, `0x99 → 927`).
-/// Three legs are now *individually* capture-pinned too - `0x8C → 914`,
-/// `0x8D → 915`, `0x8F → 917` (the `{gola_gola,mushura,barra}_summon_mid_cast`
-/// states, loader-B id read mid-cast + the stager byte-resident at slot B;
-/// disc+library-gated `evolved_summon_binding`) - so the block is no longer
-/// purely predicted; the remaining legs ride the same bracketed run. Two of
-/// these stagers carry `0x4000` render-mode nodes (`0x8E → 916`, `0x93 → 921`).
+/// Every leg is now *individually* capture-pinned too (loader-B id read
+/// mid-cast + the stager byte-resident at slot B; disc+library-gated
+/// `evolved_summon_binding`): the `<seru>_summon_mid_cast` mednafen states
+/// cover `0x8C..=0x8F` / `0x92..=0x95`, and the two injected-cast PCSX states
+/// `evolved_0x90_midcast` / `evolved_0x91_midcast` close Kemaro `0x90 → 918`
+/// and Spoon `0x91 → 919`. Two of these stagers carry `0x4000` render-mode
+/// nodes (`0x8E → 916`, `0x93 → 921`).
 pub const EVOLVED_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x8C..=0x95;
 
 /// High summon block: Evil Seru Magic (`0x99` - the creature resolves
@@ -133,9 +134,8 @@ pub const HIGH_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x99..=0xA0;
 /// head with the ASCII display name of the summon's attack (0907 Nighto
 /// "Hell's Music", 0927 Juggernaut "Dark Eclipse"); the high-block entries
 /// otherwise head with a pre-linked slot-B pointer table. The
-/// [`EVOLVED_SUMMON_IDS`] block bridging the two is statically stager-shaped
-/// with three legs capture-pinned (`0x8C`/`0x8D`/`0x8F`); the rest ride the same
-/// bracketed run. The id-`0x96..=0x98` gap is *not* a player summon (those
+/// [`EVOLVED_SUMMON_IDS`] block bridging the two is capture-pinned on every
+/// leg as well. The id-`0x96..=0x98` gap is *not* a player summon (those
 /// resolve to 924..926 under the enemy `895 + id` formula); it returns `None`.
 pub fn summon_stager_prot_entry(spell_id: u8) -> Option<u32> {
     if SERU_SUMMON_IDS.contains(&spell_id) || EVOLVED_SUMMON_IDS.contains(&spell_id) {
@@ -162,7 +162,8 @@ pub fn summon_stager_prot_entry(spell_id: u8) -> Option<u32> {
 /// ([`legaia_asset::summon_creatures`]): every summon group's `summon.dat`
 /// actor-record TMD is byte-identical to its mapped `battle_data` creature mesh,
 /// covering `0x81..=0x95` (the base block plus the evolved-Seru block, including
-/// the two evolved legs Kemaro `0x90` / Spoon `0x91` that had no capture state).
+/// the two evolved legs Kemaro `0x90` / Spoon `0x91`, which were disc-pinned by
+/// mesh identity first and have since gained injected-cast capture states too).
 /// The high block `0x99..=0xA0` carries a bespoke mesh (not an archive creature)
 /// and is intentionally unmapped - those summons return `None` here for now.
 /// The map id is validated as live in this archive; a name-based fallback covers

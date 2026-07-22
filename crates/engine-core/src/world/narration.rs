@@ -738,33 +738,20 @@ impl World {
                 return;
             }
         }
-        // Held at an inline narration block. Two hold shapes share
-        // `narration_pc` (see [`crate::cutscene_timeline::CutsceneTimeline`]):
-        // the LAST crawl block (blocking) waiting for its own roller to scroll
-        // out before advancing, and any block reached while a PRIOR roller is
-        // still scrolling (`narration_pending_open`) held so a second roller
-        // does not stack. In both cases we wait for the active roller to
-        // drain; retail's `FUN_80037174` clears the parent's halt bit when
-        // every page has scrolled off.
-        if let Some(block_pc) = tl.narration_pc {
+        // Held AT an inline narration block's op because a PRIOR roller is
+        // still scrolling (`narration_pending_open`) - two rollers never
+        // stack. Wait for the active roller to drain; retail's `FUN_80037174`
+        // clears the parent's halt bit when every page has scrolled off.
+        if tl.narration_pc.is_some() {
             if self.cutscene_narration_active() {
                 self.cutscene_timeline = Some(tl);
                 return;
             }
-            if tl.narration_pending_open {
-                // Was waiting for a prior roller to drain before opening this
-                // block: clear the hold and leave the PC AT the block op so the
-                // loop below re-enters and opens it now that nothing stacks.
-                tl.narration_pc = None;
-                tl.narration_pending_open = false;
-            } else {
-                // This (last, blocking) block's own roller finished: advance
-                // the PC past the block into the timeline's terminal ops.
-                if let Some(site) = tl.narration_blocks.iter().find(|b| b.op_offset == block_pc) {
-                    tl.pc = site.end;
-                }
-                tl.narration_pc = None;
-            }
+            // The prior roller drained: clear the hold and leave the PC AT
+            // the block op so the loop below re-enters and opens it now that
+            // nothing stacks.
+            tl.narration_pc = None;
+            tl.narration_pending_open = false;
         }
         if self.run_spawned_record_slice(&mut tl, true) {
             self.finish_cutscene_timeline_frame(tl);
@@ -997,14 +984,16 @@ impl World {
                 //
                 // Crawl (`op0 0x80`): retail spawns the roller as a CHILD
                 // context (`FUN_80037174`) and keeps executing THIS parent
-                // timeline, so the camera cuts / fades / waits authored between
-                // the crawl blocks play UNDER the scrolling text. Mirror that:
-                // open the roller and let the PC continue (non-blocking) for
-                // every block except the LAST, which blocks so the timeline
-                // does not reach its terminal scene-transition / hand-off
-                // before the final pages scroll out. If a prior roller is still
-                // scrolling when a block is reached, hold (don't stack rollers)
-                // until it drains, then re-enter to open this one.
+                // timeline, so the camera cuts / fades / waits authored after
+                // the block play UNDER the scrolling text - for EVERY block,
+                // the last included. (Pinned by the `map01` fly-in retail
+                // capture: its last crawl's authored `4A` 600 + 330 tail runs
+                // concurrent with the roller - the leg span only fits the
+                // authored waits, leaving no room for a serialized roller.)
+                // If a prior roller is still scrolling when a block is
+                // reached, hold (don't stack rollers) until it drains, then
+                // re-enter to open this one. The final pages are protected by
+                // the terminal-SceneChange hold below, not by a park here.
                 //
                 // Title card (`op0 0x89`): the pages show simultaneously
                 // while the parent CONTINUES; a card whose pages are blank
@@ -1018,17 +1007,8 @@ impl World {
                                 break;
                             }
                             let site_end = site.end;
-                            let site_off = site.op_offset;
                             let pages = site.pages.clone();
-                            let is_last_block =
-                                tl.narration_blocks.iter().all(|b| b.op_offset <= site_off);
                             host.world.open_cutscene_narration(pages);
-                            if is_last_block {
-                                // Blocking: park until these pages scroll out.
-                                tl.narration_pc = Some(pc);
-                                tl.narration_pending_open = false;
-                                break;
-                            }
                             // Non-blocking: the roller scrolls on its own
                             // (`World::tick`); continue into the camera cuts.
                             tl.pc = site_end;
@@ -1079,6 +1059,19 @@ impl World {
                     continue;
                 }
                 let opcode_byte = tl.bytecode.get(pc).copied().unwrap_or(0);
+                // Terminal SceneChange (`0x3F`) while a narration roller is
+                // still scrolling: HOLD at the op until the pages drain, so
+                // the final crawl finishes before the scene transition -
+                // retail's parent blocks before the record's terminal
+                // SceneChange, not at the crawl block itself (the between-op
+                // waits play under the scroll; see the crawl-open branch
+                // above). The hold is real playout progress, so keep it off
+                // the anti-hang frame cap, like the walk parks.
+                // REF: FUN_80037174
+                if opcode_byte & 0x7F == 0x3F && host.world.cutscene_narration_active() {
+                    tl.frames = tl.frames.saturating_sub(1);
+                    break;
+                }
                 // Cross-context dispatch (`0x80`-bit ops): resolve the target
                 // byte to a spawned per-actor channel (`ctx[+0x50] == target`,
                 // retail `FUN_8003C83C`) and run the op against THAT context -

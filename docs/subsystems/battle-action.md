@@ -902,7 +902,9 @@ The player-driven battle Arts submenu (`legaia_engine_core::battle_arts`) models
   - `0x801F6524` - the 15 Super `find` entries, fixed 13-byte stride (`[len u8][bytes][zero pad]`), in `super_art.rs` table order (Vahn ×5, Noa ×5, Gala ×5);
   - `0x801F65E8` - the 15 Super `replace` strings, 16-byte stride, zero-padded, word-aligned, same order.
 
-  Every resident string is byte-identical to `super_art.rs`'s modeled `find` / `replace` fields, and every resident replace preserves its find minus the final `[19, art]` pair then appends `[1A, finisher…]` - the pairing law locked by `super_art.rs`'s `replace_preserves_find_prefix_and_finisher_tail` test. So the byte-exact connector strings are no longer spreadsheet-only: the two live-queue captures above validate the *runtime effect* for one Miracle and one Super, and the resident-table read validates the *strings* for all 15.
+  Every resident string is byte-identical to `super_art.rs`'s modeled `find` / `replace` fields, and every resident replace preserves its find minus the final `[19, art]` pair then appends `[1A, finisher…]` - the pairing law locked by `super_art.rs`'s `replace_preserves_find_prefix_and_finisher_tail` test.
+  So the byte-exact connector strings are no longer spreadsheet-only: the resident-table read validates the *strings* for all 15, and the *runtime queue effect* is live-executed for all 15 too - the in-the-wild Noa Miracle / Vahn Tri-Somersault captures above plus a per-Super applier-injection sweep
+  (probe `autorun_super_art_queue_inject.lua`; each post-`FUN_801EF9E4` queue at `actor[+0x1DF]` is byte-identical to `super_art.rs`'s `replace`, re-checkable via the `super_queue_replace_*` library states + `crates/pcsxr/tests/super_art_queue_replace.rs`; see [`super-art-queue-capture.md`](../tooling/super-art-queue-capture.md#result---all-15-supers-live-executed-injection-probe)).
   The byte-exact matcher itself (`SuperMatcher::try_trigger_at_tail`) is also ported and exercised by `resolve_action_queue`'s tail pass + `battle.rs`'s `commit_turn`.
 
 ### The retail queue-builder (`FUN_801EED1C`) and Super applier (`FUN_801EF9E4`)

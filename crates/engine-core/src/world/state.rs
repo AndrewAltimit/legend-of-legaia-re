@@ -1440,6 +1440,13 @@ pub struct World {
     /// hook), stepped + applied against the host's software VRAM by
     /// [`World::step_clut_fx`], cleared on scene entry.
     pub clut_fx: Vec<crate::world::ClutCellFx>,
+    /// Queued field-VM `4C 60` literal-operand VRAM `MoveImage` stamps (the
+    /// sibling of [`Self::clut_fx`] - retail's one-shot face-frame stamps
+    /// onto the player texture atlas). Queued by
+    /// [`World::queue_script_vram_move`] (the `op4c_n6_sub0_emitter6` host
+    /// hook), drained against the host's software VRAM by
+    /// [`World::apply_script_vram_moves`], cleared on scene entry.
+    pub script_vram_moves: Vec<crate::world::ScriptVramMove>,
 
     /// Pending move-FX sound cue id (`+0x0d`), set by [`World::spawn_move_fx`]
     /// when the move carries a non-zero cue. The host drains it via
@@ -2258,6 +2265,7 @@ impl World {
             actor_vsync_accum: 0,
             clut_pending_game_ticks: 0,
             clut_fx: Vec::new(),
+            script_vram_moves: Vec::new(),
             pending_move_fx_cue: None,
             element_affinity: None,
             battle_camera_heights: None,

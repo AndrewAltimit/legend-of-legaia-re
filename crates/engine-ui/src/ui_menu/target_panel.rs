@@ -41,7 +41,7 @@ use super::field_panels::{
 use crate::*;
 
 /// Window-14 content rect from the descriptor table (`(174, 28, 132,
-/// 176)` - id 14 of the `0x801E473C` table).
+/// 176)` - id 14 of the `0x801E4738` table).
 pub const TARGET_PANEL_RECT: (i32, i32, i32, i32) = (174, 28, 132, 176);
 
 /// Per-member block pitch (`FUN_801D0520` advances every pen by `0x3E`

@@ -181,29 +181,23 @@ pub struct CutsceneTimeline {
     /// [`crate::world::World::step_cutscene_timeline`].
     pub arms_prologue_handoff: bool,
     /// The record's inline narration blocks, in script order (parsed once at
-    /// install). The stepper suspends the timeline at each block's op until
-    /// the narration presenter finishes its pages - the retail caption-child
-    /// suspend - then resumes past the block.
+    /// install). Every crawl block opens its roller **non-blocking** - the
+    /// retail roller is a child context and the parent keeps executing, so the
+    /// camera cuts / fades / `WaitFrames` authored after a block play UNDER
+    /// the scrolling text. (The `map01` fly-in pins this for the LAST block
+    /// too: its authored `4A` 600 + 330 tail runs concurrent with the 3-page
+    /// Mist crawl in the retail capture - serializing them overshoots the leg
+    /// by the whole roller duration.) The final pages are protected by the
+    /// terminal-SceneChange hold in the stepper, not by a park at the block.
     pub narration_blocks: Vec<NarrationSite>,
-    /// `Some(op_offset)` while the timeline is held at that narration block.
-    /// Two hold shapes share this field, disambiguated by
-    /// [`Self::narration_pending_open`]:
-    /// - a **blocking** block (the last crawl before the scene transition) that
-    ///   has opened its roller and is waiting for it to scroll out before the
-    ///   PC advances past it (`narration_pending_open == false`); and
-    /// - a block reached while a PRIOR roller is still scrolling, held until
-    ///   that roller drains so a second roller doesn't stack over it
-    ///   (`narration_pending_open == true` - the pre-step gate then re-enters
-    ///   the block's op to open it).
-    ///
-    /// A **non-blocking** crawl (any block that is not the last) opens its
-    /// roller and lets the PC continue into the camera-cut / fade / wait ops
-    /// that play UNDER the scrolling text (retail spawns the roller as a child
-    /// context and keeps executing the parent timeline), so it never sets this.
+    /// `Some(op_offset)` while the timeline is held AT that narration block's
+    /// op because a PRIOR roller is still scrolling - two rollers never stack,
+    /// so the block waits for the active one to drain before opening. The
+    /// pre-step gate then re-enters the block's op to open it.
     pub narration_pc: Option<usize>,
-    /// See [`Self::narration_pc`]: distinguishes "held, waiting to OPEN this
-    /// block once a prior roller drains" (`true`) from "opened, waiting for
-    /// THIS block's roller to scroll out" (`false`).
+    /// Kept alongside [`Self::narration_pc`]; always `true` while a hold is
+    /// live (the only remaining hold shape is "waiting to OPEN this block
+    /// once the prior roller drains").
     pub narration_pending_open: bool,
     /// An open inline dialog box (`0x1F`-lead glyph segment reached by the
     /// record's own flow, e.g. the Mei walk-on beat's conversation). While

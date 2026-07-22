@@ -123,10 +123,62 @@ direction input the tail-replace ran behind. The `find_writer` trace shows the
 dequeue at pc `0x801D89D8` (the action SM consuming the queue head-first, one
 entry per executed action).
 
-So both an in-the-wild Miracle (Noa) and Super (Vahn) now confirm the engine's
-modeled queues + `ActionConstant` encoding byte-exact. Remaining is only the
-long tail of the other 13 Supers' replace strings, each a one-capture check
-through the same probe if ever needed.
+So both an in-the-wild Miracle (Noa) and Super (Vahn) confirm the engine's
+modeled queues + `ActionConstant` encoding byte-exact. The long tail - the
+other 13 Supers' live queue effect - is closed by the injection probe below.
+
+## Result - all 15 Supers live-executed (injection probe)
+
+[`autorun_super_art_queue_inject.lua`](../../scripts/pcsx-redux/autorun_super_art_queue_inject.lua)
+drives the **retail applier itself** over every Super in the trigger table,
+from a single battle state. The lever is the applier's calling convention
+(pinned in [`battle-action.md`](../subsystems/battle-action.md#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4)):
+the queue-builder `FUN_801EED1C` ends with `jal 0x801EF9E4` (call site
+`0x801EF9AC`) passing `a0` = actor slot and `a1` = the party roster char id
+`0x8007BD10[slot]` minus 1 (the `-1` is in the delay slot; 0=Vahn 1=Noa
+2=Gala). `FUN_801EF9E4` is table-driven off `(a0, a1)` alone - it zero-scans
+the queue at `actor[+0x1DF]` (cap `0x10`), tail-matches the five 13-byte
+`find` rows at `0x801F6524 + a1*65`, and on match overwrites the tail from
+`0x801F65E8 + a1*80`.
+
+So an Exec breakpoint at `0x801EF9E4` (1) overwrites the 16-byte queue proper
+(`+0x1DF..+0x1EE` - exactly what `FUN_801DA34C` preseeds; `+0x1EF..` holds
+unrelated actor fields, don't touch) with the target Super's exact `find`
+bytes, and (2) sets register `a1` to the owning character's index; a second
+Exec breakpoint at the return site `0x801EF9B4` (the builder epilogue) reads
+the replaced queue back. The probe loops the whole table by reloading the
+base state per entry.
+
+```bash
+xvfb-run -a timeout --kill-after=20s 1740s \
+bash scripts/pcsx-redux/run_probe.sh \
+    --scenario party_basic_attack_vs_gobu_gobu \
+    --lua scripts/pcsx-redux/autorun_super_art_queue_inject.lua
+```
+
+The `party_basic_attack_vs_gobu_gobu` state parks Vahn on the Begin/Reselect
+confirm; the probe forces CROSS and the applier fires a few hundred vsyncs
+later (`slot=0`, natural `a1=0`, Vahn's committed queue `0F 0E 19 27` - Up,
+Down, Starter, Somersault). The sweep result: **all 15 Supers PASS** - every
+post-applier queue is byte-identical to `super_art.rs`'s `replace` string
+plus zero fill, i.e. the retail tail-replace loop (`sb` at `0x801EFB7C`)
+live-produces the modeled bytes for the full table, combo-specific
+connectors and multi-hit finisher tails included. Per-run CSV:
+`captures/super_art_queue_inject/<ts>/super_art_queue_inject.csv`
+(Sony-derived RAM bytes - local only, never committed).
+
+Three post-applier states (one per character, each a Super with no prior
+end-to-end execution - Vahn's Rolling Combo `1A 2F 30`, Noa's Triple Lizard
+`1A 2E 2E 2E`, Gala's Back Punch x3 `1A 2B 2B 2B`) are cataloged in
+[`scripts/scenarios.toml`](../../scripts/scenarios.toml)
+(`super_queue_replace_*`) with library backups, and
+`crates/pcsxr/tests/super_art_queue_replace.rs` re-derives the queue check
+from them (skip-passes without the library).
+
+The two knobs worth knowing: `LEGAIA_DRY=1` logs the natural `(a0, a1)` +
+queue at the applier hit without injecting (method validation), and
+`LEGAIA_SUPER_LIST=4,5,10` restricts the sweep to a subset of table
+indices.
 
 ## Note on run time
 

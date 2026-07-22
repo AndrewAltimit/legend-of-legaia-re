@@ -59,16 +59,19 @@ window 15 (Items **Use** list) = `3`, 16 (Throw Out list) = `0x22`,
 candidate list) = `0x15`, 38 = `2` (the price-gated bag list), 40 = `0xB`
 (shop list) - the same id space as the kernel allowlist at `0x80073E1C`.
 
-NB the parser `legaia_asset::menu_windows` reads the same bytes at base
-`0x801E473C` (`+4` from the engine's), so its `f1`/`kind` fields are the
-**next** record's content-id/class head; its rect and renderer fields land
-on the same absolute bytes and are unaffected.
+NB the decompiled C of `FUN_801D6628` renders the base as
+`&DAT_801e473c + id*0x10` (folding the x-field load offset into the
+symbol) - reading that rendering instead of the disassembly yields a
+`+4`-skewed table whose head fields belong to the **next** record. The
+parser `legaia_asset::menu_windows` consumes the disassembly's base; the
+rect and renderer fields land on the same absolute bytes in either frame.
 
 The table extent is structural: record 52 fails the rect/renderer validity
 envelope. Provenance: byte-matched between the disc entry and the resident
 overlay across the six catalogued menu-open mednafen states
-(`menu_{status,equipment,options}_{field,town}`); only id 22's style low
-bits and id 49's `y` (178 -> 180) differ at runtime. The drawn window frame
+(`menu_{status,equipment,options}_{field,town}`); only id 23's content id
+(the equip candidate list's builder case swaps with the selected slot
+category) and id 49's `y` (178 -> 180) differ at runtime. The drawn window frame
 extends past the content rect by 8 px on every side (the RAM GPU-prim scan
 of the `menu_status_town` capture places each window's 4x4 corner tiles at
 `content - 8` - window 26's content `(14, 38)` frames from `(6, 30)` -
@@ -1026,7 +1029,8 @@ id-order fallback without the overlay). Discards reach the world bag
 through `field_menu_dispatch::apply_inventory_outcome`. The engine
 draws the Throw Out list with the same paged layout as the Use list -
 whether the retail descriptor-16 variant pages or row-scrolls hangs on
-the untraced `f1` word (the deletion fix-up's pitch subtraction hints
+its content-builder case (content id `0x22` vs the Use list's `3` in
+`FUN_80030628`'s dispatch; the deletion fix-up's pitch subtraction hints
 at row scrolling). Both hosts (play-window + the web play page) render
 this screen through the same builders.
 

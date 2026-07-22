@@ -97,16 +97,71 @@ fn window_table_reproduces_the_captured_geometry() {
             "window {id} renderer in overlay range"
         );
         assert!(
-            matches!(d.kind, 0 | 2 | 3 | 4),
+            (2..=4).contains(&d.kind),
             "window {id} kind {} in the observed class set",
             d.kind
         );
+        // Park edges are the even (single-edge) create-switch cases only.
+        assert!(
+            matches!(d.park_edge, 0 | 2 | 4 | 6),
+            "window {id} park edge {}",
+            d.park_edge
+        );
+        // Content ids stay in the SCUS builder's dispatch domain
+        // (`FUN_80030628` accepts 2..=0x22; 0 = no built content).
+        assert!(
+            d.content_id == 0 || (2..=0x22).contains(&d.content_id),
+            "window {id} content id {:#x}",
+            d.content_id
+        );
     }
-    // Title tabs 0..=3 are kind 2 (the options tab, id 4, is kind 3
-    // despite the identical tab geometry); every screen-set id resolves.
-    for id in [window_ids::TAB_EQUIP, window_ids::TAB_STATUS] {
+    // All five title tabs are kind 2; every screen-set id resolves.
+    for id in [
+        window_ids::TAB_ITEMS,
+        window_ids::TAB_MAGIC,
+        window_ids::TAB_EQUIP,
+        window_ids::TAB_STATUS,
+        window_ids::TAB_OPTIONS,
+    ] {
         assert_eq!(table.window(id).unwrap().kind, 2, "tab {id} kind");
+        // Tabs live along the top edge and park against it.
+        assert_eq!(table.window(id).unwrap().park_edge, 4, "tab {id} park");
     }
+    // Content ids are non-zero exactly on the renderer-less list windows,
+    // with the values the SCUS content builder dispatches on.
+    let content_pins: [(usize, u8); 7] = [
+        (11, 0x19), // Door of Wind list
+        (window_ids::ITEMS_LIST, 0x03),
+        (16, 0x22), // Throw Out list
+        (window_ids::MAGIC_LIST, 0x05),
+        (window_ids::EQUIP_LIST, 0x15),
+        (38, 0x02), // price-gated bag list
+        (40, 0x0B), // shop list
+    ];
+    for (id, d) in table.windows.iter().enumerate() {
+        let pinned = content_pins.iter().find(|(pid, _)| *pid == id);
+        match pinned {
+            Some((_, cid)) => assert_eq!(d.content_id, *cid, "window {id} content id"),
+            None => assert_eq!(d.content_id, 0, "window {id} has no built content"),
+        }
+    }
+    // The top-level windows park toward their nearest edge (the parked
+    // coordinates the captures observe: left / bottom / right).
+    assert_eq!(
+        table
+            .window(window_ids::TOP_COMMAND_LIST)
+            .unwrap()
+            .park_edge,
+        2
+    );
+    assert_eq!(
+        table.window(window_ids::TOP_MONEY_TIME).unwrap().park_edge,
+        0
+    );
+    assert_eq!(
+        table.window(window_ids::TOP_INFO_PANEL).unwrap().park_edge,
+        6
+    );
     for set in [
         &STATUS_SCREEN_WINDOWS[..],
         &EQUIP_SCREEN_WINDOWS[..],

@@ -364,7 +364,7 @@ pub struct Actor {
     pub active: bool,
 
     /// Default-position lookup result for the actor VM. Retail reads this
-    /// from a 16-byte-stride table at `0x801E473C`; engines populate per
+    /// from a 16-byte-stride table at `0x801E4738`; engines populate per
     /// scene from extracted assets.
     pub default_pos: ActorVmPosition,
 

@@ -60,8 +60,8 @@
     <tbody>
       <tr>
         <td>Super / Miracle Arts trigger logic</td>
-        <td><span class="tag tag-mostly">mostly resolved</span></td>
-        <td>Ported <strong>and live-wired</strong>: <code>engine-vm</code>'s <code>battle_action</code> applies <code>MiracleMatcher</code>/<code>SuperMatcher</code> and the Arts submenu flags Miracle/Super chains. The byte-exact question is closed by capture: the battle overlay keeps the full trigger table resident, and a live battle-RAM read captured all 30 find/replace strings byte-identical to the modeled tables (<code>0x801F64F4/6504/6514</code> = the 3 Miracle strings, <code>0x801F6524</code> = 15 Super <code>find</code> entries, <code>0x801F65E8</code> = 15 Super <code>replace</code> strings) - the combo-specific connectors are <strong>resident table data</strong>, not a derivation. <a href="#d-super-miracle">details &darr;</a></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Ported <strong>and live-wired</strong>, and the whole retail chain is pinned: all 30 resident find/replace strings byte-identical to the modeled tables (<code>0x801F64F4/6504/6514</code> Miracle, <code>0x801F6524</code>/<code>0x801F65E8</code> Super find/replace), the queue-builder <code>FUN_801EED1C</code> and Super applier <code>FUN_801EF9E4</code> traced from disassembly, and <strong>every one of the 15 Supers live-executed</strong>: an applier-entry injection probe drives the retail applier over each Super's <code>find</code> string and reads the tail-replaced queue at <code>actor[+0x1DF]</code> back byte-exact, 15/15. <a href="#d-super-miracle">details &darr;</a></td>
         <td><a href="../subsystems/battle-action.html">battle-action</a></td>
       </tr>
       <tr>
@@ -85,8 +85,8 @@
     </tbody>
   </table>
 
-  <h3 id="d-super-miracle">Super / Miracle Arts - residual</h3>
-  <p>The queue is the per-actor <code>actor[+0x1DF..+0x1F2]</code> action-parameter byte stream; captures validate Noa's Miracle queue and Vahn's Tri-Somersault Super byte-exact against the modeled replace strings, and every replace obeys <code>replace = find[..len-2] ++ [1A, finisher&hellip;]</code> (test-locked). What (narrowly) stays open: per-Super <em>live-executed</em> queue captures for the other 13 (driving each combo and watching the tail-replace at <code>actor[+0x1DF]</code>) - now purely confirmatory, since the resident strings, queue location, dequeue site (<code>0x801D89D8</code>) and two end-to-end executions are all pinned. The connector-emitting queue-builder is pinned: <code>FUN_801EED1C</code> (battle overlay 0898, ActionSeed state <code>0x0C</code>), with the saved-chain preseed <code>FUN_801DA34C</code>, the Miracle replacement inline from <code>0x801F64F4</code>, and the Super find&rarr;tail-replace in <code>FUN_801EF9E4</code> (<code>0x801F6524</code>/<code>0x801F65E8</code>) - see <a href="../subsystems/battle-action.html">battle-action</a>.</p>
+  <h3 id="d-super-miracle">Super / Miracle Arts - closed</h3>
+  <p>The queue is the per-actor <code>actor[+0x1DF..+0x1EE]</code> action-parameter byte stream (exactly 16 bytes; <code>+0x1EF..</code> is neighbouring data), and every replace obeys <code>replace = find[..len-2] ++ [1A, finisher&hellip;]</code> (test-locked). The chain: saved-chain preseed <code>FUN_801DA34C</code> (a verbatim <code>+0x76F &rarr; +0x1DF</code> byte copy, so the char-record chain uses the queue-space encoding directly), queue-builder <code>FUN_801EED1C</code> (battle overlay 0898, ActionSeed state <code>0x0C</code>), Miracle replacement inline from <code>0x801F64F4</code>, Super find&rarr;tail-replace in <code>FUN_801EF9E4</code> - table-driven off <code>(actor slot, char index)</code>, find cells <code>[len][bytes]</code> at <code>0x801F6524 + char*65 + row*13</code>, replace at <code>0x801F65E8 + char*80 + row*16</code>, first-match-wins. The former residual is closed: an applier-entry injection probe (<code>autorun_super_art_queue_inject.lua</code>) live-executed all 15 Supers with the two hand-driven combos (Noa's Miracle, Vahn's Tri-Somersault) as positive controls, each tail-replace byte-exact against the modeled tables; one post-applier library state per character is re-checked by <code>crates/pcsxr/tests/super_art_queue_replace.rs</code>. See <a href="../subsystems/battle-action.html">battle-action</a>.</p>
 </section>
 
 <section class="doc-section" id="field">
@@ -227,8 +227,8 @@
     <li>The <code>0x4000</code>/<code>0x4001</code> render-mode nodes are statically decoded (moving particle / 3D positional <em>sound</em> emitter) and the classification is ported, but no catalogued capture seats one live - an <em>enemy</em> cast of a Sim-Seru creature (Palma / Mule / Jedo) would.</li>
   </ul>
 
-  <h3 id="d-off-by-2">Off-by-2 ripple - residual</h3>
-  <p>Only the evolved-Seru legs <code>0x90 &rarr; 918</code> and <code>0x91 &rarr; 919</code> stay arithmetic-predicted (no mid-cast capture); every other leg of the player, evolved, high, and enemy stager blocks is capture-pinned on the linear <code>spell &minus; 0x79</code> arithmetic.</p>
+  <h3 id="d-off-by-2">Off-by-2 ripple - closed</h3>
+  <p>Every leg of the player, evolved, high, flute, and enemy stager blocks is capture-pinned on the linear <code>spell &minus; 0x79</code> arithmetic. The last two - evolved-Seru <code>0x90</code> Kemaro &rarr; 918 and <code>0x91</code> Spoon &rarr; 919 - are pinned by <em>injected</em> casts (probe <code>autorun_evolved_cast.lua</code>: spell written into the caster's record spell list, MP into record + battle-actor <code>+0x150</code>), each loader-B-id-confirmed mid-cast with the slot-B image a 100% byte-match over the entry's full LBA footprint. Capture nuance: loader-B flips when the slot-B load is <em>queued</em>, so the probe saves 90 frames after the flip, when the stager is fully resident.</p>
 </section>
 <section class="doc-section" id="adding-rows">
   <h2>When to add a row</h2>
