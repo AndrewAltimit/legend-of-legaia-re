@@ -169,6 +169,7 @@ pub fn summon_stager_prot_entry(spell_id: u8) -> Option<u32> {
     // One contiguous run: 0x81 → 903 .. 0xA0 → 934. The loader arithmetic is
     // `FUN_8003EC70(id - 0x79)` against the raw TOC, and the extraction index
     // sits 2 below the raw one, so `903 + (id - 0x81)` states the same thing.
+    // REF: FUN_8003EC70 (the slot-B overlay loader this mirrors)
     Some(903 + (spell_id - 0x81) as u32)
 }
 
