@@ -212,6 +212,32 @@ the two verdicts that turn on which image a dump came from - and yields:
 | No dump testifies | `UNCERTAIN`, with the reason narrowed by the follow-up below |
 | A `DUPLICATE` peer has no matching body at its own VA | `REAL`, duplicate claim withdrawn |
 
+#### Asking the images directly, with no dump involved
+
+The arbiter above reasons *from dumps* to images. When no dump testifies - or
+when the dumps disagree - the question can also be put to the images alone:
+[`scripts/ghidra-analysis/locate-entry-image.py`](../../scripts/ghidra-analysis/locate-entry-image.py)
+walks every based overlay in
+[`static-overlays.toml`](../../crates/asset/data/static-overlays.toml) and
+reports two independent signals per image: a stack-frame prologue
+(`addiu sp, sp, -N`) within the first few instructions, and the number of
+`jal <va>` sites elsewhere in that same image.
+
+A frame in exactly one image names the body to port from. Neither signal is
+sufficient alone, which is why the tool prints both instead of a verdict:
+
+- A **leaf** function has no frame. `0x801F6D48` is a real entry in PROT 0900
+  that opens `lui t6, 0x1f80` and never touches `sp`.
+- A function reached through a jump table or from `SCUS_942.54` has no
+  in-overlay `jal`. `FUN_801EC3E4` has zero, and is real.
+- Call-site counts can agree across aliases: `0x801E1D98` has three `jal` sites
+  in **both** PROT 0897 and 0898. Only the frame separates them - 0898 holds the
+  332-instruction body, while 0897's bytes there are the field-VM label-call
+  idiom (`addiu fp, fp, 6`).
+
+The frame scan must stop at a `jr ra`, or an epilogue reports its *successor's*
+prologue as its own - the false positive `0x801D2D2C` produces.
+
 #### "No dump testifies" is two different problems
 
 The bare form of that verdict - *un-extracted overlay, or mis-based dumps* -

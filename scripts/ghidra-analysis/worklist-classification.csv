@@ -111,7 +111,7 @@ addr,class,reason
 8006c9a8,REAL,self-entry body of 7 instructions returning `jr ra`
 801c6c78,REAL,self-entry body of 441 instructions returning `jr ra`
 801ce844,UNCERTAIN,no extracted image holds the dumped bytes at this VA - the owning overlay is either un-extracted or the dumps are mis-based; alias cannot be confirmed or refuted
-801cee80,REAL,self-entry body of 59 instructions returning `jr ra`
+801cee80,REAL,"self-entry in PROT 0974 (dev module OTHER3), the mode-24 door-warp sub-id 2 slot-A occupant. Disc bytes at file +0x668 are 27bdffe8 (`addiu sp,sp,-0x18`) then `jal 0x8001daf8` / `jal 0x8001dcf8`. Every other slot-A image decodes this VA as mid-function or data, so the entry is 0974's alone; 0974 is now in static-overlays.toml"
 801cf00c,REAL,self-entry body of 223 instructions returning `jr ra`
 801cf388,REAL,self-entry body of 2973 instructions returning `jr ra`
 801cf5bc,UNCERTAIN,no `jr ra` and no trailing unconditional jump - body may be truncated
@@ -152,8 +152,8 @@ addr,class,reason
 801d2afc,REAL,self-entry body of 549 instructions returning `jr ra`
 801d2cc0,REAL,self-entry body of 259 instructions returning `jr ra`
 801d2cfc,UNCERTAIN,"every dump at this VA is mis-based: the bytes live at field(897) 0x801e1514 (delta +0xe818), and at this VA in no image - so nothing attests the address. Not an un-extracted overlay; no extraction closes it"
-801d2d1c,UNCERTAIN,"every dump at this VA has a gapped instruction stream (2 hole(s) in 0897), so it matches no image as a contiguous window - re-dump before classifying"
-801d2d2c,UNCERTAIN,"every dump at this VA is mis-based: the bytes live at field(897) 0x801e1544 (delta +0xe818), and at this VA in no image - so nothing attests the address. Not an un-extracted overlay; no extraction closes it"
+801d2d1c,INTERIOR,"register-restore epilogue, not an entry. Verified from disc bytes across all 31 based overlay images (scripts/ghidra-analysis/locate-entry-image.py): none carries a stack-frame prologue at this VA. In PROT 0897 the body is `lw s4,0x40(sp); lw s3,0x3c(sp); lw s2; lw s1; lw s0,0x30(sp); jr ra` - callee-saved restores from a frame it never built. Supersedes the UNCERTAIN gapped-dump reading"
+801d2d2c,INTERIOR,"inside the same PROT 0897 epilogue as 801d2d1c - the VA is its `lw s0,0x30(sp)` instruction, one word before `jr ra`. No based image carries a prologue here. NB a naive prologue scan reports a false hit: the `addiu sp` three words on belongs to the NEXT function, past the `jr ra` - locate-entry-image.py stops at `jr ra` for exactly this case"
 801d2d98,REAL,self-entry body of 104 instructions returning `jr ra`
 801d2e74,REAL,self-entry body of 140 instructions returning `jr ra`
 801d2f38,REAL,self-entry body of 240 instructions returning `jr ra`
@@ -173,7 +173,7 @@ addr,class,reason
 801d4df8,REAL,self-entry body of 116 instructions returning `jr ra`
 801d5510,REAL,"identified: shop quantity-window info renderer - Have-count row via bag scan FUN_80042EE0 (bag count 2-digit at WX+0x20), quantity DAT_801E46B4 at the lower row; not yet ported"
 801d553c,REAL,self-entry body of 160 instructions returning `jr ra`
-801d56c4,UNCERTAIN,dump carries a decompiled body but no disassembly (Ghidra reports 1 bytes) - function bounds never established
+801d56c4,REAL,"leaf helper in PROT 0897 - no stack frame by design, which is why the dump never established bounds. Body is a signed round-toward-zero divide by 64: `move a2,a0; bgez a1,+8; move v0,a1; addiu v0,a1,0x3f; sra v0,v0,6`, and the same shape for the second argument. Supersedes the UNCERTAIN no-disassembly reading"
 801d57bc,REAL,self-entry body of 73 instructions returning `jr ra`
 801d5a68,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview); no second dumped body here
 801d5ae8,REAL,self-entry body of 190 instructions returning `jr ra`
@@ -235,7 +235,7 @@ addr,class,reason
 801e09f8,REAL,"duplicate claim withdrawn: peer 801f71e0 is a printed address from a mis-based dump, not a body at that VA"
 801e1114,REAL,self-entry body of 61 instructions returning `jr ra`
 801e13b8,REAL,"per-frame sibling call of the card ticker FUN_801E1114 (display-list side); not yet read in depth, not yet ported"
-801e1d98,REAL,"duplicate claim withdrawn: peer 801f8580 is a printed address from a mis-based dump, not a body at that VA"
+801e1d98,REAL,"self-entry in PROT 0898 ONLY (332 instructions, `addiu sp,sp,-0x78`, scratchpad 0x1F800314 + a 0x2E808080 GP0 word). The 0897 dump's 3-instruction body at this VA is the field-VM label-call idiom (`addiu fp,fp,6`, fp = script PC) and 0899 holds different code again - port from the 0898 body. Both 0897 and 0898 contain 3 `jal` sites to the VA, so call-site counts alone do NOT disambiguate here; the stack frame does"
 801e2524,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
 801e2650,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
 801e3294,REAL,self-entry body of 259 instructions returning `jr ra`
@@ -266,11 +266,11 @@ addr,class,reason
 801f1ed4,REAL,every dump at this VA is of battle_action(898) (captures: muscle_dome); no second dumped body here
 801f20b0,REAL,every dump at this VA is of field(897) (captures: baka_fighter/dance/debug_menu/fishing/slot_machine); no second dumped body here
 801f2160,REAL,every dump at this VA is of battle_action(898) (captures: muscle_dome); no second dumped body here
-801f2d68,PHANTOM,"printed address of a mis-based import (0905_xxx_dat.BIN at 0x801F0000; true base 0x801F69D8): true entry 0x801F9740 (file +0x2D68) inside the x83 stager; no image holds an entry at 801f2d68 itself"
-801f36a0,PHANTOM,"printed address of a mis-based import (0905_xxx_dat.BIN at 0x801F0000; true base 0x801F69D8): true entry 0x801FA078 (file +0x36A0) inside the x83 stager; no image holds an entry at 801f36a0 itself"
+801f2d68,PHANTOM,printed address of a mis-based import (0905_xxx_dat.BIN at 0x801F0000; true base 0x801F69D8): true entry 0x801F9740 (file +0x2D68) inside the x83 stager; no image holds an entry at 801f2d68 itself
+801f36a0,PHANTOM,printed address of a mis-based import (0905_xxx_dat.BIN at 0x801F0000; true base 0x801F69D8): true entry 0x801FA078 (file +0x36A0) inside the x83 stager; no image holds an entry at 801f36a0 itself
 801f452c,REAL,"real entry only in battle_action(898): the 30-instruction magic-level-increased banner composer (overlay_0898_static_801f452c, ported engine-core magic_xp). The other two dumped bodies at this printed VA are wrong-base prints of 0x801C0000-band imports whose files carry 0898's image shifted: overlay_0896 print = 0898 file +0x652C = interior of FUN_801D388C at true VA 801d4d44; overlay_0897 print = 0898 file +0xF52C = interior of FUN_801DDB30 at true VA 801ddd44. The historical 'real entry <= 801f4498, unfound' note was those fragments' backward branches read in print coordinates; re-based, the entries are 801d388c and 801ddb30 (both already documented)"
 801f45a4,REAL,"every dump at this VA is of battle_action(898) (captures: baka_fighter/dance/debug_menu/fishing/muscle_dome/slot_machine); no second dumped body here. This 152-byte entry is the per-round RNG waker for status bit 0x400 (loops 7 actor slots, rng&7==0 clears +0x16E via andi 0xfbff at 801f4610) - the clear battle.md historically attributed to FUN_801F452C. Ported engine-vm battle_formulas::status_0x400_wakes"
-801f4dd0,PHANTOM,"printed address of a mis-based import (0905_xxx_dat.BIN at 0x801F0000; true base 0x801F69D8): true entry 0x801FB7A8 (file +0x4DD0) inside the x83 stager; no image holds an entry at 801f4dd0 itself"
+801f4dd0,PHANTOM,printed address of a mis-based import (0905_xxx_dat.BIN at 0x801F0000; true base 0x801F69D8): true entry 0x801FB7A8 (file +0x4DD0) inside the x83 stager; no image holds an entry at 801f4dd0 itself
 801f5748,REAL,self-entry body of 2777 instructions returning `jr ra`
 801f69d8,REAL,self-entry body of 643 instructions returning `jr ra`
 801f6b24,REAL,self-entry body of 82 instructions returning `jr ra`

@@ -139,6 +139,28 @@ fingerprint_sha256 = "1949cd5f6aa4a711572fc38199ca7212cc7a6e037263a8134594cb6b54
 notes = "Fishing minigame overlay (docs/subsystems/minigame-fishing.md). State machine FUN_801cf3bc (base+0xBA4, the anchor), reel tug-of-war FUN_801d4004, catch scoring FUN_801d5298 -- 15 of 20 documented fishing functions land on prologues at this base. Leading strings are the 'How to Fish' help text ('button while turning the reel', 'your line will snap', 'Continue Fishing'). Base recovered statically (29 corroborating call targets)."
 
 [[overlays]]
+prot_index = 973
+label = "other2_dev"
+base_va = 0x801CE818
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801CE8A0
+fingerprint_sha256 = "fcce87931513434245c0d6d9a3dea91891750a1f2e806bc416ba623b80a05809"
+notes = "Dev module 'OTHER2', the mode-24 door-warp sub-id 1 slot-A occupant (docs/subsystems/script-vm.md sub-id table). Head strings are 'OTHER2 / CICLE1 / SPRITE1 / THERNDER1 / NORMAL / COLOR / NOT BACK CLIP / 3D CLIP / SPREAD / GT4 DIV16' -- a primitive/clip test harness; the game-facing identity is open. Base cross-referenced from the sub-id dispatch table: the documented init VA 0x801CE8A0 lands on file +0x88 = 27bdffe8 (`addiu sp,sp,-0x18`), a clean prologue at the canonical slot-A base. OWN CONTENT IS ONE SECTOR -- the runtime slice is 0x800 bytes and the rest of the 0xB800 extraction footprint over-reads into 974/975 (which is what once made this entry look like the slot-machine overlay; see the 0975 row's HISTORY note)."
+
+[[overlays]]
+prot_index = 974
+label = "other3_dev"
+base_va = 0x801CE818
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801CEE80
+fingerprint_sha256 = "06a4bdcd2fd6fead19d5c5f89e5b69e303581ecbb701f9cdf4722c80f401d59d"
+notes = "Dev module 'OTHER3', the mode-24 door-warp sub-id 2 slot-A occupant (docs/subsystems/script-vm.md sub-id table). Head strings are 'OTHER3 / SELECT NO %d DEPTH %d / vol %d / read ret %d / set' -- a selection/depth test harness with a CD-read return code, so it reads as a streaming or model-depth probe; the game-facing identity is open. Base cross-referenced from the sub-id dispatch table: the documented init VA 0x801CEE80 lands on file +0x668 = 27bdffe8 (`addiu sp,sp,-0x18`) followed immediately by `jal 0x8001daf8` / `jal 0x8001dcf8`, a clean prologue at the canonical slot-A base. Runtime slice is 7 sectors; the 0x16000 extraction footprint over-reads past it."
+
+[[overlays]]
 prot_index = 975
 label = "slot_machine"
 base_va = 0x801CE818
