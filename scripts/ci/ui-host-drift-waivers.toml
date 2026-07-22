@@ -225,3 +225,43 @@ half (`world_map_overlay` `DevMenuRow`/`cursor_step`/`list_body_draws`) is
 wired and unit-tested, so this builder waits for a host debug toggle rather
 than inventing one.
 """
+
+[[waiver]]
+builder = "backdrop_dim_sprites"
+kind = "orphan"
+reason = """
+The retail Load/Save backdrop dim law (`FUN_801E02A4`: the title art
+re-emitted with every RGB modulation byte set to the dim level, split at the
+retail VRAM-paging seam), ported and unit-tested this wave. Neither host yet
+routes its save-UI backdrop through the shared builder - the native window
+and the browser page both stamp the title art through their pre-existing
+title paths without the dim modulation pass. Folding the dim into both hosts
+is a host-side change to the save-UI scene assembly, not a draw-call one;
+until then the law lives here with its tests.
+"""
+
+[[waiver]]
+builder = "confirm_prompt_draws"
+kind = "orphan"
+reason = """
+The retail Yes/No confirm-prompt window body (`FUN_801D1DAC` 1-line +
+`FUN_801D1F10` 3-line variant: prompt at the window pen, second line
+indented, option rows at `WX + 0x44` in menu ink 5, hand cursor at
+`WX + 0x30`). Ported with the retail geometry constants and unit-tested;
+no host flow currently raises this prompt through `engine-ui` - the flows
+that would (overwrite-save confirm, quit confirm) are not yet host-wired.
+The builder waits for those flows rather than inventing a caller.
+"""
+
+[[waiver]]
+builder = "save_ui_record_quad"
+kind = "orphan"
+reason = """
+The save-UI chrome stamper (`FUN_801E3FF0`: one `0x801E5048`-table record ->
+one textured quad with the RGB word folded in - pills, tabs, chrome at
+arbitrary brightness). The atlas-rect model half (`SaveMenuAtlasRects`) is
+already disc-parsed and consumed by both hosts through the existing
+save-screen builders; this per-record primitive is the retail drawer those
+builders currently inline by hand. Swapping their inlined stamps over to it
+is a refactor of the wired path, tracked for the next save-UI pass.
+"""
