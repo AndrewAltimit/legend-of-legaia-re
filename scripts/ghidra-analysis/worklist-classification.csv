@@ -207,7 +207,6 @@ addr,class,reason
 801d9c14,REAL,self-entry body of 419 instructions returning `jr ra`
 801d9d3c,REAL,self-entry body of 388 instructions returning `jr ra`
 801da2a0,REAL,self-entry body of 470 instructions returning `jr ra`
-801da34c,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
 801da59c,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
 801da6b4,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
 801da7f0,REAL,self-entry body of 80 instructions returning `jr ra`
@@ -247,7 +246,6 @@ addr,class,reason
 801e5154,UNCERTAIN,every dump at this VA decodes data as code (239 of 243 instructions are $zero-absolute loads/stores in 0897_xxx_dat) - no valid body to classify
 801e5338,REAL,self-entry body of 201 instructions returning `jr ra`
 801e805c,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
-801e91e8,REAL,self-entry body of 61 instructions returning `jr ra`
 801e92dc,REAL,self-entry body of 59 instructions returning `jr ra`
 801ea9b0,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview); no second dumped body here
 801ec0dc,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
@@ -258,8 +256,6 @@ addr,class,reason
 801ee90c,REAL,self-entry body of 275 instructions returning `jr ra`
 801ef014,REAL,self-entry body of 167 instructions returning `jr ra`
 801ef9b4,INTERIOR,dump is a citation stub for 801ef6e0
-801ef9e4,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
-801efbfc,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
 801f0450,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/muscle_dome); no second dumped body here
 801f0adc,REAL,every dump at this VA is of field(897) (captures: baka_fighter/dance/debug_menu/fishing/slot_machine); no second dumped body here
 801f1278,REAL,self-entry body of 201 instructions returning `jr ra`
@@ -272,7 +268,6 @@ addr,class,reason
 801f2160,REAL,every dump at this VA is of battle_action(898) (captures: muscle_dome); no second dumped body here
 801f2d68,REAL,self-entry body of 26 instructions returning `jr ra`
 801f36a0,REAL,"duplicate claim withdrawn: peer 801f16a0 is a printed address from a mis-based dump, not a body at that VA"
-801f3990,REAL,every dump at this VA is of battle_action(898) (captures: baka_fighter/dance/debug_menu/fishing/muscle_dome/slot_machine); no second dumped body here
 801f452c,REAL,self-entry body of 30 instructions returning `jr ra`
 801f45a4,REAL,every dump at this VA is of battle_action(898) (captures: baka_fighter/dance/debug_menu/fishing/muscle_dome/slot_machine); no second dumped body here
 801f4dd0,REAL,self-entry body of 138 instructions returning `jr ra`

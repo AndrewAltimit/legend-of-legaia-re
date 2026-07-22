@@ -923,8 +923,14 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
    (`lbu v0,0x76f(v1)` `0x801DA3F8`, `lbu v0,0x77f(v0)` `0x801DA4F8`) - byte-for-byte into
    `actor[+0x1DF..+0x1EE]` (`sb v0,0x1df(v1)` at `0x801DA404` / `0x801DA454` / `0x801DA504`),
    or zero-fills the queue when the selected slot is empty (`sb zero,0x1df` at
-   `0x801DA490`/`0x801DA540`/`0x801DA584`). Live pad edits during the Arts gauge then mutate the
-   same bytes in place.
+   `0x801DA490`/`0x801DA540`/`0x801DA584`). Slot pick + fallback are **asymmetric**: the u16
+   pair `actor[+0x154]`/`[+0x156]` selects the leg (`sltu` at `0x801DA3A4`) - the
+   `[+0x156] < [+0x154]` leg prefers the first string and falls back to the second when its
+   head byte is zero, while the other leg reads only the second string and zero-fills on an
+   empty head with **no** fallback (`beq` at `0x801DA4CC` lands on the `0x801DA51C` zero-fill,
+   never on a `+0x76F` copy). The whole copy is gated on the stage byte `DAT_8007BD04`
+   (zero → zero-fill, `0x801DA378`). Live pad edits during the Arts gauge then mutate the
+   same bytes in place. Byte-level port: `legaia_engine_vm::battle_action::preseed_action_queue`.
 2. **Normalize arrows into art constants.** `FUN_801EED1C`'s player path walks the queue,
    matches each token run against the character's art command table (token compare via
    `addiu v1,v1,-0xb` at `0x801EF3E8` - the queue's `0x0C..0x0F` arrows against the art table's
@@ -935,7 +941,15 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
    `0x801EF730..0x801EF744`). Each accepted art is validated against the character's learned
    list by `FUN_801EFBFC` (`jal` at `0x801EF44C`; count at char record `+0x74D`, ids at
    `+0x74E..`), pays its AP (`lhu/subu/sh +0x170` at `0x801EF490..0x801EF49C`) and accrues the
-   spent counter `+0x224` (`0x801EF4B4`).
+   spent counter `+0x224` (`0x801EF4B4`). `FUN_801EFBFC` is more than a membership check - it is
+   also the **arts learn-on-use inserter**: when the id is absent it returns `2` after an
+   ascending-sorted insert into `+0x74E..` (shift loop `0x801EFD64..0x801EFDB0`, count bump
+   `0x801EFE24`), but only for ids **above** the per-character innate cap at
+   `0x801F686C + char_id - 1` (`sltu` at `0x801EFD14`; the zero id passes the gate as an edge)
+   and only when the learn gate opens: `actor[+0x266] == 0`, **or** a 1/512 roll
+   (`FUN_80056798() & 0x1FF == 0` at `0x801EFCC4`), **or** the debug byte `DAT_8007BD0C == 'O'`
+   (`0x801EFCD4`). Returns `1` when already known, `0` when unknown and not learnable.
+   Byte-level port: `legaia_engine_vm::battle_action::check_and_learn_art`.
 3. **Miracle replacement (inline).** When the slot's Miracle marker `ctx[+0x25F + slot]` is set
    (`lbu v0,0x25f(v0)` at `0x801EF4C8`), the builder overwrites the whole 16-byte queue from the
    character's Miracle replacement string - the loop at `0x801EF4E8..0x801EF524` copies from
@@ -954,6 +968,12 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
    array `0x801F6990[pos] = 4` for each written `0x1A` SpecialStarter (`0x801EFB84..0x801EFBA8`)
    and sets `0x801F696C = 1` (`0x801EFBD4`). Miracle-before-Super ordering is therefore
    structural: the Miracle branch runs inside the builder body, the Super applier only at its end.
+   Two more of its laws matter to a byte-faithful mirror: rows are scanned **in table order and
+   the first full match wins** (the match path exits the row loop by forcing the counter to 5),
+   and the replace copy stops at the replace string's own terminator **without re-terminating
+   the queue** - a replace longer than its find legally spills past byte 16 of the 19-byte
+   stream. Byte-level port: `legaia_engine_vm::battle_action::apply_super_tail_replace`
+   (equivalence with the structural `SuperMatcher` over the shipped tables is test-asserted).
 
 The consuming side is unchanged: the strike loop reads `actor[+0x1DF + +0x15]` and the round
 driver's queue clear runs the `sb zero,0x1df(v0)` loop at `0x801D89D8` inside `FUN_801D88CC`

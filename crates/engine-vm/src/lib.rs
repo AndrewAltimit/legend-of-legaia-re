@@ -73,6 +73,7 @@ pub mod ambient_motion;
 pub mod anim_vm;
 pub mod battle_action;
 pub mod battle_camera;
+pub mod battle_cast_cue;
 pub mod battle_formulas;
 pub mod camera_mover;
 pub mod cutscene_trigger;
