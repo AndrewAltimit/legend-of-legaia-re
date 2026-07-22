@@ -331,6 +331,39 @@ pub const FMV_STATE_TABLE_ADDR: u32 = 0x801D_0A6C;
 /// selector at overlay VA `0x801CEC9C` (`FUN_801CEA3C`).
 pub const FMV_STATE_SLOT_STRIDE: u32 = 0x20;
 
+/// Pop the top entry of a compact `u16`-counted halfword stack.
+///
+/// PORT: FUN_8001FA34
+/// REF: FUN_801D629C
+///
+/// The sprite-list "current entry" stack the cutscene sprite emitter
+/// `FUN_801D629C` draws from. `count` is a signed halfword holding the
+/// **1-based top index**, and the body is the halfword array starting at
+/// `table + 2` - which is why the load carries a `+2` displacement
+/// (`lh v0,2(v0)` at `0x8001FA54`) on top of an index already scaled from
+/// `count - 1`. Net effect: the routine reads `table[count]`, decrements
+/// `count`, and returns the value.
+///
+/// The paired **push** sits immediately after it at `0x8001FA68` - `count++`
+/// then `sh a3,(table + count*2)`, writing exactly the halfword this pop
+/// reads back. The two share the convention, not code.
+///
+/// Underflow is a *signed* test on the pre-decrement count
+/// (`bltz v0, 0x8001FA60`), and the target is two instructions past this
+/// function's own `jr ra`: a separate `jr ra; li v0,-1` tail. So an empty
+/// stack (`count == 0`) still pops - it reads `table[0]`, the header
+/// halfword, and leaves `count` at `-1`; only the *next* call returns `-1`.
+///
+/// Returns `None` for the retail `-1`.
+pub fn sprite_stack_pop(count: &mut i16, table: &[i16]) -> Option<i16> {
+    if *count < 0 {
+        return None;
+    }
+    let idx = *count as usize;
+    *count = count.wrapping_sub(1);
+    table.get(idx).copied()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -533,5 +566,30 @@ mod tests {
         assert_eq!(FMV_STATE_SLOT_STRIDE, 0x20);
         assert_eq!(FMV_SLOT_COUNT, 23);
         assert_eq!(FMV_SLOT_COUNT, legaia_asset::fmv_dispatch::FMV_SLOT_COUNT);
+    }
+
+    #[test]
+    fn sprite_stack_pop_reads_the_body_not_the_header() {
+        // table[0] is the header halfword; the body is table[1..]. A count
+        // of 3 therefore pops table[3], the third body entry.
+        let table = [0x1111i16, 10, 20, 30];
+        let mut count = 3i16;
+        assert_eq!(sprite_stack_pop(&mut count, &table), Some(30));
+        assert_eq!(count, 2);
+        assert_eq!(sprite_stack_pop(&mut count, &table), Some(20));
+        assert_eq!(sprite_stack_pop(&mut count, &table), Some(10));
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn sprite_stack_pop_underflows_one_call_late() {
+        // The `bltz` tests the PRE-decrement count, so count == 0 still pops
+        // (the header halfword) and only the following call returns -1.
+        let table = [0x1111i16, 10];
+        let mut count = 0i16;
+        assert_eq!(sprite_stack_pop(&mut count, &table), Some(0x1111));
+        assert_eq!(count, -1);
+        assert_eq!(sprite_stack_pop(&mut count, &table), None);
+        assert_eq!(count, -1, "the underflow tail writes nothing back");
     }
 }
