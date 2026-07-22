@@ -568,6 +568,17 @@ format decoder and matches what the asset tooling and the site's character
 viewer need, but a consumer chasing frame-exact runtime parity has to add the
 sub-frame blend itself.
 
+The angle half of that blend is available: `legaia_asset::player_anm::lerp_angle_12`
+is the port of `FUN_8001D088`. The result is
+`(to + ((from - to) * frac >> 4)) & 0xFFF`, with the pair first brought onto the
+short arc by two **sequential** guards (`0x8001D090..0x8001D0B8`) - add a turn to
+`to` when `from - to >= 0x800`, then add a turn to `from` when the *updated*
+`to - from >= 0x800`. Because the second guard re-reads the bumped `to`, an
+input exactly half a turn apart fires both and they cancel, so that one case
+resolves forward. Retail additionally accumulates `|from - to|` into
+`_DAT_8007BD28` and journals the unwrapped pair into the 8-byte-stride slot
+table at `0x800891A8`; neither is part of the transform, and the port omits both.
+
 The decoder helper `legaia_asset::player_anm::BoneTransform::decode`
 returns `(t_x, t_y, t_z, r_x, r_y, r_z)` directly; the WASM
 [`LegaiaViewer::player_anm_record_pose_frames`](../../crates/web-viewer/src/lib.rs)

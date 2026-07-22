@@ -396,6 +396,55 @@ impl BoneTransform {
     }
 }
 
+/// One full turn in the retail 12-bit angle space (`4096 = 360 deg`).
+pub const ANGLE_TURN: i32 = 0x1000;
+
+/// Wraparound-aware interpolation between two 12-bit PSX angles.
+///
+/// PORT: FUN_8001D088
+///
+/// `frac` is the 4-bit sub-frame fraction the frame blender carries at
+/// `actor+0x68` (`0..=15`); the result is
+/// `(to + ((from - to) * frac >> 4)) & 0xFFF`, so `frac == 0` yields `to`
+/// and `frac == 16` would yield `from`. Both inputs are masked to 12 bits
+/// first.
+///
+/// The part that is not a plain lerp is the **unwrap**, and it is why the
+/// bone blender cannot use the translation lerp for angles. Retail brings
+/// the pair onto the shortest arc before subtracting, in two guarded steps
+/// (`0x8001D090..0x8001D0B8`):
+///
+/// - if `from - to >= 0x800`, add a full turn to `to`;
+/// - then, if `to - from >= 0x800`, add a full turn to `from`.
+///
+/// Both comparisons are signed `slti` against half a turn, so after the pair
+/// the signed difference `from - to` always lies in `(-0x800, 0x800]` - the
+/// short way round. Interpolating 0x010 towards 0xFF0 therefore crosses zero
+/// (16 units) instead of running 4064 units the long way.
+///
+/// The two guards are **sequential, not exclusive**: the second re-reads the
+/// `to` the first may have just bumped (`subu v0,a1,a0` at `0x8001D0A4`). At
+/// exactly half a turn both fire and cancel, leaving the delta at `+0x800`,
+/// so that one input resolves forward rather than backward.
+///
+/// Two side effects of the retail routine are deliberately not modelled: it
+/// accumulates `|from - to|` into the counter `_DAT_8007BD28` (the two
+/// branches at `0x8001D0DC` add the same magnitude, since `|a-b| == |b-a|`,
+/// so the branch is a wash), and it journals the unwrapped `(from, to)` pair
+/// into the 8-byte-stride slot table at `0x800891A8`. Both are
+/// engine-external bookkeeping over globals this crate does not host.
+pub fn lerp_angle_12(from: i32, to: i32, frac: i32) -> u16 {
+    let mut from = from & 0xFFF;
+    let mut to = to & 0xFFF;
+    if from - to >= ANGLE_TURN / 2 {
+        to += ANGLE_TURN;
+    }
+    if to - from >= ANGLE_TURN / 2 {
+        from += ANGLE_TURN;
+    }
+    (((((from - to) * frac) >> 4) + to) as u16) & 0x0FFF
+}
+
 /// Find every player-ANM-shaped section in a single PROT entry.
 ///
 /// Walks `bytes` as a [`parse_player_lzs`]-shaped container with the given
@@ -633,5 +682,56 @@ mod tests {
         buf.extend_from_slice(&[0u8; 16]);
         let bundle = parse(&buf).unwrap();
         assert!(bundle.record(0).is_err());
+    }
+
+    #[test]
+    fn lerp_angle_12_endpoints_are_the_two_frames() {
+        // frac 0 is the `to` frame verbatim; the mask is applied to both ends.
+        assert_eq!(lerp_angle_12(0x400, 0x100, 0), 0x100);
+        assert_eq!(lerp_angle_12(0x1400, 0x100, 0), 0x100);
+        // 16/16 of the way is `from`, but the caller only ever passes 0..=15,
+        // so the last representable step stops one sixteenth short.
+        assert_eq!(lerp_angle_12(0x400, 0x100, 15), 0x100 + ((0x300 * 15) >> 4));
+    }
+
+    #[test]
+    fn lerp_angle_12_takes_the_short_arc_across_zero() {
+        // 0xFF0 -> 0x010 is 32 units forward, not 4064 units backward.
+        // Half-way must land on 0x000, and never in the 0x800 region.
+        assert_eq!(lerp_angle_12(0x010, 0xFF0, 8), 0x000);
+        assert_eq!(lerp_angle_12(0xFF0, 0x010, 8), 0x000);
+        // Same arc, quarter of the way from each side.
+        assert_eq!(lerp_angle_12(0x010, 0xFF0, 4), 0xFF8);
+        assert_eq!(lerp_angle_12(0xFF0, 0x010, 4), 0x008);
+    }
+
+    #[test]
+    fn lerp_angle_12_unwrap_is_symmetric_and_stays_in_range() {
+        for from in (0..0x1000).step_by(0x37) {
+            for to in (0..0x1000).step_by(0x53) {
+                for frac in 0..16 {
+                    let v = lerp_angle_12(from, to, frac);
+                    assert!(v < 0x1000, "{from:#x} {to:#x} {frac} -> {v:#x}");
+                }
+                // The unwrap brings the pair onto the short arc, so the step
+                // taken per frac tick never exceeds half a turn / 16.
+                let a = lerp_angle_12(from, to, 0) as i32;
+                let b = lerp_angle_12(from, to, 1) as i32;
+                let step = (a - b).rem_euclid(0x1000).min((b - a).rem_euclid(0x1000));
+                assert!(step <= 0x800 / 16 + 1, "{from:#x} {to:#x} step {step:#x}");
+            }
+        }
+    }
+
+    #[test]
+    fn lerp_angle_12_half_turn_fires_both_guards() {
+        // Exactly half a turn is the one input where BOTH guards fire, and
+        // they cancel: `from - to == 0x800` bumps `to` to 0x1000, which makes
+        // `to - from == 0x800` and bumps `from` to 0x1800, leaving the delta
+        // back at +0x800. The walk therefore runs FORWARD, and half-way lands
+        // on 0x400 rather than 0xC00. The second guard is re-evaluated on the
+        // updated `to` (`subu v0,a1,a0` at 0x8001D0A4), which is what makes
+        // this fall out; modelling the two as exclusive gets it backwards.
+        assert_eq!(lerp_angle_12(0x800, 0x000, 8), 0x400);
     }
 }

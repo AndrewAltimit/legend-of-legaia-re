@@ -186,6 +186,67 @@ impl Default for GteMat3 {
     }
 }
 
+/// Per-object suppression bits in the render-node flag halfword at `+0x52`,
+/// read by the retail view-rotation build [`camera_view_rotation`].
+///
+/// Each bit **skips** its axis - the retail branch is `andi` + `bnez` to the
+/// next stage, so a *set* bit means "leave this axis out of the composition",
+/// not "apply it".
+pub mod view_rot_flags {
+    /// Skip the pitch factor (`RotMatrixX`, `FUN_800461A4`).
+    pub const SKIP_PITCH: u16 = 0x0080;
+    /// Skip the yaw factor (`RotMatrixY`, `FUN_8004629C`).
+    pub const SKIP_YAW: u16 = 0x0100;
+    /// Skip the roll factor (`RotMatrixZ`, `FUN_8004638C`).
+    pub const SKIP_ROLL: u16 = 0x0200;
+    /// Bypass the whole build and reuse the saved GTE control block.
+    pub const USE_SAVED_MATRIX: u16 = 0x0400;
+}
+
+/// Retail's camera / cutscene view-rotation build.
+///
+/// PORT: FUN_8001CF50
+/// REF: FUN_8003D178, FUN_800461A4, FUN_8004629C, FUN_8004638C, FUN_8003D1A4
+///
+/// Returns the composed rotation, or `None` when the node asks for the saved
+/// camera matrix instead ([`view_rot_flags::USE_SAVED_MATRIX`]).
+///
+/// The shape, read off `0x8001CF50..0x8001D038`:
+///
+/// 1. `FUN_8003D178` resets the GTE rotation to identity **and clears
+///    TRX/TRY/TRZ**, so the build starts from a pure rotation.
+/// 2. Each of `FUN_800461A4` / `FUN_8004629C` / `FUN_8004638C` **post**-multiplies
+///    the current GTE rotation by its axis factor - they save TR, zero it,
+///    push the three columns of the axis matrix through `MVMVA` against the
+///    resident rotation, then write the result back and restore TR. So the
+///    composition order is `Rx * Ry * Rz`, in that order, with pitch outermost.
+/// 3. Each factor is skipped when its `node+0x52` bit is set (see
+///    [`view_rot_flags`]); the angles come from the three camera globals
+///    `_DAT_8007B790` (pitch) / `_DAT_8007B792` (yaw) / `_DAT_8007B794` (roll).
+/// 4. Bit `0x400` short-circuits the whole thing: retail restores the saved
+///    GTE control words from `0x8007BF10` (`FUN_8003D1A4`) rather than
+///    rebuilding, which is what `None` stands for here.
+///
+/// The scale stage the retail function runs after the rotation (`0x6000` into
+/// each of `mat+0x14..0x1C`, then `FUN_8005B4E8` `ScaleMatrix`) is not part of
+/// the rotation and is left to the caller - the engine scales with `glam`.
+pub fn camera_view_rotation(flags: u16, pitch: f32, yaw: f32, roll: f32) -> Option<GteMat3> {
+    if flags & view_rot_flags::USE_SAVED_MATRIX != 0 {
+        return None;
+    }
+    let mut m = GteMat3::IDENTITY;
+    if flags & view_rot_flags::SKIP_PITCH == 0 {
+        m = m.mul(&GteMat3::rot_x(pitch));
+    }
+    if flags & view_rot_flags::SKIP_YAW == 0 {
+        m = m.mul(&GteMat3::rot_y(yaw));
+    }
+    if flags & view_rot_flags::SKIP_ROLL == 0 {
+        m = m.mul(&GteMat3::rot_z(roll));
+    }
+    Some(m)
+}
+
 /// Equivalent of `RTPT` (rotate, translate, perspective transform): apply
 /// `rot * v + trans`. Result is in q19.12.
 pub fn rot_trans(rot: &GteMat3, v: GteVec3, trans: GteVec3) -> GteVec3 {
