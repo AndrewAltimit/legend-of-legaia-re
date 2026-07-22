@@ -32,8 +32,41 @@ and decrements inventory.
 credits the Point Card counter `_DAT_800845B4` (u32) before the gold debit:
 when the party holds item `0xFE` (the Point Card - inventory-has check
 `func_0x80042f4c(0xFE)`), it adds `price / 20` per unit bought, capped at
-`9,999,999`. Sell transactions never accrue. Not yet mirrored in the engine's
-`buy_from_shop`. `see ghidra/scripts/funcs/overlay_shop_save_801db7f4.txt`.
+`9,999,999`. Sell transactions never accrue. The single-unit buy path of the
+recipient picker `FUN_801db380` (row 0 = "into the bag") applies the same
+accrual. Ported as `engine-core::shop::{point_card_credit,
+apply_point_card}` inside `BuyQuantitySession`; the engine's
+`buy_from_shop` world kernel does not yet apply it.
+`see ghidra/scripts/funcs/overlay_shop_save_801db7f4.txt`.
+
+### Retail quantity pickers (menu-overlay sub-screens)
+
+The pause-shop's quantity screens are two sibling state machines in the
+menu overlay, both sharing one pad decode - Right/Left step the quantity
+by 1, Down/Up by 10, clamped to `[1, max]`, every step gated so walking
+off either end is a silent no-op:
+
+- **Buy** (`FUN_801DB7F4`): `max = min(gold / price, 99, 99 - held)`;
+  the commit runs Point Card accrual, bag add, gold debit
+  `price * qty`, and - only when the Point Card toast was shown - waits
+  for a button press before returning to the buy list. Port:
+  `engine-core::shop::BuyQuantitySession`.
+- **Sell** (`FUN_801DBD94`, sub-screen `0x1F`): `max` = the staged bag
+  slot's count; the commit credits `(price * qty) >> 1` gold (purse cap
+  `9,999,999`) and applies a sell-list scroll fix-up (selling the last
+  row while it sits alone on the final page steps the selection and
+  scroll back); a whole-stack sale that empties the bag runs a
+  `0x11`-unit delay and exits to the shop root instead of the sell
+  list. Port: `engine-core::shop::SellQuantitySession` (+
+  `sell_credit` / `apply_sale_gold` / `sell_list_fixup`).
+
+Both prices are the **item table's** halfword (`0x80074368 + id*0xC +
+2`) - the retail item shop carries no per-shop gold price, which is
+why the sell-side proceeds derive from the same table the buy list
+shows. (The casino prize exchange's coin table at `0x801E4518` is a
+separate system with its own stock records.) The sessions are not yet
+wired into the hosts' menu flow (the `ShopQuantity` screen still
+drives `ShopSession::set_quantity`).
 
 ### State-machine routing
 
