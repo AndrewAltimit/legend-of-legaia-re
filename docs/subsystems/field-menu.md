@@ -969,6 +969,19 @@ When the applier reports a result through `_DAT_8007BB78` (seeded
 confirm press before closing (`0x801E4C68`). Exhaustion runs the same
 20-frame timer + bag rescan.
 
+The notify window's renderer does **not** format its message. The
+template string is already staged at `DAT_801E4700`; each frame
+`FUN_801DCD58` finds the first `0xC1` and the first `0xC5` markup token
+in it (`FUN_8003CBF8`, the same `0xC0`-class lead-byte scan the dialog
+strcpy/strcat use) and overwrites the byte **immediately after** each
+token in place. The `0xC1` operand takes the low byte of `_DAT_8007BB70`;
+the `0xC5` operand takes `_DAT_8007BB78 + _DAT_8007BB70 * 0x40`, both
+truncated by the byte store. So the template's operand slots are live
+placeholders the renderer refills, not values baked at stage time. The
+message then draws in ink `7` at the window content origin, with the hand
+sprite (kind 1, mode 1) at `(WX+0xE6, WY+0xD)`. Engine port:
+`engine-core::pause_screens::notify_window_operands`.
+
 **Preview-mode derivation `FUN_801D6A54`**: mode 0 unless the item's
 record kind byte is `2` **and** its effect class is `6` - the
 permanent-stat Waters. The effect arg maps `0 -> 1` (Life Water),

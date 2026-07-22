@@ -1134,6 +1134,50 @@ pub fn target_panel_model(s: &PauseItemsSession, mode: u32) -> Option<TargetPane
     })
 }
 
+/// The staged notify-window message after its two markup operands are
+/// patched, plus the window's two pens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NotifyWindow {
+    /// Operand byte written after the first `0xC1` markup token.
+    pub c1_operand: u8,
+    /// Operand byte written after the first `0xC5` markup token.
+    pub c5_operand: u8,
+    /// Message pen (ink `7`) at the window content origin.
+    pub text_pen: (i16, i16),
+    /// Hand-sprite pen at `(WX + 0xE6, WY + 0xD)`; kind and mode are both `1`.
+    pub cursor_pen: (i16, i16),
+}
+
+/// Patch the two markup operands of the **notify window** (menu-overlay
+/// window `8`, the panel an item-use result opens) and resolve its pens.
+///
+/// The message is not formatted at draw time: the window renderer takes the
+/// already-staged template at `DAT_801E4700`, finds the first `0xC1` and the
+/// first `0xC5` markup token in it (`FUN_8003CBF8`, the same `0xC0`-class
+/// lead-byte scan the dialog strcpy/strcat use) and overwrites **the byte
+/// following each token** in place. So the template's operand slots are
+/// placeholders the renderer refills every frame, not values baked when the
+/// message was staged.
+///
+/// The arithmetic is what the disassembly pins: the `0xC1` operand is the
+/// low byte of `selector` (`_DAT_8007BB70`) and the `0xC5` operand is
+/// `base + selector * 0x40` (`_DAT_8007BB78` plus the **halfword** at
+/// `_DAT_8007BB70` scaled by `0x40`), both truncated to a byte by the `sb`.
+/// What the two globals index is not pinned.
+///
+/// PORT: FUN_801dcd58 (menu-overlay notify-window content renderer)
+/// REF: FUN_8003cbf8 (the markup-token scan whose offset the operand write
+/// is relative to)
+pub fn notify_window_operands(window: (i16, i16), selector: i16, base: u8) -> NotifyWindow {
+    let (wx, wy) = window;
+    NotifyWindow {
+        c1_operand: selector as u8,
+        c5_operand: base.wrapping_add((selector.wrapping_mul(0x40)) as u8),
+        text_pen: (wx, wy),
+        cursor_pen: (wx + 0xE6, wy + 0xD),
+    }
+}
+
 /// Number of rows the menu-overlay root command picker offers.
 pub const ROOT_MENU_ROWS: u16 = 7;
 
@@ -1179,6 +1223,8 @@ pub enum RootMenuRoute {
 ///
 /// PORT: FUN_801d6b20 (menu-overlay sub-screen `0x01`, phase-1 confirm arm
 /// `0x801D6BCC..0x801D6CF4`)
+/// REF: FUN_801d688c (the cursor navigator this screen drives; ported as
+/// `crate::menu_input`)
 pub fn root_menu_confirm_route(
     row: u16,
     entry_context_kind: Option<u8>,
@@ -1831,6 +1877,18 @@ mod tests {
         assert_eq!(staged_mp_cost(0x10), 30);
         // Both bits set: Half (0x20) wins the priority - 20, not 30.
         assert_eq!(staged_mp_cost(0x30), 20);
+    }
+
+    #[test]
+    fn notify_window_operands_and_pens() {
+        let n = notify_window_operands((12, 30), 2, 5);
+        assert_eq!(n.c1_operand, 2);
+        // base + selector * 0x40, truncated to a byte by the retail `sb`.
+        assert_eq!(n.c5_operand, 5 + 2 * 0x40);
+        assert_eq!(n.text_pen, (12, 30));
+        assert_eq!(n.cursor_pen, (12 + 0xE6, 30 + 0xD));
+        // selector 4 * 0x40 = 0x100 wraps to 0 in the byte store.
+        assert_eq!(notify_window_operands((0, 0), 4, 7).c5_operand, 7);
     }
 
     #[test]
