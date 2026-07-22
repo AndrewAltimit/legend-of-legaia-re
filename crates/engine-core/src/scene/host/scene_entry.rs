@@ -198,11 +198,14 @@ impl SceneHost {
         // Same scene-scoping for the sibling `4C 60` MoveImage stamps: any
         // still-queued rect operands belong to the previous scene's MAN.
         self.world.script_vram_moves.clear();
-        self.world.frame_step = if crate::scene::is_world_map_scene(name) {
+        // Retail installs this as the per-mode floor `DAT_8007B9D8`; the
+        // adaptive resolver (`World::resolve_frame_step`) can only raise it.
+        self.world.frame_step_floor = if crate::scene::is_world_map_scene(name) {
             3
         } else {
             2
         };
+        self.world.frame_step = self.world.frame_step_floor;
         let (record_bytes, stager_entry_bytes): (Vec<u8>, Vec<u8>) = {
             let scene = self
                 .scene

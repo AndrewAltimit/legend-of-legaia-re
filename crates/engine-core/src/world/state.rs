@@ -1412,6 +1412,35 @@ pub struct World {
     ///
     /// REF: FUN_80016B6C
     pub frame_step: u8,
+    /// Retail `DAT_8007B9D8` - the per-mode **floor** under
+    /// [`Self::frame_step`], installed by the mode/scene loader and never by
+    /// the frame driver. `FUN_80016B6C` applies it as a minimum (`slt` plus a
+    /// store taken only when the adaptive value is *below* it), so it raises
+    /// the cadence and never caps it. Kept separate from `frame_step` because
+    /// folding the two lets a single slow frame ratchet the floor upward
+    /// permanently.
+    ///
+    /// REF: FUN_80016B6C, FUN_801D6704
+    pub frame_step_floor: u8,
+    /// Set to request that the next per-frame mode handler skip its frame.
+    ///
+    /// Retail's frame-begin pass `FUN_8001698C` returns `1` when `gp+0x3D8`
+    /// is set and neither `_DAT_8007B938` nor `gp+0x55C` carries bit `0x800`;
+    /// its caller (the per-frame mode handler, [`crate::mode::per_frame_stage`])
+    /// then abandons the frame after a pad poll and a `VSync(0)` - no
+    /// mid-frame driver, no frame-end pass. Consumed (and cleared) by
+    /// [`crate::mode::ModeDriver::tick`] via [`World::take_frame_begin_skip`].
+    ///
+    /// Defaults to `false`; a host that never sets it gets the pre-existing
+    /// tick-every-frame behaviour.
+    ///
+    /// REF: FUN_8001698C
+    pub frame_begin_skip: bool,
+    /// Retail's frame-time history behind the adaptive cadence
+    /// (`DAT_80084098[16]` + `0x1F800392`). Only advanced when a host calls
+    /// [`World::resolve_frame_step`]; a host with no frame-time telemetry
+    /// leaves it untouched and keeps the deterministic floor.
+    pub frame_step_telemetry: vm::actor_tick::FrameStepTelemetry,
     /// Vsyncs accumulated toward the next retail *game tick* (a game tick
     /// spans [`Self::frame_step`] vsyncs). Advanced by [`World::tick`] on the
     /// sim ticks that map to a retail vsync ([`Self::field_frame_step`]).
@@ -2268,6 +2297,9 @@ impl World {
             active_field_fx: Vec::new(),
             // Field/town baseline; scene entry re-pins (`mapNN` -> 3).
             frame_step: 2,
+            frame_step_floor: 2,
+            frame_begin_skip: false,
+            frame_step_telemetry: vm::actor_tick::FrameStepTelemetry::new(),
             clut_vsync_accum: 0,
             actor_vsync_accum: 0,
             clut_pending_game_ticks: 0,

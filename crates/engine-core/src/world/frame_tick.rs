@@ -13,6 +13,52 @@ impl World {
         self.play_time_seconds = self.play_time_seconds.saturating_add(delta_seconds);
     }
 
+    /// Consume the frame-begin skip request, returning whether this frame
+    /// should be abandoned. Models `FUN_8001698C`'s non-zero return; see
+    /// [`Self::frame_begin_skip`].
+    ///
+    /// PORT: FUN_8001698c (the frame-skip return; the ring-aging half of the
+    /// same function is `legaia_engine_audio::sfx_ring::SfxCueRing::age`)
+    pub fn take_frame_begin_skip(&mut self) -> bool {
+        std::mem::take(&mut self.frame_begin_skip)
+    }
+
+    /// Resolve this frame's cadence the way `FUN_80016B6C` does and install
+    /// it into [`Self::frame_step`].
+    ///
+    /// PORT: FUN_80016b6c (the `0x80017044 .. 0x800171D8` cadence block; the
+    /// telemetry state machine lives in
+    /// [`legaia_engine_vm::actor_tick::FrameStepTelemetry`]).
+    ///
+    /// `elapsed_hblanks` is the frame time retail samples with `VSync(1)`
+    /// through `FUN_800173BC`. The floor is [`Self::frame_step_floor`]
+    /// (`DAT_8007B9D8`), installed per scene, and the resolver can only raise
+    /// the cadence above it - never below.
+    ///
+    /// **Hosts that want determinism should not call this.** Retail gates the
+    /// whole adaptive path on a boot config word (`gp+0x4CE == 0x10`); with
+    /// `frameskip_enabled = false` this returns the floor unchanged, which is
+    /// exactly what the replay / trace oracles need. Wall-clock-paced hosts
+    /// pass their measured frame time and `true`.
+    pub fn resolve_frame_step(&mut self, elapsed_hblanks: i32, frameskip_enabled: bool) -> u8 {
+        let cadence = self.frame_step_telemetry.resolve(
+            elapsed_hblanks,
+            frameskip_enabled,
+            self.frame_step_floor,
+        );
+        self.frame_step = cadence.vsyncs_per_tick();
+        self.frame_step
+    }
+
+    /// The `VSync(n)` argument retail would pass this frame - **last** frame's
+    /// cadence, with `< 2` passed as `0` (`0x8001719C`, read before the new
+    /// value is written back at `0x800171D8`).
+    ///
+    /// REF: FUN_80016B6C
+    pub fn frame_step_vsync_wait(&self) -> u8 {
+        self.frame_step_telemetry.vsync_wait()
+    }
+
     /// Increment the deterministic LCG and return the new value.
     pub fn next_rng(&mut self) -> u32 {
         // Numerical Recipes LCG. Cheap, deterministic.

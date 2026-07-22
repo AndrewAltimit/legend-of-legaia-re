@@ -238,6 +238,139 @@ impl FrameCadence {
     }
 }
 
+/// The retail frame-time telemetry that feeds [`FrameCadence::resolve`].
+///
+/// PORT: FUN_80016b6c - the adaptive-cadence half of the frame-end driver
+/// (`0x80017044 .. 0x800171D8`), read off the disassembly
+/// (`see ghidra/scripts/funcs/80016b6c.txt`) and cross-checked block-for-block
+/// against the static-recomp rendering of `func_80016B6C`.
+///
+/// [`FrameCadence::resolve`] models the *ladder*; this models the **state
+/// behind it**, which is what makes the cadence sticky rather than
+/// instantaneous. Retail keeps three cells:
+///
+/// | Retail cell | Here |
+/// |---|---|
+/// | `DAT_80084098[16]` - 16 `i16` frame-time samples | [`Self::history`] |
+/// | `gp+0x440` - the ring write cursor, masked `& 0xF` at the *top* of the next frame | [`Self::cursor`] |
+/// | `0x1F800392` - last frame's resolved cadence, the `VSync` argument | [`Self::previous`] |
+///
+/// Three details in the instruction stream that a "16-sample running max"
+/// summary loses, and all three change the resolved cadence:
+///
+/// 1. **Samples are clamped on the way in.** `slti v0,s0,0x2d0 / li s0,0x2bc`
+///    at `0x8001709C` stores `0x2BC` (700) for any sample `>= 0x2D0` (720).
+///    So the *history* can never on its own reach the top rung - a stored
+///    spike ages out as cadence 3, not 4.
+/// 2. **The current sample overrides the max.** At `0x800170F8` the raw
+///    (unclamped) sample replaces the ring maximum when it is `>= 0x2D0`.
+///    Combined with (1) this is the whole point of the clamp: a `>= 720`
+///    frame resolves to cadence 4 **on that frame only**, then decays to 3.
+/// 3. **The vsync wait lags one frame.** `0x1F800392` is read for the
+///    `VSync(n)` argument *before* the newly resolved cadence is written back
+///    to it (`0x800171D8`), and a value `< 2` is passed as `0`. So the frame
+///    that detects a slow frame still waits at the old cadence.
+///
+/// The gate itself is `gp+0x4CE == 0x10` (`0x80017108`) - one comparison, one
+/// site - and the floor is applied as a *minimum*: `slt` + a store taken only
+/// when the resolved value is **below** `DAT_8007B9D8`. It raises the cadence,
+/// it never caps it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameStepTelemetry {
+    history: [i16; Self::HISTORY],
+    cursor: usize,
+    previous: u8,
+}
+
+impl FrameStepTelemetry {
+    /// Ring length - retail's `sltiu v0,s5,0x10` loop bound.
+    pub const HISTORY: usize = 16;
+
+    /// The sample value stored in place of anything `>= [`Self::SPIKE`]`
+    /// (retail `li s0,0x2bc`).
+    pub const CLAMPED: i16 = 0x2BC;
+
+    /// Samples at or above this are spikes: clamped on store, and used raw
+    /// in place of the ring maximum on the frame they occur.
+    pub const SPIKE: i32 = 0x2D0;
+
+    /// Fresh telemetry: an all-zero history and a previous cadence of 1
+    /// (retail's cold `0x1F800392`).
+    pub const fn new() -> Self {
+        Self {
+            history: [0; Self::HISTORY],
+            cursor: 0,
+            previous: 1,
+        }
+    }
+
+    /// One frame of `FUN_80016B6C`'s cadence block.
+    ///
+    /// `elapsed_hblanks` is the frame time `FUN_800173BC` returns (retail's
+    /// `VSync(1)`); `frameskip_enabled` is the `gp+0x4CE == 0x10` gate;
+    /// `mode_floor` is `DAT_8007B9D8`. Returns the newly resolved cadence -
+    /// the value retail writes to `DAT_1F800393`.
+    pub fn resolve(
+        &mut self,
+        elapsed_hblanks: i32,
+        frameskip_enabled: bool,
+        mode_floor: u8,
+    ) -> FrameCadence {
+        // 0x8001709C: clamp on the way into the ring.
+        let stored = if elapsed_hblanks < Self::SPIKE {
+            elapsed_hblanks as i16
+        } else {
+            Self::CLAMPED
+        };
+        self.history[self.cursor] = stored;
+        // 0x800170C8: the cursor advances unmasked and is masked `& 0xF` at
+        // the top of the next frame (0x8001704C) - equivalent to wrapping here.
+        self.cursor = (self.cursor + 1) % Self::HISTORY;
+
+        // 0x800170D0: running maximum over all 16 slots, including the one
+        // just written.
+        let mut worst = 0i32;
+        for &s in &self.history {
+            if i32::from(s) > worst {
+                worst = i32::from(s);
+            }
+        }
+        // 0x800170F8: a spiking *current* sample replaces the max outright.
+        if elapsed_hblanks >= Self::SPIKE {
+            worst = elapsed_hblanks;
+        }
+
+        let cadence = FrameCadence::resolve(
+            frameskip_enabled,
+            worst.clamp(0, i32::from(u16::MAX)) as u16,
+            mode_floor,
+        );
+        // 0x800171D8: the resolved cadence becomes next frame's VSync arg.
+        self.previous = cadence.vsyncs_per_tick();
+        cadence
+    }
+
+    /// The `VSync(n)` argument for the frame just resolved: last frame's
+    /// cadence, with `< 2` passed as `0` (`0x8001719C`).
+    ///
+    /// Call this **before** [`Self::resolve`] to get retail's ordering - the
+    /// wait happens on the previous frame's cadence.
+    pub const fn vsync_wait(&self) -> u8 {
+        if self.previous < 2 { 0 } else { self.previous }
+    }
+
+    /// Last frame's resolved cadence (retail `0x1F800392`).
+    pub const fn previous(&self) -> u8 {
+        self.previous
+    }
+}
+
+impl Default for FrameStepTelemetry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Default for FrameCadence {
     fn default() -> Self {
         Self::FIELD
@@ -926,6 +1059,65 @@ mod cadence_tests {
         assert_eq!(FrameCadence::resolve(true, 0x300, 2).vsyncs_per_tick(), 4);
         // Battle-intro floor of 3 beats a mid adaptive of 2.
         assert_eq!(FrameCadence::resolve(true, 0x150, 3).vsyncs_per_tick(), 3);
+    }
+
+    /// A spike `>= 0x2D0` reaches the top rung on the frame it happens and
+    /// then decays to 3, because the history stores the clamped `0x2BC`
+    /// (`0x8001709C`) while the ladder sees the raw sample (`0x800170F8`).
+    #[test]
+    fn a_spike_hits_cadence_four_only_on_its_own_frame() {
+        let mut t = FrameStepTelemetry::new();
+        assert_eq!(t.resolve(0x400, true, 1).vsyncs_per_tick(), 4);
+        // The spike is in the history now, but clamped to 700 - which is
+        // below the `> 0x2D0` rung.
+        assert_eq!(t.resolve(0x10, true, 1).vsyncs_per_tick(), 3);
+    }
+
+    /// The history is a running maximum, so one slow frame keeps the cadence
+    /// raised for the next 16 frames and then releases it.
+    #[test]
+    fn the_history_max_is_sticky_for_exactly_sixteen_frames() {
+        let mut t = FrameStepTelemetry::new();
+        assert_eq!(t.resolve(0x200, true, 1).vsyncs_per_tick(), 3);
+        for i in 0..(FrameStepTelemetry::HISTORY - 1) {
+            assert_eq!(
+                t.resolve(0, true, 1).vsyncs_per_tick(),
+                3,
+                "frame {i} should still see the sample in the ring"
+            );
+        }
+        assert_eq!(
+            t.resolve(0, true, 1).vsyncs_per_tick(),
+            1,
+            "the sample has now been overwritten"
+        );
+    }
+
+    /// The floor raises, never caps - and with the adaptive gate off the
+    /// resolver is the floor, which is what makes replay deterministic.
+    #[test]
+    fn telemetry_respects_the_floor_and_the_gate() {
+        let mut t = FrameStepTelemetry::new();
+        assert_eq!(t.resolve(0x400, false, 2).vsyncs_per_tick(), 2);
+        assert_eq!(t.resolve(0x10, true, 3).vsyncs_per_tick(), 3);
+        assert_eq!(
+            t.resolve(0x400, true, 2).vsyncs_per_tick(),
+            4,
+            "the floor is a minimum, not a maximum"
+        );
+    }
+
+    /// `VSync(n)` is called with the *previous* frame's cadence, and `< 2`
+    /// goes in as `0`.
+    #[test]
+    fn the_vsync_wait_lags_one_frame() {
+        let mut t = FrameStepTelemetry::new();
+        assert_eq!(t.vsync_wait(), 0, "cold previous cadence of 1 -> 0");
+        t.resolve(0x400, true, 1);
+        assert_eq!(t.previous(), 4);
+        assert_eq!(t.vsync_wait(), 4, "the wait now reflects the slow frame");
+        t.resolve(0, true, 1);
+        assert_eq!(t.vsync_wait(), 3, "one frame behind the decayed cadence");
     }
 
     /// Durations are denominated in vsyncs, so a `t += cadence` accumulator

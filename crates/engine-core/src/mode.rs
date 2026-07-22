@@ -501,6 +501,11 @@ pub struct ModeDriver {
     pub frames: u64,
     /// Frames spent in the current mode (resets on transition).
     pub frames_in_mode: u64,
+    /// The [`PerFrameStage`] resolved on the last [`Self::tick`], or `None`
+    /// when the current mode is an INIT mode. Hosts read it to dispatch the
+    /// mode's overlay hook (mode 13's `FUN_801CE850`) and to know which
+    /// mid-frame driver retail would have run.
+    last_stage: Option<PerFrameStage>,
 }
 
 impl ModeDriver {
@@ -515,11 +520,17 @@ impl ModeDriver {
             current: start,
             frames: 0,
             frames_in_mode: 0,
+            last_stage: None,
         }
     }
 
     pub fn current(&self) -> GameMode {
         self.current
+    }
+
+    /// The per-frame staging plan resolved on the last [`Self::tick`].
+    pub fn last_stage(&self) -> Option<PerFrameStage> {
+        self.last_stage
     }
 
     pub fn entry(&self) -> &ModeEntry {
@@ -548,10 +559,19 @@ impl ModeDriver {
         // idempotent - the World's tick path keys off it.
         world.mode = self.current.scene_mode();
         let r = host.run(self.current, world, input);
-        // Always tick the World after the handler, so a Continue runs the
-        // VMs for this mode every frame. Init modes that flip to the run
-        // mode via Done get one final World tick before transitioning.
-        world.tick();
+        // Retail's per-frame handlers ([`per_frame_stage`]) early-out when the
+        // frame-begin pass `FUN_8001698C` returns non-zero: that frame gets a
+        // pad poll and a `VSync(0)` and nothing else - no mid-frame driver and
+        // no frame-end pass. Honour the same skip here. Only the per-frame
+        // (odd-indexed) modes have that shape; INIT modes tick unconditionally.
+        let skipped = per_frame_stage(self.current).is_some() && world.take_frame_begin_skip();
+        self.last_stage = per_frame_stage(self.current);
+        if !skipped {
+            // Tick the World after the handler, so a Continue runs the VMs
+            // for this mode every frame. Init modes that flip to the run
+            // mode via Done get one final World tick before transitioning.
+            world.tick();
+        }
         self.frames += 1;
         self.frames_in_mode += 1;
         match r {
@@ -735,6 +755,89 @@ pub fn mode_init_stage(mode: GameMode) -> Option<ModeInitStage> {
     }
 }
 
+/// The mid-frame driver a per-frame mode handler calls between the
+/// frame-begin pass and the frame-end pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameBody {
+    /// `FUN_80016444(param)` - the master frame driver (five actor tick
+    /// passes, five render passes, the display flip). The `param` really does
+    /// vary by mode: the default handler passes `1`, MAPDISP passes `0`.
+    Master { param: i32 },
+    /// `FUN_80017978` - the CARD-mode substitute. Mode 23 replaces the master
+    /// driver outright rather than parameterising it.
+    CardDriver,
+}
+
+/// The per-frame handler shape shared by every odd-indexed (per-frame) mode.
+///
+/// PORT: FUN_80025eec (the default handler - 12 of the 14 per-frame modes)
+/// PORT: FUN_80025f2c (mode 13 MAPDISP)
+/// PORT: FUN_80025f74 (mode 23 CARD)
+/// REF: FUN_8001698C, FUN_80016444, FUN_80016B6C, FUN_80017978, FUN_801CE850
+///
+/// All three are the same eight-instruction skeleton, and the differences
+/// between them are exactly the three fields below. Read off the disassembly
+/// (`see ghidra/scripts/funcs/80025eec.txt`, `80025f2c.txt`, `80025f74.txt`)
+/// and confirmed against the static-recomp renderings.
+///
+/// ```text
+///   if (FUN_8001698C() != 0) return;      // frame-begin; non-zero = skipped
+///   [overlay_hook()]                      // MAPDISP only
+///   if (<body>() != 0) return;
+///   FUN_80016B6C();                       // frame-end
+/// ```
+///
+/// The **early-out is the load-bearing part**. `FUN_8001698C` returns `1`
+/// when it took its frame-skip branch (`gp+0x3D8` set and neither
+/// `_DAT_8007B938` nor `gp+0x55C` carrying bit `0x800`), in which case it has
+/// already done the pad poll and a `VSync(0)` and the frame ends there - no
+/// render, and crucially **no `FUN_80016B6C`**, so the SFX cue ring is neither
+/// drained nor re-aged that frame. Modelling the handler as an unconditional
+/// three-call sequence loses that.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PerFrameStage {
+    /// Overlay hook called between the begin pass and the body. Only mode 13
+    /// has one (`FUN_801CE850`, the world-map render tick in the slot-A
+    /// overlay); `None` everywhere else.
+    pub overlay_hook: Option<u32>,
+    /// Which mid-frame driver runs.
+    pub body: FrameBody,
+    /// Whether a non-zero body return aborts before the frame-end pass.
+    /// True for all three - kept explicit because it is the branch that
+    /// makes the shape a state machine rather than a call list.
+    pub body_can_abort: bool,
+}
+
+/// Per-frame staging plan for a mode. `None` for the INIT (even-indexed)
+/// modes, which use [`mode_init_stage`] instead.
+pub fn per_frame_stage(mode: GameMode) -> Option<PerFrameStage> {
+    let stage = match mode {
+        // Mode 13 MAPDISP - the only handler with an overlay hook, and the
+        // only one that passes 0 to the master driver (`jal 0x80016444;
+        // _clear a0` at 0x80025F4C).
+        GameMode::MapdispMode => PerFrameStage {
+            overlay_hook: Some(0x801C_E850),
+            body: FrameBody::Master { param: 0 },
+            body_can_abort: true,
+        },
+        // Mode 23 CARD - substitutes FUN_80017978 for the master driver.
+        GameMode::CardMode => PerFrameStage {
+            overlay_hook: None,
+            body: FrameBody::CardDriver,
+            body_can_abort: true,
+        },
+        // Every other per-frame (odd-indexed) mode routes through the
+        // default handler.
+        m if m.as_index() % 2 == 1 => PerFrameStage {
+            overlay_hook: None,
+            body: FrameBody::Master { param: 1 },
+            body_can_abort: true,
+        },
+        _ => return None,
+    };
+    Some(stage)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -770,6 +873,107 @@ mod tests {
         // Non-wrapper modes have no plan.
         assert!(mode_init_stage(GameMode::MainMode).is_none());
         assert!(mode_init_stage(GameMode::BattleInit).is_none());
+    }
+
+    /// The default handler covers 12 of the 14 per-frame modes; MAPDISP and
+    /// CARD are the two exceptions, and each differs in exactly one field.
+    #[test]
+    fn per_frame_stage_separates_the_two_exception_handlers() {
+        // FUN_80025EEC: the master driver with a0 = 1, no overlay hook.
+        for m in [
+            GameMode::ConfigMode,
+            GameMode::MainMode,
+            GameMode::BattleMode,
+            GameMode::StrMode,
+        ] {
+            let s = per_frame_stage(m).unwrap();
+            assert_eq!(s.body, FrameBody::Master { param: 1 }, "mode {m:?}");
+            assert!(s.overlay_hook.is_none(), "mode {m:?}");
+        }
+        // FUN_80025F2C: `jal 0x801CE850` between the passes, and the master
+        // driver takes 0 (`jal 0x80016444; _clear a0`).
+        let map = per_frame_stage(GameMode::MapdispMode).unwrap();
+        assert_eq!(map.overlay_hook, Some(0x801C_E850));
+        assert_eq!(map.body, FrameBody::Master { param: 0 });
+        // FUN_80025F74: a different driver entirely.
+        let card = per_frame_stage(GameMode::CardMode).unwrap();
+        assert_eq!(card.body, FrameBody::CardDriver);
+        assert!(card.overlay_hook.is_none());
+        // INIT (even-indexed) modes have no per-frame plan.
+        assert!(per_frame_stage(GameMode::MainInit).is_none());
+        assert!(per_frame_stage(GameMode::CardInit).is_none());
+    }
+
+    #[test]
+    fn every_odd_mode_has_a_per_frame_stage_and_every_even_mode_has_none() {
+        for i in 0..28usize {
+            let m = GameMode::from_index(i).unwrap();
+            assert_eq!(
+                per_frame_stage(m).is_some(),
+                i % 2 == 1,
+                "mode {i} ({m:?}) parity"
+            );
+        }
+    }
+
+    #[test]
+    fn a_frame_begin_skip_abandons_the_frame_before_the_world_ticks() {
+        struct Noop;
+        impl ModeHandler for Noop {
+            fn run(&mut self, _m: GameMode, _w: &mut World, _i: &InputState) -> HandlerResult {
+                HandlerResult::Continue
+            }
+        }
+        let mut d = ModeDriver::new(GameMode::MainMode);
+        let mut w = World::default();
+        let input = InputState::default();
+
+        let before = w.field_frame_accum;
+        w.frame_begin_skip = true;
+        d.tick(&mut Noop, &mut w, &input);
+        assert_eq!(
+            w.field_frame_accum, before,
+            "FUN_8001698C returned 1 - no frame ran"
+        );
+        assert!(!w.frame_begin_skip, "the request is consumed");
+        assert_eq!(d.last_stage().unwrap().body, FrameBody::Master { param: 1 });
+
+        // Default (nothing set) is the ordinary every-frame tick.
+        d.tick(&mut Noop, &mut w, &input);
+        assert!(w.field_frame_accum != before);
+    }
+
+    #[test]
+    fn init_modes_ignore_the_frame_begin_skip() {
+        struct Noop;
+        impl ModeHandler for Noop {
+            fn run(&mut self, _m: GameMode, _w: &mut World, _i: &InputState) -> HandlerResult {
+                HandlerResult::Continue
+            }
+        }
+        let mut d = ModeDriver::new(GameMode::CardInit);
+        let mut w = World::default();
+        let before = w.field_frame_accum;
+        w.frame_begin_skip = true;
+        d.tick(&mut Noop, &mut w, &InputState::default());
+        assert!(
+            w.field_frame_accum != before,
+            "only the per-frame handlers carry the early-out"
+        );
+        assert!(d.last_stage().is_none());
+    }
+
+    #[test]
+    fn resolve_frame_step_installs_the_floor_when_frameskip_is_off() {
+        let mut w = World {
+            frame_step_floor: 3,
+            ..Default::default()
+        };
+        assert_eq!(w.resolve_frame_step(0x400, false), 3);
+        assert_eq!(w.frame_step, 3);
+        // With the gate on, a spike raises past the floor for one frame.
+        assert_eq!(w.resolve_frame_step(0x400, true), 4);
+        assert_eq!(w.resolve_frame_step(0x10, true), 3, "then decays to it");
     }
 
     #[test]
