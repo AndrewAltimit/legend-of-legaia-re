@@ -266,6 +266,45 @@ pub fn parse_player_lzs(file: &[u8], count: usize) -> Result<Container> {
     Ok(Container { meta, descriptors })
 }
 
+/// PORT: FUN_80020224
+///
+/// Descriptor-pair **walker** - the runtime consumer of the
+/// [`parse_player_lzs`] container shape (`docs/formats/asset-descriptor.md`).
+/// Retail (reached from the field overlay's `MAIN_INIT`, `FUN_801D6704` at
+/// `0x801D6B0C`) reads the pair **count from the header word at `+0`**
+/// (`lw s3, 0x0(s4)` - i.e. `meta[0]` of the parsed container), then for
+/// each 8-byte pair `(type_size at +0x8+8i, offset at +0xC+8i)` calls the
+/// asset-type dispatcher `FUN_8001F05C(base + offset, type_size, param, 0)`
+/// and ORs every return into one summary word - the same union-accumulator
+/// convention as the streaming walker (`docs/formats/asset-type.md`).
+///
+/// A non-positive count skips the loop (retail `blez`) and returns `0`.
+/// The VSync timing captures bracketing the retail loop (`gp+0x684` /
+/// `gp+0x6D0` load-time telemetry) and the `FUN_80058104` cache flush are
+/// host-substituted away. `dispatch` receives each descriptor; the caller
+/// supplies whatever engine-side handler stands in for `FUN_8001F05C`.
+pub fn walk_descriptor_pairs(
+    file: &[u8],
+    mut dispatch: impl FnMut(&Descriptor) -> u32,
+) -> Result<u32> {
+    if file.len() < 4 {
+        bail!(
+            "file too small ({}b) for a descriptor count word",
+            file.len()
+        );
+    }
+    let count = i32::from_le_bytes(file[0..4].try_into().unwrap());
+    if count <= 0 {
+        return Ok(0);
+    }
+    let container = parse_player_lzs(file, count as usize)?;
+    let mut summary = 0u32;
+    for d in &container.descriptors {
+        summary |= dispatch(d);
+    }
+    Ok(summary)
+}
+
 #[derive(Debug, Serialize)]
 pub struct Container {
     pub meta: [u32; 2],
@@ -595,6 +634,40 @@ mod tests {
         assert_eq!(d.size, 0x123456);
         assert_eq!(d.data_offset, 0x40);
         assert_eq!(d.asset_type(), AssetType::Tmd);
+    }
+
+    /// FUN_80020224: count from the header word, OR-union of the
+    /// per-descriptor dispatch returns, blez early-out.
+    #[test]
+    fn walk_descriptor_pairs_unions_dispatch_returns() {
+        // count = 2, meta1 = 0, then two (type_size, offset) pairs.
+        let mut file = Vec::new();
+        file.extend_from_slice(&2u32.to_le_bytes());
+        file.extend_from_slice(&0u32.to_le_bytes());
+        file.extend_from_slice(&0x00_000010u32.to_le_bytes()); // TIM, size 0x10
+        file.extend_from_slice(&0x20u32.to_le_bytes());
+        file.extend_from_slice(&0x02_000020u32.to_le_bytes()); // TMD, size 0x20
+        file.extend_from_slice(&0x40u32.to_le_bytes());
+        let mut seen = Vec::new();
+        let summary = walk_descriptor_pairs(&file, |d| {
+            seen.push((d.type_byte, d.data_offset));
+            1u32 << d.type_byte
+        })
+        .expect("walk");
+        assert_eq!(seen, vec![(0x00, 0x20), (0x02, 0x40)]);
+        assert_eq!(summary, 0b101, "OR-union of per-entry returns");
+    }
+
+    #[test]
+    fn walk_descriptor_pairs_non_positive_count_returns_zero() {
+        // count = 0 and count = -1 (blez) both skip the loop.
+        for count in [0i32, -1] {
+            let mut file = Vec::new();
+            file.extend_from_slice(&count.to_le_bytes());
+            file.extend_from_slice(&0u32.to_le_bytes());
+            let n = walk_descriptor_pairs(&file, |_| panic!("no dispatch")).expect("walk");
+            assert_eq!(n, 0);
+        }
     }
 
     #[test]
