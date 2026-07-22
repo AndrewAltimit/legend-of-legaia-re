@@ -25,8 +25,23 @@
 //!
 //! The per-leg tolerance is deliberately loose (25 %) - the point is to catch
 //! a *unit* regression (a leg running at sim-tick rate is 67 % fast, far
-//! outside it), not to freeze the current numbers. The whole-chain bound is
-//! tighter because the per-leg errors do not all point the same way.
+//! outside it), not to freeze the current numbers.
+//!
+//! The errors are **one-sided**: each retail leg span includes the scene's
+//! load + mode-transition window (label flip -> the record's first world
+//! tick), which the engine does not model - its scene loads are instant. The
+//! `map01` leg carries the largest such window and gets its own asymmetric
+//! band, pinned by a per-frame decomposition of the retail capture against
+//! the record's authored ops (`chain_cam_full` camera trace vs the P2[38]
+//! disasm): 355 frames of world-map load + mode-2 init before the record's
+//! first op, then 322 frames of authored title-card `WaitFrames` (1:1),
+//! then the `apply 900` fly-in glide running concurrent with the authored
+//! `4A` 160 + 600 + 330 tail (1090 frames, the 3-page Mist crawl scrolling
+//! under them, non-blocking), then ~40 frames of transition fade. The
+//! engine plays the record-authored ~1410 frames and skips the ~440 frames
+//! of load + teardown, so it runs ~24 % SHORT and must never run LONG - a
+//! leg running long means record pacing broke (the historical failure was
+//! the final crawl being serialized against the authored tail waits).
 //!
 //! Skip-passes without disc data (CLAUDE.md convention).
 
@@ -105,25 +120,50 @@ fn opening_chain_legs_run_at_retail_wall_time() {
         let retail_s = retail_frames / RETAIL_FPS;
         engine_total += engine_s;
         retail_total += retail_s;
-        let err = (engine_s - retail_s).abs() / retail_s;
-        let err_pct = err * 100.0;
+        let signed = (engine_s - retail_s) / retail_s;
+        let err_pct = signed.abs() * 100.0;
         eprintln!(
             "[pacing] {scene}: engine {engine_s:.1}s vs retail {retail_s:.1}s ({err_pct:.1}%)"
         );
-        assert!(
-            err < 0.25,
-            "{scene} leg is {err_pct:.1}% off retail wall-time \
-             (engine {engine_s:.1}s vs retail {retail_s:.1}s) - a leg stepped at the \
-             100 Hz sim rate instead of the 60 Hz retail-frame sub-clock runs ~67% fast"
-        );
+        if scene == "map01" {
+            // Asymmetric band (see the module doc): the engine skips the
+            // ~440 retail frames of world-map load + teardown, so the leg
+            // legitimately runs up to ~24% short - but the record-authored
+            // pacing itself is 1:1, so a leg running LONG means the record
+            // pacing broke (e.g. the final crawl serialized against the
+            // authored `4A` 600 + 330 tail instead of scrolling under it).
+            assert!(
+                signed < 0.05,
+                "map01 leg runs {err_pct:.1}% LONG (engine {engine_s:.1}s vs retail \
+                 {retail_s:.1}s) - the fly-in record's authored pacing is 1:1 with \
+                 retail, so a long leg means a wait/crawl was serialized that retail \
+                 runs concurrently"
+            );
+            assert!(
+                signed > -0.28,
+                "map01 leg is {err_pct:.1}% short (engine {engine_s:.1}s vs retail \
+                 {retail_s:.1}s) - more than the un-modeled ~440-frame load + \
+                 teardown window accounts for"
+            );
+        } else {
+            assert!(
+                signed.abs() < 0.25,
+                "{scene} leg is {err_pct:.1}% off retail wall-time \
+                 (engine {engine_s:.1}s vs retail {retail_s:.1}s) - a leg stepped at the \
+                 100 Hz sim rate instead of the 60 Hz retail-frame sub-clock runs ~67% fast"
+            );
+        }
     }
-    let total_err = (engine_total - retail_total).abs() / retail_total;
-    let total_pct = total_err * 100.0;
+    let total_signed = (engine_total - retail_total) / retail_total;
+    let total_pct = total_signed.abs() * 100.0;
     eprintln!(
         "[pacing] chain: engine {engine_total:.1}s vs retail {retail_total:.1}s ({total_pct:.1}%)"
     );
+    // One-sided like the legs: the engine's instant scene loads leave the
+    // whole chain a little short of retail; running LONG is the regression
+    // signal (a serialized wait/crawl somewhere in the chain).
     assert!(
-        total_err < 0.10,
+        total_signed < 0.05 && total_signed > -0.15,
         "whole chain is {total_pct:.1}% off retail wall-time \
          (engine {engine_total:.1}s vs retail {retail_total:.1}s)"
     );
