@@ -782,7 +782,7 @@ through `MenuState::ShopMenu`/`ShopTrade`/`ShopTradeConfirm`. (Engine and retail
 share the offer math; the engine UI's migration to the bucket+`give_level`
 schedule is in progress.)
 
-> Verified by the rando `seru_trade_real` disc oracle (every piece lands in 0899,
+> Verified by the patcher `seru_trade_real` disc oracle (every piece lands in 0899,
 > the schedule round-trips to the kernel offers, the SCUS gap is left untouched,
 > byte-deterministic) plus the kernel unit tests; the retail screen is
 > hardware-confirmed (render → slide → cursor → confirm → swap).

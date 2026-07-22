@@ -1,7 +1,7 @@
 //! Disc-gated runtime oracles for the **shop** randomizers - the buy-side
 //! counterparts to the chest / drop / steal oracles.
 //!
-//! The rando crate's own disc-gated test (`shop_patch_real`) proves a patched
+//! The patcher crate's own disc-gated test (`shop_patch_real`) proves a patched
 //! shop is *written* faithfully (the item-id byte changes inside the re-packed
 //! scene MAN / the casino table; the disc still parses). What it does not prove
 //! is that a runtime *reads the patched stock and lets the player buy the new
