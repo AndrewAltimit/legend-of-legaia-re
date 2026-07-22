@@ -27,6 +27,26 @@
 //! *previous* actor of this family (tracked at `gp+0x750`) gets its flags
 //! (`+0x10`) ORed with `8`; then bit `0x100` is set and `gp+0x750` points
 //! at the new actor - see [`SpawnHandshake`].
+//!
+//! ## Why no host calls this
+//!
+//! The camera half is wired: `legaia_engine_core::camera::RetailCamGlobals`
+//! carries exactly the ten axes [`CameraSnapshot`] wants and converts to one
+//! via `RetailCamGlobals::camera_snapshot`, so a caller can always hand the
+//! normalizer the live camera.
+//!
+//! What is missing is the **record**. This normalizer takes a 20-halfword
+//! spawn parameter block, and the engine has nowhere to get one: the only
+//! effect-spawn path in `legaia_engine_core` is `World::try_spawn_effect`,
+//! which is the *other* family - the PROT 0873 `efect.dat` catalog spawned
+//! by `(ui_id, world_pos, angle)` through `FUN_801D8DE8` /
+//! `FUN_801DFDF8`. The camera-anchored family this normalizer belongs to
+//! (spawn descriptor `DAT_8007071C`, actor list `_DAT_8007C34C`) has no
+//! engine counterpart at all, so there is no record to normalize and no
+//! honest way to stand a host up - a synthetic record would only exercise
+//! the arithmetic the unit tests already cover. Porting that family's
+//! allocator (`FUN_80020DE0` and its battle-overlay callers) is the
+//! prerequisite, not more plumbing here.
 
 /// The camera state the normalizer reads.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

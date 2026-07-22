@@ -82,6 +82,22 @@ impl RetailCamGlobals {
     pub fn h(&self) -> i32 {
         self.0[9]
     }
+
+    /// The same ten axes in the shape the camera-relative effect-actor
+    /// normalizer wants (`legaia_engine_vm::camera_rel_actor`). The
+    /// normalizer compares each of a spawn record's ten reference
+    /// halfwords against exactly these globals, so the conversion is a
+    /// re-labelling, not a transform - note in particular that the focus
+    /// goes across **stored** (X and Z negated), because that is the form
+    /// `FUN_80021248` compares against.
+    pub fn camera_snapshot(&self) -> legaia_engine_vm::camera_rel_actor::CameraSnapshot {
+        legaia_engine_vm::camera_rel_actor::CameraSnapshot {
+            angles: [self.0[0] as u16, self.0[1] as u16, self.0[2] as u16],
+            offsets: self.tr_eye(),
+            focus: self.focus_stored(),
+            gte_h: self.0[9] as i16,
+        }
+    }
 }
 
 impl Default for RetailCamGlobals {

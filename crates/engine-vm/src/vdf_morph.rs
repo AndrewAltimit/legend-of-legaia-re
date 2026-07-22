@@ -42,6 +42,28 @@
 //! actor-side slot arrays match the overlay VDF bring-up
 //! (`docs/reference/memory-map.md` `0x80083E58`).
 //!
+//! ## Where the two inputs come from
+//!
+//! Both arrays `FUN_8001C604` reads off the actor are authored by ported
+//! code, which is what makes [`stage_group_morph_for_actor`] a real
+//! composition rather than a synthetic one:
+//!
+//! * move-VM op `0x0A` writes the slot count (`+0x6C`) and one
+//!   `(sub_entry_index, up_curve, down_curve)` triple per slot - the index
+//!   at `+0xB0 + i` (a **byte** stride), the two curves at `+0xB8 + i*2`
+//!   and `+0xC8 + i*2`;
+//! * the ramp envelope [`crate::move_buffer::envelope_tick`]
+//!   (`FUN_80020740`) moves each slot's weight at `+0xA0 + i*2` up to
+//!   `0x1000` and back down at that slot's own two velocities.
+//!
+//! `legaia_engine_core::world::World::stage_actor_group_morph` is the host:
+//! it pairs the actor's `MoveBufferState` with the scene's VDF buffer
+//! (`World::vdf_record_bytes`, retail's `0x80083E58` walk) and returns the
+//! staged vertex buffer. What is still missing for a *visible* morph is on
+//! the renderer's side - actor meshes draw by walking `Actor::tmd_ref`'s
+//! object vertices directly, and nothing yet substitutes the staged buffer
+//! for a group's authored vertices on the frame it is built.
+//!
 //! REF: FUN_801D77F4
 
 /// One parsed VDF morph record (borrowing the delta payload).
@@ -153,6 +175,39 @@ pub fn stage_group_morph(rest_pose: &[u8], group_idx: u32, slots: &[(&[u8], i16)
     work
 }
 
+/// Stage a group's morph straight off a live actor's ramp-envelope state -
+/// the composition `FUN_8001C604` performs, with the two arrays it reads
+/// supplied by the structs the ported VM already writes:
+///
+/// * `state.bone_count` is the actor's `+0x6C` slot count, set by move-VM
+///   op `0x0A`;
+/// * `state.vdf_slot[i]` is the `+0xB0 + i` VDF sub-entry index, also set by
+///   op `0x0A`;
+/// * `state.lanes[i]` is the `+0xA0 + i*2` weight, ramped every frame by
+///   [`crate::move_buffer::envelope_tick`].
+///
+/// `resolve` is the host's VDF pointer-table lookup (retail `0x80083E58`;
+/// the engine's is `World::vdf_record_bytes`). Slots whose index does not
+/// resolve are skipped, matching the retail bail-through.
+///
+/// Weights are `0..=0x1000` unsigned in the envelope and signed in the GTE
+/// blend; the cast here is the same reinterpretation retail's `lhu` into an
+/// `IR0` write performs.
+pub fn stage_group_morph_for_actor<'a>(
+    rest_pose: &[u8],
+    group_idx: u32,
+    state: &crate::move_buffer::MoveBufferState,
+    mut resolve: impl FnMut(u8) -> Option<&'a [u8]>,
+) -> Vec<u8> {
+    let slots: Vec<(&[u8], i16)> = (0..state.bone_count as usize)
+        .filter_map(|i| {
+            let entry = resolve(state.vdf_slot[i])?;
+            Some((entry, state.lanes[i] as i16))
+        })
+        .collect();
+    stage_group_morph(rest_pose, group_idx, &slots)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -248,5 +303,46 @@ mod tests {
         let recs = parse_vdf_morph_records(&e);
         apply_weighted_deltas(&mut buf, 0, &recs[0], 0x1000);
         assert_eq!(&buf[6..8], &[0xAB, 0xCD]);
+    }
+
+    /// The full retail chain on one actor: move-VM op `0x0A` installs the
+    /// morph slots, the ramp envelope moves the weights, and the stager
+    /// blends the deltas at whatever weight the envelope reached. Each of
+    /// the three steps is a separate ported kernel; this pins them together
+    /// the way `FUN_8001C604` sees them.
+    #[test]
+    fn op0a_then_envelope_then_stage_is_one_chain() {
+        use crate::move_buffer::{MoveBufferState, envelope_tick};
+
+        let rest = [vert(0, 0, 0), vert(0, 0, 0)].concat();
+        // Slot 0 morphs group 3 vertex 0 by +0x100 at full weight.
+        let record = entry(&[(3, 0, &[(0x100, 0, 0)])]);
+
+        // What move-VM op 0x0A leaves behind for one slot: count, the VDF
+        // sub-entry index, and the lane's up-ramp velocity.
+        let mut state = MoveBufferState {
+            bone_count: 1,
+            ..Default::default()
+        };
+        state.vdf_slot[0] = 7;
+        state.up_velocity[0] = 0x400;
+
+        // Zero weight -> the rest pose is returned untouched.
+        let out =
+            stage_group_morph_for_actor(&rest, 3, &state, |i| (i == 7).then_some(&record[..]));
+        assert_eq!(&out[0..2], &0i16.to_le_bytes());
+
+        // Two envelope frames put the lane at 0x800 - half weight, so the
+        // 0x100 delta lands as 0x80.
+        envelope_tick(&mut state, 1);
+        envelope_tick(&mut state, 1);
+        assert_eq!(state.lanes[0], 0x800);
+        let out =
+            stage_group_morph_for_actor(&rest, 3, &state, |i| (i == 7).then_some(&record[..]));
+        assert_eq!(&out[0..2], &0x80i16.to_le_bytes());
+
+        // An index the host cannot resolve is skipped, not fatal.
+        let out = stage_group_morph_for_actor(&rest, 3, &state, |_| None);
+        assert_eq!(&out[0..2], &0i16.to_le_bytes());
     }
 }
