@@ -147,6 +147,21 @@
     <li><strong>15-bit ordered dithering.</strong> Packing the 24-bit shaded colour into the 15-bit (BGR555) framebuffer, the PSX GPU adds a signed 4&times;4 ordered-dither offset per pixel before truncating each channel to 5 bits. The shader helper <code>PSX_DITHER_WGSL</code> (prepended to every shaded 3D shader) reproduces it and mirrors the unit-tested CPU <code>psx_dither</code> module; the composed shaders are naga-validated in the test suite (a GPU-free guard that the WGSL stays well-formed).</li>
   </ul>
 
+  <h4>Retail's dither law, stated separately from the port's default</h4>
+  <p>The two are different claims and get confused, so they are written apart here.</p>
+  <p><strong>Retail law: dither is on at boot and script-controlled.</strong> The GPU's <code>dtd</code> bit lives in the DRAWENV byte at <code>+0x2A</code> of each of the two draw environments that the frame-begin driver swaps. Four sites, all read off the disassembly:</p>
+  <table>
+    <thead><tr><th>Site</th><th>Instruction</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x8002004C</code></td><td><code>sb zero, 0x2a(a0)</code></td><td>DRAWENV pair initialiser (<code>FUN_80020038</code>) stamps <code>dtd = 0</code></td></tr>
+      <tr><td><code>0x80017208</code> / <code>0x80017210</code></td><td><code>lbu v1, -0x459a(v1)</code> / <code>sb v1, 0x2a(v0)</code></td><td>frame-begin driver <code>FUN_80016B6C</code> <strong>re-stamps</strong> <code>dtd</code> from <code>_DAT_8007BA66</code> every frame, indexing the pair by <code>gp+0x434</code> at stride <code>0x74</code></td></tr>
+      <tr><td><code>0x8001D520</code></td><td><code>sh s2, -0x459a(at)</code>, <code>s2 = 1</code></td><td>boot (<code>FUN_8001D424</code>) writes <code>1</code> to <code>_DAT_8007BA66</code></td></tr>
+      <tr><td><code>0x801E350C</code></td><td><code>lbu v1, 0x1(s6)</code> / <code>sh v1, -0x459a(v0)</code></td><td>field-VM opcode takes a one-byte script operand into <code>_DAT_8007BA66</code>, then advances the VM PC by 3</td></tr>
+    </tbody>
+  </table>
+  <p>So the initialiser's <code>dtd = 0</code> never survives a frame: the per-frame refresh overwrites it from the global, the global boots at <code>1</code>, and a scene script can flip it at will. <code>FUN_80026CE4</code> reads the same global as an <code>lh</code> and passes it to the mode-<code>0x15</code> STR packet submit, so the FMV blit path honours the same bit.</p>
+  <p><strong>Port default: off, by choice.</strong> <code>Renderer::set_psx_mode</code> gates the engine's dither, and it is opt-in. That is a project decision about the default look, not a reading of the executable - the retail bit above is what the toggle reproduces when you turn it on.</p>
+
   <h3>Affine UV interpolation (always on)</h3>
   <p>Per-vertex UVs interpolate linearly in screen space, with no perspective-correct division, on every path in every mode. This reproduces the texture warping you see on retail surfaces with steep depth gradients: <code>GP0(0x24)</code>-class triangle commands transmit only <code>(u, v)</code> per vertex, and the rasteriser does not divide by <code>1/w</code>. WGSL <code>@interpolate(linear)</code> gives the same behaviour. The baked per-prim colour carries the same qualifier, for the same reason - PSX gouraud interpolation is affine in screen space too.</p>
   <p>Texture page (<code>tsb</code>) and CLUT base address (<code>cba</code>) stay <code>@interpolate(flat)</code> - they are per-primitive in retail because <code>GP0(0x24)</code> sets them once per draw call, not per vertex.</p>

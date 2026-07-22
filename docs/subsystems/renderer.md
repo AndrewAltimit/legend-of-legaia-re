@@ -658,6 +658,31 @@ in with `LEGAIA_PSX_RENDER=1`.
 - **Sub-pixel vertex snap ("vertex jitter").** Clip-space `x` / `y` are snapped to integer pixel positions inside the vertex shader (NDC → pixel grid → NDC round-trip). Reproduces the GTE's per-vertex sub-pixel-truncation jitter that gives PSX rendering its characteristic shimmer on slowly-moving geometry.
 - **15-bit ordered dithering.** When packing the 24-bit shaded colour into the 15-bit (BGR555) framebuffer, the PSX GPU adds a signed 4x4 ordered-dither offset per pixel before truncating each channel to 5 bits. The shader helper `PSX_DITHER_WGSL` (prepended to every shaded 3D shader) reproduces it and mirrors the unit-tested CPU `psx_dither` module; the composed shader sources are naga-validated in the engine-render test suite (the GPU-free guard that the WGSL stays well-formed).
 
+#### Retail's dither law, stated separately from the port's default
+
+The two are different claims and get confused, so they are written apart here.
+
+**Retail law: dither is on at boot and script-controlled.** The GPU's `dtd` bit
+lives in the DRAWENV byte at `+0x2A` of each of the two draw environments that
+the frame-begin driver swaps. Four sites, all read off the disassembly:
+
+| Site | Instruction | Effect |
+|---|---|---|
+| `0x8002004C` | `sb zero, 0x2a(a0)` | DRAWENV pair initialiser (`FUN_80020038`) stamps `dtd = 0` |
+| `0x80017208` / `0x80017210` | `lbu v1, -0x459a(v1)` / `sb v1, 0x2a(v0)` | frame-begin driver `FUN_80016B6C` **re-stamps** `dtd` from `_DAT_8007BA66` every frame, indexing the pair by `gp+0x434` at stride `0x74` |
+| `0x8001D520` | `sh s2, -0x459a(at)`, `s2 = 1` | boot (`FUN_8001D424`) writes `1` to `_DAT_8007BA66` |
+| `0x801E350C` | `lbu v1, 0x1(s6)` / `sh v1, -0x459a(v0)` | field-VM opcode takes a one-byte script operand into `_DAT_8007BA66`, then advances the VM PC by 3 |
+
+So the initialiser's `dtd = 0` never survives a frame: the per-frame refresh
+overwrites it from the global, the global boots at `1`, and a scene script can
+flip it at will. `FUN_80026CE4` reads the same global as an `lh` and passes it
+to the mode-`0x15` STR packet submit, so the FMV blit path honours the same bit.
+
+**Port default: off, by choice.** `Renderer::set_psx_mode` gates the engine's
+dither, and it is opt-in. That is a project decision about the default look, not
+a reading of the executable - the retail bit above is what the toggle reproduces
+when you turn it on.
+
 ### Affine UV interpolation (always on)
 
 Per-vertex UVs interpolate linearly in screen space, with no perspective-correct
