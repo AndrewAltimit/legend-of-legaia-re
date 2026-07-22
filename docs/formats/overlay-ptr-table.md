@@ -44,9 +44,11 @@ enemy.` - and in `summon.dat`'s attack-name records, exactly parallel to Gimard'
 Attack`). The earlier "Disco King dance-song" reading is **refuted**: the dance overlay (0980)
 contains zero slot-B loader callsites - its music is sequenced BGM via the sound streaming
 loader. `0924_xxx_dat.BIN` "Ultimate Rave" and `0927_xxx_dat.BIN` "Dark Eclipse" are the same
-attack-titled, stager-shaped family (part-spawn call census matches the pinned stagers); their
-loader callsites are computed, so which action ids drive them is still open. All three are in
-the static overlay map, slot-B base `0x801F69D8`. **`0957_xxx_dat.BIN` is a different shape**:
+attack-titled, stager-shaped family (part-spawn call census matches the pinned stagers). Their
+loader callsites are computed rather than constant, but which action ids drive them is **no
+longer open** - both are capture-pinned mid-cast off the loader-B current id: 0924 is the
+rare-Seru flute summon **Lippian** (spell `0x96`) and 0927 is **Juggernaut** on Evil Seru Magic
+(spell `0x99`). All three are in the static overlay map, slot-B base `0x801F69D8`. **`0957_xxx_dat.BIN` is a different shape**:
 its head is a summon string table - `Dies` / `Puera` / `Both` / `Damage` / `Recover` (the summon
 `Puera` + effect/target labels) - followed by an absolute-pointer table and code; it is the
 slot-B `summon_effect_table` overlay.

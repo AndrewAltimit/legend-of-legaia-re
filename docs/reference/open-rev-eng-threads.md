@@ -525,7 +525,13 @@ its un-modeled retail scene-load window (the engine loads scenes instantly by de
 
 The overlay loaders (`FUN_8003EBE4`/`FUN_8003EC70` → `FUN_8003E8A8(param + 0x381)`) resolve against the in-RAM TOC at `0x801C70F0`, which is **raw `PROT.DAT` from byte 0** (byte-verified vs the `door_warp_town01_to_map01` state); the extraction index space slices entry starts 2 words higher, so the loaded entry is **extraction `param + 0x37F`** - every historical `param + 0x381` PROT attribution is 2 high. Slot A is fully reconciled (field 0897 = mode 2, battle 0898, menu 0899 = mode 22, STR-path 0969, cutscene 0970, debug menu 0971 = mode 0, the seven `0x3E` minigame slots, efect-test 0979 = mode 8 - each content/prologue-anchored; see [`boot.md`](../subsystems/boot.md)). Open:
 
-1. **Per-spell summon-stager identity (slot B) - Gimard leg pinned from existing states; other ids open.**
+1. **Per-spell summon-stager identity (slot B) - resolved; every id capture-pinned.**
+   The whole player span `0x81..=0xA0` is one unbroken linear run
+   (`extraction = spell_id - 0x79 + 895`, i.e. `903 + (id - 0x81)`) with no
+   special-cased gap, and the enemy arm is pinned separately. Engine mirror:
+   `engine-core::summon::summon_stager_prot_entry`. The detail below is kept
+   because the method - reading loader-B out of catalogued states rather than
+   live-probing - is the reusable part.
    The loader-B current-id (`gp+0x934` = `0x8007BC4C`) read straight out of the catalogued PCSX save
    states (no live probe - `scripts/pcsx-redux/match_prim_groups_to_disc.py::extract_ram` walks the
    gzipped-protobuf `.sstate` to the RAM blob): all three player-Gimard cast states
