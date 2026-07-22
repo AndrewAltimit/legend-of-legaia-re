@@ -50,11 +50,14 @@ pub struct ModeEntry {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GameMode {
     /// Mode 0 - "CONFIG INIT" (dev label - misleading): the retail handler
-    /// `FUN_80025C68` loads PROT 973, a SLOT-MACHINE DEBUG overlay
-    /// (OTHER2 / CICLE1 / SPRITE1 / SPREAD / GT4 DIV16). Not a game-config init.
+    /// `FUN_80025C68` runs the sound detach + [`CORE_STATE_RESET`], then
+    /// loads PROT 971, the dev DEBUG-MENU overlay (`FUN_8003EBE4(0x4C)`) -
+    /// see the corrected `functions.md` row (the earlier "PROT 973
+    /// slot-machine debug" reading was loader-math off-by-2). Not a
+    /// game-config init.
     ConfigInit,
-    /// Mode 1 - "CONFIG MODE" per-frame handler for the slot-machine debug
-    /// mode. Uses the default per-frame dispatcher `FUN_80025EEC`.
+    /// Mode 1 - "CONFIG MODE" per-frame handler for the debug-menu mode.
+    /// Uses the default per-frame dispatcher `FUN_80025EEC`.
     ConfigMode,
     /// Mode 2 - "MAIN INIT": the field/town gameplay INIT mode. The retail
     /// handler `FUN_80025B64` loads the field overlay (`FUN_8003EBE4(2)`)

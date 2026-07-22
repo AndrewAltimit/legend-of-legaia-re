@@ -1728,7 +1728,7 @@ function called from a 1332-byte parameter-prep wrapper:
 
 | Address | Role |
 |---|---|
-| `FUN_801D1344` | World-map gate-arm wrapper. 1332 bytes; function-pointer-only entry (Ghidra `incoming=0`). Reads three globals at `_DAT_8007BCD0/_D4/_D8` and forwards them to `FUN_801D8258` as the scale / step / OT-layer params at PC `0x801D1470: jal 0x801D8258`. **Same RAM address holds a different function when the dialog overlay is paged in** - that variant is the actor frame handler (see [`reference/functions.md`](../reference/functions.md#dialog-overlay-actor-frame-helpers)). |
+| `FUN_801D1344` | The field overlay's **player master frame handler** (1332 bytes; function-pointer-only entry, Ghidra `incoming=0`) - the gate-arm forward is one early leg of it: when `_DAT_8007BCD0` or `_D4` is non-zero it forwards the three globals `_DAT_8007BCD0/_D4/_D8` to `FUN_801D8258` as the scale / step / OT-layer params at PC `0x801D1470: jal 0x801D8258`. Every capture at this VA (world_map / world_map_walk / cutscene_dialogue / dialog) holds this same instruction-identical body - the walk view runs the field overlay; an earlier note here that "the dialog overlay holds a different function at this VA" is falsified by the dump diff. Engine counterpart: the Field arm of `World::tick` (scoped `PORT: FUN_801d1344`). |
 | `FUN_801D8258` | 40-byte gate setter. Writes `_DAT_801F351C = 1`, then `_DAT_801F3520 = param_2`, `_DAT_801F3524 = param_3`, `_DAT_801F3528 = param_4` - the inputs the emitter consumes on its next run. |
 | `FUN_801C2B2C` | Code-identical relocation copy of `FUN_801D1344` in the 0897 field overlay. Same body, different load address; calls `jal 0x801D8258` at PC `0x801C2C58`. Active during field-mode entry transitions. |
 

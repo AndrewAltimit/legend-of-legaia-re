@@ -5,7 +5,7 @@ addr,class,reason
 80016b6c,REAL,self-entry body of 469 instructions returning `jr ra`
 80017714,REAL,self-entry body of 93 instructions returning `jr ra`
 800179c0,REAL,self-entry body of 59 instructions returning `jr ra`
-80017bec,UNCERTAIN,dump carries a decompiled body but no disassembly (Ghidra reports 1 bytes) - function bounds never established
+80017bec,REAL,"Ghidra dump has no instruction stream, but the static recomp attests the body: func_80017BEC, 428 bytes / 18 blocks ending jr ra; ported (engine-core::field_regions::refresh_object_grid_marks)"
 8001822c,REAL,self-entry body of 423 instructions returning `jr ra`
 800188c8,REAL,self-entry body of 314 instructions returning `jr ra`
 800196a4,REAL,self-entry body of 57 instructions returning `jr ra`
@@ -115,7 +115,7 @@ addr,class,reason
 801cf00c,REAL,self-entry body of 223 instructions returning `jr ra`
 801cf388,REAL,self-entry body of 2973 instructions returning `jr ra`
 801cf5bc,UNCERTAIN,no `jr ra` and no trailing unconditional jump - body may be truncated
-801cf5d0,REAL,self-entry body of 32 instructions returning `jr ra`
+801cf5d0,INTERIOR,"tail slice, not an entry: first instruction stores through live t0 and the body reads unaffected t2/t3/t4 before restoring a frame it never built (lw ra,0x10(sp) / sp+0x18) - a mid-function window of the enclosing 0897 routine"
 801cf730,REAL,every dump at this VA is of debug_menu(971) (captures: debug_menu); no second dumped body here
 801cf740,REAL,self-entry body of 92 instructions returning `jr ra`
 801cf88c,REAL,self-entry body of 311 instructions returning `jr ra`
@@ -143,7 +143,7 @@ addr,class,reason
 801d1f10,REAL,self-entry body of 97 instructions returning `jr ra`
 801d21fc,REAL,self-entry body of 104 instructions returning `jr ra`
 801d231c,REAL,every dump at this VA is of dance(980) (captures: dance); no second dumped body here
-801d2404,REAL,every dump at this VA is of field(897) (captures: 0897/cutscene_dialogue/cutscene_mapview); no second dumped body here
+801d2404,INTERIOR,"field-VM opcode slice, not an entry: 8 instructions with no prologue, reads live v0/v1/s6, exits `j 0x801e3624` (the FUN_801DE840 op-advance epilogue - the label-call idiom)"
 801d2524,REAL,every dump at this VA is of dance(980) (captures: dance); no second dumped body here
 801d26cc,REAL,"duplicate claim withdrawn: peer 801c56b4 is a printed address from a mis-based dump, not a body at that VA"
 801d2914,REAL,self-entry body of 100 instructions returning `jr ra`
@@ -196,7 +196,7 @@ addr,class,reason
 801d7b50,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview); no second dumped body here
 801d7ff8,REAL,self-entry body of 196 instructions returning `jr ra`
 801d8308,REAL,self-entry body of 267 instructions returning `jr ra`
-801d8450,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview); no second dumped body here
+801d8450,INTERIOR,"non-ABI dispatcher-private subroutine: entry has no prologue, reads live saved regs s2/s5/s6/s7/s8 from the enclosing field-overlay dispatcher's frame (dump starts mid-loop at `lh a0,0xc(s7)`); not a portable entry"
 801d8f10,REAL,self-entry body of 128 instructions returning `jr ra`
 801d9110,REAL,self-entry body of 92 instructions returning `jr ra`
 801d9280,REAL,self-entry body of 197 instructions returning `jr ra`
@@ -224,9 +224,9 @@ addr,class,reason
 801dea50,REAL,self-entry body of 712 instructions returning `jr ra`
 801df098,UNCERTAIN,no `jr ra` and no trailing unconditional jump - body may be truncated
 801df6b8,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
-801df8dc,REAL,self-entry body of 21 instructions returning `jr ra`
+801df8dc,INTERIOR,"interior slice, not an entry: dump begins in a delay slot (`_li v0,0x63`), branches on live v1, and the debug-print tail restores s0..s5/ra from a 0x50-byte frame it never built"
 801e0080,REAL,every dump at this VA is of battle_action(898) (captures: battle_action); no second dumped body here
-801e00b8,REAL,self-entry body of 15 instructions returning `jr ra`
+801e00b8,SHARED_TAIL,"shared epilogue slice: no prologue, reads live s1, restores s0..s2/ra from a 0x60-byte frame it never built; entered by `j 0x801e00b8` from FUN_801D4908 (and siblings) as a common exit"
 801e01f0,UNCERTAIN,"every dump at this VA is mis-based: the bytes live at field(897) 0x801e5a08 (delta +0x5818), and at this VA in no image - so nothing attests the address. Not an un-extracted overlay; no extraction closes it"
 801e02a4,REAL,self-entry body of 93 instructions returning `jr ra`
 801e0418,REAL,self-entry body of 96 instructions returning `jr ra`
