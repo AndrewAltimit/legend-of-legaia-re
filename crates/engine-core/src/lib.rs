@@ -119,6 +119,8 @@ pub mod walk_regen;
 pub mod world;
 pub mod world_map;
 
+pub mod float_tween;
+
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
