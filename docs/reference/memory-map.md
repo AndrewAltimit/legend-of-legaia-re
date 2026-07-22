@@ -39,6 +39,14 @@ Plus the PSX-specific scratchpad at `0x1F800000-0x1F8003FF` (1 KB) which Legaia 
 | `0x800845DC` | (mirror of `_DAT_80084570`) | Snapshot written by op 0x4C nibble-E sub-E. |
 | `0x800845A4` | u32 | Casino coin bank. "Infinite Coins" cheat writes `0x05F5_E0FF`. |
 | `0x800845B4` | u32 | **Point Card counter** (unmapped by every public cheat archive). The shop buy commit `FUN_801db7f4` (menu overlay) accrues `price/20 * qty` into it when item `0xFE` (the Point Card) is held (`func_0x80042f4c(0xFE)` inventory-has gate), capped at `9,999,999`. Menu display readers at `0x801d1008`/`0x801dce84`. GameShark-style max: 16-bit pair `800845B4 967F` + `800845B6 0098`. `see ghidra/scripts/funcs/overlay_shop_save_801db7f4.txt`. |
+| `0x8007BB80` | u32 | Menu window-slide latch: non-zero while a window is sliding; every menu sub-screen SM gates its interactive phase on `== 0`. |
+| `0x8007BB84` | u32 | Menu pad-**edge** word (remapped d-pad bits `0x1000` Up / `0x4000` Down / `0x8000` Left / `0x2000` Right) read by the kind-4 list kernel `FUN_80032A44` and the quantity pickers. |
+| `0x8007BB88` | u32 | List-kernel selected-row **payload** (low 12 bits of the row entry - the bag slot on the item lists). Doubles as the name-entry grid cursor. |
+| `0x8007BB90` | i32 | List-kernel persisted **scroll top** (`gp+0x878`); clamped in place by the allocator `FUN_80030104`. |
+| `0x8007BB94` | i32 | List-kernel **mode/result**: 0 idle, 1 browsing, 2 row confirmed, 3 cancelled, 4 parked behind the command window. |
+| `0x8007BB98` | i32 | List-kernel persisted **selected row** (`gp+0x880`); clamped to `count-1` on rebuild. |
+| `0x8007BB9C` | u32 | Selected row's **class nibble** (`entry & 0xF000`) - the screen-id key `FUN_80034250` dispatches descriptions on. |
+| `0x8007BBA0` | i32 | List-kernel **row count** (mirrored from the allocator; bounds the sell-list scroll fix-up in `FUN_801DBD94`). |
 
 ## Game-mode state machine
 
