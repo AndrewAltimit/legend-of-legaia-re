@@ -139,9 +139,9 @@
       <input type="search" id="bgm-search" placeholder="Filter by PROT index…" autocomplete="off">
       <span id="bgm-summary">&nbsp;</span>
       <span style="margin-left:auto; display: flex; gap: 0.6rem; align-items: center;">
-        <label title="Post-mixer gain. SPU output sits ~1% of the i16 range; default 25x brings it to comfortable speaker level." style="display: flex; gap: 0.3rem; align-items: center;">
-          gain <input type="range" id="bgm-gain" min="1" max="100" step="1" value="25" style="width: 6rem;">
-          <span id="bgm-gain-value" style="min-width: 2.5rem; text-align: right;">25x</span>
+        <label title="Post-mixer gain, applied after the SPU mix. Default 1x is the unscaled mixer output; raise it only if a quiet bank needs help." style="display: flex; gap: 0.3rem; align-items: center;">
+          gain <input type="range" id="bgm-gain" min="1" max="100" step="1" value="1" style="width: 6rem;">
+          <span id="bgm-gain-value" style="min-width: 2.5rem; text-align: right;">1x</span>
         </label>
         <button id="bgm-stop" type="button" disabled>&#x25A0; stop</button>
         <button id="bgm-pause" type="button" disabled>&#x23F8; pause</button>
