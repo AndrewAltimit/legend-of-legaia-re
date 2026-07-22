@@ -58,6 +58,34 @@ pub trait BgmDirector {
     fn queue_owned_vab(&mut self, bgm_id: u16, entry_bytes: &[u8]) {
         let _ = (bgm_id, entry_bytes);
     }
+    /// Sub-op 8 - re-attach the BGM sound source and re-apply the field
+    /// BGM volume (retail `FUN_80019898`; see [`bgm_reattach_volume`] for
+    /// the level arithmetic). Directors that model per-voice volume apply
+    /// `level` to both channels of the BGM sequencer voice; the default
+    /// is a no-op.
+    fn reattach_volume(&mut self, level: i16) {
+        let _ = level;
+    }
+}
+
+/// PORT: FUN_80019898
+///
+/// Field-BGM re-attach + volume re-apply - the body of field-VM op `0x35`
+/// sub-op `8`. Retail re-attaches the BGM slot's sound source
+/// (`FUN_80026478(0x8007057C)` - the activate counterpart of the
+/// pause/stop teardown family), then re-applies the field BGM volume
+/// global `DAT_8007B6EC` to both channels of the slot's sequencer voice
+/// (`lh 0xA(0x8007057C)`) via the `SsSeqSetVol`-shaped setter
+/// `FUN_80064890(voice, level, level)`.
+///
+/// The level arithmetic is `(raw << 15) >> 16` on a 32-bit register
+/// (`sll a1,a1,0xf; sra a1,a1,0x10` at `0x800198C0..C4`): bits `[16:1]`
+/// of the raw global, sign-extended - i.e. a halving that keeps the
+/// 16-bit sign. This helper returns that level; the re-attach + apply
+/// side effects live behind [`BgmDirector::reattach_volume`], which
+/// [`SceneHost::route_bgm_events`] drives for sub-op `8`.
+pub fn bgm_reattach_volume(raw: i32) -> i16 {
+    ((raw << 15) >> 16) as i16
 }
 
 /// Discards every BGM event. Useful for tests + engines that haven't wired
@@ -152,6 +180,10 @@ pub struct SceneHost {
     /// reads valid party data. `None` (the default) leaves the world's
     /// scaffold party untouched, which is what disc-free tests expect.
     pub new_game_defaults: Option<crate::new_game::NewGameDefaults>,
+    /// Field BGM volume global - mirrors `DAT_8007B6EC`. Boot value `-1`
+    /// (set by the game-state initializer `FUN_8001FFA4`). Consumed by
+    /// the op `0x35` sub-op `8` route ([`bgm_reattach_volume`]).
+    pub bgm_volume_raw: i32,
 }
 
 mod audio_dialog;

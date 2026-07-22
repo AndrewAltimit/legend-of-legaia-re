@@ -218,6 +218,18 @@ impl World {
                     (self.cutscene_caption_alpha - CAPTION_FADE_STEP).max(target);
             }
         }
+        // Tick the live `4C E1` text balloon (FUN_801DA7F0 handler; see
+        // `crate::text_balloon`). The player-engaged flag (`_DAT_8007C364
+        // +0x10 & 0x80000`) is host-substituted by "a dialog engagement is
+        // live"; the cadence is the 60 fps sub-clock step, matching the
+        // narration roller above.
+        if let Some(balloon) = self.text_balloon.as_mut() {
+            let engaged = self.current_dialog.is_some();
+            let cadence = self.field_frame_step as i16;
+            if balloon.tick(engaged, cadence) == crate::text_balloon::BalloonTick::Killed {
+                self.text_balloon = None;
+            }
+        }
         match self.mode {
             SceneMode::Battle => {
                 // In-battle dialogue box (the tutorial text the engage script

@@ -162,10 +162,75 @@ impl World {
     }
 }
 
+/// PORT: FUN_8001FFA4
+///
+/// Game-state **cold-reset** defaults - the boot-time initializer one layer
+/// above the new-game data-init `FUN_80034A6C`. Retail:
+///
+/// 1. zero-fills the `0x1A18`-byte live game-state block at `0x80084140`
+///    (inventory pages, party fields, story flags - everything the save
+///    block snapshots),
+/// 2. seeds the non-zero boot defaults tabulated below,
+/// 3. chains into `FUN_80034A6C` (new-game data-init: gold = 500,
+///    starting-party template expansion) and `FUN_8002614C(0)` (audio-context
+///    volume re-apply).
+///
+/// | Field | Retail global | Boot value |
+/// |---|---|---|
+/// | `flag_at_0x434` | `_DAT_80084574` | `1` |
+/// | `brightness_ref` | `_DAT_8008457C` | `0xD7` (full-brightness reference the battle fades clamp against) |
+/// | `voice_volume` | `_DAT_80084580` | `200` (voice/SFX volume config) |
+/// | `screen_brightness` | `_DAT_8007B910` | `0xD7` (live brightness, ramped by battle-action fades) |
+/// | `bgm_volume_raw` | `DAT_8007B6EC` | `-1` (field-BGM volume; see [`crate::scene::bgm_reattach_volume`]) |
+///
+/// `DAT_8007B750` and `_DAT_8007BAD0` are also cleared to `0` (already
+/// covered by the engine's default state). The engine analog of steps 1 + 3
+/// is [`World::begin_new_game`] + [`World::seed_cold_boot_defaults`]; this
+/// struct carries the step-2 values so hosts seed them from one place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GameStateColdReset {
+    /// `_DAT_80084574` boot value.
+    pub flag_at_0x434: u32,
+    /// `_DAT_8008457C` - full-brightness reference.
+    pub brightness_ref: i32,
+    /// `_DAT_80084580` - voice/SFX volume config.
+    pub voice_volume: i32,
+    /// `_DAT_8007B910` - live screen brightness.
+    pub screen_brightness: i32,
+    /// `DAT_8007B6EC` - field-BGM volume raw global.
+    pub bgm_volume_raw: i32,
+}
+
+/// The retail boot values `FUN_8001FFA4` stores (see [`GameStateColdReset`]).
+pub const GAME_STATE_COLD_RESET: GameStateColdReset = GameStateColdReset {
+    flag_at_0x434: 1,
+    brightness_ref: 0xD7,
+    voice_volume: 200,
+    screen_brightness: 0xD7,
+    bgm_volume_raw: -1,
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use legaia_save::character::RECORD_CAP_CONSTANT;
+
+    /// FUN_8001FFA4's five non-zero boot stores, as read off the
+    /// disassembly (`li` + `sw` pairs at `0x8001FFD4..0x80020004`).
+    #[test]
+    fn cold_reset_defaults_match_retail_stores() {
+        let d = GAME_STATE_COLD_RESET;
+        assert_eq!(d.flag_at_0x434, 1);
+        assert_eq!(d.brightness_ref, 0xD7);
+        assert_eq!(d.voice_volume, 200);
+        // Boot: live brightness starts at the full-brightness reference
+        // (both stores source the same 0xD7 register).
+        assert_eq!(d.screen_brightness, d.brightness_ref);
+        assert_eq!(d.bgm_volume_raw, -1);
+        // The level the BGM re-attach (FUN_80019898) derives from the
+        // boot-value raw global.
+        assert_eq!(crate::scene::bgm_reattach_volume(d.bgm_volume_raw), -1);
+    }
 
     fn vahn() -> StartingChar {
         StartingChar {

@@ -298,7 +298,7 @@ These are sub-dispatchers - the operand byte selects a sub-command.
 | 5 | Set volume. |
 | 6 | Flag set. |
 | 7 | Target-sound-set (`_DAT_8007B880`). |
-| 8 | `func_0x80019898`. |
+| 8 | Re-attach + volume re-apply (`func_0x80019898`): re-attaches the BGM slot's sound source (`FUN_80026478(0x8007057C)`) then re-applies the field volume global `DAT_8007B6EC` - level `(raw << 15) >> 16` - to both channels of the slot's voice via `FUN_80064890`. Port: `engine-core::scene::bgm_reattach_volume`. |
 | 9 | Queue. |
 | 10 | Unhalt-pause toggle. |
 | 11 | `_DAT_8007BA9C = -1`. |

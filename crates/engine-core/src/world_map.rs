@@ -249,6 +249,92 @@ impl WorldMapController {
     }
 }
 
+// =========================================================================
+// World-map-entry fade-up - FUN_800196A4
+// =========================================================================
+
+/// Kingdom index for a scene PROT base index (`_DAT_80084540`), as the
+/// fade-up tick derives it into `gp+0x658`: the three kingdom overworld
+/// bundles `0x55` (Drake) / `0xF4` (Sebucus) / `0x187` (Karisto) map to
+/// `0..=2`; anything else is `None` (retail `-1`).
+pub fn kingdom_index_for_scene_base(scene_base: u16) -> Option<u8> {
+    match scene_base {
+        0x55 => Some(0),
+        0xF4 => Some(1),
+        0x187 => Some(2),
+        _ => None,
+    }
+}
+
+/// Per-frame draw command the fade-up tick emits: a full-screen grey quad
+/// (retail `FUN_80024EE4(1, 2, grey * 0x010101)`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FadeQuad {
+    /// Grey level 0..=0xFF (the draw value clamps even when the stored
+    /// ramp value overshoots).
+    pub grey: u8,
+}
+
+/// PORT: FUN_800196A4
+///
+/// World-map-entry **fade-up tick**. Retail runs this per frame on the
+/// way into the world-map display mode:
+///
+/// 1. Re-derives the kingdom index global `gp+0x658` from the scene
+///    PROT base `_DAT_80084540` ([`kingdom_index_for_scene_base`]).
+/// 2. When the fade ramp global (`0x8007BAF4`) is non-zero, advances it
+///    by `cadence << 5` (the frame-delta byte `DAT_1F800393` times 32),
+///    stores the **un-clamped** value back, and emits the fade quad with
+///    the grey level clamped to `0xFF`.
+/// 3. When the stored ramp value reaches `0x100`, parks it at `0xFF` and
+///    stores master mode `_DAT_8007B83C = 0xC` (12 = MAPDSIP INIT, the
+///    world-map display overlay swap - see `docs/subsystems/boot.md`).
+///
+/// A zero ramp value is idle: no quad, no mode switch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct WorldMapEntryFade {
+    /// The ramp global (`0x8007BAF4`). `0` = idle; callers arm the fade
+    /// by setting it non-zero (retail's arming site writes a small seed).
+    pub ramp: i32,
+    /// Kingdom index mirror of `gp+0x658` (`None` = retail `-1`).
+    pub kingdom_index: Option<u8>,
+}
+
+/// One tick's outputs: the fade quad to draw (if the ramp is live) and
+/// whether the mode-12 switch fired this frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorldMapEntryFadeTick {
+    pub quad: Option<FadeQuad>,
+    pub enter_map_display: bool,
+}
+
+impl WorldMapEntryFade {
+    /// One frame of `FUN_800196A4`. `scene_base` mirrors
+    /// `_DAT_80084540`; `cadence` is the frame-delta byte.
+    pub fn tick(&mut self, scene_base: u16, cadence: u8) -> WorldMapEntryFadeTick {
+        self.kingdom_index = kingdom_index_for_scene_base(scene_base);
+        let mut quad = None;
+        if self.ramp != 0 {
+            self.ramp += (cadence as i32) << 5;
+            let grey = if self.ramp < 0x100 {
+                self.ramp as u8
+            } else {
+                0xFF
+            };
+            quad = Some(FadeQuad { grey });
+        }
+        let mut enter = false;
+        if self.ramp >= 0x100 {
+            self.ramp = 0xFF;
+            enter = true;
+        }
+        WorldMapEntryFadeTick {
+            quad,
+            enter_map_display: enter,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -405,5 +491,80 @@ mod tests {
         gate.arm(1, 2, 3);
         gate.arm(7, 8, 9);
         assert_eq!(gate.take(), Some((7, 8, 9)), "plain stores, last arm wins");
+    }
+
+    // -- WorldMapEntryFade (FUN_800196A4) ------------------------------
+
+    #[test]
+    fn kingdom_index_covers_the_three_overworld_bases() {
+        assert_eq!(kingdom_index_for_scene_base(0x55), Some(0));
+        assert_eq!(kingdom_index_for_scene_base(0xF4), Some(1));
+        assert_eq!(kingdom_index_for_scene_base(0x187), Some(2));
+        assert_eq!(kingdom_index_for_scene_base(0x56), None);
+        assert_eq!(kingdom_index_for_scene_base(0), None);
+    }
+
+    #[test]
+    fn fade_idle_emits_nothing() {
+        let mut f = WorldMapEntryFade::default();
+        let t = f.tick(0x55, 1);
+        assert_eq!(t.quad, None);
+        assert!(!t.enter_map_display);
+        assert_eq!(f.kingdom_index, Some(0));
+        assert_eq!(f.ramp, 0, "idle ramp untouched");
+    }
+
+    #[test]
+    fn fade_ramps_by_32_per_cadence_unit_and_fires_mode_switch() {
+        let mut f = WorldMapEntryFade {
+            ramp: 1,
+            ..Default::default()
+        };
+        // Tick 1: 1 + 32 = 33; below 0x100 -> grey 33, no switch.
+        let t = f.tick(0xF4, 1);
+        assert_eq!(t.quad, Some(FadeQuad { grey: 33 }));
+        assert!(!t.enter_map_display);
+        assert_eq!(f.ramp, 33);
+        // Keep ticking until the switch fires.
+        let mut switched_at = None;
+        for i in 0..16 {
+            let t = f.tick(0xF4, 1);
+            if t.enter_map_display {
+                switched_at = Some(i);
+                // The draw value clamps to 0xFF while the stored value
+                // overshoots then parks at 0xFF.
+                assert_eq!(t.quad, Some(FadeQuad { grey: 0xFF }));
+                assert_eq!(f.ramp, 0xFF);
+                break;
+            }
+        }
+        // 33 + 32*k >= 0x100 first at k = 7 (index 6).
+        assert_eq!(switched_at, Some(6));
+    }
+
+    #[test]
+    fn fade_parked_ramp_keeps_firing_until_cleared() {
+        // Retail leaves the global at 0xFF after the switch; every
+        // subsequent tick overshoots and fires again until the mode
+        // change clears it.
+        let mut f = WorldMapEntryFade {
+            ramp: 0xFF,
+            ..Default::default()
+        };
+        let t = f.tick(0x187, 1);
+        assert!(t.enter_map_display);
+        assert_eq!(f.ramp, 0xFF);
+        let t = f.tick(0x187, 1);
+        assert!(t.enter_map_display);
+    }
+
+    #[test]
+    fn fade_cadence_two_doubles_the_step() {
+        let mut f = WorldMapEntryFade {
+            ramp: 1,
+            ..Default::default()
+        };
+        f.tick(0x55, 2);
+        assert_eq!(f.ramp, 1 + 64);
     }
 }

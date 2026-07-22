@@ -1746,11 +1746,18 @@ pub trait FieldHost {
     /// j epilogue` block at `0x801df098`, i.e. PC += 2.
     fn op4c_n_e_sub9_clear_b9c4(&mut self) {}
 
-    /// Op 0x4C outer-nibble-E sub-A - call `func_0x8003C7EC` then halt at PC.
+    /// Op 0x4C outer-nibble-E sub-A - call `FUN_8003C7EC` then halt at PC:
+    /// the **scripted game-over trigger**.
     ///
-    /// 1-byte instruction `[4C, 0xEA]`. The original at line 7367 calls the
-    /// overlay-resident `func_0x8003C7EC()` (an actor-list mutator) then
-    /// exits via `switchD_801e00f4::default()` → halt at PC for opcode 0x4C.
+    /// 1-byte instruction `[4C, 0xEA]`. `FUN_8003C7EC` (SCUS, not an
+    /// actor-list mutator - an earlier decompile-derived label) is the
+    /// helper twin of the party-wipe gate's inline handoff (see
+    /// `docs/subsystems/battle.md` § party wipe): it stores master mode
+    /// `_DAT_8007B83C = 0x16` (22 = CARD INIT, the CARD/CONTINUE title
+    /// flow), raises the continue-flow flag `_DAT_8007BB00 = 1`, clears
+    /// bit 1 of `DAT_8007B750`, and pauses the BGM
+    /// (`FUN_800266E0(0x8007052C)`). The dispatcher then exits via
+    /// `switchD_801e00f4::default()` → halt at PC for opcode 0x4C.
     fn op4c_n_e_sub_a_call_c7ec(&mut self) {}
 
     /// Op 0x4C outer-nibble-E sub-1 - spawn a screen-anchored text balloon
