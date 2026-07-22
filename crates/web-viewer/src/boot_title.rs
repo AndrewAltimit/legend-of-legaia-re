@@ -325,9 +325,24 @@ impl LegaiaRuntime {
             });
         };
 
-        // Wordmark art always.
+        // Wordmark art always, through the shared retail backdrop law
+        // (`FUN_801E02A4`): the art re-emitted with all three RGB
+        // modulation bytes at one brightness byte, split at the VRAM
+        // texture-page seam. Retail's ramp is the modulation byte, not
+        // an alpha, so the page folds its fade into the same byte -
+        // `0x80` is neutral, a fully-faded-in title. Mirrors the native
+        // window's `title_screen_sprite_draws`.
         let wm = title_pak::TITLE_BAND_WORDMARK;
-        push(&mut out, wm, wm.0 as i32, wm.1 as i32, color);
+        let brightness = (alpha * 128.0).round().clamp(0.0, 255.0) as u8;
+        out.extend(ui::backdrop_dim_sprites(
+            wm,
+            brightness,
+            (
+                sx0 + (tpx + wm.0 as i32) * si,
+                sy0 + (tpy + wm.1 as i32) * si,
+            ),
+            scale,
+        ));
 
         // Press Start prompt during that phase only.
         if matches!(session.phase(), TitlePhase::PressStart { .. }) {

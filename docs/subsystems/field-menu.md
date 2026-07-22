@@ -1024,7 +1024,17 @@ menu exit - the flow stays on the Items screen.
 
 Engine port of the three special routes:
 `engine-core::pause_screens::SpecialUseSession` (+ the fixed consume
-ids `0x88/0x89/0x8A` and exit codes 4/5 as named constants).
+ids `0x88/0x89/0x8A` and exit codes 4/5 as named constants). The two
+**confirm** routes are reachable from the Items screen: a Use-list
+confirm on `0x88` / `0x8A` opens `PauseItemsFocus::SpecialConfirm`
+(`special_confirm_route_for_item`), whose window both hosts draw with
+`engine-ui::confirm_prompt_draws` at the id-10 / id-12 descriptor rect
+(`ITEMS_USE_CONFIRM_1LINE_RECT` / `ITEMS_USE_CONFIRM_2LINE_RECT`).
+Door of Wind is deliberately not in that map - submenu `0xC` opens the
+destination list, not a prompt - and its host route is still open.
+Retail's own prompt strings live in the menu overlay's data segment and
+are not recovered, so the port stages the item name and its own question
+in the retail line slots; the window geometry is exact.
 
 **Throw Out list `FUN_801D8734`** (submenu 7): phase 0 re-points the
 live list window from descriptor 15 to descriptor 16 (live-window

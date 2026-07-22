@@ -386,6 +386,51 @@ impl PlayWindowApp {
                 stage_scale,
             ));
         }
+        // Items page: the special Use-route confirm (Door of Light window
+        // 10 / Incense window 12) frames its own window and puts the hand
+        // on the focused option row. The hand goes through retail's
+        // per-record quad drawer `FUN_801E3FF0` - one atlas record, one
+        // textured quad, the RGB word folded into the command - stamped
+        // at the neutral `0x80` level.
+        if let Some(FieldMenuSubsession::Items(s)) = sub
+            && let Some(sp) = s.special_use()
+            && matches!(
+                sp.phase,
+                legaia_engine_core::pause_screens::SpecialUsePhase::Confirm
+            )
+        {
+            let prompt_lines = if matches!(
+                sp.route,
+                legaia_engine_core::pause_screens::UseRoute::Incense
+            ) {
+                2
+            } else {
+                1
+            };
+            let (win_id, fallback) = legaia_engine_render::use_confirm_window(prompt_lines);
+            let rect = {
+                let r = self.menu_window_rect(win_id);
+                if r == (0, 0, 0, 0) { fallback } else { r }
+            };
+            out.extend(legaia_engine_render::menu_window_chrome_draws_for(
+                &assets.rects,
+                (rect.0 - 8, rect.1 - 8, rect.2 + 16, rect.3 + 16),
+                stage_origin,
+                stage_scale,
+            ));
+            let hand = legaia_engine_render::confirm_prompt_hand_pos(
+                (rect.0, rect.1),
+                prompt_lines,
+                sp.cursor as u8,
+            );
+            out.push(legaia_engine_render::save_ui_record_quad(
+                assets.rects.cursor,
+                (0x80, 0x80, 0x80),
+                hand,
+                stage_origin,
+                stage_scale,
+            ));
+        }
         // Status page: the LV / HP / MP labels, the AP gauge (pieces + red
         // value digits) and the 7-slot equipment pictogram grid are UI-icon
         // sprites from the system-UI atlas (the text stand-ins are
@@ -642,9 +687,28 @@ impl PlayWindowApp {
             });
         };
 
-        // Wordmark always.
+        // Wordmark always - and it is the band retail treats as the
+        // *backdrop*, so it goes through the shared retail law rather
+        // than a plain tinted blit. `FUN_801E02A4` re-emits the art
+        // with all three RGB modulation bytes set to one brightness
+        // byte and splits the blit at the VRAM texture-page seam
+        // (`BACKDROP_SPLIT_X`); the caller's ramp (its `s0`, clamped
+        // `0..=0xFF`) is what drives both the title fade and the
+        // save-screen dim, which is why retail needs no alpha here.
+        // The engine folds its fade alpha and its dim luminance into
+        // the same byte: `0x80` is neutral, so the SaveSelect dim
+        // (0.45) lands at `0x3A` and a fully-faded-in title at `0x80`.
         let wm = title_pak::TITLE_BAND_WORDMARK;
-        push_band(&mut out, wm, wm.0 as i32, wm.1 as i32, color);
+        let brightness = (lum * alpha * 128.0).round().clamp(0.0, 255.0) as u8;
+        out.extend(legaia_engine_render::backdrop_dim_sprites(
+            wm,
+            brightness,
+            (
+                stage_x0 + (title_pos_x + wm.0 as i32) * scale_i32,
+                stage_y0 + (title_pos_y + wm.1 as i32) * scale_i32,
+            ),
+            scale,
+        ));
 
         // PressStart prompt only during that phase.
         if emit_press_start {

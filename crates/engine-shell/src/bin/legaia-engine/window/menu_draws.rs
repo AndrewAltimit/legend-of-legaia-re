@@ -409,6 +409,51 @@ impl PlayWindowApp {
                 &self.font, &view, pen,
             ));
         }
+        // Special Use-route confirm (submenu 0xB Door of Light -> window
+        // 10 / `FUN_801D1DAC`, submenu 0xD Incense -> window 12 /
+        // `FUN_801D1F10`). A different window and renderer from the Throw
+        // Out confirm above, and the cursor seeds to Yes rather than No.
+        //
+        // Retail's own prompt strings live in the menu overlay's data
+        // segment (the `0x801CEA94` block the renderer's `lui`/`addiu`
+        // pairs point at) and are not recovered, so the port stages the
+        // item name and its own question in the retail line slots; the
+        // geometry - which is what the renderer actually is - is exact.
+        if let Some(sc) = model.special_confirm.as_ref() {
+            let two_line = matches!(
+                sc.route,
+                legaia_engine_core::pause_screens::UseRoute::Incense
+            );
+            let prompt_lines = if two_line { 2 } else { 1 };
+            let (win_id, fallback) = legaia_engine_render::use_confirm_window(prompt_lines);
+            let pen = self.menu_window_pen(win_id);
+            let pen = if pen == (0, 0) {
+                (fallback.0, fallback.1)
+            } else {
+                pen
+            };
+            let one_line = format!("Use {}?", sc.item_name);
+            let lines: Vec<&str> = if two_line {
+                vec![sc.item_name.as_str(), "Use it?"]
+            } else {
+                vec![one_line.as_str()]
+            };
+            d.extend(legaia_engine_render::confirm_prompt_draws(
+                &self.font,
+                &lines,
+                &["Yes", "No"],
+                pen,
+            ));
+            if self.save_menu.is_none() {
+                let (hx, hy) =
+                    legaia_engine_render::confirm_prompt_hand_pos(pen, prompt_lines, sc.cursor);
+                d.extend(legaia_engine_render::text_draws_for(
+                    &self.font.layout_ascii(">"),
+                    (hx, hy),
+                    legaia_engine_render::MENU_TEXT_GOLD,
+                ));
+            }
+        }
         d
     }
 

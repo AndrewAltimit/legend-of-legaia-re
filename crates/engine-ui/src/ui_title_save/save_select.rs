@@ -100,6 +100,100 @@ pub fn save_ui_record_quad(
     }
 }
 
+#[cfg(test)]
+mod backdrop_and_record_tests {
+    use super::*;
+
+    /// `FUN_801E02A4` emits **two** `0x64` prims, not one: retail's
+    /// backdrop straddles two VRAM texture pages, so it stops the first
+    /// blit at [`BACKDROP_SPLIT_X`] and restarts the second there. The
+    /// engine samples one linear atlas rect, so the split has to fall on
+    /// the same column or the seam (and any texel bleed a host pipeline
+    /// shows at it) lands somewhere retail's did not.
+    #[test]
+    fn backdrop_splits_at_the_retail_texture_page_seam() {
+        let out = backdrop_dim_sprites((0, 17, 256, 124), 0x80, (0, 0), 1);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].src, (0, 17, BACKDROP_SPLIT_X, 124));
+        assert_eq!(out[0].dst, (0, 0, BACKDROP_SPLIT_X, 124));
+        assert_eq!(
+            out[1].src,
+            (BACKDROP_SPLIT_X, 17, 256 - BACKDROP_SPLIT_X, 124)
+        );
+        assert_eq!(
+            out[1].dst,
+            (BACKDROP_SPLIT_X as i32, 0, 256 - BACKDROP_SPLIT_X, 124)
+        );
+    }
+
+    /// A source narrower than the seam is one prim, not one prim plus a
+    /// zero-width one - retail only pages when the art crosses the page.
+    #[test]
+    fn backdrop_narrower_than_the_seam_is_a_single_blit() {
+        let out = backdrop_dim_sprites((0, 0, 64, 32), 0x80, (0, 0), 1);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].src, (0, 0, 64, 32));
+    }
+
+    /// The dim is an **RGB modulation**, not an alpha: retail writes one
+    /// brightness byte into all three colour bytes of the prim and leaves
+    /// the blend mode alone. `0x80` is the PSX neutral level.
+    #[test]
+    fn backdrop_brightness_modulates_rgb_and_never_alpha() {
+        for (level, want) in [(0x80u8, 1.0f32), (0x40, 0.5), (0x00, 0.0)] {
+            let out = backdrop_dim_sprites((0, 0, 256, 128), level, (0, 0), 1);
+            for d in &out {
+                assert_eq!(d.color[0], want);
+                assert_eq!(d.color[1], want);
+                assert_eq!(d.color[2], want);
+                assert_eq!(d.color[3], 1.0, "alpha must stay opaque");
+            }
+        }
+    }
+
+    /// Stage origin translates, stage scale multiplies - and the second
+    /// prim's origin advances by the *scaled* split, not the raw one.
+    #[test]
+    fn backdrop_honours_the_stage_transform() {
+        let out = backdrop_dim_sprites((0, 0, 256, 128), 0x80, (10, 20), 3);
+        assert_eq!(out[0].dst, (10, 20, BACKDROP_SPLIT_X * 3, 128 * 3));
+        assert_eq!(out[1].dst.0, 10 + (BACKDROP_SPLIT_X * 3) as i32);
+        assert_eq!(out[1].dst.1, 20);
+    }
+
+    /// `FUN_801E3FF0` builds the quad at the **pen**, sized from the
+    /// record - the record's `(u, v)` stay the source origin and never
+    /// leak into the destination.
+    #[test]
+    fn record_quad_places_the_record_at_the_pen() {
+        let q = save_ui_record_quad((32, 96, 48, 16), (0x80, 0x80, 0x80), (136, 97), (0, 0), 1);
+        assert_eq!(q.src, (32, 96, 48, 16));
+        assert_eq!(q.dst, (136, 97, 48, 16));
+        assert_eq!(q.color, [1.0, 1.0, 1.0, 1.0]);
+    }
+
+    /// The RGB word folds into the command per channel, so the drawer can
+    /// stamp the same chrome record at any brightness - which is why
+    /// retail has this primitive rather than a fixed blit.
+    #[test]
+    fn record_quad_folds_rgb_per_channel() {
+        let q = save_ui_record_quad((0, 0, 8, 8), (0x40, 0x80, 0x00), (0, 0), (0, 0), 1);
+        assert_eq!(q.color[0], 0.5);
+        assert_eq!(q.color[1], 1.0);
+        assert_eq!(q.color[2], 0.0);
+        assert_eq!(q.color[3], 1.0);
+    }
+
+    /// Pen is in stage pixels, so it scales with the stage; the source
+    /// rect never does.
+    #[test]
+    fn record_quad_scales_pen_and_size_but_not_source() {
+        let q = save_ui_record_quad((4, 8, 16, 16), (0x80, 0x80, 0x80), (10, 20), (5, 7), 2);
+        assert_eq!(q.src, (4, 8, 16, 16));
+        assert_eq!(q.dst, (5 + 20, 7 + 40, 32, 32));
+    }
+}
+
 /// **Canonical PSX framebuffer stage for the boot UI**. All retail-
 /// pinned positions (panel, pills, cursor, title art) are expressed
 /// in 320×240 framebuffer coords; the boot-UI stage maps 1:1 to

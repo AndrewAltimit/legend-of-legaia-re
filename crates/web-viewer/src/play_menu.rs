@@ -1424,12 +1424,78 @@ impl LegaiaRuntime {
             };
             d.extend(ui::items_throw_confirm_draws_for(font, &view, pen));
         }
+        // Special Use-route confirm (submenu 0xB Door of Light -> window 10 /
+        // FUN_801D1DAC, submenu 0xD Incense -> window 12 / FUN_801D1F10). A
+        // different window and renderer from the Throw Out confirm above, and
+        // the cursor seeds to Yes rather than No. Mirrors the native window's
+        // `pause_items_draws`; retail's own prompt strings live in the menu
+        // overlay's unrecovered data segment, so the port stages the item name
+        // and its own question in the retail line slots - the geometry, which
+        // is what the renderer is, is exact.
+        let special_pen = model.special_confirm.as_ref().map(|sc| {
+            let two_line = matches!(
+                sc.route,
+                legaia_engine_core::pause_screens::UseRoute::Incense
+            );
+            let prompt_lines = if two_line { 2 } else { 1 };
+            let (win_id, fallback) = ui::use_confirm_window(prompt_lines);
+            let pen = assets.pen(win_id);
+            let pen = if pen == (0, 0) {
+                (fallback.0, fallback.1)
+            } else {
+                pen
+            };
+            (prompt_lines, pen)
+        });
+        if let (Some(sc), Some((prompt_lines, pen))) = (model.special_confirm.as_ref(), special_pen)
+        {
+            let one_line = format!("Use {}?", sc.item_name);
+            let lines: Vec<&str> = if prompt_lines == 2 {
+                vec![sc.item_name.as_str(), "Use it?"]
+            } else {
+                vec![one_line.as_str()]
+            };
+            d.extend(ui::confirm_prompt_draws(font, &lines, &["Yes", "No"], pen));
+            if assets.chrome.is_none() {
+                let (hx, hy) = ui::confirm_prompt_hand_pos(pen, prompt_lines, sc.cursor);
+                d.extend(ui::text_draws_for(
+                    &font.layout_ascii(">"),
+                    (hx, hy),
+                    ui::MENU_TEXT_GOLD,
+                ));
+            }
+        }
         ui::scale_stage_text_draws(&mut d, origin, scale);
         texts.extend(d);
 
         let Some((_, rects)) = assets.chrome.as_ref() else {
             return;
         };
+        // The confirm's own 9-slice frame + the hand on the focused option
+        // row. The hand goes through retail's per-record quad drawer
+        // `FUN_801E3FF0` at the neutral `0x80` modulation.
+        if let (Some(sc), Some((prompt_lines, pen))) = (model.special_confirm.as_ref(), special_pen)
+        {
+            let (_, fallback) = ui::use_confirm_window(prompt_lines);
+            let rect = {
+                let r = assets.window_rect(ui::use_confirm_window(prompt_lines).0);
+                if r == (0, 0, 0, 0) { fallback } else { r }
+            };
+            sprites.extend(ui::menu_window_chrome_draws_for(
+                rects,
+                (rect.0 - 8, rect.1 - 8, rect.2 + 16, rect.3 + 16),
+                origin,
+                scale,
+            ));
+            let hand = ui::confirm_prompt_hand_pos(pen, prompt_lines, sc.cursor);
+            sprites.push(ui::save_ui_record_quad(
+                rects.cursor,
+                (0x80, 0x80, 0x80),
+                hand,
+                origin,
+                scale,
+            ));
+        }
         for &id in &legaia_asset::menu_windows::ITEMS_SCREEN_WINDOWS {
             if id <= window_ids::TAB_OPTIONS {
                 let (_, _, w, _) = assets.window_rect(id);

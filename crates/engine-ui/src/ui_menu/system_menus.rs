@@ -300,3 +300,103 @@ pub fn confirm_prompt_hand_pos(pen: (i32, i32), prompt_lines: usize, cursor: u8)
         pen.1 + (prompt_lines as i32 + cursor as i32) * CONFIRM_PROMPT_PITCH_Y,
     )
 }
+
+#[cfg(test)]
+mod confirm_prompt_tests {
+    use super::*;
+
+    /// Top-left of the first glyph of each emitted run, in draw order.
+    fn run_origins(draws: &[TextDraw]) -> Vec<(i32, i32)> {
+        // Every glyph of a run shares the run's baseline row, and the
+        // builder emits runs back to back, so a new row (or a leftward
+        // jump) starts a new run.
+        let mut out: Vec<(i32, i32)> = Vec::new();
+        let mut prev: Option<(i32, i32)> = None;
+        for d in draws {
+            let (x, y, _, _) = d.dst;
+            let starts_run = match prev {
+                None => true,
+                Some((px, py)) => y != py || x < px,
+            };
+            if starts_run {
+                out.push((x, y));
+            }
+            prev = Some((x, y));
+        }
+        out
+    }
+
+    /// `FUN_801D1DAC`: prompt at the window pen, then the two option rows
+    /// at `WX + 0x44`, one `0xE` pitch apart. The X inset is the thing
+    /// that separates this window from its Throw Out sibling
+    /// (`FUN_801D1B20`, options at `WX + 0x3C`), so pin it.
+    #[test]
+    fn one_line_variant_places_options_at_the_traced_inset() {
+        let font = legaia_font::synthetic_for_tests();
+        let pen = (14, 38);
+        let draws = confirm_prompt_draws(&font, &["Do you wish to save?"], &["Yes", "No"], pen);
+        let origins = run_origins(&draws);
+        assert_eq!(origins.len(), 3, "prompt + two options");
+        assert_eq!(origins[0], pen);
+        assert_eq!(origins[1], (pen.0 + 0x44, pen.1 + 0xE));
+        assert_eq!(origins[2], (pen.0 + 0x44, pen.1 + 0x1C));
+    }
+
+    /// `FUN_801D1F10`: a second prompt line indented `WX + 0xC` pushes the
+    /// whole option block one pitch down. Its rows then coincide with the
+    /// Throw Out confirm's `WY + 0x1C` / `WY + 0x2A`, which is what makes
+    /// the two easy to confuse - the inset is the discriminator.
+    #[test]
+    fn three_line_variant_indents_line_two_and_shifts_the_options() {
+        let font = legaia_font::synthetic_for_tests();
+        let pen = (14, 38);
+        let draws = confirm_prompt_draws(
+            &font,
+            &["Overwrite the", "saved data?"],
+            &["Yes", "No"],
+            pen,
+        );
+        let origins = run_origins(&draws);
+        assert_eq!(origins.len(), 4);
+        assert_eq!(origins[0], pen);
+        assert_eq!(origins[1], (pen.0 + CONFIRM_PROMPT_LINE2_X, pen.1 + 0xE));
+        assert_eq!(origins[2], (pen.0 + 0x44, pen.1 + 0x1C));
+        assert_eq!(origins[3], (pen.0 + 0x44, pen.1 + 0x2A));
+    }
+
+    /// Retail stages `DAT_8007B454 = 5` before each option string and
+    /// leaves the prompt on the default white - the option rows are teal,
+    /// the prompt is not.
+    #[test]
+    fn options_take_menu_ink_five_and_the_prompt_does_not() {
+        let font = legaia_font::synthetic_for_tests();
+        let draws = confirm_prompt_draws(&font, &["Save?"], &["Yes", "No"], (0, 0));
+        let prompt_row: Vec<_> = draws.iter().filter(|d| d.dst.1 == 0).collect();
+        assert!(!prompt_row.is_empty());
+        assert!(prompt_row.iter().all(|d| d.color == OPTIONS_INK_WHITE));
+        let option_rows: Vec<_> = draws.iter().filter(|d| d.dst.1 > 0).collect();
+        assert!(!option_rows.is_empty());
+        assert!(option_rows.iter().all(|d| d.color == CONFIRM_OPTION_INK));
+    }
+
+    /// The hand sits `0x14` left of the option strings (`WX + 0x30` vs
+    /// `WX + 0x44`) on the focused row, and steps by the same pitch the
+    /// rows do.
+    #[test]
+    fn hand_tracks_the_focused_option_row() {
+        let pen = (14, 38);
+        assert_eq!(
+            confirm_prompt_hand_pos(pen, 1, 0),
+            (pen.0 + CONFIRM_HAND_X, pen.1 + CONFIRM_PROMPT_PITCH_Y)
+        );
+        assert_eq!(
+            confirm_prompt_hand_pos(pen, 1, 1),
+            (pen.0 + CONFIRM_HAND_X, pen.1 + 2 * CONFIRM_PROMPT_PITCH_Y)
+        );
+        assert_eq!(
+            confirm_prompt_hand_pos(pen, 2, 0),
+            (pen.0 + CONFIRM_HAND_X, pen.1 + 2 * CONFIRM_PROMPT_PITCH_Y)
+        );
+        assert_eq!(CONFIRM_OPTION_X - CONFIRM_HAND_X, 0x14);
+    }
+}

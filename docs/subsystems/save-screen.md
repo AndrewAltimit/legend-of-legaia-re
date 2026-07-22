@@ -617,7 +617,10 @@ rects the GPU actually receives) pin the remaining layout:
   Sibling draw helpers under `FUN_801DD35C`: `FUN_801E02A4` re-emits the
   title art dimmed (two `0x64` sprites split at x = 192 across texture
   pages 8/9, RGB = the brightness parameter; port
-  `backdrop_dim_sprites`), `FUN_801E3FF0` stamps one record of the
+  `backdrop_dim_sprites`; its brightness byte is not a constant - the
+  caller computes a per-frame ramp and clamps it to `0..=0xFF` before
+  passing it to both this and `FUN_801E0418`, so the dim **is** the fade,
+  done as RGB modulation rather than as an alpha), `FUN_801E3FF0` stamps one record of the
   12-byte sprite-record table at `0x801E5048` as a `0x2C` quad at a pen
   with an RGB word (port `save_ui_record_quad`), and `FUN_801E0418`
   draws the five-row card-message / two-choice text stack (prompt at

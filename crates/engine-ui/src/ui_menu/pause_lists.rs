@@ -70,12 +70,47 @@ pub mod pause_list_window_ids {
     /// `FUN_801D1B20`; opened by the throw-out SM `FUN_801D8734`
     /// phase 3, sliding the command window out and this one in).
     pub const ITEMS_THROW_CONFIRM: usize = 9;
+    /// Items screen: the **Door of Light** Yes/No confirm (renderer
+    /// `FUN_801D1DAC`, the one-prompt-line variant; opened by the
+    /// special-Use SM `FUN_801D8A58`, submenu `0xB`, script
+    /// `0x801E4CBC`).
+    pub const ITEMS_USE_CONFIRM_1LINE: usize = 10;
+    /// Items screen: the **Incense** Yes/No confirm (renderer
+    /// `FUN_801D1F10`, the two-prompt-line variant; opened by
+    /// `FUN_801D8D94`, submenu `0xD`, script `0x801E4CE4`).
+    pub const ITEMS_USE_CONFIRM_2LINE: usize = 12;
 }
 
 /// Content rect of the Throw Out confirm window (descriptor id 9). It
 /// overlays the command window's area - retail closes id 13 while the
 /// confirm is open and reopens it on close.
 pub const ITEMS_THROW_CONFIRM_RECT: (i32, i32, i32, i32) = (14, 38, 144, 54);
+
+/// Content rect of the Door of Light confirm window (descriptor id 10,
+/// renderer [`crate::confirm_prompt_draws`]'s one-line arm).
+pub const ITEMS_USE_CONFIRM_1LINE_RECT: (i32, i32, i32, i32) = (76, 100, 168, 40);
+/// Content rect of the Incense confirm window (descriptor id 12, the
+/// two-prompt-line arm). Taller by one row pitch than its sibling,
+/// which is what the extra prompt line buys.
+pub const ITEMS_USE_CONFIRM_2LINE_RECT: (i32, i32, i32, i32) = (76, 88, 168, 54);
+
+/// Descriptor id + pinned fallback rect of the special Use-route confirm
+/// window that carries `prompt_lines` prompt rows. Retail has one window
+/// (and one renderer) per line count, so the line count is what selects
+/// the window - this keeps both hosts resolving the same one.
+pub const fn use_confirm_window(prompt_lines: usize) -> (usize, (i32, i32, i32, i32)) {
+    if prompt_lines >= 2 {
+        (
+            pause_list_window_ids::ITEMS_USE_CONFIRM_2LINE,
+            ITEMS_USE_CONFIRM_2LINE_RECT,
+        )
+    } else {
+        (
+            pause_list_window_ids::ITEMS_USE_CONFIRM_1LINE,
+            ITEMS_USE_CONFIRM_1LINE_RECT,
+        )
+    }
+}
 
 /// Items screen window set with the pinned descriptor content rects, in
 /// retail draw order. The rects double as a disc-free fallback for hosts
