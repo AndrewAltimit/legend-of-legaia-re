@@ -626,6 +626,27 @@ still corroborates the *id labelling* - the four party-table ids reproduce
 exactly, water/earth/light/dark corroborate, and the byte takes only `0..=7`
 across every populated record.)
 
+**The slot-7 attacker is literal, and its element is the streamed cast-body
+record's.** Every per-spell summon overlay module (PROT 0902..0934) contains
+its own `jal FUN_801DD0AC` with `li a1, 7` immediately before it (byte-scan of
+the extracted entries for the call word `0x0C07742B`), so a cast's damage roll
+is issued by the spell's own overlay with the attacker slot hardcoded to 7
+while the acting seat `ctx+0x13` stays on the caster - the battle-action
+overlay itself carries exactly one static roll call site (`0x801E188C`, which
+passes `ctx+0x13`). Slot 7 resolves through `0x801C9348[4]` = `0x801C9358`,
+the pointer `FUN_801F19EC` installs when a group's actor-record slot streams
+([`summon-readef.md`](../formats/summon-readef.md#actor-record-slot-last-streamed-slot-of-a-group) -
+the record's `+0x1D` element byte is tabulated there). `0x801C9358` is **zero
+at battle init** and is written *only* by that installer, so a cast whose
+readef group streams no actor record resolves its element through whatever
+the slot last held (null → the `lbu` lands on `main_ram[0x1D]` via the KUSEG
+mirror). Live-confirmed on a Gimard cast: `FUN_801DD0AC(_, 7, target)` with
+the element read from the installed Burning Attack record
+(`scripts/pcsx-redux/autorun_element_attribution_trace.lua`). Which attacker
+slot an **enemy** magic-band cast (a `+0x21` id with no move-power record,
+e.g. Bloody Horns `0x5C`) passes is the open link - see
+[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
+
 **Engine wiring.** The matrix + per-character table load from the same PROT 0898
 overlay as the move-power table (`World::element_affinity`), and the monster
 special-attack path scales by `matrix[enemy_element][party_member_element]`
