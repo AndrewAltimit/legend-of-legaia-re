@@ -152,6 +152,581 @@ impl ShopSession {
     }
 }
 
+/// Retail gold cap enforced when a sale credits the purse (`0x98967F` at
+/// `0x801dbec4..0x801dbeec`).
+pub const GOLD_CAP: i32 = 9_999_999;
+
+/// Frame-delta accumulation threshold of the post-sale exit delay
+/// (`FUN_801DBD94` phase 2, `slti 0x11` at `0x801dc194`).
+pub const SELL_QTY_EXIT_DELAY: i32 = 0x11;
+
+/// The retail sell credit: `(item_record_price * qty) >> 1` - half the
+/// item table's price halfword, floored (`mult` + `sra 1` at
+/// `0x801dbec0..0x801dbed4`). The price is the *item table's* (`+0x2` of
+/// the 12-byte `0x80074368` record), not a per-shop price.
+pub fn sell_credit(price: u16, qty: i32) -> i32 {
+    (price as i32 * qty) >> 1
+}
+
+/// Post-sale purse update: add the credit, clamp to [`GOLD_CAP`].
+pub fn apply_sale_gold(gold: i32, credit: i32) -> i32 {
+    (gold + credit).min(GOLD_CAP)
+}
+
+/// The post-sale sell-list scroll fix-up (`0x801dbef0..0x801dbf4c`):
+/// when the sold row is the **last** row and sits alone at the top of
+/// the final page (`selected == count-1 && selected == scroll_top &&
+/// selected > 0`), the selection steps back one and the scroll steps
+/// back one page (retail reads `visible_rows` off live window `0x26`'s
+/// list node). Applied on every confirmed sale, whole-stack or not -
+/// the condition, not the stack size, is the gate.
+pub fn sell_list_fixup(
+    sel: &mut crate::menu_list_rows::ListSelection,
+    row_count: i32,
+    visible_rows: i32,
+) {
+    if sel.selected == row_count - 1 && sel.selected == sel.scroll_top && sel.selected > 0 {
+        sel.selected = row_count - 2;
+        sel.scroll_top -= visible_rows;
+    }
+}
+
+/// The shared quantity-picker pad decode (identical instruction shapes
+/// in `FUN_801DBD94` at `0x801dc034..0x801dc178` and `FUN_801DB7F4` at
+/// `0x801db980..0x801dbac4`): Right/Left step by one, Down/Up by ten,
+/// clamped to `[1, max]`; a step off either end is a silent no-op (the
+/// retail gates are `qty < max` for the increments and `qty >= 2` for
+/// the decrements, checked before the SFX fires). Returns the new
+/// quantity, or `None` when nothing moved.
+fn quantity_step(pressed: u16, qty: i32, max: i32) -> Option<i32> {
+    use crate::input::PadButton;
+    if pressed & PadButton::Right.mask() != 0 && qty < max {
+        return Some(qty + 1);
+    }
+    if pressed & PadButton::Left.mask() != 0 && qty >= 2 {
+        return Some(qty - 1);
+    }
+    if pressed & PadButton::Down.mask() != 0 && qty < max {
+        return Some((qty + 10).min(max));
+    }
+    if pressed & PadButton::Up.mask() != 0 && qty >= 2 {
+        return Some((qty - 10).max(1));
+    }
+    None
+}
+
+/// What a [`SellQuantitySession`] frame produced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SellQtyEvent {
+    None,
+    /// Quantity moved (retail cues SFX `0x21`).
+    Moved,
+    /// Sale confirmed (SFX `0x36`): consume `qty` copies of `item_id`
+    /// and credit [`sell_credit`] gold (clamped via [`apply_sale_gold`]).
+    /// A whole-stack sale expects a [`SellQuantitySession::finish_whole_stack`]
+    /// call with the post-sale bag-rescan result.
+    Sold {
+        item_id: u8,
+        qty: u8,
+        credit: i32,
+    },
+    /// Backed out (SFX `0x37`) - the session is done, back to the sell
+    /// list.
+    Cancelled,
+    /// Session finished: return to the sell list (partial sale, or a
+    /// whole-stack sale with items left in the bag).
+    ExitToSellList,
+    /// Session finished after the exit delay: the sale emptied the bag -
+    /// return to the shop root menu.
+    ExitToShopRoot,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SellQtyPhase {
+    /// Retail phase 0: staging + window script.
+    Init,
+    /// Retail phase 1: pad-driven quantity edit.
+    Interactive,
+    /// Post-sale: the next tick returns to the sell list.
+    AfterSale,
+    /// Retail phase 2: exit-delay accumulator before the shop root.
+    ExitDelay,
+    Done,
+}
+
+/// PORT: FUN_801DBD94 (menu-overlay sub-screen `0x1F` - the shop-sell
+/// quantity picker; `see ghidra/scripts/funcs/overlay_menu_801dbd94.txt`).
+///
+/// Phase 0 seeds quantity 1 and reads the staged bag slot's count as the
+/// maximum (`0x80085959 + slot*2` -> `DAT_801E46B8`), hides the list
+/// hand (cursor `|= 0x1000`) and parks the kernel. Phase 1 (gated on
+/// the window-slide latch) maps the pad edges: Right/Left step the
+/// quantity by one, Down/Up by ten, clamped to `[1, max]` - each move
+/// gated so a step off either end is a silent no-op (`0x801dc034..
+/// 0x801dc178`). Confirm consumes the quantity from the bag
+/// (`FUN_80042310`), credits half the item-table price per copy
+/// ([`sell_credit`], purse clamp [`GOLD_CAP`]) and applies the
+/// [`sell_list_fixup`]; a whole-stack sale rescans the bag (a slot
+/// counts only when both id and count bytes are non-zero) and, when
+/// empty, runs the ~17-unit exit delay (phase 2) before returning to
+/// the shop root instead of the sell list.
+///
+/// NOT WIRED: the menu runtime's quantity flow
+/// ([`ShopSession::set_quantity`]) still drives the hosts; this session
+/// is the retail-shaped replacement.
+#[derive(Debug, Clone)]
+pub struct SellQuantitySession {
+    pub item_id: u8,
+    /// Item-record price halfword (`0x80074368 + id*0xC + 2`).
+    pub price: u16,
+    /// Current quantity (`DAT_801E46B4`), seeded 1.
+    pub qty: i32,
+    /// Staged bag slot's held count (`DAT_801E46B8`).
+    pub max: i32,
+    phase: SellQtyPhase,
+    /// Exit-delay accumulator (`DAT_801E46D0` reuse).
+    delay: i32,
+}
+
+impl SellQuantitySession {
+    pub fn new(item_id: u8, price: u16, held_count: u8) -> Self {
+        Self {
+            item_id,
+            price,
+            qty: 1,
+            max: held_count as i32,
+            phase: SellQtyPhase::Init,
+            delay: 0,
+        }
+    }
+
+    /// Drive one frame. `pressed` is the edge-triggered pad word;
+    /// `frame_delta` the scratchpad frame-delta units (1 per vsync at
+    /// 60 Hz) consumed by the exit delay.
+    pub fn tick(&mut self, pressed: u16, frame_delta: i32) -> SellQtyEvent {
+        use crate::input::PadButton;
+        match self.phase {
+            SellQtyPhase::Init => {
+                // Phase 0: staging + window script; interactive next
+                // frame.
+                self.qty = 1;
+                self.phase = SellQtyPhase::Interactive;
+                SellQtyEvent::None
+            }
+            SellQtyPhase::Interactive => {
+                if pressed & PadButton::Cross.mask() != 0 {
+                    let qty = self.qty.clamp(1, self.max.max(1)) as u8;
+                    let credit = sell_credit(self.price, qty as i32);
+                    // A whole-stack sale waits for the caller's bag
+                    // rescan (`finish_whole_stack`); a partial sale
+                    // returns to the sell list next tick.
+                    self.phase = SellQtyPhase::AfterSale;
+                    self.delay = 0;
+                    return SellQtyEvent::Sold {
+                        item_id: self.item_id,
+                        qty,
+                        credit,
+                    };
+                }
+                if pressed & (PadButton::Circle.mask() | PadButton::Triangle.mask()) != 0 {
+                    self.phase = SellQtyPhase::Done;
+                    return SellQtyEvent::Cancelled;
+                }
+                if let Some(q) = quantity_step(pressed, self.qty, self.max) {
+                    self.qty = q;
+                    return SellQtyEvent::Moved;
+                }
+                SellQtyEvent::None
+            }
+            SellQtyPhase::AfterSale => {
+                self.phase = SellQtyPhase::Done;
+                SellQtyEvent::ExitToSellList
+            }
+            SellQtyPhase::ExitDelay => {
+                self.delay += frame_delta;
+                if self.delay >= SELL_QTY_EXIT_DELAY {
+                    self.phase = SellQtyPhase::Done;
+                    SellQtyEvent::ExitToShopRoot
+                } else {
+                    SellQtyEvent::None
+                }
+            }
+            SellQtyPhase::Done => SellQtyEvent::None,
+        }
+    }
+
+    /// Route a whole-stack sale by the caller's bag rescan result
+    /// (retail: a slot counts only when both its id and count bytes are
+    /// non-zero). An empty bag enters the exit-delay phase; otherwise
+    /// the next [`Self::tick`] returns to the sell list.
+    pub fn finish_whole_stack(&mut self, bag_empty: bool) {
+        if bag_empty {
+            self.phase = SellQtyPhase::ExitDelay;
+            self.delay = 0;
+        } else {
+            self.phase = SellQtyPhase::AfterSale;
+        }
+    }
+
+    /// Session left the quantity screen.
+    pub fn is_done(&self) -> bool {
+        self.phase == SellQtyPhase::Done
+    }
+}
+
+/// Retail per-stack held cap the buy quantity clamps against (`0x63` at
+/// `0x801db8a4..0x801db8ec`).
+pub const BUY_QTY_CAP: i32 = 99;
+
+/// The Point Card id whose held-count gates the accrual
+/// (`FUN_80042F4C(0xFE)` at `0x801dbac8`).
+pub const POINT_CARD_ITEM_ID: u8 = 0xFE;
+
+/// Point Card cap - same `0x98967F` constant as the purse.
+pub const POINT_CARD_CAP: i32 = 9_999_999;
+
+/// Point Card accrual for one buy commit: `(price / 20) * qty` (the
+/// `0xCCCCCCCD` reciprocal-multiply + `srl 4`, truncated to 16 bits,
+/// times the quantity - `0x801dbadc..0x801dbb3c`). Credited **before**
+/// the gold debit, only while the party holds item `0xFE`.
+pub fn point_card_credit(price: u16, qty: i32) -> i32 {
+    (price as i32 / 20) * qty
+}
+
+/// Post-buy Point Card counter update, clamped to [`POINT_CARD_CAP`].
+pub fn apply_point_card(points: i32, credit: i32) -> i32 {
+    (points + credit).min(POINT_CARD_CAP)
+}
+
+/// The buy-quantity maximum (`FUN_801DB7F4` phase 0): `gold / price`,
+/// clamped to [`BUY_QTY_CAP`], further clamped to `99 - held` when the
+/// bag already holds a stack of the item (`FUN_80042EE0` slot scan at
+/// `0x801db8ac..0x801db8ec`). The price is the item table's halfword -
+/// retail shop buys carry no per-shop price.
+pub fn buy_qty_max(gold: i32, price: u16, held: Option<u8>) -> i32 {
+    let mut max = (gold / (price as i32).max(1)).min(BUY_QTY_CAP);
+    if let Some(held) = held {
+        max = max.min(BUY_QTY_CAP - held as i32);
+    }
+    max
+}
+
+/// What a [`BuyQuantitySession`] frame produced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuyQtyEvent {
+    None,
+    /// Quantity moved (SFX `0x21`).
+    Moved,
+    /// Purchase committed (`FUN_800421D4(id, qty)` + gold debit):
+    /// consume `cost` gold, add `qty` copies, and - when
+    /// `point_credit > 0` - credit the Point Card counter (the credit is
+    /// non-zero only while the caller reported the Point Card held).
+    Bought {
+        item_id: u8,
+        qty: u8,
+        cost: i32,
+        point_credit: i32,
+    },
+    /// Backed out (SFX `0x37`) - return to the buy list.
+    Cancelled,
+    /// Session finished - back to the buy list (submenu `0x1B`).
+    ExitToBuyList,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BuyQtyPhase {
+    /// Retail phase 0: max derivation + window script.
+    Init,
+    /// Retail phase 1: pad-driven quantity edit.
+    Interactive,
+    /// Retail phases 2+3: Point Card accrual + commit (collapsed - the
+    /// retail split is a one-frame window-script beat).
+    Commit,
+    /// Retail phase 4: the Point Card toast waits for a confirm/cancel
+    /// press before returning to the list.
+    ToastWait,
+    /// Exit next tick.
+    Exit,
+    Done,
+}
+
+/// PORT: FUN_801DB7F4 (menu-overlay shop **buy quantity + commit**
+/// sub-screen; `see ghidra/scripts/funcs/overlay_menu_801db7f4.txt`).
+///
+/// Phase 0 derives the quantity maximum ([`buy_qty_max`]) and opens the
+/// picker window. Phase 1 maps the pad exactly like the sell picker
+/// (shared [`quantity_step`] decode; confirm cues SFX `0x2C`, cancel
+/// `0x37`). The commit credits the Point Card **before** the gold debit
+/// ([`point_card_credit`], gated on holding item `0xFE`), adds the
+/// stack, debits `price * qty`, and - only when the Point Card toast
+/// was shown - waits for a button press (SFX `0x20`) before dropping
+/// back to the buy list.
+///
+/// NOT WIRED: the menu runtime's quantity flow
+/// ([`ShopSession::set_quantity`] + `World::buy_from_shop`) still
+/// drives the hosts; this session is the retail-shaped replacement.
+#[derive(Debug, Clone)]
+pub struct BuyQuantitySession {
+    pub item_id: u8,
+    /// Item-record price halfword.
+    pub price: u16,
+    /// Current quantity (`DAT_801E46B4`), seeded 1.
+    pub qty: i32,
+    /// Derived maximum (`DAT_801E46B8`).
+    pub max: i32,
+    /// Party holds the Point Card (item `0xFE`).
+    pub point_card_held: bool,
+    phase: BuyQtyPhase,
+}
+
+impl BuyQuantitySession {
+    pub fn new(
+        item_id: u8,
+        price: u16,
+        gold: i32,
+        held: Option<u8>,
+        point_card_held: bool,
+    ) -> Self {
+        Self {
+            item_id,
+            price,
+            qty: 1,
+            max: buy_qty_max(gold, price, held),
+            point_card_held,
+            phase: BuyQtyPhase::Init,
+        }
+    }
+
+    /// Drive one frame from the edge-triggered pad word.
+    pub fn tick(&mut self, pressed: u16) -> BuyQtyEvent {
+        use crate::input::PadButton;
+        match self.phase {
+            BuyQtyPhase::Init => {
+                self.qty = 1;
+                self.phase = BuyQtyPhase::Interactive;
+                BuyQtyEvent::None
+            }
+            BuyQtyPhase::Interactive => {
+                if pressed & PadButton::Cross.mask() != 0 {
+                    self.phase = BuyQtyPhase::Commit;
+                    return BuyQtyEvent::None;
+                }
+                if pressed & (PadButton::Circle.mask() | PadButton::Triangle.mask()) != 0 {
+                    self.phase = BuyQtyPhase::Done;
+                    return BuyQtyEvent::Cancelled;
+                }
+                if let Some(q) = quantity_step(pressed, self.qty, self.max) {
+                    self.qty = q;
+                    return BuyQtyEvent::Moved;
+                }
+                BuyQtyEvent::None
+            }
+            BuyQtyPhase::Commit => {
+                let qty = self.qty.clamp(1, self.max.max(1));
+                let point_credit = if self.point_card_held {
+                    point_card_credit(self.price, qty)
+                } else {
+                    0
+                };
+                self.phase = if self.point_card_held {
+                    BuyQtyPhase::ToastWait
+                } else {
+                    BuyQtyPhase::Exit
+                };
+                BuyQtyEvent::Bought {
+                    item_id: self.item_id,
+                    qty: qty as u8,
+                    cost: self.price as i32 * qty,
+                    point_credit,
+                }
+            }
+            BuyQtyPhase::ToastWait => {
+                if pressed
+                    & (PadButton::Cross.mask()
+                        | PadButton::Circle.mask()
+                        | PadButton::Triangle.mask())
+                    != 0
+                {
+                    self.phase = BuyQtyPhase::Done;
+                    BuyQtyEvent::ExitToBuyList
+                } else {
+                    BuyQtyEvent::None
+                }
+            }
+            BuyQtyPhase::Exit => {
+                self.phase = BuyQtyPhase::Done;
+                BuyQtyEvent::ExitToBuyList
+            }
+            BuyQtyPhase::Done => BuyQtyEvent::None,
+        }
+    }
+
+    pub fn is_done(&self) -> bool {
+        self.phase == BuyQtyPhase::Done
+    }
+}
+
+/// What a [`BuyRecipientSession`] frame produced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuyRecipientEvent {
+    None,
+    /// Cursor moved between the rows (SFX `0x21`).
+    Moved,
+    /// Row 0 confirmed: a plain single-unit buy into the bag (SFX
+    /// `0x2C`) - add one copy, debit `cost`, credit `point_credit`.
+    BoughtToBag {
+        item_id: u8,
+        cost: i32,
+        point_credit: i32,
+    },
+    /// A party row confirmed (SFX `0x24`): buy **and equip now**. The
+    /// previously equipped piece in the target slot (if any) returns to
+    /// the bag (`FUN_800421D4(old, 1)` at `0x801db6a4`), the purchase
+    /// equips directly - it never enters the bag - then the gold debit
+    /// and Point Card accrual run and the ability bits rebuild
+    /// (`FUN_80042558`).
+    BoughtAndEquipped {
+        /// 0-based party index (`cursor - 1`).
+        party_index: u8,
+        item_id: u8,
+        cost: i32,
+        point_credit: i32,
+    },
+    /// Confirmed a party member who cannot equip the item (SFX `0x23`).
+    Buzz,
+    /// Backed out (SFX `0x37`) - back to the buy list.
+    Cancelled,
+    /// Session finished (post-toast) - back to the buy list.
+    ExitToBuyList,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BuyRecipientPhase {
+    Init,
+    Interactive,
+    /// Point Card toast (script `0x801E4EA8`): waits for a press.
+    ToastWait,
+    Exit,
+    Done,
+}
+
+/// PORT: FUN_801DB380 (menu-overlay shop **buy recipient picker**
+/// sub-screen; `see ghidra/scripts/funcs/overlay_menu_801db380.txt`).
+///
+/// Navigates `party_count + 1` rows through the shared cursor
+/// primitive (`FUN_801D688C`, wrap - port
+/// [`crate::menu_input::menu_cursor_nav`]): row 0 buys one copy into
+/// the bag, a party row buys **and equips immediately** after an
+/// equippability check (item subtype -> equip-record `+6` mask vs the
+/// per-character mask byte `0x801E43F0[char]`; a mismatch buzzes and
+/// stays). Both purchase paths debit the item-table price, accrue the
+/// Point Card ([`point_card_credit`], gated on holding item `0xFE`)
+/// and - only when the accrual ran - hold a toast for a button press
+/// (SFX `0x20`) before returning to the buy list.
+///
+/// NOT WIRED: the hosts' shop flow buys into the bag only; equip-now
+/// needs the equip-session bridge.
+#[derive(Debug, Clone)]
+pub struct BuyRecipientSession {
+    pub item_id: u8,
+    /// Item-record price halfword.
+    pub price: u16,
+    pub point_card_held: bool,
+    /// Cursor row: 0 = the bag, `1..=party` = party members.
+    pub cursor: u32,
+    /// Per-party-member equippability (index 0 = party member 0 = row 1).
+    pub can_equip: Vec<bool>,
+    phase: BuyRecipientPhase,
+}
+
+impl BuyRecipientSession {
+    pub fn new(item_id: u8, price: u16, can_equip: Vec<bool>, point_card_held: bool) -> Self {
+        Self {
+            item_id,
+            price,
+            point_card_held,
+            cursor: 0,
+            can_equip,
+            phase: BuyRecipientPhase::Init,
+        }
+    }
+
+    /// Drive one frame from the menu nav-button edges.
+    pub fn tick(&mut self, buttons: crate::menu_input::NavButtons) -> BuyRecipientEvent {
+        use crate::menu_input::CursorNav;
+        match self.phase {
+            BuyRecipientPhase::Init => {
+                self.cursor = 0;
+                self.phase = BuyRecipientPhase::Interactive;
+                BuyRecipientEvent::None
+            }
+            BuyRecipientPhase::Interactive => {
+                let rows = self.can_equip.len() as u32 + 1;
+                match crate::menu_input::menu_cursor_nav(&mut self.cursor, rows, true, buttons) {
+                    CursorNav::Confirm => {
+                        let row = self.cursor & 0xFFF;
+                        let point_credit = if self.point_card_held {
+                            point_card_credit(self.price, 1)
+                        } else {
+                            0
+                        };
+                        if row == 0 {
+                            self.phase = if self.point_card_held {
+                                BuyRecipientPhase::ToastWait
+                            } else {
+                                BuyRecipientPhase::Exit
+                            };
+                            BuyRecipientEvent::BoughtToBag {
+                                item_id: self.item_id,
+                                cost: self.price as i32,
+                                point_credit,
+                            }
+                        } else if self.can_equip.get(row as usize - 1) == Some(&true) {
+                            self.phase = if self.point_card_held {
+                                BuyRecipientPhase::ToastWait
+                            } else {
+                                BuyRecipientPhase::Exit
+                            };
+                            BuyRecipientEvent::BoughtAndEquipped {
+                                party_index: (row - 1) as u8,
+                                item_id: self.item_id,
+                                cost: self.price as i32,
+                                point_credit,
+                            }
+                        } else {
+                            // Retail buzzes and stays on this sub-screen.
+                            BuyRecipientEvent::Buzz
+                        }
+                    }
+                    CursorNav::Cancel => {
+                        self.phase = BuyRecipientPhase::Done;
+                        BuyRecipientEvent::Cancelled
+                    }
+                    CursorNav::Moved => BuyRecipientEvent::Moved,
+                    CursorNav::None => BuyRecipientEvent::None,
+                }
+            }
+            BuyRecipientPhase::ToastWait => {
+                if buttons.confirm || buttons.cancel {
+                    self.phase = BuyRecipientPhase::Done;
+                    BuyRecipientEvent::ExitToBuyList
+                } else {
+                    BuyRecipientEvent::None
+                }
+            }
+            BuyRecipientPhase::Exit => {
+                self.phase = BuyRecipientPhase::Done;
+                BuyRecipientEvent::ExitToBuyList
+            }
+            BuyRecipientPhase::Done => BuyRecipientEvent::None,
+        }
+    }
+
+    pub fn is_done(&self) -> bool {
+        self.phase == BuyRecipientPhase::Done
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,5 +850,282 @@ mod tests {
     fn buy_item_count_reflects_inventory_length() {
         let s = session_with_items();
         assert_eq!(s.buy_item_count(), 2);
+    }
+
+    use crate::input::PadButton;
+    use crate::menu_list_rows::ListSelection;
+
+    #[test]
+    fn sell_credit_is_half_price_floored() {
+        assert_eq!(sell_credit(100, 2), 100);
+        // Odd product floors: 15 * 3 = 45 -> 22.
+        assert_eq!(sell_credit(15, 3), 22);
+        assert_eq!(sell_credit(1, 1), 0);
+    }
+
+    #[test]
+    fn apply_sale_gold_clamps_at_cap() {
+        assert_eq!(apply_sale_gold(100, 50), 150);
+        assert_eq!(apply_sale_gold(GOLD_CAP - 10, 50), GOLD_CAP);
+    }
+
+    #[test]
+    fn sell_quantity_pad_steps_and_clamps() {
+        let mut s = SellQuantitySession::new(0x40, 100, 25);
+        assert_eq!(s.tick(0, 1), SellQtyEvent::None); // init frame
+        let right = PadButton::Right.mask();
+        let left = PadButton::Left.mask();
+        let down = PadButton::Down.mask();
+        let up = PadButton::Up.mask();
+        assert_eq!(s.tick(right, 1), SellQtyEvent::Moved);
+        assert_eq!(s.qty, 2);
+        assert_eq!(s.tick(down, 1), SellQtyEvent::Moved);
+        assert_eq!(s.qty, 12);
+        // +10 clamps to max.
+        assert_eq!(s.tick(down, 1), SellQtyEvent::Moved);
+        assert_eq!(s.tick(down, 1), SellQtyEvent::Moved);
+        assert_eq!(s.qty, 25);
+        // At max, +1 is a silent no-op.
+        assert_eq!(s.tick(right, 1), SellQtyEvent::None);
+        // -10 floors at 1.
+        assert_eq!(s.tick(up, 1), SellQtyEvent::Moved);
+        assert_eq!(s.tick(up, 1), SellQtyEvent::Moved);
+        assert_eq!(s.tick(up, 1), SellQtyEvent::Moved);
+        assert_eq!(s.qty, 1);
+        // At 1, -1 and -10 are silent no-ops (retail gates on qty >= 2).
+        assert_eq!(s.tick(left, 1), SellQtyEvent::None);
+        assert_eq!(s.tick(up, 1), SellQtyEvent::None);
+    }
+
+    #[test]
+    fn sell_quantity_partial_sale_returns_to_sell_list() {
+        let mut s = SellQuantitySession::new(0x40, 100, 5);
+        s.tick(0, 1);
+        s.tick(PadButton::Right.mask(), 1); // qty 2
+        let ev = s.tick(PadButton::Cross.mask(), 1);
+        assert_eq!(
+            ev,
+            SellQtyEvent::Sold {
+                item_id: 0x40,
+                qty: 2,
+                credit: 100
+            }
+        );
+        assert_eq!(s.tick(0, 1), SellQtyEvent::ExitToSellList);
+        assert!(s.is_done());
+    }
+
+    #[test]
+    fn sell_quantity_whole_stack_empty_bag_delays_to_shop_root() {
+        let mut s = SellQuantitySession::new(0x40, 100, 1);
+        s.tick(0, 1);
+        let ev = s.tick(PadButton::Cross.mask(), 1);
+        assert_eq!(
+            ev,
+            SellQtyEvent::Sold {
+                item_id: 0x40,
+                qty: 1,
+                credit: 50
+            }
+        );
+        s.finish_whole_stack(true);
+        // 17 frame-delta units accumulate before the exit fires.
+        for _ in 0..(SELL_QTY_EXIT_DELAY - 1) {
+            assert_eq!(s.tick(0, 1), SellQtyEvent::None);
+        }
+        assert_eq!(s.tick(0, 1), SellQtyEvent::ExitToShopRoot);
+    }
+
+    #[test]
+    fn sell_quantity_whole_stack_with_items_left_returns_to_list() {
+        let mut s = SellQuantitySession::new(0x40, 100, 1);
+        s.tick(0, 1);
+        s.tick(PadButton::Cross.mask(), 1);
+        s.finish_whole_stack(false);
+        assert_eq!(s.tick(0, 1), SellQtyEvent::ExitToSellList);
+    }
+
+    #[test]
+    fn sell_quantity_cancel() {
+        let mut s = SellQuantitySession::new(0x40, 100, 5);
+        s.tick(0, 1);
+        assert_eq!(s.tick(PadButton::Circle.mask(), 1), SellQtyEvent::Cancelled);
+        assert!(s.is_done());
+    }
+
+    use crate::menu_input::NavButtons;
+
+    fn nav(confirm: bool, cancel: bool, left: bool, right: bool) -> NavButtons {
+        NavButtons {
+            confirm,
+            cancel,
+            left,
+            right,
+        }
+    }
+
+    #[test]
+    fn buy_recipient_row0_buys_into_bag() {
+        let mut s = BuyRecipientSession::new(0x30, 200, vec![true, false], false);
+        assert_eq!(
+            s.tick(nav(false, false, false, false)),
+            BuyRecipientEvent::None
+        );
+        assert_eq!(
+            s.tick(nav(true, false, false, false)),
+            BuyRecipientEvent::BoughtToBag {
+                item_id: 0x30,
+                cost: 200,
+                point_credit: 0,
+            }
+        );
+        assert_eq!(
+            s.tick(nav(false, false, false, false)),
+            BuyRecipientEvent::ExitToBuyList
+        );
+        assert!(s.is_done());
+    }
+
+    #[test]
+    fn buy_recipient_party_row_equips_or_buzzes() {
+        let mut s = BuyRecipientSession::new(0x30, 200, vec![true, false], true);
+        s.tick(nav(false, false, false, false));
+        assert_eq!(
+            s.tick(nav(false, false, false, true)),
+            BuyRecipientEvent::Moved
+        );
+        assert_eq!(
+            s.tick(nav(false, false, false, true)),
+            BuyRecipientEvent::Moved
+        );
+        // Row 2 = party member 1, cannot equip -> buzz, stays.
+        assert_eq!(
+            s.tick(nav(true, false, false, false)),
+            BuyRecipientEvent::Buzz
+        );
+        assert!(!s.is_done());
+        // Back to row 1 = party member 0 (can equip).
+        s.tick(nav(false, false, true, false));
+        assert_eq!(
+            s.tick(nav(true, false, false, false)),
+            BuyRecipientEvent::BoughtAndEquipped {
+                party_index: 0,
+                item_id: 0x30,
+                cost: 200,
+                point_credit: 10,
+            }
+        );
+        // Point Card toast holds for a press.
+        assert_eq!(
+            s.tick(nav(false, false, false, false)),
+            BuyRecipientEvent::None
+        );
+        assert_eq!(
+            s.tick(nav(true, false, false, false)),
+            BuyRecipientEvent::ExitToBuyList
+        );
+    }
+
+    #[test]
+    fn buy_recipient_cancel_returns_to_list() {
+        let mut s = BuyRecipientSession::new(0x30, 200, vec![true], false);
+        s.tick(nav(false, false, false, false));
+        assert_eq!(
+            s.tick(nav(false, true, false, false)),
+            BuyRecipientEvent::Cancelled
+        );
+        assert!(s.is_done());
+    }
+
+    #[test]
+    fn point_card_credit_is_five_percent_per_unit() {
+        // floor(price / 20) per unit, times qty.
+        assert_eq!(point_card_credit(100, 3), 15);
+        assert_eq!(point_card_credit(19, 5), 0); // < 20 gold earns nothing
+        assert_eq!(point_card_credit(59, 2), 4); // floor(59/20) = 2 per unit
+        assert_eq!(apply_point_card(POINT_CARD_CAP - 3, 10), POINT_CARD_CAP);
+    }
+
+    #[test]
+    fn buy_qty_max_laws() {
+        // gold / price, capped at 99.
+        assert_eq!(buy_qty_max(1000, 100, None), 10);
+        assert_eq!(buy_qty_max(100_000, 100, None), 99);
+        // Held stack tightens the cap to 99 - held.
+        assert_eq!(buy_qty_max(100_000, 100, Some(95)), 4);
+        // Poorer than one copy -> 0.
+        assert_eq!(buy_qty_max(50, 100, None), 0);
+    }
+
+    #[test]
+    fn buy_quantity_commit_with_point_card_waits_for_toast() {
+        let mut s = BuyQuantitySession::new(0x40, 100, 10_000, None, true);
+        assert_eq!(s.tick(0), BuyQtyEvent::None); // init
+        assert_eq!(s.tick(PadButton::Right.mask()), BuyQtyEvent::Moved);
+        assert_eq!(s.qty, 2);
+        assert_eq!(s.tick(PadButton::Cross.mask()), BuyQtyEvent::None);
+        assert_eq!(
+            s.tick(0),
+            BuyQtyEvent::Bought {
+                item_id: 0x40,
+                qty: 2,
+                cost: 200,
+                point_credit: 10,
+            }
+        );
+        // Point Card toast holds until a button press.
+        assert_eq!(s.tick(0), BuyQtyEvent::None);
+        assert_eq!(s.tick(PadButton::Cross.mask()), BuyQtyEvent::ExitToBuyList);
+        assert!(s.is_done());
+    }
+
+    #[test]
+    fn buy_quantity_commit_without_point_card_exits_directly() {
+        let mut s = BuyQuantitySession::new(0x40, 100, 10_000, None, false);
+        s.tick(0);
+        s.tick(PadButton::Cross.mask());
+        assert_eq!(
+            s.tick(0),
+            BuyQtyEvent::Bought {
+                item_id: 0x40,
+                qty: 1,
+                cost: 100,
+                point_credit: 0,
+            }
+        );
+        assert_eq!(s.tick(0), BuyQtyEvent::ExitToBuyList);
+    }
+
+    #[test]
+    fn sell_list_fixup_last_row_alone_on_final_page() {
+        // Selling with the hand on the last row, alone at the top of the
+        // final page: selection steps back one, scroll steps back a page.
+        let mut sel = ListSelection {
+            scroll_top: 12,
+            selected: 12,
+        };
+        sell_list_fixup(&mut sel, 13, 12);
+        assert_eq!((sel.scroll_top, sel.selected), (0, 11));
+        // Not the last row -> untouched.
+        let mut sel = ListSelection {
+            scroll_top: 12,
+            selected: 12,
+        };
+        sell_list_fixup(&mut sel, 14, 12);
+        assert_eq!((sel.scroll_top, sel.selected), (12, 12));
+        // Last row but not at the page top -> untouched.
+        let mut sel = ListSelection {
+            scroll_top: 12,
+            selected: 13,
+        };
+        sell_list_fixup(&mut sel, 14, 12);
+        assert_eq!((sel.scroll_top, sel.selected), (12, 13));
+        // Row 0 never steps back.
+        let mut sel = ListSelection {
+            scroll_top: 0,
+            selected: 0,
+        };
+        sell_list_fixup(&mut sel, 1, 12);
+        assert_eq!((sel.scroll_top, sel.selected), (0, 0));
     }
 }

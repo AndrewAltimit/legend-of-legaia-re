@@ -698,7 +698,13 @@ descriptor's `132x182`.
 
 Engine port: `engine-core::pause_screens::list_kernel_navigate` (the
 navigation phase, page-local wrap + page flip); the row/header draws
-stay in `engine-ui::pause_lists` at the capture-pinned pens.
+stay in `engine-ui::pause_lists` at the capture-pinned pens. The rest
+of the kernel's data side lives in `engine-core::menu_list_rows`: the
+allocator (`list_alloc`), the row-entry bit constants, the row-name
+resolver (`row_name_source`, `FUN_8002FF8C`), the description
+dispatcher (`description_source`, `FUN_80034250`), the content-builder
+item-list cases (below), and the live-window upsert
+(`LiveWindowSet`, `FUN_80032434`).
 
 ### Use-list row build (content id 3, `FUN_80030628`)
 
@@ -717,23 +723,35 @@ i*2` over the window `gp[+0x2D2]..gp[+0x2D4]`), the item record
   page tail rather than interleaving.
 - otherwise, in the field context (`gp[+0x85C] == 0`): Door of Light /
   Door of Wind (ids `0x88`/`0x89`, `0x80030930..0x80030974`) gate on
-  scratchpad word `0x1F800394` bits `0x100000`/`0x200000` (the scene
-  class that makes the door usable); then the effect **field-usable**
-  bit `0x2` (`0x80030990`, clear = dim); then the applicability probe
-  `FUN_8003043C` (`0x800309A4`) - a party scan through the action
-  validator `FUN_8003FB10` that returns 0 when the item would affect
-  nobody (everyone at full HP for a heal), which dims the row
-  (`0x800309BC`). These rows stay **in place** (dim rows interleave
-  with white ones). In the battle context (`gp[+0x85C] == 1`) the gate
-  is the effect **battle-usable** bit `0x4` (`0x800309E0`) instead.
+  scratchpad word `0x1F800394` bits `0x100000`/`0x200000` - a **set**
+  bit dims the door's row in place (the `bne` at
+  `0x8003094C`/`0x8003096C` emits `slot | 0x1800` when the bit is
+  set; the clear state falls through to the normal usability chain);
+  then the effect **field-usable** bit `0x2` (`0x80030990`, clear =
+  dim); then the applicability probe `FUN_8003043C` (`0x800309A4`) - a
+  party scan through the action validator `FUN_8003FB10` that returns
+  0 when the item would affect nobody (everyone at full HP for a
+  heal), which dims the row (`0x800309BC`). These rows stay **in
+  place** (dim rows interleave with white ones). In the battle context
+  (`gp[+0x85C] == 1`) the gate is the effect **battle-usable** bit
+  `0x4` (`0x800309E0`) instead - and, unlike the field context, a
+  battle-unusable row joins the kind-1 tail buffer (`0x800309FC`
+  stores through the second buffer) rather than dimming in place. A
+  context value other than 0/1 emits no row at all (`0x800309C0`).
 
 So a Healing Leaf row greys out at full party HP through the
 applicability probe - the capture-pinned dim row (`0x1800`, item
 `0x77`) of the single-item Use list. The **Throw Out** list (window 16,
 content id `0x22`, case `0x80030AF8`) reuses the shapes with a
-discardability gate (kind-1 rows dim on equip-record `+0x7` bit `0x1`);
-the price-gated bag list is content id `2` (window 38: rows with item
-price `+0x2 == 0` dim and sort last, `0x8003071C`/`0x80030734`).
+discardability gate: kind-1 rows go to the tail buffer white unless
+equip-record `+0x7` bit `0x1` (no-discard) dims them
+(`0x80030C08..0x80030C18`), and the in-place rows dim on item-effect
+flag `0x1` (key items, `0x80030C40`). The price-gated bag list is
+content id `2` (window 38: rows with item price `+0x2 == 0` dim and
+sort last, `0x8003071C`/`0x80030734`). All three cases are ported as
+`engine-core::menu_list_rows::{build_use_list_rows,
+build_throw_out_rows, build_price_gated_rows}` (row words + buffer
+order, unit-tested against these laws).
 
 Shared helpers, both menu-overlay resident:
 
