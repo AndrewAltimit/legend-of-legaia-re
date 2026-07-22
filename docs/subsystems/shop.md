@@ -287,10 +287,18 @@ carried the padding). Validated against the Rim Elm Variety Store's 10 pinned id
 > while talking to the counter attendant the game is still field mode 3 under
 > the field overlay (the dialog itself is not a menu session).
 
-Retail enforces a max held count of 98 per item before dimming additional buy
-attempts; the port mirrors the gate in the grant kernel
-(`World::buy_from_shop` refuses a buy that would push the held count past
-`shop::SHOP_HELD_CAP`).
+Retail fills a stack at **99** per item id, and both gates carry the same
+`0x63` literal: the buy-list row builder dims a row once the held count
+stops being `< 0x63` (`sltiu v0,v0,0x63` at `0x80030f0c` / `ori s0,s0,0x800`
+at `0x80030f18`, shop-row case of `FUN_80030628` - see
+`ghidra/scripts/funcs/80030628.txt`, recomp-corroborated), and the
+buy-quantity maximum clamps to `min(gold/price, 99, 99 - held)`
+(`slti v0,v0,0x64; li v0,0x63` at `0x801db89c..0x801db8a4` and
+`li a0,0x63; subu a0,a0,v1` at `0x801db8d0..0x801db8dc` in `FUN_801DB7F4` -
+see `ghidra/scripts/funcs/overlay_menu_801db7f4.txt`). The port mirrors the
+gate in the grant kernel (`World::buy_from_shop` refuses a buy that would
+push the held count past `shop::SHOP_HELD_CAP` = 99; the picker side is
+`shop::buy_qty_max`).
 
 ## Open items
 

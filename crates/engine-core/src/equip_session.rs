@@ -424,6 +424,151 @@ impl EquipSession {
     pub fn give_item(&mut self, id: u8, qty: u8) {
         *self.inventory.entry(id).or_insert(0) += qty;
     }
+
+    /// Refresh [`Self::preview_stats`] for a hovered candidate by
+    /// **trial-equipping** it on a copy of the record - the retail
+    /// candidate-list handler's preview mechanism: save the record's equip
+    /// array into the `DAT_801EF0C8` staging buffer, write the candidate
+    /// (or `0` for the Remove row), re-run the stat aggregator
+    /// `FUN_801CF650`, restore the array. The engine expresses the
+    /// save/restore as a copy.
+    ///
+    /// PORT: FUN_801d9c14 (state-2 trial-equip stat preview; see
+    /// `ghidra/scripts/funcs/overlay_menu_801d9c14.txt` at
+    /// `0x801d9e8c..0x801da058`)
+    pub fn preview_candidate(&mut self, slot: u8, item_id: u8) {
+        let mut copy = self.record;
+        if let Some(cell) = copy.equip.get_mut(slot as usize) {
+            *cell = item_id;
+        }
+        self.preview_stats =
+            compute_battle_stats(&copy, &self.equipment, &self.active_status, &self.modifiers);
+    }
+
+    /// The candidate list's **Remove** row commit (class-`0x4000` payload-0
+    /// row): return the equipped item to the bag and clear the slot,
+    /// re-running the stat aggregate. Returns the removed id, or `None`
+    /// when the slot is already empty - retail buzzes SFX `0x37` there and
+    /// commits nothing.
+    ///
+    /// PORT: FUN_801d9c14 (confirm path `0x801da0b4..0x801da134`: equipped
+    /// byte zero -> `FUN_80035B50(0x37)`; else SFX `0x24`,
+    /// `FUN_800421D4(equipped, 1)`, `sb zero` into the record slot)
+    pub fn unequip(&mut self, slot: u8) -> Option<u8> {
+        let removed = *self.record.equip.get(slot as usize)?;
+        if removed == 0 {
+            return None;
+        }
+        *self.inventory.entry(removed).or_insert(0) += 1;
+        self.record.equip[slot as usize] = 0;
+        self.preview_stats = compute_battle_stats(
+            &self.record,
+            &self.equipment,
+            &self.active_status,
+            &self.modifiers,
+        );
+        self.state = EquipState::Done(EquipOutcome::Committed {
+            slot,
+            removed,
+            added: 0,
+        });
+        self.events.push(EquipEvent::Committed {
+            slot,
+            removed,
+            added: 0,
+        });
+        Some(removed)
+    }
+
+    /// The Equip screen's slot-browse confirm dispatch: row `0` is the
+    /// "Best Equipment" auto-equip, rows `1..=7` open the candidate list
+    /// for slot `row - 1`. (Retail's cancel leaves for the character
+    /// picker, sub-screen `0x12`; the engine host owns that transition.)
+    ///
+    /// `candidates` are the four best-armament ids the retail candidate
+    /// computer `FUN_801CF88C` parks at `DAT_801EF0C0` - the engine host
+    /// supplies its own pick.
+    ///
+    /// PORT: FUN_801d99f0 (menu-overlay sub-screen `0x13`; see
+    /// `ghidra/scripts/funcs/overlay_menu_801d99f0.txt` - confirm on row 0
+    /// runs the applier and cues SFX `0x24` on change / buzz `0x23` on
+    /// none, other rows hand off to sub-screen `0x14`)
+    pub fn slot_browse_confirm(&mut self, row: u8, candidates: [u8; 4]) -> SlotBrowseOutcome {
+        if row == 0 {
+            let changed =
+                apply_best_equipment(&mut self.record.equip, candidates, &mut self.inventory);
+            if changed > 0 {
+                self.preview_stats = compute_battle_stats(
+                    &self.record,
+                    &self.equipment,
+                    &self.active_status,
+                    &self.modifiers,
+                );
+                SlotBrowseOutcome::BestEquipApplied(changed)
+            } else {
+                SlotBrowseOutcome::BestEquipNothing
+            }
+        } else {
+            SlotBrowseOutcome::OpenCandidates {
+                slot: (row - 1).min(7),
+            }
+        }
+    }
+}
+
+/// Outcome of [`EquipSession::slot_browse_confirm`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SlotBrowseOutcome {
+    /// Best Equipment applied `n` swaps (retail SFX `0x24` + stat
+    /// re-aggregate).
+    BestEquipApplied(u32),
+    /// Nothing to change (retail buzz `0x23`).
+    BestEquipNothing,
+    /// A slot row confirmed - open the candidate list (retail sub-screen
+    /// `0x14`).
+    OpenCandidates { slot: u8 },
+}
+
+/// The "Best Equipment" applier over the four armament slots: for each
+/// slot whose best-candidate id differs from the equipped id, take one
+/// candidate from the bag (a candidate not in the bag is skipped - no
+/// swap, no count), return the old item when non-zero, and write the
+/// candidate into the slot. Returns the number of slots changed.
+///
+/// PORT: FUN_801cf760 (see `ghidra/scripts/funcs/overlay_menu_801cf760.txt`:
+/// per-slot `beq candidate, equipped` skip, `FUN_80042EE0` bag-slot find
+/// with the `0x100` not-found sentinel, `FUN_80043048(slot, 1)` take,
+/// `FUN_800421D4(old, 1)` give-back, `sb` commit, changed-count return)
+/// REF: FUN_801cf88c (the best-candidate computer filling `DAT_801EF0C0`;
+/// the engine host derives `candidates` itself)
+pub fn apply_best_equipment(
+    equips: &mut [u8; 8],
+    candidates: [u8; 4],
+    inventory: &mut HashMap<u8, u8>,
+) -> u32 {
+    let mut changed = 0;
+    for (slot, &candidate) in candidates.iter().enumerate() {
+        let equipped = equips[slot];
+        if candidate == equipped {
+            continue;
+        }
+        // Bag must actually hold the candidate (retail's 0x100 sentinel
+        // check); the Remove direction never happens here - a zero
+        // candidate is never in the bag.
+        let Some(qty) = inventory.get_mut(&candidate) else {
+            continue;
+        };
+        if *qty == 0 {
+            continue;
+        }
+        *qty -= 1;
+        if equipped != 0 {
+            *inventory.entry(equipped).or_insert(0) += 1;
+        }
+        equips[slot] = candidate;
+        changed += 1;
+    }
+    changed
 }
 
 #[cfg(test)]
@@ -911,5 +1056,88 @@ mod tests {
             EquipState::ItemPicker { cursor, .. } => assert_eq!(cursor, 1),
             _ => panic!("expected item picker"),
         }
+    }
+
+    #[test]
+    fn best_equipment_swaps_only_differing_in_bag_candidates() {
+        // FUN_801cf760 law: per slot, skip when candidate == equipped or
+        // the bag lacks the candidate; otherwise take one, return the old
+        // item, count the change.
+        let mut equips = [0u8; 8];
+        equips[0] = 0x05; // already the best - must not move
+        equips[1] = 0x25; // will be replaced by 0x26
+        let mut inv = HashMap::new();
+        inv.insert(0x26, 1);
+        // Slot 2's candidate 0x45 is NOT in the bag - skipped, no count.
+        let changed = apply_best_equipment(&mut equips, [0x05, 0x26, 0x45, 0], &mut inv);
+        assert_eq!(changed, 1);
+        assert_eq!(equips[0], 0x05);
+        assert_eq!(equips[1], 0x26);
+        assert_eq!(equips[2], 0);
+        assert_eq!(inv.get(&0x26), Some(&0));
+        // The displaced 0x25 went back to the bag.
+        assert_eq!(inv.get(&0x25), Some(&1));
+    }
+
+    #[test]
+    fn slot_browse_row0_applies_best_and_other_rows_open_candidates() {
+        let mut s = fresh_session();
+        s.give_item(0x06, 1); // better slot-0 item in the bag
+        match s.slot_browse_confirm(0, [0x06, 0, 0, 0]) {
+            SlotBrowseOutcome::BestEquipApplied(1) => {}
+            other => panic!("expected one swap, got {other:?}"),
+        }
+        assert_eq!(s.record().equip[0], 0x06);
+        // Nothing left to improve: retail buzzes 0x23.
+        assert_eq!(
+            s.slot_browse_confirm(0, [0x06, 0, 0, 0]),
+            SlotBrowseOutcome::BestEquipNothing
+        );
+        // A slot row opens the candidate list for row - 1.
+        assert_eq!(
+            s.slot_browse_confirm(3, [0, 0, 0, 0]),
+            SlotBrowseOutcome::OpenCandidates { slot: 2 }
+        );
+    }
+
+    #[test]
+    fn unequip_returns_item_to_bag_and_refuses_empty_slot() {
+        let mut s = fresh_session();
+        // Equip 0x05 into slot 0 first (bag holds one).
+        s.input(EquipInput {
+            cross: true,
+            ..Default::default()
+        });
+        s.input(EquipInput {
+            cross: true,
+            ..Default::default()
+        });
+        s.input(EquipInput {
+            cross: true,
+            ..Default::default()
+        });
+        assert_eq!(s.record().equip[0], 0x05);
+        assert_eq!(s.inventory().get(&0x05), Some(&0));
+
+        // Remove row: item returns to the bag, slot clears.
+        let mut s2 = s.clone();
+        assert_eq!(s2.unequip(0), Some(0x05));
+        assert_eq!(s2.record().equip[0], 0);
+        assert_eq!(s2.inventory().get(&0x05), Some(&1));
+        // Already-empty slot refuses (retail buzz 0x37, no commit).
+        assert_eq!(s2.unequip(1), None);
+    }
+
+    #[test]
+    fn preview_candidate_is_a_trial_that_leaves_the_record_alone() {
+        let mut s = fresh_session();
+        let base_atk = s.preview_stats.atk;
+        s.preview_candidate(0, 0x05); // +5 atk modifier from fresh_session
+        assert_eq!(s.preview_stats.atk, base_atk + 5);
+        // The trial restored the record - nothing equipped.
+        assert_eq!(s.record().equip[0], 0);
+        // Remove-row preview (candidate 0) lands back on the bare stats.
+        s.preview_candidate(0, 0);
+        assert_eq!(s.preview_stats.atk, base_atk);
     }
 }

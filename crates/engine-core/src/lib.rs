@@ -79,6 +79,7 @@ pub mod new_game;
 pub mod options;
 pub mod overlay_loader;
 pub mod pause_screens;
+pub mod prize_exchange;
 pub mod publisher_logos;
 pub mod ram_map;
 pub mod region_encounter;

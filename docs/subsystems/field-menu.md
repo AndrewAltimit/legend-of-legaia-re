@@ -582,7 +582,7 @@ stays with the UI crates.
 ## Submenu state machines
 
 Every pause-menu screen's input handling is one per-submenu tick
-function, dispatched from the master menu tick (inside `FUN_801DC1CC`,
+function, dispatched from the master menu tick (inside `FUN_801DC6B4`,
 menu overlay) through the function-pointer table at VA `0x801E4F40`,
 indexed by the submenu word `DAT_801E46A4`. The master tick keeps a
 requested/settled pair: a handler *requests* a switch by writing

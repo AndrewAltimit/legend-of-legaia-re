@@ -181,8 +181,8 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 | `0x10` | `FUN_801D9280` | (unknown) |
 | `0x11` | `FUN_801D9594` | (unknown) |
 | `0x12` | `FUN_801D98F0` | 2-state scrollable picker: state 0 sets `_DAT_8007BB94 = 4`, clears `DAT_801E48A8`, masks the cursor to its index bits (`DAT_801E46C4 &= 0xFFF`) and raises flag `0x4000` on `DAT_801E46C0`, then actor `&DAT_801E4D88`; state 1 picker `FUN_801D688C(&DAT_801E46C4, DAT_80084594, 1)` (count from save-block existence table). Confirm → sfx `0x20` + `0x13`, cancel → `0x01` |
-| `0x13` | `FUN_801D99F0` | (unknown) |
-| `0x14` | `FUN_801D9C14` | per-character record serialisation (0x414 bytes, `char_id` stride) |
+| `0x13` | `FUN_801D99F0` | Equip screen **slot browse** (8 rows: Best Equipment + 7 slots via `FUN_801D688C(&DAT_801E46C0, 8, 1)`; confirm row 0 auto-equips best - `FUN_801CF88C` candidates + `FUN_801CF760` applier, SFX `0x24`/buzz `0x23`; rows 1..7 → `0x14`; cancel → `0x12` character picker) - see [field-menu.md](field-menu.md#equip-screen) |
+| `0x14` | `FUN_801D9C14` | Equip screen **candidate list + commit** (see [field-menu.md](field-menu.md#equip-screen); the old "record serialisation" label is falsified - the `0x414`-stride reads are the live party record, the `DAT_801EF0C8` staging is the trial-equip save/restore) |
 | `0x15` | `FUN_801DA2A0` | (unknown) |
 | `0x16` | `FUN_801DD310` | no-op tick: tail-calls `func_0x80031D00` (frame-end / actor-tick flush) with no other work |
 | `0x17` | `FUN_801DD330` | thin wrapper invoking the generic picker `FUN_801DA9F8(start=0, end=9, init=0x30, return_subscreen=1)` |
@@ -194,7 +194,7 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 | `0x1D` | `FUN_801DB7F4` | (unknown) |
 | `0x1E` | `FUN_801DBC5C` | 4-state spinner: state 0 raises flag `0x1000` on `DAT_801E46BC` + calls `FUN_801D6628(&DAT_801E4EE4)`; state 1 waits `_DAT_8007BB80 == 0`, sets `_DAT_8007BB94 = 1` and falls into state 2. States 1-settling and 2 **share** the staging read of the two inventory bytes at `0x80084140 + 0x1818 + _DAT_8007BB88*2` into `DAT_801E46B0/B4`, then branch on `_DAT_8007BB94`: `3` re-runs actor `&DAT_801E4EFC` and parks at state 3, `2` advances to `0x1F`. State 3 waits `_DAT_8007BB80 == 0`, then returns to `0x1A` |
 | `0x1F` | `FUN_801DBD94` | D-pad quantity-input screen (state 0 init + actor invoke; state 1 ±1/±10 on the dpad clamped to `[1, DAT_801E46B8]`, on confirm applies money delta `_DAT_8008459C += (price * qty) >> 1` and walks live inventory at `0x80084140 + 0x1818` for a non-empty slot; state 2 returns to `0x1A` after a brief delay). NOT the save-card writer - actual libcd I/O lives in `FUN_801E3294` (see "Libcd I/O state machine" section below); `FUN_8001A8B0(SC_base=0x80084140, staging=0x801E5120, 0x1A18)` is plain memcpy used in both directions (post-read or pre-write staging copy) |
-| `0x20` | `FUN_801DC1CC` | auto-save path (entry-context `*ptr == '\x07'`) |
+| `0x20` | `FUN_801DC1CC` | **casino prize-exchange session** (entry-context `*ptr == '\x07'`; `ptr+1` = prize block). 4-state SM: build visible rows from the `0x801E4518` table (walk stops at the first zero id; a non-zero gate flag already set hides the one-shot row), browse (`FUN_801D688C`; confirm gated on coin bank `0x800845A4 >= price` and held `< 0x63`, buzz `0x23`), Yes/No with **No default** (`DAT_801E46D0 = 1`), commit (SFX `0x25`, grant 1, debit coins, `FUN_8003CE08(gate)`, rebuild). Port `engine-core::prize_exchange`. The earlier "auto-save path" label is falsified - nothing here touches the card |
 
 The table ends at `0x1F`; entries past `0x20` are the start of the MES bytecode
 section (`0x85826B82` etc.) and are not function pointers.
@@ -403,18 +403,21 @@ route the slot to the valid or the corrupt state. Ported as
 `save_select::save_block_checksum` with the compose helper
 `save_block_checksum_valid` mirroring that load-path compare.
 
-### Per-character status preview (`FUN_801D9C14`, sub-screen `0x14`)
+### Equip-candidate list handler (`FUN_801D9C14`, sub-screen `0x14`)
 
-Per-character menu preview function. Reads from the character record at
-`char_id * 0x414 + 0x80084A9E` and uses `DAT_801EF0C8` as a staging
-buffer for the displayed stat read-back. State 0 calls `FUN_801CF650`,
-which is the **equipment-effect stat aggregator** for the selected
-character: it walks the 5 equipment slots in the character record, looks
-each equipment ID up in the 12-byte-stride table at `0x80074368`, and
-when `prop[id*12].byte_0 == 1` reads a 5-byte stat-bonus block from
-`0x80074F68 + prop[id*12].byte_1 * 8`, summing the bonuses into
-`DAT_801EF09C..DAT_801EF098` (5 stat totals - HP/MP/Atk/Def/Spd or
-similar). This is **not** a memory-card write primitive.
+Not a save-screen function at all: sub-screen `0x14` is the pause menu's
+**Equip candidate list + commit** handler, sharing the `0x801E4F40` table
+with the save flow. It browses the equip-candidate list through the
+kind-4 list-kernel protocol, derives the stat-compare preview by
+**trial-equipping** the hovered candidate (save the record's 8-byte
+equip array at `+0x196` into the staging buffer `DAT_801EF0C8`, write
+the candidate, re-run the stat aggregator `FUN_801CF650`, restore), and
+on confirm commits the swap through the bag. Full walkthrough on
+[field-menu.md](field-menu.md#equip-screen); the earlier readings of the
+`0x414`-stride access as "record serialisation" and of `DAT_801EF0C8` as
+a "displayed stat read-back buffer" are both superseded - the stride is
+the live party record and the staging is the trial-equip save/restore
+window. It is **not** a memory-card write primitive.
 
 ## Slot list: memory-card slots, not save blocks
 

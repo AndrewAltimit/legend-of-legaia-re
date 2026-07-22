@@ -13,10 +13,16 @@
 //! This module owns only the buy/sell session state. (Disc-free builds leave the
 //! stock host-supplied.)
 
-/// Max held count of one item id before further buys refuse (retail dims buy
-/// attempts past 98 held; enforced by
-/// [`crate::world::World::buy_from_shop`], which knows the live inventory).
-pub const SHOP_HELD_CAP: u8 = 98;
+/// Max held count of one item id - a stack fills at **99**. Two retail
+/// gates both carry the `0x63` literal: the buy-list row builder dims a
+/// row once the held count stops being `< 0x63` (`sltiu v0,v0,0x63` at
+/// `0x80030f0c` / `ori s0,s0,0x800` at `0x80030f18`, shop-row case of
+/// `FUN_80030628`; recomp-corroborated), and the buy-quantity maximum
+/// clamps to `0x63 - held` (`li a0,0x63; subu a0,a0,v1` at
+/// `0x801db8d0..0x801db8dc` in `FUN_801DB7F4`) so a buy can top the
+/// stack off at exactly 99. Enforced by
+/// [`crate::world::World::buy_from_shop`], which knows the live inventory.
+pub const SHOP_HELD_CAP: u8 = 99;
 
 /// One item a shop stocks.
 #[derive(Debug, Clone, PartialEq, Eq)]
