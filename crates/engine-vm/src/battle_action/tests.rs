@@ -42,6 +42,9 @@ struct RecHost {
     /// Pre-staged art records returned by `art_record(character, action)`
     /// - keyed by `(character_byte, action_byte)`.
     art_records: std::collections::HashMap<(u8, u8), legaia_art::ArtRecord>,
+    /// Per-slot equipment ATK bonus bytes returned by
+    /// `equip_attack_bonuses`.
+    equip_atk: std::collections::HashMap<u8, [u8; 5]>,
 }
 
 impl RecHost {
@@ -123,6 +126,9 @@ impl BattleActionHost for RecHost {
     }
     fn apply_art_strike(&mut self, info: ArtStrikeInfo) {
         self.record(Event::ApplyArtStrike(info));
+    }
+    fn equip_attack_bonuses(&self, party_slot: u8) -> [u8; 5] {
+        self.equip_atk.get(&party_slot).copied().unwrap_or([0; 5])
     }
     fn art_record(
         &self,
@@ -1509,4 +1515,85 @@ fn attack_chain_no_art_strike_when_record_missing() {
         events.iter().any(|e| matches!(e, Event::ApplyDamage(..))),
         "apply_damage should still fire as fallback"
     );
+}
+
+// --- arms execution-time weapon fold (FUN_801EC3E4) -------------------------
+
+#[test]
+fn arms_command_folds_the_equipped_weapon_into_atk_working() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::AttackChain.as_byte();
+    // Command 0x0C reads equipment slot 2 and folds half its ATK bonus.
+    host.actors[1].params[0] = 0x0C;
+    host.actors[1].params[1] = 0xFF;
+    host.actors[1].current_anim = 0x0C;
+    host.actors[1].atk_working = 100;
+    host.equip_atk.insert(1, [0, 0, 30, 0, 0]);
+
+    assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    assert_eq!(
+        host.actors[1].atk_working, 115,
+        "slot 2 bonus 30 folds as 30 >> 1 = 15"
+    );
+}
+
+#[test]
+fn arms_command_0x11_folds_half_the_sum_of_every_slot() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::AttackChain.as_byte();
+    host.actors[1].params[0] = 0x11;
+    host.actors[1].params[1] = 0xFF;
+    host.actors[1].current_anim = 0x11;
+    host.equip_atk.insert(1, [10, 20, 30, 40, 50]);
+
+    assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    assert_eq!(host.actors[1].atk_working, 75, "(10+20+30+40+50) >> 1");
+}
+
+#[test]
+fn non_arms_commands_leave_atk_working_alone() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::AttackChain.as_byte();
+    // 0x19 is an art starter - admitted by the head gate (0x0C..=0x1F) but
+    // outside the six-arm dispatch table, so it folds nothing.
+    host.actors[1].params[0] = 0x19;
+    host.actors[1].params[1] = 0xFF;
+    host.actors[1].current_anim = 0x19;
+    host.actors[1].atk_working = 100;
+    host.equip_atk.insert(1, [10, 20, 30, 40, 50]);
+
+    assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    assert_eq!(host.actors[1].atk_working, 100);
+}
+
+#[test]
+fn arms_fold_is_gated_by_the_input_cursor_bound() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::AttackChain.as_byte();
+    host.actors[1].params[0] = 0x0C;
+    host.actors[1].params[1] = 0xFF;
+    host.actors[1].current_anim = 0x0C;
+    host.actors[1].atk_working = 100;
+    // Cursor at the bound: the resolver's head guard rejects `+0x1F4 >= 4`.
+    host.actors[1].input_cursor = 4;
+    host.equip_atk.insert(1, [0, 0, 30, 0, 0]);
+
+    assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    assert_eq!(host.actors[1].atk_working, 100, "cursor 4 bails");
+}
+
+#[test]
+fn arms_fold_does_not_run_for_enemy_slots() {
+    // Slot 3 and above take the resolver's enemy branch, which performs no
+    // equipment fold.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 3);
+    ctx.action_state = ActionState::AttackChain.as_byte();
+    host.actors[3].params[0] = 0x0C;
+    host.actors[3].params[1] = 0xFF;
+    host.actors[3].current_anim = 0x0C;
+    host.actors[3].atk_working = 100;
+    host.equip_atk.insert(3, [0, 0, 30, 0, 0]);
+
+    assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    assert_eq!(host.actors[3].atk_working, 100);
 }

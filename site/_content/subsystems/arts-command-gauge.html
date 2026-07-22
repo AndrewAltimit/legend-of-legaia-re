@@ -82,7 +82,25 @@ ctx[0x6DC] -= ctx[slot + 0x14];                             // consume the comma
 
 <section class="doc-section" id="execution-path">
   <h2>Execution path</h2>
-  <p>Once a combo is committed it is replayed by the <strong>Arms execution resolver <code>FUN_801EC3E4</code></strong> (overlay <code>0898</code>), <strong>called from <code>SCUS_942.54</code> at <code>0x800478A0</code></strong> (<code>jal 0x801EC3E4</code>) - the execution driver is the static side, which is why the resolver has no caller inside the overlay. It advances the input cursor (<code>actor + 0x1F4</code>) one step per recorded command and dispatches per-command sub-handlers through <code>PTR_801CF4B4[(actor + 0x1D9) - 0xC]</code>. Those sub-handlers read the equipped weapon again (e.g. <code>0x801ECC00</code>: weapon id &rarr; item subtype <code>DAT_80074369</code> &rarr; equip record <code>DAT_80074F68</code>) to fold it into the damage / effect calculation - a read distinct from the gauge-build cost above.</p>
+  <p>Once a combo is committed it is replayed by the <strong>Arms execution resolver <code>FUN_801EC3E4</code></strong> (overlay <code>0898</code>), <strong>called from <code>SCUS_942.54</code> at <code>0x800478A0</code></strong> (<code>jal 0x801EC3E4</code>) - the execution driver is the static side, which is why the resolver has no caller inside the overlay. It advances the input cursor (<code>actor + 0x1F4</code>) one step per recorded command and dispatches per-command sub-handlers through <code>PTR_801CF4B4[(actor + 0x1D9) - 0xC]</code>. Those sub-handlers read the equipped weapon again to fold it into the damage calculation - a read distinct from the gauge-build cost above.</p>
+
+  <h3>The execution-time weapon fold</h3>
+  <p>The dispatch is bounded at <strong>six arms</strong> (<code>(command - 0x0C) &lt; 6</code>, commands <code>0x0C..=0x11</code>), and the head admission gate is a <em>different</em> band read from a <em>different</em> place: it tests the caller's command-record byte with <code>(cmd - 0x0C) &lt; 0x14</code> (<code>0x0C..=0x1F</code>). A command in <code>0x12..=0x1F</code> is admitted and then folds nothing.</p>
+  <p>Each arm resolves one or more of the character record's five equipment slots (<code>+0x196..+0x19B</code>) through the two-hop lookup item property record <code>DAT_80074368 + id*0xC</code> byte <code>+1</code> &rarr; equipment stat row <code>DAT_80074F68 + row*8</code> byte <code>+1</code> (the <strong>attack</strong> bonus), and adds it into the actor's <strong>ATK working</strong> halfword <code>+0x158</code>:</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>command</th><th>equipment slots</th><th>fold into <code>+0x158</code></th></tr></thead>
+    <tbody>
+      <tr><td><code>0x0C</code></td><td>2</td><td><code>atk[2] &gt;&gt; 1</code></td></tr>
+      <tr><td><code>0x0D</code></td><td>3</td><td><code>atk[3] &gt;&gt; 1</code></td></tr>
+      <tr><td><code>0x0E</code> / <code>0x0F</code></td><td>4</td><td><code>atk[4] &gt;&gt; 1</code></td></tr>
+      <tr><td><code>0x10</code></td><td>none</td><td>nothing</td></tr>
+      <tr><td><code>0x11</code></td><td>0,1,2,3,4</td><td><code>(sum of all five) &gt;&gt; 1</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><code>0x0E</code> and <code>0x0F</code> share a jump-table arm, and <code>0x10</code>'s slot is the same address the bounds check bails to - a live table entry that folds nothing. Retail applies no empty-slot test and no <code>kind == 1</code> item-class guard here.</p>
+  <p>This is the counterpart to the battle-load asymmetry: the seeder <code>FUN_80053CB8</code> folds the equipment table's UDF / LDF / SPD bytes and folds <strong>neither</strong> INT nor ATK, so a weapon's attack bonus never reaches the actor's ATK <strong>base</strong> (<code>+0x15A</code>). It reaches ATK <strong>working</strong> here instead, per committed command - the seeder's omission is correct, not a gap.</p>
 </section>
 
 <section class="doc-section" id="who-writes-it">

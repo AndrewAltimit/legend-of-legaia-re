@@ -421,6 +421,15 @@ pub struct BattleActor {
     pub strike_index: u8,
     /// `+0x16` - combo bit (cleared by `AttackShortStep` when in range).
     pub combo_bit: u8,
+    /// `+0x1F4` - arms input cursor. `FUN_801EC3E4` uses it both to index the
+    /// caller's command record and as a head guard (`< 4`).
+    pub input_cursor: u8,
+    /// `+0x158` - ATK **working** (the attacker's offense the damage routine
+    /// reads; `+0x15A` is the base a buff restores to). The Arms execution
+    /// resolver folds the equipped weapon's attack bonus into this per
+    /// committed command - see
+    /// [`crate::battle_formulas::arms_weapon_atk_fold`].
+    pub atk_working: u16,
     /// `+0x1F5` - anim-cue flag (read at state `SummonFadeIn` for fade-in
     /// trigger).
     pub anim_cue: u8,

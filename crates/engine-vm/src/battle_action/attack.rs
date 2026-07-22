@@ -1,6 +1,7 @@
 //! Physical-attack band of the battle-action state machine (face / short-step / windup / chain).
 
 use super::*;
+use crate::battle_formulas::{arms_resolver_admits, arms_weapon_atk_fold};
 
 // --- attack band ------------------------------------------------------------
 
@@ -152,6 +153,27 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
         actor.queued_anim = next_byte;
         actor.flag_bits.set(ActorFlags::ADVANCE_DONE);
         actor.strike_index = actor.strike_index.saturating_add(1);
+    }
+    // Arms execution-time weapon fold. Retail runs this in FUN_801EC3E4,
+    // which SCUS calls at 0x800478A0 once per committed arms command - a
+    // separate call edge from FUN_801E295C, not a subroutine of it. The port
+    // drives it from here because this is the engine's equivalent point: the
+    // strike loop is where one recorded command byte is consumed and staged.
+    // The head guards are evaluated against the same state retail reads
+    // (ctx[7], the command byte, the actor's +0x1F4 cursor, the slot), with
+    // this strike as the record's last step.
+    // PORT: FUN_801EC3E4 (call site for the ATK-working weapon fold)
+    let (input_cursor, current_command) = host
+        .actor(slot)
+        .map(|a| (a.input_cursor, a.current_anim))
+        .unwrap_or((0, 0));
+    if arms_resolver_admits(ctx.action_state, next_byte, 0, 1, input_cursor, slot) {
+        let bonuses = host.equip_attack_bonuses(slot);
+        if let Some(delta) = arms_weapon_atk_fold(current_command, &bonuses)
+            && let Some(actor) = host.actor_mut(slot)
+        {
+            actor.atk_working = actor.atk_working.wrapping_add(delta);
+        }
     }
     // Fire swing-apex damage for this strike. (Retail seeds this byte stream
     // at action start via FUN_801eed1c - the party action-stream setup hook

@@ -52,6 +52,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
+mod arms_fold;
 mod arts;
 mod basic;
 mod damage_finish;
@@ -61,6 +62,7 @@ mod stat_init;
 mod summon;
 mod victory;
 
+pub use arms_fold::*;
 pub use arts::*;
 pub use basic::*;
 pub use damage_finish::*;
