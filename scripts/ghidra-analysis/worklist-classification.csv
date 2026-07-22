@@ -151,7 +151,7 @@ addr,class,reason
 801d2aa4,REAL,self-entry body of 135 instructions returning `jr ra`
 801d2afc,REAL,self-entry body of 549 instructions returning `jr ra`
 801d2cc0,REAL,self-entry body of 259 instructions returning `jr ra`
-801d2cfc,UNCERTAIN,"every dump at this VA is mis-based: the bytes live at field(897) 0x801e1514 (delta +0xe818), and at this VA in no image - so nothing attests the address. Not an un-extracted overlay; no extraction closes it"
+801d2cfc,PHANTOM,"mis-based print, corroborated by its own decoded exit: the 7-instruction slice resolves at field(897) 0x801e1514 (delta +0xe818) and at this VA in no image, has no prologue, and exits `j 0x801e205c` - 0xb48 past its own 28-byte window, the label-call idiom inside the routine that owns 0x801e1514. Nothing to port at this address"
 801d2d1c,INTERIOR,"register-restore epilogue, not an entry. Verified from disc bytes across all 31 based overlay images (scripts/ghidra-analysis/locate-entry-image.py): none carries a stack-frame prologue at this VA. In PROT 0897 the body is `lw s4,0x40(sp); lw s3,0x3c(sp); lw s2; lw s1; lw s0,0x30(sp); jr ra` - callee-saved restores from a frame it never built. Supersedes the UNCERTAIN gapped-dump reading"
 801d2d2c,INTERIOR,"inside the same PROT 0897 epilogue as 801d2d1c - the VA is its `lw s0,0x30(sp)` instruction, one word before `jr ra`. No based image carries a prologue here. NB a naive prologue scan reports a false hit: the `addiu sp` three words on belongs to the NEXT function, past the `jr ra` - locate-entry-image.py stops at `jr ra` for exactly this case"
 801d2d98,REAL,self-entry body of 104 instructions returning `jr ra`
@@ -227,7 +227,7 @@ addr,class,reason
 801df8dc,INTERIOR,"interior slice, not an entry: dump begins in a delay slot (`_li v0,0x63`), branches on live v1, and the debug-print tail restores s0..s5/ra from a 0x50-byte frame it never built"
 801e0080,REAL,every dump at this VA is of battle_action(898) (captures: battle_action); no second dumped body here
 801e00b8,SHARED_TAIL,"shared epilogue slice: no prologue, reads live s1, restores s0..s2/ra from a 0x60-byte frame it never built; entered by `j 0x801e00b8` from FUN_801D4908 (and siblings) as a common exit"
-801e01f0,UNCERTAIN,"every dump at this VA is mis-based: the bytes live at field(897) 0x801e5a08 (delta +0x5818), and at this VA in no image - so nothing attests the address. Not an un-extracted overlay; no extraction closes it"
+801e01f0,PHANTOM,"mis-based print: the 81-instruction body resolves at field(897) 0x801e5a08 (delta +0x5818) and at this VA in no image. Its own `j 0x801e5aec` / `j 0x801e5ae8` land inside 0x801e5a08..0x801e5b4c and nowhere near the printed window - jump targets come from the bytes, not the load base. The withdrawn 801d71f0 duplicate claim already named this a mis-based print"
 801e02a4,REAL,self-entry body of 93 instructions returning `jr ra`
 801e0418,REAL,self-entry body of 96 instructions returning `jr ra`
 801e0598,REAL,"identified: save-UI card-session init - zeroes ~20 session globals, raises the directory-rebuild request _DAT_801F0224, stages the SC base 0x80084140 into 0x801F32A0; not yet ported"
@@ -241,9 +241,9 @@ addr,class,reason
 801e3294,REAL,self-entry body of 259 instructions returning `jr ra`
 801e39a8,REAL,self-entry body of 22 instructions returning `jr ra`
 801e3ff0,REAL,self-entry body of 82 instructions returning `jr ra`
-801e4404,UNCERTAIN,every dump at this VA decodes data as code (Ghidra reports bad instruction data over a 5-instruction body in 0897) - no valid body to classify
+801e4404,DATA,"not code: the only dump is 5 instructions Ghidra itself flags as bad instruction data (`syscall`, `lb s8,0x6400(zero)`, `tge at,t0`) and truncates control flow on. Sits just below the menu window-descriptor table at 0x801e4738, whose own row 801e473c is DATA"
 801e4d8c,REAL,self-entry body of 242 instructions returning `jr ra`
-801e5154,UNCERTAIN,every dump at this VA decodes data as code (239 of 243 instructions are $zero-absolute loads/stores in 0897_xxx_dat) - no valid body to classify
+801e5154,DATA,"pointer table, not code: 239 of 243 decoded instructions in overlay_0897_xxx_dat are `$zero`-absolute loads, and their operands read as a run of 0x801e5xxx words - the save-UI record band that begins with the 12-byte sprite-record table at 0x801e5048"
 801e5338,REAL,self-entry body of 201 instructions returning `jr ra`
 801e805c,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
 801e92dc,REAL,self-entry body of 59 instructions returning `jr ra`
@@ -259,7 +259,7 @@ addr,class,reason
 801f0450,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/muscle_dome); no second dumped body here
 801f0adc,REAL,every dump at this VA is of field(897) (captures: baka_fighter/dance/debug_menu/fishing/slot_machine); no second dumped body here
 801f1278,REAL,self-entry body of 201 instructions returning `jr ra`
-801f138c,UNCERTAIN,"every dump at this VA is mis-based: the bytes live at battle_action(898) 0x801daba4 (delta -0x167e8), and at this VA in no image - so nothing attests the address. Not an un-extracted overlay; no extraction closes it"
+801f138c,PHANTOM,"mis-based print: the 352-instruction body resolves at battle_action(898) 0x801daba4 (delta -0x167e8) and at this VA in no image; corroborated by `j 0x801db0f8` / `j 0x801db0f0` (inside 0x801daba4 + 0x580) and `jal 0x801db124` (the entry one past its end). 801daba4 already carries a // PORT: tag - 801fa38c is the same routine's third printed address"
 801f159c,REAL,self-entry body of 73 instructions returning `jr ra`
 801f16a0,PHANTOM,"printed address of a mis-based import: program 0905_xxx_dat.BIN loads the x83 stager at 0x801F0000 but its true base is 0x801F69D8 (static-overlays row summon_stager_x83). The dumped body is real stager code whose true entry is 0x801F8078 (file +0x16A0, addiu-sp prologue); no image holds an entry at 801f16a0 itself (0898's bytes there are mid-function)"
 801f17f8,REAL,self-entry body of 125 instructions returning `jr ra`
@@ -277,4 +277,4 @@ addr,class,reason
 801f6d48,REAL,"self-entry body of 208 instructions returning `jr ra`. Owner pinned by bytes: the minigame-capture dumps at this VA match PROT 0900 (field render library, file +0x370 at slot-B base 0x801F69D8) not the battle-action image (0898 file +0x28530 differs) - it is 0900's per-cell ground/tile GT3 emitter (see the summon_render row notes in static-overlays.toml), resident under the minigame as field-mode slot-B strata"
 801f7088,REAL,every dump at this VA is of summon_render(900) (captures: baka_fighter/dance/debug_menu/fishing/muscle_dome/slot_machine); no second dumped body here
 801f71e0,REAL,every dump at this VA is of battle_tutorial(967) (captures: PROT 0967 @ base 0x801F69D8); no second dumped body here
-8020e748,UNCERTAIN,"every dump at this VA is mis-based: the bytes live at menu(899) 0x801cf760 (delta -0x3efe8), and at this VA in no image - so nothing attests the address. Not an un-extracted overlay; no extraction closes it"
+8020e748,PHANTOM,"mis-based print: the 75-instruction body resolves at menu(899) 0x801cf760 (delta -0x3efe8) and at this VA in no image; corroborated by `j 0x801cf7d0`, an intra-body label jump inside 0x801cf760..0x801cf88c - and 0x801cf88c is the next documented entry, so the body ends exactly where its neighbour begins. 0x801cf760 is the equip applier"

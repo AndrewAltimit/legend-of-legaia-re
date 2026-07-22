@@ -567,6 +567,8 @@
 # no evidence at all, and 801cfb94 has a whole 33-instruction body with its own
 # frame in str_fmv. `--audit-ignored` re-runs this check.
 "8001b47c" = "INTERIOR: dump resolves entry=8001ada4, not 8001b47c"
+"801ce8ec" = "INTERIOR: the only dump is an explicit citation stub - `801ce8ec (cite of FUN_801ce8a0)`, resolving entry=801ce8a0. Port 801ce8a0."
+"801ef9b4" = "INTERIOR: the only dump is an explicit citation stub - `801ef9b4 (cite of FUN_801ef6e0)`, resolving entry=801ef6e0. Port 801ef6e0."
 "801d8450" = "INTERIOR: non-ABI dispatcher-private subroutine of the field overlay - no prologue, first insn `lh a0,0xc(s7)` reads the enclosing dispatcher's live saved regs (s2/s5/s6/s7/s8); wave-16 non-portable claim verified from the dump"
 "801d2404" = "INTERIOR: 8-instruction field-VM opcode slice - no prologue, reads live v0/v1/s6, exits `j 0x801e3624` (FUN_801DE840 op-advance epilogue, the label-call idiom)"
 "801cf5d0" = "INTERIOR: tail slice - first insn stores through live t0, reads unaffected t2/t3/t4, restores ra from a 0x18-byte frame it never built"
@@ -697,9 +699,29 @@
 "801f2d68" = "PHANTOM: same mis-based 0905 import as 801f16a0 (loaded 0x801F0000, true base 0x801F69D8). True entry 0x801F9740 (0905 file +0x2D68 = 27bdffd0). PROT 0898's word at 801f2d68 (file +0x24550) is beq, mid-function."
 "801f36a0" = "PHANTOM: same mis-based 0905 import as 801f16a0. True entry 0x801FA078 (0905 file +0x36A0 = 27bdffd0). PROT 0898's word at 801f36a0 (file +0x24E88) is sh, mid-function."
 "801f4dd0" = "PHANTOM: same mis-based 0905 import as 801f16a0. True entry 0x801FB7A8 (0905 file +0x4DD0 = 27bdffd0). PROT 0898's word at 801f4dd0 (file +0x265B8) is the pointer literal 801f4a98, not an instruction."
+# Printed addresses of mis-based dumps. Each was arbitrated against the
+# extracted overlay images (`classify-worklist.py`), and each verdict is
+# independently corroborated by the dump's own decoded jump targets - which
+# come from the instruction bytes, not the load base, so they survive a wrong
+# one and land inside the body only at its true VA
+# (docs/tooling/call-target-integrity.md). There is no function at the address
+# these rows name; the routine is real and lives where the reason says.
+"8020e748" = "PHANTOM: printed address of a mis-based dump. The 75-instruction body resolves at menu(899) 0x801CF760 (delta -0x3EFE8) and at this VA in no image. Corroborated by its own `j 0x801CF7D0`, an intra-body label jump that lands inside 0x801CF760..0x801CF88C only at the true base - and 0x801CF88C is the next documented entry (the equip candidate builder), so the body ends exactly where its neighbour starts. 0x801CF760 is the equip applier named in docs/subsystems/save-screen.md."
+"801f138c" = "PHANTOM: printed address of a mis-based dump. The 352-instruction body resolves at battle_action(898) 0x801DABA4 (delta -0x167E8) and at this VA in no image. Corroborated by `j 0x801DB0F8` / `j 0x801DB0F0` (inside 0x801DABA4 + 0x580) and `jal 0x801DB124` (the entry one past its end). 801daba4 already carries a `// PORT:` tag - see the 801fa38c duplicate row above, which is the same routine's third printed address."
+"801d2cfc" = "PHANTOM: printed address of a mis-based dump. The 7-instruction slice resolves at field(897) 0x801E1514 (delta +0xE818) and at this VA in no image. It is a fragment, not an entry: no prologue, and it exits `j 0x801E205C` - an absolute target 0xB48 past its own 28-byte window, i.e. the label-call idiom inside the routine that owns 0x801E1514."
+"801e01f0" = "PHANTOM: printed address of a mis-based dump. The 81-instruction body resolves at field(897) 0x801E5A08 (delta +0x5818) and at this VA in no image. Corroborated by its own `j 0x801E5AEC` / `j 0x801E5AE8`, both inside 0x801E5A08..0x801E5B4C and nowhere near the printed window. NB the 801d71f0 row's withdrawn duplicate claim already named 801e01f0 as a mis-based print."
 
 # Worklist addresses that name data or a region boundary rather than code.
 [worklist_data]
 "801e473c" = "DATA: the menu window-descriptor table (52 records), not code - see docs/subsystems/field-menu.md. The dump is a 256-byte hex listing; the table is parsed by legaia_asset::menu_windows."
 "801f0000" = "Region boundary, not a function entry: the docs citing 0x801F0000 (boot.md, world-map.md, memory-map.md, battle-action.md) all name it as the base of the persistent post-overlay region, never as a call target. The only dump covering the VA is a 4 KB window listing from overlay_magic_level_up_full.bin."
 "801f4000" = "Region boundary, not a function entry: the sole citation (docs/subsystems/battle.md) names 0x801CE800..0x801F4000 as the encounter-trigger overlay residency window. The only dump covering the VA is a 4 KB window listing."
+"801e5154" = "DATA: a pointer table, not code. Every dump at this VA decodes a data region (239 of 243 instructions in overlay_0897_xxx_dat are `$zero`-absolute loads), and the decoded operands read as a run of `0x801E5xxx` words - the save-UI record/pointer band that begins with the 12-byte sprite-record table at 0x801E5048 (docs/subsystems/save-screen.md, parsed by the engine's atlas builder)."
+"801e4404" = "DATA: not code. The only dump is 5 instructions Ghidra itself flags as bad instruction data (`syscall`, `lb s8,0x6400(zero)`, `tge at,t0`) and truncates control flow on. The VA sits just below the menu window-descriptor table at 0x801E4738, whose own row (801e473c) is already DATA - see docs/subsystems/field-menu.md."
+
+# Developer-tool overlay entry points whose whole body is allocator + global
+# seeding. PROT 0971 is not blanket-excluded - it hosts real game screens too,
+# and one of them (801C36B0, the shop / exchange buy-confirm) is a documented
+# port site. Only routines that carry no game logic belong here.
+[dev_tool_overlays]
+"801cf730" = "Debug-menu (PROT 0971) mode init - `CONFIG INIT`, the dev mode the mode-name table mislabels as game config (docs/subsystems/boot.md). Its 51 instructions are entirely (a) a PsyQ heap reset - `FUN_8001DCF8(0)` then `FUN_80017888(0, 0x7D000)` - which the clean-room port maps to Rust allocation rather than porting, and (b) seeding six debug-menu colour bytes (two `(0x20, 0x40, 0xA0)` triples) plus two counters. No game logic, no draw. NB the VA is also aliased: outside the debug-menu image it is interior to 801cf650, so a future dump at this address need not be this body."
