@@ -2177,3 +2177,17 @@ label = "flute_spikefish_midcast"
 slot = 255
 backup_fingerprint = "506c35707fc97431dffe8e4483ed687e6a9dbb60c3e805f3a8f4d1be721dd27f"
 description = "Mid-cast Spikefish Flute summon (spell 0x97, attack 'Blowfish') vs Gobu Gobu; loader-B id 0x1E, slot-B resident = extraction 0925 (untitled pre-linked head). Pinned the 0925 binding."
+
+[[scenarios]]
+label = "evolved_0x90_midcast"
+slot = 255
+backup_fingerprint = "ba2a2321a7d687b9115eb015bfdc5ee66a8f049c7106816603b51ff4542f6c3d"
+description = "Mid-cast Kemaro summon (evolved-Seru spell 0x90, attack 'Canine Fangs') vs Gobu Gobu, cast injected into Vahn's record spell list (autorun_evolved_cast.lua); loader-B id 0x17, slot-B resident = extraction 0918 (pre-linked pointer-table head), 100% byte-match over the 6-sector LBA footprint. Pinned the 0918 binding - closed one of the two arithmetic-predicted evolved legs."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x90", "evolved-Seru", "pcsx-redux"]
+
+[[scenarios]]
+label = "evolved_0x91_midcast"
+slot = 255
+backup_fingerprint = "59eb763bbbf748d46f585d8b4ef94f9a7df559e1782f7003deee5cbad603e794"
+description = "Mid-cast Spoon summon (evolved-Seru spell 0x91, attack 'Holy Eyes') vs Gobu Gobu, cast injected into Vahn's record spell list (autorun_evolved_cast.lua); loader-B id 0x18, slot-B resident = extraction 0919 (MIPS-prologue head), 100% byte-match over the 5-sector LBA footprint. Pinned the 0919 binding - closed the last arithmetic-predicted evolved leg."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x91", "evolved-Seru", "pcsx-redux"]
