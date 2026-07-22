@@ -1134,6 +1134,91 @@ pub fn target_panel_model(s: &PauseItemsSession, mode: u32) -> Option<TargetPane
     })
 }
 
+/// Number of rows the menu-overlay root command picker offers.
+pub const ROOT_MENU_ROWS: u16 = 7;
+
+/// The entry-context kind byte (`*_DAT_8007B450`) that both gates the root
+/// menu's Save row and redirects its cancel into the Yes/No confirm.
+pub const ROOT_MENU_CONTEXT_LOCKED: u8 = 0x0D;
+
+/// Sub-screen each root-menu row hands off to, in row order. Rows `5`
+/// (`0x18`, the save-card driver) and `6` (`0x19`, load-from-slot) are the
+/// two conditional ones - see [`root_menu_confirm_route`].
+pub const ROOT_MENU_ROUTES: [u8; ROOT_MENU_ROWS as usize] =
+    [0x05, 0x0E, 0x12, 0x15, 0x17, 0x18, 0x19];
+
+/// What confirming a root-menu row does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RootMenuRoute {
+    /// Hand off to this sub-screen id (`DAT_801E46A4`).
+    Sub(u8),
+    /// Row is unavailable - retail plays the reject cue `0x23` and stays.
+    Buzz,
+    /// Row index outside `0..7`: nothing happens.
+    None,
+}
+
+/// Confirm routing for the menu-overlay **root command picker**
+/// (sub-screen `0x01`).
+///
+/// The picker runs `FUN_801D688C(&DAT_801E46BC, 7, 1)` - seven rows - and
+/// routes the confirmed row through [`ROOT_MENU_ROUTES`]. Two rows are
+/// conditional and buzz instead of advancing:
+///
+/// * **Save** (row `5`) is blocked when an entry context is installed at
+///   `_DAT_8007B450` **and** its kind byte is
+///   [`ROOT_MENU_CONTEXT_LOCKED`]. A null context pointer allows the row -
+///   the test is on the kind, not on the pointer's presence.
+/// * **Load** (row `6`) is blocked when the save-block presence byte
+///   `_DAT_800846A8` is zero.
+///
+/// Every accepted row first clears the shared list globals
+/// `_DAT_8007BB98` / `_DAT_8007BB90` / `_DAT_8007BB88`, and the Magic row
+/// additionally stages `DAT_801E46C8 = DAT_801E46C4 & 0xFFF`; both are host
+/// state the caller mirrors.
+///
+/// PORT: FUN_801d6b20 (menu-overlay sub-screen `0x01`, phase-1 confirm arm
+/// `0x801D6BCC..0x801D6CF4`)
+pub fn root_menu_confirm_route(
+    row: u16,
+    entry_context_kind: Option<u8>,
+    any_save_block: bool,
+) -> RootMenuRoute {
+    match row {
+        5 => {
+            if entry_context_kind == Some(ROOT_MENU_CONTEXT_LOCKED) {
+                RootMenuRoute::Buzz
+            } else {
+                RootMenuRoute::Sub(ROOT_MENU_ROUTES[5])
+            }
+        }
+        6 => {
+            if any_save_block {
+                RootMenuRoute::Sub(ROOT_MENU_ROUTES[6])
+            } else {
+                RootMenuRoute::Buzz
+            }
+        }
+        r if r < ROOT_MENU_ROWS => RootMenuRoute::Sub(ROOT_MENU_ROUTES[r as usize]),
+        _ => RootMenuRoute::None,
+    }
+}
+
+/// Sub-screen a cancel out of the root command picker lands on: `0` (the
+/// terminal exit screen) normally, and `3` - the Yes/No confirm - when the
+/// installed entry context's kind byte is [`ROOT_MENU_CONTEXT_LOCKED`]. So
+/// the same context that hides the Save row is the one that makes leaving
+/// the menu ask first.
+///
+/// PORT: FUN_801d6b20 (cancel arm `0x801D6CF8..0x801D6D18`)
+pub fn root_menu_cancel_route(entry_context_kind: Option<u8>) -> u8 {
+    if entry_context_kind == Some(ROOT_MENU_CONTEXT_LOCKED) {
+        3
+    } else {
+        0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1746,5 +1831,51 @@ mod tests {
         assert_eq!(staged_mp_cost(0x10), 30);
         // Both bits set: Half (0x20) wins the priority - 20, not 30.
         assert_eq!(staged_mp_cost(0x30), 20);
+    }
+
+    #[test]
+    fn root_menu_routes_the_five_unconditional_rows() {
+        for (row, want) in [(0u16, 0x05u8), (1, 0x0E), (2, 0x12), (3, 0x15), (4, 0x17)] {
+            assert_eq!(
+                root_menu_confirm_route(row, None, false),
+                RootMenuRoute::Sub(want)
+            );
+        }
+        assert_eq!(root_menu_confirm_route(7, None, true), RootMenuRoute::None);
+    }
+
+    #[test]
+    fn root_menu_save_row_is_gated_on_the_context_kind_not_its_presence() {
+        // No context at all: Save is available.
+        assert_eq!(
+            root_menu_confirm_route(5, None, false),
+            RootMenuRoute::Sub(0x18)
+        );
+        // A context of some other kind: still available.
+        assert_eq!(
+            root_menu_confirm_route(5, Some(0x07), false),
+            RootMenuRoute::Sub(0x18)
+        );
+        // The locked kind: buzz.
+        assert_eq!(
+            root_menu_confirm_route(5, Some(ROOT_MENU_CONTEXT_LOCKED), false),
+            RootMenuRoute::Buzz
+        );
+    }
+
+    #[test]
+    fn root_menu_load_row_needs_a_save_block() {
+        assert_eq!(root_menu_confirm_route(6, None, false), RootMenuRoute::Buzz);
+        assert_eq!(
+            root_menu_confirm_route(6, None, true),
+            RootMenuRoute::Sub(0x19)
+        );
+    }
+
+    #[test]
+    fn root_menu_cancel_asks_first_under_the_locked_context() {
+        assert_eq!(root_menu_cancel_route(None), 0);
+        assert_eq!(root_menu_cancel_route(Some(0x01)), 0);
+        assert_eq!(root_menu_cancel_route(Some(ROOT_MENU_CONTEXT_LOCKED)), 3);
     }
 }

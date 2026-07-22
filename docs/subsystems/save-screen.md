@@ -163,7 +163,7 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 | ID | Function | Role |
 |---|---|---|
 | `0x00` | `FUN_801DD12C` | 2-state final-exit screen: state 0 invokes actor `&DAT_801E4A78` (terminal display); state 1 waits `_DAT_8007BB80 == 0`, then sets `DAT_801E46A0 = 0xF2` and exit code `_DAT_8007B43C = 3` |
-| `0x01` | `FUN_801D6B20` | `FUN_801DAEF4` slot selector path |
+| `0x01` | `FUN_801D6B20` | **Root command picker** - the menu overlay's own top level, not a slot selector. 7 rows through `FUN_801D688C(&DAT_801E46BC, 7, 1)`, routing to `[5, 0x0E, 0x12, 0x15, 0x17, 0x18, 0x19]` - see [below](#root-command-picker-fun_801d6b20) |
 | `0x02` | `FUN_801D6E18` | save entry (from menu entry-context `(char*)1`) |
 | `0x03` | `FUN_801D6D38` | 2-state Yes/No confirm with default cursor `1`: actor `&DAT_801E4BD4`, picker `FUN_801D688C(&DAT_801E46D0, 2, 1)`; cursor `1` returns to current sub-screen (`0x01`), cursor `0` advances to `0x00` (exit), cancel returns to `0x01` |
 | `0x04` | `FUN_801DD1B8` | post-save "press any button" return: state 0 invokes actor `&DAT_801E4BE0`; state 1 waits `_DAT_8007BB80 == 0` AND a button **held** (`_DAT_8007B874 & (_DAT_800846D0 \| _DAT_800846D4) != 0`), plays sfx `0x20` and returns to `0x01`. Mirror of `0x08`, which waits for the same mask to read **zero** |
@@ -198,6 +198,41 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 
 The table ends at `0x1F`; entries past `0x20` are the start of the MES bytecode
 section (`0x85826B82` etc.) and are not function pointers.
+
+### Root command picker (`FUN_801D6B20`)
+
+Sub-screen `0x01` is the menu overlay's own top level, and the earlier
+"`FUN_801DAEF4` slot selector path" label is **falsified**: the function
+never touches a slot table. Its two phases are the standard
+script-then-wait pair - phase 0 runs the display script `&DAT_801E4BC0`,
+raises `DAT_801E46C0 = 0x1000` and masks `DAT_801E46BC &= 0xFFF`; phase 1
+waits `_DAT_8007BB80 == 0`, then runs `FUN_801D688C(&DAT_801E46BC, 7, 1)`
+and dispatches the confirmed row.
+
+Rows `0..4` route unconditionally to sub-screens `5` (Items command
+window), `0x0E` (Magic caster picker), `0x12` (Equip character picker),
+`0x15` and `0x17`. The Magic row additionally stages
+`DAT_801E46C8 = DAT_801E46C4 & 0xFFF`, and every accepted row first
+clears the shared list globals `_DAT_8007BB98` / `_DAT_8007BB90` /
+`_DAT_8007BB88`.
+
+The last two rows are gated:
+
+- **Row 5 → `0x18`** (save-card driver) is blocked when the installed
+  entry context `_DAT_8007B450` has kind byte `0x0D`. The test is on the
+  kind, **not** on the pointer's presence - a null context pointer takes
+  the *allow* branch.
+- **Row 6 → `0x19`** (load from slot) is blocked when the save-block
+  presence byte `_DAT_800846A8` is zero.
+
+Both blocked cases play the reject cue `0x23` and stay on the picker;
+both allowed cases play `0x20` first.
+
+Cancel leaves for sub-screen `0` (the terminal exit screen) - except
+under that same `0x0D` entry context, where it goes to `3`, the Yes/No
+confirm. So one context byte both hides Save and makes leaving ask
+first. Engine port: `engine-core::pause_screens::{root_menu_confirm_route,
+root_menu_cancel_route}`.
 
 ### Engine port of the sub-screen graph
 
