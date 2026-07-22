@@ -25,7 +25,7 @@ addr,class,reason
 8001fa34,UNCERTAIN,dump carries a decompiled body but no disassembly (Ghidra reports 1 bytes) - function bounds never established
 8001fa88,REAL,self-entry body of 81 instructions returning `jr ra`
 8001ffa4,REAL,self-entry body of 37 instructions returning `jr ra`
-80020038,REAL,self-entry body of 6 instructions returning `jr ra`
+80020038,REAL,"self-entry 6-instruction body returning `jr ra`. Subject corrected: a0 is the DISPENV/DRAWENV pair at 0x8007BF30 (caller FUN_8001DAF8 passes base and base+0x74), not an actor struct - the three stores land on DRAWENV tpage/dtd/isbg"
 80020050,REAL,self-entry body of 50 instructions returning `jr ra`
 80020118,REAL,self-entry body of 67 instructions returning `jr ra`
 80020224,REAL,self-entry body of 57 instructions returning `jr ra`
