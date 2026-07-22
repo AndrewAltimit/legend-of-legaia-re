@@ -48,6 +48,18 @@ impl World {
     /// [`vm::actor_tick::tick_actor`] once per active slot, then dispatches
     /// the emitted [`TickEvent`]s.
     ///
+    /// This loop is the engine's form of the retail actor-list iterator
+    /// `FUN_8002519C` - the walker `FUN_80016444` runs over each of the
+    /// five `_DAT_8007C34C..0x36C` list heads: per node it either `jalr`s
+    /// the node's own tick fn (`node[+0x0C]`) or, for standard actors whose
+    /// fn is `FUN_80021DF4`, runs the inline physics tick, with flag bit
+    /// `0x200` as the "already ticked this frame" dedupe. The engine keeps
+    /// one pool with an `active` flag instead of five lists, and the
+    /// special-fn nodes are the dedicated ticks `World::tick` sequences
+    /// around this loop, so the dedupe bit has no counterpart. Node layout
+    /// and observed tick fns: `docs/subsystems/world-map.md`
+    /// ("per-frame render-pass iterator").
+    ///
     /// At the moment the only event the engine reacts to is
     /// [`TickEvent::MoveVmKick`], which drives
     /// [`vm::move_buffer::cursor_advance`] against the actor's
@@ -63,6 +75,8 @@ impl World {
     ///
     /// `frame_delta` matches the retail `DAT_1F800393` ramp scalar
     /// (idle = `1`). The default tick uses `1`.
+    // PORT: FUN_8002519c (list-walk tick dispatch; pool-not-lists divergence
+    //                     documented above)
     pub fn tick_actor_physics_with(&mut self, scalars: TickScalars, listener: &ListenerState) {
         self.last_tick_events.clear();
         let host = move_buffer_host::WorldMoveBufferView {

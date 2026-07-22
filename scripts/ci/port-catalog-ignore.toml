@@ -238,6 +238,14 @@
 "8001ccfc" = "Dev 2-D line emitter: 3-word GP0 line packet from pre-projected screen coords, caller-supplied command/colour word + OT bucket. Sibling of 8001ce34; zero callers in the captured corpus. see ghidra/scripts/funcs/8001ccfc.txt"
 "8001c7a0" = "Dev tiny-digit number drawer: renders a value right-to-left as 4x8 semi-transparent digit sprites (GP0 0x66-family, CLUT 0x7F83) plus a minus glyph; the 4x8 sibling of the ignored debug-HUD digit drawer 8001abc8. Zero callers in the captured corpus. see ghidra/scripts/funcs/8001c7a0.txt"
 "8003fabc" = "Out-of-line tail of the 8003f86c OT line-segment emitter: restores s0..s7 from the scratchpad save slots (0x1F800000..0x1C), installs a diag(0x6000) GTE rotation and stages a vector into data regs 5..7; reached only from the hand-scheduled emitter body, not an independent function. see ghidra/scripts/funcs/8003fabc.txt"
+"8003f86c" = "OT line-segment emitter proper (the body whose out-of-line tail 8003fabc is already listed): hand-scheduled GP0 line-packet builder off the scratchpad OT cursor _DAT_1F8003A0, reserving 0x28-byte packets and linking into the OT. Engine draws lines through its wgpu overlay; no OT/packet emission. see ghidra/scripts/funcs/8003f86c.txt"
+"8003f838" = "Scratchpad packet-id advance: bumps the OT-cursor id word _DAT_1F8002A8 by one 0xC-byte packet and re-folds the halves - GP0 packet bookkeeping for the 8003f86c/8003f3fc emitter family, no game state. see ghidra/scripts/funcs/8003f838.txt"
+"8003f3fc" = "Ambient sprite/particle record emitter: clips one 0x18-stride pool record (base DAT_8007B7E0) against the scratch attribute box 0x1F800384..87, view-transforms via 8003d344 (ApplyMatrix) and pushes the GP0 sprite packet; distance bands off record[0] scale the size. The pool WRITERS are the game-logic half and stay in the worklist; this per-record GP0 emission is replaced by the engine's wgpu ambient/effect draw. see ghidra/scripts/funcs/8003f3fc.txt"
+"8003f348" = "Ambient sprite/particle pool render pass: per-frame walk of the DAT_8007B7E0 pool (count at +2, active flag +5) calling 8003f3fc per record, GTE state bracketed by 8005b268/8005b308, emitted-count into gp+0x990. Same class as the listed tile-window passes: replaced by the engine's wgpu draw path. see ghidra/scripts/funcs/8003f348.txt"
+"80026ce4" = "Display-flip / frame-present driver: sets the clear color + DISPENV swap (8005b7d8/8003d1a4), DrawSync-family waits (8005fb84), the STR-mode (0x15) double packet submit (80059010 + 8003d2c4 AddPrim) with the 80026f50 camera commit, and the per-mode world-map tile-dispatch calls (801f7088 / 801f69d8 - those callees are game logic and stay in the worklist). The engine presents through the wgpu swapchain. see ghidra/scripts/funcs/80026ce4.txt"
+"80026f50" = "Camera GTE matrix commit (STR-mode leg of 80026ce4): builds the rotation from the camera angle triple via 80026988, multiplies the DAT_80010B84 template (8005b3a8 MulMatrix), loads translation from DAT_800840B8..C0 and pushes RT/TR to the GTE (8005b618/8005b6a8). Engine builds view matrices in engine-render (Camera); pure COP2 staging. see ghidra/scripts/funcs/80026f50.txt"
+"8001d058" = "Display-flip gate wrapper: calls the present driver 80026ce4 only while scratch _DAT_1F800394 bit 8 is set. Frame-loop plumbing around the listed 80026ce4. see ghidra/scripts/funcs/8001d058.txt"
+"8001d140" = "Scratchpad-stack render trampoline: swaps SP into the 0x1F8002BC fast-scratch window, jals the per-actor render dispatcher 8001ada4 for the caller's list head, restores SP. Pure R3000 performance idiom around the (documented) render dispatcher; no behaviour of its own. see ghidra/scripts/funcs/8001d140.txt"
 "801d99bc" = "Per-actor battle UI-element array teardown: zeroes the 0x28-actor UI-element arrays (+0x1074/+0x11b4/+0x11b7) and calls 800355f0. Frame draw-state reset companion to 800355f0; no engine equivalent (engine holds battle UI state in Rust structs). see ghidra/scripts/funcs/801d99bc.txt"
 "8003563c" = "Per-actor record-queue append: appends a 16-byte record into an actor's 8-slot sub-buffer on the gp+0x148 draw/event list (lazy 0x80-byte alloc, hard cap 8). Data-structure plumbing; the reward-resolver semantic it serves is ported in apply_battle_loot. see ghidra/scripts/funcs/8003563c.txt"
 "8003adac" = "Scene-entry letterbox/sprite-pair chrome: builds two box/sprite primitives (sizes 0x1E, 0x08) via the panel emitter 80024e80. Host GP0 chrome emission; engine draws scene-entry framing through its own overlay path. see ghidra/scripts/funcs/8003adac.txt"
@@ -555,6 +563,10 @@
 # no evidence at all, and 801cfb94 has a whole 33-instruction body with its own
 # frame in str_fmv. `--audit-ignored` re-runs this check.
 "8001b47c" = "INTERIOR: dump resolves entry=8001ada4, not 8001b47c"
+"801d8450" = "INTERIOR: non-ABI dispatcher-private subroutine of the field overlay - no prologue, first insn `lh a0,0xc(s7)` reads the enclosing dispatcher's live saved regs (s2/s5/s6/s7/s8); wave-16 non-portable claim verified from the dump"
+"801d2404" = "INTERIOR: 8-instruction field-VM opcode slice - no prologue, reads live v0/v1/s6, exits `j 0x801e3624` (FUN_801DE840 op-advance epilogue, the label-call idiom)"
+"801cf5d0" = "INTERIOR: tail slice - first insn stores through live t0, reads unaffected t2/t3/t4, restores ra from a 0x18-byte frame it never built"
+"801df8dc" = "INTERIOR: dump begins in a delay slot (`_li v0,0x63`), branches on live v1; debug-print tail restoring s0..s5/ra from a 0x50-byte frame it never built"
 "8001e928" = "INTERIOR: dump resolves entry=8001e890, not 8001e928"
 "8002cdd0" = "INTERIOR: dump resolves entry=8002c69c, not 8002cdd0"
 "8002d988" = "INTERIOR: dump resolves entry=8002c69c, not 8002d988"
@@ -608,6 +620,7 @@
 # behind it is not deleted.
 [worklist_shared_tail]
 "801d3290" = "SHARED_TAIL: 5 instructions, no `jr ra`; reads s5 it never writes, ends `addiu s8,s8,0x6` + `j 0x801df8dc` - the field-VM label-call idiom (s8 = script PC), not a function. Ghidra renders it as two calls and a return."
+"801e00b8" = "SHARED_TAIL: common exit slice - no prologue, reads live s1, restores s0..s2/ra from a 0x60-byte frame it never built; entered by `j 0x801e00b8` from FUN_801D4908 (and siblings) in the 0897 field overlay"
 "80043658" ="SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
 "80043768" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"
 "800438b8" = "SHARED_TAIL: no `jr ra`; body exits `j 0x80043580`, inside 80043390 - an entry into a multi-entry routine, not a standalone function"

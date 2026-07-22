@@ -49,6 +49,22 @@ impl World {
     ///     - `Field`      → field-VM step (or no-op if no bytecode loaded).
     ///     - `Cutscene`   → field-VM step (cutscenes use the same script VM).
     ///     - `Title`      → no further VM.
+    ///
+    /// This is the engine's counterpart of the retail master frame driver
+    /// `FUN_80016444`: retail runs five `FUN_8002519C` **tick passes** over
+    /// the actor-list heads `_DAT_8007C34C..0x36C` (pass 3/4 swapped by the
+    /// `_DAT_1F800394 & 0x10` mirror bit), then five `FUN_8001D140` **render
+    /// passes** (the scratchpad-SP trampoline into `FUN_8001ADA4`), with the
+    /// display flip (`FUN_8001D058` → `FUN_80026CE4`) before the render
+    /// passes in STR mode (0x15) and after them otherwise, plus dev error
+    /// prints and the dev mode-transition writer `FUN_800179C0`. The engine
+    /// splits that frame: the tick passes are the per-actor loops below,
+    /// the render passes live in the host renderer (wgpu), the flip is the
+    /// swapchain present, and the dev prints are not ported. Divergence:
+    /// engine actors live in one pool with an `active` flag, not five
+    /// linked lists - pass ORDER is preserved by the sequencing below.
+    // PORT: FUN_80016444 (frame-pass sequencing; render/flip halves are the
+    //                     host renderer's, dev prints not ported)
     pub fn tick(&mut self) -> Option<StepOutcome> {
         self.frame += 1;
         // Retail-frame sub-clock for the narration crawl roller. The sim ticks
