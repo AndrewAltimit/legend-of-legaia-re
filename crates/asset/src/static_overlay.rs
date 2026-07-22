@@ -330,6 +330,72 @@ pub fn pointer_resolution(as_loaded: &[u8], base_va: u32) -> (u32, u32) {
     (resolved, total)
 }
 
+/// The canonical slot-A overlay base (the per-mode gameplay overlay window;
+/// field / battle-action / menu / minigame overlays all load here). The rival
+/// of [`crate::summon_overlay::SUMMON_OVERLAY_LINK_BASE`] (slot B) in the
+/// two-slot base cross-checks.
+pub const SLOT_A_BASE: u32 = 0x801C_E818;
+
+/// Count the overlay's absolute pointers that land on the **start of an
+/// in-file NUL-terminated ASCII string** (>= 6 printable bytes, not preceded
+/// by a printable byte) when the blob is placed at `base_va`.
+///
+/// This is the positive discriminator [`pointer_resolution`] lacks. That
+/// metric scans only pointers whose `lui` half matches the candidate base's
+/// own two hi-halves and counts any in-window hit - so an overlay that densely
+/// references **fixed structures of a co-resident overlay** in the rival
+/// slot's VA band can score high at a base it never loads to (PROT 0902
+/// scored 44/48 "resolved" at the slot-B base off purely external battle-band
+/// references; its true base is [`SLOT_A_BASE`], pinned by the mode-18 loader
+/// chain). A pointer that decodes to the start of one of the file's own
+/// string literals, by contrast, only does so at the true base - external
+/// fixed-VA references land on arbitrary bytes under the wrong base and fail
+/// the string-shape test. Compare the committed base's votes against the
+/// rival slot base's: the true base wins or ties (0-0 for string-free blobs);
+/// a rival win falsifies the committed slot.
+pub fn string_anchor_votes(as_loaded: &[u8], base_va: u32) -> u32 {
+    let is_print = |b: u8| (0x20..=0x7E).contains(&b);
+    let is_string_start = |off: usize| -> bool {
+        if off > 0 && is_print(as_loaded[off - 1]) {
+            return false;
+        }
+        let mut n = 0usize;
+        while off + n < as_loaded.len() && is_print(as_loaded[off + n]) {
+            n += 1;
+        }
+        n >= 6 && off + n < as_loaded.len() && as_loaded[off + n] == 0
+    };
+    let mut votes = 0u32;
+    let words = as_loaded.len() / 4;
+    for i in 0..words {
+        let w1 = legaia_bytes::u32_le(as_loaded, i * 4).unwrap();
+        if w1 >> 26 != 0x0F {
+            continue; // not lui
+        }
+        let rt = (w1 >> 16) & 0x1F;
+        let hi = w1 & 0xFFFF;
+        // Any hi-half inside the overlay window (either slot's band).
+        if !(0x801C..=0x8021).contains(&hi) {
+            continue;
+        }
+        for j in (i + 1)..(i + 7).min(words) {
+            let w2 = legaia_bytes::u32_le(as_loaded, j * 4).unwrap();
+            if w2 >> 26 == 0x09 && (w2 >> 21) & 0x1F == rt {
+                let lo = (w2 & 0xFFFF) as i16 as i32;
+                let addr = ((hi << 16) as i32).wrapping_add(lo) as u32;
+                if let Some(off) = addr.checked_sub(base_va)
+                    && (off as usize) < as_loaded.len()
+                    && is_string_start(off as usize)
+                {
+                    votes += 1;
+                }
+                break;
+            }
+        }
+    }
+    votes
+}
+
 /// Result of a static base recovery.
 #[derive(Debug, Clone, Copy)]
 pub struct BaseRecovery {
@@ -700,6 +766,34 @@ mod tests {
         let (r2, t2) = pointer_resolution(&code, 0x801C_E818);
         assert_eq!(t2, 0, "no 0x801c/0x801d pointers in this blob");
         assert_eq!(r2, 0);
+    }
+
+    #[test]
+    fn string_anchor_votes_discriminate_bases() {
+        // Blob laid out like a slot-A overlay: a pointer at the head loads the
+        // VA of an in-file dev string. At the true base the pointer decodes to
+        // the string start; at the rival slot base it lands on arbitrary bytes.
+        let true_base = 0x801C_E818u32;
+        let rival_base = 0x801F_69D8u32;
+        let lui = |rt: u32, hi: u32| (0x0Fu32 << 26) | (rt << 16) | hi;
+        let addiu = |rt: u32, lo: u16| (0x09u32 << 26) | (rt << 21) | (rt << 16) | lo as u32;
+        let mut code = vec![0u8; 0x1000];
+        // Dev string at file +0x430.
+        code[0x430..0x430 + 10].copy_from_slice(b"GAME OVER\0");
+        // Standard MIPS 32-bit-immediate split: hi is carry-adjusted, lo is
+        // sign-extended by addiu. 0x801CEC48 -> lui 0x801D ; addiu -0x13B8.
+        let split = |va: u32| ((va.wrapping_add(0x8000)) >> 16, (va & 0xFFFF) as u16);
+        let target = true_base + 0x430;
+        let (hi, lo) = split(target);
+        code[0x00..0x04].copy_from_slice(&lui(4, hi).to_le_bytes());
+        code[0x04..0x08].copy_from_slice(&addiu(4, lo).to_le_bytes());
+        assert_eq!(string_anchor_votes(&code, true_base), 1);
+        assert_eq!(string_anchor_votes(&code, rival_base), 0);
+        // A pointer into the middle of the string is NOT a string start.
+        let (hi, lo) = split(true_base + 0x433);
+        code[0x08..0x0C].copy_from_slice(&lui(5, hi).to_le_bytes());
+        code[0x0C..0x10].copy_from_slice(&addiu(5, lo).to_le_bytes());
+        assert_eq!(string_anchor_votes(&code, true_base), 1);
     }
 
     #[test]

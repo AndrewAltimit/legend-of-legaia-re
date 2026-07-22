@@ -764,7 +764,23 @@ The script censuses cover script-op operand spaces only. The bank's helpers are 
 - **Muscle Dome** (PROT 0977, dev module `other6`; the file carries the mastering path `h:\prot\field\koin1\efect.dat`, pinning `koin1` as its host scene). The post-match settle routine CLEARs `0x50A` (`jal` at `0x801CE818`-based VA `0x801D0FF8`, file `0977+0x27E8`) and re-SETs it (`0x801D101C`) iff the win global `0x801D1ADC` is set - the overlay's `WIn on` / `WIn off` debug strings label exactly this pair. The same routine mirrors the battle-victory low flag `0x35`, SETs the per-class victory latches `0x130`/`0x131`/`0x132`, pays prize gold from the table at `0x801D1860`, and past round 13 grants item `0xCD` once, gated on flag `0x6CB`.
 - **The dance overlays** (PROT 0978/0979/0980 - the three dance-song variants sharing one code image; canonical static-overlay row is 0980). Session setup SETs `0x50A` unconditionally (`0x801CF968`, file `0980+0x1150`) after decoding the song select from flags `0x133`/`0x134`/`0x135` (alt `0x428`) and clearing the three; the result path CLEARs it (`0x801CFF10`) when the performance misses its score goal.
 
-The venue linkage closes the loop: `koin1`'s scripts carry the mode-24 door-warp `3E 69` (Muscle Dome) at three sites plus `3E 68` (Baka Fighter) at three, and `koin3` carries `3E 6A` (dance) at four. On return from mode 24 the venue scene re-enters and its gates re-evaluate: `koin1 P2[9]` (C2=`[0x50A]`, spawns while set) is the returned-victorious beat, `P2[10]` (C1=`[0x50A]`) the default arrangement, and `koin3`'s `P2[9]`/`P2[10]` clean TESTs branch the same way. This is why the script census correctly reports no script writer: the writers are native code, resident only while the minigame overlay occupies slot A. Anchor test: `man_variant_carrier_census_disc.rs::koin_gates_0x50a_0x5d6_remain_script_writer_less` (still true as stated - *script*-writer-less).
+The venue linkage closes the loop. `koin1` is the whole coin-games venue, not
+one game's antechamber - its scripts carry three distinct mode-24 door-warps,
+three sites each:
+
+| operand | sub-id | destination | sites |
+|---|---|---|---|
+| `3E 67` | 3 | casino slot machine (PROT 0975) | `P1[54..56]` |
+| `3E 68` | 4 | Baka Fighter (PROT 0976) | `P1[51..53]` |
+| `3E 69` | 5 | the arena (PROT 0977) | `P1[9]` |
+
+`koin3` carries `3E 6A` (sub-id 6, dance) at four sites. The rest of the `koin`
+cluster - `koin1b`, `koin2`, `koin4`, `koin6` - carries no door-warp at all.
+This is why one scene is both the Muscle Dome's host (the 0977 mastering path
+`h:\prot\field\koin1\efect.dat`) and "the casino floor" whose BGM id `2018` is
+named *Sol casino*: they are two doors off the same room.
+
+On return from mode 24 the venue scene re-enters and its gates re-evaluate: `koin1 P2[9]` (C2=`[0x50A]`, spawns while set) is the returned-victorious beat, `P2[10]` (C1=`[0x50A]`) the default arrangement, and `koin3`'s `P2[9]`/`P2[10]` clean TESTs branch the same way. This is why the script census correctly reports no script writer: the writers are native code, resident only while the minigame overlay occupies slot A. Anchor test: `man_variant_carrier_census_disc.rs::koin_gates_0x50a_0x5d6_remain_script_writer_less` (still true as stated - *script*-writer-less).
 
 **`0x5D6` (the `koin4` C1 gate + `P1[15]` dialog/position variant) has no writer in any enumerable space:**
 

@@ -201,8 +201,11 @@ fn failed_run_consumes_the_turn_and_the_battle_continues() {
 }
 
 #[test]
-fn shop_buy_refuses_past_the_98_held_cap() {
-    // Retail dims buy attempts past 98 held of one item id (SHOP_HELD_CAP).
+fn shop_buy_fills_the_stack_at_99_and_refuses_past_it() {
+    // Retail law min(gold/price, 99, 99-held): the buy-list row dims once
+    // held stops being < 0x63 (sltiu at 0x80030f0c, FUN_80030628 shop
+    // case) and the quantity max clamps to 99 - held (li a0,0x63 at
+    // 0x801db8d0, FUN_801DB7F4) - so a stack tops off at exactly 99.
     let mut world = World::new();
     world.money = 1_000_000;
     let inv = crate::shop::ShopInventory::new(
@@ -215,19 +218,23 @@ fn shop_buy_refuses_past_the_98_held_cap() {
     let mut session = crate::shop::ShopSession::new(inv);
     session.select_buy_item(0);
 
-    // 94 held + 4 more = 98: allowed, exactly at the cap.
-    world.inventory.insert(0x77, 94);
+    // 95 held + 4 more = 99: allowed, exactly at the cap.
+    world.inventory.insert(0x77, 95);
     session.set_quantity(3); // qty 4
     let (_, qty, _) = world.buy_from_shop(&session).expect("cap-exact buy lands");
     assert_eq!(qty, 4);
-    assert_eq!(world.inventory.get(&0x77), Some(&98));
+    assert_eq!(world.inventory.get(&0x77), Some(&99));
 
-    // 98 held: one more refuses, inventory and gold untouched.
+    // 99 held: one more refuses, inventory and gold untouched.
     let money = world.money;
     session.set_quantity(0); // qty 1
     assert!(world.buy_from_shop(&session).is_none());
-    assert_eq!(world.inventory.get(&0x77), Some(&98));
+    assert_eq!(world.inventory.get(&0x77), Some(&99));
     assert_eq!(world.money, money);
+
+    // The retail quantity kernel agrees: at 95 held the picker maxes at 4.
+    assert_eq!(crate::shop::buy_qty_max(1_000_000, 10, Some(95)), 4);
+    assert_eq!(crate::shop::buy_qty_max(1_000_000, 10, Some(99)), 0);
 }
 
 #[test]

@@ -107,6 +107,57 @@ pub fn add_spell_xp(record: &mut CharacterRecord, slot: usize, gain: u32) {
     record.raw[off..off + 4].copy_from_slice(&cur.saturating_add(gain).to_le_bytes());
 }
 
+/// PORT: FUN_801E92DC - learn a new Seru spell by **prepending** it to the
+/// character's spell list. Retail shifts the three parallel arrays up by one
+/// slot in a single descending loop (`id[i+1] = id[i]`, `level[i+1] =
+/// level[i]`, `xp[i+1] = xp[i]` for `i = count-1..=0`), then writes slot 0 as
+/// `id = spell_id - 0x80` (the list stores the low byte of the `0x8x` spell
+/// id), `level = 1`, `xp = 0`, and increments the count. The newest Seru
+/// therefore always lists first. (The randomizer's shiny-Seru feature
+/// patches exactly this routine's level write + shift - see
+/// `crates/patcher/src/shiny_seru/`.)
+///
+/// The shift is bounded to the record's array capacity
+/// ([`legaia_save::MAX_SPELLS`]); retail's unbounded `do`/`while` never
+/// exceeds it in practice (the id space `0x81..=0x8B` caps a legitimate list
+/// at 11 entries).
+pub fn learn_spell_prepend(record: &mut CharacterRecord, spell_id: u8) {
+    let mut list = record.spell_list();
+    let count = (list.count as usize).min(list.ids.len() - 1);
+    // Shift ids/levels (descending, like retail's single loop) ...
+    for i in (0..count).rev() {
+        list.ids[i + 1] = list.ids[i];
+        list.levels[i + 1] = list.levels[i];
+    }
+    list.ids[0] = spell_id.wrapping_sub(0x80);
+    list.levels[0] = 1;
+    list.count = list.count.wrapping_add(1);
+    record.set_spell_list(list);
+    // ... and the parallel u32 XP array at +0x8.
+    for i in (0..count).rev() {
+        let xp = spell_xp(record, i);
+        let off = SPELL_XP_OFFSET + (i + 1) * 4;
+        record.raw[off..off + 4].copy_from_slice(&xp.to_le_bytes());
+    }
+    record.raw[SPELL_XP_OFFSET..SPELL_XP_OFFSET + 4].copy_from_slice(&0u32.to_le_bytes());
+}
+
+/// The banner suffix retail appends after the spell name (battle-action
+/// overlay rodata at `0x801F6840 + 4` - the `+4` skips a 4-byte glyph-prefix
+/// chain, leaving the possessive suffix).
+pub const MAGIC_LEVEL_INCREASED_SUFFIX: &str = "'s magic level increased.";
+
+/// Compose the "magic level increased" banner shown when a Seru spell levels
+/// up: the cast spell's name (`DAT_800754D0[actor[+0x1DF]]`, the shared
+/// spell-name table) followed by [`MAGIC_LEVEL_INCREASED_SUFFIX`]. Retail
+/// builds it into the shared context message buffer `_DAT_8007BD24 + 0x1F9`
+/// (string copy `FUN_8003CA78` + append `FUN_8003CAC4`).
+///
+/// PORT: FUN_801F452C
+pub fn magic_level_increased_message(spell_name: &str) -> String {
+    format!("{spell_name}{MAGIC_LEVEL_INCREASED_SUFFIX}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,5 +230,36 @@ mod tests {
         list.ids[0x21] = 0x8B;
         rec.set_spell_list(list);
         assert_eq!(spell_slot(&rec, 0x8B), None);
+    }
+
+    #[test]
+    fn learn_prepend_shifts_ids_levels_and_xp() {
+        let mut rec = CharacterRecord::zeroed();
+        let mut list = rec.spell_list();
+        list.count = 2;
+        list.ids[0] = 0x03; // spell 0x83, level 4
+        list.ids[1] = 0x01; // spell 0x81, level 2
+        list.levels[0] = 4;
+        list.levels[1] = 2;
+        rec.set_spell_list(list);
+        add_spell_xp(&mut rec, 0, 77);
+        add_spell_xp(&mut rec, 1, 33);
+
+        learn_spell_prepend(&mut rec, 0x8B);
+        let l = rec.spell_list();
+        assert_eq!(l.count, 3);
+        assert_eq!(&l.ids[..3], &[0x0B, 0x03, 0x01]);
+        assert_eq!(&l.levels[..3], &[1, 4, 2]);
+        assert_eq!(spell_xp(&rec, 0), 0, "new spell starts at zero XP");
+        assert_eq!(spell_xp(&rec, 1), 77, "old slot-0 XP moved with it");
+        assert_eq!(spell_xp(&rec, 2), 33);
+    }
+
+    #[test]
+    fn level_up_banner_appends_the_retail_suffix() {
+        assert_eq!(
+            magic_level_increased_message("Gimard"),
+            "Gimard's magic level increased."
+        );
     }
 }

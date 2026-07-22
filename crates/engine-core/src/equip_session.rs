@@ -424,6 +424,261 @@ impl EquipSession {
     pub fn give_item(&mut self, id: u8, qty: u8) {
         *self.inventory.entry(id).or_insert(0) += qty;
     }
+
+    /// Refresh [`Self::preview_stats`] for a hovered candidate by
+    /// **trial-equipping** it on a copy of the record - the retail
+    /// candidate-list handler's preview mechanism: save the record's equip
+    /// array into the `DAT_801EF0C8` staging buffer, write the candidate
+    /// (or `0` for the Remove row), re-run the stat aggregator
+    /// `FUN_801CF650`, restore the array. The engine expresses the
+    /// save/restore as a copy.
+    ///
+    /// PORT: FUN_801d9c14 (state-2 trial-equip stat preview; see
+    /// `ghidra/scripts/funcs/overlay_menu_801d9c14.txt` at
+    /// `0x801d9e8c..0x801da058`)
+    pub fn preview_candidate(&mut self, slot: u8, item_id: u8) {
+        let mut copy = self.record;
+        if let Some(cell) = copy.equip.get_mut(slot as usize) {
+            *cell = item_id;
+        }
+        self.preview_stats =
+            compute_battle_stats(&copy, &self.equipment, &self.active_status, &self.modifiers);
+    }
+
+    /// The candidate list's **Remove** row commit (class-`0x4000` payload-0
+    /// row): return the equipped item to the bag and clear the slot,
+    /// re-running the stat aggregate. Returns the removed id, or `None`
+    /// when the slot is already empty - retail buzzes SFX `0x37` there and
+    /// commits nothing.
+    ///
+    /// PORT: FUN_801d9c14 (confirm path `0x801da0b4..0x801da134`: equipped
+    /// byte zero -> `FUN_80035B50(0x37)`; else SFX `0x24`,
+    /// `FUN_800421D4(equipped, 1)`, `sb zero` into the record slot)
+    pub fn unequip(&mut self, slot: u8) -> Option<u8> {
+        let removed = *self.record.equip.get(slot as usize)?;
+        if removed == 0 {
+            return None;
+        }
+        *self.inventory.entry(removed).or_insert(0) += 1;
+        self.record.equip[slot as usize] = 0;
+        self.preview_stats = compute_battle_stats(
+            &self.record,
+            &self.equipment,
+            &self.active_status,
+            &self.modifiers,
+        );
+        self.state = EquipState::Done(EquipOutcome::Committed {
+            slot,
+            removed,
+            added: 0,
+        });
+        self.events.push(EquipEvent::Committed {
+            slot,
+            removed,
+            added: 0,
+        });
+        Some(removed)
+    }
+
+    /// The Equip screen's slot-browse confirm dispatch: row `0` is the
+    /// "Best Equipment" auto-equip, rows `1..=7` open the candidate list
+    /// for slot `row - 1`. (Retail's cancel leaves for the character
+    /// picker, sub-screen `0x12`; the engine host owns that transition.)
+    ///
+    /// `candidates` are the four best-armament ids the retail candidate
+    /// computer `FUN_801CF88C` parks at `DAT_801EF0C0` - the engine host
+    /// supplies its own pick.
+    ///
+    /// PORT: FUN_801d99f0 (menu-overlay sub-screen `0x13`; see
+    /// `ghidra/scripts/funcs/overlay_menu_801d99f0.txt` - confirm on row 0
+    /// runs the applier and cues SFX `0x24` on change / buzz `0x23` on
+    /// none, other rows hand off to sub-screen `0x14`)
+    pub fn slot_browse_confirm(&mut self, row: u8, candidates: [u8; 4]) -> SlotBrowseOutcome {
+        if row == 0 {
+            let changed =
+                apply_best_equipment(&mut self.record.equip, candidates, &mut self.inventory);
+            if changed > 0 {
+                self.preview_stats = compute_battle_stats(
+                    &self.record,
+                    &self.equipment,
+                    &self.active_status,
+                    &self.modifiers,
+                );
+                SlotBrowseOutcome::BestEquipApplied(changed)
+            } else {
+                SlotBrowseOutcome::BestEquipNothing
+            }
+        } else {
+            SlotBrowseOutcome::OpenCandidates {
+                slot: (row - 1).min(7),
+            }
+        }
+    }
+}
+
+/// The **armament** slot a piece of equipment competes for, in the order the
+/// Best Equipment candidate array `DAT_801EF0C0` uses.
+///
+/// Retail derives it from the equipment record's `+7` slot bits and then
+/// permutes: the raw `(bits & 0x60) >> 5` order is body / head / weapon /
+/// footwear, and the candidate array is indexed **weapon first**. The
+/// permutation is a four-way branch chain in the body, not a table.
+///
+/// PORT: FUN_801cf88c (`0x801CFA38..0x801CFA64`)
+pub fn armament_slot_of(slot_bits: u8) -> usize {
+    // raw 0 body -> 2, 1 head -> 1, 2 weapon -> 0, 3 footwear -> 3.
+    [2usize, 1, 0, 3][((slot_bits & 0x60) >> 5) as usize]
+}
+
+/// The joined item + equipment record fields the Best Equipment scan reads
+/// for one bag id: item record `+0` / `+1` chained into the equipment record
+/// at `0x80074F68 + index*8`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EquipCandidate {
+    /// Item record `+0` - the class byte. Only `1` (equipment) competes.
+    pub kind: u8,
+    /// Equipment record `+1` - the ATK bonus, the weapon slot's only stat term.
+    pub attack: u8,
+    /// Equipment record `+2` / `+3` - the UDF / LDF bonuses, the **only**
+    /// stat terms the armour slots rank on.
+    pub defence: (u8, u8),
+    /// Equipment record `+6` - the equippable-character mask.
+    pub char_mask: u8,
+    /// Equipment record `+7` - the slot-type bits.
+    pub slot_bits: u8,
+}
+
+/// Compute the four Best Equipment candidate ids for a character.
+///
+/// This is the scan half of retail's `FUN_801CF88C`: it seeds the candidate
+/// array with what the character already wears and then walks the bag,
+/// keeping the best eligible id per armament slot. The function's other half
+/// (back up the eight equip bytes, write the candidates in, re-run the stat
+/// aggregator `FUN_801CF650` so the preview block reflects them, then restore
+/// the backup) is host bookkeeping the engine expresses through
+/// [`EquipSession::preview_candidate`] and [`compute_battle_stats`].
+///
+/// Two ranking laws fall straight out of the disassembly and are easy to get
+/// wrong from the screen alone:
+///
+/// * **Armour is ranked on `UDF + LDF` only.** The INT (`+0`) and SPD (`+4`)
+///   bonuses are never read here, so a head accessory that is pure INT or a
+///   pair of boots that is pure SPD never displaces an incumbent.
+/// * **The weapon's category check dominates its ATK.** The weapon score is
+///   `equip[+1] + FUN_801DD0C0(char, id, 1)`, and that check contributes a
+///   flat [`crate::menu_item_category::CATEGORY_MATCH_SCORE`] (`1000`) or
+///   `0`. An ATK byte cannot reach 1000, so a category-favoured weapon beats
+///   every unfavoured one outright regardless of raw attack.
+///
+/// A slot whose incumbent is `0` (nothing equipped) is filled by the **first**
+/// eligible bag entry for it - the empty-slot test runs before the comparison.
+/// Ties keep the incumbent (`<` is strict in both arms).
+///
+/// `weapon_category_score` is the caller's `FUN_801DD0C0` binding; pass
+/// `|_| 0` when no category table is loaded.
+///
+/// PORT: FUN_801cf88c (menu-overlay Best Equipment candidate scan;
+/// `see ghidra/scripts/funcs/overlay_menu_801cf88c.txt`)
+/// REF: FUN_801cf650 (the stat aggregator the retail body re-runs twice
+/// around the trial equip)
+/// REF: FUN_801dd0c0 (the category check `weapon_category_score` binds;
+/// ported as `crate::menu_item_category::category_check`)
+pub fn best_equipment_candidates(
+    equipped: [u8; 4],
+    char_mask: u8,
+    bag: &[(u8, u8)],
+    lookup: impl Fn(u8) -> Option<EquipCandidate>,
+    weapon_category_score: impl Fn(u8) -> u32,
+) -> [u8; 4] {
+    let mut best = equipped;
+    for &(id, count) in bag {
+        if id == 0 || count == 0 {
+            continue;
+        }
+        let Some(cand) = lookup(id) else {
+            continue;
+        };
+        if cand.kind != 1 || cand.char_mask & char_mask == 0 {
+            continue;
+        }
+        let slot = armament_slot_of(cand.slot_bits);
+        let incumbent = best[slot];
+        if incumbent == 0 {
+            best[slot] = id;
+            continue;
+        }
+        let cur = lookup(incumbent).unwrap_or_default();
+        let (cand_score, cur_score) = if slot == 0 {
+            (
+                u32::from(cand.attack) + weapon_category_score(id),
+                u32::from(cur.attack) + weapon_category_score(incumbent),
+            )
+        } else {
+            (
+                u32::from(cand.defence.0) + u32::from(cand.defence.1),
+                u32::from(cur.defence.0) + u32::from(cur.defence.1),
+            )
+        };
+        if cur_score < cand_score {
+            best[slot] = id;
+        }
+    }
+    best
+}
+
+/// Outcome of [`EquipSession::slot_browse_confirm`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SlotBrowseOutcome {
+    /// Best Equipment applied `n` swaps (retail SFX `0x24` + stat
+    /// re-aggregate).
+    BestEquipApplied(u32),
+    /// Nothing to change (retail buzz `0x23`).
+    BestEquipNothing,
+    /// A slot row confirmed - open the candidate list (retail sub-screen
+    /// `0x14`).
+    OpenCandidates { slot: u8 },
+}
+
+/// The "Best Equipment" applier over the four armament slots: for each
+/// slot whose best-candidate id differs from the equipped id, take one
+/// candidate from the bag (a candidate not in the bag is skipped - no
+/// swap, no count), return the old item when non-zero, and write the
+/// candidate into the slot. Returns the number of slots changed.
+///
+/// PORT: FUN_801cf760 (see `ghidra/scripts/funcs/overlay_menu_801cf760.txt`:
+/// per-slot `beq candidate, equipped` skip, `FUN_80042EE0` bag-slot find
+/// with the `0x100` not-found sentinel, `FUN_80043048(slot, 1)` take,
+/// `FUN_800421D4(old, 1)` give-back, `sb` commit, changed-count return)
+/// REF: FUN_801cf88c (the best-candidate computer filling `DAT_801EF0C0` -
+/// ported as [`best_equipment_candidates`])
+pub fn apply_best_equipment(
+    equips: &mut [u8; 8],
+    candidates: [u8; 4],
+    inventory: &mut HashMap<u8, u8>,
+) -> u32 {
+    let mut changed = 0;
+    for (slot, &candidate) in candidates.iter().enumerate() {
+        let equipped = equips[slot];
+        if candidate == equipped {
+            continue;
+        }
+        // Bag must actually hold the candidate (retail's 0x100 sentinel
+        // check); the Remove direction never happens here - a zero
+        // candidate is never in the bag.
+        let Some(qty) = inventory.get_mut(&candidate) else {
+            continue;
+        };
+        if *qty == 0 {
+            continue;
+        }
+        *qty -= 1;
+        if equipped != 0 {
+            *inventory.entry(equipped).or_insert(0) += 1;
+        }
+        equips[slot] = candidate;
+        changed += 1;
+    }
+    changed
 }
 
 #[cfg(test)]
@@ -911,5 +1166,182 @@ mod tests {
             EquipState::ItemPicker { cursor, .. } => assert_eq!(cursor, 1),
             _ => panic!("expected item picker"),
         }
+    }
+
+    #[test]
+    fn best_equipment_swaps_only_differing_in_bag_candidates() {
+        // FUN_801cf760 law: per slot, skip when candidate == equipped or
+        // the bag lacks the candidate; otherwise take one, return the old
+        // item, count the change.
+        let mut equips = [0u8; 8];
+        equips[0] = 0x05; // already the best - must not move
+        equips[1] = 0x25; // will be replaced by 0x26
+        let mut inv = HashMap::new();
+        inv.insert(0x26, 1);
+        // Slot 2's candidate 0x45 is NOT in the bag - skipped, no count.
+        let changed = apply_best_equipment(&mut equips, [0x05, 0x26, 0x45, 0], &mut inv);
+        assert_eq!(changed, 1);
+        assert_eq!(equips[0], 0x05);
+        assert_eq!(equips[1], 0x26);
+        assert_eq!(equips[2], 0);
+        assert_eq!(inv.get(&0x26), Some(&0));
+        // The displaced 0x25 went back to the bag.
+        assert_eq!(inv.get(&0x25), Some(&1));
+    }
+
+    #[test]
+    fn slot_browse_row0_applies_best_and_other_rows_open_candidates() {
+        let mut s = fresh_session();
+        s.give_item(0x06, 1); // better slot-0 item in the bag
+        match s.slot_browse_confirm(0, [0x06, 0, 0, 0]) {
+            SlotBrowseOutcome::BestEquipApplied(1) => {}
+            other => panic!("expected one swap, got {other:?}"),
+        }
+        assert_eq!(s.record().equip[0], 0x06);
+        // Nothing left to improve: retail buzzes 0x23.
+        assert_eq!(
+            s.slot_browse_confirm(0, [0x06, 0, 0, 0]),
+            SlotBrowseOutcome::BestEquipNothing
+        );
+        // A slot row opens the candidate list for row - 1.
+        assert_eq!(
+            s.slot_browse_confirm(3, [0, 0, 0, 0]),
+            SlotBrowseOutcome::OpenCandidates { slot: 2 }
+        );
+    }
+
+    #[test]
+    fn unequip_returns_item_to_bag_and_refuses_empty_slot() {
+        let mut s = fresh_session();
+        // Equip 0x05 into slot 0 first (bag holds one).
+        s.input(EquipInput {
+            cross: true,
+            ..Default::default()
+        });
+        s.input(EquipInput {
+            cross: true,
+            ..Default::default()
+        });
+        s.input(EquipInput {
+            cross: true,
+            ..Default::default()
+        });
+        assert_eq!(s.record().equip[0], 0x05);
+        assert_eq!(s.inventory().get(&0x05), Some(&0));
+
+        // Remove row: item returns to the bag, slot clears.
+        let mut s2 = s.clone();
+        assert_eq!(s2.unequip(0), Some(0x05));
+        assert_eq!(s2.record().equip[0], 0);
+        assert_eq!(s2.inventory().get(&0x05), Some(&1));
+        // Already-empty slot refuses (retail buzz 0x37, no commit).
+        assert_eq!(s2.unequip(1), None);
+    }
+
+    #[test]
+    fn preview_candidate_is_a_trial_that_leaves_the_record_alone() {
+        let mut s = fresh_session();
+        let base_atk = s.preview_stats.atk;
+        s.preview_candidate(0, 0x05); // +5 atk modifier from fresh_session
+        assert_eq!(s.preview_stats.atk, base_atk + 5);
+        // The trial restored the record - nothing equipped.
+        assert_eq!(s.record().equip[0], 0);
+        // Remove-row preview (candidate 0) lands back on the bare stats.
+        s.preview_candidate(0, 0);
+        assert_eq!(s.preview_stats.atk, base_atk);
+    }
+
+    #[test]
+    fn armament_slot_permutes_the_raw_slot_bits() {
+        assert_eq!(armament_slot_of(0x00), 2); // body
+        assert_eq!(armament_slot_of(0x20), 1); // head
+        assert_eq!(armament_slot_of(0x40), 0); // weapon
+        assert_eq!(armament_slot_of(0x60), 3); // footwear
+        // The Ra-Seru bit and anything else outside 0x60 is ignored.
+        assert_eq!(armament_slot_of(0x41), 0);
+    }
+
+    fn cand(kind: u8, attack: u8, defence: (u8, u8), slot_bits: u8) -> EquipCandidate {
+        EquipCandidate {
+            kind,
+            attack,
+            defence,
+            char_mask: 7,
+            slot_bits,
+        }
+    }
+
+    #[test]
+    fn best_equipment_fills_empty_slots_with_the_first_eligible_item() {
+        let table = |id: u8| match id {
+            0x10 => Some(cand(1, 4, (0, 0), 0x40)),
+            0x11 => Some(cand(1, 9, (0, 0), 0x40)),
+            _ => None,
+        };
+        // Empty weapon slot: the first eligible bag entry takes it outright,
+        // then the stronger one displaces it on the comparison.
+        let best =
+            best_equipment_candidates([0, 0, 0, 0], 7, &[(0x10, 1), (0x11, 1)], table, |_| 0);
+        assert_eq!(best[0], 0x11);
+        // Reversed bag order: the weaker one never displaces the stronger.
+        let best =
+            best_equipment_candidates([0, 0, 0, 0], 7, &[(0x11, 1), (0x10, 1)], table, |_| 0);
+        assert_eq!(best[0], 0x11);
+    }
+
+    #[test]
+    fn armour_ranks_on_udf_plus_ldf_only() {
+        // 0x20 is pure INT/SPD as far as this scan is concerned (both
+        // defence fields zero) and must not displace the incumbent 0x21.
+        let table = |id: u8| match id {
+            0x20 => Some(cand(1, 200, (0, 0), 0x20)),
+            0x21 => Some(cand(1, 0, (1, 0), 0x20)),
+            _ => None,
+        };
+        let best = best_equipment_candidates([0, 0x21, 0, 0], 7, &[(0x20, 1)], table, |_| 0);
+        assert_eq!(best[1], 0x21);
+        // A single point of LDF is enough to win.
+        let table2 = |id: u8| match id {
+            0x20 => Some(cand(1, 0, (1, 1), 0x20)),
+            0x21 => Some(cand(1, 0, (1, 0), 0x20)),
+            _ => None,
+        };
+        let best = best_equipment_candidates([0, 0x21, 0, 0], 7, &[(0x20, 1)], table2, |_| 0);
+        assert_eq!(best[1], 0x20);
+    }
+
+    #[test]
+    fn weapon_category_score_dominates_raw_attack() {
+        let table = |id: u8| match id {
+            0x30 => Some(cand(1, 255, (0, 0), 0x40)),
+            0x31 => Some(cand(1, 1, (0, 0), 0x40)),
+            _ => None,
+        };
+        // 0x31 is category-favoured; its flat 1000 beats 0x30's 255 ATK.
+        let score = |id: u8| {
+            if id == 0x31 {
+                crate::menu_item_category::CATEGORY_MATCH_SCORE
+            } else {
+                0
+            }
+        };
+        let best = best_equipment_candidates([0x30, 0, 0, 0], 7, &[(0x31, 1)], table, score);
+        assert_eq!(best[0], 0x31);
+    }
+
+    #[test]
+    fn best_equipment_skips_non_equipment_wrong_character_and_empty_stacks() {
+        let table = |id: u8| match id {
+            0x40 => Some(cand(2, 99, (9, 9), 0x40)), // not equipment
+            0x41 => Some(EquipCandidate {
+                char_mask: 2, // Noa-only
+                ..cand(1, 99, (9, 9), 0x40)
+            }),
+            0x42 => Some(cand(1, 99, (9, 9), 0x40)),
+            _ => None,
+        };
+        let bag = [(0x40, 1), (0x41, 1), (0x42, 0), (0, 5)];
+        let best = best_equipment_candidates([0, 0, 0, 0], 1, &bag, table, |_| 0);
+        assert_eq!(best, [0, 0, 0, 0]);
     }
 }

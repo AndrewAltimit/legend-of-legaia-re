@@ -1430,3 +1430,88 @@ fn op2f_subop_1f_value_decrement_dims_color() {
         "lowering V should reduce the dominant channel ({v_before:#x} -> {v_after:#x})"
     );
 }
+
+#[test]
+fn op0a_packs_slot_indices_one_byte_apart_and_keeps_curves_per_slot() {
+    let mut host = TestHost::default();
+    let mut state = ActorState::new();
+    // [0x0A, op1, count=3, (idx, up, down) x 3]
+    let bc = program(&[0x0A, 1, 3, 0x11, 10, 20, 0x22, 11, 21, 0x33, 12, 22]);
+    let r = step(&mut host, &mut state, &bc);
+    assert_eq!(r, StepResult::Advance);
+    assert_eq!(state.pc, 3 + 3 * 3);
+    assert_eq!(state.keyframe_count, 3);
+    assert_eq!(state.flags & 0x1000, 0x1000);
+
+    // `+0xB0 + i` - a BYTE per slot, so the three indices land one
+    // u16 slot apart in the modelled window, not two.
+    assert_eq!(state.anim_block_u8(0x04), 0x11);
+    assert_eq!(state.anim_block_u8(0x05), 0x22);
+    assert_eq!(state.anim_block_u8(0x06), 0x33);
+
+    // `+0xB8 + i*2` / `+0xC8 + i*2` - both curves are per slot. The
+    // third slot's down curve lands at byte offset 0x20, past the old
+    // 16-slot window that silently dropped it.
+    let mul = i32::from(host.keyframe_curve_multiplier());
+    for (i, (up, down)) in [(10i32, 20i32), (11, 21), (12, 22)].iter().enumerate() {
+        assert_eq!(state.anim_block_u16(0x0C + i * 2), ((up * mul) >> 3) as u16);
+        assert_eq!(
+            state.anim_block_u16(0x1C + i * 2),
+            ((down * mul) >> 3) as u16
+        );
+    }
+}
+
+#[test]
+fn op0a_reset_arm_zeroes_the_morph_weights_not_the_anim_block_head() {
+    let mut host = TestHost::default();
+    let mut state = ActorState::new();
+    // Pre-load the `+0xA0` weight window (which the retail record shares
+    // with the op-0x2C keyframe descriptor) and the `+0x7C` lane mask.
+    state.keyframe_desc = [0x1000, 0x1000, 0x1000, 0x1000];
+    state.field_7c = 0x8000_0003;
+    state.anim_block_u16_set(0x00, 0xBEEF);
+
+    // `op[1] == 0` arms the reset for each of the two slots.
+    let bc = program(&[0x0A, 0, 2, 0x01, 1, 2, 0x02, 3, 4]);
+    let r = step(&mut host, &mut state, &bc);
+    assert_eq!(r, StepResult::Advance);
+
+    // Slots 0 and 1 -> `+0xA0` and `+0xA2`; slots 2 and 3 untouched.
+    assert_eq!(state.keyframe_desc, [0, 0, 0x1000, 0x1000]);
+    assert_eq!(state.field_7c, 0);
+    // `+0xAC` is a different field entirely and must survive.
+    assert_eq!(state.anim_block_u16(0x00), 0xBEEF);
+}
+
+#[test]
+fn op0a_without_the_reset_arm_leaves_the_weights_alone() {
+    let mut host = TestHost::default();
+    let mut state = ActorState::new();
+    state.keyframe_desc = [0x1000; 4];
+    state.field_7c = 0x8000_0003;
+    let bc = program(&[0x0A, 1, 2, 0x01, 1, 2, 0x02, 3, 4]);
+    step(&mut host, &mut state, &bc);
+    assert_eq!(state.keyframe_desc, [0x1000; 4]);
+    assert_eq!(state.field_7c, 0x8000_0003);
+}
+
+#[test]
+fn zero_keyframe_weight_walks_the_retail_field_overlap() {
+    let mut state = ActorState::new();
+    state.keyframe_desc = [1, 2, 3, 4];
+    state.field_a8 = 0x1111_2222;
+    state.anim_block_u16_set(0x00, 0x3333);
+
+    // lanes 0..4 land in the op-0x2C descriptor at `+0xA0..+0xA8`.
+    state.zero_keyframe_weight(2);
+    assert_eq!(state.keyframe_desc, [1, 2, 0, 4]);
+    // lane 4 -> `+0xA8` low half, lane 5 -> `+0xAA` high half.
+    state.zero_keyframe_weight(4);
+    assert_eq!(state.field_a8, 0x1111_0000u32 as i32);
+    state.zero_keyframe_weight(5);
+    assert_eq!(state.field_a8, 0);
+    // lane 6 -> `+0xAC`, the head of the anim block.
+    state.zero_keyframe_weight(6);
+    assert_eq!(state.anim_block_u16(0x00), 0);
+}

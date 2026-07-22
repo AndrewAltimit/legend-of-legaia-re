@@ -335,6 +335,17 @@ register and dump the DMA/FIFO state on timeout (`FUN_801D0248` - the `MDEC_in_s
 `MDEC_out_sync` strings that identify the overlay); `FUN_801CFEE0` is the reset
 (`MDEC_rest:bad option(%d)`).
 
+Those five are the clean-room boundary of this subsystem, and they are the only part of the
+STR overlay's decode path that is **not** ported. Everything above them - the play loop, the ring
+and stream setup, the frame pump, the slice callback, the output control word - has a
+[`crates/mdec`](../../crates/mdec/README.md) counterpart in the table above, because each is a
+decision about the bitstream. `FUN_801CFFDC` / `FUN_801CFEE0` / `FUN_801D0100` / `FUN_801D0198` /
+`FUN_801D0248` are instead MDEC command/status register writes, DMA-0/DMA-1 channel kicks, busy
+spins on a `0x100000`-iteration budget and a printf of the FIFO bits: they describe a chip the
+software decoder does not model, so they carry no port site and are listed in
+`scripts/ci/port-catalog-ignore.toml`. The two spin waiters additionally share their VA with the
+fishing overlay's own resident, so the bare address is not one function either.
+
 ## XA channel selection
 
 Two distinct retail paths, neither of which lives where the old hypothesis put it (the STR overlay

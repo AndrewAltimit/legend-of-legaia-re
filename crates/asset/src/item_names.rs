@@ -165,7 +165,7 @@ pub const TABLE_BASE_VA: u32 = TABLE_VA - 4;
 /// value (`price` at record `+2`, i.e. VA `TABLE_BASE_VA + id*0xC + 2`). `None`
 /// if `scus` isn't a PS-X EXE or the slot is out of range. This is the field a
 /// price patch rewrites to give a normally-free (chest-found) equipment a shop
-/// value; see `legaia_rando::item_price`.
+/// value; see `legaia_patcher::item_price`.
 pub fn price_slot(scus: &[u8], id: u8) -> Option<(usize, u16)> {
     let map = ExeMap::parse(scus)?;
     let va = TABLE_BASE_VA + (id as u32) * RECORD_STRIDE as u32 + 2;
@@ -188,7 +188,7 @@ pub fn item_price(scus: &[u8], id: u8) -> Option<u16> {
 /// segment - that span is zero in the file but is `.sbss`/`.bss`-class scratch
 /// the game overwrites with variables at runtime (a string put there renders as
 /// changing garbage). A safe target is a region verified constant across diverse
-/// runtime states; see `legaia_rando::item_name`.
+/// runtime states; see `legaia_patcher::item_name`.
 pub fn file_offset_for_va(scus: &[u8], va: u32) -> Option<usize> {
     ExeMap::parse(scus)?.off(va)
 }

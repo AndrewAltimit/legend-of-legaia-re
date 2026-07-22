@@ -1178,6 +1178,23 @@ fn needs_retarget_on_dead_or_out_of_range_target() {
     assert!(needs_retarget(0xFF, 50)); // the unset sentinel
 }
 
+#[test]
+fn status_0x400_waker_rolls_only_for_live_afflicted_actors() {
+    // Dead / empty slot or clear bit: no roll consumed, no change.
+    let mut rolls = 0u32;
+    let mut rng = || {
+        rolls += 1;
+        0u16
+    };
+    assert_eq!(status_0x400_wakes(0x0400, false, &mut rng), None);
+    assert_eq!(status_0x400_wakes(0x0001, true, &mut rng), None);
+    assert_eq!(rolls, 0, "RNG stream untouched for skipped slots");
+    // rng & 7 == 0 clears exactly bit 0x400 (andi 0xFBFF), keeping the rest.
+    assert_eq!(status_0x400_wakes(0x1401, true, || 8), Some(0x1001));
+    // A miss (rng & 7 != 0) leaves the word alone but consumed the roll.
+    assert_eq!(status_0x400_wakes(0x0400, true, || 3), None);
+}
+
 /// The camera clamp bottoms out at its own default, so only large monsters
 /// move it at all.
 #[test]

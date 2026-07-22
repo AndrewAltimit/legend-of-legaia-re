@@ -35,12 +35,22 @@
 //!   labels; the page resolves the SCUS item table it already parses at
 //!   `load_disc`. Same draw builder, populated row labels.
 //!
+//! Row inks come from the retail kernels
+//! `legaia_engine_core::shop::{shop_root_command_rows, shop_stock_row_ink}`
+//! (`FUN_801D4868` / `FUN_801D5DE0`), so an empty bag greys the Sell row and a
+//! full stack / unaffordable price greys a stock row on this host too.
+//!
 //! REF: FUN_801d5de0
+//! REF: FUN_801d4868
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_core::menu_runtime::{MenuInput, MenuState, shop_menu_rows};
 use legaia_engine_ui::{self as ui, ShopRow, SpriteDraw, TextDraw};
 use wasm_bindgen::prelude::*;
+
+/// One shop panel row before it is turned into a borrowing [`ShopRow`]:
+/// owned label, optional price, retail `_DAT_8007B454` ink.
+type ShopRowSpec = (String, Option<u32>, u8);
 
 /// Stage-pixel pen for the shop panel, matching the native window's `(8, 140)`.
 const SHOP_PEN: (i32, i32) = (8, 140);
@@ -100,44 +110,76 @@ impl LegaiaRuntime {
         // Owned label storage: the ShopRow view borrows &str, so the
         // resolved names have to outlive the row vector.
         let mut labels: Vec<String> = Vec::new();
-        let (rows_spec, show_gold): (Vec<(String, Option<u32>)>, Option<i32>) = match state {
+        let bag = legaia_engine_core::menu_runtime::MenuRuntime::inventory_items(world);
+        let held_of = |id: u8| -> i16 {
+            bag.iter()
+                .find(|(i, _)| *i == id)
+                .map(|(_, q)| *q as i16)
+                .unwrap_or(0)
+        };
+        let (rows_spec, show_gold): (Vec<ShopRowSpec>, Option<i32>) = match state {
             // Top picker: Buy / Sell / (Trade) / Exit, matching the runtime's
-            // dynamic row layout.
-            Some(MenuState::ShopMenu) => (
-                shop_menu_rows(world.seru_trade_enabled())
-                    .iter()
-                    .map(|s| {
-                        let label = match s {
-                            MenuState::ShopBuy => "Buy",
-                            MenuState::ShopSell => "Sell",
-                            MenuState::ShopTrade => "Trade Seru",
-                            _ => "Exit",
-                        };
-                        (label.to_string(), None)
-                    })
-                    .collect(),
-                Some(gold),
-            ),
+            // dynamic row layout. The Sell row's ink follows retail's bag scan
+            // (`shop_root_command_rows`): an empty bag greys it.
+            Some(MenuState::ShopMenu) => {
+                let sellable = !bag.is_empty();
+                let ink =
+                    legaia_engine_core::shop::shop_root_command_rows((0, 0), 0x4000, sellable);
+                (
+                    shop_menu_rows(world.seru_trade_enabled())
+                        .iter()
+                        .map(|s| {
+                            let (label, ink) = match s {
+                                MenuState::ShopBuy => ("Buy", ink[0].ink),
+                                MenuState::ShopSell => ("Sell", ink[1].ink),
+                                MenuState::ShopTrade => ("Trade Seru", ink[0].ink),
+                                _ => ("Exit", ink[0].ink),
+                            };
+                            (label.to_string(), None, ink)
+                        })
+                        .collect(),
+                    Some(gold),
+                )
+            }
             Some(MenuState::ShopBuy) => (
                 shop.inventory
                     .items
                     .iter()
-                    .map(|item| (self.shop_item_label(item.item_id), Some(item.price)))
+                    .map(|item| {
+                        let ink = legaia_engine_core::shop::shop_stock_row_ink(
+                            held_of(item.item_id),
+                            0,
+                            gold,
+                            item.price as i32,
+                        );
+                        (self.shop_item_label(item.item_id), Some(item.price), ink)
+                    })
                     .collect(),
                 Some(gold),
             ),
             Some(MenuState::ShopSell) => (
-                legaia_engine_core::menu_runtime::MenuRuntime::inventory_items(world)
-                    .iter()
-                    .map(|(id, qty)| (format!("{} x{}", self.shop_item_label(*id), qty), None))
+                bag.iter()
+                    .map(|(id, qty)| {
+                        (
+                            format!("{} x{}", self.shop_item_label(*id), qty),
+                            None,
+                            ui::SHOP_INK_NORMAL,
+                        )
+                    })
                     .collect(),
                 Some(gold),
             ),
-            Some(MenuState::ShopQuantity) => {
-                ((1u32..=9).map(|n| (n.to_string(), None)).collect(), None)
-            }
+            Some(MenuState::ShopQuantity) => (
+                (1u32..=9)
+                    .map(|n| (n.to_string(), None, ui::SHOP_INK_NORMAL))
+                    .collect(),
+                None,
+            ),
             Some(MenuState::ShopConfirm) => (
-                vec![("Yes".to_string(), None), ("No".to_string(), None)],
+                vec![
+                    ("Yes".to_string(), None, ui::SHOP_INK_NORMAL),
+                    ("No".to_string(), None, ui::SHOP_INK_NORMAL),
+                ],
                 Some(gold),
             ),
             _ => (Vec::new(), None),
@@ -145,15 +187,16 @@ impl LegaiaRuntime {
         if rows_spec.is_empty() {
             return None;
         }
-        for (label, _) in &rows_spec {
+        for (label, _, _) in &rows_spec {
             labels.push(label.clone());
         }
         let rows: Vec<ShopRow<'_>> = labels
             .iter()
             .zip(rows_spec.iter())
-            .map(|(label, (_, price))| ShopRow {
+            .map(|(label, (_, price, ink))| ShopRow {
                 label: label.as_str(),
                 price: *price,
+                ink: *ink,
             })
             .collect();
         let title = self.menu.current_label();

@@ -61,7 +61,7 @@ Choose by what you're trying to do:
 
 The repo is a Cargo workspace. Crate naming: package `legaia-foo`, lib `legaia_foo`; one library plus an optional binary per crate. Each crate's `README.md` documents its own scope and CLI.
 
-**Track 1 - preservation.** `bytes` (shared checked readers) and the container layer `iso`, `prot`, `lzs`, `asset`; the per-format parsers `tim`, `tmd`, `vab`, `xa`, `seq`, `mes`, `anm`, `mdt`, `art`, `font`, `mdec`, `save`; the pipeline driver `extract`; the emulator-state bridges `mednafen` and `pcsxr`; the curated label sets `gamedata` and `cheats`; and the disc patcher `rando`.
+**Track 1 - preservation.** `bytes` (shared checked readers) and the container layer `iso`, `prot`, `lzs`, `asset`; the per-format parsers `tim`, `tmd`, `vab`, `xa`, `seq`, `mes`, `anm`, `mdt`, `art`, `font`, `mdec`, `save`; the pipeline driver `extract`; the emulator-state bridges `mednafen` and `pcsxr`; the curated label sets `gamedata` and `cheats`; and the disc patcher `patcher`.
 
 **Track 2 - engine.** `engine-core` (world + scene host), `engine-vm` (the ported VMs and battle SM), `engine-render` (winit + wgpu), `engine-audio` (SPU + sequencer), `engine-ui` (renderer-agnostic draw lists), `engine-shell` (the `legaia-engine` binary), plus `asset-viewer` and the `web-viewer` WASM target.
 

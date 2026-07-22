@@ -21,7 +21,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 - [Stat aggregator (`FUN_80042558`)](#stat-aggregator-fun_80042558)
 - [Battle archive (`FUN_80052FA0` / `FUN_800542C8`)](#battle-archive-fun_80052fa0--fun_800542c8)
 - [Character record layout](#character-record-layout) - [why the pair order is `(max, cur)`](#why-the-pair-order-is-max-cur)
-- [Battle main dispatcher (`FUN_801D0748`)](#battle-main-dispatcher-fun_801d0748) · [hottest utility (`FUN_801D8DE8`)](#hottest-battle-utility-fun_801d8de8) · [weapon trail builder](#weapon--effect-trail-builder-fun_80048310--fun_800485bc)
+- [Battle main dispatcher (`FUN_801D0748`)](#battle-main-dispatcher-fun_801d0748) · [hottest utility (`FUN_801D8DE8`)](#hottest-battle-utility-fun_801d8de8) · [weapon trail builder](#weapon--effect-trail-builder-fun_80048310--fun_800485bc) · [move-FX streak ribbon](#move-fx-streak-ribbon-fun_801e1d98)
 - [Per-frame actor maintenance (`FUN_8004CE2C`)](#per-frame-actor-maintenance-fun_8004ce2c)
 
 **Clean-room engine systems**
@@ -835,6 +835,17 @@ spells spell-entry blobs       ; each carries its own attack-effect geometry
 +0x08→ texture / CLUT pool     ; per-monster palettes + 4bpp texture pages
 ```
 
+The name string carries a two-byte **element-icon escape**: a `^` + letter
+prefix (`^A Gimard`, `^F Aluru`) the battle UI renders as the element badge,
+in the fixed order `^A`=Fire, `^B`=Thunder, `^C`=Wind, `^D`=Water, `^E`=Earth,
+`^F`=Light, `^G`=Dark, `^H`=Evil (the icon-glyph row `0x1D..0x24` in the same
+order - **not** the element-id order of the [`+0x1D` element byte](#monster-record-source-layout)).
+Across the roster every carrying monster's caret letter agrees with its
+element byte, with one deliberate exception: `^H Cort` (the final boss) wears
+the Evil icon over element byte `7` - the no-affinity id whose matrix row and
+column are all-100. Boss-tier `$2`/`$3` name suffixes are literal ASCII, not
+markup.
+
 The mesh's primitives are textured: they reference a CLUT + a 4bpp texture page
 via per-prim CBA/TSB. The matching palette + pixel bytes live in the **texture
 pool at record `+0x08`**, whose layout is pinned from the battle loader
@@ -993,7 +1004,7 @@ The randomizer's enemy-ally ("charm") feature rides the stock `0x380`
 delegation flag plus one overlay word: the monster-wipe scan's down-mask at
 `0x801E6638` widens from `andi v0,v0,0x4` to `andi v0,v0,0x384`, so a living
 charmed monster counts as "down" and the player does not have to kill their
-own ally to win (`legaia_rando::enemy_ally`). That widen interacts with a
+own ally to win (`legaia_patcher::enemy_ally`). That widen interacts with a
 retail invariant inside the end-of-action gate (state `0x5A` of
 `FUN_801E295C`), and the interaction is the pinned cause of the charm battle
 hard-freeze.
@@ -1216,6 +1227,31 @@ That code word is a **`POLY_G4`** - four-point gouraud, semi-transparent, *untex
 
 These are pure rendering helpers - no gameplay state changes. Engine reimpl can defer them until visuals matter.
 
+### Move-FX streak ribbon (`FUN_801E1D98`)
+
+The move-FX draw dispatcher has two 2D streak shapes and picks between them by call site: `0x801E0CA0` calls `FUN_801E1AB0`, the single-billboard afterimage; `0x801E0CD0` calls `FUN_801E1D98`, the chained ribbon. Both take the trail-texture id from the move-power record's `+0x0b` byte and both build the same kind of packet - a semi-transparent textured `POLY_FT4` (`0x2e808080`), texpage `0x27`, CLUT `0x7700 + trail_id`.
+
+The ribbon starts from one `FUN_800195A8` billboard projection of the actor point - half-width `0x100`, half-height `0x200`, no in-plane spin, and no `+0x120` Y push (that push is the afterimage's, not shared). From the projected quad it derives two governing numbers:
+
+- **Suppression.** If the projected top edge spans `0x41` px or more (`x1 - x0`, signed), the routine returns without linking anything. The packet it had already carved out of the frame arena is simply abandoned; there is no single-quad fallback.
+- **Segment height.** The projected height `y2 - y0` is kept when it is at least `0x40`, otherwise `0x40` is substituted. That is a **floor**, not a cap - a tall billboard produces tall segments and therefore a shorter chain.
+
+Every further segment reuses the previous segment's top edge as its own bottom edge, so the quads form one continuous strip, and the un-jittered baseline steps up by exactly one segment height per iteration. The walk stops when the baseline (sign-extended to 16 bits) is no longer greater than `-height`, i.e. once the strip has left the top of the screen.
+
+The jitter law differs between the first segment and the rest, and the magnitudes are all shifts of the segment height `h`:
+
+| Segment | `rand` draws | What each moves |
+|---|---|---|
+| Bottom (from the projection) | 7 | one shared `[-h/4, +h/4]` X wobble on the whole top edge, one shared `[-h/8, +h/8]` X wobble on the whole bottom edge, then four independent `[-h/8, +h/8]` Y wobbles in corner order, then the brightness band |
+| Each further segment | 4 | one shared `[-h, +h]` X wobble carried across both new top corners, two independent `[-h/4, +h/4]` Y offsets off the stepped baseline, then the brightness band |
+
+Because the X wobble is shared inside an edge, the strip keeps its width and snakes sideways rather than shearing. The brightness band is `(rand & 3) << 5`, selecting one of four `0x20`-wide texture sub-columns; the quad then samples `band ..= band|0x1f` horizontally and `0 ..= 0x3f` vertically, assigned `TL, TR, BL, BR`. That corner assignment is **mirrored relative to `FUN_801E1AB0`**, which puts the `|0x1f` edge on corners 0 and 1 - folding the two UV builders together would flip the texture on one of them.
+
+Retail links every segment at the **same** OT bucket, the depth `FUN_800195A8` returned for the bottom billboard, so the strip is depth-flat.
+
+Ported as `legaia_engine_render::afterimage::build_streak_ribbon` (injected rng, unit-tested); projection is `project_ribbon_corners`, and arena allocation plus OT linking stay on the retail-renderer side that engine-render replaces.
+
+
 ## Per-frame actor maintenance (`FUN_8004CE2C`)
 
 The SCUS-resident per-frame sweep over the battle actor table - one of the
@@ -1356,8 +1392,11 @@ switch (kinds `>= 7` write nothing), not through `+0x6F6`, and not by any unalig
 
 - the accessory-passive cure `andi 0xFBFF` at `0x8004CFCC` (`FUN_8004CE2C`, keyed on char
   passive word `+0x6C0` bit `0x08000000`);
-- a dedicated per-round waker: `FUN_801F452C` loops the 7 actor slots and clears exactly bit
-  `0x400` behind a `rng & 7 == 0` roll (`andi v0,v0,0xfbff` at `0x801F4610`, `sh` `0x801F4614`);
+- a dedicated per-round waker: `FUN_801F45A4` loops the 7 actor slots and clears exactly bit
+  `0x400` behind a `rng & 7 == 0` roll (`andi v0,v0,0xfbff` at `0x801F4610`, `sh` `0x801F4614`;
+  the instruction PCs sit inside `FUN_801F45A4` - the neighbouring `FUN_801F452C` this clear
+  was once attributed to is the 30-instruction magic-level-increased banner composer that
+  ends at `0x801F45A0`. `see ghidra/scripts/funcs/overlay_0898_static_801f45a4.txt`);
 - item/spell cure masks `andi 0xFB84` / `0xFF84` / `0xFFFC` in the slot-B battle-support
   images (e.g. `0x801FC6AC` in 0902's image);
 - the on-hit strip `andi 0xF07F` at `0x801EDA5C` (`FUN_801EC3E4`) and its bit-`0x4`-gated

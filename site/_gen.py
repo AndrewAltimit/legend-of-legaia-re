@@ -409,9 +409,16 @@ CDNAME_SCENES: list[dict] = [
     {"label": "korb2",            "start": 517,  "category": "field",     "display": "Field (korb2)"},
     {"label": "korb3",            "start": 524,  "category": "field",     "display": "Field (korb3)"},
     {"label": "korout",           "start": 533,  "category": "field",     "display": "Field (korout)"},
-    {"label": "koin1",            "start": 542,  "category": "field",     "display": "Soren Camp"},
+    # The `koin` cluster is Sol's coin-games quarter (`koin` = coin), sitting
+    # directly after the `kor` (Sol) blocks. `koin1` is the venue hub, pinned
+    # three ways: the Muscle Dome overlay (PROT 0977) carries the mastering
+    # path `h:\prot\field\koin1\efect.dat`; koin1's scripts carry the mode-24
+    # door-warps `3E 69` (Muscle Dome) and `3E 68` (Baka Fighter) at three
+    # sites each, and koin3 carries `3E 6A` (dance) at four; and its floor
+    # starts BGM id 2018 = "Sol casino". The old "Soren Camp" label was wrong.
+    {"label": "koin1",            "start": 542,  "category": "field",     "display": "Sol (coin-games venue)"},
     {"label": "koin2",            "start": 551,  "category": "field",     "display": "Field (koin2)"},
-    {"label": "koin3",            "start": 561,  "category": "field",     "display": "Field (koin3)"},
+    {"label": "koin3",            "start": 561,  "category": "field",     "display": "Field (koin3, dance venue)"},
     {"label": "koin4",            "start": 570,  "category": "field",     "display": "Field (koin4)"},
     {"label": "koin6",            "start": 578,  "category": "field",     "display": "Field (koin6)"},
     {"label": "juui1",            "start": 587,  "category": "field",     "display": "Juggernaut interior 1"},
@@ -439,7 +446,8 @@ CDNAME_SCENES: list[dict] = [
     {"label": "opkorout",         "start": 758,  "category": "cutscene",  "display": "Opening (korout)"},
     {"label": "opurud",           "start": 763,  "category": "cutscene",  "display": "Opening (Uru)"},
     {"label": "opmap01",          "start": 768,  "category": "cutscene",  "display": "Opening (map)"},
-    {"label": "koin1b",           "start": 773,  "category": "field",     "display": "Soren Camp (alt)"},
+    # `koin1`'s story-state sibling - same gate shape plus a spliced `0x00B`.
+    {"label": "koin1b",           "start": 773,  "category": "field",     "display": "Sol (coin-games venue, later)"},
     # ED cutscenes
     {"label": "edteien",          "start": 780,  "category": "cutscene",  "display": "Ending (Sky Gardens)"},
     {"label": "edbylon",          "start": 785,  "category": "cutscene",  "display": "Ending (Biron)"},
@@ -588,10 +596,14 @@ def build_gamedata_json() -> tuple[dict, dict]:
         "Underground Octam":    "chitei2",
         "Ratayu":               None,        # Gaza's city; block not yet pinned
         "Karisto Station":      "station",
-        "Sol":                  None,        # the `kor` cluster (kor3 = Sol district)
+        # the `kor` cluster (kor3 = Sol district); the `koin` cluster is Sol's
+        # coin-games quarter, but no single scene is the town hub yet
+        "Sol":                  None,
         "Buma":                 "bubu2",
         "Usha Research Center": "doman",
-        "Soren Camp":           "koin1",
+        # was "koin1", which is falsified - koin1 is the Sol coin-games venue
+        # (Muscle Dome / Baka Fighter host). Soren Camp's scene is unpinned.
+        "Soren Camp":           None,
         "Conkram":              "conc",
     }
 

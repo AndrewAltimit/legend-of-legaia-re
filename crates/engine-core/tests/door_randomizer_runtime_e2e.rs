@@ -2,7 +2,7 @@
 //! runtime** - the fourth-kind sibling of the chest / drop / encounter / steal
 //! oracles.
 //!
-//! The randomizer's own disc-gated tests (`crates/rando/tests/door_patch_real`)
+//! The randomizer's own disc-gated tests (`crates/patcher/tests/door_patch_real`)
 //! prove the patch is *written* faithfully (the `0x3F` op's inline destination
 //! name is resized + relocated, the MAN re-parses, sectors stay EDC/ECC-valid).
 //! What they don't prove is that a runtime actually *reads the patched
@@ -37,8 +37,8 @@
 use legaia_asset::man_edit::DestEdit;
 use legaia_asset::scene_asset_table::encode_size_word;
 use legaia_engine_core::world::{SceneMode, World};
-use legaia_rando::disc::DiscPatcher;
-use legaia_rando::door::SceneDoors;
+use legaia_patcher::disc::DiscPatcher;
+use legaia_patcher::door::SceneDoors;
 
 /// Rim Elm scene bundle PROT entry.
 const TOWN01_ENTRY: usize = 4;

@@ -11,6 +11,189 @@ pub struct SaveSelectRow<'a> {
     pub location: &'a str,
 }
 
+/// Width of the left sprite of the retail backdrop pair - the title
+/// art's 320 columns straddle two 256-wide texture pages, so retail
+/// redraws it as a 192-wide sprite off page 8 plus a 128-wide sprite
+/// off page 9 (`0x64` prims at `(0,0,192,192)` UV `(0,0)` and
+/// `(192,0,128,255)` UV `(64,0)`).
+pub const BACKDROP_SPLIT_X: u32 = 0xC0;
+
+/// The save-UI backdrop redraw: the title art re-emitted with every RGB
+/// modulation byte set to `brightness` - the dim behind the Load/Save
+/// chrome. `0x80` is the PSX neutral level, so the engine tint is
+/// `brightness / 128`. The retail two-sprite split is a VRAM-paging
+/// artifact; the engine samples one `title_src` atlas rect and splits it
+/// at the same [`BACKDROP_SPLIT_X`] column so the seam (and any texel
+/// bleed a host pipeline shows there) lands where retail's did.
+///
+/// PORT: FUN_801e02a4 (see
+/// `ghidra/scripts/funcs/overlay_menu_801e02a4.txt`: two `0x64` sprite
+/// prims, `sb param` into the three RGB bytes of each)
+pub fn backdrop_dim_sprites(
+    title_src: (u32, u32, u32, u32),
+    brightness: u8,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let scale = stage_scale.max(1);
+    let tint = brightness as f32 / 128.0;
+    let color = [tint, tint, tint, 1.0];
+    let (sx, sy, sw, sh) = title_src;
+    let split = BACKDROP_SPLIT_X.min(sw);
+    let mut out = Vec::with_capacity(2);
+    out.push(SpriteDraw {
+        dst: (stage_origin.0, stage_origin.1, split * scale, sh * scale),
+        src: (sx, sy, split, sh),
+        color,
+    });
+    if sw > split {
+        out.push(SpriteDraw {
+            dst: (
+                stage_origin.0 + (split * scale) as i32,
+                stage_origin.1,
+                (sw - split) * scale,
+                sh * scale,
+            ),
+            src: (sx + split, sy, sw - split, sh),
+            color,
+        });
+    }
+    out
+}
+
+/// Draw one record of the save-UI sprite-record table as a quad at
+/// `(x, y)` with an RGB modulation.
+///
+/// Retail's drawer takes a record index into the 12-byte-stride table at
+/// menu-overlay VA `0x801E5048` (`[+2` u][`+4` v][`+6` w][`+8` h]`) and
+/// builds a GP0 `0x2C` textured quad at the pen with the caller's RGB
+/// word folded into the command - which is how the save UI stamps its
+/// pills / tabs / chrome pieces at arbitrary brightness. The engine's
+/// record is the `(u, v, w, h)` rect its atlas parse recovered
+/// (`SaveMenuAtlasRects` fields); `rgb` maps `0x80` to neutral.
+///
+/// PORT: FUN_801e3ff0 (see
+/// `ghidra/scripts/funcs/overlay_menu_801e3ff0.txt`)
+pub fn save_ui_record_quad(
+    record: (u32, u32, u32, u32),
+    rgb: (u8, u8, u8),
+    pen: (i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> SpriteDraw {
+    let scale = stage_scale.max(1);
+    let (_, _, w, h) = record;
+    SpriteDraw {
+        dst: (
+            stage_origin.0 + pen.0 * scale as i32,
+            stage_origin.1 + pen.1 * scale as i32,
+            w * scale,
+            h * scale,
+        ),
+        src: record,
+        color: [
+            rgb.0 as f32 / 128.0,
+            rgb.1 as f32 / 128.0,
+            rgb.2 as f32 / 128.0,
+            1.0,
+        ],
+    }
+}
+
+#[cfg(test)]
+mod backdrop_and_record_tests {
+    use super::*;
+
+    /// `FUN_801E02A4` emits **two** `0x64` prims, not one: retail's
+    /// backdrop straddles two VRAM texture pages, so it stops the first
+    /// blit at [`BACKDROP_SPLIT_X`] and restarts the second there. The
+    /// engine samples one linear atlas rect, so the split has to fall on
+    /// the same column or the seam (and any texel bleed a host pipeline
+    /// shows at it) lands somewhere retail's did not.
+    #[test]
+    fn backdrop_splits_at_the_retail_texture_page_seam() {
+        let out = backdrop_dim_sprites((0, 17, 256, 124), 0x80, (0, 0), 1);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].src, (0, 17, BACKDROP_SPLIT_X, 124));
+        assert_eq!(out[0].dst, (0, 0, BACKDROP_SPLIT_X, 124));
+        assert_eq!(
+            out[1].src,
+            (BACKDROP_SPLIT_X, 17, 256 - BACKDROP_SPLIT_X, 124)
+        );
+        assert_eq!(
+            out[1].dst,
+            (BACKDROP_SPLIT_X as i32, 0, 256 - BACKDROP_SPLIT_X, 124)
+        );
+    }
+
+    /// A source narrower than the seam is one prim, not one prim plus a
+    /// zero-width one - retail only pages when the art crosses the page.
+    #[test]
+    fn backdrop_narrower_than_the_seam_is_a_single_blit() {
+        let out = backdrop_dim_sprites((0, 0, 64, 32), 0x80, (0, 0), 1);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].src, (0, 0, 64, 32));
+    }
+
+    /// The dim is an **RGB modulation**, not an alpha: retail writes one
+    /// brightness byte into all three colour bytes of the prim and leaves
+    /// the blend mode alone. `0x80` is the PSX neutral level.
+    #[test]
+    fn backdrop_brightness_modulates_rgb_and_never_alpha() {
+        for (level, want) in [(0x80u8, 1.0f32), (0x40, 0.5), (0x00, 0.0)] {
+            let out = backdrop_dim_sprites((0, 0, 256, 128), level, (0, 0), 1);
+            for d in &out {
+                assert_eq!(d.color[0], want);
+                assert_eq!(d.color[1], want);
+                assert_eq!(d.color[2], want);
+                assert_eq!(d.color[3], 1.0, "alpha must stay opaque");
+            }
+        }
+    }
+
+    /// Stage origin translates, stage scale multiplies - and the second
+    /// prim's origin advances by the *scaled* split, not the raw one.
+    #[test]
+    fn backdrop_honours_the_stage_transform() {
+        let out = backdrop_dim_sprites((0, 0, 256, 128), 0x80, (10, 20), 3);
+        assert_eq!(out[0].dst, (10, 20, BACKDROP_SPLIT_X * 3, 128 * 3));
+        assert_eq!(out[1].dst.0, 10 + (BACKDROP_SPLIT_X * 3) as i32);
+        assert_eq!(out[1].dst.1, 20);
+    }
+
+    /// `FUN_801E3FF0` builds the quad at the **pen**, sized from the
+    /// record - the record's `(u, v)` stay the source origin and never
+    /// leak into the destination.
+    #[test]
+    fn record_quad_places_the_record_at_the_pen() {
+        let q = save_ui_record_quad((32, 96, 48, 16), (0x80, 0x80, 0x80), (136, 97), (0, 0), 1);
+        assert_eq!(q.src, (32, 96, 48, 16));
+        assert_eq!(q.dst, (136, 97, 48, 16));
+        assert_eq!(q.color, [1.0, 1.0, 1.0, 1.0]);
+    }
+
+    /// The RGB word folds into the command per channel, so the drawer can
+    /// stamp the same chrome record at any brightness - which is why
+    /// retail has this primitive rather than a fixed blit.
+    #[test]
+    fn record_quad_folds_rgb_per_channel() {
+        let q = save_ui_record_quad((0, 0, 8, 8), (0x40, 0x80, 0x00), (0, 0), (0, 0), 1);
+        assert_eq!(q.color[0], 0.5);
+        assert_eq!(q.color[1], 1.0);
+        assert_eq!(q.color[2], 0.0);
+        assert_eq!(q.color[3], 1.0);
+    }
+
+    /// Pen is in stage pixels, so it scales with the stage; the source
+    /// rect never does.
+    #[test]
+    fn record_quad_scales_pen_and_size_but_not_source() {
+        let q = save_ui_record_quad((4, 8, 16, 16), (0x80, 0x80, 0x80), (10, 20), (5, 7), 2);
+        assert_eq!(q.src, (4, 8, 16, 16));
+        assert_eq!(q.dst, (5 + 20, 7 + 40, 32, 32));
+    }
+}
+
 /// **Canonical PSX framebuffer stage for the boot UI**. All retail-
 /// pinned positions (panel, pills, cursor, title art) are expressed
 /// in 320×240 framebuffer coords; the boot-UI stage maps 1:1 to

@@ -135,6 +135,13 @@ pub enum PauseItemsFocus {
     /// The Yes / No throw-out confirm window (descriptor id 9, renderer
     /// `FUN_801D1B20`; `FUN_801D8734` phase 3).
     ThrowOutConfirm,
+    /// One of the special Use routes' own Yes / No confirm windows -
+    /// submenu `0xB` (Door of Light, window 10, renderer `FUN_801D1DAC`)
+    /// or submenu `0xD` (Incense, window 12, renderer `FUN_801D1F10`).
+    /// Distinct from [`Self::ThrowOutConfirm`]: a different window, a
+    /// different renderer, and the cursor seeds to **Yes** rather than
+    /// No. The live state is [`PauseItemsSession::special_use`].
+    SpecialConfirm,
 }
 
 /// The retail Items screen session: the command-window/list focus model
@@ -159,6 +166,9 @@ pub struct PauseItemsSession {
     /// Throw-out confirm row (0 = Yes, 1 = No). Retail seeds the confirm
     /// cursor word `DAT_801E46D0` to `1` on open - "No" is the default.
     pub confirm_cursor: u8,
+    /// The live special Use route, while one is open. Boxed to keep the
+    /// session (and the `FieldMenuSubsession` enum carrying it) small.
+    special_use: Option<Box<SpecialUseSession>>,
     /// Arrange sort ranks (id -> rank). `None` falls back to the id-order
     /// identity ([`crate::menu_arrange::ArrangeRankTable::id_order`]).
     /// Boxed to keep the session (and the `FieldMenuSubsession` enum
@@ -179,6 +189,7 @@ impl PauseItemsSession {
             focus: PauseItemsFocus::Command,
             command_cursor: 0,
             confirm_cursor: 1,
+            special_use: None,
             arrange_rank: None,
             cursor: 0,
             closed: false,
@@ -261,6 +272,15 @@ impl PauseItemsSession {
     //   to the party rows while stock and applicability hold), the notify
     //   window (script 0x801E4C60) and the 20-frame exhaustion timer
     //   collapse into the session's single-apply Done.)
+    // PORT: FUN_801D7FF8 (the sibling ALL-party apply SM - retail submenu
+    //   9, the `flags & 0x20` arm of use_route_for_effect: same preview
+    //   staging via FUN_801D6A54, but its picker runs with count 0
+    //   (`FUN_801D688C(&DAT_801E46C4, 0, 0)` at 0x801d80a4 - confirm /
+    //   cancel only, no target rows), cancel drops to the Use list
+    //   (submenu 6), confirm cues SFX 0x25 and applies to every member
+    //   through the same FUN_800402F4 + FUN_80042558 chain with one bag
+    //   decrement (FUN_80043048) and the FUN_8003043C applicability
+    //   re-probe. The session's ApplyAll arm is this flow.)
     pub fn input_pad_edge(&mut self, pressed: u16) {
         let up = pressed & PadButton::Up.mask() != 0;
         let down = pressed & PadButton::Down.mask() != 0;
@@ -303,6 +323,24 @@ impl PauseItemsSession {
                 }
                 self.list_navigate(pressed);
                 if cross {
+                    // Retail's Use dispatch routes on the hovered item's
+                    // effect class before it ever opens the target panel:
+                    // classes `0x80` / `0x82` branch into submenus 0xB /
+                    // 0xD, which raise their own confirm window instead
+                    // (`use_route_for_effect`). The bag ids of those two
+                    // routes are fixed, so the branch keys on the id -
+                    // the class lookup is the general form and needs the
+                    // item-effect record the row does not carry.
+                    if let Some(route) = self
+                        .rows
+                        .get(self.cursor)
+                        .and_then(|r| special_confirm_route_for_item(r.id))
+                    {
+                        self.special_use =
+                            Some(Box::new(SpecialUseSession::new(route, Vec::new())));
+                        self.focus = PauseItemsFocus::SpecialConfirm;
+                        return;
+                    }
                     // Map the hand row into the inner flow's filtered
                     // cursor space; a non-usable row has no mapping and
                     // the confirm is a buzz no-op (retail).
@@ -351,7 +389,41 @@ impl PauseItemsSession {
                     }
                 }
             }
+            PauseItemsFocus::SpecialConfirm => {
+                let Some(sp) = self.special_use.as_mut() else {
+                    self.focus = PauseItemsFocus::List;
+                    return;
+                };
+                sp.input_pad_edge(pressed);
+                if let SpecialUsePhase::Done(outcome) = &sp.phase {
+                    match outcome {
+                        // Door of Light hands the field the escape exit
+                        // code and closes the whole menu; Incense applies
+                        // in place and drops back to the Use list, and a
+                        // cancel does the same without consuming.
+                        SpecialUseOutcome::FieldEscape | SpecialUseOutcome::Warp { .. } => {
+                            self.closed = true;
+                        }
+                        SpecialUseOutcome::EncounterSuppress | SpecialUseOutcome::Cancelled => {
+                            self.focus = PauseItemsFocus::List;
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    /// The live special Use route, while its confirm window is open.
+    /// The host reads the finished session's
+    /// [`SpecialUseSession::consumed_item_id`] /
+    /// [`SpecialUseSession::exit_code`] to apply the outcome.
+    pub fn special_use(&self) -> Option<&SpecialUseSession> {
+        self.special_use.as_deref()
+    }
+
+    /// Drop a finished special route once the host has applied it.
+    pub fn take_special_use(&mut self) -> Option<SpecialUseSession> {
+        self.special_use.take().map(|b| *b)
     }
 
     /// Shared list navigation - the retail kind-4 list kernel's pad
@@ -515,6 +587,26 @@ pub struct ItemsScreenModel {
     /// command window (the retail confirm slides the command window out
     /// and window 9 in).
     pub throw_confirm: Option<ThrowConfirmModel>,
+    /// The special Use route's own confirm window content - `Some` while
+    /// submenu `0xB` (Door of Light) or `0xD` (Incense) has its Yes/No
+    /// prompt open. A different window and renderer from `throw_confirm`;
+    /// hosts draw it with `engine-ui::confirm_prompt_draws`.
+    pub special_confirm: Option<SpecialConfirmModel>,
+}
+
+/// Special Use-route confirm window content - the shape both
+/// `FUN_801D1DAC` (window 10, Door of Light) and `FUN_801D1F10`
+/// (window 12, Incense) render.
+#[derive(Debug, Clone)]
+pub struct SpecialConfirmModel {
+    /// Which route raised the window - it picks the descriptor rect and
+    /// the one-line vs three-line renderer.
+    pub route: UseRoute,
+    /// Name of the item being used, staged as the prompt's first line.
+    pub item_name: String,
+    /// 0 = Yes, 1 = No. Retail seeds these two windows to **Yes**,
+    /// unlike the Throw Out confirm.
+    pub cursor: u8,
 }
 
 /// Throw Out confirm window content (`FUN_801D1B20`).
@@ -571,6 +663,17 @@ pub fn items_screen_model(s: &PauseItemsSession) -> ItemsScreenModel {
     } else {
         None
     };
+    let special_confirm = s.special_use().and_then(|sp| {
+        matches!(sp.phase, SpecialUsePhase::Confirm).then(|| SpecialConfirmModel {
+            route: sp.route,
+            item_name: s
+                .rows
+                .get(cursor)
+                .map(|r| r.name.clone())
+                .unwrap_or_default(),
+            cursor: sp.cursor as u8,
+        })
+    });
     ItemsScreenModel {
         page_rows,
         page: s.page(),
@@ -589,6 +692,7 @@ pub fn items_screen_model(s: &PauseItemsSession) -> ItemsScreenModel {
         info,
         target_select: s.target_select(),
         throw_confirm,
+        special_confirm,
     }
 }
 
@@ -776,6 +880,20 @@ pub const INCENSE_ITEM_ID: u8 = 0x8A;
 /// world-map warp.
 pub const MENU_EXIT_CODE_FIELD_ESCAPE: u32 = 4;
 pub const MENU_EXIT_CODE_WORLD_MAP_WARP: u32 = 5;
+
+/// Which of the special Use routes - if any - a bag id opens a **Yes/No
+/// confirm window** for. Only two of the three do: Door of Light raises
+/// window 10 (`FUN_801D1DAC`) and Incense raises window 12
+/// (`FUN_801D1F10`). Door of Wind opens the destination *list* (window
+/// 11, renderer-less and kernel-driven) instead, so it is not a confirm
+/// and is deliberately absent here.
+pub fn special_confirm_route_for_item(item_id: u8) -> Option<UseRoute> {
+    match item_id {
+        DOOR_OF_LIGHT_ITEM_ID => Some(UseRoute::DoorOfLight),
+        INCENSE_ITEM_ID => Some(UseRoute::Incense),
+        _ => None,
+    }
+}
 
 /// Which submenu a confirmed Use-list pick routes to - the
 /// `FUN_801D7E50` phase-2 dispatch on the picked item's effect class
@@ -1014,6 +1132,137 @@ pub fn target_panel_model(s: &PauseItemsSession, mode: u32) -> Option<TargetPane
         cursor_row: *cursor as u8,
         all_targets: false,
     })
+}
+
+/// The staged notify-window message after its two markup operands are
+/// patched, plus the window's two pens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NotifyWindow {
+    /// Operand byte written after the first `0xC1` markup token.
+    pub c1_operand: u8,
+    /// Operand byte written after the first `0xC5` markup token.
+    pub c5_operand: u8,
+    /// Message pen (ink `7`) at the window content origin.
+    pub text_pen: (i16, i16),
+    /// Hand-sprite pen at `(WX + 0xE6, WY + 0xD)`; kind and mode are both `1`.
+    pub cursor_pen: (i16, i16),
+}
+
+/// Patch the two markup operands of the **notify window** (menu-overlay
+/// window `8`, the panel an item-use result opens) and resolve its pens.
+///
+/// The message is not formatted at draw time: the window renderer takes the
+/// already-staged template at `DAT_801E4700`, finds the first `0xC1` and the
+/// first `0xC5` markup token in it (`FUN_8003CBF8`, the same `0xC0`-class
+/// lead-byte scan the dialog strcpy/strcat use) and overwrites **the byte
+/// following each token** in place. So the template's operand slots are
+/// placeholders the renderer refills every frame, not values baked when the
+/// message was staged.
+///
+/// The arithmetic is what the disassembly pins: the `0xC1` operand is the
+/// low byte of `selector` (`_DAT_8007BB70`) and the `0xC5` operand is
+/// `base + selector * 0x40` (`_DAT_8007BB78` plus the **halfword** at
+/// `_DAT_8007BB70` scaled by `0x40`), both truncated to a byte by the `sb`.
+/// What the two globals index is not pinned.
+///
+/// PORT: FUN_801dcd58 (menu-overlay notify-window content renderer)
+/// REF: FUN_8003cbf8 (the markup-token scan whose offset the operand write
+/// is relative to)
+pub fn notify_window_operands(window: (i16, i16), selector: i16, base: u8) -> NotifyWindow {
+    let (wx, wy) = window;
+    NotifyWindow {
+        c1_operand: selector as u8,
+        c5_operand: base.wrapping_add((selector.wrapping_mul(0x40)) as u8),
+        text_pen: (wx, wy),
+        cursor_pen: (wx + 0xE6, wy + 0xD),
+    }
+}
+
+/// Number of rows the menu-overlay root command picker offers.
+pub const ROOT_MENU_ROWS: u16 = 7;
+
+/// The entry-context kind byte (`*_DAT_8007B450`) that both gates the root
+/// menu's Save row and redirects its cancel into the Yes/No confirm.
+pub const ROOT_MENU_CONTEXT_LOCKED: u8 = 0x0D;
+
+/// Sub-screen each root-menu row hands off to, in row order. Rows `5`
+/// (`0x18`, the save-card driver) and `6` (`0x19`, load-from-slot) are the
+/// two conditional ones - see [`root_menu_confirm_route`].
+pub const ROOT_MENU_ROUTES: [u8; ROOT_MENU_ROWS as usize] =
+    [0x05, 0x0E, 0x12, 0x15, 0x17, 0x18, 0x19];
+
+/// What confirming a root-menu row does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RootMenuRoute {
+    /// Hand off to this sub-screen id (`DAT_801E46A4`).
+    Sub(u8),
+    /// Row is unavailable - retail plays the reject cue `0x23` and stays.
+    Buzz,
+    /// Row index outside `0..7`: nothing happens.
+    None,
+}
+
+/// Confirm routing for the menu-overlay **root command picker**
+/// (sub-screen `0x01`).
+///
+/// The picker runs `FUN_801D688C(&DAT_801E46BC, 7, 1)` - seven rows - and
+/// routes the confirmed row through [`ROOT_MENU_ROUTES`]. Two rows are
+/// conditional and buzz instead of advancing:
+///
+/// * **Save** (row `5`) is blocked when an entry context is installed at
+///   `_DAT_8007B450` **and** its kind byte is
+///   [`ROOT_MENU_CONTEXT_LOCKED`]. A null context pointer allows the row -
+///   the test is on the kind, not on the pointer's presence.
+/// * **Load** (row `6`) is blocked when the save-block presence byte
+///   `_DAT_800846A8` is zero.
+///
+/// Every accepted row first clears the shared list globals
+/// `_DAT_8007BB98` / `_DAT_8007BB90` / `_DAT_8007BB88`, and the Magic row
+/// additionally stages `DAT_801E46C8 = DAT_801E46C4 & 0xFFF`; both are host
+/// state the caller mirrors.
+///
+/// PORT: FUN_801d6b20 (menu-overlay sub-screen `0x01`, phase-1 confirm arm
+/// `0x801D6BCC..0x801D6CF4`)
+/// REF: FUN_801d688c (the cursor navigator this screen drives; ported as
+/// `crate::menu_input`)
+pub fn root_menu_confirm_route(
+    row: u16,
+    entry_context_kind: Option<u8>,
+    any_save_block: bool,
+) -> RootMenuRoute {
+    match row {
+        5 => {
+            if entry_context_kind == Some(ROOT_MENU_CONTEXT_LOCKED) {
+                RootMenuRoute::Buzz
+            } else {
+                RootMenuRoute::Sub(ROOT_MENU_ROUTES[5])
+            }
+        }
+        6 => {
+            if any_save_block {
+                RootMenuRoute::Sub(ROOT_MENU_ROUTES[6])
+            } else {
+                RootMenuRoute::Buzz
+            }
+        }
+        r if r < ROOT_MENU_ROWS => RootMenuRoute::Sub(ROOT_MENU_ROUTES[r as usize]),
+        _ => RootMenuRoute::None,
+    }
+}
+
+/// Sub-screen a cancel out of the root command picker lands on: `0` (the
+/// terminal exit screen) normally, and `3` - the Yes/No confirm - when the
+/// installed entry context's kind byte is [`ROOT_MENU_CONTEXT_LOCKED`]. So
+/// the same context that hides the Save row is the one that makes leaving
+/// the menu ask first.
+///
+/// PORT: FUN_801d6b20 (cancel arm `0x801D6CF8..0x801D6D18`)
+pub fn root_menu_cancel_route(entry_context_kind: Option<u8>) -> u8 {
+    if entry_context_kind == Some(ROOT_MENU_CONTEXT_LOCKED) {
+        3
+    } else {
+        0
+    }
 }
 
 #[cfg(test)]
@@ -1260,6 +1509,7 @@ mod tests {
                 spells: vec![0x81, 0x9c],
                 spell_levels: vec![2, 1],
                 ability_bits: 0,
+                ra_seru_missing: false,
             },
             CasterSlot {
                 slot: 1,
@@ -1272,6 +1522,7 @@ mod tests {
                 spells: vec![0x83],
                 spell_levels: vec![3],
                 ability_bits: 0,
+                ra_seru_missing: false,
             },
         ];
         let targets = vec![crate::spell_menu::TargetRow {
@@ -1370,6 +1621,7 @@ mod tests {
             spells: vec![0x81],
             spell_levels: vec![1],
             ability_bits,
+            ra_seru_missing: false,
         }];
         let targets = vec![crate::spell_menu::TargetRow {
             slot: 0,
@@ -1446,6 +1698,95 @@ mod tests {
         assert_eq!(target_panel_mode(2, 6, 6), 0);
         assert_eq!(target_panel_mode(2, 0, 0), 0); // healing item
         assert_eq!(target_panel_mode(0, 6, 0), 0); // wrong kind byte
+    }
+
+    /// Only the two *confirm* routes map here. Door of Wind is a special
+    /// route too, but submenu 0xC opens the destination **list** (window
+    /// 11, kernel-driven), not a Yes/No window - so it must not resolve
+    /// to a confirm or the Items screen would raise a prompt retail
+    /// never shows.
+    #[test]
+    fn only_the_two_confirm_routes_map_to_a_confirm_window() {
+        assert_eq!(
+            special_confirm_route_for_item(DOOR_OF_LIGHT_ITEM_ID),
+            Some(UseRoute::DoorOfLight)
+        );
+        assert_eq!(
+            special_confirm_route_for_item(INCENSE_ITEM_ID),
+            Some(UseRoute::Incense)
+        );
+        assert_eq!(special_confirm_route_for_item(DOOR_OF_WIND_ITEM_ID), None);
+        assert_eq!(special_confirm_route_for_item(0x01), None);
+    }
+
+    /// Confirming a Door of Light in the Use list opens the route's own
+    /// confirm window instead of the target panel, and the confirm seeds
+    /// to **Yes** - the opposite default from the Throw Out confirm.
+    #[test]
+    fn use_list_confirm_on_door_of_light_opens_the_special_confirm() {
+        let mut s = items_session(&[(DOOR_OF_LIGHT_ITEM_ID, 1)]);
+        s.input_pad_edge(edge(PadButton::Cross)); // Use -> list
+        assert_eq!(s.focus, PauseItemsFocus::List);
+        s.input_pad_edge(edge(PadButton::Cross)); // confirm the row
+        assert_eq!(s.focus, PauseItemsFocus::SpecialConfirm);
+        assert!(!s.target_select(), "the target panel must not open");
+        let sp = s.special_use().expect("route session");
+        assert_eq!(sp.route, UseRoute::DoorOfLight);
+        assert_eq!(sp.cursor, 0, "seeded on Yes");
+        let model = items_screen_model(&s);
+        let sc = model.special_confirm.expect("confirm model");
+        assert_eq!(sc.route, UseRoute::DoorOfLight);
+        assert_eq!(sc.cursor, 0);
+    }
+
+    /// Yes on the Door of Light closes the whole menu (retail hands the
+    /// field exit code 4); Yes on an Incense applies in place and drops
+    /// back to the Use list, as does a cancel.
+    #[test]
+    fn special_confirm_outcomes_route_back_the_way_retail_does() {
+        let mut s = items_session(&[(DOOR_OF_LIGHT_ITEM_ID, 1)]);
+        s.input_pad_edge(edge(PadButton::Cross));
+        s.input_pad_edge(edge(PadButton::Cross));
+        s.input_pad_edge(edge(PadButton::Cross)); // Yes
+        assert!(s.is_done());
+        assert_eq!(
+            s.special_use().and_then(|sp| sp.exit_code()),
+            Some(MENU_EXIT_CODE_FIELD_ESCAPE)
+        );
+        assert_eq!(
+            s.special_use().and_then(|sp| sp.consumed_item_id()),
+            Some(DOOR_OF_LIGHT_ITEM_ID)
+        );
+
+        let mut s = items_session(&[(INCENSE_ITEM_ID, 1)]);
+        s.input_pad_edge(edge(PadButton::Cross));
+        s.input_pad_edge(edge(PadButton::Cross));
+        s.input_pad_edge(edge(PadButton::Cross)); // Yes
+        assert!(!s.is_done(), "Incense stays on the Items screen");
+        assert_eq!(s.focus, PauseItemsFocus::List);
+        assert_eq!(
+            s.take_special_use().and_then(|sp| sp.consumed_item_id()),
+            Some(INCENSE_ITEM_ID)
+        );
+
+        let mut s = items_session(&[(DOOR_OF_LIGHT_ITEM_ID, 1)]);
+        s.input_pad_edge(edge(PadButton::Cross));
+        s.input_pad_edge(edge(PadButton::Cross));
+        s.input_pad_edge(edge(PadButton::Circle)); // cancel
+        assert!(!s.is_done());
+        assert_eq!(s.focus, PauseItemsFocus::List);
+        assert_eq!(s.special_use().and_then(|sp| sp.consumed_item_id()), None);
+    }
+
+    /// A Door of **Wind** confirm must fall through to the ordinary use
+    /// flow rather than opening a confirm window it has none of.
+    #[test]
+    fn door_of_wind_does_not_open_a_confirm_window() {
+        let mut s = items_session(&[(DOOR_OF_WIND_ITEM_ID, 1)]);
+        s.input_pad_edge(edge(PadButton::Cross));
+        s.input_pad_edge(edge(PadButton::Cross));
+        assert_ne!(s.focus, PauseItemsFocus::SpecialConfirm);
+        assert!(s.special_use().is_none());
     }
 
     /// Door of Light (FUN_801D8A58): Yes/No confirm seeded on Yes;
@@ -1536,5 +1877,63 @@ mod tests {
         assert_eq!(staged_mp_cost(0x10), 30);
         // Both bits set: Half (0x20) wins the priority - 20, not 30.
         assert_eq!(staged_mp_cost(0x30), 20);
+    }
+
+    #[test]
+    fn notify_window_operands_and_pens() {
+        let n = notify_window_operands((12, 30), 2, 5);
+        assert_eq!(n.c1_operand, 2);
+        // base + selector * 0x40, truncated to a byte by the retail `sb`.
+        assert_eq!(n.c5_operand, 5 + 2 * 0x40);
+        assert_eq!(n.text_pen, (12, 30));
+        assert_eq!(n.cursor_pen, (12 + 0xE6, 30 + 0xD));
+        // selector 4 * 0x40 = 0x100 wraps to 0 in the byte store.
+        assert_eq!(notify_window_operands((0, 0), 4, 7).c5_operand, 7);
+    }
+
+    #[test]
+    fn root_menu_routes_the_five_unconditional_rows() {
+        for (row, want) in [(0u16, 0x05u8), (1, 0x0E), (2, 0x12), (3, 0x15), (4, 0x17)] {
+            assert_eq!(
+                root_menu_confirm_route(row, None, false),
+                RootMenuRoute::Sub(want)
+            );
+        }
+        assert_eq!(root_menu_confirm_route(7, None, true), RootMenuRoute::None);
+    }
+
+    #[test]
+    fn root_menu_save_row_is_gated_on_the_context_kind_not_its_presence() {
+        // No context at all: Save is available.
+        assert_eq!(
+            root_menu_confirm_route(5, None, false),
+            RootMenuRoute::Sub(0x18)
+        );
+        // A context of some other kind: still available.
+        assert_eq!(
+            root_menu_confirm_route(5, Some(0x07), false),
+            RootMenuRoute::Sub(0x18)
+        );
+        // The locked kind: buzz.
+        assert_eq!(
+            root_menu_confirm_route(5, Some(ROOT_MENU_CONTEXT_LOCKED), false),
+            RootMenuRoute::Buzz
+        );
+    }
+
+    #[test]
+    fn root_menu_load_row_needs_a_save_block() {
+        assert_eq!(root_menu_confirm_route(6, None, false), RootMenuRoute::Buzz);
+        assert_eq!(
+            root_menu_confirm_route(6, None, true),
+            RootMenuRoute::Sub(0x19)
+        );
+    }
+
+    #[test]
+    fn root_menu_cancel_asks_first_under_the_locked_context() {
+        assert_eq!(root_menu_cancel_route(None), 0);
+        assert_eq!(root_menu_cancel_route(Some(0x01)), 0);
+        assert_eq!(root_menu_cancel_route(Some(ROOT_MENU_CONTEXT_LOCKED)), 3);
     }
 }

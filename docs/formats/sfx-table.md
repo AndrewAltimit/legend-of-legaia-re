@@ -52,6 +52,54 @@ The SPU programming itself (`FUN_80065034` → `SpuSetVoiceAttr`) is libsnd and 
 of clean-room scope - the engine has its own SPU. What is portable is the static
 **data**.
 
+### The ring is two arrays, aged by one function and drained by another
+
+`DAT_8007B6D8[4]` (`i16` cue ids) has a sibling the doc's "4-entry ring" phrasing
+hides: `DAT_8007C338[4]`, a `u32` **countdown in vsyncs** per slot. Two different
+functions walk them, in a fixed order the per-frame mode handlers pin
+(`FUN_8001698C` → `FUN_80016444` → `FUN_80016B6C`):
+
+- **`FUN_8001698C` ages** (`0x80016AF4..0x80016B54`). A slot whose timer is zero
+  has its id cleared to `-1`; a non-zero timer is decremented by the adaptive
+  frame step `DAT_1F800393` and floored at zero. Retail stores the possibly
+  negative difference and *then* overwrites it with zero - two stores - so a slot
+  cannot skip past zero however large the frame step is.
+- **`FUN_80016B6C` drains** (`0x80016BF8`). A slot plays only when its timer is
+  **exactly zero** and its id is still `>= 0`.
+- The producers sit between them. `FUN_80035B50` writes `id` plus `timer = 0`
+  into slot `gp+0x158` and advances that cursor round-robin over the four.
+
+So the contract is a **one-shot scheduled delay**, not a queue: a cue armed with
+timer `N` plays on the frame its countdown first reads zero and is cleared before
+the next drain sees it. Two consequences an approximate "queue with a per-cue
+frame counter" gets wrong - the countdown is in **vsyncs** (at the field cadence
+floor of 2, a `timer = 4` cue plays after two game ticks, not four), and there
+are exactly four slots, so a fifth pending cue *replaces* one.
+
+Port: `legaia_engine_audio::sfx_ring`.
+
+### Voice allocation: one-shots descend from 23, sustained cues ascend from 7
+
+`FUN_80016B6C`'s two key-on loops do not share a voice range.
+
+| Branch | Voices | State |
+|---|---|---|
+| One-shot (`flags & 0x20 == 0`) | `23 - cursor`, descending | rolling cursor `gp+0x4BC`, wrapped when it *exceeds* the limit - so the limit value itself is used. Limit is `3`, or `1` in game modes `3` and `0x17`. |
+| Sustained (`flags & 0x20`) | `7 .. 7 + count - 1`, ascending | held count `gp+0x5D0`; the previous run is released first, and the mixer-record pointer latches into `gp+0x40C`. |
+
+Two details worth keeping. A one-shot **stops** each voice (`FUN_800653C8`)
+immediately before reprogramming it. And the sustained held-count write lives
+*inside* the key-on loop, so a sustained cue with a zero voice count releases the
+old run but leaves `gp+0x5D0` unchanged - the next sustained cue re-releases the
+same, already-stopped voices.
+
+The channel gate is a 12-byte mixer record at `0x80091508 + channel * 12`: `+8`
+is the level handed to `FUN_80065034`, `+0xB` is an enable byte and a zero there
+skips the cue entirely, before any voice work. The two VAs this page's `+4` row
+names, `DAT_80091510` and `DAT_80091513`, are the `+8` and `+0xB` fields of
+record 0 - not two byte arrays. While `_DAT_8007BA88` is non-zero every cue is
+forced onto channel `6`.
+
 ### The ring value **is** the descriptor index
 
 `FUN_80016B6C` reads a ring slot and indexes `&DAT_8006F198 + ring_value * 8`

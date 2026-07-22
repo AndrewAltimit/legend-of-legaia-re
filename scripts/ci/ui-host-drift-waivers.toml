@@ -225,3 +225,4 @@ half (`world_map_overlay` `DevMenuRow`/`cursor_step`/`list_body_draws`) is
 wired and unit-tested, so this builder waits for a host debug toggle rather
 than inventing one.
 """
+

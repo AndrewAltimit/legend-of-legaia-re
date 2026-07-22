@@ -105,7 +105,7 @@ function triggerDownload(bytes, filename) {
 
 function patchedName(original, seed) {
   const base = (original || 'disc.bin').replace(/\.bin$/i, '');
-  return `${base}.legaia-rando-${seed}.bin`;
+  return `${base}.legaia-patcher-${seed}.bin`;
 }
 
 // Render the per-section language coverage block from patch_rom's `lang`

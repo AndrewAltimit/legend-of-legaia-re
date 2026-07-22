@@ -787,7 +787,7 @@ transcribed from the disassembly (`overlay_battle_action_801db9c4.txt` /
 - The state machine does **not** own the animation. It writes `actor[+0x1DA]` (queued anim) and waits on `actor[+0x1D9]` (current anim) to converge. The convergence is performed by the SCUS anim trio - the per-frame anim-node tick `FUN_80047430` (cursor advance + end-of-clip detect) calls the commit `FUN_8004AD80` (id → action-record install, `+0x1D9 = +0x1DA` snap, reaction/end chains), and the decoder `FUN_8004998C` cross-blends the last frame toward the queued clip's frame 0. `FUN_801D5854` never touches the anim fields (see [pose driver](#fun_801d5854---per-actor-pose-driver)); the earlier note attributing the tween to it and to `FUN_80021DF4` was wrong.
 - Actions are **interruptible** only at `0x1E` (counter-attack steal). Every other transition is unconditional once the precondition fires.
 - Battle-end (`DAT_8007BD71 = 0xFE`) is set from `0x5A` (post-cleanup count of survivors, with `_DAT_8007BD2C` carrying the wipe cause) or `0x66` (the successful-escape teardown - no wipe cause byte). The mode-state-machine then unloads the battle overlay.
-- The `0x5A` **monster-wipe victory arm** stages the win pose off the acting actor's party slot, re-picking a living party member only when the acting actor is dead (the alive-skip at `0x801E6690`). Retail is safe because the wipe scan and the scheduler share the `+0x14C != 0 && !(+0x16E & 0x4)` predicate, so an alive acting actor is always a party member - but the randomizer's enemy-ally charm widens that mask to `0x384` and breaks the invariant. Full chain + the randomizer's disc-side fix (`legaia_rando::charm_fix`, a single-word `0x801E6690` detour widening the keep-condition to a living party slot): [battle.md](battle.md#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock).
+- The `0x5A` **monster-wipe victory arm** stages the win pose off the acting actor's party slot, re-picking a living party member only when the acting actor is dead (the alive-skip at `0x801E6690`). Retail is safe because the wipe scan and the scheduler share the `+0x14C != 0 && !(+0x16E & 0x4)` predicate, so an alive acting actor is always a party member - but the randomizer's enemy-ally charm widens that mask to `0x384` and breaks the invariant. Full chain + the randomizer's disc-side fix (`legaia_patcher::charm_fix`, a single-word `0x801E6690` detour widening the keep-condition to a living party slot): [battle.md](battle.md#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock).
 
 ## Decompile quirks worth knowing
 
@@ -931,6 +931,12 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
    never on a `+0x76F` copy). The whole copy is gated on the stage byte `DAT_8007BD04`
    (zero → zero-fill, `0x801DA378`). Live pad edits during the Arts gauge then mutate the
    same bytes in place. Byte-level port: `legaia_engine_vm::battle_action::preseed_action_queue`.
+   The **write-back twin** is `FUN_801DA59C`: after an arts action (category `+0x1DE == 3`,
+   live actor), it copies `actor[+0x1DF..+0x1EF]` back into the char record's chain slot -
+   the same `[+0x156] < [+0x154]` predicate picks `+0x76F` vs `+0x77F` (`sb` loops at
+   `0x801DA638`/`0x801DA69C`), with no head-byte fallback: exactly one slot is overwritten.
+   That is what the next preseed replays. Port:
+   `legaia_engine_vm::battle_action::save_action_queue`.
 2. **Normalize arrows into art constants.** `FUN_801EED1C`'s player path walks the queue,
    matches each token run against the character's art command table (token compare via
    `addiu v1,v1,-0xb` at `0x801EF3E8` - the queue's `0x0C..0x0F` arrows against the art table's

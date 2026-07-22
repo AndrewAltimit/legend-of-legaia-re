@@ -2,7 +2,7 @@
 //! - the sixth member of the randomizer runtime-oracle set (chest, monster-drop,
 //!   encounter, steal, door, and now starting items).
 //!
-//! The randomizer's own disc-gated test (`crates/rando/tests/starting_items_patch_real`)
+//! The randomizer's own disc-gated test (`crates/patcher/tests/starting_items_patch_real`)
 //! proves a patched starting inventory is *written* faithfully: the seed code in
 //! `SCUS_942.54` (`FUN_80034A6C`) is rewritten in place, the surrounding function
 //! bytes are untouched, and the touched sector stays EDC/ECC-valid. What it does
@@ -32,8 +32,8 @@
 
 use legaia_asset::new_game::StartingInventory;
 use legaia_engine_core::world::World;
-use legaia_rando::apply;
-use legaia_rando::disc::DiscPatcher;
+use legaia_patcher::apply;
+use legaia_patcher::disc::DiscPatcher;
 use std::collections::HashMap;
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -77,7 +77,7 @@ fn patched_starting_items_seed_the_bag_at_runtime() {
 
     // --- Patch the starting items on a scratch copy of the disc. ---
     let mut patcher = DiscPatcher::open(disc).expect("open disc");
-    let opts = legaia_rando::starting_items::StartingSeedOptions {
+    let opts = legaia_patcher::starting_items::StartingSeedOptions {
         random_items: n,
         ..Default::default()
     };
@@ -130,7 +130,7 @@ fn patched_starting_items_seed_the_bag_at_runtime() {
 /// fresh world from the patched seed and assert the bag holds Door of Wind. The
 /// all-warps toggle is a story-flag preset the clean-room engine has no consumer
 /// for yet (there is no Door-of-Wind warp menu), so its runtime check stays at
-/// the disc-round-trip level (`crates/rando/tests/starting_items_patch_real`);
+/// the disc-round-trip level (`crates/patcher/tests/starting_items_patch_real`);
 /// here we cover the half that the engine *does* run - the item grant.
 #[test]
 fn forced_door_of_wind_seeds_the_bag_at_runtime() {
@@ -139,7 +139,7 @@ fn forced_door_of_wind_seeds_the_bag_at_runtime() {
         return;
     };
     use legaia_asset::new_game::DOOR_OF_WIND_ITEM;
-    use legaia_rando::starting_items::{DOOR_OF_WIND_COUNT, StartingSeedOptions};
+    use legaia_patcher::starting_items::{DOOR_OF_WIND_COUNT, StartingSeedOptions};
 
     // Baseline: a vanilla New Game has no Door of Wind in the bag.
     let scus = legaia_iso::iso9660::read_file_in_image(&disc, "SCUS_942.54").expect("SCUS");

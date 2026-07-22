@@ -12,7 +12,7 @@
 --
 -- Use the UNGATED diagnostic disc so the detour fires on the FIRST op-0x49 arm
 -- of any kind (New Game name-entry is the earliest), not only shop sub-op 0:
---   cargo run -p legaia-rando --example overlay_slice_bin -- \
+--   cargo run -p legaia-patcher --example overlay_slice_bin -- \
 --       <input.bin> /tmp/legaia_slice_ungated.bin   # with LEGAIA_SLICE_UNGATED=1
 --
 -- Run (cold boot; play to ANY menu -- e.g. start New Game, reach name entry):

@@ -3,7 +3,7 @@
 //! the chest ([`chest_randomizer_runtime_e2e`]) and monster-drop
 //! ([`monster_drop_randomizer_runtime_e2e`]) oracles.
 //!
-//! The randomizer's own disc-gated test (`crates/rando/tests/encounter_patch_real`)
+//! The randomizer's own disc-gated test (`crates/patcher/tests/encounter_patch_real`)
 //! proves a patched formation is *written* faithfully: the formation's monster-id
 //! bytes change inside the re-packed scene MAN, formation counts + the id multiset
 //! are preserved, every id stays in the scene's pool, and the touched PROT.DAT
@@ -42,8 +42,8 @@
 
 use legaia_engine_core::encounter_man::scene_encounter_from_man;
 use legaia_engine_core::world::{SceneMode, World};
-use legaia_rando::disc::DiscPatcher;
-use legaia_rando::encounter::SceneEncounters;
+use legaia_patcher::disc::DiscPatcher;
+use legaia_patcher::encounter::SceneEncounters;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

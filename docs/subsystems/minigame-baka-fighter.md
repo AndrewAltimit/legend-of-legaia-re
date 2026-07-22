@@ -360,7 +360,13 @@ machine's `DAT_801d347c`, plus per-quad gradient colour fields):
 | `+0x13` | ABR rate, folded as `texpage + abr * 0x20` (`1` = additive `B + F`) |
 
 The quad is **centred** on `(x, y)`; half-extent = `w * scale >> 13 * size
->> 12`. Record 51 onward is string rodata, which bounds the table. Two records
+>> 12` (both shifts round toward zero - the MIPS `bgez` fixup); every colour
+channel is `c * brightness >> 8`, and a one-shot mirror latch (`DAT_801dbe98`,
+zeroed by every call) swaps the left/right texture columns. The engine port of
+the whole quad computation is `engine-core::baka_fighter::hud_widget_quad`
+(the OT-bucket link at `_DAT_801DBEBC` stays host-side); the screen-centre
+effect spawn `FUN_801d6e04` is `engine-core::baka_fighter::center_effect_spawn`.
+Record 51 onward is string rodata, which bounds the table. Two records
 are patched live: widget 5 (the 24px stage digit, `DAT_801d71cc = stage * 0x18`
 written by the banner-actor draw callback `FUN_801d67f0`) and widget `0x13`
 (the 8px digit, `u = digit * 8`, patched by the digit drawer `FUN_801d69e4`;

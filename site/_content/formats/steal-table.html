@@ -37,7 +37,7 @@
 <section class="doc-section" id="parser">
   <h2>Parser</h2>
   <p><code>legaia_asset::steal_table::StealTable::from_scus</code> resolves the table from a <code>SCUS_942.54</code> image (PSX-EXE <code>t_addr</code> &rarr; file-offset map, identical to the <a href="item-table.html">item-name table</a> resolver). <code>entry(monster_id)</code> returns the <code>[chance, item]</code> pair; <code>steal_item(monster_id)</code> returns the item only when the entry is stealable. The disc-gated <code>steal_table_real</code> test pins the Skeleton&rarr;Incense anchor plus a span of ids against the real executable. CLI: <code>asset steal-table &lt;SCUS&gt; [--all] [--json]</code>, with the item id joined to its name.</p>
-  <p>The randomizer (<code>legaia_rando::steal</code>) edits this table on a user-supplied disc to reassign steal items.</p>
+  <p>The randomizer (<code>legaia_patcher::steal</code>) edits this table on a user-supplied disc to reassign steal items.</p>
 </section>
 
 <section class="doc-section" id="see-also">

@@ -4,14 +4,8 @@ use super::*;
 fn shop_draws_for_buy_mode_produces_draws() {
     let font = legaia_font::synthetic_for_tests();
     let rows = [
-        ShopRow {
-            label: "Healing Leaf",
-            price: Some(50),
-        },
-        ShopRow {
-            label: "Healing Fruit",
-            price: Some(100),
-        },
+        ShopRow::new("Healing Leaf", Some(50)),
+        ShopRow::new("Healing Fruit", Some(100)),
     ];
     let draws = shop_draws_for(&font, "[BUY]", &rows, 0, Some(1500), (8, 140));
     // Title + 2 rows (label + price each, cursor on row 0) + gold line
@@ -21,16 +15,7 @@ fn shop_draws_for_buy_mode_produces_draws() {
 #[test]
 fn shop_draws_for_confirm_mode_no_gold() {
     let font = legaia_font::synthetic_for_tests();
-    let rows = [
-        ShopRow {
-            label: "Yes",
-            price: None,
-        },
-        ShopRow {
-            label: "No",
-            price: None,
-        },
-    ];
+    let rows = [ShopRow::new("Yes", None), ShopRow::new("No", None)];
     let draws = shop_draws_for(&font, "[CONFIRM?]", &rows, 0, None, (8, 140));
     assert!(!draws.is_empty());
 }
@@ -39,14 +24,8 @@ fn shop_draws_for_confirm_mode_no_gold() {
 fn shop_draws_for_cursor_on_second_row() {
     let font = legaia_font::synthetic_for_tests();
     let rows = [
-        ShopRow {
-            label: "Item A",
-            price: Some(10),
-        },
-        ShopRow {
-            label: "Item B",
-            price: Some(20),
-        },
+        ShopRow::new("Item A", Some(10)),
+        ShopRow::new("Item B", Some(20)),
     ];
     // cursor=1 → no crash
     let draws = shop_draws_for(&font, "[SELL]", &rows, 1, Some(100), (0, 0));

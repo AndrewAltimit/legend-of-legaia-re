@@ -27,6 +27,7 @@ pub mod note_trace;
 pub mod seq_slots;
 pub mod sequencer;
 pub mod sfx;
+pub mod sfx_ring;
 pub mod shout;
 pub mod spu;
 pub mod vab_bind;
@@ -40,6 +41,7 @@ pub use sfx::{
     CueDispatch, PendingCue, SfxBank, SfxEntry, SfxFireBatch, SfxScheduler, classify_cue,
     voice_pitch,
 };
+pub use sfx_ring::{CueDrainState, CueSlot, CueVoice, CueVoicePlan, SfxCueRing, plan_cue_voices};
 pub use shout::{ArtsShoutBank, SHOUT_CD_RESPONSE_DELAY, ShoutClip};
 pub use spu::Spu;
 pub use spu::adpcm::{AdpcmDecoder, BLOCK_BYTES, SAMPLES_PER_BLOCK};

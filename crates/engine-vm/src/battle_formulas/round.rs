@@ -458,6 +458,39 @@ pub fn needs_retarget(target_slot: u8, target_hp: u16) -> bool {
 pub const ACTION_STREAM_RANGE: std::ops::Range<usize> = 0x1DF..0x1EF;
 
 // ---------------------------------------------------------------------------
+// Per-round status-0x400 RNG waker (FUN_801F45A4)
+// ---------------------------------------------------------------------------
+
+/// The status halfword bit the per-round waker services (battle actor
+/// `+0x16E` bit `0x400` - the latent guard-disabling status; no retail
+/// applier sets it, see `docs/subsystems/battle.md`).
+pub const STATUS_BIT_0X400: u16 = 0x400;
+
+/// Per-round RNG waker for status bit `0x400`, one actor slot's step.
+///
+/// Retail loops the 7 battle-actor slots (`&DAT_801C9370`); for each live
+/// actor (`+0x14C != 0`) whose `+0x16E` status halfword carries bit `0x400`
+/// it rolls the shared RNG (`FUN_80056798`) and, when `rng & 7 == 0`, clears
+/// exactly that bit (`andi 0xFBFF` at `0x801F4610`, `sh` at `0x801F4614`).
+/// The RNG is consumed **only** for live afflicted actors - callers must not
+/// pre-roll for empty slots or the stream desyncs.
+///
+/// Returns the new status halfword, or `None` when nothing changes (dead /
+/// empty slot, bit clear, or the 1-in-8 roll misses).
+///
+/// PORT: FUN_801F45A4
+pub fn status_0x400_wakes(status: u16, alive: bool, mut roll: impl FnMut() -> u16) -> Option<u16> {
+    if !alive || status & STATUS_BIT_0X400 == 0 {
+        return None;
+    }
+    if roll() & 7 == 0 {
+        Some(status & !STATUS_BIT_0X400)
+    } else {
+        None
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Target framing (FUN_801F0348)
 // ---------------------------------------------------------------------------
 

@@ -1083,6 +1083,127 @@ impl BakaTally {
     }
 }
 
+/// A resolved HUD widget quad - the renderer-agnostic form of the POLY_GT4
+/// packet the retail emitter builds (12-word GP0 `0x3C`/`0x3E` shaded
+/// textured quad).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HudWidgetQuad {
+    /// GP0 polygon code (`(semi << 1) | 0x3C`).
+    pub poly_code: u8,
+    /// Quad corners, inclusive: `(x0, y0)` top-left, `(x1, y1)` bottom-right.
+    pub x0: i16,
+    pub y0: i16,
+    pub x1: i16,
+    pub y1: i16,
+    /// Per-corner texture coordinates in vertex order (TL, TR, BL, BR).
+    pub uv: [(u8, u8); 4],
+    /// Brightness-scaled gouraud colours: verts 0/1 take `rgb_top`, verts
+    /// 2/3 take `rgb_bottom`.
+    pub rgb_top: [u8; 3],
+    pub rgb_bottom: [u8; 3],
+    /// CLUT id (packet uv0 hi-half).
+    pub clut: u16,
+    /// Texpage attribute after the ABR fold (`texpage + abr * 0x20`).
+    pub tpage_attr: u16,
+}
+
+/// The MIPS `mult`/`sra` scale idiom the emitter applies to every colour
+/// channel and half-extent: signed multiply, round toward zero at the given
+/// shift (`bgez` skip + `addiu (1 << shift) - 1`).
+fn mips_scale(value: i32, factor: i32, shift: u32) -> i32 {
+    let p = value * factor;
+    let p = if p < 0 { p + ((1 << shift) - 1) } else { p };
+    p >> shift
+}
+
+/// PORT: FUN_801d5ed0 - the Baka Fighter HUD textured-quad emitter.
+///
+/// `FUN_801d5ed0(x, y, id, brightness, size)` draws widget `id` of the
+/// 51-record descriptor table `DAT_801d7160`
+/// ([`legaia_asset::baka_opponents::parse_baka_hud`]) as a POLY_GT4 centred
+/// on `(x, y)`:
+///
+/// - half-extent per axis = `((cell * scale) >> 13) * size >> 12` (both
+///   shifts round toward zero), spanning `x - hw ..= x + hw - 1`;
+/// - every colour channel = `channel * brightness >> 8` (round toward
+///   zero); verts 0/1 carry `rgb_top`, verts 2/3 `rgb_bottom`;
+/// - UVs cover the cell inclusively (`u ..= u + w - 1`); `mirror` swaps the
+///   left/right texture columns (retail's one-shot flag `DAT_801dbe98`,
+///   consumed - zeroed - by every call);
+/// - texpage attribute = `texpage + abr * 0x20` (the ABR blend fold), CLUT
+///   passes through.
+///
+/// Retail then links the packet into the OT bucket `_DAT_801DBEBC` and
+/// bumps that slot to 3 - host-side scheduling this kernel leaves to the
+/// renderer.
+pub fn hud_widget_quad(
+    widget: &legaia_asset::baka_opponents::BakaHudWidget,
+    x: i16,
+    y: i16,
+    brightness: i32,
+    size: i32,
+    mirror: bool,
+) -> HudWidgetQuad {
+    let scale8 = |c: u8| mips_scale(c as i32, brightness, 8) as u8;
+    let half = |cell: u8| {
+        let base = mips_scale(cell as i32, widget.scale, 13);
+        mips_scale(size, base, 12)
+    };
+    let hw = half(widget.w) as i16;
+    let hh = half(widget.h) as i16;
+    let (u0, v0) = (widget.u, widget.v);
+    let (u1, v1) = (
+        widget.u.wrapping_add(widget.w).wrapping_sub(1),
+        widget.v.wrapping_add(widget.h).wrapping_sub(1),
+    );
+    let uv = if mirror {
+        [(u1, v0), (u0, v0), (u1, v1), (u0, v1)]
+    } else {
+        [(u0, v0), (u1, v0), (u0, v1), (u1, v1)]
+    };
+    HudWidgetQuad {
+        poly_code: (widget.semi << 1) | 0x3C,
+        x0: x - hw,
+        y0: y - hh,
+        x1: x + hw - 1,
+        y1: y + hh - 1,
+        uv,
+        rgb_top: widget.rgb_top.map(scale8),
+        rgb_bottom: widget.rgb_bottom.map(scale8),
+        clut: widget.clut,
+        tpage_attr: widget.texpage + widget.abr as u16 * 0x20,
+    }
+}
+
+/// A minigame effect-part spawn spec - the argument set the tiny spawn
+/// wrappers pass to the shared part-spawn API (`FUN_80021B04`) plus the
+/// fields they stamp on the returned part.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EffectSpawnSpec {
+    /// Screen position handed to the spawn API.
+    pub x: i16,
+    pub y: i16,
+    /// Fixed-point scale (`0x1000` = 1.0).
+    pub scale: i32,
+    /// Sprite/animation id stamped into the spawned part's `+0x50`.
+    pub sprite_id: u16,
+}
+
+/// PORT: FUN_801d6e04 - the round chrome's screen-centre effect spawn:
+/// retail zero-fills a spawn record, plants it at the fixed screen centre
+/// `(0xA0, 0x78)` through the shared part-spawn API `FUN_80021B04` at scale
+/// `0x1000`, then stamps `sprite_id` into the spawned part's `+0x50`. The
+/// dance overlay's cell-placed twin is `FUN_801d3fd0`
+/// ([`crate::dance::step_mark_effect_spawn`]).
+pub fn center_effect_spawn(sprite_id: u16) -> EffectSpawnSpec {
+    EffectSpawnSpec {
+        x: 0xA0,
+        y: 0x78,
+        scale: 0x1000,
+        sprite_id,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1493,5 +1614,46 @@ mod tests {
         assert_eq!(r.match_won(), Some(40));
         assert_eq!(r.phase(), RunPhase::AllClear);
         assert_eq!(r.banked(), 40);
+    }
+
+    #[test]
+    fn hud_widget_quad_scales_centres_and_mirrors() {
+        let w = legaia_asset::baka_opponents::BakaHudWidget {
+            scale: 0x2000, // 2.0 in 20.12: half-extent = cell (w*0x2000>>13 = w)
+            texpage: 0x19,
+            clut: 0x7AB0,
+            u: 8,
+            v: 16,
+            w: 32,
+            h: 16,
+            rgb_top: [0x80, 0x40, 0xFF],
+            semi: 1,
+            rgb_bottom: [0x10, 0x20, 0x30],
+            abr: 1,
+        };
+        let q = hud_widget_quad(&w, 160, 120, 0x100, 0x1000, false);
+        // scale 0x2000 -> half = cell size; size 0x1000 = 1.0.
+        assert_eq!((q.x0, q.x1), (160 - 32, 160 + 31));
+        assert_eq!((q.y0, q.y1), (120 - 16, 120 + 15));
+        // brightness 0x100 = identity on the colour channels.
+        assert_eq!(q.rgb_top, [0x80, 0x40, 0xFF]);
+        assert_eq!(q.rgb_bottom, [0x10, 0x20, 0x30]);
+        // Inclusive UV cell + poly code + ABR fold.
+        assert_eq!(q.uv, [(8, 16), (39, 16), (8, 31), (39, 31)]);
+        assert_eq!(q.poly_code, 0x3E);
+        assert_eq!(q.tpage_attr, 0x19 + 0x20);
+        // Half brightness halves the channels (round toward zero).
+        let dim = hud_widget_quad(&w, 160, 120, 0x80, 0x1000, false);
+        assert_eq!(dim.rgb_top, [0x40, 0x20, 0x7F]);
+        // The mirror latch swaps the texture columns only.
+        let m = hud_widget_quad(&w, 160, 120, 0x100, 0x1000, true);
+        assert_eq!(m.uv, [(39, 16), (8, 16), (39, 31), (8, 31)]);
+        assert_eq!((m.x0, m.x1), (q.x0, q.x1));
+    }
+
+    #[test]
+    fn center_effect_spawn_is_screen_centre_at_unit_scale() {
+        let s = center_effect_spawn(0x2A);
+        assert_eq!((s.x, s.y, s.scale, s.sprite_id), (0xA0, 0x78, 0x1000, 0x2A));
     }
 }

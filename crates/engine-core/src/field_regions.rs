@@ -342,6 +342,93 @@ pub fn parse_map_objects(map: &[u8]) -> Vec<MapObject> {
     out
 }
 
+/// Rebuild the derived marker bits of the object-index grid - the writer of
+/// the bits the tile dispatch and the floor sampler read.
+///
+/// PORT: FUN_80017bec (SCUS_942.54; the Ghidra dump carries no instruction
+/// stream - ported from the static-recomp rendering of `func_80017BEC`,
+/// 428 bytes / 18 blocks, instruction-grade).
+///
+/// Three passes over the scene buffer at `_DAT_1F8003EC` (the `.MAP` image):
+///
+/// 1. **Descriptor flag decay**: for each of the 512 object descriptors
+///    (`+0x0000`, 0x20 stride), when the `u16` countdown at `+0x16` is zero,
+///    bit 0 of the flags word `+0x12` is cleared.
+/// 2. **Cell mirror rebuild**: every object-index cell (`+0x8000`, u16 per
+///    tile, `0x80 x 0x80`) gets bit `0x1000` set/cleared from its owning
+///    descriptor's flags bit 0 and bit `0x2000` from flags bit 1 (descriptor =
+///    `cell & 0x1FF`).
+/// 3. **Trigger-presence stamp**: for trigger kinds 0..2 (header `s16` pairs
+///    at `+0x10002`/`+0x10004` + 4k, body offset relative to `+0x10000`,
+///    4-byte records `[tile_x][tile_z]..`), the cell at each record's tile
+///    gets bit `0x200 << kind` ORed in - producing the `0x600` fast-gate mask
+///    ([`MAP_OBJECT_TRIGGER_BITS`]) the walk-on dispatch tests and the `0x800`
+///    elevation-override marker `FUN_80019278` routes on.
+///
+/// Pass 3 is set-only (never cleared); retail runs this over the freshly
+/// streamed `.MAP` where the bits start clear.
+pub fn refresh_object_grid_marks(map: &mut [u8]) {
+    let rd16 = |m: &[u8], o: usize| u16::from_le_bytes([m[o], m[o + 1]]);
+    let wr16 = |m: &mut [u8], o: usize, v: u16| m[o..o + 2].copy_from_slice(&v.to_le_bytes());
+    if map.len() < MAP_REGION_BLOCK_OFFSET + 0x12 {
+        return;
+    }
+    // Pass 1: countdown-expired descriptors lose flags bit 0.
+    for i in 0..0x200usize {
+        let base = i * MAP_OBJECT_DESCRIPTOR_STRIDE;
+        if rd16(map, base + 0x16) == 0 {
+            let f = rd16(map, base + 0x12);
+            wr16(map, base + 0x12, f & 0xFFFE);
+        }
+    }
+    // Pass 2: mirror descriptor flag bits 0/1 into cell bits 0x1000/0x2000.
+    // Retail walks columns outer, rows inner (cell = +0x8000 + col*2 + row*0x100).
+    for col in 0..0x80usize {
+        for row in 0..0x80usize {
+            let o = MAP_OBJECT_INDEX_OFFSET + col * 2 + row * 0x100;
+            let cell = rd16(map, o);
+            let flags = rd16(
+                map,
+                usize::from(cell & 0x1FF) * MAP_OBJECT_DESCRIPTOR_STRIDE + 0x12,
+            );
+            let cell = if flags & 1 != 0 {
+                cell | 0x1000
+            } else {
+                cell & !0x1000
+            };
+            // Retail re-reads the cell between the two updates; the value is
+            // the one just stored, so a sequential update is equivalent.
+            let cell = if flags & 2 != 0 {
+                cell | 0x2000
+            } else {
+                cell & !0x2000
+            };
+            wr16(map, o, cell);
+        }
+    }
+    // Pass 3: stamp trigger-presence bits 0x200 << kind for kinds 0..2.
+    for kind in 0..3usize {
+        let hdr = MAP_REGION_BLOCK_OFFSET + kind * 4;
+        let body = i16::from_le_bytes([map[hdr + 2], map[hdr + 3]]);
+        let count = i16::from_le_bytes([map[hdr + 4], map[hdr + 5]]);
+        let Some(base) = MAP_REGION_BLOCK_OFFSET.checked_add_signed(body as isize) else {
+            continue;
+        };
+        for j in 0..count.max(0) as usize {
+            let rec = base + j * 4;
+            let (Some(&tx), Some(&tz)) = (map.get(rec), map.get(rec + 1)) else {
+                break;
+            };
+            let o = MAP_OBJECT_INDEX_OFFSET + usize::from(tx) * 2 + usize::from(tz) * 0x100;
+            if o + 1 >= map.len() {
+                continue; // malformed record; retail would write blind
+            }
+            let cell = rd16(map, o);
+            wr16(map, o, cell | (0x200 << kind));
+        }
+    }
+}
+
 /// Region-record stride. Retail reads it from the resident byte
 /// `DAT_8007B31B`; in the disc corpus the table body is 8-byte records
 /// (`[x0, z0, x1, z1, type, 0, 0, 0]` - see the disc-gated structural test).
@@ -812,5 +899,67 @@ mod tests {
         let t = zone_table(&[a, b]);
         let hit = zone_query(&t, None, &RegionAttributes::DEFAULT_FILL, 5, 5).unwrap();
         assert_eq!(hit.record.unwrap()[5], 0xAA);
+    }
+
+    /// A minimal synthetic `.MAP` image for the object-grid mark refresh.
+    fn synthetic_map() -> Vec<u8> {
+        vec![0u8; 0x14000]
+    }
+
+    #[test]
+    fn grid_marks_mirror_descriptor_flags() {
+        let mut map = synthetic_map();
+        // Descriptor 5: flags bits 0+1 set, countdown alive.
+        map[5 * 0x20 + 0x12] = 0x03;
+        map[5 * 0x20 + 0x16] = 1;
+        // Descriptor 7: flags bits 0+1 set, countdown expired -> bit 0 decays.
+        map[7 * 0x20 + 0x12] = 0x03;
+        // Tile (2, 3) owned by descriptor 5, tile (4, 4) by descriptor 7;
+        // both cells start with stale 0x1000/0x2000 states.
+        let o5 = MAP_OBJECT_INDEX_OFFSET + 2 * 2 + 3 * 0x100;
+        let o7 = MAP_OBJECT_INDEX_OFFSET + 4 * 2 + 4 * 0x100;
+        map[o5..o5 + 2].copy_from_slice(&5u16.to_le_bytes());
+        map[o7..o7 + 2].copy_from_slice(&(7u16 | 0x1000).to_le_bytes());
+        refresh_object_grid_marks(&mut map);
+        let cell5 = u16::from_le_bytes([map[o5], map[o5 + 1]]);
+        let cell7 = u16::from_le_bytes([map[o7], map[o7 + 1]]);
+        assert_eq!(cell5, 5 | 0x1000 | 0x2000, "live flags mirror in");
+        // Descriptor 7's bit 0 decayed (countdown 0), so 0x1000 clears and
+        // only the flags-bit-1 mirror survives.
+        assert_eq!(cell7, 7 | 0x2000);
+        assert_eq!(
+            u16::from_le_bytes([map[7 * 0x20 + 0x12], map[7 * 0x20 + 0x13]]),
+            0x02,
+            "expired descriptor loses flags bit 0"
+        );
+    }
+
+    #[test]
+    fn grid_marks_stamp_trigger_presence_bits() {
+        let mut map = synthetic_map();
+        // Kind-0 table: one record at tile (10, 20); kind-1 at (10, 20) too;
+        // kind-2 at (30, 40). Bodies packed after the header.
+        let blk = MAP_REGION_BLOCK_OFFSET;
+        for (kind, body) in [(0usize, 0x20i16), (1, 0x24), (2, 0x28)] {
+            map[blk + kind * 4 + 2..blk + kind * 4 + 4].copy_from_slice(&body.to_le_bytes());
+            map[blk + kind * 4 + 4..blk + kind * 4 + 6].copy_from_slice(&1i16.to_le_bytes());
+        }
+        map[blk + 0x20] = 10;
+        map[blk + 0x21] = 20;
+        map[blk + 0x24] = 10;
+        map[blk + 0x25] = 20;
+        map[blk + 0x28] = 30;
+        map[blk + 0x29] = 40;
+        refresh_object_grid_marks(&mut map);
+        let cell_a = {
+            let o = MAP_OBJECT_INDEX_OFFSET + 10 * 2 + 20 * 0x100;
+            u16::from_le_bytes([map[o], map[o + 1]])
+        };
+        let cell_b = {
+            let o = MAP_OBJECT_INDEX_OFFSET + 30 * 2 + 40 * 0x100;
+            u16::from_le_bytes([map[o], map[o + 1]])
+        };
+        assert_eq!(cell_a & MAP_OBJECT_TRIGGER_BITS, 0x600, "kind 0 + kind 1");
+        assert_eq!(cell_b, 0x800, "kind 2 = elevation-override marker");
     }
 }

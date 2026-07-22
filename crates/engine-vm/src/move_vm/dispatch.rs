@@ -118,25 +118,37 @@ pub fn step<H: MoveHost + ?Sized>(
             let count = header_op2 as i16;
             let curve_mul = host.keyframe_curve_multiplier() as i32;
             size = 3;
+            // `op[1] == 0` arms the reset arm *inside* the per-slot loop:
+            // each slot's morph weight at `+0xA0 + i*2` is zeroed and the
+            // lane-completion bitfield at `+0x7C` is cleared.
+            let reset = read(1) == 0;
             for i in 0..count.max(0) {
                 let base = (3 + 3 * i) as usize;
-                // Note: byte writes to `+0xB0+i` are abstracted into anim_block.
+                let lane = i as usize;
+                // `sb v1, 0xb0(v0)` with `v0 = actor + i` - a **byte** per
+                // lane, so the indices pack 1 byte apart, not 2. In the
+                // retail record that leaves room for 8 before the array runs
+                // into the `+0xB8` up-ramp curves.
                 let descriptor_byte = read(base) as u8;
-                state.anim_block_u16_set(0x04 + (i as usize) * 2, descriptor_byte as u16);
+                state.anim_block_u8_set(0x04 + lane, descriptor_byte);
 
+                // `+0xB8 + i*2` and `+0xC8 + i*2` - per-lane ramp velocities
+                // (`move_buffer::MoveBufferState::up_velocity` /
+                // `down_velocity`), not one global rate.
                 let raw_b8 = read(base + 1) as i16 as i32;
                 let scaled_b8 = (raw_b8 * curve_mul) >> 3;
-                state.anim_block_u16_set(0x0C + (i as usize) * 2, scaled_b8 as u16);
+                state.anim_block_u16_set(0x0C + lane * 2, scaled_b8 as u16);
 
                 let raw_c8 = read(base + 2) as i16 as i32;
                 let scaled_c8 = (raw_c8 * curve_mul) >> 3;
-                state.anim_block_u16_set(0x1C + (i as usize) * 2, scaled_c8 as u16);
+                state.anim_block_u16_set(0x1C + lane * 2, scaled_c8 as u16);
+
+                if reset {
+                    state.zero_keyframe_weight(lane);
+                    state.field_7c = 0;
+                }
 
                 size += 3;
-            }
-            // op[1] == 0 path also clears anim_block[0] + a 4-byte slot.
-            if read(1) == 0 {
-                state.anim_block_u16_set(0x00, 0);
             }
             state.local_flags = 0;
         }

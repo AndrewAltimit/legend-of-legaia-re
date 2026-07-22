@@ -140,7 +140,17 @@ Absolute `actor[+0x14..+0x18] = v1..v3` (Y mirror in `+0x2A` matches `v2`).
 
 ### 0x0A - `KEYFRAME_LOAD` (variable, size = `3 + count*3`)
 
-`actor[+0x10] |= 0x1000`. `actor[+0x6C] = byte(op[2])`. Then loops `count = op[2]` writing `actor[+0xB0+i] = byte(op[3+3*i])` and two scaled curves for `+0xB8` / `+0xC8` per slot.
+`actor[+0x10] |= 0x1000`. `actor[+0x6C] = byte(op[2])`. Then loops `count = op[2]` over `(index, up_curve, down_curve)` operand triples, writing per slot `i`:
+
+| write | stride | what it is |
+|---|---|---|
+| `actor[+0xB0 + i] = byte(op[3+3*i])` | **1 byte** | VDF sub-entry index - the morph record this lane drives, read back by the morph stager `FUN_8001C604` |
+| `actor[+0xB8 + i*2] = (op[4+3*i] * DAT_1F800369) >> 3` | 2 bytes | the lane's **up**-ramp velocity |
+| `actor[+0xC8 + i*2] = (op[5+3*i] * DAT_1F800369) >> 3` | 2 bytes | the lane's **down**-ramp velocity |
+
+The two ramp velocities are **per lane**, not one global rate: the envelope `FUN_80020740` reads them at `0xb8(a1)` / `0xc8(a1)` with `a1 = actor + lane*2`. The slot-index array is the odd one out at a **byte** stride, which is what gives the retail record room for eight lanes before `+0xB0 + i` runs into `+0xB8`.
+
+When `op[1] == 0` the loop additionally arms a reset per slot: `actor[+0xA0 + i*2] = 0` (the lane's morph **weight**, the array the envelope ramps) and `actor[+0x7C] = 0` (the lane-completion bitfield). `+0xA0` overlaps the op-`0x2C` keyframe buffer descriptor in the retail record - that overlap is the layout, not an artifact.
 
 ### 0x16 - `STUB` (size 2)
 

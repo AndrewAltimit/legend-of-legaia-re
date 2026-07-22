@@ -49,7 +49,7 @@ log() { printf '[release-build] %s\n' "$*"; }
 
 CLI_BINS=(
     anm art asset cheat-tool disc-extract field-disasm font-extract
-    gamedata-tool legaia-extract legaia-rando lzs-decode mdec mdt
+    gamedata-tool legaia-extract legaia-patcher lzs-decode mdec mdt
     mednafen-state mes prot-extract save-tool seq tim tmd vab xa
 )
 GUI_BINS=(legaia-engine asset-viewer)
@@ -190,7 +190,7 @@ cp LICENSE-MIT "$STAGE/LICENSE-MIT"
     printf '    legaia-engine   the clean-room engine: play-window, play-str, record/replay\n'
     printf '    asset-viewer    windowed viewer: textures, meshes, audio, scenes\n'
     printf 'Mod + translate\n'
-    printf '    legaia-rando    randomizer / disc patcher + "translate" language packs\n'
+    printf '    legaia-patcher    disc patcher: randomizer, "translate" language packs, manual edits\n'
     printf '    save-tool       memory-card and save-file inspector\n'
     printf '    gamedata-tool   curated game-data lookups (arts, items, enemies, shops)\n'
     printf '    cheat-tool      cheat-database inspector (databases built in)\n'

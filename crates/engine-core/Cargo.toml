@@ -35,9 +35,9 @@ legaia-bytes.workspace = true
 [dev-dependencies]
 tempfile = "3"
 # Disc-gated runtime oracle for the chest randomizer: patch a real disc's MAN in
-# memory, then drive the patched bytes through the field VM. rando depends only
+# memory, then drive the patched bytes through the field VM. legaia-patcher depends only
 # on asset/lzs/prot/iso (never engine-core), so this dev-only edge is acyclic.
-legaia-rando = { path = "../rando" }
+legaia-patcher = { path = "../patcher" }
 # Disc-gated field-state oracles: load a cataloged PCSX-Redux playthrough anchor's
 # main RAM and assert the engine reproduces the captured retail facts. pcsxr
 # depends only on mednafen (never engine-core), so this dev-only edge is acyclic.

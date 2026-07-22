@@ -5,7 +5,7 @@
 # Disc-extracted Sony bytes. NEVER commit (see CLAUDE.md, NOTICE).
 /extracted/
 
-# Translation language packs (`legaia-rando translate export/init`): exported
+# Translation language packs (`legaia-patcher translate export/init`): exported
 # packs carry the game's dialog/name strings (Sony-derived). NEVER commit.
 /translations/
 legaia_*.yaml

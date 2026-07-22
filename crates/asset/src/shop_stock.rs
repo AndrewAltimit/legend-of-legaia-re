@@ -32,7 +32,7 @@
 //! matches the curated walkthrough stock (e.g. "Market" decodes to 10 ids but
 //! sells 7). [`ShopRecord::sellable_count`] returns the priced-prefix length
 //! given the SCUS price table; the asset-`tests` cross-table sweep
-//! (`legaia_rando::cross_table_integrity_real`) pins the partition disc-wide.
+//! (`legaia_patcher::cross_table_integrity_real`) pins the partition disc-wide.
 //!
 //! ## Locating sites safely
 //!
@@ -49,7 +49,7 @@
 //! printable, letter-initial, `0x00`-terminated string.
 //!
 //! This is the shared *read* side: the randomizer
-//! ([`legaia_rando::shop`](https://docs.rs)) wraps [`locate`] with its
+//! ([`legaia_patcher::shop`](https://docs.rs)) wraps [`locate`] with its
 //! recompress/write-back machinery, and the engine builds its shop UI stock from
 //! the same records (`legaia_engine_core::shop_catalog`).
 

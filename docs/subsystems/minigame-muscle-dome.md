@@ -6,6 +6,16 @@ Instead, the Muscle Dome runs **inside the battle-action overlay** (PROT entry *
 
 This matches the design - the arena reuses the battle engine wholesale (its fighters are battle actors, card plays resolve through the battle-action path). The "`overlay_muscle_dome.bin`" Duckstation capture was that battle-overlay slot resident during the arena, **not** a separate overlay; the `0977` "Ronginus" entry is only the mode-24 sub-id-5 door/init slot (arena roster + `other6` paths), not the match SM.
 
+## Contest settlement + the one-shot prize
+
+The `0977` door/init slot (a slot-A overlay at base `0x801CE818` - the base is pinned by string anchors into its own monster-name roster) carries the **contest settlement** routine `FUN_801D0F60` (file `+0x2748`; historically mis-cited as `FUN_801C2748` from a `0x801C0000`-band import). After a contest leg it restores the SC block (`FUN_8001A8B0`) and settles the running score tally `_DAT_80084440`:
+
+- **Not continuing** halves the tally (signed `/2`); continuing keeps it and adds the per-`(course, round)` score-table cell `DAT_801d1860 + course*0x40 + (round-1)*4`.
+- **Contest over** zeroes the tally and drops the continue latch `DAT_801d1adc`.
+- On the **Master-course final fight** (round counter `DAT_801d1a94 >= 0xD`) with the one-shot flag-bank bit `FUN_8003CE64(0x6CB)` still clear, it awards item `0xCD` (the **War God Icon**) via `FUN_800421D4(0xCD, 1)` - the once-per-save first-clear prize.
+
+Engine port: `engine-core::muscle_dome::settle_contest`. `see ghidra/scripts/funcs/overlay_0977_slotA_801d0f60.txt`.
+
 The whole contest runs on a shared context block at `_DAT_8007bd24` (referred to below as **ctx**). The fighters are ordinary battle actors reached through the global actor pointer table `&DAT_801c9370` (the same table the main battle system uses), so a "card play" ultimately resolves through the battle action machinery against actor records.
 
 **BGM.** The arena loads **no BGM track of its own** - a full sweep of the muscle-dome function dumps finds no streaming-loader call (`8001fc00`) and no BGM-id write. It inherits the **battle theme** its entry set, exactly as it reuses the battle engine wholesale: the music is whichever `music_01` battle track the mode-24 sub-id-5 arena setup (the `0977` door/init slot) had playing when the contest starts. There is no dedicated muscle-dome cue to pin; this is the same "host-scene-inherited BGM" shape as the [slot machine](minigame-slot-machine.md), one class up (battle rather than field). The engine/site can represent it with the standard battle theme (`M26B1`, global BGM `2026`).
@@ -24,8 +34,8 @@ A small number of phase arms are confirmed by content:
 - Phase `0x6e` arm (`FUN_801d0748` near `0x801d0f24`): when a sub-result tag equals `0xb6` it computes a percentage `actor[+0x14c]*0x6c/actor[+0x14e]` (current/max ratio ×108) and renders it as a number - the **score / HP-percentage readout**.
 
 Auxiliary per-frame helpers the controller calls every frame:
-- `FUN_801d3444` - animates the round **time meter**: ramps a 0..0xc counter `DAT_801f4e0a` up while the phase tag `ctx+6 == 'P'` (0x50) and an enable flag is set, down otherwise, and maps it to a bar Y position. (`overlay_muscle_dome_801d3444.txt`.)
-- `FUN_801d9bbc` - advances every **active animated sprite handle** (`ctx+0x1074[]`, up to 0x28 entries) one step toward its target screen position over a per-handle frame count; returns the count still in flight. (`overlay_muscle_dome_801d9bbc.txt`.)
+- `FUN_801d3444` - animates the round **time meter**: ramps a 0..0xc counter `DAT_801f4e0a` up by the frame delta while the phase tag `ctx+6 == 'P'` (0x50) and an enable flag is set, drains it otherwise, and maps it to the bar Y `counter * 160 / 12 - 0x92`. Core ramp + mapping ported as `engine-core::muscle_dome::time_meter_step`. (`overlay_muscle_dome_801d3444.txt`.)
+- `FUN_801d9bbc` - advances every **active animated sprite handle** (`ctx+0x1074[]`, up to 0x28 entries) one linear-ease step toward its target screen position over a per-handle frame count (`ctx+0x11B4 + i*0xC` records: total/elapsed frames + target/start positions; arrival snaps and deactivates). Per-handle step ported as `engine-core::muscle_dome::SpriteGlide::step`. (`overlay_muscle_dome_801d9bbc.txt`.)
 
 ## Card / move representation + selection
 

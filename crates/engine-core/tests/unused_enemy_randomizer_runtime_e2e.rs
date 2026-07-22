@@ -1,6 +1,6 @@
 //! Disc-gated end-to-end oracle for the `--unused-enemies` toggle at runtime.
 //!
-//! The randomizer's own disc-gated test (`crates/rando/tests/unused_content_real`)
+//! The randomizer's own disc-gated test (`crates/patcher/tests/unused_content_real`)
 //! proves the toggle *writes* an unused enemy id into a scene's encounter
 //! formations: with the toggle on, the curated Evil Bat ids join each scene's
 //! Random pool and get placed, and the patched scene MAN re-packs in its
@@ -12,7 +12,7 @@
 //! ([`encounter_randomizer_runtime_e2e`]) but driven by the toggle's own code:
 //!   1. run the real toggle path
 //!      ([`SceneEncounters::randomize_with_extra`] with
-//!      [`legaia_rando::unused::UNUSED_ENEMY_IDS`], the same call
+//!      [`legaia_patcher::unused::UNUSED_ENEMY_IDS`], the same call
 //!      `apply::randomize_encounters` makes) on a scene of the real disc until
 //!      it places an unused id at some formation row's slot 0,
 //!   2. write the re-packed MAN onto a scratch disc and re-decode it off the
@@ -27,9 +27,9 @@
 
 use legaia_engine_core::encounter_man::scene_encounter_from_man;
 use legaia_engine_core::world::{SceneMode, World};
-use legaia_rando::disc::DiscPatcher;
-use legaia_rando::encounter::SceneEncounters;
-use legaia_rando::unused::UNUSED_ENEMY_IDS;
+use legaia_patcher::disc::DiscPatcher;
+use legaia_patcher::encounter::SceneEncounters;
+use legaia_patcher::unused::UNUSED_ENEMY_IDS;
 
 /// Fixed seed for the toggle's per-scene Random pass (mixed with the entry idx
 /// inside `randomize_with_extra`, so deterministic per scene).
@@ -97,7 +97,7 @@ fn enabling_unused_enemies_spawns_the_evil_bat_at_runtime() {
         let mut patched = SceneEncounters::locate(&entry, idx).unwrap();
         let changed = patched.randomize_with_extra(
             SEED,
-            legaia_rando::drops::DropMode::Random,
+            legaia_patcher::drops::DropMode::Random,
             UNUSED_ENEMY_IDS,
         );
         if changed == 0 {

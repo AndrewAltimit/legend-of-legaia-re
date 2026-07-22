@@ -568,6 +568,295 @@ pub fn card_status_poll(events: [bool; CARD_STATUS_EVENTS], counter: &mut u16) -
     status
 }
 
+/// Drain the four card kernel events with their results discarded.
+///
+/// Retail's `TestEvent` consumes a pending event as it tests it, so the
+/// drain is exactly a clear of all four flags - which is why the earlier
+/// judgment that "a Rust caller that passes the event states in has
+/// nothing left to drain" was almost right: the caller *does* still have
+/// the flags themselves to reset between operations, and this is the
+/// primitive the second-op step (`FUN_801E3294` state 2) runs before
+/// arming the next BIOS call.
+///
+/// PORT: FUN_801E39A8 (four `TestEvent` calls on the `0x8007B9F0..FC`
+/// handles, results ignored; see
+/// `ghidra/scripts/funcs/overlay_menu_801e39a8.txt`)
+pub fn card_events_drain(events: &mut [bool; CARD_STATUS_EVENTS]) {
+    *events = [false; CARD_STATUS_EVENTS];
+}
+
+/// Number of retries the card I/O machine spends on a failing phase
+/// before it commits an error result (`DAT_801E4FC4 == 5` tests at
+/// `0x801e339c` / `0x801e34d4` / `0x801e3590` / `0x801e35c0`).
+pub const CARD_IO_RETRIES: u8 = 5;
+
+/// Side effect one [`CardIoMachine::tick`] asks the host to perform -
+/// the BIOS thunk calls the retail machine makes at each step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CardIoEffect {
+    /// State 0: arm the first BIOS card op (`FUN_8006EE14(chan)`).
+    StartOp,
+    /// State 2: drain the events ([`card_events_drain`]) and arm the
+    /// second BIOS op (`FUN_801E39A8` + `FUN_8006EE24(chan)`).
+    SecondOp,
+    /// A `Complete` event fired during the first-op wait: run the
+    /// finalize pair (`FUN_801E3A98` + `FUN_8006EE34(chan)` +
+    /// `FUN_801E3A00`).
+    Finalize,
+    /// The finalize path with a non-`-1` hardware result also clears the
+    /// live pad words (`_DAT_8007B850` / `_DAT_8007B874` at
+    /// `0x801e34a8..0x801e34b4`) - a real input swallow, not bookkeeping.
+    PadClear,
+}
+
+/// The libcd I/O state machine of the save/load flow - the driver the
+/// per-frame ticker ([`card_frame_tick`]) advances until it yields a
+/// non-zero result.
+///
+/// Retail keeps five states in `DAT_801EF188`: `0` arm first op, `1`
+/// wait, `2` arm second op, `3` wait, `4` publish the pending result and
+/// reset. Both wait states consume the per-frame status poll
+/// ([`card_status_poll`]) and share a retry budget (`DAT_801E4FC4`,
+/// [`CARD_IO_RETRIES`]): a failing phase re-runs the whole two-op cycle
+/// with result `0` until the budget is spent, then commits `-1` (no
+/// card), `-2` (stray complete in phase two) or `-3` (abort/timeout).
+/// The `both_acked` latch (`DAT_801EED20`) records that phase two
+/// acknowledged, letting the *next* cycle short-circuit to success off
+/// the first ack alone - success publishes result `1`.
+///
+/// PORT: FUN_801E3294 (see
+/// `ghidra/scripts/funcs/overlay_menu_801e3294.txt`; the state table in
+/// `docs/subsystems/save-screen.md` is the same machine)
+#[derive(Debug, Clone, Default)]
+pub struct CardIoMachine {
+    /// `DAT_801EF188`.
+    state: u8,
+    /// `DAT_801E4FC4` - shared retry budget.
+    retry: u8,
+    /// `DAT_801EED20` - phase-two-acknowledged latch.
+    both_acked: bool,
+    /// `DAT_801EF184` - result staged for the next state-4 publish.
+    pending: i32,
+    /// `DAT_801EF180` - last published result (the return value).
+    result: i32,
+    /// `_DAT_801F0214` - the "not card count" printed at retry
+    /// exhaustion.
+    not_card_count: i32,
+    /// `DAT_801EF0FC` - count of published `2` results.
+    pub aborted_publishes: u32,
+    /// `_DAT_801F3808` - last non-zero published result; the finalize
+    /// branch keys on it. Retail's finalize helpers also write it, so a
+    /// host mirroring real hardware may override via
+    /// [`Self::set_hw_result`].
+    last_result: i32,
+}
+
+impl CardIoMachine {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Last published result (`0` = busy / none yet).
+    pub fn result(&self) -> i32 {
+        self.result
+    }
+
+    /// Override the hardware-result word (`_DAT_801F3808`) the finalize
+    /// branch inspects; retail's BIOS-side helpers write it out of band.
+    pub fn set_hw_result(&mut self, v: i32) {
+        self.last_result = v;
+    }
+
+    fn publish(&mut self, pending: i32) -> i32 {
+        // State 4 body, run inline where retail parks one frame: reset,
+        // publish, count/latch the non-zero results.
+        self.state = 0;
+        self.result = pending;
+        if pending == 2 {
+            self.aborted_publishes += 1;
+        }
+        if pending != 0 {
+            self.last_result = pending;
+        }
+        self.result
+    }
+
+    fn fail_or_retry(&mut self, exhausted_result: i32, clear_latch_on_retry: bool) {
+        if self.retry >= CARD_IO_RETRIES {
+            self.retry = 0;
+            self.both_acked = false;
+            self.pending = exhausted_result;
+        } else {
+            self.retry += 1;
+            if clear_latch_on_retry {
+                self.both_acked = false;
+            }
+            self.pending = 0;
+        }
+        self.state = 4;
+    }
+
+    /// Advance one frame. `status` is this frame's poll outcome (only the
+    /// two wait states consume it); `poll_counter` is the shared
+    /// [`card_status_poll`] backstop counter, which the arm states reset
+    /// (`DAT_801EF17C = 0` at `0x801e32f8` / state 2). Returns the
+    /// published result (`0` while busy) plus any host effect.
+    pub fn tick(
+        &mut self,
+        status: CardStatus,
+        poll_counter: &mut u16,
+    ) -> (i32, Option<CardIoEffect>) {
+        match self.state {
+            0 => {
+                self.state = 1;
+                *poll_counter = 0;
+                self.result = 0;
+                (self.result, Some(CardIoEffect::StartOp))
+            }
+            1 => match status {
+                CardStatus::Pending => (self.result, None),
+                CardStatus::Ready => {
+                    self.not_card_count = 0;
+                    self.pending = 1;
+                    if self.both_acked {
+                        // Prior cycle acked phase two - one ack completes.
+                        self.state = 4;
+                    } else {
+                        self.state = 2;
+                    }
+                    (self.result, None)
+                }
+                CardStatus::NoCard => {
+                    if self.retry >= CARD_IO_RETRIES {
+                        // Retail prints "not card count:%d" here; the -1
+                        // result only fires while the count is >= 0, and
+                        // the count advances either way.
+                        if self.not_card_count >= 0 {
+                            self.not_card_count = 0;
+                            self.pending = -1;
+                            self.state = 4;
+                            self.retry = 0;
+                            self.both_acked = false;
+                        }
+                        self.not_card_count += 1;
+                        (self.result, None)
+                    } else {
+                        self.fail_or_retry(-1, false);
+                        (self.result, None)
+                    }
+                }
+                CardStatus::Complete => {
+                    // A completion event during the first wait: finalize.
+                    if self.last_result == -1 {
+                        self.both_acked = false;
+                        self.pending = 2;
+                        self.state = 2;
+                        (self.result, Some(CardIoEffect::Finalize))
+                    } else {
+                        if self.last_result < 0 {
+                            // Retail raises DAT_801EF10C here (a UI error
+                            // flag) - surfaced through the negative
+                            // last_result itself.
+                        }
+                        self.pending = 0;
+                        self.state = 4;
+                        (self.result, Some(CardIoEffect::PadClear))
+                    }
+                }
+                CardStatus::Aborted => {
+                    self.fail_or_retry(-3, false);
+                    (self.result, None)
+                }
+            },
+            2 => {
+                self.state = 3;
+                *poll_counter = 0;
+                (self.result, Some(CardIoEffect::SecondOp))
+            }
+            3 => match status {
+                CardStatus::Pending => (self.result, None),
+                CardStatus::Ready => {
+                    self.both_acked = true;
+                    self.state = 4;
+                    (self.result, None)
+                }
+                CardStatus::NoCard => {
+                    self.fail_or_retry(-1, false);
+                    (self.result, None)
+                }
+                CardStatus::Complete => {
+                    self.fail_or_retry(-2, true);
+                    (self.result, None)
+                }
+                CardStatus::Aborted => {
+                    self.fail_or_retry(-3, false);
+                    (self.result, None)
+                }
+            },
+            _ => {
+                let pending = self.pending;
+                (self.publish(pending), None)
+            }
+        }
+    }
+}
+
+/// One frame of the save-commit ticker: advance the card I/O machine and,
+/// on the save-commit beat, run the directory rebuild chain.
+///
+/// Retail's ticker advances `FUN_801E3294(chan, 0)` every frame while its
+/// gate word allows (`_DAT_801F329C < 3` - pass `sm_gate`), latching any
+/// non-zero result, and - when the commit phase word `_DAT_801F021C`
+/// reads `3` and the rebuild request `_DAT_801F0224` is raised -
+/// sequences the ported directory trio: fill the table
+/// ([`card_directory_scan`]), cost it ([`card_free_blocks`]), classify it
+/// (the [`classify_card_directory`] walk via [`card_directory_slots`]),
+/// then clears the request.
+///
+/// PORT: FUN_801E1114 (see
+/// `ghidra/scripts/funcs/overlay_menu_801e1114.txt`)
+/// REF: FUN_801E13B8 / FUN_801E380C / FUN_801E16E0 (the ticker's sibling
+/// per-frame calls - display-list side, not ported here)
+#[allow(clippy::too_many_arguments)]
+pub fn card_frame_tick(
+    io: &mut CardIoMachine,
+    status: CardStatus,
+    poll_counter: &mut u16,
+    sm_gate: bool,
+    commit_phase: u32,
+    rebuild_requested: &mut bool,
+    entries: &[CardDirEntry],
+) -> (i32, Option<CardIoEffect>, Option<Vec<SlotSnapshot>>) {
+    let (result, effect) = if sm_gate {
+        io.tick(status, poll_counter)
+    } else {
+        (io.result(), None)
+    };
+
+    let rebuilt = if commit_phase == 3 && *rebuild_requested {
+        let (table, count) = card_directory_scan(entries);
+        let free = card_free_blocks(&table, count);
+        let frames: Vec<Vec<u8>> = table
+            .iter()
+            .take(count)
+            .map(|e| {
+                let mut frame = vec![0u8; CARD_DIRENTRY_STRIDE];
+                frame[..CARD_DIRENTRY_NAME_LEN].copy_from_slice(&e.name);
+                frame[CARD_DIRENTRY_SIZE_OFFSET..CARD_DIRENTRY_SIZE_OFFSET + 4]
+                    .copy_from_slice(&e.size.to_le_bytes());
+                frame
+            })
+            .collect();
+        let frame_refs: Vec<&[u8]> = frames.iter().map(|f| f.as_slice()).collect();
+        *rebuild_requested = false;
+        Some(card_directory_slots(&frame_refs, free.max(0) as u32))
+    } else {
+        None
+    };
+
+    (result, effect, rebuilt)
+}
+
 /// What the bottom info panel shows for the focused grid cell.
 ///
 /// Retail passes this to the panel renderer as a `view_mode` int; the
@@ -1900,6 +2189,143 @@ mod tests {
     /// visit leaves the counter well over the limit. Without the reset
     /// the second visit's poll is forced to `Aborted` before it can look
     /// at the events, and a card reporting Complete would be ignored.
+    fn drive_io(
+        io: &mut CardIoMachine,
+        counter: &mut u16,
+        statuses: &[CardStatus],
+    ) -> (i32, Vec<CardIoEffect>) {
+        let mut effects = Vec::new();
+        let mut result = 0;
+        for &st in statuses {
+            let (r, e) = io.tick(st, counter);
+            result = r;
+            if let Some(e) = e {
+                effects.push(e);
+            }
+        }
+        (result, effects)
+    }
+
+    #[test]
+    fn card_io_happy_path_publishes_1_after_both_acks() {
+        let mut io = CardIoMachine::new();
+        let mut counter = 5u16;
+        // Arm (resets the poll counter), first ack, arm second, second
+        // ack, publish.
+        let (result, effects) = drive_io(
+            &mut io,
+            &mut counter,
+            &[
+                CardStatus::Pending, // state 0: arm
+                CardStatus::Ready,   // state 1: first ack -> state 2
+                CardStatus::Pending, // state 2: arm second op
+                CardStatus::Ready,   // state 3: second ack -> state 4
+                CardStatus::Pending, // state 4: publish
+            ],
+        );
+        assert_eq!(result, 1, "success publishes the pending 1");
+        assert_eq!(effects, vec![CardIoEffect::StartOp, CardIoEffect::SecondOp]);
+        assert_eq!(counter, 0, "arm states reset the poll backstop");
+
+        // The both-acked latch short-circuits the next cycle: one ack
+        // completes (state 1 Ready goes straight to publish).
+        let (result, effects) = drive_io(
+            &mut io,
+            &mut counter,
+            &[CardStatus::Pending, CardStatus::Ready, CardStatus::Pending],
+        );
+        assert_eq!(result, 1);
+        assert_eq!(effects, vec![CardIoEffect::StartOp]);
+    }
+
+    #[test]
+    fn card_io_no_card_retries_five_times_then_fails_minus_1() {
+        let mut io = CardIoMachine::new();
+        let mut counter = 0u16;
+        // Each NoCard in the first wait burns one retry and re-arms the
+        // whole cycle with result 0.
+        for _ in 0..CARD_IO_RETRIES {
+            let (r, _) = io.tick(CardStatus::Pending, &mut counter); // arm
+            assert_eq!(r, 0);
+            io.tick(CardStatus::NoCard, &mut counter); // retry -> state 4
+            let (r, _) = io.tick(CardStatus::Pending, &mut counter); // publish 0
+            assert_eq!(r, 0, "a retry publishes 0, not an error");
+        }
+        // Budget spent: the sixth NoCard commits -1.
+        io.tick(CardStatus::Pending, &mut counter);
+        io.tick(CardStatus::NoCard, &mut counter);
+        let (r, _) = io.tick(CardStatus::Pending, &mut counter);
+        assert_eq!(r, -1);
+    }
+
+    #[test]
+    fn card_io_abort_exhaustion_publishes_minus_3() {
+        let mut io = CardIoMachine::new();
+        let mut counter = 0u16;
+        for _ in 0..CARD_IO_RETRIES {
+            io.tick(CardStatus::Pending, &mut counter);
+            io.tick(CardStatus::Aborted, &mut counter);
+            let (r, _) = io.tick(CardStatus::Pending, &mut counter);
+            assert_eq!(r, 0);
+        }
+        io.tick(CardStatus::Pending, &mut counter);
+        io.tick(CardStatus::Aborted, &mut counter);
+        let (r, _) = io.tick(CardStatus::Pending, &mut counter);
+        assert_eq!(r, -3);
+    }
+
+    #[test]
+    fn card_events_drain_clears_all_four() {
+        let mut ev = [true, false, true, true];
+        card_events_drain(&mut ev);
+        assert_eq!(ev, [false; CARD_STATUS_EVENTS]);
+    }
+
+    #[test]
+    fn card_frame_tick_rebuilds_the_directory_on_the_commit_beat() {
+        let mut io = CardIoMachine::new();
+        let mut counter = 0u16;
+        let mut frame = vec![0u8; CARD_DIRENTRY_STRIDE];
+        frame[..16].copy_from_slice(b"BASCUS-94254PRO_");
+        frame[16] = b'0';
+        frame[17] = b'3';
+        frame[CARD_DIRENTRY_SIZE_OFFSET..CARD_DIRENTRY_SIZE_OFFSET + 4]
+            .copy_from_slice(&0x2000u32.to_le_bytes());
+        let entries = vec![CardDirEntry::from_frame(&frame).unwrap()];
+
+        // Off the commit beat: no rebuild, request stays up.
+        let mut req = true;
+        let (_, _, rebuilt) = card_frame_tick(
+            &mut io,
+            CardStatus::Pending,
+            &mut counter,
+            true,
+            0,
+            &mut req,
+            &entries,
+        );
+        assert!(rebuilt.is_none());
+        assert!(req);
+
+        // Commit beat: scan -> cost -> classify runs once and clears the
+        // request.
+        let (_, _, rebuilt) = card_frame_tick(
+            &mut io,
+            CardStatus::Pending,
+            &mut counter,
+            false,
+            3,
+            &mut req,
+            &entries,
+        );
+        let slots = rebuilt.expect("commit beat rebuilds");
+        assert!(!req);
+        // Slot 3 carries the save; every other slot is Free (14 free
+        // blocks affordable out of 15 - one block spent on the save).
+        assert!(slots[3].present);
+        assert!(!slots[0].present);
+    }
+
     #[test]
     fn poll_counter_resets_between_visits() {
         let mut s = enter_now_checking(200);

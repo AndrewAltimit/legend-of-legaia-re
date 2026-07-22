@@ -56,7 +56,7 @@ Skeleton→Incense anchor plus a span of ids against the real executable.
 CLI: `asset steal-table <SCUS> [--all] [--json]` (the stolen item id is joined
 to its name).
 
-The randomizer (`legaia_rando::steal`) edits this table on a user-supplied disc
+The randomizer (`legaia_patcher::steal`) edits this table on a user-supplied disc
 to reassign steal items; see [`randomizer.md`](../tooling/randomizer.md).
 
 ## See also

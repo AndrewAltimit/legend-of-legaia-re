@@ -76,6 +76,7 @@ directory.
 - `disasm-overlay-fn.py` + `mips_gte.py` - capstone MIPS disassembly with COP2/GTE annotation.
 - `gpu_packets.py` + `find-addprim-emitters.py` + `analyze-walk-ground-tiles.py` - PSX GPU-primitive decode + emitter/ground-tile analysis.
 - `call-graph.py` / `scan_funcs_for_addr_range.py` - call-graph + address-range scans over the Ghidra dumps.
+- `locate-entry-image.py` - which based overlay image actually holds a worklist address's function entry, from disc bytes (stack-frame prologue + in-image `jal` sites). Disambiguates the VA aliasing at the shared `0x801CE818` / `0x801F69D8` bases; prints both signals rather than a verdict, because leaf entries have no frame and jump-table / SCUS-called entries have no in-overlay `jal`.
 
 See [`docs/tooling/ghidra.md`](../docs/tooling/ghidra.md) and
 [`docs/tooling/static-overlay-pipeline.md`](../docs/tooling/static-overlay-pipeline.md).

@@ -1,6 +1,6 @@
 //! In-browser randomizer / disc patcher.
 //!
-//! Runs the Track-1 [`legaia_rando`] randomizer entirely client-side: the user
+//! Runs the Track-1 [`legaia_patcher`] randomizer entirely client-side: the user
 //! supplies their own disc image, the patcher edits it in WASM memory, and the
 //! page downloads the patched image locally. No bytes leave the browser and
 //! nothing is uploaded - the same "user supplies the disc" model as the CLI, so
@@ -14,12 +14,12 @@
 use js_sys::{Object, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
 
-use legaia_rando::apply;
-use legaia_rando::disc::DiscPatcher;
-use legaia_rando::drops::DropMode;
-use legaia_rando::items::valid_item_pool;
-use legaia_rando::rng::seed_from_str;
-use legaia_rando::translation::{
+use legaia_patcher::apply;
+use legaia_patcher::disc::DiscPatcher;
+use legaia_patcher::drops::DropMode;
+use legaia_patcher::items::valid_item_pool;
+use legaia_patcher::rng::seed_from_str;
+use legaia_patcher::translation::{
     ImportPhase, ImportReport, LanguagePack, export_pack, import_pack, import_pack_phase, lift,
 };
 
@@ -172,8 +172,8 @@ pub fn patch_rom(
     let casino_mode = parse_mode(casino);
     let steal_mode = parse_mode(steals);
     let arts_mode = parse_mode(arts).map(|m| match m {
-        DropMode::Shuffle => legaia_rando::arts::ArtsMode::Shuffle,
-        DropMode::Random => legaia_rando::arts::ArtsMode::Random,
+        DropMode::Shuffle => legaia_patcher::arts::ArtsMode::Shuffle,
+        DropMode::Random => legaia_patcher::arts::ArtsMode::Random,
     });
     let door_mode = parse_mode(doors);
     let house_door_mode = parse_mode(house_doors);
@@ -197,12 +197,12 @@ pub fn patch_rom(
     // (the unnamed accessory in particular is otherwise excluded - no name), and
     // give that accessory the name "Seru Bell" so it doesn't show as a blank.
     if unused_items && needs_pool {
-        legaia_rando::unused::extend_pool(&mut pool, legaia_rando::unused::UNUSED_ITEM_IDS);
+        legaia_patcher::unused::extend_pool(&mut pool, legaia_patcher::unused::UNUSED_ITEM_IDS);
         apply::inject_seru_bell_name(&mut patcher).map_err(|e| err(format!("name inject: {e}")))?;
     }
     // The unused-enemy id set passed to the encounter randomizer (empty unless on).
     let unused_enemy_ids: &[u8] = if unused_enemies {
-        legaia_rando::unused::UNUSED_ENEMY_IDS
+        legaia_patcher::unused::UNUSED_ENEMY_IDS
     } else {
         &[]
     };
@@ -257,7 +257,7 @@ pub fn patch_rom(
     if equipment_drops {
         let rep = apply::inject_equipment_bonus_drop(
             &mut patcher,
-            legaia_rando::bonus_drop::DEFAULT_CHANCE_PCT,
+            legaia_patcher::bonus_drop::DEFAULT_CHANCE_PCT,
         )
         .map_err(|e| err(format!("equipment drops: {e}")))?;
         summary.push_str(&format!(
@@ -302,7 +302,7 @@ pub fn patch_rom(
     // Run-away EXP: a code hook in the escape teardown banks a slice of a fled
     // fight's experience into the party (vanilla gives nothing for fleeing).
     if flee_exp {
-        let rep = apply::inject_flee_exp(&mut patcher, legaia_rando::flee_exp::DEFAULT_PCT)
+        let rep = apply::inject_flee_exp(&mut patcher, legaia_patcher::flee_exp::DEFAULT_PCT)
             .map_err(|e| err(format!("flee-exp: {e}")))?;
         summary.push_str(&format!(
             "flee-exp: {}% of a fled fight's experience banked into the party\n",
@@ -316,7 +316,7 @@ pub fn patch_rom(
     // so it fights on the player's side (works on bosses); a one-word widen of the
     // victory check keeps the charmed enemy from being one you must defeat.
     if enemy_ally {
-        let rep = apply::inject_enemy_ally(&mut patcher, legaia_rando::enemy_ally::DEFAULT_PCT)
+        let rep = apply::inject_enemy_ally(&mut patcher, legaia_patcher::enemy_ally::DEFAULT_PCT)
             .map_err(|e| err(format!("enemy-ally: {e}")))?;
         summary.push_str(&format!(
             "enemy-ally: {}% chance per battle a random enemy fights on your side\n",
@@ -329,7 +329,7 @@ pub fn patch_rom(
     // Shiny Seru: a code hook boosts a rare capturable enemy's stats +35%; the
     // capture/damage hooks make its captured Seru deal +35% damage forever.
     if shiny_seru {
-        let rep = apply::inject_shiny_seru(&mut patcher, legaia_rando::shiny_seru::DEFAULT_PCT)
+        let rep = apply::inject_shiny_seru(&mut patcher, legaia_patcher::shiny_seru::DEFAULT_PCT)
             .map_err(|e| err(format!("shiny-seru: {e}")))?;
         summary.push_str(&format!(
             "shiny-seru: {}% chance per battle a capturable enemy is shiny (+35% stats / damage)\n",
@@ -357,8 +357,8 @@ pub fn patch_rom(
             // quest item is moved out of its chest or dropped into another.
             let keep_static: std::collections::BTreeSet<u8> =
                 match legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54") {
-                    Some(scus) => legaia_rando::items::default_static_chest_items(&scus),
-                    None => legaia_rando::items::DEFAULT_STATIC_CHEST_ITEMS
+                    Some(scus) => legaia_patcher::items::default_static_chest_items(&scus),
+                    None => legaia_patcher::items::DEFAULT_STATIC_CHEST_ITEMS
                         .iter()
                         .copied()
                         .collect(),
@@ -522,11 +522,11 @@ pub fn patch_rom(
     }
 
     match house_door_mode {
-        Some(legaia_rando::drops::DropMode::Shuffle) => {
+        Some(legaia_patcher::drops::DropMode::Shuffle) => {
             let rep = apply::randomize_house_doors(
                 &mut patcher,
                 seed_n,
-                legaia_rando::drops::DropMode::Shuffle,
+                legaia_patcher::drops::DropMode::Shuffle,
             )
             .map_err(|e| err(format!("house-doors: {e}")))?;
             summary.push_str(&format!(
@@ -542,7 +542,7 @@ pub fn patch_rom(
         None => summary.push_str("house-doors: untouched\n"),
     }
 
-    let seed_opts = legaia_rando::starting_items::StartingSeedOptions {
+    let seed_opts = legaia_patcher::starting_items::StartingSeedOptions {
         random_items: starting_items,
         door_of_wind,
         incense,
@@ -589,12 +589,12 @@ pub fn patch_rom(
         // Items beyond the 7-slot direct-seed cap are granted on top via a silent
         // GIVE_ITEM block injected into the opening scene (see `starting_bag`), so
         // the explicit convenience items AND the full requested random fill land.
-        let overflow = legaia_rando::starting_items::overflow_bag(seed_n, &seed_opts);
+        let overflow = legaia_patcher::starting_items::overflow_bag(seed_n, &seed_opts);
         if !overflow.is_empty() {
             let bag = apply::apply_starting_bag(
                 &mut patcher,
                 &overflow,
-                legaia_rando::starting_bag::DEFAULT_GUARD_BIT,
+                legaia_patcher::starting_bag::DEFAULT_GUARD_BIT,
             )
             .map_err(|e| err(format!("starting-items overflow: {e}")))?;
             if bag.applied {
@@ -616,7 +616,7 @@ pub fn patch_rom(
         summary.push_str("starting-items: untouched (vanilla Healing Leaf x5)\n");
     }
 
-    if legaia_rando::starting_level::is_active(starting_level) {
+    if legaia_patcher::starting_level::is_active(starting_level) {
         let rep = apply::apply_starting_level(&mut patcher, starting_level)
             .map_err(|e| err(format!("starting-level: {e}")))?;
         summary.push_str(&format!(
@@ -693,7 +693,7 @@ fn issue_reason(msg: &str) -> &'static str {
 fn lang_report_json(
     language: &str,
     report: &ImportReport,
-    sections: &[legaia_rando::translation::SectionCounts],
+    sections: &[legaia_patcher::translation::SectionCounts],
 ) -> Result<JsValue, JsValue> {
     let out = Object::new();
     Reflect::set(&out, &"language".into(), &language.into())?;

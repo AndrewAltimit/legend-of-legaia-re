@@ -11,14 +11,14 @@
 # Fields per [[mod]]:
 #   key       stable slug
 #   name      display name
-#   flag      CLI flag (legaia-rando)
+#   flag      CLI flag (legaia-patcher)
 #   tier      A-F primary technique
 #   variant   optional G/H/I/J specialization tag ("" if none)
 #   target    what + where the edit lands (concise; addresses where pinned)
 #   edit      "in-place" (same-size) | "relocate" (variable-length, footprint-bounded)
 #   gap       true if it consumes the shared SCUS rodata gap (composition-relevant)
 #   status    "shipped" | "planned"
-#   test      disc oracle test (crates/rando/tests/*), or ""
+#   test      disc oracle test (crates/patcher/tests/*), or ""
 #   notes     optional one-liner
 
 # ---------------------------------------------------------------------------

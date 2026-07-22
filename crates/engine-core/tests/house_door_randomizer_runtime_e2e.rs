@@ -2,10 +2,10 @@
 //! at runtime** - the sibling of the chest / door / encounter / steal oracles.
 //!
 //! The randomizer's own disc-gated tests prove the patch is *written*
-//! faithfully (`crates/rando/tests/house_door_patch_real`: per-scene,
+//! faithfully (`crates/patcher/tests/house_door_patch_real`: per-scene,
 //! per-class target multisets preserved, sectors EDC/ECC-valid) and that the
 //! classified population is the audited one
-//! (`crates/rando/tests/house_door_classifier_real`). What they don't prove is
+//! (`crates/patcher/tests/house_door_classifier_real`). What they don't prove is
 //! that a runtime actually *reads the patched operand bytes and warps the
 //! player there*.
 //!
@@ -39,10 +39,10 @@
 
 use legaia_engine_core::field_events::FieldEvent;
 use legaia_engine_core::world::{SceneMode, World};
-use legaia_rando::apply;
-use legaia_rando::disc::DiscPatcher;
-use legaia_rando::drops::DropMode;
-use legaia_rando::house_door::{DoorSide, SceneHouseDoors};
+use legaia_patcher::apply;
+use legaia_patcher::disc::DiscPatcher;
+use legaia_patcher::drops::DropMode;
+use legaia_patcher::house_door::{DoorSide, SceneHouseDoors};
 
 /// Rim Elm scene bundle PROT entry.
 const TOWN01_ENTRY: usize = 4;

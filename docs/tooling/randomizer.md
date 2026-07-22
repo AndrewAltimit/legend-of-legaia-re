@@ -19,9 +19,13 @@ game (or the port) plays the result. The one exception is
 [Seru trading](#seru-trading), which embeds a config the engine reads because
 retail has no trade UI to hook.
 
-Crate: [`crates/rando`](../../crates/rando/README.md) (`legaia-rando`). It ships
-only code - no game bytes - and every test that needs real data is disc-gated, so
-CI runs without a disc. There is also a
+Crate: [`crates/patcher`](../../crates/patcher/README.md) (`legaia-patcher`) -
+the project's general disc-patching toolkit. The randomizer documented on this
+page is its largest feature family; the same machinery carries the
+[translation packs](translation.md) and the manual per-record edits
+(`monster-block`, in the [modding guide](../guides/modding-and-translation.md)).
+It ships only code - no game bytes - and every test that needs real data is
+disc-gated, so CI runs without a disc. There is also a
 [browser build](#in-the-browser) that never uploads your disc.
 
 ## What it can re-roll
@@ -44,7 +48,7 @@ CI runs without a disc. There is also a
 - [Why this needs three new capabilities](#why-this-needs-three-new-capabilities)
 - [Editing model: same-size in place, except doors](#editing-model-same-size-in-place-except-doors)
 - [In the browser](#in-the-browser)
-- [CLI: `legaia-rando`](#cli-legaia-rando)
+- [CLI: `legaia-patcher`](#cli-legaia-patcher)
 - Per-randomizer mechanics:
   - [Keep-static items](#keep-static-items)
   - [Equipment drops](#equipment-drops)
@@ -93,7 +97,7 @@ preservation track never had (it only ever *read* the disc):
    2048-byte user payload of a CD sector also requires recomputing its 4-byte
    EDC and 276-byte P/Q ECC, or the sector reads as corrupt. See
    [PSX disc geometry](../formats/disc.md).
-3. **A disc bridge** - `legaia_rando::disc::DiscPatcher`, which ties the editing
+3. **A disc bridge** - `legaia_patcher::disc::DiscPatcher`, which ties the editing
    primitives to the sector write-back through the PROT.DAT TOC.
 
 ## Editing model: same-size in place, except doors
@@ -135,7 +139,7 @@ report is spoiler-safe: when a random starting-item fill is requested it
 prints only the item *count* (the CLI listing below stays verbose - it's the
 offline spoiler log). The CLI below is the scriptable / shareable-PPF path.
 
-## CLI: `legaia-rando`
+## CLI: `legaia-patcher`
 
 The top-level binary turns a disc + seed into a portable patch. Every disc
 argument takes a raw Mode 2/2352 `.bin` or a `.cue` sheet (resolved to the
@@ -143,37 +147,40 @@ argument takes a raw Mode 2/2352 `.bin` or a `.cue` sheet (resolved to the
 one-line `overwriting PATH` notice:
 
 ```bash
-legaia-rando drops     --input DISC.bin                       # read-only: monster drops
-legaia-rando chests    --input DISC.bin                       # read-only: chest contents
-legaia-rando steals    --input DISC.bin                       # read-only: steal items
-legaia-rando doors     --input DISC.bin                       # read-only: scene transitions
-legaia-rando house-doors --input DISC.bin                     # read-only: intra-town door warps
-legaia-rando map-doors --input DISC.bin                       # read-only: .MAP kind-0 teleports
-legaia-rando starting-items --input DISC.bin                  # read-only: new-game starting bag
-legaia-rando shops     --input DISC.bin                       # read-only: what town stores sell
-legaia-rando casino    --input DISC.bin                       # read-only: casino prize exchange
-legaia-rando monster-stats --input DISC.bin                   # read-only: monster HP/MP/ATK/DEF/INT/SPD
-legaia-rando move-powers   --input DISC.bin                   # read-only: special-attack power table
-legaia-rando affinity      --input DISC.bin                   # read-only: element-affinity matrix
-legaia-rando spell-costs   --input DISC.bin                   # read-only: spell MP costs
-legaia-rando equip-bonuses --input DISC.bin                   # read-only: equipment stat-bonus table
-legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
-legaia-rando randomize --input DISC.bin --seed brutal --monster-stats shuffle \
+legaia-patcher drops     --input DISC.bin                       # read-only: monster drops
+legaia-patcher chests    --input DISC.bin                       # read-only: chest contents
+legaia-patcher steals    --input DISC.bin                       # read-only: steal items
+legaia-patcher doors     --input DISC.bin                       # read-only: scene transitions
+legaia-patcher house-doors --input DISC.bin                     # read-only: intra-town door warps
+legaia-patcher map-doors --input DISC.bin                       # read-only: .MAP kind-0 teleports
+legaia-patcher starting-items --input DISC.bin                  # read-only: new-game starting bag
+legaia-patcher shops     --input DISC.bin                       # read-only: what town stores sell
+legaia-patcher casino    --input DISC.bin                       # read-only: casino prize exchange
+legaia-patcher monster-stats --input DISC.bin                   # read-only: monster HP/MP/ATK/DEF/INT/SPD
+legaia-patcher move-powers   --input DISC.bin                   # read-only: special-attack power table
+legaia-patcher affinity      --input DISC.bin                   # read-only: element-affinity matrix
+legaia-patcher spell-costs   --input DISC.bin                   # read-only: spell MP costs
+legaia-patcher equip-bonuses --input DISC.bin                   # read-only: equipment stat-bonus table
+legaia-patcher monster-block --input DISC.bin --id 10 --dump m10.bin      # dump one monster's decoded block
+legaia-patcher monster-block --input DISC.bin --id 10 --write m10.bin \
+    --output edited.bin --patch m10.ppf                       # re-pack an edited block onto a copy
+legaia-patcher randomize --input DISC.bin --seed myrun --drops shuffle
+legaia-patcher randomize --input DISC.bin --seed brutal --monster-stats shuffle \
     --move-power shuffle --element-affinity shuffle --spell-cost shuffle    # battle-tuning shuffle
-legaia-rando randomize --input DISC.bin --seed gear --drops shuffle --equipment-drops   # +low-chance bonus gear drop
-legaia-rando randomize --input DISC.bin --seed flee --encounters shuffle --flee-exp     # +5% experience on a successful escape
-legaia-rando randomize --input DISC.bin --seed pal --enemy-ally                         # 20% chance an enemy fights on your side
-legaia-rando randomize --input DISC.bin --seed pal --shiny-seru                         # 2% chance a capturable enemy is shiny (+35% stats / captured-Seru damage)
-legaia-rando randomize --input DISC.bin --seed swap --seru-trade                        # vendors trade seru-for-seru (clean-room engine UI)
-legaia-rando randomize --input DISC.bin --seed mart --shops shuffle --casino shuffle
-legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
+legaia-patcher randomize --input DISC.bin --seed gear --drops shuffle --equipment-drops   # +low-chance bonus gear drop
+legaia-patcher randomize --input DISC.bin --seed flee --encounters shuffle --flee-exp     # +5% experience on a successful escape
+legaia-patcher randomize --input DISC.bin --seed pal --enemy-ally                         # 20% chance an enemy fights on your side
+legaia-patcher randomize --input DISC.bin --seed pal --shiny-seru                         # 2% chance a capturable enemy is shiny (+35% stats / captured-Seru damage)
+legaia-patcher randomize --input DISC.bin --seed swap --seru-trade                        # vendors trade seru-for-seru (clean-room engine UI)
+legaia-patcher randomize --input DISC.bin --seed mart --shops shuffle --casino shuffle
+legaia-patcher randomize --input DISC.bin --seed 0xC0FFEE --drops random \
     --encounters shuffle --steals shuffle --arts shuffle --doors shuffle --door-coupling coupled \
     --starting-items 3 --patch run.ppf --output patched.bin --manifest run.toml
-legaia-rando randomize --input DISC.bin --seed wild --encounters random \
+legaia-patcher randomize --input DISC.bin --seed wild --encounters random \
     --unused-enemies --chests random --unused-items                  # bring back unused content
-legaia-rando randomize --input DISC.bin --seed chaos --encounters random \
+legaia-patcher randomize --input DISC.bin --seed chaos --encounters random \
     --encounter-scope world                                          # late-game monsters anywhere; over-strong fights go solo by default
-legaia-rando verify    --input DISC.bin --patch run.ppf       # apply + sanity-check
+legaia-patcher verify    --input DISC.bin --patch run.ppf       # apply + sanity-check
 ```
 
 ### What `randomize` does
@@ -283,6 +290,14 @@ decode the randomizable populations off the user's disc and print them, with ite
 ids and names resolved from the disc's own SCUS table, and chests and doors
 grouped by scene via CDNAME.
 
+`monster-block` is the one manual-edit subcommand: `--dump` LZS-decodes a
+single monster's `battle_data` block (PROT 867) to a file for hex editing, and
+`--write` re-packs the edited block into its fixed `0x14000`-byte slot on a
+copy of the disc (`--output` / `--patch`), through the same
+`DiscPatcher::patch_monster_slot` path the stat randomizer uses. The
+walkthrough lives in the
+[modding guide](../guides/modding-and-translation.md).
+
 Two are worth knowing about specifically. `chests` lists the exact 275-site
 treasure population the chest randomizer reassigns - the natural place to audit
 for quest / key items a run might want to keep static. `doors` lists every
@@ -348,7 +363,7 @@ injected routine:
 2. rolls `rand() % table_len` to index an embedded equipment-id table;
 3. calls `FUN_800421d4(id, 1)` to add the gear - the same helper the normal
    drop, shops, and minigame rewards use (an unguarded add, like the minigame
-   completion reward `FUN_801C2748`);
+   completion reward `FUN_801D0F60`);
 4. replays the two displaced instructions and `j`s back to `0x8004f618`.
 
 The join is reached once per battle, so the roll fires once per battle. The
@@ -370,7 +385,7 @@ table shared by consumables, key items, and equipment, with nothing that flags
 "this id is a weapon" in a single byte, so the equipment ids are recovered by
 **name** - every weapon / armor / accessory in the curated public
 [gamedata tables](../reference/gamedata.md) is matched case-insensitively against
-the disc's own item-name table to find its id (`legaia_rando::equipment::equipment_pool`).
+the disc's own item-name table to find its id (`legaia_patcher::equipment::equipment_pool`).
 The names ship in the repo; the ids come from the user's disc - no Sony bytes are
 embedded (the injected routine is the randomizer's own code), and the join
 doubles as a cross-check of the curated tables against the real executable. About
@@ -442,7 +457,7 @@ The kingdom partition is derived from the disc's own `CDNAME.TXT`, never a
 hardcoded scene list: the three overworlds (`map01` / `map02` / `map03`) are
 pinned world-map bundles, so **Sebucus begins at the first CDNAME block after
 `map01`, Karisto at the first after `map02`** (Karisto absorbs the dungeons
-listed after `map03`). See [`kingdom`](../../crates/rando/src/kingdom.rs).
+listed after `map03`). See [`kingdom`](../../crates/patcher/src/kingdom.rs).
 `kingdom` scope needs `CDNAME.TXT`; `world` does not. The wider pools rely on the
 battle loader streaming a monster's archive slot on demand by id, so an
 out-of-area enemy still loads and renders.
@@ -872,7 +887,7 @@ nearest priced gear of the same type) with a same-size SCUS edit, so they're
 non-free and part of the sellable pool. On the retail disc this is
 34 shops (the picker-gated vendors a walk used to miss, plus duplicate scene
 clusters and per-story-phase shop records). `--shops shuffle|random`; read-only
-`legaia-rando shops` lists every shop's stock.
+`legaia-patcher shops` lists every shop's stock.
 
 ### Casino prize exchange
 
@@ -886,7 +901,7 @@ blocks of 8-byte `[u16 item_id][u16 story-gate][u32 coin-price]` records (the
 high-value prizes carry a non-zero gate that locks them behind casino
 progression). `casino::CasinoExchange` shuffles / randoms the whole records (so a
 prize keeps its coin price and progression gate wherever it lands), a same-size
-raw edit with no LZS. `--casino shuffle|random`; read-only `legaia-rando casino`.
+raw edit with no LZS. `--casino shuffle|random`; read-only `legaia-patcher casino`.
 At runtime the prize-exchange UI is a menu-overlay session: it runs at
 `game_mode 0x17` (the CARD/menu pair) with PROT 0899 resident in slot A, the
 same hosting as the pause menu and the gold shop (see
@@ -906,7 +921,7 @@ re-pack, no overflow, so nothing is ever skipped. `apply::randomize_steals`
 reassigns the item for every stealable monster (`Shuffle` redistributes the
 existing steal-item multiset, `Random` draws from the valid item pool) and
 **preserves each monster's steal chance** - the item changes, the rate doesn't.
-On the retail disc 189 monsters are stealable. `legaia-rando steals` lists the
+On the retail disc 189 monsters are stealable. `legaia-patcher steals` lists the
 current table (the audit surface).
 
 ### Monster combat stats
@@ -927,7 +942,7 @@ difficulty. Each edit re-packs the monster's slot through the same
 decompress → edit → recompress path as the drop randomizer
 (`monster::repack_slot`); the decoded length is unchanged, so every slot keeps
 its `0x14000`-byte footprint (a slot too tight to re-pack is skipped, as with
-drops). `legaia-rando monster-stats` lists the current stats.
+drops). `legaia-patcher monster-stats` lists the current stats.
 
 A set of scripted enemies (`monster_stats::PROTECTED_MONSTER_IDS`) is excluded
 from the pass entirely - both as a source and a target - so each keeps its
@@ -958,7 +973,7 @@ never handed to an unused slot. The other 24 bytes of each record (strike
 geometry, phase timing, impact-effect / trail / sound cue, contact + launch
 effect lists) are untouched, so every move keeps its own animation and effects;
 only how hard it hits changes. PROT 0898 is stored raw, so the write is a
-same-size raw-entry edit. `legaia-rando move-powers` lists the table, each entry
+same-size raw-entry edit. `legaia-patcher move-powers` lists the table, each entry
 tagged with the spell-table name of a move that resolves to it.
 
 ### Element-affinity matrix
@@ -973,7 +988,7 @@ preserved - the same number of weaknesses / resistances exists, just between
 different element pairs); `Random` draws each cell from that pool. Only the
 matrix moves; the per-character element assignment and the summon-power rows are
 left untouched, so the change is purely *which element pairs interact*. PROT
-0898 is raw, so the write is same-size in place. `legaia-rando affinity` prints
+0898 is raw, so the write is same-size in place. `legaia-patcher affinity` prints
 the labeled grid.
 
 ### Spell MP costs
@@ -986,7 +1001,7 @@ static `SCUS_942.54` spell table (`DAT_800754C8`, cost at record `+3`; see
 non-zero-cost** spells participate, so free / internal enemy-tier entries never
 gain a cost and names / target shapes are untouched. The table is in
 `SCUS_942.54`, so the edit is a same-size in-place SCUS patch via
-`patch_named_file` (like steals). `legaia-rando spell-costs` lists the table.
+`patch_named_file` (like steals). `legaia-patcher spell-costs` lists the table.
 
 ### Equipment stat bonuses
 
@@ -1006,7 +1021,7 @@ per-id rewrite would double-edit a shared row and corrupt its bonuses
 (`equip_stats::items_for_rows` maps rows → the ids that reach them). Rows no
 equippable item references are left untouched, so an unused/garbage row can never
 hand a real item a junk tuple. The table is in `SCUS_942.54`, so the edit is a
-same-size in-place SCUS patch. `legaia-rando equip-bonuses` lists the table,
+same-size in-place SCUS patch. `legaia-patcher equip-bonuses` lists the table,
 grouped by slot category, with the items that reference each row.
 
 ### Equip mask (who can equip what)
@@ -1023,7 +1038,7 @@ stat pass it edits bonus **rows** (not item ids) and skips rows no equippable it
 references, so a garbage row can't hand a real item an unequippable (zero) mask.
 The engine reads the same `+6` byte
 (`legaia_engine_core::equipment::DiscEquipInfo::can_equip`), so a patched disc
-re-gates each character's equip picker. `legaia-rando equip-bonuses` lists the
+re-gates each character's equip picker. `legaia-patcher equip-bonuses` lists the
 current mask (`V/N/G` / `any`) beside each row.
 
 ### Weapon specialty
@@ -1045,7 +1060,7 @@ favored relationship, and re-compresses in place. The byte lives inside an LZS
 stream, so this is the one feature that decompresses + re-compresses a section per
 edit (a section too tight to re-pack is skipped and reported; in practice every one
 re-packs). The Astral Sword and non-class gear carry no family and are never
-touched, so the Astral Sword stays always-wide. `legaia-rando weapon-specialty`
+touched, so the Astral Sword stays always-wide. `legaia-patcher weapon-specialty`
 shows each character's current favored class.
 
 ### Arts button combos
@@ -1074,7 +1089,7 @@ count** (a 4-input art stays 4 inputs) and each character's combos stay unique
 (every character's arts map to distinct strings; a bijection keeps them
 distinct). `Shuffle` reassigns existing same-length combos (no new input
 ambiguity); `Random` writes fresh same-length combos. The per-character
-**Miracle Art** (`0xFF09` marker) is left untouched. `legaia-rando arts` lists
+**Miracle Art** (`0xFF09` marker) is left untouched. `legaia-patcher arts` lists
 the current combos.
 
 ### Doors (scene transitions)
@@ -1090,7 +1105,7 @@ see [MAN relocation](../formats/man-relocation.md)). On the retail disc there ar
 the hubs.
 
 **Not every `0x3F` site is a walk-through door**, so the shuffle pool is gated
-(`door::DoorSiteClass`; `legaia-rando doors` prints each site's class):
+(`door::DoorSiteClass`; `legaia-patcher doors` prints each site's class):
 
 - **Walk-trigger evidence.** A genuine door's partition-2 record is spawned by
   a `.MAP` **kind-1 gate-1** tile trigger (`[tile_x, tile_z, record, gate]`,
@@ -1173,7 +1188,7 @@ explicit door-pairing convention in their SJIS names: fullwidth `ＩＮ`/`ＯＵ
 entry (`town01`) is exactly the `0xA3 0xF8 0x61 0x36` (interior tile `(97, 54)`)
 in the record named `…ＩＮ`.
 
-`legaia_rando::house_door::SceneHouseDoors` enumerates these classified door
+`legaia_patcher::house_door::SceneHouseDoors` enumerates these classified door
 warps (the record walk skips inline-dialogue `0x1F` segments, the same
 ground-truthed rule as the chest walk) and `--house-doors shuffle` does a
 **per-scene, class-preserving shuffle**: `ＩＮ`-class targets (interior landing
@@ -1230,7 +1245,7 @@ it is by far the largest door population on the disc: 2319 records inside the
 carries 128). Destinations are in half-tiles: the landing is
 `world = (dest_x*64 + 64, (dest_z+1)*64)`.
 
-`--house-doors shuffle` drives this pass too (`legaia_rando::map_door`,
+`--house-doors shuffle` drives this pass too (`legaia_patcher::map_door`,
 applied by `apply::randomize_map_doors` inside `randomize_house_doors` -
 which is also how the browser patcher exposes it). Each edit is a **same-size
 2-byte in-place write** into the raw `.MAP` sectors - the `.MAP` is not
@@ -1562,33 +1577,33 @@ bit-for-bit.
 | `crates/asset` `lzs_compress_roundtrip_real` | disc-gated | the encoder round-trips real monster records + LZS-container sections, and compresses them |
 | `crates/iso` `write` unit tests | CI | encode is idempotent / self-consistent; corrupting user data invalidates until re-encoded; ECC is address-independent; a seam-straddling patch keeps both sectors valid |
 | `crates/iso` `ecc_real` | disc-gated | the encoder reproduces real PROT.DAT sectors' EDC/ECC bit-for-bit; a one-byte patch + restore round-trips a real sector exactly |
-| `crates/rando` unit tests | CI | seeded planner determinism; shuffle preserves the drop multiset; surgical `set_drop`; PPF diff/write/apply round-trip; a synthetic-disc patch round-trips through the disc → ISO → PROT chain |
-| `crates/rando` `disc_patch_real` | disc-gated | patch a real monster's drop onto a scratch copy of the disc; it re-decodes off the patched image with neighbours untouched and sectors valid |
-| `crates/rando` `rando_cli_real` | disc-gated | full-archive shuffle: plan from a seed → apply → each monster reads its planned drop (skipped slots unchanged) → diff into a PPF that reproduces the patched image; deterministic for a fixed seed |
-| `crates/rando` `encounter_patch_real` | disc-gated | whole-disc encounter shuffle: re-decode every patched scene MAN off the disc and assert counts + id multiset preserved, ids in-pool, sectors EDC/ECC-valid, deterministic; **plus** every scripted/boss formation (Tetsu id `0x4F` among them) is byte-identical after the shuffle |
-| `crates/rando` `chest_patch_real` | disc-gated | whole-disc chest shuffle: re-decode every patched scene MAN, assert give-item site offsets unchanged + chest-item multiset preserved + sectors valid + deterministic |
-| `crates/rando` `steal_patch_real` | disc-gated | whole-disc steal shuffle: re-read the patched `SCUS_942.54` steal table, assert the steal-item multiset preserved + every steal chance byte untouched + the table sector EDC/ECC-valid + deterministic |
-| `crates/rando` `arts_patch_real` | disc-gated | arts-combo shuffle + random: re-decode the patched combos, assert every art keeps its input count + each character's combos stay unique + the Miracle Arts untouched + (shuffle) the global per-length set of distinct combos preserved + sector EDC/ECC-valid + deterministic; **plus the MATCHER GUARD** - decompress each character's player-file `record0` and assert every art's display combo is present as a matcher record and the records actually changed (the desync the feature tripped over) |
+| `crates/patcher` unit tests | CI | seeded planner determinism; shuffle preserves the drop multiset; surgical `set_drop`; PPF diff/write/apply round-trip; a synthetic-disc patch round-trips through the disc → ISO → PROT chain |
+| `crates/patcher` `disc_patch_real` | disc-gated | patch a real monster's drop onto a scratch copy of the disc; it re-decodes off the patched image with neighbours untouched and sectors valid |
+| `crates/patcher` `rando_cli_real` | disc-gated | full-archive shuffle: plan from a seed → apply → each monster reads its planned drop (skipped slots unchanged) → diff into a PPF that reproduces the patched image; deterministic for a fixed seed |
+| `crates/patcher` `encounter_patch_real` | disc-gated | whole-disc encounter shuffle: re-decode every patched scene MAN off the disc and assert counts + id multiset preserved, ids in-pool, sectors EDC/ECC-valid, deterministic; **plus** every scripted/boss formation (Tetsu id `0x4F` among them) is byte-identical after the shuffle |
+| `crates/patcher` `chest_patch_real` | disc-gated | whole-disc chest shuffle: re-decode every patched scene MAN, assert give-item site offsets unchanged + chest-item multiset preserved + sectors valid + deterministic |
+| `crates/patcher` `steal_patch_real` | disc-gated | whole-disc steal shuffle: re-read the patched `SCUS_942.54` steal table, assert the steal-item multiset preserved + every steal chance byte untouched + the table sector EDC/ECC-valid + deterministic |
+| `crates/patcher` `arts_patch_real` | disc-gated | arts-combo shuffle + random: re-decode the patched combos, assert every art keeps its input count + each character's combos stay unique + the Miracle Arts untouched + (shuffle) the global per-length set of distinct combos preserved + sector EDC/ECC-valid + deterministic; **plus the MATCHER GUARD** - decompress each character's player-file `record0` and assert every art's display combo is present as a matcher record and the records actually changed (the desync the feature tripped over) |
 | `crates/asset` `man_edit` unit tests | CI | the MAN relocation engine: grow / shrink a destination name relocates the section + later-record offsets, a spanning relative jump's delta is fixed (a non-spanning one isn't), the rebuilt MAN re-parses |
-| `crates/rando` `door_enumerate_real` | disc-gated | whole-disc door census: 160 doors across 48 scenes, every destination a clean CDNAME label, the pinned town01 → map01 exit present, the overworld hubs fan out |
-| `crates/rando` `door_patch_real` | disc-gated | whole-disc door shuffle (one-way + coupled): re-decode every patched scene MAN, assert the destination multiset preserved (clean shuffle) / names valid (with skips), sectors EDC/ECC-valid, image size unchanged, deterministic |
-| `crates/rando` `house_door_classifier_real` | disc-gated | house-door warp census: every classified site carries the `0xA3 0xF8` cross-context player-MOVE_TO signature, the per-scene ＩＮ/ＯＵＴ class counts match the audited population (12 scenes, 27 + 29 sites), targets non-sentinel, and the runtime-captured Mei's-house interior `(97, 54)` is among town01's ＩＮ targets |
-| `crates/rando` `house_door_patch_real` | disc-gated | whole-disc intra-town (house) door shuffle: re-decode every patched scene MAN, assert the per-scene ＩＮ-class and ＯＵＴ-class door-warp target multisets each preserved, sectors EDC/ECC-valid, image size unchanged, deterministic |
-| `crates/rando` `starting_items_patch_real` | disc-gated | starting-item randomize: re-decode the rewritten `FUN_80034A6C` seed off the patched `SCUS_942.54`, assert the seeded items match the plan + are in-pool consumables + the surrounding function bytes are untouched + image size unchanged + sector EDC/ECC-valid + deterministic |
-| `crates/rando` `equipment_drops_real` | disc-gated | inject the bonus equipment drop into a scratch `SCUS_942.54`; assert off the patched image that the hook site holds `j routine` + nop, the routine + id table decode as the hand-assembled bytes (replaying the two displaced instructions and returning), the table holds pool equipment ids, the edit is surgical (only the hook + routine regions change) and the disc still parses; byte-deterministic; the build guard refuses a corrupted hook site / non-dead routine region |
-| `crates/rando` `flee_exp_real` | disc-gated | inject the run-away EXP hook: assert the real disc's escape-teardown site (PROT 898, VA `0x801E5A10`) **is** the expected displaced pair, then off the patched image that the overlay detour is `j routine` + nop, the SCUS routine decodes as the hand-assembled bytes (replaying the displaced pair + returning), each edit is surgical (only the 8-byte hook / the routine region change), the patched overlay + image still parse and stay EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook site / non-dead routine region |
-| `crates/rando` `enemy_ally_real` | disc-gated | inject the enemy-ally charm: assert the real disc's setup hook (SCUS, VA `0x80051990`) **is** `lui v1,0x8008` / `lbu v1,-0x42f4(v1)` and the victory site (PROT 898, VA `0x801E6638`) **is** `andi v0,v0,0x4`, then off the patched image that the SCUS detour is `j routine` + nop, the routine decodes as the hand-assembled bytes (sets `0x380`, replays the displaced pair, returns), the victory word is widened to `andi v0,v0,0x384`, each edit is surgical, it composes with flee-EXP in the same gap, the image stays EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook / non-dead routine region / unexpected victory word |
-| `crates/rando` `shiny_seru_real` | disc-gated | inject shiny Seru: assert all nine hook sites match the known US build and the SCUS regions (`0x80077728` gap 1 / `0x8007AE00` arena 1 / `0x8007AFF8` arena 2 / `0x80078A88` slot 6) are all-zero dead space outside every live table - incl. the `0x80079xxx` SsAPI sound tables the old arena3/4/5 squatted in (routine VAs 4-byte aligned), and the victory mouth-override row at `0x800781B0` keeps the clean keyframes; then off the patched image: every detour became `j routine` + nop, the bitmap has Gimard set / gobu clear, bytes outside the planned edits are untouched, the disc stays EDC/ECC-valid, it composes with enemy-ally, is byte-deterministic, and the guards refuse a corrupted / non-dead / in-table region |
-| `crates/rando` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
-| `crates/rando` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
-| `crates/rando` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140, "Comm" (id 78) is a populated standalone record (not a clone); item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |
-| `crates/rando` `monster_stats_real` | disc-gated | whole-archive monster-stat shuffle: re-decode every patched `battle_data` record off the disc, assert each stat column's multiset is preserved, every non-randomized field (the AGL gauge, drop, exp, gold, name, element) byte-identical, every protected monster's (tutorial enemies + story bosses) combat stats unchanged, slot footprints fixed, deterministic |
-| `crates/rando` `move_power_real` | disc-gated | special-attack power shuffle: re-parse the patched PROT 0898 move-power table, assert the power multiset preserved + every non-power record byte byte-identical (only `+0x00` moves) + deterministic |
-| `crates/rando` `element_affinity_real` | disc-gated | element-affinity shuffle: re-parse the patched PROT 0898 matrix, assert the scale-percent multiset preserved + the per-character element + summon-power sibling tables untouched + deterministic |
-| `crates/rando` `spell_cost_real` | disc-gated | spell MP-cost shuffle: re-read the patched `SCUS_942.54` spell table, assert the MP-cost multiset + the named/costed-spell id set preserved + the table sector EDC/ECC-valid + deterministic |
-| `crates/rando` `equip_bonuses_real` | disc-gated | equipment stat-bonus shuffle: re-read the patched `SCUS_942.54` bonus table, assert each slot category's `+0..+4` stat-tuple multiset preserved (no tuple crosses categories) + every row's `+5/+6/+7` tail (passive/mask/slot) byte-identical + the table sectors EDC/ECC-valid + deterministic |
-| `crates/rando` `equip_masks_real` | disc-gated | equip-mask shuffle: re-read the patched bonus table, assert each slot category's `+6` equip-mask multiset preserved (no mask crosses categories) + every non-`+6` byte untouched + no referenced row left unequippable + sectors EDC/ECC-valid + deterministic + composes with the stat pass |
-| `crates/rando` `seru_trade_real` | disc-gated | seru-trade config write: assert an unpatched disc reports no config, then off the patched image the embedded blob decodes back to the written `(enabled, seed, offer cap)`, the write is same-size + a tiny localized edit, re-running with a new seed overwrites the prior blob, and a fixed seed is byte-deterministic |
+| `crates/patcher` `door_enumerate_real` | disc-gated | whole-disc door census: 160 doors across 48 scenes, every destination a clean CDNAME label, the pinned town01 → map01 exit present, the overworld hubs fan out |
+| `crates/patcher` `door_patch_real` | disc-gated | whole-disc door shuffle (one-way + coupled): re-decode every patched scene MAN, assert the destination multiset preserved (clean shuffle) / names valid (with skips), sectors EDC/ECC-valid, image size unchanged, deterministic |
+| `crates/patcher` `house_door_classifier_real` | disc-gated | house-door warp census: every classified site carries the `0xA3 0xF8` cross-context player-MOVE_TO signature, the per-scene ＩＮ/ＯＵＴ class counts match the audited population (12 scenes, 27 + 29 sites), targets non-sentinel, and the runtime-captured Mei's-house interior `(97, 54)` is among town01's ＩＮ targets |
+| `crates/patcher` `house_door_patch_real` | disc-gated | whole-disc intra-town (house) door shuffle: re-decode every patched scene MAN, assert the per-scene ＩＮ-class and ＯＵＴ-class door-warp target multisets each preserved, sectors EDC/ECC-valid, image size unchanged, deterministic |
+| `crates/patcher` `starting_items_patch_real` | disc-gated | starting-item randomize: re-decode the rewritten `FUN_80034A6C` seed off the patched `SCUS_942.54`, assert the seeded items match the plan + are in-pool consumables + the surrounding function bytes are untouched + image size unchanged + sector EDC/ECC-valid + deterministic |
+| `crates/patcher` `equipment_drops_real` | disc-gated | inject the bonus equipment drop into a scratch `SCUS_942.54`; assert off the patched image that the hook site holds `j routine` + nop, the routine + id table decode as the hand-assembled bytes (replaying the two displaced instructions and returning), the table holds pool equipment ids, the edit is surgical (only the hook + routine regions change) and the disc still parses; byte-deterministic; the build guard refuses a corrupted hook site / non-dead routine region |
+| `crates/patcher` `flee_exp_real` | disc-gated | inject the run-away EXP hook: assert the real disc's escape-teardown site (PROT 898, VA `0x801E5A10`) **is** the expected displaced pair, then off the patched image that the overlay detour is `j routine` + nop, the SCUS routine decodes as the hand-assembled bytes (replaying the displaced pair + returning), each edit is surgical (only the 8-byte hook / the routine region change), the patched overlay + image still parse and stay EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook site / non-dead routine region |
+| `crates/patcher` `enemy_ally_real` | disc-gated | inject the enemy-ally charm: assert the real disc's setup hook (SCUS, VA `0x80051990`) **is** `lui v1,0x8008` / `lbu v1,-0x42f4(v1)` and the victory site (PROT 898, VA `0x801E6638`) **is** `andi v0,v0,0x4`, then off the patched image that the SCUS detour is `j routine` + nop, the routine decodes as the hand-assembled bytes (sets `0x380`, replays the displaced pair, returns), the victory word is widened to `andi v0,v0,0x384`, each edit is surgical, it composes with flee-EXP in the same gap, the image stays EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook / non-dead routine region / unexpected victory word |
+| `crates/patcher` `shiny_seru_real` | disc-gated | inject shiny Seru: assert all nine hook sites match the known US build and the SCUS regions (`0x80077728` gap 1 / `0x8007AE00` arena 1 / `0x8007AFF8` arena 2 / `0x80078A88` slot 6) are all-zero dead space outside every live table - incl. the `0x80079xxx` SsAPI sound tables the old arena3/4/5 squatted in (routine VAs 4-byte aligned), and the victory mouth-override row at `0x800781B0` keeps the clean keyframes; then off the patched image: every detour became `j routine` + nop, the bitmap has Gimard set / gobu clear, bytes outside the planned edits are untouched, the disc stays EDC/ECC-valid, it composes with enemy-ally, is byte-deterministic, and the guards refuse a corrupted / non-dead / in-table region |
+| `crates/patcher` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
+| `crates/patcher` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
+| `crates/patcher` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140, "Comm" (id 78) is a populated standalone record (not a clone); item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |
+| `crates/patcher` `monster_stats_real` | disc-gated | whole-archive monster-stat shuffle: re-decode every patched `battle_data` record off the disc, assert each stat column's multiset is preserved, every non-randomized field (the AGL gauge, drop, exp, gold, name, element) byte-identical, every protected monster's (tutorial enemies + story bosses) combat stats unchanged, slot footprints fixed, deterministic |
+| `crates/patcher` `move_power_real` | disc-gated | special-attack power shuffle: re-parse the patched PROT 0898 move-power table, assert the power multiset preserved + every non-power record byte byte-identical (only `+0x00` moves) + deterministic |
+| `crates/patcher` `element_affinity_real` | disc-gated | element-affinity shuffle: re-parse the patched PROT 0898 matrix, assert the scale-percent multiset preserved + the per-character element + summon-power sibling tables untouched + deterministic |
+| `crates/patcher` `spell_cost_real` | disc-gated | spell MP-cost shuffle: re-read the patched `SCUS_942.54` spell table, assert the MP-cost multiset + the named/costed-spell id set preserved + the table sector EDC/ECC-valid + deterministic |
+| `crates/patcher` `equip_bonuses_real` | disc-gated | equipment stat-bonus shuffle: re-read the patched `SCUS_942.54` bonus table, assert each slot category's `+0..+4` stat-tuple multiset preserved (no tuple crosses categories) + every row's `+5/+6/+7` tail (passive/mask/slot) byte-identical + the table sectors EDC/ECC-valid + deterministic |
+| `crates/patcher` `equip_masks_real` | disc-gated | equip-mask shuffle: re-read the patched bonus table, assert each slot category's `+6` equip-mask multiset preserved (no mask crosses categories) + every non-`+6` byte untouched + no referenced row left unequippable + sectors EDC/ECC-valid + deterministic + composes with the stat pass |
+| `crates/patcher` `seru_trade_real` | disc-gated | seru-trade config write: assert an unpatched disc reports no config, then off the patched image the embedded blob decodes back to the written `(enabled, seed, offer cap)`, the write is same-size + a tiny localized edit, re-running with a new seed overwrites the prior blob, and a fixed seed is byte-deterministic |
 | `crates/engine-core` `seru_trade_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch the seru-trade config onto the disc, re-decode it from the patched SCUS, install it into a `World` holding a known party, open a vendor session, confirm the first offer, assert the owner's spell list swaps give→receive, and that advancing past a two-in-game-hour boundary reseeds the offers (baseline: an unpatched disc reports trading disabled) |
 | `crates/engine-core` `chest_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one chest, re-decode the MAN off the patched image, drive its inline interaction script through the real field VM, assert the runtime grants the patched id (not the original) |
 | `crates/engine-core` `monster_drop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's drop item, re-decode the record off the patched archive, build the engine catalog, drive a one-monster formation through the victory-spoils path (`apply_battle_loot`), assert the runtime grants the patched drop (not the original) |
@@ -1604,7 +1619,7 @@ bit-for-bit.
 
 Disc-gated tests read `LEGAIA_DISC_BIN`; with it unset they skip and pass.
 
-The `engine-core` runtime oracles answer a question the `crates/rando`
+The `engine-core` runtime oracles answer a question the `crates/patcher`
 patch tests don't: not just that the patched byte is *written* faithfully, but
 that a runtime actually *reads it and acts on it* - grants the new item, spawns
 the new monster, or warps to the new scene. A savestate can't prove this - the
@@ -1627,7 +1642,7 @@ share where a patched `.bin` is not.
 
 ## See also
 
-- [`crates/rando`](../../crates/rando/README.md) - the crate.
+- [`crates/patcher`](../../crates/patcher/README.md) - the crate.
 - [LZS compression](../formats/lzs.md) - the encoder this builds on.
 - [PSX disc geometry](../formats/disc.md) - the Mode 2/2352 sector layout.
 - [PROT.DAT TOC](../formats/prot.md) - entry → LBA addressing.

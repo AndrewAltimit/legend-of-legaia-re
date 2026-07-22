@@ -83,7 +83,7 @@ The dispatcher `categorize` runs every detector below and tags each entry's
 | `sound_pack` | Per-scene `.dpk` / `sound_data2`: a VAB + SEQ bundle in the type-2-terminated streaming container (chunk 0 = VAB header, chunk 1 = VAB sample pool, chunk 2 = SEQ). `extract` reconstitutes the contiguous VAB + slices the SEQ. |
 | `scene_asset_table` | Per-scene asset slot table (CDNAME block layout). `resolve` / `slots` / `payload_range` walk the positional slot->payload mapping (the descriptor's `data_offset` IS the indirection - no separate table), unifying the bare and prescript-prefixed variants. Plus `SceneAssetTable::size_word_offset` / `encode_size_word` for rewriting a descriptor's decompressed-size word after a variable-length asset edit. |
 | `scene_v12_table` | Variant of the per-scene table. |
-| `shop_stock` | Town gold-shop stock records inside a scene MAN (field-VM op `0x49` sub-op `0` = `[count][item_ids][name]`). `scan` byte-scans a decompressed MAN; `locate` decompresses a bundle entry's MAN and returns its [`ShopRecord`]s. Shared read side for the randomizer (`legaia_rando::shop`) and the engine shop catalog (`legaia_engine_core::shop_catalog`). |
+| `shop_stock` | Town gold-shop stock records inside a scene MAN (field-VM op `0x49` sub-op `0` = `[count][item_ids][name]`). `scan` byte-scans a decompressed MAN; `locate` decompresses a bundle entry's MAN and returns its [`ShopRecord`]s. Shared read side for the randomizer (`legaia_patcher::shop`) and the engine shop catalog (`legaia_engine_core::shop_catalog`). |
 | `inn_costs` | Scripted gold charges (inn stays, tours, rides, casino coin buys) inside a scene MAN: op `0x4E` gold-gate (sub-3 u16 / sub-10 u32 literal vs `_DAT_8008459C`) paired with a negative op `0x3A` `ADD_MONEY` debit. `scan` byte-scans a decompressed MAN; `locate` decompresses a bundle entry's MAN and returns its [`GoldCharge`]s. Retail has no inn cost table - the costs are these script literals (`docs/subsystems/inn.md`). |
 | `scene_scripted_asset_table` | Composite shape pairing a `[u16 count][u16 offsets[count]]` prescript with a canonical 7-asset table at the next sector boundary. |
 | `scene_event_scripts` | Sister detector: the prescript exists but no asset table follows. (The records are word-aligned actor/event commands, NOT field-VM bytecode.) |
@@ -129,7 +129,10 @@ CLI `asset monster-archive --id N --obj <out>` exports the mesh, `--texture-png
 <out>` bakes the texture page, `--anim` lists the action animations, and `--glb
 <out>` exports the whole thing - mesh + baked texture + every action animation - as
 a binary glTF (`monster_gltf::export_glb`; per-object animated nodes + a per-palette
-texture atlas).
+texture atlas). For editing rather than exporting, `--dump-block` writes the
+monster's whole LZS-decoded block to a file and `--write-block` re-packs an
+edited block into its slot in place (`decode_block` / `encode_slot`); the
+disc-image equivalent is `legaia-patcher monster-block`.
 
 `scene_gltf::build_scene_glb` is the sibling exporter for assembled
 VRAM-textured scenes (kingdom continents, full town maps, single scene
@@ -502,7 +505,7 @@ asset field-pack / field-pack-scan
 asset effect-bundle / effect-bundle-scan
 asset battle-data-pack / battle-data-pack-scan
 asset befect-cluster   <PROT.DAT> --cdname <CDNAME.TXT> --out <dir>
-asset monster-archive  [--id N --obj/--texture-png/--anim/--glb]
+asset monster-archive  [--id N --obj/--texture-png/--anim/--glb/--dump-block/--write-block]
 asset character-pack / battle-char-pack / field-char-tex
 asset player-anm / player-anm-scan
 asset scene-v12 / scene-v12-scan

@@ -1533,3 +1533,67 @@ fn rtpt_matches_recomp_cop2_capture() {
         "no on-screen RTPT records to strictly cross-check"
     );
 }
+
+// --- FUN_8001CF50 camera view-rotation build ---------------------------
+
+#[test]
+fn camera_view_rotation_bit_0x400_defers_to_the_saved_matrix() {
+    assert!(camera_view_rotation(view_rot_flags::USE_SAVED_MATRIX, 0.3, 0.4, 0.5).is_none());
+    // The bypass wins even when the three per-axis bits are clear.
+    assert!(camera_view_rotation(0x0400, 0.0, 0.0, 0.0).is_none());
+}
+
+#[test]
+fn camera_view_rotation_all_flags_set_is_identity() {
+    // Every axis suppressed, but not the 0x400 bypass: the build still runs
+    // and yields the identity FUN_8003D178 left in the GTE.
+    let m = camera_view_rotation(
+        view_rot_flags::SKIP_PITCH | view_rot_flags::SKIP_YAW | view_rot_flags::SKIP_ROLL,
+        1.0,
+        1.0,
+        1.0,
+    )
+    .expect("no bypass bit");
+    assert_eq!(m, GteMat3::IDENTITY);
+}
+
+#[test]
+fn camera_view_rotation_skips_exactly_the_flagged_axis() {
+    let (p, y, r) = (0.3f32, 0.7f32, 1.1f32);
+    // A set bit skips its factor, so the result is the product of the other
+    // two - in the same Rx * Ry * Rz order.
+    assert_eq!(
+        camera_view_rotation(view_rot_flags::SKIP_PITCH, p, y, r).unwrap(),
+        GteMat3::IDENTITY
+            .mul(&GteMat3::rot_y(y))
+            .mul(&GteMat3::rot_z(r))
+    );
+    assert_eq!(
+        camera_view_rotation(view_rot_flags::SKIP_YAW, p, y, r).unwrap(),
+        GteMat3::IDENTITY
+            .mul(&GteMat3::rot_x(p))
+            .mul(&GteMat3::rot_z(r))
+    );
+    assert_eq!(
+        camera_view_rotation(view_rot_flags::SKIP_ROLL, p, y, r).unwrap(),
+        GteMat3::IDENTITY
+            .mul(&GteMat3::rot_x(p))
+            .mul(&GteMat3::rot_y(y))
+    );
+}
+
+#[test]
+fn camera_view_rotation_composition_order_is_pitch_yaw_roll() {
+    let (p, y, r) = (0.4f32, 0.9f32, 0.2f32);
+    let got = camera_view_rotation(0, p, y, r).unwrap();
+    let want = GteMat3::rot_x(p)
+        .mul(&GteMat3::rot_y(y))
+        .mul(&GteMat3::rot_z(r));
+    assert_eq!(got, want);
+    // Order is load-bearing: the reverse product is a different matrix, so a
+    // port that composed Rz * Ry * Rx would not silently agree.
+    let reversed = GteMat3::rot_z(r)
+        .mul(&GteMat3::rot_y(y))
+        .mul(&GteMat3::rot_x(p));
+    assert_ne!(got, reversed);
+}

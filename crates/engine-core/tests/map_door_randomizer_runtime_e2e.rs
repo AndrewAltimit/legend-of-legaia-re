@@ -2,7 +2,7 @@
 //! at runtime** - the sibling of the chest / door / house-door oracles.
 //!
 //! The randomizer's own disc-gated test proves the patch is *written*
-//! faithfully (`crates/rando/tests/map_door_patch_real`: per-scene
+//! faithfully (`crates/patcher/tests/map_door_patch_real`: per-scene
 //! destination multisets preserved, reachability oracle re-verified off the
 //! patched image, sectors EDC/ECC-valid). What it doesn't prove is that a
 //! runtime actually *reads the patched destination bytes and seats the player
@@ -31,9 +31,9 @@
 //! Skips + passes without `LEGAIA_DISC_BIN`.
 
 use legaia_engine_core::field_regions::{lookup_intra_scene_teleport, parse_intra_scene_teleports};
-use legaia_rando::apply;
-use legaia_rando::disc::DiscPatcher;
-use legaia_rando::drops::DropMode;
+use legaia_patcher::apply;
+use legaia_patcher::disc::DiscPatcher;
+use legaia_patcher::drops::DropMode;
 
 /// `.MAP` trigger-block offset (`legaia_engine_core::field_regions::MAP_REGION_BLOCK_OFFSET`).
 const TRIGGER_BLOCK: usize = legaia_engine_core::field_regions::MAP_REGION_BLOCK_OFFSET;

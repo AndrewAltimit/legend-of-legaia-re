@@ -13,7 +13,7 @@ legaia-prot = { path = "../prot" }
 legaia-asset = { path = "../asset" }
 legaia-lzs = { path = "../lzs" }
 legaia-iso = { path = "../iso" }
-legaia-rando = { path = "../rando" }
+legaia-patcher = { path = "../patcher" }
 legaia-tmd = { path = "../tmd" }
 legaia-art = { path = "../art" }
 legaia-mes = { path = "../mes" }

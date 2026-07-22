@@ -152,6 +152,32 @@ and `*DAT_80010390`; see [`prot.md`](../formats/prot.md#overlay-loaders-parallel
   extraction earns its keep: the *disc* entry disassembles cleanly at the link
   base even though the *runtime* buffer is unusable.
 
+  **`pointer_resolution` is one-sided and needs the string-anchor
+  counterpart.** The metric scans only pointers whose `lui` half matches the
+  candidate base's own two hi-halves and counts any in-window hit - so an
+  overlay that densely references **fixed structures of a co-resident overlay
+  in the rival slot's VA band** can score high at a base it never loads to.
+  The GAME OVER overlay (PROT 0902) is the case that proved it: 44/48 of its
+  `lui 0x801f/0x8020` pairs are external references to fixed battle-band
+  structures at `0x801F7724..0x801F90FC` that happen to fall inside
+  `[0x801F69D8, +0x6000)`, scoring 91 % at the slot-B base - but its true base
+  is slot A `0x801CE818`, pinned by the mode-18 loader chain (`FUN_80025B30` =
+  `overlay_loader_a(7,0)` → PROT 902, then `jal 0x801CE844` = file `+0x2C`,
+  the first prologue) and by in-file string anchors (`0x801CE820` → the
+  `gameover.pak` path string at `+0x8`, `0x801CEC48` → the `GAME OVER` caption
+  at `+0x430`). The hardened check is `static_overlay::string_anchor_votes`: a
+  pointer that decodes to the **start of one of the file's own NUL-terminated
+  string literals** only does so at the true base, so the reproducibility test
+  compares votes at the committed base against the rival slot base and fails
+  any anchor-less row the rival wins (0902 scores 2 at slot A vs 0 at slot
+  B). One caveat bounds the metric: references to a **co-resident** overlay's
+  head string table alias onto this file's own head strings when both keep
+  string tables at matching small offsets (PROT 0977's arena code passes the
+  slot-B `field_back_read` module's dev strings at `0x801F69D8+{0, 0x20,
+  0x84}`, which alias onto its own roster strings at the same offsets), so a
+  pinned prologue anchor outranks the raw vote count and exempts the row from
+  the comparison.
+
   **The slot-B cluster is heterogeneous.** The summon-stager arithmetic range
   `0903..=0913` (spell ids `0x81..=0x8B` under the corrected loader index math
   `param + 0x37F` in extraction space - the historical "Gimard = 0905" label
@@ -166,10 +192,12 @@ and `*DAT_80010390`; see [`prot.md`](../formats/prot.md#overlay-loaders-parallel
   sequenced BGM via the sound streaming loader). The same correction reframes
   0924 "Ultimate Rave" / 0927 "Dark Eclipse": attack-titled, stager-shaped
   (`FUN_80021B04` part-spawn census), loader callsites computed - which action
-  ids drive them is the open piece. The cluster also holds the **GAME OVER**
-  overlay (0902) and summon-effect data (0957 - its head is a summon string
-  table, `Puera` + `Damage`/`Recover`/`Both` effect labels, NOT a dance song;
-  correcting an earlier `overlay-ptr-table` reading). See
+  ids drive them is the open piece. The cluster also holds summon-effect data
+  (0957 - its head is a summon string table, `Puera` +
+  `Damage`/`Recover`/`Both` effect labels, NOT a dance song; correcting an
+  earlier `overlay-ptr-table` reading). The **GAME OVER** overlay (0902) is
+  **not** slot B - its old slot-B row was the `pointer_resolution` false
+  positive dissected above; it is a slot-A row. See
   [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
 ### A small overlay does not clear the slot

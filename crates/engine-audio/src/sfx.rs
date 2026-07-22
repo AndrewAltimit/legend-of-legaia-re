@@ -8,6 +8,11 @@
 //! offset and dispatches when the per-frame tick reaches the firing
 //! frame.
 //!
+//! [`SfxScheduler::tick_frame`] additionally drives the byte-faithful retail
+//! cue ring in [`crate::sfx_ring`], whose two halves live in the frame-begin
+//! and frame-end drivers.
+//! REF: FUN_8001698C, FUN_80016B6C
+//!
 //! ## Cue ID conventions
 //!
 //! - `0x1A` - generic SFX trigger (the canonical `HitCue` "play sound"
@@ -404,11 +409,41 @@ impl SfxFireBatch {
 #[derive(Debug, Default, Clone)]
 pub struct SfxScheduler {
     queue: Vec<PendingCue>,
+    ring: crate::sfx_ring::SfxCueRing,
+    frame_step: u8,
 }
 
 impl SfxScheduler {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            queue: Vec::new(),
+            ring: crate::sfx_ring::SfxCueRing::new(),
+            frame_step: 1,
+        }
+    }
+
+    /// Install the adaptive frame step (`DAT_1F800393`) the **retail ring**
+    /// ages by. Defaults to `1`; field play runs at `2`
+    /// (`legaia_engine_vm::actor_tick::FrameCadence::FIELD`). Only the ring
+    /// half reads it - the approximate [`Self::enqueue`] queue is still
+    /// per-tick, which is the difference the ring exists to remove.
+    pub fn set_frame_step(&mut self, step: u8) {
+        self.frame_step = step.max(1);
+    }
+
+    /// Write a cue into a slot of the byte-faithful retail ring
+    /// ([`crate::sfx_ring::SfxCueRing`]), with its delay in **vsyncs**.
+    ///
+    /// This is the retail producer contract: four slots, the producer picks
+    /// the slot, a fifth cue replaces one. [`Self::tick_frame`] ages the ring
+    /// and folds any due cue into the same [`SfxFireBatch`].
+    pub fn arm_ring_cue(&mut self, slot: usize, id: i16, delay_vsyncs: i32) {
+        self.ring.arm(slot, id, delay_vsyncs);
+    }
+
+    /// Borrow the retail ring (inspection / tests).
+    pub fn ring(&self) -> &crate::sfx_ring::SfxCueRing {
+        &self.ring
     }
 
     /// Queue a cue. The cue fires when `frames_remaining` reaches zero
@@ -437,7 +472,13 @@ impl SfxScheduler {
     }
 
     /// Advance the clock by one frame. Returns the cues whose
-    /// `frames_remaining` reached zero this tick (in queue order).
+    /// `frames_remaining` reached zero this tick (in queue order), followed
+    /// by any retail-ring slot that came due this frame.
+    ///
+    /// The ring half runs the exact retail order - age
+    /// (`FUN_8001698C`), then drain (`FUN_80016B6C`) - so a ring cue fires on
+    /// the frame its countdown first reads zero and is cleared before the next
+    /// drain can see it. See [`crate::sfx_ring`].
     pub fn tick_frame(&mut self) -> SfxFireBatch {
         let mut batch = SfxFireBatch::default();
         // Decrement, partition into fired vs. still-pending.
@@ -458,6 +499,24 @@ impl SfxScheduler {
             }
         }
         self.queue = still;
+
+        // The retail ring pair, phase-rotated for a host that arms *before*
+        // the tick instead of in the middle of one.
+        //
+        // Retail's frame is age (FUN_8001698C) -> game logic, which is where
+        // FUN_80035B50 arms a slot with timer 0 -> drain (FUN_80016B6C). So a
+        // cue armed on frame N is drained on frame N, and cleared by frame
+        // N+1's aging pass. Here the host arms and *then* calls this, so
+        // draining first and ageing after reproduces exactly that schedule:
+        // delay 0 fires on this tick, delay d fires d ticks later, and the
+        // slot is cleared before it can fire twice. Ageing first would
+        // clear a just-armed delay-0 cue before it ever played.
+        for (_slot, id) in self.ring.drain() {
+            if id >= 0 {
+                batch.fired.push(PendingCue::new(id as u16, 0));
+            }
+        }
+        self.ring.age(self.frame_step);
         batch
     }
 
@@ -465,6 +524,7 @@ impl SfxScheduler {
     /// battle abort.
     pub fn clear(&mut self) {
         self.queue.clear();
+        self.ring.clear();
     }
 }
 
@@ -600,6 +660,38 @@ mod tests {
             assert!(s.tick_frame().fired.is_empty());
         }
         assert_eq!(s.tick_frame().fired.len(), 1);
+    }
+
+    #[test]
+    fn ring_cue_fires_once_through_the_scheduler_and_is_then_cleared() {
+        let mut s = SfxScheduler::new();
+        s.arm_ring_cue(0, 0x1A, 0);
+        let ids: Vec<u16> = s.tick_frame().fired.iter().map(|c| c.id).collect();
+        assert_eq!(ids, vec![0x1A], "delay 0 fires on the arming frame");
+        assert!(
+            s.tick_frame().fired.is_empty(),
+            "the aging pass cleared the slot - a ring cue never repeats"
+        );
+    }
+
+    #[test]
+    fn ring_delay_is_denominated_in_vsyncs_not_ticks() {
+        let mut s = SfxScheduler::new();
+        // Field cadence: one tick spans two vsyncs.
+        s.set_frame_step(2);
+        s.arm_ring_cue(1, 0x33, 4);
+        assert!(s.tick_frame().fired.is_empty());
+        assert!(s.tick_frame().fired.is_empty());
+        let ids: Vec<u16> = s.tick_frame().fired.iter().map(|c| c.id).collect();
+        assert_eq!(ids, vec![0x33], "4 vsyncs at cadence 2 = 2 ticks");
+    }
+
+    #[test]
+    fn scheduler_clear_empties_the_ring_too() {
+        let mut s = SfxScheduler::new();
+        s.arm_ring_cue(2, 0x40, 0);
+        s.clear();
+        assert!(s.tick_frame().fired.is_empty());
     }
 
     #[test]

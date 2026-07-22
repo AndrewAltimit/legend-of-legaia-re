@@ -398,6 +398,12 @@ impl World {
     /// [`World::leading_edge_wall_probes`]. With the flag off, locomotion
     /// tests one candidate-centre point - a standoff/feel difference, not an
     /// indexing one.
+    ///
+    /// PORT: FUN_801d56c4 (field-overlay walkability probe, 47 instructions
+    /// `0x801D56C4..0x801D577C`: the two signed `/64` cell derivations, the
+    /// `(col + row*0x80)` byte index into `*(0x1F8003EC) + 0x4000`, the
+    /// four-way quadrant-bit select out of the high nibble, and the
+    /// `sltu zero, masked` "non-zero means blocked" return)
     pub fn field_tile_is_wall(&self, x: i16, z: i16) -> bool {
         if self.field_collision_grid.len() < FIELD_GRID_LEN {
             return false;

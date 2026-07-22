@@ -7,8 +7,8 @@ groundwork for lifting the official French / German / Italian translations into
 the [translation pipeline](translation.md). It contains **no game text** (byte
 values, offsets, counts and encodings only).
 
-The cross-region measurement tool is `legaia-rando translate diff-disc`
-(`legaia_rando::translation::diff`); it is region-agnostic and emits counts and
+The cross-region measurement tool is `legaia-patcher translate diff-disc`
+(`legaia_patcher::translation::diff`); it is region-agnostic and emits counts and
 byte values only.
 
 ## Region ids
@@ -132,9 +132,9 @@ concrete form of the "accented scripts need a font patch" caveat in
 
 ## Lifting an official translation
 
-`legaia-rando translate lift-official --from <PAL.bin> --target <USA.bin>
+`legaia-patcher translate lift-official --from <PAL.bin> --target <USA.bin>
 -o <pack.yaml>` re-keys the official localized text onto the USA coordinate space
-the importer patches (`legaia_rando::translation::lift`):
+the importer patches (`legaia_patcher::translation::lift`):
 
 1. Detect the source region from `SYSTEM.CNF`'s `BOOT` line (SCES_019.44/.45/.46
    = FR/DE/IT).
@@ -175,7 +175,7 @@ spell names), so those bytes already render and rewriting them would lose a
 glyph. Both counts are reported - folded and left-raw - so nothing changes
 silently. Implementation: `translation::markup::fold_high_glyphs` /
 `translation::lift::fold_pack_accents`; disc-gated oracle
-`crates/rando/tests/translate_lift_official_real.rs`.
+`crates/patcher/tests/translate_lift_official_real.rs`.
 
 ### What a lift does not cover
 
@@ -187,7 +187,7 @@ party roster, and the whole `0x1F` dialog corpus are covered.
 
 ## Fit rate against the USA target
 
-`legaia-rando translate fit-report --from <PAL.bin> --target <USA.bin>` measures
+`legaia-patcher translate fit-report --from <PAL.bin> --target <USA.bin>` measures
 fit under two budgets (counts only, no text):
 
 - **per-string** (the old same-size constraint): a line fits iff its encoded
@@ -249,7 +249,7 @@ footprint inserts `ceil(deficit/2048)` sectors after the MAN, shifts every later
 sub-asset, and bumps their `scene_asset_table` descriptor `data_offset`s (+ the
 MAN decompressed-size word). The PROT entry **index space is preserved**, so every
 same-size index-keyed edit (the randomizer features) still resolves after a
-relayout. Disc-gated oracle: `crates/rando/tests/translate_relayout_import_real.rs`
+relayout. Disc-gated oracle: `crates/patcher/tests/translate_relayout_import_real.rs`
 (all three PAL languages) asserts the patched image re-parses, every relocated
 sector is EDC/ECC-valid + MSF-correct, and every applied line is present at full
 length. See [disc.md](../formats/disc.md#full-iso-relayout) for the reference

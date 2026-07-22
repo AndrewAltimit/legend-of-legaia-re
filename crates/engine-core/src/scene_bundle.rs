@@ -628,6 +628,53 @@ pub fn find_vdf_buffer(scene: &Scene) -> Option<Vec<u8>> {
     None
 }
 
+/// The field-load **entry step** (`FUN_80020118`) - what runs before the
+/// per-scene `.MAP` / bundle walk when a field scene starts loading.
+///
+/// PORT: FUN_80020118
+///
+/// `(scene_name, field_record)` in retail:
+///
+/// 1. resets the kingdom-TMD prefix `DAT_8007B6F8 = 0` (world-map actor
+///    kinds index past the party TMDs; a field load starts from zero -
+///    see `docs/reference/memory-map.md`),
+/// 2. builds `"DATA_FIELD\" + scene_name` into a scratch path (dev-host
+///    naming; retail resolves by index),
+/// 3. loads the shared player pack (`FUN_8001E890` - `data\field\player.lzs`,
+///    the 5-TMD character mesh pack into `DAT_8007C018[0..4]`),
+/// 4. **only when no DATA_FIELD bundle is staged** (`DAT_8007B768 < 0`,
+///    the `0xFFFF` sentinel [`crate::mode::CORE_STATE_RESET`] seeds)
+///    requests the scene's streaming bundle - PROT chunk index
+///    `field_record + 3` - into the `_DAT_8007B85C` asset buffer
+///    (`FUN_8001EEF0`; the retail branch additionally blocks on
+///    `FUN_8003DE7C(0)` when the request was issued),
+/// 5. clears the `u16` at scene-buffer `+0x12` - object descriptor 0's
+///    flags word, so the grid-mark refresh
+///    ([`crate::field_regions::refresh_object_grid_marks`]) sees slot 0
+///    inactive.
+///
+/// The engine loads scenes through [`crate::scene::Scene`] resources
+/// instead of a staging buffer, so the plan is exposed as data: which
+/// chunk to stage and whether the stage is needed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FieldLoadEntryPlan {
+    /// `field_record + 3` - the DATA_FIELD streaming-bundle chunk the
+    /// stage requests (the same `+3` base the scene-transition streamer
+    /// `FUN_80021934` uses).
+    pub data_field_chunk: i16,
+    /// `DAT_8007B768 < 0` at call time - a fresh stage is required.
+    pub stage_needed: bool,
+}
+
+/// Build the retail field-load entry plan. `staged_index` mirrors
+/// `DAT_8007B768` read as a signed halfword (`lh` at `0x80020188`).
+pub fn field_load_entry_plan(field_record: i16, staged_index: i16) -> FieldLoadEntryPlan {
+    FieldLoadEntryPlan {
+        data_field_chunk: field_record + 3,
+        stage_needed: staged_index < 0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -669,6 +716,22 @@ mod tests {
                 bytes: Arc::new(entry_bytes),
             }],
         }
+    }
+
+    #[test]
+    fn field_load_entry_plan_matches_retail_gate() {
+        // Chunk index = field_record + 3 (the FUN_8001EEF0 argument at
+        // 0x800201b4); stage only when the staged-index sentinel is
+        // negative (bgez skip at 0x80020190).
+        let p = field_load_entry_plan(0x10, -1);
+        assert_eq!(p.data_field_chunk, 0x13);
+        assert!(p.stage_needed);
+        // CORE_STATE_RESET's 0xFFFF sentinel reads as -1 through the lh.
+        let p = field_load_entry_plan(0x10, crate::mode::CORE_STATE_RESET.data_field_index as i16);
+        assert!(p.stage_needed);
+        // An already-staged (non-negative) index skips the request.
+        assert!(!field_load_entry_plan(5, 0).stage_needed);
+        assert!(!field_load_entry_plan(5, 0x123).stage_needed);
     }
 
     #[test]

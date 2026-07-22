@@ -370,7 +370,7 @@ stat labels (`ATK`/`UDF`/`LDF`/`SPD`/`INT`/`AGL`, `Experience`,
 the `Attack` / `Arts` / `Magic` / `Item` command-ring labels are UI-icon
 sprites, not text. These pools are the coordinate windows the translation
 pipeline's `ui_menu` section patches same-size in place
-(`legaia_rando::translation::ui`; see
+(`legaia_patcher::translation::ui`; see
 [`translation.md`](../tooling/translation.md)).
 
 **Money / play-time box (id 49, `FUN_801D0148`)**: money pictogram (ICO
@@ -467,6 +467,62 @@ Second pass only when the submenu id is settled on the equip screen
 **Item-list window (id 23, rect `(174,22,132,182)`)** is renderer-less in
 the descriptor table (frame-only container); its picker content is drawn by
 the equip flow outside these window renderers.
+
+**Sub-screen chain**: the Equip screen runs as three sub-screens of the
+`0x801E4F40` table. `0x12` (`FUN_801D98F0`) picks the character; `0x13`
+(`FUN_801D99F0`) browses the 8 rows (Best Equipment + 7 slots) - confirm
+on row 0 recomputes the best-candidate ids ([`FUN_801CF88C`
+below](#best-equipment-how-the-candidates-are-picked) →
+`DAT_801EF0C0`) and applies them through `FUN_801CF760` (per armament
+slot: skip when candidate == equipped or the bag lacks the candidate,
+else take one from the bag, return the old item, write the slot; SFX
+`0x24` on any change, buzz `0x23` on none), other rows hand off to
+`0x14`; cancel returns to `0x12`. `0x14` (`FUN_801D9C14`) drives the
+candidate list through the kind-4 kernel protocol: per frame it resolves
+the hovered row's candidate id (class `0x4000` payload 0 = the Remove
+row, `0x7000` = the equipped item itself, else the bag slot), derives
+the stat-compare preview by **trial-equipping** - the record's 8 equip
+bytes at `+0x196` save into `DAT_801EF0C8`, the candidate (or 0) is
+written, `FUN_801CF650` re-aggregates, the array restores - and on
+confirm commits: Remove returns the equipped item to the bag (buzz
+`0x37` on an empty slot), a bag row takes one copy (`FUN_80042EE0` find
++ `FUN_80043048` remove), returns the old item (`FUN_800421D4`) and
+writes the slot, then the hand advances to the next slot row and the
+screen returns to `0x13`. Engine ports:
+`equip_session::{preview_candidate, unequip, slot_browse_confirm,
+apply_best_equipment}`.
+
+### Best Equipment: how the candidates are picked
+
+`FUN_801CF88C` seeds `DAT_801EF0C0` with the four items the character
+already wears and then walks the bag (`0x80085958 + i*2` over
+`_DAT_8007B5EA.._DAT_8007B5EC`), keeping one winner per **armament
+slot**. An id competes only when its item record `+0` is `1`
+(equipment) and its equipment record `+6` mask shares a bit with the
+per-character mask byte `0x801E43F0[char]`. The slot it competes for is
+the equipment record's `+7` bits permuted - raw `(bits & 0x60) >> 5` is
+body / head / weapon / footwear, and the candidate array is indexed
+weapon-first, so the mapping is `[2, 1, 0, 3]`.
+
+Two ranking laws that the screen alone does not reveal:
+
+- **Armour ranks on `UDF + LDF` only** - equipment record `+2` plus
+  `+3`. The INT (`+0`) and SPD (`+4`) bonuses are never read, so a
+  pure-INT head accessory or pure-SPD boot never displaces an incumbent.
+- **A weapon's category check dominates its ATK.** The weapon score is
+  `equip[+1] + FUN_801DD0C0(char, id, 1)`, and that check returns a flat
+  `1000` or `0`. An ATK byte cannot reach `1000`, so a category-favoured
+  weapon outranks every unfavoured one regardless of raw attack.
+
+An empty slot is filled by the **first** eligible entry (the
+`incumbent == 0` test runs before the comparison) and ties keep the
+incumbent (both compares are strict `<`). The rest of the function is
+bookkeeping around a trial equip: back up the eight equip bytes, write
+the candidates in, re-run `FUN_801CF650`, swap the resulting stat block
+into the preview staging pair, then restore the backup and aggregate
+again - so the routine leaves the character wearing exactly what it
+found. Engine port: `equip_session::best_equipment_candidates` (+
+`armament_slot_of`).
 
 Engine port: `engine-ui::equip_screen_draws_for` (window contents at
 the offsets above; the candidate list fills the id-23 rect at the shared
@@ -582,7 +638,7 @@ stays with the UI crates.
 ## Submenu state machines
 
 Every pause-menu screen's input handling is one per-submenu tick
-function, dispatched from the master menu tick (inside `FUN_801DC1CC`,
+function, dispatched from the master menu tick (inside `FUN_801DC6B4`,
 menu overlay) through the function-pointer table at VA `0x801E4F40`,
 indexed by the submenu word `DAT_801E46A4`. The master tick keeps a
 requested/settled pair: a handler *requests* a switch by writing
@@ -591,10 +647,14 @@ requested/settled pair: a handler *requests* a switch by writing
 word `DAT_801E46AC` before dispatching - every submenu entered starts at
 phase 0. Items-screen slots of the table: 5 = command window
 (`FUN_801D7C00`), 6 = the Use list (`FUN_801D7E50`), 7 = the Throw Out
-list (`FUN_801D8734`), 9/0xA/0xB/0xC/0xD = the Use flow's per-effect-class
-apply/target flows; 0xE/0xF = the Magic screen's caster/list handlers,
-0x13 = the Equip screen (the `DAT_801E46A4 == 0x13` gate of
-`FUN_801D21C0`).
+list (`FUN_801D8734`), 9 = the all-party apply (`FUN_801D7FF8` - its
+picker runs with count 0, confirm/cancel only), 0xA = the single-target
+apply (`FUN_801D8308`), 0xB/0xC/0xD = the Door of Light / Door of Wind /
+Incense special routes; 0xE/0xF = the Magic screen's caster/list
+handlers, 0x10/0x11 = the group-cast and single-target Magic apply flows
+(spell-stat byte `+2` bit `0x20` picks between them), 0x12/0x13/0x14 =
+the Equip screen chain (character picker → slot browse → candidate
+list; the `DAT_801E46A4 == 0x13` gate of `FUN_801D21C0`).
 
 The list windows themselves (descriptor kind 4) are paged by the
 SCUS-resident **kind-4 list kernel `FUN_80032A44`** (below), which the
@@ -909,6 +969,19 @@ When the applier reports a result through `_DAT_8007BB78` (seeded
 confirm press before closing (`0x801E4C68`). Exhaustion runs the same
 20-frame timer + bag rescan.
 
+The notify window's renderer does **not** format its message. The
+template string is already staged at `DAT_801E4700`; each frame
+`FUN_801DCD58` finds the first `0xC1` and the first `0xC5` markup token
+in it (`FUN_8003CBF8`, the same `0xC0`-class lead-byte scan the dialog
+strcpy/strcat use) and overwrites the byte **immediately after** each
+token in place. The `0xC1` operand takes the low byte of `_DAT_8007BB70`;
+the `0xC5` operand takes `_DAT_8007BB78 + _DAT_8007BB70 * 0x40`, both
+truncated by the byte store. So the template's operand slots are live
+placeholders the renderer refills, not values baked at stage time. The
+message then draws in ink `7` at the window content origin, with the hand
+sprite (kind 1, mode 1) at `(WX+0xE6, WY+0xD)`. Engine port:
+`engine-core::pause_screens::notify_window_operands`.
+
 **Preview-mode derivation `FUN_801D6A54`**: mode 0 unless the item's
 record kind byte is `2` **and** its effect class is `6` - the
 permanent-stat Waters. The effect arg maps `0 -> 1` (Life Water),
@@ -997,7 +1070,17 @@ menu exit - the flow stays on the Items screen.
 
 Engine port of the three special routes:
 `engine-core::pause_screens::SpecialUseSession` (+ the fixed consume
-ids `0x88/0x89/0x8A` and exit codes 4/5 as named constants).
+ids `0x88/0x89/0x8A` and exit codes 4/5 as named constants). The two
+**confirm** routes are reachable from the Items screen: a Use-list
+confirm on `0x88` / `0x8A` opens `PauseItemsFocus::SpecialConfirm`
+(`special_confirm_route_for_item`), whose window both hosts draw with
+`engine-ui::confirm_prompt_draws` at the id-10 / id-12 descriptor rect
+(`ITEMS_USE_CONFIRM_1LINE_RECT` / `ITEMS_USE_CONFIRM_2LINE_RECT`).
+Door of Wind is deliberately not in that map - submenu `0xC` opens the
+destination list, not a prompt - and its host route is still open.
+Retail's own prompt strings live in the menu overlay's data segment and
+are not recovered, so the port stages the item name and its own question
+in the retail line slots; the window geometry is exact.
 
 **Throw Out list `FUN_801D8734`** (submenu 7): phase 0 re-points the
 live list window from descriptor 15 to descriptor 16 (live-window

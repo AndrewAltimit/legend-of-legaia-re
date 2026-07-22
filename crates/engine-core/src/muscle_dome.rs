@@ -303,6 +303,163 @@ impl MuscleDomeSession {
     }
 }
 
+/// Fixed item id of the one-shot Master-course first-clear prize (the
+/// War God Icon; `FUN_800421D4(0xCD, 1)`).
+pub const CONTEST_PRIZE_ITEM_ID: u8 = 0xCD;
+
+/// Story-flag id of the one-shot prize latch (`FUN_8003CE64(0x6CB)` - once
+/// set, the prize never re-awards).
+pub const CONTEST_PRIZE_FLAG: u16 = 0x6CB;
+
+/// The Master-course fight index the prize gates on (`round >= 0xD`, i.e.
+/// the 13th and final fight of the Master course row).
+pub const CONTEST_PRIZE_ROUND: u32 = 0xD;
+
+/// Outcome of the arena contest settlement kernel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContestSettlement {
+    /// The score tally (`_DAT_80084440`) after settlement.
+    pub score: i32,
+    /// The continue latch (`DAT_801d1adc`) after settlement.
+    pub continuing: bool,
+    /// The one-shot prize item is awarded this settlement
+    /// (`FUN_800421D4(0xCD, 1)`).
+    pub award_prize: bool,
+}
+
+/// Arena contest settlement - the score/prize half of the minigame
+/// completion routine in the arena roster/init overlay (PROT 0977 at
+/// slot-A base `0x801CE818`, file `+0x2748`).
+///
+/// Retail runs this after a contest leg: it restores the SC block, then
+/// settles the running score tally and, exactly once per save, awards the
+/// Master-course first-clear prize. The decision order is:
+///
+/// 1. Not continuing -> the tally is halved (signed `/ 2`); continuing
+///    keeps it intact.
+/// 2. A finished contest (`contest_over`) zeroes the tally and drops the
+///    continue latch.
+/// 3. A still-live continue adds the per-`(course, round)` score-table
+///    entry (`DAT_801d1860 + course*0x40 + (round-1)*4`) and, when the
+///    round counter has reached the Master-course final fight and the
+///    one-shot flag `0x6CB` is still clear, awards item `0xCD` (the War
+///    God Icon).
+///
+/// `score_table_entry` is the caller-resolved `DAT_801d1860` cell for
+/// `(course, round)`; `prize_already_awarded` is the `0x6CB` flag-bank
+/// bit.
+///
+/// PORT: FUN_801d0f60
+pub fn settle_contest(
+    score: i32,
+    continuing: bool,
+    contest_over: bool,
+    round: u32,
+    score_table_entry: i32,
+    prize_already_awarded: bool,
+) -> ContestSettlement {
+    // 801d1014..801d1038: halve the tally unless the continue latch is up.
+    let mut score = if continuing { score } else { score / 2 };
+    let mut continuing = continuing;
+    // 801d1044..801d1060: a finished contest zeroes both.
+    if contest_over {
+        continuing = false;
+        score = 0;
+    }
+    // 801d10d4..801d1144: live continue -> add the score-table cell; the
+    // prize is gated on the Master-course final fight + the one-shot flag.
+    let mut award_prize = false;
+    if continuing {
+        score += score_table_entry;
+        if round >= CONTEST_PRIZE_ROUND && !prize_already_awarded {
+            award_prize = true;
+        }
+    }
+    ContestSettlement {
+        score,
+        continuing,
+        award_prize,
+    }
+}
+
+/// One animated-sprite glide record (`ctx + 0x11B4 + i*0xC`, up to 0x28
+/// handles): a sprite easing from `start` to `target` over `total` frames.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SpriteGlide {
+    /// `+0x00` total frame count; `0` = slot inactive.
+    pub total: u8,
+    /// `+0x01` elapsed frames.
+    pub elapsed: u8,
+    /// `+0x04`/`+0x06` target screen position.
+    pub target: (i16, i16),
+    /// `+0x08`/`+0x0A` start screen position.
+    pub start: (i16, i16),
+}
+
+/// One step's outcome for a glide handle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlideStep {
+    /// Slot inactive - nothing written.
+    Idle,
+    /// The step reached the target: the sprite snaps to `target` and the
+    /// record deactivates (`total = 0`).
+    Arrived { pos: (i16, i16) },
+    /// Still in flight: linear interpolation `start + (target - start) *
+    /// elapsed / total` (signed division), plus the remaining-frames count
+    /// retail folds into its return (`total - elapsed + 1`).
+    Moving { pos: (i16, i16), remaining: u32 },
+}
+
+impl SpriteGlide {
+    /// PORT: FUN_801d9bbc (one handle's step; retail loops all 0x28 handles
+    /// per frame with the frame delta from scratchpad `0x1F800393`).
+    ///
+    /// Arrival test is `dt >= total - elapsed` **before** accumulating;
+    /// otherwise `elapsed += dt` first and the eased position uses the new
+    /// elapsed count.
+    pub fn step(&mut self, dt: u8) -> GlideStep {
+        if self.total == 0 {
+            return GlideStep::Idle;
+        }
+        if dt as i32 >= self.total as i32 - self.elapsed as i32 {
+            self.total = 0;
+            return GlideStep::Arrived { pos: self.target };
+        }
+        self.elapsed += dt;
+        let lerp = |s: i16, t: i16| {
+            let d = (t as i32 - s as i32) * self.elapsed as i32 / self.total as i32;
+            (s as i32 + d) as i16
+        };
+        GlideStep::Moving {
+            pos: (
+                lerp(self.start.0, self.target.0),
+                lerp(self.start.1, self.target.1),
+            ),
+            remaining: (self.total - self.elapsed) as u32 + 1,
+        }
+    }
+}
+
+/// The round time meter's counter ceiling (`0xC` ticks = a full bar).
+pub const TIME_METER_MAX: u8 = 0xC;
+
+/// PORT: FUN_801d3444 (core ramp + bar mapping) - the round **time meter**:
+/// while the phase tag is `'P'` (0x50, the selection phase) and the ramp
+/// flag is up, the 0..=0xC counter climbs by the frame delta (clamped at
+/// [`TIME_METER_MAX`]); otherwise it drains by the delta (floored at 0).
+/// The bar sprite's Y offset is `counter * 160 / 12 - 0x92` (the
+/// `0x2AAAAAAB` reciprocal-multiply divide) - `-0x92` empty, `+0xE` full.
+/// Returns `(new_counter, bar_y)`.
+pub fn time_meter_step(counter: u8, dt: u8, in_select_phase: bool, ramp_up: bool) -> (u8, i16) {
+    let new = if ramp_up && in_select_phase {
+        (counter as u32 + dt as u32).min(TIME_METER_MAX as u32) as u8
+    } else {
+        counter.saturating_sub(dt)
+    };
+    let bar_y = (new as i32 * 160 / 12 - 0x92) as i16;
+    (new, bar_y)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -409,5 +566,84 @@ mod tests {
         s.end_selection();
         s.resolve_round(|attacker, _| if attacker == 1 { 1000 } else { 0 });
         assert_eq!(s.phase(), MusclePhase::Lost);
+    }
+
+    #[test]
+    fn settlement_halves_the_tally_when_not_continuing() {
+        // 801d102c..801d1034: signed /2, rounding toward zero.
+        let s = settle_contest(101, false, false, 5, 40, false);
+        assert_eq!(s.score, 50);
+        assert!(!s.continuing);
+        assert!(!s.award_prize);
+        let s = settle_contest(-101, false, false, 5, 40, false);
+        assert_eq!(s.score, -50, "MIPS srl/addu/sra idiom rounds toward zero");
+    }
+
+    #[test]
+    fn settlement_adds_the_score_table_cell_on_continue() {
+        let s = settle_contest(100, true, false, 5, 40, false);
+        assert_eq!(s.score, 140);
+        assert!(s.continuing);
+        assert!(!s.award_prize, "prize gates on the Master-course final");
+    }
+
+    #[test]
+    fn contest_over_zeroes_score_and_latch() {
+        let s = settle_contest(100, true, true, 13, 40, false);
+        assert_eq!(s.score, 0);
+        assert!(!s.continuing);
+        assert!(!s.award_prize, "dropped latch skips the prize branch");
+    }
+
+    #[test]
+    fn glide_arrives_snaps_and_deactivates() {
+        let mut g = SpriteGlide {
+            total: 10,
+            elapsed: 8,
+            target: (100, 50),
+            start: (0, 0),
+        };
+        // dt >= total - elapsed: snap to target, slot deactivates.
+        assert_eq!(g.step(2), GlideStep::Arrived { pos: (100, 50) });
+        assert_eq!(g.total, 0);
+        assert_eq!(g.step(1), GlideStep::Idle);
+    }
+
+    #[test]
+    fn glide_eases_linearly_with_signed_division() {
+        let mut g = SpriteGlide {
+            total: 10,
+            elapsed: 0,
+            target: (-100, 40),
+            start: (0, 0),
+        };
+        assert_eq!(
+            g.step(5),
+            GlideStep::Moving {
+                pos: (-50, 20),
+                remaining: 6
+            }
+        );
+        assert_eq!(g.elapsed, 5);
+    }
+
+    #[test]
+    fn time_meter_ramps_in_select_phase_and_drains_otherwise() {
+        // Ramp clamps at 0xC.
+        assert_eq!(time_meter_step(0xB, 3, true, true), (0xC, 0xE));
+        // Outside the select phase the same flags drain.
+        assert_eq!(time_meter_step(5, 2, false, true).0, 3);
+        // Drain floors at zero; empty bar sits at -0x92.
+        assert_eq!(time_meter_step(1, 3, true, false), (0, -0x92));
+    }
+
+    #[test]
+    fn prize_awards_once_at_the_master_course_final() {
+        let s = settle_contest(100, true, false, 13, 40, false);
+        assert!(s.award_prize);
+        assert_eq!(s.score, 140);
+        // One-shot: the 0x6CB flag suppresses the re-award.
+        let s = settle_contest(100, true, false, 13, 40, true);
+        assert!(!s.award_prize);
     }
 }

@@ -148,22 +148,60 @@ row rendered at a fixed vertical stride:
 
 | Element | X offset (px) | Y stride (px) | Notes |
 |---|---|---|---|
-| Cursor `>` | +0 | - | Drawn only on the selected row |
+| Cursor | +0 | - | Hand sprite `FUN_8002B994`, gated by `_DAT_8007BB98` |
 | Item name | +20 (`0x14`) | +14 (`0x0E`) per row | `func_0x80036888` |
 | Price | +112 (`0x70`) | same row | `func_0x80034b78`, 6-digit field |
-| Gold footer | +0 | below last row | `func_0x80034b78`, 8-digit field |
 
-Row colour logic (retail `_DAT_8007b454` palette index):
-- **White** - normal affordable item.
-- **Dim** - item is unaffordable (`price > gold`) or held count exceeds 98.
-- **Blue** - item has an "equipped-comparison" flag set.
+The row count is the byte at `DAT_801EF0D0` and each row indexes the stock
+table through the row-order byte array at `DAT_801EF0E0`; the window renderer
+draws **no gold footer** - the purse is its own window, and `FUN_801D5DE0`
+reads `_DAT_800845A4` only to decide a row's ink.
+
+### Row ink is last-rule-wins, not first-match
+
+Three tests run in a fixed order and each one **overwrites** the previous
+verdict, so the ink is not a priority list:
+
+1. ink starts at `7` (white);
+2. held count not `< 0x63` (a stack at 99) -> `0`, grey;
+3. stock record `+2` non-zero (the "already owned / restricted" marker)
+   -> `6`, the accent pen - **even when the stack is full**;
+4. `_DAT_800845A4 < price` -> `0`, grey - **even when the marker set `6`**.
+
+Ported with the geometry constants as
+`engine-core::shop::{shop_stock_row_ink, shop_cursor_mode}`; both hosts feed
+the resulting ink into `engine-ui::shop_draws_for` through `ShopRow::ink`.
 
 The quantity-selector sub-screen (`FUN_801d5510`) uses the same 14 px line
 height, showing "Have N [item]" + "How many will you buy?" + a quantity×price
-line at y+34 (`0x22`) from the panel top.
+line at y+34 (`0x22`) from the panel top. The running total's digit-field
+width is chosen from the magnitude of the **unit price**, not of the total
+(cascading compares against `99` / `999` / `9999` giving 4..7 columns), which
+is what keeps the number right-aligned as the quantity climbs. Ported as
+`engine-core::shop::{shop_buy_quantity_panel, shop_total_digit_field}`.
 
-The sell-item detail panel (`FUN_801d5ae8`) shows item name, type description,
-and sell price (buy price ÷ 2) at y+43 (`0x2b`) with an icon at x+84.
+### Item detail / sell panel (`FUN_801D5AE8`)
+
+Rows off the window content origin: item name (record `+4`, ink `6`) at
+`(WX, WY)`, description (record `+8`) at `WY + 0xE`, then the price row at
+`WY + 0x2B` - the "Price" label at `WX + 0x24` (ink `5`), the currency glyph
+at `WX + 0x54`, and the value at `WX + 0x64` as a **5-digit** field. The sell
+price is `buy_price >> 1`, exactly half; a `0` price replaces the whole row
+with a "Cannot sell" string at `WX + 0x50` in ink `9`.
+
+Below it the item's accessory passive prints twice over: its name (accessory
+record `+4`, ink `4`) at `WY + 0x45` and its description (record `+8`, ink
+`7`) at `WY + 0x55`. The index is **re-derived for each of the two draws**
+rather than cached, through the same two-table chain both times - item record
+`+0 == 1` reads the passive index from equipment record `+5`, anything else
+from item-effect record `+3`, and an index `>= 0x40` is the no-passive
+sentinel that suppresses the draw.
+
+The whole body is gated on the staged id word `DAT_801E46B0` being
+**positive**, with one exception: the `0x90 x 0x28` shade box at
+`(WX, WY + 0x45)` draws unconditionally, so an empty panel is not an empty
+rectangle. Ported as `engine-core::shop::{shop_sell_detail_panel,
+item_passive_index}`.
 
 `engine-render::shop_draws_for` implements the above layout using these
 confirmed constants. The cost prompt and Yes/No cursor are rendered in
@@ -197,6 +235,12 @@ the Sell row the function scans the inventory id/count pair array at
 and, when no slot has both a non-zero id **and** a non-zero count, clears the
 global to `0` so **Sell renders dim when the bag is empty**.
 
+The scan sits *between* the Buy draw and the Sell draw, and nothing restores
+the global afterwards, so an empty bag greys **Sell and Quit together** - Buy
+is the only row that is always white. Ported as
+`engine-core::shop::shop_root_command_rows`, which both hosts consult for the
+Sell row's ink.
+
 After each row the cursor sprite `func_0x8002b994(0, mode, WX, rowY)` (the
 16x16 bobbing menu cursor, drawn at the window origin X - the same "+0"
 cursor column as the buy list) is gated on the picker cursor word
@@ -209,6 +253,10 @@ cursor column as the buy list) is gated on the picker cursor word
 - bit `0x2000` - parked/unfocused presentation: the row-index gate is
   bypassed and every row gets a mode-4/0 draw keyed to the blink bit;
 - bit `0x4000` - cursor suppressed entirely.
+
+The stock list `FUN_801D5DE0` re-runs the identical four-way decode against
+its own word `_DAT_8007BB98`; the shared kernel is
+`engine-core::shop::shop_cursor_mode`.
 
 Input lives in the picker dispatcher `FUN_801dafd4` (its sub-state var is
 `DAT_801E46AC`): the cursor clamp is a literal `li a1,0x3` at `0x801DB098`
@@ -223,7 +271,7 @@ vendor-name plates. (These instruction/descriptor words are byte-verified by
 the randomizer's seru-trading vendor, which patches exactly these seams -
 cursor clamp, a detour after the Quit text draw, and the window record's
 height field - to grow the panel to four rows; see
-`crates/rando/src/seru_overlay/consts.rs` and
+`crates/patcher/src/seru_overlay/consts.rs` and
 [randomizer.md](../tooling/randomizer.md).)
 
 ## Gold-shop stock source
@@ -287,10 +335,18 @@ carried the padding). Validated against the Rim Elm Variety Store's 10 pinned id
 > while talking to the counter attendant the game is still field mode 3 under
 > the field overlay (the dialog itself is not a menu session).
 
-Retail enforces a max held count of 98 per item before dimming additional buy
-attempts; the port mirrors the gate in the grant kernel
-(`World::buy_from_shop` refuses a buy that would push the held count past
-`shop::SHOP_HELD_CAP`).
+Retail fills a stack at **99** per item id, and both gates carry the same
+`0x63` literal: the buy-list row builder dims a row once the held count
+stops being `< 0x63` (`sltiu v0,v0,0x63` at `0x80030f0c` / `ori s0,s0,0x800`
+at `0x80030f18`, shop-row case of `FUN_80030628` - see
+`ghidra/scripts/funcs/80030628.txt`, recomp-corroborated), and the
+buy-quantity maximum clamps to `min(gold/price, 99, 99 - held)`
+(`slti v0,v0,0x64; li v0,0x63` at `0x801db89c..0x801db8a4` and
+`li a0,0x63; subu a0,a0,v1` at `0x801db8d0..0x801db8dc` in `FUN_801DB7F4` -
+see `ghidra/scripts/funcs/overlay_menu_801db7f4.txt`). The port mirrors the
+gate in the grant kernel (`World::buy_from_shop` refuses a buy that would
+push the held count past `shop::SHOP_HELD_CAP` = 99; the picker side is
+`shop::buy_qty_max`).
 
 ## Open items
 

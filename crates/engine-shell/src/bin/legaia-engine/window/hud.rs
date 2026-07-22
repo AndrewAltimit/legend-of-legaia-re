@@ -415,76 +415,118 @@ impl PlayWindowApp {
                 if trade_state {
                     self.draw_shop_trade(&mut out, state, cursor);
                 }
-                let (title, rows, show_gold) = match state {
-                    _ if trade_state => (label, Vec::new(), None),
-                    // Top picker: Buy / Sell / (Trade) / Exit, matching the
-                    // runtime's dynamic row layout.
-                    Some(MenuState::ShopMenu) => {
-                        let rows: Vec<ShopRow<'_>> =
-                            legaia_engine_core::menu_runtime::shop_menu_rows(
+                // Row labels are owned so item names can be resolved from the
+                // disc item table; the ink is the retail `_DAT_8007B454` pen
+                // from the menu-overlay window kernels.
+                let bag = MenuRuntime::inventory_items(&self.session.host.world);
+                let item_label = |id: u8| -> String {
+                    self.session
+                        .host
+                        .world
+                        .menu_text
+                        .as_ref()
+                        .and_then(|t| t.item_name(id))
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| format!("item {id:02}"))
+                };
+                let held_of = |id: u8| -> i16 {
+                    bag.iter()
+                        .find(|(i, _)| *i == id)
+                        .map(|(_, q)| *q as i16)
+                        .unwrap_or(0)
+                };
+                let (title, rows_spec, show_gold): (_, Vec<(String, Option<u32>, u8)>, _) =
+                    match state {
+                        _ if trade_state => (label, Vec::new(), None),
+                        // Top picker: Buy / Sell / (Trade) / Exit, matching the
+                        // runtime's dynamic row layout. The Sell row's ink is
+                        // retail's bag-scan verdict.
+                        Some(MenuState::ShopMenu) => {
+                            let ink = legaia_engine_core::shop::shop_root_command_rows(
+                                (0, 0),
+                                0x4000,
+                                !bag.is_empty(),
+                            );
+                            let rows = legaia_engine_core::menu_runtime::shop_menu_rows(
                                 self.session.host.world.seru_trade_enabled(),
                             )
                             .iter()
-                            .map(|s| ShopRow {
-                                label: match s {
-                                    MenuState::ShopBuy => "Buy",
-                                    MenuState::ShopSell => "Sell",
-                                    MenuState::ShopTrade => "Trade Seru",
-                                    _ => "Exit",
-                                },
-                                price: None,
+                            .map(|s| {
+                                let (l, i) = match s {
+                                    MenuState::ShopBuy => ("Buy", ink[0].ink),
+                                    MenuState::ShopSell => ("Sell", ink[1].ink),
+                                    MenuState::ShopTrade => ("Trade Seru", ink[0].ink),
+                                    _ => ("Exit", ink[0].ink),
+                                };
+                                (l.to_string(), None, i)
                             })
                             .collect();
-                        (label, rows, Some(gold))
-                    }
-                    Some(MenuState::ShopBuy) => {
-                        let rows: Vec<ShopRow<'_>> = shop
-                            .inventory
-                            .items
-                            .iter()
-                            .map(|item| ShopRow {
-                                label: "Item",
-                                price: Some(item.price),
-                            })
-                            .collect();
-                        (label, rows, Some(gold))
-                    }
-                    Some(MenuState::ShopSell) => {
-                        let inv_items = MenuRuntime::inventory_items(&self.session.host.world);
-                        let rows: Vec<ShopRow<'_>> = inv_items
-                            .iter()
-                            .map(|(_id, _qty)| ShopRow {
-                                label: "Item",
-                                price: None,
-                            })
-                            .collect();
-                        (label, rows, Some(gold))
-                    }
-                    Some(MenuState::ShopQuantity) => {
-                        let rows: Vec<ShopRow<'_>> = (1u32..=9)
-                            .map(|_| ShopRow {
-                                label: "qty",
-                                price: None,
-                            })
-                            .collect();
-                        (label, rows, None)
-                    }
-                    Some(MenuState::ShopConfirm) => {
-                        let rows = vec![
-                            ShopRow {
-                                label: "Yes",
-                                price: None,
-                            },
-                            ShopRow {
-                                label: "No",
-                                price: None,
-                            },
-                        ];
-                        (label, rows, Some(gold))
-                    }
-                    _ => (label, Vec::new(), None),
-                };
-                if !rows.is_empty() {
+                            (label, rows, Some(gold))
+                        }
+                        Some(MenuState::ShopBuy) => {
+                            let rows = shop
+                                .inventory
+                                .items
+                                .iter()
+                                .map(|item| {
+                                    let ink = legaia_engine_core::shop::shop_stock_row_ink(
+                                        held_of(item.item_id),
+                                        0,
+                                        gold,
+                                        item.price as i32,
+                                    );
+                                    (item_label(item.item_id), Some(item.price), ink)
+                                })
+                                .collect();
+                            (label, rows, Some(gold))
+                        }
+                        Some(MenuState::ShopSell) => {
+                            let rows = bag
+                                .iter()
+                                .map(|(id, qty)| {
+                                    (
+                                        format!("{} x{qty}", item_label(*id)),
+                                        None,
+                                        legaia_engine_render::SHOP_INK_NORMAL,
+                                    )
+                                })
+                                .collect();
+                            (label, rows, Some(gold))
+                        }
+                        Some(MenuState::ShopQuantity) => {
+                            let rows = (1u32..=9)
+                                .map(|n| {
+                                    (n.to_string(), None, legaia_engine_render::SHOP_INK_NORMAL)
+                                })
+                                .collect();
+                            (label, rows, None)
+                        }
+                        Some(MenuState::ShopConfirm) => {
+                            let rows = vec![
+                                (
+                                    "Yes".to_string(),
+                                    None,
+                                    legaia_engine_render::SHOP_INK_NORMAL,
+                                ),
+                                (
+                                    "No".to_string(),
+                                    None,
+                                    legaia_engine_render::SHOP_INK_NORMAL,
+                                ),
+                            ];
+                            (label, rows, Some(gold))
+                        }
+                        _ => (label, Vec::new(), None),
+                    };
+                if !rows_spec.is_empty() {
+                    let rows: Vec<ShopRow<'_>> = rows_spec
+                        .iter()
+                        .map(|(l, price, ink)| ShopRow {
+                            label: l.as_str(),
+                            price: *price,
+                            ink: *ink,
+                        })
+                        .collect();
                     let shop_draws =
                         shop_draws_for(&self.font, title, &rows, cursor, show_gold, (8, 140));
                     out.extend(shop_draws);
@@ -503,16 +545,7 @@ impl PlayWindowApp {
                 match state {
                     Some(MenuState::InnConfirm) => {
                         let title = format!("INN  Rest for {}G?", cost);
-                        let rows = vec![
-                            ShopRow {
-                                label: "Yes",
-                                price: None,
-                            },
-                            ShopRow {
-                                label: "No",
-                                price: None,
-                            },
-                        ];
+                        let rows = vec![ShopRow::new("Yes", None), ShopRow::new("No", None)];
                         let inn_draws =
                             shop_draws_for(&self.font, &title, &rows, cursor, Some(gold), (8, 140));
                         out.extend(inn_draws);

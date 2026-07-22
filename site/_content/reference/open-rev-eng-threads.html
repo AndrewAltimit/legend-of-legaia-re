@@ -73,7 +73,7 @@
       <tr>
         <td>Enemy-ally charm battle softlock</td>
         <td><span class="tag tag-done">resolved</span> (both tracks fixed; grade <span class="tag tag-done">disassembly</span>)</td>
-        <td>The state-<code>0x5A</code> victory arm's party-slot assumption OOB-indexes the win-pose roster <code>DAT_8007BD10</code> (via <code>0x801E6770</code>) when a living charmed ally is the acting actor at monster-wipe victory. The <code>FUN_801E7320</code> "unbounded reroll" theory is falsified (<a href="re-do-not-re-walk.html">do not re-walk</a>). Fixed on both tracks: engine <code>victory_pose_fixup</code>/<code>charm_widen</code>, and the disc-side <code>legaia_rando::charm_fix</code> guard - a single-word detour at the <code>0x801E6690</code> keep-branch into a SCUS dead-space liveness guard. Full chain: <a href="../subsystems/battle.html">battle</a>.</td>
+        <td>The state-<code>0x5A</code> victory arm's party-slot assumption OOB-indexes the win-pose roster <code>DAT_8007BD10</code> (via <code>0x801E6770</code>) when a living charmed ally is the acting actor at monster-wipe victory. The <code>FUN_801E7320</code> "unbounded reroll" theory is falsified (<a href="re-do-not-re-walk.html">do not re-walk</a>). Fixed on both tracks: engine <code>victory_pose_fixup</code>/<code>charm_widen</code>, and the disc-side <code>legaia_patcher::charm_fix</code> guard - a single-word detour at the <code>0x801E6690</code> keep-branch into a SCUS dead-space liveness guard. Full chain: <a href="../subsystems/battle.html">battle</a>.</td>
         <td><a href="../subsystems/battle.html">battle</a></td>
       </tr>
       <tr>

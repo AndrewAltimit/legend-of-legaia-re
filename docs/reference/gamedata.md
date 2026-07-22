@@ -283,7 +283,7 @@ is the tie-breaker when the two disagree:
   is documented in `legaia_asset::shop_stock`.
 - `casino_prizes_vs_disc` - joins `casino.toml` to the coin prize-exchange table
   in the menu/save/shop overlay's data segment (PROT entry 0899, stored raw; the
-  canonical reader is `legaia_rando::casino::CasinoExchange`). Each prize is an
+  canonical reader is `legaia_patcher::casino::CasinoExchange`). Each prize is an
   8-byte record `[u16 item_id][u16 story_gate][u32 coin_price]` in `0x60`-byte
   blocks; block 1 is the Vidna casino counter, block 0 the Sol Tower Muscle Dome
   counter (high-value prizes story-gated via the `+2` word), and blocks 2/3 are

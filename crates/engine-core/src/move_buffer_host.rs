@@ -96,6 +96,46 @@ impl MoveBufferHost for WorldMoveBufferView<'_> {
     }
 }
 
+impl crate::world::World {
+    /// Stage one TMD group's morphed vertices for the actor at `slot` -
+    /// the engine's host side of the retail morph stager `FUN_8001C604`.
+    ///
+    /// Everything the retail stager reads off the actor record is already
+    /// carried by the actor's [`legaia_engine_vm::move_buffer::MoveBufferState`]:
+    /// the slot count (`+0x6C`), the per-slot VDF sub-entry indices
+    /// (`+0xB0 + i`, installed by move-VM op `0x0A`) and the per-slot
+    /// weights (`+0xA0 + i*2`, ramped by the envelope). The sub-entry
+    /// bytes come from the scene's VDF buffer through
+    /// [`crate::world::World::vdf_record_bytes`], which is the same
+    /// pointer-table walk retail does via `0x80083E58`.
+    ///
+    /// Returns `None` for an inactive or out-of-range slot. A resolved
+    /// actor with no morph slots returns the rest pose unchanged, which is
+    /// also what retail's scratch copy leaves behind.
+    ///
+    /// The remaining gap to a *visible* morph is renderer-side: actor
+    /// meshes are drawn by walking `Actor::tmd_ref`'s object vertices
+    /// directly, so nothing yet substitutes this staged buffer for a
+    /// group's authored vertices on the frame it is built.
+    pub fn stage_actor_group_morph(
+        &self,
+        slot: usize,
+        group_idx: u32,
+        rest_pose: &[u8],
+    ) -> Option<Vec<u8>> {
+        let actor = self.actors.get(slot)?;
+        if !actor.active {
+            return None;
+        }
+        Some(legaia_engine_vm::vdf_morph::stage_group_morph_for_actor(
+            rest_pose,
+            group_idx,
+            &actor.move_buffer,
+            |idx| self.vdf_record_bytes(idx),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -246,5 +286,47 @@ mod tests {
         };
         let rec = host.resolve_record(0, 0x1007).expect("masked id");
         assert!(!rec.is_empty());
+    }
+
+    /// `stage_actor_group_morph` reads the actor's own morph slots and the
+    /// scene's VDF buffer - the two halves the retail stager takes - and
+    /// scales the authored delta by whatever weight the ramp envelope has
+    /// reached.
+    #[test]
+    fn stage_actor_group_morph_blends_the_scene_vdf_record_at_the_lane_weight() {
+        let mut world = crate::world::World::new();
+
+        // One morph record: group 3, vertex 0, delta (+0x100, 0, 0).
+        let mut record = 1u32.to_le_bytes().to_vec();
+        record.extend_from_slice(&3u32.to_le_bytes()); // group
+        record.extend_from_slice(&0u32.to_le_bytes()); // dst index
+        record.extend_from_slice(&1u32.to_le_bytes()); // delta count
+        record.extend_from_slice(&0x0100i16.to_le_bytes());
+        record.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+
+        // VDF buffer: `[u32 count][u32 offsets[count]][payload]`.
+        let mut vdf = 1u32.to_le_bytes().to_vec();
+        vdf.extend_from_slice(&8u32.to_le_bytes());
+        vdf.extend_from_slice(&record);
+        world.set_vdf_buffer(Some(vdf));
+
+        world.actors[0].active = true;
+        world.actors[0].move_buffer.bone_count = 1;
+        world.actors[0].move_buffer.vdf_slot[0] = 0;
+        world.actors[0].move_buffer.lanes[0] = 0x0800; // half weight
+
+        let rest = vec![0u8; 8];
+        let out = world
+            .stage_actor_group_morph(0, 3, &rest)
+            .expect("active slot");
+        assert_eq!(&out[0..2], &0x80i16.to_le_bytes());
+
+        // A different group is not this record's group - no change.
+        let out = world.stage_actor_group_morph(0, 9, &rest).unwrap();
+        assert_eq!(&out[0..2], &0i16.to_le_bytes());
+
+        // Inactive slots resolve to None rather than an empty buffer.
+        world.actors[0].active = false;
+        assert!(world.stage_actor_group_morph(0, 3, &rest).is_none());
     }
 }

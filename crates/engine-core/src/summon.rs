@@ -111,6 +111,23 @@ pub const SERU_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x81..=0x8B;
 /// nodes (`0x8E → 916`, `0x93 → 921`).
 pub const EVOLVED_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x8C..=0x95;
 
+/// Rare-Seru **flute** summon block (`0x96..=0x98`), the contiguous
+/// continuation of [`EVOLVED_SUMMON_IDS`] under the same arithmetic
+/// (`0x96 → 924`, `0x97 → 925`, `0x98 → 926`). SummonFlute items (item-effect
+/// classes 126/127) enqueue the spell id directly, so the flutes ride the same
+/// stager mechanism as Seru magic rather than a separate path.
+///
+/// Capture-pinned on both live legs (`flute_lippian_midcast` /
+/// `flute_spikefish_midcast`, probe `autorun_flute_cast.lua`): loader-B
+/// `0x1D`/`0x1E` mid-cast with the slot-B head byte-identical to the disc
+/// entry. **Lippian** `0x96` heads with the ASCII title "Ultimate Rave" (the
+/// failed-kill banner; the landed 1/128 kill shows "Ultimate Death"), and
+/// **Spikefish** `0x97` heads with a pre-linked slot-B pointer table. `0x98`
+/// is unused in retail: entry 0926's own content is a single sector opening on
+/// `jr ra`, and everything from file `+0x800` is 0927 bleeding through the
+/// extraction over-read (byte-identical for 0x8800 bytes).
+pub const FLUTE_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x96..=0x98;
+
 /// High summon block: Evil Seru Magic (`0x99` - the creature resolves
 /// per-cast, e.g. Juggernaut), the Sim-Seru summons Palma / Mule / Horn /
 /// Jedo (`0x9A..=0x9D`), and the Ra-Seru summons Meta / Terra / Ozma
@@ -118,6 +135,11 @@ pub const EVOLVED_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x8C..=0x95;
 /// (mid-cast loader-B id + slot-B-resident stager; disc+library-gated
 /// `summon_binding_base_high`).
 pub const HIGH_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x99..=0xA0;
+
+/// The whole player-summon spell-id span, base through high block. Every id in
+/// it resolves through the same linear stager arithmetic - see
+/// [`summon_stager_prot_entry`].
+pub const PLAYER_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x81..=0xA0;
 
 /// PROT entry holding the per-summon stager overlay for a Seru-magic `spell_id`,
 /// or `None` if `spell_id` is not a summon. Retail: `FUN_8003EC70(id - 0x79)`
@@ -135,17 +157,20 @@ pub const HIGH_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x99..=0xA0;
 /// "Hell's Music", 0927 Juggernaut "Dark Eclipse"); the high-block entries
 /// otherwise head with a pre-linked slot-B pointer table. The
 /// [`EVOLVED_SUMMON_IDS`] block bridging the two is capture-pinned on every
-/// leg as well. The id-`0x96..=0x98` gap is *not* a player summon (those
-/// resolve to 924..926 under the enemy `895 + id` formula); it returns `None`.
+/// leg as well, and so is the [`FLUTE_SUMMON_IDS`] block that used to read as a
+/// gap: `0x96`/`0x97` are the rare-Seru flute summons Lippian / Spikefish
+/// (capture-pinned mid-cast on the *player* path), and `0x98 → 926` is retail's
+/// unused slot. So the whole span `0x81..=0xA0` is **one unbroken linear run**
+/// - `extraction = spell_id - 0x79 + 895` - with no hole to special-case.
 pub fn summon_stager_prot_entry(spell_id: u8) -> Option<u32> {
-    if SERU_SUMMON_IDS.contains(&spell_id) || EVOLVED_SUMMON_IDS.contains(&spell_id) {
-        // One contiguous run: 0x81 → 903 .. 0x95 → 923.
-        Some(903 + (spell_id - 0x81) as u32)
-    } else if HIGH_SUMMON_IDS.contains(&spell_id) {
-        Some(927 + (spell_id - 0x99) as u32)
-    } else {
-        None
+    if !PLAYER_SUMMON_IDS.contains(&spell_id) {
+        return None;
     }
+    // One contiguous run: 0x81 → 903 .. 0xA0 → 934. The loader arithmetic is
+    // `FUN_8003EC70(id - 0x79)` against the raw TOC, and the extraction index
+    // sits 2 below the raw one, so `903 + (id - 0x81)` states the same thing.
+    // REF: FUN_8003EC70 (the slot-B overlay loader this mirrors)
+    Some(903 + (spell_id - 0x81) as u32)
 }
 
 /// `battle_data` (PROT 867) creature id whose mesh + per-object animation the
@@ -787,9 +812,33 @@ mod tests {
         assert_eq!(summon_stager_prot_entry(0x8F), Some(917)); // Barra (capture-pinned)
         assert_eq!(summon_stager_prot_entry(0x93), Some(921)); // carries 0x4000 render-mode nodes
         assert_eq!(summon_stager_prot_entry(0x95), Some(923)); // last evolved-Seru leg
-        // The id-0x96..0x98 gap is the enemy 895+id block, not a player summon.
-        assert_eq!(summon_stager_prot_entry(0x96), None);
-        assert_eq!(summon_stager_prot_entry(0x98), None);
+    }
+
+    #[test]
+    fn summon_prot_entry_maps_the_flute_block() {
+        // 0x96..=0x98 used to be read as a hole ("the enemy 895+id block, not
+        // a player summon"). That is falsified: both live legs are
+        // capture-pinned mid-cast on the *player* path (loader-B 0x1D/0x1E,
+        // slot-B head byte-identical to the disc entry), and SummonFlute items
+        // (item-effect classes 126/127) enqueue the spell id directly.
+        assert_eq!(summon_stager_prot_entry(0x96), Some(924)); // Lippian
+        assert_eq!(summon_stager_prot_entry(0x97), Some(925)); // Spikefish
+        assert_eq!(summon_stager_prot_entry(0x98), Some(926)); // unused in retail
+    }
+
+    #[test]
+    fn the_player_summon_run_is_one_unbroken_line() {
+        // Every id from the base block through the high block resolves under
+        // the single loader arithmetic, with no special-cased gap.
+        for (i, id) in PLAYER_SUMMON_IDS.clone().enumerate() {
+            assert_eq!(
+                summon_stager_prot_entry(id),
+                Some(903 + i as u32),
+                "spell id {id:#04x}"
+            );
+        }
+        assert_eq!(summon_stager_prot_entry(0x80), None);
+        assert_eq!(summon_stager_prot_entry(0xA1), None);
     }
 
     #[test]
@@ -799,7 +848,6 @@ mod tests {
         assert_eq!(summon_stager_prot_entry(0x9D), Some(931)); // Jedo
         assert_eq!(summon_stager_prot_entry(0x9E), Some(932)); // Meta
         assert_eq!(summon_stager_prot_entry(0xA0), Some(934)); // Ozma
-        assert_eq!(summon_stager_prot_entry(0x98), None); // below the high block
         assert_eq!(summon_stager_prot_entry(0xA1), None); // above the high block
     }
 

@@ -155,7 +155,10 @@ patching an instruction. Useful Ghidra anchors.
 | `0x8007C348` | u32 | Free-list LIFO stack pointer for the actor allocator. |
 | `0x8007C34C..0x36C` | u32[7] | Actor-list slot table consumed by `FUN_8002519c`. Seven linked-list heads at strides of 4 bytes (`+0x00`/`+0x04`/`+0x08`/`+0x0C`/`+0x10`/`+0x14`/`+0x20`). `FUN_80016444` walks five of them per frame as separate render passes; per-node entry-point is `node[+0x0C]` invoked via `jalr`. `_DAT_8007C354` and `_DAT_8007C364` are also read by `func_0x8003C83C` for the `0xF8`/`0xFB` motion-VM channel lookups (same list, two consumers). |
 | `0x8007C364` | u32 | Player context pointer (`_DAT_8007C364`). Corpus-stable at `0x80083794` across the field/battle Tetsu captures. `+0x10` carries the `0x80000` "encounter active" flag the entity SM raises during install and clears at the battle handoff. |
-| `0x8007BD24` | u32 | Battle context pointer (`_DAT_8007BD24`). `0x800EB654` while a battle is resident, `0` in the field. Base of the battle-actor / AI ctx block (`+0x13` = active slot, `+0x28A` = battle-mode counter). |
+| `0x8007BD24` | u32 | Battle context pointer (`_DAT_8007BD24`). `0x800EB654` while a battle is resident, `0` in the field. Base of the battle-actor / AI ctx block (`+0x13` = active slot, `+0x276` = tutorial byte gating arts-voice XA cues, `+0x28A` = battle-mode counter; the pending-SFX write counter lives at `+0x9`). |
+| `0x8007B6D8` | u16[4] | Pending-SFX cue ring (counter = battle ctx `+0x9`, wraps past 3). Written by the cue router `FUN_8004FE5C` (and directly by minigame overlays), drained by `FUN_80016B6C` against the SFX descriptor table. Engine mirror `legaia_engine_core::sfx_cue`. |
+| `0x8007B724` | u32 | Last-played SFX id - the cue router's dedupe compare. |
+| `0x800788B8` | u16[N] | Per-arts-voice XA clip duration table (index = cue id − `0x100`); `FUN_8004FE5C` converts to sectors as `(raw*60 + 99)/100`. |
 | `0x8007326C` | u32 | TMD per-mode descriptor table (8-byte stride × 6 entries). |
 | `0x8007A940` | SsAPI per-note pitch / per-voice volume exponential lookup table (read by `FUN_80066E50` / `FUN_80067550`). |
 | `0x801CD2B8` | SsAPI 16-bit slot-allocation bitmap. Bit `i` = sequencer slot `i` allocated. |
@@ -213,9 +216,13 @@ map, but the table layout is scene-independent.)
 | `0x8007B7C0` | Debug-dispatch trigger. |
 | `0x8007B450` | Debug-dispatch parameter slot. Also used by the field-VM `STATE_RESUME` opcode (`0x49`) as its tristate state register. |
 | `0x8007B6F4` | "Small maps" debug mode flag. |
-| `0x8007B850` | Per-frame button mask (built by `FUN_8001822C`). |
+| `0x8007B850` | Per-frame button mask (built by `FUN_8001822C`; retail truncates to port 0's low 16 bits - port 1 fills the high half only under `0x8007B98C != 0`). Packed layout, not the raw pad word: face/shoulder byte in bits 0-7, dpad/system byte in bits 8-15. Engine mirror `legaia_engine_core::retail_pad`. |
 | `0x8007B7C0` | Previous-frame button mask. |
+| `0x8007B7C4` | Changed-this-frame mask (`held ^ prev`, `FUN_8001822C`). |
 | `0x8007B874` | "Newly pressed this frame" (edge detection). |
+| `0x80089128` | 32 × u32 held-mask history ring, one entry per elapsed vsync (write index `gp+0x62C` = `0x8007B944`). |
+| `0x8007B938` | AND of the whole `0x80089128` ring (`gp+0x620`) - bits held for the full 32-vsync window. |
+| `0x8007B93C` | Auto-repeat pulse (`gp+0x624`): the AND-window mask on the frame the `0x8007B940` (`gp+0x628`) countdown underruns; rearms at `+8` vsyncs. Menu auto-repeat source. |
 
 JP retail uses build-shifted addresses (`0x07D51F` for the in-game debug menu enable; +0x1B90 from the NA address).
 

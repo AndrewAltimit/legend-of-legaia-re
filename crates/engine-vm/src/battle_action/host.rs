@@ -150,6 +150,24 @@ pub trait BattleActionHost {
     /// compatibility), so a host that hasn't wired arts yet keeps working.
     fn apply_art_strike(&mut self, _info: ArtStrikeInfo) {}
 
+    /// Attack bonuses of the five items in this actor's equipment slots
+    /// (character record `+0x196..+0x19B`), in slot order.
+    ///
+    /// Each entry is the equipment stat table's ATK byte
+    /// (`DAT_80074F68 + row*8`, `+1`) for the id in that slot, resolved
+    /// through the item property record's `+1` byte
+    /// (`DAT_80074368 + id*0xC`) - the two-hop lookup
+    /// `legaia_asset::equip_stats` implements. Retail applies no empty-slot
+    /// or item-class guard on this path, so an empty slot reports whatever
+    /// id `0` resolves to (normally `0`).
+    ///
+    /// Feeds [`crate::battle_formulas::arms_weapon_atk_fold`], the
+    /// execution-time weapon fold in `FUN_801EC3E4`. Default returns zeros,
+    /// which makes the fold a no-op for hosts that have not wired equipment.
+    fn equip_attack_bonuses(&self, _party_slot: u8) -> [u8; 5] {
+        [0; 5]
+    }
+
     /// Returns `true` if the spell at `spell_id` is a capture-class spell
     /// (first byte of its table entry is `'c'`). Drives the
     /// `MagicCastBegin → MagicCaptureBranch` route. Default returns `false`.

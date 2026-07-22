@@ -89,7 +89,8 @@
   </tr>
   </tbody>
   </table>
-  <p>Non-spell residents of the cluster: the <strong>GAME OVER</strong> overlay (0902), summon-effect data (0957), and 0924 &ldquo;Ultimate Rave&rdquo; - still computed, likeliest another Evil-Seru-Magic creature's stager (the creature resolves the loader id under the generic spell), an <a href="../reference/open-rev-eng-threads.html">open thread</a>.</p>
+  <p>Non-spell residents of the cluster: summon-effect data (0957 - a summon string table, not a dance song) and the rare-Seru flute summons 0924/0925 (<strong>Lippian</strong> / <strong>Spikefish</strong>, capture-pinned; &ldquo;Ultimate Rave&rdquo; is Lippian's failed-kill banner), with 0926 the unused <code>0x98</code> one-sector stub.</p>
+  <p>The <strong>GAME OVER</strong> overlay (0902) is <em>not</em> slot B - its old slot-B row was a <code>pointer_resolution</code> false positive: 44/48 of its pointers are external references to fixed battle-band structures that happen to fall inside the slot-B window, scoring 91% at a base it never loads to. Its true base is slot A <code>0x801CE818</code>, pinned by the mode-18 loader chain and by in-file string anchors (the <code>gameover.pak</code> path, the <code>GAME OVER</code> caption). The hardened check, <code>string_anchor_votes</code>, counts pointers that decode to the start of one of the file's own string literals - a vote only the true base can win - and the reproducibility test fails any anchor-less row the rival slot out-votes.</p>
 
   <details class="disclosure">
     <summary>How the labels were corrected (do not re-walk)</summary>

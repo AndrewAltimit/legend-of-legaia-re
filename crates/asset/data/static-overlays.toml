@@ -139,6 +139,28 @@ fingerprint_sha256 = "1949cd5f6aa4a711572fc38199ca7212cc7a6e037263a8134594cb6b54
 notes = "Fishing minigame overlay (docs/subsystems/minigame-fishing.md). State machine FUN_801cf3bc (base+0xBA4, the anchor), reel tug-of-war FUN_801d4004, catch scoring FUN_801d5298 -- 15 of 20 documented fishing functions land on prologues at this base. Leading strings are the 'How to Fish' help text ('button while turning the reel', 'your line will snap', 'Continue Fishing'). Base recovered statically (29 corroborating call targets)."
 
 [[overlays]]
+prot_index = 973
+label = "other2_dev"
+base_va = 0x801CE818
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801CE8A0
+fingerprint_sha256 = "fcce87931513434245c0d6d9a3dea91891750a1f2e806bc416ba623b80a05809"
+notes = "Dev module 'OTHER2', the mode-24 door-warp sub-id 1 slot-A occupant (docs/subsystems/script-vm.md sub-id table). Head strings are 'OTHER2 / CICLE1 / SPRITE1 / THERNDER1 / NORMAL / COLOR / NOT BACK CLIP / 3D CLIP / SPREAD / GT4 DIV16' -- a primitive/clip test harness; the game-facing identity is open. Base cross-referenced from the sub-id dispatch table: the documented init VA 0x801CE8A0 lands on file +0x88 = 27bdffe8 (`addiu sp,sp,-0x18`), a clean prologue at the canonical slot-A base. OWN CONTENT IS ONE SECTOR -- the runtime slice is 0x800 bytes and the rest of the 0xB800 extraction footprint over-reads into 974/975 (which is what once made this entry look like the slot-machine overlay; see the 0975 row's HISTORY note)."
+
+[[overlays]]
+prot_index = 974
+label = "other3_dev"
+base_va = 0x801CE818
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801CEE80
+fingerprint_sha256 = "06a4bdcd2fd6fead19d5c5f89e5b69e303581ecbb701f9cdf4722c80f401d59d"
+notes = "Dev module 'OTHER3', the mode-24 door-warp sub-id 2 slot-A occupant (docs/subsystems/script-vm.md sub-id table). Head strings are 'OTHER3 / SELECT NO %d DEPTH %d / vol %d / read ret %d / set' -- a selection/depth test harness with a CD-read return code, so it reads as a streaming or model-depth probe; the game-facing identity is open. Base cross-referenced from the sub-id dispatch table: the documented init VA 0x801CEE80 lands on file +0x668 = 27bdffe8 (`addiu sp,sp,-0x18`) followed immediately by `jal 0x8001daf8` / `jal 0x8001dcf8`, a clean prologue at the canonical slot-A base. Runtime slice is 7 sectors; the 0x16000 extraction footprint over-reads past it."
+
+[[overlays]]
 prot_index = 975
 label = "slot_machine"
 base_va = 0x801CE818
@@ -169,6 +191,39 @@ anchor_va = 0x801CF470
 fingerprint_sha256 = "0a3da15ea4d5e921c30943c4efb76465a77310394ce6725182254da7bd718295"
 notes = "Noa dance rhythm minigame overlay (docs/subsystems/minigame-dance.md). Beat-clock SM FUN_801cf470 (the anchor), timing-window judge FUN_801d1960 -- 6 of 8 documented dance functions land on prologues at this base. Leading strings are the 'Disco King' help text ('how to dance?', 'buttons to dance', 'you can try more advanced steps'). Base recovered statically (17 corroborating call targets)."
 
+[[overlays]]
+prot_index = 977
+label = "arena_init"
+base_va = 0x801CE818
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801D0F60
+fingerprint_sha256 = "49c8f73b78ae0ff3e2745e988c60d731abfcdf79ff2e0e2565785941e829f613"
+notes = "Muscle Dome arena roster/init slot-A overlay (mode-24 door-warp sub-id path, dev module 'other6'; the arena MATCH SM lives in the battle-action overlay 0898, see docs/subsystems/minigame-muscle-dome.md). Head is the sim-battle opponent name roster ('Ronginus', 'Viguro Lv2', ...); 5 in-file string anchors into that roster corroborate the base (pointer_resolution 89/93; the anchor prologue is the decisive check -- the raw two-slot string-vote count is confounded here because 0977's code also references the CO-RESIDENT slot-B field_back_read module's head strings at 0x801F69D8+{0,0x20,0x84}, which alias onto the roster's own head offsets). Carries the contest settlement + one-shot War God Icon prize FUN_801D0F60 (file +0x2748, the anchor; historically mis-cited as FUN_801C2748 from a 0x801C0000-band import). Own content ~0x4800; the extraction footprint over-reads into 0979 from +0x4800."
+
+[[overlays]]
+prot_index = 979
+label = "field_battle_intro"
+base_va = 0x801CE818
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801D0370
+fingerprint_sha256 = "0c21e79d998dae5ec32a849cf2c6fa8aa5845ce6379c5d95a0a2fbedc168998e"
+notes = "Field->battle transition (battle intro) slot-A overlay: head strings 'efect init' / 'battle bgm %d' / 'brule.xxx'. The static home of the overlay_field_battle_intro capture dumps -- the capture program's 0x801C0000-window RAM image byte-matches this entry's code at the same VAs (FUN_801CF1B0..FUN_801D1D9C band; anchor FUN_801D0370 = file +0x1B58 prologue). pointer_resolution 206/207 at this base. Own content 0x4000; the footprint over-reads into the dance overlay 0980 from +0x4000 (0979[0x4000:] == 0980[0:])."
+
+[[overlays]]
+prot_index = 902
+label = "gameover"
+base_va = 0x801CE818
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+anchor_va = 0x801CE844
+fingerprint_sha256 = "c29b748513cb6bf85017892d2f35e97b3da828d7552289d4b1c3a7b884025522"
+notes = "GAME OVER overlay (game-mode 18/19 GAMEOVER INIT/MODE -- retail-unreachable dev harness; a party wipe routes to the CARD/CONTINUE title flow instead, see docs/subsystems/battle.md). A SLOT-A overlay: the mode-18 handler FUN_80025B30 is overlay_loader_a(7,0) -> PROT 902 followed by jal 0x801CE844 = file +0x2C, the first prologue (the anchor). String anchors corroborate the base: in-file pointers 0x801CE820 -> the 'gameover.pak' source-path string at +0x8 and 0x801CEC48 -> the 'GAME OVER' caption at +0x430 decode to string starts only under 0x801CE818 (static_overlay::string_anchor_votes: 2 at slot A, 0 at slot B). Its high-band jals (0x801D5854..0x801F8B84) are external calls into the co-resident battle-band images, which is what mis-scored the old slot-B row: pointer_resolution counted 44/48 external references to fixed 0x801F7724..0x801F90FC structures as in-file self-pointers under the slot-B base. Sparse internal jal graph -- base is loader-chain cross_ref, not jal-recovered."
+
 # --- Slot-B overlays (the second swappable overlay slot, *DAT_80010390; link
 #     base 0x801F69D8, summon_overlay::SUMMON_OVERLAY_LINK_BASE). These are the
 #     player-summon / effect / minigame-data blobs from the 0900..0969 PROT
@@ -186,10 +241,14 @@ notes = "Noa dance rhythm minigame overlay (docs/subsystems/minigame-dance.md). 
 #     refuted: the dance overlay 0980 has no slot-B loader callsite, its music
 #     is sequenced BGM), further attack-titled stager-shaped entries whose
 #     loader callsites are computed (0924 "Ultimate Rave", 0927 "Dark Eclipse"),
-#     the GAME OVER overlay (0902), and summon-effect data (0957 -- head is a
-#     summon string table, "Puera" + Damage/Recover/Both effect labels).
+#     and summon-effect data (0957 -- head is a summon string table, "Puera" +
+#     Damage/Recover/Both effect labels). NOT in this cluster: the GAME OVER
+#     overlay 0902 is a slot-A row above -- its old slot-B row was a
+#     pointer_resolution false positive (external battle-band references
+#     landing inside the slot-B window; see the 0902 row notes).
 #     Identity is from the leading dev string + capture pinning + the in-file
-#     pointer-resolution base check. ---
+#     pointer-resolution base check, hardened by the two-slot
+#     string_anchor_votes comparison (the true base wins or ties). ---
 
 [[overlays]]
 prot_index = 900
@@ -242,16 +301,6 @@ fingerprint_sha256 = "7e0740575be7f7798c053e675903d465ebdcc4fe7a954fa153df547098
 notes = "Summon spawn stager on the spell-0x83 arithmetic slot (38 FUN_80021B04 part-spawn calls; the deep-dived file in docs/subsystems/battle-action.md -- previously labelled 'summon_gimard' via the +0x381 off-by-2). First function at base 0x801F69D8 (head is an addiu sp prologue). Base cross-referenced from summon_overlay::SUMMON_OVERLAY_LINK_BASE: the record pointers (lui 0x8020/addiu immediates) resolve in-file only under this base (disc-gated summon_overlay_real). Overwritten by the 0900 render overlay mid-cast, so not byte-resident in the capture."
 
 [[overlays]]
-prot_index = 902
-label = "gameover"
-base_va = 0x801F69D8
-form = "raw"
-eligibility = "static"
-base_source = "cross_ref"
-fingerprint_sha256 = "c29b748513cb6bf85017892d2f35e97b3da828d7552289d4b1c3a7b884025522"
-notes = "GAME OVER overlay (game-mode 18/19 GAMEOVER INIT/MODE). Head string is the source path 'h:\\prot\\field\\gameover\\gameover.pak' + the 'GAME OVER' caption. A slot-B overlay: 91% of its internal absolute pointers resolve in-file under the summon link base 0x801F69D8 (static_overlay::pointer_resolution), pinning the base; its internal jal graph is too sparse to triangulate."
-
-[[overlays]]
 prot_index = 907
 label = "summon_nighto"
 base_va = 0x801F69D8
@@ -269,7 +318,7 @@ form = "raw"
 eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "a80f6d33eba463d7d5874439762bb23aa37955f62752d10f2c87e5e2c75b9e45"
-notes = "Attack-titled stager-shaped overlay 'Ultimate Rave' (ASCII title at file offset 0, then code with FUN_80021B04 part-spawn calls -- the summon-stager shape; the 'dance-song' reading is refuted with 0907's). Which action id loads it is OPEN: no constant loader argument in SCUS or the mapped overlays resolves to 924; the load is computed. Under the verified linear arithmetic its loader id would be 0x1D (spell id 0x96 = a rare-drop name, not a castable spell), so it is likeliest another Evil-Seru-Magic creature's stager whose id resolves per-creature -- its sibling 927 ('Dark Eclipse') is capture-pinned as the Juggernaut cast. Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (98%)."
+notes = "Rare-Seru FLUTE summon stager for Lippian (spell id 0x96 -> loader-B 0x1D -> extraction 924; capture-pinned mid-cast, scenario flute_lippian_midcast, probe autorun_flute_cast.lua, with the slot-B head byte-identical to this entry). ASCII title at file offset 0 is 'Ultimate Rave', the attack's FAILED-kill banner -- the landed 1/128 kill shows 'Ultimate Death' (the summon.dat slot-65 actor name); the same title-is-the-attack-name pattern as 0907 'Hell's Music' and 0927 'Dark Eclipse'. Then code with FUN_80021B04 part-spawn calls, the summon-stager shape (the 'dance-song' reading is refuted with 0907's). The earlier 'which action id loads it is OPEN / likeliest another Evil-Seru-Magic creature's stager' reading is SUPERSEDED: SummonFlute items (item-effect classes 126/127) enqueue the spell id directly, so the flutes ride the same stager mechanism as Seru magic and extend the player run unbroken (0x95->923, 0x96->924, 0x97->925, unused 0x98->926, 0x99->927). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (98%)."
 
 [[overlays]]
 prot_index = 927
@@ -360,3 +409,13 @@ eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "410d6faa825846aea70902f35bcab2f134d2dbc16b077e5eac0a4462f36b7766"
 notes = "Slot-B summon-effect overlay. Head is a string table ['Dies','Puera','Both','Damage','Recover'] followed by an absolute-pointer table and code -- 'Puera' is a summon, Damage/Recover/Both are effect/target labels. NOT a dance song (corrects an earlier overlay-ptr-table reading that grouped 0957 with the Disco King songs). No FUN_80021B04 part-spawn calls (not a stager). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (93%); the precise role (per-summon effect descriptor vs a debug/test table) is open."
+
+[[overlays]]
+prot_index = 978
+label = "field_back_read"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "fc384892a1bb4c9d53ad12f00dcfaf7dcada51fd6931afa82e867e3ed6277253"
+notes = "Slot-B 'FIELD BACK READ' staged-loader overlay: head strings 'f_read %d size %d KB' / 'h:\\prot\\field\\other6\\tim\\int.tim' / 'FIELD BACK READ NOW'. Entry FUN_801F6B24 (file +0x14C, a leaf -- no addiu-sp prologue, so no anchor_va) is called from SCUS FUN_80025358 state 2, which pins the base externally; 12 in-file string anchors into its own dev-path strings corroborate (string_anchor_votes 12 at slot B, 1 at slot A; pointer_resolution 25/25). Own content < 0x1000; the 0xE000 footprint over-reads into 0979 (field_battle_intro, from +0x1000) and 0980 (dance, from +0x5000) -- dumps of that tail printed under a 0x801C0000-band import carry wrong-base addresses (docs/tooling/dump-corpus-integrity.md)."

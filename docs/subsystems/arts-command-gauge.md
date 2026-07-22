@@ -107,7 +107,27 @@ So: favored mapping is **knife/sword → Vahn, claw → Noa, club/axe → Gala**
 
 ## Execution path
 
-Once a combo is committed, it is replayed by the **Arms execution resolver `FUN_801EC3E4`** (overlay `0898`), which is **called from `SCUS_942.54` at `0x800478A0`** (`jal 0x801EC3E4`) - the arts execution driver is the static side, which is why the resolver has no caller inside the overlay. The resolver advances the input cursor (`actor + 0x1F4`) one step per recorded command and dispatches per-command sub-handlers through the jump table `PTR_801CF4B4[(actor + 0x1D9) - 0xC]`. These sub-handlers read the equipped weapon again (e.g. `0x801ECC00`: weapon id → item subtype `DAT_80074369` → equip record `DAT_80074F68`) to fold the weapon into the damage / effect calculation. This execution-time weapon read is **distinct** from the gauge-build cost above.
+Once a combo is committed, it is replayed by the **Arms execution resolver `FUN_801EC3E4`** (overlay `0898`), which is **called from `SCUS_942.54` at `0x800478A0`** (`jal 0x801EC3E4`) - the arts execution driver is the static side, which is why the resolver has no caller inside the overlay. The resolver advances the input cursor (`actor + 0x1F4`) one step per recorded command and dispatches per-command sub-handlers through the jump table `PTR_801CF4B4[(actor + 0x1D9) - 0xC]`. These sub-handlers read the equipped weapon again to fold it into the damage calculation. This execution-time weapon read is **distinct** from the gauge-build cost above.
+
+### The execution-time weapon fold
+
+The dispatch is bounded at **six arms** (`(command - 0x0C) < 6`, i.e. commands `0x0C..=0x11`), and the head admission gate is a *different* band read from a *different* place: it tests the caller's command-record byte with `(cmd - 0x0C) < 0x14` (`0x0C..=0x1F`). A command in `0x12..=0x1F` is therefore admitted and then folds nothing.
+
+Each arm resolves one or more of the character record's five equipment slots (`+0x196..+0x19B`) through the two-hop lookup item property record `DAT_80074368 + id*0xC` byte `+1` → equipment stat row `DAT_80074F68 + row*8` byte `+1` (the **attack** bonus), and adds it into the actor's **ATK working** halfword `+0x158`:
+
+| command | equipment slots | fold into `+0x158` |
+|---|---|---|
+| `0x0C` | 2 | `atk[2] >> 1` |
+| `0x0D` | 3 | `atk[3] >> 1` |
+| `0x0E` / `0x0F` | 4 | `atk[4] >> 1` |
+| `0x10` | none | nothing |
+| `0x11` | 0,1,2,3,4 | `(sum of all five) >> 1` |
+
+`0x0E` and `0x0F` share a jump-table arm (slots `[2]` and `[3]` hold the same target), and `0x10`'s slot is the same address the bounds check bails to - a live table entry that folds nothing. Retail applies no empty-slot test and no `kind == 1` item-class guard here, matching the battle-load seeder's behaviour.
+
+This is the counterpart to the battle-load asymmetry recorded in [`battle-formulas.md`](battle-formulas.md): the seeder `FUN_80053CB8` folds the equipment table's UDF / LDF / SPD bytes and folds **neither** INT nor ATK, so a weapon's attack bonus never reaches the actor's ATK **base** (`+0x15A`). It reaches ATK **working** here instead, per committed command. The seeder's omission is correct, not a gap.
+
+Ports: `legaia_engine_vm::battle_formulas::arms_command_equip_slots` / `arms_weapon_atk_fold` / `arms_resolver_admits`.
 
 ## Who writes the cost
 

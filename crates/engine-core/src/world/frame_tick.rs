@@ -2,6 +2,11 @@
 //!
 //! Split out of `world.rs` as additional `impl World` blocks; no logic
 //! change from the original inline definitions.
+//!
+//! The frame-time sampler behind the adaptive cadence
+//! ([`World::resolve_frame_step`]) - retail's `VSync(1)` reading, returned by
+//! the dev profiler HUD.
+//! REF: FUN_800173BC
 
 use super::*;
 
@@ -11,6 +16,75 @@ impl World {
     /// retail "play time" field shown on the save screen.
     pub fn advance_play_time(&mut self, delta_seconds: u32) {
         self.play_time_seconds = self.play_time_seconds.saturating_add(delta_seconds);
+    }
+
+    /// Arm the timed sound-source auto-release for `deadline` vsyncs
+    /// (`gp+0x814`). [`Self::tick`] counts it down by the frame step.
+    ///
+    /// REF: FUN_800267FC
+    pub fn arm_sound_release(&mut self, deadline_vsyncs: i32) {
+        self.sound_release.arm(deadline_vsyncs);
+        self.pending_sound_release = false;
+    }
+
+    /// Drain the "the sound-release deadline expired" event.
+    pub fn take_pending_sound_release(&mut self) -> bool {
+        std::mem::take(&mut self.pending_sound_release)
+    }
+
+    /// Run the one-shot sound detach (`FUN_8002689C`). Returns `true` only on
+    /// the first call - retail's `gp+0x804` latch gates every later one out,
+    /// which is why the mode-INIT chain can call it freely.
+    ///
+    /// PORT: FUN_8002689c
+    pub fn detach_sound(&mut self) -> bool {
+        self.sound_detach.detach()
+    }
+
+    /// Consume the frame-begin skip request, returning whether this frame
+    /// should be abandoned. Models `FUN_8001698C`'s non-zero return; see
+    /// [`Self::frame_begin_skip`].
+    ///
+    /// PORT: FUN_8001698c (the frame-skip return; the ring-aging half of the
+    /// same function is `legaia_engine_audio::sfx_ring::SfxCueRing::age`)
+    pub fn take_frame_begin_skip(&mut self) -> bool {
+        std::mem::take(&mut self.frame_begin_skip)
+    }
+
+    /// Resolve this frame's cadence the way `FUN_80016B6C` does and install
+    /// it into [`Self::frame_step`].
+    ///
+    /// PORT: FUN_80016b6c (the `0x80017044 .. 0x800171D8` cadence block; the
+    /// telemetry state machine lives in
+    /// [`legaia_engine_vm::actor_tick::FrameStepTelemetry`]).
+    ///
+    /// `elapsed_hblanks` is the frame time retail samples with `VSync(1)`
+    /// through `FUN_800173BC`. The floor is [`Self::frame_step_floor`]
+    /// (`DAT_8007B9D8`), installed per scene, and the resolver can only raise
+    /// the cadence above it - never below.
+    ///
+    /// **Hosts that want determinism should not call this.** Retail gates the
+    /// whole adaptive path on a boot config word (`gp+0x4CE == 0x10`); with
+    /// `frameskip_enabled = false` this returns the floor unchanged, which is
+    /// exactly what the replay / trace oracles need. Wall-clock-paced hosts
+    /// pass their measured frame time and `true`.
+    pub fn resolve_frame_step(&mut self, elapsed_hblanks: i32, frameskip_enabled: bool) -> u8 {
+        let cadence = self.frame_step_telemetry.resolve(
+            elapsed_hblanks,
+            frameskip_enabled,
+            self.frame_step_floor,
+        );
+        self.frame_step = cadence.vsyncs_per_tick();
+        self.frame_step
+    }
+
+    /// The `VSync(n)` argument retail would pass this frame - **last** frame's
+    /// cadence, with `< 2` passed as `0` (`0x8001719C`, read before the new
+    /// value is written back at `0x800171D8`).
+    ///
+    /// REF: FUN_80016B6C
+    pub fn frame_step_vsync_wait(&self) -> u8 {
+        self.frame_step_telemetry.vsync_wait()
     }
 
     /// Increment the deterministic LCG and return the new value.
@@ -49,6 +123,22 @@ impl World {
     ///     - `Field`      → field-VM step (or no-op if no bytecode loaded).
     ///     - `Cutscene`   → field-VM step (cutscenes use the same script VM).
     ///     - `Title`      → no further VM.
+    ///
+    /// This is the engine's counterpart of the retail master frame driver
+    /// `FUN_80016444`: retail runs five `FUN_8002519C` **tick passes** over
+    /// the actor-list heads `_DAT_8007C34C..0x36C` (pass 3/4 swapped by the
+    /// `_DAT_1F800394 & 0x10` mirror bit), then five `FUN_8001D140` **render
+    /// passes** (the scratchpad-SP trampoline into `FUN_8001ADA4`), with the
+    /// display flip (`FUN_8001D058` → `FUN_80026CE4`) before the render
+    /// passes in STR mode (0x15) and after them otherwise, plus dev error
+    /// prints and the dev mode-transition writer `FUN_800179C0`. The engine
+    /// splits that frame: the tick passes are the per-actor loops below,
+    /// the render passes live in the host renderer (wgpu), the flip is the
+    /// swapchain present, and the dev prints are not ported. Divergence:
+    /// engine actors live in one pool with an `active` flag, not five
+    /// linked lists - pass ORDER is preserved by the sequencing below.
+    // PORT: FUN_80016444 (frame-pass sequencing; render/flip halves are the
+    //                     host renderer's, dev prints not ported)
     pub fn tick(&mut self) -> Option<StepOutcome> {
         self.frame += 1;
         // Retail-frame sub-clock for the narration crawl roller. The sim ticks
@@ -80,6 +170,21 @@ impl World {
             if self.clut_vsync_accum >= self.frame_step.max(1) {
                 self.clut_vsync_accum = 0;
                 self.clut_pending_game_ticks = (self.clut_pending_game_ticks + 1).min(600);
+            }
+        }
+        // Retail's frame-begin driver services the timed sound-source
+        // auto-release before anything else in the frame (`FUN_800267FC`,
+        // called at `0x800169FC`). Its accumulator advances by the frame step,
+        // so drive it on the sim ticks that map to a retail vsync.
+        if self.field_frame_step == 1 {
+            let step = self.frame_step.max(1);
+            // The teardown gates (`record[+8]` active, `_DAT_8007B868`) live
+            // in the libsnd voice binding the engine replaces, so the engine
+            // arm is "release when it fires" unconditionally.
+            if let crate::sound_state::SoundReleaseTick::Fired { .. } =
+                self.sound_release.tick(step, true, false)
+            {
+                self.pending_sound_release = true;
             }
         }
         // Step the active full-screen fade (escape teardown ramp); drop it
@@ -262,6 +367,21 @@ impl World {
                 }
             }
             SceneMode::Field => {
+                // The Field arm as a whole is the engine's counterpart of
+                // the retail player master frame handler - the field
+                // overlay's per-frame driver that wraps everything below:
+                // engaged-flag gating, locomotion (FUN_801D01B0), the
+                // vertical settle (FUN_801D1BA0), touch/walk-on dispatch
+                // (FUN_801DE234/801DE3E0 through FUN_801D1EC4), the camera
+                // update (FUN_801DB510/801DAA50) and the intro-skip packet
+                // (pad 0x100 while `_DAT_1F800394 & 0x4000000` ->
+                // `FUN_8001FD44("town01", 3)`, ported as
+                // `World::take_prologue_handoff`). Leg-for-leg mapping in
+                // the comments below; the retail body is
+                // `overlay_cutscene_dialogue_801d1344.txt`.
+                // PORT: FUN_801d1344 (frame-pump orchestration; legs are
+                //                     individually ported + cited below)
+                //
                 // Per-tick: one Cross/Circle edge feeds at most one of the
                 // script's 0x4C dialog poll or the interaction probe.
                 self.dialog_input_consumed = false;

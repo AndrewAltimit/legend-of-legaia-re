@@ -506,6 +506,24 @@ all at `z = -768`, `x` from `-640` to `+640`: three horizontal at `y = -192 / 0 
 +192` and two diagonals crossing at `y = ±320`. The winning line (`DAT_801d3c8c`)
 is drawn bright.
 
+The packet is a `LINE_F2` with GP0 code `0x43` - flat, **semi-transparent**. The
+idle colour is a neutral `0x808080`; the winning line is redrawn by overwriting
+only the three colour bytes of the already-assembled command word with
+`(0xFF, 0xFF, 0x80)`, so the `0x43` code byte survives and a lit line is still
+semi-transparent. The highlight test is a plain equality against `DAT_801d3c8c`,
+which means a frame where that word still holds `0` lights line `0` - only a
+value outside `0..5` leaves the whole rack dark.
+
+Retail projects each endpoint separately, then links the packet at the OT bucket
+derived from the **second** endpoint's returned depth alone:
+`(depth >> 2) >> ctx[+0x90]`, with a `+3` bias first when the depth is negative
+so the shift truncates toward zero.
+
+Ported as `legaia_engine_core::slot_machine::payline_prims` +
+`payline_ot_depth`; the geometry comes from the parsed table
+(`legaia_asset::minigame_slot_scene::SlotScene::paylines`), and projection plus
+OT linkage stay caller-side as they do for the rest of the machine's furniture.
+
 ### The furniture is billboards - `FUN_801d08e4`
 
 Four passes, each through `FUN_800195a8`. All the geometry is disc data, in four

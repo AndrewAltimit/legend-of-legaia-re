@@ -1,6 +1,6 @@
 -- autorun_shiny_recon.lua
 --
--- Runtime recon for the shiny-Seru randomizer feature (`legaia_rando::shiny_seru`).
+-- Runtime recon for the shiny-Seru randomizer feature (`legaia_patcher::shiny_seru`).
 -- Confirms, in live RAM, the things the disc patch depends on, and observes its
 -- two write-side routines firing. Run it against the BOOTED PATCHED DISC
 -- (`legaia_shiny_100.bin`) - or against a vanilla savestate to confirm the patch

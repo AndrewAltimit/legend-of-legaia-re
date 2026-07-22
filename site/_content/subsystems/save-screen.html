@@ -24,7 +24,10 @@
 <section class="doc-section" id="key-functions">
   <h2>Key functions</h2>
   <h3><code>FUN_801DAEF4</code> - load-from-slot driver (sub-screen 0x19)</h3>
-  <p>Runs an actor VM with bytecode at <code>&amp;DAT_801E4E30</code> (its display actor), waits on <code>_DAT_8007BB80 != 0</code> (menu-active flag). State 2 calls <code>FUN_801DD35C(1, 1)</code> - the saving-overlay main in <em>load</em> direction (param_2 selects op: 1 = load, 2 = save). Each step calls <code>FUN_80031D00</code> (text-actor tick / MES advance). The slot-selector proper is <code>FUN_801D6B20</code> (sub-screen <code>0x01</code>).</p>
+  <p>Runs an actor VM with bytecode at <code>&amp;DAT_801E4E30</code> (its display actor), waits on <code>_DAT_8007BB80 != 0</code> (menu-active flag). State 2 calls <code>FUN_801DD35C(1, 1)</code> - the saving-overlay main in <em>load</em> direction (param_2 selects op: 1 = load, 2 = save). Each step calls <code>FUN_80031D00</code> (text-actor tick / MES advance). It is reached from row 6 of the root command picker <code>FUN_801D6B20</code> (sub-screen <code>0x01</code>) - which, despite an earlier label here, is <strong>not</strong> a slot selector.</p>
+
+  <h3><code>FUN_801D6B20</code> - root command picker (sub-screen 0x01)</h3>
+  <p>The menu overlay's own top level. Phase 0 runs the display script <code>&amp;DAT_801E4BC0</code>, raises <code>DAT_801E46C0 = 0x1000</code> and masks <code>DAT_801E46BC &amp;= 0xFFF</code>; phase 1 waits for the menu-active flag to clear, then runs a <strong>7-row</strong> picker <code>FUN_801D688C(&amp;DAT_801E46BC, 7, 1)</code>. Rows 0..4 route unconditionally to sub-screens <code>5</code> (Items command window), <code>0x0E</code> (Magic caster picker), <code>0x12</code> (Equip character picker), <code>0x15</code> and <code>0x17</code>. The last two are gated: row 5 (save-card driver <code>0x18</code>) is blocked when the installed entry context <code>_DAT_8007B450</code> carries kind byte <code>0x0D</code> - the test is on the <em>kind</em>, not on the pointer's presence, so a null context takes the allow branch - and row 6 (load <code>0x19</code>) is blocked when the save-block presence byte is zero. Blocked rows buzz with cue <code>0x23</code> and stay. Cancel leaves for sub-screen <code>0</code>, except under that same <code>0x0D</code> context where it goes to <code>3</code>, the Yes/No confirm: one context byte both hides Save and makes leaving ask first. Engine port: <code>engine-core::pause_screens::{root_menu_confirm_route, root_menu_cancel_route}</code>.</p>
 
   <h3><code>FUN_801DAFD4</code> - slot confirm + saving in progress</h3>
   <p>Runs the 3-item slot scrolling list via <code>FUN_801D688C(&amp;DAT_801E46BC, 3, 1)</code>. On slot 1 confirmed: validates against the save-block existence table at <code>&amp;DAT_80084140 + slot * 2 + 0x1818</code> (byte 0 = slot present, byte 1 = slot valid), then advances <code>DAT_801E46A4</code> to <code>0x1E</code> (the write sub-screen). On slot 2: cancel SFX. Slot 0 routes to the card-full/error sub-screen (<code>0x1B</code>).</p>
@@ -47,7 +50,7 @@
   <table>
     <thead><tr><th>ID</th><th>Address</th><th>Function</th></tr></thead>
     <tbody>
-      <tr><td><code>0x1</code></td><td><code>0x801E4F44</code></td><td><code>FUN_801D6B20</code> - slot selector</td></tr>
+      <tr><td><code>0x1</code></td><td><code>0x801E4F44</code></td><td><code>FUN_801D6B20</code> - root command picker (7 rows)</td></tr>
       <tr><td><code>0x2</code></td><td><code>0x801E4F48</code></td><td>Save entry (from menu)</td></tr>
       <tr><td><code>0x4</code></td><td><code>0x801E4F50</code></td><td>Post-save return path</td></tr>
       <tr><td><code>0x18</code></td><td><code>0x801E4F80</code></td><td><code>FUN_801DAE24</code> - save-card driver entry; installs card handle and dispatches into <code>FUN_801DD35C(1, 2)</code></td></tr>
