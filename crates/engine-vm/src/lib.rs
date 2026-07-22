@@ -76,6 +76,7 @@ pub mod battle_camera;
 pub mod battle_cast_cue;
 pub mod battle_formulas;
 pub mod camera_mover;
+pub mod camera_rel_actor;
 pub mod cutscene_trigger;
 pub mod effect_vm;
 pub mod field;

@@ -262,6 +262,21 @@ impl World {
                 }
             }
             SceneMode::Field => {
+                // The Field arm as a whole is the engine's counterpart of
+                // the retail player master frame handler - the field
+                // overlay's per-frame driver that wraps everything below:
+                // engaged-flag gating, locomotion (FUN_801D01B0), the
+                // vertical settle (FUN_801D1BA0), touch/walk-on dispatch
+                // (FUN_801DE234/801DE3E0 through FUN_801D1EC4), the camera
+                // update (FUN_801DB510/801DAA50) and the intro-skip packet
+                // (pad 0x100 while `_DAT_1F800394 & 0x4000000` ->
+                // `FUN_8001FD44("town01", 3)`, ported as
+                // `World::take_prologue_handoff`). Leg-for-leg mapping in
+                // the comments below; the retail body is
+                // `overlay_cutscene_dialogue_801d1344.txt`.
+                // PORT: FUN_801d1344 (frame-pump orchestration; legs are
+                //                     individually ported + cited below)
+                //
                 // Per-tick: one Cross/Circle edge feeds at most one of the
                 // script's 0x4C dialog poll or the interaction probe.
                 self.dialog_input_consumed = false;

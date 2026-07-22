@@ -547,9 +547,124 @@ impl Camera {
     }
 }
 
+/// The default camera-zone parameter set `FUN_801DBE9C` installs when the
+/// per-tile zone query misses (no camera-region record covers the player's
+/// tile). Raw values + the `0x8007B607..` globals they land in.
+///
+/// | field | global | value |
+/// |---|---|---|
+/// | `mode` | `DAT_8007B607` | `0x10` |
+/// | `param_b608` | `DAT_8007B608` | `0x10` |
+/// | `param_b609` | `DAT_8007B609` | `0x30` |
+/// | `param_b60a` | `DAT_8007B60A` | `0x51` |
+/// | `param_b60b` | `DAT_8007B60B` | `0x20` |
+/// | `angle` | `DAT_8007B60C` | `0x1B8` |
+/// | `b610` | `DAT_8007B610` | `0` |
+/// | `b614` | `DAT_8007B614` | `0x4000` |
+/// | `b618` | `DAT_8007B618` | `0x300` |
+///
+/// (`0x1B8` is the same default pitch `FUN_80025C24` seeds at scene entry;
+/// see [`Camera::reset_globals_for_scene_entry`].)
+// REF: FUN_801DBE9C (miss-path stores at 0x801dbf18..0x801dbf74)
+pub const CAMERA_ZONE_DEFAULTS: [(u32, u32); 9] = [
+    (0x8007B607, 0x10),
+    (0x8007B608, 0x10),
+    (0x8007B609, 0x30),
+    (0x8007B60A, 0x51),
+    (0x8007B60B, 0x20),
+    (0x8007B60C, 0x1B8),
+    (0x8007B610, 0),
+    (0x8007B614, 0x4000),
+    (0x8007B618, 0x300),
+];
+
+/// What one [`camera_zone_arrival_tick`] decided.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CameraZoneArrival {
+    /// Countdown still running - nothing else happened, actor not flagged.
+    Waiting,
+    /// Countdown expired: the player tile was queried and a camera-region
+    /// record hit - load it (`FUN_801DBC20`), then run the follow update.
+    LoadZoneConfig,
+    /// Countdown expired with no covering record: install
+    /// [`CAMERA_ZONE_DEFAULTS`], then run the follow update.
+    LoadDefaults,
+}
+
+/// The camera-zone **arrival tick** - one frame of `FUN_801DBE9C`'s
+/// query arm (the `_DAT_8007B868 != 0` leg; the `== 0` leg skips the
+/// query and only runs the follow update).
+///
+/// PORT: FUN_801dbe9c
+///
+/// Decrements the actor's `+0x54` countdown; while it has not reached
+/// `-1` the tick returns [`CameraZoneArrival::Waiting`] (and retail
+/// neither flags the actor nor touches the camera). On expiry the player
+/// tile quantises as `(pos - 0x40) >> 7` (the region-refresh form, NOT
+/// the walk-on dispatch's raw `>> 7`) and the zone-record query
+/// (`FUN_801DBA20` = [`crate::field_regions::zone_query`]) picks between
+/// the record load and [`CAMERA_ZONE_DEFAULTS`]. Either way the follow
+/// update (`FUN_801DB8EC` + the negated-focus store, see
+/// [`Camera::tick`]) runs and the actor's `+0x10` flags gain bit `8`.
+///
+/// Provenance: `overlay_0897_locomotion_cluster.txt` at `0x801dbe9c..
+/// 0x801dc0b8` (the committed `FUN_801DBEC4` name is a mid-function
+/// label of this body, not its entry).
+pub fn camera_zone_arrival_tick(
+    countdown: &mut i16,
+    player_pos: (i16, i16),
+    zone_hit: impl FnOnce(i32, i32) -> bool,
+) -> CameraZoneArrival {
+    *countdown = countdown.wrapping_sub(1);
+    if *countdown != -1 {
+        return CameraZoneArrival::Waiting;
+    }
+    let tile_x = i32::from(player_pos.0 - 0x40) >> 7;
+    let tile_z = i32::from(player_pos.1 - 0x40) >> 7;
+    if zone_hit(tile_x, tile_z) {
+        CameraZoneArrival::LoadZoneConfig
+    } else {
+        CameraZoneArrival::LoadDefaults
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn zone_arrival_counts_down_then_queries_at_region_tile() {
+        let mut cd: i16 = 2;
+        // Two waiting frames (2 -> 1, 1 -> 0), then expiry at -1.
+        assert_eq!(
+            camera_zone_arrival_tick(&mut cd, (0, 0), |_, _| true),
+            CameraZoneArrival::Waiting
+        );
+        assert_eq!(
+            camera_zone_arrival_tick(&mut cd, (0, 0), |_, _| true),
+            CameraZoneArrival::Waiting
+        );
+        let mut seen = None;
+        let r = camera_zone_arrival_tick(&mut cd, (1838, 2526), |x, z| {
+            seen = Some((x, z));
+            true
+        });
+        assert_eq!(r, CameraZoneArrival::LoadZoneConfig);
+        // Region-refresh quantisation: (pos - 0x40) >> 7.
+        assert_eq!(seen, Some(((1838 - 0x40) >> 7, (2526 - 0x40) >> 7)));
+    }
+
+    #[test]
+    fn zone_arrival_miss_installs_defaults() {
+        let mut cd: i16 = 0;
+        assert_eq!(
+            camera_zone_arrival_tick(&mut cd, (0x40, 0x40), |_, _| false),
+            CameraZoneArrival::LoadDefaults
+        );
+        // The default set includes the scene-entry pitch and GTE far plane.
+        assert!(CAMERA_ZONE_DEFAULTS.contains(&(0x8007B60C, 0x1B8)));
+        assert_eq!(CAMERA_ZONE_DEFAULTS.len(), 9);
+    }
     use crate::world::SceneMode;
     use legaia_engine_vm::Position as ActorVmPosition;
 

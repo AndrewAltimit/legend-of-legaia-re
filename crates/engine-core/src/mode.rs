@@ -570,9 +570,157 @@ impl Default for ModeDriver {
     }
 }
 
+/// The shared mode-INIT core state reset (`FUN_80025CB4`).
+///
+/// PORT: FUN_80025cb4
+///
+/// Called by the CONFIG INIT handler (`FUN_80025C68`) after the scene-name
+/// sync `FUN_8001D7F8`. Every store below is read off the instruction
+/// stream (`see ghidra/scripts/funcs/80025cb4.txt`, corroborated by the
+/// static-recomp rendering of `func_80025CB4` - which also shows the
+/// `_DAT_8007B8C8 = 0` store issued twice, a benign duplicate the Ghidra C
+/// folds away). Field order below = retail store order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CoreStateReset {
+    /// `DAT_8007B718` (u16): display-brightness register, reset to `0x80`.
+    pub brightness: u16,
+    /// `DAT_8007B6F4` (u16): camera zoom / GTE `H` projection word, `0xA0`.
+    pub gte_h_zoom: u16,
+    /// `_DAT_8007B8B8` (u32): the field warm-entry flag - zero forces the
+    /// next field entry down the cold path (see `field-locomotion.md`).
+    pub field_warm_entry: u32,
+    /// `DAT_8007B648` (u8) cleared.
+    pub b648: u8,
+    /// `_DAT_8007B83C` (u16): the master game-mode word, advanced to `1`
+    /// (CONFIG MODE - the mode-0 INIT hands off to its RUN sibling).
+    pub game_mode: u16,
+    /// `_DAT_8007B874` (u32): the newly-pressed pad-edge word, cleared.
+    pub pad_pressed_edge: u32,
+    /// `_DAT_8007B830` + `_DAT_8007B8C8` (u32): cleared (B8C8 twice).
+    pub b830_b8c8: u32,
+    /// `DAT_8007B768` (u16): the DATA_FIELD bundle index, `0xFFFF` = none
+    /// (the sentinel `FUN_80020118` tests with `bgez`).
+    pub data_field_index: u16,
+    /// `DAT_8007B6FC` + `DAT_8007B6C8` (the `FUN_80025358` sub-overlay
+    /// stage counter) + `_DAT_8007B9C4`: cleared.
+    pub counters_cleared: u32,
+    /// Retail leg (`_DAT_8007B98C == 0` - debug word clear):
+    /// `_DAT_8007BA36 = 1` and `DAT_8007B71C = 1`.
+    pub retail_ba36_b71c: u16,
+    /// `_DAT_8007B900` (u32): set to `0xFFFFFFFF` unconditionally.
+    pub b900: u32,
+}
+
+/// The retail store values of [`CoreStateReset`]. The scratchpad mirrors
+/// (`0x1F80037D/91/93` reloaded from `DAT_8007B7BE/E6` / `DAT_8007B8EC`)
+/// are carried by the host's scratch model, not this struct.
+pub const CORE_STATE_RESET: CoreStateReset = CoreStateReset {
+    brightness: 0x80,
+    gte_h_zoom: 0xA0,
+    field_warm_entry: 0,
+    b648: 0,
+    game_mode: 1,
+    pad_pressed_edge: 0,
+    b830_b8c8: 0,
+    data_field_index: 0xFFFF,
+    counters_cleared: 0,
+    retail_ba36_b71c: 1,
+    b900: 0xFFFF_FFFF,
+};
+
+/// One mode-table INIT handler's staging plan: which slot-A overlay it
+/// loads and which loaded-overlay entry point it hands off to.
+///
+/// The retail INIT handlers are thin wrappers with one shared shape -
+/// optional state reset, `FUN_8003DE7C(0)` blocking read-wait, slot-A
+/// overlay load (`FUN_8003EBE4(param, 0)` =
+/// [`crate::overlay_loader::load_overlay_a`]), wait again, then a `jal`
+/// into the freshly loaded overlay:
+///
+/// | Mode | Handler | Overlay A param | Overlay entry |
+/// |---|---|---|---|
+/// | 0 CONFIG INIT | `FUN_80025C68` | `0x4C` | `FUN_801CE8EC` |
+/// | 2 MAIN INIT | `FUN_80025B64` | `2` | `FUN_801D6704` |
+/// | 18 GAME OVER INIT | `FUN_80025B30` | `7` | `FUN_801CE844` |
+///
+/// CONFIG INIT additionally runs the sound detach `FUN_8002689C` and the
+/// [`CORE_STATE_RESET`] first; GAME OVER INIT skips the leading wait.
+/// The engine's [`ModeDriver`] + scene host replace the overlay `jal` with
+/// native scene entry, so the plan is data, not control flow, here.
+// PORT: FUN_80025c68 (mode-0 CONFIG INIT stage plan)
+// PORT: FUN_80025b64 (mode-2 MAIN INIT stage plan)
+// PORT: FUN_80025b30 (mode-18 GAME OVER INIT stage plan; retail-unreachable,
+//                     dev harness only - no static writer of mode 18 exists)
+// REF: FUN_8003EBE4 (the slot-A loader the params feed)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModeInitStage {
+    /// `FUN_8003EBE4` first argument (extraction PROT entry `param + 0x37F`).
+    pub overlay_a_param: i32,
+    /// VA of the loaded overlay's entry the handler `jal`s after the wait.
+    pub overlay_entry: u32,
+    /// Whether the handler runs [`CORE_STATE_RESET`] before staging.
+    pub runs_core_reset: bool,
+}
+
+/// Staging plan for the three thin INIT handlers (see [`ModeInitStage`]).
+/// Returns `None` for modes whose INIT is not this wrapper shape.
+pub fn mode_init_stage(mode: GameMode) -> Option<ModeInitStage> {
+    match mode {
+        GameMode::ConfigInit => Some(ModeInitStage {
+            overlay_a_param: 0x4C,
+            overlay_entry: 0x801C_E8EC,
+            runs_core_reset: true,
+        }),
+        GameMode::MainInit => Some(ModeInitStage {
+            overlay_a_param: 2,
+            overlay_entry: 0x801D_6704,
+            runs_core_reset: false,
+        }),
+        GameMode::GameOverInit => Some(ModeInitStage {
+            overlay_a_param: 7,
+            overlay_entry: 0x801C_E844,
+            runs_core_reset: false,
+        }),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn core_state_reset_matches_retail_stores() {
+        // FUN_80025CB4's literal stores, read off the disassembly
+        // (li/sh + li/sw pairs at 0x80025CCC..0x80025D94).
+        let r = CORE_STATE_RESET;
+        assert_eq!(r.brightness, 0x80);
+        assert_eq!(r.gte_h_zoom, 0xA0);
+        assert_eq!(r.field_warm_entry, 0);
+        assert_eq!(r.game_mode, 1, "CONFIG INIT hands off to CONFIG MODE");
+        assert_eq!(r.data_field_index, 0xFFFF);
+        assert_eq!(r.retail_ba36_b71c, 1);
+        assert_eq!(r.b900, 0xFFFF_FFFF);
+    }
+
+    #[test]
+    fn mode_init_stage_plans_match_retail_wrappers() {
+        // The three thin INIT wrappers' overlay params + jal targets.
+        let cfg = mode_init_stage(GameMode::ConfigInit).unwrap();
+        assert_eq!(cfg.overlay_a_param, 0x4C);
+        assert_eq!(cfg.overlay_entry, 0x801C_E8EC);
+        assert!(cfg.runs_core_reset);
+        let main = mode_init_stage(GameMode::MainInit).unwrap();
+        assert_eq!(main.overlay_a_param, 2);
+        assert_eq!(main.overlay_entry, 0x801D_6704);
+        assert!(!main.runs_core_reset);
+        let go = mode_init_stage(GameMode::GameOverInit).unwrap();
+        assert_eq!(go.overlay_a_param, 7);
+        assert_eq!(go.overlay_entry, 0x801C_E844);
+        // Non-wrapper modes have no plan.
+        assert!(mode_init_stage(GameMode::MainMode).is_none());
+        assert!(mode_init_stage(GameMode::BattleInit).is_none());
+    }
 
     #[test]
     fn table_has_28_entries_in_order() {
