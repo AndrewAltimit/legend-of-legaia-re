@@ -471,7 +471,8 @@ the equip flow outside these window renderers.
 **Sub-screen chain**: the Equip screen runs as three sub-screens of the
 `0x801E4F40` table. `0x12` (`FUN_801D98F0`) picks the character; `0x13`
 (`FUN_801D99F0`) browses the 8 rows (Best Equipment + 7 slots) - confirm
-on row 0 recomputes the best-candidate ids (`FUN_801CF88C` →
+on row 0 recomputes the best-candidate ids ([`FUN_801CF88C`
+below](#best-equipment-how-the-candidates-are-picked) →
 `DAT_801EF0C0`) and applies them through `FUN_801CF760` (per armament
 slot: skip when candidate == equipped or the bag lacks the candidate,
 else take one from the bag, return the old item, write the slot; SFX
@@ -490,6 +491,38 @@ writes the slot, then the hand advances to the next slot row and the
 screen returns to `0x13`. Engine ports:
 `equip_session::{preview_candidate, unequip, slot_browse_confirm,
 apply_best_equipment}`.
+
+### Best Equipment: how the candidates are picked
+
+`FUN_801CF88C` seeds `DAT_801EF0C0` with the four items the character
+already wears and then walks the bag (`0x80085958 + i*2` over
+`_DAT_8007B5EA.._DAT_8007B5EC`), keeping one winner per **armament
+slot**. An id competes only when its item record `+0` is `1`
+(equipment) and its equipment record `+6` mask shares a bit with the
+per-character mask byte `0x801E43F0[char]`. The slot it competes for is
+the equipment record's `+7` bits permuted - raw `(bits & 0x60) >> 5` is
+body / head / weapon / footwear, and the candidate array is indexed
+weapon-first, so the mapping is `[2, 1, 0, 3]`.
+
+Two ranking laws that the screen alone does not reveal:
+
+- **Armour ranks on `UDF + LDF` only** - equipment record `+2` plus
+  `+3`. The INT (`+0`) and SPD (`+4`) bonuses are never read, so a
+  pure-INT head accessory or pure-SPD boot never displaces an incumbent.
+- **A weapon's category check dominates its ATK.** The weapon score is
+  `equip[+1] + FUN_801DD0C0(char, id, 1)`, and that check returns a flat
+  `1000` or `0`. An ATK byte cannot reach `1000`, so a category-favoured
+  weapon outranks every unfavoured one regardless of raw attack.
+
+An empty slot is filled by the **first** eligible entry (the
+`incumbent == 0` test runs before the comparison) and ties keep the
+incumbent (both compares are strict `<`). The rest of the function is
+bookkeeping around a trial equip: back up the eight equip bytes, write
+the candidates in, re-run `FUN_801CF650`, swap the resulting stat block
+into the preview staging pair, then restore the backup and aggregate
+again - so the routine leaves the character wearing exactly what it
+found. Engine port: `equip_session::best_equipment_candidates` (+
+`armament_slot_of`).
 
 Engine port: `engine-ui::equip_screen_draws_for` (window contents at
 the offsets above; the candidate list fills the id-23 rect at the shared
