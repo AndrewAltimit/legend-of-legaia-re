@@ -129,7 +129,11 @@ pub enum PrizeEvent {
     /// Yes committed: the host applies [`apply_redeem`] with these values,
     /// then calls [`PrizeExchangeSession::rebuild`]. Carries the commit
     /// jingle [`SFX_COIN_JINGLE`].
-    Redeemed { item_id: u8, price: u32, gate: u16 },
+    Redeemed {
+        item_id: u8,
+        price: u32,
+        gate: u16,
+    },
     /// Browse cancelled - session over (retail exits to sub-screen `0`).
     Exit,
 }
@@ -206,30 +210,32 @@ impl PrizeExchangeSession {
     pub fn tick(&mut self, nav: NavButtons, coins: u32, held: impl Fn(u8) -> u8) -> PrizeEvent {
         match self.phase {
             Phase::Done => PrizeEvent::None,
-            Phase::Browse => match menu_cursor_nav(&mut self.cursor, self.rows.len() as u32, true, nav) {
-                CursorNav::Confirm => {
-                    let Some(rec) = self.selected().copied() else {
-                        return PrizeEvent::None;
-                    };
-                    match redeem_gate(coins, rec.price, held(rec.item_id)) {
-                        Err(refusal) => PrizeEvent::Refused(refusal),
-                        Ok(()) => {
-                            // Retail seeds the Yes/No cursor to 1 (No) and
-                            // raises the browse cursor's editing bit.
-                            self.confirm_cursor = 1;
-                            self.cursor |= 0x1000;
-                            self.phase = Phase::Confirm;
-                            PrizeEvent::OpenedConfirm
+            Phase::Browse => {
+                match menu_cursor_nav(&mut self.cursor, self.rows.len() as u32, true, nav) {
+                    CursorNav::Confirm => {
+                        let Some(rec) = self.selected().copied() else {
+                            return PrizeEvent::None;
+                        };
+                        match redeem_gate(coins, rec.price, held(rec.item_id)) {
+                            Err(refusal) => PrizeEvent::Refused(refusal),
+                            Ok(()) => {
+                                // Retail seeds the Yes/No cursor to 1 (No) and
+                                // raises the browse cursor's editing bit.
+                                self.confirm_cursor = 1;
+                                self.cursor |= 0x1000;
+                                self.phase = Phase::Confirm;
+                                PrizeEvent::OpenedConfirm
+                            }
                         }
                     }
+                    CursorNav::Cancel => {
+                        self.phase = Phase::Done;
+                        PrizeEvent::Exit
+                    }
+                    CursorNav::Moved => PrizeEvent::Moved,
+                    CursorNav::None => PrizeEvent::None,
                 }
-                CursorNav::Cancel => {
-                    self.phase = Phase::Done;
-                    PrizeEvent::Exit
-                }
-                CursorNav::Moved => PrizeEvent::Moved,
-                CursorNav::None => PrizeEvent::None,
-            },
+            }
             Phase::Confirm => match menu_cursor_nav(&mut self.confirm_cursor, 2, true, nav) {
                 CursorNav::Confirm => {
                     self.cursor &= crate::menu_input::CURSOR_INDEX_MASK;
