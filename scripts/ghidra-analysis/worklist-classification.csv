@@ -123,11 +123,11 @@ addr,class,reason
 801cfb94,REAL,every dump at this VA is of cutscene_str(970) (captures: str_fmv); no second dumped body here
 801cfbb4,REAL,self-entry body of 123 instructions returning `jr ra`
 801cfda0,REAL,self-entry body of 241 instructions returning `jr ra`
-801cfee0,REAL,self-entry body of 63 instructions returning `jr ra`
-801cffdc,REAL,every dump at this VA is of cutscene_str(970) (captures: str_fmv); no second dumped body here
-801d0100,VA_ALIASED,"2 overlays hold distinct code at this VA (cutscene_str(970), fishing(972)) - confirmed against the extracted images, not the dump image tags"
-801d0198,VA_ALIASED,"2 overlays hold distinct code at this VA (cutscene_str(970), fishing(972)) - confirmed against the extracted images, not the dump image tags"
-801d0248,REAL,self-entry body of 76 instructions returning `jr ra`
+801cfee0,REAL,"identified: MDEC reset in the STR overlay (0970) - control-register writes 0x80000000 / 0x60000000, DMA-0/1 pointer clear, two 0x20-word table uploads via 801cffdc; MDEC_rest:bad option on an out-of-range option. Hardware reset with no clean-room port site (retired to [render_pipeline])"
+801cffdc,REAL,"identified: MDEC command + DMA-0 upload in the STR overlay (0970). The debug-menu (0971) copy is byte-identical for its first 14 instructions and then runs off that overlay's own content boundary at base+0x1800 = 0x801D0018 into the residual fishing image - a truncation artifact, not a second body. Retired to [render_pipeline]"
+801d0100,VA_ALIASED,"2 overlays hold distinct code at this VA (cutscene_str(970), fishing(972)) - confirmed against the extracted images, not the dump image tags. The STR resident is identified: the MDEC_in_sync status spin (retired to [va_aliased_overlay_local]); the fishing resident is undumped work"
+801d0198,VA_ALIASED,"2 overlays hold distinct code at this VA (cutscene_str(970), fishing(972)) - confirmed against the extracted images, not the dump image tags. The STR resident is identified: the MDEC_out_sync DMA-busy spin (retired to [va_aliased_overlay_local]); the fishing copy at this VA is mid-function"
+801d0248,REAL,"identified: the MDEC sync-timeout diagnostic in the STR overlay (0970) - two printf dumps of the MDEC status word plus the DMA-0/1 channel and FIFO bits, reached only from the 801d0100 / 801d0198 spin waiters. Dev instrumentation over registers the engine has none of (retired to [render_pipeline])"
 801d02c0,REAL,every dump at this VA is of battle_action(898) (captures: battle_action); no second dumped body here
 801d0370,REAL,"duplicate claim withdrawn: peer 801c2b58 is a printed address from a mis-based dump, not a body at that VA"
 801d03c4,REAL,every dump at this VA is of dance(980) (captures: dance); no second dumped body here

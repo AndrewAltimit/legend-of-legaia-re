@@ -895,6 +895,7 @@ pub fn shop_root_command_rows(
 /// unaffordable price finally greys it again regardless of the marker.
 ///
 /// PORT: FUN_801d5de0 (stock-row ink selection, `0x801D5EA0..0x801D5F6C`)
+/// REF: FUN_80042f4c (the held-count bag scan whose result `held` carries)
 pub fn shop_stock_row_ink(held: i16, marker: i16, gold: i32, price: i32) -> u8 {
     let mut ink = SHOP_INK_NORMAL;
     if held >= SHOP_HELD_CAP as i16 {
