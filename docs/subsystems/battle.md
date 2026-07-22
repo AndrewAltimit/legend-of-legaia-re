@@ -993,7 +993,7 @@ The randomizer's enemy-ally ("charm") feature rides the stock `0x380`
 delegation flag plus one overlay word: the monster-wipe scan's down-mask at
 `0x801E6638` widens from `andi v0,v0,0x4` to `andi v0,v0,0x384`, so a living
 charmed monster counts as "down" and the player does not have to kill their
-own ally to win (`legaia_rando::enemy_ally`). That widen interacts with a
+own ally to win (`legaia_patcher::enemy_ally`). That widen interacts with a
 retail invariant inside the end-of-action gate (state `0x5A` of
 `FUN_801E295C`), and the interaction is the pinned cause of the charm battle
 hard-freeze.

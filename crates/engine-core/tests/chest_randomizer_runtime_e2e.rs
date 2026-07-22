@@ -1,6 +1,6 @@
 //! Disc-gated end-to-end oracle for the chest randomizer **at runtime**.
 //!
-//! The randomizer's own disc-gated tests (`crates/rando/tests/chest_patch_real`)
+//! The randomizer's own disc-gated tests (`crates/patcher/tests/chest_patch_real`)
 //! prove the patch is *written* faithfully: the field-VM `GIVE_ITEM` (op `0x39`)
 //! operand byte changes, the site offsets stay put, sectors stay EDC/ECC-valid.
 //! What they do **not** prove is that a runtime actually *reads the patched byte
@@ -34,11 +34,11 @@
 use legaia_asset::man_section::parse as parse_man;
 use legaia_engine_core::field_events::FieldEvent;
 use legaia_engine_core::world::World;
-use legaia_rando::chest::SceneChests;
-use legaia_rando::disc::DiscPatcher;
+use legaia_patcher::chest::SceneChests;
+use legaia_patcher::disc::DiscPatcher;
 
 /// keikoku (Ravine) scene bundle PROT entry - the chest-randomizer ground-truth
-/// scene (see `crates/rando/tests/chest_patch_real.rs`).
+/// scene (see `crates/patcher/tests/chest_patch_real.rs`).
 const KEIKOKU_ENTRY: usize = 112;
 /// keikoku's Phoenix chest gives item id `0x80` (pinned by the
 /// `keikoku_chest_pre` / `_open` savestate pair).

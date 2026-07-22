@@ -490,7 +490,7 @@ pub fn scene_destinations(man_file: &ManFile, man: &[u8]) -> Vec<SceneDestinatio
 /// decompressed MAN. Intra-town doors are these: a script repositions the
 /// player to an interior sub-area tile. Distinguishing door warps from NPC /
 /// cutscene movement is the caller's job (see `crate::house_door` in
-/// `legaia-rando`).
+/// `legaia-patcher`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MoveToSite {
     /// Absolute offset of the `0x23` opcode in the decompressed MAN.
@@ -723,7 +723,7 @@ pub struct Insertion {
     pub offset: usize,
     /// The bytecode to splice in. Assumed position-independent at `offset` (its own
     /// relative jumps are self-contained); the caller emits such a block (see
-    /// `legaia_rando::starting_bag`).
+    /// `legaia_patcher::starting_bag`).
     pub bytes: Vec<u8>,
 }
 

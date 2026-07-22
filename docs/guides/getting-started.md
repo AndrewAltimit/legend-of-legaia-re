@@ -120,7 +120,7 @@ Game-data, playing, and modding:
 |---|---|
 | `legaia-engine` | The clean-room engine: play scenes, FMVs, record/replay - straight from your disc. |
 | `asset-viewer` | Windowed browser for textures, meshes, audio banks, and scene demos. |
-| `legaia-rando` | Randomizer / disc patcher plus the translation toolchain; emits shareable PPF patches. |
+| `legaia-patcher` | Disc patcher: randomizer, translation toolchain, and manual record edits; emits shareable PPF patches. |
 | `save-tool` | PSX memory-card / save inspector: character records, save-block diffs. |
 | `gamedata-tool` | Curated game-data lookups (arts, items, shops, enemies, ...); needs no disc at all. |
 | `cheat-tool` | GameShark cheat-database parser with the Legaia NTSC-U databases built in. |
@@ -130,7 +130,7 @@ Reverse-engineering aids (useful once you go deeper):
 | Binary | What it's for |
 |---|---|
 | `field-disasm` | Field/event-VM script disassembler over `PROT.DAT`. |
-| `mes` | MES dialog-container inspector (for readable game text, use `legaia-rando translate export` instead). |
+| `mes` | MES dialog-container inspector (for readable game text, use `legaia-patcher translate export` instead). |
 | `anm` | ANM animation-container inspector. |
 | `mdt` | Move-table (Tactical Arts) layout classifier. |
 | `art` | Tactical Arts tables: action constants, arts names, Super/Miracle Art triggers. |

@@ -2,7 +2,7 @@
 //! **at runtime** - the engine member of the randomizer oracle set (chest,
 //! monster-drop, encounter, steal, shop, …).
 //!
-//! The randomizer's own disc-gated test (`crates/rando/tests/arts_patch_real`)
+//! The randomizer's own disc-gated test (`crates/patcher/tests/arts_patch_real`)
 //! proves a patched combo is *written* faithfully: each art's `+8`
 //! command-glyph pointer in the static `SCUS_942.54` arts-name table is
 //! reassigned, input counts + uniqueness + the Miracle Arts are preserved, and
@@ -35,9 +35,9 @@
 use legaia_art::queue::{ActionConstant, Command};
 use legaia_art::record::{ArtRecord, EnemyEffect};
 use legaia_engine_core::battle_arts::chain_matches_record;
-use legaia_rando::apply::{self, ArtSite};
-use legaia_rando::arts::ArtsMode;
-use legaia_rando::disc::DiscPatcher;
+use legaia_patcher::apply::{self, ArtSite};
+use legaia_patcher::arts::ArtsMode;
+use legaia_patcher::disc::DiscPatcher;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

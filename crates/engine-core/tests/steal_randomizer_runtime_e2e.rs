@@ -2,7 +2,7 @@
 //! the fourth member of the randomizer runtime-oracle set (chest, monster-drop,
 //! encounter, and now steal).
 //!
-//! The randomizer's own disc-gated test (`crates/rando/tests/steal_patch_real`)
+//! The randomizer's own disc-gated test (`crates/patcher/tests/steal_patch_real`)
 //! proves a patched steal is *written* faithfully: the item byte in the static
 //! `SCUS_942.54` steal table changes, every steal chance byte is untouched, and
 //! the touched SCUS sector stays EDC/ECC-valid. What it does **not** prove is
@@ -40,7 +40,7 @@
 
 use legaia_asset::steal_table::{self, StealTable};
 use legaia_engine_core::world::World;
-use legaia_rando::disc::DiscPatcher;
+use legaia_patcher::disc::DiscPatcher;
 
 /// World RNG seed for which the first `apply_steal` roll is `0`
 /// (`next_rng() % 100 == 0`), so the steal lands for any positive chance. A

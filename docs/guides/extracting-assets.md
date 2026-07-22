@@ -91,7 +91,7 @@ To *edit* a monster, `--dump-block` writes one monster's whole decoded block
 (stat record + name + mesh + animations) to a file and `--write-block` re-packs
 your edited copy into the archive in place - no slot-offset or LZS math. To do
 the same directly against a disc image (with a shareable PPF out the other
-end), use `legaia-rando monster-block` instead
+end), use `legaia-patcher monster-block` instead
 ([modding-and-translation.md](modding-and-translation.md)).
 
 ## Streamed audio (voice + ambience) → WAV

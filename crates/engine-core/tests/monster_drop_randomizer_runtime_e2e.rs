@@ -1,6 +1,6 @@
 //! Disc-gated end-to-end oracle for the monster **drop** randomizer at runtime.
 //!
-//! The randomizer's own disc-gated test (`crates/rando/tests/disc_patch_real`)
+//! The randomizer's own disc-gated test (`crates/patcher/tests/disc_patch_real`)
 //! proves a patched monster drop is *written* faithfully: the `+0x48` drop item
 //! byte changes inside the re-packed `0x14000` `battle_data` slot, neighbouring
 //! records stay intact, and the touched PROT.DAT sectors stay EDC/ECC-valid.
@@ -41,7 +41,7 @@ use legaia_engine_core::monster_catalog::{
     FormationDef, FormationSlot, catalog_from_monster_archive,
 };
 use legaia_engine_core::world::World;
-use legaia_rando::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 
 /// World RNG seed for which the first `apply_battle_loot` drop roll is `0`
 /// (`(next_rng() & 0xFF) == 0`), so the drop lands for any positive rate. The
@@ -116,7 +116,7 @@ fn patched_monster_drop_grants_new_item_at_runtime() {
             }
             let replacement = pick_replacement(r.drop_item);
             let slot = patcher.monster_slot(r.id).ok()?;
-            legaia_rando::monster::set_drop(&slot, replacement, r.drop_chance_pct).ok()?;
+            legaia_patcher::monster::set_drop(&slot, replacement, r.drop_chance_pct).ok()?;
             Some((r.id, r.drop_item, r.drop_chance_pct))
         })
         .expect("archive must hold at least one droppable, re-packable monster");
@@ -139,7 +139,7 @@ fn patched_monster_drop_grants_new_item_at_runtime() {
     let mut patcher = DiscPatcher::open(disc).expect("reopen disc");
     let slot = patcher.monster_slot(monster_id).unwrap();
     let repacked =
-        legaia_rando::monster::set_drop(&slot, replacement_item, original_chance).unwrap();
+        legaia_patcher::monster::set_drop(&slot, replacement_item, original_chance).unwrap();
     patcher.patch_monster_slot(monster_id, &repacked).unwrap();
 
     let patched_archive = patcher.read_entry(MONSTER_ARCHIVE_ENTRY).unwrap();

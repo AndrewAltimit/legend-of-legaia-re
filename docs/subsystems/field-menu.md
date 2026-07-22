@@ -370,7 +370,7 @@ stat labels (`ATK`/`UDF`/`LDF`/`SPD`/`INT`/`AGL`, `Experience`,
 the `Attack` / `Arts` / `Magic` / `Item` command-ring labels are UI-icon
 sprites, not text. These pools are the coordinate windows the translation
 pipeline's `ui_menu` section patches same-size in place
-(`legaia_rando::translation::ui`; see
+(`legaia_patcher::translation::ui`; see
 [`translation.md`](../tooling/translation.md)).
 
 **Money / play-time box (id 49, `FUN_801D0148`)**: money pictogram (ICO

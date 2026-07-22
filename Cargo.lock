@@ -1278,9 +1278,9 @@ dependencies = [
  "legaia-mdt",
  "legaia-mednafen",
  "legaia-mes",
+ "legaia-patcher",
  "legaia-pcsxr",
  "legaia-prot",
- "legaia-rando",
  "legaia-save",
  "legaia-seq",
  "legaia-tim",
@@ -1499,6 +1499,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-patcher"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "legaia-art",
+ "legaia-asset",
+ "legaia-gamedata",
+ "legaia-iso",
+ "legaia-lzs",
+ "legaia-prot",
+ "libc",
+ "serde",
+ "serde_yaml",
+]
+
+[[package]]
 name = "legaia-pcsxr"
 version = "0.1.0"
 dependencies = [
@@ -1517,23 +1534,6 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "legaia-rando"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "legaia-art",
- "legaia-asset",
- "legaia-gamedata",
- "legaia-iso",
- "legaia-lzs",
- "legaia-prot",
- "libc",
- "serde",
- "serde_yaml",
 ]
 
 [[package]]
@@ -1611,8 +1611,8 @@ dependencies = [
  "legaia-mdec",
  "legaia-mednafen",
  "legaia-mes",
+ "legaia-patcher",
  "legaia-prot",
- "legaia-rando",
  "legaia-save",
  "legaia-seq",
  "legaia-tim",

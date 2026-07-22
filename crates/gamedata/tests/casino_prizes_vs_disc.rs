@@ -5,16 +5,16 @@
 //! Unlike a town gold merchant (inline in a scene's field-VM script), the coin
 //! prize counter is a static table at `DAT_801e4518` - file offset
 //! `0x15D00` of PROT 0899 - decoded by the randomizer's canonical reader
-//! `legaia_rando::casino::CasinoExchange`. Each prize is an 8-byte record
+//! `legaia_patcher::casino::CasinoExchange`. Each prize is an 8-byte record
 //! `[u16 item_id][u16 story_gate][u32 coin_price]`; blocks are `0x60` bytes
 //! (12 records), terminated by the first `item_id == 0`. The retail US disc
 //! holds four blocks: block 1 is the Vidna casino counter, block 0 the Sol
 //! Tower Muscle Dome counter (its high-value prizes story-gated via the `+2`
 //! word), and blocks 2/3 are short pre-progression states (a single cheap
 //! healing item each - the counter shows these before progression unlocks the
-//! full list). To avoid a dev-dependency cycle (`legaia-rando` already depends
+//! full list). To avoid a dev-dependency cycle (`legaia-patcher` already depends
 //! on `legaia-gamedata`) the 8-byte record walk is reproduced inline here; the
-//! constants mirror `legaia_rando::casino`.
+//! constants mirror `legaia_patcher::casino`.
 //!
 //! Every curated prize joins a disc record byte-exact on (item name, coin
 //! price) - across both the Vidna and Sol lists - with one documented
@@ -31,7 +31,7 @@ use std::path::PathBuf;
 use legaia_asset::item_names::ItemNameTable;
 use legaia_gamedata::Database;
 
-/// Mirror of `legaia_rando::casino` constants (kept inline to avoid a
+/// Mirror of `legaia_patcher::casino` constants (kept inline to avoid a
 /// dev-dependency cycle; see the module doc).
 const CASINO_TABLE_OFFSET: usize = 0x15D00;
 const BLOCK_SIZE: usize = 0x60;

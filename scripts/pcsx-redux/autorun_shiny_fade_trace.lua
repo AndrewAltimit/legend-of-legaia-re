@@ -1,7 +1,7 @@
 -- autorun_shiny_fade_trace.lua
 --
 -- Pin which actor the SUMMON-CREATURE mesh is drawn as, for the shiny-Seru
--- transparency tell (`legaia_rando::shiny_seru`). The shiny routine floors the
+-- transparency tell (`legaia_patcher::shiny_seru`). The shiny routine floors the
 -- summon actor's fade byte (`+0x226 = 1`), which the game's per-primitive fade
 -- modulator `FUN_8004A908` turns into a semi-transparent draw. In-vivo the byte
 -- IS set (confirmed via mednafen RAM: caster `+0x1dd` = summon slot 3, slot-3

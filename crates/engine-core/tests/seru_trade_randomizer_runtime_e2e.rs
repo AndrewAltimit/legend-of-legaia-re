@@ -19,8 +19,8 @@
 use legaia_asset::seru_trade::{DEFAULT_MAX_OFFERS, SECONDS_PER_RESEED};
 use legaia_engine_core::seru_trade::TradeResult;
 use legaia_engine_core::world::World;
-use legaia_rando::apply;
-use legaia_rando::disc::DiscPatcher;
+use legaia_patcher::apply;
+use legaia_patcher::disc::DiscPatcher;
 use legaia_save::{CharacterRecord, Party, SpellList};
 
 fn load_disc() -> Option<Vec<u8>> {

@@ -6,7 +6,7 @@
 //!   2. it names that otherwise-blank accessory **"Seru Bell"** so it shows a
 //!      real name when it lands.
 //!
-//! The randomizer's own disc-gated test (`crates/rando/tests/unused_content_real`)
+//! The randomizer's own disc-gated test (`crates/patcher/tests/unused_content_real`)
 //! proves the *bytes*: the pool widens to include `0xFD`, and the name injection
 //! repoints only `0xFD`'s pointer to a "Seru Bell" string in reclaimable SCUS
 //! space. What it does **not** prove is that a runtime actually *grants `0xFD`
@@ -32,8 +32,8 @@ use legaia_engine_core::monster_catalog::{
     FormationDef, FormationSlot, catalog_from_monster_archive,
 };
 use legaia_engine_core::world::World;
-use legaia_rando::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
-use legaia_rando::item_name::{SERU_BELL_ID, SERU_BELL_NAME};
+use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use legaia_patcher::item_name::{SERU_BELL_ID, SERU_BELL_NAME};
 
 /// World RNG seed for which the first `apply_battle_loot` drop roll is `0` (so
 /// the drop lands for any positive rate) - same value the drop oracle uses.
@@ -74,7 +74,7 @@ fn enabling_unused_items_grants_and_names_the_accessory_at_runtime() {
 
     // ===== Display side: the name injection names only the accessory =====
     let mut patcher = DiscPatcher::open(disc.clone()).expect("open disc");
-    let set = legaia_rando::apply::inject_seru_bell_name(&mut patcher)
+    let set = legaia_patcher::apply::inject_seru_bell_name(&mut patcher)
         .expect("inject")
         .expect("fresh disc must get the name set");
     assert_eq!(set, SERU_BELL_NAME);
@@ -111,7 +111,7 @@ fn enabling_unused_items_grants_and_names_the_accessory_at_runtime() {
                 return None;
             }
             let slot = base.monster_slot(r.id).ok()?;
-            legaia_rando::monster::set_drop(&slot, SERU_BELL_ID, r.drop_chance_pct).ok()?;
+            legaia_patcher::monster::set_drop(&slot, SERU_BELL_ID, r.drop_chance_pct).ok()?;
             Some((r.id, r.drop_item, r.drop_chance_pct))
         })
         .expect("archive must hold a droppable, re-packable monster");
@@ -126,7 +126,7 @@ fn enabling_unused_items_grants_and_names_the_accessory_at_runtime() {
     // Patch the drop to the unused accessory, re-decode off the patched image.
     let mut patcher = DiscPatcher::open(disc).expect("reopen disc");
     let slot = patcher.monster_slot(monster_id).unwrap();
-    let repacked = legaia_rando::monster::set_drop(&slot, SERU_BELL_ID, chance).unwrap();
+    let repacked = legaia_patcher::monster::set_drop(&slot, SERU_BELL_ID, chance).unwrap();
     patcher.patch_monster_slot(monster_id, &repacked).unwrap();
     let patched_archive = patcher.read_entry(MONSTER_ARCHIVE_ENTRY).unwrap();
     let patched_rec = legaia_asset::monster_archive::record(&patched_archive, monster_id)

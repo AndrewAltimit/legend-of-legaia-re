@@ -9,7 +9,7 @@
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset (disc-gated convention).
 use legaia_engine_core::battle_anim::MonsterAnimPlayer;
-use legaia_rando::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 
 fn load_disc() -> Option<Vec<u8>> {
     let path = std::env::var_os("LEGAIA_DISC_BIN")?;

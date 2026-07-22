@@ -11,7 +11,7 @@
 //! - **State 0 (build)**: sets system flag `8` (`FUN_8003CE08(8)`), then
 //!   walks the active `0x60`-byte block of the prize table at `0x801E4518`
 //!   (8-byte records `[u16 item_id][u16 gate][u32 price]` - the same table
-//!   `legaia_rando::casino` edits), collecting the **visible** row indices
+//!   `legaia_patcher::casino` edits), collecting the **visible** row indices
 //!   into `0x801F00E0` (count at `0x801F00D0`): the walk stops at the first
 //!   record whose id halfword is `<= 0` (`lh`/`blez` at `0x801dc264..`), and
 //!   a row is skipped when its gate is non-zero **and** the system flag it

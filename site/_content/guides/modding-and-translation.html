@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; modding + translation</div>
   <h1>Modding and translation</h1>
-  <p class="lede"><code>legaia-rando</code> patches a disc image you supply: randomizer features, code-hook extras, and a full community-translation toolchain. Everything is built on same-size in-place sector edits with the EDC/ECC re-encoded, so patched images stay valid discs.</p>
+  <p class="lede"><code>legaia-patcher</code> patches a disc image you supply: randomizer features, code-hook extras, and a full community-translation toolchain. Everything is built on same-size in-place sector edits with the EDC/ECC re-encoded, so patched images stay valid discs.</p>
 </header>
 
 <section class="doc-section" id="safety">
@@ -15,7 +15,7 @@
 
 <section class="doc-section" id="randomize">
   <h2>1 &middot; Randomize (onto a scratch copy)</h2>
-<pre><code>./legaia-rando randomize \
+<pre><code>./legaia-patcher randomize \
     --input "/path/to/Legend of Legaia (USA).bin" \
     --seed 12345 \
     --patch legaia-12345.ppf \
@@ -33,7 +33,7 @@
 <section class="doc-section" id="share-verify">
   <h2>3 &middot; Share and verify a patch</h2>
   <p>Share the <code>.ppf</code> (and the manifest). The recipient applies and checks it against their own dump in one step:</p>
-<pre><code>./legaia-rando verify \
+<pre><code>./legaia-patcher verify \
     --input "/path/to/their Legend of Legaia (USA).bin" \
     --patch legaia-12345.ppf \
     --output legaia-12345.bin</code></pre>
@@ -44,7 +44,7 @@
   <h2>4 &middot; Hand-edit one monster (stats / element / name)</h2>
   <p>The randomizer shuffles monster stats wholesale; for a curated rebalance you edit records directly. Every monster lives in the <code>battle_data</code> archive (PROT entry 867) as an LZS-compressed block - <code>monster-block</code> does the slot math and the compression for you, so the edit loop is dump &rarr; hex-edit &rarr; write:</p>
 <pre><code># 1. Dump the decoded block (monster-stats lists the 1-based ids).
-./legaia-rando monster-block --input "/path/to/disc.bin" --id 10 --dump m10.bin
+./legaia-patcher monster-block --input "/path/to/disc.bin" --id 10 --dump m10.bin
 
 # 2. Edit m10.bin in any hex editor. The stat record starts at +0x00:
 #    HP +0x0C, AGL +0x0E, MP +0x10, ATK +0x12, DEF +0x14/+0x16, INT +0x18,
@@ -53,7 +53,7 @@
 #    block at the offset the u32 at +0x00 points to.
 
 # 3. Re-pack onto a copy (and emit a shareable PPF).
-./legaia-rando monster-block --input "/path/to/disc.bin" --id 10 \
+./legaia-patcher monster-block --input "/path/to/disc.bin" --id 10 \
     --write m10.bin --output edited.bin --patch m10.ppf</code></pre>
   <p>The write is the same machinery as the randomizer - the block is recompressed (the encoder need not match Sony's bytes; the retail decoder accepts any valid stream), padded back into its fixed <code>0x14000</code>-byte slot, and the touched sectors get their EDC/ECC re-encoded. With <code>--output</code> the tool re-parses the patched image and confirms the record still decodes before declaring success. Full record layout: <a href="../subsystems/battle.html">battle system</a>; the equivalent flags on the extracted tree are <code>asset monster-archive --dump-block</code> / <code>--write-block</code> (<a href="extracting-assets.html">extracting assets</a>).</p>
 </section>
@@ -62,22 +62,22 @@
   <h2>5 &middot; Translate the game</h2>
   <p>The <code>translate</code> family exports the disc's text as an editable YAML <strong>language pack</strong> and imports a filled pack back as a same-size in-place patch (<a href="../tooling/translation.html">translation / language packs</a> is the full reference):</p>
 <pre><code># 1. Export the text (working pack - contains game text, keep it private).
-./legaia-rando translate export --input "/path/to/disc.bin" -o legaia_en.yaml
+./legaia-patcher translate export --input "/path/to/disc.bin" -o legaia_en.yaml
 
 # 2. Make a skeleton for your language and fill the `translation:` fields.
-./legaia-rando translate init --lang fr --from legaia_en.yaml \
+./legaia-patcher translate init --lang fr --from legaia_en.yaml \
     --contributor "you" -o legaia_fr.yaml
 
 # 3. Check coverage, encodability, and byte budgets as you go.
-./legaia-rando translate stats --pack legaia_fr.yaml --input "/path/to/disc.bin"
+./legaia-patcher translate stats --pack legaia_fr.yaml --input "/path/to/disc.bin"
 
 # 4. Apply to a copy (and emit a shareable PPF).
-./legaia-rando translate import --input "/path/to/disc.bin" \
+./legaia-patcher translate import --input "/path/to/disc.bin" \
     --pack legaia_fr.yaml --output legaia_fr.bin --patch legaia_fr.ppf</code></pre>
   <p>The constraint that shapes every entry: <strong>same-size in place</strong>. Each string's <code>budget:</code> is its maximum encoded byte length; <code>stats</code> and <code>import</code> re-measure every target on the disc and skip anything that does not fit, summarizing skips per reason (<code>--verbose</code> for the full per-key list). Partially filled packs are always playable - untranslated entries stay byte-identical. The retail font is printable-ASCII-only, so accented text must be written unaccented (<code>Epee</code>, not <code>Épée</code>).</p>
   <p>Before sharing a filled pack, <code>translate strip</code> removes every <code>source:</code> field, leaving only your translations keyed by disc coordinates - the only shape that is safe to publish. <code>merge</code> recombines chunked packs.</p>
   <p>Owners of an official PAL disc can lift its French / German / Italian text onto USA coordinates instead of translating from scratch:</p>
-<pre><code>./legaia-rando translate lift-official --from "/path/to/SCES-disc.bin" \
+<pre><code>./legaia-patcher translate lift-official --from "/path/to/SCES-disc.bin" \
     --target "/path/to/USA.bin" -o legaia_de.yaml</code></pre>
   <p><code>diff-disc</code> and <code>fit-report</code> are the text-free measurements behind this - how well the two discs align and how much official text fits the USA budgets. See <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/pal-localizations.md" target="_blank" rel="noopener"><code>tooling/pal-localizations.md</code></a>.</p>
 </section>

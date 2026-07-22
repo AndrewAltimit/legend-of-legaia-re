@@ -90,7 +90,7 @@ impl ExeMap {
 /// `base + M*2`, its item byte at `base + M*2 + 1`. Returns `None` if `scus`
 /// isn't a PSX-EXE or the table address is outside its data segment.
 ///
-/// The randomizer ([`legaia_rando::steal`](../../../crates/rando/src/steal.rs))
+/// The randomizer ([`legaia_patcher::steal`](../../../crates/patcher/src/steal.rs))
 /// uses this to turn a monster id into a patch offset for the SCUS file.
 pub fn table_file_offset(scus: &[u8]) -> Option<usize> {
     ExeMap::parse(scus)?.off(TABLE_VA)

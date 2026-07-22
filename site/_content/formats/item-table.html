@@ -36,7 +36,7 @@
 
 <section class="doc-section" id="parser">
   <h2>Provenance + parser</h2>
-  <p><code>PTR_DAT_8007436C</code> and the <code>*3</code>-word index form are read straight from the MES <code>0xC2</code>/<code>0xC4</code> substitution dispatch. <code>legaia_asset::item_names::ItemNameTable</code> resolves the table from a <code>SCUS_942.54</code> image at runtime (PSX-EXE <code>t_addr</code> &rarr; file-offset map); the disc-gated <code>item_names_real</code> test pins a span of ids against the real executable. Consumers: the web viewer's enemy table joins drop ids to names through it; the shop randomizer reads <code>price_slot</code> (<code>legaia_asset::item_names</code> / <code>legaia_rando::item_price</code>) to drop quest items from the for-sale pool and price chest-found equipment.</p>
+  <p><code>PTR_DAT_8007436C</code> and the <code>*3</code>-word index form are read straight from the MES <code>0xC2</code>/<code>0xC4</code> substitution dispatch. <code>legaia_asset::item_names::ItemNameTable</code> resolves the table from a <code>SCUS_942.54</code> image at runtime (PSX-EXE <code>t_addr</code> &rarr; file-offset map); the disc-gated <code>item_names_real</code> test pins a span of ids against the real executable. Consumers: the web viewer's enemy table joins drop ids to names through it; the shop randomizer reads <code>price_slot</code> (<code>legaia_asset::item_names</code> / <code>legaia_patcher::item_price</code>) to drop quest items from the for-sale pool and price chest-found equipment.</p>
 </section>
 
 <section class="doc-section" id="see-also">

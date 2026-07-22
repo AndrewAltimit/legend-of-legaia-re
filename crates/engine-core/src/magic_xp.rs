@@ -115,7 +115,7 @@ pub fn add_spell_xp(record: &mut CharacterRecord, slot: usize, gain: u32) {
 /// id), `level = 1`, `xp = 0`, and increments the count. The newest Seru
 /// therefore always lists first. (The randomizer's shiny-Seru feature
 /// patches exactly this routine's level write + shift - see
-/// `crates/rando/src/shiny_seru/`.)
+/// `crates/patcher/src/shiny_seru/`.)
 ///
 /// The shift is bounded to the record's array capacity
 /// ([`legaia_save::MAX_SPELLS`]); retail's unbounded `do`/`while` never

@@ -1,6 +1,6 @@
 # Modding and translation
 
-`legaia-rando` patches a disc image you supply: randomizer features, code-hook
+`legaia-patcher` patches a disc image you supply: randomizer features, code-hook
 extras, and a full community-translation toolchain. Everything is built on
 same-size in-place sector edits with the EDC/ECC re-encoded, so patched images
 stay valid discs. Commands use the bare `./tool` form (source builds live at
@@ -18,7 +18,7 @@ Two safety properties to rely on:
 ## 1. Randomize (onto a scratch copy)
 
 ```bash
-./legaia-rando randomize \
+./legaia-patcher randomize \
     --input "/path/to/Legend of Legaia (USA).bin" \
     --seed 12345 \
     --patch legaia-12345.ppf \
@@ -58,7 +58,7 @@ Share the `.ppf` (and the manifest). The recipient applies and checks it
 against their own dump in one step:
 
 ```bash
-./legaia-rando verify \
+./legaia-patcher verify \
     --input "/path/to/their Legend of Legaia (USA).bin" \
     --patch legaia-12345.ppf \
     --output legaia-12345.bin
@@ -78,7 +78,7 @@ the compression for you, so the edit loop is dump → hex-edit → write:
 
 ```bash
 # 1. Dump the decoded block (monster-stats lists the 1-based ids).
-./legaia-rando monster-block --input "/path/to/disc.bin" --id 10 --dump m10.bin
+./legaia-patcher monster-block --input "/path/to/disc.bin" --id 10 --dump m10.bin
 
 # 2. Edit m10.bin in any hex editor. The stat record starts at +0x00:
 #    HP +0x0C, AGL +0x0E, MP +0x10, ATK +0x12, DEF +0x14/+0x16, INT +0x18,
@@ -87,7 +87,7 @@ the compression for you, so the edit loop is dump → hex-edit → write:
 #    block at the offset the u32 at +0x00 points to.
 
 # 3. Re-pack onto a copy (and emit a shareable PPF).
-./legaia-rando monster-block --input "/path/to/disc.bin" --id 10 \
+./legaia-patcher monster-block --input "/path/to/disc.bin" --id 10 \
     --write m10.bin --output edited.bin --patch m10.ppf
 ```
 
@@ -108,17 +108,17 @@ pack** and imports a filled pack back as a same-size in-place patch
 
 ```bash
 # 1. Export the text (working pack - contains game text, keep it private).
-./legaia-rando translate export --input "/path/to/disc.bin" -o legaia_en.yaml
+./legaia-patcher translate export --input "/path/to/disc.bin" -o legaia_en.yaml
 
 # 2. Make a skeleton for your language and fill the `translation:` fields.
-./legaia-rando translate init --lang fr --from legaia_en.yaml \
+./legaia-patcher translate init --lang fr --from legaia_en.yaml \
     --contributor "you" -o legaia_fr.yaml
 
 # 3. Check coverage, encodability, and byte budgets as you go.
-./legaia-rando translate stats --pack legaia_fr.yaml --input "/path/to/disc.bin"
+./legaia-patcher translate stats --pack legaia_fr.yaml --input "/path/to/disc.bin"
 
 # 4. Apply to a copy (and emit a shareable PPF).
-./legaia-rando translate import --input "/path/to/disc.bin" \
+./legaia-patcher translate import --input "/path/to/disc.bin" \
     --pack legaia_fr.yaml --output legaia_fr.bin --patch legaia_fr.ppf
 ```
 
@@ -138,7 +138,7 @@ Owners of an official PAL disc can lift its French / German / Italian text
 onto USA coordinates instead of translating from scratch:
 
 ```bash
-./legaia-rando translate lift-official --from "/path/to/SCES-disc.bin" \
+./legaia-patcher translate lift-official --from "/path/to/SCES-disc.bin" \
     --target "/path/to/USA.bin" -o legaia_de.yaml
 ```
 

@@ -220,8 +220,8 @@ pub struct OwnerTrade {
 }
 
 /// SplitMix64, duplicated here (instead of depending on the randomizer's copy)
-/// so this kernel stays a leaf both `legaia-rando` and `engine-core` can share.
-/// Same constants as `legaia_rando::rng::SplitMix64`, so the streams match.
+/// so this kernel stays a leaf both `legaia-patcher` and `engine-core` can share.
+/// Same constants as `legaia_patcher::rng::SplitMix64`, so the streams match.
 struct Rng(u64);
 
 impl Rng {

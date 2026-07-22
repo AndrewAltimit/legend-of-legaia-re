@@ -26,18 +26,18 @@
 //!
 //! - **Town merchants** (`town_shop_buy_grants_patched_item`): stock is inline
 //!   in the scene MAN field-VM script (op `0x49`); patched via
-//!   [`legaia_rando::shop::SceneShops`].
+//!   [`legaia_patcher::shop::SceneShops`].
 //! - **Casino exchange** (`casino_buy_grants_patched_prize`): stock is the
 //!   static overlay table the casino buy UI shares with town shops (same
-//!   handlers); patched via [`legaia_rando::casino::CasinoExchange`].
+//!   handlers); patched via [`legaia_patcher::casino::CasinoExchange`].
 //!
 //! Skips without `LEGAIA_DISC_BIN` (CLAUDE.md convention).
 
 use legaia_engine_core::shop::{ShopInventory, ShopItem, ShopSession};
 use legaia_engine_core::world::World;
-use legaia_rando::casino::{self, CasinoExchange};
-use legaia_rando::disc::DiscPatcher;
-use legaia_rando::shop::SceneShops;
+use legaia_patcher::casino::{self, CasinoExchange};
+use legaia_patcher::disc::DiscPatcher;
+use legaia_patcher::shop::SceneShops;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

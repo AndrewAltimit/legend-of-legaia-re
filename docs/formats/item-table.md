@@ -45,7 +45,7 @@ line-break token; `legaia_asset::item_names` decodes it to `'\n'`.
 The shop price at `+2` is decisive (verified live: War God Band = 21000, Healing
 Leaf = 100, the Ra-Seru / quest items = 0). The shop randomizer reads it to drop
 quest items from the for-sale pool and to give the chest-found equipment a value
-(`legaia_asset::item_names::price_slot` / `legaia_rando::item_price`).
+(`legaia_asset::item_names::price_slot` / `legaia_patcher::item_price`).
 
 The table's extent is found by reading until the `name_ptr` words leave the
 PSX-EXE data segment (the words past `id 0xFF` are no longer valid pointers).

@@ -1,7 +1,7 @@
 -- autorun_seru_overlay_slice.lua
 --
 -- HOOK-INDEPENDENT validation of the retail custom-overlay LOAD path
--- (legaia_rando::seru_overlay): proves on the emulator that the game's own
+-- (legaia_patcher::seru_overlay): proves on the emulator that the game's own
 -- synchronous CD reader streams a hand-written overlay out of an overwritten
 -- pochi PROT slot and executes it. Independent of any shop/battle trigger.
 --

@@ -1,6 +1,6 @@
 # Translation / language packs
 
-`legaia-rando translate` turns a user-supplied retail disc's user-facing text
+`legaia-patcher translate` turns a user-supplied retail disc's user-facing text
 into an editable **YAML language pack**, and applies a filled pack back onto a
 disc copy as a same-size in-place patch. It is built for community
 translations: export, edit the `translation:` fields with any text editor or
@@ -8,9 +8,9 @@ script, import. Nothing is redistributed - the pack is generated from your own
 disc, and the shareable artifact is a PPF patch or (better) a *filled* pack
 plus these instructions.
 
-Implementation: [`crates/rando/src/translation/`](../../crates/rando/src/translation/)
+Implementation: [`crates/patcher/src/translation/`](../../crates/patcher/src/translation/)
 (module docs cover the internals). Writes go through
-[`legaia_rando::disc::DiscPatcher`](randomizer.md) - every touched sector's
+[`legaia_patcher::disc::DiscPatcher`](randomizer.md) - every touched sector's
 EDC/ECC is re-encoded, no LBA ever moves.
 
 ## Two pack shapes
@@ -48,12 +48,12 @@ entry individually.
 
 ```bash
 # 1. Dump the source text into a working pack (once).
-legaia-rando translate export --input "Legend of Legaia (USA).bin" -o legaia_en.yaml
+legaia-patcher translate export --input "Legend of Legaia (USA).bin" -o legaia_en.yaml
 
 # 2. Make a skeleton for your language (fr de es it pl pt-BR ja ru zh ko ...).
 #    --resume seeds it from an already-published pack so you can keep editing a
 #    shipped translation without anyone redistributing the source.
-legaia-rando translate init --lang fr --from legaia_en.yaml \
+legaia-patcher translate init --lang fr --from legaia_en.yaml \
     --contributor "you" [--resume site/lang/fr.yaml] -o legaia_fr.yaml
 
 # 3. Fill `translation:` fields (editor, script, AI pass - your choice).
@@ -62,13 +62,13 @@ legaia-rando translate init --lang fr --from legaia_en.yaml \
 
 # 4. Check coverage + encodability/budget. Add --input to dry-run the pack
 #    against a real disc (the only way to validate a distributable pack).
-legaia-rando translate stats --pack legaia_fr.yaml [--input DISC.bin]
+legaia-patcher translate stats --pack legaia_fr.yaml [--input DISC.bin]
 
 # 5. Publish: strip the source to make the distributable, committable pack.
-legaia-rando translate strip --pack legaia_fr.yaml -o site/lang/fr.yaml
+legaia-patcher translate strip --pack legaia_fr.yaml -o site/lang/fr.yaml
 
 # 6. Apply to a scratch copy (and/or emit a shareable PPF).
-legaia-rando translate import --input "Legend of Legaia (USA).bin" \
+legaia-patcher translate import --input "Legend of Legaia (USA).bin" \
     --pack legaia_fr.yaml --output legaia_fr.bin --patch legaia_fr.ppf
 ```
 
@@ -130,7 +130,7 @@ Combined with the randomizer, a pack is applied in two phases
   moved key) but it silently loses the relocated scenes' lines.
 - **SCUS name sections (`scus:` keys) go last.** The equipment-bonus-drop
   pass classifies gear by matching the disc's item names against curated
-  English names (`legaia_rando::equipment::equipment_pool`); with the item
+  English names (`legaia_patcher::equipment::equipment_pool`); with the item
   table already translated its pool comes back empty and the pass aborts.
   Nothing in the randomizer relocates a SCUS string, so translating the name
   tables after every pass is always safe - and every other name-keyed pass
@@ -297,7 +297,7 @@ strings (`ui_menu`): the pause-menu / options / shop / equip / status command
 labels and the in-battle system messages, which are NUL-terminated C strings in
 the menu (PROT 0899) and battle (PROT 0898) overlay data segments rather than in
 any table or dialog segment. These are pinned by disc-coordinate VA windows in
-`legaia_rando::translation::ui` (menu pool `0x801CE81C..`, battle pool
+`legaia_patcher::translation::ui` (menu pool `0x801CE81C..`, battle pool
 `0x801F4B98..`, both load base `0x801CE818`; see
 [`field-menu.md`](../subsystems/field-menu.md)). They are tight: the pool is
 4-byte aligned with little slack, so a same-size translation of a short label
@@ -352,7 +352,7 @@ The official PAL discs already carry such an atlas: see
 [`pal-localizations.md`](pal-localizations.md) for the CP437-aligned accent
 byte→glyph map, the enumerated font-patch cell set, how the official
 French/German/Italian text aligns id-/order-for-order to the USA disc
-(`legaia-rando translate diff-disc`), how to lift it onto USA coordinates
+(`legaia-patcher translate diff-disc`), how to lift it onto USA coordinates
 (`translate lift-official`), and the per-string vs per-MAN fit rate
 (`translate fit-report`).
 

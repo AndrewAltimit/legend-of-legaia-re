@@ -48,7 +48,7 @@ dialog-rendering overlay is captured) will fill in the meanings.
   the `legaia-extract` `font/` step), and the byte space `0x20..=0x7E` maps to
   plain ASCII. The text-decoding consumers live elsewhere: the engine's
   dialog renderer draws MES glyph streams through `legaia-font`, and the
-  translation codec (`legaia-rando translate export`, see
+  translation codec (`legaia-patcher translate export`, see
   [`docs/tooling/translation.md`](../../docs/tooling/translation.md)) is the
   user-facing dialog-text path.
 - Validate offset tables against the bytecode region. The offset-table

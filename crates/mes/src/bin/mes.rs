@@ -32,7 +32,7 @@ enum Cmd {
     /// Input: a MES dialog blob (asset type 0x04) pulled out of a scene
     /// bundle by `legaia-extract <disc.bin> --out extracted` (see
     /// extracted/streaming/). For readable dialog text, prefer
-    /// `legaia-rando translate export`.
+    /// `legaia-patcher translate export`.
     Info { path: PathBuf },
     /// Greedy bytecode disassembly. For Compact, starts at the bytecode
     /// offset; for Records, starts at byte 0 (record content is
