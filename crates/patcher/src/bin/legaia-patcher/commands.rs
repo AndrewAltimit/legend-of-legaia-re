@@ -586,7 +586,10 @@ pub(crate) fn cmd_arts(input: &Path) -> Result<()> {
     }
     println!(
         "\n{} arts total. `--arts-power COMBO=VALUE` rebalances an art's damage \
-         (power byte 0x0C..=0x1F = tier, or 0 to disable).",
+         (power byte 0x0C..=0x1F = tier, or 0 to disable). `--arts-ap-grant \
+         COMBO=AMOUNT` makes an art grant AP (Spirit) instead of costing it; the \
+         leftmost number is the arts-table index, which is the shared config row \
+         - AP-grant applies to every character's art at that same index.",
         entries.len()
     );
     let _ = regular;

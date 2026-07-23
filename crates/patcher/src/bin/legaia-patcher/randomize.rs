@@ -26,6 +26,15 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         Some(s) => resolve_seed(s),
         None => clock_seed(),
     };
+    // Arts AP-grant and shiny-Seru reuse the same verified-dead SCUS arena bytes,
+    // so they are mutually exclusive - refuse before touching anything.
+    if !args.arts_ap_grant.is_empty() && args.shiny_seru {
+        bail!(
+            "--arts-ap-grant and --shiny-seru both inject into the same verified-dead SCUS \
+             arena and are mutually exclusive; enable only one"
+        );
+    }
+
     let original = load_image(&args.input)?;
     check_usa_disc(&original, args.allow_region_mismatch, "randomize")?;
     let mut patcher = DiscPatcher::open(original.clone()).context("parse disc image")?;
@@ -279,6 +288,35 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
                 println!("arts-power: {combo_s} already at {value:#04X} (or has no damage byte)");
             }
             manifest.push(format!("arts_power {combo_s} = {value:#04X}"));
+        }
+    }
+
+    // Arts AP-grant: three same-size detours into the party arts queue-builder
+    // (PROT 0898) + routines and a 26-entry config table in a verified-dead SCUS
+    // arena, so a targeted art grants AP (clamped at 100) instead of costing it.
+    // The config row is the arts-table index, shared across all three characters.
+    if !args.arts_ap_grant.is_empty() {
+        let report = apply::inject_arts_ap_grant(&mut patcher, &args.arts_ap_grant)?;
+        for g in &report.resolved {
+            let targeted = legaia_patcher::arts_ap_grant::combo_str(&g.targeted_combo);
+            let shared: Vec<String> = g
+                .shared
+                .iter()
+                .map(|(ch, name, combo)| {
+                    let c = legaia_patcher::arts_ap_grant::combo_str(combo);
+                    format!("{ch:?} {c} {name:?}")
+                })
+                .collect();
+            println!(
+                "arts-ap-grant: {targeted} -> row {} grants {} AP (shared row affects: {})",
+                g.row,
+                g.amount,
+                shared.join("; ")
+            );
+        }
+        for (combo, amount) in &args.arts_ap_grant {
+            let combo_s = legaia_patcher::arts_ap_grant::combo_str(combo);
+            manifest.push(format!("arts_ap_grant {combo_s} = {amount}"));
         }
     }
 

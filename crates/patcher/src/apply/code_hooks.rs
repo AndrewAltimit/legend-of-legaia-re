@@ -215,6 +215,58 @@ pub fn inject_shiny_seru(patcher: &mut DiscPatcher, pct: u8) -> Result<ShinySeru
     Ok(ShinySeruReport { pct: plan.pct })
 }
 
+/// Report of an arts-AP-grant injection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArtsApGrantReport {
+    /// Every resolved grant (config row, amount, and the arts sharing that row).
+    pub resolved: Vec<crate::arts_ap_grant::ResolvedGrant>,
+}
+
+/// Inject the **arts AP-grant** feature (see [`crate::arts_ap_grant`]): make each
+/// targeted Tactical Art *grant* `amount` AP (Spirit, `actor[+0x170]`, clamped at
+/// 100) instead of costing it, admitting it at any Spirit level. Three same-size
+/// detours into the party arts queue-builder (PROT 0898) plus the routines +
+/// 26-entry config table in a verified-dead SCUS arena.
+///
+/// **Mutually exclusive with `--shiny-seru`** - both reuse the same arena bytes.
+/// Fails (without touching the disc) if the build isn't the recognized US layout,
+/// a combo is unknown, or the arena isn't dead space.
+pub fn inject_arts_ap_grant(
+    patcher: &mut DiscPatcher,
+    grants: &[(Vec<legaia_art::queue::Command>, u8)],
+) -> Result<ArtsApGrantReport> {
+    let scus = patcher
+        .read_named_file(SCUS_NAME)
+        .context("read SCUS_942.54 for arts-ap-grant injection")?;
+    let ov0898 = patcher
+        .read_entry(crate::arts_ap_grant::OVERLAY_PROT_INDEX)
+        .context("read battle-action overlay (0898) for arts-ap-grant injection")?;
+    let (config, resolved) = crate::arts_ap_grant::resolve(&scus, grants)?;
+    let plan = crate::arts_ap_grant::ArtsApGrantInjection::plan(&scus, &ov0898, config, resolved)?;
+
+    for edit in &plan.edits {
+        match edit.prot_index {
+            None => patcher
+                .patch_named_file(SCUS_NAME, edit.file_off as u64, &edit.bytes)
+                .with_context(|| {
+                    format!("write arts-ap-grant SCUS edit at {:#x}", edit.file_off)
+                })?,
+            Some(idx) => patcher
+                .patch_prot_entry(idx, edit.file_off as u64, &edit.bytes)
+                .with_context(|| {
+                    format!(
+                        "write arts-ap-grant PROT {idx} edit at {:#x}",
+                        edit.file_off
+                    )
+                })?,
+        }
+    }
+
+    Ok(ArtsApGrantReport {
+        resolved: plan.resolved,
+    })
+}
+
 /// Outcome of enabling seru trading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SeruTradeReport {

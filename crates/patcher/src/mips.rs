@@ -153,6 +153,10 @@ pub(crate) const fn sltiu(rt: u32, rs: u32, imm: u16) -> u32 {
 
 // --- Loads / stores ---------------------------------------------------------
 
+/// `lb rt,off(rs)` - load byte, sign-extended.
+pub(crate) const fn lb(rt: u32, rs: u32, off: u16) -> u32 {
+    (0x20 << 26) | (rs << 21) | (rt << 16) | off as u32
+}
 /// `lbu rt,off(rs)` - load byte, zero-extended.
 pub(crate) const fn lbu(rt: u32, rs: u32, off: u16) -> u32 {
     (0x24 << 26) | (rs << 21) | (rt << 16) | off as u32

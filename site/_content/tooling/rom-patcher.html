@@ -395,6 +395,12 @@
         <span class="rom-opt-note">Rebalance a party Tactical Art's damage ("arts power-down"). One or more <code>combo=value</code> pairs, comma-separated - the combo is the art's input (<code>L/R/D/U</code>, e.g. <code>RDLDL</code> = Vahn's Burning Flare) and <code>value</code> is a power byte: <code>0x0C..0x1F</code> is a damage tier (a defence facet plus one of the multipliers 12/18/20/22/28, so a <em>lower</em> value powers the art down), or <code>0</code> disables its hits. Every per-strike power byte of the matched art is set to <code>value</code>. The CLI <code>legaia-patcher arts</code> lists every art's combo and current power tiers.</span>
         <input type="text" id="rom-arts-power" placeholder="e.g. RDLDL=0x16, UDU=0x0C" spellcheck="false" autocomplete="off">
       </div>
+
+      <div class="rom-opt">
+        <label class="rom-opt-label" for="rom-arts-ap-grant">Tactical-Art AP-grant</label>
+        <span class="rom-opt-note">Make a party Tactical Art <em>grant</em> AP (Spirit) instead of costing it. One or more <code>combo=amount</code> pairs, comma-separated - the combo is the art's input (<code>L/R/D/U</code>, e.g. <code>RDLDL</code>) and <code>amount</code> (1..100) is the AP added per use; the art becomes castable at any AP level and adds that much, clamped at the 100 cap, without polluting the end-of-turn refund. The config is a <strong>shared row</strong> (the arts-table index), so a combo grants that index for <em>all three characters</em>; <code>legaia-patcher arts</code> lists each art's index. <strong>Mutually exclusive with Shiny Seru</strong> - both reuse the same verified-dead SCUS arena, so enable only one.</span>
+        <input type="text" id="rom-arts-ap-grant" placeholder="e.g. RDLDL=10, UDU=25" spellcheck="false" autocomplete="off">
+      </div>
     </details>
 
     <div class="rom-row rom-actions">

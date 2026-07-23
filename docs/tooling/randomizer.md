@@ -74,6 +74,7 @@ disc-gated, so CI runs without a disc. There is also a
   - [Weapon specialty](#weapon-specialty)
   - [Arts button combos](#arts-button-combos)
   - [Arts damage power](#arts-damage-power)
+  - [Arts AP-grant](#arts-ap-grant)
   - [Doors (scene transitions)](#doors-scene-transitions)
   - [House doors (intra-town)](#house-doors-intra-town)
   - [Map doors (`.MAP` kind-0 intra-scene teleports)](#map-doors-map-kind-0-intra-scene-teleports)
@@ -186,6 +187,7 @@ legaia-patcher earth-egg --input DISC.bin                                       
 legaia-patcher randomize --input DISC.bin --earth-egg-price 25000                         # Earth Egg costs 25000 casino coins
 legaia-patcher arts      --input DISC.bin                                                 # read-only: list every art's combo + damage-power tiers
 legaia-patcher randomize --input DISC.bin --seed pow --arts-power RDLDL=0x0C              # power Vahn's Burning Flare down to tier 0x0C
+legaia-patcher randomize --input DISC.bin --arts-ap-grant RDLDL=10                        # Burning Flare (arts row 1) GRANTS 10 AP instead of costing it
 legaia-patcher randomize --input DISC.bin --seed mart --shops shuffle --casino shuffle
 legaia-patcher randomize --input DISC.bin --seed 0xC0FFEE --drops random \
     --encounters shuffle --steals shuffle --arts shuffle --doors shuffle --door-coupling coupled \
@@ -264,6 +266,7 @@ unless asked for:
 | `--rename-location INDEX=NAME` | rename a world-map location (save / load / pause + quick-travel menu), e.g. an element cave to match a re-elemented party | repeatable | [Location names](#location-names) |
 | `--earth-egg-price VALUE` | set the casino-coin threshold to obtain the Earth Egg (Sol Tower Prize Counter; retail 100000), gate + debit together | single value | [Earth Egg coin threshold](#earth-egg-coin-threshold) |
 | `--arts-power COMBO=VALUE` | rebalance a Tactical Art's per-strike damage-power bytes, targeted by input combo (`RDLDL=0x16`); `VALUE` is a power tier `0x0C..=0x1F` or `0` to disable | repeatable / comma-separated | [Arts damage power](#arts-damage-power) |
+| `--arts-ap-grant COMBO=AMOUNT` | make a Tactical Art **grant** `AMOUNT` AP (Spirit, clamped at 100) instead of costing it, admitting it at any AP level; a code hook into the party arts queue-builder. Config row = arts-table index, **shared across all three characters**. Mutually exclusive with `--shiny-seru` | repeatable / comma-separated | [Arts AP-grant](#arts-ap-grant) |
 
 **Tuning the encounter and door passes:**
 
@@ -1237,6 +1240,34 @@ matching art in each file. `legaia-patcher arts` lists every art's combo, AP, an
 current power tiers. Seedless targeted edit; no Sony bytes. Module
 [`legaia_patcher::arts_power`](../../crates/patcher/src/arts_power.rs); disc oracle
 `crates/patcher/tests/arts_power_real.rs`.
+
+### Arts AP-grant
+
+`--arts-ap-grant COMBO=AMOUNT` makes a targeted Tactical Art **grant** `AMOUNT`
+AP (Spirit, `actor[+0x170]`, clamped at the native 100 cap) instead of costing
+it, and admits it at any AP level. It is a MIPS code hook into the **party** arts
+queue-builder `FUN_801EED1C` (PROT 0898, base `0x801CE818`; slot < 3, so enemies
+are unaffected) - three same-size detours plus the routines and a 26-entry `i8`
+config table injected into a verified-dead SCUS arena. The pinned sites, the AP
+math, and the placement are documented in
+[arts-command-gauge.md § Arts AP-grant hook](../subsystems/arts-command-gauge.md#arts-ap-grant-hook).
+
+An art is targeted by its **input combo** (like `--arts-power`). The combo
+resolves to its arts-table display index, which is the config **row** (`s3 -
+0x0B`, art rows `0x0B..=0x24`). The row is **shared across the three characters**
+- the table is indexed by the art-row cursor, not by character - so a grant
+applies to every character's art at that same index (`legaia-patcher arts` prints
+each art's index; the apply report lists the full set a grant touches). Because
+the injected bytes are the same verified-dead arena the [Shiny Seru](#shiny-seru)
+feature reuses, **`--arts-ap-grant` is mutually exclusive with `--shiny-seru`** -
+enforced in the CLI and the web patcher.
+
+Seedless targeted edit; no Sony bytes. Module
+[`legaia_patcher::arts_ap_grant`](../../crates/patcher/src/arts_ap_grant.rs); disc
+oracle `crates/patcher/tests/arts_ap_grant_real.rs`. **A disc oracle proves only
+where the bytes land, not in-game behaviour** - a live battle playtest (a
+configured art grants AP, admits at 0 AP, clamps at 100, and the refund is not
+double-counted) is required before treating it as runtime-verified.
 
 ### Doors (scene transitions)
 

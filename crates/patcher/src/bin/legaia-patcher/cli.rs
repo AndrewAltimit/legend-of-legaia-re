@@ -9,7 +9,10 @@ use clap::{Parser, Subcommand, ValueEnum};
 use legaia_patcher::apply;
 use legaia_patcher::drops::DropMode;
 
-use crate::util::{parse_arts_power, parse_item_spec, parse_location_rename, parse_prize_price};
+use crate::util::{
+    parse_arts_ap_grant, parse_arts_power, parse_item_spec, parse_location_rename,
+    parse_prize_price,
+};
 
 #[derive(Parser)]
 #[command(
@@ -538,6 +541,18 @@ pub(crate) struct RandomizeArgs {
     /// `legaia-patcher arts` lists every art's combo and current power tiers.
     #[arg(long, value_name = "COMBO=VALUE", value_delimiter = ',', value_parser = parse_arts_power)]
     pub(crate) arts_power: Vec<(Vec<legaia_art::queue::Command>, u8)>,
+    /// **Make a Tactical Art grant AP instead of costing it** ("arts AP-grant").
+    /// Comma- or repeat-separated `COMBO=AMOUNT` entries, targeting an art by its
+    /// input combo (`L/R/D/U`, e.g. `--arts-ap-grant RDLDL=10`). `AMOUNT` is the
+    /// AP (Spirit) granted per use (1..=100); the art becomes castable at any AP
+    /// level and *adds* that much (clamped at 100) rather than paying a cost. A
+    /// same-size code hook into the party arts queue-builder (PROT 0898) plus
+    /// routines + a 26-entry config table in a verified-dead SCUS arena. The
+    /// config is a **shared row** (arts-table index): a combo's row grants that
+    /// index for *all three characters*; `legaia-patcher arts` lists each art's
+    /// index. **Mutually exclusive with `--shiny-seru`** (same arena bytes).
+    #[arg(long, value_name = "COMBO=AMOUNT", value_delimiter = ',', value_parser = parse_arts_ap_grant)]
+    pub(crate) arts_ap_grant: Vec<(Vec<legaia_art::queue::Command>, u8)>,
     /// **Rename a world-map location** (the names shown on the quick-travel
     /// menu and the save / load / pause location display). Repeatable
     /// `INDEX=NAME` entries; the index is a landmark slot (`legaia-patcher

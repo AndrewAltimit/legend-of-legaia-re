@@ -135,7 +135,10 @@ pub fn resolve_seed(seed: &str) -> String {
 /// 100000); the game debits exactly that many coins on purchase. `arts_powers`
 /// is a comma/space-separated list of `combo=value` pairs that rebalance a
 /// Tactical Art's damage-power bytes (e.g. `RDLDL=0x16`; `value` a power byte
-/// `0x0C..=0x1F` or `0`). These are all manual, seedless edits.
+/// `0x0C..=0x1F` or `0`). `arts_ap_grants` is a comma/space-separated list of
+/// `combo=amount` pairs (e.g. `RDLDL=10`; `amount` 1..=100 AP) that make an art
+/// grant AP instead of costing it; mutually exclusive with `shiny_seru` (same
+/// SCUS arena). These are all manual, seedless edits.
 /// `starting_level`
 /// begins the new game at that character level instead of 1 (`0` or `1` =
 /// vanilla; range 2..=14), seeding the lead character's XP and recomputing the
@@ -194,6 +197,7 @@ pub fn patch_rom(
     location_renames: &str,
     earth_egg_price: &str,
     arts_powers: &str,
+    arts_ap_grants: &str,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -213,6 +217,15 @@ pub fn patch_rom(
     });
     let door_mode = parse_mode(doors);
     let house_door_mode = parse_mode(house_doors);
+
+    // Arts AP-grant and shiny-Seru reuse the same verified-dead SCUS arena bytes,
+    // so they are mutually exclusive - refuse the combination before patching.
+    if shiny_seru && !arts_ap_grants.trim().is_empty() {
+        return Err(err(
+            "arts-ap-grant and shiny-seru both inject into the same verified-dead SCUS arena \
+             and are mutually exclusive; enable only one",
+        ));
+    }
 
     let mut patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
 
@@ -545,6 +558,64 @@ pub fn patch_rom(
                     }
                 }
                 None => summary.push_str(&format!("arts-power: skipped malformed entry {tok:?}\n")),
+            }
+        }
+    }
+
+    // Arts AP-grant: comma/space/newline-separated `COMBO=AMOUNT` tokens
+    // (`RDLDL=10`). `AMOUNT` (1..=100) is the AP granted per use; the art becomes
+    // castable at any AP level and adds that much (clamped at 100) instead of
+    // costing it. The config row is the arts-table index, shared across all three
+    // characters. Mutually exclusive with shiny-seru (guarded above).
+    let arts_ap_grants = arts_ap_grants.trim();
+    if arts_ap_grants.is_empty() {
+        summary.push_str("arts-ap-grant: untouched\n");
+    } else {
+        let mut grants = Vec::new();
+        for tok in arts_ap_grants
+            .split([',', ';', '\n', ' '])
+            .filter(|t| !t.trim().is_empty())
+        {
+            let parsed = tok.split_once('=').and_then(|(c, v)| {
+                let combo = legaia_patcher::arts_power::parse_combo(c.trim())?;
+                let vs = v.trim();
+                let amount = vs
+                    .strip_prefix("0x")
+                    .or_else(|| vs.strip_prefix("0X"))
+                    .map(|h| u8::from_str_radix(h, 16))
+                    .unwrap_or_else(|| vs.parse::<u8>())
+                    .ok()?;
+                (amount >= 1 && u16::from(amount) <= legaia_patcher::arts_ap_grant::AP_CAP)
+                    .then_some((combo, amount))
+            });
+            match parsed {
+                Some(g) => grants.push(g),
+                None => {
+                    summary.push_str(&format!("arts-ap-grant: skipped malformed entry {tok:?}\n"))
+                }
+            }
+        }
+        if grants.is_empty() {
+            summary.push_str("arts-ap-grant: no valid entries\n");
+        } else {
+            match apply::inject_arts_ap_grant(&mut patcher, &grants) {
+                Ok(rep) => {
+                    for g in &rep.resolved {
+                        let targeted = legaia_patcher::arts_ap_grant::combo_str(&g.targeted_combo);
+                        let shared: Vec<String> = g
+                            .shared
+                            .iter()
+                            .map(|(ch, name, _)| format!("{ch:?} {name:?}"))
+                            .collect();
+                        summary.push_str(&format!(
+                            "arts-ap-grant: {targeted} -> row {} grants {} AP (shared: {})\n",
+                            g.row,
+                            g.amount,
+                            shared.join("; ")
+                        ));
+                    }
+                }
+                Err(e) => summary.push_str(&format!("arts-ap-grant: {e}\n")),
             }
         }
     }

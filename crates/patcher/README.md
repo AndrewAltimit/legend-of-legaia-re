@@ -28,7 +28,9 @@ Three patching families share that machinery:
   `--fishing-price` / `--rename-location` retune fishing-exchange prices and
   world-map names; `--arts-power COMBO=VALUE` rebalances a Tactical Art's
   per-strike damage-power bytes (`record0 +0x24`, targeted by input combo -
-  [`arts_power`](src/arts_power.rs)).
+  [`arts_power`](src/arts_power.rs)); `--arts-ap-grant COMBO=AMOUNT` makes an art
+  grant AP instead of costing it (a battle-overlay code hook -
+  [`arts_ap_grant`](src/arts_ap_grant.rs), mutually exclusive with `--shiny-seru`).
 
 It is Track-1-adjacent tooling - it does **not** touch the clean-room engine -
 and it ships only code: no game bytes are embedded or committed, and every
@@ -63,6 +65,7 @@ full design.
   - [Weapon specialty](#weapon-specialty)
   - [Arts](#arts)
   - [Arts damage power](#arts-damage-power-arts_power-module)
+  - [Arts AP-grant](#arts-ap-grant-arts_ap_grant-module)
   - [Doors](#doors)
   - [House doors](#house-doors)
   - [Map doors](#map-doors)
@@ -656,6 +659,30 @@ no-damage-byte art like Gala's spirit Miracle is skipped), and recompresses
 `record0` to fit. `VALUE` is a tier `0x0C..=0x1F` (lower = weaker) or `0` to
 disable. No display copy to sync (the power is not shown in the menu).
 `legaia-patcher arts` lists every art's combo, AP, and power tiers.
+
+## Arts AP-grant (`arts_ap_grant` module)
+
+`--arts-ap-grant COMBO=AMOUNT` makes a targeted art **grant** `AMOUNT` AP (Spirit,
+`actor[+0x170]`, clamped at 100) instead of costing it, and admits it at any AP
+level. A MIPS code hook into the **party** arts queue-builder `FUN_801EED1C`
+(PROT 0898, base `0x801CE818`; slot < 3, so enemies are unaffected): three
+same-size detours - the affordability guard (`0x801EF410`), the AP debit/accrual
+(`0x801EF490`), and the end-of-turn refund clamp (`0x801EF988`) - plus the
+routines and a 26-entry `i8` config table injected into a verified-dead SCUS
+arena (the same `shiny_seru::ARENA1_VA` the [Shiny Seru](#shiny-seru) feature
+reuses, so the two are **mutually exclusive** - enforced in the CLI and the web
+patcher). Trap-wise it is the same class as `shiny_seru`/`bonus_drop`: honour the
+R3000 load-delay slot, never split a `mult`/`mflo` (the guard replays `mflo t7`
+without issuing its own multiply), and "zero is not dead" (the arena is
+read-watch-verified, not merely all-zero).
+
+The config index is `s3 - 0x0B` (`s3` = the art-table row cursor), which equals
+the art's arts-table display index; an art is targeted by its input combo, which
+resolves to that index. The row is **shared across the three characters**, so a
+grant applies to every character's art at that same index. Site details + AP math:
+[`docs/subsystems/arts-command-gauge.md`](../../docs/subsystems/arts-command-gauge.md#arts-ap-grant-hook).
+Disc oracle `tests/arts_ap_grant_real.rs` proves *where* the bytes land; a live
+battle playtest is still required to certify in-game behaviour.
 
 ## Doors
 
