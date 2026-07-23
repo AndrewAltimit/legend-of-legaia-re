@@ -142,9 +142,19 @@ impl PlayWindowApp {
                 Some(Judge::Miss) => "miss",
                 None => "",
             };
+            // The score readout goes through the retail number renderer's
+            // decimal split, so leading zeros are blank slots and a score of
+            // zero draws nothing at all - the overlay's `-1` sentinel.
+            let score_digits: String = legaia_engine_core::dance::dance_number_digits(g.score())
+                .iter()
+                .map(|d| match d {
+                    Some(v) => char::from(b'0' + v),
+                    None => ' ',
+                })
+                .collect();
             let dl1 = format!(
                 "DANCE  score {}  gauge {}  lane {}",
-                g.score(),
+                score_digits.trim_start(),
                 g.gauge(),
                 g.lane()
             );
@@ -153,6 +163,55 @@ impl PlayWindowApp {
             let dl2 = format!("press {arrow}   {judge}   (K = quit)");
             let ly2 = self.font.layout_ascii(&dl2);
             out.extend(text_draws_for(&ly2, (8, 80), dim));
+
+            // The beat track. Two things the overlay's track renderer
+            // (`FUN_801d2524`) computes, kept distinct here because they are
+            // distinct in retail: the **displayed** combo slot uses its own
+            // level-widened beat mask and its own narrow flash window, and is
+            // NOT the judge's combo slot (`DanceGame::on_combo_slot`, mask 3
+            // over the full acceptance window) - the judged cell is not the
+            // displayed cell. And the notes scroll one 16-px cell per beat, so
+            // note `i`'s pen slides left with the intra-beat fraction.
+            use legaia_engine_core::dance::{
+                GAUGE_STEP, dance_beat_track_note_x, dance_combo_window_bright,
+            };
+            let beat = g.beat_index();
+            let frac = g.intra_beat_phase();
+            let level = g.gauge() / GAUGE_STEP;
+            let bright = dance_combo_window_bright(beat, level, frac);
+            let track_label = if bright { "COMBO" } else { "beat " };
+            let ly3 = self.font.layout_ascii(track_label);
+            out.extend(text_draws_for(
+                &ly3,
+                (8, 98),
+                if bright { white } else { dim },
+            ));
+            // The upcoming eight cells of the human's own chart row, drawn at
+            // the ported scroll positions. The x base is this HUD's pen, not
+            // the overlay's screen constant; the per-note offset is retail's.
+            const TRACK_BASE_X: i32 = 60;
+            if let Some(row) = g.chart_row(g.lane()) {
+                for i in 0..8u32 {
+                    let cell = row[((beat + i) % row.len() as u32) as usize];
+                    let glyph = match cell {
+                        1 => "<",
+                        2 => ">",
+                        3 => "^",
+                        _ => ".",
+                    };
+                    let x = dance_beat_track_note_x(TRACK_BASE_X, i, frac);
+                    let ly = self.font.layout_ascii(glyph);
+                    out.extend(text_draws_for(
+                        &ly,
+                        (x, 98),
+                        if i == 0 && !g.in_dead_zone() {
+                            white
+                        } else {
+                            dim
+                        },
+                    ));
+                }
+            }
         }
         // Fishing minigame HUD: the phase-specific line (cast-power bar while
         // casting; tension + strength while fighting; the catch result when
@@ -200,7 +259,7 @@ impl PlayWindowApp {
             let count_of = |id: u32| *inventory.get(&(id as u8)).unwrap_or(&0) as i32;
             let mut rod_index = 0;
             let has_rod = select_owned_rod(&mut rod_index, count_of);
-            let items = legaia_engine_render::persistent_hud_draws(
+            let mut items = legaia_engine_render::persistent_hud_draws(
                 s.record().points,
                 s.record().best_points,
                 rod_index,
@@ -210,6 +269,28 @@ impl PlayWindowApp {
                     0
                 },
             );
+            // The catch HUD, drawn over the persistent rows while a cast is
+            // out: the length / extent / cast-power readouts, plus the depth
+            // and tension gauge block once the fish is on. `record` is the
+            // fight's reel progress - the engine's analogue of the retail line
+            // record the land gate compares. Two retail globals have no engine
+            // analogue and stay zero: the cast line-projection term
+            // (`DAT_801d9178`) and the line depth (`DAT_801d9298`), so the
+            // extent readout reads 0 and the depth bar sits empty.
+            let fight = s.fight();
+            items.extend(legaia_engine_render::catch_hud_draws(
+                &legaia_engine_render::CatchHudState {
+                    record: fight.map(|f| f.progress()).unwrap_or(0),
+                    line_extent: 0,
+                    cast_power: s.cast_power(),
+                    depth: 0,
+                    tension: fight.map(|f| f.tension()).unwrap_or(0),
+                    gauges_visible: s.phase() == FishingPhase::Fighting,
+                },
+            ));
+            // This frame's live one-shot banners (hook / reel-in / miss /
+            // auxiliary / strike splash), serviced in the redraw handler.
+            items.extend(self.fishing_banner_draws.iter().copied());
             // No fishing sprite page is uploaded, so the glyph ids and the
             // gauge fills resolve to nothing; the number / caption rows are
             // font-atlas text and render as-is.
@@ -352,6 +433,30 @@ impl PlayWindowApp {
             let bl2 = format!("{status}   Left/Right/Up attack, Down special (B = quit)");
             let ly2 = self.font.layout_ascii(&bl2);
             out.extend(text_draws_for(&ly2, (8, 80), dim));
+
+            // The duel's three number drawers, at their ported cell layouts:
+            // the one-glyph round digit, the 8 px right-aligned score field,
+            // and the 0x10 px "GET COIN" numeral strip for the prize. The HUD
+            // widget descriptors these cells patch (`DAT_801d7160`) index a
+            // sprite page the engine does not upload, so each cell is drawn as
+            // a font glyph at its ported x offset instead of as a textured
+            // quad - the layout is retail's, the glyph source is not.
+            use legaia_engine_core::baka_fighter::{
+                DigitCell, coin_digit_cells, right_aligned_number_cells, single_digit_cell,
+            };
+            let mut cell_row = |cells: &[DigitCell], base_x: i32, y: i32| {
+                for c in cells {
+                    let s = [b'0' + c.digit.min(9)];
+                    let text = core::str::from_utf8(&s).unwrap_or("0");
+                    let ly = self.font.layout_ascii(text);
+                    out.extend(text_draws_for(&ly, (base_x + c.x_offset as i32, y), dim));
+                }
+            };
+            cell_row(&[single_digit_cell((f.round() + 1).min(9) as u8)], 8, 98);
+            if let Some(t) = f.tally() {
+                cell_row(&right_aligned_number_cells(t.total()), 40, 98);
+                cell_row(&coin_digit_cells(t.gold_remaining()), 140, 98);
+            }
         }
         // Muscle Dome HUD: HP + score readouts, the hand with costs, the
         // budget line, and the phase prompt.
@@ -360,12 +465,14 @@ impl PlayWindowApp {
         {
             use legaia_engine_core::muscle_dome::MusclePhase;
             let ml1 = format!(
-                "MUSCLE DOME  you {}hp ({}%)  vs  foe {}hp ({}%)  round {}",
+                "MUSCLE DOME  you {}hp ({}%)  vs  foe {}hp ({}%)  round {}  time {}/{}",
                 s.hp(0),
                 s.score_percent(0),
                 s.hp(1),
                 s.score_percent(1),
-                s.round() + 1
+                s.round() + 1,
+                s.time_meter(),
+                legaia_engine_core::muscle_dome::TIME_METER_MAX,
             );
             let ly1 = self.font.layout_ascii(&ml1);
             out.extend(text_draws_for(&ly1, (8, 62), white));

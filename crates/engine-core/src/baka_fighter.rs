@@ -1116,6 +1116,12 @@ fn mips_scale(value: i32, factor: i32, shift: u32) -> i32 {
     p >> shift
 }
 
+// NOT WIRED: a textured-quad emit needs both halves of a source the engine does
+// not assemble - the 51-record widget descriptor table
+// (`legaia_asset::baka_opponents::parse_baka_hud`, which no host calls) and the
+// PROT 1203 HUD sprite page uploaded into VRAM. The duel HUD in the play window
+// is font text, so there is no textured quad to build. Wiring it needs that page
+// resident plus a quad sink in the renderer's sprite pass.
 /// PORT: FUN_801d5ed0 - the Baka Fighter HUD textured-quad emitter.
 ///
 /// `FUN_801d5ed0(x, y, id, brightness, size)` draws widget `id` of the
@@ -1189,6 +1195,10 @@ pub struct EffectSpawnSpec {
     pub sprite_id: u16,
 }
 
+// NOT WIRED: same prerequisite as its dance twin
+// ([`crate::dance::step_mark_effect_spawn`]) - the engine has no minigame
+// effect-part pool. The only sprite-part pool is the effect-VM bundle pool,
+// whose ids index effect bundles, not the duel overlay's own sprites.
 /// PORT: FUN_801d6e04 - the round chrome's screen-centre effect spawn:
 /// retail zero-fills a spawn record, plants it at the fixed screen centre
 /// `(0xA0, 0x78)` through the shared part-spawn API `FUN_80021B04` at scale
@@ -1213,6 +1223,12 @@ fn sra4_round_to_zero(v: i32) -> i32 {
     (if v < 0 { v + 0xF } else { v }) >> 4
 }
 
+// NOT WIRED: two prerequisites are missing. The `frame_indices` slice is the
+// action record's per-sub-keyframe `+0x26` column, and
+// `legaia_asset::baka_opponents::parse_actions` decodes the record's power and
+// keyframe *count* but not that column; and the duel has no animation host - the
+// port drives the fight from the rules state machine and draws no fighter clip,
+// so nothing asks which keyframe a frame range lands on.
 /// PORT: FUN_801d6e5c - action-table keyframe lookup by frame range.
 ///
 /// Returns the index of the first sub-keyframe whose whole-frame index (the
@@ -1300,6 +1316,10 @@ fn field_cells(value: i32, widget: u8, stride: i16, u_of: impl Fn(u8) -> u8) -> 
     out
 }
 
+/// Wired: the duel HUD's score-total row in the play window lays its digits out
+/// through this. The cells are drawn as font glyphs at their ported x offsets,
+/// since the widget descriptor they patch has no sprite page behind it.
+///
 /// PORT: FUN_801d6a18 - the right-aligned 8px decimal number drawer.
 ///
 /// Lays `value` out across the eight-place field as widget [`NUMBER_WIDGET`]
@@ -1313,6 +1333,8 @@ pub fn right_aligned_number_cells(value: i32) -> Vec<DigitCell> {
     field_cells(value, NUMBER_WIDGET, NUMBER_CELL_STRIDE, |d| d * 8)
 }
 
+/// Wired: the duel HUD's prize row, alongside [`right_aligned_number_cells`].
+///
 /// PORT: FUN_801d6f44 - the coin-count digit-strip drawer (HUD widget 47).
 ///
 /// Same right-aligned decimal decomposition as [`right_aligned_number_cells`],
@@ -1326,6 +1348,8 @@ pub fn coin_digit_cells(value: i32) -> Vec<DigitCell> {
     })
 }
 
+/// Wired: the duel HUD's round-number glyph.
+///
 /// PORT: FUN_801d69e4 - the single 8px digit draw.
 ///
 /// The one-glyph form the right-aligned drawer calls per place: patch widget
@@ -1368,6 +1392,10 @@ pub struct BakaRoundScore {
 
 /// Clamp a raw combo count to the combo-bonus table index space.
 ///
+// NOT WIRED: it exists to index the overlay's combo-bonus table for
+// [`baka_round_score`], and that table has no parser (see the note there), so
+// there is nothing for the clamped index to address.
+///
 /// PORT: FUN_801d2a28 (`0x801d2a34..0x801d2a40`). Retail keeps the count when
 /// it is below `0x14` and otherwise pins it to [`BAKA_COMBO_MAX`]; the compare
 /// is signed, so a (never-produced) negative count passes through unclamped,
@@ -1381,6 +1409,14 @@ pub fn baka_combo_index(combo: i32) -> i32 {
 }
 
 /// Resolve the two score-row increments a finished round contributes.
+///
+// NOT WIRED: the two tables it indexes are overlay disc data - the combo-bonus
+// table `&DAT_801d70c4` and the health-bonus table `&DAT_801d711c` - and
+// `legaia_asset::baka_opponents` has no parser for either, so no caller can
+// supply the slices. That is also why [`BakaFight`] opens its tally with the
+// two score rows at zero and only the coin prize populated: the rows this
+// computes have no data behind them yet. Wiring it needs those two tables
+// parsed off the duel overlay, then this called from `end_round`.
 ///
 /// PORT: FUN_801d2a28 (per-round score accumulation). The retail routine reads
 /// the round's combo count (`DAT_801dbec8`) and the winner's remaining HP
