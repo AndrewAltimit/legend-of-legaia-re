@@ -351,7 +351,23 @@
 "800644c0" = "SsSetTableSize(table, s_max, t_max): latches the two counts into the libsnd BSS halfwords _DAT_801CDB40 / _DAT_801CDB42 then fills the slot-pointer array at _DAT_801CD2C0 with `table + slot * 0xB0` (the (v1*2+v1)*4-v1 <<4 chain is a x176 multiply - the libsnd SEQ_TABLE record stride), one entry per sep x seq. Touches nothing but the libsnd table BSS; engine-audio's Sequencer owns its own slot vector. see ghidra/scripts/funcs/800644c0.txt"
 "80065fe8" = "libsnd all-voice reset / calc-top: installs the SPU transfer-callback block (8006bc70), clears the 0xC0-entry u16 array at 0x801CE080, the 24-byte voice-flag array at 0x801CE060 (0x18 = the SPU voice count) and the 0x10-byte mask block at 0x801CE368, clamps its u8 arg to 0x18 voices, then sweeps 80065bac / 80065978 / 80067480 / 8006c048 (SpuSetVoiceAttr). Every store lands in the 0x801Cxxxx-0x801Dxxxx libsnd BSS. engine-audio maps the whole tier to a Spu reset + one Sequencer pass (docs/subsystems/audio.md). see ghidra/scripts/funcs/80065fe8.txt"
 "80066308" = "libsnd note-trigger dispatch: per-slot status bytes _DAT_801CE34x, the x0x81 velocity scale, then the voice-allocation scan 80066b00 -> _SsVoKeyOnDirect 80065978 / _SsVoNoteOn 80067550 with 80066f4c / 80066d8c / 80068568 as the pitch + envelope helpers. Sits entirely below the SsAPI surface (its only non-libsnd input is the sequencer event already decoded by 8006320c/8006352c); engine-audio's sequencer.rs is the clean-room replacement. see ghidra/scripts/funcs/80066308.txt"
-
+"8006171c" = "SsAPI SEQ event dispatch: routes the decoded event through the installed handler-vector table _DAT_801cd238.._DAT_801cd250 (indexed by event class, jalr v0). engine-audio's Sequencer has its own clean-room event loop. see ghidra/scripts/funcs/8006171c.txt"
+"80064cf0" = "SsAPI ProgAtr getter: 8-byte copy of a program-attribute record out of the libsnd open-bank table the engine does not maintain (engine-audio parses the VAB directly via VabBank). see ghidra/scripts/funcs/80064cf0.txt"
+"80064df8" = "SsAPI tone-region getter: 0x18-byte copy of a tone/VAG-region record out of the libsnd open-bank table (mirror-read of the setter 800655cc). No engine consumer. see ghidra/scripts/funcs/80064df8.txt"
+"800655cc" = "SsAPI tone-region setter: 0x18-byte store into the libsnd open-bank table (write mirror of 80064df8). engine-audio holds tone regions in VabBank. see ghidra/scripts/funcs/800655cc.txt"
+"8006861c" = "utility velocity key-on: runs the exact FUN_80067550 vol/pan key-on chain already ported as vab_bind::fire + sequencer::channel_mix. Duplicate of a ported kernel. see ghidra/scripts/funcs/8006861c.txt"
+"80066f4c" = "per-voice vol/pan/reverb recompute: the standalone form of the FUN_80067550 mix chain already ported as sequencer::remix_channel. Duplicate of a ported kernel. see ghidra/scripts/funcs/80066f4c.txt"
+"80067a1c" = "pitch-bend apply: the per-tone pbmin/pbmax scaling law already ported as VabBank::pitch_bend_range + sequencer::pitch_bend_factor (engine uses a float model by design). see ghidra/scripts/funcs/80067a1c.txt"
+"8006cf9c" = "SsAPI worker/callback machinery (SsSetSerialAttr-tier table plumbing); the clean-room Sequencer stubs this tier wholesale. see ghidra/scripts/funcs/8006cf9c.txt"
+"8006cfc8" = "SsAPI worker/callback machinery; clean-room Sequencer stub tier. see ghidra/scripts/funcs/8006cfc8.txt"
+"8006d030" = "SsAPI worker/callback machinery; clean-room Sequencer stub tier. see ghidra/scripts/funcs/8006d030.txt"
+"8006d1e0" = "SsAPI worker/callback machinery; clean-room Sequencer stub tier. see ghidra/scripts/funcs/8006d1e0.txt"
+"8006daac" = "SsAPI worker/callback machinery; clean-room Sequencer stub tier. see ghidra/scripts/funcs/8006daac.txt"
+"8006e0a0" = "SsAPI worker/callback machinery; clean-room Sequencer stub tier. see ghidra/scripts/funcs/8006e0a0.txt"
+"8006e2b4" = "SsAPI worker/callback machinery; clean-room Sequencer stub tier. see ghidra/scripts/funcs/8006e2b4.txt"
+"8006e46c" = "SsAPI worker/callback machinery; clean-room Sequencer stub tier. see ghidra/scripts/funcs/8006e46c.txt"
+"8006e9c0" = "SsAPI worker/callback machinery; clean-room Sequencer stub tier. see ghidra/scripts/funcs/8006e9c0.txt"
+"8006ec24" = "SsAPI worker/callback machinery; clean-room Sequencer stub tier. see ghidra/scripts/funcs/8006ec24.txt"
 
 # libspu primitives + SPU DMA transfer engine. Replaced by clean-room
 # software SPU in `engine-audio`.
@@ -399,6 +415,11 @@
 # `crates/engine-vm/src/field.rs`), so there is no separate function to port.
 "8003ee7c" = "libspu SPU common-attr / reverb-depth setter shim used by the CD-XA clip path. Thin two-call wrapper: FUN_800643c4(0, depth, depth) (SpuSetCommonAttr-style master/reverb-depth set from the s16 arg) then FUN_80062a0c(0,0,1) (CD/reverb attribute apply). No game logic; REF-listed as out-of-scope in crates/engine-core/src/cd_dma.rs. see ghidra/scripts/funcs/8003ee7c.txt"
 "8006a7c8" = "SpuSetReverbVol-shape 3-mode wrapper (mode 0 = clear, 1 = OR, 8 = write) over the SPU voice-attribute halfword table at DAT_8007AF40, or the shadow copy at 0x801CE390 when DAT_8007AF38 & 1, also ORing the dirty mask DAT_8007AB04. Reverb lives in the clean-room SPU. see ghidra/scripts/funcs/8006a7c8.txt"
+"80062228" = "libspu voice-block register clear: writes the SPU MMIO region at base 0x1f80_1xxx (two lui a2,0x1f80 poke loops). Hardware register access modelled at value level by the clean-room SPU, never poked. see ghidra/scripts/funcs/80062228.txt"
+"800693d8" = "SpuInit core: SPU control-register bring-up + BSS zeroing. engine-audio constructs its Spu directly. see ghidra/scripts/funcs/800693d8.txt"
+"8006954c" = "SPU transfer/DMA reset: resets the transfer state block driven by the software SPU in engine-audio. see ghidra/scripts/funcs/8006954c.txt"
+"800699ac" = "SPU DMA settle + kick: waits the transfer FIFO then starts the SPU DMA channel. No hardware DMA in the clean-room SPU. see ghidra/scripts/funcs/800699ac.txt"
+"8006b854" = "SpuSetKey: writes the SPU KON/KOFF key-on/off registers. engine-audio keys voices in its software SPU voice pool. see ghidra/scripts/funcs/8006b854.txt"
 [field_vm_labels]
 "801e3620" = "FUN_801de840 intra-function label (`code_r0x801e3620`): `param_2 + 4; break;` -> PC += 4"
 
