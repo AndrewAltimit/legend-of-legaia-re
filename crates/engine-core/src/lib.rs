@@ -104,6 +104,7 @@ pub mod shop_catalog;
 pub mod slot_machine;
 pub mod sound_state;
 pub mod spell_menu;
+pub mod spell_party_broadcast;
 pub mod spells;
 pub mod status_screen;
 pub mod stream_file;
