@@ -543,6 +543,17 @@ impl Sequencer {
             log::trace!("sequencer: no tone for ch{channel} prog{program} key{key}");
             return;
         };
+        // The tone resolves by key range, but it can still fail to sound if
+        // its slot is empty (`vag <= 0`) or its sample never uploaded (SPU RAM
+        // exhausted). Verify it can actually fire BEFORE `alloc_voice`, which
+        // may key-off a sounding voice: stealing a live note for one that then
+        // fails to play is a net dropped note.
+        if !self.bank.can_play(program, key) {
+            log::trace!(
+                "sequencer: tone not playable for ch{channel} prog{program} key{key}; not stealing"
+            );
+            return;
+        }
         let Some(voice) = self.alloc_voice(spu, prio) else {
             log::trace!(
                 "sequencer: no free voice for ch{} key{} (active={})",

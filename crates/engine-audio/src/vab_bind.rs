@@ -316,6 +316,28 @@ impl VabBank {
             .and_then(|p| p.tones.iter().find(|t| note >= t.min && note <= t.max))
             .map(|t| t.prior)
     }
+
+    /// Whether `(program, note)` would actually key on a voice - i.e. it
+    /// resolves to a tone whose sample is present and uploaded. This is the
+    /// exact success condition of [`Self::fire`] (tone found by key range,
+    /// `vag > 0`, sample resident), computed without a voice or side effects.
+    ///
+    /// The sequencer calls this **before** allocating a voice: a note that
+    /// can't sound (empty tone slot, or a sample that didn't fit in SPU RAM)
+    /// must not steal a voice that is currently sounding, or the steal drops
+    /// an audible note in exchange for silence.
+    pub fn can_play(&self, program: usize, note: u8) -> bool {
+        let Some(prog) = self.programs.get(program) else {
+            return false;
+        };
+        let Some(tone) = prog.tones.iter().find(|t| note >= t.min && note <= t.max) else {
+            return false;
+        };
+        if tone.vag <= 0 {
+            return false;
+        }
+        matches!(self.samples.get((tone.vag - 1) as usize), Some(Some(_)))
+    }
 }
 
 /// Compute the SPU pitch register value for `note` against `tone.center`,
@@ -441,5 +463,43 @@ mod tests {
         assert!(!ok);
         // Voice 0 still in default Off state.
         assert!(spu.voices[0].is_off());
+    }
+
+    /// `can_play` mirrors `fire`'s success condition exactly: it is true only
+    /// when the tone resolves AND its sample is resident. A resolved tone whose
+    /// sample slot is missing/empty, or whose `vag` is out of range, is false -
+    /// which is what keeps the sequencer from stealing a voice for a note that
+    /// would then fail to sound.
+    #[test]
+    fn can_play_tracks_sample_residency() {
+        let uploaded = UploadedVag { addr: 0, size: 16 };
+        // Program 0 tone points at sample 1 (1-based vag); program 1 at sample 2.
+        let bank = VabBank {
+            master_vol: 127,
+            // Sample index 0 present (backs vag=1), index 1 absent (backs vag=2).
+            samples: vec![Some(uploaded), None],
+            programs: vec![
+                VabProgram {
+                    mvol: 127,
+                    mpan: 0x40,
+                    tones: vec![dummy_tone(60, 1, 100, 0x40)],
+                },
+                VabProgram {
+                    mvol: 127,
+                    mpan: 0x40,
+                    tones: vec![dummy_tone(60, 2, 100, 0x40)],
+                },
+            ],
+        };
+        // Resolves and sample resident -> playable, and consistent with play_note.
+        assert!(bank.can_play(0, 60));
+        let mut spu = Spu::new();
+        assert!(bank.play_note(&mut spu, 0, 0, 60, 100));
+        // Resolves but sample absent -> not playable (would steal-then-fail).
+        assert!(!bank.can_play(1, 60));
+        let mut spu = Spu::new();
+        assert!(!bank.play_note(&mut spu, 0, 1, 60, 100));
+        // Program out of range -> not playable.
+        assert!(!bank.can_play(9, 60));
     }
 }

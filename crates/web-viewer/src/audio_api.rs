@@ -293,7 +293,13 @@ impl LegaiaAudio {
         // Upload bank into the SPU model (which lives inside WebAudioOut's
         // resampler). Then build the sequencer and attach.
         let bank = out.with_spu(|spu| {
-            let mut alloc = legaia_engine_audio::spu::ram::SpuAllocator::new(0x1000, 0x40_000);
+            // Full SPU RAM (minus the 4 KB reserved head), as retail and the
+            // asset-viewer audition path do - the old 256 KB cap could drop
+            // the overflowing samples of a larger music VAB (silent voices).
+            let mut alloc = legaia_engine_audio::spu::ram::SpuAllocator::new(
+                0x1000,
+                legaia_engine_audio::spu::ram::SPU_RAM_BYTES as u32 - 0x1000,
+            );
             legaia_engine_audio::VabBank::upload(
                 spu,
                 &mut alloc,
@@ -301,7 +307,10 @@ impl LegaiaAudio {
                 &buf[vab_offset as usize..],
             )
         });
-        let sequencer = legaia_engine_audio::sequencer::Sequencer::new(seq, bank);
+        let mut sequencer = legaia_engine_audio::sequencer::Sequencer::new(seq, bank);
+        // Loop to the start at end-of-track so BGM repeats instead of playing
+        // once and stopping (matches the native BGM director's default).
+        sequencer.set_loop_to(0);
         out.attach_sequencer(sequencer);
         Ok(())
     }
@@ -387,7 +396,10 @@ impl LegaiaAudio {
             return Vec::new();
         };
         let mut spu = legaia_engine_audio::Spu::new();
-        let mut alloc = legaia_engine_audio::spu::ram::SpuAllocator::new(0x1000, 0x40_000);
+        let mut alloc = legaia_engine_audio::spu::ram::SpuAllocator::new(
+            0x1000,
+            legaia_engine_audio::spu::ram::SPU_RAM_BYTES as u32 - 0x1000,
+        );
         let bank = legaia_engine_audio::VabBank::upload(
             &mut spu,
             &mut alloc,
@@ -395,6 +407,9 @@ impl LegaiaAudio {
             &buf[vab_offset as usize..],
         );
         let mut sequencer = legaia_engine_audio::sequencer::Sequencer::new(seq, bank);
+        // Loop at end-of-track so a pre-rendered chunk fills its full duration
+        // for a track shorter than the request, rather than ending in silence.
+        sequencer.set_loop_to(0);
         let duration_samples =
             (duration_seconds * legaia_engine_audio::SPU_INTERNAL_RATE as f32) as usize;
         legaia_engine_audio::render_bgm_to_pcm(&mut sequencer, &mut spu, duration_samples)
