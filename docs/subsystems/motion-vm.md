@@ -51,6 +51,35 @@ the pursue VM `FUN_8003774C` (`+0x10 & 0x400`), the scripted VM
 present, `+0x10 & 8` clear), and the move-table consumer `FUN_800204F8`
 (`+0x5C > 0` or `+0x10 & 0x1000`).
 
+### The cutscene event-script arm - `FUN_80039B7C`
+
+The driver's first dispatch (fired on `+0x10 & 0x100` with a script pointer at
+`+0x90`) is not a motion VM at all - it is a **per-actor pump that steps a
+field/event-VM script in lock-step with a global cutscene phase**
+(`_DAT_801F2734`), so a scripted actor's choreography advances one authored
+beat per phase tick rather than freely (see
+`ghidra/scripts/funcs/80039b7c.txt`). The script bytes live at
+`*(actor+0x90) + *(actor+0x9E)` - the same `0x21`-terminated event-script
+format the field VM `FUN_801DE840` reads - and the arm is a three-state machine
+on `actor+0x9E` (PC) / `actor+0x9C` (state):
+
+| state | phase gate `_DAT_801F2734` | behaviour |
+|---|---|---|
+| 0 | any | bumps the modal-window depth `_DAT_801C6EA4+0xA`, sets player flag `0x80000`, then runs `FUN_801DE840` over the script until it yields (op `< 0x20`) or terminates (op `0x21`). On terminate it tears the actor down (clear flag `0x100`, set `0x8` if `+0x5C == -1`, snap facing `+0x26 = +0x5A`, decrement the modal depth). Otherwise it advances to state 1 and, when `+0x10 & 0x420000 == 0x20000`, snaps `+0x26` to the player bearing via `FUN_80019B28`. |
+| 1 | `1`/`4`/`7` | latches `_DAT_801F3538 = script + +0x9E`, raises `DAT_80073F02`, bumps the phase, advances to state 2. |
+| 2 | `0`/`3`/`6`/`9` | skip-scans forward over the current op through `FUN_80038050` (the `0xC0`-family entries are 2-byte), commits the new PC, resets to state 0, bumps the phase, and re-arms the field control block (`+0x62 = 0x20`). |
+
+`FUN_80038050` is the arm's **structural-op advance helper**
+(`ghidra/scripts/funcs/80038050.txt`): given the op at `script + +0x9E`, it
+consumes the event-script's non-yielding structural ops and reports whether the
+pump should keep stepping (`1`) or stop (`0`). It knows `0x21` (terminator, stop),
+`0x24`/`0x25`/`0x48` (advance one byte, keep going), `0x27..0x2A` (multi-way jump -
+indexes the branch offset by the live modal-window depth `_DAT_801C6EA4+0xC`), and
+`0x4C` (byte-1 `0xFF` = +2, `0xFE` = +3 and latches `_DAT_801F273C`). Every other
+op ends the scan. This is the arm that plays a partition-2 cutscene timeline's
+event script; the motion of any actor it walks is issued by the field VM ops the
+script contains, not by this function.
+
 ## Bytecode layout
 
 Each script entry is `1 + N` bytes:
@@ -664,6 +693,8 @@ Disc-gated anchor test: `crates/engine-core/tests/motion_flag_census_disc.rs`.
 
 - `ghidra/scripts/funcs/8003774c.txt` - full disassembly + decompilation.
 - `ghidra/scripts/funcs/80038158.txt` - the second VM's interpreter.
+- `ghidra/scripts/funcs/80039b7c.txt` - the driver's cutscene event-script arm.
+- `ghidra/scripts/funcs/80038050.txt` - its structural-op advance helper.
 - `ghidra/scripts/funcs/8003a9d4.txt` - motion-script installer (record chain + actor binding).
 - `ghidra/scripts/funcs/8003c5f0.txt` - the ramp-scheduler installer op `0x0D` inlines.
 - `ghidra/scripts/funcs/overlay_cutscene_dialogue_801cf8ac.txt` - the walk
