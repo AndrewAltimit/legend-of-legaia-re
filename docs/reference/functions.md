@@ -935,6 +935,48 @@ Each minigame's per-frame controller, with the full per-overlay function tables 
 | `801D3A2C` | **Dance** floor render cluster: per-frame draw pass `801D3A2C` (actor list + tile grid) + tile-grid blit `801D2A10` + two-layer step-marker lookup `801D3EC0`→`801D3F54`. Reuses the field scene buffer `_DAT_1f8003ec` (grid `+0x8000`, step layers `+0x10000`/`+0x12000`) + actor list `_DAT_8007c36c`. Live-pinned to the dance overlay via the resident mode-24 slot-A help text. See [`minigame-dance.md` § Dance-floor rendering](../subsystems/minigame-dance.md#dance-floor-rendering). `overlay_dance_801d3a2c.txt`. |
 | `801D0748` | **Muscle Dome** per-frame match controller: pad read, phase dispatch on `ctx+6`, card pick/commit/resolve/score loop. Distinct overlay (not the hub family). See [`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md). `overlay_muscle_dome_801d0748.txt`. |
 
+## Debug-menu overlay (PROT 0971, mode-0 CONFIG)
+
+The dev debug menu is the overlay mode 0 (CONFIG) loads (`FUN_80025C68`), resident at slot-A base `0x801CE818`. The generic-slot `overlay_0971_*` dumps are these same functions re-imported at `0x801C0000` (mis-based by `0xE818`) - read the `overlay_debug_menu_*` copy for correct VAs. The whole menu is retail-gated: each per-frame body early-returns unless the debug-enable flag is set.
+
+| Address | Role |
+|---|---|
+| `801CE97C` | **Debug-menu per-frame controller.** Runs a ~22-row cursor list (index `_DAT_8007B862`): pad edges move the cursor, adjust the selected row's value, or fire the row action - scene-load (`FUN_8001FC00` / `FUN_8001E54C`), SPU voice key-on/off (`FUN_80026478` / `FUN_800266E0`), sound stop-all (`FUN_80017910` + the `FUN_800653C8` voice loop). Draws labeled readouts through the debug string drawer `FUN_8001A068` and the digit drawer `FUN_8001ABC8`. `see ghidra/scripts/funcs/overlay_debug_menu_801ce97c.txt`. |
+| `801CF338` | **Debug TMD-viewer per-actor tick.** D-pad edits the viewed object's translate/rotate fields (`actor+0x14/+0x16/+0x18/+0x24/+0x26`), sums POLY/VERT counts over the object table at `actor+0x44`, prints the object readouts via `FUN_8001A068`, and cycles the TMD index `_DAT_8007B6E4`, reloading through `FUN_80024E08`. `see ghidra/scripts/funcs/overlay_debug_menu_801cf338.txt`. |
+| `801D0230` | **Debug sub-screen per-frame body.** Advances a fade timer by `DAT_1F800393`, emits a full-screen dim quad via `FUN_80024EE4` when active, draws sub-panels (`FUN_801D13F0` / `FUN_801D1580`), and on a pad edge raises an SFX cue and enters the exit state; tails into the layout-offset helper `FUN_801D03B0`. `see ghidra/scripts/funcs/overlay_debug_menu_801d0230.txt`. |
+| `801CFE20` / `801CFE5C` | Two 15-instruction entry wrappers for the `FUN_801D0230` body; each runs a per-mode setup (`FUN_801D0100` / `FUN_801D0198`) then tail-calls `FUN_801D0230`. `see ghidra/scripts/funcs/overlay_debug_menu_801cfe20.txt`. |
+
+## Menu-overlay callees (PROT 0899)
+
+Callees of the pause/field menu overlay (loaded by the mode-22 CARD pair via `FUN_8003EBE4(4)`), resident at slot-A base `0x801D0000+`. Dumps are correctly based (`overlay_menu_*`).
+
+| Address | Role |
+|---|---|
+| `801DAD6C` | **Menu-open init state machine** (5-state jump table on `DAT_801E46AC`): stages the menu actors through the actor/sprite VM `FUN_801D6628`, spawns the cursor actor via `FUN_80020DE0`, advances a phase counter, then always ticks the text-actor list `FUN_80031D00`. `see ghidra/scripts/funcs/overlay_menu_801dad6c.txt`. |
+| `801D1290` | **Menu-page draw dispatcher** (11-way jump table) rendering rows via the glyph / icon / number / dialog-font primitives (`FUN_80036888` / `FUN_8002C488` / `FUN_80034B78` / `FUN_8003C1F8`). `see ghidra/scripts/funcs/overlay_menu_801d1290.txt`. |
+| `801D4C28` | **Status/equipment menu-page renderer:** rebuilds a character's effective stats (`FUN_80042558` aggregator, `FUN_801CF650` equip-stat sum) then draws the page (jump table) via the glyph/number primitives. `see ghidra/scripts/funcs/overlay_menu_801d4c28.txt`. |
+| `801D61B0` / `801D6360` | **Menu option-list row drawers** - emit each row's text via `FUN_80036888` and its selection-cursor highlight via `FUN_8002B994`. `see ghidra/scripts/funcs/overlay_menu_801d61b0.txt`. |
+| `801E420C` | **Menu textured-quad sprite emitter** (GP0 `POLY_FT4`, cmd base `0x2E`): allocates a `0x28`-byte packet from the scratchpad pool `0x1F800314+0x8C`, fills four verts/UVs from the per-index geometry table `0x801E5048` (stride `0xC`), posts via `FUN_8003D2C4`. `see ghidra/scripts/funcs/overlay_menu_801e420c.txt`. |
+| `801E2DC4` / `801E2EE4` / `801E4190` | Sibling menu GPU-primitive emitters - build a GP0 packet in the `0x1F800314` pool and link it into the OT via `FUN_8003D2C4` (their only call). `see ghidra/scripts/funcs/overlay_menu_801e2dc4.txt`. |
+| `801E1934` | **Numeric readout formatter** - repeated `/10` digit extraction of a counter into the menu display buffer, uploaded to VRAM via `StoreImage` (`FUN_8005842C`). `see ghidra/scripts/funcs/overlay_menu_801e1934.txt`. |
+| `801E3A00` / `801E3A98` | Kernel event-handle poll helpers (call `TestEvent` `FUN_80056658`). `see ghidra/scripts/funcs/overlay_menu_801e3a00.txt`. |
+| `801E3BEC` | Formatted-string build + print (sprintf-shape `FUN_80056738` + print `FUN_800567A8`). `see ghidra/scripts/funcs/overlay_menu_801e3bec.txt`. |
+| `801E4140` | Widget frame/box draw wrapper (`FUN_8002C69C`). `see ghidra/scripts/funcs/overlay_menu_801e4140.txt`. |
+| `801E36A0` | 9-instruction thunk into the menu routine `FUN_801DD35C`. `see ghidra/scripts/funcs/overlay_menu_801e36a0.txt`. |
+| `801E4138` | Empty stub - 2-instruction `jr ra; nop`. `see ghidra/scripts/funcs/overlay_menu_801e4138.txt`. |
+
+## Other-game minigame overlay (PROT 0977)
+
+Slot-A minigame occupant (the "other_game" overlay reached from the mode-24 door warp), true base `0x801CE818`. The `0x801Dxxxx`-named `overlay_0977_other_game_*` dumps are correctly based; the `0x801Cxxxx`-named ones are mis-imported at `0x801C0000` (add `0xE818` for the true VA, per the same anchor that fixes `801C2748` -> `801D0F60`). Structural roles only.
+
+| Address | Role |
+|---|---|
+| `801D050C` | **Colored-quad emitter** - allocates a `0x34`-byte GP0 polygon packet from the scratchpad pool `0x1F800314+0x8C` with per-vertex RGB modulated by a brightness argument, geometry from the table at `0x801D170C` (stride `0x14`), posts via `FUN_8003D2C4`. `see ghidra/scripts/funcs/overlay_0977_other_game_801d050c.txt`. |
+| `801D1308` | **Multi-digit decimal renderer** - divides the value down (`/10^7` then a `/10` chain) into up to eight digits and draws each via `FUN_801D050C`. `see ghidra/scripts/funcs/overlay_0977_other_game_801d1308.txt`. |
+| `801D1288` | **Per-frame sprite/cue trigger** - calls the shared primitive `FUN_80065034` with a rotating id (counter `DAT_801D1AE4 & 3`) and a coordinate from `_DAT_80084580`, then bumps the counter. `see ghidra/scripts/funcs/overlay_0977_other_game_801d1288.txt`. |
+| `801D14B0` | **Step-size scaler** - returns the argument unchanged when flag `DAT_801D1AB4` is set, else `arg/5` (arg > 5), `1` (arg < 3), or `arg/2`. `see ghidra/scripts/funcs/overlay_0977_other_game_801d14b0.txt`. |
+| `801CF074` (true VA; the `801c085c` dump is mis-based, `+0xE818`) | **Minigame per-frame update** - accumulates frame time (scratchpad `0x1F800314+0x7F`) into lane counters, scales each step via `FUN_801D14B0`, and triggers cues via `FUN_801D1288` / `FUN_801D08EC`. `see ghidra/scripts/funcs/overlay_0977_other_game_801c085c.txt`. |
+
 ## Function details
 
 Full write-ups for the rows above whose detail outgrew a table cell. Linked from each section table by **[details ↓]**.
