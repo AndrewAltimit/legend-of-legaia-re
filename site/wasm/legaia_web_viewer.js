@@ -329,7 +329,10 @@ export class LegaiaAudio {
     }
     /**
      * JSON list of every BGM pair (`pBAV` + `pQES` in the same PROT entry).
-     * Shape: `[{ prot_index, vab_offset, seq_offset, program_count, sample_count, ppqn, bpm }, ...]`.
+     * Shape: `[{ prot_index, vab_offset, seq_offset, program_count,
+     * sample_count, ppqn, bpm, sound_test_id, debug_id, title, context }, ...]`.
+     * The last four resolve the `music_01` sound-test join and are `null` for
+     * the uncatalogued boot/battle/dev copies.
      * @returns {string}
      */
     enumerate_bgm_pairs_json() {
@@ -449,6 +452,25 @@ export class LegaiaAudio {
      */
     set_bgm_paused(paused) {
         wasm.legaiaaudio_set_bgm_paused(this.__wbg_ptr, paused);
+    }
+    /**
+     * JSON of the game's debug Sound Test in catalogue order - every curated
+     * `music_01` slot, joined to this disc's playable pair. Shape:
+     * `[{ index, debug_id, title, context, ost, relocalization, uncertain,
+     * prot_index, playable, vab_offset, seq_offset, bpm }, ...]`.
+     * @returns {string}
+     */
+    sound_test_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaaudio_sound_test_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
     }
     /**
      * Start BGM playback for the given (`prot_index`, `vab_offset`,
@@ -1688,6 +1710,100 @@ export class LegaiaMinigames {
         }
     }
     /**
+     * Advance the cast-power oscillator by `step` (no-op outside casting). The
+     * native driver steps `0x80` per frame; the page passes its own rate.
+     * @param {number} step
+     */
+    fishing_advance_cast(step) {
+        wasm.legaiaminigames_fishing_advance_cast(this.__wbg_ptr, step);
+    }
+    /**
+     * Lock the cast and hook a fish, entering the fight (no-op outside
+     * casting). The locked power selects the species.
+     */
+    fishing_lock_cast() {
+        wasm.legaiaminigames_fishing_lock_cast(this.__wbg_ptr);
+    }
+    /**
+     * Recast after a resolved fight: reset the meter and clear the fight
+     * (no-op unless the fight is done).
+     */
+    fishing_recast() {
+        wasm.legaiaminigames_fishing_recast(this.__wbg_ptr);
+    }
+    /**
+     * Apply one fight frame's reel input, stepped by `frames`: `0` = idle
+     * (tension bleeds off), `1` = reel A (Cross, `rod*9 + 0x23` divisor),
+     * `2` = reel B (Square, `rod*6 + 0x19`). No-op outside the fighting phase.
+     * @param {number} input
+     * @param {number} frames
+     */
+    fishing_reel(input, frames) {
+        wasm.legaiaminigames_fishing_reel(this.__wbg_ptr, input, frames);
+    }
+    /**
+     * The whole decoded species table, for the "what's biting" panel:
+     *
+     * ```json
+     * [ { "index": 0, "name": "Legaia Bass", "score": 8000,
+     *     "pull": 250, "strike_gate": 8 }, ... ]
+     * ```
+     *
+     * `name` is `null` when the overlay's name pointer doesn't resolve.
+     * @returns {string}
+     */
+    fishing_species_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_fishing_species_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Start a fishing session over the disc's species table, beginning in the
+     * casting phase. Returns `false` when the table didn't decode.
+     * @returns {boolean}
+     */
+    fishing_start() {
+        const ret = wasm.legaiaminigames_fishing_start(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Live fishing state.
+     *
+     * ```json
+     * { "live": true, "phase": "casting"|"fighting"|"done",
+     *   "cast_power": 64, "cast_min": 32, "cast_max": 4096, "cast_seed": 64,
+     *   "tension": 0, "tension_max": 4096, "strength": 0, "land_target": 310,
+     *   "fish": { "index": 2, "name": "Legaia Bass", "score": 10000 },
+     *   "points": 0, "best_points": 0, "best_fish": 0,
+     *   "outcome": "landed"|"snapped"|null, "outcome_points": 0 }
+     * ```
+     *
+     * `strength` is the confirmed catch-score accumulator - it grows only
+     * while reeling, so it doubles as a "how worked-in is the fish" readout;
+     * `tension` climbing to `tension_max` snaps the line. `fish` is `null`
+     * while casting.
+     * @returns {string}
+     */
+    fishing_state_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_fishing_state_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * Load a full Mode2/2352 disc image (or a raw `PROT.DAT`), parse the TOC,
      * and pre-decode every minigame table that resolves. Returns a JSON status
      * object naming which games came up:
@@ -1767,6 +1883,75 @@ export class LegaiaMinigames {
             return getStringFromWasm0(ret[0], ret[1]);
         } finally {
             wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+        }
+    }
+    /**
+     * Commit one of the player's four hand cards (0..4) into the action queue,
+     * debiting the budget. Returns `false` when it can't be committed
+     * (overspend, queue full, or outside the selection phase).
+     * @param {number} card_slot
+     * @returns {boolean}
+     */
+    muscle_commit(card_slot) {
+        const ret = wasm.legaiaminigames_muscle_commit(this.__wbg_ptr, card_slot);
+        return ret !== 0;
+    }
+    /**
+     * Run the opponent's greedy in-order commit (the host AI model), then
+     * close the selection phase so the round is ready to resolve.
+     */
+    muscle_end_selection() {
+        wasm.legaiaminigames_muscle_end_selection(this.__wbg_ptr);
+    }
+    /**
+     * Start the next round after a non-terminal resolution: reseed budgets,
+     * clear queues. No-op unless the contest is at a round break.
+     */
+    muscle_next_round() {
+        wasm.legaiaminigames_muscle_next_round(this.__wbg_ptr);
+    }
+    /**
+     * Play the round out through the card-damage stand-in. No-op unless the
+     * round is in the resolve phase (i.e. after [`Self::muscle_end_selection`]).
+     */
+    muscle_resolve() {
+        wasm.legaiaminigames_muscle_resolve(this.__wbg_ptr);
+    }
+    /**
+     * Start a Muscle Dome contest on the disc's dealt hand, beginning in the
+     * selection phase. Returns `false` when the hand table didn't decode.
+     * @returns {boolean}
+     */
+    muscle_start() {
+        const ret = wasm.legaiaminigames_muscle_start(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Live contest state.
+     *
+     * ```json
+     * { "live": true, "phase": "select"|"resolve"|"round_over"|"won"|"lost",
+     *   "round": 0, "hp": [500, 400], "hp_max": [500, 400],
+     *   "budget": [90, 70], "spent": [0, 0], "score": [108, 108],
+     *   "queue": [[12], []], "last_damage": [0, 0],
+     *   "hand": [ { "cmd": 12, "cost": 30 }, ... ], "reward_spell": 129 }
+     * ```
+     *
+     * `score` is the retail `hp * 0x6c / max_hp` readout; `hand` is the
+     * player's four dealt cards; `reward_spell` is the spell id awarded on a
+     * win (an id into the shared spell-name table's player Seru-magic block).
+     * @returns {string}
+     */
+    muscle_state_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_muscle_state_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
         }
     }
     /**
@@ -2328,11 +2513,49 @@ export class LegaiaRuntime {
     /**
      * Attempt to start the WebAudio backend. Must be called from a user-gesture
      * handler (browser autoplay policy). `true` on success.
+     *
+     * Once up, the scene's BGM plays automatically: every [`Self::tick_frame`]
+     * routes the field VM's op-`0x35` music events through the same clean-room
+     * VAB + SEQ + SPU path the audio audition page uses. This call also stages
+     * the current scene's VAB bank (so a scene-local track has a bank) and sets
+     * a default output gain, since retail SEQ output is near-inaudible at
+     * unity. Browsers often open the `AudioContext` suspended even inside a
+     * gesture - call [`Self::audio_resume`] right after this to make it audible.
      * @returns {boolean}
      */
     audio_init() {
         const ret = wasm.legaiaruntime_audio_init(this.__wbg_ptr);
         return ret !== 0;
+    }
+    /**
+     * Whether the WebAudio backend is live (`audio_init` succeeded). The play
+     * page reads this to decide whether it still needs the user's audio-enable
+     * gesture.
+     * @returns {boolean}
+     */
+    audio_ready() {
+        const ret = wasm.legaiaruntime_audio_ready(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Resume the BGM `AudioContext`. Browsers construct it in `suspended`
+     * state even when the constructor runs inside a user gesture; the play
+     * page calls this from its gesture handler right after [`Self::audio_init`]
+     * to make the audio actually sound. Resolved no-op when audio isn't up.
+     * @returns {Promise<any>}
+     */
+    audio_resume() {
+        const ret = wasm.legaiaruntime_audio_resume(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Set the BGM output gain. `1.0` matches the native cpal path; the play
+     * page defaults to [`BGM_DEFAULT_GAIN`] because retail SEQ+SPU output is
+     * quiet. No-op when audio isn't up.
+     * @param {number} gain
+     */
+    audio_set_gain(gain) {
+        wasm.legaiaruntime_audio_set_gain(this.__wbg_ptr, gain);
     }
     /**
      * `[width, height]` of the title atlas; `[0, 0]` when none.
@@ -7024,7 +7247,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 122, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 131, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__hc20c1a455dcd1273);
             return ret;
         },

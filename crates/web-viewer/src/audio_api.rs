@@ -63,7 +63,10 @@ impl LegaiaAudio {
     }
 
     /// JSON list of every BGM pair (`pBAV` + `pQES` in the same PROT entry).
-    /// Shape: `[{ prot_index, vab_offset, seq_offset, program_count, sample_count, ppqn, bpm }, ...]`.
+    /// Shape: `[{ prot_index, vab_offset, seq_offset, program_count,
+    /// sample_count, ppqn, bpm, sound_test_id, debug_id, title, context }, ...]`.
+    /// The last four resolve the `music_01` sound-test join and are `null` for
+    /// the uncatalogued boot/battle/dev copies.
     pub fn enumerate_bgm_pairs_json(&self) -> String {
         let v = audio::enumerate_bgm_pairs(&self.prot, &self.entries);
         let mut s = String::from("[");
@@ -72,13 +75,48 @@ impl LegaiaAudio {
                 s.push(',');
             }
             s.push_str(&format!(
-                r#"{{"prot_index":{},"vab_offset":{},"seq_offset":{},"program_count":{},"sample_count":{},"ppqn":{},"bpm":{:.1}}}"#,
+                r#"{{"prot_index":{},"vab_offset":{},"seq_offset":{},"program_count":{},"sample_count":{},"ppqn":{},"bpm":{:.1},"sound_test_id":{},"debug_id":{},"title":{},"context":{}}}"#,
                 x.prot_index,
                 x.vab_offset,
                 x.seq_offset,
                 x.program_count,
                 x.sample_count,
                 x.ppqn,
+                x.bpm,
+                json_num_opt(x.sound_test_id),
+                json_str_opt(x.debug_id.as_deref()),
+                json_str_opt(x.title.as_deref()),
+                json_str_opt(x.context.as_deref()),
+            ));
+        }
+        s.push(']');
+        s
+    }
+
+    /// JSON of the game's debug Sound Test in catalogue order - every curated
+    /// `music_01` slot, joined to this disc's playable pair. Shape:
+    /// `[{ index, debug_id, title, context, ost, relocalization, uncertain,
+    /// prot_index, playable, vab_offset, seq_offset, bpm }, ...]`.
+    pub fn sound_test_json(&self) -> String {
+        let v = audio::sound_test_entries(&self.prot, &self.entries);
+        let mut s = String::from("[");
+        for (i, x) in v.iter().enumerate() {
+            if i > 0 {
+                s.push(',');
+            }
+            s.push_str(&format!(
+                r#"{{"index":{},"debug_id":{},"title":{},"context":{},"ost":{},"relocalization":{},"uncertain":{},"prot_index":{},"playable":{},"vab_offset":{},"seq_offset":{},"bpm":{:.1}}}"#,
+                x.index,
+                json_str_opt(x.debug_id.as_deref()),
+                json_str_opt(x.title.as_deref()),
+                json_str_opt(x.context.as_deref()),
+                json_str_opt(x.ost.as_deref()),
+                json_str_opt(x.relocalization.as_deref()),
+                x.uncertain,
+                x.prot_index,
+                x.playable,
+                x.vab_offset,
+                x.seq_offset,
                 x.bpm,
             ));
         }
@@ -427,4 +465,35 @@ impl Default for LegaiaAudio {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Emit an `Option<&str>` as a JSON string literal, or `null` when absent.
+/// Escapes the JSON structural characters so a curated title with a quote or
+/// backslash can't break the surrounding object.
+fn json_str_opt(v: Option<&str>) -> String {
+    match v {
+        None => "null".to_string(),
+        Some(s) => {
+            let mut out = String::with_capacity(s.len() + 2);
+            out.push('"');
+            for c in s.chars() {
+                match c {
+                    '"' => out.push_str("\\\""),
+                    '\\' => out.push_str("\\\\"),
+                    '\n' => out.push_str("\\n"),
+                    '\r' => out.push_str("\\r"),
+                    '\t' => out.push_str("\\t"),
+                    c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+                    c => out.push(c),
+                }
+            }
+            out.push('"');
+            out
+        }
+    }
+}
+
+/// Emit an `Option<u32>` as a JSON number, or `null` when absent.
+fn json_num_opt(v: Option<u32>) -> String {
+    v.map_or_else(|| "null".to_string(), |n| n.to_string())
 }

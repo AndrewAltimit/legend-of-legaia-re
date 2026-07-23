@@ -162,7 +162,10 @@ export class LegaiaAudio {
     decode_xa_stream_i16(lba: number, size: number, stream_idx: number): Int16Array;
     /**
      * JSON list of every BGM pair (`pBAV` + `pQES` in the same PROT entry).
-     * Shape: `[{ prot_index, vab_offset, seq_offset, program_count, sample_count, ppqn, bpm }, ...]`.
+     * Shape: `[{ prot_index, vab_offset, seq_offset, program_count,
+     * sample_count, ppqn, bpm, sound_test_id, debug_id, title, context }, ...]`.
+     * The last four resolve the `music_01` sound-test join and are `null` for
+     * the uncatalogued boot/battle/dev copies.
      */
     enumerate_bgm_pairs_json(): string;
     /**
@@ -212,6 +215,13 @@ export class LegaiaAudio {
      * freezes.
      */
     set_bgm_paused(paused: boolean): void;
+    /**
+     * JSON of the game's debug Sound Test in catalogue order - every curated
+     * `music_01` slot, joined to this disc's playable pair. Shape:
+     * `[{ index, debug_id, title, context, ost, relocalization, uncertain,
+     * prot_index, playable, vab_offset, seq_offset, bpm }, ...]`.
+     */
+    sound_test_json(): string;
     /**
      * Start BGM playback for the given (`prot_index`, `vab_offset`,
      * `seq_offset`) tuple. Constructs the WebAudio output on the first call
@@ -801,6 +811,61 @@ export class LegaiaMinigames {
      */
     dance_widgets_json(): string;
     /**
+     * Advance the cast-power oscillator by `step` (no-op outside casting). The
+     * native driver steps `0x80` per frame; the page passes its own rate.
+     */
+    fishing_advance_cast(step: number): void;
+    /**
+     * Lock the cast and hook a fish, entering the fight (no-op outside
+     * casting). The locked power selects the species.
+     */
+    fishing_lock_cast(): void;
+    /**
+     * Recast after a resolved fight: reset the meter and clear the fight
+     * (no-op unless the fight is done).
+     */
+    fishing_recast(): void;
+    /**
+     * Apply one fight frame's reel input, stepped by `frames`: `0` = idle
+     * (tension bleeds off), `1` = reel A (Cross, `rod*9 + 0x23` divisor),
+     * `2` = reel B (Square, `rod*6 + 0x19`). No-op outside the fighting phase.
+     */
+    fishing_reel(input: number, frames: number): void;
+    /**
+     * The whole decoded species table, for the "what's biting" panel:
+     *
+     * ```json
+     * [ { "index": 0, "name": "Legaia Bass", "score": 8000,
+     *     "pull": 250, "strike_gate": 8 }, ... ]
+     * ```
+     *
+     * `name` is `null` when the overlay's name pointer doesn't resolve.
+     */
+    fishing_species_json(): string;
+    /**
+     * Start a fishing session over the disc's species table, beginning in the
+     * casting phase. Returns `false` when the table didn't decode.
+     */
+    fishing_start(): boolean;
+    /**
+     * Live fishing state.
+     *
+     * ```json
+     * { "live": true, "phase": "casting"|"fighting"|"done",
+     *   "cast_power": 64, "cast_min": 32, "cast_max": 4096, "cast_seed": 64,
+     *   "tension": 0, "tension_max": 4096, "strength": 0, "land_target": 310,
+     *   "fish": { "index": 2, "name": "Legaia Bass", "score": 10000 },
+     *   "points": 0, "best_points": 0, "best_fish": 0,
+     *   "outcome": "landed"|"snapped"|null, "outcome_points": 0 }
+     * ```
+     *
+     * `strength` is the confirmed catch-score accumulator - it grows only
+     * while reeling, so it doubles as a "how worked-in is the fish" readout;
+     * `tension` climbing to `tension_max` snaps the line. `fish` is `null`
+     * while casting.
+     */
+    fishing_state_json(): string;
+    /**
      * Load a full Mode2/2352 disc image (or a raw `PROT.DAT`), parse the TOC,
      * and pre-decode every minigame table that resolves. Returns a JSON status
      * object naming which games came up:
@@ -832,6 +897,48 @@ export class LegaiaMinigames {
      * [`Self::dance_bgm_ready_json`].
      */
     minigame_bgm_ready_json(game: string): string;
+    /**
+     * Commit one of the player's four hand cards (0..4) into the action queue,
+     * debiting the budget. Returns `false` when it can't be committed
+     * (overspend, queue full, or outside the selection phase).
+     */
+    muscle_commit(card_slot: number): boolean;
+    /**
+     * Run the opponent's greedy in-order commit (the host AI model), then
+     * close the selection phase so the round is ready to resolve.
+     */
+    muscle_end_selection(): void;
+    /**
+     * Start the next round after a non-terminal resolution: reseed budgets,
+     * clear queues. No-op unless the contest is at a round break.
+     */
+    muscle_next_round(): void;
+    /**
+     * Play the round out through the card-damage stand-in. No-op unless the
+     * round is in the resolve phase (i.e. after [`Self::muscle_end_selection`]).
+     */
+    muscle_resolve(): void;
+    /**
+     * Start a Muscle Dome contest on the disc's dealt hand, beginning in the
+     * selection phase. Returns `false` when the hand table didn't decode.
+     */
+    muscle_start(): boolean;
+    /**
+     * Live contest state.
+     *
+     * ```json
+     * { "live": true, "phase": "select"|"resolve"|"round_over"|"won"|"lost",
+     *   "round": 0, "hp": [500, 400], "hp_max": [500, 400],
+     *   "budget": [90, 70], "spent": [0, 0], "score": [108, 108],
+     *   "queue": [[12], []], "last_damage": [0, 0],
+     *   "hand": [ { "cmd": 12, "cost": 30 }, ... ], "reward_spell": 129 }
+     * ```
+     *
+     * `score` is the retail `hp * 0x6c / max_hp` readout; `hand` is the
+     * player's four dealt cards; `reward_spell` is the spell id awarded on a
+     * win (an id into the shared spell-name table's player Seru-magic block).
+     */
+    muscle_state_json(): string;
     /**
      * Render a global-pool BGM id (`2000 + sound-test slot`) to a **seamless
      * loop** render: PCM plus the loop region the browser drives
@@ -1157,8 +1264,35 @@ export class LegaiaRuntime {
     /**
      * Attempt to start the WebAudio backend. Must be called from a user-gesture
      * handler (browser autoplay policy). `true` on success.
+     *
+     * Once up, the scene's BGM plays automatically: every [`Self::tick_frame`]
+     * routes the field VM's op-`0x35` music events through the same clean-room
+     * VAB + SEQ + SPU path the audio audition page uses. This call also stages
+     * the current scene's VAB bank (so a scene-local track has a bank) and sets
+     * a default output gain, since retail SEQ output is near-inaudible at
+     * unity. Browsers often open the `AudioContext` suspended even inside a
+     * gesture - call [`Self::audio_resume`] right after this to make it audible.
      */
     audio_init(): boolean;
+    /**
+     * Whether the WebAudio backend is live (`audio_init` succeeded). The play
+     * page reads this to decide whether it still needs the user's audio-enable
+     * gesture.
+     */
+    audio_ready(): boolean;
+    /**
+     * Resume the BGM `AudioContext`. Browsers construct it in `suspended`
+     * state even when the constructor runs inside a user gesture; the play
+     * page calls this from its gesture handler right after [`Self::audio_init`]
+     * to make the audio actually sound. Resolved no-op when audio isn't up.
+     */
+    audio_resume(): Promise<any>;
+    /**
+     * Set the BGM output gain. `1.0` matches the native cpal path; the play
+     * page defaults to [`BGM_DEFAULT_GAIN`] because retail SEQ+SPU output is
+     * quiet. No-op when audio isn't up.
+     */
+    audio_set_gain(gain: number): void;
     /**
      * `[width, height]` of the title atlas; `[0, 0]` when none.
      */
@@ -3232,6 +3366,7 @@ export interface InitOutput {
     readonly legaiaaudio_resume_bgm: (a: number) => any;
     readonly legaiaaudio_set_bgm_gain: (a: number, b: number) => void;
     readonly legaiaaudio_set_bgm_paused: (a: number, b: number) => void;
+    readonly legaiaaudio_sound_test_json: (a: number) => [number, number];
     readonly legaiaaudio_start_bgm: (a: number, b: number, c: number, d: number) => [number, number];
     readonly legaiaaudio_stop_bgm: (a: number) => void;
     readonly legaiaaudio_str_decode_frame: (a: number, b: number) => [number, number];
@@ -3313,9 +3448,22 @@ export interface InitOutput {
     readonly legaiaminigames_dance_sting_rate: (a: number, b: number, c: number) => number;
     readonly legaiaminigames_dance_tick: (a: number, b: number) => void;
     readonly legaiaminigames_dance_widgets_json: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_advance_cast: (a: number, b: number) => void;
+    readonly legaiaminigames_fishing_lock_cast: (a: number) => void;
+    readonly legaiaminigames_fishing_recast: (a: number) => void;
+    readonly legaiaminigames_fishing_reel: (a: number, b: number, c: number) => void;
+    readonly legaiaminigames_fishing_species_json: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_start: (a: number) => number;
+    readonly legaiaminigames_fishing_state_json: (a: number) => [number, number];
     readonly legaiaminigames_load_disc: (a: number, b: number, c: number) => [number, number, number, number];
     readonly legaiaminigames_minigame_bgm_pcm_i16: (a: number, b: number, c: number, d: number) => [number, number];
     readonly legaiaminigames_minigame_bgm_ready_json: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaminigames_muscle_commit: (a: number, b: number) => number;
+    readonly legaiaminigames_muscle_end_selection: (a: number) => void;
+    readonly legaiaminigames_muscle_next_round: (a: number) => void;
+    readonly legaiaminigames_muscle_resolve: (a: number) => void;
+    readonly legaiaminigames_muscle_start: (a: number) => number;
+    readonly legaiaminigames_muscle_state_json: (a: number) => [number, number];
     readonly legaiaminigames_music01_bgm_render: (a: number, b: number, c: number) => number;
     readonly legaiaminigames_new: () => number;
     readonly legaiaminigames_save_portrait_rgba: (a: number, b: number) => [number, number];
@@ -3348,6 +3496,9 @@ export interface InitOutput {
     readonly legaiaminigames_slot_symbol_rgba: (a: number, b: number) => [number, number];
     readonly legaiaminigames_slot_tick: (a: number) => number;
     readonly legaiaruntime_audio_init: (a: number) => number;
+    readonly legaiaruntime_audio_ready: (a: number) => number;
+    readonly legaiaruntime_audio_resume: (a: number) => any;
+    readonly legaiaruntime_audio_set_gain: (a: number, b: number) => void;
     readonly legaiaruntime_boot_title_atlas_dims: (a: number) => [number, number];
     readonly legaiaruntime_boot_title_atlas_rgba: (a: number) => [number, number];
     readonly legaiaruntime_boot_title_close: (a: number) => void;
