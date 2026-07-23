@@ -297,6 +297,7 @@ menu.md#use-list-row-build-content-id-3-fun_80030628). |
 
 | Thread | Status | What would close it |
 |---|---|---|
+| `_DAT_8007B910` carries two incompatible roles | open | The corpus calls it "live brightness" (seeded `0xD7` beside the brightness reference `_DAT_8008457C` by `FUN_8001FFA4`; ramped as a screen fade by the battle-action SM states `0x35`/`0x51`/`0x6F`) **and** feeds it as an audio scalar: `FUN_80026478` passes `_DAT_8007B910 >> 1` to the pan primitive `FUN_8002657C`, and `FUN_800267A8` passes the same halved value to the libsnd wrapper `FUN_80062004`. Both readings are already committed, in different pages. Closing it needs a live watch on the cell across a summon cast (brightness ramp) with the audio mix observed, or the identification of `FUN_80062004`'s libsnd entry - if its second argument is a volume, one of the two labels is wrong. |
 | XA clip-table writer + `(clip_id, chan)` cue census | resolved | Writer pinned statically: `FUN_801CFA78` in PROT 0895 `init.pak` (base `0x801CE818`, recovered from four in-blob string refs) sprintf-generates `\XA\XA%d.XA;1` per slot and fills `[BCD-MSF][size]` via ISO9660 lookup `FUN_8005DBB4`; called once from the init boot tick `0x801CF500`. Full deduped one-shot + streamed cue census in [`audio.md`](../subsystems/audio.md); grade `disassembly` (byte-level, base self-consistent). Census note: PROT-entry over-read aliases callsites into neighbouring overlays - dedupe by true entry extent (gameover 0902 / world-map 0901 have zero genuine XA calls). [details ↓](#xa-clip-table-writer--clip_id-chan-cue-census) |
 
 ### XA clip-table writer + `(clip_id, chan)` cue census
@@ -315,7 +316,34 @@ A caller census of `FUN_8003D53C`/`FUN_8003EAE4` names each `(clip_id, chan)` cu
 | Full-window item-add OOB primitive: reachability | resolved (moved to re-settled) | Primitive real (grade `disassembly`): id store `sb t0,0x1818(a0)` @ `0x800422BC` is unconditional, before the guard that gates only the count store. But **unreachable through the retail add call sites in normal play** - each caller `jal`s the helper with no room pre-check, and the helper's free-slot scan cannot reach the `i == end` OOB exit (a `[0,256)` window holds ≤255 distinct ids, so a hole always remains). See [`re-settled-threads.md`](re-settled-threads.md#full-window-item-add-oob-reachability). |
 | New-Game opening chain + narration roller | resolved (chain + caption + roller + prologue gold grade; far-geometry residual closed resolved-negative) - the gold grade is a capture-pinned palette-space collapse, superseding the per-node depth-cue reading | [details ↓](#new-game-opening-chain--narration-roller) |
 | Slot-B overlay cluster (`0900..0969`) per-entry identity | mostly resolved | [details ↓](#slot-b-overlay-cluster-09000969-per-entry-identity) |
+| PROT 0977 / 0978 are not in the extracted overlay set | open | [details ↓](#prot-0977--0978-are-not-in-the-extracted-overlay-set) |
+| Phantom-VA sweep of the PROT 0897 imports | partial | The two deltas are measured and nine addresses are re-keyed against base-tagged dumps - see [`overlay-va-aliases.md`](overlay-va-aliases.md). What remains: the boundary band near `0x801E5000` (where the "0897 own content" and "over-read into 0898" readings both land inside a dumped body, and neither dump carries enough instructions to decide), the doubly-aliased `0x8020D05C`, and whether PROT 0896's imports obey a law of their own (one `0x9000` step is measured, which is not a law). Closing it means a byte-level sweep of both images at every printed VA rather than the per-address spot checks done so far. |
 | Overlay-loader index off-by-2 - remaining ripple | resolved | Slot A reconciled; slot-B per-spell identity fully capture-pinned across every block, incl. the flute summons 0924/0925 (Lippian/Spikefish) and the 0926 unused-`0x98` stub; engine mirrors carry the extraction-space constant. [details ↓](#overlay-loader-index-off-by-2---remaining-ripple) |
+
+### PROT 0977 / 0978 are not in the extracted overlay set
+
+*Status:* open
+
+Dumps prefixed `overlay_0977_*` / `overlay_0978_*` resolve to no extracted
+image, so their printed addresses cannot be corrected against a known base.
+
+Five rows (`801c2b58`, `801c3004`, `801c39b8`, `801c614c`, `801c6804`) close as
+mis-based prints on the **base argument alone**: every slot-A overlay bases at
+`0x801CE818` and every slot-B overlay at `0x801F69D8`, so a VA below
+`0x801CE818` names no overlay function whatever its dump looks like. That
+disposes of the addresses; it does not recover the functions. The real VA of
+each body stays unknown and the bodies stay undocumented.
+
+Two hints at where they came from: four `overlay_0978_*` siblings resolve into
+`dance_0980` at a constant `+0x9818`, and one `overlay_0977_*` into
+`baka_fighter_0976` at `+0x5710`. That the deltas are constant per program
+suggests the images those imports were taken from are not the overlays their
+filenames claim - the same class of error measured in
+[`overlay-va-aliases.md`](overlay-va-aliases.md) for the PROT 0897 imports.
+
+Closing it needs `asset overlay` runs for 0977 and 0978, then a re-run of
+`scripts/ghidra-analysis/check-dump-base-integrity.py`. Evidence grade:
+`disassembly`.
 
 ### Slot-B overlay cluster (`0900..0969`) per-entry identity
 
