@@ -151,7 +151,21 @@ patching an instruction. Useful Ghidra anchors.
 | `0x801C6EA4` | Current world / scene struct pointer. |
 | `0x801C6ED8` | CD-XA streaming-clip table: 34 slots of `[CdlLOC][u32 byte_len]` (8-byte stride, indexed by clip id; `+0x0` = 4-byte BCD-MSF `CdlLOC` disc start, `+0x4` = length, zero = empty slot). **Slot `i` = file `XA<i+1>.XA`** - lengths byte-exact vs the disc. Filled at boot by `FUN_801CFA78` (PROT 0895 `init.pak`), which sprintf-generates `\XA\XA%d.XA;1` per slot and stages `[BCD-MSF][size]` via ISO9660 lookup `FUN_8005DBB4` - no XA LBA is stored absolutely, so the table survives disc relayout. Read by the XA cue starter `FUN_8003D53C` (via `msf_to_lba`, `FUN_8005C42C`), which drives the CdSync-callback state machine `FUN_8003D764` (`CdlSetfilter {file 1, chan}` per cue). See [`cutscene.md`](../subsystems/cutscene.md#xa-channel-selection). |
 | `0x801C6460` | 64-entry × u16 scratchpad slot table. Written by op 0x4C nibble-C sub-A; adjusted by sub-B / sub-C. |
-| `0x801C66A0` | 64-slot ramp scheduler pool (stride 0x20). |
+| `0x801C66A0` | 64-slot ramp scheduler pool (stride 0x20). Installed by `FUN_8003C5F0`, walked by `FUN_80036D80`. |
+| `0x8007BB20` | Timed sound-source auto-release **armed flag** (`gp+0x808`); set by `FUN_800267A8`, cleared on expiry by `FUN_800267FC`. |
+| `0x8007BB24` | Level latched at arm time (`gp+0x80C`) - the value of `_DAT_8007B910` when `FUN_800267A8` ran. |
+| `0x8007BB28` | Caller tag stored at arm time (`gp+0x810`). |
+| `0x8007BB2C` | Auto-release **deadline** in vsyncs (`gp+0x814`). |
+| `0x8007BB34` | Auto-release **elapsed** accumulator (`gp+0x81C`); advanced by `DAT_1F800393`, so the deadline is cadence-invariant. |
+| `0x80076C10` | **Battle pose-slot array**, 24-byte stride, indexed by slot. `+0x14` holds a pointer to the acting actor's `+0x1BC` animation descriptor (stored by `FUN_801D5854` before the `FUN_80035F04` lookup); `+0x02` / `+0x04` / `+0x06` / `+0x0A` / `+0x0C` are the u16 fields the copy helpers `FUN_801D5778` / `FUN_801D57E8` move. Records 41/42 (`+0x3D8` / `+0x3F0`) are the pair `FUN_801D5854` copies inline. |
+| `0x801F6950` | u32 - **battle-action overlay PRNG state** (`FUN_801D0290`). Overlay-resident, so it is not the SCUS `rand()` seed and its draws do not perturb that stream. |
+| `0x801D9184` / `0x801D918C` | Two tracked 2-D points in the **fishing** overlay (`i16` at `+0` = x, `+4` = y); `FUN_801D765C` returns their separation in grid tiles. |
+| `0x801E46B0` | i32 - menu-overlay **selected item id** for the window-34 description box (`FUN_801D4A80`); `<= 0` draws nothing. |
+| `0x801E46D0` | u32 - menu-overlay packed **toggle state word** for window 46 (`FUN_801D603C`); bits `0x4000` / `0x2000` / `0x1000` and the low 12 bits select each row's marker kind. |
+| `0x1F800314 +0x6A` | u16 - scratchpad draw-context **depth clip bound** used by `FUN_801D5C2C`. |
+| `0x1F800314 +0x74` / `+0x78` | u16 - scratchpad draw-context **2-D clip bounds** used by `FUN_801D56E4`. |
+| `0x1F80037E` | u16 - scratchpad **near cutoff**; `FUN_801D5C2C` rejects a segment whose two transformed Z both fall inside it. |
+| `0x80073280` | 0x24-byte block immediately below the widget class table `DAT_800732A4`: seven 4-byte records followed by two pointers, `0x8007B41C` and `0x8007B418`. Role unidentified; recorded so the block is not mistaken for the head of the class table. |
 | `0x8007C018` | TMD pointer table (`idx * 4` stride). Sole writer is `FUN_80026B4C`. All populated entries (`[0..DAT_8007BB38]`) are post-fixup Legaia TMDs. |
 | `0x8007C348` | u32 | Free-list LIFO stack pointer for the actor allocator. |
 | `0x8007C34C..0x36C` | u32[7] | Actor-list slot table consumed by `FUN_8002519c`. Seven linked-list heads at strides of 4 bytes (`+0x00`/`+0x04`/`+0x08`/`+0x0C`/`+0x10`/`+0x14`/`+0x20`). `FUN_80016444` walks five of them per frame as separate render passes; per-node entry-point is `node[+0x0C]` invoked via `jalr`. `_DAT_8007C354` and `_DAT_8007C364` are also read by `func_0x8003C83C` for the `0xF8`/`0xFB` motion-VM channel lookups (same list, two consumers). |
