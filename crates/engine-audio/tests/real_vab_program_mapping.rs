@@ -80,7 +80,10 @@ fn every_real_bank_maps_programs_by_used_slot_rank() {
         let mut alloc = SpuAllocator::new(0x1000, 0x10_0000);
         let bank = VabBank::upload(&mut spu, &mut alloc, &report, &bytes);
 
-        // The law itself: used slot -> its rank's packed page, unused -> empty.
+        // The law itself: a used slot maps to its rank's page; an unused slot
+        // aliases onto the page the NEXT used slot gets (retail writes the
+        // used-counter before the used check), and only a slot past the last
+        // used page is left empty.
         let mut page = 0usize;
         for (slot, prog) in report.programs.iter().enumerate() {
             if prog.tones != 0 {
@@ -96,8 +99,32 @@ fn every_real_bank_maps_programs_by_used_slot_rank() {
                     assert_eq!((a.vag, a.vol, a.min, a.max), (b.vag, b.vol, b.min, b.max));
                 }
                 page += 1;
+            } else if page < report.tones.len() {
+                // Unused slot, in range: aliased onto the next used slot's page
+                // (rank = used slots seen so far), keeping its own mvol/mpan.
+                let got = bank
+                    .programs
+                    .get(slot)
+                    .expect("aliased unused slot present");
+                assert_eq!(
+                    got.mvol, prog.mvol,
+                    "{name} slot {slot}: unused keeps own mvol"
+                );
+                assert_eq!(
+                    got.tones.len(),
+                    report.tones[page].len(),
+                    "{name} slot {slot}: aliased to page {page}"
+                );
+                for (a, b) in got.tones.iter().zip(&report.tones[page]) {
+                    assert_eq!((a.vag, a.vol, a.min, a.max), (b.vag, b.vol, b.min, b.max));
+                }
             } else if let Some(p) = bank.programs.get(slot) {
-                assert!(p.tones.is_empty(), "{name} slot {slot}: unused but toned");
+                // Past the last used page: retail reads garbage; the port stays
+                // empty (silent).
+                assert!(
+                    p.tones.is_empty(),
+                    "{name} slot {slot}: past-region stays empty"
+                );
             }
         }
 

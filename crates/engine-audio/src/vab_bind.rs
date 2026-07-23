@@ -36,8 +36,9 @@ use legaia_vab::{VabReport, VagAtr};
 /// One program slot of a bank: the program-level attributes retail stages at
 /// key-on, plus the program's tone page. Indexed by **program number** (the
 /// `ProgAtr` slot a SEQ ProgramChange or an SFX descriptor names) - see
-/// [`VabBank::programs`]. An unused slot carries an empty page and neutral
-/// attributes; its notes never resolve.
+/// [`VabBank::programs`]. An unused slot aliases onto the next used slot's tone
+/// page (retail's rank rule) while keeping its own `ProgAtr` mvol/mpan; only a
+/// slot past the last used page carries an empty page whose notes never resolve.
 #[derive(Debug, Clone)]
 pub struct VabProgram {
     /// Program master volume 0..=127 (`ProgAtr.mvol`). Factors into the
@@ -76,8 +77,9 @@ pub struct VabBank {
     /// tone-page order. The file stores one 16-tone page per *used* program
     /// (`ProgAtr.tones != 0`), packed in slot order; `upload` expands those
     /// pages back into slot space the way retail does at VAB open (see
-    /// there). Unused slots hold an empty page; trailing unused slots are
-    /// trimmed, so `len()` reads "last used program + 1".
+    /// there): an unused slot aliases onto the next used slot's page, and only
+    /// slots past the last used page hold an empty page. Those trailing empties
+    /// are trimmed, so `len()` reads "last used program + 1".
     pub programs: Vec<VabProgram>,
 }
 
@@ -134,21 +136,34 @@ impl VabBank {
         // sparse bank (most music banks) that collapses the whole score onto
         // a few low pages.
         //
-        // Divergence kept deliberate: retail stores the counter *before* the
-        // used check, so a program-change to an unused slot aliases onto the
-        // next used slot's page (and past the last used slot, reads garbage
-        // beyond the tone region). The engine gives unused slots an empty
-        // page instead, so their notes simply don't resolve.
+        // Retail stores the counter *before* the used check, so a slot's page
+        // index is the count of USED slots that precede it: a used slot maps to
+        // its own next page, and an UNUSED slot aliases onto the SAME page the
+        // next used slot gets. The engine reproduces this so a ProgramChange to
+        // an unused slot resolves to the aliased page rather than silence -
+        // real retail BGM does this (e.g. music banks where a channel selects a
+        // gap slot; see tests/real_seq_program_change_coverage.rs). The unused
+        // slot keeps its own ProgAtr mvol/mpan (retail reads ProgAtr[P] for the
+        // volume chain) but borrows the next used slot's tone region.
+        //
+        // Only the *past-the-last-used-page* case is NOT reproduced: there
+        // retail's alias index runs beyond the packed tone region and reads
+        // garbage; the engine leaves those trailing slots an empty (silent)
+        // page instead of replaying undefined bytes.
         let mut programs = Vec::with_capacity(report.programs.len());
         let mut page = 0usize;
         for prog in &report.programs {
-            if prog.tones != 0 && page < report.tones.len() {
+            if page < report.tones.len() {
                 programs.push(VabProgram {
                     mvol: prog.mvol,
                     mpan: prog.mpan,
                     tones: report.tones[page].clone(),
                 });
-                page += 1;
+                // Only a used slot advances the page counter; an unused slot
+                // shares the page of the used slot that follows it.
+                if prog.tones != 0 {
+                    page += 1;
+                }
             } else {
                 programs.push(VabProgram {
                     mvol: 0x7F,
@@ -501,5 +516,81 @@ mod tests {
         assert!(!bank.play_note(&mut spu, 0, 1, 60, 100));
         // Program out of range -> not playable.
         assert!(!bank.can_play(9, 60));
+    }
+
+    fn prog(tones: u8, mvol: u8) -> legaia_vab::ProgAtr {
+        legaia_vab::ProgAtr {
+            tones,
+            mvol,
+            prior: 0,
+            mode: 0,
+            mpan: 0x40,
+            reserved0: 0,
+            attr: 0,
+            reserved1: 0,
+            reserved2: 0,
+        }
+    }
+
+    fn mk_report(
+        progs: Vec<legaia_vab::ProgAtr>,
+        tones: Vec<Vec<VagAtr>>,
+    ) -> legaia_vab::VabReport {
+        legaia_vab::VabReport {
+            header: legaia_vab::VabHeader {
+                magic: 0,
+                version: 0,
+                vab_id: 0,
+                fsize: 0,
+                ps: tones.len() as u16,
+                ts: 0,
+                vs: 0,
+                mvol: 127,
+                pan: 0x40,
+                attr1: 0,
+                attr2: 0,
+            },
+            header_offset: 0,
+            programs: progs,
+            tones,
+            vag_samples: vec![],
+            vag_table_spacer: 0,
+        }
+    }
+
+    /// A ProgramChange to an UNUSED program slot aliases onto the next used
+    /// slot's tone page (retail's `+8` used-counter is written before the used
+    /// check), keeping the unused slot's own `mvol`; a slot past the last used
+    /// page stays empty (retail reads garbage there, which we don't replay).
+    #[test]
+    fn unused_slot_program_aliases_to_next_used_page() {
+        // Slots: used, UNUSED, used, unused(trailing). Two used -> two packed
+        // pages, made distinguishable by tone `center` (10 = page A, 20 = B).
+        let page_a = vec![dummy_tone(10, 1, 100, 0x40)];
+        let page_b = vec![dummy_tone(20, 1, 100, 0x40)];
+        let report = mk_report(
+            vec![
+                prog(1, 0x70), // slot 0 used   -> page A
+                prog(0, 0x55), // slot 1 UNUSED -> aliases to slot 2's page (B)
+                prog(1, 0x60), // slot 2 used   -> page B
+                prog(0, 0x40), // slot 3 unused, trailing -> past region -> empty
+            ],
+            vec![page_a, page_b],
+        );
+        let mut spu = Spu::new();
+        let mut alloc = crate::spu::ram::SpuAllocator::new(0x1000, 0x1_0000);
+        let bank = VabBank::upload(&mut spu, &mut alloc, &report, &[]);
+
+        // Used slots keep their own next page.
+        assert_eq!(bank.programs[0].tones[0].center, 10, "slot 0 = page A");
+        assert_eq!(bank.programs[2].tones[0].center, 20, "slot 2 = page B");
+        // THE FIX: the unused in-range slot resolves to the next used slot's
+        // page (B) instead of silence, and keeps its OWN ProgAtr mvol.
+        assert_eq!(bank.programs[1].tones.len(), 1, "slot 1 aliased, not empty");
+        assert_eq!(bank.programs[1].tones[0].center, 20, "slot 1 -> page B");
+        assert_eq!(bank.programs[1].mvol, 0x55, "slot 1 keeps its own mvol");
+        // The trailing unused slot is past the last used page -> empty ->
+        // trimmed off the tail, so the bank ends at the last used slot.
+        assert_eq!(bank.programs.len(), 3, "trailing empty slot trimmed");
     }
 }
