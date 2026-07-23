@@ -368,6 +368,32 @@ runs, `step_world_map_locomotion` stands the overworld player down (the force-wa
 lock) and `World::tick`'s world-map arm steps the timeline whenever one is active
 (not just during the opening `map01` fly-in).
 
+### Field-overlay actor state machines (sparkle / travel-magic / dev)
+
+Several more `+0x54`-keyed actor state machines share the world-map / field
+overlay band (all `ctx[+0x54]` = SM phase, `ctx[+0x9e]` = a vsync accumulator,
+`ctx[+0x10] |= 8` = retire). They are dumped but not clean-room ported - each
+is interwoven with menu-prompt, warp, or GTE-render infrastructure that does
+not factor into `engine-vm` cleanly:
+
+| Function | Dump | What it is |
+|---|---|---|
+| `FUN_801E5338` | `801e5338.txt` | Sparkle emitter: spawns up to 8 `SPRT` particles at `rand()` offsets (`FUN_80056798`) around `ctx[+0x14/+0x16]`, animates each through a 10-frame sprite anim, posts them via `AddPrim` (`FUN_8003D2C4`); phase `2` waits for all to retire, then sets bit `0x8` |
+| `FUN_801EA9B0` | `overlay_debug_menu_801ea9b0.txt` | 24-case SM dispatcher on `ctx[+0x9e]` (jump table `0x801CF2E4`); the out-of-range arm parks `ctx[+0x54] = 1` and returns. Sibling of the dev-menu renderer `FUN_801EAD98` |
+| `FUN_801EE094` | `801ee094.txt` | **Riremito** travel-art actor (string `"ON RIREMITO"`): scans the visited-map table (`_DAT_8007B806` count, records at `+0xC`, `0x10` stride) for the current map `_DAT_80084628`; a miss parks phase `99` and prints `"UNFIND MAP NUMBER %d"` |
+| `FUN_801EE328` | `801ee328.txt` | **Rula** travel-art actor (string `"ON RULA"`): same map-table search; phase 2 raises the halt bit on `_DAT_8007C364[+0x10]`, scrolls `_DAT_8007C364[+0x16]` and spawns a flash quad via `FUN_80024E80` |
+| `FUN_801EF014` | `801ef014.txt` | Destination list-picker actor over the tile descriptor `_DAT_8007B450`: counts selectable cells (`+1`), drives a cursor prompt (`FUN_801E9DC8`), commits the pick into `_DAT_8007BB88`, then exits via `ctx[+0x50] = 0x1A` |
+
+### `FUN_801D5DE0` - world-map tile cursor SM (604 bytes)
+
+Entry `(ctx_ptr)` (dump `801d5e20.txt`, entry `801d5de0`). While
+`DAT_801EF0D0 != 0` it walks the per-cell cursor state `_DAT_8007BB98`
+(low 12 bits = selected cell, bit `0x2000`/`0x4000` = mode flags), calls the
+tile drawer `FUN_8002B994` for the highlighted cell, sets `_DAT_8007B454 = 7`,
+and resolves each cell's art id through `DAT_801E4518[...]` keyed by the tile
+descriptor `_DAT_8007B450[+1]`. A cursor / selection-grid renderer, not a
+locomotion controller.
+
 ### The Drake round trip (Rim Elm <-> map01 <-> cave01)
 
 The two directions of a hop are **different mechanisms**, so a working exit does
@@ -1285,6 +1311,22 @@ field-overlay handlers emit them:
   `World::step_clut_fx` (the VRAM driver), fed by the
   `op4c_n6_sub_61_emitter` field-VM host hook.
 
+A **third**, distinct CLUT-fade actor lives in the same overlay band:
+`FUN_801E4D8C` (`ghidra/scripts/funcs/overlay_world_map_top_801e4d8c.txt`) is
+a *single-source blend-to-target* fade, not an A→B interpolation. Its first
+tick `LoadImage`s one 16×1 CLUT row, decodes each BGR555 entry into three
+8-bit-scaled channel bytes, and precomputes an **endpoint** as a partial blend
+toward a flat target colour: `end = base + ((target − base) × frac >> 12)`
+(the fraction `frac`, the target bytes, and the duration are the data record at
+actor `+0x90`, read via `FUN_8003CE9C`). Every tick `acc += DAT_1F800393`
+(vsyncs/tick) and, while `acc < duration`, each entry interpolates
+`base + (end − base) × acc / duration` per channel and `StoreImage`s the row;
+on `acc >= duration` it repacks straight from the endpoint bytes, frees the
+scratch and sets flag bit `0x8`. Two retail quirks are faithful: the endpoint
+uses a **logical** shift over a possibly-negative product, and the per-tick
+term uses an **unsigned** `divu`. Engine mirror (arithmetic kernel):
+`legaia_engine_vm::world_map_clut_fade::ClutBlendFade`.
+
 Both families bottom out in the statically-linked libgpu (`MoveImage
 FUN_80058490`, which patches the static 5-word GP0 packet template at
 `0x80078DFC`; `LoadImage FUN_800583C8`; `StoreImage FUN_8005842C`) - which
@@ -1691,10 +1733,27 @@ which forwards into the per-actor render dispatcher `FUN_8001ADA4`
 runs a different switch - on `actor[+0x56]` (render mode `1..0xB`):
 
 - **case 4** (multi-target). Dispatches on `actor[+0x9e]` flags:
-  - bit `0x4000` → `FUN_8002A5A4` (SCUS).
-  - bit `0x2000` → `FUN_801CFA48` (overlay-resident).
-  - else → `FUN_80028158` (SCUS, distinct from the 6692-byte motion
-    bytecode VM `FUN_80038158`).
+  - bit `0x4000` → `FUN_8002A5A4` (SCUS, `8002a5a4.txt`, 183 instructions).
+    Builds a **single billboard quad** into the actor's prim group: four
+    corner vertices from the source record's half-dims (`+0x18`/`+0x1a`,
+    `z = 0`), the corner orientation chosen by `param_2 & 3` (0/90/180°). The
+    primitive is a textured-gouraud `POLY_GT4` (GP0 `0x26`, 9-word stride,
+    `tpage`/`clut` `0x3C`/`0x9`) when `(param_2 >> 3) & 7 == 0`, otherwise a
+    shorter semi-transparent gouraud `POLY_G4`-class quad (GP0 `0x22`, 6-word
+    stride, `0x2C`); colour comes from record `+0xC..+0x12`. Ends by zeroing a
+    `0x14`-word tail. A pure record→packet transform; not ported (raw GP0
+    packet layout belongs to `engine-render`, not `engine-vm`).
+  - bit `0x2000` → `FUN_801CFA48` (overlay-resident). The only accessible
+    dumps are the **menu / battle-action** overlays, where `0x801CFA48` is a
+    *mid-function citation* inside `FUN_801CF88C`, not an entry - it is
+    VA-aliased to a different overlay's function (see
+    [`call-target-integrity.md`](../tooling/call-target-integrity.md)), so no
+    clean world-map dump exists to port from.
+  - else → `FUN_80028158` (SCUS, `80028158.txt`, 1395 instructions; distinct
+    from the 6692-byte motion bytecode VM `FUN_80038158`). The **multi-
+    primitive** default shape: walks the source record and emits a batch of
+    gouraud/textured `POLY` packets (`0x24`-word stride) into the prim pool.
+    Large GTE/GP0 emitter; document-only for the same clean-room reason.
 - **case 5** (full TMD). Iterates the mesh chain at `actor[+0x44]`
   (`puVar5[0]` = count, `puVar5[1..n]` = mesh pointers) and per
   entry calls:

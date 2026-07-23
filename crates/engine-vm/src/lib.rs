@@ -101,6 +101,7 @@ pub mod vdf_morph;
 pub mod vram_rect_copy;
 pub mod world_map;
 
+pub mod world_map_clut_fade;
 pub mod world_map_dim;
 pub mod world_map_horizon;
 pub mod world_map_overlay;
