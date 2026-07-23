@@ -111,6 +111,14 @@ pub(crate) const BITMAP_BYTES: usize = 32;
 /// sound/effect tables found by read-watching a live battle (their zero padding
 /// is what the old arena3/4/5 wrongly squatted in - the Healing-Leaf freeze).
 pub(crate) const SCUS_TABLE_RANGES: &[(u32, u32)] = &[
+    // Dialog-font + text-render live block, up to the item-name table. Covers the
+    // 256-byte glyph advance/width table (`0x80073F1C`, `legaia_font`), the 38-entry
+    // `0xCE`-escape table (`0x80074050`), the per-glyph advance-padding var
+    // `DAT_800740E8` (read every glyph by the font renderer `FUN_80036888`), the
+    // text-render globals + handler table (`0x800742EC`/`0x800742F0`), and the 4xu32
+    // ability bitmask (`0x80074358`, memory-map.md). A read-watch sweep found 11
+    // live refs inside this window - a plain zero-run here is NOT dead space.
+    (0x8007_3F1C, 0x8007_436C),
     (0x8007_436C, 0x8007_625C), // item / equipment / spell name + stat tables
     (0x8007_625C, 0x8007_6900), // accessory table + face source/geo/delta tables
     (0x8007_0700, 0x8007_078C), // pad before the 28-mode game-mode table (old arena3)
