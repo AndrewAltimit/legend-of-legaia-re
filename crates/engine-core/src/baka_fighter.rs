@@ -1204,6 +1204,144 @@ pub fn center_effect_spawn(sprite_id: u16) -> EffectSpawnSpec {
     }
 }
 
+// --- Action-table keyframe lookup ------------------------------------------
+
+/// Arithmetic shift-right-by-4 rounding toward zero - the retail
+/// `bgez v, skip; addiu v, v, 0xf; skip: sra v, v, 4` idiom (a plain `>> 4`
+/// on a negative would round toward minus infinity).
+fn sra4_round_to_zero(v: i32) -> i32 {
+    (if v < 0 { v + 0xF } else { v }) >> 4
+}
+
+/// PORT: FUN_801d6e5c - action-table keyframe lookup by frame range.
+///
+/// Returns the index of the first sub-keyframe whose whole-frame index (the
+/// action record's `+0x26` field, one per `0x08`-byte sub-keyframe) falls
+/// within the query range, or `None` when the range is inverted (`to < from`),
+/// the action has no sub-keyframes, or none match.
+///
+/// The fixed point sits on the **query**, not on the record: `from` and `to`
+/// are shifted right by 4 (rounding toward zero) and compared against the raw
+/// frame indices, so callers pass a `<< 4` fixed-point frame range against the
+/// whole-frame keyframe values. `frame_indices` is the action record's
+/// per-sub-keyframe `+0x26` column (its length is the record's `+0x1c` count);
+/// the retail function reaches it through `PTR_DAT_801db8b8[char][action]`.
+pub fn keyframe_in_range(frame_indices: &[i16], from: i32, to: i32) -> Option<usize> {
+    if to < from {
+        return None;
+    }
+    let lo = sra4_round_to_zero(from);
+    let hi = sra4_round_to_zero(to);
+    frame_indices
+        .iter()
+        .position(|&f| lo <= f as i32 && (f as i32) <= hi)
+}
+
+// --- Decimal number drawers ------------------------------------------------
+
+/// Cells in the Baka Fighter number drawers' fixed-width right-aligned field:
+/// eight decimal places (`10_000_000` down to `1`). Leading-zero places are
+/// blank; the units place always draws (so a zero value shows a single `0`).
+pub const DIGIT_FIELD_CELLS: usize = 8;
+
+/// Widget id of the 8px digit glyph (`FUN_801d69e4` / `FUN_801d6a18`).
+pub const NUMBER_WIDGET: u8 = 0x13;
+/// X advance per drawn cell for the 8px number drawer (`s1 += 8`).
+pub const NUMBER_CELL_STRIDE: i16 = 8;
+/// Widget id of the coin-count digit glyph (`FUN_801d6f44`, HUD widget 47).
+pub const COIN_WIDGET: u8 = 0x2F;
+/// X advance per drawn cell for the coin-strip drawer (`s1 += 0x10`).
+pub const COIN_CELL_STRIDE: i16 = 0x10;
+/// Base `u` texel column of the coin digit cell row (`u = 0x58 + digit*0x10`).
+pub const COIN_U_BASE: u8 = 0x58;
+
+/// One decimal glyph a Baka Fighter number drawer emits: which HUD widget to
+/// draw, its place in the field, the x offset from the field's left edge, and
+/// the `u` texel column patched into the widget descriptor for the digit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DigitCell {
+    /// Field place, `0` (leftmost / highest) .. `DIGIT_FIELD_CELLS` (units).
+    pub cell: usize,
+    /// The decimal digit `0..=9` drawn here.
+    pub digit: u8,
+    /// HUD widget id drawn for this glyph.
+    pub widget: u8,
+    /// X offset from the field's left edge (`cell * stride`).
+    pub x_offset: i16,
+    /// The `u` texel column stamped into the widget descriptor.
+    pub u: u8,
+}
+
+/// Lay out an integer as a right-aligned decimal field. Shared kernel of the
+/// two overlay number drawers: the retail code stores each place's truncated
+/// quotient `value / 10^(7-cell)` into a scratch array (skipping the ones that
+/// come out zero, except the units place which is pre-seeded so it always
+/// draws), then draws each surviving place as `quotient % 10`. Negative input
+/// has no retail call site (score / coin counts are non-negative) and is
+/// clamped to zero here.
+fn field_cells(value: i32, widget: u8, stride: i16, u_of: impl Fn(u8) -> u8) -> Vec<DigitCell> {
+    let value = value.max(0);
+    let mut out = Vec::new();
+    let mut divisor = 10_000_000i32;
+    for cell in 0..DIGIT_FIELD_CELLS {
+        let quotient = value / divisor;
+        if quotient != 0 || cell == DIGIT_FIELD_CELLS - 1 {
+            let digit = (quotient % 10) as u8;
+            out.push(DigitCell {
+                cell,
+                digit,
+                widget,
+                x_offset: cell as i16 * stride,
+                u: u_of(digit),
+            });
+        }
+        divisor /= 10;
+    }
+    out
+}
+
+/// PORT: FUN_801d6a18 - the right-aligned 8px decimal number drawer.
+///
+/// Lays `value` out across the eight-place field as widget [`NUMBER_WIDGET`]
+/// glyphs, each cell `8` px to the right of the last ([`NUMBER_CELL_STRIDE`])
+/// with the digit's `u` column patched to `digit * 8` (`DAT_801d72e4`). Retail
+/// also biases the glyph CLUT for the run (`DAT_801d72e2 = clut + 0x7d87`,
+/// restored after) and draws through [`hud_widget_quad`] / `FUN_801d5ed0`; the
+/// CLUT bias and OT-bucket scheduling are host-side, so this returns just the
+/// per-digit cell layout.
+pub fn right_aligned_number_cells(value: i32) -> Vec<DigitCell> {
+    field_cells(value, NUMBER_WIDGET, NUMBER_CELL_STRIDE, |d| d * 8)
+}
+
+/// PORT: FUN_801d6f44 - the coin-count digit-strip drawer (HUD widget 47).
+///
+/// Same right-aligned decimal decomposition as [`right_aligned_number_cells`],
+/// but drawing widget [`COIN_WIDGET`] glyphs `0x10` px apart
+/// ([`COIN_CELL_STRIDE`]) with the digit `u` column patched to
+/// `0x58 + digit * 0x10` (`DAT_801d7514`) - the "GET COIN" numeral row on the
+/// PROT 1203 tally sheet.
+pub fn coin_digit_cells(value: i32) -> Vec<DigitCell> {
+    field_cells(value, COIN_WIDGET, COIN_CELL_STRIDE, |d| {
+        COIN_U_BASE.wrapping_add(d.wrapping_mul(0x10))
+    })
+}
+
+/// PORT: FUN_801d69e4 - the single 8px digit draw.
+///
+/// The one-glyph form the right-aligned drawer calls per place: patch widget
+/// [`NUMBER_WIDGET`]'s `u` column to `digit << 3` (`DAT_801d72e4`) and draw it
+/// through `FUN_801d5ed0`. Retail leaves the caller to position `x`; this
+/// reports the cell with a zero x offset.
+pub fn single_digit_cell(digit: u8) -> DigitCell {
+    DigitCell {
+        cell: 0,
+        digit,
+        widget: NUMBER_WIDGET,
+        x_offset: 0,
+        u: digit.wrapping_shl(3),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1655,5 +1793,84 @@ mod tests {
     fn center_effect_spawn_is_screen_centre_at_unit_scale() {
         let s = center_effect_spawn(0x2A);
         assert_eq!((s.x, s.y, s.scale, s.sprite_id), (0xA0, 0x78, 0x1000, 0x2A));
+    }
+
+    #[test]
+    fn keyframe_lookup_matches_the_range_and_fixed_point() {
+        // Whole-frame keyframe indices; the query is << 4 fixed point.
+        let frames = [0i16, 4, 10, 22, 30];
+        // 22 << 4 = 0x160; a range straddling it matches its index (3).
+        assert_eq!(keyframe_in_range(&frames, 21 << 4, 23 << 4), Some(3));
+        // Exact single-frame query still resolves via the >>4 fold.
+        assert_eq!(keyframe_in_range(&frames, 10 << 4, 10 << 4), Some(2));
+        // First match wins when several fall in range.
+        assert_eq!(keyframe_in_range(&frames, 0, 30 << 4), Some(0));
+        // Nothing in the gap between 10 and 22.
+        assert_eq!(keyframe_in_range(&frames, 15 << 4, 20 << 4), None);
+        // Inverted range is rejected before the shift.
+        assert_eq!(keyframe_in_range(&frames, 30 << 4, 0,), None);
+        // No sub-keyframes -> no match.
+        assert_eq!(keyframe_in_range(&[], 0, 100), None);
+    }
+
+    #[test]
+    fn keyframe_lookup_rounds_the_query_toward_zero() {
+        let frames = [0i16, 1];
+        // 0x0f >> 4 rounds to 0 (toward zero), so frame 0 is in [0, 0].
+        assert_eq!(keyframe_in_range(&frames, 0, 0xF), Some(0));
+        // 0x10 >> 4 = 1, so the low bound now excludes frame 0.
+        assert_eq!(keyframe_in_range(&frames, 0x10, 0x1F), Some(1));
+    }
+
+    #[test]
+    fn right_aligned_number_suppresses_leading_zeros_but_always_draws_units() {
+        // Zero draws exactly one '0' glyph in the units place.
+        let z = right_aligned_number_cells(0);
+        assert_eq!(z.len(), 1);
+        assert_eq!(z[0].cell, DIGIT_FIELD_CELLS - 1);
+        assert_eq!((z[0].digit, z[0].widget, z[0].u), (0, NUMBER_WIDGET, 0));
+
+        // 42 draws "4" then "2" in the two rightmost cells, right-aligned.
+        let n = right_aligned_number_cells(42);
+        let digits: Vec<u8> = n.iter().map(|c| c.digit).collect();
+        assert_eq!(digits, vec![4, 2]);
+        assert_eq!(n[0].cell, 6);
+        assert_eq!(n[1].cell, 7);
+        // u = digit * 8; x steps by the 8px cell stride.
+        assert_eq!(n[0].u, 4 * 8);
+        assert_eq!(n[1].u, 2 * 8);
+        assert_eq!(n[0].x_offset, 6 * NUMBER_CELL_STRIDE);
+        assert_eq!(n[1].x_offset, 7 * NUMBER_CELL_STRIDE);
+    }
+
+    #[test]
+    fn coin_strip_uses_widget_47_and_its_own_cell_geometry() {
+        let c = coin_digit_cells(305);
+        let digits: Vec<u8> = c.iter().map(|d| d.digit).collect();
+        assert_eq!(digits, vec![3, 0, 5]);
+        for cell in &c {
+            assert_eq!(cell.widget, COIN_WIDGET);
+            // u = 0x58 + digit*0x10; x steps by the 16px coin cell stride.
+            assert_eq!(cell.u, COIN_U_BASE + cell.digit * 0x10);
+            assert_eq!(cell.x_offset, cell.cell as i16 * COIN_CELL_STRIDE);
+        }
+    }
+
+    #[test]
+    fn single_digit_cell_patches_the_8px_u_column() {
+        let d = single_digit_cell(7);
+        assert_eq!((d.widget, d.digit, d.u), (NUMBER_WIDGET, 7, 7 * 8));
+    }
+
+    #[test]
+    fn number_field_never_exceeds_eight_cells() {
+        // 8-digit maximum fills the whole field; a 9th place would overflow it,
+        // matching the fixed 10^7 top divisor.
+        let full = right_aligned_number_cells(98_765_432);
+        assert_eq!(full.len(), DIGIT_FIELD_CELLS);
+        assert_eq!(
+            full.iter().map(|c| c.digit).collect::<Vec<_>>(),
+            vec![9, 8, 7, 6, 5, 4, 3, 2]
+        );
     }
 }

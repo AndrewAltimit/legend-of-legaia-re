@@ -370,7 +370,11 @@ Record 51 onward is string rodata, which bounds the table. Two records
 are patched live: widget 5 (the 24px stage digit, `DAT_801d71cc = stage * 0x18`
 written by the banner-actor draw callback `FUN_801d67f0`) and widget `0x13`
 (the 8px digit, `u = digit * 8`, patched by the digit drawer `FUN_801d69e4`;
-`FUN_801d6a18` draws right-aligned numbers with it). Parser
+`FUN_801d6a18` draws right-aligned numbers with it, and `FUN_801d6f44` draws
+the coin strip through widget `0x2f`, `u = 0x58 + digit * 0x10`). The digit
+drawers' right-aligned decimal decomposition is ported as
+`engine-core::baka_fighter::right_aligned_number_cells` / `coin_digit_cells`
+/ `single_digit_cell`. Parser
 [`legaia_asset::baka_opponents::parse_baka_hud`].
 
 The HUD renderer `FUN_801d2afc` draws, per frame (retail 320x240 frame):
@@ -573,10 +577,11 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `FUN_801d239c` | end-of-match score tally → gold payout |
 | `FUN_801d21fc` | round-start READY/FIGHT banner + countdown |
 | `FUN_801d4df8` / `FUN_801d49e8` | knockdown / launch-arc playback |
-| `FUN_801d6e5c` | action-table keyframe lookup by frame range |
+| `FUN_801d6e5c` | action-table keyframe lookup by frame range (port `engine-core::baka_fighter::keyframe_in_range`) |
 | `FUN_801d67f0` | per-frame fighter sprite-actor draw callback (`_DAT_8007ba2c`) |
 | `FUN_801d5ed0` | textured-quad GPU emitter for every HUD glyph / banner sprite (indexes the widget table `DAT_801d7160`) |
-| `FUN_801d69e4` / `FUN_801d6a18` | 8px digit drawer (widget `0x13`, `u = digit * 8`) / right-aligned number drawer |
+| `FUN_801d69e4` / `FUN_801d6a18` | 8px single-digit draw (widget `0x13`, `u = digit * 8`, port `single_digit_cell`) / right-aligned decimal number drawer (port `right_aligned_number_cells`) |
+| `FUN_801d6f44` | "GET COIN" coin-count digit-strip drawer (widget `0x2f`, `u = 0x58 + digit * 0x10`, `0x10`-px stride; port `engine-core::baka_fighter::coin_digit_cells`) |
 | `FUN_801d6710` | end-of-match tally drain step (not a drawer - see above) |
 | `FUN_801d553c` | developer dump of the action table (`ot5stat.txt`) |
 
