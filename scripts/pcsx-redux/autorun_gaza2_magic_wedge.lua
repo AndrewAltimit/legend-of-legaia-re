@@ -12,9 +12,16 @@
 -- Per docs/subsystems/battle-action.md, the cast-effect census FUN_801E09F8
 -- RECOMPUTES both exit counters from scratch every frame:
 --
---   ctx+0x249  actors still mid-animation: +1 per live actor with +0x1D9 != 0,
---              less party actors whose +0x1D9 == 8
---   ctx+0x24D  active spell-children over the ctx+0x252.. slot array
+--   ctx+0x249  actors still mid-animation. Over slots 0..6 ONLY (loop bound
+--              `sltiu v0,v0,0x7` at 0x801E0B24 - slot 7 is never visited):
+--              +1 per slot whose PRESENCE WORD actor[+0x4] != 0 and whose
+--              +0x1D9 != 0, then -1 again for a party slot (<3) whose
+--              +0x1D9 == 8. The gate is +0x4, NOT hp - actor[+0x14C] is read
+--              later in the same loop for ctx+0x24A / +0x24B instead.
+--   ctx+0x24D  number of non-zero bytes in the FOUR-entry array
+--              ctx[+0x252..+0x255], one byte per in-flight spell child. Only
+--              recomputed when one of the phase bytes ctx[+0x24E..+0x251] is
+--              set, so with nothing in flight it keeps the 0 written on entry.
 --
 -- They are live counts, not latched flags. So a band that never exits means
 -- some ACTOR never clears +0x1D9 (pins +0x249) or some spell CHILD never
@@ -39,13 +46,28 @@
 --   LEGAIA_PAD_SCRIPT   ";"-separated "vsync:BUTTON[:hold]" pad program, e.g.
 --                       "200:CROSS;260:DOWN;300:CROSS". Button names are the
 --                       probe.pad BTN keys. Default: empty (passive observe).
---   LEGAIA_STALL_N      vsyncs of an unchanged ctx+7 that counts as a stall
---                       (default 900; a healthy summon 0x36 runs ~760).
+--   LEGAIA_STALL_N      vsyncs of an unchanged ctx+7, inside an action band,
+--                       that counts as a stall. Default 2000. Do NOT lower it
+--                       to the gimard baseline's ~760: on THIS save a healthy
+--                       summon 0x36 measures 1224-1228 across replays (and 788
+--                       in one run), so anything under ~1300 reports every
+--                       ordinary cast as a wedge.
+--   LEGAIA_AUTOPILOT    N = press the next button of LEGAIA_AUTOPILOT_SEQ every
+--                       N vsyncs, forever. The sampling instrument; see below.
+--   LEGAIA_AUTOPILOT_SEQ  comma-separated button cycle. MUST contain DOWN.
+--   LEGAIA_GODMODE      1 = top up living party slots' HP each frame so the
+--                       fight survives long enough to sample. An intervention.
+--   LEGAIA_UI_TRACE     1 = log every FUN_801D8DE8 (UI element) call.
+--   LEGAIA_SHOT_EVERY   N = dump a framebuffer grab every N vsyncs.
 --   LEGAIA_FRAMES       capture length in vsyncs.
 --
 --   bash scripts/pcsx-redux/run_probe.sh \
 --     --lua scripts/pcsx-redux/autorun_gaza2_magic_wedge.lua \
 --     --sstate ~/.config/pcsx-redux/SCUS94254.sstate9 --frames 3000
+--
+-- Throughput note: Lua breakpoints need -interpreter -debugger, and with this
+-- probe's per-vsync reads a capture runs at roughly 12 vsyncs/second, so a
+-- 20000-vsync run takes ~28 minutes. Always launch under a kill timeout.
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
@@ -54,7 +76,9 @@ local pad   = require("probe.pad")
 
 local SSTATE  = probe.getenv("LEGAIA_SSTATE", "")
 local FRAMES  = probe.getenv_num("LEGAIA_FRAMES", 3000)
-local STALL_N = probe.getenv_num("LEGAIA_STALL_N", 900)
+-- Default above the measured healthy summon dwell on this save (1224-1228), not
+-- the gimard baseline's ~760, which would flag every ordinary cast.
+local STALL_N = probe.getenv_num("LEGAIA_STALL_N", 2000)
 local SCRIPT  = probe.getenv("LEGAIA_PAD_SCRIPT", "")
 -- LEGAIA_UI_TRACE=1 arms FUN_801D8DE8 (the battle UI-element scheduler) and
 -- logs every (effect_id, mode) call. Used to discover which pad button opens
