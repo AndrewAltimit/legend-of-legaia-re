@@ -72,6 +72,7 @@ pub mod house_door;
 pub mod item_name;
 pub mod item_price;
 pub mod items;
+pub mod jewel_fix;
 pub mod kingdom;
 pub mod map_door;
 pub(crate) mod mips;

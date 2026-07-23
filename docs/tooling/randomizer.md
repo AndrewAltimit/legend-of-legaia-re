@@ -57,6 +57,7 @@ disc-gated, so CI runs without a disc. There is also a
   - [Enemy ally (charm)](#enemy-ally-charm)
   - [Shiny Seru](#shiny-seru)
   - [Seru trading](#seru-trading)
+  - [Jewel fix](#jewel-fix)
   - [Treasure chests](#treasure-chests)
   - [Town shops (what stores sell)](#town-shops-what-stores-sell)
   - [Casino prize exchange](#casino-prize-exchange)
@@ -172,6 +173,7 @@ legaia-patcher randomize --input DISC.bin --seed flee --encounters shuffle --fle
 legaia-patcher randomize --input DISC.bin --seed pal --enemy-ally                         # 20% chance an enemy fights on your side
 legaia-patcher randomize --input DISC.bin --seed pal --shiny-seru                         # 2% chance a capturable enemy is shiny (+35% stats / captured-Seru damage)
 legaia-patcher randomize --input DISC.bin --seed swap --seru-trade                        # vendors trade seru-for-seru (clean-room engine UI)
+legaia-patcher randomize --input DISC.bin --seed fair --jewel-fix                         # Bloody Horns / Terio Punch respect elemental guards
 legaia-patcher randomize --input DISC.bin --seed mart --shops shuffle --casino shuffle
 legaia-patcher randomize --input DISC.bin --seed 0xC0FFEE --drops random \
     --encounters shuffle --steals shuffle --arts shuffle --doors shuffle --door-coupling coupled \
@@ -245,6 +247,7 @@ unless asked for:
 | `--enemy-ally` | a random enemy is charmed onto the party's side as an uncontrolled ally (multi-enemy fights only) | `--enemy-ally-pct N` (default 20) | [Enemy ally (charm)](#enemy-ally-charm) |
 | `--shiny-seru` | a capturable enemy spawns shiny: +35% stats, and its captured Seru deals +35% damage forever | `--shiny-pct N` (default 2) | [Shiny Seru](#shiny-seru) |
 | `--seru-trade` | vendors swap one of a character's seru for another, reseeding every two in-game hours | `--seru-trade-offers N` caps offers per vendor | [Seru trading](#seru-trading) |
+| `--jewel-fix` | Xain's Bloody Horns / Terio Punch (and Bull Charge) respect elemental guards like every other special | - | [Jewel fix](#jewel-fix) |
 
 **Tuning the encounter and door passes:**
 
@@ -786,6 +789,31 @@ schedule is in progress.)
 > the schedule round-trips to the kernel offers, the SCUS gap is left untouched,
 > byte-deterministic) plus the kernel unit tests; the retail screen is
 > hardware-confirmed (render → slide → cursor → confirm → swap).
+
+### Jewel fix
+
+`--jewel-fix` makes Xain's signature casts respect elemental guards
+(`jewel_fix` module). In retail, **Bloody Horns** (`0x5C`) and **Terio Punch**
+(`0x5D`) are capture-class boss cinematic casts - per-spell streamed code
+modules (PROT 952 / 953, see
+[spell-table.md § cast classes](../formats/spell-table.md#cast-classes-record-byte-0)) -
+whose main damage calls go through the wrapper `FUN_801DD6B4`, which passes the
+finisher `param_5 = 1` and thereby **skips the entire party-defender resist
+block**: Earth Jewels, elemental guards, and All Guard never apply, even though
+Xain's Earth element is read by the affinity scale
+([battle-formulas.md](../subsystems/battle-formulas.md)). The fix retargets the
+two `jal` words (one per module) to the guard-respecting wrapper
+`FUN_801DD4B0`, so those hits run the same resist ladder as every ordinary
+monster special. Terio Punch's module is shared with **Bull Charge** (`0x5E`),
+which the fix therefore covers too. Seedless; each stock word is verified
+before writing and an unrecognized (or already-patched) image is refused.
+
+> Verified by the `jewel_fix_real` disc oracle: the baseline sites hold the
+> stock `jal FUN_801DD6B4` words, exactly the two physical words change (the
+> overlapping 09xx extents are modelled - entry 953 starts `0x1800` into entry
+> 952's window, so the Terio Punch word aliases into both), the patched image
+> still parses, the edit is byte-deterministic, and re-application is refused.
+> The engine-side equivalent is `damage_finish::bypass_party_resist = false`.
 
 ### Treasure chests
 
@@ -1594,6 +1622,7 @@ bit-for-bit.
 | `crates/patcher` `flee_exp_real` | disc-gated | inject the run-away EXP hook: assert the real disc's escape-teardown site (PROT 898, VA `0x801E5A10`) **is** the expected displaced pair, then off the patched image that the overlay detour is `j routine` + nop, the SCUS routine decodes as the hand-assembled bytes (replaying the displaced pair + returning), each edit is surgical (only the 8-byte hook / the routine region change), the patched overlay + image still parse and stay EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook site / non-dead routine region |
 | `crates/patcher` `enemy_ally_real` | disc-gated | inject the enemy-ally charm: assert the real disc's setup hook (SCUS, VA `0x80051990`) **is** `lui v1,0x8008` / `lbu v1,-0x42f4(v1)` and the victory site (PROT 898, VA `0x801E6638`) **is** `andi v0,v0,0x4`, then off the patched image that the SCUS detour is `j routine` + nop, the routine decodes as the hand-assembled bytes (sets `0x380`, replays the displaced pair, returns), the victory word is widened to `andi v0,v0,0x384`, each edit is surgical, it composes with flee-EXP in the same gap, the image stays EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook / non-dead routine region / unexpected victory word |
 | `crates/patcher` `shiny_seru_real` | disc-gated | inject shiny Seru: assert all nine hook sites match the known US build and the SCUS regions (`0x80077728` gap 1 / `0x8007AE00` arena 1 / `0x8007AFF8` arena 2 / `0x80078A88` slot 6) are all-zero dead space outside every live table - incl. the `0x80079xxx` SsAPI sound tables the old arena3/4/5 squatted in (routine VAs 4-byte aligned), and the victory mouth-override row at `0x800781B0` keeps the clean keyframes; then off the patched image: every detour became `j routine` + nop, the bitmap has Gimard set / gobu clear, bytes outside the planned edits are untouched, the disc stays EDC/ECC-valid, it composes with enemy-ally, is byte-deterministic, and the guards refuse a corrupted / non-dead / in-table region |
+| `crates/patcher` `jewel_fix_real` | disc-gated | apply the jewel fix: assert the two cast-module call sites (PROT 952 `+0xF70`, PROT 953 `+0xA38`) hold the stock `jal FUN_801DD6B4` word, then off the patched image that both read `jal FUN_801DD4B0`, that exactly the two physical words changed (the overlapping 09xx extents are pinned: entry 953 starts `0x1800` into 952's window, so the Terio Punch word aliases into both), the image still parses, the edit is byte-deterministic, and re-application / an unrecognized build is refused |
 | `crates/patcher` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
 | `crates/patcher` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
 | `crates/patcher` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140, "Comm" (id 78) is a populated standalone record (not a clone); item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |

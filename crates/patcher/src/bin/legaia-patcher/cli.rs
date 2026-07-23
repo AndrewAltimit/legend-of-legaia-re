@@ -471,6 +471,16 @@ pub(crate) struct RandomizeArgs {
     /// `--shiny-seru`).
     #[arg(long, default_value_t = legaia_patcher::shiny_seru::DEFAULT_PCT)]
     pub(crate) shiny_pct: u8,
+    /// **Jewel fix**: make Xain's Bloody Horns / Terio Punch (and the
+    /// module-sharing Bull Charge) respect elemental guards. In retail those
+    /// boss cinematic casts call the resist-ladder-bypassing damage wrapper
+    /// (`FUN_801DD6B4`, finisher `param_5 = 1`), so Earth Jewels, elemental
+    /// guards and All Guard never apply to them despite Xain's Earth element
+    /// being read by the affinity scale. This retargets their two damage
+    /// `jal`s (one per streamed cast module) to the guard-respecting wrapper
+    /// `FUN_801DD4B0` (same-size, two-word edit in PROT entries 952 / 953).
+    #[arg(long, default_value_t = false)]
+    pub(crate) jewel_fix: bool,
     /// Let vendors offer to **trade** one of a character's seru for a different
     /// seru. Embeds an enabled flag + the run's seed in `SCUS_942.54`; the
     /// clean-room engine renders the trade UI and reseeds each vendor's offers

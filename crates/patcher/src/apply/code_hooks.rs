@@ -302,3 +302,38 @@ pub fn inject_seru_bell_name(patcher: &mut DiscPatcher) -> Result<Option<String>
         .context("repoint accessory 0xFD name pointer")?;
     Ok(Some(SERU_BELL_NAME.to_string()))
 }
+
+/// Outcome of applying the jewel fix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JewelFixReport {
+    /// Number of `jal` words retargeted (the three bypass-wrapper call sites).
+    pub sites_patched: usize,
+}
+
+/// Apply the **jewel fix** (see [`crate::jewel_fix`]): retarget the damage
+/// calls of Xain's Bloody Horns / Terio Punch (and module-sharing Bull Charge)
+/// cast modules from the resist-ladder-bypassing wrapper `FUN_801DD6B4` to the
+/// guard-respecting `FUN_801DD4B0`, so elemental jewels / guards / All Guard
+/// apply to those hits like every ordinary monster special.
+///
+/// Two same-size one-word edits in the raw PROT entries 952 / 953 (one call
+/// site per streamed cast module; the neighbouring extents overlap on disc, so
+/// each physical word is written exactly once). Each stock word is verified
+/// before writing; an unrecognized build is refused without touching the disc.
+pub fn apply_jewel_fix(patcher: &mut DiscPatcher) -> Result<JewelFixReport> {
+    let bh = patcher
+        .read_entry(crate::jewel_fix::BLOODY_HORNS_PROT_INDEX)
+        .context("read Bloody Horns cast module for jewel fix")?;
+    let tp = patcher
+        .read_entry(crate::jewel_fix::TERIO_PUNCH_PROT_INDEX)
+        .context("read Terio Punch cast module for jewel fix")?;
+    let plan = crate::jewel_fix::JewelFix::plan(&bh, &tp)?;
+    for &(index, offset, word) in &plan.writes {
+        patcher
+            .patch_prot_entry(index, offset as u64, &word.to_le_bytes())
+            .with_context(|| format!("write jewel-fix word at PROT {index} +{offset:#x}"))?;
+    }
+    Ok(JewelFixReport {
+        sites_patched: plan.writes.len(),
+    })
+}

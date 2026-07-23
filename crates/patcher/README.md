@@ -15,7 +15,10 @@ Three patching families share that machinery:
   the battle-tuning tables (monster combat stats, special-attack power, the
   element-affinity matrix, spell MP costs). Several extras are hand-assembled
   MIPS code hooks detoured into SCUS/overlay dead space: the bonus equipment
-  drop, run-away EXP, enemy ally (charm), shiny Seru, and Seru trading.
+  drop, run-away EXP, enemy ally (charm), shiny Seru, and Seru trading. The
+  `--jewel-fix` toggle is a two-word retarget of the Bloody Horns / Terio
+  Punch cast modules' damage `jal`s so Xain's signature casts respect
+  elemental guards ([`jewel_fix`](#jewel-fix-jewel_fix-module)).
 - **Translation packs** - the `translate` CLI family: disc text out to an
   editable YAML language pack, filled pack back in as a same-size in-place
   reimport ([`docs/tooling/translation.md`](../../docs/tooling/translation.md)).
@@ -39,6 +42,7 @@ full design.
   - [Encounters](#encounters)
   - [Run-away EXP](#run-away-exp)
   - [Enemy ally (charm)](#enemy-ally-charm) - [Charm softlock fix](#charm-softlock-fix-charm_fix-module)
+  - [Jewel fix](#jewel-fix-jewel_fix-module)
   - [Shiny Seru](#shiny-seru)
   - [Seru trading](#seru-trading)
   - [Chests](#chests)
@@ -300,6 +304,23 @@ it is a **living party slot** (`alive && slot < 3`) and otherwise routes into
 retail's own bounded valid-slot re-pick, so the roster read is always in range. The
 `j`'s delay slot leaves the original `sb v0,-0x42a0(v1)` store in place. Applied
 automatically with the charm feature; same known-build / all-zero guards.
+
+## Jewel fix (`jewel_fix` module)
+
+`--jewel-fix` makes Xain's Bloody Horns / Terio Punch respect elemental guards.
+Those are capture-class boss cinematic casts - per-spell streamed code modules
+(PROT 952 / 953) - whose main damage calls use the wrapper `FUN_801DD6B4`,
+which passes the finisher `param_5 = 1` and skips the entire party-defender
+resist block (Earth Jewels, elemental guards, All Guard). The fix retargets
+the two `jal` words (one per module) to the guard-respecting `FUN_801DD4B0`;
+nothing else changes - both wrappers share the argument contract and the
+caster's element was already read by the affinity scale. Terio Punch's module
+is shared with Bull Charge, which is covered too. Not a code *injection* - no
+dead-space routine, just two verified same-size word retargets (the stock word
+is checked first; an unrecognized or already-patched image is refused). NB the
+neighbouring `09xx` extents overlap on disc (entry 953 starts `0x1800` into
+952's window), so each physical word is written exactly once. See
+[`docs/tooling/randomizer.md` § Jewel fix](../../docs/tooling/randomizer.md#jewel-fix).
 
 ## Shiny Seru
 

@@ -660,9 +660,12 @@ through one of two SCUS wrappers around scale + finish:
 Both pass `a1 = ctx+0x13` (the caster's seat), so the affinity scale reads the
 caster's true record element either way - the bypass is purely the finisher's
 `param_5 == 0` gate around the resist ladder. Which wrapper a given cast uses
-is hand-written per module: Xain's **Bloody Horns** (PROT 952: hits `0x1D0` /
-`0x274` via `FUN_801DD6B4`, plus one `0x80` component via `FUN_801DD4B0`) and
+is hand-written per module: Xain's **Bloody Horns** (PROT 952: hit `0x1D0` via
+`FUN_801DD6B4`, plus one `0x80` component via `FUN_801DD4B0`) and
 **Terio Punch** (PROT 953: `0x274` via `FUN_801DD6B4`) bypass the ladder -
+NB the neighbouring `09xx` extents overlap on disc (entry 953 starts `0x1800`
+into entry 952's window), so the Terio Punch word also appears in 952's window
+at `+0x2238`; it is the same physical word, not a second Bloody Horns hit -
 **this is why Earth Jewels do not reduce them** despite Xain's element byte
 being 0 (Earth) and being read by the scale - while the enemy-side
 **Evil Seru Magic** module (PROT 966: `0x327` / `0x100` via `FUN_801DD4B0`)
