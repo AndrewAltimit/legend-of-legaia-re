@@ -34,8 +34,8 @@ with `SceneAssets::seq_in_stream_entries` / `bgm_seq_offset`.
 - [Path-string cluster](#path-string-cluster) · [SCUS consumers](#scus-consumers) · [File-API leaf cluster](#file-api-leaf-cluster)
 - [VAB sound banks](#vab-sound-banks) · [per-actor SFX](#per-actor-sound-effects) · [monster sound bank](#monster-sound-bank---hmpackmonstersnd)
 - [BGM dispatch](#bgm-dispatch) · [global-pool BGM (`music_01`)](#global-pool-bgm-the-music_01-bank)
-- [SsAPI sequencer](#ssapi-sequencer-0x80061-0x80067-cluster) - [globals](#globals) · [public SEQ API](#public-seq-api) · [SEQ internals](#seq-internals) · [voice / mixer](#voice--mixer-audible-output-critical-path) · [SPU command shims](#spu-command-shims-0x81-scaling--0127--016383) · [renderer-citation correction](#renderer-citation-correction)
-- [libspu / SPU control](#libspu--spu-control-0x80068-0x8006d-cluster) - [SPU globals](#spu-globals) · [primitives](#libspu-primitives) · [DMA transfer engine](#spu-dma-transfer-engine) · [reverb model](#reverb-model-engine-audio) · [Gaussian resampler](#voice-resampler---4-point-gaussian-interpolation-engine-audio) · [SsApi seq-management layer](#ssapi-seq-management-layer-above-libspu)
+- [SsAPI sequencer](#ssapi-sequencer-0x80061-0x80067-cluster) - [globals](#globals) · [public SEQ API](#public-seq-api) · [SEQ internals](#seq-internals) · [voice / mixer](#voice--mixer-audible-output-critical-path) · [VAB attr accessors](#vab-attribute-accessors--utility-note-triggers) · [SPU command shims](#spu-command-shims-0x81-scaling--0127--016383) · [renderer-citation correction](#renderer-citation-correction)
+- [libspu / SPU control](#libspu--spu-control-0x80068-0x8006d-cluster) - [SPU globals](#spu-globals) · [primitives](#libspu-primitives) · [init / reset / key](#spu-init--reset--key-registers) · [DMA transfer engine](#spu-dma-transfer-engine) · [reverb model](#reverb-model-engine-audio) · [Gaussian resampler](#voice-resampler---4-point-gaussian-interpolation-engine-audio) · [SsApi seq-management layer](#ssapi-seq-management-layer-above-libspu)
 - [Engine-audio: Sequencer port](#engine-audio-model---sequencer-port) · [clean-room SPU port](#engine-audio-model---clean-room-spu-port) · [SFX bank + scheduler](#sfx-bank--scheduler) · [XA-ADPCM](#xa-adpcm)
 - [Battle arts-voice shout path](#battle-arts-voice-shout-path-engine) · [Audio-trace parity oracle](#audio-trace-parity-oracle) · [What's left](#whats-left)
 
@@ -178,6 +178,7 @@ Legaia statically links Sony's PsyQ **libsnd / SsAPI** sequencer for `.SEQ`-driv
 | `FUN_80061C68(slot)` | `_SsSeqGetVar` - MIDI-style 7-bit-with-continuation varint decode for delta-time bytes; accumulates into `+0x88` running tick. |
 | `FUN_80061EDC(slot, channel, vol, ...)` | `SsSeqSetVol` - calls `FUN_800683D8` to fetch `(vol_l, vol_r)`, clamps target ≥ requested, calls `FUN_8006206C` (slewer), sets bit `0x20`, clears bit `0x10` in `+0x98`. |
 | `FUN_8006206C(...)` | `_SsSetSlideVolume` - ramp from→to over N ticks. Touches `+0x48/0x4A/0x9C/0xA0/0x4C`, signed-divide per-tick delta. Gated by flags `4 & 0x100` in `+0x98`. |
+| `FUN_8006171C(vab, prog, ev)` | Per-program SEQ controller/meta dispatch - post-increments the program's stream cursor (`_DAT_801CD2C0[vab] + prog*0xB0`, deref `+0`), switches on the event byte `ev`, routes through the installed handler vector `_DAT_801CD238..248`, and falls to the varint decoder `FUN_80061C68` for value events, storing the result at `+0x90`. |
 
 **Per-frame tick call graph.** The concrete chain behind the prose "hand the payload to `FUN_80062340` for playback": `FUN_80062F98` (per-slot fan-out) → `FUN_8006320C` / `FUN_8006352C` (the per-channel note/expression handlers over `_DAT_801CD2C0[slot]`) → `FUN_80066308` (note-trigger dispatch; `×0x81` velocity scale, per-slot status `_DAT_801CE34x`) → `FUN_80066B00` (voice-allocation scan) → `FUN_80065978` (`_SsVoKeyOnDirect`), with `FUN_80065BAC` / `FUN_800675C8` (the voice flush / release sweep below) carrying the result to the SPU. The SEQ-stream cursor advances through `FUN_80063CEC` (calls the varint decoder `FUN_80061C68`, steps `_DAT_801CD220..230`) with track-end / vab-release in `FUN_80063AA8`. This is `sequencer.rs`'s integer-accumulator event loop in retail form.
 
@@ -192,6 +193,21 @@ Legaia statically links Sony's PsyQ **libsnd / SsAPI** sequencer for `.SEQ`-driv
 | `FUN_80065978(...)` | `_SsVoKeyOnDirect` - consumes the **already-chosen** voice at `_DAT_801CE362` (the `FUN_80066B00` scan's winner): clears that voice's bit from all 16 silent-history ring words at `_DAT_801CE208`, sets its envelope word to `0x7FFF`, looks up region in `_DAT_801CE334` (stride `0x10`), writes pitch + base note to `&DAT_801CE088 + voice*2`, ORs flags `0x8/0x30` into `&DAT_801CE060`. |
 | `FUN_80066E50(key, fine)` | `_SsPitchFromKey` - indexes 12-entry pitch table `&DAT_8007A940`, octave-shift by `(oct-5)`. Returns 16-bit SPU PITCH register value. |
 | `FUN_80065B88` | `SsResetTranspose` - single-store stub: zeros `_DAT_801CE2E8` (a base-note offset shifted in by `FUN_80065978`). |
+
+### VAB attribute accessors + utility note triggers
+
+Between the sequencer event loop and the raw voice registers sits a band of SsAPI utility accessors (the `SsUt*` family shape) that copy VAB metadata in and out of the open-bank tables, gated on the per-vab open-state byte `_DAT_801CE368[vab] == 1` (they return `-1` when the bank is closed). These are the retail source of the tone/program attributes `crates/engine-audio`'s `VabBank` reads at upload and play time.
+
+| Function | Role |
+|---|---|
+| `FUN_80064CF0(vab, prog, out[8])` | Program-attribute getter - copies the 8-byte ProgAtr record at `_DAT_801CE334 + prog*0x10` (mvol / mpan / prior / mode) into the caller buffer. |
+| `FUN_80064DF8(vab, prog, note, out[0x18])` | Tone-region **getter** - selects the tone page via `FUN_80068B98`, then copies the 0x18-byte tone descriptor at `_DAT_801CE340 + (note + tone_page*0x10)*0x20` (ADSR words, pitch, SPU addr, pan) into the buffer. |
+| `FUN_800655CC(vab, prog, note, in[0x18])` | Tone-region **setter** - the exact mirror of `FUN_80064DF8`, writing the 0x18-byte block back into the tone table. |
+| `FUN_8006861C(packed, seq, prog, vel, dur)` | Utility velocity key-on - runs the full `FUN_80067550` vol/pan chain (bank/prog/tone vol, channel vol `+0x58/+0x5A` each `/0x7F`, three one-sided pan attenuations) after matching the voice-driver record (stride `0x36` at `_DAT_801CDB50`) on `(seq, prog, note)`. |
+| `FUN_80067A1C(voice, seq, note, prog, wheel)` | **Pitch-bend apply** - offsets the key by the sounding tone's own bend range (`tone+0xD` = pbmax for `wheel > 0x40`, `tone+0xC` = pbmin for `wheel < 0x40`), calls `FUN_80066E50` (`_SsPitchFromKey`), writes the SPU PITCH to `&DAT_801CE084[voice]` and ORs flag `0x4` into `&DAT_801CE060`. |
+| `FUN_80066F4C(voice)` | **Per-voice vol/pan/reverb recompute** - re-derives one sounding voice's L/R from the current channel vol (`prog_attr +0x58/+0x5A`), prog/tone vol, three pan attenuations and the `_DAT_801CE330` mono fold, commits reverb depth via `FUN_8006AA90(_DAT_801CE34A - _DAT_801CE358)`, and stages the result into `&DAT_801CE080/082[voice]` with flags `0x3`. |
+
+`FUN_80067A1C` is the retail source for the per-tone pitch-bend range the engine ports as `VabBank::pitch_bend_range`: the wheel scales by the *sounding tone's* own `pbmin`/`pbmax` bytes, so a `(0,0)`-range tone does not bend - exactly the law [`engine-audio`'s sequencer](#engine-audio-model---sequencer-port) applies. `FUN_80066F4C` is the retail twin of `sequencer.rs`'s `remix_channel` (re-derive every sounding voice on a mid-note CC7/CC10 change) - the same vol/pan chain as `FUN_80067550`, run standalone rather than at note-on. Provenance: `see ghidra/scripts/funcs/80064cf0.txt`, `80064df8.txt`, `800655cc.txt`, `8006861c.txt`, `80067a1c.txt`, `80066f4c.txt`.
 
 ### Voice allocator + key-on/off flush (the middle tier)
 
@@ -269,6 +285,20 @@ Sits underneath the SsAPI sequencer and drives the SPU hardware directly. PsyQ `
 | `FUN_8006C048` | `SpuSetVoiceAttr` (24-voice broadcaster) | Loops `i=0..23` over `1<<i` mask, writes per-voice regs at `+i*0x10` (full SPU voice block: vol-L/R, pitch via `FUN_8006C6E4`, ADSR, env mode). 1548 bytes. |
 | `FUN_8006C6E4` | `_SsKey2Pitch` | Two-octave-table pitch math: `((key1*0x80+fine1) - (key2*0x80+fine2)) / 0x600`, exponential build via `0x103B` factor. Returns 14-bit SPU PITCH (clamps `0x3FFF`). |
 
+### SPU init / reset / key registers
+
+The bottom of the libspu stack: cold init, the SPU-RAM transfer reset, and the raw KON/KOFF register writer. All are direct SPU MMIO or global-state resets - documented, not ported (the clean-room `Spu` models the KON/KOFF masks and the reset at the register-value level, never the hardware poke).
+
+| Function | PsyQ shape | Notes |
+|---|---|---|
+| `FUN_800693D8(mode)` | `SpuInit` / `SsInit` core | `FUN_8006954C` transfer reset, then (mode 0) fills the 0x18 reverb registers with `0xC000`, zeroes the whole SsApi transfer-state block (`_DAT_8007AAxx` / `_DAT_8007AFxx` masks + flags), and `FUN_80069E98(0xD1, reverb_base, 0)`. |
+| `FUN_8006954C(mode)` | SPU transfer/DMA reset | ORs `0xB0000` into `SPUCNT`, warm-transfers 0x10 bytes via `FUN_800697E0`, and spins `FUN_8006A078` settle delays while polling for the reset to settle; on timeout logs `"SPU_T/O:%s"` (`wait` / `reset`). |
+| `FUN_80062228()` | voice-block hardware clear | Zeroes the 24-voice register block from `0x1F801C00` and the reverb work area at `0x1F801D80`, then `FUN_80065FE8` (all-voice reset). The SPU half of a full audio-subsystem reset. |
+| `FUN_800699AC()` | SPU DMA settle+kick | `FUN_8006A078` settle then `FUN_8005BD30(0xF0000009, 0x20)` - kicks the SPU DMA channel for a zero-fill sweep. |
+| `FUN_8006B854(mode, mask24)` | `SpuSetKey` (KON/KOFF) | Writes a 24-bit voice mask to the SPU **KOFF** register (`_DAT_8007AF40 +0x18C/+0x18E`, `mode==0`) or **KON** (`+0x188/+0x18A`, `mode==1`). When the transfer-busy flag `_DAT_8007AF38 & 1` is set it stages the mask into shadow accumulators (`_DAT_801CE518..51E`, `_DAT_8007AB00/AB04`) for a deferred flush instead of touching hardware. |
+
+Provenance: `see ghidra/scripts/funcs/800693d8.txt`, `8006954c.txt`, `80062228.txt`, `800699ac.txt`, `8006b854.txt`.
+
 ### SPU DMA transfer engine
 
 Sits between the SsApi seq layer and the libspu register primitives. This is the path SEQ/VAG bytes take when moving from PSX RAM into SPU RAM.
@@ -343,6 +373,18 @@ history that survives ADPCM block boundaries. The pitch step clamps at
 | `FUN_8006CE30` | `SsSeqSetUserData` - resolves ctx via `_DAT_801CE564`, tail-calls `FUN_8006D7B4`. |
 | `FUN_8006D7B4` | `_SsSeqSetUserDataInner` - `ctx[+0x28] = p2; ctx[+0x34] = p3`. |
 | `FUN_8006DDC8` | `SsSeqSetMarkCallback` - installs trampolines at ctx `+0x14/+0x18`, sets active-flag at `+0x46`. |
+
+**Seq-worker callback table.** Above the per-slot record chain the layer installs a dispatch vtable at `_DAT_801CE540..580` and walks a stride-`0xF0` worker-record table at `0x801CE628` (cursor `_DAT_8007B2B4`) - the mechanism behind the `_DAT_801CE564` / `_DAT_801CE574` hooks flagged in [SPU globals](#spu-globals).
+
+| Function | Role |
+|---|---|
+| `FUN_8006E2B4(cb1, cb2)` | Worker-table init - clears the `0x1E0`-byte record table at `0x801CE628`, installs the hook vector (`_DAT_801CE560 = FUN_8006E46C` advance, plus the `_DAT_801CE564` / `_56C` / `_558` / `_578` / `_580` resolvers), stores the two user callbacks, and fills each record's control bytes with the `0xFF` idle sentinel. |
+| `FUN_8006E46C(rec)` | Per-slot advance - steps the worker cursor `_DAT_8007B2B4` by one `0xF0` record and services it via `FUN_8006E9C0` / `FUN_8006EC24`, looping while the cursor is `<= _DAT_8007B2C8`. |
+| `FUN_8006DAAC(rec)` | Per-record state dispatch - branches on the record's state byte `+0x47` into `FUN_8006E0A0` / `_E0C0` / `_E0E0` / `_E100`. |
+| `FUN_8006CF9C()` | Hook installer - `_DAT_801CE544 = FUN_8006D030`, `_DAT_801CE548 = FUN_8006CFC8`. |
+| `FUN_8006D1E0()` | Callback install under a BIOS critical section (`FUN_80056678` / `FUN_80056688`) touching the `_DAT_801CE540` vector. |
+
+Provenance: `see ghidra/scripts/funcs/8006e2b4.txt`, `8006e46c.txt`, `8006daac.txt`, `8006cf9c.txt`, `8006d1e0.txt`.
 
 The runtime sequencer chain is now nearly fully mapped: slot bitmap @ `_DAT_801CD2B8` → ptr table @ `0x801CD2C0` → per-slot record (stride `0x36`) at `0x801CDB60` → VAB program-attr (stride `0xB0`) at `0x801CD2C0[i] + prog*0xB0`.
 
