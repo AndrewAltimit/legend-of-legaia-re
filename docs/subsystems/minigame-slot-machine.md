@@ -384,6 +384,7 @@ The payout table is exactly 10 bytes - one per symbol id, the index range `FUN_8
 | `FUN_801d13e8` | win evaluation + payout-table lookup + bonus trigger - `overlay_slot_machine_801d13e8.txt` |
 | `FUN_801d1af4` | bonus-symbol "reach" scanner (presentation only) - `overlay_slot_machine_801d1af4.txt` |
 | `FUN_801d2cc0` | HUD widget sprite-quad rasteriser (3-record descriptor table `DAT_801d347c`) - `overlay_slot_machine_801d2cc0.txt` |
+| `FUN_801d2aa4` | payout-preview HUD: for each of the 5 lines draws the symbol icon (preview-order table `DAT_801d3784`, page selected by the arg) + its `DAT_801d3598` payout split into tens/units digits via `FUN_801d32c8` - `overlay_slot_machine_801d2aa4.txt` |
 | `FUN_801d0fa8` | **reel cylinder** renderer: trig-table `y`/`z`, `RotTransPers4` quads, arithmetic symbol UVs, per-symbol row-490/491 CLUTs, depth-cue shade - `overlay_slot_machine_801d0fa8.txt` |
 | `FUN_801d08e4` | the **billboard pass**: medallions, lamps, reel-stop pedestals, marquee panel + mascots - `overlay_slot_machine_801d08e4.txt` |
 | `FUN_801d3380` | the **5 paylines** as `RTPS`-projected 3D line segments - `overlay_slot_machine_801d3380.txt` |

@@ -64,7 +64,7 @@ followed by `count` `(u8 elem_id, u8 mode)` pairs (reader `FUN_801d388c`):
 ```
 record = PTR_DAT_801f4d34[step]
 record[0] = sub-draw count
-record[1] = side/animation selector (1/2/3 → FUN_801d99bc / FUN_801d9ae8 panel slides)
+record[1] = side/animation selector (1/2/3 → the panel-sprite reset/teardown pair FUN_801d99bc / FUN_801d9ae8; see Key functions - a full-table rebuild and a full-table release, not slides)
 record[2] = DUAL ROLE:
               (a) active-panel id - compared against ctx+0x275; record[2]+ctx+0x275 == 6
                   triggers a panel-swap reset of ctx+0x880..0x883, AND
@@ -162,6 +162,8 @@ All offsets are relative to the context base `_DAT_8007bd24` unless noted otherw
 | `FUN_801d8de8` | HUD / element renderer: draws labels, HP/stat bars, card numbers, and the reward message; returns a sprite handle | `overlay_muscle_dome_801d8de8.txt` |
 | `FUN_801d3444` | Round time-meter bar animation | `overlay_muscle_dome_801d3444.txt` |
 | `FUN_801d9bbc` | Advances active sprite handles toward target screen positions | `overlay_muscle_dome_801d9bbc.txt` |
+| `FUN_801d99bc` | Panel-sprite table hard reset + rebuild: zeroes all `0x28` handle slots (ptr `ctx+0x1074`, flags `ctx+0x11b7`/`ctx+0x11b4`) and the 16-word scratch `DAT_801c8fa0`, then re-creates the panel sprites | `overlay_muscle_dome_801d99bc.txt` |
+| `FUN_801d9ae8` | Panel-sprite teardown: for each of the `0x28` slots with flag `ctx+0x11b7` set and a live handle at `ctx+0x1074[i]`, destroys the sprite via the shared object destructor `FUN_800319a8(handle+8)` and clears its slot, then zeroes the 16-word scratch `DAT_801c8fa0` | `overlay_muscle_dome_801d9ae8.txt` |
 | `FUN_801f19ec` | Fighter model installer: relocates a TMD model bundle, uploads it, and binds it to a dome actor | `overlay_muscle_dome_801f19ec.txt` |
 
 ## Hand deck decoded
