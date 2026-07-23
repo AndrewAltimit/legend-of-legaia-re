@@ -25,6 +25,17 @@
 //! sentinel-terminated table at `0x801F2E94`, and the per-character parameter
 //! editors that poke the live party records) touch disc data / actor state and
 //! stay documented-not-ported; see [`docs/subsystems/world-map.md`].
+//!
+//! ## NOT WIRED
+//!
+//! These are the *input* arms of the world-map developer menu, and the engine
+//! has no developer menu to feed them. The dispatcher they come from is keyed
+//! on the menu actor's cursor row (`actor[+0x9E] - 3`), so a caller needs that
+//! actor: a debug-menu screen holding a phase byte and a cursor row, with a
+//! per-row backing value for each arm to step. The sibling
+//! [`crate::world_map_overlay`] carries the same gap for the menu's row model,
+//! panel sizer and list-picker; both close together or not at all. Wiring only
+//! the two integer kernels here would step values nothing displays.
 
 /// Newly-pressed pad bit that steps a debug-menu value **up**.
 pub const PAD_STEP_UP: u32 = 0x2000;

@@ -147,6 +147,17 @@ fn lerp_q12(cur: i32, nb: i32, frac: i32) -> i32 {
 ///
 /// PORT: FUN_80029724
 ///
+/// NOT WIRED: the engine has no software near-plane clip stage to synthesise
+/// a vertex for. Retail clips in software against a scratch cache of
+/// [`CLIP_VERT_STRIDE`]-byte projected vertices before handing the GPU a
+/// packet; the port projects with the GTE and then submits triangles to wgpu,
+/// which clips in hardware, so no `verts` cache is ever materialised. The
+/// prerequisite is that cache plus the clip walker that decides *where* the
+/// crossing is and with which [`clip_flags`] - this function is only the
+/// per-crossing interpolation. Changing that is a rasterisation-path change
+/// and is measured by the VRAM oracle, so it does not belong to a wiring
+/// pass.
+///
 /// `verts` is the projected-vertex scratch cache ([`CLIP_VERT_STRIDE`] records);
 /// `cur_off` is the byte offset of the current vertex within it. The neighbour
 /// is `cur_off - 0x1C`, or `cur_off + 0x1C` when [`clip_flags::TRAILING`] is
@@ -195,6 +206,13 @@ pub fn interp_clip_vertex(out: &mut [u8], verts: &[u8], cur_off: usize, flags: u
 /// Pack per-vertex RGB triples into a gouraud `POLY_*` primitive packet.
 ///
 /// PORT: FUN_80036c4c
+///
+/// NOT WIRED: the engine emits no `POLY_G3` / `POLY_G4` GPU packets, so there
+/// is no `packet` byte buffer whose `+4 + 8*i` colour fields want filling.
+/// Per-vertex colour reaches the wgpu pipeline as a vertex-buffer attribute
+/// built by the mesh uploader; the packed-packet layout this writes into
+/// exists only in the retail command stream. The prerequisite is a GPU-packet
+/// emitter (the same one [`interp_clip_vertex`] wants), not a caller.
 ///
 /// `colors` is the source, one 4-byte word per vertex (`[R, G, B, code]`, LE);
 /// only the low three bytes are used. `count` is 3 (`POLY_G3`) or 4 (`POLY_G4`);

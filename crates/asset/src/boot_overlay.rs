@@ -270,6 +270,14 @@ pub const CARD_TIM_RAW_INDEX: u32 = 0x37E;
 /// system-UI sprite sheet (see [`crate::title_pak`]). Wiring 892 would mean
 /// implementing CARD mode, not retargeting an existing screen.
 ///
+// NOT WIRED: no engine consumer, and the prerequisite is a screen rather than
+// a call. Retail's CARD mode is a standalone memory-card-management screen and
+// this constant is the index of the TIM pack that mode loads; the engine has
+// no CARD mode, and its save / load UI is a different screen whose art is
+// capture-pinned to PROT 899's embedded TIMs plus the system-UI sprite sheet
+// (see `crate::title_pak`). Nothing can consume the index until that mode
+// exists - retargeting an existing screen onto entry 892 would be a
+// substitution, not a wiring fix.
 // PORT: FUN_8002574c (loader constant only)
 pub const CARD_TIM_EXTRACTION_INDEX: u32 = CARD_TIM_RAW_INDEX - RAW_TO_EXTRACTION;
 

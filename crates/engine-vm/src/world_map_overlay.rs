@@ -26,6 +26,41 @@
 //! - `ghidra/scripts/funcs/overlay_world_map_801ed710.txt`
 //! - `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d2ebc.txt`
 //! - `ghidra/scripts/funcs/overlay_world_map_801e5b4c.txt`
+//!
+//! ## NOT WIRED
+//!
+//! No engine host calls anything in this module, and the reason differs per
+//! address. Each entry names what has to exist first - none of them is more
+//! plumbing here.
+//!
+//! - **`FUN_801EAD98` / `FUN_801ECA08`** (row model, formatter, panel sizer,
+//!   list-picker cursor + draw gate). The engine has no world-map developer
+//!   menu. Retail's is an actor whose handler owns a phase byte (`ctx[+0x54]`)
+//!   and a cursor row (`ctx[+0x9E]`), reached from the world-map controller
+//!   behind a debug gate; the engine's world-map mode carries neither field
+//!   and opens no menu on it. The render half is equally unconsumed -
+//!   `legaia_engine_ui::dev_menu_list_draws_for` has no caller either - so
+//!   wiring means standing up the debug screen, not connecting two halves.
+//! - **`FUN_801ED710`** (battle-records data model). The engine keeps none of
+//!   the lifetime counters this screen reads: battles fought, escapes, and the
+//!   per-character max-hits / max-damage / knockouts / monsters-defeated /
+//!   Hyper-Arts / magic tallies. `World` carries a play-time clock and nothing
+//!   else on the list, and the pause menu has no records page to host the
+//!   result. Wiring needs those counters on the persistent record first.
+//! - **`FUN_801D2EBC`** (escape-timer scheduler). The timer is armed by field
+//!   VM `0x4C 0xD3` (`SCHEDULE_TIMED_FLAGS`), which the port decodes and hands
+//!   to `FieldHost::op4c_n_d_sub3_party_setup` - a default no-op body that no
+//!   engine host overrides, so the duration / threshold / flag-word triple is
+//!   discarded at the installer. Nothing arms a timer, so nothing can drain
+//!   one. Wiring is three coupled pieces: timer state on the world, that host
+//!   override, and a per-frame drain against the clock delta.
+//! - **`FUN_801E5B4C`** (equipment stat-comparison preview). The engine's
+//!   equip screen is the menu-overlay flow (`legaia_engine_core::EquipSession`,
+//!   ported from `FUN_801D9C14` / `FUN_801D99F0`), which previews by
+//!   trial-equipping into its own 8-slot array and re-running its stat
+//!   aggregator. Nothing produces the 5-slot `char[+0x75E..]` equip window or
+//!   the per-character weapon-slot table (`0x8007B42C`) that this shared
+//!   comparison panel indexes, so the aggregation has no input.
 
 // ---------------------------------------------------------------------------
 // FUN_801EAD98 - fixed-width decimal formatter

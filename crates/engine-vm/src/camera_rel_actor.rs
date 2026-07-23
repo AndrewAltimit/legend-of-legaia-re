@@ -28,7 +28,7 @@
 //! (`+0x10`) ORed with `8`; then bit `0x100` is set and `gp+0x750` points
 //! at the new actor - see [`SpawnHandshake`].
 //!
-//! ## Why no host calls this
+//! ## NOT WIRED
 //!
 //! The camera half is wired: `legaia_engine_core::camera::RetailCamGlobals`
 //! carries exactly the ten axes [`CameraSnapshot`] wants and converts to one
