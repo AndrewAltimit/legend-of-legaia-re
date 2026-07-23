@@ -138,6 +138,17 @@ seeds the last slot with `0` before the fill loop, which is what makes a value
 of zero draw a single `0` rather than nothing. Its first argument picks the slot
 pitch: `0` = 8 px, anything else = 16 px.
 
+## Additional HUD draw helpers
+
+Three more fishing-overlay draw helpers sit in the same band. Each is pinned to
+PROT entry 0972 by content (the arbiter byte-matches all five minigame-overlay
+captures at each VA back to `fishing(972)`; see [VA aliasing](#va-aliasing-in-this-band)),
+and each is reached from a fishing-overlay caller, not a sibling minigame.
+
+- `FUN_801d74b0` `(cx, y, w, val)` - centered bar-widget draw. Skips entirely when `y > 0xF0`; otherwise stages widget kind `0x44` via `FUN_80034b6c` and emits the bar through the bar-widget dispatcher `FUN_8002c69c` at `(cx - w/2 - 2, y + 6)` with width `w` and fill `val`. Called by the state machine `FUN_801cf3bc` and the shop/help helpers. `see ghidra/scripts/funcs/overlay_fishing_801d74b0.txt`.
+- `FUN_801d7964` `(x, rgb0, rgb1, y, arg4, arg5)` - colored screen-fade spawn wrapper. Unpacks the two packed 24-bit colours (`rgb0`/`rgb1`, three bytes each) and the coordinate params into an on-stack fade template, then spawns the fade actor via `FUN_80024e80(template, 1)` (the screen-fade primitive spawn). `see ghidra/scripts/funcs/overlay_fishing_801d7964.txt`.
+- `FUN_801d7c84` `(row)` - species-name list drawer. Reads up to four species ids from the venue spawn table `PTR_DAT_801d9114` at index `row*8 + i` (`i = 0..3`), and for each non-`-1` id draws the name pointer at `&DAT_801d81a4 + id*0x28` (the per-species table) via the glyph renderer `FUN_80036888` at `x = 0`, stacking rows 16 px apart from `y = 0x10` at palette `0xa0`. `see ghidra/scripts/funcs/overlay_fishing_801d7c84.txt`.
+
 ## VA aliasing in this band
 
 The dumps covering `0x801d1xxx` and `0x801d6f00`..`0x801d78ff` are runtime
