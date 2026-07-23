@@ -160,7 +160,7 @@ const PRESET_BASE = {
   drops: 'none', encounters: 'none', encounter_scope: 'scene', soloStrong: false, fleeExp: false, chests: 'none',
   shops: 'none', casino: 'none', steals: 'none', arts: 'none', doors: 'none',
   door_coupling: 'coupled', houseDoors: false, equipmentDrops: false, seruTrade: false,
-  enemyAlly: false, shinySeru: false, jewelFix: false, fishingPrice: '', renameLocation: '', earthEggPrice: '',
+  enemyAlly: false, shinySeru: false, jewelFix: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '',
   startingItems: 0, doorOfWind: false, incense: false,
   speedChain: false, chickenHeart: false, goodLuckBell: false,
   allWarps: false,
@@ -235,6 +235,7 @@ function init() {
   const fishingPriceInput = $('rom-fishing-price');
   const renameLocationInput = $('rom-rename-location');
   const earthEggPriceInput = $('rom-earth-egg-price');
+  const artsPowerInput = $('rom-arts-power');
   const weaponSpecialtyChk = $('rom-weapon-specialty');
   const houseDoorsChk = $('rom-house-doors');
   const unusedEnemiesChk = $('rom-unused-enemies');
@@ -396,6 +397,7 @@ function init() {
     fishingPriceInput.value = cfg.fishingPrice || '';
     renameLocationInput.value = cfg.renameLocation || '';
     earthEggPriceInput.value = cfg.earthEggPrice || '';
+    artsPowerInput.value = cfg.artsPower || '';
     weaponSpecialtyChk.checked = cfg.weaponSpecialty;
     startingItemsSel.value = String(cfg.startingItems);
     startingLevelSel.value = String(cfg.startingLevel);
@@ -476,6 +478,7 @@ function init() {
     const fishingPrice = (fishingPriceInput.value || '').trim();
     const renameLocation = (renameLocationInput.value || '').trim();
     const earthEggPrice = (earthEggPriceInput.value || '').trim();
+    const artsPower = (artsPowerInput.value || '').trim();
     const chests = segVal('chests', 'none');
     const shops = segVal('shops', 'none');
     const casino = segVal('casino', 'none');
@@ -521,7 +524,7 @@ function init() {
       monsterStats === 'none' && movePower === 'none' && elementAffinity === 'none' &&
       spellCost === 'none' && equipBonus === 'none' && !weaponSpecialty &&
       startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru && !jewelFix &&
-      !fishingPrice && !renameLocation && !earthEggPrice
+      !fishingPrice && !renameLocation && !earthEggPrice && !artsPower
     ) {
       setStatus('Enable at least one option (pick a preset, a language, or flip a toggle).', 'err');
       return;
@@ -542,7 +545,7 @@ function init() {
       setStatus('Patching (this can take a moment for a full disc) ...');
       // Yield so the status paints before the synchronous WASM call.
       await new Promise((r) => setTimeout(r, 30));
-      const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, fishingPrice, renameLocation, earthEggPrice);
+      const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, fishingPrice, renameLocation, earthEggPrice, artsPower);
       const data = result.data;
       const usedSeed = result.seed;
       const name = patchedName(file.name, usedSeed);

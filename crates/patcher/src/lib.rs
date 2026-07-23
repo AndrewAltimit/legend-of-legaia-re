@@ -54,6 +54,7 @@
 
 pub mod apply;
 pub mod arts;
+pub mod arts_power;
 pub mod bonus_drop;
 pub mod casino;
 pub mod charm_fix;

@@ -389,6 +389,12 @@
         <span class="rom-opt-note">Rename the world-map location names shown on the quick-travel menu and the save / load / pause display. One <code>index=name</code> per line (ASCII, up to 31 chars) - e.g. <code>3=Ancient Fire Cave</code> renames the Ancient Wind Cave. Slots: 3 = Ancient Wind Cave, 4 = Ancient Water Cave, 6 = Vidna, 14 = Conkram (the CLI <code>legaia-patcher locations</code> lists all 16). Handy for matching dungeon names to a re-elemented party.</span>
         <textarea id="rom-rename-location" rows="3" placeholder="3=Ancient Fire Cave&#10;4=Ancient Ice Cave" spellcheck="false" autocomplete="off"></textarea>
       </div>
+
+      <div class="rom-opt">
+        <label class="rom-opt-label" for="rom-arts-power">Tactical-Art power</label>
+        <span class="rom-opt-note">Rebalance a party Tactical Art's damage ("arts power-down"). One or more <code>combo=value</code> pairs, comma-separated - the combo is the art's input (<code>L/R/D/U</code>, e.g. <code>RDLDL</code> = Vahn's Burning Flare) and <code>value</code> is a power byte: <code>0x0C..0x1F</code> is a damage tier (a defence facet plus one of the multipliers 12/18/20/22/28, so a <em>lower</em> value powers the art down), or <code>0</code> disables its hits. Every per-strike power byte of the matched art is set to <code>value</code>. The CLI <code>legaia-patcher arts</code> lists every art's combo and current power tiers.</span>
+        <input type="text" id="rom-arts-power" placeholder="e.g. RDLDL=0x16, UDU=0x0C" spellcheck="false" autocomplete="off">
+      </div>
     </details>
 
     <div class="rom-row rom-actions">

@@ -328,10 +328,25 @@ fn record0_offset(entry: &[u8]) -> usize {
 /// record `+0` in `1=L,2=R,3=D,4=U` form, 0-terminated. Each `(vanilla, new)`
 /// edit overwrites the vanilla combo bytes with the new ones (same length) at
 /// every record-grid-aligned clean-start occurrence.
-pub fn patch_player_record0(
-    entry: &[u8],
-    edits: &[(Vec<u8>, Vec<u8>)],
-) -> Option<(usize, Vec<u8>)> {
+/// The LZS-stream region of a player-data entry's `record0`: where the compressed
+/// stream starts, its decoded size budget, and the byte footprint an in-place
+/// recompression must fit within. Shared by the combo editor
+/// ([`patch_player_record0`]) and the power editor
+/// ([`crate::arts_power::patch_player_record0_power`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Record0Region {
+    /// File offset of the LZS stream (record0 header `+0x10`).
+    pub lzs_off: usize,
+    /// Decoded size of `record0`.
+    pub budget: usize,
+    /// Max recompressed byte length that fits the original footprint
+    /// (`[lzs_off, ro + desc_off)`).
+    pub avail: usize,
+}
+
+/// Compute the [`Record0Region`] for a raw player-data entry, or `None` if the
+/// header is missing/implausible.
+pub fn record0_lzs_region(entry: &[u8]) -> Option<Record0Region> {
     let ro = record0_offset(entry);
     let hdr = entry.get(ro..ro + 0x10)?;
     let desc_off = u32::from_le_bytes(hdr[0..4].try_into().ok()?) as usize;
@@ -340,9 +355,22 @@ pub fn patch_player_record0(
         return None;
     }
     let lzs_off = ro + 0x10;
-    let mut decoded = legaia_lzs::decompress(entry.get(lzs_off..)?, budget).ok()?;
-    // Available compressed footprint: [lzs_off, ro + desc_off).
     let avail = (ro + desc_off).checked_sub(lzs_off)?;
+    Some(Record0Region {
+        lzs_off,
+        budget,
+        avail,
+    })
+}
+
+pub fn patch_player_record0(
+    entry: &[u8],
+    edits: &[(Vec<u8>, Vec<u8>)],
+) -> Option<(usize, Vec<u8>)> {
+    let region = record0_lzs_region(entry)?;
+    let lzs_off = region.lzs_off;
+    let avail = region.avail;
+    let mut decoded = legaia_lzs::decompress(entry.get(lzs_off..)?, region.budget).ok()?;
     let changed = apply_record_edits(&mut decoded, edits);
     if changed == 0 {
         return None;

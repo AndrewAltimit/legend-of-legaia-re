@@ -242,6 +242,46 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push(format!("earth_egg_price = {price}"));
     }
 
+    // Tactical-Art damage-power edits: rewrite an art's per-strike power bytes
+    // (record+0x24) in the character's player-file record0. Seedless targeted
+    // edits keyed by input combo.
+    if !args.arts_power.is_empty() {
+        let report = apply::set_arts_power(&mut patcher, &args.arts_power)?;
+        let mut changed: std::collections::BTreeSet<Vec<u8>> = std::collections::BTreeSet::new();
+        for e in &report.edits {
+            let combo: String = e
+                .combo
+                .iter()
+                .map(legaia_patcher::arts_power::command_glyph)
+                .collect();
+            let old: String = e
+                .old_power
+                .iter()
+                .map(|b| format!("{b:02X}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            let new: String = e
+                .new_power
+                .iter()
+                .map(|b| format!("{b:02X}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            println!("arts-power: {combo} ({:?}) [{old}] -> [{new}]", e.character);
+            changed.insert(e.combo.iter().map(|c| c.as_byte()).collect());
+        }
+        for (combo, value) in &args.arts_power {
+            let key: Vec<u8> = combo.iter().map(|c| c.as_byte()).collect();
+            let combo_s: String = combo
+                .iter()
+                .map(legaia_patcher::arts_power::command_glyph)
+                .collect();
+            if !changed.contains(&key) {
+                println!("arts-power: {combo_s} already at {value:#04X} (or has no damage byte)");
+            }
+            manifest.push(format!("arts_power {combo_s} = {value:#04X}"));
+        }
+    }
+
     // Location renames: same-size overwrites of the SCUS world-map name table.
     if !args.rename_location.is_empty() {
         let report = apply::rename_locations(&mut patcher, &args.rename_location)?;

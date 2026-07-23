@@ -132,8 +132,10 @@ pub fn resolve_seed(seed: &str) -> String {
 /// rename world-map location slots (e.g. `3=Ancient Fire Cave`).
 /// `earth_egg_price` (empty = untouched) sets the casino-coin threshold the Sol
 /// Tower Prize Counter requires before it offers the Earth Ra-Seru Egg (retail
-/// 100000); the game debits exactly that many coins on purchase. All three are
-/// manual, seedless edits.
+/// 100000); the game debits exactly that many coins on purchase. `arts_powers`
+/// is a comma/space-separated list of `combo=value` pairs that rebalance a
+/// Tactical Art's damage-power bytes (e.g. `RDLDL=0x16`; `value` a power byte
+/// `0x0C..=0x1F` or `0`). These are all manual, seedless edits.
 /// `starting_level`
 /// begins the new game at that character level instead of 1 (`0` or `1` =
 /// vanilla; range 2..=14), seeding the lead character's XP and recomputing the
@@ -191,6 +193,7 @@ pub fn patch_rom(
     fishing_prices: &str,
     location_renames: &str,
     earth_egg_price: &str,
+    arts_powers: &str,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -491,6 +494,57 @@ pub fn patch_rom(
                 None => summary.push_str(&format!(
                     "rename-location: skipped malformed entry {line:?}\n"
                 )),
+            }
+        }
+    }
+
+    // Arts damage-power edits: comma/space/newline-separated `COMBO=VALUE`
+    // tokens (`RDLDL=0x16`). `VALUE` is a power-encoding byte (`0` disables, or
+    // `0x0C..=0x1F` = a damage tier; lower = weaker). A bad entry is reported
+    // and skipped.
+    let arts_powers = arts_powers.trim();
+    if arts_powers.is_empty() {
+        summary.push_str("arts-power: untouched\n");
+    } else {
+        for tok in arts_powers
+            .split([',', ';', '\n', ' '])
+            .filter(|t| !t.trim().is_empty())
+        {
+            let parsed = tok.split_once('=').and_then(|(c, v)| {
+                let combo = legaia_patcher::arts_power::parse_combo(c.trim())?;
+                let vs = v.trim();
+                let value = vs
+                    .strip_prefix("0x")
+                    .or_else(|| vs.strip_prefix("0X"))
+                    .map(|h| u8::from_str_radix(h, 16))
+                    .unwrap_or_else(|| vs.parse::<u8>())
+                    .ok()?;
+                (value == 0 || legaia_patcher::arts_power::is_power_byte(value))
+                    .then_some((combo, value))
+            });
+            match parsed {
+                Some((combo, value)) => {
+                    match apply::set_arts_power(&mut patcher, &[(combo, value)]) {
+                        Ok(rep) if rep.edits.is_empty() => {
+                            summary.push_str(&format!("arts-power: {tok} unchanged\n"))
+                        }
+                        Ok(rep) => {
+                            for e in &rep.edits {
+                                let combo: String = e
+                                    .combo
+                                    .iter()
+                                    .map(legaia_patcher::arts_power::command_glyph)
+                                    .collect();
+                                summary.push_str(&format!(
+                                    "arts-power: {combo} ({:?}) -> {value:#04X}\n",
+                                    e.character
+                                ));
+                            }
+                        }
+                        Err(e) => summary.push_str(&format!("arts-power: {e}\n")),
+                    }
+                }
+                None => summary.push_str(&format!("arts-power: skipped malformed entry {tok:?}\n")),
             }
         }
     }

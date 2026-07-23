@@ -73,6 +73,7 @@ disc-gated, so CI runs without a disc. There is also a
   - [Equip mask (who can equip what)](#equip-mask-who-can-equip-what)
   - [Weapon specialty](#weapon-specialty)
   - [Arts button combos](#arts-button-combos)
+  - [Arts damage power](#arts-damage-power)
   - [Doors (scene transitions)](#doors-scene-transitions)
   - [House doors (intra-town)](#house-doors-intra-town)
   - [Map doors (`.MAP` kind-0 intra-scene teleports)](#map-doors-map-kind-0-intra-scene-teleports)
@@ -183,6 +184,8 @@ legaia-patcher locations --input DISC.bin                                       
 legaia-patcher randomize --input DISC.bin --seed loc --rename-location "3=Ancient Fire Cave"  # rename the Ancient Wind Cave
 legaia-patcher earth-egg --input DISC.bin                                                 # read-only: show the Earth Egg coin threshold
 legaia-patcher randomize --input DISC.bin --earth-egg-price 25000                         # Earth Egg costs 25000 casino coins
+legaia-patcher arts      --input DISC.bin                                                 # read-only: list every art's combo + damage-power tiers
+legaia-patcher randomize --input DISC.bin --seed pow --arts-power RDLDL=0x0C              # power Vahn's Burning Flare down to tier 0x0C
 legaia-patcher randomize --input DISC.bin --seed mart --shops shuffle --casino shuffle
 legaia-patcher randomize --input DISC.bin --seed 0xC0FFEE --drops random \
     --encounters shuffle --steals shuffle --arts shuffle --doors shuffle --door-coupling coupled \
@@ -260,6 +263,7 @@ unless asked for:
 | `--fishing-price ITEM=POINTS` | set the fishing-exchange point cost of a prize (e.g. the Buma Water Egg); the price also gates when the prize appears | repeatable / comma-separated | [Fishing prize prices](#fishing-prize-prices) |
 | `--rename-location INDEX=NAME` | rename a world-map location (save / load / pause + quick-travel menu), e.g. an element cave to match a re-elemented party | repeatable | [Location names](#location-names) |
 | `--earth-egg-price VALUE` | set the casino-coin threshold to obtain the Earth Egg (Sol Tower Prize Counter; retail 100000), gate + debit together | single value | [Earth Egg coin threshold](#earth-egg-coin-threshold) |
+| `--arts-power COMBO=VALUE` | rebalance a Tactical Art's per-strike damage-power bytes, targeted by input combo (`RDLDL=0x16`); `VALUE` is a power tier `0x0C..=0x1F` or `0` to disable | repeatable / comma-separated | [Arts damage power](#arts-damage-power) |
 
 **Tuning the encounter and door passes:**
 
@@ -1208,6 +1212,31 @@ distinct). `Shuffle` reassigns existing same-length combos (no new input
 ambiguity); `Random` writes fresh same-length combos. The per-character
 **Miracle Art** (`0xFF09` marker) is left untouched. `legaia-patcher arts` lists
 the current combos.
+
+### Arts damage power
+
+A party member's Tactical Art does **not** draw its damage from the move-power
+table (that is special-attack-only). Each art's 1-4 per-strike **power bytes**
+live at a fixed offset `+0x24` inside the same `0xD0`-stride `record0` art record
+whose combo the [button-combo](#arts-button-combos) editor rewrites - pinned by
+back-tracing the arts damage kernel `FUN_801EC3E4` and byte-validating every
+art's tier across the three player files (see
+[art-data.md § Damage power byte](../formats/art-data.md#damage-power-byte---pinned-to-record0-0x24)).
+A power byte is a tier: `mult = [12,18,20,22,28][(v-0xC)%5]`, defence facet
+`(v-0xC)%10 < 5 ? UDF : LDF`; valid values are `0x0C..=0x1F`.
+
+`apply::set_arts_power` (`--arts-power COMBO=VALUE`) targets an art by its input
+combo (`RDLDL` = Vahn's Burning Flare), decompresses that character's `record0`,
+and sets **every active** power byte of the matched record to `VALUE` (the hit
+count is preserved - a non-hit slot is never promoted, and an art with no damage
+byte, e.g. Gala's spirit-only Biron Rage, is skipped), then recompresses to fit.
+`VALUE` is a power tier `0x0C..=0x1F` (lower = weaker, an "arts power-down") or
+`0` to disable the art's hits. There is **no** second copy to sync (the power has
+no menu display). A combo shared across characters (e.g. `UDU`) edits the
+matching art in each file. `legaia-patcher arts` lists every art's combo, AP, and
+current power tiers. Seedless targeted edit; no Sony bytes. Module
+[`legaia_patcher::arts_power`](../../crates/patcher/src/arts_power.rs); disc oracle
+`crates/patcher/tests/arts_power_real.rs`.
 
 ### Doors (scene transitions)
 

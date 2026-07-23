@@ -9,7 +9,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use legaia_patcher::apply;
 use legaia_patcher::drops::DropMode;
 
-use crate::util::{parse_item_spec, parse_location_rename, parse_prize_price};
+use crate::util::{parse_arts_power, parse_item_spec, parse_location_rename, parse_prize_price};
 
 #[derive(Parser)]
 #[command(
@@ -528,6 +528,16 @@ pub(crate) struct RandomizeArgs {
     /// 1..=8388608. `legaia-patcher earth-egg` shows the current value.
     #[arg(long, value_name = "VALUE")]
     pub(crate) earth_egg_price: Option<u32>,
+    /// **Rebalance a Tactical Art's damage** ("arts power-down"). Comma- or
+    /// repeat-separated `COMBO=VALUE` entries, targeting an art by its input
+    /// combo (`L/R/D/U`, e.g. `--arts-power RDLDL=0x16`). `VALUE` is a
+    /// power-encoding byte: `0x0C..=0x1F` (a defence facet + one of the
+    /// multipliers 12/18/20/22/28; higher = stronger, so a *lower* value powers
+    /// the art down), or `0` to disable that art's hits. Every active per-strike
+    /// power byte of the matched art is set to `VALUE` (hit count preserved).
+    /// `legaia-patcher arts` lists every art's combo and current power tiers.
+    #[arg(long, value_name = "COMBO=VALUE", value_delimiter = ',', value_parser = parse_arts_power)]
+    pub(crate) arts_power: Vec<(Vec<legaia_art::queue::Command>, u8)>,
     /// **Rename a world-map location** (the names shown on the quick-travel
     /// menu and the save / load / pause location display). Repeatable
     /// `INDEX=NAME` entries; the index is a landmark slot (`legaia-patcher

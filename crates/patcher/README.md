@@ -24,7 +24,11 @@ Three patching families share that machinery:
   reimport ([`docs/tooling/translation.md`](../../docs/tooling/translation.md)).
 - **Manual edits** - targeted single-record patching for curated mods:
   `monster-block` dumps one monster's decoded `battle_data` block for hex
-  editing (stats, element, name) and re-packs it onto a copy of the disc.
+  editing (stats, element, name) and re-packs it onto a copy of the disc;
+  `--fishing-price` / `--rename-location` retune fishing-exchange prices and
+  world-map names; `--arts-power COMBO=VALUE` rebalances a Tactical Art's
+  per-strike damage-power bytes (`record0 +0x24`, targeted by input combo -
+  [`arts_power`](src/arts_power.rs)).
 
 It is Track-1-adjacent tooling - it does **not** touch the clean-room engine -
 and it ships only code: no game bytes are embedded or committed, and every
@@ -58,6 +62,7 @@ full design.
   - [Equip mask](#equip-mask)
   - [Weapon specialty](#weapon-specialty)
   - [Arts](#arts)
+  - [Arts damage power](#arts-damage-power-arts_power-module)
   - [Doors](#doors)
   - [House doors](#house-doors)
   - [Map doors](#map-doors)
@@ -636,6 +641,21 @@ preserved** and each character's combos stay unique by construction.
 - `Shuffle` reassigns existing same-length combos.
 - `Random` writes fresh same-length combos.
 - The Miracle Art (`0xFF09`) is left untouched.
+
+## Arts damage power (`arts_power` module)
+
+`--arts-power COMBO=VALUE` rebalances a party art's damage. Each art's 1-4
+per-strike **power bytes** sit at a fixed offset `+0x24` in the same
+`0xD0`-stride `record0` record as its combo (pinned by back-tracing the arts
+damage kernel `FUN_801EC3E4`; see
+[`docs/formats/art-data.md`](../../docs/formats/art-data.md#damage-power-byte---pinned-to-record0-0x24)).
+A power byte is a tier - `mult = [12,18,20,22,28][(v-0xC)%5]`, defence facet
+`(v-0xC)%10<5 ? UDF : LDF`, valid `0x0C..=0x1F`. The editor targets an art by its
+input combo, sets every active power byte to `VALUE` (hit count preserved; a
+no-damage-byte art like Gala's spirit Miracle is skipped), and recompresses
+`record0` to fit. `VALUE` is a tier `0x0C..=0x1F` (lower = weaker) or `0` to
+disable. No display copy to sync (the power is not shown in the menu).
+`legaia-patcher arts` lists every art's combo, AP, and power tiers.
 
 ## Doors
 

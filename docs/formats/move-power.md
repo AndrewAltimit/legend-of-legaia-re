@@ -156,8 +156,10 @@ neither a party member's art nor an enemy *basic* attack draws its damage from
 this table.
 
 Damage sources therefore split cleanly: **enemy special attacks** roll through
-this move-power table (`FUN_801dd0ac`); **a party member's Tactical Art** takes its
-power from the per-strike *art-record* power byte ([art-data.md](art-data.md));
+this move-power table (`FUN_801dd0ac`); **a party member's Tactical Art** takes
+its power from the per-strike *art-record* power byte at `record0 +0x24`, read by
+the arts kernel `FUN_801ec3e4` (pinned - see
+[art-data.md § Damage power byte](art-data.md#damage-power-byte---pinned-to-record0-0x24));
 enemy basic attacks use the generic physical path. The engine mirrors this - the
 move-power table is wired for enemy specials only, and a character's art damage
 uses the art power byte. (`move_power_map_is_special_attack_only` pins the

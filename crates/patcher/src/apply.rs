@@ -28,6 +28,7 @@ const SCUS_NAME: &str = "SCUS_942.54";
 // imports/const above and the other features' re-exported items; every
 // previously-public `apply::*` path is preserved by the `pub use` glob
 // re-exports below.
+mod arts_power;
 mod battle_tuning;
 mod chests;
 mod code_hooks;
@@ -60,6 +61,7 @@ mod steals_arts;
 /// Both in-browser [`crate::translation`] callers and the CLI honour this.
 pub use crate::translation::import_pack as import_language_pack;
 
+pub use arts_power::*;
 pub use battle_tuning::*;
 pub use chests::*;
 pub use code_hooks::*;
