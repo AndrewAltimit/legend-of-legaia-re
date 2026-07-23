@@ -83,6 +83,7 @@
 # math directly in `crates/engine-render`; the retail wrappers are not
 # carried over.
 [libgte]
+"8005ba38" = "libgte cop2 coordinate-transform wrapper (setCopReg(2)/copFunction(2,0x180001)/getCopReg; dump is C-only but cop2 op sequence is unambiguous)"
 "8005b618" = "GTE rotation-matrix loader: five ctc2 of a 5-word block into COP2 control regs 0x0/0x800/0x1000/0x1800/0x2000 (the R11..R33 rotation-matrix region). Sibling of 8005b7c0 SetRotMatrix; engine emits rotation via glam Mat3/Mat4"
 "8005b7c0" = "SetRotMatrix (setCopControlWord(2, 0xD800, x))"
 "8005b7cc" = "SetTransMatrix (setCopControlWord(2, 0xE000, x))"
@@ -301,6 +302,27 @@
 # replaces this cluster end-to-end; see `docs/subsystems/audio.md`.
 "8005fde8" = "libapi device-vtable trampoline (slot +0x4 of PTR_PTR_8007A860): the whole body is `lw v0,-0x57a0(0x8008); lw v0,0x4(v0); jalr v0`, forwarding its arguments untouched. Direct sibling of the already-listed 8005fd88 (slot +0xC). see ghidra/scripts/funcs/8005fde8.txt"
 [libsnd]
+"80060a1c" = "SsSeqPlay event handler: DAT_801cd2c0[track]*4 -> +param*0xb0 channel struct, advances byte-ptr, calls read-next-event 80061c68"
+"80060a94" = "SsSeqPlay multi-branch event dispatcher over the 0xb0-stride channel struct (DAT_801cd2c0 table)"
+"80060ebc" = "SsSeqPlay per-channel event handler (DAT_801cd2c0/0xb0-stride, calls 80061c68)"
+"80060f8c" = "SsSeqPlay per-channel event handler (DAT_801cd2c0/0xb0-stride)"
+"80061054" = "SsSeqPlay per-channel event handler (DAT_801cd2c0/0xb0-stride)"
+"8006113c" = "SsSeqPlay per-channel event handler (DAT_801cd2c0/0xb0-stride)"
+"800611e4" = "SsSeqPlay per-channel event handler (DAT_801cd2c0/0xb0-stride)"
+"8006126c" = "SsSeqPlay per-channel event handler (DAT_801cd2c0/0xb0-stride)"
+"8006139c" = "SsSeqPlay multi-branch event dispatcher (DAT_801cd2c0/0xb0-stride)"
+"800614d0" = "SsSeqPlay per-channel event handler (DAT_801cd2c0/0xb0-stride)"
+"80061540" = "SsSeqPlay per-channel event handler (DAT_801cd2c0/0xb0-stride)"
+"800615b0" = "SsSeqPlay per-channel event handler (DAT_801cd2c0/0xb0-stride)"
+"8006166c" = "SsSeqPlay per-channel event handler (DAT_801cd2c0/0xb0-stride)"
+"80061954" = "SsSeqPlay tempo/meta handler (60000000/x tempo divide; DAT_801cd2c0/0xb0-stride)"
+"80061b24" = "SsSeqPlay event handler (DAT_801cd2c0/0xb0-stride)"
+"80061bf8" = "SsSeqPlay per-channel event handler (DAT_801cd2c0/0xb0-stride)"
+"80065b98" = "SsUt-style flag setter (sound-driver global, 5-instruction leaf)"
+"80066d8c" = "libsnd vibrato/tremolo LFO table lookup (sound-driver 0x8008 globals)"
+"80068c70" = "libsnd sound-driver global setter (4-instruction leaf)"
+"800693b8" = "libsnd thunk (8-instruction wrapper)"
+"8005ebfc" = "libsnd wrapper thunk (routes into sound-driver helper)"
 "80061c68" = "_SsSeqGetVar (MIDI varint delta-time decoder)"
 "80061d18" = "SsSeqClose (full close - clears bitmap + memsets channels)"
 "80061e94" = "SsSeqClose short-arg shim (tail-calls 80061d18)"
@@ -372,6 +394,14 @@
 # libspu primitives + SPU DMA transfer engine. Replaced by clean-room
 # software SPU in `engine-audio`.
 [libspu]
+"8006b684" = "libspu thunk (SPU voice/DMA management wrapper)"
+"8006c9e4" = "libspu thunk (SPU voice/DMA management wrapper)"
+"8006ca04" = "libspu thunk (SPU voice/DMA management wrapper)"
+"8006d2f0" = "libspu voice-transfer trigger (sound-driver 0x8008 globals, dispatches 8006d358)"
+"8006e600" = "libspu voice-allocation scan (61-voice budget DAT_8007b2bc + 10 < 0x3d)"
+"8005bcb8" = "libspu reverb/key-off wrapper (tail-calls 8005bd30 with 0xf0000003)"
+"8005bce0" = "libspu reverb/key-off wrapper (tail-calls 8005bd30 with 0xf0000003)"
+"8005bd08" = "libspu reverb/key-off wrapper (tail-calls 8005bd30 with 0xf0000003)"
 "800697e0" = "_SpuTransfer outer wrapper (non-DMA CPU copy path)"
 "80069b18" = "_spu_t core (4-mode SPU transfer state machine)"
 "80069da8" = "SpuWrite (top-level; picks DMA vs CPU copy path)"
@@ -494,6 +524,11 @@
 # behavior to port. (The 8002b9xx cluster is the stripped per-tile sprite-emit
 # leaf family; cf. FUN_8002B96C, also `jr ra; nop`.)
 [noop_stubs]
+"80026c20" = "no-op stub (jr ra; nop)"
+"8002b934" = "no-op stub (jr ra; nop)"
+"8002b984" = "no-op stub (jr ra; nop)"
+"8002b98c" = "no-op stub (jr ra; nop)"
+"8003cc88" = "no-op stub (jr ra; nop)"
 "8002b93c" = "Empty stub (`jr ra; nop`). Stripped tile-sprite-emit leaf (8002b9xx family)."
 "8002b944" = "Empty stub (`jr ra; nop`). Stripped tile-sprite-emit leaf (8002b9xx family)."
 "8002b94c" = "Empty stub (`jr ra; nop`). Stripped tile-sprite-emit leaf (8002b9xx family)."
