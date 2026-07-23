@@ -904,6 +904,124 @@ impl FishingMenu {
     }
 }
 
+/// Outcome of one [`RodLureSelect::tick`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RodLureSelectTick {
+    /// SFX request this frame (`sh id, _DAT_8007B6D8`): `0x20` confirm /
+    /// equip, `0x22` cannot equip (selected lure not owned), `0x37` cancel,
+    /// `0x21` cursor move. `None` when no pad edge acted.
+    pub sfx: Option<u16>,
+    /// A lure was equipped: the new persistent lure/label index
+    /// (`_DAT_80084450 = cursor`, `cursor < 3`). Its consumable is
+    /// [`lure_item_id`]`(index)`.
+    pub equip_lure: Option<u32>,
+    /// A rod was equipped: the new persistent rod-upgrade stat
+    /// (`_DAT_80084454 = slot`, the value that scales the tension change).
+    pub equip_rod: Option<i32>,
+    /// Cancel / confirm-out: the caller jumps the fishing SM to `100`
+    /// (`DAT_801D926C = 100`).
+    pub leave: bool,
+}
+
+/// PORT: FUN_801d0f5c (rod / lure select screen - the input + equip half)
+///
+/// The fishing overlay's rod/lure select screen (`overlay_fishing_801d0f5c.txt`,
+/// PROT 0972). The retail body is input, equip, **and** the row render; this
+/// port models the input/equip kernel only (the row list + owned-count highlight
+/// is a host draw concern, like the [`FishingMenu`] split).
+///
+/// Per frame it first counts the **owned rods** among item ids `0xA0..=0xA2`
+/// (`owned_rods`), which bounds the cursor. When `interactive` (retail
+/// `param_1 != 0`):
+///
+/// - **accept** (`pad_edge & 0x44` = Cross `0x40` / L1 `0x04`): a lure row
+///   (`cursor < 3`) equips its lure - if the lure item `0x9D + cursor` is owned
+///   it writes the persistent lure index `_DAT_80084450 = cursor` (SFX `0x20`),
+///   otherwise it refuses with SFX `0x22`. A rod row (`cursor >= 3`) walks the
+///   three rod slots and equips the `(cursor - 3)`-th **owned** one, writing the
+///   persistent rod stat `_DAT_80084454 = slot` (SFX `0x20`) - so unowned slots
+///   are skipped, and the visible rod rows are exactly the owned rods.
+/// - **cancel** (`pad_edge & 0x21` = Circle `0x20` / L2 `0x01`): SFX `0x37`,
+///   [`leave`](RodLureSelectTick::leave).
+/// - **move** (`pad_move & 0x1000` up / `& 0x4000` down): step the cursor -/+1,
+///   SFX `0x21`. `pad_move` is the retail `DAT_801D90D8` mask, distinct from the
+///   `pad_edge` (`_DAT_8007B874`) accept/cancel mask.
+///
+/// The cursor **snap-wrap** runs every frame regardless of `interactive`
+/// (retail): a cursor past `owned_rods + 2` snaps to `0`, a negative cursor snaps
+/// to `owned_rods + 2` - the `3` lure rows plus the owned-rod rows.
+///
+/// Not wired: the play window has no rod/lure select screen, so this closes the
+/// documented gap noted on [`select_owned_rod`] (the read-only rod re-point) with
+/// the interactive selection half.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RodLureSelect {
+    /// Cursor row (`DAT_801D90DC`); `0..3` = the three lure rows, `3..` = the
+    /// owned rods.
+    pub cursor: i32,
+}
+
+impl RodLureSelect {
+    pub fn tick(
+        &mut self,
+        pad_edge: u32,
+        pad_move: u32,
+        interactive: bool,
+        mut count_of: impl FnMut(u32) -> i32,
+    ) -> RodLureSelectTick {
+        let owned_rods: i32 = (0..ROD_KINDS).filter(|k| count_of(0xa0 + k) != 0).count() as i32;
+        let mut out = RodLureSelectTick::default();
+        if interactive {
+            if pad_edge & 0x44 != 0 {
+                if self.cursor < 3 {
+                    // Lure row: equip only if the paired lure item is owned.
+                    if count_of(0x9d + self.cursor as u32) != 0 {
+                        out.sfx = Some(0x20);
+                        out.equip_lure = Some(self.cursor as u32);
+                    } else {
+                        out.sfx = Some(0x22);
+                    }
+                } else {
+                    // Rod row: the (cursor - 3)-th owned rod among slots 0..3.
+                    let mut remaining = self.cursor - 3;
+                    let mut slot = 0i32;
+                    while slot < 3 {
+                        if count_of(0xa0 + slot as u32) != 0 {
+                            if remaining < 1 {
+                                out.sfx = Some(0x20);
+                                out.equip_rod = Some(slot);
+                                break;
+                            }
+                            remaining -= 1;
+                        }
+                        slot += 1;
+                    }
+                }
+            }
+            if pad_edge & 0x21 != 0 {
+                out.sfx = Some(0x37);
+                out.leave = true;
+            }
+            if pad_move & 0x1000 != 0 {
+                out.sfx = Some(0x21);
+                self.cursor -= 1;
+            }
+            if pad_move & 0x4000 != 0 {
+                out.sfx = Some(0x21);
+                self.cursor += 1;
+            }
+        }
+        // Snap-wrap (retail: the bgez / slt pair, run every frame).
+        if owned_rods + 2 < self.cursor {
+            self.cursor = 0;
+        }
+        if self.cursor < 0 {
+            self.cursor = owned_rods + 2;
+        }
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1282,5 +1400,77 @@ mod tests {
         assert_eq!(t.next_state, None);
         assert_eq!(t.sfx, None);
         assert_eq!(m.cursor, 2);
+    }
+
+    // Inventory helper for the rod/lure select tests: `owned` lists the item
+    // ids the player holds (count 1 each).
+    fn inv(owned: &[u32]) -> impl FnMut(u32) -> i32 + '_ {
+        move |id| owned.contains(&id) as i32
+    }
+
+    #[test]
+    fn rod_lure_select_equips_owned_lure() {
+        // Cursor on lure row 1; the paired lure item 0x9e is owned. Accept
+        // (Cross 0x40) equips lure index 1 with the confirm SFX.
+        let mut s = RodLureSelect { cursor: 1 };
+        let t = s.tick(0x40, 0, true, inv(&[0x9e, 0xa0]));
+        assert_eq!(t.equip_lure, Some(1));
+        assert_eq!(t.equip_rod, None);
+        assert_eq!(t.sfx, Some(0x20));
+    }
+
+    #[test]
+    fn rod_lure_select_refuses_unowned_lure() {
+        // Lure row 2 whose item 0x9f is not owned: accept refuses (SFX 0x22),
+        // nothing equipped.
+        let mut s = RodLureSelect { cursor: 2 };
+        let t = s.tick(0x40, 0, true, inv(&[0x9d, 0xa0]));
+        assert_eq!(t.equip_lure, None);
+        assert_eq!(t.sfx, Some(0x22));
+    }
+
+    #[test]
+    fn rod_lure_select_walks_owned_rods() {
+        // Player owns rod slots 0 and 2 (item 0xa0, 0xa2), so two rod rows show
+        // at cursor 3 and 4. Rod row 4 (cursor-3 = 1) is the *second* owned rod
+        // = slot 2, skipping the unowned slot 1.
+        let mut s = RodLureSelect { cursor: 4 };
+        let t = s.tick(0x40, 0, true, inv(&[0xa0, 0xa2]));
+        assert_eq!(t.equip_rod, Some(2));
+        assert_eq!(t.equip_lure, None);
+        assert_eq!(t.sfx, Some(0x20));
+        // Rod row 3 (cursor-3 = 0) is the first owned rod = slot 0.
+        let mut s = RodLureSelect { cursor: 3 };
+        let t = s.tick(0x40, 0, true, inv(&[0xa0, 0xa2]));
+        assert_eq!(t.equip_rod, Some(0));
+    }
+
+    #[test]
+    fn rod_lure_select_cursor_wraps_against_owned_rods() {
+        // Two owned rods -> max cursor = owned_rods + 2 = 4. Moving down past it
+        // snaps to 0; moving up below 0 snaps to 4.
+        let mut s = RodLureSelect { cursor: 4 };
+        let t = s.tick(0, 0x4000, true, inv(&[0xa0, 0xa2])); // down
+        assert_eq!(t.sfx, Some(0x21));
+        assert_eq!(s.cursor, 0);
+        let mut s = RodLureSelect { cursor: 0 };
+        s.tick(0, 0x1000, true, inv(&[0xa0, 0xa2])); // up
+        assert_eq!(s.cursor, 4);
+    }
+
+    #[test]
+    fn rod_lure_select_cancel_and_non_interactive() {
+        // Cancel (Circle 0x20) leaves with the cancel SFX.
+        let mut s = RodLureSelect { cursor: 1 };
+        let t = s.tick(0x20, 0, true, inv(&[0x9d]));
+        assert!(t.leave);
+        assert_eq!(t.sfx, Some(0x37));
+        // Non-interactive: no pad acted, but the snap-wrap still runs. An
+        // out-of-range cursor with one owned rod (max 3) snaps to 0.
+        let mut s = RodLureSelect { cursor: 9 };
+        let t = s.tick(0xFFFF, 0xFFFF, false, inv(&[0xa0]));
+        assert_eq!(t.sfx, None);
+        assert!(!t.leave);
+        assert_eq!(s.cursor, 0);
     }
 }
