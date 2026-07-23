@@ -184,6 +184,8 @@ RAM↔disc and VRAM↔disc in a mid-cast save state. Full format + verification:
 
 Effect IDs are anonymous; no string table maps id → "fireball / thunder / heal". To name effects, trace call sites of `FUN_801DFDF8` in damage / battle-action code (in town/level-up overlays). Each caller passes a literal byte for `effect_id`; correlate with the action that triggered it (a Tactical Arts move, an item use, a spell cast).
 
+Two producers of the 2D-pool spawn wrapper `FUN_801DFDF0` are confirmed: the move-power `+0x12`/`+0x16` effect-id lists dispatched by `FUN_801e09f8`, and the per-move effect-list spawner `FUN_801e22c8` (called by the battle effect driver `FUN_800402f4`), which walks a 5-byte-stride list at `0x801F6470` through the same bit-7 multiplex. See [`effect.md` § the bit-7 multiplex](../formats/effect.md#how-a-move-reaches-this-2d-pool---the-bit-7-multiplex).
+
 ## See also
 
 **Reference** -
