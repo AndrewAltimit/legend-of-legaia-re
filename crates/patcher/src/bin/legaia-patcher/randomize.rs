@@ -26,6 +26,15 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         Some(s) => resolve_seed(s),
         None => clock_seed(),
     };
+    // Arts AP-grant and shiny-Seru reuse the same verified-dead SCUS arena bytes,
+    // so they are mutually exclusive - refuse before touching anything.
+    if !args.arts_ap_grant.is_empty() && args.shiny_seru {
+        bail!(
+            "--arts-ap-grant and --shiny-seru both inject into the same verified-dead SCUS \
+             arena and are mutually exclusive; enable only one"
+        );
+    }
+
     let original = load_image(&args.input)?;
     check_usa_disc(&original, args.allow_region_mismatch, "randomize")?;
     let mut patcher = DiscPatcher::open(original.clone()).context("parse disc image")?;
@@ -209,6 +218,123 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("jewel_fix = true".to_string());
     } else {
         manifest.push("jewel_fix = false".to_string());
+    }
+
+    // Fishing-exchange price edits: set the point cost of one or more prizes
+    // (e.g. the Buma Water Egg). Seedless targeted edits in the raw PROT 972
+    // overlay; the price also gates when the prize appears.
+    for &(item_id, price) in &args.fishing_price {
+        let report = apply::set_fishing_price(&mut patcher, item_id as u32, price)?;
+        if report.edits.is_empty() {
+            println!("fishing-price: item 0x{item_id:02X} already costs {price} points");
+        } else {
+            for (page, _row, _id, old, new) in &report.edits {
+                let venue = if *page == 0 { "Buma" } else { "Vidna" };
+                println!("fishing-price: {venue} item 0x{item_id:02X}: {old} -> {new} points");
+            }
+        }
+        manifest.push(format!("fishing_price 0x{item_id:02X} = {price}"));
+    }
+
+    // Earth Egg coin-threshold edit: rewrite the Sol Tower Prize Counter's
+    // scripted coin gate + debit (koin1 MAN). Seedless targeted edit.
+    if let Some(price) = args.earth_egg_price {
+        let report = apply::set_earth_egg_price(&mut patcher, price)?;
+        if report.changed {
+            println!(
+                "earth-egg-price: {} -> {} coins",
+                report.old_price, report.new_price
+            );
+        } else {
+            println!("earth-egg-price: already {} coins", report.new_price);
+        }
+        manifest.push(format!("earth_egg_price = {price}"));
+    }
+
+    // Tactical-Art damage-power edits: rewrite an art's per-strike power bytes
+    // (record+0x24) in the character's player-file record0. Seedless targeted
+    // edits keyed by input combo.
+    if !args.arts_power.is_empty() {
+        let report = apply::set_arts_power(&mut patcher, &args.arts_power)?;
+        let mut changed: std::collections::BTreeSet<Vec<u8>> = std::collections::BTreeSet::new();
+        for e in &report.edits {
+            let combo: String = e
+                .combo
+                .iter()
+                .map(legaia_patcher::arts_power::command_glyph)
+                .collect();
+            let old: String = e
+                .old_power
+                .iter()
+                .map(|b| format!("{b:02X}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            let new: String = e
+                .new_power
+                .iter()
+                .map(|b| format!("{b:02X}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            println!("arts-power: {combo} ({:?}) [{old}] -> [{new}]", e.character);
+            changed.insert(e.combo.iter().map(|c| c.as_byte()).collect());
+        }
+        for (combo, value) in &args.arts_power {
+            let key: Vec<u8> = combo.iter().map(|c| c.as_byte()).collect();
+            let combo_s: String = combo
+                .iter()
+                .map(legaia_patcher::arts_power::command_glyph)
+                .collect();
+            if !changed.contains(&key) {
+                println!("arts-power: {combo_s} already at {value:#04X} (or has no damage byte)");
+            }
+            manifest.push(format!("arts_power {combo_s} = {value:#04X}"));
+        }
+    }
+
+    // Arts AP-grant: three same-size detours into the party arts queue-builder
+    // (PROT 0898) + routines and a 26-entry config table in a verified-dead SCUS
+    // arena, so a targeted art grants AP (clamped at 100) instead of costing it.
+    // The config row is the arts-table index, shared across all three characters.
+    if !args.arts_ap_grant.is_empty() {
+        let report = apply::inject_arts_ap_grant(&mut patcher, &args.arts_ap_grant)?;
+        for g in &report.resolved {
+            let targeted = legaia_patcher::arts_ap_grant::combo_str(&g.targeted_combo);
+            let shared: Vec<String> = g
+                .shared
+                .iter()
+                .map(|(ch, name, combo)| {
+                    let c = legaia_patcher::arts_ap_grant::combo_str(combo);
+                    format!("{ch:?} {c} {name:?}")
+                })
+                .collect();
+            println!(
+                "arts-ap-grant: {targeted} -> row {} grants {} AP (shared row affects: {})",
+                g.row,
+                g.amount,
+                shared.join("; ")
+            );
+        }
+        for (combo, amount) in &args.arts_ap_grant {
+            let combo_s = legaia_patcher::arts_ap_grant::combo_str(combo);
+            manifest.push(format!("arts_ap_grant {combo_s} = {amount}"));
+        }
+    }
+
+    // Location renames: same-size overwrites of the SCUS world-map name table.
+    if !args.rename_location.is_empty() {
+        let report = apply::rename_locations(&mut patcher, &args.rename_location)?;
+        for (idx, old, new) in &report.renames {
+            println!("rename-location: {idx} {old:?} -> {new:?}");
+            manifest.push(format!("rename_location {idx} = {new:?}"));
+        }
+        // Report requested-but-unchanged (already-matching) entries too.
+        let changed: std::collections::BTreeSet<usize> =
+            report.renames.iter().map(|(i, _, _)| *i).collect();
+        for (idx, _) in &args.rename_location {
+            if !changed.contains(idx) {
+                println!("rename-location: {idx} already has that name");
+            }
+        }
     }
 
     // Seru trading: embed an enabled flag + the run's seed so the clean-room

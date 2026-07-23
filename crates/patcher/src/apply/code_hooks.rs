@@ -215,6 +215,58 @@ pub fn inject_shiny_seru(patcher: &mut DiscPatcher, pct: u8) -> Result<ShinySeru
     Ok(ShinySeruReport { pct: plan.pct })
 }
 
+/// Report of an arts-AP-grant injection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArtsApGrantReport {
+    /// Every resolved grant (config row, amount, and the arts sharing that row).
+    pub resolved: Vec<crate::arts_ap_grant::ResolvedGrant>,
+}
+
+/// Inject the **arts AP-grant** feature (see [`crate::arts_ap_grant`]): make each
+/// targeted Tactical Art *grant* `amount` AP (Spirit, `actor[+0x170]`, clamped at
+/// 100) instead of costing it, admitting it at any Spirit level. Three same-size
+/// detours into the party arts queue-builder (PROT 0898) plus the routines +
+/// 26-entry config table in a verified-dead SCUS arena.
+///
+/// **Mutually exclusive with `--shiny-seru`** - both reuse the same arena bytes.
+/// Fails (without touching the disc) if the build isn't the recognized US layout,
+/// a combo is unknown, or the arena isn't dead space.
+pub fn inject_arts_ap_grant(
+    patcher: &mut DiscPatcher,
+    grants: &[(Vec<legaia_art::queue::Command>, u8)],
+) -> Result<ArtsApGrantReport> {
+    let scus = patcher
+        .read_named_file(SCUS_NAME)
+        .context("read SCUS_942.54 for arts-ap-grant injection")?;
+    let ov0898 = patcher
+        .read_entry(crate::arts_ap_grant::OVERLAY_PROT_INDEX)
+        .context("read battle-action overlay (0898) for arts-ap-grant injection")?;
+    let (config, resolved) = crate::arts_ap_grant::resolve(&scus, grants)?;
+    let plan = crate::arts_ap_grant::ArtsApGrantInjection::plan(&scus, &ov0898, config, resolved)?;
+
+    for edit in &plan.edits {
+        match edit.prot_index {
+            None => patcher
+                .patch_named_file(SCUS_NAME, edit.file_off as u64, &edit.bytes)
+                .with_context(|| {
+                    format!("write arts-ap-grant SCUS edit at {:#x}", edit.file_off)
+                })?,
+            Some(idx) => patcher
+                .patch_prot_entry(idx, edit.file_off as u64, &edit.bytes)
+                .with_context(|| {
+                    format!(
+                        "write arts-ap-grant PROT {idx} edit at {:#x}",
+                        edit.file_off
+                    )
+                })?,
+        }
+    }
+
+    Ok(ArtsApGrantReport {
+        resolved: plan.resolved,
+    })
+}
+
 /// Outcome of enabling seru trading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SeruTradeReport {
@@ -341,4 +393,45 @@ pub fn apply_jewel_fix(patcher: &mut DiscPatcher) -> Result<JewelFixReport> {
     Ok(JewelFixReport {
         sites_patched: plan.writes.len(),
     })
+}
+
+/// Outcome of a landmark/location rename.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocationRenameReport {
+    /// Per rename: `(index, old_name, new_name)`.
+    pub renames: Vec<(usize, String, String)>,
+}
+
+/// Rename one or more world-map landmark / location names (the strings echoed
+/// by the save / load / pause location display). Each `(index, new_name)` is a
+/// same-size overwrite of a 32-byte `SCUS_942.54` slot; a name already matching
+/// is a no-op, and an out-of-range index / oversized / non-ASCII name is
+/// refused (see [`crate::location_name`]).
+pub fn rename_locations(
+    patcher: &mut DiscPatcher,
+    renames: &[(usize, String)],
+) -> Result<LocationRenameReport> {
+    let scus = patcher
+        .read_named_file(SCUS_NAME)
+        .context("read SCUS_942.54 for location rename")?;
+    // Plan all edits against the pristine image first so a bad entry aborts
+    // before any write lands.
+    let mut plans = Vec::new();
+    for (index, new_name) in renames {
+        if let Some(edit) = crate::location_name::plan_rename(&scus, *index, new_name)? {
+            plans.push(edit);
+        }
+    }
+    let mut report = LocationRenameReport {
+        renames: Vec::new(),
+    };
+    for edit in plans {
+        patcher
+            .patch_named_file(SCUS_NAME, edit.offset as u64, &edit.slot)
+            .with_context(|| format!("write location name {} ({:?})", edit.index, edit.new_name))?;
+        report
+            .renames
+            .push((edit.index, edit.old_name, edit.new_name));
+    }
+    Ok(report)
 }

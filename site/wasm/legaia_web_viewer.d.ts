@@ -3126,7 +3126,24 @@ export function lift_official_pack(target_image: Uint8Array, source_image: Uint8
  * per-battle chance, the frontmost *capturable* enemy spawns as a rare shiny
  * variant (+35% stats) whose captured Seru deals +35% damage on every future
  * cast (the flag rides the spell's level byte and is masked from the level-up +
- * menu readers).
+ * menu readers). `jewel_fix` retargets the boss cinematic casts' damage calls
+ * from the resist-ladder-bypassing wrapper to the guard-respecting one, so
+ * elemental jewels / guards / All Guard apply to Xain's Bloody Horns / Terio
+ * Punch, Cort's Guilty Cross, and the Delilas trio's signature moves (a fix,
+ * not a randomization - it is seedless). `fishing_prices` is a
+ * comma/space-separated list of `item=points` pairs that set the
+ * fishing-exchange point cost of prizes (e.g. `0x6F=500` for the Water Egg).
+ * `location_renames` is a newline-separated list of `index=name` lines that
+ * rename world-map location slots (e.g. `3=Ancient Fire Cave`).
+ * `earth_egg_price` (empty = untouched) sets the casino-coin threshold the Sol
+ * Tower Prize Counter requires before it offers the Earth Ra-Seru Egg (retail
+ * 100000); the game debits exactly that many coins on purchase. `arts_powers`
+ * is a comma/space-separated list of `combo=value` pairs that rebalance a
+ * Tactical Art's damage-power bytes (e.g. `RDLDL=0x16`; `value` a power byte
+ * `0x0C..=0x1F` or `0`). `arts_ap_grants` is a comma/space-separated list of
+ * `combo=amount` pairs (e.g. `RDLDL=10`; `amount` 1..=100 AP) that make an art
+ * grant AP instead of costing it; mutually exclusive with `shiny_seru` (same
+ * SCUS arena). These are all manual, seedless edits.
  * `starting_level`
  * begins the new game at that character level instead of 1 (`0` or `1` =
  * vanilla; range 2..=14), seeding the lead character's XP and recomputing the
@@ -3142,7 +3159,7 @@ export function lift_official_pack(target_image: Uint8Array, source_image: Uint8
  * mismatch) are counted in the summary but never abort the patch. Returns
  * `{ data, summary, seed }`.
  */
-export function patch_rom(image: Uint8Array, seed: string, lang_pack: string, drops: string, encounters: string, encounter_scope: string, chests: string, shops: string, casino: string, steals: string, arts: string, doors: string, door_coupling: string, house_doors: string, starting_items: number, door_of_wind: number, incense: number, speed_chain: number, chicken_heart: number, good_luck_bell: number, all_warps: boolean, unused_enemies: boolean, unused_items: boolean, equipment_drops: boolean, monster_stats: string, move_power: string, element_affinity: string, spell_cost: string, equip_bonus: string, weapon_specialty: boolean, starting_level: number, solo_strong_encounters: boolean, flee_exp: boolean, seru_trade: boolean, enemy_ally: boolean, shiny_seru: boolean): any;
+export function patch_rom(image: Uint8Array, seed: string, lang_pack: string, drops: string, encounters: string, encounter_scope: string, chests: string, shops: string, casino: string, steals: string, arts: string, doors: string, door_coupling: string, house_doors: string, starting_items: number, door_of_wind: number, incense: number, speed_chain: number, chicken_heart: number, good_luck_bell: number, all_warps: boolean, unused_enemies: boolean, unused_items: boolean, equipment_drops: boolean, monster_stats: string, move_power: string, element_affinity: string, spell_cost: string, equip_bonus: string, weapon_specialty: boolean, starting_level: number, solo_strong_encounters: boolean, flee_exp: boolean, seru_trade: boolean, enemy_ally: boolean, shiny_seru: boolean, jewel_fix: boolean, fishing_prices: string, location_renames: string, earth_egg_price: string, arts_powers: string, arts_ap_grants: string): any;
 
 /**
  * Resolve a user seed string to the numeric seed, as a decimal string (so the
@@ -3603,7 +3620,7 @@ export interface InitOutput {
     readonly music01render_ok: (a: number) => number;
     readonly music01render_pcm: (a: number) => [number, number];
     readonly music01render_rate: (a: number) => number;
-    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number, l1: number, m1: number, n1: number, o1: number, p1: number, q1: number, r1: number, s1: number, t1: number, u1: number, v1: number, w1: number, x1: number, y1: number, z1: number, a2: number, b2: number, c2: number) => [number, number, number];
+    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number, l1: number, m1: number, n1: number, o1: number, p1: number, q1: number, r1: number, s1: number, t1: number, u1: number, v1: number, w1: number, x1: number, y1: number, z1: number, a2: number, b2: number, c2: number, d2: number, e2: number, f2: number, g2: number, h2: number, i2: number, j2: number, k2: number, l2: number, m2: number, n2: number) => [number, number, number];
     readonly resolve_seed: (a: number, b: number) => [number, number];
     readonly save_summary_json: (a: number, b: number) => [number, number, number, number];
     readonly validate_lang_pack: (a: number, b: number, c: number, d: number) => [number, number, number];

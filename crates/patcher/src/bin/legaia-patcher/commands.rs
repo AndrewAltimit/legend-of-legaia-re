@@ -71,6 +71,75 @@ pub(crate) fn cmd_casino(input: &Path) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn cmd_fishing(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let overlay = patcher
+        .read_entry(legaia_patcher::fishing_price::OVERLAY_PROT_INDEX)
+        .context("read fishing overlay (PROT 972)")?;
+    let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+        .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+    let nm = |id: u32| {
+        item_names
+            .as_ref()
+            .and_then(|t| t.name(id as u8))
+            .unwrap_or("?")
+            .to_string()
+    };
+    let venue = |page: usize| if page == 0 { "Buma" } else { "Vidna" };
+    let rows =
+        legaia_patcher::fishing_price::list_prizes(&overlay).context("parse fishing exchange")?;
+    let mut cur_page = usize::MAX;
+    for p in rows {
+        if p.page != cur_page {
+            println!("{} pond:", venue(p.page));
+            cur_page = p.page;
+        }
+        let kind = if p.one_time { "one-time" } else { "repeat  " };
+        println!(
+            "  row {}  {:<16} {:>7} pts  [{kind}]  (id 0x{:02X})",
+            p.row,
+            nm(p.item_id),
+            p.price,
+            p.item_id
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn cmd_earth_egg(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    match legaia_patcher::apply::current_earth_egg(&patcher)? {
+        Some(info) => {
+            let name = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+                .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus))
+                .and_then(|t| t.name(info.item_id).map(str::to_string))
+                .unwrap_or_else(|| "Earth Egg".to_string());
+            println!("Earth Egg exchange (Sol Tower Prize Counter):");
+            println!("  scene bundle: PROT entry {}", info.entry_idx);
+            println!("  prize:        {name} (item 0x{:02X})", info.item_id);
+            println!(
+                "  coins required: {}  (gate = coins > {}; debit = {} on purchase)",
+                info.price, info.threshold, info.debit
+            );
+        }
+        None => println!("Earth Egg exchange not found on this disc."),
+    }
+    Ok(())
+}
+
+pub(crate) fn cmd_locations(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+        .context("read SCUS_942.54")?;
+    for (idx, name) in legaia_patcher::location_name::list_names(&scus)? {
+        println!("{idx:>2}  {name}");
+    }
+    Ok(())
+}
+
 pub(crate) fn cmd_monster_stats(input: &Path) -> Result<()> {
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
@@ -472,19 +541,41 @@ pub(crate) fn cmd_arts(input: &Path) -> Result<()> {
         legaia_art::arts_table::parse_from_scus(&scus).context("parse arts-name table")?;
     let mut regular = 0usize;
     for ch in Character::all() {
+        // Join the per-strike damage-power bytes (record0 +0x24) for this char.
+        let power_by_combo: std::collections::HashMap<Vec<u8>, Vec<u8>> = patcher
+            .read_entry(legaia_patcher::arts_power::player_entry_index(ch))
+            .ok()
+            .and_then(|entry| legaia_patcher::arts_power::labeled_art_powers(&scus, &entry, ch))
+            .map(|list| {
+                list.into_iter()
+                    .map(|a| (a.combo.iter().map(|c| c.as_byte()).collect(), a.power))
+                    .collect()
+            })
+            .unwrap_or_default();
         println!("{}:", ch.name());
         for e in entries.iter().filter(|e| e.character == ch) {
             let combo = legaia_patcher::arts::pretty_combo(&e.commands);
-            let tag = if e.is_miracle {
-                "  [Miracle, not randomized]"
-            } else {
-                ""
+            let key: Vec<u8> = e.commands.iter().map(|c| c.as_byte()).collect();
+            let power = power_by_combo.get(&key);
+            let tiers = match power {
+                Some(p) if !p.is_empty() => p
+                    .iter()
+                    .map(|&b| {
+                        legaia_patcher::arts_power::power_tier(b)
+                            .map(|(u, m)| format!("{}x{m}", if u { "U" } else { "L" }))
+                            .unwrap_or_else(|| format!("{b:02X}"))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(","),
+                _ => "-".into(),
             };
+            let tag = if e.is_miracle { "  [Miracle]" } else { "" };
             println!(
-                "  {:>2}  ap{:>3}  {:<11}  {}{}",
+                "  {:>2}  ap{:>3}  {:<11}  power [{:<12}]  {}{}",
                 e.index,
                 e.ap,
                 if combo.is_empty() { "-".into() } else { combo },
+                tiers,
                 e.name,
                 tag
             );
@@ -494,10 +585,14 @@ pub(crate) fn cmd_arts(input: &Path) -> Result<()> {
         }
     }
     println!(
-        "\n{} arts total, {} regular arts the randomizer reassigns (3 Miracle arts left untouched).",
-        entries.len(),
-        regular
+        "\n{} arts total. `--arts-power COMBO=VALUE` rebalances an art's damage \
+         (power byte 0x0C..=0x1F = tier, or 0 to disable). `--arts-ap-grant \
+         COMBO=AMOUNT` makes an art grant AP (Spirit) instead of costing it; the \
+         leftmost number is the arts-table index, which is the shared config row \
+         - AP-grant applies to every character's art at that same index.",
+        entries.len()
     );
+    let _ = regular;
     Ok(())
 }
 

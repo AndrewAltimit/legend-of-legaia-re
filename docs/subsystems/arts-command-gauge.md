@@ -15,6 +15,7 @@ The popular description is "an off-class weapon **doubles** the arm command." Th
 - [Who writes the cost](#who-writes-the-cost)
 - [Disc location](#disc-location)
 - [Confidence and open threads](#confidence-and-open-threads)
+- [Arts AP-grant hook](#arts-ap-grant-hook)
 - [See also](#see-also)
 
 ## Where the cost lives
@@ -166,6 +167,45 @@ Cross-checked against live RAM: Gala + Nail Glove reads `0x2A`, Gala + Ra-Seru C
 **Inferred**: the identification of command `0x0C` as "the arm" (it is the only command whose cost tracks the weapon).
 
 The weapon-specialty mechanic is therefore a fully editable data table: rewrite a character's favored-class arm costs up / another class's down to reassign their specialty. The [randomizer](../tooling/randomizer.md)'s `--weapon-specialty` does exactly this - it permutes the three favored families among the characters by rewriting these bytes (decompressing / re-compressing each touched section in place).
+
+## Arts AP-grant hook
+
+The gauge cost above is spent inside the **party arts queue-builder**
+`FUN_801EED1C` (PROT 0898, base `0x801CE818`, file `+0x20504`;
+`see ghidra/scripts/funcs/overlay_battle_action_801eed1c.txt`), which runs only
+for a party slot (`< 3`; monster AI uses `FUN_801E7320`). When a committed
+directional run fully matches one of the character's art records, the builder
+gates it on the caster's Spirit/AP (`actor[+0x170]`), debits the cost, and
+accrues it into the spent accumulator (`actor[+0x224]`) that the same function
+refunds at end of turn. The randomizer's **arts AP-grant** hook
+(`--arts-ap-grant`) detours three sites of that flow so a configured art is
+admitted at any AP level and *adds* AP instead of paying.
+
+The art identity is register `s3` (the art-row cursor, `li s3,0xb` at
+`0x801ef2ec`); the 0-based row is `s3 - 0x0B` (site B below,
+`addiu a1,s3,-0xb`), which equals the art's arts-table display index (`0` =
+Miracle Art). A 26-entry `i8` config table indexed by that row (art rows
+`0x0B..=0x24`) drives the grant: `0` = retail, `> 0` = grant that many AP,
+admit + no cost. The row is a **shared** index across the three characters (the
+table is indexed by the row cursor, not by character), so a grant applies to
+every character's art at that row.
+
+| Site | VA | Stock word | Role |
+|---|---|---|---|
+| A affordability guard | `0x801EF410` | `0x94A20170` (`lhu v0,0x170(a1)`) | bypassed for a grant art so `slt v0,v0,t7` reads "affordable" (admit at 0 AP) |
+| B per-art index | `0x801EF438` | `0x2665FFF5` (`addiu a1,s3,-0xb`) | pins the config index `= s3 - 0x0B` (read-only build fingerprint, not detoured) |
+| C AP debit + accrual | `0x801EF490` | `0x94620170` (`lhu v0,0x170(v1)`) | a grant art *adds* AP (clamped at 100), stores, and returns past the `+0x224` accrual (`0x801EF4A0..0x801EF4B4`) so the refund never double-counts it; a native art falls through to the stock `subu v0,v0,a2` at `0x801EF498` |
+| D end-of-turn refund | `0x801EF988` | `0x94620170` (`lhu v0,0x170(v1)`) | replays `Spirit += +0x224` and clamps it at 100 (retail leaves this unclamped, deferring to the `FUN_801E295C` state-`0x50` cap) |
+
+Placement: the battle overlay is packed (no dead space - the move-power window
+`0x801F4E63..0x801F69D8` is the only large zero run and is runtime-indexed), so
+the three detour routines + the config table are injected into a verified-dead
+SCUS arena (`shiny_seru::ARENA1_VA = 0x8007AE00..0x8007AF00`), reached from the
+0898 detours by `j`. Those bytes are the same ones the [shiny-Seru](../tooling/randomizer.md#shiny-seru)
+feature reuses, so **arts AP-grant and `--shiny-seru` are mutually exclusive** -
+enforced in the CLI and the web patcher. All four site words are byte-verified
+against the extracted 0898 image; an unrecognized build is refused, not
+corrupted. Port: [`legaia_patcher::arts_ap_grant`](../../crates/patcher/src/arts_ap_grant.rs).
 
 ## See also
 

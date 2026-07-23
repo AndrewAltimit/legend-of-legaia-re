@@ -261,6 +261,11 @@
         <input type="checkbox" id="rom-weapon-specialty">
         <span>Weapon specialty - reassign which weapon class each character favors (Vahn blades / Noa claws / Gala clubs by default); an off-class weapon widens the Arms command in an arts combo <span class="rom-opt-note">(the Astral Sword stays always-wide)</span></span>
       </label>
+
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-jewel-fix">
+        <span>Jewel fix - make the boss cinematic casts respect elemental guards, like every ordinary attack. In retail, Xain's Bloody Horns / Terio Punch, Cort's Guilty Cross, and the Delilas trio's signature moves skip the defense check entirely, so Jewels and All Guard do nothing against them <span class="rom-opt-note">(a bug fix, not a randomization - unaffected by the seed)</span></span>
+      </label>
     </details>
 
     <!-- ---- Exploration ---- -->
@@ -363,6 +368,41 @@
       </label>
     </details>
 
+    <!-- ---- Manual value edits (advanced) ---- -->
+    <details class="rom-group">
+      <summary>Manual value edits <span class="rom-summary-note">advanced - type exact numbers</span></summary>
+
+      <div class="rom-opt">
+        <label class="rom-opt-label" for="rom-fishing-price">Fishing prize prices</label>
+        <span class="rom-opt-note">Set the fishing-point cost of a fishing-exchange prize. One or more <code>item=points</code> pairs, comma-separated - item id in decimal or <code>0xHH</code>. Example: <code>0x6F=500</code> makes the Buma Water Egg cost 500 points (it also appears sooner, since the price is the "once you can afford it" gate). The <a href="../reference/gamedata.html">item ids</a> and current prices are what the CLI <code>legaia-patcher fishing</code> lists.</span>
+        <input type="text" id="rom-fishing-price" placeholder="e.g. 0x6F=500, 0xCD=10000" spellcheck="false" autocomplete="off">
+      </div>
+
+      <div class="rom-opt">
+        <label class="rom-opt-label" for="rom-earth-egg-price">Earth Egg coin threshold</label>
+        <span class="rom-opt-note">Set the casino-coin count the Sol Tower "Prize Counter" requires before it offers the Earth Ra-Seru Egg (retail <code>100000</code>). This is a hidden scripted exchange, <em>not</em> a row in the casino prize table, so the shop / casino editors can't reach it. The value is the coins required; the game debits exactly that many on purchase. Range <code>1</code>&ndash;<code>8388608</code>. The CLI <code>legaia-patcher earth-egg</code> shows the current value.</span>
+        <input type="text" id="rom-earth-egg-price" inputmode="numeric" placeholder="e.g. 25000" spellcheck="false" autocomplete="off">
+      </div>
+
+      <div class="rom-opt">
+        <label class="rom-opt-label" for="rom-rename-location">Location names</label>
+        <span class="rom-opt-note">Rename the world-map location names shown on the quick-travel menu and the save / load / pause display. One <code>index=name</code> per line (ASCII, up to 31 chars) - e.g. <code>3=Ancient Fire Cave</code> renames the Ancient Wind Cave. Slots: 3 = Ancient Wind Cave, 4 = Ancient Water Cave, 6 = Vidna, 14 = Conkram (the CLI <code>legaia-patcher locations</code> lists all 16). Handy for matching dungeon names to a re-elemented party.</span>
+        <textarea id="rom-rename-location" rows="3" placeholder="3=Ancient Fire Cave&#10;4=Ancient Ice Cave" spellcheck="false" autocomplete="off"></textarea>
+      </div>
+
+      <div class="rom-opt">
+        <label class="rom-opt-label" for="rom-arts-power">Tactical-Art power</label>
+        <span class="rom-opt-note">Rebalance a party Tactical Art's damage ("arts power-down"). One or more <code>combo=value</code> pairs, comma-separated - the combo is the art's input (<code>L/R/D/U</code>, e.g. <code>RDLDL</code> = Vahn's Burning Flare) and <code>value</code> is a power byte: <code>0x0C..0x1F</code> is a damage tier (a defence facet plus one of the multipliers 12/18/20/22/28, so a <em>lower</em> value powers the art down), or <code>0</code> disables its hits. Every per-strike power byte of the matched art is set to <code>value</code>. The CLI <code>legaia-patcher arts</code> lists every art's combo and current power tiers.</span>
+        <input type="text" id="rom-arts-power" placeholder="e.g. RDLDL=0x16, UDU=0x0C" spellcheck="false" autocomplete="off">
+      </div>
+
+      <div class="rom-opt">
+        <label class="rom-opt-label" for="rom-arts-ap-grant">Tactical-Art AP-grant</label>
+        <span class="rom-opt-note">Make a party Tactical Art <em>grant</em> AP (Spirit) instead of costing it. One or more <code>combo=amount</code> pairs, comma-separated - the combo is the art's input (<code>L/R/D/U</code>, e.g. <code>RDLDL</code>) and <code>amount</code> (1..100) is the AP added per use; the art becomes castable at any AP level and adds that much, clamped at the 100 cap, without polluting the end-of-turn refund. The config is a <strong>shared row</strong> (the arts-table index), so a combo grants that index for <em>all three characters</em>; <code>legaia-patcher arts</code> lists each art's index. <strong>Mutually exclusive with Shiny Seru</strong> - both reuse the same verified-dead SCUS arena, so enable only one.</span>
+        <input type="text" id="rom-arts-ap-grant" placeholder="e.g. RDLDL=10, UDU=25" spellcheck="false" autocomplete="off">
+      </div>
+    </details>
+
     <div class="rom-row rom-actions">
       <button id="rom-run" class="rom-button">Patch &amp; download</button>
     </div>
@@ -421,7 +461,7 @@
   .rom-row { display: block; margin: 0.7rem 0; }
   .rom-label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
   .rom-hint { font-weight: 400; color: var(--text-dim); font-size: 0.85em; }
-  .rom-form input[type=text], .rom-form select { width: 100%; max-width: 32rem; padding: 0.4rem 0.55rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 5px; }
+  .rom-form input[type=text], .rom-form select, .rom-form textarea { width: 100%; max-width: 32rem; padding: 0.4rem 0.55rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 5px; font: inherit; resize: vertical; }
   .rom-form input[type=file] { color: var(--text-muted); }
 
   /* Presets */

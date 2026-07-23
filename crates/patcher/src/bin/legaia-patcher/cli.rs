@@ -9,7 +9,10 @@ use clap::{Parser, Subcommand, ValueEnum};
 use legaia_patcher::apply;
 use legaia_patcher::drops::DropMode;
 
-use crate::util::parse_item_spec;
+use crate::util::{
+    parse_arts_ap_grant, parse_arts_power, parse_item_spec, parse_location_rename,
+    parse_prize_price,
+};
 
 #[derive(Parser)]
 #[command(
@@ -108,6 +111,31 @@ pub(crate) enum Cmd {
     /// Read-only: list the casino prize-exchange prizes (item, coin price,
     /// progression gate).
     Casino {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
+        #[arg(long)]
+        input: PathBuf,
+    },
+    /// Read-only: list the fishing point-exchange prizes per venue (Buma /
+    /// Vidna) with their item and fishing-point price - the population the
+    /// `--fishing-price` editor changes.
+    Fishing {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
+        #[arg(long)]
+        input: PathBuf,
+    },
+    /// Read-only: show the Earth Egg coin threshold (the Sol Tower Prize Counter
+    /// exchange) - the value the `--earth-egg-price` editor changes.
+    EarthEgg {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
+        #[arg(long)]
+        input: PathBuf,
+    },
+    /// Read-only: list the world-map location / landmark names (index + name)
+    /// - the slots the `--rename-location` editor changes.
+    Locations {
         /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
         /// is accepted and resolved to the `.bin` it references).
         #[arg(long)]
@@ -485,6 +513,56 @@ pub(crate) struct RandomizeArgs {
     /// untouched.
     #[arg(long, default_value_t = false)]
     pub(crate) jewel_fix: bool,
+    /// Set the **fishing-exchange price** of one or more prizes. Comma- or
+    /// repeat-separated `ITEM=POINTS` entries (`--fishing-price 0x6F=500` sets
+    /// the Water Egg to 500 fishing points; ids in decimal or `0xHH`). The
+    /// price is both the point cost and the "only appears once you can afford
+    /// it" gate, so lowering it also makes the prize show up sooner. Applies to
+    /// every venue (Buma / Vidna) row granting that item. `legaia-patcher
+    /// fishing` lists the current prizes and prices.
+    #[arg(long, value_name = "ITEM=POINTS", value_delimiter = ',', value_parser = parse_prize_price)]
+    pub(crate) fishing_price: Vec<(u8, u32)>,
+    /// Set the **Earth Egg coin threshold** - the casino-coin count the Sol
+    /// Tower "Prize Counter" requires before it offers to exchange coins for the
+    /// Earth Ra-Seru Egg (retail 100000). This is a bespoke scripted exchange,
+    /// *not* a row in the casino prize table, so the shop / casino editors can't
+    /// reach it. VALUE is the coins required; the game debits exactly that many
+    /// on purchase (gate = value - 1, debit = value, matching retail). Range
+    /// 1..=8388608. `legaia-patcher earth-egg` shows the current value.
+    #[arg(long, value_name = "VALUE")]
+    pub(crate) earth_egg_price: Option<u32>,
+    /// **Rebalance a Tactical Art's damage** ("arts power-down"). Comma- or
+    /// repeat-separated `COMBO=VALUE` entries, targeting an art by its input
+    /// combo (`L/R/D/U`, e.g. `--arts-power RDLDL=0x16`). `VALUE` is a
+    /// power-encoding byte: `0x0C..=0x1F` (a defence facet + one of the
+    /// multipliers 12/18/20/22/28; higher = stronger, so a *lower* value powers
+    /// the art down), or `0` to disable that art's hits. Every active per-strike
+    /// power byte of the matched art is set to `VALUE` (hit count preserved).
+    /// `legaia-patcher arts` lists every art's combo and current power tiers.
+    #[arg(long, value_name = "COMBO=VALUE", value_delimiter = ',', value_parser = parse_arts_power)]
+    pub(crate) arts_power: Vec<(Vec<legaia_art::queue::Command>, u8)>,
+    /// **Make a Tactical Art grant AP instead of costing it** ("arts AP-grant").
+    /// Comma- or repeat-separated `COMBO=AMOUNT` entries, targeting an art by its
+    /// input combo (`L/R/D/U`, e.g. `--arts-ap-grant RDLDL=10`). `AMOUNT` is the
+    /// AP (Spirit) granted per use (1..=100); the art becomes castable at any AP
+    /// level and *adds* that much (clamped at 100) rather than paying a cost. A
+    /// same-size code hook into the party arts queue-builder (PROT 0898) plus
+    /// routines + a 26-entry config table in a verified-dead SCUS arena. The
+    /// config is a **shared row** (arts-table index): a combo's row grants that
+    /// index for *all three characters*; `legaia-patcher arts` lists each art's
+    /// index. **Mutually exclusive with `--shiny-seru`** (same arena bytes).
+    #[arg(long, value_name = "COMBO=AMOUNT", value_delimiter = ',', value_parser = parse_arts_ap_grant)]
+    pub(crate) arts_ap_grant: Vec<(Vec<legaia_art::queue::Command>, u8)>,
+    /// **Rename a world-map location** (the names shown on the quick-travel
+    /// menu and the save / load / pause location display). Repeatable
+    /// `INDEX=NAME` entries; the index is a landmark slot (`legaia-patcher
+    /// locations` lists them - e.g. 3 = "Ancient Wind Cave", 4 = "Ancient Water
+    /// Cave", 6 = "Vidna", 14 = "Conkram"). The new name is ASCII, up to 31
+    /// characters (same-size slot overwrite). Useful to match renamed
+    /// dungeons to a re-elemented party, e.g. `--rename-location "3=Ancient
+    /// Fire Cave"`.
+    #[arg(long, value_name = "INDEX=NAME", value_parser = parse_location_rename)]
+    pub(crate) rename_location: Vec<(usize, String)>,
     /// Let vendors offer to **trade** one of a character's seru for a different
     /// seru. Embeds an enabled flag + the run's seed in `SCUS_942.54`; the
     /// clean-room engine renders the trade UI and reseeds each vendor's offers

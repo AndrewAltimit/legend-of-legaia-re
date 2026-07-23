@@ -24,7 +24,13 @@ Three patching families share that machinery:
   reimport ([`docs/tooling/translation.md`](../../docs/tooling/translation.md)).
 - **Manual edits** - targeted single-record patching for curated mods:
   `monster-block` dumps one monster's decoded `battle_data` block for hex
-  editing (stats, element, name) and re-packs it onto a copy of the disc.
+  editing (stats, element, name) and re-packs it onto a copy of the disc;
+  `--fishing-price` / `--rename-location` retune fishing-exchange prices and
+  world-map names; `--arts-power COMBO=VALUE` rebalances a Tactical Art's
+  per-strike damage-power bytes (`record0 +0x24`, targeted by input combo -
+  [`arts_power`](src/arts_power.rs)); `--arts-ap-grant COMBO=AMOUNT` makes an art
+  grant AP instead of costing it (a battle-overlay code hook -
+  [`arts_ap_grant`](src/arts_ap_grant.rs), mutually exclusive with `--shiny-seru`).
 
 It is Track-1-adjacent tooling - it does **not** touch the clean-room engine -
 and it ships only code: no game bytes are embedded or committed, and every
@@ -43,6 +49,9 @@ full design.
   - [Run-away EXP](#run-away-exp)
   - [Enemy ally (charm)](#enemy-ally-charm) - [Charm softlock fix](#charm-softlock-fix-charm_fix-module)
   - [Jewel fix](#jewel-fix-jewel_fix-module)
+  - [Fishing prize prices](#fishing-prize-prices-fishing_price-module)
+  - [Location names](#location-names-location_name-module)
+  - [Earth Egg coin threshold](#earth-egg-coin-threshold-earth_egg-module)
   - [Shiny Seru](#shiny-seru)
   - [Seru trading](#seru-trading)
   - [Chests](#chests)
@@ -55,6 +64,8 @@ full design.
   - [Equip mask](#equip-mask)
   - [Weapon specialty](#weapon-specialty)
   - [Arts](#arts)
+  - [Arts damage power](#arts-damage-power-arts_power-module)
+  - [Arts AP-grant](#arts-ap-grant-arts_ap_grant-module)
   - [Doors](#doors)
   - [House doors](#house-doors)
   - [Map doors](#map-doors)
@@ -329,6 +340,44 @@ into 952's window); every site lies in its module's own extent, so each
 physical word is written exactly once. See
 [`docs/tooling/randomizer.md` § Jewel fix](../../docs/tooling/randomizer.md#jewel-fix).
 
+## Fishing prize prices (`fishing_price` module)
+
+`--fishing-price ITEM=POINTS` sets the fishing-point cost of a fishing-exchange
+prize. The prize rows are 12-byte `[u32 limit][u32 price][u32 item_id]` records
+in the raw fishing overlay (PROT 972, `legaia_asset::fishing_exchange`); the
+edit rewrites the `price` u32 of every row (Buma / Vidna) granting `ITEM` -
+same-size, no recompression (972 is raw). The price doubles as the "prize
+appears once you can afford it" gate, so lowering it also reveals the prize
+sooner. `plan_set_price` matches by item id (stable across venues), skips
+already-matching prices (idempotent), and refuses an item no prize grants.
+`legaia-patcher fishing` lists the current prizes/prices. Disc oracle:
+`fishing_price_real`.
+
+## Location names (`location_name` module)
+
+`--rename-location INDEX=NAME` renames a world-map location (the strings shown
+on the quick-travel menu and echoed by the save / load / pause location
+display). The 16 names live in a fixed `SCUS_942.54` table (`0x80073B18`, 16 ×
+32-byte NUL-padded slots; `legaia_asset::worldmap_menu`); a rename overwrites
+one slot in place with new ASCII (≤ 31 chars), zero-padding the tail. Idempotent
+(a matching name is a no-op) and validated (out-of-range index / oversized /
+non-ASCII refused). `legaia-patcher locations` lists all 16. Disc oracle:
+`location_name_real`.
+
+## Earth Egg coin threshold (`earth_egg` module)
+
+`--earth-egg-price VALUE` sets the casino-coin count the Sol Tower "Prize
+Counter" requires before it offers the Earth Ra-Seru Egg (retail 100000). The
+egg is **not** a casino-table row - it is a scripted exchange in the `koin1`
+scene MAN (PROT entry 543): a field-VM op-`0x4E` sub-11 coin compare (gate,
+retail 99999) plus an op-`0x4C` nibble-E sub-5 add-coins debit (retail -100000).
+The module rewrites both as same-size value swaps in the decompressed MAN
+(`gate = VALUE - 1`, `debit = VALUE`, matching retail), then LZS-recompresses +
+writes back in place; `VALUE` is `1..=8388608` (the debit is a signed 24-bit
+field). Idempotent, refuses out-of-range, `None` when the entry isn't the
+exchange bundle. `legaia-patcher earth-egg` shows the current value. Disc oracle:
+`earth_egg_real`.
+
 ## Shiny Seru
 
 Gives a per-battle chance (`--shiny-seru`, `--shiny-pct`%, default **2**) that the
@@ -595,6 +644,45 @@ preserved** and each character's combos stay unique by construction.
 - `Shuffle` reassigns existing same-length combos.
 - `Random` writes fresh same-length combos.
 - The Miracle Art (`0xFF09`) is left untouched.
+
+## Arts damage power (`arts_power` module)
+
+`--arts-power COMBO=VALUE` rebalances a party art's damage. Each art's 1-4
+per-strike **power bytes** sit at a fixed offset `+0x24` in the same
+`0xD0`-stride `record0` record as its combo (pinned by back-tracing the arts
+damage kernel `FUN_801EC3E4`; see
+[`docs/formats/art-data.md`](../../docs/formats/art-data.md#damage-power-byte---pinned-to-record0-0x24)).
+A power byte is a tier - `mult = [12,18,20,22,28][(v-0xC)%5]`, defence facet
+`(v-0xC)%10<5 ? UDF : LDF`, valid `0x0C..=0x1F`. The editor targets an art by its
+input combo, sets every active power byte to `VALUE` (hit count preserved; a
+no-damage-byte art like Gala's spirit Miracle is skipped), and recompresses
+`record0` to fit. `VALUE` is a tier `0x0C..=0x1F` (lower = weaker) or `0` to
+disable. No display copy to sync (the power is not shown in the menu).
+`legaia-patcher arts` lists every art's combo, AP, and power tiers.
+
+## Arts AP-grant (`arts_ap_grant` module)
+
+`--arts-ap-grant COMBO=AMOUNT` makes a targeted art **grant** `AMOUNT` AP (Spirit,
+`actor[+0x170]`, clamped at 100) instead of costing it, and admits it at any AP
+level. A MIPS code hook into the **party** arts queue-builder `FUN_801EED1C`
+(PROT 0898, base `0x801CE818`; slot < 3, so enemies are unaffected): three
+same-size detours - the affordability guard (`0x801EF410`), the AP debit/accrual
+(`0x801EF490`), and the end-of-turn refund clamp (`0x801EF988`) - plus the
+routines and a 26-entry `i8` config table injected into a verified-dead SCUS
+arena (the same `shiny_seru::ARENA1_VA` the [Shiny Seru](#shiny-seru) feature
+reuses, so the two are **mutually exclusive** - enforced in the CLI and the web
+patcher). Trap-wise it is the same class as `shiny_seru`/`bonus_drop`: honour the
+R3000 load-delay slot, never split a `mult`/`mflo` (the guard replays `mflo t7`
+without issuing its own multiply), and "zero is not dead" (the arena is
+read-watch-verified, not merely all-zero).
+
+The config index is `s3 - 0x0B` (`s3` = the art-table row cursor), which equals
+the art's arts-table display index; an art is targeted by its input combo, which
+resolves to that index. The row is **shared across the three characters**, so a
+grant applies to every character's art at that same index. Site details + AP math:
+[`docs/subsystems/arts-command-gauge.md`](../../docs/subsystems/arts-command-gauge.md#arts-ap-grant-hook).
+Disc oracle `tests/arts_ap_grant_real.rs` proves *where* the bytes land; a live
+battle playtest is still required to certify in-game behaviour.
 
 ## Doors
 

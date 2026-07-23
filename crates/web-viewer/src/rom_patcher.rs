@@ -43,6 +43,23 @@ fn err(msg: impl AsRef<str>) -> JsValue {
     JsValue::from_str(msg.as_ref())
 }
 
+/// Parse an `item=value` pair where `item` is a u8 id (decimal or `0xHH`) and
+/// `value` is a u32. Returns `None` on any malformed token.
+fn parse_id_eq_u32(tok: &str) -> Option<(u8, u32)> {
+    let (id_str, val_str) = tok.trim().split_once('=')?;
+    let id_str = id_str.trim();
+    let id = if let Some(hex) = id_str
+        .strip_prefix("0x")
+        .or_else(|| id_str.strip_prefix("0X"))
+    {
+        u8::from_str_radix(hex, 16).ok()?
+    } else {
+        id_str.parse::<u8>().ok()?
+    };
+    let value = val_str.trim().parse::<u32>().ok()?;
+    Some((id, value))
+}
+
 /// Resolve a user seed string to the numeric seed, as a decimal string (so the
 /// page can display / persist it without JS `BigInt` precision loss).
 #[wasm_bindgen]
@@ -104,7 +121,24 @@ pub fn resolve_seed(seed: &str) -> String {
 /// per-battle chance, the frontmost *capturable* enemy spawns as a rare shiny
 /// variant (+35% stats) whose captured Seru deals +35% damage on every future
 /// cast (the flag rides the spell's level byte and is masked from the level-up +
-/// menu readers).
+/// menu readers). `jewel_fix` retargets the boss cinematic casts' damage calls
+/// from the resist-ladder-bypassing wrapper to the guard-respecting one, so
+/// elemental jewels / guards / All Guard apply to Xain's Bloody Horns / Terio
+/// Punch, Cort's Guilty Cross, and the Delilas trio's signature moves (a fix,
+/// not a randomization - it is seedless). `fishing_prices` is a
+/// comma/space-separated list of `item=points` pairs that set the
+/// fishing-exchange point cost of prizes (e.g. `0x6F=500` for the Water Egg).
+/// `location_renames` is a newline-separated list of `index=name` lines that
+/// rename world-map location slots (e.g. `3=Ancient Fire Cave`).
+/// `earth_egg_price` (empty = untouched) sets the casino-coin threshold the Sol
+/// Tower Prize Counter requires before it offers the Earth Ra-Seru Egg (retail
+/// 100000); the game debits exactly that many coins on purchase. `arts_powers`
+/// is a comma/space-separated list of `combo=value` pairs that rebalance a
+/// Tactical Art's damage-power bytes (e.g. `RDLDL=0x16`; `value` a power byte
+/// `0x0C..=0x1F` or `0`). `arts_ap_grants` is a comma/space-separated list of
+/// `combo=amount` pairs (e.g. `RDLDL=10`; `amount` 1..=100 AP) that make an art
+/// grant AP instead of costing it; mutually exclusive with `shiny_seru` (same
+/// SCUS arena). These are all manual, seedless edits.
 /// `starting_level`
 /// begins the new game at that character level instead of 1 (`0` or `1` =
 /// vanilla; range 2..=14), seeding the lead character's XP and recomputing the
@@ -158,6 +192,12 @@ pub fn patch_rom(
     seru_trade: bool,
     enemy_ally: bool,
     shiny_seru: bool,
+    jewel_fix: bool,
+    fishing_prices: &str,
+    location_renames: &str,
+    earth_egg_price: &str,
+    arts_powers: &str,
+    arts_ap_grants: &str,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -177,6 +217,15 @@ pub fn patch_rom(
     });
     let door_mode = parse_mode(doors);
     let house_door_mode = parse_mode(house_doors);
+
+    // Arts AP-grant and shiny-Seru reuse the same verified-dead SCUS arena bytes,
+    // so they are mutually exclusive - refuse the combination before patching.
+    if shiny_seru && !arts_ap_grants.trim().is_empty() {
+        return Err(err(
+            "arts-ap-grant and shiny-seru both inject into the same verified-dead SCUS arena \
+             and are mutually exclusive; enable only one",
+        ));
+    }
 
     let mut patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
 
@@ -348,6 +397,227 @@ pub fn patch_rom(
         summary.push_str("seru-trade: in-shop Seru trading vendor enabled\n");
     } else {
         summary.push_str("seru-trade: untouched\n");
+    }
+
+    // Jewel fix: retarget the boss cinematic casts' damage calls from the
+    // resist-ladder-bypassing wrapper to the guard-respecting one, so elemental
+    // jewels / guards / All Guard apply to Xain's Bloody Horns / Terio Punch,
+    // Cort's Guilty Cross, and the Delilas trio's signature moves. Seedless.
+    if jewel_fix {
+        let rep =
+            apply::apply_jewel_fix(&mut patcher).map_err(|e| err(format!("jewel-fix: {e}")))?;
+        summary.push_str(&format!(
+            "jewel-fix: {} boss-cast damage calls now respect elemental guards\n",
+            rep.sites_patched
+        ));
+    } else {
+        summary.push_str("jewel-fix: untouched\n");
+    }
+
+    // Fishing-exchange price edits: a comma/semicolon/whitespace-separated list
+    // of `item=points` pairs (item id decimal or 0xHH). Each sets the fishing
+    // point cost of every prize row granting that item; the price also gates
+    // when the prize appears. A malformed pair is reported and skipped rather
+    // than aborting the whole patch.
+    let fishing_prices = fishing_prices.trim();
+    if fishing_prices.is_empty() {
+        summary.push_str("fishing-price: untouched\n");
+    } else {
+        for tok in fishing_prices
+            .split([',', ';', '\n', ' '])
+            .filter(|t| !t.trim().is_empty())
+        {
+            match parse_id_eq_u32(tok) {
+                Some((item_id, price)) => {
+                    match apply::set_fishing_price(&mut patcher, item_id as u32, price) {
+                        Ok(rep) if rep.edits.is_empty() => summary.push_str(&format!(
+                            "fishing-price: item 0x{item_id:02X} already {price} points\n"
+                        )),
+                        Ok(rep) => {
+                            for (page, _row, _id, old, new) in &rep.edits {
+                                let venue = if *page == 0 { "Buma" } else { "Vidna" };
+                                summary.push_str(&format!(
+                                    "fishing-price: {venue} item 0x{item_id:02X}: {old} -> {new} points\n"
+                                ));
+                            }
+                        }
+                        Err(e) => summary.push_str(&format!("fishing-price: {e}\n")),
+                    }
+                }
+                None => {
+                    summary.push_str(&format!("fishing-price: skipped malformed entry {tok:?}\n"))
+                }
+            }
+        }
+    }
+
+    // Earth Egg coin threshold: the Sol Tower Prize Counter's scripted
+    // coin-for-Earth-Egg exchange (koin1 MAN). A single coins-required value
+    // (empty = untouched); the game debits exactly that many on purchase.
+    let earth_egg_price = earth_egg_price.trim();
+    if earth_egg_price.is_empty() {
+        summary.push_str("earth-egg-price: untouched\n");
+    } else {
+        match earth_egg_price.parse::<u32>() {
+            Ok(price) => match apply::set_earth_egg_price(&mut patcher, price) {
+                Ok(rep) if !rep.changed => {
+                    summary.push_str(&format!("earth-egg-price: already {price} coins\n"))
+                }
+                Ok(rep) => summary.push_str(&format!(
+                    "earth-egg-price: {} -> {} coins\n",
+                    rep.old_price, rep.new_price
+                )),
+                Err(e) => summary.push_str(&format!("earth-egg-price: {e}\n")),
+            },
+            Err(_) => summary.push_str(&format!(
+                "earth-egg-price: skipped non-numeric value {earth_egg_price:?}\n"
+            )),
+        }
+    }
+
+    // Location renames: newline-separated `index=name` lines (name may contain
+    // spaces, so only the newline splits entries). Each is a same-size SCUS
+    // slot overwrite; a bad entry is reported and skipped.
+    let location_renames = location_renames.trim();
+    if location_renames.is_empty() {
+        summary.push_str("rename-location: untouched\n");
+    } else {
+        for line in location_renames.lines().filter(|l| !l.trim().is_empty()) {
+            match line.split_once('=') {
+                Some((idx_str, name)) => match idx_str.trim().parse::<usize>() {
+                    Ok(index) => {
+                        match apply::rename_locations(&mut patcher, &[(index, name.to_string())]) {
+                            Ok(rep) if rep.renames.is_empty() => summary.push_str(&format!(
+                                "rename-location: {index} already has that name\n"
+                            )),
+                            Ok(rep) => {
+                                for (i, old, new) in &rep.renames {
+                                    summary.push_str(&format!(
+                                        "rename-location: {i} {old:?} -> {new:?}\n"
+                                    ));
+                                }
+                            }
+                            Err(e) => summary.push_str(&format!("rename-location: {e}\n")),
+                        }
+                    }
+                    Err(_) => {
+                        summary.push_str(&format!("rename-location: bad index in {line:?}\n"))
+                    }
+                },
+                None => summary.push_str(&format!(
+                    "rename-location: skipped malformed entry {line:?}\n"
+                )),
+            }
+        }
+    }
+
+    // Arts damage-power edits: comma/space/newline-separated `COMBO=VALUE`
+    // tokens (`RDLDL=0x16`). `VALUE` is a power-encoding byte (`0` disables, or
+    // `0x0C..=0x1F` = a damage tier; lower = weaker). A bad entry is reported
+    // and skipped.
+    let arts_powers = arts_powers.trim();
+    if arts_powers.is_empty() {
+        summary.push_str("arts-power: untouched\n");
+    } else {
+        for tok in arts_powers
+            .split([',', ';', '\n', ' '])
+            .filter(|t| !t.trim().is_empty())
+        {
+            let parsed = tok.split_once('=').and_then(|(c, v)| {
+                let combo = legaia_patcher::arts_power::parse_combo(c.trim())?;
+                let vs = v.trim();
+                let value = vs
+                    .strip_prefix("0x")
+                    .or_else(|| vs.strip_prefix("0X"))
+                    .map(|h| u8::from_str_radix(h, 16))
+                    .unwrap_or_else(|| vs.parse::<u8>())
+                    .ok()?;
+                (value == 0 || legaia_patcher::arts_power::is_power_byte(value))
+                    .then_some((combo, value))
+            });
+            match parsed {
+                Some((combo, value)) => {
+                    match apply::set_arts_power(&mut patcher, &[(combo, value)]) {
+                        Ok(rep) if rep.edits.is_empty() => {
+                            summary.push_str(&format!("arts-power: {tok} unchanged\n"))
+                        }
+                        Ok(rep) => {
+                            for e in &rep.edits {
+                                let combo: String = e
+                                    .combo
+                                    .iter()
+                                    .map(legaia_patcher::arts_power::command_glyph)
+                                    .collect();
+                                summary.push_str(&format!(
+                                    "arts-power: {combo} ({:?}) -> {value:#04X}\n",
+                                    e.character
+                                ));
+                            }
+                        }
+                        Err(e) => summary.push_str(&format!("arts-power: {e}\n")),
+                    }
+                }
+                None => summary.push_str(&format!("arts-power: skipped malformed entry {tok:?}\n")),
+            }
+        }
+    }
+
+    // Arts AP-grant: comma/space/newline-separated `COMBO=AMOUNT` tokens
+    // (`RDLDL=10`). `AMOUNT` (1..=100) is the AP granted per use; the art becomes
+    // castable at any AP level and adds that much (clamped at 100) instead of
+    // costing it. The config row is the arts-table index, shared across all three
+    // characters. Mutually exclusive with shiny-seru (guarded above).
+    let arts_ap_grants = arts_ap_grants.trim();
+    if arts_ap_grants.is_empty() {
+        summary.push_str("arts-ap-grant: untouched\n");
+    } else {
+        let mut grants = Vec::new();
+        for tok in arts_ap_grants
+            .split([',', ';', '\n', ' '])
+            .filter(|t| !t.trim().is_empty())
+        {
+            let parsed = tok.split_once('=').and_then(|(c, v)| {
+                let combo = legaia_patcher::arts_power::parse_combo(c.trim())?;
+                let vs = v.trim();
+                let amount = vs
+                    .strip_prefix("0x")
+                    .or_else(|| vs.strip_prefix("0X"))
+                    .map(|h| u8::from_str_radix(h, 16))
+                    .unwrap_or_else(|| vs.parse::<u8>())
+                    .ok()?;
+                (amount >= 1 && u16::from(amount) <= legaia_patcher::arts_ap_grant::AP_CAP)
+                    .then_some((combo, amount))
+            });
+            match parsed {
+                Some(g) => grants.push(g),
+                None => {
+                    summary.push_str(&format!("arts-ap-grant: skipped malformed entry {tok:?}\n"))
+                }
+            }
+        }
+        if grants.is_empty() {
+            summary.push_str("arts-ap-grant: no valid entries\n");
+        } else {
+            match apply::inject_arts_ap_grant(&mut patcher, &grants) {
+                Ok(rep) => {
+                    for g in &rep.resolved {
+                        let targeted = legaia_patcher::arts_ap_grant::combo_str(&g.targeted_combo);
+                        let shared: Vec<String> = g
+                            .shared
+                            .iter()
+                            .map(|(ch, name, _)| format!("{ch:?} {name:?}"))
+                            .collect();
+                        summary.push_str(&format!(
+                            "arts-ap-grant: {targeted} -> row {} grants {} AP (shared: {})\n",
+                            g.row,
+                            g.amount,
+                            shared.join("; ")
+                        ));
+                    }
+                }
+                Err(e) => summary.push_str(&format!("arts-ap-grant: {e}\n")),
+            }
+        }
     }
 
     match chest_mode {

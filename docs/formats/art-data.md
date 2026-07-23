@@ -132,7 +132,7 @@ The layout is **schema-then-walk**: each record begins with a fixed prefix (comm
 | Field | Encoding |
 |---|---|
 | Art Name | UTF-like string. Populated for Super Arts, Miracle Art finishers, and some Hyper Arts; absent for regular arts (the runtime falls back to a per-character name table). |
-| Art Power (×4) | Each byte is a damage multiplier - see [Power encoding](#power-encoding) below. |
+| Art Power (×4) | Each byte is a damage multiplier - see [Power encoding](#power-encoding) below. **Pinned to record `+0x24`** (a fixed offset, 1-4 active bytes), not the art-specific variable position this table originally implied. |
 | Damage Timing (×4) | One byte per Art Power byte; the animation frame at which that hit fires. |
 | Special Effect Cues (×2) | Each cue occupies 2 words: half-word effect_id, then 3 half-words XYZ. Active iff any field is non-zero. |
 | Hit Effect Cues (×4) | Each cue is a 32-bit word: high half = timing in frames, low half = constant (`0x1A` = sound effect, `0x4C` = hit effect, …). |
@@ -154,6 +154,45 @@ The layout is **schema-then-walk**: each record begins with a fixed prefix (comm
 | any other | - | - | No damage |
 
 Concretely: `0x1D` = LDF × 20, `0x19` = UDF × 22, `0x1F` = LDF × 28, `0x1A` = UDF × 28.
+
+The kernel decodes the byte with `mult = MULT[(v - 0xC) % 5]`,
+`MULT = [12, 18, 20, 22, 28]`, and picks the defence facet by
+`(v - 0xC) % 10 < 5` (UDF else LDF). `MULT` is byte-verified at overlay-`0898`
+VA `0x801F64EC` (`[0c 12 14 16 1c]`); the sibling def-side table is `0x801F64E4`
+(`[06 04 04 04 02]`).
+
+### Damage power byte - pinned to `record0 +0x24`
+
+The power bytes are **Confirmed** on disc, not inferred. Each `0xD0`-stride art
+record (the matcher record, combo at `+0`) carries its 1-4 per-strike power
+bytes as a contiguous run at a **fixed offset `+0x24`** (the name field is a
+fixed `+0x10..+0x24` slot, so power is *after* the name, but at a constant
+offset, not a name-relative one). The read chain, disassembly-traced:
+
+- The arts/melee damage kernel is **`FUN_801EC3E4`** (overlay 0898; the summon
+  kernel `FUN_801DD0AC` handles *specials* via the move-power table, which is
+  special-attack-only). It reads the current strike's power byte as
+  `param_2[actor+0x1F4]`, where `param_2 = actor[+0x4C]` (the materialized art
+  record) and `actor+0x1F4` is a strike cursor that starts at `0`
+  (`FUN_8004AD80`/`FUN_80047430` zero it) and increments `+1` per hit
+  (`0x801EECE8`). So the first four bytes the cursor visits are the four power
+  bytes, and `param_2` points at the power run (`record+0x24`).
+- `FUN_8004AD80` materializes an art (staged id `>= 0x10`) into
+  `actor[+0x4C] = *(DAT_801C9360[char] + slot*4)`; `DAT_801C9360[char]` is the
+  runtime copy of `record0` (`+0x58` = its art block), and `record0` decodes
+  from the player battle file ([battle-data-pack.md](battle-data-pack.md), PROT
+  `0863`/`0864`/`0865`).
+
+Byte-validation across all three player files: every art the SCUS arts-name
+table lists resolves to one `record0` record whose `+0x24` holds power-encoding
+bytes matching the art's damage tier (weak single arts 1 byte, hyper/super arts
+4 ascending bytes; the two Noa Hurricane-Kick holes and Gala's spirit-only
+Miracle - which carries *no* `+0x24` byte - both reproduce). There is **no**
+display copy of the power (unlike the combo, whose menu arrows are a separate
+SCUS string): the kernel reads only these bytes. The parser + in-place editor
+is `legaia_patcher::arts_power` (CLI `legaia-patcher arts` /
+`--arts-power COMBO=VALUE`; see [randomizer.md](../tooling/randomizer.md)); this
+supersedes the earlier "exact byte offsets per art-specific / UNPINNED" note.
 
 ## Learned Art Constant
 

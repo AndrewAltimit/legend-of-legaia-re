@@ -44,6 +44,86 @@ pub(crate) fn parse_item_spec(s: &str) -> Result<(u8, u8)> {
     Ok((parse_item_id(id_str)?, count))
 }
 
+/// Parse a `--fishing-price` entry: `ITEM=POINTS` (`0x6F=500`, `111=1000`). The
+/// item id is the SCUS item-name id space; the price is fishing points
+/// (`u32`). Errors on a malformed pair.
+pub(crate) fn parse_prize_price(s: &str) -> Result<(u8, u32)> {
+    let s = s.trim();
+    let (id_str, price_str) = s.split_once('=').with_context(|| {
+        format!("invalid fishing price {s:?} (expected ITEM=POINTS, e.g. 0x6F=500)")
+    })?;
+    let price = price_str
+        .trim()
+        .parse::<u32>()
+        .with_context(|| format!("invalid points in {s:?} (expected a number)"))?;
+    Ok((parse_item_id(id_str)?, price))
+}
+
+/// Parse an `--arts-power` entry: `COMBO=VALUE` (`RDLDL=0x16`). The combo is a
+/// run of `L/R/D/U` glyphs (case-insensitive); `VALUE` is a power-encoding byte
+/// (`0` to disable, or `0x0C..=0x1F` for a real damage tier), given in decimal
+/// or `0xHH`. Errors on a malformed pair, an unknown glyph, or an
+/// out-of-range value.
+pub(crate) fn parse_arts_power(s: &str) -> Result<(Vec<legaia_art::queue::Command>, u8)> {
+    let s = s.trim();
+    let (combo_str, val_str) = s.split_once('=').with_context(|| {
+        format!("invalid arts power {s:?} (expected COMBO=VALUE, e.g. RDLDL=0x16)")
+    })?;
+    let combo = legaia_patcher::arts_power::parse_combo(combo_str.trim())
+        .with_context(|| format!("invalid combo {combo_str:?} (use L/R/D/U glyphs, e.g. RDLDL)"))?;
+    let vs = val_str.trim();
+    let value = if let Some(hex) = vs.strip_prefix("0x").or_else(|| vs.strip_prefix("0X")) {
+        u8::from_str_radix(hex, 16)
+    } else {
+        vs.parse::<u8>()
+    }
+    .with_context(|| format!("invalid power value in {s:?} (expected 0 or 0x0C..=0x1F)"))?;
+    if value != 0 && !legaia_patcher::arts_power::is_power_byte(value) {
+        anyhow::bail!(
+            "power value {value:#04x} is not a damage tier: use 0 (disable) or 0x0C..=0x1F"
+        );
+    }
+    Ok((combo, value))
+}
+
+/// Parse an `--arts-ap-grant` entry: `COMBO=AMOUNT` (`RDLDL=10`). The combo is a
+/// run of `L/R/D/U` glyphs (case-insensitive); `AMOUNT` is the AP granted per
+/// use, `1..=100`, in decimal or `0xHH`. Errors on a malformed pair, an unknown
+/// glyph, or an out-of-range amount.
+pub(crate) fn parse_arts_ap_grant(s: &str) -> Result<(Vec<legaia_art::queue::Command>, u8)> {
+    let s = s.trim();
+    let (combo_str, val_str) = s.split_once('=').with_context(|| {
+        format!("invalid arts AP-grant {s:?} (expected COMBO=AMOUNT, e.g. RDLDL=10)")
+    })?;
+    let combo = legaia_patcher::arts_power::parse_combo(combo_str.trim())
+        .with_context(|| format!("invalid combo {combo_str:?} (use L/R/D/U glyphs, e.g. RDLDL)"))?;
+    let vs = val_str.trim();
+    let amount = if let Some(hex) = vs.strip_prefix("0x").or_else(|| vs.strip_prefix("0X")) {
+        u8::from_str_radix(hex, 16)
+    } else {
+        vs.parse::<u8>()
+    }
+    .with_context(|| format!("invalid AP amount in {s:?} (expected 1..=100)"))?;
+    if amount < 1 || u16::from(amount) > legaia_patcher::arts_ap_grant::AP_CAP {
+        anyhow::bail!("AP-grant amount {amount} out of range (use 1..=100)");
+    }
+    Ok((combo, amount))
+}
+
+/// Parse a `--rename-location` entry: `INDEX=NAME` (`3=Ancient Fire Cave`).
+/// The index is a landmark slot (0..16, decimal); the name is the new ASCII
+/// string. Errors on a malformed pair (name validity is checked at apply time).
+pub(crate) fn parse_location_rename(s: &str) -> Result<(usize, String)> {
+    let (idx_str, name) = s
+        .split_once('=')
+        .with_context(|| format!("invalid location rename {s:?} (expected INDEX=NAME)"))?;
+    let index = idx_str
+        .trim()
+        .parse::<usize>()
+        .with_context(|| format!("invalid landmark index in {s:?} (expected a number)"))?;
+    Ok((index, name.to_string()))
+}
+
 pub(crate) fn clock_seed() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()

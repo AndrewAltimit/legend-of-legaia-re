@@ -58,6 +58,9 @@ disc-gated, so CI runs without a disc. There is also a
   - [Shiny Seru](#shiny-seru)
   - [Seru trading](#seru-trading)
   - [Jewel fix](#jewel-fix)
+  - [Fishing prize prices](#fishing-prize-prices)
+  - [Location names](#location-names)
+  - [Earth Egg coin threshold](#earth-egg-coin-threshold)
   - [Treasure chests](#treasure-chests)
   - [Town shops (what stores sell)](#town-shops-what-stores-sell)
   - [Casino prize exchange](#casino-prize-exchange)
@@ -70,6 +73,8 @@ disc-gated, so CI runs without a disc. There is also a
   - [Equip mask (who can equip what)](#equip-mask-who-can-equip-what)
   - [Weapon specialty](#weapon-specialty)
   - [Arts button combos](#arts-button-combos)
+  - [Arts damage power](#arts-damage-power)
+  - [Arts AP-grant](#arts-ap-grant)
   - [Doors (scene transitions)](#doors-scene-transitions)
   - [House doors (intra-town)](#house-doors-intra-town)
   - [Map doors (`.MAP` kind-0 intra-scene teleports)](#map-doors-map-kind-0-intra-scene-teleports)
@@ -174,6 +179,15 @@ legaia-patcher randomize --input DISC.bin --seed pal --enemy-ally               
 legaia-patcher randomize --input DISC.bin --seed pal --shiny-seru                         # 2% chance a capturable enemy is shiny (+35% stats / captured-Seru damage)
 legaia-patcher randomize --input DISC.bin --seed swap --seru-trade                        # vendors trade seru-for-seru (clean-room engine UI)
 legaia-patcher randomize --input DISC.bin --seed fair --jewel-fix                         # boss cinematic casts respect elemental guards
+legaia-patcher fishing   --input DISC.bin                                                 # read-only: list fishing-exchange prizes + prices
+legaia-patcher randomize --input DISC.bin --seed fish --fishing-price 0x6F=500            # Buma Water Egg costs 500 fishing points
+legaia-patcher locations --input DISC.bin                                                 # read-only: list the 16 world-map location names
+legaia-patcher randomize --input DISC.bin --seed loc --rename-location "3=Ancient Fire Cave"  # rename the Ancient Wind Cave
+legaia-patcher earth-egg --input DISC.bin                                                 # read-only: show the Earth Egg coin threshold
+legaia-patcher randomize --input DISC.bin --earth-egg-price 25000                         # Earth Egg costs 25000 casino coins
+legaia-patcher arts      --input DISC.bin                                                 # read-only: list every art's combo + damage-power tiers
+legaia-patcher randomize --input DISC.bin --seed pow --arts-power RDLDL=0x0C              # power Vahn's Burning Flare down to tier 0x0C
+legaia-patcher randomize --input DISC.bin --arts-ap-grant RDLDL=10                        # Burning Flare (arts row 1) GRANTS 10 AP instead of costing it
 legaia-patcher randomize --input DISC.bin --seed mart --shops shuffle --casino shuffle
 legaia-patcher randomize --input DISC.bin --seed 0xC0FFEE --drops random \
     --encounters shuffle --steals shuffle --arts shuffle --doors shuffle --door-coupling coupled \
@@ -248,6 +262,11 @@ unless asked for:
 | `--shiny-seru` | a capturable enemy spawns shiny: +35% stats, and its captured Seru deals +35% damage forever | `--shiny-pct N` (default 2) | [Shiny Seru](#shiny-seru) |
 | `--seru-trade` | vendors swap one of a character's seru for another, reseeding every two in-game hours | `--seru-trade-offers N` caps offers per vendor | [Seru trading](#seru-trading) |
 | `--jewel-fix` | the boss cinematic casts (Xain, Cort, the Delilas trio) respect elemental guards like every other special | - | [Jewel fix](#jewel-fix) |
+| `--fishing-price ITEM=POINTS` | set the fishing-exchange point cost of a prize (e.g. the Buma Water Egg); the price also gates when the prize appears | repeatable / comma-separated | [Fishing prize prices](#fishing-prize-prices) |
+| `--rename-location INDEX=NAME` | rename a world-map location (save / load / pause + quick-travel menu), e.g. an element cave to match a re-elemented party | repeatable | [Location names](#location-names) |
+| `--earth-egg-price VALUE` | set the casino-coin threshold to obtain the Earth Egg (Sol Tower Prize Counter; retail 100000), gate + debit together | single value | [Earth Egg coin threshold](#earth-egg-coin-threshold) |
+| `--arts-power COMBO=VALUE` | rebalance a Tactical Art's per-strike damage-power bytes, targeted by input combo (`RDLDL=0x16`); `VALUE` is a power tier `0x0C..=0x1F` or `0` to disable | repeatable / comma-separated | [Arts damage power](#arts-damage-power) |
+| `--arts-ap-grant COMBO=AMOUNT` | make a Tactical Art **grant** `AMOUNT` AP (Spirit, clamped at 100) instead of costing it, admitting it at any AP level; a code hook into the party arts queue-builder. Config row = arts-table index, **shared across all three characters**. Mutually exclusive with `--shiny-seru` | repeatable / comma-separated | [Arts AP-grant](#arts-ap-grant) |
 
 **Tuning the encounter and door passes:**
 
@@ -821,6 +840,77 @@ refused.
 > still parses, the edit is byte-deterministic, and re-application is refused.
 > The engine-side equivalent is `damage_finish::bypass_party_resist = false`.
 
+### Fishing prize prices
+
+The fishing minigame's prize counters (the **Buma** and **Vidna** ponds) sell
+accessories and consumables for **fishing points** rather than gold. Each prize
+is a 12-byte row `[u32 limit][u32 price][u32 item_id]` in the raw fishing
+overlay (PROT entry **972**, `legaia_asset::fishing_exchange`). `--fishing-price
+ITEM=POINTS` sets the `price` of every row granting `ITEM` (id in decimal or
+`0xHH`) - e.g. `--fishing-price 0x6F=500` drops the Buma Water Egg from 20,000
+to 500 points. The price is **both** the point cost and the "only appears once
+you can afford it" gate (the top prize row is hidden until `price < points`), so
+lowering it also makes the prize show up sooner. PROT 972 is a raw overlay, so
+each edit is a same-size in-place `u32` write - no recompression. Multiple
+prizes can be set at once (comma-separated or by repeating the flag), and
+`legaia-patcher fishing` lists the current prizes and prices (with names). In
+the browser patcher, the same edits live in the **Manual value edits** group as
+`item=points` pairs.
+
+> Verified by the `fishing_price_real` disc oracle: the Buma Water Egg row is at
+> the parser's coordinate (PROT 972, offset `0x9874`, 20,000 points), a price
+> edit lands as a same-size `u32` at exactly the targeted `price` fields, the
+> patched overlay re-parses with the new price, re-applying the same value is a
+> no-op, and an item no prize grants is refused.
+
+### Location names
+
+The 16 world-map **location / landmark names** (shown on the quick-travel menu
+and echoed by the save / load / pause location display) live in a fixed table
+in `SCUS_942.54` (`0x80073B18`, 16 slots of 32 NUL-padded bytes;
+`legaia_asset::worldmap_menu`). `--rename-location INDEX=NAME` overwrites one
+slot in place with a new ASCII name (up to 31 characters) - e.g.
+`--rename-location "3=Ancient Fire Cave"` renames the Ancient Wind Cave to match
+a re-elemented party. The slot is zero-padded (no stale tail), a name already
+matching is a no-op, and an out-of-range index / oversized / non-ASCII name is
+refused. `legaia-patcher locations` lists all 16 with their indices (3 = Ancient
+Wind Cave, 4 = Ancient Water Cave, 6 = Vidna, 14 = Conkram, ...). In the browser
+patcher the same edits live in the **Manual value edits** group, one
+`index=name` per line.
+
+> Verified by the `location_name_real` disc oracle: the pinned names decode at
+> their coordinates (idx 3/4 = the element caves at `0x64378`/`0x64398`), a
+> rename lands as a same-size 32-byte slot overwrite that re-parses to the new
+> (NUL-terminated) name, only the targeted slots change, re-applying is a no-op,
+> and an oversized / non-ASCII / out-of-range name is refused.
+
+### Earth Egg coin threshold
+
+The **Earth Ra-Seru Egg** is *not* a row in the four-block casino prize table
+([casino prize exchange](#casino-prize-exchange)); it is a **bespoke scripted exchange** in the
+`koin1` scene's field-VM script (the MAN, retail PROT entry **543**). The Sol
+Tower "Prize Counter" offers it only once the casino-coin bank clears a
+threshold, then gives item `0x6E` and debits the coins. Two verified literals
+drive it: the **gate** is a field-VM op-`0x4E` INVENTORY_CMP sub-op 11 (coin u32
+compare) whose value is retail **99999** (`coins > 99999`, i.e. `>= 100000`),
+and the **debit** is an op-`0x4C` nibble-E sub-5 add-coins of `-100000`. Retail
+keeps `gate = price - 1`, `debit = price`.
+
+`--earth-egg-price VALUE` sets both together so the repriced egg stays coherent
+(require `VALUE` coins, remove exactly `VALUE`); `VALUE` is the coins required,
+range `1..=8388608` (the debit is a signed 24-bit field). The threshold and
+debit are same-size value swaps in the decompressed MAN, which is LZS-recompressed
+and written back in place (the `koin1` MAN is zero-slack, but the re-packer fits
+it). `legaia-patcher earth-egg` prints the current value. In the browser patcher
+the field lives in the **Manual value edits** group.
+
+> Verified by the `earth_egg_real` disc oracle: the gate is located in PROT 543
+> at the retail shape (coins 100000 / gate 99999 / debit 100000, item `0x6E`,
+> `GIVE_ITEM 0x39 0x6E` present); a price edit re-decodes to `gate = value - 1`
+> and `debit = value`, changes only the threshold-half and debit bytes in the
+> decompressed MAN, keeps every neighbouring descriptor + the touched sector
+> EDC/ECC-valid, refuses `0` / over-range, and is a no-op on re-apply.
+
 ### Treasure chests
 
 A chest gives its item via the field-VM **`GIVE_ITEM` opcode `0x39`**, encoded
@@ -1125,6 +1215,59 @@ distinct). `Shuffle` reassigns existing same-length combos (no new input
 ambiguity); `Random` writes fresh same-length combos. The per-character
 **Miracle Art** (`0xFF09` marker) is left untouched. `legaia-patcher arts` lists
 the current combos.
+
+### Arts damage power
+
+A party member's Tactical Art does **not** draw its damage from the move-power
+table (that is special-attack-only). Each art's 1-4 per-strike **power bytes**
+live at a fixed offset `+0x24` inside the same `0xD0`-stride `record0` art record
+whose combo the [button-combo](#arts-button-combos) editor rewrites - pinned by
+back-tracing the arts damage kernel `FUN_801EC3E4` and byte-validating every
+art's tier across the three player files (see
+[art-data.md § Damage power byte](../formats/art-data.md#damage-power-byte---pinned-to-record0-0x24)).
+A power byte is a tier: `mult = [12,18,20,22,28][(v-0xC)%5]`, defence facet
+`(v-0xC)%10 < 5 ? UDF : LDF`; valid values are `0x0C..=0x1F`.
+
+`apply::set_arts_power` (`--arts-power COMBO=VALUE`) targets an art by its input
+combo (`RDLDL` = Vahn's Burning Flare), decompresses that character's `record0`,
+and sets **every active** power byte of the matched record to `VALUE` (the hit
+count is preserved - a non-hit slot is never promoted, and an art with no damage
+byte, e.g. Gala's spirit-only Biron Rage, is skipped), then recompresses to fit.
+`VALUE` is a power tier `0x0C..=0x1F` (lower = weaker, an "arts power-down") or
+`0` to disable the art's hits. There is **no** second copy to sync (the power has
+no menu display). A combo shared across characters (e.g. `UDU`) edits the
+matching art in each file. `legaia-patcher arts` lists every art's combo, AP, and
+current power tiers. Seedless targeted edit; no Sony bytes. Module
+[`legaia_patcher::arts_power`](../../crates/patcher/src/arts_power.rs); disc oracle
+`crates/patcher/tests/arts_power_real.rs`.
+
+### Arts AP-grant
+
+`--arts-ap-grant COMBO=AMOUNT` makes a targeted Tactical Art **grant** `AMOUNT`
+AP (Spirit, `actor[+0x170]`, clamped at the native 100 cap) instead of costing
+it, and admits it at any AP level. It is a MIPS code hook into the **party** arts
+queue-builder `FUN_801EED1C` (PROT 0898, base `0x801CE818`; slot < 3, so enemies
+are unaffected) - three same-size detours plus the routines and a 26-entry `i8`
+config table injected into a verified-dead SCUS arena. The pinned sites, the AP
+math, and the placement are documented in
+[arts-command-gauge.md § Arts AP-grant hook](../subsystems/arts-command-gauge.md#arts-ap-grant-hook).
+
+An art is targeted by its **input combo** (like `--arts-power`). The combo
+resolves to its arts-table display index, which is the config **row** (`s3 -
+0x0B`, art rows `0x0B..=0x24`). The row is **shared across the three characters**
+- the table is indexed by the art-row cursor, not by character - so a grant
+applies to every character's art at that same index (`legaia-patcher arts` prints
+each art's index; the apply report lists the full set a grant touches). Because
+the injected bytes are the same verified-dead arena the [Shiny Seru](#shiny-seru)
+feature reuses, **`--arts-ap-grant` is mutually exclusive with `--shiny-seru`** -
+enforced in the CLI and the web patcher.
+
+Seedless targeted edit; no Sony bytes. Module
+[`legaia_patcher::arts_ap_grant`](../../crates/patcher/src/arts_ap_grant.rs); disc
+oracle `crates/patcher/tests/arts_ap_grant_real.rs`. **A disc oracle proves only
+where the bytes land, not in-game behaviour** - a live battle playtest (a
+configured art grants AP, admits at 0 AP, clamps at 100, and the refund is not
+double-counted) is required before treating it as runtime-verified.
 
 ### Doors (scene transitions)
 
@@ -1629,6 +1772,9 @@ bit-for-bit.
 | `crates/patcher` `enemy_ally_real` | disc-gated | inject the enemy-ally charm: assert the real disc's setup hook (SCUS, VA `0x80051990`) **is** `lui v1,0x8008` / `lbu v1,-0x42f4(v1)` and the victory site (PROT 898, VA `0x801E6638`) **is** `andi v0,v0,0x4`, then off the patched image that the SCUS detour is `j routine` + nop, the routine decodes as the hand-assembled bytes (sets `0x380`, replays the displaced pair, returns), the victory word is widened to `andi v0,v0,0x384`, each edit is surgical, it composes with flee-EXP in the same gap, the image stays EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook / non-dead routine region / unexpected victory word |
 | `crates/patcher` `shiny_seru_real` | disc-gated | inject shiny Seru: assert all nine hook sites match the known US build and the SCUS regions (`0x80077728` gap 1 / `0x8007AE00` arena 1 / `0x8007AFF8` arena 2 / `0x80078A88` slot 6) are all-zero dead space outside every live table - incl. the `0x80079xxx` SsAPI sound tables the old arena3/4/5 squatted in (routine VAs 4-byte aligned), and the victory mouth-override row at `0x800781B0` keeps the clean keyframes; then off the patched image: every detour became `j routine` + nop, the bitmap has Gimard set / gobu clear, bytes outside the planned edits are untouched, the disc stays EDC/ECC-valid, it composes with enemy-ally, is byte-deterministic, and the guards refuse a corrupted / non-dead / in-table region |
 | `crates/patcher` `jewel_fix_real` | disc-gated | apply the jewel fix: assert all thirteen cast-module call sites across PROT 944 / 952 / 953 / 958 / 959 / 960 hold the stock `jal FUN_801DD6B4` word, then off the patched image that every site reads `jal FUN_801DD4B0` and that per touched window exactly the planned words changed - the overlapping 09xx extents are measured empirically (each other module's head located in the window), so aliased appearances (e.g. entry 953 starting `0x1800` into 952's window) are expected - plus the image still parses, the edit is byte-deterministic, and re-application / an unrecognized build is refused |
+| `crates/patcher` `fishing_price_real` | disc-gated | apply a fishing-exchange price edit: assert the Buma Water Egg row is at PROT 972 offset 0x9874 (20000 points), then off the patched image that the price becomes the target as a same-size u32, exactly the targeted price words changed, the overlay re-parses, re-applying is a no-op, and an absent item is refused |
+| `crates/patcher` `location_name_real` | disc-gated | rename world-map locations: assert the pinned landmark names decode at their SCUS coordinates (idx 3/4 = element caves at 0x64378/0x64398), then off the patched image that a rename is a same-size 32-byte slot overwrite re-parsing to the NUL-terminated new name, only the targeted slots change, re-applying is a no-op, and an oversized / non-ASCII / OOB name is refused |
+| `crates/patcher` `earth_egg_real` | disc-gated | locate the Earth Egg scripted exchange in the koin1 MAN (PROT 543) at the retail shape (coins 100000 / gate 99999 / debit 100000, item 0x6E, give present); off the patched image a price edit re-decodes to gate = value-1 / debit = value, changes only the threshold-half + debit bytes in the decompressed MAN, keeps neighbouring descriptors + the touched sector EDC/ECC-valid, refuses 0 / over-range, and is a no-op on re-apply; byte-deterministic |
 | `crates/patcher` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
 | `crates/patcher` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
 | `crates/patcher` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140, "Comm" (id 78) is a populated standalone record (not a clone); item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |

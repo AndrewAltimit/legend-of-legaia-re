@@ -291,3 +291,44 @@ pub fn randomize_casino(patcher: &mut DiscPatcher, seed: u64, mode: DropMode) ->
     }
     Ok(changed)
 }
+
+/// Outcome of a fishing-prize price edit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FishingPriceReport {
+    /// Per edit: `(page, row, item_id, old_price, new_price)`.
+    pub edits: Vec<(usize, usize, u32, u32, u32)>,
+}
+
+/// Set the fishing-exchange price of every prize row granting `item_id` to
+/// `new_price` (across both venue pages). PROT 972 is a raw overlay, so each is
+/// a same-size u32 write. No-op (empty report) when the price already matches;
+/// errors if no prize grants `item_id`.
+pub fn set_fishing_price(
+    patcher: &mut DiscPatcher,
+    item_id: u32,
+    new_price: u32,
+) -> Result<FishingPriceReport> {
+    let overlay = patcher
+        .read_entry(crate::fishing_price::OVERLAY_PROT_INDEX)
+        .context("read fishing overlay for price edit")?;
+    let edits = crate::fishing_price::plan_set_price(&overlay, item_id, new_price)?;
+    let mut report = FishingPriceReport { edits: Vec::new() };
+    for e in &edits {
+        patcher
+            .patch_prot_entry(
+                crate::fishing_price::OVERLAY_PROT_INDEX,
+                e.offset as u64,
+                &e.new_price.to_le_bytes(),
+            )
+            .with_context(|| {
+                format!(
+                    "write fishing price for item 0x{:02X} (page {} row {})",
+                    e.item_id, e.page, e.row
+                )
+            })?;
+        report
+            .edits
+            .push((e.page, e.row, e.item_id, e.old_price, e.new_price));
+    }
+    Ok(report)
+}
