@@ -21,7 +21,14 @@ Representative confusables (each dumped under several non-dome overlays, so **sh
 | `FUN_801f3c34` | "**No effect**" unusable-move guard: reads the active actor's queued `+0x1df`, checks the per-move learned/count table, prints via `FUN_801d8de8(0x66,0)` - also dumped under dance / Baka Fighter / fishing / slot | [`battle-action.md`](battle-action.md) |
 | `FUN_801f3d3c` | shared **AI/action-decision** helper (per-move learned-count scan + BIOS-`rand` branch on `DAT_801c9358+0x1d`) - dumped under Baka Fighter / dance / fishing / slot / debug-menu | [`battle-action.md`](battle-action.md) |
 
-The one entry dumped **only** under `overlay_muscle_dome` is `FUN_801f2410` (593 instructions, 31 GPU-primitive builds, reads the shared battle ctx `_DAT_8007bd24`): a **render-track HUD/number emitter** - documented-not-ported by the clean-room policy, and its shared-vs-dome status is unconfirmed precisely because the context it draws from is the shared battle one. The genuinely dome-unique controller / presentation set is the [Key functions](#key-functions) table below (`FUN_801d0748`'s dome arms, `FUN_801d388c`, `FUN_801d5854`, `FUN_801d8de8`, and the panel helpers); everything else in the dump directory is battle-overlay furniture.
+Two entries are dumped **only** under `overlay_muscle_dome`, both render-track and
+both dome-vs-shared unconfirmed. `FUN_801f2410` (593 instructions, 31 GPU-primitive
+builds, reads the shared battle ctx `_DAT_8007bd24`) is a **HUD/number emitter** -
+documented-not-ported by the clean-room policy, its status unconfirmed precisely
+because the context it draws from is the shared battle one. `FUN_801f2e10` is an
+**oriented-quad "beam" emitter** (see [Key functions](#key-functions)); it
+references no dome ctx at all, so its status is likewise open. The genuinely
+dome-unique controller / presentation set is the [Key functions](#key-functions) table below (`FUN_801d0748`'s dome arms, `FUN_801d388c`, `FUN_801d5854`, `FUN_801d8de8`, and the panel helpers); everything else in the dump directory is battle-overlay furniture.
 
 ## Contest settlement + the one-shot prize
 
@@ -182,6 +189,7 @@ All offsets are relative to the context base `_DAT_8007bd24` unless noted otherw
 | `FUN_801d99bc` | Panel-sprite table hard reset + rebuild: zeroes all `0x28` handle slots (ptr `ctx+0x1074`, flags `ctx+0x11b7`/`ctx+0x11b4`) and the 16-word scratch `DAT_801c8fa0`, then re-creates the panel sprites | `overlay_muscle_dome_801d99bc.txt` |
 | `FUN_801d9ae8` | Panel-sprite teardown: for each of the `0x28` slots with flag `ctx+0x11b7` set and a live handle at `ctx+0x1074[i]`, destroys the sprite via the shared object destructor `FUN_800319a8(handle+8)` and clears its slot, then zeroes the 16-word scratch `DAT_801c8fa0` | `overlay_muscle_dome_801d9ae8.txt` |
 | `FUN_801f19ec` | Fighter model installer: relocates a TMD model bundle, uploads it, and binds it to a dome actor | `overlay_muscle_dome_801f19ec.txt` |
+| `FUN_801f2e10` | **Oriented-quad "beam" emitter** (render-track): draws one textured `POLY_FT4` between two endpoints - angle+length from an atan2 helper (`func_0x80019b28`) plus the SCUS sin/cos LUTs (`_DAT_8007b7f8` / `_DAT_8007b81c`), width jittered per-edge via BIOS `rand` (`func_0x80056798`), a random 32px texture column, greyscale tint from an arg, OT depth from an arg. Touches no dome ctx; dome-vs-shared status open (see [The dump set is the whole battle overlay](#the-dump-set-is-the-whole-battle-overlay---a-filename-prefix-is-not-dome-evidence)) | `overlay_muscle_dome_801f2e10.txt` |
 
 ## Hand deck decoded
 
