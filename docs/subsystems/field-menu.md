@@ -987,7 +987,13 @@ dropping back to the list - to submenu 5 when the bag emptied.
 **Single-target apply `FUN_801D8308`** (submenu 0xA, the default
 route): same shape with a navigable hand - phase 0 stages the preview
 mode, clears the cursor's high bits and runs the script at
-`0x801E4C48` (identical to submenu 9's - same window set); phase 1
+`0x801E4C48` (identical to submenu 9's - same window set). The party
+target panel (window 14) is drawn by `FUN_801D56FC`: a header row plus
+one row per active party member (count `DAT_80084594`, roster ids at
+`0x80084598`), each greyed when the picked item's equip mask
+(equipment table `0x80074F68 +6`) misses the per-character mask
+`DAT_801E43F0[member]` - the same equippability test the shop
+buy-recipient picker runs. Phase 1
 navigates the party rows (`FUN_801D688C(&DAT_801E46C4,
 party_count(0x80084594), 1)`, gated on `_DAT_8007BB80 == 0`); a
 confirm first re-checks usability through the SCUS validator
