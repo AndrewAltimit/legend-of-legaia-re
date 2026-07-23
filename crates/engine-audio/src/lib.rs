@@ -452,6 +452,37 @@ impl StreamResampler {
             }
         }
     }
+
+    /// Swap the active sequencer for `new_seq` **immediately**. The outgoing
+    /// sequencer is key-offed (its notes release naturally through their ADSR
+    /// envelopes, so nothing hard-cuts to a discontinuity) and `new_seq` is
+    /// installed to tick from its own first event this same instant - its
+    /// intro is never held silent behind a fade-out.
+    ///
+    /// `fade_in_samples` is a short click-guard ramp on the SPU master applied
+    /// as the swap lands (a couple of frames at most): the master rises from
+    /// near-silence to full so an abrupt onset can't pop. Because the ramp only
+    /// ever rises toward full - never toward zero - the incoming track is
+    /// audible from the first sample. Pass `0` for a true hard cut.
+    fn swap_bgm(&mut self, new_seq: Sequencer, fade_in_samples: u32) {
+        if let Some(mut prev) = self.sequencer.take() {
+            prev.stop(&mut self.spu);
+        }
+        self.pending_seq = None;
+        self.sequencer = Some(new_seq);
+        if fade_in_samples == 0 {
+            self.master_fade = 1.0;
+            self.fade_target = 1.0;
+            self.fade_step = 0.0;
+        } else {
+            // Ramp up from silence. `advance_fade` runs once before the first
+            // sample is emitted, so the first audible frame already carries a
+            // non-zero master - no sample is fully zeroed.
+            self.master_fade = 0.0;
+            self.fade_target = 1.0;
+            self.fade_step = 1.0 / fade_in_samples as f32;
+        }
+    }
 }
 
 /// Stage a one-shot XA shout into a resampler, honoring the back-to-back
@@ -946,6 +977,23 @@ impl AudioOut {
             s.fade_target = 0.0;
             s.fade_step = 1.0 / fade_samples.max(1) as f32;
         }
+    }
+
+    /// Swap the active sequencer for `new_seq` **immediately**, faithful to
+    /// retail's hard-cut BGM changes: the outgoing track is key-offed (its
+    /// notes release through their ADSR envelopes) and `new_seq` starts
+    /// sounding from its own first event this same instant. Unlike
+    /// [`Self::crossfade_to`], the incoming track's intro is never held silent
+    /// behind a fade-out - the new sequencer is active on the very next SPU
+    /// sample.
+    ///
+    /// `fade_in_samples` is a short click-guard ramp (a couple of frames at
+    /// most) that rises the SPU master from near-silence to full as the swap
+    /// lands, so an abrupt onset can't pop. Pass `0` for a true hard cut. Use
+    /// this - not `crossfade_to` - for BGM transitions where the new track's
+    /// intro must be heard.
+    pub fn swap_bgm(&self, new_seq: Sequencer, fade_in_samples: u32) {
+        self.lock().swap_bgm(new_seq, fade_in_samples);
     }
 
     /// Snapshot of the sequencer's progress, returned `None` if no sequencer
@@ -1481,6 +1529,92 @@ mod tests {
         assert!(r.pending_seq.is_none());
         // Fade should now be going back up.
         assert_eq!(r.fade_target, 1.0);
+    }
+
+    /// Sibling of [`one_quarter_seq`] at a distinctly faster tempo (240 BPM =
+    /// 250 000 us/qn) so the sequencer installed by a swap is identifiable by
+    /// its reported BPM.
+    fn one_quarter_seq_fast() -> legaia_seq::Seq {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&legaia_seq::SEQ_MAGIC);
+        buf.extend_from_slice(&[0x00, 0x01]); // version
+        buf.extend_from_slice(&[0x01, 0xE0]); // ppqn 480
+        buf.extend_from_slice(&[0x03, 0xD0, 0x90]); // tempo 250000 us/qn = 240 BPM
+        buf.push(0x04);
+        buf.push(0x02);
+        buf.extend_from_slice(&[0x00, 0xC0, 0x00]); // prog change
+        buf.extend_from_slice(&[0x00, 0x90, 60, 100]); // note on
+        buf.extend_from_slice(&[0x83, 0x60, 60, 0]); // +480: note off
+        buf.extend_from_slice(&[0x00, 0xFF, 0x2F, 0x00]); // end of track
+        legaia_seq::Seq::parse(&buf).unwrap()
+    }
+
+    /// A BGM transition (swap) installs the incoming track **immediately** and
+    /// only ever ramps the master *up* toward full - it never parks the new
+    /// track behind a fade-out. This pins the fix for the serial cross-fade
+    /// that held the incoming intro silent for ~0.5 s: the old path stashed the
+    /// new sequencer in `pending_seq` with `fade_target = 0.0`; the faithful
+    /// path installs it in `sequencer` this instant with `fade_target = 1.0`.
+    #[test]
+    fn swap_bgm_installs_new_track_immediately_without_serial_fade() {
+        let mut r = StreamResampler::new(SPU_INTERNAL_RATE);
+        // A track is already playing (120 BPM).
+        r.sequencer = Some(Sequencer::new(one_quarter_seq(), empty_bank()));
+        r.master_fade = 1.0;
+        // Transition to a distinctly-faster track (240 BPM).
+        let new = Sequencer::new(one_quarter_seq_fast(), empty_bank());
+        let new_bpm = new.bpm();
+        r.swap_bgm(new, 1_470);
+        // The new sequencer is active THIS instant, not queued behind a
+        // fade-out (the serial-crossfade bug parked it in `pending_seq`).
+        assert!(
+            r.pending_seq.is_none(),
+            "incoming track must not be queued behind a fade-out"
+        );
+        let active_bpm = r.sequencer.as_ref().expect("new seq installed").bpm();
+        assert!(
+            (active_bpm - new_bpm).abs() < 0.1,
+            "the NEW track must be the active sequencer immediately (bpm {active_bpm} != {new_bpm})"
+        );
+        // The ramp is a fade-IN toward full, never a fade toward silence.
+        assert_eq!(
+            r.fade_target, 1.0,
+            "swap must ramp toward full, not silence"
+        );
+        assert!(r.fade_step > 0.0, "swap must ramp up");
+        // Drive the ramp: the master only ever rises and reaches full within
+        // the short click-guard window - the incoming intro is never held
+        // silent for any meaningful span. The first emitted sample already
+        // carries a non-zero master because `advance_fade` runs before it.
+        let mut prev = r.master_fade;
+        for _ in 0..1_470 {
+            r.advance_fade();
+            assert!(
+                r.master_fade + 1e-6 >= prev,
+                "master fade must not dip while the new track plays: {prev} -> {}",
+                r.master_fade
+            );
+            prev = r.master_fade;
+        }
+        assert!(
+            (r.master_fade - 1.0).abs() < 1e-5,
+            "new track reaches full volume within the short window, got {}",
+            r.master_fade
+        );
+    }
+
+    /// `swap_bgm(_, 0)` is a true hard cut: the new track is installed at full
+    /// master volume with no ramp at all.
+    #[test]
+    fn swap_bgm_zero_fade_is_a_hard_cut_at_full_volume() {
+        let mut r = StreamResampler::new(SPU_INTERNAL_RATE);
+        r.sequencer = Some(Sequencer::new(one_quarter_seq(), empty_bank()));
+        r.master_fade = 1.0;
+        r.swap_bgm(Sequencer::new(one_quarter_seq_fast(), empty_bank()), 0);
+        assert!(r.sequencer.is_some());
+        assert!(r.pending_seq.is_none());
+        assert_eq!(r.master_fade, 1.0);
+        assert_eq!(r.fade_step, 0.0);
     }
 
     #[test]

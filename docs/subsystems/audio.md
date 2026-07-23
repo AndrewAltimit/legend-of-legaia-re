@@ -119,7 +119,21 @@ for running the prescript: it decodes data bytes as instructions and yields
 implausible ids (values far outside the `2000..=2077` band) mixed in with the
 real ones.
 
-The engine port reuses this same dispatch for the **Battle↔Field music swap**: `World::set_battle_bgm` configures a battle track id, and the live gameplay loop queues an ordinary `FieldEvent::Bgm{sub_op: 1}` start for it on encounter (`swap_to_battle_bgm`) and resumes the stashed field track on battle end (`restore_field_bgm`). The host's `AudioBgmDirector` cross-fades both transitions over ~0.5 s through its existing `start_inner` path - no separate battle-audio code path. The battle id must resolve in the current scene's BGM table since the live loop doesn't load a distinct battle audio bundle.
+The engine port reuses this same dispatch for the **Battle↔Field music swap**: `World::set_battle_bgm` configures a battle track id, and the live gameplay loop queues an ordinary `FieldEvent::Bgm{sub_op: 1}` start for it on encounter (`swap_to_battle_bgm`) and resumes the stashed field track on battle end (`restore_field_bgm`). Both transitions run through the host's `AudioBgmDirector` `start_inner` path - no separate battle-audio code path. The battle id must resolve in the current scene's BGM table since the live loop doesn't load a distinct battle audio bundle.
+
+Retail BGM changes are **hard cuts** (or short `SsSeqSetVol` ramps), so
+`start_inner` swaps tracks the faithful way: when a track is already playing it
+calls `AudioOut::swap_bgm`, which key-offs the outgoing sequencer (its notes
+release through their own ADSR envelopes, so nothing hard-cuts to a
+discontinuity) and installs the new sequencer to tick from its first event that
+same instant. The incoming track's intro is audible immediately - only a brief
+click-guard fade-in on the SPU master (a couple of frames) softens the onset.
+This replaces the earlier serial cross-fade (`crossfade_to`), which faded the
+old track down to silence *before* installing the new one and then faded that
+back up, holding the incoming intro near-silent for its first half-second - both
+an artifact and less faithful than retail. `crossfade_to` and its `pending_seq`
+fade-out-then-swap machinery remain for callers that genuinely want a symmetric
+cross-fade; BGM transitions no longer use it.
 
 ### Global-pool BGM: the `music_01` bank
 
