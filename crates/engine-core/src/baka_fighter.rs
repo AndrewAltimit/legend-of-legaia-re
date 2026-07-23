@@ -1342,6 +1342,91 @@ pub fn single_digit_cell(digit: u8) -> DigitCell {
     }
 }
 
+/// The combo count is clamped to this before it indexes the combo-bonus table
+/// (`FUN_801d2a28`: `if (0x13 < combo) combo = 0x13`).
+pub const BAKA_COMBO_MAX: i32 = 0x13;
+
+/// A round that ends with the winner still at full HP ([`HP_START`]) pays this
+/// flat perfect-clear bonus instead of a health-scaled one
+/// (`FUN_801d2a28`: `if (DAT_801dbfc4 == 0xc80) bonus += 0xc350`).
+pub const BAKA_PERFECT_BONUS: i32 = 50_000;
+
+/// The end-of-round HP is divided by this to index the health-bonus table
+/// (`FUN_801d2a28`: `DAT_801dbfc4 / 0x140`). [`HP_START`] (`0xc80`) / `0x140`
+/// is `10`, so the top table slot is reachable only via the perfect path.
+pub const BAKA_HEALTH_BONUS_DIVISOR: i32 = 0x140;
+
+/// The per-round score increment a completed round contributes to the two
+/// score rows the end-of-match tally later drains.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct BakaRoundScore {
+    /// Added to the combo-score row (`DAT_801dbed8`).
+    pub combo_gain: i32,
+    /// Added to the bonus row (`DAT_801dbedc`).
+    pub bonus_gain: i32,
+}
+
+/// Clamp a raw combo count to the combo-bonus table index space.
+///
+/// PORT: FUN_801d2a28 (`0x801d2a34..0x801d2a40`). Retail keeps the count when
+/// it is below `0x14` and otherwise pins it to [`BAKA_COMBO_MAX`]; the compare
+/// is signed, so a (never-produced) negative count passes through unclamped,
+/// exactly as the `slti` does.
+pub fn baka_combo_index(combo: i32) -> i32 {
+    if combo < BAKA_COMBO_MAX + 1 {
+        combo
+    } else {
+        BAKA_COMBO_MAX
+    }
+}
+
+/// Resolve the two score-row increments a finished round contributes.
+///
+/// PORT: FUN_801d2a28 (per-round score accumulation). The retail routine reads
+/// the round's combo count (`DAT_801dbec8`) and the winner's remaining HP
+/// (`DAT_801dbfc4`) and folds two increments into the running score rows the
+/// end-of-match tally ([`BakaTally`]) later drains:
+///
+/// - the **combo** row gains `combo_bonus[clamp(combo)]`, indexed by
+///   [`baka_combo_index`] into the overlay combo-bonus table
+///   (`&DAT_801d70c4`, 20 `i32` slots);
+/// - the **bonus** row gains [`BAKA_PERFECT_BONUS`] when the round ended at
+///   full HP ([`HP_START`]), else `health_bonus[hp / `[`BAKA_HEALTH_BONUS_DIVISOR`]`]`
+///   indexed into the overlay health-bonus table (`&DAT_801d711c`, `i16`
+///   slots). The HP divide is the retail signed `/0x140`.
+///
+/// The two tables are disc data (`FUN_801d2a28`'s overlay), so they are passed
+/// in by the caller rather than baked here; the caller supplies the slices it
+/// parsed from the Baka Fighter overlay. Out-of-range indices are treated as a
+/// zero contribution, which cannot happen with the retail table sizes but
+/// keeps the kernel total.
+pub fn baka_round_score(
+    combo: i32,
+    combo_bonus: &[i32],
+    end_hp: i32,
+    health_bonus: &[i16],
+) -> BakaRoundScore {
+    let combo_gain = combo_bonus
+        .get(baka_combo_index(combo).max(0) as usize)
+        .copied()
+        .unwrap_or(0);
+
+    let bonus_gain = if end_hp == HP_START {
+        BAKA_PERFECT_BONUS
+    } else {
+        let idx = end_hp / BAKA_HEALTH_BONUS_DIVISOR;
+        health_bonus
+            .get(idx.max(0) as usize)
+            .map(|&v| v as i32)
+            .unwrap_or(0)
+    };
+
+    BakaRoundScore {
+        combo_gain,
+        bonus_gain,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1872,5 +1957,64 @@ mod tests {
             full.iter().map(|c| c.digit).collect::<Vec<_>>(),
             vec![9, 8, 7, 6, 5, 4, 3, 2]
         );
+    }
+
+    // Synthetic (non-Sony) score tables: distinct values so an off-by-one in
+    // the index math is visible. Sizes match the retail overlay tables.
+    const COMBO_TBL: [i32; 20] = [
+        0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190,
+    ];
+    const HEALTH_TBL: [i16; 11] = [0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000];
+
+    #[test]
+    fn combo_index_clamps_at_nineteen() {
+        assert_eq!(baka_combo_index(0), 0);
+        assert_eq!(baka_combo_index(19), 19);
+        // 20 and above pin to 0x13 (the `slti ..,0x14` boundary).
+        assert_eq!(baka_combo_index(20), BAKA_COMBO_MAX);
+        assert_eq!(baka_combo_index(255), BAKA_COMBO_MAX);
+    }
+
+    #[test]
+    fn round_score_indexes_combo_bonus() {
+        let s = baka_round_score(5, &COMBO_TBL, 0, &HEALTH_TBL);
+        assert_eq!(s.combo_gain, 50);
+        // A 25-hit combo saturates at slot 19.
+        let s = baka_round_score(25, &COMBO_TBL, 0, &HEALTH_TBL);
+        assert_eq!(s.combo_gain, 190);
+    }
+
+    #[test]
+    fn round_score_pays_flat_perfect_bonus_at_full_hp() {
+        // End-of-round HP still at HP_START (0xc80) is the perfect-clear path.
+        let s = baka_round_score(0, &COMBO_TBL, HP_START, &HEALTH_TBL);
+        assert_eq!(s.bonus_gain, BAKA_PERFECT_BONUS);
+    }
+
+    #[test]
+    fn round_score_scales_bonus_by_health_band() {
+        // hp / 0x140 (floor): 0x140 -> slot 1, 0x280 -> slot 2, 0x3ff -> slot 3.
+        assert_eq!(
+            baka_round_score(0, &COMBO_TBL, 0x140, &HEALTH_TBL).bonus_gain,
+            100
+        );
+        assert_eq!(
+            baka_round_score(0, &COMBO_TBL, 0x280, &HEALTH_TBL).bonus_gain,
+            200
+        );
+        assert_eq!(
+            baka_round_score(0, &COMBO_TBL, 0x3FF, &HEALTH_TBL).bonus_gain,
+            300
+        );
+        // Just below full HP takes the table path, not the perfect bonus.
+        let almost = baka_round_score(0, &COMBO_TBL, HP_START - 1, &HEALTH_TBL);
+        assert_ne!(almost.bonus_gain, BAKA_PERFECT_BONUS);
+    }
+
+    #[test]
+    fn round_score_out_of_range_index_is_inert() {
+        // Empty tables never panic; both increments fall back to zero.
+        let s = baka_round_score(5, &[], 0x500, &[]);
+        assert_eq!(s, BakaRoundScore::default());
     }
 }
