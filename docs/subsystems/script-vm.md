@@ -1116,13 +1116,13 @@ A survey of the high-reference `0x801F` VA band the field overlay shares with th
 | `0x801D71B8` | SHARED_TAIL | Fixed-point tail `(v1*v0 + m[0]*base[_DAT_8007B7F8]) >> 12`; enters with `v0`/`v1` preset (2-term q12 accumulate). | `overlay_0897_801d71b8.txt` |
 | `0x801E2650` | INTERIOR | Branch-delay-slot entry; decimal splitter storing 8 digit bytes at `&DAT_801F35F0`, tail-jumps `FUN_801F1118`/`FUN_801F1278`. | `overlay_0897_801e2650.txt` |
 | `0x801E805C` | INTERIOR | Actor command commit: writes action id to actor `+0x1DF`, reads a per-command descriptor at `0x8007..52C0` (stride 4), branches on bits `0x40`/`0x20`. | `overlay_0897_801e805c.txt` |
-| `0x801E0080` | gap | 0-instruction dump (corpus gap; C only, no bytes). Not analyzable. | `overlay_0897_801e0080.txt` |
+| `0x801E0080` | REAL (battle overlay) | The `overlay_0897` dump is an empty 0-instruction stub (corpus gap), but a full 606-instruction body is present in the battle-overlay dump — a real `battle_action(898)` function, not a field-VM entry. | `overlay_battle_action_801e0080.txt` |
 | `0x801F0450` | INTERIOR of `FUN_801F03B0` | Per-entry sprite-position lerp over 40×`0xC` records; non-ABI `t0`/`t2` register args. | `overlay_0897_801f0450.txt` |
 | `0x801F0ADC` | INTERIOR of `FUN_801F07AC` | Overlap-spread pass on a ≤6-entry i16 coordinate array, tail-jumps `801DA0F0`/`801DA2D0`. | `overlay_0897_801f0adc.txt` |
 | `0x801DF6B8` | INTERIOR (epilogue) of `FUN_801DF570` | Two-decimal percent text builder (`v*100/max`, `v*10000/max`) drawn via `80034B78`/`8003C1F8`/`8003CC98`; register-arg. | `overlay_0897_801df6b8.txt` |
 | `0x801EC0DC` | INTERIOR | Delay-slot entry; sprite/text draw fragment (`8003CD00` + `8002B994`), register-arg `s1`/`s2`/`s3`. | `overlay_0896_801ec0dc.txt` |
 | `0x801F20B0` | DUPLICATE | Interior of `FUN_801F2098`, a twin of the living-slot scanner `FUN_801DB8B4` (below). | `overlay_overlay_0897_xxx_dat_801f20b0.txt` |
-| `0x801F6B24` | undecodable | NOFUNC in every overlay spanning this VA (0897/0967/0978/0898); no analyzed function. | `overlay_*_801f6b24.txt` |
+| `0x801F6B24` | out-of-scope | NOFUNC in the Legaia field/battle overlays (0897/0967/0898); the only analyzed body at this VA (82 instructions) lives in the unrelated `0978_other_game` overlay, so it is not a Legaia field-VM function. | `overlay_0978_other_game_801f6b24.txt` |
 | `0x801F1278` | REAL (C-only) | Party-cursor submode enter (below). | `overlay_overlay_0897_801f1278.txt` |
 | `0x801F159C` | REAL (C-only) | Party-cursor submode resume / close (below). | `overlay_overlay_0897_801f159c.txt` |
 | `0x801F71E0` / `0x801F5748` | REAL, large | Per-actor command / queue loops over the actor band (below). | `overlay_0897_801f71e0.txt` / `overlay_0897_801f5748.txt` |
