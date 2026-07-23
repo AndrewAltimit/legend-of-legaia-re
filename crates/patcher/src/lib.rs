@@ -67,6 +67,7 @@ pub mod enemy_ally;
 pub mod equip_bonus;
 pub mod equip_mask;
 pub mod equipment;
+pub mod fishing_price;
 pub mod flee_exp;
 pub mod house_door;
 pub mod item_name;

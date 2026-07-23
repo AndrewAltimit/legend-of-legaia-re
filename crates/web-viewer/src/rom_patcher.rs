@@ -43,6 +43,23 @@ fn err(msg: impl AsRef<str>) -> JsValue {
     JsValue::from_str(msg.as_ref())
 }
 
+/// Parse an `item=value` pair where `item` is a u8 id (decimal or `0xHH`) and
+/// `value` is a u32. Returns `None` on any malformed token.
+fn parse_id_eq_u32(tok: &str) -> Option<(u8, u32)> {
+    let (id_str, val_str) = tok.trim().split_once('=')?;
+    let id_str = id_str.trim();
+    let id = if let Some(hex) = id_str
+        .strip_prefix("0x")
+        .or_else(|| id_str.strip_prefix("0X"))
+    {
+        u8::from_str_radix(hex, 16).ok()?
+    } else {
+        id_str.parse::<u8>().ok()?
+    };
+    let value = val_str.trim().parse::<u32>().ok()?;
+    Some((id, value))
+}
+
 /// Resolve a user seed string to the numeric seed, as a decimal string (so the
 /// page can display / persist it without JS `BigInt` precision loss).
 #[wasm_bindgen]
@@ -163,6 +180,7 @@ pub fn patch_rom(
     enemy_ally: bool,
     shiny_seru: bool,
     jewel_fix: bool,
+    fishing_prices: &str,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -368,6 +386,43 @@ pub fn patch_rom(
         ));
     } else {
         summary.push_str("jewel-fix: untouched\n");
+    }
+
+    // Fishing-exchange price edits: a comma/semicolon/whitespace-separated list
+    // of `item=points` pairs (item id decimal or 0xHH). Each sets the fishing
+    // point cost of every prize row granting that item; the price also gates
+    // when the prize appears. A malformed pair is reported and skipped rather
+    // than aborting the whole patch.
+    let fishing_prices = fishing_prices.trim();
+    if fishing_prices.is_empty() {
+        summary.push_str("fishing-price: untouched\n");
+    } else {
+        for tok in fishing_prices
+            .split([',', ';', '\n', ' '])
+            .filter(|t| !t.trim().is_empty())
+        {
+            match parse_id_eq_u32(tok) {
+                Some((item_id, price)) => {
+                    match apply::set_fishing_price(&mut patcher, item_id as u32, price) {
+                        Ok(rep) if rep.edits.is_empty() => summary.push_str(&format!(
+                            "fishing-price: item 0x{item_id:02X} already {price} points\n"
+                        )),
+                        Ok(rep) => {
+                            for (page, _row, _id, old, new) in &rep.edits {
+                                let venue = if *page == 0 { "Buma" } else { "Vidna" };
+                                summary.push_str(&format!(
+                                    "fishing-price: {venue} item 0x{item_id:02X}: {old} -> {new} points\n"
+                                ));
+                            }
+                        }
+                        Err(e) => summary.push_str(&format!("fishing-price: {e}\n")),
+                    }
+                }
+                None => {
+                    summary.push_str(&format!("fishing-price: skipped malformed entry {tok:?}\n"))
+                }
+            }
+        }
     }
 
     match chest_mode {

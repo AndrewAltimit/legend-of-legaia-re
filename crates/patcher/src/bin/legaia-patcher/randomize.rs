@@ -211,6 +211,22 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("jewel_fix = false".to_string());
     }
 
+    // Fishing-exchange price edits: set the point cost of one or more prizes
+    // (e.g. the Buma Water Egg). Seedless targeted edits in the raw PROT 972
+    // overlay; the price also gates when the prize appears.
+    for &(item_id, price) in &args.fishing_price {
+        let report = apply::set_fishing_price(&mut patcher, item_id as u32, price)?;
+        if report.edits.is_empty() {
+            println!("fishing-price: item 0x{item_id:02X} already costs {price} points");
+        } else {
+            for (page, _row, _id, old, new) in &report.edits {
+                let venue = if *page == 0 { "Buma" } else { "Vidna" };
+                println!("fishing-price: {venue} item 0x{item_id:02X}: {old} -> {new} points");
+            }
+        }
+        manifest.push(format!("fishing_price 0x{item_id:02X} = {price}"));
+    }
+
     // Seru trading: embed an enabled flag + the run's seed so the clean-room
     // engine can offer vendor seru-for-seru swaps (offers reseed every two
     // in-game hours from this seed). A plain data write; inert on real hardware.

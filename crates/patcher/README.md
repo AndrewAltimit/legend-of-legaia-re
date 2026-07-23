@@ -43,6 +43,7 @@ full design.
   - [Run-away EXP](#run-away-exp)
   - [Enemy ally (charm)](#enemy-ally-charm) - [Charm softlock fix](#charm-softlock-fix-charm_fix-module)
   - [Jewel fix](#jewel-fix-jewel_fix-module)
+  - [Fishing prize prices](#fishing-prize-prices-fishing_price-module)
   - [Shiny Seru](#shiny-seru)
   - [Seru trading](#seru-trading)
   - [Chests](#chests)
@@ -328,6 +329,19 @@ neighbouring `09xx` extents overlap on disc (e.g. entry 953 starts `0x1800`
 into 952's window); every site lies in its module's own extent, so each
 physical word is written exactly once. See
 [`docs/tooling/randomizer.md` § Jewel fix](../../docs/tooling/randomizer.md#jewel-fix).
+
+## Fishing prize prices (`fishing_price` module)
+
+`--fishing-price ITEM=POINTS` sets the fishing-point cost of a fishing-exchange
+prize. The prize rows are 12-byte `[u32 limit][u32 price][u32 item_id]` records
+in the raw fishing overlay (PROT 972, `legaia_asset::fishing_exchange`); the
+edit rewrites the `price` u32 of every row (Buma / Vidna) granting `ITEM` -
+same-size, no recompression (972 is raw). The price doubles as the "prize
+appears once you can afford it" gate, so lowering it also reveals the prize
+sooner. `plan_set_price` matches by item id (stable across venues), skips
+already-matching prices (idempotent), and refuses an item no prize grants.
+`legaia-patcher fishing` lists the current prizes/prices. Disc oracle:
+`fishing_price_real`.
 
 ## Shiny Seru
 

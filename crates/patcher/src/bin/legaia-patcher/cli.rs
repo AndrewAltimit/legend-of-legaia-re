@@ -9,7 +9,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use legaia_patcher::apply;
 use legaia_patcher::drops::DropMode;
 
-use crate::util::parse_item_spec;
+use crate::util::{parse_item_spec, parse_prize_price};
 
 #[derive(Parser)]
 #[command(
@@ -108,6 +108,15 @@ pub(crate) enum Cmd {
     /// Read-only: list the casino prize-exchange prizes (item, coin price,
     /// progression gate).
     Casino {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
+        #[arg(long)]
+        input: PathBuf,
+    },
+    /// Read-only: list the fishing point-exchange prizes per venue (Buma /
+    /// Vidna) with their item and fishing-point price - the population the
+    /// `--fishing-price` editor changes.
+    Fishing {
         /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
         /// is accepted and resolved to the `.bin` it references).
         #[arg(long)]
@@ -485,6 +494,15 @@ pub(crate) struct RandomizeArgs {
     /// untouched.
     #[arg(long, default_value_t = false)]
     pub(crate) jewel_fix: bool,
+    /// Set the **fishing-exchange price** of one or more prizes. Comma- or
+    /// repeat-separated `ITEM=POINTS` entries (`--fishing-price 0x6F=500` sets
+    /// the Water Egg to 500 fishing points; ids in decimal or `0xHH`). The
+    /// price is both the point cost and the "only appears once you can afford
+    /// it" gate, so lowering it also makes the prize show up sooner. Applies to
+    /// every venue (Buma / Vidna) row granting that item. `legaia-patcher
+    /// fishing` lists the current prizes and prices.
+    #[arg(long, value_name = "ITEM=POINTS", value_delimiter = ',', value_parser = parse_prize_price)]
+    pub(crate) fishing_price: Vec<(u8, u32)>,
     /// Let vendors offer to **trade** one of a character's seru for a different
     /// seru. Embeds an enabled flag + the run's seed in `SCUS_942.54`; the
     /// clean-room engine renders the trade UI and reseeds each vendor's offers

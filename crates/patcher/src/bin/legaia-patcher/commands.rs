@@ -71,6 +71,42 @@ pub(crate) fn cmd_casino(input: &Path) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn cmd_fishing(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let overlay = patcher
+        .read_entry(legaia_patcher::fishing_price::OVERLAY_PROT_INDEX)
+        .context("read fishing overlay (PROT 972)")?;
+    let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+        .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+    let nm = |id: u32| {
+        item_names
+            .as_ref()
+            .and_then(|t| t.name(id as u8))
+            .unwrap_or("?")
+            .to_string()
+    };
+    let venue = |page: usize| if page == 0 { "Buma" } else { "Vidna" };
+    let rows =
+        legaia_patcher::fishing_price::list_prizes(&overlay).context("parse fishing exchange")?;
+    let mut cur_page = usize::MAX;
+    for p in rows {
+        if p.page != cur_page {
+            println!("{} pond:", venue(p.page));
+            cur_page = p.page;
+        }
+        let kind = if p.one_time { "one-time" } else { "repeat  " };
+        println!(
+            "  row {}  {:<16} {:>7} pts  [{kind}]  (id 0x{:02X})",
+            p.row,
+            nm(p.item_id),
+            p.price,
+            p.item_id
+        );
+    }
+    Ok(())
+}
+
 pub(crate) fn cmd_monster_stats(input: &Path) -> Result<()> {
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;

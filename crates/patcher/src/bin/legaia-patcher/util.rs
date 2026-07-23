@@ -44,6 +44,21 @@ pub(crate) fn parse_item_spec(s: &str) -> Result<(u8, u8)> {
     Ok((parse_item_id(id_str)?, count))
 }
 
+/// Parse a `--fishing-price` entry: `ITEM=POINTS` (`0x6F=500`, `111=1000`). The
+/// item id is the SCUS item-name id space; the price is fishing points
+/// (`u32`). Errors on a malformed pair.
+pub(crate) fn parse_prize_price(s: &str) -> Result<(u8, u32)> {
+    let s = s.trim();
+    let (id_str, price_str) = s.split_once('=').with_context(|| {
+        format!("invalid fishing price {s:?} (expected ITEM=POINTS, e.g. 0x6F=500)")
+    })?;
+    let price = price_str
+        .trim()
+        .parse::<u32>()
+        .with_context(|| format!("invalid points in {s:?} (expected a number)"))?;
+    Ok((parse_item_id(id_str)?, price))
+}
+
 pub(crate) fn clock_seed() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()

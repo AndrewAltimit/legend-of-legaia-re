@@ -368,6 +368,17 @@
       </label>
     </details>
 
+    <!-- ---- Manual value edits (advanced) ---- -->
+    <details class="rom-group">
+      <summary>Manual value edits <span class="rom-summary-note">advanced - type exact numbers</span></summary>
+
+      <div class="rom-opt">
+        <label class="rom-opt-label" for="rom-fishing-price">Fishing prize prices</label>
+        <span class="rom-opt-note">Set the fishing-point cost of a fishing-exchange prize. One or more <code>item=points</code> pairs, comma-separated - item id in decimal or <code>0xHH</code>. Example: <code>0x6F=500</code> makes the Buma Water Egg cost 500 points (it also appears sooner, since the price is the "once you can afford it" gate). The <a href="../reference/gamedata.html">item ids</a> and current prices are what the CLI <code>legaia-patcher fishing</code> lists.</span>
+        <input type="text" id="rom-fishing-price" placeholder="e.g. 0x6F=500, 0xCD=10000" spellcheck="false" autocomplete="off">
+      </div>
+    </details>
+
     <div class="rom-row rom-actions">
       <button id="rom-run" class="rom-button">Patch &amp; download</button>
     </div>
