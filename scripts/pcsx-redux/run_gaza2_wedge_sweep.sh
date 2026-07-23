@@ -44,6 +44,14 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# proc_spawn_group / proc_wait_pid / proc_kill_group. Each attempt runs in its
+# OWN process group so the deadline can kill the emulator too. Plain
+# `timeout <n> bash run_probe.sh` cannot: timeout signals its direct child, the
+# shell dies, and PCSX-Redux is orphaned - observed live, an orphan from a
+# finished run kept burning CPU and slowed the next attempt to a crawl. These
+# helpers also make the liveness check structurally unable to match this script.
+# shellcheck source=../lib/proc.sh
+source "$REPO_ROOT/scripts/lib/proc.sh"
 
 ATTEMPTS=8
 SSTATE="$HOME/.config/pcsx-redux/SCUS94254.sstate9"
@@ -97,21 +105,25 @@ for (( i = 0; i < ATTEMPTS; i++ )); do
     mkdir -p "$dir"
     echo "--- attempt $i (autopilot cadence ${cadence} vsyncs) -> $dir"
 
-    # The probe is launched under an explicit kill timeout: PCSX-Redux does not
-    # reliably exit on its own, and a hung emulator would wedge the sweep.
+    # Own process group + explicit deadline. PCSX-Redux does not reliably exit
+    # on its own, and killing only the wrapper strands it.
     set +e
-    LEGAIA_AUTOPILOT="$cadence" \
-    LEGAIA_STALL_N="$STALL_N" \
-    LEGAIA_OUT_DIR="$dir" \
-    timeout "$PER_TIMEOUT" bash "$REPO_ROOT/scripts/pcsx-redux/run_probe.sh" \
-        --lua "$REPO_ROOT/scripts/pcsx-redux/autorun_gaza2_magic_wedge.lua" \
-        --sstate "$SSTATE" --frames "$FRAMES" --out-dir "$dir" \
-        > "$dir/runner.log" 2>&1
-    rc=$?
+    pgid=$(LEGAIA_AUTOPILOT="$cadence" \
+           LEGAIA_STALL_N="$STALL_N" \
+           LEGAIA_OUT_DIR="$dir" \
+           proc_spawn_group "$dir/runner.log" \
+               bash "$REPO_ROOT/scripts/pcsx-redux/run_probe.sh" \
+               --lua "$REPO_ROOT/scripts/pcsx-redux/autorun_gaza2_magic_wedge.lua" \
+               --sstate "$SSTATE" --frames "$FRAMES" --out-dir "$dir")
+    proc_wait_pid "$pgid" "$PER_TIMEOUT"
+    waited=$?
     set -e
-    if [[ $rc -ne 0 ]]; then
-        echo "    WARN: attempt $i exited $rc (timeout or emulator failure)"
+    if [[ $waited -ne 0 ]]; then
+        echo "    WARN: attempt $i hit the ${PER_TIMEOUT}s deadline; killing its group"
     fi
+    # Unconditional: even a probe that finished its capture can leave the
+    # emulator up (observed), so tear the group down either way.
+    proc_kill_group "$pgid"
 
     stalled="?"
     dwell="?"
