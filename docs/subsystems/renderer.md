@@ -239,6 +239,28 @@ so the fill is a smooth two-axis gradient rather than a flat tint. `param_4
 (`0x3E800000` vs `0x3C800000`). It is a pure primitive-buffer writer with no
 GTE transform.
 
+## Other SCUS-band emitters (documented, not ported)
+
+Beyond the two 3D TMD renderers and the gradient-tile primitive, the SCUS render
+band carries a set of smaller GTE/GPU emitters. The clean-room engine reproduces
+all of these through its own wgpu path, so they are **documented, not ported** -
+their per-address roles live in
+[`reference/functions.md` § Renderer / GPU primitives](../reference/functions.md#renderer--gpu-primitives):
+
+- **`FUN_80028158` / `FUN_8002A5A4` / `FUN_801CFA48`** - the three multi-target
+  primitive emitters the per-actor RENDER dispatcher `FUN_8001ADA4` case 4 picks
+  on `actor[+0x9e]`. Each is a GPU packet builder over a caller buffer, unpacking
+  a primitive count from the high byte of its packed param (`801CFA48` OR-s the
+  GT4 command base `0x3C000000`).
+- **`FUN_80019D50`** - a BGR555 cell-grid emitter: one coloured quad per non-zero
+  `u16` cell (5-5-5 + `0x8000` STP bit) into the OT cursor `_DAT_1F800314+0x8c`.
+- **`FUN_800351C0`** - the full-screen `320×224` backdrop quad (tag `0x08000000`).
+- **`FUN_8001B73C`** - a GTE on-screen visibility test (RTPT the four corners of
+  an actor box, accept if any projects inside the `320×240` screen), not an
+  emitter - a cull probe.
+- **`FUN_80029DD8`** - a 39-`cop2`-op 3D primitive emitter, sibling of
+  `FUN_8002735C` / `FUN_80029888`.
+
 ## TMD pointer table
 
 `FUN_80026B4C` writes registered TMDs to `*(int **)(idx * 4 + 0x8007C018)`. Consumers in retail (4 functions, all setup-not-render):
