@@ -12,7 +12,7 @@ both confirmed as the menu overlay by function-address identity; decompiled func
 ## Contents
 
 - [Overlay structure](#overlay-structure) · [Key functions](#key-functions) · [Globals used](#globals-used)
-- [Sub-screen function pointer table](#sub-screen-function-pointer-table) - [load/save dispatch](#loadsave-dispatch-fun_801dd35c) · [libcd I/O state machine](#libcd-io-state-machine-fun_801e3294) · [save-block directory enumeration](#save-block-directory-enumeration-fun_801e1208) · [equip-candidate list handler](#equip-candidate-list-handler-fun_801d9c14-sub-screen-0x14)
+- [Sub-screen function pointer table](#sub-screen-function-pointer-table) - [load/save dispatch](#loadsave-dispatch-fun_801dd35c) · [libcd I/O state machine](#libcd-io-state-machine-fun_801e3294) · [card-operation sequencer](#card-operation-sequencer-fun_801e13b8) · [save-block directory enumeration](#save-block-directory-enumeration-fun_801e1208) · [equip-candidate list handler](#equip-candidate-list-handler-fun_801d9c14-sub-screen-0x14)
 - [Relationship to `legaia_save`](#relationship-to-legaia_save) · [story-flag persistence vs. scratchpad word](#story-flag-persistence-vs-scratchpad-word) · [retail SC block layout](#retail-sc-block-layout)
 - [Sprite asset sources (Continue → Load screen)](#sprite-asset-sources-continue--load-screen) - [9-slice tile rects](#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2) · [how the panel TIM was pinned](#how-the-panel-tim-was-pinned)
 - [Slide-in UI primitive (`FUN_801E1C1C`)](#slide-in-ui-primitive-fun_801e1c1c) · [messagebox panel geometry (`FUN_801E36C4`)](#messagebox-panel-geometry-fun_801e36c4) · [bottom info panel renderer (`FUN_801E08D8`)](#bottom-info-panel-renderer-fun_801e08d8)
@@ -356,6 +356,30 @@ their results discarded. Since `TestEvent` consumes the pending event as it
 tests it, the drain is exactly a clear of all four flags: ported as
 `save_select::card_events_drain`, which the second-op step of the I/O
 machine runs before arming the next BIOS call.
+
+### Card-operation sequencer (`FUN_801E13B8`)
+
+One of the three per-frame calls the ticker `FUN_801E1114` makes (the
+others are the display-list emitters `FUN_801E380C` / `FUN_801E16E0`).
+`FUN_801E13B8` is the higher-level card-**operation** sequencer over the
+op word `_DAT_801F329C`, sitting above the libcd I/O machine
+`FUN_801E3294` and issuing that machine's read / write / format requests
+(see `ghidra/scripts/funcs/overlay_menu_801e13b8.txt`):
+
+| `_DAT_801F329C` | Action |
+|---|---|
+| `1` | Save request armed. Waits on the last card result `_DAT_801F3804`; a fatal `-2` raises write-error flag `DAT_801EF13C` and status-string id `_DAT_801F0204 = 0x17`; a positive result arms the write delay `DAT_801EF128 = 0x18` and advances to `3`. |
+| `2` | Load request armed. Same shape; fatal `-2` raises `DAT_801EF140` + string `0x13`; positive advances to `5`. |
+| `3` | Write execute. Counts the `0x18`-frame delay down by the frame-rate byte `DAT_1F800393`, resolves the region filename (`FUN_801E3AF0` / `3BA0` / `3BEC`, prefix `BASCUS-94254PRO_`), issues the block write `FUN_801E3D68(handle, 0, name, buf, 0x2000, …)`. Success prints `"open ok"` and advances to `4`; failure closes the file (`FUN_800566D8`), prints `"write error"`, raises `DAT_801EF13C`, resets to `0`. |
+| `5` | Read execute. `FUN_801E3C90(handle, 0, name, buf, blocks)`; success advances to `6`, failure prints `"write error"` and resets to `0`. |
+| `7` | Format. Retries `FUN_801E3E7C` up to five times; result `-1` prints `"Format No Card"`, `1` prints `"Format End"` (+ `_DAT_801F0220 = 3`), anything else `"Format Error"`; resets to `0`. |
+
+The message strings live contiguously at `0x801CF3B4..`
+(`write error` / `open ok` / `Format End` / `Format No Card` /
+`Format Error`). This is memory-card-hardware orchestration - it drives
+the libcd read / write / format lifecycle through `FUN_801E3294` - so it
+is documented, not ported: the clean-room engine persists through the
+`legaia_save` LGSF path, not a PSX card op sequencer.
 
 ### Save-block directory enumeration (`FUN_801E1208`)
 
