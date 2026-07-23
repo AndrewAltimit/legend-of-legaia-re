@@ -10,6 +10,17 @@
 //!
 //! It is a genuine closed-form arithmetic kernel with no hardware or table
 //! dependency, so it ports clean-room even though its consumer is presentation.
+//!
+//! # NOT WIRED
+//!
+//! The tween is one step of `FUN_80050120`, the per-actor tint state machine,
+//! and that machine's state is what is missing: the per-actor step-scale byte
+//! and the "tween is running" flag both live on the actor struct outside the
+//! range `BattleActor` models, so nothing can supply `step_scale` or decide
+//! which slots are mid-tween on a given frame. The word it eases,
+//! `actor[+0x4]`, *is* on the port (`BattleActor::render_color`, which the
+//! target-select cursor `FUN_801DA6B4` stamps), so this is the second half of
+//! that pair - it becomes wirable as soon as the tint SM's own state lands.
 
 /// One channel stepped toward `target` by at most `max_delta`, clamping exactly
 /// on the target without overshoot. Signed so a channel may pass through zero

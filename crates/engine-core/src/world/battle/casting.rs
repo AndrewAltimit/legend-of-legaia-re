@@ -4,6 +4,35 @@
 
 use super::*;
 
+/// The boss signature casts whose streamed capture-class module calls the
+/// **resist-bypass** damage wrapper `FUN_801DD6B4` instead of the respecting
+/// `FUN_801DD4B0`.
+///
+/// The two wrappers differ in exactly one thing: the fifth argument they push
+/// for the shared finisher `FUN_801DDB30`. At the `jal` sites in the battle
+/// overlay dump (`ghidra/scripts/funcs/overlay_battle_action_801dd4b0.txt`
+/// `801dd678` and `..._801dd6b4.txt` `801dd828`), the respecting wrapper stores
+/// `zero` into `0x10(sp)` and the bypass wrapper stores `1`. `param_5 = 1` is
+/// the flag `battle_formulas::DamageFinish::bypass_party_resist` models: it
+/// skips the party defender's elemental-resistance stage outright, so the
+/// elemental jewels / guards / All Guard do not apply to these hits. The guard
+/// halve, the no-damage floor and the cap all still run.
+///
+/// Which spells land on the bypass wrapper is a census over every
+/// capture-class module, kept with the disc patcher that retargets those
+/// thirteen `jal` words (`crates/patcher/src/jewel_fix.rs`, whose module header
+/// carries the per-module table): Guilty Cross, Bloody Horns, Terio Punch,
+/// Bull Charge, Blazing Slash, Megaton Press, Plasma Strike. Spells that share
+/// one of those modules but whose dispatched tick either carries no damage call
+/// or calls the respecting wrapper - Curse All `0x53`, Astral Slash `0xB8`,
+/// Neo Star Slash `0xA6` - are deliberately **not** here.
+///
+/// This is retail behaviour and therefore the engine's baseline; making these
+/// casts respect guards is the opt-in `--jewel-fix` disc patch, not a default.
+///
+/// REF: FUN_801DD6B4, FUN_801DD4B0, FUN_801DDB30
+const CAPTURE_BYPASS_MOVE_IDS: [u8; 7] = [0x37, 0x5C, 0x5D, 0x5E, 0x79, 0x7A, 0x7B];
+
 impl World {
     /// Deduct `def`'s MP cost from `caster` and fold its effect onto each
     /// absolute actor slot in `targets`. Shared by the player cast path
@@ -108,7 +137,7 @@ impl World {
             // arts/physical kernel already folds the enemy→party affinity in.
             if let Some(power) = move_power
                 && let crate::spells::SpellOutcome::Damage { amount, .. } = &mut outcome
-                && let Some(faithful) = self.enemy_move_predamage(caster, t, power)
+                && let Some(faithful) = self.enemy_move_predamage(caster, t, power, def.id)
             {
                 *amount = faithful;
             } else if let crate::spells::SpellOutcome::Damage { amount, .. } = &mut outcome {
@@ -231,7 +260,13 @@ impl World {
     ///
     /// REF: FUN_801dd0ac (arts/physical branch)
     /// REF: FUN_801ddb30 (finisher stages on the enemy-special path)
-    fn enemy_move_predamage(&mut self, attacker: u8, target: u8, power: i32) -> Option<u16> {
+    fn enemy_move_predamage(
+        &mut self,
+        attacker: u8,
+        target: u8,
+        power: i32,
+        move_id: u8,
+    ) -> Option<u16> {
         use vm::battle_formulas::{
             DamageFinish, SummonRollActor, arts_physical_predamage_lazy, damage_finish_lazy,
         };
@@ -296,7 +331,7 @@ impl World {
                 .copied()
                 .unwrap_or(false),
             enemy_defender_halve: false,
-            bypass_party_resist: false,
+            bypass_party_resist: CAPTURE_BYPASS_MOVE_IDS.contains(&move_id),
             summon_power_pct: 100,
             floor_rand: 0,
         };
@@ -687,5 +722,147 @@ impl World {
             // is a no-op (MP was already spent up front).
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod capture_bypass_tests {
+    use super::*;
+    use crate::monster_catalog::{MonsterCatalog, MonsterDef};
+    use crate::spells::{SpellDef, SpellEffect, SpellElement, SpellTarget};
+    use legaia_asset::move_power::{
+        MOVE_ID_INDEX_MAP_FILE_OFFSET, MOVE_POWER_RECORD_STRIDE, MOVE_POWER_TABLE_FILE_OFFSET,
+        MOVE_POWER_TABLE_LEN,
+    };
+
+    /// A move id the bypass census does **not** list, mapped to the same power
+    /// record as the bypass id so the two rolls are otherwise identical.
+    const RESPECT_MOVE_ID: u8 = 0x5B;
+    /// Bloody Horns - PROT 952, one of the six bypass modules.
+    const BYPASS_MOVE_ID: u8 = 0x5C;
+
+    /// Synthetic PROT-0898-shaped buffer mapping both ids to one power record.
+    fn overlay_with_two_ids(power: u16) -> Vec<u8> {
+        let mut buf = vec![
+            0u8;
+            MOVE_POWER_TABLE_FILE_OFFSET
+                + MOVE_POWER_RECORD_STRIDE * MOVE_POWER_TABLE_LEN
+        ];
+        // `from_overlay_0898`'s structural guard.
+        buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 4] = 1;
+        buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + RESPECT_MOVE_ID as usize] = 1;
+        buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + BYPASS_MOVE_ID as usize] = 1;
+        buf[MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE] = power as u8;
+        buf[MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE + 1] = (power >> 8) as u8;
+        buf
+    }
+
+    /// One party member carrying the element-0 resist passive, one monster
+    /// caster of element 0. Same seed every time.
+    fn world_with_resisting_party() -> World {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        let mut catalog = MonsterCatalog::new();
+        let mut caster = MonsterDef::new(5, "Boss", 4000, 200);
+        caster.element = 0;
+        catalog.insert(caster);
+        world.monster_catalog = catalog;
+
+        // Party slot 0 resists element 0 (`record+0xF4` bit 0x20000000) and
+        // carries no All-Guard absorb bit, so the ladder's halve arm is the one
+        // that would run. Loaded before the actor stats: `load_party` reseeds
+        // the battle mirrors from the record.
+        world.load_party(legaia_save::Party::zeroed(1));
+        if let Some(m) = world.roster.members.get_mut(0) {
+            let mut bits = m.ability_bits();
+            bits[3] |= 0x20;
+            bits[4..8].fill(0);
+            m.set_ability_bits(bits);
+        }
+
+        world.actors[0].battle.max_hp = 9999;
+        world.actors[0].battle.hp = 9999;
+        world.actors[0].battle.liveness = 1;
+        world.battle_accuracy[0] = 5;
+        world.battle_defense[0] = 1;
+
+        world.actors[1].battle.max_hp = 4000;
+        world.actors[1].battle.hp = 4000;
+        world.actors[1].battle.mp = 200;
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(5);
+        world.battle_accuracy[1] = 200;
+
+        world.move_power = Some(
+            crate::move_power::MovePowerCatalog::from_overlay_0898(&overlay_with_two_ids(2000))
+                .expect("synthetic catalog parses"),
+        );
+        world.rng_state = 0xC0FF_EE01;
+        world
+    }
+
+    fn spell(id: u8) -> SpellDef {
+        SpellDef {
+            id,
+            name: "boss cast".into(),
+            mp_cost: 0,
+            element: SpellElement::Neutral,
+            target: SpellTarget::OneEnemy,
+            effect: SpellEffect::Damage {
+                base_power: 100,
+                element: SpellElement::Neutral,
+            },
+            anim_id: 0,
+        }
+    }
+
+    fn damage_from(move_id: u8) -> u16 {
+        let mut world = world_with_resisting_party();
+        let before = world.actors[0].battle.hp;
+        world.cast_spell_on_slots(1, &spell(move_id), &[0]);
+        before - world.actors[0].battle.hp
+    }
+
+    /// `FUN_801DD6B4` passes `param_5 = 1` to the finisher, which skips the
+    /// party defender's elemental-resistance stage; `FUN_801DD4B0` passes `0`
+    /// and the stage halves the hit. Same power record, same seed, so the only
+    /// difference between the two casts is which wrapper retail routes them
+    /// through.
+    #[test]
+    fn bypass_move_ignores_the_party_elemental_resist_ladder() {
+        let respected = damage_from(RESPECT_MOVE_ID);
+        let bypassed = damage_from(BYPASS_MOVE_ID);
+        assert!(respected > 0, "the respecting cast still lands");
+        assert_eq!(
+            bypassed,
+            respected * 2,
+            "the resisted cast is halved and the bypassing one is not"
+        );
+    }
+
+    /// Guard against the bypass leaking to every cast: an unresisted element
+    /// gives both ids the same magnitude.
+    fn damage_without_resist(move_id: u8) -> u16 {
+        let mut world = world_with_resisting_party();
+        if let Some(m) = world.roster.members.get_mut(0) {
+            let mut bits = m.ability_bits();
+            bits[3] &= !0x20;
+            m.set_ability_bits(bits);
+        }
+        let before = world.actors[0].battle.hp;
+        world.cast_spell_on_slots(1, &spell(move_id), &[0]);
+        before - world.actors[0].battle.hp
+    }
+
+    #[test]
+    fn bypass_changes_nothing_when_the_defender_has_no_matching_resist() {
+        assert_eq!(
+            damage_without_resist(RESPECT_MOVE_ID),
+            damage_without_resist(BYPASS_MOVE_ID),
+            "with no resist bit the ladder is a no-op, so the wrappers agree"
+        );
     }
 }

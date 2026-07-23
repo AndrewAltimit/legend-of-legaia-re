@@ -10,6 +10,32 @@
 //! Port provenance (disassembly, not the decompiled C):
 //! `see ghidra/scripts/funcs/8003cb54.txt`, `.../800597c8.txt`,
 //! `.../80046870.txt`, `.../801cee80.txt`.
+//!
+//! # NOT WIRED
+//!
+//! Each of these leaves is waiting on a different piece of engine state:
+//!
+//! - `FUN_8003CB54` ([`action_queue_end_offset`] / [`action_queue_append`])
+//!   splices into retail's variable-width `{lead, payload}` byte queue. The
+//!   engine assembles actions as a typed `legaia_art::ActionQueue` of
+//!   `ActionConstant`s, so no caller holds a raw buffer with a `< 0x1f`
+//!   terminator for the walk to find.
+//! - `FUN_800597C8` ([`screen_x_mirror`]) is selected by the orientation
+//!   globals `DAT_80078D54` / `DAT_80078D57`. The engine's renderer has one
+//!   battle view and no mirrored or half-width mode, so the transform has no
+//!   mode byte to be selected by.
+//! - `FUN_80046870` ([`advance_gauge`]) ramps the `gp + 0x2E8` word. That word
+//!   has no engine analogue - and note which other routine reads it: the
+//!   validator's arm-`0x82` gate `FUN_80046898` tests **the same word**
+//!   against `0xE0`. Read together the pair is gauge-shaped (`+0x40` per call,
+//!   ceiling `0x100`, threshold `0xE0`), which is why
+//!   `battle_action::validator`'s "inventory item count" reading of `gp+0x2E8`
+//!   is recorded there as unconfirmed. Wiring this needs that identity settled
+//!   first, since the value is what a host would have to produce.
+//! - `FUN_801CEE80` ([`ease_quad_interp`]) is driven from the actor tween
+//!   triple `+0x28` (target index), `+0x50` (progress) and `+0x9E`
+//!   (duration). None of the three is on the port's battle or field actor, so
+//!   nothing advances a progress counter for the ease to sample.
 
 /// Append a two-byte command entry `{tag, arg}` to a variable-width action
 /// queue, re-terminating with a `0` byte.

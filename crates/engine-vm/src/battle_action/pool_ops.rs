@@ -20,6 +20,40 @@
 //! `..._801db81c.txt`, and `ghidra/scripts/funcs/80019b28.txt` - not the C.
 //! The pool is 8 slots (0..2 party, 3..7 monsters); slots 0..2 are treated as
 //! always-present, slots 3.. are gated on the liveness halfword `actor[+0x14C]`.
+//!
+//! # NOT WIRED
+//!
+//! No engine caller reaches any of these leaves, and the missing prerequisite
+//! is per-routine rather than one blanket gap:
+//!
+//! - `FUN_801DB9C4` ([`clear_end_of_action_flags`]) scrubs the actor **`+0x8`**
+//!   anim/render flag word. The port's `BattleActor` carries `+0x1DC`
+//!   (`flag_bits`) and no `+0x8` word at all, so the mask has nothing to clear.
+//! - `FUN_801DB318` ([`normalize_formation_span`]) shifts the camera-focus
+//!   accumulators `_DAT_80089118` / `_DAT_80089120` to compensate for the
+//!   squash. The engine frames the battle camera by a per-action snap
+//!   (`camera_height_for_frame` through `BattleActionHost::camera_bounds`) and
+//!   carries no focus accumulator for that compensation to land in.
+//! - `FUN_801D8A88` ([`build_attack_target_queue`]) and `FUN_801D8D00`
+//!   ([`cycle_attack_target`]) build and step the context byte ring at
+//!   `ctx[+0x244..+0x249]`. The engine's battle cursor is
+//!   `engine-core::target_picker`, a row/slot cursor over `SlotState` rows; no
+//!   caller holds a ring for these to build or walk.
+//! - `FUN_801DB124` ([`redirect_dead_target`]) *is* called by the turn picker
+//!   `FUN_801DABA4` - itself ported, as `World::next_combatant_by_initiative` -
+//!   but behind two gates the port does not carry: `ctx[+0x276]`, and on the
+//!   party arm the command-flow byte `ctx[+0x06]` being `0xFF`. Adding the
+//!   re-roll without them would spend RNG draws retail does not always make,
+//!   which is a simulation change rather than a wiring fix.
+//! - `FUN_801DB8B4` ([`first_live_monster_slot`]), `FUN_801DBA04`
+//!   ([`first_selectable_target`]) and `FUN_801DB81C`
+//!   ([`next_selectable_actor`]) are retail's `+0x1A` round-robin turn scans
+//!   over the fixed 8-slot pool. The engine orders turns by initiative key
+//!   (`FUN_801DABA4`) over compact seating, so nothing produces the
+//!   `action_state[i] != 4` array they index or consumes a round-robin answer.
+//! - `FUN_80019B28` ([`bearing_12bit`]) needs the `SCUS_942.54` arctan LUT at
+//!   `0x8006F4C8`. No engine boot path extracts that table, so no caller can
+//!   supply the `atan_lut` argument.
 
 /// The `+0x8` actor flag-word bits state `0x5A` keeps: it clears
 /// `0x83000000` (bit 31 and bits 25/24). `FUN_801DB9C4`.
