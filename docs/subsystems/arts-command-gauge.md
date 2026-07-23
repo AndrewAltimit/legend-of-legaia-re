@@ -9,6 +9,7 @@ The popular description is "an off-class weapon **doubles** the arm command." Th
 - [Where the cost lives](#where-the-cost-lives)
 - [Measured arm cost](#measured-arm-cost)
 - [How the gauge consumes it](#how-the-gauge-consumes-it)
+- [Re-arming the gauge at art start](#re-arming-the-gauge-at-art-start)
 - [Status limb gating](#status-limb-gating)
 - [Weapon classes and favored mapping](#weapon-classes-and-favored-mapping)
 - [Execution path](#execution-path)
@@ -68,6 +69,29 @@ The same case-`9`/`0xB` machinery also deals and spends the **Muscle Dome hand**
 The **enemy analogue** is the AGL action-budget in `FUN_801E9FD4`: a monster fills its per-turn action queue by rolling candidate moves and paying each move's `+0x74` cost out of the per-round AGL gauge (`actor[+0x154]`), the same "wider cost = fewer commands" mechanic on the AI side - see [`battle-action.md` § Enemy AGL action-budget](battle-action.md#enemy-agl-action-budget-fun_801e9fd4).
 
 > A separate `+2` in the same case (`icon = DAT_801F4B94[i] + 2`, gated on an *empty* equip slot, `equip[cmd] == 0`) is an empty-slot icon tweak, **not** the class penalty - a fully-equipped off-class character still shows the widened arm via the `+0x74` cost above.
+
+## Re-arming the gauge at art start
+
+`FUN_801e93c8` (battle overlay, PROT 0898;
+`see ghidra/scripts/funcs/overlay_battle_action_801e93c8.txt`) resets the
+per-actor gauge slot flags when a committed action begins, so a fresh art draws
+its arrows from a clean state. It reads the active actor
+(`_DAT_8007bd24 + 0x13` indexes the actor-pointer table `DAT_801C9370`), then
+gates on **what** was staged: the actor's last-staged action id `+0x1D9`. For a
+party slot (index `< 3`) the re-arm runs only while `+0x1D9 < 0x10` - i.e. the
+staged id is a plain direction (`0x0C..=0x0F`), not a materialized art or
+starter (`>= 0x10`). For a monster (index `>= 3`) it resolves the materialized
+art record (`+0x4C`) instead and bails when the record's `+0x87` flag byte is
+set. When the gate passes it walks all seven actor slots, clearing each slot's
+`+0x21C` latch (only when it holds `1`) and writing `+0x21D = 8` (the default
+per-slot arm-width seed the gauge builder later overwrites with the real
+`+0x74` cost), then clears the active actor's `+0x243` byte.
+
+The `+0x21D = 8` seed is why a slot briefly reads the neutral width before
+[the gauge build](#how-the-gauge-consumes-it) stamps the weapon-specialty
+`+0x74` cost over it; the `+0x1D9 < 0x10` gate is the same
+direction-vs-materialized-art split the action queue uses (see
+[art-data.md § Action Constants](../formats/art-data.md#action-constants)).
 
 ## Status limb gating
 
