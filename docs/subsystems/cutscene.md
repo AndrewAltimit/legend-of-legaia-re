@@ -34,6 +34,7 @@ library. The FMV dispatch table is at `0x801D0A6C`.
 - [Field-VM FMV-trigger op](#field-vm-fmv-trigger-op) - [static trigger sites](#static-fmv-trigger-sites---exhaustive) · [trigger assignment is disc-sourced](#the-per-scene-trigger-assignment-is-disc-sourced-the-runtime-reconstructed-reading-is-falsified) · [per-STR trigger corpus](#per-str-fmv-trigger-corpus)
 - [In-engine 3D opening](#in-engine-3d-opening-the-five-scene-new-game-chain) - [the five-scene chain](#the-five-scene-chain) · [record spawn](#record-spawn-mechanisms-live-probe-pinned) · [`opdeene` timeline record](#the-opdeene-timeline-record) · [inline narration](#inline-narration-format) · [crawl roller](#narration-playback---the-crawl-roller-fun_80037174) · [timeline execution](#timeline-execution-model-ghidra-traced) · [engine port](#timeline-execution-engine-port) · [vignette actors](#per-actor-channels---the-vignette-actors) · [screen fade](#scripted-screen-fade-op-0x4c-0x12--the-effect-colour-op-0x34-sub-0) · [sepia grade](#full-scene-sepia-grade-the-gold-prologue-look)
 - [Field-to-battle transition](#field-to-battle-transition-the-battle-intro-overlay) - [tick + battle handoff](#transition-tick--battle-handoff---fun_801cf5bc) · [per-style emitters](#per-style-emitters-render-track-gtegpu)
+- [Script-cutscene helpers](#script-cutscene-helpers-overlay_cutscene_dialogue)
 - [Open items](#open-items) · [Provenance](#provenance)
 
 ## Game modes
@@ -1305,12 +1306,39 @@ transition, not these packet builders.
 
 Shared render helpers in the same band: `FUN_801CF1B0` (angle-keyed rotated-quad builder,
 lookup at `&DAT_801D1ED3`), `FUN_801D0E54` (style-2 per-record sub-emitter into
-`_DAT_8007B85C + 0x5DC00`), `FUN_801D1A20` (byte-colour-unpack quad helper). Two
+`_DAT_8007B85C + 0x5DC00`), `FUN_801D1A20` (byte-colour-unpack quad helper). Several
 allocate-and-seed inits build the per-style working buffers up front: `FUN_801CFBB4`
 (a 0x28x0x20 grid of 0x2C-byte cells, seeded from height tables `_DAT_8007B7F8` /
 `_DAT_8007B81C`) and `FUN_801D081C` (two `FUN_80017888` buffer allocations, 0x908 +
-0x5C00). All are GTE/GPU emitters - render-track, not ported. `see
+0x5C00). `FUN_801D0164` is a sibling grid builder - a 0x20x0x28 array of 0x2C-byte
+particle cells (one `FUN_80017888` 0xDC00 allocation, packet colour `0x808080`, each
+cell's position seeded polar via `func_0x80019B28` / `func_0x8005AF0C` / `func_0x80056798`
+against the same height tables). `FUN_801D1564` is the style-4 buffer init: it allocates
+the three tables `DAT_801D247C` / `DAT_801D2474` / `DAT_801D2478` (0x100 / 0x6300 / 0x18C0)
+that the `FUN_801D1888` emitter consumes and fills a 0x10x0x21 grid of GTE-space vertices
+plus UV / colour bytes, screen-clamped to `+-0xA00` (X) / `+-0x760` (Y). Any allocation
+failure in either bumps the error counter `_DAT_8007B828`. `FUN_801D1CD4` is an inert
+stub - it writes a 12-byte local (`0, 0, 0x7D0, 0, 0, 0`) that never escapes, then returns.
+All the emitters and builders are GTE/GPU render-track, not ported. `see
 ghidra/scripts/funcs/overlay_field_battle_intro_<addr>.txt` for each.
+
+## Script-cutscene helpers (`overlay_cutscene_dialogue`)
+
+The actor-scripted dialogue / scene sequences (the `op*` / `ed*` CDNAME scenes) run in a
+separate overlay from the STR/MDEC player - the one that shares the town field-VM binary
+(noted at the top of this page). These are per-frame effect steps in that overlay, driven
+from the scene's actor records. The four below are byte-identical to the
+`overlay_cutscene_mapview` capture (and `FUN_801D27E0` also to the world-map overlay), so
+they are shared scripted-scene machinery rather than dialogue-only code.
+
+| Address | Role |
+|---|---|
+| `FUN_801D27E0` | scripted camera-focus SM (6 states, actor `+0x54`): snaps the camera onto the party actor `DAT_80084597`, copies its `x/y/z/rot` into the camera table and ramps a fade counter (`+0x9e` vs `DAT_1F800393`); spawns a focus effect object (`_DAT_801F3490`) via `func_0x80024E80` and drives the camera through `FUN_801DE190` / `FUN_801DE3E0` / `FUN_801DB8EC` / `FUN_801DAA50` |
+| `FUN_801D5C08` | per-frame position tween step: accumulates `+0x9c += (+0x9e) * DAT_1F800393`, lerps between the start (`+0x14`) and end (`+0x24`) vectors by `t = +0x9c / 0x1000` via `FUN_801E45BC`, writes the result onto the linked object (`+0x90`), and snaps to the end + sets done bit `8` at `t >= 0x1000` |
+| `FUN_801D5D60` | scripted-element teardown: restores the camera (`FUN_801DB510` + `FUN_801DAA50`) when armed, and once the linked object's done bit `8` is set clears the enable flags (mask `~(+0x74)`) on the `+0x94` and camera objects |
+| `FUN_801D6058` | ambient particle emitter (gated on `_DAT_8007B854`, optional `fog_set` trace): with actor `+0x1a == 0` occasionally spawns one particle at the actor position + random jitter via `FUN_801D629C`; otherwise loops 0x18 times spawning random bursts across the scene bounds (`DAT_1F8003E8..EB`) |
+
+`see ghidra/scripts/funcs/overlay_cutscene_dialogue_<addr>.txt` for each.
 
 ## Open items
 
@@ -1330,7 +1358,8 @@ ghidra/scripts/funcs/overlay_field_battle_intro_<addr>.txt` for each.
 | StGetNext frame poll + end latch + display width | `FUN_801CF740`; `see ghidra/scripts/funcs/overlay_str_fmv_0x801CF740.txt` |
 | MDEC decode watchdog / reset / DMA-out thunk | `FUN_801CFAD4` / `FUN_801CFC18` / `FUN_801CFE00`; `see ghidra/scripts/funcs/overlay_str_fmv_0x801CFAD4.txt` |
 | Field->battle transition SM + style dispatch | `FUN_801CF5BC` (PROT 0979 `field_battle_intro`); `see ghidra/scripts/funcs/overlay_field_battle_intro_801cf5bc.txt` |
-| Field->battle per-style GTE/GPU emitters | `FUN_801CFDA0` / `FUN_801D0370` / `FUN_801D0D24` / `FUN_801D11D0` / `FUN_801D1888` + helpers `FUN_801CF1B0` / `FUN_801D0E54`; PROT 0979 `field_battle_intro` |
+| Field->battle per-style GTE/GPU emitters | `FUN_801CFDA0` / `FUN_801D0370` / `FUN_801D0D24` / `FUN_801D11D0` / `FUN_801D1888` + helpers `FUN_801CF1B0` / `FUN_801D0E54` / `FUN_801D0164` / `FUN_801D1564`; PROT 0979 `field_battle_intro` |
+| Script-cutscene camera / tween / particle steps | `FUN_801D27E0` / `FUN_801D5C08` / `FUN_801D5D60` / `FUN_801D6058`; `see ghidra/scripts/funcs/overlay_cutscene_dialogue_<addr>.txt` |
 | Iki / STRv2 bitstream decoders | `FUN_801D0378` / `FUN_801D070C` (+ LZSS `FUN_801D0604`); `see ghidra/scripts/funcs/overlay_str_fmv_0x801D0378.txt` |
 | XA-clip channel selector (`CdlSetfilter`) | `FUN_8003D53C` / `FUN_8003D764`; `see ghidra/scripts/funcs/8003d764.txt` |
 | Per-movie XA `(file 1, chan 0)` single track | raw-sector subheader scan of all six `MOV/MV*.STR` on the disc |
