@@ -628,6 +628,23 @@ Pinned data structures inside the residency window (captured from a save state d
 | `0x801CE810` | ~150 B | variable | Path-string table (\\DATA\\MOV.STR;1, \\DATA\\MOV15.STR;1, \\MOV\\MV1A.STR;1, \\MOV\\MV6..MV1.STR;1) |
 | `0x801CE8AC` | ~50 B | variable | Post-FMV return-scene labels (CDNAME shape) |
 
+### MDECin DMA-callback hook (`FUN_801CFE98`)
+
+`FUN_801CFE98` is a nine-instruction wrapper that forwards its single
+argument to the PsyQ `DMACallback` entry `FUN_8005FDE8` with the channel
+argument hard-coded to **0** - DMA channel 0 is MDECin, the CPU→MDEC
+compressed-data feed. It is the FMV path's sibling of the SPU callback
+registration `FUN_8006A0E0`, which calls the same PsyQ entry with channel
+`4`.
+
+The wrapper is byte-identical, and at the same VA, in PROT **0970**
+(`cutscene_str`) and PROT **0971** (`debug_menu`) - both verified by
+disassembling each extracted image at base `0x801CE818` (file offset
+`0x1680`, inside 0971's own `0x1800` bytes, so this is genuine
+co-residency and not the 0971 → 0972 over-read). No static caller appears
+in either image; the callback is installed from a code path this corpus
+does not cover, so **who** registers it is Unknown.
+
 ### Directory-record cache
 
 The 24-byte records at `0x801CAE08` are PsyQ `CdlFILE` structs - `[u32 CdlLOC][u32 size][char name[16]]` - libcd's `CdSearchFile` cache for the last directory searched, not an FMV structure. An earlier name-first parse ("compact MV table at `0x801CAE40`") was phase-shifted 8 bytes and paired each name with the *next* record's location; the shift artefacts ("`MV1` points at disc `MV2`") dissolve at the `CdlFILE` phase. Details + the title-capture cross-check (the same cache holding `XA1.XA..XA34.XA`) in [`str-fmv-table.md`](../formats/str-fmv-table.md#directory-record-cache-0x801cae08-24-b-cdlfile-records).

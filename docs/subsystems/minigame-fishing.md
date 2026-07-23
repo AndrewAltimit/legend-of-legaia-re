@@ -149,6 +149,65 @@ and each is reached from a fishing-overlay caller, not a sibling minigame.
 - `FUN_801d7964` `(x, rgb0, rgb1, y, arg4, arg5)` - colored screen-fade spawn wrapper. Unpacks the two packed 24-bit colours (`rgb0`/`rgb1`, three bytes each) and the coordinate params into an on-stack fade template, then spawns the fade actor via `FUN_80024e80(template, 1)` (the screen-fade primitive spawn). `see ghidra/scripts/funcs/overlay_fishing_801d7964.txt`.
 - `FUN_801d7c84` `(row)` - species-name list drawer. Reads up to four species ids from the venue spawn table `PTR_DAT_801d9114` at index `row*8 + i` (`i = 0..3`), and for each non-`-1` id draws the name pointer at `&DAT_801d81a4 + id*0x28` (the per-species table) via the glyph renderer `FUN_80036888` at `x = 0`, stacking rows 16 px apart from `y = 0x10` at palette `0xa0`. `see ghidra/scripts/funcs/overlay_fishing_801d7c84.txt`.
 
+## Scene geometry helpers
+
+The fishing overlay carries its **own copies** of four small geometry
+routines. It is a slot-A occupant, so the field overlay is not resident
+while it runs and nothing in the `0x801CE818+` window can be borrowed from
+0897. All four are reached from the hooked-fish handler `FUN_801d26cc`,
+and all four are confirmed at their printed VA by disassembling PROT entry
+0972 at base `0x801CE818` directly - the field overlay holds unrelated code
+at each of these addresses (see [VA aliasing](#va-aliasing-in-this-band)).
+
+| Function | Shape | What it computes |
+|---|---|---|
+| `FUN_801d7030` | `(x, z) -> bool` | Walkability-grid wall probe, **high** nibble |
+| `FUN_801d765c` | `() -> tiles` | Distance between two overlay globals, in tiles |
+| `FUN_801d56e4` | `(&p, &q)` | 2-D segment clip against the draw-window bounds |
+| `FUN_801d5c2c` | `(&p, &q, &o0, &o1)` | 3-D segment transform + depth clip |
+
+**`FUN_801d7030(x, z)`** is a wall-bit query against the per-scene
+walkability grid at `*(_DAT_1F8003EC) + 0x4000` - the same grid the field
+overlay's per-axis collision uses (see
+[field-locomotion.md](field-locomotion.md)). It converts the two world
+coordinates to grid coordinates through the usual `(v + 0x3F) >> 6`
+rounding ladder, addresses the byte at `((z_cell / 2) & 0x7F) + ((x_cell
+<< 6) & 0x3F80)`, and tests one of four sub-cell bits (`1`, `2`, `4`, `8`)
+selected by the two coordinate parities. It reads the byte's **high**
+nibble (`>> 4`), not the low one, so it queries the second of the two
+4-bit wall masks packed into each grid byte. A leaf function: no frame,
+`jr ra` with the test result in `v0`.
+
+**`FUN_801d765c()`** takes no arguments. It reads two `(i16 x, i16 y)`
+pairs from the overlay globals at `0x801E9184` and `0x801E918C`, squares
+and sums the component differences, normalises through the SCUS
+`isqrt`-style helper `FUN_8005AF0C`, arithmetic-shifts the result right by
+6 - the same `>> 6` that maps world units onto 128-unit grid tiles - and
+clamps a negative result to zero. So it answers "how many tiles apart are
+these two tracked points", not general distance.
+
+**`FUN_801d56e4(&p, &q)`** clips a 2-D segment in place. `p` and `q` are
+`(i16 x, i16 y)` pairs; the bounds come from the scratchpad draw context
+at `0x1F800314` (`+0x74` and `+0x78`). Every arm has the same fixed-point
+form: `t = ((bound - p.x) << 12) / (q.x - p.x)`, then `p.y += ((q.y - p.y)
+* t) >> 12` - with the `+0xFFF` bias before the shift that rounds a
+negative product toward zero - then `p.x = bound`. An endpoint already
+inside its bound is left untouched.
+
+**`FUN_801d5c2c(&p, &q, &o0, &o1)`** is the 3-D sibling. It pushes both
+endpoints through the GTE wrapper `FUN_8003D344` (one `MVMVA`,
+rotation × V + TR) into a pair of on-stack view-space triples. If
+**both** transformed Z values fall inside the near cutoff `_DAT_1F80037E`
+it zeroes the two output pairs and returns - a whole-segment reject.
+Otherwise it writes the transformed coordinates back through `p` / `q` and
+clips against the depth bound at `0x1F800314 + 0x6A` with the same
+`<< 12` / `>> 12` lerp the 2-D clipper uses.
+
+Confidence: **Confirmed** for the arithmetic of all four (read from the
+disassembly of the extracted 0972 image). What the two clippers *draw* is
+**Inferred** - `FUN_801d26cc` is the fish / lure / line actor handler, so
+the fishing line is the natural reading, but no capture pins it.
+
 ## VA aliasing in this band
 
 The dumps covering `0x801d1xxx` and `0x801d6f00`..`0x801d78ff` are runtime
@@ -247,6 +306,7 @@ Fishing-specific globals (overlay-resident unless noted; `_DAT_8008xxxx` live in
 - `FUN_801d1870` / `FUN_801d1a90` / `FUN_801d76e0` - the horizontal bar, vertical bar and digit-field primitives (see [The bar and digit primitives](#the-bar-and-digit-primitives)).
 - `FUN_801d7450` / `FUN_801d3db4` / `FUN_801d746c` - the reel-button decoder, the reel-cadence recogniser, and its buffer reset (see [Reel-button decode and cadence](#reel-button-decode-and-cadence)).
 - `FUN_801d0f5c` / `FUN_801d1c5c` / `FUN_801d2050` / `FUN_801d2278` / `FUN_801d70ec` / `FUN_801d4948` / `FUN_801d67bc` / `FUN_801d24ec` / `FUN_801d6bbc` / `FUN_801d78c0` / `FUN_801d79e0` - the rod/lure select screen, the actor handlers, and the scene render pass (see [Fishing actors and scene render](#fishing-actors-and-scene-render)).
+- `FUN_801d7030` / `FUN_801d765c` / `FUN_801d56e4` / `FUN_801d5c2c` - the overlay's own walk-grid probe, tile-distance, 2-D clip and 3-D clip helpers (see [Scene geometry helpers](#scene-geometry-helpers)).
 
 Parser: [`legaia_asset::fishing_species`](../../crates/asset/src/fishing_species.rs) decodes the [per-species table](#per-species-parameter-table) from the disc.
 
