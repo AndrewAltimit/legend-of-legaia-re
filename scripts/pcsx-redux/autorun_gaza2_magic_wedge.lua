@@ -170,16 +170,32 @@ local armed = false
 local watched_actor = 0
 local last_key = ""
 local last_ctx7, ctx7_since = -1, 0
+local park_yaw_moves, park_yaw_last = 0, -1
 local stall_dumped = false
 local stall_confirmed = false
 local band_seen = {}
 local band_max_dwell = {}
 
--- The cast bands: magic/item 0x28..0x2E and summon 0x32..0x38. A stall only
--- counts inside these - every other long park (0x00 waiting for the player,
--- 0x20 attack-return) is ordinary.
+-- Which ctx+7 states can meaningfully "wedge". Deliberately WIDER than the two
+-- cast bands: an action that never completes can park anywhere in an execution
+-- band, and a live capture caught a boss cast (Neo Star Slash 0xA6) routing out
+-- of 0x28 into the CAPTURE band and sitting at 0x70 for ~800 vsyncs. That one
+-- turned out to be a long-but-finite playout - its hit counter actor[+0x21B]
+-- was still ticking 236 -> 0 and the camera yaw was frozen rather than orbiting
+-- - but a detector scoped to 0x28..0x2E / 0x32..0x38 would not even have looked.
+--
+-- Excluded: 0x00 (waiting on player input - unbounded by design) and the
+-- one-to-three-frame init/dispatch states 0x0A..0x0C.
 local function in_cast_band(st)
-    return (st >= 0x28 and st <= 0x2E) or (st >= 0x32 and st <= 0x38)
+    return (st >= 0x14 and st <= 0x20)   -- attack chain
+        or (st >= 0x28 and st <= 0x2E)   -- magic / item
+        or (st >= 0x32 and st <= 0x38)   -- summon
+        or (st >= 0x3C and st <= 0x40)   -- spirit
+        or (st >= 0x46 and st <= 0x48)   -- spirit-arts variant
+        or (st >= 0x50 and st <= 0x52)   -- done / cleanup
+        or st == 0x5A                    -- end-of-action gate
+        or (st >= 0x64 and st <= 0x6B)   -- run / capture-fail
+        or (st >= 0x6E and st <= 0x71)   -- capture sequence
 end
 local pad_idx, pad_release_at, pad_btn_held = 1, nil, nil
 
@@ -245,6 +261,14 @@ local function dump_stall(c, why, fname)
     add("vsync=%d  ctx=0x%08X  ctx+7=0x%02X (unchanged for %d vsyncs)",
         g_elapsed, c, u8(c + 7), ctx7_since)
     add("acting seat ctx+0x13 = %d", u8(c + 0x13))
+    add("battle camera yaw _DAT_8007B792 = 0x%04X, changed %d time(s) during"
+        .. " this park", u16(CAM_YAW), park_yaw_moves)
+    if park_yaw_moves == 0 then
+        add("  -> yaw FROZEN. The community symptom is an ENDLESS ORBIT, so a")
+        add("     frozen yaw means this park is NOT that report's bug.")
+    else
+        add("  -> yaw still sweeping: consistent with the reported endless orbit.")
+    end
     add("")
     add("-- exit counters (recomputed each frame by FUN_801E09F8) --")
     add("ctx+0x249 (actor anim census) = %d   <- gates magic exit 0x2E", u8(c + 0x249))
@@ -377,13 +401,26 @@ probe.run{
         if not in_ram(c) then return end
 
         local ctx7 = u8(c + 7)
+        -- Yaw motion during a park is the discriminator against the COMMUNITY
+        -- symptom, which is an ENDLESS ORBIT. The idle sweep in FUN_801D0748
+        -- steps _DAT_8007B792 unconditionally while the SM is idle, so a real
+        -- report has the yaw still moving. A park with a frozen yaw is some
+        -- other stall (an animation playing out, a cut camera), not the
+        -- reported bug - live-observed on a boss cast parked at 0x70 with the
+        -- yaw pinned at one value the whole time.
+        local yaw = u16(CAM_YAW)
         if ctx7 ~= last_ctx7 then
             if last_ctx7 >= 0 and ctx7_since > (band_max_dwell[last_ctx7] or -1) then
                 band_max_dwell[last_ctx7] = ctx7_since
             end
             last_ctx7, ctx7_since = ctx7, 0
+            park_yaw_moves, park_yaw_last = 0, yaw
             band_seen[ctx7] = (band_seen[ctx7] or 0) + 1
         else
+            if yaw ~= park_yaw_last then
+                park_yaw_moves = park_yaw_moves + 1
+                park_yaw_last = yaw
+            end
             ctx7_since = ctx7_since + 1
             if ctx7_since > (band_max_dwell[ctx7] or -1) then
                 band_max_dwell[ctx7] = ctx7_since
