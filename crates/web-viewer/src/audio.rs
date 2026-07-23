@@ -178,11 +178,14 @@ pub fn sound_test_entries(disc: &[u8], entries: &[EntryMeta]) -> Vec<SoundTestEn
         .collect();
 
     let mut out = Vec::new();
-    for index in 0..ml::MUSIC_BANK_SLOTS {
+    for index in 0..ml::MUSIC_TRACK_COUNT {
         let Some(t) = ml::track_for_sound_test_index(index) else {
-            continue; // the spare 82nd slot carries no sound-test row
+            continue;
         };
-        let prot_index = ml::MUSIC_BANK_EXTRACTION_BASE + index;
+        // The bank is piecewise (a 2-entry gap at index 68); this honors it.
+        let Some(prot_index) = ml::prot_entry_for_sound_test_index(index) else {
+            continue;
+        };
         let pair = pairs.get(&prot_index);
         out.push(SoundTestEntry {
             index: t.index,

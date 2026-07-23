@@ -309,24 +309,22 @@ exactly three PROT loads, all sound:
 | raw | extraction | role |
 |---|---|---|
 | `0x4D1` | **1231** | the dance's SFX sample bank (`VABp`) |
-| `0x41A` | **1048** | BGM (`music_01` slot 58) |
-| `0x420` | **1054** | the alternate BGM (`music_01` slot 64; a branch on `DAT_801D514C` picks the song) |
+| `0x41A` | **1048** | BGM (`music_01` #60 `M116` "Sol disco final 1") |
+| `0x420` | **1054** | the alternate BGM (`music_01` #66 `M120` "Sol disco final 2"; a branch on `DAT_801D514C` picks the song) |
 
-Both BGM entries are genuine `music_01` slots (the raw-loader `-2` skew is the
-same one that resolves the Baka Fighter overture correctly: raw `0x415` = slot
-53). By the sound-test join their slots (58 / 64) label as `M114` / `M119`,
-whose debug working titles ("ordinary town 2" / "opening character act 2")
-read oddly for a disco - but that join is confirmed contiguous through the
-`pochi` slots, and the disc bytes settle it: **both entries are short ~33-beat
-loops** (extraction 1048 = 291 notes over 15 840 ticks, 1054 = 266 over
-15 860; both at 480 ppqn ≈ one 32-beat step-chart cycle), unlike the
-full-length Sol-disco tracks in the same bank (`M115` slot 59 = 2987 notes /
-281 beats, `M116` slot 60 = 733 / 121). So these two are purpose-built dance
-loops sized to the chart, whatever their sound-test working title - the
-overlay loads exactly them, and the engine/site play exactly them. The
-Sol-disco *floor* tracks (`M112`/`M115`/`M116`/`M120`) are the host casino
-scene's op-`0x35` BGM around the minigame, not overlay loads; the site's dance
-page offers all of them as a jukebox on top of these two.
+Both BGM entries are genuine `music_01` Sol-disco finals - the natural fit for
+the Sol dance floor. The bank map is **piecewise** (extraction = `988 + index`
+for sound-test index `<= 67`), which is what places these at #60/#66; an
+earlier reading based the whole bank at extraction 990 and so mis-labelled
+them as slots 58/64 (`M114` "ordinary town 2" / `M119` "opening character act
+2"), titles that read oddly for a disco - that was the +2 base skew, now
+corrected (see [`../reference/music-tracks.md`](../reference/music-tracks.md)).
+The disc bytes fit: **both entries are short ~33-beat loops** (extraction 1048
+= 291 notes over 15 840 ticks, 1054 = 266 over 15 860; both at 480 ppqn ≈ one
+32-beat step-chart cycle) sized to the step chart. The full Sol-disco *floor*
+set (`M112`/`M115`/`M116`/`M120`) is also the host casino scene's op-`0x35`
+BGM around the minigame; the site's dance page offers them as a jukebox on top
+of these two.
 
 The art it draws with is nevertheless dance-specific: the mode-24 entry path
 stages **extraction PROT 1230** (`other7`, a `prot::timpack` of **31 TIMs** -

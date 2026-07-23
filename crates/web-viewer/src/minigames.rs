@@ -1820,10 +1820,10 @@ impl LegaiaMinigames {
         legaia_engine_audio::SPU_INTERNAL_RATE
     }
 
-    /// Resolve a global-pool BGM id (`>= 2000`) to its `music_01` entry bytes.
+    /// Resolve a global-pool BGM id (`>= 2000`) to its `music_01` entry bytes,
+    /// through the piecewise bank map (the bank is not a single linear run).
     fn music01_entry_for_bgm(&self, bgm_id: u16) -> Option<&[u8]> {
-        let slot = legaia_engine_core::music_labels::sound_test_index_for_bgm_id(bgm_id)?;
-        let entry = legaia_engine_core::music_labels::MUSIC_BANK_EXTRACTION_BASE + slot;
+        let entry = legaia_engine_core::music_labels::prot_entry_for_bgm_id(bgm_id)?;
         entry_bytes(&self.prot, &self.entries, entry)
     }
 

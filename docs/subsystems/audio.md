@@ -97,7 +97,12 @@ See [`subsystems/script-vm.md`](script-vm.md) → "BGM lookup table" for the res
 The result is stored to `0x8007BAB8` and compared against the currently-loaded
 index at `0x8007BA9C`, so a re-select of the playing track is a no-op. Both
 laws are readable at runtime: on a running retail image `0x8007BC64` holds
-`990`, which is `MUSIC_BANK_EXTRACTION_BASE` in the extraction frame.
+`990` - the **raw** in-RAM TOC pool base. Extraction-frame indices run two
+below raw (the +2 filename skew, see [`../formats/cdname.md`](../formats/cdname.md)),
+so the bank's low range sits at extraction `988`; the engine maps a sound-test
+index to its extraction entry through the piecewise
+`legaia_engine_core::music_labels::prot_entry_for_bgm_id` (a 2-entry gap at
+extraction `1056`/`1057` splits it, see [`../reference/music-tracks.md`](../reference/music-tracks.md)).
 
 ### Which track a scene plays
 
@@ -137,9 +142,9 @@ cross-fade; BGM transitions no longer use it.
 
 ### Global-pool BGM: the `music_01` bank
 
-Every real music track on the disc lives in the **`music_01` bank** (extraction PROT `990..=1071`), not in scene-local slots - scenes carry no SEQ of their own (see [`reference/music-tracks.md`](../reference/music-tracks.md) for the sound-test join). A global-pool id (`>= 2000`) is `2000 + slot`, and each bank entry is one self-contained `[VAB][SEQ]` pair (a chunk-header, a `pBAV` VAB body, then a `pQES` score). Playing one means uploading **that entry's own VAB** into SPU RAM and driving the sequencer against it, rather than the scene VAB the field path stages.
+Every real music track on the disc lives in the **`music_01` bank**, not in scene-local slots - scenes carry no SEQ of their own (see [`reference/music-tracks.md`](../reference/music-tracks.md) for the sound-test join). A global-pool id (`>= 2000`) is `2000 + slot`, and each bank entry is one self-contained `[VAB][SEQ]` pair (a chunk-header, a `pBAV` VAB body, then a `pQES` score). The bank is **piecewise** in extraction space (`988 + i` for index `i <= 67`, `990 + i` for `i >= 68`, a 2-entry gap at `1056`/`1057`); `music_labels::prot_entry_for_bgm_id` owns that map. Playing one means uploading **that entry's own VAB** into SPU RAM and driving the sequencer against it, rather than the scene VAB the field path stages.
 
-The site's minigame pages take exactly this path per game (`crates/web-viewer/src/minigames.rs`): `render_music01_bgm` / `render_music01_loop` split the pair, `VabBank::upload` the VAB, and render through the clean-room `Spu` + `Sequencer` - the same components the live `AudioBgmDirector` uses. Minigame BGM sources are disc-pinned constants: the Baka Fighter overlay init loads `music_01` slot 53 (boss overture, extraction 1043); the dance overlay loads slots 58/64 (extraction 1048/1054, mode-selected - short chart-sized loops, see [`minigame-dance.md`](minigame-dance.md)); the slot machine and fishing/Muscle Dome start **no** track and inherit their host scene's op-`0x35` BGM. The `music01_bgm_render` WASM surface renders any bank slot for the dance's Sol-disco jukebox.
+The site's minigame pages take exactly this path per game (`crates/web-viewer/src/minigames.rs`): `render_music01_bgm` / `render_music01_loop` split the pair, `VabBank::upload` the VAB, and render through the clean-room `Spu` + `Sequencer` - the same components the live `AudioBgmDirector` uses. Minigame BGM sources are disc-pinned extraction constants (base-independent): the Baka Fighter init loads extraction 1043 (#55 `M112` "Sol disco fever"); the dance overlay loads extraction 1048/1054 (#60/#66, the Sol disco finals, mode-selected, see [`minigame-dance.md`](minigame-dance.md)); the slot machine and fishing/Muscle Dome start **no** track and inherit their host scene's op-`0x35` BGM. The `music01_bgm_render` WASM surface renders any bank slot for the dance's Sol-disco jukebox.
 
 ## SsAPI sequencer (`0x80061-0x80067` cluster)
 

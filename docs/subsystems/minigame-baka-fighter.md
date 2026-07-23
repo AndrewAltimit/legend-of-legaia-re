@@ -496,7 +496,10 @@ bank the **battle scene loader** `FUN_800520F0` loads (also class 2, swapping to
 raw `0x36D` when `DAT_8007BD11 == 4`), so it is the shared battle/minigame SFX
 bank rather than a Baka-private one. All four cue descriptors resolve in it
 (they use programs `0` and `3`). The minigame's **BGM** is **extraction PROT
-1043** (`music_01`), loaded by `FUN_8001FC00(0x415, ...)` + `FUN_8001E54C(5, ...)`.
+1043** (`music_01` sound-test #55 `M112` "Sol disco fever" - a Sol track for a
+Sol minigame), loaded by `FUN_8001FC00(0x415, ...)` + `FUN_8001E54C(5, ...)`
+(raw loader index `0x415`; the bank map is piecewise, so extraction 1043 =
+sound-test index 55, see [`../reference/music-tracks.md`](../reference/music-tracks.md)).
 **Confirmed.**
 
 ### Site presentation
