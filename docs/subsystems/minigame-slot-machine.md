@@ -747,7 +747,8 @@ Decode it with `SfxCueBank::decode_tone` (constants
 
 The slot machine starts **no BGM** - it inherits the host scene's: the casino
 floor `0543_koin1` starts BGM id `2018` via field-VM op `0x35` = `music_01`
-bank slot 18 ("Sol casino", extraction 1008,
+sound-test slot 18 ("Sol casino", extraction 1006 - the bank map is piecewise,
+so a slot in this range is extraction `988 + slot`, not `990 + slot`;
 `legaia_asset::slot_payout::SLOT_HOST_BGM_PROT_INDEX`). Parser
 [`legaia_asset::minigame_sfx`].
 

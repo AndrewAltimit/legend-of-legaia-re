@@ -153,7 +153,9 @@ pub struct SoundTestEntry {
     pub relocalization: Option<String>,
     /// The source flags this row as a guess / dev placeholder.
     pub uncertain: bool,
-    /// The bank's extraction-space PROT entry for this slot (990 + index).
+    /// The bank's extraction-space PROT entry for this slot, resolved through
+    /// the piecewise bank map (`988 + index` below the gap, `990 + index`
+    /// above it) - never by re-deriving a single base.
     pub prot_index: u32,
     /// True when a playable VAB+SEQ pair actually exists at `prot_index` on
     /// this disc. The four pochi-filled dev slots (and any pack that never

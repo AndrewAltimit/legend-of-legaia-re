@@ -34,9 +34,12 @@ pub const SLOT_OVERLAY_PROT_INDEX: usize = 975;
 /// Extraction PROT entry of the BGM heard at the machine. The slot overlay
 /// starts **no** track of its own - it inherits the host scene's - and the
 /// casino floor (scene `0543_koin1`) starts BGM id `2018` via field-VM op
-/// `0x35` = `music_01` bank slot 18 ("Sol casino") = extraction `990 + 18`.
-/// See `docs/subsystems/minigame-slot-machine.md` + `docs/reference/music-tracks.md`.
-pub const SLOT_HOST_BGM_PROT_INDEX: usize = 1008;
+/// `0x35` = `music_01` sound-test slot 18 ("Sol casino"). The bank map is
+/// piecewise, so slot 18 is extraction `988 + 18`, not `990 + 18`; resolve a
+/// slot through `legaia_engine_core::music_labels::prot_entry_for_sound_test_index`
+/// rather than re-deriving a base. See `docs/subsystems/minigame-slot-machine.md`
+/// + `docs/reference/music-tracks.md`.
+pub const SLOT_HOST_BGM_PROT_INDEX: usize = 1006;
 
 /// Load base of the slot-machine overlay (the shared slot-A minigame base).
 pub const SLOT_OVERLAY_BASE_VA: u32 = 0x801C_E818;
