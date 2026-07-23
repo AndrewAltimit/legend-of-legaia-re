@@ -115,6 +115,11 @@ Statically-linked PsyQ glue. Trivial to stub in a clean-room port.
 | `80060A04` | `BREAK 0x105` - debug trap. |
 | `800608E0` / `8006xxxx` | libapi `fopen` / `fseek` / `fread` / `fclose` cluster. |
 | `8005FD88` | libapi device-vtable trampoline (slot `+0xC` of `PTR_PTR_8007A860`). |
+| `8005FE18` / `8005FE7C` / `8005FEAC` | libapi device-vtable trampolines - call slot `+0x14` (`(4, a0)`) / `+0x10` / `+0x18` of `*0x800857A0`; siblings of the `+0xC` trampoline `FUN_8005FD88`. |
+| `80056638` / `80056668` / `80056778` / `80056618` | More `li t2,vec; jr t2; li t1,routine` BIOS-vector thunks with identified targets: `80056638` = `OpenEvent` (B0 0x08), `80056668` = `EnableEvent` (B0 0x0C), `80056778` = `bzero` (A0 0x28), `80056618` = A0 0x70. The audio-init `FUN_8001D230` opens then enables its 8 SPU/DMA events through the first two. |
+| `8005F994` | `memcpy` (word-granular) - copies `a2` words `a1` -> `a0`. |
+| `8005F9C8` | Raw DMA-channel start - spins for the channel idle, enables it in DPCR, programs MADR/BCR/CHCR at `0x1F801080 + chan*0x10` and the DICR bit; the low-level transfer kick under libgpu/libspu. `see ghidra/scripts/funcs/8005f9c8.txt`. |
+| `8002035C` | Kernel-event teardown + SPU re-init - closes the 8 event handles at `gp+0x6D8..0x6F8` (via the `CloseEvent`-class thunk `FUN_80056648`) inside a critical section, then re-runs the SPU voice-state init `FUN_8006EF18`. Inverse of the audio-event setup `FUN_8001D230`. `see ghidra/scripts/funcs/8002035c.txt`. |
 
 ### libgte primitives
 
@@ -165,6 +170,9 @@ gap sweeps stop re-flagging them; all are dumped under `ghidra/scripts/funcs/<ad
 | `8005C2C4` | `CdDiskReady` - wraps `FUN_8005D9A0`, returns `rc == 0`. |
 | `8005A78C` | Pad / SIO init - touches `_DAT_80078E28/E34/E44` (SIO MMIO), wraps with `FUN_8005FF04` (IRQ disable), clears 256 B at `0x801C948C` and 6 KB at `0x801C9590` (pad RX/TX buffers). |
 | `8005ABD0` | Pad-protocol-phase handshake - bitfield writes `0xE1001000 / 0x20000504 / 0x10000007` on `_DAT_80078E24/E28`. SIO digital-pad protocol selector, returns state code 0..4. |
+| `8005BC28` | libcd init / reset with 4-retry - probes via `FUN_8005BD80(1)`, on success programs the CD command records at `0x8006BCB8/BCE0/BD08` (`FUN_8005BECC/BEE4/EB50`); after 4 failures prints a diagnostic and returns 0. `see ghidra/scripts/funcs/8005bc28.txt`. |
+| `8005BD80` | CD state-probe dispatcher - `(mode)`: mode 2 -> `FUN_8005D5F8`, else `FUN_8005D648` (and mode 1 also `FUN_8005D504`); returns a readiness bool. Called by the init/reset `FUN_8005BC28`. `see ghidra/scripts/funcs/8005bd80.txt`. |
+| `8005D424` | Low-level CDROM controller poke (thunked through `FUN_8005BDEC`) - writes index/command bytes to the CD MMIO register pointers `_DAT_80079670/9678/967C/9680`, spins on status bit `0x7`, commits `0x1325`. `see ghidra/scripts/funcs/8005d424.txt`. |
 
 ## CD / file-system (libcd-style)
 
@@ -178,6 +186,11 @@ Used by the sound subsystem's dev branch and elsewhere when retail-async CD read
 | `8005E4D4` | High-level open-then-read helper: `(buf, dir_entry, size)` → `bool`. Calls `FUN_8005C328` to build the CdlLOC, `FUN_8005BEFC(2,…)` to issue `CdlSetloc`, `FUN_8005E9A4` to set sector size `0x80` (2048 vs 2336). |
 | `8005E574` | CD sector-reader state machine - handles block reads, timeout, completion callback at `_DAT_800796C0`. |
 | `8005C42C` | BCD-MSF → LBA: `((m*60 + s)*75 + f) - 150`. |
+| `8005ED64` | CD set-read-location - converts the stored MSF at `0x801DD210` to LBA (`FUN_8005C42C`) and builds the CdlLOC via `FUN_8005C328`; returns -1 when the drive is busy (`0x801DD208 != 0`). `see ghidra/scripts/funcs/8005ed64.txt`. |
+| `8005DE80` | 12-byte filename equality test - `strncmp(a, b, 12) == 0` (BIOS A0 0x18 via `FUN_80056748`); the directory-lookup name match. `see ghidra/scripts/funcs/8005de80.txt`. |
+| `8005EC1C` | libcd FS state reset - zeroes the file-system state globals at `0x801DAD..` and clears the entry table via `FUN_8005EF04(0)`. `see ghidra/scripts/funcs/8005ec1c.txt`. |
+| `8005EC7C` | libcd stop / teardown - critical-section-guarded `FUN_8005C2E4(0)` + `FUN_8005BEE4(0)`, then clears the CD busy flags at `_DAT_80079700` / `_DAT_800796F4`. `see ghidra/scripts/funcs/8005ec7c.txt`. |
+| `8005EF04` | FS entry-table clear - zeroes the `+0x0` word of `a1` records (0x20-byte stride) starting at index `a0` in the libcd FS entry table `*0x801DADD8`. `see ghidra/scripts/funcs/8005ef04.txt`. |
 
 ## Helpers
 
@@ -215,6 +228,9 @@ Used by the sound subsystem's dev branch and elsewhere when retail-async CD read
 | `8002B790` | **Linked-list maximum.** `() -> max`. Walks the sentinel-terminated list whose head is `*(gp+0x840)` (node `+0x0` = next, terminator = `head+0xC`) and returns the maximum `node[+0x8]` value across the nodes (`0` for an empty list). `see ghidra/scripts/funcs/8002b790.txt`. |
 | `8003E9C0` | **Named-resource open helper.** `(name, ...)`. Copies the name string (`FUN_80056758`) into a scratch record, resolves it via `FUN_800608F0` (returns `-1` on miss, bumping the fail counter `_DAT_8007B86E` and re-copying the name for the diagnostic), and proceeds with the resolved handle on success. `see ghidra/scripts/funcs/8003e9c0.txt`. |
 | `8003053C` | **Spell-record dispatch keyed on spell id.** `(spell_id)`. Indexes the SCUS spell-stats table `DAT_800754C8` (12-byte stride; [`formats/spell-table.md`](../formats/spell-table.md)) and branches on the record's flag byte `+0x2` bit `0x20`: set → `FUN_8003FB10(record[0], record[1], 0)`; clear → iterates the live party/state block at `0x80084140 + 0x454`. `see ghidra/scripts/funcs/8003053c.txt`. |
+| `80019098` | List-file loader + parser - opens a named text file via the SCUS path-opener `FUN_8003E6BC` into a 2 KB buffer, splits it on `0x0D` newlines (terminator `0xFF`), and copies each name into a 16-byte-stride table it allocates and returns. `see ghidra/scripts/funcs/80019098.txt`. |
+| `8001C93C` | Debug watch-list renderer - `(count, records)`. Draws `count` 0x28-byte watch records via the dev monospaced writers `FUN_8001AA68` / `FUN_8001ABC8`, dispatching on the record type `+0x0` (string / indexed name / signed number with auto digit count). `see ghidra/scripts/funcs/8001c93c.txt`. |
+| `8003CB54` | Append a 2-byte control code to a MES/dialog string - walks to the terminator (skipping `0xC0`-family two-byte escapes) and writes `[a1][a2][0x00]`; sibling of the glyph-stride walker `FUN_8003CA38`. `see ghidra/scripts/funcs/8003cb54.txt`. |
 
 ## Input + debug subsystem
 
@@ -612,6 +628,7 @@ SCUS-side leaves the field free-movement controller `FUN_801D01B0` and the cutsc
 | `8001E890` | "DATA_FIELD player loader" - loads `data\field\player.lzs` via the disc index `0x36C` r... - [details ↓](#8001e890) |
 | `8003E8A8` | PROT-by-index size lookup. Reads `start_lba = PROT_TOC[p+2]` and `next_lba = PROT_TOC[p+3]` (TOC base `0x801C70F0`; see [`prot.md`](../formats/prot.md)) and returns `next_lba - start_lba` (LBA count for the entry). Also stows `start_lba` at `gp[+0x8F0]` and the entry index at `gp[+0x90C]` so the matching `FUN_8003E800` read can pick them up. |
 | `8003E800` | Issues the actual sector read scheduled by `FUN_8003E8A8`. `param_1` = destination buffer, `param_2` = LBA count, `param_3` = flag bits (`& 1` enables the libcd request via `FUN_8003F128`; `& 2` blocks on completion). The pair `FUN_8003E8A8` + `FUN_8003E800` is wrapped by `FUN_8003EB98(prot_idx, dst, 1)` for one-shot PROT-by-index loads. |
+| `8001ED60` | Load + checksum PROT entry `0x36C` (party field data). Allocates a 256 KB buffer, then dev-path (`FUN_8003E6BC` named-file open) or retail-path (`FUN_8003E8A8`/`FUN_8003E800` async PROT read) loads the entry and word-sums it into the checksum cells `gp+0x6B8` / `gp+0x690`; sizes rounded up to a word land at `gp+0x6C8` / `gp+0x69C`. (Ghidra aliases this entry as `8001ED9C`, an interior branch delay slot.) `see ghidra/scripts/funcs/8001ed9c.txt`. |
 
 ## Audio
 
@@ -672,6 +689,37 @@ SCUS-side leaves the field free-movement controller `FUN_801D01B0` and the cutsc
 | `8006B1B4` | `SpuSetReverbModePa-am` - 30-attr reverb commit, writes regs `0x1C0..0x1FE`. |
 | `8006BCB4` | `SpuSetCommonAt-r` - master vol L/R + reverb regs + SPUCNT bits. |
 | `8006C6E4` | `_SsKey2Pitch` - `((key1*0x80+fine1) - (key2*0x80+fine2)) / 0x600` expon-ntial build. Returns 14-bit SPU PITCH. |
+| `80026234` | SsAPI SEQ message-handler table install - writes 18 SEQ event-handler pointers (the `0x8006xxxx` status-byte handler cluster) into the dispatch table at `0x801D2220`. `see ghidra/scripts/funcs/80026234.txt`. |
+| `8002666C` | Audio subsystem one-shot init (gated on `gp+0x818`) - master volume (`FUN_80062AA0`), SPU voice attrs (`FUN_800654D8` / `FUN_800655AC`), CD/reverb attrs (`FUN_80062A0C`), and the SEQ handler-table install `FUN_80026234`. `see ghidra/scripts/funcs/8002666c.txt`. |
+| `8001D230` | Audio IRQ/event setup - opens then enables 8 SPU/DMA interrupt events (`0xF4000001` / `0xF0000011` classes; handles at `gp+0x6D8..0x6F8`) via the BIOS `OpenEvent`/`EnableEvent` thunks, after the SPU init steps `FUN_8006EE8C` / `FUN_8006EEE0`. Torn down by `FUN_8002035C`. `see ghidra/scripts/funcs/8001d230.txt`. |
+| `80062AF0` (+ `80062D58` = start thunk) | SsAPI tick-timer install/start - selects a root-counter rate from the mode global `DAT_8007A908` (0/2/3/5, else a computed target `0x204CC0` or `0x409980 / rate`), programs the RCnt via `FUN_80062E28`, and installs the VSync/RCnt callback `FUN_8005FDB8`; the sequencer clock source. `see ghidra/scripts/funcs/80062af0.txt`. |
+| `80062164` | SsAPI tick-timer stop - critical-section-guarded teardown of the RCnt callback that `FUN_80062AF0` installs. `see ghidra/scripts/funcs/80062164.txt`. |
+| `80062E28` | Root-counter target program - `(counter 0..2, target, flags)`. Writes the RCnt target into the 0x10-stride table at `DAT_8007A924[counter]` and builds the RCnt mode word (`0x48` / `0x49` / `0x248` plus IRQ/repeat bits `0x10` / `0x100` from the flags). `see ghidra/scripts/funcs/80062e28.txt`. |
+| `80062F60` | Root-counter target clear - zeroes `DAT_8007A924[counter]` for counter 0..2. `see ghidra/scripts/funcs/80062f60.txt`. |
+| `80062D98` / `80062DD8` | RCnt callback trampolines - `_D98` invokes the two installed timer callbacks (`DAT_8007A914` then `PTR_FUN_8007A910`); `_DD8` is a one-shot reentry-guarded (`DAT_8007A91C`) invoke of `PTR_FUN_8007A910`. `see ghidra/scripts/funcs/80062d98.txt`. |
+| `80064698` | SsAPI tick-period selector - resolves the sequencer tick count (`50` / `60` / `120` / `240`, stored at `0x801CD2BC`) from a mode via the jump table at `0x80015D94`. `see ghidra/scripts/funcs/80064698.txt`. |
+| `8006AAE0` (+ `8006558C` off / `800655AC` on) | `SpuSetReverb` - toggles the SPU reverb-enable bit `0x80` in SPUCNT (`+0x1AA` of the SPU state block); `(0)` off, `(1)` on. `see ghidra/scripts/funcs/8006aae0.txt`. |
+| `800654D8` | SPU reverb-type/depth setter - clamps the signed type to `|t|<10` (the ten reverb modes), records it at `0x801CE250`, disables reverb (`FUN_8006AAE0(0)`) for type 0, and commits via `FUN_8006ACBC`. `see ghidra/scripts/funcs/800654d8.txt`. |
+| `8006688C` | SEQ voice match-and-release - scans the active-voice table (0x2D-byte stride, count `0x801D1CBC`) for a record matching the 4-field key `(a0,a1,a2,a3)` with tag `0xFF` and releases it via `FUN_80067428`. `see ghidra/scripts/funcs/8006688c.txt`. |
+| `80067428` | SEQ voice-slot release - clears the note record (0x2D-byte stride) for voice `a0` and issues the SPU key-off `FUN_8006A7A4`. `see ghidra/scripts/funcs/80067428.txt`. |
+| `80067C1C` | SEQ note-on dispatch - applies the program (`FUN_80068B98`) then triggers the note on each active voice via `FUN_80067A1C`, returning the count started. `see ghidra/scripts/funcs/80067c1c.txt`. |
+| `80067D0C` | SEQ per-program attribute set - selects the program (`FUN_80068B98`), then writes `a2` into `+0x1` of the ProgAtr record `*0x801D...[prog*0x10]`; returns it. `see ghidra/scripts/funcs/80067d0c.txt`. |
+| `80068568` | Active-note enumerator - walks the sounding-voice table, filters by the per-program key range (`+6..+7` of `*0x801D...[prog*0x20]`), and appends `(note, voice)` pairs to the caller's two buffers; returns the count. `see ghidra/scripts/funcs/80068568.txt`. |
+| `800694D0` | SPU DMA-IRQ event setup (one-shot, `gp+0x50C4`-gated) - `FUN_8006A0E0` config, then opens+enables the SPU interrupt event (`0xF0000009`) via the BIOS thunks, latching the handle at `0x8008FAD4`. `see ghidra/scripts/funcs/800694d0.txt`. |
+| `8006A0E0` | SPU DMA-callback register - `DMACallback(4, handler)` via `FUN_8005FDE8`. `see ghidra/scripts/funcs/8006a0e0.txt`. |
+| `8006A104` | SPU DMA channel program - stages the DMA4 transfer descriptor (`madr = 0x40001010`, block control from a shift) when `mode > 0`; part of the SPU transfer engine. `see ghidra/scripts/funcs/8006a104.txt`. |
+| `8006D358` | SPU DMA transfer kick - programs the SPU transfer-control registers (mode `0x1003` / `0x3003`, SPUCNT via `FUN_8006ED34`) and starts the block transfer to SPU RAM. `see ghidra/scripts/funcs/8006d358.txt`. |
+| `8006D470` | SPU transfer state-machine pump - calls the current state handler from the 5-entry table at `0x8008B2E8`, advances/wraps the state index, and fires an error callback on a negative return. `see ghidra/scripts/funcs/8006d470.txt`. |
+| `8006D768` | SPU transfer-ready spin - polls SPU status (`+0x4`) bit `0x2`. `see ghidra/scripts/funcs/8006d768.txt`. |
+| `8006D794` | BIOS C0-vector 0x02 thunk (`li t2,0xC0; jr t2; li t1,0x2`); sibling of the C0 0x03 thunk `FUN_8006D7A4`. |
+| `8006ED34` | SPU-transfer timeout latch - stores the pending SPU command `a0` and the current Timer2 value (`0x1F801120`) for the DMA-completion timeout check. `see ghidra/scripts/funcs/8006ed34.txt`. |
+| `8006E8D4` | SEQ-stream callback install - stores the per-track tick handler `FUN_8006E8F8` and the ready/done probe `FUN_8006ECFC` into the transfer vtable at `0x801D1A5C` / `0x801D1A74`. `see ghidra/scripts/funcs/8006e8d4.txt`. |
+| `8006E8F8` | SEQ streamed-track tick driver - dispatches on the track phase `+0x46` (`FUN_8006E06C` start/stop, the record's `+0x14` handler, or the block-advance `FUN_8006D7D0`). `see ghidra/scripts/funcs/8006e8f8.txt`. |
+| `8006ECFC` | SEQ streamed-track done-probe - returns 1 when the track is idle (`+0xE6 == 0`) or finished (`+0x46 == 0xFF`). `see ghidra/scripts/funcs/8006ecfc.txt`. |
+| `8006E06C` / `8006E08C` / `8006E0C0` / `8006E0E0` / `8006E100` | SEQ transfer state setters - each stamps a target SPU-command byte into track `+0x36` (`_06C`=0x43, `_08C`=0x45, `_0C0`=0x46, `_0E0`=0x47, `_100`=0x4B) and arms/clears the inline arg at `+0x24`. `see ghidra/scripts/funcs/8006e06c.txt`. |
+| `8006D854` / `8006D7D0` / `8006D9A0` / `8006D9D8` | Streamed-audio block iterator family - `_854` is the phase machine on record `+0x46` that parses the streamed-resource header and walks its blocks; `_7D0` sub-dispatches on the phase; `_9A0` computes the current block size/offset; `_9D8` arms a block-transfer descriptor. `see ghidra/scripts/funcs/8006d854.txt`. |
+| `8006EE8C` / `8006EEE0` | SPU init/teardown steps - critical-section-guarded BIOS B-vector calls (`FUN_8006EF48` = B0 0x4A, `FUN_8006EF58` = B0 0x4B, plus `FUN_8006EFD0` / `FUN_8006F088`) around `FUN_8005FD68(0)`. `see ghidra/scripts/funcs/8006ee8c.txt`. |
+| `8006EFD0` | SPU voice-state install - BIOS B0-vector 0x56, then copies a 5-dword template (`0x8006EF78`) into the returned block `+0x28` and `FlushCache`; sibling of the `FUN_8006EF18` init trio. `see ghidra/scripts/funcs/8006efd0.txt`. |
 | `_DAT_801CE564` / `_DAT_801CE574` (data) | Legaia-installed seq-context vfn pointers - `_564` resolves the active script-VM seq context, `_574` is a worker-availability check. Used by `FUN_8006CA7C / CB3C / CDB0 / CE30 / DDC8`. |
 
 ## Renderer / GPU primitives
@@ -718,6 +766,11 @@ SCUS-side leaves the field free-movement controller `FUN_801D01B0` and the cutsc
 | `8001B73C` | **GTE on-screen visibility test.** `(actor)`. Builds the four corners of the actor's screen box from `actor[+0x14/+0x16/+0x18]` scaled by `actor[+0x58]`, RTPTs them (`cop2 0x280030`), reads back the SXY FIFO, and returns `1` as soon as **any** projected corner lands inside the `320×240` screen bounds (`x < 0x140`, `0 <= y <= 0xF0`), else `0`. A GTE culling / off-screen probe (no packet emit); unported. `see ghidra/scripts/funcs/8001b73c.txt`. |
 | `80029DD8` | **GTE 3D primitive emitter** (499 instrs, 39 `cop2` ops + OT writes) - a sibling of the two TMD renderers `FUN_8002735C` / `FUN_80029888` in the SCUS render band that projects and ordering-table-links geometry through the GTE. Render-track; unported (the engine rasterises via wgpu). `see ghidra/scripts/funcs/80029dd8.txt`. |
 | `8001763C` | **Draw-environment pair refresh.** Indexes the `0x74`-stride draw-env pair at `0x80083F30` by the current buffer index `gp+0x434` and issues the libgpu draw-env op `FUN_800589D0`; when `a0 == 2` it first stamps the background RGB (`0xFF` into `+0x19/+0x1a/+0x1b` of both env buffers). Uses the same `gp+0x434`-at-stride-`0x74` env-pair indexing the frame-begin driver's dither re-stamp rides (see [`subsystems/renderer.md`](../subsystems/renderer.md#retails-dither-law-stated-separately-from-the-ports-default)). `see ghidra/scripts/funcs/8001763c.txt`. |
+| `8001A374` | Fixed-cell ASCII glyph sprite emitter - `(x, y, char)`. Maps the character code to a font-atlas UV cell (digits / upper / lower / a set of punctuation), builds a textured-sprite GP0 packet at the OT cursor `0x1F800314 + 0x8C` (tpage from `gp+0x660`), and links it via `FUN_8003D2C4`; the dev/HUD monospaced glyph draw. `see ghidra/scripts/funcs/8001a374.txt`. |
+| `8001CD68` | Textured-quad (POLY_FT4) emitter - `(x, w, y, h, u, v, clut, tpage, semi)`. Builds a 0x28-byte GP0 `0x2C`/`0x2E` packet (four corners, explicit UV/CLUT/tpage, colour `0x808080`) at the OT cursor and links via `FUN_8003D2C4`. `see ghidra/scripts/funcs/8001cd68.txt`. |
+| `8003479C` | Screen wipe / curtain emitter - `(progress 0..0xF2)`. Draws top+bottom fill bars (`FUN_8003C510`) whose extent tracks progress, a gradient pair (`FUN_8003C43C`) below `0x81`, and a full-screen fill at `>= 0xF2`; links via `FUN_8003D2C4`. `see ghidra/scripts/funcs/8003479c.txt`. |
+| `800597C8` | Display-mode-aware Y coordinate convert - reads the display-mode/interlace flags (`_DAT_80078D54` / `_DAT_80078D57`) and maps a rect's Y (`0x400 - y`, halved, or identity) for the OT coordinate packers. `see ghidra/scripts/funcs/800597c8.txt`. |
+| `80046870` | Brightness/fade ramp-up - increments `gp+0x2E8` by `0x40` and clamps at `0x100`. `see ghidra/scripts/funcs/80046870.txt`. |
 
 ## ANM animation container
 
@@ -772,6 +825,7 @@ The "records" page (battles fought, escapes, play time, per-character maximums) 
 | `800431FC` | Knows-spell predicate: `(char_idx, spell_id) -> bool`. Scans the same `+0x13D` spell list (count at `+0x13C`) for `spell_id`. `see ghidra/scripts/funcs/800431fc.txt`. |
 | `80043264` | Accessory-equipped predicate: `(char_idx, item_id) -> bool`. Scans the character's equip-id bytes `+0x19B..0x19D` (slots 5..7 of the `+0x196..0x19D` block - the Goods slots) for `item_id`. `see ghidra/scripts/funcs/80043264.txt`. |
 | `800430AC` | Party-wide accessory unequip-by-id: `(item_id) -> 0 \| 0x100`. For each active party member (`DAT_80084594` count, member ids at `0x80084598+`), scans the record's Goods slots `+0x19B..0x19D`; on the first match zeroes the slot and returns `0`, else `0x100`. Ghidra's auto-analysis leaves this body undisassembled (the `800430ac` function record is degenerate until re-created); the dump is force-created. Port: `engine-core::equipment::party_unequip_accessory_by_id`. `see ghidra/scripts/funcs/800430ac.txt`. |
+| `800302E4` | Equipment/item stat-field accessor - `(_, id, field 0..3)`. Decodes the id-space tag in the id's high nibble (`0x1000`/`0x6000`/`0x9000` resolve through an inventory slot then the item-name table `PTR_DAT_8007436C`; `0x7000` is a direct equipment id), and returns the field `a2` selects from the equipment stat table `DAT_80074F68` (8-byte stride; [`formats/equipment-table.md`](../formats/equipment-table.md)). `see ghidra/scripts/funcs/800302e4.txt`. |
 
 ## Shop screen panels
 
