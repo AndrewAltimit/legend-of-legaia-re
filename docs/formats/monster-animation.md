@@ -166,11 +166,34 @@ loop-hold counter (`actor +0x176`) and `+0x85`/`+0x86` bound a loop window
 (e.g. the player defeat entries hold a 2-frame loop); `+0x87` is a sound
 cue fired at install.
 
+### Vertex-blend variants (`FUN_800495C8` / `FUN_80049858`)
+
+Once the decoder has a pose, two sibling routines write it onto the object
+vertices in the per-actor draw buffer at `gp[0xA0C] + slot*4 + 0x1060`. Both
+walk the actor's TMD object list (`obj[+0xC]` primitive groups reached through
+the monster-object table `DAT_801C9370 + actor[+0x5A]*4 → +0x230`) and copy
+each primitive's 8-byte packed vertices out of the pose scratch:
+
+- `FUN_80049858` is the straight copy - two fixed passes (part indices `1`
+  then `0`) that move the interpolated vertices into place with no further
+  weighting.
+- `FUN_800495C8` is the **morph** variant: it first derives a 12-bit blend
+  factor from the actor's animation phase `actor[+0x68]` against a per-object
+  frame-range table (bytes `[1..=4]` of the entry), then, after the same
+  vertex copy, calls the blend kernel `FUN_8005B038(dst, group+3, count,
+  factor)` to lerp each vertex toward its next-frame target - sub-keyframe
+  vertex morphing on top of the rigid TRS decode.
+
+Both thread GTE-buffer pointers and gp globals, so neither is a pure function;
+the port keeps to the rigid-TRS decode already in `engine-vm/anim_vm.rs` and
+defers vertex morphing to the renderer.
+
 ## Provenance
 
 - `FUN_8004998c` - packed-stream decoder + frame interpolation (`ghidra/scripts/funcs/8004998c.txt`).
 - `FUN_80048a08` - per-actor battle draw; reads the phase, drives the decoder, applies the pose per object (`ghidra/scripts/funcs/80048a08.txt`).
-- `FUN_800495c8` / `FUN_8005b038` - GTE vertex blend of the decoded pose (`ghidra/scripts/funcs/800495c8.txt`, `8005b038.txt`).
+- `FUN_800495c8` / `FUN_8005b038` - GTE vertex morph-blend of the decoded pose (`ghidra/scripts/funcs/800495c8.txt`, `8005b038.txt`).
+- `FUN_80049858` - the non-morph sibling: straight two-pass vertex copy of the decoded pose (`ghidra/scripts/funcs/80049858.txt`).
 - `FUN_80054cb0` - monster init; copies the action/effect pointer (record `+0x04`) into actor `+0x230` and builds the `+0x1EF..+0x1F3` tag map (`ghidra/scripts/funcs/80054cb0.txt`).
 - `FUN_80047430` - per-frame anim-node tick: cursor advance, end-of-clip detect, commit dispatch (`ghidra/scripts/funcs/80047430.txt`). Its own caller is not in the dump corpus (open).
 - `FUN_8004AD80` - anim commit/transition: id → entry install, `+0x1D9` convergence, reaction chaining, dynamic party art slots (`ghidra/scripts/funcs/8004ad80.txt`).

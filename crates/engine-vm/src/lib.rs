@@ -93,6 +93,7 @@ pub mod move_buffer;
 pub mod move_vm;
 pub mod move_vm_overlay_ext;
 pub mod prim_dispatch;
+pub mod scus_battle_helpers;
 pub mod scus_core_helpers;
 pub mod status_effects;
 pub mod title_overlay;
