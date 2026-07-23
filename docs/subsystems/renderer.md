@@ -279,8 +279,8 @@ ported (the clean-room engine projects and rasterises through wgpu):
 - **`FUN_80029724`** - the vertex-attribute interpolation kernel the clip loop
   calls. Given an output slot, two vertices and a q12 fraction `a3`, it lerps
   X/Y/Z (`out = b + ((a-b)*frac >> 12)`) and, gated by the flag word `a2` (bit 0
-  colour, bit 1 UV, bit `0x800` selects the trailing endpoint), the packed RGB and
-  UV bytes. Pure integer arithmetic, but kept unported because it exists only to
+  `0x1` the UV pair at `+0x18/0x19`, bit 1 `0x2` the RGB triple at `+0x14..0x16`,
+  bit `0x800` selects the trailing endpoint), the packed RGB and UV bytes. Pure integer arithmetic, but kept unported because it exists only to
   service retail's software near-plane clip. See
   `ghidra/scripts/funcs/80029724.txt`.
 
