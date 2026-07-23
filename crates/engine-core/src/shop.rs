@@ -431,6 +431,15 @@ pub enum BuyListRoute {
 /// list; see `ghidra/scripts/funcs/overlay_menu_801db21c.txt` -
 /// `slt gold, price` + buzz at `0x801db314..0x801db328`, the kind
 /// dispatch at `0x801db334..0x801db364`)
+///
+/// NOT WIRED: two of the three routes have no screen to reach.
+/// `crate::menu_runtime` sends every confirmed buy row to `ShopQuantity`;
+/// there is no equipment recipient picker ([`BuyRecipientSession`] is
+/// itself disclosed unwired below) and no list-level refusal beat - the
+/// affordability test happens later, in `World::buy_from_shop`. The kind
+/// byte is also absent from the row: [`ShopItem`] carries `item_id` and
+/// `price` only, so the dispatch has nothing to switch on. Wiring needs
+/// the recipient picker plus the item record's `+0` kind on the shop row.
 pub fn buy_list_confirm_route(kind: u8, gold: i32, price: u16) -> BuyListRoute {
     if gold < price as i32 {
         return BuyListRoute::Refused;
@@ -918,6 +927,9 @@ pub fn shop_stock_row_ink(held: i16, marker: i16, gold: i32, price: i32) -> u8 {
 /// the number stays right-aligned in the box as the quantity climbs.
 ///
 /// PORT: FUN_801d5510 (total digit-field width, `0x801D5654..0x801D56A4`)
+///
+/// NOT WIRED: consumed only by [`shop_buy_quantity_panel`], which no host
+/// draws - see that builder's tag for the missing draw path.
 pub fn shop_total_digit_field(price: u16) -> u8 {
     let mut n: u8 = if price > 9999 { 5 } else { 4 };
     if price > 999 {
@@ -965,6 +977,14 @@ pub struct BuyQuantityPanel {
 /// count)` or `None` for retail's `0x100` "not held" sentinel.
 ///
 /// PORT: FUN_801d5510 (menu-overlay buy-quantity prompt window content renderer)
+///
+/// NOT WIRED: the hosts' shop screens have no window-descriptor draw path.
+/// `engine-shell`'s `window/hud.rs` and `web-viewer`'s `play_shop.rs` draw
+/// the shop with their own fixed layout and consume only the two ink
+/// kernels ([`shop_root_command_rows`], [`shop_stock_row_ink`]); nothing
+/// resolves a live window record's `+0xa` / `+0xc` content origin, which
+/// is the `window` argument every pen here is relative to. Wiring needs a
+/// draw path driven by `legaia_asset::menu_windows` rects.
 pub fn shop_buy_quantity_panel(
     window: (i16, i16),
     held: Option<u8>,
@@ -1007,6 +1027,16 @@ pub const PASSIVE_NONE: u8 = 0x40;
 /// PORT: FUN_801d5ae8 (`0x801D5C5C..0x801D5CC8` - the panel runs this exact
 /// chain **twice**, once for the passive's name and again for its
 /// description, rather than caching the index)
+///
+/// NOT WIRED: only [`shop_sell_detail_panel`] would consume it, and that
+/// panel has no host draw path (see its tag). The live engine path that
+/// needs the same answer - the Items screen's passive lines
+/// ([`crate::pause_screens::MenuTextTables::item_passive_lines`]) - reads
+/// `legaia_asset::accessory_passive::AccessoryPassiveTable::passive_index`
+/// instead, which owns the parsed tables. NB the two differ on the
+/// non-equipment arm: this port follows `FUN_801d5ae8` in sending **any**
+/// non-`1` kind to the item-effect table, while the asset-crate resolver
+/// (derived from `FUN_80042558`) accepts kind `2` only.
 pub fn item_passive_index(
     kind: u8,
     subtype: u8,
@@ -1070,6 +1100,11 @@ pub struct SellDetailPanel {
 /// leaves only the shade box. `price` is the item record's `+2` halfword.
 ///
 /// PORT: FUN_801d5ae8 (menu-overlay item detail / sell panel content renderer)
+///
+/// NOT WIRED: same missing prerequisite as [`shop_buy_quantity_panel`] -
+/// the hosts draw the shop with a fixed engine layout and never resolve a
+/// menu-overlay window record's content origin, which is what every pen
+/// here is relative to.
 pub fn shop_sell_detail_panel(
     window: (i16, i16),
     staged: i32,

@@ -290,6 +290,12 @@ impl EquipSession {
                     };
                     self.events
                         .push(EquipEvent::EnteredItemPicker { slot: cursor });
+                    // Retail stages the trial equip as the candidate list
+                    // opens, so the stat-compare block is already showing the
+                    // top row's preview on the first frame.
+                    if let Some(item) = self.items_for_slot(cursor).first().copied() {
+                        self.preview_candidate(cursor, item.id);
+                    }
                 } else if input.circle {
                     self.state = EquipState::Done(EquipOutcome::Cancelled);
                     self.events.push(EquipEvent::Cancelled);
@@ -305,6 +311,12 @@ impl EquipSession {
                         state: EquipStateKind::ItemPicker,
                         cursor,
                     });
+                    // Retail's candidate list previews the **hovered** row, not
+                    // just the confirmed one - the trial equip re-runs on every
+                    // cursor move so the stat-compare block tracks the hand.
+                    if let Some(item) = items.get(cursor as usize) {
+                        self.preview_candidate(slot, item.id);
+                    }
                 } else if input.down && (cursor as usize + 1) < n {
                     cursor += 1;
                     self.state = EquipState::ItemPicker { slot, cursor };
@@ -312,6 +324,9 @@ impl EquipSession {
                         state: EquipStateKind::ItemPicker,
                         cursor,
                     });
+                    if let Some(item) = items.get(cursor as usize) {
+                        self.preview_candidate(slot, item.id);
+                    }
                 } else if input.cross && (cursor as usize) < n {
                     let item = items[cursor as usize];
                     if !item.owned {
@@ -327,15 +342,9 @@ impl EquipSession {
                         slot,
                         item_id: item.id,
                     });
-                    // Refresh the preview by simulating the swap.
-                    let mut copy = self.record;
-                    copy.equip[slot as usize] = item.id;
-                    self.preview_stats = compute_battle_stats(
-                        &copy,
-                        &self.equipment,
-                        &self.active_status,
-                        &self.modifiers,
-                    );
+                    // Refresh the preview through the ported trial-equip
+                    // (`FUN_801d9c14`) rather than re-deriving it here.
+                    self.preview_candidate(slot, item.id);
                 } else if input.circle {
                     self.state = EquipState::SlotPicker { cursor: slot };
                 }
@@ -433,6 +442,10 @@ impl EquipSession {
     /// `FUN_801CF650`, restore the array. The engine expresses the
     /// save/restore as a copy.
     ///
+    /// Driven from [`Self::input`]'s `ItemPicker` arm: the candidate list
+    /// stages a preview as it opens, refreshes it on every cursor move, and
+    /// re-runs it on the confirm that raises the Yes/No prompt.
+    ///
     /// PORT: FUN_801d9c14 (state-2 trial-equip stat preview; see
     /// `ghidra/scripts/funcs/overlay_menu_801d9c14.txt` at
     /// `0x801d9e8c..0x801da058`)
@@ -454,6 +467,13 @@ impl EquipSession {
     /// PORT: FUN_801d9c14 (confirm path `0x801da0b4..0x801da134`: equipped
     /// byte zero -> `FUN_80035B50(0x37)`; else SFX `0x24`,
     /// `FUN_800421D4(equipped, 1)`, `sb zero` into the record slot)
+    ///
+    /// NOT WIRED: the engine's candidate list has no **Remove** row. Its
+    /// rows come from [`Self::items_for_slot`], which lists owned items
+    /// only, so there is no payload-0 entry for a confirm to land on;
+    /// retail reaches this arm from that row. Wiring it needs the Remove
+    /// row to exist in both the session's row space and the host draw
+    /// builders that index it (`engine-ui::equip_screen_draws_for`).
     pub fn unequip(&mut self, slot: u8) -> Option<u8> {
         let removed = *self.record.equip.get(slot as usize)?;
         if removed == 0 {
@@ -493,6 +513,13 @@ impl EquipSession {
     /// `ghidra/scripts/funcs/overlay_menu_801d99f0.txt` - confirm on row 0
     /// runs the applier and cues SFX `0x24` on change / buzz `0x23` on
     /// none, other rows hand off to sub-screen `0x14`)
+    ///
+    /// NOT WIRED: the engine's Equip screen has no selectable row 0. Its
+    /// slot-picker cursor indexes the eight [`EquipSlot`]s directly and
+    /// `engine-ui::equip_screen_draws_for` draws "Best Equipment" as a
+    /// static header above them, so no confirm can carry row `0`. Wiring
+    /// this needs the row-0 entry added to the shared row space - a change
+    /// that shifts every slot index the host draw builders key on.
     pub fn slot_browse_confirm(&mut self, row: u8, candidates: [u8; 4]) -> SlotBrowseOutcome {
         if row == 0 {
             let changed =
@@ -525,6 +552,9 @@ impl EquipSession {
 /// permutation is a four-way branch chain in the body, not a table.
 ///
 /// PORT: FUN_801cf88c (`0x801CFA38..0x801CFA64`)
+///
+/// NOT WIRED: only [`best_equipment_candidates`] consumes this permutation,
+/// and that scan is itself unreached - see its tag for the missing row.
 pub fn armament_slot_of(slot_bits: u8) -> usize {
     // raw 0 body -> 2, 1 head -> 1, 2 weapon -> 0, 3 footwear -> 3.
     [2usize, 1, 0, 3][((slot_bits & 0x60) >> 5) as usize]
@@ -583,6 +613,12 @@ pub struct EquipCandidate {
 /// around the trial equip)
 /// REF: FUN_801dd0c0 (the category check `weapon_category_score` binds;
 /// ported as `crate::menu_item_category::category_check`)
+///
+/// NOT WIRED: its only caller would be the Equip screen's row-0 confirm
+/// ([`EquipSession::slot_browse_confirm`]), and the engine's slot picker
+/// has no row 0 - see that method's tag. Nothing else in the engine asks
+/// for a best-per-armament-slot pick, so the four-id candidate array
+/// (retail `DAT_801EF0C0`) has no producer *or* consumer.
 pub fn best_equipment_candidates(
     equipped: [u8; 4],
     char_mask: u8,
@@ -651,6 +687,10 @@ pub enum SlotBrowseOutcome {
 /// `FUN_800421D4(old, 1)` give-back, `sb` commit, changed-count return)
 /// REF: FUN_801cf88c (the best-candidate computer filling `DAT_801EF0C0` -
 /// ported as [`best_equipment_candidates`])
+///
+/// NOT WIRED: reached only from [`EquipSession::slot_browse_confirm`]'s
+/// row-0 arm, and the engine's slot picker has no row 0 - see that
+/// method's tag.
 pub fn apply_best_equipment(
     equips: &mut [u8; 8],
     candidates: [u8; 4],
