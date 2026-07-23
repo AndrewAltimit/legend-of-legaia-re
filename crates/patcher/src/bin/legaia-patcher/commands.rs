@@ -107,6 +107,17 @@ pub(crate) fn cmd_fishing(input: &Path) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn cmd_locations(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+        .context("read SCUS_942.54")?;
+    for (idx, name) in legaia_patcher::location_name::list_names(&scus)? {
+        println!("{idx:>2}  {name}");
+    }
+    Ok(())
+}
+
 pub(crate) fn cmd_monster_stats(input: &Path) -> Result<()> {
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;

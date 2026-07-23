@@ -59,6 +59,20 @@ pub(crate) fn parse_prize_price(s: &str) -> Result<(u8, u32)> {
     Ok((parse_item_id(id_str)?, price))
 }
 
+/// Parse a `--rename-location` entry: `INDEX=NAME` (`3=Ancient Fire Cave`).
+/// The index is a landmark slot (0..16, decimal); the name is the new ASCII
+/// string. Errors on a malformed pair (name validity is checked at apply time).
+pub(crate) fn parse_location_rename(s: &str) -> Result<(usize, String)> {
+    let (idx_str, name) = s
+        .split_once('=')
+        .with_context(|| format!("invalid location rename {s:?} (expected INDEX=NAME)"))?;
+    let index = idx_str
+        .trim()
+        .parse::<usize>()
+        .with_context(|| format!("invalid landmark index in {s:?} (expected a number)"))?;
+    Ok((index, name.to_string()))
+}
+
 pub(crate) fn clock_seed() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()

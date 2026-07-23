@@ -342,3 +342,44 @@ pub fn apply_jewel_fix(patcher: &mut DiscPatcher) -> Result<JewelFixReport> {
         sites_patched: plan.writes.len(),
     })
 }
+
+/// Outcome of a landmark/location rename.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocationRenameReport {
+    /// Per rename: `(index, old_name, new_name)`.
+    pub renames: Vec<(usize, String, String)>,
+}
+
+/// Rename one or more world-map landmark / location names (the strings echoed
+/// by the save / load / pause location display). Each `(index, new_name)` is a
+/// same-size overwrite of a 32-byte `SCUS_942.54` slot; a name already matching
+/// is a no-op, and an out-of-range index / oversized / non-ASCII name is
+/// refused (see [`crate::location_name`]).
+pub fn rename_locations(
+    patcher: &mut DiscPatcher,
+    renames: &[(usize, String)],
+) -> Result<LocationRenameReport> {
+    let scus = patcher
+        .read_named_file(SCUS_NAME)
+        .context("read SCUS_942.54 for location rename")?;
+    // Plan all edits against the pristine image first so a bad entry aborts
+    // before any write lands.
+    let mut plans = Vec::new();
+    for (index, new_name) in renames {
+        if let Some(edit) = crate::location_name::plan_rename(&scus, *index, new_name)? {
+            plans.push(edit);
+        }
+    }
+    let mut report = LocationRenameReport {
+        renames: Vec::new(),
+    };
+    for edit in plans {
+        patcher
+            .patch_named_file(SCUS_NAME, edit.offset as u64, &edit.slot)
+            .with_context(|| format!("write location name {} ({:?})", edit.index, edit.new_name))?;
+        report
+            .renames
+            .push((edit.index, edit.old_name, edit.new_name));
+    }
+    Ok(report)
+}

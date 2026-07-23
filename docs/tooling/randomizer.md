@@ -59,6 +59,7 @@ disc-gated, so CI runs without a disc. There is also a
   - [Seru trading](#seru-trading)
   - [Jewel fix](#jewel-fix)
   - [Fishing prize prices](#fishing-prize-prices)
+  - [Location names](#location-names)
   - [Treasure chests](#treasure-chests)
   - [Town shops (what stores sell)](#town-shops-what-stores-sell)
   - [Casino prize exchange](#casino-prize-exchange)
@@ -177,6 +178,8 @@ legaia-patcher randomize --input DISC.bin --seed swap --seru-trade              
 legaia-patcher randomize --input DISC.bin --seed fair --jewel-fix                         # boss cinematic casts respect elemental guards
 legaia-patcher fishing   --input DISC.bin                                                 # read-only: list fishing-exchange prizes + prices
 legaia-patcher randomize --input DISC.bin --seed fish --fishing-price 0x6F=500            # Buma Water Egg costs 500 fishing points
+legaia-patcher locations --input DISC.bin                                                 # read-only: list the 16 world-map location names
+legaia-patcher randomize --input DISC.bin --seed loc --rename-location "3=Ancient Fire Cave"  # rename the Ancient Wind Cave
 legaia-patcher randomize --input DISC.bin --seed mart --shops shuffle --casino shuffle
 legaia-patcher randomize --input DISC.bin --seed 0xC0FFEE --drops random \
     --encounters shuffle --steals shuffle --arts shuffle --doors shuffle --door-coupling coupled \
@@ -252,6 +255,7 @@ unless asked for:
 | `--seru-trade` | vendors swap one of a character's seru for another, reseeding every two in-game hours | `--seru-trade-offers N` caps offers per vendor | [Seru trading](#seru-trading) |
 | `--jewel-fix` | the boss cinematic casts (Xain, Cort, the Delilas trio) respect elemental guards like every other special | - | [Jewel fix](#jewel-fix) |
 | `--fishing-price ITEM=POINTS` | set the fishing-exchange point cost of a prize (e.g. the Buma Water Egg); the price also gates when the prize appears | repeatable / comma-separated | [Fishing prize prices](#fishing-prize-prices) |
+| `--rename-location INDEX=NAME` | rename a world-map location (save / load / pause + quick-travel menu), e.g. an element cave to match a re-elemented party | repeatable | [Location names](#location-names) |
 
 **Tuning the encounter and door passes:**
 
@@ -847,6 +851,27 @@ the browser patcher, the same edits live in the **Manual value edits** group as
 > edit lands as a same-size `u32` at exactly the targeted `price` fields, the
 > patched overlay re-parses with the new price, re-applying the same value is a
 > no-op, and an item no prize grants is refused.
+
+### Location names
+
+The 16 world-map **location / landmark names** (shown on the quick-travel menu
+and echoed by the save / load / pause location display) live in a fixed table
+in `SCUS_942.54` (`0x80073B18`, 16 slots of 32 NUL-padded bytes;
+`legaia_asset::worldmap_menu`). `--rename-location INDEX=NAME` overwrites one
+slot in place with a new ASCII name (up to 31 characters) - e.g.
+`--rename-location "3=Ancient Fire Cave"` renames the Ancient Wind Cave to match
+a re-elemented party. The slot is zero-padded (no stale tail), a name already
+matching is a no-op, and an out-of-range index / oversized / non-ASCII name is
+refused. `legaia-patcher locations` lists all 16 with their indices (3 = Ancient
+Wind Cave, 4 = Ancient Water Cave, 6 = Vidna, 14 = Conkram, ...). In the browser
+patcher the same edits live in the **Manual value edits** group, one
+`index=name` per line.
+
+> Verified by the `location_name_real` disc oracle: the pinned names decode at
+> their coordinates (idx 3/4 = the element caves at `0x64378`/`0x64398`), a
+> rename lands as a same-size 32-byte slot overwrite that re-parses to the new
+> (NUL-terminated) name, only the targeted slots change, re-applying is a no-op,
+> and an oversized / non-ASCII / out-of-range name is refused.
 
 ### Treasure chests
 
@@ -1657,6 +1682,7 @@ bit-for-bit.
 | `crates/patcher` `shiny_seru_real` | disc-gated | inject shiny Seru: assert all nine hook sites match the known US build and the SCUS regions (`0x80077728` gap 1 / `0x8007AE00` arena 1 / `0x8007AFF8` arena 2 / `0x80078A88` slot 6) are all-zero dead space outside every live table - incl. the `0x80079xxx` SsAPI sound tables the old arena3/4/5 squatted in (routine VAs 4-byte aligned), and the victory mouth-override row at `0x800781B0` keeps the clean keyframes; then off the patched image: every detour became `j routine` + nop, the bitmap has Gimard set / gobu clear, bytes outside the planned edits are untouched, the disc stays EDC/ECC-valid, it composes with enemy-ally, is byte-deterministic, and the guards refuse a corrupted / non-dead / in-table region |
 | `crates/patcher` `jewel_fix_real` | disc-gated | apply the jewel fix: assert all thirteen cast-module call sites across PROT 944 / 952 / 953 / 958 / 959 / 960 hold the stock `jal FUN_801DD6B4` word, then off the patched image that every site reads `jal FUN_801DD4B0` and that per touched window exactly the planned words changed - the overlapping 09xx extents are measured empirically (each other module's head located in the window), so aliased appearances (e.g. entry 953 starting `0x1800` into 952's window) are expected - plus the image still parses, the edit is byte-deterministic, and re-application / an unrecognized build is refused |
 | `crates/patcher` `fishing_price_real` | disc-gated | apply a fishing-exchange price edit: assert the Buma Water Egg row is at PROT 972 offset 0x9874 (20000 points), then off the patched image that the price becomes the target as a same-size u32, exactly the targeted price words changed, the overlay re-parses, re-applying is a no-op, and an absent item is refused |
+| `crates/patcher` `location_name_real` | disc-gated | rename world-map locations: assert the pinned landmark names decode at their SCUS coordinates (idx 3/4 = element caves at 0x64378/0x64398), then off the patched image that a rename is a same-size 32-byte slot overwrite re-parsing to the NUL-terminated new name, only the targeted slots change, re-applying is a no-op, and an oversized / non-ASCII / OOB name is refused |
 | `crates/patcher` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
 | `crates/patcher` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
 | `crates/patcher` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140, "Comm" (id 78) is a populated standalone record (not a clone); item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |

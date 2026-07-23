@@ -125,7 +125,12 @@ pub fn resolve_seed(seed: &str) -> String {
 /// from the resist-ladder-bypassing wrapper to the guard-respecting one, so
 /// elemental jewels / guards / All Guard apply to Xain's Bloody Horns / Terio
 /// Punch, Cort's Guilty Cross, and the Delilas trio's signature moves (a fix,
-/// not a randomization - it is seedless).
+/// not a randomization - it is seedless). `fishing_prices` is a
+/// comma/space-separated list of `item=points` pairs that set the
+/// fishing-exchange point cost of prizes (e.g. `0x6F=500` for the Water Egg).
+/// `location_renames` is a newline-separated list of `index=name` lines that
+/// rename world-map location slots (e.g. `3=Ancient Fire Cave`). Both are
+/// manual, seedless edits.
 /// `starting_level`
 /// begins the new game at that character level instead of 1 (`0` or `1` =
 /// vanilla; range 2..=14), seeding the lead character's XP and recomputing the
@@ -181,6 +186,7 @@ pub fn patch_rom(
     shiny_seru: bool,
     jewel_fix: bool,
     fishing_prices: &str,
+    location_renames: &str,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -421,6 +427,42 @@ pub fn patch_rom(
                 None => {
                     summary.push_str(&format!("fishing-price: skipped malformed entry {tok:?}\n"))
                 }
+            }
+        }
+    }
+
+    // Location renames: newline-separated `index=name` lines (name may contain
+    // spaces, so only the newline splits entries). Each is a same-size SCUS
+    // slot overwrite; a bad entry is reported and skipped.
+    let location_renames = location_renames.trim();
+    if location_renames.is_empty() {
+        summary.push_str("rename-location: untouched\n");
+    } else {
+        for line in location_renames.lines().filter(|l| !l.trim().is_empty()) {
+            match line.split_once('=') {
+                Some((idx_str, name)) => match idx_str.trim().parse::<usize>() {
+                    Ok(index) => {
+                        match apply::rename_locations(&mut patcher, &[(index, name.to_string())]) {
+                            Ok(rep) if rep.renames.is_empty() => summary.push_str(&format!(
+                                "rename-location: {index} already has that name\n"
+                            )),
+                            Ok(rep) => {
+                                for (i, old, new) in &rep.renames {
+                                    summary.push_str(&format!(
+                                        "rename-location: {i} {old:?} -> {new:?}\n"
+                                    ));
+                                }
+                            }
+                            Err(e) => summary.push_str(&format!("rename-location: {e}\n")),
+                        }
+                    }
+                    Err(_) => {
+                        summary.push_str(&format!("rename-location: bad index in {line:?}\n"))
+                    }
+                },
+                None => summary.push_str(&format!(
+                    "rename-location: skipped malformed entry {line:?}\n"
+                )),
             }
         }
     }

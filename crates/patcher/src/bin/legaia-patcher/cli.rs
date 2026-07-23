@@ -9,7 +9,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use legaia_patcher::apply;
 use legaia_patcher::drops::DropMode;
 
-use crate::util::{parse_item_spec, parse_prize_price};
+use crate::util::{parse_item_spec, parse_location_rename, parse_prize_price};
 
 #[derive(Parser)]
 #[command(
@@ -117,6 +117,14 @@ pub(crate) enum Cmd {
     /// Vidna) with their item and fishing-point price - the population the
     /// `--fishing-price` editor changes.
     Fishing {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
+        #[arg(long)]
+        input: PathBuf,
+    },
+    /// Read-only: list the world-map location / landmark names (index + name)
+    /// - the slots the `--rename-location` editor changes.
+    Locations {
         /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
         /// is accepted and resolved to the `.bin` it references).
         #[arg(long)]
@@ -503,6 +511,16 @@ pub(crate) struct RandomizeArgs {
     /// fishing` lists the current prizes and prices.
     #[arg(long, value_name = "ITEM=POINTS", value_delimiter = ',', value_parser = parse_prize_price)]
     pub(crate) fishing_price: Vec<(u8, u32)>,
+    /// **Rename a world-map location** (the names shown on the quick-travel
+    /// menu and the save / load / pause location display). Repeatable
+    /// `INDEX=NAME` entries; the index is a landmark slot (`legaia-patcher
+    /// locations` lists them - e.g. 3 = "Ancient Wind Cave", 4 = "Ancient Water
+    /// Cave", 6 = "Vidna", 14 = "Conkram"). The new name is ASCII, up to 31
+    /// characters (same-size slot overwrite). Useful to match renamed
+    /// dungeons to a re-elemented party, e.g. `--rename-location "3=Ancient
+    /// Fire Cave"`.
+    #[arg(long, value_name = "INDEX=NAME", value_parser = parse_location_rename)]
+    pub(crate) rename_location: Vec<(usize, String)>,
     /// Let vendors offer to **trade** one of a character's seru for a different
     /// seru. Embeds an enabled flag + the run's seed in `SCUS_942.54`; the
     /// clean-room engine renders the trade UI and reseeds each vendor's offers

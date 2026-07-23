@@ -44,6 +44,7 @@ full design.
   - [Enemy ally (charm)](#enemy-ally-charm) - [Charm softlock fix](#charm-softlock-fix-charm_fix-module)
   - [Jewel fix](#jewel-fix-jewel_fix-module)
   - [Fishing prize prices](#fishing-prize-prices-fishing_price-module)
+  - [Location names](#location-names-location_name-module)
   - [Shiny Seru](#shiny-seru)
   - [Seru trading](#seru-trading)
   - [Chests](#chests)
@@ -342,6 +343,17 @@ sooner. `plan_set_price` matches by item id (stable across venues), skips
 already-matching prices (idempotent), and refuses an item no prize grants.
 `legaia-patcher fishing` lists the current prizes/prices. Disc oracle:
 `fishing_price_real`.
+
+## Location names (`location_name` module)
+
+`--rename-location INDEX=NAME` renames a world-map location (the strings shown
+on the quick-travel menu and echoed by the save / load / pause location
+display). The 16 names live in a fixed `SCUS_942.54` table (`0x80073B18`, 16 ×
+32-byte NUL-padded slots; `legaia_asset::worldmap_menu`); a rename overwrites
+one slot in place with new ASCII (≤ 31 chars), zero-padding the tail. Idempotent
+(a matching name is a no-op) and validated (out-of-range index / oversized /
+non-ASCII refused). `legaia-patcher locations` lists all 16. Disc oracle:
+`location_name_real`.
 
 ## Shiny Seru
 

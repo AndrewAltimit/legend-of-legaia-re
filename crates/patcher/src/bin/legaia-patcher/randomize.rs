@@ -227,6 +227,23 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push(format!("fishing_price 0x{item_id:02X} = {price}"));
     }
 
+    // Location renames: same-size overwrites of the SCUS world-map name table.
+    if !args.rename_location.is_empty() {
+        let report = apply::rename_locations(&mut patcher, &args.rename_location)?;
+        for (idx, old, new) in &report.renames {
+            println!("rename-location: {idx} {old:?} -> {new:?}");
+            manifest.push(format!("rename_location {idx} = {new:?}"));
+        }
+        // Report requested-but-unchanged (already-matching) entries too.
+        let changed: std::collections::BTreeSet<usize> =
+            report.renames.iter().map(|(i, _, _)| *i).collect();
+        for (idx, _) in &args.rename_location {
+            if !changed.contains(idx) {
+                println!("rename-location: {idx} already has that name");
+            }
+        }
+    }
+
     // Seru trading: embed an enabled flag + the run's seed so the clean-room
     // engine can offer vendor seru-for-seru swaps (offers reseed every two
     // in-game hours from this seed). A plain data write; inert on real hardware.

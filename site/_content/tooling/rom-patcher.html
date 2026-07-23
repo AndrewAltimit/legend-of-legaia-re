@@ -377,6 +377,12 @@
         <span class="rom-opt-note">Set the fishing-point cost of a fishing-exchange prize. One or more <code>item=points</code> pairs, comma-separated - item id in decimal or <code>0xHH</code>. Example: <code>0x6F=500</code> makes the Buma Water Egg cost 500 points (it also appears sooner, since the price is the "once you can afford it" gate). The <a href="../reference/gamedata.html">item ids</a> and current prices are what the CLI <code>legaia-patcher fishing</code> lists.</span>
         <input type="text" id="rom-fishing-price" placeholder="e.g. 0x6F=500, 0xCD=10000" spellcheck="false" autocomplete="off">
       </div>
+
+      <div class="rom-opt">
+        <label class="rom-opt-label" for="rom-rename-location">Location names</label>
+        <span class="rom-opt-note">Rename the world-map location names shown on the quick-travel menu and the save / load / pause display. One <code>index=name</code> per line (ASCII, up to 31 chars) - e.g. <code>3=Ancient Fire Cave</code> renames the Ancient Wind Cave. Slots: 3 = Ancient Wind Cave, 4 = Ancient Water Cave, 6 = Vidna, 14 = Conkram (the CLI <code>legaia-patcher locations</code> lists all 16). Handy for matching dungeon names to a re-elemented party.</span>
+        <textarea id="rom-rename-location" rows="3" placeholder="3=Ancient Fire Cave&#10;4=Ancient Ice Cave" spellcheck="false" autocomplete="off"></textarea>
+      </div>
     </details>
 
     <div class="rom-row rom-actions">
@@ -437,7 +443,7 @@
   .rom-row { display: block; margin: 0.7rem 0; }
   .rom-label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
   .rom-hint { font-weight: 400; color: var(--text-dim); font-size: 0.85em; }
-  .rom-form input[type=text], .rom-form select { width: 100%; max-width: 32rem; padding: 0.4rem 0.55rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 5px; }
+  .rom-form input[type=text], .rom-form select, .rom-form textarea { width: 100%; max-width: 32rem; padding: 0.4rem 0.55rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 5px; font: inherit; resize: vertical; }
   .rom-form input[type=file] { color: var(--text-muted); }
 
   /* Presets */

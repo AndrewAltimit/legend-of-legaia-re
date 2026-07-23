@@ -6612,7 +6612,12 @@ export function lift_official_pack(target_image, source_image, fold_accents) {
  * from the resist-ladder-bypassing wrapper to the guard-respecting one, so
  * elemental jewels / guards / All Guard apply to Xain's Bloody Horns / Terio
  * Punch, Cort's Guilty Cross, and the Delilas trio's signature moves (a fix,
- * not a randomization - it is seedless).
+ * not a randomization - it is seedless). `fishing_prices` is a
+ * comma/space-separated list of `item=points` pairs that set the
+ * fishing-exchange point cost of prizes (e.g. `0x6F=500` for the Water Egg).
+ * `location_renames` is a newline-separated list of `index=name` lines that
+ * rename world-map location slots (e.g. `3=Ancient Fire Cave`). Both are
+ * manual, seedless edits.
  * `starting_level`
  * begins the new game at that character level instead of 1 (`0` or `1` =
  * vanilla; range 2..=14), seeding the lead character's XP and recomputing the
@@ -6665,9 +6670,10 @@ export function lift_official_pack(target_image, source_image, fold_accents) {
  * @param {boolean} shiny_seru
  * @param {boolean} jewel_fix
  * @param {string} fishing_prices
+ * @param {string} location_renames
  * @returns {any}
  */
-export function patch_rom(image, seed, lang_pack, drops, encounters, encounter_scope, chests, shops, casino, steals, arts, doors, door_coupling, house_doors, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, monster_stats, move_power, element_affinity, spell_cost, equip_bonus, weapon_specialty, starting_level, solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru, jewel_fix, fishing_prices) {
+export function patch_rom(image, seed, lang_pack, drops, encounters, encounter_scope, chests, shops, casino, steals, arts, doors, door_coupling, house_doors, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, monster_stats, move_power, element_affinity, spell_cost, equip_bonus, weapon_specialty, starting_level, solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru, jewel_fix, fishing_prices, location_renames) {
     const ptr0 = passArray8ToWasm0(image, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(seed, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -6708,7 +6714,9 @@ export function patch_rom(image, seed, lang_pack, drops, encounters, encounter_s
     const len18 = WASM_VECTOR_LEN;
     const ptr19 = passStringToWasm0(fishing_prices, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len19 = WASM_VECTOR_LEN;
-    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, ptr12, len12, ptr13, len13, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, ptr14, len14, ptr15, len15, ptr16, len16, ptr17, len17, ptr18, len18, weapon_specialty, starting_level, solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru, jewel_fix, ptr19, len19);
+    const ptr20 = passStringToWasm0(location_renames, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len20 = WASM_VECTOR_LEN;
+    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, ptr12, len12, ptr13, len13, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, ptr14, len14, ptr15, len15, ptr16, len16, ptr17, len17, ptr18, len18, weapon_specialty, starting_level, solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru, jewel_fix, ptr19, len19, ptr20, len20);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
@@ -6999,7 +7007,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 119, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 120, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__hc20c1a455dcd1273);
             return ret;
         },
