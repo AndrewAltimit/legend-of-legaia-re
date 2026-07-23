@@ -1295,6 +1295,62 @@ semantics, border+fill inflation), `dialog_advance_hand_sprite`,
 `dialog_option_hand_sprite`; the play-window's `dialog_stage_layout`
 carries the rects.
 
+## Two more descriptor-table renderers (windows 34 and 46)
+
+Neither window appears in the [screen sets](#window-descriptor-table)
+above, because no catalogued capture opens the screen that spawns it. Both
+are nevertheless pinned structurally: their VAs sit in the `+0xC`
+content-renderer field of a descriptor record, so the table itself names
+them.
+
+| Window | Rect `(x, y, w, h)` | Class | Renderer |
+|---|---|---|---|
+| 34 | `(138, 166, 168, 38)` | 4 (list page) | `FUN_801D4A80` |
+| 46 | `(16, 84, 104, 42)` | 3 (standard) | `FUN_801D603C` |
+
+**`FUN_801D4A80` - item / accessory description box.** Reads the selected
+id from `_DAT_801E46B0` and returns immediately when it is `<= 0`, so an
+empty selection draws nothing. Otherwise:
+
+1. Stages ink `6` into `DAT_8007B454` and draws the item record's **name**
+   string (`0x80074368 + id*0x0C`, field `+0x04` - the `PTR_DAT_8007436C`
+   name pointer of [item-table.md](../formats/item-table.md)) through
+   `FUN_80036888` at the window's content `(x, y)`.
+2. Maps the id through `FUN_80042EE0`; a result of `0x100` means "no
+   holder", otherwise it indexes the save-block byte array at
+   `0x80085959 + result*2`. Either way the result plus the window origin
+   `+0x94` goes to the icon/count draw `FUN_80034B78`.
+3. Stages ink `7` and picks the description. When the item record's
+   **leading byte is `2`** and the item-effect record's `+0x03` index
+   (`0x800752C0 + effect*4`, see
+   [item-effect-table.md](../formats/item-effect-table.md)) is `< 0x40`,
+   it draws the **accessory-passive** description - `0x8007625C +
+   index*0x0C`, field `+0x08`, per
+   [accessory-passive-table.md](../formats/accessory-passive-table.md) -
+   through the word-wrapping renderer `FUN_8003CD00` at `y + 0x0E`.
+   Otherwise it draws the item record's own `+0x08` string through
+   `FUN_800337B0`.
+
+So the "class 2 + passive index in range" test is exactly what makes an
+accessory show its passive text where an ordinary item shows its own.
+
+**`FUN_801D603C` - two-row toggle panel.** Draws two label strings from the
+menu overlay's own rodata (`0x801CEA84` and `0x801CEA8C`) plus a heading at
+`0x801CEAC8`, at ink `7` / `5`, on a 16 px then 14 px vertical step from
+the window origin. Each row is followed by a marker sprite from the cursor
+family `FUN_8002B994`, whose *kind* is decoded from the state word
+`_DAT_801E46D0`:
+
+- bit `0x4000` set - draw no marker for that row at all;
+- else bit `0x2000` set - kind is `(!(w & 0x1000)) << 2`, i.e. `4` or `0`;
+- else - kind is `(w >> 12) ^ 1` masked to one bit, compared against `0`
+  on the first row and `1` on the second.
+
+The panel is content-only, like every renderer in this table - the frame
+is drawn by the caller. Which screen owns it is **Unknown**; the two-row
+shape and the packed state word read as a settings pair, but nothing in
+the corpus opens window 46.
+
 ## Draw primitives + CLUT staging
 
 Three shared primitives render everything:

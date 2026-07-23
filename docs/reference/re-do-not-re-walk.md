@@ -139,6 +139,54 @@ dump header is the cheap first filter - a 47-instruction "function" that restore
 four callee-saved registers is not a function. The corpus-wide picture is in
 [`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md).
 
+## No overlay function lives below `0x801CE818`
+
+**Falsified:** "an undocumented address in the `0x801C0164`..`0x801CE000`
+band is an overlay-resident function awaiting a doc entry."
+
+The reading is plausible because the repository's own orientation says
+overlay code lives "at `0x801C0000+`", and because dumps in that band
+disassemble cleanly, carry function-shaped prologues and epilogues, and
+are filed under `overlay_<label>_801c….txt` names. Nothing about them
+looks wrong.
+
+They are not functions. They are **printed addresses from imports based at
+`0x801C0000`**, and the true VA of every one of them is `printed + delta`.
+The structural argument needs no dump at all: every occupant of the
+slot-A overlay window bases at `0x801CE818` and every slot-B occupant at
+`0x801F69D8` (see
+[`static-overlays.toml`](../../crates/asset/data/static-overlays.toml)),
+so **no extracted overlay image contains any VA below `0x801CE818`**. An
+address in that band cannot name a function in any overlay, whatever its
+dump looks like. The measurement agrees: disassembling every extracted
+image at its mapped base and asking which of those addresses is a `jal`
+target, a `j` target or an instruction boundary returns nothing at all for
+the whole band.
+
+The deltas are the same ones
+[`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md)
+tabulates - `+0xE818` into the field (0897) or menu (0899) overlay,
+`+0xD018` into fishing (0972) through the 0971 over-read tail, `+0x9818`
+into dance (0980), `+0x5818` for the `overlay_0896_*` family - and they
+are constant per import, so the whole band resolves mechanically. Worked
+examples: the "function at `0x801C6FEC`" is the fishing reel tug-of-war
+`FUN_801D4004`; the "function at `0x801C56B4`" is the hooked-fish handler
+`FUN_801D26CC`; the "function at `0x801C2704`" is menu-overlay
+`FUN_801D0F1C`. Each is already documented under its real address.
+
+The same failure extends **above** `0x801CE818`, where it is harder to
+see because the printed address is then inside a real overlay's span and
+so cannot be rejected on range alone. There the test that works is the
+one above: resolve the dump's bytes to an image and offset, and
+separately ask whether the printed VA is a `jr ra`-preceded boundary in
+any image. A VA that is only ever a `j` or branch target is an
+intra-function label, not a port site.
+
+**Generalises to:** treat "the dump prints an address" as evidence about
+the *import*, never about the game. The identity questions - which image,
+which offset, is this a function at all - are answered from the extracted
+image at its mapped base, and only from there.
+
 ## Related pages
 
 - [`open-rev-eng-threads.md`](open-rev-eng-threads.md) - the live hunts.

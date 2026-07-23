@@ -267,6 +267,78 @@ dump is a truncated alias; the real 83-instruction body is in the
 cutscene-dialogue field capture.
 `see ghidra/scripts/funcs/overlay_cutscene_dialogue_801e4470.txt`.
 
+### The arc apex, and `FUN_801D5780`
+
+`FUN_801D5780` is the **standalone spawn half** of the routine above: the
+same template `0x801F227C`, the same field writes, but four arguments
+(`source_actor`, `&target_xyz`, `arc_height`, `duration`) instead of five,
+and it returns the new actor rather than continuing into a second stage.
+`FUN_801D25EC` inlines this identical body and then keeps going.
+
+"Seeds the midpoints" understates what `+0x3C/+0x3E/+0x40` are. `+0x3C`
+and `+0x40` are plain midpoints of the X and Z endpoints, but `+0x3E` is a
+**quadratic-Bézier control point**, computed from the arc-height argument:
+
+```
+mid   = (start.y + target.y) / 2          ; +0x3E, provisionally
+apex  = min(start.y, target.y) - height   ; height = the arc argument
++0x3E = mid + 2 * (apex - mid)            ; = 2*apex - mid
+```
+
+`2*apex - mid` is exactly the control point that makes a quadratic Bézier
+pass through `apex` at its half-way parameter, so `arc_height` is "how far
+above the lower endpoint the hop peaks" - a lob, not a straight tween.
+The per-frame parameter is the `+0x9E = 0x1000 / duration` step, with
+`0x1000` (fixed-point `1.0`) substituted whole when `duration <= 0`.
+Confidence: **Confirmed**, disassembled from PROT entry 0897 at base
+`0x801CE818`.
+
+## Scene-load actor fix-up
+
+Two more field-overlay bodies run on the actor list at scene-load time
+rather than per frame. Both are confirmed at their printed VA against the
+extracted 0897 image.
+
+**`FUN_801D7518(&list_head)`** is the **re-hydration pass**: the per-scene
+field init `FUN_801D6704` calls it seven times, once per actor list, and
+it walks each list through the `+0x00` next pointer allocating the runtime
+side-buffers a freshly loaded actor record does not carry.
+
+- Three handler VAs in `+0x0C` (`0x80025000`, `0x801E1C20`, `0x8002174C`)
+  each get `+0x10 |= 8` - the "killed" bit, so these handler classes are
+  retired on load rather than revived.
+- Every actor gets `+0x10 |= 0x10000`.
+- An actor whose `+0x10` carries `0x800` receives a `0x9C`-byte block from
+  the general allocator `FUN_80017888` into `+0x44`, has its OBJECT table
+  rebuilt by `FUN_80024D78`, and gets `+0x94/+0x96/+0x98 = 0` with
+  `+0x9A = -1` written into that block.
+- An actor on handler `0x80021DF4` (the [per-actor anim
+  tick](#per-actor-anim-tick---fun_80021df4)) with `+0x5A == 3` and
+  `+0xA4 > 0x10` gets an `+0xA4 * +0xA6`-byte block into `+0xA8`, uploaded
+  through `StoreImage` (`FUN_8005842C`) - a per-actor VRAM staging buffer.
+- The same handler with `+0x5A == 6` builds a **two-key interpolation
+  table**: it picks two half-word streams out of `+0x48` at the u16
+  indices `+0xCC` and `+0xCE`, allocates `count*0x20 + 8` bytes into
+  `+0x4C`, and fills a `0x18`-stride record per key with six halfwords
+  from the first stream at `+0x00` and six from the second at `+0x0C`.
+  The "from-pose / to-pose pair" reading of those two six-halfword halves
+  is **Inferred**; the copy itself is Confirmed.
+
+**`FUN_801D9C3C()`** is the field overlay's **MAN-load reset hook**,
+called from the SCUS MAN decoder `FUN_8003AEB0` at `0x8003B444` - so it
+only runs while 0897 is the resident slot-A overlay, which is exactly when
+a field MAN is being decoded. It reseeds a block of overlay globals
+(`0x801F2734 = 1`, `0x801F2738/0x801F273C/0x801F274C/0x801F2748/
+0x801F2758/0x801F275C = 0`, `0x801F2740 = 3`, `0x801F2754 = 1`,
+`0x801F3530/0x801F3534/0x801F3538 = 0`), zeroes the sixteen words ending
+at `0x801F357C`, then asks the actor-list finder `FUN_8003CF04` whether a
+live actor already exists on the list at `_DAT_8007C34C + 4`. If none
+does, it allocates one from the template at `0x801F2760` via
+`FUN_80020DE0` and clears the new actor's `+0x50` and `+0x54`. It returns
+the actor pointer, or zero when one was already live - the standard
+find-or-spawn shape of the
+[widget control APIs](../reference/functions.md).
+
 ## See also
 
 **Reference** -

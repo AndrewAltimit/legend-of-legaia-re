@@ -9,7 +9,8 @@ A two-level finite state machine that drives the per-actor execution of a chosen
 - [Inner dispatch - actor action category](#inner-dispatch---actor-action-category) · [per-actor sub-state surface](#per-actor-sub-state-surface)
 - [Cross-references with other battle helpers](#cross-references-with-other-battle-helpers) - [range/LOS](#fun_8004e2f0---battle-range--line-of-sight) · [stat aggregator](#fun_80042558---per-frame-stat-aggregator) · [effect spawn API](#fun_801dfdf8---effect-bundle-public-spawn-api) · [summon-overlay dispatch](#seru-magic-summon-overlay-dispatch) · [pose driver](#fun_801d5854---per-actor-pose-driver) · [party/monster setup](#fun_801eed1c--fun_801e7320---party--monster-setup-hooks) · [camera bounds](#fun_801efe44---battle-camera-bounds) · [escape roll](#the-escape-roll-fun_801e791c) · [battle voice cues](#battle-voice-cues---the-xa30-grunt-vs-the-xa2xa4xa6-arts-shout) · [helper functions](#battle-helper-functions)
 - [Notes for the engine port](#notes-for-the-engine-port) · [decompile quirks](#decompile-quirks-worth-knowing) · [engine port](#engine-port)
-- [Action validator (`FUN_8003FB10`)](#action-validator-fun_8003fb10) · [action queue + Tactical Arts trigger ordering](#action-queue-and-tactical-arts-trigger-ordering) · [Miracle / Super in the live Arts submenu](#miracle--super-in-the-live-player-driven-arts-submenu) · [open work](#open-work)
+- [Action validator (`FUN_8003FB10`)](#action-validator-fun_8003fb10) · [action queue + Tactical Arts trigger ordering](#action-queue-and-tactical-arts-trigger-ordering) · [Miracle / Super in the live Arts submenu](#miracle--super-in-the-live-player-driven-arts-submenu)
+- [Pose-slot table `0x80076C10`](#pose-slot-table-0x80076c10-and-its-copy-helpers) · [overlay-local PRNG](#overlay-local-prng-fun_801d0290) · [open work](#open-work)
 
 ## One-paragraph overview
 
@@ -1185,6 +1186,70 @@ consumes the turn through the Done band. The escape *probability* is the retail
 [`FUN_801E791C` roll](#the-escape-roll-fun_801e791c) - party vs enemy speed/missing-HP scores
 plus the two Chicken accessory bits - ported as `battle_formulas::escape_roll` and rolled by
 `World::roll_battle_escape`.
+
+## Pose-slot table `0x80076C10` and its copy helpers
+
+The battle animation dispatcher [`FUN_801D388C`](../reference/functions.md)
+keeps its per-slot animation state in a **24-byte-stride record array
+based at `0x80076C10`**. Two small overlay leaves move records around
+inside it; both take `(dst_index, src_index)`, address `0x80076C10 +
+index * 0x18` by the `(i*2 + i) << 3` idiom, and return nothing.
+
+| Function | Fields written into `dst` |
+|---|---|
+| `FUN_801D57E8` | straight clone of `+0x02`, `+0x04`, `+0x06`, `+0x0A`, `+0x0C` (u16) and `+0x14` (u32) |
+| `FUN_801D5778` | re-mapped clone - see below |
+
+`FUN_801D57E8` is the plain copy: five halfwords plus the word at `+0x14`.
+It deliberately leaves `dst`'s `+0x00`, `+0x08`, `+0x10` and `+0x12`
+alone, so it is a **partial** clone, not a `memcpy`.
+
+`FUN_801D5778` copies the same record but permutes and biases three of the
+fields: `dst[+0x02] = src[+0x0A]`, `dst[+0x04] = src[+0x0C]`,
+`dst[+0x06] = src[+0x06]`, `dst[+0x0A] = src[+0x0A] - 0x140`,
+`dst[+0x0C] = src[+0x0C]`, `dst[+0x14] = src[+0x14]`. The literal `0x140`
+is 320, the PSX display width.
+
+The camera / view director `FUN_801D5854` performs the *same* moves
+inline between the two adjacent records at `0x80076C10 + 0x3D8` and
+`+ 0x3F0` (records 41 and 42), which is what fixes the 24-byte stride
+independently of the two helpers, and it is also where `+0x14` is shown
+to hold a pointer: `FUN_801D5854` stores `actor + 0x1BC` there before
+feeding it to the per-actor animation lookup `FUN_80035F04`.
+
+Both helpers are called only from `FUN_801D388C` - `FUN_801D57E8` from its
+`0x801D4414` / `0x801D4434` sites, `FUN_801D5778` from `0x801D50A0` /
+`0x801D50F8`. Evidence grade: **Confirmed** for the field moves and the
+call sites (disassembled from PROT entry 0898 at base `0x801CE818`);
+**Unknown** for what the individual halfwords mean, beyond `+0x14` being
+the animation-descriptor pointer.
+
+## Overlay-local PRNG `FUN_801D0290`
+
+The battle-action overlay carries a second random-number generator,
+distinct from the SCUS PsyQ-shape `rand()` at `FUN_80056798` that
+[battle-formulas.md](battle-formulas.md#rng-primitive) documents. It is
+twelve instructions with no frame, and its whole state is the word at
+`0x801F6950` (the overlay's own data tail):
+
+```
+s = *0x801F6950
+v = s * 12 + 2              ; (s << 2) + (s << 3) + 2
+s = (v << 16) + (v >> 16)   ; 32-bit rotate by 16
+*0x801F6950 = s
+return s
+```
+
+The multiply-add is done with shifts, and the "rotate" is an `addu` of the
+two shifted halves rather than an `or`, so a carry out of the low half
+propagates - the result is not a pure rotate. Five call sites, all in the
+overlay's leading function, none in SCUS.
+
+Because its state lives in overlay memory rather than the SCUS RNG seed,
+draws from this generator do **not** perturb the `FUN_80056798` stream the
+determinism oracles follow. Which battle quantities it feeds is
+**Unknown**; the arithmetic and the state address are **Confirmed** from
+the disassembly of PROT entry 0898 at base `0x801CE818`.
 
 ## Open work
 
