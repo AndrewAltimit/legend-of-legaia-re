@@ -326,6 +326,32 @@ sprite drawer `FUN_80036888`. `FUN_80034FA0` presets the leading-digit flag
 `gp+0x15C = 1` (zero-padded / fixed-width form); `FUN_80034CC4` honours the flag
 as passed. See `ghidra/scripts/funcs/80034cc4.txt`, `80034fa0.txt`.
 
+## Arts-list panel renderer
+
+`FUN_80034358` draws a scrollable list of the active character's learned Arts.
+The active character index is `gp+0x874`; per-character state is the `0x414`-byte
+block at `0x80084140 + char*0x414`. The learned-art id list starts at block
+`+0x74E`, its length at block `+0x74D`, and `gp+0x140` is the scroll top. Visible
+rows = `param+0x10 / 0x1C`, laid out `0x1E` apart in Y from `param+0xC`, at base
+X `param+0xA`.
+
+For each visible slot it scans the arts-name table `DAT_80075EC4` (stride `0x14`,
+terminated when a record's first byte reaches `99`) for the entry keyed on
+`[character, art-id]`, then:
+
+- draws the art name via the glyph-string primitive `FUN_80036888` under text
+  attribute `gp+0x13C = 7` (CLUT 7);
+- draws the art's AP cost - decimal-split against the place-value table
+  `0x80073DCC` - through the sprite primitive `FUN_8003C11C`, halved when the
+  character block's flag word `+0x6C0` has bit `0x800` set;
+- draws the art's input command as arrow sprites via `FUN_8003C310`, one per
+  input, keyed on the four direction codes `DAT_80073E4D` / `4F` / `51` / `53`.
+
+It is the SCUS-resident sibling of the overlay "Moves" submenu (same arts-table
+data, same name / AP / command-arrow layout) in
+[`field-menu.md`](field-menu.md#moves-list-submenu-3); the two differ in row
+pitch and host screen. See `ghidra/scripts/funcs/80034358.txt`.
+
 ## TMD pointer table
 
 `FUN_80026B4C` writes registered TMDs to `*(int **)(idx * 4 + 0x8007C018)`. Consumers in retail (4 functions, all setup-not-render):
