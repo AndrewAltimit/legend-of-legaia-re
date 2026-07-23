@@ -667,6 +667,25 @@
 # 0x801F7xxx. These are real code, but they port as arms of the enclosing
 # routine rather than as separate sites - the row is not a port site, the work
 # behind it is not deleted.
+"80016e4c" = "INTERIOR: dump resolves entry=80016b6c, not 80016e4c"
+"80016eb8" = "INTERIOR: dump resolves entry=80016b6c, not 80016eb8"
+"8001ed9c" = "INTERIOR: dump resolves entry=8001ed60, not 8001ed9c"
+"800379a8" = "INTERIOR: dump resolves entry=8003774c, not 800379a8"
+"8003cd68" = "INTERIOR: dump resolves entry=8003cd00, not 8003cd68"
+"801c802c" = "INTERIOR: VA lies inside the dumped body of 801c7f38 in 0896"
+"801ca998" = "INTERIOR: VA lies inside the dumped body of 801ca850 in 0896"
+"801ccdd4" = "INTERIOR: VA lies inside the dumped body of 801ccbb0 in 0896"
+"801d30b8" = "INTERIOR: no `addiu sp,sp,-N` prologue; body reads s1/s2/s3/s4/s5/s6/s7/s8 and a caller stack slot it never writes - a tail fragment reaching the parent's epilogue"
+"801d3170" = "INTERIOR: dump resolves entry=801d30b8, not 801d3170"
+"801d34a4" = "INTERIOR: no `addiu sp,sp,-N` prologue; body reads s0/s1/s2/s5/s8 and a caller stack slot it never writes - a tail fragment reaching the parent's epilogue"
+"801d43ec" = "INTERIOR: VA lies inside the dumped body of 801d362c in 0897"
+"801d701c" = "INTERIOR: VA lies inside the dumped body of 801d6704 in 0897"
+"801d95a8" = "INTERIOR: no `addiu sp,sp,-N` prologue; body reads s1/s2/s5/s8 and a caller stack slot it never writes - a tail fragment reaching the parent's epilogue"
+"801dcf24" = "INTERIOR: no `addiu sp,sp,-N` prologue; body reads s0/s1/s2/s5 and a caller stack slot it never writes - a tail fragment reaching the parent's epilogue"
+"801dd690" = "INTERIOR: no `addiu sp,sp,-N` prologue; body reads s0/s1/s2/s3/s5/s6/s8 and a caller stack slot it never writes - a tail fragment reaching the parent's epilogue"
+"801de268" = "INTERIOR: no `addiu sp,sp,-N` prologue; body reads s0/s2/s3 and a caller stack slot it never writes - a tail fragment reaching the parent's epilogue"
+"801e4138" = "INTERIOR: dump is a citation stub for 801e295c"
+"801f07ac" = "INTERIOR: no `addiu sp,sp,-N` prologue; body reads s1/s7 and a caller stack slot it never writes - a tail fragment reaching the parent's epilogue"
 [worklist_shared_tail]
 "801d3290" = "SHARED_TAIL: 5 instructions, no `jr ra`; reads s5 it never writes, ends `addiu s8,s8,0x6` + `j 0x801df8dc` - the field-VM label-call idiom (s8 = script PC), not a function. Ghidra renders it as two calls and a return."
 "801e00b8" = "SHARED_TAIL: common exit slice - no prologue, reads live s1, restores s0..s2/ra from a 0x60-byte frame it never built; entered by `j 0x801e00b8` from FUN_801D4908 (and siblings) in the 0897 field overlay"
@@ -718,6 +737,23 @@
 # their own mis-based copy. Ignoring them deleted the only copy of the routine.
 # A peer now qualifies only when a dump at the peer VA carries the same body
 # AND resolves against an image there; see docs/tooling/worklist-classification.md.
+"801d0094" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801e3624` - an entry into a multi-entry routine, not a standalone function"
+"801d03a4" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801e3624`, inside 801e3578 - an entry into a multi-entry routine, not a standalone function"
+"801d06e0" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801dee50` - an entry into a multi-entry routine, not a standalone function"
+"801d1314" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801e3614`, inside 801e3578 - an entry into a multi-entry routine, not a standalone function"
+"801d1ef0" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801e00bc`, inside 801de840 - an entry into a multi-entry routine, not a standalone function"
+"801d207c" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801e3624` - an entry into a multi-entry routine, not a standalone function"
+"801d31d8" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801d8a2c`, inside 801d8a2c - an entry into a multi-entry routine, not a standalone function"
+"801d3f24" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801e3624`, inside 801e3578 - an entry into a multi-entry routine, not a standalone function"
+"801d4908" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801e00b8`, inside 801e00b8 - an entry into a multi-entry routine, not a standalone function"
+"801dabb4" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801df89c` - an entry into a multi-entry routine, not a standalone function"
+"801dac78" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801e3620` - an entry into a multi-entry routine, not a standalone function"
+"801db6cc" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801df098`, inside 801df098 - an entry into a multi-entry routine, not a standalone function"
+"801dba78" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801e205c`, inside 801e205c - an entry into a multi-entry routine, not a standalone function"
+"801e6548" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801ec964` - an entry into a multi-entry routine, not a standalone function"
+"801ea7ac" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801f03c0`, inside 801f03c0 - an entry into a multi-entry routine, not a standalone function"
+"801f03c0" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801d30e8` - an entry into a multi-entry routine, not a standalone function"
+"801f20dc" = "SHARED_TAIL: no `jr ra`; body exits `j 0x801d3290` - an entry into a multi-entry routine, not a standalone function"
 
 [worklist_duplicate]
 "801c2b2c" = "DUPLICATE: 333-instruction stream identical modulo relocation to 801d1344"
@@ -729,6 +765,23 @@
 # Worklist addresses with no body of their own: Ghidra reports a size but emits
 # no usable instruction stream, or the only body is a degenerate jump pad in the
 # image that was dumped. Nothing to port until a dump with a body exists.
+"8005bdec" = "DUPLICATE: 8-instruction stream identical modulo relocation to 8005be8c"
+"80062d58" = "DUPLICATE: 8-instruction stream identical modulo relocation to 800655ac"
+"8006558c" = "DUPLICATE: 8-instruction stream identical modulo relocation to 800693b8"
+"800655ac" = "DUPLICATE: 8-instruction stream identical modulo relocation to 80062d58"
+"801cc6ac" = "DUPLICATE: 245-instruction stream identical modulo relocation to the already-ported 801d1ec4"
+"801cd520" = "DUPLICATE: 97-instruction stream identical modulo relocation to the already-ported 801d2d38"
+"801cd6a4" = "DUPLICATE: 189-instruction stream identical modulo relocation to the already-ported 801d2ebc"
+"801cd998" = "DUPLICATE: 287-instruction stream identical modulo relocation to the already-ported 801d31b0"
+"801ceb84" = "DUPLICATE: 290-instruction stream identical modulo relocation to 801d02c0"
+"801cfe00" = "DUPLICATE: 8-instruction stream identical modulo relocation to 8005bdec"
+"801cff3c" = "DUPLICATE: 26-instruction stream identical modulo relocation to the already-ported 801de754"
+"801d657c" = "DUPLICATE: 31-instruction stream identical modulo relocation to 801d7964"
+"801d79e0" = "DUPLICATE: 31-instruction stream identical modulo relocation to the already-ported 801d5ae0"
+"801ec204" = "DUPLICATE: 37-instruction stream identical modulo relocation to 801f1a1c"
+"801f1cd8" = "DUPLICATE: 18-instruction stream identical modulo relocation to 801f1d48"
+"801f1d48" = "DUPLICATE: 18-instruction stream identical modulo relocation to 801f1cd8"
+"8020e504" = "DUPLICATE: 818-instruction stream identical modulo relocation to the already-ported 801eed1c"
 [worklist_phantom]
 "80021934" = "PHANTOM: only dump body is a 3-instruction stub"
 "80035c10" = "PHANTOM: only dump body is a 4-instruction stub"
@@ -752,6 +805,27 @@
 "801e01f0" = "PHANTOM: printed address of a mis-based dump. The 81-instruction body resolves at field(897) 0x801E5A08 (delta +0x5818) and at this VA in no image. Corroborated by its own `j 0x801E5AEC` / `j 0x801E5AE8`, both inside 0x801E5A08..0x801E5B4C and nowhere near the printed window. NB the 801d71f0 row's withdrawn duplicate claim already named 801e01f0 as a mis-based print."
 
 # Worklist addresses that name data or a region boundary rather than code.
+"8002b974" = "PHANTOM: only dump body is a 2-instruction stub"
+"80056618" = "PHANTOM: only dump body is a 3-instruction stub"
+"80056638" = "PHANTOM: only dump body is a 3-instruction stub"
+"80056668" = "PHANTOM: only dump body is a 3-instruction stub"
+"80056778" = "PHANTOM: only dump body is a 3-instruction stub"
+"8005bd30" = "PHANTOM: only dump body is a 3-instruction stub"
+"8005bd40" = "PHANTOM: only dump body is a 4-instruction stub"
+"8005bd50" = "PHANTOM: only dump body is a 4-instruction stub"
+"8005db9c" = "PHANTOM: only dump body is a 3-instruction stub"
+"8006d794" = "PHANTOM: only dump body is a 3-instruction stub"
+"8006ef48" = "PHANTOM: only dump body is a 3-instruction stub"
+"8006ef58" = "PHANTOM: only dump body is a 3-instruction stub"
+"801d0338" = "PHANTOM: only dump body is a 3-instruction stub"
+"801d2774" = "PHANTOM: only dump body is a 4-instruction stub"
+"801d2968" = "PHANTOM: only dump body is a 1-instruction stub"
+"801d6300" = "PHANTOM: only dump body is a 4-instruction stub"
+"801db2fc" = "PHANTOM: only dump body is a 2-instruction stub"
+"801db4e8" = "PHANTOM: only dump body is a 3-instruction stub"
+"801dd094" = "PHANTOM: only dump body is a 4-instruction stub"
+"801e5ae8" = "PHANTOM: only dump body is a 4-instruction stub"
+"801f6a84" = "PHANTOM: only dump body is a 0-instruction stub"
 [worklist_data]
 "801e473c" = "DATA: the menu window-descriptor table (52 records), not code - see docs/subsystems/field-menu.md. The dump is a 256-byte hex listing; the table is parsed by legaia_asset::menu_windows."
 "801f0000" = "Region boundary, not a function entry: the docs citing 0x801F0000 (boot.md, world-map.md, memory-map.md, battle-action.md) all name it as the base of the persistent post-overlay region, never as a call target. The only dump covering the VA is a 4 KB window listing from overlay_magic_level_up_full.bin."
