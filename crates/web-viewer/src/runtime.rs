@@ -30,6 +30,14 @@ use wasm_bindgen::prelude::*;
 
 use crate::play::{FieldRender, NpcClip, NpcRender, PlayerRig};
 
+/// Default BGM output gain for the play page. Retail SEQ + clean-room SPU
+/// output sits around 1% of the i16 range (near-inaudible at unity); the audio
+/// audition page (`site/audio.html`) uses ~25x for the same reason. Match that
+/// ballpark so the play page's music is at a comfortable speaker level - JS can
+/// retune it live through [`LegaiaRuntime::audio_set_gain`].
+#[cfg(target_arch = "wasm32")]
+const BGM_DEFAULT_GAIN: f32 = 20.0;
+
 /// Bridge object the play page instantiates once. Holds a `World` +
 /// `MenuRuntime` for the disc-free path, and - once `load_disc` has run - a
 /// `SceneHost` plus the render state for the scene it is running.
@@ -86,6 +94,20 @@ pub struct LegaiaRuntime {
     pub(crate) cards: [Option<crate::cards::InsertedCard>; crate::cards::CARD_SLOTS],
     #[cfg(target_arch = "wasm32")]
     audio_out: Option<WebAudioOut>,
+    /// Scene-local BGM sound bank, staged from the scene's first VAB entry
+    /// ([`SceneHost::scene_vab_bytes`]) whenever audio is live. Scene-local BGM
+    /// starts (`bgm_id < 2000`, [`WebBgmDirector::start`]) play their SEQ
+    /// through this bank; a global-pool track (`>= 2000`) brings its own VAB
+    /// and replaces it. `None` until a scene is staged with audio running.
+    #[cfg(target_arch = "wasm32")]
+    bgm_bank: Option<legaia_engine_audio::VabBank>,
+    /// Last BGM id handed to [`WebAudioOut`], for the field VM's redundant
+    /// op-`0x35` re-emit suppression - re-attaching the same track would drop
+    /// the playhead. Reset on a deliberate [`Self::enter_field`] so re-booting
+    /// a scene restarts its music; preserved across door transitions so an
+    /// unchanged track keeps playing.
+    #[cfg(target_arch = "wasm32")]
+    bgm_last_started: Option<u16>,
 }
 
 #[wasm_bindgen]
@@ -117,6 +139,10 @@ impl LegaiaRuntime {
             cards: [const { None }; crate::cards::CARD_SLOTS],
             #[cfg(target_arch = "wasm32")]
             audio_out: None,
+            #[cfg(target_arch = "wasm32")]
+            bgm_bank: None,
+            #[cfg(target_arch = "wasm32")]
+            bgm_last_started: None,
         }
     }
 
@@ -308,6 +334,16 @@ impl LegaiaRuntime {
         if !in_opening {
             self.seat_player();
         }
+        // A deliberate scene boot restages BGM from scratch: clear the dedupe
+        // latch (so the scene's own op-`0x35` start is honoured even if it names
+        // the track that was already playing) and stage the new scene's VAB
+        // bank. Both no-op until audio is live (`audio_init`), which itself
+        // restages the current scene's bank.
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.bgm_last_started = None;
+            self.stage_scene_bgm_bank();
+        }
         Ok(self.state_json())
     }
 
@@ -375,6 +411,12 @@ impl LegaiaRuntime {
         if host.world.mode == SceneMode::Cutscene && host.world.active_fmv.is_some() {
             host.world.finish_cutscene();
         }
+        // Route this tick's field-VM BGM events (op `0x35`) into WebAudioOut -
+        // the scene's music, started/queued/paused/stopped by the same events
+        // the native `AudioBgmDirector` consumes. The `host` borrow above is
+        // dead here (not used past `finish_cutscene`), so this can re-borrow.
+        #[cfg(target_arch = "wasm32")]
+        self.route_bgm_wasm();
         if let SceneTickEvent::SceneEntered { name } = event {
             // `town01` keeps its establishing-sweep timeline: the page now
             // draws the name-entry overlay its pinned op-0x49 opens
@@ -384,6 +426,11 @@ impl LegaiaRuntime {
             // taught (a screen armed with nothing to finish it parks the
             // script dead).
             self.rebuild_render_state()?;
+            // A door swapped the scene: restage its VAB bank (a scene-local
+            // start needs it) without resetting the dedupe latch, so a track
+            // that carries across the transition keeps its playhead.
+            #[cfg(target_arch = "wasm32")]
+            self.stage_scene_bgm_bank();
             return Ok(name);
         }
         // A field-VM op-0x49 sub-0 merchant armed a shop this tick: hand it to
@@ -502,12 +549,24 @@ impl LegaiaRuntime {
 
     /// Attempt to start the WebAudio backend. Must be called from a user-gesture
     /// handler (browser autoplay policy). `true` on success.
+    ///
+    /// Once up, the scene's BGM plays automatically: every [`Self::tick_frame`]
+    /// routes the field VM's op-`0x35` music events through the same clean-room
+    /// VAB + SEQ + SPU path the audio audition page uses. This call also stages
+    /// the current scene's VAB bank (so a scene-local track has a bank) and sets
+    /// a default output gain, since retail SEQ output is near-inaudible at
+    /// unity. Browsers often open the `AudioContext` suspended even inside a
+    /// gesture - call [`Self::audio_resume`] right after this to make it audible.
     pub fn audio_init(&mut self) -> bool {
         #[cfg(target_arch = "wasm32")]
         {
             match WebAudioOut::new() {
                 Ok(out) => {
+                    out.set_gain(BGM_DEFAULT_GAIN);
                     self.audio_out = Some(out);
+                    // If a scene is already up, stage its VAB now so a
+                    // scene-local BGM start resolves against a live bank.
+                    self.stage_scene_bgm_bank();
                     true
                 }
                 Err(e) => {
@@ -518,6 +577,42 @@ impl LegaiaRuntime {
         }
         #[cfg(not(target_arch = "wasm32"))]
         false
+    }
+
+    /// Resume the BGM `AudioContext`. Browsers construct it in `suspended`
+    /// state even when the constructor runs inside a user gesture; the play
+    /// page calls this from its gesture handler right after [`Self::audio_init`]
+    /// to make the audio actually sound. Resolved no-op when audio isn't up.
+    #[cfg(target_arch = "wasm32")]
+    pub fn audio_resume(&self) -> js_sys::Promise {
+        match self.audio_out.as_ref() {
+            Some(out) => out.resume(),
+            None => js_sys::Promise::resolve(&JsValue::UNDEFINED),
+        }
+    }
+
+    /// Set the BGM output gain. `1.0` matches the native cpal path; the play
+    /// page defaults to [`BGM_DEFAULT_GAIN`] because retail SEQ+SPU output is
+    /// quiet. No-op when audio isn't up.
+    #[cfg(target_arch = "wasm32")]
+    pub fn audio_set_gain(&self, gain: f32) {
+        if let Some(out) = self.audio_out.as_ref() {
+            out.set_gain(gain);
+        }
+    }
+
+    /// Whether the WebAudio backend is live (`audio_init` succeeded). The play
+    /// page reads this to decide whether it still needs the user's audio-enable
+    /// gesture.
+    pub fn audio_ready(&self) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.audio_out.is_some()
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            false
+        }
     }
 
     /// Frame counter.
@@ -951,6 +1046,174 @@ impl LegaiaRuntime {
             ))
         });
         host.world.set_field_player_anim(anim);
+    }
+
+    /// Drain this tick's field-VM BGM events into [`WebAudioOut`] via a
+    /// [`WebBgmDirector`]. Runs only while audio is live; until then the field
+    /// VM's music events stay on the world queue (they are not consumed here),
+    /// so enabling audio later still catches the scene's track on its next
+    /// op-`0x35` re-emit. The borrows are disjoint fields of `self`.
+    #[cfg(target_arch = "wasm32")]
+    fn route_bgm_wasm(&mut self) {
+        let out = match self.audio_out.as_ref() {
+            Some(o) => o,
+            None => return,
+        };
+        let host = match self.scene_host.as_mut() {
+            Some(h) => h,
+            None => return,
+        };
+        let mut director = WebBgmDirector {
+            out,
+            bank: &mut self.bgm_bank,
+            last_started: &mut self.bgm_last_started,
+        };
+        if let Err(e) = host.route_bgm_events(&mut director) {
+            crate::console_log(&format!("play BGM: route failed: {e:#}"));
+        }
+    }
+
+    /// Stage the current scene's first VAB entry
+    /// ([`SceneHost::scene_vab_bytes`]) into the SPU as the active scene-local
+    /// BGM bank, mirroring the native boot's `stage_scene_vab` (parse at
+    /// offset 0, SPU RAM allocator from `0x1000`). No-op when audio isn't up or
+    /// the scene has no VAB. A subsequent global-pool track replaces this bank
+    /// with its own on start.
+    #[cfg(target_arch = "wasm32")]
+    fn stage_scene_bgm_bank(&mut self) {
+        let out = match self.audio_out.as_ref() {
+            Some(o) => o,
+            None => return,
+        };
+        let host = match self.scene_host.as_ref() {
+            Some(h) => h,
+            None => return,
+        };
+        let vab_bytes = match host.scene_vab_bytes() {
+            Ok(Some(b)) => b,
+            _ => return,
+        };
+        let report = match legaia_vab::parse(&vab_bytes, 0) {
+            Ok(r) => r,
+            Err(e) => {
+                crate::console_log(&format!("play BGM: scene VAB parse failed: {e}"));
+                return;
+            }
+        };
+        let bank = out.with_spu(|spu| {
+            let mut alloc = legaia_engine_audio::spu::ram::SpuAllocator::new(
+                0x1000,
+                legaia_engine_audio::spu::ram::SPU_RAM_BYTES as u32 - 0x1000,
+            );
+            legaia_engine_audio::VabBank::upload(spu, &mut alloc, &report, &vab_bytes)
+        });
+        self.bgm_bank = Some(bank);
+    }
+}
+
+/// A [`legaia_engine_core::scene::BgmDirector`] that routes the field VM's
+/// op-`0x35` music events into a [`WebAudioOut`]: the browser twin of the
+/// native `AudioBgmDirector`. Borrows the runtime's audio handle plus its
+/// scene-local BGM bank + dedupe latch for the duration of one routing pass.
+///
+/// Scene-local starts (`bgm_id < 2000`) play their SEQ through the pre-staged
+/// scene bank (`bank`); global-pool tracks (`>= 2000`) carry their own
+/// `[chunk][pBAV VAB][pQES SEQ]` and upload it before playing - the path most
+/// real Legaia music takes. Both loop to the start and cross-fade in.
+#[cfg(target_arch = "wasm32")]
+struct WebBgmDirector<'a> {
+    out: &'a WebAudioOut,
+    bank: &'a mut Option<legaia_engine_audio::VabBank>,
+    last_started: &'a mut Option<u16>,
+}
+
+#[cfg(target_arch = "wasm32")]
+impl WebBgmDirector<'_> {
+    /// Cross-fade in a freshly-built, looping sequencer over ~0.5 s at the
+    /// SPU's 44.1 kHz rate. When nothing is playing, `crossfade_to` installs it
+    /// immediately - so this is also the plain first-start path.
+    fn play(&mut self, bgm_id: u16, seq: legaia_seq::Seq, bank: legaia_engine_audio::VabBank) {
+        const CROSSFADE_SAMPLES: u32 = 22_050;
+        let mut sequencer = legaia_engine_audio::sequencer::Sequencer::new(seq, bank);
+        sequencer.set_loop_to(0);
+        self.out.crossfade_to(sequencer, CROSSFADE_SAMPLES);
+        *self.last_started = Some(bgm_id);
+    }
+
+    /// Split a global-pool `music_01` entry (`[chunk][pBAV VAB][pQES SEQ]`),
+    /// upload its own VAB into the SPU BGM region, stash it as the active bank,
+    /// and return the parsed SEQ. `None` when the pair is absent or a header
+    /// doesn't parse. Mirrors the native `AudioBgmDirector::stage_owned_vab`.
+    fn stage_owned(
+        &mut self,
+        entry_bytes: &[u8],
+    ) -> Option<(legaia_seq::Seq, legaia_engine_audio::VabBank)> {
+        let vab_off = entry_bytes.windows(4).position(|w| w == b"pBAV")?;
+        let seq_rel = entry_bytes[vab_off..]
+            .windows(4)
+            .position(|w| w == b"pQES")?;
+        let report = legaia_vab::parse(entry_bytes, vab_off).ok()?;
+        let body = &entry_bytes[vab_off..];
+        let bank = self.out.with_spu(|spu| {
+            let mut alloc = legaia_engine_audio::spu::ram::SpuAllocator::new(
+                0x1000,
+                legaia_engine_audio::spu::ram::SPU_RAM_BYTES as u32 - 0x1000,
+            );
+            legaia_engine_audio::VabBank::upload(spu, &mut alloc, &report, body)
+        });
+        let seq = legaia_seq::Seq::parse(&entry_bytes[vab_off + seq_rel..]).ok()?;
+        *self.bank = Some(bank.clone());
+        Some((seq, bank))
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl legaia_engine_core::scene::BgmDirector for WebBgmDirector<'_> {
+    fn start(&mut self, bgm_id: u16, seq_bytes: &[u8]) {
+        if *self.last_started == Some(bgm_id) {
+            return;
+        }
+        let Some(bank) = self.bank.clone() else {
+            crate::console_log("play BGM: scene-local start with no scene VAB staged");
+            return;
+        };
+        match legaia_seq::Seq::parse(seq_bytes) {
+            Ok(seq) => self.play(bgm_id, seq, bank),
+            Err(e) => crate::console_log(&format!("play BGM: SEQ parse failed: {e}")),
+        }
+    }
+
+    fn queue(&mut self, bgm_id: u16, seq_bytes: &[u8]) {
+        // No deferred-flush plumbing on the play page (no scene-transition
+        // flush hook); a queued track starts immediately.
+        self.start(bgm_id, seq_bytes);
+    }
+
+    fn start_owned_vab(&mut self, bgm_id: u16, entry_bytes: &[u8]) {
+        if *self.last_started == Some(bgm_id) {
+            return;
+        }
+        match self.stage_owned(entry_bytes) {
+            Some((seq, bank)) => self.play(bgm_id, seq, bank),
+            None => crate::console_log("play BGM: global entry has no [VAB][SEQ] pair"),
+        }
+    }
+
+    fn queue_owned_vab(&mut self, bgm_id: u16, entry_bytes: &[u8]) {
+        self.start_owned_vab(bgm_id, entry_bytes);
+    }
+
+    fn pause(&mut self) {
+        self.out.set_sequencer_paused(true);
+    }
+
+    fn resume(&mut self) {
+        self.out.set_sequencer_paused(false);
+    }
+
+    fn stop(&mut self) {
+        self.out.detach_sequencer();
+        *self.last_started = None;
     }
 }
 

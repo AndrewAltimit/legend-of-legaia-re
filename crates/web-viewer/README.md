@@ -78,6 +78,27 @@ pinned by the disc-gated parity test `tests/play_parity.rs`:
 The disc-gated `tests/play_parity_wave.rs` pins the hide-box contract, the
 sim-tick clip cadence, and the opening-chain staging below.
 
+## Scene BGM (`runtime`)
+
+The play page plays the scene's music through the clean-room SPU + sequencer,
+the browser twin of the native `AudioBgmDirector`. `audio_init()` opens a
+`legaia_engine_audio::WebAudioOut` (must run inside a user gesture - browser
+autoplay policy) and stages the scene's VAB bank; every `tick_frame()` then
+routes the field VM's op-`0x35` BGM events through a `WebBgmDirector` that
+implements `legaia_engine_core::scene::BgmDirector`. Scene-local starts
+(`bgm_id < 2000`) play their SEQ through the pre-staged scene bank; global-pool
+tracks (`>= 2000`, the path most real Legaia BGM takes) carry their own
+`[chunk][pBAV VAB][pQES SEQ]` and upload it before playing - the same
+`SceneHost::route_bgm_events` / `bgm_seq_bytes` / `music_bank_entry_bytes`
+selection the native window uses, no new mapping. Tracks loop to the start and
+cross-fade in; a redundant op-`0x35` re-emit of the same id is suppressed so
+the playhead survives. `audio_resume()` (browsers open the context suspended),
+`audio_set_gain()`, and `audio_ready()` round out the JS surface; routing and
+staging no-op until audio is live, so the field VM's events stay queued until
+the user enables sound. Not built into a disc-gated parity test - the SPU
+render path is exercised by the audio page (`audio_api`) and the native
+`audio-trace` oracle; the play-page wiring needs an in-browser listen.
+
 ## Retail dialog reading box (`play_dialog`)
 
 The field NPC / event message box, served as the same `{ sprites, texts }`
