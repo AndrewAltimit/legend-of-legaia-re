@@ -312,7 +312,7 @@ are capture-class spells - per-spell streamed code modules - and exactly six
 modules route damage through the wrapper `FUN_801DD6B4`, which passes the
 finisher `param_5 = 1` and skips the entire party-defender resist block
 (Jewels, elemental guards, All Guard): Xain's Bloody Horns / Terio Punch
-(+ module-sharing Bull Charge), Cort's Guilty Cross (+ Curse All), and the
+(+ module-sharing Bull Charge), Cort's Guilty Cross, and the
 Delilas trio's Blazing Slash / Megaton Press / Plasma Strike. (Gaza's Astral
 Slash shares the Bloody Horns module but dispatches to its own tick and
 respects guards - playtest-confirmed.) The fix retargets all thirteen

@@ -473,7 +473,7 @@ pub(crate) struct RandomizeArgs {
     pub(crate) shiny_pct: u8,
     /// **Jewel fix**: make the boss cinematic casts respect elemental guards.
     /// In retail, Xain's Bloody Horns / Terio Punch (+ Bull Charge), Cort's
-    /// Guilty Cross (+ Curse All), and the Delilas trio's Blazing Slash /
+    /// Guilty Cross, and the Delilas trio's Blazing Slash /
     /// Megaton Press / Plasma Strike call the resist-ladder-bypassing damage
     /// wrapper (`FUN_801DD6B4`, finisher `param_5 = 1`), so Earth/other
     /// Jewels, elemental guards and All Guard never apply to them despite the

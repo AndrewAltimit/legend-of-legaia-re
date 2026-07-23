@@ -312,7 +312,7 @@ pub struct JewelFixReport {
 
 /// Apply the **jewel fix** (see [`crate::jewel_fix`]): retarget the damage
 /// calls of the boss cinematic casts - Xain's Bloody Horns / Terio Punch (and
-/// module-sharing Bull Charge), Cort's Guilty Cross (and Curse All), and the
+/// module-sharing Bull Charge), Cort's Guilty Cross, and the
 /// Delilas trio's Blazing Slash / Megaton Press / Plasma Strike - from the
 /// resist-ladder-bypassing wrapper `FUN_801DD6B4` to the guard-respecting
 /// `FUN_801DD4B0`, so elemental jewels / guards / All Guard apply to those

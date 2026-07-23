@@ -681,9 +681,9 @@ respect, each module's own extent bounded by the next entry's head-overlap):
 
 | Module | Spells (shared per module) | Known caster | Wrapper |
 |---|---|---|---|
-| PROT 944 | Guilty Cross `0x37`, Curse All `0x53` | Cort (humanoid phases) | **bypass** |
+| PROT 944 | Guilty Cross `0x37` -> **bypass** (dispatcher `+0x1510` sends `0x37` to the `+0x2C` tick; playtest-confirmed - an Ebony Jewel makes no difference); Curse All `0x53` -> `+0xA98` tick with **no damage-wrapper call** | Cort (humanoid phases) | per-spell (see cells) |
 | PROT 952 | Bloody Horns `0x5C` -> **bypass** (dispatcher `+0x1150` sends `0x5C` to the `+0x740` tick); Astral Slash `0xB8` -> `+0x34` tick, which carries **no damage-wrapper call** - and **respects** in play (community playtest: a Luminous Jewel halves it, 1570 -> 781); its damage-call site is unpinned | Xain; Gaza (first fight) | per-spell (see cells) |
-| PROT 953 | Terio Punch `0x5D`, Bull Charge `0x5E` | Xain | **bypass** |
+| PROT 953 | Terio Punch `0x5D`, Bull Charge `0x5E` (no id dispatcher - one shared tick, both spells) | Xain | **bypass** |
 | PROT 958 | Blazing Slash `0x79` | Gi Delilas | **bypass** (6 calls) |
 | PROT 959 | Megaton Press `0x7A` | Che Delilas | **bypass** (3 calls) |
 | PROT 960 | Plasma Strike `0x7B` -> `+0xB0C` tick = **bypass**; Neo Star Slash `0xA6` -> `+0x0` tick = **respect** (dispatcher `+0x1C60`) | Lu Delilas; Gaza (Sim-Seru) | per-spell (see cells) |
