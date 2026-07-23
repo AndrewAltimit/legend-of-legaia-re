@@ -660,9 +660,12 @@ through one of two SCUS wrappers around scale + finish:
 Both pass `a1 = ctx+0x13` (the caster's seat), so the affinity scale reads the
 caster's true record element either way - the bypass is purely the finisher's
 `param_5 == 0` gate around the resist ladder. Which wrapper a given cast uses
-is hand-written per module: Xain's **Bloody Horns** (PROT 952: hit `0x1D0` via
-`FUN_801DD6B4`, plus one `0x80` component via `FUN_801DD4B0`) and
-**Terio Punch** (PROT 953: `0x274` via `FUN_801DD6B4`) bypass the ladder -
+is hand-written per module - and, where a module is shared, per **spell**: a
+module head dispatcher branches on the action id `actor[+0x1DF]` to a
+per-spell tick function (e.g. PROT 960 `+0x1C60`: `0x7B` -> the `+0xB0C`
+function, `0xA6` -> `+0x0`). Xain's **Bloody Horns** (PROT 952: hit `0x1D0`
+via `FUN_801DD6B4`) and **Terio Punch** (PROT 953: `0x274` via
+`FUN_801DD6B4`) bypass the ladder -
 NB the neighbouring `09xx` extents overlap on disc (entry 953 starts `0x1800`
 into entry 952's window), so the Terio Punch word also appears in 952's window
 at `+0x2238`; it is the same physical word, not a second Bloody Horns hit -
@@ -679,18 +682,23 @@ respect, each module's own extent bounded by the next entry's head-overlap):
 | Module | Spells (shared per module) | Known caster | Wrapper |
 |---|---|---|---|
 | PROT 944 | Guilty Cross `0x37`, Curse All `0x53` | Cort (humanoid phases) | **bypass** |
-| PROT 952 | Bloody Horns `0x5C`, Astral Slash `0xB8` | Xain; Gaza (first fight) | **bypass** (+1 respect call) |
+| PROT 952 | Bloody Horns `0x5C` -> **bypass** (dispatcher `+0x1150` sends `0x5C` to the `+0x740` tick); Astral Slash `0xB8` -> `+0x34` tick, which carries **no damage-wrapper call** (path open) | Xain; Gaza (first fight) | per-spell (see cells) |
 | PROT 953 | Terio Punch `0x5D`, Bull Charge `0x5E` | Xain | **bypass** |
 | PROT 958 | Blazing Slash `0x79` | Gi Delilas | **bypass** (6 calls) |
 | PROT 959 | Megaton Press `0x7A` | Che Delilas | **bypass** (3 calls) |
-| PROT 960 | Plasma Strike `0x7B`, Neo Star Slash `0xA6` | Lu Delilas; Gaza (Sim-Seru) | **mixed** (1 bypass + 1 respect) |
+| PROT 960 | Plasma Strike `0x7B` -> `+0xB0C` tick = **bypass**; Neo Star Slash `0xA6` -> `+0x0` tick = **respect** (dispatcher `+0x1C60`) | Lu Delilas; Gaza (Sim-Seru) | per-spell (see cells) |
 | every other damage-dealing capture module (935..966) | Earthquake, Hyper Crush/Lightning, Chaos Breath/Flare, Call/Big Wave, Water Column/Crystals/Hazard, Cross Beam, V-/Neo Windhash, Rolling Flare, Scythe Wind, Dead End / Final Crisis, Blade Breath band, Genocidal Cannon, Doomsday, Mystic Circle, enemy ESM, ... | various | respect |
 
 Status-only modules (Glare / Divide / Curse / White Shield cluster / Mystic
 Shield / Clone / Fatal Decision / Kiss of Death band) carry no damage-wrapper
-call at all. Within a *shared* module the per-spell attribution of individual
-call sites is not pinned (the module branches internally); the table is
-module-granular. Notably **no Songi cast is in a bypass or mixed module**
+call at all. Shared modules dispatch **per spell** at the module-head id
+switch, so a shared row does not imply shared behaviour. Two residuals: PROT
+952 carries one *respect* call (`+0x15B0`, power `0x80`) with **no reachable
+in-module entry** - same-shape twins sit at the same offsets in sibling
+modules, so it reads as shared template dead code, not a Bloody Horns
+component - and Astral Slash's dispatched tick has no damage call at all, so
+where its damage lands is an open leg. Notably **no Songi cast is in a bypass
+module**
 (Hyper Wave is plain-class; Hyper Lightning / Hyper Crush / Chaos Flare /
 Genocidal Cannon all respect), and non-capture casts (plain-class, player
 summons, move-power specials) all reach the finisher with `param_5 = 0`.

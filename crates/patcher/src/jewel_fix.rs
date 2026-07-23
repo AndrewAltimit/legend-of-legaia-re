@@ -20,9 +20,10 @@
 //!
 //! Both wrappers pass the caster's seat, so the affinity scale reads Xain's
 //! true Earth element either way - the bypass is purely the finisher's
-//! `param_5 == 0` gate. Bloody Horns' big hit (power `0x1D0`) and Terio
-//! Punch's hit (`0x274`) call the bypass wrapper; the enemy-side Evil Seru
-//! Magic module calls the respecting one (which is why Cort's ESM behaves as
+//! `param_5 == 0` gate. Bloody Horns' hit (power `0x1D0`, dispatched to the
+//! module's `+0x740` tick by the id switch at `+0x1150`) and Terio Punch's
+//! hit (`0x274`) call the bypass wrapper; the enemy-side Evil Seru Magic
+//! module calls the respecting one (which is why Cort's ESM behaves as
 //! Dark). See `docs/subsystems/battle-formulas.md` and
 //! `docs/formats/spell-table.md` (cast classes).
 //!
@@ -34,9 +35,10 @@
 //! attacker slot, `a2` = defender slot; both roll internally and return the
 //! damage margin), so the retarget changes nothing but the finisher's
 //! `param_5`, and the resist ladder engages exactly as it does for every
-//! ordinary monster special. Bloody Horns' small second component (power
-//! `0x80`, entry offset `0x15B0`) already uses the respecting wrapper in
-//! retail and is untouched.
+//! ordinary monster special. The respecting-wrapper call at entry offset
+//! `0x15B0` (power `0x80`) is untouched: it has no reachable in-module entry
+//! (same-shape twins sit at the same offset in sibling modules - shared
+//! template dead code, not a Bloody Horns component).
 //!
 //! Terio Punch shares its module (spell sub-index `0x12`) with **Bull Charge**
 //! (`0x5E`), so the fix covers that cast too.
