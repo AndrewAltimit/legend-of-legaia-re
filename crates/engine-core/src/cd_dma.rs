@@ -715,6 +715,15 @@ pub trait StreamReadSyncHost {
 /// `deliver_status` (retail `FUN_8005BEAC(1, result)`), and the last
 /// report is returned: sectors remaining, `0` on completion, or
 /// [`STREAM_SYNC_TIMED_OUT`].
+///
+/// NOT WIRED: nothing implements [`StreamReadSyncHost`]. The engine reads
+/// PROT entries and named files synchronously out of an in-memory disc image
+/// through `legaia_iso`, so there is no IRQ-driven sector chain to wait on -
+/// no outstanding-sector counter, no per-sector IRQ timestamp, and no vsync
+/// counter to time the two watchdogs against. Every value the trait asks for
+/// would have to be invented. Wiring it needs an asynchronous sector reader
+/// behind the asset loader, which is the same prerequisite the streaming
+/// half of this module is waiting on.
 pub fn stream_read_sync(
     host: &mut impl StreamReadSyncHost,
     poll_once: bool,

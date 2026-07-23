@@ -5,6 +5,20 @@
 //! PORT: FUN_8003C110 - the one-line mode setter the reset calls.
 //! REF: FUN_800355F0, FUN_80032434, FUN_80031D00, FUN_80030628
 //!
+//! ## NOT WIRED
+//!
+//! Nothing in the engine owns the `gp+0x148` node list these passes walk.
+//! On-screen text and labels are rebuilt every frame by the `engine-ui`
+//! draw-list builders from the state that produces them, so no allocation
+//! path ever hands out a `0x34`-byte node, and no producer writes the
+//! `+0x24` tween descriptor that decides whether a node tweens at all -
+//! retail's is the label emitter `FUN_80032434`, which is not ported.
+//! [`tick_node`] / [`tick_list`] therefore have no list to advance, and
+//! [`FIELD_SUBSYSTEM_RESET`] describes emptying a list that never exists.
+//! Wiring these needs the retail node pool plus its emitter, at which point
+//! the engine would also need the sibling draw pass `FUN_80031D00` to
+//! consume the tweened positions.
+//!
 //! `gp+0x148` (`0x8007B460`) is **one** sentinel-circular doubly-linked list of
 //! `0x34`-byte nodes, not several. The text/label producer `FUN_80032434`
 //! builds the head and inserts nodes into it, the per-frame walker

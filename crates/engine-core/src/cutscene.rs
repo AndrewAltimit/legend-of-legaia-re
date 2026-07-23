@@ -355,6 +355,12 @@ pub const FMV_STATE_SLOT_STRIDE: u32 = 0x20;
 /// halfword, and leaves `count` at `-1`; only the *next* call returns `-1`.
 ///
 /// Returns `None` for the retail `-1`.
+///
+/// NOT WIRED: the stack's owner is the cutscene sprite emitter
+/// `FUN_801D629C`, which is not ported. The engine draws cutscene sprites as
+/// `screen_fx` widgets built from the decoded scripts, so no
+/// `[count][halfword entries]` buffer is ever allocated for this pop (or its
+/// paired push at `0x8001FA68`) to walk. Wiring it needs that emitter.
 pub fn sprite_stack_pop(count: &mut i16, table: &[i16]) -> Option<i16> {
     if *count < 0 {
         return None;
