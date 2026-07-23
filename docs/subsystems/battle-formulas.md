@@ -660,16 +660,49 @@ through one of two SCUS wrappers around scale + finish:
 Both pass `a1 = ctx+0x13` (the caster's seat), so the affinity scale reads the
 caster's true record element either way - the bypass is purely the finisher's
 `param_5 == 0` gate around the resist ladder. Which wrapper a given cast uses
-is hand-written per module: Xain's **Bloody Horns** (PROT 952: hits `0x1D0` /
-`0x274` via `FUN_801DD6B4`, plus one `0x80` component via `FUN_801DD4B0`) and
-**Terio Punch** (PROT 953: `0x274` via `FUN_801DD6B4`) bypass the ladder -
+is hand-written per module - and, where a module is shared, per **spell**: a
+module head dispatcher branches on the action id `actor[+0x1DF]` to a
+per-spell tick function (e.g. PROT 960 `+0x1C60`: `0x7B` -> the `+0xB0C`
+function, `0xA6` -> `+0x0`). Xain's **Bloody Horns** (PROT 952: hit `0x1D0`
+via `FUN_801DD6B4`) and **Terio Punch** (PROT 953: `0x274` via
+`FUN_801DD6B4`) bypass the ladder -
+NB the neighbouring `09xx` extents overlap on disc (entry 953 starts `0x1800`
+into entry 952's window), so the Terio Punch word also appears in 952's window
+at `+0x2238`; it is the same physical word, not a second Bloody Horns hit -
 **this is why Earth Jewels do not reduce them** despite Xain's element byte
 being 0 (Earth) and being read by the scale - while the enemy-side
 **Evil Seru Magic** module (PROT 966: `0x327` / `0x100` via `FUN_801DD4B0`)
-respects it, which is why Cort's ESM behaves as Dark. Guilty Cross (PROT 944,
-`0x38E`) and the module disasm sites are recoverable by scanning the extracted
-entries for the `jal` words (`0x0C07752C` / `0x0C0775AD`). The engine finisher
+respects it, which is why Cort's ESM behaves as Dark. The engine finisher
 models the gate as `damage_finish::bypass_party_resist`.
+
+The full wrapper census over every capture-class module (byte-scan of the
+extracted entries for the `jal` words `0x0C0775AD` bypass / `0x0C07752C`
+respect, each module's own extent bounded by the next entry's head-overlap):
+
+| Module | Spells (shared per module) | Known caster | Wrapper |
+|---|---|---|---|
+| PROT 944 | Guilty Cross `0x37` -> **bypass** (dispatcher `+0x1510` sends `0x37` to the `+0x2C` tick; playtest-confirmed - an Ebony Jewel makes no difference); Curse All `0x53` -> `+0xA98` tick with **no damage-wrapper call**; no monster record carries `0x53` and no case of the picker's [hardcoded special-cast switch](../formats/spell-table.md#the-hardcoded-special-cast-switch-the-second-selection-mechanism) queues it - **casterless** (unused content, cf. the dummied Freeze Thunder `0x2C`) | Cort (humanoid phases) | per-spell (see cells) |
+| PROT 952 | Bloody Horns `0x5C` -> **bypass** (dispatcher `+0x1150` sends `0x5C` to the `+0x740` tick); Astral Slash `0xB8` -> `+0x34` tick, which carries **no damage-wrapper call** - and **respects** in play (community playtest: a Luminous Jewel halves it, 1570 -> 781); its damage-call site is unpinned | Xain; Gaza (first fight) | per-spell (see cells) |
+| PROT 953 | Terio Punch `0x5D`, Bull Charge `0x5E` (no id dispatcher - one shared tick, both spells) | Xain | **bypass** |
+| PROT 958 | Blazing Slash `0x79` | Gi Delilas | **bypass** (6 calls) |
+| PROT 959 | Megaton Press `0x7A` | Che Delilas | **bypass** (3 calls) |
+| PROT 960 | Plasma Strike `0x7B` -> `+0xB0C` tick = **bypass**; Neo Star Slash `0xA6` -> `+0x0` tick = **respect** (dispatcher `+0x1C60`) | Lu Delilas; Gaza (Sim-Seru) | per-spell (see cells) |
+| every other damage-dealing capture module (935..966) | Earthquake, Hyper Crush/Lightning, Chaos Breath/Flare, Call/Big Wave, Water Column/Crystals/Hazard, Cross Beam, V-/Neo Windhash, Rolling Flare, Scythe Wind, Dead End / Final Crisis, Blade Breath band, Genocidal Cannon, Doomsday, Mystic Circle, enemy ESM, ... | various | respect |
+
+Status-only modules (Glare / Divide / Curse / White Shield cluster / Mystic
+Shield / Clone / Fatal Decision / Kiss of Death band) carry no damage-wrapper
+call at all. Shared modules dispatch **per spell** at the module-head id
+switch, so a shared row does not imply shared behaviour. Two residuals: PROT
+952 carries one *respect* call (`+0x15B0`, power `0x80`) with **no reachable
+in-module entry** - same-shape twins sit at the same offsets in sibling
+modules, so it reads as shared template dead code, not a Bloody Horns
+component - and Astral Slash's dispatched tick has no damage call at all;
+its behaviour is **respecting** (community playtest: Luminous Jewel halves
+it), but which call site applies its damage stays open. Notably **no Songi
+cast is in a bypass module**
+(Hyper Wave is plain-class; Hyper Lightning / Hyper Crush / Chaos Flare /
+Genocidal Cannon all respect), and non-capture casts (plain-class, player
+summons, move-power specials) all reach the finisher with `param_5 = 0`.
 
 **Engine wiring.** The matrix + per-character table load from the same PROT 0898
 overlay as the move-power table (`World::element_affinity`), and the monster

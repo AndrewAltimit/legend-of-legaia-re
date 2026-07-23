@@ -302,3 +302,43 @@ pub fn inject_seru_bell_name(patcher: &mut DiscPatcher) -> Result<Option<String>
         .context("repoint accessory 0xFD name pointer")?;
     Ok(Some(SERU_BELL_NAME.to_string()))
 }
+
+/// Outcome of applying the jewel fix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JewelFixReport {
+    /// Number of `jal` words retargeted (the three bypass-wrapper call sites).
+    pub sites_patched: usize,
+}
+
+/// Apply the **jewel fix** (see [`crate::jewel_fix`]): retarget the damage
+/// calls of the boss cinematic casts - Xain's Bloody Horns / Terio Punch (and
+/// module-sharing Bull Charge), Cort's Guilty Cross, and the
+/// Delilas trio's Blazing Slash / Megaton Press / Plasma Strike - from the
+/// resist-ladder-bypassing wrapper `FUN_801DD6B4` to the guard-respecting
+/// `FUN_801DD4B0`, so elemental jewels / guards / All Guard apply to those
+/// hits like every ordinary monster special. Respecting-spell paths sharing a
+/// module (Neo Star Slash; Gaza's Astral Slash) are untouched.
+///
+/// Thirteen same-size one-word edits across the raw PROT entries
+/// 944 / 952 / 953 / 958 / 959 / 960, every offset inside its module's own
+/// extent (the neighbouring extents overlap on disc; each physical word is
+/// written exactly once). Each stock word is verified before writing; an
+/// unrecognized build is refused without touching the disc.
+pub fn apply_jewel_fix(patcher: &mut DiscPatcher) -> Result<JewelFixReport> {
+    let mut modules = std::collections::BTreeMap::new();
+    for index in crate::jewel_fix::MODULE_INDICES {
+        let bytes = patcher
+            .read_entry(index)
+            .with_context(|| format!("read cast module PROT {index} for jewel fix"))?;
+        modules.insert(index, bytes);
+    }
+    let plan = crate::jewel_fix::JewelFix::plan(&modules)?;
+    for &(index, offset, word) in &plan.writes {
+        patcher
+            .patch_prot_entry(index, offset as u64, &word.to_le_bytes())
+            .with_context(|| format!("write jewel-fix word at PROT {index} +{offset:#x}"))?;
+    }
+    Ok(JewelFixReport {
+        sites_patched: plan.writes.len(),
+    })
+}

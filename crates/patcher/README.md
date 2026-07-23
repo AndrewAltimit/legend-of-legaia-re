@@ -15,7 +15,10 @@ Three patching families share that machinery:
   the battle-tuning tables (monster combat stats, special-attack power, the
   element-affinity matrix, spell MP costs). Several extras are hand-assembled
   MIPS code hooks detoured into SCUS/overlay dead space: the bonus equipment
-  drop, run-away EXP, enemy ally (charm), shiny Seru, and Seru trading.
+  drop, run-away EXP, enemy ally (charm), shiny Seru, and Seru trading. The
+  `--jewel-fix` toggle retargets the boss cinematic cast modules' damage
+  `jal`s so Xain's, Cort's, and the Delilas trio's signature casts respect
+  elemental guards ([`jewel_fix`](#jewel-fix-jewel_fix-module)).
 - **Translation packs** - the `translate` CLI family: disc text out to an
   editable YAML language pack, filled pack back in as a same-size in-place
   reimport ([`docs/tooling/translation.md`](../../docs/tooling/translation.md)).
@@ -39,6 +42,7 @@ full design.
   - [Encounters](#encounters)
   - [Run-away EXP](#run-away-exp)
   - [Enemy ally (charm)](#enemy-ally-charm) - [Charm softlock fix](#charm-softlock-fix-charm_fix-module)
+  - [Jewel fix](#jewel-fix-jewel_fix-module)
   - [Shiny Seru](#shiny-seru)
   - [Seru trading](#seru-trading)
   - [Chests](#chests)
@@ -300,6 +304,30 @@ it is a **living party slot** (`alive && slot < 3`) and otherwise routes into
 retail's own bounded valid-slot re-pick, so the roster read is always in range. The
 `j`'s delay slot leaves the original `sb v0,-0x42a0(v1)` store in place. Applied
 automatically with the charm feature; same known-build / all-zero guards.
+
+## Jewel fix (`jewel_fix` module)
+
+`--jewel-fix` makes the boss cinematic casts respect elemental guards. Those
+are capture-class spells - per-spell streamed code modules - and exactly six
+modules route damage through the wrapper `FUN_801DD6B4`, which passes the
+finisher `param_5 = 1` and skips the entire party-defender resist block
+(Jewels, elemental guards, All Guard): Xain's Bloody Horns / Terio Punch
+(+ module-sharing Bull Charge), Cort's Guilty Cross, and the
+Delilas trio's Blazing Slash / Megaton Press / Plasma Strike. (Gaza's Astral
+Slash shares the Bloody Horns module but dispatches to its own tick and
+respects guards - playtest-confirmed.) The fix retargets all thirteen
+`jal` words across PROT
+944 / 952 / 953 / 958 / 959 / 960 to the guard-respecting `FUN_801DD4B0`;
+nothing else changes - both wrappers share the argument contract and the
+caster's element was already read by the affinity scale. Spells that already
+respect guards (incl. Neo Star Slash, which shares Plasma Strike's module but
+dispatches to its own tick) are untouched. Not a code *injection* - no
+dead-space routine, just verified same-size word retargets (each stock word is
+checked first; an unrecognized or already-patched image is refused). NB the
+neighbouring `09xx` extents overlap on disc (e.g. entry 953 starts `0x1800`
+into 952's window); every site lies in its module's own extent, so each
+physical word is written exactly once. See
+[`docs/tooling/randomizer.md` § Jewel fix](../../docs/tooling/randomizer.md#jewel-fix).
 
 ## Shiny Seru
 

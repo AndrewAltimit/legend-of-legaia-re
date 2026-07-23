@@ -117,6 +117,33 @@ prints `&DAT_800754D0 + id*0xC` (`0x27` → `Tail Fire`). So the enemy spell nam
 the local entry id. Decoder: [`legaia_asset::spell_names`](../../crates/asset/README.md);
 CLI `asset spell-names <SCUS> [--json]`.
 
+### The hardcoded special-cast switch (the second selection mechanism)
+
+The `+0x21` array is **not** the only cast source: the picker's tail runs a
+hardcoded `switch` on the **formation monster id** (`DAT_8007BD0C[slot]`,
+dump `overlay_battle_action_801e9fd4.txt` `0x801EB0xx..0x801EBD24`, ~30
+cases) that queues boss- and species-specific casts **directly into
+`actor+0x1DF`**, gated on HP fraction, MP, the battle round counter
+(`ctx+0xA28`), RNG cadence, the not-charmed check (`+0x16E & 0x380 == 0`),
+and per-slot chain-state cells at `DAT_801C8FE0[slot+4]` (+ the one-shot
+counter `DAT_801C8FE4`). Verified live: the Zeto mid-cast states hold
+`+0x1DF = 0x55/0x56` while the record's array still reads its disc value
+`{0x28, 0x01, 0x00}`. Notable cases:
+
+| Formation id | Casts queued | Trigger shape |
+|---|---|---|
+| `0x4B` Zeto | Call Wave `0x55` → chain-cell → Big Wave `0x56` | 40% + MP >= 100; the cell arms the follow-up |
+| `0x8B` Xain | Bull Charge `0x5E` → chain-cell → Terio Punch `0x5D` | rand%3; Bloody Horns `0x5C` comes from the `+0x21` array |
+| `0xA2..0xA4` Gi/Che/Lu Delilas | id − `0x29` = Blazing Slash / Megaton Press / Plasma Strike | every 3rd round |
+| `0xA6` Sim-Seru Gaza | Neo Star Slash `0xA6` | odd rounds, MP >= 200 |
+| `0xA8` Rogue | Element Change `0xAF`; then Rogue Wind/Thunder/Flame via `DAT_801C8FE4 − 0x50` | element-cycling counter |
+| `0xB3` Songi (Seru-Kai) | Genocidal Cannon `0xB3` | two-turn charge latched in record `+0x1C` |
+| `0xB4` / `0xB5` / `0xB6` Cort forms | ESM `0xAD` / Mystic Circle `0xB7` / Mystic Shield `0xAC`; Ultra Charge `0xA5` → Final Crisis `0xB4`, Doomsday `0xB6`; the `0xA2..0xA5` → Dead End Crisis `0xA1` round ladder | round-scripted |
+| species bands (`0x43+`, `0x54+`, `0x59+`, `0x62+`, `0x6B+`, `0x99..0xA1`, ...) | Steal `0x51`, Power Up `0x52`, White Shield `0x60`, Rolling Flare `0x5A`, Power Charge `0x72`, Void Accessories `0x73`, Paralyzing Wave `0x75`, Death Game `0x76`, Thunder Storm `0x77`, Stone Circle `0xB9`, Chaos Breath `0x4E`, Jugger Power `0xBA`, Lapis Wave `0xB5`, ... | HP-fraction / cadence gates |
+
+No case queues Curse All `0x53` (or Curse `0x40`) - with neither mechanism
+sourcing them, both are confirmed **casterless** in retail.
+
 (The `0xC5` MES substitution table at `DAT_80075EC4`, once mistaken for a
 spell-name source, is the [Tactical Arts name
 table](art-data.md#arts-name-table-dat_80075ec4) - per-character art names, no
