@@ -1029,6 +1029,39 @@ parked y. The shell driver
 panel-y-relative so future slides / layout shifts only need to touch
 the parked-y constant.
 
+## Debug character-parameter editor (`FUN_801D6E18` + `FUN_801DA2A0`)
+
+The save/menu overlay carries a developer character-editor sub-screen that
+reuses the same `DAT_801E46AC` phase word and `DAT_801E46C4` character
+cursor as the save UI (dumps `overlay_save_ui_801d6e18.txt` /
+`overlay_save_ui_801da2a0.txt`). It is not part of the retail save flow;
+its free per-field increment and unconditional stat-clamp mark it as a
+debug tool.
+
+**`FUN_801D6E18` - edit tick.** Phase-gated on `DAT_801E46AC` (0 → init,
+1 → active, 2 → suspend). A row cursor `_DAT_8007BB88` runs `0..0xB` over
+12 record fields; L1/R1 (`_DAT_8007BB84 & 0x1000 / 0x4000`) move it with
+wrap. Left/right (`0xA000`) step the hovered field by `±1`, scaled `×8`
+when `_DAT_8007B850 & 8` and `×8` again (`×64`) when `& 2`, sign from the
+`0x8000` bit. Row `0` selects the character (`0..3`, wrap); rows `1..0x9`
+add the step to byte/`i16` stat fields at `char*0x414 + 0x11C..`; row
+`0xB` adds `step*0x10` to an `i32` at `char*0x414 - 0x7FF7B8F8`. Confirm on
+row `10` (`_DAT_8007B874 & _DAT_800846D0`) zeroes a `0x10`-byte record span
+(`char*0x414 - 0x7FF7B773..`) with SFX `0x25`. Every tick a trailing pass
+clamps all four party records (`0x80084140 + n*0x414`): the `+0x6F8` byte
+to `1..0xC7`, the `+0x6E4..+0x6F4` `u16` stats to `1..0x4E1F`.
+
+**`FUN_801DA2A0` - page-navigation SM.** The phase router that drives the
+editor: it reads the roster byte at `0x80084598 + (DAT_801E46C4 & 0xFFF)`,
+branches on `DAT_801E46AC`, and on the active phase runs the shared
+list-cursor navigator [`FUN_801D688C`](#fun_801d688c---shared-list-cursor-navigator)
+over the roster count, switching on its result to retune the packed
+sub-mode nibble `DAT_801E46C0` and advance `DAT_801E46AC`; the init phase
+kicks the actor VM (`FUN_801D6628`). Neither function is ported - the
+clean-room engine models character records through `legaia_save` rather
+than a live-RAM debug editor, and there is no engine consumer for the
+developer screen.
+
 ## See also
 
 **Reference** -

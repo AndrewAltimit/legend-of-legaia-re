@@ -77,6 +77,31 @@ DAT_1F800393 = max(adaptive, DAT_8007B9D8);
 `FUN_801D6704`'s install is `sw s0,-0x4628(v0)` at `0x801D6990`, with `li s0,0x2`
 in the preceding instruction at `0x801D6988` (`overlay_0897`, base `0x801CE818`).
 
+`FUN_801CFDA0` is more than a floor installer - it is the field-to-battle intro
+particle builder (dump `overlay_field_battle_intro_801cfda0.txt`). After setting
+the floor-3 cadence and (on the first frame) fading to `0x101010`, it loops
+`0x488` times over a per-particle source stride of `0x2C`, building one GTE
+`0x2C`-byte GPU packet per particle straight into the ordering-table cursor
+`_DAT_1F8003A0`: it stamps the shared colour/geometry via `FUN_8003D1A4` /
+`FUN_8003D344` / `FUN_80026988`, transforms through `FUN_8005BAC8`
+(RotTransPers-class), applies `>>1` velocity nudges scaled by the tick byte
+`DAT_1F800393`, and screen-clips to `X in [-8,0x148)`, `Y in [-8,0xF8)` before
+linking the packet into the OT. It is a direct GTE/GPU-packet emitter, not a
+draw-list builder, so it is documented rather than ported into the clean-room
+render path.
+
+Two worklist addresses in this overlay band are VA-aliased and not
+independently portable. `0x801CEE80` is a field-VM interior label (jump-table
+slot `[8]` of `FUN_801DE840` in `overlay_0897`) that the base-program dump
+renders as a standalone gauge-fill helper reading an uninitialised `v0`; its one
+`jal` caller (`FUN_80025980` mode switch) sets no arguments, confirming the alias.
+`0x801D5A68` and `0x801D7B50` are real functions in the *field* overlay - the
+ambient-motion direction resolver (`REF` in `engine-vm::ambient_motion`, see
+[motion-vm.md](motion-vm.md)) and the sub-area window rebuild
+([field-locomotion.md](field-locomotion.md)) respectively - but their
+cutscene/menu-overlay dumps land mid-`FUN_801D5944` / `FUN_801D7B40`, so those
+dumps are interior slices, not the owning entry.
+
 **`FUN_801C6C78` is not an installer, despite an earlier row here saying so.**
 Its own 441-instruction disassembly (`0x801C6C78..0x801C7358`) writes exactly one
 global - `0x8007AA14`, via 17 copies of `sw t0,-0x55ec(at)` - and has no store to

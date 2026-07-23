@@ -532,6 +532,29 @@ table. The engine's 8th slot row (its equip-array over-model) stays
 navigable but icon-less; the stat-compare block previews the hovered
 candidate rather than the best-equipment pick.
 
+### Manual equip applier (`FUN_801D71F0`)
+
+The per-slot equip commit behind an accepted item pick (field overlay
+0897; `ghidra/scripts/funcs/overlay_0897_801d71f0.txt`). Signature
+`FUN_801D71F0(item_id, char, slot_hint)`; returns `1` on success, `0` if
+the bag pull fails. It pulls the item from the bag (`FUN_80042EE0(item_id
+& 0xFF)`, sentinel `0x100` = failure → early `0`) then finalises the
+decrement (`FUN_80043048`). Slot resolution: when `slot_hint < 4` it
+reads the item's equip class - equip-stat record `+7` bits `(0x60) >> 5`,
+the same field the Best-Equipment scan permutes - from the item-record
+`+1` index into the equipment table `0x80074F68`; armament classes route
+to the shared armament placer at `0x801E5AE8` (class `2` first indexing
+the per-character weapon-slot table `0x8007B42C[char]`), while class `0`
+and every `slot_hint >= 4` Goods slot (destination `slot_hint + 1`) fall
+to the inline placer. The inline placer writes the character equip array
+at `record[0x196 + slot]` (`0x80084140 + char*0x414 + 0x75E`): a prior
+occupant is returned to the bag (`FUN_800421D4`), the new id is stored,
+and SFX `0x24` plays (`FUN_80035BD0`) - the confirm cue the equip
+sub-screen (`0x13`) uses. Not ported; the engine's equip session applies
+the Best-Equipment pick via `equip_session` rather than this per-slot
+retail applier, and the `0x801E5AE8` armament tail is a separate function
+outside this dump.
+
 ## Scroll widgets (submenu 2 or 3)
 
 Up arrow (icon `0x67`) when `_DAT_8007bb90 > 0` and down arrow (icon `0x68`)
