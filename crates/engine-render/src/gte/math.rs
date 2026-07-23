@@ -209,6 +209,18 @@ pub mod view_rot_flags {
 /// REF: FUN_8003D178, FUN_800461A4, FUN_8004629C, FUN_8004638C, FUN_8003D1A4
 /// REF: FUN_8005B4E8
 ///
+/// NOT WIRED: the renderer does not build a view rotation by composing axis
+/// factors. Every camera MVP in `crate::window` folds the pitch + yaw pair
+/// into a spherical orbit and a `glam::Mat4::look_at_rh` (see
+/// [`crate::window::cutscene_camera_mvp`], which states the substitution),
+/// so there is no composition site to route through. Both of this function's
+/// own inputs are missing too: the engine's render node carries no `+0x52`
+/// flag halfword for the three per-axis skip bits, and it keeps no saved GTE
+/// control block for bit `0x400` to defer to. Wiring means giving render
+/// nodes that flag word and a saved-matrix slot, then replacing the
+/// `look_at_rh` camera with a factor product - a change to how the shot is
+/// framed, not a call insertion.
+///
 /// Returns the composed rotation, or `None` when the node asks for the saved
 /// camera matrix instead ([`view_rot_flags::USE_SAVED_MATRIX`]).
 ///

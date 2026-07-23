@@ -567,6 +567,12 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
 /// renderer masks.
 ///
 /// PORT: FUN_8003BC08 (the `0x8003BCA8..0x8003BCF4` facing-clamp arm)
+///
+/// NOT WIRED: this is the applier for [`FieldActorFacing::RotateToward`], and
+/// nothing selects that arm - see the disclosure on [`field_actor_plan`] for
+/// the missing prerequisite (the per-actor `+0x10` flag word). The engine's
+/// field NPCs turn through the bytecode laws in [`step`] instead, so no
+/// caller has a `(current, target, rate)` triple to clamp.
 pub fn rotate_toward_clamped(current: i16, target: i16, rate: i32) -> i16 {
     let mut delta = i32::from(target) - i32::from(current);
     if delta > rate {
@@ -677,6 +683,19 @@ pub struct FieldActorInputs {
 /// and always increments a frame counter - see [`FieldActorPlan::pre_update`].
 ///
 /// PORT: FUN_8003BC08
+///
+/// NOT WIRED: every input this plan branches on is a bit of the retail
+/// per-actor flag word `+0x10`, and the engine has no flag word. `World`
+/// splits field-NPC state into typed per-slot maps - in-flight walk legs,
+/// ambient facing channels, default-move pairs, glide speeds - and decides
+/// what to run from which map a slot appears in, so there is no single record
+/// to read `0x2` / `0x2000` / `0x20000000` / `0x100` / `0x400` / `0x8` /
+/// `0x1000` off. Its NPC tick therefore calls [`step`] directly with a
+/// MAN-decoded program rather than asking this driver first. Wiring means
+/// giving the engine's field-actor record that flag word (or a typed
+/// equivalent per predicate) and routing the tick through the plan - which
+/// changes which NPCs move on a given frame, so it lands with the field
+/// oracles, not as a call insertion.
 ///
 /// REF: FUN_80019278 (bearing-to-target, feeds `FaceTarget` / `RotateToward`),
 /// FUN_80039B7C, FUN_80038158, FUN_800204F8

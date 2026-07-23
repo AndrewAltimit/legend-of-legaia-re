@@ -135,6 +135,16 @@ pub trait MoveSpawnHost: ActorAllocatorHost {
 ///
 /// PORT: FUN_80021B04
 ///
+/// NOT WIRED: the host side is ready - `impl MoveSpawnHost for World` lives in
+/// `legaia_engine_core::actor_alloc_host` - but nothing in the engine spawns a
+/// move-VM actor. Both live actor paths construct through the world's own
+/// pool: the field path spawns from MAN placements and the battle path from
+/// the formation, and neither routes a `MoveSpawnRequest` through the retail
+/// allocator. The prerequisite is a spawn site that *starts from a move
+/// buffer* - retail's are the script-VM 3D-anim play arm and the world-map
+/// spawn paths, neither of which is ported - so only tests drive this entry
+/// point today.
+///
 /// One-shot composition that mirrors the SCUS body at
 /// `ghidra/scripts/funcs/80021b04.txt`:
 ///

@@ -31,6 +31,23 @@
 //!
 //! Clean-room boundary: `ghidra/scripts/funcs/8003c9ac.txt` is the spec; no
 //! Sony bytes live here. Tests use synthetic actor lists + tables.
+//!
+//! ## NOT WIRED
+//!
+//! Two of the three pieces exist engine-side and the third does not. The
+//! retail caller has an analogue - `World::check_field_walk_touch` is the
+//! `FUN_801D5B5C` touch post and runs from the locomotion step - and the
+//! default-move table is harvested at scene load into
+//! `World::field_npc_default_moves`. What is missing is the **actor view this
+//! kick sweeps**: retail reads a per-actor flag word (`+0x10 & 0x20000`,
+//! moving-class) and a motion-stream-installed pointer (`+0x80 != 0`) off one
+//! scene actor list, and the engine has neither field. Its field-NPC state is
+//! split across typed per-slot maps (in-flight walk legs, ambient motion
+//! channels, default-move pairs) with no flag word to gate on, so nothing can
+//! build a `[PauseKickActor]` slice to hand in. Wiring means giving the
+//! engine's field-NPC record a moving-class predicate and a
+//! motion-stream-present predicate, then projecting the map set into this
+//! view at the touch post - not adding a call.
 
 /// Moving-class actor bit in the `+0x10` flag word. Only actors with this
 /// bit set are candidates for the pause kick.
