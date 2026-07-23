@@ -1106,6 +1106,44 @@ A growing set of small leaf helpers in the dispatcher's call graph are pure arit
 
 The Rust ports are exhaustively tested (39 tests covering escape sequences, terminator placement, bit ordering, search bounds, LE byte assembly across short / full-width / over-long buffers, and tile-center high-bit and zero-input edge cases). Tests live alongside the ports in `field_helpers.rs`.
 
+## Overlay-0897 command / submenu support functions
+
+A survey of the high-reference `0x801F` VA band the field overlay shares with the battle overlays. Most rows here are **not** portable function entries: they are interior addresses of larger functions, shared tails that enter with registers preset by a fall-through caller, corpus gaps, or VA-aliased duplicates (see [`worklist-classification.md`](../tooling/worklist-classification.md) and [`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md)). Classification is by containing function and role, not by the raw address.
+
+| Address | Class | What it is | Dump |
+|---|---|---|---|
+| `0x801D9D3C` | INTERIOR | Tail-call fragment: `a0 -= 0xE10` then block-copy `func 0x8001AA68` with register-arg `a1=s3`/`a2=s5`; no prologue. | `overlay_0897_801d9d3c.txt` |
+| `0x801D71B8` | SHARED_TAIL | Fixed-point tail `(v1*v0 + m[0]*base[_DAT_8007B7F8]) >> 12`; enters with `v0`/`v1` preset (2-term q12 accumulate). | `overlay_0897_801d71b8.txt` |
+| `0x801E2650` | INTERIOR | Branch-delay-slot entry; decimal splitter storing 8 digit bytes at `&DAT_801F35F0`, tail-jumps `FUN_801F1118`/`FUN_801F1278`. | `overlay_0897_801e2650.txt` |
+| `0x801E805C` | INTERIOR | Actor command commit: writes action id to actor `+0x1DF`, reads a per-command descriptor at `0x8007..52C0` (stride 4), branches on bits `0x40`/`0x20`. | `overlay_0897_801e805c.txt` |
+| `0x801E0080` | gap | 0-instruction dump (corpus gap; C only, no bytes). Not analyzable. | `overlay_0897_801e0080.txt` |
+| `0x801F0450` | INTERIOR of `FUN_801F03B0` | Per-entry sprite-position lerp over 40×`0xC` records; non-ABI `t0`/`t2` register args. | `overlay_0897_801f0450.txt` |
+| `0x801F0ADC` | INTERIOR of `FUN_801F07AC` | Overlap-spread pass on a ≤6-entry i16 coordinate array, tail-jumps `801DA0F0`/`801DA2D0`. | `overlay_0897_801f0adc.txt` |
+| `0x801DF6B8` | INTERIOR (epilogue) of `FUN_801DF570` | Two-decimal percent text builder (`v*100/max`, `v*10000/max`) drawn via `80034B78`/`8003C1F8`/`8003CC98`; register-arg. | `overlay_0897_801df6b8.txt` |
+| `0x801EC0DC` | INTERIOR | Delay-slot entry; sprite/text draw fragment (`8003CD00` + `8002B994`), register-arg `s1`/`s2`/`s3`. | `overlay_0896_801ec0dc.txt` |
+| `0x801F20B0` | DUPLICATE | Interior of `FUN_801F2098`, a twin of the living-slot scanner `FUN_801DB8B4` (below). | `overlay_overlay_0897_xxx_dat_801f20b0.txt` |
+| `0x801F6B24` | undecodable | NOFUNC in every overlay spanning this VA (0897/0967/0978/0898); no analyzed function. | `overlay_*_801f6b24.txt` |
+| `0x801F1278` | REAL (C-only) | Party-cursor submode enter (below). | `overlay_overlay_0897_801f1278.txt` |
+| `0x801F159C` | REAL (C-only) | Party-cursor submode resume / close (below). | `overlay_overlay_0897_801f159c.txt` |
+| `0x801F71E0` / `0x801F5748` | REAL, large | Per-actor command / queue loops over the actor band (below). | `overlay_0897_801f71e0.txt` / `overlay_0897_801f5748.txt` |
+| `0x801E0598` | REAL (other subsystem) | Menu/save overlay state-init: zeroes ~25 `0x801Fxxxx`/`0x801EFxxx` globals, calls `Init_card`, installs the save-scan base `&DAT_80084140` at `_DAT_801F32A0`. | `overlay_menu_801e0598.txt` |
+| `0x801F6D48` | REAL (other subsystem) | Baka Fighter minigame overlay function; see [`minigame-baka-fighter.md`](minigame-baka-fighter.md). | `overlay_baka_fighter_801f6d48.txt` |
+
+`FUN_801F2098` is a byte-for-byte VA-aliased duplicate of the living-slot scanner already documented as `FUN_801DB8B4` in [`battle-formulas.md`](battle-formulas.md) (Rust `battle_formulas::round::needs_retarget`): starting at `&DAT_801C937C` it returns the lowest actor slot `3..=6` whose HP field `+0x14C` is nonzero, else `7`. It is not re-ported.
+
+### The op-`0x49` party-cursor submode (`FUN_801F1278` / `FUN_801F159C`)
+
+The STATE_RESUME "Done writer (field-overlay `FUN_801F159C`-class)" named above drives a second op-`0x49` sub-screen (sibling to the name-entry screen), reached through actor `+0x50` handler slot `7` in the table `PTR_FUN_801F33B4`:
+
+- **Enter** `FUN_801F1278(actor)`: suspends field input (`FUN_801DE190`, sets `_DAT_8007C364+0x10` bit `0x80000`, clears pad latch `_DAT_1F800394` bit `0x8000`), forces the cursor context `_DAT_801C6EA4+0x3E = 1`, saves the caller's `+0x50` into `+0x40` and installs handler `7`, seeds portrait/member cells `_DAT_801C6EA4+0x36/+0x38/+0x3A` from the roster `DAT_80084594` (count) / `DAT_80084598..A` (member ids), homes the cursor (`+0x46=0xA0`,`+0x48=0x58`), and if a pending pick `_DAT_8007B450` is live remaps `+0x50` through the id table `&DAT_801F33A4`.
+- **Resume / close** `FUN_801F159C(actor)`: active only while submode state `DAT_801F2734 ∈ {1,4,7}`; re-arms via `FUN_801F1278` when a pad flag is set, dispatches the per-frame handler `PTR_FUN_801F33B4[actor+0x50]`, and on confirm (`_DAT_801C6EA4+0x3E == 0`) sets the actor yield bit (`+0x10 |= 8`), releases the pad latch, and drops the field/tile-board busy flag (`_DAT_8007B450` / `_DAT_8007C364+0x10 &= ~0x80000`).
+
+Both dumps are decompiled-C only (no disassembly), so store order is unverified; they stay documented rather than ported.
+
+### The actor-band command loops (`FUN_801F71E0` / `FUN_801F5748`)
+
+`FUN_801F71E0` (1070 instr) and `FUN_801F5748` (2777 instr, overlay base `0x801CE818`, contains `switchD_801D2830`) iterate the per-actor pointer band based at `0x801C9370` (`= 0x801D0000 - 0x6C90`), touching command fields `+0x1D9`, `+0x1DF` (the [move-power](../formats/move-power.md) action id), `+0x249`, `+0x24D` and the HP field `+0x14C`. They are large, global-entangled queue/command processors, and because the `0x801Fxxxx` VA aliases across the field (0897) and battle (0898) overlays their owning overlay must be confirmed before any port; documented, not ported.
+
 ## Field dialogue has no opcode
 
 There is **no dedicated "open dialogue" field-VM opcode.** Talking to a field
