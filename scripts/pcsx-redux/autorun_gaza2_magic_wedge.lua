@@ -286,11 +286,11 @@ local function arm_watches()
     w:arm(c + 0x249, 1, "ctx_249")
     w:arm(c + 0x24C, 1, "ctx_24c")
     w:arm(c + 0x24D, 1, "ctx_24d")
-    -- The band timer itself. During a 0x51 park this is the decisive watch: if
-    -- NOTHING writes +0x6D8 while the SM sits in 0x51, the decrement code is
-    -- not running at all (the state body is not being reached), which is a
-    -- different bug from "the decrement runs but the frame delta is 0". The
-    -- writer pc/ra in the CSV names whichever it is.
+    -- The band timer itself. UNPROVEN: in a full run where +0x6D8 demonstrably
+    -- changes (it reaches 0xFFFE = -2 on healthy 0x51 exits) this watch logged
+    -- ZERO hits, so it is evidently not catching the store. Do NOT read "no
+    -- band-timer writes during the park" off this watch as evidence of
+    -- anything until it has been seen firing on a healthy decrement.
     w:arm(c + BAND_TIMER_OFF, 2, "ctx_6d8_band_timer")
     if actor ~= 0 then
         watched_actor = actor
