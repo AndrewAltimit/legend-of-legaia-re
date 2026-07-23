@@ -78,6 +78,18 @@ local SHOT_EVERY = probe.getenv_num("LEGAIA_SHOT_EVERY", 0)
 -- +0x24D census, the in-flight/impact stepper and the damage kernel are never
 -- exercised. DOWN walks the spell list so offensive casts (which do populate
 -- ctx[0x252..0x255]) actually get reached.
+--
+-- LEGAIA_GODMODE=1 refills the three party slots' HP every frame. Without it a
+-- run against a boss ends in a party wipe long before it has sampled many
+-- rounds - the autopilot picks commands blind, so it cannot heal on purpose,
+-- and measured runs lose two of three members inside ~8000 vsyncs. Sampling a
+-- rare per-cast bug needs the fight to keep going.
+--
+-- This IS an intervention on the simulation, so treat any wedge found only
+-- under godmode as needing a plain-run confirmation: it suppresses death, and
+-- a downed actor is itself a plausible way to strand an animation. It does not
+-- touch the cast machinery, the censuses or the effect pool.
+local GODMODE = probe.getenv_num("LEGAIA_GODMODE", 0)
 local AUTOPILOT = probe.getenv_num("LEGAIA_AUTOPILOT", 0)
 local AUTOPILOT_SEQ = probe.getenv("LEGAIA_AUTOPILOT_SEQ",
     "CROSS,RIGHT,CROSS,DOWN,CROSS,CROSS,RIGHT,CROSS,DOWN,DOWN,CROSS,CROSS,CROSS,CROSS")
@@ -399,6 +411,22 @@ probe.run{
 
         local c = u32(CTX_PTR)
         if not in_ram(c) then return end
+
+        -- Keep the party alive so the fight runs long enough to sample. Only
+        -- tops up a slot that is already alive: reviving a downed actor would
+        -- be a much larger intervention than sustaining a live one.
+        if GODMODE ~= 0 then
+            for s = 0, 2 do
+                local a = actor_of(s)
+                if a ~= 0 then
+                    local cur, max = u16(a + 0x14C), u16(a + 0x14E)
+                    if cur > 0 and max > 0 and cur < max then
+                        probe.write_u16(a + 0x14C, max)
+                        probe.write_u16(a + 0x172, max)
+                    end
+                end
+            end
+        end
 
         local ctx7 = u8(c + 7)
         -- Yaw motion during a park is the discriminator against the COMMUNITY
