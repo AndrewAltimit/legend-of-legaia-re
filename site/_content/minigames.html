@@ -229,13 +229,14 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   <div class="breadcrumb"><a href="index.html">home</a> &middot; minigames</div>
   <h1>Minigames &amp; Sol Tower</h1>
   <p class="lede">
-    Three of Legaia's minigames - <strong>the casino slot machine, Noa's dance, and Baka
-    Fighter</strong> - are <a href="#play">playable right here in your browser</a>, each one the
-    game's own reverse-engineered logic playing against the real tables on your disc.
+    All five of Legaia's minigames - <strong>the casino slot machine, Noa's dance, Baka
+    Fighter, fishing, and the Muscle Dome</strong> - are <a href="#play">playable right here in
+    your browser</a>, each one the game's own reverse-engineered logic playing against the real
+    tables on your disc.
   </p>
   <p>
     You supply the disc image; it is read locally and nothing is uploaded. Load an emulator save
-    into the bar below and its <strong>casino coin bank funds the session</strong> across all three
+    into the bar below and its <strong>casino coin bank funds the session</strong> across the coin
     games (export writes the balance back). The rest of the page is reference: prize ladders,
     Muscle Dome courses, and the Sol Tower side-quests (scene <code>town0d</code>).
   </p>
@@ -273,6 +274,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         <button class="mg-tab is-active" type="button" data-game="slot">Slot machine</button>
         <button class="mg-tab" type="button" data-game="dance">Dance</button>
         <button class="mg-tab" type="button" data-game="baka">Baka Fighter</button>
+        <button class="mg-tab" type="button" data-game="fishing">Fishing</button>
+        <button class="mg-tab" type="button" data-game="muscle">Muscle Dome</button>
       </div>
 
       <!-- ---------------- dance ---------------- -->
@@ -448,6 +451,111 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         <p class="mg-bonus-legend" id="slot-bonus-legend"></p>
         <p class="mg-note" id="slot-art-note"></p>
       </section>
+
+      <!-- ---------------- fishing ---------------- -->
+      <section class="mg-panel" data-game="fishing">
+        <h3>Fishing &mdash; the reel tug-of-war</h3>
+        <p class="mg-blurb">
+          Lock the <b>cast meter</b> to hook a fish &mdash; the harder you cast, the rarer the
+          species &mdash; then <b>reel it in</b>. Reeling raises the <b>tension</b> gauge; let the
+          line rest and it bleeds off. Pin the tension at the top and the <b>line snaps</b>; work
+          the fish long enough and you <b>land it</b> for points. The catch scoring, the tension
+          divisors and the point cap are the game's own confirmed kernels
+          (<code>FUN_801d4004</code> / <code>FUN_801d5298</code>); every fish's value is read off
+          your disc's PROT&nbsp;0972 species table.
+        </p>
+        <canvas id="fishing-canvas" class="mg-cabinet" width="640" height="240"
+                tabindex="0" role="button"
+                aria-label="Fishing - space casts and locks, hold J to reel in"></canvas>
+        <div class="mg-verdict" id="fishing-verdict"></div>
+        <p class="mg-controls">
+          <b><kbd>Space</kbd> casts and locks; hold <kbd>J</kbd> (or the Reel button) to reel.</b>
+          Press Space while the meter sweeps to hook a fish, then hold Reel to bring it in without
+          snapping the line. After it lands or snaps, Space casts again.
+        </p>
+        <div class="mg-row">
+          <button class="mg-btn mg-primary" type="button" id="fishing-cast">Cast / Lock<span class="mg-key">SPACE</span></button>
+          <button class="mg-btn mg-throw" type="button" id="fishing-reel-a">Reel in<span class="mg-key">J</span></button>
+          <button class="mg-btn mg-throw" type="button" id="fishing-reel-b">Reel (soft)<span class="mg-key">K</span></button>
+        </div>
+        <div class="mg-hud">
+          <span>Phase <b id="fishing-phase">&mdash;</b></span>
+          <span>Hooked <b id="fishing-fish">&mdash;</b></span>
+          <span>Points <b class="mg-big" id="fishing-points">0</b></span>
+          <span>Best <b id="fishing-best">0</b></span>
+        </div>
+        <div class="mg-note">
+          <p>
+            <b>The species table is your disc's.</b> Each of the ten fish carries a score value, a
+            pull factor and a strike gate in the fishing overlay's rodata (PROT&nbsp;0972), decoded
+            here and listed below; the locked cast power picks which one bites.
+          </p>
+          <p>
+            <b>Fitted rather than traced:</b> the two-bar pond drawing, the cast-meter sweep rate,
+            and the land / snap thresholds &mdash; the exact reel-button bits and win/lose gates are
+            on the open list in <code>docs/subsystems/minigame-fishing.md</code>. The tension
+            arithmetic and catch award themselves are the overlay's confirmed formulas.
+          </p>
+        </div>
+        <div class="mg-paytable" id="fishing-species"></div>
+      </section>
+
+      <!-- ---------------- muscle dome ---------------- -->
+      <section class="mg-panel" data-game="muscle">
+        <h3>Muscle Dome &mdash; card battle</h3>
+        <p class="mg-blurb">
+          A four-card hand under a <b>point budget</b>: commit the cards you can afford into your
+          fighter's action queue, confirm, and watch the round play out. Each committed card debits
+          your budget; the opponent fills its own queue greedily. The deal, the budget gate, the
+          <code>hp&nbsp;&times;&nbsp;0x6c&nbsp;/&nbsp;max</code> score readout and the win/lose
+          bookkeeping are the arena's own logic (<code>FUN_801d0748</code> /
+          <code>FUN_801d388c</code>) resident in the battle overlay (PROT&nbsp;0898) on your disc.
+        </p>
+        <div class="mg-verdict" id="muscle-verdict"></div>
+        <div class="mg-fighters">
+          <div class="mg-fighter">
+            <div class="mg-fname">You</div>
+            <div class="mg-bar"><span id="muscle-p0-hp" style="width:100%"></span></div>
+            <div id="muscle-p0-meta">&mdash;</div>
+          </div>
+          <div class="mg-fighter">
+            <div class="mg-fname">Opponent</div>
+            <div class="mg-bar mg-bar-foe"><span id="muscle-p1-hp" style="width:100%"></span></div>
+            <div id="muscle-p1-meta">&mdash;</div>
+          </div>
+        </div>
+        <p class="mg-controls">
+          <b>Commit cards, then Confirm.</b> Click a card (or press <kbd>1</kbd>&ndash;<kbd>4</kbd>)
+          to queue it while your budget covers its cost; <kbd>Space</kbd> confirms and resolves the
+          round; between rounds <kbd>Space</kbd> starts the next.
+        </p>
+        <div class="mg-row" id="muscle-cards"></div>
+        <div class="mg-row">
+          <button class="mg-btn mg-primary" type="button" id="muscle-confirm">Confirm / Next<span class="mg-key">SPACE</span></button>
+          <button class="mg-btn" type="button" id="muscle-restart">New contest</button>
+        </div>
+        <div class="mg-hud">
+          <span>Round <b id="muscle-round">1</b></span>
+          <span>Your budget <b id="muscle-budget">0</b></span>
+          <span>Queued <b id="muscle-queue">0</b></span>
+          <span>Score <b id="muscle-score">0%</b> / <b id="muscle-score-foe">0%</b></span>
+          <span>Reward Seru spell <b id="muscle-reward">&mdash;</b></span>
+        </div>
+        <div class="mg-note">
+          <p>
+            <b>The dealt hand is your disc's.</b> The four command ids come from the deck table in
+            the battle overlay's rodata (PROT&nbsp;0898); each maps to a swing action.
+          </p>
+          <p>
+            <b>Fitted rather than traced:</b> the flat per-card cost (the browser has no player
+            battle file to read the per-command <code>+0x74</code> swing bytes from, so it uses the
+            native launcher's favored-cost fallback), the budget pools and HP, and the per-card
+            damage &mdash; a battle-path stand-in, the same <code>(atk&nbsp;-&nbsp;def)</code> the
+            native <code>play-window</code> uses, since the full battle-action playback is a host
+            concern. See <code>docs/subsystems/minigame-muscle-dome.md</code>.
+          </p>
+        </div>
+      </section>
     </div>
   </div>
 </section>
@@ -456,8 +564,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   <h2>What's here</h2>
   <div class="card-grid">
     <a class="card" href="#play">
-      <div class="card-title">Play three of them</div>
-      <div class="card-body">Noa's dance, Baka Fighter and the casino slot machine, running in the browser off the clean-room rules engines, your own disc's tables, and the game's own art.</div>
+      <div class="card-title">Play all five</div>
+      <div class="card-body">Noa's dance, Baka Fighter, the casino slot machine, fishing and the Muscle Dome, running in the browser off the clean-room rules engines, your own disc's tables, and the game's own art.</div>
     </a>
     <a class="card" href="#sol-tower">
       <div class="card-title">Sol Tower map</div>
@@ -569,10 +677,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   <p style="margin-top: 1rem;">
     <strong>All five are playable in the clean-room engine's</strong> native
     <code>play-window</code> (dance <code>K</code>, fishing <code>L</code>, slot machine
-    <code>O</code>, Baka Fighter <code>B</code>, Muscle Dome <code>M</code>), and three of them
-    (<a href="#play">the dance, Baka Fighter, the slot machine</a>) run right here in the browser,
-    compiled to WebAssembly. Fishing needs venue and rod state from the save file, and the Muscle
-    Dome resolves through the full turn-based battle engine, so those two stay native-only.
+    <code>O</code>, Baka Fighter <code>B</code>, Muscle Dome <code>M</code>), and
+    <a href="#play">all five</a> also run right here in the browser, compiled to WebAssembly. The
+    browser fishing session starts from default rod state rather than a save file, and the Muscle
+    Dome resolves each card through a battle-path damage stand-in rather than the full turn-based
+    battle engine &mdash; the deals, budgets, tension and scoring are the game's own tables.
   </p>
 </section>
 
@@ -661,7 +770,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
      *    (0543_koin1 op-0x35 BGM 2018 = slot 18, "Sol casino").
      * Both render through the clean-room SPU and loop seamlessly (MgBgm2). The
      * dance carries its own jukebox inside js/minigame-dance.js. */
-    const GAME_BGM = { baka: 2053, slot: 2018 };
+    /* Muscle Dome reuses the battle engine, so it plays a battle theme: global
+     * BGM 2026 = music_01 slot 26 (M26B1, the standard random-battle theme;
+     * see docs/subsystems/minigame-muscle-dome.md). Fishing inherits its venue
+     * scene's BGM, which the overlay doesn't pin, so it carries no track. */
+    const GAME_BGM = { baka: 2053, slot: 2018, muscle: 2026 };
 
     function audio() {
       if (!ctx) {
@@ -712,6 +825,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       if (active === 'dance') danceFrame();
       else if (active === 'baka') bakaFrame();
       else if (active === 'slot') slotFrame();
+      else if (active === 'fishing') fishingFrame();
+      else if (active === 'muscle') muscleFrame();
     }
     raf = requestAnimationFrame(loop);
   }
@@ -2479,8 +2594,256 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       }
     } else if (active === 'slot') {
       if (k === ' ' && slotOnScreen()) { e.preventDefault(); slotPress(); }
+    } else if (active === 'fishing') {
+      if (k === ' ') { e.preventDefault(); fishingCast(); }
+      else if (k === 'j') { e.preventDefault(); fishingReel = 1; }
+      else if (k === 'k') { e.preventDefault(); fishingReel = 2; }
+    } else if (active === 'muscle') {
+      const c = { 1: 0, 2: 1, 3: 2, 4: 3 }[k];
+      if (c !== undefined) { e.preventDefault(); muscleCommit(c); }
+      else if (k === ' ' || k === 'enter') { e.preventDefault(); muscleConfirm(); }
     }
   });
+
+  document.addEventListener('keyup', (e) => {
+    if (active !== 'fishing') return;
+    const k = e.key.toLowerCase();
+    if ((k === 'j' && fishingReel === 1) || (k === 'k' && fishingReel === 2)) fishingReel = 0;
+  });
+
+  /* ================= fishing ================= */
+
+  /* The rules are legaia-engine-core's fishing session (cast-power oscillator +
+   * tension tug-of-war + catch scoring); this block ticks it and draws a
+   * two-bar "pond" HUD. The species table is your disc's PROT 0972 rodata. */
+  const FISH_CAST_STEP = 0x80;     /* native tick_fishing per-frame meter step */
+  let fishingReel = 0;             /* 0 idle, 1 reel A (Cross/J), 2 reel B (Square/K) */
+  let fishingLastPhase = null;
+
+  function fishingLoad() {
+    /* Fill the species panel off the disc, then hook a first cast so the pond
+     * is live the moment the tab opens. */
+    const list = JSON.parse(api.fishing_species_json());
+    $('fishing-species').innerHTML = list.map(f =>
+      `<div class="mg-pay"><b>${f.name || 'Fish #' + f.index}</b>` +
+      `<span>${f.score.toLocaleString()} pts</span></div>`).join('');
+    fishingLastPhase = null;
+    api.fishing_start();
+  }
+
+  /* Space / Cast button: lock the meter (casting) or recast (done). */
+  function fishingCast() {
+    if (!api) return;
+    const st = JSON.parse(api.fishing_state_json());
+    if (!st.live) { api.fishing_start(); return; }
+    if (st.phase === 'casting') api.fishing_lock_cast();
+    else if (st.phase === 'done') { api.fishing_recast(); verdict($('fishing-verdict'), '', ''); }
+  }
+
+  function fishingFrame() {
+    if (!api) return;
+    let st = JSON.parse(api.fishing_state_json());
+    if (!st.live) return;
+    if (st.phase === 'casting') api.fishing_advance_cast(FISH_CAST_STEP);
+    else if (st.phase === 'fighting') api.fishing_reel(fishingReel, 1);
+    st = JSON.parse(api.fishing_state_json());
+    /* Announce the result once, on the transition into 'done'. */
+    if (st.phase === 'done' && fishingLastPhase !== 'done') {
+      if (st.outcome === 'landed') {
+        const nm = (st.fish && st.fish.name) || 'the fish';
+        verdict($('fishing-verdict'),
+          `Landed ${nm} for ${st.outcome_points.toLocaleString()} points! Space to cast again.`,
+          'good');
+      } else if (st.outcome === 'snapped') {
+        verdict($('fishing-verdict'), 'The line snapped. Space to cast again.', 'bad');
+      }
+    }
+    fishingLastPhase = st.phase;
+    fishingDraw(st);
+  }
+
+  function fishingDraw(st) {
+    const c = $('fishing-canvas');
+    if (!c) return;
+    const g = c.getContext('2d');
+    const W = c.width, H = c.height;
+    /* Water. */
+    const grad = g.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#123a55');
+    grad.addColorStop(1, '#0a2033');
+    g.fillStyle = grad; g.fillRect(0, 0, W, H);
+    g.fillStyle = 'rgba(255,255,255,0.06)';
+    for (let y = 40; y < H; y += 28) g.fillRect(0, y, W, 2);
+
+    const bar = (x, y, w, h, frac, col) => {
+      g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x, y, w, h);
+      g.fillStyle = col; g.fillRect(x, y, Math.max(0, Math.min(1, frac)) * w, h);
+      g.strokeStyle = 'rgba(255,255,255,0.4)'; g.strokeRect(x + 0.5, y + 0.5, w, h);
+    };
+    g.font = '14px system-ui, sans-serif';
+    g.fillStyle = '#dfe8f0';
+
+    if (st.phase === 'casting') {
+      g.fillText('Casting — press Space to lock the cast', 24, 32);
+      const frac = (st.cast_power - st.cast_min) / (st.cast_max - st.cast_min);
+      bar(24, 150, W - 48, 40, frac, '#39b0e5');
+      g.fillText('A stronger cast reaches a rarer fish', 24, 214);
+    } else if (st.phase === 'fighting') {
+      const nm = (st.fish && st.fish.name) || 'a fish';
+      g.fillText(`Fighting ${nm} — hold Reel (J) to land it, ease off before the line snaps`, 24, 32);
+      /* Tension: green safe, red near the ceiling. */
+      const tf = st.tension / st.tension_max;
+      const col = tf > 0.82 ? '#e05a5a' : tf > 0.6 ? '#e0a94a' : '#4ac07a';
+      g.fillText('Line tension', 24, 76);
+      bar(24, 84, W - 48, 34, tf, col);
+      /* Strength worked in (proxy for landing progress). */
+      g.fillText('Fish worked in', 24, 150);
+      const sf = st.land_target > 0 ? Math.min(1, st.strength / (st.land_target * 3)) : 0;
+      bar(24, 158, W - 48, 34, sf, '#8a7de0');
+    } else {
+      g.fillStyle = st.outcome === 'landed' ? '#7dd17d' : '#e08a8a';
+      g.font = 'bold 22px system-ui, sans-serif';
+      g.fillText(st.outcome === 'landed' ? 'Fish landed!' : 'Line snapped', 24, 120);
+      g.font = '14px system-ui, sans-serif';
+      g.fillStyle = '#dfe8f0';
+      g.fillText('Press Space to cast again', 24, 152);
+    }
+    /* HUD spans. */
+    $('fishing-phase').textContent = st.phase;
+    $('fishing-fish').textContent = (st.fish && st.fish.name) || '—';
+    $('fishing-points').textContent = st.points.toLocaleString();
+    $('fishing-best').textContent = st.best_points.toLocaleString();
+  }
+
+  /* Controls (bound once; the buttons exist in the static panel). */
+  (function bindFishing() {
+    const cast = $('fishing-cast');
+    if (cast) cast.addEventListener('click', () => { if (api) fishingCast(); });
+    const canvas = $('fishing-canvas');
+    if (canvas) canvas.addEventListener('click', () => { if (api) fishingCast(); });
+    const hold = (id, val) => {
+      const b = $(id);
+      if (!b) return;
+      const down = (e) => { e.preventDefault(); fishingReel = val; };
+      const up = () => { if (fishingReel === val) fishingReel = 0; };
+      b.addEventListener('pointerdown', down);
+      b.addEventListener('pointerup', up);
+      b.addEventListener('pointerleave', up);
+      b.addEventListener('pointercancel', up);
+    };
+    hold('fishing-reel-a', 1);
+    hold('fishing-reel-b', 2);
+  })();
+
+  /* ================= muscle dome ================= */
+
+  /* The rules are legaia-engine-core's muscle_dome session (4-slot hand deal +
+   * point-budget commit + hp-ratio score + win/lose); this block ticks it and
+   * draws HP bars, the queue, and the four dealt cards. The hand command ids
+   * are your disc's PROT 0898 rodata. */
+  const MUSCLE_CMD_LABEL = { 12: 'Low', 13: 'Down', 14: 'Up', 15: 'High' };
+  let muscleLastPhase = null;
+
+  function muscleReset() {
+    muscleLastPhase = null;
+    if (api) api.muscle_start();
+    verdict($('muscle-verdict'), '', '');
+    muscleBuildCards();
+    muscleDraw(api ? JSON.parse(api.muscle_state_json()) : { live: false });
+  }
+
+  function muscleBuildCards() {
+    if (!api) return;
+    const st = JSON.parse(api.muscle_state_json());
+    const hand = (st.hand || []);
+    $('muscle-cards').innerHTML = hand.map((c, i) =>
+      `<button class="mg-btn mg-throw" type="button" data-card="${i}">` +
+      `${MUSCLE_CMD_LABEL[c.cmd] || ('Card ' + (i + 1))}` +
+      `<span class="mg-key">${c.cost} pt</span></button>`).join('');
+    $('muscle-cards').querySelectorAll('[data-card]').forEach(b =>
+      b.addEventListener('click', () => muscleCommit(parseInt(b.dataset.card, 10))));
+  }
+
+  function muscleCommit(slot) {
+    if (!api) return;
+    const st = JSON.parse(api.muscle_state_json());
+    if (!st.live || st.phase !== 'select') return;
+    api.muscle_commit(slot);
+    muscleDraw(JSON.parse(api.muscle_state_json()));
+  }
+
+  /* Space / Confirm: end selection + resolve, or start the next round. */
+  function muscleConfirm() {
+    if (!api) return;
+    MgBgm.start('muscle');    /* first confirm is the user gesture that lets audio play */
+    const st = JSON.parse(api.muscle_state_json());
+    if (!st.live) { muscleReset(); return; }
+    if (st.phase === 'select') {
+      api.muscle_end_selection();
+      api.muscle_resolve();
+    } else if (st.phase === 'round_over') {
+      api.muscle_next_round();
+    } else if (st.phase === 'won' || st.phase === 'lost') {
+      muscleReset();
+    }
+    muscleDraw(JSON.parse(api.muscle_state_json()));
+  }
+
+  function muscleFrame() {
+    if (!api) return;
+    const st = JSON.parse(api.muscle_state_json());
+    if (!st.live) return;
+    /* A queue-built resolve phase settles on the next frame (retail resolves
+     * the round the frame after selection closes). */
+    if (st.phase === 'resolve') { api.muscle_resolve(); }
+    muscleDraw(JSON.parse(api.muscle_state_json()));
+  }
+
+  function muscleDraw(st) {
+    if (!st.live) return;
+    const pct = (hp, max) => Math.max(0, Math.round(hp * 100 / max)) + '%';
+    $('muscle-p0-hp').style.width = pct(st.hp[0], st.hp_max[0]);
+    $('muscle-p1-hp').style.width = pct(st.hp[1], st.hp_max[1]);
+    $('muscle-p0-meta').textContent = `HP ${st.hp[0]} / ${st.hp_max[0]}` +
+      (st.last_damage[0] ? ` (-${st.last_damage[0]})` : '');
+    $('muscle-p1-meta').textContent = `HP ${st.hp[1]} / ${st.hp_max[1]}` +
+      (st.last_damage[1] ? ` (-${st.last_damage[1]})` : '');
+    $('muscle-round').textContent = st.round + 1;
+    $('muscle-budget').textContent = st.budget[0];
+    $('muscle-queue').textContent = st.queue[0].length;
+    $('muscle-score').textContent = st.score[0] + '%';
+    $('muscle-score-foe').textContent = st.score[1] + '%';
+    $('muscle-reward').textContent = '0x' + st.reward_spell.toString(16).toUpperCase();
+
+    /* Grey out cards the budget can no longer afford, off the phase. */
+    const cards = $('muscle-cards').querySelectorAll('[data-card]');
+    cards.forEach((b, i) => {
+      const c = st.hand[i];
+      b.disabled = !(st.phase === 'select' && c && c.cost <= st.budget[0]);
+    });
+
+    /* Verdict + confirm-button label per phase, announced once per transition. */
+    if (st.phase !== muscleLastPhase) {
+      if (st.phase === 'select') verdict($('muscle-verdict'),
+        'Commit cards you can afford, then Confirm.', '');
+      else if (st.phase === 'round_over') verdict($('muscle-verdict'),
+        `Round settled — you took ${st.last_damage[0]}, opponent took ${st.last_damage[1]}. ` +
+        'Space for the next round.', '');
+      else if (st.phase === 'won') verdict($('muscle-verdict'),
+        `You win! Reward Seru spell 0x${st.reward_spell.toString(16).toUpperCase()}. ` +
+        'Space for a new contest.', 'good');
+      else if (st.phase === 'lost') verdict($('muscle-verdict'),
+        'You lost. Space for a new contest.', 'bad');
+      muscleLastPhase = st.phase;
+    }
+  }
+
+  (function bindMuscle() {
+    const confirm = $('muscle-confirm');
+    if (confirm) confirm.addEventListener('click', () => { if (api) muscleConfirm(); });
+    const restart = $('muscle-restart');
+    if (restart) restart.addEventListener('click', () => { if (api) muscleReset(); });
+  })();
 
   /* ---------------- disc load ---------------- */
 
@@ -2503,12 +2866,13 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       window.__mgStatus = status;
 
       /* A game whose overlay didn't decode is disabled, not broken. */
-      const ok = { dance: status.dance.ok, baka: status.baka.ok, slot: status.slot.ok };
+      const ok = { dance: status.dance.ok, baka: status.baka.ok, slot: status.slot.ok,
+                   fishing: status.fishing.ok, muscle: status.muscle.ok };
       tabsEl.querySelectorAll('.mg-tab').forEach(b => {
         b.disabled = !ok[b.dataset.game];
         if (b.disabled) b.title = (status[b.dataset.game] || {}).why || 'table did not decode';
       });
-      const firstOk = ['slot', 'dance', 'baka'].find(g => ok[g]);
+      const firstOk = ['slot', 'dance', 'baka', 'fishing', 'muscle'].find(g => ok[g]);
       if (!firstOk) {
         prog.fail('None of the minigame overlays decoded from this image.');
         return;
@@ -2517,6 +2881,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       if (ok.dance) danceLoadArt();
       if (ok.baka) bakaFillRoster();
       if (ok.slot) { slotLoadArt(); slotLoadSfx(); slotReset(); }
+      if (ok.fishing) fishingLoad();
+      if (ok.muscle) muscleReset();
       /* Pre-mix the on-screen game's BGM now so the first spin / first
        * fight starts its track without a render hitch. */
       MgBgm.prerender(active);
@@ -2530,6 +2896,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         ok.dance ? `dance (${status.dance.rows}-lane step chart)` : null,
         ok.baka  ? `Baka Fighter (${status.baka.fighters} fighters)` : null,
         ok.slot  ? 'slot machine (10-symbol paytable)' : null,
+        ok.fishing ? `fishing (${status.fishing.species} species)` : null,
+        ok.muscle ? 'Muscle Dome (4-card hand)' : null,
       ].filter(Boolean);
       prog.done(`Ready - ${games.join(', ')}.`);
       /* The progress bar fades out; leave the standing status behind it. */
@@ -2568,6 +2936,21 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   window.__mgSlot    = { reset: slotReset,
                          press: slotPress,
                          state: () => api && JSON.parse(api.slot_state_json()) };
+  window.__mgFishing = { load: fishingLoad, cast: fishingCast,
+                         reel: (v) => { fishingReel = v; },
+                         start: () => api && api.fishing_start(),
+                         advanceCast: (s) => api && api.fishing_advance_cast(s),
+                         lock: () => api && api.fishing_lock_cast(),
+                         reelStep: (i, f) => api && api.fishing_reel(i, f),
+                         recast: () => api && api.fishing_recast(),
+                         state: () => api && JSON.parse(api.fishing_state_json()),
+                         species: () => api && JSON.parse(api.fishing_species_json()) };
+  window.__mgMuscle  = { reset: muscleReset, commit: muscleCommit, confirm: muscleConfirm,
+                         start: () => api && api.muscle_start(),
+                         endSelection: () => api && api.muscle_end_selection(),
+                         resolve: () => api && api.muscle_resolve(),
+                         nextRound: () => api && api.muscle_next_round(),
+                         state: () => api && JSON.parse(api.muscle_state_json()) };
 
   RomCache.attach(fileInput, { onLoad: loadDisc });
 })();

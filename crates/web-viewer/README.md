@@ -393,27 +393,45 @@ resolution, voice pools, and the `.glb` export's animation bank).
 ## Playable minigames (`minigames`)
 
 `LegaiaMinigames` is a standalone `#[wasm_bindgen]` class (its own
-`load_disc`, no canvas) that runs three of the game's side-games in the
+`load_disc`, no canvas) that runs all five of the game's side-games in the
 browser for `site/minigames.html`. It is a thin JSON shell over the
 clean-room rules engines in `legaia-engine-core` - the beat clock + judge
 (`dance`), the rock-paper-scissors duel (`baka_fighter`), the reel state
-machine + payout eval (`slot_machine`). It carries no rules of its own.
+machine + payout eval (`slot_machine`), the cast/tension/catch loop
+(`fishing`), and the card-battle deal/commit/resolve (`muscle_dome`). It
+carries no rules of its own.
 
 Every table each game plays with is decoded from the visitor's own disc via
 the same path the play-window uses (raw PROT entry ->
 `static_overlay::as_loaded` -> table parser): the step chart out of PROT
-0980, the roster + action tables out of 0976, the payout table out of 0975.
-Nothing is shipped with the site.
+0980, the roster + action tables out of 0976, the payout table out of 0975,
+the fishing species table out of 0972, and the Muscle Dome hand command-id
+table out of the battle overlay 0898. Nothing is shipped with the site.
 
-Per game: `<g>_start` / `<g>_tick` / an input method
+Per game: `<g>_start` / a step or input method
 (`dance_press` / `baka_choose` / `slot_spin` + `slot_stop` +
-`slot_collect`) / `<g>_state_json`. `load_disc` returns a status object
-naming which games' overlays resolved, so a disc that can't feed one game
-still plays the others. `dance_state_json` deliberately surfaces **both**
-halves of retail's split chart lookup - `judged` (what the hit judge
-matches, the step to press) and `displayed` (the display half's
-held-sequence substitution); see `docs/subsystems/minigame-dance.md`.
-Disc-gated oracle: `tests/minigames_wasm_api.rs`.
+`slot_collect` / `fishing_advance_cast` + `fishing_lock_cast` +
+`fishing_reel` + `fishing_recast` / `muscle_commit` +
+`muscle_end_selection` + `muscle_resolve` + `muscle_next_round`) /
+`<g>_state_json`. `load_disc` returns a status object naming which games'
+overlays resolved, so a disc that can't feed one game still plays the
+others. `dance_state_json` deliberately surfaces **both** halves of retail's
+split chart lookup - `judged` (what the hit judge matches, the step to
+press) and `displayed` (the display half's held-sequence substitution); see
+`docs/subsystems/minigame-dance.md`. Disc-gated oracle:
+`tests/minigames_wasm_api.rs`.
+
+`minigames_fishing.rs` and `minigames_muscle.rs` are the fishing / Muscle
+Dome shells. Fishing drives [`legaia_engine_core::fishing::FishingSession`]
+from a default rod stat (no save-block record on the web entry point) and
+resolves species names against the loaded PROT 0972 overlay image; the
+cast-meter sweep rate and the land/snap glue are the module's engine-side
+reconstruction (`docs/subsystems/minigame-fishing.md`). Muscle Dome drives
+[`legaia_engine_core::muscle_dome::MuscleDomeSession`] on the disc's dealt
+hand with the native launcher's flat favored per-card cost (the browser has
+no player battle file for the per-command `+0x74` swing bytes) and a
+battle-path damage stand-in matching the native `tick_muscle_dome`
+constants (`docs/subsystems/minigame-muscle-dome.md`).
 
 `minigames_baka.rs` adds the Baka Fighter duel's **presentation** exports so
 the page draws with the cabinet's own assets: per-side fighter mesh buffers
