@@ -199,6 +199,79 @@ Both offsets are load-base independent - read straight off the `param_1 + N`
 (`FUN_8002C488`) remain a UI-icon-atlas sprite seam owned by the host, as with
 the status page's LV/HP/MP icons.
 
+### Dev-menu sub-panel renderers and the value-adjust input SM
+
+The developer menu list `FUN_801EAD98` draws the row labels; a small family of
+sibling routines draws each panel's live values and edits them. All read the
+world-map overlay data region (`0x801F28F0..0x801F2Fxx`) and the dev context
+`_DAT_801C6EA4`.
+
+- **`FUN_801E6400`** (556 bytes, `801e6400.txt`) - the numeric-field draw
+  helper. Entry `(ctx_ptr)`. Draws two `i16` readouts from `_DAT_801C6EA4[+0x42]`
+  / `[+0x44]` (via the `FUN_80034B78` digit emitter), and, keyed on the menu
+  mode word at `_DAT_8007BB9C` (`0x3000` / `0x1000`), one further product-scaled
+  value indexed off the 12-byte-stride table at `0x80074368` by the map index
+  `_DAT_8007BB88`. Label strings come from the overlay pointers at
+  `0x801F29E4` / `0x801F2AB4..0x801F2AC0`. Render-track (GPU emit), so
+  documented-not-ported.
+- **`FUN_801E6984`** (432 bytes, `801e6984.txt`) - the MAP_CHANGE list / cursor
+  renderer. Iterates `_DAT_8007B450[+0x3]` cell entries at `+0x10` row pitch
+  (the tile / map-cell descriptor `_DAT_8007B450`), drawing the map-select
+  cursor sprite (`FUN_8002B994`) on the entry equal to `_DAT_8007BB88`, an icon
+  `0x4F`/`0x58` (`FUN_8002C488`) on the entry equal to `_DAT_8007BB9C`, and a
+  `0x9C x 0x20` frame box (`FUN_8002C69C`). Render-track.
+- **`FUN_801E6B34`** (1084 bytes, `overlay_world_map_top_801e6b34.txt`) - the
+  top-view MAP_CHANGE **grid** + coordinate readout. Lays the map dots out in a
+  102-wide grid (`idx % 0x66`), draws the cursor when `_DAT_8007BB94 != 4`, a
+  `6 x 17` glyph grid from the string at `0x801F29F0`, and three label lines
+  resolving the map name through `_DAT_8007B450[+1]` into the 8-byte-stride
+  name table at `0x801F2A6C`. Render-track.
+- **`FUN_801ECD0C`** (168-383 bytes across captures; body in
+  `overlay_world_map_walk_801ecd0c.txt`) - a destination / map-list picker
+  panel keyed on `ctx[+0x54]` (6-case jump table `0x801CF4E4`), sizing off the
+  panel descriptor at `0x801F2B98[+0x5C/+0x5E]`. Case 0 seeds `ctx[+0x94]` from
+  the string list at `0x801F2BEC` (`FUN_80032434`) and reads the visited-map
+  count `_DAT_8007B806`. The list cursor is the same swap-wrap picker
+  `FUN_801ECA08` runs; documented-not-ported (interwoven with the panel /
+  prompt draw path).
+- **`FUN_801E9F64`** (659 bytes, `overlay_world_map_walk_801e9f64.txt`) - the
+  **input** half of the dev menu, a 20-case dispatcher on `ctx[+0x9e] - 3`
+  (jump table `0x801CF294`). Each case edits one row's backing value from the
+  frame's newly-pressed pad mask `_DAT_8007BB84` (Right `0x2000` steps up,
+  Left `0x8000` steps down). The row bounding rules vary: the counter at
+  `_DAT_8007B6D0` wraps in a 12-bit ring, the rate at `_DAT_801F2E8C` clamps to
+  `[1, 255]`, the BGM index at `_DAT_801F2E90` cycles the sentinel-terminated
+  (`0x58`) table at `0x801F2E94`, and later arms poke per-character party
+  records. The two pure-integer bounding kernels are ported as
+  `legaia_engine_vm::world_map_dev_menu` (`wrap12_step`, `clamp1_255_step`,
+  `pad_step`); the table-cycle and party-record arms stay documented-not-ported.
+
+### World-map top-view HUD primitive batch
+
+The top-view HUD (menu boxes, the map grid, cursor quads) is drawn by a small
+GPU-primitive family that shares a **screen-origin + colour-gradient state**
+block in the overlay data region: `_DAT_801F28F0` / `_DAT_801F28F4` hold the
+current origin, `_DAT_801F28F8` / `_DAT_801F2900` the two colour endpoints, and
+`_DAT_801F2904` a scale word.
+
+- **`FUN_801E3984`** (1148 bytes, `overlay_world_map_top_801e3984.txt`) - the
+  batch **seeder**. Entry `(rect_ptr, colour_start, colour_end, flag)`. Emits a
+  `DR_MODE` (tpage `0x1E`) through `FUN_80059010`, stores the caller's colour
+  endpoints into `0x801F28F8` / `0x801F2900` and the rect's `[0]`/`[2]` fields
+  into the origin globals, and precomputes the per-component colour deltas
+  (masks `0xFC` / `0xFC00`, quarter-steps) so the emitters below can interpolate.
+- **`FUN_801E3658`** / **`FUN_801E3764`** / **`FUN_801E3894`** (`801e3658.txt`
+  etc.) - the shape emitters. Each allocates a packet off the scratchpad prim
+  cursor `0x1F800314[+0x8C]`, offsets every vertex by the origin globals, tints
+  it with the colour globals, and posts it via `AddPrim` (`FUN_8003D2C4`):
+  `FUN_801E3658` a gouraud quad (tag `0x06`, 28 bytes), `FUN_801E3764` a larger
+  gouraud/textured packet (tag `0x08`, 36 bytes), `FUN_801E3894` a flat
+  semi-transparent quad (tag `0x05`, 24 bytes, `SPRT`-style `0x140`-wide branch).
+
+These are field(897)-shared helpers parameterised entirely by the world-map
+overlay's `0x801F28xx` state, so they are the top-view HUD's primitive layer.
+All are GTE/GPU primitive emitters - render-track, documented-not-ported.
+
 ### `FUN_801EE90C` - world map text-box dispatcher (128 bytes)
 
 Entry: `(ctx_ptr)`. Dispatches on `ctx[+0x54]` via a 15-entry jump table at
@@ -383,6 +456,7 @@ not factor into `engine-vm` cleanly:
 | `FUN_801EE094` | `801ee094.txt` | **Riremito** travel-art actor (string `"ON RIREMITO"`): scans the visited-map table (`_DAT_8007B806` count, records at `+0xC`, `0x10` stride) for the current map `_DAT_80084628`; a miss parks phase `99` and prints `"UNFIND MAP NUMBER %d"` |
 | `FUN_801EE328` | `801ee328.txt` | **Rula** travel-art actor (string `"ON RULA"`): same map-table search; phase 2 raises the halt bit on `_DAT_8007C364[+0x10]`, scrolls `_DAT_8007C364[+0x16]` and spawns a flash quad via `FUN_80024E80` |
 | `FUN_801EF014` | `801ef014.txt` | Destination list-picker actor over the tile descriptor `_DAT_8007B450`: counts selectable cells (`+1`), drives a cursor prompt (`FUN_801E9DC8`), commits the pick into `_DAT_8007BB88`, then exits via `ctx[+0x50] = 0x1A` |
+| `FUN_801E3E00` | `overlay_world_map_walk_801e3e00.txt` | Scripted-move actor tick: dispatches on the opcode at `script[ctx[+0x9e]]` (`script = ctx[+0x94]`); op `0` retires (`ctx[+0x10] |= 8`), op `1` rewinds the cursor `ctx[+0x9e]`, op `2` reads three-byte big-endian operands via `FUN_8003CE9C` into a target block (`ctx[+0x74]` and the screen-scroll fields `ctx[+0x16]/+0x3C/+0x3E`) and advances the cursor. A world-map scripted-camera / actor mover; `j 0x801E4420`/`0x801E444C` are shared-tail exits, not calls |
 
 ### `FUN_801D5DE0` - world-map tile cursor SM (604 bytes)
 
@@ -1092,6 +1166,19 @@ height math) is the reliable anchor and is all the heightfield port needs for
 correct geometry. (The earlier `FUN_801F5748` write-probe lead is dead: in a
 genuine continent-**walk** RAM image that address disassembles as data, not
 code - the `0x801F76xx` range aliases across overlays.)
+
+**`FUN_801F73E4`** (608 bytes,
+`overlay_world_map_top_ext_wm_ext_dispatcher_caller_helper_801f73e4.txt`) is a
+per-cell GTE **emit helper** in the overview-render extension pack
+(byte-attributed to `world_map_render`, PROT 0901, by
+`classify-worklist.py --explain`), a sibling of the `FUN_801F69D8` sweep. It
+reads a screen-origin accumulator at `0x8007B792`, applies the GTE rotate /
+transfer pair (`FUN_800172C0` / `FUN_8003D1EC` / `FUN_8003D368`), derives a
+tile screen position from the transformed vertex plus the perspective-divided Z
+(`>> 6`), gates the fill colour word (`0x80808080` vs `0x40404040`) on a
+depth / visibility test (`FUN_8003CE64`), and posts a `0x14C`-command packet
+off the scratchpad prim cursor `0x1F8003A0`. Pure GTE/GPU primitive emitter -
+render-track, documented-not-ported.
 
 **Engine status.** The continent ground now renders as a **heightfield
 surface**: [`Scene::walk_heightfield`] →
