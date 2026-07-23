@@ -21,6 +21,14 @@
 -- retires (pins +0x24D). This probe is built to tell those two apart and to
 -- name the owning slot, which is exactly what the timeline records.
 --
+-- Both counters are REACHABLE in this fight, and both clear on their own in a
+-- healthy run - measured: +0x249 rises to 2 across the attack and summon
+-- bands, and +0x24D reaches 1 in state 0x2B during an enemy cast, with the
+-- per-child phase bytes ctx[+0x24E..] reaching 2. An earlier note here said
+-- +0x24D was never non-zero; that was an artifact of only having sampled the
+-- party heal, which spawns no children, and a deeper capture falsified it.
+-- Neither census is a dead mechanism, so neither is ruled out as the wedge.
+--
 -- Outputs (under captures/gaza2_magic_wedge/<ts>/):
 --   timeline.csv        change-triggered per-vsync SM + signal timeline
 --   signal_writes.csv   write attribution (pc/ra) for ctx+7 and the counters
