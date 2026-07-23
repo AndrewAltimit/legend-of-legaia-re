@@ -1,25 +1,44 @@
-//! Two small leaf routines from the `SCUS_942.54` battle band.
+//! Small arithmetic kernels lifted from the `SCUS_942.54` battle band.
 //!
 //! PORT: FUN_80055854, FUN_80046978
 //!
-//! Both are self-contained arithmetic kernels the surrounding battle code
-//! calls: a two-level variable-length word-record copier and a per-channel
-//! RGB colour-modulate with saturation. Every claim below is read out of
-//! the instruction stream in the reference dumps, not the decompiled C.
+//! Two self-contained whole routines: a two-level variable-length word-record
+//! copier ([`copy_nested_records`]) and a per-channel RGB colour-modulate with
+//! saturation ([`scale_rgb24`]).
+//!
+//! On top of those, this module carries the reusable *arithmetic cores* of
+//! several larger battle-actor routines whose bodies are otherwise
+//! render-track (they call the GTE, write GPU primitive packets through the
+//! scratchpad OT pointer `_DAT_1f8003a0`, or drive dozens of battle globals)
+//! and therefore are **not** ported whole in the clean-room engine. Each core
+//! is the faithful, testable computation the retail routine repeats inline:
+//!
+//! - [`bgr555_to_grey`] - the desaturate step of the stone/petrify CLUT-fade
+//!   builder `FUN_8004ce2c`.
+//! - [`depth_cue_scale_channel`] - the per-channel depth-brightness ramp of the
+//!   actor colour/OTZ setup `FUN_8004a908`.
+//! - [`invert_bgr24`] - the "negative colour" status recolour, also from
+//!   `FUN_8004a908`.
+//!
+//! Every claim below is read out of the instruction stream in the reference
+//! dumps, not the decompiled C.
 //!
 //! ## Clean-room boundary
 //!
 //! No `SCUS_942.54` bytes live in this crate. The reference dumps
-//! (`ghidra/scripts/funcs/80055854.txt`, `80046978.txt`) are the *spec*.
+//! (`ghidra/scripts/funcs/80055854.txt`, `80046978.txt`, `8004ce2c.txt`,
+//! `8004a908.txt`) are the *spec*. The render-track parents of the extracted
+//! cores are documented, with provenance, in `docs/subsystems/battle.md`.
 //!
 //! # NOT WIRED
 //!
-//! Neither is called by the engine yet. They are ported because each is a
-//! faithful, testable computation whose retail edge cases (the do-while
-//! floor, the pre-multiply saturation) are observable, and because the
-//! engine's battle path is expected to grow a consumer for both - the
-//! record copier stages a nested animation/keyframe table, the colour
-//! modulate feeds a screen-flash/overlay submit.
+//! None of these is called by the engine yet. They are ported because each is
+//! a faithful, testable computation whose retail edge cases (the do-while
+//! floor, the pre-multiply saturation, the luminance clamp, the min-4 dim
+//! floor) are observable, and because the engine's battle path is expected to
+//! grow a consumer for each - the record copier stages a nested
+//! animation/keyframe table, the colour maths feed screen-flash / status /
+//! depth-cue submits.
 
 // ---------------------------------------------------------------------------
 // FUN_80055854 - two-level nested word-record copy
@@ -159,6 +178,94 @@ pub fn scale_rgb24(packed: u32, scale: u8) -> u32 {
     r | (g << 8) | (b << 16)
 }
 
+// ---------------------------------------------------------------------------
+// FUN_8004ce2c - stone/petrify grey-out CLUT-fade luminance
+// ---------------------------------------------------------------------------
+
+/// Desaturate one 15-bit `BGR555` pixel to grey - the arithmetic core of the
+/// petrify CLUT-fade builder `FUN_8004ce2c`.
+///
+/// PORT: FUN_8004ce2c
+///
+/// The retail routine walks a 240-entry captured framebuffer strip, and for
+/// each pixel computes a single luminance value and writes it into all three
+/// 5-bit channels, producing the grey CLUT the stone-status overlay fades to.
+/// Straight off the disassembly (`0x8004d700`):
+///
+/// - `r = pixel & 0x1F`, `g = (pixel >> 5) & 0x1F`, `b = (pixel >> 10) & 0x1F`.
+/// - `lum = (r + g + b) >> 2` (an arithmetic shift; the sum is non-negative
+///   so it is a plain floor-divide by four - note the divisor is 4, not 3, so
+///   this is a deliberately-dimmed average, max `0x17`).
+/// - `if lum > 0x1F { lum = 0x1F }` (`sltiu ..., 0x20`).
+/// - repack `lum | (lum << 5) | (lum << 10)`.
+///
+/// The top `STP` bit (`0x8000`) is **not** set by this variant - it is added
+/// by the sibling brightened path (`lum * 3 / 2`), which is a separate ramp
+/// and not reproduced here. The surrounding routine (packet build via
+/// `_DAT_1f8003a0`, `FUN_800583c8` submit) is render-track; see
+/// `docs/subsystems/battle.md`.
+pub fn bgr555_to_grey(pixel: u16) -> u16 {
+    let r = pixel & 0x1F;
+    let g = (pixel >> 5) & 0x1F;
+    let b = (pixel >> 10) & 0x1F;
+    let lum = ((r + g + b) >> 2).min(0x1F);
+    lum | (lum << 5) | (lum << 10)
+}
+
+// ---------------------------------------------------------------------------
+// FUN_8004a908 - actor depth-cue brightness + negative-colour recolour
+// ---------------------------------------------------------------------------
+
+/// Scale one 10-bit colour channel by a depth ratio `num/den`, clamped so a
+/// near actor never brightens past its base and a far one never fades to
+/// black - the per-channel core of the actor colour/OTZ setup `FUN_8004a908`.
+///
+/// PORT: FUN_8004a908
+///
+/// The retail routine computes, per channel, exactly (`0x8004aac8`):
+///
+/// - `p = (raw * num) / den` - an unsigned 10-bit `*` 16-bit product then
+///   `divu` (`den` is the transformed depth `>> 4`; `num` is the mesh's
+///   half-range `mesh[+0x58]`).
+/// - `if raw < p { p = raw }` - clamp to the base channel, so an actor closer
+///   than the half-range stays at full brightness rather than over-driving.
+/// - `if p == 0 { p = 4 }` - a dim floor; a fully-faded channel still shows a
+///   4/1024 ember rather than pure black.
+///
+/// Retail guarantees `den >= 1` (the caller replaces a zero depth with 1
+/// before this runs); this port maps `den == 0` to `1` to match. The result
+/// is the scaled 10-bit value; retail then quantises it to 8 bits per channel
+/// (`>> 2` / `& 0x3FC`) when packing the GPU colour word - that packing, and
+/// the `FUN_8003d344` GTE transform the depth comes from, are render-track and
+/// live in `docs/subsystems/battle.md`.
+pub fn depth_cue_scale_channel(raw10: u16, num: u16, den: u16) -> u16 {
+    let raw = (raw10 & 0x3FF) as u32;
+    let den = den.max(1) as u32;
+    let mut p = (raw * num as u32) / den;
+    if raw < p {
+        p = raw;
+    }
+    if p == 0 {
+        p = 4;
+    }
+    p as u16
+}
+
+/// Invert the low 24 bits (`0x00BBGGRR`) of a packed actor colour word while
+/// preserving the top byte - the "negative colour" status recolour from
+/// `FUN_8004a908`.
+///
+/// PORT: FUN_8004a908
+///
+/// Off the disassembly (`0x8004abf4`): `out = (0xFFFFFF - (c & 0xFFFFFF)) |
+/// (c & 0xFF000000)`. Retail applies it only when the three channels are
+/// already equal (a greyscale word) - that guard belongs to the caller; this
+/// function is the recolour itself, which is a plain complement of the colour
+/// bits with the GPU code/attribute byte in bits 24..31 left intact.
+pub fn invert_bgr24(color: u32) -> u32 {
+    (0x00FF_FFFF - (color & 0x00FF_FFFF)) | (color & 0xFF00_0000)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,5 +365,86 @@ mod tests {
     fn scale_rgb_drops_the_top_byte() {
         // A non-zero alpha/top byte must not appear in the result.
         assert_eq!(scale_rgb24(0xFF_00_00_00, 3) & 0xFF00_0000, 0);
+    }
+
+    #[test]
+    fn grey_replicates_luminance_into_all_channels() {
+        // White (all 0x1F): sum 0x5D >> 2 = 0x17, clamp keeps 0x17.
+        let g = bgr555_to_grey(0x7FFF);
+        let lum = g & 0x1F;
+        assert_eq!(lum, 0x17);
+        assert_eq!((g >> 5) & 0x1F, lum);
+        assert_eq!((g >> 10) & 0x1F, lum);
+        assert_eq!(g & 0x8000, 0, "STP bit is never set by this variant");
+    }
+
+    #[test]
+    fn grey_black_stays_black() {
+        assert_eq!(bgr555_to_grey(0x0000), 0);
+    }
+
+    #[test]
+    fn grey_averages_the_three_5bit_channels_floor_divided_by_four() {
+        // r=0x1F, g=0, b=0 -> sum 0x1F >> 2 = 7.
+        let g = bgr555_to_grey(0x001F);
+        assert_eq!(g & 0x1F, 7);
+        assert_eq!(g, 7 | (7 << 5) | (7 << 10));
+    }
+
+    #[test]
+    fn grey_output_is_a_valid_15bit_word_with_equal_channels() {
+        // A single 555 pixel can never exceed lum 0x17, so the top bit stays
+        // clear and all three channels always match for every input.
+        for p in [0x7FFFu16, 0x03FF, 0x7C1F, 0x0000] {
+            let g = bgr555_to_grey(p);
+            let lum = g & 0x1F;
+            assert_eq!((g >> 5) & 0x1F, lum);
+            assert_eq!((g >> 10) & 0x1F, lum);
+            assert!(g < 0x8000, "no STP bit, so top bit clear");
+        }
+    }
+
+    #[test]
+    fn depth_cue_full_brightness_when_closer_than_half_range() {
+        // den (depth) < num (half-range) -> (raw*num)/den >= raw -> clamp to raw.
+        assert_eq!(depth_cue_scale_channel(0x200, 0x40, 0x10), 0x200);
+    }
+
+    #[test]
+    fn depth_cue_dims_when_farther_than_half_range() {
+        // raw=0x100, num=8, den=0x20 -> (0x100*8)/0x20 = 0x40.
+        assert_eq!(depth_cue_scale_channel(0x100, 8, 0x20), 0x40);
+    }
+
+    #[test]
+    fn depth_cue_floor_is_four_not_zero() {
+        // Product rounds to 0 -> dim floor of 4.
+        assert_eq!(depth_cue_scale_channel(1, 1, 0x40), 4);
+    }
+
+    #[test]
+    fn depth_cue_masks_input_to_ten_bits_and_guards_zero_den() {
+        // Bits above bit 9 in raw are dropped before scaling.
+        assert_eq!(
+            depth_cue_scale_channel(0xFC00 | 0x100, 1, 1),
+            depth_cue_scale_channel(0x100, 1, 1)
+        );
+        // den == 0 is treated as 1 (retail guarantees >= 1 upstream).
+        assert_eq!(depth_cue_scale_channel(0x080, 1, 0), 0x080);
+    }
+
+    #[test]
+    fn invert_complements_colour_bits_keeps_top_byte() {
+        assert_eq!(invert_bgr24(0x00_00_00_00), 0x00FF_FFFF);
+        assert_eq!(invert_bgr24(0x00_FF_FF_FF), 0x0000_0000);
+        // Top byte (GPU code/attr) survives untouched.
+        assert_eq!(invert_bgr24(0xC5_10_20_30), 0xC5_EF_DF_CF);
+    }
+
+    #[test]
+    fn invert_is_self_inverse_on_the_colour_bits() {
+        for c in [0x00_12_34_56u32, 0x81_00_80_FF, 0x00_7F_7F_7F] {
+            assert_eq!(invert_bgr24(invert_bgr24(c)), c);
+        }
     }
 }

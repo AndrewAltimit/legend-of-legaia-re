@@ -192,6 +192,7 @@ defers vertex morphing to the renderer.
 
 - `FUN_8004998c` - packed-stream decoder + frame interpolation (`ghidra/scripts/funcs/8004998c.txt`).
 - `FUN_80048a08` - per-actor battle draw; reads the phase, drives the decoder, applies the pose per object (`ghidra/scripts/funcs/80048a08.txt`).
+- `FUN_80048310` - a second decoder consumer: the weapon / effect swept-trail builder (documented in [`battle.md`](../subsystems/battle.md#weapon--effect-trail-builder-fun_80048310--fun_800485bc)) calls `FUN_8004998c` per trail slot, then submits the swept quads through the GTE emitter `FUN_800485bc`. Render-track; not ported whole (`ghidra/scripts/funcs/80048310.txt`, `800485bc.txt`).
 - `FUN_800495c8` / `FUN_8005b038` - GTE vertex morph-blend of the decoded pose (`ghidra/scripts/funcs/800495c8.txt`, `8005b038.txt`).
 - `FUN_80049858` - the non-morph sibling: straight two-pass vertex copy of the decoded pose (`ghidra/scripts/funcs/80049858.txt`).
 - `FUN_80054cb0` - monster init; copies the action/effect pointer (record `+0x04`) into actor `+0x230` and builds the `+0x1EF..+0x1F3` tag map (`ghidra/scripts/funcs/80054cb0.txt`).

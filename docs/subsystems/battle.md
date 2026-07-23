@@ -1287,7 +1287,10 @@ byte `*(_DAT_8007BD24)[0]`:
    same luminance plus `b = (l*3) >> 1` and set the STP bit, giving a blue
    tint over a per-character index window from the 3-pair table at
    `DAT_80078630` (stride 6). This is status tinting latched once per
-   affliction, not a per-frame damage flash.
+   affliction, not a per-frame damage flash. The desaturate step is the
+   reusable arithmetic core; it is ported (with tests) as
+   `legaia_engine_vm::scus_battle_helpers::bgr555_to_grey`, while the packet
+   build (`_DAT_1F8003A0` OT, `FUN_800583C8` submit) stays render-track.
 
 Calls the actor-spawn/move-VM invoker `FUN_80021B04` and helpers
 `FUN_8004FE5C` / `FUN_800583C8` / `FUN_80031D00` / RNG `FUN_80056798`.
@@ -2009,7 +2012,7 @@ stated by the concrete writes.
 | `FUN_80055B6C` | Battle scene initializer: clears the actor/effect pools, resolves the party-slot composition (dedup + fill from `DAT_8007BD0C..`), sizes the LZS scratch, allocates the `0x7A34`-word monster-object arena at `_DAT_801C9370`, and programs the disp/draw environment. |
 | `FUN_80055B20` | Seeds the fallback party-slot id table `DAT_8007BD10 = {1, 2, 3}` (Vahn/Noa/Gala); `FUN_80055B6C` overwrites it from the live party. Slot bytes index character records as `(id-1)*0x414`. |
 | `FUN_800480D8` | Per-actor battle tick / teardown: on the scene-clear byte `gp[0xA0C]+0x272` (guarded by `DAT_8007BD71 == -1`) runs the four overlay shutdowns and voids the effect-node table `DAT_801C90F0`, else forwards to the tint pass `FUN_8004A908` and the death / `0x808080` greyscale path. |
-| `FUN_8004A908` | Battle-actor tint: writes the colour word `+0x74` and blink halfword `+0x78` from the actor's transformed depth vs the monster-object depth threshold, with hard overrides for the `+0x16E` status bits (`0x01`→red, `0x02`→red-violet, `0x380`→magenta) and a greyscale-invert debug path gated on `DAT_8007BDA8`. |
+| `FUN_8004A908` | Battle-actor tint: writes the colour word `+0x74` and blink halfword `+0x78` from the actor's transformed depth vs the monster-object depth threshold, with hard overrides for the `+0x16E` status bits (`0x01`→red, `0x02`→red-violet, `0x380`→magenta) and a greyscale-invert path gated on `DAT_8007BDA8`. The two arithmetic cores are ported (with tests): the per-channel depth-brightness ramp as `scus_battle_helpers::depth_cue_scale_channel` (min-4 dim floor, clamp-to-base), the negative-colour recolour as `scus_battle_helpers::invert_bgr24`. The GTE transform (`FUN_8003D344`) and colour-word packing stay render-track. |
 | `FUN_80046A20` | Party HP/MP status-face selector: keyed on `+0x172`/`+0x174` vs `+0x14E>>1`/`>>2` (and status word `+0x16E`) it writes an expression state (`2`/`3`/`6`/`7`/`9`) into the four portrait slots at `DAT_801C8FA0`. |
 | `FUN_8004DC68` | Target-highlight pass: OR/clears the actor draw-flag bits `0x83000000` by 2D distance from the acting actor (angle+radius via `FUN_80019B28`), dimming out-of-range targets during command selection; boss/target ids are special-cased. |
 | `FUN_8004C650` | Battle name-banner placement: measures a name string width (`FUN_80035F04`) and centres its four banner X coords around `0xA0`, with `0xCF`/`0xC1` leading-byte nudges. |
