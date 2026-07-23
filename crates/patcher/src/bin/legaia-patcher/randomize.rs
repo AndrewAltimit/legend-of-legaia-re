@@ -192,16 +192,18 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("shiny_seru = false".to_string());
     }
 
-    // Jewel fix: retarget the Bloody Horns / Terio Punch damage jals from the
+    // Jewel fix: retarget the boss cinematic casts' damage jals from the
     // resist-ladder-bypassing wrapper to the guard-respecting one, so elemental
-    // jewels / guards / All Guard apply to Xain's signature casts (and Bull
-    // Charge, which shares the Terio Punch module). Seedless - a fixed
-    // three-word edit.
+    // jewels / guards / All Guard apply to Xain's Bloody Horns / Terio Punch
+    // (+ Bull Charge), Cort's Guilty Cross (+ Curse All), and the Delilas
+    // trio's Blazing Slash / Megaton Press / Plasma Strike. Seedless - a fixed
+    // thirteen-word edit across the six cast modules.
     if args.jewel_fix {
         let report = apply::apply_jewel_fix(&mut patcher)?;
         println!(
             "jewel-fix: {} damage calls retargeted to the guard-respecting wrapper \
-             (Bloody Horns / Terio Punch / Bull Charge now respect elemental guards)",
+             (Bloody Horns / Terio Punch / Bull Charge / Guilty Cross / Curse All / \
+             Blazing Slash / Megaton Press / Plasma Strike now respect elemental guards)",
             report.sites_patched
         );
         manifest.push("jewel_fix = true".to_string());

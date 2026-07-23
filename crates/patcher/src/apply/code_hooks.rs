@@ -311,23 +311,28 @@ pub struct JewelFixReport {
 }
 
 /// Apply the **jewel fix** (see [`crate::jewel_fix`]): retarget the damage
-/// calls of Xain's Bloody Horns / Terio Punch (and module-sharing Bull Charge)
-/// cast modules from the resist-ladder-bypassing wrapper `FUN_801DD6B4` to the
-/// guard-respecting `FUN_801DD4B0`, so elemental jewels / guards / All Guard
-/// apply to those hits like every ordinary monster special.
+/// calls of the boss cinematic casts - Xain's Bloody Horns / Terio Punch (and
+/// module-sharing Bull Charge), Cort's Guilty Cross (and Curse All), Gaza's
+/// Astral Slash module, and the Delilas trio's Blazing Slash / Megaton Press /
+/// Plasma Strike - from the resist-ladder-bypassing wrapper `FUN_801DD6B4` to
+/// the guard-respecting `FUN_801DD4B0`, so elemental jewels / guards / All
+/// Guard apply to those hits like every ordinary monster special.
+/// Respecting-spell paths sharing a module (Neo Star Slash) are untouched.
 ///
-/// Two same-size one-word edits in the raw PROT entries 952 / 953 (one call
-/// site per streamed cast module; the neighbouring extents overlap on disc, so
-/// each physical word is written exactly once). Each stock word is verified
-/// before writing; an unrecognized build is refused without touching the disc.
+/// Thirteen same-size one-word edits across the raw PROT entries
+/// 944 / 952 / 953 / 958 / 959 / 960, every offset inside its module's own
+/// extent (the neighbouring extents overlap on disc; each physical word is
+/// written exactly once). Each stock word is verified before writing; an
+/// unrecognized build is refused without touching the disc.
 pub fn apply_jewel_fix(patcher: &mut DiscPatcher) -> Result<JewelFixReport> {
-    let bh = patcher
-        .read_entry(crate::jewel_fix::BLOODY_HORNS_PROT_INDEX)
-        .context("read Bloody Horns cast module for jewel fix")?;
-    let tp = patcher
-        .read_entry(crate::jewel_fix::TERIO_PUNCH_PROT_INDEX)
-        .context("read Terio Punch cast module for jewel fix")?;
-    let plan = crate::jewel_fix::JewelFix::plan(&bh, &tp)?;
+    let mut modules = std::collections::BTreeMap::new();
+    for index in crate::jewel_fix::MODULE_INDICES {
+        let bytes = patcher
+            .read_entry(index)
+            .with_context(|| format!("read cast module PROT {index} for jewel fix"))?;
+        modules.insert(index, bytes);
+    }
+    let plan = crate::jewel_fix::JewelFix::plan(&modules)?;
     for &(index, offset, word) in &plan.writes {
         patcher
             .patch_prot_entry(index, offset as u64, &word.to_le_bytes())

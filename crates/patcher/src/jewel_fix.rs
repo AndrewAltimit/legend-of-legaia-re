@@ -1,16 +1,12 @@
-//! **Jewel fix**: make Xain's signature casts respect elemental guards.
+//! **Jewel fix**: make the boss cinematic casts respect elemental guards.
 //!
 //! ## The retail behaviour (pinned)
 //!
-//! Xain is element 0 (Earth), yet his two signature casts - **Bloody Horns**
-//! (spell id `0x5C`) and **Terio Punch** (`0x5D`) - are unaffected by Earth
-//! Jewels (and every other elemental guard, and All Guard). The element is not
-//! dropped anywhere: those spells are *capture-class* boss cinematic casts
-//! (spell-table class byte `'c'`), each shipping its own streamed code module
-//! (`FUN_8003EC70(record[+1] + 0x28)` -> PROT entries [`BLOODY_HORNS_PROT_INDEX`]
-//! / [`TERIO_PUNCH_PROT_INDEX`]) with baked-in per-hit power constants. Each
-//! module's damage calls pick one of two SCUS wrappers around the shared
-//! scale + finish kernels:
+//! The boss signature casts are *capture-class* spells (spell-table class byte
+//! `'c'`), each shipping its own streamed code module
+//! (`FUN_8003EC70(record[+1] + 0x28)` -> PROT entries 935..966) with baked-in
+//! per-hit power constants. Each module's damage calls pick one of two SCUS
+//! wrappers around the shared scale + finish kernels:
 //!
 //! - `FUN_801DD4B0` ([`RESPECT_WRAPPER_VA`]) - calls the finisher
 //!   `FUN_801DDB30` with `param_5 = 0`: the party-defender resist ladder runs
@@ -18,52 +14,85 @@
 //! - `FUN_801DD6B4` ([`BYPASS_WRAPPER_VA`]) - same roll shape but finisher
 //!   `param_5 = 1`: the **entire** resist block is skipped.
 //!
-//! Both wrappers pass the caster's seat, so the affinity scale reads Xain's
-//! true Earth element either way - the bypass is purely the finisher's
-//! `param_5 == 0` gate. Bloody Horns' hit (power `0x1D0`, dispatched to the
-//! module's `+0x740` tick by the id switch at `+0x1150`) and Terio Punch's
-//! hit (`0x274`) call the bypass wrapper; the enemy-side Evil Seru Magic
-//! module calls the respecting one (which is why Cort's ESM behaves as
-//! Dark). See `docs/subsystems/battle-formulas.md` and
-//! `docs/formats/spell-table.md` (cast classes).
+//! Both wrappers pass the caster's seat, so the affinity scale reads the
+//! caster's true record element either way - the bypass is purely the
+//! finisher's `param_5 == 0` gate. The full wrapper census over every
+//! capture-class module (`docs/subsystems/battle-formulas.md`) finds the
+//! bypass wrapper in exactly six modules - the boss signature-move set:
+//!
+//! | Module | Spell(s) | Caster |
+//! |---|---|---|
+//! | PROT 944 | Guilty Cross `0x37`, Curse All `0x53` | Cort (humanoid phases) |
+//! | PROT 952 | Bloody Horns `0x5C` (Astral Slash `0xB8` shares the module; its dispatched tick has no damage call) | Xain; Gaza (first fight) |
+//! | PROT 953 | Terio Punch `0x5D`, Bull Charge `0x5E` | Xain |
+//! | PROT 958 | Blazing Slash `0x79` | Gi Delilas |
+//! | PROT 959 | Megaton Press `0x7A` | Che Delilas |
+//! | PROT 960 | Plasma Strike `0x7B` (Neo Star Slash `0xA6` shares the module and **respects** - its tick is untouched) | Lu Delilas |
+//!
+//! Every other capture-class damage module (incl. every Songi cast, Neo Star
+//! Slash, and the enemy-side Evil Seru Magic) already calls the respecting
+//! wrapper; plain-class casts, player summons, and move-power specials all
+//! reach the finisher with `param_5 = 0`.
 //!
 //! ## The fix
 //!
-//! Retarget the two `jal FUN_801DD6B4` words - one per module - to
-//! `jal FUN_801DD4B0`: a same-size, two-word in-place PROT edit. The
-//! wrappers share the argument contract (`a0` = power constant, `a1` =
-//! attacker slot, `a2` = defender slot; both roll internally and return the
-//! damage margin), so the retarget changes nothing but the finisher's
-//! `param_5`, and the resist ladder engages exactly as it does for every
-//! ordinary monster special. The respecting-wrapper call at entry offset
-//! `0x15B0` (power `0x80`) is untouched: it has no reachable in-module entry
-//! (same-shape twins sit at the same offset in sibling modules - shared
-//! template dead code, not a Bloody Horns component).
+//! Retarget all thirteen `jal FUN_801DD6B4` words across the six modules to
+//! `jal FUN_801DD4B0` - a same-size in-place PROT edit. The wrappers share
+//! the argument contract (`a0` = power, `a1` = attacker slot, `a2` = defender
+//! slot; both roll internally and return the damage margin), so the retarget
+//! changes nothing but the finisher's `param_5`, and the resist ladder
+//! engages exactly as it does for every ordinary monster special. Shared
+//! modules dispatch per spell at a module-head id switch, so
+//! respecting-spell paths (Neo Star Slash) are untouched, and PROT 952's
+//! unreachable template respect call (`+0x15B0`) is left alone.
 //!
-//! Terio Punch shares its module (spell sub-index `0x12`) with **Bull Charge**
-//! (`0x5E`), so the fix covers that cast too.
-//!
-//! NB the neighbouring `09xx` PROT extents **overlap on disc**: entry 953's
-//! window starts [`OVERLAP_953_IN_952`] bytes into entry 952's, so the Terio
-//! Punch word also appears in the Bloody Horns entry window at
-//! `0x1800 + 0xA38 = 0x2238`. That is the same physical word, not a third
-//! site - the fix writes each physical word exactly once.
+//! NB the neighbouring `09xx` PROT extents **overlap on disc** (e.g. entry
+//! 953's window starts [`OVERLAP_953_IN_952`] bytes into entry 952's, so the
+//! Terio Punch word also appears in the Bloody Horns entry window at
+//! `0x1800 + 0xA38 = 0x2238`). Every [`SITES`] offset lies inside its
+//! module's **own** extent (bounded by the next entry's head-overlap), so
+//! each physical word is written exactly once.
 //!
 //! Each site's stock word is verified before it is replaced - a
 //! differently-laid-out image is refused, not corrupted. No Sony bytes are
 //! embedded: the patch words are `jal` encodings of documented SCUS entry
 //! points.
 
+use std::collections::BTreeMap;
+
 use anyhow::{Result, bail};
 
 use crate::mips::jal;
 
+/// PROT entry (extraction index) of the Guilty Cross / Curse All cast module
+/// (capture sub-index `0x09` -> loader arg `0x31`).
+pub const GUILTY_CROSS_PROT_INDEX: usize = 944;
 /// PROT entry (extraction index) of the streamed Bloody Horns cast module
 /// (spell `0x5C`, capture sub-index `0x11` -> loader arg `0x39`).
 pub const BLOODY_HORNS_PROT_INDEX: usize = 952;
 /// PROT entry (extraction index) of the streamed Terio Punch / Bull Charge cast
 /// module (spells `0x5D`/`0x5E`, capture sub-index `0x12` -> loader arg `0x3A`).
 pub const TERIO_PUNCH_PROT_INDEX: usize = 953;
+/// PROT entry (extraction index) of the Blazing Slash cast module (Gi Delilas,
+/// capture sub-index `0x17`).
+pub const BLAZING_SLASH_PROT_INDEX: usize = 958;
+/// PROT entry (extraction index) of the Megaton Press cast module (Che
+/// Delilas, capture sub-index `0x18`).
+pub const MEGATON_PRESS_PROT_INDEX: usize = 959;
+/// PROT entry (extraction index) of the Plasma Strike / Neo Star Slash cast
+/// module (Lu Delilas / Sim-Seru Gaza, capture sub-index `0x19`). Only the
+/// Plasma Strike tick carries the bypass call.
+pub const PLASMA_STRIKE_PROT_INDEX: usize = 960;
+
+/// Every PROT entry the fix touches, ascending.
+pub const MODULE_INDICES: [usize; 6] = [
+    GUILTY_CROSS_PROT_INDEX,
+    BLOODY_HORNS_PROT_INDEX,
+    TERIO_PUNCH_PROT_INDEX,
+    BLAZING_SLASH_PROT_INDEX,
+    MEGATON_PRESS_PROT_INDEX,
+    PLASMA_STRIKE_PROT_INDEX,
+];
 
 /// `FUN_801DD4B0` - damage wrapper whose finisher call passes `param_5 = 0`
 /// (party-defender resist ladder runs).
@@ -82,26 +111,38 @@ pub const OVERLAP_953_IN_952: usize = 0x1800;
 pub struct Site {
     /// PROT entry (extraction index) holding the module.
     pub prot_index: usize,
-    /// Byte offset of the `jal` word within the entry.
+    /// Byte offset of the `jal` word within the entry (always inside the
+    /// module's own extent).
     pub offset: usize,
-    /// The hit's baked power constant (documentation only; not patched).
+    /// The hit's baked power constant where it is a nearby `li a0, imm`
+    /// (documentation only; `0` = register-computed at the call site).
     pub power: u16,
 }
 
-/// The two physically-distinct bypass-wrapper call sites, one per module. (The
-/// Terio Punch word also aliases into entry 952's window at
-/// `OVERLAP_953_IN_952 + 0xA38 = 0x2238` - same disc bytes, not a third site.)
-pub const SITES: [Site; 2] = [
+const fn site(prot_index: usize, offset: usize, power: u16) -> Site {
     Site {
-        prot_index: BLOODY_HORNS_PROT_INDEX,
-        offset: 0x0F70,
-        power: 0x1D0,
-    },
-    Site {
-        prot_index: TERIO_PUNCH_PROT_INDEX,
-        offset: 0x0A38,
-        power: 0x274,
-    },
+        prot_index,
+        offset,
+        power,
+    }
+}
+
+/// The thirteen physically-distinct bypass-wrapper call sites across the six
+/// modules, each inside its module's own extent.
+pub const SITES: [Site; 13] = [
+    site(GUILTY_CROSS_PROT_INDEX, 0x0100, 0x38E),
+    site(BLOODY_HORNS_PROT_INDEX, 0x0F70, 0x1D0),
+    site(TERIO_PUNCH_PROT_INDEX, 0x0A38, 0x274),
+    site(BLAZING_SLASH_PROT_INDEX, 0x0B14, 0),
+    site(BLAZING_SLASH_PROT_INDEX, 0x0E7C, 0x38),
+    site(BLAZING_SLASH_PROT_INDEX, 0x12CC, 0x38),
+    site(BLAZING_SLASH_PROT_INDEX, 0x170C, 0x38),
+    site(BLAZING_SLASH_PROT_INDEX, 0x1D7C, 0x40),
+    site(BLAZING_SLASH_PROT_INDEX, 0x1F00, 0),
+    site(MEGATON_PRESS_PROT_INDEX, 0x0810, 0x80),
+    site(MEGATON_PRESS_PROT_INDEX, 0x10B8, 0x80),
+    site(MEGATON_PRESS_PROT_INDEX, 0x14E4, 0x30),
+    site(PLASMA_STRIKE_PROT_INDEX, 0x1790, 0x1C0),
 ];
 
 /// The stock word at every site: `jal FUN_801DD6B4` (`0x0C0775AD`).
@@ -114,8 +155,8 @@ pub const fn respect_word() -> u32 {
     jal(RESPECT_WRAPPER_VA)
 }
 
-/// A planned jewel fix: the two same-size word writes, verified against the
-/// stock bytes first.
+/// A planned jewel fix: the thirteen same-size word writes, verified against
+/// the stock bytes first.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JewelFix {
     /// `(prot_index, offset, word)` writes, one per [`SITES`] entry.
@@ -123,23 +164,23 @@ pub struct JewelFix {
 }
 
 impl JewelFix {
-    /// Plan the fix given the two modules' raw PROT entry bytes. Fails (rather
-    /// than corrupts) if any site does not hold the stock
+    /// Plan the fix given each touched module's raw PROT entry bytes, keyed by
+    /// extraction index (every index in [`MODULE_INDICES`] must be present).
+    /// Fails (rather than corrupts) if any site does not hold the stock
     /// `jal FUN_801DD6B4` word - an unrecognized build, or an already-patched
     /// image.
-    pub fn plan(bloody_horns: &[u8], terio_punch: &[u8]) -> Result<Self> {
+    pub fn plan(modules: &BTreeMap<usize, Vec<u8>>) -> Result<Self> {
         let mut writes = Vec::with_capacity(SITES.len());
-        for site in SITES {
-            let entry = match site.prot_index {
-                BLOODY_HORNS_PROT_INDEX => bloody_horns,
-                _ => terio_punch,
+        for s in SITES {
+            let Some(entry) = modules.get(&s.prot_index) else {
+                bail!("cast module PROT {} bytes not supplied", s.prot_index);
             };
-            let Some(bytes) = entry.get(site.offset..site.offset + 4) else {
+            let Some(bytes) = entry.get(s.offset..s.offset + 4) else {
                 bail!(
                     "cast module PROT {} is only {} bytes; call site +{:#x} out of range",
-                    site.prot_index,
+                    s.prot_index,
                     entry.len(),
-                    site.offset
+                    s.offset
                 );
             };
             let word = u32::from_le_bytes(bytes.try_into().unwrap());
@@ -147,12 +188,12 @@ impl JewelFix {
                 bail!(
                     "cast module PROT {} +{:#x} = {word:#010x}, expected {:#010x} \
                      (`jal FUN_801DD6B4`; unrecognized or already-patched build) - refusing to patch",
-                    site.prot_index,
-                    site.offset,
+                    s.prot_index,
+                    s.offset,
                     bypass_word(),
                 );
             }
-            writes.push((site.prot_index, site.offset, respect_word()));
+            writes.push((s.prot_index, s.offset, respect_word()));
         }
         Ok(Self { writes })
     }
@@ -161,6 +202,18 @@ impl JewelFix {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn stock_modules() -> BTreeMap<usize, Vec<u8>> {
+        let mut m: BTreeMap<usize, Vec<u8>> = BTreeMap::new();
+        for idx in MODULE_INDICES {
+            m.insert(idx, vec![0u8; 0x3800]);
+        }
+        for s in SITES {
+            m.get_mut(&s.prot_index).unwrap()[s.offset..s.offset + 4]
+                .copy_from_slice(&bypass_word().to_le_bytes());
+        }
+        m
+    }
 
     #[test]
     fn wrapper_jal_words_match_the_disc_bytes() {
@@ -171,40 +224,52 @@ mod tests {
     }
 
     #[test]
+    fn sites_cover_exactly_the_module_set() {
+        let mut idxs: Vec<usize> = SITES.iter().map(|s| s.prot_index).collect();
+        idxs.sort_unstable();
+        idxs.dedup();
+        assert_eq!(idxs, MODULE_INDICES.to_vec());
+        // No duplicate (entry, offset) pairs - each physical word once.
+        let mut pairs: Vec<(usize, usize)> =
+            SITES.iter().map(|s| (s.prot_index, s.offset)).collect();
+        pairs.sort_unstable();
+        let n = pairs.len();
+        pairs.dedup();
+        assert_eq!(pairs.len(), n);
+    }
+
+    #[test]
     fn plan_refuses_an_unrecognized_build() {
-        let zeroed = vec![0u8; 0x3000];
-        assert!(JewelFix::plan(&zeroed, &zeroed).is_err());
+        let mut m = stock_modules();
+        // Corrupt one site.
+        m.get_mut(&BLAZING_SLASH_PROT_INDEX).unwrap()[0x12CC] ^= 0xFF;
+        assert!(JewelFix::plan(&m).is_err());
     }
 
     #[test]
-    fn plan_refuses_a_truncated_entry() {
-        let short = vec![0u8; 0x100];
-        assert!(JewelFix::plan(&short, &short).is_err());
+    fn plan_refuses_a_missing_or_truncated_module() {
+        let mut m = stock_modules();
+        m.remove(&MEGATON_PRESS_PROT_INDEX);
+        assert!(JewelFix::plan(&m).is_err());
+        let mut m = stock_modules();
+        m.get_mut(&PLASMA_STRIKE_PROT_INDEX)
+            .unwrap()
+            .truncate(0x100);
+        assert!(JewelFix::plan(&m).is_err());
     }
 
     #[test]
-    fn plan_accepts_stock_words_and_retargets_both_sites() {
-        let mut bh = vec![0u8; 0x3000];
-        let mut tp = vec![0u8; 0x3000];
-        for site in SITES {
-            let entry = if site.prot_index == BLOODY_HORNS_PROT_INDEX {
-                &mut bh
-            } else {
-                &mut tp
-            };
-            entry[site.offset..site.offset + 4].copy_from_slice(&bypass_word().to_le_bytes());
-        }
-        let plan = JewelFix::plan(&bh, &tp).expect("stock build accepted");
-        assert_eq!(plan.writes.len(), 2);
+    fn plan_accepts_stock_words_and_retargets_every_site() {
+        let plan = JewelFix::plan(&stock_modules()).expect("stock build accepted");
+        assert_eq!(plan.writes.len(), SITES.len());
         assert!(plan.writes.iter().all(|&(_, _, w)| w == respect_word()));
-        // Site offsets survive into the writes verbatim.
         assert_eq!(
-            plan.writes[0],
+            plan.writes[1],
             (BLOODY_HORNS_PROT_INDEX, 0x0F70, respect_word())
         );
         assert_eq!(
-            plan.writes[1],
-            (TERIO_PUNCH_PROT_INDEX, 0x0A38, respect_word())
+            plan.writes[12],
+            (PLASMA_STRIKE_PROT_INDEX, 0x1790, respect_word())
         );
     }
 
@@ -212,16 +277,11 @@ mod tests {
     fn planning_is_idempotence_guarded() {
         // A second plan over an already-patched image must refuse (the sites
         // now hold the respect word, not the stock bypass word).
-        let mut bh = vec![0u8; 0x3000];
-        let mut tp = vec![0u8; 0x3000];
-        for site in SITES {
-            let entry = if site.prot_index == BLOODY_HORNS_PROT_INDEX {
-                &mut bh
-            } else {
-                &mut tp
-            };
-            entry[site.offset..site.offset + 4].copy_from_slice(&respect_word().to_le_bytes());
+        let mut m = stock_modules();
+        for s in SITES {
+            m.get_mut(&s.prot_index).unwrap()[s.offset..s.offset + 4]
+                .copy_from_slice(&respect_word().to_le_bytes());
         }
-        assert!(JewelFix::plan(&bh, &tp).is_err());
+        assert!(JewelFix::plan(&m).is_err());
     }
 }
