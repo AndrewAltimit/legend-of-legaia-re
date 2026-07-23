@@ -270,9 +270,10 @@ mod tests {
         // -3 / 2 toward zero = -1 (not -2 as arithmetic >>1 would give).
         assert_eq!(screen_x_mirror(ScreenOrient::Mode2, false, -3, 0), -1);
         // mirror path halves width the same way.
+        // formula `(0x400 - half(width)) - x` with x=0, half(-3)=-1.
         assert_eq!(
             screen_x_mirror(ScreenOrient::Mode2, true, 0, -3),
-            (0x400 - (-1)) - 0
+            0x400 - (-1)
         );
     }
 
