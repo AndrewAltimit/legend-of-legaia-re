@@ -133,6 +133,31 @@ In results state `0x14`, `FUN_801cf470` copies the three player scores into disp
 
 The high score is tracked in the save block (`_DAT_80084464` is updated when `DAT_801d53cc` exceeds it). **Confirmed.**
 
+## The setumei (how-to) tutorial script (`FUN_801d0750`)
+
+Mode 2 (setumei) is driven by a dedicated actor script - the Disco King's
+per-frame state machine, an 18-case `switch` on the actor's own step counter
+(`param+0x9c`). It teaches the game with dialogue lines (`func_0x80036888`,
+drawn at fixed y `0x78`/`0x88`/`0x98`) and advances on any face button
+(`_DAT_8007b874 & 0xf0`, keying the confirm cue `0x20`). Between segments it
+resets the shared dance run-state, so it is also the mode's controller, not
+just a caption printer. **Confirmed** (`overlay_dance_801d0750.txt`).
+
+The script's state-mutating beats, in order: a cursor-move demo (`DAT_801d607c`,
+toggled by pad `0x1000`/`0x4000`); text pages 1..4 explaining the buttons; a
+"try Square / Circle now" segment (case 7) that probes the human's press with
+two direct `FUN_801d1960(0, gauge/1000, 0x100)` / `0x101` calls and praises a
+correct one, timed by the progress accumulator `DAT_801d5150` reaching `900`; a
+"level rises automatically" page that arms the load gate (`DAT_801d5830 = 1`,
+`DAT_801d5334 = 2`); the groovy-move lesson; and a groovy-move practice segment
+(case `0xd`) that reads the triangle-landed flag `DAT_801d570c` to print praise
+vs a timing scold, gated by the feedback window `DAT_801d5144`. Two cases
+(`0xc` / `0x11`) are countdown holds on the timer `DAT_801d6080` that clear the
+beat clock (`DAT_801d581c` / `DAT_801d5820` / `DAT_801d5824`) before advancing.
+This is presentation-bound (its output is Sony dialogue) and not ported; the
+mutations it makes are on the same run-state globals the [RAM table](#ram-state)
+lists.
+
 ## Dance-floor rendering
 
 The scrolling dance floor (the step-lane grid the markers travel down) is drawn by a small cluster that **reuses the field engine's scene infrastructure** rather than a dance-specific renderer: the scene-data base `_DAT_1f8003ec` (the scratchpad-resolved per-scene pointer, the same one whose `+0x4000` slice is the field walkability grid - see [`field-locomotion.md`](field-locomotion.md)) and the actor-list head `_DAT_8007c36c`. The dance step layers live at fixed offsets inside that scene data: a tile grid at `+0x8000` and two step-marker layers at `+0x10000` / `+0x12000`. **Confirmed** (the offsets and the shared bases are read directly from the dump).
@@ -207,6 +232,14 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
 | `FUN_801d2a10` | Dance-floor tile-grid blit (scratchpad column-Y table + rect quad emit). `overlay_dance_801d2a10.txt` |
 | `FUN_801d3ec0` | Two-layer step-marker lookup wrapper (scene-data `+0x10000` / `+0x12000`). `overlay_dance_801d3ec0.txt` |
 | `FUN_801d3f54` | Per-cell step-marker lookup (per-row sub-list, match `(x, y)`). `overlay_dance_801d3f54.txt` |
+| `FUN_801d0750` | The **setumei (how-to) tutorial script** - the Disco King actor's per-frame state machine. See [The setumei tutorial script](#the-setumei-how-to-tutorial-script-fun_801d0750). `overlay_dance_801d0750.txt` |
+| `FUN_801d231c` | Score / gauge HUD render driver: per-mode score-box → dancer-slot layout, then draws each box (`FUN_801d32f8`), the gauge level (`FUN_801d3e28`) and the beat track (`FUN_801d2524`). `overlay_dance_801d231c.txt` |
+| `FUN_801d32f8` | Multi-digit number renderer: 8-place decimal split (leading-zero suppressed) → per-digit widget-U patch + emit. `overlay_dance_801d32f8.txt` |
+| `FUN_801d2524` | Beat-track HUD: combo-window CLUT flash, the scrolling-note screen-x, the caps / body / stock-marker draws. `overlay_dance_801d2524.txt` |
+| `FUN_801d2d98` | Count-in banner animator (`1 2 3 READY... GO!`): slide-in / fade envelope + fires the intro cue `0x200` on frame `0x1e`. `overlay_dance_801d2d98.txt` |
+| `FUN_801d3d78` | On-beat "good step" sting: keys two SPU voices (`0x12` / `0x13`) at tones `2r` / `2r+1`, note `0x3c+r`, for `r = rand() % 3`. `overlay_dance_801d3d78.txt` |
+| `FUN_801d40dc` | Sequence-clear ("Good!") banner + two flanking stars carrying the accuracy weight (`+0x72`). `overlay_dance_801d40dc.txt` |
+| `FUN_801d4098` | Actor clip-driver gate: hands the dancer to the shared clip driver `FUN_800204f8` only when its spin counter `+0x5c > 0` or its flag word `+0x10` has bit `0x1000`. `overlay_dance_801d4098.txt` |
 
 Parser: [`legaia_asset::dance_chart`](../../crates/asset/src/dance_chart.rs) decodes the baked [step chart](#step--rhythm-state-machine) (3 rows × `0x20` beats) from the disc.
 
@@ -247,6 +280,17 @@ the dancer's spin (`lane + 1` turns at `0x80 + lane * 0x20` per frame), which
 is the same disc-derived formula for the visible move. The dance-floor / arrow
 rendering (the [floor cluster](#dance-floor-rendering)) is not part of the
 rules port - it is a separate host concern.
+
+Alongside the rules layer the port also lifts the **HUD parameterisation** -
+the disc-derived arithmetic a HUD draw is fed, kept in the rules crate while the
+quad emit stays the host's (as [`step_mark_effect_spawn`] / the score-banner
+digit already split their render routines): the number renderer's decimal split
+(`dance_number_digits` / `dance_score_digit_u` / `dance_level_digit_u`,
+`FUN_801d32f8`), the beat-track combo-flash CLUT + scrolling-note screen-x
+(`dance_combo_window_bright` / `dance_beat_track_note_x`, `FUN_801d2524`), the
+good-step sting's two-voice pick (`dance_hit_sting_voices`, `FUN_801d3d78`), the
+sequence-clear banner + star spawns (`good_banner_spawn`, `FUN_801d40dc`), and
+the face-stamp rig selector (`dance_face_rig`, `FUN_801d03c4`).
 
 ## Assets: the overlay loads none - the entry path stages PROT 1230
 
