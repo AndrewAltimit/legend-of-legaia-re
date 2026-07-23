@@ -131,6 +131,27 @@ sample-clock is reset so the looped body re-fires on the same sample offset
 every pass. `Sequencer::set_loop_to` remains an external fallback for the four
 tracks that carry no markers.
 
+### ProgramChange to an unused VAB slot
+
+A `0xCn` ProgramChange names a `ProgAtr` slot in the paired [VAB](vab.md).
+Retail's VAB-open (`FUN_80068d94`) writes a running used-program counter into
+each slot's `+8` word and the program-change consumer reads it back as the
+tone-page index, so a change to an **unused** slot aliases onto the next used
+slot's page (past the last used slot it reads garbage beyond the tone region).
+The engine port instead gives unused slots an empty page - their notes don't
+resolve, so they play silence. This is a deliberate divergence
+(`engine-audio::vab_bind`).
+
+That divergence is exercised on the retail corpus: a disc sweep of every
+in-container `[VAB][SEQ]` pair
+(`engine-audio/tests/real_seq_program_change_coverage.rs`) finds eight such
+ProgramChanges across four entries. Two are audible losses - retail aliases to
+a valid different page while the port goes silent, and notes follow (PROT 868
+prog 5, PROT 996 prog 19). The rest are benign: retail's own alias index runs
+past the tone region so it reads garbage too (PROT 994 prog 42), or no notes
+follow the change (PROT 988 prog 127). The audible cases are a candidate for a
+future fix to `vab_bind` (implement the `+8`-counter aliasing).
+
 ## Stream termination and truncation
 
 A well-formed stream ends on its own `FF 2F` marker. Retail always writes a
@@ -152,9 +173,23 @@ getting a whole track - a player, a note-level parity oracle, a corpus sweep
 Across the disc's SEQ-bearing PROT entries the corpus is almost entirely
 clean; `engine-audio/tests/real_seq_stream_integrity.rs` pins the count of
 non-clean streams so a parser change that starts truncating more tracks
-fails loudly. The one known outlier is PROT entry 1045, which desynchronises
-partway through and halts on a `0xF4` byte; its cause is not yet pinned, and
-it is tracked as an open thread rather than papered over.
+fails loudly. The one outlier is PROT entry 1045, and its cause is pinned:
+the stream is a **valid, complete track** that ends on its own `FF 2F 00`
+marker, but a few notes before that marker the parser drifts by exactly one
+byte inside a dense run of running-status note events (near stream offset
+~4900-4920, next to an anomalous non-round-BPM `FF 51` tempo). Latched one
+byte ahead of the true alignment, it reads the volume `Control Change` events
+of the closing fade (`B5 07 nn` / `B6 07 nn`) as 2-byte VLQ deltas plus
+running-status note data, walks straight through the real `FF 2F 00`, and
+halts on the first post-track byte it cannot size - a `0xF4`, eleven bytes
+*past* the true end-of-track. The `0xF4` is therefore **dead post-track
+tail**, not a real skippable libsnd event: there is nothing to resynchronise
+onto, and "skip 0xF4 and continue" would decode ~124 KB of trailing container
+bytes as bogus music. The parser is right to stop and report
+`SystemMessage(0xF4)`. `engine-audio/tests/real_seq_1045_truncation.rs`
+proves both halves - a clean `FF 2F 00` sits just before the `0xF4`, and
+correcting the one-byte drift makes the whole stream parse to a clean
+end-of-track - so the parser is left unchanged.
 
 ## Tempo math
 
