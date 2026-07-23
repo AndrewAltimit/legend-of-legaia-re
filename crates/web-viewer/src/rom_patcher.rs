@@ -129,7 +129,10 @@ pub fn resolve_seed(seed: &str) -> String {
 /// comma/space-separated list of `item=points` pairs that set the
 /// fishing-exchange point cost of prizes (e.g. `0x6F=500` for the Water Egg).
 /// `location_renames` is a newline-separated list of `index=name` lines that
-/// rename world-map location slots (e.g. `3=Ancient Fire Cave`). Both are
+/// rename world-map location slots (e.g. `3=Ancient Fire Cave`).
+/// `earth_egg_price` (empty = untouched) sets the casino-coin threshold the Sol
+/// Tower Prize Counter requires before it offers the Earth Ra-Seru Egg (retail
+/// 100000); the game debits exactly that many coins on purchase. All three are
 /// manual, seedless edits.
 /// `starting_level`
 /// begins the new game at that character level instead of 1 (`0` or `1` =
@@ -187,6 +190,7 @@ pub fn patch_rom(
     jewel_fix: bool,
     fishing_prices: &str,
     location_renames: &str,
+    earth_egg_price: &str,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -428,6 +432,30 @@ pub fn patch_rom(
                     summary.push_str(&format!("fishing-price: skipped malformed entry {tok:?}\n"))
                 }
             }
+        }
+    }
+
+    // Earth Egg coin threshold: the Sol Tower Prize Counter's scripted
+    // coin-for-Earth-Egg exchange (koin1 MAN). A single coins-required value
+    // (empty = untouched); the game debits exactly that many on purchase.
+    let earth_egg_price = earth_egg_price.trim();
+    if earth_egg_price.is_empty() {
+        summary.push_str("earth-egg-price: untouched\n");
+    } else {
+        match earth_egg_price.parse::<u32>() {
+            Ok(price) => match apply::set_earth_egg_price(&mut patcher, price) {
+                Ok(rep) if !rep.changed => {
+                    summary.push_str(&format!("earth-egg-price: already {price} coins\n"))
+                }
+                Ok(rep) => summary.push_str(&format!(
+                    "earth-egg-price: {} -> {} coins\n",
+                    rep.old_price, rep.new_price
+                )),
+                Err(e) => summary.push_str(&format!("earth-egg-price: {e}\n")),
+            },
+            Err(_) => summary.push_str(&format!(
+                "earth-egg-price: skipped non-numeric value {earth_egg_price:?}\n"
+            )),
         }
     }
 

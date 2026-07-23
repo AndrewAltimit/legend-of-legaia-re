@@ -47,6 +47,7 @@ fn main() -> Result<()> {
         Cmd::Shops { input } => commands::cmd_shops(&input),
         Cmd::Casino { input } => commands::cmd_casino(&input),
         Cmd::Fishing { input } => commands::cmd_fishing(&input),
+        Cmd::EarthEgg { input } => commands::cmd_earth_egg(&input),
         Cmd::Locations { input } => commands::cmd_locations(&input),
         Cmd::MonsterStats { input } => commands::cmd_monster_stats(&input),
         Cmd::MonsterBlock {

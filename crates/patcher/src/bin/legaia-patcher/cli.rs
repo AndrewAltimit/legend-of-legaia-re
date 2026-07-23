@@ -122,6 +122,14 @@ pub(crate) enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Read-only: show the Earth Egg coin threshold (the Sol Tower Prize Counter
+    /// exchange) - the value the `--earth-egg-price` editor changes.
+    EarthEgg {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
+        #[arg(long)]
+        input: PathBuf,
+    },
     /// Read-only: list the world-map location / landmark names (index + name)
     /// - the slots the `--rename-location` editor changes.
     Locations {
@@ -511,6 +519,15 @@ pub(crate) struct RandomizeArgs {
     /// fishing` lists the current prizes and prices.
     #[arg(long, value_name = "ITEM=POINTS", value_delimiter = ',', value_parser = parse_prize_price)]
     pub(crate) fishing_price: Vec<(u8, u32)>,
+    /// Set the **Earth Egg coin threshold** - the casino-coin count the Sol
+    /// Tower "Prize Counter" requires before it offers to exchange coins for the
+    /// Earth Ra-Seru Egg (retail 100000). This is a bespoke scripted exchange,
+    /// *not* a row in the casino prize table, so the shop / casino editors can't
+    /// reach it. VALUE is the coins required; the game debits exactly that many
+    /// on purchase (gate = value - 1, debit = value, matching retail). Range
+    /// 1..=8388608. `legaia-patcher earth-egg` shows the current value.
+    #[arg(long, value_name = "VALUE")]
+    pub(crate) earth_egg_price: Option<u32>,
     /// **Rename a world-map location** (the names shown on the quick-travel
     /// menu and the save / load / pause location display). Repeatable
     /// `INDEX=NAME` entries; the index is a landmark slot (`legaia-patcher

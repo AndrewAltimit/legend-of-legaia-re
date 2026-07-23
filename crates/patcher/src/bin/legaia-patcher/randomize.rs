@@ -227,6 +227,21 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push(format!("fishing_price 0x{item_id:02X} = {price}"));
     }
 
+    // Earth Egg coin-threshold edit: rewrite the Sol Tower Prize Counter's
+    // scripted coin gate + debit (koin1 MAN). Seedless targeted edit.
+    if let Some(price) = args.earth_egg_price {
+        let report = apply::set_earth_egg_price(&mut patcher, price)?;
+        if report.changed {
+            println!(
+                "earth-egg-price: {} -> {} coins",
+                report.old_price, report.new_price
+            );
+        } else {
+            println!("earth-egg-price: already {} coins", report.new_price);
+        }
+        manifest.push(format!("earth_egg_price = {price}"));
+    }
+
     // Location renames: same-size overwrites of the SCUS world-map name table.
     if !args.rename_location.is_empty() {
         let report = apply::rename_locations(&mut patcher, &args.rename_location)?;

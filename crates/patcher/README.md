@@ -45,6 +45,7 @@ full design.
   - [Jewel fix](#jewel-fix-jewel_fix-module)
   - [Fishing prize prices](#fishing-prize-prices-fishing_price-module)
   - [Location names](#location-names-location_name-module)
+  - [Earth Egg coin threshold](#earth-egg-coin-threshold-earth_egg-module)
   - [Shiny Seru](#shiny-seru)
   - [Seru trading](#seru-trading)
   - [Chests](#chests)
@@ -354,6 +355,20 @@ one slot in place with new ASCII (≤ 31 chars), zero-padding the tail. Idempote
 (a matching name is a no-op) and validated (out-of-range index / oversized /
 non-ASCII refused). `legaia-patcher locations` lists all 16. Disc oracle:
 `location_name_real`.
+
+## Earth Egg coin threshold (`earth_egg` module)
+
+`--earth-egg-price VALUE` sets the casino-coin count the Sol Tower "Prize
+Counter" requires before it offers the Earth Ra-Seru Egg (retail 100000). The
+egg is **not** a casino-table row - it is a scripted exchange in the `koin1`
+scene MAN (PROT entry 543): a field-VM op-`0x4E` sub-11 coin compare (gate,
+retail 99999) plus an op-`0x4C` nibble-E sub-5 add-coins debit (retail -100000).
+The module rewrites both as same-size value swaps in the decompressed MAN
+(`gate = VALUE - 1`, `debit = VALUE`, matching retail), then LZS-recompresses +
+writes back in place; `VALUE` is `1..=8388608` (the debit is a signed 24-bit
+field). Idempotent, refuses out-of-range, `None` when the entry isn't the
+exchange bundle. `legaia-patcher earth-egg` shows the current value. Disc oracle:
+`earth_egg_real`.
 
 ## Shiny Seru
 

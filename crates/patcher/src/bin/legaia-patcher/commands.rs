@@ -107,6 +107,28 @@ pub(crate) fn cmd_fishing(input: &Path) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn cmd_earth_egg(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    match legaia_patcher::apply::current_earth_egg(&patcher)? {
+        Some(info) => {
+            let name = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+                .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus))
+                .and_then(|t| t.name(info.item_id).map(str::to_string))
+                .unwrap_or_else(|| "Earth Egg".to_string());
+            println!("Earth Egg exchange (Sol Tower Prize Counter):");
+            println!("  scene bundle: PROT entry {}", info.entry_idx);
+            println!("  prize:        {name} (item 0x{:02X})", info.item_id);
+            println!(
+                "  coins required: {}  (gate = coins > {}; debit = {} on purchase)",
+                info.price, info.threshold, info.debit
+            );
+        }
+        None => println!("Earth Egg exchange not found on this disc."),
+    }
+    Ok(())
+}
+
 pub(crate) fn cmd_locations(input: &Path) -> Result<()> {
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;

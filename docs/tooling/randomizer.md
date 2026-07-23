@@ -60,6 +60,7 @@ disc-gated, so CI runs without a disc. There is also a
   - [Jewel fix](#jewel-fix)
   - [Fishing prize prices](#fishing-prize-prices)
   - [Location names](#location-names)
+  - [Earth Egg coin threshold](#earth-egg-coin-threshold)
   - [Treasure chests](#treasure-chests)
   - [Town shops (what stores sell)](#town-shops-what-stores-sell)
   - [Casino prize exchange](#casino-prize-exchange)
@@ -180,6 +181,8 @@ legaia-patcher fishing   --input DISC.bin                                       
 legaia-patcher randomize --input DISC.bin --seed fish --fishing-price 0x6F=500            # Buma Water Egg costs 500 fishing points
 legaia-patcher locations --input DISC.bin                                                 # read-only: list the 16 world-map location names
 legaia-patcher randomize --input DISC.bin --seed loc --rename-location "3=Ancient Fire Cave"  # rename the Ancient Wind Cave
+legaia-patcher earth-egg --input DISC.bin                                                 # read-only: show the Earth Egg coin threshold
+legaia-patcher randomize --input DISC.bin --earth-egg-price 25000                         # Earth Egg costs 25000 casino coins
 legaia-patcher randomize --input DISC.bin --seed mart --shops shuffle --casino shuffle
 legaia-patcher randomize --input DISC.bin --seed 0xC0FFEE --drops random \
     --encounters shuffle --steals shuffle --arts shuffle --doors shuffle --door-coupling coupled \
@@ -256,6 +259,7 @@ unless asked for:
 | `--jewel-fix` | the boss cinematic casts (Xain, Cort, the Delilas trio) respect elemental guards like every other special | - | [Jewel fix](#jewel-fix) |
 | `--fishing-price ITEM=POINTS` | set the fishing-exchange point cost of a prize (e.g. the Buma Water Egg); the price also gates when the prize appears | repeatable / comma-separated | [Fishing prize prices](#fishing-prize-prices) |
 | `--rename-location INDEX=NAME` | rename a world-map location (save / load / pause + quick-travel menu), e.g. an element cave to match a re-elemented party | repeatable | [Location names](#location-names) |
+| `--earth-egg-price VALUE` | set the casino-coin threshold to obtain the Earth Egg (Sol Tower Prize Counter; retail 100000), gate + debit together | single value | [Earth Egg coin threshold](#earth-egg-coin-threshold) |
 
 **Tuning the encounter and door passes:**
 
@@ -872,6 +876,33 @@ patcher the same edits live in the **Manual value edits** group, one
 > rename lands as a same-size 32-byte slot overwrite that re-parses to the new
 > (NUL-terminated) name, only the targeted slots change, re-applying is a no-op,
 > and an oversized / non-ASCII / out-of-range name is refused.
+
+### Earth Egg coin threshold
+
+The **Earth Ra-Seru Egg** is *not* a row in the four-block casino prize table
+([casino prize exchange](#casino-prize-exchange)); it is a **bespoke scripted exchange** in the
+`koin1` scene's field-VM script (the MAN, retail PROT entry **543**). The Sol
+Tower "Prize Counter" offers it only once the casino-coin bank clears a
+threshold, then gives item `0x6E` and debits the coins. Two verified literals
+drive it: the **gate** is a field-VM op-`0x4E` INVENTORY_CMP sub-op 11 (coin u32
+compare) whose value is retail **99999** (`coins > 99999`, i.e. `>= 100000`),
+and the **debit** is an op-`0x4C` nibble-E sub-5 add-coins of `-100000`. Retail
+keeps `gate = price - 1`, `debit = price`.
+
+`--earth-egg-price VALUE` sets both together so the repriced egg stays coherent
+(require `VALUE` coins, remove exactly `VALUE`); `VALUE` is the coins required,
+range `1..=8388608` (the debit is a signed 24-bit field). The threshold and
+debit are same-size value swaps in the decompressed MAN, which is LZS-recompressed
+and written back in place (the `koin1` MAN is zero-slack, but the re-packer fits
+it). `legaia-patcher earth-egg` prints the current value. In the browser patcher
+the field lives in the **Manual value edits** group.
+
+> Verified by the `earth_egg_real` disc oracle: the gate is located in PROT 543
+> at the retail shape (coins 100000 / gate 99999 / debit 100000, item `0x6E`,
+> `GIVE_ITEM 0x39 0x6E` present); a price edit re-decodes to `gate = value - 1`
+> and `debit = value`, changes only the threshold-half and debit bytes in the
+> decompressed MAN, keeps every neighbouring descriptor + the touched sector
+> EDC/ECC-valid, refuses `0` / over-range, and is a no-op on re-apply.
 
 ### Treasure chests
 
@@ -1683,6 +1714,7 @@ bit-for-bit.
 | `crates/patcher` `jewel_fix_real` | disc-gated | apply the jewel fix: assert all thirteen cast-module call sites across PROT 944 / 952 / 953 / 958 / 959 / 960 hold the stock `jal FUN_801DD6B4` word, then off the patched image that every site reads `jal FUN_801DD4B0` and that per touched window exactly the planned words changed - the overlapping 09xx extents are measured empirically (each other module's head located in the window), so aliased appearances (e.g. entry 953 starting `0x1800` into 952's window) are expected - plus the image still parses, the edit is byte-deterministic, and re-application / an unrecognized build is refused |
 | `crates/patcher` `fishing_price_real` | disc-gated | apply a fishing-exchange price edit: assert the Buma Water Egg row is at PROT 972 offset 0x9874 (20000 points), then off the patched image that the price becomes the target as a same-size u32, exactly the targeted price words changed, the overlay re-parses, re-applying is a no-op, and an absent item is refused |
 | `crates/patcher` `location_name_real` | disc-gated | rename world-map locations: assert the pinned landmark names decode at their SCUS coordinates (idx 3/4 = element caves at 0x64378/0x64398), then off the patched image that a rename is a same-size 32-byte slot overwrite re-parsing to the NUL-terminated new name, only the targeted slots change, re-applying is a no-op, and an oversized / non-ASCII / OOB name is refused |
+| `crates/patcher` `earth_egg_real` | disc-gated | locate the Earth Egg scripted exchange in the koin1 MAN (PROT 543) at the retail shape (coins 100000 / gate 99999 / debit 100000, item 0x6E, give present); off the patched image a price edit re-decodes to gate = value-1 / debit = value, changes only the threshold-half + debit bytes in the decompressed MAN, keeps neighbouring descriptors + the touched sector EDC/ECC-valid, refuses 0 / over-range, and is a no-op on re-apply; byte-deterministic |
 | `crates/patcher` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
 | `crates/patcher` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
 | `crates/patcher` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140, "Comm" (id 78) is a populated standalone record (not a clone); item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |

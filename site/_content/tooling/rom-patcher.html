@@ -379,6 +379,12 @@
       </div>
 
       <div class="rom-opt">
+        <label class="rom-opt-label" for="rom-earth-egg-price">Earth Egg coin threshold</label>
+        <span class="rom-opt-note">Set the casino-coin count the Sol Tower "Prize Counter" requires before it offers the Earth Ra-Seru Egg (retail <code>100000</code>). This is a hidden scripted exchange, <em>not</em> a row in the casino prize table, so the shop / casino editors can't reach it. The value is the coins required; the game debits exactly that many on purchase. Range <code>1</code>&ndash;<code>8388608</code>. The CLI <code>legaia-patcher earth-egg</code> shows the current value.</span>
+        <input type="text" id="rom-earth-egg-price" inputmode="numeric" placeholder="e.g. 25000" spellcheck="false" autocomplete="off">
+      </div>
+
+      <div class="rom-opt">
         <label class="rom-opt-label" for="rom-rename-location">Location names</label>
         <span class="rom-opt-note">Rename the world-map location names shown on the quick-travel menu and the save / load / pause display. One <code>index=name</code> per line (ASCII, up to 31 chars) - e.g. <code>3=Ancient Fire Cave</code> renames the Ancient Wind Cave. Slots: 3 = Ancient Wind Cave, 4 = Ancient Water Cave, 6 = Vidna, 14 = Conkram (the CLI <code>legaia-patcher locations</code> lists all 16). Handy for matching dungeon names to a re-elemented party.</span>
         <textarea id="rom-rename-location" rows="3" placeholder="3=Ancient Fire Cave&#10;4=Ancient Ice Cave" spellcheck="false" autocomplete="off"></textarea>

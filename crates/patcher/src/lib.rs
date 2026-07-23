@@ -61,6 +61,7 @@ pub mod chest;
 pub mod disc;
 pub mod door;
 pub mod drops;
+pub mod earth_egg;
 pub mod element_affinity;
 pub mod encounter;
 pub mod enemy_ally;
