@@ -274,7 +274,8 @@ local function dump_stall(c, why, fname)
     add("")
     add("-- actor table. The ctx+0x249 census gate is +0x4 != 0 (NOT hp):")
     add("   contributes +1 when +0x4 != 0 and +0x1D9 != 0, then -1 again for")
-    add("   a PARTY slot (<3) whose +0x1D9 == 8 --")
+    add("   a PARTY slot (<3) whose +0x1D9 == 8. Slots 0..6 only - seat 7 is")
+    add("   outside the loop bound and is marked [not censused] below --")
     add("  seat  actor       +7   +0x4        hp     +0x1D9 +0x1DA +0x1DC" ..
         " +0x1DE +0x1DF +0x1F5 +0x1FA +0x21B +0x21C +0x16E")
     for seat = 0, 7 do
@@ -286,6 +287,9 @@ local function dump_stall(c, why, fname)
                 u8(a + 0x1D9), u8(a + 0x1DA), u8(a + 0x1DC), u8(a + 0x1DE),
                 u8(a + 0x1DF), u8(a + 0x1F5), u8(a + 0x1FA), u8(a + 0x21B),
                 u8(a + 0x21C), u16(a + 0x16E))
+            if seat == 7 then
+                lines[#lines] = lines[#lines] .. "   [not censused]"
+            end
         end
     end
     add("")
@@ -294,8 +298,12 @@ local function dump_stall(c, why, fname)
     add("ctx+0x249=%d ctx+0x24D=%d", c249, c24d)
     -- Reproduce the census exactly as the disassembly computes it, so the
     -- dump names the owning slot rather than guessing.
+    -- Slots 0..6 ONLY. The census loop's bound is `sltiu v0,v0,0x7` at
+    -- 0x801E0B24, so slot 7 is never visited and can never pin ctx+0x249 no
+    -- matter what its +0x1D9 / +0x4 read. (Observed live: seat 7 sits at
+    -- +0x1D9 = 1 for hundreds of frames after a summon while +0x249 stays 0.)
     local pinners = {}
-    for seat = 0, 7 do
+    for seat = 0, 6 do
         local a = actor_of(seat)
         if a ~= 0 and u32(a + 0x4) ~= 0 and u8(a + 0x1D9) ~= 0 then
             if not (seat < 3 and u8(a + 0x1D9) == 8) then
