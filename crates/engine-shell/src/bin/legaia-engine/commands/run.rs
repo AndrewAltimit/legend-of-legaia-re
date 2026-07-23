@@ -4,6 +4,52 @@
 
 use super::*;
 
+/// Run retail's post-FMV control transfer for `fmv_id`.
+///
+/// The master dispatch `FUN_801CEA3C` ends every playback with a second
+/// `switch` that writes the mode/scene globals: the next-scene CDNAME label
+/// (`0x80084548`), the spawn/door word (`0x80084540`) and the next-game-mode
+/// byte (`0x8007B83C`). Mid-game FMVs therefore do **not** resume the trigger
+/// scene - `town01` triggers `fmv_id 1` and lands in `town0b`. The per-id map
+/// is [`legaia_engine_core::cutscene::fmv_post_play_handoff`]; this is its
+/// host, called once playback has finished and the world has left
+/// [`SceneMode::Cutscene`](legaia_engine_core::world::SceneMode).
+///
+/// Only the two field arms are applied. NOT WIRED: the `CardInit` arm hands
+/// off to game mode 22 (memory-card init) and `ModeZero` to game mode 0;
+/// neither mode exists in the engine's `SceneMode` set, so there is nothing
+/// to transfer control *to* and the arm is reported instead of run. Wiring
+/// them needs those two modes on the world first.
+fn apply_fmv_handoff(session: &mut legaia_engine_shell::BootSession, fmv_id: i16, tick_count: u64) {
+    use legaia_engine_core::cutscene::{FmvHandoff, fmv_post_play_handoff};
+    match fmv_post_play_handoff(fmv_id) {
+        // The door word is retail's spawn/arrival selector. The engine seats a
+        // cold field entry from its own resolver and carries no door-word ->
+        // arrival-seat table, so it is reported rather than applied; the scene
+        // hand-off itself is the part that changes where play continues.
+        FmvHandoff::Field { scene, door } => match session.host.enter_field_scene(scene, 0) {
+            Ok(()) => println!(
+                "frame {tick_count}: fmv {fmv_id} hands off to field scene '{scene}' (door {door:#05x})"
+            ),
+            Err(e) => println!(
+                "frame {tick_count}: fmv {fmv_id} hand-off to field scene '{scene}' failed: {e:#}"
+            ),
+        },
+        FmvHandoff::ResumeField => println!(
+            "frame {tick_count}: fmv {fmv_id} resumes the trigger scene (no scene name written)"
+        ),
+        FmvHandoff::CardInit { card_arg } => println!(
+            "frame {tick_count}: fmv {fmv_id} hands off to game mode 22 (card init, arg {card_arg}) - mode not in the engine"
+        ),
+        FmvHandoff::ModeZero => println!(
+            "frame {tick_count}: fmv {fmv_id} hands off to game mode 0 - mode not in the engine"
+        ),
+        FmvHandoff::None => println!(
+            "frame {tick_count}: fmv {fmv_id} encodes no hand-off (dev slot); trigger scene continues"
+        ),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn cmd_play(
     scene: &str,
@@ -126,6 +172,7 @@ pub(crate) fn cmd_play(
                 }
             }
             session.host.world.finish_cutscene();
+            apply_fmv_handoff(&mut session, fmv_id, tick_count);
         }
         if let Some(bgm) = session.bgm.as_ref()
             && bgm.last_started.is_some()
