@@ -8,7 +8,8 @@
  * speed_chain, chicken_heart, good_luck_bell, all_warps,
  * unused_enemies, unused_items, equipment_drops, monster_stats, move_power,
  * element_affinity, spell_cost, equip_bonus, weapon_specialty, starting_level,
- * solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru)
+ * solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru,
+ * jewel_fix)
  * -> { data, summary, seed, lang }`, `resolve_seed(str)`,
  * `validate_lang_pack(image, yaml) -> { ok, language, applied, skipped, message, report }`,
  * `export_lang_pack(image, language) -> yaml_string`, and
@@ -159,7 +160,7 @@ const PRESET_BASE = {
   drops: 'none', encounters: 'none', encounter_scope: 'scene', soloStrong: false, fleeExp: false, chests: 'none',
   shops: 'none', casino: 'none', steals: 'none', arts: 'none', doors: 'none',
   door_coupling: 'coupled', houseDoors: false, equipmentDrops: false, seruTrade: false,
-  enemyAlly: false, shinySeru: false,
+  enemyAlly: false, shinySeru: false, jewelFix: false,
   startingItems: 0, doorOfWind: false, incense: false,
   speedChain: false, chickenHeart: false, goodLuckBell: false,
   allWarps: false,
@@ -194,7 +195,7 @@ const PRESETS = {
     soloStrong: true, fleeExp: true,
     chests: 'shuffle', steals: 'shuffle', arts: 'shuffle',
     monster_stats: 'shuffle', equip_bonus: 'shuffle', equipmentDrops: true,
-    seruTrade: true, enemyAlly: true, shinySeru: true,
+    seruTrade: true, enemyAlly: true, shinySeru: true, jewelFix: true,
     ...STARTING_BUNDLE,
   },
   chaos: {
@@ -206,7 +207,7 @@ const PRESETS = {
     houseDoors: true, unusedEnemies: true, unusedItems: true,
     monster_stats: 'random', move_power: 'random', element_affinity: 'random',
     spell_cost: 'random', equip_bonus: 'random', weaponSpecialty: true,
-    equipmentDrops: true, seruTrade: true, enemyAlly: true, shinySeru: true,
+    equipmentDrops: true, seruTrade: true, enemyAlly: true, shinySeru: true, jewelFix: true,
     ...STARTING_BUNDLE,
   },
 };
@@ -230,6 +231,7 @@ function init() {
   const seruTradeChk = $('rom-seru-trade');
   const enemyAllyChk = $('rom-enemy-ally');
   const shinySeruChk = $('rom-shiny-seru');
+  const jewelFixChk = $('rom-jewel-fix');
   const weaponSpecialtyChk = $('rom-weapon-specialty');
   const houseDoorsChk = $('rom-house-doors');
   const unusedEnemiesChk = $('rom-unused-enemies');
@@ -387,6 +389,7 @@ function init() {
     seruTradeChk.checked = cfg.seruTrade;
     enemyAllyChk.checked = cfg.enemyAlly;
     shinySeruChk.checked = cfg.shinySeru;
+    jewelFixChk.checked = cfg.jewelFix;
     weaponSpecialtyChk.checked = cfg.weaponSpecialty;
     startingItemsSel.value = String(cfg.startingItems);
     startingLevelSel.value = String(cfg.startingLevel);
@@ -463,6 +466,7 @@ function init() {
     const seruTrade = seruTradeChk.checked;
     const enemyAlly = enemyAllyChk.checked;
     const shinySeru = shinySeruChk.checked;
+    const jewelFix = jewelFixChk.checked;
     const chests = segVal('chests', 'none');
     const shops = segVal('shops', 'none');
     const casino = segVal('casino', 'none');
@@ -507,7 +511,7 @@ function init() {
       speedChain === 0 && chickenHeart === 0 && goodLuckBell === 0 && !allWarps &&
       monsterStats === 'none' && movePower === 'none' && elementAffinity === 'none' &&
       spellCost === 'none' && equipBonus === 'none' && !weaponSpecialty &&
-      startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru
+      startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru && !jewelFix
     ) {
       setStatus('Enable at least one option (pick a preset, a language, or flip a toggle).', 'err');
       return;
@@ -528,7 +532,7 @@ function init() {
       setStatus('Patching (this can take a moment for a full disc) ...');
       // Yield so the status paints before the synchronous WASM call.
       await new Promise((r) => setTimeout(r, 30));
-      const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru);
+      const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix);
       const data = result.data;
       const usedSeed = result.seed;
       const name = patchedName(file.name, usedSeed);

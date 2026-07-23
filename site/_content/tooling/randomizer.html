@@ -19,6 +19,7 @@
     <li><strong>Navigation</strong> - scene-transition doors/exits, intra-town (house / interior) doors, and <code>.MAP</code> intra-scene teleports.</li>
     <li><strong>The party</strong> - Tactical-Arts button combos, equipment stat bonuses, each character's favored weapon class, and the new game's starting items and level.</li>
     <li><strong>Additions retail has no table for</strong>, added as machine-code hooks: experience for running away, charming an enemy onto your side, shiny Seru, and Seru trading.</li>
+    <li><strong>Fixes</strong>, applied as code edits: the jewel fix, which makes the boss cinematic casts respect elemental guards like every ordinary attack.</li>
   </ul>
 </section>
 
@@ -147,6 +148,7 @@ legaia-patcher verify    --input DISC.bin --patch run.ppf       # apply + sanity
       <tr><td><code>--enemy-ally</code></td><td>Toggle: code hook charming one enemy onto the party's side per battle at <code>--enemy-ally-pct</code>% (default 20); multi-enemy fights only. See <a href="#enemy-ally">Enemy ally</a>.</td></tr>
       <tr><td><code>--shiny-seru</code></td><td>Toggle: code hooks making a capturable enemy spawn shiny at <code>--shiny-pct</code>% (default 2) per battle - +35% stats, captured Seru +35% damage forever. See <a href="#shiny-seru">Shiny Seru</a>.</td></tr>
       <tr><td><code>--seru-trade</code></td><td>Toggle: in-shop Seru-trading vendor (<code>--seru-trade-offers</code> caps offers per vendor, default 4). See <a href="#seru-trade">Seru trading</a>.</td></tr>
+      <tr><td><code>--jewel-fix</code></td><td>Toggle (seedless): retarget the boss cinematic casts (Xain's Bloody Horns / Terio Punch, Cort's Guilty Cross, the Delilas trio's signature moves) so elemental Jewels / guards / All Guard apply to them, instead of the retail resist-ladder bypass.</td></tr>
       <tr><td><code>--starting-items N</code></td><td>Seeds the new game with <code>N</code> random consumables (0 = vanilla Healing Leaf &times;5); the first seven slots (five with <code>--all-warps</code>) go through the direct code seed, overflow via a silent <code>GIVE_ITEM</code> block injected into the opening scene.</td></tr>
       <tr><td><code>--start-with id[:count],&hellip;</code></td><td>Seeds explicit items on top - any id (consumable, equipment, or accessory), count default 1.</td></tr>
       <tr><td><code>--starting-level N</code></td><td>Begins the new game with the starting party (Vahn / Noa / Gala) at level <code>N</code> instead of 1 (0/1 = vanilla; range 2..=14).</td></tr>

@@ -104,7 +104,11 @@ pub fn resolve_seed(seed: &str) -> String {
 /// per-battle chance, the frontmost *capturable* enemy spawns as a rare shiny
 /// variant (+35% stats) whose captured Seru deals +35% damage on every future
 /// cast (the flag rides the spell's level byte and is masked from the level-up +
-/// menu readers).
+/// menu readers). `jewel_fix` retargets the boss cinematic casts' damage calls
+/// from the resist-ladder-bypassing wrapper to the guard-respecting one, so
+/// elemental jewels / guards / All Guard apply to Xain's Bloody Horns / Terio
+/// Punch, Cort's Guilty Cross, and the Delilas trio's signature moves (a fix,
+/// not a randomization - it is seedless).
 /// `starting_level`
 /// begins the new game at that character level instead of 1 (`0` or `1` =
 /// vanilla; range 2..=14), seeding the lead character's XP and recomputing the
@@ -158,6 +162,7 @@ pub fn patch_rom(
     seru_trade: bool,
     enemy_ally: bool,
     shiny_seru: bool,
+    jewel_fix: bool,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -348,6 +353,21 @@ pub fn patch_rom(
         summary.push_str("seru-trade: in-shop Seru trading vendor enabled\n");
     } else {
         summary.push_str("seru-trade: untouched\n");
+    }
+
+    // Jewel fix: retarget the boss cinematic casts' damage calls from the
+    // resist-ladder-bypassing wrapper to the guard-respecting one, so elemental
+    // jewels / guards / All Guard apply to Xain's Bloody Horns / Terio Punch,
+    // Cort's Guilty Cross, and the Delilas trio's signature moves. Seedless.
+    if jewel_fix {
+        let rep =
+            apply::apply_jewel_fix(&mut patcher).map_err(|e| err(format!("jewel-fix: {e}")))?;
+        summary.push_str(&format!(
+            "jewel-fix: {} boss-cast damage calls now respect elemental guards\n",
+            rep.sites_patched
+        ));
+    } else {
+        summary.push_str("jewel-fix: untouched\n");
     }
 
     match chest_mode {

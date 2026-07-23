@@ -6608,7 +6608,11 @@ export function lift_official_pack(target_image, source_image, fold_accents) {
  * per-battle chance, the frontmost *capturable* enemy spawns as a rare shiny
  * variant (+35% stats) whose captured Seru deals +35% damage on every future
  * cast (the flag rides the spell's level byte and is masked from the level-up +
- * menu readers).
+ * menu readers). `jewel_fix` retargets the boss cinematic casts' damage calls
+ * from the resist-ladder-bypassing wrapper to the guard-respecting one, so
+ * elemental jewels / guards / All Guard apply to Xain's Bloody Horns / Terio
+ * Punch, Cort's Guilty Cross, and the Delilas trio's signature moves (a fix,
+ * not a randomization - it is seedless).
  * `starting_level`
  * begins the new game at that character level instead of 1 (`0` or `1` =
  * vanilla; range 2..=14), seeding the lead character's XP and recomputing the
@@ -6659,9 +6663,10 @@ export function lift_official_pack(target_image, source_image, fold_accents) {
  * @param {boolean} seru_trade
  * @param {boolean} enemy_ally
  * @param {boolean} shiny_seru
+ * @param {boolean} jewel_fix
  * @returns {any}
  */
-export function patch_rom(image, seed, lang_pack, drops, encounters, encounter_scope, chests, shops, casino, steals, arts, doors, door_coupling, house_doors, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, monster_stats, move_power, element_affinity, spell_cost, equip_bonus, weapon_specialty, starting_level, solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru) {
+export function patch_rom(image, seed, lang_pack, drops, encounters, encounter_scope, chests, shops, casino, steals, arts, doors, door_coupling, house_doors, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, monster_stats, move_power, element_affinity, spell_cost, equip_bonus, weapon_specialty, starting_level, solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru, jewel_fix) {
     const ptr0 = passArray8ToWasm0(image, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(seed, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -6700,7 +6705,7 @@ export function patch_rom(image, seed, lang_pack, drops, encounters, encounter_s
     const len17 = WASM_VECTOR_LEN;
     const ptr18 = passStringToWasm0(equip_bonus, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len18 = WASM_VECTOR_LEN;
-    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, ptr12, len12, ptr13, len13, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, ptr14, len14, ptr15, len15, ptr16, len16, ptr17, len17, ptr18, len18, weapon_specialty, starting_level, solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru);
+    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, ptr12, len12, ptr13, len13, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, ptr14, len14, ptr15, len15, ptr16, len16, ptr17, len17, ptr18, len18, weapon_specialty, starting_level, solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru, jewel_fix);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
