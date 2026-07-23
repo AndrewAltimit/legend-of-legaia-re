@@ -135,6 +135,15 @@ end
 local CTX_PTR = 0x8007BD24
 local ACTORS  = 0x801C9370
 local CAM_YAW = 0x8007B792
+-- ctx+0x6D8 is the band timer several states count down before they may exit.
+-- State 0x50 seeds it (0x3C), and 0x51 exits only when it goes NEGATIVE and
+-- ctx+0x276 == 0. The states that decrement it do so by DAT_1F800393, the
+-- per-frame delta in PSX scratchpad - so a zero delta freezes every
+-- timer-gated state while the unconditional idle camera sweep keeps orbiting.
+-- Both are logged because a captured wedge parked at 0x51 with +0x6D8 pinned
+-- at exactly its seed value points straight at that decrement.
+local BAND_TIMER_OFF = 0x6D8
+local FRAME_DT = 0x1F800393
 
 local SLOT_BIT = { [0] = 1, 2, 4, 8, 16, 32, 64, 128 }
 
@@ -205,7 +214,8 @@ local timeline = probe.csv_open(probe.out_path("timeline.csv"),
     "vsync,ctx7,seat,cat,move_id,c249,c24a,c24b,c24c,c24d,c24e," ..
     "a1fa,a1d9,a1da,a21b,cur,cam_yaw," ..
     "d9_0,d9_1,d9_2,d9_3,d9_4,d9_5,d9_6,d9_7," ..
-    "hp_0,hp_1,hp_2,hp_3,p4mask,child0,child1,child2,child3,stream")
+    "hp_0,hp_1,hp_2,hp_3,p4mask,child0,child1,child2,child3," ..
+    "band_timer,frame_dt,c276,c269,stream")
 
 local ui_csv = probe.csv_open(probe.out_path("ui_elements.csv"),
     "vsync,effect_id,mode,ra")
@@ -321,7 +331,15 @@ local function dump_stall(c, why, fname)
     add("ctx+0x24C (hit counter)       = %d", u8(c + 0x24C))
     add("ctx+0x24D (spell children)    = %d", u8(c + 0x24D))
     add("ctx+0x24E (flight phase)      = %d", u8(c + 0x24E))
-    add("ctx+0x6D8 (band timer, u16)   = %d", u16(c + 0x6D8))
+    add("ctx+0x6D8 (band timer, u16)   = %d", u16(c + BAND_TIMER_OFF))
+    add("DAT_1F800393 (frame delta)    = %d   <- what decrements the timer",
+        probe.mem.read_scratch_u8(FRAME_DT))
+    add("ctx+0x269 (0x5A vs 0x52 pick) = %d", u8(c + 0x269))
+    add("state 0x51 exits only when ctx+0x6D8 < 0 AND ctx+0x276 == 0.")
+    add("  ctx+0x6D8 = %d, ctx+0x276 = %d -> %s",
+        u16(c + BAND_TIMER_OFF), u8(c + 0x276),
+        (u8(c + 0x276) ~= 0) and "BLOCKED by ctx+0x276 != 0"
+            or "the timer never went negative")
     add("ctx+0x276/0x277/0x278        = %d / %d / %d",
         u8(c + 0x276), u8(c + 0x277), u8(c + 0x278))
     add("")
@@ -525,13 +543,22 @@ probe.run{
             actor ~= 0 and u8(actor + 0x1DA) or 255,
             actor ~= 0 and u8(actor + 0x21B) or 255,
             actor ~= 0 and u8(actor + 0x15) or 255)
+        -- The 0x51 exit gate: `ctx+0x6D8 < 0 && ctx+0x276 == 0` (then
+        -- ctx+0x269 picks 0x5A vs 0x52). The timer is decremented by the
+        -- scratchpad frame delta, so log both together.
+        local band_timer = u16(c + BAND_TIMER_OFF)
+        local frame_dt = probe.mem.read_scratch_u8(FRAME_DT)
+
         local full = key .. "|" .. table.concat(d9, ",") .. "|" .. stream_s
             .. "|" .. p4mask .. "|" .. table.concat(child, ",")
+            .. "|" .. band_timer .. "|" .. frame_dt
         if full ~= last_key then
             last_key = full
-            timeline:row("%d,%s,%d,%s,%s,0x%02X,%s,%s", v, key, u16(CAM_YAW),
+            timeline:row("%d,%s,%d,%s,%s,0x%02X,%s,%d,%d,%d,%d,%s",
+                v, key, u16(CAM_YAW),
                 table.concat(d9, ","), table.concat(hp, ","), p4mask,
-                table.concat(child, ","), stream_s)
+                table.concat(child, ","), band_timer, frame_dt,
+                u8(c + 0x276), u8(c + 0x269), stream_s)
         end
 
         -- Stall detection. Only inside the cast bands: on this save a HEALTHY
