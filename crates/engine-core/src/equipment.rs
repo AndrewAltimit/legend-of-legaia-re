@@ -698,6 +698,64 @@ pub fn party_unequip_accessory_by_id(party: &mut legaia_save::Party, item_id: u8
     false
 }
 
+/// PORT: FUN_800302E4
+///
+/// Equipment **stat-field accessor**. Given an item `id` (whose high nibble
+/// `id & 0xF000` tags its id space) and a `field` selector, resolves the id
+/// to an 8-byte equip stat-bonus record (`DAT_80074F68`,
+/// [`legaia_asset::equip_stats`]) and returns the requested stat combination.
+///
+/// Id-space tags (`id & 0xF000`):
+/// - `0x1000` / `0x6000` / `0x9000`: `id & 0x3FF` is an **inventory-slot
+///   index**; the real item id is read from the live inventory-slot block
+///   (retail `0x80085958 + (id & 0x3FF) * 2`), supplied by `inventory_slot`.
+/// - `0x7000`: `id & 0x3FF` is a **direct** item id.
+/// - any other tag: returns `0`.
+///
+/// The resolved item id selects the equip record via `equip_bonus` (retail's
+/// un-gated `item_table[id].byte(+1)` -> `DAT_80074F68` double-indirect; a
+/// caller typically passes `|id| table.bonus(id as u8)`). `field` picks the
+/// value returned:
+/// - `0`: def-up (`+2`) + def-down (`+3`) — total defence
+/// - `1`: def-up (`+2`)
+/// - `2`: attack (`+1`) + `agility_term(resolved_id)` — where `agility_term`
+///   is retail's overlay-resident `FUN_801DD0C0(_, id, 0)`, injected by the
+///   caller because it needs runtime context absent from this kernel
+/// - `3`: attack (`+1`) + def-down (`+3`)
+/// - any other field: `0`
+///
+/// Returns `0` when the tag is unrecognised, the resolved id has no equip
+/// record, or the field is out of range (retail falls through to the shared
+/// epilogue returning `0` in each case). Note `param_1` (the retail first
+/// arg) is dead except as the passthrough to `FUN_801DD0C0`, so it is folded
+/// into the caller's `agility_term` closure rather than taken here.
+pub fn equip_stat_field(
+    id: u16,
+    field: u8,
+    inventory_slot: impl Fn(u16) -> u8,
+    equip_bonus: impl Fn(u16) -> Option<legaia_asset::equip_stats::EquipBonus>,
+    agility_term: impl Fn(u16) -> u32,
+) -> u32 {
+    let resolved = match id & 0xf000 {
+        // Inventory-slot indirection: the low bits index the live slot block,
+        // whose byte is the real item id (read unmasked in retail).
+        0x1000 | 0x6000 | 0x9000 => inventory_slot(id & 0x3ff) as u16,
+        // Direct item id.
+        0x7000 => id & 0x3ff,
+        _ => return 0,
+    };
+    let Some(b) = equip_bonus(resolved) else {
+        return 0;
+    };
+    match field {
+        0 => b.def_up() as u32 + b.def_down() as u32,
+        1 => b.def_up() as u32,
+        2 => b.attack() as u32 + agility_term(resolved),
+        3 => b.attack() as u32 + b.def_down() as u32,
+        _ => 0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -948,5 +1006,70 @@ mod tests {
         assert!(boots.modifier.spd > 0);
         // Ability bit 12 set (evasion flag).
         assert_ne!(boots.modifier.ability_bits[1] & 0x10, 0);
+    }
+
+    // -- equip_stat_field (FUN_800302E4) -------------------------------
+
+    use legaia_asset::equip_stats::EquipBonus;
+
+    // raw = [INT, ATK, UDF, LDF, SPD, passive, mask, slot]
+    const REC_10: EquipBonus = EquipBonus {
+        raw: [0, 10, 5, 3, 0, 0x40, 7, 0x40],
+    };
+
+    // A closure resolving item id 0x30 -> REC_10, everything else missing.
+    fn bonus_30(id: u16) -> Option<EquipBonus> {
+        (id == 0x30).then_some(REC_10)
+    }
+
+    #[test]
+    fn direct_id_selects_each_field() {
+        // 0x7000-tagged direct id 0x30, no agility term.
+        let zero = |_: u16| 0u32;
+        let no_inv = |_: u16| 0u8;
+        let f = |field| equip_stat_field(0x7030, field, no_inv, bonus_30, zero);
+        assert_eq!(f(0), 5 + 3); // def-up + def-down
+        assert_eq!(f(1), 5); // def-up
+        assert_eq!(f(2), 10); // attack + agility(0)
+        assert_eq!(f(3), 10 + 3); // attack + def-down
+    }
+
+    #[test]
+    fn field_two_adds_agility_term_keyed_on_resolved_id() {
+        // agility_term is applied only for field 2, and receives the resolved
+        // id (0x30), not the tagged input.
+        let agl = |resolved: u16| if resolved == 0x30 { 7 } else { 999 };
+        let got = equip_stat_field(0x7030, 2, |_| 0, bonus_30, agl);
+        assert_eq!(got, 10 + 7);
+    }
+
+    #[test]
+    fn inventory_tag_resolves_through_slot_block() {
+        // 0x1000/0x6000/0x9000 read the item id out of the inventory slot.
+        // Slot 5 holds item id 0x30.
+        let inv = |slot: u16| if slot == 5 { 0x30 } else { 0 };
+        for tag in [0x1000u16, 0x6000, 0x9000] {
+            let got = equip_stat_field(tag | 5, 1, inv, bonus_30, |_| 0);
+            assert_eq!(got, 5, "tag {tag:#06x}");
+        }
+        // A slot holding an unequippable id yields 0 (no record).
+        let got = equip_stat_field(0x1000 | 6, 1, inv, bonus_30, |_| 0);
+        assert_eq!(got, 0);
+    }
+
+    #[test]
+    fn unknown_tag_returns_zero() {
+        // 0x2000 is not a recognised id space.
+        let got = equip_stat_field(0x2030, 0, |_| 0x30u8, bonus_30, |_| 0);
+        assert_eq!(got, 0);
+    }
+
+    #[test]
+    fn missing_record_and_bad_field_return_zero() {
+        // Direct id with no equip record.
+        assert_eq!(equip_stat_field(0x7099, 0, |_| 0, bonus_30, |_| 0), 0);
+        // Valid record but out-of-range field.
+        assert_eq!(equip_stat_field(0x7030, 4, |_| 0, bonus_30, |_| 0), 0);
+        assert_eq!(equip_stat_field(0x7030, 200, |_| 0, bonus_30, |_| 0), 0);
     }
 }
