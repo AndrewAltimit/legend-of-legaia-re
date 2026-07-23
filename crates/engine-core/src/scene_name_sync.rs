@@ -100,6 +100,45 @@ pub fn sync_scene_name(
     }
 }
 
+/// Width of the boot scene-name field the dev `initmap.txt` override is
+/// read into (`0x10` bytes at `0x8007050C`). The override text is read as a
+/// raw line, so it carries whatever line terminator the host file used;
+/// [`sanitize_initmap_scene_name`] strips those in place.
+pub const INITMAP_NAME_FIELD_LEN: usize = 0x10;
+
+/// Strip the text-file line terminators out of a scene-name field read from
+/// the dev `initmap.txt` override, in place.
+///
+/// PORT: FUN_8001D424 (the initmap-override sanitizer loop at
+/// `0x8001D758..0x8001D7B0`; the rest of `FUN_8001D424` is display-env /
+/// GTE-scratchpad / work-table init and calls into already-ported helpers -
+/// see the crate notes, it is not game-state logic and is not ported here)
+///
+/// Retail reads the override line into the 16-byte field at `0x8007050C`
+/// (via `FUN_8001A8B0(&DAT_8007050C, line, 0x10)`), then walks all 16 bytes
+/// nulling any EOF (`0x1A`), LF (`0x0A`) or CR (`0x0D`) byte it finds:
+///
+/// ```text
+///   for i in 0..0x10:
+///       if buf[i] == 0x1A { buf[i] = 0 }   // MS-DOS EOF marker
+///       if buf[i] == 0x0A { buf[i] = 0 }   // LF
+///       if buf[i] == 0x0D { buf[i] = 0 }   // CR
+/// ```
+///
+/// This is a per-byte null-out, not a truncate: each terminator byte
+/// becomes a NUL where it sits, so a `"town01\r\n"` line resolves to a
+/// clean NUL-terminated `"town01"`. Retail only takes this path on the dev
+/// arm (`_DAT_8007B8C2 == 0`); retail hardware boots with the flag set and
+/// keeps the compiled-in default scene name untouched. The buffer is
+/// caller-supplied - no Sony bytes live here.
+pub fn sanitize_initmap_scene_name(buf: &mut [u8]) {
+    for b in buf.iter_mut() {
+        if *b == 0x1A || *b == 0x0A || *b == 0x0D {
+            *b = 0;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -182,5 +221,36 @@ mod tests {
         let mut index = 0u32;
         sync_scene_name(&mut staged, &table, &mut active, &mut index);
         assert_eq!(index, 7);
+    }
+
+    // ---- sanitize_initmap_scene_name (FUN_8001D424 override loop) ----
+
+    #[test]
+    fn sanitize_strips_crlf_into_nul_terminated_name() {
+        let mut field = [0u8; INITMAP_NAME_FIELD_LEN];
+        field[..8].copy_from_slice(b"town01\r\n");
+        sanitize_initmap_scene_name(&mut field);
+        // The CR and LF became NULs; the name reads clean up to the first NUL.
+        let end = field.iter().position(|&b| b == 0).unwrap();
+        assert_eq!(&field[..end], b"town01");
+    }
+
+    #[test]
+    fn sanitize_nulls_dos_eof_marker() {
+        let mut field = *b"map01\x1axxxxxxxxxx";
+        sanitize_initmap_scene_name(&mut field);
+        assert_eq!(field[5], 0, "0x1A EOF marker becomes NUL");
+        assert_eq!(&field[..5], b"map01");
+        // Bytes after the EOF are left as-is (per-byte null-out, not truncate).
+        assert_eq!(&field[6..], b"xxxxxxxxxx");
+    }
+
+    #[test]
+    fn sanitize_leaves_clean_name_untouched() {
+        let mut field = [0u8; INITMAP_NAME_FIELD_LEN];
+        field[..7].copy_from_slice(b"garmel\0");
+        let before = field;
+        sanitize_initmap_scene_name(&mut field);
+        assert_eq!(field, before);
     }
 }
