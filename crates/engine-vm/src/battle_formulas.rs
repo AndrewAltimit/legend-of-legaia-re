@@ -52,6 +52,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
+mod actor_tween;
 mod arms_fold;
 mod arts;
 mod basic;
@@ -62,6 +63,7 @@ mod stat_init;
 mod summon;
 mod victory;
 
+pub use actor_tween::*;
 pub use arms_fold::*;
 pub use arts::*;
 pub use basic::*;
