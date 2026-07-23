@@ -122,6 +122,11 @@ pub struct MuscleDomeSession {
     reward_seru_index: u8,
     /// Damage applied to each fighter in the last resolution, for the HUD.
     last_round_damage: [i32; 2],
+    /// The round time meter's `0..=`[`TIME_METER_MAX`] counter, advanced by
+    /// [`Self::tick_time_meter`].
+    time_meter: u8,
+    /// The meter bar sprite's Y offset for the current counter value.
+    time_meter_bar_y: i16,
 }
 
 impl MuscleDomeSession {
@@ -144,7 +149,37 @@ impl MuscleDomeSession {
             round: 0,
             reward_seru_index,
             last_round_damage: [0, 0],
+            time_meter: 0,
+            time_meter_bar_y: time_meter_step(0, 0, false, false).1,
         }
+    }
+
+    /// Advance the round **time meter** one frame by the frame delta `dt`.
+    ///
+    /// The counter climbs while the contest is in its selection phase (retail's
+    /// phase tag `'P'`) and drains otherwise, and the bar sprite's Y offset
+    /// follows it ([`time_meter_step`]). Retail additionally gates the climb on
+    /// a separate ramp flag; nothing in the port lowers that flag mid-selection,
+    /// so the session passes it up and the phase is the whole gate here.
+    ///
+    /// Returns the bar's new Y offset.
+    pub fn tick_time_meter(&mut self, dt: u8) -> i16 {
+        let in_select = self.phase == MusclePhase::Select;
+        let (counter, bar_y) = time_meter_step(self.time_meter, dt, in_select, in_select);
+        self.time_meter = counter;
+        self.time_meter_bar_y = bar_y;
+        bar_y
+    }
+
+    /// The time meter's current counter, `0..=`[`TIME_METER_MAX`].
+    pub fn time_meter(&self) -> u8 {
+        self.time_meter
+    }
+
+    /// The time-meter bar sprite's current Y offset (`-0x92` empty, `+0xE`
+    /// full).
+    pub fn time_meter_bar_y(&self) -> i16 {
+        self.time_meter_bar_y
     }
 
     /// Current phase.
@@ -349,6 +384,14 @@ pub struct ContestSettlement {
 /// `(course, round)`; `prize_already_awarded` is the `0x6CB` flag-bank
 /// bit.
 ///
+// NOT WIRED: three of its inputs have no producer in the port. The
+// `score_table_entry` is a cell of the arena overlay's per-`(course, round)`
+// score table `DAT_801d1860`, for which `legaia_asset` has no parser; the
+// `continuing` latch belongs to a course *ladder* the port does not model
+// ([`MuscleDomeSession`] is a single contest with no course id and no continue
+// prompt); and `prize_already_awarded` is the story-flag `0x6CB` bit, which
+// nothing reads on this path. Wiring it needs the score table parsed and the
+// contest promoted to a course run.
 /// PORT: FUN_801d0f60
 pub fn settle_contest(
     score: i32,
@@ -450,6 +493,9 @@ pub const TIME_METER_MAX: u8 = 0xC;
 /// The bar sprite's Y offset is `counter * 160 / 12 - 0x92` (the
 /// `0x2AAAAAAB` reciprocal-multiply divide) - `-0x92` empty, `+0xE` full.
 /// Returns `(new_counter, bar_y)`.
+///
+/// Wired: [`MuscleDomeSession::tick_time_meter`], which the host calls once a
+/// frame while a contest is up.
 pub fn time_meter_step(counter: u8, dt: u8, in_select_phase: bool, ramp_up: bool) -> (u8, i16) {
     let new = if ramp_up && in_select_phase {
         (counter as u32 + dt as u32).min(TIME_METER_MAX as u32) as u8

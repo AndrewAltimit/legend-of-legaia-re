@@ -3,6 +3,77 @@
 use super::*;
 
 impl PlayWindowApp {
+    // The mode-24 minigame door warp (`World::arm_minigame_warp` /
+    // `World::minigame_return_warp`, retail `FUN_80025980` / `FUN_80026018`) is
+    // deliberately NOT called from these entry points, and the reason is a bug
+    // one layer down rather than a missing prerequisite.
+    //
+    // `FUN_80026018` banks the mode-24 winnings accumulator `_DAT_80084440`
+    // into the casino coin bank `_DAT_800845A4` (`0x80026050..0x80026078`,
+    // clamped at 9,999,999). What fills that accumulator is the Baka Fighter
+    // end-of-match tally: `FUN_801D239C` at `0x801d2894..0x801d28bc` adds each
+    // drained step into `0x80084440`. This port instead pays that drain into
+    // `World::money` - party gold, which retail keeps at the *different* word
+    // `0x8008459C` - so `World::minigame_winnings` never fills and the warp's
+    // commit would be an add of zero.
+    //
+    // Wiring the warp here without redirecting the duel tally first would
+    // therefore close the audit row while leaving the round trip inert. The
+    // redirect lives in `World::tick_baka_fighter` / `World::exit_baka_fighter`
+    // (`engine-core`), so the two halves have to land together.
+    // REF: FUN_80026018 (coin-bank commit), FUN_801d239c (the producer)
+
+    /// Drive the fishing HUD's one-shot banner animations for this frame.
+    ///
+    /// Seeds a timer on each session phase edge (cast lock = strike + hook,
+    /// resolve = reel-in or miss, recast = the auxiliary banner), then services
+    /// every timer through the retail driver-tail loop
+    /// ([`BannerTimer::service`](legaia_engine_render::BannerTimer::service))
+    /// and caches this frame's draws for the HUD builder, which is `&self` and
+    /// cannot advance them itself.
+    ///
+    /// The frame step is the engine's fixed one tick per frame (retail reads
+    /// `DAT_1f800393`, its frame-rate compensation word).
+    pub(super) fn tick_fishing_banners(&mut self) {
+        use legaia_engine_core::fishing::{FightOutcome, FishingPhase};
+        let Some(session) = self.session.host.world.fishing.as_ref() else {
+            // Left the minigame: drop any half-run banner with the session.
+            self.fishing_banners = Default::default();
+            self.fishing_banner_draws.clear();
+            self.fishing_prev_phase = None;
+            return;
+        };
+        let phase = session.phase();
+        let outcome = session.last_outcome();
+        match (self.fishing_prev_phase, phase) {
+            (Some(FishingPhase::Casting), FishingPhase::Fighting) => {
+                self.fishing_banners.on_hook();
+            }
+            (Some(FishingPhase::Fighting), FishingPhase::Done) => match outcome {
+                Some(FightOutcome::Landed { .. }) => self.fishing_banners.on_landed(),
+                Some(FightOutcome::Snapped) => self.fishing_banners.on_snapped(),
+                _ => {}
+            },
+            (Some(FishingPhase::Done), FishingPhase::Casting) => {
+                self.fishing_banners.on_recast();
+            }
+            _ => {}
+        }
+        self.fishing_prev_phase = Some(phase);
+        self.fishing_banner_draws = self.fishing_banners.service_frame(1);
+    }
+
+    /// Advance the Muscle Dome contest's round **time meter** one frame.
+    ///
+    /// Retail runs the meter from the arena's per-frame driver with the frame
+    /// delta from scratchpad `0x1F800393`; the engine ticks a fixed one per
+    /// frame. No-op outside a contest.
+    pub(super) fn tick_muscle_time_meter(&mut self) {
+        if let Some(s) = self.session.host.world.muscle_dome.as_mut() {
+            s.tick_time_meter(1);
+        }
+    }
+
     /// Drain the Baka Fighter duel's queued SFX cues and enqueue them into the
     /// BGM director's SFX scheduler, so the punch/exchange hit (`BAKA_CUE_HIT`
     /// = `0x09`, written by the rules kernel's damage step) actually sounds in

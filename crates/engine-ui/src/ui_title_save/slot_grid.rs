@@ -42,6 +42,15 @@ pub const SLOT_GRID_QUAD_LANDED_X: i32 = 0x5A + 8;
 /// row-mates.
 pub const SLOT_GRID_PARK_SLOT_STAGGER_X: i32 = 64;
 
+/// The commit slide's interpolator at full travel (12-bit fixed point `1.0`) -
+/// the landed grid. [`slot_grid_quad_x`] at this `t` reproduces the
+/// GP0-pinned quad row `98 + col*40 + row*4` exactly.
+pub const SLOT_GRID_SLIDE_LANDED: u16 = 0x1000;
+
+/// Transparent margin around a 32x32 cell sprite: the visible 20x20 frame
+/// starts this far into it, so a sprite's top-left is the quad x minus this.
+pub const SLOT_GRID_SPRITE_MARGIN: i32 = 6;
+
 /// A cell quad's x for one frame of the commit slide - the retail grid
 /// dispatcher's per-cell placement law.
 ///
@@ -53,6 +62,11 @@ pub const SLOT_GRID_PARK_SLOT_STAGGER_X: i32 = 64;
 /// its `+8` content inset. At `t = 0x1000` this lands on the pinned
 /// grid (`98 + col*40 + row*4`); at `t = 0` the cells park off-screen
 /// right from x = 354 with the 104 px per-slot fan-out.
+///
+/// Wired: [`slot_preview_grid_draws_for`] places every cell through this at
+/// [`SLOT_GRID_SLIDE_LANDED`]. The intermediate `t` frames still have no host
+/// driver - the save screen opens on the landed grid rather than animating the
+/// commit slide - so only the endpoint is exercised in the live path.
 ///
 /// PORT: FUN_801e06c0 (per-cell x of the grid loop, `0x801e0734..0x801e0784`)
 /// REF: FUN_801e0fd0 (the per-cell drawer whose `+8` inset is folded in)
@@ -126,9 +140,12 @@ pub fn slot_preview_grid_draws_for(
         // row*stagger, origin.y + row*pitch_y) - retail slants each
         // row +4 px right of the one above. Sprite origin = grid pos
         // - 6.
-        let cell_x = SLOT_GRID_ORIGIN.0
-            + (col as i32) * SLOT_GRID_PITCH_X
-            + (row as i32) * SLOT_GRID_ROW_STAGGER_X;
+        // The cell quad's x comes from the ported slide law at full travel;
+        // at `t = 0x1000` it is the GP0-pinned landed row (98 + col*40 +
+        // row*4), so the visible frame sits `SLOT_GRID_SPRITE_MARGIN` further
+        // right - which is `SLOT_GRID_ORIGIN.0` for column 0.
+        let quad_x = slot_grid_quad_x(col as u32, row as u32, slot as u32, SLOT_GRID_SLIDE_LANDED);
+        let cell_x = quad_x + SLOT_GRID_SPRITE_MARGIN;
         let cell_y = SLOT_GRID_ORIGIN.1 + (row as i32) * SLOT_GRID_PITCH_Y;
         let color = if slot == cursor_slot as usize {
             white
@@ -141,7 +158,15 @@ pub fn slot_preview_grid_draws_for(
             // sits at the cell position. Engines may instead sample
             // sub-rect (6, 6, 20, 20) and skip the margin - both
             // produce the same on-screen pixels.
-            push(&mut out, frame, cell_x - 6, cell_y - 6, 32, 32, color);
+            push(
+                &mut out,
+                frame,
+                quad_x,
+                cell_y - SLOT_GRID_SPRITE_MARGIN,
+                32,
+                32,
+                color,
+            );
         }
         if cell.present
             && let Some(char_id) = cell.portrait_char_id
@@ -184,6 +209,25 @@ mod tests {
         assert_eq!(slot_grid_quad_x(0, 0, 0, 0x1000), 98);
         assert_eq!(slot_grid_quad_x(1, 0, 1, 0x1000), 138);
         assert_eq!(slot_grid_quad_x(4, 2, 14, 0x1000), 98 + 4 * 40 + 2 * 4);
+    }
+
+    /// The builder places its cells through [`slot_grid_quad_x`]; this pins the
+    /// identity the refactor rests on - the landed quad row is the slide law at
+    /// full travel, offset by the sprite margin to the visible frame origin.
+    #[test]
+    fn the_landed_grid_is_the_slide_law_at_full_travel() {
+        for slot in 0..(SLOT_GRID_COLS * SLOT_GRID_ROWS) {
+            let (col, row) = (slot % SLOT_GRID_COLS, slot / SLOT_GRID_COLS);
+            let quad_x =
+                slot_grid_quad_x(col as u32, row as u32, slot as u32, SLOT_GRID_SLIDE_LANDED);
+            assert_eq!(
+                quad_x + SLOT_GRID_SPRITE_MARGIN,
+                SLOT_GRID_ORIGIN.0
+                    + (col as i32) * SLOT_GRID_PITCH_X
+                    + (row as i32) * SLOT_GRID_ROW_STAGGER_X,
+                "slot {slot} landed x"
+            );
+        }
     }
 
     #[test]

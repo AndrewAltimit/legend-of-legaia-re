@@ -199,7 +199,12 @@ impl DanceDir {
         self as u8 + 1
     }
 
-    /// The pad-mask bit for this button (`FUN_801d4040`).
+    /// The chart symbol -> pad-mask bit map: symbol `1` (`DanceDir::A`) ->
+    /// `0x80`, `2` -> `0x20`, `3` -> `0x10`. Retail takes the raw chart byte and
+    /// returns `0` for anything else; the chart decoder converts symbols to
+    /// [`DanceDir`] before this point, so the whole retail domain is covered by
+    /// the three variants and the `0` arm has no reachable input.
+    // PORT: FUN_801d4040 (chart symbol -> pad-mask bit)
     pub fn pad_bit(self) -> u16 {
         match self {
             DanceDir::A => 0x80,
@@ -211,18 +216,6 @@ impl DanceDir {
     /// `true` for the Triangle wildcard (chart symbol `3`).
     pub fn is_triangle(self) -> bool {
         matches!(self, DanceDir::C)
-    }
-}
-
-/// The chart symbol → pad-mask bit map (`FUN_801d4040`): `1 → 0x80`, `2 → 0x20`,
-/// `3 → 0x10`, anything else `0`.
-// PORT: FUN_801d4040 (chart symbol -> pad-mask bit)
-pub fn symbol_pad_bit(symbol: u8) -> u16 {
-    match symbol {
-        1 => 0x80,
-        2 => 0x20,
-        3 => 0x10,
-        _ => 0,
     }
 }
 
@@ -865,6 +858,12 @@ impl DanceGame {
     }
 }
 
+// NOT WIRED: the dance floor has no effect-part host. The engine's only
+// sprite-part pool is the effect-VM bundle pool, whose ids index effect
+// bundles; nothing maps the dance overlay's own sprite ids into it, and there
+// is no dance render pass to anchor a part at a floor-grid cell. Wiring this
+// needs a dance presentation layer that owns a part pool and the overlay's
+// sprite page.
 /// PORT: FUN_801d3fd0 - the dance overlay's cell-placed effect spawn (the
 /// step-mark flash): retail zero-fills a spawn record, spawns through the
 /// shared part-spawn API `FUN_80021B04` at scale `0x1000`, stamps
@@ -885,6 +884,12 @@ pub fn step_mark_effect_spawn(
     }
 }
 
+// NOT WIRED: this is a texture-U byte patched into a HUD widget descriptor
+// before the widget is emitted. The engine draws the dance HUD from the
+// proportional font atlas and uploads no dance sprite page, so there is no
+// widget descriptor to patch and no glyph row for the U to index. Wiring it
+// needs the overlay's HUD sprite page in VRAM plus a widget-quad emitter for
+// the dance overlay, neither of which exists.
 /// PORT: FUN_801d3e28 - the score-banner thousands-digit glyph selector:
 /// retail stores `(score / 1000) * 8 - 0x30` into the banner widget's
 /// texture-U byte (`DAT_801d4760`) - each digit glyph is 8 texels wide and
@@ -914,6 +919,9 @@ pub fn score_thousands_glyph_u(score: i32) -> i8 {
 /// x before emitting it. This is the split: `Some(digit)` per drawn slot,
 /// `None` for a suppressed leading zero. `0` renders as no digits at all, matching
 /// the retail sentinel (the drawn-slot test is "quotient non-zero").
+///
+/// Wired: the dance HUD's score readout in the play window runs through this,
+/// so a blank slot really does draw nothing there.
 pub fn dance_number_digits(value: u32) -> [Option<u8>; 8] {
     let mut out = [None; 8];
     let mut place = 10_000_000u32; // 10^7 - the leading of eight digit slots
@@ -927,12 +935,18 @@ pub fn dance_number_digits(value: u32) -> [Option<u8>; 8] {
     out
 }
 
+// NOT WIRED: same prerequisite as [`score_thousands_glyph_u`] - a texture-U
+// column into a HUD widget descriptor, with no dance sprite page uploaded and
+// no widget-quad emitter to feed. The *value* split those glyphs draw is
+// [`dance_number_digits`], which is wired.
 /// PORT: FUN_801d32f8 style-A digit glyph-U (the score boxes, widget `1`):
 /// `digit * 0x10` - each score glyph is 16 texels wide, drawn at a 16-px x step.
 pub fn dance_score_digit_u(digit: u8) -> u8 {
     digit * 0x10
 }
 
+// NOT WIRED: same prerequisite as [`dance_score_digit_u`] - a widget-descriptor
+// texture-U with no dance sprite page and no widget-quad emitter behind it.
 /// PORT: FUN_801d32f8 style-B digit glyph-U (widget `0x21`, the narrow counter):
 /// `digit * 8 + 0x40` - 8-texel glyphs offset `0x40` into the page, 8-px x step.
 pub fn dance_level_digit_u(digit: u8) -> u8 {
@@ -948,6 +962,9 @@ pub const BEAT_TRACK_CLUT_NOTE: u16 = 0x7d0e;
 /// Intra-beat phase below which the combo slot flashes (`FUN_801d2524`: `< 0x46`).
 pub const COMBO_FLASH_WINDOW: u32 = 0x46;
 
+/// Wired: [`dance_combo_window_bright`], which the play window's beat-track row
+/// reads every frame.
+///
 /// PORT: FUN_801d2524 - the beat-track's combo-slot mask. The beat index is
 /// masked to 8 once the dancer has promoted a level (`gauge / 1000 > 0`), else 4,
 /// so the flash + note read-out cadence widens on the higher rows.
@@ -955,6 +972,14 @@ pub fn dance_beat_level_mask(level: u32) -> u32 {
     if level > 0 { 7 } else { 3 }
 }
 
+/// This is the **displayed** combo slot, and it is not the judged one:
+/// [`DanceGame::on_combo_slot`] masks the beat by `3` and accepts the whole
+/// window, while the track's flash widens its mask with the dancer's level and
+/// uses the much narrower [`COMBO_FLASH_WINDOW`]. Keep the two apart - the cell
+/// the track lights is not the cell the judge scores.
+///
+/// Wired: the play window's dance HUD lights its beat-track row from this.
+///
 /// PORT: FUN_801d2524 - the combo-window flash test: the beat track lights its
 /// caps + body ([`BEAT_TRACK_CLUT_COMBO`]) on the masked combo slot inside the
 /// flash window, else it stays [`BEAT_TRACK_CLUT_IDLE`].
@@ -962,6 +987,9 @@ pub fn dance_combo_window_bright(beat: u32, level: u32, frac: u32) -> bool {
     beat & dance_beat_level_mask(level) == 3 && frac < COMBO_FLASH_WINDOW
 }
 
+/// Wired: the play window's dance HUD places its upcoming-note row at these
+/// offsets (from its own pen, not the overlay's screen constant).
+///
 /// PORT: FUN_801d2524 - the scrolling note's screen-x. Note `i` sits at
 /// `base_x + i*16`, scrolled left by the intra-beat fraction
 /// (`(frac * 16) / BEAT_PERIOD + 5`) and a fixed 4-texel inset, so the row of
@@ -981,6 +1009,11 @@ pub struct DanceStingVoice {
     pub note: i16,
 }
 
+// NOT WIRED: the sting is a direct two-voice SPU key-on (voice, tone, note),
+// and the engine's audio host exposes only cue-id scheduling
+// (`AudioBgmDirector::enqueue_sfx` against the resident SFX bank). Wiring it
+// needs a host key-on API that takes a voice/tone/note triple, plus the dance
+// overlay's own sound bank resident to key it against.
 /// PORT: FUN_801d3d78 - the on-beat "good step" sting. A judged direction fires
 /// **no** ring cue; instead one of three stings (`r = rand() % 3`) keys two
 /// voices together through the SPU key-on primitive (`FUN_80065034`): voice
@@ -1016,6 +1049,10 @@ pub struct GoodBannerSpawns {
     pub weight: u16,
 }
 
+// NOT WIRED: it composes three [`step_mark_effect_spawn`] records, and that
+// spawn has no effect-part host (see its own note). The banner also needs the
+// dance overlay's sprite ids `0xb` / `0x16` resident, which no engine pass
+// uploads.
 /// PORT: FUN_801d40dc - spawn the sequence-clear banner + two stars. Retail
 /// issues three `FUN_801d3fd0` spawns - `(0xa0, 0x90, sprite 0xb)` for the banner
 /// and `(0x68, 0x90, sprite 0x16)` / `(0xd8, 0x90, sprite 0x16)` for the stars
@@ -1054,6 +1091,10 @@ pub struct CountInBanner {
     pub hold: bool,
 }
 
+// NOT WIRED: [`DanceGame`] starts on the beat clock - the port has no pre-song
+// count-in phase, so no host owns the banner's own frame counter or its
+// once-only cue latch. Wiring it needs the overlay's pre-song states
+// (`FUN_801cf470` states below 10) modelled as session phases first.
 /// PORT: FUN_801d2d98 - the count-in banner animator (`1 2 3 READY... GO!`).
 ///
 /// Three segments keyed on the banner's own frame counter `frame`:
@@ -1096,6 +1137,11 @@ pub fn dance_countin_banner_envelope(frame: i32) -> CountInBanner {
     }
 }
 
+// NOT WIRED: the port's dancers are rules records, not world actors - there is
+// no per-dancer actor with the `+0x5c` spin counter and `+0x10` flag word this
+// predicate reads, and no clip driver behind it. The spin state itself lives on
+// the session ([`DanceGame::groovy_lock`]); what is missing is an animated
+// dancer actor for the gate to admit.
 /// PORT: FUN_801d4098 - the per-dancer actor clip-driver gate. Retail hands the
 /// dancer to the shared clip driver `FUN_800204f8` only when its spin counter
 /// (`+0x5c`, the groovy-move turns left) is positive **or** its flag word
@@ -1106,6 +1152,10 @@ pub fn dance_clip_driver_gate(spin: i16, flags: u32) -> bool {
     spin > 0 || (flags & 0x1000) != 0
 }
 
+// NOT WIRED: the rig index selects a per-dancer VRAM face strip for two
+// `MoveImage` blits. The engine uploads no dancer face strips and has no
+// blit pass for the dance floor, so nothing can consume a rig id. Wiring it
+// needs the dance overlay's face pages resident plus a VRAM blit host.
 /// PORT: FUN_801d03c4 - the dancer face-stamp's rig selector. The face blit picks
 /// a per-dancer VRAM strip + eye/mouth frame table by rig index; in the qualifier
 /// (mode 0) the overlay remaps dancer `2 -> 3` and `1 -> 2`, so the rig id equals
@@ -1190,10 +1240,8 @@ mod tests {
 
     #[test]
     fn symbol_pad_bit_map() {
-        assert_eq!(symbol_pad_bit(1), 0x80);
-        assert_eq!(symbol_pad_bit(2), 0x20);
-        assert_eq!(symbol_pad_bit(3), 0x10);
-        assert_eq!(symbol_pad_bit(0), 0);
+        assert_eq!(DanceDir::A.pad_bit(), 0x80);
+        assert_eq!(DanceDir::B.pad_bit(), 0x20);
         assert_eq!(DanceDir::A.symbol(), 1);
         assert_eq!(DanceDir::C.pad_bit(), 0x10);
         assert!(DanceDir::C.is_triangle());

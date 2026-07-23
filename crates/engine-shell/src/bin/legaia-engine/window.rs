@@ -561,6 +561,17 @@ struct PlayWindowApp {
     /// ([`legaia_asset::fishing_exchange`]) and named from the SCUS item
     /// table when readable. `P` toggles the list while fishing.
     fishing_prize_venues: Option<[legaia_engine_core::fishing::PrizeExchange; 2]>,
+    /// The fishing HUD's five one-shot banner timers (hook / reel-in / miss /
+    /// auxiliary / strike splash). Seeded from the session's phase edges and
+    /// serviced once a frame in the redraw handler; the draws they produce are
+    /// cached in `fishing_banner_draws` for the (immutable) HUD builder.
+    fishing_banners: legaia_engine_render::FishingBanners,
+    /// This frame's live fishing banner draws, produced by servicing
+    /// `fishing_banners`. Empty whenever no banner is running.
+    fishing_banner_draws: Vec<legaia_engine_render::HudDraw>,
+    /// The fishing phase seen on the previous frame, so the redraw handler can
+    /// detect the hook / landed / snapped / recast edges that seed the banners.
+    fishing_prev_phase: Option<legaia_engine_core::fishing::FishingPhase>,
     /// World actor slot the spawned player-summon creature occupies (`>= 8`, so
     /// it never collides with the party/monster battle slots), or `None`.
     summon_actor_slot: Option<usize>,
