@@ -370,7 +370,11 @@ Record 51 onward is string rodata, which bounds the table. Two records
 are patched live: widget 5 (the 24px stage digit, `DAT_801d71cc = stage * 0x18`
 written by the banner-actor draw callback `FUN_801d67f0`) and widget `0x13`
 (the 8px digit, `u = digit * 8`, patched by the digit drawer `FUN_801d69e4`;
-`FUN_801d6a18` draws right-aligned numbers with it). Parser
+`FUN_801d6a18` draws right-aligned numbers with it, and `FUN_801d6f44` draws
+the coin strip through widget `0x2f`, `u = 0x58 + digit * 0x10`). The digit
+drawers' right-aligned decimal decomposition is ported as
+`engine-core::baka_fighter::right_aligned_number_cells` / `coin_digit_cells`
+/ `single_digit_cell`. Parser
 [`legaia_asset::baka_opponents::parse_baka_hud`].
 
 The HUD renderer `FUN_801d2afc` draws, per frame (retail 320x240 frame):
@@ -492,7 +496,10 @@ bank the **battle scene loader** `FUN_800520F0` loads (also class 2, swapping to
 raw `0x36D` when `DAT_8007BD11 == 4`), so it is the shared battle/minigame SFX
 bank rather than a Baka-private one. All four cue descriptors resolve in it
 (they use programs `0` and `3`). The minigame's **BGM** is **extraction PROT
-1043** (`music_01`), loaded by `FUN_8001FC00(0x415, ...)` + `FUN_8001E54C(5, ...)`.
+1043** (`music_01` sound-test #55 `M112` "Sol disco fever" - a Sol track for a
+Sol minigame), loaded by `FUN_8001FC00(0x415, ...)` + `FUN_8001E54C(5, ...)`
+(raw loader index `0x415`; the bank map is piecewise, so extraction 1043 =
+sound-test index 55, see [`../reference/music-tracks.md`](../reference/music-tracks.md)).
 **Confirmed.**
 
 ### Site presentation
@@ -573,14 +580,95 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `FUN_801d239c` | end-of-match score tally → gold payout |
 | `FUN_801d21fc` | round-start READY/FIGHT banner + countdown |
 | `FUN_801d4df8` / `FUN_801d49e8` | knockdown / launch-arc playback |
-| `FUN_801d6e5c` | action-table keyframe lookup by frame range |
+| `FUN_801d6e5c` | action-table keyframe lookup by frame range (port `engine-core::baka_fighter::keyframe_in_range`) |
 | `FUN_801d67f0` | per-frame fighter sprite-actor draw callback (`_DAT_8007ba2c`) |
 | `FUN_801d5ed0` | textured-quad GPU emitter for every HUD glyph / banner sprite (indexes the widget table `DAT_801d7160`) |
-| `FUN_801d69e4` / `FUN_801d6a18` | 8px digit drawer (widget `0x13`, `u = digit * 8`) / right-aligned number drawer |
+| `FUN_801d69e4` / `FUN_801d6a18` | 8px single-digit draw (widget `0x13`, `u = digit * 8`, port `single_digit_cell`) / right-aligned decimal number drawer (port `right_aligned_number_cells`) |
+| `FUN_801d6f44` | "GET COIN" coin-count digit-strip drawer (widget `0x2f`, `u = 0x58 + digit * 0x10`, `0x10`-px stride; port `engine-core::baka_fighter::coin_digit_cells`) |
 | `FUN_801d6710` | end-of-match tally drain step (not a drawer - see above) |
 | `FUN_801d553c` | developer dump of the action table (`ot5stat.txt`) |
+| `FUN_801d4fc8` | per-fighter keyframe / motion-event advance (uses `FUN_801d6e5c`); poses the fighter actor - runs in the `DAT_801dbf44 - 400 < 100` sub-phase |
+| `FUN_801d5c7c` | round-result banner fly-in / hold / fly-out animator (horizontal slide offset + brightness ramp, draws widget 3 through `FUN_801d5ed0` / `FUN_801d69a8`) |
+| `FUN_801d59d4` | title / logo flash animator (widget `0x28`, brightness `iVar << 3` ramp + the two XA stings) |
+| `FUN_801d69a8` | stage-digit draw helper: patches widget 5's `u` (`DAT_801d71cc = stage * 0x18`) then draws widget 5 through `FUN_801d5ed0` |
+| `FUN_801d6cbc` | "How to Play Baka Fighter" instructions-screen text drawer (11 lines from `PTR_..._801d7134`, `0xd` px apart) |
+| `FUN_801d2a28` | per-exchange score accumulator (see [Score-bonus tables](#score-bonus-tables)) |
+| `FUN_801ceb84` | scratchpad GPU packet-template initializer (fills the OT / primitive scratch `0x1f800034+` with gouraud packet words) - render-track |
+| `FUN_801d6480` / `FUN_801d6770` | raw GPU quad emitters into the OT scratch `_DAT_1f8003a0` (gouraud code `0x3a` / flat `0x28`; `FUN_801d6770` links through `FUN_8003d2c4`) - render-track |
+| `FUN_801d657c` | vertex-colour packet build (two packed RGBs → 6 components) + GTE submit `FUN_80024e80` - render-track |
+| `FUN_801d6910` / `FUN_801d693c` / `FUN_801d6968` / `FUN_801d6994` | vertex-packet field setters assembling the scratch primitive at `0x80070764` (three 12-byte vertex blocks + a trailing pair) - render-track |
+| `FUN_801d6bb8` / `FUN_801d6d60` | matrix-stacked placed-3D draw (`FUN_8005b268` / `FUN_8005b308` GTE push/pop, local transform `FUN_8003d20c` / `FUN_8003d344`) - render-track |
+| `FUN_801d6f18` | effect-part flag setter + spawn (`actor +0x10 \|= 0x200000`, `FUN_800204f8`) |
+| `FUN_801d3390` | per-fighter idle / reset pose setter (match phase `DAT_801dbf78 == 0`; seeds display anim `+0x6a` from the action table) |
+| `FUN_801d6300` | do-nothing stub (`jr ra`); a disabled hook the SM family still calls |
+| `FUN_801d6310` | scripted-arc effect-actor animator: phase `+0x22` (frame-delta stepped) drives a piecewise trajectory (`+0x14` / `+0x26`) with display-anim / flag swaps over phase bands `0..0xef`, fires a positional cue via `FUN_801d65f8` at two band edges, and raises the done flag (`+0x10 \| 8`) past phase `0xef` |
+| `FUN_801d65f8` | positional SFX helper: builds a pan / pitch pair from table `&DAT_801dbe84` (index `arg * 4`, pitch base `0x340`, pan base `0x80`) and plays it via `func_0x80058490` |
 
 Provenance: each row corresponds to `ghidra/scripts/funcs/overlay_baka_fighter_<addr>.txt`.
+
+### Score-bonus tables
+
+`FUN_801d2a28` is the per-exchange **score accumulator** feeding two of the
+end-of-match tally's three score rows (the coin row is the gold prize; see
+[Opponent + scoring](#opponent--scoring)). Per resolved hit it adds a
+combo-step bonus - `DAT_801d70c4[combo]`, the combo clamped to `0x13` - into
+row `DAT_801dbed8`, and an HP-keyed clear bonus into row `DAT_801dbedc`
+(`50000` at full HP `0xc80`, else `DAT_801d711c[hp / 0x140]`). Both bonus
+tables are overlay rodata (Sony bytes, not committed) with no parser. The
+engine port deliberately runs **no score channel** - `BakaTally` starts its
+three score rows empty and only carries the coin prize - so this path is
+documented, not ported; the tally port models the coin row alone
+(`engine-core::baka_fighter::BakaTally`). See
+`overlay_baka_fighter_801d2a28.txt`. **Confirmed.**
+
+### Shared-overlay helpers (out of scope)
+
+The overlay's high band (`0x801f0000+`) is the **shared runtime library**
+linked identically into every minigame / field overlay, not Baka-Fighter code:
+`FUN_801f6d48`, `FUN_801f159c`, `FUN_801f0adc` and `FUN_801f20b0` all
+byte-match the field overlay (PROT 0897) at the same VA (classifier image
+`field(897)`), so they belong to the field / actor / move VMs documented in
+[`script-vm.md`](script-vm.md), [`actor-vm.md`](actor-vm.md) and
+[`move-vm.md`](move-vm.md), not to this page.
+
+### Minigame-hub actor / draw callbacks (shared `0x801f` band)
+
+A second shared cluster sits in the `0x801f1138`-`0x801f2200` band plus
+`FUN_801f69ec` and `FUN_801f90dc`. Unlike the field-VM helpers above, these do
+**not** byte-match the field overlay (PROT 0897) - they are byte-identical
+across the **hub-family minigame overlays** (baka-fighter, dance, fishing,
+slot-machine and the debug menu) and are the shared minigame-hub actor /
+sprite-VM step and draw callbacks reached from baka-fighter among the others.
+They drive the hub menu / panel presentation through the text kernel
+(`FUN_80036888` glyph strings, `FUN_8002b994` / `FUN_8002c488` sprite cells),
+the per-actor draw pump `FUN_80031d00`, the grid / tile-board actor
+`DAT_801c6ea4`, and the confirm / entry cue plays (`FUN_80035bd0` /
+`FUN_80035b50`). `FUN_801f69ec` differs in muscle-dome (its own overlay),
+pinning it to the hub family. Being shared framework rather than baka rules,
+they carry no baka engine-port site.
+
+| Address | Role |
+|---|---|
+| `FUN_801f1138` | start / confirm menu tick (2-state): counts active entries from `_DAT_8007b450`, sizes the panel, waits a face-button then plays confirm cue `0x20` and re-arms |
+| `FUN_801f16c0` | stacked per-entry label list: prints one glyph string per `DAT_80084594` entry from table `&DAT_801f29b0`, stepping `y` |
+| `FUN_801f17d8` | header string + a row of per-row sprite cells keyed by the grid actor's `+0x54` bytes (`_DAT_8007bb88` rows) |
+| `FUN_801f1890` | three-line panel draw + a cursor sprite positioned by `_DAT_8007bb98` |
+| `FUN_801f1950` | two-option panel with the selected row (`_DAT_8007bb88`) highlighted by a cursor sprite |
+| `FUN_801f1a1c` | count-gated single label (`DAT_80084594 < 2` picks the alternate string) + cursor sprite |
+| `FUN_801f1ab0` | two-line panel + cursor (`_DAT_8007bb88 * 0x10`), then fires effect `FUN_80024ee4(3)` |
+| `FUN_801f1b64` | single label + cursor sprite (offset by actor `+0xe`) |
+| `FUN_801f1c88` / `FUN_801f1cb0` / `FUN_801f1d20` | thin wrappers over `FUN_801eca08(actor, lo, hi, mode)` for frame bands `0..7` / `8..0x10` / `0x11..0x17` (modes `0` / `1` / `2`) |
+| `FUN_801f1cd8` / `FUN_801f1d48` | actor deactivate / reset: draw, stash `+0x50` into `DAT_801c6ea4`, zero `+0x50` / `+0x54` (identical bodies) |
+| `FUN_801f1d90` | actor deactivate with the re-arm state (`+0x50 = 0x2c` vs `2`) chosen from hub-progress flags |
+| `FUN_801f1e48` | hub sub-menu SM (3 states): clear `_DAT_8007b450` + draw, wait-confirm + draw, deactivate / re-arm to `0x1a` |
+| `FUN_801f1fdc` | hub prompt SM (2 states): entry sting `FUN_80035b50(0x26)` + draw, then wait-confirm + deactivate |
+| `FUN_801f2134` | hub draw tick that clears the grid actor's `+0x3e` when `_DAT_8007bb80 == 0` |
+| `FUN_801f69ec` | shared minigame-hub 3D tile-grid GTE rasterizer: per visible tile (attr bit `0x1000`) of the scene map (`_DAT_1f8003ec + 0x8000`) runs RTPT + depth-cue and links a textured `POLY_GT` into the OT `_DAT_1f8003a0` - render-track |
+| `FUN_801f90dc` | round-result caption draw: two strings indexed by `DAT_801e46b0`, plus a fixed caption + sprite on the `== 0xfe` end-state |
+
+Provenance: each row corresponds to
+`ghidra/scripts/funcs/overlay_baka_fighter_<addr>.txt` (byte-identical dumps
+exist under the sibling hub overlays).
 
 ## Engine port
 

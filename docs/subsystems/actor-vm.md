@@ -77,6 +77,31 @@ DAT_1F800393 = max(adaptive, DAT_8007B9D8);
 `FUN_801D6704`'s install is `sw s0,-0x4628(v0)` at `0x801D6990`, with `li s0,0x2`
 in the preceding instruction at `0x801D6988` (`overlay_0897`, base `0x801CE818`).
 
+`FUN_801CFDA0` is more than a floor installer - it is the field-to-battle intro
+particle builder (dump `overlay_field_battle_intro_801cfda0.txt`). After setting
+the floor-3 cadence and (on the first frame) fading to `0x101010`, it loops
+`0x488` times over a per-particle source stride of `0x2C`, building one GTE
+`0x2C`-byte GPU packet per particle straight into the ordering-table cursor
+`_DAT_1F8003A0`: it stamps the shared colour/geometry via `FUN_8003D1A4` /
+`FUN_8003D344` / `FUN_80026988`, transforms through `FUN_8005BAC8`
+(RotTransPers-class), applies `>>1` velocity nudges scaled by the tick byte
+`DAT_1F800393`, and screen-clips to `X in [-8,0x148)`, `Y in [-8,0xF8)` before
+linking the packet into the OT. It is a direct GTE/GPU-packet emitter, not a
+draw-list builder, so it is documented rather than ported into the clean-room
+render path.
+
+Two worklist addresses in this overlay band are VA-aliased and not
+independently portable. `0x801CEE80` is a field-VM interior label (jump-table
+slot `[8]` of `FUN_801DE840` in `overlay_0897`) that the base-program dump
+renders as a standalone gauge-fill helper reading an uninitialised `v0`; its one
+`jal` caller (`FUN_80025980` mode switch) sets no arguments, confirming the alias.
+`0x801D5A68` and `0x801D7B50` are real functions in the *field* overlay - the
+ambient-motion direction resolver (`REF` in `engine-vm::ambient_motion`, see
+[motion-vm.md](motion-vm.md)) and the sub-area window rebuild
+([field-locomotion.md](field-locomotion.md)) respectively - but their
+cutscene/menu-overlay dumps land mid-`FUN_801D5944` / `FUN_801D7B40`, so those
+dumps are interior slices, not the owning entry.
+
 **`FUN_801C6C78` is not an installer, despite an earlier row here saying so.**
 Its own 441-instruction disassembly (`0x801C6C78..0x801C7358`) writes exactly one
 global - `0x8007AA14`, via 17 copies of `sw t0,-0x55ec(at)` - and has no store to
@@ -216,6 +241,31 @@ The memory note's "live snapshot" at `0x8011A2FC` shows what looks like a 16-byt
 ```
 
 Read against `FUN_801D77F4`'s walker - `*puVar11 = record_count`, `puVar10 = puVar11 + 1` then `*puVar10 = group_idx`, advances `puVar10 += 12` bytes per record - the first u32 is the record count and the records start 4 bytes in. The "16-byte header" framing was off-by-12. The actor VM does **not** skip any metadata header before dispatch because **the actor VM never dispatches on this buffer at all** (per Implication 1 above).
+
+## Field-spawned sprite-tick actors
+
+Two field-overlay (PROT 0897) functions spawn and drive *attached-sprite* actors
+on the shared actor list `_DAT_8007C34C` - the same list the
+[field VM](script-vm.md#per-frame-scheduling) walks - rather than being actor-VM
+opcode handlers themselves.
+
+`FUN_801D25EC` is the **position-tween spawner**: given a source actor, a target
+`xyz`, and a duration, it allocates an actor from template `0x801F227C`
+(`func_0x80020DE0(0x801F227C, _DAT_8007C34C)`), records the source in `+0x90`,
+copies the source position `+0x14/+0x16/+0x18`, stores the target in
+`+0x24/+0x26/+0x28`, seeds the midpoints `+0x3C/+0x3E/+0x40`, and sets the
+per-frame step `+0x9E = 0x1000 / duration` (fixed-point `1.0` over the duration).
+`see ghidra/scripts/funcs/overlay_cutscene_dialogue_801d25ec.txt`.
+
+`FUN_801E4470` is the **per-frame tick** for such an actor: it reads the parent
+`+0x90`, adds the parent's world position to its own, screen-projects through the
+GTE wrapper `func_0x800195A8` (using the actor's `+0x3C/+0x3E` bbox), computes the
+projected midpoint + span, and draws via `FUN_801E3984` (control word `+0x74`,
+`+0x88`, byte `+0x5A`). Because it calls the GTE projection and builds a draw
+primitive it is render-track - documented, not ported. Its direct `overlay_0897`
+dump is a truncated alias; the real 83-instruction body is in the
+cutscene-dialogue field capture.
+`see ghidra/scripts/funcs/overlay_cutscene_dialogue_801e4470.txt`.
 
 ## See also
 

@@ -1204,6 +1204,229 @@ pub fn center_effect_spawn(sprite_id: u16) -> EffectSpawnSpec {
     }
 }
 
+// --- Action-table keyframe lookup ------------------------------------------
+
+/// Arithmetic shift-right-by-4 rounding toward zero - the retail
+/// `bgez v, skip; addiu v, v, 0xf; skip: sra v, v, 4` idiom (a plain `>> 4`
+/// on a negative would round toward minus infinity).
+fn sra4_round_to_zero(v: i32) -> i32 {
+    (if v < 0 { v + 0xF } else { v }) >> 4
+}
+
+/// PORT: FUN_801d6e5c - action-table keyframe lookup by frame range.
+///
+/// Returns the index of the first sub-keyframe whose whole-frame index (the
+/// action record's `+0x26` field, one per `0x08`-byte sub-keyframe) falls
+/// within the query range, or `None` when the range is inverted (`to < from`),
+/// the action has no sub-keyframes, or none match.
+///
+/// The fixed point sits on the **query**, not on the record: `from` and `to`
+/// are shifted right by 4 (rounding toward zero) and compared against the raw
+/// frame indices, so callers pass a `<< 4` fixed-point frame range against the
+/// whole-frame keyframe values. `frame_indices` is the action record's
+/// per-sub-keyframe `+0x26` column (its length is the record's `+0x1c` count);
+/// the retail function reaches it through `PTR_DAT_801db8b8[char][action]`.
+pub fn keyframe_in_range(frame_indices: &[i16], from: i32, to: i32) -> Option<usize> {
+    if to < from {
+        return None;
+    }
+    let lo = sra4_round_to_zero(from);
+    let hi = sra4_round_to_zero(to);
+    frame_indices
+        .iter()
+        .position(|&f| lo <= f as i32 && (f as i32) <= hi)
+}
+
+// --- Decimal number drawers ------------------------------------------------
+
+/// Cells in the Baka Fighter number drawers' fixed-width right-aligned field:
+/// eight decimal places (`10_000_000` down to `1`). Leading-zero places are
+/// blank; the units place always draws (so a zero value shows a single `0`).
+pub const DIGIT_FIELD_CELLS: usize = 8;
+
+/// Widget id of the 8px digit glyph (`FUN_801d69e4` / `FUN_801d6a18`).
+pub const NUMBER_WIDGET: u8 = 0x13;
+/// X advance per drawn cell for the 8px number drawer (`s1 += 8`).
+pub const NUMBER_CELL_STRIDE: i16 = 8;
+/// Widget id of the coin-count digit glyph (`FUN_801d6f44`, HUD widget 47).
+pub const COIN_WIDGET: u8 = 0x2F;
+/// X advance per drawn cell for the coin-strip drawer (`s1 += 0x10`).
+pub const COIN_CELL_STRIDE: i16 = 0x10;
+/// Base `u` texel column of the coin digit cell row (`u = 0x58 + digit*0x10`).
+pub const COIN_U_BASE: u8 = 0x58;
+
+/// One decimal glyph a Baka Fighter number drawer emits: which HUD widget to
+/// draw, its place in the field, the x offset from the field's left edge, and
+/// the `u` texel column patched into the widget descriptor for the digit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DigitCell {
+    /// Field place, `0` (leftmost / highest) .. `DIGIT_FIELD_CELLS` (units).
+    pub cell: usize,
+    /// The decimal digit `0..=9` drawn here.
+    pub digit: u8,
+    /// HUD widget id drawn for this glyph.
+    pub widget: u8,
+    /// X offset from the field's left edge (`cell * stride`).
+    pub x_offset: i16,
+    /// The `u` texel column stamped into the widget descriptor.
+    pub u: u8,
+}
+
+/// Lay out an integer as a right-aligned decimal field. Shared kernel of the
+/// two overlay number drawers: the retail code stores each place's truncated
+/// quotient `value / 10^(7-cell)` into a scratch array (skipping the ones that
+/// come out zero, except the units place which is pre-seeded so it always
+/// draws), then draws each surviving place as `quotient % 10`. Negative input
+/// has no retail call site (score / coin counts are non-negative) and is
+/// clamped to zero here.
+fn field_cells(value: i32, widget: u8, stride: i16, u_of: impl Fn(u8) -> u8) -> Vec<DigitCell> {
+    let value = value.max(0);
+    let mut out = Vec::new();
+    let mut divisor = 10_000_000i32;
+    for cell in 0..DIGIT_FIELD_CELLS {
+        let quotient = value / divisor;
+        if quotient != 0 || cell == DIGIT_FIELD_CELLS - 1 {
+            let digit = (quotient % 10) as u8;
+            out.push(DigitCell {
+                cell,
+                digit,
+                widget,
+                x_offset: cell as i16 * stride,
+                u: u_of(digit),
+            });
+        }
+        divisor /= 10;
+    }
+    out
+}
+
+/// PORT: FUN_801d6a18 - the right-aligned 8px decimal number drawer.
+///
+/// Lays `value` out across the eight-place field as widget [`NUMBER_WIDGET`]
+/// glyphs, each cell `8` px to the right of the last ([`NUMBER_CELL_STRIDE`])
+/// with the digit's `u` column patched to `digit * 8` (`DAT_801d72e4`). Retail
+/// also biases the glyph CLUT for the run (`DAT_801d72e2 = clut + 0x7d87`,
+/// restored after) and draws through [`hud_widget_quad`] / `FUN_801d5ed0`; the
+/// CLUT bias and OT-bucket scheduling are host-side, so this returns just the
+/// per-digit cell layout.
+pub fn right_aligned_number_cells(value: i32) -> Vec<DigitCell> {
+    field_cells(value, NUMBER_WIDGET, NUMBER_CELL_STRIDE, |d| d * 8)
+}
+
+/// PORT: FUN_801d6f44 - the coin-count digit-strip drawer (HUD widget 47).
+///
+/// Same right-aligned decimal decomposition as [`right_aligned_number_cells`],
+/// but drawing widget [`COIN_WIDGET`] glyphs `0x10` px apart
+/// ([`COIN_CELL_STRIDE`]) with the digit `u` column patched to
+/// `0x58 + digit * 0x10` (`DAT_801d7514`) - the "GET COIN" numeral row on the
+/// PROT 1203 tally sheet.
+pub fn coin_digit_cells(value: i32) -> Vec<DigitCell> {
+    field_cells(value, COIN_WIDGET, COIN_CELL_STRIDE, |d| {
+        COIN_U_BASE.wrapping_add(d.wrapping_mul(0x10))
+    })
+}
+
+/// PORT: FUN_801d69e4 - the single 8px digit draw.
+///
+/// The one-glyph form the right-aligned drawer calls per place: patch widget
+/// [`NUMBER_WIDGET`]'s `u` column to `digit << 3` (`DAT_801d72e4`) and draw it
+/// through `FUN_801d5ed0`. Retail leaves the caller to position `x`; this
+/// reports the cell with a zero x offset.
+pub fn single_digit_cell(digit: u8) -> DigitCell {
+    DigitCell {
+        cell: 0,
+        digit,
+        widget: NUMBER_WIDGET,
+        x_offset: 0,
+        u: digit.wrapping_shl(3),
+    }
+}
+
+/// The combo count is clamped to this before it indexes the combo-bonus table
+/// (`FUN_801d2a28`: `if (0x13 < combo) combo = 0x13`).
+pub const BAKA_COMBO_MAX: i32 = 0x13;
+
+/// A round that ends with the winner still at full HP ([`HP_START`]) pays this
+/// flat perfect-clear bonus instead of a health-scaled one
+/// (`FUN_801d2a28`: `if (DAT_801dbfc4 == 0xc80) bonus += 0xc350`).
+pub const BAKA_PERFECT_BONUS: i32 = 50_000;
+
+/// The end-of-round HP is divided by this to index the health-bonus table
+/// (`FUN_801d2a28`: `DAT_801dbfc4 / 0x140`). [`HP_START`] (`0xc80`) / `0x140`
+/// is `10`, so the top table slot is reachable only via the perfect path.
+pub const BAKA_HEALTH_BONUS_DIVISOR: i32 = 0x140;
+
+/// The per-round score increment a completed round contributes to the two
+/// score rows the end-of-match tally later drains.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct BakaRoundScore {
+    /// Added to the combo-score row (`DAT_801dbed8`).
+    pub combo_gain: i32,
+    /// Added to the bonus row (`DAT_801dbedc`).
+    pub bonus_gain: i32,
+}
+
+/// Clamp a raw combo count to the combo-bonus table index space.
+///
+/// PORT: FUN_801d2a28 (`0x801d2a34..0x801d2a40`). Retail keeps the count when
+/// it is below `0x14` and otherwise pins it to [`BAKA_COMBO_MAX`]; the compare
+/// is signed, so a (never-produced) negative count passes through unclamped,
+/// exactly as the `slti` does.
+pub fn baka_combo_index(combo: i32) -> i32 {
+    if combo < BAKA_COMBO_MAX + 1 {
+        combo
+    } else {
+        BAKA_COMBO_MAX
+    }
+}
+
+/// Resolve the two score-row increments a finished round contributes.
+///
+/// PORT: FUN_801d2a28 (per-round score accumulation). The retail routine reads
+/// the round's combo count (`DAT_801dbec8`) and the winner's remaining HP
+/// (`DAT_801dbfc4`) and folds two increments into the running score rows the
+/// end-of-match tally ([`BakaTally`]) later drains:
+///
+/// - the **combo** row gains `combo_bonus[clamp(combo)]`, indexed by
+///   [`baka_combo_index`] into the overlay combo-bonus table
+///   (`&DAT_801d70c4`, 20 `i32` slots);
+/// - the **bonus** row gains [`BAKA_PERFECT_BONUS`] when the round ended at
+///   full HP ([`HP_START`]), else `health_bonus[hp / `[`BAKA_HEALTH_BONUS_DIVISOR`]`]`
+///   indexed into the overlay health-bonus table (`&DAT_801d711c`, `i16`
+///   slots). The HP divide is the retail signed `/0x140`.
+///
+/// The two tables are disc data (`FUN_801d2a28`'s overlay), so they are passed
+/// in by the caller rather than baked here; the caller supplies the slices it
+/// parsed from the Baka Fighter overlay. Out-of-range indices are treated as a
+/// zero contribution, which cannot happen with the retail table sizes but
+/// keeps the kernel total.
+pub fn baka_round_score(
+    combo: i32,
+    combo_bonus: &[i32],
+    end_hp: i32,
+    health_bonus: &[i16],
+) -> BakaRoundScore {
+    let combo_gain = combo_bonus
+        .get(baka_combo_index(combo).max(0) as usize)
+        .copied()
+        .unwrap_or(0);
+
+    let bonus_gain = if end_hp == HP_START {
+        BAKA_PERFECT_BONUS
+    } else {
+        let idx = end_hp / BAKA_HEALTH_BONUS_DIVISOR;
+        health_bonus
+            .get(idx.max(0) as usize)
+            .map(|&v| v as i32)
+            .unwrap_or(0)
+    };
+
+    BakaRoundScore {
+        combo_gain,
+        bonus_gain,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1655,5 +1878,143 @@ mod tests {
     fn center_effect_spawn_is_screen_centre_at_unit_scale() {
         let s = center_effect_spawn(0x2A);
         assert_eq!((s.x, s.y, s.scale, s.sprite_id), (0xA0, 0x78, 0x1000, 0x2A));
+    }
+
+    #[test]
+    fn keyframe_lookup_matches_the_range_and_fixed_point() {
+        // Whole-frame keyframe indices; the query is << 4 fixed point.
+        let frames = [0i16, 4, 10, 22, 30];
+        // 22 << 4 = 0x160; a range straddling it matches its index (3).
+        assert_eq!(keyframe_in_range(&frames, 21 << 4, 23 << 4), Some(3));
+        // Exact single-frame query still resolves via the >>4 fold.
+        assert_eq!(keyframe_in_range(&frames, 10 << 4, 10 << 4), Some(2));
+        // First match wins when several fall in range.
+        assert_eq!(keyframe_in_range(&frames, 0, 30 << 4), Some(0));
+        // Nothing in the gap between 10 and 22.
+        assert_eq!(keyframe_in_range(&frames, 15 << 4, 20 << 4), None);
+        // Inverted range is rejected before the shift.
+        assert_eq!(keyframe_in_range(&frames, 30 << 4, 0,), None);
+        // No sub-keyframes -> no match.
+        assert_eq!(keyframe_in_range(&[], 0, 100), None);
+    }
+
+    #[test]
+    fn keyframe_lookup_rounds_the_query_toward_zero() {
+        let frames = [0i16, 1];
+        // 0x0f >> 4 rounds to 0 (toward zero), so frame 0 is in [0, 0].
+        assert_eq!(keyframe_in_range(&frames, 0, 0xF), Some(0));
+        // 0x10 >> 4 = 1, so the low bound now excludes frame 0.
+        assert_eq!(keyframe_in_range(&frames, 0x10, 0x1F), Some(1));
+    }
+
+    #[test]
+    fn right_aligned_number_suppresses_leading_zeros_but_always_draws_units() {
+        // Zero draws exactly one '0' glyph in the units place.
+        let z = right_aligned_number_cells(0);
+        assert_eq!(z.len(), 1);
+        assert_eq!(z[0].cell, DIGIT_FIELD_CELLS - 1);
+        assert_eq!((z[0].digit, z[0].widget, z[0].u), (0, NUMBER_WIDGET, 0));
+
+        // 42 draws "4" then "2" in the two rightmost cells, right-aligned.
+        let n = right_aligned_number_cells(42);
+        let digits: Vec<u8> = n.iter().map(|c| c.digit).collect();
+        assert_eq!(digits, vec![4, 2]);
+        assert_eq!(n[0].cell, 6);
+        assert_eq!(n[1].cell, 7);
+        // u = digit * 8; x steps by the 8px cell stride.
+        assert_eq!(n[0].u, 4 * 8);
+        assert_eq!(n[1].u, 2 * 8);
+        assert_eq!(n[0].x_offset, 6 * NUMBER_CELL_STRIDE);
+        assert_eq!(n[1].x_offset, 7 * NUMBER_CELL_STRIDE);
+    }
+
+    #[test]
+    fn coin_strip_uses_widget_47_and_its_own_cell_geometry() {
+        let c = coin_digit_cells(305);
+        let digits: Vec<u8> = c.iter().map(|d| d.digit).collect();
+        assert_eq!(digits, vec![3, 0, 5]);
+        for cell in &c {
+            assert_eq!(cell.widget, COIN_WIDGET);
+            // u = 0x58 + digit*0x10; x steps by the 16px coin cell stride.
+            assert_eq!(cell.u, COIN_U_BASE + cell.digit * 0x10);
+            assert_eq!(cell.x_offset, cell.cell as i16 * COIN_CELL_STRIDE);
+        }
+    }
+
+    #[test]
+    fn single_digit_cell_patches_the_8px_u_column() {
+        let d = single_digit_cell(7);
+        assert_eq!((d.widget, d.digit, d.u), (NUMBER_WIDGET, 7, 7 * 8));
+    }
+
+    #[test]
+    fn number_field_never_exceeds_eight_cells() {
+        // 8-digit maximum fills the whole field; a 9th place would overflow it,
+        // matching the fixed 10^7 top divisor.
+        let full = right_aligned_number_cells(98_765_432);
+        assert_eq!(full.len(), DIGIT_FIELD_CELLS);
+        assert_eq!(
+            full.iter().map(|c| c.digit).collect::<Vec<_>>(),
+            vec![9, 8, 7, 6, 5, 4, 3, 2]
+        );
+    }
+
+    // Synthetic (non-Sony) score tables: distinct values so an off-by-one in
+    // the index math is visible. Sizes match the retail overlay tables.
+    const COMBO_TBL: [i32; 20] = [
+        0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190,
+    ];
+    const HEALTH_TBL: [i16; 11] = [0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000];
+
+    #[test]
+    fn combo_index_clamps_at_nineteen() {
+        assert_eq!(baka_combo_index(0), 0);
+        assert_eq!(baka_combo_index(19), 19);
+        // 20 and above pin to 0x13 (the `slti ..,0x14` boundary).
+        assert_eq!(baka_combo_index(20), BAKA_COMBO_MAX);
+        assert_eq!(baka_combo_index(255), BAKA_COMBO_MAX);
+    }
+
+    #[test]
+    fn round_score_indexes_combo_bonus() {
+        let s = baka_round_score(5, &COMBO_TBL, 0, &HEALTH_TBL);
+        assert_eq!(s.combo_gain, 50);
+        // A 25-hit combo saturates at slot 19.
+        let s = baka_round_score(25, &COMBO_TBL, 0, &HEALTH_TBL);
+        assert_eq!(s.combo_gain, 190);
+    }
+
+    #[test]
+    fn round_score_pays_flat_perfect_bonus_at_full_hp() {
+        // End-of-round HP still at HP_START (0xc80) is the perfect-clear path.
+        let s = baka_round_score(0, &COMBO_TBL, HP_START, &HEALTH_TBL);
+        assert_eq!(s.bonus_gain, BAKA_PERFECT_BONUS);
+    }
+
+    #[test]
+    fn round_score_scales_bonus_by_health_band() {
+        // hp / 0x140 (floor): 0x140 -> slot 1, 0x280 -> slot 2, 0x3ff -> slot 3.
+        assert_eq!(
+            baka_round_score(0, &COMBO_TBL, 0x140, &HEALTH_TBL).bonus_gain,
+            100
+        );
+        assert_eq!(
+            baka_round_score(0, &COMBO_TBL, 0x280, &HEALTH_TBL).bonus_gain,
+            200
+        );
+        assert_eq!(
+            baka_round_score(0, &COMBO_TBL, 0x3FF, &HEALTH_TBL).bonus_gain,
+            300
+        );
+        // Just below full HP takes the table path, not the perfect bonus.
+        let almost = baka_round_score(0, &COMBO_TBL, HP_START - 1, &HEALTH_TBL);
+        assert_ne!(almost.bonus_gain, BAKA_PERFECT_BONUS);
+    }
+
+    #[test]
+    fn round_score_out_of_range_index_is_inert() {
+        // Empty tables never panic; both increments fall back to zero.
+        let s = baka_round_score(5, &[], 0x500, &[]);
+        assert_eq!(s, BakaRoundScore::default());
     }
 }

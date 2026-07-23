@@ -145,8 +145,15 @@ Absolute `actor[+0x14..+0x18] = v1..v3` (Y mirror in `+0x2A` matches `v2`).
 | write | stride | what it is |
 |---|---|---|
 | `actor[+0xB0 + i] = byte(op[3+3*i])` | **1 byte** | VDF sub-entry index - the morph record this lane drives, read back by the morph stager `FUN_8001C604` |
-| `actor[+0xB8 + i*2] = (op[4+3*i] * DAT_1F800369) >> 3` | 2 bytes | the lane's **up**-ramp velocity |
-| `actor[+0xC8 + i*2] = (op[5+3*i] * DAT_1F800369) >> 3` | 2 bytes | the lane's **down**-ramp velocity |
+| `actor[+0xB8 + i*2] = (op[4+3*i] * DAT_1F80037D) >> 3` | 2 bytes | the lane's **up**-ramp velocity |
+| `actor[+0xC8 + i*2] = (op[5+3*i] * DAT_1F80037D) >> 3` | 2 bytes | the lane's **down**-ramp velocity |
+
+The scale byte is `DAT_1F80037D`, the per-frame speed scalar (the same one the
+render-mode table below reads), verified in the disassembly at case `0x0A`'s
+multiply: `lui 0x1f80; ori 0x314; lbu 0x69(t0)` resolves to `0x1F800314 + 0x69 =
+0x1F80037D`. The `0x0B` jump-table slot has **no distinct handler** - control
+falls straight to the continue-epilogue (the same shape as `0x22`), so a lane
+record only ever uses `0x0A`.
 
 The two ramp velocities are **per lane**, not one global rate: the envelope `FUN_80020740` reads them at `0xb8(a1)` / `0xc8(a1)` with `a1 = actor + lane*2`. The slot-index array is the odd one out at a **byte** stride, which is what gives the retail record room for eight lanes before `+0xB0 + i` runs into `+0xB8`.
 
@@ -246,7 +253,88 @@ facial animator `FUN_8004C7B4`; see
 [`battle-data-pack.md` § Facial animation tracks](../formats/battle-data-pack.md#facial-animation-tracks-entry-0x8c--0x98).)
 Engine hook: `MoveVmHost::move_image` (`crates/engine-vm/src/move_vm.rs`).
 
-(Cases beyond `0x3C` not listed here are documented in the function dump and follow the same pattern; consult `ghidra/scripts/funcs/80023070.txt` for the exhaustive list.)
+### Remaining opcodes
+
+The cases the sections above skip (`0x0C..0x2B` and `0x41..0x46`), decoded from
+`ghidra/scripts/funcs/80023070.txt`. `v1..vN` are `op[1]..op[N]`; sizes are u16
+words. Bare field writes follow the same shape as the sections above; the ones
+carrying structure are called out below the table.
+
+| op | size | effect |
+|---|---|---|
+| `0x0C` | 6 | `+0x74 = (v1<<24 \| 0x40000000) + v2 + (v3<<8) + (v4<<16)`; `+0x78 = v5` (composite control word) |
+| `0x0D` | 2 | `+0x90 = v1 << 3` (tween source X) |
+| `0x0E` | 2 | `+0x72 = v1` (scale X) |
+| `0x0F` | 2 | `+0x92 = v1 << 3` (tween source Y) |
+| `0x10` | 2 | `+0x42 = v1` |
+| `0x11` | 2 | `+0x94 = v1 << 3` (tween source Z) |
+| `0x12` | 2 | `+0x7A = v1` (scale Z) |
+| `0x13` | 0x10 | render-mode-6 keyframe-mesh child - see below |
+| `0x14` | 5 | `+0xC0/+0xC2/+0xC4/+0xC6 = v1..v4 << 3` (duration + colour channels) |
+| `0x15` | 2 | `+0x52 = v1`; if `v1 & 0x400` also clears actor flag bit `0x80` |
+| `0x17` | 2 | **battle-overlay extension escape** - see below |
+| `0x18` | 2 | loop-open A: `+0x88 = PC`, `+0x8C = v1` (counter) |
+| `0x19` | 1/2 | loop-back A - see below |
+| `0x1A` | 2 | loop-open B: `+0x8A = PC`, `+0x8E = v1` |
+| `0x1B` | 1/2 | loop-back B (mirror of `0x19` on `+0x8E`/`+0x8A`) |
+| `0x1C` | 2 | `+0xCA = v1 << 3` (beam length channel) |
+| `0x1D` | 2 | `DAT_8007B6DE = v1` (a global, not an actor field) |
+| `0x1E` | 8 | render-mode-4 VRAM-beam setup: `+0x5A = 4`, `+0xC4/+0xCC..+0xD6 = v1..v7` |
+| `0x1F` | 8 | morph install: `+0x9E \|= byte`, `+0xB0/+0xB2/+0xA8/+0xAA/+0xAC/+0xAE = v2..v7` |
+| `0x20` | 3 | **indirect call** `(*(gp+0x714))(actor, v1, v2)` - a per-build function-pointer hook |
+| `0x21` | 7 | per-id record write to `DAT_8007BE60 + v1*0xC` (5 halfwords + i32); `+0x6D = v1` |
+| `0x22` | 1 | continue-epilogue (no-op that advances PC) |
+| `0x23` | 0xD | render-mode-2 child spawn (`+0x9E = v1 \| 0x4000`) + tween block |
+| `0x24` | 3 | `+0xA8 += v1; +0xAC += v1; +0xAA += v2; +0xAE += v2` (sprite pos/UV double-add) |
+| `0x25` | 2 | **spawn child from the prescript stager** - see below |
+| `0x26` | 5 | `+0xA8/+0xAA/+0xAC/+0xAE = v1..v4` (absolute sprite pos/UV) |
+| `0x27` | 3 | `+0xB0 = v1; +0xB2 = v2` |
+| `0x28` | 2 | `+0x9A += v1` (tween scale Z add) |
+| `0x29` | 2 | `+0x96 = v1` (tween scale X, no shift) |
+| `0x2A` | 2 | `+0x9A = v1 << 3` (tween scale Z) |
+| `0x2B` | 4 | `+0x90 = v1; +0x92 = v2; +0x94 = v3` (tween source, absolute) |
+| `0x3D` | 3 + 6*count | keyframe-mesh LERP + load - see below |
+| `0x3E` | 2 | `+0x22 = v1` (morph interpolation cursor, 12-bit) |
+| `0x3F` | 2 | `+0xD0 = v1` |
+| `0x41` | 2 | `+0xB2 = v1` |
+| `0x42` | 0xF | render-mode-2 child spawn variant (`+0x9E = v1 \| 0x2000`) + tween block |
+| `0x43` | 1 | `+0x86 \|= 0x2000` |
+| `0x44` | 4 | `+0x9E = v1; +0x68 = v2; +0x6A = v3 << 3` |
+| `0x45` | 8 | render-mode-7 matrix/billboard setup: `+0x5A = 7`, `+0xC4/+0xCC/+0xCE/+0xD4/+0xD6/+0xD0/+0xD2 = v1..v7` |
+| `0x46` | 4 | tween-delta seed: `+0x94/+0x96 = +0x92`, `+0x98 = v1 - +0x94`, `+0x9A = v2 - +0x92`, `+0xBC/+0xC0 = v3`, `+0xB8 = 1` |
+
+**The loop pair (`0x18`/`0x19`, `0x1A`/`0x1B`).** `0x18` latches the current PC
+into `+0x88` and a repeat count into `+0x8C`; `0x19` decrements `+0x8C` and, while
+the count has not underflowed (`& 0x4000` clear) and stays `<= 40000`, rewrites the
+PC back to `+0x88` (size 1, re-runs the body). When the count retires it advances
+past itself (size 2). `0x1A`/`0x1B` are the identical mechanism on the second
+register pair `+0x8A`/`+0x8E`, so a move program can nest two counted loops.
+
+**`0x25` spawn from the prescript stager.** Calls
+`FUN_80021B04(actor+0x14, actor+0x24, _DAT_8007B8D0 + offsets[v1], 0x1000)` - it
+seats a **child part** from the per-scene prescript stager table
+(`_DAT_8007B8D0`, [move-buffer record sources](#move-buffer-record-sources) #3),
+passing the parent's world position (`+0x14`) and render slots (`+0x24`) as the
+child origin. This is how one move program spawns another as a sub-actor.
+
+**`0x17` battle-overlay extension escape.** Calls `FUN_801F30C4(actor, v1)`, the
+battle-side sibling of `0x2F`'s field escape. `--explain` on `0x801F30C4` resolves
+the live body to the **battle overlay (0898)** (563 instructions; the
+`overlay_0897_801f30c4` copy is empty - the field overlay does not carry it), so
+`0x17` only has an effect while the battle overlay is resident, exactly as `0x2F`
+is field-resident-only. The two escapes are symmetric: `0x2F` → field ext VM,
+`0x17` → battle ext VM.
+
+**`0x13` / `0x3D` keyframe-mesh interpolation.** `0x13` seats a render-mode-6
+keyframe-mesh child (`+0x5A = 2`, `+0x56 = 4`, clears flag `0x2`, loads the
+`+0xA0`/`+0xA4` 24-bit endpoints and the `+0xB4..+0xBE` block). `0x3D` is the
+per-tick driver: when a prior keyframe is armed (`+0xCE != 0`) it LERPs the vertex
+buffer at `+0x4C` toward the next keyframe by the 12-bit cursor `+0x22`
+(`a + ((b - a) * cursor >> 12)`, six components per vertex), then latches the new
+keyframe (`+0xCE = PC`) and copies `count` vertices' worth of operand data in
+(size `3 + 6*count`). This is the move-VM authoring side of the mode-6
+keyframe-mesh blend the [part render-tail](#part-render-tail-the-0x5a-render-modes-fun_80021df4)
+consumes.
 
 ## Control flow
 

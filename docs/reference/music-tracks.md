@@ -45,39 +45,56 @@ Confidence is **Inferred** unless a track has been matched to its OST entry, in
 which case the OST columns are **Confirmed** against the published listing. The
 last three rows (highlighted in the source as uncertain) are flagged inline.
 
-## The disc-side join: the `music_01` bank IS the sound-test order
+## The disc-side join: the `music_01` bank in sound-test order
 
-The sound-test index (`#` below) attaches structurally to the disc: the
-`music_01` CDNAME block (extraction entries `990..=1071`, raw TOC `992..`,
-82 slots) is the global BGM bank, and **bank slot `i` = sound-test index
-`i`**. A field-VM op-`0x35` BGM id `>= 2000` resolves through the global
-pool (`FUN_800243F0`, see [script-vm § BGM lookup](../subsystems/script-vm.md#bgm-lookup-table)),
-so **global id `2000 + i` plays sound-test track `i`**. Pinned by:
+A field-VM op-`0x35` BGM id `>= 2000` resolves through the global pool
+(`FUN_800243F0`, see [script-vm § BGM lookup](../subsystems/script-vm.md#bgm-lookup-table)),
+and the pool order **is** the debug sound-test order, so **global id
+`2000 + i` plays sound-test track `i`**. That id-space join is proven by the
+per-scene op-`0x35` census (`engine-core/tests/scene_bgm_labels_disc.rs`):
+walking every scene MAN's scripts and joining each started id to this table
+lands the right label across the corpus - `town01` starts `2016` = `M14B`
+"Rim Elm theme", the three kingdom maps start `2000`/`2001` = `M01`/`M02`
+overworld pair, `bylon` starts `2019` = `M17` "Byron Monastery", Sol's floors
+start `M16` casino / `M23` bar / `M100` Sol / `M112` disco, `geremi` starts
+`2047` = `M102` "Jeremi", the Bio-Castle interiors start `2013` = `M13`.
 
-- **Per-scene op-`0x35` census** (`engine-core/tests/scene_bgm_labels_disc.rs`):
-  walking every scene MAN's scripts and joining each started id to this
-  table lands the right label across the corpus - `town01` starts `2016` =
-  `M14B` "Rim Elm theme", the three kingdom maps start `2000`/`2001` =
-  `M01`/`M02` overworld pair, `bylon` starts `2019` = `M17` "Byron
-  Monastery", Sol's floors start `M16` casino / `M23` bar / `M100` Sol /
-  `M112` disco, `geremi` starts `2047` = `M102` "Jeremi", the Bio-Castle
-  interiors start `2013` = `M13`.
-- **Pochi alignment**: the bank's four placeholder-filled slots (extraction
+The **physical** `music_01` bank, however, is not a single linear PROT run.
+Sound-test index maps onto two contiguous extraction ranges with a 2-entry
+gap between them:
+
+- indices `0..=67`  -> extraction PROT `988 + index` (`988..=1055`);
+- a 2-entry gap - extraction `1056` (a VAB-only sound bank, no score) and
+  `1057` (an entry not in the sound-test list);
+- indices `68..=80` -> extraction PROT `990 + index` (`1058..=1070`).
+
+The low range starts at extraction **988**, not 990: the first two tracks
+(`M01`/`M02`) live in the entries whose `prot-extract` filename label reads
+`monster_test`, because the `music_01` CDNAME `#define` number is a *raw* TOC
+index and the named content sits two entries earlier (the +2 filename skew,
+see [`../formats/cdname.md`](../formats/cdname.md)). Pinned by on-disc SEQ
+residency (`engine-core/tests/music_bank_residency_disc.rs`):
+
+- **Pochi alignment**: the four placeholder-filled slots (extraction
   `1066..=1069`) land exactly on the four dev-leftover rows (#76..=79 - the
-  M13 flute, `M117`, `MPIANO`, `LEVELUP`), removed from the retail NA disc
-  but still holding their sound-test slots.
-- **Bank copies**: the battle themes (#26..) and title theme (#65)
-  byte-match their `sound_data2` boot/battle-bank copies (extraction
-  879..884), the banks those cues actually stream from.
+  M13 flute, `M117`, `MPIANO`, `LEVELUP`), still holding their sound-test
+  slots in the retail NA disc.
+- **Battle-bank copies**: the ten `sound_data2` boot/battle-bank SEQ copies
+  (extraction `877..886`) resolve, under this map, to exactly the ten
+  battle/boss themes (#26 Battle 1, #27 Battle 2, #28 Boss 1, #30 Songi,
+  #31 Cort 1, #32 Boss 2, #51 Koru 2, #61 Juggernaut final, #67 Vahn-Saryu,
+  #73 Wild Arms) - a coherent battle bank only when the low range is based at
+  988. (The title #65 is at extraction `1053`; it is **not** in the battle
+  bank.)
 
-Slot 81 (extraction `1071`) is a spare past the last sound-test row. Scenes
-carry **no local SEQ data** - every SEQ stream on the disc lives in this
-bank + the `sound_data2` banks (+ the `monster_test` dev bank and
+Scenes carry **no local SEQ data** - every SEQ stream on the disc lives in
+this bank + the `sound_data2` banks (+ the `monster_test` dev bank and
 `teien`'s scene-local copy of `M01`) - so the scene-local id space
-(`< 2000`) is the rare exception. The engine's
-resolver is `legaia_engine_core::music_labels` (`label_for_bgm_id` /
-`label_for_prot_entry`); the play-window HUD names the playing track and
-the asset-viewer `seq` command names a bank slot's file.
+(`< 2000`) is the rare exception. The engine's resolver is
+`legaia_engine_core::music_labels` (`prot_entry_for_bgm_id` /
+`label_for_bgm_id` / `label_for_prot_entry`), which owns the piecewise map;
+the play-window HUD names the playing track and the asset-viewer `seq`
+command names a bank slot's file.
 
 ## Notable entries
 

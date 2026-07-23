@@ -17,7 +17,7 @@ Retail computes the mapping once at VAB open: `FUN_80068D94` (`SsVabOpenHead`) w
 
 The distinction is load-bearing on this disc: 66 of the 217 wrapped PROT-entry banks - 43 of the 77 `music_01` banks - author *sparse* (non-contiguous) used-program sets, so indexing the packed pages with the raw program number mis-tones or silently drops most of their programs. The engine expands the pages into slot space at upload (`engine-audio::VabBank::upload`); the law is asserted corpus-wide by the disc-gated `engine-audio/tests/real_vab_program_mapping.rs`.
 
-Retail quirk, not reproduced: the rank counter is stored *before* the used check increments it, so a retail program-change to an unused slot aliases onto the next used slot's page (and past the last used slot, indexes garbage beyond the tone region). The engine resolves unused slots to nothing instead.
+Retail quirk, reproduced: the rank counter is stored *before* the used check increments it, so a program-change to an unused slot aliases onto the next used slot's page. The engine reproduces this - the unused slot borrows that page while keeping its own `ProgAtr` mvol/mpan - because real BGM exercises it (e.g. `music_01` PROT 868 program 5 and PROT 996 program 19 select gap slots that retail plays via the alias; `engine-audio/tests/real_seq_program_change_coverage.rs` pins the census and the resolution). The one case *not* reproduced is a program-change past the last used slot, where retail's index runs beyond the tone region and reads garbage: the engine leaves those slots empty (silent) rather than replay undefined bytes.
 
 ### Tone attributes the engine uses (and the ones it can ignore)
 

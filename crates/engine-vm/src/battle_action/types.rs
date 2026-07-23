@@ -392,8 +392,18 @@ pub struct BattleActor {
     /// `ctx.hit_counter >= hit_count_bound`).
     pub hit_count_bound: u8,
     /// `+0x21C` - per-actor render flag - `0xFF` while hidden by summon
-    /// fade, `0x02` while captured, `0` otherwise.
+    /// fade, `0x02` while captured, `0` otherwise. The target-select cursor
+    /// ([`crate::battle_action::target_cursor_highlight`]) also drives it as a
+    /// brightness level: `5` on the pointed-at monster, `200` on the others.
     pub render_flag: u8,
+    /// `+0x4` - per-actor mesh colour/tint word fed to the battle actor
+    /// renderer. The target-select cursor writes `0x20080200` (bright) or
+    /// `0x00401004` (dimmed); the summon fade clears it to `0`.
+    pub render_color: u32,
+    /// `+0xC` - per-actor mesh brightness/scale word (`0x1000` = the neutral
+    /// q12 unit). The target-select cursor sets it to `0x1000` when the cursor
+    /// is up and `0` when it retires.
+    pub render_scale: u32,
     /// `+0x46` - facing angle (i12 in `0xFFF` range; written from bearing
     /// checks).
     pub facing_angle: u16,

@@ -192,6 +192,20 @@ The sound subsystem init / `.dpk` loader. Documented under [sound-driver path-st
 
 Builds paths under the `sound\` prefix; the XA / `.pac` / `STR` consumer. Same dev/retail split as the field loader. Plays alongside `FUN_8001FA88` for "sound-but-not-bank" assets.
 
+## Sidecar-footprint helper (`FUN_80020310`)
+
+`FUN_80020310(_, base_idx)` returns the combined **sector** footprint of three
+consecutive raw TOC entries:
+`FUN_8003E68C(base_idx) + FUN_8003E68C(base_idx+1) + FUN_8003E68C(base_idx+2)`.
+The per-entry helper `FUN_8003E68C(idx)` reads the in-RAM TOC at `0x801C70F0` and
+returns `toc[idx+3] - toc[idx+2]` = entry `idx`'s size in sectors (the same
+[PROT TOC math](../formats/prot.md)). The three entries are a scene's `.MAP` /
+`.PCH` / event-script sidecar triple (raw block base `+0/+1/+2`; see
+[field/town loader](#field--town-scene-loader-fun_8001f7c0--fun_800255b8)), so the
+sum is how many sectors those sidecars occupy on disc - what a caller sizes a
+staging read against before streaming them into the per-scene buffer.
+`see ghidra/scripts/funcs/80020310.txt`.
+
 ## Top-level extraction pipeline
 
 `legaia-extract` (the binary in `crates/extract`) drives the offline preservation pipeline: verify → disc → PROT → categorize → streaming-format extract → TIM → PNG. See [`tooling/extraction.md`](../tooling/extraction.md) for the per-stage CLI invocations.

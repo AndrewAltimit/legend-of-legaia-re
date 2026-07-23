@@ -895,6 +895,240 @@ pub fn score_thousands_glyph_u(score: i32) -> i8 {
     ((score / 1000) * 8 - 0x30) as i8
 }
 
+// ------------------------------------------------------------ HUD kernels
+//
+// The overlay draws its whole HUD through the shared textured-quad emitter
+// (`FUN_801d2f38`, an engine-ui concern). These functions carry the *arithmetic*
+// those draws are parameterised by - the value a widget's texture-U / screen-x /
+// CLUT is patched to - which is disc-derived game logic, not rendering. Each is
+// the computational content of a HUD render routine; the quad emit stays a host
+// job, exactly as [`step_mark_effect_spawn`] / [`score_thousands_glyph_u`]
+// already split `FUN_801d3fd0` / `FUN_801d3e28`.
+
+/// PORT: FUN_801d32f8 - the multi-digit number renderer's decimal split.
+///
+/// Retail walks eight decimal places most-significant first, storing the running
+/// quotient `value / 10^(7-i)` only when it is non-zero (leading slots stay at
+/// its `-1` sentinel and draw nothing), then per drawn slot rewrites one HUD
+/// widget's texture-U (via [`dance_score_digit_u`] / [`dance_level_digit_u`]) and
+/// x before emitting it. This is the split: `Some(digit)` per drawn slot,
+/// `None` for a suppressed leading zero. `0` renders as no digits at all, matching
+/// the retail sentinel (the drawn-slot test is "quotient non-zero").
+pub fn dance_number_digits(value: u32) -> [Option<u8>; 8] {
+    let mut out = [None; 8];
+    let mut place = 10_000_000u32; // 10^7 - the leading of eight digit slots
+    for slot in out.iter_mut() {
+        let quotient = value / place;
+        if quotient != 0 {
+            *slot = Some((quotient % 10) as u8);
+        }
+        place /= 10;
+    }
+    out
+}
+
+/// PORT: FUN_801d32f8 style-A digit glyph-U (the score boxes, widget `1`):
+/// `digit * 0x10` - each score glyph is 16 texels wide, drawn at a 16-px x step.
+pub fn dance_score_digit_u(digit: u8) -> u8 {
+    digit * 0x10
+}
+
+/// PORT: FUN_801d32f8 style-B digit glyph-U (widget `0x21`, the narrow counter):
+/// `digit * 8 + 0x40` - 8-texel glyphs offset `0x40` into the page, 8-px x step.
+pub fn dance_level_digit_u(digit: u8) -> u8 {
+    digit * 8 + 0x40
+}
+
+/// Beat-track CLUT ids (`FUN_801d2524`): the caps + body idle palette.
+pub const BEAT_TRACK_CLUT_IDLE: u16 = 0x7d08;
+/// Beat-track combo-window flash palette (caps + body, on the combo slot).
+pub const BEAT_TRACK_CLUT_COMBO: u16 = 0x7d0d;
+/// Beat-track scrolling-note palette.
+pub const BEAT_TRACK_CLUT_NOTE: u16 = 0x7d0e;
+/// Intra-beat phase below which the combo slot flashes (`FUN_801d2524`: `< 0x46`).
+pub const COMBO_FLASH_WINDOW: u32 = 0x46;
+
+/// PORT: FUN_801d2524 - the beat-track's combo-slot mask. The beat index is
+/// masked to 8 once the dancer has promoted a level (`gauge / 1000 > 0`), else 4,
+/// so the flash + note read-out cadence widens on the higher rows.
+pub fn dance_beat_level_mask(level: u32) -> u32 {
+    if level > 0 { 7 } else { 3 }
+}
+
+/// PORT: FUN_801d2524 - the combo-window flash test: the beat track lights its
+/// caps + body ([`BEAT_TRACK_CLUT_COMBO`]) on the masked combo slot inside the
+/// flash window, else it stays [`BEAT_TRACK_CLUT_IDLE`].
+pub fn dance_combo_window_bright(beat: u32, level: u32, frac: u32) -> bool {
+    beat & dance_beat_level_mask(level) == 3 && frac < COMBO_FLASH_WINDOW
+}
+
+/// PORT: FUN_801d2524 - the scrolling note's screen-x. Note `i` sits at
+/// `base_x + i*16`, scrolled left by the intra-beat fraction
+/// (`(frac * 16) / BEAT_PERIOD + 5`) and a fixed 4-texel inset, so the row of
+/// notes slides one 16-px cell per beat toward the judge line.
+pub fn dance_beat_track_note_x(base_x: i32, i: u32, frac: u32) -> i32 {
+    base_x + (i as i32) * 16 - ((frac * 16 / BEAT_PERIOD) as i32 + 5) - 4
+}
+
+/// One of the two voices a good-step sting keys (`FUN_801d3d78`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DanceStingVoice {
+    /// Voice id handed to the SPU key-on primitive (`0x12` / `0x13`).
+    pub voice: u16,
+    /// Tone within the sting's program (`2r` / `2r + 1`).
+    pub tone: i16,
+    /// Note the voice is keyed at (`0x3c + r`).
+    pub note: i16,
+}
+
+/// PORT: FUN_801d3d78 - the on-beat "good step" sting. A judged direction fires
+/// **no** ring cue; instead one of three stings (`r = rand() % 3`) keys two
+/// voices together through the SPU key-on primitive (`FUN_80065034`): voice
+/// `0x12` at tone `2r` and voice `0x13` at tone `2r + 1`, both at note `0x3c + r`
+/// (retail takes the volume from the config global `DAT_80084580`). Returns the
+/// two voice descriptors; the key-on itself is the audio host's.
+pub fn dance_hit_sting_voices(r: u16) -> [DanceStingVoice; 2] {
+    let note = 0x3c + r as i16;
+    [
+        DanceStingVoice {
+            voice: 0x12,
+            tone: (2 * r) as i16,
+            note,
+        },
+        DanceStingVoice {
+            voice: 0x13,
+            tone: (2 * r + 1) as i16,
+            note,
+        },
+    ]
+}
+
+/// The sequence-clear ("Good!") banner and its two flanking star sparkles
+/// (`FUN_801d40dc`). The two stars carry the press's accuracy weight - retail
+/// stores it into each star actor's `+0x72`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GoodBannerSpawns {
+    /// The "Good!" banner sprite (id `0xb`) at screen centre.
+    pub banner: crate::baka_fighter::EffectSpawnSpec,
+    /// The two star sparkles (sprite id `0x16`) flanking the banner.
+    pub stars: [crate::baka_fighter::EffectSpawnSpec; 2],
+    /// The accuracy weight stamped into each star's `+0x72`.
+    pub weight: u16,
+}
+
+/// PORT: FUN_801d40dc - spawn the sequence-clear banner + two stars. Retail
+/// issues three `FUN_801d3fd0` spawns - `(0xa0, 0x90, sprite 0xb)` for the banner
+/// and `(0x68, 0x90, sprite 0x16)` / `(0xd8, 0x90, sprite 0x16)` for the stars
+/// (the banner centred, the stars `0x38` to either side) - then stamps the
+/// accuracy `weight` into each star's `+0x72`. The spawn records go through the
+/// same primitive as [`step_mark_effect_spawn`].
+pub fn good_banner_spawn(weight: u16) -> GoodBannerSpawns {
+    GoodBannerSpawns {
+        banner: step_mark_effect_spawn(0xa0, 0x90, 0xb),
+        stars: [
+            step_mark_effect_spawn(0x68, 0x90, 0x16),
+            step_mark_effect_spawn(0xd8, 0x90, 0x16),
+        ],
+        weight,
+    }
+}
+
+/// The intro-cue id the count-in banner fires once, when it crosses into its
+/// hold segment (`FUN_801d2d98`, into the runtime SFX bank; see `sfx-table.md`).
+pub const COUNTIN_INTRO_CUE: u16 = 0x200;
+
+/// The count-in banner's slide / hold / fade envelope for one frame
+/// (`FUN_801d2d98`). The two banner halves emit through the hub sprite emitter
+/// [`FUN_801d2f38`]; this is the arithmetic that emit is fed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CountInBanner {
+    /// Horizontal offset of the sliding halves from screen centre (`0xa0`); `0`
+    /// during the hold. Retail places the right half at `0xa0 + x_offset`, the
+    /// left at `0xa0 - x_offset`.
+    pub x_offset: i32,
+    /// Brightness passed to the emit, clamped `0..=0xff`. Halved for the two
+    /// sliding halves; full for the single held banner.
+    pub brightness: i32,
+    /// `true` = the single centred banner (widget `0x78`, opaque); `false` = the
+    /// two half-brightness sliding halves (widget `0x77`).
+    pub hold: bool,
+}
+
+/// PORT: FUN_801d2d98 - the count-in banner animator (`1 2 3 READY... GO!`).
+///
+/// Three segments keyed on the banner's own frame counter `frame`:
+/// **slide-in** (`frame < 0x1e`): the two halves fly in from `0xb4 - 6*frame`
+/// to centre at flat brightness `0x80`; **hold** (`0x1e..0x5a`): a single
+/// centred banner whose brightness ramps `((frame-0x1e)*0x7f)/0x1e + 0x80`
+/// (clamped `0xff`) - and the once-only intro cue [`COUNTIN_INTRO_CUE`] fires
+/// on entry; **slide-out** (`>= 0x5a`): the halves fly back out `6*(frame-0x5a)`
+/// as brightness fades `200 - ((frame-0x5a)*0x7f)/0x1e`. The emit itself and the
+/// cue-fire latch (`DAT_801d5134`) are the host's; this returns the envelope.
+pub fn dance_countin_banner_envelope(frame: i32) -> CountInBanner {
+    let (mut x_offset, mut brightness, hold);
+    if frame < 0x1e {
+        x_offset = 0xb4 - 6 * frame;
+        brightness = 0x80;
+        hold = false;
+    } else {
+        x_offset = 0;
+        brightness = ((frame - 0x1e) * 0x7f) / 0x1e + 0x80;
+        hold = true;
+    }
+    if frame > 0x59 {
+        x_offset = 6 * (frame - 0x5a);
+        brightness = 200 - ((frame - 0x5a) * 0x7f) / 0x1e;
+        // The slide-out overrides the hold path back to two sliding halves.
+        return CountInBanner {
+            x_offset,
+            brightness: brightness.clamp(0, 0xff) / 2,
+            hold: false,
+        };
+    }
+    brightness = brightness.clamp(0, 0xff);
+    if !hold {
+        brightness /= 2;
+    }
+    CountInBanner {
+        x_offset,
+        brightness,
+        hold,
+    }
+}
+
+/// PORT: FUN_801d4098 - the per-dancer actor clip-driver gate. Retail hands the
+/// dancer to the shared clip driver `FUN_800204f8` only when its spin counter
+/// (`+0x5c`, the groovy-move turns left) is positive **or** its flag word
+/// (`+0x10`) carries bit `0x1000`. That predicate is the whole function; the
+/// driver call is the animation host's. `spin` is the signed spin counter,
+/// `flags` the actor flag word.
+pub fn dance_clip_driver_gate(spin: i16, flags: u32) -> bool {
+    spin > 0 || (flags & 0x1000) != 0
+}
+
+/// PORT: FUN_801d03c4 - the dancer face-stamp's rig selector. The face blit picks
+/// a per-dancer VRAM strip + eye/mouth frame table by rig index; in the qualifier
+/// (mode 0) the overlay remaps dancer `2 -> 3` and `1 -> 2`, so the rig id equals
+/// the dancer's kind (the qualifier cast is kinds `0/2/3`). Dancers past `3` are
+/// not stamped (retail early-returns); a rig `>= 5` has no jump-table case.
+/// Returns the rig index; the pose-unchanged latch (`DAT_801d56cc`) and the two
+/// `MoveImage` blits are the render host's.
+pub fn dance_face_rig(mode: DanceMode, dancer: usize) -> Option<usize> {
+    if dancer >= 4 {
+        return None;
+    }
+    let rig = if mode == DanceMode::Qualifier {
+        match dancer {
+            2 => 3,
+            1 => 2,
+            d => d,
+        }
+    } else {
+        dancer
+    };
+    (rig < 5).then_some(rig)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1264,5 +1498,157 @@ mod tests {
         assert_eq!(score_thousands_glyph_u(1000), -0x28);
         assert_eq!(score_thousands_glyph_u(6000), 0);
         assert_eq!(score_thousands_glyph_u(9999), 0x18);
+    }
+
+    // ---------------------------------------------------------- HUD kernels
+
+    #[test]
+    fn number_split_suppresses_leading_zeros_and_zero_draws_nothing() {
+        // Right-aligned, leading blanks are None; the drawn digits are the value.
+        assert_eq!(
+            dance_number_digits(1234),
+            [None, None, None, None, Some(1), Some(2), Some(3), Some(4)]
+        );
+        assert_eq!(
+            dance_number_digits(50),
+            [None, None, None, None, None, None, Some(5), Some(0)]
+        );
+        // The retail sentinel means a zero value draws no digit at all.
+        assert_eq!(dance_number_digits(0), [None; 8]);
+        // 10^7 - 1 fills the low seven slots (the eighth place is still zero).
+        assert_eq!(
+            dance_number_digits(9_999_999),
+            [
+                None,
+                Some(9),
+                Some(9),
+                Some(9),
+                Some(9),
+                Some(9),
+                Some(9),
+                Some(9)
+            ]
+        );
+    }
+
+    #[test]
+    fn digit_glyph_u_steps_match_the_two_widget_styles() {
+        assert_eq!(dance_score_digit_u(0), 0x00);
+        assert_eq!(dance_score_digit_u(9), 0x90);
+        assert_eq!(dance_level_digit_u(0), 0x40);
+        assert_eq!(dance_level_digit_u(9), 0x88);
+    }
+
+    #[test]
+    fn beat_track_mask_widens_with_the_level() {
+        assert_eq!(dance_beat_level_mask(0), 3);
+        assert_eq!(dance_beat_level_mask(1), 7);
+        assert_eq!(dance_beat_level_mask(2), 7);
+    }
+
+    #[test]
+    fn combo_window_flashes_on_the_masked_slot_inside_the_window() {
+        // Level 0 masks to 4: beat 3 on the beat flashes, past 0x46 does not.
+        assert!(dance_combo_window_bright(3, 0, 0));
+        assert!(dance_combo_window_bright(3, 0, 0x45));
+        assert!(!dance_combo_window_bright(3, 0, 0x46));
+        assert!(!dance_combo_window_bright(2, 0, 0));
+        // Level 1 masks to 8: `beat & 7 == 3` flashes every 8th beat (3, 11, ...),
+        // so beat 3 is a combo slot but beat 7 - a level-0 slot - no longer is.
+        assert!(dance_combo_window_bright(3, 1, 0));
+        assert!(dance_combo_window_bright(11, 1, 0));
+        assert!(!dance_combo_window_bright(7, 1, 0));
+        assert!(!dance_combo_window_bright(5, 1, 0));
+    }
+
+    #[test]
+    fn beat_track_note_scrolls_one_cell_per_beat() {
+        // On the beat (frac 0): note i sits at base + i*16 - 9.
+        assert_eq!(dance_beat_track_note_x(120, 0, 0), 120 - 9);
+        assert_eq!(dance_beat_track_note_x(120, 1, 0), 120 + 16 - 9);
+        // Across a full beat the fraction subtracts a further ~16 texels: note 1
+        // has scrolled almost onto note 0's on-beat slot.
+        let edge = dance_beat_track_note_x(120, 1, BEAT_PERIOD - 1);
+        assert!(edge < dance_beat_track_note_x(120, 1, 0));
+        assert!(edge <= dance_beat_track_note_x(120, 0, 0) + 1);
+    }
+
+    #[test]
+    fn hit_sting_keys_two_voices_per_random_pick() {
+        for r in 0..3u16 {
+            let [a, b] = dance_hit_sting_voices(r);
+            assert_eq!((a.voice, b.voice), (0x12, 0x13));
+            assert_eq!((a.tone, b.tone), ((2 * r) as i16, (2 * r + 1) as i16));
+            assert_eq!((a.note, b.note), (0x3c + r as i16, 0x3c + r as i16));
+        }
+    }
+
+    #[test]
+    fn good_banner_places_banner_centre_and_stars_symmetric() {
+        let s = good_banner_spawn(0x0abc);
+        assert_eq!(s.weight, 0x0abc);
+        assert_eq!(s.banner.sprite_id, 0xb);
+        assert_eq!((s.stars[0].sprite_id, s.stars[1].sprite_id), (0x16, 0x16));
+        // The two stars flank the banner symmetrically (0x38 either side, then
+        // the shared <<3 spawn convention).
+        let (bx, lx, rx) = (s.banner.x, s.stars[0].x, s.stars[1].x);
+        assert_eq!(rx - bx, bx - lx);
+        assert_eq!(bx, 0xa0 << 3);
+    }
+
+    #[test]
+    fn face_rig_remaps_only_the_qualifier_cast() {
+        // Qualifier: dancer -> kind (2 -> 3, 1 -> 2), so rig id == dancer kind.
+        assert_eq!(dance_face_rig(DanceMode::Qualifier, 0), Some(0));
+        assert_eq!(dance_face_rig(DanceMode::Qualifier, 1), Some(2));
+        assert_eq!(dance_face_rig(DanceMode::Qualifier, 2), Some(3));
+        // Other modes stamp the dancer index straight through.
+        assert_eq!(dance_face_rig(DanceMode::Finals, 1), Some(1));
+        assert_eq!(dance_face_rig(DanceMode::HowTo, 3), Some(3));
+        // Dancers past the fourth are not stamped.
+        assert_eq!(dance_face_rig(DanceMode::FreePlay, 4), None);
+    }
+
+    #[test]
+    fn countin_banner_slides_holds_then_fades() {
+        // Slide-in: two half-bright halves flying in from 0xb4 toward centre.
+        let s0 = dance_countin_banner_envelope(0);
+        assert!(!s0.hold);
+        assert_eq!(s0.x_offset, 0xb4);
+        assert_eq!(s0.brightness, 0x80 / 2);
+        let s29 = dance_countin_banner_envelope(29);
+        assert_eq!(s29.x_offset, 0xb4 - 6 * 29);
+        assert!(!s29.hold);
+
+        // Hold: single opaque centred banner, brightness ramps from 0x80 and
+        // clamps at 0xff; the intro cue fires on entry (frame 0x1e).
+        let h = dance_countin_banner_envelope(0x1e);
+        assert!(h.hold);
+        assert_eq!(h.x_offset, 0);
+        assert_eq!(h.brightness, 0x80);
+        assert_eq!(COUNTIN_INTRO_CUE, 0x200);
+        // Deep into the hold the ramp saturates at full brightness.
+        assert_eq!(dance_countin_banner_envelope(0x59).brightness, 0xff);
+
+        // Slide-out: two halves again, flying back out as brightness fades.
+        let o = dance_countin_banner_envelope(0x5a);
+        assert!(!o.hold);
+        assert_eq!(o.x_offset, 0);
+        assert_eq!(o.brightness, 200 / 2);
+        let o_late = dance_countin_banner_envelope(0x5a + 30);
+        assert!(o_late.x_offset > o.x_offset);
+        assert!(o_late.brightness < o.brightness);
+    }
+
+    #[test]
+    fn clip_driver_gate_fires_on_spin_or_flag() {
+        // A spinning dancer (groovy-move turns left) drives its clip.
+        assert!(dance_clip_driver_gate(1, 0));
+        // The 0x1000 flag bit alone drives it too.
+        assert!(dance_clip_driver_gate(0, 0x1000));
+        assert!(dance_clip_driver_gate(0, 0x1234));
+        // Neither: idle, no clip drive.
+        assert!(!dance_clip_driver_gate(0, 0));
+        assert!(!dance_clip_driver_gate(-1, 0x2000));
     }
 }

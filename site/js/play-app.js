@@ -503,6 +503,7 @@
       this.rt = newRuntime;
       this.stop();               /* the trapped loop is dead; clear its raf id */
       this._vrDrive = null;
+      this._audioUp = false;     /* fresh engine has no audio output yet */
       const st = this.enter(label);
       this.start();
       return st;
@@ -701,6 +702,11 @@
         dragging = true; lastX = e.clientX; lastY = e.clientY;
         this.canvas.focus();
         this.canvas.setPointerCapture(e.pointerId);
+        /* Autoplay backstop: a click on the canvas is a user gesture, so init
+         * the BGM output here too (the scene-pick click already tries) and
+         * always resume - browsers open the AudioContext suspended. Scene BGM
+         * then feeds itself through the engine's per-tick op-0x35 routing. */
+        this._enableAudio();
       });
       this.canvas.addEventListener('pointerup', (e) => {
         dragging = false;
@@ -1091,6 +1097,24 @@
 
     setPaused(on) { this.paused = !!on; }
     step() { this.stepOnce = true; }
+
+    /* Bring up the WebAudio BGM backend from inside a user gesture (browser
+     * autoplay policy). Idempotent: initialises the output once, then always
+     * resumes the AudioContext (browsers open it suspended even in a gesture).
+     * The scene's music plays itself - every engine tick routes the field VM's
+     * op-0x35 BGM events into the output - so there is nothing to start here.
+     * Tolerant of a stale cached WASM without the audio methods. */
+    _enableAudio() {
+      const rt = this.rt;
+      if (!rt || typeof rt.audio_init !== 'function') return;
+      try {
+        if (typeof rt.audio_ready === 'function' ? !rt.audio_ready() : !this._audioUp) {
+          rt.audio_init();
+          this._audioUp = true;
+        }
+        if (typeof rt.audio_resume === 'function') rt.audio_resume();
+      } catch (e) { console.warn('play audio enable', e); }
+    }
 
     /* A WASM trap (or any throw from an engine call) during the frame poisons
      * the engine instance. Stop the dead loop and hand the message to the page,

@@ -275,6 +275,25 @@ So only the bit-7-set half of a move's effect list reaches `pack1` / this pool;
 the bit-7-clear half is the move-VM effect-model path. The engine models the
 split at `engine-core::move_power::EffectListEntry` (`Spawn` vs `AltEffect`).
 
+**Second dispatch site - `FUN_801e22c8`.** The move-power lists are not the only
+producer. `FUN_801e22c8` (battle overlay, called twice by the battle effect
+driver `FUN_800402f4` - once with the neutral modulation colour `0x808080`, once
+with a coloured flash) runs the **identical bit-7 split** over a *different*
+effect list: a 5-byte-stride table at `0x801F6470`, indexed by its list-id
+argument. Per byte:
+
+- **bit 7 clear** → the same 3D path - gate `0x801F6418[id] != 0`, prototype
+  `0x801F6324[id]` staged via `FUN_80050ED4` at scale `0x1000`, plus a
+  `0x1DC`-tagged flash primitive emitted through `FUN_80058490`.
+- **bit 7 set** → `FUN_801DFDF0(id & 0x7F)` into this 2D pool.
+
+So the "trace call sites of `FUN_801DFDF0`" thread has two confirmed producers -
+the move-power `+0x12`/`+0x16` lists via `FUN_801e09f8`, and this per-move
+effect-list spawner via `FUN_801e22c8` - both funnelling the bit-7-set half into
+`pack1`. Provenance: `FUN_801e22c8 in PROT entry 0898`, see
+`ghidra/scripts/funcs/overlay_battle_action_801e22c8.txt` (the addresses above are
+read from its disassembly, not the C).
+
 ### Runtime pool layout (`_DAT_8007BD30`, 5008 bytes total)
 
 ```

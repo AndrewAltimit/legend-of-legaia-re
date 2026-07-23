@@ -384,6 +384,8 @@ The payout table is exactly 10 bytes - one per symbol id, the index range `FUN_8
 | `FUN_801d13e8` | win evaluation + payout-table lookup + bonus trigger - `overlay_slot_machine_801d13e8.txt` |
 | `FUN_801d1af4` | bonus-symbol "reach" scanner (presentation only) - `overlay_slot_machine_801d1af4.txt` |
 | `FUN_801d2cc0` | HUD widget sprite-quad rasteriser (3-record descriptor table `DAT_801d347c`) - `overlay_slot_machine_801d2cc0.txt` |
+| `FUN_801d2aa4` | payout-preview HUD: for each of the 5 lines draws the symbol icon (preview-order table `DAT_801d3784`, page selected by the arg) + its `DAT_801d3598` payout split into tens/units digits via `FUN_801d32c8` - `overlay_slot_machine_801d2aa4.txt` |
+| `FUN_801d32c8` | **single-digit glyph emitter** (render-track): builds one gouraud-textured `POLY_GT4` quad for the digit `(x, y, digit)` args - texpage `0x1D`, CLUT `0x7B42`, `U = digit * 0x10`, 16x16, semi-transparent (GP0 word `0x2c808080`, shade `0x70`/`0x80`) - into the prim buffer `_DAT_1f8003a0` (advanced `0x28`) and links it via `func_0x8003d2c4`. The digit-pair caller `FUN_801d2aa4` calls it per place. **Confirmed** from the field-by-field prim writes - `overlay_slot_machine_801d32c8.txt` |
 | `FUN_801d0fa8` | **reel cylinder** renderer: trig-table `y`/`z`, `RotTransPers4` quads, arithmetic symbol UVs, per-symbol row-490/491 CLUTs, depth-cue shade - `overlay_slot_machine_801d0fa8.txt` |
 | `FUN_801d08e4` | the **billboard pass**: medallions, lamps, reel-stop pedestals, marquee panel + mascots - `overlay_slot_machine_801d08e4.txt` |
 | `FUN_801d3380` | the **5 paylines** as `RTPS`-projected 3D line segments - `overlay_slot_machine_801d3380.txt` |
@@ -391,6 +393,10 @@ The payout table is exactly 10 bytes - one per symbol id, the index range `FUN_8
 | `FUN_801d069c` | marquee dot-buffer composer (scrolling blit; `msg < 0` clears) - `overlay_slot_machine_801d069c.txt` |
 | `FUN_801d3230` | marquee dot-buffer blit at a `(col, row)` - `overlay_slot_machine_801d3230.txt` |
 | `FUN_801d2914` | coin-readout digit renderer (screen space) - `overlay_slot_machine_801d2914.txt` |
+| `FUN_801d079c` | **bonus-rounds-remaining lamp indicator** (render-track): emits three 16x16 textured HUD sprites (`x = 0x230` step `0x10`, tpage `0x84`, CLUT `0x7A8D`) into `_DAT_1f8003a0`; the first `DAT_801d3cb0` of them (the bonus free-spin counter) draw at the bright/dim shade selected by `DAT_801d3c9c & 1` (the blink tick), the rest neutral, then link a trailing quad via `func_0x80059010` - `overlay_slot_machine_801d079c.txt` |
+| `FUN_801d30f8` | **attract-text column draw** (render-track): sets text attribute `DAT_80073f20 = 0xc`, then walks the 14-entry instruction-line pointer table `0x801d34b8` drawing each string via `func_0x80036888` at `(param1, param2)`, advancing y by `0xd` per line - `overlay_slot_machine_801d30f8.txt` |
+| `FUN_801d317c` | **UI panel quad** (render-track): emits one 168x48 `POLY_FT4` textured quad (tag `0x9000000`, colour `0x2c808080`, tpage/CLUT word `0x7b43`) at caller `(param1, param2)` into `_DAT_1f8003a0`, linked via `func_0x8003d2c4` - `overlay_slot_machine_801d317c.txt` |
+| `FUN_801d13c4` | **effectively empty**: a 3-iteration counter loop with no memory writes and no calls (loads the address of `DAT_801d3cc0` but never uses it); a dead stub - `overlay_slot_machine_801d13c4.txt` |
 | `FUN_800172c0` | the per-frame **scene camera** the machine's 3D emits project through (SCUS) |
 | `FUN_800195a8` | the **billboard projector** (SCUS): view-space centre + half-extent -> projected quad |
 | `FUN_8005bac8` / `FUN_8003d368` | `RotTransPers4` / `RTPS` (SCUS GTE wrappers) |

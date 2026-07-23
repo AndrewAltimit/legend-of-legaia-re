@@ -266,11 +266,19 @@ impl AudioBgmDirector {
         if let Some(loop_to) = self.loop_to {
             sequencer.set_loop_to(loop_to);
         }
-        // Cross-fade over ~30 frames (0.5 s at 60 Hz = 22050 SPU samples)
-        // if another sequencer is already playing; otherwise attach directly.
-        const CROSSFADE_SAMPLES: u32 = 22_050;
+        // Retail BGM changes are hard cuts (or short `SsSeqSetVol` ramps), not
+        // a serial cross-fade that fades the old track out to silence before
+        // the new one is even installed - that swallows the incoming track's
+        // intro. Swap immediately so the new track sounds from its first event,
+        // with only a brief click-guard fade-in on the SPU master. If nothing
+        // is playing, attach directly at full volume.
+        //
+        // ~2 frames at 60 Hz (44100 / 60 * 2). Long enough to avoid an onset
+        // pop, far too short to hide an intro (the old fade held it silent for
+        // 22050 samples = 0.5 s).
+        const TRANSITION_FADE_IN_SAMPLES: u32 = 1_470;
         if self.audio.sequencer_progress().is_some() && !self.paused {
-            self.audio.crossfade_to(sequencer, CROSSFADE_SAMPLES);
+            self.audio.swap_bgm(sequencer, TRANSITION_FADE_IN_SAMPLES);
         } else {
             self.audio.attach_sequencer(sequencer);
         }

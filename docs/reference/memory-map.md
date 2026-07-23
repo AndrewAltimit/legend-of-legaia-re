@@ -47,6 +47,7 @@ Plus the PSX-specific scratchpad at `0x1F800000-0x1F8003FF` (1 KB) which Legaia 
 | `0x8007BB98` | i32 | List-kernel persisted **selected row** (`gp+0x880`); clamped to `count-1` on rebuild. |
 | `0x8007BB9C` | u32 | Selected row's **class nibble** (`entry & 0xF000`) - the screen-id key `FUN_80034250` dispatches descriptions on. |
 | `0x8007BBA0` | i32 | List-kernel **row count** (mirrored from the allocator; bounds the sell-list scroll fix-up in `FUN_801DBD94`). |
+| `0x8007BB04` / `0x8007BB08` | ptr | Two `0x8000`-byte render scratch buffers allocated by `FUN_800271A8` via `FUN_80017888` (each guarded by a `== 0` first-use check). `0x8007BB08` is filled with a `0x4000`-entry `u16` depth ramp; the pair feeds the GTE / primitive-buffer reset (`FUN_8005B268` / `FUN_8003D1A4` / `FUN_8003D254`). See `ghidra/scripts/funcs/800271a8.txt`. |
 
 ## Game-mode state machine
 
@@ -302,6 +303,7 @@ The PSX has 1 KB of fast scratchpad RAM mapped here. Legaia uses the high end:
 | `0x1F800314` | i16[] | Inverted-Y mirror table (op 0x4C nibble-9 sub-E writes `-words[i]` here). |
 | `0x1F800393` | u8 | Per-frame tick byte. Global frame-time scalar. Read by op 0x4A `WAIT_FRAMES` and the 0xFFFF sentinel in op 0x4C nibble-C sub-B/C. Also subtracted from the title-attract countdown at `0x801EF16C` every tick (see [`subsystems/boot.md`](../subsystems/boot.md#tick-function)) and exposed via `World::tick_move_vms_with_delta` in the engine port. |
 | `0x1F800394` | u32 | **Field-VM transient flag word** (32-bit; **not** persisted - distinct from the saved story-flag bitmap at `0x80085600..0x80085800`, ops `FUN_8003CE08/CE34/CE64`). Script-VM bits are set/clear/tested by `GFLAG_SET` / `GFLAG_CLR` / `GFLAG_TST` (ops 0x2E / 0x2F / 0x30, `1 << (idx & 0x1f)` at `FUN_801DE840:5280/5284`); also gates op 0x4C nibble-4 sub-9's tristate dispatch via bits `0x01000000` / `0x02000000`. The **lower 16 bits** are re-seeded on every mode switch from `mode_table[_DAT_8007B83C].param` (`+0x14`) by `FUN_8001DCF8 @ 0x8001E17C` - its sole non-RMW writer (see [`save-screen.md`](../subsystems/save-screen.md)). Bit 0x40 is set by the scene-change packet `FUN_8001FD44` (a scene-transition-pending flag, **not** a "dialog active" lock - an earlier mislabel). |
+| `0x1F8003A0` | ptr | **Active primitive/packet write cursor** (`[0x1F800314]+0x8C`). The `POLY_*` emitters (`FUN_8003C43C` G4, `FUN_8003C510` G3, `FUN_8002BDC4` gradient tile, and the TMD per-primitive emitter `FUN_80027C6C`) allocate their packet here, post-increment by the packet size, then link it through `FUN_8003D2C4`. |
 | `0x1F8003E8` | u32 | Render-config block (op 0x46). |
 | `0x1F8003EC` | u8[] | Tile-flag bitmap base used by op 0x4C nibble-7 (rectangle SET/CLEAR over `+0x4000` offset). |
 | `0x1F8003F8` / `0x1F8003FA` | i16 | Camera-scroll values used by op 0x23 player path. |

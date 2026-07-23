@@ -43,6 +43,14 @@ if let Some(m) = mips_overlay::detect(buf) {
 }
 ```
 
+## Address attestation in overlay dumps
+
+A dumped function's *printed* addresses are trustworthy only when the dump's link base was recovered correctly; a filename prefix is not evidence of the base. Two failure modes recur across the battle / minigame overlay dumps and disqualify most raw addresses from being documented at their printed VA. The byte-match arbiter (`scripts/ghidra-analysis/classify-worklist.py --explain <addr>`) resolves the true image per address; trust its `image=` verdict, not the dump filename.
+
+- **Mis-recovered base.** The `bat_back_dat` (PROT 0896) dump family was imported at `0x801C5818` rather than the overlay's true `0x801C0000` load base (visible in the per-dump header as `[overlay_0896 base=0x801C5818]`). Its printed addresses are shifted, and any address above the overlay's real span reads *through* into the adjacent field (0897) and battle-action (0898) overlays. Running the arbiter over the 0896 address set resolves most entries to field(897) / battle(898) bodies, or to interior / shared-tail fragments (no `addiu sp,sp,-N` prologue, a body that exits via `j` into another routine's epilogue), not to a standalone `bat_back_dat` function. A dump whose header shows this base cannot be cited by its printed VA.
+
+- **Relocation-duplicate re-images.** The debug-menu (0971), fishing (0977 / 0978 "other_game") and menu (0899) overlays re-image a shared render / minigame library at a different base per game-mode context - the same `0900`<->`0901` / `0965`<->`0967` re-imaging pattern noted in [`functions.md`](../reference/functions.md). Their function bodies are byte-identical modulo relocation to already-dumped bodies in debug_menu(0970) / fishing(0972) / menu(0899); the arbiter reports each such address as a `DUPLICATE` of the canonical VA. Only `REAL` self-entry bodies at a recovered base attest a distinct function at their printed address.
+
 ## See also
 
 - [Static overlay-extraction pipeline](../tooling/static-overlay-pipeline.md) - extracts these (and the big scene overlays) from the disc at their recovered base, with identity attached from the PROT entry.

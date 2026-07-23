@@ -44,6 +44,27 @@
 /* Nested voice rows under an expanded SE bank. */
 .audio-list li.se-voice { background: var(--bg-code); padding-left: 1.5rem; }
 .audio-list li.se-voice .ai-idx { color: var(--text-muted); font-weight: 400; }
+/* Enriched name rows (BGM sound-test join). */
+.audio-list .ai-body { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.audio-list .ai-name { color: var(--text); font-weight: 500; }
+.audio-list .ai-name .st-id { color: var(--text-muted); font-weight: 400; margin-left: 0.4rem; }
+.audio-list .ai-sub { color: var(--text-muted); font-size: 0.75rem; }
+.audio-list li.is-unplayable { opacity: 0.5; }
+.audio-list li.is-unplayable .ai-idx { color: var(--text-muted); }
+.st-tag {
+  display: inline-block; margin-left: 0.4rem; padding: 0 0.35rem;
+  border: 1px solid var(--border); border-radius: 3px;
+  font-size: 0.68rem; color: var(--text-muted); vertical-align: middle;
+}
+/* Segmented view toggle: PROT entries vs. Sound Test. */
+.audio-view-toggle { display: flex; gap: 0; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.audio-view-toggle button {
+  background: var(--bg-card); color: var(--text-muted);
+  border: none; border-right: 1px solid var(--border);
+  padding: 0.3rem 0.7rem; font-family: inherit; font-size: 0.76rem; cursor: pointer;
+}
+.audio-view-toggle button:last-child { border-right: none; }
+.audio-view-toggle button.is-active { background: var(--accent); color: var(--bg); }
 
 .audio-toolbar {
   display: flex; gap: 0.75rem; align-items: center;
@@ -135,8 +156,12 @@
 
   <!-- BGM panel -->
   <div class="audio-panel is-active" data-panel="bgm">
+    <div class="audio-view-toggle" role="tablist" style="margin-bottom: 0.6rem; width: max-content;">
+      <button id="bgm-view-sound-test" class="is-active" type="button">&#x266B; Sound Test</button>
+      <button id="bgm-view-prot" type="button">PROT entries</button>
+    </div>
     <div class="audio-toolbar">
-      <input type="search" id="bgm-search" placeholder="Filter by PROT index…" autocomplete="off">
+      <input type="search" id="bgm-search" placeholder="Filter by name, id, context or PROT…" autocomplete="off">
       <span id="bgm-summary">&nbsp;</span>
       <span style="margin-left:auto; display: flex; gap: 0.6rem; align-items: center;">
         <label title="Post-mixer gain, applied after the SPU mix. Default 1x is the unscaled mixer output; raise it only if a quiet bank needs help." style="display: flex; gap: 0.3rem; align-items: center;">
@@ -147,9 +172,10 @@
         <button id="bgm-pause" type="button" disabled>&#x23F8; pause</button>
       </span>
     </div>
-    <ul class="audio-list" id="bgm-list"></ul>
+    <ul class="audio-list" id="sound-test-list"></ul>
+    <ul class="audio-list" id="bgm-list" style="display: none;"></ul>
     <p class="hint" style="margin-top: 0.5rem; font-size: 0.78rem;">
-      BGM playback drives the same clean-room SPU + SEQ stack the engine port uses - see <a href="subsystems/audio.html">audio</a>.
+      <strong>Sound Test</strong> lists the score the way the game's own debug menu does - by track name and sound-test number, from the curated <a href="reference/music-tracks.html">music-track table</a> joined structurally to the <code>music_01</code> bank. <strong>PROT entries</strong> is the raw view: every <code>VAB</code>+<code>SEQ</code> carrier on the disc, including the boot/battle duplicate copies that have no catalogued name. Playback drives the same clean-room SPU + SEQ stack the engine port uses - see <a href="subsystems/audio.html">audio</a>.
     </p>
   </div>
 
@@ -207,13 +233,17 @@
   const panels      = document.querySelectorAll('.audio-panel');
 
 
+  const bgmPanel    = document.querySelector('.audio-panel[data-panel="bgm"]');
   const bgmList     = document.getElementById('bgm-list');
+  const soundTestList = document.getElementById('sound-test-list');
   const bgmSummary  = document.getElementById('bgm-summary');
   const bgmSearch   = document.getElementById('bgm-search');
   const bgmStopBtn  = document.getElementById('bgm-stop');
   const bgmPauseBtn = document.getElementById('bgm-pause');
   const bgmGain     = document.getElementById('bgm-gain');
   const bgmGainVal  = document.getElementById('bgm-gain-value');
+  const bgmViewProtBtn = document.getElementById('bgm-view-prot');
+  const bgmViewSoundTestBtn = document.getElementById('bgm-view-sound-test');
 
   const fmvList     = document.getElementById('fmv-list');
   const fmvSummary  = document.getElementById('fmv-summary');
@@ -229,6 +259,8 @@
   let wasmMod = null;
   let audio = null;        // LegaiaAudio instance
   let bgmEntries = [];
+  let soundTestEntries = [];   // curated music_01 catalogue, sound-test order
+  let bgmView = 'sound-test';  // 'sound-test' | 'prot'
   let fmvEntries = [];     // MV*.STR movies
   let seEntries = [];      // XA*.XA sound banks
   /** Cache of demuxed voice metadata per SE bank, keyed by `lba`. Filled the
@@ -431,25 +463,112 @@
   }
 
   // ---------------- BGM list ----------------
+  /** Minimal HTML-escape for curated names dropped into row markup. */
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /** Re-render whichever BGM sub-view is active with the current search box. */
+  function refreshBgmView() {
+    const q = bgmSearch.value;
+    if (bgmView === 'prot') {
+      bgmList.style.display = '';
+      soundTestList.style.display = 'none';
+      renderBgmList(q);
+    } else {
+      soundTestList.style.display = '';
+      bgmList.style.display = 'none';
+      renderSoundTest(q);
+    }
+  }
+
+  /** Case-insensitive substring match over a PROT-view row's searchable text. */
+  function bgmMatches(e, q) {
+    if (q === '') return true;
+    const st = (e.sound_test_id !== null && e.sound_test_id !== undefined) ? '#' + e.sound_test_id : '';
+    return `prot ${e.prot_index} ${e.title || ''} ${e.debug_id || ''} ${e.context || ''} ${st}`
+      .toLowerCase().includes(q);
+  }
+
+  /** Case-insensitive substring match over a Sound-Test row's searchable text. */
+  function soundTestMatches(e, q) {
+    if (q === '') return true;
+    return `#${e.index} ${e.title || ''} ${e.debug_id || ''} ${e.context || ''} ${e.ost || ''} ${e.relocalization || ''} prot ${e.prot_index}`
+      .toLowerCase().includes(q);
+  }
+
+  // ---------------- PROT-entry view ----------------
+  // Every VAB+SEQ carrier on the disc; names where the music_01 join resolves,
+  // "uncatalogued copy" for the boot/battle/dev duplicates that carry no name.
   function renderBgmList(filter) {
-    const f = (filter || '').trim();
-    const fNum = f === '' ? null : parseInt(f, 10);
-    const visible = bgmEntries.filter(e => {
-      if (fNum === null || isNaN(fNum)) return true;
-      return e.prot_index === fNum;
-    });
-    bgmSummary.textContent = `${visible.length} of ${bgmEntries.length} BGM pairs`;
+    const q = (filter || '').trim().toLowerCase();
+    const visible = bgmEntries.filter(e => bgmMatches(e, q));
+    bgmSummary.textContent = `${visible.length} of ${bgmEntries.length} BGM carriers`;
     bgmList.innerHTML = visible.map(e => {
+      const named = e.title || e.debug_id;
+      const stId = (e.sound_test_id !== null && e.sound_test_id !== undefined)
+        ? `<span class="st-id">#${e.sound_test_id}${e.debug_id ? ' ' + escapeHtml(e.debug_id) : ''}</span>` : '';
+      const name = named
+        ? `${escapeHtml(e.title || e.debug_id)}${stId}`
+        : `<span class="ai-meta">uncatalogued copy</span>`;
       return `<li data-prot="${e.prot_index}" data-vab="${e.vab_offset}" data-seq="${e.seq_offset}">
         <span class="ai-idx">PROT ${e.prot_index}</span>
-        <span class="ai-meta"><b>${e.program_count}</b> progs &middot; <b>${e.sample_count}</b> samples &middot; ${e.bpm} BPM &middot; PPQN ${e.ppqn}</span>
+        <span class="ai-body">
+          <span class="ai-name">${name}</span>
+          <span class="ai-sub"><b>${e.program_count}</b> progs &middot; <b>${e.sample_count}</b> samples &middot; ${e.bpm} BPM &middot; PPQN ${e.ppqn}</span>
+        </span>
         <span class="ai-actions">
           <button data-act="play">&#x25B6; play</button>
           <button data-act="wav">.wav</button>
         </span>
       </li>`;
     }).join('');
-    bgmList.querySelectorAll('li').forEach(li => {
+    bgmList.querySelectorAll('li').forEach(wireBgmRow);
+  }
+
+  // ---------------- Sound Test view ----------------
+  // The curated music_01 catalogue in the game's own sound-test order. Slots
+  // with no audio on the retail disc (pochi-filled dev leftovers) still show,
+  // greyed, so the full sound-test space is visible.
+  function renderSoundTest(filter) {
+    const q = (filter || '').trim().toLowerCase();
+    const visible = soundTestEntries.filter(e => soundTestMatches(e, q));
+    const playable = soundTestEntries.filter(e => e.playable).length;
+    bgmSummary.textContent =
+      `${visible.length} of ${soundTestEntries.length} tracks &middot; ${playable} playable on this disc`;
+    soundTestList.innerHTML = visible.map(e => {
+      const title = e.title || e.debug_id || '(unnamed)';
+      const sub = [];
+      if (e.context && e.context !== e.title) sub.push(escapeHtml(e.context));
+      if (e.ost) sub.push(`OST: ${escapeHtml(e.ost)}`);
+      if (e.playable) sub.push(`${e.bpm} BPM`);
+      sub.push(`PROT ${e.prot_index}`);
+      const tags = [];
+      if (e.uncertain) tags.push('<span class="st-tag" title="Flagged by the source as a dev placeholder / working title.">placeholder</span>');
+      if (!e.playable) tags.push('<span class="st-tag" title="No audio on the retail disc - a pochi-filled dev leftover slot.">no audio</span>');
+      const actions = e.playable
+        ? `<button data-act="play">&#x25B6; play</button><button data-act="wav">.wav</button>`
+        : '';
+      return `<li class="${e.playable ? '' : 'is-unplayable'}" data-prot="${e.prot_index}" data-vab="${e.vab_offset}" data-seq="${e.seq_offset}">
+        <span class="ai-idx">#${String(e.index).padStart(2, '0')}</span>
+        <span class="ai-body">
+          <span class="ai-name">${escapeHtml(title)}${e.debug_id ? `<span class="st-id">${escapeHtml(e.debug_id)}</span>` : ''}${tags.join('')}</span>
+          <span class="ai-sub">${sub.join(' &middot; ')}</span>
+        </span>
+        <span class="ai-actions">${actions}</span>
+      </li>`;
+    }).join('');
+    soundTestList.querySelectorAll('li').forEach(li => {
+      if (!li.classList.contains('is-unplayable')) wireBgmRow(li);
+    });
+  }
+
+  // ---------------- Shared row wiring ----------------
+  // Attaches play + .wav to a rendered row (both views use identical
+  // data-prot/vab/seq attributes, so a single wiring path serves both).
+  function wireBgmRow(li) {
       const btn = li.querySelector('[data-act="play"]');
       const wavBtn = li.querySelector('[data-act="wav"]');
       wavBtn.addEventListener('click', () => {
@@ -521,7 +640,7 @@
           );
           btn.textContent = orig;
           bgmStopBtn.disabled = false;
-          bgmList.querySelectorAll('button.is-playing').forEach(b => b.classList.remove('is-playing'));
+          bgmPanel.querySelectorAll('button.is-playing').forEach(b => b.classList.remove('is-playing'));
           btn.classList.add('is-playing');
           src.onended = () => {
             btn.classList.remove('is-playing');
@@ -540,7 +659,6 @@
           btn.disabled = false;
         }
       });
-    });
   }
 
   /** Stop the currently-playing BGM (no-op when nothing is playing). */
@@ -556,7 +674,7 @@
     }
     activeBgm = null;
     bgmStopBtn.disabled = true;
-    bgmList.querySelectorAll('button.is-playing').forEach(b => b.classList.remove('is-playing'));
+    bgmPanel.querySelectorAll('button.is-playing').forEach(b => b.classList.remove('is-playing'));
   }
 
   bgmStopBtn.addEventListener('click', stopBgm);
@@ -815,8 +933,18 @@
     });
   }
 
+  // ---------------- BGM view toggle ----------------
+  function setBgmView(view) {
+    bgmView = view;
+    bgmViewSoundTestBtn.classList.toggle('is-active', view === 'sound-test');
+    bgmViewProtBtn.classList.toggle('is-active', view === 'prot');
+    refreshBgmView();
+  }
+  bgmViewSoundTestBtn.addEventListener('click', () => setBgmView('sound-test'));
+  bgmViewProtBtn.addEventListener('click', () => setBgmView('prot'));
+
   // ---------------- Search wiring ----------------
-  bgmSearch.addEventListener('input', () => renderBgmList(bgmSearch.value));
+  bgmSearch.addEventListener('input', () => refreshBgmView());
   fmvSearch.addEventListener('input', () => renderFmvList(fmvSearch.value));
   seSearch.addEventListener('input', () => renderSeList(seSearch.value));
 
@@ -843,13 +971,14 @@
       prog.indeterminate('Scanning for BGM + streaming media…');
       await prog.paint();
       bgmEntries = JSON.parse(audio.enumerate_bgm_pairs_json());
+      soundTestEntries = JSON.parse(audio.sound_test_json());
       const streamEntries = JSON.parse(audio.enumerate_xa_files_json());
       // MV*.STR carry video (FMV); XA*.XA are audio-only sound banks (SE).
       fmvEntries = streamEntries.filter(e => /\.str$/i.test(e.path));
       seEntries  = streamEntries.filter(e => /\.xa$/i.test(e.path));
       seVoiceCache.clear();
       seExpanded.clear();
-      renderBgmList('');
+      refreshBgmView();
       renderFmvList('');
       renderSeList('');
       browseSec.style.display = 'block';

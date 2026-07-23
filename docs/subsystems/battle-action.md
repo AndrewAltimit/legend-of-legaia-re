@@ -66,9 +66,9 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x2E` | Magic - exit | Gated on `ctx[+0x249] == 0`. Resets screen-shake (`_DAT_8007B790` if > 400, sets to 0; `_DAT_800840BC = 0x500`). | `0x50`. |
 | `0x32` | Summon - invoke | `FUN_801D5854(actor, 6)` + waits on `func_0x8003DE7C(1)` (sound bank ready). When ready, computes summon-frame index `bVar5` from `actor[+0x1DF]` (if < 0x9A: `(actor[+0x1DF] + 0x7F) * 3 + 0x80`, else `actor[+0x1DF] * 4 + 99`); writes `ctx[+0x277] = bVar5`, `ctx[+0x276] = 1`, `ctx[+0x278] = 1`. Sets `actor[+0x1DA] = 9`, `actor[+0x1DC] |= 1`, `actor[+0x1FA]++`. | `0x33`. |
 | `0x33` | Summon - fade in | `FUN_801DC0A0(party, 0x12)`. When `actor[+0x1F5] != 0` (anim cue): writes a 16-byte BG fade descriptor (`DAT_801C9070..0x9086`: time `0x14`, RGB `(0xFF,0xFF,0xFF)`, alpha 0→`0x14`); calls `func_0x80024E80` (push fade primitive). | `0x34`. |
-| `0x34` | Summon - actor freeze | `FUN_801DC0A0(party, 0x12)`. When `actor[+0x1D9] == 0`: OR's the fade primitive bit `8`, clears `ctx[+0x278/+0x279]`, sets `ctx[+0x6D8] = 0x78` (timer), calls `func_0x801F1ED4` (the [summon actor/camera re-frame](#battle-helper-functions)), iterates the 8-actor table to clear `actor[+0x4]` and set `+0x21C = 0xFF` (actor-hidden marker). Writes a second fade descriptor (`0x78` time, alpha `0xFF→0`). | `0x35`. |
+| `0x34` | Summon - actor freeze | `FUN_801DC0A0(party, 0x12)`. When `actor[+0x1D9] == 0`: OR's the fade primitive bit `8`, clears `ctx[+0x278/+0x279]`, sets `ctx[+0x6D8] = 0x78` (timer), calls `func_0x801F1ED4` (the [player-summon effect-script dispatcher](#battle-helper-functions), keyed on the summon id `actor[+0x1DF]`), iterates the 8-actor table to clear `actor[+0x4]` and set `+0x21C = 0xFF` (actor-hidden marker). Writes a second fade descriptor (`0x78` time, alpha `0xFF→0`). | `0x35`. |
 | `0x35` | Summon - sustain | Decrements `ctx[+0x6D8]`; ramps screen brightness `_DAT_8007B910` down by `DAT_1F800393` per frame, clamped at `(_DAT_8008457C * 0x4B) / 100` (75%) for spells < 0x99 or 50% for higher. If `+0x6D8 < 0` and `ctx[+0x276] != 0`, force-clamp `+0x6D8 = 1`. | `0x36` when timer expires. |
-| `0x36` | Summon - return-from-fade | Runs `func_0x801F1ED4` (the [actor/camera re-frame](#battle-helper-functions); void) again while the fade settles. Then iterates 8-actor table clearing `+0x21C = 0` and resetting `+0x8 = 0x81000000` for actors with `+0x4 == 0`. Calls `FUN_801E70BC` (the summon-magic level-up check - see [`reference/functions.md`](../reference/functions.md); engine `World::accrue_summon_spell_xp` + `battle_formulas::summon_magic_levels_up`). | `0x37`. |
+| `0x36` | Summon - return-from-fade | Runs `func_0x801F1ED4` (the [player-summon effect-script dispatcher](#battle-helper-functions)) again while the fade settles. Then iterates 8-actor table clearing `+0x21C = 0` and resetting `+0x8 = 0x81000000` for actors with `+0x4 == 0`. Calls `FUN_801E70BC` (the summon-magic level-up check - see [`reference/functions.md`](../reference/functions.md); engine `World::accrue_summon_spell_xp` + `battle_formulas::summon_magic_levels_up`). | `0x37`. |
 | `0x37` | Summon - verify all alive | `FUN_801D5854(actor, 6)`. Iterates the 8-actor table (party + active monsters); checks each is alive (`+0x14C != 0` AND `+0x1D9 != 0`). Sets a 4-byte fade-back-in sentinel at `ctx[+0x890..+0x893]` (`84 10 42 08`). | `0x38`. |
 | `0x38` | Summon - done | OR's the fade primitive bit `8`; clears `DAT_801C938C[+0x22C]`. | `0x50`. |
 | `0x3C` | **Spirit / Item - pre-arm** | `FUN_801D5854(actor, 6)`. Sets `actor[+0x1DA] = actor[+0x1E7]` (queued anim). Sets `ctx[+0x243] = 1` ("action in progress" marker). For `+0x1DE == 1` (Item): looks up item record at `ctx[+0x1DF]*0xC + -0x7FF8BC97` for label/icon; writes `actor[+0x1E8/+0x1E9]` (icon page/x); writes HUD via `_DAT_80077332..+0x35C`. Special case: `actor[+0x1DF] == 0xFE` (Pomander) → label = `s_Points_returned_801CED34`. For non-Item (Magic/Spirit, `+0x1DE != 1`): does the same write of `+0x1E8/+0x1E9` from the spell table at `actor[+0x1DF]*0xC + -0x7FF8AB38`, computes MP cost (with ability-bit half/quarter), subtracts from `actor[+0x150]`; for party_id < 3 fires `FUN_801D8DE8(7, 0)` (UI element). Always fires `FUN_801D8DE8(0x4C, 0)` (HUD label). | `0x3D`. |
@@ -92,7 +92,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x6B` | Capture - end | `FUN_801D5854(0, 9)`; screen rotates; decrements timer. When < 0 → `0x5A` (end-of-action). | `0x5A`. |
 | `0x6E` | **Magic-capture branch** | `FUN_801D5854(actor, 6)`; waits on `func_0x8003DE7C(1)` (CD ready). When ready: calls `func_0x8003EAE4(0, capture_index)` (load capture archive); sets `_DAT_8007BDB0` to capture-monster index. | `0x6F`. |
 | `0x6F` | Magic-capture - fade | If `ctx[+0x287] != 0`: ramp `_DAT_8007B910 -= DAT_1F800393`, clamp to `(_DAT_8008457C * 0x4B) / 100`. Adjusts ctx-buffer X position. Waits on `func_0x8003F2B8(1)`. | `0x70`. |
-| `0x70` | Magic-capture - phase 2 | Same brightness ramp as `0x6F`. Waits on `func_0x801F2160`. When done, calls `func_0x801F0348` (the [widget-pool teardown](#battle-helper-functions)). | `0x71`. |
+| `0x70` | Magic-capture - phase 2 | Same brightness ramp as `0x6F`. Runs `func_0x801F2160` (the [magic effect-class dispatcher](#battle-helper-functions), keyed on the spell's effect-class byte). When done, calls `func_0x801F0348` (the [target-size camera framing](#battle-helper-functions)). | `0x71`. |
 | `0x71` | Magic-capture - finalize | `FUN_801D5854(actor, 6)`; checks all 8 slots are settled (alive with non-zero `+0x4`, or non-`8` `+0x1D9`). Once stable: clears ctx buffers, writes the 4-byte fade sentinel (`84 10 42 08`), iterates resetting per-actor `+0x21C = 0` and `+0x8 = 0x81000000`. | `0x50`. |
 | `0xFD` | Idle hold (battle paused?) | `FUN_801D5854(actor, 8)`. No state change. | (stays). |
 | `0xFF` | **Battle complete** | Sets `ctx[+0x6] = 0x14`, increments `ctx[+0x28A]` (battle-count?), calls `func_0x801F45A4` (the [end-of-action damage/HP-bar settle](#battle-helper-functions)). | (terminal - exits the battle overlay). |
@@ -230,6 +230,30 @@ ported as `engine-vm::status_effects::toxic_tick_damage` / `venom_tick_damage`
 (`StatusEffectTracker::tick_actor`). The same walk pays the Life Grail / Magic
 Grail per-round recoveries for party slots.
 
+### `FUN_801DD4B0` / `FUN_801DD6B4` - the two per-move damage-roll wrappers
+
+Two sibling **damage kernels** the action path calls to resolve one hit. Each
+draws an attacker roll and a defender roll from the two battle-actor records
+(`(&DAT_801C9370)[slot]`), calls the affinity scale `FUN_801DD864` and then the
+closed-form finisher `FUN_801DDB30`, and returns `attacker_roll - defender_roll`
+as the net damage. They differ in two ways: `FUN_801DD4B0` mixes the physical
+attack/defence stat `+0x168` into both rolls and passes finisher **`param_5 = 0`**
+(the equipment resist ladder - jewels / elemental guards / All Guard - runs);
+`FUN_801DD6B4` uses the spell-power stat `+0x158` and passes **`param_5 = 1`**,
+which makes the finisher **skip the whole party-defender resist block**. The
+`param_5 = 1` path is the **resist-BYPASS** wrapper: a hit routed through it
+takes no Earth/Luminous-Jewel or All-Guard reduction even when the defender is
+elementally warded, which is the mechanism behind the non-elemental capture-class
+boss casts (Bloody Horns / Terio Punch). The affinity scale still reads the
+caster's slot element either way, so the attacker's element is applied - only the
+defender's jewel stage is dropped. Full stat fields, the finisher stage list, the
+per-spell module census, and the engine mirror (`damage_finish::bypass_party_resist`)
+are in
+[battle-formulas.md § Summon-magic damage roll](battle-formulas.md#summon-magic-damage-roll---fun_801dd0ac).
+See
+`ghidra/scripts/funcs/overlay_battle_action_801dd4b0.txt` /
+`_801dd6b4.txt`.
+
 ### AI-delegated (`0x380`) party members - what is and isn't pinned
 
 `FUN_80047430` sets `actor[+0x16E] |= 0x380` each frame on a party slot whose
@@ -288,6 +312,27 @@ per-actor delegation discriminator - `+0x16E & 0x380` is (the
 `FUN_80047430`/`+0xF8 & 0x2000` relation above is on the **character record**,
 a different struct); (b) this is a single sample, so the engine's auto-physical
 stand-in stays a stand-in - the writer and the pick variability are still open.
+
+**`FUN_801F0450` - the auto arts-combo assembler (a candidate writer).** A REAL
+928-instruction battle-action body (`--explain 801f0450` => `REAL`, entry
+`801f0450`, `jr ra`) that, for each party slot with `ctx[+0x266 + slot] != 0`
+and action category `actor[+0x1DE] == 3` (Attack), **fills the `actor[+0x1DF+n]`
+arts-command stream** the strike loop later walks - the AI-side counterpart to
+the player queue-builder `FUN_801EED1C`. It scans the per-command arm entries of
+the arts-command table `DAT_801C9360[slot][cmd]` (`cmd` `0xC..=0xF`), reads each
+command's AP cost byte `+0x74` (the same [arts AP-gauge cost](arts-command-gauge.md)
+the randomizer edits), builds a weighted candidate pool - dropping any command
+whose per-command elemental/status guard mask `DAT_801F672C[cmd-0xC]` collides
+with the target's status word `actor[+0x16E]` - then draws from the pool with
+`func_0x80056798` (RNG) until the actor's special gauge `actor[+0x154]` no longer
+covers the cheapest command, halving the budget when the AP-Used-Down passive bit
+`0x800` is set. It is the natural producer of the observed delegated
+`[0x22,0x26,0x25,0x22,0x21]` multi-strike, but the outer gate keys on `+0xF8 &
+0x2000` / `+0x16E & 0x404` rather than the `0x380` delegation bits directly, so
+confirming it is *the* Rage-delegate path (versus a shared auto-fight assembler)
+still wants the runtime `actor[+0x1DF]`-writer capture this section calls for. No
+engine consumer yet; documented, unported. See
+`ghidra/scripts/funcs/overlay_battle_action_801f0450.txt`.
 
 ### Enemy AGL action-budget (`FUN_801E9FD4`)
 
@@ -648,6 +693,28 @@ an artifact of the same shift). `0x801F3990` is re-pinned below from battle-resi
 other three descriptions are retained but **need re-verification** against a battle-resident
 dump (`overlay_battle_action_*`) before being relied on.
 
+**Over-read `0x801Fxxxx` / `0x8020xxxx` alias resolutions.** A cluster of addresses that
+surface as self-entry bodies in the `overlay_0897*` / `overlay_0897_xxx_dat*` dumps are the
+same double-shifted images - each is byte-identical modulo relocation to a battle function
+already pinned under its true entry, and nothing attests the printed VA. Resolve them to the
+real entry (arbiter `classify-worklist.py --explain`; the first two independently confirmed
+from the disassembly against the descriptions cited):
+
+- `0x80205504` -> `FUN_801EED1C`, the retail queue-builder (below): zeros the 16-word scratch
+  at the shifted `0x801F6990`, writes the action queue `actor[+0x1DF..+0x1E2]`, calls the
+  Super applier `FUN_801EF9E4`.
+- `0x8020A178` -> `FUN_801F3990`, the cast audio-cue dispatcher (below): mode gate on
+  `DAT_8007BD10[ctx+0x13]`, two 9-entry `jr` jump tables keyed on `actor[+0x1E8]`, cues via
+  `FUN_8004FCC8`; `actor[+0x1DF] == 0xFE` takes an effect-spawn path.
+- `0x802028C4` -> `FUN_801EC0DC`.
+- `0x801FD150` -> `FUN_801E6968`, the Lost Grail Final Heal auto-revive (state `0x50`).
+- `0x801F8580` -> `FUN_801E1D98`.
+- `0x801F8AB0` -> `FUN_801E22C8`.
+
+Read the true entry's battle-resident dump, never the shifted alias. The remaining worklist
+addresses at these VAs are non-standalone (interior citations, shared tails, `$zero`-absolute
+data decoded as code, or 0-instruction stubs) and carry no body to document.
+
 **`0x801F0348` - target-size camera framing.** Pinned from battle-resident bytes
 (`overlay_battle_action_801f0348.txt`). It writes the camera height/distance at ctx `+0x6D0`
 (i16) from a monster's **size class**, the byte at monster record `+0x1F`:
@@ -688,18 +755,34 @@ the same seating split `apply_side_lockout` documents from the other side.
 > came from the aliased `overlay_0897_801f0348.txt` dump and is **falsified**: the
 > battle-resident body contains no widget table, no free call and no `0x801C8FA0` clear.
 
-**`0x801F1ED4` - summon actor/camera re-frame.** *Decoded from the aliased
-`overlay_0897_801f1ed4.txt` dump - identity, entry address, and body need re-verification
-against battle-resident bytes.* Computes the bounding box of all live actors'
-ground positions (`actor[+0x34]` = X, `actor[+0x38]` = Z) across the 8-slot table (party slots
-`0..2` unconditionally, monster slots gated on `+0x14C` alive), subtracts the box center from every
-actor's position, and adds the center to the world/camera anchor globals `_DAT_80089118` (X) /
-`_DAT_80089120` (Z) - re-centering the whole cast on its centroid. When the caller's angle/zoom
-delta (`in_t1 - in_t2`) exceeds `0x800` it additionally pre-divides each actor's Z and
-`_DAT_80089120` by that delta (a Z compression). It returns void, so the state-`0x36` "waits on it
-returning 0" reading was an inference - it is the per-frame summon framing pass. The summon
-**creature spawn** is a separate mechanism (the `summon.dat` applier `FUN_801F12D0` /
-`FUN_801F19EC`, see [summon-readef](../formats/summon-readef.md)).
+**`0x801F1ED4` - player-summon effect-script dispatcher.** Re-pinned from a clean
+self-entry dump: the classifier confirms the muscle-dome capture's bytes at this
+VA are byte-identical to the PROT 898 battle-action image (`--explain 801f1ed4`
+=> `REAL`; entry `801f1ed4`, 163 insns, `jr ra`; the `overlay_0897` dump is
+interior, entry `801f1cc8`). The body is a `jr`-jump-table dispatcher on
+`actor[+0x1DF] - 0x81` (the summon / Enhanced-Seru-Magic id block `0x81..=0xA0`;
+`sltiu` bound `0x20`, table at `0x801D54EC`) into per-summon effect routines
+(`FUN_801F69D8`, `FUN_801F6A84`, ...); after the routine, if `ctx[+0x27A] != 0`
+it calls `FUN_801F2410`. It is the summon spell's visual driver, not a centroid
+re-centre. The earlier "summon actor/camera re-frame - bounding-box recentre onto
+the cast centroid" reading came from the aliased `overlay_0897_801f1ed4.txt` dump
+and is **falsified**: that centroid-recentre body is really the formation
+span-normalise leaf `FUN_801DB318` (documented above), surfaced at a shifted VA.
+The summon **creature spawn** is a separate mechanism (the `summon.dat` applier
+`FUN_801F12D0` / `FUN_801F19EC`, see [summon-readef](../formats/summon-readef.md)).
+See `ghidra/scripts/funcs/overlay_muscle_dome_801f1ed4.txt`.
+
+**`0x801F2160` - magic effect-class dispatcher.** Sibling of `0x801F1ED4`, called
+from state `0x70` (magic-capture phase 2). Re-pinned from a clean self-entry dump
+(`--explain 801f2160` => `REAL`; muscle-dome bytes = PROT 898; entry `801f2160`,
+172 insns, `jr ra`). A `jr`-jump-table dispatcher on the spell's **effect-class
+byte** - `*(DAT_800754C8 + actor[+0x1DF]*0xC + 1)`, i.e. `+1` of the SCUS
+spell-table record ([spell-table.md](../formats/spell-table.md)); `sltiu` bound
+`0x20`, table at `0x801D5A6C` - into per-effect-class routines
+(`FUN_801F69D8`..`FUN_801F9BA8`); after the routine, if `ctx[+0x27A] != 0` calls
+`FUN_801F2410`. Effect/render-track (each target routine drives that class's
+visual sequence), documented not ported. See
+`ghidra/scripts/funcs/overlay_muscle_dome_801f2160.txt`.
 
 **`FUN_801F3990` - cast audio-cue dispatcher.** Pinned from battle-resident bytes (the aliased
 `overlay_0897_801f3990.txt` dump surfaces a different function - really `FUN_801DD0AC` - at this
@@ -779,6 +862,100 @@ transcribed from the disassembly (`overlay_battle_action_801db9c4.txt` /
   only for ids `0xFE`/`0x98`), it re-rolls a **living** slot on the same side
   (`rand % party_count`, or `rand % monster_count + 3`), retrying until alive.
   Port: `redirect_dead_target` / `RedirectQuery`.
+
+### Per-frame action-effect update helpers
+
+Battle-overlay functions that run the *visual* side of a chosen action -
+projectile flight, action-HUD chrome, side-band asset streaming. All are heavy
+GTE / GPU-primitive / CD-IO work reached through the effect + anim path, so
+they are documented here rather than lifted whole into `engine-vm`.
+
+- **`FUN_801DA6B4` - target-select cursor tint.** Over the fixed monster-slot
+  window `3..=6`, brightens the acting actor's current target (`+0x1DD`) and
+  dims the rest: `+0x21C` render flag (`5` / `200` / `0`), `+0x4` colour word
+  (`0x20080200` / `0x00401004`), `+0xC` scale word (`0x1000` / `0`). `param_1
+  == 0` stamps the highlight; non-zero clears it. Only the alive slots
+  (`+0x14C != 0`) are touched. Self-contained; ported as
+  `battle_action::target_cursor_highlight`. See
+  `overlay_battle_action_801da6b4.txt`.
+- **`FUN_801DBDDC` - action banner box.** Gated on `ctx[+0x6CE] == 0`. Emits
+  one `0x09`-code quad into the ordering table at `_DAT_1F8003A0` (colour
+  `0x2C808080`, rect derived from the three `short` args) and links it via
+  `FUN_8003D2C4`. Pure GPU-primitive build. See
+  `overlay_battle_action_801dbddc.txt`.
+- **`FUN_801DEA50` - action effect-script stepper.** For the acting actor
+  (`param_1 == ctx[+0x13]`) walks 8-byte effect-script records at `param_2`
+  under the `actor[+0x1F5]` cursor (`< 8`), GTE-rotating each record's offset by
+  the actor's `+0x46` facing through the sin/cos LUTs (`_DAT_8007B81C` /
+  `_DAT_8007B7F8`) and spawning effects via `FUN_80050ED4` / `FUN_801DFDF0`. On
+  a terminator it installs the **move-power record** (`0x801F4F5C +
+  map[actor+0x1DF]*0x1A`, map at `0x801F4E64`, `0x1A`-byte stride) at
+  `ctx[+0x1014]` and seeds per-target homing state (`+0x1144` position, `+0x252`
+  target, `+0x1166` bearing). GTE + effect-spawn; not ported. See
+  `overlay_battle_action_801dea50.txt` and
+  [move-power.md](../formats/move-power.md).
+- **`FUN_801E09F8` - cast-effect census + projectile flight/impact.** Runs two
+  jobs each frame. **(1) Census**: it recomputes, from scratch, the outstanding
+  effect-count fields the magic/summon exit states poll - `ctx[+0x249]` (actors
+  still mid-animation: `+1` per live actor with `+0x1D9 != 0`, less party actors
+  whose `+0x1D9 == 8`) and `ctx[+0x24D]` (active spell-children over `ctx[+0x252..]`),
+  plus the sole-survivor target indices `ctx[+0x24A]` (party) / `ctx[+0x24B]`
+  (monster). These are **live counts, not latched flags**, which is why state
+  `0x2E` (magic exit, gated on `ctx[+0x249] == 0`) and state `0x35` (summon
+  sustain) wait on them - a stalled effect child that never dies pins the count
+  above zero and holds the band. **(2) Flight/impact**: it steps the in-flight
+  effect slots (`ctx[+0x24E]` phase, `+0x252` target, `+0x1144` position, `+0x6C6`
+  per-slot timer), homing each with the LUT trig and spawning per-effect visuals
+  via `FUN_801DFDF0`; on arrival it calls the damage kernel `FUN_801DD0AC`
+  (indexed through the `0x801F4E64` map) and applies the roll to the target's HP
+  (`+0x14C`), death anim (`+0x1DA`), and the accumulated-damage queue
+  (`ctx[+0x83C]`). GTE + effect + damage-application; not ported. See
+  `overlay_battle_action_801e09f8.txt`.
+- **`FUN_801E0080` - battle particle/sprite-cloud animator.** Gated on
+  `DAT_8007BD58 != 0 && DAT_8007BD71 == 0xFF` (battle live, no end signal).
+  Advances per-frame animation cursors across two effect pools (a 32-slot
+  `0x1C`-stride pool and a 128-slot pool at `_DAT_8007BD30 + 0x10`), applies the
+  same sin/cos-LUT rigid rotation (`_DAT_8007B7F8` / `_DAT_8007B81C`, shifts
+  `>>4` / `>>0xC`) per part, then in a third pass builds textured-sprite GPU
+  primitives (`0x09000000` command word, per-particle brightness) into the OT at
+  `_DAT_1F8003A0`, projecting each via `FUN_800195A8` and linking with
+  `FUN_8003D2C4`. Pure GTE / GPU-primitive emit; not ported. See
+  `overlay_battle_action_801e0080.txt`.
+- **`FUN_801DF6B8` - damage-number popup renderer.** Draws a scaling decimal
+  number sprite for one actor's accumulated damage `ctx[+0x83C]`: extracts each
+  base-10 digit (`* 0x66666667` / `>>0x22` = divide-by-10), indexes the digit
+  glyph atlas at `0x801F6..` (`-0x7FE09BA4`), and builds one `0x09`-code sprite
+  quad per digit into the OT, ramp-scaling the rect by the per-frame timer
+  `ctx[+0x85C]`. Reads actor screen position `+0x3C/+0x3E/+0x40`. Pure
+  GPU-primitive build; not ported. See `overlay_battle_action_801df6b8.txt`.
+- **`FUN_8005112C` - per-character signature effect trigger.** SCUS-resident
+  (`8005112c.txt`), gated on `actor[+0x68] != 0 && actor[+0x5A] < 3` (a party
+  slot). Reads the roster char id `DAT_8007BD10[actor[+0x5A]]` (`1`/`2`/`3` =
+  Vahn/Noa/Gala) and, when the actor's current anim id (`*(actor[+0x4C]) + 0x77`)
+  hits that character's hard-coded frame value (`0x29`/`0x1E`/`0x2A`/`0x64`),
+  fires `FUN_80048310(actor, effect_id, 3, rgb)` with a per-character effect id +
+  RGB tint - a hand-authored visual accent on a specific animation frame. Effect
+  spawn, not a formula; not ported.
+- **`FUN_801F17F8` - summon / readef side-band streamer.** A three-phase
+  (`ctx[+0x26C]`) CD loader gated on `ctx[+0x26B]`: opens `data\battle\summon`
+  (arg `0x37F`) or `data\battle\readef` (arg `0x380`) via `FUN_800558FC`, reads
+  a `0x10800`-byte page into `ctx[+0x314]`, and waits on `FUN_8003DE7C`. Pure
+  CD-IO; the engine streams these through `SceneAssets`. See
+  `overlay_battle_action_801f17f8.txt` and
+  [summon-readef.md](../formats/summon-readef.md).
+
+The worklist addresses `0x801F1ED4` / `0x801F2160` have their only clean
+self-entry dumps in the **muscle_dome** overlay, but the classifier confirms
+those bytes are **byte-identical to the PROT 898 battle-action image**
+(`--explain` tags both `REAL`, capture `battle_action(898)`) - the muscle-dome
+overlay carries the same battle-action code region, so the dumps *are* the
+battle-resident bodies and are decoded [above](#battle-helper-functions) (the
+summon and magic effect-class dispatchers). The battle overlay's *own* dumps
+show these VAs as interior because the `overlay_0897` extraction is
+double-shifted (the aliasing the caution above describes); that shift is also
+what produced the earlier - now falsified - "summon actor/camera re-frame"
+reading of `0x801F1ED4`. `0x801F69D8` / `0x801F7088` remain per-summon effect
+leaves reached through those dispatchers.
 
 ## Notes for the engine port
 

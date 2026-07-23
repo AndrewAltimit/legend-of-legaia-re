@@ -1076,7 +1076,7 @@ _DAT_8007BAB8 = _DAT_8007BAC8 + _DAT_8007BAB8;   // final PROT index
 
 So:
 - `bgm_id < 2000`: scene-local - lives at PROT `current_scene + 6 + bgm_id`. Different scenes have different BGM at the same script ID. Rare in retail: scenes carry almost no local SEQ data (`teien` is the one scene with a local copy).
-- `bgm_id ≥ 2000`: global - lives at PROT `_DAT_8007BC64 + bgm_id - 2000`. The global pool is the **`music_01` bank** (extraction `990..=1071`), whose slot order is the **debug sound-test order** - so `2000 + i` plays sound-test track `i` and every global id resolves to a curated human name. Pinned by the per-scene op-`0x35` census joining ids to their scenes' known music (`town01` starts `2016` = "Rim Elm theme"); see [music-tracks](../reference/music-tracks.md#the-disc-side-join-the-music_01-bank-is-the-sound-test-order). Engine resolver: `legaia_engine_core::music_labels`.
+- `bgm_id ≥ 2000`: global - lives at PROT `_DAT_8007BC64 + bgm_id - 2000` (raw pool base `990`). The global pool is the **`music_01` bank**, whose pool order is the **debug sound-test order** - so `2000 + i` plays sound-test track `i` and every global id resolves to a curated human name. Pinned by the per-scene op-`0x35` census joining ids to their scenes' known music (`town01` starts `2016` = "Rim Elm theme"). The physical bank is piecewise in extraction space (a 2-entry gap); the resolver `legaia_engine_core::music_labels::prot_entry_for_bgm_id` owns the id→entry map. See [music-tracks](../reference/music-tracks.md#the-disc-side-join-the-music_01-bank-in-sound-test-order).
 
 The "table" *is* the [CDNAME.TXT name map](../formats/cdname.md)'s per-scene block layout. There's no separate BGM index in `SCUS_942.54`.
 
@@ -1105,6 +1105,121 @@ A growing set of small leaf helpers in the dispatcher's call graph are pure arit
 **`tile_center(b)`** - the field VM's grid-byte → world-coord conversion. Formula: `b == 0` returns 0; otherwise `(b & 0x7F) << 7 | 0x40`, plus `0x40` if the high bit is set. The original inlines this conversion in nine separate dispatcher arms (most prominently `0x4C nE sub-3/4` for camera-anchored teleport / bbox queries, MOVE_TO at op 0x23, the scene-change entry tile at op 0x3F, and the position-broadcast `0x4C nC sub-F`). Lifting it to a shared helper avoids the closure-per-arm pattern that drift-prone copy-paste was producing - round 18 introduced the helper and migrated `nE sub-4`'s closure to it; future arms can pick it up directly.
 
 The Rust ports are exhaustively tested (39 tests covering escape sequences, terminator placement, bit ordering, search bounds, LE byte assembly across short / full-width / over-long buffers, and tile-center high-bit and zero-input edge cases). Tests live alongside the ports in `field_helpers.rs`.
+
+## Overlay-0897 command / submenu support functions
+
+A survey of the high-reference `0x801F` VA band the field overlay shares with the battle overlays. Most rows here are **not** portable function entries: they are interior addresses of larger functions, shared tails that enter with registers preset by a fall-through caller, corpus gaps, or VA-aliased duplicates (see [`worklist-classification.md`](../tooling/worklist-classification.md) and [`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md)). Classification is by containing function and role, not by the raw address.
+
+| Address | Class | What it is | Dump |
+|---|---|---|---|
+| `0x801D9D3C` | INTERIOR | Tail-call fragment: `a0 -= 0xE10` then block-copy `func 0x8001AA68` with register-arg `a1=s3`/`a2=s5`; no prologue. | `overlay_0897_801d9d3c.txt` |
+| `0x801D71B8` | SHARED_TAIL | Fixed-point tail `(v1*v0 + m[0]*base[_DAT_8007B7F8]) >> 12`; enters with `v0`/`v1` preset (2-term q12 accumulate). | `overlay_0897_801d71b8.txt` |
+| `0x801E2650` | INTERIOR | Branch-delay-slot entry; decimal splitter storing 8 digit bytes at `&DAT_801F35F0`, tail-jumps `FUN_801F1118`/`FUN_801F1278`. | `overlay_0897_801e2650.txt` |
+| `0x801E805C` | INTERIOR | Actor command commit: writes action id to actor `+0x1DF`, reads a per-command descriptor at `0x8007..52C0` (stride 4), branches on bits `0x40`/`0x20`. | `overlay_0897_801e805c.txt` |
+| `0x801E0080` | REAL (battle overlay) | The `overlay_0897` dump is an empty 0-instruction stub (corpus gap), but a full 606-instruction body is present in the battle-overlay dump — a real `battle_action(898)` function, not a field-VM entry. | `overlay_battle_action_801e0080.txt` |
+| `0x801F0450` | INTERIOR of `FUN_801F03B0` | Per-entry sprite-position lerp over 40×`0xC` records; non-ABI `t0`/`t2` register args. | `overlay_0897_801f0450.txt` |
+| `0x801F0ADC` | INTERIOR of `FUN_801F07AC` | Overlap-spread pass on a ≤6-entry i16 coordinate array, tail-jumps `801DA0F0`/`801DA2D0`. | `overlay_0897_801f0adc.txt` |
+| `0x801DF6B8` | INTERIOR (epilogue) of `FUN_801DF570` | Two-decimal percent text builder (`v*100/max`, `v*10000/max`) drawn via `80034B78`/`8003C1F8`/`8003CC98`; register-arg. | `overlay_0897_801df6b8.txt` |
+| `0x801EC0DC` | INTERIOR | Delay-slot entry; sprite/text draw fragment (`8003CD00` + `8002B994`), register-arg `s1`/`s2`/`s3`. | `overlay_0896_801ec0dc.txt` |
+| `0x801F20B0` | DUPLICATE | Interior of `FUN_801F2098`, a twin of the living-slot scanner `FUN_801DB8B4` (below). | `overlay_overlay_0897_xxx_dat_801f20b0.txt` |
+| `0x801F6B24` | out-of-scope | NOFUNC in the Legaia field/battle overlays (0897/0967/0898); the only analyzed body at this VA (82 instructions) lives in the unrelated `0978_other_game` overlay, so it is not a Legaia field-VM function. | `overlay_0978_other_game_801f6b24.txt` |
+| `0x801F1278` | REAL (C-only) | Party-cursor submode enter (below). | `overlay_overlay_0897_801f1278.txt` |
+| `0x801F159C` | REAL (C-only) | Party-cursor submode resume / close (below). | `overlay_overlay_0897_801f159c.txt` |
+| `0x801F71E0` / `0x801F5748` | REAL, large | Per-actor command / queue loops over the actor band (below). | `overlay_0897_801f71e0.txt` / `overlay_0897_801f5748.txt` |
+| `0x801E0598` | REAL (other subsystem) | Menu/save overlay state-init: zeroes ~25 `0x801Fxxxx`/`0x801EFxxx` globals, calls `Init_card`, installs the save-scan base `&DAT_80084140` at `_DAT_801F32A0`. | `overlay_menu_801e0598.txt` |
+| `0x801F6D48` | REAL (other subsystem) | Baka Fighter minigame overlay function; see [`minigame-baka-fighter.md`](minigame-baka-fighter.md). | `overlay_baka_fighter_801f6d48.txt` |
+| `0x801F07AC` | INTERIOR | Confirmed tail fragment (no prologue; `s5`/`s7` low byte = label count, the ≤N i16 screen-X array already on the caller's stack at `sp+0x28`). Label **de-overlap spread**: for each adjacent pair, measures the earlier label's text width (`jal 0x80035F04` over the `+0x29`-strided name) and, where the next label's X underflows, pushes both apart by half the overlap; tail-jumps `801DA0F0`. Its inner loop `801F0ADC` is the row above. | `overlay_0897_801f07ac.txt` |
+| `0x801DA0F0` / `0x801D9978` / `0x801D9804` | UNCERTAIN (truncated) | Decimal-string expansion tails - see [§ below](#the-decimal-string-expansion-tail-family). | dumps as named |
+| `0x801F1118` | INTERIOR / continuation | Tail-jump target of the decimal splitter `801E2650`; per-record (stride `0x414`) flag-word scan at `+0x6BC` (tests `0x40000`/`0x20000`/`0x8000`), sets `+0x16C = 1`. Register-arg (`s0..s3` preset). | `overlay_0897_801f1118.txt` |
+| `0x801DBDDC` | REAL (battle overlay) | **Not** a field-VM entry: every dumped body at this VA is `battle_action(898)` - a per-frame counter decrementing `DAT_801F2AA0`, clamped to `[0, 0xFFF]`. The 0897 slice (19 insn, `j 0x801EA7AC`) is the truncated alias. | `overlay_battle_action_801dbddc.txt` |
+| `0x801D2F38` | REAL (dance overlay) | **Not** a field-VM entry: the 0897 dump is an empty stub (corpus gap); the only real body (240 insn, `jr ra`) lives in the `dance(980)` overlay. VA-aliased dance-minigame function. | `overlay_dance_801d2f38.txt` |
+| `0x801D43EC` | INTERIOR | VA lies inside the dumped body of `FUN_801D362C` (the cutscene-dialogue SM) in 0897; register-arg (`s0`/`s1`/`s6`), not a standalone entry. | `overlay_0897_801d43ec.txt` |
+| `0x801D1EF0` | SHARED_TAIL | No `jr ra`; exits `j 0x801E00BC` inside `FUN_801DE840` - an entry into the field VM's multi-entry epilogue, not a standalone function. | `overlay_0897_801d1ef0.txt` |
+| `0x801D06E0` | SHARED_TAIL | No `jr ra`; exits `j 0x801DEE50` (the field VM's "halt-acquire failed / reset to loop start" label) - a multi-entry tail, not standalone. | `overlay_0897_801d06e0.txt` |
+| `0x801D30B8` | INTERIOR | No prologue; reads `s1..s8` + a caller stack slot it never writes - a tail fragment reaching the parent's epilogue. | `overlay_0897_801d30b8.txt` |
+| `0x801D84C0` | REAL, aliased | ≤6-slot name/label assembler: walks `&DAT_801F29F0` at stride `0xE`, skipping `0x7C` (`\|`) separators + a skip-char, into the `+0x2AF8` draw buffer. The field body (212 insn) VA-aliases a distinct 259-insn `battle_action(898)` body - confirm the image before porting. | `overlay_0897_801d84c0.txt` |
+| `0x801D32BC` | REAL (small) | Field opcode-arm helper: `if ((v0 >> 16) == 0x100) func_0x800430AC(*(u8*)(s6+1)); return pc + 3`. Aliases a 98-insn `battle_action(898)` body. | `overlay_0897_801d32bc.txt` |
+| `0x801DBC30` / `0x801DBB8C` | REAL (C-only) | Text-cell table init pair - see [§ below](#text-cell-table-init). Field bodies alias 53-/41-insn battle bodies. | dumps as named |
+| `0x801D0D38` / `0x801D095C` | REAL, render-track | Party-roster panel renderers (op-`0x49` submode family) - see [§ below](#party-roster-panel-renderers). Direct `overlay_0897_<addr>` dumps are truncated aliases; the full bodies are in the cutscene-dialogue / mapview field captures. | `overlay_cutscene_dialogue_801d0d38.txt` |
+| `0x801E4470` | REAL, render-track | Attached-sprite projection tick - documented in [`actor-vm.md`](actor-vm.md#field-spawned-sprite-tick-actors). | `overlay_cutscene_dialogue_801e4470.txt` |
+
+`FUN_801F2098` is a byte-for-byte VA-aliased duplicate of the living-slot scanner already documented as `FUN_801DB8B4` in [`battle-formulas.md`](battle-formulas.md) (Rust `battle_formulas::round::needs_retarget`): starting at `&DAT_801C937C` it returns the lowest actor slot `3..=6` whose HP field `+0x14C` is nonzero, else `7`. It is not re-ported.
+
+### The op-`0x49` party-cursor submode (`FUN_801F1278` / `FUN_801F159C`)
+
+The STATE_RESUME "Done writer (field-overlay `FUN_801F159C`-class)" named above drives a second op-`0x49` sub-screen (sibling to the name-entry screen), reached through actor `+0x50` handler slot `7` in the table `PTR_FUN_801F33B4`:
+
+- **Enter** `FUN_801F1278(actor)`: suspends field input (`FUN_801DE190`, sets `_DAT_8007C364+0x10` bit `0x80000`, clears pad latch `_DAT_1F800394` bit `0x8000`), forces the cursor context `_DAT_801C6EA4+0x3E = 1`, saves the caller's `+0x50` into `+0x40` and installs handler `7`, seeds portrait/member cells `_DAT_801C6EA4+0x36/+0x38/+0x3A` from the roster `DAT_80084594` (count) / `DAT_80084598..A` (member ids), homes the cursor (`+0x46=0xA0`,`+0x48=0x58`), and if a pending pick `_DAT_8007B450` is live remaps `+0x50` through the id table `&DAT_801F33A4`.
+- **Resume / close** `FUN_801F159C(actor)`: active only while submode state `DAT_801F2734 ∈ {1,4,7}`; re-arms via `FUN_801F1278` when a pad flag is set, dispatches the per-frame handler `PTR_FUN_801F33B4[actor+0x50]`, and on confirm (`_DAT_801C6EA4+0x3E == 0`) sets the actor yield bit (`+0x10 |= 8`), releases the pad latch, and drops the field/tile-board busy flag (`_DAT_8007B450` / `_DAT_8007C364+0x10 &= ~0x80000`).
+
+Both dumps are decompiled-C only (no disassembly), so store order is unverified; they stay documented rather than ported.
+
+### The actor-band command loops (`FUN_801F71E0` / `FUN_801F5748`)
+
+`FUN_801F71E0` (1070 instr) and `FUN_801F5748` (2777 instr, overlay base `0x801CE818`, contains `switchD_801D2830`) iterate the per-actor pointer band based at `0x801C9370` (`= 0x801D0000 - 0x6C90`), touching command fields `+0x1D9`, `+0x1DF` (the [move-power](../formats/move-power.md) action id), `+0x249`, `+0x24D` and the HP field `+0x14C`. They are large, global-entangled queue/command processors, and because the `0x801Fxxxx` VA aliases across the field (0897) and battle (0898) overlays their owning overlay must be confirmed before any port; documented, not ported.
+
+> **These rows are mostly VA-aliased or truncated, not standalone field-VM
+> entries.** The direct `overlay_0897_<addr>.txt` dump at many of these VAs is a
+> mis-based slice - a 1-instruction stub carrying only decompiled C, or a
+> fragment of an unrelated function - while the real body lives in another
+> overlay image (the `battle_action(898)` / `dance(980)` captures) or in a
+> better-based field capture (`overlay_cutscene_dialogue_*` /
+> `overlay_cutscene_mapview_*`, which the classifier confirms *are* the field
+> overlay 0897). Always check `classify-worklist.py --explain` and read the
+> body-bearing dump before treating one as a field-VM function; a filename
+> prefix is not evidence of base correctness
+> (see [`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md)).
+
+### The decimal-string expansion tail family
+
+`801DA0F0`, `801D9978` and `801D9804` are three near-identical tails that convert
+a signed integer to decimal ASCII in place. Each enters mid-computation with the
+dividend in `s1` and the divisor in `a3`/`v0` (no prologue - register handoff from
+a caller that already set up the value), runs a reciprocal-multiply `÷10` loop
+(magic constant `0x66666667`, guarded by `break 0x1C00` / `0x1800` for the `÷0`
+and `INT_MIN / -1` cases), stores each `'0' + digit` byte into the stack buffer at
+`sp+0x18`, and bounds the loop by a global digit count (`*(int*)(t2 + 0x2B80)`).
+The tail ends `jal 0x8001AA68` - the block-copy that lands the finished string
+into the draw buffer. `801DA0F0` is the `j`-reached tail of the label-spread pass
+`801F07AC`; `801D9978` / `801D9804` are the same idiom reached from the
+number-draw arms. The classifier marks all three UNCERTAIN because the dumped
+window ends at the `jal` with no `jr ra` - the window is truncated, not the
+function. `see ghidra/scripts/funcs/overlay_0897_801da0f0.txt`.
+
+### Text-cell table init
+
+`801DBC30` seeds a 46-record table in PSX scratchpad at `0x1F800314` (stride
+`0x18`): each record takes the colour word `param_1` at `+4`/`+0xC`, `param_3` at
+`+0xA`, and a per-record depth counter (decremented from `DAT_1F8003E9`, chained
+through each record's `+0x22`) at `+2`. It then sets `_DAT_80077024 = 0xE` /
+`_DAT_80077022 = 0x44`, calls `FUN_801D99BC` / `FUN_801D8DE8(0x1A,1)` /
+`FUN_801D32BC(1)`, and finds the narration-crawl roller
+(`func_0x8003CF04(_DAT_8007C34C, 0x80037174)`) to adjust its flag word by the mode
+in `s6` (2 → clear `0x80000`; 3 → clear the parked caller's `0x400` and set bit
+`8`). `801DBB8C` is an alternate entry into the same routine, entering with the
+counter (`v0`) and table base (`v1`) already in registers - it skips the
+`DAT_1F8003E9` setup. Both are referenced by the actor-band command loops
+`801F5748` / `801F747C`. The field slices are decompiled-C only (the disassembly at
+these VAs belongs to distinct 53- / 41-instruction `battle_action(898)` bodies),
+so store order is unverified; documented, not ported.
+`see ghidra/scripts/funcs/overlay_0897_801dbc30.txt`.
+
+### Party-roster panel renderers
+
+`801D0D38` and `801D095C` are per-frame panel builders in the op-`0x49`
+party-cursor submode family (siblings of `801F1278` / `801F159C` above).
+`801D0D38` (387 insn) walks the live roster - member count `DAT_80084594`, records
+`DAT_800845C4`, player context `_DAT_8007C364` - and the cursor context
+`DAT_801F3488..348C`, drawing per-member numerics through `func_0x80034B78` and
+screen-projecting cell anchors through the GTE wrapper `func_0x800195A8`.
+`801D095C` (141 insn) is the money/counter variant: it clamps each of three values
+to `9,999,999` and draws them from the save-scan base `&DAT_80084140` (stride
+`0x414`) via the same number drawer, gating on the field / tile-board busy flag
+`_DAT_8007B454 = 7`. Both call `func_0x800195A8` and build GPU primitives, so they
+are **render-track** - documented, not ported. Their direct `overlay_0897_<addr>`
+dumps are truncated aliases; the full bodies are in the cutscene-dialogue /
+cutscene-mapview field captures.
+`see ghidra/scripts/funcs/overlay_cutscene_dialogue_801d0d38.txt`.
 
 ## Field dialogue has no opcode
 

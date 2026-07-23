@@ -57,7 +57,10 @@ pub const DANCE_SFX_BANK_PROT_INDEX: usize = 1228;
 /// loaded by the overlay itself). Sits in the PROT TOC's zeroed tail - needs
 /// the footprint fallback in the TOC parsers to resolve at all.
 pub const DANCE_SFX_VAB_PROT_INDEX: usize = 1231;
-/// The dance's two BGM entries (`music_01` bank; the overlay picks by mode).
+/// The dance's two BGM entries (`music_01` bank; the overlay picks by mode) -
+/// extraction 1048 = sound-test #60 `M116` "Sol disco final 1", 1054 = #66
+/// `M120` "Sol disco final 2" (the piecewise bank map: extraction = 988+index
+/// for indices <= 67).
 pub const DANCE_BGM_PROT_INDEX: usize = 1048;
 pub const DANCE_BGM_ALT_PROT_INDEX: usize = 1054;
 

@@ -196,23 +196,26 @@ fn sparse_bank_programs_resolve_by_used_slot_rank() {
     let mut alloc = SpuAllocator::new(0x1000, 0x10_0000);
     let bank = VabBank::upload(&mut spu, &mut alloc, &report, &blob);
 
-    // Slot space: len = last used slot + 1; slots 0/2 empty.
+    // Slot space: len = last used slot + 1.
     assert_eq!(bank.programs.len(), 4);
-    assert!(bank.programs[0].tones.is_empty());
-    assert!(bank.programs[2].tones.is_empty());
     let vag1_addr = bank.samples[0].expect("VAG 1 uploaded").addr;
     let vag2_addr = bank.samples[1].expect("VAG 2 uploaded").addr;
 
-    // Program 1 -> packed page 0 -> VAG 1.
+    // Program 1 (used) -> packed page 0 -> VAG 1.
     assert!(bank.play_note(&mut spu, 0, 1, 60, 100));
     assert_eq!(spu.voices[0].start_addr, vag1_addr);
-    // Program 3 -> packed page 1 -> VAG 2. Under the old packed indexing
+    // Program 3 (used) -> packed page 1 -> VAG 2. Under the old packed indexing
     // this program number was out of range and the note silently dropped.
     assert!(bank.play_note(&mut spu, 1, 3, 60, 100));
     assert_eq!(spu.voices[1].start_addr, vag2_addr);
-    // Unused slots resolve nothing.
-    assert!(!bank.play_note(&mut spu, 2, 0, 60, 100));
-    assert!(!bank.play_note(&mut spu, 2, 2, 60, 100));
-    assert_eq!(bank.tone_prior(1, 60), Some(0));
-    assert_eq!(bank.tone_prior(2, 60), None);
+    // Unused slots alias onto the page the NEXT used slot gets (retail's +8
+    // used-counter), so they resolve rather than fall silent: slot 0 -> page 0
+    // (VAG 1, same as program 1), slot 2 -> page 1 (VAG 2, same as program 3).
+    assert!(bank.play_note(&mut spu, 2, 0, 60, 100));
+    assert_eq!(spu.voices[2].start_addr, vag1_addr);
+    assert!(bank.play_note(&mut spu, 3, 2, 60, 100));
+    assert_eq!(spu.voices[3].start_addr, vag2_addr);
+    assert_eq!(bank.tone_prior(0, 60), bank.tone_prior(1, 60));
+    assert_eq!(bank.tone_prior(2, 60), bank.tone_prior(3, 60));
+    assert!(bank.tone_prior(1, 60).is_some());
 }

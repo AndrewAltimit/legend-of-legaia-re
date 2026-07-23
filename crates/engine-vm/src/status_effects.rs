@@ -573,10 +573,126 @@ fn dot_tick_damage(current_hp: u16, raw: u16, cap: u16) -> u16 {
     }
     dmg
 }
+/// Outcome of the HUD status-icon selector [`status_icon`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatusIcon {
+    /// The slot is live but carries no ailment bits: retail draws the base
+    /// marker sprite (id `0x0A`) and, beside it, the numeric counter read
+    /// from the display record's `+0x6F8` byte (a turn / stack count) via
+    /// the number drawer `FUN_80034B78`. The count value itself is an
+    /// engine-supplied field, not part of the selection.
+    BaseWithCount,
+    /// Draw a single ailment sprite from the `0x18..=0x20` id band.
+    Sprite(u8),
+    /// Draw nothing (an inactive-and-empty slot, or a bit set outside the
+    /// eight the priority ladder tests).
+    None,
+}
+
+/// HUD status-icon selection - the display arm of `FUN_8002C2E4`
+/// (`ghidra/scripts/funcs/8002c2e4.txt`).
+///
+/// PORT: FUN_8002C2E4
+///
+/// Each on-screen party / battle slot carries a `u16` display-flag word at
+/// its status-display record `+0x6F6` and a "slot live" halfword at `+0x6CE`
+/// (`present`). Once per frame the retail routine turns the two into one of
+/// three draws, all landing through the icon drawer `FUN_8002C488`:
+///
+/// - `flags == 0 && present` -> [`StatusIcon::BaseWithCount`]: the base
+///   marker plus the `+0x6F8` counter.
+/// - otherwise, `!present` -> `Sprite(0x20)` (the "empty / gone" marker,
+///   which wins over any flag bits still set), and
+/// - `present` with bits set -> the first match of a fixed **priority
+///   ladder**, read off the disassembly's branch order (the Ghidra C renders
+///   it as a nest of `if`s in the same order):
+///
+/// | bit tested | sprite id |
+/// |------------|-----------|
+/// | `0x0004`   | `0x1A`    |
+/// | `0x0400`   | `0x1D`    |
+/// | `0x0800`   | `0x1E`    |
+/// | `0x0380`   | `0x1C`    |
+/// | `0x0078`   | `0x1B`    |
+/// | `0x1000`   | `0x1F`    |
+/// | `0x0002`   | `0x19`    |
+/// | `0x0001`   | `0x18`    |
+///
+/// A `present` slot whose only set bits fall outside every mask above draws
+/// nothing ([`StatusIcon::None`]) - retail falls through the ladder to the
+/// function's return. The mapping from a bit to the ailment it represents is
+/// not pinned here; this port reproduces the selection, and the draw
+/// coordinates (`param2 + 0x33`, `param3 - 4`) are fixed offsets the caller
+/// supplies.
+pub fn status_icon(display_flags: u16, present: bool) -> StatusIcon {
+    if display_flags == 0 {
+        return if present {
+            StatusIcon::BaseWithCount
+        } else {
+            StatusIcon::Sprite(0x20)
+        };
+    }
+    if !present {
+        // The `+0x6CE == 0` arm is taken before any flag bit is inspected.
+        return StatusIcon::Sprite(0x20);
+    }
+    // Priority ladder, first match wins (retail branch order).
+    for &(mask, id) in &[
+        (0x0004u16, 0x1Au8),
+        (0x0400, 0x1D),
+        (0x0800, 0x1E),
+        (0x0380, 0x1C),
+        (0x0078, 0x1B),
+        (0x1000, 0x1F),
+        (0x0002, 0x19),
+        (0x0001, 0x18),
+    ] {
+        if display_flags & mask != 0 {
+            return StatusIcon::Sprite(id);
+        }
+    }
+    StatusIcon::None
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn status_icon_base_marker_needs_a_live_empty_slot() {
+        assert_eq!(status_icon(0, true), StatusIcon::BaseWithCount);
+        // Empty and not live: the gone-marker, never the base+count.
+        assert_eq!(status_icon(0, false), StatusIcon::Sprite(0x20));
+    }
+
+    #[test]
+    fn status_icon_absent_slot_wins_over_flag_bits() {
+        // `present == 0` is tested before the ladder: 0x20 regardless of bits.
+        assert_eq!(status_icon(0x0004, false), StatusIcon::Sprite(0x20));
+        assert_eq!(status_icon(0x1000, false), StatusIcon::Sprite(0x20));
+    }
+
+    #[test]
+    fn status_icon_ladder_is_priority_ordered() {
+        assert_eq!(status_icon(0x0004, true), StatusIcon::Sprite(0x1A));
+        assert_eq!(status_icon(0x0400, true), StatusIcon::Sprite(0x1D));
+        assert_eq!(status_icon(0x0800, true), StatusIcon::Sprite(0x1E));
+        assert_eq!(status_icon(0x0380, true), StatusIcon::Sprite(0x1C));
+        assert_eq!(status_icon(0x0078, true), StatusIcon::Sprite(0x1B));
+        assert_eq!(status_icon(0x1000, true), StatusIcon::Sprite(0x1F));
+        assert_eq!(status_icon(0x0002, true), StatusIcon::Sprite(0x19));
+        assert_eq!(status_icon(0x0001, true), StatusIcon::Sprite(0x18));
+        // 0x0004 outranks a lower-priority bit set at the same time.
+        assert_eq!(status_icon(0x0004 | 0x0001, true), StatusIcon::Sprite(0x1A));
+        // 0x0380 (a group mask) outranks 0x0078.
+        assert_eq!(status_icon(0x0380 | 0x0078, true), StatusIcon::Sprite(0x1C));
+    }
+
+    #[test]
+    fn status_icon_unlisted_bit_on_a_live_slot_draws_nothing() {
+        // 0x8000 is outside every mask; a live slot carrying only it is blank.
+        assert_eq!(status_icon(0x8000, true), StatusIcon::None);
+    }
 
     #[test]
     fn enemy_effect_byte_routes() {

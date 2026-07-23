@@ -118,9 +118,7 @@ fn scene_prescripts_select_global_pool_tracks() {
             .iter()
             .map(|&(id, owned)| {
                 let entry = if owned {
-                    legaia_engine_core::music_labels::MUSIC_BANK_EXTRACTION_BASE
-                        + legaia_engine_core::music_labels::sound_test_index_for_bgm_id(id)
-                            .unwrap_or(0)
+                    legaia_engine_core::music_labels::prot_entry_for_bgm_id(id).unwrap_or(0)
                 } else {
                     block_start + 8 + id as u32
                 };

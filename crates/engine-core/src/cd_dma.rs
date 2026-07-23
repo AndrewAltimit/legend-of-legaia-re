@@ -775,6 +775,155 @@ fn bin_to_bcd(v: u8) -> u8 {
     ((v / 10) << 4) | (v % 10)
 }
 
+// =========================================================================
+// StreamLoadQueue - index-based async streaming enqueue (FUN_8003DDA0)
+// =========================================================================
+
+/// One entry in the boot-time async streaming load queue built by
+/// [`StreamLoadQueue::enqueue`]. Retail stores an 8-byte descriptor at
+/// `gp+0x1A8 + n*8`: `[u32 prot_idx][u32 byte_offset]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StreamLoadDescriptor {
+    /// PROT entry index queued (retail `desc[0]`, `gp+0x1A8 + n*8 + 0`).
+    pub prot_idx: ProtIndex,
+    /// Running byte offset into the accumulated destination buffer at
+    /// which this entry's payload will land (retail `desc[1]`, `+4`).
+    pub byte_offset: u32,
+}
+
+/// Index-based streaming **load queue** - the port of `FUN_8003DDA0`.
+///
+/// PORT: FUN_8003DDA0
+/// REF: FUN_8003EE7C, FUN_8003DE7C, FUN_8003ED04 (XA-control toggles the
+/// retail routine brackets each append with; hardware side-band, not
+/// modelled here)
+///
+/// Retail `FUN_8003DDA0(idx)` appends a load descriptor for PROT entry
+/// `idx` to the queue and advances a running byte cursor by the entry's
+/// byte size, reading the in-RAM TOC at `0x801C70F0` with the standard
+/// [PROT TOC math](../../../docs/formats/prot.md):
+///
+/// ```text
+///   start        = TOC[idx + 2]                 // gp+0x8F0 stash
+///   next         = TOC[idx + 3]
+///   size_sectors = next - start
+///   gp+0x90C     = idx                          // last-enqueued index
+///   gp+0x8F0     = start
+///   n            = gp+0x8BC                      // queued-entry count
+///   cursor       = gp+0x984                      // running byte cursor
+///   gp+0x91C     = 0x78                          // read-wait timeout
+///   desc         = gp+0x1A8 + n*8
+///   desc[0]      = idx
+///   desc[1]      = cursor
+///   gp+0x984     = cursor + (size_sectors << 11) // advance by size*2048
+///   gp+0x8BC     = n + 1
+/// ```
+///
+/// The `<< 11` (`* 0x800`) turns a sector count into a byte count, so the
+/// cursor tracks the total bytes queued so far - the destination offset the
+/// next entry's payload lands at. This is the size-aware sibling of the
+/// plain LBA resolver [`CdDmaHost::prot_index_size_lookup`]
+/// (`FUN_8003E8A8`): the resolver hands a one-shot loader a single entry's
+/// LBA count, whereas this accumulates a *contiguous multi-entry* read plan.
+///
+/// The TOC is caller-supplied (built from the user's disc at runtime); no
+/// Sony bytes live here. `ghidra/scripts/funcs/8003dda0.txt` is the spec.
+#[derive(Debug, Clone, Default)]
+pub struct StreamLoadQueue {
+    /// The `gp+0x1A8` descriptor table; length is retail's queued-entry
+    /// count `gp+0x8BC`.
+    entries: Vec<StreamLoadDescriptor>,
+    /// Running byte cursor `gp+0x984` - total bytes queued so far.
+    byte_cursor: u32,
+    /// Last-enqueued PROT index `gp+0x90C`.
+    last_prot_idx: ProtIndex,
+    /// Last-resolved start LBA `gp+0x8F0`.
+    last_start_lba: Lba,
+    /// Read-wait timeout `gp+0x91C`, reset to `0x78` on each enqueue.
+    read_wait_timeout: u32,
+}
+
+impl StreamLoadQueue {
+    /// A fresh queue: empty descriptor table, byte cursor at zero.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Append a load descriptor for PROT entry `prot_idx`, given its TOC
+    /// start LBA and the following entry's start LBA (`next_lba`, so the
+    /// entry spans `next_lba - start_lba` sectors). Mirrors `FUN_8003DDA0`
+    /// exactly; returns the descriptor just appended.
+    ///
+    /// Arithmetic is wrapping to match the 32-bit retail registers (LBAs
+    /// are small positive values in practice, so this never wraps for real
+    /// disc data, but a degenerate `next < start` will not panic).
+    pub fn enqueue(
+        &mut self,
+        prot_idx: ProtIndex,
+        start_lba: Lba,
+        next_lba: Lba,
+    ) -> StreamLoadDescriptor {
+        let size_sectors = next_lba.wrapping_sub(start_lba);
+        self.last_prot_idx = prot_idx;
+        self.last_start_lba = start_lba;
+        self.read_wait_timeout = 0x78;
+        let desc = StreamLoadDescriptor {
+            prot_idx,
+            byte_offset: self.byte_cursor,
+        };
+        self.entries.push(desc);
+        self.byte_cursor = self.byte_cursor.wrapping_add(size_sectors.wrapping_shl(11));
+        desc
+    }
+
+    /// Convenience wrapper resolving `start`/`next` straight out of a raw
+    /// in-RAM TOC word slice (`0x801C70F0` head), reading `toc[idx + 2]`
+    /// and `toc[idx + 3]` per the PROT TOC math, then calling
+    /// [`enqueue`](Self::enqueue). Returns `None` when `idx + 3` is out of
+    /// range. The TOC slice is caller-supplied disc data.
+    pub fn enqueue_from_toc(
+        &mut self,
+        prot_idx: ProtIndex,
+        toc: &[u32],
+    ) -> Option<StreamLoadDescriptor> {
+        let i = prot_idx as usize;
+        let start = *toc.get(i + 2)?;
+        let next = *toc.get(i + 3)?;
+        Some(self.enqueue(prot_idx, start, next))
+    }
+
+    /// The queued descriptors so far (retail `gp+0x1A8` table).
+    pub fn entries(&self) -> &[StreamLoadDescriptor] {
+        &self.entries
+    }
+
+    /// Queued-entry count (retail `gp+0x8BC`).
+    pub fn count(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Running byte cursor (retail `gp+0x984`) - total bytes queued, i.e.
+    /// the destination offset the next enqueue will land at.
+    pub fn byte_cursor(&self) -> u32 {
+        self.byte_cursor
+    }
+
+    /// Last-enqueued PROT index (retail `gp+0x90C`).
+    pub fn last_prot_idx(&self) -> ProtIndex {
+        self.last_prot_idx
+    }
+
+    /// Last-resolved start LBA (retail `gp+0x8F0`).
+    pub fn last_start_lba(&self) -> Lba {
+        self.last_start_lba
+    }
+
+    /// Read-wait timeout (retail `gp+0x91C`), `0x78` after any enqueue.
+    pub fn read_wait_timeout(&self) -> u32 {
+        self.read_wait_timeout
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1248,5 +1397,79 @@ mod tests {
         assert_eq!(lba_to_bcd_msf(75), (0x00, 0x03, 0x00));
         // LBA 60*75 = 1 minute past pregap: MSF 01:02:00.
         assert_eq!(lba_to_bcd_msf(60 * 75), (0x01, 0x02, 0x00));
+    }
+
+    // ---- StreamLoadQueue (FUN_8003DDA0) ----
+
+    #[test]
+    fn stream_queue_first_enqueue_lands_at_offset_zero() {
+        let mut q = StreamLoadQueue::new();
+        // Entry 897 spans 4 sectors (start 1000, next 1004).
+        let d = q.enqueue(897, 1000, 1004);
+        assert_eq!(
+            d,
+            StreamLoadDescriptor {
+                prot_idx: 897,
+                byte_offset: 0
+            }
+        );
+        assert_eq!(q.count(), 1);
+        assert_eq!(q.last_prot_idx(), 897);
+        assert_eq!(q.last_start_lba(), 1000);
+        assert_eq!(q.read_wait_timeout(), 0x78);
+        // 4 sectors * 0x800 = 0x2000 bytes queued.
+        assert_eq!(q.byte_cursor(), 4 * 0x800);
+    }
+
+    #[test]
+    fn stream_queue_accumulates_byte_cursor_across_entries() {
+        let mut q = StreamLoadQueue::new();
+        q.enqueue(10, 0, 3); // 3 sectors -> +0x1800
+        let d2 = q.enqueue(11, 100, 105); // 5 sectors -> +0x2800
+        // Second entry's payload lands right after the first (0x1800).
+        assert_eq!(d2.byte_offset, 3 * 0x800);
+        assert_eq!(q.byte_cursor(), (3 + 5) * 0x800);
+        assert_eq!(q.count(), 2);
+        assert_eq!(
+            q.entries()[0],
+            StreamLoadDescriptor {
+                prot_idx: 10,
+                byte_offset: 0
+            }
+        );
+        // last_* track the most recent enqueue only.
+        assert_eq!(q.last_prot_idx(), 11);
+        assert_eq!(q.last_start_lba(), 100);
+    }
+
+    #[test]
+    fn stream_queue_from_toc_reads_idx_plus_2_and_3() {
+        // Raw in-RAM TOC head: word[idx+2] = start, word[idx+3] = next.
+        // Lay out so entry idx=1 -> start=toc[3], next=toc[4].
+        let toc: Vec<u32> = vec![0, 0, 0, 500, 512, 600];
+        let mut q = StreamLoadQueue::new();
+        let d = q.enqueue_from_toc(1, &toc).expect("idx+3 in range");
+        assert_eq!(d.prot_idx, 1);
+        assert_eq!(q.last_start_lba(), 500);
+        // 512 - 500 = 12 sectors * 0x800.
+        assert_eq!(q.byte_cursor(), 12 * 0x800);
+    }
+
+    #[test]
+    fn stream_queue_from_toc_out_of_range_returns_none() {
+        let toc: Vec<u32> = vec![0, 0, 500];
+        let mut q = StreamLoadQueue::new();
+        // idx=0 needs toc[2] and toc[3]; toc[3] is missing.
+        assert!(q.enqueue_from_toc(0, &toc).is_none());
+        assert_eq!(q.count(), 0, "a failed lookup must not mutate the queue");
+    }
+
+    #[test]
+    fn stream_queue_degenerate_size_does_not_panic() {
+        let mut q = StreamLoadQueue::new();
+        // next < start: retail computes a wrapping size; port must not panic.
+        let d = q.enqueue(5, 200, 100);
+        assert_eq!(d.byte_offset, 0);
+        assert_eq!(q.count(), 1);
     }
 }

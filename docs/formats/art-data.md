@@ -12,6 +12,9 @@ Implementation: [`crates/art`](../../crates/art/README.md).
   - [Fixed prefix](#fixed-prefix)
   - [Variable fields](#variable-fields-positions-documented-exact-byte-offsets-per-art-specific)
   - [Power encoding](#power-encoding)
+- [Runtime cue playout](#runtime-cue-playout)
+  - [The cue tables](#the-cue-tables)
+  - [Target-group encoding](#target-group-encoding)
 - [Learned Art Constant](#learned-art-constant)
 - [Art Anim Data](#art-anim-data)
 - [Miracle Arts](#miracle-arts)
@@ -193,6 +196,75 @@ SCUS string): the kernel reads only these bytes. The parser + in-place editor
 is `legaia_patcher::arts_power` (CLI `legaia-patcher arts` /
 `--arts-power COMBO=VALUE`; see [randomizer.md](../tooling/randomizer.md)); this
 supersedes the earlier "exact byte offsets per art-specific / UNPINNED" note.
+
+## Runtime cue playout
+
+The art record's [Special / Hit Effect Cues and Damage Timing](#variable-fields-positions-documented-exact-byte-offsets-per-art-specific)
+fields are read at play-time by a per-frame driver, not decoded up front. The
+matched art materializes into `actor[+0x4C]` (see [Damage power byte](#damage-power-byte---pinned-to-record0-0x24)),
+and a per-actor **cue cursor** at `actor[+0x1F5]` walks the record's hit run,
+firing one cue per animation frame it reaches. The functions below are the
+readers; each is in the battle overlay (PROT 0898).
+
+- **`FUN_801dea50`** (`see ghidra/scripts/funcs/overlay_battle_action_801dea50.txt`)
+  is the arts per-frame hit-cue + damage-marker playout. It reads the hit run at
+  `art_record + cursor*8 + 0x14` (8-byte entries: `+0` timing, `+1` cue code,
+  `+2/+4/+6` XYZ offsets), places each cue in world space from the actor's
+  position (`+0x34/+0x38`) rotated by its facing (`+0x46`) through the shared
+  sin/cos tables, and dispatches on the cue code. A code with the high bit set
+  is a floating-number spawn (masked `& 0x7f`, via `FUN_801dfdf0`); a plain code
+  is an SFX + effect-sprite pair (see [the cue tables](#the-cue-tables)). On the
+  terminator entry it materializes the move-power record for the move id
+  `actor[+0x1DF]` (`0x801F4F5C`, 26-byte stride; see [move-power.md](move-power.md))
+  and lays down that move's own per-hit cue list plus the multi-target markers.
+  It advances `actor[+0x1F5]` and loops while the cursor is `< 8`.
+- **`FUN_801e22c8`** (`see ghidra/scripts/funcs/overlay_battle_action_801e22c8.txt`)
+  is a lighter impact-cue emitter for a single art/anim id. It indexes a
+  per-art cue table at `0x801F6470` (5-byte stride: `+0` entry count, then the
+  cue codes), and for each entry spawns either a number (`FUN_801dfdf0`) or an
+  SFX + effect sprite, decorating the sprite with the caller's texture word
+  (`+0x74`) unless it is the `0x808080` sentinel.
+- **`FUN_801e09f8`** (`see ghidra/scripts/funcs/overlay_battle_action_801e09f8.txt`)
+  is the special-attack sibling of `FUN_801dea50`: the same cue-table + number
+  machinery, but its damage path routes through the summon / move-power kernel
+  `FUN_801dd0ac` rather than the arts fold.
+- **`FUN_801e6d84`** (`see ghidra/scripts/funcs/overlay_battle_action_801e6d84.txt`)
+  sets up the target camera and enemy target-markers for a committed action. It
+  keys on the active actor's staged fields - target `+0x1DD`, action-constant
+  category `+0x1DE`, move/spell id `+0x1DF` - skips setup for Escape
+  (`+0x1DE == 5`), enumerates live enemies (slots 3..6, alive flag `+0x14C`) for
+  an all-target action, and otherwise frames the single target through the
+  battle camera command `FUN_801d8de8`.
+
+### The cue tables
+
+`FUN_801dea50` / `FUN_801e09f8` resolve a plain cue code through two parallel
+overlay tables; `FUN_801e22c8` uses the third:
+
+| Table VA | Indexed by | Role |
+|---|---|---|
+| `0x801F6418` | cue code (1-byte stride) | SFX id; nonzero entry issues a `0x1DC` sound packet |
+| `0x801F6324` | cue code (`code*4`) | pointer to the effect-sprite descriptor spawned via `FUN_80050ed4` |
+| `0x801F6470` | art/anim id (5-byte stride) | per-art cue list (`+0` count, then codes) read by `FUN_801e22c8` |
+
+A cue code's high bit (`0x80`) is not an index into these tables - it is the
+"spawn a digit" flag, and the low 7 bits select the glyph, matching the
+[Miracle Art directional MSB masking](#action-constants) convention (`& 0x7F`).
+
+### Target-group encoding
+
+Several arts readers share a compact target-group code in place of an explicit
+actor list. `FUN_801dea50` (staged value) and `FUN_801dceac`
+(`see ghidra/scripts/funcs/overlay_battle_action_801dceac.txt`, which computes
+the centroid / bounding box of a group's actor positions for area-effect aiming)
+both decode it the same way:
+
+| Code | Actor slot range `[start, end)` | Meaning |
+|---|---|---|
+| `< 8` | `[code, code+1)` | one explicit actor |
+| `8` | `[0, 3)` | the party |
+| `9` | `[3, 7)` | the enemy row |
+| `0xA` | `[0, 7)` | everyone |
 
 ## Learned Art Constant
 

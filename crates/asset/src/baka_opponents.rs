@@ -71,10 +71,12 @@
 /// CDNAME / PROT index of the Baka Fighter overlay (`data\OTHER5`).
 pub const BAKA_OVERLAY_PROT_INDEX: usize = 976;
 
-/// Extraction PROT entry of the duel's BGM (`music_01` bank slot 53, the
-/// boss-overture theme): the overlay init `FUN_801CF00C` loads it via
-/// `FUN_8001FC00(0x415, ...)` + `FUN_8001E54C(5, ...)` (raw loader index
-/// `0x415` = extraction 1043). See `docs/subsystems/minigame-baka-fighter.md`.
+/// Extraction PROT entry of the duel's BGM (`music_01` sound-test #55 `M112`
+/// "Sol disco fever" - the Baka Fighter is a Sol minigame): the overlay init
+/// `FUN_801CF00C` loads it via `FUN_8001FC00(0x415, ...)` + `FUN_8001E54C(5,
+/// ...)` (raw loader index `0x415` = extraction 1043). The bank map is
+/// piecewise, so extraction 1043 = index 55, not 53; see
+/// `docs/subsystems/minigame-baka-fighter.md`.
 pub const BAKA_BGM_PROT_INDEX: usize = 1043;
 
 /// Load base of the Baka Fighter overlay (the shared slot-A minigame base).

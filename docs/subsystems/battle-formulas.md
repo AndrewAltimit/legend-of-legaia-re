@@ -852,6 +852,7 @@ The clean-room Rust module `crates/engine-vm/src/battle_formulas.rs` ports the f
 | `victory_gold_per_monster` / `victory_gold_finalize` / `victory_exp_per_member` | this doc, victory-spoils gold/EXP scaling (`FUN_8004E568`) |
 | `escape_roll` / `escape_party_score` / `escape_enemy_score` (+ `EscapeFlags`) | this doc, [run / escape roll](#run--escape-roll---fun_801e791c) (`FUN_801E791C`) |
 | `status_effects::toxic_tick_damage` / `venom_tick_damage` (module `engine-vm::status_effects`) | this doc, [per-round status DoT ticker](#per-round-status-dot-ticker---fun_801e752c) (`FUN_801E752C`) |
+| `packed3_approach_target` / `approach_channel_clamped` | `FUN_80050F30`, the battle-actor tint/tween step - a pure kernel documented under [battle.md § Additional SCUS battle-band helpers](battle.md#additional-scus-battle-band-helpers). It moves an actor's on-screen tint word, not any stat, so it lives here as the file's one presentation-layer kernel rather than a damage formula. |
 
 The unit tests there pin the documented formulas as fixtures - a future runtime trace can then add comparison cases without touching the formula bodies.
 

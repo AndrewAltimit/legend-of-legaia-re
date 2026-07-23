@@ -65,6 +65,13 @@ pub fn enumerate_vabs(disc: &[u8], entries: &[EntryMeta]) -> Vec<VabSummary> {
 }
 
 /// One BGM pair (VAB + SEQ co-located in a single PROT entry).
+///
+/// The `sound_test_*` fields carry the curated `music_01` sound-test join
+/// (`legaia_engine_core::music_labels`): when this entry falls inside the
+/// global BGM bank (extraction 990..=1071) it resolves to a debug sound-test
+/// row - id, human title, in-game context. The boot/battle `sound_data2`
+/// copies and the dev banks carry a SEQ but no catalogued name, so those
+/// fields stay `None` (an honest "uncatalogued copy").
 #[derive(Debug, Clone)]
 pub struct BgmPair {
     pub prot_index: u32,
@@ -74,6 +81,19 @@ pub struct BgmPair {
     pub sample_count: u32,
     pub ppqn: u32,
     pub bpm: f32,
+    pub sound_test_id: Option<u32>,
+    pub debug_id: Option<String>,
+    pub title: Option<String>,
+    pub context: Option<String>,
+}
+
+/// Best single human name for a curated music row: where it's heard in-game,
+/// else the debug title's English gloss, else the OST gloss.
+fn track_title(t: &legaia_engine_core::music_labels::MusicTrack) -> Option<String> {
+    t.context
+        .clone()
+        .or_else(|| t.debug_gloss.clone())
+        .or_else(|| t.ost_gloss.clone())
 }
 
 /// Enumerate every PROT entry that contains both a parseable VAB and a SEQ
@@ -100,6 +120,8 @@ pub fn enumerate_bgm_pairs(disc: &[u8], entries: &[EntryMeta]) -> Vec<BgmPair> {
         let Ok(hdr) = legaia_seq::parse_header(&buf[seq_off..]) else {
             continue;
         };
+        let track = legaia_engine_core::music_labels::sound_test_index_for_prot_entry(e.index)
+            .and_then(legaia_engine_core::music_labels::track_for_sound_test_index);
         out.push(BgmPair {
             prot_index: e.index,
             vab_offset: vab_off as u32,
@@ -108,6 +130,76 @@ pub fn enumerate_bgm_pairs(disc: &[u8], entries: &[EntryMeta]) -> Vec<BgmPair> {
             sample_count: report.vag_samples.len() as u32,
             ppqn: hdr.ppqn as u32,
             bpm: hdr.bpm(),
+            sound_test_id: track.map(|t| t.index),
+            debug_id: track.and_then(|t| t.id.clone()),
+            title: track.and_then(track_title),
+            context: track.and_then(|t| t.context.clone()),
+        });
+    }
+    out
+}
+
+/// One row of the game's debug Sound Test - a curated `music_01` bank slot in
+/// its sound-test order, joined to this disc's playable BGM pair when one is
+/// present at the slot's PROT entry.
+#[derive(Debug, Clone)]
+pub struct SoundTestEntry {
+    /// Debug sound-test index (0..=80) - the order the in-game sound test lists.
+    pub index: u32,
+    pub debug_id: Option<String>,
+    pub title: Option<String>,
+    pub context: Option<String>,
+    pub ost: Option<String>,
+    pub relocalization: Option<String>,
+    /// The source flags this row as a guess / dev placeholder.
+    pub uncertain: bool,
+    /// The bank's extraction-space PROT entry for this slot (990 + index).
+    pub prot_index: u32,
+    /// True when a playable VAB+SEQ pair actually exists at `prot_index` on
+    /// this disc. The four pochi-filled dev slots (and any pack that never
+    /// shipped) resolve to a name but carry no audio.
+    pub playable: bool,
+    pub vab_offset: u32,
+    pub seq_offset: u32,
+    pub bpm: f32,
+}
+
+/// Build the full game Sound Test in catalogue order: every curated
+/// `music_01` row (`legaia_engine_core::music_labels`), each joined to its
+/// on-disc BGM pair when one exists. Presents the score the way the game's own
+/// sound-test menu does - by name and sound-test number, not by disc address.
+pub fn sound_test_entries(disc: &[u8], entries: &[EntryMeta]) -> Vec<SoundTestEntry> {
+    use legaia_engine_core::music_labels as ml;
+    // Playable pairs keyed by their PROT entry, so each catalogue row can look
+    // up the vab/seq offsets it plays from.
+    let pairs: std::collections::HashMap<u32, BgmPair> = enumerate_bgm_pairs(disc, entries)
+        .into_iter()
+        .map(|p| (p.prot_index, p))
+        .collect();
+
+    let mut out = Vec::new();
+    for index in 0..ml::MUSIC_TRACK_COUNT {
+        let Some(t) = ml::track_for_sound_test_index(index) else {
+            continue;
+        };
+        // The bank is piecewise (a 2-entry gap at index 68); this honors it.
+        let Some(prot_index) = ml::prot_entry_for_sound_test_index(index) else {
+            continue;
+        };
+        let pair = pairs.get(&prot_index);
+        out.push(SoundTestEntry {
+            index: t.index,
+            debug_id: t.id.clone(),
+            title: track_title(t),
+            context: t.context.clone(),
+            ost: t.ost_gloss.clone(),
+            relocalization: t.relocalization.clone(),
+            uncertain: t.uncertain,
+            prot_index,
+            playable: pair.is_some(),
+            vab_offset: pair.map(|p| p.vab_offset).unwrap_or(0),
+            seq_offset: pair.map(|p| p.seq_offset).unwrap_or(0),
+            bpm: pair.map(|p| p.bpm).unwrap_or(0.0),
         });
     }
     out

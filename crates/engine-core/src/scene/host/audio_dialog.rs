@@ -41,18 +41,17 @@ impl SceneHost {
     /// Raw `music_01` bank entry bytes for a **global-pool** BGM id
     /// (`>= 2000`): the whole `[VAB][SEQ]` pair the director uploads + plays
     /// itself (via [`BgmDirector::start_owned_vab`]). Global ids are
-    /// `2000 + sound-test slot`, and each slot is extraction PROT
-    /// `MUSIC_BANK_EXTRACTION_BASE + slot` (see
-    /// [`crate::music_labels`]). Returns `None` for scene-local ids, ids past
+    /// `2000 + sound-test slot`, resolved to an extraction PROT entry through
+    /// the piecewise bank map ([`crate::music_labels::prot_entry_for_bgm_id`] -
+    /// the bank is not a single linear run). Returns `None` for scene-local ids, ids past
     /// the bank, or when the entry can't be read. This is the global half of
     /// the retail `FUN_800243F0` resolver that [`Self::bgm_seq_bytes`] left
     /// unmodeled - every real music cue (field, battle, minigame) is a global
     /// track, so this is the path most BGM actually takes.
     pub fn music_bank_entry_bytes(&self, bgm_id: u16) -> Result<Option<Arc<Vec<u8>>>> {
-        let Some(slot) = crate::music_labels::sound_test_index_for_bgm_id(bgm_id) else {
+        let Some(entry) = crate::music_labels::prot_entry_for_bgm_id(bgm_id) else {
             return Ok(None);
         };
-        let entry = crate::music_labels::MUSIC_BANK_EXTRACTION_BASE + slot;
         Ok(self.index.entry_bytes(entry).ok())
     }
 

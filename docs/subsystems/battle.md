@@ -23,6 +23,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 - [Character record layout](#character-record-layout) - [why the pair order is `(max, cur)`](#why-the-pair-order-is-max-cur)
 - [Battle main dispatcher (`FUN_801D0748`)](#battle-main-dispatcher-fun_801d0748) · [hottest utility (`FUN_801D8DE8`)](#hottest-battle-utility-fun_801d8de8) · [weapon trail builder](#weapon--effect-trail-builder-fun_80048310--fun_800485bc) · [move-FX streak ribbon](#move-fx-streak-ribbon-fun_801e1d98)
 - [Per-frame actor maintenance (`FUN_8004CE2C`)](#per-frame-actor-maintenance-fun_8004ce2c)
+- [Additional SCUS battle-band helpers](#additional-scus-battle-band-helpers)
 
 **Clean-room engine systems**
 - [Inventory (page-banked)](#inventory-cratesasset-page-banked-layout) · [Status effects](#status-effects) · [AP / Spirit gauge](#ap--spirit-gauge) · [Battle stat aggregator](#battle-stat-aggregator) · [Item catalog](#item-catalog)
@@ -1286,7 +1287,10 @@ byte `*(_DAT_8007BD24)[0]`:
    same luminance plus `b = (l*3) >> 1` and set the STP bit, giving a blue
    tint over a per-character index window from the 3-pair table at
    `DAT_80078630` (stride 6). This is status tinting latched once per
-   affliction, not a per-frame damage flash.
+   affliction, not a per-frame damage flash. The desaturate step is the
+   reusable arithmetic core; it is ported (with tests) as
+   `legaia_engine_vm::scus_battle_helpers::bgr555_to_grey`, while the packet
+   build (`_DAT_1F8003A0` OT, `FUN_800583C8` submit) stays render-track.
 
 Calls the actor-spawn/move-VM invoker `FUN_80021B04` and helpers
 `FUN_8004FE5C` / `FUN_800583C8` / `FUN_80031D00` / RNG `FUN_80056798`.
@@ -1995,6 +1999,39 @@ The crate ships four test variants:
 | `real_psx_memory_card_save_drives_full_loop` | Disc-gated: boots the same loop from a real Legaia memory-card save block via `Party::from_retail_sc_block` when `~/.mednafen/sav/` holds a Legaia card. |
 
 Disc-gated variants skip silently when `extracted/PROT.DAT` / the mednafen card is missing.
+
+## Additional SCUS battle-band helpers
+
+Small `SCUS_942.54` routines the battle tick and scene-init reach through the
+actor / mode tables (no static caller). Roles are read off the stores in each
+bare-hex dump under `ghidra/scripts/funcs/`; where a purpose is inferred it is
+stated by the concrete writes.
+
+| Function | Role |
+|---|---|
+| `FUN_80055B6C` | Battle scene initializer: clears the actor/effect pools, resolves the party-slot composition (dedup + fill from `DAT_8007BD0C..`), sizes the LZS scratch, allocates the `0x7A34`-word monster-object arena at `_DAT_801C9370`, and programs the disp/draw environment. |
+| `FUN_80055B20` | Seeds the fallback party-slot id table `DAT_8007BD10 = {1, 2, 3}` (Vahn/Noa/Gala); `FUN_80055B6C` overwrites it from the live party. Slot bytes index character records as `(id-1)*0x414`. |
+| `FUN_80054A6C` | Battle party-file loader: builds the `data\battle\` filename (`s_data_battle_800153B8`), then streams each live party member's player battle file keyed on the party-id table `DAT_8007BD0C` at file stride `(id-1)*0x14000`. Dual-mode on `_DAT_8007B8C2`: retail ISO9660 (`FUN_800608F0`/`FUN_80060920`/`FUN_80060944` async CD reads) vs dev PROT-TOC (`FUN_8003E8A8`/`FUN_8003E964`/`FUN_8003E800`, entry `0x365`); bumps the loaded-count `DAT_8007B649`. CD/loader I/O infra - documented, not ported. |
+| `FUN_800480D8` | Per-actor battle tick / teardown: on the scene-clear byte `gp[0xA0C]+0x272` (guarded by `DAT_8007BD71 == -1`) runs the four overlay shutdowns and voids the effect-node table `DAT_801C90F0`, else forwards to the tint pass `FUN_8004A908` and the death / `0x808080` greyscale path. |
+| `FUN_8004A908` | Battle-actor tint: writes the colour word `+0x74` and blink halfword `+0x78` from the actor's transformed depth vs the monster-object depth threshold, with hard overrides for the `+0x16E` status bits (`0x01`→red, `0x02`→red-violet, `0x380`→magenta) and a greyscale-invert path gated on `DAT_8007BDA8`. The two arithmetic cores are ported (with tests): the per-channel depth-brightness ramp as `scus_battle_helpers::depth_cue_scale_channel` (min-4 dim floor, clamp-to-base), the negative-colour recolour as `scus_battle_helpers::invert_bgr24`. The GTE transform (`FUN_8003D344`) and colour-word packing stay render-track. |
+| `FUN_80046A20` | Party HP/MP status-face selector: keyed on `+0x172`/`+0x174` vs `+0x14E>>1`/`>>2` (and status word `+0x16E`) it writes an expression state (`2`/`3`/`6`/`7`/`9`) into the four portrait slots at `DAT_801C8FA0`. |
+| `FUN_8004DC68` | Target-highlight pass: OR/clears the actor draw-flag bits `0x83000000` by 2D distance from the acting actor (angle+radius via `FUN_80019B28`), dimming out-of-range targets during command selection; boss/target ids are special-cased. |
+| `FUN_8004C650` | Battle name-banner placement: measures a name string width (`FUN_80035F04`) and centres its four banner X coords around `0xA0`, with `0xCF`/`0xC1` leading-byte nudges. |
+| `FUN_8004CCD4` | Per-command display resolver (battle-data-pack): for each of the actor's up-to-2 command slots, tests a threshold value against the `+0xA4` range pairs and writes the matching `+0x1034` (hit) or `+0x1030` (fallback) display pointer into the caller's output table. |
+| `FUN_80046978` | Screen-flash colour submit: when trigger `gp[0x9D4]` is set, scales stored colour `gp[0x9D0]` by scratch byte `0x1F800393` and submits via `FUN_80024EE4`. The per-channel saturating scale is ported as `scale_rgb24`; the trigger + submit stay caller-side. |
+| `FUN_80050120` | Per-actor battle-presentation tick: walks the actor table `DAT_801C9370`, skips actors with no `+0x22C` sub-struct, and dispatches on the actor state byte `+0x21C` (11-entry jump table at `0x8001532C`). Its live arms ease the actor's packed tint/tween word `+0x04` toward a target via `FUN_80050F30`, and treat the packed arrival value `0x20080200` (all three channels at the neutral `0x80` target) as "reached". |
+| `FUN_80050F30` | 3×10-bit packed approach-to-target step: eases each 10-bit channel of a packed `u32` toward an 8-bit target (widened `<<2`) by at most `step_scale * DAT_1f800393 * 8` per call, clamping on the target without overshoot; only differing channels are rewritten (the byte-exact masking is why the top two bits survive an unchanged Z channel). A pure closed-form kernel with no table/hardware dependency; **ported** (with tests) as `battle_formulas::packed3_approach_target` / `approach_channel_clamped`. |
+| `FUN_80050BB8` | Pairwise battle-actor separation (push-apart): reads two actors' body radii `+0x22C→+0x58` and positions `+0x3C`/`+0x40`, projects the between-actor distance onto the angle from `FUN_80019B28` via the sin/cos LUTs `_DAT_8007B81C`/`DAT_8007B7F8`, and if the projected gap is below `(r1+r2)/6` nudges both actors' position accumulators `+0x34`/`+0x38` apart by `sin/cos >> 10`. Positional physics keyed on the game's trig tables; ported as a faithful fixed-point mirror in `engine-vm::battle_separation::push_apart` (trig samples lifted to caller parameters, no Sony table bytes). |
+| `FUN_80051078` | Separation driver: the 7×7 double loop over the actor table that calls `FUN_80050BB8(i, j)` for every ordered pair of living actors (`i != j`, both `+4 != 0`), so every actor is pushed off every other once per pass. |
+| `FUN_8005133C` | Per-actor status-marker + display-list primitive spawn: allocates a primitive on the ordered list `_DAT_1F8003A0` (type tag `0x1E1 + slot`, size `0xF0`, priority 1), fills it from `gp[0xA0C] + slot*0x1E0 + 0x894` via `FUN_800583C8`, then sets the four actor status-marker bytes `+0x220..+0x223 = 1` (the lingering-status visual flags near the `+0x21F` marker). Render + status write - documented, not ported. |
+
+The animation pair `FUN_800495C8` / `FUN_80049858` (pose→vertex blend) is
+documented in [`monster-animation.md`](../formats/monster-animation.md#vertex-blend-variants-fun_800495c8--fun_80049858).
+The tween/separation cluster (`FUN_80050120` and the helpers it drives) is the
+battle-overlay actor-**presentation** layer: it moves and tints the on-screen
+actor sprites but touches no HP/MP/stat field, so it sits beside - not inside -
+the [damage formulas](battle-formulas.md). Only `FUN_80050F30` is a pure kernel;
+the rest depend on the actor table, the trig LUTs, or the GPU ordered list.
 
 ## See also
 

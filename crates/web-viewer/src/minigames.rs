@@ -34,12 +34,25 @@ mod baka_presentation;
 #[path = "minigames_dance.rs"]
 mod dance_presentation;
 
+// Fishing + Muscle Dome are the other two ported rules engines
+// (`legaia_engine_core::fishing` / `muscle_dome`). Each gets a thin JSON shell
+// in its own child module, mirroring the dance/baka split above; the session
+// state lives on `LegaiaMinigames` and the wasm-bindgen methods that drive it
+// are in these files.
+#[path = "minigames_fishing.rs"]
+mod fishing_web;
+#[path = "minigames_muscle.rs"]
+mod muscle_web;
+
+use legaia_asset::fishing_species::FishingSpecies;
 use legaia_asset::minigame_art::{self, SlotHudWidget};
 use legaia_asset::minigame_sfx::{self, SfxCueBank};
 use legaia_asset::minigame_slot_scene::{self as slot_scene, SlotScene};
 use legaia_asset::static_overlay;
 use legaia_engine_core::baka_fighter::{BakaAttack, BakaFight, LadderRun, MatchPhase, RunPhase};
 use legaia_engine_core::dance::{DanceDir, DanceEvent, DanceGame};
+use legaia_engine_core::fishing::FishingSession;
+use legaia_engine_core::muscle_dome::MuscleDomeSession;
 use legaia_engine_core::slot_machine::{SlotMachine, SlotPhase};
 use legaia_tim::Tim;
 
@@ -89,6 +102,21 @@ pub struct LegaiaMinigames {
     /// dedicated dancer NPCs, their choreography ANM bundle and the VRAM they
     /// sample (see `minigames_dance.rs`).
     dance_bodies: Option<dance_presentation::DanceBodies>,
+
+    /// Live fishing session (see `minigames_fishing.rs`).
+    fishing: Option<FishingSession>,
+    /// Parsed per-species table (PROT 0972 rodata; cached so the roster panel
+    /// and each recast read it without re-decoding).
+    fishing_species: Option<Vec<FishingSpecies>>,
+    /// The as-loaded fishing overlay image, kept so the species-name pointers
+    /// (`FishingSpecies::name`) resolve against it.
+    fishing_overlay: Option<Vec<u8>>,
+
+    /// Live Muscle Dome contest (see `minigames_muscle.rs`).
+    muscle: Option<MuscleDomeSession>,
+    /// The four dealt hand command ids (deck table, PROT 0898 rodata; cached so
+    /// each fresh contest rebuilds the hand without re-decoding).
+    muscle_hand: Option<[u8; 4]>,
 }
 
 impl Default for LegaiaMinigames {
@@ -150,6 +178,11 @@ impl LegaiaMinigames {
             baka_names: None,
             dance_pres: None,
             dance_bodies: None,
+            fishing: None,
+            fishing_species: None,
+            fishing_overlay: None,
+            muscle: None,
+            muscle_hand: None,
         }
     }
 
@@ -188,6 +221,11 @@ impl LegaiaMinigames {
         self.baka = None;
         self.baka_run = None;
         self.slot = None;
+        self.fishing = None;
+        self.fishing_species = None;
+        self.fishing_overlay = None;
+        self.muscle = None;
+        self.muscle_hand = None;
 
         // --- dance step chart (PROT 0980) + presentation (PROT 1230 art,
         //     the overlay's widget table, PROT 1228/1231 SFX) ---
@@ -323,8 +361,14 @@ impl LegaiaMinigames {
             ),
         };
 
+        // --- fishing species table (PROT 0972) + muscle-dome hand (PROT 0898) ---
+        // Decoded into the cached fields the child modules read; each returns a
+        // status object so a disc that can't feed one still plays the others.
+        let fishing_json = self.load_fishing_tables();
+        let muscle_json = self.load_muscle_tables();
+
         Ok(format!(
-            r#"{{"entries":{},"dance":{dance_json},"baka":{baka_json},"slot":{slot_json}}}"#,
+            r#"{{"entries":{},"dance":{dance_json},"baka":{baka_json},"slot":{slot_json},"fishing":{fishing_json},"muscle":{muscle_json}}}"#,
             self.entries.len()
         ))
     }
@@ -1776,10 +1820,10 @@ impl LegaiaMinigames {
         legaia_engine_audio::SPU_INTERNAL_RATE
     }
 
-    /// Resolve a global-pool BGM id (`>= 2000`) to its `music_01` entry bytes.
+    /// Resolve a global-pool BGM id (`>= 2000`) to its `music_01` entry bytes,
+    /// through the piecewise bank map (the bank is not a single linear run).
     fn music01_entry_for_bgm(&self, bgm_id: u16) -> Option<&[u8]> {
-        let slot = legaia_engine_core::music_labels::sound_test_index_for_bgm_id(bgm_id)?;
-        let entry = legaia_engine_core::music_labels::MUSIC_BANK_EXTRACTION_BASE + slot;
+        let entry = legaia_engine_core::music_labels::prot_entry_for_bgm_id(bgm_id)?;
         entry_bytes(&self.prot, &self.entries, entry)
     }
 

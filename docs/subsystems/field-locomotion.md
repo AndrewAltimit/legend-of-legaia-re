@@ -16,7 +16,7 @@ static call site to follow. See [Provenance](#provenance).
 ## Contents
 
 - [Player actor fields used](#player-actor-fields-used) · [spawn position](#spawn-position-on-scene-entry) · [per-frame flow](#per-frame-flow)
-- [Wall-slide resolution](#wall-slide-resolution-fun_80046494) · [Collision - `FUN_801cfe4c`](#collision---fun_801cfe4c) · [where the grid comes from](#where-the-collision-grid-comes-from) · [collision byte](#collision-byte-walls--floor-height) · [floor height](#floor-height-two-models) · [trigger block](#trigger-block-0x10000---four-kind-sub-tables) · [object records](#object-record-format-0x0000-0x20-byte-stride) · [the object bind](#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose) · [the door swing](#the-door-swing-how-a-bind-script-drives-the-clip)
+- [Wall-slide resolution](#wall-slide-resolution-fun_80046494) · [Collision - `FUN_801cfe4c`](#collision---fun_801cfe4c) · [where the grid comes from](#where-the-collision-grid-comes-from) · [collision byte](#collision-byte-walls--floor-height) · [floor height](#floor-height-two-models) · [trigger block](#trigger-block-0x10000---four-kind-sub-tables) · [object records](#object-record-format-0x0000-0x20-byte-stride) · [the object bind](#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose) · [the door swing](#the-door-swing-how-a-bind-script-drives-the-clip) · [scripted door-swing controller](#the-scripted-door-swing-controller)
 - [Vertical settle + ledge hop](#vertical-settle--ledge-hop---fun_801d1ba0--fun_801d1878) - [step-delta globals](#the-step-delta-globals) · [`FUN_801d1ba0`](#fun_801d1ba0---settle-then-trigger) · [`FUN_801d1878`](#fun_801d1878---probe-and-post) · [engine port](#engine-port-2)
 - [Provenance](#provenance) · [Town / field parity](#town--field-parity)
 - [Engine port](#engine-port) - [environment geometry](#environment-geometry) · [scene-entry script](#scene-entry-script) · [encounter table](#scene-encounter-table) · [per-step encounter roll](#per-step-encounter-roll-in-the-live-loop) · [input lock during cutscenes](#input-is-locked-during-an-opening-cutscene-timeline)
@@ -224,6 +224,8 @@ A bit-`1` hit posts the touch event (`FUN_801d5b5c` on the `+0x98` partner), tur
 **`FUN_801d5b5c` (the touch event post, decoded from a live overlay image - the static `overlay_0897` copy is garbled in this region)** marks the engagement: player `flags |= 0x80000` (the same bit that suppresses locomotion input at the top of `FUN_801d01b0`), touched actor `flags |= 0x100`, actor touch counter `+0x2a += 1`, field-control event counter `_DAT_801c6ea4+0xA += 1`, the actor's current facing `+0x26` saved into `+0x5A` (restored when the interaction ends), then `FUN_8003c9ac` - which sweeps the scene actor list and reloads every moving-class actor's `+0x5C`/`+0x88` timer from the per-actor byte table at `0x801C6470` (an NPC-motion pause kick while the interaction runs).
 The **teardown** is the dialog SM's exit path (`FUN_80039b7c`): it restores the actor's facing `+0x26` from the `+0x5A` save (moving-class partners), subtracts the actor's `+0x2A` touch counter out of the field-control global `+0xA`, and when the global reaches zero clears the player's `0x80000` engaged flag and `ctrl+0x60` - so overlapping touches keep locomotion suppressed until every one is dismissed.
 (The separate sampler `FUN_801d5718` reads the same `*(_DAT_1f8003ec) + 0x4000` grid with the identical nibble-and-mask shape, confirming the map layout.)
+
+**A second per-direction collision probe, `FUN_801c1634`**, is byte-for-byte structural twin of `FUN_801cfe4c`: `(actor, scene, dir)`, three `FUN_801cfc40` actor-box probes over the same table `DAT_801f21b4` OR'd into the return, then three high-nibble wall samples of `*(_DAT_1f8003ec) + 0x4000` over table `DAT_801f2214` with the same `zc=(z>>6)+2` / `xc=((x+0x3f)>>6)-1` bias and `1 << ((zc&1)<<1 | (xc&1))` quadrant mask, returning `(actor_bits & 5) | (2 if wall)`. It reads the same field walkability grid, so it is a field-collision-family probe (its calling mover is not pinned from the dump). See `ghidra/scripts/funcs/overlay_0897_xxx_dat_801c1634.txt`.
 
 **The static-entity anchor decodes against the `.MAP` object records.** A static actor's box centre is its live position plus a **collision-footprint offset** from its object record (`actor[+0x60]` indexes the `+0x0000` record table): `off = (rec[+6]·0x80 + rec[+0xE]·0x10, rec[+7]·0x80 + rec[+0xF]·0x10)`, and when the actor's `+0x52 & 8` is set (mirrored at spawn from record flag bit `0x8`) further corrected by `(−x_off, +z_off)` (record halfwords `+0`/`+4`).
 Live-verified against the spawned static collision actors of four catalogued captures (town01 records 315 + 137 - the latter the correction arm - town0c 331, koin3 116): the live actor position equals the placement spawn position and the live-computed centre equals the disc-computed one (`engine-shell/tests/field_prop_colliders_live.rs`).
@@ -436,6 +438,9 @@ The per-tile lookup (`FUN_801D5630`) scans the `+0x10000` primary block first an
   Record headers differ **per partition**, so the flat index must be resolved to its partition before the script offset is computed: P0 `[u8 n][n*2 SJIS name][u8 attr]` (`pc0 = 1 + 2n + 1`), P1 `[u8 N][N*2 locals][4-byte placement header]` (`pc0 = 1 + 2N + 4`), P2 name + three condition blocks (`FUN_8003BDE0`). Engine: `man_field_scripts::flat_record_span`.
 - **Kind 0 - intra-scene teleport** (`SceneHost::dispatch_intra_scene_teleport`, the `FUN_801D1EC4` arm at `0x801d21c0..0x801d2268`): crossing onto a kind-0 tile seats the player at the record's landing (`dest_x*64 + 64`, `(dest_z + 1)*64`), re-samples the floor height, and leaves the last-tile compare stale so the landing tile's own kind-1 record fires next tick (retail queries it inline and runs a ~`0x26`-frame fade across the reposition; the engine warps instantly). Skipped while the player's movement-disabled flag (`+0x10 & 0x80000`) is set. This is the class most house **exits** belong to - see [Intra-scene doorways](#intra-scene-doorways---the-walk-touch-teleport-family).
   Retail gates both arms on the crossed tile's object-index word: `cell & 0x600 != 0` (`0x801d2140`) - a fast filter in front of the table scan. Every kind-0 trigger tile on the disc carries those bits, so the engine's exact-match table lookup subsumes it.
+
+  **The retail reposition animator + tile-crossing handler is `FUN_801c36ac`.** While its warp timer `_DAT_8007b6b0` is positive it steps the warped actor toward destination tile `(_DAT_8007bdd0, _DAT_8007bdd4)` - landing world `(dest_x*64 + 64, (dest_z + 1)*64)` into actor `+0x14`/`+0x18` (the same `dest*64+64` formula the engine warps to instantly) - re-samples floor via `FUN_80019278`, re-poses via `func_0x801d5630`, and decrements the timer by `_DAT_1f800393`.
+  When the timer is idle it quantises the actor position to a tile, compares against the stored crossing tile `(_DAT_8007bdd8, _DAT_8007bddc)`, and on a change runs the same `cell & 0x600` object-index filter (scene map `_DAT_1f800314+0xd8 + tile*2 + 0x8000`) and posts `FUN_8003bde0`, arming a fresh `0x26`-frame warp via `FUN_801d58f0`. See `ghidra/scripts/funcs/overlay_0897_xxx_dat_801c36ac.txt`.
 
 The partition-2 gate bitmap (`DAT_80085758`) **is** the field VM's `0x50`/`0x60`/`0x70` system-flag bank - one store, shared by the record dispatcher's C1/C2 test (`World::p2_gate_flag_set` = `system_flag_test`) and the VM's flag writes, so an opening-timeline `set` is immediately visible to the next record's gate. It also overlaps the saved story-flag window at byte `+0x158` (`0x80085758 - 0x80085600`); the engine save mirrors the bank into that window and reloads seed it back. Disc-gated coverage: `crates/engine-core/tests/walk_on_trigger_dispatch_disc.rs` (opening-to-free-roam progression, south-gate exit to `map01`, house-door contact teleport, ambient no-lock, gate-flag save round-trip).
 
@@ -664,6 +669,56 @@ bounding-box cull `FUN_8001b73c`.
 
 See [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
+### The scripted door-swing controller
+
+The functions `FUN_801d2404` (setup) and `FUN_801d2298` (per-frame advance).
+Distinct from the placed-prop bind-clip path above, a **dedicated single-instance
+door-swing controller** drives one door through a linear-interpolated hinge swing
+using its own cursor pair (`actor+0x9c` / `actor+0x9e`), **not** the prop system's
+`+0x68`/`+0x6A` frame cursor. It works on the big field-scene control block at
+`0x8007c348` (allocated + cleared by MAIN_INIT `FUN_801d6704`, which memsets
+`0x7b0c` bytes through `func_0x8001a8b0(&DAT_8007c348, …)`); the block's `+0x1c`
+holds the animated door actor and `+0x4` a spawn-template id. Both functions are
+confirmed field-overlay (`0897`) bodies (the classifier resolves every dump at
+these VAs to `image=0897`; the short mis-based standalone dumps at `801d2404` /
+`801d2298` are wrong-base fragments).
+
+**`FUN_801d2404` - swing setup.** Called with `(a0 = source door actor,
+a1 = s16 offset, a2 = s16 rate)`. If the control block's `+0x1c` is null it
+returns. Otherwise it spawns a door-leaf actor from the pool allocator
+`func_0x80020de0` with template pointer `0x801f227c`, copies the source door's
+8-byte transform (`+0x14..+0x1b`, X / facing / Z) into the leaf, and reads the
+source's placement halfwords `+0`/`+2`/`+4` into the leaf's `+0x24`/`+0x26`/`+0x28`
+(the swing's far endpoint). It then computes the interpolation targets as the
+**midpoint** of the two endpoints: `+0x3c = (X+[+0x24])/2`,
+`+0x3e = (facing+[+0x26])/2`, `+0x40 = (Z+[+0x28])/2` (with an angle-sign
+correction to `+0x3e` from `a1`). The clip is seeded `+0x9c = 0` and extent
+`+0x9e = (a2 <= 0) ? 0x1000 : 0x1000 / a2`. A **second** leaf is spawned from
+template `0x801f2294` (`+0x9e = a2`, `+0x9c = 0`) - the paired hinge - and the
+control-block door actor's `+0x10` gains the movement-lock bit `0x80000`.
+
+**`FUN_801d2298` - per-frame advance.** Called with the leaf actor in `a0`. Each
+frame it re-transforms the control-block door actor (`func_0x801db510` then
+`func_0x801daa50`, the resident world-transform + copy helpers) and steps a small
+3-phase state driven by the cursor `+0x9c` against the extent `+0x9e`:
+
+| Phase | Condition | Effect |
+|---|---|---|
+| start | `+0x9c == 0` | set bit `8` of door actor `+0x62` (anim-active), OR `0x200000` into `+0x10`, phase global `0x8007bdd8 = 6`, play SFX `0x2a` (swing-start cue) |
+| advance | every frame | `+0x9c += DAT_1f800393` (the per-frame delta scalar), clamped to `+0x9e` |
+| mid | `+0x9c` crosses `+0x9e` this frame | clear `0x200000` from door actor `+0x10`, set bit `8` of `+0x62`, phase global `= 7` |
+| end | `+0x9c >= +0x9e + 6` | clear bit `8` of door actor `+0x62`, clear `0x80000` from `+0x10` (release the movement lock), phase global `= 1`, play SFX `0x29`, set bit `8` of leaf `+0x10` (tear-down) |
+
+So the whole swing holds the player's movement lock (`+0x80000`) from setup
+through the end phase - the player stands while the gate opens, the classic
+scripted-transition door - and the two SFX (`0x2a` at start, `0x29` at settle)
+bracket it. The `DAT_1f800393`-paced cursor is the same frame-rate-compensation
+scalar the free-movement step loop uses, so the swing runs at a fixed real-time
+rate independent of frame count. The controller is ticked from the field scene
+loop `FUN_801f5748`. Not ported: this is a scripted-cutscene door actor, not a
+locomotion kernel. The exact door instance it drives (the templates suggest a
+two-leaf gate) is not pinned from static analysis alone.
+
 ## Provenance
 
 - Controller `FUN_801d01b0`, position writes `0x801D0684 / 06E4 / 0744 / 07B4` - see `ghidra/scripts/funcs/overlay_0897_801d0684.txt`; the touch/interact dispatch body (`0x801d07c0..0x801d08dc`) in `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d01b0.txt` (the `overlay_0897` copy is garbled in this region).
@@ -672,6 +727,7 @@ See [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 - Scene-entry map-init `FUN_8003aeb0` (height LUT fill, `+0x8000` footprint OR, player-actor setup) - `ghidra/scripts/funcs/8003aeb0.txt`. Object spawn iterator `FUN_8003a55c` (low-nibble floor-height read, `+0x8000` index walk) - `ghidra/scripts/funcs/8003a55c.txt`.
 - Floor sampler `FUN_80019278` (both height models: the `cell & 0x800` elevation-override branch and the bilinear nibble branch) - `ghidra/scripts/funcs/80019278.txt`. Its kind-table lookups `FUN_801D5630` / `FUN_801D5AE0` - `ghidra/scripts/funcs/overlay_cutscene_mapview_801d5630.txt`, `ghidra/scripts/funcs/overlay_0896_801d5ae0.txt`.
 - Runtime pin: `scripts/pcsx-redux/autorun_player_pos_watch.lua` (write-watchpoint on `*(0x8007c364) + 0x14/0x18`).
+- Scripted door-swing controller: setup `FUN_801d2404` and per-frame advance `FUN_801d2298` - see `ghidra/scripts/funcs/overlay_0897_door_raw_801d2298_801d2600.txt` (the base-correct contiguous `overlay_0897.bin` dump; the short standalone `801d2404.txt` / `801d2298.txt` are wrong-base fragments). Scene control block `0x8007c348` cleared by MAIN_INIT `FUN_801d6704` (`func_0x8001a8b0(&DAT_8007c348, …, 0x7b0c)`); leaf templates `0x801f227c` / `0x801f2294`; ticked from the field scene loop `FUN_801f5748`.
 
 ## Town / field parity
 
@@ -910,6 +966,33 @@ and the locomotion walks each doorway in and back out);
 `crates/engine-core/tests/vahn_house_roundtrip_disc.rs` (the mixed case - pad-walk
 in through the script door and back out through the map door, no story flags);
 `crates/engine-core/tests/walk_on_trigger_dispatch_disc.rs`.
+
+## Field-VM actor-placement + motion opcodes
+
+The field/event VM (`FUN_801DE840`, see [`script-vm.md`](script-vm.md)) reaches a family of small overlay-resident handlers that write the **actor motion state** the locomotion and per-scene-actor-motion paths above then read. Each is a leaf of the VM dispatch: it consumes its inline operand bytes off the script cursor (register `s6`) against the current actor (register `s5`), writes the motion fields, and exits through the VM return idiom `j 0x801e3624` / `0x801e3628` (advancing the cursor `s8`).
+
+The field offsets they touch are the same ones tabulated in [Player actor fields used](#player-actor-fields-used) (`+0x14` X, `+0x16` terrain-conform angle, `+0x18` Z, `+0x26` heading, `+0x62` motion-clip control word, `+0x72` speed multiplier, `+0x8c`/`+0x8d` tile). All are field-overlay (`0897`) functions; each dump is `ghidra/scripts/funcs/overlay_0897[_xxx_dat]_<addr>.txt`.
+
+| Handler | Role |
+|---|---|
+| `FUN_801d03a4` | Place actor at operand tile: `+0x14`/`+0x18` from the two 7-bit tile bytes (`bit 0x80` = half-tile `+0x40`), terrain-conform `+0x16` via `func_0x80019278`; if the actor is the player (`_DAT_8007c364`) repositions the follow camera (`func_0x80017ec8`), else stores the tile into `+0x8c`/`+0x8d`. |
+| `FUN_801d3f24` | Spawn/init actor at tile: sets Z from the operand, motion-script cursor `+0x9e`, speed `+0x72 = 0x1000`, walk counter `+0x5c`, clip control `+0x62 = 0x15`, clears the residual motion fields, and derives the anchor tile `+0x8c`/`+0x8d` from the world position. |
+| `FUN_801d30b8` (interior label `801d3170`) | Step actor along a facing: nudges Z `+0x40`, sets heading `+0x26` from the 8-direction LUT at SCUS `0x80073F04` (index `(op[3] & 0xf) * 2`), and terrain-conforms `+0x16`. |
+| `FUN_801d2968` | Set the per-actor speed multiplier `+0x72` from the operand (single store). |
+| `FUN_801d2774` | Set the motion-clip control word `+0x62` (clears `bit 0x80`, ORs `0x20a`). |
+| `FUN_801d207c` | Set clip control `+0x62` (mask `0xd3ff`, OR `0x1000`) and the direction byte `+0x6c`; clears `+0x7c`; VM advance `+3`. |
+| `FUN_801d4908` | Copy transform (`+0x14`/`+0x16`/`+0x18`/`+0x26`) from another actor and mirror facing into `+0x8e`; player case repositions the follow camera. |
+| `FUN_801d1314` | Actor-in-tile-rectangle test: compares the actor's current tile pair against the operand rect (`op[0..3]`); inside advances the script `+7`, outside arms actor action `0x2c` (state `+0x54 = 0`). |
+| `FUN_801d701c` | Spawn a positioned sub-actor (template `0x801f2978`): inits `+0x54 = 0`, `+0x50`, `+0x14`, `+0x16`, `+0x9c` from operands. |
+| `FUN_801cff3c` | Spawn a sub-actor (template `0x801f2858`): inits `+0x54`/`+0x9e = 0` and writes operands into `+0xb8`/`+0xba`/`+0xbc`. |
+
+`FUN_801d4a60` is the largest of the group: a scripted actor-approach state machine keyed on the actor's `+0x54` state byte. It snapshots the player transform (`_DAT_8007c364 + 0x14/0x18/0x24/0x28`), then in its running state steps toward the target vector `DAT_801f2658` once per frame scaled by the per-frame delta `DAT_1f800393`, accumulating progress in `+0x9e` until it reaches its arrival threshold - a camera-relative "walk the actor to a scripted spot" controller.
+
+`FUN_801dfb10` is a scripted player-turn cutscene state machine (also keyed on `+0x54`): its active state locks player input (`_DAT_8007c364 + 0x10 |= 1`, system word `_DAT_1f800394 |= 0x1000000`) and rotates the player's `+0x16` angle by `DAT_1f800393` per frame until it crosses a fixed threshold, then triggers a fade. It gates its entry/exit on the story flags `0xb` (`func_0x8003ce08` set / `func_0x8003ce64` test).
+
+`FUN_801d567c` advances a per-actor **motion keyframe**: when the actor's frame timer expires it reads the next motion bytes from `actor[+0x94] + actor[+0x9e]` through the flag/stream reader `func_0x8003ce9c`; otherwise, when `+0x9c == 0`, it latches the current motion transform (copying `+0x3c` -> `+0x40`, `+0x16` -> `+0x6a`, and packing `+0x74`/`+0x88` into `+0x80..+0x85`) and runs `FUN_801e4404`.
+
+Provenance: the per-handler dumps named above. Not documented here (out of scope): the field-VM opcode dispatcher `FUN_801d0094` (a jump table at `0x801CECC0` indexed by `op - 0x21`) belongs to [`script-vm.md`](script-vm.md), and the `DAT_801f35xx` number-display / wager handlers that share the overlay are a betting-minigame subsystem, not the [tile board](tile-board.md).
 
 ## Open
 

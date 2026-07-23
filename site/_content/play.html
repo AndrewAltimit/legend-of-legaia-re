@@ -367,6 +367,11 @@
       the in-game Load and Save screens read and write <em>that</em> card through retail's own
       save-select flow (<a href="subsystems/save-screen.html">save screen</a>). Saving edits the
       block in place, so <em>Export</em> hands back a card your emulator still loads.</li>
+    <li><strong>Music.</strong> The scene's BGM plays through the clean-room
+      <a href="subsystems/audio.html">SPU + sequencer</a> in your browser - the same field-VM
+      op-0x35 events the native window routes drive a WebAudio output here, off your disc's own VAB
+      and SEQ. Browsers require a click first (autoplay policy); picking a scene or clicking the
+      canvas enables it.</li>
   </ul>
   <p>What does <em>not</em> run here yet:</p>
   <ul>
@@ -380,9 +385,6 @@
     <li><strong>The inn.</strong> Its runtime state is ported, but no scene opens an inn session
       in either the browser or the native window yet. Merchants <em>do</em> work here: walking into
       a shopkeeper opens the retail gold shop, priced from your disc's own item table.</li>
-    <li><strong>Audio.</strong> The sequencer and SPU are ported
-      (<a href="subsystems/audio.html">audio</a>) and the WebAudio backend exists, but the BGM
-      director is not wired into this page.</li>
     <li><strong>The overworld.</strong> World-map locomotion and camera are a different controller;
       see the <a href="world-overview.html">world overview</a> for the continents.</li>
   </ul>
@@ -620,6 +622,11 @@
       }
       const st = view.enter(label);
       view.start();
+      /* Picking a scene is a user gesture: bring up the BGM output now (browser
+       * autoplay policy) so the scene's music sounds without waiting for a
+       * canvas click. The scene's track feeds itself through the engine's
+       * per-tick op-0x35 routing; a canvas click resumes it as a backstop. */
+      if (typeof view._enableAudio === 'function') view._enableAudio();
       statusEl.textContent = `Running ${label}. Click the canvas, then walk with the arrow keys.`;
       window.__playState = st;
       canvas.focus();

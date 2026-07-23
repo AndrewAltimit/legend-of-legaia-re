@@ -220,6 +220,138 @@ priority: retail itself is not observed dispatching to these handlers at runtime
 output; the `NccMode` metadata is kept for fidelity if a light-using scene is ever
 found.
 
+## 2D gradient-tile primitive - `FUN_8002BDC4`
+
+Distinct from the two 3D TMD renderers: `FUN_8002BDC4`
+(`ghidra/scripts/funcs/8002bdc4.txt`) fills a screen rectangle with a
+tiled, double-gradient textured quad strip - the UI/backdrop primitive
+behind gradient panels and bar fills. It takes an origin `(x, y)`, a texture
+descriptor `param_3` (`[0]=u0, [1]=v0, [2]=tile_w, [3]=tile_h`), a
+`tpage/clut` word `param_4`, and optional `w`/`h` overrides (`0` = take the
+descriptor's tile size). It walks the rectangle in `tile_h + 8` row bands
+and `tile_w`-wide columns, emitting a `0x34`-byte gouraud-textured quad
+(`0x0C000000` tag) per cell straight into the ordering-table cursor
+`_DAT_1F8003A0` and adding it through `FUN_8003D2C4`. The shading is a
+bilinear ramp: the luminance runs from `0x40` and steps by
+`0x900 / (h + 8)` down each band and by a per-column delta across each row,
+so the fill is a smooth two-axis gradient rather than a flat tint. `param_4
+& 0x80` toggles the base RGB word between two brightness constants
+(`0x3E800000` vs `0x3C800000`). It is a pure primitive-buffer writer with no
+GTE transform.
+
+## Other SCUS-band emitters (documented, not ported)
+
+Beyond the two 3D TMD renderers and the gradient-tile primitive, the SCUS render
+band carries a set of smaller GTE/GPU emitters. The clean-room engine reproduces
+all of these through its own wgpu path, so they are **documented, not ported** -
+their per-address roles live in
+[`reference/functions.md` § Renderer / GPU primitives](../reference/functions.md#renderer--gpu-primitives):
+
+- **`FUN_80028158` / `FUN_8002A5A4` / `FUN_801CFA48`** - the three multi-target
+  primitive emitters the per-actor RENDER dispatcher `FUN_8001ADA4` case 4 picks
+  on `actor[+0x9e]`. Each is a GPU packet builder over a caller buffer, unpacking
+  a primitive count from the high byte of its packed param (`801CFA48` OR-s the
+  GT4 command base `0x3C000000`).
+- **`FUN_80019D50`** - a BGR555 cell-grid emitter: one coloured quad per non-zero
+  `u16` cell (5-5-5 + `0x8000` STP bit) into the OT cursor `_DAT_1F800314+0x8c`.
+- **`FUN_800351C0`** - the full-screen `320×224` backdrop quad (tag `0x08000000`).
+- **`FUN_8001B73C`** - a GTE on-screen visibility test (RTPT the four corners of
+  an actor box, accept if any projects inside the `320×240` screen), not an
+  emitter - a cull probe.
+- **`FUN_80029DD8`** - a 39-`cop2`-op 3D primitive emitter, sibling of
+  `FUN_8002735C` / `FUN_80029888`.
+
+## Per-primitive TMD render helpers (`FUN_8002735C` family)
+
+Three helpers hang off the main TMD renderer `FUN_8002735C`, documented but not
+ported (the clean-room engine projects and rasterises through wgpu):
+
+- **`FUN_80027C6C`** - the per-primitive GTE emitter. Loads a group's vertices
+  into the GTE (`lwc2`), runs `RTPT` (`cop2 0x280030`), reads the group mode byte
+  and dispatches on its low 2 bits (`F`/`FT`/`G`/`GT`) to pack the matching
+  `POLY_*` packet straight into the active primitive cursor `_DAT_1F8003A0`. See
+  `ghidra/scripts/funcs/80027c6c.txt`.
+- **`FUN_80027F00`** - the near/far vertex clip loop. For each edge whose endpoint
+  falls outside the screen-space clip bound at `[0x1F800314]+0x6C`, it computes the
+  crossing fraction `((bound - a) << 12) / (b - a)` and calls the interpolator to
+  synthesise a clipped vertex before handing the group to `FUN_80027C6C`. See
+  `ghidra/scripts/funcs/80027f00.txt`.
+- **`FUN_80029724`** - the vertex-attribute interpolation kernel the clip loop
+  calls. Given an output slot, two vertices and a q12 fraction `a3`, it lerps
+  X/Y/Z (`out = b + ((a-b)*frac >> 12)`) and, gated by the flag word `a2` (bit 0
+  `0x1` the UV pair at `+0x18/0x19`, bit 1 `0x2` the RGB triple at `+0x14..0x16`,
+  bit `0x800` selects the trailing endpoint), the packed RGB and UV bytes. Pure integer arithmetic, but kept unported because it exists only to
+  service retail's software near-plane clip. See
+  `ghidra/scripts/funcs/80029724.txt`.
+
+## 2D `POLY_*` packet emitters
+
+A small family builds flat 2D `POLY_G3` / `POLY_G4` packets from an
+already-projected screen-XY vertex array (no GTE transform) into the primitive
+cursor `_DAT_1F8003A0`, advancing it by the packet size and linking through
+`FUN_8003D2C4`. They back the HUD / menu number and panel draws:
+
+| Addr | Packet | Bytes | Role |
+|---|---|---|---|
+| `FUN_8003C510` | `POLY_G3` (cmd `0x28`) | 24 | gouraud triangle; copies 3 XY pairs + inline per-vertex RGB |
+| `FUN_8003C43C` | `POLY_G4` (cmd `0x38`) | 36 | gouraud quad; copies 4 XY pairs, then fills colours via `FUN_80036C4C` |
+| `FUN_80036C4C` | colour writer | - | packs per-vertex RGB into a `POLY_*` packet, `a2` = 3 (tri) or 4 (quad) |
+
+`(a2 << 1) | a3` forms the semi-transparent-bit + command byte; the leading tag
+word is the packet-length code (`0x05000000` / `0x08000000`). See
+`ghidra/scripts/funcs/8003c510.txt`, `8003c43c.txt`, `80036c4c.txt`.
+
+## Frame setup + present
+
+- **`FUN_800271A8`** - graphics-scratch init. Allocates two `0x8000`-byte buffers
+  (`FUN_80017888`) into `0x8007BB04` / `0x8007BB08`, fills the second with a
+  `0x4000`-entry `u16` depth ramp (`sra(acc, 18)`, `acc` stepping quadratically),
+  then resets the GTE / primitive buffers (`FUN_8005B268`, `FUN_8003D1A4`,
+  `FUN_8003D254`). Runs once before the emitters have a buffer to write into. See
+  `ghidra/scripts/funcs/800271a8.txt`.
+- **`FUN_8003DAA8`** - the double-buffer swap / frame-present driver. Advances the
+  gp-relative draw-state (`gp+0x8E8` frame counter, `gp+0x964` field), then drives
+  the libgpu present chain - `FUN_8005BEE4` / `FUN_8005BECC` / `FUN_8005C42C` /
+  `FUN_8005C034` (PutDrawEnv / PutDispEnv / DrawSync / draw-list submit shape) -
+  branching on the display-mode byte at `0x8007B876`. See
+  `ghidra/scripts/funcs/8003daa8.txt`.
+
+## Numeric-glyph string emitters
+
+`FUN_80034CC4` / `FUN_80034FA0` draw a base-10 integer as a run of font glyphs.
+Both divide the value against the place-value table at `0x80073DCC`, offset each
+digit by the glyph base `0x82` (ones digit `+0x4F`), assemble the string in a
+stack buffer seeded from the `0x80010C10` template, and submit it through the
+sprite drawer `FUN_80036888`. `FUN_80034FA0` presets the leading-digit flag
+`gp+0x15C = 1` (zero-padded / fixed-width form); `FUN_80034CC4` honours the flag
+as passed. See `ghidra/scripts/funcs/80034cc4.txt`, `80034fa0.txt`.
+
+## Arts-list panel renderer
+
+`FUN_80034358` draws a scrollable list of the active character's learned Arts.
+The active character index is `gp+0x874`; per-character state is the `0x414`-byte
+block at `0x80084140 + char*0x414`. The learned-art id list starts at block
+`+0x74E`, its length at block `+0x74D`, and `gp+0x140` is the scroll top. Visible
+rows = `param+0x10 / 0x1C`, laid out `0x1E` apart in Y from `param+0xC`, at base
+X `param+0xA`.
+
+For each visible slot it scans the arts-name table `DAT_80075EC4` (stride `0x14`,
+terminated when a record's first byte reaches `99`) for the entry keyed on
+`[character, art-id]`, then:
+
+- draws the art name via the glyph-string primitive `FUN_80036888` under text
+  attribute `gp+0x13C = 7` (CLUT 7);
+- draws the art's AP cost - decimal-split against the place-value table
+  `0x80073DCC` - through the sprite primitive `FUN_8003C11C`, halved when the
+  character block's flag word `+0x6C0` has bit `0x800` set;
+- draws the art's input command as arrow sprites via `FUN_8003C310`, one per
+  input, keyed on the four direction codes `DAT_80073E4D` / `4F` / `51` / `53`.
+
+It is the SCUS-resident sibling of the overlay "Moves" submenu (same arts-table
+data, same name / AP / command-arrow layout) in
+[`field-menu.md`](field-menu.md#moves-list-submenu-3); the two differ in row
+pitch and host screen. See `ghidra/scripts/funcs/80034358.txt`.
+
 ## TMD pointer table
 
 `FUN_80026B4C` writes registered TMDs to `*(int **)(idx * 4 + 0x8007C018)`. Consumers in retail (4 functions, all setup-not-render):
