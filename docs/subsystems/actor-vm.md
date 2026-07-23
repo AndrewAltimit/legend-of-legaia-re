@@ -242,6 +242,31 @@ The memory note's "live snapshot" at `0x8011A2FC` shows what looks like a 16-byt
 
 Read against `FUN_801D77F4`'s walker - `*puVar11 = record_count`, `puVar10 = puVar11 + 1` then `*puVar10 = group_idx`, advances `puVar10 += 12` bytes per record - the first u32 is the record count and the records start 4 bytes in. The "16-byte header" framing was off-by-12. The actor VM does **not** skip any metadata header before dispatch because **the actor VM never dispatches on this buffer at all** (per Implication 1 above).
 
+## Field-spawned sprite-tick actors
+
+Two field-overlay (PROT 0897) functions spawn and drive *attached-sprite* actors
+on the shared actor list `_DAT_8007C34C` - the same list the
+[field VM](script-vm.md#per-frame-scheduling) walks - rather than being actor-VM
+opcode handlers themselves.
+
+`FUN_801D25EC` is the **position-tween spawner**: given a source actor, a target
+`xyz`, and a duration, it allocates an actor from template `0x801F227C`
+(`func_0x80020DE0(0x801F227C, _DAT_8007C34C)`), records the source in `+0x90`,
+copies the source position `+0x14/+0x16/+0x18`, stores the target in
+`+0x24/+0x26/+0x28`, seeds the midpoints `+0x3C/+0x3E/+0x40`, and sets the
+per-frame step `+0x9E = 0x1000 / duration` (fixed-point `1.0` over the duration).
+`see ghidra/scripts/funcs/overlay_cutscene_dialogue_801d25ec.txt`.
+
+`FUN_801E4470` is the **per-frame tick** for such an actor: it reads the parent
+`+0x90`, adds the parent's world position to its own, screen-projects through the
+GTE wrapper `func_0x800195A8` (using the actor's `+0x3C/+0x3E` bbox), computes the
+projected midpoint + span, and draws via `FUN_801E3984` (control word `+0x74`,
+`+0x88`, byte `+0x5A`). Because it calls the GTE projection and builds a draw
+primitive it is render-track - documented, not ported. Its direct `overlay_0897`
+dump is a truncated alias; the real 83-instruction body is in the
+cutscene-dialogue field capture.
+`see ghidra/scripts/funcs/overlay_cutscene_dialogue_801e4470.txt`.
+
 ## See also
 
 **Reference** -
