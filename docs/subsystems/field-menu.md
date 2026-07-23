@@ -29,9 +29,9 @@ resolved through the window-descriptor table below.
 - [Magic list](#magic-list-submenu-2) · [Moves list](#moves-list-submenu-3) · [Skills page](#skills-page-submenu-1)
 - [Top-level pause menu](#top-level-pause-menu) · [Equip screen](#equip-screen) · [Options screen](#options-screen)
 - [Submenu state machines](#submenu-state-machines) · [Items screen](#items-screen) · [Magic screen](#magic-screen)
-- [Inn stay](#inn-stay-there-is-no-inn-screen)
+- [Prize-exchange windows](#prize-exchange-ticket-counter-windows) · [Inn stay](#inn-stay-there-is-no-inn-screen)
 - [Draw primitives + CLUT staging](#draw-primitives--clut-staging)
-- [Record fields consumed](#record-fields-consumed)
+- [Record fields consumed](#record-fields-consumed) · [Overlay identity + VA-aliasing](#overlay-identity--va-aliasing)
 
 ## Window descriptor table
 
@@ -273,7 +273,11 @@ right end `(184,80,8,16)` (= ICO record `0x6A`, `dx = 0x60`).
   `0x6C+ones` at `x+0x56`. The digit records are ten 6x6 cells at
   `(64 + 6*digit, 128)`, CLUT row 4; all at `y+5`.
 
-**Derived-stat grid** (`FUN_801cf650` computes the values first). 3 rows at
+**Derived-stat grid** (`FUN_801cf650` computes the values first; its base
+stats come from the preload helper `FUN_801CF5D0`, which copies the
+character record words `+0x6CC..+0x6E2` into the aggregator staging block at
+`0x801F0080` before the equipment bonuses are summed on top -
+`ghidra/scripts/funcs/overlay_menu_801cf5d0.txt`). 3 rows at
 `WY+0x42 / +0x4f / +0x5c`, two columns. Left column: label `X+0`, live value
 `X+0x28`, `(` at `X+0x40`, growth value `X+0x48`, `)` at `X+0x60`. Right
 column: label `X+0x74`, live value `X+0x9c`, `(` at `X+0xb4`, growth value
@@ -553,7 +557,10 @@ and SFX `0x24` plays (`FUN_80035BD0`) - the confirm cue the equip
 sub-screen (`0x13`) uses. Not ported; the engine's equip session applies
 the Best-Equipment pick via `equip_session` rather than this per-slot
 retail applier, and the `0x801E5AE8` armament tail is a separate function
-outside this dump.
+outside this dump. The classifier flags `0x801E5AE8` PHANTOM: the only dump
+at that VA is a 4-instruction stub (in the mis-based
+`overlay_0896_bat_back_dat` image, exit `0x801EC96C`), so the placer body is
+not recovered there - the routing above is a call edge, not a dumped body.
 
 ## Scroll widgets (submenu 2 or 3)
 
@@ -573,7 +580,9 @@ Three functions in the menu overlay (PROT 0899, base `0x801CE818`):
   (on value rows) the value string at `x+140`, then advances y by the
   row's layout pitch.
 - **Input SM** `FUN_801DA9F8` (browse cursor `DAT_801E46C0`, low 12 bits =
-  row, bit `0x1000` = editing, bit `0x4000` = cursor hidden).
+  row, bit `0x1000` = editing, bit `0x4000` = cursor hidden). The options
+  submenu's tick entry is the thin wrapper `FUN_801DD330`, a single tail call
+  `FUN_801DA9F8(0, 9, 0x30, 1)` (`ghidra/scripts/funcs/overlay_menu_801dd330.txt`).
 - **Value-popup renderer** `FUN_801D2B44` (window id 47).
 
 Three data tables drive the rows:
@@ -1204,6 +1213,49 @@ character records, descriptions via `MenuTextTables` /
 Quarter bit `0x10` shaves 25%, Half winning when both are set) is applied to
 the displayed cost, matching the retail info window and the battle cast path.
 
+## Prize-exchange (ticket-counter) windows
+
+The casino / point ticket-counter (prize exchange) is hosted in this same
+menu overlay - its prize table sits in the overlay data segment at VA
+`0x801E4518` (PROT 0899 file `0x15D00`; see the overlay note in
+`crates/asset/data/static-overlays.toml`), and a save inside the shop holds
+game mode `0x17` with this overlay resident at slot A. The screen is composed
+from the same descriptor-table window system, with content-only renderers
+analogous to the Items / Magic ones. Each is a self-entry menu-overlay body
+that takes the window rect `a0` and hangs its content off
+`(WX, WY) = (a0+0xa, a0+0xc)`:
+
+| renderer | draws |
+|---|---|
+| **Exchange tab `FUN_801DCFE4`** | the "Exchange" label STR (overlay rodata `0x801CEC6C`) at `(WX, WY)` CLUT 7 - title-tab content, no frame. `overlay_menu_801dcfe4.txt` |
+| **Gold box `FUN_801DCF84`** | money pictogram ICO `0x62` at `(WX, WY+2)` + the 8-digit party gold `_DAT_8008459C` at `(WX+0x28, WY)` CLUT 7 - the same money global the top-level id-49 box draws. `overlay_menu_801dcf84.txt` |
+| **Coin box `FUN_801DD028`** | casino-coin pictogram ICO `0x66` at `(WX, WY+2)` + the 8-digit coin bank `_DAT_800845A4` at `(WX+0x28, WY)` CLUT 7. `overlay_menu_801dd028.txt` |
+| **Points box `FUN_801DCE20`** | a points-label STR (`0x801CEA40`) at `(WX, WY)`; the 8-digit point-card bank `_DAT_800845B4` at `(WX, WY+0xE)` CLUT 6; the "point(s)" STR (`0x801CEA50`) at `(WX+0x40, WY+0xE)`; advance hand `FUN_8002B994(1,1, WX+0xE6, WY+0xD)`. `overlay_menu_801dce20.txt` |
+| **Item-info `FUN_801DCC20`** | when a prize id is staged (`DAT_801E46B0 > 0`): the shared item-info panel `FUN_801D0F1C` (name/desc), then CLUT 6 + the 2-digit bag count (`FUN_80042F4C(id)`) at `(WX+0x80, WY)`; always a `0x90 x 0x28` shade box `FUN_8002C69C(WX, WY+0x38)` under it - the Items id-17 `FUN_801DCB60` shape. `overlay_menu_801dcc20.txt` |
+| **Prompt line `FUN_801DCF14`** | the current dialog-context text (`_DAT_8007B450`, skipping its `+2` glyph-count header, from `+3`) at `(WX, WY)` CLUT 7, forcing the monospace-advance override (`DAT_80073F20 = 0x10`) for the draw and restoring it after. `overlay_menu_801dcf14.txt` |
+| **Message box `FUN_801DCCB4`** | refills operand byte `0x801E46E5` in place from the staged character record byte (`record + 0x705`, record `_DAT_8007BB78 + _DAT_8007BB70*0x414`), draws the template STR `0x801E46E4` at `(WX, WY)` CLUT 7, then the advance hand at `(WX+0xE6, WY+0xD)` - the notify shape of the Items `FUN_801DCD58`. `overlay_menu_801dccb4.txt` |
+
+The exchange **session drivers** are `FUN_801DB380` / `FUN_801DB510` /
+`FUN_801DB7F4` (menu overlay; each runs the descriptor-window scripts and
+polls the list kernel like the Items sub-screens -
+`ghidra/scripts/funcs/overlay_menu_801db380.txt` and siblings).
+
+Its sub-screen tick handlers follow the same phase protocol as the Items
+routes - phase word `DAT_801E46AC`, submenu word `DAT_801E46A4`, window
+script through `FUN_801D6628`, gated on the slide latch `_DAT_8007BB80 == 0`:
+
+- **`FUN_801DD12C`** runs window script `0x801E4A78`, then on the slide
+  latch clearing exits the menu with `DAT_801E46A0 = 0xF2` (fade) + outer-SM
+  handoff code `_DAT_8007B43C = 3` (a distinct field-side exit from the
+  Door routes' codes 4/5). `overlay_menu_801dd12c.txt`.
+- **`FUN_801DD1B8`** (script `0x801E4BE0`) and **`FUN_801DD26C`** (script
+  `0x801E4CA4`) are its confirm / return windows - on a confirm/cancel edge
+  (`_DAT_8007B874 & (_DAT_800846D0 | _DAT_800846D4)`) `FUN_801DD1B8` plays
+  SFX `0x20` and requests the prior submenu, `FUN_801DD26C` requests submenu
+  `5` (the Items command). `overlay_menu_801dd1b8.txt` / `_801dd26c.txt`.
+- **`FUN_801DD310`** is an idle sub-screen tick that only pumps the window
+  engine `FUN_80031D00`. `overlay_menu_801dd310.txt`.
+
 ## Dialog reading box (FUN_801D84D0)
 
 The field dialog pager `FUN_801D84D0` (dialog overlay) draws the NPC /
@@ -1371,6 +1423,33 @@ inn scripts heal the live party on both hosts. `MenuRuntime::open_inn`
 remains an engine-side convenience (a yes/no session with an explicit
 cost) for tests and tooling - it is **not** a port of a retail screen,
 because retail has none.
+
+## Overlay identity + VA-aliasing
+
+Every function on this page is a body in the **menu overlay** (PROT 0899,
+base `0x801CE818`), whose code spans `0x801CF5D0..0x801E435C` - the data
+segment above that carries the window-descriptor table (`0x801E4738`), the
+options tables (`0x801E4404+`) and the prize table (`0x801E4518`). Its dumps
+carry the `overlay_menu_` prefix. Confirm any citation with the classifier
+(`scripts/ghidra-analysis/classify-worklist.py --explain <VA>`): its
+`image=menu` line is the arbiter, and it also catches the interior-address
+trap (e.g. `0x801CF754` decodes inside `FUN_801CF650`, not as its own
+function).
+
+A VA in the `0x801Cxxxx..0x801Fxxxx` band does **not** identify a menu
+function on its own - this slot-A window is shared, at different times, by the
+field overlay (0897), the battle overlay (0898) and the cutscene / minigame
+overlays, all based at `0x801CE818`, so one VA aliases several unrelated
+bodies (`0x801CF650` is the equip aggregator here but a "Give" string in the
+field overlay; `0x801D84C0` is a menu body here but a battle-action body in
+0898). Dumps prefixed `overlay_0896_*` are a separate trap: PROT 0896
+(`bat_back_dat`) has an **unrecovered** link base and its file over-reads the
+field overlay's bytes from `+0x9000`, so an `overlay_0896_*` dump above
+`0x801CE818` is field-overlay code (not menu code) and below `0x801CE818` its
+call targets are untrustworthy (see
+[`call-target-integrity.md`](../tooling/call-target-integrity.md) and
+[`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md)). Read the
+classifier's `image=`, not the filename prefix.
 
 ## Engine port
 
