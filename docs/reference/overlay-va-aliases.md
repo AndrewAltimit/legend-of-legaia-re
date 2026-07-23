@@ -97,6 +97,31 @@ inherit their parent's re-keying rather than being measured separately.
 | `0x802046B8` | `0x801EDED0` | `801EC3E4` |
 | `0x802059F8` | `0x801EF210` | `801EF014` |
 
+### Below `0x801CE818` nothing is real
+
+Every mapped overlay bases at `0x801CE818` (slot A) or `0x801F69D8` (slot B), so
+**no extracted image contains a VA below `0x801CE818`**. A printed address in
+`0x801C0000..0x801CE818` therefore names no overlay function whatever its dump
+looks like, and the correction is the plain `+ 0xE818`. This needs no dump at
+all - it follows from the base map.
+
+The failure signature to watch for is a write-up that calls two bodies a "twin",
+a "relocation copy" or a "sibling" on the strength of identical instructions with
+branch targets offset by a constant. That constant *is* the base error. PSX
+overlays are not relocated, so two genuinely distinct functions do not come out
+instruction-for-instruction identical.
+
+| Phantom VA | `+ 0xE818` | Match | Was written up as |
+|---|---|---|---|
+| `0x801C1634` | `801CFE4C` | 202 / 202 instructions by VA | "byte-for-byte structural twin" of the collision probe |
+| `0x801C2B2C` | `801D1344` | 296 / 296 | "code-identical relocation copy" |
+| `0x801C36AC` | `801D1EC4` | 245 / 245, operands included | a distinct warp-reposition handler |
+| `0x801C9688` | `801D7EA0` | 208 / 208, operands included | "field-mode equivalent" of the horizon emitter |
+
+Each was checked against a **base-correct** dump of the target
+(`overlay_cutscene_dialogue_*` / `overlay_world_map_*`), not against another
+0897 import.
+
 ### The inverse direction
 
 The law runs backwards too. `overlay_0897_xxx_dat_801cf408.txt` prints a body at
