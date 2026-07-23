@@ -220,6 +220,25 @@ priority: retail itself is not observed dispatching to these handlers at runtime
 output; the `NccMode` metadata is kept for fidelity if a light-using scene is ever
 found.
 
+## 2D gradient-tile primitive - `FUN_8002BDC4`
+
+Distinct from the two 3D TMD renderers: `FUN_8002BDC4`
+(`ghidra/scripts/funcs/8002bdc4.txt`) fills a screen rectangle with a
+tiled, double-gradient textured quad strip - the UI/backdrop primitive
+behind gradient panels and bar fills. It takes an origin `(x, y)`, a texture
+descriptor `param_3` (`[0]=u0, [1]=v0, [2]=tile_w, [3]=tile_h`), a
+`tpage/clut` word `param_4`, and optional `w`/`h` overrides (`0` = take the
+descriptor's tile size). It walks the rectangle in `tile_h + 8` row bands
+and `tile_w`-wide columns, emitting a `0x34`-byte gouraud-textured quad
+(`0x0C000000` tag) per cell straight into the ordering-table cursor
+`_DAT_1F8003A0` and adding it through `FUN_8003D2C4`. The shading is a
+bilinear ramp: the luminance runs from `0x40` and steps by
+`0x900 / (h + 8)` down each band and by a per-column delta across each row,
+so the fill is a smooth two-axis gradient rather than a flat tint. `param_4
+& 0x80` toggles the base RGB word between two brightness constants
+(`0x3E800000` vs `0x3C800000`). It is a pure primitive-buffer writer with no
+GTE transform.
+
 ## TMD pointer table
 
 `FUN_80026B4C` writes registered TMDs to `*(int **)(idx * 4 + 0x8007C018)`. Consumers in retail (4 functions, all setup-not-render):

@@ -26,6 +26,31 @@ tick's own buffer; its *runtime facing channel* - the ambient idle turns of ops
 `0x04` and `0x0D`, plus the ramp scheduler they drive - is
 [`legaia_engine_vm::ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs).
 
+## The driver: `FUN_8003BC08`
+
+The per-actor tick that gates and dispatches both VMs is itself two
+independently-gated halves (see `ghidra/scripts/funcs/8003bc08.txt`; ported
+as `field_actor_plan` in
+[`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs)).
+
+**Facing arm** - runs only when the actor is live (`+0x5C >= 0`, which also
+gates the `FUN_801D79E8` pre-update) and not self-frozen (`+0x10 & 2` clear).
+It picks one facing law from the flag word `+0x10`: bit `0x20000000` snaps the
+heading to `-(+0x8E)`; else if neither a target bit (`0x20200`) nor the
+ambient enable `_DAT_8007B6A8` is set the heading holds; else bit `0x2000`
+selects a per-frame clamped turn toward the target bearing (`rate = pad-held
+* 6`, `rotate_toward_clamped` - a raw signed-difference clamp, distinct from
+the frame-budget ramp `rotate_step`), and its absence snaps straight to the
+bearing (`FUN_80019278`).
+
+**Dispatch arm** - skipped whole when the global suppress bit
+`_DAT_1F800394 & 0x400` is set. Otherwise four routines fire on their own
+guards: `FUN_80039B7C` (`+0x10 & 0x100` and path target `+0x90` present),
+the pursue VM `FUN_8003774C` (`+0x10 & 0x400`), the scripted VM
+`FUN_80038158` (no modal window `*(_DAT_801C6EA4 + 8) == 0`, bytecode `+0x80`
+present, `+0x10 & 8` clear), and the move-table consumer `FUN_800204F8`
+(`+0x5C > 0` or `+0x10 & 0x1000`).
+
 ## Bytecode layout
 
 Each script entry is `1 + N` bytes:

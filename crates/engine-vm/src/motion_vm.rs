@@ -553,6 +553,168 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
     }
 }
 
+/// Rotate a facing toward a target by at most `rate`, clamped - the facing
+/// ramp in `FUN_8003BC08` (`ghidra/scripts/funcs/8003bc08.txt`,
+/// `0x8003BCA8..0x8003BCF4`).
+///
+/// Unlike [`rotate_step`] (which distributes an arc over a frame budget and
+/// wraps the write-back), this is the field NPC's per-frame *pursue* turn:
+/// take the raw signed difference `target - current`, clamp it to
+/// `[-rate, rate]`, and add it back. `rate` is `_DAT_1F800393 * 6` (the
+/// per-frame pad-held magnitude times six) at the retail call site. The
+/// arithmetic is 16-bit truncating, matching the halfword store to `+0x16`;
+/// there is no `& 0xFFF` normalisation - a heading is held raw and the
+/// renderer masks.
+///
+/// PORT: FUN_8003BC08 (the `0x8003BCA8..0x8003BCF4` facing-clamp arm)
+pub fn rotate_toward_clamped(current: i16, target: i16, rate: i32) -> i16 {
+    let mut delta = i32::from(target) - i32::from(current);
+    if delta > rate {
+        delta = rate;
+    }
+    if delta < -rate {
+        delta = -rate;
+    }
+    (i32::from(current) + delta) as i16
+}
+
+/// How `FUN_8003BC08`'s facing arm updates a field actor's heading `+0x16`
+/// this frame, selected from the flag word `+0x10`. Only reached when the
+/// actor's lifetime halfword `+0x5C` is non-negative and `flags & 2` is
+/// clear; otherwise the facing is left untouched ([`FieldActorFacing::Hold`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldActorFacing {
+    /// Leave the current heading standing (the `flags & 2` guard, or the
+    /// `(flags & 0x20200) == 0 && ambient_gate == false` early-out).
+    Hold,
+    /// `flags & 0x20000000`: snap the heading to `-(+0x8E)` outright.
+    Snap(i16),
+    /// Snap to the live bearing toward the actor's target (retail
+    /// `FUN_80019278`); taken when `flags & 0x2000` is clear.
+    FaceTarget,
+    /// `flags & 0x2000`: ramp toward the target bearing, at most `rate` per
+    /// frame - feed the bearing and the current heading to
+    /// [`rotate_toward_clamped`]. `rate = pad_held * 6`.
+    RotateToward { rate: i32 },
+}
+
+/// Which of the per-actor motion routines `FUN_8003BC08` dispatches this
+/// frame, after its facing arm. Every flag is `false` when the global motion
+/// suppress bit (`_DAT_1F800394 & 0x400`) is set - retail skips the whole
+/// dispatch block during that freeze.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FieldMotionDispatch {
+    /// `flags & 0x100 && path_target_present` -> the spline / path arm
+    /// `FUN_80039B7C`.
+    pub run_spline: bool,
+    /// `flags & 0x400` -> the pursue / patrol motion VM ported in this
+    /// module ([`step`], retail `FUN_8003774C`).
+    pub run_pursue: bool,
+    /// `dialog_idle && scripted_present && !(flags & 8)` -> the scripted
+    /// motion VM `FUN_80038158`. `dialog_idle` is `*(_DAT_801C6EA4 + 8) == 0`
+    /// (no modal window open); `scripted_present` is `+0x80 != 0`.
+    pub run_scripted: bool,
+    /// `lifetime > 0 || flags & 0x1000` -> the move-table consumer
+    /// `FUN_800204F8`.
+    pub run_move_table: bool,
+}
+
+/// The full per-frame plan `FUN_8003BC08` computes for one field actor -
+/// clean-room from the disassembly. The function itself also bumps a global
+/// frame counter (`_DAT_801C6ED0`) and, when `lifetime >= 0`, runs a
+/// pre-update (`FUN_801D79E8`); those are surfaced as [`Self::pre_update`].
+///
+/// Inputs are the actor fields and globals the retail body reads; the port
+/// returns the decision so the host can invoke whichever sub-updates it has
+/// wired without this function reaching into engine state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FieldActorPlan {
+    /// `true` when `lifetime (+0x5C) >= 0`: retail runs the `FUN_801D79E8`
+    /// pre-update and then the facing arm. When `false`, neither runs and
+    /// `facing` is [`FieldActorFacing::Hold`].
+    pub pre_update: bool,
+    /// The facing arm's outcome.
+    pub facing: FieldActorFacing,
+    /// The motion dispatch that follows.
+    pub dispatch: FieldMotionDispatch,
+}
+
+/// Inputs to [`field_actor_plan`] - the actor fields and engine globals
+/// `FUN_8003BC08` reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FieldActorInputs {
+    /// `+0x5C` lifetime / active halfword.
+    pub lifetime: i16,
+    /// `+0x10` flag word.
+    pub flags: u32,
+    /// `+0x8E` - the snap target is its negation.
+    pub field_8e: i16,
+    /// `+0x90 != 0` - path / emitter target present.
+    pub path_target_present: bool,
+    /// `+0x80 != 0` - scripted-motion bytecode present.
+    pub scripted_present: bool,
+    /// `_DAT_8007B6A8 != 0` - the ambient-facing enable that lets a
+    /// non-target actor still face-update.
+    pub ambient_gate: bool,
+    /// `_DAT_1F800393` - per-frame pad-held magnitude; the rotate rate is
+    /// this times six.
+    pub pad_held: u8,
+    /// `*(_DAT_801C6EA4 + 8) == 0` - no modal window / dialog open.
+    pub dialog_idle: bool,
+    /// `_DAT_1F800394 & 0x400 != 0` - global motion-suppress freeze.
+    pub global_suppress: bool,
+}
+
+/// Port of `FUN_8003BC08` - the field-actor per-frame motion driver
+/// (`ghidra/scripts/funcs/8003bc08.txt`). Turns one actor's flags + the
+/// engine globals into a [`FieldActorPlan`]: which facing law to apply and
+/// which of the four motion routines to run.
+///
+/// The two halves are independently gated. The facing arm runs only for a
+/// live actor (`lifetime >= 0`) that is not itself frozen (`flags & 2`
+/// clear); the dispatch block runs unless the global suppress bit is set,
+/// regardless of lifetime. Retail runs `FUN_801D79E8` before the facing arm
+/// and always increments a frame counter - see [`FieldActorPlan::pre_update`].
+///
+/// PORT: FUN_8003BC08
+///
+/// REF: FUN_80019278 (bearing-to-target, feeds `FaceTarget` / `RotateToward`),
+/// FUN_80039B7C, FUN_80038158, FUN_800204F8
+pub fn field_actor_plan(inp: FieldActorInputs) -> FieldActorPlan {
+    let pre_update = inp.lifetime >= 0;
+
+    let facing = if !pre_update || inp.flags & 2 != 0 {
+        FieldActorFacing::Hold
+    } else if inp.flags & 0x2000_0000 != 0 {
+        FieldActorFacing::Snap(inp.field_8e.wrapping_neg())
+    } else if inp.flags & 0x0002_0200 == 0 && !inp.ambient_gate {
+        FieldActorFacing::Hold
+    } else if inp.flags & 0x2000 == 0 {
+        FieldActorFacing::FaceTarget
+    } else {
+        FieldActorFacing::RotateToward {
+            rate: i32::from(inp.pad_held) * 6,
+        }
+    };
+
+    let dispatch = if inp.global_suppress {
+        FieldMotionDispatch::default()
+    } else {
+        FieldMotionDispatch {
+            run_spline: inp.flags & 0x100 != 0 && inp.path_target_present,
+            run_pursue: inp.flags & 0x400 != 0,
+            run_scripted: inp.dialog_idle && inp.scripted_present && inp.flags & 8 == 0,
+            run_move_table: inp.lifetime > 0 || inp.flags & 0x1000 != 0,
+        }
+    };
+
+    FieldActorPlan {
+        pre_update,
+        facing,
+        dispatch,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -568,6 +730,156 @@ mod tests {
 
     fn tgt(x: i16, y: i16, z: i16) -> MotionTarget {
         MotionTarget { x, y, z, id: 0 }
+    }
+
+    fn inputs() -> FieldActorInputs {
+        FieldActorInputs {
+            lifetime: 1,
+            flags: 0,
+            field_8e: 0,
+            path_target_present: false,
+            scripted_present: false,
+            ambient_gate: false,
+            pad_held: 0,
+            dialog_idle: true,
+            global_suppress: false,
+        }
+    }
+
+    #[test]
+    fn rotate_toward_clamped_limits_the_turn() {
+        // Delta within rate: lands exactly on target.
+        assert_eq!(rotate_toward_clamped(100, 130, 50), 130);
+        // Delta exceeds +rate: clamped.
+        assert_eq!(rotate_toward_clamped(100, 400, 50), 150);
+        // Delta below -rate: clamped the other way.
+        assert_eq!(rotate_toward_clamped(400, 100, 50), 350);
+        // Zero rate freezes the heading.
+        assert_eq!(rotate_toward_clamped(400, 100, 0), 400);
+    }
+
+    #[test]
+    fn facing_hold_when_dead_or_frozen() {
+        // lifetime < 0: no facing arm at all.
+        let plan = field_actor_plan(FieldActorInputs {
+            lifetime: -1,
+            flags: 0x2000_0000,
+            ..inputs()
+        });
+        assert!(!plan.pre_update);
+        assert_eq!(plan.facing, FieldActorFacing::Hold);
+        // flags & 2 freezes the facing even for a live actor.
+        let plan = field_actor_plan(FieldActorInputs {
+            flags: 0x2000_0002,
+            ..inputs()
+        });
+        assert!(plan.pre_update);
+        assert_eq!(plan.facing, FieldActorFacing::Hold);
+    }
+
+    #[test]
+    fn facing_arm_selects_by_flag_priority() {
+        // 0x20000000 snaps to -(+0x8E).
+        assert_eq!(
+            field_actor_plan(FieldActorInputs {
+                flags: 0x2000_0000,
+                field_8e: 7,
+                ..inputs()
+            })
+            .facing,
+            FieldActorFacing::Snap(-7)
+        );
+        // No target/ambient bits and gate off -> Hold.
+        assert_eq!(field_actor_plan(inputs()).facing, FieldActorFacing::Hold);
+        // Ambient gate alone re-enables the face-target arm.
+        assert_eq!(
+            field_actor_plan(FieldActorInputs {
+                ambient_gate: true,
+                ..inputs()
+            })
+            .facing,
+            FieldActorFacing::FaceTarget
+        );
+        // A target bit (0x200) selects face-target without the ambient gate.
+        assert_eq!(
+            field_actor_plan(FieldActorInputs {
+                flags: 0x200,
+                ..inputs()
+            })
+            .facing,
+            FieldActorFacing::FaceTarget
+        );
+        // 0x2000 alone does not pass the 0x20200 target gate: still Hold.
+        assert_eq!(
+            field_actor_plan(FieldActorInputs {
+                flags: 0x2000,
+                ..inputs()
+            })
+            .facing,
+            FieldActorFacing::Hold
+        );
+        // 0x2000 with a target bit (0x200) switches to the clamped ramp;
+        // rate = pad_held * 6.
+        assert_eq!(
+            field_actor_plan(FieldActorInputs {
+                flags: 0x2000 | 0x200,
+                pad_held: 4,
+                ..inputs()
+            })
+            .facing,
+            FieldActorFacing::RotateToward { rate: 24 }
+        );
+    }
+
+    #[test]
+    fn dispatch_gates_on_flags_and_presence() {
+        let plan = field_actor_plan(FieldActorInputs {
+            flags: 0x100 | 0x400 | 0x1000,
+            path_target_present: true,
+            scripted_present: true,
+            ..inputs()
+        });
+        assert!(plan.dispatch.run_spline);
+        assert!(plan.dispatch.run_pursue);
+        assert!(plan.dispatch.run_scripted);
+        assert!(plan.dispatch.run_move_table);
+        // Spline needs the path target present, not just the flag.
+        let plan = field_actor_plan(FieldActorInputs {
+            flags: 0x100,
+            path_target_present: false,
+            ..inputs()
+        });
+        assert!(!plan.dispatch.run_spline);
+        // flags & 8 suppresses the scripted VM even with bytecode present.
+        let plan = field_actor_plan(FieldActorInputs {
+            flags: 8,
+            scripted_present: true,
+            ..inputs()
+        });
+        assert!(!plan.dispatch.run_scripted);
+        // A modal window (dialog not idle) also suppresses it.
+        let plan = field_actor_plan(FieldActorInputs {
+            scripted_present: true,
+            dialog_idle: false,
+            ..inputs()
+        });
+        assert!(!plan.dispatch.run_scripted);
+        // move-table runs on lifetime > 0 even with no flags.
+        assert!(field_actor_plan(inputs()).dispatch.run_move_table);
+    }
+
+    #[test]
+    fn global_suppress_clears_the_whole_dispatch() {
+        let plan = field_actor_plan(FieldActorInputs {
+            flags: 0x100 | 0x400 | 0x1000,
+            path_target_present: true,
+            scripted_present: true,
+            global_suppress: true,
+            ..inputs()
+        });
+        assert_eq!(plan.dispatch, FieldMotionDispatch::default());
+        // The facing arm is not part of the suppress gate - it still runs.
+        assert_eq!(plan.facing, FieldActorFacing::Hold);
     }
 
     #[test]
