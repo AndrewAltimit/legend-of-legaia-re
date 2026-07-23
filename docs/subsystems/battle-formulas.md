@@ -682,7 +682,7 @@ respect, each module's own extent bounded by the next entry's head-overlap):
 | Module | Spells (shared per module) | Known caster | Wrapper |
 |---|---|---|---|
 | PROT 944 | Guilty Cross `0x37`, Curse All `0x53` | Cort (humanoid phases) | **bypass** |
-| PROT 952 | Bloody Horns `0x5C` -> **bypass** (dispatcher `+0x1150` sends `0x5C` to the `+0x740` tick); Astral Slash `0xB8` -> `+0x34` tick, which carries **no damage-wrapper call** (path open) | Xain; Gaza (first fight) | per-spell (see cells) |
+| PROT 952 | Bloody Horns `0x5C` -> **bypass** (dispatcher `+0x1150` sends `0x5C` to the `+0x740` tick); Astral Slash `0xB8` -> `+0x34` tick, which carries **no damage-wrapper call** - and **respects** in play (community playtest: a Luminous Jewel halves it, 1570 -> 781); its damage-call site is unpinned | Xain; Gaza (first fight) | per-spell (see cells) |
 | PROT 953 | Terio Punch `0x5D`, Bull Charge `0x5E` | Xain | **bypass** |
 | PROT 958 | Blazing Slash `0x79` | Gi Delilas | **bypass** (6 calls) |
 | PROT 959 | Megaton Press `0x7A` | Che Delilas | **bypass** (3 calls) |
@@ -696,9 +696,10 @@ switch, so a shared row does not imply shared behaviour. Two residuals: PROT
 952 carries one *respect* call (`+0x15B0`, power `0x80`) with **no reachable
 in-module entry** - same-shape twins sit at the same offsets in sibling
 modules, so it reads as shared template dead code, not a Bloody Horns
-component - and Astral Slash's dispatched tick has no damage call at all, so
-where its damage lands is an open leg. Notably **no Songi cast is in a bypass
-module**
+component - and Astral Slash's dispatched tick has no damage call at all;
+its behaviour is **respecting** (community playtest: Luminous Jewel halves
+it), but which call site applies its damage stays open. Notably **no Songi
+cast is in a bypass module**
 (Hyper Wave is plain-class; Hyper Lightning / Hyper Crush / Chaos Flare /
 Genocidal Cannon all respect), and non-capture casts (plain-class, player
 summons, move-power specials) all reach the finisher with `param_5 = 0`.

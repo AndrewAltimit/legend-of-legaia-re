@@ -312,9 +312,11 @@ are capture-class spells - per-spell streamed code modules - and exactly six
 modules route damage through the wrapper `FUN_801DD6B4`, which passes the
 finisher `param_5 = 1` and skips the entire party-defender resist block
 (Jewels, elemental guards, All Guard): Xain's Bloody Horns / Terio Punch
-(+ module-sharing Bull Charge), Cort's Guilty Cross (+ Curse All), Gaza's
-Astral Slash module, and the Delilas trio's Blazing Slash / Megaton Press /
-Plasma Strike. The fix retargets all thirteen `jal` words across PROT
+(+ module-sharing Bull Charge), Cort's Guilty Cross (+ Curse All), and the
+Delilas trio's Blazing Slash / Megaton Press / Plasma Strike. (Gaza's Astral
+Slash shares the Bloody Horns module but dispatches to its own tick and
+respects guards - playtest-confirmed.) The fix retargets all thirteen
+`jal` words across PROT
 944 / 952 / 953 / 958 / 959 / 960 to the guard-respecting `FUN_801DD4B0`;
 nothing else changes - both wrappers share the argument contract and the
 caster's element was already read by the affinity scale. Spells that already

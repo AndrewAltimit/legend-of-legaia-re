@@ -803,7 +803,7 @@ apply, even though the caster's element is read by the affinity scale (the
 full census: [battle-formulas.md](../subsystems/battle-formulas.md)). The
 bypassing set is the boss signature-move roster: Xain's **Bloody Horns** /
 **Terio Punch** (+ module-sharing **Bull Charge**), Cort's **Guilty Cross**
-(+ **Curse All**), Gaza's Astral Slash module, and the Delilas trio's
+(+ **Curse All**), and the Delilas trio's
 **Blazing Slash** / **Megaton Press** / **Plasma Strike**. The fix retargets
 all thirteen `jal` words across PROT 944 / 952 / 953 / 958 / 959 / 960 to the
 guard-respecting wrapper `FUN_801DD4B0`, so those hits run the same resist

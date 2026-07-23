@@ -23,7 +23,7 @@
 //! | Module | Spell(s) | Caster |
 //! |---|---|---|
 //! | PROT 944 | Guilty Cross `0x37`, Curse All `0x53` | Cort (humanoid phases) |
-//! | PROT 952 | Bloody Horns `0x5C` (Astral Slash `0xB8` shares the module; its dispatched tick has no damage call) | Xain; Gaza (first fight) |
+//! | PROT 952 | Bloody Horns `0x5C` (Astral Slash `0xB8` shares the module; its dispatched tick has no damage call and it **respects** guards in playtests) | Xain; Gaza (first fight) |
 //! | PROT 953 | Terio Punch `0x5D`, Bull Charge `0x5E` | Xain |
 //! | PROT 958 | Blazing Slash `0x79` | Gi Delilas |
 //! | PROT 959 | Megaton Press `0x7A` | Che Delilas |

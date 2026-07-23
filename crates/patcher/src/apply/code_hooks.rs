@@ -312,12 +312,12 @@ pub struct JewelFixReport {
 
 /// Apply the **jewel fix** (see [`crate::jewel_fix`]): retarget the damage
 /// calls of the boss cinematic casts - Xain's Bloody Horns / Terio Punch (and
-/// module-sharing Bull Charge), Cort's Guilty Cross (and Curse All), Gaza's
-/// Astral Slash module, and the Delilas trio's Blazing Slash / Megaton Press /
-/// Plasma Strike - from the resist-ladder-bypassing wrapper `FUN_801DD6B4` to
-/// the guard-respecting `FUN_801DD4B0`, so elemental jewels / guards / All
-/// Guard apply to those hits like every ordinary monster special.
-/// Respecting-spell paths sharing a module (Neo Star Slash) are untouched.
+/// module-sharing Bull Charge), Cort's Guilty Cross (and Curse All), and the
+/// Delilas trio's Blazing Slash / Megaton Press / Plasma Strike - from the
+/// resist-ladder-bypassing wrapper `FUN_801DD6B4` to the guard-respecting
+/// `FUN_801DD4B0`, so elemental jewels / guards / All Guard apply to those
+/// hits like every ordinary monster special. Respecting-spell paths sharing a
+/// module (Neo Star Slash; Gaza's Astral Slash) are untouched.
 ///
 /// Thirteen same-size one-word edits across the raw PROT entries
 /// 944 / 952 / 953 / 958 / 959 / 960, every offset inside its module's own
