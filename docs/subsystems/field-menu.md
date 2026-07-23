@@ -1451,6 +1451,58 @@ call targets are untrustworthy (see
 [`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md)). Read the
 classifier's `image=`, not the filename prefix.
 
+### The 0896 dump band yields no menu function
+
+The `overlay_0896_*` dumps whose VAs fall in this doc's `0x801Cxxxx..0x8020xxxx`
+band are a standing decoy: PROT 0896 is `bat_back_dat`, not the menu overlay
+(0899), so a body dumped there is never a pause-menu / options / status
+function. Run through the classifier
+(`scripts/ghidra-analysis/classify-worklist.py --explain <VA>`) and the
+disassembly, every such worklist row lands in one of the buckets below - each
+disqualifying it as a menu entry for a distinct, disc-stable reason. The
+buckets follow the [worklist classification](../tooling/worklist-classification.md)
+vocabulary and the `0x801CE818` seam of
+[`call-target-integrity.md`](../tooling/call-target-integrity.md).
+
+- **Interior / tail fragment of a larger 0896 body** - the VA is not an
+  entry. `0x801CA998` decodes inside `0x801CA850`, `0x801CCDD4` inside
+  `0x801CCBB0`, `0x801C802C` inside `0x801C7F38`; prologue-less tail
+  fragments (`0x801D34A4`, `0x801D95A8`, `0x801DCF24`, `0x801DD690`,
+  `0x801DE268`) read caller-saved registers and fall into a parent's
+  epilogue.
+- **Interior of a resident SCUS function** (below `0x801C0000`, not
+  overlay-resident) - `0x80016E4C` / `0x80016EB8` sit inside entry
+  `0x80016B6C`, `0x800379A8` inside `0x8003774C` (the NPC motion VM of
+  [`motion-vm.md`](motion-vm.md)), `0x8003CD68` inside `0x8003CD00`.
+- **Duplicate reprint of an already-ported menu body** - the mis-based
+  image re-prints a correctly-based `0x801Dxxxx` menu-overlay body at a
+  shifted VA: `0x801CC6AC` = `0x801D1EC4`, `0x801CD520` = `0x801D2D38`,
+  `0x801CD6A4` = `0x801D2EBC`, `0x801CD998` = `0x801D31B0`, `0x801EC204`
+  = `0x801F1A1C`, `0x8020E504` = `0x801EED1C` (the Super-Art queue
+  builder). The right-hand VA is the one to cite.
+- **Shared tail** - no `jr ra`; a mid-routine entry into a multi-entry
+  body (`0x801D31D8`, `0x801DABB4`, `0x801DAC78`, `0x801DB6CC`,
+  `0x801DBA78`, `0x801E6548`, `0x801F03C0`, `0x801F20DC`).
+- **Phantom stub / undecodable** - a 2..4-instruction stub
+  (`0x801D0338`, `0x801DB2FC`, `0x801DB4E8`, `0x801DD094`), a window that
+  decodes data as `$zero`-absolute loads (`0x801EE5B0`), or a dump with no
+  disassembly at all (`0x801D56D4`, `0x801DA1F8`).
+- **Self-entry body below `0x801CE818`** - a genuine `jr ra` body, but in
+  the unrecovered-base window where the bytes are not what the dump prints
+  (`0x801C5C90`, `0x801C5F40`, `0x801C6A34`, `0x801C7760`, `0x801C8400`,
+  `0x801CA850`, `0x801CB244`, `0x801CB4A8`, `0x801CCBB0`, and the
+  `bat_back_dat`-image `0x801C0D1C` / `0x801C2720` - `0x801C0D1C` calls
+  the non-enterable interior `0x8002CDD0`, the canonical tell). Nothing
+  attests the printed VA, so no behaviour can be claimed.
+- **Self-entry body at/above `0x801CE818`** - correctly based, but the
+  over-read neighbour's field (0897) / battle (0898) code, not menu:
+  `0x801D4A3C` indexes off the dialog pager context `0x801C6EA4`,
+  `0x801E7448` / `0x801E8B10` are field-overlay state machines,
+  `0x801F69A0` walks the battle actor `+0x1DD`, `0x802097BC` is a
+  battle-scene body. These belong to
+  [`field-locomotion.md`](field-locomotion.md) /
+  [`battle-action.md`](battle-action.md), not here.
+
 ## Engine port
 
 Every draw builder named on this page lives in **`legaia-engine-ui`**, not in
