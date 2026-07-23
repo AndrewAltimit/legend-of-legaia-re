@@ -669,10 +669,31 @@ at `+0x2238`; it is the same physical word, not a second Bloody Horns hit -
 **this is why Earth Jewels do not reduce them** despite Xain's element byte
 being 0 (Earth) and being read by the scale - while the enemy-side
 **Evil Seru Magic** module (PROT 966: `0x327` / `0x100` via `FUN_801DD4B0`)
-respects it, which is why Cort's ESM behaves as Dark. Guilty Cross (PROT 944,
-`0x38E`) and the module disasm sites are recoverable by scanning the extracted
-entries for the `jal` words (`0x0C07752C` / `0x0C0775AD`). The engine finisher
+respects it, which is why Cort's ESM behaves as Dark. The engine finisher
 models the gate as `damage_finish::bypass_party_resist`.
+
+The full wrapper census over every capture-class module (byte-scan of the
+extracted entries for the `jal` words `0x0C0775AD` bypass / `0x0C07752C`
+respect, each module's own extent bounded by the next entry's head-overlap):
+
+| Module | Spells (shared per module) | Known caster | Wrapper |
+|---|---|---|---|
+| PROT 944 | Guilty Cross `0x37`, Curse All `0x53` | Cort (humanoid phases) | **bypass** |
+| PROT 952 | Bloody Horns `0x5C`, Astral Slash `0xB8` | Xain; Gaza (first fight) | **bypass** (+1 respect call) |
+| PROT 953 | Terio Punch `0x5D`, Bull Charge `0x5E` | Xain | **bypass** |
+| PROT 958 | Blazing Slash `0x79` | Gi Delilas | **bypass** (6 calls) |
+| PROT 959 | Megaton Press `0x7A` | Che Delilas | **bypass** (3 calls) |
+| PROT 960 | Plasma Strike `0x7B`, Neo Star Slash `0xA6` | Lu Delilas; Gaza (Sim-Seru) | **mixed** (1 bypass + 1 respect) |
+| every other damage-dealing capture module (935..966) | Earthquake, Hyper Crush/Lightning, Chaos Breath/Flare, Call/Big Wave, Water Column/Crystals/Hazard, Cross Beam, V-/Neo Windhash, Rolling Flare, Scythe Wind, Dead End / Final Crisis, Blade Breath band, Genocidal Cannon, Doomsday, Mystic Circle, enemy ESM, ... | various | respect |
+
+Status-only modules (Glare / Divide / Curse / White Shield cluster / Mystic
+Shield / Clone / Fatal Decision / Kiss of Death band) carry no damage-wrapper
+call at all. Within a *shared* module the per-spell attribution of individual
+call sites is not pinned (the module branches internally); the table is
+module-granular. Notably **no Songi cast is in a bypass or mixed module**
+(Hyper Wave is plain-class; Hyper Lightning / Hyper Crush / Chaos Flare /
+Genocidal Cannon all respect), and non-capture casts (plain-class, player
+summons, move-power specials) all reach the finisher with `param_5 = 0`.
 
 **Engine wiring.** The matrix + per-character table load from the same PROT 0898
 overlay as the move-power table (`World::element_affinity`), and the monster
