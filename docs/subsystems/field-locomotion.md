@@ -962,6 +962,33 @@ and the locomotion walks each doorway in and back out);
 in through the script door and back out through the map door, no story flags);
 `crates/engine-core/tests/walk_on_trigger_dispatch_disc.rs`.
 
+## Field-VM actor-placement + motion opcodes
+
+The field/event VM (`FUN_801DE840`, see [`script-vm.md`](script-vm.md)) reaches a family of small overlay-resident handlers that write the **actor motion state** the locomotion and per-scene-actor-motion paths above then read. Each is a leaf of the VM dispatch: it consumes its inline operand bytes off the script cursor (register `s6`) against the current actor (register `s5`), writes the motion fields, and exits through the VM return idiom `j 0x801e3624` / `0x801e3628` (advancing the cursor `s8`).
+
+The field offsets they touch are the same ones tabulated in [Player actor fields used](#player-actor-fields-used) (`+0x14` X, `+0x16` terrain-conform angle, `+0x18` Z, `+0x26` heading, `+0x62` motion-clip control word, `+0x72` speed multiplier, `+0x8c`/`+0x8d` tile). All are field-overlay (`0897`) functions; each dump is `ghidra/scripts/funcs/overlay_0897[_xxx_dat]_<addr>.txt`.
+
+| Handler | Role |
+|---|---|
+| `FUN_801d03a4` | Place actor at operand tile: `+0x14`/`+0x18` from the two 7-bit tile bytes (`bit 0x80` = half-tile `+0x40`), terrain-conform `+0x16` via `func_0x80019278`; if the actor is the player (`_DAT_8007c364`) repositions the follow camera (`func_0x80017ec8`), else stores the tile into `+0x8c`/`+0x8d`. |
+| `FUN_801d3f24` | Spawn/init actor at tile: sets Z from the operand, motion-script cursor `+0x9e`, speed `+0x72 = 0x1000`, walk counter `+0x5c`, clip control `+0x62 = 0x15`, clears the residual motion fields, and derives the anchor tile `+0x8c`/`+0x8d` from the world position. |
+| `FUN_801d30b8` (interior label `801d3170`) | Step actor along a facing: nudges Z `+0x40`, sets heading `+0x26` from the 8-direction LUT at SCUS `0x80073F04` (index `(op[3] & 0xf) * 2`), and terrain-conforms `+0x16`. |
+| `FUN_801d2968` | Set the per-actor speed multiplier `+0x72` from the operand (single store). |
+| `FUN_801d2774` | Set the motion-clip control word `+0x62` (clears `bit 0x80`, ORs `0x20a`). |
+| `FUN_801d207c` | Set clip control `+0x62` (mask `0xd3ff`, OR `0x1000`) and the direction byte `+0x6c`; clears `+0x7c`; VM advance `+3`. |
+| `FUN_801d4908` | Copy transform (`+0x14`/`+0x16`/`+0x18`/`+0x26`) from another actor and mirror facing into `+0x8e`; player case repositions the follow camera. |
+| `FUN_801d1314` | Actor-in-tile-rectangle test: compares the actor's current tile pair against the operand rect (`op[0..3]`); inside advances the script `+7`, outside arms actor action `0x2c` (state `+0x54 = 0`). |
+| `FUN_801d701c` | Spawn a positioned sub-actor (template `0x801f2978`): inits `+0x54 = 0`, `+0x50`, `+0x14`, `+0x16`, `+0x9c` from operands. |
+| `FUN_801cff3c` | Spawn a sub-actor (template `0x801f2858`): inits `+0x54`/`+0x9e = 0` and writes operands into `+0xb8`/`+0xba`/`+0xbc`. |
+
+`FUN_801d4a60` is the largest of the group: a scripted actor-approach state machine keyed on the actor's `+0x54` state byte. It snapshots the player transform (`_DAT_8007c364 + 0x14/0x18/0x24/0x28`), then in its running state steps toward the target vector `DAT_801f2658` once per frame scaled by the per-frame delta `DAT_1f800393`, accumulating progress in `+0x9e` until it reaches its arrival threshold - a camera-relative "walk the actor to a scripted spot" controller.
+
+`FUN_801dfb10` is a scripted player-turn cutscene state machine (also keyed on `+0x54`): its active state locks player input (`_DAT_8007c364 + 0x10 |= 1`, system word `_DAT_1f800394 |= 0x1000000`) and rotates the player's `+0x16` angle by `DAT_1f800393` per frame until it crosses a fixed threshold, then triggers a fade. It gates its entry/exit on the story flags `0xb` (`func_0x8003ce08` set / `func_0x8003ce64` test).
+
+`FUN_801d567c` advances a per-actor **motion keyframe**: when the actor's frame timer expires it reads the next motion bytes from `actor[+0x94] + actor[+0x9e]` through the flag/stream reader `func_0x8003ce9c`; otherwise, when `+0x9c == 0`, it latches the current motion transform (copying `+0x3c` -> `+0x40`, `+0x16` -> `+0x6a`, and packing `+0x74`/`+0x88` into `+0x80..+0x85`) and runs `FUN_801e4404`.
+
+Provenance: the per-handler dumps named above. Not documented here (out of scope): the field-VM opcode dispatcher `FUN_801d0094` (a jump table at `0x801CECC0` indexed by `op - 0x21`) belongs to [`script-vm.md`](script-vm.md), and the `DAT_801f35xx` number-display / wager handlers that share the overlay are a betting-minigame subsystem, not the [tile board](tile-board.md).
+
 ## Open
 
 - The `FUN_801d5b5c` post kernel's facing save/restore (`+0x26` -> `+0x5A`) and touch counters (`+0x2A` / `_DAT_801c6ea4+0xA`); the engaged flag and the parked-script resume are modelled (`world/prop_interact.rs`).
