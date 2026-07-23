@@ -6,6 +6,23 @@ Instead, the Muscle Dome runs **inside the battle-action overlay** (PROT entry *
 
 This matches the design - the arena reuses the battle engine wholesale (its fighters are battle actors, card plays resolve through the battle-action path). The "`overlay_muscle_dome.bin`" Duckstation capture was that battle-overlay slot resident during the arena, **not** a separate overlay; the `0977` "Ronginus" entry is only the mode-24 sub-id-5 door/init slot (arena roster + `other6` paths), not the match SM.
 
+### The dump set is the whole battle overlay - a filename prefix is not dome evidence
+
+`ghidra/scripts/funcs/overlay_muscle_dome_*.txt` is the **entire battle-action overlay** dumped at the arena, not a set of dome-unique functions. The shared battle context `_DAT_8007bd24` these dumps read is the **same** context the main battle system, magic-capture, Baka Fighter, dance and fishing overlays use. So the great majority of the "`overlay_muscle_dome`" functions are **shared battle-system code**, documented in [`battle-action.md`](battle-action.md) / [`battle-formulas.md`](battle-formulas.md), not dome findings. The cross-check is mechanical: an entry whose body is also dumped under `overlay_battle_action_` / `overlay_magic_capture_` / `overlay_baka_fighter_` / `overlay_dance_` / `overlay_fishing_` is shared, not dome-unique.
+
+Representative confusables (each dumped under several non-dome overlays, so **shared battle**, not dome):
+
+| Address | What it is | Belongs to |
+|---|---|---|
+| `FUN_801d0748` | the round driver - **byte-identical to the main battle round loop** (also under `overlay_battle_action_` / `overlay_magic_capture_` / `overlay_magic_level_up_` / `overlay_0898_`); this page documents only its *dome role* (`ctx+6` card phases) | [`battle-action.md`](battle-action.md) |
+| `FUN_801d32bc` | next/prev **living-actor cursor** (skips actors with 0 HP at `+0x14c` or a set status mask `+0x16e & 0xf84`; steps `ctx+0x13/0x20/0x21/0x1f`) | [`battle-action.md`](battle-action.md) |
+| `FUN_801d84c0` | **battle-outcome message builder** ("won the battle / Gained Experience", "is out of strength", "escaped") into `ctx+0xa9/0x129/0x159/0x189` via the SCUS `strcpy`/`strcat` pair | [`battle-action.md`](battle-action.md) |
+| `FUN_801f44a0` | pushes one entry into an 8-slot **damage/number-popup ring** (`ctx+0x83c` value / `+0x318` param / `+0x85c` timer, counter `+0x262 & 7`) - also under dance / Baka Fighter / fishing / slot / debug-menu | [`battle-action.md`](battle-action.md) |
+| `FUN_801f3c34` | "**No effect**" unusable-move guard: reads the active actor's queued `+0x1df`, checks the per-move learned/count table, prints via `FUN_801d8de8(0x66,0)` - also dumped under dance / Baka Fighter / fishing / slot | [`battle-action.md`](battle-action.md) |
+| `FUN_801f3d3c` | shared **AI/action-decision** helper (per-move learned-count scan + BIOS-`rand` branch on `DAT_801c9358+0x1d`) - dumped under Baka Fighter / dance / fishing / slot / debug-menu | [`battle-action.md`](battle-action.md) |
+
+The one entry dumped **only** under `overlay_muscle_dome` is `FUN_801f2410` (593 instructions, 31 GPU-primitive builds, reads the shared battle ctx `_DAT_8007bd24`): a **render-track HUD/number emitter** - documented-not-ported by the clean-room policy, and its shared-vs-dome status is unconfirmed precisely because the context it draws from is the shared battle one. The genuinely dome-unique controller / presentation set is the [Key functions](#key-functions) table below (`FUN_801d0748`'s dome arms, `FUN_801d388c`, `FUN_801d5854`, `FUN_801d8de8`, and the panel helpers); everything else in the dump directory is battle-overlay furniture.
+
 ## Contest settlement + the one-shot prize
 
 The `0977` door/init slot (a slot-A overlay at base `0x801CE818` - the base is pinned by string anchors into its own monster-name roster) carries the **contest settlement** routine `FUN_801D0F60` (file `+0x2748`; historically mis-cited as `FUN_801C2748` from a `0x801C0000`-band import). After a contest leg it restores the SC block (`FUN_8001A8B0`) and settles the running score tally `_DAT_80084440`:
