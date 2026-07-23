@@ -693,6 +693,28 @@ an artifact of the same shift). `0x801F3990` is re-pinned below from battle-resi
 other three descriptions are retained but **need re-verification** against a battle-resident
 dump (`overlay_battle_action_*`) before being relied on.
 
+**Over-read `0x801Fxxxx` / `0x8020xxxx` alias resolutions.** A cluster of addresses that
+surface as self-entry bodies in the `overlay_0897*` / `overlay_0897_xxx_dat*` dumps are the
+same double-shifted images - each is byte-identical modulo relocation to a battle function
+already pinned under its true entry, and nothing attests the printed VA. Resolve them to the
+real entry (arbiter `classify-worklist.py --explain`; the first two independently confirmed
+from the disassembly against the descriptions cited):
+
+- `0x80205504` -> `FUN_801EED1C`, the retail queue-builder (below): zeros the 16-word scratch
+  at the shifted `0x801F6990`, writes the action queue `actor[+0x1DF..+0x1E2]`, calls the
+  Super applier `FUN_801EF9E4`.
+- `0x8020A178` -> `FUN_801F3990`, the cast audio-cue dispatcher (below): mode gate on
+  `DAT_8007BD10[ctx+0x13]`, two 9-entry `jr` jump tables keyed on `actor[+0x1E8]`, cues via
+  `FUN_8004FCC8`; `actor[+0x1DF] == 0xFE` takes an effect-spawn path.
+- `0x802028C4` -> `FUN_801EC0DC`.
+- `0x801FD150` -> `FUN_801E6968`, the Lost Grail Final Heal auto-revive (state `0x50`).
+- `0x801F8580` -> `FUN_801E1D98`.
+- `0x801F8AB0` -> `FUN_801E22C8`.
+
+Read the true entry's battle-resident dump, never the shifted alias. The remaining worklist
+addresses at these VAs are non-standalone (interior citations, shared tails, `$zero`-absolute
+data decoded as code, or 0-instruction stubs) and carry no body to document.
+
 **`0x801F0348` - target-size camera framing.** Pinned from battle-resident bytes
 (`overlay_battle_action_801f0348.txt`). It writes the camera height/distance at ctx `+0x6D0`
 (i16) from a monster's **size class**, the byte at monster record `+0x1F`:
