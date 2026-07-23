@@ -116,6 +116,16 @@ pub fn parse_category_table(overlay: &[u8]) -> Result<Vec<CategoryEntry>> {
 ///   scores `0`,
 /// - no match (or an empty table) scores `0`.
 // PORT: FUN_801DD0C0 (menu overlay; a0 = char_index, a1 = item_id, a2 = group)
+//
+// NOT WIRED: its retail caller is the Best-Equipment chooser
+// (`FUN_801CF88C`, ported as
+// `crate::equip_session::best_equipment_candidates`), which binds this as
+// the `weapon_category_score` argument - and that scan is itself
+// unreached because the engine's Equip screen has no selectable row 0 for
+// Best Equipment (see the tag on
+// `crate::equip_session::EquipSession::slot_browse_confirm`). The table
+// parse is exercised by the disc-gated `menu_item_category_disc` test,
+// but the score has no live consumer until that row exists.
 pub fn category_check(table: &[CategoryEntry], char_index: u32, item_id: u8, group: u32) -> u32 {
     let shift = char_index.wrapping_add(group.wrapping_mul(4)) & 0x1F;
     for entry in table {
