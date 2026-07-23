@@ -90,6 +90,27 @@ pub enum ReelInput {
     ReelB,
 }
 
+impl ReelInput {
+    /// Decode the pad held-mask (`_DAT_8007b850`) into a reel input.
+    ///
+    /// Cross (`0x40`) takes priority and selects reel A; Square (`0x80`)
+    /// without Cross selects reel B; anything else is idle. This mirrors the
+    /// retail decoder's three-way branch exactly - holding both reel buttons
+    /// resolves to reel A, not a blend - so `0x40 -> ReelA`, `0x80 -> ReelB`,
+    /// else `Idle`. The retail body is `if (m & 0x40) return 1; else return
+    /// (m >> 6) & 2;`, whose `1` / `2` / `0` results map onto these variants.
+    // PORT: FUN_801d7450 (reel-button decoder)
+    pub fn from_pad_mask(mask: u32) -> Self {
+        if mask & 0x40 != 0 {
+            ReelInput::ReelA
+        } else if (mask >> 6) & 2 != 0 {
+            ReelInput::ReelB
+        } else {
+            ReelInput::Idle
+        }
+    }
+}
+
 /// The casting-power oscillator (`FUN_801cf3bc` state `0x14`): a value that
 /// bounces between [`CAST_POWER_MIN`] and [`CAST_POWER_MAX`] until the player
 /// locks it, setting the cast distance. The per-frame `step` magnitude is not
@@ -900,6 +921,32 @@ mod tests {
             roll_cutoff_b: 512,
             roll_cutoff_c: 90,
             strike_gate,
+        }
+    }
+
+    #[test]
+    fn reel_decoder_matches_retail_three_way_branch() {
+        // Cross (0x40) -> reel A.
+        assert_eq!(ReelInput::from_pad_mask(0x40), ReelInput::ReelA);
+        // Square (0x80) without Cross -> reel B.
+        assert_eq!(ReelInput::from_pad_mask(0x80), ReelInput::ReelB);
+        // Both reel buttons held: Cross takes priority (not a blend).
+        assert_eq!(ReelInput::from_pad_mask(0xC0), ReelInput::ReelA);
+        // Neither reel button -> idle, even with other buttons down.
+        assert_eq!(ReelInput::from_pad_mask(0), ReelInput::Idle);
+        assert_eq!(ReelInput::from_pad_mask(0x20), ReelInput::Idle); // Circle = cast
+        assert_eq!(ReelInput::from_pad_mask(0x100), ReelInput::Idle);
+        // Exhaustive cross-check of the low byte against the retail formula
+        // `(m & 0x40) ? 1 : ((m >> 6) & 2)`.
+        for m in 0u32..0x1_0000 {
+            let want = if m & 0x40 != 0 {
+                ReelInput::ReelA
+            } else if (m >> 6) & 2 != 0 {
+                ReelInput::ReelB
+            } else {
+                ReelInput::Idle
+            };
+            assert_eq!(ReelInput::from_pad_mask(m), want, "mask {m:#x}");
         }
     }
 

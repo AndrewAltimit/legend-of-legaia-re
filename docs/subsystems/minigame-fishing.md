@@ -55,6 +55,41 @@ A landed catch is resolved in `FUN_801d5298` (`overlay_fishing_801d5298.txt`). T
 `points = (fish_base_value * (DAT_801d91b8 + 0x9c0)) / 0x32000`,
 where `fish_base_value` is the species record's `+0x04` field (`&DAT_801d81a8 + DAT_801d91cc*0x28`) and `DAT_801d91b8` is the accumulated pull / strength for the fight. The points are added to the persistent counter `_DAT_8008444c` (clamped to `999999`), guarded by a per-catch latch at actor `+0x2a` so a single fish is scored once. If the catch beats the current best (`_DAT_80084458`), the best value and its fish id (`_DAT_8008445c`) are updated.
 
+## Reel-button decode and cadence
+
+The held pad-mask `_DAT_8007b850` reaches the reel logic through a tiny decoder, `FUN_801d7450` (`overlay_fishing_801d7450.txt`): **Cross (`0x40`) takes priority and returns reel A (`1`); Square (`0x80`) without Cross returns reel B (`2`); neither returns idle (`0`)**. The whole body is the three-way branch `if (m & 0x40) return 1; else return (m >> 6) & 2;`, which is why holding both reel buttons resolves to reel A rather than a blend. This is the same reel-A = Cross / reel-B = Square mapping the [tension mechanic](#tension--reeling-mechanic) integrates.
+
+Above the raw reel state sits a **cadence recogniser**, `FUN_801d3db4`
+(`overlay_fishing_801d3db4.txt`). Each frame it decodes the current reel button
+and compares it to the previous decode `DAT_801d9064`: while unchanged it
+accumulates the frame-step `DAT_1f800393` into the current slot of a 16-entry
+`{button, held-frames}` ring buffer `DAT_801d91e4` (write index `DAT_801d91dc`,
+wrapped mod 16); on a change it advances the index and opens a fresh slot. It
+then walks a window of that history backwards against the rodata gesture
+templates at `DAT_801d87d4` - each template a sequence of `{button, duration}`
+pairs matched with a **±10-frame tolerance** - and on a full match resets the
+buffer through `FUN_801d746c` and reports the matched gesture. `FUN_801d746c`
+(`overlay_fishing_801d746c.txt`) is that reset: it zeroes `DAT_801d91dc` and
+clears all sixteen 8-byte entries of `DAT_801d91e4`.
+
+(VA aliasing: `undoc` attributes `801d3db4`'s VA to `overlay_0971`; the *fishing* occupant of that VA is the recogniser here, pinned by its reads of the fishing globals `DAT_801d9064` / `DAT_801d91dc` / `DAT_801d91e4` and its calls to `FUN_801d7450` / `FUN_801d746c`. See [VA aliasing](#va-aliasing-in-this-band).)
+
+## Fishing actors and scene render
+
+The run loop drives a small pool of per-frame actor handlers reached through the actor table (each takes the actor-struct pointer), plus the select screen and the scene render pass:
+
+- `FUN_801d0f5c` (`overlay_fishing_801d0f5c.txt`) - the **rod / lure select screen**: input *and* render. It counts owned rods (item ids `0xa0`..`0xa2`), moves the select cursor `DAT_801d90dc` on the D-pad edge (`0x1000` / `0x4000`), wraps it against `owned+2`, and on the accept edge (`0x44`) equips the highlighted entry - a lure (`DAT_801d90dc < 3`, item `0x9d`+cursor) writes the persistent lure index `_DAT_80084450`, a rod (cursor `>= 3`, item `0xa0`+) writes the persistent rod stat `_DAT_80084454` (the value that scales the [tension change](#tension--reeling-mechanic)). Cancel / confirm (`0x21`) sets the leave SFX and jumps `DAT_801d926c` to `100`. The tail renders each rod / lure row with its owned count and a highlight (`_DAT_8007b454 = 7`).
+- `FUN_801d1c5c` (`overlay_fishing_801d1c5c.txt`) - the **cast-line / bobber actor**: a small animation SM on `DAT_801d91ac` (state `1` sinks the bob `DAT_801d9134` at `-0x40 * step` down to `-700`, state `10` raises it at `+0x40 * step` up to `0x400` then latches `0x14`), then a GTE transform + draw of the lure at the computed position / spin (`DAT_801d9140`).
+- `FUN_801d2050` (`overlay_fishing_801d2050.txt`) - the **pre-hook swimming-fish tick + fish-sprite spawn**: an init-once latch installs the per-frame callback `FUN_801d7c30` into `_DAT_8007ba2c` and records the actor pointer in `DAT_801d928c`; when `DAT_801d9294` steps it spawns the fish sprite keyed on species `DAT_801d91cc` (special-casing id `8`). It delegates motion to `FUN_801d2278` and `FUN_801d6028`.
+- `FUN_801d2278` (`overlay_fishing_801d2278.txt`) - the **free-swim wander**: decrements the re-target timer `DAT_801d9060`, and on expiry re-rolls a random destination / duration (BIOS `rand`) and spawns a ripple effect; in the idle / cast state (`DAT_801d926c == 0xc`) it also reads the D-pad (`0x8000` / `0x2000`) to nudge the fish-facing angle clamped `0x700`..`0x900`.
+- `FUN_801d70ec` (`overlay_fishing_801d70ec.txt`) - a **minimal swimming-fish idle tick** (the reduced sibling of `FUN_801d2050`'s non-spawn path: refresh `+0x16` from `FUN_801d6028`, clear the draw-skip bit, submit).
+- `FUN_801d4948` (`overlay_fishing_801d4948.txt`) - the **reeling-line / hooked-lure actor**: a sub-state machine on `DAT_801d91c8` (`0`→arm, `1`→attach to the hooked-fish actor `+0x48`, `2`→track) that positions the line end from `DAT_801d9174` / `DAT_801d9178` / `DAT_801d917c`, applies an orbit offset via `FUN_801d7bb8`, and raises the hook SFX cue `_DAT_8007b6da = 0x3a`.
+- `FUN_801d67bc` (`overlay_fishing_801d67bc.txt`) - the **caught-fish 3D mesh render**: GTE rotate (`+0x24` / `+0x26` / `+0x28` Euler angles), matrix push, per-fish tint from the actor `+0x72` colour word, and a subdivided-primitive draw. Render-track - documented, not ported.
+- `FUN_801d24ec` (`overlay_fishing_801d24ec.txt`) - the **water reflection / shadow strip**: a run of textured quads written straight into the GTE packet list `_DAT_1f8003a0`. Render-track - documented, not ported.
+- `FUN_801d6bbc` (`overlay_fishing_801d6bbc.txt`) - the **fishing scene render pass** invoked from the driver tail (`FUN_801cf3bc`): it walks the live actor list (transform + submit + free) and emits the shared tile-board grid at `_DAT_1f8003ec` (the `+0x4000` / `+0x8000` cell + walkability arrays - see [`tile-board.md`](tile-board.md)). Render-track - documented, not ported.
+- `FUN_801d78c0` (`overlay_fishing_801d78c0.txt`) - the **fishing camera-scroll reset**: `_DAT_800840b8 = 0`, `_DAT_800840c0 = 0x974`, and the scroll trio `_DAT_8007b790` / `_DAT_8007b792` / `_DAT_8007b794 = 0`.
+- `FUN_801d79e0` (`overlay_fishing_801d79e0.txt`) - a **cell-record lookup** used by the fish-placement path (reached through `FUN_801d6028`): a linear scan of a per-cell record table matching a `(x, y)` cell against each record's first two bytes, returning the record pointer or null.
+
 ## HUD and banner animations
 
 The persistent HUD `FUN_801d13f0` (`overlay_fishing_801d13f0.txt`) is drawn every frame by the driver tail: the best-catch row (`_DAT_80084458`, glyph `0x1a`), the point-total row (`_DAT_8008444c` rendered capped at `999999`, glyph `0x1c`), the selected rod/lure label (three overlay strings picked by `_DAT_80084450` = 0/1/2; any other index draws no label), and a lures-remaining line: a caption plus the live inventory count of item `_DAT_80084450 + 0x9d` (`func_0x80042f4c`) as a 4-digit number, plus a trailing caption. All rows draw at brightness `0x80`.
@@ -171,6 +206,14 @@ Fishing-specific globals (overlay-resident unless noted; `_DAT_8008xxxx` live in
 | `0x801d9058` | `u32` | "Fish hooked" flag; gates the catch HUD (`FUN_801d1580`). |
 | `0x801d905c` | `s32` | Screen-fade level (down-ramped on fade-in, up-ramped on exit). |
 | `0x801d90d0` | `u32` | Fishing-location variant selected at setup. |
+| `0x801d90dc` | `u32` | Rod / lure select cursor for `FUN_801d0f5c` (`0`..`2` = lures, `3`+ = rods). |
+| `0x801d9064` | `s32` | Last decoded reel button (`0` idle / `1` reel A / `2` reel B), for the `FUN_801d3db4` cadence recogniser. |
+| `0x801d91dc` | `u32` | Reel-cadence ring-buffer write index (mod 16); reset by `FUN_801d746c`. |
+| `0x801d91e4` | `u64[16]` | Reel-cadence ring buffer - sixteen `{button, held-frames}` entries walked against the templates at `DAT_801d87d4`. |
+| `0x801d9060` | `s32` | Free-swim fish re-target timer (`FUN_801d2278`). |
+| `0x801d9294` | `u32` | Fish-sprite spawn step latch (`FUN_801d2050`). |
+| `0x801d928c` | `u32` | Hooked-fish actor pointer, saved by `FUN_801d2050`, read by `FUN_801d4948`. |
+| `0x801d91c8` | `u32` | Reeling-line actor sub-state (`FUN_801d4948`, `0`/`1`/`2`). |
 | `0x8008444c` | `s32` | **Persistent fishing-point score** (save block), capped at `999999`. |
 | `0x80084450` | `u32` | Persistent selected-rod index (HUD label + SFX base). |
 | `0x80084454` | `s32` | Persistent rod / upgrade stat; scales the per-frame tension change. |
@@ -191,10 +234,17 @@ Fishing-specific globals (overlay-resident unless noted; `_DAT_8008xxxx` live in
 - `FUN_801d712c` (`overlay_fishing_801d712c.txt`) - rod-ownership gate; queries inventory item ids `0x9d`..`0x9f` (`func_0x80042f4c`) and re-points the persistent rod index `_DAT_80084450` onto an owned one.
 - `FUN_801d6f10` / `FUN_801d7528` - the miss-retry and auxiliary banner animators (see [HUD and banner animations](#hud-and-banner-animations)).
 - `FUN_801d1870` / `FUN_801d1a90` / `FUN_801d76e0` - the horizontal bar, vertical bar and digit-field primitives (see [The bar and digit primitives](#the-bar-and-digit-primitives)).
+- `FUN_801d7450` / `FUN_801d3db4` / `FUN_801d746c` - the reel-button decoder, the reel-cadence recogniser, and its buffer reset (see [Reel-button decode and cadence](#reel-button-decode-and-cadence)).
+- `FUN_801d0f5c` / `FUN_801d1c5c` / `FUN_801d2050` / `FUN_801d2278` / `FUN_801d70ec` / `FUN_801d4948` / `FUN_801d67bc` / `FUN_801d24ec` / `FUN_801d6bbc` / `FUN_801d78c0` / `FUN_801d79e0` - the rod/lure select screen, the actor handlers, and the scene render pass (see [Fishing actors and scene render](#fishing-actors-and-scene-render)).
 
 Parser: [`legaia_asset::fishing_species`](../../crates/asset/src/fishing_species.rs) decodes the [per-species table](#per-species-parameter-table) from the disc.
 
-Engine port: [`legaia_engine_core::fishing`](../../crates/engine-core/src/fishing.rs) is the clean-room rules engine over that table. The **Confirmed** numeric kernels are ported directly: the casting-power oscillator (`CastPower`, bounds `0x20..=0x1000`, seed `0x40`; `FUN_801cf3bc` state `0x14`), the tension-gauge tug-of-war (`TensionGauge`, reel divisors `rod*9+0x23` / `rod*6+0x19`, release `(rod*0x40+0x4a)*frame_step`, clamp `[0, 0x1000]`; `FUN_801d4004`), and the catch award + persistent-record credit (`FishingRecord`, `value*(strength+0x9c0)/0x32000`, `999999` cap, best-catch; `FUN_801d5298`).
+Engine port: [`legaia_engine_core::fishing`](../../crates/engine-core/src/fishing.rs) is the clean-room rules engine over that table. The **Confirmed** numeric kernels are ported directly: the casting-power oscillator (`CastPower`, bounds `0x20..=0x1000`, seed `0x40`; `FUN_801cf3bc` state `0x14`), the tension-gauge tug-of-war (`TensionGauge`, reel divisors `rod*9+0x23` / `rod*6+0x19`, release `(rod*0x40+0x4a)*frame_step`, clamp `[0, 0x1000]`; `FUN_801d4004`), and the catch award + persistent-record credit (`FishingRecord`,
+`value*(strength+0x9c0)/0x32000`, `999999` cap, best-catch; `FUN_801d5298`),
+and the reel-button decoder (`ReelInput::from_pad_mask`, `0x40 -> ReelA` /
+`0x80 -> ReelB` / else `Idle`; `FUN_801d7450`). The reel-cadence recogniser
+(`FUN_801d3db4`) stays documented-not-ported: its match is pure integer logic
+but is driven by the Sony gesture-template rodata `DAT_801d87d4`.
 
 The HUD / banner cluster is ported as a draw-list layer (`HudDraw`) in [`legaia_engine_ui::ui_fishing`](../../crates/engine-ui/src/ui_fishing.rs), beside the consumer that renders it: `persistent_hud_draws` (`FUN_801d13f0`), `catch_hud_draws` plus the `length_display` / `extent_display` / `cast_power_percent` kernels (`FUN_801d1580`), the five animators `banner_from_left_draw` / `banner_from_right_draw` / `strike_splash_draws` / `banner_miss_draw` / `banner_converge_draws` (`FUN_801d78ec` / `FUN_801d75dc` / `FUN_801d71d4` / `FUN_801d6f10` / `FUN_801d7528`), and `BannerTimer` (the tail's timer-service loop).
 
