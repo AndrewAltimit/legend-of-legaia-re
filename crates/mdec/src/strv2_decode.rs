@@ -64,6 +64,22 @@
 //! thing as an in-order [`Vec::push`].
 //!
 //! See [`docs/subsystems/cutscene.md`](../../../../docs/subsystems/cutscene.md#bitstream-decode--mdec-feed-overlay).
+//!
+//! # NOT WIRED
+//!
+//! No engine path can select this decoder, and no retail data would make it
+//! do so. The overlay's master dispatch picks a bitstream per `fmv_id` and
+//! only slots 9 and 10 - `MV1A.STR` and `MOV15.STR` - clear the Iki flag; both
+//! files are dev leftovers that are **not on the released disc**, so
+//! `legaia_engine_core::cutscene::fmv_bitstream` returns `Iki` for every
+//! reachable id and the STR player's [`Bitstream::Strv2`] arm never comes up.
+//! What must exist first is an input: an STRv2/v3 stream to decode, together
+//! with the runtime unpack of the VLC table that stream needs
+//! ([`crate::strv2_table`], itself only exercised by tests). Both are
+//! preservation artefacts of the two cut slots, not gaps in the shipping
+//! playback path.
+//!
+//! [`Bitstream::Strv2`]: crate::str_player::Bitstream::Strv2
 
 use crate::strv2_table::STRV2_TABLE_U16S;
 use anyhow::{Result, bail};

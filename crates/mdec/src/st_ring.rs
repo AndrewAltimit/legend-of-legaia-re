@@ -76,12 +76,19 @@
 //!
 //! ## Wiring status
 //!
-//! NOT WIRED: this module is a standalone kernel. The engine's own cutscene
-//! path (`legaia_engine_core::cutscene`, `legaia-engine play-str`) demuxes
-//! through [`StrFrameAssembler`](crate::str_sector::StrFrameAssembler) instead,
-//! and nothing outside this crate's tests constructs an [`StRing`]. It exists
-//! as the faithful reading of retail's back-pressure and seek behaviour, and as
-//! the oracle the assembler is cross-checked against.
+//! Wired. [`StrPlayer::open`](crate::str_player::StrPlayer::open) - the port of
+//! the overlay's own stream-open `FUN_801CF988` - builds an [`StRing`] and runs
+//! the whole family through it: `set_stream` (and so `set_mask`) at open,
+//! `deliver_sector` (and so `latch_frame`) per sector, then `get_next` /
+//! `free_ring` per frame. The `mdec` CLI's segment decode drives that player,
+//! which is what puts retail's back-pressure and seek behaviour on a real
+//! production path rather than only under test.
+//!
+//! The engine's *other* cutscene path is separate and stays so:
+//! `legaia_engine_core::cutscene` and `legaia-engine play-str` demux through
+//! [`StrFrameAssembler`](crate::str_sector::StrFrameAssembler), which is the
+//! simpler in-order assembler. This module remains the oracle that one is
+//! cross-checked against.
 
 use crate::str_sector::{SECTOR_HEADER_BYTES, SECTOR_PAYLOAD_BYTES, VIDEO_SECTOR_MAGIC};
 

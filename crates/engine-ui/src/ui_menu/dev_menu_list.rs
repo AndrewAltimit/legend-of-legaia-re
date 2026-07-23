@@ -24,6 +24,20 @@
 //! PORT: FUN_801EAD98 - dev-menu list-body renderer (row geometry)
 //!
 //! Source: `ghidra/scripts/funcs/overlay_world_map_801ead98.txt`.
+//!
+//! # NOT WIRED
+//!
+//! The engine has no dev-menu host screen. Retail's world-map developer menu
+//! is a debug-build tool: it is opened from the world-map controller's own
+//! debug branch, its 24 rows are driven by a context struct whose cursor word
+//! is `ctx+0x9e`, and its arms warp the party, poke story flags and page the
+//! equip screens. None of that has an engine counterpart - `SceneMode` carries
+//! no dev-menu mode, `WorldMapController` exposes no debug-menu state, and
+//! nothing constructs the [`DevMenuListRow`] slice this builder consumes. The
+//! simulation half is in the same position: `legaia_engine_vm`'s `DevMenuRow`
+//! and `legaia_engine_core::dev_menu`'s flag editor have no caller either.
+//! Wiring this needs the dev-menu context and its pad-driven cursor to exist
+//! first; the layout here is then the draw pass over them.
 
 use crate::{MENU_TEXT_WHITE, TextDraw, text_draws_for};
 
