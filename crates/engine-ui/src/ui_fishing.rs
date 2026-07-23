@@ -747,6 +747,78 @@ impl BannerTimer {
     }
 }
 
+/// The fishing HUD's five one-shot banner animations, as the set of timers
+/// retail keeps alongside the driver (`DAT_801d9160` hook / `DAT_801d915c`
+/// reel-in / `DAT_801d9268` miss / `DAT_801d9164` auxiliary / `DAT_801d90f0`
+/// splash).
+///
+/// Own one per fishing session on the host, seed it from the session's phase
+/// edges, and call [`FishingBanners::service_frame`] once a frame; the returned
+/// draws append to the HUD item list the rest of this module builds. The
+/// per-frame service is the retail driver tail's own loop
+/// ([`BannerTimer::service`]) - a timer advances only while its animator still
+/// reports a draw, and resets itself the frame the animation expires.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FishingBanners {
+    /// Hook banner, sliding in from the left ([`banner_from_left_draw`]).
+    pub hook: BannerTimer,
+    /// Reel-in banner, sliding in from the right ([`banner_from_right_draw`]).
+    pub reel_in: BannerTimer,
+    /// Miss / retry banner ([`banner_miss_draw`]).
+    pub miss: BannerTimer,
+    /// Auxiliary converging pair ([`banner_converge_draws`]).
+    pub converge: BannerTimer,
+    /// Strike splash ([`strike_splash_draws`]).
+    pub splash: BannerTimer,
+}
+
+impl FishingBanners {
+    /// The fish takes the lure. Retail seeds the splash at the strike and the
+    /// hook banner at the hook a moment later; the engine's cast-lock is both
+    /// events at once, so both timers start on the same edge.
+    pub fn on_hook(&mut self) {
+        self.splash.start();
+        self.hook.start();
+    }
+
+    /// The fish was landed: the reel-in banner runs, and - as in the retail
+    /// driver tail - it cancels the hook banner while it does.
+    pub fn on_landed(&mut self) {
+        self.hook.cancel();
+        self.reel_in.start();
+    }
+
+    /// The line snapped: the miss / retry banner runs (the retail state-`0x2d`
+    /// retry countdown), cancelling the hook banner.
+    pub fn on_snapped(&mut self) {
+        self.hook.cancel();
+        self.miss.start();
+    }
+
+    /// Returning to the cast loop. Retail seeds the auxiliary banner from its
+    /// own wait state (`0x28`); which session edge that is has not been pinned,
+    /// so mapping it to the recast is an engine-side choice - the animation
+    /// itself is the ported one.
+    pub fn on_recast(&mut self) {
+        self.converge.start();
+    }
+
+    /// Service every timer for one frame and collect the draws still live.
+    pub fn service_frame(&mut self, frame_step: i32) -> Vec<HudDraw> {
+        let mut out = Vec::new();
+        out.extend(self.hook.service(frame_step, banner_from_left_draw));
+        out.extend(self.reel_in.service(frame_step, banner_from_right_draw));
+        out.extend(self.miss.service(frame_step, banner_miss_draw));
+        if let Some(pair) = self.converge.service(frame_step, banner_converge_draws) {
+            out.extend(pair);
+        }
+        if let Some(pair) = self.splash.service(frame_step, strike_splash_draws) {
+            out.extend(pair);
+        }
+        out
+    }
+}
+
 // --- host consumer -----------------------------------------------------------
 
 /// The caption strings a [`HudDraw::Caption`] resolves to.
@@ -964,6 +1036,44 @@ pub fn fishing_hud_draws_for(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The host-facing banner set: each session edge seeds its own timer, the
+    /// per-frame service produces the animators' draws, and every banner
+    /// eventually retires itself.
+    #[test]
+    fn fishing_banners_seed_service_and_retire() {
+        let mut b = FishingBanners::default();
+        assert!(b.service_frame(1).is_empty(), "idle set draws nothing");
+
+        // Hook: the splash (two glyphs) and the from-left banner (one) run.
+        b.on_hook();
+        assert!(b.hook.is_active() && b.splash.is_active());
+        assert_eq!(b.service_frame(1).len(), 3);
+
+        // Landed: the reel-in banner cancels the hook banner, as the retail
+        // driver tail does.
+        b.on_landed();
+        assert!(!b.hook.is_active(), "from-left cancelled by from-right");
+        assert!(b.reel_in.is_active());
+
+        // Snapped instead: the miss banner runs.
+        let mut b2 = FishingBanners::default();
+        b2.on_hook();
+        b2.on_snapped();
+        assert!(b2.miss.is_active() && !b2.hook.is_active());
+
+        // Recast seeds the auxiliary converging pair.
+        b2.on_recast();
+        assert!(b2.converge.is_active());
+
+        // Every timer retires on its own once its animation expires; the
+        // splash outlives the banners, so run past both lifetimes.
+        for _ in 0..(SPLASH_FRAMES + BANNER_FRAMES) {
+            b2.service_frame(1);
+        }
+        assert!(b2.service_frame(1).is_empty(), "all banners retired");
+        assert!(!b2.miss.is_active() && !b2.converge.is_active());
+    }
 
     #[test]
     fn banner_variants_share_the_slide_ramp_and_expire_together() {

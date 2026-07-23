@@ -1749,25 +1749,33 @@ impl Music01Render {
 }
 
 /// The dance's disco jukebox: the two tracks the dance overlay itself loads
-/// (mode-selected, extraction 1048/1054) plus the Sol-disco family that plays
-/// on the casino/disco floor around it - all live in the same `music_01`
-/// bank. Each row is `(global BGM id, role)`; the human label comes from
-/// [`music_labels`]. Ids that don't decode on a given disc are dropped from
-/// [`LegaiaMinigames::dance_jukebox_json`].
+/// (mode-selected, extraction 1048/1054) plus the rest of the Sol-disco family
+/// that plays on the casino/disco floor around it - all live in the same
+/// `music_01` bank. Each row is `(global BGM id, role)`; the human label comes
+/// from [`music_labels`]. Ids that don't decode on a given disc are dropped
+/// from [`LegaiaMinigames::dance_jukebox_json`].
+///
+/// The bank map is **piecewise**, so an extraction entry is `988 + slot` in
+/// this range, not `990 + slot`: the overlay's two songs at extraction
+/// 1048/1054 are sound-test slots 60/66 (`M116`/`M120`, "Sol disco final"
+/// 1 and 2) = ids 2060/2066. They are the same two tracks the floor rows
+/// name, so the roles are merged here rather than listed twice. The first
+/// row is the jukebox default the page selects.
 const DANCE_JUKEBOX: &[(u16, &str)] = &[
-    (2058, "Dance stage (overlay track A)"),
-    (2064, "Dance stage (overlay track B)"),
+    (2060, "Dance stage (overlay track A) - Sol disco final"),
+    (2066, "Dance stage (overlay track B) - Sol disco final II"),
     (2055, "Sol disco floor"),
     (2059, "Sol disco - qualifier"),
-    (2060, "Sol disco - finals"),
-    (2066, "Sol disco - finals II"),
 ];
 
 /// The disc-pinned BGM source for one browser minigame: `(prot_index, why)`.
 ///
 /// - `baka`: the duel overlay starts its own track - `FUN_801CF00C` loads raw
-///   index `0x415` = extraction 1043 (`music_01` slot 53, the boss-overture
-///   theme). See `docs/subsystems/minigame-baka-fighter.md`.
+///   loader index `0x415` = extraction 1043 (`music_01` sound-test slot **55**,
+///   `M112` "Sol disco fever" - the Baka Fighter is a Sol minigame). The bank
+///   map is piecewise, so extraction 1043 is slot 55, not 53; the "boss
+///   overture" label came from the superseded `990 + slot` base. See
+///   `docs/subsystems/minigame-baka-fighter.md`.
 /// - `slot`: the overlay starts **no** track (it inherits the host scene's);
 ///   the casino floor `0543_koin1` starts BGM id 2018 via field-VM op `0x35`
 ///   = `music_01` slot 18, "Sol casino". See
@@ -1778,7 +1786,7 @@ fn minigame_bgm_source(game: &str) -> Option<(u32, &'static str)> {
     match game {
         "baka" => Some((
             legaia_asset::baka_opponents::BAKA_BGM_PROT_INDEX as u32,
-            "overlay init FUN_801CF00C loads music_01 slot 53 (boss overture)",
+            "overlay init FUN_801CF00C loads music_01 slot 55 (Sol disco fever)",
         )),
         "slot" => Some((
             legaia_asset::slot_payout::SLOT_HOST_BGM_PROT_INDEX as u32,

@@ -225,7 +225,18 @@ A bit-`1` hit posts the touch event (`FUN_801d5b5c` on the `+0x98` partner), tur
 The **teardown** is the dialog SM's exit path (`FUN_80039b7c`): it restores the actor's facing `+0x26` from the `+0x5A` save (moving-class partners), subtracts the actor's `+0x2A` touch counter out of the field-control global `+0xA`, and when the global reaches zero clears the player's `0x80000` engaged flag and `ctrl+0x60` - so overlapping touches keep locomotion suppressed until every one is dismissed.
 (The separate sampler `FUN_801d5718` reads the same `*(_DAT_1f8003ec) + 0x4000` grid with the identical nibble-and-mask shape, confirming the map layout.)
 
-**A second per-direction collision probe, `FUN_801c1634`**, is byte-for-byte structural twin of `FUN_801cfe4c`: `(actor, scene, dir)`, three `FUN_801cfc40` actor-box probes over the same table `DAT_801f21b4` OR'd into the return, then three high-nibble wall samples of `*(_DAT_1f8003ec) + 0x4000` over table `DAT_801f2214` with the same `zc=(z>>6)+2` / `xc=((x+0x3f)>>6)-1` bias and `1 << ((zc&1)<<1 | (xc&1))` quadrant mask, returning `(actor_bits & 5) | (2 if wall)`. It reads the same field walkability grid, so it is a field-collision-family probe (its calling mover is not pinned from the dump). See `ghidra/scripts/funcs/overlay_0897_xxx_dat_801c1634.txt`.
+**There is no second per-direction collision probe.** `FUN_801c1634` was read as a
+byte-for-byte structural twin of `FUN_801cfe4c`; it is that same function, printed at a
+phantom VA. Its dump is an `overlay_0897` import based at `0x801C0000`, but PROT 0897
+loads at `0x801CE818`, and `0x801CFE4C - 0x801C1634` is exactly that `0xE818`. All 202
+instructions match by VA at the delta.
+
+The reading was not careless, and the shape recurs: a mis-based print and a genuine
+duplicate are observationally identical, because a wrongly-based dump shows the same
+instructions with every internal branch target displaced by the same constant. Comparing
+the two bodies cannot separate them. What settles it is that no overlay image bases below
+`0x801CE818`. See [`reference/overlay-va-aliases.md`](../reference/overlay-va-aliases.md)
+and [`tooling/dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md).
 
 **The static-entity anchor decodes against the `.MAP` object records.** A static actor's box centre is its live position plus a **collision-footprint offset** from its object record (`actor[+0x60]` indexes the `+0x0000` record table): `off = (rec[+6]·0x80 + rec[+0xE]·0x10, rec[+7]·0x80 + rec[+0xF]·0x10)`, and when the actor's `+0x52 & 8` is set (mirrored at spawn from record flag bit `0x8`) further corrected by `(−x_off, +z_off)` (record halfwords `+0`/`+4`).
 Live-verified against the spawned static collision actors of four catalogued captures (town01 records 315 + 137 - the latter the correction arm - town0c 331, koin3 116): the live actor position equals the placement spawn position and the live-computed centre equals the disc-computed one (`engine-shell/tests/field_prop_colliders_live.rs`).

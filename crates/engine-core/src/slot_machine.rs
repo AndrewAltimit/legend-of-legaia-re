@@ -14,7 +14,7 @@
 //!   (`FUN_801d30cc`, [`SlotRng`]);
 //! - the 20-slot reel-strip build: per slot draw RNG mod `0x14`, probe forward
 //!   to the first unused position, and place the slot's value there
-//!   (`FUN_801cf0d8` case 0, [`build_strip`]). Retail builds **two** strips per
+//!   (`FUN_801cf0d8` case 0, [`build_reel`]). Retail builds **two** strips per
 //!   reel in one interleaved pass - the symbol strip `DAT_801d3e90` (`slot/2`,
 //!   probe `+0xd`) and the bonus-numeral strip `DAT_801d3fd0`
 //!   (`slot/2 + 0x10`, probe `+1`);
@@ -159,34 +159,27 @@ impl SlotRng {
     }
 }
 
-/// Build one 20-slot reel strip (`FUN_801cf0d8` case 0): for each of the 20
-/// slots draw a fresh RNG value, reduce it mod `0x14`, and probe forward by
-/// `probe_step` until an unused position is found; place `slot/2 + value_base`
-/// there. A collision-resolving permutation that scatters each value (two strip
-/// positions each) around the reel. `probe_step` is [`STRIP_PROBE_PRIMARY`] for
-/// the symbol strip and [`STRIP_PROBE_SECONDARY`] for the bonus one; both are
-/// coprime with 20 so the probe always terminates.
+/// Build one reel's **two** 20-slot strips (`FUN_801cf0d8` case 0).
 ///
-/// `value_base` is `0` for the symbol strip (ids `0..=9`) and
+/// For each of the 20 slots: draw a fresh RNG value, reduce it mod `0x14`, and
+/// probe forward until an unused position is found; place `slot/2` (plus the
+/// strip's value base) there. A collision-resolving permutation that scatters
+/// each value - two strip positions each - around the reel. The probe step is
+/// [`STRIP_PROBE_PRIMARY`] for the symbol strip and [`STRIP_PROBE_SECONDARY`]
+/// for the bonus one; both are coprime with 20, so the probe always terminates.
+/// The value base is `0` for the symbol strip (ids `0..=9`) and
 /// [`slot_payout::BONUS_VALUE_BASE`] for the bonus one (values `0x10..=0x19`).
+///
+/// The two strips are built in retail's **interleaved** draw order: slot `i`
+/// is placed in the symbol strip and then slot `i` in the bonus strip, from the
+/// same RNG stream, before moving on to slot `i + 1`. The order matters - it is
+/// what the strips are, and building either strip alone from a fresh stream
+/// would produce a different permutation.
+///
+/// Wired: [`SlotMachine::new`] builds all three reels through this at session
+/// start, and seeds the display strip from the symbol half.
 // PORT: FUN_801cf0d8 case 0 (reel-strip permutation build)
-pub fn build_strip(rng: &mut SlotRng, probe_step: usize, value_base: u8) -> [u8; STRIP_LEN] {
-    let mut strip = [u8::MAX; STRIP_LEN];
-    for slot in 0..STRIP_LEN {
-        let mut pos = (rng.next_u32() as usize) % STRIP_LEN;
-        while strip[pos] != u8::MAX {
-            pos = (pos + probe_step) % STRIP_LEN;
-        }
-        strip[pos] = (slot / 2) as u8 + value_base;
-    }
-    strip
-}
-
-/// Build one reel's **two** strips in retail's interleaved draw order
-/// (`FUN_801cf0d8` case 0 places slot `i` in the symbol strip and then slot `i`
-/// in the bonus strip, from the same RNG stream, before moving to slot `i + 1`).
-/// The order matters: it is what the strips are.
-fn build_reel(rng: &mut SlotRng) -> ([u8; STRIP_LEN], [u8; STRIP_LEN]) {
+pub fn build_reel(rng: &mut SlotRng) -> ([u8; STRIP_LEN], [u8; STRIP_LEN]) {
     let (mut symbols, mut bonus) = ([u8::MAX; STRIP_LEN], [u8::MAX; STRIP_LEN]);
     for slot in 0..STRIP_LEN {
         let mut pos = (rng.next_u32() as usize) % STRIP_LEN;
@@ -1099,6 +1092,14 @@ pub struct PaylinePrim {
 /// the rest of the machine's 3D furniture: retail `RTPS`-projects each
 /// endpoint on its own through `FUN_8003d368` and links the packet at
 /// [`payline_ot_depth`] of the **second** endpoint's returned depth.
+// NOT WIRED: the geometry table it consumes only comes out of
+// `legaia_asset::minigame_slot_scene::parse_scene`, whose signature demands the
+// decoded page-3 art plane for the marquee message bank - so a host that wants
+// only the five payline records still has to build that plane, and no host
+// does. The second half is the sink: paylines are GTE-projected 3D line prims,
+// and the port draws the machine as a text HUD with no projection or
+// ordering-table pass to link them into. Wiring it needs a payline-only parse
+// entry point plus a 3D slot-cabinet render pass.
 // PORT: FUN_801d3380 (payline 3D line segments)
 pub fn payline_prims(
     paylines: &[legaia_asset::minigame_slot_scene::PayLine],
@@ -1256,13 +1257,20 @@ mod tests {
 
     #[test]
     fn strip_is_a_two_of_each_permutation_for_both_probe_steps() {
-        for probe in [STRIP_PROBE_PRIMARY, STRIP_PROBE_SECONDARY] {
-            let mut rng = SlotRng::new(12345);
-            let strip = build_strip(&mut rng, probe, 0);
+        let mut rng = SlotRng::new(12345);
+        let (symbols, bonus) = build_reel(&mut rng);
+        // The symbol half probes by STRIP_PROBE_PRIMARY over base 0; the bonus
+        // half probes by STRIP_PROBE_SECONDARY over BONUS_VALUE_BASE. Both are
+        // two-of-each permutations of the ten values.
+        for (strip, base, probe) in [
+            (symbols, 0u8, STRIP_PROBE_PRIMARY),
+            (bonus, slot_payout::BONUS_VALUE_BASE, STRIP_PROBE_SECONDARY),
+        ] {
             let mut counts = [0usize; SYMBOL_COUNT];
             for &s in &strip {
-                assert!((s as usize) < SYMBOL_COUNT, "symbol id in range");
-                counts[s as usize] += 1;
+                let id = s.wrapping_sub(base) as usize;
+                assert!(id < SYMBOL_COUNT, "symbol id in range");
+                counts[id] += 1;
             }
             assert_eq!(
                 counts, [2; SYMBOL_COUNT],

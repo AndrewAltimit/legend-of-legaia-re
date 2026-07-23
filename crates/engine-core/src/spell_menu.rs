@@ -221,6 +221,17 @@ pub enum InvalidReason {
 ///
 /// PORT: FUN_801d9110 (the state-2 confirm dispatch,
 /// `0x801d9220..0x801d9260`: `lbu 0x2(spell_stats); andi 0x20`)
+///
+/// NOT WIRED: the session has no group flow to route into.
+/// [`SpellMenuOutcome::Cast`] names exactly one `target_slot` and
+/// [`crate::spells::cast_spell`] resolves a group heal one ally at a time
+/// (its `HealAll` arm asks the caller to re-run it per ally), so a
+/// confirmed spell always enters the per-member picker. Wiring the retail
+/// split (sub-screen `0x10` no-pick vs `0x11` picker) needs a multi-target
+/// outcome shape the field host can apply, which is a change to the
+/// outcome contract rather than to this predicate. The catalog already
+/// carries the flag as [`crate::spells::SpellTarget`] - see
+/// `crate::retail_magic` for the `0x02` ally / `0x20` all bit decode.
 pub fn spell_targets_group(stats_flag_byte: u8) -> bool {
     stats_flag_byte & 0x20 != 0
 }

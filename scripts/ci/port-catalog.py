@@ -130,7 +130,19 @@ PORT_TAG_RE = re.compile(
 
 
 def collect_dumped() -> dict[str, str]:
-    """Return {addr: dump_filename_stem} for every dump under ghidra/scripts/funcs/."""
+    """Return {addr: dump_filename_stem} for every dump under ghidra/scripts/funcs/.
+
+    Band-filtered to `CODE_ADDR_RE`, which is what makes this symmetric with the
+    citation regexes. Without the filter the stem match admits the deliberately
+    named `data_<addr>_DAT_<addr>_*.txt` data-region dumps, whose addresses sit
+    outside the code band (`0x8007xxxx`) and therefore can never be matched by
+    `DOC_CITATION_RE`. Those rows then read as "dumped but never documented" in
+    perpetuity - unclosable by construction, because the address is a data table
+    rather than a function entry and no amount of prose about it can close the
+    row. `DAT_8007326c` (the TMD per-mode descriptor table) is the worked
+    example: cited from `docs/formats/tmd.md` and from `CLAUDE.md`, yet it sat
+    in the undocumented worklist.
+    """
     out: dict[str, str] = {}
     if not FUNCS_DIR.exists():
         return out
@@ -138,6 +150,8 @@ def collect_dumped() -> dict[str, str]:
         m = re.search(r"([0-9a-fA-F]{8})\.txt$", p.name)
         if m:
             addr = m.group(1).lower()
+            if not CODE_ADDR_RE.fullmatch(addr):
+                continue
             # Prefer overlay dumps over SCUS-named bare dumps if both exist.
             stem = p.stem
             if addr not in out or "overlay_" in stem:

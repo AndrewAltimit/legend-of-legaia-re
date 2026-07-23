@@ -367,6 +367,17 @@ pub fn parse_map_objects(map: &[u8]) -> Vec<MapObject> {
 ///
 /// Pass 3 is set-only (never cleared); retail runs this over the freshly
 /// streamed `.MAP` where the bits start clear.
+///
+/// NOT WIRED: all three passes rewrite the streamed `.MAP` image in place,
+/// and the engine does not keep one. Scene load decodes the object grid once
+/// into typed state ([`crate::world::World::field_object_cells`] and
+/// friends) and drops the bytes, so the cell-mirror and trigger-stamp passes
+/// have no buffer to stamp and no consumer that re-reads it. The engine also
+/// has no owner for pass 1's per-descriptor `+0x16` countdown - nothing
+/// decrements it - so the flag decay has no input. Wiring this needs the
+/// mutable `.MAP` image held resident for the scene's lifetime, with the
+/// walk-on dispatch and floor sampler reading it back instead of the decoded
+/// vectors.
 pub fn refresh_object_grid_marks(map: &mut [u8]) {
     let rd16 = |m: &[u8], o: usize| u16::from_le_bytes([m[o], m[o + 1]]);
     let wr16 = |m: &mut [u8], o: usize, v: u16| m[o..o + 2].copy_from_slice(&v.to_le_bytes());

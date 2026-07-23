@@ -854,6 +854,14 @@ pub fn magic_screen_model(s: &SpellMenuSession, text: Option<&MenuTextTables>) -
 /// Everything else is mode `0` - the plain `cur/max` panel.
 ///
 /// PORT: FUN_801D6A54 (target-panel preview-mode derivation)
+///
+/// NOT WIRED: no host builds the window-14 target panel. Both halves have
+/// zero host callers ([`target_panel_model`] here, `target_panel_draws_for`
+/// in `engine-ui`), and the mode word only means anything as that panel's
+/// input. It also needs the item-effect record (class `+0`, arg `+1`) for
+/// the staged item, which [`PauseItemRow`] does not carry: the session
+/// resolves rows through [`MenuTextTables`] (names, descriptions,
+/// passives) and never loads `legaia_asset::item_effect`.
 pub fn target_panel_mode(item_kind: u8, effect_class: u8, effect_arg: u8) -> u32 {
     if item_kind != 2 || effect_class != 6 {
         return 0;
@@ -881,16 +889,37 @@ pub const INCENSE_ITEM_ID: u8 = 0x8A;
 pub const MENU_EXIT_CODE_FIELD_ESCAPE: u32 = 4;
 pub const MENU_EXIT_CODE_WORLD_MAP_WARP: u32 = 5;
 
+/// The item-effect **class byte** (`0x800752C0 + eff*4 + 0`) of the three
+/// special Use items. These three ids are the only ones retail's dispatch
+/// (`FUN_801D7E50`) sends to a dedicated submenu, and each one's class is
+/// fixed disc data, so the engine can key the class off the id while
+/// [`PauseItemRow`] carries no effect record of its own.
+fn special_use_effect_class(item_id: u8) -> Option<u8> {
+    match item_id {
+        DOOR_OF_LIGHT_ITEM_ID => Some(0x80),
+        DOOR_OF_WIND_ITEM_ID => Some(0x81),
+        INCENSE_ITEM_ID => Some(0x82),
+        _ => None,
+    }
+}
+
 /// Which of the special Use routes - if any - a bag id opens a **Yes/No
 /// confirm window** for. Only two of the three do: Door of Light raises
 /// window 10 (`FUN_801D1DAC`) and Incense raises window 12
 /// (`FUN_801D1F10`). Door of Wind opens the destination *list* (window
 /// 11, renderer-less and kernel-driven) instead, so it is not a confirm
-/// and is deliberately absent here.
+/// and drops out here.
+///
+/// The route itself comes from [`use_route_for_effect`] - the ported
+/// dispatch is the decision point, and this wrapper only supplies the
+/// class byte and filters the list route out of the confirm set.
 pub fn special_confirm_route_for_item(item_id: u8) -> Option<UseRoute> {
-    match item_id {
-        DOOR_OF_LIGHT_ITEM_ID => Some(UseRoute::DoorOfLight),
-        INCENSE_ITEM_ID => Some(UseRoute::Incense),
+    // The all-party flag byte is irrelevant on this path: the three class
+    // bytes below are all matched before `use_route_for_effect` looks at
+    // it, which is why 0 is a faithful stand-in for the record's `+2`.
+    match use_route_for_effect(special_use_effect_class(item_id)?, 0) {
+        route @ (UseRoute::DoorOfLight | UseRoute::Incense) => Some(route),
+        // Door of Wind is a destination list, not a confirm window.
         _ => None,
     }
 }
@@ -921,6 +950,12 @@ pub enum UseRoute {
 /// `0x80`/`0x81`/`0x82` take the dedicated flows; anything else goes to
 /// the all-party apply when the flag byte (`+2`) has bit `0x20`, else
 /// the single-target apply.
+///
+/// Driven from [`special_confirm_route_for_item`], which every Use-list
+/// confirm runs. The `ApplyAll` / `ApplySingle` split it also decides is
+/// not consulted there: the engine's target shape comes from the inner
+/// [`InventoryUseSession`], which reads its own catalog rather than the
+/// item-effect flag byte.
 ///
 /// PORT: FUN_801D7E50 (Use-list phase-2 effect-class dispatch)
 pub fn use_route_for_effect(effect_class: u8, effect_flags: u8) -> UseRoute {
@@ -1168,6 +1203,14 @@ pub struct NotifyWindow {
 /// PORT: FUN_801dcd58 (menu-overlay notify-window content renderer)
 /// REF: FUN_8003cbf8 (the markup-token scan whose offset the operand write
 /// is relative to)
+///
+/// NOT WIRED: nothing stages a message template for this to patch. The
+/// engine reports an item-use result as a typed event the host renders
+/// with its own text, so there is no `DAT_801E4700` buffer holding
+/// `0xC1` / `0xC5` markup tokens, and no host raises menu-overlay window
+/// `8` at all. Wiring it needs the staged-template notify window to exist
+/// first - and the two globals the operands index (`_DAT_8007BB70` /
+/// `_DAT_8007BB78`) are themselves still unpinned.
 pub fn notify_window_operands(window: (i16, i16), selector: i16, base: u8) -> NotifyWindow {
     let (wx, wy) = window;
     NotifyWindow {
@@ -1225,6 +1268,16 @@ pub enum RootMenuRoute {
 /// `0x801D6BCC..0x801D6CF4`)
 /// REF: FUN_801d688c (the cursor navigator this screen drives; ported as
 /// `crate::menu_input`)
+///
+/// NOT WIRED: the engine's pause root is
+/// [`crate::field_menu::FieldMenuSession`], which resolves a confirmed row
+/// to a typed [`crate::field_menu::FieldMenuRow`] and lets the shell push
+/// the matching sub-session - it has no sub-screen id space for
+/// [`ROOT_MENU_ROUTES`] to name. Its two conditional rows are gated by the
+/// host-supplied `FieldMenuRowMask` instead, and the entry-context pointer
+/// this routing keys on (`_DAT_8007B450`, whose kind byte both hides Save
+/// and arms the leave-confirm) has no engine analogue. Wiring needs that
+/// entry context on the world first.
 pub fn root_menu_confirm_route(
     row: u16,
     entry_context_kind: Option<u8>,
@@ -1257,6 +1310,11 @@ pub fn root_menu_confirm_route(
 /// the menu ask first.
 ///
 /// PORT: FUN_801d6b20 (cancel arm `0x801D6CF8..0x801D6D18`)
+///
+/// NOT WIRED: same missing entry context as [`root_menu_confirm_route`].
+/// [`crate::field_menu::FieldMenuSession`] closes on Circle with
+/// `FieldMenuOutcome::Closed` and has no leave-confirm sub-screen for the
+/// locked-context arm to select.
 pub fn root_menu_cancel_route(entry_context_kind: Option<u8>) -> u8 {
     if entry_context_kind == Some(ROOT_MENU_CONTEXT_LOCKED) {
         3

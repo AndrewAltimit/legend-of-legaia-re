@@ -268,6 +268,14 @@ pub fn parse_player_lzs(file: &[u8], count: usize) -> Result<Container> {
 
 /// PORT: FUN_80020224
 ///
+/// NOT WIRED: retail reaches this from the field overlay's `MAIN_INIT`
+/// (`FUN_801D6704`), and `MAIN_INIT` is documented but not ported - the engine
+/// has no boot-time routine that hands a container to a per-descriptor
+/// dispatcher and folds the returns. It resolves scene sub-assets through the
+/// typed [`AssetType`] chain into `SceneAssets` instead, so no engine
+/// caller has a `dispatch` closure standing in for `FUN_8001F05C` to pass. The
+/// prerequisite is that init path, not a call site for the walker.
+///
 /// Descriptor-pair **walker** - the runtime consumer of the
 /// [`parse_player_lzs`] container shape (`docs/formats/asset-descriptor.md`).
 /// Retail (reached from the field overlay's `MAIN_INIT`, `FUN_801D6704` at

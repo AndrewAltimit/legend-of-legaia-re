@@ -216,6 +216,13 @@ const CARD_PREFIX_LEN: usize = 16;
 /// caller.
 ///
 /// PORT: FUN_801E1208
+///
+/// NOT WIRED: the engine's saves are LGSF files on disk
+/// (`crate::menu_runtime` writes `slot_NN.bin`). Nothing mounts a raw PSX
+/// memory-card image at runtime, so no 15-frame card directory exists to
+/// walk; the one caller chain ([`card_directory_slots`] ->
+/// [`SaveSelectSession::from_card_directory`]) is entered only by tests.
+/// Wiring this needs a card-image backend behind the save-slot session.
 pub fn classify_card_directory(
     frames: &[&[u8]],
     avail_blocks: u32,
@@ -396,6 +403,10 @@ impl CardDirEntry {
 /// result is a plain "number of files", which is what this returns.
 ///
 /// PORT: FUN_801E3AF0
+///
+/// NOT WIRED: same missing prerequisite as [`classify_card_directory`] -
+/// no host mounts a memory-card image, so nothing produces the BIOS file
+/// enumeration this table is filled from.
 pub fn card_directory_scan(entries: &[CardDirEntry]) -> ([CardDirEntry; CARD_DIR_FRAMES], usize) {
     // Retail clears every slot before the walk, so a shorter enumeration
     // than the previous one cannot leave stale names behind.
@@ -420,6 +431,10 @@ pub fn card_directory_scan(entries: &[CardDirEntry]) -> ([CardDirEntry; CARD_DIR
 /// floors it at zero before spending it as a budget.
 ///
 /// PORT: FUN_801E3BA0
+///
+/// NOT WIRED: costs the [`card_directory_scan`] table, which no host
+/// fills - see that tag. A disk-backed slot list has no block budget to
+/// spend.
 pub fn card_free_blocks(table: &[CardDirEntry], count: usize) -> i32 {
     let mut used: i32 = 0;
     for entry in table.iter().take(count) {
@@ -471,6 +486,13 @@ pub const SAVE_BLOCK_CHECKSUM_WORD: usize = 0x7FF;
 /// [`save_block_checksum_valid`]. Words past index `0x7FF` in a full
 /// `0x800`-word block are ignored.
 // PORT: FUN_801E38D8
+//
+// NOT WIRED: the engine never materialises a retail save block. Its saves
+// are LGSF files (`legaia_save::SaveFile`), and the one path that reads a
+// real `0x2000`-byte block - `SaveFile::from_retail_sc_block` - lives in
+// `legaia-save` and takes the block already extracted by a card walker.
+// Wiring the validity gate needs the block itself to flow through the
+// save-slot session, which the LGSF model does not carry.
 pub fn save_block_checksum(block: &[u32]) -> u32 {
     block
         .iter()
@@ -577,6 +599,11 @@ pub fn card_status_poll(events: [bool; CARD_STATUS_EVENTS], counter: &mut u16) -
 /// the flags themselves to reset between operations, and this is the
 /// primitive the second-op step (`FUN_801E3294` state 2) runs before
 /// arming the next BIOS call.
+///
+/// Driven from the session's `NowChecking` beat straight after the
+/// per-frame [`card_status_poll`], which is where retail's `TestEvent`
+/// consumption happens, and from a host handling
+/// [`CardIoEffect::SecondOp`].
 ///
 /// PORT: FUN_801E39A8 (four `TestEvent` calls on the `0x8007B9F0..FC`
 /// handles, results ignored; see
@@ -817,6 +844,13 @@ impl CardIoMachine {
 /// `ghidra/scripts/funcs/overlay_menu_801e1114.txt`)
 /// REF: FUN_801E13B8 / FUN_801E380C / FUN_801E16E0 (the ticker's sibling
 /// per-frame calls - display-list side, not ported here)
+///
+/// NOT WIRED: nothing owns the state this ticker advances. No engine host
+/// keeps a [`CardIoMachine`], and the rebuild arm needs a card directory
+/// enumeration that only a memory-card backend can produce (see
+/// [`classify_card_directory`]). [`SaveSelectSession`] runs its own
+/// `NowChecking` beat off [`card_status_poll`] alone, so the two-op I/O
+/// machine has no frame to be advanced on.
 #[allow(clippy::too_many_arguments)]
 pub fn card_frame_tick(
     io: &mut CardIoMachine,
@@ -1429,6 +1463,12 @@ impl SaveSelectSession {
     ///   conclusive, so the frame countdown decides. With no card events
     ///   latched (the default) this is the only path taken, and the beat
     ///   lasts exactly [`Self::now_checking_frames`] frames.
+    ///
+    /// The poll models retail's four `TestEvent` calls, and `TestEvent`
+    /// *consumes* the event it tests - so the latched flags are cleared
+    /// through [`card_events_drain`] once the poll has read them. Without
+    /// that, a host that latches an event once would keep re-reporting it
+    /// on every later frame of every later beat.
     fn tick_now_checking(
         &mut self,
         slot: u8,
@@ -1438,6 +1478,7 @@ impl SaveSelectSession {
         let mut counter = self.card_poll_counter;
         let status = card_status_poll(self.card_events, &mut counter);
         self.card_poll_counter = counter;
+        card_events_drain(&mut self.card_events);
 
         match status {
             CardStatus::Ready | CardStatus::Complete => {

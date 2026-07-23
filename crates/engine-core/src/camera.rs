@@ -626,6 +626,15 @@ pub enum CameraZoneArrival {
 /// Provenance: `overlay_0897_locomotion_cluster.txt` at `0x801dbe9c..
 /// 0x801dc0b8` (the committed `FUN_801DBEC4` name is a mid-function
 /// label of this body, not its entry).
+///
+/// NOT WIRED: the engine has no arrival countdown to tick. Its camera picks
+/// a zone by querying the region table directly at the player's tile through
+/// [`crate::field_regions::zone_query`] (`FUN_801DBA20`, which *is* live off
+/// the field movement path), so there is no per-actor `+0x54` counter for a
+/// scene entry or a door arrival to arm, and no `_DAT_8007B868` dev/retail
+/// word selecting between the query leg and the follow-only leg. Wiring this
+/// needs that countdown owned and armed somewhere - i.e. the retail camera
+/// actor, not the engine's per-scene camera state.
 pub fn camera_zone_arrival_tick(
     countdown: &mut i16,
     player_pos: (i16, i16),

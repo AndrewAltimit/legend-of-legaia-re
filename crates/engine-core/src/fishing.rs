@@ -316,6 +316,13 @@ impl FishingFight {
         self.strength
     }
 
+    /// Accumulated reel progress - the engine's analogue of the retail line
+    /// record `DAT_801d927c`, and the value [`Self::land_target`] is the
+    /// `record < f + 300` gate on. The catch HUD's length readout reads it.
+    pub fn progress(&self) -> i32 {
+        self.progress
+    }
+
     /// The hooked species.
     pub fn species(&self) -> &FishingSpecies {
         &self.species
@@ -774,6 +781,13 @@ pub struct HelpPanelLayout {
     pub frame: (i16, i16, i16, i16),
 }
 
+// NOT WIRED: every line of the panel is a row of the overlay's own
+// string-pointer tables (`0x801D8130` / `0x801D8168`), which are Sony text the
+// port does not read - there is no fishing string-table reader, and no
+// help-screen state on the fishing session for a host to open. A draw wired
+// today would place 14 or 15 empty rows. Wiring it needs the overlay string
+// tables decoded (or a translation-pack source for them) plus a help-page
+// toggle on the session.
 /// PORT: overlay_fishing_801d72a0
 ///
 /// Fishing help-panel layout - the static-extract resolution of the VA

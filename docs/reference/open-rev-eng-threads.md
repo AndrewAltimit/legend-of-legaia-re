@@ -127,6 +127,7 @@ none reading the pool `word1` high half. So `attr` (real per-vertex data) is ign
 | Super / Miracle Arts trigger logic | resolved (grade `disassembly`+`capture`) | The full chain is pinned (preseed `FUN_801DA34C`, queue-builder `FUN_801EED1C`, Super applier `FUN_801EF9E4`) and all 15 Supers are **live-executed**: an applier-entry injection probe (`autorun_super_art_queue_inject.lua`) drives the retail applier over each `find` string and reads the tail-replace at `actor[+0x1DF]` back byte-exact, 15/15; per-character library states re-checked by `crates/pcsxr/tests/super_art_queue_replace.rs`. Full chain + derived pins: [`re-settled-threads.md`](re-settled-threads.md#super--miracle-arts-trigger-chain) and [battle-action.md](../subsystems/battle-action.md#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4). |
 | First boss trigger -> Battle | resolved | The scripted-battle arm is the field-VM op `3E FF <formation_row>` ([battle.md](../subsystems/battle.md#scripted-battle-entry-3e-ff-row)): Zeto = garmel `P2[12]` row 9 (lone `0x4B`), Caruban = rikuroa stager `P1[3]` row 17 (lone `0x49`, `World::run_boss_stager_record`). `DAT_8007b7fc` closed: writer-less across `SCUS_942.54` + every static overlay (validated absolute + gp-relative + address-materialisation sweep); readers pin it as the debug forced-battle formation id - battle init `FUN_80055b6c` -> `FUN_8005567c` seeds the formation cells `DAT_8007BD0C+` from it, and `FUN_80046A20` routes a nonzero value to its mode-0 debug-menu exit. Retail never sets it. See [battle.md](../subsystems/battle.md). |
 | Enemy-ally charm battle softlock | resolved (both tracks fixed; grade `disassembly`) | The state-`0x5A` victory arm's party-slot assumption OOB-indexes the win-pose roster `DAT_8007BD10` (via `0x801E6770`) when a living charmed ally is the acting actor at monster-wipe victory - the `FUN_801E7320` reroll theory is falsified ([`re-do-not-re-walk.md`](re-do-not-re-walk.md#battle--arts--level-up)). Fixed on both tracks: engine `victory_pose_fixup`/`charm_widen`, and the disc-side `legaia_patcher::charm_fix` guard - a single-word detour at the `0x801E6690` keep-branch into a SCUS dead-space liveness guard. Full chain + port: [battle.md](../subsystems/battle.md#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock). |
+| Action-SM state `0xFF` treated as battle end by the port | open (retail half graded `disassembly`) | Retail `0xFF` is the **round boundary**: its only writer is the non-wipe arm of `0x5A`, and wipes signal through `DAT_8007BD71 = 0xFE` without writing a state byte ([battle-action.md](../subsystems/battle-action.md#0xff-is-the-round-boundary-not-the-battles-end)). The port maps it to `ActionState::BattleComplete` → `battle_end(MonsterWipe)` → `finish_battle`. Close it by settling whether a live battle reaches that path: it turns on how `action_queue_counter` accumulates, given `dispatch.rs` re-stamps it from `ctx.queued_action`. If it does, the symptom is a spurious victory after one round. Drive a battle past a full round with both sides alive. |
 | Battle-actor `+0x16E` bit `0x400` applier (guard-disabling status) | resolved - exhaustive negative (grade `disassembly`) | Bit `0x400` has **no retail setter**: a word-level decode of `SCUS_942.54` + every static-overlay image (all stores covering `+0x16C..+0x171`, pointer precomputes, `ori`/`sllv` bit-set shapes, the `+0x6F6` mirror, the `+0x21F` deferral) finds only clears - accessory cure `FUN_8004CE2C`, the per-round RNG waker `FUN_801F45A4`, item cures, the on-hit strip, battle-exit. The appliers (hit leg `FUN_801EC3E4`, cast leg `FUN_801E09F8`) map kinds 3/4/5/6 → `0x1`/`0x2`/random-`0x38`/`0x1000`, kinds 1-2 → the `0x380` deferral; none reaches `0x400`. Latent content. Writer inventory: [battle.md](../subsystems/battle.md#the-0x16e-status-halfword---retail-writer-inventory). |
 
 ## Field / locomotion
@@ -297,6 +298,7 @@ menu.md#use-list-row-build-content-id-3-fun_80030628). |
 
 | Thread | Status | What would close it |
 |---|---|---|
+| `_DAT_8007B910` carries two incompatible roles | open | The corpus calls it "live brightness" (seeded `0xD7` beside the brightness reference `_DAT_8008457C` by `FUN_8001FFA4`; ramped as a screen fade by the battle-action SM states `0x35`/`0x51`/`0x6F`) **and** feeds it as an audio scalar: `FUN_80026478` passes `_DAT_8007B910 >> 1` to the pan primitive `FUN_8002657C`, and `FUN_800267A8` passes the same halved value to the libsnd wrapper `FUN_80062004`. Both readings are already committed, in different pages. Closing it needs a live watch on the cell across a summon cast (brightness ramp) with the audio mix observed, or the identification of `FUN_80062004`'s libsnd entry - if its second argument is a volume, one of the two labels is wrong. |
 | XA clip-table writer + `(clip_id, chan)` cue census | resolved | Writer pinned statically: `FUN_801CFA78` in PROT 0895 `init.pak` (base `0x801CE818`, recovered from four in-blob string refs) sprintf-generates `\XA\XA%d.XA;1` per slot and fills `[BCD-MSF][size]` via ISO9660 lookup `FUN_8005DBB4`; called once from the init boot tick `0x801CF500`. Full deduped one-shot + streamed cue census in [`audio.md`](../subsystems/audio.md); grade `disassembly` (byte-level, base self-consistent). Census note: PROT-entry over-read aliases callsites into neighbouring overlays - dedupe by true entry extent (gameover 0902 / world-map 0901 have zero genuine XA calls). [details ↓](#xa-clip-table-writer--clip_id-chan-cue-census) |
 
 ### XA clip-table writer + `(clip_id, chan)` cue census
@@ -315,7 +317,34 @@ A caller census of `FUN_8003D53C`/`FUN_8003EAE4` names each `(clip_id, chan)` cu
 | Full-window item-add OOB primitive: reachability | resolved (moved to re-settled) | Primitive real (grade `disassembly`): id store `sb t0,0x1818(a0)` @ `0x800422BC` is unconditional, before the guard that gates only the count store. But **unreachable through the retail add call sites in normal play** - each caller `jal`s the helper with no room pre-check, and the helper's free-slot scan cannot reach the `i == end` OOB exit (a `[0,256)` window holds ≤255 distinct ids, so a hole always remains). See [`re-settled-threads.md`](re-settled-threads.md#full-window-item-add-oob-reachability). |
 | New-Game opening chain + narration roller | resolved (chain + caption + roller + prologue gold grade; far-geometry residual closed resolved-negative) - the gold grade is a capture-pinned palette-space collapse, superseding the per-node depth-cue reading | [details ↓](#new-game-opening-chain--narration-roller) |
 | Slot-B overlay cluster (`0900..0969`) per-entry identity | mostly resolved | [details ↓](#slot-b-overlay-cluster-09000969-per-entry-identity) |
+| PROT 0977 / 0978 are not in the extracted overlay set | open | [details ↓](#prot-0977--0978-are-not-in-the-extracted-overlay-set) |
+| Phantom-VA sweep of the PROT 0897 imports | partial | The two deltas are measured and nine addresses are re-keyed against base-tagged dumps - see [`overlay-va-aliases.md`](overlay-va-aliases.md). What remains: the boundary band near `0x801E5000` (where the "0897 own content" and "over-read into 0898" readings both land inside a dumped body, and neither dump carries enough instructions to decide), the doubly-aliased `0x8020D05C`, and whether PROT 0896's imports obey a law of their own (one `0x9000` step is measured, which is not a law). Closing it means a byte-level sweep of both images at every printed VA rather than the per-address spot checks done so far. |
 | Overlay-loader index off-by-2 - remaining ripple | resolved | Slot A reconciled; slot-B per-spell identity fully capture-pinned across every block, incl. the flute summons 0924/0925 (Lippian/Spikefish) and the 0926 unused-`0x98` stub; engine mirrors carry the extraction-space constant. [details ↓](#overlay-loader-index-off-by-2---remaining-ripple) |
+
+### PROT 0977 / 0978 are not in the extracted overlay set
+
+*Status:* open
+
+Dumps prefixed `overlay_0977_*` / `overlay_0978_*` resolve to no extracted
+image, so their printed addresses cannot be corrected against a known base.
+
+Five rows (`801c2b58`, `801c3004`, `801c39b8`, `801c614c`, `801c6804`) close as
+mis-based prints on the **base argument alone**: every slot-A overlay bases at
+`0x801CE818` and every slot-B overlay at `0x801F69D8`, so a VA below
+`0x801CE818` names no overlay function whatever its dump looks like. That
+disposes of the addresses; it does not recover the functions. The real VA of
+each body stays unknown and the bodies stay undocumented.
+
+Two hints at where they came from: four `overlay_0978_*` siblings resolve into
+`dance_0980` at a constant `+0x9818`, and one `overlay_0977_*` into
+`baka_fighter_0976` at `+0x5710`. That the deltas are constant per program
+suggests the images those imports were taken from are not the overlays their
+filenames claim - the same class of error measured in
+[`overlay-va-aliases.md`](overlay-va-aliases.md) for the PROT 0897 imports.
+
+Closing it needs `asset overlay` runs for 0977 and 0978, then a re-run of
+`scripts/ghidra-analysis/check-dump-base-integrity.py`. Evidence grade:
+`disassembly`.
 
 ### Slot-B overlay cluster (`0900..0969`) per-entry identity
 

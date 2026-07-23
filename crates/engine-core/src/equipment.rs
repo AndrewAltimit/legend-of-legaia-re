@@ -729,6 +729,15 @@ pub fn party_unequip_accessory_by_id(party: &mut legaia_save::Party, item_id: u8
 /// epilogue returning `0` in each case). Note `param_1` (the retail first
 /// arg) is dead except as the passthrough to `FUN_801DD0C0`, so it is folded
 /// into the caller's `agility_term` closure rather than taken here.
+///
+/// NOT WIRED: its `id` argument is a **class-tagged row-entry word**
+/// (`0x1000` / `0x6000` / `0x7000` / `0x9000`), the same id space
+/// [`crate::menu_list_rows`] decodes - and nothing in the engine produces
+/// those words. The Equip screen's stat-compare columns are fed instead
+/// from [`crate::battle_stats::compute_battle_stats`] over a trial-equipped
+/// record ([`crate::equip_session::EquipSession::preview_candidate`]), which
+/// needs no row word. Wiring this needs the retail list-node row model
+/// disclosed on `menu_list_rows`.
 pub fn equip_stat_field(
     id: u16,
     field: u8,

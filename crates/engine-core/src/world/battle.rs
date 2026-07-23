@@ -17,3 +17,4 @@ mod monster_ai;
 mod stats;
 mod teardown;
 mod tutorial;
+mod validator_host;

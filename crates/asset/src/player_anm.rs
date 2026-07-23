@@ -403,6 +403,15 @@ pub const ANGLE_TURN: i32 = 0x1000;
 ///
 /// PORT: FUN_8001D088
 ///
+/// NOT WIRED: no engine animation sampler carries a sub-frame fraction, so
+/// nothing has a `frac` to pass. Every consumer of this bundle - the field
+/// character renderer, the battle pose builder, the web viewer's players -
+/// calls [`PlayerAnmBundle::bone_transform`] at a whole frame index and poses
+/// the mesh from that decode alone. The prerequisite is the `actor+0x68`
+/// blend fraction on the engine's animation state plus a two-frame sampler to
+/// feed it; adding one changes every posed frame, so it is an animation-path
+/// change measured against the pose oracles rather than a call insertion.
+///
 /// `frac` is the 4-bit sub-frame fraction the frame blender carries at
 /// `actor+0x68` (`0..=15`); the result is
 /// `(to + ((from - to) * frac >> 4)) & 0xFFF`, so `frac == 0` yields `to`

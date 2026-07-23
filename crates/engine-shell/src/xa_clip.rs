@@ -12,6 +12,29 @@
 //! per-cue slot/channel are exactly what the cutscene-audio census needs.
 //!
 //! All arithmetic is reproduced from the disassembly, not the decompiled C.
+//!
+//! # NOT WIRED
+//!
+//! Two prerequisites are missing before anything can consume a
+//! `(clip_slot, channel, duration_sectors)` triple.
+//!
+//! **A drive model.** The clip starter is a `CdlSetfilter` / `CdlReadS` state
+//! machine over the physical disc, playing sectors out of `XA<n>.XA` in real
+//! time through the SPU's CD input. The engine has no streaming CD device: its
+//! two XA consumers both read whole files up front - `play-str` demuxes the
+//! single track interleaved inside an `MV*.STR`, and the arts-shout bank
+//! pre-decodes `XA2`/`XA4`/`XA6.XA` into memory at boot (`read_arts_shout_bank`
+//! in `crate::boot`). Neither needs a slot, a filter channel or a sector
+//! duration.
+//!
+//! **A producer for this cue-id space.** Every cue the world raises today
+//! comes from the static SFX descriptor table (ids below [`XA_CUE_BASE`]) or
+//! from a move-power record, so no id ever reaches the voice arm.
+//! `legaia_engine_audio::classify_cue` ports the same dispatcher's *routing*
+//! decision and is on the frame path, but the hosts log its `Voice` result
+//! rather than playing it - see `window/event_handler/redraw.rs`. Wiring this
+//! module means giving the engine a streamed-voice output first; the two
+//! `FUN_8003D53C` helpers below then have a caller with a real start LBA.
 
 /// A cue id at or above this value addresses an XA clip; below it the dispatcher
 /// takes a different (SFX-queue) path (`sltiu v0,s0,0x100` at `8004fcd4`).

@@ -43,6 +43,16 @@
 //! `0x1000` Up, `0x2000` Right, `0x4000` Down, `0x8000` Left. The
 //! [`PACK_*`](PACK_UP) constants below are that layout; do not substitute
 //! `PadButton::*.mask()` here.
+//!
+//! NOT WIRED: **the engine has no dev-menu screen.** There is no game mode,
+//! menu row or debug binding that opens one, so nothing owns the two
+//! cursors these kernels step ([`EventFlagEditor`]) and nothing draws the
+//! rows - `engine-ui`'s `dev_menu_list_draws_for` is the matching draw
+//! builder and it has no host caller either. The list itself is missing
+//! too: the flag-list table is an overlay-0897 debug asset
+//! (`DAT_801f2e94`, stride `0xA` with the `'X'` sentinel) that the engine
+//! never loads, so even a host screen would have no rows to walk. Wiring
+//! needs the screen and the table, in that order.
 
 /// Packed-pad Triangle (`_DAT_8007b850 & 0x10` = the coarse-step modifier).
 pub const PACK_TRIANGLE: u16 = 0x0010;

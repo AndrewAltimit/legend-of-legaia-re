@@ -68,6 +68,15 @@ impl World {
     /// `frameskip_enabled = false` this returns the floor unchanged, which is
     /// exactly what the replay / trace oracles need. Wall-clock-paced hosts
     /// pass their measured frame time and `true`.
+    ///
+    /// NOT WIRED: no host calls it, and the paragraph above is why. The
+    /// engine ticks at a fixed sim rate, nothing samples retail's `VSync(1)`
+    /// hblank count (`FUN_800173BC`) to supply `elapsed_hblanks`, and the
+    /// replay / trace oracles require the floor to stay where the scene
+    /// loader installed it. Wiring it needs a host frame-time sampler **and**
+    /// a decision that the adaptive cadence is on (retail gates the whole
+    /// path behind the boot config word `gp+0x4CE == 0x10`); until then
+    /// [`Self::frame_step`] is scene-driven and this has nothing to resolve.
     pub fn resolve_frame_step(&mut self, elapsed_hblanks: i32, frameskip_enabled: bool) -> u8 {
         let cadence = self.frame_step_telemetry.resolve(
             elapsed_hblanks,
@@ -412,6 +421,9 @@ impl World {
                 // player cell (retail's per-frame board render pass).
                 self.refresh_tile_board_draw_list();
                 self.step_field_locomotion();
+                // Walk-regen: drain the accumulator the step above just fed
+                // and apply the three accessory-gated restore bumps.
+                self.tick_field_walk_regen();
                 // Vertical settle + ledge-hop trigger. Retail runs this as a
                 // separate per-frame controller after the walk commits, so
                 // it reads the step-delta pair the walk just wrote.
@@ -504,6 +516,92 @@ impl World {
             // menu state machine and restores the suspended mode on close.
             SceneMode::Menu => None,
             SceneMode::Title => None,
+        }
+    }
+
+    /// Field walk-regen driver: project the present party onto the
+    /// [`crate::walk_regen`] kernel, run one tick against
+    /// [`Self::walk_regen_steps`], and write the bumped gauges back into the
+    /// roster records.
+    ///
+    /// REF: FUN_801D0B90
+    ///
+    /// The kernel ([`crate::walk_regen::tick_walk_regen`]) is the retail
+    /// body: it only runs while the accumulator exceeds
+    /// [`crate::walk_regen::WALK_REGEN_STEP_COST`] (`0x20`), subtracts that
+    /// cost, and bumps HP / MP / AP by `8` / `2` / `1` for each member whose
+    /// ability-bitfield word 1 carries the walk-passive bit (`0x38` Life
+    /// Source, `0x39` Magic Source, `0x3A` Mettle Source), each clamped at
+    /// the record's effective maximum. A party with none of those accessories
+    /// equipped therefore sees no state change at all, which is why wiring
+    /// this moves no existing oracle.
+    ///
+    /// Two honest gaps, both stated rather than papered over:
+    ///
+    /// - The **fill** side of the accumulator is not decoded. No dump in the
+    ///   corpus carries the writer of retail's `_DAT_801F2274`, so
+    ///   [`Self::step_field_locomotion`] feeds it one unit per retail frame
+    ///   whose step committed. The drain (`0x20`, the `>` gate, the three
+    ///   bump/clamp pairs) is the retail one.
+    /// - The kernel's return value is the edge where retail arms a
+    ///   dialog-window callback off [`Self::walk_regen_window`]
+    ///   (`_DAT_8007B600`). The engine has no such window slot and nothing
+    ///   arms the countdown, so the edge cannot fire and the result is
+    ///   dropped here.
+    ///
+    /// Member order is the present party (retail walks the member-id table
+    /// at `0x80084598`), resolved through [`Self::party_roster_slot`].
+    fn tick_field_walk_regen(&mut self) {
+        use crate::walk_regen::{WalkGauge, WalkRegenMember};
+        if self.walk_regen_steps <= crate::walk_regen::WALK_REGEN_STEP_COST {
+            return;
+        }
+        let count = (self.party_count.min(3) as usize).min(self.roster.members.len());
+        let slots: Vec<usize> = (0..count).map(|i| self.party_roster_slot(i)).collect();
+        let mut members: Vec<WalkRegenMember> = Vec::with_capacity(slots.len());
+        for &rslot in &slots {
+            let Some(rec) = self.roster.members.get(rslot) else {
+                continue;
+            };
+            let hms = rec.hp_mp_sp();
+            // Word 1 of the `+0xF4` ability bitfield - the word the three
+            // walk-passive bits (`0x38..=0x3A`) land in.
+            let bits = rec.ability_bits();
+            let ability_hi = u32::from_le_bytes([bits[4], bits[5], bits[6], bits[7]]);
+            members.push(WalkRegenMember {
+                ability_hi,
+                hp: WalkGauge {
+                    value: hms.hp_cur,
+                    cap: hms.hp_max,
+                },
+                mp: WalkGauge {
+                    value: hms.mp_cur,
+                    cap: hms.mp_max,
+                },
+                ap: WalkGauge {
+                    value: hms.sp_cur,
+                    cap: hms.sp_max,
+                },
+            });
+        }
+        let mut counter = self.walk_regen_steps;
+        let mut window = self.walk_regen_window;
+        // The dialog-window arm edge (see the note above) has no consumer.
+        let _armed = crate::walk_regen::tick_walk_regen(&mut counter, &mut members, &mut window);
+        self.walk_regen_steps = counter;
+        self.walk_regen_window = window;
+        for (&rslot, m) in slots.iter().zip(members.iter()) {
+            let Some(rec) = self.roster.members.get_mut(rslot) else {
+                continue;
+            };
+            let mut hms = rec.hp_mp_sp();
+            if hms.hp_cur == m.hp.value && hms.mp_cur == m.mp.value && hms.sp_cur == m.ap.value {
+                continue;
+            }
+            hms.hp_cur = m.hp.value;
+            hms.mp_cur = m.mp.value;
+            hms.sp_cur = m.ap.value;
+            rec.set_hp_mp_sp(hms);
         }
     }
 

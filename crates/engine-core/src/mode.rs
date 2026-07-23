@@ -719,6 +719,13 @@ pub struct ModeInitStage {
 /// words `_DAT_8007BC3C`/`BC4C = -1`, kingdom-base snapshot
 /// (`gp+0x7AC` <- `_DAT_80084540`), and a `FUN_80058104(0)` teardown call.
 // REF: FUN_80058104
+// NOT WIRED: the engine has no mode-table overlay-residency model, so
+// nothing stages a per-sub-id "other game" overlay or `jalr`s its init entry
+// out of the `0x80010AE4` table. Its minigames are resident Rust rules
+// engines entered as suspended in-place scene modes (`World::enter_fishing`
+// / `enter_slot_machine` / `enter_dance` / ...), which is also why the
+// warp-shared reset half of the retail body has no state to clear. Same
+// missing prerequisite as `crate::overlay_loader`.
 pub fn other_warp_init_stage(sub_id: i16) -> Option<ModeInitStage> {
     /// Per-sub-id overlay init entries (jump table at `0x80010AE4`).
     const OTHER_WARP_ENTRIES: [u32; 7] = [

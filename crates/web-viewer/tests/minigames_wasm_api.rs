@@ -61,13 +61,18 @@ fn dance_jukebox_and_seamless_loop_render_from_a_real_disc() {
         return;
     };
     // The jukebox always carries the two tracks the dance overlay actually
-    // loads (global BGM 2058/2064 = extraction 1048/1054); the Sol-disco
-    // floor family (2055/2059/2060/...) is present when those slots decode.
+    // loads, at extraction 1048/1054. The bank map is piecewise, so those are
+    // sound-test slots 60/66 (`988 + slot`) = global BGM 2060/2066 - both
+    // "Sol disco final". The ids asserted here were 2058/2064 while the flat
+    // `990 + slot` base was assumed, which resolved to extraction 1046/1052
+    // ("Vidna", a plain town theme, and an opening-title cue) once the bank
+    // map was corrected. The rest of the Sol-disco floor family (2055/2059)
+    // is present when those slots decode.
     let jb: serde_json::Value = serde_json::from_str(&mg.dance_jukebox_json()).unwrap();
     let tracks = jb["tracks"].as_array().unwrap();
     let bgms: Vec<u64> = tracks.iter().map(|t| t["bgm"].as_u64().unwrap()).collect();
     assert!(
-        bgms.contains(&2058) && bgms.contains(&2064),
+        bgms.contains(&2060) && bgms.contains(&2066),
         "jukebox has both overlay tracks: {jb:?}"
     );
     assert!(

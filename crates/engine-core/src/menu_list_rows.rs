@@ -26,6 +26,22 @@
 //!
 //! All ports are derived from the SCUS disassembly
 //! (`ghidra/scripts/funcs/<addr>.txt`); provenance notes sit on each item.
+//!
+//! NOT WIRED: nothing in the engine speaks retail's row-entry model. Every
+//! pause-menu screen carries a **typed** row model built straight from
+//! world state - [`crate::pause_screens::PauseItemRow`],
+//! [`crate::spell_menu::SpellRowView`],
+//! [`crate::equip_session::EquipItem`] - and the hosts render those. No
+//! code path produces the class-tagged `u16` entry words
+//! ([`CLASS_BAG`]..[`CLASS_SHOP_ALT`]) that [`row_name_source`] and
+//! [`description_source`] decode, and none allocates the `gp+0x148`
+//! live-window list node ([`LiveWindowSet`], [`list_alloc`]) that the
+//! kernel reads them out of. Wiring any of this needs that window/list-node
+//! model to exist first and the screens to be rebuilt on top of it; the
+//! per-content-id builders below then become its content pass.
+//! `crate::pause_screens::list_kernel_navigate` - the *navigation* half of
+//! the same kernel - is the one piece that survived the flat-cursor
+//! translation and is live.
 
 /// Row-entry class nibble mask (`entry & 0xF000`). The class routes the
 /// per-row draw in `FUN_80032A44` and the name lookup in `FUN_8002FF8C`.

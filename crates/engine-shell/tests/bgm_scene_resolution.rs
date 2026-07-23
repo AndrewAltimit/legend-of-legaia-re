@@ -7,7 +7,9 @@
 //! `FUN_800243F0`:
 //!
 //! - `bgm_id < 2000`  -> scene-local slot `raw_define + 6 + bgm_id`
-//! - `bgm_id >= 2000` -> global `music_01` slot `990 + (bgm_id - 2000)`
+//! - `bgm_id >= 2000` -> global `music_01` sound-test slot `bgm_id - 2000`,
+//!   whose extraction entry comes from the **piecewise** bank map
+//!   (`music_labels::prot_entry_for_bgm_id`), not from a single base
 //!
 //! The result is the matched-track input the note-level BGM differential
 //! needs: a scene name paired with a concrete PROT entry.

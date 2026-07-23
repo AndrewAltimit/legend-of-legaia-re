@@ -500,10 +500,14 @@ window.MgDance = (function () {
     }
 
     /* The disco jukebox track the dance plays. The dance overlay itself loads
-     * one of two mode-selected tracks (extraction 1048/1054 = global BGM
-     * 2058/2064); the page can swap in any Sol-disco-floor track from the same
-     * bank via setBgmTrack(). Default = overlay track A. */
-    let bgmTrack = 2058;
+     * one of two mode-selected tracks (extraction 1048/1054); the page can
+     * swap in any Sol-disco-floor track from the same bank via setBgmTrack().
+     * The bank map is piecewise - extraction = 988 + sound-test slot in this
+     * range, not 990 + slot - so those two are slots 60/66 ("Sol disco final"
+     * 1 and 2) = global BGM 2060/2066. This value is only the fallback for a
+     * WASM surface with no dance_jukebox_json; normally the page selects the
+     * jukebox's first row. Default = overlay track A. */
+    let bgmTrack = 2060;
     let bgmSrc = null;
 
     /* Render + start the selected BGM as a seamless loop (SEQ+VAB through the

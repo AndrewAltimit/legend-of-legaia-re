@@ -185,6 +185,20 @@ pub struct World {
     /// `Self::check_field_walk_touch`; the button-press interact dispatch
     /// is (`Self::tick_field_interaction_probe`).
     pub solid_field_npcs: bool,
+    /// Accumulated walked amount the field walk-regen tick drains (retail
+    /// `_DAT_801F2274`). [`World::step_field_locomotion`] bumps it on every
+    /// retail frame whose locomotion step actually committed;
+    /// [`World::tick_field_walk_regen`] consumes
+    /// [`crate::walk_regen::WALK_REGEN_STEP_COST`] per regen tick. The drain
+    /// is retail-pinned, the fill unit is the engine's - see
+    /// [`World::tick_field_walk_regen`].
+    pub walk_regen_steps: i32,
+    /// The walk-regen tick's secondary countdown (retail `_DAT_8007B600`),
+    /// which arms a dialog-window callback on its zero edge. Nothing in the
+    /// engine arms it, so it stays `0` and the edge never fires - the
+    /// window descriptor it schedules (`_DAT_8007B450`) has no engine
+    /// analogue.
+    pub walk_regen_window: i32,
     /// Camera azimuth (PSX 12-bit angle, `4096` = full turn) used to make
     /// d-pad locomotion camera-relative. Retail equivalent: the view
     /// direction `func_0x800467e8` remaps the held pad against. `0` maps
@@ -2148,6 +2162,8 @@ impl World {
             field_player_anim: None,
             leading_edge_wall_probes: false,
             solid_field_npcs: false,
+            walk_regen_steps: 0,
+            walk_regen_window: 0,
             field_camera_azimuth: 0,
             precise_movement: false,
             precise_move_carry: (0.0, 0.0),

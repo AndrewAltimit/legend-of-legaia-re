@@ -594,6 +594,17 @@ pub enum StatusIcon {
 ///
 /// PORT: FUN_8002C2E4
 ///
+/// NOT WIRED: this selector consumes a packed `u16` display-flag word
+/// (`+0x6F6`) and the engine never builds one. The battle HUD models a slot's
+/// ailments as a typed `Vec<StatusKind>` (`SlotHud::status_icons`), sorts it
+/// and draws **one sprite per kind**, where retail packs the ailments into
+/// bits and draws exactly one sprite chosen by the priority ladder below.
+/// Wiring needs the packed word first, and with it the bit -> ailment map -
+/// which this port deliberately does not claim, because the ladder's masks
+/// (`0x0380`, `0x0078`) group bits whose individual meanings are unpinned.
+/// Feeding it a word synthesised from `StatusKind` would be inventing that
+/// map, not porting it.
+///
 /// Each on-screen party / battle slot carries a `u16` display-flag word at
 /// its status-display record `+0x6F6` and a "slot live" halfword at `+0x6CE`
 /// (`present`). Once per frame the retail routine turns the two into one of

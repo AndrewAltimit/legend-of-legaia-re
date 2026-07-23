@@ -688,6 +688,16 @@ impl World {
     /// entries, unlike [`World::decode_field_direction`]'s 90°-quantised
     /// screen-vector rotation, which the two agree on for even `rot` (the
     /// axis-aligned cameras every retail field scene actually uses).
+    ///
+    /// NOT WIRED: the live pad path remaps through
+    /// [`Self::decode_field_direction`] instead, because the engine's camera
+    /// publishes a 12-bit azimuth ([`Self::field_camera_azimuth`]) rather
+    /// than retail's eighth-turn ring step `gp+0x2d8`, and because the same
+    /// azimuth has to serve the continuous `precise_movement` decode, which
+    /// a ring index cannot express. The two agree on every even `rot` - i.e.
+    /// on every camera a retail field scene installs - so routing the live
+    /// path here would need the eighth-turn index published by a camera that
+    /// actually orbits in 45 degree steps, which none does.
     pub fn remap_pad_direction(held: u16, rot: u32) -> u16 {
         if rot == 0 {
             return held;
@@ -736,6 +746,16 @@ impl World {
     /// This is a pure resolver over the collision grid; wiring it into the
     /// live pad path is separate (the default [`World::decode_field_direction`]
     /// stops at a blocked axis rather than sliding).
+    ///
+    /// NOT WIRED: the returned mask composes directly with
+    /// [`Self::advance_with_collision`], so the call itself is one line - but
+    /// turning it on changes where the player comes to rest against **every**
+    /// wall, and the engine's wall-contact parity is currently pinned by the
+    /// disc-gated `engine-shell/tests/field_collision_discriminator.rs`
+    /// against captures measured on the non-sliding stepper. Wiring it needs
+    /// that oracle re-pinned against wall-press captures that exercise the
+    /// skid (an asymmetric wall the sweep's sign test resolves), so the
+    /// slide bits are validated rather than merely enabled.
     pub fn resolve_field_slide(&self, held: u16, x: i16, z: i16) -> u16 {
         // No-clip pad bit: pass the raw mask through untouched.
         if held & 0x2 != 0 {
@@ -1954,10 +1974,33 @@ impl World {
             anim.moved_this_frame = true;
         }
 
+        let before = {
+            let ms = &self.actors[slot].move_state;
+            (ms.world_x, ms.world_z)
+        };
         if let Some(((wx, wz), _, _)) = precise {
             self.advance_with_collision_vector(slot, wx, wz, speed);
         } else {
             self.advance_with_collision(slot, dir_bits, speed);
+        }
+        // Walk-regen accumulator (retail `_DAT_801F2274`, drained `0x20` per
+        // [`crate::walk_regen::tick_walk_regen`] call): a frame in which the
+        // step actually committed counts as walked. Advanced on the
+        // retail-frame sub-clock so the cadence is frame-rate independent
+        // like every other duration in the tick.
+        //
+        // The DRAIN is retail-pinned (`> 0x20` gate, `-= 0x20`, the three
+        // per-member bumps); the FILL is not - no dump in the corpus carries
+        // the writer of `_DAT_801F2274`, so "one unit per moved field frame"
+        // is the engine's unit, not a decoded one. See
+        // [`World::tick_field_walk_regen`].
+        {
+            let ms = &self.actors[slot].move_state;
+            if (ms.world_x, ms.world_z) != before {
+                self.walk_regen_steps = self
+                    .walk_regen_steps
+                    .saturating_add(self.field_frame_step as i32);
+            }
         }
 
         // Walk-touch dispatch (retail: the per-sub-step touch check inside
@@ -2192,11 +2235,12 @@ impl World {
     /// position ([`Self::field_dir_blocked`]) - the retail standoff - and
     /// commits the step whenever the edge is clear. The default candidate-
     /// centre test is kept (off-flag) for the locomotion oracles and the
-    /// BFS nav drivers. With [`Self::solid_field_npcs`] set, each axis
-    /// additionally blocks when the direction's actor-collision probes land
-    /// inside a field NPC's body box ([`Self::field_npc_dir_blocked`]) -
-    /// retail gates a step on the actor bits and the wall bit together
-    /// (`FUN_801cfe4c` returning any of `1`/`2`/`4` refuses the 2-unit step).
+    /// BFS nav drivers. With [`Self::solid_field_npcs`] set, each axis takes
+    /// its actor gate from the combined [`Self::field_actor_dir_blocked`]
+    /// instead - both `FUN_801cfc40` entity classes in one test - so a field
+    /// NPC's body box blocks the step as well: retail gates a step on the
+    /// actor bits and the wall bit together (`FUN_801cfe4c` returning any of
+    /// `1`/`2`/`4` refuses the 2-unit step).
     ///
     /// **Placed props block unconditionally** ([`Self::field_prop_dir_probe`]):
     /// retail's placed-object actors always sit in the collision candidate
@@ -2215,26 +2259,24 @@ impl World {
             // Z axis.
             if dir_bits & 0x1000 != 0 {
                 let nz = cz.saturating_add(FIELD_STEP_UNIT as i16);
-                let prop = self.probe_props_for_step(cx, cz, 2);
+                let actors = self.probe_actors_for_step(cx, cz, 2, solid_npcs);
                 let blocked = if edge {
                     self.field_dir_blocked(cx, cz, 2)
                 } else {
                     self.field_tile_is_wall(cx, nz)
-                } || (solid_npcs && self.field_npc_dir_blocked(cx, cz, 2))
-                    || prop;
+                } || actors;
                 if !blocked {
                     self.actors[slot].move_state.world_z = nz;
                     self.field_step_delta.1 = FIELD_PROBE_DELTA;
                 }
             } else if dir_bits & 0x4000 != 0 {
                 let nz = cz.saturating_sub(FIELD_STEP_UNIT as i16);
-                let prop = self.probe_props_for_step(cx, cz, 0);
+                let actors = self.probe_actors_for_step(cx, cz, 0, solid_npcs);
                 let blocked = if edge {
                     self.field_dir_blocked(cx, cz, 0)
                 } else {
                     self.field_tile_is_wall(cx, nz)
-                } || (solid_npcs && self.field_npc_dir_blocked(cx, cz, 0))
-                    || prop;
+                } || actors;
                 if !blocked {
                     self.actors[slot].move_state.world_z = nz;
                     self.field_step_delta.1 = -FIELD_PROBE_DELTA;
@@ -2245,26 +2287,24 @@ impl World {
             let cz2 = self.actors[slot].move_state.world_z;
             if dir_bits & 0x2000 != 0 {
                 let nx = cx.saturating_add(FIELD_STEP_UNIT as i16);
-                let prop = self.probe_props_for_step(cx, cz2, 3);
+                let actors = self.probe_actors_for_step(cx, cz2, 3, solid_npcs);
                 let blocked = if edge {
                     self.field_dir_blocked(cx, cz2, 3)
                 } else {
                     self.field_tile_is_wall(nx, cz2)
-                } || (solid_npcs && self.field_npc_dir_blocked(cx, cz2, 3))
-                    || prop;
+                } || actors;
                 if !blocked {
                     self.actors[slot].move_state.world_x = nx;
                     self.field_step_delta.0 = FIELD_PROBE_DELTA;
                 }
             } else if dir_bits & 0x8000 != 0 {
                 let nx = cx.saturating_sub(FIELD_STEP_UNIT as i16);
-                let prop = self.probe_props_for_step(cx, cz2, 1);
+                let actors = self.probe_actors_for_step(cx, cz2, 1, solid_npcs);
                 let blocked = if edge {
                     self.field_dir_blocked(cx, cz2, 1)
                 } else {
                     self.field_tile_is_wall(nx, cz2)
-                } || (solid_npcs && self.field_npc_dir_blocked(cx, cz2, 1))
-                    || prop;
+                } || actors;
                 if !blocked {
                     self.actors[slot].move_state.world_x = nx;
                     self.field_step_delta.0 = -FIELD_PROBE_DELTA;
@@ -2306,6 +2346,30 @@ impl World {
             }
         }
         self.precise_move_carry = (ax, az);
+    }
+
+    /// One movement sub-step's **actor-collision** gate - the engine's
+    /// analogue of the `FUN_801cfc40` calls `FUN_801cfe4c` makes before its
+    /// wall probes, whose result bits `1` (moving actor) and `4` (static
+    /// entity) refuse the 2-unit step exactly like the wall bit `2`.
+    ///
+    /// REF: FUN_801cfc40, FUN_801cfe4c
+    ///
+    /// Always runs the prop half first, because that arm is the one that
+    /// latches the static-class touch anchor
+    /// ([`Self::probe_props_for_step`]) the locomotion auto-posts, and
+    /// because placed props are solid unconditionally (see
+    /// [`Self::advance_with_collision`]). When `solid_npcs` is set the gate
+    /// takes retail's **combined** answer through
+    /// [`Self::field_actor_dir_blocked`] - both entity classes in one test,
+    /// the shape `FUN_801cfe4c` consumes - so a village NPC blocks the step
+    /// as well. The two forms agree by construction
+    /// (`field_actor_dir_blocked` is `field_npc_dir_blocked ||
+    /// field_prop_dir_probe(..).blocked`), so the flag only ever adds the
+    /// moving-actor arm.
+    fn probe_actors_for_step(&mut self, x: i16, z: i16, dir: usize, solid_npcs: bool) -> bool {
+        let prop = self.probe_props_for_step(x, z, dir);
+        prop || (solid_npcs && self.field_actor_dir_blocked(x, z, dir))
     }
 
     /// One movement sub-step's prop probe: blocks on any solid prop box hit

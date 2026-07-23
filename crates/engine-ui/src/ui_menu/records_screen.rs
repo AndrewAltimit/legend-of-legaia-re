@@ -25,6 +25,19 @@
 //! PORT: FUN_8003c1f8 - single separator-glyph draw
 //!
 //! Source: `ghidra/scripts/funcs/overlay_world_map_801ed710.txt`.
+//!
+//! # NOT WIRED
+//!
+//! The records page is a row of the world-map **developer** menu, and the
+//! engine has no dev-menu host screen to open it from (same prerequisite as
+//! [`crate::dev_menu_row_y`]'s list body). It also has no source for most of
+//! what it prints: the engine tracks no lifetime battle / escape / knockout
+//! counters, no max-hit or max-damage high-water marks and no treasure-chest
+//! census, so `RecordsScreenView` has nothing to be built from even once a
+//! host exists. The sibling data model
+//! `legaia_engine_vm::world_map_overlay::records_screen` is unreached for the
+//! same reason. Wiring needs those persistent counters on the world first,
+//! then the dev-menu host; this module is the layout waiting on both.
 
 use crate::{TextDraw, text_draws_for};
 
