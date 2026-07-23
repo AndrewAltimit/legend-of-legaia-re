@@ -584,8 +584,47 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `FUN_801d6f44` | "GET COIN" coin-count digit-strip drawer (widget `0x2f`, `u = 0x58 + digit * 0x10`, `0x10`-px stride; port `engine-core::baka_fighter::coin_digit_cells`) |
 | `FUN_801d6710` | end-of-match tally drain step (not a drawer - see above) |
 | `FUN_801d553c` | developer dump of the action table (`ot5stat.txt`) |
+| `FUN_801d4fc8` | per-fighter keyframe / motion-event advance (uses `FUN_801d6e5c`); poses the fighter actor - runs in the `DAT_801dbf44 - 400 < 100` sub-phase |
+| `FUN_801d5c7c` | round-result banner fly-in / hold / fly-out animator (horizontal slide offset + brightness ramp, draws widget 3 through `FUN_801d5ed0` / `FUN_801d69a8`) |
+| `FUN_801d59d4` | title / logo flash animator (widget `0x28`, brightness `iVar << 3` ramp + the two XA stings) |
+| `FUN_801d69a8` | stage-digit draw helper: patches widget 5's `u` (`DAT_801d71cc = stage * 0x18`) then draws widget 5 through `FUN_801d5ed0` |
+| `FUN_801d6cbc` | "How to Play Baka Fighter" instructions-screen text drawer (11 lines from `PTR_..._801d7134`, `0xd` px apart) |
+| `FUN_801d2a28` | per-exchange score accumulator (see [Score-bonus tables](#score-bonus-tables)) |
+| `FUN_801ceb84` | scratchpad GPU packet-template initializer (fills the OT / primitive scratch `0x1f800034+` with gouraud packet words) - render-track |
+| `FUN_801d6480` / `FUN_801d6770` | raw GPU quad emitters into the OT scratch `_DAT_1f8003a0` (gouraud code `0x3a` / flat `0x28`; `FUN_801d6770` links through `FUN_8003d2c4`) - render-track |
+| `FUN_801d657c` | vertex-colour packet build (two packed RGBs → 6 components) + GTE submit `FUN_80024e80` - render-track |
+| `FUN_801d6910` / `FUN_801d693c` / `FUN_801d6968` / `FUN_801d6994` | vertex-packet field setters assembling the scratch primitive at `0x80070764` (three 12-byte vertex blocks + a trailing pair) - render-track |
+| `FUN_801d6bb8` / `FUN_801d6d60` | matrix-stacked placed-3D draw (`FUN_8005b268` / `FUN_8005b308` GTE push/pop, local transform `FUN_8003d20c` / `FUN_8003d344`) - render-track |
+| `FUN_801d6f18` | effect-part flag setter + spawn (`actor +0x10 \|= 0x200000`, `FUN_800204f8`) |
+| `FUN_801d3390` | per-fighter idle / reset pose setter (match phase `DAT_801dbf78 == 0`; seeds display anim `+0x6a` from the action table) |
+| `FUN_801d6300` | do-nothing stub (`jr ra`); a disabled hook the SM family still calls |
 
 Provenance: each row corresponds to `ghidra/scripts/funcs/overlay_baka_fighter_<addr>.txt`.
+
+### Score-bonus tables
+
+`FUN_801d2a28` is the per-exchange **score accumulator** feeding two of the
+end-of-match tally's three score rows (the coin row is the gold prize; see
+[Opponent + scoring](#opponent--scoring)). Per resolved hit it adds a
+combo-step bonus - `DAT_801d70c4[combo]`, the combo clamped to `0x13` - into
+row `DAT_801dbed8`, and an HP-keyed clear bonus into row `DAT_801dbedc`
+(`50000` at full HP `0xc80`, else `DAT_801d711c[hp / 0x140]`). Both bonus
+tables are overlay rodata (Sony bytes, not committed) with no parser. The
+engine port deliberately runs **no score channel** - `BakaTally` starts its
+three score rows empty and only carries the coin prize - so this path is
+documented, not ported; the tally port models the coin row alone
+(`engine-core::baka_fighter::BakaTally`). See
+`overlay_baka_fighter_801d2a28.txt`. **Confirmed.**
+
+### Shared-overlay helpers (out of scope)
+
+The overlay's high band (`0x801f0000+`) is the **shared runtime library**
+linked identically into every minigame / field overlay, not Baka-Fighter code:
+`FUN_801f6d48`, `FUN_801f159c`, `FUN_801f0adc` and `FUN_801f20b0` all
+byte-match the field overlay (PROT 0897) at the same VA (classifier image
+`field(897)`), so they belong to the field / actor / move VMs documented in
+[`script-vm.md`](script-vm.md), [`actor-vm.md`](actor-vm.md) and
+[`move-vm.md`](move-vm.md), not to this page.
 
 ## Engine port
 
