@@ -41,9 +41,19 @@
 //! flag is set (and the actor is alive) every slot is forced to `3`; otherwise
 //! the HP and MP bars are coloured independently by their own fill ratio.
 //!
-//! REF: the engine's battle HUD is not yet wired (see `docs/subsystems/battle.md`);
-//! this is a faithful, side-effect-free mirror of the retail threshold arithmetic
-//! carrying no Sony bytes, in the same spirit as `battle_camera` / `battle_formulas`.
+//! REF: this is a faithful, side-effect-free mirror of the retail threshold
+//! arithmetic carrying no Sony bytes, in the same spirit as `battle_camera` /
+//! `battle_formulas`.
+//!
+//! # NOT WIRED
+//!
+//! The colour index this selects is written into the four gauge-primitive
+//! slots at `DAT_801C8FA0`, and the engine has no such array: its battle HUD
+//! bars are `engine-ui` draw-list rectangles sized directly from the actor's
+//! `hp` / `max_hp`, with the fill colour a constant of the widget rather than
+//! a per-frame index. Wiring this needs the retail gauge primitive - a
+//! four-slot descriptor array whose colour word the HUD builder reads - to
+//! exist on the presentation side first.
 
 /// Gauge fill-colour index: actor is dead (`cur_hp == 0`).
 pub const GAUGE_DEAD: u8 = 2;

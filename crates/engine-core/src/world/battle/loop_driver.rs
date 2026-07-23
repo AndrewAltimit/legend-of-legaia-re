@@ -266,6 +266,18 @@ impl World {
             && self.any_battle_speed()
             && !self.any_living_initiative_key()
         {
+            // End-of-round handler. Retail reaches it as action-SM state
+            // `0xFF` (`801e67e8`), which the `0x5A` gate arms once every
+            // living actor has acted: it parks the flow byte at `0x14` - the
+            // round-driver state the sweep + DoT tick below stand in for -
+            // then bumps the round counter `ctx[+0x28A]` and calls
+            // `FUN_801F45A4`. Both run here, ahead of the sweep, in that
+            // order. The bump is what walks a multi-phase boss through its
+            // scripted casts (`crate::monster_ai::decide` reads the same
+            // counter); the waker is RNG-free unless an actor carries the
+            // latent `0x400` status, which no retail applier sets.
+            self.advance_battle_mode();
+            self.tick_status_0x400_wakes();
             // The actor sweep (`FUN_801D88CC`): action-gauge restore, the
             // `+0x1DF` action-stream clear, and the party band's stale-target
             // re-pick. Retail's flow SM runs it here, *before* the initiative
@@ -531,5 +543,37 @@ impl World {
             .get(slot as usize)
             .is_none_or(|a| a.battle.liveness == 0)
             || self.actor_is_petrified(slot)
+    }
+
+    /// The per-round status-`0x400` waker retail's action-SM state `0xFF`
+    /// tail-calls (`jal 0x801f45a4` at `801e680c`).
+    ///
+    /// Retail sweeps the seven battle-actor slots and, for each **live** actor
+    /// whose `+0x16E` carries bit `0x400`, draws one RNG sample and clears the
+    /// bit on a 1-in-8 hit. The port keeps `+0x16E` as
+    /// `BattleActor::field_flags`, so the sweep runs over the same word. The
+    /// RNG is drawn only for a live afflicted actor - stepping the stream for
+    /// an empty or unafflicted slot would desync it - and no retail applier
+    /// sets `0x400`, so on a normal battle this loop consumes nothing.
+    ///
+    /// PORT: FUN_801F45A4 (the caller-side slot sweep)
+    pub(in crate::world) fn tick_status_0x400_wakes(&mut self) {
+        use vm::battle_formulas::{STATUS_BIT_0X400, status_0x400_wakes};
+        // Retail's `&DAT_801C9370` sweep runs seven slots.
+        const RETAIL_ACTOR_SLOTS: usize = 7;
+        let n = self.actors.len().min(RETAIL_ACTOR_SLOTS);
+        for slot in 0..n {
+            let (status, alive) = {
+                let a = &self.actors[slot].battle;
+                (a.field_flags, a.liveness != 0)
+            };
+            if !alive || status & STATUS_BIT_0X400 == 0 {
+                continue;
+            }
+            let roll = self.next_rng() as u16;
+            if let Some(next) = status_0x400_wakes(status, alive, || roll) {
+                self.actors[slot].battle.field_flags = next;
+            }
+        }
     }
 }

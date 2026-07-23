@@ -16,6 +16,17 @@
 //! (see `docs/subsystems/battle.md`). The port exists as a faithful, testable
 //! mirror of the retail arithmetic, in the same spirit as the other pure
 //! fixed-point battle kernels in this crate (`battle_camera`, `battle_formulas`).
+//!
+//! # NOT WIRED
+//!
+//! Three things have to exist before a caller can run this pass. The engine
+//! seats battle actors at fixed formation points and never integrates a
+//! position, so there is no per-frame slot for an all-pairs nudge. The
+//! accumulators the kernel writes are the actor `+0x34` / `+0x38` pair, which
+//! `BattleActor` does not carry (the port's positions live on the actor's
+//! `move_state`, a different field set with no separate accumulator). And the
+//! body radius is `*(actor+0x22C)+0x58`, a field of the monster render record
+//! the engine does not load into the battle actor at all.
 
 /// One actor's separation-relevant state, mirroring the retail battle-actor
 /// struct fields the kernel reads and writes:

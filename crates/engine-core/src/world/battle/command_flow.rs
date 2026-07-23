@@ -34,27 +34,17 @@ impl World {
     pub(in crate::world) fn tick_battle_command(&mut self) {
         use crate::battle_input::{BattleCommandInput, Resolution};
         use crate::input::PadButton;
-        use crate::target_picker::{CursorRow, SlotState};
+        use crate::target_picker::CursorRow;
 
         let Some(mut session) = self.battle_command.take() else {
             return;
         };
 
         let party_count = self.party_count.clamp(1, 3);
-        let slot_at = |idx: usize| -> SlotState {
-            match self.actors.get(idx) {
-                Some(a) if a.battle.max_hp > 0 => SlotState::alive(true, a.battle.liveness != 0),
-                _ => SlotState::default(),
-            }
-        };
-        let mut party = [SlotState::default(); 3];
-        for (i, p) in party.iter_mut().enumerate().take(party_count as usize) {
-            *p = slot_at(i);
-        }
-        let mut monsters = [SlotState::default(); 5];
-        for (i, m) in monsters.iter_mut().enumerate() {
-            *m = slot_at(party_count as usize + i);
-        }
+        // Target-row selectability: the per-slot validity byte the retail
+        // validator (`FUN_8003FB10` arm `0x05`) writes, not an inline liveness
+        // test - see `super::validator_host`.
+        let (party, monsters) = self.battle_target_rows();
 
         let ev = BattleCommandInput {
             up: self.input.just_pressed(PadButton::Up),
@@ -65,6 +55,10 @@ impl World {
             circle: self.input.just_pressed(PadButton::Circle),
         };
         session.input(ev, party, monsters);
+        // Target-cursor tint: retail stamps the four monster slots bright /
+        // dimmed while the cursor is walking them and clears the tint the
+        // moment it closes.
+        self.apply_target_cursor_tint(&session);
 
         // Sparring tutorial: the hook for the state this resolution enters can
         // reject it (the wrong-lesson rewind), in which
@@ -215,6 +209,38 @@ impl World {
         }
     }
 
+    /// Stamp (or clear) the retail target-select tint across the monster
+    /// slots for the open command session.
+    ///
+    /// Retail's picker writes the pointed-at slot straight into the acting
+    /// actor's `+0x1DD` and `FUN_801DA6B4` reads it back from there, so the
+    /// port mirrors the engine picker's cursor onto `active_target` while an
+    /// enemy row is live. Any other phase - the command menu, an ally row, a
+    /// resolved session - runs the clear pass, which is retail's
+    /// `param_1 != 0` arm.
+    ///
+    /// REF: FUN_801DA6B4
+    fn apply_target_cursor_tint(&mut self, session: &crate::battle_input::BattleCommandSession) {
+        use crate::target_picker::{CursorRow, PickerState};
+        let party_count = self.party_count.clamp(1, 3);
+        let enable = match session.picker().map(|p| p.state()) {
+            Some(PickerState::Cursor {
+                row: CursorRow::Enemy,
+                slot,
+            }) => {
+                let abs = party_count.saturating_add(slot);
+                if let Some(a) = self.actors.get_mut(session.actor as usize) {
+                    a.battle.active_target = abs;
+                }
+                true
+            }
+            _ => false,
+        };
+        let ctx = self.battle_ctx.clone();
+        let mut host = BattleHostImpl { world: self };
+        vm::battle_action::target_cursor_highlight(&mut host, &ctx, enable);
+    }
+
     /// Drive the open battle Arts submenu one frame from [`World::input`].
     ///
     /// Edge-triggered pad → one [`crate::battle_arts::BattleArtsInput`] per
@@ -225,27 +251,13 @@ impl World {
     pub(in crate::world) fn tick_battle_arts_menu(&mut self) {
         use crate::battle_arts::{ArtsResolution, BattleArtsInput};
         use crate::input::PadButton;
-        use crate::target_picker::SlotState;
 
         let Some(mut menu) = self.battle_arts_menu.take() else {
             return;
         };
 
-        let party_count = self.party_count.clamp(1, 3);
-        let slot_at = |idx: usize| -> SlotState {
-            match self.actors.get(idx) {
-                Some(a) if a.battle.max_hp > 0 => SlotState::alive(true, a.battle.liveness != 0),
-                _ => SlotState::default(),
-            }
-        };
-        let mut party = [SlotState::default(); 3];
-        for (i, p) in party.iter_mut().enumerate().take(party_count as usize) {
-            *p = slot_at(i);
-        }
-        let mut monsters = [SlotState::default(); 5];
-        for (i, m) in monsters.iter_mut().enumerate() {
-            *m = slot_at(party_count as usize + i);
-        }
+        // Same validator-backed target rows as the command menu.
+        let (party, monsters) = self.battle_target_rows();
 
         let ev = BattleArtsInput {
             up: self.input.just_pressed(PadButton::Up),
@@ -509,27 +521,13 @@ impl World {
     pub(in crate::world) fn tick_battle_spell_menu(&mut self) {
         use crate::battle_magic::{BattleSpellInput, SpellResolution};
         use crate::input::PadButton;
-        use crate::target_picker::SlotState;
 
         let Some(mut menu) = self.battle_spell_menu.take() else {
             return;
         };
 
-        let party_count = self.party_count.clamp(1, 3);
-        let slot_at = |idx: usize| -> SlotState {
-            match self.actors.get(idx) {
-                Some(a) if a.battle.max_hp > 0 => SlotState::alive(true, a.battle.liveness != 0),
-                _ => SlotState::default(),
-            }
-        };
-        let mut party = [SlotState::default(); 3];
-        for (i, p) in party.iter_mut().enumerate().take(party_count as usize) {
-            *p = slot_at(i);
-        }
-        let mut monsters = [SlotState::default(); 5];
-        for (i, m) in monsters.iter_mut().enumerate() {
-            *m = slot_at(party_count as usize + i);
-        }
+        // Same validator-backed target rows as the command menu.
+        let (party, monsters) = self.battle_target_rows();
 
         let ev = BattleSpellInput {
             up: self.input.just_pressed(PadButton::Up),

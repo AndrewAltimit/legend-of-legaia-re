@@ -508,7 +508,8 @@ pub fn status_0x400_wakes(status: u16, alive: bool, mut roll: impl FnMut() -> u1
 /// is not a decompiler artifact.
 ///
 /// This is only the arithmetic; [`camera_height_for_frame`] is the whole
-/// routine including the slot gating.
+/// routine including the slot gating, and calls this for each of its two
+/// lookups.
 ///
 /// PORT: FUN_801f0348 (the `<< 7` + clamp arithmetic)
 pub fn camera_height_from_size_class(size_class: u8) -> i16 {
@@ -574,14 +575,20 @@ pub fn camera_height_for_frame(
 ) -> i16 {
     let mut h = CAMERA_HEIGHT_MIN;
     // Outer gate: an out-of-range target byte skips both lookups entirely.
+    //
+    // Retail stores the raw `size << 7` and clamps once at the exit; each
+    // lookup here goes through `camera_height_from_size_class`, which clamps
+    // in place. The two agree: an intermediate value is either overwritten by
+    // the attacker-side store or is itself the value the exit clamp sees, and
+    // the clamp is idempotent.
     if target_slot < 8 {
         if target_slot >= monster_slot_base {
-            h = i16::from(size_of(target_slot)) << 7;
+            h = camera_height_from_size_class(size_of(target_slot));
         }
         if attacker_slot >= monster_slot_base {
             // Retail re-reads the acting slot and overwrites the target-derived
             // value - a monster frames on its own bulk.
-            h = i16::from(size_of(attacker_slot)) << 7;
+            h = camera_height_from_size_class(size_of(attacker_slot));
         }
     }
     h.clamp(CAMERA_HEIGHT_MIN, CAMERA_HEIGHT_MAX)

@@ -82,6 +82,14 @@ pub const TWEEN_SLOTS: usize = 9;
 /// wrap adjust, the `0xA0` pre-scale), hence `&mut` on both sides here. The
 /// retail tail then arms the step-table walker (`FUN_80021248`) on the
 /// freshly written table; that walker is out of scope for this kernel.
+///
+/// NOT WIRED: the builder's only product is a 9-record `{step_count,
+/// endpoint}` table for a per-frame walker to advance, and the engine has no
+/// walker to hand it to - the battle camera is framed by a per-action snap
+/// (`battle_formulas::camera_height_for_frame` through
+/// `BattleActionHost::camera_bounds`), not by stepping angles toward a
+/// target. The routine that arms retail's walker, `FUN_80021248`, is
+/// documented but unported, so nothing exists to consume a step table.
 pub fn build_camera_angle_tween(
     current: &mut CameraAngles,
     target: &mut CameraAngles,

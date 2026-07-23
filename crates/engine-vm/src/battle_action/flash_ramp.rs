@@ -38,6 +38,17 @@
 //! turns one of these layers into two `POLY_FT4`s with a position picked by
 //! `stage - 1`. This module hands the layers back as a list so the emitter
 //! can be ported behind it without disturbing the ramp law.
+//!
+//! # NOT WIRED
+//!
+//! Two prerequisites are missing on the engine side. The ramp is driven
+//! entirely by the two battle-context bytes `ctx[+0x28B]` (stage) and
+//! `ctx[+0x28C]` (level), and `BattleActionCtx` carries neither - nothing in
+//! the port can raise a flash or hold its level between frames. And the layer
+//! list it returns is an argument list for `FUN_801E2650`, which is not
+//! ported, so even a driven ramp would have no primitive sink: the engine's
+//! full-screen effects are the `engine_core::fade` kernel, a different
+//! mechanism with no per-layer quad emitter behind it.
 
 /// Stage values `1..=STAGE_DRAW_MAX` run the emit pass.
 pub const STAGE_DRAW_MAX: u8 = 4;

@@ -144,18 +144,26 @@ pub trait ActionValidatorHost {
         false
     }
 
-    /// The `gp + 0x2E8` word - the running inventory item count the arm-`0x82`
-    /// callee `FUN_80046898` compares against the `0xE0` (224) cap. See
-    /// [`item_count_gate`]. Default 0 (empty inventory - gate open).
+    /// The `gp + 0x2E8` word the arm-`0x82` callee `FUN_80046898` compares
+    /// against `0xE0`. See [`item_count_gate`]. Default 0 (gate open).
+    ///
+    /// The "running inventory item count against a 224-slot cap" reading of
+    /// this word is **unconfirmed**: the sibling `FUN_80046870` (ported as
+    /// `crate::battle_helpers::advance_gauge`) writes the same `gp + 0x2E8`,
+    /// adding `0x40` per call and saturating at `0x100` - a gauge shape, in
+    /// which `0xE0` is a threshold rather than a capacity. Nothing in the
+    /// dumped corpus settles which reading is right, so hosts should treat
+    /// the default as "gate open" rather than plumbing an inventory length in.
     fn inventory_count(&self) -> i32 {
         0
     }
 }
 
 /// The out-of-battle inventory gate arm `0x82` tails into: a 3-instruction
-/// leaf returning `*(int *)(gp + 0x2E8) < 0xE0` - "the inventory has room"
-/// (signed compare against the 224-slot cap). Retail returns this raw value
-/// as the validator result; the validity byte is not touched.
+/// leaf returning `*(int *)(gp + 0x2E8) < 0xE0` (signed compare). Retail
+/// returns this raw value as the validator result; the validity byte is not
+/// touched. What `gp + 0x2E8` counts is not settled - see
+/// [`ActionValidatorHost::inventory_count`].
 ///
 /// PORT: FUN_80046898
 pub fn item_count_gate(count: i32) -> bool {
