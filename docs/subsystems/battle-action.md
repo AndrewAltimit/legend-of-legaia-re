@@ -780,6 +780,62 @@ transcribed from the disassembly (`overlay_battle_action_801db9c4.txt` /
   (`rand % party_count`, or `rand % monster_count + 3`), retrying until alive.
   Port: `redirect_dead_target` / `RedirectQuery`.
 
+### Per-frame action-effect update helpers
+
+Battle-overlay functions that run the *visual* side of a chosen action -
+projectile flight, action-HUD chrome, side-band asset streaming. All are heavy
+GTE / GPU-primitive / CD-IO work reached through the effect + anim path, so
+they are documented here rather than lifted whole into `engine-vm`.
+
+- **`FUN_801DA6B4` - target-select cursor tint.** Over the fixed monster-slot
+  window `3..=6`, brightens the acting actor's current target (`+0x1DD`) and
+  dims the rest: `+0x21C` render flag (`5` / `200` / `0`), `+0x4` colour word
+  (`0x20080200` / `0x00401004`), `+0xC` scale word (`0x1000` / `0`). `param_1
+  == 0` stamps the highlight; non-zero clears it. Only the alive slots
+  (`+0x14C != 0`) are touched. Self-contained; ported as
+  `battle_action::target_cursor_highlight`. See
+  `overlay_battle_action_801da6b4.txt`.
+- **`FUN_801DBDDC` - action banner box.** Gated on `ctx[+0x6CE] == 0`. Emits
+  one `0x09`-code quad into the ordering table at `_DAT_1F8003A0` (colour
+  `0x2C808080`, rect derived from the three `short` args) and links it via
+  `FUN_8003D2C4`. Pure GPU-primitive build. See
+  `overlay_battle_action_801dbddc.txt`.
+- **`FUN_801DEA50` - action effect-script stepper.** For the acting actor
+  (`param_1 == ctx[+0x13]`) walks 8-byte effect-script records at `param_2`
+  under the `actor[+0x1F5]` cursor (`< 8`), GTE-rotating each record's offset by
+  the actor's `+0x46` facing through the sin/cos LUTs (`_DAT_8007B81C` /
+  `_DAT_8007B7F8`) and spawning effects via `FUN_80050ED4` / `FUN_801DFDF0`. On
+  a terminator it installs the **move-power record** (`0x801F4F5C +
+  map[actor+0x1DF]*0x1A`, map at `0x801F4E64`, `0x1A`-byte stride) at
+  `ctx[+0x1014]` and seeds per-target homing state (`+0x1144` position, `+0x252`
+  target, `+0x1166` bearing). GTE + effect-spawn; not ported. See
+  `overlay_battle_action_801dea50.txt` and
+  [move-power.md](../formats/move-power.md).
+- **`FUN_801E09F8` - projectile flight + impact.** Steps the four in-flight
+  effect slots (`ctx[+0x24E]` phase, `+0x252` target slot, `+0x1144` position,
+  `+0x6C6` per-slot timer), homing each toward its target with the same LUT
+  trig and spawning per-effect visuals; on arrival it calls the damage kernel
+  `FUN_801DD0AC` (indexed through the same `0x801F4E64` map) and applies the
+  roll to the target's HP (`+0x14C`), death anim (`+0x1DA`), and the
+  accumulated-damage queue (`ctx[+0x83C]`). GTE + effect + damage-application;
+  not ported. See `overlay_battle_action_801e09f8.txt`.
+- **`FUN_801F17F8` - summon / readef side-band streamer.** A three-phase
+  (`ctx[+0x26C]`) CD loader gated on `ctx[+0x26B]`: opens `data\battle\summon`
+  (arg `0x37F`) or `data\battle\readef` (arg `0x380`) via `FUN_800558FC`, reads
+  a `0x10800`-byte page into `ctx[+0x314]`, and waits on `FUN_8003DE7C`. Pure
+  CD-IO; the engine streams these through `SceneAssets`. See
+  `overlay_battle_action_801f17f8.txt` and
+  [summon-readef.md](../formats/summon-readef.md).
+
+The worklist addresses `0x801F1ED4` / `0x801F2160` / `0x801F69D8` /
+`0x801F7088` are **not** battle-overlay entries: their only clean dumps are real
+function entries in the **muscle_dome** overlay (`0x801F69D8` also in
+`world_map_top_ext`), while the battle overlay's own dumps show these VAs as
+interior/empty - the same aliasing the caution above describes. Do not port the
+muscle_dome bytes as battle logic; the battle-overlay function actually resident
+at `0x801F1ED4` is the summon re-frame helper below, which still lacks a clean
+battle-resident dump.
+
 ## Notes for the engine port
 
 - The state graph is **flat** within each band: `0x14 → 0x15 → 0x16 → 0x17 → 0x18 → 0x1E` is the attack-strike chain. There are no jumps backward except from `0x5A` (which restarts at `0x0A` for the next actor).

@@ -73,5 +73,8 @@ pub use queue_applier::*;
 mod flash_ramp;
 pub use flash_ramp::*;
 
+mod target_cursor;
+pub use target_cursor::*;
+
 #[cfg(test)]
 mod tests;
