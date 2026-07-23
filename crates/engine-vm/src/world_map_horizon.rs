@@ -203,11 +203,15 @@ pub const BAND_COUNT: usize = (ROW_LIMIT - ROW_FIRST) as usize;
 /// against the disassembly and exercised by unit tests, but no frame the
 /// engine draws depends on it.
 ///
-/// `FUN_801C9688` is a relocation copy of `FUN_801D7EA0`: the two bodies
-/// are instruction-identical, differing only in three branch targets
-/// that shift by the `0xE818` relocation delta, so one port covers both.
+/// `FUN_801C9688` is **not** a second function. It is this same body
+/// printed at a phantom VA: its dump is `overlay_0897_*`, PROT 0897 loads
+/// at `0x801CE818`, and `0x801D7EA0 - 0x801C9688` is exactly that base.
+/// The dump was imported at `0x801C0000`. A mis-based print and a genuine
+/// relocation copy are observationally identical - both show identical
+/// bodies whose branch targets differ by a constant - so the bodies alone
+/// cannot tell them apart; what settles it is that no overlay image bases
+/// below `0x801CE818`. See `docs/reference/overlay-va-aliases.md`.
 // PORT: FUN_801d7ea0
-// PORT: FUN_801c9688
 pub fn emit_horizon(
     scale: i32,
     angle: u32,

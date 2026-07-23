@@ -291,7 +291,9 @@ flashing as it grows), the round timer digits (`DAT_801dc110`) and the
 running high score (`DAT_801dbee4`). The **end-of-match tally** is
 `overlay_baka_fighter_801d239c.txt`: it animates four accumulating score
 counters (`DAT_801dbee0`/`ed8`/`edc`/`ee8`) draining into the total
-(`DAT_801dbee4`) and into the player's gold (`_DAT_80084440`).
+(`DAT_801dbee4`) and into the casino prize accumulator (`_DAT_80084440`),
+which `FUN_80026018` later pays into the **casino coin bank** `0x800845A4` -
+not party gold `0x8008459C`.
 
 The drain is paced by `FUN_801d6710`, which draws nothing - it returns the
 per-frame step for a given remainder. The step is proportional, so a counter
@@ -306,7 +308,7 @@ starts draining when its fade reaches `0x11` frame steps, moves one
 `FUN_801d6710` step per frame and writes the tick blip (`0x21`) to the cue ring
 on every step. The first three counters feed the on-screen total
 `DAT_801dbee4`; the fourth (`DAT_801dbee8`, the coin prize) is added straight
-into party gold at `_DAT_80084440`. The fast-forward flag `DAT_801dbf00` is
+into the casino prize accumulator `_DAT_80084440`. The fast-forward flag `DAT_801dbf00` is
 latched at the top of `FUN_801d239c` from `_DAT_8007b874 & 0xf0` (any face
 button) and short-circuits the step to the whole remainder, so holding a button
 snaps the tally to its end state; nothing inside the tally clears the latch.
@@ -316,7 +318,7 @@ Fighter tick. **Confirmed.**
 
 Confidence: **Confirmed** AI roll + scripted-pattern table, the HUD/tally draw
 paths, and the gold payout (a flat per-opponent prize from the record table's
-`+0x00`, drained into `_DAT_80084440`); the other three tally counters
+`+0x00`, drained into the prize accumulator `_DAT_80084440`); the other three tally counters
 (`DAT_801dbee0`/`ed8`/`edc`) feed the on-screen score total `DAT_801dbee4`, not
 gold.
 
@@ -684,7 +686,7 @@ as the suspending `SceneMode::BakaFighter` (play-window `B` key;
 Left/Right/Up = the three attacks, Down charges the special). A player match
 win installs the score tally (`BakaTally`, the `FUN_801d239c` port), which the
 world's Baka Fighter tick runs frame by frame, adding each drained step into
-the party money exactly as retail adds it into `_DAT_80084440`; leaving the
+the money exactly as retail adds it into `_DAT_80084440`; leaving the
 duel before the tally finishes banks the remainder, so the total paid is the
 prize either way. Disc-free oracle for that path:
 `engine-core/tests/baka_tally_world.rs`. Disc-gated oracle:

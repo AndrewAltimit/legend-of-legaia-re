@@ -96,9 +96,31 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x70` | Magic-capture - phase 2 | Same brightness ramp as `0x6F`. Runs `func_0x801F2160` (the [magic effect-class dispatcher](#battle-helper-functions), keyed on the spell's effect-class byte). When done, calls `func_0x801F0348` (the [target-size camera framing](#battle-helper-functions)). | `0x71`. |
 | `0x71` | Magic-capture - finalize | `FUN_801D5854(actor, 6)`; checks all 8 slots are settled (alive with non-zero `+0x4`, or non-`8` `+0x1D9`). Once stable: clears ctx buffers, writes the 4-byte fade sentinel (`84 10 42 08`), iterates resetting per-actor `+0x21C = 0` and `+0x8 = 0x81000000`. | `0x50`. |
 | `0xFD` | Idle hold (battle paused?) | `FUN_801D5854(actor, 8)`. No state change. | (stays). |
-| `0xFF` | **Battle complete** | Sets `ctx[+0x6] = 0x14`, increments `ctx[+0x28A]` (battle-count?), calls `func_0x801F45A4` (the [end-of-action damage/HP-bar settle](#battle-helper-functions)). | (terminal - exits the battle overlay). |
+| `0xFF` | **End of round** (not battle end - see below) | Sets `ctx[+0x6] = 0x14`, increments `ctx[+0x28A]` (round counter), calls `func_0x801F45A4` (the [end-of-action damage/HP-bar settle](#battle-helper-functions)). | round boundary; the next round's actor selection follows. |
 
 States `0x67` (post-fade hold), `0x07` (unused?), and several gaps in the table are not present as case labels - they fall into the `default` no-op arm (the dispatcher's `sltiu v0, v1, 0x100` bound is 256 and the JT slot for unhandled values points at the function epilogue at `0x801E6814`).
+
+#### `0xFF` is the round boundary, not the battle's end
+
+Worth stating separately, because the opposite reading was recorded here and the engine
+port inherited it. `0xFF` has exactly one writer: the **non-wipe** arm of `0x5A`, reached
+when every living actor has acted and both sides still have someone standing. The wipe
+arms do not write a state byte at all - they raise the battle-end *signal*
+`DAT_8007BD71 = 0xFE` (with `_DAT_8007BD2C` = `5` party wipe / `0` monster wipe), which is
+also what the successful-escape teardown `0x66` raises. So battle end is signalled through
+`DAT_8007BD71`, never through the state byte, and reaching `0xFF` means "the round is
+over", not "the battle is over".
+
+Read the two rows together and the table already said so: the `0x5A` row routes wipes to
+the signal and only the everyone-has-acted path to `0xFF`.
+
+**Port consequence, open.** `engine_vm::battle_action` maps `0xFF` to
+`ActionState::BattleComplete`, whose handler calls `battle_end(BattleEndCause::MonsterWipe)`
+- asserting a wipe that has not happened - and the live loop turns that into
+`finish_battle`. Whether a real battle reaches that path depends on how
+`action_queue_counter` accumulates across a round, which is not settled here; the failure
+mode if it does is a spurious victory, with loot and XP granted after one round. Tracked in
+[`reference/open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
 #### Attack chain - strike loop (`0x1E`)
 

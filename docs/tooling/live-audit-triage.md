@@ -29,6 +29,16 @@ A `DISCLOSE` reason must say *why* there is no caller. "No caller" restates the
 audit. The useful form names what must exist first - a host screen, a state
 shape, an id space the engine does not carry.
 
+**A verdict here is a hypothesis with evidence attached, not a settled fact.** Several
+have since been overturned by work that held the disassembly: the `minigame_return_warp`
+`WIRE` rested on state that no production code writes (corrected in place below), the
+`build_strip` row described a build the port already performed correctly, the
+`symbol_pad_bit` `DELETE` cited a rustdoc link as a call site, and the `motion_pause_kick`
+reason named a touch-event gap the port does not have. Re-check a row against the dumps
+before acting on it, and correct it here when it does not hold - a stale verdict in this
+file propagates into source as a `NOT WIRED:` tag, which is the failure direction hardest
+to detect later.
+
 **The four analysis defects this triage found are fixed in the tool**, and the
 verdicts below are stated against the corrected audit. The order mattered:
 acting on the uncorrected audit would have written false `NOT WIRED:` tags into
@@ -289,12 +299,24 @@ wiring gaps either.
 
 ## `WIRE` rows: the call site that should exist
 
-**`minigame_return_warp`** (`80026018`). Its partner `World::arm_minigame_warp`
-is uncalled too, so neither half of the mode-24 round trip runs. Call
-`arm_minigame_warp` where the host enters a minigame scene and
-`minigame_return_warp` where it leaves, beside the existing
-`exit_slot_machine` call in `window/event_handler/keyboard.rs`. Small: both are
-parameterless `&mut self` methods and the state they touch already exists.
+**`minigame_return_warp`** (`80026018`). **This row's original reasoning was wrong and
+is corrected here**, because acting on it as written produces a double credit.
+
+It claimed "the state they touch already exists". It does not: `World::minigame_winnings`
+is assigned a non-zero value only in tests, so nothing in production fills it, and the
+`exit_slot_machine` path already performs its own coin assignment. Wiring the pair beside
+that call therefore credits the bank twice.
+
+What retail actually does, read off the dumps: `FUN_801D239C` (`0x801d2894..0x801d28bc`)
+drains each Baka tally into the prize accumulator `_DAT_80084440`, and `FUN_80026018`
+(`0x80026050..0x80026078`) adds that accumulator into the **casino coin bank**
+`0x800845A4`, clamped at 9,999,999 - not party gold `0x8008459C`. The port pays the tally
+into `World::money` instead, which is why the accumulator never fills.
+
+So this is a real `WIRE`, but a **two-part** one that no single lane can land: the Baka
+tally must be redirected from party money to a coin accumulator (in
+`world/frame_tick.rs`), *and* the warp call sites added. Either half alone is wrong - the
+call sites alone credit zero, the redirect alone loses the prize.
 
 **`fmv_post_play_handoff`** (`801cea3c`). Nothing consumes `FmvHandoff`
 anywhere. `commands/run.rs` reads `World::active_fmv()`, logs it and skips.
