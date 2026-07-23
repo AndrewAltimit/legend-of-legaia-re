@@ -87,6 +87,11 @@ pub struct SeqSlot {
 // (raw copy / VAB upload / VRAM rect / stream flag / budget stop), with the
 // hardware sinks behind [`InstallHost`] and the `0x80091508` slot
 // bookkeeping on [`SeqSlot`].
+// NOT WIRED: the engine resolves scene sub-assets through the typed
+// `legaia_asset` dispatcher and uploads VRAM and VAB directly from those.
+// Nothing produces retail's `[type, size, data]` side-band chunk list, so
+// the walker has no stream to walk. Wiring it needs a producer that emits
+// that side band - i.e. the retail streaming loader, not the typed one.
 /// Walk `stream` as a `[header, payload]` chunk list and dispatch each chunk.
 ///
 /// `budget` mirrors the retail third argument (the remaining transfer-byte

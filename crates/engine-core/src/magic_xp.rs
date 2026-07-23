@@ -121,6 +121,14 @@ pub fn add_spell_xp(record: &mut CharacterRecord, slot: usize, gain: u32) {
 /// ([`legaia_save::MAX_SPELLS`]); retail's unbounded `do`/`while` never
 /// exceeds it in practice (the id space `0x81..=0x8B` caps a legitimate list
 /// at 11 entries).
+///
+/// NOT WIRED: nothing promotes a learned Seru into the record. The capture
+/// kernel ([`crate::seru_learning::record_capture`]) banks a crossed learn
+/// threshold into `SeruCaptureLog::learned_spells`, a parallel per-character
+/// list the magic menus and the battle spell session read alongside the
+/// record's arrays; no path copies that entry back into the record's three
+/// parallel spell arrays, which is the write this prepend performs. Wiring
+/// it means giving the capture log's learn edge a record-side commit step.
 pub fn learn_spell_prepend(record: &mut CharacterRecord, spell_id: u8) {
     let mut list = record.spell_list();
     let count = (list.count as usize).min(list.ids.len() - 1);
@@ -154,6 +162,14 @@ pub const MAGIC_LEVEL_INCREASED_SUFFIX: &str = "'s magic level increased.";
 /// (string copy `FUN_8003CA78` + append `FUN_8003CAC4`).
 ///
 /// PORT: FUN_801F452C
+///
+/// NOT WIRED: the event this line announces is produced -
+/// `World::accrue_summon_spell_xp` pushes every level-up into
+/// `World::magic_level_ups` - but no host drains it. The battle HUD's banner
+/// channel carries the art-learned / level-up / capture banners only, and
+/// retail's magic-level line is its own UI element (`0x65`) with no engine
+/// slot. Wiring this needs that banner slot plus a spell-name lookup at the
+/// drain point.
 pub fn magic_level_increased_message(spell_name: &str) -> String {
     format!("{spell_name}{MAGIC_LEVEL_INCREASED_SUFFIX}")
 }

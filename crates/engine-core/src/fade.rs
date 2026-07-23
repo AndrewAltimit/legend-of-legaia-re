@@ -159,6 +159,14 @@ impl FadeState {
 /// every spawn, so the copy is semantics-preserving.
 ///
 /// PORT: FUN_80024E80
+///
+/// NOT WIRED: the engine's fades are host-driven state
+/// ([`crate::world::World::screen_fade`], a plain `Option<FadeState>`), not
+/// entries in a fixed-capacity system-actor pool. The `slot_free` argument
+/// models a pool allocation outcome that no engine caller can supply an
+/// answer for, so every call site would have to invent `true`. Wiring it
+/// needs the retail system-actor pool (`actor_free(&DAT_80070674, ..)`)
+/// behind the fade spawn.
 pub fn spawn_fade(template: &FadeTemplate, id: i16, slot_free: bool) -> Option<FadeState> {
     if !slot_free {
         // Retail `iVar1 == 0` branch: no stamp, no load.

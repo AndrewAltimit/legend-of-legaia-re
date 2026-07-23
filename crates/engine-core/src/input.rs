@@ -167,6 +167,14 @@ impl InputState {
     /// `vsync_delta` is `DAT_1F800393` - the adaptive frame step
     /// ([`crate::world::World::frame_step`]), not a constant `1`. That is what
     /// keeps the auto-repeat rate wall-clock-constant across a cadence change.
+    ///
+    /// NOT WIRED: no host produces [`crate::retail_pad::PadReport`]s. winit
+    /// hands the shell decoded key / gamepad events and the browser hands
+    /// the WASM host a key set, so every host assembles a packed mask and
+    /// enters through [`Self::set_pad`] - which pumps the same retail state
+    /// machine, so the auto-repeat window is populated either way. Wiring
+    /// this needs a backend that surfaces raw two-port libpad report buffers
+    /// (a real PSX pad / an emulator bridge), which no shipped host does.
     pub fn set_pad_reports(
         &mut self,
         port0: &crate::retail_pad::PadReport,
