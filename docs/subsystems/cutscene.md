@@ -33,6 +33,7 @@ library. The FMV dispatch table is at `0x801D0A6C`.
 - [CDNAME → STR override map](#cdname--str-override-map) · [overlay residency](#strmdec-fmv-overlay-residency) · [directory-record cache](#directory-record-cache) · [post-FMV return scenes](#post-fmv-return-scenes)
 - [Field-VM FMV-trigger op](#field-vm-fmv-trigger-op) - [static trigger sites](#static-fmv-trigger-sites---exhaustive) · [trigger assignment is disc-sourced](#the-per-scene-trigger-assignment-is-disc-sourced-the-runtime-reconstructed-reading-is-falsified) · [per-STR trigger corpus](#per-str-fmv-trigger-corpus)
 - [In-engine 3D opening](#in-engine-3d-opening-the-five-scene-new-game-chain) - [the five-scene chain](#the-five-scene-chain) · [record spawn](#record-spawn-mechanisms-live-probe-pinned) · [`opdeene` timeline record](#the-opdeene-timeline-record) · [inline narration](#inline-narration-format) · [crawl roller](#narration-playback---the-crawl-roller-fun_80037174) · [timeline execution](#timeline-execution-model-ghidra-traced) · [engine port](#timeline-execution-engine-port) · [vignette actors](#per-actor-channels---the-vignette-actors) · [screen fade](#scripted-screen-fade-op-0x4c-0x12--the-effect-colour-op-0x34-sub-0) · [sepia grade](#full-scene-sepia-grade-the-gold-prologue-look)
+- [Field-to-battle transition](#field-to-battle-transition-the-battle-intro-overlay) - [tick + battle handoff](#transition-tick--battle-handoff---fun_801cf5bc) · [per-style emitters](#per-style-emitters-render-track-gtegpu)
 - [Open items](#open-items) · [Provenance](#provenance)
 
 ## Game modes
@@ -345,6 +346,23 @@ spins on a `0x100000`-iteration budget and a printf of the FIFO bits: they descr
 software decoder does not model, so they carry no port site and are listed in
 `scripts/ci/port-catalog-ignore.toml`. The two spin waiters additionally share their VA with the
 fishing overlay's own resident, so the bare address is not one function either.
+
+#### Remaining MDEC / St helpers
+
+Four more overlay helpers sit on that same clean-room boundary and carry no port site:
+`FUN_801CFAD4` is the MDEC-decode watchdog - it spins up to `0x800000` iterations on the
+decode-done flag `ctx+0x34` and, on timeout, prints `time out in decoding` and force-flips
+the code buffer (`ctx+0x28`); `FUN_801CFE00` is an 8-instruction thunk to the DMA-0 code
+upload `FUN_801D0070` (the `FUN_801CFFDC` family); `FUN_801CFC18` wraps the MDEC reset
+`FUN_801CFEE0`, adding a DMA reset (`func_0x8005FD88`) when its argument is `0`; and
+`FUN_801CFCDC` stages the two double-buffered output rects into `&DAT_801D0D5C` /
+`&DAT_801D0D9C`. The frame-poll wrapper `FUN_801CF740` is the logic sibling that stays
+*inside* the port: it loops `StGetNext` (`FUN_8005EF40`, up to 2000 spins), sets the
+inclusive end-frame latch `DAT_801E09F8` when the demuxed frame number reaches the slot's
+`+0x0C`, and computes the 24bpp display width (`width * 3/2`) - already ported within
+[`str_player`](#engine-port---legaia_mdecstr_player) (the "end frame is inclusive" pin).
+`see ghidra/scripts/funcs/overlay_str_fmv_0x801CFAD4.txt` /
+`overlay_str_fmv_0x801CF740.txt`.
 
 ## XA channel selection
 
@@ -1233,6 +1251,67 @@ is no such law to port:
   distance culling widens the sampled far region. Both are engine boundaries, not palette-law
   defects; there is no faithful separable palette / depth law to add.
 
+## Field-to-battle transition (the battle-intro overlay)
+
+Not an STR movie and not the 3D opening: the full-screen effect that plays between a field
+encounter trigger and the battle scene - the screen shatters / swirls into battle - is its
+own overlay. **Source: PROT 0979** (`field_battle_intro`, slot-A base `0x801CE818`),
+identified statically by its head strings `efect init` / `battle bgm %d` (`0x801CE854`) /
+`brule.xxx` (`0x801CE864`); see
+[`static-overlay-pipeline.md`](../tooling/static-overlay-pipeline.md). It shares the
+mode-26/27 overlay slot family with the STR player but is a distinct disc entry (own
+content `0x4000`; the static footprint over-reads into the dance overlay 0980 past
+`+0x4000`).
+
+### Transition tick + battle handoff - `FUN_801CF5BC`
+
+The per-frame driver. A **phase counter** at `actor+0x22` sequences the battle handoff:
+phase 1 runs battle-mesh assembly (`FUN_80052770`), phase 2 loads the battle BGM
+(`func_0x800567A8("battle bgm %d", id)`) and the battle-scene bundle
+(`func_0x8001FC00(0x36F + id, ...)`). A parallel spin/camera timer `actor+0x1a` counts
+display frames (`+= DAT_1F800393`) against the total intro duration `DAT_801D2458`: near
+the end it raises the ready bits `actor+0x2a |= 1` / `2`, and at completion
+(`actor+0x2a == 3`) it writes the game-mode handoff **`_DAT_8007B83C = 0x14`** (enter
+battle). Full phase/BGM detail is in the `FUN_801CF5BC` row of
+[`functions.md`](../reference/functions.md). `see
+ghidra/scripts/funcs/overlay_field_battle_intro_801cf5bc.txt`.
+
+Two switches drive the visuals. A **style selector `DAT_801D2460` (0..=4)** dispatches to
+one of five per-frame transition emitters (below); a second switch then applies a per-style
+screen fade `func_0x80024EE4(2, blend, level*0x10101)`, the fade `level` ramped from the
+`actor+0x1a`-vs-`DAT_801D2458` remaining-time delta (a different slope + threshold per
+style). **Dump caveat:** the classifier marks `801cf5bc` **UNCERTAIN** because its
+disassembly section stops at `0x801CF8A8` without a `jr ra`. That is a truncated *dump
+window*, not a short body - the decompiled C is complete (both switches, the fade and the
+`return`), so the function is real and the truncation is the only anomaly.
+
+### Per-style emitters (render-track GTE/GPU)
+
+Each style is a direct GTE/GPU packet emitter: it builds primitives straight into the
+ordering-table cursor `_DAT_1F8003A0`, transforms vertices through the GTE (`FUN_80026988`
+RotMatrix, `FUN_8005BAC8` RotTransPers-class, `FUN_8003D2C4` / `FUN_8003D344` /
+`FUN_8003D1A4` primitive helpers) and screen-clips before linking. They are the render half
+of this subsystem and are **documented-not-ported** at the clean-room boundary (GTE/GPU
+emitters carry no port site) - the port renders battle entry through the engine's own
+transition, not these packet builders.
+
+| `DAT_801D2460` | Emitter | What it draws |
+|---:|---|---|
+| 0 | `FUN_801CFDA0` | 0x488-particle scatter; per-particle 0x2C-byte packet, `>>1` velocity nudge. See [actor-vm.md](actor-vm.md#tick-cadence-dat_1f800393). |
+| 1 | `FUN_801D0370` | Sibling particle field (0x2C stride, RotTransPers per particle). |
+| 2 | `FUN_801D0D24` | 0x100 rotated cells at `DAT_801D2468` (0x5C stride) via sub-emitter `FUN_801D0E54`. |
+| 3 | `FUN_801D11D0` | Two textured screen bands + a per-scanline warp, via quad helper `FUN_801CF1B0`. |
+| 4 | `FUN_801D1888` | `DAT_801D247C` table-driven quads, timed by `DAT_801D2470`. |
+
+Shared render helpers in the same band: `FUN_801CF1B0` (angle-keyed rotated-quad builder,
+lookup at `&DAT_801D1ED3`), `FUN_801D0E54` (style-2 per-record sub-emitter into
+`_DAT_8007B85C + 0x5DC00`), `FUN_801D1A20` (byte-colour-unpack quad helper). Two
+allocate-and-seed inits build the per-style working buffers up front: `FUN_801CFBB4`
+(a 0x28x0x20 grid of 0x2C-byte cells, seeded from height tables `_DAT_8007B7F8` /
+`_DAT_8007B81C`) and `FUN_801D081C` (two `FUN_80017888` buffer allocations, 0x908 +
+0x5C00). All are GTE/GPU emitters - render-track, not ported. `see
+ghidra/scripts/funcs/overlay_field_battle_intro_<addr>.txt` for each.
+
 ## Open items
 
 - **XA channel map - resolved.** There is no channel selector in the STR overlay: FMVs play with the sector filter off (each movie carries one `(1, 0)` track), and the `XA*.XA` clip path selects `CdlSetfilter {file 1, chan}` per cue in SCUS (`FUN_8003D764`), with `clip_id -> XA<n>.XA` via the table at `0x801C6ED8`. See [XA channel selection](#xa-channel-selection). The earlier "`\DATA\MOV.STR` multi-channel container drives it" hypothesis is falsified (dev leftover, not on the disc).
@@ -1248,6 +1327,10 @@ is no such law to port:
 | Master dispatch + return-scene hand-off | `FUN_801CEA3C`; `see ghidra/scripts/funcs/overlay_cutscene_str_0970_801cea3c.txt` |
 | Play loop | `FUN_801CF098`; `see ghidra/scripts/funcs/str0970_801cf098.txt` |
 | Frame-demux SM (St library) | `FUN_8005ECD4` / `FUN_8005F024`; `see ghidra/scripts/funcs/8005f024.txt` |
+| StGetNext frame poll + end latch + display width | `FUN_801CF740`; `see ghidra/scripts/funcs/overlay_str_fmv_0x801CF740.txt` |
+| MDEC decode watchdog / reset / DMA-out thunk | `FUN_801CFAD4` / `FUN_801CFC18` / `FUN_801CFE00`; `see ghidra/scripts/funcs/overlay_str_fmv_0x801CFAD4.txt` |
+| Field->battle transition SM + style dispatch | `FUN_801CF5BC` (PROT 0979 `field_battle_intro`); `see ghidra/scripts/funcs/overlay_field_battle_intro_801cf5bc.txt` |
+| Field->battle per-style GTE/GPU emitters | `FUN_801CFDA0` / `FUN_801D0370` / `FUN_801D0D24` / `FUN_801D11D0` / `FUN_801D1888` + helpers `FUN_801CF1B0` / `FUN_801D0E54`; PROT 0979 `field_battle_intro` |
 | Iki / STRv2 bitstream decoders | `FUN_801D0378` / `FUN_801D070C` (+ LZSS `FUN_801D0604`); `see ghidra/scripts/funcs/overlay_str_fmv_0x801D0378.txt` |
 | XA-clip channel selector (`CdlSetfilter`) | `FUN_8003D53C` / `FUN_8003D764`; `see ghidra/scripts/funcs/8003d764.txt` |
 | Per-movie XA `(file 1, chan 0)` single track | raw-sector subheader scan of all six `MOV/MV*.STR` on the disc |
