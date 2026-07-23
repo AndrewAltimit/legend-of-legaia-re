@@ -93,6 +93,18 @@ mode-menu-world dispatch; the init sequence maps onto `BootSession`.
 
 Reads the first three sectors of `PROT.DAT` (= 6 KB) into RAM at `0x801C70F0`. Called from `FUN_8003EFE8` and `FUN_8003F08C` at boot.
 
+The two boot callers differ only in whether they bring the CD stack up first.
+**`FUN_8003EFE8`** (`see ghidra/scripts/funcs/8003f000.txt`) is the bare open: it
+zeroes the async-load queue globals (`gp+0x984` byte cursor and `gp+0x8BC`
+queued-entry count - the same pair the enqueue below advances), dev-prints
+`open port.dat`, then calls `FUN_8003E4E8("PROT.DAT", 1)` with the do-read flag
+set. **`FUN_8003F08C`** (`see ghidra/scripts/funcs/8003f0f4.txt`) wraps that same
+open behind a `param==0` gate and, when taken, first programs the drive through
+the CD command sender `FUN_8005C160` (`0x0E` set-mode with the mode block at
+`0x8007BBC0`, then `0x03`), bracketed by the `FUN_8005BE0C` / `FUN_8005BE8C` sync
+helpers - i.e. the cold-start path that readies the drive before the first TOC
+read.
+
 The on-disc TOC and the in-RAM TOC have **different strides** - see [`formats/prot.md`](../formats/prot.md). The on-disc-to-in-RAM transformation function hasn't been reversed; it presumably runs once at boot.
 
 After this completes, two resolvers are usable:
@@ -267,6 +279,44 @@ The SCUS-side CD I/O is layered. Bottom-up:
 | `FUN_8003EBE4` / `FUN_8003EC70` | Parallel overlay loaders A/B (see Game-mode state machine section). Both call `FUN_8003E8A8(param + 0x381)`; in extraction index space that is **entry `param + 0x37F`** (the resolver indexes the raw in-RAM `PROT.DAT` head, 2 entries above the extraction indexing - see the index-spaces note above the mode table). Differ only in destination buffer pointer (`*DAT_8001038C` vs `*DAT_80010390`) and current-id tracker (`gp+0x924` vs `gp+0x934`; `gp = 0x8007B318`, so `0x8007BC3C` / `0x8007BC4C`). |
 
 `FUN_8003E360` shows a **dual-mode loader pattern** keyed on the dev/retail flag `_DAT_8007B8C2`. The gate is `bne v0,zero,0x8003E49C` at `0x8003E37C`: the **non-zero** (retail) branch takes the PROT TOC index path (`FUN_8003E8A8(0x3D5,1)` + `FUN_8003E800`), while the **zero** (dev) fall-through opens a path through `FUN_800608F0` - `break 0x103`, a dev-station host trap - then `FUN_80060920` / `FUN_80060944`. Only the retail branch runs on real hardware. The dev branch zero-fills the tail up to the next 2 KB boundary, so the padded length - not the file length - is what it records.
+
+#### Low-level CD driver + async load queue
+
+Beneath the API stack above sits Legaia's own CD driver - hardware-register and
+callback code, not the PsyQ `libcd` BIOS path, so **documented, not ported**. The
+async loaders (`FUN_8003E800` / `FUN_8003F128`) feed a two-part queue engine:
+
+- **`FUN_8003DDA0`** - index-based streaming **enqueue**. Reads the in-RAM TOC at
+  `0x801C70F0`: `start = toc[idx+2]`, `size_sectors = toc[idx+3] - toc[idx+2]`
+  (the same [PROT TOC math](../formats/prot.md)). It appends an 8-byte
+  `(idx, byte_offset)` descriptor to the queue table at `gp+0x1A8 + count*8`,
+  bumps the queued-entry count `gp+0x8BC`, and advances the running byte cursor
+  `gp+0x984` by `size_sectors << 11` (= ×2048 bytes). Each append is bracketed by
+  the XA-control toggles `FUN_8003EE7C` / `FUN_8003DE7C` / `FUN_8003ED04`. This is
+  the size-aware sibling of the plain LBA resolver `FUN_8003E8A8`.
+  `see ghidra/scripts/funcs/8003dda0.txt`.
+- **`FUN_8003DAA8`** - the load-kick / completion driver the queue drains
+  through. Reads the in-progress flag `_DAT_8007B876 & 1`, converts the pending
+  LBA (`gp+0x97C`) to BCD-MSF via `FUN_8005C42C`, issues the drive read
+  (`FUN_8005FB84`, `FUN_8005C034`) into the destination `gp+0x894`, and maintains
+  the load counters `gp+0x8E8` / `gp+0x964`. `see ghidra/scripts/funcs/8003daa8.txt`.
+
+The interrupt / register side:
+
+| Function | Role |
+|---|---|
+| `FUN_8005DAB0` | CD response dispatcher. Loops on the interrupt-cause read `FUN_8005C4AC` until it returns 0; on cause bit `0x4` calls the data-ready callback `DAT_800793B0`, on bit `0x2` the completion callback `DAT_800793AC`; restores the saved command byte on exit. `see ghidra/scripts/funcs/8005dab0.txt`. |
+| `FUN_8005D5F8` | Driver re-arm. Zeroes the two callback slots (`DAT_800793AC` / `DAT_800793B0`) and their counters, masks via `FUN_8005FD88`, then hands `FUN_8005DAB0` to the driver-vector call `FUN_8005FDB8`. |
+| `FUN_8005D648` | Driver init / reset. Dev-prints, zeroes the callback + counter globals, then walks the drive through its init command sequence via the register pointers, spinning on the status bits (`& 0x7`) until the drive settles. |
+| `FUN_8005D504` | SPU + CD-audio mixer init. Pokes the SPU main-volume (`+0x180/0x182`), CD-input-volume (`+0x1B0/0x1B2`) and control (`+0x1AA = 0xC001`) registers through the base pointer `DAT_80079684`, then issues a CD command (`0x20`). |
+| `FUN_8005BD40` / `FUN_8005BD50` | CD status-byte getters (`DAT_800793BC` / `DAT_800793CC`). |
+| `FUN_8005EB50` | Streaming destination-callback swap: get-and-set `DAT_800796C0`. |
+| `FUN_8005C2E4` | DMA-channel-3 (CD) queue helper: forwards to `FUN_8005FDE8(3, dest)`. |
+
+The BIOS-trampoline stubs in this cluster (`FUN_8005BD30` = B(`0x07`),
+`FUN_8005DB9C` = B(`0x3F`), and the `FUN_80056648`-family B-table wrappers - each
+is `li t2,0xB0; jr t2; _li t1,N`) are thin syscall shims into the PSX kernel and
+carry no game logic of their own.
 
 #### Side-band loader constants
 
