@@ -1033,6 +1033,79 @@ pub fn good_banner_spawn(weight: u16) -> GoodBannerSpawns {
     }
 }
 
+/// The intro-cue id the count-in banner fires once, when it crosses into its
+/// hold segment (`FUN_801d2d98`, into the runtime SFX bank; see `sfx-table.md`).
+pub const COUNTIN_INTRO_CUE: u16 = 0x200;
+
+/// The count-in banner's slide / hold / fade envelope for one frame
+/// (`FUN_801d2d98`). The two banner halves emit through the hub sprite emitter
+/// [`FUN_801d2f38`]; this is the arithmetic that emit is fed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CountInBanner {
+    /// Horizontal offset of the sliding halves from screen centre (`0xa0`); `0`
+    /// during the hold. Retail places the right half at `0xa0 + x_offset`, the
+    /// left at `0xa0 - x_offset`.
+    pub x_offset: i32,
+    /// Brightness passed to the emit, clamped `0..=0xff`. Halved for the two
+    /// sliding halves; full for the single held banner.
+    pub brightness: i32,
+    /// `true` = the single centred banner (widget `0x78`, opaque); `false` = the
+    /// two half-brightness sliding halves (widget `0x77`).
+    pub hold: bool,
+}
+
+/// PORT: FUN_801d2d98 - the count-in banner animator (`1 2 3 READY... GO!`).
+///
+/// Three segments keyed on the banner's own frame counter `frame`:
+/// **slide-in** (`frame < 0x1e`): the two halves fly in from `0xb4 - 6*frame`
+/// to centre at flat brightness `0x80`; **hold** (`0x1e..0x5a`): a single
+/// centred banner whose brightness ramps `((frame-0x1e)*0x7f)/0x1e + 0x80`
+/// (clamped `0xff`) - and the once-only intro cue [`COUNTIN_INTRO_CUE`] fires
+/// on entry; **slide-out** (`>= 0x5a`): the halves fly back out `6*(frame-0x5a)`
+/// as brightness fades `200 - ((frame-0x5a)*0x7f)/0x1e`. The emit itself and the
+/// cue-fire latch (`DAT_801d5134`) are the host's; this returns the envelope.
+pub fn dance_countin_banner_envelope(frame: i32) -> CountInBanner {
+    let (mut x_offset, mut brightness, hold);
+    if frame < 0x1e {
+        x_offset = 0xb4 - 6 * frame;
+        brightness = 0x80;
+        hold = false;
+    } else {
+        x_offset = 0;
+        brightness = ((frame - 0x1e) * 0x7f) / 0x1e + 0x80;
+        hold = true;
+    }
+    if frame > 0x59 {
+        x_offset = 6 * (frame - 0x5a);
+        brightness = 200 - ((frame - 0x5a) * 0x7f) / 0x1e;
+        // The slide-out overrides the hold path back to two sliding halves.
+        return CountInBanner {
+            x_offset,
+            brightness: brightness.clamp(0, 0xff) / 2,
+            hold: false,
+        };
+    }
+    brightness = brightness.clamp(0, 0xff);
+    if !hold {
+        brightness /= 2;
+    }
+    CountInBanner {
+        x_offset,
+        brightness,
+        hold,
+    }
+}
+
+/// PORT: FUN_801d4098 - the per-dancer actor clip-driver gate. Retail hands the
+/// dancer to the shared clip driver `FUN_800204f8` only when its spin counter
+/// (`+0x5c`, the groovy-move turns left) is positive **or** its flag word
+/// (`+0x10`) carries bit `0x1000`. That predicate is the whole function; the
+/// driver call is the animation host's. `spin` is the signed spin counter,
+/// `flags` the actor flag word.
+pub fn dance_clip_driver_gate(spin: i16, flags: u32) -> bool {
+    spin > 0 || (flags & 0x1000) != 0
+}
+
 /// PORT: FUN_801d03c4 - the dancer face-stamp's rig selector. The face blit picks
 /// a per-dancer VRAM strip + eye/mouth frame table by rig index; in the qualifier
 /// (mode 0) the overlay remaps dancer `2 -> 3` and `1 -> 2`, so the rig id equals
@@ -1534,5 +1607,48 @@ mod tests {
         assert_eq!(dance_face_rig(DanceMode::HowTo, 3), Some(3));
         // Dancers past the fourth are not stamped.
         assert_eq!(dance_face_rig(DanceMode::FreePlay, 4), None);
+    }
+
+    #[test]
+    fn countin_banner_slides_holds_then_fades() {
+        // Slide-in: two half-bright halves flying in from 0xb4 toward centre.
+        let s0 = dance_countin_banner_envelope(0);
+        assert!(!s0.hold);
+        assert_eq!(s0.x_offset, 0xb4);
+        assert_eq!(s0.brightness, 0x80 / 2);
+        let s29 = dance_countin_banner_envelope(29);
+        assert_eq!(s29.x_offset, 0xb4 - 6 * 29);
+        assert!(!s29.hold);
+
+        // Hold: single opaque centred banner, brightness ramps from 0x80 and
+        // clamps at 0xff; the intro cue fires on entry (frame 0x1e).
+        let h = dance_countin_banner_envelope(0x1e);
+        assert!(h.hold);
+        assert_eq!(h.x_offset, 0);
+        assert_eq!(h.brightness, 0x80);
+        assert_eq!(COUNTIN_INTRO_CUE, 0x200);
+        // Deep into the hold the ramp saturates at full brightness.
+        assert_eq!(dance_countin_banner_envelope(0x59).brightness, 0xff);
+
+        // Slide-out: two halves again, flying back out as brightness fades.
+        let o = dance_countin_banner_envelope(0x5a);
+        assert!(!o.hold);
+        assert_eq!(o.x_offset, 0);
+        assert_eq!(o.brightness, 200 / 2);
+        let o_late = dance_countin_banner_envelope(0x5a + 30);
+        assert!(o_late.x_offset > o.x_offset);
+        assert!(o_late.brightness < o.brightness);
+    }
+
+    #[test]
+    fn clip_driver_gate_fires_on_spin_or_flag() {
+        // A spinning dancer (groovy-move turns left) drives its clip.
+        assert!(dance_clip_driver_gate(1, 0));
+        // The 0x1000 flag bit alone drives it too.
+        assert!(dance_clip_driver_gate(0, 0x1000));
+        assert!(dance_clip_driver_gate(0, 0x1234));
+        // Neither: idle, no clip drive.
+        assert!(!dance_clip_driver_gate(0, 0));
+        assert!(!dance_clip_driver_gate(-1, 0x2000));
     }
 }

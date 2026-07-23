@@ -236,10 +236,12 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
 | `FUN_801d231c` | Score / gauge HUD render driver: per-mode score-box → dancer-slot layout, then draws each box (`FUN_801d32f8`), the gauge level (`FUN_801d3e28`) and the beat track (`FUN_801d2524`). `overlay_dance_801d231c.txt` |
 | `FUN_801d32f8` | Multi-digit number renderer: 8-place decimal split (leading-zero suppressed) → per-digit widget-U patch + emit. `overlay_dance_801d32f8.txt` |
 | `FUN_801d2524` | Beat-track HUD: combo-window CLUT flash, the scrolling-note screen-x, the caps / body / stock-marker draws. `overlay_dance_801d2524.txt` |
-| `FUN_801d2d98` | Count-in banner animator (`1 2 3 READY... GO!`): slide-in / fade envelope + fires the intro cue `0x200` on frame `0x1e`. `overlay_dance_801d2d98.txt` |
+| `FUN_801d2d98` | Count-in banner animator (`1 2 3 READY... GO!`): slide-in / hold / fade envelope + fires the intro cue `0x200` on frame `0x1e`. Envelope ported as [`dance_countin_banner_envelope`]. `overlay_dance_801d2d98.txt` |
 | `FUN_801d3d78` | On-beat "good step" sting: keys two SPU voices (`0x12` / `0x13`) at tones `2r` / `2r+1`, note `0x3c+r`, for `r = rand() % 3`. `overlay_dance_801d3d78.txt` |
 | `FUN_801d40dc` | Sequence-clear ("Good!") banner + two flanking stars carrying the accuracy weight (`+0x72`). `overlay_dance_801d40dc.txt` |
-| `FUN_801d4098` | Actor clip-driver gate: hands the dancer to the shared clip driver `FUN_800204f8` only when its spin counter `+0x5c > 0` or its flag word `+0x10` has bit `0x1000`. `overlay_dance_801d4098.txt` |
+| `FUN_801d4098` | Actor clip-driver gate: hands the dancer to the shared clip driver `FUN_800204f8` only when its spin counter `+0x5c > 0` or its flag word `+0x10` has bit `0x1000`. Predicate ported as [`dance_clip_driver_gate`]. `overlay_dance_801d4098.txt` |
+| `FUN_801d387c` | Per-dancer sprite/shadow emit dispatch: computes the fade alpha from the dancer's beat field `+0x78` (`(v > 0x4000 ? 0 : v) >> 4`, clamped `0..0xff`) then `switch`es on a draw mode `0..4`, pushing the dancer's marker/shadow quads through the hub sprite emitter `FUN_801d2f38` (semi-transparency flags `0x400` / `0x800`) or copying the transform template `DAT_801d51a0`. Render-track; documented, not ported. `overlay_dance_801d387c.txt` |
+| `FUN_801d414c` | Dance scene-name stager / teardown: copies the `other1` scene-name string (`s_other1_801d518c`) into the scene-name buffer `0x80084548`, clears the pad-latch `_DAT_8007b880`, stores `DAT_801d5180` into `_DAT_80084540`, calls the scene-setup helper `FUN_80026018`, and arms `_DAT_8007ba9c = -1`. Called once from the dance tick `FUN_801cf470`. Engine scene plumbing, not rhythm logic; documented, not ported. `overlay_dance_801d414c.txt` |
 
 Parser: [`legaia_asset::dance_chart`](../../crates/asset/src/dance_chart.rs) decodes the baked [step chart](#step--rhythm-state-machine) (3 rows × `0x20` beats) from the disc.
 
@@ -289,8 +291,12 @@ digit already split their render routines): the number renderer's decimal split
 `FUN_801d32f8`), the beat-track combo-flash CLUT + scrolling-note screen-x
 (`dance_combo_window_bright` / `dance_beat_track_note_x`, `FUN_801d2524`), the
 good-step sting's two-voice pick (`dance_hit_sting_voices`, `FUN_801d3d78`), the
-sequence-clear banner + star spawns (`good_banner_spawn`, `FUN_801d40dc`), and
-the face-stamp rig selector (`dance_face_rig`, `FUN_801d03c4`).
+sequence-clear banner + star spawns (`good_banner_spawn`, `FUN_801d40dc`), the
+face-stamp rig selector (`dance_face_rig`, `FUN_801d03c4`), the count-in banner's
+slide/hold/fade envelope (`dance_countin_banner_envelope`, `FUN_801d2d98`), and
+the per-dancer clip-driver gate (`dance_clip_driver_gate`, `FUN_801d4098` - drive
+the shared clip when the dancer's spin counter is positive or its flag word
+carries bit `0x1000`).
 
 ## Assets: the overlay loads none - the entry path stages PROT 1230
 
