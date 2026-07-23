@@ -690,7 +690,8 @@ pub fn magic_screen_draws_for(
         str_at(&mut out, row.name, lx + 0x0c + advance, y, row_ink);
     }
 
-    // Info window (PORT: FUN_801d2e74).
+    // PORT: FUN_801d2e74 (item/spell description info window)
+    // Info window.
     if let Some(info) = &view.info {
         let (ix, iy) = info_pen;
         str_at(
