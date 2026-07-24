@@ -675,8 +675,16 @@ at idle (`+0x1DA = +0x1D9 = 0`) and his position never changed from the
 first poll: the staged approach drive **never engaged**. So the full park
 condition is (a) out of reach, (b) no tag `0x20` - which removes the SM's
 own `0x16` stepping guarantee - and (c) the animation-side approach drive
-idle; what idles it is the remaining open sub-question
-([open threads](../reference/open-rev-eng-threads.md)).
+idle. Note (a) is the **norm**, not an anomaly: in the same capture every
+healthy Gaza melee started out of reach (nearest target 438-1078 vs ~416
+reach; 4/4 went `0x14 -> 0x19`), and the parked 556-unit gap is ordinary
+formation spacing - the boss's model is simply so large that center-to-center
+distances beyond reach still look adjacent. The sole anomaly in the caught
+park is (c); what idles the drive is the remaining open sub-question
+([open threads](../reference/open-rev-eng-threads.md)). Untested candidate
+with the right shape: summon staging relocates the boss to `(0, -2048)` and
+back, and in the healthy capture no melee ever directly followed a summon -
+the drive-idle race may live in that staging aftermath.
 
 Confirmed against the parked save itself (RAM read via `legaia-pcsxr`,
 example `gaza2_walk_tag`): Gaza's seat-3 record holds 12 actions with tags
