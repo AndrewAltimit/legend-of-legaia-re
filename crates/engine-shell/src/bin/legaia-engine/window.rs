@@ -556,6 +556,13 @@ struct PlayWindowApp {
     /// Whether the lazy `face_tables` load already ran (so a missing
     /// executable is only probed once).
     face_tables_attempted: bool,
+    /// The opt-in developer menu (`LEGAIA_DEV_MENU=1`), created on the first
+    /// ticked frame. `None` on every default run, which is what keeps the
+    /// dev screen out of a player build.
+    dev_menu: Option<legaia_engine_core::dev_menu_host::DevMenuSession>,
+    /// This frame's dev-menu row-list draws, rebuilt by `tick_dev_menu` and
+    /// appended by the (immutable) HUD builder. Empty unless the menu is on.
+    dev_menu_draws: Vec<TextDraw>,
     /// The two fishing point-exchange venue pages (0 = Buma, 1 = Vidna),
     /// decoded from the fishing overlay when the minigame starts
     /// ([`legaia_asset::fishing_exchange`]) and named from the SCUS item
@@ -769,6 +776,10 @@ mod battle_cam;
 mod boot_cutscene;
 #[path = "window/camera.rs"]
 mod camera;
+
+/// Opt-in developer menu (`LEGAIA_DEV_MENU=1`) - the host screen for the
+/// ported retail dev-menu kernels.
+mod dev_menu;
 #[path = "window/event_handler.rs"]
 mod event_handler;
 #[path = "window/field_render.rs"]

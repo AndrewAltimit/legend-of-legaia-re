@@ -86,9 +86,8 @@ pub trait EquipCommitHost {
 /// PORT: FUN_801e5a08
 /// REF: FUN_801E5B4C (the slot resolution reused from `world_map_overlay`)
 ///
-/// NOT WIRED: the engine's dev menu reaches the equip rows through
-/// `world_map_overlay`'s browse model, which has no confirm step yet, so no
-/// host root calls this commit.
+/// Wired: `legaia_engine_core::dev_menu_host::DevMenuSession`'s `EQUIP` row
+/// confirm calls this against the engine's own bag (`WorldEquipHost`).
 pub fn commit_equip<H: EquipCommitHost>(
     host: &mut H,
     record: &mut [u8],

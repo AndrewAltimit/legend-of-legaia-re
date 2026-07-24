@@ -31,6 +31,7 @@ pub use legaia_font;
 pub use legaia_tim;
 
 pub mod battle_name_banner;
+pub mod other_game_hud;
 mod ui_fishing;
 mod ui_menu;
 pub mod ui_menu_window_painters;

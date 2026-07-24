@@ -193,6 +193,10 @@ impl PlayWindowApp {
             // retail scene script installs one, so this is the visual
             // trigger for the per-cell tile-actor draw pass.
             self.maybe_install_demo_tile_board();
+            // Opt-in developer menu (`LEGAIA_DEV_MENU=1`): retail reaches its
+            // dev tools from debug branches a player cannot; this is the
+            // engine's equivalent entry point.
+            self.tick_dev_menu();
             // Dance minigame auto-end: `tick_dance` restores the scene
             // mode when the song timer runs out but leaves the game
             // installed for one frame. Detect that (mode no longer

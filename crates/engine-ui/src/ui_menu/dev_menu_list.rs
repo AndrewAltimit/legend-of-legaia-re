@@ -21,23 +21,23 @@
 //! independent geometry: the `+8` label column, the 8-px row pitch, the
 //! `0x17` clamp and the first-row `y` origin.
 //!
-//! PORT: FUN_801EAD98 - dev-menu list-body renderer (row geometry)
+//! The `FUN_801EAD98` tag sits on each implementing function below rather
+//! than on this module block - a module-level tag claims every symbol in the
+//! file at once and reports them all live off one name collision.
 //!
 //! Source: `ghidra/scripts/funcs/overlay_world_map_801ead98.txt`.
 //!
-//! # NOT WIRED
+//! # Wiring
 //!
-//! The engine has no dev-menu host screen. Retail's world-map developer menu
-//! is a debug-build tool: it is opened from the world-map controller's own
-//! debug branch, its 24 rows are driven by a context struct whose cursor word
-//! is `ctx+0x9e`, and its arms warp the party, poke story flags and page the
-//! equip screens. None of that has an engine counterpart - `SceneMode` carries
-//! no dev-menu mode, `WorldMapController` exposes no debug-menu state, and
-//! nothing constructs the [`DevMenuListRow`] slice this builder consumes. The
-//! simulation half is in the same position: `legaia_engine_vm`'s `DevMenuRow`
-//! and `legaia_engine_core::dev_menu`'s flag editor have no caller either.
-//! Wiring this needs the dev-menu context and its pad-driven cursor to exist
-//! first; the layout here is then the draw pass over them.
+//! `legaia-engine`'s opt-in developer menu (`LEGAIA_DEV_MENU=1`, host module
+//! `window/dev_menu.rs`) builds its row list through
+//! [`dev_menu_list_draws_for`] and places its cursor with
+//! [`dev_menu_cursor_xy`], over the row model in
+//! `legaia_engine_core::dev_menu_host`. That screen carries the subset of
+//! retail's 24 rows whose backing state the engine owns; the rest of the
+//! retail list (party warps, story-flag pokes, the equip pager) still has no
+//! engine counterpart, so the geometry here is exercised by fewer rows than
+//! retail draws.
 
 use crate::{MENU_TEXT_WHITE, TextDraw, text_draws_for};
 

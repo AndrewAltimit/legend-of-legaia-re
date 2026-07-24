@@ -46,18 +46,17 @@
 //! | `+0x12C` | INT | `999` |
 //! | `+0x130` | level | `99` |
 //!
-//! PORT: FUN_801d6e18 (`0x801D6EC0..0x801D7240` cursor + field edit,
-//! `0x801D72F4..0x801D7518` clamp pass; the renderer half is not ported)
+//! Ported from `FUN_801D6E18` (`0x801D6EC0..0x801D7240` cursor + field edit,
+//! `0x801D72F4..0x801D7518` clamp pass; the renderer half is not ported).
+//! The address tag sits on each implementing function below rather than on
+//! this module block - a module-level tag would claim every symbol in the
+//! file and report the whole set live off one name collision.
 //!
 //! Source: `ghidra/scripts/funcs/overlay_save_ui_801d6e18.txt`.
 //!
-//! # NOT WIRED
-//!
-//! The engine has no developer character-editor screen and no live
-//! four-record RAM array to clamp - it models characters through
-//! `legaia_save::CharacterRecord` and writes LGSF saves. Wiring needs a
-//! debug host page (the same prerequisite the world-map dev menu waits on)
-//! plus a mutable party-record view for it to edit.
+//! Wired: [`crate::dev_menu_host::DevMenuSession`]'s `PLAYER_PARAM` page
+//! drives [`DebugEditor::tick`], and its per-frame tail runs
+//! [`clamp_record_stats`] over the whole party exactly as retail does.
 
 /// Character-record offsets the editor touches, relative to the record
 /// base (`0x80084708 + n*0x414`). The retail code addresses them off
