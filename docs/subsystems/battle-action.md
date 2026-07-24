@@ -587,6 +587,51 @@ Two further instrumentation facts, measured on the Gaza 2 save:
   (~84k vsyncs, twelve Final Heal revives, one menu heal, no harness write to
   any HP / readout / accumulator field) produced zero of either.
 
+## The `0x19` attack-approach park - a second, distinct softlock class
+
+The endless-camera-orbit symptom has (at least) two parks behind it, and the
+first one caught **from ordinary play with no interventions at all** is not
+the `0x51` HP-settle gate above - it is state `0x19`, the attack-approach
+range poll. Caught live on the Gaza 2 fight by a human playing at
+recompiler speed under `scripts/pcsx-redux/autorun_gaza2_park_hunter.lua`
+(a poll-only probe - no breakpoints, so it runs under dynarec while a human
+plays and savestates); the frozen moment is the catalogued scenario
+`battle_gaza2_park_0x19` (`scripts/scenarios.toml`, identified by
+fingerprint).
+
+The arm's wait shape, from the `FUN_801E295C` dump (`case 0x19`): recompute
+facing from the target's current position, call the range check
+`FUN_8004E2F0(acting_seat, actor[+0x1DD])`, advance to `0x1E` only when it
+returns 0. The not-in-range path is the shared stall label `0x801E35D0`,
+which adds the frame delta to the stall counter `ctx[+0x6D4]` and breaks -
+**state `0x19` contains no movement code and no timeout**. The walking
+happens in the `0x16` advance loop, an earlier state. An action that
+reaches `0x19` still out of range therefore re-polls forever.
+
+Measured anatomy of the caught park (interpreter replay of the fingerprinted
+save, probe `scripts/pcsx-redux/autorun_gaza2_range_wedge.lua`):
+
+- The acting actor is the **boss** (seat 3, category 3 physical attack,
+  871/15000 HP) targeting Gala (seat 2) across a ~556-unit gap; the range
+  metric returns 554-557 every poll and the actor's position never changes.
+- The reach the metric is compared against: party attackers use the static
+  table `DAT_80078870[acting_seat]` = `{256, 384, 1024}`; monster attackers
+  use a size-scaled reach (~416 for Gaza's `0x1A`). 556 > 416 - the check
+  is honest, the boss genuinely needed to walk.
+- The state trace into the park runs `0x0C -> 0x14 -> 0x19` within ~3
+  vsyncs: **the walk phase never engaged**. Why `0x14`/`0x16` handed off
+  without walking is the open question of this thread.
+- The whole round queue is wedged in approach states simultaneously: Vahn
+  polls his own queued attack against Gaza (metric ~458 > his 256 reach),
+  and Noa and Gala sit with `+0x1DD == 8` - which `FUN_8004E2F0` rejects
+  **by construction** (its head returns 1 for any target `>= 8`, so an
+  all-target action can never satisfy a range poll).
+- Every party HP triple is synced (`+0x14C == +0x172`, `+0x10 == 0`): the
+  `0x51` HP-readout invariant plays no part in this park.
+
+The camera orbit is the same pure symptom as ever: `FUN_801D0748`'s idle
+azimuth sweep never consults the state machine.
+
 ## Cross-references with other battle helpers
 
 ### `FUN_8004E2F0` - battle range / line-of-sight

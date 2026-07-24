@@ -2260,3 +2260,30 @@ end = 0x80200000
 label = "party_hp_readout_triple"
 start = 0x800EC9E8
 end = 0x800ED0E0
+
+# ----------------------------------------------------------------------
+# The 0x19 attack-approach park, caught LIVE by a human playing the Gaza 2
+# fight at dynarec speed under autorun_gaza2_park_hunter.lua. A second,
+# distinct park class from the 0x51 HP-settle gate above: Gaza (acting seat
+# 3, category 3 physical attack, 871/15000 HP) targets Gala (seat 2) from a
+# ~556-unit gap, the walk phase never engaged (0x0C -> 0x14 -> 0x19 within
+# ~3 vsyncs), and state 0x19 re-polls FUN_8004E2F0 forever - its
+# not-in-range path only bumps the stall counter ctx+0x6D4. The whole round
+# queue is wedged in approach states (Vahn -> Gaza at 458; Noa and Gala
+# hold target 8, which FUN_8004E2F0 rejects by construction).
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "battle_gaza2_park_0x19"
+description = "Gaza 2 fight parked in battle-action state 0x19 (attack approach) - the endless-camera-orbit softlock caught from ordinary play. ctx+0x13 acting = 3 (Gaza, category 3 attack, 871/15000 HP) targeting +0x1DD = 2 (Gala); Gaza at (433,291) vs Gala at (0,0), range metric ~556 vs reach ~416, no walking, stall counter ctx+0x6D4 climbing. Party Vahn/Noa/Gala LV23 full HP, all HP triples synced (the 0x51 HP-readout invariant is NOT involved)."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb3"
+pcsx_redux_sstate = "$HOME/.config/pcsx-redux/SCUS94254.sstate6"
+backup_fingerprint = "814dce6b90da114a8d8d37386a90623c4f871f7e380e14c010889ab4414c9dd8"
+topics = ["battle", "boss", "Gaza", "softlock", "state 0x19", "attack approach", "FUN_8004E2F0", "korb3", "endless orbit"]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000

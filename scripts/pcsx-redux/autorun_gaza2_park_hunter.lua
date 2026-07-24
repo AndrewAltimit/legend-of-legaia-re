@@ -17,9 +17,13 @@
 --
 -- Detections (both write a wedge file and, by default, PAUSE the emulator so
 -- the frozen moment can be savestated at leisure):
---   PARK    ctx+7 == 0x51 with ctx+0x6D8 unchanged and ctx+0x276 == 0 for
---           LEGAIA_PARK_N consecutive vsyncs (default 600; a healthy 0x51
---           dwell is ~83). This is the endless-orbit softlock itself.
+--   PARK    ANY ctx+7 value held unchanged for LEGAIA_PARK_N consecutive
+--           vsyncs while in battle (default 1500; the longest healthy dwell
+--           measured on this save is state 0x36's ~1227). Band-agnostic on
+--           purpose: the first live-caught park sat in 0x19 (attack
+--           approach), not the 0x51 HP-settle gate this family started from.
+--           States 0x00 (Begin/Run prompt) and 0xFF (round boundary) are
+--           exempt - both legitimately wait on the player.
 --   DESYNC  a party slot absorbing (+0x14C != +0x172 with +0x10 == 0, actor
 --           alive) for LEGAIA_ABSORB_N consecutive vsyncs (default 900).
 --           Phased mid-action crediting produces this shape transiently -
@@ -50,7 +54,7 @@
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
 
-local PARK_N    = probe.getenv_num("LEGAIA_PARK_N", 600)
+local PARK_N    = probe.getenv_num("LEGAIA_PARK_N", 1500)
 local ABSORB_N  = probe.getenv_num("LEGAIA_ABSORB_N", 900)
 local PAUSE     = probe.getenv_num("LEGAIA_PAUSE", 1) ~= 0
 local HEARTBEAT = probe.getenv_num("LEGAIA_HEARTBEAT", 64)
@@ -83,7 +87,7 @@ local csv = probe.csv_open(probe.out_path("hunt.csv"),
 
 local vsync = 0
 local last_sig = ""
-local park_c6d8, park_since = nil, 0
+local park_ctx7, park_since = nil, 0
 local absorb_since = { [0] = 0, [1] = 0, [2] = 0 }
 local wedge_n = 0
 local triggered = false   -- latched until the condition clears
@@ -143,12 +147,13 @@ local function on_vsync()
     local c6d8 = i16(c + 0x6D8)
     local c276 = u8(c + 0x276)
 
-    -- Park detector: 0x51 with a frozen countdown and a clear +0x276.
-    if ctx7 == 0x51 and c276 == 0 and c6d8 == (park_c6d8 or c6d8) then
-        park_c6d8 = c6d8
+    -- Park detector: ANY battle-action state held past the longest healthy
+    -- dwell. 0x00 (the Begin/Run prompt) and 0xFF (round boundary) wait on
+    -- the player and are exempt.
+    if ctx7 == park_ctx7 and ctx7 ~= 0x00 and ctx7 ~= 0xFF then
         park_since = park_since + 1
     else
-        park_c6d8, park_since = nil, 0
+        park_ctx7, park_since = ctx7, 0
     end
 
     local row = { vsync, scene_name(), string.format("0x%02X", ctx7), c6d8, c276 }
@@ -178,9 +183,9 @@ local function on_vsync()
 
     if park_since == PARK_N and not triggered then
         triggered = true
-        note = "PARK"
-        write_wedge("PARK (0x51 frozen)", string.format(
-            "ctx+0x6D8 frozen at %d for %d vsyncs, ctx+0x276=0", c6d8, PARK_N))
+        note = string.format("PARK 0x%02X", ctx7)
+        write_wedge(string.format("PARK (ctx7=0x%02X held %d vsyncs)", ctx7, PARK_N),
+            string.format("c6d8=%d c276=%d", c6d8, c276))
     end
     if triggered and park_since == 0 and not any_absorb then
         triggered = false

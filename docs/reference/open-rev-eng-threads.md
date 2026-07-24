@@ -132,12 +132,30 @@ none reading the pool `word1` high half. So `attr` (real per-vertex data) is ign
 
 ### Endless orbit - what remains open
 
-The mechanism is settled: the park is state `0x51`, whose exit countdown
-`FUN_801E7250` gates at `0x801E604C`, and a party slot holding
-`+0x14C != +0x172` with the pending-delta accumulator `+0x10 == 0` holds it
-forever - the orbit is only the unconditional idle azimuth sweep
-(`FUN_801D0748` stepping `_DAT_8007B792`). Mechanism, branch, and repro:
-[battle-action.md](../subsystems/battle-action.md#the-0x51-exit-gate-and-the-hp-bar-settle-invariant).
+The orbit is only the unconditional idle azimuth sweep (`FUN_801D0748`
+stepping `_DAT_8007B792`); behind it sit **two distinct park classes**, and
+the one caught from ordinary play is not the one this thread started on:
+
+- **State `0x19` (attack approach) - caught live, no interventions.** A
+  human playing the Gaza 2 fight at dynarec speed under the poll-only
+  `autorun_gaza2_park_hunter.lua` hit it and savestated the frozen moment
+  (scenario `battle_gaza2_park_0x19`). The boss's physical attack reached
+  `0x19` still ~556 units from its target with the walk phase never having
+  engaged; `0x19` has no movement code and its not-in-range path only bumps
+  the stall counter `ctx[+0x6D4]`, so it re-polls `FUN_8004E2F0` forever.
+  Full anatomy:
+  [battle-action.md](../subsystems/battle-action.md#the-0x19-attack-approach-park---a-second-distinct-softlock-class).
+  Open: why `0x14`/`0x16` handed off without walking (the `0x0C -> 0x14 ->
+  0x19` transition took ~3 vsyncs), and what built the wedged round queue
+  (all four combatants simultaneously parked in approach states, two of
+  them holding target `8`, which the range check rejects by construction).
+- **State `0x51` (HP-readout settle)** - mechanism fully decoded and
+  reproducible by injection
+  ([battle-action.md](../subsystems/battle-action.md#the-0x51-exit-gate-and-the-hp-bar-settle-invariant)),
+  generators measured out on this fight; still unobserved from retail-only
+  play. The community live-park exhibit (JP screenshot) is now more likely
+  a `0x19`-class park - its healthy-looking readout needs no HP desync
+  under that reading.
 
 What fell: the clamp asymmetry only amplifies a pre-existing offset, and a
 three-capture Lost-Grail campaign (twelve retail revives, zero harness HP
