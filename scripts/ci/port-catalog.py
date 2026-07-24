@@ -280,6 +280,9 @@ QUAL_CALL_RE = re.compile(r"\b([A-Za-z_]\w*)\s*::\s*([A-Za-z_]\w*)")
 METHOD_CALL_RE = re.compile(r"\.\s*([A-Za-z_]\w*)\s*\(")
 BARE_CALL_RE = re.compile(r"(?<![.\w])([A-Za-z_]\w*)\s*\(")
 IDENT_RE = re.compile(r"(?<![.\w])([A-Za-z_]\w*)\b")
+# A `:` that is a field separator, not the `::` of a path. Used by the strict
+# graph to drop struct fields from the bare-identifier (function-value) edge.
+FIELD_COLON_RE = re.compile(r"\s*:(?!:)")
 # The disclosure marker is written in caps by convention (`NOT WIRED:` /
 # `**NOT WIRED**`). Matching case-insensitively pulls in ordinary prose - one
 # module doc says "Consumers (not wired here):" while describing retail, which
@@ -712,6 +715,7 @@ def collect_roots(srcs: dict[Path, RustSource]) -> list[RustFn]:
 
 def build_rust_graph(
     srcs: dict[Path, RustSource],
+    strict: bool = False,
 ) -> tuple[list[RustFn], dict[int, set[int]]]:
     """Name-resolved forward call graph over every non-test `fn` body.
 
@@ -727,6 +731,42 @@ def build_rust_graph(
       field holding a callback. Methods are deliberately excluded here: a local
       binding named `new` or a field named `id` would otherwise link to every
       `Type::new` / `Type::id` in the workspace.
+
+    ## The two graphs, and why sharpening this one in place would be wrong
+
+    `strict=False` (the default) is the permissive graph described above, and it
+    is what every `live` / `--not-live` verdict is read off. Its
+    over-approximation is load-bearing: biasing every ambiguity toward
+    "reachable" is what makes the not-live list a hard floor, so an address it
+    calls inert is one no plausible edge could reach.
+
+    That same bias is wrong for the opposite question. `--live-audit`'s "tagged
+    `NOT WIRED` but analysed live" section asks whether a disclosure is stale,
+    and there a spurious edge manufactures a false accusation: one
+    `session.tick(...)` reaching all 63 in-tree `tick`, one `new(` reaching all
+    192 `new`. Measured over the whole tree, 54 of 55 rows in that section were
+    false edges rather than stale tags.
+
+    So `strict=True` builds a *second* graph with the two sharpenings that
+    ambiguity allows, and only the stale-tag test reads it. Nothing is traded:
+    each direction consults the graph whose error mode is safe for it. (An
+    earlier attempt applied the receiver gate to the single shared graph and was
+    reverted for exactly the reason above - it is the sharing, not the gate,
+    that was the mistake.)
+
+    The two sharpenings, both of which only ever *remove* edges:
+
+    1. **Struct fields are not function values.** An identifier immediately
+       followed by `:` - and not `::` - is a field declaration or a struct
+       literal key, so it cannot be a function value reaching `map`. Without
+       this the field `stat_deltas` links to a free `stat_deltas` in another
+       crate.
+    2. **A receiver gate on ambiguous method edges.** A `.name(...)` or
+       `name(...)` edge onto an `impl Type` method survives only if the calling
+       file names `Type` at all, or defines the method itself. A file that never
+       writes `EscapeTimer` cannot be calling `EscapeTimer::tick`. Free
+       functions and `Qual::name` edges are untouched - they are already
+       resolved.
     """
     fns: list[RustFn] = []
     for src in srcs.values():
@@ -762,6 +802,37 @@ def build_rust_graph(
     # resolves toward reachability. Keeping the graph purely
     # over-approximating is what makes `--not-live` a hard floor.
 
+    # Receiver gate (strict only): the set of type names each file mentions
+    # anywhere in its own stripped source. A method edge into `impl Type` is
+    # kept only if the calling file names `Type`, or defines that method.
+    named_types: dict[Path, set[str]] = {}
+    if strict:
+        all_impl_types = {f.impl_type for f in fns if f.impl_type}
+        for p, s in srcs.items():
+            words = set(IDENT_RE.findall(s.stripped))
+            named_types[p] = words & all_impl_types
+
+    def gated(caller: RustFn, cands: list[RustFn]) -> list[RustFn]:
+        """Apply the receiver gate, but only where there is ambiguity to resolve.
+
+        A method name with exactly one definition in the tree is already
+        unambiguous, so the gate has nothing to decide and must not fire: the
+        receiver is routinely a local binding whose type the calling file never
+        spells (`ctrl.run_horizon_emitter(..)`), and gating on the spelling
+        would drop a real edge. Dropping a real edge is the one failure mode
+        this graph must not have - it converts a correct `NOT WIRED` disclosure
+        into a silent omission from the audit.
+        """
+        if not strict or len(cands) < 2:
+            return cands
+        return [
+            c
+            for c in cands
+            if not c.impl_type
+            or c.path == caller.path
+            or c.impl_type in named_types.get(caller.path, ())
+        ]
+
     edges: dict[int, set[int]] = defaultdict(set)
     for src in srcs.values():
         for f in src.fns:
@@ -786,14 +857,21 @@ def build_rust_graph(
                 targets.update(c.uid for c in cands)
             for m in METHOD_CALL_RE.finditer(body):
                 consumed.add(m.span(1))
-                targets.update(c.uid for c in methods_by_name.get(m.group(1), []))
+                targets.update(
+                    c.uid for c in gated(f, methods_by_name.get(m.group(1), []))
+                )
             for m in BARE_CALL_RE.finditer(body):
                 if m.span(1) in consumed or m.group(1) in RUST_KEYWORDS:
                     continue
                 consumed.add(m.span(1))
-                targets.update(c.uid for c in by_name.get(m.group(1), []))
+                targets.update(c.uid for c in gated(f, by_name.get(m.group(1), [])))
             for m in IDENT_RE.finditer(body):
                 if m.span(1) in consumed or m.group(1) in RUST_KEYWORDS:
+                    continue
+                # A field declaration (`name: Type`) or a struct-literal key
+                # (`Foo { name: v }`) is not a function value. `::` is not a
+                # field separator, so exclude it from the lookahead.
+                if strict and FIELD_COLON_RE.match(body, m.end(1)):
                     continue
                 targets.update(c.uid for c in free_by_name.get(m.group(1), []))
             targets.discard(f.uid)
@@ -922,6 +1000,7 @@ def compute_live(
     srcs: dict[Path, RustSource],
     fns: list[RustFn],
     reach: set[int],
+    reach_strict: set[int] | None = None,
 ) -> dict[str, dict]:
     """Resolve each anchor to live / not, then fold up to `{addr: ...}`.
 
@@ -930,6 +1009,12 @@ def compute_live(
     retail behaviour to be on the frame path. The per-anchor verdicts stay on
     the row so `--live-audit` can report at the granularity a `NOT WIRED:` tag
     is actually written at.
+
+    `reach_strict`, when supplied, is the same resolution run against the
+    receiver-gated graph (`build_rust_graph(strict=True)`). It sets a second
+    verdict, `live_strict`, which nothing but the stale-`NOT WIRED` test reads -
+    see that function's docstring for why the two questions need two graphs.
+    Absent it, `live_strict` mirrors `live`.
     """
     # A module anchor's scope is the file. But `foo.rs` next to a `foo/`
     # directory is often a pure module-declaration file with no `fn` of its
@@ -937,26 +1022,37 @@ def compute_live(
     # it. Reading such a file's `//! PORT:` block against an empty function
     # set reports the whole field VM inert, which is wrong. When the file
     # defines no non-test `fn`, widen the scope to its submodule subtree.
-    module_live: dict[Path, bool] = {}
-    for p, s in srcs.items():
-        own = [f for f in s.fns if not f.is_test]
-        if own:
-            module_live[p] = any(f.uid in reach for f in own)
-            continue
-        # `lib.rs` / `main.rs` / `mod.rs` own the directory they sit in;
-        # `foo.rs` owns the sibling `foo/`.
-        subtree = p.parent if p.stem in ("lib", "main", "mod") else p.parent / p.stem
-        module_live[p] = any(
-            f.uid in reach
-            for q, s2 in srcs.items()
-            if q.is_relative_to(subtree)
-            for f in s2.fns
-            if not f.is_test
-        )
-    type_live: dict[tuple[Path, str], bool] = defaultdict(bool)
-    for f in fns:
-        if f.impl_type and not f.is_test and f.uid in reach:
-            type_live[(f.path, f.impl_type)] = True
+    def module_scope(reached: set[int]) -> dict[Path, bool]:
+        out: dict[Path, bool] = {}
+        for p, s in srcs.items():
+            own = [f for f in s.fns if not f.is_test]
+            if own:
+                out[p] = any(f.uid in reached for f in own)
+                continue
+            # `lib.rs` / `main.rs` / `mod.rs` own the directory they sit in;
+            # `foo.rs` owns the sibling `foo/`.
+            sub = p.parent if p.stem in ("lib", "main", "mod") else p.parent / p.stem
+            out[p] = any(
+                f.uid in reached
+                for q, s2 in srcs.items()
+                if q.is_relative_to(sub)
+                for f in s2.fns
+                if not f.is_test
+            )
+        return out
+
+    def type_scope(reached: set[int]) -> dict[tuple[Path, str], bool]:
+        out: dict[tuple[Path, str], bool] = defaultdict(bool)
+        for f in fns:
+            if f.impl_type and not f.is_test and f.uid in reached:
+                out[(f.path, f.impl_type)] = True
+        return out
+
+    module_live = module_scope(reach)
+    type_live = type_scope(reach)
+    strict_on = reach_strict is not None
+    module_live_s = module_scope(reach_strict) if strict_on else module_live
+    type_live_s = type_scope(reach_strict) if strict_on else type_live
     # Which types the file gives an `impl` block to at all. A tag on a plain
     # data struct - no `impl`, its behaviour in free functions or in an `impl`
     # of some *other* type in the same file - has no method for the rule above
@@ -966,19 +1062,28 @@ def compute_live(
     for p, s in srcs.items():
         for _a, _b, ty, _tr in s.impl_spans:
             typed_in_file[p].add(ty)
+    def verdict(e: dict, reached: set[int], mods, types) -> bool:
+        if e["kind"] == "fn":
+            return e["fn_uid"] in reached
+        if e["kind"] == "type":
+            hit = types.get((e["path"], e["type_name"]), False)
+            if not hit and e["type_name"] not in typed_in_file[e["path"]]:
+                hit = mods.get(e["path"], False)
+            return hit
+        return mods.get(e["path"], False)
+
     out: dict[str, dict] = {}
     for addr, entries in anchors.items():
         for e in entries:
-            if e["kind"] == "fn":
-                e["live"] = e["fn_uid"] in reach
-            elif e["kind"] == "type":
-                e["live"] = type_live.get((e["path"], e["type_name"]), False)
-                if not e["live"] and e["type_name"] not in typed_in_file[e["path"]]:
-                    e["live"] = module_live.get(e["path"], False)
-            else:
-                e["live"] = module_live.get(e["path"], False)
+            e["live"] = verdict(e, reach, module_live, type_live)
+            e["live_strict"] = (
+                verdict(e, reach_strict, module_live_s, type_live_s)
+                if strict_on
+                else e["live"]
+            )
         out[addr] = {
             "live": any(e["live"] for e in entries),
+            "live_strict": any(e["live_strict"] for e in entries),
             "anchors": entries,
             "not_wired_tag": any(e["not_wired_tag"] for e in entries),
         }
@@ -1256,7 +1361,10 @@ def summarize(rows: list[dict]) -> str:
         n_a_undisclosed = sum(
             1 for _, a in pairs if not a["live"] and not a["not_wired_tag"]
         )
-        n_stale = sum(1 for _, a in pairs if a["live"] and a["not_wired_tag"])
+        # Stale-tag is the one question read off the receiver-gated graph:
+        # a spurious edge here manufactures a false accusation against a
+        # correct disclosure. See build_rust_graph.
+        n_stale = sum(1 for _, a in pairs if a["live_strict"] and a["not_wired_tag"])
         live_block = [
             "",
             f"ported + live  (reachable from a host root)     : {n_live}",
@@ -1308,7 +1416,7 @@ def render_live_audit(rows: list[dict], out_path: Path | None) -> str:
     pairs = [
         (r, a) for r in rows if r["ported"] and r["live_known"] for a in r["anchors"]
     ]
-    stale = [(r, a) for r, a in pairs if a["live"] and a["not_wired_tag"]]
+    stale = [(r, a) for r, a in pairs if a["live_strict"] and a["not_wired_tag"]]
     undisclosed = [(r, a) for r, a in pairs if not a["live"] and not a["not_wired_tag"]]
     disclosed = [(r, a) for r, a in pairs if not a["live"] and a["not_wired_tag"]]
 
@@ -1752,7 +1860,17 @@ def main() -> int:
         fns, edges = build_rust_graph(srcs)
         roots = collect_roots(srcs)
         reach = reachable_fns(fns, edges, roots)
-        live_map = compute_live(collect_port_anchors(srcs), srcs, fns, reach)
+        # Second, receiver-gated pass. Only the stale-`NOT WIRED` test reads it;
+        # every `live` / `--not-live` verdict stays on the permissive graph so
+        # the not-live list keeps its hard-floor property. Built only for the
+        # audit, which is the sole consumer.
+        reach_strict = None
+        if args.live_audit:
+            _, edges_s = build_rust_graph(srcs, strict=True)
+            reach_strict = reachable_fns(fns, edges_s, roots)
+        live_map = compute_live(
+            collect_port_anchors(srcs), srcs, fns, reach, reach_strict
+        )
 
     rows = build_rows(dumped, refs, sources, docs, ports, ignore=ignore, live=live_map)
 

@@ -53,25 +53,59 @@ coarse to tell them apart.
 
 ## What that means for the reachability pass
 
-Fixing this is a change to `scripts/ci/port-catalog.py`, not to any tag, and it
-is worth separating from the over-approximation the graph is deliberately built
-on. Three sharpenings, in increasing cost:
+Fixing this is a change to `scripts/ci/port-catalog.py`, not to any tag. Two of
+the three sharpenings below are implemented; the third is not.
 
-1. **Exclude struct fields from the bare-identifier edge.** A `name:` inside a
-   struct literal or a `self.name` projection is not a function value. This is a
-   pure false-positive removal with no reachability cost.
-2. **Gate an ambiguous `.name(` / `name(` edge on the calling file naming the
-   callee's type.** If `boot_title.rs` never writes `EscapeTimer`, no edge from
-   it can land on `EscapeTimer::tick`. This keeps the graph over-approximating
-   within a file's own vocabulary while dropping cross-crate collisions on
-   `new` / `tick`.
-3. **Report a module anchor at the granularity the tag claims.** When a
-   `//! PORT:` tag names specific addresses and the module doc marks specific
-   items `NOT WIRED`, the live verdict should be read off those items, not off
-   any function in the file.
+### The two-graph split (implemented)
 
-Until then, the audit's first section is a prompt, and this page is the
-answer for the rows it currently lists.
+Sharpening the single shared graph would be wrong, and was tried and reverted
+once for that reason. The over-approximation is load-bearing for `--not-live`:
+biasing every ambiguity toward "reachable" is what makes the not-live list a
+hard floor. It is only *this* question - is a disclosure stale - where a
+spurious edge does damage, by manufacturing a false accusation against a correct
+tag.
+
+So `build_rust_graph(strict=True)` builds a **second** graph and only the
+stale-tag test reads it. Every `live` / `--not-live` / `--live-only` verdict
+stays on the permissive graph, unchanged. Nothing is traded: each question
+consults the graph whose error mode is safe for it.
+
+1. **Struct fields are excluded from the bare-identifier edge.** An identifier
+   immediately followed by `:` - and not `::` - is a field declaration or a
+   struct-literal key, so it is not a function value reaching `map`. Without it
+   the field `stat_deltas` links to a free `stat_deltas` in another crate.
+2. **Ambiguous method edges take a receiver gate.** A `.name(...)` or
+   `name(...)` edge onto an `impl Type` method survives only if the calling file
+   names `Type`, or defines the method itself.
+
+   The gate fires **only where the name is ambiguous** (more than one candidate
+   definition). That qualifier is not cosmetic: a receiver is routinely a local
+   binding whose type the calling file never spells, as in
+   `ctrl.run_horizon_emitter(..)`. Gating an already-unambiguous name on the
+   spelling drops a real edge - which silently removes a correct row from this
+   audit, the one failure mode the strict graph must not have. Applying the gate
+   unconditionally lost `801d7ea0`, the single genuine stale tag on this page.
+
+Measured over the whole tree, the two together take the audit's first section
+from 78 rows to 26, with `801d7ea0` still reported and every FALSE-EDGE row on
+this page cleared.
+
+### Anchor granularity (not implemented)
+
+**Report a module anchor at the granularity the tag claims.** When a `//! PORT:`
+tag names specific addresses and the module doc marks specific items
+`NOT WIRED`, the live verdict should be read off those items, not off any
+function in the file.
+
+This is a different defect from edge inference and it is what most of the
+residual 26 rows now are: a file whose tagged state machine is inert while some
+small helper or trait impl in the same file is legitimately reachable
+(`card_flow.rs`, `cutscene_script_elements.rs`, `vram_rect_copy.rs`). Closing it
+needs the `PORT:` tag to carry item-level information, or a rule for reading a
+module tag against inherent methods only - and the rows below were triaged by
+hand against the pre-fix output, so there is no ground truth here to validate a
+heuristic against. Until then those rows stay a prompt, and this page is the
+answer for them.
 
 ## Rows
 
