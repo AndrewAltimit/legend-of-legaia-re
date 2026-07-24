@@ -76,7 +76,8 @@
 --   LEGAIA_AUTOPILOT     press the next macro button every N vsyncs (0 = off)
 --   LEGAIA_AUTOPILOT_SEQ comma-separated button cycle
 --   LEGAIA_EQUIP_GRAIL   party seat 0..2 whose accessory slot 7 becomes the
---                        Lost Grail (0xE7) at vsync 60, or -1 = no poke
+--                        Lost Grail (0xE7) at vsync 60, 3 = all three seats,
+--                        or -1 = no poke
 --                        (default -1). If the per-frame aggregator does not
 --                        derive ability bit 0x27 within 600 vsyncs (measured:
 --                        FUN_80042558 is not ticked during battle, so an
@@ -403,8 +404,11 @@ probe.run{
         g_elapsed = v
         if not armed and v >= 2 then armed = arm_bps() end
 
-        if EQUIP_GRAIL >= 0 and EQUIP_GRAIL <= 2 then
-            if not grail_poked_at and v >= 60 then poke_grail(EQUIP_GRAIL) end
+        if EQUIP_GRAIL >= 0 and EQUIP_GRAIL <= 3 then
+            local seats = EQUIP_GRAIL == 3 and { 0, 1, 2 } or { EQUIP_GRAIL }
+            if not grail_poked_at and v >= 60 then
+                for _, s in ipairs(seats) do poke_grail(s) end
+            end
             -- Verify the retail aggregator derived the Final Heal gate bit
             -- (record +0xF8 bit 7) from the poked equipment id. Measured: the
             -- aggregator FUN_80042558 is not ticked during battle, so after a
@@ -412,32 +416,36 @@ probe.run{
             -- aggregation of the same equipment would have left - and from
             -- then on only watches it. A later clear would mean something in
             -- battle does rebuild the bitfield, and is logged as such.
-            if grail_poked_at and v % 30 == 0 then
-                local pid = u8(PARTY_ID_TBL + EQUIP_GRAIL)
-                local rec = CHAR_REC + (pid - 1) * 0x414
-                local w1 = u32(rec + 0xF8)
-                local bit_set = w1 % 0x100 >= 0x80
-                if not grail_bit_seen then
-                    if bit_set then
-                        grail_bit_seen = v
+            if grail_poked_at and v % 6 == 0 then
+                for _, s in ipairs(seats) do
+                    local pid = u8(PARTY_ID_TBL + s)
+                    local rec = CHAR_REC + (pid - 1) * 0x414
+                    local w1 = u32(rec + 0xF8)
+                    local bit_set = w1 % 0x100 >= 0x80
+                    if not grail_bit_seen then grail_bit_seen = {} end
+                    if not grail_bit_seen[s] then
+                        if bit_set then
+                            grail_bit_seen[s] = v
+                            PCSX.log(string.format(
+                                "[discard] vsync=%d seat %d ability bit 0x27 live " ..
+                                "(+0xF8=0x%08X)", v, s, w1))
+                        elseif v - grail_poked_at >= 600 then
+                            probe.write_u8(rec + 0xF8, (w1 % 0x100) + 0x80)
+                            grail_bit_seen[s] = v
+                            PCSX.log(string.format(
+                                "[discard] vsync=%d seat %d: seeded ability bit 0x27 " ..
+                                "(+0xF8 0x%02X -> 0x%02X), mirroring pre-battle " ..
+                                "aggregation of the equipped grail",
+                                v, s, w1 % 0x100, (w1 % 0x100) + 0x80))
+                        end
+                    elseif not bit_set then
                         PCSX.log(string.format(
-                            "[discard] vsync=%d ability bit 0x27 live (+0xF8=0x%08X)",
-                            v, w1))
-                    elseif v - grail_poked_at >= 600 then
-                        probe.write_u8(rec + 0xF8, (w1 % 0x100) + 0x80)
-                        grail_bit_seen = v
-                        PCSX.log(string.format(
-                            "[discard] vsync=%d aggregator never ran in-battle; " ..
-                            "seeded ability bit 0x27 once (+0xF8 0x%02X -> 0x%02X), " ..
-                            "mirroring pre-battle aggregation of the equipped grail",
-                            v, w1 % 0x100, (w1 % 0x100) + 0x80))
+                            "[discard] vsync=%d seat %d: ability bit 0x27 CLEARED " ..
+                            "(+0xF8=0x%08X) - an in-battle aggregator pass rebuilt the " ..
+                            "bitfield (or the revive consumed the grail); re-seeding next poll",
+                            v, s, w1))
+                        grail_bit_seen[s] = nil
                     end
-                elseif not bit_set then
-                    PCSX.log(string.format(
-                        "[discard] vsync=%d WARNING: ability bit 0x27 was CLEARED " ..
-                        "(+0xF8=0x%08X) - something does rebuild the bitfield in-battle",
-                        v, w1))
-                    grail_bit_seen = nil
                 end
             end
         end
@@ -556,10 +564,13 @@ probe.run{
         add("")
         add("-- Lost Grail (Final Heal) instrumentation --")
         if EQUIP_GRAIL >= 0 then
-            add("  grail poked onto seat %d at vsync %s; ability bit 0x27 %s",
-                EQUIP_GRAIL, tostring(grail_poked_at),
-                grail_bit_seen and string.format("derived by vsync %d", grail_bit_seen)
-                    or "NEVER derived (poke did not take)")
+            add("  grail poke mode %d at vsync %s", EQUIP_GRAIL, tostring(grail_poked_at))
+            for s = 0, 2 do
+                local at = grail_bit_seen and grail_bit_seen[s]
+                if at then
+                    add("  seat %d ability bit 0x27 live since vsync %d", s, at)
+                end
+            end
         else
             add("  no equip poke requested")
         end
