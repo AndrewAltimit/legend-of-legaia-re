@@ -39,38 +39,18 @@ files cover the VA, each one's resolved `entry=`, image, instruction count,
 whether the body contains `jr ra`, and the trailing jump target if any. That is
 the fastest way to audit a verdict without opening the dumps.
 
-`--audit-ignored` re-classifies the rows the ignore list has already absorbed
-under a `worklist_*` category and reports any that no longer read non-portable,
-exiting non-zero if there are any. Once a row is ignored it leaves the worklist,
-so nothing else would ever re-examine it - and an ignore is exactly the verdict
-that costs a real port site when it is wrong. Re-run it whenever the dump corpus
-gains an image, because the usual way a merged verdict goes stale is a later
-dump taken at a base the earlier run did not have.
+`--audit-ignored` re-examines the rows the ignore list has already absorbed
+under a `worklist_*` category and re-raises the ones that read as wrong, exiting
+non-zero if there are any. Once a row is ignored it leaves the worklist, so
+nothing else would ever re-examine it - and an ignore is exactly the verdict that
+costs a real port site when it is wrong. Re-run it whenever the dump corpus gains
+an image, because the usual way a merged verdict goes stale is a later dump taken
+at a base the earlier run did not have.
 
-### Reading an `--audit-ignored` re-raise
-
-A re-raise is a prompt, not a verdict. Most are the audit and the merged reason
-agreeing in different words, and two shapes account for nearly all of them:
-
-- **`REAL: self-entry body of N instructions returning `jr ra`` on a
-  `worklist_misbased_print` row.** The body *is* real - just not at that VA. The
-  entry test reads the dump's own instruction stream, which a mis-based print
-  reproduces faithfully; nothing in that stream records the base error. Confirm
-  by finding the dump's opening words in an extracted image and reading the VA
-  they actually occupy. If the merged reason already names that VA, leave it.
-- **`UNCERTAIN` restating the row's own evidence** - "every dump at this VA is
-  mis-based", "decodes data as code", "dump carries no disassembly", "gapped
-  instruction stream". `UNCERTAIN` sits outside `NON_PORTABLE`, so it re-raises
-  even when it is the finding the row was merged on.
-
-The rows worth opening are the ones where the classifier can see something the
-merged reason could not:
-
-- a `worklist_interior` or `worklist_data` row whose VA is a `jr ra`-preceded
-  prologue in an extracted image at its mapped base - the merged reason was read
-  off one image and a different image holds a real entry;
-- `every dump at this VA is of <image>; no second dumped body here`, which
-  withdraws a `VA_ALIASED` reading and leaves the plain entry test standing.
+The audit does **not** simply re-run the classifier over an absorbed row: that
+re-derives the row's own evidence and reads agreement as disagreement.
+[What an `--audit-ignored` re-raise means](#what-an---audit-ignored-re-raise-means)
+gives the test order and the two noise shapes it exists to suppress.
 
 The decisive check is neither the dump nor the reason string: disassemble the
 mapped image at the VA and look for the `jr ra` / `addiu sp,sp,-N` pair around
