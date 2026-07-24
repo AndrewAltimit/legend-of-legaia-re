@@ -407,7 +407,11 @@ Both walk ops probe through `FUN_801cf8ac`, and its only subject is the
 **player actor** - not the walkability grid, and not other NPCs. The
 directional steps probe the single `DAT_801F2254` compass point for their
 heading index; the wander probes the three-point fan of `DAT_801F21B4` row
-`dir` through `FUN_801d5a68`, which ORs three `FUN_801cf8ac` calls. Both
+`dir` through `FUN_801d5a68`, which reads the row's `+0x00 / +0x04 / +0x08`
+pairs (the row is `0x10` bytes wide and its fourth pair is never read), calls
+`FUN_801cf8ac` on each and returns the bitwise **or** of the three - so any one
+point hitting the player refuses the step. That fan is the engine's
+`AmbientPlayerProbe::wander_blocked`. Both
 apply the shared `(x + dx, z - dz)` convention around the walking actor and
 accept a hit inside the ±40 moving-actor box. These are the same two tables
 the player's own locomotion reads (see

@@ -72,6 +72,16 @@ impl vm::ambient_motion::AmbientBlocking for AmbientPlayerProbe {
         self.hit(x, z, dx, dz)
     }
 
+    /// The wander fan, which retail hoists into its own routine.
+    ///
+    /// `FUN_801d5a68(actor, dir)` indexes `DAT_801F21B4` at `dir * 0x10`,
+    /// reads three `(i16 dx, i16 dz)` pairs from `+0x00 / +0x04 / +0x08` of
+    /// that row, calls `FUN_801cf8ac(actor, dx, dz)` on each, and returns the
+    /// bitwise **or** of the three results - so any one of the fan's three
+    /// points hitting the player refuses the step. The row's fourth pair
+    /// (`+0x0C`) is never read.
+    ///
+    /// PORT: FUN_801d5a68
     fn wander_blocked(&self, x: i16, z: i16, dir4: u8) -> bool {
         FIELD_ACTOR_PROBES[usize::from(dir4) & 3]
             .iter()

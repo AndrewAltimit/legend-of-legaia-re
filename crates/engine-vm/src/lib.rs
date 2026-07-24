@@ -102,9 +102,11 @@ pub mod field;
 /// engine's existing `legaia_engine_vm::field_disasm` / `crate::field_disasm`
 /// paths keep working.
 pub use legaia_asset::field_disasm;
+pub mod field_actor_billboard;
 pub mod field_actor_reflect;
 pub mod field_helpers;
 pub mod field_ledge_hop_arc;
+pub mod field_passive_hud;
 pub mod field_state_pick;
 pub mod menu;
 pub mod menu_actor_seed;

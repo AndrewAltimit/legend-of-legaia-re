@@ -2,8 +2,13 @@
 //! reserves for its streamed cue, free the SEQ resource slot behind it, and
 //! clear the two globals that track it.
 //!
-//! PORT: FUN_801d8450
 //! REF: FUN_800653C8, FUN_8001FF58
+//!
+//! The port of `FUN_801d8450` itself is [`field_audio_release_steps`], which
+//! carries the `PORT` tag and its own wiring disclosure. The tag deliberately
+//! does **not** repeat at module level: a `//!  PORT:` line makes the whole
+//! file a second, coarser anchor for the same address, and that anchor has no
+//! disclosure of its own.
 //!
 //! # Provenance, and a correction
 //!

@@ -2,7 +2,10 @@
 //! actor's pose onto a second actor across an axis-aligned mirror line, and
 //! flips the facing angle to match.
 //!
-//! PORT: FUN_801e5154
+//! The port of `FUN_801e5154` is [`tick_reflection`], which carries the `PORT`
+//! tag and its own wiring disclosure. It is deliberately not repeated at module
+//! level - a `//!  PORT:` line makes the whole file a second, coarser anchor for
+//! the same address, with no disclosure of its own.
 //!
 //! # Provenance and why the old readings were wrong
 //!
