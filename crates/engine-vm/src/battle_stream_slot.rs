@@ -75,14 +75,15 @@ pub fn decode_request(request: u8) -> Option<(StreamFile, u8)> {
     }
 }
 
-/// Byte offset of a slot from the start of its file.
+/// Byte offset of a slot from the start of its file - retail builds it as
+/// `((i << 5) + i) << 11` in the seek call's argument slots
+/// (`0x801F1948..0x801F1954`).
 ///
-/// PORT: FUN_801F17F8 (the seek operand, `0x801F1948..0x801F1954`)
-/// NOT WIRED: the engine has no slot-at-a-time CD streamer. Retail reaches
-/// this from the battle scene loader `FUN_800520F0` case `0xFF`, whose port
-/// (`engine-core::overlay_loader::battle_stage_overlay_entry`) is itself
-/// inert, and the side-band files are read whole off the extracted PROT
-/// entries by `legaia_asset::summon_readef` instead of a slot at a time.
+/// Not a separate port anchor: it is one arithmetic expression inside
+/// [`StreamSlotSm::step`], which carries the `// PORT:` tag and the wiring
+/// disclosure for the whole sequencer.
+///
+/// REF: FUN_801F17F8
 pub fn slot_offset(index: u8) -> u32 {
     u32::from(index) * SLOT_BYTES
 }

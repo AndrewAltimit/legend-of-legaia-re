@@ -210,6 +210,12 @@ pub fn accumulate_pending(pending: i32, display: u16, delta: i32) -> i32 {
 /// without an external HP write.
 ///
 /// PORT: FUN_800402F4 (the `actor[+0x10] = -delta` seeds)
+/// NOT WIRED: the engine has no port of `FUN_800402F4`'s item / restore
+/// applier as a distinct entry point - item effects and revives land through
+/// `engine-core`'s `World::apply_battle_hp_delta`, which seeds with the
+/// **accumulating** convention. Nothing therefore calls the assigning one.
+/// Wiring it needs the item-effect applier itself ported with its own seed
+/// site, not a new caller for this leaf.
 pub fn assign_pending(delta: i16) -> i32 {
     -i32::from(delta)
 }
@@ -222,6 +228,11 @@ pub fn assign_pending(delta: i16) -> i32 {
 /// width: `+0x178` is read `lh`, a signed halfword.
 ///
 /// PORT: FUN_80047430 (party arm of the MP readout ramp)
+/// NOT WIRED: there is no MP readout to move. [`crate::battle_action::BattleActor`]
+/// carries live `mp` (`+0x150`) and `last_mp_cost` (`+0x178`) but no
+/// `mp_display` (`+0x174`), and the battle HUD draws live MP directly. Adding
+/// the field without a consumer would be dead state, so the missing
+/// prerequisite is an MP readout in the HUD, not a caller for this leaf.
 pub fn party_mp_step(display: u16, pending: i16) -> BarStep {
     let st = party_bar_step(display, i32::from(pending));
     BarStep {
@@ -264,6 +275,12 @@ pub fn monster_mp_step(display: u16, pending: i16) -> BarStep {
 /// Returns the clamped delta.
 ///
 /// PORT: FUN_801E09F8 (the enemy-cast damage clamp at `0x801E1924`)
+/// NOT WIRED: its call site is inside the **unported tail** of
+/// `FUN_801E09F8` - the per-slot effect-child driver that runs past the
+/// census head [`crate::battle_cast_census::cast_census`] covers. The engine's
+/// enemy casts resolve through `engine-core`'s `fold_spell_outcome` into
+/// `World::apply_battle_hp_delta`, which uses the accumulating seed, so the
+/// safe applier has no path to reach. Porting that tail is the prerequisite.
 pub fn clamp_damage_against_live_hp(damage: i32, live_hp: u16) -> i32 {
     damage.min(i32::from(live_hp))
 }
