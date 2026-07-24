@@ -636,7 +636,7 @@ The single most-cited helper inside `FUN_801E295C` (~30 call sites). Signature `
 
 It is a **camera/presentation program driver**, not the animation system: its body dispatches `pose_id` 0..9 through a jump table at `0x801CEA00` computing three i16[3] tween-target vectors handed to `0x801D7130` (with a secondary dispatch on `actor[+0x1DB]` values `0x11..0x18` - per-art camera variants for the dynamically-installed art anims). It never writes `+0x1D9/+0x1DA`; the same-numbered **anim** ids 7/8/9 are staged separately (by the SM's own `+0x1DA` stores and the `FUN_8004AD80` end-of-clip chains), and the anim system's idle id is `0` - pose 6 has no anim counterpart (record[0] entry 6 is empty in every player file). The two id spaces are designed to align numerically at 7/8/9, which is what made the conflated reading stick.
 
-Note that `FUN_801D5854` for `param_2 == 9 && param_1 == 7` (the only path that calls the special-case) writes pose 9 unconditionally and triggers the run-side animation lookup `FUN_801DB9C4`.
+`FUN_801D5854` opens with an **out-of-range guard** (`0x801D58C8..0x801D58E8`, `param_1` = `a0` = actor slot in `s5`, `param_2` = `a1` = pose id in `s4`): when `param_2 >= 6` *and* `param_1 >= 8` - i.e. a real pose requested for a slot outside the 8-entry pool - it forces `param_2 = 9` and calls `FUN_801DB9C4`, which scrubs the `+0x8` flag word across the pool. It is a defensive path, not the run-side animation lookup an earlier reading called it, and the operands are `>= 6` / `>= 8`, not `== 9` / `== 7`.
 
 #### Case `0` - the submenu close-up framing
 
@@ -943,9 +943,14 @@ transcribed from the disassembly (`overlay_battle_action_801db9c4.txt` /
 `_801db318.txt` / `_801d8a88.txt` / `_801d8d00.txt` / `_801db124.txt` /
 `_801db8b4.txt` / `_801dba04.txt` / `_801db81c.txt`, plus `80019b28.txt`).
 
-- **`FUN_801DB9C4` - end-of-action flag scrub.** AND-masks the `+0x8` flag word
-  of pool slots 0..=6 with `0x7CFFFFFF` (clears bit 31 and bits 25/24). This is
-  the state-`0x5A` per-actor anim-flag clear. Port: `clear_end_of_action_flags`.
+- **`FUN_801DB9C4` - pool `+0x8` flag-word scrub.** AND-masks the `+0x8` flag
+  word of pool slots 0..=6 with `0x7CFFFFFF` (clears bit 31 and bits 25/24).
+  Its only static caller in the battle overlay is the pose setter
+  `FUN_801D5854`'s out-of-range guard (`jal` at `0x801D58E8`). It is **not** the
+  state-`0x5A` per-actor anim-flag clear: state `0x5A` runs its own inline mask
+  (`lui a1,0x7cff` at `0x801E6478`, paired with `+0x21F = 0`) and
+  `FUN_801E295C` contains no call to `FUN_801DB9C4`. Port:
+  `clear_pool_flag_words`.
 - **`FUN_801DB318` - formation span-normalise + recentre.** Over the included
   slots (0..2 always, 3.. gated on `+0x14C`), takes the X/Z extents; if an axis
   spans more than `0x800` it rescales every included coordinate by
@@ -1211,7 +1216,7 @@ The player-driven battle Arts submenu (`legaia_engine_core::battle_arts`) models
   Every resident string is byte-identical to `super_art.rs`'s modeled `find` / `replace` fields, and every resident replace preserves its find minus the final `[19, art]` pair then appends `[1A, finisher…]` - the pairing law locked by `super_art.rs`'s `replace_preserves_find_prefix_and_finisher_tail` test.
   So the byte-exact connector strings are no longer spreadsheet-only: the resident-table read validates the *strings* for all 15, and the *runtime queue effect* is live-executed for all 15 too - the in-the-wild Noa Miracle / Vahn Tri-Somersault captures above plus a per-Super applier-injection sweep
   (probe `autorun_super_art_queue_inject.lua`; each post-`FUN_801EF9E4` queue at `actor[+0x1DF]` is byte-identical to `super_art.rs`'s `replace`, re-checkable via the `super_queue_replace_*` library states + `crates/pcsxr/tests/super_art_queue_replace.rs`; see [`super-art-queue-capture.md`](../tooling/super-art-queue-capture.md#result---all-15-supers-live-executed-injection-probe)).
-  The byte-exact matcher itself (`SuperMatcher::try_trigger_at_tail`) is also ported and exercised by `resolve_action_queue`'s tail pass + `battle.rs`'s `commit_turn`.
+  The modeled tables feed the live path through `miracle_row_for` / `super_rows_for`, which project them into the resident row shapes; the queue arithmetic itself is the byte applier's, not `SuperMatcher`'s (see [the retail queue-builder](#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4) below).
 
 ### The retail queue-builder (`FUN_801EED1C`) and Super applier (`FUN_801EF9E4`)
 
@@ -1268,7 +1273,20 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
    `0x801F64F4 + (char_id-1)*0x10` (`addiu a1,v0,0x64f4` at `0x801EF4EC`; `sb v0,0x1df(v1)` at
    `0x801EF518`), i.e. the three resident strings at `0x801F64F4/0x6504/0x6514`, then flags
    `ctx[+0x28D + slot] = 1` and the shared trigger flag `0x801F696C = 1` (`0x801EF5A8`/`0x801EF5B4`).
-4. **Super find→tail-replace (helper call).** At its end (`jal 0x801EF9E4` at `0x801EF9AC`) the
+4. **MSB clear + marked-starter reorder.** After the build loop the builder sweeps the 16-byte
+   queue window clearing bit 7 of every byte (`0x801EF85C..0x801EF898`). It does it with a
+   signed load and an *add*, not an AND: `lb v0,0x1df(a0)` / `lbu v1,0x1df(a0)` /
+   `bgez v0, skip` / `addiu v0,v1,0x80` / `sb v0,0x1df(a0)` - adding `0x80` to a byte that
+   already has bit 7 set wraps it off, so the effect is `& 0x7F`. This is the runtime half of
+   the on-disc MSB quirk: it is what turns the Miracle row's leading `0x8C..0x8F` direction
+   bytes back into `0x0C..0x0F`, and it runs **after** the Miracle copy of step 3 and **before**
+   the Super applier of step 5. A second pass at `0x801EF8A0..0x801EF968` then walks the side
+   array `0x801F6990` and, for each marked index `i > 0` whose queue byte is a `SpecialStarter`
+   (`0x1A`), scans `j < i` and swaps `queue[j]` with `queue[i]` wherever
+   `queue[j + 1] == queue[i + 1]` - no early exit, so the swap can fire more than once per `i`.
+   The marks it reads come from the build loop, not from the Super applier, which runs later.
+   Port: `legaia_engine_vm::battle_action::clear_queue_msb` (the reorder is not ported).
+5. **Super find→tail-replace (helper call).** At its end (`jal 0x801EF9E4` at `0x801EF9AC`) the
    builder invokes **`FUN_801EF9E4`** (file `+0x211CC`;
    `see ghidra/scripts/funcs/overlay_battle_action_801ef9e4.txt`), which measures the queue
    (zero-terminator scan over `+0x1DF..` at `0x801EFA14..0x801EFA30`), then for each of the
@@ -1286,6 +1304,20 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
    the queue** - a replace longer than its find legally spills past byte 16 of the 19-byte
    stream. Byte-level port: `legaia_engine_vm::battle_action::apply_super_tail_replace`
    (equivalence with the structural `SuperMatcher` over the shipped tables is test-asserted).
+   The applier is called **unconditionally**, including after a Miracle replacement - the
+   Miracle row's tail matches no `find` row, so the two do not interact - and it applies at most
+   one replace per builder invocation: the row loop exits on the first full match, and the
+   builder calls it once.
+
+The engine's entry point `legaia_engine_vm::battle_action::resolve_action_queue` - what
+`engine-core` calls once per committed arts input - runs steps 3, 4 and 5 in that order on a raw
+`ACTION_QUEUE_CAP`-wide byte window, so the live path is the byte applier's arithmetic rather
+than the structural `legaia_art` matchers'. Two retail laws that reach the simulation through
+that change: the Super scan takes the **first matching row in resident-table order** (not the
+longest `find`), and it applies **once** (not to a fixpoint). Retail's Miracle gate is the
+per-slot marker `ctx[+0x25F + slot]`, armed by the input recognizer; the engine's stand-in is a
+whole-string match against the character's Miracle command table, because that recognizer
+(`FUN_801E91E8`'s caller) is not ported.
 
 The consuming side is unchanged: the strike loop reads `actor[+0x1DF + +0x15]` and the round
 driver's queue clear runs the `sb zero,0x1df(v0)` loop at `0x801D89D8` inside `FUN_801D88CC`
