@@ -149,6 +149,44 @@ and each is reached from a fishing-overlay caller, not a sibling minigame.
 - `FUN_801d7964` `(x, rgb0, rgb1, y, arg4, arg5)` - colored screen-fade spawn wrapper. Unpacks the two packed 24-bit colours (`rgb0`/`rgb1`, three bytes each) and the coordinate params into an on-stack fade template, then spawns the fade actor via `FUN_80024e80(template, 1)` (the screen-fade primitive spawn). `see ghidra/scripts/funcs/overlay_fishing_801d7964.txt`.
 - `FUN_801d7c84` `(row)` - species-name list drawer. Reads up to four species ids from the venue spawn table `PTR_DAT_801d9114` at index `row*8 + i` (`i = 0..3`), and for each non-`-1` id draws the name pointer at `&DAT_801d81a4 + id*0x28` (the per-species table) via the glyph renderer `FUN_80036888` at `x = 0`, stacking rows 16 px apart from `y = 0x10` at palette `0xa0`. `see ghidra/scripts/funcs/overlay_fishing_801d7c84.txt`.
 
+### Chrome leaves
+
+Five more leaves in the same band carry no fishing rules at all - they reset
+or nudge shared state around the sub-screens. All five are ported as
+`engine-core::fishing_chrome`; the panel geometry of `FUN_801d74b0` above is
+`centred_panel` in the same module.
+
+- `FUN_801d03b0` - idle sway. Samples the shared sine table `*_DAT_8007B81C`
+  at `angle`, `angle + 0x400` and `angle + 0x800` (sine, cosine, negated
+  sine), scales each `>> 8` rounding toward zero and biases it `-0xA`, writes
+  the triple to the render scratch block at `0x1F80035E/60/62` after clearing
+  `0x1F80035C`, and advances the angle at `0x801D9118` by
+  `DAT_1F800393 << 4`. The angle carried forward is **unmasked** - only the
+  table index is folded into a turn.
+- `FUN_801d746c` - catch-slot reset. Clears the count word `0x801D91DC` and
+  both words of all 16 records of the `8`-byte-stride table at `0x801D91E4`.
+  Retail unrolls the loop two words at a time, which is what makes the table
+  `16 * 8` rather than `32 * 4`.
+- `FUN_801d78c0` - venue camera reset. Zeroes the rotation trio
+  `_DAT_8007B790/92/94` and `TR.x` (`_DAT_800840B8`) and parks `TR.z`
+  (`_DAT_800840C0`) at `0x974`. It never touches `TR.y`.
+- `FUN_801d70ec` - float actor wrapper. Calls the height solver
+  `FUN_801d6028`, stores the result into the actor's `+0x16`, clears the
+  dispatcher's `+0x10` bit `2` and re-enters `FUN_800204F8`.
+- `FUN_801d7c30` - ripple spawn. A non-zero mode argument does nothing; mode
+  zero spawns the `0x801D899C` part at the actor's world position, built as
+  `(actor+0x14, 0, actor+0x18)` - the zero is the **middle** component, so
+  the pair is the world XZ and not a screen point.
+
+The splash burst `FUN_801d7a5c` spawns the same part three times and fans them
+apart. Its fourth argument packs a spread into the low 12 bits and a form bit
+at `0x1000`: with the bit set the nudge lands on the spawned part's `+0x80`
+sub-block (`+0x34/+0x36`, by twice the spread on the first part and once on
+the second), with it clear on the part's own `+0x14/+0x16` (first part
+`-spread` on both axes, third `+spread` on x and `-spread` on y). Each form
+leaves one of the three parts unmoved as the burst anchor, and the two forms
+use different rotation-word triples.
+
 ## Scene geometry helpers
 
 The fishing overlay carries its **own copies** of four small geometry

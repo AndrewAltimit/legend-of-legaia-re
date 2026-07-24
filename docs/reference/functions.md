@@ -1000,8 +1000,26 @@ The dev debug menu is the overlay mode 0 (CONFIG) loads (`FUN_80025C68`), reside
 |---|---|
 | `801CE97C` | **Debug-menu per-frame controller.** Runs a ~22-row cursor list (index `_DAT_8007B862`): pad edges move the cursor, adjust the selected row's value, or fire the row action - scene-load (`FUN_8001FC00` / `FUN_8001E54C`), SPU voice key-on/off (`FUN_80026478` / `FUN_800266E0`), sound stop-all (`FUN_80017910` + the `FUN_800653C8` voice loop). Draws labeled readouts through the debug string drawer `FUN_8001A068` and the digit drawer `FUN_8001ABC8`. `see ghidra/scripts/funcs/overlay_debug_menu_801ce97c.txt`. |
 | `801CF338` | **Debug TMD-viewer per-actor tick.** D-pad edits the viewed object's translate/rotate fields (`actor+0x14/+0x16/+0x18/+0x24/+0x26`), sums POLY/VERT counts over the object table at `actor+0x44`, prints the object readouts via `FUN_8001A068`, and cycles the TMD index `_DAT_8007B6E4`, reloading through `FUN_80024E08`. `see ghidra/scripts/funcs/overlay_debug_menu_801cf338.txt`. |
-| `801D0230` | **Debug sub-screen per-frame body.** Advances a fade timer by `DAT_1F800393`, emits a full-screen dim quad via `FUN_80024EE4` when active, draws sub-panels (`FUN_801D13F0` / `FUN_801D1580`), and on a pad edge raises an SFX cue and enters the exit state; tails into the layout-offset helper `FUN_801D03B0`. `see ghidra/scripts/funcs/overlay_debug_menu_801d0230.txt`. |
-| `801CFE20` / `801CFE5C` | Two 15-instruction entry wrappers for the `FUN_801D0230` body; each runs a per-mode setup (`FUN_801D0100` / `FUN_801D0198`) then tail-calls `FUN_801D0230`. `see ghidra/scripts/funcs/overlay_debug_menu_801cfe20.txt`. |
+| `801D0100` | **Sub-screen per-frame body**, and the owner of the `801D0230` bytes - see [below](#801d0100-sub-screen-body). |
+| `801D03B0` | **Sub-screen sway helper.** Leaf, no frame. Samples the shared sine table `*_DAT_8007B81C` at `angle`, `angle + 0x400` and `angle + 0x800`, scales each `>> 8` (round toward zero) and biases it by `-0xA`, writing the triple to the render scratch block `0x1F80035E/60/62` after clearing `0x1F80035C`; then advances the angle at `0x801D9118` by `DAT_1F800393 << 4`. Port `engine-core::fishing_chrome::sway_vector`. `see ghidra/scripts/funcs/overlay_fishing_801d03b0.txt`. |
+| `801CFE20` / `801CFE5C` | Two 15-instruction mode wrappers: `a0 == 0` runs the per-mode setup (`FUN_801D0100` / `FUN_801D0198`), otherwise they call into the `FUN_801D0100` body at `0x801D0230` and return bit 29 / bit 24 of its result. `see ghidra/scripts/funcs/overlay_debug_menu_801cfe20.txt`. |
+
+<a id="801d0100-sub-screen-body"></a>
+
+`0x801D0230` is **interior to `FUN_801D0100`**, not an entry. Disassembling PROT
+0972 at the slot-A base gives a 172-instruction body at `0x801D0100` spanning
+688 bytes - `0x801D0100..0x801D03B0` - which contains it; the dump that starts
+at `0x801D0230` opens `lw a0,-0x6F10(s0)` on a live `s0` with no prologue and
+closes by restoring `s0..s7`/`ra` from a `0x48`-byte frame it never builds.
+The body advances a fade timer by `DAT_1F800393`, emits a full-screen dim quad
+via `FUN_80024EE4`, draws sub-panels (`FUN_801D13F0` / `FUN_801D1580`), raises
+an SFX cue on a pad edge, and tails into `FUN_801D03B0`.
+
+The bytes also do not belong to the debug-menu overlay its dumps are labelled
+with: PROT 0971's own content stops at file `+0x1800`, i.e. VA `0x801D0018`,
+so everything the `overlay_debug_menu_*` dumps print above that address is
+PROT 0972 read through 0971's extraction footprint
+([`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md)).
 
 ## Menu-overlay callees (PROT 0899)
 
