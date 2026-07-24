@@ -993,14 +993,58 @@ mod capture_bypass_tests {
         );
     }
 
-    /// The wrapper's defence weighting is the observable half of the roll
-    /// split: `FUN_801DD6B4` folds `+0x15C`/`+0x160` in at `>> 1`, eight times
-    /// as heavily as the shared kernel's `>> 4`, so raising the defender's
-    /// defence terms moves a bypass hit further than it moves a respecting
-    /// one.
+    /// The wrapper's defence weighting, asserted on the pure roll where it is
+    /// unconditionally observable: `FUN_801DD6B4`'s defender stage folds
+    /// `+0x15C` / `+0x160` in at `>> 1`, eight times as heavily as the
+    /// physical wrapper's `>> 4`, and reads no AGL at all.
+    ///
+    /// This is deliberately *not* measured end-to-end. See
+    /// [`the_bonus_arm_floor_makes_a_bypass_hit_defence_insensitive`] for why
+    /// the end-to-end signal does not exist.
     #[test]
     fn the_bypass_wrapper_weights_the_defence_terms_more_heavily() {
-        let with_defence = |move_id: u8, defence: u16| -> u16 {
+        use legaia_engine_vm::battle_damage_wrappers::{
+            WrapperDefender, physical_defender_roll, spell_defender_roll,
+        };
+        let d = |stat: u16| WrapperDefender {
+            hp: 0,
+            agl: 0,
+            stat_a: stat,
+            stat_b: stat,
+            status: 0,
+            guard: 0,
+        };
+        // rand 0 isolates the deterministic terms from the modulus draw.
+        let spell_slope =
+            spell_defender_roll(&d(64), 0) as i32 - spell_defender_roll(&d(0), 0) as i32;
+        let phys_slope =
+            physical_defender_roll(&d(64), 0) as i32 - physical_defender_roll(&d(0), 0) as i32;
+        assert_eq!(spell_slope, 64, "two terms at >> 1");
+        assert_eq!(phys_slope, 8, "two terms at >> 4");
+        assert_eq!(spell_slope, phys_slope * 8);
+    }
+
+    /// The end-to-end consequence of `FUN_801DD6B4`'s **bonus arm**, and the
+    /// reason the heavier defence weighting above is not visible as HP loss.
+    ///
+    /// `spell_wrapper_predamage` re-rolls the attacker whenever
+    /// `atk < def + power`, and the re-roll is
+    /// `def + power + rand % ((power >> 2) + 1)` (`wrapper_bonus_roll`,
+    /// instruction-identical between `FUN_801DD4B0` and `FUN_801DD6B4`). The
+    /// net `atk - def` it leaves is therefore `power + rand % …` - the
+    /// defender's contribution cancels exactly. For a high-power move the arm
+    /// fires at every defence worth testing, so a bypass hit is **defence
+    /// insensitive**, while the respecting cast, which reaches the shared
+    /// kernel, still falls off.
+    ///
+    /// Stated as an inequality on `i32`, so an inversion is an assertion
+    /// failure in both profiles rather than an unsigned-subtraction panic in
+    /// debug and a silent pass in release.
+    ///
+    /// REF: FUN_801DD6B4 (bonus arm), FUN_801DD4B0 (the same arm)
+    #[test]
+    fn the_bonus_arm_floor_makes_a_bypass_hit_defence_insensitive() {
+        let with_defence = |move_id: u8, defence: u16| -> i32 {
             let mut world = world_with_resisting_party();
             if let Some(m) = world.roster.members.get_mut(0) {
                 let mut bits = m.ability_bits();
@@ -1008,15 +1052,37 @@ mod capture_bypass_tests {
                 m.set_ability_bits(bits);
             }
             world.battle_defense[0] = defence;
-            let before = world.actors[0].battle.hp;
+            let before = world.actors[0].battle.hp as i32;
             world.cast_spell_on_slots(1, &spell(move_id), &[0]);
-            before - world.actors[0].battle.hp
+            before - world.actors[0].battle.hp as i32
         };
-        let bypass_drop = with_defence(BYPASS_MOVE_ID, 1) - with_defence(BYPASS_MOVE_ID, 400);
-        let respect_drop = with_defence(RESPECT_MOVE_ID, 1) - with_defence(RESPECT_MOVE_ID, 400);
+
+        // Every sampled defence lands the same bypass hit once the arm is
+        // firing, and no sample is a heal.
+        let bypass: Vec<i32> = [50u16, 100, 200, 400, 800]
+            .iter()
+            .map(|d| with_defence(BYPASS_MOVE_ID, *d))
+            .collect();
+        assert!(bypass.iter().all(|&x| x > 0), "bypass lands: {bypass:?}");
         assert!(
-            bypass_drop > respect_drop,
-            "bypass drop {bypass_drop} should exceed respect drop {respect_drop}"
+            bypass.windows(2).all(|w| w[0] == w[1]),
+            "the bonus-arm floor pins the bypass hit: {bypass:?}"
+        );
+
+        // The respecting cast is the control: its damage falls monotonically
+        // as defence climbs, and strictly over the same span.
+        let respect: Vec<i32> = [50u16, 100, 200, 400, 800]
+            .iter()
+            .map(|d| with_defence(RESPECT_MOVE_ID, *d))
+            .collect();
+        assert!(respect.iter().all(|&x| x > 0), "respect lands: {respect:?}");
+        assert!(
+            respect.windows(2).all(|w| w[0] >= w[1]),
+            "the shared kernel never rewards defence: {respect:?}"
+        );
+        assert!(
+            respect[0] > respect[respect.len() - 1],
+            "defence must actually mitigate a respecting hit: {respect:?}"
         );
     }
 }
