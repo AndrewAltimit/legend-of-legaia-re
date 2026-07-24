@@ -11,7 +11,9 @@
 //! PORT: FUN_801D8A88 (attack-target-queue builder)
 //! PORT: FUN_801D8D00 (target-cycle accessor)
 //! PORT: FUN_801DB124 (dead-target redirect roll)
-//! PORT: FUN_801DB8B4 (first-live-monster slot)
+//! REF: FUN_801DB8B4 (first-live-monster slot - the canonical port is
+//! `engine-core`'s `BattleRound::first_living_monster`, which is live; the
+//! fixed-slot twin below exists for oracle work)
 //! PORT: FUN_801DBA04 (first-selectable target)
 //! PORT: FUN_801DB81C (next-selectable actor)
 //! PORT: FUN_80019B28 (12-bit bearing / atan2, faithful LUT form)
@@ -456,7 +458,14 @@ pub fn build_attack_target_queue(
 /// Scans pool slots 3,4,5,6 in order and returns the first whose `+0x14C`
 /// liveness halfword is non-zero; the retail loop's fall-through value is `7`.
 ///
-/// PORT: FUN_801DB8B4
+/// This is the **fixed-slot** twin of the anchor's canonical port,
+/// `engine-core`'s `BattleRound::first_living_monster`, which is on the live
+/// round-boundary path and scans from `party_count` because the engine
+/// compacts its battle seating. Kept here in retail's literal slot-`3..7`
+/// form for oracle work; it carries a `REF` rather than a second `PORT` tag
+/// so the anchor stays attributed to the live implementation.
+///
+/// REF: FUN_801DB8B4
 pub fn first_live_monster_slot(pool: &[PoolActor]) -> u8 {
     let mut slot = 3u8;
     while slot < 7 {
