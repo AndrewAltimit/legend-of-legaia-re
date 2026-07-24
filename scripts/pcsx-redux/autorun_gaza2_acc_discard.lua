@@ -77,7 +77,21 @@
 --   LEGAIA_AUTOPILOT_SEQ comma-separated button cycle
 --   LEGAIA_EQUIP_GRAIL   party seat 0..2 whose accessory slot 7 becomes the
 --                        Lost Grail (0xE7) at vsync 60, or -1 = no poke
---                        (default -1)
+--                        (default -1). If the per-frame aggregator does not
+--                        derive ability bit 0x27 within 600 vsyncs (measured:
+--                        FUN_80042558 is not ticked during battle, so an
+--                        in-battle equip change never reaches +0xF8), the
+--                        probe seeds the bit once - mirroring what pre-battle
+--                        aggregation of the same equipment would have left -
+--                        and then watches that nothing ever clears it.
+--   LEGAIA_PASSIVE_BELOW switch the autopilot to a passive DOWN,CROSS (Spirit)
+--                        cycle once the slot-3 monster's live HP +0x14C drops
+--                        below this value (0 = never; default 0). Gaza 2's
+--                        hardcoded cast script escalates on his own HP
+--                        fraction, so the aggressive phase drives his HP into
+--                        the escalation band and the passive phase stops the
+--                        party's damage output there - the party takes his
+--                        escalated casts for as many rounds as it takes.
 --   LEGAIA_SSTATE        save state (fingerprint it; never trust a slot number)
 --
 -- Run:
@@ -95,6 +109,7 @@ local SSTATE      = probe.getenv("LEGAIA_SSTATE", "")
 local FRAMES      = probe.getenv_num("LEGAIA_FRAMES", 4000)
 local AUTOPILOT   = probe.getenv_num("LEGAIA_AUTOPILOT", 0)
 local EQUIP_GRAIL = probe.getenv_num("LEGAIA_EQUIP_GRAIL", -1)
+local PASSIVE_BELOW = probe.getenv_num("LEGAIA_PASSIVE_BELOW", 0)
 local AUTOPILOT_SEQ = probe.getenv("LEGAIA_AUTOPILOT_SEQ",
     "CROSS,DOWN,CROSS,CROSS,CROSS,UP,CROSS,CROSS,RIGHT,CROSS,CROSS,CROSS")
 
@@ -205,6 +220,15 @@ if AUTOPILOT > 0 then
         if btn then auto_seq[#auto_seq + 1] = { btn = btn, name = name:upper() } end
     end
 end
+-- The passive cycle: DOWN then confirm - the second command-menu entry
+-- (Spirit) on every character turn, no damage output. Only engaged once
+-- PASSIVE_BELOW trips, so the initial Begin/Run prompt is long gone.
+local passive_seq = {
+    { btn = pad.BTN.DOWN,  name = "DOWN" },
+    { btn = pad.BTN.CROSS, name = "CROSS" },
+}
+local passive_on = false
+
 local auto_i = 1
 local pad_release_at, pad_btn_held = nil, nil
 
@@ -382,16 +406,38 @@ probe.run{
         if EQUIP_GRAIL >= 0 and EQUIP_GRAIL <= 2 then
             if not grail_poked_at and v >= 60 then poke_grail(EQUIP_GRAIL) end
             -- Verify the retail aggregator derived the Final Heal gate bit
-            -- (record +0xF8 bit 7) from the poked equipment id.
-            if grail_poked_at and not grail_bit_seen and v % 30 == 0 then
+            -- (record +0xF8 bit 7) from the poked equipment id. Measured: the
+            -- aggregator FUN_80042558 is not ticked during battle, so after a
+            -- grace period the probe seeds the bit ONCE - the value pre-battle
+            -- aggregation of the same equipment would have left - and from
+            -- then on only watches it. A later clear would mean something in
+            -- battle does rebuild the bitfield, and is logged as such.
+            if grail_poked_at and v % 30 == 0 then
                 local pid = u8(PARTY_ID_TBL + EQUIP_GRAIL)
                 local rec = CHAR_REC + (pid - 1) * 0x414
                 local w1 = u32(rec + 0xF8)
-                if w1 % 0x100 >= 0x80 then
-                    grail_bit_seen = v
+                local bit_set = w1 % 0x100 >= 0x80
+                if not grail_bit_seen then
+                    if bit_set then
+                        grail_bit_seen = v
+                        PCSX.log(string.format(
+                            "[discard] vsync=%d ability bit 0x27 live (+0xF8=0x%08X)",
+                            v, w1))
+                    elseif v - grail_poked_at >= 600 then
+                        probe.write_u8(rec + 0xF8, (w1 % 0x100) + 0x80)
+                        grail_bit_seen = v
+                        PCSX.log(string.format(
+                            "[discard] vsync=%d aggregator never ran in-battle; " ..
+                            "seeded ability bit 0x27 once (+0xF8 0x%02X -> 0x%02X), " ..
+                            "mirroring pre-battle aggregation of the equipped grail",
+                            v, w1 % 0x100, (w1 % 0x100) + 0x80))
+                    end
+                elseif not bit_set then
                     PCSX.log(string.format(
-                        "[discard] vsync=%d FUN_80042558 derived ability bit 0x27 " ..
-                        "(+0xF8=0x%08X) from the equipped grail", v, w1))
+                        "[discard] vsync=%d WARNING: ability bit 0x27 was CLEARED " ..
+                        "(+0xF8=0x%08X) - something does rebuild the bitfield in-battle",
+                        v, w1))
+                    grail_bit_seen = nil
                 end
             end
         end
@@ -400,9 +446,21 @@ probe.run{
             pad.release(pad_btn_held)
             pad_release_at, pad_btn_held = nil, nil
         end
+        if PASSIVE_BELOW > 0 and not passive_on then
+            local gaza = actor_of(3)
+            if gaza ~= 0 and u16(gaza + 0x14C) > 0
+                and u16(gaza + 0x14C) < PASSIVE_BELOW then
+                passive_on = true
+                auto_i = 1
+                PCSX.log(string.format(
+                    "[discard] vsync=%d slot-3 HP %d < %d: autopilot goes PASSIVE " ..
+                    "(DOWN,CROSS Spirit cycle)", v, u16(gaza + 0x14C), PASSIVE_BELOW))
+            end
+        end
         if AUTOPILOT > 0 and #auto_seq > 0 and v % AUTOPILOT == 0 then
-            local e = auto_seq[auto_i]
-            auto_i = (auto_i % #auto_seq) + 1
+            local seq = passive_on and passive_seq or auto_seq
+            local e = seq[auto_i]
+            auto_i = (auto_i % #seq) + 1
             if pad_btn_held then pad.release(pad_btn_held) end
             pad.force(e.btn)
             pad_btn_held, pad_release_at = e.btn, v + 4
