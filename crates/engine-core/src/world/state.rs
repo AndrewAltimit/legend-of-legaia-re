@@ -1470,6 +1470,39 @@ pub struct World {
     /// (`FUN_8002657C` + `FUN_80064370`), which the engine replaces with its
     /// own voice pool - so the port surfaces the *event*, not the teardown.
     pub pending_sound_release: bool,
+    /// The five `gp` cells retail's **arm** half writes alongside
+    /// [`Self::sound_release`] (`gp+0x80C`/`0x810`), latched by
+    /// [`World::arm_sound_release`]. `None` until the field VM's BGM op
+    /// sub-`5` arms the release.
+    ///
+    /// REF: FUN_800267A8
+    pub sound_arm: Option<crate::scus_leaf_kernels::TimedSoundArm>,
+    /// The per-slot SFX-cue delay table (`DAT_8007C338`) the field VM's op
+    /// `0x36` sub-`4` writes.
+    ///
+    /// REF: FUN_80035BAC
+    pub sfx_cue_delays: crate::scus_leaf_kernels::SfxCueDelays,
+    /// The slot the SFX enqueue last parked (`gp+0x15A`) - the index
+    /// [`Self::sfx_cue_delays`] is written through.
+    pub sfx_parked_slot: i16,
+    /// The enqueue's round-robin write cursor (`gp+0x158`), wrapping at
+    /// [`crate::scus_leaf_kernels::SFX_CUE_SLOTS`].
+    pub sfx_cue_cursor: i16,
+    /// The scene control block `_DAT_801C6EA4` (`0x64` bytes), re-allocated
+    /// and reset on every scene load.
+    ///
+    /// REF: FUN_8003A024
+    pub scene_control_block: crate::scus_leaf_kernels::SceneControlBlockReset,
+    /// The field-to-battle transition entity, live only while the encounter
+    /// session sits in [`crate::encounter::EncounterPhase::Transition`].
+    /// `None` outside that window.
+    ///
+    /// REF: FUN_801CF5BC
+    pub battle_intro: Option<vm::battle_intro_transition::TransitionEntity>,
+    /// Effects the last [`World::tick_encounter`] battle-intro tick asked for,
+    /// in retail order. Hosts drain this to drive the loads the kernel cannot
+    /// perform itself (mesh assembly, the battle bundle read).
+    pub battle_intro_effects: Vec<vm::battle_intro_transition::TransitionEffect>,
     /// The one-shot sound-detach latch (`gp+0x804`). Idempotent: the mode-INIT
     /// chain can call it repeatedly and only the first has any effect.
     ///
@@ -2358,6 +2391,15 @@ impl World {
             frame_step_floor: 2,
             sound_release: crate::sound_state::SoundReleaseTimer::default(),
             pending_sound_release: false,
+            sound_arm: None,
+            sfx_cue_delays: crate::scus_leaf_kernels::SfxCueDelays::new(
+                crate::scus_leaf_kernels::SFX_CUE_SLOTS,
+            ),
+            sfx_parked_slot: 0,
+            sfx_cue_cursor: 0,
+            scene_control_block: crate::scus_leaf_kernels::SCENE_CONTROL_BLOCK_RESET,
+            battle_intro: None,
+            battle_intro_effects: Vec::new(),
             sound_detach: crate::sound_state::SoundDetachLatch::default(),
             frame_begin_skip: false,
             frame_step_telemetry: vm::actor_tick::FrameStepTelemetry::new(),

@@ -9,19 +9,22 @@
 //! `scripts/ghidra-analysis/disasm-overlay-fn.py --base 0x80010000
 //! --header 0x800`.
 //!
-//! PORT: FUN_8001FA00 - identity index-list init.
 //! PORT: FUN_80035BAC - SFX-cue delay set on the parked slot.
-//! PORT: FUN_80035C00 - staged-character selector setter.
 //! PORT: FUN_800267A8 - timed sound-source arm.
-//! PORT: FUN_800265E8 - boot-time offset-table seeder.
 //! PORT: FUN_8003A024 - scene control-block allocate + reset.
 //!
-//! NOT WIRED: these are leaf setters whose callers are overlay-resident
-//! dispatchers this lane does not own; the state they write lives in
-//! host structs other lanes are still shaping.
+//! Those three are live: the SFX-cue delay set and the timed sound arm are the
+//! field VM's own op `0x36` sub-`4` and op `0x35` sub-`5` bodies
+//! (`legaia_engine_core::world::vm_hosts`), and the scene control-block reset
+//! runs from [`crate::scene::SceneHost::load_scene`]. The other three carry
+//! their `PORT` tag and their own per-item wiring disclosure on the item:
+//! [`init_identity_index_list`], [`StagedCharacterSelector::set_pair`] and
+//! [`seed_boot_offset_table`].
 //!
 //! REF: FUN_800267FC - the tick half of the timed sound-source pair, ported
 //! in [`crate::sound_state`].
+//! REF: FUN_80035B50 - the SFX enqueue that parks the slot the delay set
+//! writes through.
 //! REF: FUN_80062004 - the libsnd `SsSeqSetVol` shim the arm tail-calls.
 //! REF: FUN_80017888 - the allocator the scene control-block reset calls.
 //! REF: FUN_8003A110 - the per-scene populate pass that runs after the reset.
@@ -38,6 +41,14 @@
 /// The `-1` is not an error code: it is the *top index* convention the
 /// matching pop / push pair at `0x8001FA34` / `0x8001FA68` consumes, where an
 /// empty list is `-1` rather than `0`.
+///
+/// PORT: FUN_8001FA00
+///
+/// NOT WIRED: the list it fills is the sprite stack the cutscene sprite
+/// emitter `FUN_801D629C` pops from ([`crate::cutscene::sprite_stack_pop`]).
+/// That emitter is not ported - the engine draws cutscene sprites as
+/// `screen_fx` widgets built from the decoded scripts - so no
+/// `[count][halfword entries]` buffer is ever allocated for this to seed.
 pub fn init_identity_index_list(list: &mut [u16], n: i16) -> i16 {
     if n > 0 {
         for (i, slot) in list.iter_mut().take(n as usize).enumerate() {
@@ -59,10 +70,21 @@ pub fn init_identity_index_list(list: &mut [u16], n: i16) -> i16 {
 /// The slot index is read fresh from `gp+0x15A` on every call
 /// (`lh v1,0x15a(gp)`), so the delay lands on whichever slot the enqueue
 /// last parked - the caller does not name it.
+///
+/// The table is the **timer half** of the four-slot pending-cue ring: the
+/// enqueue `FUN_80035B50` writes the cue id into `DAT_8007B6D8[slot]`, parks
+/// `slot` at `gp+0x15A` and zeroes `DAT_8007C338[slot]` in the same body, and
+/// the frame-begin drain ages that word by the frame step
+/// (`legaia_engine_audio::sfx_ring::CueSlot::timer`). So a non-zero entry here
+/// is a cue that is scheduled but has not played.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SfxCueDelays {
     slots: Vec<i32>,
 }
+
+/// Slots in the retail pending-cue ring (`slti v0,a2,0x4` in the drain,
+/// `li v0,0x4` in the enqueue's wrap test at `0x80035B94`).
+pub const SFX_CUE_SLOTS: usize = 4;
 
 impl SfxCueDelays {
     /// A table with `slots` entries, all zero (fired immediately).
@@ -96,6 +118,25 @@ impl SfxCueDelays {
     pub fn delay(&self, slot: usize) -> Option<i32> {
         self.slots.get(slot).copied()
     }
+
+    /// The enqueue's half of the pair: park `slot` and clear its delay, the
+    /// `sw zero,0x0(v1)` at `0x80035B9C`. Returns the next round-robin slot
+    /// (`gp+0x158`, wrapping at [`SFX_CUE_SLOTS`]).
+    ///
+    /// REF: FUN_80035B50
+    pub fn park(&mut self, slot: i16) -> i16 {
+        if let Ok(idx) = usize::try_from(slot)
+            && let Some(cell) = self.slots.get_mut(idx)
+        {
+            *cell = 0;
+        }
+        let next = slot.wrapping_add(1);
+        if next as usize == SFX_CUE_SLOTS {
+            0
+        } else {
+            next
+        }
+    }
 }
 
 /// The staged-character selector pair (`FUN_80035C00`, file offset `0x26400`,
@@ -119,7 +160,16 @@ pub struct StagedCharacterSelector {
 
 impl StagedCharacterSelector {
     /// `FUN_80035C00(a, b)`.
-    pub fn set(&mut self, primary: u16, secondary: u16) {
+    ///
+    /// PORT: FUN_80035C00
+    ///
+    /// NOT WIRED: the pair is read back by the pause-menu notify /
+    /// message-box path as a character-record selector. Nothing in the engine
+    /// *stages* a character id - its menu screens address party members by
+    /// roster slot directly - so there is no producer to put behind this
+    /// setter, and writing it from the menu host would be inventing state the
+    /// reader does not consult.
+    pub fn set_pair(&mut self, primary: u16, secondary: u16) {
         self.primary = primary;
         self.secondary = secondary;
     }
@@ -218,6 +268,29 @@ pub const BOOT_OFFSET_TABLE_UNWRITTEN: usize = 9;
 /// `0x8007051C`.
 pub const BOOT_ENABLE_FLAG_ADDRS: [u32; 3] = [0x8007_0520, 0x8007_0580, 0x8007_05B0];
 
+/// Seed the twelve-word table, the way `FUN_800265E8` does: every word of
+/// [`BOOT_OFFSET_TABLE`] except index [`BOOT_OFFSET_TABLE_UNWRITTEN`], which
+/// the routine skips and therefore leaves at whatever the loader put there.
+///
+/// The three enable halfwords it sets alongside are
+/// [`BOOT_ENABLE_FLAG_ADDRS`]; they are addresses, not part of this array.
+///
+/// PORT: FUN_800265E8
+///
+/// NOT WIRED: no consumer of the seeded table is identified in the dumped
+/// corpus - the words read as offsets into one region, but nothing in the
+/// corpus indexes `0x800917B0`. Wiring it needs that reader found first;
+/// calling it from the engine's boot path would write a table no engine
+/// subsystem then looks at.
+pub fn seed_boot_offset_table(table: &mut [u32; 12]) {
+    for (i, word) in BOOT_OFFSET_TABLE.iter().enumerate() {
+        if i == BOOT_OFFSET_TABLE_UNWRITTEN {
+            continue;
+        }
+        table[i] = *word;
+    }
+}
+
 /// The reset image `FUN_8003A024` (file offset `0x2A824`, 59 instructions)
 /// writes over the freshly allocated **scene control block** - the `0x64`-byte
 /// struct every field / cutscene subsystem reaches through `_DAT_801C6EA4`.
@@ -274,6 +347,34 @@ pub const SCENE_CONTROL_BLOCK_ALLOC_FAIL_CODE: u32 = 0x1BC;
 /// into - see `docs/subsystems/tile-board.md`).
 pub const SCENE_RESET_CLEARED_GLOBALS: [u32; 2] = [0x8007_B630, 0x8007_B450];
 
+impl crate::world::World {
+    /// Allocate + reset the scene control block. `FUN_8003A024`.
+    ///
+    /// Called from [`crate::scene::SceneHost::load_scene`], which is where
+    /// retail runs it: the block is re-allocated per scene and the per-scene
+    /// contents are installed afterwards by `FUN_8003A110` from the scene MAN.
+    ///
+    /// The engine models the two globals the reset clears alongside the block
+    /// ([`SCENE_RESET_CLEARED_GLOBALS`]) rather than the raw words. `0x8007B450`
+    /// is the tile-descriptor pointer the field VM's op `0x49` installs a tile
+    /// board into (`docs/subsystems/tile-board.md`), so clearing it is what
+    /// stops a board surviving a scene change; `0x8007B630` is the scene-scoped
+    /// scratch word, which the engine has no field for.
+    ///
+    /// PORT: FUN_8003A024
+    pub fn reset_scene_control_block(&mut self) {
+        self.scene_control_block = SCENE_CONTROL_BLOCK_RESET;
+        // `_DAT_8007B450 = 0` - the tile-board descriptor and everything the
+        // engine hangs off it.
+        self.tile_board = None;
+        self.tile_board_header = None;
+        self.tile_board_target = None;
+        self.tile_board_armed = false;
+        self.tile_actor_slots = [None; crate::tile_board::TILE_ACTOR_TABLE_LEN];
+        self.tile_board_draw_list.clear();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -322,7 +423,7 @@ mod tests {
     #[test]
     fn the_selector_setter_writes_exactly_two_cells() {
         let mut s = StagedCharacterSelector::default();
-        s.set(0x11, 0x22);
+        s.set_pair(0x11, 0x22);
         assert_eq!(
             s,
             StagedCharacterSelector {

@@ -544,3 +544,106 @@ fn boss_battle_entry_writes_no_flags() {
     assert!(!world.system_flag_test(0x289));
     assert!(!world.system_flag_test(0x142));
 }
+
+#[test]
+fn the_battle_intro_sm_runs_through_the_transition_phase() {
+    use crate::encounter::{EncounterPhase, EncounterRoll};
+    use legaia_engine_vm::battle_intro_transition::TransitionEffect;
+
+    let mut world = World::new();
+    let mut session = crate::encounter::EncounterSession::new(
+        crate::encounter::EncounterTracker::new(crate::encounter::EncounterTable::default()),
+    );
+    session.trigger_with(EncounterRoll {
+        formation_id: 3,
+        row_index: 0,
+        roll_q8: 0,
+    });
+    world.set_encounter_session(Some(session));
+    world.set_battle_bgm(Some(2001));
+
+    // Phase 0 arms the audio cue, phase 1 clears mesh assembly, phase 2 is the
+    // BGM + bundle load - three ticks reach it.
+    world.tick_encounter();
+    assert!(
+        world.battle_intro.is_some(),
+        "armed on the transition frame"
+    );
+    world.tick_encounter();
+    world.tick_encounter();
+    assert!(
+        world
+            .battle_intro_effects
+            .iter()
+            .any(|e| matches!(e, TransitionEffect::LoadBattleBgm { battle_id: 3 })),
+        "phase 2 loads the battle BGM: {:?}",
+        world.battle_intro_effects
+    );
+    assert_eq!(
+        world.current_bgm,
+        Some(2001),
+        "the BGM swap runs during the spin, not at battle entry"
+    );
+
+    // Leaving the phase drops the entity.
+    for _ in 0..64 {
+        world.tick_encounter();
+    }
+    assert!(matches!(
+        world.encounter.as_ref().unwrap().phase(),
+        EncounterPhase::Triggered(_)
+    ));
+    assert!(world.battle_intro.is_none());
+}
+
+#[test]
+fn the_bgm_op_sub_5_arms_the_timed_sound_release() {
+    // Field-VM op `0x35` sub-`5` is `FUN_800267A8(0, operand)` - a deadline in
+    // vsyncs, not a volume set.
+    let mut world = World::new();
+    world.arm_sound_release(4);
+    let arm = world.sound_arm.expect("the arm half latches its cells");
+    assert_eq!(arm.deadline, 4);
+    assert_eq!(arm.shim_deadline(), 5, "deadline | 1");
+    assert!(world.sound_release.armed);
+}
+
+#[test]
+fn the_sfx_cue_delay_lands_on_the_slot_the_enqueue_parked() {
+    // Two enqueues park slots 0 then 1; the op-0x36 sub-4 delay writes slot 1.
+    let mut world = World::new();
+    for _ in 0..2 {
+        let slot = world.sfx_cue_cursor;
+        world.sfx_cue_cursor = world.sfx_cue_delays.park(slot);
+        world.sfx_parked_slot = slot;
+    }
+    assert_eq!(world.sfx_parked_slot, 1);
+    assert_eq!(world.sfx_cue_cursor, 2);
+    world.sfx_cue_delays.set_delay(world.sfx_parked_slot, 0x30);
+    assert_eq!(world.sfx_cue_delays.delay(1), Some(0x30));
+    assert_eq!(world.sfx_cue_delays.delay(0), Some(0));
+}
+
+#[test]
+fn a_scene_load_clears_the_tile_board_with_the_control_block() {
+    // `FUN_8003A024` zeroes `_DAT_8007B450` (the tile-descriptor pointer) as
+    // part of the per-scene control-block reset, so a board cannot survive a
+    // scene change.
+    let mut world = World::new();
+    world.tile_board = Some(crate::tile_board::TileBoard::from_header(
+        &crate::tile_board::TileBoardHeader {
+            width: 2,
+            height: 2,
+            ..Default::default()
+        },
+        vec![0; 4],
+    ));
+    world.tile_board_armed = true;
+    world.reset_scene_control_block();
+    assert!(world.tile_board.is_none());
+    assert!(!world.tile_board_armed);
+    assert_eq!(
+        world.scene_control_block,
+        crate::scus_leaf_kernels::SCENE_CONTROL_BLOCK_RESET
+    );
+}

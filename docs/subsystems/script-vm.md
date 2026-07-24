@@ -295,7 +295,7 @@ These are sub-dispatchers - the operand byte selects a sub-command.
 | 2 | Pause (`func_0x800266E0(0x8007052C)`). |
 | 3 | Resume (`func_0x80026740`). |
 | 4 | Stop (`func_0x80026478`). |
-| 5 | Set volume. |
+| 5 | **Arm the timed sound-source auto-release** for `signed16(operand0, operand1)` vsyncs: `func_0x800267A8(0, operand)` at `0x801E01B4`, whose tick half `FUN_800267FC` runs from the frame-begin driver. Not a volume set - the volume the arm applies is a *side effect* of the libsnd wrapper it tail-calls, and the operand is a deadline. Port: `engine-core::World::arm_sound_release`. |
 | 6 | Flag set. |
 | 7 | Target-sound-set (`_DAT_8007B880`). |
 | 8 | Re-attach + volume re-apply (`func_0x80019898`): re-attaches the BGM slot's sound source (`FUN_80026478(0x8007057C)`) then re-applies the field volume global `DAT_8007B6EC` - level `(raw << 15) >> 16` - to both channels of the slot's voice via `FUN_80064890`. Port: `engine-core::scene::bgm_reattach_volume`. |
@@ -305,9 +305,29 @@ These are sub-dispatchers - the operand byte selects a sub-command.
 
 PC += 4.
 
-#### 0x36 SCENE_FADE
+#### 0x36 SOUND_CUE
 
-`[36, lo0, hi0, lo1, hi1]`. Reads two 16-bit operands. `0xFFFF` = wait for `_DAT_8007BC20` load flag. Bit-15-clear values do `func_0x8003D53C` fade or `func_0x80019794` lookup. Bit-15-set sub-cases 0..4 dispatch various transitions including `FUN_801D8450`.
+`[36, lo0, hi0, lo1, hi1]`, PC += 5. Reads two signed-16 operands through `FUN_8003CE9C`:
+`sel` (first) and `arg` (second). Despite the historical `SCENE_FADE` label - which the
+engine's `FieldHost::scene_fade` hook still carries - **every arm of this op is sound**.
+Read off the disassembly at `0x801E02CC..0x801E0444` in `FUN_801DE840`.
+
+`sel == 0xFFFF` waits on the load flag `_DAT_8007BC20` (zero falls through, non-zero halts
+at PC). Otherwise bit 15 of `sel` picks the arm:
+
+| `sel` | Arm |
+|---|---|
+| bit 15 clear, `sel & 0x7FFF != 0` | `func_0x8003D53C(arg >> 3, arg & 7, sel)` - start a CD-XA voice clip `(clip, channel)` out of the `0x801C6ED8` clip table. |
+| bit 15 clear, `sel & 0x7FFF == 0` | `func_0x80019794(arg >> 3)` - the clip-idle query; a non-zero answer halts at PC. |
+| bit 15 set, sub `0` | `func_0x80035B50(arg)` - enqueue SFX cue `arg` into the four-slot pending ring, parking its slot at `gp+0x15A`. |
+| bit 15 set, sub `1` | `_DAT_8007BABC = arg`. |
+| bit 15 set, sub `2` | Gate only: halt unless `_DAT_8007BABC == _DAT_8007BAA0`. |
+| bit 15 set, sub `3` | `FUN_801D8450()`. |
+| bit 15 set, sub `4` | `func_0x80035BAC(arg)` - store `arg` as the parked slot's delay, scheduling the cue instead of firing it. Port: `engine-core::scus_leaf_kernels::SfxCueDelays`. |
+
+Two gates the port does not model: the whole bit-15-set arm is skipped when the dual-mode
+global `_DAT_8007B868` is non-zero, and subs `0`/`2`/`3` additionally halt at PC unless
+`_DAT_8007BABC == _DAT_8007BAA0`.
 
 ### 0x37-0x42 (yield, sound, RPG state, dialog, jump)
 

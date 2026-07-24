@@ -869,6 +869,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         } else if sub_op == 4 {
             // 4 = stop.
             self.world.current_bgm = None;
+        } else if sub_op == 5 {
+            // Sub-5 is the timed release: retail's handler is
+            // `FUN_800267A8(0, s16_operand)` at `0x801E01B4` (the operand is
+            // the same `FUN_8003CE9C` read every other sub-op takes), which
+            // arms the sound-source auto-release for `operand` vsyncs. The
+            // frame-begin tick (`FUN_800267FC`) counts it down and raises
+            // `pending_sound_release` on expiry.
+            // PORT: FUN_800267A8 (live wiring; the arm record itself is
+            // `crate::scus_leaf_kernels::TimedSoundArm`)
+            self.world.arm_sound_release(i32::from(text_id));
         }
         self.world
             .pending_field_events
@@ -1207,6 +1217,37 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn scene_fade(&mut self, op0_word: u16, op1_word: u16) -> SceneFadeResult {
+        // Op `0x36` is the sound-cue op, not a fade (the `SceneFade` event
+        // name predates the handler being read): retail decodes two s16
+        // operands and, when bit 15 of the first is set, runs a five-way
+        // sub-switch on its low bits. Two of those sub-ops are the pending-cue
+        // ring's producer pair, and the engine models both.
+        //
+        // * sub-`0` - `FUN_80035B50(arg)` enqueues the cue, parks its slot at
+        //   `gp+0x15A` and zeroes that slot's delay word.
+        // * sub-`4` - `FUN_80035BAC(arg)` stores `arg` as the parked slot's
+        //   delay, i.e. schedules the cue instead of firing it.
+        //
+        // PORT: FUN_80035BAC (live wiring; the table itself is
+        // `crate::scus_leaf_kernels::SfxCueDelays`)
+        // REF: FUN_80035B50
+        if op0_word & 0x8000 != 0 {
+            match op0_word & 0x7FFF {
+                0 => {
+                    // The enqueue writes the slot the cursor names, parks it,
+                    // then advances the cursor - so the parked slot stays the
+                    // written one until the next enqueue.
+                    let slot = self.world.sfx_cue_cursor;
+                    self.world.sfx_cue_cursor = self.world.sfx_cue_delays.park(slot);
+                    self.world.sfx_parked_slot = slot;
+                }
+                4 => {
+                    let parked = self.world.sfx_parked_slot;
+                    self.world.sfx_cue_delays.set_delay(parked, op1_word as i16);
+                }
+                _ => {}
+            }
+        }
         self.world
             .pending_field_events
             .push(FieldEvent::SceneFade { op0_word, op1_word });

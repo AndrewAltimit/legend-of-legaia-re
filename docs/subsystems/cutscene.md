@@ -1294,6 +1294,14 @@ battle). Full phase/BGM detail is in the `FUN_801CF5BC` row of
 [`functions.md`](../reference/functions.md). `see
 ghidra/scripts/funcs/overlay_field_battle_intro_801cf5bc.txt`.
 
+Engine side, this state machine is the encounter session's `Transition` phase: the port
+(`legaia_engine_vm::battle_intro_transition::tick_transition`) is driven once per frame by
+`legaia_engine_core::World::tick_encounter` for as long as the session sits in that phase,
+and its phase-2 `LoadBattleBgm` effect is what starts the battle track - during the spin,
+which is where retail starts it, not at battle entry. The remaining effects (mesh
+assembly, the bundle read, the load waits) are surfaced on `World::battle_intro_effects`
+for a host that owns those reads.
+
 Two switches drive the visuals. A **style selector `DAT_801D2460` (0..=4)** dispatches to
 one of five per-frame transition emitters (below); a second switch then applies a per-style
 screen fade `func_0x80024EE4(2, blend, level*0x10101)`, the fade `level` ramped from the

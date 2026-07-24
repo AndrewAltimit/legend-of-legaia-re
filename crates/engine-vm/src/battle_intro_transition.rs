@@ -1,12 +1,10 @@
 //! The field-to-battle transition overlay's state machine and its shared
 //! textured-quad builder.
 //!
-//! PORT: FUN_801CF5BC
-//! PORT: FUN_801CF1B0
-//!
-//! NOT WIRED: the engine enters battle from `engine-core`'s scene host
-//! directly and has no field-to-battle transition entity, so neither kernel
-//! has a caller yet.
+//! The state machine is live: `legaia_engine_core::World::tick_encounter`
+//! drives it once per frame for as long as the encounter session sits in its
+//! `Transition` phase, which is the same window retail runs this overlay in.
+//! The quad builder is not - see [`build_intro_quad`].
 //!
 //! The transition is its own overlay (PROT 0979 `field_battle_intro`; see
 //! `docs/subsystems/cutscene.md` § "Field-to-battle transition"). It runs the
@@ -457,6 +455,12 @@ pub struct IntroQuadRequest {
 /// what retail's `if (x < 0) x += mask` pre-bias does.
 ///
 /// PORT: FUN_801CF1B0
+///
+/// NOT WIRED: this is the style-3 emitter's quad helper, and its descriptor
+/// table lives at overlay VA `0x801D1EC4` - inside PROT 0979, which the engine
+/// never loads. Wiring it needs that overlay's `0x14`-byte record table parsed
+/// off the disc *and* a consumer for the built `POLY_GT4`; the engine renders
+/// battle entry through its own transition, not these packet builders.
 pub fn build_intro_quad(req: &IntroQuadRequest, table: &[IntroQuadDesc]) -> Option<IntroQuad> {
     let IntroQuadRequest {
         anchor,

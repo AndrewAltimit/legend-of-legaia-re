@@ -7,10 +7,21 @@
 //! PORT: FUN_801D5778
 //! PORT: FUN_801D9AE8
 //!
-//! NOT WIRED: all four are pure kernels with no host root yet - the engine's
-//! round boundary (`engine-core::battle_round::BattleRound::boundary`) keeps
-//! the active-actor cursor with the host, the engine's battle HUD has no
-//! pose-slot array, and it has no tracked-widget pool.
+//! NOT WIRED, with a concrete prerequisite each:
+//!
+//! * `FUN_801D32BC` rewrites four context cursor bytes (`+0x13`/`+0x1F`/
+//!   `+0x20`/`+0x21`). The engine's round boundary
+//!   (`engine-core::battle_round::BattleRound::boundary`) owns actor order and
+//!   keeps only `battle_ctx.active_actor` - there is no `+0x1F` step counter or
+//!   `+0x20`/`+0x21` history pair to write, so a call would drop three of its
+//!   four effects.
+//! * `FUN_801D57E8` / `FUN_801D5778` copy between **pose slots** - the
+//!   per-actor animation-pose array the battle renderer double-buffers. The
+//!   engine animates from decoded ANM frames per actor and allocates no such
+//!   array.
+//! * `FUN_801D9AE8` releases a `0x28`-slot tracked-widget pool. The engine's
+//!   battle UI is rebuilt from world state every frame (`engine-ui` draw-list
+//!   builders), so nothing is tracked and nothing needs releasing.
 //!
 //! ## Why one module for four functions
 //!

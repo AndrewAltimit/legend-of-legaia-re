@@ -1,11 +1,17 @@
 //! The field-to-battle transition overlay's two particle-grid seeders.
 //!
-//! PORT: FUN_801CFBB4
-//! PORT: FUN_801D0164
+//! Both `PORT` tags live on [`seed_particle_grid`], which is the one body they
+//! share; the disclosure below applies to both.
 //!
-//! NOT WIRED: nothing in the engine drives the field-to-battle transition, so
-//! neither seeder has a caller. Neither has a *dumped* retail caller either -
-//! see "Callers" below.
+//! NOT WIRED: the transition state machine itself is now driven from
+//! `legaia_engine_core::World::tick_encounter`, but these two are the style-0
+//! and style-1 *render* buffers - 1280 sprite records apiece, consumed only by
+//! the per-style GTE/GPU packet emitters in PROT 0979, which are
+//! documented-not-ported at the clean-room boundary. Wiring them needs a
+//! battle-intro particle renderer on the engine side plus the sine / cosine
+//! height tables `_DAT_8007B7F8` / `_DAT_8007B81C` the [`ParticleEnv`] trait
+//! abstracts; seeding a grid nothing draws would be an inert call with a cost.
+//! Neither has a *dumped* retail caller either - see "Callers" below.
 //!
 //! Both routines do the same job with different constants: allocate one
 //! `0xDC00`-byte block, then fill it as a **32 x 40 grid of 1280 particle

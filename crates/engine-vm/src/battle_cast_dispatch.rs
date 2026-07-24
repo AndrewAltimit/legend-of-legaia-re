@@ -5,9 +5,17 @@
 //! PORT: FUN_801F2160
 //! PORT: FUN_801DBA90
 //!
-//! NOT WIRED: the engine has no cast-effect emitter pool to hand a resolved
-//! handler to, and no battle context text buffer at `ctx+0x1F9`; these are the
-//! selection kernels only.
+//! NOT WIRED: all three resolve to something the engine has no channel for.
+//! The two dispatchers return a **retail VA** - the emitter is overlay code in
+//! the battle image, unported, so there is nothing callable at the other end;
+//! turning them into a wire needs an engine-side cast-effect pool keyed by
+//! spell id / effect class first. `FUN_801F2160` additionally needs the spell
+//! record's `+0x01` effect-class byte, which the engine's spell catalog
+//! (`crate::retail_magic`) does not decode - it carries name / MP / target
+//! only, so [`spell_effect_class`] has no live source of bytes. The banner
+//! composer writes the battle context text buffer at `ctx+0x1F9`, which the
+//! engine does not model (its battle HUD builds draw lists, not a text
+//! buffer).
 //!
 //! ## The two dispatchers
 //!

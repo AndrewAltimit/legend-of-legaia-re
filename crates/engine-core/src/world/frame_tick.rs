@@ -21,10 +21,24 @@ impl World {
     /// Arm the timed sound-source auto-release for `deadline` vsyncs
     /// (`gp+0x814`). [`Self::tick`] counts it down by the frame step.
     ///
-    /// REF: FUN_800267FC
+    /// Retail's arm half writes five `gp` cells, not three: on top of the
+    /// timer's armed flag / deadline / elapsed it latches the live brightness
+    /// word `_DAT_8007B910` and the caller's tag, then tail-calls the libsnd
+    /// volume shim with `(level >> 1, deadline | 1)`. Those two extra cells
+    /// land in [`Self::sound_arm`] so a host driving the shim has the exact
+    /// arguments; the engine has no live brightness ramp of its own, so the
+    /// latched level is the cold-reset value retail boots `_DAT_8007B910` to.
+    ///
+    /// PORT: FUN_800267A8
+    /// REF: FUN_800267FC, FUN_80062004
     pub fn arm_sound_release(&mut self, deadline_vsyncs: i32) {
         self.sound_release.arm(deadline_vsyncs);
         self.pending_sound_release = false;
+        self.sound_arm = Some(crate::scus_leaf_kernels::TimedSoundArm::arm(
+            0,
+            deadline_vsyncs.max(0) as u32,
+            crate::new_game::GAME_STATE_COLD_RESET.screen_brightness,
+        ));
     }
 
     /// Drain the "the sound-release deadline expired" event.

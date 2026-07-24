@@ -104,7 +104,7 @@ impl World {
     /// [`World::battle_bgm`] is `None` or the swap is already active. Stashes
     /// the current field track for [`World::restore_field_bgm`] and queues a
     /// `FieldEvent::Bgm` start so the host's BGM director cross-fades to it.
-    fn swap_to_battle_bgm(&mut self) {
+    pub(crate) fn swap_to_battle_bgm(&mut self) {
         let Some(battle) = self.battle_bgm else {
             return;
         };

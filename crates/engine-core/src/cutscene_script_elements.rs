@@ -11,9 +11,16 @@
 //! PORT: FUN_801D6058 - ambient particle emitter.
 //! PORT: FUN_801D841C - the fade/flash element spawn.
 //!
-//! NOT WIRED: the cutscene element-actor dispatch lives in
-//! `crate::cutscene`, which another lane owns this cycle; these kernels are
-//! pure state transforms with no host call site yet.
+//! NOT WIRED: there is no element-actor dispatch to hang these off.
+//! `crate::cutscene` is the FMV dispatch-table lookup and nothing else; the
+//! engine's scripted scenes run through [`crate::cutscene_timeline`], which
+//! interprets the record's cross-context yields (walk / rotate / channel
+//! waits) **directly** instead of spawning an object whose `+0x0C` holds a
+//! handler and whose `+0x90` points at a linked object. Wiring these four
+//! needs that element-actor channel first: a pool of spawned elements, each
+//! carrying a linked-object pointer, ticked once per frame with the linked
+//! object's done bit `+0x10 & 8` as the entry gate. Until then a call site
+//! would have nothing to link to and nothing to retire.
 //!
 //! REF: FUN_801E45BC - the vector midpoint/lerp helper the tween calls.
 //! REF: FUN_801D629C - the particle spawn primitive the emitter calls.
