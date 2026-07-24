@@ -278,11 +278,18 @@ These are field(897)-shared helpers parameterised entirely by the world-map
 overlay's `0x801F28xx` state, so they are the top-view HUD's primitive layer.
 All are GTE/GPU primitive emitters - render-track, documented-not-ported.
 
-### `FUN_801EE90C` - world map text-box dispatcher (128 bytes)
+### `FUN_801EE90C` - world map text-box dispatcher (1100 bytes)
 
 Entry: `(ctx_ptr)`. Dispatches on `ctx[+0x54]` via a 15-entry jump table at
 `0x801CF5FC`. When `ctx[+0x54] >= 15` but `< 10`: falls through to
 `FUN_80031D00` (text-actor tick - advances the MES bytecode one frame).
+
+The body is 275 instructions in the based PROT 0897 image - the whole
+dispatcher plus its fifteen case bodies. Several Ghidra programs cut the
+function at the `jr v0` and list only the 32-instruction dispatch head
+(`128` bytes), because the jump-table cases are not reachable by linear flow;
+that truncation is a boundary artifact of the listing, not a second body at
+the same VA. The bytes are identical across every dump at this address.
 
 ### `FUN_801CFC40` - world map sprite batcher (524 bytes, top-view only)
 
