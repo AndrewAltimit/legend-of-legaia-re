@@ -313,8 +313,8 @@ latched at the top of `FUN_801d239c` from `_DAT_8007b874 & 0xf0` (any face
 button) and short-circuits the step to the whole remainder, so holding a button
 snaps the tally to its end state; nothing inside the tally clears the latch.
 Port: `engine-core::baka_fighter::BakaTally`, driven by `BakaFight::tick` once
-the player takes a match and banked into party money by the world's Baka
-Fighter tick. **Confirmed.**
+the player takes a match and drained into the world's mode-24 winnings
+accumulator by the world's Baka Fighter tick. **Confirmed.**
 
 Confidence: **Confirmed** AI roll + scripted-pattern table, the HUD/tally draw
 paths, and the gold payout (a flat per-opponent prize from the record table's
@@ -686,9 +686,13 @@ as the suspending `SceneMode::BakaFighter` (play-window `B` key;
 Left/Right/Up = the three attacks, Down charges the special). A player match
 win installs the score tally (`BakaTally`, the `FUN_801d239c` port), which the
 world's Baka Fighter tick runs frame by frame, adding each drained step into
-the money exactly as retail adds it into `_DAT_80084440`; leaving the
-duel before the tally finishes banks the remainder, so the total paid is the
-prize either way. Disc-free oracle for that path:
+the mode-24 winnings accumulator exactly as retail adds it into
+`_DAT_80084440`; leaving the duel before the tally finishes banks the
+remainder, so the total accumulated is the prize either way. The duel's exit
+then runs the mode-24 return warp (`World::minigame_return_warp`,
+`FUN_80026018`), which pays the accumulator into the casino coin bank
+`_DAT_800845A4`, restores the backed-up scene name and latches the field mode.
+Disc-free oracle for that path:
 `engine-core/tests/baka_tally_world.rs`. Disc-gated oracle:
 `engine-core/tests/baka_minigame_real.rs` (counter-play through the world
 tick beats a real ladder opponent and banks the parsed prize). Host

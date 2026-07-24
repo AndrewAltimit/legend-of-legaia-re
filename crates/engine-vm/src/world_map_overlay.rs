@@ -29,9 +29,11 @@
 //!
 //! ## NOT WIRED
 //!
-//! No engine host calls anything in this module, and the reason differs per
-//! address. Each entry names what has to exist first - none of them is more
-//! plumbing here.
+//! Four of the five addresses have no engine caller, and the reason differs
+//! per address. Each entry names what has to exist first - none of them is
+//! more plumbing here. `FUN_801D2EBC` is the exception: it is wired, through
+//! `legaia_engine_core::World`'s `schedule_timed_flags` installer hook and
+//! its per-frame `tick_escape_timer` drain.
 //!
 //! - **`FUN_801EAD98` / `FUN_801ECA08`** (row model, formatter, panel sizer,
 //!   list-picker cursor + draw gate). The engine has no world-map developer
@@ -47,13 +49,6 @@
 //!   Hyper-Arts / magic tallies. `World` carries a play-time clock and nothing
 //!   else on the list, and the pause menu has no records page to host the
 //!   result. Wiring needs those counters on the persistent record first.
-//! - **`FUN_801D2EBC`** (escape-timer scheduler). The timer is armed by field
-//!   VM `0x4C 0xD3` (`SCHEDULE_TIMED_FLAGS`), which the port decodes and hands
-//!   to `FieldHost::op4c_n_d_sub3_party_setup` - a default no-op body that no
-//!   engine host overrides, so the duration / threshold / flag-word triple is
-//!   discarded at the installer. Nothing arms a timer, so nothing can drain
-//!   one. Wiring is three coupled pieces: timer state on the world, that host
-//!   override, and a per-frame drain against the clock delta.
 //! - **`FUN_801E5B4C`** (equipment stat-comparison preview). The engine's
 //!   equip screen is the menu-overlay flow (`legaia_engine_core::EquipSession`,
 //!   ported from `FUN_801D9C14` / `FUN_801D99F0`), which previews by

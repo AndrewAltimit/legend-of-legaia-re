@@ -475,7 +475,7 @@ impl PlayWindowApp {
         // Fighter overlay (PROT 0976), suspends the current scene,
         // and runs the best-of-3 duel; Left/Right/Up throw the three
         // attacks, Down charges the special, Cross leaves a decided
-        // match. Pressing B again aborts (no gold on an abort).
+        // match. Pressing B again aborts (no coins on an abort).
         if matches!(code, KeyCode::KeyB)
             && state == ElementState::Pressed
             && !self.boot_ui.is_active()
@@ -484,9 +484,9 @@ impl PlayWindowApp {
                 if let Some(f) = self.session.host.world.exit_baka_fighter() {
                     match f.winner() {
                         Some(0) => log::info!(
-                            "baka: match WON - {} gold banked (money now {})",
+                            "baka: match WON - {} coins banked (bank now {})",
                             f.gold_reward(),
-                            self.session.host.world.money
+                            self.session.host.world.casino_coins
                         ),
                         Some(_) => log::info!("baka: match lost"),
                         None => log::info!("baka: match aborted"),

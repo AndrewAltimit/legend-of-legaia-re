@@ -1083,6 +1083,27 @@ pub struct World {
     /// into [`World::casino_coins`].
     pub minigame_winnings: u32,
 
+    /// The scripted countdown timer the field VM arms with `0x4C 0xD3`
+    /// (`SCHEDULE_TIMED_FLAGS`). Retail keeps it in three globals -
+    /// `_DAT_800845A0` remaining, `_DAT_800845BC` below-threshold trigger,
+    /// `_DAT_800845B8` armed - which is the triple
+    /// [`legaia_engine_vm::world_map_overlay::EscapeTimer`] models.
+    /// [`World::tick_escape_timer`] drains it once per retail frame.
+    pub escape_timer: vm::world_map_overlay::EscapeTimer,
+
+    /// The packed flag word the same installer writes to `_DAT_800845C0`:
+    /// low half = the below-threshold flag, high half = the expiry flag.
+    /// Both are masked to 12 bits before they reach the system-flag bank.
+    pub escape_timer_flag_word: u32,
+
+    /// This frame's escape-timer HUD readout, recomputed by
+    /// [`World::tick_escape_timer`] while the timer is armed and cleared
+    /// when it is not: `(minutes, seconds, hundredths, ink)`. Retail's
+    /// `FUN_801D2EBC` decomposes and colours the readout in the same
+    /// function that drains the counter, so the values are a per-frame
+    /// product of the tick rather than something a renderer derives.
+    pub escape_timer_hud: Option<(i32, i32, i32, vm::world_map_overlay::TimerInk)>,
+
     /// Per-actor status-effect tracker (Toxic / Numb / Venom /
     /// Sleep / Confuse / Curse / Stone / Faint). Populated by
     /// [`World::fold_battle_event`] on `ApplyArtStrike` events whose
@@ -2292,6 +2313,9 @@ impl World {
             casino_coins: 0,
             minigame_scene_backup: None,
             minigame_winnings: 0,
+            escape_timer: Default::default(),
+            escape_timer_flag_word: 0,
+            escape_timer_hud: None,
             status_effects: vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
             battle_guarding: [false; 3],

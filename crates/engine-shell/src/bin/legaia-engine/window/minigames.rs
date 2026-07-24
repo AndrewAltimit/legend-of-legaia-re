@@ -4,23 +4,18 @@ use super::*;
 
 impl PlayWindowApp {
     // The mode-24 minigame door warp (`World::arm_minigame_warp` /
-    // `World::minigame_return_warp`, retail `FUN_80025980` / `FUN_80026018`) is
-    // deliberately NOT called from these entry points, and the reason is a bug
-    // one layer down rather than a missing prerequisite.
+    // `World::minigame_return_warp`, retail `FUN_80025980` / `FUN_80026018`)
+    // is not driven from these entry points - it runs one layer down, inside
+    // `World::enter_baka_fighter` / `World::exit_baka_fighter`, where the
+    // producer it depends on lives.
     //
     // `FUN_80026018` banks the mode-24 winnings accumulator `_DAT_80084440`
     // into the casino coin bank `_DAT_800845A4` (`0x80026050..0x80026078`,
     // clamped at 9,999,999). What fills that accumulator is the Baka Fighter
     // end-of-match tally: `FUN_801D239C` at `0x801d2894..0x801d28bc` adds each
-    // drained step into `0x80084440`. This port instead pays that drain into
-    // `World::money` - party gold, which retail keeps at the *different* word
-    // `0x8008459C` - so `World::minigame_winnings` never fills and the warp's
-    // commit would be an add of zero.
-    //
-    // Wiring the warp here without redirecting the duel tally first would
-    // therefore close the audit row while leaving the round trip inert. The
-    // redirect lives in `World::tick_baka_fighter` / `World::exit_baka_fighter`
-    // (`engine-core`), so the two halves have to land together.
+    // drained step into `0x80084440` - the coin prize, not party gold
+    // (`0x8008459C`). The engine's duel tick pays the same drain into
+    // `World::minigame_winnings`, so the warp's commit has something to bank.
     // REF: FUN_80026018 (coin-bank commit), FUN_801d239c (the producer)
 
     /// Drive the fishing HUD's one-shot banner animations for this frame.

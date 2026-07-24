@@ -7,7 +7,7 @@
 //! (`SceneHost::open_disc` -> `entry_bytes_extended(976)` ->
 //! `static_overlay::as_loaded` -> `parse` / `parse_actions`) resolves the
 //! real tables, and a `BakaFight` runs exchanges to a decided best-of-3
-//! match whose gold prize lands in the party money. No Sony bytes are
+//! match whose coin prize lands in the casino coin bank. No Sony bytes are
 //! asserted, only structural facts. Skips + passes when `LEGAIA_DISC_BIN`
 //! is absent.
 
@@ -73,7 +73,7 @@ fn real_tables_drive_a_decided_match_and_bank_the_gold() {
 
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    let money0 = world.money;
+    let coins0 = world.casino_coins;
     let fight = BakaFight::from_tables(&opponents, &actions, 0, opponent, 0xBAA5EED)
         .expect("fight builds from real tables");
     assert_eq!(fight.gold_reward(), prize);
@@ -118,16 +118,16 @@ fn real_tables_drive_a_decided_match_and_bank_the_gold() {
     assert_eq!(f.round_wins(0), baka_opponents::ROUND_WIN_TARGET);
     assert!(f.hp(1) < HP_START || matches!(f.phase(), MatchPhase::MatchOver(0)));
 
-    // Cross leaves the decided match through the world tick path, crediting
-    // the parsed gold prize into the party money (play-window's B key exit
-    // goes through the same `exit_baka_fighter`).
+    // Cross leaves the decided match through the world tick path, banking the
+    // parsed coin prize into the casino coin bank via the mode-24 return warp
+    // (play-window's B key exit goes through the same `exit_baka_fighter`).
     world.set_pad(PadButton::Cross.mask());
     let _ = world.tick();
     assert_eq!(world.mode, SceneMode::Field, "return mode restored");
     assert!(world.baka_fighter.is_none(), "fight cleared on exit");
     assert_eq!(
-        world.money,
-        money0 + prize as i32,
-        "the opponent's parsed gold prize banked"
+        world.casino_coins,
+        coins0 + prize,
+        "the opponent's parsed coin prize banked"
     );
 }

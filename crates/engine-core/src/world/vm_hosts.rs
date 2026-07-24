@@ -1581,6 +1581,15 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         apply_script_table_teleport(&man_file, &man, ctx);
     }
 
+    // Op 0x4C nibble-D sub-3 - arm the scripted countdown timer. The three
+    // operands are the installer's four global writes; the world keeps them
+    // as one `EscapeTimer` plus the packed flag word, and `World::tick`
+    // drains it once per retail frame.
+    // REF: FUN_801DE840 case 0xD sub 3, FUN_801D2EBC (the drain)
+    fn op4c_n_d_sub3_party_setup(&mut self, ab: u32, cd: u32, ef: u32) {
+        self.world.schedule_timed_flags(ab, cd, ef);
+    }
+
     fn op4c_n_d_sub8_call_d77f4(&mut self, b1: u8, words: [i16; 3]) {
         // Synchronous actor allocator (see retail `FUN_801D77F4` body
         // dumped at `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d77f4.txt`).
