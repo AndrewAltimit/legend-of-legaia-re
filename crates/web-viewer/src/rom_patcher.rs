@@ -125,7 +125,11 @@ pub fn resolve_seed(seed: &str) -> String {
 /// from the resist-ladder-bypassing wrapper to the guard-respecting one, so
 /// elemental jewels / guards / All Guard apply to Xain's Bloody Horns / Terio
 /// Punch, Cort's Guilty Cross, and the Delilas trio's signature moves (a fix,
-/// not a randomization - it is seedless). `fishing_prices` is a
+/// not a randomization - it is seedless). `approach_softlock_fix` retargets
+/// the battle-action walk-animation-missing jump so a walk-less monster
+/// (bosses generally) whose contact attack targets someone beyond its reach
+/// strikes in place instead of parking the battle in an infinite range poll -
+/// the "endless camera orbit" softlock (also seedless). `fishing_prices` is a
 /// comma/space-separated list of `item=points` pairs that set the
 /// fishing-exchange point cost of prizes (e.g. `0x6F=500` for the Water Egg).
 /// `location_renames` is a newline-separated list of `index=name` lines that
@@ -193,6 +197,7 @@ pub fn patch_rom(
     enemy_ally: bool,
     shiny_seru: bool,
     jewel_fix: bool,
+    approach_softlock_fix: bool,
     fishing_prices: &str,
     location_renames: &str,
     earth_egg_price: &str,
@@ -412,6 +417,21 @@ pub fn patch_rom(
         ));
     } else {
         summary.push_str("jewel-fix: untouched\n");
+    }
+
+    // Attack-approach softlock fix: one word in the battle overlay so a
+    // walk-less monster attacking beyond its reach strikes in place instead of
+    // parking the battle in the state-0x19 range poll forever. Seedless.
+    if approach_softlock_fix {
+        let rep = apply::apply_approach_fix(&mut patcher)
+            .map_err(|e| err(format!("approach-softlock-fix: {e}")))?;
+        summary.push_str(if rep.changed {
+            "approach-softlock-fix: battle overlay patched (out-of-reach walk-less monsters strike in place)\n"
+        } else {
+            "approach-softlock-fix: already applied\n"
+        });
+    } else {
+        summary.push_str("approach-softlock-fix: untouched\n");
     }
 
     // Fishing-exchange price edits: a comma/semicolon/whitespace-separated list

@@ -513,6 +513,17 @@ pub(crate) struct RandomizeArgs {
     /// untouched.
     #[arg(long, default_value_t = false)]
     pub(crate) jewel_fix: bool,
+    /// Fix the **attack-approach softlock** (the "endless camera orbit"): a
+    /// monster with no walk animation - bosses generally - whose contact
+    /// attack targets a party member beyond its reach parks the battle in an
+    /// infinite range poll (battle-action state `0x19` has no movement and no
+    /// timeout; caught live on the Gaza rematch). One same-size word edit in
+    /// the battle overlay retargets the walk-animation-missing path to the
+    /// strike chain, so the attack lands from where the monster stands
+    /// instead of wedging the fight. Walking monsters, party attacks, and
+    /// in-range attacks are untouched.
+    #[arg(long, default_value_t = false)]
+    pub(crate) approach_softlock_fix: bool,
     /// Set the **fishing-exchange price** of one or more prizes. Comma- or
     /// repeat-separated `ITEM=POINTS` entries (`--fishing-price 0x6F=500` sets
     /// the Water Egg to 500 fishing points; ids in decimal or `0xHH`). The

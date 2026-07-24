@@ -395,6 +395,44 @@ pub fn apply_jewel_fix(patcher: &mut DiscPatcher) -> Result<JewelFixReport> {
     })
 }
 
+/// Outcome of applying the attack-approach softlock fix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ApproachFixReport {
+    /// Whether the hook word was rewritten (`false` = already fixed).
+    pub changed: bool,
+}
+
+/// Apply the **attack-approach softlock fix** (see [`crate::approach_fix`]):
+/// retarget the battle-action state machine's walk-tag-missing jump so a
+/// monster with no walk animation whose contact attack targets someone beyond
+/// its reach strikes from where it stands instead of parking the battle in
+/// the state-`0x19` range poll forever (the "endless camera orbit" softlock).
+///
+/// One same-size one-word edit in the battle-action overlay (raw PROT entry
+/// 898). The stock word and its two documented neighbours are verified before
+/// writing; an unrecognized build is refused without touching the disc, and an
+/// already-fixed image is a no-op.
+pub fn apply_approach_fix(patcher: &mut DiscPatcher) -> Result<ApproachFixReport> {
+    let index = crate::approach_fix::BATTLE_ACTION_OVERLAY_PROT_INDEX;
+    let overlay = patcher
+        .read_entry(index)
+        .with_context(|| format!("read battle-action overlay PROT {index} for approach fix"))?;
+    match crate::approach_fix::plan(&overlay)? {
+        None => Ok(ApproachFixReport { changed: false }),
+        Some(fix) => {
+            patcher
+                .patch_prot_entry(index, fix.hook_off as u64, &fix.word.to_le_bytes())
+                .with_context(|| {
+                    format!(
+                        "write approach-fix word at PROT {index} +{:#x}",
+                        fix.hook_off
+                    )
+                })?;
+            Ok(ApproachFixReport { changed: true })
+        }
+    }
+}
+
 /// Outcome of a landmark/location rename.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocationRenameReport {

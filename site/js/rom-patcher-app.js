@@ -9,7 +9,8 @@
  * unused_enemies, unused_items, equipment_drops, monster_stats, move_power,
  * element_affinity, spell_cost, equip_bonus, weapon_specialty, starting_level,
  * solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru,
- * jewel_fix, fishing_prices, location_renames, earth_egg_price, arts_powers,
+ * jewel_fix, approach_softlock_fix, fishing_prices, location_renames,
+ * earth_egg_price, arts_powers,
  * arts_ap_grants)
  * -> { data, summary, seed, lang }`, `resolve_seed(str)`,
  * `validate_lang_pack(image, yaml) -> { ok, language, applied, skipped, message, report }`,
@@ -161,7 +162,7 @@ const PRESET_BASE = {
   drops: 'none', encounters: 'none', encounter_scope: 'scene', soloStrong: false, fleeExp: false, chests: 'none',
   shops: 'none', casino: 'none', steals: 'none', arts: 'none', doors: 'none',
   door_coupling: 'coupled', houseDoors: false, equipmentDrops: false, seruTrade: false,
-  enemyAlly: false, shinySeru: false, jewelFix: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', artsApGrant: '',
+  enemyAlly: false, shinySeru: false, jewelFix: false, approachFix: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', artsApGrant: '',
   startingItems: 0, doorOfWind: false, incense: false,
   speedChain: false, chickenHeart: false, goodLuckBell: false,
   allWarps: false,
@@ -196,7 +197,7 @@ const PRESETS = {
     soloStrong: true, fleeExp: true,
     chests: 'shuffle', steals: 'shuffle', arts: 'shuffle',
     monster_stats: 'shuffle', equip_bonus: 'shuffle', equipmentDrops: true,
-    seruTrade: true, enemyAlly: true, shinySeru: true, jewelFix: true,
+    seruTrade: true, enemyAlly: true, shinySeru: true, jewelFix: true, approachFix: true,
     ...STARTING_BUNDLE,
   },
   chaos: {
@@ -208,7 +209,7 @@ const PRESETS = {
     houseDoors: true, unusedEnemies: true, unusedItems: true,
     monster_stats: 'random', move_power: 'random', element_affinity: 'random',
     spell_cost: 'random', equip_bonus: 'random', weaponSpecialty: true,
-    equipmentDrops: true, seruTrade: true, enemyAlly: true, shinySeru: true, jewelFix: true,
+    equipmentDrops: true, seruTrade: true, enemyAlly: true, shinySeru: true, jewelFix: true, approachFix: true,
     ...STARTING_BUNDLE,
   },
 };
@@ -233,6 +234,7 @@ function init() {
   const enemyAllyChk = $('rom-enemy-ally');
   const shinySeruChk = $('rom-shiny-seru');
   const jewelFixChk = $('rom-jewel-fix');
+  const approachFixChk = $('rom-approach-fix');
   const fishingPriceInput = $('rom-fishing-price');
   const renameLocationInput = $('rom-rename-location');
   const earthEggPriceInput = $('rom-earth-egg-price');
@@ -396,6 +398,7 @@ function init() {
     enemyAllyChk.checked = cfg.enemyAlly;
     shinySeruChk.checked = cfg.shinySeru;
     jewelFixChk.checked = cfg.jewelFix;
+    approachFixChk.checked = cfg.approachFix;
     fishingPriceInput.value = cfg.fishingPrice || '';
     renameLocationInput.value = cfg.renameLocation || '';
     earthEggPriceInput.value = cfg.earthEggPrice || '';
@@ -478,6 +481,7 @@ function init() {
     const enemyAlly = enemyAllyChk.checked;
     const shinySeru = shinySeruChk.checked;
     const jewelFix = jewelFixChk.checked;
+    const approachFix = approachFixChk.checked;
     const fishingPrice = (fishingPriceInput.value || '').trim();
     const renameLocation = (renameLocationInput.value || '').trim();
     const earthEggPrice = (earthEggPriceInput.value || '').trim();
@@ -527,7 +531,7 @@ function init() {
       speedChain === 0 && chickenHeart === 0 && goodLuckBell === 0 && !allWarps &&
       monsterStats === 'none' && movePower === 'none' && elementAffinity === 'none' &&
       spellCost === 'none' && equipBonus === 'none' && !weaponSpecialty &&
-      startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru && !jewelFix &&
+      startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru && !jewelFix && !approachFix &&
       !fishingPrice && !renameLocation && !earthEggPrice && !artsPower && !artsApGrant
     ) {
       setStatus('Enable at least one option (pick a preset, a language, or flip a toggle).', 'err');
@@ -553,7 +557,7 @@ function init() {
       setStatus('Patching (this can take a moment for a full disc) ...');
       // Yield so the status paints before the synchronous WASM call.
       await new Promise((r) => setTimeout(r, 30));
-      const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant);
+      const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant);
       const data = result.data;
       const usedSeed = result.seed;
       const name = patchedName(file.name, usedSeed);

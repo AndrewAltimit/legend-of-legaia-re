@@ -58,6 +58,7 @@ disc-gated, so CI runs without a disc. There is also a
   - [Shiny Seru](#shiny-seru)
   - [Seru trading](#seru-trading)
   - [Jewel fix](#jewel-fix)
+  - [Approach-softlock fix](#approach-softlock-fix)
   - [Fishing prize prices](#fishing-prize-prices)
   - [Location names](#location-names)
   - [Earth Egg coin threshold](#earth-egg-coin-threshold)
@@ -179,6 +180,7 @@ legaia-patcher randomize --input DISC.bin --seed pal --enemy-ally               
 legaia-patcher randomize --input DISC.bin --seed pal --shiny-seru                         # 2% chance a capturable enemy is shiny (+35% stats / captured-Seru damage)
 legaia-patcher randomize --input DISC.bin --seed swap --seru-trade                        # vendors trade seru-for-seru (clean-room engine UI)
 legaia-patcher randomize --input DISC.bin --seed fair --jewel-fix                         # boss cinematic casts respect elemental guards
+legaia-patcher randomize --input DISC.bin --seed fair --approach-softlock-fix              # walk-less bosses out of reach strike instead of wedging
 legaia-patcher fishing   --input DISC.bin                                                 # read-only: list fishing-exchange prizes + prices
 legaia-patcher randomize --input DISC.bin --seed fish --fishing-price 0x6F=500            # Buma Water Egg costs 500 fishing points
 legaia-patcher locations --input DISC.bin                                                 # read-only: list the 16 world-map location names
@@ -262,6 +264,7 @@ unless asked for:
 | `--shiny-seru` | a capturable enemy spawns shiny: +35% stats, and its captured Seru deals +35% damage forever | `--shiny-pct N` (default 2) | [Shiny Seru](#shiny-seru) |
 | `--seru-trade` | vendors swap one of a character's seru for another, reseeding every two in-game hours | `--seru-trade-offers N` caps offers per vendor | [Seru trading](#seru-trading) |
 | `--jewel-fix` | the boss cinematic casts (Xain, Cort, the Delilas trio) respect elemental guards like every other special | - | [Jewel fix](#jewel-fix) |
+| `--approach-softlock-fix` | a walk-less monster whose attack targets someone beyond its reach strikes in place instead of parking the battle forever (the "endless camera orbit") | - | [Approach-softlock fix](#approach-softlock-fix) |
 | `--fishing-price ITEM=POINTS` | set the fishing-exchange point cost of a prize (e.g. the Buma Water Egg); the price also gates when the prize appears | repeatable / comma-separated | [Fishing prize prices](#fishing-prize-prices) |
 | `--rename-location INDEX=NAME` | rename a world-map location (save / load / pause + quick-travel menu), e.g. an element cave to match a re-elemented party | repeatable | [Location names](#location-names) |
 | `--earth-egg-price VALUE` | set the casino-coin threshold to obtain the Earth Egg (Sol Tower Prize Counter; retail 100000), gate + debit together | single value | [Earth Egg coin threshold](#earth-egg-coin-threshold) |
@@ -839,6 +842,30 @@ refused.
 > 952's window - are expected rather than violations), the patched image
 > still parses, the edit is byte-deterministic, and re-application is refused.
 > The engine-side equivalent is `damage_finish::bypass_party_resist = false`.
+
+### Approach-softlock fix
+
+`--approach-softlock-fix` closes the retail "endless camera orbit" softlock
+(`approach_fix` module). A monster whose action table has no walk animation
+(tag `0x20` - bosses generally) cannot enter the battle-action walking states:
+when its contact attack targets a party member beyond its size-scaled reach,
+state `0x14`'s fallback drops it into the state-`0x19` range poll, which has
+**no movement code and no timeout** - the battle waits forever while the idle
+camera orbits the party. Caught live from ordinary play on the Gaza rematch
+and root-caused from the disassembly; full anatomy in
+[battle-action.md](../subsystems/battle-action.md#root-cause-the-walk-tag-fallback-in-state-0x14).
+The fix is a **single-word** retarget in the battle overlay (PROT 898): the
+walk-tag-missing jump at `0x801E32AC` lands on the in-range continuation
+(state `0x1E`, the strike chain) instead of the park, so the attack simply
+lands from where the monster stands. Walking monsters, party attacks and
+in-range attacks are byte-for-byte untouched. Seedless; the stock word and
+its two documented neighbours are verified before writing, an unrecognized
+build is refused, and an already-fixed image is a no-op.
+
+> Verified by the `approach_fix_real` disc oracle: the baseline hook holds
+> the stock park jump, exactly the one word changes across the whole overlay
+> entry, the patched image still parses, the edit is byte-deterministic, and
+> a second application is a clean no-op.
 
 ### Fishing prize prices
 
@@ -1771,6 +1798,7 @@ bit-for-bit.
 | `crates/patcher` `flee_exp_real` | disc-gated | inject the run-away EXP hook: assert the real disc's escape-teardown site (PROT 898, VA `0x801E5A10`) **is** the expected displaced pair, then off the patched image that the overlay detour is `j routine` + nop, the SCUS routine decodes as the hand-assembled bytes (replaying the displaced pair + returning), each edit is surgical (only the 8-byte hook / the routine region change), the patched overlay + image still parse and stay EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook site / non-dead routine region |
 | `crates/patcher` `enemy_ally_real` | disc-gated | inject the enemy-ally charm: assert the real disc's setup hook (SCUS, VA `0x80051990`) **is** `lui v1,0x8008` / `lbu v1,-0x42f4(v1)` and the victory site (PROT 898, VA `0x801E6638`) **is** `andi v0,v0,0x4`, then off the patched image that the SCUS detour is `j routine` + nop, the routine decodes as the hand-assembled bytes (sets `0x380`, replays the displaced pair, returns), the victory word is widened to `andi v0,v0,0x384`, each edit is surgical, it composes with flee-EXP in the same gap, the image stays EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook / non-dead routine region / unexpected victory word |
 | `crates/patcher` `shiny_seru_real` | disc-gated | inject shiny Seru: assert all nine hook sites match the known US build and the SCUS regions (`0x80077728` gap 1 / `0x8007AE00` arena 1 / `0x8007AFF8` arena 2 / `0x80078A88` slot 6) are all-zero dead space outside every live table - incl. the `0x80079xxx` SsAPI sound tables the old arena3/4/5 squatted in (routine VAs 4-byte aligned), and the victory mouth-override row at `0x800781B0` keeps the clean keyframes; then off the patched image: every detour became `j routine` + nop, the bitmap has Gimard set / gobu clear, bytes outside the planned edits are untouched, the disc stays EDC/ECC-valid, it composes with enemy-ally, is byte-deterministic, and the guards refuse a corrupted / non-dead / in-table region |
+| `crates/patcher` `approach_fix_real` | disc-gated | apply the approach-softlock fix: assert the baseline hook at PROT 898 `+0x14A94` holds the stock `j 0x801E32C4` word (and its `jal`/`sb` neighbours match the documented disassembly), then off the patched image that exactly the one hook word changed, the image still parses, the edit is byte-deterministic, and a second application is a clean no-op |
 | `crates/patcher` `jewel_fix_real` | disc-gated | apply the jewel fix: assert all thirteen cast-module call sites across PROT 944 / 952 / 953 / 958 / 959 / 960 hold the stock `jal FUN_801DD6B4` word, then off the patched image that every site reads `jal FUN_801DD4B0` and that per touched window exactly the planned words changed - the overlapping 09xx extents are measured empirically (each other module's head located in the window), so aliased appearances (e.g. entry 953 starting `0x1800` into 952's window) are expected - plus the image still parses, the edit is byte-deterministic, and re-application / an unrecognized build is refused |
 | `crates/patcher` `fishing_price_real` | disc-gated | apply a fishing-exchange price edit: assert the Buma Water Egg row is at PROT 972 offset 0x9874 (20000 points), then off the patched image that the price becomes the target as a same-size u32, exactly the targeted price words changed, the overlay re-parses, re-applying is a no-op, and an absent item is refused |
 | `crates/patcher` `location_name_real` | disc-gated | rename world-map locations: assert the pinned landmark names decode at their SCUS coordinates (idx 3/4 = element caves at 0x64378/0x64398), then off the patched image that a rename is a same-size 32-byte slot overwrite re-parsing to the NUL-terminated new name, only the targeted slots change, re-applying is a no-op, and an oversized / non-ASCII / OOB name is refused |

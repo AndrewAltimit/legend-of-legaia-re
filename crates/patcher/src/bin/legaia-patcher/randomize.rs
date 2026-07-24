@@ -220,6 +220,25 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("jewel_fix = false".to_string());
     }
 
+    // Attack-approach softlock fix: retarget the battle-action walk-tag-missing
+    // jump so a walk-less monster attacking beyond its reach strikes in place
+    // instead of parking the battle in the state-0x19 range poll (the "endless
+    // camera orbit"). Seedless - one word in the battle overlay.
+    if args.approach_softlock_fix {
+        let report = apply::apply_approach_fix(&mut patcher)?;
+        println!(
+            "approach-softlock-fix: {}",
+            if report.changed {
+                "battle overlay patched (walk-less monsters out of reach now strike in place)"
+            } else {
+                "already applied (no change)"
+            }
+        );
+        manifest.push("approach_softlock_fix = true".to_string());
+    } else {
+        manifest.push("approach_softlock_fix = false".to_string());
+    }
+
     // Fishing-exchange price edits: set the point cost of one or more prizes
     // (e.g. the Buma Water Egg). Seedless targeted edits in the raw PROT 972
     // overlay; the price also gates when the prize appears.
