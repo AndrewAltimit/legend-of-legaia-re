@@ -54,12 +54,30 @@
 --   discards.csv    the subset where an ASSIGN overwrote a non-zero prior
 --   invariant.csv   per-vsync per-party-slot hp/bar/acc and the invariant
 --   absorbing.csv   transitions into and out of (hp != bar && acc == 0)
+--   final_heal.csv  each FUN_801E6968 revive call: seat + acc at the call
+--   settle.csv      each 0x51 settle-check verdict (v0 at 0x801E604C) + ctx+0x6D8
 --   summary.txt     terse verdict
+--
+-- The strongest deliberate driver of the discard is the Lost Grail Final Heal
+-- (state 0x50 runs FUN_801E6968, whose class-4 revive call reaches the bare
+-- assign at 0x800410BC on the very action whose killing hit credited the
+-- accumulator). The save's inventory owns exactly one Lost Grail (item 0xE7)
+-- but nobody wears it, so LEGAIA_EQUIP_GRAIL pokes it into a party member's
+-- accessory slot 7 (record +0x19D) while the battle is still parked at the
+-- Begin/Run prompt. That reproduces a configuration ordinary play reaches by
+-- equipping the owned grail in the pause menu before the fight; the per-frame
+-- stat aggregator FUN_80042558 then derives ability bit 0x27 (record +0xF8
+-- bit 7 - the exact gate the Final Heal checks) from the equipment id, and
+-- every HP-side write still flows through retail code only. The poke touches
+-- no HP field, no bar field, no accumulator.
 --
 -- Knobs (env):
 --   LEGAIA_FRAMES        capture vsyncs (default 4000)
 --   LEGAIA_AUTOPILOT     press the next macro button every N vsyncs (0 = off)
 --   LEGAIA_AUTOPILOT_SEQ comma-separated button cycle
+--   LEGAIA_EQUIP_GRAIL   party seat 0..2 whose accessory slot 7 becomes the
+--                        Lost Grail (0xE7) at vsync 60, or -1 = no poke
+--                        (default -1)
 --   LEGAIA_SSTATE        save state (fingerprint it; never trust a slot number)
 --
 -- Run:
@@ -73,9 +91,10 @@ package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
 local pad   = require("probe.pad")
 
-local SSTATE    = probe.getenv("LEGAIA_SSTATE", "")
-local FRAMES    = probe.getenv_num("LEGAIA_FRAMES", 4000)
-local AUTOPILOT = probe.getenv_num("LEGAIA_AUTOPILOT", 0)
+local SSTATE      = probe.getenv("LEGAIA_SSTATE", "")
+local FRAMES      = probe.getenv_num("LEGAIA_FRAMES", 4000)
+local AUTOPILOT   = probe.getenv_num("LEGAIA_AUTOPILOT", 0)
+local EQUIP_GRAIL = probe.getenv_num("LEGAIA_EQUIP_GRAIL", -1)
 local AUTOPILOT_SEQ = probe.getenv("LEGAIA_AUTOPILOT_SEQ",
     "CROSS,DOWN,CROSS,CROSS,CROSS,UP,CROSS,CROSS,RIGHT,CROSS,CROSS,CROSS")
 
@@ -88,6 +107,11 @@ end
 local CTX_PTR = 0x8007BD24
 local ACTORS  = 0x801C9370
 local CAM_YAW = 0x8007B792
+
+-- Character records (the pause-menu-side structs, not the battle actors).
+local PARTY_ID_TBL = 0x8007BD10 -- seat -> 1-based party id
+local CHAR_REC     = 0x80084708 -- + (party_id-1)*0x414
+local LOST_GRAIL   = 0xE7       -- item id; passive index 0x27 = +0xF8 bit 7
 
 local function u8(a)  return probe.read_u8(a)  or 0 end
 local function u16(a) return probe.read_u16(a) or 0 end
@@ -143,6 +167,13 @@ local WRITERS = {
     { bp = 0x801EDB7C, store = 0x801EDB7C, kind = "CLAMP",
       ptr = "v1", val = "a1", who = "FUN_801EC3E4 anti-overkill clamp" },
 
+    -- The enemy-cast damage applier inside the cast tick FUN_801E09F8 - the
+    -- SAFE shape (clamps the damage once, applies it to both fields). This is
+    -- how Gaza's own casts credit a party accumulator, so without it every
+    -- party-side blame reads "(none seen)".
+    { bp = 0x801E1948, store = 0x801E1948, kind = "ACCUM",
+      ptr = "v1", val = "v0", who = "FUN_801E09F8 enemy-cast safe applier" },
+
     -- FUN_80047430, the per-actor bar tick. The party arm writes back the
     -- quarter-stepped remainder; the non-party arm zeroes the accumulator and
     -- applies the whole delta in one frame.
@@ -151,6 +182,20 @@ local WRITERS = {
     { bp = 0x80047580, store = 0x80047580, kind = "DRAIN0",
       ptr = "s2", val = "zero", who = "FUN_80047430 non-party one-shot" },
 }
+
+-- The two Final Heal call sites inside FUN_801E6968 (state 0x50). Each is
+-- `jal 0x800402F4` with a0=4 (revive class), a1=1 (full); a2 carries the
+-- seat for the single-target site. Logging them separates "the auto-revive
+-- fired" from "a menu Phoenix fired" at the same applier.
+local FINAL_HEAL_SITES = {
+    { bp = 0x801E6A24, who = "FUN_801E6968 single-target revive" },
+    { bp = 0x801E6BD0, who = "FUN_801E6968 sweep revive" },
+}
+
+-- The 0x51 arm's settle-check return: 801e6044 jal 0x801e7250, so the
+-- delay-slot-adjusted return lands at 0x801E604C where v0 IS the verdict
+-- (non-zero = "not settled" = the countdown decrement is skipped).
+local SETTLE_RET = 0x801E604C
 
 ------------------------------------------------------------------
 local auto_seq = {}
@@ -173,6 +218,10 @@ local absorbing_ever = {}     -- seat -> true if it was ever absorbing
 local last_inv = {}           -- seat -> last invariant value
 local last_acc_writer = {}    -- seat -> {pc, who} of the most recent +0x10 store
 local park_vsync = nil
+local final_heals = {}        -- list of Final Heal firings
+local settle_counts = { settled = 0, blocked = 0 }
+local grail_poked_at = nil
+local grail_bit_seen = nil    -- vsync the +0xF8 bit-7 first read set
 
 local acc_csv = probe.csv_open(probe.out_path("acc_writes.csv"),
     "vsync,store_pc,kind,who,seat,actor,prior_acc,new_acc,hp,bar,bar_minus_hp,discarded")
@@ -185,6 +234,12 @@ local inv_csv = probe.csv_open(probe.out_path("invariant.csv"),
 
 local abs_csv = probe.csv_open(probe.out_path("absorbing.csv"),
     "vsync,seat,event,hp,bar,acc,residual,blamed_pc,blamed_who")
+
+local heal_csv = probe.csv_open(probe.out_path("final_heal.csv"),
+    "vsync,site_pc,who,a2_seat,hp,bar,acc")
+
+local settle_csv = probe.csv_open(probe.out_path("settle.csv"),
+    "vsync,verdict,ctx6d8,acting_seat,target_1dd")
 
 local function note_absorbing(seat, event, hp, bar, acc)
     local blame = last_acc_writer[seat] or { pc = 0, who = "(none seen)" }
@@ -237,6 +292,43 @@ local function on_acc_write(w)
     end
 end
 
+local function on_final_heal(site)
+    return function()
+        local r = PCSX.getRegisters()
+        local seat = tonumber(r.GPR.n.a2) or -1
+        local a = (seat >= 0 and seat <= 7) and actor_of(seat) or 0
+        local hp  = a ~= 0 and u16(a + 0x14C) or -1
+        local bar = a ~= 0 and u16(a + 0x172) or -1
+        local acc = a ~= 0 and i32(a + 0x10) or 0
+        final_heals[#final_heals + 1] = {
+            vsync = g_elapsed, pc = site.bp, who = site.who, seat = seat,
+            hp = hp, bar = bar, acc = acc,
+        }
+        heal_csv:row("%d,0x%08X,%s,%d,%d,%d,%d",
+            g_elapsed, site.bp, site.who, seat, hp, bar, acc)
+        PCSX.log(string.format(
+            "[discard] vsync=%d FINAL HEAL fired: %s seat=%d (hp=%d bar=%d acc=%d)",
+            g_elapsed, site.who, seat, hp, bar, acc))
+    end
+end
+
+local function on_settle_ret()
+    local r = PCSX.getRegisters()
+    local verdict = tonumber(r.GPR.n.v0) or 0
+    local c = u32(CTX_PTR)
+    if not in_ram(c) then return end
+    local seat = u8(c + 0x13)
+    local a = actor_of(seat)
+    local t1dd = a ~= 0 and u8(a + 0x1DD) or -1
+    if verdict ~= 0 then
+        settle_counts.blocked = settle_counts.blocked + 1
+    else
+        settle_counts.settled = settle_counts.settled + 1
+    end
+    settle_csv:row("%d,%d,%d,%d,%d",
+        g_elapsed, verdict, i16(c + 0x6D8), seat, t1dd)
+end
+
 local function arm_bps()
     local c = u32(CTX_PTR)
     if not in_ram(c) then return false end
@@ -244,9 +336,35 @@ local function arm_bps()
         probe.arm_breakpoint(w.bp, "Exec", 4,
             string.format("acc_%08X", w.store), on_acc_write(w))
     end
-    PCSX.log(string.format("[discard] armed %d accumulator writers on ctx=0x%08X",
-        #WRITERS, c))
+    for _, s in ipairs(FINAL_HEAL_SITES) do
+        probe.arm_breakpoint(s.bp, "Exec", 4,
+            string.format("heal_%08X", s.bp), on_final_heal(s))
+    end
+    probe.arm_breakpoint(SETTLE_RET, "Exec", 4, "settle_ret", on_settle_ret)
+    PCSX.log(string.format(
+        "[discard] armed %d accumulator writers + %d final-heal sites + settle return on ctx=0x%08X",
+        #WRITERS, #FINAL_HEAL_SITES, c))
     return true
+end
+
+-- Poke the owned Lost Grail into a party member's accessory slot 7. Pure
+-- equipment-id state - the ability bit itself is derived from it by the
+-- retail per-frame aggregator FUN_80042558, which is the point.
+local function poke_grail(seat)
+    local pid = u8(PARTY_ID_TBL + seat)
+    if pid < 1 or pid > 4 then
+        PCSX.log(string.format("[discard] grail poke: seat %d has bad party id %d",
+            seat, pid))
+        return
+    end
+    local rec = CHAR_REC + (pid - 1) * 0x414
+    local old = u8(rec + 0x19D)
+    probe.write_u8(rec + 0x19D, LOST_GRAIL)
+    grail_poked_at = g_elapsed
+    PCSX.log(string.format(
+        "[discard] vsync=%d poked Lost Grail 0x%02X over accessory 0x%02X " ..
+        "(seat %d, record 0x%08X slot +0x19D); no HP/bar/acc field touched",
+        g_elapsed, LOST_GRAIL, old, seat, rec))
 end
 
 ------------------------------------------------------------------
@@ -256,10 +374,27 @@ probe.run{
     sstate         = SSTATE,
     capture_frames = FRAMES,
     boot_delay     = 60,
-    on_arm         = function() return { "deferred" } end,
-    on_capture     = function(_, v)
+    on_arm         = function() return {} end,
+    on_capture     = function(ctx, v)
         g_elapsed = v
         if not armed and v >= 2 then armed = arm_bps() end
+
+        if EQUIP_GRAIL >= 0 and EQUIP_GRAIL <= 2 then
+            if not grail_poked_at and v >= 60 then poke_grail(EQUIP_GRAIL) end
+            -- Verify the retail aggregator derived the Final Heal gate bit
+            -- (record +0xF8 bit 7) from the poked equipment id.
+            if grail_poked_at and not grail_bit_seen and v % 30 == 0 then
+                local pid = u8(PARTY_ID_TBL + EQUIP_GRAIL)
+                local rec = CHAR_REC + (pid - 1) * 0x414
+                local w1 = u32(rec + 0xF8)
+                if w1 % 0x100 >= 0x80 then
+                    grail_bit_seen = v
+                    PCSX.log(string.format(
+                        "[discard] vsync=%d FUN_80042558 derived ability bit 0x27 " ..
+                        "(+0xF8=0x%08X) from the equipped grail", v, w1))
+                end
+            end
+        end
 
         if pad_release_at and v >= pad_release_at then
             pad.release(pad_btn_held)
@@ -287,6 +422,13 @@ probe.run{
                     "[discard] state 0x51 has been parked %d vsyncs at vsync %d",
                     ctx7_since, v))
             end
+        end
+
+        -- A healthy 0x51 dwell measures 83 vsyncs on this save. Once the park
+        -- has held ~30x that past detection, the settle.csv tail is already
+        -- decisive - stop burning wall clock.
+        if park_vsync and v - park_vsync > 2400 then
+            ctx.request_quit = true
         end
 
         -- The party count the all-target arm of FUN_801E7250 scans.
@@ -354,12 +496,30 @@ probe.run{
         end
         if not any then add("  none") end
         add("")
+        add("-- Lost Grail (Final Heal) instrumentation --")
+        if EQUIP_GRAIL >= 0 then
+            add("  grail poked onto seat %d at vsync %s; ability bit 0x27 %s",
+                EQUIP_GRAIL, tostring(grail_poked_at),
+                grail_bit_seen and string.format("derived by vsync %d", grail_bit_seen)
+                    or "NEVER derived (poke did not take)")
+        else
+            add("  no equip poke requested")
+        end
+        add("final heal firings: %d", #final_heals)
+        for _, h in ipairs(final_heals) do
+            add("  vsync=%-6d %s seat=%d (hp=%d bar=%d acc-at-call=%d%s)",
+                h.vsync, h.who, h.seat, h.hp, h.bar, h.acc,
+                h.acc ~= 0 and " <- non-zero: the assign will DISCARD this" or "")
+        end
+        add("")
         add("-- state 0x51 park --")
         if park_vsync then
             add("  parked from vsync %d (camera yaw 0x%04X)", park_vsync, u16(CAM_YAW))
         else
             add("  no park observed")
         end
+        add("settle checks at 0x801E604C: settled=%d not-settled=%d",
+            settle_counts.settled, settle_counts.blocked)
         add("")
         if #discards > 0 then
             add("VERDICT: retail reached the bare-assign accumulator store with a")
