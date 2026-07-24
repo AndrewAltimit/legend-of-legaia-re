@@ -235,8 +235,7 @@ impl DevMenuSession {
             if let Some(record) = records.get_mut(self.chars.character as usize)
                 && crate::debug_char_editor::apply_confirm_clear(record)
             {
-                self.pending_sfx
-                    .push(crate::debug_char_editor::CONFIRM_SFX);
+                self.pending_sfx.push(crate::debug_char_editor::CONFIRM_SFX);
             }
         }
     }
@@ -301,8 +300,12 @@ impl EquipCommitHost for WorldEquipHost<'_> {
     }
 
     fn give_to_bag(&mut self, item_id: u8, qty: u8) {
-        *self.inventory.entry(item_id).or_insert(0) =
-            self.inventory.get(&item_id).copied().unwrap_or(0).saturating_add(qty);
+        *self.inventory.entry(item_id).or_insert(0) = self
+            .inventory
+            .get(&item_id)
+            .copied()
+            .unwrap_or(0)
+            .saturating_add(qty);
     }
 
     fn play_sfx(&mut self, cue: u8) {
@@ -444,7 +447,10 @@ mod tests {
             sfx: Vec::new(),
         };
         let mut record = vec![0u8; 0x414];
-        assert!(s.commit_equip_row(&mut host, &mut record, &[2, 2, 2]).is_none());
+        assert!(
+            s.commit_equip_row(&mut host, &mut record, &[2, 2, 2])
+                .is_none()
+        );
         assert_eq!(record[0x196], 0);
     }
 

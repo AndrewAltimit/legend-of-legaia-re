@@ -779,6 +779,7 @@ mod camera;
 
 /// Opt-in developer menu (`LEGAIA_DEV_MENU=1`) - the host screen for the
 /// ported retail dev-menu kernels.
+#[path = "window/dev_menu.rs"]
 mod dev_menu;
 #[path = "window/event_handler.rs"]
 mod event_handler;

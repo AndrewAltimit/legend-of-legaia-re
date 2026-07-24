@@ -240,7 +240,10 @@ mod tests {
 
     #[test]
     fn mode_zero_blocks_and_anything_else_polls() {
-        assert_eq!(mdec_in_sync(0, || 0), MdecSync::Waited(wait_mdec_in_idle(|| 0)));
+        assert_eq!(
+            mdec_in_sync(0, || 0),
+            MdecSync::Waited(wait_mdec_in_idle(|| 0))
+        );
         assert_eq!(mdec_in_sync(1, || IN_BUSY_MASK), MdecSync::Polled(1));
         assert_eq!(mdec_in_sync(1, || 0), MdecSync::Polled(0));
         // The mode argument is only tested against zero.
@@ -251,7 +254,11 @@ mod tests {
     fn the_out_poll_reads_the_in_side_word() {
         // Bit 0x18 of the *in* status decides, and the out-side source is
         // not consulted at all on the polling path.
-        let got = mdec_out_sync(1, || panic!("out source must not be read"), || OUT_BUSY_MASK);
+        let got = mdec_out_sync(
+            1,
+            || panic!("out source must not be read"),
+            || OUT_BUSY_MASK,
+        );
         assert_eq!(got, MdecSync::Polled(1));
         let got = mdec_out_sync(1, || panic!("out source must not be read"), || 0);
         assert_eq!(got, MdecSync::Polled(0));

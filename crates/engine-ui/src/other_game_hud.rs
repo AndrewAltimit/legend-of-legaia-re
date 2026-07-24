@@ -129,7 +129,11 @@ pub const GP0_POLY_GT4: u8 = 0x3C;
 /// index.
 #[inline]
 pub fn hud_sel_split(sel: i32) -> (usize, i32) {
-    let biased = if sel < 0 { sel.wrapping_add(0x3FF) } else { sel };
+    let biased = if sel < 0 {
+        sel.wrapping_add(0x3FF)
+    } else {
+        sel
+    };
     ((sel & 0x3FF) as usize, biased >> HUD_SEL_INDEX_BITS)
 }
 
@@ -173,12 +177,7 @@ fn shared_quad(rec: &HudSprite, brightness: i32, clut: u16) -> HudQuad {
     let v1 = rec.v0.wrapping_add(rec.h).wrapping_sub(1);
     HudQuad {
         xy: [(0, 0); 4],
-        uv: [
-            (rec.u0, rec.v0),
-            (u1, rec.v0),
-            (rec.u0, v1),
-            (u1, v1),
-        ],
+        uv: [(rec.u0, rec.v0), (u1, rec.v0), (rec.u0, v1), (u1, v1)],
         rgb: [top, top, bottom, bottom],
         tpage: rec.tpage.wrapping_add((rec.page as u16).wrapping_mul(0x20)),
         clut,
@@ -397,7 +396,10 @@ mod tests {
         let mut a = sprite();
         let mut b = sprite();
         // 0x200 doubles: 0x80 * 0x200 >> 8 = 0x100, which truncates to 0.
-        assert_eq!(hud_quad_centred(&mut a, 0, 0, 0, 0x200, 0x1000).rgb[0][0], 0);
+        assert_eq!(
+            hud_quad_centred(&mut a, 0, 0, 0, 0x200, 0x1000).rgb[0][0],
+            0
+        );
         // The corner emitter clamps to 0xFF first, so nothing overflows.
         assert_eq!(
             hud_quad_corner(&mut b, 0, 0, 0, 0x200, 0x1000).rgb[0][0],
@@ -447,7 +449,10 @@ mod tests {
     #[test]
     fn leading_zeros_are_suppressed() {
         let s = decimal_slots(1000);
-        assert_eq!(s, [None, None, None, None, Some(1), Some(0), Some(0), Some(0)]);
+        assert_eq!(
+            s,
+            [None, None, None, None, Some(1), Some(0), Some(0), Some(0)]
+        );
     }
 
     #[test]

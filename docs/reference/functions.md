@@ -1068,19 +1068,92 @@ Callees of the pause/field menu overlay (loaded by the mode-22 CARD pair via `FU
 
 ## Other-game minigame overlay (PROT 0977)
 
-Slot-A minigame occupant (the "other_game" overlay reached from the mode-24 door warp), true base `0x801CE818`. The `0x801Dxxxx`-named `overlay_0977_other_game_*` dumps are correctly based; the `0x801Cxxxx`-named ones are mis-imported at `0x801C0000` (add `0xE818` for the true VA, per the same anchor that fixes `801C2748` -> `801D0F60`). Structural roles only.
+Slot-A occupant of the mode-24 sub-id-5 door warp, true base `0x801CE818`. `other_game` is the **CDNAME block name**, not an identity: the module is the Muscle Dome **arena door/init** slot (dev module `other6`), pinned by its own monster-name roster and by the contest settlement `FUN_801D0F60`. The rows below are its HUD primitive layer. The `0x801Dxxxx`-named `overlay_0977_other_game_*` dumps are correctly based; the `0x801Cxxxx`-named ones are mis-imported at `0x801C0000` (add `0xE818` for the true VA, per the same anchor that fixes `801C2748` -> `801D0F60`).
+
+Ports: `legaia_engine_ui::other_game_hud` (the two quad emitters + the decimal readout) and `legaia_engine_core::other_game_overlay` (the step scaler + the SFX cue). See [PROT 0977 HUD primitives](#prot-0977-hud-primitives).
 
 | Address | Role |
 |---|---|
-| `801D050C` | **Colored-quad emitter** - allocates a `0x34`-byte GP0 polygon packet from the scratchpad pool `0x1F800314+0x8C` with per-vertex RGB modulated by a brightness argument, geometry from the table at `0x801D170C` (stride `0x14`), posts via `FUN_8003D2C4`. `see ghidra/scripts/funcs/overlay_0977_other_game_801d050c.txt`. |
-| `801D1308` | **Multi-digit decimal renderer** - divides the value down (`/10^7` then a `/10` chain) into up to eight digits and draws each via `FUN_801D050C`. `see ghidra/scripts/funcs/overlay_0977_other_game_801d1308.txt`. |
-| `801D1288` | **Per-frame sprite/cue trigger** - calls the shared primitive `FUN_80065034` with a rotating id (counter `DAT_801D1AE4 & 3`) and a coordinate from `_DAT_80084580`, then bumps the counter. `see ghidra/scripts/funcs/overlay_0977_other_game_801d1288.txt`. |
-| `801D14B0` | **Step-size scaler** - returns the argument unchanged when flag `DAT_801D1AB4` is set, else `arg/5` (arg > 5), `1` (arg < 3), or `arg/2`. `see ghidra/scripts/funcs/overlay_0977_other_game_801d14b0.txt`. |
+| `801D050C` | **Centred sprite-quad emitter** - a `POLY_GT4` packet from the scratchpad pool `0x1F800314+0x8C`, textured and Gouraud-shaded from the descriptor table at `0x801D170C` (stride `0x14`), centred on the argument point. [details](#prot-0977-hud-primitives). `see ghidra/scripts/funcs/overlay_0977_other_game_801d050c.txt`. |
+| `801D08EC` | **Corner-anchored sibling** of `801D050C`: same packet, but the argument point is the quad's top-left and the brightness argument is clamped to `0..=0xFF` first. [details](#prot-0977-hud-primitives). `see ghidra/scripts/funcs/overlay_0977_other_game_801d08ec.txt`. |
+| `801D1308` | **Decimal readout** - up to eight digits through `FUN_801D050C`, stepping the digit record's texture column per glyph. Negative values draw nothing. [details](#prot-0977-hud-primitives). `see ghidra/scripts/funcs/overlay_0977_other_game_801d1308.txt`. |
+| `801D1288` | **Round-robin SFX cue** - one `FUN_80065034` voice-attr call per frame across voices `0x10..=0x13` (counter `DAT_801D1AE4 & 3`), positioned from the party-block word `_DAT_80084580`. Not a sprite emitter - `FUN_80065034` is the libsnd `SpuSetVoiceAttr` analogue. `see ghidra/scripts/funcs/overlay_0977_other_game_801d1288.txt`. |
+| `801D14B0` | **Step-size scaler** - a leaf: returns the argument unchanged while flag `DAT_801D1AB4` is set, else `arg/5` (`arg > 5`), `1` (`arg < 3`), or `arg/2`. `see ghidra/scripts/funcs/overlay_0977_other_game_801d14b0.txt`. |
 | `801CF074` (true VA; the `801c085c` dump is mis-based, `+0xE818`) | **Minigame per-frame update** - accumulates frame time (scratchpad `0x1F800314+0x7F`) into lane counters, scales each step via `FUN_801D14B0`, and triggers cues via `FUN_801D1288` / `FUN_801D08EC`. `see ghidra/scripts/funcs/overlay_0977_other_game_801c085c.txt`. |
 
 ## Function details
 
 Full write-ups for the rows above whose detail outgrew a table cell. Linked from each section table by **[details ↓]**.
+
+### PROT 0977 HUD primitives
+
+Three routines share the sprite descriptor table at `0x801D170C`. Each record
+is `0x14` bytes:
+
+| Offset | Field |
+|---|---|
+| `+0x00` | `i32` texel-to-world size scalar, applied before the caller's scale |
+| `+0x04` | `u16` base tpage word; the emitter adds `page * 0x20` |
+| `+0x06` | `u16` CLUT word |
+| `+0x08` / `+0x09` | `u8` texture U / V of the top-left texel |
+| `+0x0A` / `+0x0B` | `u8` texel width / height |
+| `+0x0C..0x0E` | `u8` RGB of the two **top** vertices |
+| `+0x0F` | non-zero selects the semi-transparent command (`0x3E` over `0x3C`) |
+| `+0x10..0x12` | `u8` RGB of the two **bottom** vertices |
+| `+0x13` | `u8` tpage page offset |
+
+The two colour triples make every quad a vertical two-stop gradient - the
+packet is a `POLY_GT4`, thirteen words including the tag, not a flat sprite.
+
+The `sel` argument packs a table index in its low ten bits and a **variant**
+above them (`sel / 0x400`, truncating). A non-zero variant is a *write* into
+the shared record: it sets `+0x0F` to `1` and `+0x13` to the variant, and
+those stay set for every later call on that record. Variant `2` additionally
+draws with `CLUT + 1`, which the record itself never sees.
+
+Geometry differs only between the two emitters. `FUN_801D050C` halves the
+extent (`(texels * size) >> 13`, then `* scale >> 12`) and brackets the
+argument point, `x - half ..= x + half - 1`. `FUN_801D08EC` shifts once less
+and spans `x ..= x + extent` from the argument point, and clamps brightness
+into `0..=0xFF` before scaling - the centred emitter does not, so a brightness
+above `0x100` wraps its colour bytes there.
+
+Both post through `FUN_8003D2C4` at the ordering-table depth held in
+`DAT_801D1AA8`, then reset that depth to `3`.
+
+`FUN_801D1308` renders a decimal readout through the centred emitter using
+record index `9`. Its eight digit slots start at `-1`, the units slot is
+pre-seeded with `0`, and slot `i` is overwritten with `value / 10^(7-i)` only
+when that quotient is non-zero; a slot holding a negative quotient is skipped
+at draw time. Two consequences: `0` renders as a single `0`, and a **negative
+value renders nothing at all**. The pen advances 8 px per slot including the
+skipped ones, and the digit record's CLUT is offset by the palette argument
+for the call and restored to `0x7D86` on return.
+
+### `801CFE20` / `801CFE5C`
+
+**MDEC in / out DMA sync.** Both live in the slot-A STR/FMV overlay and are
+byte-identical in PROT 0970 (`cutscene_str`) and PROT 0971 (`debug_menu`) -
+the same co-residency the MDECin DMA-callback hook `FUN_801CFE98` shows (see
+[`subsystems/cutscene.md`](../subsystems/cutscene.md)). They are **not**
+debug-menu logic; the `overlay_debug_menu_*` dumps at these VAs are that
+capture's copy of the same overlay bytes.
+
+Each takes one argument selecting between a blocking wait and a poll:
+
+| Entry | argument `0` | argument non-zero |
+|---|---|---|
+| `801CFE20` | `FUN_801D0100` - spin until MDEC-**in** idle | bit `0x1D` of the status word |
+| `801CFE5C` | `FUN_801D0198` - spin until MDEC-**out** idle | bit `0x18` of the status word |
+
+The blocking halves count down from `0x100000`, re-reading their status word
+each pass. They return `0` the moment the busy bit (`0x2000_0000` in-side,
+`0x0100_0000` out-side) clears, and `-1` after logging `"MDEC in sync"` /
+`"MDEC out sync"` if the budget runs out. Both polling halves read the *same*
+word - `FUN_801D0230`, a six-instruction leaf that dereferences the in-side
+pointer global - so the out-side poll queries the in-side register while its
+own blocking arm queries the out-side one. Port:
+`legaia_engine_core::mdec_dma_sync`.
 
 ### `8003EF14`
 

@@ -51,6 +51,7 @@ Two distinct flags in the same RAM page:
 | Flag | NA address | JP address | Effect |
 |---|---|---|---|
 | `_DAT_8007B8C2` | `0x8007B8C2` | (build-shifted by 0x1B90) | Dev/retail loader-path flag; 40 `lh` reads in SCUS. Retail boots it to `1` (`0x80015F08`), selecting the PROT-index arm; the `== 0` arm is the `h:\PROT\FIELD\<stage>\…` dev-path branch in `FUN_800255B8` and its sisters. |
+| `_DAT_8007B9B0` | `0x8007B9B0` | - | Overlay **print flag**. Separate from the menu enable: the slot-A minigame overlays gate their `printf`-style readouts on it, several of them additionally on held pad bit `0x2`. In the fishing overlay that pair also swaps the bite cadence for a debug value. |
 | `_DAT_8007B98F` | `0x8007B98F` | `0x8007D51F` | In-game debug menu enable. Accessed as the high byte of the word at `0x8007B98C` - the GameShark byte-write `8007B98F 0001` makes the LE word non-zero (`0x01000000`), enabling every debug branch with one check. |
 
 Both have **zero static writers in `SCUS_942.54`**. The writers must live in an unswept overlay or come from external POKE - TCRF GameShark codes prove both flags are runtime-writable.
@@ -88,6 +89,46 @@ GameShark D-code globals:
 - `DAT_8007B7C0` - previous-frame button mask (so `D007B7C0 XXXX` D-codes mean "wait for the user to press XXXX").
 - `_DAT_8007B874 = mask & ~prev` - newly pressed this frame (edge detection).
 - `DAT_8007B7C4 = mask ^ prev` - buttons that changed.
+
+## Developer menus
+
+`SELECT + Triangle` above opens the in-game debug menu. It is not one screen -
+it is four separate tools, each resident in a different overlay, that the
+retail debug branches reach:
+
+| Tool | Retail entry | Lives in |
+|---|---|---|
+| Row list (`MAP_CHANGE`, `CAMERA`, `ENCOUNT`, ... 24 rows) | `FUN_801EAD98` draws it, `FUN_801E9F64` feeds each row's pad edits | world-map overlay |
+| EVENT FLAG editor | `FUN_801DBD04` value step, `FUN_801DB8B4` / `FUN_801DB8F4` list cursor | field overlay (0897) |
+| Character-parameter editor | `FUN_801D6E18` | menu overlay (0899) |
+| Equip commit | `FUN_801E5A08` | field overlay (0897) |
+
+The row list's cursor lives at `ctx + 0x9E` and `FUN_801E9F64` dispatches on
+`cursor - 3`; each arm edits one row's backing value from the frame's
+newly-pressed pad word, Right (`0x2000`) stepping up and Left (`0x8000`) down.
+The two editors take the whole pad instead: both read the **packed** words
+`_DAT_8007BB84` (newly pressed) and `_DAT_8007B850` (held), Up/Down walking
+their own cursor and Left/Right editing the hovered value.
+
+The character editor is worth reading even outside a debug build, because it
+runs a two-stage clamp over all four party records at the end of **every**
+tick, whichever row is hovered. That clamp is the game's own statement of its
+stat caps - see [`docs/subsystems/save-screen.md`](../subsystems/save-screen.md)
+for where the records live, and the port in `legaia_engine_core`.
+
+### Reaching the menus in the engine
+
+The Rust port carries all four kernel families, and `legaia-engine`'s
+`play-window` hosts them behind an explicit opt-in: set `LEGAIA_DEV_MENU=1`
+and a row list is drawn and driven once a frame. Nothing runs and no draw is
+produced without the variable, so a default build is unchanged.
+
+The engine's list carries the subset of retail's rows whose backing state the
+engine owns - `MAP_CHANGE`, `ENCOUNT`, `EVENT_FLAG`, `PLAYER_PARAM`, `EQUIP` -
+rather than all 24, so that no row steps a value nothing reads. The rows that
+are missing need overlay-resident state the engine never loads: the flag-list
+table (`DAT_801F2E94`, stride `0xA` with an `'X'` sentinel) is the clearest
+case, and without it the EVENT FLAG page edits a raw index only.
 
 ## Camera control axes
 
