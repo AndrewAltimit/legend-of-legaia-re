@@ -274,6 +274,16 @@ single point while clearing its `+0x10` is enough, and the next party-targeted
 action hangs while monster-targeted actions in between still complete normally.
 Probe: `scripts/pcsx-redux/autorun_gaza2_hpbar_settle.lua`.
 
+Two conventions for seeding `+0x10` coexist in the dumped battle corpus, which
+is where a retail trigger would have to come from. `FUN_801EC3E4` **accumulates**
+(`lw v0,0x10(v1)` / `addu` / `sw` at `0x801EDB58`, with an anti-overkill clamp
+`if (bar < acc) acc = bar` at `0x801EDB70`), while all three of `FUN_800402F4`'s
+seeds (`0x800408FC`, `0x80040D28`, `0x800410BC`) plainly **assign**
+`actor[+0x10] = -delta`. An assigning seed that lands while an accumulated drain
+is still in flight discards the remainder, and the bar stops short of live HP by
+exactly that much. Which retail sequence actually reaches that state is
+**Unknown** - no capture has produced the desync without an external HP write.
+
 ### Consequences for instrumentation
 
 Any intervention that force-writes `+0x14C` without re-seeding `+0x10` -
@@ -1359,6 +1369,7 @@ the disassembly of PROT entry 0898 at base `0x801CE818`.
 - **Unlisted `ctx[7]` states are inert/reserved, not a crash (`FUN_801E295C`).** The state byte dispatches through a 256-entry `jr` jump table at `0x801CED44` with **no `default`** (`sltiu v0,ctx[7],0x100; jr v0`; see `ghidra/scripts/funcs/overlay_0898_801e295c.txt`). The handled states are `0x00`, `0x0A`–`0x0C`, `0x14`–`0x19`, `0x1E`–`0x20`, `0x28`–`0x2E`, `0x32`–`0x38`, `0x3C`–`0x40`, `0x46`–`0x48`, `0x50`–`0x52`, `0x5A`, `0x64`–`0x66`, `0x68`–`0x6B`, `0x6E`–`0x71`, `0xFD`, `0xFF`. Every other byte value in `0x00`–`0xFF` has no case body: its table slot falls straight to the shared post-switch epilogue (the knockback/shove settle at `0x801E6814`), a safe no-op advance, never an out-of-bounds jump.
 - The inert indices are the inter-band gaps (`0x07`, `0x21`–`0x27`, `0x39`–`0x3B`, `0x41`–`0x45`, `0x49`–`0x4F`, `0x53`–`0x59`, `0x5B`–`0x63`, `0x6C`–`0x6D`, `0x72`–`0xFC`) plus the low-band ones. No path in the dumped battle-overlay corpus writes any of them into `ctx[7]` (corpus-scoped: a value injected by an un-dumped overlay would still dispatch safely). **One exception:** state `0x67` **is** written (case `0x66` sets `ctx[7] = 0x67`) yet has no case body — a genuine written-but-inert state that also lands on the epilogue.
 - State `0x47` (spirit-arts sustain): the `actor[+0x1F9] != 0` "spirit shield" branch is **resolved**. `+0x1F9` is set by the damage-application primitive `FUN_800402F4` case 5 (spirit-shield spirit → `+0x1F9 = 1`, gated on a non-zero target roll) and cleared by case 4 (cleanse → `+0x1F9 = 0`). Which case runs is selected by `actor[+0x1E8]`, seeded at [state `0x3C`](#state-table) from the spell table's class byte (`DAT_800754C8 + spell_id*0xC + 0`): class `== 5` routes to the shield write, class `== 4` to the cleanse. So the specific spirit that raises the shield is disc-side spell-table data, not a runtime constant. See [`spell-table.md`](../formats/spell-table.md).
+- **The `0x51` HP-bar settle gate is decoded and its softlock is reproducible; its retail trigger is not.** The mechanism, the exact branch that skips the countdown, and the absorbing `+0x14C != +0x172` / `+0x10 == 0` state are all measured - see [the section above](#the-0x51-exit-gate-and-the-hp-bar-settle-invariant). What is still open is which unaided retail sequence puts a party slot into that state. The mixed assign-vs-accumulate seeding of `+0x10` is the leading candidate class and has not been driven to a repro; every park captured so far needed an external HP write to set up.
 - `FUN_801E7250` (`0x51`) and `FUN_801E7824` (`0x68`) are decoded from their `overlay_battle_action_*` dumps: the former is the **HP-bar drain settle check** (the `0x51` arm freezes the `ctx[+0x6D8]` countdown while any relevant actor's live HP `+0x14C` differs from its bar display value `+0x172`), the latter the **captured-monster takedown** (queued anim from the monster record, HP pair + facing zeroed, retarget to `8`, run-UI banner opened). Both ported in `crates/engine-vm/src/battle_action.rs`; see [`reference/functions.md`](../reference/functions.md).
 
 ## See also
