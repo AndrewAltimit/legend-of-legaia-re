@@ -1,7 +1,9 @@
 //! World-map debug-menu value-adjust kernels, ported clean-room from the
 //! per-row input state machine `FUN_801E9F64`.
 //!
-//! PORT: FUN_801E9F64
+//! The address tag sits on each implementing function below rather than on
+//! this module block, because a module-level tag claims every symbol in the
+//! file at once.
 //!
 //! `FUN_801E9F64` (`overlay_world_map_walk_801e9f64.txt`, base `0x801C0000`) is
 //! the input half of the world-map developer menu whose list is drawn by
@@ -26,16 +28,13 @@
 //! editors that poke the live party records) touch disc data / actor state and
 //! stay documented-not-ported; see [`docs/subsystems/world-map.md`].
 //!
-//! ## NOT WIRED
+//! ## Wiring
 //!
-//! These are the *input* arms of the world-map developer menu, and the engine
-//! has no developer menu to feed them. The dispatcher they come from is keyed
-//! on the menu actor's cursor row (`actor[+0x9E] - 3`), so a caller needs that
-//! actor: a debug-menu screen holding a phase byte and a cursor row, with a
-//! per-row backing value for each arm to step. The sibling
-//! [`crate::world_map_overlay`] carries the same gap for the menu's row model,
-//! panel sizer and list-picker; both close together or not at all. Wiring only
-//! the two integer kernels here would step values nothing displays.
+//! `legaia_engine_core::dev_menu_host::DevMenuSession` is the host screen:
+//! its `MAP_CHANGE` row steps [`wrap12_step`] and its `ENCOUNT` row
+//! [`clamp1_255_step`], both off the frame's newly-pressed pad word. The
+//! sibling [`crate::world_map_overlay`] still carries the menu's retail row
+//! model, panel sizer and list-picker, which that screen does not use.
 
 /// Newly-pressed pad bit that steps a debug-menu value **up**.
 pub const PAD_STEP_UP: u32 = 0x2000;
@@ -46,6 +45,8 @@ pub const PAD_STEP_DOWN: u32 = 0x8000;
 ///
 /// Mirrors the branch order in `FUN_801E9F64`: the up bit is tested first and
 /// wins when both bits are set in the same frame.
+///
+// PORT: FUN_801e9f64 (pad-edge decode shared by every row arm)
 #[inline]
 pub fn pad_step(pad_pressed: u32) -> i32 {
     if pad_pressed & PAD_STEP_UP != 0 {
@@ -61,6 +62,8 @@ pub fn pad_step(pad_pressed: u32) -> i32 {
 ///
 /// The retail arm keeps the low 12 bits after the increment/decrement, so the
 /// value cycles `0 -> 0xFFF -> 0` without ever leaving `0..=0xFFF`.
+///
+// PORT: FUN_801e9f64 (`0x801E9FE4..0x801EA030`, the 12-bit ring arm)
 #[inline]
 pub fn wrap12_step(value: u16, pad_pressed: u32) -> u16 {
     let stepped = (value as i32) + pad_step(pad_pressed);
@@ -73,6 +76,8 @@ pub fn wrap12_step(value: u16, pad_pressed: u32) -> u16 {
 /// value `>= 0x100` snaps to `255`. The clamp runs every tick the row is active,
 /// so a value seeded out of range is pulled in on the first frame even without a
 /// pad press.
+///
+// PORT: FUN_801e9f64 (`0x801EA034..0x801EA0AC`, the `[1, 255]` clamp arm)
 #[inline]
 pub fn clamp1_255_step(value: i32, pad_pressed: u32) -> i32 {
     let mut v = value + pad_step(pad_pressed);

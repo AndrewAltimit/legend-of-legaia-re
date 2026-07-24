@@ -101,7 +101,7 @@ Statically-linked PsyQ glue. Trivial to stub in a clean-room port.
 |---|---|
 | `80056678` | `EnterCriticalSection` - `syscall(0)` with `$a0=1`. |
 | `80056688` | `ExitCriticalSection` - `syscall(0)` with `$a0=2`. |
-| `80056738` / `80056748` / `80056758` / `80056768` / `80057014` / `8005ACE8` / `8005ACD8` / `8005BBE8` / `8005FD68` / `8005FD78` | `jr 0xA0/0xB0/0xC0` - PSX BIOS table dispatchers (libapi). Identified targets: `80056748` = `strncmp` (A0 0x18); `80056758` = `strncpy` (A0 0x19, `li t2,0xA0; jr t2; li t1,0x19`) - the name-copy thunk used by `FUN_800560B4` (party-name seed) and `FUN_8001D7F8` (scene-name sync); `80056768` = `strlen` (A0 0x1B); `80057014` = `rand` (A0 0x2E); `8005ACD8` = `GPU_cw` (A0 0x49); `8005BBE8` = `FlushCache` (A0 0x44); `8005FD68` = B0 0x5B (card init); `8005FD78` = `ChangeClearRCnt` (C0 0x0A). |
+| `80056738` / `80056748` / `80056758` / `80056768` / `80057014` / `8005ACE8` / `8005ACD8` / `8005BBE8` / `8005FD68` / `8005FD78` | `jr 0xA0/0xB0/0xC0` - PSX BIOS table dispatchers (libapi). Identified targets: `80056748` = `strncmp` (A0 0x18); `80056758` = `strcpy` (A0 0x19, `li t2,0xA0; jr t2; li t1,0x19`) - the name-copy thunk used by `FUN_800560B4` (party-name seed) and `FUN_8001D7F8` (scene-name sync); `80056768` = `strlen` (A0 0x1B); `80057014` = A0 `0x2E` = `memchr` (**not** `rand` - `rand` is A0 `0x2F`, the veneer at `80056798`); `8005ACD8` = `GPU_cw` (A0 0x49); `8005BBE8` = `FlushCache` (A0 0x44); `8005FD68` = B0 0x5B (card init); `8005FD78` = `ChangeClearRCnt` (C0 0x0A). |
 | `80056658` | `TestEvent` BIOS thunk - `jr 0xB0` with `t1=0x0B`. Polls a kernel event handle. |
 | `8006B844` | `WaitEvent` BIOS thunk - `jr 0xB0` with `t1=0x0A`. Blocks on a kernel event handle. |
 | `80056698` / `800566A8` / `800566B8` / `800566C8` / `800566D8` / `800566E8` / `800566F8` / `80056708` / `80056718` | Byte-identical `li t2,0xB0; jr t2` BIOS B-vector thunks emitted by the linker once per caller. The selected B-routine is determined by `$t1` set up by the caller, not by the thunk. Same pattern at `8006EE14` / `8006EE24` / `8006EE34` (B0-vector cluster cited from menu/text helpers). |
@@ -119,6 +119,10 @@ Statically-linked PsyQ glue. Trivial to stub in a clean-room port.
 | `8005FE18` / `8005FE7C` / `8005FEAC` | libapi device-vtable trampolines - call slot `+0x14` (`(4, a0)`) / `+0x10` / `+0x18` of `*0x800857A0`; siblings of the `+0xC` trampoline `FUN_8005FD88`. |
 | `80056638` / `80056668` / `80056778` / `80056618` | More `li t2,vec; jr t2; li t1,routine` BIOS-vector thunks with identified targets: `80056638` = `OpenEvent` (B0 0x08), `80056668` = `EnableEvent` (B0 0x0C), `80056778` = `bzero` (A0 0x28), `80056618` = A0 0x70. The audio-init `FUN_8001D230` opens then enables its 8 SPU/DMA events through the first two. |
 | `8005F994` | `memcpy` (word-granular) - copies `a2` words `a1` -> `a0`. |
+| `80056608` / `80056628` | Two more `li t2,0xA0; jr t2; li t1,N` BIOS A-vector veneers in the same bank as the identified thunks above: `80056608` = A0 `0x51`, `80056628` = A0 `0x71`. Sandwiched between them is `80056618` = A0 `0x70`, already listed. The bank is one veneer per distinct routine number, emitted by the linker. `see ghidra/scripts/funcs/80056608.txt`, `80056628.txt`. |
+| `8002B584` | `free` - the standard 12-byte-header free-list insert with forward and backward coalescing. Block header is `[next, prev, size]`; the list head is gp-relative at `gp+0x840`; a block is merged when `block + size + 0xC` equals its neighbour's stored `next`. No branch in it touches game state. `see ghidra/scripts/funcs/8002b584.txt`. |
+| `80058170` | libgpu debug rectangle validator. Reads the library debug-level byte `_DAT_80087D56`; at level 1 it bounds-checks the four `RECT` halfwords at `a1+0x0/2/4/6` against the framebuffer limits `_DAT_80087D58` / `_DAT_80087D5A` and rejects non-positive extents, at level 2 it reports unconditionally, and either way it reports through the installed printf hook `*_DAT_80087D50` with a caller-name argument. Pure diagnostics - the retail path leaves the level byte at 0 and the whole body falls through. `see ghidra/scripts/funcs/80058170.txt`. |
+| `8005860C` | Sibling of the validator above on the primitive-submission path: same `_DAT_80087D56` debug gate and `*_DAT_80087D50` hook, then dispatch through slot `+0x2C` of the GPU module function table `*_DAT_80087D4C`, then a 24-bit-masked pointer store into the primitive's first word - the OT/tag link every libgpu submit ends with. `see ghidra/scripts/funcs/8005860c.txt`. |
 | `8005F9C8` | Raw DMA-channel start - spins for the channel idle, enables it in DPCR, programs MADR/BCR/CHCR at `0x1F801080 + chan*0x10` and the DICR bit; the low-level transfer kick under libgpu/libspu. `see ghidra/scripts/funcs/8005f9c8.txt`. |
 | `8002035C` | Kernel-event teardown + SPU re-init - closes the 8 event handles at `gp+0x6D8..0x6F8` (via the `CloseEvent`-class thunk `FUN_80056648`) inside a critical section, then re-runs the SPU voice-state init `FUN_8006EF18`. Inverse of the audio-event setup `FUN_8001D230`. `see ghidra/scripts/funcs/8002035c.txt`. |
 
@@ -128,6 +132,9 @@ Statically-linked PsyQ glue. Trivial to stub in a clean-room port.
 |---|---|
 | `8005B7C0` | `SetRotMatrix`-shaped - `setCopControlWord(2, 0xD800, x)`. |
 | `8005B7CC` | `SetTransMatrix`-shaped - `setCopControlWord(2, 0xE000, x)`. |
+| `8005B6A8` | `SetTransMatrix` proper - loads three words from `matrix+0x14/+0x18/+0x1C` (the `long t[3]` tail of a PsyQ `MATRIX`, past the `short m[3][3]` head) into the GTE translation control registers TRX / TRY / TRZ. Eight instructions, no branches. `see ghidra/scripts/funcs/8005b6a8.txt`. |
+| `8005B7D8` | `SetFarColor` - shifts each of the three colour arguments left by 4 and writes them to the GTE far-colour control registers RFC / GFC / BFC. The `<< 4` is the PsyQ API's own 8-bit → 12-bit-fraction promotion, so a caller passes plain 0..255 components. `see ghidra/scripts/funcs/8005b7d8.txt`. |
+| `8005BA38` | **Not a function.** The dump reports `size=1 bytes, 0 instructions` - Ghidra could not decode a single instruction at this address, so it is data or padding between the GTE wrappers, minted as a `FUN_` only because something references the address. Do not open a port row for it. `see ghidra/scripts/funcs/8005ba38.txt`. |
 | `8001CF50` | **Cutscene/field camera GTE rotation build.** Composes the view rotation matrix from the three camera-angle globals by rotating about each axis: `RotMatrixX(pitch=_DAT_8007B790)` / `RotMatrixY(yaw=_DAT_8007B792)` / `RotMatrixZ(roll=_DAT_8007B794)` (each gated per-object by a flag bit at `obj+0x52` so a draw can inherit the globals), then sets the GTE translation from the focus and emits. This is what consumes the op-`0x45` camera angles - the build path `FUN_801DAB90` / `FUN_801DB8EC` only *stage* the angles + focus + H. See [`subsystems/cutscene.md`](../subsystems/cutscene.md). |
 | `800461A4` / `8004629C` / `8004638C` | GTE `RotMatrixX` / `RotMatrixY` / `RotMatrixZ`. `(angle12)`: masks the angle to 12 bits (`4096 = 360°`), indexes the shared sin/cos LUT at `0x80070A2C` (`+0x800` = the quarter-wave cosine offset), and multiplies the current matrix by the per-axis rotation via GTE `mvmva`. Used by the camera build `FUN_8001CF50` and other per-object transforms. |
 | `8005BA1C` | GTE square-root / normalize - `mtc2 0xF000 / mfc2 0xF800`. |
@@ -171,7 +178,8 @@ gap sweeps stop re-flagging them; all are dumped under `ghidra/scripts/funcs/<ad
 | `8005C2C4` | `CdDiskReady` - wraps `FUN_8005D9A0`, returns `rc == 0`. |
 | `8005A78C` | Pad / SIO init - touches `_DAT_80078E28/E34/E44` (SIO MMIO), wraps with `FUN_8005FF04` (IRQ disable), clears 256 B at `0x801C948C` and 6 KB at `0x801C9590` (pad RX/TX buffers). |
 | `8005ABD0` | Pad-protocol-phase handshake - bitfield writes `0xE1001000 / 0x20000504 / 0x10000007` on `_DAT_80078E24/E28`. SIO digital-pad protocol selector, returns state code 0..4. |
-| `8005BC28` | libcd init / reset with 4-retry - probes via `FUN_8005BD80(1)`, on success programs the CD command records at `0x8006BCB8/BCE0/BD08` (`FUN_8005BECC/BEE4/EB50`); after 4 failures prints a diagnostic and returns 0. `see ghidra/scripts/funcs/8005bc28.txt`. |
+| `8005BC28` | libcd init / reset with 4-retry - probes via `FUN_8005BD80(1)`, on success installs the three CD event callbacks `FUN_8005BCB8` / `FUN_8005BCE0` / `FUN_8005BD08` through `FUN_8005BECC` / `FUN_8005BEE4` / `FUN_8005EB50`; after 4 failures prints a diagnostic and returns 0. `see ghidra/scripts/funcs/8005bc28.txt`. |
+| `8005BCB8` / `8005BCE0` / `8005BD08` | The three callbacks that install names. Each is a 10-instruction wrapper calling the `DeliverEvent` BIOS thunk `FUN_8005BD30` (B-vector `0x07`) with event class `0xF0000003` and spec `0x20` (`8005BCB8`) or `0x40` (the other two) - i.e. they raise the kernel CD-ROM event so a `TestEvent` / `WaitEvent` poller elsewhere unblocks. Not game logic; do not port. `see ghidra/scripts/funcs/8005bcb8.txt`, `8005bce0.txt`, `8005bd08.txt`. |
 | `8005BD80` | CD state-probe dispatcher - `(mode)`: mode 2 -> `FUN_8005D5F8`, else `FUN_8005D648` (and mode 1 also `FUN_8005D504`); returns a readiness bool. Called by the init/reset `FUN_8005BC28`. `see ghidra/scripts/funcs/8005bd80.txt`. |
 | `8005D424` | Low-level CDROM controller poke (thunked through `FUN_8005BDEC`) - writes index/command bytes to the CD MMIO register pointers `_DAT_80079670/9678/967C/9680`, spins on status bit `0x7`, commits `0x1325`. `see ghidra/scripts/funcs/8005d424.txt`. |
 
@@ -498,9 +506,26 @@ Identity + base are pinned by a live-battle-RAM (`s5_tetsu_battle`) vs static-bl
 
 | Address | Role |
 |---|---|
-| `801F71E0` | **Per-frame tutorial-message pacing driver** (668 B; the hot S5 hit). Manages the message display timer at `ctx[+0x6B4]` (`_DAT_8007BD24`): decrements it by `DAT_1F800393 * DAT_1F80037D` (frame-count × rate) each frame; on underflow it advances the tutorial step (`ctx[+0x289]`/step index `ctx[+0x28A]`, loading the next line pointer from `ctx[+0x88C]` into `_DAT_8007B874`) and clears the pad latches (`0x8007B874`/`B938`/`B850`). A player confirm-press (`_DAT_8007B874 != 0`, with `ctx[+0x6B2]==0`) skips the current timer. Sets `ctx[+0x6AE]=0` (line counter) / `ctx[+0x6B0]=1` (active). |
+| `801F71E0` | **Not an entry point** - a `bne` target inside the tutorial-message routine, and the second half of a `lui`/`lw` pair split across it. [Details ↓](#801f71e0-is-a-label-not-an-entry). The **pacing tail** that begins here is what the S5 trace hits: it decrements the message timer `ctx[+0x6B4]` (`_DAT_8007BD24`) by `DAT_1F800393 * DAT_1F80037D` (frame-count × rate) each frame; on underflow it advances the tutorial step (`ctx[+0x289]`/step index `ctx[+0x28A]`, loading the next line pointer from `ctx[+0x88C]` into `_DAT_8007B874`) and clears the pad latches (`0x8007B874`/`B938`/`B850`). A confirm-press (`_DAT_8007B874 != 0`, with `ctx[+0x6B2]==0`) skips the current timer. Sets `ctx[+0x6AE]=0` (line counter) / `ctx[+0x6B0]=1` (active). |
 | `801F6C70` / `801F6D48` | **Tutorial-step text emitters.** Call the box helper `FUN_801F747C(str, mode)` with the step's message and run the same pacing tail as `FUN_801F71E0`. `FUN_801F6D48` dispatches on the step index (`0/1/2/3` → the attack-mode / item / spirit / Hyper-Arts lessons; step 2 also calls `FUN_801F7628`). Host (VA-aliasing): these emitters are the Tetsu-tutorial-battle slot-B overlay at `0x801F69D8` (this section's header), **not** PROT 0900 — at these same VAs PROT 0900's bytes are the field render library (`0x801F6D48` is a ground/tile renderer there). See the 0900 row in `crates/asset/data/static-overlays.toml` for the byte evidence. |
 | `801F747C` | **Tutorial text-box display helper** `(str, mode)`. Emits the prompt through the SCUS text-actor register+draw `FUN_8003541C` (the switch case `0x801F74F4` calls `func_0x8003541C(1, 0xD)`). Host (VA-aliasing): this is the PROT 0967 tutorial-battle occupant. `0x801F747C` is a genuine function head **only** in the 0967 image; in PROT 0900 the same VA falls *inside* `FUN_801F7088` (the field static-object/decoration renderer) — mid its scroll-window-clamp prologue (`lui v1,0x1f80; lb v1,0x3ea(v1)`), not a callable entry — and in PROT 0897 inside the inventory-hub body. So the "tutorial" reading is 0967-only, and this exact VA has hosted three distinct occupants at different times. |
+
+### `801F71E0` is a label, not an entry
+
+Read straight out of the extracted PROT 0967 image at its own base
+`0x801F69D8`, the word **at** `0x801F71E0` is `lw v1,-0x42dc(v0)` and the word
+**before** it is `lui v0,0x8008` - the two halves of one address load, split
+across the address. `0x801F71E0` is also the target of
+`bne v1,v0,0x801f71e0` sixteen bytes earlier, and there is no `jr ra` between
+it and the only prologue below it (`0x801F6B78`, `addiu sp,sp,-0x38`); the
+enclosing routine's sole `jr ra` is at `0x801F7474`.
+[`locate-entry-image.py`](../../scripts/ghidra-analysis/locate-entry-image.py)
+agrees across every based image: no frame here, and no in-image `jal` to it.
+
+The dump that reported a self-entry 167-instruction body has the right bytes
+at the right base; only its `entry=` is wrong, because
+`dump_effect_overlay_0967.py` creates a function at each traced hit address
+and a trace hit lands on whatever instruction the breakpoint sat on.
 
 ## Battle command-block persistence + target menu (overlay 0898, trace-surfaced)
 
@@ -586,8 +611,10 @@ These are the SCUS-callee leaves the field-VM dispatcher reaches via per-opcode 
 | Address | Role |
 |---|---|
 | `801D596C` | Party-state init helper. 46 instructions. Walks the `_DAT_8007C34C` actor list via `func_0x8003CF04(list, FUN_801D2EBC)` looking for an existing match; if found, sets `actor[+0x10] \|= 0x8`. When the global gate `_DAT_800845B8` is non-zero and no match exists, allocates a fresh actor from pool `0x801F22DC` and seeds it with `+0x14=0xC0, +0x16=0x10, +0x26=0xFFF0, +0x54=0, +0x6A=0x200`. Invoked by field-VM op `0x4C 0xD3` (party-state setup). |
+| `801D5A24` | Parameterised actor-spawn helper. 17 instructions. `(value)`. Allocates from the field overlay's own spawn descriptor at `0x801F26D8` into the system pool `_DAT_8007C34C` via `func_0x80020DE0`; on a non-null result writes `actor[+0x54] = 0` and `actor[+0x50] = value`. The parameterised sibling of the [actor-VM](../subsystems/actor-vm.md) spawn helper that clears both fields - the `+0x50` write is the only difference. Read from `overlay_field_0897.bin` at base `0x801CE818`; the dumps printed at `0x801D5A24` under an `overlay_0897_` prefix are mis-based and show unrelated bytes ([phantom-print-index.md](../tooling/phantom-print-index.md)). |
 | `801D835C` | Actor-clone helper for op `0x4C` sub-1 sub-op `0x14`. 48 instructions. `(src_actor, param_2, param_3)`. Spawns a duplicate actor from pool `0x80070644` via `func_0x80020DE0(pool, _DAT_8007C34C)` and copies six u32 slots from `src+0x14..+0x4F` plus `src+0x68`; writes `dst+0x54 = param_3`, `dst+0x74 = param_2`, and sets the scene-global `_DAT_80070648 = src[+0x64]`. |
 | `801DB8EC` | Camera focus + projection setter - [details ↓](#801db8ec) |
+| `801DD4C4` | Per-actor tween step (frameless leaf). `(actor)`. Advances the u16 progress counter `actor[+0x50]` by the scratchpad per-frame delta at `0x1F800393`; when it reaches the duration `actor[+0x9E]` it clamps to that duration and sets bit `3` of the flag word `actor[+0x10]` - the same actor-retire bit `FUN_801E3E00` raises on its op-`0` arm. It then computes the linear interpolant `actor[+0x14] + (actor[+0x24] - actor[+0x14]) * counter / duration`, skipping the arithmetic when `actor[+0x24]` is `-1` or already equals `actor[+0x14]`, and reads the owner back-pointer at `actor[+0x90]`. Frameless, so it has no `addiu sp,sp,-N` prologue - an entry only its `jr ra` predecessor pair identifies. |
 | `801DD9D4` | Per-actor GPU-prim emitter. 69 instructions. `(actor_ptr)`. Builds a polygon-draw header `0x05000000` + flat-color packet `0x28808080` at `_DAT_1F8003A0` (OT chain head), copies `actor[+0xB8..+0xBC]` as RGB into the packet, then iterates a jump-table at `0x801CEC40` calling `func_0x8003D2C4(_DAT_1F8003F4 + actor[+0x50]*4)` once per slot. Used as the predicate callback the field-VM hands to `func_0x8003CF04` from op `0x43 0xE` (mark currently-iterating actor with flag bit `0x8`). |
 | `801DDFE4` | Camera init helper. 3-instruction tail-call wrapper: writes `local_stack[+0x10] = 0x100` then jumps to `0x801EC96C` → `FUN_801D6274`. Sets up the 256-tick camera-config preroll consumed by `FUN_801DE084`. Invoked from the field-VM op `0x45` CAMERA CONFIGURE prelude. |
 | `801DE084` | Camera apply / commit (op `0x45` CAMERA CONFIGURE apply path) - [details ↓](#801de084) |
@@ -772,6 +799,8 @@ SCUS-side leaves the field free-movement controller `FUN_801D01B0` and the cutsc
 | `8003F838` | Particle PRNG step - 13-instr LCG: `seed = seed * 12 + 2`, byte-swap. State at `_DAT_1F8002A8`. |
 | `8003F86C` | OT line-segment emitter with GTE-projected endpoints. 148 instrs: cop2 `0x280030` (RTPT) + `0x1400006` (NCLIP); inserts into ordering table at `_DAT_1F8003F4`. Returns `1` on emit / `0` on cull. |
 | `8001FA68` | Generic ringbuffer push-u16: `*(u16*)(p2 + (++*p1)*2) = val`. |
+| `8001AD38` | **Per-glyph sprite emitter of the dev monospaced text path** (`FUN_8001AA68`'s primitive; distinct from the proportional dialog-font emitter `FUN_8003C1F8`). `(x, y, u, v, clut)`. Takes 0x10 bytes from the scratchpad packet cursor at `_DAT_1F8003A0`, bumps the cursor, and writes a four-word GP0 packet: tag `0x03000000` (3 payload words), command word `0x74808080` (8x8 textured sprite, opaque, grey `0x808080` modulation), position `(x-4, y-4)` as two halfwords, then the `u`/`v` bytes and the CLUT halfword. Links through `FUN_8003D2C4` into the OT pointer at `_DAT_1F8003E0`. The `-4` on both axes is what makes the caller's coordinate the cell's **centre**. `see ghidra/scripts/funcs/8001ad38.txt`. |
+| `80017D98` | Fixed-cell wrapper over `FUN_8001AD38`: sign-extends `(x, y)` and calls it with `u = 0x50`, `v = 0xF8`, `clut = 0x7F80` - one particular cell of the dev-font page, drawn centred at the caller's point. `see ghidra/scripts/funcs/80017d98.txt`. |
 | `80049348` | Battle **arts after-image (motion-trail) renderer**. `(node)`. Walks the actor's 31-deep history rings (positions `+0x4C`, anim cursors `+0x17A`, staged anim ids `+0x1FB`, anim contexts `+0x234` - shifted per frame by `FUN_80047430`) at a stride derived from the anim-rate byte `actor+0x21D`; for each history entry whose staged id byte is `> 0x10` (party: the dynamic-art slot-`0x11` clips; enemies: `0x10 + attach_key` specials) it draws a darkened translucent ghost via `FUN_80048A08` (prim word `\| 0x85000000`, RGB `− 0x101010`), re-running the equipment-variant swap `FUN_8004CCD4` with the ghost's historical cursor + entry first. Per-character trail tint from `DAT_80076908` (party) / `DAT_80076914`. `80049348.txt`. |
 | `8004A908` | NTSC/PAL-adaptive color dithering + brightness mixer for OT primitives. Reads `_DAT_80078D4C` mode flag. |
 | `80046978` | Palette fade / tint engine. Reads RGB components, applies global brightness from `_DAT_1F800393`. |
@@ -903,7 +932,7 @@ Content-only panel draws in the menu overlay (`overlay_menu` and `overlay_shop_s
 | `801E3294` | **Libcd card I/O state machine** (menu overlay): 5 states, shared retry budget `DAT_801E4FC4` (5), both-acked latch `DAT_801EED20`, results `1` / `-1` / `-2` / `-3`. Ported: `engine-core::save_select::CardIoMachine`. `see ghidra/scripts/funcs/overlay_menu_801e3294.txt`. |
 | `801E1114` | **Per-frame card ticker**: advances `FUN_801E3294` under the `_DAT_801F329C < 3` gate and, on the commit beat (`_DAT_801F021C == 3` + request `_DAT_801F0224`), sequences `FUN_801E3AF0` -> `FUN_801E3BA0` -> `FUN_801E1208`. Ported: `save_select::card_frame_tick`. `see ghidra/scripts/funcs/overlay_menu_801e1114.txt`. |
 | `801D6E18` | **Developer character-parameter editor tick.** A 12-row cursor over one character's stat fields; L1/R1 move it, left/right step the hovered field by `±1` scaled `×8` / `×64` by two modifier bits, and row 11 scales by `0x10` into the XP word. Ends **every** tick with a two-stage clamp over all four records - a sanity reset to `1` outside `1..=0x4E1F` (level `1..=0xC7`), then per-field ceilings: HP `9999`, MP `999`, the `+0x120` cap constant `100`, the six battle stats `999`, level `99`. Those ceilings are the game's own stat caps. Ported (input + clamp halves only): `engine-core::debug_char_editor`. `see ghidra/scripts/funcs/overlay_save_ui_801d6e18.txt`. |
-| `801DA2A0` | **Debug-editor page-navigation SM** - the phase router driving `FUN_801D6E18`. Unported; see [`save-screen.md`](../subsystems/save-screen.md#debug-character-parameter-editor-fun_801d6e18--fun_801da2a0). `see ghidra/scripts/funcs/overlay_save_ui_801da2a0.txt`. |
+| `801DA2A0` | **Save/menu sub-screen `0x15`** - one body serving three per-character lists (ability bitfield `+0xF4` population count, Ra-Seru-gated spell count `+0x13C`, a byte at `+0x185`), selected by the step counter; confirm swaps two rows across three parallel arrays. The "debug-editor page-navigation SM" label is falsified. Kernels ported as `engine-core::save_subscreen::sub15_*`; see [`save-screen.md`](../subsystems/save-screen.md#sub-screen-0x15---the-per-character-list-screen-fun_801da2a0). `see ghidra/scripts/funcs/overlay_save_ui_801da2a0.txt`. |
 | `801E13B8` | **Card write / format state machine** over `DAT_801F329C`. States `1`/`2` wait for a positive poll (a `-2` interrupts with menu mode `0x17` save / `0x13` load); `3` burns a `0x18` delay, then opens the directory, sizes it, looks the file up, composes the block (`FUN_801E1934`) and writes - a *create* additionally needs a free block; `5` reads back; `7` formats with 5 busy-retries, and only result `1` is success. Ported: `engine-core::card_flow::CardWriteMachine`. `see ghidra/scripts/funcs/overlay_menu_801e13b8.txt`. |
 | `801E16E0` | **Card-health fold.** Composes a status name off the last poll `DAT_801F3804` into a stack buffer nothing reads, then dispatches the latched poll `DAT_801F3800` through a second `result+3` jump table. Maintains two saturating (`0x400`) counters: `0x801F0218`, the no-card fault count its own `printf("not card %d", n)` names - the argument survives in `a1` and the decompiled C drops it - and `0x801F01BC`, the card-changed debounce that needs **two** consecutive `-2`s. A live fault clears the cached directory scan. Ported: `engine-core::card_flow::CardHealth::fold`. `see ghidra/scripts/funcs/overlay_menu_801e16e0.txt`. |
 | `801E39A8` | **Card event drain**: four `TestEvent` calls with results discarded (TestEvent consumes the pending flag). Ported: `save_select::card_events_drain`. `see ghidra/scripts/funcs/overlay_menu_801e39a8.txt`. |
@@ -948,7 +977,7 @@ Both live at `0x801C0000+`. Full architecture in `docs/subsystems/world-map.md`.
 | `FUN_801D9E1C` (world_map overlay) | World-map encounter handler - [details ↓](#fun_801d9e1c-world_map-overlay) |
 | `FUN_801ED308` (field/world 0897 band) | **Screen-brightness fade/flash SM.** Actor-handler body, 8-case jump table on phase byte `+0x54` (the shared `ctx[+0x54]` convention of `FUN_801ECA08` / `FUN_801EE90C`). Ramps the brightness global `_DAT_8007b440` by `DAT_1f800393*10` (clamped `0xf2`), applying it each frame via `FUN_8003479c`, and saves/restores an RGB tint triple (`DAT_8007bf5d/e/f` <-> `DAT_8007b634/5/6`) across the flash, gated by the counter `_DAT_8007b43c` and `FUN_801d841c`. Terminal cases write the scene struct `DAT_801c6ea4` (`+0x2e`/`+0x3e`/`+0x40`) and reset the actor `+0x50`/`+0x54`. `see ghidra/scripts/funcs/801ed308.txt`. |
 | `FUN_801ED590` (field/world 0897 band) | **Sub-list open/close SM.** Actor-handler body, 4-state on `+0x54`. State 0 halves the brightness scale `_DAT_8007b910` and draws the window (`FUN_801e9b3c(0x801f3274)`); state 1 polls a two-option cursor (`FUN_801e9dc8(&_DAT_8007bb88)`, confirm SFX `0x20`) while unlocked (`_DAT_8007bb80 == 0`); states 2/3 restore by doubling `_DAT_8007b910`, redraw (`0x801f3284`), write the scene struct `DAT_801c6ea4 +0x2e/+0x40`, and hand off (`FUN_801d84b4` / `FUN_800266e0`). Always ticks the text-actor list (`FUN_80031d00`). `see ghidra/scripts/funcs/801ed590.txt`. |
-| `FUN_801EDF00` (field/world 0897 band) | **Return-to-title / soft-reset SM.** Actor-handler body, 4-state on `+0x54`, animating a counter `_DAT_801f35b8` through `FUN_801ed710`. State 1 ramps the counter down to `0xe` and, on a pad edge (`_DAT_8007b850 & 0x9f0`), fires a `0x78`-frame white fade (`FUN_801d58f0`); state 2 ramps up by `DAT_1f800393` and at `0x77` reloads the boot executable by name (`FUN_80017714` on the `SCUS_942.54` string) - a full soft reset. `see ghidra/scripts/funcs/801edf00.txt`. |
+| `FUN_801EDF00` (field/world 0897 band) | **Return-to-title / soft-reset SM.** Actor-handler body, 4-state on `+0x54`, animating a counter `_DAT_801f35b8` through `FUN_801ed710`. State 1 ramps the counter down to `0xe` and, on a pad edge (`_DAT_8007b850 & 0x9f0`), fires a `0x78`-frame white fade (`FUN_801d58f0`); state 2 ramps up by `DAT_1f800393` and on reaching `0x78` reloads the boot executable by name (`FUN_80017714` on the `SCUS_942.54` string) - a full soft reset. `see ghidra/scripts/funcs/801edf00.txt`. |
 | `FUN_801EE5D4` (field/world 0897 band) | **Screen-fill fade transition SM.** Actor-handler body, 5-case jump table on `+0x54`. Builds full-screen fill-rect primitives on the stack (tag `2`, extent `0x10`, RGB `0xff`) and posts them via `FUN_80024e80`, saving/restoring the RGB tint triple (`DAT_8007bf5d/e/f` <-> `DAT_8007b634/5/6`), spawning a sub-actor (`FUN_80020de0(0x800706bc, _DAT_8007c34c)`), queueing DMA (`FUN_8003cf40`), and setting the scene-struct flag bit `0x80000` and `+0x2e/+0x40`. Fade sibling of `FUN_801ED308`. `see ghidra/scripts/funcs/801ee5d4.txt`. |
 | `FUN_801EED58` (field/world 0897 band) | **Symbol-code entry puzzle SM.** Actor-handler body, 5-case on `+0x54`. State 1 reads new-press **face-button** bits out of `_DAT_8007b874` (`0x20/0x40/0x80/0x10` -> symbol `1/0/2/3`; the d-pad occupies `0x1000..0x8000` in that packed byte, so the code is entered with the face buttons, not the directions) and writes one symbol per position into a 5-byte buffer at `DAT_801c6ea4 + _DAT_8007bb88 + 0x54` (index `_DAT_8007bb88` 0..4, SFX `0x36` each). State 3 compares the five entered bytes (`+0x54..+0x58`) against the target code in the descriptor `_DAT_8007b450 + 1..+5`: a full match plays success SFX `0x25` (`FUN_8003ce08(9)`), otherwise failure SFX `0x23` (`FUN_8003ce34(9)`). `see ghidra/scripts/funcs/801eed58.txt`. |
 
@@ -976,6 +1005,9 @@ These are 2-instruction `jr ra` / nop bodies - likely retail-disabled debug hook
 | `80024C80` | Move-VM op `0x16` body. The opcode is a no-op. |
 | `80024DFC` | Actor-cleanup hook (called from `FUN_8002519C` while freeing an actor). |
 | `8002B93C` / `8002B944` / `8002B94C` / `8002B954` / `8002B974` | Cluster of debug-disabled helpers (each a 2-instruction `jr ra; nop`). `8002B974` is a genuine empty leaf, not a Ghidra phantom. |
+| `8002B934` / `8002B96C` / `8002B984` / `8002B98C` | Four more members of that same `0x8002B9xx` cluster, each an identical 2-instruction `jr ra; nop`. They interleave with the five above at 8-byte spacing, which is what a run of separately-emitted empty library leaves looks like. `see ghidra/scripts/funcs/8002b934.txt`, `8002b96c.txt`, `8002b984.txt`, `8002b98c.txt`. |
+| `80026C18` / `80026C20` | Adjacent 2-instruction `jr ra; nop` leaves in the renderer band. Nothing dispatches through them conditionally - a port implements both as no-ops. `see ghidra/scripts/funcs/80026c18.txt`, `80026c20.txt`. |
+| `8003CC88` | `jr ra; li v0,0` - the "returns zero" variant of the empty leaf, so a caller that tests the result always takes the false branch. `see ghidra/scripts/funcs/8003cc88.txt`. |
 | `8003E7F0` | Reserved sound-path stub (called from `FUN_80017AAC`). |
 
 ## Minigames
@@ -990,6 +1022,9 @@ Each minigame's per-frame controller, with the full per-overlay function tables 
 | `801CF00C` | **Baka Fighter** scene-setup leaf (baka_fighter overlay occupant; VA-aliases per the note above). Runs the one-time graphics/scene init - display-env setup (`FUN_8001DAF8`), primitive-packet + OT allocation (`FUN_8001E3B8`), the streaming asset / SEQ loads (`FUN_8001FC00` / `FUN_8001E54C`), and the duel-actor spawns (`FUN_80020DE0`) - before handing to the round SM `FUN_801D3468`. See [`minigame-baka-fighter.md`](../subsystems/minigame-baka-fighter.md). `overlay_baka_fighter_801cf00c.txt`. |
 | `801CF470` | **Dance** per-frame controller / beat-clock state machine (switch on `DAT_801d5334`). See [`minigame-dance.md`](../subsystems/minigame-dance.md). `overlay_dance_801cf470.txt`. |
 | `801D3A2C` | **Dance** floor render cluster: per-frame draw pass `801D3A2C` (actor list + tile grid) + tile-grid blit `801D2A10` + two-layer step-marker lookup `801D3EC0`→`801D3F54`. Reuses the field scene buffer `_DAT_1f8003ec` (grid `+0x8000`, step layers `+0x10000`/`+0x12000`) + actor list `_DAT_8007c36c`. Live-pinned to the dance overlay via the resident mode-24 slot-A help text. See [`minigame-dance.md` § Dance-floor rendering](../subsystems/minigame-dance.md#dance-floor-rendering). `overlay_dance_801d3a2c.txt`. |
+| `801D6028` | **Scene ground-height solver** - shared slot-A overlay-band code (byte-identical in the fishing / slot-machine / debug-menu images). Returns the world height under an actor off the scene floor buffer `_DAT_1F8003EC` and maintains the actor's `0x800000` off-floor flag. Bilinear corner blend, or a step-layer patch path via `801D79E0`. See [`minigame-fishing.md` § The scene floor buffer](../subsystems/minigame-fishing.md#the-scene-floor-buffer). `overlay_fishing_801d6028.txt`. |
+| `801D6BBC` | **Scene floor pass** - the shared-band sibling of `801D3A2C`: same cell walk, same tile-actor spawn, different overlay-local globals, and it opens with a bounds debug print. Not the field-VM tile board. `overlay_fishing_801d6bbc.txt`. |
+| `801D0750` | **Dance** setumei (how-to) tutorial script: the Disco King actor's per-frame state machine over `actor+0x9C`, a 19-slot jump table. See [`minigame-dance.md`](../subsystems/minigame-dance.md#the-setumei-how-to-tutorial-script-fun_801d0750). `overlay_dance_801d0750.txt`. |
 | `801D0748` | **Muscle Dome** per-frame match controller: pad read, phase dispatch on `ctx+6`, card pick/commit/resolve/score loop. Distinct overlay (not the hub family). See [`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md). `overlay_muscle_dome_801d0748.txt`. |
 | `801D56E4` | **2-D segment clipper** (fishing overlay 0972). Clips two `(i16 x, i16 y)` endpoints in place against the scratchpad draw-context bounds `0x1F800314 + 0x74` / `+ 0x78`, by `t = ((bound - p.x) << 12) / (q.x - p.x)` then `p.y += ((q.y - p.y) * t) >> 12`. `overlay_fishing_801d56e4.txt`. |
 | `801D5C2C` | **3-D segment transform + depth clip** (fishing overlay 0972). Pushes both endpoints through the GTE wrapper `FUN_8003D344` (`MVMVA`), rejects the segment when **both** transformed Z fall inside the near cutoff `_DAT_1F80037E` (zeroing both output pairs), otherwise writes the view-space coordinates back and clips against `0x1F800314 + 0x6A`. `overlay_fishing_801d5c2c.txt`. |
@@ -1050,19 +1085,92 @@ Callees of the pause/field menu overlay (loaded by the mode-22 CARD pair via `FU
 
 ## Other-game minigame overlay (PROT 0977)
 
-Slot-A minigame occupant (the "other_game" overlay reached from the mode-24 door warp), true base `0x801CE818`. The `0x801Dxxxx`-named `overlay_0977_other_game_*` dumps are correctly based; the `0x801Cxxxx`-named ones are mis-imported at `0x801C0000` (add `0xE818` for the true VA, per the same anchor that fixes `801C2748` -> `801D0F60`). Structural roles only.
+Slot-A occupant of the mode-24 sub-id-5 door warp, true base `0x801CE818`. `other_game` is the **CDNAME block name**, not an identity: the module is the Muscle Dome **arena door/init** slot (dev module `other6`), pinned by its own monster-name roster and by the contest settlement `FUN_801D0F60`. The rows below are its HUD primitive layer. The `0x801Dxxxx`-named `overlay_0977_other_game_*` dumps are correctly based; the `0x801Cxxxx`-named ones are mis-imported at `0x801C0000` (add `0xE818` for the true VA, per the same anchor that fixes `801C2748` -> `801D0F60`).
+
+Ports: `legaia_engine_ui::other_game_hud` (the two quad emitters + the decimal readout) and `legaia_engine_core::other_game_overlay` (the step scaler + the SFX cue). See [PROT 0977 HUD primitives](#prot-0977-hud-primitives).
 
 | Address | Role |
 |---|---|
-| `801D050C` | **Colored-quad emitter** - allocates a `0x34`-byte GP0 polygon packet from the scratchpad pool `0x1F800314+0x8C` with per-vertex RGB modulated by a brightness argument, geometry from the table at `0x801D170C` (stride `0x14`), posts via `FUN_8003D2C4`. `see ghidra/scripts/funcs/overlay_0977_other_game_801d050c.txt`. |
-| `801D1308` | **Multi-digit decimal renderer** - divides the value down (`/10^7` then a `/10` chain) into up to eight digits and draws each via `FUN_801D050C`. `see ghidra/scripts/funcs/overlay_0977_other_game_801d1308.txt`. |
-| `801D1288` | **Per-frame sprite/cue trigger** - calls the shared primitive `FUN_80065034` with a rotating id (counter `DAT_801D1AE4 & 3`) and a coordinate from `_DAT_80084580`, then bumps the counter. `see ghidra/scripts/funcs/overlay_0977_other_game_801d1288.txt`. |
-| `801D14B0` | **Step-size scaler** - returns the argument unchanged when flag `DAT_801D1AB4` is set, else `arg/5` (arg > 5), `1` (arg < 3), or `arg/2`. `see ghidra/scripts/funcs/overlay_0977_other_game_801d14b0.txt`. |
+| `801D050C` | **Centred sprite-quad emitter** - a `POLY_GT4` packet from the scratchpad pool `0x1F800314+0x8C`, textured and Gouraud-shaded from the descriptor table at `0x801D170C` (stride `0x14`), centred on the argument point. [details](#prot-0977-hud-primitives). `see ghidra/scripts/funcs/overlay_0977_other_game_801d050c.txt`. |
+| `801D08EC` | **Corner-anchored sibling** of `801D050C`: same packet, but the argument point is the quad's top-left and the brightness argument is clamped to `0..=0xFF` first. [details](#prot-0977-hud-primitives). `see ghidra/scripts/funcs/overlay_0977_other_game_801d08ec.txt`. |
+| `801D1308` | **Decimal readout** - up to eight digits through `FUN_801D050C`, stepping the digit record's texture column per glyph. Negative values draw nothing. [details](#prot-0977-hud-primitives). `see ghidra/scripts/funcs/overlay_0977_other_game_801d1308.txt`. |
+| `801D1288` | **Round-robin SFX cue** - one `FUN_80065034` voice-attr call per frame across voices `0x10..=0x13` (counter `DAT_801D1AE4 & 3`), positioned from the party-block word `_DAT_80084580`. Not a sprite emitter - `FUN_80065034` is the libsnd `SpuSetVoiceAttr` analogue. `see ghidra/scripts/funcs/overlay_0977_other_game_801d1288.txt`. |
+| `801D14B0` | **Step-size scaler** - a leaf: returns the argument unchanged while flag `DAT_801D1AB4` is set, else `arg/5` (`arg > 5`), `1` (`arg < 3`), or `arg/2`. `see ghidra/scripts/funcs/overlay_0977_other_game_801d14b0.txt`. |
 | `801CF074` (true VA; the `801c085c` dump is mis-based, `+0xE818`) | **Minigame per-frame update** - accumulates frame time (scratchpad `0x1F800314+0x7F`) into lane counters, scales each step via `FUN_801D14B0`, and triggers cues via `FUN_801D1288` / `FUN_801D08EC`. `see ghidra/scripts/funcs/overlay_0977_other_game_801c085c.txt`. |
 
 ## Function details
 
 Full write-ups for the rows above whose detail outgrew a table cell. Linked from each section table by **[details ↓]**.
+
+### PROT 0977 HUD primitives
+
+Three routines share the sprite descriptor table at `0x801D170C`. Each record
+is `0x14` bytes:
+
+| Offset | Field |
+|---|---|
+| `+0x00` | `i32` texel-to-world size scalar, applied before the caller's scale |
+| `+0x04` | `u16` base tpage word; the emitter adds `page * 0x20` |
+| `+0x06` | `u16` CLUT word |
+| `+0x08` / `+0x09` | `u8` texture U / V of the top-left texel |
+| `+0x0A` / `+0x0B` | `u8` texel width / height |
+| `+0x0C..0x0E` | `u8` RGB of the two **top** vertices |
+| `+0x0F` | non-zero selects the semi-transparent command (`0x3E` over `0x3C`) |
+| `+0x10..0x12` | `u8` RGB of the two **bottom** vertices |
+| `+0x13` | `u8` tpage page offset |
+
+The two colour triples make every quad a vertical two-stop gradient - the
+packet is a `POLY_GT4`, thirteen words including the tag, not a flat sprite.
+
+The `sel` argument packs a table index in its low ten bits and a **variant**
+above them (`sel / 0x400`, truncating). A non-zero variant is a *write* into
+the shared record: it sets `+0x0F` to `1` and `+0x13` to the variant, and
+those stay set for every later call on that record. Variant `2` additionally
+draws with `CLUT + 1`, which the record itself never sees.
+
+Geometry differs only between the two emitters. `FUN_801D050C` halves the
+extent (`(texels * size) >> 13`, then `* scale >> 12`) and brackets the
+argument point, `x - half ..= x + half - 1`. `FUN_801D08EC` shifts once less
+and spans `x ..= x + extent` from the argument point, and clamps brightness
+into `0..=0xFF` before scaling - the centred emitter does not, so a brightness
+above `0x100` wraps its colour bytes there.
+
+Both post through `FUN_8003D2C4` at the ordering-table depth held in
+`DAT_801D1AA8`, then reset that depth to `3`.
+
+`FUN_801D1308` renders a decimal readout through the centred emitter using
+record index `9`. Its eight digit slots start at `-1`, the units slot is
+pre-seeded with `0`, and slot `i` is overwritten with `value / 10^(7-i)` only
+when that quotient is non-zero; a slot holding a negative quotient is skipped
+at draw time. Two consequences: `0` renders as a single `0`, and a **negative
+value renders nothing at all**. The pen advances 8 px per slot including the
+skipped ones, and the digit record's CLUT is offset by the palette argument
+for the call and restored to `0x7D86` on return.
+
+### `801CFE20` / `801CFE5C`
+
+**MDEC in / out DMA sync.** Both live in the slot-A STR/FMV overlay and are
+byte-identical in PROT 0970 (`cutscene_str`) and PROT 0971 (`debug_menu`) -
+the same co-residency the MDECin DMA-callback hook `FUN_801CFE98` shows (see
+[`subsystems/cutscene.md`](../subsystems/cutscene.md)). They are **not**
+debug-menu logic; the `overlay_debug_menu_*` dumps at these VAs are that
+capture's copy of the same overlay bytes.
+
+Each takes one argument selecting between a blocking wait and a poll:
+
+| Entry | argument `0` | argument non-zero |
+|---|---|---|
+| `801CFE20` | `FUN_801D0100` - spin until MDEC-**in** idle | bit `0x1D` of the status word |
+| `801CFE5C` | `FUN_801D0198` - spin until MDEC-**out** idle | bit `0x18` of the status word |
+
+The blocking halves count down from `0x100000`, re-reading their status word
+each pass. They return `0` the moment the busy bit (`0x2000_0000` in-side,
+`0x0100_0000` out-side) clears, and `-1` after logging `"MDEC in sync"` /
+`"MDEC out sync"` if the budget runs out. Both polling halves read the *same*
+word - `FUN_801D0230`, a six-instruction leaf that dereferences the in-side
+pointer global - so the out-side poll queries the in-side register while its
+own blocking arm queries the out-side one. Port:
+`legaia_engine_core::mdec_dma_sync`.
 
 ### `8003EF14`
 

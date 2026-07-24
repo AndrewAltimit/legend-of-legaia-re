@@ -2692,3 +2692,81 @@ kbd {
   color: var(--text-dim);
   font-size: 0.9rem;
 }
+
+/* ---------------------------------------------------------------------------
+   Landing-page progress meter.
+
+   Rendered by site/_gen.py from scripts/ci/progress-metrics.json. Each track
+   keeps its denominator attached to its own bar: two of the tracks are measured
+   against the game's own bytes and two against the set of functions the project
+   has identified, so a reader who takes them as one number is being misled.
+   That is why there is no aggregate bar here and no single headline figure.
+   --------------------------------------------------------------------------- */
+.progress-meter {
+  display: grid;
+  gap: 1.1rem;
+  margin: 1rem 0 1.4rem;
+}
+
+.progress-track {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.75rem 0.9rem 0.8rem;
+}
+
+.progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.progress-label { font-weight: 600; }
+.progress-label a { text-decoration: none; }
+
+.progress-pct {
+  font-family: var(--font-mono);
+  font-size: 1.05rem;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-bar {
+  position: relative;
+  height: 8px;
+  margin: 0.5rem 0 0.45rem;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  overflow: hidden;
+}
+
+.progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-hi));
+}
+
+.progress-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+}
+
+.progress-headline { color: var(--text); }
+.progress-denom    { color: var(--partial); }
+
+.progress-detail {
+  margin: 0.45rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+@media (max-width: 560px) {
+  .progress-head { flex-direction: column; gap: 0.1rem; }
+}

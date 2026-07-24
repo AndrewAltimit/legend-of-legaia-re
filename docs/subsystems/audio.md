@@ -34,7 +34,7 @@ with `SceneAssets::seq_in_stream_entries` / `bgm_seq_offset`.
 - [Path-string cluster](#path-string-cluster) · [SCUS consumers](#scus-consumers) · [File-API leaf cluster](#file-api-leaf-cluster)
 - [VAB sound banks](#vab-sound-banks) · [per-actor SFX](#per-actor-sound-effects) · [monster sound bank](#monster-sound-bank---hmpackmonstersnd)
 - [BGM dispatch](#bgm-dispatch) · [global-pool BGM (`music_01`)](#global-pool-bgm-the-music_01-bank)
-- [SsAPI sequencer](#ssapi-sequencer-0x80061-0x80067-cluster) - [globals](#globals) · [public SEQ API](#public-seq-api) · [SEQ internals](#seq-internals) · [voice / mixer](#voice--mixer-audible-output-critical-path) · [VAB attr accessors](#vab-attribute-accessors--utility-note-triggers) · [SPU command shims](#spu-command-shims-0x81-scaling--0127--016383) · [renderer-citation correction](#renderer-citation-correction)
+- [SsAPI sequencer](#ssapi-sequencer-0x80061-0x80067-cluster) - [globals](#globals) · [public SEQ API](#public-seq-api) · [SEQ internals](#seq-internals) · [voice / mixer](#voice--mixer-audible-output-critical-path) · [VAB attr accessors](#vab-attribute-accessors--utility-note-triggers) · [SPU command shims](#spu-command-shims-0x81-scaling--0127--016383) · [per-channel event handlers](#per-channel-event-handlers-over-_dat_801cd2c0-the-0x80060a1c0x80061bf8-family) · [further libsnd leaves](#further-libsnd--libspu-leaves) · [renderer-citation correction](#renderer-citation-correction)
 - [libspu / SPU control](#libspu--spu-control-0x80068-0x8006d-cluster) - [SPU globals](#spu-globals) · [primitives](#libspu-primitives) · [init / reset / key](#spu-init--reset--key-registers) · [DMA transfer engine](#spu-dma-transfer-engine) · [reverb model](#reverb-model-engine-audio) · [Gaussian resampler](#voice-resampler---4-point-gaussian-interpolation-engine-audio) · [SsApi seq-management layer](#ssapi-seq-management-layer-above-libspu)
 - [Engine-audio: Sequencer port](#engine-audio-model---sequencer-port) · [clean-room SPU port](#engine-audio-model---clean-room-spu-port) · [SFX bank + scheduler](#sfx-bank--scheduler) · [XA-ADPCM](#xa-adpcm)
 - [Battle arts-voice shout path](#battle-arts-voice-shout-path-engine) · [Audio-trace parity oracle](#audio-trace-parity-oracle) · [What's left](#whats-left)
@@ -250,6 +250,65 @@ Provenance: per-instruction read of `FUN_80066B00` / `FUN_80065BAC` / `FUN_80065
 | `FUN_80062AA0(x, y)` | `SsSetMVol` - packs `[cmd=3, x*0x81, y*0x81]`, calls `FUN_8006BCB4` (SPU-cmd dispatcher). |
 | `FUN_80065440(p1, p2)` | Single-shot SPU command (likely `SsUtKeyOn` or `SsUtPitchBend`) - `[cmd=6, p1*0x81, p2*0x81]`, calls `FUN_8006ACBC` (sister of `FUN_8006BCB4`). |
 
+### Per-channel event handlers over `_DAT_801CD2C0` (the `0x80060A1C..0x80061BF8` family)
+
+Sixteen SCUS routines share one prologue shape, and reading that shape is what
+identifies the family: each takes `(seq_no, channel_no, value)` as sign-extended
+halfwords, resolves `seq_tab = *(u32 *)(_DAT_801CD2C0 + seq_no*4)`, adds
+`channel_no * 0xB0`, and operates on the resulting per-channel record. All but
+`FUN_80061B24` close by calling the varint decoder `FUN_80061C68` and storing
+its result at `+0x90`, the record's stream cursor - i.e. they are the handler
+leaves of the same dispatch `FUN_8006171C` drives, one per MIDI-style event
+class, and `+0x90` is where each leaf republishes the advanced cursor.
+
+The `0xB0` stride and the `+0x90` cursor are the two facts to carry away; they
+are what make an unfamiliar `0x80060xxx`/`0x80061xxx` routine recognisable as a
+member rather than as unported game logic. Provenance for the whole family is
+the disassembly of each dump named below.
+
+| Function | Record bytes written | Reading |
+|---|---|---|
+| `FUN_80060A1C` | `+0x00` (cursor), `+0x26` | Re-seeds the program/bank byte from the stream and re-publishes the cursor. |
+| `FUN_80060A94` | (voice fan-out only) | The largest leaf: walks the channel's active-voice list and calls `FUN_80064CF0` / `FUN_80064DF8` / `FUN_800655CC` per voice. Note-level event. |
+| `FUN_80060EBC` | `+0x60` (per-voice halfword) | Writes a per-voice halfword then re-triggers through `FUN_8006861C`. |
+| `FUN_80060F8C` | `+0x27` | Sets the tone/region byte then re-triggers through `FUN_8006861C`. |
+| `FUN_80061054` | - | Calls `FUN_80067D0C` then `FUN_8006861C` with the `+0x60` halfword - a re-key of sounding voices. |
+| `FUN_8006113C` | - | Branches on `value < 0x40`: `FUN_80065B88` (transpose reset) or `FUN_80065B98` (transpose mode 2). |
+| `FUN_800611E4` | - | Forwards `value` to the SPU command shim `FUN_80065440`. |
+| `FUN_8006126C` | `+0x15`, `+0x1A`, `+0x1C`, `+0x1D`, `+0x1F` | Loop/repeat bookkeeping: latches a pending count at `+0x1D`, clears `+0x1C`, sets the busy flag `+0x15`. |
+| `FUN_8006139C` | `+0x00`, `+0x08`, `+0x15`, `+0x1B`, `+0x1C`, `+0x1D`, `+0x1F`, `+0x90` | The loop-close twin of the above: rewinds the cursor from the saved pointer at `+0x08` and clears the busy flag. |
+| `FUN_800614D0` | `+0x18`, `+0x1E` | Sets state byte `+0x18`, bumps the nesting counter `+0x1E`. |
+| `FUN_80061540` | `+0x19`, `+0x1E` | Same shape for the sibling state byte `+0x19`. |
+| `FUN_800615B0` | `+0x18`, `+0x19` | Clears both of the above, then `FUN_8006558C` / `FUN_80065B88`. |
+| `FUN_8006166C` | `+0x00` | Cursor-only skip; forwards to `FUN_80067C1C`. |
+| `FUN_80061954` | `+0x00`, `+0x52`, `+0x54`, `+0x94` | The widest leaf: writes the channel volume pair `+0x52/+0x54` and the secondary cursor `+0x94`. |
+| `FUN_80061B24` | - | The one member that does **not** end in `FUN_80061C68`: it calls `FUN_80066308` (note-trigger dispatch) and `FUN_8006688C` directly. |
+| `FUN_80061BF8` | - | Minimal leaf - decode the varint, store the cursor, return. |
+
+Provenance: `see ghidra/scripts/funcs/80060a1c.txt`, `80060a94.txt`,
+`80060ebc.txt`, `80060f8c.txt`, `80061054.txt`, `8006113c.txt`, `800611e4.txt`,
+`8006126c.txt`, `8006139c.txt`, `800614d0.txt`, `80061540.txt`, `800615b0.txt`,
+`8006166c.txt`, `80061954.txt`, `80061b24.txt`, `80061bf8.txt`.
+
+### Further libsnd / libspu leaves
+
+| Function | Role |
+|---|---|
+| `FUN_80064BD0` | VAB-slot teardown: builds a default voice-attr block on the stack (pitch `0x1000`, `0x80FF`, `0x4000`) and loops `_DAT_801CDB44` times over the `0x36`-stride voice-driver records from `_DAT_801CDB52`, clearing each and calling `FUN_8006C048` then `FUN_80067480(1)`. |
+| `FUN_80065B98` | Transpose-mode setter - stores `2` to `_DAT_801CE2E8`, the same global `FUN_80065B88` zeroes. The `< 0x40` / `>= 0x40` branch in `FUN_8006113C` picks between the two. |
+| `FUN_80066D8C` | Octave/semitone → SPU pitch-step converter: divides the key by 12 for the octave, indexes the 16-entry halfword semitone table at `DAT_8007A940`, then shifts by `octave - 5` (left when positive, right when negative). Sibling of `FUN_80066E50`. |
+| `FUN_80068C70` | `SsSetStereo` - zeroes the mono-fold flag `_DAT_801CE330`. (Its `SsSetMono` twin `FUN_80068C5C` sets it to `1`.) |
+| `FUN_800693B8` | One-argument shim - tail-calls `FUN_800693D8(0)`, the SPU key/reset routine. |
+| `FUN_8006B684` | Two-constant shim - calls `FUN_8006A7C8(a0, a1, 0xCC, 0xCD)`; the constants select the SPU register pair the callee programs. |
+| `FUN_8006C9E4` / `FUN_8006CA04` | Argument-free shims onto `FUN_8006D1E0` / `FUN_8006D2AC` (the transfer-mode setters in the [DMA engine](#spu-dma-transfer-engine)). |
+| `FUN_8006D2F0` | DMA-completion path: clears `_DAT_8007B2B8`, latches the block count `_DAT_8007B2C4` into `_DAT_8007B2B4`, advances the SPU address by `count * 0xF0`, calls `FUN_8006D358`, and on failure invokes the installed callback at `_DAT_801CE560` with `0xFFFF`. |
+| `FUN_8006E600` | Per-voice release/steal sweep over one driver record: reads the voice-count byte `+0x34` (clamped to `6`), scans the `+0x57`/`+0x5D` parallel byte arrays for a free slot, and accumulates the global voice budget `_DAT_8007B2BC` against the `0x3D` ceiling. |
+| `FUN_8005EBFC` | Single-hop shim onto `FUN_8005F024`. |
+
+Provenance: `see ghidra/scripts/funcs/80064bd0.txt`, `80065b98.txt`,
+`80066d8c.txt`, `80068c70.txt`, `800693b8.txt`, `8006b684.txt`, `8006c9e4.txt`,
+`8006ca04.txt`, `8006d2f0.txt`, `8006e600.txt`, `8005ebfc.txt`.
+
 ### Renderer-citation correction
 
 The cluster appears in xrefs from per-frame draw loops near `FUN_80026410+` only because battle / field code triggers SFX cues during render passes. None of these functions is libgpu / libgs - they're all libsnd. The "renderer / GPU primitives" inventory in `docs/reference/functions.md` previously listed `FUN_80061EDC / FUN_80067E9C / FUN_80066E50 / FUN_80067550` under the renderer; they belong here.
@@ -379,7 +438,7 @@ history that survives ADPCM block boundaries. The pitch step clamps at
 | `FUN_800683D8(vab, prog)` | `SsVabTransfer`-shaped - VAB program-attr lookup at `DAT_801CD2C0[vab&0xFF] + (prog>>8)*0xB0 + 0x58/0x5A`. |
 | `FUN_800684CC(vab_id)` | `SsVabClose` (by VAB-ID search) - iterates `0x801CDB60 + i*0x36`, matches `+0x0`, calls `FUN_80067480(0)`. |
 | `FUN_80068B98(vab_id, program)` | **VAB program-change.** Bounds-checks `vab_id < 0x10` + open-state, `program < _DAT_801CE332` (the bank's program-slot count), then installs the current-bank globals (`_DAT_801CE334` prog base / `_DAT_801CE33C` header / `_DAT_801CE340` tone base) and `DAT_801CE34F` = the `ProgAtr[program]+8` **packed tone-page index** the open wrote (below). Earlier "SsSeqOpen / track count" label corrected from the disassembly. |
-| `FUN_80068C5C / 80068C70` | `SsSetMono` / `SsSetStereo` - `_DAT_801CE330 = 1 / 0`, the mono-fold flag `FUN_80067550` reads. (Earlier "auto-poll" label corrected.) |
+| `FUN_80068C5C` / `FUN_80068C70` | `SsSetMono` / `SsSetStereo` - `_DAT_801CE330 = 1 / 0`, the mono-fold flag `FUN_80067550` reads. (Earlier "auto-poll" label corrected.) |
 | `FUN_80068C80(vab_id)` | VAB close (per-vab tables) - if the open-state byte at `0x801CE368+vab` is set, `SpuFree`s the bank's allocation from the addr table `0x801CE3C8+vab*4`, clears the state, decrements the open-bank count `_DAT_801CE3C0`. |
 | `FUN_80068D34(hdr, vab_id, addr)` | `SsVabOpenHeadSticky`-shape wrapper - tail-calls `FUN_80068D94` with the caller-supplied SPU address (skips the `SsSpuMalloc`). |
 | `FUN_80068D94(hdr, vab_id, sticky, addr)` | **`SsVabOpenHead` core.** Validates `pBAV` magic, sets `_DAT_801CE332` to 0x40 (0x80 for version >= 5), checks `ps` (`+0x12`) against it, registers header / ProgAtr / tone-region base pointers in the per-vab tables, and builds the **program-number → packed-tone-page rank map** into the ProgAtr `+8` reserved words ([`vab.md`](../formats/vab.md#program-slots-vs-packed-tone-pages)). Sums VAG sizes, `SsSpuMalloc`s (`FUN_8006A158`) unless sticky, stashes per-VAG SPU addresses `>>3` in ProgAtr `+0xC/+0xE`. Engine port of the rank map: `VabBank::upload`. (Earlier "SsSepOpen / 'VAP' SEP loader" reading falsified - [`re-do-not-re-walk.md`](../reference/re-do-not-re-walk.md#audio--sound-driver).) |

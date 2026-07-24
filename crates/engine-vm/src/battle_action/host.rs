@@ -232,6 +232,23 @@ pub trait BattleActionHost {
         ACTOR_SLOTS as u8
     }
 
+    /// The two four-entry effect-child arrays the cast tick censuses:
+    /// `(ctx[+0x24E..=+0x251], ctx[+0x252..=+0x255])`.
+    ///
+    /// The first array is the per-slot **kind** byte (zero = the slot is not
+    /// carrying an effect at all) and the second is the live child handle.
+    /// [`crate::battle_action::tick_cast_census`] folds them into
+    /// [`BattleActionCtx::magic_recovery_gate`].
+    ///
+    /// Default is all zeros - a host with no effect children reports "nothing
+    /// outstanding", which is what the port did before the census existed, so
+    /// the default is behaviour-preserving rather than a stub that lies.
+    ///
+    /// REF: FUN_801E09F8
+    fn effect_child_slots(&self) -> ([u8; 4], [u8; 4]) {
+        ([0; 4], [0; 4])
+    }
+
     /// Look up the [`legaia_art::ArtRecord`] for an actor's chosen art. The
     /// state machine reads this on Tactical Arts windup to fetch power
     /// bytes, hit timing, repeat-frame data, and the status effect to

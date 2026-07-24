@@ -37,12 +37,12 @@
 "80056728" = "strcat (BIOS A0 0x15) - li t2,0xA0; jr t2; li t1,0x15"
 "80056738" = "strcmp (BIOS A0 0x17) - li t2,0xA0; jr t2; li t1,0x17"
 "80056748" = "strncmp (BIOS A0 0x18)"
-"80056758" = "strncpy (BIOS A0 0x19) - li t2,0xA0; jr t2; li t1,0x19"
+"80056758" = "strcpy (BIOS A0 0x19) - li t2,0xA0; jr t2; li t1,0x19 (strncpy is A0 0x1A)"
 "80056768" = "strlen (BIOS A0 0x1B)"
 "80056788" = "memset (BIOS A0 0x2B) - li t2,0xA0; jr t2; li t1,0x2B"
-"80056798" = "srand (BIOS A0 0x2F) - li t2,0xA0; jr t2; li t1,0x2F"
+"80056798" = "rand (BIOS A0 0x2F) - li t2,0xA0; jr t2; li t1,0x2F; the combat RNG (srand is A0 0x30)"
 "800567a8" = "printf BIOS thunk (BIOS A0 0x3F) - li t2,0xA0; jr t2; li t1,0x3F"
-"80057014" = "rand (BIOS A0 0x2E)"
+"80057014" = "memchr (BIOS A0 0x2E) - rand is A0 0x2F at 80056798"
 "8005acd8" = "GPU_cw (BIOS A0 0x49)"
 "8005ace8" = "A-vector thunk (jr 0xA0)"
 "8005bbe8" = "FlushCache (BIOS A0 0x44)"
@@ -662,7 +662,7 @@
 "8002b934" = "no-op stub (jr ra; nop)"
 "8002b984" = "no-op stub (jr ra; nop)"
 "8002b98c" = "no-op stub (jr ra; nop)"
-"8003cc88" = "no-op stub (jr ra; nop)"
+"8003cc88" = "stub returning ZERO (jr ra; clear v0 in the delay slot) - not a bare no-op"
 "8002b93c" = "Empty stub (`jr ra; nop`). Stripped tile-sprite-emit leaf (8002b9xx family)."
 "8002b944" = "Empty stub (`jr ra; nop`). Stripped tile-sprite-emit leaf (8002b9xx family)."
 "8002b94c" = "Empty stub (`jr ra; nop`). Stripped tile-sprite-emit leaf (8002b9xx family)."
@@ -739,6 +739,7 @@
 "801f1cb0" = "Constant-argument thunk onto FUN_801ECA08, ten instructions in PROT 0897: `FUN_801ECA08(actor, 8, 0x10, 1)`. Same reasoning as 801f1c88 - the callee is ported in engine-vm world_map_overlay and the constants are the whole content."
 "801f1d20" = "Constant-argument thunk onto FUN_801ECA08, ten instructions in PROT 0897: `FUN_801ECA08(actor, 0x11, 0x17, 2)`. Same reasoning as 801f1c88."
 "80015e90" = "main(): cold-boot subsystem-init sequence + the master mode-dispatch loop over the 0x8007078C table (docs/subsystems/boot.md, The main loop). Host-replaced wholesale by engine-shell's driver loop + BootSession; the mode machine itself is the ported surface. see ghidra/scripts/funcs/80015e90.txt"
+"801e36a0" = "Constant-argument thunk onto the save-UI dispatcher: nine instructions whose whole body is `FUN_801DD35C(0, 0)` (`clear a0` then `move a1,a0`, so both arguments are literal zero) plus prologue/epilogue. Identical bodies in overlay_menu and overlay_shop_save; the third of its three refs is the overlay_battle_action dump, which is a mid-function citation inside FUN_801E295C, not a call to this body. FUN_801DD35C's first argument is the backdrop-dim brightness (clamped to 0xFF and folded into an RGB word at 0x801DD3BC..0x801DD3EC, skipped entirely when zero) and the second is the card-op selector documented in docs/subsystems/save-screen.md, so this call is 'tick the save UI with no dim and no card op'. The 3026-instruction callee is host-replaced wholesale - the save screen is drawn by engine-ui ui_title_save and driven by engine-core save_select / save_subscreen - so the thunk carries no semantic of its own. Same reasoning as 801f1c88 and 80015e90. see ghidra/scripts/funcs/overlay_menu_801e36a0.txt"
 
 
 # Overlay VA-aliased pseudo-addresses. The catalog keys functions by bare VA,
@@ -863,11 +864,19 @@
 "801e3628" = "INTERIOR: VA lies inside the dumped body of 801e3578 in 0897"
 "801eccac" = "INTERIOR: no `addiu sp,sp,-N` prologue; body reads s0/s1/s2 and a caller stack slot it never writes - a tail fragment reaching the parent's epilogue"
 "801f02d0" = "INTERIOR: dump is a citation stub for 801eff30"
-# 801f71e0 is NOT ignored: the `INTERIOR in 0897` reading is the 0x801CE818
-# base's. At the co-resident overlay PROT 0967's own base 0x801F69D8 the dump
-# `overlay_effect_0967_801f71e0` is a self-entry 167-instruction body - the
-# sparring-tutorial message-pacing driver, and a hot hit in the S5 trace. The
-# row is VA-aliased; ignoring it deleted a real port site.
+# 801f71e0 was previously held out of this list on the grounds that
+# `overlay_effect_0967_801f71e0` is "a self-entry 167-instruction body" at PROT
+# 0967's own base. The dump's bytes are right and its base is right; its
+# *entry* is a Ghidra artifact, because `dump_effect_overlay_0967.py` creates a
+# function at each traced hit address. Read straight out of the extracted 0967
+# image at 0x801F69D8: the word AT 0x801F71E0 is `lw v1,-0x42dc(v0)` and the
+# word BEFORE it is `lui v0,0x8008` - the two halves of one LUI+LW pair - and
+# 0x801F71E0 is the target of `bne v1,v0,0x801f71e0` sixteen bytes earlier.
+# Between the only prologue below it (0x801F6B78 `addiu sp,sp,-0x38`) and it
+# there is no `jr ra`; the enclosing routine's sole `jr ra` is at 0x801F7474.
+# `locate-entry-image.py` agrees across all 31 based images: no frame, no
+# in-image jal. The message-pacing driver is real, but its entry is not here.
+"801f71e0" = "INTERIOR: a `bne` target and the second half of a LUI+LW pair inside the PROT 0967 routine whose prologue is 0x801F6B78 and whose only `jr ra` is 0x801F7474. Read from the extracted 0967 image at base 0x801F69D8: the word at the VA is `lw v1,-0x42dc(v0)` with v0 written by the `lui` one word earlier, so it owns no frame and cannot be called. The dump that reported it as an entry was taken by a script that creates a function at each traced hit address."
 "801e23ec" = "INTERIOR: VA lies inside the dumped body of 801de840 in 0897 - `801e23ec  lh v0,0x68(s5)` is an instruction of the field VM"
 "801e30e4" = "INTERIOR: dump resolves entry=801de840, not 801e30e4; `801e30e4  jal 0x8003ce9c` is an instruction of the field VM in 0897 too"
 "801f7628" = "INTERIOR: dump resolves entry=801f5748/801f71e0, not 801f7628"
@@ -1479,6 +1488,9 @@
 "801d6cbc" = "Baka Fighter help-screen chrome: text kind 0x80073F20 = 0xC, eleven string pointers from 0x801D7134 through the sprite emitter 80036888 at a 0xD line pitch, then the 0xF0 x 0x8F window frame through the shared box dispatcher 8002C69C. The port draws help text through engine-ui. see ghidra/scripts/funcs/overlay_baka_fighter_801d6cbc.txt"
 "801d7c84" = "Fishing sub-screen icon row: reads up to four ids from the word array *(0x801D9114) at index `row*8 + i`, stops on -1, and emits each through the sprite emitter 80036888 out of the 0x28-stride descriptor array at 0x801D81A4, x stepping 0x10 per icon. see ghidra/scripts/funcs/overlay_fishing_801d7c84.txt"
 "801d24ec" = "Fishing venue backdrop: stamps the two GTE camera records at 0x8007BF44/0x8007BFB8, pushes the rotation trio through 800172c0 / 8003d1ec / 8003d368, then emits the gradient quad strip. Camera-and-packet only; the port's camera is `engine-core::camera`. see ghidra/scripts/funcs/overlay_fishing_801d24ec.txt"
+# Slot-B world-map render overlay (PROT 0901, link base 0x801F69D8): same
+# packet-only shape as the slot-A rows above.
+"801f73e4" = "World-map top-view band strip: zeroes the camera roll global 0x8007B792 (saving it into s5) and restores it on exit, pushes the camera through 800172c0 / 8003d1ec / 8003d368, then loops five times emitting a 0x14-byte flat rect (tag 0x04000000) per band into the scratchpad prim arena at *(0x1F8003A0) - each screen-clipped against the 0x140-wide, 0x80-high draw area with the extent shrunk rather than the packet dropped - and links each with 8003d2c4, closing with one 0x98 SetDrawMode fill through 80059010 and a final link. No band count, colour or geometry is read from game state: the tint endpoints come from literals (0x00808080 / 0x00404040 + 0x64000000) selected by 8003ce64, and the row pitch is `i << 7`. The engine draws the world-map sky/band layer from engine-render's own draw list. Body resolves to world_map_render(901) at its mapped base. see ghidra/scripts/funcs/overlay_world_map_top_ext_wm_ext_dispatcher_caller_helper_801f73e4.txt"
 
 # Same overlay family, the 3D half: GTE matrix push / RotTrans / mesh submit
 # wrappers. Each pushes a matrix with 8005B268, transforms through 8003D344 or

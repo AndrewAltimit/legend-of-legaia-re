@@ -297,9 +297,17 @@ impl ListPickerPhase {
 /// product is `1` or `3`:
 ///
 /// - phase `Active` (1) with `gate = 1` (input allowed) -> draws;
-/// - phase `CancelUnwind` (3) with `gate = FUN_801EA9B0()` (1 while the
-///   unwind is still running) -> draws;
+/// - phase `CancelUnwind` (3) with `gate` = the unwind dispatcher's return
+///   -> draws;
 /// - every other product (0, 2, 4, ...) -> no draw.
+///
+/// The unwind dispatcher is `FUN_801EA9B0`, and it returns `1`
+/// unconditionally - `s1` is loaded with `1` in the delay slot of its bound
+/// check and every arm, including the out-of-range one, exits through
+/// `move v0,s1` (see [`crate::world_map_panel::dev_menu_action`]). So phase
+/// `CancelUnwind` always draws; that gate never suppresses it. The argument
+/// stays because the phase-1 leg's gate is the caller's own input-allowed
+/// flag, which does vary.
 ///
 /// PORT: FUN_801ECA08 (`mult s2,s3` draw gate)
 pub fn list_body_draws(phase: i16, gate: i32) -> bool {

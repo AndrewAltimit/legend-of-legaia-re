@@ -2,7 +2,7 @@
 --
 -- Most "what writes this address?" probes hand-roll the same closure: arm a
 -- Write breakpoint, and in the callback read the CPU registers, log
--- (elapsed, label, addr, pc, ra, new_value) to a CSV, and dump the call
+-- (elapsed, label, addr, pc, ra, prev_value) to a CSV, and dump the call
 -- context for the first N hits. This factors that out so a new probe is a few
 -- lines instead of a ~40-line copy (see autorun_player_pos_watch.lua,
 -- autorun_prim_pool_writers.lua, autorun_title_overlay_writer_hunt.lua, ...).
@@ -36,10 +36,26 @@ local Watch = {}
 Watch.__index = Watch
 
 -- Create a watch logger. `opts.csv` is a Csv (from probe.csv_open) whose
--- header should be "tick,label,addr,pc,ra,value"; rows are written in that
+-- header should be "tick,label,addr,pc,ra,prev_value"; rows are written in that
 -- order. `opts.elapsed` is a function returning the current frame counter
 -- (defaults to a constant 0). `opts.detail_path` (optional) receives the
 -- call context for the first `opts.max_detail` (default 16) hits.
+--
+-- THE LOGGED VALUE IS THE PRE-STORE VALUE, NOT THE NEW ONE. PCSX-Redux runs
+-- the debug hook from the interpreter BEFORE the instruction executes - the
+-- same ordering an Exec breakpoint gets - so by the time this callback reads
+-- the watched address, the store has not happened yet. This column was called
+-- `new_value` here and `new_val` in consumer probes, which is wrong.
+--
+-- Measured, not assumed. In a battle capture the paired damage applier
+-- `0x801E1948` (`acc += damage`) / `0x801E1960` (`hp -= damage`) logged
+-- `acc = 0` and `hp = 1199` at the two stores, while the following frame's
+-- bar-drain reads showed `acc = 930` and live HP `269`. Both logged values are
+-- the operands the stores overwrote.
+--
+-- To capture the value actually written, read the source register out of
+-- `PCSX.getRegisters()` in your own callback, or re-read the address on the
+-- next vsync.
 function M.new(opts)
     opts = opts or {}
     assert(opts.csv, "watch.new: opts.csv is required")

@@ -1094,14 +1094,14 @@ pub struct PaylinePrim {
 /// the rest of the machine's 3D furniture: retail `RTPS`-projects each
 /// endpoint on its own through `FUN_8003d368` and links the packet at
 /// [`payline_ot_depth`] of the **second** endpoint's returned depth.
-// NOT WIRED: the geometry table it consumes only comes out of
-// `legaia_asset::minigame_slot_scene::parse_scene`, whose signature demands the
-// decoded page-3 art plane for the marquee message bank - so a host that wants
-// only the five payline records still has to build that plane, and no host
-// does. The second half is the sink: paylines are GTE-projected 3D line prims,
-// and the port draws the machine as a text HUD with no projection or
-// ordering-table pass to link them into. Wiring it needs a payline-only parse
-// entry point plus a 3D slot-cabinet render pass.
+// NOT WIRED: the remaining blocker is the sink, not the source. The source
+// half is now covered - `legaia_asset::minigame_slot_scene::parse_paylines`
+// takes the five segments straight off the raw overlay, with no decoded
+// page-3 art plane. What is still missing is a consumer: paylines are
+// GTE-projected 3D line prims, and the native window draws the machine as a
+// text HUD with no projection or ordering-table pass to link them into, while
+// the browser play page draws its cabinet from JS geometry of its own. Wiring
+// it needs a 3D slot-cabinet render pass on either host.
 // PORT: FUN_801d3380 (payline 3D line segments)
 pub fn payline_prims(
     paylines: &[legaia_asset::minigame_slot_scene::PayLine],

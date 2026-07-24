@@ -1,0 +1,47 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; disc coverage</div>
+  <h1>Disc coverage</h1>
+  <p class="lede">How much of the game's own bytes the project can account for, measured against the disc rather than against the project's own notes. This is where the two byte-denominated figures on the <a href="../index.html#progress">landing page</a> come from.</p>
+</header>
+
+<section class="doc-section" id="why">
+  <h2>Why this exists alongside the port catalog</h2>
+  <p>The <a href="port-catalog.html">port catalog</a> tracks three status columns &mdash; <em>dumped</em>, <em>documented</em>, <em>ported</em> &mdash; over the set of addresses this project <strong>cites</strong>. That is the right instrument for steering work, and it answers "what is left on the list". It cannot answer "how much of the game is left", because its denominator is the citation graph: a subsystem nobody has cited is invisible to it, and the page can read as near-complete while that subsystem sits outside the measurement entirely.</p>
+  <p>The distinction is not academic. Against the citation graph the dump corpus reads as effectively closed &mdash; zero cited-but-not-dumped addresses. Against the executable's own bytes, roughly a sixth of <code>SCUS_942.54</code>'s code is not inside any dumped function at all.</p>
+</section>
+
+<section class="doc-section" id="two-halves">
+  <h2>The two halves measure different things</h2>
+  <p>This is the one thing to carry away before quoting a figure from this page.</p>
+  <table>
+    <thead><tr><th></th><th>Kind</th><th>What a percentage means</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Code</strong></td><td>byte-exact</td><td>a byte is inside a dumped function, or it is not</td></tr>
+      <tr><td><strong>Data</strong></td><td>format recognition</td><td>an entry's format class is known; its bytes are not individually accounted for</td></tr>
+    </tbody>
+  </table>
+  <p>The data figure is an <strong>upper bound</strong>. Knowing an entry is a VAB stream is not the same as consuming every byte inside it, and no parser in the tree reports consumed-versus-unconsumed bytes yet. Closing that gap &mdash; having each parser return its consumed extent &mdash; is what would put the data half on the same footing as the code half.</p>
+</section>
+
+<section class="doc-section" id="code">
+  <h2>How code coverage is computed</h2>
+  <p>Every Ghidra dump header carries an entry address and a byte length, so the dumped functions are real intervals over an image's address space. The tool merges them, subtracts them from the image's extent, and is left with the genuinely un-dumped remainder.</p>
+  <p>That remainder is then split into <strong>code</strong> and <strong>data</strong>, because a PS-X EXE's text segment carries its read-only data inside the same span, and counting string tables and jump tables as "un-decompiled code" would understate coverage badly. Each gap is classified statistically over its whole length: the share of words decoding to a plausible MIPS I opcode, and the density of <code>0x80xxxxxx</code> words that betrays a pointer table.</p>
+  <p>The classifier is checked against a control. A region known to be code profiles at about 94% plausible opcodes and near-zero pointer density; the large gaps reported as code match that signature, while the head of the segment (87% printable ASCII, 48% plausible) does not.</p>
+  <p>Dumps that report <code>0 instructions</code> and carry only decompiled C are <strong>excluded</strong> &mdash; such a dump is not evidence that its bytes are understood.</p>
+</section>
+
+<section class="doc-section" id="overlays">
+  <h2>Why overlay rows can read "not meaningful"</h2>
+  <p><code>SCUS_942.54</code> is the only image with an unambiguous answer: one load image, one fixed base, no aliasing.</p>
+  <p>Overlays are different. Several are loaded at the same base address, so a dump whose entry lands in that band <strong>cannot be attributed to one image by address alone</strong> &mdash; the same address belongs to the battle overlay, the menu overlay and the field overlay at different moments. Attributing by address counts a dump once for every image whose span contains it.</p>
+  <p>Rather than publish a number that quietly double-counts, each overlay row carries the share of its attributed dumps that another mapped overlay could equally claim. Above 50% the coverage figure is replaced by <em>not meaningful</em>, and such rows are excluded from the ratchet baseline: a figure that moves with attribution rather than with real coverage would produce failures nobody can act on. That is also why the landing page's decompilation bar quotes the executable alone.</p>
+</section>
+
+<section class="doc-section" id="gate">
+  <h2>Gate behaviour</h2>
+  <p>Both inputs &mdash; the Ghidra dump corpus and the extracted disc tree &mdash; are gitignored, so a clone without disc data has nothing to measure. The tool <strong>exits 0 and reports SKIPPED</strong> in that case, following the same skip-and-pass convention as the rest of the repo's disc-gated tests. CI therefore passes without disc data, and the ratchet only has teeth on a machine that has the disc.</p>
+  <p>Coverage may only go up, within a tolerance of half a percentage point, checked against a committed baseline. If a dump is legitimately removed, the baseline is refreshed explicitly and the commit message has to say why &mdash; a baseline moving down is a claim that needs a reason.</p>
+  <p>A useful side effect: the report lists the largest un-dumped <strong>code</strong> runs in the executable by size. That is a dump worklist derived from the bytes rather than from what anyone happened to cite &mdash; the one worklist the citation graph structurally cannot produce.</p>
+  <p>Tool: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/ci/disc-coverage.py"><code>scripts/ci/disc-coverage.py</code></a>. The landing-page figures are refreshed by <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/ci/update-progress-metrics.py"><code>scripts/ci/update-progress-metrics.py</code></a> and committed, because the site is built where the disc is not.</p>
+</section>

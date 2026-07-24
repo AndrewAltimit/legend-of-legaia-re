@@ -780,6 +780,8 @@ pub(super) fn cmd_play_window_with_record(
         face_tables: None,
         art_mouth_tables: None,
         face_tables_attempted: false,
+        dev_menu: None,
+        dev_menu_draws: Vec::new(),
         fishing_prize_venues: None,
         fishing_banners: Default::default(),
         fishing_banner_draws: Vec::new(),

@@ -17,23 +17,33 @@
 //! `0xDC00`-byte block, then fill it as a **32 x 40 grid of 1280 particle
 //! records, `0x2C` bytes apart** (`32 * 40 * 0x2C == 0xDC00`, which is what
 //! fixes the grid shape independently of the loop bounds). Each record gets a
-//! world position derived from its cell, an outward velocity taken from the
-//! sine / cosine tables at the cell's heading, a size, and a per-cell UV.
+//! rotation derived from its cell, an outward angular velocity taken from the
+//! sine / cosine tables at the cell's heading, a translation velocity, and a
+//! per-cell texel. What each word *means* is fixed by the two per-frame ticks
+//! that read it back - see [`IntroParticle`], whose field names are theirs.
 //!
 //! The two differ only in constants and in two rules - the y scale, the x
-//! origin and step, the velocity scale, the fall rate, the sprite size, the
-//! flag word, and how the phase field `+0x1E` and the v coordinate `+0x2A` are
+//! origin and step, the velocity scale, the fall rate, the translation
+//! velocity, and how the delay field `+0x1E` and the v coordinate `+0x2A` are
 //! produced - and [`IntroParticleStyle`] carries exactly those. The
-//! `FUN_801D0164` phase is the only one that is not a pure function of the
+//! `FUN_801D0164` delay is the only one that is not a pure function of the
 //! cell: it mixes the cell's distance from the origin with an RNG draw.
 //!
 //! ## Callers
 //!
 //! No dump in the corpus contains a `jal` to either address: the five style
 //! emitters (`FUN_801CFDA0` / `FUN_801D0370` / `FUN_801D0D24` / `FUN_801D11D0`
-//! / `FUN_801D1888`, see `docs/subsystems/cutscene.md`) name neither. Do not
-//! read that as "unused" - the style-0 body is the one whose printed
-//! disassembly the corpus truncates.
+//! / `FUN_801D1888`, see `docs/subsystems/cutscene.md`) name neither, and all
+//! five printed bodies have now been read end to end. Do not read that as
+//! "unused": three of the five styles have a *separate* init routine that the
+//! emitters equally never call (`FUN_801D081C` and `FUN_801D1564`, ported in
+//! [`crate::battle_intro_tiles`] and [`crate::battle_intro_swirl`]), so the
+//! whole family is installed by something upstream of the emitters.
+//!
+//! What *is* established is the consumer: the two `0x2C`-stride ticks
+//! `FUN_801CFDA0` and `FUN_801D0370` walk the entity's `+0x48` block at exactly
+//! this stride, and no other routine in the corpus does. Which of the two
+//! seeders pairs with which tick is still open.
 //!
 //! ## Allocation failure
 //!
@@ -88,18 +98,20 @@ pub struct IntroParticleStyle {
     pub col_x_origin: i32,
     /// Column step of the stored x.
     pub col_x_step: i32,
-    /// The word written at `+0x14`.
-    pub z_scale: u16,
+    /// The word written at `+0x14` - the rotation vector's z component.
+    pub z_scale: i16,
     /// How the sine / cosine table reads are scaled down before they are
     /// stored at `+0x18` / `+0x1A`. The two routines differ in **rounding**,
     /// not just magnitude - see [`VelocityScale`].
     pub velocity_scale: VelocityScale,
     /// The constant fall rate at `+0x1C`.
     pub fall_rate: i16,
-    /// Sprite width / height at `+0x20` / `+0x22`.
-    pub size: (u16, u16),
-    /// The flag word at `+0x24`.
-    pub flags: u16,
+    /// The pair written at `+0x20` / `+0x22`. Both ticks integrate the
+    /// translation by it, so it is a velocity - see
+    /// [`IntroParticle::trans_vel`].
+    pub size: (i16, i16),
+    /// The word written at `+0x24` - the third component of the same velocity.
+    pub flags: i16,
     /// How `+0x1E` is produced.
     pub phase: PhaseRule,
     /// How `+0x2A` (the v coordinate) is produced.
@@ -189,25 +201,49 @@ pub const STYLE_D0164: IntroParticleStyle = IntroParticleStyle {
     v_rule: VRule::RowTimesEightPlusFour,
 };
 
-/// One seeded particle record.
+/// One `0x2C`-byte particle record.
+///
+/// The field names are the **consumers'**, not the seeders'. Both per-frame
+/// ticks (`FUN_801CFDA0` / `FUN_801D0370`, ported in
+/// [`crate::battle_intro_styles`]) read this record, and what they do with each
+/// word is what fixes its meaning:
+///
+/// * `+0x10..+0x14` is the vector handed to `RotMatrix`, integrated by
+///   `+0x18..+0x1C` - so it is a **rotation**, not a position, and the word the
+///   seeder puts a `0x1000` / `0x2000` in is its z angle.
+/// * `+0x20..+0x24` is what `+0x08..+0x0C` - the vector handed to
+///   `SetTransMatrix` - integrates by. It is a **translation velocity**, which
+///   is why the earlier reading of `+0x20` / `+0x22` as a sprite size and
+///   `+0x24` as a flag word does not survive contact with either tick.
+/// * `+0x1E` is compared against the entity clock before anything moves, so it
+///   is a spawn **delay**, not a phase.
+///
+/// `+0x08..+0x0E` is the one region no seeder writes: the ticks integrate it
+/// from whatever the allocator left there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct IntroParticle {
-    /// `+0x04`.
+    /// `+0x04` - packed colour. The ticks skip the whole particle when bits
+    /// `31..24` are non-zero.
     pub tint: u32,
-    /// `+0x10` / `+0x12`.
-    pub pos: (i16, i16),
-    /// `+0x14`.
-    pub z_scale: u16,
-    /// `+0x18` / `+0x1A` / `+0x1C`.
-    pub vel: (i16, i16, i16),
-    /// `+0x1E`.
-    pub phase: i16,
-    /// `+0x20` / `+0x22`.
-    pub size: (u16, u16),
-    /// `+0x24`.
-    pub flags: u16,
-    /// `+0x28` / `+0x2A`.
-    pub uv: (i16, i16),
+    /// `+0x08` / `+0x0A` / `+0x0C` - translation. Not seeded; integrated by
+    /// [`IntroParticle::trans_vel`].
+    pub trans: (i16, i16, i16),
+    /// `+0x10` / `+0x12` / `+0x14` - rotation vector. Seeded from the cell's
+    /// world position and the style's z constant.
+    pub rot: (i16, i16, i16),
+    /// `+0x16` - written `1` by `FUN_801CFDA0` on every frame a particle
+    /// moves, and never read in either tick's dump.
+    pub field_16: i16,
+    /// `+0x18` / `+0x1A` / `+0x1C` - angular velocity.
+    pub spin: (i16, i16, i16),
+    /// `+0x1E` - spawn delay, held against the scaled entity clock.
+    pub delay: i16,
+    /// `+0x20` / `+0x22` / `+0x24` - translation velocity.
+    pub trans_vel: (i16, i16, i16),
+    /// `+0x28` - packed `(texture page << 6) | u`.
+    pub texel_page: i16,
+    /// `+0x2A` - v. Stored as a halfword and consumed as its low byte.
+    pub texel_v: i16,
 }
 
 /// What a seeder did.
@@ -280,20 +316,22 @@ pub fn seed_particle_grid(
             };
             grid.push(IntroParticle {
                 tint: PARTICLE_TINT,
-                pos: (
+                trans: (0, 0, 0),
+                rot: (
                     (style.col_x_origin + col as i32 * style.col_x_step) as i16,
                     (cell_z << style.row_y_shift) as i16,
+                    style.z_scale,
                 ),
-                z_scale: style.z_scale,
-                vel: (
+                field_16: 0,
+                spin: (
                     style.velocity_scale.apply(env.sin(heading)),
                     style.velocity_scale.apply(env.cos(heading)),
                     style.fall_rate,
                 ),
-                phase,
-                size: style.size,
-                flags: style.flags,
-                uv: ((col as i32 * 8) as i16, v),
+                delay: phase,
+                trans_vel: (style.size.0, style.size.1, style.flags),
+                texel_page: (col as i32 * 8) as i16,
+                texel_v: v,
             });
         }
         running_v = running_v.wrapping_add(8);
@@ -355,9 +393,9 @@ mod tests {
         };
         assert_eq!(g.len(), PARTICLE_COUNT);
         // Column inner: the first 40 entries share row 0's y.
-        let y0 = g[0].pos.1;
-        assert!(g[..PARTICLE_COLS].iter().all(|p| p.pos.1 == y0));
-        assert_ne!(g[PARTICLE_COLS].pos.1, y0);
+        let y0 = g[0].rot.1;
+        assert!(g[..PARTICLE_COLS].iter().all(|p| p.rot.1 == y0));
+        assert_ne!(g[PARTICLE_COLS].rot.1, y0);
     }
 
     #[test]
@@ -366,19 +404,21 @@ mod tests {
             panic!()
         };
         // Cell (0,0): x = -0x1400, y = -0x390 << 2.
-        assert_eq!(g[0].pos, (-0x1400, ((-0x390i32) << 2) as i16));
-        assert_eq!(g[0].phase, 0, "(col + row) * 0x40 at the origin cell");
-        assert_eq!(g[0].uv, (0, 4));
-        assert_eq!(g[0].size, (0x40, 0x40));
-        assert_eq!(g[0].vel.2, -0x50);
-        assert_eq!(g[0].z_scale, 0x1000);
-        assert_eq!(g[0].flags, 0x20);
+        assert_eq!(
+            (g[0].rot.0, g[0].rot.1),
+            (-0x1400, ((-0x390i32) << 2) as i16)
+        );
+        assert_eq!(g[0].delay, 0, "(col + row) * 0x40 at the origin cell");
+        assert_eq!((g[0].texel_page, g[0].texel_v), (0, 4));
+        assert_eq!(g[0].trans_vel, (0x40, 0x40, 0x20));
+        assert_eq!(g[0].spin.2, -0x50);
+        assert_eq!(g[0].rot.2, 0x1000);
         // Cell (0,1): x steps by 0x100, u by 8.
-        assert_eq!(g[1].pos.0, -0x1400 + 0x100);
-        assert_eq!(g[1].uv.0, 8);
-        assert_eq!(g[1].phase, 0x40);
+        assert_eq!(g[1].rot.0, -0x1400 + 0x100);
+        assert_eq!(g[1].texel_page, 8);
+        assert_eq!(g[1].delay, 0x40);
         // Row 1 raises v by 8.
-        assert_eq!(g[PARTICLE_COLS].uv.1, 12);
+        assert_eq!(g[PARTICLE_COLS].texel_v, 12);
     }
 
     #[test]
@@ -386,13 +426,15 @@ mod tests {
         let SeedOutcome::Seeded(g) = seed_particle_grid(&STYLE_D0164, true, &mut env()) else {
             panic!()
         };
-        assert_eq!(g[0].pos, (-0x2800, ((-0x390i32) << 3) as i16));
-        assert_eq!(g[0].uv, (0, 4));
-        assert_eq!(g[PARTICLE_COLS].uv.1, 12, "row * 8 + 4");
-        assert_eq!(g[0].size, (0x20, 0x40));
-        assert_eq!(g[0].vel.2, -8);
-        assert_eq!(g[0].z_scale, 0x2000);
-        assert_eq!(g[0].flags, 0);
+        assert_eq!(
+            (g[0].rot.0, g[0].rot.1),
+            (-0x2800, ((-0x390i32) << 3) as i16)
+        );
+        assert_eq!((g[0].texel_page, g[0].texel_v), (0, 4));
+        assert_eq!(g[PARTICLE_COLS].texel_v, 12, "row * 8 + 4");
+        assert_eq!(g[0].trans_vel, (0x20, 0x40, 0));
+        assert_eq!(g[0].spin.2, -8);
+        assert_eq!(g[0].rot.2, 0x2000);
     }
 
     #[test]
@@ -405,7 +447,7 @@ mod tests {
         };
         // Different code, same sequence - which is why the doc keeps them
         // separate but the test pins the equivalence.
-        assert!(a.iter().zip(b.iter()).all(|(x, y)| x.uv.1 == y.uv.1));
+        assert!(a.iter().zip(b.iter()).all(|(x, y)| x.texel_v == y.texel_v));
     }
 
     #[test]
@@ -417,7 +459,7 @@ mod tests {
         // First cell: sqrt(0x500^2 + 0x390^2) >> 4, plus the first draw % 2000.
         let d = ((0x500i32 * 0x500 + 0x390 * 0x390) as f64).sqrt() as i32;
         // The first draw is 37, and 37 % 2000 is 37.
-        assert_eq!(g[0].phase, ((d >> 4) + 37) as i16);
+        assert_eq!(g[0].delay, ((d >> 4) + 37) as i16);
     }
 
     #[test]

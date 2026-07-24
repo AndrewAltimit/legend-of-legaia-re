@@ -1160,8 +1160,9 @@ A survey of the high-reference `0x801F` VA band the field overlay shares with th
 | `0x801D84C0` | REAL, aliased | ≤6-slot name/label assembler: walks `&DAT_801F29F0` at stride `0xE`, skipping `0x7C` (`\|`) separators + a skip-char, into the `+0x2AF8` draw buffer. The field body (212 insn) VA-aliases a distinct 259-insn `battle_action(898)` body - confirm the image before porting. | `overlay_0897_801d84c0.txt` |
 | `0x801D32BC` | REAL (small) | Field opcode-arm helper: `if ((v0 >> 16) == 0x100) func_0x800430AC(*(u8*)(s6+1)); return pc + 3`. Aliases a 98-insn `battle_action(898)` body. | `overlay_0897_801d32bc.txt` |
 | `0x801DBC30` / `0x801DBB8C` | REAL (C-only) | Text-cell table init pair - see [§ below](#text-cell-table-init). Field bodies alias 53-/41-insn battle bodies. | dumps as named |
-| `0x801D0D38` / `0x801D095C` | REAL, render-track | Party-roster panel renderers (op-`0x49` submode family) - see [§ below](#party-roster-panel-renderers). Direct `overlay_0897_<addr>` dumps are truncated aliases; the full bodies are in the cutscene-dialogue / mapview field captures. | `overlay_cutscene_dialogue_801d0d38.txt` |
-| `0x801E4470` | REAL, render-track | Attached-sprite projection tick - documented in [`actor-vm.md`](actor-vm.md#field-spawned-sprite-tick-actors). | `overlay_cutscene_dialogue_801e4470.txt` |
+| `0x801D0D38` | REAL, render-track | Party-roster panel renderer (op-`0x49` submode family) - see [§ below](#party-roster-panel-renderers). Its direct `overlay_0897_801d0d38` dump is a truncated alias; the full body is in the cutscene-dialogue / mapview field captures. | `overlay_cutscene_dialogue_801d0d38.txt` |
+| `0x801D095C` | REAL, render-track | Passive-ability indicator HUD above the player - **not** a roster panel; see [§ below](#the-passive-ability-indicator-hud-fun_801d095c). Ported: `legaia_engine_vm::field_passive_hud`. | `overlay_cutscene_dialogue_801d095c.txt` |
+| `0x801E4470` | REAL, render-track | Attached-sprite projection tick - documented in [`actor-vm.md`](actor-vm.md). Ported: `legaia_engine_vm::field_actor_billboard`. | `overlay_cutscene_dialogue_801e4470.txt` |
 
 `FUN_801F2098` is a byte-for-byte VA-aliased duplicate of the living-slot scanner already documented as `FUN_801DB8B4` in [`battle-formulas.md`](battle-formulas.md) (Rust `battle_formulas::round::needs_retarget`): starting at `&DAT_801C937C` it returns the lowest actor slot `3..=6` whose HP field `+0x14C` is nonzero, else `7`. It is not re-ported.
 
@@ -1226,20 +1227,50 @@ so store order is unverified; documented, not ported.
 
 ### Party-roster panel renderers
 
-`801D0D38` and `801D095C` are per-frame panel builders in the op-`0x49`
-party-cursor submode family (siblings of `801F1278` / `801F159C` above).
-`801D0D38` (387 insn) walks the live roster - member count `DAT_80084594`, records
-`DAT_800845C4`, player context `_DAT_8007C364` - and the cursor context
-`DAT_801F3488..348C`, drawing per-member numerics through `func_0x80034B78` and
-screen-projecting cell anchors through the GTE wrapper `func_0x800195A8`.
-`801D095C` (141 insn) is the money/counter variant: it clamps each of three values
-to `9,999,999` and draws them from the save-scan base `&DAT_80084140` (stride
-`0x414`) via the same number drawer, gating on the field / tile-board busy flag
-`_DAT_8007B454 = 7`. Both call `func_0x800195A8` and build GPU primitives, so they
-are **render-track** - documented, not ported. Their direct `overlay_0897_<addr>`
-dumps are truncated aliases; the full bodies are in the cutscene-dialogue /
-cutscene-mapview field captures.
+`801D0D38` (387 insn) is a per-frame panel builder in the op-`0x49`
+party-cursor submode family (sibling of `801F1278` / `801F159C` above). It
+walks the live roster - member count `DAT_80084594`, records `DAT_800845C4`,
+player context `_DAT_8007C364` - and the cursor context `DAT_801F3488..348C`,
+drawing per-member numerics through `func_0x80034B78` and screen-projecting
+cell anchors through the GTE wrapper `func_0x800195A8`. It builds GPU
+primitives, so it is **render-track** - documented, not ported. Its direct
+`overlay_0897_801d0d38` dump is a truncated alias; the full body is in the
+cutscene-dialogue / cutscene-mapview field captures.
 `see ghidra/scripts/funcs/overlay_cutscene_dialogue_801d0d38.txt`.
+
+### The passive-ability indicator HUD (`FUN_801D095C`)
+
+`801D095C` was filed alongside `801D0D38` as "the money/counter variant",
+clamping three values to `9,999,999` and drawing them from the save-scan base
+`&DAT_80084140` at stride `0x414`. **That reading is falsified.** The body at
+field-overlay file offset `0x2144` contains no clamp, no `0x80084140`, no
+stride-`0x414` walk and no number drawer. Its thirteen calls are the global
+ability bit-test `FUN_800431D0`, the icon sprite `FUN_8002C488`, and one GTE
+three-point transform `FUN_8005BA68`.
+
+What it actually draws is the small badge column that floats above the
+player's head while an accessory passive is active. Three stack points share
+the player's X (`+0x14`) and Z (`+0x18`) and lift Y (`+0x16`) by three
+fractions of the player's height half-word `+0x72` - `(h*13)>>9`, `h>>6` and
+`(h*43)>>10`. The trio goes through `FUN_8005BA68`, and the anchor retail uses
+afterwards is a **mixed** pair: the X of the first projected point and the Y of
+the third.
+
+Two groups hang off that anchor, neither table-driven - every bit and icon id
+is an immediate:
+
+- **Encounter badge.** Retail computes the *parity* of ability bits `0x3B`
+  (High Encounter) and `0x3C` (Low Encounter), not "either": both set draws
+  nothing, because the two accessories cancel. Plate icon `0x4A` at
+  `x - 0x14`; chevron `0x4B` at `(x - 0x10, y - 8)` for `0x3B`, `0x4C` at
+  `(x - 0x10, y + 0xA)` for `0x3C`; bit `0x3D` adds icon `0x4D` at `x - 0x1E`
+  and independently forces the plate.
+- **Centred stack.** Bits `0x38` / `0x39` / `0x3A` draw icons `0x47` / `0x48` /
+  `0x49` at `x + 2` on a 10-pixel pitch, starting at `y + (5 - 5*n)` for `n`
+  set bits - i.e. the column is centred on the anchor.
+
+Ported: [`legaia_engine_vm::field_passive_hud`](../../crates/engine-vm/src/field_passive_hud.rs).
+`see ghidra/scripts/funcs/overlay_cutscene_dialogue_801d095c.txt`.
 
 ## Field dialogue has no opcode
 
@@ -1353,6 +1384,23 @@ Pitfalls when verifying:
 3. The C decomp sometimes collapses sub-op-first dispatch ordering. Round 11's 0x4C nibble-A bug was an inversion that only became visible after reading raw asm at `0x801e2568` (`bne a1, zero, 0x801e258c` dispatching on sub-op BEFORE the ctx[+0x10] check). When tests pass but the C reads suspicious, walk the asm.
 
 A standing audit pass - picking 5 random ported sub-ops and cross-checking against the dump - turned up **no further inversion bugs** as of round 15.
+
+#### The same labels seen through a mis-based print
+
+The label-promotion artifact above compounds with the base error catalogued in
+[`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md), and the
+combination is the single largest source of fake worklist rows in the
+`0x801C…` / `0x801D…` band. A dump of one of these labels, taken from a program
+imported at `0x801C0000`, prints a VA that exists in no runtime image and names
+no function under any base.
+
+Thirty-one such printed addresses re-key into `FUN_801DE840`'s body - the
+`+0xE818` prints `0x801D0170` … `0x801D4C30` and the `+0x5818` prints
+`0x801D9860` … `0x801DD0BC`. The per-address list, with the resolved VA for
+each, is in
+[`phantom-print-index.md`](../tooling/phantom-print-index.md#group-1---re-keys-into-the-fieldevent-vm-fun_801de840).
+None is a port site, and the check that settles any of them is the one already
+stated in pitfall 2 above - performed at the *correct* base.
 
 ## Disassembler tool: `field-disasm`
 

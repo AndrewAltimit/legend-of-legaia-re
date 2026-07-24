@@ -569,6 +569,32 @@ fn rd_pos(b: &[u8], o: usize) -> Pos3 {
     }
 }
 
+/// Parse **only** the five payline segments out of the raw PROT 0975 image.
+///
+/// The payline geometry table is the one part of the scene graph that needs
+/// no art: [`parse_scene`] demands the decoded banner page for the marquee
+/// message bank, which a caller that wants nothing but the paylines would
+/// otherwise have to build. Split out so a host can take the segments alone.
+pub fn parse_paylines(overlay: &[u8]) -> Result<Vec<PayLine>> {
+    let need = PAYLINE_TABLE_OFFSET + PAYLINE_COUNT * 16;
+    if overlay.len() < need {
+        bail!(
+            "slot overlay too small ({}b) for the payline table at 0x{:X}",
+            overlay.len(),
+            PAYLINE_TABLE_OFFSET
+        );
+    }
+    Ok((0..PAYLINE_COUNT)
+        .map(|i| {
+            let o = PAYLINE_TABLE_OFFSET + i * 16;
+            PayLine {
+                a: rd_pos(overlay, o),
+                b: rd_pos(overlay, o + 8),
+            }
+        })
+        .collect())
+}
+
 /// Parse the slot machine's 3D scene graph out of the **raw** PROT 0975 image.
 ///
 /// `page3` is the decoded banner page of the art pack (pack index 3, fb
@@ -584,15 +610,7 @@ pub fn parse_scene(overlay: &[u8], page3: &[u8], page3_w: usize) -> Result<SlotS
         );
     }
 
-    let paylines = (0..PAYLINE_COUNT)
-        .map(|i| {
-            let o = PAYLINE_TABLE_OFFSET + i * 16;
-            PayLine {
-                a: rd_pos(overlay, o),
-                b: rd_pos(overlay, o + 8),
-            }
-        })
-        .collect();
+    let paylines = parse_paylines(overlay)?;
 
     let lamp_at = |base: usize| -> Vec<LampBillboard> {
         (0..LAMP_COUNT)

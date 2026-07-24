@@ -19,7 +19,7 @@ Representative confusables (each dumped under several non-dome overlays, so **sh
 | `FUN_801d84c0` | **battle-outcome message builder** ("won the battle / Gained Experience", "is out of strength", "escaped") into `ctx+0xa9/0x129/0x159/0x189` via the SCUS `strcpy`/`strcat` pair | [`battle-action.md`](battle-action.md) |
 | `FUN_801f44a0` | pushes one entry into an 8-slot **damage/number-popup ring** (`ctx+0x83c` value / `+0x318` param / `+0x85c` timer, counter `+0x262 & 7`) - also under dance / Baka Fighter / fishing / slot / debug-menu | [`battle-action.md`](battle-action.md) |
 | `FUN_801f3c34` | **Queued-magic message trigger**, not a guard: it rejects nothing, returns nothing and touches no queue state. Reads the active actor's queued `+0x1df`, and on a spell-level test of `>= 3` *fires* the message via `FUN_801d8de8(0x66,0)`, sets `ctx[+0x18] = 0x66` and installs a hook pointer at `0x800775B4` - also dumped under dance / Baka Fighter / fishing / slot | [`battle-action.md`](battle-action.md) |
-| `FUN_801f3d3c` | shared **AI/action-decision** helper (per-move learned-count scan + BIOS-`rand` branch on `DAT_801c9358+0x1d`) - dumped under Baka Fighter / dance / fishing / slot / debug-menu | [`battle-action.md`](battle-action.md) |
+| `FUN_801f3d3c` | The **installer half** of the pair above - it writes the two globals `FUN_801F3C34` gates on. See [The queued-magic pair](#the-queued-magic-pair) | [`battle-action.md`](battle-action.md) |
 
 Two entries are dumped **only** under `overlay_muscle_dome`, both render-track and
 both dome-vs-shared unconfirmed. `FUN_801f2410` (593 instructions, 31 GPU-primitive
@@ -29,6 +29,42 @@ because the context it draws from is the shared battle one. `FUN_801f2e10` is an
 **oriented-quad "beam" emitter** (see [Key functions](#key-functions)); it
 references no dome ctx at all, so its status is likewise open. The genuinely
 dome-unique controller / presentation set is the [Key functions](#key-functions) table below (`FUN_801d0748`'s dome arms, `FUN_801d388c`, `FUN_801d5854`, `FUN_801d8de8`, and the panel helpers); everything else in the dump directory is battle-overlay furniture.
+
+### The queued-magic pair
+
+`FUN_801F3C34` and `FUN_801F3D3C` are two halves of one mechanism, not two
+unrelated helpers, and reading either alone invites the "AI decision" guess.
+They share their whole preamble - resolve the acting actor out of
+`&DAT_801C9370` by `ctx[+0x13]`, take its queued action byte `+0x1DF`, scan
+the caster's spell-id array (character record `+0x13D`, `0x20` entries) for
+that action, read the parallel level byte at record `+0x161`, and bail when
+the level is below `3`. Both then print the same message id `0x66` through
+`FUN_801D8DE8(0x66, 0)`.
+
+What separates them is which side of the latch each one is on:
+
+- `FUN_801F3C34` **reads** `*(0x801F6960)` and returns early when it is
+  non-zero - a follow-up is already queued, so it stays silent.
+- `FUN_801F3D3C` **writes** it. Past the level gate it runs a suppression
+  roll (below), then selects an 8-byte record out of the table at
+  `0x801F6870` indexed `[actor class][level band]`, where the band is
+  `(level - 3) >> 1` and the class row stride is `0x20`. The record's byte
+  `0` becomes the pending latch `0x801F6960`, its word `1` the follow-up
+  routine pointer `0x800775B4`, and the hold counter `0x801F6964` is always
+  seeded `0xB4`.
+
+The suppression roll only runs when `ctx[+0x287]` is set, and three shapes
+pass it: an actor class of `5`, a BIOS `rand()` divisible by five, and a
+`[actor class][other class]` byte of `0x801F53E8` (row stride `8`) at or
+above `0x65`. The sense is worth stating because the table shape invites the
+opposite reading - a byte **below** `0x65` is what suppresses. A class below
+`7` leaves through the seven-entry jump table at `0x801CFA2C` instead of
+reaching the installer tail, and those arms are separate bodies that the
+`FUN_801F3D3C` dump does not cover (its instruction stream is discontiguous
+across them).
+
+Port: `engine-vm::move_no_effect_guard` (`queued_magic_message` /
+`follow_up_hook_install`). `see ghidra/scripts/funcs/overlay_muscle_dome_801f3d3c.txt`.
 
 ## Contest settlement + the one-shot prize
 

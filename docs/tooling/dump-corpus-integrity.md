@@ -70,6 +70,14 @@ Both are handled - `s8`/`s9`/`r30` fold to one name, and register tokens are
 stripped before immediates are read - and together they account for roughly a
 quarter of the corpus.
 
+A third folding gap survives in the *positive* direction and is worth naming
+because it produces a near-miss rather than a miss: the two disassemblers render
+`break`'s code field differently (Ghidra prints the 10-bit code, capstone the
+full 20-bit immediate, e.g. `break 6` against `break 0x1800`). A window whose
+only disagreement is a `break` operand is a match; anything that compares
+canonicalised tokens should treat a lone `break`-immediate mismatch as noise
+rather than evidence of different code.
+
 The generalisable point: **a resolver's negative class is where its own bugs
 accumulate**, because a false negative there looks like missing data rather
 than a broken comparison. Validate any change to `canon()` against a dump known
@@ -117,6 +125,13 @@ overwhelming majority, and both point at one mistake. Counts are given as
 | `+0xE818` | 208 / 221 | field overlay (PROT 0897) | Imported at base `0x801C0000` instead of `0x801CE818`. `0x801CE818 - 0x801C0000 = 0xE818`. |
 | `+0x5818` | 50 / 55 | `overlay_0896_*` | Same field-overlay bytes, reached at PROT 0896's over-read base. |
 | `+0xD018` | 8 / 8 | `overlay_0971` | The same mistake again, read through an over-read tail - see below. |
+| `+0x9818` | small | `overlay_0978_*` | Imported at `0x801C5000`; the bytes are **dance**-overlay (PROT 0980) routines. |
+
+The `+0xE818` mistake is not confined to the field overlay. `overlay_0899_xxx_dat_*`
+dumps take the same delta into the *menu* overlay, so the base error travels with
+the operator rather than with the program. The per-program deltas measured across
+the whole `0x801C…` / `0x801D…` printed band, and every affected address, are
+tabulated in [phantom-print-index.md](phantom-print-index.md).
 
 **`+0xE818` is a single mis-based batch run.** Every member resolves
 single-hit into `overlay_field_0897.bin`, with a median of 35 consecutive
@@ -275,6 +290,72 @@ function lives there.
 | `0x801F8080` | `overlay_muscle_dome_801f8080` | PROT 0900 `0x801F8080` | Base-correct but interior: inside the sprite-widget spawner `FUN_801F8004`. Opens in a delay slot. |
 | `0x801F8190` | `overlay_muscle_dome_801f8190` | PROT 0900 `0x801F8190` | Base-correct but interior: inside the screen-mask widget handler `FUN_801F811C`. |
 | `0x801F92A4` | `overlay_muscle_dome_801f92a4` | PROT 0900 `0x801F92A4` | Base-correct but interior: inside `FUN_801F91D8`. |
+| `0x801E1538` | `overlay_0897_801e1538` | field (0897) `0x801EFD50` | `+0xE818`. Opens with a load whose base register is never set in the window - a frameless slice, not an entry. |
+| `0x801E158C` | `overlay_0897_801e158c` | field (0897) `0x801EFDA4` | `+0xE818`. Opens in a delay slot (`_nop`) and exits `j 0x801EFEA0`, a VA outside its own printed window. |
+| `0x801E175C` | `overlay_0897_801e175c` | field (0897) `0x801EFF74` | `+0xE818`. |
+| `0x801E22C4` | `overlay_0897_801e22c4` | field (0897) `0x801F0ADC` | `+0xE818`. A real entry with a prologue - a five-case state machine on `s16 arg[+0x54]` through the jump table at `0x801CF734` - printed at a VA no runtime image uses. |
+| `0x801E5134` | `overlay_0897_xxx_dat_801e5134` | field (0897) `0x801F394C` | `+0xE818`. |
+| `0x801EC370` | `overlay_0897_801ec370` | field (0897) `0x801FAB88` | `+0xE818`. The dump's own body jumps from `0x801EC394` straight to `0x801ED920`, i.e. it splices two disjoint regions - a second reason not to read its addresses. |
+| `0x801E6A7C` | `overlay_0896_801e6a7c` (cite of `FUN_801E66D8`) | field (0897) via `+0x5818` | The enclosing dump `overlay_0896_801e66d8` is itself `SHIFTED +0x5818`, so the cited interior VA is phantom twice over. |
+| `0x801E8B34` | `overlay_0896_801e8b34` (cite of `FUN_801E8B10`) | field (0897) via `+0x5818` | Same shape; enclosing dump resolves to `0x801EE328`. |
+| `0x801EA074` / `0x801EA348` | `overlay_0896_801ea074` / `_801ea348` (cite of `FUN_801E9FD4`) | field (0897) via `+0x5818` | Same shape; enclosing dump resolves to `0x801EF7EC`. **Not** the enemy AGL action picker - that `FUN_801E9FD4` is the *battle-action* image's function at the same VA, a different dump. |
+| `0x801EC228` | `overlay_0896_801ec228` (cite of `FUN_801EC204`) | field (0897) via `+0x5818` | Same shape; enclosing dump resolves to `0x801F1A1C`. |
+| `0x801EF648` / `0x801EF6E0` / `0x801EF7B4` | `overlay_0896_801ef6e0` and its two cites | field (0897) via `+0x5818` | Same shape; the enclosing dump resolves to `0x801F4C78`. |
+| `0x801E65F8` | `overlay_0896_bat_back_dat_801e65f8` | field (0897) `0x801EAFD8`, low confidence | Reported `+0x49E0` on an 11-hit signature, so the resolution is weak. Independent of that, the dump is a frameless fragment - it opens mid-flow with a `div` and a `break 0x1C00` divide guard - so no function starts at the printed VA either way. |
+| `0x801FFBA4` | `overlay_0896_bat_back_dat_801fa38c`, `overlay_0897_xxx_dat_801f138c` | battle-action (0898) `0x801DABA4` | Three-way confirmed: both mis-based dumps and the base-correct `overlay_battle_action_801daba4` are 1408 bytes / 352 instructions with an identical opening. `0x801FFBA4` sits in 0897's over-read tail, so the field-overlay resolution has to be re-keyed into 0898 by the table above. Cite `FUN_801DABA4`. |
+
+Read the `overlay_0896_*` rows together: the whole group is one mis-based batch
+seen through a cite-pointer, and a **cite of a shifted dump inherits the shift**.
+The corpus stores mid-function citations as their own files, so a phantom entry
+address can spawn several more phantom interior addresses, each of which looks
+like an independent unported function in a worklist.
+
+## Region-window dumps are not addresses
+
+A second shape that reads as an address but is not one. `dump_levelup_data_section.py`
+emits **fixed 4 KB hex windows** over the level-up overlay's data segment, one
+file per window, named `overlay_magic_level_up_data_0x<base>.txt`. The header
+line says `DATA REGION 0x801F1000..0x801F1FFF`, not `FUN_`; the body is a
+`C`/`D`-annotated hexdump, not a disassembly.
+
+Any tool that recovers an address from a dump filename therefore mints entries
+at `0x801C8F00`, `0x801F0000`, `0x801F1000`, `0x801F2000`, `0x801F3000`,
+`0x801F4000`, `0x801F5000`, `0x801F6000`, `0x801F7000` and `0x801FA000` - the
+window bases, spaced on round 4 KB boundaries. **The roundness is the tell.**
+Nothing in the retail link lands ten function entries on exact 4 KB multiples.
+None of these is a function and none is a port site.
+
+## PROT 0900's head window (`0x801F69D8..0x801F6A84`)
+
+The third shape, and the one that produces the largest single cluster of false
+entries: a run of eighteen `FUN_` pseudo-entries at 4- and 8-byte spacing in
+`overlay_muscle_dome.bin`, covering `0x801F69D8`, `0x801F69E8`, `0x801F69EC`,
+`0x801F69F0`, `0x801F69F4`, `0x801F69F8`, `0x801F69FC`, `0x801F6A00`,
+`0x801F6A08`, `0x801F6A10`, `0x801F6A18`, `0x801F6A30`, `0x801F6A34`,
+`0x801F6A3C`, `0x801F6A40`, `0x801F6A58`, `0x801F6A74` and `0x801F6A84`.
+
+Read the dumps and the cluster falls apart on its own terms. Every member is at
+most 8 bytes. Ten report `size=1 bytes, 0 instructions` with Ghidra's
+"bad instruction data" warning - it could not decode even one instruction. The
+rest decode to a single nonsense word each: a `beq` into the middle of the run,
+a `jal 0x8C3C0004`, and one that Ghidra named `thunk_EXT_FUN_8C000000` because
+the word looks like a jump into the KSEG1 hardware window. **Four-byte spacing
+between `jal` targets is not a function layout.** It is a table.
+
+And `0x801F69D8` is a known address: it is PROT 0900's slot-B link base, and
+the overlay-resident dispatcher `FUN_801F2D68` indexes a jump table there with
+`jr *(0x801F69D8 + sub*4)` (see
+[move-vm.md § screen-effect widget family](../subsystems/move-vm.md#screen-effect-widget-family-prot-0900)).
+`crates/asset/data/static-overlays.toml` records the same head being referenced
+at `+0x00`, `+0x20` and `+0x84` from PROT 0977's code. So the window holds the
+module's head pointer/string data, the surrounding slot-A code words decode as
+`jal` into it, and Ghidra dutifully minted an entry per target.
+
+The capture provenance closes it: `overlay_muscle_dome.bin` is a Duckstation
+save-state RAM slice, so slot A and slot B are whatever the emulator held at
+that instant and need not be the pair the slot-A code was linked against.
+Treat all eighteen as data. None is a port site, and the surrounding real
+functions of that band belong to PROT 0900, not to the Muscle Dome.
 
 The four `overlay_muscle_dome_*` rows are the instructive ones, because their
 base is *right* and the label is wrong. PROT 0977 (Muscle Dome) is a slot-A
@@ -291,6 +372,42 @@ a PROT 0900 scene-draw setup routine that seeds the render scratchpad window
 and `0x8007B790`, snapshots the scratchpad view bytes `0x1F800384/385` and
 `0x1F8003E8..3EB` into overlay-local slots from `0x801F8EE0`, and then runs the
 draw through `FUN_80026988`.
+
+## Three cheap tells that a dump is not a function
+
+The sweep needs ten signable instructions, so the short dumps - the largest
+class in the corpus - get no verdict from it. These three checks cost one look
+at the disassembly section and settle most of them without any tooling.
+
+**The first printed line is a delay slot.** Ghidra prints a delay-slot
+instruction with a leading underscore (`_li v0,0x8`). A function cannot begin
+with one, so the dump is a slice of a body whose branch is above the window.
+`0x801E0F40` is the minimal case: three instructions, opening `_li v0,0x8`,
+closing `j 0x801EFEA0`. `0x801E0F24` is the same shape inside a body that *is*
+identified - the dump's own header names the enclosing function
+`FUN_801DE840`, the field/event VM, and script-vm.md catalogues the VA as the
+`switchD_801e0f24::caseD_4` label.
+
+**No prologue and an unconditional `j` for an exit.** A real leaf ends `jr ra`.
+`0x801E015C`, `0x801E08C4`, `0x801E0DF0` and `0x801E2640` all open mid-flow
+with no `addiu sp,sp,-N` and leave through `j` to a shared epilogue
+(`0x801EED24`, `0x801EF228`, `0x801EFEA0`). They are basic blocks of larger
+overlay routines.
+
+**The disassembly contains instructions the R3000A does not have.** This is the
+strongest tell available, because it needs no context at all. `0x801E5E84`
+decodes as `andi zero,...` followed by `tge` - a MIPS-II trap instruction.
+`0x801E60A8` decodes as `jalx` and `daddi` - MIPS-16 and 64-bit opcodes. The
+PSX CPU implements neither. Any window that disassembles to them is data being
+rendered as code, and the surrounding "function" is fiction. `0x801E45AC`
+(four `nop`s - alignment padding) and `0x801E565C` (`size=1 bytes, 0
+instructions`) are the degenerate cases of the same thing.
+
+`0x801ECC00` is worth naming separately: three independent images
+(`overlay_battle_action`, `overlay_battle_action_0898`,
+`overlay_0896_bat_back_dat`) all dump it as `NOFUNC - no analyzed function at
+or containing this address`. Three misses agreeing is about as clear as the
+corpus gets.
 
 ## Tagged is necessary, not sufficient
 
@@ -359,6 +476,7 @@ cases where a base can be self-consistently wrong.
 
 ## See also
 
+- [`phantom-print-index.md`](phantom-print-index.md) - this page's findings applied address-by-address to the `0x801C…` / `0x801D…` printed band.
 - [`call-target-integrity.md`](call-target-integrity.md) - the sibling failure: what a decoded `jal` target does and does not prove.
 - [`static-overlay-pipeline.md`](static-overlay-pipeline.md) - how an overlay's base is recovered and what makes a recovery load-bearing.
 - [`ghidra.md`](ghidra.md) - the dump scripts, and the decompiler artifacts that have produced false claims.

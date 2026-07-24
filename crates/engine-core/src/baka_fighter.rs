@@ -294,6 +294,35 @@ pub struct BakaFight {
     /// match (`FUN_801d239c`'s screen). `None` until then, and on a loss -
     /// a beaten player is paid nothing.
     tally: Option<BakaTally>,
+    /// The two overlay score-bonus tables, when a host has parsed them.
+    score_tables: Option<BakaScoreTables>,
+    /// `DAT_801dbec8` - the running **maximum** of the player's hit streak,
+    /// which retail latches once per frame in the HUD renderer
+    /// (`FUN_801d2afc`: `if (DAT_801dbec8 <= DAT_801dc094) DAT_801dbec8 =
+    /// DAT_801dc094;`). `DAT_801dc094` is `&DAT_801dbfec[1 * 0x2a]` - slot 1's
+    /// consecutive-hits-taken counter, i.e. how long a streak the player is
+    /// currently landing.
+    max_combo: i32,
+    /// The three score rows `FUN_801d2a28` accumulates into
+    /// (`DAT_801dbee0` / `DAT_801dbed8` / `DAT_801dbedc`), which the
+    /// end-of-match [`BakaTally`] then drains.
+    score_rows: [i32; 3],
+    /// The round chrome, advanced once per [`BakaFight::tick_with_input`].
+    chrome: crate::baka_fighter_chrome::BakaChrome,
+    /// The chrome frame the last tick produced.
+    chrome_frame: crate::baka_fighter_chrome::ChromeFrame,
+}
+
+/// The two per-round score-bonus tables the overlay carries as rodata: the
+/// combo-bonus table `&DAT_801d70c4` (20 `i32` slots) and the health-bonus
+/// table `&DAT_801d711c` (`i16` slots). They are Sony bytes with no parser in
+/// `legaia_asset::baka_opponents`, so a host that wants the score rows
+/// populated reads them out of the overlay image itself; with no tables the
+/// rows stay at zero, which is what [`BakaFight`] does by default.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BakaScoreTables {
+    pub combo_bonus: Vec<i32>,
+    pub health_bonus: Vec<i16>,
 }
 
 impl BakaFight {
@@ -321,7 +350,47 @@ impl BakaFight {
             rng: BiosRand::new(seed),
             last_exchange: None,
             tally: None,
+            score_tables: None,
+            max_combo: 0,
+            score_rows: [0; 3],
+            chrome: crate::baka_fighter_chrome::BakaChrome::default(),
+            chrome_frame: crate::baka_fighter_chrome::ChromeFrame::default(),
         }
+    }
+
+    /// Supply the two overlay score-bonus tables so the per-round score rows
+    /// accumulate. Without them every [`baka_round_score`] lookup misses and
+    /// the rows stay empty.
+    pub fn with_score_tables(mut self, tables: BakaScoreTables) -> Self {
+        self.score_tables = Some(tables);
+        self
+    }
+
+    /// Arm the cabinet's intro title card so the first ticks run it.
+    pub fn with_intro_card(mut self) -> Self {
+        self.chrome = crate::baka_fighter_chrome::BakaChrome::with_intro();
+        self
+    }
+
+    /// The chrome frame the last tick produced - the round banner, countdown
+    /// and title-card draws plus any announcer line they fired.
+    pub fn chrome_frame(&self) -> &crate::baka_fighter_chrome::ChromeFrame {
+        &self.chrome_frame
+    }
+
+    /// The chrome runner itself, for a host that wants its sprite pool.
+    pub fn chrome(&self) -> &crate::baka_fighter_chrome::BakaChrome {
+        &self.chrome
+    }
+
+    /// The running maximum player hit streak (`DAT_801dbec8`).
+    pub fn max_combo(&self) -> i32 {
+        self.max_combo
+    }
+
+    /// The three accumulated score rows.
+    pub fn score_rows(&self) -> [i32; 3] {
+        self.score_rows
     }
 
     /// Build both fighters straight from the parsed overlay tables. `None`
@@ -600,18 +669,49 @@ impl BakaFight {
         if !already_credited {
             self.f[winner].round_wins += 1;
         }
+        self.accumulate_round_score(winner);
+        self.chrome
+            .start_round_banner(crate::baka_fighter_chrome::ROUND_BANNER_SPRITE);
         if self.f[winner].round_wins >= ROUND_WIN_TARGET {
             self.phase = MatchPhase::MatchOver(winner);
             if winner == 0 {
                 // The retail end-of-match tally screen comes up on a player
-                // win and drains the prize into gold. The engine has no
-                // score channel, so the three score rows start empty and
-                // only the coin row carries a value.
-                self.tally = Some(BakaTally::new([0, 0, 0, self.cfg[1].gold_reward as i32]));
+                // win and drains the prize into gold.
+                self.tally = Some(BakaTally::new([
+                    self.score_rows[0],
+                    self.score_rows[1],
+                    self.score_rows[2],
+                    self.cfg[1].gold_reward as i32,
+                ]));
             }
         } else {
             self.phase = MatchPhase::RoundOver(winner);
         }
+    }
+
+    /// Fold this round's two bonus increments into the score rows, exactly
+    /// as `FUN_801d2a28` does: the combo row takes the running-maximum
+    /// streak's table entry, the bonus row the winner's end-HP entry.
+    ///
+    /// The score channel runs only when a host has supplied the two overlay
+    /// bonus tables. Without them the port has no score channel at all - the
+    /// rows stay empty and the tally carries the coin prize alone, which is
+    /// the behaviour every disc-free oracle measures. Retail always has the
+    /// tables, so supplying them is what turns the retail channel on.
+    ///
+    /// REF: FUN_801d2a28
+    fn accumulate_round_score(&mut self, winner: usize) {
+        let Some(tables) = self.score_tables.clone() else {
+            return;
+        };
+        let gain = baka_round_score(
+            self.max_combo,
+            &tables.combo_bonus,
+            self.f[winner].hp,
+            &tables.health_bonus,
+        );
+        self.score_rows[1] += gain.combo_gain;
+        self.score_rows[2] += gain.bonus_gain;
     }
 
     /// Advance the duel one frame: decay cooldowns, let the CPU pick, charge
@@ -627,6 +727,20 @@ impl BakaFight {
     /// this frame's edge-triggered face-button test (`_DAT_8007b874 & 0xf0`),
     /// which snaps the end-of-match tally to its end state.
     pub fn tick_with_input(&mut self, frame_step: i32, face_button: bool) {
+        // The HUD renderer latches the running maximum once per frame, so it
+        // runs whatever the phase.
+        if self.max_combo <= self.f[1].combo {
+            self.max_combo = self.f[1].combo;
+        }
+        let chrome_tick = crate::baka_fighter_chrome::ChromeTick {
+            frame_step,
+            loading: false,
+            match_phase: i32::from(matches!(self.phase, MatchPhase::MatchOver(_))),
+            round: self.round as i32,
+            round_counter: self.round as i32,
+            focus: (0, 1),
+        };
+        self.chrome_frame = self.chrome.step(&chrome_tick, (&[], &[]));
         match self.phase {
             MatchPhase::MatchOver(_) => {
                 // The match is decided: the tally screen runs (FUN_801d239c).
@@ -1195,10 +1309,6 @@ pub struct EffectSpawnSpec {
     pub sprite_id: u16,
 }
 
-// NOT WIRED: same prerequisite as its dance twin
-// ([`crate::dance::step_mark_effect_spawn`]) - the engine has no minigame
-// effect-part pool. The only sprite-part pool is the effect-VM bundle pool,
-// whose ids index effect bundles, not the duel overlay's own sprites.
 /// PORT: FUN_801d6e04 - the round chrome's screen-centre effect spawn:
 /// retail zero-fills a spawn record, plants it at the fixed screen centre
 /// `(0xA0, 0x78)` through the shared part-spawn API `FUN_80021B04` at scale
@@ -1223,7 +1333,7 @@ fn sra4_round_to_zero(v: i32) -> i32 {
     (if v < 0 { v + 0xF } else { v }) >> 4
 }
 
-// NOT WIRED: two prerequisites are missing. The `frame_indices` slice is the
+// NOT WIRED: the concrete blocker is the parser. The `frame_indices` slice is the
 // action record's per-sub-keyframe `+0x26` column, and
 // `legaia_asset::baka_opponents::parse_actions` decodes the record's power and
 // keyframe *count* but not that column; and the duel has no animation host - the
@@ -1392,10 +1502,6 @@ pub struct BakaRoundScore {
 
 /// Clamp a raw combo count to the combo-bonus table index space.
 ///
-// NOT WIRED: it exists to index the overlay's combo-bonus table for
-// [`baka_round_score`], and that table has no parser (see the note there), so
-// there is nothing for the clamped index to address.
-///
 /// PORT: FUN_801d2a28 (`0x801d2a34..0x801d2a40`). Retail keeps the count when
 /// it is below `0x14` and otherwise pins it to [`BAKA_COMBO_MAX`]; the compare
 /// is signed, so a (never-produced) negative count passes through unclamped,
@@ -1410,20 +1516,17 @@ pub fn baka_combo_index(combo: i32) -> i32 {
 
 /// Resolve the two score-row increments a finished round contributes.
 ///
-// NOT WIRED: the two tables it indexes are overlay disc data - the combo-bonus
-// table `&DAT_801d70c4` and the health-bonus table `&DAT_801d711c` - and
-// `legaia_asset::baka_opponents` has no parser for either, so no caller can
-// supply the slices. Both VAs are fixed and the overlay's load base is already
-// pinned (`legaia_asset::baka_opponents::BAKA_OVERLAY_BASE_VA`), so the parser
-// is mechanical; what is *not* settled is the combo input. Retail's
-// `DAT_801dbec8` is a per-match running **maximum** (`FUN_801d2afc` latches
-// `if (DAT_801dbec8 <= DAT_801dc094) DAT_801dbec8 = DAT_801dc094;`, and
-// `0x801d05c0` zeroes it at setup), and which fighter's counter `DAT_801dc094`
-// tracks is not pinned - so mapping it onto [`BakaFight`]'s per-fighter
-// `combo` would be a guess. That is also why [`BakaFight`] opens its tally
-// with the two score rows at zero and only the coin prize populated.
+/// PORT: FUN_801d2a28 (per-round score accumulation).
 ///
-/// PORT: FUN_801d2a28 (per-round score accumulation). The retail routine reads
+/// The combo input is [`BakaFight::max_combo`], the running maximum
+/// `DAT_801dbec8` that the HUD renderer latches each frame from
+/// `DAT_801dc094`. That address resolves: the per-fighter hits-taken array is
+/// `&DAT_801dbfec[slot * 0x2a]` (an `int` index, so `0xa8` bytes per slot) and
+/// `0x801dbfec + 0xa8 == 0x801dc094`, i.e. **slot 1's** consecutive-hits-taken
+/// counter - how long a streak the player is currently landing. The two bonus
+/// tables are still overlay rodata with no parser, so [`BakaFight`] keeps them
+/// optional ([`BakaScoreTables`]): absent, every lookup misses and the rows
+/// stay at zero. The retail routine reads
 /// the running maximum combo (`DAT_801dbec8`) and the winner's remaining HP
 /// (`DAT_801dbfc4`) and folds two increments into the running score rows the
 /// end-of-match tally ([`BakaTally`]) later drains:
@@ -1466,6 +1569,82 @@ pub fn baka_round_score(
         combo_gain,
         bonus_gain,
     }
+}
+
+// ------------------------------------------------------- per-fighter installer
+
+/// PROT TOC base the per-fighter mesh installer adds the folded roster index
+/// to. Entry `0x4b6` is extraction 1204, the battle-form party pack.
+pub const FIGHTER_PACK_TOC_BASE: u32 = 0x4B6;
+/// Roster ids at or above this fold down by the same amount - the three party
+/// fighters share the one party pack.
+pub const FIGHTER_PACK_FOLD: usize = 3;
+/// Scratch buffer the installer allocates for the pack before walking it.
+pub const FIGHTER_PACK_BUFFER: usize = 0x4_6000;
+/// Mask that separates a chunk header word's size from its type byte.
+pub const FIGHTER_CHUNK_SIZE_MASK: u32 = 0x00FF_FFFF;
+
+/// One chunk of a fighter pack, as the installer's walk sees it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FighterChunk {
+    /// Header byte `3` - the asset type the dispatcher switches on.
+    pub kind: u8,
+    /// Byte offset of the payload inside the pack.
+    pub offset: usize,
+    /// Payload length as the header declares it.
+    pub len: usize,
+}
+
+/// Which PROT TOC entry the installer loads for a roster index, and the folded
+/// index it uses.
+///
+/// REF: FUN_801d4c50 (`0x801D4D58..0x801D4D70`)
+pub fn fighter_pack_entry(roster: usize) -> (usize, u32) {
+    let folded = if roster >= FIGHTER_PACK_FOLD {
+        roster - FIGHTER_PACK_FOLD
+    } else {
+        roster
+    };
+    (folded, FIGHTER_PACK_TOC_BASE + folded as u32)
+}
+
+// NOT WIRED: the engine loads a fighter's art through
+// `legaia_asset::baka_opponents::parse_fighter_pack`, which takes the already
+// resolved PROT entry, so nothing calls the installer's own walk. Reaching it
+// needs the duel host to stage art at all - `BakaFight` is the rules layer and
+// holds no meshes.
+/// PORT: FUN_801d4c50 - the per-fighter **mesh installer**'s chunk walk.
+///
+/// The installer allocates [`FIGHTER_PACK_BUFFER`] bytes, fills it either from
+/// a named `data_field` path (the dev arm, taken only while the streaming flag
+/// `_DAT_8007b8c2` is `0`) or from raw PROT entry [`fighter_pack_entry`] (the
+/// retail arm), then walks the buffer as a chain of
+/// `[u32 (type << 24) | size][payload]` chunks, handing each to the asset
+/// dispatcher `FUN_8001F05C` with the "already decompressed" flag. The chain
+/// ends at the first header whose size field is zero, and the buffer is freed
+/// on the way out - the pack is transient, and whatever the dispatcher keeps
+/// it has already copied.
+///
+/// The stride is the retail one and it is **not** `4 + size`: the size is
+/// rounded down to a multiple of four first (`sra 2` then `sll 2`), so a chunk
+/// whose declared length is not word-aligned advances short of its own end.
+pub fn fighter_pack_chunks(pack: &[u8]) -> Vec<FighterChunk> {
+    let mut out = Vec::new();
+    let mut pos = 0usize;
+    while pos + 4 <= pack.len() {
+        let hdr = u32::from_le_bytes([pack[pos], pack[pos + 1], pack[pos + 2], pack[pos + 3]]);
+        let size = (hdr & FIGHTER_CHUNK_SIZE_MASK) as usize;
+        if size == 0 {
+            break;
+        }
+        out.push(FighterChunk {
+            kind: (hdr >> 24) as u8,
+            offset: pos + 4,
+            len: size,
+        });
+        pos += (size / 4) * 4 + 4;
+    }
+    out
 }
 
 #[cfg(test)]
@@ -1720,6 +1899,146 @@ mod tests {
         f.tick(1);
         let second = f.last_exchange().unwrap().damage;
         assert_eq!(second, first + COMBO_DAMAGE_STEP);
+    }
+
+    #[test]
+    fn fighter_pack_entry_folds_the_party_slots() {
+        assert_eq!(fighter_pack_entry(0), (0, 0x4B6));
+        assert_eq!(fighter_pack_entry(2), (2, 0x4B8));
+        // Roster 3 is the first ladder fighter and folds back onto entry 0.
+        assert_eq!(fighter_pack_entry(3), (0, 0x4B6));
+        assert_eq!(fighter_pack_entry(16), (13, 0x4C3));
+    }
+
+    #[test]
+    fn fighter_pack_walk_stops_at_a_zero_header() {
+        let mut buf = Vec::new();
+        let mut chunk = |kind: u8, len: usize| {
+            let hdr = ((kind as u32) << 24) | len as u32;
+            buf.extend_from_slice(&hdr.to_le_bytes());
+            buf.extend(std::iter::repeat_n(0xAAu8, len));
+        };
+        chunk(0, 8);
+        chunk(9, 4);
+        buf.extend_from_slice(&[0u8; 4]);
+        let chunks = fighter_pack_chunks(&buf);
+        assert_eq!(
+            chunks,
+            vec![
+                FighterChunk {
+                    kind: 0,
+                    offset: 4,
+                    len: 8
+                },
+                FighterChunk {
+                    kind: 9,
+                    offset: 16,
+                    len: 4
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn the_walk_rounds_a_chunk_length_down_to_a_word() {
+        // A 5-byte chunk advances 4 + 4, not 4 + 5 - the retail stride
+        // truncates the size before adding the header. So the next header is
+        // read at offset 8, one byte inside the first chunk's own payload.
+        let mut buf = vec![0x05, 0x00, 0x00, 0x00];
+        buf.extend_from_slice(&[0xAA; 4]);
+        buf.extend_from_slice(&[0x09, 0x00, 0x00, 0x06]);
+        buf.extend_from_slice(&[0u8; 12]);
+        let chunks = fighter_pack_chunks(&buf);
+        assert_eq!(
+            chunks,
+            vec![
+                FighterChunk {
+                    kind: 0,
+                    offset: 4,
+                    len: 5
+                },
+                FighterChunk {
+                    kind: 6,
+                    offset: 12,
+                    len: 9
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn the_duel_ticks_the_round_chrome() {
+        let mut f = fight();
+        // No banner is running before a round ends.
+        f.tick(1);
+        assert!(!f.chrome().busy());
+        f.end_round(0, false);
+        assert!(f.chrome().busy());
+        assert_eq!(f.chrome().sprites().len(), 1);
+        f.tick(1);
+        assert_eq!(
+            f.chrome_frame().xa.map(|x| x.clip),
+            Some(0x1F),
+            "the round-announce line fires on the banner's first frame"
+        );
+    }
+
+    #[test]
+    fn the_running_max_combo_tracks_slot_ones_hits_taken() {
+        let mut f = fight();
+        f.f[1].combo = 4;
+        f.tick(1);
+        assert_eq!(f.max_combo(), 4);
+        // It is a maximum, so a reset streak does not lower it.
+        f.f[1].combo = 0;
+        f.tick(1);
+        assert_eq!(f.max_combo(), 4);
+    }
+
+    #[test]
+    fn without_tables_there_is_no_score_channel_at_all() {
+        let mut f = fight();
+        f.f[1].combo = 6;
+        f.tick(1);
+        f.end_round(0, false);
+        assert_eq!(f.score_rows(), [0, 0, 0]);
+        // ...and the tally therefore opens on the coin row alone.
+        let mut f = fight();
+        f.f[0].round_wins = ROUND_WIN_TARGET - 1;
+        f.end_round(0, false);
+        assert_eq!(f.tally().unwrap().counters()[..3], [0, 0, 0]);
+    }
+
+    #[test]
+    fn the_perfect_bonus_is_a_literal_not_a_table_read() {
+        // Supplying empty tables turns the channel on; the combo lookup then
+        // misses but the full-HP bonus still lands, because retail spells it
+        // as an immediate rather than a table cell.
+        let mut f = fight().with_score_tables(BakaScoreTables::default());
+        f.f[1].combo = 6;
+        f.tick(1);
+        f.end_round(0, false);
+        assert_eq!(f.score_rows(), [0, 0, BAKA_PERFECT_BONUS]);
+
+        // A winner below full HP falls back to the (empty) health table.
+        let mut f = fight().with_score_tables(BakaScoreTables::default());
+        f.f[0].hp = HP_START - 1;
+        f.end_round(0, false);
+        assert_eq!(f.score_rows(), [0, 0, 0]);
+    }
+
+    #[test]
+    fn score_rows_accumulate_once_the_tables_are_supplied() {
+        let mut f = fight().with_score_tables(BakaScoreTables {
+            combo_bonus: (0..20).map(|i| i * 10).collect(),
+            health_bonus: vec![0; 16],
+        });
+        f.f[1].combo = 6;
+        f.tick(1);
+        f.end_round(0, false);
+        // Combo row takes combo_bonus[6]; the winner is at full HP, so the
+        // bonus row takes the flat perfect bonus.
+        assert_eq!(f.score_rows(), [0, 60, BAKA_PERFECT_BONUS]);
     }
 
     #[test]

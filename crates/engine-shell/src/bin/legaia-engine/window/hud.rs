@@ -1082,6 +1082,8 @@ impl PlayWindowApp {
             legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
             out.extend(draws);
         }
+        // Opt-in developer menu: its row list draws over everything else.
+        out.extend(self.dev_menu_draws.iter().copied());
         out
     }
 

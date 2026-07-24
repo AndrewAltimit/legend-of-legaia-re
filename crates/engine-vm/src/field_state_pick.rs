@@ -3,7 +3,10 @@
 //! state onto the scene record and installs either the normal successor state
 //! `0x30` or the debug shortcut state `0x13`.
 //!
-//! PORT: FUN_801f1f4c
+//! The port of `FUN_801f1f4c` is [`state_pick`], which carries the `PORT` tag
+//! and its own wiring disclosure. It is deliberately not repeated at module
+//! level - a `//!  PORT:` line makes the whole file a second, coarser anchor for
+//! the same address, with no disclosure of its own.
 //!
 //! # Provenance
 //!

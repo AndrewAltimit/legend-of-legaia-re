@@ -246,9 +246,32 @@ the target class:
 | `> 8` | 0. |
 
 Only party-side slots are ever inspected, in either arm. An action aimed at a
-monster clears the gate on the frame it is asked, whatever the enemy's bar is
+monster clears the gate on the frame it is asked, whatever the enemy's mirror is
 doing; an action aimed at the party - an enemy attack, a heal, any all-target
-cast - is the only kind that can be held.
+cast - is the only kind that can be held. `ctx[+0x00]` is the party member
+count, so the all-target arm is a party-side scan too.
+
+### Why only the party side has anything to wait for
+
+Retail draws **no HP readout for monsters**. The party HUD counts its HP down
+over several frames after a hit; an enemy's HP is never shown at all. That is
+what the whole asymmetry is for, and it explains three things that otherwise
+look arbitrary:
+
+- `+0x172` is maintained for monster slots but never drawn. `FUN_80047430`'s
+  non-party arm therefore does not animate: it applies the entire delta in one
+  frame and clears the accumulator (`0x80047578`). There is no readout to ramp.
+- The settle gate returns 0 for monster targets because there is no animation to
+  wait on - the wait exists purely to let the party's readout finish counting
+  before the action ends.
+- The same arm's `lhu` read of the signed accumulator, and the non-party MP
+  path's use of the HP fields (see below), are unobservable in retail precisely
+  because nothing renders the values they corrupt.
+
+So "HP bar" is shorthand throughout this page for the **displayed-HP mirror**
+`+0x172`, which is a drawn readout only on the party side. Readers of `+0x172`
+in the corpus are UI-side: `FUN_80046A20` (`0x80046AA8`) and the
+`FUN_801D8DE8` UI-element family (`0x801D9758`).
 
 ### The invariant the check assumes
 
@@ -266,6 +289,16 @@ monster target never holds the `0x51` exit.
 The whole ramp sits behind one guard at `0x800474E8`
 (`lw a0,0x10(s2); beq a0,zero,<skip>`): **with a zero accumulator the bar is not
 touched at all.**
+
+Two retail quirks live in the non-party arms and are unobservable because
+nothing draws a monster's readout. The HP arm reads the signed accumulator with
+`lhu` (`0x8004757C`), so a negative accumulator on a monster - a heal - wraps
+through the low halfword. And the non-party **MP** arm at `0x80047624` operates
+on `+0x172` / `+0x10`, the **HP** fields, rather than `+0x174` / `+0x178`: a
+copy-paste of the HP arm. The consequence is that a monster's MP accumulator
+`+0x178` is never cleared, so that branch re-runs every frame for the rest of
+the battle, subtracting an already-zeroed HP accumulator. Both are faithful
+behaviour for a port to reproduce, not defects to correct.
 
 That makes `+0x14C != +0x172` with `+0x10 == 0` on a party slot an **absorbing
 state** for as long as the actor takes ordinary hits: the drain is the only
@@ -289,15 +322,142 @@ single point while clearing its `+0x10` is enough, and the next party-targeted
 action hangs while monster-targeted actions in between still complete normally.
 Probe: `scripts/pcsx-redux/autorun_gaza2_hpbar_settle.lua`.
 
-Two conventions for seeding `+0x10` coexist in the dumped battle corpus, which
-is where a retail trigger would have to come from. `FUN_801EC3E4` **accumulates**
-(`lw v0,0x10(v1)` / `addu` / `sw` at `0x801EDB58`, with an anti-overkill clamp
-`if (bar < acc) acc = bar` at `0x801EDB70`), while all three of `FUN_800402F4`'s
-seeds (`0x800408FC`, `0x80040D28`, `0x800410BC`) plainly **assign**
-`actor[+0x10] = -delta`. An assigning seed that lands while an accumulated drain
-is still in flight discards the remainder, and the bar stops short of live HP by
-exactly that much. Which retail sequence actually reaches that state is
-**Unknown** - no capture has produced the desync without an external HP write.
+### Where the desync comes from: two seeding conventions
+
+Every writer of `+0x10` in the dumped battle corpus follows one of two
+conventions, and they disagree about what to do when a new delta arrives while
+the bar is still moving.
+
+**The battle damage/heal kernel `FUN_801EC3E4` accumulates at every one of its
+sites** (`see ghidra/scripts/funcs/overlay_battle_action_801ec3e4.txt`):
+
+| store | shape | branch |
+|---|---|---|
+| `0x801EDAF0` | `acc -= (max - hp)` | overheal - live HP saturates at `+0x14E` first, so only the amount actually applied is credited |
+| `0x801EDB14` | `acc -= (s0 - s1)` | ordinary net delta, paired with the live-HP write at `0x801EDAFC` |
+| `0x801EDB58` | `acc += (s0 - s1)` | the second actor the same hit credits |
+| `0x801EDB7C` | `acc = bar` | anti-overkill clamp, guarded `if (bar < acc)` at `0x801EDB70` - caps the drain at the whole visible bar |
+
+Each is a read-modify-write, so overlapping hits compose and the invariant
+`(+0x172 - +0x14C) == +0x10` survives every path through the damage kernel.
+
+**The item / restore applier `FUN_800402F4` assigns.** Its head builds a pointer
+table over `&actor[+0x14C]`, `+0x14E`, `+0x150`, `+0x152` for slots `0..6`
+(battle mode `0x15`; a different source table otherwise), applies the restore
+with `hp = hp + amount` at `0x800408AC`, and then seeds the bar with a bare
+store:
+
+```
+800408f0  lw   v1,0x0(v1)      ; v1 = the actor
+800408f4  subu v0,zero,v0      ; v0 = -amount
+800408f8  jal  0x801e22c8
+800408fc  _sw  v0,0x10(v1)     ; actor[+0x10] = -amount   <- the old value is never read
+```
+
+All three of its seeds - `0x800408FC`, `0x80040D28`, `0x800410BC` - are that
+same shape. Because none of them reads the old accumulator, **a restore that
+lands while a damage drain is still in flight discards the remainder.** The rest
+is forced arithmetic: with live HP `L`, bar `D` and remainder `A = D - L`, a
+restore of `H` leaves live HP at `L + H` and ramps the bar from `D` to `D + H`,
+so the bar settles exactly `A` above live HP with the accumulator back at zero.
+That is the absorbing state above, reached through nothing but ordinary game
+actions.
+
+So the retail trigger is **healing a party member whose HP readout has not
+finished counting down from a recent hit** - and the residual desync is exactly
+the amount of readout movement the heal cancelled. Every later action whose
+acting actor targets that slot (`+0x1DD` in `0..2`) or the whole party
+(`+0x1DD == 8`, which is what a party-wide spell uses) then parks at `0x51`.
+
+#### The auto-revive reaches the assigning seed by itself, one state early
+
+The chain does not need a player to time an item badly, because state `0x50`
+does it unprompted. `FUN_801E6968` - the Lost Grail **Final Heal** auto-revive
+that `0x50` runs - calls `FUN_800402F4` twice, at `0x801E6A24` and `0x801E6BD0`,
+both with `a0 = 4, a1 = 1`: **effect class 4** (revive) at tier 1 (full).
+Class 4 dispatches through the applier's jump table at `0x80014FA0` into the
+revive arm at `0x80040F14`, and that arm's accumulator seed - `0x800410BC` - is
+one of the three bare assigns. Each call is guarded by
+`lhu v0,0x14c(<actor>); bne v0,zero,<skip>`, so it fires only on a member whose
+live HP has just reached zero.
+
+That is the worst possible moment. The killing hit credited the readout
+accumulator with the whole remaining bar, so the readout is mid-drop when the
+revive lands; the assign discards whatever is left of it. With live HP `0`,
+readout `B` still falling, and accumulator `B`, a full revive to `M` leaves live
+HP `M`, sets the accumulator to `-M`, ramps the readout to `B + M`, and settles
+**`B` above live HP** with the accumulator at zero. And `0x50`'s only successor
+is `0x51` - the state that asks whether the readout has settled. The park can
+therefore land on the very action that triggered the revive.
+
+The same arm is what a **Phoenix** (class 4) reaches from the battle item menu,
+and the class 0 / class 1 heal arms reach the sibling assign at `0x800408FC`.
+So a downed-and-revived party member in a long boss fight is the shape that
+makes an otherwise rare race routine, and it explains why the reports cluster on
+late-game bosses rather than on ordinary encounters.
+
+The store shapes are **Confirmed** from disassembly. Whether ordinary play
+actually lands a restore inside a drain window is a timing question, measured by
+`scripts/pcsx-redux/autorun_gaza2_acc_discard.lua`, which arms an Exec
+breakpoint on all nine `+0x10` writers and flags any assign that lands on a
+non-zero accumulator.
+
+### The clamp asymmetry: two overkill guards against different references
+
+The corpus contains two ways to apply damage to a party actor, and they clamp
+overkill against **different** values. This is the generator that needs no
+restore and no timing race at all.
+
+The **safe** shape - the enemy-cast damage applier at `0x801E1924`, reached from
+the cast dispatch just above it (`jal 0x801DD0AC` at `0x801E188C`) - clamps the
+**damage** first and then applies that one clamped value to both fields:
+
+```
+801e1924  lhu  a0,0x14c(v1)   ; live HP
+801e192c  sltu v0,a0,a1       ; if (hp < damage)
+801e1938  move a1,a0          ;     damage = hp          <- clamp the DAMAGE
+801e1944  addu v0,v0,a1       ; acc += damage
+801e1948  sw   v0,0x10(v1)
+801e195c  subu v0,v0,a1       ; hp  -= damage
+801e1960  sh   v0,0x14c(v1)
+```
+
+Both fields move by the same amount, so the invariant holds by construction.
+
+The **unsafe** shape is `FUN_801EC3E4`, where the two fields are written at
+different times against different references. The bar accumulator is credited
+while the action resolves and is clamped against the **displayed bar**
+(`if (bar < acc) acc = bar` at `0x801EDB70`), while live HP is committed only at
+the end of the action, from the separate per-action damage total `actor[+0x00]`,
+and is clamped against **live HP**:
+
+```
+801eea10  lhu  a0,0x14c(v1)   ; live HP
+801eea14  lw   v0,0x0(v1)     ; the action's accumulated damage
+801eea1c  sltu v0,v0,a0       ; if (damage < hp)
+801eea2c  _sh  zero,0x14c(v1) ;     else hp = 0          <- clamp the HP
+801eea38  subu v0,a0,v0       ;     hp -= damage
+801eea3c  sh   v0,0x14c(v1)
+801eea74  sw   zero,0x0(v1)   ; damage total cleared
+```
+
+The two clamps agree only while `+0x172 == +0x14C`. Once the bar is lagging for
+any reason, a hit whose total exceeds the **displayed** bar but not **live HP**
+trips the bar-side clamp alone: the bar drains to exactly `0` while live HP
+stays positive, and the accumulator lands at zero. That is the absorbing state
+at full depth, and it is reachable from ordinary damage. A plain capture on the
+Gaza 2 save shows exactly it - a party slot holding live HP `266` with the bar
+drawing `0` and a zero accumulator.
+
+Three further guards above the commit (`0x801EE988`, `0x801EE9AC`, `0x801EE9EC`)
+branch to `0x801EEB5C` / `0x801EEB60` and skip the live-HP write entirely. A
+skip that leaves the bar accumulator already credited moves the bar without
+moving live HP, which is the `bar < live` direction - also observed live.
+
+Probe: `scripts/pcsx-redux/autorun_gaza2_hpbar_writers.lua` puts Write
+watchpoints on each party actor's `+0x00` / `+0x10` / `+0x14C` / `+0x172` rather
+than guessing store addresses, and Exec breakpoints on the commit and its skip
+exits, so the writers name themselves and the pairing is auditable per frame.
 
 ### Consequences for instrumentation
 
@@ -1105,8 +1265,26 @@ leaves reached through those dispatchers.
 - The decompile shows `_DAT_8007BD24` typed as `int*`. `_DAT_8007BD24[N]` is therefore byte N of the **pointed-to** struct (Ghidra resolves the pointer dereference as part of the indexing) - not byte N of the pointer itself. This trips up first-pass readers; see [battle.md](battle.md) § "Battle context struct" for the decode.
 - `ctx[+0x6DA]` and `ctx[+0x6DB]` look like u8 fields but are read as a u16 pair (the `0x6DA` access at line 4147 of the dump uses `*(short *)(_DAT_8007bd24 + 0x6da)`). Treat as packed `(timer_lo, timer_hi)` or `i16`.
 - Several states share an exit edge into `0x5A` via fall-through (e.g. `0x6B` → `0x5A`). The C decompile materialises this as explicit assignment; the MIPS source sometimes uses `j 0x801E6814` (function epilogue) directly without a state write.
-- `func_0x80056798()` returns the PSX rand BIOS call (`A0 0x2E`). It's used for combat RNG (combo timing, capture chance, run angle).
+- `func_0x80056798()` returns the PSX `rand` BIOS call. Its veneer reads `li t2,0xA0; jr t2; li t1,0x2F`, so the vector is **A0 `0x2F`** - not `0x2E`, which is `memchr` and belongs to the separate veneer at `FUN_80057014`. It's used for combat RNG (combo timing, capture chance, run angle).
 - Signed-vs-unsigned comparisons appear pervasively (`(int)((uVar10 - uVar16) * 0x10000) < 0` is the idiom for "i16 went negative this frame"). The compiler emitted these as explicit casts to satisfy Ghidra; the underlying MIPS is a `bgez`/`bltz` on a sign-extended halfword.
+
+### Interior addresses cited as if they were entries
+
+The corpus stores mid-function citations as their own `<addr>.txt` files whose
+whole body is a pointer at the enclosing dump. Three land in this overlay's
+documented functions, and none of the three is even a basic-block head - each
+is a single instruction in the middle of an expression, which is why no
+prologue and no `jr ra` appears anywhere near it.
+
+| Address | Inside | The instruction |
+|---|---|---|
+| `0x801EA5C4` | `FUN_801E9FD4` (the [enemy AGL action budget](#enemy-agl-action-budget-fun_801e9fd4)) | One arm of the four-way `andi 0x60` classification of the spell record's byte `+2`: `beq a0,v0,0x801EA7E8` selecting the `0x20` class. |
+| `0x801EC784` | `FUN_801EC3E4` (the [physical-attack damage kernel](battle-formulas.md#physical-attack-damage---overlay_battle_action_801ec3e4)) | `addiu a0,a0,0x4140` - the low half of the `lui/addiu` pair forming the character-record base `0x80084140`, immediately before the `slot * 0x414` stride multiply. |
+| `0x801EF228` | `FUN_801EED1C` (the [arts queue-builder](#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4)) | `addu v0,v0,v1` - the second step of that same `x*0x414` stride idiom (`((x<<6)+x)<<2 + x)<<2`), here indexing `+0x6BC` of the resolved record. |
+
+The stride idiom is worth recognising on sight: any dump opening inside
+`sll/addu/sll/addu` over a small integer, followed by an add of `0x80084140`,
+is in the middle of a character-record lookup and is not a function.
 
 ## Engine port
 

@@ -13,6 +13,7 @@ below to jump within this page.
 
 **Overlay + key functions**
 - [Overlay structure](#overlay-structure)
+- [Panel window system](#the-panel-window-system---fun_801e9b3c--fun_801e9dc8--fun_801ea9b0) - the script interpreter, the shared list cursor, the dev-menu row dispatcher
 - [Key functions](#key-functions) - [controller `FUN_801E76D4`](#fun_801e76d4---world-map-controller-9320-bytes) · [debug-menu renderer `FUN_801EAD98`](#fun_801ead98---world-map-debug-menu-renderer-7280-bytes) · [entity tick `FUN_801DA51C`](#fun_801da51c---world-map-entity-tick-260-bytes)
 
 **Entity / encounter SM**
@@ -169,9 +170,16 @@ Cursor wrap is a **swap, not a clamp**: below `row_start` jumps to `row_end`
 and above `row_end` jumps back to `row_start`.
 
 The menu list is drawn by `FUN_801EAD98(ctx, x, y, row_start, row_end)`, gated
-on the phase / helper product being `1` or `3` - so phase 1 always draws, phase
-3 draws only while `FUN_801EA9B0` reports the unwind still running, and phases
-2 and 4 never draw. Input is suppressed entirely while `_DAT_8007BB80 != 0`.
+on the phase / helper product being `1` or `3` - so phase 1 draws while input
+is allowed, phase 3 always draws, and phases 2 and 4 never draw. Input is
+suppressed entirely while `_DAT_8007BB80 != 0`.
+
+The phase-3 leg's multiplicand is `FUN_801EA9B0`'s return, and that return is
+the constant `1`: `s1` is loaded with `1` in the delay slot of the bound check
+at `0x801EA9D0` and every arm - including the out-of-range one at
+`0x801EAD7C` - exits through `move v0,s1`. So the cancel-unwind phase is not
+conditionally drawn. ("Phase 3 draws only while the unwind is still running"
+was the earlier reading; it is falsified by the epilogue.)
 
 #### Engine port
 
@@ -204,6 +212,201 @@ Both offsets are load-base independent - read straight off the `param_1 + N`
 / `param_2 + N` immediates. The per-character portrait/separator icons
 (`FUN_8002C488`) remain a UI-icon-atlas sprite seam owned by the host, as with
 the status page's LV/HP/MP icons.
+
+### The panel window system - `FUN_801E9B3C` / `FUN_801E9DC8` / `FUN_801EA9B0`
+
+The dev menu and the window-owning `ctx[+0x54]` panel actors in the world-map
+band do almost no window work themselves. Three shared leaves carry it, and
+all three live in the field overlay (PROT 0897, base `0x801CE818`).
+
+Which actors reach them is not uniform, and the phase convention is the only
+thing the whole band has in common. `FUN_801ED590`, `FUN_801EE5D4`,
+`FUN_801EE90C` and `FUN_801EF014` run panel scripts through `FUN_801E9B3C`;
+only `FUN_801ED590`, `FUN_801EE90C` and `FUN_801EF014` read the pad through
+`FUN_801E9DC8`. `FUN_801ED308` and `FUN_801EDF00` call neither - the first
+ramps a brightness global, the second drives the records screen. The actors
+themselves are described [below](#the-panel-actor-state-machines).
+
+#### `FUN_801E9B3C` - panel command-script interpreter (652 bytes)
+
+Entry `(script_ptr)`. Walks a table of 8-byte records until one reads zero:
+
+| Field | Type | Role |
+|---|---|---|
+| `+0x00` | `u16` | Opcode. `0` terminates the script. |
+| `+0x02` | `i16` | Panel index into the descriptor array at `0x801F2B98`. |
+| `+0x04` | `u32` | Operand. Position arms read it as packed `(x = lo, y = hi)`. |
+
+The arm index is `(i16)(op - 1)` bounded by `sltiu ..,0xd`, dispatched through
+the 13-entry table at `0x801CF25C`. Both cursors advance by 8 on every path,
+including the default arm, so a record is always consumed exactly once.
+
+| `op` | Arm |
+|---|---|
+| 1 | Ensure the panel exists, place it at `desc[+0x08]` / `desc[+0x0A]`. |
+| 2 | Ensure the panel exists, place it at the operand position. |
+| 3 | Store the operand's low byte into the window object's `+0x1D`. |
+| 4 | Close this panel (`FUN_80035978`). |
+| 5 | Close every panel (`FUN_80035A4C`). |
+| 6 | Zero the window object's `+0x20` halfword. |
+| 8 | Retire the panel's actor (`FUN_800319A8`). |
+| 9 | Slide (`FUN_800358C0`) to the operand position, or to the descriptor position when the operand is zero. |
+| 10 | Retire and respawn, sliding back to the live object's own `+0x0A` / `+0x0C`. |
+| 12 | Resize the party panel, then recurse into the nested script at `0x801F3170`. |
+| 7, 11, 13, `> 13` | Shared default - the record is consumed and nothing happens. |
+
+"Ensure the panel exists" is the `FUN_80035334(idx)` lookup followed, on a
+miss, by `FUN_80032434(idx, &desc[idx])`.
+
+The `op 12` party arm is the one piece of arithmetic in the routine. From the
+live party count at `0x80084594` it writes descriptor 7's height
+(`+0x0E`) `= members * 56 - 7` and its `y` (`+0x0A`, mirrored at `+0x12`)
+`= 202 - height`, i.e. the panel is bottom-anchored at 202 - the same shape as
+the list picker's 208-pixel anchor above.
+
+The arm-to-opcode mapping is Ghidra's resolution of the jump table; the arm
+*bodies*, the bound, the record stride and the party arithmetic are read from
+the instruction stream.
+
+#### `FUN_801E9DC8` - shared vertical list cursor (412 bytes)
+
+Entry `(cursor_ptr, count, wrap)`, returns `0`/`1`/`2`/`3`. It is the picker
+kernel the band's actors call - `FUN_801EE90C` invokes it as
+`(0x8007BB88, 2, wrap = 1)`, `FUN_801EF014` drives its destination list
+through it.
+
+The two action buttons are tested first, against the **held** mask
+`_DAT_8007B874` and the two configurable button masks at `0x800846D0` /
+`0x800846D4`; either one returns immediately (SFX `0x36` -> `1`, SFX `0x37`
+-> `2`) without touching the cursor. Only then are Up (`0x1000`) and Down
+(`0x4000`) tested, against the **newly-pressed** mask `_DAT_8007BB84`, both
+without an `else`, so a frame carrying both edges runs both steps.
+
+The wrapping and clamping modes differ in more than the fold:
+
+| | `wrap == 0` | `wrap != 0` |
+|---|---|---|
+| Up | only when `cursor > 0` | always; `0` jumps to `count - 1` |
+| Down | only when `cursor + 1 < count` | always; `count` folds to `0` |
+| SFX `0x21` | only when the cursor actually moves | on every press |
+
+#### `FUN_801EA9B0` - dev-menu row-action dispatcher (1000 bytes)
+
+Entry `(ctx)`. Bounds `ctx[+0x9E]` against `0x18` and dispatches through the
+24-entry table at `0x801CF2E4`; the out-of-range arm parks `ctx[+0x54] = 1`.
+The arms are debug cheats - restore the party's HP/MP from their maxima,
+cycle the encounter rate at `_DAT_8007B5F8`, max every stat on the three
+`0x80084140 + n*0x414` records, grant the whole item table through
+`FUN_800421D4`, cycle the BGM index at `_DAT_801F2E90`, toggle
+`_DAT_8007B606`.
+
+The routine's return is the constant `1` on every path (see the draw-gate
+correction above). The 25-instruction listing some dumps carry at this VA is
+the same body with a hole: Ghidra stops at the `jr v0` and resumes at the
+epilogue, because the jump-table cases are not reachable by linear flow.
+
+#### Engine port
+
+`legaia_engine_vm::world_map_panel` carries all three: `PanelCommand` /
+`PanelEffect` / `decode_panel_command` / `run_panel_script` /
+`party_panel_geometry` for `FUN_801E9B3C`, `list_cursor_input` for
+`FUN_801E9DC8`, and `dev_menu_action` for `FUN_801EA9B0`'s bound / park-phase
+/ constant-return contract. The arms' global pokes are not modelled - they
+address debug state with no engine counterpart. Like the rest of the dev-menu
+cluster the module is unhosted: the engine has no panel-window list and no
+`ctx[+0x54]` panel actor to open one.
+
+### The panel actor state machines
+
+Six actors in the band and one field HUD builder. All seven are read out of
+the statically extracted PROT 0897 image at base `0x801CE818`;
+[`locate-entry-image.py`](../../scripts/ghidra-analysis/locate-entry-image.py)
+reports a stack-frame prologue for each of the seven VAs in that image and in
+no other. The `overlay_0897_*`-prefixed dumps at these addresses print bodies
+that match no image at the queried VA - see
+[`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md).
+
+Every terminal arm makes the same four stores through the scene struct at
+`0x801C6EA4`: `scene[+0x2E] = -1`, `scene[+0x40] = ctx[+0x50]`,
+`ctx[+0x50] = <next handler id>`, `ctx[+0x54] = 0`. The handler id is what
+`FUN_801F159C` dispatches on next frame.
+
+| Actor | Phases | Shape |
+|---|---|---|
+| `FUN_801ED308` | 8, JT `0x801CF4FC` | Brightness fade/flash. |
+| `FUN_801ED590` | 4, if/else ladder | Two-option sub-list. |
+| `FUN_801EDF00` | 4, if/else ladder | Return to title. |
+| `FUN_801EE5D4` | 5, JT `0x801CF5E4` | Screen-fill fade. |
+| `FUN_801EE90C` | 15, JT `0x801CF5FC` | Text box + a near-copy of the fill fade. |
+| `FUN_801EF014` | 4, if/else ladder | Flag-window picker. |
+| `FUN_801D0D38` | none - an idle timer | Field party HUD. |
+
+Four details are worth stating because they are invisible in the decompiled C
+and each one changes behaviour:
+
+- **Fall-through between arms.** `FUN_801ED308`'s case 0 and `FUN_801EE5D4`'s
+  case 0 end on the phase store and continue into the next case's body rather
+  than branching to the epilogue, so arming and the first step of the ramp
+  happen in the same frame. `FUN_801ED308`'s case 2 does the same into case 3
+  on its saturating path, which is why the hold phase can reach phase 4 with a
+  tint restore in one tick.
+- **The fill-fade block is copied, not shared.** `FUN_801EE90C`'s phases
+  10..13 repeat `FUN_801EE5D4`'s cases 0..3 with two omissions: no opening
+  panel script, and the first hold arm consults neither the input lock
+  `_DAT_8007BB80` nor the text-actor tick `FUN_80031D00`. The dispatcher's
+  epilogue runs `FUN_80031D00` only while `ctx[+0x54] < 10`.
+- **`FUN_801ED590` picks its next phase from the cursor.** Confirm sets
+  `ctx[+0x54] = _DAT_8007BB88 + 2`, so option 0 closes the window (state 2)
+  and option 1 takes the `FUN_800266E0` / `FUN_801D84B4` hand-off (state 3);
+  cancel goes straight to state 2.
+- **`FUN_801EF014` works in an inverted row space.** The list draws bottom-up,
+  so the picker converts the absolute selection to a screen row with
+  `row = rows - (sel - first_visible) - 1`, hands *that* to `FUN_801E9DC8`
+  with `wrap = 0`, then applies the same expression again to recover the
+  selection. Down on the pad therefore decreases the flag index. The panel it
+  sizes is descriptor 14 of the `0x801F2B98` array: `height = rows * 16`,
+  `y = (8 - rows) * 16 + 0x48`, i.e. a window that grows upward from a fixed
+  bottom edge at `0xC8`.
+
+#### `FUN_801D0D38` - the field party HUD
+
+Not a phase machine: a per-frame panel builder behind an idle timer. It bails
+outright when `_DAT_8007B868` is set, when `_DAT_800845C4 == 2`, when any of
+the four D-pad bits (`_DAT_8007B850 & 0xF000`) is held, or when
+`_DAT_1F800394 & 0x0800_0000` is set - so the HUD is hidden while the player
+is walking.
+
+Otherwise it compares the player object's `+0x14` / `+0x18` against the pair
+cached at `_DAT_801F3488` / `_DAT_801F348A`. A mismatch rearms the countdown
+`_DAT_801F348C` (`0x28` frames in view mode 0, `0xA0` otherwise) and caches
+the new position. A match decrements the countdown by `_DAT_1F80038F`, and the
+panel is built once it reaches zero. The scene-entry path arms the same
+countdown but consults `_DAT_8007B5F4` as well, shortening it to `0` in view
+mode 0 and to `0x50` in view mode 1.
+
+The panel's top edge is `12`, except that the player's own position is
+projected through `FUN_800195A8` first and the panel drops to `0xAA` when the
+projected screen `y` is under `0x30` - the HUD moves out from under the
+player rather than overlapping. Each party member gets a column
+`0x64` pixels further right, drawn from the `0x80084140 + n*0x414` record:
+name at `+0x86F`, level at `+0x6F8`, HP `+0x6CC`/`+0x6CE` and MP
+`+0x6D0`/`+0x6D2` (all relative to the `0x80084140` base). A second pass emits
+the bar frames as `0x05`-tagged line primitives.
+
+#### Engine port
+
+`legaia_engine_vm::world_map_panel_actors` carries all seven as pure
+phase-transition kernels: `fade_flash_tick`, `sub_list_tick`,
+`soft_reset_tick`, `fill_fade_tick`, `text_box_tick`, `flag_window_tick` and
+`field_hud_tick`, each returning its next phase plus an effect list. The
+effects name the retail calls (post the fill primitive, capture or restore the
+tint triple, run a panel script, set a story flag) rather than performing
+them, because the globals they address - the tint triple, the DMA queues, the
+scene struct - have no engine counterpart yet.
+
+The module is unhosted for the same reason the shared leaves are: `SceneMode`
+has no panel-window or dev-menu mode, `WorldMapController` owns no window list
+and no `ctx[+0x54]` phase, and the render halves have no caller either.
 
 ### Dev-menu sub-panel renderers and the value-adjust input SM
 
@@ -465,7 +668,7 @@ not factor into `engine-vm` cleanly:
 | Function | Dump | What it is |
 |---|---|---|
 | `FUN_801E5338` | `801e5338.txt` | Sparkle emitter: spawns up to 8 `SPRT` particles at `rand()` offsets (`FUN_80056798`) around `ctx[+0x14/+0x16]`, animates each through a 10-frame sprite anim, posts them via `AddPrim` (`FUN_8003D2C4`); phase `2` waits for all to retire, then sets bit `0x8` |
-| `FUN_801EA9B0` | `overlay_debug_menu_801ea9b0.txt` | 24-case SM dispatcher on `ctx[+0x9e]` (jump table `0x801CF2E4`); the out-of-range arm parks `ctx[+0x54] = 1` and returns. Sibling of the dev-menu renderer `FUN_801EAD98` |
+| `FUN_801EA9B0` | `overlay_cutscene_dialogue_801ea9b0.txt` | Dev-menu row-action dispatcher. Ported - see [the panel window system](#the-panel-window-system---fun_801e9b3c--fun_801e9dc8--fun_801ea9b0) |
 | `FUN_801EE094` | `801ee094.txt` | **Riremito** travel-art actor (string `"ON RIREMITO"`): scans the visited-map table (`_DAT_8007B806` count, records at `+0xC`, `0x10` stride) for the current map `_DAT_80084628`; a miss parks phase `99` and prints `"UNFIND MAP NUMBER %d"` |
 | `FUN_801EE328` | `801ee328.txt` | **Rula** travel-art actor (string `"ON RULA"`): same map-table search; phase 2 raises the halt bit on `_DAT_8007C364[+0x10]`, scrolls `_DAT_8007C364[+0x16]` and spawns a flash quad via `FUN_80024E80` |
 | `FUN_801EF014` | `801ef014.txt` | Destination list-picker actor over the tile descriptor `_DAT_8007B450`: counts selectable cells (`+1`), drives a cursor prompt (`FUN_801E9DC8`), commits the pick into `_DAT_8007BB88`, then exits via `ctx[+0x50] = 0x1A` |

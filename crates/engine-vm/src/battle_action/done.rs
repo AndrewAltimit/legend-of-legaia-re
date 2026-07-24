@@ -105,16 +105,18 @@ fn rearm_action_gauge<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut Batt
 ///   (`+0x14C`) differs from its HP-bar display value (`+0x172`);
 /// - target `3..=7` (monster slot): never pending (returns 0 immediately -
 ///   the `2 < bVar1` early-out);
-/// - target `8` ("all"): scans every actor slot up to the battle actor
-///   count, pending if any pair differs;
+/// - target `8` ("all"): scans slots `0 .. ctx[+0x00] - 1`, pending if any
+///   pair differs. `ctx[+0x00]` is the **party member count** (measured `3`),
+///   not the total actor count - so even the all-target arm inspects the party
+///   side only, which is the same conclusion the `3..=7` early-out reaches by a
+///   different route: a monster's readout can never hold this gate;
 /// - target `> 8`: never pending.
 ///
 /// The engine models the retail `+0x14C`-vs-`+0x172` pair as
-/// [`BattleActor::hp`] vs [`BattleActor::hp_display`] (`None` = settled).
-pub(super) fn hp_bar_drain_pending<H: BattleActionHost + ?Sized>(
-    host: &H,
-    ctx: &BattleActionCtx,
-) -> bool {
+/// [`BattleActor::hp`] vs [`BattleActor::hp_display`] (`None` = settled), and
+/// the third field the pair converges through as
+/// [`BattleActor::hp_bar_pending`] - see [`tick_hp_bars`].
+pub fn hp_bar_drain_pending<H: BattleActionHost + ?Sized>(host: &H, ctx: &BattleActionCtx) -> bool {
     let pending = |slot: u8| -> bool {
         host.actor(slot)
             .map(|a| a.hp_display.is_some_and(|shown| shown != a.hp))
@@ -126,9 +128,62 @@ pub(super) fn hp_bar_drain_pending<H: BattleActionHost + ?Sized>(
         .unwrap_or(8);
     match target {
         0..=2 => pending(target),
-        8 => (0..host.slot_count()).any(pending),
+        8 => (0..host.party_count()).any(pending),
         _ => false,
     }
+}
+
+/// Run one frame of HP-bar ramp across every battle slot - the per-actor tick
+/// that makes [`hp_bar_drain_pending`] a *gate* rather than a constant.
+///
+/// Retail spreads this over per-actor calls to `FUN_80047430`; the caller that
+/// makes them is **not in the dumped corpus** (no dump references
+/// `0x80047430` as a `jal` target), so the cadence here is the port's own
+/// choice: once per battle frame, every slot, before the action SM steps. What
+/// *is* disassembly-grounded is the arithmetic and the slot split - see
+/// [`crate::battle_hp_bar`].
+///
+/// REF: FUN_80047430 (the HP-bar ramp arm; kernel in `battle_hp_bar`)
+pub fn tick_hp_bars<H: BattleActionHost + ?Sized>(host: &mut H) {
+    for slot in 0..host.slot_count() {
+        if let Some(actor) = host.actor_mut(slot) {
+            actor.tick_hp_bar(slot);
+        }
+    }
+}
+
+/// Rebuild the four cast-census bytes on `ctx` from the actor pool and the
+/// host's effect-child arrays - one frame of `FUN_801E09F8`'s head.
+///
+/// This is what turns [`BattleActionCtx::magic_exit_gate`] (`+0x249`),
+/// [`BattleActionCtx::magic_recovery_gate`] (`+0x24D`) and the two retarget
+/// latches [`BattleActionCtx::item_target_a`] / [`BattleActionCtx::item_target_b`]
+/// (`+0x24A` / `+0x24B`) into live measurements. Retail recomputes them from
+/// zero every frame; so does this.
+///
+/// The arithmetic lives in [`crate::battle_cast_census`], which carries the
+/// `// PORT:` tag.
+///
+/// REF: FUN_801E09F8 (census head)
+pub fn tick_cast_census<H: BattleActionHost + ?Sized>(host: &H, ctx: &mut BattleActionCtx) {
+    use crate::battle_cast_census::{CENSUS_SLOTS, CensusSlot, cast_census};
+
+    let mut slots = [CensusSlot::default(); CENSUS_SLOTS];
+    for (i, s) in slots.iter_mut().enumerate() {
+        if let Some(a) = host.actor(i as u8) {
+            *s = CensusSlot {
+                render_word: a.render_color,
+                current_anim: a.current_anim,
+                liveness: a.liveness,
+            };
+        }
+    }
+    let (kinds, children) = host.effect_child_slots();
+    let census = cast_census(&slots, kinds, children);
+    ctx.magic_exit_gate = census.anim_outstanding;
+    ctx.magic_recovery_gate = census.effect_children;
+    ctx.item_target_a = census.sole_party_target;
+    ctx.item_target_b = census.sole_monster_target;
 }
 
 pub(super) fn done_fade_down<H: BattleActionHost + ?Sized>(

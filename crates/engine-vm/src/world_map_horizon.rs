@@ -193,15 +193,17 @@ pub const BAND_COUNT: usize = (ROW_LIMIT - ROW_FIRST) as usize;
 /// when `_DAT_801F351C != 0` and clears the flag first. Pair it with
 /// `EmitterGate::take()`.
 ///
-/// NOT WIRED: reached only from tests. `World::tick_world_map` does call
-/// `run_horizon_emitter` every world-map frame, but the gate it consults
-/// is never armed in production - `EmitterGate::arm` (the port of
-/// `FUN_801D8258`) has no non-test caller because retail's param-prep
-/// wrappers `FUN_801D1344` / `FUN_801C2B2C` are not ported. Nothing
-/// consumes the resulting `HorizonBatch` either: no renderer reads
-/// `WorldMapController::horizon`. So the arithmetic below is verified
-/// against the disassembly and exercised by unit tests, but no frame the
-/// engine draws depends on it.
+/// Wired, but inert at runtime, and the distinction matters. The call chain
+/// is real and production-only: `World::tick_world_map` ->
+/// `tick_world_map_horizon` -> `WorldMapController::run_horizon_emitter` ->
+/// here, every world-map frame. What is missing is *data*, not plumbing -
+/// `EmitterGate::arm` (the port of `FUN_801D8258`) has no non-test caller,
+/// because retail arms it from `FUN_801D1344` by forwarding the three
+/// scene-configured globals `_DAT_8007BCD0/_D4/_D8`, and the engine has no
+/// source for those three. Until one exists the gate reads empty every
+/// frame and this body returns without being entered. Nothing consumes a
+/// `HorizonBatch` yet either: no renderer reads
+/// `WorldMapController::horizon`.
 ///
 /// `FUN_801C9688` is **not** a second function. It is this same body
 /// printed at a phantom VA: its dump is `overlay_0897_*`, PROT 0897 loads

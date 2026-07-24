@@ -86,9 +86,46 @@ The run loop drives a small pool of per-frame actor handlers reached through the
 - `FUN_801d4948` (`overlay_fishing_801d4948.txt`) - the **reeling-line / hooked-lure actor**: a sub-state machine on `DAT_801d91c8` (`0`→arm, `1`→attach to the hooked-fish actor `+0x48`, `2`→track) that positions the line end from `DAT_801d9174` / `DAT_801d9178` / `DAT_801d917c`, applies an orbit offset via `FUN_801d7bb8`, and raises the hook SFX cue `_DAT_8007b6da = 0x3a`.
 - `FUN_801d67bc` (`overlay_fishing_801d67bc.txt`) - the **caught-fish 3D mesh render**: GTE rotate (`+0x24` / `+0x26` / `+0x28` Euler angles), matrix push, per-fish tint from the actor `+0x72` colour word, and a subdivided-primitive draw. Render-track - documented, not ported.
 - `FUN_801d24ec` (`overlay_fishing_801d24ec.txt`) - the **water reflection / shadow strip**: a run of textured quads written straight into the GTE packet list `_DAT_1f8003a0`. Render-track - documented, not ported.
-- `FUN_801d6bbc` (`overlay_fishing_801d6bbc.txt`) - the **fishing scene render pass** invoked from the driver tail (`FUN_801cf3bc`): it walks the live actor list (transform + submit + free) and emits the shared tile-board grid at `_DAT_1f8003ec` (the `+0x4000` / `+0x8000` cell + walkability arrays - see [`tile-board.md`](tile-board.md)). Render-track - documented, not ported.
+- `FUN_801d6bbc` (`overlay_fishing_801d6bbc.txt`) - the **scene floor pass** invoked from the driver tail (`FUN_801cf3bc`): it walks the live actor list (transform + submit + free) and then spawns one tile actor per drawn cell of the scene floor grid at `_DAT_1f8003ec`. This is **not** the field-VM tile board of [`tile-board.md`](tile-board.md) - that is a `width x height` byte cell array installed by script op `0x49`, where this reads the per-scene floor buffer's `u16` cell grid. See [The scene floor buffer](#the-scene-floor-buffer).
 - `FUN_801d78c0` (`overlay_fishing_801d78c0.txt`) - the **fishing camera-scroll reset**: `_DAT_800840b8 = 0`, `_DAT_800840c0 = 0x974`, and the scroll trio `_DAT_8007b790` / `_DAT_8007b792` / `_DAT_8007b794 = 0`.
 - `FUN_801d79e0` (`overlay_fishing_801d79e0.txt`) - a **cell-record lookup** used by the fish-placement path (reached through `FUN_801d6028`): a linear scan of a per-cell record table matching a `(x, y)` cell against each record's first two bytes, returning the record pointer or null.
+
+### The scene floor buffer
+
+`FUN_801d6028` is the **ground-height solver**: given an actor it returns the
+world height under it and maintains the actor's off-floor flag. It is shared
+library code in the overlay band above `0x801D0018` - the fishing,
+slot-machine and debug-menu dumps of it are byte-identical - and the dance
+overlay's floor pass `FUN_801d3a2c` indexes the same tables. Port:
+[`legaia_engine_core::minigame_floor`](../../crates/engine-core/src/minigame_floor.rs).
+
+Three regions of the buffer at `_DAT_1f8003ec` matter. Tile **records** are
+`0x20` bytes at the buffer base, indexed by tile id. The `u16` **cell grid**
+at `+0x8000` (row pitch `0x100`) carries the tile id in bits `0..8` plus flag
+bits. The **terrain byte** grid at `+0x4000` (row pitch `0x80`) is two fields
+in one: its *low* nibble indexes a 16-entry height ramp, its *high* nibble is
+the four sub-cell wall bits the field collision probe `FUN_801cfe4c` reads
+(`>> 4 & quadrant`). Calling the whole byte "the walkability grid" conflates
+the two - the height solver never looks at the wall bits, and the collision
+probe never looks at the height.
+
+The solver reduces the actor's `+0x14` / `+0x18` world pair to a **half-cell**
+index (`>> 6`) and halves that toward zero for the grid index, so a floor cell
+is 128 world units and the half-cell's low bit is the quadrant. The sub-cell
+fraction is the raw coordinate's low seven bits.
+
+Two solve paths, chosen by cell bit `0x800`. Without it: if all four corner
+nibbles agree the height is that ramp entry exactly (retail returns early),
+otherwise the four corners are bilinearly blended over the fraction in `0x80`
+units per axis, with the `>> 14` biased `+0x3fff` when negative. With it: the
+four corners are averaged by a plain `>> 2` - **no** rounding bias, unlike the
+blend - and a step-layer patch found by `FUN_801d79e0` in the `+0x10000` layer
+(falling back to `+0x12000`) subtracts a whole step scaled `0x20` plus a
+2-bit quadrant bias scaled `0x10`.
+
+The flag maintenance runs before either path and is never skipped. A negative
+flag word only ORs `0x800000` in; a non-negative one clears the bit and
+re-raises it when the cell lacks bit `0x1000`.
 
 ## HUD and banner animations
 
@@ -171,8 +208,10 @@ or nudge shared state around the sub-screens. All five are ported as
   `_DAT_8007B790/92/94` and `TR.x` (`_DAT_800840B8`) and parks `TR.z`
   (`_DAT_800840C0`) at `0x974`. It never touches `TR.y`.
 - `FUN_801d70ec` - float actor wrapper. Calls the height solver
-  `FUN_801d6028`, stores the result into the actor's `+0x16`, clears the
-  dispatcher's `+0x10` bit `2` and re-enters `FUN_800204F8`.
+  `FUN_801d6028` (see [The scene floor buffer](#the-scene-floor-buffer)),
+  stores the result into the actor's `+0x16`, clears the dispatcher's `+0x10`
+  bit `2` and re-enters `FUN_800204F8`. The solver's own `0x800000`
+  maintenance survives into the stored flag word.
 - `FUN_801d7c30` - ripple spawn. A non-zero mode argument does nothing; mode
   zero spawns the `0x801D899C` part at the actor's world position, built as
   `(actor+0x14, 0, actor+0x18)` - the zero is the **middle** component, so

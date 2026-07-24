@@ -215,7 +215,7 @@ XP-table probe both use this for first-hit detail dumps.
 ### Write-watchpoint logging (`probe.watch`)
 
 The recurring "*what writes this address?*" probe arms a Write breakpoint
-and, in the callback, logs `(elapsed, label, addr, pc, ra, new_value)` to a
+and, in the callback, logs `(elapsed, label, addr, pc, ra, prev_value)` - the PRE-store value, since the debug hook runs before the instruction - to a
 CSV plus a first-N call-context dump. `probe.watch` factors that closure out
 (it composes `bp` + `mem` + `snapshot`, adding no new emulator interaction):
 
@@ -821,7 +821,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 ##### `autorun_player_pos_watch.lua`
 
 - **Probes:** Write-watchpoint on the player actor world-position fields (`*(0x8007C364) + 0x14` X / `+0x18` Z), armed lazily in `on_capture` after the save loads (the target is a runtime pointer deref). Cycles the four d-pad directions (camera facing unknown) so at least one produces a position write.
-- **What it answered: Pinned the town/field free-movement integrator** - hits land in `FUN_801d01b0` (overlay 0897) at the four `sh player[+0x14/0x18]` stores `0x801D0684/06E4/0744/07B4`, with collision via `FUN_801cfe4c`. CSV columns `tick, axis, write_addr, pc, ra, new_val` + a `.detail.txt` call-context sidecar. Run against a save parked in a walkable field/town. See [`subsystems/field-locomotion.md`](../subsystems/field-locomotion.md).
+- **What it answered: Pinned the town/field free-movement integrator** - hits land in `FUN_801d01b0` (overlay 0897) at the four `sh player[+0x14/0x18]` stores `0x801D0684/06E4/0744/07B4`, with collision via `FUN_801cfe4c`. CSV columns `tick, axis, write_addr, pc, ra, prev_val` + a `.detail.txt` call-context sidecar. Run against a save parked in a walkable field/town. See [`subsystems/field-locomotion.md`](../subsystems/field-locomotion.md).
 
 ##### `autorun_house_door_writer.lua`
 

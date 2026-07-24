@@ -34,7 +34,7 @@ pub const MENU_OPEN_STEPS: u32 = 5;
 ///
 /// The tail (`FUN_80031D00`, the window-chrome stage) is not modelled as
 /// an effect because it is unconditional - a host runs it after every
-/// [`step`] call, whatever comes back.
+/// [`menu_open_step`] call, whatever comes back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuOpenEffect {
     /// Step 0: publish the staged pointer and start the menu's actor
@@ -54,10 +54,15 @@ pub enum MenuOpenEffect {
 /// the effect for this frame and leaves `step` advanced when the arm
 /// falls into the shared increment.
 ///
+/// The name is deliberately not the bare `step`: the port catalog's call
+/// graph resolves calls by name without inferring a receiver, so a free
+/// function called `step` picks up an edge from every `x.step(...)` and
+/// every parameter named `step` in the workspace and reads as wired.
+///
 /// PORT: FUN_801DAD6C
 /// NOT WIRED: the menu host opens its screens directly rather than
 /// running the retail open sequence
-pub fn step(step_no: &mut u32, busy: bool) -> MenuOpenEffect {
+pub fn menu_open_step(step_no: &mut u32, busy: bool) -> MenuOpenEffect {
     match *step_no {
         0 => {
             *step_no += 1;
@@ -88,17 +93,20 @@ mod tests {
     #[test]
     fn the_busy_gate_holds_step_one_without_advancing() {
         let mut s = 1;
-        assert_eq!(step(&mut s, true), MenuOpenEffect::Idle);
+        assert_eq!(menu_open_step(&mut s, true), MenuOpenEffect::Idle);
         assert_eq!(s, 1);
-        assert_eq!(step(&mut s, false), MenuOpenEffect::RunDeferredUpload);
+        assert_eq!(
+            menu_open_step(&mut s, false),
+            MenuOpenEffect::RunDeferredUpload
+        );
         assert_eq!(s, 2);
     }
 
     #[test]
     fn steps_two_and_three_are_two_idle_frames_not_two_phases() {
         let mut s = 2;
-        assert_eq!(step(&mut s, false), MenuOpenEffect::Idle);
-        assert_eq!(step(&mut s, false), MenuOpenEffect::Idle);
+        assert_eq!(menu_open_step(&mut s, false), MenuOpenEffect::Idle);
+        assert_eq!(menu_open_step(&mut s, false), MenuOpenEffect::Idle);
         assert_eq!(s, 4);
     }
 
@@ -106,7 +114,7 @@ mod tests {
     fn step_four_is_terminal_by_omission() {
         let mut s = 4;
         for _ in 0..3 {
-            assert_eq!(step(&mut s, false), MenuOpenEffect::Finish);
+            assert_eq!(menu_open_step(&mut s, false), MenuOpenEffect::Finish);
             assert_eq!(s, 4, "the terminal arm never reaches the increment");
         }
     }
@@ -114,16 +122,16 @@ mod tests {
     #[test]
     fn out_of_range_steps_run_the_tail_only() {
         let mut s = MENU_OPEN_STEPS;
-        assert_eq!(step(&mut s, false), MenuOpenEffect::Idle);
+        assert_eq!(menu_open_step(&mut s, false), MenuOpenEffect::Idle);
         assert_eq!(s, MENU_OPEN_STEPS, "no arm ran, so nothing advanced");
         let mut s = 0xFFFF_FFFF;
-        assert_eq!(step(&mut s, true), MenuOpenEffect::Idle);
+        assert_eq!(menu_open_step(&mut s, true), MenuOpenEffect::Idle);
     }
 
     #[test]
     fn a_clean_run_reaches_the_finish_arm_in_four_frames() {
         let mut s = 0;
-        let seen: Vec<_> = (0..4).map(|_| step(&mut s, false)).collect();
+        let seen: Vec<_> = (0..4).map(|_| menu_open_step(&mut s, false)).collect();
         assert_eq!(
             seen,
             vec![
@@ -133,6 +141,6 @@ mod tests {
                 MenuOpenEffect::Idle,
             ]
         );
-        assert_eq!(step(&mut s, false), MenuOpenEffect::Finish);
+        assert_eq!(menu_open_step(&mut s, false), MenuOpenEffect::Finish);
     }
 }

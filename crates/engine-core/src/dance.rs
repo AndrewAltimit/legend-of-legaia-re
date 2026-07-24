@@ -1189,6 +1189,133 @@ pub fn dance_face_rig(mode: DanceMode, dancer: usize) -> Option<usize> {
     (rig < 5).then_some(rig)
 }
 
+/// The scene name the dance hall stages when the minigame starts or tears
+/// down (`s_other1_801D518C`) - the same `other1` bundle the fishing venue
+/// uses, which is why both minigames live in the slot-A overlay band.
+pub const DANCE_SCENE_NAME: &str = "other1";
+
+/// What the dance scene stager writes, in the order retail stores it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DanceSceneStage {
+    /// Scene name copied into the scene-name buffer at `0x80084548`.
+    pub scene: &'static str,
+    /// `_DAT_8007B880` is zeroed - the pad latch the field subsystem reads,
+    /// so the frame the dance enters or leaves on cannot carry a stale press
+    /// into the next mode.
+    pub clear_pad_latch: bool,
+    /// The word copied from the overlay's `DAT_801D5180` into
+    /// `_DAT_80084540`, the scene-name buffer's preceding word (the scene
+    /// **kind** the loader dispatches on).
+    pub scene_kind_from_overlay: bool,
+    /// `_DAT_8007BA9C` is armed to `-1` after the scene-setup helper returns.
+    pub arm_value: i32,
+}
+
+// NOT WIRED: this is engine scene plumbing, not rhythm logic - it names a
+// scene and pokes three field-subsystem globals. The port enters the dance
+// through `World::enter_dance`, which suspends the current scene mode rather
+// than staging a new scene bundle, so there is no scene-name buffer for it to
+// write. Wiring it needs the dance to become a real scene load.
+/// PORT: FUN_801d414c - the dance scene-name stager / teardown.
+///
+/// Copies [`DANCE_SCENE_NAME`] into the scene-name buffer at `0x80084548`
+/// through the string copy `FUN_80056758`, clears the pad latch
+/// `_DAT_8007B880`, stores the overlay word `DAT_801D5180` into
+/// `_DAT_80084540`, calls the scene-setup helper `FUN_80026018`, and only
+/// **then** arms `_DAT_8007BA9C = -1`. The ordering matters: the arm is after
+/// the setup call, so a setup that re-enters cannot see the armed value.
+///
+/// Called once from the dance tick `FUN_801CF470`.
+pub const fn dance_scene_stage() -> DanceSceneStage {
+    DanceSceneStage {
+        scene: DANCE_SCENE_NAME,
+        clear_pad_latch: true,
+        scene_kind_from_overlay: true,
+        arm_value: -1,
+    }
+}
+
+/// Fade weight the dancer sprite emit derives from a dancer's beat field
+/// (`actor + 0x78`), clamped to `0 ..= 0xFF`.
+///
+/// Retail reads the field as a **halfword** and compares it against `0x4000`
+/// as a *signed 32-bit* value, so the "above the window" test can never see a
+/// negative: a beat past `0x4000` collapses the weight to zero outright rather
+/// than saturating it.
+// PORT: FUN_801d387c (the fade-weight prologue)
+// NOT WIRED: the port's dancers are rules records with no `+0x78` beat field
+// and no sprite quad to fade - the same missing dance presentation layer
+// [`dance_face_rig`] names.
+pub fn dancer_fade_weight(beat: u16) -> u8 {
+    if beat as i32 > 0x4000 {
+        return 0;
+    }
+    ((beat as i32) >> 4).min(0xFF) as u8
+}
+
+/// Which emit the dancer sprite dispatch performs for a draw mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DancerEmit {
+    /// Mode `0` - no emit at all: copy the transform template's `+0x90` trio
+    /// into the dancer and zero its `+0x96` / `+0x98` / `+0x9A`.
+    CopyTemplate,
+    /// Mode `1` - store the caller's third argument into the dancer's
+    /// `+0x94`; still no emit.
+    SetTemplateZ,
+    /// Mode `2` - the shadowed draw: **two** emits at the dancer's screen
+    /// position (its `+0x14` / `+0x16` pair rounded toward zero and shifted
+    /// `>> 3`), the first with semi-transparency flag `0x400` and the second
+    /// with `0x800`.
+    Shadowed { x: i16, y: i16, flags: [u16; 2] },
+    /// Mode `3` - one plain emit at the **unrounded** `+0x14` / `+0x16` pair.
+    /// Note this mode does not divide by eight at all.
+    Plain { x: i16, y: i16, flags: u16 },
+    /// Mode `4` - the marker draw: one emit with flags forced to `1` and the
+    /// scale word forced to `0x1000`, after stamping `sprite << 4` into the
+    /// overlay byte `DAT_801D46E8`.
+    Marker { x: i16, y: i16, clut_byte: u8 },
+    /// A mode past the five-entry jump table - nothing is drawn.
+    None,
+}
+
+// NOT WIRED: every arm ends in the hub sprite emitter `FUN_801D2F38` or in a
+// write to an overlay-resident transform template, neither of which the engine
+// has: no dance sprite page is uploaded and no quad emitter is bound to one.
+// Same prerequisite as [`dance_face_rig`] and [`step_mark_effect_spawn`].
+/// PORT: FUN_801d387c - the per-dancer sprite / shadow emit dispatch.
+///
+/// `mode` selects one of five arms through a jump table; `x` / `y` are the
+/// dancer's `+0x14` / `+0x16` world pair and `sprite` its `+0x50` word. The
+/// two emitting arms round toward zero **before** the `>> 3` (retail's
+/// `bgez / addiu 7 / sra 3`), so a dancer at `-1` maps to screen `0` and not
+/// `-1`.
+pub fn dancer_emit(mode: u32, x: i16, y: i16, sprite: u16) -> DancerEmit {
+    let scaled = |v: i16| -> i16 {
+        let v = v as i32;
+        ((if v < 0 { v + 7 } else { v }) >> 3) as i16
+    };
+    match mode {
+        0 => DancerEmit::CopyTemplate,
+        1 => DancerEmit::SetTemplateZ,
+        2 => DancerEmit::Shadowed {
+            x: scaled(x),
+            y: scaled(y),
+            flags: [sprite | 0x400, sprite | 0x800],
+        },
+        3 => DancerEmit::Plain {
+            x,
+            y,
+            flags: sprite,
+        },
+        4 => DancerEmit::Marker {
+            x,
+            y,
+            clut_byte: (sprite << 4) as u8,
+        },
+        _ => DancerEmit::None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1665,6 +1792,58 @@ mod tests {
         assert_eq!(dance_face_rig(DanceMode::HowTo, 3), Some(3));
         // Dancers past the fourth are not stamped.
         assert_eq!(dance_face_rig(DanceMode::FreePlay, 4), None);
+    }
+
+    #[test]
+    fn fade_weight_collapses_past_the_window_instead_of_saturating() {
+        assert_eq!(dancer_fade_weight(0), 0);
+        assert_eq!(dancer_fade_weight(0x10), 1);
+        // 0x4000 >> 4 = 0x400, clamped to 0xff.
+        assert_eq!(dancer_fade_weight(0x4000), 0xFF);
+        // One past the window is zero, not 0xff.
+        assert_eq!(dancer_fade_weight(0x4001), 0);
+        assert_eq!(dancer_fade_weight(0xFFFF), 0);
+    }
+
+    #[test]
+    fn dancer_emit_modes_differ_in_rounding_and_flags() {
+        assert_eq!(dancer_emit(0, 0, 0, 0), DancerEmit::CopyTemplate);
+        assert_eq!(dancer_emit(1, 0, 0, 0), DancerEmit::SetTemplateZ);
+        assert_eq!(
+            dancer_emit(2, 16, -1, 0x20),
+            DancerEmit::Shadowed {
+                x: 2,
+                // -1 rounds toward zero before the shift.
+                y: 0,
+                flags: [0x420, 0x820],
+            }
+        );
+        // Mode 3 does not scale at all.
+        assert_eq!(
+            dancer_emit(3, 16, -1, 0x20),
+            DancerEmit::Plain {
+                x: 16,
+                y: -1,
+                flags: 0x20
+            }
+        );
+        assert_eq!(
+            dancer_emit(4, 16, -1, 0x0A),
+            DancerEmit::Marker {
+                x: 16,
+                y: -1,
+                clut_byte: 0xA0
+            }
+        );
+        assert_eq!(dancer_emit(5, 0, 0, 0), DancerEmit::None);
+    }
+
+    #[test]
+    fn scene_stage_arms_after_the_setup_call() {
+        let s = dance_scene_stage();
+        assert_eq!(s.scene, "other1");
+        assert!(s.clear_pad_latch);
+        assert_eq!(s.arm_value, -1);
     }
 
     #[test]

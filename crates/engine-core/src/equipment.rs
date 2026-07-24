@@ -681,9 +681,29 @@ pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
 /// Faithful edge: retail compares the raw slot byte, so `item_id == 0`
 /// matches the first *empty* accessory slot and still reports success.
 ///
-/// NOT WIRED: no live engine path strips an accessory party-wide yet
-/// (retail reaches this from overlay-resident event/menu flows); the
-/// kernel is exercised by this module's tests.
+/// The caller is pinned, and it is not a menu flow: the **field VM's
+/// take-item opcode** reaches it as a *fallback*. At
+/// `0x801E1ABC..0x801E1AEC` in `FUN_801DE840` (disassembly, not the
+/// decompile) the opcode installs the active item window
+/// (`FUN_8004313C`), consumes one of the operand id from the bag
+/// (`FUN_80042310(id, 1)`), sign-extends the result and compares it
+/// against the `0x100` not-found sentinel - and **only when the bag does
+/// not hold the item** does it `jal FUN_800430AC` with the same id. The
+/// program counter advances by `3` on both paths (the `addiu s8,s8,3`
+/// sits in the call's delay slot), so the fallback costs no extra
+/// operand. The sibling give path at `0x801E0448` is the same window
+/// install followed by `FUN_800421D4(id, 1)`.
+///
+/// So a script that takes away an accessory the player is *wearing*
+/// still removes it. Without the fallback the item survives on the
+/// character and the script's precondition silently fails.
+///
+/// NOT WIRED: the engine's field-VM take-item host removes from the
+/// engine inventory only and has no bag-miss branch, so nothing reaches
+/// this. Wiring it is a one-site change in the field VM's take-item
+/// opcode host (`engine-vm` field step -> the `engine-core` world host),
+/// neither of which this module can reach from here; the kernel is
+/// exercised by this module's tests.
 pub fn party_unequip_accessory_by_id(party: &mut legaia_save::Party, item_id: u8) -> bool {
     for member in &mut party.members {
         let mut eq = member.equipment();
