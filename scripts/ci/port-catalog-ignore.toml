@@ -993,6 +993,11 @@
 "801f92a4" = "INTERIOR of PROT 0900 FUN_801F91D8, the slot-B scene-draw setup routine (prologue `addiu sp,sp,-0x70` at 0x801f91d8). The VA is mid its scratchpad-seeding run (`lbu v0,0x384(v0)` off `lui v0,0x1f80`). Same capture-label caveat as 801f7e4c."
 "80021940" = "INTERIOR: the real entry is 80021934, three instructions earlier. Those three (`lui v0,0x1f80` / `lbu v0,0x393(v0)` / `lw v1,0x710(gp)`) load the values consumed at 80021960 `subu v1,v1,v0` and 80021968 `sw v1,0x710(gp)`, so a call landing on the 80021940 prologue would run that subtract on uninitialised registers. Port 80021934 (scene-transition streaming actor SM) instead. Read from extracted/SCUS_942.54 at file offset 0x12134; the Ghidra dump for this VA carries decompiled C only."
 "80036db0" = "INTERIOR: no `addiu sp,sp,-N` prologue; the first instruction is `beqz v1,0x80036dd4` with `addu t3,v0,t4` in the delay slot - v0/v1/t1/t4 are all live-in and never written here - and it leaves by `j 0x80036fe0`, not `jr ra`. It is the countdown arm of the interpolation loop docs/reference/functions.md already places `near 0x80036DB0`. Read from extracted/SCUS_942.54 at file offset 0x275B0; the Ghidra dump for this VA carries decompiled C only."
+# Read off the extracted PROT images rather than off a dump, so the load base
+# is not in question: field(0897) is `0897_xxx_dat.BIN` at slot-A base
+# 0x801CE818, and only its first 0x25000 bytes are its own content.
+"801f03b0" = "INTERIOR: field(0897) file +0x21B98 (own content). The three instructions at this VA are `addiu s2,s2,1 / slti v0,s2,0xf / bnez v0,0x801F02E8` - the increment-and-test block of a 15-iteration loop whose body starts at 0x801F02E8, followed at +0x10 by the parent's `lw ra,0x44(sp)` epilogue. No prologue, and no `jal 0x801F03B0` encoding exists anywhere in extracted/PROT, so the ref count is Ghidra label promotion off a backward branch."
+"801f2098" = "INTERIOR: field(0897) file +0x23880 (own content). Opens `jal 0x80031D00` in a delay-slot pair and is immediately followed by `lw ra,0x14(sp) / lw s0,0x10(sp) / jr ra` - the tail of the routine that built that 0x18-byte frame. No prologue; no `jal 0x801F2098` encoding exists in any extracted PROT image."
 [worklist_shared_tail]
 "801d3290" = "SHARED_TAIL: 5 instructions, no `jr ra`; reads s5 it never writes, ends `addiu s8,s8,0x6` + `j 0x801df8dc` - the field-VM label-call idiom (s8 = script PC), not a function. Ghidra renders it as two calls and a return."
 "801e00b8" = "SHARED_TAIL: common exit slice - no prologue, reads live s1, restores s0..s2/ra from a 0x60-byte frame it never built; entered by `j 0x801e00b8` from FUN_801D4908 (and siblings) in the 0897 field overlay"
@@ -1402,6 +1407,40 @@
 "801e9d8c" = "Mis-based print, delta +0xE818: the dump's 15 instructions are battle-action(0898) 0x801D35A4, interior to FUN_801D344C (body 0x801d344c..0x801d3744). Verified against 0898_xxx_dat.BIN at base 0x801CE818."
 "801e9f48" = "Mis-based print, delta +0x5818: the dump's 35 instructions are field(0897) 0x801EF760, interior to the tile-board walk SM FUN_801EF2B0 (docs/subsystems/tile-board.md)."
 "801f04b0" = "Mis-based print, delta +0x5818, landing in 0897's over-read tail: field file +0x274B0 is 0898 file +0x24B0 = battle-action(0898) 0x801D0CC8, interior to the battle dispatcher FUN_801D0748 (body 0x801d0748..0x801d32b8). Corroborated by the fragment's own exit `j 0x801d3290`, that function's epilogue hop - an absolute jump target is a byte property, so it survives the mis-basing."
+
+# The `overlay_0896_*` dump family (both the bare `overlay_0896_<addr>` files
+# and the `overlay_0896_bat_back_dat_<addr>` ones) is imported at base
+# 0x801C0000, below the 0x801CE818 slot-A floor, so every VA it prints is a
+# phantom. Its true content chain is measurable off the extracted images:
+# `0896_bat_back_dat.BIN[0x9000:] == 0897_xxx_dat.BIN[0:]` and
+# `0897_xxx_dat.BIN[0x25000:] == 0898_xxx_dat.BIN[0:]`, both byte-exact, so
+# PROT 0896's own content is only its first 0x9000 bytes. Re-keying is
+# therefore: file = printed - 0x801C0000; file >= 0x9000 is field(0897) at
+# printed + 0x5818; file >= 0x2E000 is battle_action(0898) at printed
+# - 0x1F7E8. The rows below name the re-keyed VA and were each checked by
+# disassembling the extracted image there and matching the dump's opening
+# instruction stream. NB this is a DIFFERENT delta from the 0x167E8 used by
+# the 0x801C0000-based PROT 0897 import; applying that one to an 0896 dump
+# lands 0x9000 short.
+"801e8b10" = "Phantom VA of the 0x801C0000-based PROT 0896 import: file +0x28B10, inside the 0897 over-read, so it re-keys to field(0897) 0x801EE328 - a real entry whose `addiu sp,sp,-0x50 / sw s3,0x3c(sp) / move s3,a0 / sw ra,0x48(sp)` opening matches the dump instruction for instruction. The bare VA 0x801E8B10 is interior in every image that covers it (897 `move a2,s5`, 898 `addiu v0,zero,0x4f`) and has no `jal` encoding on the disc. Port 801ee328."
+"801eff30" = "Phantom VA of the 0x801C0000-based PROT 0896 import: file +0x2FF30, past 0x2E000, so it re-keys to battle_action(0898) 0x801D0748 - the battle/minigame dispatcher, whose `lui v0,0x8008 / lw v0,-0x42dc(v0) / addiu sp,sp,-0x48` opening matches the dump. The bare VA is interior in both 897 and 898 and has no `jal` encoding on the disc."
+"801f69a0" = "Phantom VA of the 0x801C0000-based PROT 0896 import: file +0x369A0, so it re-keys to battle_action(0898) 0x801D71B8, whose `addiu sp,sp,-0x30 / lui v0,0x8008 / lw a0,-0x42dc(v0) / lui v1,0x801d` opening matches the dump. Independently: 0x801F69A0 is below 0x801F69D8, the base of every slot-B overlay, so no slot-B image can contain it either."
+"801f5748" = "Phantom VA of the PROT 0897 extraction's own 0x25000 footprint over-read: file +0x26F30 is 0x1F30 past the boundary, and the bytes there are byte-identical to battle_action(0898) 0x801D0748 (verified by disassembling both). The long-cited 'field inventory hub FUN_801F5748' is this over-read - see the 0897 row of crates/asset/data/static-overlays.toml. No image holds an entry at the bare VA and no `jal 0x801F5748` encoding exists on the disc."
+"802097bc" = "Phantom VA of the 0x801C0000-based PROT 0896 import: file +0x497BC, so it re-keys to battle_action(0898) 0x801E9FD4, whose `addiu sp,sp,-0x70 / sw s7,0x64(sp) / move s7,a0 / sll a3,s7,2` opening matches the dump. The same word sequence occurs at exactly one place in each of the three chained images (0896 +0x497BC, 0897 +0x407BC, 0898 +0x1B7BC), which is the chain shift 0x9000 / 0x25000 confirming the re-key."
+"801d4a3c" = "Phantom VA of the 0x801C0000-based PROT 0896 import: file +0x14A3C re-keys to field(0897) 0x801DA254, and the instruction there is the `break` of a signed-division overflow check - the mid-function idiom already ignore-listed at 801d9804 / 801d9978, never an entry. The dump's own first instruction is that `break`. No `jal 0x801D4A3C` encoding exists in any extracted PROT image."
+
+# The same import error at a different base: dumps named `overlay_0897_<addr>`
+# (and one carrying an `[overlay_0897_xxx_dat.bin]` tag, which is why the tag is
+# not evidence either) that were imported at 0x801C0000 instead of the slot-A
+# base 0x801CE818. Re-key is printed + 0xE818, and each row below was checked by
+# matching the dump's opening instruction stream against `0897_xxx_dat.BIN` at
+# file offset `printed - 0x801C0000`. None of the printed VAs is the target of
+# any `jal` encoding anywhere in extracted/PROT.
+"801d7334" = "Phantom VA of the 0x801C0000-based PROT 0897 import: file +0x17334 re-keys to field(0897) 0x801E5B4C, whose `addiu sp,sp,-0x60 / sw s0,0x48(sp) / move s0,a0 / addiu a0,sp,0x18` opening matches the dump and which is the target of the image's one `jal 0x801E5B4C`. The bare VA 0x801D7334 disassembles mid-store (`sh v0,-0x48e8(v1)`). Port 801e5b4c."
+"801d7e14" = "Phantom VA of the 0x801C0000-based PROT 0897 import: file +0x17E14 re-keys to field(0897) 0x801E662C, whose `addiu sp,sp,-0x28 / lui v0,0x8008 / sw ra,0x24(sp) / sw s2,0x20(sp)` opening matches the dump. The bare VA disassembles mid-function (`nop / sh v0,0x26(s0)`). Port 801e662c."
+"801d831c" = "Phantom VA of the 0x801C0000-based PROT 0897 import: file +0x1831C re-keys to field(0897) 0x801E6B34, whose `addiu sp,sp,-0x40 / sw s7,0x34(sp) / move s7,a0 / lui v0,0x8008` opening matches the dump. The bare VA is a loop increment-and-test block (`addiu s3,s3,1 / addiu v0,v0,1 / sltu v0,s3,v0 / bnez v0,0x801D82D0`). Port 801e6b34."
+"801d71f0" = "Phantom VA of the 0x801C0000-based PROT 0897 import: file +0x171F0 re-keys to field(0897) 0x801E5A08, whose `addiu sp,sp,-0x20 / sw s2,0x18(sp) / move s2,a0 / sw s1,0x14(sp)` opening matches the dump. The bare VA disassembles mid-function (`jal 0x8001FC00` in the first slot). Port 801e5a08."
+"801e4af0" = "Phantom VA of the 0x801C0000-based PROT 0897 import - and the re-key lands in DATA, so there is nothing to port at either address. File +0x24AF0 is inside the overlay's trailing pointer/record section (true VA 0x801F3308) and disassembles as the `nop / nop / nop / movt` run the dump prints; the dump's `[overlay_0897_xxx_dat.bin]` base tag is wrong. The bare VA 0x801E4AF0 is mid-function code (`lw a0,0x98(s2)`)."
 
 # Added by the port-wiring wave.
 [render_pipeline_mdec]

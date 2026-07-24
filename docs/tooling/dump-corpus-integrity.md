@@ -135,6 +135,25 @@ seam: PROT 0896's footprint runs into its neighbour, so dumps taken at its
 widely-cited base are reading field-overlay code. `0x801CE818 - 0x5818 =
 0x801C9000`, the over-read base. PROT 0896's own link base remains unrecovered.
 
+The seam is measurable rather than inferred, and it is two hops deep. Against
+the extracted images, `0896_bat_back_dat.BIN[0x9000:]` equals
+`0897_xxx_dat.BIN[0:]` byte for byte over its whole `0x46800`-byte remainder,
+and `0897_xxx_dat.BIN[0x25000:]` equals `0898_xxx_dat.BIN[0:]` over its whole
+`0x29800` bytes. So PROT 0896's own content is exactly its first `0x9000`
+bytes, and re-keying an `overlay_0896_*` printed VA runs:
+
+| `printed - 0x801C0000` | Owner | True VA |
+|---|---|---|
+| `< 0x9000` | PROT 0896 itself | unrecoverable - 0896's link base is still unknown |
+| `0x9000 ..< 0x2E000` | field (PROT 0897) | `printed + 0x5818` |
+| `>= 0x2E000` | battle_action (PROT 0898) | `printed - 0x1F7E8` |
+
+Read against the `+0xE818` row above, that is the trap worth naming: the two
+mis-based batches take **different** deltas. An `overlay_0896_*` VA re-keyed
+with the 0897 batch's `+0xE818`, or with the `0x167E8` the 0897-into-0898
+over-read uses, lands `0x9000` off - close enough to disassemble into plausible
+code, which is exactly how a wrong re-key survives review.
+
 **`+0xD018` is a third mis-based batch, seen through an over-read tail.** It was
 settled the way this page proposed: extract PROT 0971 (now mapped as
 `debug_menu` at `0x801CE818`, see
