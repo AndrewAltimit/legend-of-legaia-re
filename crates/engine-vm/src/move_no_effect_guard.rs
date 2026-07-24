@@ -187,6 +187,9 @@ pub enum FollowUpOutcome {
 /// range at four bands.
 ///
 /// PORT: FUN_801f3d3c (`0x801F4420..0x801F4434`)
+///
+/// NOT WIRED: a helper of [`follow_up_hook_install`], which is itself inert -
+/// same blocker.
 pub fn follow_up_band(level: u8) -> i32 {
     (level as i32 - 3) >> 1
 }
@@ -201,6 +204,9 @@ pub fn follow_up_band(level: u8) -> i32 {
 /// invites.
 ///
 /// PORT: FUN_801f3d3c (`0x801F3DEC..0x801F3E7C`)
+///
+/// NOT WIRED: a helper of [`follow_up_hook_install`], which is itself inert -
+/// same blocker.
 pub fn follow_up_roll_passes(inp: &FollowUpInputs) -> bool {
     if inp.roll_enabled == 0 {
         return true;

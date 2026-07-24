@@ -42,7 +42,7 @@
 //!
 //! Nothing here is reachable from a host root: the engine has no field
 //! system-actor pool, so no code path produces an actor with a `+0x50`
-//! handler id for [`dispatch`] to index. Every entry point carries the
+//! handler id for [`hub_dispatch`] to index. Every entry point carries the
 //! `NOT WIRED` disclosure naming that one blocker.
 
 /// One system actor as this family sees it.
@@ -289,7 +289,7 @@ pub const CAPTION_MONEY_ID: i32 = 0xFE;
 /// releases the pad latch and drops the board busy state.
 ///
 /// `handler` is the caller's view of `PTR_FUN_801F33B4[actor.state]`.
-pub fn dispatch(
+pub fn hub_dispatch(
     actor: &mut HubActor,
     env: &HubEnv,
     grid: &HubGrid,
@@ -326,7 +326,7 @@ pub fn dispatch(
 // coin exchange
 // ---------------------------------------------------------------------------
 
-// NOT WIRED: same blocker as [`dispatch`] - this is handler slot `0x25` of
+// NOT WIRED: same blocker as [`hub_dispatch`] - this is handler slot `0x25` of
 // `PTR_FUN_801F33B4` and only that dispatcher reaches it.
 /// PORT: FUN_801f0adc - the coin-exchange head plus its five-slot sub-dispatch.
 ///
@@ -353,6 +353,9 @@ pub fn coin_exchange(actor: &mut HubActor, env: &HubEnv) -> HubFrame {
 /// The clamped coin amount `FUN_801F0ADC` publishes to `DAT_8007BB90`.
 ///
 /// PORT: FUN_801f0adc (`0x801F0AE8..0x801F0B44`)
+///
+/// NOT WIRED: the arithmetic half of [`coin_exchange`], which is itself only
+/// reachable through [`hub_dispatch`] - same blocker.
 pub fn coin_exchange_amount(gold: i32, coin_bank: i32) -> i32 {
     let coins = gold / GOLD_PER_COIN;
     if COIN_BANK_MAX < coin_bank.wrapping_add(coins) {
@@ -396,7 +399,7 @@ fn hand_back(actor: &mut HubActor, grid: &mut HubGrid) {
     actor.sub = 0;
 }
 
-// NOT WIRED: same blocker as [`dispatch`].
+// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f1138 - the start / confirm menu tick.
 ///
 /// State `0` counts the active entries in the three bytes at
@@ -437,7 +440,7 @@ pub fn start_menu(actor: &mut HubActor, env: &HubEnv, grid: &mut HubGrid) -> Hub
     out
 }
 
-// NOT WIRED: same blocker as [`dispatch`].
+// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f1e48 - the hub sub-menu state machine.
 ///
 /// Three states: `0` clears the cursor row and installs the idle panel, `1`
@@ -466,13 +469,13 @@ pub fn submenu(actor: &mut HubActor, env: &HubEnv, grid: &mut HubGrid) -> HubFra
     out
 }
 
-// NOT WIRED: same blocker as [`dispatch`].
+// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f1fdc - the hub prompt state machine.
 ///
 /// State `0` plays the entry sting [`CUE_ENTRY`] and installs the prompt
 /// panel; state `1` waits for a confirm, plays [`CUE_CONFIRM`] and hands the
 /// actor back. Unlike [`submenu`] it never clears the board flag.
-pub fn prompt(actor: &mut HubActor, env: &HubEnv, grid: &mut HubGrid) -> HubFrame {
+pub fn hub_prompt(actor: &mut HubActor, env: &HubEnv, grid: &mut HubGrid) -> HubFrame {
     let mut out = HubFrame::default();
     match actor.sub {
         0 => {
@@ -490,13 +493,13 @@ pub fn prompt(actor: &mut HubActor, env: &HubEnv, grid: &mut HubGrid) -> HubFram
     out
 }
 
-// NOT WIRED: same blocker as [`dispatch`].
+// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f20b0 - the panel-install draw tick.
 ///
 /// State `0` installs [`PANEL_DRAW_TICK`] and advances; any state above `1`
 /// returns before the pump. Otherwise it pumps and, while the suppression
 /// flag is clear, clears the grid actor's completion gate - which is what
-/// lets [`dispatch`] retire the actor on the following frame.
+/// lets [`hub_dispatch`] retire the actor on the following frame.
 pub fn draw_tick(actor: &mut HubActor, env: &HubEnv, grid: &mut HubGrid) -> HubFrame {
     let mut out = HubFrame::default();
     match actor.sub {
@@ -514,7 +517,7 @@ pub fn draw_tick(actor: &mut HubActor, env: &HubEnv, grid: &mut HubGrid) -> HubF
     out
 }
 
-// NOT WIRED: same blocker as [`dispatch`].
+// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f2134 - the close-sting draw tick.
 ///
 /// [`draw_tick`]'s twin: identical but for state `0`, which plays the close
@@ -536,7 +539,7 @@ pub fn close_tick(actor: &mut HubActor, env: &HubEnv, grid: &mut HubGrid) -> Hub
     out
 }
 
-// NOT WIRED: same blocker as [`dispatch`].
+// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f1d90 - the actor deactivate with a chosen re-arm state.
 ///
 /// Plays the close sting, pumps, then hands the actor back with `+0x50` set
@@ -573,7 +576,7 @@ pub const STR_TWO_LINE: [u32; 2] = [0x801C_F190, 0x801C_F198];
 pub const STR_SINGLE: u32 = 0x801C_F1A4;
 pub const STR_CAPTION: u32 = 0x801C_EA30;
 
-// NOT WIRED: same blocker as [`dispatch`].
+// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f16c0 - the stacked per-entry label list.
 ///
 /// Walks the `DAT_80084594` entries, publishing each entry's code byte to
@@ -604,7 +607,7 @@ pub fn entry_list(actor: &mut HubActor, env: &HubEnv) -> HubFrame {
     out
 }
 
-// NOT WIRED: same blocker as [`dispatch`].
+// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f17d8 - the header string plus one sprite cell per grid column.
 ///
 /// The header prints at the actor origin; the cell row starts `0x10` in on
@@ -628,7 +631,7 @@ pub fn column_row(actor: &HubActor, env: &HubEnv, grid: &HubGrid) -> HubFrame {
     out
 }
 
-// NOT WIRED: same blocker as [`dispatch`].
+// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f1890 - the three-line panel with its own cursor row.
 ///
 /// The first line uses [`PALETTE_PANEL`], the lower two [`PALETTE_DIM`]; the
@@ -665,7 +668,7 @@ pub fn three_line_panel(actor: &HubActor, env: &HubEnv) -> HubFrame {
     out
 }
 
-// NOT WIRED: same blocker as [`dispatch`].
+// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f1950 - the two-option panel.
 ///
 /// Each option draws its cursor *before* its label and only when
@@ -711,7 +714,7 @@ fn edge_cursor(actor: &HubActor) -> HubDraw {
     }
 }
 
-// NOT WIRED: same blocker as [`dispatch`].
+// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f1a1c - the count-gated single label.
 ///
 /// Picks the alternate string when the entry count `DAT_80084594` is below
@@ -734,7 +737,7 @@ pub fn count_gated_label(actor: &HubActor, env: &HubEnv) -> HubFrame {
     out
 }
 
-// NOT WIRED: same blocker as [`dispatch`].
+// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f1b64 - the single label plus the right-edge cursor.
 ///
 /// [`count_gated_label`] without the count test.
@@ -750,7 +753,7 @@ pub fn single_label(actor: &HubActor) -> HubFrame {
     out
 }
 
-// NOT WIRED: same blocker as [`dispatch`].
+// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f1ab0 - the two-line panel with the screen-effect push.
 ///
 /// Both lines start `0x0C` in and are `0x10` apart; the cursor sits `8` left
@@ -781,7 +784,7 @@ pub fn two_line_panel(actor: &HubActor, env: &HubEnv) -> HubFrame {
     out
 }
 
-// NOT WIRED: same blocker as [`dispatch`].
+// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f90dc - the item-acquisition caption.
 ///
 /// `DAT_801E46B0` is an **item id**, and the two strings come from the static
@@ -878,7 +881,7 @@ mod tests {
         let grid = HubGrid::default();
         let mut e = env();
         e.submode = 2;
-        let f = dispatch(&mut a, &e, &grid, |_| HubFrame::default());
+        let f = hub_dispatch(&mut a, &e, &grid, |_| HubFrame::default());
         assert!(f.draws.is_empty() && f.actions.is_empty());
         assert_eq!(a.flags, 0);
     }
@@ -890,7 +893,7 @@ mod tests {
         let mut e = env();
         e.pad_latch = PAD_LATCH_SUSPEND;
         let mut ran = false;
-        let f = dispatch(&mut a, &e, &grid, |_| {
+        let f = hub_dispatch(&mut a, &e, &grid, |_| {
             ran = true;
             HubFrame::default()
         });
@@ -905,11 +908,11 @@ mod tests {
         let grid = HubGrid::default();
         let mut e = env();
         e.board_flag = 0;
-        let f = dispatch(&mut a, &e, &grid, |_| HubFrame::default());
+        let f = hub_dispatch(&mut a, &e, &grid, |_| HubFrame::default());
         assert!(f.actions.contains(&HubAction::ClearBusyBit));
         e.board_flag = 1;
         let mut a = HubActor::default();
-        let f = dispatch(&mut a, &e, &grid, |_| HubFrame::default());
+        let f = hub_dispatch(&mut a, &e, &grid, |_| HubFrame::default());
         assert!(f.actions.contains(&HubAction::SetBoardFlag));
     }
 
@@ -956,7 +959,7 @@ mod tests {
         let mut e = env();
         e.pad_edge = e.confirm_mask;
         e.input_blocked = 1;
-        let f = prompt(&mut a, &e, &mut g);
+        let f = hub_prompt(&mut a, &e, &mut g);
         assert!(!f.actions.contains(&HubAction::ConfirmCue(CUE_CONFIRM)));
         assert_eq!(a.sub, 1);
     }

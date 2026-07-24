@@ -105,6 +105,12 @@ pub const BANNER_CLUT_FLASH: u16 = 0x7742;
 /// wraps at 256 exactly as retail's `sb` does).
 ///
 /// PORT: FUN_801D69A8 (the store half) / FUN_801D67F0 mode 2.
+///
+/// NOT WIRED: the two timelines carry the cell index through
+/// [`ChromeDraw::glyph`] and leave the `u` stamp to whoever owns the parsed
+/// widget table, so nothing in the port performs the store itself. It becomes
+/// reachable when a host resolves a [`ChromeDraw`] against
+/// `legaia_asset::baka_opponents::parse_baka_hud`.
 pub fn glyph_u(index: i32) -> u8 {
     (index.wrapping_mul(GLYPH_CELL_WIDTH) & 0xFF) as u8
 }
