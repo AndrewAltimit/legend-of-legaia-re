@@ -697,6 +697,16 @@ anim-driver field (a frame cursor / clip-length latch) stale so the fresh
 Move clip hits its "end" almost immediately. Which field is the remaining
 open sub-question ([open threads](../reference/open-rev-eng-threads.md)).
 
+The trigger is **CPU-core-independent in emulation**: the same recipe parks
+under both PCSX-Redux cores (recompiler and interpreter, via `run_probe.sh
+--timing`) with the identical onset shape - restore interleaved with the
+`0x14` melee setup, Move clip engaged at ~19 units/vsync, dead ~12-16
+vsyncs in, frozen thereafter. So the race is not an artifact of dynarec
+cycle accounting. Emulators whose CD latency model differs substantially
+(e.g. image preload / async readahead) may schedule the summon's streamed
+staging restore differently relative to the melee and rarely or never land
+in the window.
+
 Confirmed against the parked save itself (RAM read via `legaia-pcsxr`,
 example `gaza2_walk_tag`): Gaza's seat-3 record holds 12 actions with tags
 `[00 01 02 03 04 05 0B 0E 13 0C 23 23]` - **no `0x20`**. Bosses generally
