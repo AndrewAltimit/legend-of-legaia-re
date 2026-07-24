@@ -101,6 +101,7 @@ pub mod field;
 pub use legaia_asset::field_disasm;
 pub mod field_helpers;
 pub mod menu;
+pub mod menu_actor_seed;
 pub mod motion_pause;
 pub mod motion_vm;
 pub mod move_buffer;
