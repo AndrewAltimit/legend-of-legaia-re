@@ -249,7 +249,7 @@ local grail_poked_at = nil
 local grail_bit_seen = nil    -- vsync the +0xF8 bit-7 first read set
 
 local acc_csv = probe.csv_open(probe.out_path("acc_writes.csv"),
-    "vsync,store_pc,kind,who,seat,actor,prior_acc,new_acc,hp,bar,bar_minus_hp,discarded")
+    "vsync,store_pc,kind,who,seat,actor,prior_acc,new_acc,hp,bar,bar_minus_hp,discarded,ctx7,acting_seat,acting_1dd")
 
 local disc_csv = probe.csv_open(probe.out_path("discards.csv"),
     "vsync,store_pc,who,seat,prior_acc,new_acc,hp,bar,bar_minus_hp")
@@ -311,9 +311,17 @@ local function on_acc_write(w)
                 g_elapsed, w.who, w.store, seat, prior, prior, new_acc, hp, bar))
         end
 
-        acc_csv:row("%d,0x%08X,%s,%s,%d,0x%08X,%d,%d,%d,%d,%d,%d",
+        local c = u32(CTX_PTR)
+        local ctx7, act_seat, act_1dd = -1, -1, -1
+        if in_ram(c) then
+            ctx7 = u8(c + 7)
+            act_seat = u8(c + 0x13)
+            local aa = actor_of(act_seat)
+            if aa ~= 0 then act_1dd = u8(aa + 0x1DD) end
+        end
+        acc_csv:row("%d,0x%08X,%s,%s,%d,0x%08X,%d,%d,%d,%d,%d,%d,0x%02X,%d,%d",
             g_elapsed, w.store, w.kind, w.who, seat, actor,
-            prior, new_acc, hp, bar, bar - hp, discarded)
+            prior, new_acc, hp, bar, bar - hp, discarded, ctx7, act_seat, act_1dd)
     end
 end
 
