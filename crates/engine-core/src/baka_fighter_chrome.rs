@@ -945,9 +945,333 @@ fn merge_frame(out: &mut ChromeFrame, f: ChromeFrame) {
     out.banner_clut = out.banner_clut.or(f.banner_clut);
 }
 
+// ---------------------------------------------------------------------------
+// Impact effect pair, positional cue, mirrored sprite pass
+// ---------------------------------------------------------------------------
+
+/// One effect-part spawn the impact pair emits: a world position, a Euler
+/// rotation and the rodata VA of the template `FUN_80021B04` is handed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImpactSpawn {
+    pub pos: (i16, i16, i16),
+    pub rot: (i16, i16, i16),
+    /// Rodata VA of the spawn template.
+    pub template: u32,
+    /// Fixed-point scale (`0x1000` = 1.0).
+    pub scale: i32,
+}
+
+/// Templates the impact pair picks by slot: `[slot 0, slot 1]`, first the
+/// un-rotated pair then the yawed pair.
+pub const IMPACT_TEMPLATE_A: [u32; 2] = [0x801D_B8FC, 0x801D_B960];
+pub const IMPACT_TEMPLATE_B: [u32; 2] = [0x801D_BBA4, 0x801D_BBD4];
+/// Yaw the second spawn takes, by slot - the two sides mirror.
+pub const IMPACT_YAW: [i16; 2] = [-0x400, 0x400];
+/// Z lift applied unless the special latch `DAT_801DBF50` is up.
+pub const IMPACT_Z_LIFT: i16 = 0x32;
+
+// NOT WIRED: `BakaFight` models the duel as rules only - it carries no
+// fighter world position and no per-action keyframe TRS, which are this
+// routine's two position inputs (the actor's `+0x14/+0x16/+0x18` and the
+// action record's `+0x20/+0x22/+0x24`). The keyframe column is the same one
+// `legaia_asset::baka_opponents::parse_actions` does not decode, so no host
+// can supply it either.
+/// PORT: FUN_801d4df8 - the per-slot **impact effect pair**.
+///
+/// Retail calls it on a decided exchange. It first zeroes the fighter's
+/// `+0x38` accumulator (`&DAT_801dbff4[slot * 0xa8]`), then places both
+/// spawns at the fighter's world position offset by the current action
+/// keyframe's TRS: X **added** when the facing flag `&DAT_801dbfe4[slot]` is
+/// set and **subtracted** when it is clear, Y added, and Z added with a
+/// further [`IMPACT_Z_LIFT`] taken off unless the special latch
+/// `DAT_801DBF50` is up. `reset_keyframe` forces the keyframe index to `0`
+/// rather than the fighter's live `&DAT_801dc054[slot]`
+/// ([`impact_keyframe_index`]).
+///
+/// Both spawns go through the shared part-spawn API at scale `0x1000`; the
+/// first uses [`IMPACT_TEMPLATE_A`] with no rotation, the second
+/// [`IMPACT_TEMPLATE_B`] with the slot's [`IMPACT_YAW`]. The two slots take
+/// **opposite** yaws, which is what mirrors the effect across the arena.
+///
+/// It is an effect spawn, not an animation play: nothing here touches the
+/// fighter's action id or frame cursor.
+pub fn impact_effect_pair(
+    slot: usize,
+    actor_pos: (i16, i16, i16),
+    keyframe_trs: (i16, i16, i16),
+    facing_flag: bool,
+    special_latch: bool,
+) -> [ImpactSpawn; 2] {
+    let s = slot & 1;
+    let x = if facing_flag {
+        actor_pos.0.wrapping_add(keyframe_trs.0)
+    } else {
+        actor_pos.0.wrapping_sub(keyframe_trs.0)
+    };
+    let y = actor_pos.1.wrapping_add(keyframe_trs.1);
+    let mut z = actor_pos.2.wrapping_add(keyframe_trs.2);
+    if !special_latch {
+        z = z.wrapping_sub(IMPACT_Z_LIFT);
+    }
+    let pos = (x, y, z);
+    [
+        ImpactSpawn {
+            pos,
+            rot: (0, 0, 0),
+            template: IMPACT_TEMPLATE_A[s],
+            scale: 0x1000,
+        },
+        ImpactSpawn {
+            pos,
+            rot: (0, IMPACT_YAW[s], 0),
+            template: IMPACT_TEMPLATE_B[s],
+            scale: 0x1000,
+        },
+    ]
+}
+
+/// Which keyframe index the impact pair reads - `0` when the caller asks for
+/// a reset, otherwise the fighter's live cursor `&DAT_801dc054[slot]`.
+///
+/// REF: FUN_801d4df8 (`0x801D4E54..0x801D4E5C`)
+pub fn impact_keyframe_index(live_cursor: i32, reset_keyframe: bool) -> i32 {
+    if reset_keyframe { 0 } else { live_cursor }
+}
+
+/// A positional SFX one-shot: the `(pitch, pan)` pair plus the two trailing
+/// fields the caller stacks beside them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PositionalCue {
+    pub pitch: i16,
+    pub pan: i16,
+    /// The two fixed words written beside the pair (`6`, `0x18`).
+    pub tail: (i16, i16),
+    /// The two literal arguments the play call takes after the record.
+    pub base_pitch: i32,
+    pub voice: i32,
+}
+
+/// Base pitch the table entry is added to.
+pub const CUE_BASE_PITCH: i16 = 0x340;
+/// Centre pan the table entry is added to.
+pub const CUE_BASE_PAN: i16 = 0x80;
+/// The literal voice argument the play call takes.
+pub const CUE_VOICE: i32 = 0x86;
+
+// NOT WIRED: the pan/pitch table `&DAT_801dbe84` is overlay rodata with no
+// parser in `legaia_asset::baka_opponents`, and its one retail caller is the
+// scripted-arc effect animator `FUN_801d6310`, which the port does not model -
+// `BakaFight` fires the hit cue through the plain cue ring instead.
+/// PORT: FUN_801d65f8 - the **positional SFX helper**.
+///
+/// Builds a `(pitch, pan)` pair out of the 4-byte record at
+/// `&DAT_801dbe84 + index * 4`: byte `0` shifted right two and added to
+/// [`CUE_BASE_PITCH`], byte `1` added to [`CUE_BASE_PAN`]. The record is
+/// stacked with the two constants `(6, 0x18)` and handed to
+/// `func_0x80058490(&record, 0x340, 0x86)`.
+///
+/// `mode` is the routine's first argument, and only `0` is a defined call:
+/// the table pointer *and* the two trailing constants are written **only**
+/// inside the `mode == 0` arm, so any other value reads the table through an
+/// uninitialised register. Retail has no such call site; this port returns
+/// `None` rather than inventing behaviour for it.
+pub fn positional_cue(mode: i32, entry: [u8; 2]) -> Option<PositionalCue> {
+    if mode != 0 {
+        return None;
+    }
+    Some(PositionalCue {
+        pitch: (entry[0] >> 2) as i16 + CUE_BASE_PITCH,
+        pan: entry[1] as i16 + CUE_BASE_PAN,
+        tail: (6, 0x18),
+        base_pitch: CUE_BASE_PITCH as i32,
+        voice: CUE_VOICE,
+    })
+}
+
+/// The two passes the mirrored sprite draw runs.
+pub const MIRROR_PASSES: usize = 2;
+/// Frame cursor decrement applied at the top of every pass.
+pub const MIRROR_CURSOR_STEP: i16 = 0x30;
+/// Yaw step added to `+0x78` between passes.
+pub const MIRROR_YAW_STEP: u16 = 0x400;
+/// Yaw the first pass starts from.
+pub const MIRROR_YAW_START: u16 = 0x800;
+
+/// One pass of the mirrored sprite draw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MirrorPass {
+    /// Which live-mask bit this pass belongs to.
+    pub bit: u32,
+    /// `true` when the pass emitted a draw.
+    pub drawn: bool,
+    /// `true` when the pass instead cleared its live-mask bit (the clip ran
+    /// past its end).
+    pub expired: bool,
+    /// The frame cursor the pass ran at.
+    pub cursor: i16,
+    /// The yaw the pass ran at.
+    pub yaw: u16,
+}
+
+/// What [`mirrored_sprite_pass`] resolved for one actor.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MirrorFrame {
+    /// The actor retires this frame (its live mask was already empty).
+    pub retire: bool,
+    /// The live mask after the passes.
+    pub live_mask: u16,
+    /// The frame cursor the actor keeps (the pre-pass value; the passes'
+    /// decrements are scratch and are restored on the way out).
+    pub cursor: i16,
+    pub passes: Vec<MirrorPass>,
+}
+
+// NOT WIRED: this is a draw callback over the minigame sprite-actor pool -
+// it needs the actor's `+0x5A` live mask, `+0x5C` clip id and `+0x68` frame
+// cursor plus the runtime sprite archives `_DAT_8007B888` / `_DAT_8007B840`
+// to resolve the clip record. `BakaChrome`'s pool carries banner widgets, not
+// clip records, so there is nothing to hand it.
+/// PORT: FUN_801d49e8 - the **mirrored two-pass sprite draw**.
+///
+/// An empty live mask (`+0x5A == 0`) retires the actor outright and nothing
+/// else runs. Otherwise the clip id `+0x5C` picks a sprite archive - below
+/// [`ANIM_BANK_SPLIT`] the `_DAT_8007B888` bank, at or above it
+/// `_DAT_8007B840` - the id's low [`ANIM_ID_MASK`] bits index that bank's
+/// word-offset table, and the record reached is cached in `+0x4C`. The actor
+/// copies its owner's world position (`&DAT_801dbfac[+0x50]` `+0x14..+0x1B`)
+/// and advances its frame cursor by `(anim * 2 + n - 1) / n * frame_step`,
+/// where `n` is record byte `+6`.
+///
+/// Then it runs [`MIRROR_PASSES`] passes over the live mask's low bits. Each
+/// pass drops the cursor by [`MIRROR_CURSOR_STEP`] and, for a set bit, draws
+/// when the cursor is in `0 ..< record[+2] * 0x10 - 1` and clears the bit
+/// when it has run past that end; the yaw `+0x78` steps
+/// [`MIRROR_YAW_STEP`] per pass from [`MIRROR_YAW_START`], which is what
+/// mirrors the two copies. Every scratch field the passes touched (`+0x62`,
+/// `+0x68`, `+0x74`, `+0x78`) is restored before returning.
+///
+/// The body reads `s5` without ever writing it - the register holds whatever
+/// the caller left there when the transform call `FUN_8003D344(s5 + 0x14,
+/// s5 + 0x2C)` runs. That is in the disassembly, not a decompiler artifact,
+/// so the port takes no such argument rather than reproducing the
+/// uninitialised read.
+pub fn mirrored_sprite_pass(
+    live_mask: u16,
+    cursor: i16,
+    frame_step: i32,
+    anim: i16,
+    keyframe_count: u8,
+    clip_frames: u16,
+) -> MirrorFrame {
+    if live_mask == 0 {
+        return MirrorFrame {
+            retire: true,
+            live_mask,
+            cursor,
+            passes: Vec::new(),
+        };
+    }
+    let n = keyframe_count.max(1) as i32;
+    let advance = ((anim as i32 * 2 + n - 1) / n) * frame_step;
+    let mut running = (cursor as i32 + advance) as i16;
+    let kept = running;
+    let end = (clip_frames as i32 * 0x10 - 1) as i16;
+    let mut mask = live_mask;
+    let mut passes = Vec::new();
+    for i in 0..MIRROR_PASSES {
+        running = running.wrapping_sub(MIRROR_CURSOR_STEP);
+        let yaw = MIRROR_YAW_START.wrapping_add(MIRROR_YAW_STEP * i as u16);
+        if live_mask >> i & 1 == 0 {
+            continue;
+        }
+        let (mut drawn, mut expired) = (false, false);
+        if running >= 0 {
+            if running < end {
+                drawn = true;
+            } else {
+                mask &= !(1u16 << i);
+                expired = true;
+            }
+        }
+        passes.push(MirrorPass {
+            bit: i as u32,
+            drawn,
+            expired,
+            cursor: running,
+            yaw,
+        });
+    }
+    MirrorFrame {
+        retire: false,
+        live_mask: mask,
+        cursor: kept,
+        passes,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn impact_pair_mirrors_by_slot_and_lifts_by_the_special_latch() {
+        let a = impact_effect_pair(0, (100, 20, 300), (5, 6, 7), true, false);
+        assert_eq!(a[0].pos, (105, 26, 307 - IMPACT_Z_LIFT));
+        assert_eq!(a[0].rot, (0, 0, 0));
+        assert_eq!(a[0].template, IMPACT_TEMPLATE_A[0]);
+        assert_eq!(a[1].rot, (0, IMPACT_YAW[0], 0));
+        assert_eq!(a[1].template, IMPACT_TEMPLATE_B[0]);
+
+        // A clear facing flag subtracts the keyframe X instead.
+        let b = impact_effect_pair(1, (100, 20, 300), (5, 6, 7), false, true);
+        assert_eq!(b[0].pos, (95, 26, 307));
+        assert_eq!(b[1].rot, (0, IMPACT_YAW[1], 0));
+        assert_eq!(IMPACT_YAW[0], -IMPACT_YAW[1]);
+    }
+
+    #[test]
+    fn impact_keyframe_index_honours_the_reset_argument() {
+        assert_eq!(impact_keyframe_index(4, false), 4);
+        assert_eq!(impact_keyframe_index(4, true), 0);
+    }
+
+    #[test]
+    fn positional_cue_biases_a_shifted_pitch_and_a_centred_pan() {
+        let c = positional_cue(0, [0x40, 0x10]).unwrap();
+        assert_eq!(c.pitch, 0x10 + CUE_BASE_PITCH);
+        assert_eq!(c.pan, 0x10 + CUE_BASE_PAN);
+        assert_eq!(c.tail, (6, 0x18));
+        // Only mode 0 is a defined call.
+        assert!(positional_cue(1, [0x40, 0x10]).is_none());
+    }
+
+    #[test]
+    fn an_empty_live_mask_retires_the_mirrored_actor() {
+        let f = mirrored_sprite_pass(0, 0, 1, 0, 1, 1);
+        assert!(f.retire);
+        assert!(f.passes.is_empty());
+    }
+
+    #[test]
+    fn mirrored_passes_step_the_yaw_and_expire_on_the_clip_end() {
+        // Both bits live, cursor far past the clip end -> both expire.
+        let f = mirrored_sprite_pass(0b11, 0x400, 0, 0, 1, 1);
+        assert_eq!(f.passes.len(), 2);
+        assert!(f.passes.iter().all(|p| p.expired && !p.drawn));
+        assert_eq!(f.live_mask, 0);
+        assert_eq!(f.passes[0].yaw, MIRROR_YAW_START);
+        assert_eq!(f.passes[1].yaw, MIRROR_YAW_START + MIRROR_YAW_STEP);
+        // The cursor the actor keeps is the pre-pass value, not the scratch.
+        assert_eq!(f.cursor, 0x400);
+    }
+
+    #[test]
+    fn a_mirrored_pass_inside_the_clip_draws() {
+        let f = mirrored_sprite_pass(0b01, 0x100, 0, 0, 1, 0x40);
+        assert_eq!(f.passes.len(), 1);
+        assert!(f.passes[0].drawn);
+        assert_eq!(f.live_mask, 0b01);
+    }
 
     #[test]
     fn intro_fires_each_announcer_line_once() {
