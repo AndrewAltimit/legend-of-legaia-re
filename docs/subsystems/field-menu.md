@@ -1351,6 +1351,34 @@ is drawn by the caller. Which screen owns it is **Unknown**; the two-row
 shape and the packed state word read as a settings pair, but nothing in
 the corpus opens window 46.
 
+### Ported painters
+
+Fourteen of the table's content renderers are ported as draw-list
+builders in
+[`engine-ui::ui_menu_window_painters`](../../crates/engine-ui/src/ui_menu_window_painters.rs):
+windows 5, 6, 7, 24, 31, 32, 33, 34, 36, 37, 43, 45 and 46, plus the
+bottom-clipped box emit `FUN_801E4140`. The port keeps the pen
+arithmetic and the state-word rules and drops the two globals every one
+of them touches - the draw-order word `DAT_8007B454` and the
+glyph-advance byte `DAT_80073F20` - because a host that composites in
+call order and lays glyphs out proportionally has no use for either.
+
+Three rules the block encodes are worth naming on their own:
+
+- **Window 36's character mask is a table, not a shift.** `FUN_801D56FC`
+  indexes four bytes at `0x801E43F0`, which read `01 02 04 00` on disc.
+  Classes `0..=2` therefore agree with `1 << class`, but class `3` gets a
+  mask of zero and matches no equipment - not even against the
+  "any party member" mask `7` of
+  [equipment-table.md](../formats/equipment-table.md). A row that fails
+  the mask is not skipped: its draw order drops to `0`.
+- **Window 37's sell total is halved.** `FUN_801D5944` multiplies the
+  quantity by the unit price and arithmetic-shifts right by one.
+- **Window 37's digit field is a ladder, not a digit count.** It starts
+  at 4; `>= 100` and `>= 1000` each add one, and `>= 10000` *assigns* 5
+  before those two still add to it - so the widths are 4 / 5 / 6 / 7 and
+  a four-digit price reserves six cells.
+
 ## Draw primitives + CLUT staging
 
 Three shared primitives render everything:

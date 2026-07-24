@@ -553,8 +553,10 @@ pub fn description_source(item_kind: u8, passive_index: u8) -> DescriptionSource
 
 /// Window 34: item name, owned count, and the description line below.
 ///
-/// `FUN_801D4A80` draws nothing at all when the selection index
-/// `DAT_801E46B0` is not positive. Otherwise the name goes at the content
+/// `FUN_801D4A80` draws nothing at all when the selected **item id**
+/// `DAT_801E46B0` is not positive - that word is the id the routine
+/// multiplies by 12 to reach `0x80074368`, not a list row. Otherwise the
+/// name goes at the content
 /// origin, the two-digit owned count at `WX + 0x94`, and the description
 /// one row pitch down at `WX + 8` - routed through
 /// [`description_source`]. The owned count comes back from
@@ -740,7 +742,8 @@ pub fn sell_total(quantity: u32, unit_price: u32) -> u32 {
 
 /// Window 37: the sell quantity panel.
 ///
-/// `FUN_801D5944` draws nothing when the selection index is not positive.
+/// `FUN_801D5944` draws nothing when the selected item id
+/// `DAT_801E46B0` is not positive.
 /// Otherwise: a heading at the content origin, then one row `0x14` below
 /// carrying the quantity at `WX + 0x10`, a separator glyph at `WX + 0x20`
 /// and the held count at `WX + 0x28`. The gold pictogram and the total
