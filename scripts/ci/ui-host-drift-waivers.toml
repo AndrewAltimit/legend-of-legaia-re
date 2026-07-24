@@ -156,49 +156,6 @@ session.
 """
 
 [[waiver]]
-builder = "items_throw_confirm_sprites_for"
-kind = "orphan"
-reason = """
-The hand-*sprite* variant of the Throw Out confirm cursor. Both hosts already
-draw this window through the sibling text builder `items_throw_confirm_draws_for`
-(native `window/menu_draws.rs`, web `play_menu.rs`), which they call with
-`text_cursor = true` - so the Yes/No hand comes out as the ASCII `>` stand-in
-the confirm shares with the rest of the pause lists, and the atlas-sprite
-variant is unused today. Not a missing screen: the confirm renders on both
-hosts. Closing this means switching the confirm to the sprite hand on both
-hosts (a host-side change), which is out of scope for the RE lane that traced
-the confirm SM.
-"""
-
-[[waiver]]
-builder = "target_panel_draws_for"
-kind = "orphan"
-reason = """
-The retail window-14 party target panel renderer (`FUN_801D0520`), newly traced
-from the 0899 disassembly. Both hosts currently stand in the field item-use
-target-select with a generic overlay (native `pause_items_draws` returns
-`items_session_draws` while `model.target_select`; the web page mirrors it),
-rather than the retail per-member `cur/max` + Water-preview column. Wiring this
-builder in is a host-side change (native `window/menu_draws.rs`, web
-`play_menu.rs`, both outside this RE lane's file scope) that also needs the
-host to feed per-member level + base-stat records into the `TargetPanelModel`.
-Kept as the faithful renderer the host follow-up will call; the SM half
-(`engine-core::pause_screens::target_panel_model`/`target_panel_mode`) is wired
-and unit-tested.
-"""
-
-[[waiver]]
-builder = "target_panel_sprites_for"
-kind = "orphan"
-reason = """
-The sprite half (LV/HP/MP label tags + hand cursor) of the window-14 target
-panel - the companion to `target_panel_draws_for` above, and gated on the same
-host follow-up. Neither host draws the retail target column yet, so nothing
-calls it; it lands with its text sibling when a host routes the item
-target-select through the window-14 panel.
-"""
-
-[[waiver]]
 builder = "records_screen_draws_for"
 kind = "orphan"
 reason = """

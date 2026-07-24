@@ -230,6 +230,20 @@ impl World {
             list.levels[slot] = level + 1;
             record.set_spell_list(list);
             self.magic_level_ups.push((caster, spell_id, level + 1));
+            // Retail composes "<spell>'s magic level increased." into the
+            // shared message buffer and raises UI element 0x65
+            // (`FUN_801F452C`). The engine has one banner channel; the line
+            // goes there so the text a host draws is the retail one rather
+            // than an engine-invented string.
+            let spell_name = self
+                .spell_catalog
+                .get(spell_id)
+                .map(|d| d.name.clone())
+                .unwrap_or_else(|| format!("Spell {spell_id:#04X}"));
+            self.current_art_banner = Some(crate::tactical_arts::ArtLearnedBanner {
+                text: crate::magic_xp::magic_level_increased_message(&spell_name),
+                frames_remaining: crate::tactical_arts::ArtLearnedBanner::DEFAULT_FRAMES,
+            });
         }
     }
 
@@ -269,6 +283,17 @@ impl World {
                 &party_slots,
             );
             if outcome.accepted {
+                // Retail's learn edge writes the character RECORD: the three
+                // parallel spell arrays get the new id prepended at slot 0
+                // (`FUN_801E92DC`). The engine's `SeruCaptureLog` list is a
+                // read model beside it, so the record-side commit has to
+                // happen here or a save round-trip loses the spell's own
+                // level / XP slots.
+                for learn in &outcome.learns {
+                    if let Some(rec) = self.roster.members.get_mut(learn.char_slot as usize) {
+                        crate::magic_xp::learn_spell_prepend(rec, learn.spell_id);
+                    }
+                }
                 if first_accepted.is_none() {
                     first_accepted = Some((sid, outcome.clone()));
                 }

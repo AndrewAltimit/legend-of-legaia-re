@@ -122,13 +122,10 @@ pub fn add_spell_xp(record: &mut CharacterRecord, slot: usize, gain: u32) {
 /// exceeds it in practice (the id space `0x81..=0x8B` caps a legitimate list
 /// at 11 entries).
 ///
-/// NOT WIRED: nothing promotes a learned Seru into the record. The capture
-/// kernel ([`crate::seru_learning::record_capture`]) banks a crossed learn
-/// threshold into `SeruCaptureLog::learned_spells`, a parallel per-character
-/// list the magic menus and the battle spell session read alongside the
-/// record's arrays; no path copies that entry back into the record's three
-/// parallel spell arrays, which is the write this prepend performs. Wiring
-/// it means giving the capture log's learn edge a record-side commit step.
+/// Driven from `World::resolve_captures`: every accepted capture whose
+/// points crossed a Seru's learn threshold commits the learn into the
+/// character record here, beside the `SeruCaptureLog::learned_spells` read
+/// model the menus and the battle spell session list from.
 pub fn learn_spell_prepend(record: &mut CharacterRecord, spell_id: u8) {
     let mut list = record.spell_list();
     let count = (list.count as usize).min(list.ids.len() - 1);
@@ -163,13 +160,11 @@ pub const MAGIC_LEVEL_INCREASED_SUFFIX: &str = "'s magic level increased.";
 ///
 /// PORT: FUN_801F452C
 ///
-/// NOT WIRED: the event this line announces is produced -
-/// `World::accrue_summon_spell_xp` pushes every level-up into
-/// `World::magic_level_ups` - but no host drains it. The battle HUD's banner
-/// channel carries the art-learned / level-up / capture banners only, and
-/// retail's magic-level line is its own UI element (`0x65`) with no engine
-/// slot. Wiring this needs that banner slot plus a spell-name lookup at the
-/// drain point.
+/// Driven from `World::accrue_summon_spell_xp`: the same edge that pushes
+/// `World::magic_level_ups` composes this line and stages it on the world's
+/// banner channel, resolving the spell name through `World::spell_catalog`.
+/// Retail raises it as its own UI element (`0x65`); the engine has one
+/// banner slot, so the two share it.
 pub fn magic_level_increased_message(spell_name: &str) -> String {
     format!("{spell_name}{MAGIC_LEVEL_INCREASED_SUFFIX}")
 }

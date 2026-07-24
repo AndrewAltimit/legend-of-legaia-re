@@ -241,6 +241,44 @@ fn pressed(edge: u16, b: PadButton) -> bool {
     edge & b.mask() != 0
 }
 
+/// Map the engine-core window-14 target-panel model onto the engine-ui view
+/// rows. Mirrors the native shell's `target_panel_members`.
+fn target_panel_members(
+    model: &legaia_engine_core::pause_screens::TargetPanelModel,
+) -> Vec<ui::TargetPanelMember<'_>> {
+    model
+        .members
+        .iter()
+        .map(|m| ui::TargetPanelMember {
+            name: m.name.as_str(),
+            level: m.level,
+            hp: m.hp,
+            mp: m.mp,
+            hp_max: m.hp_max,
+            mp_max: m.mp_max,
+            base_hp_max: m.base_hp_max,
+            base_mp_max: m.base_mp_max,
+            stat_eff: m.stat_eff,
+            stat_base: m.stat_base,
+        })
+        .collect()
+}
+
+/// Hand-cursor decode of the target panel: all-party picks put the hand on
+/// every row (retail cursor bit `0x2000`), otherwise it sits on one row.
+fn target_panel_cursor(
+    model: &legaia_engine_core::pause_screens::TargetPanelModel,
+) -> ui::TargetPanelCursor {
+    if model.all_targets {
+        ui::TargetPanelCursor::All { pressed: false }
+    } else {
+        ui::TargetPanelCursor::Single {
+            row: model.cursor_row,
+            pressed: false,
+        }
+    }
+}
+
 /// Slide-in y-offset (delta from parked y) of the save screen's bottom info
 /// panel. Mirrors the native shell's `info_panel_slide_offset`: retail's
 /// `FUN_801E08D8` ramps the panel from off-screen-below (394) up to parked
@@ -1348,6 +1386,45 @@ impl LegaiaRuntime {
         let font = &assets.font;
         let model = legaia_engine_core::pause_screens::items_screen_model(s);
         if model.target_select {
+            // Retail replaces the item list with window 14 - the party
+            // target panel (`FUN_801D0520`) - for the target pick. The
+            // generic overlay only stands in when there is no world (and
+            // so no roster) behind the session.
+            if let Some(panel) = self
+                .menu_world()
+                .and_then(|w| legaia_engine_core::pause_screens::target_panel_view_model(s, w))
+                .filter(|m| !m.members.is_empty())
+            {
+                let members = target_panel_members(&panel);
+                let view = ui::TargetPanelView {
+                    members: &members,
+                    mode: ui::TargetPanelMode::from_preview_word(panel.mode),
+                    cursor: target_panel_cursor(&panel),
+                    label_icons: assets.chrome.is_some(),
+                    text_cursor: assets.chrome.is_none(),
+                };
+                let pen = assets.pen(14);
+                let pen = if pen == (0, 0) {
+                    let (x, y, _, _) = ui::TARGET_PANEL_RECT;
+                    (x, y)
+                } else {
+                    pen
+                };
+                let mut d = ui::target_panel_draws_for(font, &view, pen);
+                d.extend(ui::tab_label_draws(
+                    font,
+                    "Items",
+                    assets.pen(window_ids::TAB_ITEMS),
+                ));
+                ui::scale_stage_text_draws(&mut d, origin, scale);
+                texts.extend(d);
+                if let Some((_, rects)) = assets.chrome.as_ref() {
+                    sprites.extend(ui::target_panel_sprites_for(
+                        rects, &view, pen, origin, scale,
+                    ));
+                }
+                return;
+            }
             let mut d = self.items_session_draws(assets, &s.inner);
             ui::scale_stage_text_draws(&mut d, origin, scale);
             texts.extend(d);
@@ -1423,6 +1500,17 @@ impl LegaiaRuntime {
                 text_cursor: assets.chrome.is_none(),
             };
             d.extend(ui::items_throw_confirm_draws_for(font, &view, pen));
+            // The confirm's hand cursor is an atlas sprite whenever the
+            // chrome atlas is loaded; the ASCII `>` above is its stand-in.
+            if let Some((_, rects)) = assets.chrome.as_ref() {
+                sprites.extend(ui::items_throw_confirm_sprites_for(
+                    rects,
+                    confirm.cursor,
+                    pen,
+                    origin,
+                    scale,
+                ));
+            }
         }
         // Special Use-route confirm (submenu 0xB Door of Light -> window 10 /
         // FUN_801D1DAC, submenu 0xD Incense -> window 12 / FUN_801D1F10). A

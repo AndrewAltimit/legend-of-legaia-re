@@ -520,6 +520,52 @@ impl PlayWindowApp {
                 stage_origin,
                 stage_scale,
             ));
+            // Throw Out confirm (window 9, `FUN_801D1B20`): its hand
+            // cursor is an atlas sprite, not the ASCII stand-in the text
+            // pass emits when the sprite pass is absent.
+            if let Some(confirm) = model.throw_confirm.as_ref() {
+                let pen = self.menu_window_pen(9);
+                let pen = if pen == (0, 0) {
+                    let (x, y, _, _) = legaia_engine_render::ITEMS_THROW_CONFIRM_RECT;
+                    (x, y)
+                } else {
+                    pen
+                };
+                out.extend(legaia_engine_render::items_throw_confirm_sprites_for(
+                    &assets.rects,
+                    confirm.cursor,
+                    pen,
+                    stage_origin,
+                    stage_scale,
+                ));
+            }
+        }
+        // Target panel (window 14, `FUN_801D0520`): the LV / HP / MP tag
+        // sprites plus the hand cursor(s) of the party column the Use
+        // flow picks a target in.
+        if let Some(FieldMenuSubsession::Items(s)) = sub
+            && s.target_select()
+            && let Some(model) = legaia_engine_core::pause_screens::target_panel_view_model(
+                s,
+                &self.session.host.world,
+            )
+            && !model.members.is_empty()
+        {
+            let members = Self::target_panel_members(&model);
+            let view = legaia_engine_render::TargetPanelView {
+                members: &members,
+                mode: legaia_engine_render::TargetPanelMode::from_preview_word(model.mode),
+                cursor: Self::target_panel_cursor(&model),
+                label_icons: true,
+                text_cursor: false,
+            };
+            out.extend(legaia_engine_render::target_panel_sprites_for(
+                &assets.rects,
+                &view,
+                self.target_panel_pen(),
+                stage_origin,
+                stage_scale,
+            ));
         }
         // Magic screen: the caster blocks' LV / MP tag sprites, the
         // pointing-hand cursor and the page-turn arrows (FUN_801D2C98).

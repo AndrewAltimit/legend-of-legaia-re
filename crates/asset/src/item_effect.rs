@@ -437,6 +437,8 @@ pub struct ItemEffectTable {
     descriptors: Vec<ItemEffect>,
     /// `subtype[id]` - the item-name table `+1` byte, per item id.
     subtype: Vec<u8>,
+    /// `kind[id]` - the item-name table `+0` byte, per item id.
+    kind: Vec<u8>,
     /// The tier-indexed heal-amount sub-tables the apply handler reads.
     heal_amounts: HealAmounts,
 }
@@ -460,9 +462,11 @@ impl ItemEffectTable {
         }
 
         let mut subtype = Vec::with_capacity(ITEM_COUNT);
+        let mut kind = Vec::with_capacity(ITEM_COUNT);
         for id in 0..ITEM_COUNT {
-            let off = map.off(ITEM_TABLE_BASE_VA + (id as u32) * ITEM_RECORD_STRIDE + 1)?;
-            subtype.push(*scus.get(off)?);
+            let rec = ITEM_TABLE_BASE_VA + (id as u32) * ITEM_RECORD_STRIDE;
+            kind.push(*scus.get(map.off(rec)?)?);
+            subtype.push(*scus.get(map.off(rec + 1)?)?);
         }
 
         let read_tiers = |base_va: u32| -> Option<[u16; HEAL_TIER_COUNT]> {
@@ -481,6 +485,7 @@ impl ItemEffectTable {
         Some(Self {
             descriptors,
             subtype,
+            kind,
             heal_amounts,
         })
     }
@@ -488,6 +493,15 @@ impl ItemEffectTable {
     /// The subtype byte item `id` indexes the descriptor table by.
     pub fn subtype(&self, id: u8) -> u8 {
         self.subtype[id as usize]
+    }
+
+    /// The item-record **kind** byte (`0x80074368 + id*0xC + 0`) - the
+    /// record-class selector the menu code gates on before it even reads the
+    /// descriptor. The target-panel preview derivation `FUN_801D6A54` requires
+    /// `kind == 2` (`801d6a74 lbu a1,0x0(a0)` / `801d6a7c bne a1,v0`) before it
+    /// looks at the descriptor class, so the two bytes are read as a pair.
+    pub fn kind(&self, id: u8) -> u8 {
+        self.kind[id as usize]
     }
 
     /// The raw descriptor for a subtype, or `None` if the subtype is past the
