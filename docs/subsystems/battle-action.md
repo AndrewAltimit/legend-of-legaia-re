@@ -448,14 +448,34 @@ the line by a few frames either way. And a community capture of the live
 softlock (Japanese version; the community reports the same park on both
 regions) shows the parked fight's target panel drawing a **mid-game** pool -
 `1476/1476`, displayed exactly at max - so a high readout is not *necessary*:
-the parked fight's move set evidently has a tail short enough to cross at
-~1476, faster than any tail Gaza 2 showed under measurement. What the
-readout-at-max face fits is the **overshoot direction**: a discarded revive
-leaves the readout `leftover` *above* live HP, and the drain
-(`FUN_80047430`) has no max clamp - no `+0x14E` read anywhere in it - so
-the overshoot rides until something redraws it. Whether the panel's digit
-renderer clamps the drawn value at max (making `1476/1476` the exact face
-of an overshot readout) is the open verification.
+the parked fight's configuration crosses at ~1476.
+
+Three follow-on measurements interpret that exhibit:
+
+- **The HUD draws `+0x172` raw.** An injected overshoot (readout = live +
+  150) renders on screen as `1439/1289` - over max, human-verified - and
+  the drain (`FUN_80047430`) has no max clamp (no `+0x14E` read anywhere in
+  it), so an overshot readout rides and *shows*. An over-max readout is
+  therefore a distinctive on-screen witness of the discarded-restore
+  direction worth searching community footage for.
+- Because nothing clamps the drawn value, the exhibit's clean `1476/1476`
+  panel is a **healthy displayed member**: the desynced slot is off-panel,
+  and the parked action is party-targeted (`+0x1DD == 8`, the all-slot
+  scan) - which is what a boss's party-wide cast uses, matching the
+  community's "magic softlock" phrasing.
+- **The party-wide cast damage bypasses every armed writer.** In the
+  capture campaign, the double-kill party-wide casts credited live HP and
+  the accumulator through **none** of the census sites (kernel, item
+  applier, enemy-cast safe applier, drain) - the seeding that the
+  post-kill drains then walked down arrived from stores outside the
+  `SCUS_942.54` + battle-overlay corpus. The remaining writer family is
+  the **capture-class per-spell modules** (PROT 944..966; Gaza 2's Neo
+  Star Slash is module 960 - see
+  [battle-formulas.md](battle-formulas.md)), whose module-resident HP
+  bookkeeping has never been audited for the accumulate-vs-assign
+  pairing. An unpaired store there is the strongest remaining generator
+  candidate, and it would sit precisely in the code the community's
+  "magic softlock" reports implicate.
 
 The same arm is what a **Phoenix** (class 4) reaches from the battle item
 menu, and the class 0 / class 1 heal arms reach the sibling assign at

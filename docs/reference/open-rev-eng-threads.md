@@ -147,18 +147,24 @@ accumulator - both entries with reasoning in
 
 What would close the thread now:
 
-- the **drain-vs-tail race on other move sets**: the measured minimum
-  last-credit-to-`0x51` gap on Gaza 2 is ~27 rendered frames while the
-  quarter-step drain takes 23 frames from a ~1300 readout (30 from `9999`;
-  +1 per doubling), so Gaza 2 misses by ~4 frames and a higher readout or a
+- **audit the capture-class module HP stores** - the new prime suspect.
+  The capture campaign's party-wide double-kill casts credited live HP and
+  the accumulator through **none** of the armed census writers; the only
+  uncensused writer family is the capture-class per-spell modules
+  (PROT 944..966, Gaza 2's Neo Star Slash = module 960). Statically audit
+  each module's stores to `actor+0x14C`/`+0x172`/`+0x10` for the
+  accumulate-vs-assign pairing - an unpaired store there is a generator
+  sitting exactly where the "magic softlock" reports point;
+- the **drain-vs-tail race**: minimum last-credit-to-`0x51` gap on Gaza 2 is
+  ~27 rendered frames vs a 23-frame drain from a ~1300 readout (30 from
+  `9999`; +1 per doubling) - Gaza 2 misses by ~4 frames; a higher readout or
   faster-tailed move crosses
   ([battle-action.md](../subsystems/battle-action.md#where-the-desync-comes-from-two-seeding-conventions)
-  has the numbers). A community capture of the live park (JP version,
-  reported on both regions) shows a target readout drawn `1476/1476` - at
-  max, on a mid-game pool - so some fight's tail crosses at ~1476.
-  Identifying that fight and measuring its tail with the existing probe
-  would close the leg; whether the battle HUD clamps the drawn readout at
-  max (the overshoot face) is the sub-verification in flight;
+  has the numbers). The community live-park exhibit (JP version, reported on
+  both regions) draws a healthy `1476/1476` target panel - measured: the HUD
+  draws `+0x172` raw (an injected overshoot renders `1439/1289` on screen),
+  so the desynced slot in the exhibit is off-panel and the parked action is
+  the all-target arm (`+0x1DD == 8`), i.e. a party-wide cast;
 - a retail path through the `FUN_801EC3E4` commit-skip guards
   (`0x801EE988` / `0x801EE9AC` / `0x801EE9EC`) with a non-zero credit
   already applied - credit-without-commit is the one shape that leaves a
