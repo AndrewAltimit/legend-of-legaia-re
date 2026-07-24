@@ -102,6 +102,18 @@ impl BroadcastRoster {
 /// * broadcast path - `1` when at least one application returned non-zero,
 ///   `0` otherwise (retail computes `sltu v0, zero, hits`, so the count is
 ///   collapsed to a boolean and is *not* the number of hits).
+///
+/// NOT WIRED: the `apply` closure has nothing to bind to. Retail's applier is
+/// `FUN_8003FB10`, ported as
+/// [`legaia_engine_vm::battle_action::validator::validate_action`], and
+/// nothing implements that port's `ActionValidatorHost` either - the engine
+/// gates spells with per-menu checks (`spell_menu`'s MP test,
+/// `spells::cast_spell`'s own target resolve) rather than through the retail
+/// 16-arm gate. Both halves close together: until a host exists for the
+/// applier, this dispatcher has no effect to broadcast, and the roster walk
+/// would run against a closure the caller had to invent. The `0x80084140`
+/// roster bytes it reads are equally unmodelled - `World` keeps a typed party,
+/// not that save-block window.
 pub fn broadcast<F>(rec: SpellDispatchRecord, roster: &BroadcastRoster, mut apply: F) -> u32
 where
     F: FnMut(u8, u8, u8) -> u32,
