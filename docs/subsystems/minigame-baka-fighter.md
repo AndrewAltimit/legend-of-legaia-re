@@ -244,7 +244,9 @@ attack type, and stored to the fighter record `+0x10` (disasm at
 same value. Debug strings emitted under
 `DAT_801dbf94`: `%d %d`, `stat no %d %d %d`, `hit frame %d fo %d fn %d`,
 `mot speed %d`. The knockdown / launch playback (after a lost exchange) is
-`FUN_801d4df8`, and `FUN_801d49e8` drives the multi-frame launch arc.
+`FUN_801d4df8` (an effect spawn rather than an animation play - see
+[Impact, cue and mirror](#impact-cue-and-mirror)), and `FUN_801d49e8` is the
+mirrored sprite pass that draws it.
 
 Confidence: **Confirmed** the button-bit → type mapping, the named physical
 buttons (Square/Circle/Cross from the slot-0 branch of
@@ -408,6 +410,83 @@ round-result banners are sprite actors (spawned by `FUN_801d6e04`, widget id
 in `actor + 0x50`, drawn by the `FUN_801d67f0` hook) over the "YOU" / "WIN!" /
 "LOSE..." / "DRAW" / "ROUND" / "FIGHT!" / "PERFECT!!" / "GAME OVER" cells of
 the widget table.
+
+### Impact, cue and mirror
+
+Three small bodies sit under the exchange-resolution path, and two of them
+have shapes their names invite a reader to guess wrong.
+
+**`FUN_801d4df8` is an effect spawn, not a knockdown playback.** Nothing in it
+touches the fighter's action id or frame cursor. It zeroes the fighter's
+`+0x38` accumulator (`&DAT_801dbff4[slot * 0xa8]`), then places two spawns at
+the fighter's world position offset by the current action keyframe's TRS
+(`+0x20` / `+0x22` / `+0x24`): X is **added** when the facing flag
+`&DAT_801dbfe4[slot]` is set and **subtracted** when it is clear, Y is added,
+and Z is added with a further `0x32` taken off unless the special latch
+`DAT_801dbf50` is up. Its second argument forces the keyframe index to `0`
+instead of the fighter's live cursor `&DAT_801dc054[slot]`. Both spawns go
+through the shared part-spawn API `FUN_80021b04` at scale `0x1000`: the first
+with no rotation, the second with a yaw of `-0x400` for slot 0 and `+0x400`
+for slot 1, which is what mirrors the effect across the arena.
+
+**`FUN_801d49e8` is the mirrored sprite pass.** An empty live mask
+(`+0x5a == 0`) retires the actor and nothing else runs. Otherwise the clip id
+`+0x5c` picks a sprite archive (below `0x400` the `_DAT_8007b888` bank, at or
+above it `_DAT_8007b840`), the id's low `0x3ff` bits index that bank's
+word-offset table, and the record reached is cached in `+0x4c`. The actor
+copies its owner's world position and advances its frame cursor by
+`(anim * 2 + n - 1) / n * frame_step` for `n` = record byte `+6`, then runs
+**two** passes over the live mask's low bits: each drops the cursor by `0x30`
+and, for a set bit, draws while the cursor is inside `0 ..< record[+2] * 0x10
+- 1` and clears the bit once it has run past that end. The yaw `+0x78` steps
+`0x400` per pass from `0x800`, which is what mirrors the two copies. Every
+scratch field the passes touch is restored on the way out.
+
+The body reads `s5` without ever writing it - `s5` is saved and restored
+around the frame but is never assigned, so the transform call
+`FUN_8003d344(s5 + 0x14, s5 + 0x2c)` runs against whatever the caller left in
+the register. That is visible in the disassembly, not a decompiler artifact
+(Ghidra renders it `unaff_s5`), and the port takes no such argument rather
+than reproducing the uninitialised read.
+
+**`FUN_801d65f8` is only defined for its mode-0 call.** It builds a
+`(pitch, pan)` pair out of the 4-byte record at `&DAT_801dbe84 + index * 4` -
+byte `0` shifted right two plus `0x340`, byte `1` plus `0x80` - and plays it
+through `func_0x80058490(&record, 0x340, 0x86)`. The table pointer *and* the
+two trailing constants `(6, 0x18)` are written **only** inside the first
+argument's `== 0` arm, so any other value reads the table through an
+uninitialised register; retail's one call site (`FUN_801d6310`) passes `0`.
+
+Ports: `engine-core::baka_fighter_chrome::{impact_effect_pair,
+mirrored_sprite_pass, positional_cue}`.
+
+### The developer keyframe editor
+
+`FUN_801d4fc8` is the leftover in-game **action-table editor**, the sibling of
+the "add frame" / "delete frame" helpers `FUN_801d57bc` / `FUN_801d58e0`. Its
+gate is the match-timer global read as an unsigned window - `DAT_801dbf44 -
+400 < 100`, i.e. the `400..=499` band, distinct from the `== 100` band a live
+round runs in - and outside that band it retires both the editor actor and the
+fighter actor and returns. Inside it:
+
+- draws the action / frame cursors and their labels
+  (`func_0x8002b98c` / `func_0x8002b984` / `func_0x80017d98`);
+- on a change of the selected action, reloads the record's speed `+0x04` and
+  power `+0x18` into the edit fields;
+- calls `FUN_801d6e5c` to find the keyframe the current frame cursor sits on,
+  and on a cursor move installs or removes that keyframe through
+  `FUN_801d57bc` / `FUN_801d58e0` depending on the edit-mode flag;
+- writes the edited values back into the action record - speed `+0x04`, power
+  `+0x18`, and, for a selected keyframe with the write flag set, the TRS
+  triple `+0x20` / `+0x22` / `+0x24`;
+- wraps the action cursor at `0x11` (the 17 table entries) and the frame
+  cursor at `record[+2] - 1`;
+- spawns a marker effect at the edited keyframe's position and re-poses the
+  fighter by writing `actor + 0x5c` and re-entering the actor dispatcher.
+
+So the keyframe lookup `FUN_801d6e5c` has two callers: this editor, and the
+per-fighter combat tick `FUN_801d3f44`, which uses it to detect the exchange's
+commit frame. Only the second is on a shipping path.
 
 ### Round chrome timelines
 
@@ -648,7 +727,8 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `FUN_801d2afc` | HUD renderer (HP bars, combo, round pips, timer, high score) |
 | `FUN_801d239c` | end-of-match score tally → gold payout |
 | `FUN_801d21fc` | round-start READY/FIGHT banner + countdown |
-| `FUN_801d4df8` / `FUN_801d49e8` | knockdown / launch-arc playback |
+| `FUN_801d4df8` | per-slot **impact effect pair** spawn at the current action keyframe's TRS offset (see [Impact, cue and mirror](#impact-cue-and-mirror)) |
+| `FUN_801d49e8` | mirrored two-pass sprite draw over the actor's `+0x5a` live mask (same section) |
 | `FUN_801d6e5c` | action-table keyframe lookup by frame range (port `engine-core::baka_fighter::keyframe_in_range`) |
 | `FUN_801d67f0` | per-frame fighter sprite-actor draw callback (`_DAT_8007ba2c`) |
 | `FUN_801d5ed0` | textured-quad GPU emitter for every HUD glyph / banner sprite (indexes the widget table `DAT_801d7160`) |
@@ -656,7 +736,7 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `FUN_801d6f44` | "GET COIN" coin-count digit-strip drawer (widget `0x2f`, `u = 0x58 + digit * 0x10`, `0x10`-px stride; port `engine-core::baka_fighter::coin_digit_cells`) |
 | `FUN_801d6710` | end-of-match tally drain step (not a drawer - see above) |
 | `FUN_801d553c` | developer dump of the action table (`ot5stat.txt`) |
-| `FUN_801d4fc8` | per-fighter keyframe / motion-event advance (uses `FUN_801d6e5c`); poses the fighter actor - runs in the `DAT_801dbf44 - 400 < 100` sub-phase |
+| `FUN_801d4fc8` | the **developer action-table keyframe editor** tick (see [The developer keyframe editor](#the-developer-keyframe-editor)) |
 | `FUN_801d5c7c` | round-result banner fly-in / hold / fly-out animator (horizontal slide offset + brightness ramp, draws widget 3 through `FUN_801d5ed0` / `FUN_801d69a8`) |
 | `FUN_801d59d4` | title / logo flash animator (widget `0x28`, brightness `iVar << 3` ramp + the two XA stings) |
 | `FUN_801d69a8` | stage-digit draw helper: patches widget 5's `u` (`DAT_801d71cc = stage * 0x18`) then draws widget 5 through `FUN_801d5ed0` |
@@ -683,11 +763,23 @@ end-of-match tally's three score rows (the coin row is the gold prize; see
 combo-step bonus - `DAT_801d70c4[combo]`, the combo clamped to `0x13` - into
 row `DAT_801dbed8`, and an HP-keyed clear bonus into row `DAT_801dbedc`
 (`50000` at full HP `0xc80`, else `DAT_801d711c[hp / 0x140]`). Both bonus
-tables are overlay rodata (Sony bytes, not committed) with no parser. The
-engine port deliberately runs **no score channel** - `BakaTally` starts its
-three score rows empty and only carries the coin prize - so this path is
-documented, not ported; the tally port models the coin row alone
-(`engine-core::baka_fighter::BakaTally`). See
+tables are overlay rodata (Sony bytes, not committed) with no parser.
+
+The combo input is **not** the per-exchange counter: it is the running
+maximum `DAT_801dbec8`, which the HUD renderer latches once per frame
+(`FUN_801d2afc`: `if (DAT_801dbec8 <= DAT_801dc094) DAT_801dbec8 =
+DAT_801dc094;`). `DAT_801dc094` resolves against the per-fighter arrays on
+this page: the hits-taken counter is `&DAT_801dbfec[slot * 0x2a]`, a C `int`
+index and therefore `0xa8` bytes per slot, and `0x801dbfec + 0xa8 ==
+0x801dc094`. So the score's combo term tracks **slot 1's** consecutive-hits-
+taken counter - how long a streak the player is currently landing.
+
+The engine port accumulates both rows into the tally
+(`engine-core::baka_fighter`: `BakaFight::max_combo` feeds `baka_round_score`
+at every round end). The two bonus tables stay optional
+(`BakaScoreTables`): with none supplied every table lookup misses, so the
+combo row stays empty and the bonus row carries only the flat full-HP
+bonus, which is a literal in the kernel rather than a table read. See
 `overlay_baka_fighter_801d2a28.txt`. **Confirmed.**
 
 ### Shared-overlay helpers (out of scope)
@@ -699,6 +791,18 @@ byte-match the field overlay (PROT 0897) at the same VA (classifier image
 `field(897)`), so they belong to the field / actor / move VMs documented in
 [`script-vm.md`](script-vm.md), [`actor-vm.md`](actor-vm.md) and
 [`move-vm.md`](move-vm.md), not to this page.
+
+`FUN_801f159c` is the family's **dispatcher**: it indexes the 52-entry handler
+table `PTR_FUN_801f33b4` by the actor's `+0x50` word, so every routine in the
+table below is one of its slots. `FUN_801f0adc` is slot `0x25`, the **coin
+exchange** - it divides party gold `0x8008459c` by `100` (the `0x51EB851F`
+reciprocal multiply plus the sign fixup, so it truncates toward zero),
+publishes the result to `0x8007bb90` and clamps it so the casino coin bank
+`0x800845a4` cannot pass `9,999,999`; its own `+0x54` then tail-jumps a
+five-slot sub-table at `0x801cf734`, whose handlers share the frame, which is
+why the dumped body is discontiguous.
+
+The whole family is ported clean-room as `engine-vm::baka_hub_actors`.
 
 ### Minigame-hub actor / draw callbacks (shared `0x801f` band)
 
@@ -713,13 +817,34 @@ They drive the hub menu / panel presentation through the text kernel
 the per-actor draw pump `FUN_80031d00`, the grid / tile-board actor
 `DAT_801c6ea4`, and the confirm / entry cue plays (`FUN_80035bd0` /
 `FUN_80035b50`). `FUN_801f69ec` differs in muscle-dome (its own overlay),
-pinning it to the hub family. Being shared framework rather than baka rules,
-they carry no baka engine-port site.
+pinning it to the hub family.
+
+Being shared framework rather than baka rules, they carry no *baka* port site;
+the family as a whole is ported clean-room as `engine-vm::baka_hub_actors`,
+alongside the dispatcher and the coin exchange from the section above.
+
+Every handler in the table shares one shape. It reads its own sub-state
+`+0x54`, draws its panel, and - where it takes input - hands the actor back to
+the hub on a confirm: write `-1` into the grid actor's `+0x2e`, stash `+0x50`
+into the grid actor's `+0x40`, then re-arm `+0x50` to `0x1a` and `+0x54` to
+`0`. Every confirm test is `_DAT_8007bb80 == 0 && (pad_edge & (_DAT_800846d0 |
+_DAT_800846d4)) != 0`, so the suppression flag blocks all of them at once.
+
+The **item-acquisition caption** `FUN_801f90dc` is the one member that is not
+menu chrome. `DAT_801e46b0` is an **item id** and the two strings it draws are
+the static `SCUS_942.54` item table's own record fields: the routine bases at
+`0x80074368` with a `0x0c` stride and reads words `1` and `2`, which is
+`0x8007436c + id * 0x0c` - the item-name pointer of
+[`item-table.md`](../formats/item-table.md) - and the record's next word. The
+id `0xfe` is the money pseudo-item: it adds a fixed caption and prints the
+eight-digit amount at `_DAT_800845b4`. The Ghidra dump stops after that arm
+with no epilogue (`Control flow encountered bad instruction data`), so the
+body past the number draw is unrecovered.
 
 | Address | Role |
 |---|---|
 | `FUN_801f1138` | start / confirm menu tick (2-state): counts active entries from `_DAT_8007b450`, sizes the panel, waits a face-button then plays confirm cue `0x20` and re-arms |
-| `FUN_801f16c0` | stacked per-entry label list: prints one glyph string per `DAT_80084594` entry from table `&DAT_801f29b0`, stepping `y` |
+| `FUN_801f16c0` | stacked per-entry label list over the `DAT_80084594` entries; publishes each code to `DAT_8007b469` first, draws only codes below `3`, restores `y` |
 | `FUN_801f17d8` | header string + a row of per-row sprite cells keyed by the grid actor's `+0x54` bytes (`_DAT_8007bb88` rows) |
 | `FUN_801f1890` | three-line panel draw + a cursor sprite positioned by `_DAT_8007bb98` |
 | `FUN_801f1950` | two-option panel with the selected row (`_DAT_8007bb88`) highlighted by a cursor sprite |
@@ -733,7 +858,7 @@ they carry no baka engine-port site.
 | `FUN_801f1fdc` | hub prompt SM (2 states): entry sting `FUN_80035b50(0x26)` + draw, then wait-confirm + deactivate |
 | `FUN_801f2134` | hub draw tick that clears the grid actor's `+0x3e` when `_DAT_8007bb80 == 0` |
 | `FUN_801f69ec` | shared minigame-hub 3D tile-grid GTE rasterizer: per visible tile (attr bit `0x1000`) of the scene map (`_DAT_1f8003ec + 0x8000`) runs RTPT + depth-cue and links a textured `POLY_GT` into the OT `_DAT_1f8003a0` - render-track |
-| `FUN_801f90dc` | round-result caption draw: two strings indexed by `DAT_801e46b0`, plus a fixed caption + sprite on the `== 0xfe` end-state |
+| `FUN_801f90dc` | **item-acquisition caption**: `DAT_801e46b0` is an item id into the static SCUS item table (see below) |
 
 Provenance: each row corresponds to
 `ghidra/scripts/funcs/overlay_baka_fighter_<addr>.txt` (byte-identical dumps
@@ -766,6 +891,16 @@ tick beats a real ladder opponent and banks the parsed prize). Host
 simplifications, documented in the module: exchange recovery is immediate
 (cooldowns pace re-entry) and the special's final-keyframe gate is modelled
 as a held charge.
+
+The **round chrome** runs off the same clock. `BakaFight` owns a
+`baka_fighter_chrome::BakaChrome`, steps it once per tick, and starts the
+round-banner timeline at every round end - which is the retail arrangement,
+where the three chrome bodies are per-frame timelines running alongside the
+resolution SM and the round-result banners are sprite actors serviced by the
+`_DAT_8007ba2c` draw hook. The runner spawns each banner through the
+screen-centre wrapper (`FUN_801d6e04`), binds and draws it through the actor
+callbacks (`FUN_801d3390` / `FUN_801d67f0`), and hands the host a per-frame
+`ChromeFrame` of widget draws plus whichever announcer line fired.
 
 ## Open
 
