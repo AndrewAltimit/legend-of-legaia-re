@@ -445,7 +445,9 @@ impl CardWriteMachine {
                 saving,
             });
         }
-        if code < -2 || code > 2 || code <= 0 {
+        // `slt (-2)` / `slti 3` / `blez` in that order: out of `-2..=2`, or
+        // not strictly positive, and the state is left alone.
+        if !(-2..=2).contains(&code) || code <= 0 {
             return None;
         }
         if saving {
@@ -456,7 +458,11 @@ impl CardWriteMachine {
     }
 
     /// State 3: burn the delay, then open, size, find, compose and write.
-    fn write_delay(&mut self, frame_delta: i32, io: &mut dyn CardWriteIo) -> Option<CardWriteEvent> {
+    fn write_delay(
+        &mut self,
+        frame_delta: i32,
+        io: &mut dyn CardWriteIo,
+    ) -> Option<CardWriteEvent> {
         let remaining = self.delay - frame_delta;
         if remaining > 0 {
             self.delay = remaining;
@@ -717,20 +723,27 @@ mod tests {
 
     #[test]
     fn counters_saturate_rather_than_run_away() {
-        let mut h = CardHealth::default();
-        h.fault_count = CARD_COUNTER_CEILING;
+        let mut h = CardHealth {
+            fault_count: CARD_COUNTER_CEILING,
+            ..Default::default()
+        };
         h.fold(CardPollResult::NoCard, false);
         assert_eq!(h.fault_count, CARD_COUNTER_CEILING);
-        h.fault_count = 0;
-        h.change_count = CARD_COUNTER_CEILING;
+
+        let mut h = CardHealth {
+            change_count: CARD_COUNTER_CEILING,
+            ..Default::default()
+        };
         h.fold(CardPollResult::Changed, false);
         assert_eq!(h.change_count, CARD_COUNTER_CEILING);
     }
 
     #[test]
     fn a_busy_write_machine_gates_the_fold_but_still_clears_the_phase() {
-        let mut h = CardHealth::default();
-        h.phase = CARD_PHASE_READY;
+        let mut h = CardHealth {
+            phase: CARD_PHASE_READY,
+            ..Default::default()
+        };
         h.fold(CardPollResult::NoCard, true);
         assert_eq!(h.phase, 0);
         assert_eq!(h.fault_count, 0);

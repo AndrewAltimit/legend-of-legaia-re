@@ -27,6 +27,7 @@ pub mod battle_tutorial;
 pub mod camera;
 pub mod capture_observations;
 pub mod card_bu_io;
+pub mod card_flow;
 pub mod cd_dma;
 pub mod cheat_applier;
 pub mod chunk_install;

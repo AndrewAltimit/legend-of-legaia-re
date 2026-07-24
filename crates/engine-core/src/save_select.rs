@@ -842,8 +842,11 @@ impl CardIoMachine {
 ///
 /// PORT: FUN_801E1114 (see
 /// `ghidra/scripts/funcs/overlay_menu_801e1114.txt`)
-/// REF: FUN_801E13B8 / FUN_801E380C / FUN_801E16E0 (the ticker's sibling
-/// per-frame calls - display-list side, not ported here)
+/// REF: FUN_801E13B8 / FUN_801E16E0 (the ticker's sibling per-frame calls,
+/// ported in `crate::card_flow` - neither is a display-list emitter:
+/// `FUN_801E13B8` is the write/format state machine and `FUN_801E16E0`
+/// folds the poll result into the card-health counters)
+/// REF: FUN_801E380C (the remaining sibling call, unported)
 ///
 /// NOT WIRED: nothing owns the state this ticker advances. No engine host
 /// keeps a [`CardIoMachine`], and the rebuild arm needs a card directory
