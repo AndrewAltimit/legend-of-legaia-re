@@ -80,9 +80,36 @@ local CTX_PTR = 0x8007BD24
 local ACTORS  = 0x801C9370
 
 local FIELDS = {
-    { off = 0x10,  width = 4, name = "acc" },
-    { off = 0x14C, width = 2, name = "hp" },
-    { off = 0x172, width = 2, name = "bar" },
+    { off = 0x00,  width = 4, name = "dmg" },   -- per-action damage total
+    { off = 0x10,  width = 4, name = "acc" },   -- pending bar delta
+    { off = 0x14C, width = 2, name = "hp" },    -- live HP
+    { off = 0x172, width = 2, name = "bar" },   -- displayed HP
+}
+
+-- The end-of-action live-HP commit inside FUN_801EC3E4, and the guarded exits
+-- that skip it.
+--
+-- The bar accumulator +0x10 and the per-action damage total +0x00 are credited
+-- together while the action resolves (0x801EDB40 / 0x801EDB58), but live HP is
+-- only written at the END of the action, here:
+--
+--   801eea10  lhu  a0,0x14c(v1)   ; live HP
+--   801eea14  lw   v0,0x0(v1)     ; the action's accumulated damage
+--   801eea1c  sltu v0,v0,a0
+--   801eea20  bne  v0,zero,0x801eea30
+--   801eea2c  _sh  zero,0x14c(v1) ; damage >= HP -> live HP = 0
+--   801eea3c  sh   v0,0x14c(v1)   ; else live HP -= damage
+--   801eea74  sw   zero,0x0(v1)   ; and the damage total is cleared
+--
+-- Three guards above it branch to 0x801EEB5C / 0x801EEB60 and skip the commit
+-- entirely. A skip that still leaves +0x10 credited moves the bar without
+-- moving live HP, which is the `bar < hp` desync direction seen live.
+local COMMIT_SITES = {
+    { pc = 0x801EEA10, name = "commit_entry" },
+    { pc = 0x801EEA2C, name = "commit_overkill_hp0" },
+    { pc = 0x801EEA3C, name = "commit_subtract" },
+    { pc = 0x801EEB5C, name = "skip_exit_b5c" },
+    { pc = 0x801EEB60, name = "skip_exit_b60" },
 }
 
 local function u8(a)  return probe.read_u8(a)  or 0 end
@@ -104,6 +131,7 @@ local break_frames = 0
 local absorb_runs = {}        -- seat -> vsyncs spent absorbing
 local absorb_max = {}         -- seat -> longest absorbing run
 local last_ctx7 = -1
+local commit_armed = false
 
 local writes_csv = probe.csv_open(probe.out_path("writes.csv"),
     "tick,label,addr,pc,ra,value")
@@ -121,15 +149,60 @@ local watch = require("probe.watch").new{
     elapsed     = function() return g_elapsed end,
 }
 
--- The watch helper logs the hit; this wrapper additionally records WHICH field
--- of WHICH slot moved this frame, which is what makes the pairing readable.
+-- The watch helper logs the hit to writes.csv; this wrapper additionally
+-- records WHICH field of WHICH slot moved this frame, which is what makes the
+-- pairing readable - a live-HP write with no accumulator write beside it is the
+-- defect shape, and that is only visible per frame.
 local function arm_slot(seat, actor)
     for _, f in ipairs(FIELDS) do
         local label = string.format("s%d_%s", seat, f.name)
         watch:arm(actor + f.off, f.width, label)
+        -- A second, cheap breakpoint on the same address purely to tally the
+        -- writer PC per (field, slot) and mark the frame. Kept separate from
+        -- the watch helper so its CSV contract stays untouched.
+        probe.arm_breakpoint(actor + f.off, "Write", f.width,
+            string.format("tally_s%d_%s", seat, f.name), function()
+                local r = PCSX.getRegisters()
+                local pc = bit.band(tonumber(r.pc), 0xFFFFFFFF)
+                local key = string.format("%-4s pc=0x%08X", f.name, pc)
+                writers[key] = (writers[key] or 0) + 1
+                local w = this_frame[seat] or {}
+                w[f.name] = pc
+                this_frame[seat] = w
+            end)
     end
     armed_for[seat] = actor
     PCSX.log(string.format("[writers] armed slot %d at actor 0x%08X", seat, actor))
+end
+
+-- Per-action commit tracking: did the end-of-action live-HP commit run, or did
+-- a guard skip it while the bar accumulator was already credited?
+local commit_counts = {}
+local commit_csv = probe.csv_open(probe.out_path("commit.csv"),
+    "vsync,ctx7,site,seat,dmg_total,acc,hp,bar")
+
+local function arm_commit_sites()
+    for _, s in ipairs(COMMIT_SITES) do
+        probe.arm_breakpoint(s.pc, "Exec", 4, s.name, function()
+            commit_counts[s.name] = (commit_counts[s.name] or 0) + 1
+            local c = u32(CTX_PTR)
+            if not in_ram(c) then return end
+            local ctx7 = u8(c + 7)
+            -- Log every party slot's triple at the commit boundary; which slot
+            -- the arm is acting on is register-dependent, and the whole party
+            -- picture is what the pairing question needs anyway.
+            for seat = 0, 2 do
+                local a = actor_of(seat)
+                if a ~= 0 then
+                    commit_csv:row("%d,0x%02X,%s,%d,%d,%d,%d,%d",
+                        g_elapsed, ctx7, s.name, seat,
+                        i32(a + 0x00), i32(a + 0x10),
+                        u16(a + 0x14C), u16(a + 0x172))
+                end
+            end
+        end)
+    end
+    PCSX.log(string.format("[writers] armed %d commit sites", #COMMIT_SITES))
 end
 
 ------------------------------------------------------------------
@@ -167,6 +240,11 @@ probe.run{
         if not in_ram(c) then return end
         local ctx7 = u8(c + 7)
         last_ctx7 = ctx7
+
+        if not commit_armed then
+            arm_commit_sites()
+            commit_armed = true
+        end
 
         local party = u8(c + 0x00)
         if party < 1 or party > 3 then party = 3 end
@@ -224,6 +302,15 @@ probe.run{
         if #keys == 0 then
             add("  (the per-frame tally is in pairing.csv; writes.csv holds every hit)")
         end
+        add("")
+        add("-- end-of-action live-HP commit (FUN_801EC3E4) --")
+        for _, s in ipairs(COMMIT_SITES) do
+            add("  %-22s hits=%d", s.name, commit_counts[s.name] or 0)
+        end
+        add("`commit_entry` is only reached when all three guards pass, so it")
+        add("counts commits TAKEN and should equal subtract + overkill. The two")
+        add("skip exits are shared with the function's ordinary epilogue, so")
+        add("their counts are upper bounds on skips, not skip counts.")
         add("")
         add("-- invariant --")
         add("frames with a broken invariant on a written slot: %d", break_frames)

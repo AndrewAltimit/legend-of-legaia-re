@@ -344,6 +344,63 @@ actually lands a restore inside a drain window is a timing question, measured by
 breakpoint on all nine `+0x10` writers and flags any assign that lands on a
 non-zero accumulator.
 
+### The clamp asymmetry: two overkill guards against different references
+
+The corpus contains two ways to apply damage to a party actor, and they clamp
+overkill against **different** values. This is the generator that needs no
+restore and no timing race at all.
+
+The **safe** shape - the enemy-cast damage applier at `0x801E1924`, reached from
+the cast dispatch just above it (`jal 0x801DD0AC` at `0x801E188C`) - clamps the
+**damage** first and then applies that one clamped value to both fields:
+
+```
+801e1924  lhu  a0,0x14c(v1)   ; live HP
+801e192c  sltu v0,a0,a1       ; if (hp < damage)
+801e1938  move a1,a0          ;     damage = hp          <- clamp the DAMAGE
+801e1944  addu v0,v0,a1       ; acc += damage
+801e1948  sw   v0,0x10(v1)
+801e195c  subu v0,v0,a1       ; hp  -= damage
+801e1960  sh   v0,0x14c(v1)
+```
+
+Both fields move by the same amount, so the invariant holds by construction.
+
+The **unsafe** shape is `FUN_801EC3E4`, where the two fields are written at
+different times against different references. The bar accumulator is credited
+while the action resolves and is clamped against the **displayed bar**
+(`if (bar < acc) acc = bar` at `0x801EDB70`), while live HP is committed only at
+the end of the action, from the separate per-action damage total `actor[+0x00]`,
+and is clamped against **live HP**:
+
+```
+801eea10  lhu  a0,0x14c(v1)   ; live HP
+801eea14  lw   v0,0x0(v1)     ; the action's accumulated damage
+801eea1c  sltu v0,v0,a0       ; if (damage < hp)
+801eea2c  _sh  zero,0x14c(v1) ;     else hp = 0          <- clamp the HP
+801eea38  subu v0,a0,v0       ;     hp -= damage
+801eea3c  sh   v0,0x14c(v1)
+801eea74  sw   zero,0x0(v1)   ; damage total cleared
+```
+
+The two clamps agree only while `+0x172 == +0x14C`. Once the bar is lagging for
+any reason, a hit whose total exceeds the **displayed** bar but not **live HP**
+trips the bar-side clamp alone: the bar drains to exactly `0` while live HP
+stays positive, and the accumulator lands at zero. That is the absorbing state
+at full depth, and it is reachable from ordinary damage. A plain capture on the
+Gaza 2 save shows exactly it - a party slot holding live HP `266` with the bar
+drawing `0` and a zero accumulator.
+
+Three further guards above the commit (`0x801EE988`, `0x801EE9AC`, `0x801EE9EC`)
+branch to `0x801EEB5C` / `0x801EEB60` and skip the live-HP write entirely. A
+skip that leaves the bar accumulator already credited moves the bar without
+moving live HP, which is the `bar < live` direction - also observed live.
+
+Probe: `scripts/pcsx-redux/autorun_gaza2_hpbar_writers.lua` puts Write
+watchpoints on each party actor's `+0x00` / `+0x10` / `+0x14C` / `+0x172` rather
+than guessing store addresses, and Exec breakpoints on the commit and its skip
+exits, so the writers name themselves and the pairing is auditable per frame.
+
 ### Consequences for instrumentation
 
 Any intervention that force-writes `+0x14C` without re-seeding `+0x10` -
