@@ -258,6 +258,12 @@ impl World {
     /// exactly when mitigation zeroes the hit - retail's only finisher draw),
     /// and the 9999 cap.
     ///
+    /// A capture-class boss cast ([`CAPTURE_BYPASS_MOVE_IDS`]) does **not**
+    /// take this path: those hits run the resist-bypass wrapper
+    /// `FUN_801DD6B4` instead of the shared kernel, which is a different roll
+    /// as well as a different finisher flag - see
+    /// [`Self::capture_bypass_predamage`].
+    ///
     /// REF: FUN_801dd0ac (arts/physical branch)
     /// REF: FUN_801ddb30 (finisher stages on the enemy-special path)
     fn enemy_move_predamage(
@@ -270,6 +276,10 @@ impl World {
         use vm::battle_formulas::{
             DamageFinish, SummonRollActor, arts_physical_predamage_lazy, damage_finish_lazy,
         };
+
+        if CAPTURE_BYPASS_MOVE_IDS.contains(&move_id) {
+            return self.capture_bypass_predamage(attacker, target, power);
+        }
 
         let element_affinity_pct = self.enemy_affinity_pct(attacker, target);
         let a = self.actors.get(attacker as usize)?;
@@ -331,7 +341,108 @@ impl World {
                 .copied()
                 .unwrap_or(false),
             enemy_defender_halve: false,
-            bypass_party_resist: CAPTURE_BYPASS_MOVE_IDS.contains(&move_id),
+            // The bypass casts are routed away above; every move that reaches
+            // the shared kernel passes `param_5 = 0`.
+            bypass_party_resist: false,
+            summon_power_pct: 100,
+            floor_rand: 0,
+        };
+        let over = damage_finish_lazy(&finish, || (self.next_rng() & 0x7fff) as u16);
+        Some(over.min(9999) as u16)
+    }
+
+    /// Roll a **capture-class boss cast** whose streamed module calls the
+    /// resist-bypass wrapper `FUN_801DD6B4` ([`CAPTURE_BYPASS_MOVE_IDS`]).
+    ///
+    /// The wrapper is not the shared kernel with a flag flipped - it is its
+    /// own roll, and the two differ in three places the port keeps apart
+    /// ([`legaia_engine_vm::battle_damage_wrappers`]):
+    ///
+    /// * the attacker roll mixes the flat ATK-working stat (`+0x158`) in place
+    ///   of the shared kernel's doubled `+0x168` term, and draws **one**
+    ///   `rand()` where the kernel draws two;
+    /// * the defender roll ignores `+0x168` entirely and weights the two
+    ///   defence terms (`+0x15C` / `+0x160`) eight times as heavily
+    ///   (`>> 1` instead of `>> 4`);
+    /// * the bonus arm's threshold is `defender + power` and its re-roll takes
+    ///   **one** draw, against the kernel's AGL-widened threshold and pair.
+    ///
+    /// So the RNG cursor advances by exactly two draws on the no-bonus path
+    /// and three on the bonus path, then a fourth only when the finisher's
+    /// no-damage floor fires - matching `FUN_801DD6B4`'s call order.
+    ///
+    /// The finisher runs with `bypass_party_resist =
+    /// `[`SPELL_BYPASSES_PARTY_RESIST`], the `param_5 = 1` the wrapper pushes
+    /// at `0x801DD828`: the party defender's elemental-jewel / All-Guard
+    /// ladder is skipped outright. The affinity scale still reads the caster's
+    /// slot element, so only the *defender's* resist stage is dropped.
+    ///
+    /// Stat bridge is the sibling paths' ([`Self::summon_roll_defender`] for
+    /// the defender, [`Self::battle_attack`] for the attacker's `+0x158`).
+    /// `power` is the move-power table's `+0` scalar; retail's module bakes
+    /// the per-hit constant into the call site instead, so the magnitude is
+    /// the engine's own seed even though the arithmetic is the wrapper's.
+    ///
+    /// PORT: FUN_801DD6B4 (live wiring; pure kernel in
+    /// `battle_damage_wrappers::spell_wrapper_predamage`)
+    fn capture_bypass_predamage(&mut self, attacker: u8, target: u8, power: i32) -> Option<u16> {
+        use legaia_engine_vm::battle_damage_wrappers::{
+            SPELL_BYPASSES_PARTY_RESIST, WrapperAttacker, WrapperDefender, spell_wrapper_predamage,
+        };
+        use vm::battle_formulas::{DamageFinish, damage_finish_lazy};
+
+        let element_affinity_pct = self.enemy_affinity_pct(attacker, target);
+        let attacker_hp = self.actors.get(attacker as usize)?.battle.hp;
+        let defender = self.summon_roll_defender(target)?;
+        let a = WrapperAttacker {
+            hp: attacker_hp,
+            // `+0x168` is not read on this path at all.
+            agl: 0,
+            spell_power: self
+                .battle_attack
+                .get(attacker as usize)
+                .copied()
+                .unwrap_or(0),
+            status: 0,
+        };
+        let d = WrapperDefender {
+            hp: defender.hp,
+            agl: 0,
+            stat_a: defender.stat_a,
+            stat_b: defender.stat_b,
+            status: 0,
+            guard: 0,
+        };
+        let power = power.max(0) as u32;
+        let rng2 = [
+            (self.next_rng() & 0x7fff) as u16,
+            (self.next_rng() & 0x7fff) as u16,
+        ];
+        let (atk, def) = spell_wrapper_predamage(power, &a, &d, element_affinity_pct, rng2, || {
+            (self.next_rng() & 0x7fff) as u16
+        });
+
+        let attacker_element = self
+            .actors
+            .get(attacker as usize)
+            .and_then(|a| a.battle_monster_id)
+            .and_then(|id| self.monster_catalog.get(id))
+            .map(|d| d.element)
+            .unwrap_or(7);
+        let target_is_party = target < self.party_count;
+        let finish = DamageFinish {
+            predamage: atk.saturating_sub(def).clamp(1, 9999),
+            attacker_slot: 3,
+            defender_slot: if target_is_party { 0 } else { 3 },
+            attacker_element,
+            defender_resist: self.defender_resist(target),
+            defender_guarding: self
+                .battle_guarding
+                .get(target as usize)
+                .copied()
+                .unwrap_or(false),
+            enemy_defender_halve: false,
+            bypass_party_resist: SPELL_BYPASSES_PARTY_RESIST,
             summon_power_pct: 100,
             floor_rand: 0,
         };
@@ -826,25 +937,8 @@ mod capture_bypass_tests {
         before - world.actors[0].battle.hp
     }
 
-    /// `FUN_801DD6B4` passes `param_5 = 1` to the finisher, which skips the
-    /// party defender's elemental-resistance stage; `FUN_801DD4B0` passes `0`
-    /// and the stage halves the hit. Same power record, same seed, so the only
-    /// difference between the two casts is which wrapper retail routes them
-    /// through.
-    #[test]
-    fn bypass_move_ignores_the_party_elemental_resist_ladder() {
-        let respected = damage_from(RESPECT_MOVE_ID);
-        let bypassed = damage_from(BYPASS_MOVE_ID);
-        assert!(respected > 0, "the respecting cast still lands");
-        assert_eq!(
-            bypassed,
-            respected * 2,
-            "the resisted cast is halved and the bypassing one is not"
-        );
-    }
-
-    /// Guard against the bypass leaking to every cast: an unresisted element
-    /// gives both ids the same magnitude.
+    /// Same world minus the party defender's element-0 resist bit, so the
+    /// finisher's ladder has nothing to match.
     fn damage_without_resist(move_id: u8) -> u16 {
         let mut world = world_with_resisting_party();
         if let Some(m) = world.roster.members.get_mut(0) {
@@ -857,12 +951,72 @@ mod capture_bypass_tests {
         before - world.actors[0].battle.hp
     }
 
+    /// `FUN_801DD6B4` passes `param_5 = 1` to the finisher, so the party
+    /// defender's elemental-resistance ladder never runs: the same cast lands
+    /// for the same amount whether or not the defender carries the matching
+    /// resist bit.
     #[test]
-    fn bypass_changes_nothing_when_the_defender_has_no_matching_resist() {
+    fn bypass_move_ignores_the_party_elemental_resist_ladder() {
+        let resisted = damage_from(BYPASS_MOVE_ID);
+        let unresisted = damage_without_resist(BYPASS_MOVE_ID);
+        assert!(resisted > 0, "the bypassing cast lands");
         assert_eq!(
+            resisted, unresisted,
+            "the resist bit must not change a bypass-wrapper hit"
+        );
+    }
+
+    /// The control: an ordinary move-power special reaches the finisher with
+    /// `param_5 = 0`, so the same resist bit halves it.
+    #[test]
+    fn respecting_move_is_halved_by_the_party_elemental_resist_ladder() {
+        let resisted = damage_from(RESPECT_MOVE_ID);
+        let unresisted = damage_without_resist(RESPECT_MOVE_ID);
+        assert!(resisted > 0, "the respecting cast still lands");
+        assert_eq!(
+            unresisted,
+            resisted * 2,
+            "the ladder halves a respecting hit"
+        );
+    }
+
+    /// The wrappers are not the shared kernel with a flag flipped: with the
+    /// resist ladder disarmed on both sides (so the finisher stages agree),
+    /// the two ids still resolve to different magnitudes, because
+    /// `FUN_801DD6B4` rolls its own attacker / defender / bonus arithmetic.
+    #[test]
+    fn the_bypass_wrapper_rolls_a_different_kernel_not_just_a_different_flag() {
+        assert_ne!(
             damage_without_resist(RESPECT_MOVE_ID),
             damage_without_resist(BYPASS_MOVE_ID),
-            "with no resist bit the ladder is a no-op, so the wrappers agree"
+            "the bypass id must route through the wrapper roll, not FUN_801DD0AC"
+        );
+    }
+
+    /// The wrapper's defence weighting is the observable half of the roll
+    /// split: `FUN_801DD6B4` folds `+0x15C`/`+0x160` in at `>> 1`, eight times
+    /// as heavily as the shared kernel's `>> 4`, so raising the defender's
+    /// defence terms moves a bypass hit further than it moves a respecting
+    /// one.
+    #[test]
+    fn the_bypass_wrapper_weights_the_defence_terms_more_heavily() {
+        let with_defence = |move_id: u8, defence: u16| -> u16 {
+            let mut world = world_with_resisting_party();
+            if let Some(m) = world.roster.members.get_mut(0) {
+                let mut bits = m.ability_bits();
+                bits[3] &= !0x20;
+                m.set_ability_bits(bits);
+            }
+            world.battle_defense[0] = defence;
+            let before = world.actors[0].battle.hp;
+            world.cast_spell_on_slots(1, &spell(move_id), &[0]);
+            before - world.actors[0].battle.hp
+        };
+        let bypass_drop = with_defence(BYPASS_MOVE_ID, 1) - with_defence(BYPASS_MOVE_ID, 400);
+        let respect_drop = with_defence(RESPECT_MOVE_ID, 1) - with_defence(RESPECT_MOVE_ID, 400);
+        assert!(
+            bypass_drop > respect_drop,
+            "bypass drop {bypass_drop} should exceed respect drop {respect_drop}"
         );
     }
 }

@@ -33,6 +33,28 @@
 //! would divide by zero there, so this port returns `None`.
 //!
 //! Provenance: `see ghidra/scripts/funcs/overlay_battle_action_801dceac.txt`.
+//!
+//! # NOT WIRED
+//!
+//! Every retail caller uses the centroid for one thing only: it feeds the two
+//! negated components straight into the 12-bit bearing helper `FUN_80019B28`
+//! and stores the result in the acting actor's facing halfword `+0x46`. That
+//! is the shape at all three call sites - the battle-action SM's cast-begin
+//! state (`overlay_battle_action_801e295c.txt` `0x801E4370..0x801E43A4`),
+//! `FUN_801DC0A0` `0x801DC39C` and `0x801DC51C` - and none of them reads the
+//! extent output back at all.
+//!
+//! Two prerequisites are missing, so the engine has nothing to hand the
+//! centroid to:
+//!
+//! * [`crate::battle_action::bearing_12bit`] (`FUN_80019B28`) is itself
+//!   unwired for want of the `SCUS_942.54` arctan LUT at `0x8006F4C8`, which
+//!   no engine boot path extracts.
+//! * [`crate::battle_action::BattleActor`] carries the facing halfword
+//!   (`facing_angle`) but no `+0x34`/`+0x38` world position, so the port has
+//!   no source for the per-slot geometry [`GroupSlot`] describes; the battle
+//!   seat positions live on `engine-core`'s world actors instead, and nothing
+//!   there computes a facing.
 
 /// The maximum the extent output is clamped to (`0x400`).
 pub const MAX_GROUP_EXTENT: i16 = 0x400;

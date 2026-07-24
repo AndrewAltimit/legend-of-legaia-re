@@ -66,6 +66,15 @@ pub enum StagedAction {
 /// retail clears the context's `+0x243` byte - the caller owns that write
 /// because `+0x243` lives in the battle context, not in the slot array.
 ///
+/// The live caller is the battle-action SM's `DoneCleanup` tail
+/// (`crate::battle_action`'s `rearm_action_gauge`), which is where retail
+/// `jal`s it. That caller maps `+0x21C` / `+0x21D` onto the SM's
+/// `BattleActor::render_flag` / `BattleActor::impact_step`, and reads the
+/// party gate's `+0x1D9` off `BattleActor::current_anim` - the same byte, read
+/// under a different name (the SM's field list calls `+0x1D9` the current anim
+/// id, `docs/subsystems/arts-command-gauge.md` calls it the last-staged action
+/// id).
+///
 /// PORT: FUN_801E93C8
 pub fn rearm_gauge(staged: StagedAction, slots: &mut GaugeSlots) -> bool {
     let gate_open = match staged {
