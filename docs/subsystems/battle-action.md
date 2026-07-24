@@ -227,8 +227,10 @@ The branch target `0x801E60B8` rejoins after the store, so a "not settled"
 answer skips the store and nothing else. A park at `0x51` with `ctx[+0x6D8]`
 holding exactly the `0x3C` that `0x50` seeded, `ctx[+0x276] == 0` and a healthy
 `DAT_1F800393` is therefore neither a stalled effect child, nor a zero frame
-delta, nor a pinned census - the arm is running every frame and `FUN_801E7250`
-is answering "not settled" every frame.
+delta, nor a pinned census. The state machine is still being entered on its
+normal cadence (once per game frame, which `DAT_1F800393 = 3` makes roughly one
+vsync in three) and the `0x51` arm still reaches the `jal` - `FUN_801E7250` is
+simply answering "not settled" every time.
 
 ### What `FUN_801E7250` measures
 
