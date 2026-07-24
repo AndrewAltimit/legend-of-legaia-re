@@ -101,6 +101,9 @@ pub const BANNER_CLUT_VA: u32 = 0x801D_740E;
 pub const BANNER_CLUT_IDLE: u16 = 0x7740;
 pub const BANNER_CLUT_FLASH: u16 = 0x7742;
 
+// NOT WIRED: the value it computes is the `u` field of a widget record the
+// engine only parses when the duel HUD sprite page is resident, which no host
+// stages - same prerequisite as `baka_fighter::hud_widget_quad`.
 /// `u` origin the glyph wrappers stamp for cell `index` (a byte store, so it
 /// wraps at 256 exactly as retail's `sb` does).
 ///

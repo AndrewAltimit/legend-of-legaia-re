@@ -139,6 +139,9 @@ pub const PANEL_WIDGET_KIND: u8 = 0x44;
 /// Screen-y past which the panel is suppressed entirely.
 pub const PANEL_Y_CUTOFF: i16 = 0xF1;
 
+// NOT WIRED: the fishing sub-screens the panel frames are drawn by
+// `engine-ui::ui_fishing`, which lays its own frames out; nothing calls this
+// until a host runs the retail sub-screen geometry instead.
 /// PORT: FUN_801D74B0 - the centred panel frame.
 ///
 /// `(cx, y, w, h)`: stages widget kind [`PANEL_WIDGET_KIND`] and emits the
