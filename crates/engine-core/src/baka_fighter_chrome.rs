@@ -1198,6 +1198,69 @@ mod tests {
     }
 
     #[test]
+    fn the_runner_spawns_a_banner_actor_and_drives_the_timeline() {
+        let mut c = BakaChrome::default();
+        assert!(!c.busy());
+        c.start_round_banner(ROUND_BANNER_SPRITE);
+        assert!(c.busy());
+        assert_eq!(c.sprites().len(), 1);
+        // The spawn goes through the shared screen-centre wrapper.
+        assert_eq!(c.sprites()[0].actor.x, 0xA0);
+        assert_eq!(c.sprites()[0].actor.y, 0x78);
+        assert_eq!(c.sprites()[0].flags & ACTOR_FLAG_HOLD, ACTOR_FLAG_HOLD);
+
+        let tick = ChromeTick::default();
+        let f = c.step(&tick, (&[], &[]));
+        // Frame 0 fires the banner's announce line and draws the banner's
+        // four quads plus the countdown's two.
+        assert_eq!(f.xa.map(|x| x.clip), Some(0x1F));
+        assert!(f.draws.len() >= 6);
+    }
+
+    #[test]
+    fn the_runner_retires_its_banner_actors_once_the_match_ends() {
+        let mut c = BakaChrome::default();
+        c.start_round_banner(ROUND_BANNER_SPRITE);
+        let tick = ChromeTick {
+            match_phase: 1,
+            ..ChromeTick::default()
+        };
+        c.step(&tick, (&[], &[]));
+        assert!(c.sprites().is_empty());
+    }
+
+    #[test]
+    fn the_banner_timeline_runs_out_and_disarms() {
+        let mut c = BakaChrome::default();
+        c.start_round_banner(ROUND_BANNER_SPRITE);
+        let tick = ChromeTick::default();
+        for _ in 0..BANNER_END {
+            c.step(&tick, (&[], &[]));
+        }
+        assert!(!c.busy());
+    }
+
+    #[test]
+    fn the_intro_card_runs_only_while_armed() {
+        let mut plain = BakaChrome::default();
+        let tick = ChromeTick::default();
+        assert!(plain.step(&tick, (&[], &[])).draws.is_empty());
+
+        let mut c = BakaChrome::with_intro();
+        assert!(c.busy());
+        // The card is silent before its first range opens.
+        assert!(c.step(&tick, (&[], &[])).draws.is_empty());
+        for _ in 0..INTRO_LOGO_IN {
+            c.step(&tick, (&[], &[]));
+        }
+        assert!(!c.step(&tick, (&[], &[])).draws.is_empty());
+        for _ in 0..INTRO_END {
+            c.step(&tick, (&[], &[]));
+        }
+        assert!(!c.busy());
+    }
+
+    #[test]
     fn glyph_u_wraps_like_the_byte_store() {
         assert_eq!(glyph_u(0), 0);
         assert_eq!(glyph_u(1), 24);

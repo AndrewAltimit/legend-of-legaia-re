@@ -1818,6 +1818,66 @@ mod tests {
     }
 
     #[test]
+    fn the_duel_ticks_the_round_chrome() {
+        let mut f = fight();
+        // No banner is running before a round ends.
+        f.tick(1);
+        assert!(!f.chrome().busy());
+        f.end_round(0, false);
+        assert!(f.chrome().busy());
+        assert_eq!(f.chrome().sprites().len(), 1);
+        f.tick(1);
+        assert_eq!(
+            f.chrome_frame().xa.map(|x| x.clip),
+            Some(0x1F),
+            "the round-announce line fires on the banner's first frame"
+        );
+    }
+
+    #[test]
+    fn the_running_max_combo_tracks_slot_ones_hits_taken() {
+        let mut f = fight();
+        f.f[1].combo = 4;
+        f.tick(1);
+        assert_eq!(f.max_combo(), 4);
+        // It is a maximum, so a reset streak does not lower it.
+        f.f[1].combo = 0;
+        f.tick(1);
+        assert_eq!(f.max_combo(), 4);
+    }
+
+    #[test]
+    fn without_tables_only_the_literal_perfect_bonus_lands() {
+        // Both table lookups miss, but the full-HP bonus is a literal in the
+        // retail kernel rather than a table read, so it still applies.
+        let mut f = fight();
+        f.f[1].combo = 6;
+        f.tick(1);
+        f.end_round(0, false);
+        assert_eq!(f.score_rows(), [0, 0, BAKA_PERFECT_BONUS]);
+
+        // A winner below full HP falls back to the (absent) health table.
+        let mut f = fight();
+        f.f[0].hp = HP_START - 1;
+        f.end_round(0, false);
+        assert_eq!(f.score_rows(), [0, 0, 0]);
+    }
+
+    #[test]
+    fn score_rows_accumulate_once_the_tables_are_supplied() {
+        let mut f = fight().with_score_tables(BakaScoreTables {
+            combo_bonus: (0..20).map(|i| i * 10).collect(),
+            health_bonus: vec![0; 16],
+        });
+        f.f[1].combo = 6;
+        f.tick(1);
+        f.end_round(0, false);
+        // Combo row takes combo_bonus[6]; the winner is at full HP, so the
+        // bonus row takes the flat perfect bonus.
+        assert_eq!(f.score_rows(), [0, 60, BAKA_PERFECT_BONUS]);
+    }
+
+    #[test]
     fn ko_ends_the_round_and_two_rounds_take_the_match() {
         let mut f = fight();
         let mut rounds = 0;
