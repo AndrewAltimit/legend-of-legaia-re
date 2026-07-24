@@ -27,14 +27,17 @@
 #
 # Usage:
 #   bash scripts/pcsx-redux/run_gaza2_wedge_sweep.sh \
-#       --attempts 10 --sstate ~/.config/pcsx-redux/SCUS94254.sstate9
+#       --attempts 10            # defaults to --scenario battle_gaza2_prompt
 #
 # Flags:
 #   --attempts N     number of cadences to try (default 8)
 #   --cadences LIST  comma-separated autopilot vsync periods to sweep
 #                    (default 45,37,53,29,61,41,49,33)
-#   --sstate PATH    the Gaza 2 save state (fingerprint it first with
-#                    analyze_gaza2_fingerprint.py - never trust a slot number)
+#   --scenario NAME  scenario label from scripts/scenarios.toml (default
+#                    battle_gaza2_prompt, which resolves the immutable library
+#                    copy rather than the wipe-prone live slot)
+#   --sstate PATH    an explicit save state instead of a scenario (fingerprint
+#                    it first - never trust a slot number)
 #   --frames N       capture vsyncs per attempt (default 4200)
 #   --stall-n N      cast-band dwell that counts as a wedge (default 1800)
 #   --out DIR        sweep output root (default captures/gaza2_wedge_sweep/<ts>)
@@ -54,7 +57,12 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$REPO_ROOT/scripts/lib/proc.sh"
 
 ATTEMPTS=8
-SSTATE="$HOME/.config/pcsx-redux/SCUS94254.sstate9"
+# Default to the catalogued scenario rather than a slot number: the live
+# PCSX-Redux slot is overwritten the next time anyone saves, while the scenario
+# resolves the immutable library copy behind `backup_fingerprint`. An explicit
+# --sstate still wins.
+SCENARIO="battle_gaza2_prompt"
+SSTATE=""
 FRAMES=4200
 STALL_N=1800
 OUT_ROOT=""
@@ -65,7 +73,8 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --attempts) ATTEMPTS="$2"; shift 2 ;;
         --cadences) CADENCES="$2"; shift 2 ;;
-        --sstate)   SSTATE="$2";   shift 2 ;;
+        --sstate)   SSTATE="$2"; SCENARIO=""; shift 2 ;;
+        --scenario) SCENARIO="$2"; SSTATE=""; shift 2 ;;
         --frames)   FRAMES="$2";   shift 2 ;;
         --stall-n)  STALL_N="$2";  shift 2 ;;
         --out)      OUT_ROOT="$2"; shift 2 ;;
@@ -75,9 +84,18 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ ! -e "$SSTATE" ]]; then
+if [[ -z "$SCENARIO" && ! -e "$SSTATE" ]]; then
     echo "ERROR: save state not found: $SSTATE" >&2
     exit 1
+fi
+
+# One of the two is always set; build the pair of flags the runner takes.
+if [[ -n "$SCENARIO" ]]; then
+    STATE_FLAGS=(--scenario "$SCENARIO")
+    STATE_DESC="scenario $SCENARIO"
+else
+    STATE_FLAGS=(--sstate "$SSTATE")
+    STATE_DESC="$SSTATE"
 fi
 
 if [[ -z "$OUT_ROOT" ]]; then
@@ -91,7 +109,7 @@ SUMMARY="$OUT_ROOT/sweep.tsv"
 printf 'attempt\tcadence\tstalled\tcast_band_max_dwell\tstates_visited\n' > "$SUMMARY"
 
 echo "=== gaza2 wedge sweep ==="
-echo "  sstate   : $SSTATE"
+echo "  state    : $STATE_DESC"
 echo "  attempts : $ATTEMPTS"
 echo "  frames   : $FRAMES   stall_n: $STALL_N"
 echo "  out      : $OUT_ROOT"
@@ -114,7 +132,7 @@ for (( i = 0; i < ATTEMPTS; i++ )); do
            proc_spawn_group "$dir/runner.log" \
                bash "$REPO_ROOT/scripts/pcsx-redux/run_probe.sh" \
                --lua "$REPO_ROOT/scripts/pcsx-redux/autorun_gaza2_magic_wedge.lua" \
-               --sstate "$SSTATE" --frames "$FRAMES" --out-dir "$dir")
+               "${STATE_FLAGS[@]}" --frames "$FRAMES" --out-dir "$dir")
     proc_wait_pid "$pgid" "$PER_TIMEOUT"
     waited=$?
     set -e

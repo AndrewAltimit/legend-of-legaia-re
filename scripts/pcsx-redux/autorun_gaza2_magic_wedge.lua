@@ -76,7 +76,7 @@
 --
 --   bash scripts/pcsx-redux/run_probe.sh \
 --     --lua scripts/pcsx-redux/autorun_gaza2_magic_wedge.lua \
---     --sstate ~/.config/pcsx-redux/SCUS94254.sstate9 --frames 3000
+--     --scenario battle_gaza2_prompt --frames 3000
 --
 -- Throughput note: Lua breakpoints need -interpreter -debugger, and with this
 -- probe's per-vsync reads a capture runs at roughly 12 vsyncs/second, so a

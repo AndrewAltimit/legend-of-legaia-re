@@ -65,7 +65,7 @@
 -- Run:
 --   bash scripts/pcsx-redux/run_probe.sh \
 --     --lua scripts/pcsx-redux/autorun_gaza2_acc_discard.lua \
---     --sstate ~/.config/pcsx-redux/SCUS94254.sstate9 --frames 4000
+--     --scenario battle_gaza2_prompt --frames 4000
 --
 -- Lua breakpoints need -interpreter -debugger, so never launch this --fast.
 

@@ -2231,3 +2231,32 @@ phase = "battle"
 expected_game_mode = 0x15
 description = "Post-applier battle state: slot-0 actor queue at +0x1DF = Gala's Back Punch x3 replace string 19 27 0F 19 29 0D 1A 2B 2B 2B (x3 finisher), written live by FUN_801EF9E4 with a1 retargeted to char index 2; zero fill to +0x1EE."
 topics = ["battle", "super art", "arts", "Gala", "Back Punch x3", "action queue", "FUN_801EF9E4", "pcsx-redux"]
+
+# ----------------------------------------------------------------------
+# Gaza 2 (Sim-Seru Gaza, monster id 166) - the boss fight the community
+# endless-camera-orbit softlock is reported in, and the anchor every
+# HP-readout probe under scripts/pcsx-redux/autorun_gaza2_*.lua runs
+# against. Identify it by its contents, never by a slot number: the live
+# PCSX-Redux slot is overwritten the next time anyone saves, which is why
+# this block carries a backup_fingerprint.
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "battle_gaza2_prompt"
+description = "Gaza 2 boss fight parked at the top-level Begin/Run prompt (battle-action ctx+7 = 0). Enemy seat 3 is monster id 166 Sim-Seru Gaza, HP 15000 / MP 1200; party is Vahn/Noa/Gala at LV23 with max HP 1289/1199/1382. The fight the HP-readout desync work is anchored on: state 0x51 parks forever when a party slot's live HP +0x14C and displayed HP +0x172 disagree while the pending-delta accumulator +0x10 reads zero."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb3"
+pcsx_redux_sstate = "$HOME/.config/pcsx-redux/SCUS94254.sstate9"
+backup_fingerprint = "6ae194385d1e7c9ef8e2f968a065a906a0ab38ca683f1b50b7b02d677f56d986"
+topics = ["battle", "boss", "Gaza", "softlock", "HP readout", "state 0x51", "BattleMode", "korb3"]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios.watchpoints]]
+label = "party_hp_readout_triple"
+start = 0x800EC9E8
+end = 0x800ED0E0
