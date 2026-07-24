@@ -97,6 +97,27 @@ inherit their parent's re-keying rather than being measured separately.
 | `0x802046B8` | `0x801EDED0` | `801EC3E4` |
 | `0x802059F8` | `0x801EF210` | `801EF014` |
 
+### A re-key describes the dump, not the address
+
+Both tables above say what a *dump* printed at a VA really contains. That is not
+the same claim as "no function lives at this VA", and for one class of row the
+two come apart: a printed VA **below `0x801F3818`** is inside PROT 0897's own
+`0x25000` of content, so the `0x25000` over-read half of the `0x167E8` delta
+explains the dump's bytes but says nothing about the address. The field overlay
+can and does hold real code there.
+
+`0x801F1F4C` is the measured instance. Its dump re-keys to battle-action
+`0x801DB764`, and that re-key stands - but the VA is field file `+0x23734`, and
+disassembling `0897` at its own base shows `jr ra` at `0x801F1F48` followed by a
+leaf that gates on `_DAT_8007B450` and exits `jr ra` at `0x801F1FCC` /
+`0x801F1FD4`. So the address is VA-aliased, not phantom, and the two listed
+"interiors" `0x801F1FC8` / `0x801F1FD4` are interior to *that* leaf as well.
+
+The check is cheap and worth running before any row below `0x801F3818` is read
+as "names nothing": disassemble the mapped image at the VA and look for the
+`jr ra` / prologue pair. Above `0x801F3818` the over-read argument is the whole
+story and no such second reading exists.
+
 ### Below `0x801CE818` nothing is real
 
 Every mapped overlay bases at `0x801CE818` (slot A) or `0x801F69D8` (slot B), so

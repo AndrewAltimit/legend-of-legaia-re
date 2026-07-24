@@ -787,9 +787,27 @@
 "801ce8ec" = "INTERIOR: the only dump is an explicit citation stub - `801ce8ec (cite of FUN_801ce8a0)`, resolving entry=801ce8a0. Port 801ce8a0."
 "801ef9b4" = "INTERIOR: the only dump is an explicit citation stub - `801ef9b4 (cite of FUN_801ef6e0)`, resolving entry=801ef6e0. Port 801ef6e0."
 "801df098" = "INTERIOR: full tail-fragment signature, read off the disassembly and not the decompiled C (its `unaff_s2/s3/s4` locals are the artifact, not the evidence). Across all 146 instructions there is no `addiu sp,sp,-N` prologue and no `jr ra`; s2/s3/s4 appear only as base registers and branch operands and are never a destination, so the body reads a frame and callee-saved registers it never establishes. It is a slice of the routine that owns them."
-"801d8450" = "INTERIOR: non-ABI dispatcher-private subroutine of the field overlay - no prologue, first insn `lh a0,0xc(s7)` reads the enclosing dispatcher's live saved regs (s2/s5/s6/s7/s8); wave-16 non-portable claim verified from the dump"
-"801d2404" = "INTERIOR: 8-instruction field-VM opcode slice - no prologue, reads live v0/v1/s6, exits `j 0x801e3624` (FUN_801DE840 op-advance epilogue, the label-call idiom)"
-"801cf5d0" = "INTERIOR: tail slice - first insn stores through live t0, reads unaffected t2/t3/t4, restores ra from a 0x18-byte frame it never built"
+# Removed after an `--audit-ignored` re-read against the extracted images:
+#
+#   801d8450 - `overlay_0897_801d8450.txt`, the dump the INTERIOR reading came
+#     from, is a +0xE818 mis-based print; its bytes are field(0897) 0x801E6C68.
+#     At 0x801D8450 itself the field image holds `jr ra` at 0x801d844c followed
+#     by `addiu sp,sp,-0x20`, and both base-tagged dumps (cutscene_dialogue /
+#     cutscene_mapview) show that 25-instruction body. docs/subsystems/script-vm.md
+#     already cites FUN_801D8450 as an op-0x36 transition. Port it.
+#   801d2404 - same shape: the 8-instruction "field-VM opcode slice" dump is a
+#     +0xE818 print of field(0897) 0x801E0C1C. At 0x801D2404 the field image has
+#     `jr ra` at 0x801d23fc then `addiu sp,sp,-0x28`, and three base-tagged dumps
+#     hold the 122-instruction body. It is the scripted door-swing SETUP that
+#     docs/subsystems/field-locomotion.md documents - the doc says outright that
+#     the short standalone dump is a wrong-base fragment. Port it.
+#   801cf5d0 - the tail-slice reading is the battle_action image's, where the VA
+#     decodes data as code. In the menu overlay (0899, base+0xdb8 - the first
+#     menu routine per static-overlays.toml) it is a real 32-instruction LEAF
+#     ending `jr ra`: copy eight u16 fields out of char record 0x80084140 +
+#     n*0x414 into the scratch block at 0x801EF080. Documented in
+#     docs/reference/functions.md as the per-character equipment snapshot stage.
+#     Port it. A leaf has no prologue, so the frame test cannot see it.
 "801df8dc" = "INTERIOR: dump begins in a delay slot (`_li v0,0x63`), branches on live v1; debug-print tail restoring s0..s5/ra from a 0x50-byte frame it never built"
 "8001e928" = "INTERIOR: dump resolves entry=8001e890, not 8001e928"
 "8002cdd0" = "INTERIOR: dump resolves entry=8002c69c, not 8002cdd0"
@@ -1074,7 +1092,7 @@
 "8020e504" = "DUPLICATE: 818-instruction stream identical modulo relocation to the already-ported 801eed1c"
 [worklist_phantom]
 "801e5fb0" = "2-insn body of non-R3000 opcodes (misdecoded data), degenerate stub"
-"801f9ba8" = "body is 17 consecutive nop (inter-function alignment padding) - no routine"
+"801f9ba8" = "VA-ALIASED, and neither reading is a port site at this address. The only dump is `overlay_muscle_dome_801f9ba8.txt`, whose slot-B occupant is PROT 0900 - 17 consecutive nop of inter-function alignment padding there, hence the row. PROT 0957 (summon_effect_table), mapped at the same slot-B base 0x801F69D8, does hold a `jr ra`-preceded `addiu sp,sp,-0x18` entry at this VA (file +0x31d0), so an `--audit-ignored` re-read will keep flagging it; 0957's base_source is `cross_ref` and its role is open, so that body is unattributed rather than unported. Re-open with 0957, not with the dome dump."
 "80021934" = "PHANTOM: only dump body is a 3-instruction stub"
 "80035c10" = "PHANTOM: only dump body is a 4-instruction stub"
 "80055b4c" = "PHANTOM: only dump body is a 0-instruction stub"
@@ -1141,7 +1159,15 @@
 "801e473c" = "DATA: the menu window-descriptor table (52 records), not code - see docs/subsystems/field-menu.md. The dump is a 256-byte hex listing; the table is parsed by legaia_asset::menu_windows."
 "801f0000" = "Region boundary, not a function entry: the docs citing 0x801F0000 (boot.md, world-map.md, memory-map.md, battle-action.md) all name it as the base of the persistent post-overlay region, never as a call target. The only dump covering the VA is a 4 KB window listing from overlay_magic_level_up_full.bin."
 "801f4000" = "Region boundary, not a function entry: the sole citation (docs/subsystems/battle.md) names 0x801CE800..0x801F4000 as the encounter-trigger overlay residency window. The only dump covering the VA is a 4 KB window listing."
-"801e5154" = "DATA: a pointer table, not code. Every dump at this VA decodes a data region (239 of 243 instructions in overlay_0897_xxx_dat are `$zero`-absolute loads), and the decoded operands read as a run of `0x801E5xxx` words - the save-UI record/pointer band that begins with the 12-byte sprite-record table at 0x801E5048 (docs/subsystems/save-screen.md, parsed by the engine's atlas builder)."
+# 801e5154 removed after an `--audit-ignored` re-read. The DATA reading is the
+# MENU overlay's (0899), where 0x801E5xxx is the save-UI record/pointer band.
+# In the FIELD overlay (0897, file +0x1693c) the VA is code: `jr ra` at
+# 0x801e514c, then a 16-instruction leaf `(actor)` that ORs flag bit 8 into
+# actor+0x10 when either linked actor at +0x90/+0x94 already carries it, exiting
+# `jr ra` at 0x801e5190. Two committed docs already treat it as a function -
+# docs/subsystems/script-vm-menuctrl.md registers `&LAB_801E5154` as an
+# actor-list callback, and docs/reference/memory-map.md lists it as an
+# effect-descriptor handler slot. VA-aliased, not data.
 "801e4404" = "DATA: not code. The only dump is 5 instructions Ghidra itself flags as bad instruction data (`syscall`, `lb s8,0x6400(zero)`, `tge at,t0`) and truncates control flow on. The VA sits just below the menu window-descriptor table at 0x801E4738, whose own row (801e473c) is already DATA - see docs/subsystems/field-menu.md."
 
 # Added by the port-wiring wave.
@@ -1310,7 +1336,7 @@
 "801d808c" = "every dump at this VA is mis-based (bytes resolve to 801e68a4 +0xe818 field_0897), and the VA is not a `jr ra`-preceded function boundary in any extracted overlay image at its mapped base; it appears only as a `j`/branch target (battle_action(0898):j; field(0897):j)."
 "801d873c" = "every dump at this VA is mis-based (bytes resolve to 801d8a08 +0x2cc slot_machine_0975), and the VA is not a `jr ra`-preceded function boundary in any extracted overlay image at its mapped base; it appears only as a `j`/branch target (battle_action(0898):j; field(0897):j)."
 "801d886c" = "every dump at this VA is mis-based (bytes resolve to 801de084 +0x5818 field_0897), and the VA is not a `jr ra`-preceded function boundary in any extracted overlay image at its mapped base; it appears only as a `j`/branch target (battle_action(0898):br)."
-"801d8a2c" = "every dump at this VA is mis-based (bytes resolve to 801de244 +0x5818 field_0897), and the VA is not a `jr ra`-preceded function boundary in any extracted overlay image at its mapped base; it appears only as a `j`/branch target (debug_menu(0971):br; field(0897):j)."
+"801d8a2c" = "every dump at this VA is mis-based (bytes resolve to 801de244 +0x5818 field_0897), and the VA is not a `jr ra`-preceded function boundary in any extracted overlay image at its mapped base; it appears only as a `j`/branch target (debug_menu(0971):br; field(0897):j). Re-audit note: the slot-machine image (0975) does carry a prologue one word LATER, but the routine there starts at 0x801D8A28 (`lui v0,0x801e`, after the `jr ra` at 0x801d8a20), so 0x801D8A2C is its second instruction - still not an entry."
 "801d8b24" = "every dump at this VA is mis-based (bytes resolve to 801e733c +0xe818 field_0897), and the VA is not a `jr ra`-preceded function boundary in any extracted overlay image at its mapped base."
 "801da8bc" = "every dump at this VA is mis-based (bytes resolve to 801e7d88 +0xd4cc field_0897), and the VA is not a `jr ra`-preceded function boundary in any extracted overlay image at its mapped base; it appears only as a `j`/branch target (battle_action(0898):j; field(0897):j)."
 "801da8f0" = "every dump at this VA is mis-based (bytes resolve to 801e9108 +0xe818 field_0897), and the VA is not a `jr ra`-preceded function boundary in any extracted overlay image at its mapped base; it appears only as a `j`/branch target (battle_action(0898):j; field(0897):j; menu(0899):br)."
@@ -1323,9 +1349,14 @@
 "801e7504" = "Phantom VA of the PROT 0897 import, not a routine: re-keys to battle_action(0898) 801D0748 at delta 0x167e8 (0x25000 footprint over-read minus the 0xE818 base error). Evidence: the re-keyed VA falls inside the dumped body of that entry; this row carries no body of its own. See docs/reference/over..."
 "801ee4b8" = "Phantom VA of the PROT 0897 import, not a routine: re-keys to battle_action(0898) 801D71B8 at delta 0x167e8 (0x25000 footprint over-read minus the 0xE818 base error). Evidence: opening mnemonic stream matches the stream at the re-keyed VA in a base-tagged 0898 dump. See docs/reference/overlay-va-..."
 "801ef91c" = "Phantom VA of the PROT 0897 import, not a routine: re-keys to battle_action(0898) 801D9110 at delta 0x167e8 (0x25000 footprint over-read minus the 0xE818 base error). Evidence: the re-keyed VA falls inside the dumped body of that entry; this row carries no body of its own. See docs/reference/over..."
-"801f1f4c" = "Phantom VA of the PROT 0897 import, not a routine: re-keys to battle_action(0898) 801DB510 at delta 0x167e8 (0x25000 footprint over-read minus the 0xE818 base error). Evidence: the re-keyed VA falls inside the dumped body of that entry; this row carries no body of its own. See docs/reference/over..."
-"801f1fc8" = "Phantom VA of the PROT 0897 import, not a routine: re-keys to battle_action(0898) 801DB7B0 at delta 0x167e8 (0x25000 footprint over-read minus the 0xE818 base error). Evidence: opening mnemonic stream matches the stream at the re-keyed VA in a base-tagged 0898 dump. See docs/reference/overlay-va-..."
-"801f1fd4" = "Phantom VA of the PROT 0897 import, not a routine: re-keys to battle_action(0898) 801DB7B0 at delta 0x167e8 (0x25000 footprint over-read minus the 0xE818 base error). Evidence: the re-keyed VA falls inside the dumped body of that entry; this row carries no body of its own. See docs/reference/over..."
+# 801f1f4c removed after an `--audit-ignored` re-read. The 0x167e8 re-key is a
+# fact about the DUMP, not about the VA: 0x801F1F4C is field(0897) file
+# +0x23734, below the 0x25000 own-content boundary, so the 0x25000 over-read
+# component cannot apply to the address itself. In the base-correct field image
+# it is a `jr ra`-preceded leaf (`jr ra` at 0x801f1f48; body gates on
+# _DAT_8007b450 and exits `jr ra` at 0x801f1fcc / 0x801f1fd4).
+"801f1fc8" = "INTERIOR of the field(0897) leaf entered at 0x801F1F4C - four instructions before that body's first `jr ra` at 0x801f1fcc. (The 0x167e8 re-key to battle_action(0898) 801DB7B0 describes the mis-based DUMP; this VA is field file +0x237b0, inside 0897's own 0x25000, so the over-read component of that delta does not apply to the address.)"
+"801f1fd4" = "INTERIOR of the same field(0897) leaf: the VA is that body's second `jr ra` exit word, not an entry. Same caveat as 801f1fc8 - the 0x167e8 re-key is a property of the mis-based dump, not of the address."
 "801f4318" = "Phantom VA of the PROT 0897 import, not a routine: re-keys to battle_action(0898) 801DDB30 at delta 0x167e8 (0x25000 footprint over-read minus the 0xE818 base error). Evidence: opening mnemonic stream matches the stream at the re-keyed VA in a base-tagged 0898 dump. See docs/reference/overlay-va-..."
 "801f7b88" = "Phantom VA of the PROT 0897 import, not a routine: re-keys to battle_action(0898) 801E09F8 at delta 0x167e8 (0x25000 footprint over-read minus the 0xE818 base error). Evidence: the re-keyed VA falls inside the dumped body of that entry; this row carries no body of its own. See docs/reference/over..."
 "801f89b8" = "Phantom VA of the PROT 0897 import, not a routine: re-keys to battle_action(0898) 801E1D98 at delta 0x167e8 (0x25000 footprint over-read minus the 0xE818 base error). Evidence: the re-keyed VA falls inside the dumped body of that entry; this row carries no body of its own. See docs/reference/over..."
