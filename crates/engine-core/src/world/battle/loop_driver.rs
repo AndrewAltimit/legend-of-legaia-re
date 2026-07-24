@@ -62,6 +62,26 @@ impl World {
         }
     }
 
+    /// Rebuild the four cast-census bytes on the battle context - the head of
+    /// retail's per-frame cast tick.
+    ///
+    /// Before this ran, `ctx[+0x249]` / `ctx[+0x24D]` / `ctx[+0x24A]` /
+    /// `ctx[+0x24B]` were modelled on [`vm::battle_action::BattleActionCtx`]
+    /// and read by the magic band, but nothing outside tests ever wrote them -
+    /// the same inert-gate shape the HP-bar settle check had.
+    ///
+    /// REF: FUN_801E09F8 (census head; kernel + `// PORT:` tag in
+    /// `legaia_engine_vm::battle_cast_census`)
+    pub(in crate::world) fn tick_battle_cast_census(&mut self) {
+        let ctx_ptr: *mut BattleActionCtx = &mut self.battle_ctx;
+        let host = BattleHostImpl { world: self };
+        // SAFETY: same argument as `step_battle` - `BattleHostImpl` never
+        // reaches `world.battle_ctx` through its borrow, and the census reads
+        // only the actor table.
+        let ctx = unsafe { &mut *ctx_ptr };
+        vm::battle_action::tick_cast_census(&host, ctx);
+    }
+
     /// Per-frame battle-side driver for the live gameplay loop. Gated by
     /// [`Self::live_gameplay_loop`] in [`Self::tick`].
     ///
@@ -232,6 +252,13 @@ impl World {
         // (`legaia_engine_vm::battle_hp_bar`).
         // REF: FUN_80047430
         self.tick_battle_hp_bars();
+
+        // Rebuild the cast-census bytes the magic band's exit states read.
+        // Retail's cast tick (`FUN_801E09F8`) does this from zero every frame
+        // before it drives any effect child, so the gates are measurements
+        // rather than latches.
+        // REF: FUN_801E09F8
+        self.tick_battle_cast_census();
 
         let outcome = self.step_battle();
 

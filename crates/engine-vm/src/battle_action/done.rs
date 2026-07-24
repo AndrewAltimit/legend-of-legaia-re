@@ -105,8 +105,11 @@ fn rearm_action_gauge<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut Batt
 ///   (`+0x14C`) differs from its HP-bar display value (`+0x172`);
 /// - target `3..=7` (monster slot): never pending (returns 0 immediately -
 ///   the `2 < bVar1` early-out);
-/// - target `8` ("all"): scans every actor slot up to the battle actor
-///   count, pending if any pair differs;
+/// - target `8` ("all"): scans slots `0 .. ctx[+0x00] - 1`, pending if any
+///   pair differs. `ctx[+0x00]` is the **party member count** (measured `3`),
+///   not the total actor count - so even the all-target arm inspects the party
+///   side only, which is the same conclusion the `3..=7` early-out reaches by a
+///   different route: a monster's readout can never hold this gate;
 /// - target `> 8`: never pending.
 ///
 /// The engine models the retail `+0x14C`-vs-`+0x172` pair as
@@ -125,7 +128,7 @@ pub fn hp_bar_drain_pending<H: BattleActionHost + ?Sized>(host: &H, ctx: &Battle
         .unwrap_or(8);
     match target {
         0..=2 => pending(target),
-        8 => (0..host.slot_count()).any(pending),
+        8 => (0..host.party_count()).any(pending),
         _ => false,
     }
 }
@@ -147,6 +150,40 @@ pub fn tick_hp_bars<H: BattleActionHost + ?Sized>(host: &mut H) {
             actor.tick_hp_bar(slot);
         }
     }
+}
+
+/// Rebuild the four cast-census bytes on `ctx` from the actor pool and the
+/// host's effect-child arrays - one frame of `FUN_801E09F8`'s head.
+///
+/// This is what turns [`BattleActionCtx::magic_exit_gate`] (`+0x249`),
+/// [`BattleActionCtx::magic_recovery_gate`] (`+0x24D`) and the two retarget
+/// latches [`BattleActionCtx::item_target_a`] / [`BattleActionCtx::item_target_b`]
+/// (`+0x24A` / `+0x24B`) into live measurements. Retail recomputes them from
+/// zero every frame; so does this.
+///
+/// The arithmetic lives in [`crate::battle_cast_census`], which carries the
+/// `// PORT:` tag.
+///
+/// REF: FUN_801E09F8 (census head)
+pub fn tick_cast_census<H: BattleActionHost + ?Sized>(host: &H, ctx: &mut BattleActionCtx) {
+    use crate::battle_cast_census::{CENSUS_SLOTS, CensusSlot, cast_census};
+
+    let mut slots = [CensusSlot::default(); CENSUS_SLOTS];
+    for (i, s) in slots.iter_mut().enumerate() {
+        if let Some(a) = host.actor(i as u8) {
+            *s = CensusSlot {
+                render_word: a.render_color,
+                current_anim: a.current_anim,
+                liveness: a.liveness,
+            };
+        }
+    }
+    let (kinds, children) = host.effect_child_slots();
+    let census = cast_census(&slots, kinds, children);
+    ctx.magic_exit_gate = census.anim_outstanding;
+    ctx.magic_recovery_gate = census.effect_children;
+    ctx.item_target_a = census.sole_party_target;
+    ctx.item_target_b = census.sole_monster_target;
 }
 
 pub(super) fn done_fade_down<H: BattleActionHost + ?Sized>(
