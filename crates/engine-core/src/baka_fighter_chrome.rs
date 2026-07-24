@@ -101,9 +101,6 @@ pub const BANNER_CLUT_VA: u32 = 0x801D_740E;
 pub const BANNER_CLUT_IDLE: u16 = 0x7740;
 pub const BANNER_CLUT_FLASH: u16 = 0x7742;
 
-// NOT WIRED: the value it computes is the `u` field of a widget record the
-// engine only parses when the duel HUD sprite page is resident, which no host
-// stages - same prerequisite as `baka_fighter::hud_widget_quad`.
 /// `u` origin the glyph wrappers stamp for cell `index` (a byte store, so it
 /// wraps at 256 exactly as retail's `sb` does).
 ///
@@ -112,10 +109,6 @@ pub fn glyph_u(index: i32) -> u8 {
     (index.wrapping_mul(GLYPH_CELL_WIDTH) & 0xFF) as u8
 }
 
-// NOT WIRED: emitting the quad needs the PROT 1203 HUD sprite page resident,
-// the same prerequisite that keeps `baka_fighter::hud_widget_quad` inert; the
-// timelines below call this to build their draw lists, which is the reachable
-// half.
 /// PORT: FUN_801D69A8 - the glyph draw wrapper.
 ///
 /// `FUN_801D69A8(x, y, index, brightness, size)` pages the [`GLYPH_WIDGET`]
@@ -163,9 +156,6 @@ pub struct IntroTitle {
 }
 
 impl IntroTitle {
-    // NOT WIRED: the duel host has no title-card phase - `BakaFight::new`
-    // starts at the first exchange - so nothing ticks this yet. Wiring it
-    // needs a pre-match phase in the minigame host plus the HUD sprite page.
     /// PORT: FUN_801D59D4 - the Baka Fighter intro title card.
     ///
     /// One call per frame with the elapsed frame count `t`. Three segments,
@@ -305,9 +295,6 @@ pub const BANNER_SLIDE_OUT: i32 = 90;
 /// Screen x the two banner halves converge on.
 pub const BANNER_CENTRE_X: i16 = 0x90;
 
-// NOT WIRED: same prerequisite as the intro card - `BakaFight` has no
-// round-banner phase and the HUD page is not resident. The curve itself is
-// exercised by this module's tests.
 /// PORT: FUN_801D5C7C - the "ROUND n" banner slide.
 ///
 /// One call per frame with the elapsed frame count `t` and the round index
@@ -407,9 +394,6 @@ pub struct Countdown {
     pub timer: i32,
 }
 
-// NOT WIRED: presentation only - the duel resolution SM never waits on it
-// (`DAT_801DC134` is read and written nowhere else in the overlay), and the
-// engine's `BakaFight` has no pre-round hold to hang it off.
 /// PORT: FUN_801D21FC - the READY/FIGHT countdown.
 ///
 /// `frame_step` is the per-frame tick (`DAT_1F800393`), `loading` the scene
@@ -522,9 +506,6 @@ pub struct ChromeActorDraw {
     pub retire: bool,
 }
 
-// NOT WIRED: this is the body retail installs into the overlay's actor-draw
-// hook `_DAT_8007BA2C`; the engine has no minigame sprite-actor pool to install
-// it into (the same gap `baka_fighter::EffectSpawnSpec` documents).
 /// PORT: FUN_801D67F0 - the chrome sprite-actor draw callback.
 ///
 /// `mode` selects the shape of the draw. Whatever the mode, the brightness is
@@ -584,7 +565,6 @@ pub const ACTOR_FLAG_HOLD: u32 = 0x0020_0000;
 /// Actor flag bit the bind path clears (`+0x10 &= ~2`).
 pub const ACTOR_FLAG_TICK: u32 = 0x2;
 
-// NOT WIRED: no minigame sprite-actor pool exists to carry the flag word.
 /// PORT: FUN_801D6F18 - the chrome actor hold wrapper.
 ///
 /// Raises [`ACTOR_FLAG_HOLD`] on the actor's flag word and re-enters the
@@ -614,9 +594,6 @@ pub const ANIM_BANK_SPLIT: i16 = 0x400;
 /// Mask applied to the animation id before the bank offset lookup.
 pub const ANIM_ID_MASK: u16 = 0x3FF;
 
-// NOT WIRED: the banks are the runtime sprite-archive pointers
-// `_DAT_8007B840` / `_DAT_8007B888`, which the engine does not stage for the
-// minigame overlays; a caller must supply both slices.
 /// PORT: FUN_801D3390 - the chrome sprite-actor animation bind.
 ///
 /// Runs before the actor's draw. Once the match phase global
@@ -703,9 +680,11 @@ pub struct AnimSlotInstall {
     pub full: bool,
 }
 
-// NOT WIRED: the table it edits is the overlay's per-fighter animation slot
-// array; the engine models fighter animation as `baka_fighter::FighterState`
-// action ids, not as a slot array, so there is no live array to install into.
+// NOT WIRED: its only retail caller is the developer keyframe editor
+// `FUN_801D4FC8`, which runs in the `DAT_801DBF44 == 400..500` editor
+// sub-phase - a phase no shipping path enters and the port does not model.
+// Reaching it needs that editor tick plus the per-fighter animation slot
+// array it edits; `baka_fighter::FighterState` carries action ids, not slots.
 /// PORT: FUN_801D57BC - the animation-slot installer.
 ///
 /// `(bank, fighter, key)`: the routine resolves the fighter's slot block, then
@@ -744,6 +723,226 @@ pub fn anim_slot_install(keys: &mut Vec<i16>, key_raw: i32) -> AnimSlotInstall {
             full: false,
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// The runner that drives the three timelines and the banner actor pool
+// ---------------------------------------------------------------------------
+
+/// Frame at which the intro title card has finished assembling and the
+/// duel host stops ticking it. The card's last independent range test opens
+/// at `140` and its ramps run 64 frames.
+pub const INTRO_END: i32 = 204;
+
+/// Frame at which the round banner's fly-out brightness has clamped to `0`
+/// and the banner is done: `0xC8 - (t - 90) * 127 / 30 <= 0` first holds at
+/// `t - 90 == 48`.
+pub const BANNER_END: i32 = BANNER_SLIDE_OUT + 48;
+
+/// Widget id the round banner spawns as a sprite actor
+/// (`FUN_801D6E04`'s argument on the round-result path).
+pub const ROUND_BANNER_SPRITE: u16 = 3;
+
+/// One frame's worth of match state the runner needs from the duel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChromeTick {
+    /// The global frame step (`DAT_1F800393`).
+    pub frame_step: i32,
+    /// `_DAT_8007BC20` - the scene-load flag that freezes the countdown walk.
+    pub loading: bool,
+    /// `DAT_801DBF78` - `0` while the match is torn down, non-zero while it
+    /// runs. The actor bind retires every pooled banner once it is set.
+    pub match_phase: i32,
+    /// `DAT_801DBF8C` - the 0-based round index the banner announces.
+    pub round: i32,
+    /// `DAT_801DC110` - the round counter the countdown tests for its final
+    /// announcer line.
+    pub round_counter: i32,
+    /// `DAT_801DBF70` / `DAT_801DBF74` - the two focused fighter ids the bind
+    /// compares each actor's owner against.
+    pub focus: (i16, i16),
+}
+
+impl Default for ChromeTick {
+    fn default() -> Self {
+        ChromeTick {
+            frame_step: 1,
+            loading: false,
+            match_phase: 0,
+            round: 0,
+            round_counter: 0,
+            focus: (0, 1),
+        }
+    }
+}
+
+/// One live banner sprite actor in the runner's pool, plus the mode its draw
+/// callback runs under and the owner id the bind compares.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChromeSprite {
+    pub actor: ChromeActor,
+    /// The `mode` argument `FUN_801D67F0` is installed with.
+    pub mode: i32,
+    /// `+0x5A` - the fighter this banner belongs to.
+    pub owner: i16,
+    /// `+0x5C` - the animation id the bind resolves.
+    pub anim_id: i16,
+    /// `+0x10` flag word.
+    pub flags: u32,
+}
+
+/// The Baka Fighter round chrome as one advancing object.
+///
+/// Retail runs all three timelines off the overlay's own per-frame tick, in
+/// parallel with the resolution state machine, and spawns the round-result
+/// banners as sprite actors that the `_DAT_8007BA2C` draw hook services.
+/// [`BakaChrome`] is that arrangement: the duel
+/// ([`crate::baka_fighter::BakaFight`]) steps it once per frame and reads the
+/// [`ChromeFrame`] it produces.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BakaChrome {
+    intro: IntroTitle,
+    intro_t: Option<i32>,
+    banner_t: Option<i32>,
+    countdown: Countdown,
+    /// `DAT_801DBEB4` / `DAT_801DBEB0` - the two banner brightness globals
+    /// the countdown gates on and draws with.
+    banner_level: i32,
+    title_level: i32,
+    sprites: Vec<ChromeSprite>,
+    /// Whether the banner's two sprite-actor visibility flags are up.
+    banner_flags: bool,
+}
+
+impl BakaChrome {
+    /// A runner with the intro title card armed (the cabinet's attract
+    /// sequence) rather than starting mid-duel.
+    pub fn with_intro() -> Self {
+        BakaChrome {
+            intro_t: Some(0),
+            ..BakaChrome::default()
+        }
+    }
+
+    /// Start the round banner timeline and spawn its sprite actor at the
+    /// screen centre through the shared spawn wrapper.
+    pub fn start_round_banner(&mut self, sprite_id: u16) {
+        self.banner_t = Some(0);
+        self.countdown = Countdown::default();
+        let spec = crate::baka_fighter::center_effect_spawn(sprite_id);
+        self.sprites.push(ChromeSprite {
+            actor: ChromeActor {
+                x: spec.x,
+                y: spec.y,
+                id: spec.sprite_id,
+                size: spec.scale as u16,
+                fade: 0x800,
+            },
+            mode: 1,
+            owner: -1,
+            anim_id: spec.sprite_id as i16,
+            flags: chrome_actor_hold(0),
+        });
+    }
+
+    /// `true` while any timeline is still running.
+    pub fn busy(&self) -> bool {
+        self.intro_t.is_some() || self.banner_t.is_some()
+    }
+
+    /// The live banner sprite pool.
+    pub fn sprites(&self) -> &[ChromeSprite] {
+        &self.sprites
+    }
+
+    /// The countdown's own state, for a host that wants to show it.
+    pub fn countdown(&self) -> Countdown {
+        self.countdown
+    }
+
+    /// Advance every armed timeline one frame and service the sprite pool.
+    ///
+    /// `banks` are the two runtime sprite archives the bind resolves frame
+    /// counts out of (`_DAT_8007B888` below [`ANIM_BANK_SPLIT`],
+    /// `_DAT_8007B840` at or above). A host with neither staged passes empty
+    /// slices, in which case the resolved frame count is `None` and every
+    /// other bind output still applies.
+    pub fn step(&mut self, tick: &ChromeTick, banks: (&[u8], &[u8])) -> ChromeFrame {
+        let mut out = ChromeFrame::default();
+
+        if let Some(t) = self.intro_t {
+            let f = self.intro.frame(t);
+            merge_frame(&mut out, f);
+            self.intro_t = if t + 1 < INTRO_END { Some(t + 1) } else { None };
+        }
+
+        if let Some(t) = self.banner_t {
+            let f = round_banner_frame(t, tick.round);
+            self.banner_flags = round_banner_flags(t);
+            merge_frame(&mut out, f);
+            // The banner brightness the countdown gates on is the same ramp
+            // the banner draws with, so it crosses COUNTDOWN_FADE_GATE a
+            // couple of frames into the slide-in.
+            self.banner_level = t.min(0xFF);
+            self.title_level = self.banner_level;
+            let cd = countdown_frame(
+                &mut self.countdown,
+                tick.frame_step,
+                tick.loading,
+                self.banner_level,
+                self.title_level,
+                tick.round_counter,
+            );
+            merge_frame(&mut out, cd);
+            self.banner_t = if t + 1 < BANNER_END {
+                Some(t + 1)
+            } else {
+                None
+            };
+        }
+
+        let mut retired = Vec::new();
+        for (i, s) in self.sprites.iter_mut().enumerate() {
+            let bind = chrome_actor_bind(
+                s.flags,
+                tick.match_phase,
+                s.owner,
+                tick.focus,
+                s.anim_id,
+                banks.0,
+                banks.1,
+            );
+            s.flags = bind.flags;
+            s.actor.fade = bind.fade;
+            if bind.flags & ACTOR_FLAG_RETIRE != 0 {
+                retired.push(i);
+                continue;
+            }
+            let d = chrome_actor_draw(&s.actor, s.mode, tick.match_phase);
+            if let Some(draw) = d.draw {
+                out.draws.push(draw);
+            }
+            if d.retire {
+                s.flags |= ACTOR_FLAG_RETIRE;
+                retired.push(i);
+            }
+        }
+        for i in retired.into_iter().rev() {
+            self.sprites.remove(i);
+        }
+        out
+    }
+}
+
+/// Fold one timeline's frame into the accumulating frame: draws append, and
+/// the three single-slot channels take the first value produced this frame -
+/// retail's later writes land on the same globals, and the earlier timeline
+/// is the one that owns them while it runs.
+fn merge_frame(out: &mut ChromeFrame, f: ChromeFrame) {
+    out.draws.extend(f.draws);
+    out.xa = out.xa.or(f.xa);
+    out.tint = out.tint.or(f.tint);
+    out.banner_clut = out.banner_clut.or(f.banner_clut);
 }
 
 #[cfg(test)]

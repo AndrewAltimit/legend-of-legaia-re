@@ -1,0 +1,540 @@
+diff --git a/crates/asset/src/minigame_slot_scene.rs b/crates/asset/src/minigame_slot_scene.rs
+index 4edd5aa9..1efd7621 100644
+--- a/crates/asset/src/minigame_slot_scene.rs
++++ b/crates/asset/src/minigame_slot_scene.rs
+@@ -569,6 +569,32 @@ fn rd_pos(b: &[u8], o: usize) -> Pos3 {
+     }
+ }
+ 
++/// Parse **only** the five payline segments out of the raw PROT 0975 image.
++///
++/// The payline geometry table is the one part of the scene graph that needs
++/// no art: [`parse_scene`] demands the decoded banner page for the marquee
++/// message bank, which a caller that wants nothing but the paylines would
++/// otherwise have to build. Split out so a host can take the segments alone.
++pub fn parse_paylines(overlay: &[u8]) -> Result<Vec<PayLine>> {
++    let need = PAYLINE_TABLE_OFFSET + PAYLINE_COUNT * 16;
++    if overlay.len() < need {
++        bail!(
++            "slot overlay too small ({}b) for the payline table at 0x{:X}",
++            overlay.len(),
++            PAYLINE_TABLE_OFFSET
++        );
++    }
++    Ok((0..PAYLINE_COUNT)
++        .map(|i| {
++            let o = PAYLINE_TABLE_OFFSET + i * 16;
++            PayLine {
++                a: rd_pos(overlay, o),
++                b: rd_pos(overlay, o + 8),
++            }
++        })
++        .collect())
++}
++
+ /// Parse the slot machine's 3D scene graph out of the **raw** PROT 0975 image.
+ ///
+ /// `page3` is the decoded banner page of the art pack (pack index 3, fb
+@@ -584,15 +610,7 @@ pub fn parse_scene(overlay: &[u8], page3: &[u8], page3_w: usize) -> Result<SlotS
+         );
+     }
+ 
+-    let paylines = (0..PAYLINE_COUNT)
+-        .map(|i| {
+-            let o = PAYLINE_TABLE_OFFSET + i * 16;
+-            PayLine {
+-                a: rd_pos(overlay, o),
+-                b: rd_pos(overlay, o + 8),
+-            }
+-        })
+-        .collect();
++    let paylines = parse_paylines(overlay)?;
+ 
+     let lamp_at = |base: usize| -> Vec<LampBillboard> {
+         (0..LAMP_COUNT)
+diff --git a/crates/engine-core/src/dance.rs b/crates/engine-core/src/dance.rs
+index 07f78e82..dcb14958 100644
+--- a/crates/engine-core/src/dance.rs
++++ b/crates/engine-core/src/dance.rs
+@@ -1189,6 +1189,133 @@ pub fn dance_face_rig(mode: DanceMode, dancer: usize) -> Option<usize> {
+     (rig < 5).then_some(rig)
+ }
+ 
++/// The scene name the dance hall stages when the minigame starts or tears
++/// down (`s_other1_801D518C`) - the same `other1` bundle the fishing venue
++/// uses, which is why both minigames live in the slot-A overlay band.
++pub const DANCE_SCENE_NAME: &str = "other1";
++
++/// What the dance scene stager writes, in the order retail stores it.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub struct DanceSceneStage {
++    /// Scene name copied into the scene-name buffer at `0x80084548`.
++    pub scene: &'static str,
++    /// `_DAT_8007B880` is zeroed - the pad latch the field subsystem reads,
++    /// so the frame the dance enters or leaves on cannot carry a stale press
++    /// into the next mode.
++    pub clear_pad_latch: bool,
++    /// The word copied from the overlay's `DAT_801D5180` into
++    /// `_DAT_80084540`, the scene-name buffer's preceding word (the scene
++    /// **kind** the loader dispatches on).
++    pub scene_kind_from_overlay: bool,
++    /// `_DAT_8007BA9C` is armed to `-1` after the scene-setup helper returns.
++    pub arm_value: i32,
++}
++
++// NOT WIRED: this is engine scene plumbing, not rhythm logic - it names a
++// scene and pokes three field-subsystem globals. The port enters the dance
++// through `World::enter_dance`, which suspends the current scene mode rather
++// than staging a new scene bundle, so there is no scene-name buffer for it to
++// write. Wiring it needs the dance to become a real scene load.
++/// PORT: FUN_801d414c - the dance scene-name stager / teardown.
++///
++/// Copies [`DANCE_SCENE_NAME`] into the scene-name buffer at `0x80084548`
++/// through the string copy `FUN_80056758`, clears the pad latch
++/// `_DAT_8007B880`, stores the overlay word `DAT_801D5180` into
++/// `_DAT_80084540`, calls the scene-setup helper `FUN_80026018`, and only
++/// **then** arms `_DAT_8007BA9C = -1`. The ordering matters: the arm is after
++/// the setup call, so a setup that re-enters cannot see the armed value.
++///
++/// Called once from the dance tick `FUN_801CF470`.
++pub const fn dance_scene_stage() -> DanceSceneStage {
++    DanceSceneStage {
++        scene: DANCE_SCENE_NAME,
++        clear_pad_latch: true,
++        scene_kind_from_overlay: true,
++        arm_value: -1,
++    }
++}
++
++/// Fade weight the dancer sprite emit derives from a dancer's beat field
++/// (`actor + 0x78`), clamped to `0 ..= 0xFF`.
++///
++/// Retail reads the field as a **halfword** and compares it against `0x4000`
++/// as a *signed 32-bit* value, so the "above the window" test can never see a
++/// negative: a beat past `0x4000` collapses the weight to zero outright rather
++/// than saturating it.
++// PORT: FUN_801d387c (the fade-weight prologue)
++// NOT WIRED: the port's dancers are rules records with no `+0x78` beat field
++// and no sprite quad to fade - the same missing dance presentation layer
++// [`dance_face_rig`] names.
++pub fn dancer_fade_weight(beat: u16) -> u8 {
++    if beat as i32 > 0x4000 {
++        return 0;
++    }
++    ((beat as i32) >> 4).min(0xFF) as u8
++}
++
++/// Which emit the dancer sprite dispatch performs for a draw mode.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum DancerEmit {
++    /// Mode `0` - no emit at all: copy the transform template's `+0x90` trio
++    /// into the dancer and zero its `+0x96` / `+0x98` / `+0x9A`.
++    CopyTemplate,
++    /// Mode `1` - store the caller's third argument into the dancer's
++    /// `+0x94`; still no emit.
++    SetTemplateZ,
++    /// Mode `2` - the shadowed draw: **two** emits at the dancer's screen
++    /// position (its `+0x14` / `+0x16` pair rounded toward zero and shifted
++    /// `>> 3`), the first with semi-transparency flag `0x400` and the second
++    /// with `0x800`.
++    Shadowed { x: i16, y: i16, flags: [u16; 2] },
++    /// Mode `3` - one plain emit at the **unrounded** `+0x14` / `+0x16` pair.
++    /// Note this mode does not divide by eight at all.
++    Plain { x: i16, y: i16, flags: u16 },
++    /// Mode `4` - the marker draw: one emit with flags forced to `1` and the
++    /// scale word forced to `0x1000`, after stamping `sprite << 4` into the
++    /// overlay byte `DAT_801D46E8`.
++    Marker { x: i16, y: i16, clut_byte: u8 },
++    /// A mode past the five-entry jump table - nothing is drawn.
++    None,
++}
++
++// NOT WIRED: every arm ends in the hub sprite emitter `FUN_801D2F38` or in a
++// write to an overlay-resident transform template, neither of which the engine
++// has: no dance sprite page is uploaded and no quad emitter is bound to one.
++// Same prerequisite as [`dance_face_rig`] and [`step_mark_effect_spawn`].
++/// PORT: FUN_801d387c - the per-dancer sprite / shadow emit dispatch.
++///
++/// `mode` selects one of five arms through a jump table; `x` / `y` are the
++/// dancer's `+0x14` / `+0x16` world pair and `sprite` its `+0x50` word. The
++/// two emitting arms round toward zero **before** the `>> 3` (retail's
++/// `bgez / addiu 7 / sra 3`), so a dancer at `-1` maps to screen `0` and not
++/// `-1`.
++pub fn dancer_emit(mode: u32, x: i16, y: i16, sprite: u16) -> DancerEmit {
++    let scaled = |v: i16| -> i16 {
++        let v = v as i32;
++        ((if v < 0 { v + 7 } else { v }) >> 3) as i16
++    };
++    match mode {
++        0 => DancerEmit::CopyTemplate,
++        1 => DancerEmit::SetTemplateZ,
++        2 => DancerEmit::Shadowed {
++            x: scaled(x),
++            y: scaled(y),
++            flags: [sprite | 0x400, sprite | 0x800],
++        },
++        3 => DancerEmit::Plain {
++            x,
++            y,
++            flags: sprite,
++        },
++        4 => DancerEmit::Marker {
++            x,
++            y,
++            clut_byte: (sprite << 4) as u8,
++        },
++        _ => DancerEmit::None,
++    }
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+@@ -1667,6 +1794,58 @@ mod tests {
+         assert_eq!(dance_face_rig(DanceMode::FreePlay, 4), None);
+     }
+ 
++    #[test]
++    fn fade_weight_collapses_past_the_window_instead_of_saturating() {
++        assert_eq!(dancer_fade_weight(0), 0);
++        assert_eq!(dancer_fade_weight(0x10), 1);
++        // 0x4000 >> 4 = 0x400, clamped to 0xff.
++        assert_eq!(dancer_fade_weight(0x4000), 0xFF);
++        // One past the window is zero, not 0xff.
++        assert_eq!(dancer_fade_weight(0x4001), 0);
++        assert_eq!(dancer_fade_weight(0xFFFF), 0);
++    }
++
++    #[test]
++    fn dancer_emit_modes_differ_in_rounding_and_flags() {
++        assert_eq!(dancer_emit(0, 0, 0, 0), DancerEmit::CopyTemplate);
++        assert_eq!(dancer_emit(1, 0, 0, 0), DancerEmit::SetTemplateZ);
++        assert_eq!(
++            dancer_emit(2, 16, -1, 0x20),
++            DancerEmit::Shadowed {
++                x: 2,
++                // -1 rounds toward zero before the shift.
++                y: 0,
++                flags: [0x420, 0x820],
++            }
++        );
++        // Mode 3 does not scale at all.
++        assert_eq!(
++            dancer_emit(3, 16, -1, 0x20),
++            DancerEmit::Plain {
++                x: 16,
++                y: -1,
++                flags: 0x20
++            }
++        );
++        assert_eq!(
++            dancer_emit(4, 16, -1, 0x0A),
++            DancerEmit::Marker {
++                x: 16,
++                y: -1,
++                clut_byte: 0xA0
++            }
++        );
++        assert_eq!(dancer_emit(5, 0, 0, 0), DancerEmit::None);
++    }
++
++    #[test]
++    fn scene_stage_arms_after_the_setup_call() {
++        let s = dance_scene_stage();
++        assert_eq!(s.scene, "other1");
++        assert!(s.clear_pad_latch);
++        assert_eq!(s.arm_value, -1);
++    }
++
+     #[test]
+     fn countin_banner_slides_holds_then_fades() {
+         // Slide-in: two half-bright halves flying in from 0xb4 toward centre.
+diff --git a/crates/engine-core/src/fishing_chrome.rs b/crates/engine-core/src/fishing_chrome.rs
+index 8f0ab519..dc8198c4 100644
+--- a/crates/engine-core/src/fishing_chrome.rs
++++ b/crates/engine-core/src/fishing_chrome.rs
+@@ -276,20 +276,37 @@ pub struct FloatActorTick {
+     pub flags: u32,
+ }
+ 
+-// NOT WIRED: the height solver it wraps (`FUN_801D6028`) is itself unported,
+-// and the engine models the float as `fishing::FishingRun` state rather than
+-// as an actor record.
++// NOT WIRED: the solver it wraps is ported ([`crate::minigame_floor`]), but
++// its input is not: the engine decodes no per-scene floor buffer, so nothing
++// can build the [`FloorGrid`] this needs. The engine also models the float as
++// `fishing::FishingRun` state rather than as an actor record, so there is no
++// `+0x16` to store into. The remaining blocker is entirely the floor buffer.
++//
++// [`FloorGrid`]: crate::minigame_floor::FloorGrid
+ /// PORT: FUN_801D70EC - the fishing float's per-frame actor wrapper.
+ ///
+-/// Calls the float height solver `FUN_801D6028(actor)`, stores its return
+-/// into the actor's `+0x16` screen y, clears [`ACTOR_FLAG_TICK`] and
+-/// re-enters the shared actor dispatcher `FUN_800204F8`. The wrapper adds
+-/// nothing else - it exists so the solver can be shared with the sibling
+-/// caller that does not want the store.
+-pub fn float_actor_tick(solved_y: i16, flags: u32) -> FloatActorTick {
++/// Calls the float height solver `FUN_801D6028(actor)`
++/// ([`crate::minigame_floor::ground_height`]), stores its return into the
++/// actor's `+0x16` screen y, clears [`ACTOR_FLAG_TICK`] and re-enters the
++/// shared actor dispatcher `FUN_800204F8`. The wrapper adds nothing else - it
++/// exists so the solver can be shared with the sibling caller that does not
++/// want the store.
++///
++/// Note the wrapper clears its own tick bit from the flag word the solver
++/// returned, so the solver's own `0x800000` maintenance survives into the
++/// stored word.
++pub fn float_actor_tick(
++    grid: crate::minigame_floor::FloorGrid<'_>,
++    world_x: i16,
++    world_z: i16,
++    flags: u32,
++    ramp: &[i16],
++) -> FloatActorTick {
++    let solved =
++        crate::minigame_floor::ground_height(grid, world_x, world_z, flags, ramp, |_, _| None);
+     FloatActorTick {
+-        y: solved_y,
+-        flags: flags & !ACTOR_FLAG_TICK,
++        y: solved.height as i16,
++        flags: solved.flags & !ACTOR_FLAG_TICK,
+     }
+ }
+ 
+@@ -412,9 +429,22 @@ mod tests {
+ 
+     #[test]
+     fn float_tick_clears_only_the_tick_bit() {
+-        let t = float_actor_tick(-7, 0xFF);
+-        assert_eq!(t.y, -7);
++        use crate::minigame_floor::{
++            ACTOR_FLAG_OFF_FLOOR, CELL_GRID_OFF, CELL_GRID_PITCH, CELL_ON_FLOOR, FloorGrid,
++            HEIGHT_GRID_OFF, HEIGHT_GRID_PITCH, height_ramp,
++        };
++        let mut buf = vec![0u8; CELL_GRID_OFF + 128 * CELL_GRID_PITCH];
++        // A flat cell at grid (0, 0) with the on-floor bit set.
++        buf[CELL_GRID_OFF..CELL_GRID_OFF + 2].copy_from_slice(&CELL_ON_FLOOR.to_le_bytes());
++        for (gx, gz) in [(0usize, 0usize), (1, 0), (0, 1), (1, 1)] {
++            buf[HEIGHT_GRID_OFF + gz * HEIGHT_GRID_PITCH + gx] = 2;
++        }
++        let ramp = height_ramp();
++        let t = float_actor_tick(FloorGrid::new(&buf), 0, 0, 0xFF, &ramp);
++        assert_eq!(t.y, 2 * 0x20);
++        // The tick bit is gone and the solver's off-floor bit stayed clear.
+         assert_eq!(t.flags, 0xFD);
++        assert_eq!(t.flags & ACTOR_FLAG_OFF_FLOOR, 0);
+     }
+ 
+     #[test]
+diff --git a/crates/engine-core/src/lib.rs b/crates/engine-core/src/lib.rs
+index 22de60ea..5ae37f3e 100644
+--- a/crates/engine-core/src/lib.rs
++++ b/crates/engine-core/src/lib.rs
+@@ -38,6 +38,7 @@ pub mod cutscene_narration;
+ pub mod cutscene_script_elements;
+ pub mod cutscene_timeline;
+ pub mod dance;
++pub mod dance_tutorial;
+ pub mod debug_char_editor;
+ pub mod dev_menu;
+ pub mod dialog;
+@@ -75,6 +76,7 @@ pub mod menu_item_category;
+ pub mod menu_list_rows;
+ pub mod menu_open_sequence;
+ pub mod menu_runtime;
++pub mod minigame_floor;
+ pub mod mode;
+ pub mod monster_ai;
+ pub mod monster_catalog;
+diff --git a/crates/engine-core/src/slot_machine.rs b/crates/engine-core/src/slot_machine.rs
+index 13830094..cbe6af54 100644
+--- a/crates/engine-core/src/slot_machine.rs
++++ b/crates/engine-core/src/slot_machine.rs
+@@ -1094,14 +1094,14 @@ pub struct PaylinePrim {
+ /// the rest of the machine's 3D furniture: retail `RTPS`-projects each
+ /// endpoint on its own through `FUN_8003d368` and links the packet at
+ /// [`payline_ot_depth`] of the **second** endpoint's returned depth.
+-// NOT WIRED: the geometry table it consumes only comes out of
+-// `legaia_asset::minigame_slot_scene::parse_scene`, whose signature demands the
+-// decoded page-3 art plane for the marquee message bank - so a host that wants
+-// only the five payline records still has to build that plane, and no host
+-// does. The second half is the sink: paylines are GTE-projected 3D line prims,
+-// and the port draws the machine as a text HUD with no projection or
+-// ordering-table pass to link them into. Wiring it needs a payline-only parse
+-// entry point plus a 3D slot-cabinet render pass.
++// NOT WIRED: the remaining blocker is the sink, not the source. The source
++// half is now covered - `legaia_asset::minigame_slot_scene::parse_paylines`
++// takes the five segments straight off the raw overlay, with no decoded
++// page-3 art plane. What is still missing is a consumer: paylines are
++// GTE-projected 3D line prims, and the native window draws the machine as a
++// text HUD with no projection or ordering-table pass to link them into, while
++// the browser play page draws its cabinet from JS geometry of its own. Wiring
++// it needs a 3D slot-cabinet render pass on either host.
+ // PORT: FUN_801d3380 (payline 3D line segments)
+ pub fn payline_prims(
+     paylines: &[legaia_asset::minigame_slot_scene::PayLine],
+diff --git a/docs/subsystems/minigame-dance.md b/docs/subsystems/minigame-dance.md
+index 72fbe577..b1a26f3a 100644
+--- a/docs/subsystems/minigame-dance.md
++++ b/docs/subsystems/minigame-dance.md
+@@ -154,9 +154,28 @@ correct one, timed by the progress accumulator `DAT_801d5150` reaching `900`; a
+ vs a timing scold, gated by the feedback window `DAT_801d5144`. Two cases
+ (`0xc` / `0x11`) are countdown holds on the timer `DAT_801d6080` that clear the
+ beat clock (`DAT_801d581c` / `DAT_801d5820` / `DAT_801d5824`) before advancing.
+-This is presentation-bound (its output is Sony dialogue) and not ported; the
+-mutations it makes are on the same run-state globals the [RAM table](#ram-state)
+-lists.
++Its output is Sony dialogue, so only the script's *shape* is ported
++(`legaia_engine_core::dance_tutorial`): the step classification, the option
++prompt, the advance tails and the two free-dance steps. The mutations it makes
++are on the same run-state globals the [RAM table](#ram-state) lists.
++
++Dispatch is a **19**-slot jump table at `0x801ceee8`, guarded by an unsigned
++`state < 0x13`; slot `0x12` has no body, so 18 states do anything. Three tails
++share the store at the bottom of the function: the common one stores
++`state + 1`, one stores a literal, and one stores `state + 2`. That literal is
++the opening prompt's branch - the cursor row is masked to one bit and confirms
++either to state `1` (yes) or straight to state `5` (no thanks), and it is state
++`5`'s `+2` that then hops the acknowledgement at `6` which only the "no thanks"
++path reaches. The prompt's cursor moves on **Left / Right** (`0x1000` /
++`0x4000`), not Up / Down, even though its two options are stacked vertically at
++y `0x98` / `0xa8`.
++
++The two free-dance steps share the `900` score gate but not their caption
++timers: case `7`'s scold window `DAT_801d5140` **counts up** and snaps back to
++zero past `0x20` (a blink), while case `0xd`'s feedback window `DAT_801d5144`
++counts *down* to a floor of zero (a decay). Both countdown holds seed
++`DAT_801d6080 = 0x3c` and advance only once it goes **negative**, so they run
++one frame longer than the seed reads.
+ 
+ ## Dance-floor rendering
+ 
+@@ -166,11 +185,39 @@ This cluster is what the live trace surfaced as the resident mode-24 code (the `
+ 
+ | Function | Role | Confidence |
+ |---|---|---|
+-| `FUN_801d3a2c` | **Per-frame floor draw pass.** Clears `DAT_801d6084`, then (when not paused: `(_DAT_8007b868 & 2) == 0 && _DAT_8007b8b8 == 0`) walks the actor list `*_DAT_8007c36c` emitting each actor via the shared sprite/actor helpers (`func_0x80024dfc` / `func_0x800204a4`; actors flagged `[4] & 0x800` also call `func_0x80017b94(actor[0x11])`), then sweeps the tile grid (bounds `DAT_1f800384..387`, cells at `_DAT_1f8003ec + ... + 0x8000`, `0x20`-byte records). | Confirmed (structure); the exact per-cell emit is Inferred |
+-| `FUN_801d2a10` | **Floor tile-grid blit.** Builds a 16-entry per-column Y-offset table in scratchpad (`0x1f800332+0x48`, `0x1e0` stepping `-0x20` = a 16-row column at 32-unit spacing), then nested-loops a rect (`param_1..param_3` x, `param_2..param_4` y; `param_2 << 8` fixed-point) emitting the floor quads. Hit at entry and at its loop-body PCs. | Confirmed (structure) |
++| `FUN_801d3a2c` | **Per-frame floor pass.** Clears `DAT_801d6084`, walks the actor list when not paused, then sweeps the cell grid spawning one tile actor per drawn cell. See [The floor pass](#the-floor-pass). | Confirmed (structure); the exact per-cell emit is Inferred |
++| `FUN_801d2a10` | **Height-ramp install + step-marker floor pass.** Installs the shared 16-entry height ramp, then walks a `(x, y, width, height)` rect spawning marker tile actors. See [The floor pass](#the-floor-pass). | Confirmed (structure) |
+ | `FUN_801d3ec0` | **Two-layer step lookup.** Calls `FUN_801d3f54` against scene-data layer `+0x10000`; on a miss, retries against layer `+0x12000`. So a floor cell can carry a marker in either of two overlaid step layers. | Confirmed |
+ | `FUN_801d3f54` | **Per-cell step-marker lookup.** Indexes a per-row header at `base + row*4` (count at `+4`, sub-list offset at `+2`), walks the sub-list (per-row stride from a table at `row - 0x7ff84ce8`) and returns the record whose first two bytes match the requested `(x, y)`, else NULL. | Confirmed |
+ 
++### The floor pass
++
++`FUN_801d3a2c` and `FUN_801d2a10` are the same walk over the scene floor buffer, and the byte-identical `FUN_801d6bbc` in the shared overlay band is a third copy (see [`minigame-fishing.md`](minigame-fishing.md#fishing-actors-and-scene-render)). Port: `legaia_engine_core::minigame_floor`.
++
++Three regions of the scene buffer are involved. Tile **records** are `0x20` bytes at the buffer *base*, indexed by tile id - not at `+0x8000`. The `u16` **cell grid** at `+0x8000` (row pitch `0x100`) carries the tile id in bits `0..8` and flag bits above it. The **terrain byte** grid at `+0x4000` (row pitch `0x80`) is two fields in one: its *low* nibble indexes the height ramp, its *high* nibble is the four sub-cell wall bits the field collision probe `FUN_801cfe4c` reads (`>> 4 & quadrant`). Masking the whole byte conflates height with walkability.
++
++Per cell, both passes: read the cell word, take its tile record, require the record's `+0x12` bit `0x4`, probe the neighbour cell `(x + rec[6], y + rec[7])` and require it inside `0 ..= 0x7f`. `FUN_801d3a2c` additionally rejects a neighbour whose cell word carries bit `0x400`; `FUN_801d2a10` does not. The world position is `(x * 0x80 + rec[0] + 0x40, ramp[height nibble] + rec[2], y * 0x80 - (rec[4] - 0x40))` - note the **z** term subtracts. The spawn goes through the shared actor-spawn API against a transform template, and the record's `+0x1e` / `+0x12` bits are folded into the spawned actor's `+0x74` and `+0x10`.
++
++`FUN_801d2a10`'s two extras are the ramp and the marker template. Before the walk it writes the 16-entry ramp `ramp[i] = i * 0x20` into scratchpad at `0x1f80035c` - the *same* table `FUN_801d6028` and both floor passes later index by the terrain nibble, so the "per-column Y-offset table" reading of it was wrong: it is the terrain height ladder. Per cell it then calls `FUN_801d3ec0` for a step marker and turns its `rec[2] + 1` into a template choice: clip indices `6 ..= 9` take the marker template with `clip - 6` stamped into the spawned actor's `+0x50`, anything else non-zero takes the plain floor template, and `0` skips the cell.
++
++Its four arguments are `(x0, y0, width, height)` - retail computes the loop bounds as `x1 = a2 + a0` and `y1 = a3 + a1`, so the third and fourth are **extents**, not end coordinates. The `y << 8` in the cell address is the grid's row byte pitch, not a fixed-point conversion.
++
++### The dancer emit dispatch
++
++`FUN_801d387c(dancer, mode, arg)` is the per-dancer sprite / shadow draw. Its prologue derives a fade weight from the dancer's beat field `+0x78`: a value **above** `0x4000` collapses to zero outright rather than saturating, and anything else is `>> 4` and clamped to `0xff`. So a dancer past the window goes invisible in one step instead of fading. Port: `dance::dancer_fade_weight`.
++
++`mode` then selects one of five jump-table arms (`0x801ceef4`), ported as `dance::dancer_emit`:
++
++| Mode | Emit |
++|---|---|
++| `0` | No draw: copy the transform template `DAT_801d51a0`'s `+0x90` / `+0x92` / `+0x94` into the dancer and zero its `+0x96` / `+0x98` / `+0x9a` |
++| `1` | No draw: store the caller's third argument into the dancer's `+0x94` |
++| `2` | **Two** emits at the dancer's `+0x14` / `+0x16` rounded toward zero then `>> 3`, with semi-transparency flags `0x400` then `0x800` |
++| `3` | One emit at the **unshifted** `+0x14` / `+0x16` pair |
++| `4` | One emit with the flag word forced to `1` and the scale word to `0x1000`, after stamping `(+0x50) << 4` into the overlay byte `DAT_801d46e8` |
++
++Modes past `4` draw nothing. The two shifting arms round with retail's `bgez / addiu 7 / sra 3`, so a dancer at `-1` lands on screen `0`, not `-1`.
++
+ The lookup pair (`FUN_801d3ec0` → `FUN_801d3f54`) is the read side of the step chart in *screen space* - "is there a marker at floor cell (x,y) right now" - complementing the *beat-space* chart read in [Input judging](#input-judging--timing-windows) (`FUN_801d1820`, which indexes the baked chart `DAT_801d509c` by beat). The two are the same step data addressed two ways: by time (judging) and by floor position (rendering).
+ 
+ ## RAM state
+@@ -232,7 +279,7 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
+ | `FUN_801d7dd8` | **Single small-digit glyph emit** (render-track): sets the glyph source column `DAT_801d8610 = digit*8 + 0x28`, then draws one sprite (tile id `6`) via the shared quad emitter `FUN_801d63b0` at `(x, y)`. Called per digit by the number renderer `FUN_801d76e0` when its style arg is 0. `overlay_dance_801d7dd8.txt` |
+ | `FUN_801d7d44` | **Single large-digit glyph emit** (render-track): sets `DAT_801d8778 = (digit & 0x3ff) << 4`, then draws two overlaid layers (tile ids `0x418` + `0x818`) via `FUN_801d63b0` at `(x, y)`. Called per digit by `FUN_801d76e0` when its style arg is non-zero. `overlay_dance_801d7d44.txt` |
+ | `FUN_801d3a2c` | Per-frame dance-floor draw pass (actor list + tile-grid sweep). See [Dance-floor rendering](#dance-floor-rendering). `overlay_dance_801d3a2c.txt` |
+-| `FUN_801d2a10` | Dance-floor tile-grid blit (scratchpad column-Y table + rect quad emit). `overlay_dance_801d2a10.txt` |
++| `FUN_801d2a10` | Height-ramp install + the step-marker floor pass over a `(x, y, w, h)` rect. `overlay_dance_801d2a10.txt` |
+ | `FUN_801d3ec0` | Two-layer step-marker lookup wrapper (scene-data `+0x10000` / `+0x12000`). `overlay_dance_801d3ec0.txt` |
+ | `FUN_801d3f54` | Per-cell step-marker lookup (per-row sub-list, match `(x, y)`). `overlay_dance_801d3f54.txt` |
+ | `FUN_801d0750` | The **setumei (how-to) tutorial script** - the Disco King actor's per-frame state machine. See [The setumei tutorial script](#the-setumei-how-to-tutorial-script-fun_801d0750). `overlay_dance_801d0750.txt` |
+@@ -243,8 +290,8 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
+ | `FUN_801d3d78` | On-beat "good step" sting: keys two SPU voices (`0x12` / `0x13`) at tones `2r` / `2r+1`, note `0x3c+r`, for `r = rand() % 3`. `overlay_dance_801d3d78.txt` |
+ | `FUN_801d40dc` | Sequence-clear ("Good!") banner + two flanking stars carrying the accuracy weight (`+0x72`). `overlay_dance_801d40dc.txt` |
+ | `FUN_801d4098` | Actor clip-driver gate: hands the dancer to the shared clip driver `FUN_800204f8` only when its spin counter `+0x5c > 0` or its flag word `+0x10` has bit `0x1000`. Predicate ported as [`dance_clip_driver_gate`]. `overlay_dance_801d4098.txt` |
+-| `FUN_801d387c` | Per-dancer sprite/shadow emit dispatch: computes the fade alpha from the dancer's beat field `+0x78` (`(v > 0x4000 ? 0 : v) >> 4`, clamped `0..0xff`) then `switch`es on a draw mode `0..4`, pushing the dancer's marker/shadow quads through the hub sprite emitter `FUN_801d2f38` (semi-transparency flags `0x400` / `0x800`) or copying the transform template `DAT_801d51a0`. Render-track; documented, not ported. `overlay_dance_801d387c.txt` |
+-| `FUN_801d414c` | Dance scene-name stager / teardown: copies the `other1` scene-name string (`s_other1_801d518c`) into the scene-name buffer `0x80084548`, clears the pad-latch `_DAT_8007b880`, stores `DAT_801d5180` into `_DAT_80084540`, calls the scene-setup helper `FUN_80026018`, and arms `_DAT_8007ba9c = -1`. Called once from the dance tick `FUN_801cf470`. Engine scene plumbing, not rhythm logic; documented, not ported. `overlay_dance_801d414c.txt` |
++| `FUN_801d387c` | Per-dancer sprite/shadow emit dispatch: fade weight off the dancer's beat field `+0x78`, then a five-arm draw-mode jump table. See [The dancer emit dispatch](#the-dancer-emit-dispatch). `overlay_dance_801d387c.txt` |
++| `FUN_801d414c` | Dance scene-name stager / teardown: stages the `other1` scene name and three field-subsystem globals. Engine scene plumbing, not rhythm logic; ported as `dance::dance_scene_stage`. `overlay_dance_801d414c.txt` |
+ 
+ Parser: [`legaia_asset::dance_chart`](../../crates/asset/src/dance_chart.rs) decodes the baked [step chart](#step--rhythm-state-machine) (3 rows × `0x20` beats) from the disc.
+ 
+diff --git a/docs/subsystems/minigame-fishing.md b/docs/subsystems/minigame-fishing.md
+index bc3232c0..16334a13 100644
+--- a/docs/subsystems/minigame-fishing.md
++++ b/docs/subsystems/minigame-fishing.md
+@@ -86,10 +86,47 @@ The run loop drives a small pool of per-frame actor handlers reached through the
+ - `FUN_801d4948` (`overlay_fishing_801d4948.txt`) - the **reeling-line / hooked-lure actor**: a sub-state machine on `DAT_801d91c8` (`0`→arm, `1`→attach to the hooked-fish actor `+0x48`, `2`→track) that positions the line end from `DAT_801d9174` / `DAT_801d9178` / `DAT_801d917c`, applies an orbit offset via `FUN_801d7bb8`, and raises the hook SFX cue `_DAT_8007b6da = 0x3a`.
+ - `FUN_801d67bc` (`overlay_fishing_801d67bc.txt`) - the **caught-fish 3D mesh render**: GTE rotate (`+0x24` / `+0x26` / `+0x28` Euler angles), matrix push, per-fish tint from the actor `+0x72` colour word, and a subdivided-primitive draw. Render-track - documented, not ported.
+ - `FUN_801d24ec` (`overlay_fishing_801d24ec.txt`) - the **water reflection / shadow strip**: a run of textured quads written straight into the GTE packet list `_DAT_1f8003a0`. Render-track - documented, not ported.
+-- `FUN_801d6bbc` (`overlay_fishing_801d6bbc.txt`) - the **fishing scene render pass** invoked from the driver tail (`FUN_801cf3bc`): it walks the live actor list (transform + submit + free) and emits the shared tile-board grid at `_DAT_1f8003ec` (the `+0x4000` / `+0x8000` cell + walkability arrays - see [`tile-board.md`](tile-board.md)). Render-track - documented, not ported.
++- `FUN_801d6bbc` (`overlay_fishing_801d6bbc.txt`) - the **scene floor pass** invoked from the driver tail (`FUN_801cf3bc`): it walks the live actor list (transform + submit + free) and then spawns one tile actor per drawn cell of the scene floor grid at `_DAT_1f8003ec`. This is **not** the field-VM tile board of [`tile-board.md`](tile-board.md) - that is a `width x height` byte cell array installed by script op `0x49`, where this reads the per-scene floor buffer's `u16` cell grid. See [The scene floor buffer](#the-scene-floor-buffer).
+ - `FUN_801d78c0` (`overlay_fishing_801d78c0.txt`) - the **fishing camera-scroll reset**: `_DAT_800840b8 = 0`, `_DAT_800840c0 = 0x974`, and the scroll trio `_DAT_8007b790` / `_DAT_8007b792` / `_DAT_8007b794 = 0`.
+ - `FUN_801d79e0` (`overlay_fishing_801d79e0.txt`) - a **cell-record lookup** used by the fish-placement path (reached through `FUN_801d6028`): a linear scan of a per-cell record table matching a `(x, y)` cell against each record's first two bytes, returning the record pointer or null.
+ 
++### The scene floor buffer
++
++`FUN_801d6028` is the **ground-height solver**: given an actor it returns the
++world height under it and maintains the actor's off-floor flag. It is shared
++library code in the overlay band above `0x801D0018` - the fishing,
++slot-machine and debug-menu dumps of it are byte-identical - and the dance
++overlay's floor pass `FUN_801d3a2c` indexes the same tables. Port:
++[`legaia_engine_core::minigame_floor`](../../crates/engine-core/src/minigame_floor.rs).
++
++Three regions of the buffer at `_DAT_1f8003ec` matter. Tile **records** are
++`0x20` bytes at the buffer base, indexed by tile id. The `u16` **cell grid**
++at `+0x8000` (row pitch `0x100`) carries the tile id in bits `0..8` plus flag
++bits. The **terrain byte** grid at `+0x4000` (row pitch `0x80`) is two fields
++in one: its *low* nibble indexes a 16-entry height ramp, its *high* nibble is
++the four sub-cell wall bits the field collision probe `FUN_801cfe4c` reads
++(`>> 4 & quadrant`). Calling the whole byte "the walkability grid" conflates
++the two - the height solver never looks at the wall bits, and the collision
++probe never looks at the height.
++
++The solver reduces the actor's `+0x14` / `+0x18` world pair to a **half-cell**
++index (`>> 6`) and halves that toward zero for the grid index, so a floor cell
++is 128 world units and the half-cell's low bit is the quadrant. The sub-cell
++fraction is the raw coordinate's low seven bits.
++
++Two solve paths, chosen by cell bit `0x800`. Without it: if all four corner
++nibbles agree the height is that ramp entry exactly (retail returns early),
++otherwise the four corners are bilinearly blended over the fraction in `0x80`
++units per axis, with the `>> 14` biased `+0x3fff` when negative. With it: the
++four corners are averaged by a plain `>> 2` - **no** rounding bias, unlike the
++blend - and a step-layer patch found by `FUN_801d79e0` in the `+0x10000` layer
++(falling back to `+0x12000`) subtracts a whole step scaled `0x20` plus a
++2-bit quadrant bias scaled `0x10`.
++
++The flag maintenance runs before either path and is never skipped. A negative
++flag word only ORs `0x800000` in; a non-negative one clears the bit and
++re-raises it when the cell lacks bit `0x1000`.
++
+ ## HUD and banner animations
+ 
+ The persistent HUD `FUN_801d13f0` (`overlay_fishing_801d13f0.txt`) is drawn every frame by the driver tail: the best-catch row (`_DAT_80084458`, glyph `0x1a`), the point-total row (`_DAT_8008444c` rendered capped at `999999`, glyph `0x1c`), the selected rod/lure label (three overlay strings picked by `_DAT_80084450` = 0/1/2; any other index draws no label), and a lures-remaining line: a caption plus the live inventory count of item `_DAT_80084450 + 0x9d` (`func_0x80042f4c`) as a 4-digit number, plus a trailing caption. All rows draw at brightness `0x80`.
+@@ -171,8 +208,10 @@ or nudge shared state around the sub-screens. All five are ported as
+   `_DAT_8007B790/92/94` and `TR.x` (`_DAT_800840B8`) and parks `TR.z`
+   (`_DAT_800840C0`) at `0x974`. It never touches `TR.y`.
+ - `FUN_801d70ec` - float actor wrapper. Calls the height solver
+-  `FUN_801d6028`, stores the result into the actor's `+0x16`, clears the
+-  dispatcher's `+0x10` bit `2` and re-enters `FUN_800204F8`.
++  `FUN_801d6028` (see [The scene floor buffer](#the-scene-floor-buffer)),
++  stores the result into the actor's `+0x16`, clears the dispatcher's `+0x10`
++  bit `2` and re-enters `FUN_800204F8`. The solver's own `0x800000`
++  maintenance survives into the stored flag word.
+ - `FUN_801d7c30` - ripple spawn. A non-zero mode argument does nothing; mode
+   zero spawns the `0x801D899C` part at the actor's world position, built as
+   `(actor+0x14, 0, actor+0x18)` - the zero is the **middle** component, so
