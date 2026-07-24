@@ -289,6 +289,12 @@ impl PlayWindowApp {
             OPTIONS_SCREEN_WINDOWS, STATUS_SCREEN_WINDOWS, TOP_LEVEL_WINDOWS,
         };
         use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+        /// Windows framed while the Items screen's Use flow picks a
+        /// target: the screen tab plus descriptor 14, the party target
+        /// panel (`FUN_801D0520`). Descriptor 14 has no `window_ids`
+        /// alias - retail dispatches it by index from the Use submenus.
+        const TARGET_SELECT_WINDOWS: [usize; 2] =
+            [legaia_asset::menu_windows::window_ids::TAB_ITEMS, 14];
         let Some(assets) = self.save_menu.as_ref() else {
             return Vec::new();
         };
@@ -306,9 +312,12 @@ impl PlayWindowApp {
             Some(FieldMenuSubsession::Config(_)) => &OPTIONS_SCREEN_WINDOWS,
             Some(FieldMenuSubsession::Equip { .. }) => &EQUIP_SCREEN_WINDOWS,
             // Items / Magic: the capture-pinned four-window retail sets.
-            // While the use/cast flow is target-selecting the generic
-            // overlay draws instead (its retail window is unpinned).
+            // While the cast flow is target-selecting the generic overlay
+            // draws instead (its retail window is unpinned).
             Some(FieldMenuSubsession::Items(s)) if !s.target_select() => &ITEMS_SCREEN_WINDOWS,
+            // Item target-select swaps the list for window 14 (the party
+            // target panel); the screen tab stays.
+            Some(FieldMenuSubsession::Items(_)) => &TARGET_SELECT_WINDOWS,
             Some(FieldMenuSubsession::Spells(s))
                 if !matches!(
                     s.phase(),
@@ -517,6 +526,52 @@ impl PlayWindowApp {
                 model.pages,
                 self.menu_window_pen(window_ids::ITEMS_COMMAND),
                 self.menu_window_pen(window_ids::ITEMS_LIST),
+                stage_origin,
+                stage_scale,
+            ));
+            // Throw Out confirm (window 9, `FUN_801D1B20`): its hand
+            // cursor is an atlas sprite, not the ASCII stand-in the text
+            // pass emits when the sprite pass is absent.
+            if let Some(confirm) = model.throw_confirm.as_ref() {
+                let pen = self.menu_window_pen(9);
+                let pen = if pen == (0, 0) {
+                    let (x, y, _, _) = legaia_engine_render::ITEMS_THROW_CONFIRM_RECT;
+                    (x, y)
+                } else {
+                    pen
+                };
+                out.extend(legaia_engine_render::items_throw_confirm_sprites_for(
+                    &assets.rects,
+                    confirm.cursor,
+                    pen,
+                    stage_origin,
+                    stage_scale,
+                ));
+            }
+        }
+        // Target panel (window 14, `FUN_801D0520`): the LV / HP / MP tag
+        // sprites plus the hand cursor(s) of the party column the Use
+        // flow picks a target in.
+        if let Some(FieldMenuSubsession::Items(s)) = sub
+            && s.target_select()
+            && let Some(model) = legaia_engine_core::pause_screens::target_panel_view_model(
+                s,
+                &self.session.host.world,
+            )
+            && !model.members.is_empty()
+        {
+            let members = Self::target_panel_members(&model);
+            let view = legaia_engine_render::TargetPanelView {
+                members: &members,
+                mode: legaia_engine_render::TargetPanelMode::from_preview_word(model.mode),
+                cursor: Self::target_panel_cursor(&model),
+                label_icons: true,
+                text_cursor: false,
+            };
+            out.extend(legaia_engine_render::target_panel_sprites_for(
+                &assets.rects,
+                &view,
+                self.target_panel_pen(),
                 stage_origin,
                 stage_scale,
             ));

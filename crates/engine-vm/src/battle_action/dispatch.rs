@@ -6,56 +6,103 @@ use super::*;
 /// applying Miracle Art and Super Art expansion in the canonical order.
 ///
 /// This is the entry point the battle UI layer calls *before* feeding the
-/// queue to the action state machine via `ctx.queued_action`. The retail
-/// runtime applies the same two passes as part of the command-resolution
-/// step that runs once per turn.
+/// queue to the action state machine via `ctx.queued_action`. It runs the
+/// **byte-level** appliers ported from the retail queue-builder
+/// `FUN_801EED1C`, on a raw `actor[+0x1DF..+0x1F2]`-shaped byte window, in
+/// retail's own finish order:
 ///
-/// Order of operations (matches retail):
-/// 1. Translate raw commands to directional [`ActionConstant`]s and append
-///    starter/art constants per the chained art selection.
-/// 2. **Miracle Art match** - full-queue replacement if the command
-///    sequence is the character's Miracle Art string.
-/// 3. **Super Art find/replace at tail** - runs to fixpoint to allow
-///    nested triggers (none exist in retail tables, but the API handles
-///    them).
+/// 1. Translate raw commands to directional [`ActionConstant`] bytes and
+///    append `[RegularStarter, art]` pairs per the chained art selection,
+///    capped at [`QUEUE_SCAN_LEN`] - retail's build loop bound.
+/// 2. **Miracle Art replacement** ([`apply_miracle_replace`], the
+///    `0x801EF4E8` block): when the command sequence is the character's
+///    Miracle string, the whole 16-byte window is overwritten from the
+///    resident Miracle row, padding included.
+/// 3. **MSB clear** ([`clear_queue_msb`], the `0x801EF85C` sweep) - strips
+///    the on-disc `0x8C..0x8F` quirk off the Miracle row's direction bytes.
+/// 4. **Super Art find/replace at tail** ([`apply_super_tail_replace`], the
+///    `jal 0x801EF9E4` at `0x801EF9AC`), run **once** and in **table order**,
+///    unconditionally - retail does not skip it after a Miracle, and the
+///    Miracle row's tail matches no `find` row.
+/// 5. Decode the byte window back to typed constants, stopping at the first
+///    `0x00` (the queue terminator the action SM scans for).
+///
+/// Two behaviours here are retail's, and differ from the structural
+/// `legaia_art` matchers this used to call:
+///
+/// - **first matching row wins, in resident-table order.** The applier's row
+///   loop terminates on the first full tail match (`a1 = 5` at `0x801EFBD8`);
+///   `SuperMatcher::try_trigger_at_tail` ranks by longest `find` instead.
+///   Over the shipped tables the two agree - `super_applier_agrees_with_
+///   structural_matcher` pins that - but the disassembly is the baseline.
+/// - **one application, not a fixpoint.** `FUN_801EF9E4` is called exactly
+///   once per queue build and applies at most one replace; the previous
+///   `SuperMatcher::expand_to_fixpoint` call could apply several.
 ///
 /// `chained_arts` are the art [`ActionConstant`]s the player has
 /// successfully chained this turn (e.g. `[Art22, Art28]` for Spin Combo →
 /// Charging Scorch). Each is bracketed with [`ActionConstant::RegularStarter`]
 /// when assembled into the queue, matching the retail builder.
+///
+/// [`ActionConstant`]: legaia_art::ActionConstant
+/// [`ActionConstant::RegularStarter`]: legaia_art::ActionConstant::RegularStarter
+///
+/// REF: FUN_801EED1C (the retail builder this reproduces the finish order of)
 pub fn resolve_action_queue(
     character: legaia_art::Character,
     command_input: &[legaia_art::Command],
     chained_arts: &[legaia_art::ActionConstant],
 ) -> legaia_art::ActionQueue {
-    use legaia_art::{ActionQueue, MiracleMatcher, SuperMatcher};
+    use legaia_art::{ActionConstant, ActionQueue, MiracleMatcher};
 
+    // Step 1: build the raw byte window. Retail's build loop is bounded by
+    // the same 16-byte scan window the appliers use.
+    let staged = command_input
+        .iter()
+        .map(|cmd| cmd.as_action().as_byte())
+        .chain(
+            chained_arts
+                .iter()
+                .flat_map(|art| [ActionConstant::RegularStarter.as_byte(), art.as_byte()]),
+        );
+    let mut bytes = [0u8; ACTION_QUEUE_CAP];
+    for (slot, b) in bytes[..QUEUE_SCAN_LEN].iter_mut().zip(staged) {
+        *slot = b;
+    }
+
+    // Step 2: Miracle Art replacement. Retail's gate is the per-slot marker
+    // `ctx[+0x25F + slot]`, armed by the input recognizer; the engine's
+    // equivalent is the whole-string match against the character's Miracle
+    // command table.
+    if MiracleMatcher::with_default_table()
+        .find(character, command_input)
+        .is_some()
+    {
+        apply_miracle_replace(&mut bytes, &miracle_row_for(character));
+    }
+
+    // Step 3: the MSB-clear sweep.
+    clear_queue_msb(&mut bytes);
+
+    // Step 4: the Super tail-replace, once, in table order.
+    let (find_rows, replace_rows) = super_rows_for(character);
+    let mut starter_marks = [0u32; ACTION_QUEUE_CAP];
+    apply_super_tail_replace(&mut bytes, &mut starter_marks, &find_rows, &replace_rows);
+
+    // Step 5: decode up to the terminator.
     let mut queue = ActionQueue::new();
-
-    // Step 1: literal directional inputs followed by chained arts. Each
-    // chained art is preceded by a Regular Starter (matches the retail
-    // queue layout: `19 <art> 19 <art> ...`).
-    for cmd in command_input {
-        queue.push(cmd.as_action());
+    for &b in bytes.iter() {
+        if b == 0 {
+            break;
+        }
+        // Every byte reachable here comes from the modeled tables or from a
+        // typed `ActionConstant`, so the decode cannot fail; an unmapped byte
+        // would mean a table defect, and dropping the tail is the safe read.
+        let Some(action) = ActionConstant::from_byte(b) else {
+            break;
+        };
+        queue.push(action);
     }
-    for art in chained_arts {
-        queue.push(legaia_art::ActionConstant::RegularStarter);
-        queue.push(*art);
-    }
-
-    // Step 2: Miracle Art replacement - if the input commands match a
-    // Miracle Art exactly, the entire queue is replaced.
-    let miracle = MiracleMatcher::with_default_table();
-    if miracle.try_trigger(character, command_input, &mut queue) {
-        // Miracle Arts swallow all chained input - return immediately
-        // since Super Art expansion is not applied on top.
-        return queue;
-    }
-
-    // Step 3: Super Art find/replace at tail, run to fixpoint.
-    let super_matcher = SuperMatcher::with_default_table();
-    super_matcher.expand_to_fixpoint(character, &mut queue);
-
     queue
 }
 

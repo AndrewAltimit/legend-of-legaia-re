@@ -3,9 +3,10 @@
 //! The retail result screen (`FUN_801d239c`) does not hand the player the
 //! prize in one lump: it drains four counters, each gated behind its own
 //! fade-in, at the proportional rate `FUN_801d6710` returns, and adds every
-//! step straight into party gold. This asserts the engine does the same -
-//! that the prize arrives *over frames* through `World::tick`, that a face
-//! button snaps it, and that the total paid still equals the prize however
+//! step straight into the mode-24 winnings accumulator `_DAT_80084440`. This
+//! asserts the engine does the same - that the prize arrives *over frames*
+//! through `World::tick`, that a face button snaps it, and that the total
+//! banked into the casino coin bank on exit still equals the prize however
 //! the duel is left.
 //!
 //! Disc-free: the fighters are synthetic configs, so nothing here is gated
@@ -68,7 +69,6 @@ fn start(world: &mut World) {
 #[test]
 fn the_prize_arrives_over_frames_not_in_one_step() {
     let mut world = World::new();
-    let money0 = world.money;
     start(&mut world);
     play_to_player_win(&mut world);
 
@@ -78,47 +78,52 @@ fn the_prize_arrives_over_frames_not_in_one_step() {
     assert!(f.tally().is_some(), "a won match installs the tally screen");
 
     // THE WIRING ASSERTION. Retail pays the prize a step at a time while the
-    // result screen is up. If the world tick did not run the tally, money
-    // would still be untouched here and only move on exit.
-    assert_eq!(world.money, money0, "nothing paid before the tally runs");
+    // result screen is up. If the world tick did not run the tally, the
+    // accumulator would still be empty here and only fill on exit.
+    assert_eq!(
+        world.minigame_winnings, 0,
+        "nothing paid before the tally runs"
+    );
     // The row must fade in before its first step, so an early frame pays 0.
     step(&mut world, 0);
-    assert_eq!(world.money, money0, "the row stalls while it fades in");
+    assert_eq!(
+        world.minigame_winnings, 0,
+        "the row stalls while it fades in"
+    );
 
     for _ in 0..TALLY_FADE_GATE {
         step(&mut world, 0);
     }
-    let partway = world.money;
+    let partway = world.minigame_winnings;
+    assert!(partway > 0, "the tally has started paying: {partway}");
     assert!(
-        partway > money0,
-        "the tally has started paying into gold: {partway} > {money0}"
-    );
-    assert!(
-        partway < money0 + PRIZE as i32,
+        partway < PRIZE,
         "but has not finished in one step: {partway}"
     );
 
-    // Run it out; the full prize lands and no more.
+    // Run it out; the full prize lands in the accumulator and no more.
     for _ in 0..5_000 {
         step(&mut world, 0);
     }
     assert_eq!(
-        world.money,
-        money0 + PRIZE as i32,
-        "the whole prize reaches party gold"
+        world.minigame_winnings, PRIZE,
+        "the whole prize reaches the mode-24 accumulator"
     );
     assert_eq!(
         world.baka_fighter.as_ref().unwrap().tally_gold_remaining(),
         0,
         "nothing left owed"
     );
+    assert_eq!(
+        world.casino_coins, 0,
+        "the coin bank only takes it on the exit warp"
+    );
 
-    // Leaving after a finished tally must not double-pay.
+    // Leaving after a finished tally banks it once, and must not double-pay.
     step(&mut world, PadButton::Cross.mask());
     assert!(world.baka_fighter.is_none(), "Cross leaves the duel");
     assert_eq!(
-        world.money,
-        money0 + PRIZE as i32,
+        world.casino_coins, PRIZE,
         "exit does not pay the prize twice"
     );
 }
@@ -126,29 +131,26 @@ fn the_prize_arrives_over_frames_not_in_one_step() {
 #[test]
 fn a_face_button_snaps_the_tally_to_its_end_state() {
     let mut world = World::new();
-    let money0 = world.money;
     start(&mut world);
     play_to_player_win(&mut world);
 
     for _ in 0..=TALLY_FADE_GATE {
         step(&mut world, 0);
     }
-    assert!(world.money < money0 + PRIZE as i32, "tally still running");
+    assert!(world.minigame_winnings < PRIZE, "tally still running");
 
     // The retail fast-forward latch (`_DAT_8007b874 & 0xf0` → `DAT_801dbf00`)
     // moves the whole remainder in one step.
     step(&mut world, PadButton::Square.mask());
     assert_eq!(
-        world.money,
-        money0 + PRIZE as i32,
-        "a face button snaps the whole remainder into gold"
+        world.minigame_winnings, PRIZE,
+        "a face button snaps the whole remainder into the accumulator"
     );
 }
 
 #[test]
 fn leaving_mid_tally_still_banks_exactly_the_prize() {
     let mut world = World::new();
-    let money0 = world.money;
     start(&mut world);
     play_to_player_win(&mut world);
 
@@ -156,17 +158,13 @@ fn leaving_mid_tally_still_banks_exactly_the_prize() {
     for _ in 0..(TALLY_FADE_GATE + 3) {
         step(&mut world, 0);
     }
-    let partway = world.money;
-    assert!(
-        partway > money0 && partway < money0 + PRIZE as i32,
-        "mid-tally"
-    );
+    let partway = world.minigame_winnings;
+    assert!(partway > 0 && partway < PRIZE, "mid-tally");
 
     step(&mut world, PadButton::Cross.mask());
     assert!(world.baka_fighter.is_none(), "duel left");
     assert_eq!(
-        world.money,
-        money0 + PRIZE as i32,
+        world.casino_coins, PRIZE,
         "the undrained remainder is banked on exit - total is the prize"
     );
 }
@@ -174,7 +172,6 @@ fn leaving_mid_tally_still_banks_exactly_the_prize() {
 #[test]
 fn a_lost_match_installs_no_tally_and_pays_nothing() {
     let mut world = World::new();
-    let money0 = world.money;
     world.mode = SceneMode::Field;
     // The player chips (power 1 nets 0 damage on a fresh streak); the CPU
     // one-shots. The CPU takes both rounds long before the chip damage adds
@@ -194,7 +191,10 @@ fn a_lost_match_installs_no_tally_and_pays_nothing() {
     for _ in 0..500 {
         step(&mut world, 0);
     }
-    assert_eq!(world.money, money0, "a loss pays nothing while on screen");
+    assert_eq!(
+        world.minigame_winnings, 0,
+        "a loss pays nothing while on screen"
+    );
     step(&mut world, PadButton::Cross.mask());
-    assert_eq!(world.money, money0, "and nothing on exit");
+    assert_eq!(world.casino_coins, 0, "and nothing on exit");
 }

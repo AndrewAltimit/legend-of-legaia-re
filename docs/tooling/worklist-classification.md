@@ -39,13 +39,24 @@ files cover the VA, each one's resolved `entry=`, image, instruction count,
 whether the body contains `jr ra`, and the trailing jump target if any. That is
 the fastest way to audit a verdict without opening the dumps.
 
-`--audit-ignored` re-classifies the rows the ignore list has already absorbed
-under a `worklist_*` category and reports any that no longer read non-portable,
-exiting non-zero if there are any. Once a row is ignored it leaves the worklist,
-so nothing else would ever re-examine it - and an ignore is exactly the verdict
-that costs a real port site when it is wrong. Re-run it whenever the dump corpus
-gains an image, because the usual way a merged verdict goes stale is a later
-dump taken at a base the earlier run did not have.
+`--audit-ignored` re-examines the rows the ignore list has already absorbed
+under a `worklist_*` category and re-raises the ones that read as wrong, exiting
+non-zero if there are any. Once a row is ignored it leaves the worklist, so
+nothing else would ever re-examine it - and an ignore is exactly the verdict that
+costs a real port site when it is wrong. Re-run it whenever the dump corpus gains
+an image, because the usual way a merged verdict goes stale is a later dump taken
+at a base the earlier run did not have.
+
+The audit does **not** simply re-run the classifier over an absorbed row: that
+re-derives the row's own evidence and reads agreement as disagreement.
+[What an `--audit-ignored` re-raise means](#what-an---audit-ignored-re-raise-means)
+gives the test order and the two noise shapes it exists to suppress.
+
+The decisive check is neither the dump nor the reason string: disassemble the
+mapped image at the VA and look for the `jr ra` / `addiu sp,sp,-N` pair around
+it. A **leaf** has no prologue, so a missing prologue is not a missing function -
+`FUN_801CF5D0` is a frameless eight-field record copy and is still the menu
+overlay's first routine.
 
 The generated CSV holds addresses, class names and one-line reasons. It carries
 no dump text, so it is safe to commit; the dumps themselves are Sony-derived and
@@ -425,3 +436,77 @@ strings plus a re-run, rather than from a CSV that would otherwise have to be
 kept as a growing archive. Re-running the classifier after a merge reports only
 the residue - `REAL`, `VA_ALIASED`, `UNCERTAIN`, and any `DUPLICATE` the merge
 policy held back.
+
+## What an `--audit-ignored` re-raise means
+
+The audit and the classifier ask different questions, and conflating them makes
+the audit useless. The classifier reads dump metadata. A merged ignore row was
+written from those same dumps, so re-running the classifier over an absorbed row
+mostly re-derives the row's own evidence - and any verdict outside the
+non-portable set then reads as a disagreement when it is an agreement in
+different words. Two shapes produce almost all of that noise:
+
+- **A `worklist_misbased_print` row re-classified `REAL`.** The body *is* real,
+  just not at the printed address. The entry test reads the dump's instruction
+  stream, which a mis-based print reproduces faithfully; nothing in that stream
+  records the base error, so the test cannot see the claim the row is making.
+- **`UNCERTAIN`.** It sits outside the non-portable set, so it re-raises even
+  when its reason - "decodes data as code", "every dump at this VA is
+  mis-based", "no disassembly", "gapped stream" - is the finding the row was
+  merged on.
+
+So `--audit-ignored` does not re-raise on the class. It re-raises only on
+evidence the merged reason cannot already contain, in this order:
+
+| Test | Outcome |
+|---|---|
+| Classifier returns a non-portable class | Row stands - classifier and row agree outright. |
+| A covering image starts a routine at this VA at its mapped base | **Re-raise.** The row deletes a real port site whatever the dumps say. |
+| The merged reason names a true VA the dumped bytes do not resolve to | **Re-raise.** The verdict may survive, but the reason misdirects the reader. |
+| A covering image exists and starts no routine here | Row stands. |
+| The VA lies between the executable and the overlay slots | Row stands - no image maps it, so no routine can begin there. |
+| Classifier returns `UNCERTAIN` | Row stands. No verdict is not evidence the row is wrong. |
+| Nothing above applies | Re-raise, flagged as unverifiable rather than refuted. |
+
+### The entry-boundary test
+
+The decisive test is the second one, and it involves no dump at all. Where
+[static-image arbitration](#static-image-arbitration) asks whether a *dump*
+belongs at a VA, this asks whether the *image* begins a routine there - which is
+the only question a mis-based dump cannot corrupt, and the only one that can
+refute a row whose merged reason was read off that dump.
+
+Three signatures, read from each image at its mapped base, any one sufficient:
+
+- the word two back decodes `jr ra` - the predecessor's return, with its delay
+  slot between;
+- the word at the VA decodes `addiu sp,sp,-N`, a non-leaf prologue, which occurs
+  nowhere else in this codebase;
+- the words before the VA carry the `$zero`-absolute data signature and the
+  words at it do not - a code region opening after a header or string blob,
+  which is how an overlay's first routine looks.
+
+All three are needed. A **leaf** has no prologue, so requiring one calls every
+frameless routine a fragment; a leaf sited immediately after the overlay's data
+header is preceded by neither a return nor code.
+
+Both ends are guarded. The word at the VA must decode and must not be padding or
+a transfer out, which rejects the shape that otherwise reads as a boundary: a
+body's *second* `jr ra` exit, whose predecessor pair is the first exit and its
+delay slot. A window carrying the data signature at the VA itself is refused for
+the same reason it is refused elsewhere - the image is answering with a table.
+
+### Limits
+
+The audit can only refute a row where an extracted image covers the VA. Under
+`--no-static-arbitration`, or without `extracted/`, none of the image tests run
+and the audit degrades to the true-VA cross-check plus the `UNCERTAIN` rule -
+it reports several times as many rows, most of them unverifiable rather than
+wrong. A row is also unverifiable when the VA falls inside the overlay slots but
+past every extracted image's footprint; those re-raise, flagged as such.
+
+The reverse limit matters more. "No covering image starts a routine here" rests
+on the extracted corpus being complete for that slot. It is not - an overlay
+nobody has extracted can hold an entry at a VA every extracted sibling uses as
+interior code. That is the direction in which the audit stays silent about a
+wrong row, and it is closed by extracting overlays, not by tuning the test.

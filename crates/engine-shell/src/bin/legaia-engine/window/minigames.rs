@@ -4,23 +4,18 @@ use super::*;
 
 impl PlayWindowApp {
     // The mode-24 minigame door warp (`World::arm_minigame_warp` /
-    // `World::minigame_return_warp`, retail `FUN_80025980` / `FUN_80026018`) is
-    // deliberately NOT called from these entry points, and the reason is a bug
-    // one layer down rather than a missing prerequisite.
+    // `World::minigame_return_warp`, retail `FUN_80025980` / `FUN_80026018`)
+    // is not driven from these entry points - it runs one layer down, inside
+    // `World::enter_baka_fighter` / `World::exit_baka_fighter`, where the
+    // producer it depends on lives.
     //
     // `FUN_80026018` banks the mode-24 winnings accumulator `_DAT_80084440`
     // into the casino coin bank `_DAT_800845A4` (`0x80026050..0x80026078`,
     // clamped at 9,999,999). What fills that accumulator is the Baka Fighter
     // end-of-match tally: `FUN_801D239C` at `0x801d2894..0x801d28bc` adds each
-    // drained step into `0x80084440`. This port instead pays that drain into
-    // `World::money` - party gold, which retail keeps at the *different* word
-    // `0x8008459C` - so `World::minigame_winnings` never fills and the warp's
-    // commit would be an add of zero.
-    //
-    // Wiring the warp here without redirecting the duel tally first would
-    // therefore close the audit row while leaving the round trip inert. The
-    // redirect lives in `World::tick_baka_fighter` / `World::exit_baka_fighter`
-    // (`engine-core`), so the two halves have to land together.
+    // drained step into `0x80084440` - the coin prize, not party gold
+    // (`0x8008459C`). The engine's duel tick pays the same drain into
+    // `World::minigame_winnings`, so the warp's commit has something to bank.
     // REF: FUN_80026018 (coin-bank commit), FUN_801d239c (the producer)
 
     /// Drive the fishing HUD's one-shot banner animations for this frame.
@@ -259,9 +254,11 @@ impl PlayWindowApp {
     /// decode. Mirrors [`Self::start_dance_minigame`]'s overlay path.
     ///
     /// The playing balance seeds from the world's casino coin bank
-    /// (`World::casino_coins`, the retail `_DAT_800845A4`); a thin bank is
-    /// fronted a dev stake so the dev entry point is playable. The final
-    /// balance commits back to the bank on exit (`World::exit_slot_machine`).
+    /// (`World::casino_coins`, the retail `_DAT_800845A4`); a thin bank first
+    /// goes through the casino's **coin-exchange counter**
+    /// ([`Self::buy_casino_coins`]) and only falls back to a fronted dev stake
+    /// when the party cannot pay. The final balance commits back to the bank on
+    /// exit (`World::exit_slot_machine`).
     pub(super) fn start_slot_minigame(&mut self) -> bool {
         use legaia_asset::static_overlay;
         let Some(rec) = static_overlay::overlay_map()
@@ -288,12 +285,15 @@ impl PlayWindowApp {
             log::warn!("slots: payout-table parse failed");
             return false;
         };
-        // Dev stake when the bank can't cover a spin (the retail entry path
-        // arrives through the casino with coins already banked).
+        // The retail entry path arrives through the casino with coins already
+        // banked; when the bank can't cover a spin, buy them at the exchange
+        // counter first, and only front a dev stake if the party can't pay.
         const DEV_STAKE: i32 = 100;
         let bank = self.session.host.world.casino_coins as i32;
         let balance = if bank >= legaia_engine_core::slot_machine::MIN_SPIN_BALANCE {
             bank
+        } else if let Some(bought) = self.buy_casino_coins(DEV_STAKE) {
+            bought
         } else {
             log::info!("slots: coin bank {bank} too thin - fronting a {DEV_STAKE}-coin dev stake");
             DEV_STAKE
@@ -304,6 +304,55 @@ impl PlayWindowApp {
         let machine = legaia_engine_core::slot_machine::SlotMachine::new(payouts, seed, balance);
         self.session.host.world.enter_slot_machine(machine);
         true
+    }
+
+    /// Buy `coins` at the casino's coin-exchange counter, debiting party gold
+    /// and crediting the coin bank. Returns the new bank balance, or `None`
+    /// when the counter refuses the sale (party can't pay, or the counter is
+    /// out of coins) - in which case nothing is debited.
+    ///
+    /// The counter arithmetic is the ported one: the requested count is laid
+    /// out least-significant-digit-first the way the screen's entry field
+    /// stores it, and [`coin_exchange_quote`] resolves the total cost and both
+    /// gates (`gold >= cost`, `stock >= coins`) exactly as `FUN_801E6F70`
+    /// does before it recolours the total.
+    ///
+    /// [`coin_exchange_quote`]: legaia_engine_core::slot_machine::coin_exchange_quote
+    ///
+    /// The counter's remaining stock is retail's `_DAT_8007BB90`, a global the
+    /// port has no producer for; this host stands in the full bank cap, so the
+    /// stock gate only ever bites on an absurd request.
+    fn buy_casino_coins(&mut self, coins: i32) -> Option<i32> {
+        use legaia_engine_core::slot_machine::{
+            BALANCE_CAP, COIN_ENTRY_DIGITS, coin_exchange_quote,
+        };
+        // The entry field is COIN_ENTRY_DIGITS single-digit cells, units first.
+        let mut digits = [0u8; COIN_ENTRY_DIGITS];
+        let mut n = coins.max(0);
+        for d in digits.iter_mut() {
+            *d = (n % 10) as u8;
+            n /= 10;
+        }
+        let gold = self.session.host.world.money;
+        let quote = coin_exchange_quote(&digits, gold, BALANCE_CAP);
+        if !quote.is_valid() {
+            log::info!(
+                "slots: coin counter refused {} coins ({} gold, have {gold}; in stock: {})",
+                quote.coins,
+                quote.cost,
+                quote.in_stock
+            );
+            return None;
+        }
+        self.session.host.world.money = gold - quote.cost;
+        let bank = self.session.host.world.casino_coins as i32 + quote.coins;
+        self.session.host.world.casino_coins = bank.max(0) as u32;
+        log::info!(
+            "slots: bought {} coins for {} gold at the exchange counter (bank {bank})",
+            quote.coins,
+            quote.cost
+        );
+        Some(bank)
     }
 
     /// Load the Baka Fighter overlay (PROT 0976), parse the roster + action

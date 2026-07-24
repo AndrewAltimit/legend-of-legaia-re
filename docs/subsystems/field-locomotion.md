@@ -16,7 +16,7 @@ static call site to follow. See [Provenance](#provenance).
 ## Contents
 
 - [Player actor fields used](#player-actor-fields-used) · [spawn position](#spawn-position-on-scene-entry) · [per-frame flow](#per-frame-flow)
-- [Wall-slide resolution](#wall-slide-resolution-fun_80046494) · [Collision - `FUN_801cfe4c`](#collision---fun_801cfe4c) · [where the grid comes from](#where-the-collision-grid-comes-from) · [collision byte](#collision-byte-walls--floor-height) · [floor height](#floor-height-two-models) · [trigger block](#trigger-block-0x10000---four-kind-sub-tables) · [object records](#object-record-format-0x0000-0x20-byte-stride) · [the object bind](#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose) · [the door swing](#the-door-swing-how-a-bind-script-drives-the-clip) · [scripted door-swing controller](#the-scripted-door-swing-controller)
+- [Wall-slide resolution](#wall-slide-resolution-fun_80046494) · [Collision - `FUN_801cfe4c`](#collision---fun_801cfe4c) · [where the grid comes from](#where-the-collision-grid-comes-from) · [collision byte](#collision-byte-walls--floor-height) · [floor height](#floor-height-two-models) · [trigger block](#trigger-block-0x10000---four-kind-sub-tables) · [object records](#object-record-format-0x0000-0x20-byte-stride) · [the object bind](#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose) · [the door swing](#the-door-swing-how-a-bind-script-drives-the-clip) · [scripted hop-arc controller](#the-scripted-hop-arc-controller)
 - [Vertical settle + ledge hop](#vertical-settle--ledge-hop---fun_801d1ba0--fun_801d1878) - [step-delta globals](#the-step-delta-globals) · [`FUN_801d1ba0`](#fun_801d1ba0---settle-then-trigger) · [`FUN_801d1878`](#fun_801d1878---probe-and-post) · [engine port](#engine-port-2)
 - [Provenance](#provenance) · [Town / field parity](#town--field-parity)
 - [Engine port](#engine-port) - [environment geometry](#environment-geometry) · [scene-entry script](#scene-entry-script) · [encounter table](#scene-encounter-table) · [per-step encounter roll](#per-step-encounter-roll-in-the-live-loop) · [input lock during cutscenes](#input-is-locked-during-an-opening-cutscene-timeline)
@@ -680,55 +680,74 @@ bounding-box cull `FUN_8001b73c`.
 
 See [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
-### The scripted door-swing controller
+### The scripted hop-arc controller
 
 The functions `FUN_801d2404` (setup) and `FUN_801d2298` (per-frame advance).
-Distinct from the placed-prop bind-clip path above, a **dedicated single-instance
-door-swing controller** drives one door through a linear-interpolated hinge swing
-using its own cursor pair (`actor+0x9c` / `actor+0x9e`), **not** the prop system's
-`+0x68`/`+0x6A` frame cursor. It works on the big field-scene control block at
-`0x8007c348` (allocated + cleared by MAIN_INIT `FUN_801d6704`, which memsets
-`0x7b0c` bytes through `func_0x8001a8b0(&DAT_8007c348, …)`); the block's `+0x1c`
-holds the animated door actor and `+0x4` a spawn-template id. Both functions are
-confirmed field-overlay (`0897`) bodies (the classifier resolves every dump at
-these VAs to `image=0897`; the short mis-based standalone dumps at `801d2404` /
-`801d2298` are wrong-base fragments).
+Distinct from the placed-prop bind-clip path above, this is a **single-instance
+arc controller** with its own cursor pair (`actor+0x9c` / `actor+0x9e`), **not**
+the prop system's `+0x68`/`+0x6A` frame cursor. It works on the big field-scene
+control block at `0x8007c348` (allocated + cleared by MAIN_INIT `FUN_801d6704`,
+which memsets `0x7b0c` bytes through `func_0x8001a8b0(&DAT_8007c348, …)`); the
+block's `+0x1c` is `_DAT_8007c364`, the **player context pointer**
+([`script-vm.md`](script-vm.md)), and `+0x4` is the pool handle the spawn
+allocator takes as its second argument. Both functions are confirmed
+field-overlay (`0897`) bodies; the short mis-based standalone dumps at
+`801d2404` / `801d2298` are wrong-base fragments, and the extracted
+`0897_xxx_dat.BIN` bytes at file `+0x3BEC` carry the real 122-instruction
+`FUN_801d2404`.
 
-**`FUN_801d2404` - swing setup.** Called with `(a0 = source door actor,
-a1 = s16 offset, a2 = s16 rate)`. If the control block's `+0x1c` is null it
-returns. Otherwise it spawns a door-leaf actor from the pool allocator
-`func_0x80020de0` with template pointer `0x801f227c`, copies the source door's
-8-byte transform (`+0x14..+0x1b`, X / facing / Z) into the leaf, and reads the
-source's placement halfwords `+0`/`+2`/`+4` into the leaf's `+0x24`/`+0x26`/`+0x28`
-(the swing's far endpoint). It then computes the interpolation targets as the
-**midpoint** of the two endpoints: `+0x3c = (X+[+0x24])/2`,
-`+0x3e = (facing+[+0x26])/2`, `+0x40 = (Z+[+0x28])/2` (with an angle-sign
-correction to `+0x3e` from `a1`). The clip is seeded `+0x9c = 0` and extent
-`+0x9e = (a2 <= 0) ? 0x1000 : 0x1000 / a2`. A **second** leaf is spawned from
-template `0x801f2294` (`+0x9e = a2`, `+0x9c = 0`) - the paired hinge - and the
-control-block door actor's `+0x10` gains the movement-lock bit `0x80000`.
+**`FUN_801d2404` - arc setup.** The image holds exactly one `jal 0x801D2404`
+encoding, at `0x801D1B70` inside the **ledge-hop trigger** `FUN_801d1878`, and
+the argument set-up there pins the signature: `a0` is a pointer to the
+three-half-word landing triple the trigger built at `sp+0x18`, `a1` is the arc's
+peak height (`0x10` for a hop up, `0x18` for a hop down) and `a2` is the clip
+length in frames (always `0x10`). It is the same triple
+`World::try_field_ledge_hop` posts as `FieldLedgeHop`. This is a **hop arc, not
+a hinge swing**; nothing in the body reads a door.
 
-**`FUN_801d2298` - per-frame advance.** Called with the leaf actor in `a0`. Each
-frame it re-transforms the control-block door actor (`func_0x801db510` then
-`func_0x801daa50`, the resident world-transform + copy helpers) and steps a small
-3-phase state driven by the cursor `+0x9c` against the extent `+0x9e`:
+If the player pointer is null it returns. Otherwise it spawns a helper actor
+from the pool allocator `func_0x80020de0` with template pointer `0x801f227c`,
+copies the player's 8-byte transform (`+0x14..+0x1b`, X / Y / Z) into the helper
+as the arc's start point `P0`, and stores the landing triple into
+`+0x24`/`+0x26`/`+0x28` as the end point `P2`. It writes the three midpoints to
+`+0x3c`/`+0x3e`/`+0x40` and then **overwrites the Y one** with the quadratic
+Bezier control point `C = mid + 2 * (min(P0y, P2y) - a1 - mid)`. Evaluating the
+curve at `t = 0.5` gives `(P0y + 2C + P2y) / 4 = min(P0y, P2y) - a1` exactly, so
+- world Y growing downward - **the hop peaks `a1` units above whichever endpoint
+is higher**, whatever the drop. The clip is seeded `+0x9c = 0` and step
+`+0x9e = (a2 <= 0) ? 0x1000 : 0x1000 / a2`. A **second** helper is spawned from
+template `0x801f2294` (`+0x9e = a2`, `+0x9c = 0`) and the player's `+0x10` gains
+the movement-lock bit `0x80000`; if that second spawn fails, the first helper
+instead gets the tear-down bit `8` in its `+0x10` and the hop is abandoned.
+Ported as `legaia_engine_vm::field_ledge_hop_arc::build_hop_arc`.
+
+**`FUN_801d2298` - per-frame advance.** Called with the helper actor in `a0`.
+Each frame it re-transforms the control block's player actor
+(`func_0x801db510` then `func_0x801daa50`, the resident world-transform + copy
+helpers) and steps a small 3-phase state driven by the cursor `+0x9c` against
+the extent `+0x9e`:
 
 | Phase | Condition | Effect |
 |---|---|---|
-| start | `+0x9c == 0` | set bit `8` of door actor `+0x62` (anim-active), OR `0x200000` into `+0x10`, phase global `0x8007bdd8 = 6`, play SFX `0x2a` (swing-start cue) |
+| start | `+0x9c == 0` | set bit `8` of player actor `+0x62` (anim-active), OR `0x200000` into `+0x10`, phase global `0x8007bdd8 = 6`, play SFX `0x2a` (take-off cue) |
 | advance | every frame | `+0x9c += DAT_1f800393` (the per-frame delta scalar), clamped to `+0x9e` |
-| mid | `+0x9c` crosses `+0x9e` this frame | clear `0x200000` from door actor `+0x10`, set bit `8` of `+0x62`, phase global `= 7` |
-| end | `+0x9c >= +0x9e + 6` | clear bit `8` of door actor `+0x62`, clear `0x80000` from `+0x10` (release the movement lock), phase global `= 1`, play SFX `0x29`, set bit `8` of leaf `+0x10` (tear-down) |
+| mid | `+0x9c` crosses `+0x9e` this frame | clear `0x200000` from player actor `+0x10`, set bit `8` of `+0x62`, phase global `= 7` |
+| end | `+0x9c >= +0x9e + 6` | clear bit `8` of player actor `+0x62`, clear `0x80000` from `+0x10` (release the movement lock), phase global `= 1`, play SFX `0x29`, set bit `8` of helper `+0x10` (tear-down) |
 
-So the whole swing holds the player's movement lock (`+0x80000`) from setup
-through the end phase - the player stands while the gate opens, the classic
-scripted-transition door - and the two SFX (`0x2a` at start, `0x29` at settle)
-bracket it. The `DAT_1f800393`-paced cursor is the same frame-rate-compensation
-scalar the free-movement step loop uses, so the swing runs at a fixed real-time
-rate independent of frame count. The controller is ticked from the field scene
-loop `FUN_801f5748`. Not ported: this is a scripted-cutscene door actor, not a
-locomotion kernel. The exact door instance it drives (the templates suggest a
-two-leaf gate) is not pinned from static analysis alone.
+Every one of those reads and writes goes through `*(0x8007c348 + 0x1c)` - the
+player context pointer - so the actor the clip drives is the player, not a
+scene prop. The lock (`+0x80000`) is held from setup through the end phase, so
+the player cannot steer mid-hop, and the two SFX (`0x2a` at take-off, `0x29` at
+landing) bracket it. The `DAT_1f800393`-paced cursor is the same
+frame-rate-compensation scalar the free-movement step loop uses, so the arc runs
+at a fixed real-time rate independent of frame count.
+
+The setup half is ported (`legaia_engine_vm::field_ledge_hop_arc`); the advance
+half is not, because the helper-actor pool it walks has no counterpart in the
+engine's world model. What ticks it is **open**: the "field scene loop
+`FUN_801f5748`" this section used to name is a phantom VA - `0x801F5748` sits
+`0x1F30` past PROT 0897's own `0x25000` bytes, and the bytes there are PROT
+0898's `FUN_801D0748`.
 
 ## Provenance
 
@@ -738,7 +757,7 @@ two-leaf gate) is not pinned from static analysis alone.
 - Scene-entry map-init `FUN_8003aeb0` (height LUT fill, `+0x8000` footprint OR, player-actor setup) - `ghidra/scripts/funcs/8003aeb0.txt`. Object spawn iterator `FUN_8003a55c` (low-nibble floor-height read, `+0x8000` index walk) - `ghidra/scripts/funcs/8003a55c.txt`.
 - Floor sampler `FUN_80019278` (both height models: the `cell & 0x800` elevation-override branch and the bilinear nibble branch) - `ghidra/scripts/funcs/80019278.txt`. Its kind-table lookups `FUN_801D5630` / `FUN_801D5AE0` - `ghidra/scripts/funcs/overlay_cutscene_mapview_801d5630.txt`, `ghidra/scripts/funcs/overlay_0896_801d5ae0.txt`.
 - Runtime pin: `scripts/pcsx-redux/autorun_player_pos_watch.lua` (write-watchpoint on `*(0x8007c364) + 0x14/0x18`).
-- Scripted door-swing controller: setup `FUN_801d2404` and per-frame advance `FUN_801d2298` - see `ghidra/scripts/funcs/overlay_0897_door_raw_801d2298_801d2600.txt` (the base-correct contiguous `overlay_0897.bin` dump; the short standalone `801d2404.txt` / `801d2298.txt` are wrong-base fragments). Scene control block `0x8007c348` cleared by MAIN_INIT `FUN_801d6704` (`func_0x8001a8b0(&DAT_8007c348, …, 0x7b0c)`); leaf templates `0x801f227c` / `0x801f2294`; ticked from the field scene loop `FUN_801f5748`.
+- Scripted hop-arc controller: setup `FUN_801d2404` and per-frame advance `FUN_801d2298` - see `ghidra/scripts/funcs/overlay_0897_door_raw_801d2298_801d2600.txt` and `overlay_0897_door_801d2404.txt` (the base-correct contiguous `overlay_0897.bin` dumps; the short standalone `801d2404.txt` / `801d2298.txt` are wrong-base fragments). Both bodies also read directly out of the extracted `0897_xxx_dat.BIN` at slot-A base `0x801CE818`, file `+0x3BEC` and `+0x3A80`. Sole caller of the setup is `FUN_801d1878` at `0x801D1B70` - the only `jal 0x801D2404` encoding in the image. Scene control block `0x8007c348` cleared by MAIN_INIT `FUN_801d6704` (`func_0x8001a8b0(&DAT_8007c348, …, 0x7b0c)`); helper templates `0x801f227c` / `0x801f2294`.
 
 ## Town / field parity
 

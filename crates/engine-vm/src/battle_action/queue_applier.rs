@@ -1,34 +1,52 @@
-//! Byte-level ports of the retail action-queue side kernels that surround
-//! the arts queue-builder `FUN_801EED1C` (battle overlay, PROT 0898).
+//! Byte-level ports of the retail action-queue kernels that make up the tail
+//! of the arts queue-builder `FUN_801EED1C` (battle overlay, PROT 0898).
 //!
 //! PORT: FUN_801EF9E4, FUN_801DA34C, FUN_801EFBFC, FUN_801E91E8
 //!
-//! Where [`resolve_action_queue`](super::resolve_action_queue) models the
-//! Miracle/Super trigger passes structurally (typed [`ActionConstant`]s over
-//! `legaia_art`'s modeled tables), the functions here are the *byte-exact*
-//! forms operating on the raw 19-byte per-actor queue at
-//! `actor[+0x1DF..+0x1F2]` and the resident trigger tables
-//! (`find` `0x801F6524`, 13-byte stride; `replace` `0x801F65E8`, 16-byte
-//! stride) - the shapes `docs/subsystems/battle-action.md`
-//! ("The retail queue-builder and Super applier") pins from the
-//! disassembly. The equivalence of the two forms over the shipped tables is
-//! asserted by the tests below.
+//! These are the *byte-exact* forms operating on the raw 19-byte per-actor
+//! queue at `actor[+0x1DF..+0x1F2]` and the resident trigger tables
+//! (Miracle `0x801F64F4`, 16-byte stride; Super `find` `0x801F6524`, 13-byte
+//! stride; Super `replace` `0x801F65E8`, 16-byte stride) - the shapes
+//! `docs/subsystems/battle-action.md` ("The retail queue-builder and Super
+//! applier") pins from the disassembly.
 //!
-//! [`ActionConstant`]: legaia_art::ActionConstant
+//! [`resolve_action_queue`](super::resolve_action_queue) - the entry point the
+//! engine's battle layer calls once per committed arts input - runs these
+//! appliers in retail's own order, so the live path is byte-level, not
+//! structural. The retail finish order, read off the `FUN_801EED1C`
+//! disassembly, is:
 //!
-//! # NOT WIRED
+//! 1. the per-command build loop, which on a Miracle-armed slot
+//!    (`ctx[+0x25F + slot] != 0`) overwrites `queue[0..16]` from the resident
+//!    Miracle row ([`apply_miracle_replace`], block `0x801EF4E8`);
+//! 2. the MSB-clear sweep over `queue[0..16]` ([`clear_queue_msb`], block
+//!    `0x801EF85C`) - this is what strips the on-disc `0x8C..0x8F` quirk off
+//!    the Miracle row's leading direction bytes;
+//! 3. the marked-starter reorder at `0x801EF8A0` (**not** ported - see the
+//!    module's `NOT PORTED` note below);
+//! 4. `jal 0x801EF9E4` ([`apply_super_tail_replace`]) at `0x801EF9AC`,
+//!    unconditionally, with `a0` = actor slot and `a1` = the roster char id
+//!    minus one.
 //!
-//! The live battle path resolves Miracle/Super triggers through the
-//! structural [`resolve_action_queue`](super::resolve_action_queue) /
-//! `legaia_art` matchers, and models learned arts as the save-ext
-//! `learned_arts_mask` bitmask rather than the retail sorted byte list -
-//! so nothing in `engine-core` calls these byte-level forms today. They
-//! are ported because the raw-queue laws are observable (the asymmetric
-//! preseed fallback, the first-matching-row order, the learn-on-use
-//! sorted insert and its 1/512 gate) and because the byte applier is the
-//! form a future raw-savestate / recomp-differential oracle compares
-//! against. `super_applier_agrees_with_structural_matcher` keeps the two
-//! forms provably equivalent over the shipped tables.
+//! `legaia_art`'s structural [`MiracleMatcher`] / [`SuperMatcher`] remain the
+//! *table* source - [`miracle_row_for`] / [`super_rows_for`] project the
+//! modeled tables into the resident row shapes the appliers index - but the
+//! queue arithmetic on the live path is now retail's.
+//!
+//! [`MiracleMatcher`]: legaia_art::MiracleMatcher
+//! [`SuperMatcher`]: legaia_art::SuperMatcher
+//!
+//! # NOT PORTED
+//!
+//! `FUN_801EED1C`'s marked-starter reorder (`0x801EF8A0..0x801EF968`) is not
+//! ported. It walks `0x801F6990[i]`, and for every marked index `i > 0` whose
+//! queue byte is a `SpecialStarter` (`0x1A`) it scans `j < i` and swaps
+//! `queue[j]` with `queue[i]` wherever `queue[j + 1] == queue[i + 1]` (no
+//! early exit, so the swap can run more than once per `i`). The marks it reads
+//! are written by the *build* loop, which this module does not port - the
+//! marks [`apply_super_tail_replace`] writes are consumed later, after this
+//! pass has already run. Porting the reorder without the build loop would add
+//! a second inert routine, so it is recorded here instead.
 
 /// Capacity of the per-actor action-parameter byte stream
 /// (`actor[+0x1DF..+0x1F2]`, 19 bytes). The queue-length scan and the
@@ -47,6 +65,55 @@ pub const SUPER_FIND_STRIDE: usize = 13;
 pub const SUPER_REPLACE_STRIDE: usize = 16;
 /// Rows per character in both tables (`slti v0,a1,0x5` at `0x801EFBE0`).
 pub const SUPER_ROWS: usize = 5;
+
+/// Stride of the resident Miracle replacement table at `0x801F64F4`
+/// (`sll v0,v0,0x4` at `0x801EF504` - one 16-byte row per character, indexed
+/// by the roster char id minus one).
+pub const MIRACLE_ROW_STRIDE: usize = 16;
+
+/// PORT: FUN_801EED1C (the Miracle applier block `0x801EF4E8..0x801EF528`)
+///
+/// Overwrite the whole 16-byte queue window from the acting character's
+/// resident Miracle row. Retail reaches this block when the slot's Miracle
+/// marker `ctx[+0x25F + slot]` is non-zero and the build loop is on its first
+/// pass; the copy is a flat 16-iteration `lbu`/`sb` pair over
+/// `0x801F64F4 + (char_id - 1)*16`, so the row's zero padding is copied too
+/// and everything the build had staged past the Miracle string is erased.
+///
+/// The bytes are copied **raw** - the leading direction bytes carry the
+/// on-disc MSB-set quirk (`0x8C..0x8F`) at this point. [`clear_queue_msb`] is
+/// what strips it, several blocks later; the two must run in that order.
+///
+/// Retail also latches `ctx[+0x28D] = 1` and the shared trigger flag
+/// `0x801F696C = 1` here, and (when the character record's `+0x6C0` bit
+/// `0x800` is set) moves 4 points from `actor[+0x170]` into `actor[+0x224]`.
+/// Those are actor / ctx side effects rather than queue arithmetic, so they
+/// stay with the caller.
+pub fn apply_miracle_replace(queue: &mut [u8; ACTION_QUEUE_CAP], row: &[u8; MIRACLE_ROW_STRIDE]) {
+    queue[..MIRACLE_ROW_STRIDE].copy_from_slice(row);
+}
+
+/// PORT: FUN_801EED1C (the MSB-clear sweep `0x801EF85C..0x801EF898`)
+///
+/// Clear bit 7 of every byte in the 16-byte queue window. Retail does it with
+/// a signed load and an *add*, not an AND: `lb v0,0x1df(a0)` /
+/// `lbu v1,0x1df(a0)` / `bgez v0, skip` / `addiu v0,v1,0x80` / `sb`. Adding
+/// `0x80` to a byte that already has bit 7 set wraps it off, so the two forms
+/// agree for every input - the add is transcribed here because it is what the
+/// disassembly does.
+///
+/// This is the runtime half of the on-disc MSB quirk `docs/formats/art-data.md`
+/// records for the Miracle strings: the resident Miracle row stores its leading
+/// direction bytes as `0x8C..0x8F` and this sweep is what turns them back into
+/// `0x0C..0x0F` in the live queue. Nothing else in the queue normally carries
+/// bit 7, so the sweep is a no-op on a queue built from plain input.
+pub fn clear_queue_msb(queue: &mut [u8; ACTION_QUEUE_CAP]) {
+    for b in queue[..QUEUE_SCAN_LEN].iter_mut() {
+        if *b & 0x80 != 0 {
+            *b = b.wrapping_add(0x80);
+        }
+    }
+}
 
 /// Outcome of [`apply_super_tail_replace`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,6 +208,11 @@ pub fn apply_super_tail_replace(
 /// PORT: FUN_801DA34C - the round driver's arts-queue preseed (leaf; called
 /// from `FUN_801D0748` at `0x801D15C8` / `0x801D1734`).
 ///
+/// NOT WIRED: retail's caller `FUN_801D0748` (the battle command / menu SM) is
+/// not ported, and the engine has no per-character saved arts-input string to
+/// preseed from - `legaia_save`'s record model carries no `+0x76F` / `+0x77F`
+/// chain slot. Wiring needs both.
+///
 /// Copies one of the character's two saved 16-byte arts-input strings
 /// (char record `+0x76F` = first slot, `+0x77F` = second slot, off
 /// `0x80084140 + (id-1)*0x414`) byte-for-byte into `queue[0..16]`, or
@@ -185,6 +257,9 @@ pub fn preseed_action_queue(
     }
 }
 
+/// NOT WIRED: same prerequisite as [`preseed_action_queue`] - no engine-side
+/// `+0x76F` / `+0x77F` chain slot to write back into.
+///
 /// PORT: FUN_801DA59C - the write-back twin of [`preseed_action_queue`]:
 /// saves the actor's executed 16-byte arts-input string back into the
 /// character record so the next battle's preseed can replay it.
@@ -230,6 +305,14 @@ pub enum ArtUseCheck {
 /// PORT: FUN_801EFBFC - learned-art membership check **plus learn-on-use
 /// insert** (called from the queue-builder at `0x801EF44C` per accepted
 /// art).
+///
+/// NOT WIRED: the engine models learned arts as the save-ext
+/// `learned_arts_mask` bitmask, not as the retail `+0x74D` count / `+0x74E`
+/// ascending id list, and [`resolve_action_queue`](super::resolve_action_queue)
+/// is handed already-recognized arts rather than the raw per-command stream
+/// this check runs inside. Wiring it means the caller carrying the char
+/// record's arts list plus the per-character innate cap at
+/// `0x801F686C + char_id - 1`.
 ///
 /// The character's learned-arts list lives in the char record: count at
 /// `+0x74D`, ascending-sorted ids at `+0x74E..`. Laws (disassembly
@@ -282,6 +365,14 @@ pub fn check_and_learn_art(
     ArtUseCheck::Learned
 }
 
+/// NOT WIRED: `FUN_801E91E8` is **not** called by the queue-builder
+/// `FUN_801EED1C` (whose only `jal`s are `0x80056798`, `0x801EFBFC` and
+/// `0x801EF9E4`); it belongs to the per-keypress input recognizer that arms
+/// the slot's Miracle marker `ctx[+0x25F + slot]`. The engine's Miracle gate is
+/// the whole-string match in
+/// [`resolve_action_queue`](super::resolve_action_queue), so the per-token
+/// position has no consumer until that recognizer is ported.
+///
 /// PORT: FUN_801E91E8 - Miracle-command token position lookup.
 ///
 /// Maps an input token to its 1-based position in the character's
@@ -307,6 +398,38 @@ pub fn miracle_command_position(token: u8, miracle_pending: bool, cmds_msb: &[u8
         }
     }
     0
+}
+
+/// Build a character's resident-table-shaped Miracle row from the modeled
+/// `legaia_art` table: the replacement action constants, zero-padded to
+/// [`MIRACLE_ROW_STRIDE`], with the leading run of direction constants
+/// (`0x0C..=0x0F`) MSB-set to mirror the on-disc `0x8C..0x8F` form the
+/// resident row stores and [`clear_queue_msb`] strips.
+///
+/// This is the bridge that lets [`apply_miracle_replace`] run against the
+/// modeled table; keeping the row in its on-disc form is what makes the
+/// MSB-clear sweep observable instead of vacuous.
+pub fn miracle_row_for(character: legaia_art::Character) -> [u8; MIRACLE_ROW_STRIDE] {
+    let mut row = [0u8; MIRACLE_ROW_STRIDE];
+    let Some(art) = legaia_art::MIRACLE_ARTS
+        .iter()
+        .find(|m| m.character == character)
+    else {
+        return row;
+    };
+    let mut leading = true;
+    for (slot, action) in row.iter_mut().zip(art.replacement.iter()) {
+        let b = action.as_byte();
+        // The MSB quirk covers the row's leading direction bytes only; the
+        // starter + art constants that follow are stored plain.
+        if leading && (0x0C..=0x0F).contains(&b) {
+            *slot = b | 0x80;
+        } else {
+            leading = false;
+            *slot = b;
+        }
+    }
+    row
 }
 
 /// Build a character's five resident-table-shaped Super rows from the

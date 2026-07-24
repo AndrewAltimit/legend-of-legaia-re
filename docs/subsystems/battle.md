@@ -1053,6 +1053,15 @@ either file for roster-adjacent values. Either way the battle wedges at the
 victory hand-off. This state is unreachable in retail; it is a
 randomizer-interaction defect, not a retail bug.
 
+**Not the only battle freeze class.** A second, structurally unrelated one
+lives in the done/cleanup band: state `0x51` refuses to decrement its exit
+countdown while a party actor's displayed HP `+0x172` disagrees with its live
+HP `+0x14C`, and that disagreement is permanent once the pending-bar-delta
+accumulator `+0x10` reaches zero. The symptom is an endless battle-camera
+orbit rather than a hard freeze, and the trigger is an HP write that skips the
+bar bookkeeping - not a roster or targeting invariant. See
+[battle-action.md](battle-action.md#the-0x51-exit-gate-and-the-hp-bar-settle-invariant).
+
 **What the softlock is *not*.** The long-standing "unbounded reroll in
 `FUN_801E7320`" theory is falsified as the cause. Both reroll loops
 (`0x801E7370..0x801E73D8` over the monster band, `0x801E7418..0x801E747C`

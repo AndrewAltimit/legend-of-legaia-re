@@ -310,7 +310,8 @@ impl PlayWindowApp {
         }
         // `K`: toggle the Noa dance (rhythm) minigame. Loads the dance
         // overlay (PROT 0980), suspends the current scene, and runs the
-        // beat clock + hit judge; Left/Right/Up are the three arrows.
+        // beat clock + hit judge; the three judged buttons are the retail
+        // ones - Square / Circle / Triangle.
         // Pressing K again aborts and logs the final score. The song
         // also ends itself after its length limit (see below).
         if matches!(code, KeyCode::KeyK)
@@ -327,14 +328,14 @@ impl PlayWindowApp {
                     self.session.restore_field_bgm();
                 }
             } else if self.start_dance_minigame(false) {
-                log::info!("dance: started - Left/Right/Up are the arrows, K to quit");
+                log::info!("dance: started - Square/Circle/Triangle are the arrows, K to quit");
             }
             return;
         }
         // `L`: toggle the fishing minigame. Loads the fishing overlay
         // (PROT 0972), suspends the current scene, and runs the cast /
         // fight / score loop; Cross locks the cast and reels (reel A),
-        // Circle is reel B. Pressing L again leaves and logs the points.
+        // Square is reel B. Pressing L again leaves and logs the points.
         if matches!(code, KeyCode::KeyL)
             && state == ElementState::Pressed
             && !self.boot_ui.is_active()
@@ -474,7 +475,7 @@ impl PlayWindowApp {
         // Fighter overlay (PROT 0976), suspends the current scene,
         // and runs the best-of-3 duel; Left/Right/Up throw the three
         // attacks, Down charges the special, Cross leaves a decided
-        // match. Pressing B again aborts (no gold on an abort).
+        // match. Pressing B again aborts (no coins on an abort).
         if matches!(code, KeyCode::KeyB)
             && state == ElementState::Pressed
             && !self.boot_ui.is_active()
@@ -483,9 +484,9 @@ impl PlayWindowApp {
                 if let Some(f) = self.session.host.world.exit_baka_fighter() {
                     match f.winner() {
                         Some(0) => log::info!(
-                            "baka: match WON - {} gold banked (money now {})",
+                            "baka: match WON - {} coins banked (bank now {})",
                             f.gold_reward(),
-                            self.session.host.world.money
+                            self.session.host.world.casino_coins
                         ),
                         Some(_) => log::info!("baka: match lost"),
                         None => log::info!("baka: match aborted"),

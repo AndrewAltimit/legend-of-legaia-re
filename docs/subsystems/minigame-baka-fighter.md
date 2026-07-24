@@ -313,8 +313,8 @@ latched at the top of `FUN_801d239c` from `_DAT_8007b874 & 0xf0` (any face
 button) and short-circuits the step to the whole remainder, so holding a button
 snaps the tally to its end state; nothing inside the tally clears the latch.
 Port: `engine-core::baka_fighter::BakaTally`, driven by `BakaFight::tick` once
-the player takes a match and banked into party money by the world's Baka
-Fighter tick. **Confirmed.**
+the player takes a match and drained into the world's mode-24 winnings
+accumulator by the world's Baka Fighter tick. **Confirmed.**
 
 Confidence: **Confirmed** AI roll + scripted-pattern table, the HUD/tally draw
 paths, and the gold payout (a flat per-opponent prize from the record table's
@@ -408,6 +408,73 @@ round-result banners are sprite actors (spawned by `FUN_801d6e04`, widget id
 in `actor + 0x50`, drawn by the `FUN_801d67f0` hook) over the "YOU" / "WIN!" /
 "LOSE..." / "DRAW" / "ROUND" / "FIGHT!" / "PERFECT!!" / "GAME OVER" cells of
 the widget table.
+
+### Round chrome timelines
+
+Three of the chrome bodies are pure frame-counter timelines over
+`FUN_801d5ed0` - given the elapsed frame they decide which widget is drawn
+where, at what brightness and size, and which announcer line fires. They hold
+no fight state, and the resolution SM never waits on them. All three are
+ported as `engine-core::baka_fighter_chrome`.
+
+**Intro title card (`FUN_801d59d4`).** Three independent range tests on the
+same counter, not a chain. `30..99` fades the logo (widget `0x28`) up at
+`(0xA0, 0x80)`, brightness `(t - 30) * 8` with the multiplier held at `0x10`,
+and fires `XA33` channel `0x0E` once. `100..139` holds the logo at `0x80`,
+fires `XA33` channel `0x0F`, tints the screen white for four frames, and
+shrinks the subtitle (widget `0x22`) in from `size = 0x1000 + (0x10 - k) <<
+11` while flipping widget 34's CLUT (`0x801D740E`) between `0x7742` and
+`0x7740`. From `140` the full card assembles: a four-cell caption ramp
+(widgets `0x24..0x27`, one per four frames from `t = 147`, tested **unsigned**
+so the negative early quotients fall through undrawn), a sweep bar (widget
+`0x32`) whose level ramps `4` per frame from `-0x80`, a screen tint fading
+white to black over 64 frames, then the logo, the subtitle, the two side
+ornaments (`0x2A` at `x = 0x86`, `0x2B` at `x = 0xBB`) and the underline
+(`0x23`).
+
+NB the Ghidra dump at this address is **truncated** - it reports 80 bytes /
+20 instructions and stops mid-body with no `jr ra`, while the overlay image
+holds 680 bytes / 170 instructions. Disassemble PROT 0976 at `0x801CE818`
+rather than trusting the dump's extent.
+
+**Round banner (`FUN_801d5c7c`).** Two mirrored halves converging on
+`x = 0x90`: offset `0xB4 - 6t` while `t < 30`, `0` through the hold, then
+`6 * (t - 90)` on the way out. The level ramps `0x80 + (t - 30) * 127 / 30`
+in (reaching `0xFF` at `t = 60`) and `0xC8 - (t - 90) * 127 / 30` out, clamped
+to `0..=0xFF`; the parted poses draw at half level and set the two banner
+sprite flags, the joined pose clears them. Frame `0` fires the round-announce
+voice line, and **its channel is the round index itself** - `FUN_8003D53C(0x1F,
+DAT_801DBF8C, 0x48)` - while the digit drawn beside the caption is that same
+index plus one.
+
+**READY/FIGHT countdown (`FUN_801d21fc`).** State `DAT_801DC134` walks
+`0 -> 1` (`XA33` channel `0x0A`), `1 -> 2` (channel `0x0B`, seeding the timer
+`DAT_801DC138 = 0x20`), then waits for the banner level `DAT_801DBEB4` to
+reach `0x11` before decaying the timer by `DAT_1F800393`; running out fires
+channel `0x0D` on the final round (`DAT_801DC110 == 0x0E`) or `0x0C`
+otherwise. The scene-load flag `_DAT_8007BC20` freezes the walk but not the
+two draws, which always run at half level: widget `0x1A` at `(0xA0, 0x60)`
+and `0x1D` / `0x1C` at `(0xA0, 0xA0)`.
+
+The **animation-slot installer** `FUN_801d57bc` sits under the knockdown
+path: it rounds the incoming key toward zero by `>> 4`, scans the fighter's
+live slots (count at `+0x1C`, key at slot `+0x26`, `8` stride) for a match,
+rewrites that slot or appends a new one, zeroes the slot's three accumulators
+either way, and refuses outright once the block already holds 8 slots. It
+always returns `-1`, which is why its caller treats it as void.
+
+The banner-actor draw hook `FUN_801d67f0` selects its shape from the mode
+argument: `0` draws widget `actor+0x50` at size `actor+0x72`, `1` does the
+same and then raises the actor's retire bit once `DAT_801DBF78` is live, `2`
+draws the widget-5 glyph strip paged to `actor+0x50`, and any other mode
+draws nothing. Whatever the mode, the brightness is `actor+0x78` conditioned
+three ways first - values at or above `0x4001` are discarded to zero, the
+level rounds toward zero by `>> 4`, then clamps to `0..=0xFF`. Its sibling
+`FUN_801d3390` binds the actor's animation before the draw: it retires the
+actor outright once the match ends, otherwise sets the fade from whether
+`actor+0x5A` matches either focused fighter (`DAT_801DBF70` /
+`DAT_801DBF74`), picks the sprite bank by `actor+0x5C < 0x400`, and reads
+byte `+0x07` of the record the id's low 10 bits reach into `actor+0x6A`.
 
 ### Site presentation
 
@@ -686,9 +753,13 @@ as the suspending `SceneMode::BakaFighter` (play-window `B` key;
 Left/Right/Up = the three attacks, Down charges the special). A player match
 win installs the score tally (`BakaTally`, the `FUN_801d239c` port), which the
 world's Baka Fighter tick runs frame by frame, adding each drained step into
-the money exactly as retail adds it into `_DAT_80084440`; leaving the
-duel before the tally finishes banks the remainder, so the total paid is the
-prize either way. Disc-free oracle for that path:
+the mode-24 winnings accumulator exactly as retail adds it into
+`_DAT_80084440`; leaving the duel before the tally finishes banks the
+remainder, so the total accumulated is the prize either way. The duel's exit
+then runs the mode-24 return warp (`World::minigame_return_warp`,
+`FUN_80026018`), which pays the accumulator into the casino coin bank
+`_DAT_800845A4`, restores the backed-up scene name and latches the field mode.
+Disc-free oracle for that path:
 `engine-core/tests/baka_tally_world.rs`. Disc-gated oracle:
 `engine-core/tests/baka_minigame_real.rs` (counter-play through the world
 tick beats a real ladder opponent and banks the parsed prize). Host

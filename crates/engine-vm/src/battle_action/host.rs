@@ -181,6 +181,17 @@ pub trait BattleActionHost {
         0
     }
 
+    /// The `+0x87` flag byte of the art record a **monster** slot's staged
+    /// action id resolves to: `record_table[slot - 3][id]` then `+0x4C`, the
+    /// monster arm of the gauge re-arm's gate (`FUN_801E93C8`
+    /// `0x801E9458..0x801E94A4`). A non-zero flag closes the gate.
+    ///
+    /// Default returns `0` (gate open) - hosts with no monster art-record
+    /// table get retail's behaviour for a record whose flag is clear.
+    fn staged_art_record_flag(&self, _monster_slot: u8, _action_id: u8) -> u8 {
+        0
+    }
+
     /// Returns the character ability bitmask at `0x80084708 + (party_id-1) *
     /// 0x414 + 0xF4`. Bit `0x20` reduces MP cost by half, `0x10` by a quarter
     /// (`0x20` wins when both are set); `0x100` / `0x200` scale impact

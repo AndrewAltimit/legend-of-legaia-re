@@ -14,6 +14,7 @@ original executable.
 - [`effect_vm` - `FUN_801DE914` / `FUN_801DFDF8` / `FUN_801E0088`](#effect_vm---fun_801de914--fun_801dfdf8--fun_801e0088)
 - [`move_vm` - `FUN_80023070`](#move_vm---fun_80023070)
 - [`world_map` - `FUN_801DA51C`](#world_map---fun_801da51c)
+- [`escape_timer` - `FUN_801D2EBC`](#escape_timer---fun_801d2ebc)
 - [`actor_tick` - `FUN_80021DF4`](#actor_tick---fun_80021df4)
 - [`status_effects`](#status_effects)
 - [`scus_core_helpers`](#scus_core_helpers)
@@ -98,6 +99,23 @@ scene-transition states. `legaia_engine_core::World` drives one
 Field-machinery battle (returning to the world map on resolution) and
 `on_interact` into a `FieldInteract` event.
 
+## `escape_timer` - `FUN_801D2EBC`
+
+The scripted countdown the field VM arms with `0x4C 0xD3`
+(`SCHEDULE_TIMED_FLAGS`) - retail's collapsing-dungeon escape clock. One
+retail function does three things per frame and all three live here:
+`EscapeTimer::tick` subtracts the play-clock delta from the counter and
+reports the below-threshold and expiry story flags the crossing fires (the
+expiry also disarms), `hud_fields` decomposes what is left into MM:SS.ff, and
+`timer_ink` picks the readout colour. A "busy" frame - retail's three
+short-circuit conditions - leaves the counter standing.
+
+`legaia_engine_core::World` joins the installer and the drain: the field VM's
+operand triple reaches `World::schedule_timed_flags` through
+`FieldHost::op4c_n_d_sub3_party_setup`, and `World::tick_escape_timer` runs
+the drain once per retail frame, raising each fired flag in the system-flag
+bank and publishing the readout.
+
 ## `actor_tick` - `FUN_80021DF4`
 
 Per-actor physics tick - the `FUN_8002519C`-driven per-frame loop calls
@@ -155,8 +173,9 @@ The per-actor battle action state machine (see
 split across `dispatch` / `attack` / `magic` / `summon` / `spirit` / `done` /
 `run` / `enemy_budget` / `validator`. `pool_ops` collects the small
 self-contained leaves over the 8-slot actor pool and the ctx target queue:
-`clear_end_of_action_flags` (`FUN_801DB9C4`, the state-`0x5A` `+0x8 &=
-0x7CFFFFFF` scrub), `normalize_formation_span` (`FUN_801DB318`, the formation
+`clear_pool_flag_words` (`FUN_801DB9C4`, the `+0x8 &= 0x7CFFFFFF` scrub the
+pose setter `FUN_801D5854` runs on an out-of-range slot - **not** an
+action-SM state), `normalize_formation_span` (`FUN_801DB318`, the formation
 span-squash + centroid recentre with camera-focus compensation),
 `build_attack_target_queue` (`FUN_801D8A88`, the multi-target ring *builder* -
 counts live monsters, sorts the alternates by bearing offset from the current
@@ -167,6 +186,19 @@ sorts by), `first_live_monster_slot` (`FUN_801DB8B4`),
 `FUN_801DB81C`, the participant scans), and `redirect_dead_target`
 (`FUN_801DB124`, re-roll a queued action's target to a living same-side slot
 when the chosen target has died).
+
+`queue_applier` carries the byte-level kernels of the arts queue-builder
+`FUN_801EED1C`, which operate on the raw `actor[+0x1DF..+0x1F2]` window rather
+than on typed action constants: `apply_miracle_replace` (the flat 16-byte
+overwrite from the resident Miracle row at `0x801F64F4`), `clear_queue_msb`
+(the sweep that strips the row's on-disc `0x8C..0x8F` quirk),
+`apply_super_tail_replace` (`FUN_801EF9E4`, first-matching-row tail replace
+from `0x801F6524` / `0x801F65E8`), plus the still-inert `preseed_action_queue`
+/ `save_action_queue` / `check_and_learn_art` / `miracle_command_position`.
+`resolve_action_queue` - the entry point `engine-core` calls once per committed
+arts input - runs the first three in retail's finish order, so the live path is
+byte-level rather than structural; `legaia_art`'s matchers remain the *table*
+source behind `miracle_row_for` / `super_rows_for`.
 
 ## `battle_formulas`
 

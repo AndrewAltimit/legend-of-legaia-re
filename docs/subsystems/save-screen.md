@@ -359,9 +359,14 @@ machine runs before arming the next BIOS call.
 
 ### Card-operation sequencer (`FUN_801E13B8`)
 
-One of the three per-frame calls the ticker `FUN_801E1114` makes (the
-others are the display-list emitters `FUN_801E380C` / `FUN_801E16E0`).
-`FUN_801E13B8` is the higher-level card-**operation** sequencer over the
+One of the three per-frame calls the ticker `FUN_801E1114` makes. Its two
+siblings are not display-list emitters: `FUN_801E380C` is the in-flight
+transfer's completion step (it polls the array-A card events, closes the
+descriptor and latches the read / write failure flag - ported as
+[`card_bu_io::CardIoState::step`](../../crates/engine-core/src/card_bu_io.rs)),
+and `FUN_801E16E0` picks the status message from the last card result and
+runs the retry counters. `FUN_801E13B8` is the higher-level
+card-**operation** sequencer over the
 op word `_DAT_801F329C`, sitting above the libcd I/O machine
 `FUN_801E3294` and issuing that machine's read / write / format requests
 (see `ghidra/scripts/funcs/overlay_menu_801e13b8.txt`):
@@ -380,6 +385,50 @@ The message strings live contiguously at `0x801CF3B4..`
 the libcd read / write / format lifecycle through `FUN_801E3294` - so it
 is documented, not ported: the clean-room engine persists through the
 `legaia_save` LGSF path, not a PSX card op sequencer.
+
+### The `bu` file-I/O layer under the sequencer
+
+The requests `FUN_801E13B8` issues land on a thin wrapper family over the
+PSX BIOS `bu` device. Every one of them formats its target the same way -
+two single-digit fields (controller port, card unit), a colon, then the
+filename - and then makes one BIOS call. Port:
+[`engine-core::card_bu_io`](../../crates/engine-core/src/card_bu_io.rs).
+
+| Routine | BIOS call | Notes |
+|---|---|---|
+| `FUN_801E3C90` | `open` `0x8001` + `read` | Clears `DAT_801EF140`; seeks one `0x200` frame in when `DAT_801F01B8 == 0x80`. |
+| `FUN_801E3D68` | `open` `0x8002` + `write` | Clears `DAT_801EF13C`; a new file first opens `0x10200` (create, one block) and closes that handle. |
+| `FUN_801E37CC` | `erase` | The only routine here that waits on no completion at all. |
+| `FUN_801E3E7C` | `format` | Device-only path; drains array B, then blocks in `FUN_801E3A00`. |
+| `FUN_801E3BEC` | `strcmp` walk | Searches the caller's count of `0x28`-stride name records at `0x801F32A8`. |
+| `FUN_801E0598` | - | Session reset; empties the name cache only when its argument is zero. |
+
+The clear loop is wider than the walk. `FUN_801E0598` steps `0x28` down
+from `0x801F32A8 + 0x4D8`, so it empties **32** records, where
+[`FUN_801E1208`](#save-block-directory-enumeration-fun_801e1208) walks
+the 15 a single card holds. Two ports' worth plus slack fits; the extra
+records are never filled by the enumerator, so a lookup that reaches them
+is matching against a name the reset already zeroed.
+
+#### Two event arrays, not one
+
+Retail keeps two four-handle `TestEvent` arrays and they carry different
+traffic. Array **A** (`0x8007B9F0..0x8007B9FC`) is the asynchronous set:
+drained before each read / write, then polled per frame. Array **B**
+(`0x8007BA04..0x8007BA10`) is the synchronous set and only `format` uses
+it, via the drain `FUN_801E3A98` and the blocking spin `FUN_801E3A00`.
+
+The two probes over array A are siblings rather than duplicates.
+`FUN_801E3900` ([the per-frame status poll](#the-per-frame-status-poll-fun_801e3900))
+lets a later handle overwrite an earlier one and folds in the 120-frame
+backstop; `FUN_801E435C` returns on the **first** handle that reports and
+has no timeout. They disagree whenever more than one handle fires in the
+same frame.
+
+The result mappings differ too. `FUN_801E3E7C` treats handle `1` as
+success, handle `3` as "no card" (`-1`) and both handle `2` **and** handle
+`4` as the generic error (`-3`) - so handle 4, which is the completion
+handle in the async poll's vocabulary, is a failure in the format path.
 
 ### Save-block directory enumeration (`FUN_801E1208`)
 
@@ -1081,10 +1130,19 @@ branches on `DAT_801E46AC`, and on the active phase runs the shared
 list-cursor navigator [`FUN_801D688C`](#fun_801d688c---shared-list-cursor-navigator)
 over the roster count, switching on its result to retune the packed
 sub-mode nibble `DAT_801E46C0` and advance `DAT_801E46AC`; the init phase
-kicks the actor VM (`FUN_801D6628`). Neither function is ported - the
+kicks the actor VM (`FUN_801D6628`). `FUN_801DA2A0` is not ported - the
 clean-room engine models character records through `legaia_save` rather
 than a live-RAM debug editor, and there is no engine consumer for the
 developer screen.
+
+`FUN_801D6E18`'s **input and clamp halves** are ported, as
+`engine-core::debug_char_editor`; its renderer half (`0x801D7524`
+onward, roughly two thirds of its 890 instructions) is not. What makes
+the clamp worth carrying is that its ceilings are the game's own stat
+caps, stated in code: max HP `9999`, max MP `999`, the `+0x120` cap
+constant `100`, the six battle stats `999`, level `99` - and the cap
+constant's ceiling independently confirms the "always 100 in captured
+saves" reading in `legaia_save`.
 
 ## See also
 

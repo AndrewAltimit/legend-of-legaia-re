@@ -1070,8 +1070,10 @@ bit `0x2000` draws it on every row (all-party), else the low 12 bits
 pick the row; bit `0x1000` drops it to the static sprite variant.
 Drawn `FUN_8002B994(0, variant, WX, Yb)`. Engine port:
 `engine-ui::target_panel_draws_for` / `target_panel_sprites_for`, fed
-by `engine-core::pause_screens::target_panel_model`. See
-`overlay_menu_801d0520.txt`.
+by `engine-core::pause_screens::target_panel_view_model` - which
+resolves the preview word off the staged bag id's item-record kind byte
+plus its effect descriptor, then fills each row's base maxima and base
+stats from the live character record. See `overlay_menu_801d0520.txt`.
 
 **Door of Light route `FUN_801D8A58`** (submenu 0xB, effect class
 `0x80`): phase 0 zeroes the confirm cursor `DAT_801E46D0` (**Yes** is
@@ -1350,6 +1352,34 @@ The panel is content-only, like every renderer in this table - the frame
 is drawn by the caller. Which screen owns it is **Unknown**; the two-row
 shape and the packed state word read as a settings pair, but nothing in
 the corpus opens window 46.
+
+### Ported painters
+
+Fourteen of the table's content renderers are ported as draw-list
+builders in
+[`engine-ui::ui_menu_window_painters`](../../crates/engine-ui/src/ui_menu_window_painters.rs):
+windows 5, 6, 7, 24, 31, 32, 33, 34, 36, 37, 43, 45 and 46, plus the
+bottom-clipped box emit `FUN_801E4140`. The port keeps the pen
+arithmetic and the state-word rules and drops the two globals every one
+of them touches - the draw-order word `DAT_8007B454` and the
+glyph-advance byte `DAT_80073F20` - because a host that composites in
+call order and lays glyphs out proportionally has no use for either.
+
+Three rules the block encodes are worth naming on their own:
+
+- **Window 36's character mask is a table, not a shift.** `FUN_801D56FC`
+  indexes four bytes at `0x801E43F0`, which read `01 02 04 00` on disc.
+  Classes `0..=2` therefore agree with `1 << class`, but class `3` gets a
+  mask of zero and matches no equipment - not even against the
+  "any party member" mask `7` of
+  [equipment-table.md](../formats/equipment-table.md). A row that fails
+  the mask is not skipped: its draw order drops to `0`.
+- **Window 37's sell total is halved.** `FUN_801D5944` multiplies the
+  quantity by the unit price and arithmetic-shifts right by one.
+- **Window 37's digit field is a ladder, not a digit count.** It starts
+  at 4; `>= 100` and `>= 1000` each add one, and `>= 10000` *assigns* 5
+  before those two still add to it - so the widths are 4 / 5 / 6 / 7 and
+  a four-digit price reserves six cells.
 
 ## Draw primitives + CLUT staging
 
@@ -1669,3 +1699,96 @@ and the "+ New" room check are one implementation, so the two hosts
 cannot drift apart on them. Saving folds the edit back into the world's
 saved chains via `World::chain_library` / `store_chain_library`, so the
 next battle's Arts rows reflect it.
+
+## Equip stat-compare panels (windows 25 and 41)
+
+Two more descriptor-table renderers, both belonging to the equip flow and
+both content-only (the frame is caller-drawn):
+
+| Window | Rect `(x, y, w, h)` | Class | Renderer |
+|---|---|---|---|
+| 25 | `(14, 40, 144, 52)` | 4 (list page) | `FUN_801D1290` |
+| 41 | `(14, 46, 108, 158)` | 3 (standard) | `FUN_801D4C28` |
+
+### The eight-word stat block
+
+Both read a block of eight words at `0x801EF080` and its trial-equip
+mirror at `0x801EF0A0`. `FUN_801CF5D0(char_idx)` seeds the first from the
+character record and `FUN_801CF650` sums the equipment bonuses into it:
+
+| Word | Record | Char | Stat |
+|---|---|---|---|
+| `+0x00` | `+0x6CC` | `+0x104` | HP max |
+| `+0x04` | `+0x6D0` | `+0x108` | MP max |
+| `+0x08` | `+0x6D8` | `+0x110` | AGL |
+| `+0x0C` | `+0x6DA` | `+0x112` | ATK |
+| `+0x10` | `+0x6DC` | `+0x114` | UDF |
+| `+0x14` | `+0x6DE` | `+0x116` | LDF |
+| `+0x18` | `+0x6E0` | `+0x118` | SPD |
+| `+0x1C` | `+0x6E2` | `+0x11A` | INT |
+
+A row prints the `0x801EF080` value and then, **only when the two words
+differ**, a rise/fall arrow (`FUN_8003C1F8` glyph `4` at ink `6`, or glyph
+`5` at ink `1`) followed by the `0x801EF0A0` value at ink `7`.
+
+### Window 25 - the active character
+
+Draws the character's display name at the content origin, then either two
+HP/MP rows or one stat triple, three rows at `+0x10` / `+0x1D` / `+0x2A`
+with columns at `+0x10` label, `+0x38` value, `+0x54` arrow, `+0x60` delta
+(stat values clamp to `999`, three digits). The HP/MP variant instead
+draws icon pairs `0x64`/`0x3F` and `0x65`/`0x40` at `+0x10` / `+0x24`,
+prints the record halfword (not the block word) at `+0x34` in four digits,
+and puts its arrow/delta at `+0x58` / `+0x64` clamped to `9999`.
+
+Which of the three it draws comes from a single **category byte**:
+
+- `< 6` - the HP / MP pair;
+- `10..=12` - SPD, INT, AGL (block words 6, 7, 2);
+- anything else - ATK, UDF, LDF (words 3, 4, 5).
+
+Both compares are unsigned (`sltiu cat, 6`, then `sltiu (cat - 10), 3`).
+The byte is `0x40` unless a lookup replaces it, and the lookup has two
+guards that decide the panel's whole behaviour:
+
+- The **staged** id `DAT_801E46B0` is only consulted on slot rows `>= 4`
+  (`(DAT_801E46C0 & 0xFFF) - 1`, so the row past "Best Equipment"). Weapon
+  and armour rows therefore always keep `0x40` and always show ATK / UDF /
+  LDF. The lookup itself is class-dependent: item record `+0` equal to `1`
+  takes the equip record's `+5` byte, otherwise the item-effect record's
+  `+3`.
+- When **nothing** is staged (`DAT_801E46B0 == -1`) the category instead
+  comes from whatever is already in that slot - and that fallback is not
+  row-gated.
+
+Every retail equipment row carries `0x40` in its `+5` byte (the
+no-passive sentinel of
+[accessory-passive-table.md](../formats/accessory-passive-table.md)), so
+the alternative row sets are reached through accessory rows via the
+item-effect table, not through weapons.
+
+There is **no jump table** in `FUN_801D1290`; the branch structure above is
+the whole of its control flow.
+
+### Window 41 - the whole party
+
+Iterates the roster (`0x80084598`, count `0x80084594`) at a `0x37`
+per-member pitch, drawing the member's name at the content origin and then
+one of three outcomes:
+
+1. the staged id is already in one of the member's eight equip bytes
+   (record `+0x196..+0x19D`) - one note at `(+0x0C, +0x14)`, ink `4`;
+2. the equip record's `+6` character mask rejects the member - the same
+   position at ink `9`;
+3. otherwise the ATK / UDF / LDF triple at `+0x0D` / `+0x1A` / `+0x27`,
+   columns `+0x04` label, `+0x2C` value, `+0x48` arrow, `+0x54` delta.
+
+The candidate column is produced by a **trial equip performed inline**:
+back the eight equip bytes up to `0x801EF0C8`, write the staged id into
+the resolved slot, swap the `0x801EF080` and `0x801EF0A0` blocks, re-run
+`FUN_80042558` and `FUN_801CF650`, swap back, restore the bytes and
+re-aggregate. A staged id that is not equipment skips all of that and
+draws the current values with no arrows.
+
+Ports: `engine-ui::equip_compare_panel_fields` /
+`party_compare_panel_fields`.

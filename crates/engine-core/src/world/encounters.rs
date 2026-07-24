@@ -772,11 +772,82 @@ impl World {
     }
 
     /// Per-frame tick of the encounter session timers. Drives the
-    /// `Transition` and `Grace` countdowns.
+    /// `Transition` and `Grace` countdowns, and - while the session is in
+    /// `Transition` - the field-to-battle intro state machine.
     pub fn tick_encounter(&mut self) {
         if let Some(session) = self.encounter.as_mut() {
             session.tick_frame();
         }
+        self.tick_battle_intro();
+    }
+
+    /// One frame of the field-to-battle transition entity, `FUN_801CF5BC`.
+    ///
+    /// The encounter session's `Transition` phase *is* this transition: retail
+    /// runs the intro overlay (PROT 0979 `field_battle_intro`) between the
+    /// encounter trigger and the battle scene coming up, and its entity's
+    /// `+0x22` phase counter sequences the same handoff the engine performs at
+    /// [`World::enter_battle_from_formation`]. The entity is armed on the frame
+    /// the session enters `Transition` and dropped when it leaves.
+    ///
+    /// Only one of the kernel's effects has an engine-side consumer today: the
+    /// phase-2 `LoadBattleBgm`, which is the point retail starts the battle
+    /// track - *during* the spin, not after it. Routing it here is what moves
+    /// the swap off [`World::enter_battle_from_formation`]; the swap is
+    /// idempotent, so the later call is a no-op once this one has run. The
+    /// remaining effects (mesh assembly, the bundle read, the load waits) are
+    /// recorded in [`World::battle_intro_effects`] for a host that owns those
+    /// reads.
+    ///
+    /// The kernel's own load-wait response is reported idle: the engine has
+    /// already resolved the formation by the time the session reaches
+    /// `Transition`, so nothing is in flight to hold a phase.
+    ///
+    /// PORT: FUN_801CF5BC (live wiring; the kernel is
+    /// `legaia_engine_vm::battle_intro_transition::tick_transition`)
+    fn tick_battle_intro(&mut self) {
+        use crate::encounter::EncounterPhase;
+        use vm::battle_intro_transition::{
+            TransitionEffect, TransitionGlobals, TransitionResponses, tick_transition,
+        };
+
+        let phase = self.encounter.as_ref().map(|s| s.phase());
+        let Some(EncounterPhase::Transition {
+            frames_remaining,
+            roll,
+        }) = phase
+        else {
+            self.battle_intro = None;
+            self.battle_intro_effects.clear();
+            return;
+        };
+        let total = self
+            .encounter
+            .as_ref()
+            .map(|s| s.transition_frames)
+            .unwrap_or(0);
+        let mut entity = self.battle_intro.take().unwrap_or_default();
+        // `+0x1A` counts display frames against `DAT_801D2458`; the session's
+        // own countdown is the same clock read the other way round.
+        entity.elapsed = total.saturating_sub(frames_remaining) as i16;
+        let globals = TransitionGlobals {
+            battle_id: i32::from(roll.formation_id),
+            total_duration: i32::from(total),
+            // `DAT_8007B648 == 0x80` is retail's "battle-mesh assembly
+            // finished" byte, which phase 1 spins on. The engine assembles
+            // battle meshes synchronously at battle entry, so the answer is
+            // always "done" and the phase passes on its first tick.
+            assembly_state: 0x80,
+            ..Default::default()
+        };
+        let tick = tick_transition(&mut entity, &globals, &TransitionResponses::default());
+        self.battle_intro = Some(entity);
+        for effect in &tick.effects {
+            if matches!(effect, TransitionEffect::LoadBattleBgm { .. }) {
+                self.swap_to_battle_bgm();
+            }
+        }
+        self.battle_intro_effects = tick.effects;
     }
 
     /// Return the resolved [`crate::monster_catalog::FormationDef`] for the

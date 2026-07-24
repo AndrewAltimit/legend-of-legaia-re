@@ -93,7 +93,7 @@ scene when it ends; press the same key again to quit.
 
 | Key | Minigame | Rules engine | Table source | Controls |
 |---|---|---|---|---|
-| `K` | Noa dance rhythm | `legaia_engine_core::dance` | dance overlay PROT 0980 | Left/Right/Up are the three arrows |
+| `K` | Noa dance rhythm | `legaia_engine_core::dance` | dance overlay PROT 0980 | Square/Circle/Triangle are the three arrows (the retail pad bits) |
 | `L` | Fishing | `legaia_engine_core::fishing` | fishing overlay PROT 0972 | Cross casts then reels, Circle is the second reel button |
 | `O` | Casino slot machine | `legaia_engine_core::slot_machine` | slot overlay PROT 0975 | Cross spins / stops each reel / collects |
 | `B` | Baka Fighter duel | `legaia_engine_core::baka_fighter` | Baka Fighter overlay PROT 0976 | Left/Right/Up throw the three rock-paper-scissors attacks, Down charges the special |

@@ -4,29 +4,22 @@
 //! which no integration test can link against, so these pin the engine-side
 //! halves those call sites rely on: the Muscle Dome round time meter's
 //! per-frame advance, the dance HUD's judged-vs-displayed combo-slot split, and
-//! the slot machine's session-start strip build. It also pins the two facts
-//! that keep the mode-24 minigame door warp deliberately unwired.
+//! the slot machine's session-start strip build. It also pins which minigame
+//! exits go through the mode-24 door warp and which keep the plain
+//! suspend/restore contract.
 
 use legaia_engine_core::world::{SceneMode, World};
 
-// --- mode-24 minigame door warp: why it stays unwired ----------------------
+// --- mode-24 minigame door warp: which exits take it -----------------------
 
-/// The evidence behind leaving `World::minigame_return_warp` uncalled: nothing
-/// in the port fills the accumulator its commit half banks, so the commit would
-/// be an add of zero however it were called.
-///
-/// Retail *does* have a producer - the Baka Fighter end-of-match tally drains
-/// into `_DAT_80084440`, which `FUN_80026018` then adds into the casino coin
-/// bank `_DAT_800845A4`. This port pays that drain into party gold
-/// (`World::money`) instead, which is a different retail word (`0x8008459C`).
-/// Redirecting it is the prerequisite, and it lives in `World::tick_baka_fighter`
-/// / `World::exit_baka_fighter`.
-///
-/// So this test is a tripwire: the day the accumulator gains a producer it
-/// fails, and whoever made that change has to land the warp's two call sites in
-/// the same breath rather than leaving the prize in a stage nothing drains.
+/// The slot overlay is not a mode-24 warp exit. Its state-100 commit
+/// **assigns** the machine's final balance into the coin bank
+/// (`_DAT_800845A4`), which is a different write from `FUN_80026018`'s
+/// delta-add of the winnings accumulator `_DAT_80084440` - so a slot session
+/// must leave the accumulator alone, and the mode must come back by
+/// suspend/restore rather than by the warp's field latch.
 #[test]
-fn no_minigame_exit_credits_the_mode24_winnings_accumulator() {
+fn the_slot_exit_assigns_the_bank_and_leaves_the_accumulator_alone() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.casino_coins = 60;
@@ -39,7 +32,7 @@ fn no_minigame_exit_credits_the_mode24_winnings_accumulator() {
     // ...and the mode-24 accumulator is untouched by it.
     assert_eq!(
         world.minigame_winnings, 0,
-        "nothing in the engine feeds the mode-24 winnings accumulator"
+        "the slot cash-out is not the mode-24 accumulator's producer"
     );
     // The suspend/restore contract, not a warp, is what carries the mode back.
     assert_eq!(world.mode, SceneMode::Field);
@@ -56,6 +49,56 @@ fn minigame_entry_suspends_and_restores_the_interrupted_mode() {
     assert_eq!(world.mode, SceneMode::SlotMachine);
     world.exit_slot_machine();
     assert_eq!(world.mode, SceneMode::Battle, "suspend/restore, not a warp");
+}
+
+/// The Baka Fighter duel *is* a mode-24 warp exit: entering from the field arms
+/// the warp (scene-name backup + accumulator zero, retail `FUN_80025980` and
+/// the field-VM `0x3E` arm), and leaving runs `World::minigame_return_warp`
+/// (`FUN_80026018`) - which banks the accumulator into the coin bank, restores
+/// the backed-up scene label and latches the field mode.
+#[test]
+fn the_baka_exit_runs_the_mode24_return_warp() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.active_scene_label = "sioro".to_string();
+    world.casino_coins = 40;
+    world.minigame_winnings = 999; // stale value from an earlier session
+
+    world.enter_baka_fighter(baka_fight_for_test());
+    assert_eq!(world.mode, SceneMode::BakaFighter);
+    assert_eq!(
+        world.minigame_winnings, 0,
+        "the warp arm zeroes the accumulator"
+    );
+    assert_eq!(
+        world.minigame_scene_backup.as_deref(),
+        Some("sioro"),
+        "the warp arm backs up the scene name"
+    );
+
+    // Stand in for the tally drain, then leave.
+    world.minigame_winnings = 25;
+    world.active_scene_label = "baka".to_string();
+    world.exit_baka_fighter();
+    assert_eq!(world.mode, SceneMode::Field);
+    assert_eq!(world.casino_coins, 65, "accumulator banked as a delta-add");
+    assert_eq!(world.active_scene_label, "sioro", "scene name restored");
+    assert!(world.minigame_scene_backup.is_none(), "backup consumed");
+}
+
+fn baka_fight_for_test() -> legaia_engine_core::baka_fighter::BakaFight {
+    use legaia_engine_core::baka_fighter::{BakaFight, FighterConfig};
+    let cfg = |roster_id: usize| FighterConfig {
+        roster_id,
+        damage_mod: 0,
+        def_tiers: [0, 0, 0],
+        crit_chance: 0,
+        atk_tiers: [0, 0, 0],
+        attack_power: [0, 0, 0, 0, 0],
+        gold_reward: 0,
+        ai_pattern: Vec::new(),
+    };
+    BakaFight::new(cfg(0), cfg(1), [0, 0], 0xBAA5EED)
 }
 
 fn slot_machine_for_test() -> legaia_engine_core::slot_machine::SlotMachine {
@@ -184,4 +227,29 @@ fn the_beat_track_notes_scroll_one_cell_per_beat() {
         dance_beat_track_note_x(base, 0, BEAT_PERIOD - 1) < dance_beat_track_note_x(base, 0, 0),
         "the row drifts left within a beat"
     );
+}
+
+// --- casino: the coin-exchange counter the slot entry point buys through ---
+
+/// The play window tops a thin coin bank up by running a purchase through the
+/// ported counter (`coin_exchange_quote`, `FUN_801E6F70`) instead of conjuring
+/// a stake, so this pins the contract that host encodes: the entry field is
+/// eight single-digit cells stored **units first**, coins are a flat
+/// `COIN_PRICE_GOLD` each, and the sale is refused - with nothing debited -
+/// when either the gold or the stock gate fails.
+#[test]
+fn the_coin_counter_prices_the_slot_entry_stake() {
+    use legaia_engine_core::slot_machine::{COIN_PRICE_GOLD, coin_exchange_quote};
+    // The host lays 100 out as [0, 0, 1, 0, 0, 0, 0, 0] - units first.
+    let digits = [0u8, 0, 1, 0, 0, 0, 0, 0];
+    let cost = 100 * COIN_PRICE_GOLD;
+    let q = coin_exchange_quote(&digits, cost, i32::MAX);
+    assert_eq!(q.coins, 100);
+    assert_eq!(q.cost, cost);
+    assert!(q.is_valid(), "exactly enough gold buys the stake");
+    // One gold short: refused, and the host keeps the party's money.
+    assert!(!coin_exchange_quote(&digits, cost - 1, i32::MAX).is_valid());
+    // Stock is the other gate, independent of gold.
+    let thin = coin_exchange_quote(&digits, cost, 99);
+    assert!(thin.affordable && !thin.in_stock && !thin.is_valid());
 }

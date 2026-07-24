@@ -1294,6 +1294,14 @@ battle). Full phase/BGM detail is in the `FUN_801CF5BC` row of
 [`functions.md`](../reference/functions.md). `see
 ghidra/scripts/funcs/overlay_field_battle_intro_801cf5bc.txt`.
 
+Engine side, this state machine is the encounter session's `Transition` phase: the port
+(`legaia_engine_vm::battle_intro_transition::tick_transition`) is driven once per frame by
+`legaia_engine_core::World::tick_encounter` for as long as the session sits in that phase,
+and its phase-2 `LoadBattleBgm` effect is what starts the battle track - during the spin,
+which is where retail starts it, not at battle entry. The remaining effects (mesh
+assembly, the bundle read, the load waits) are surfaced on `World::battle_intro_effects`
+for a host that owns those reads.
+
 Two switches drive the visuals. A **style selector `DAT_801D2460` (0..=4)** dispatches to
 one of five per-frame transition emitters (below); a second switch then applies a per-style
 screen fade `func_0x80024EE4(2, blend, level*0x10101)`, the fade `level` ramped from the
@@ -1356,6 +1364,32 @@ they are shared scripted-scene machinery rather than dialogue-only code.
 | `FUN_801D6058` | ambient particle emitter (gated on `_DAT_8007B854`, optional `fog_set` trace): with actor `+0x1a == 0` occasionally spawns one particle at the actor position + random jitter via `FUN_801D629C`; otherwise loops 0x18 times spawning random bursts across the scene bounds (`DAT_1F8003E8..EB`) |
 
 `see ghidra/scripts/funcs/overlay_cutscene_dialogue_<addr>.txt` for each.
+
+### What the tween and the emitter do beyond the one-line role
+
+Three details of these bodies are only visible in the disassembly, and the
+engine port (`legaia_engine_core::cutscene_script_elements`) carries all
+three.
+
+The tween's entry test is on the **linked** object, not on itself: `0x801D5C1C`
+loads `linked[+0x10]` and branches on bit `8`, and the taken branch lands on
+the store that sets the *element's own* bit `8`. So an element whose target has
+already finished retires itself without writing a position. Every position
+write is also accompanied by a facing/sort write - `linked[+0x8E] = -y` of the
+value just applied - and the sole exception is the camera object, compared by
+pointer identity against `_DAT_8007C364` (`0x801D5CA8` and `0x801D5D38`). Both
+the blend arm and the snap arm do it.
+
+The emitter picks between two parameter pairs on `_DAT_1F800394 & 1`
+(`0x801D60A0`): bit clear leaves `(2, 1)`, bit set replaces them with
+`(6, 0x0E)`. The first is added to the scene's Y span before it is halved, the
+second is subtracted from each particle's Y offset - so the bit widens the
+band and shifts it. Only the scene-wide burst arm reads them.
+
+Finally, the decompiled C of the burst count reads `if ((uVar1 & 3) !=
+0xffffffff)`, which is a decompiler artifact: the disassembly is `addiu
+s2,v0,0x1` then `beq s2,zero`, a zero test on a value that is always `1..=4`.
+Every burst that passes the one-in-sixteen gate spawns at least one particle.
 
 ## Open items
 

@@ -19,8 +19,8 @@
 //!
 //! | | `FUN_801DD4B0` | `FUN_801DD6B4` |
 //! |---|---|---|
-//! | attacker stat mixed into the roll | AGL `+0x168` (also `* 2`) | spell power `+0x158` |
-//! | defender mitigation terms | AGL `+0x168` (`>> 1` modulus, `* 2` flat) plus `+0x15C`/`+0x160` `>> 4` | `+0x15C`/`+0x160` only (`>> 3` modulus, `>> 1` flat) |
+//! | attacker stat mixed into the roll | `+0x168` INT working (also `* 2`) | `+0x158` ATK working |
+//! | defender mitigation terms | `+0x168` (`>> 1` modulus, `* 2` flat) plus `+0x15C`/`+0x160` `>> 4` | `+0x15C`/`+0x160` only (`>> 3` modulus, `>> 1` flat) |
 //! | finisher `param_5` | `0` - the equipment resist ladder runs | `1` - **the whole party-defender resist block is skipped** |
 //!
 //! The `param_5 = 1` path is the resist-**bypass** wrapper: a hit routed
@@ -56,9 +56,15 @@ pub const SPELL_BYPASSES_PARTY_RESIST: bool = true;
 pub struct WrapperAttacker {
     /// Current HP (`+0x14C`). Contributes `hp >> 8` to the roll.
     pub hp: u16,
-    /// Agility (`+0x168`). Read by `FUN_801DD4B0` only.
+    /// The `+0x168` stat, read by `FUN_801DD4B0` only. Named `agl` for the
+    /// role it plays in the roll; [`crate::battle_formulas::stat_init`] pins
+    /// the field itself as **INT working** (`+0x16A` is its base), which is
+    /// also what `engine-core`'s summon / arts bridges feed it.
     pub agl: u16,
-    /// Spell power (`+0x158`). Read by `FUN_801DD6B4` only.
+    /// The `+0x158` stat, read by `FUN_801DD6B4` only -
+    /// [`crate::battle_formulas::stat_init`] pins it as **ATK working**
+    /// (`+0x15A` base), i.e. the same offense scalar the physical routine
+    /// reads, not a separate spell-power field.
     pub spell_power: u16,
     /// Status bitfield (`+0x16E`): bit `0x1` scales the roll to 9/10, bit
     /// `0x2` to 7/10, applied in that order (the `FUN_801DD864` stage).
@@ -70,7 +76,7 @@ pub struct WrapperAttacker {
 pub struct WrapperDefender {
     /// Current HP (`+0x14C`). Contributes `hp >> 8` to both wrappers' rolls.
     pub hp: u16,
-    /// Agility (`+0x168`). Read by `FUN_801DD4B0` only.
+    /// The `+0x168` stat (INT working). Read by `FUN_801DD4B0` only.
     pub agl: u16,
     /// Defence term A (`+0x15C`).
     pub stat_a: u16,
@@ -91,6 +97,8 @@ pub struct WrapperDefender {
 /// `srl` and the first modulus is taken with `divu`.
 ///
 /// PORT: FUN_801DD4B0 (attacker-roll stage)
+/// NOT WIRED: only [`physical_wrapper_predamage`] composes this stage, and
+/// that entry point is itself unreachable - see its note.
 pub fn physical_attacker_roll(power: u32, a: &WrapperAttacker, rng: [u16; 2]) -> u32 {
     let modulus_power = (power >> 2) + 1;
     let modulus_agl = (a.agl as u32 >> 1) + 1;
@@ -110,6 +118,8 @@ pub fn physical_attacker_roll(power: u32, a: &WrapperAttacker, rng: [u16; 2]) ->
 /// set.
 ///
 /// PORT: FUN_801DD4B0 (defender-roll stage)
+/// NOT WIRED: only [`physical_wrapper_predamage`] composes this stage, and
+/// that entry point is itself unreachable - see its note.
 pub fn physical_defender_roll(d: &WrapperDefender, rand: u16) -> u32 {
     let modulus = (d.agl as u32 >> 1) + 1;
     (rand as u32) % modulus
@@ -196,6 +206,20 @@ fn scale(
 /// retail does.
 ///
 /// PORT: FUN_801DD4B0
+/// NOT WIRED: the respecting wrapper is reached only from the *capture-class*
+/// cast modules (the `jal 0x801DD4B0` word occurs across the streamed PROT
+/// entries `0934..=0966`, one call per module tick), and nothing in the engine
+/// can tell a capture-class cast from an ordinary move-power special: the
+/// class byte lives at `+0` of the `DAT_800754C8` spell record, which
+/// `legaia_asset::spell_names` does not decode, and the per-module id switch
+/// that picks the tick is inside code the engine never loads. Only the
+/// **bypass** subset is census-pinned by move id (the six modules the
+/// `--jewel-fix` patch retargets), which is why
+/// [`spell_wrapper_predamage`] has a live caller and this one does not. Every
+/// enemy special the engine *can* identify routes through the shared kernel
+/// `FUN_801DD0AC` (`battle_formulas::arts_physical_predamage_lazy`), whose
+/// attacker roll is instruction-identical to this one but whose bonus arm is
+/// not.
 pub fn physical_wrapper_predamage(
     power: u32,
     a: &WrapperAttacker,

@@ -87,7 +87,11 @@ Party state + inverted-Y mirror cluster.
   `0x4C7`, duration 2400, threshold 910) + disarm records in
   `chitei2`/`map03`. The flag slots live in the `0x80084140` save-scratch
   block (persisted). Installer at `FUN_801DE840` case 0xD sub 3
-  (`~0x801E2C08`, 0897 file `+0x143F0`).
+  (`~0x801E2C08`, 0897 file `+0x143F0`). Ported end to end: the installer
+  reaches `World::schedule_timed_flags` through
+  `FieldHost::op4c_n_d_sub3_party_setup`, and `World::tick_escape_timer`
+  drains it once per retail frame into the system-flag bank
+  (`legaia_engine_vm::escape_timer::EscapeTimer`).
 - **Sub-6** mutates `ctx.field_74`: 3-byte `[4C, 0xD6, b1]`, if `b1 == 4` clears top bit only, else sets bit 0x80000000 + shifts `b1` into the top byte; halts at PC.
 - **Sub-7** (1-byte) registers a `FUN_801DC0BC` list-walk callback then halts at PC.
 - **Sub-8** (9-byte) is a synchronous-spawn actor allocator: `[4C, 0xD8, vdf_idx, tmd_lo, tmd_hi, kind_lo, kind_hi, var_lo, var_hi]` decodes to `(vdf_idx: u8, tmd_idx: i16, kind: u16, variant: u16)` and routes through host hook [`FieldHost::op4c_n_d_sub8_call_d77f4`] (overlay-resident `FUN_801D77F4`, see `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d77f4.txt`); host writes `actor[+0x3C] = kind` and `actor[+0x3E] = variant` on the allocated slot. Unlike the queue-based `0x4C 0x80` halt-acquire path, the spawn is synchronous - the host emits `FieldEvent::ActorSpawned` directly, with no intervening `pending_actor_spawns` queueing. PC always += 9.

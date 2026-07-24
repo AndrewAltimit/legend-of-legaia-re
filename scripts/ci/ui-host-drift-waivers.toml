@@ -156,49 +156,6 @@ session.
 """
 
 [[waiver]]
-builder = "items_throw_confirm_sprites_for"
-kind = "orphan"
-reason = """
-The hand-*sprite* variant of the Throw Out confirm cursor. Both hosts already
-draw this window through the sibling text builder `items_throw_confirm_draws_for`
-(native `window/menu_draws.rs`, web `play_menu.rs`), which they call with
-`text_cursor = true` - so the Yes/No hand comes out as the ASCII `>` stand-in
-the confirm shares with the rest of the pause lists, and the atlas-sprite
-variant is unused today. Not a missing screen: the confirm renders on both
-hosts. Closing this means switching the confirm to the sprite hand on both
-hosts (a host-side change), which is out of scope for the RE lane that traced
-the confirm SM.
-"""
-
-[[waiver]]
-builder = "target_panel_draws_for"
-kind = "orphan"
-reason = """
-The retail window-14 party target panel renderer (`FUN_801D0520`), newly traced
-from the 0899 disassembly. Both hosts currently stand in the field item-use
-target-select with a generic overlay (native `pause_items_draws` returns
-`items_session_draws` while `model.target_select`; the web page mirrors it),
-rather than the retail per-member `cur/max` + Water-preview column. Wiring this
-builder in is a host-side change (native `window/menu_draws.rs`, web
-`play_menu.rs`, both outside this RE lane's file scope) that also needs the
-host to feed per-member level + base-stat records into the `TargetPanelModel`.
-Kept as the faithful renderer the host follow-up will call; the SM half
-(`engine-core::pause_screens::target_panel_model`/`target_panel_mode`) is wired
-and unit-tested.
-"""
-
-[[waiver]]
-builder = "target_panel_sprites_for"
-kind = "orphan"
-reason = """
-The sprite half (LV/HP/MP label tags + hand cursor) of the window-14 target
-panel - the companion to `target_panel_draws_for` above, and gated on the same
-host follow-up. Neither host draws the retail target column yet, so nothing
-calls it; it lands with its text sibling when a host routes the item
-target-select through the window-14 panel.
-"""
-
-[[waiver]]
 builder = "records_screen_draws_for"
 kind = "orphan"
 reason = """
@@ -226,3 +183,150 @@ wired and unit-tested, so this builder waits for a host debug toggle rather
 than inventing one.
 """
 
+
+[[waiver]]
+builder = "title_tab_draws_for"
+kind = "orphan"
+reason = """
+Menu-overlay window-descriptor content painter (window id 43,
+`FUN_801DCFE4`), one of ten in `ui_menu_window_painters`. The descriptor
+table names a content renderer per window and both hosts currently draw only
+the screens whose windows they already model (field / status / spell /
+equipment / inventory). Routing these in means the host walking the disc
+window table and dispatching on `renderer_va` instead of hard-coding a screen
+- a menu-host change, not a draw-call one. The geometry half is unit-tested
+against the disc rects for its window id.
+"""
+
+[[waiver]]
+builder = "record_title_tab_draws_for"
+kind = "orphan"
+reason = """
+Window id 33 (`FUN_801DCF14`): the same one-line tab, but its text lives
+behind a variable-length prefix in the live `DAT_8007B450` record. Gated on
+the same `renderer_va` dispatch as `title_tab_draws_for`, plus a host that
+surfaces that record - `title_record_text_offset` is the offset arithmetic it
+would need.
+"""
+
+[[waiver]]
+builder = "counter_panel_draws_for"
+kind = "orphan"
+reason = """
+Windows 32 and 45 (`FUN_801DCF84` / `FUN_801DD028`): pictogram plus an
+eight-digit right-aligned counter. Both hosts draw their own money readout
+inside the field-menu corner box rather than opening these standalone counter
+windows, so nothing dispatches to them yet. Same `renderer_va` gate as the
+rest of the block.
+"""
+
+[[waiver]]
+builder = "char_prompt_draws_for"
+kind = "orphan"
+reason = """
+Window id 7 (`FUN_801DCCB4`): a one-line confirm prompt with one character
+substituted out of the live `0x80084140` record block. Neither host opens the
+confirm window that owns it - the save/load confirm they do draw comes from
+`ui_title_save`, which is a different window family. Gated on the same
+`renderer_va` dispatch.
+"""
+
+[[waiver]]
+builder = "amount_prompt_draws_for"
+kind = "orphan"
+reason = """
+Window id 31 (`FUN_801DCE20`): heading, wide number field, trailing unit
+label, corner cursor. The shop and inn flows both hosts run draw their own
+amount lines, so this window is never opened. Same `renderer_va` gate.
+"""
+
+[[waiver]]
+builder = "count_panel_draws_for"
+kind = "orphan"
+reason = """
+Window id 24 (`FUN_801DCC20`): a two-digit count over a reserved sub-rect,
+guarded on a live selection index. The inventory panels both hosts draw carry
+their own count column, so this window is not opened. Same `renderer_va`
+gate.
+"""
+
+[[waiver]]
+builder = "choice_panel_draws_for"
+kind = "orphan"
+reason = """
+Window id 46 (`FUN_801D603C`): one heading over a two-row choice group whose
+markers come from the `DAT_801E46D0` branch chain. The options screen both
+hosts draw is `options_screen_draws_for`, an engine-styled list, not this
+window pair; adopting these would replace that screen's layout, which is a
+menu-host decision. The branch chain itself is unit-tested here.
+"""
+
+[[waiver]]
+builder = "two_line_choice_panel_draws_for"
+kind = "orphan"
+reason = """
+Window id 5 (`FUN_801D61B0`): the two-heading sibling of
+`choice_panel_draws_for`, sharing its marker branch chain and differing only
+in the marker column and first-row offset. Gated on the same host decision.
+"""
+
+[[waiver]]
+builder = "label_list_draws_for"
+kind = "orphan"
+reason = """
+Window id 6 (`FUN_801D6360`): six stacked labels with the only cursor in this
+block anchored to the window *extent* rather than its origin. No host opens
+window 6; the pause command list they do draw is `field_menu_draws_for`,
+whose geometry comes from window 50. Same `renderer_va` gate.
+"""
+
+[[waiver]]
+builder = "item_description_draws_for"
+kind = "orphan"
+reason = """
+Window id 34 (`FUN_801D4A80`): item name, owned count and the description
+line, with accessories routed through the passive table instead of the item's
+own description word. Both hosts draw their inventory description from
+`inventory_panel_draws_for`, which owns its own layout; adopting this window
+means the menu host dispatching on the disc table's `renderer_va` rather than
+hard-coding a screen. The description-routing rule itself
+(`description_source`) is unit-tested here and needs no host to be correct.
+"""
+
+[[waiver]]
+builder = "equip_target_list_draws_for"
+kind = "orphan"
+reason = """
+Window id 36 (`FUN_801D56FC`): the equip-target list, whose rows grey out via
+the character mask at `0x80074F68 + id*8 + 6`. The equip screen both hosts
+draw picks its target from the party panel rather than opening this window.
+Same `renderer_va` dispatch gate as the rest of `ui_menu_window_painters`;
+the mask rule (`equip_row_enabled`) is unit-tested independently.
+"""
+
+[[waiver]]
+builder = "sell_quantity_draws_for"
+kind = "orphan"
+reason = """
+Window id 37 (`FUN_801D5944`): the sell quantity panel and its right-packed
+gold total. The shop session both hosts run draws its own quantity line, so
+this window is never opened. The two rules it carries - the halved sell total
+and the four-step digit ladder - are unit-tested here and are what a host
+adopting the window would need.
+"""
+
+[[waiver]]
+builder = "compare_panel_draws_for"
+kind = "orphan"
+reason = """
+The equip screen's two stat-compare window painters (menu-overlay window
+descriptors 25 / `FUN_801D1290` and 41 / `FUN_801D4C28`), rendered from a
+shared field list. Neither host opens those windows: the engine's equip flow
+is `engine-core::equip_session`, which previews one character through
+`compute_battle_stats` and draws its own screen, so nothing produces the
+retail eight-word stat block (`0x801EF080` / its trial mirror `0x801EF0A0`)
+these panels compare, and nothing produces a party-wide preview at all -
+`EquipSession` is single-character by construction. Wiring is a host job that
+first has to rebuild the equip screen on the retail window set; the layout
+half lands now so the geometry is pinned while the disassembly is fresh.
+"""

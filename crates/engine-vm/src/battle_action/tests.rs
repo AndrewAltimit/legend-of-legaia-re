@@ -598,6 +598,72 @@ fn done_cleanup_run_screen_shakes() {
     assert!(host.take().contains(&Event::ScreenShake(0x500)));
 }
 
+/// `DoneCleanup`'s tail `jal`s the gauge re-arm (`FUN_801E93C8` at
+/// `0x801E5F64`): every one of the seven pool slots gets the neutral arm-width
+/// seed and any `+0x21C` latch holding exactly `1` is cleared.
+#[test]
+fn done_cleanup_rearms_the_command_gauge_slots() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::DoneCleanup.as_byte();
+    ctx.gauge_rearm_latch = 7;
+    // Party gate: `+0x1D9 < 0x10` (a plain direction command).
+    host.actors[1].current_anim = 0x0C;
+    for (i, a) in host.actors.iter_mut().enumerate() {
+        a.render_flag = if i % 2 == 0 { 1 } else { 200 };
+        a.impact_step = 0;
+    }
+    step(&mut host, &mut ctx);
+    for i in 0..crate::battle_gauge_rearm::GAUGE_SLOTS {
+        assert_eq!(
+            host.actors[i].impact_step,
+            crate::battle_gauge_rearm::ARM_WIDTH_SEED,
+            "slot {i} arm width seeded"
+        );
+        let expect_latch = if i % 2 == 0 { 0 } else { 200 };
+        assert_eq!(host.actors[i].render_flag, expect_latch, "slot {i} latch");
+    }
+    // Slot 7 is outside retail's `while (i < 7)` walk.
+    assert_eq!(host.actors[7].impact_step, 0);
+    assert_eq!(ctx.gauge_rearm_latch, 0);
+}
+
+/// The gate is real: a materialised art (`+0x1D9 >= 0x10`) on a party slot
+/// closes it and nothing is touched.
+#[test]
+fn done_cleanup_skips_the_rearm_for_a_materialised_art() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::DoneCleanup.as_byte();
+    ctx.gauge_rearm_latch = 7;
+    host.actors[1].current_anim = 0x1B;
+    for a in &mut host.actors {
+        a.render_flag = 1;
+        a.impact_step = 0;
+    }
+    step(&mut host, &mut ctx);
+    assert!(host.actors.iter().all(|a| a.impact_step == 0));
+    assert!(host.actors.iter().all(|a| a.render_flag == 1));
+    assert_eq!(ctx.gauge_rearm_latch, 7);
+}
+
+/// A monster slot reads the art record's `+0x87` flag instead of the staged
+/// id, through the host hook - the default (`0`) leaves the gate open.
+#[test]
+fn done_cleanup_rearm_gate_for_a_monster_slot_uses_the_record_flag() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 4);
+    ctx.action_state = ActionState::DoneCleanup.as_byte();
+    // A monster's staged id is irrelevant on this arm; the default hook
+    // reports a clear record flag, so the re-arm runs.
+    host.actors[4].current_anim = 0xFF;
+    for a in &mut host.actors {
+        a.impact_step = 0;
+    }
+    step(&mut host, &mut ctx);
+    assert_eq!(
+        host.actors[0].impact_step,
+        crate::battle_gauge_rearm::ARM_WIDTH_SEED
+    );
+}
+
 #[test]
 fn done_fade_down_holds_then_routes_to_end_of_action() {
     let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);

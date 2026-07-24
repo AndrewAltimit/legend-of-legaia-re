@@ -855,13 +855,10 @@ pub fn magic_screen_model(s: &SpellMenuSession, text: Option<&MenuTextTables>) -
 ///
 /// PORT: FUN_801D6A54 (target-panel preview-mode derivation)
 ///
-/// NOT WIRED: no host builds the window-14 target panel. Both halves have
-/// zero host callers ([`target_panel_model`] here, `target_panel_draws_for`
-/// in `engine-ui`), and the mode word only means anything as that panel's
-/// input. It also needs the item-effect record (class `+0`, arg `+1`) for
-/// the staged item, which [`PauseItemRow`] does not carry: the session
-/// resolves rows through [`MenuTextTables`] (names, descriptions,
-/// passives) and never loads `legaia_asset::item_effect`.
+/// Driven from [`target_panel_view_model`], the host entry point for the
+/// window-14 panel: the staged bag id resolves the item record's kind
+/// byte and effect descriptor through the world's disc-parsed
+/// [`legaia_asset::item_effect::ItemEffectTable`].
 pub fn target_panel_mode(item_kind: u8, effect_class: u8, effect_arg: u8) -> u32 {
     if item_kind != 2 || effect_class != 6 {
         return 0;
@@ -1125,6 +1122,17 @@ pub struct TargetPanelMemberModel {
     pub hp_max: u16,
     pub mp: u16,
     pub mp_max: u16,
+    /// Record-side base maxima (`+0x11C` / `+0x11E`) - the teal paren
+    /// values of the mode-1 (Life / Magic Water) preview rows. Zero
+    /// unless the builder had the character record.
+    pub base_hp_max: u16,
+    pub base_mp_max: u16,
+    /// Effective stats in the retail panel's label order (ATK, UDF, LDF,
+    /// SPD, INT) - the left value of the modes-2..5 stat rows.
+    pub stat_eff: [u16; 5],
+    /// Record-side base stats (`+0x124..+0x12C`), same order - the teal
+    /// paren value of the same rows.
+    pub stat_base: [u16; 5],
 }
 
 /// Owned view model of the window-14 party target panel - maps onto the
@@ -1159,6 +1167,7 @@ pub fn target_panel_model(s: &PauseItemsSession, mode: u32) -> Option<TargetPane
             hp_max: t.hp_max,
             mp: t.mp,
             mp_max: t.mp_max,
+            ..Default::default()
         })
         .collect();
     Some(TargetPanelModel {
@@ -1167,6 +1176,61 @@ pub fn target_panel_model(s: &PauseItemsSession, mode: u32) -> Option<TargetPane
         cursor_row: *cursor as u8,
         all_targets: false,
     })
+}
+
+/// The bag id the Items screen's use flow currently has staged - the row
+/// the target select was entered from (`item_cursor` -> `filtered_items`
+/// -> `items`). `None` outside target select.
+pub fn staged_use_item_id(s: &PauseItemsSession) -> Option<u8> {
+    let InventoryUseState::TargetSelect { item_cursor, .. } = &s.inner.state else {
+        return None;
+    };
+    let idx = s.inner.filtered_items.get(*item_cursor).copied()?;
+    s.inner.items.get(idx).copied()
+}
+
+/// Host entry point for the window-14 target panel: derive the retail
+/// preview word for the staged item off the world's disc item-effect
+/// table, build the view model, then fill the per-member record-side
+/// fields (base maxima + base stats) the water previews draw from the
+/// live party records.
+///
+/// This is the call the pause-menu host makes while the Items screen is
+/// in target select; [`target_panel_mode`] and [`target_panel_model`]
+/// are its two halves.
+pub fn target_panel_view_model(
+    s: &PauseItemsSession,
+    world: &crate::world::World,
+) -> Option<TargetPanelModel> {
+    let mode = staged_use_item_id(s)
+        .and_then(|id| {
+            let table = world.item_effects.as_ref()?;
+            let eff = table.effect(id)?;
+            Some(target_panel_mode(table.kind(id), eff.class, eff.tier))
+        })
+        .unwrap_or(0);
+    let mut model = target_panel_model(s, mode)?;
+    for (m, row) in model.members.iter_mut().zip(s.inner.targets.iter()) {
+        // Party rows index the roster by slot; monster rows (battle-side
+        // targets) have no character record and keep the zeroed fields.
+        let Some(rec) = world.roster.members.get(row.slot as usize) else {
+            continue;
+        };
+        if row.is_enemy {
+            continue;
+        }
+        let live = rec.live_stats();
+        let base = rec.record_stats();
+        m.level = match rec.magic_rank() {
+            l @ 1..=99 => l,
+            _ => legaia_save::level_for_cumulative_xp(rec.cumulative_xp()),
+        };
+        m.base_hp_max = base.hp_max;
+        m.base_mp_max = base.mp_max;
+        m.stat_eff = [live.atk, live.udf, live.ldf, live.spd, live.int];
+        m.stat_base = [base.atk, base.udf, base.ldf, base.spd, base.int];
+    }
+    Some(model)
 }
 
 /// The staged notify-window message after its two markup operands are
@@ -1923,6 +1987,48 @@ mod tests {
         assert_eq!(m.members[0].hp, 50);
         assert_eq!(m.members[0].hp_max, 100);
         assert!(!m.all_targets);
+    }
+
+    /// The host entry point resolves the staged bag id and, without a disc
+    /// item-effect table, falls back to the plain (mode 0) panel while
+    /// still filling the per-member record fields from the live roster.
+    #[test]
+    fn target_panel_view_model_fills_record_fields() {
+        let mut s = items_session(&[(0x77, 3)]);
+        let mut world = crate::world::World::new();
+        assert!(target_panel_view_model(&s, &world).is_none());
+        s.input_pad_edge(edge(PadButton::Cross)); // -> list
+        s.input_pad_edge(edge(PadButton::Cross)); // confirm -> target select
+        assert_eq!(staged_use_item_id(&s), Some(0x77));
+
+        // Slot 0 of the roster is the target row's record.
+        let mut rec = legaia_save::CharacterRecord::parse(&[0u8; 0x414]).expect("blank record");
+        let mut base = rec.record_stats();
+        base.hp_max = 111;
+        base.mp_max = 22;
+        base.atk = 33;
+        base.udf = 34;
+        base.ldf = 35;
+        base.spd = 36;
+        base.int = 37;
+        rec.set_record_stats(base);
+        let mut live = rec.live_stats();
+        live.atk = 43;
+        live.udf = 44;
+        live.ldf = 45;
+        live.spd = 46;
+        live.int = 47;
+        rec.set_live_stats(live);
+        world.roster.members = vec![rec];
+
+        let m = target_panel_view_model(&s, &world).expect("target select stages the panel");
+        // No disc effect table on this world - the plain panel.
+        assert_eq!(m.mode, 0);
+        assert_eq!(m.members.len(), 1);
+        assert_eq!(m.members[0].base_hp_max, 111);
+        assert_eq!(m.members[0].base_mp_max, 22);
+        assert_eq!(m.members[0].stat_eff, [43, 44, 45, 46, 47]);
+        assert_eq!(m.members[0].stat_base, [33, 34, 35, 36, 37]);
     }
 
     #[test]

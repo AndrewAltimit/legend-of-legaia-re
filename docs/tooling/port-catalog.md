@@ -442,3 +442,38 @@ The point of the table is to make the cross-cuts cheap to read:
 
 - [`docs/tooling/ghidra.md`](ghidra.md) - produces the `ghidra/scripts/funcs/` dumps that drive the "dumped" column.
 - [`docs/reference/functions.md`](../reference/functions.md) - the curated entry-point directory the "documented" signal draws from.
+
+- [`stale-not-wired-triage.md`](stale-not-wired-triage.md) - per-row verdicts
+  for the audit's *tagged `NOT WIRED` but analysed live* section, and the three
+  call-graph mechanisms that put rows there.
+
+## Where the reachability pass over-reports
+
+The graph resolves calls by name, never by receiver type, and every ambiguity
+resolves toward reachability - that is what makes `--not-live` a floor rather
+than a guess. The cost lands on the audit's first section, in three shapes:
+
+- an ambiguous `.name(` or `name(` linking to every in-tree definition of that
+  name, which makes any port whose entry point is called `new`, `tick`, `add`,
+  `len` or `default` read live regardless of wiring;
+- the bare-identifier edge, which links a function *value* to a free function of
+  that name and cannot tell it from a struct **field** of the same name;
+- a `//! PORT:` module anchor, whose scope is the whole file - so one reachable
+  routine reports every tagged address in that file live, including the ones the
+  module doc marks `NOT WIRED` by name.
+
+**The first two are corrected, in a second graph.** `--live-audit` builds
+`build_rust_graph(strict=True)` alongside the permissive one and reads *only*
+the stale-`NOT WIRED` test off it; `live`, `--not-live` and `--live-only` are
+unchanged and still come from the permissive graph. Sharpening the shared graph
+instead would trade the hard floor away for a fix to the opposite error, which
+is why it is two graphs and not one.
+
+The third shape - anchor granularity - is open, and is now most of what the
+audit's first section reports. A module anchor cannot distinguish the tagged
+routine from a live `Default` impl in the same file without the `PORT:` tag
+carrying item-level information.
+
+[`stale-not-wired-triage.md`](stale-not-wired-triage.md) carries the worked
+examples, the per-row verdicts, and why the receiver gate must fire only on
+*ambiguous* names.

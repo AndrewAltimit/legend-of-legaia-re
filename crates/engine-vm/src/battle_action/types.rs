@@ -524,6 +524,11 @@ pub struct BattleActionCtx {
     /// `[+0x269]` - multi-cast queue gate read at `DoneFadeDown`. Non-zero
     /// routes to `DoneMultiCast`; zero routes to `EndOfAction`.
     pub multi_cast_gate: u8,
+    /// `[+0x243]` - the byte the gauge re-arm clears once it has run
+    /// (`FUN_801E93C8`'s tail store at `0x801E94F8`, reached only on the arm
+    /// whose gate passed). Cleared by [`crate::battle_action::done_cleanup`]
+    /// via [`crate::battle_gauge_rearm::rearm_gauge`].
+    pub gauge_rearm_latch: u8,
     /// `[+0x249]` - exit gate read at `MagicExit`.
     pub magic_exit_gate: u8,
     /// `[+0x24A]` - item-target byte A (read at `MagicCastBegin` for

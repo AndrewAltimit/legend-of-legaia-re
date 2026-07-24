@@ -21,10 +21,24 @@ impl World {
     /// Arm the timed sound-source auto-release for `deadline` vsyncs
     /// (`gp+0x814`). [`Self::tick`] counts it down by the frame step.
     ///
-    /// REF: FUN_800267FC
+    /// Retail's arm half writes five `gp` cells, not three: on top of the
+    /// timer's armed flag / deadline / elapsed it latches the live brightness
+    /// word `_DAT_8007B910` and the caller's tag, then tail-calls the libsnd
+    /// volume shim with `(level >> 1, deadline | 1)`. Those two extra cells
+    /// land in [`Self::sound_arm`] so a host driving the shim has the exact
+    /// arguments; the engine has no live brightness ramp of its own, so the
+    /// latched level is the cold-reset value retail boots `_DAT_8007B910` to.
+    ///
+    /// PORT: FUN_800267A8
+    /// REF: FUN_800267FC, FUN_80062004
     pub fn arm_sound_release(&mut self, deadline_vsyncs: i32) {
         self.sound_release.arm(deadline_vsyncs);
         self.pending_sound_release = false;
+        self.sound_arm = Some(crate::scus_leaf_kernels::TimedSoundArm::arm(
+            0,
+            deadline_vsyncs.max(0) as u32,
+            crate::new_game::GAME_STATE_COLD_RESET.screen_brightness,
+        ));
     }
 
     /// Drain the "the sound-release deadline expired" event.
@@ -49,6 +63,95 @@ impl World {
     /// same function is `legaia_engine_audio::sfx_ring::SfxCueRing::age`)
     pub fn take_frame_begin_skip(&mut self) -> bool {
         std::mem::take(&mut self.frame_begin_skip)
+    }
+
+    /// Arm the scripted countdown the field VM installs with `0x4C 0xD3`
+    /// (`SCHEDULE_TIMED_FLAGS`).
+    ///
+    /// The three operands are the ones the installer writes into its four
+    /// globals (`0x801E2BDC..0x801E2C30`): `ab` is the packed flag word
+    /// `_DAT_800845C0` (high half = expiry flag, low half = below-threshold
+    /// flag), `cd` is the duration - stored into **both** `_DAT_800845B8`
+    /// (the armed word) and `_DAT_800845A0` (the live counter) - and `ef` is
+    /// the below-threshold trigger point `_DAT_800845BC`. A zero duration
+    /// leaves the timer disarmed, which is what retail's `_DAT_800845B8 != 0`
+    /// arm test resolves to.
+    ///
+    /// Retail also snapshots the play clock into `_DAT_80073ED4` here so the
+    /// first drain sees a zero delta; the engine's drain takes its delta from
+    /// the retail-frame sub-clock instead, so there is no latch to seed.
+    ///
+    /// REF: FUN_801DE840 case 0xD sub 3 (the installer)
+    pub fn schedule_timed_flags(&mut self, ab: u32, cd: u32, ef: u32) {
+        self.escape_timer_flag_word = ab;
+        self.escape_timer = vm::escape_timer::EscapeTimer {
+            remaining: cd as i32,
+            warn_threshold: ef as i32,
+            armed: cd != 0,
+        };
+        self.escape_timer_hud = None;
+    }
+
+    /// Whether this frame is one of the ones retail's timed-flag scheduler
+    /// sits out. Retail short-circuits on three conditions at
+    /// `0x801D2EBC..0x801D2F30`, and a busy frame refreshes the clock latch
+    /// without touching the counter:
+    ///
+    /// 1. `*(_DAT_8007C364 + 0x10) & 0x80000` - the **player actor's engaged
+    ///    bit**, the one `FUN_801D5B5C` sets on a touch/talk and the one that
+    ///    also suppresses locomotion input at the head of `FUN_801D01B0`. The
+    ///    engine's analogue is an open modal dialog.
+    /// 2. `_DAT_8007B6B4 != 0` - a **dialogue-pacing countdown**: the typing
+    ///    driver `FUN_801D1344` drains it by the frame step and clamps it at
+    ///    zero (`0x801D161C..0x801D1630`), so a non-zero value means a text
+    ///    beat is still running. Folded into the same modal-dialog test.
+    /// 3. `_DAT_8007B6B0 > 0` - the **reposition / warp timer** `FUN_801C36AC`
+    ///    counts down while it walks a warped actor to its destination tile.
+    ///    The engine warps instantly, so it has no in-flight window; the mode
+    ///    test below is the nearest stand-in, covering the frames where the
+    ///    field is not what is being driven at all (a menu, a battle, a
+    ///    minigame).
+    fn escape_timer_busy(&self) -> bool {
+        self.current_dialog.is_some()
+            || !matches!(self.mode, SceneMode::Field | SceneMode::Cutscene)
+    }
+
+    /// Drain the scripted countdown one retail frame and fire whichever
+    /// system flags the tick reaches, then refresh the HUD readout.
+    ///
+    /// Retail's `FUN_801D2EBC` is one function that does all three: it
+    /// subtracts the play-clock delta from `_DAT_800845A0`, calls
+    /// `func_0x8003CE08(flag & 0xFFF)` for the expiry flag at zero (disarming
+    /// the timer) and for the below-threshold flag under `_DAT_800845BC`,
+    /// then decomposes the remaining count into MM:SS.ff and picks the
+    /// readout ink from it. The decomposition and ink are therefore products
+    /// of the tick, not of a renderer - [`World::escape_timer_hud`] caches
+    /// this frame's.
+    ///
+    /// The delta is one retail frame per call (the caller gates on
+    /// [`World::field_frame_step`]); retail reads it as
+    /// `_DAT_80084570 - _DAT_80073ED4`, a clock that also advances one step
+    /// per display frame.
+    ///
+    /// REF: FUN_801D2EBC (scheduler + HUD decomposition; the ports are
+    /// `legaia_engine_vm::escape_timer::EscapeTimer` and `timer_ink`)
+    fn tick_escape_timer(&mut self) {
+        if !self.escape_timer.armed {
+            self.escape_timer_hud = None;
+            return;
+        }
+        let busy = self.escape_timer_busy();
+        let flag_word = self.escape_timer_flag_word;
+        let events = self.escape_timer.tick(1, flag_word, busy);
+        if let Some(flag) = events.expiry_flag {
+            self.system_flag_set(flag);
+        }
+        if let Some(flag) = events.warning_flag {
+            self.system_flag_set(flag);
+        }
+        let (minutes, seconds, hundredths) = self.escape_timer.hud_fields();
+        let ink = vm::escape_timer::timer_ink(self.escape_timer.remaining);
+        self.escape_timer_hud = Some((minutes, seconds, hundredths, ink));
     }
 
     /// Resolve this frame's cadence the way `FUN_80016B6C` does and install
@@ -262,6 +365,13 @@ impl World {
             // Actor-VM glides (op 0x09 `MotionAt` -> `start_motion`): one
             // motion-VM pursue step per game tick toward the recorded target.
             self.tick_actor_motions();
+        }
+        // Drain the scripted countdown the field VM armed with `0x4C 0xD3`.
+        // Retail's scheduler runs once per display frame off the play clock,
+        // so drive it on the same retail-frame sub-clock the other 60 Hz
+        // consumers use.
+        if self.field_frame_step == 1 {
+            self.tick_escape_timer();
         }
         // Tick art-learned banner countdown - clear when it reaches zero.
         if let Some(banner) = &mut self.current_art_banner {
@@ -898,11 +1008,12 @@ impl World {
     /// Advance the dance minigame one frame: step the beat clock, judge this
     /// frame's directional presses, and end the run when the song finishes.
     ///
-    /// The three judged directions map to the retail pad bits
-    /// ([`crate::dance::DanceDir::pad_bit`] = `0x80`/`0x20`/`0x10`), which are
-    /// this pad's [`Left`](input::PadButton::Left) / [`Right`](input::PadButton::Right)
-    /// / [`Up`](input::PadButton::Up) - a press on any of them on this frame is
-    /// judged against the active beat's chart cell. Edge-triggered
+    /// The judged buttons are the retail ones: `FUN_801d1af4` reads the
+    /// newly-pressed word `_DAT_8007B874` and tests the three face bits
+    /// `0x80` / `0x20` / `0x10` = Square / Circle / Triangle, which is exactly
+    /// [`crate::dance::DanceDir::pad_bit`]. This frame's pad edges are packed
+    /// into that layout and the direction is picked by matching `pad_bit`, so
+    /// the bit-to-direction binding lives in the ported kernel. Edge-triggered
     /// (`just_pressed`) so a held button scores at most one note per press.
     ///
     /// PORT: the dance overlay's per-frame driver (`FUN_801cf470` beat clock ->
@@ -914,19 +1025,20 @@ impl World {
             return;
         };
         game.advance(1);
-        // Judge at most one directional press this frame (retail reads one pad
-        // word per beat-clock tick). Priority Left -> Right -> Up is arbitrary
-        // among simultaneous presses; a rhythm player presses one at a time.
+        // Judge at most one directional press this frame (retail tests all
+        // three bits in one pass, but a rhythm player presses one at a time);
+        // the scan order is retail's - Triangle, then Square, then Circle.
+        //
+        // The engine's `PadButton` word and the packed word `FUN_8001822C`
+        // builds hold the same 16 buttons with the two bytes swapped (see
+        // `crate::retail_pad`: face/shoulder cluster low, dpad/system high),
+        // so one rotate turns this frame's edges into the mask the retail
+        // judge reads.
         use crate::dance::DanceDir;
-        let dir = if self.input.just_pressed(input::PadButton::Left) {
-            Some(DanceDir::A)
-        } else if self.input.just_pressed(input::PadButton::Right) {
-            Some(DanceDir::B)
-        } else if self.input.just_pressed(input::PadButton::Up) {
-            Some(DanceDir::C)
-        } else {
-            None
-        };
+        let pressed = (self.input.pad() & !self.input.pad_prev()).rotate_right(8);
+        let dir = [DanceDir::C, DanceDir::A, DanceDir::B]
+            .into_iter()
+            .find(|d| pressed & d.pad_bit() != 0);
         if let Some(dir) = dir {
             self.dance_last_judge = Some(game.judge_press(dir));
         }
@@ -1025,12 +1137,17 @@ impl World {
     /// - **Casting**: the power meter oscillates; a confirm press
     ///   ([`Cross`](input::PadButton::Cross)) locks the cast and hooks a fish.
     /// - **Fighting**: holding a reel button raises tension - [`Cross`] is reel
-    ///   A (the `rod*9 + 0x23` divisor), [`Circle`] reel B (`rod*6 + 0x19`);
-    ///   neither held bleeds tension off. The line snaps at max tension.
+    ///   A (the `rod*9 + 0x23` divisor), [`Square`] reel B (`rod*6 + 0x19`);
+    ///   neither held bleeds tension off. The line snaps at max tension. The
+    ///   two buttons are the retail packed-pad bits `0x40` / `0x80`, decoded
+    ///   through the ported reel decoder [`ReelInput::from_pad_mask`]
+    ///   (`FUN_801d7450`) rather than by a host `if` chain, so holding both
+    ///   resolves to reel A exactly as retail does.
     /// - **Done**: a confirm press recasts.
     ///
     /// [`Cross`]: input::PadButton::Cross
-    /// [`Circle`]: input::PadButton::Circle
+    /// [`Square`]: input::PadButton::Square
+    /// [`ReelInput::from_pad_mask`]: crate::fishing::ReelInput::from_pad_mask
     ///
     /// PORT: the fishing overlay's per-frame driver (`FUN_801cf3bc` mode SM ->
     /// `FUN_801d4004` tension). The casting-meter step is not byte-pinned (the
@@ -1056,13 +1173,17 @@ impl World {
                 }
             }
             FishingPhase::Fighting => {
-                let input = if self.input.pressed(input::PadButton::Cross) {
-                    ReelInput::ReelA
-                } else if self.input.pressed(input::PadButton::Circle) {
-                    ReelInput::ReelB
-                } else {
-                    ReelInput::Idle
-                };
+                // Rebuild the two reel bits of the retail held word
+                // `_DAT_8007b850` from this frame's pad and let the ported
+                // decoder classify them.
+                let mut held = 0u32;
+                if self.input.pressed(input::PadButton::Cross) {
+                    held |= crate::fishing::REEL_A_PAD_BIT;
+                }
+                if self.input.pressed(input::PadButton::Square) {
+                    held |= crate::fishing::REEL_B_PAD_BIT;
+                }
+                let input = ReelInput::from_pad_mask(held);
                 if let Some(s) = self.fishing.as_mut() {
                     s.reel(input, 1);
                 }
@@ -1209,30 +1330,49 @@ impl World {
         if self.mode != SceneMode::BakaFighter {
             self.baka_return_mode = self.mode;
         }
+        // Retail reaches the duel through the mode-24 door warp: the field-VM
+        // `0x3E` arm zeroes the winnings accumulator `_DAT_80084440` and the
+        // mode-24 OTHER-INIT `FUN_80025980` backs up the active scene name.
+        // Only a field entry goes through that warp; an engine-only entry from
+        // another mode keeps the plain suspend/restore contract.
+        if self.baka_return_mode == SceneMode::Field {
+            self.arm_minigame_warp();
+        }
         self.baka_fighter = Some(fight);
         self.mode = SceneMode::BakaFighter;
     }
 
-    /// Leave the Baka Fighter duel and restore the interrupted mode. On a
-    /// decided match with a player win, the beaten opponent's gold prize is
-    /// credited into the party gold (the retail end-of-match tally drains
-    /// `DAT_801dbee8` into `_DAT_80084440`). Returns the fight so the host
-    /// can read the final state. No-op when no duel is active.
+    /// Leave the Baka Fighter duel through the mode-24 return warp
+    /// ([`Self::minigame_return_warp`], retail `FUN_80026018`): the winnings
+    /// accumulator is banked into [`Self::casino_coins`], the backed-up scene
+    /// name is restored and the mode drops back to the field.
+    ///
+    /// On a decided match with a player win, whatever prize the end-of-match
+    /// tally has not yet drained is added to the accumulator first - retail's
+    /// tally (`FUN_801D239C` at `0x801D28A8..0x801D28BC`) drains
+    /// `DAT_801DBEE8` into `_DAT_80084440` a step at a time while the result
+    /// screen is up, so leaving early has to bank the remainder for the total
+    /// paid to match the prize either way.
+    ///
+    /// Returns the fight so the host can read the final state. No-op when no
+    /// duel is active.
     pub fn exit_baka_fighter(&mut self) -> Option<crate::baka_fighter::BakaFight> {
-        if self.mode == SceneMode::BakaFighter {
-            self.mode = self.baka_return_mode;
-        }
         let fight = self.baka_fighter.take();
         if let Some(f) = fight.as_ref()
             && f.winner() == Some(0)
         {
-            // The tally (`FUN_801d239c`) pays the prize into gold a step at a
-            // time while the result screen is up, so only what it has NOT yet
-            // drained is still owed here. Leaving early banks the remainder,
-            // which keeps the total paid equal to the prize either way.
-            let owed = f.tally_gold_remaining() as i64;
-            let new_money = (self.money as i64).saturating_add(owed);
-            self.money = new_money.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+            let owed = f.tally_gold_remaining().max(0) as u32;
+            self.minigame_winnings = self.minigame_winnings.saturating_add(owed);
+        }
+        let return_mode = self.baka_return_mode;
+        if self.mode == SceneMode::BakaFighter {
+            // The warp's own mode write is retail's mode-2 (field) latch. An
+            // engine-only entry from another mode restores that mode instead,
+            // keeping the suspend contract the other minigames use.
+            self.minigame_return_warp();
+            if return_mode != SceneMode::Field {
+                self.mode = return_mode;
+            }
         }
         fight
     }
@@ -1261,8 +1401,11 @@ impl World {
         };
         if fight.match_over() {
             // The result screen: run the score tally, banking each drained
-            // step into party gold as retail's `FUN_801d239c` adds it into
-            // `_DAT_80084440`. Any face button latches its fast-forward.
+            // step into the mode-24 winnings accumulator exactly as retail's
+            // `FUN_801D239C` adds it into `_DAT_80084440` - the coin prize,
+            // not party gold (`0x8008459C`). The exit warp
+            // ([`Self::minigame_return_warp`]) then pays the accumulator into
+            // the casino coin bank. Any face button latches its fast-forward.
             let face = [
                 input::PadButton::Triangle,
                 input::PadButton::Circle,
@@ -1273,12 +1416,9 @@ impl World {
             .any(|&b| self.input.just_pressed(b));
             if let Some(f) = self.baka_fighter.as_mut() {
                 f.tick_with_input(1, face);
-                let paid = f.take_tally_gold() as i64;
-                if paid != 0 {
-                    self.money = (self.money as i64)
-                        .saturating_add(paid)
-                        .clamp(i32::MIN as i64, i32::MAX as i64)
-                        as i32;
+                let paid = f.take_tally_gold();
+                if paid > 0 {
+                    self.minigame_winnings = self.minigame_winnings.saturating_add(paid as u32);
                 }
             }
             if self.input.just_pressed(input::PadButton::Cross) {

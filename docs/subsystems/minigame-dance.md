@@ -269,7 +269,7 @@ competitive modes. `DanceMode` carries that mapping, and the how-to mode also
 forces the short song. `DanceGame::from_overlay` stays the qualifier entry
 point.
 
-Runtime wiring: the engine host installs the rules engine as a suspending scene mode (`SceneMode::Dance`; `World::enter_dance` / `tick_dance` / `exit_dance`). The `play-window` viewer starts it from the `K` key (loads the dance overlay PROT 0980, `DanceGame::from_overlay`), maps the three arrows to the retail pad bits (Left/Right/Up = symbols `1`/`2`/`3`), and draws the score / groove-gauge / active-lane HUD; the song timer ends the run and restores the interrupted scene.
+Runtime wiring: the engine host installs the rules engine as a suspending scene mode (`SceneMode::Dance`; `World::enter_dance` / `tick_dance` / `exit_dance`). The `play-window` viewer starts it from the `K` key (loads the dance overlay PROT 0980, `DanceGame::from_overlay`), judges the three retail pad bits directly (Square/Circle/Triangle = symbols `1`/`2`/`3`), and draws the score / groove-gauge / active-lane HUD; the song timer ends the run and restores the interrupted scene.
 
 `DanceGame::press` returns the full event (Miss / Hit / Sequence with its
 points / **Groovy** with its landed flag, lock frames and remaining stock /

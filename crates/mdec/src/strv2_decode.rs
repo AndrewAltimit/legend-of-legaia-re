@@ -79,6 +79,15 @@
 //! preservation artefacts of the two cut slots, not gaps in the shipping
 //! playback path.
 //!
+//! There is a second prerequisite, and it outlives the missing input: this
+//! function stops at the **MDEC command-word list**, which retail DMAs into
+//! the MDEC for the dequantize / IDCT / colour stages. The port has no such
+//! stage as a separate entry - [`crate::MdecDecoder::decode_frame`] fuses the
+//! Iki bitstream walk and the pixel stage into one pass over the Iki payload,
+//! and takes bytes, not codes. So even handed a real STRv2 stream, a caller
+//! could not turn this vector into pixels; a code-list-to-RGBA entry point has
+//! to exist first.
+//!
 //! [`Bitstream::Strv2`]: crate::str_player::Bitstream::Strv2
 
 use crate::strv2_table::STRV2_TABLE_U16S;

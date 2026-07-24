@@ -23,6 +23,22 @@
 //! (`docs/formats/art-data.md`); the character display name it measures on
 //! the `0xC1` path is the `+0x2A7` field of the `0x414`-byte character
 //! record (`docs/formats/save-record.md`).
+//!
+//! # NOT WIRED
+//!
+//! Nothing builds an Art-name banner draw list. This crate's draw builders are
+//! the pause menu, the title / save rack, the fishing HUD and the shared text
+//! overlay; none of them emits the four banner sub-primitives whose X fields
+//! ([`BANNER_X_FIELD_OFFSETS`]) this module places, and the battle HUD the
+//! engine does draw carries no Art-name row.
+//!
+//! The wire also crosses a crate boundary that does not exist yet: the state
+//! that would drive it - which actor committed which Art - lives in
+//! `engine-core`, and `engine-core` does not depend on this crate (the
+//! dependency runs the other way, through the renderer). So a caller has to be
+//! a battle-HUD draw builder here that a renderer host feeds the committed Art
+//! id, plus the two measured widths, and neither the builder nor the
+//! measurement plumbing is present.
 
 /// Stride of one arts-name table record (`DAT_80075EC4`).
 pub const ARTS_RECORD_STRIDE: usize = 0x14;

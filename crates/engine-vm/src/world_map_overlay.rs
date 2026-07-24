@@ -3,28 +3,30 @@
 //! byte-identical to the field/PROT-0897 image at the same VAs, so the dump
 //! label is only a resolution hint).
 //!
-//! This module ports the *simulation / data-model* half of five overlay
+//! This module ports the *simulation / data-model* half of four overlay
 //! functions. Every one of the originals is dominated by GPU-packet emission
 //! (`FUN_8001AA68` text, `FUN_80034B78` / `FUN_80034E4C` number draws,
 //! `FUN_8002C69C` panel fills, `FUN_80036888` MES draws). Those calls are the
 //! render seam and are **not** reproduced here - the crate boundary keeps
 //! `engine-vm` renderer-free. What is ported is the decoded behaviour each
 //! function computes *before* it draws: value clamping, fixed-width decimal
-//! formatting, cursor/phase logic, timer decomposition, and equipment-stat
-//! aggregation. The engine host wires the resulting model to a renderer.
+//! formatting, cursor/phase logic and equipment-stat aggregation. The engine
+//! host wires the resulting model to a renderer.
 //!
 //! PORT: FUN_801EAD98 - world-map dev-menu renderer (row model + formatter)
 //! PORT: FUN_801ECA08 - dev-menu panel sizer + list-picker cursor SM
 //! PORT: FUN_801ED710 - battle-records screen data model
-//! PORT: FUN_801D2EBC - escape-timer countdown scheduler + HUD decomposition
 //! PORT: FUN_801E5B4C - equipment stat-comparison preview
+//!
+//! A fifth leaf of the same overlay, the `0x4C 0xD3` countdown scheduler
+//! `FUN_801D2EBC`, lives in [`crate::escape_timer`] - it has an engine caller
+//! and so does not belong under this module's blanket disclosure.
 //!
 //! ## Source
 //!
 //! - `ghidra/scripts/funcs/overlay_world_map_801ead98.txt`
 //! - `ghidra/scripts/funcs/801eca08.txt`
 //! - `ghidra/scripts/funcs/overlay_world_map_801ed710.txt`
-//! - `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d2ebc.txt`
 //! - `ghidra/scripts/funcs/overlay_world_map_801e5b4c.txt`
 //!
 //! ## NOT WIRED
@@ -47,13 +49,6 @@
 //!   Hyper-Arts / magic tallies. `World` carries a play-time clock and nothing
 //!   else on the list, and the pause menu has no records page to host the
 //!   result. Wiring needs those counters on the persistent record first.
-//! - **`FUN_801D2EBC`** (escape-timer scheduler). The timer is armed by field
-//!   VM `0x4C 0xD3` (`SCHEDULE_TIMED_FLAGS`), which the port decodes and hands
-//!   to `FieldHost::op4c_n_d_sub3_party_setup` - a default no-op body that no
-//!   engine host overrides, so the duration / threshold / flag-word triple is
-//!   discarded at the installer. Nothing arms a timer, so nothing can drain
-//!   one. Wiring is three coupled pieces: timer state on the world, that host
-//!   override, and a per-frame drain against the clock delta.
 //! - **`FUN_801E5B4C`** (equipment stat-comparison preview). The engine's
 //!   equip screen is the menu-overlay flow (`legaia_engine_core::EquipSession`,
 //!   ported from `FUN_801D9C14` / `FUN_801D99F0`), which previews by
@@ -427,108 +422,6 @@ pub fn records_screen(
 }
 
 // ---------------------------------------------------------------------------
-// FUN_801D2EBC - escape-timer countdown scheduler + HUD decomposition
-// ---------------------------------------------------------------------------
-
-/// Ink colour the escape-timer HUD selects from the remaining count
-/// (`_DAT_8007B454`): white while there is time, then a warning colour, then
-/// a critical colour below the last minute-and-a-half.
-///
-/// PORT: FUN_801D2EBC (`_DAT_8007B454` selection)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TimerInk {
-    /// Remaining == 0: neutral / white (`2`).
-    Neutral = 2,
-    /// `0 < remaining <= 0x707`: warning (`6`).
-    Warning = 6,
-    /// `remaining > 0x707`: cool/safe (`7`).
-    Safe = 7,
-}
-
-/// The retail ink logic: `2` at zero, `6` while non-zero and `<= 0x707`,
-/// `7` above `0x707`.
-///
-/// PORT: FUN_801D2EBC
-pub fn timer_ink(remaining: i32) -> TimerInk {
-    if remaining == 0 {
-        TimerInk::Neutral
-    } else if remaining > 0x707 {
-        TimerInk::Safe
-    } else {
-        TimerInk::Warning
-    }
-}
-
-/// Story-flag ids the scheduler fires as the counter drops. Both are the low
-/// 12 bits of a packed word (`_DAT_800845C0`): the low half is a warning flag
-/// fired once the counter falls below `_DAT_800845BC`, the high half an
-/// expiry flag fired when it reaches zero.
-///
-/// PORT: FUN_801D2EBC (`func_0x8003CE08` calls)
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct TimerFlagEvents {
-    /// Fire `flags[warning_flag & 0xFFF]` (counter dropped below threshold).
-    pub warning_flag: Option<u16>,
-    /// Fire `flags[expiry_flag & 0xFFF]` and disarm the timer (counter hit 0).
-    pub expiry_flag: Option<u16>,
-}
-
-/// Live state of the escape-timer scheduler.
-///
-/// PORT: FUN_801D2EBC
-#[derive(Debug, Clone, Copy, Default)]
-pub struct EscapeTimer {
-    /// Remaining countdown (`_DAT_800845A0`).
-    pub remaining: i32,
-    /// Below-threshold trigger point (`_DAT_800845BC`).
-    pub warn_threshold: i32,
-    /// Whether the timer is still armed (`_DAT_800845B8 != 0`).
-    pub armed: bool,
-}
-
-impl EscapeTimer {
-    /// Advance the countdown by the frame-clock delta and report which story
-    /// flags the tick fires. `clock_delta = new_clock - prev_clock`
-    /// (`_DAT_80084570 - old _DAT_80073ED4`). `flag_word` is `_DAT_800845C0`:
-    /// low half = warning flag, high half = expiry flag.
-    ///
-    /// When `busy` is set (the retail short-circuit for any of the three
-    /// pause conditions) the counter is left untouched and no flags fire -
-    /// the caller still refreshes the clock latch.
-    ///
-    /// PORT: FUN_801D2EBC (scheduler head)
-    pub fn tick(&mut self, clock_delta: i32, flag_word: u32, busy: bool) -> TimerFlagEvents {
-        let mut events = TimerFlagEvents::default();
-        if busy {
-            return events;
-        }
-        self.remaining -= clock_delta;
-        if self.remaining < 1 {
-            self.armed = false;
-            events.expiry_flag = Some(((flag_word >> 16) & 0xFFF) as u16);
-        }
-        if self.remaining < self.warn_threshold {
-            events.warning_flag = Some((flag_word & 0xFFF) as u16);
-        }
-        events
-    }
-
-    /// Decompose the remaining count into the MM:SS.ff fields the HUD draws.
-    /// `frames = remaining % 60`, `seconds = (remaining/60) % 60`,
-    /// `minutes = (remaining/60) / 60`.
-    ///
-    /// PORT: FUN_801D2EBC (`% 0x3C` decomposition + `(frames*100)/0x3C`)
-    pub fn hud_fields(&self) -> (i32, i32, i32) {
-        let frames = self.remaining % 60;
-        let seconds = (self.remaining / 60) % 60;
-        let minutes = (self.remaining / 60) / 60;
-        // The hundredths cell is `(frames * 100) / 60`.
-        let hundredths = frames * 100 / 60;
-        (minutes, seconds, hundredths)
-    }
-}
-
-// ---------------------------------------------------------------------------
 // FUN_801E5B4C - equipment stat-comparison preview
 // ---------------------------------------------------------------------------
 
@@ -758,75 +651,6 @@ mod tests {
         let r = records_screen(0, 0, 0, &chars, 1, 3);
         assert_eq!(r.treasure_percent, 33); // 100/3
         assert_eq!(r.treasure_fraction, 33); // 10000/3=3333, minus 33*100=3300 -> 33
-    }
-
-    #[test]
-    fn escape_timer_ink_thresholds() {
-        assert_eq!(timer_ink(0), TimerInk::Neutral);
-        assert_eq!(timer_ink(0x708), TimerInk::Safe);
-        assert_eq!(timer_ink(0x707), TimerInk::Warning);
-        assert_eq!(timer_ink(1), TimerInk::Warning);
-    }
-
-    #[test]
-    fn escape_timer_fires_flags_on_expiry() {
-        let mut t = EscapeTimer {
-            remaining: 5,
-            warn_threshold: 100,
-            armed: true,
-        };
-        // flag word: low half 0x0C7 (warning), high half 0x123 (expiry).
-        let ev = t.tick(10, 0x0123_00C7, false);
-        assert_eq!(t.remaining, -5);
-        assert!(!t.armed); // disarmed on expiry
-        assert_eq!(ev.expiry_flag, Some(0x123));
-        assert_eq!(ev.warning_flag, Some(0x0C7)); // also below threshold
-    }
-
-    #[test]
-    fn escape_timer_warning_only() {
-        let mut t = EscapeTimer {
-            remaining: 200,
-            warn_threshold: 100,
-            armed: true,
-        };
-        // drop to 150 -> above 0, below... no, 150 > 100 -> no warning yet.
-        let ev = t.tick(50, 0x0123_00C7, false);
-        assert_eq!(t.remaining, 150);
-        assert!(t.armed);
-        assert_eq!(ev.expiry_flag, None);
-        assert_eq!(ev.warning_flag, None);
-        // drop below threshold.
-        let ev = t.tick(60, 0x0123_00C7, false);
-        assert_eq!(t.remaining, 90);
-        assert_eq!(ev.warning_flag, Some(0x0C7));
-        assert_eq!(ev.expiry_flag, None);
-    }
-
-    #[test]
-    fn escape_timer_busy_freezes() {
-        let mut t = EscapeTimer {
-            remaining: 5,
-            warn_threshold: 100,
-            armed: true,
-        };
-        let ev = t.tick(10, 0x0123_00C7, true);
-        assert_eq!(t.remaining, 5); // untouched
-        assert!(t.armed);
-        assert_eq!(ev, TimerFlagEvents::default());
-    }
-
-    #[test]
-    fn escape_timer_hud_fields() {
-        let t = EscapeTimer {
-            remaining: 60 * 90 + 30, // 1m30s + 30 frames
-            warn_threshold: 0,
-            armed: true,
-        };
-        let (m, s, hundredths) = t.hud_fields();
-        assert_eq!(m, 1);
-        assert_eq!(s, 30);
-        assert_eq!(hundredths, 30 * 100 / 60); // 50
     }
 
     #[test]

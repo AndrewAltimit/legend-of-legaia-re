@@ -1,14 +1,19 @@
 //! Leaf helpers over the 8-slot battle-actor pool (`&DAT_801C9370`) and the
-//! action-context target queue. Each is a self-contained function the battle
-//! action state machine (`FUN_801E295C`) and its round driver call; none is a
-//! state of the SM itself, so they port cleanly as pure functions.
+//! action-context target queue. Each is a self-contained function some part of
+//! the battle overlay calls - the command SM `FUN_801D0748`, the flow SM
+//! `FUN_801D388C`, the turn picker `FUN_801DABA4`, the round reset
+//! `FUN_801D88CC`, the pose setter `FUN_801D5854`. None is called by the action
+//! SM `FUN_801E295C` itself, and none is a state of it, so they port cleanly as
+//! pure functions. The per-routine caller is named in the `NOT WIRED` block.
 //!
-//! PORT: FUN_801DB9C4 (end-of-action flag scrub)
+//! PORT: FUN_801DB9C4 (pool `+0x8` flag-word scrub)
 //! PORT: FUN_801DB318 (formation span-normalise + recentre)
 //! PORT: FUN_801D8A88 (attack-target-queue builder)
 //! PORT: FUN_801D8D00 (target-cycle accessor)
 //! PORT: FUN_801DB124 (dead-target redirect roll)
-//! PORT: FUN_801DB8B4 (first-live-monster slot)
+//! REF: FUN_801DB8B4 (first-live-monster slot - the canonical port is
+//! `engine-core`'s `BattleRound::first_living_monster`, which is live; the
+//! fixed-slot twin below exists for oracle work)
 //! PORT: FUN_801DBA04 (first-selectable target)
 //! PORT: FUN_801DB81C (next-selectable actor)
 //! PORT: FUN_80019B28 (12-bit bearing / atan2, faithful LUT form)
@@ -23,52 +28,76 @@
 //!
 //! # NOT WIRED
 //!
-//! No engine caller reaches any of these leaves, and the missing prerequisite
-//! is per-routine rather than one blanket gap:
+//! No engine caller reaches any of these leaves. The missing prerequisite is
+//! per-routine, and in every case it is the routine's own retail **caller**
+//! being un-ported - each entry below names that caller from the `jal` site in
+//! the battle-overlay dumps, not from a doc:
 //!
-//! - `FUN_801DB9C4` ([`clear_end_of_action_flags`]) scrubs the actor **`+0x8`**
-//!   anim/render flag word. The port's `BattleActor` carries `+0x1DC`
-//!   (`flag_bits`) and no `+0x8` word at all, so the mask has nothing to clear.
-//! - `FUN_801DB318` ([`normalize_formation_span`]) shifts the camera-focus
+//! - `FUN_801DB9C4` ([`clear_pool_flag_words`]) scrubs the actor **`+0x8`**
+//!   flag word. Its only static caller in the battle overlay is the pose
+//!   setter `FUN_801D5854`'s invalid-slot guard at `0x801D58E8` - **not** the
+//!   action SM's end-of-action state. `FUN_801E295C` never calls it (zero
+//!   `jal 0x801db9c4` in `overlay_battle_action_801e295c.txt`). Wiring it needs
+//!   two things: a `+0x8` flag word on `BattleActor` (the port carries `+0x1DC`
+//!   `flag_bits` and no `+0x8`), and the guard living inside the engine's
+//!   `BattleActionHost::pose` implementation, which is `engine-core`'s.
+//! - `FUN_801DB318` ([`normalize_formation_span`]) is case `0` of the battle
+//!   **flow** SM `FUN_801D388C` (`jal` at `0x801D3908`, jump table
+//!   `0x801CE880`), which is not ported. It also shifts the camera-focus
 //!   accumulators `_DAT_80089118` / `_DAT_80089120` to compensate for the
-//!   squash. The engine frames the battle camera by a per-action snap
-//!   (`camera_height_for_frame` through `BattleActionHost::camera_bounds`) and
-//!   carries no focus accumulator for that compensation to land in.
-//! - `FUN_801D8A88` ([`build_attack_target_queue`]) and `FUN_801D8D00`
-//!   ([`cycle_attack_target`]) build and step the context byte ring at
-//!   `ctx[+0x244..+0x249]`. The engine's battle cursor is
-//!   `engine-core::target_picker`, a row/slot cursor over `SlotState` rows; no
-//!   caller holds a ring for these to build or walk.
+//!   squash, and the engine frames the battle camera by a per-action snap
+//!   (`camera_height_for_frame` through `BattleActionHost::camera_bounds`) with
+//!   no focus accumulator for that compensation to land in.
+//! - `FUN_801D8A88` ([`build_attack_target_queue`]), `FUN_801D8D00`
+//!   ([`cycle_attack_target`]), `FUN_801DBA04` ([`first_selectable_target`])
+//!   and `FUN_801DB81C` ([`next_selectable_actor`]) are all leaves of the
+//!   battle **command / menu** SM `FUN_801D0748` (e.g. `jal 0x801d8a88` at
+//!   `0x801D1624` / `0x801D17A4` / `0x801D18F8`, each immediately followed by
+//!   the target-cursor stamp `FUN_801DA6B4`). That SM is not ported: the engine
+//!   drives target selection through `engine-core::target_picker`, a row/slot
+//!   cursor over `SlotState` rows, so nothing holds the `ctx[+0x244..+0x249]`
+//!   ring or the `action_state[i] != 4` array these index. **Porting
+//!   `FUN_801D0748` is the single prerequisite for all four.**
 //! - `FUN_801DB124` ([`redirect_dead_target`]) *is* called by the turn picker
 //!   `FUN_801DABA4` - itself ported, as `World::next_combatant_by_initiative` -
-//!   but behind two gates the port does not carry: `ctx[+0x276]`, and on the
-//!   party arm the command-flow byte `ctx[+0x06]` being `0xFF`. Adding the
-//!   re-roll without them would spend RNG draws retail does not always make,
-//!   which is a simulation change rather than a wiring fix.
-//! - `FUN_801DB8B4` ([`first_live_monster_slot`]), `FUN_801DBA04`
-//!   ([`first_selectable_target`]) and `FUN_801DB81C`
-//!   ([`next_selectable_actor`]) are retail's `+0x1A` round-robin turn scans
-//!   over the fixed 8-slot pool. The engine orders turns by initiative key
-//!   (`FUN_801DABA4`) over compact seating, so nothing produces the
-//!   `action_state[i] != 4` array they index or consumes a round-robin answer.
+//!   at `0x801DAF14` (party arm) and `0x801DAF50` (monster arm). The gates the
+//!   port does not carry are the **command-flow byte `ctx[+0x06] == 0xFF`** on
+//!   the party arm and the enemy-AI pick `FUN_801E9FD4` that precedes the
+//!   monster arm. (`ctx[+0x276]`, the outer gate, *is* modelled - it is
+//!   `BattleActionCtx::menu_open`.) Adding the re-roll without `ctx[+0x06]`
+//!   would spend RNG draws retail does not always make, which is a simulation
+//!   change rather than a wiring fix.
+//! - `FUN_801DB8B4` ([`first_live_monster_slot`]) is **already ported and
+//!   live** elsewhere: `engine-core`'s `BattleRound::first_living_monster`,
+//!   reached from `BattleRound::boundary` (retail's `FUN_801D88CC` loop B, the
+//!   `jal` at `0x801D8A44`). The copy here is the fixed-pool twin - retail
+//!   scans slots `3..7` unconditionally, the live port scans from
+//!   `party_count` because the engine compacts its seating. It is kept as the
+//!   byte-exact form for oracle work, not as a second implementation to wire.
 //! - `FUN_80019B28` ([`bearing_12bit`]) needs the `SCUS_942.54` arctan LUT at
 //!   `0x8006F4C8`. No engine boot path extracts that table, so no caller can
 //!   supply the `atan_lut` argument.
 
-/// The `+0x8` actor flag-word bits state `0x5A` keeps: it clears
-/// `0x83000000` (bit 31 and bits 25/24). `FUN_801DB9C4`.
-pub const END_OF_ACTION_FLAG_KEEP: u32 = 0x7cff_ffff;
+/// The `+0x8` actor flag-word bits `FUN_801DB9C4` keeps: it clears
+/// `0x83000000` (bit 31 and bits 25/24).
+pub const POOL_FLAG_WORD_KEEP: u32 = 0x7cff_ffff;
 
-/// End-of-action per-actor flag scrub (state `0x5A`). AND-masks the `+0x8`
-/// flag word of the first **7** pool slots with [`END_OF_ACTION_FLAG_KEEP`].
+/// Per-actor `+0x8` flag-word scrub. AND-masks the `+0x8` flag word of the
+/// first **7** pool slots with [`POOL_FLAG_WORD_KEEP`].
 ///
 /// The retail loop is a fixed `while (i < 7)` over `&DAT_801C9370[i]`, so it
 /// touches slots 0..=6 (not slot 7); a shorter slice is truncated to match.
 ///
+/// The caller is `FUN_801D5854`'s **invalid-slot guard**: when the requested
+/// pose is `>= 6` *and* the slot index is `>= 8`, retail forces pose `9` and
+/// runs this scrub across the pool (`0x801D58C8..0x801D58E8`). An earlier
+/// reading here attributed it to action-SM state `0x5A`; `FUN_801E295C`
+/// contains no call to it, so that attribution is withdrawn.
+///
 /// PORT: FUN_801DB9C4
-pub fn clear_end_of_action_flags(flag_words: &mut [u32]) {
+pub fn clear_pool_flag_words(flag_words: &mut [u32]) {
     for w in flag_words.iter_mut().take(7) {
-        *w &= END_OF_ACTION_FLAG_KEEP;
+        *w &= POOL_FLAG_WORD_KEEP;
     }
 }
 
@@ -429,7 +458,14 @@ pub fn build_attack_target_queue(
 /// Scans pool slots 3,4,5,6 in order and returns the first whose `+0x14C`
 /// liveness halfword is non-zero; the retail loop's fall-through value is `7`.
 ///
-/// PORT: FUN_801DB8B4
+/// This is the **fixed-slot** twin of the anchor's canonical port,
+/// `engine-core`'s `BattleRound::first_living_monster`, which is on the live
+/// round-boundary path and scans from `party_count` because the engine
+/// compacts its battle seating. Kept here in retail's literal slot-`3..7`
+/// form for oracle work; it carries a `REF` rather than a second `PORT` tag
+/// so the anchor stays attributed to the live implementation.
+///
+/// REF: FUN_801DB8B4
 pub fn first_live_monster_slot(pool: &[PoolActor]) -> u8 {
     let mut slot = 3u8;
     while slot < 7 {
@@ -577,7 +613,7 @@ mod tests {
     #[test]
     fn flag_scrub_masks_first_seven_slots() {
         let mut words = [0xFFFF_FFFFu32; 8];
-        clear_end_of_action_flags(&mut words);
+        clear_pool_flag_words(&mut words);
         for w in words.iter().take(7) {
             assert_eq!(*w, 0x7cff_ffff);
         }
@@ -588,14 +624,14 @@ mod tests {
     #[test]
     fn flag_scrub_clears_exactly_bits_31_25_24() {
         let mut words = [0x8300_0001u32];
-        clear_end_of_action_flags(&mut words);
+        clear_pool_flag_words(&mut words);
         assert_eq!(words[0], 0x0000_0001);
     }
 
     #[test]
     fn flag_scrub_truncates_short_slice() {
         let mut words = [0xFFFF_FFFFu32; 3];
-        clear_end_of_action_flags(&mut words);
+        clear_pool_flag_words(&mut words);
         assert!(words.iter().all(|w| *w == 0x7cff_ffff));
     }
 

@@ -181,10 +181,16 @@ The renderer-free half of the dev-menu leaves lives in
 `is_closed` (the 24-row model incl. the `MAP_CHANGE` / `CARD_OPTION` CLOSED
 gating), `format_fixed_decimal` (the zero-padded digit kernel `FUN_801EAD98`
 inlines per numeric readout), and `decode_camera_readout`. The module also
-ports the escape-timer scheduler (`EscapeTimer`, from `FUN_801D2EBC`), the
-battle-records data model (`records_screen`, from `FUN_801ED710`), and the
-equipment stat-comparison preview (`aggregate_slot_stats` /
+ports the battle-records data model (`records_screen`, from `FUN_801ED710`)
+and the equipment stat-comparison preview (`aggregate_slot_stats` /
 `resolve_equip_slot` / `stat_deltas`, from `FUN_801E5B4C`).
+
+The escape-timer scheduler (`FUN_801D2EBC`) is a fifth leaf of the same
+overlay but sits in its own module, `legaia_engine_vm::escape_timer`, because
+it has an engine caller: the field VM's `0x4C 0xD3` installer reaches
+`World::schedule_timed_flags` and `World::tick_escape_timer` drains the
+counter once per retail frame. See
+[`script-vm-menuctrl.md`](script-vm-menuctrl.md#0x4c-nibble-0xd00xdf---party-state--inverted-y-mirror-cluster).
 
 The **draw** half - the GPU-packet emitters (`FUN_8001AA68` / `FUN_80034B78` /
 `FUN_80034E4C` / `FUN_8003C1F8` / `FUN_8003CC98`) - lives in `engine-ui`:
@@ -272,11 +278,18 @@ These are field(897)-shared helpers parameterised entirely by the world-map
 overlay's `0x801F28xx` state, so they are the top-view HUD's primitive layer.
 All are GTE/GPU primitive emitters - render-track, documented-not-ported.
 
-### `FUN_801EE90C` - world map text-box dispatcher (128 bytes)
+### `FUN_801EE90C` - world map text-box dispatcher (1100 bytes)
 
 Entry: `(ctx_ptr)`. Dispatches on `ctx[+0x54]` via a 15-entry jump table at
 `0x801CF5FC`. When `ctx[+0x54] >= 15` but `< 10`: falls through to
 `FUN_80031D00` (text-actor tick - advances the MES bytecode one frame).
+
+The body is 275 instructions in the based PROT 0897 image - the whole
+dispatcher plus its fifteen case bodies. Several Ghidra programs cut the
+function at the `jr v0` and list only the 32-instruction dispatch head
+(`128` bytes), because the jump-table cases are not reachable by linear flow;
+that truncation is a boundary artifact of the listing, not a second body at
+the same VA. The bytes are identical across every dump at this address.
 
 ### `FUN_801CFC40` - world map sprite batcher (524 bytes, top-view only)
 

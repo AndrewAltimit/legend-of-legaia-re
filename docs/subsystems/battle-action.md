@@ -7,6 +7,7 @@ A two-level finite state machine that drives the per-actor execution of a chosen
 - [One-paragraph overview](#one-paragraph-overview)
 - [Outer dispatch - `ctx[7]` action-state cursor](#outer-dispatch---ctx7-action-state-cursor) · [state table](#state-table)
 - [Inner dispatch - actor action category](#inner-dispatch---actor-action-category) · [per-actor sub-state surface](#per-actor-sub-state-surface)
+- [The `0x51` exit gate and the HP-bar settle invariant](#the-0x51-exit-gate-and-the-hp-bar-settle-invariant) - the endless-camera-orbit softlock class
 - [Cross-references with other battle helpers](#cross-references-with-other-battle-helpers) - [range/LOS](#fun_8004e2f0---battle-range--line-of-sight) · [stat aggregator](#fun_80042558---per-frame-stat-aggregator) · [effect spawn API](#fun_801dfdf8---effect-bundle-public-spawn-api) · [summon-overlay dispatch](#seru-magic-summon-overlay-dispatch) · [pose driver](#fun_801d5854---per-actor-pose-driver) · [party/monster setup](#fun_801eed1c--fun_801e7320---party--monster-setup-hooks) · [camera bounds](#fun_801efe44---battle-camera-bounds) · [escape roll](#the-escape-roll-fun_801e791c) · [battle voice cues](#battle-voice-cues---the-xa30-grunt-vs-the-xa2xa4xa6-arts-shout) · [helper functions](#battle-helper-functions)
 - [Notes for the engine port](#notes-for-the-engine-port) · [decompile quirks](#decompile-quirks-worth-knowing) · [engine port](#engine-port)
 - [Action validator (`FUN_8003FB10`)](#action-validator-fun_8003fb10) · [action queue + Tactical Arts trigger ordering](#action-queue-and-tactical-arts-trigger-ordering) · [Miracle / Super in the live Arts submenu](#miracle--super-in-the-live-player-driven-arts-submenu)
@@ -177,9 +178,10 @@ Beyond `actor[+0x1DE]` (category), these per-actor bytes are read or written by 
 
 | Offset | Type | Use |
 |---|---|---|
-| `+0x14C` | u16 | Liveness flag (non-zero = alive). Read by every state's "is target valid" check. |
+| `+0x14C` | u16 | **Live HP** (`+0x14E` is max HP). Doubles as the liveness flag - every state's "is target valid" check is `+0x14C != 0`. Paired with the displayed-HP mirror `+0x172`; see [the `0x51` exit gate](#the-0x51-exit-gate-and-the-hp-bar-settle-invariant). |
 | `+0x16E` | u16 | Per-actor flag bank. Bit `0x4` = "non-targetable", bit `0x380` = "AI-controlled", bit `0x404` = "AI + non-targetable". Read at state-`0x0C` to decide between `FUN_801EED1C` and `FUN_801E7320`. |
-| `+0x172`/`+0x174` | u16 | HP / MP (or current / max - see [battle.md](battle.md)). |
+| `+0x10` | i32 | **Pending HP-bar delta** - how much `+0x172` still has to move. Ramped into the bar a quarter at a time by `FUN_80047430`, and only while it is non-zero. |
+| `+0x172`/`+0x174` | u16 | **Displayed** HP / MP - the values the HUD bars draw, lagging live HP `+0x14C` and live MP `+0x150`. `FUN_80047430` ramps `+0x172` by the `+0x10` accumulator and `+0x174` by `+0x178`, in the same quarter-step shape. |
 | `+0x178` | u16 | Last-action MP cost (used to display `-N MP` on screen). |
 | `+0x1A` | u8 | Party-action queue counter. Incremented by `0x0` (action-begin), `0x1E` (counter-attack swap), `0x64` (run advance), `0x5A` (next-actor). |
 | `+0x1D9` | u8 | **Current** anim ID (read-only here; written by the animation system). |
@@ -204,6 +206,110 @@ Beyond `actor[+0x1DE]` (category), these per-actor bytes are read or written by 
 | `+0x6E6 + i*2` (ctx) | u16 × 8 | Per-actor facing offsets (one per slot 0..7). Written by `0x14` for AI bookkeeping. |
 | `+0x890..+0x893` (ctx) | u8 × 4 | 4-byte fade-back sentinel `84 10 42 08`. Written by the summon `0x37` and capture `0x71` paths. |
 | `+0x102C`/`+0x1080`/`+0x1074` (ctx) | int* | Scratch pointers to live UI widgets (fade primitive, HP-bar, damage-popup). |
+
+## The `0x51` exit gate and the HP-bar settle invariant
+
+State `0x51` (done / fade-down) leaves the action band only when
+`ctx[+0x6D8] < 0 && ctx[+0x276] == 0`, and state `0x50` seeds that countdown
+with `0x3C`. The countdown is **not** decremented unconditionally - the arm
+gates it on a call:
+
+```
+801e6044  jal  0x801e7250          ; HP-bar settle check
+801e604c  bne  v0,zero,0x801e60b8  ; "not settled" -> branch PAST the decrement
+801e6054  lh   v0,0x2(s7)          ; s7+2 is ctx+0x6D8
+801e6068  lbu  v0,0x393(v0)        ; DAT_1F800393, the per-frame delta
+801e6070  subu a0,v1,v0
+801e6074  sh   a0,0x2(s7)          ; ctx+0x6D8 -= delta
+```
+
+The branch target `0x801E60B8` rejoins after the store, so a "not settled"
+answer skips the store and nothing else. A park at `0x51` with `ctx[+0x6D8]`
+holding exactly the `0x3C` that `0x50` seeded, `ctx[+0x276] == 0` and a healthy
+`DAT_1F800393` is therefore neither a stalled effect child, nor a zero frame
+delta, nor a pinned census. The state machine is still being entered on its
+normal cadence (once per game frame, which `DAT_1F800393 = 3` makes roughly one
+vsync in three) and the `0x51` arm still reaches the `jal` - `FUN_801E7250` is
+simply answering "not settled" every time.
+
+### What `FUN_801E7250` measures
+
+52 instructions; see `ghidra/scripts/funcs/overlay_battle_action_801e7250.txt`.
+It reads the acting actor's active-target slot `actor[+0x1DD]` and branches on
+the target class:
+
+| `actor[+0x1DD]` | Result |
+|---|---|
+| `0`–`2` | 1 ("not settled") when that party actor's live HP `+0x14C` differs from its displayed HP `+0x172`; else 0. |
+| `3`–`7` | 0 immediately - a monster target can never hold the exit. |
+| `8` (all) | 1 when **any** slot below `ctx[+0x00]` has `+0x14C != +0x172`; else 0. |
+| `> 8` | 0. |
+
+Only party-side slots are ever inspected, in either arm. An action aimed at a
+monster clears the gate on the frame it is asked, whatever the enemy's bar is
+doing; an action aimed at the party - an enemy attack, a heal, any all-target
+cast - is the only kind that can be held.
+
+### The invariant the check assumes
+
+Live HP `+0x14C` and displayed HP `+0x172` converge through a third field,
+`actor[+0x10]`, a signed pending-delta accumulator. The per-actor tick
+`FUN_80047430` (SCUS band, `see ghidra/scripts/funcs/80047430.txt`) drains it
+into the bar. A **party** slot gets a quarter per game frame - `0x172 -= step`
+and `acc -= step`, with `step` a divide-by-four biased so it is never zero for a
+non-zero accumulator (`(acc+3)>>2` positive, `acc>>2` negative) - so the total
+bar movement equals the seeded accumulator exactly and the sequence terminates
+at zero for either sign. A **monster** slot instead takes the whole delta in one
+frame and clears the accumulator (`0x80047578`), which is a second reason a
+monster target never holds the `0x51` exit.
+
+The whole ramp sits behind one guard at `0x800474E8`
+(`lw a0,0x10(s2); beq a0,zero,<skip>`): **with a zero accumulator the bar is not
+touched at all.**
+
+That makes `+0x14C != +0x172` with `+0x10 == 0` on a party slot an **absorbing
+state** for as long as the actor takes ordinary hits: the drain is the only
+thing that moves the bar, and a subsequent damage or heal adds its own delta to
+both sides so the constant offset rides along. One path does re-derive the bar
+from live HP - the per-round status ticker
+[`FUN_801E752C`](#fun_801e752c---per-round-status-dot-ticker) force-assigns
+`+0x172 = +0x14C` right after its own HP write (`0x801E7600` and `0x801E7698`,
+one per status bit) - so a poison or regen tick on the affected actor clears the
+mismatch. That is the only re-sync in the dumped battle corpus, and it explains
+why the softlock is survivable rather than terminal for a statused party.
+Absent it, every action that targets the
+party side reaches `0x51`, is told "not settled", and never decrements its
+countdown. The battle camera's idle azimuth sweep (`FUN_801D0748` stepping
+`_DAT_8007B792`) runs unconditionally and never consults the state machine, so
+the visible result is a battle that keeps orbiting the acting actor forever -
+an endless-camera-orbit softlock with no other symptom.
+
+The park is directly reproducible: offsetting one party slot's `+0x172` by a
+single point while clearing its `+0x10` is enough, and the next party-targeted
+action hangs while monster-targeted actions in between still complete normally.
+Probe: `scripts/pcsx-redux/autorun_gaza2_hpbar_settle.lua`.
+
+Two conventions for seeding `+0x10` coexist in the dumped battle corpus, which
+is where a retail trigger would have to come from. `FUN_801EC3E4` **accumulates**
+(`lw v0,0x10(v1)` / `addu` / `sw` at `0x801EDB58`, with an anti-overkill clamp
+`if (bar < acc) acc = bar` at `0x801EDB70`), while all three of `FUN_800402F4`'s
+seeds (`0x800408FC`, `0x80040D28`, `0x800410BC`) plainly **assign**
+`actor[+0x10] = -delta`. An assigning seed that lands while an accumulated drain
+is still in flight discards the remainder, and the bar stops short of live HP by
+exactly that much. Which retail sequence actually reaches that state is
+**Unknown** - no capture has produced the desync without an external HP write.
+
+### Consequences for instrumentation
+
+Any intervention that force-writes `+0x14C` without re-seeding `+0x10` -
+a capture-harness HP clamp, a max-HP cheat code, an engine debug key -
+manufactures this park by construction. The failure shape is worth naming
+because it is easy to mistake for the retail bug: the clamp restores live HP on
+the frame damage lands, the in-flight accumulator keeps draining the bar
+downward, the ramp then stops at zero accumulator, and the bar is left short of
+a live HP that the clamp holds pinned at maximum. A "reproduction" captured
+under such a clamp is measuring the instrument. A clamp that also assigns
+`+0x172` and zeroes `+0x10` keeps the invariant intact.
 
 ## Cross-references with other battle helpers
 
@@ -530,7 +636,7 @@ The single most-cited helper inside `FUN_801E295C` (~30 call sites). Signature `
 
 It is a **camera/presentation program driver**, not the animation system: its body dispatches `pose_id` 0..9 through a jump table at `0x801CEA00` computing three i16[3] tween-target vectors handed to `0x801D7130` (with a secondary dispatch on `actor[+0x1DB]` values `0x11..0x18` - per-art camera variants for the dynamically-installed art anims). It never writes `+0x1D9/+0x1DA`; the same-numbered **anim** ids 7/8/9 are staged separately (by the SM's own `+0x1DA` stores and the `FUN_8004AD80` end-of-clip chains), and the anim system's idle id is `0` - pose 6 has no anim counterpart (record[0] entry 6 is empty in every player file). The two id spaces are designed to align numerically at 7/8/9, which is what made the conflated reading stick.
 
-Note that `FUN_801D5854` for `param_2 == 9 && param_1 == 7` (the only path that calls the special-case) writes pose 9 unconditionally and triggers the run-side animation lookup `FUN_801DB9C4`.
+`FUN_801D5854` opens with an **out-of-range guard** (`0x801D58C8..0x801D58E8`, `param_1` = `a0` = actor slot in `s5`, `param_2` = `a1` = pose id in `s4`): when `param_2 >= 6` *and* `param_1 >= 8` - i.e. a real pose requested for a slot outside the 8-entry pool - it forces `param_2 = 9` and calls `FUN_801DB9C4`, which scrubs the `+0x8` flag word across the pool. It is a defensive path, not the run-side animation lookup an earlier reading called it, and the operands are `>= 6` / `>= 8`, not `== 9` / `== 7`.
 
 #### Case `0` - the submenu close-up framing
 
@@ -837,9 +943,14 @@ transcribed from the disassembly (`overlay_battle_action_801db9c4.txt` /
 `_801db318.txt` / `_801d8a88.txt` / `_801d8d00.txt` / `_801db124.txt` /
 `_801db8b4.txt` / `_801dba04.txt` / `_801db81c.txt`, plus `80019b28.txt`).
 
-- **`FUN_801DB9C4` - end-of-action flag scrub.** AND-masks the `+0x8` flag word
-  of pool slots 0..=6 with `0x7CFFFFFF` (clears bit 31 and bits 25/24). This is
-  the state-`0x5A` per-actor anim-flag clear. Port: `clear_end_of_action_flags`.
+- **`FUN_801DB9C4` - pool `+0x8` flag-word scrub.** AND-masks the `+0x8` flag
+  word of pool slots 0..=6 with `0x7CFFFFFF` (clears bit 31 and bits 25/24).
+  Its only static caller in the battle overlay is the pose setter
+  `FUN_801D5854`'s out-of-range guard (`jal` at `0x801D58E8`). It is **not** the
+  state-`0x5A` per-actor anim-flag clear: state `0x5A` runs its own inline mask
+  (`lui a1,0x7cff` at `0x801E6478`, paired with `+0x21F = 0`) and
+  `FUN_801E295C` contains no call to `FUN_801DB9C4`. Port:
+  `clear_pool_flag_words`.
 - **`FUN_801DB318` - formation span-normalise + recentre.** Over the included
   slots (0..2 always, 3.. gated on `+0x14C`), takes the X/Z extents; if an axis
   spans more than `0x800` it rescales every included coordinate by
@@ -1105,7 +1216,7 @@ The player-driven battle Arts submenu (`legaia_engine_core::battle_arts`) models
   Every resident string is byte-identical to `super_art.rs`'s modeled `find` / `replace` fields, and every resident replace preserves its find minus the final `[19, art]` pair then appends `[1A, finisher…]` - the pairing law locked by `super_art.rs`'s `replace_preserves_find_prefix_and_finisher_tail` test.
   So the byte-exact connector strings are no longer spreadsheet-only: the resident-table read validates the *strings* for all 15, and the *runtime queue effect* is live-executed for all 15 too - the in-the-wild Noa Miracle / Vahn Tri-Somersault captures above plus a per-Super applier-injection sweep
   (probe `autorun_super_art_queue_inject.lua`; each post-`FUN_801EF9E4` queue at `actor[+0x1DF]` is byte-identical to `super_art.rs`'s `replace`, re-checkable via the `super_queue_replace_*` library states + `crates/pcsxr/tests/super_art_queue_replace.rs`; see [`super-art-queue-capture.md`](../tooling/super-art-queue-capture.md#result---all-15-supers-live-executed-injection-probe)).
-  The byte-exact matcher itself (`SuperMatcher::try_trigger_at_tail`) is also ported and exercised by `resolve_action_queue`'s tail pass + `battle.rs`'s `commit_turn`.
+  The modeled tables feed the live path through `miracle_row_for` / `super_rows_for`, which project them into the resident row shapes; the queue arithmetic itself is the byte applier's, not `SuperMatcher`'s (see [the retail queue-builder](#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4) below).
 
 ### The retail queue-builder (`FUN_801EED1C`) and Super applier (`FUN_801EF9E4`)
 
@@ -1162,7 +1273,20 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
    `0x801F64F4 + (char_id-1)*0x10` (`addiu a1,v0,0x64f4` at `0x801EF4EC`; `sb v0,0x1df(v1)` at
    `0x801EF518`), i.e. the three resident strings at `0x801F64F4/0x6504/0x6514`, then flags
    `ctx[+0x28D + slot] = 1` and the shared trigger flag `0x801F696C = 1` (`0x801EF5A8`/`0x801EF5B4`).
-4. **Super find→tail-replace (helper call).** At its end (`jal 0x801EF9E4` at `0x801EF9AC`) the
+4. **MSB clear + marked-starter reorder.** After the build loop the builder sweeps the 16-byte
+   queue window clearing bit 7 of every byte (`0x801EF85C..0x801EF898`). It does it with a
+   signed load and an *add*, not an AND: `lb v0,0x1df(a0)` / `lbu v1,0x1df(a0)` /
+   `bgez v0, skip` / `addiu v0,v1,0x80` / `sb v0,0x1df(a0)` - adding `0x80` to a byte that
+   already has bit 7 set wraps it off, so the effect is `& 0x7F`. This is the runtime half of
+   the on-disc MSB quirk: it is what turns the Miracle row's leading `0x8C..0x8F` direction
+   bytes back into `0x0C..0x0F`, and it runs **after** the Miracle copy of step 3 and **before**
+   the Super applier of step 5. A second pass at `0x801EF8A0..0x801EF968` then walks the side
+   array `0x801F6990` and, for each marked index `i > 0` whose queue byte is a `SpecialStarter`
+   (`0x1A`), scans `j < i` and swaps `queue[j]` with `queue[i]` wherever
+   `queue[j + 1] == queue[i + 1]` - no early exit, so the swap can fire more than once per `i`.
+   The marks it reads come from the build loop, not from the Super applier, which runs later.
+   Port: `legaia_engine_vm::battle_action::clear_queue_msb` (the reorder is not ported).
+5. **Super find→tail-replace (helper call).** At its end (`jal 0x801EF9E4` at `0x801EF9AC`) the
    builder invokes **`FUN_801EF9E4`** (file `+0x211CC`;
    `see ghidra/scripts/funcs/overlay_battle_action_801ef9e4.txt`), which measures the queue
    (zero-terminator scan over `+0x1DF..` at `0x801EFA14..0x801EFA30`), then for each of the
@@ -1180,6 +1304,20 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
    the queue** - a replace longer than its find legally spills past byte 16 of the 19-byte
    stream. Byte-level port: `legaia_engine_vm::battle_action::apply_super_tail_replace`
    (equivalence with the structural `SuperMatcher` over the shipped tables is test-asserted).
+   The applier is called **unconditionally**, including after a Miracle replacement - the
+   Miracle row's tail matches no `find` row, so the two do not interact - and it applies at most
+   one replace per builder invocation: the row loop exits on the first full match, and the
+   builder calls it once.
+
+The engine's entry point `legaia_engine_vm::battle_action::resolve_action_queue` - what
+`engine-core` calls once per committed arts input - runs steps 3, 4 and 5 in that order on a raw
+`ACTION_QUEUE_CAP`-wide byte window, so the live path is the byte applier's arithmetic rather
+than the structural `legaia_art` matchers'. Two retail laws that reach the simulation through
+that change: the Super scan takes the **first matching row in resident-table order** (not the
+longest `find`), and it applies **once** (not to a fixpoint). Retail's Miracle gate is the
+per-slot marker `ctx[+0x25F + slot]`, armed by the input recognizer; the engine's stand-in is a
+whole-string match against the character's Miracle command table, because that recognizer
+(`FUN_801E91E8`'s caller) is not ported.
 
 The consuming side is unchanged: the strike loop reads `actor[+0x1DF + +0x15]` and the round
 driver's queue clear runs the `sb zero,0x1df(v0)` loop at `0x801D89D8` inside `FUN_801D88CC`
@@ -1278,6 +1416,7 @@ the disassembly of PROT entry 0898 at base `0x801CE818`.
 - **Unlisted `ctx[7]` states are inert/reserved, not a crash (`FUN_801E295C`).** The state byte dispatches through a 256-entry `jr` jump table at `0x801CED44` with **no `default`** (`sltiu v0,ctx[7],0x100; jr v0`; see `ghidra/scripts/funcs/overlay_0898_801e295c.txt`). The handled states are `0x00`, `0x0A`–`0x0C`, `0x14`–`0x19`, `0x1E`–`0x20`, `0x28`–`0x2E`, `0x32`–`0x38`, `0x3C`–`0x40`, `0x46`–`0x48`, `0x50`–`0x52`, `0x5A`, `0x64`–`0x66`, `0x68`–`0x6B`, `0x6E`–`0x71`, `0xFD`, `0xFF`. Every other byte value in `0x00`–`0xFF` has no case body: its table slot falls straight to the shared post-switch epilogue (the knockback/shove settle at `0x801E6814`), a safe no-op advance, never an out-of-bounds jump.
 - The inert indices are the inter-band gaps (`0x07`, `0x21`–`0x27`, `0x39`–`0x3B`, `0x41`–`0x45`, `0x49`–`0x4F`, `0x53`–`0x59`, `0x5B`–`0x63`, `0x6C`–`0x6D`, `0x72`–`0xFC`) plus the low-band ones. No path in the dumped battle-overlay corpus writes any of them into `ctx[7]` (corpus-scoped: a value injected by an un-dumped overlay would still dispatch safely). **One exception:** state `0x67` **is** written (case `0x66` sets `ctx[7] = 0x67`) yet has no case body — a genuine written-but-inert state that also lands on the epilogue.
 - State `0x47` (spirit-arts sustain): the `actor[+0x1F9] != 0` "spirit shield" branch is **resolved**. `+0x1F9` is set by the damage-application primitive `FUN_800402F4` case 5 (spirit-shield spirit → `+0x1F9 = 1`, gated on a non-zero target roll) and cleared by case 4 (cleanse → `+0x1F9 = 0`). Which case runs is selected by `actor[+0x1E8]`, seeded at [state `0x3C`](#state-table) from the spell table's class byte (`DAT_800754C8 + spell_id*0xC + 0`): class `== 5` routes to the shield write, class `== 4` to the cleanse. So the specific spirit that raises the shield is disc-side spell-table data, not a runtime constant. See [`spell-table.md`](../formats/spell-table.md).
+- **The `0x51` HP-bar settle gate is decoded and its softlock is reproducible; its retail trigger is not.** The mechanism, the exact branch that skips the countdown, and the absorbing `+0x14C != +0x172` / `+0x10 == 0` state are all measured - see [the section above](#the-0x51-exit-gate-and-the-hp-bar-settle-invariant). What is still open is which unaided retail sequence puts a party slot into that state. The mixed assign-vs-accumulate seeding of `+0x10` is the leading candidate class and has not been driven to a repro; every park captured so far needed an external HP write to set up.
 - `FUN_801E7250` (`0x51`) and `FUN_801E7824` (`0x68`) are decoded from their `overlay_battle_action_*` dumps: the former is the **HP-bar drain settle check** (the `0x51` arm freezes the `ctx[+0x6D8]` countdown while any relevant actor's live HP `+0x14C` differs from its bar display value `+0x172`), the latter the **captured-monster takedown** (queued anim from the monster record, HP pair + facing zeroed, retarget to `8`, run-UI banner opened). Both ported in `crates/engine-vm/src/battle_action.rs`; see [`reference/functions.md`](../reference/functions.md).
 
 ## See also

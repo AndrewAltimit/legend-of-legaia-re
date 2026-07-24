@@ -78,3 +78,6 @@ pub use target_cursor::*;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod queue_live_tests;

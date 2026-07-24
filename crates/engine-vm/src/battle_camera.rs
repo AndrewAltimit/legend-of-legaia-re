@@ -19,6 +19,28 @@
 //! `_DAT_8007BD24`) that a per-frame walker (`FUN_80021248` arms it) then
 //! advances by a constant per-frame increment, with 12-bit wrapped angles.
 //! No float easing is involved in retail.
+//!
+//! # NOT WIRED
+//!
+//! Both kernels sit between a producer and a consumer that live outside this
+//! crate's reach, and the engine has neither end:
+//!
+//! * [`apply_shake`]'s amplitude input is the global `_DAT_8007B630`, and its
+//!   only retail writer is a **field-VM opcode**: `FUN_801DE840` stores the
+//!   instruction's second byte into it and advances the PC by three
+//!   (`overlay_0897_801de840.txt` `0x801E2138..0x801E2144`). The engine's
+//!   field VM does not model that global, so the amplitude would be a
+//!   permanent zero - the value at which the routine degenerates to backing
+//!   its own previous offset out of the accumulators.
+//! * Its output accumulators `0x800840B8`/`0x800840BC` are read by the camera
+//!   pose, which in the port lives in `engine-shell`'s battle camera. Nothing
+//!   in `engine-core` or `engine-vm` reads a shake offset back;
+//!   `BattleActionHost::screen_shake` writes the same `0x800840BC` word
+//!   (retail's kick is `0x500` from the magic-exit arm at
+//!   `overlay_battle_action_801e295c.txt` `0x801E4970`) and the engine's host
+//!   impl turns it straight into a log-only `BattleEvent`.
+//! * [`build_camera_angle_tween`]'s only product is a step table for a
+//!   per-frame walker the port does not have - see its own note.
 
 use crate::battle_formulas::psyq_rand_step;
 

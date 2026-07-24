@@ -135,6 +135,25 @@ seam: PROT 0896's footprint runs into its neighbour, so dumps taken at its
 widely-cited base are reading field-overlay code. `0x801CE818 - 0x5818 =
 0x801C9000`, the over-read base. PROT 0896's own link base remains unrecovered.
 
+The seam is measurable rather than inferred, and it is two hops deep. Against
+the extracted images, `0896_bat_back_dat.BIN[0x9000:]` equals
+`0897_xxx_dat.BIN[0:]` byte for byte over its whole `0x46800`-byte remainder,
+and `0897_xxx_dat.BIN[0x25000:]` equals `0898_xxx_dat.BIN[0:]` over its whole
+`0x29800` bytes. So PROT 0896's own content is exactly its first `0x9000`
+bytes, and re-keying an `overlay_0896_*` printed VA runs:
+
+| `printed - 0x801C0000` | Owner | True VA |
+|---|---|---|
+| `< 0x9000` | PROT 0896 itself | unrecoverable - 0896's link base is still unknown |
+| `0x9000 ..< 0x2E000` | field (PROT 0897) | `printed + 0x5818` |
+| `>= 0x2E000` | battle_action (PROT 0898) | `printed - 0x1F7E8` |
+
+Read against the `+0xE818` row above, that is the trap worth naming: the two
+mis-based batches take **different** deltas. An `overlay_0896_*` VA re-keyed
+with the 0897 batch's `+0xE818`, or with the `0x167E8` the 0897-into-0898
+over-read uses, lands `0x9000` off - close enough to disassemble into plausible
+code, which is exactly how a wrong re-key survives review.
+
 **`+0xD018` is a third mis-based batch, seen through an over-read tail.** It was
 settled the way this page proposed: extract PROT 0971 (now mapped as
 `debug_menu` at `0x801CE818`, see
@@ -226,6 +245,52 @@ Confirmed instruction-by-instruction against `overlay_field_0897.bin` at base
 port tag as the tile-board procedural fill. There is no function at that
 address; there is not even an instruction boundary worth naming. The citation
 survived because the dump looked complete and its filename looked specific.
+
+## Printed VAs resolved against the extracted images
+
+A second hand-verified batch, resolved the same way: take the dump's opening
+instruction stream, find those exact words in an extracted overlay image, and
+report the VA the bytes actually occupy. Every row below is a **printed** VA
+that had a dump but no real function entry behind it - the reason each one sat
+in the corpus looking like unported work.
+
+The pattern generalises: a mis-based print and a genuine interior fragment are
+indistinguishable from the dump alone, and both are common enough that "there
+is a dump at this address" carries almost no information about whether a
+function lives there.
+
+| Printed VA | Dump | Bytes really live at | Reading |
+|---|---|---|---|
+| `0x801DCAA0` | `overlay_0897_xxx_dat_801dcaa0` | field (0897) `0x801EB2B8` | `+0xE818`. Interior of the world-map debug-menu renderer `FUN_801EAD98`. |
+| `0x801DF510` | `801df510` | field (0897) `0x801EDD28` | `+0xE818`. Interior of the battle-records screen `FUN_801ED710`; its first printed instruction is a delay slot and its back-branch leaves the window. |
+| `0x801DFEF4` | `overlay_0897_xxx_dat_801dfef4` | field (0897) `0x801EE70C` | `+0xE818`. Frameless slice of `FUN_801EE5D4`. At the correct base the VA is a lone `j 0x801E212C` inside the field VM `FUN_801DE840`. |
+| `0x801E0BE8` | `overlay_0896_bat_back_dat_801e0be8` | field (0897) `0x801E6400` | `+0x5818`. A real entry, the world-map numeric-field draw `FUN_801E6400`, printed at a VA no runtime image uses. |
+| `0x801E205C` | `overlay_0896_801e205c` | field (0897) `0x801E7874` | `+0x5818`. Interior of the world-map controller `FUN_801E76D4`. |
+| `0x801E249C` | `overlay_0897_xxx_dat_801e249c` | - | The dump's stream starts at `0x801DAAAC`, a disjoint region. At the correct base the VA is a lone `j 0x801E3628` inside the field VM `FUN_801DE840`. |
+| `0x801E5520` | `overlay_0897_801e5520` | field (0897) `0x801E5520` | Two words of data decoded as code. The VA is an intra-function `j` label of `FUN_801E5338`, reached from `0x801E537C` / `0x801E538C` / `0x801E54D0` / `0x801E54D8`. |
+| `0x801E9D8C` | `801e9d8c` | battle-action (0898) `0x801D35A4` | `+0xE818`. Interior of `FUN_801D344C`. |
+| `0x801E9F48` | `overlay_0896_801e9f48` | field (0897) `0x801EF760` | `+0x5818`. Interior of the tile-board walk SM `FUN_801EF2B0`. |
+| `0x801F04B0` | `overlay_0896_801f04b0` | battle-action (0898) `0x801D0CC8` | `+0x5818` lands in 0897's over-read tail, i.e. 0898's own image. Interior of the battle dispatcher `FUN_801D0748`; the fragment exits `j 0x801D3290`, that function's epilogue hop. |
+| `0x801F7E4C` | `overlay_muscle_dome_801f7e4c` | PROT 0900 `0x801F7E4C` | Base-correct but interior: inside the sprite-widget handler `FUN_801F7A9C`. |
+| `0x801F8080` | `overlay_muscle_dome_801f8080` | PROT 0900 `0x801F8080` | Base-correct but interior: inside the sprite-widget spawner `FUN_801F8004`. Opens in a delay slot. |
+| `0x801F8190` | `overlay_muscle_dome_801f8190` | PROT 0900 `0x801F8190` | Base-correct but interior: inside the screen-mask widget handler `FUN_801F811C`. |
+| `0x801F92A4` | `overlay_muscle_dome_801f92a4` | PROT 0900 `0x801F92A4` | Base-correct but interior: inside `FUN_801F91D8`. |
+
+The four `overlay_muscle_dome_*` rows are the instructive ones, because their
+base is *right* and the label is wrong. PROT 0977 (Muscle Dome) is a slot-A
+overlay; a dome capture's slot B holds whatever render library is resident, and
+here that is PROT 0900. Every one of those four VAs disassembles byte-identically
+out of `0900_xxx_dat.BIN` at base `0x801F69D8`, inside the
+[screen-effect widget family](../subsystems/move-vm.md#screen-effect-widget-family-prot-0900).
+None of them is dome logic. A `overlay_<minigame>_` prefix names the *capture*,
+not the code.
+
+`FUN_801F91D8` is the one enclosing body in that band with no separate write-up:
+a PROT 0900 scene-draw setup routine that seeds the render scratchpad window
+(`0x1F8002A8` / `0x1F8002CC` / `0x1F8002EC`) from the camera globals `0x8007BF10`
+and `0x8007B790`, snapshots the scratchpad view bytes `0x1F800384/385` and
+`0x1F8003E8..3EB` into overlay-local slots from `0x801F8EE0`, and then runs the
+draw through `FUN_80026988`.
 
 ## Tagged is necessary, not sufficient
 

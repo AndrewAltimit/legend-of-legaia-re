@@ -91,6 +91,13 @@ impl SceneHost {
         // engines drive via [`SceneHost::release_sustained_sfx`] directly).
         // REF: FUN_80017910, FUN_8001DCF8, FUN_8004AD80
         self.release_sustained_sfx();
+        // Re-allocate + reset the scene control block `_DAT_801C6EA4` before
+        // the new scene's records are installed. Retail's reset also clears
+        // the tile-descriptor pointer `_DAT_8007B450`, which is what keeps a
+        // tile board from surviving into the next scene.
+        // PORT: FUN_8003A024 (live wiring; the reset image itself is
+        // `crate::scus_leaf_kernels::SCENE_CONTROL_BLOCK_RESET`)
+        self.world.reset_scene_control_block();
         let scene = Scene::load(&self.index, name)?;
         let assets = crate::scene_assets::SceneAssets::build(&scene);
         self.scene = Some(scene);

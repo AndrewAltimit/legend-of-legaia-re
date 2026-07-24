@@ -35,7 +35,65 @@ pub(super) fn done_cleanup<H: BattleActionHost + ?Sized>(
         _ => host.pose(slot, Pose::Idle),
     }
 
+    rearm_action_gauge(host, ctx);
+
     transition(ctx, ActionState::DoneFadeDown)
+}
+
+/// Re-arm the per-actor command-gauge slots at the tail of `DoneCleanup`.
+///
+/// Retail's state-`0x50` body falls through all three `+0x1DE` arms into a
+/// shared tail that stamps the next state, clears `ctx[+0x6]` and then
+/// `jal`s the re-arm (`overlay_battle_action_801e295c.txt` `0x801E5F64`,
+/// unconditional on that path). The kernel itself is
+/// [`crate::battle_gauge_rearm::rearm_gauge`]; this is the call site plus the
+/// two bridges retail reads through globals:
+///
+/// * the **gate** input - a party slot (`< 3`) is gated on the actor's
+///   `+0x1D9` staged id being below `0x10`, a monster slot on the `+0x87`
+///   flag of the art record its staged id resolves to
+///   ([`BattleActionHost::staged_art_record_flag`]);
+/// * the **slot array** - retail walks the seven actor-pointer-table entries
+///   writing `+0x21C` / `+0x21D`, which the port carries as
+///   [`BattleActor::render_flag`] / [`BattleActor::impact_step`].
+///
+/// The context byte `+0x243` ([`BattleActionCtx::gauge_rearm_latch`]) is
+/// cleared only when the gate passed - retail's store sits past the two
+/// early-outs.
+///
+/// PORT: FUN_801E93C8 (call site; kernel in `battle_gauge_rearm`)
+fn rearm_action_gauge<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCtx) {
+    use crate::battle_gauge_rearm::{GAUGE_SLOTS, GaugeSlots, StagedAction, rearm_gauge};
+
+    let slot = ctx.active_actor;
+    let staged_id = host.actor(slot).map(|a| a.current_anim).unwrap_or(0);
+    let staged = if slot < 3 {
+        StagedAction::Party {
+            action_id: staged_id,
+        }
+    } else {
+        StagedAction::Monster {
+            record_flag: host.staged_art_record_flag(slot, staged_id),
+        }
+    };
+
+    let mut slots = GaugeSlots::default();
+    for i in 0..GAUGE_SLOTS {
+        if let Some(a) = host.actor(i as u8) {
+            slots.latch[i] = a.render_flag;
+            slots.arm_width[i] = a.impact_step;
+        }
+    }
+    if !rearm_gauge(staged, &mut slots) {
+        return;
+    }
+    for i in 0..GAUGE_SLOTS {
+        if let Some(a) = host.actor_mut(i as u8) {
+            a.render_flag = slots.latch[i];
+            a.impact_step = slots.arm_width[i];
+        }
+    }
+    ctx.gauge_rearm_latch = 0;
 }
 
 /// "Any HP-bar drain still animating?" settle check - PORT: FUN_801E7250

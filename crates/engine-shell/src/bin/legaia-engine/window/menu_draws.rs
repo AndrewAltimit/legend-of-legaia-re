@@ -345,6 +345,13 @@ impl PlayWindowApp {
         use legaia_asset::menu_windows::window_ids;
         let model = legaia_engine_core::pause_screens::items_screen_model(s);
         if model.target_select {
+            // Retail swaps the item list for window 14 - the party target
+            // panel (`FUN_801D0520`) - while the Use flow picks a target.
+            // The generic inventory overlay only stands in when the panel
+            // has no roster to draw.
+            if let Some(panel) = self.pause_target_panel_draws(s) {
+                return panel;
+            }
             return self.items_session_draws(&s.inner);
         }
         let rows: Vec<legaia_engine_render::PauseItemsRow<'_>> = model
@@ -455,6 +462,91 @@ impl PlayWindowApp {
             }
         }
         d
+    }
+
+    /// The window-14 target panel's content origin: the descriptor-table
+    /// pen when the menu overlay parsed, else the pinned rect.
+    pub(super) fn target_panel_pen(&self) -> (i32, i32) {
+        // Descriptor id 14 has no `window_ids` alias; retail dispatches it
+        // by index from the Use-flow submenu handlers.
+        let pen = self.menu_window_pen(14);
+        if pen == (0, 0) {
+            let (x, y, _, _) = legaia_engine_render::TARGET_PANEL_RECT;
+            (x, y)
+        } else {
+            pen
+        }
+    }
+
+    /// Map the engine-core target-panel model onto the engine-ui view.
+    pub(super) fn target_panel_members(
+        model: &legaia_engine_core::pause_screens::TargetPanelModel,
+    ) -> Vec<legaia_engine_render::TargetPanelMember<'_>> {
+        model
+            .members
+            .iter()
+            .map(|m| legaia_engine_render::TargetPanelMember {
+                name: m.name.as_str(),
+                level: m.level,
+                hp: m.hp,
+                mp: m.mp,
+                hp_max: m.hp_max,
+                mp_max: m.mp_max,
+                base_hp_max: m.base_hp_max,
+                base_mp_max: m.base_mp_max,
+                stat_eff: m.stat_eff,
+                stat_base: m.stat_base,
+            })
+            .collect()
+    }
+
+    /// Cursor decode shared by the panel's text + sprite builders.
+    pub(super) fn target_panel_cursor(
+        model: &legaia_engine_core::pause_screens::TargetPanelModel,
+    ) -> legaia_engine_render::TargetPanelCursor {
+        if model.all_targets {
+            legaia_engine_render::TargetPanelCursor::All { pressed: false }
+        } else {
+            legaia_engine_render::TargetPanelCursor::Single {
+                row: model.cursor_row,
+                pressed: false,
+            }
+        }
+    }
+
+    /// Build the retail window-14 party target panel that replaces the
+    /// item list while the pause-menu Use flow picks a target. `None`
+    /// when the flow is not in target select or has no rows to draw.
+    pub(super) fn pause_target_panel_draws(
+        &self,
+        s: &legaia_engine_core::pause_screens::PauseItemsSession,
+    ) -> Option<Vec<TextDraw>> {
+        use legaia_asset::menu_windows::window_ids;
+        let model = legaia_engine_core::pause_screens::target_panel_view_model(
+            s,
+            &self.session.host.world,
+        )?;
+        if model.members.is_empty() {
+            return None;
+        }
+        let members = Self::target_panel_members(&model);
+        let view = legaia_engine_render::TargetPanelView {
+            members: &members,
+            mode: legaia_engine_render::TargetPanelMode::from_preview_word(model.mode),
+            cursor: Self::target_panel_cursor(&model),
+            // The LV / HP / MP tags come from the UI atlas whenever the
+            // sprite pass runs (`save_menu` present); without it the
+            // ASCII stand-ins carry the layout.
+            label_icons: self.save_menu.is_some(),
+            text_cursor: self.save_menu.is_none(),
+        };
+        let mut d = legaia_engine_render::target_panel_draws_for(
+            &self.font,
+            &view,
+            self.target_panel_pen(),
+        );
+        d.extend(self.menu_tab_title_draws(window_ids::TAB_ITEMS, "Items"));
+        Some(d)
     }
 
     /// Build draws for the inventory item-use overlay. Resolves item
