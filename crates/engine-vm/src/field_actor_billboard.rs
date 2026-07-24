@@ -122,6 +122,9 @@ fn offset_world(parent: (i16, i16, i16), local: (i16, i16, i16)) -> (i16, i16, i
 /// picking one signedness and pretending the other is not there.
 ///
 /// PORT: FUN_801e4470 (`0x801E4550..0x801E4594`)
+// NOT WIRED: same blocker as [`attached_sprite_tick`], which is its only
+// caller - there is no attached-sprite actor class in `engine-core` and no
+// `engine-vm`-visible billboard projection to feed it.
 pub fn sprite_rect(quad: &ProjectedQuad) -> SpriteRect {
     let (x0, y0) = quad.p0;
     let (x3, y3) = quad.p3;

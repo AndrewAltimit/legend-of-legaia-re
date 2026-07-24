@@ -115,6 +115,9 @@ pub struct HudIcon {
 /// the third is **arithmetic** (`sra`), which only diverges for a height past
 /// `0x8000 / 43`; retail heights are far below that, so the port keeps the
 /// widths honest rather than pretending the three agree.
+// NOT WIRED: same blocker as [`passive_hud_icons`] - the lifts feed a GTE
+// three-point transform that only a field HUD host would issue, and no such
+// host exists.
 pub fn hud_anchor_offsets(height: u16) -> [i32; 3] {
     let h = i64::from(height);
     [
@@ -215,25 +218,25 @@ pub fn passive_hud_icons<F: Fn(u8) -> bool>(anchor: (i32, i32), has_bit: F) -> V
 mod tests {
     use super::*;
 
-    fn icons(bits: &[u8]) -> Vec<HudIcon> {
+    fn hud_for(bits: &[u8]) -> Vec<HudIcon> {
         passive_hud_icons((100, 50), |b| bits.contains(&b))
     }
 
     #[test]
     fn nothing_active_draws_nothing() {
-        assert!(icons(&[]).is_empty());
+        assert!(hud_for(&[]).is_empty());
     }
 
     #[test]
     fn both_encounter_bits_cancel() {
         // Parity, not "either": High + Low together draw no plate and no
         // chevrons at all.
-        assert!(icons(&[ability_bit::ENCOUNTER_HIGH, ability_bit::ENCOUNTER_LOW]).is_empty());
+        assert!(hud_for(&[ability_bit::ENCOUNTER_HIGH, ability_bit::ENCOUNTER_LOW]).is_empty());
     }
 
     #[test]
     fn one_encounter_bit_draws_plate_plus_its_chevron() {
-        let v = icons(&[ability_bit::ENCOUNTER_HIGH]);
+        let v = hud_for(&[ability_bit::ENCOUNTER_HIGH]);
         assert_eq!(
             v,
             vec![
@@ -249,14 +252,14 @@ mod tests {
                 },
             ]
         );
-        let v = icons(&[ability_bit::ENCOUNTER_LOW]);
+        let v = hud_for(&[ability_bit::ENCOUNTER_LOW]);
         assert_eq!(v[1].id, icon::BADGE_LOW);
         assert_eq!(v[1].y, 50 + 0xa);
     }
 
     #[test]
     fn badge_left_alone_still_draws_the_plate() {
-        let v = icons(&[ability_bit::BADGE_LEFT]);
+        let v = hud_for(&[ability_bit::BADGE_LEFT]);
         assert_eq!(v[0].id, icon::BADGE_PLATE);
         assert_eq!(v[1].id, icon::BADGE_LEFT);
         assert_eq!(v[1].x, 100 - 0x1e);
@@ -280,14 +283,14 @@ mod tests {
                 vec![40, 50, 60],
             ),
         ] {
-            let ys: Vec<i32> = icons(&bits).iter().map(|i| i.y).collect();
+            let ys: Vec<i32> = hud_for(&bits).iter().map(|i| i.y).collect();
             assert_eq!(ys, want, "bits {bits:?}");
         }
     }
 
     #[test]
     fn stack_x_is_two_right_of_the_anchor() {
-        for i in icons(&[ability_bit::STACK_C]) {
+        for i in hud_for(&[ability_bit::STACK_C]) {
             assert_eq!(i.x, 102);
         }
     }
