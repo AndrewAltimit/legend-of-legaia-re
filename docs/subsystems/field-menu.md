@@ -66,6 +66,16 @@ symbol) - reading that rendering instead of the disassembly yields a
 parser `legaia_asset::menu_windows` consumes the disassembly's base; the
 rect and renderer fields land on the same absolute bytes in either frame.
 
+`0x801E473C` is therefore an address worth naming rather than quietly
+correcting: it is **not** a function and not the table base, it is the skewed
+base that one decompiler rendering produces, and it is the address a corpus
+dump of the table carries (`see ghidra/scripts/funcs/data_801e473c_overlay_operand_table_801E473C.txt`
+- a 256-byte hex window, header `overlay_operand_table_801E473C`, not a
+disassembly). Records read from it open on the rect `x, y, w, h` and close on
+the *following* record's `content id / slide variant / class word`. Anything
+citing `0x801E473C` as a record boundary has inherited the skew; the boundary
+is `0x801E4738`.
+
 The table extent is structural: record 52 fails the rect/renderer validity
 envelope. Provenance: byte-matched between the disc entry and the resident
 overlay across the six catalogued menu-open mednafen states

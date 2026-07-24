@@ -1105,8 +1105,26 @@ leaves reached through those dispatchers.
 - The decompile shows `_DAT_8007BD24` typed as `int*`. `_DAT_8007BD24[N]` is therefore byte N of the **pointed-to** struct (Ghidra resolves the pointer dereference as part of the indexing) - not byte N of the pointer itself. This trips up first-pass readers; see [battle.md](battle.md) § "Battle context struct" for the decode.
 - `ctx[+0x6DA]` and `ctx[+0x6DB]` look like u8 fields but are read as a u16 pair (the `0x6DA` access at line 4147 of the dump uses `*(short *)(_DAT_8007bd24 + 0x6da)`). Treat as packed `(timer_lo, timer_hi)` or `i16`.
 - Several states share an exit edge into `0x5A` via fall-through (e.g. `0x6B` → `0x5A`). The C decompile materialises this as explicit assignment; the MIPS source sometimes uses `j 0x801E6814` (function epilogue) directly without a state write.
-- `func_0x80056798()` returns the PSX rand BIOS call (`A0 0x2E`). It's used for combat RNG (combo timing, capture chance, run angle).
+- `func_0x80056798()` returns the PSX `rand` BIOS call. Its veneer reads `li t2,0xA0; jr t2; li t1,0x2F`, so the vector is **A0 `0x2F`** - not `0x2E`, which is `memchr` and belongs to the separate veneer at `FUN_80057014`. It's used for combat RNG (combo timing, capture chance, run angle).
 - Signed-vs-unsigned comparisons appear pervasively (`(int)((uVar10 - uVar16) * 0x10000) < 0` is the idiom for "i16 went negative this frame"). The compiler emitted these as explicit casts to satisfy Ghidra; the underlying MIPS is a `bgez`/`bltz` on a sign-extended halfword.
+
+### Interior addresses cited as if they were entries
+
+The corpus stores mid-function citations as their own `<addr>.txt` files whose
+whole body is a pointer at the enclosing dump. Three land in this overlay's
+documented functions, and none of the three is even a basic-block head - each
+is a single instruction in the middle of an expression, which is why no
+prologue and no `jr ra` appears anywhere near it.
+
+| Address | Inside | The instruction |
+|---|---|---|
+| `0x801EA5C4` | `FUN_801E9FD4` (the [enemy AGL action budget](#enemy-agl-action-budget-fun_801e9fd4)) | One arm of the four-way `andi 0x60` classification of the spell record's byte `+2`: `beq a0,v0,0x801EA7E8` selecting the `0x20` class. |
+| `0x801EC784` | `FUN_801EC3E4` (the [physical-attack damage kernel](battle-formulas.md#physical-attack-damage---overlay_battle_action_801ec3e4)) | `addiu a0,a0,0x4140` - the low half of the `lui/addiu` pair forming the character-record base `0x80084140`, immediately before the `slot * 0x414` stride multiply. |
+| `0x801EF228` | `FUN_801EED1C` (the [arts queue-builder](#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4)) | `addu v0,v0,v1` - the second step of that same `x*0x414` stride idiom (`((x<<6)+x)<<2 + x)<<2`), here indexing `+0x6BC` of the resolved record. |
+
+The stride idiom is worth recognising on sight: any dump opening inside
+`sll/addu/sll/addu` over a small integer, followed by an add of `0x80084140`,
+is in the middle of a character-record lookup and is not a function.
 
 ## Engine port
 

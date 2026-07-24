@@ -413,8 +413,9 @@ a live widget by handler. The four 0x18-byte handler-binding descriptors sit at
 
 The **sprite widget script** (cursor at `actor+0x90`) is byte-coded: opcode
 `0x40`, sub-op at `+2` dispatched through the 5-entry table at the overlay head
-(`0x801F7B14/7B28/7B54/7B8C/7D90`; the same table the overlay-resident
-dispatcher `FUN_801F2D68` consumes via `jr *(0x801F69D8 + sub*4)`):
+(`0x801F7B14` / `0x801F7B28` / `0x801F7B54` / `0x801F7B8C` / `0x801F7D90`; the
+same table the overlay-resident dispatcher `FUN_801F2D68` consumes via
+`jr *(0x801F69D8 + sub*4)`):
 
 | sub | operands | semantics |
 |---|---|---|
@@ -450,6 +451,37 @@ base. PROT 0900 file `0x0640..0x2660` (the whole family) is byte-resident at
 `0x801F7018..0x801F9038` in the fingerprinted `battle_gimard_tail_fire_a`
 save, and the function bodies are byte-identical to the dance / baka-fighter
 overlay images (`overlay_dance_801f811c.txt` etc.).
+
+#### Interior addresses in the widget band
+
+Captures that hold PROT 0900 in slot B produce dumps at many addresses inside
+this family that are **not entries**. Ghidra splits a body wherever a branch
+target it did not follow lands, so the corpus carries a `FUN_` at each split
+point, and every one of them reads as unported work until someone opens the
+disassembly. The table below is what those splits actually are; the enclosing
+entry is the address to cite and the only one worth a port row.
+
+The tell is uniform: none of these dumps opens with a prologue. Several open
+in a delay slot (`_li`, `_nop` as the first printed line), and several end in
+`j` to a shared tail rather than `jr ra`.
+
+| Printed | Enclosing entry | What the block does |
+|---|---|---|
+| `0x801F7A40` / `0x801F7A54` | `FUN_801F76F4` | The scratchpad restore tail: writes four saved bytes back into the render view window `0x1F8003E8..0x1F8003EB` (having just written `0x1F800384/385` a few instructions earlier), calls `FUN_8003D1A4(0x1F8003C8)`, then the `0x80`-byte-frame epilogue. |
+| `0x801F7B1C` | `FUN_801F7A9C` (sub-op 0, `0x801F7B14`) | Tail of the sprite-script **kill** sub-op: `flags \|= 8` into `actor+0x10`, then `j` to the shared dispatcher tail `0x801F7F04`. |
+| `0x801F7B28` | `FUN_801F7A9C` (sub-op 1) | The **wait-until-story-flag-set** sub-op body itself: reads the script cursor `actor+0x90`, decodes the `i16` operand at `+3` via `FUN_8003CE9C`, tests it with `FUN_8003CE64`, and on set advances the cursor by 5 and sets the continue-same-frame flag. |
+| `0x801F7D38` / `0x801F7EBC` | `FUN_801F7A9C` | Colour-tween arms of sub-ops 3 and 4: each pairs `FUN_801DE4C8` (the shared interpolator) with `FUN_801DE648` (the sized store) writing one RGB byte at `actor+0x75`/`+0x76`, then joins the tail at `0x801F7F04`. |
+| `0x801F80A0` | `FUN_801F8004` | The texture-address arithmetic of the sprite spawner - the `texpage` / `u` / `v` / `clut` derivation tabulated above, storing to `+0xA0` / `+0xA4` / `+0xA6` / `+0xA2` and the modulation colour to `+0x74` and `+0x7C`. |
+| `0x801F816C` | `FUN_801F811C` | One arm of the mask handler's edge tween - stores the interpolated left edge to `+0x14` and reloads `+0x42`. |
+| `0x801F8228` | `FUN_801F811C` | The mask handler's four-channel tween loop: per edge, compare current against target, and where they differ run `FUN_801DE4C8` + `FUN_801DE648` with size 4. |
+| `0x801F8438` | `FUN_801F811C` | The mask handler's emit tail: fills the last black border quad (GP0 `0x28`, colour word zeroed byte by byte), links it into OT slot `+0x1C` through `FUN_8003D2C4`, and returns. |
+| `0x801F8638` / `0x801F87F4` | `FUN_801F849C` | Continuation blocks of the panel handler's five-channel tween and its textured-quad emit. |
+| `0x801F8E3C` / `0x801F8E60` | `FUN_801F8D4C` | Latch-and-return tail of the mask control API: stores the duration pair into `+0x9C`/`+0x9E` and runs the `0x28`-byte-frame epilogue. |
+
+Provenance: the `overlay_muscle_dome_<addr>.txt` dump of each printed address
+(that capture's slot B is PROT 0900 - see
+[dump-corpus integrity](../tooling/dump-corpus-integrity.md#printed-vas-resolved-against-the-extracted-images),
+where four more addresses in this band are resolved the same way).
 
 **Battle (enemy "Fire Tail") does NOT drive the widget path.** PROT 0900 is the
 slot-B occupant in the enemy Gimard "Fire Tail" mid-cast frames (loader-B id 5;
