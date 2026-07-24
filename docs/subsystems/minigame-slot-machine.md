@@ -431,7 +431,7 @@ over-read tail - mode 0 actually loads the debug-menu overlay PROT 971. See [`sc
 
 The engine-side reconstructions (each marked at its site): the spin-up pacing constants, the BIOS-`rand` stream substituted with a deterministic LCG, and feature modes 3/5 folded to the normal landing plan.
 
-Runtime wiring: a suspending scene mode (`SceneMode::SlotMachine`; `World::enter_slot_machine` / `tick_slot_machine` / `exit_slot_machine`, which performs the state-100 bank commit into `World::casino_coins` = `_DAT_800845A4`). The `play-window` viewer starts it from the `O` key (loads PROT 0975, `slot_payout::parse`); Cross spins / stops / collects. Disc-gated `slot_minigame_real` drives real-table spins through the World pad path.
+Runtime wiring: a suspending scene mode (`SceneMode::SlotMachine`; `World::enter_slot_machine` / `tick_slot_machine` / `exit_slot_machine`, which performs the state-100 bank commit into `World::casino_coins` = `_DAT_800845A4`). The `play-window` viewer starts it from the `O` key (loads PROT 0975, `slot_payout::parse`); Cross spins / stops / collects. A bank too thin for a spin is topped up through the ported coin-exchange counter (`coin_exchange_quote`, `FUN_801E6F70`): the host quotes the purchase against party gold, and commits the gold debit and the coin credit only when both retail gates pass. Disc-gated `slot_minigame_real` drives real-table spins through the World pad path.
 
 ## Rendering - a 3D scene
 

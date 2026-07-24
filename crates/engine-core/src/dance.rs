@@ -204,13 +204,16 @@ impl DanceDir {
     /// returns `0` for anything else; the chart decoder converts symbols to
     /// [`DanceDir`] before this point, so the whole retail domain is covered by
     /// the three variants and the `0` arm has no reachable input.
-    // NOT WIRED: the port never materialises a retail pad mask for the dance
-    // floor. `World::tick_dance` reads typed button edges
-    // (`PadButton::Left`/`Right`/`Up`) and maps them straight onto the three
-    // `DanceDir` variants, so the bit this returns is the *documentation* of
-    // that binding rather than a step in it. A consumer appears the day a host
-    // feeds the judge a raw retail pad word instead of typed edges - the same
-    // shape the fishing side wants for `ReelInput::from_pad_mask`.
+    ///
+    /// Wired: `World::tick_dance` packs this frame's pad edges into the retail
+    /// layout (`_DAT_8007B874`) and picks the pressed direction by matching
+    /// this bit, the way `FUN_801d1af4` tests `0x10` / `0x80` / `0x20`.
+    ///
+    /// Retail's own call site is the *other* consumer of the same map: an NPC
+    /// dancer (`FUN_801d1af4` with a non-zero dancer index) has no pad, so the
+    /// judge substitutes `FUN_801d4040(dancer)` - that dancer's current chart
+    /// symbol translated into the pad bit space - for the player's pad word.
+    /// The port models only the player, so that substitution has no caller.
     // PORT: FUN_801d4040 (chart symbol -> pad-mask bit)
     pub fn pad_bit(self) -> u16 {
         match self {

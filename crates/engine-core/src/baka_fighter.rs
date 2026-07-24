@@ -1413,13 +1413,18 @@ pub fn baka_combo_index(combo: i32) -> i32 {
 // NOT WIRED: the two tables it indexes are overlay disc data - the combo-bonus
 // table `&DAT_801d70c4` and the health-bonus table `&DAT_801d711c` - and
 // `legaia_asset::baka_opponents` has no parser for either, so no caller can
-// supply the slices. That is also why [`BakaFight`] opens its tally with the
-// two score rows at zero and only the coin prize populated: the rows this
-// computes have no data behind them yet. Wiring it needs those two tables
-// parsed off the duel overlay, then this called from `end_round`.
+// supply the slices. Both VAs are fixed and the overlay's load base is already
+// pinned (`legaia_asset::baka_opponents::BAKA_OVERLAY_BASE_VA`), so the parser
+// is mechanical; what is *not* settled is the combo input. Retail's
+// `DAT_801dbec8` is a per-match running **maximum** (`FUN_801d2afc` latches
+// `if (DAT_801dbec8 <= DAT_801dc094) DAT_801dbec8 = DAT_801dc094;`, and
+// `0x801d05c0` zeroes it at setup), and which fighter's counter `DAT_801dc094`
+// tracks is not pinned - so mapping it onto [`BakaFight`]'s per-fighter
+// `combo` would be a guess. That is also why [`BakaFight`] opens its tally
+// with the two score rows at zero and only the coin prize populated.
 ///
 /// PORT: FUN_801d2a28 (per-round score accumulation). The retail routine reads
-/// the round's combo count (`DAT_801dbec8`) and the winner's remaining HP
+/// the running maximum combo (`DAT_801dbec8`) and the winner's remaining HP
 /// (`DAT_801dbfc4`) and folds two increments into the running score rows the
 /// end-of-match tally ([`BakaTally`]) later drains:
 ///

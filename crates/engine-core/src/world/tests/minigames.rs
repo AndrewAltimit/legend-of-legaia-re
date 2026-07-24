@@ -3,13 +3,13 @@ use super::*;
 // --- Noa dance (rhythm) minigame wiring ------------------------------------
 
 /// A 3-row chart whose beat 0 (every lane) wants symbol 1 (`DanceDir::A` =
-/// pad Left), for deterministic judging.
+/// pad Square), for deterministic judging.
 fn dance_test_chart() -> legaia_asset::dance_chart::DanceChart {
     use legaia_asset::dance_chart::{BEATS_PER_ROW, DanceChart};
     let mut rows = Vec::new();
     for _ in 0..3 {
         let mut row = [0u8; BEATS_PER_ROW];
-        row[0] = 1; // symbol 1 -> DanceDir::A -> pad Left
+        row[0] = 1; // symbol 1 -> DanceDir::A -> pad Square
         rows.push(row);
     }
     DanceChart { rows }
@@ -35,9 +35,9 @@ fn dance_tick_judges_a_correct_press() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.enter_dance(crate::dance::DanceGame::new(dance_test_chart(), false));
-    // Rising edge on Left (DanceDir::A) - beat 0 of lane 0 wants symbol 1.
+    // Rising edge on Square (DanceDir::A) - beat 0 of lane 0 wants symbol 1.
     world.set_pad(0);
-    world.set_pad(input::PadButton::Left.mask());
+    world.set_pad(input::PadButton::Square.mask());
     let _ = world.tick();
     // The press was judged (the chain closed, the groove gauge advanced). The
     // score itself is the dancer kind's disc-resident bonus row, which a chart
@@ -54,12 +54,39 @@ fn dance_tick_judges_a_correct_press() {
 fn dance_wrong_direction_misses() {
     let mut world = World::new();
     world.enter_dance(crate::dance::DanceGame::new(dance_test_chart(), false));
-    // Beat 0 wants Left; press Right instead -> miss.
+    // Beat 0 wants Square; press Circle instead -> miss.
     world.set_pad(0);
-    world.set_pad(input::PadButton::Right.mask());
+    world.set_pad(input::PadButton::Circle.mask());
     let _ = world.tick();
     assert_eq!(world.dance_last_judge, Some(crate::dance::Judge::Miss));
     assert_eq!(world.dance.as_ref().unwrap().score(), 0);
+}
+
+/// The judge reads the retail packed-pad word, so the three judged buttons are
+/// the face triple `DanceDir::pad_bit` names (Square / Circle / Triangle) and a
+/// dpad press is not a dance input at all.
+#[test]
+fn dance_judges_the_retail_pad_bits_not_the_dpad() {
+    use crate::dance::DanceDir;
+    // The bit map itself, straight off `FUN_801d4040`.
+    assert_eq!(DanceDir::A.pad_bit(), 0x80);
+    assert_eq!(DanceDir::B.pad_bit(), 0x20);
+    assert_eq!(DanceDir::C.pad_bit(), 0x10);
+    let mut world = World::new();
+    world.enter_dance(crate::dance::DanceGame::new(dance_test_chart(), false));
+    // Dpad Left used to be direction A; it is not a judged bit.
+    world.set_pad(0);
+    world.set_pad(input::PadButton::Left.mask());
+    let _ = world.tick();
+    assert_eq!(world.dance_last_judge, None, "the dpad is not judged");
+    // Square is - and it is the direction beat 0 asks for.
+    world.set_pad(0);
+    world.set_pad(input::PadButton::Square.mask());
+    let _ = world.tick();
+    assert!(matches!(
+        world.dance_last_judge,
+        Some(crate::dance::Judge::Hit { .. }) | Some(crate::dance::Judge::Sequence { .. })
+    ));
 }
 
 #[test]
@@ -157,6 +184,64 @@ fn fishing_casts_locks_and_reels_to_a_resolution() {
     }
     assert_eq!(world.fishing.as_ref().unwrap().phase(), FishingPhase::Done);
     assert!(world.fishing.as_ref().unwrap().last_outcome().is_some());
+}
+
+/// The reel buttons are the retail packed-pad bits decoded by
+/// `ReelInput::from_pad_mask`: `0x40` Cross = reel A, `0x80` Square = reel B,
+/// both held = reel A. Circle (`0x20`) is the cast/hook input, not a reel.
+///
+/// The two reels are told apart by their divisors (`rod*9 + 0x23` for A,
+/// `rod*6 + 0x19` for B), so one frame of each leaves a different tension.
+#[test]
+fn fishing_reel_buttons_are_cross_and_square_with_cross_winning() {
+    use legaia_asset::fishing_species::FishingSpecies;
+    // A fish that pulls hard enough for one frame of reeling to move the
+    // gauge through the integer divisors at rod stat 8.
+    let strong = |index: usize| FishingSpecies {
+        index,
+        name_ptr_va: 0,
+        score_value: 10_000,
+        pull_factor: 4000,
+        dart_factor: 60,
+        sink_factor: 4,
+        depth_gate: 1024,
+        roll_cutoff_a: 200,
+        roll_cutoff_b: 512,
+        roll_cutoff_c: 90,
+        strike_gate: 1000,
+    };
+    let one_frame = |mask: u16| -> i32 {
+        let mut world = World::new();
+        world.enter_fishing(crate::fishing::FishingSession::new(
+            (0..3).map(strong).collect(),
+            8,
+            crate::fishing::FishingRecord::default(),
+        ));
+        world.set_pad(0);
+        world.set_pad(input::PadButton::Cross.mask());
+        let _ = world.tick(); // locks the cast -> Fighting
+        world.set_pad(mask);
+        let _ = world.tick();
+        world
+            .fishing
+            .as_ref()
+            .and_then(|s| s.fight())
+            .map(|f| f.tension())
+            .unwrap_or(-1)
+    };
+    // base_pull = 4000/8 = 500; reel A divisor 8*9+0x23 = 107, reel B 8*6+0x19 = 73.
+    let reel_a = one_frame(input::PadButton::Cross.mask());
+    let reel_b = one_frame(input::PadButton::Square.mask());
+    assert_eq!(reel_a, 500 / 107);
+    assert_eq!(reel_b, 500 / 73);
+    assert_ne!(reel_a, reel_b, "the two divisors must be distinguishable");
+    // Both held resolves to reel A - the retail decoder's priority, not a blend.
+    assert_eq!(
+        one_frame(input::PadButton::Cross.mask() | input::PadButton::Square.mask()),
+        reel_a
+    );
+    // Circle is the cast/hook input: idle, so the gauge bleeds off (clamped at 0).
+    assert_eq!(one_frame(input::PadButton::Circle.mask()), 0);
 }
 
 #[test]

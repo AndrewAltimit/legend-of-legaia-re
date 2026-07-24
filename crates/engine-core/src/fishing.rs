@@ -76,6 +76,13 @@ pub const REEL_RELEASE_MUL: i32 = 0x40;
 /// Additive term of the reel-released decrement.
 pub const REEL_RELEASE_ADD: i32 = 0x4a;
 
+/// Packed-pad bit of the reel-A button (Cross) in the retail held word
+/// `_DAT_8007b850` - the mask [`ReelInput::from_pad_mask`] decodes.
+pub const REEL_A_PAD_BIT: u32 = 0x40;
+/// Packed-pad bit of the reel-B button (Square) in the retail held word.
+/// **Not** Circle - `0x20` is the cast/hook input.
+pub const REEL_B_PAD_BIT: u32 = 0x80;
+
 /// The reel-input state this frame. The retail held mask is `_DAT_8007b850`
 /// bits `0x40` / `0x80`, which are now pinned to physical buttons via the pad
 /// packer `FUN_8001822C`: `0x40` = Cross, `0x80` = Square (reel B is Square,
@@ -99,6 +106,10 @@ impl ReelInput {
     /// resolves to reel A, not a blend - so `0x40 -> ReelA`, `0x80 -> ReelB`,
     /// else `Idle`. The retail body is `if (m & 0x40) return 1; else return
     /// (m >> 6) & 2;`, whose `1` / `2` / `0` results map onto these variants.
+    ///
+    /// Wired: `World::tick_fishing` assembles the two reel bits out of this
+    /// frame's held pad and decodes them here, so the priority rule is the
+    /// ported one rather than a host `if` chain.
     // PORT: FUN_801d7450 (reel-button decoder)
     pub fn from_pad_mask(mask: u32) -> Self {
         if mask & 0x40 != 0 {

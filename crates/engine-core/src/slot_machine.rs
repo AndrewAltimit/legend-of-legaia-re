@@ -1007,9 +1007,10 @@ impl CoinQuote {
 /// The field is [`COIN_ENTRY_DIGITS`] single-digit cells stored
 /// **least-significant first** (the accumulator starts at 1 and multiplies by
 /// ten each cell), so `digits[0]` is the units place.
+/// Wired through [`coin_exchange_quote`], which the play-window casino entry
+/// point calls to buy coins before seating the player at a machine.
 // PORT: FUN_801e6f70 entry-field half (digit accumulation). The gate half of
 // the same function is `coin_exchange_quote`; the two together cover it.
-// NOT WIRED: as coin_exchange_quote - no host casino exchange screen.
 pub fn coin_entry_value(digits: &[u8]) -> i32 {
     let mut place = 1i32;
     let mut total = 0i32;
@@ -1032,11 +1033,12 @@ pub fn coin_entry_value(digits: &[u8]) -> i32 {
 ///
 /// This function is the quote/validation half only; retail commits the sale on
 /// the counter's confirm path, not in the screen routine.
+/// Wired: the play-window casino entry point runs a coin purchase through
+/// this quote before seating the player at a machine, committing the gold
+/// debit and the coin credit only when both gates pass. What is still
+/// unreached is the *screen* around it - retail's per-frame quote refresh
+/// with the digit-entry cursor and the alert-ink recolour on a failed gate.
 // PORT: FUN_801e6f70 (coin-exchange counter: total cost + gold/stock gates)
-// NOT WIRED: the coin-exchange counter is a casino *screen*, and the host
-// has no such screen - the engine enters a machine directly. A wired caller
-// would be that screen's per-frame quote refresh, feeding the digit entry
-// and recolouring the total on a failed gate. Reachable only from tests.
 pub fn coin_exchange_quote(digits: &[u8], gold: i32, stock: i32) -> CoinQuote {
     let coins = coin_entry_value(digits);
     let cost = coins * COIN_PRICE_GOLD;

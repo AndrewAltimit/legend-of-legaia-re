@@ -125,14 +125,14 @@ impl PlayWindowApp {
         }
         // Dance minigame HUD: the running score / groove gauge / active lane,
         // the arrow the current beat calls for, and the last press judgement.
-        // The three arrows map to the retail pad bits (Left/Right/Up).
+        // The three arrows are the retail pad bits (Square/Circle/Triangle).
         if self.session.host.world.mode == SceneMode::Dance
             && let Some(g) = &self.session.host.world.dance
         {
             let arrow = match g.required_symbol() {
-                Some(1) => "< (Left)",
-                Some(2) => "> (Right)",
-                Some(3) => "^ (Up)",
+                Some(1) => "< (Square)",
+                Some(2) => "> (Circle)",
+                Some(3) => "^ (Triangle)",
                 _ => "- (rest)",
             };
             use legaia_engine_core::dance::Judge;

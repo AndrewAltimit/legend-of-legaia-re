@@ -233,10 +233,13 @@ fn playwindow_load_path_enters_and_scores_a_dance() {
             .filter(|g| !g.in_dead_zone())
             .and_then(|g| g.judged_symbol())
             .filter(|s| *s != 0);
+        // The judged buttons are the retail pad bits `DanceDir::pad_bit`
+        // names: symbol 1 = Square (0x80), 2 = Circle (0x20), 3 = Triangle
+        // (0x10).
         let button = match want {
-            Some(1) => Some(PadButton::Left),
-            Some(2) => Some(PadButton::Right),
-            Some(3) => Some(PadButton::Up),
+            Some(1) => Some(PadButton::Square),
+            Some(2) => Some(PadButton::Circle),
+            Some(3) => Some(PadButton::Triangle),
             _ => None,
         };
         world.set_pad(0);

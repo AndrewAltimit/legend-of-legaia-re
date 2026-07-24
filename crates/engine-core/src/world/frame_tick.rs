@@ -898,11 +898,12 @@ impl World {
     /// Advance the dance minigame one frame: step the beat clock, judge this
     /// frame's directional presses, and end the run when the song finishes.
     ///
-    /// The three judged directions map to the retail pad bits
-    /// ([`crate::dance::DanceDir::pad_bit`] = `0x80`/`0x20`/`0x10`), which are
-    /// this pad's [`Left`](input::PadButton::Left) / [`Right`](input::PadButton::Right)
-    /// / [`Up`](input::PadButton::Up) - a press on any of them on this frame is
-    /// judged against the active beat's chart cell. Edge-triggered
+    /// The judged buttons are the retail ones: `FUN_801d1af4` reads the
+    /// newly-pressed word `_DAT_8007B874` and tests the three face bits
+    /// `0x80` / `0x20` / `0x10` = Square / Circle / Triangle, which is exactly
+    /// [`crate::dance::DanceDir::pad_bit`]. This frame's pad edges are packed
+    /// into that layout and the direction is picked by matching `pad_bit`, so
+    /// the bit-to-direction binding lives in the ported kernel. Edge-triggered
     /// (`just_pressed`) so a held button scores at most one note per press.
     ///
     /// PORT: the dance overlay's per-frame driver (`FUN_801cf470` beat clock ->
@@ -914,19 +915,20 @@ impl World {
             return;
         };
         game.advance(1);
-        // Judge at most one directional press this frame (retail reads one pad
-        // word per beat-clock tick). Priority Left -> Right -> Up is arbitrary
-        // among simultaneous presses; a rhythm player presses one at a time.
+        // Judge at most one directional press this frame (retail tests all
+        // three bits in one pass, but a rhythm player presses one at a time);
+        // the scan order is retail's - Triangle, then Square, then Circle.
+        //
+        // The engine's `PadButton` word and the packed word `FUN_8001822C`
+        // builds hold the same 16 buttons with the two bytes swapped (see
+        // `crate::retail_pad`: face/shoulder cluster low, dpad/system high),
+        // so one rotate turns this frame's edges into the mask the retail
+        // judge reads.
         use crate::dance::DanceDir;
-        let dir = if self.input.just_pressed(input::PadButton::Left) {
-            Some(DanceDir::A)
-        } else if self.input.just_pressed(input::PadButton::Right) {
-            Some(DanceDir::B)
-        } else if self.input.just_pressed(input::PadButton::Up) {
-            Some(DanceDir::C)
-        } else {
-            None
-        };
+        let pressed = (self.input.pad() & !self.input.pad_prev()).rotate_right(8);
+        let dir = [DanceDir::C, DanceDir::A, DanceDir::B]
+            .into_iter()
+            .find(|d| pressed & d.pad_bit() != 0);
         if let Some(dir) = dir {
             self.dance_last_judge = Some(game.judge_press(dir));
         }
@@ -1025,12 +1027,17 @@ impl World {
     /// - **Casting**: the power meter oscillates; a confirm press
     ///   ([`Cross`](input::PadButton::Cross)) locks the cast and hooks a fish.
     /// - **Fighting**: holding a reel button raises tension - [`Cross`] is reel
-    ///   A (the `rod*9 + 0x23` divisor), [`Circle`] reel B (`rod*6 + 0x19`);
-    ///   neither held bleeds tension off. The line snaps at max tension.
+    ///   A (the `rod*9 + 0x23` divisor), [`Square`] reel B (`rod*6 + 0x19`);
+    ///   neither held bleeds tension off. The line snaps at max tension. The
+    ///   two buttons are the retail packed-pad bits `0x40` / `0x80`, decoded
+    ///   through the ported reel decoder [`ReelInput::from_pad_mask`]
+    ///   (`FUN_801d7450`) rather than by a host `if` chain, so holding both
+    ///   resolves to reel A exactly as retail does.
     /// - **Done**: a confirm press recasts.
     ///
     /// [`Cross`]: input::PadButton::Cross
-    /// [`Circle`]: input::PadButton::Circle
+    /// [`Square`]: input::PadButton::Square
+    /// [`ReelInput::from_pad_mask`]: crate::fishing::ReelInput::from_pad_mask
     ///
     /// PORT: the fishing overlay's per-frame driver (`FUN_801cf3bc` mode SM ->
     /// `FUN_801d4004` tension). The casting-meter step is not byte-pinned (the
@@ -1056,13 +1063,17 @@ impl World {
                 }
             }
             FishingPhase::Fighting => {
-                let input = if self.input.pressed(input::PadButton::Cross) {
-                    ReelInput::ReelA
-                } else if self.input.pressed(input::PadButton::Circle) {
-                    ReelInput::ReelB
-                } else {
-                    ReelInput::Idle
-                };
+                // Rebuild the two reel bits of the retail held word
+                // `_DAT_8007b850` from this frame's pad and let the ported
+                // decoder classify them.
+                let mut held = 0u32;
+                if self.input.pressed(input::PadButton::Cross) {
+                    held |= crate::fishing::REEL_A_PAD_BIT;
+                }
+                if self.input.pressed(input::PadButton::Square) {
+                    held |= crate::fishing::REEL_B_PAD_BIT;
+                }
+                let input = ReelInput::from_pad_mask(held);
                 if let Some(s) = self.fishing.as_mut() {
                     s.reel(input, 1);
                 }

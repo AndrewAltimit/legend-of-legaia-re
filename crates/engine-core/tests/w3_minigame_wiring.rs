@@ -185,3 +185,28 @@ fn the_beat_track_notes_scroll_one_cell_per_beat() {
         "the row drifts left within a beat"
     );
 }
+
+// --- casino: the coin-exchange counter the slot entry point buys through ---
+
+/// The play window tops a thin coin bank up by running a purchase through the
+/// ported counter (`coin_exchange_quote`, `FUN_801E6F70`) instead of conjuring
+/// a stake, so this pins the contract that host encodes: the entry field is
+/// eight single-digit cells stored **units first**, coins are a flat
+/// `COIN_PRICE_GOLD` each, and the sale is refused - with nothing debited -
+/// when either the gold or the stock gate fails.
+#[test]
+fn the_coin_counter_prices_the_slot_entry_stake() {
+    use legaia_engine_core::slot_machine::{COIN_PRICE_GOLD, coin_exchange_quote};
+    // The host lays 100 out as [0, 0, 1, 0, 0, 0, 0, 0] - units first.
+    let digits = [0u8, 0, 1, 0, 0, 0, 0, 0];
+    let cost = 100 * COIN_PRICE_GOLD;
+    let q = coin_exchange_quote(&digits, cost, i32::MAX);
+    assert_eq!(q.coins, 100);
+    assert_eq!(q.cost, cost);
+    assert!(q.is_valid(), "exactly enough gold buys the stake");
+    // One gold short: refused, and the host keeps the party's money.
+    assert!(!coin_exchange_quote(&digits, cost - 1, i32::MAX).is_valid());
+    // Stock is the other gate, independent of gold.
+    let thin = coin_exchange_quote(&digits, cost, 99);
+    assert!(thin.affordable && !thin.in_stock && !thin.is_valid());
+}
