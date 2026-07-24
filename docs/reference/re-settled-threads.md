@@ -159,10 +159,13 @@ no timeout** (its not-in-range edge only bumps `ctx[+0x6D4]`, whose sole
 reader is the arms-resolver roll, not a limit). Position captures of the same
 fight show the fallback normally still approaching *during* `0x19` (~19
 units/vsync, driven from the staged Move clip's playback, not the SM); in the
-caught park that drive never engaged (anim bytes idle `0/0`, position frozen
-from the first poll), so the fight waits forever on an attack that can never
-connect. What idles the approach drive is the remaining open sub-question
-(tracked in open-rev-eng-threads.md); the fix below is indifferent to it. Full anatomy + fix + engine-port note:
+caught parks the drive dies ~12 vsyncs in (anim pair back to `0/0`, frozen
+beyond reach), so the fight waits forever on an attack that can never
+connect. The trigger is reproduced - a summon immediately followed by the
+boss's melee (scenario `battle_gaza2_park_0x19_summon_melee`); which
+anim-driver field the staging round-trip leaves stale is the remaining open
+sub-question (tracked in open-rev-eng-threads.md). The fix below is
+indifferent to it. Full anatomy + fix + engine-port note:
 [battle-action.md](../subsystems/battle-action.md#the-0x19-attack-approach-park---a-second-distinct-softlock-class).
 
 Sub-answers settled along the way: the wedged-looking `+0x1DD == 8` targets on
