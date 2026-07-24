@@ -71,6 +71,7 @@ pub mod actor_alloc;
 pub mod actor_tick;
 pub mod ambient_motion;
 pub mod anim_vm;
+pub mod baka_hub_actors;
 pub mod battle_action;
 pub mod battle_camera;
 pub mod battle_cast_census;

@@ -67,6 +67,11 @@ pub const MESSAGE_ID: u8 = 0x66;
 /// read stays inside the record.
 ///
 /// PORT: FUN_801f3c34 (`0x801F3C9C..0x801F3CDC`)
+///
+/// NOT WIRED: shared by [`queued_magic_message`] and
+/// [`follow_up_hook_install`], both of which are themselves inert - the
+/// engine's battle round resolves a queued action through
+/// [`crate::battle_action`] with no pre-pass, so nothing reaches this scan.
 pub fn spell_index_of(spell_ids: &[u8], action: u8) -> usize {
     for i in 0..SCAN_LIMIT {
         if spell_ids.get(i).copied() == Some(action) {
@@ -108,6 +113,161 @@ pub fn queued_magic_message(
         return None;
     }
     Some(MESSAGE_ID)
+}
+
+// ---------------------------------------------------------------------------
+// The installer half: FUN_801F3D3C
+// ---------------------------------------------------------------------------
+
+/// The two globals `FUN_801F3D3C` writes and `FUN_801F3C34` reads. They are
+/// one latch: while `pending` is non-zero the guard above stays silent,
+/// because a follow-up is already queued.
+///
+/// * `0x800775B4` - the follow-up routine pointer, taken from word `1` of the
+///   selected [`FOLLOW_UP_TABLE`] record.
+/// * `0x801F6960` - the follow-up id, byte `0` of that record.
+/// * `0x801F6964` - the follow-up countdown, always seeded [`FOLLOW_UP_HOLD`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FollowUpHook {
+    /// `*(0x800775B4)`.
+    pub routine: u32,
+    /// `*(0x801F6960)` - the pending latch the guard reads.
+    pub pending: u8,
+    /// `*(0x801F6964)`.
+    pub hold: i32,
+}
+
+/// Runtime VA of the `[class][level band]` follow-up record table
+/// (`0x20` bytes per class = four 8-byte records).
+pub const FOLLOW_UP_TABLE: u32 = 0x801F_6870;
+/// Runtime VA of the `[class][class]` pass-chance byte table, `8` per row.
+pub const CLASS_PAIR_TABLE: u32 = 0x801F_53E8;
+/// Frames the installer seeds into `0x801F6964`.
+pub const FOLLOW_UP_HOLD: i32 = 0xB4;
+/// A class-pair byte at or above this passes the suppression test.
+pub const CLASS_PAIR_PASS: u8 = 0x65;
+/// The class value that skips the roll outright.
+pub const CLASS_SKIP: u8 = 5;
+/// Class values below this index the seven-entry jump table at `0x801CFA2C`;
+/// anything else falls through to the installer tail.
+pub const CLASS_JUMP_TABLE_LEN: u8 = 7;
+
+/// Everything the installer reads that is not the caster's spell record.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FollowUpInputs {
+    /// `ctx[+0x287]` - when zero the suppression roll is skipped entirely.
+    pub roll_enabled: u8,
+    /// `(*(0x801C9358))[+0x1D]` - the acting side's class byte.
+    pub actor_class: u8,
+    /// `(*(0x801C9348))[+0x1D]` - the opposing side's class byte.
+    pub other_class: u8,
+    /// The `[actor_class][other_class]` byte of [`CLASS_PAIR_TABLE`].
+    pub class_pair_byte: u8,
+    /// `FUN_80056798()` - this frame's BIOS `rand()` draw.
+    pub rand: i32,
+}
+
+/// What the installer decided.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FollowUpOutcome {
+    /// The spell level scan came back below [`MIN_LEVEL`].
+    LevelTooLow,
+    /// The class-pair roll suppressed the follow-up.
+    Suppressed,
+    /// The class byte indexes the seven-entry jump table at `0x801CFA2C`;
+    /// those arms are separate bodies and are not dumped with this one.
+    JumpTable(u8),
+    /// The installer tail ran: the caller installs this hook.
+    Installed { band: i32, hook: FollowUpHook },
+}
+
+/// The level band the tail folds a spell level into: `(level - 3) >> 1`, so
+/// levels `3..=4` share band `0`, `5..=6` band `1`, and so on. It is a byte
+/// stride of `8` into the class's `0x20`-byte row, which bounds the useful
+/// range at four bands.
+///
+/// PORT: FUN_801f3d3c (`0x801F4420..0x801F4434`)
+pub fn follow_up_band(level: u8) -> i32 {
+    (level as i32 - 3) >> 1
+}
+
+/// Whether the class-pair roll lets the follow-up through.
+///
+/// The roll only runs when `ctx[+0x287]` is set. Inside it, two shapes pass
+/// without consulting the table at all: an actor class of [`CLASS_SKIP`], and
+/// a `rand()` divisible by five. Otherwise the `[actor][other]` byte decides,
+/// and a byte **below** [`CLASS_PAIR_PASS`] is what suppresses - the sense is
+/// the opposite of the "high value = more likely" reading the table shape
+/// invites.
+///
+/// PORT: FUN_801f3d3c (`0x801F3DEC..0x801F3E7C`)
+pub fn follow_up_roll_passes(inp: &FollowUpInputs) -> bool {
+    if inp.roll_enabled == 0 {
+        return true;
+    }
+    if inp.actor_class == CLASS_SKIP {
+        return true;
+    }
+    if inp.rand % 5 == 0 {
+        return true;
+    }
+    inp.class_pair_byte >= CLASS_PAIR_PASS
+}
+
+/// The sibling of [`queued_magic_message`]: the routine that **installs** the
+/// follow-up the guard then reads.
+///
+/// It opens on the identical preamble - resolve the acting actor, take its
+/// queued action byte `+0x1DF`, find that action in the caster's spell-id
+/// array and read the parallel level byte, bail below [`MIN_LEVEL`] - and then
+/// runs the class-pair roll before selecting a record out of
+/// [`FOLLOW_UP_TABLE`] by `[actor_class][level band]`. The record's byte `0`
+/// becomes the pending latch, its word `1` the routine pointer, and the hold
+/// is always [`FOLLOW_UP_HOLD`]; the same message id [`MESSAGE_ID`] is printed
+/// through `FUN_801D8DE8(0x66, 0)`.
+///
+/// PORT: FUN_801f3d3c
+///
+/// NOT WIRED: same blocker as [`queued_magic_message`] - nothing in the port's
+/// battle round runs a pre-resolution pass, and the follow-up slot
+/// `0x800775B4` is not modelled, so there is no caller and nowhere to install
+/// the returned hook.
+pub fn follow_up_hook_install(
+    action: u8,
+    spell_ids: &[u8],
+    spell_levels: &[u8],
+    inp: &FollowUpInputs,
+    record: FollowUpHookRecord,
+) -> FollowUpOutcome {
+    let idx = spell_index_of(spell_ids, action);
+    let level = spell_levels.get(idx).copied().unwrap_or(0);
+    if level < MIN_LEVEL {
+        return FollowUpOutcome::LevelTooLow;
+    }
+    if !follow_up_roll_passes(inp) {
+        return FollowUpOutcome::Suppressed;
+    }
+    if inp.actor_class < CLASS_JUMP_TABLE_LEN {
+        return FollowUpOutcome::JumpTable(inp.actor_class);
+    }
+    FollowUpOutcome::Installed {
+        band: follow_up_band(level),
+        hook: FollowUpHook {
+            routine: record.routine,
+            pending: record.id,
+            hold: FOLLOW_UP_HOLD,
+        },
+    }
+}
+
+/// One 8-byte [`FOLLOW_UP_TABLE`] record, as the caller reads it out of the
+/// overlay image at `[actor_class][band]`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FollowUpHookRecord {
+    /// Byte `0` - the pending id.
+    pub id: u8,
+    /// Word `1` - the routine pointer.
+    pub routine: u32,
 }
 
 #[cfg(test)]
@@ -177,5 +337,98 @@ mod tests {
         let mut ids = [0u8; 36];
         ids[SCAN_LIMIT + 1] = 0x81;
         assert_eq!(spell_index_of(&ids, 0x81), SCAN_LIMIT);
+    }
+
+    fn inputs() -> FollowUpInputs {
+        FollowUpInputs {
+            roll_enabled: 1,
+            actor_class: 9,
+            other_class: 2,
+            class_pair_byte: 0x70,
+            rand: 3,
+        }
+    }
+
+    #[test]
+    fn follow_up_bands_pair_levels() {
+        assert_eq!(follow_up_band(3), 0);
+        assert_eq!(follow_up_band(4), 0);
+        assert_eq!(follow_up_band(5), 1);
+        assert_eq!(follow_up_band(6), 1);
+        assert_eq!(follow_up_band(9), 3);
+    }
+
+    #[test]
+    fn a_low_class_pair_byte_suppresses_the_follow_up() {
+        let mut inp = inputs();
+        inp.class_pair_byte = CLASS_PAIR_PASS - 1;
+        assert!(!follow_up_roll_passes(&inp));
+        inp.class_pair_byte = CLASS_PAIR_PASS;
+        assert!(follow_up_roll_passes(&inp));
+    }
+
+    #[test]
+    fn the_roll_is_skipped_three_ways() {
+        let mut inp = inputs();
+        inp.class_pair_byte = 0;
+        // ctx[+0x287] clear.
+        inp.roll_enabled = 0;
+        assert!(follow_up_roll_passes(&inp));
+        // The skip class.
+        inp.roll_enabled = 1;
+        inp.actor_class = CLASS_SKIP;
+        assert!(follow_up_roll_passes(&inp));
+        // One draw in five.
+        inp.actor_class = 9;
+        inp.rand = 10;
+        assert!(follow_up_roll_passes(&inp));
+        inp.rand = 11;
+        assert!(!follow_up_roll_passes(&inp));
+    }
+
+    #[test]
+    fn the_installer_shares_the_guards_level_gate() {
+        let (ids, levels) = lists(0x81, 2);
+        assert_eq!(
+            follow_up_hook_install(
+                0x81,
+                &ids,
+                &levels,
+                &inputs(),
+                FollowUpHookRecord::default()
+            ),
+            FollowUpOutcome::LevelTooLow
+        );
+    }
+
+    #[test]
+    fn a_low_class_reaches_the_jump_table_instead_of_the_tail() {
+        let (ids, levels) = lists(0x81, 5);
+        let mut inp = inputs();
+        inp.actor_class = 2;
+        assert_eq!(
+            follow_up_hook_install(0x81, &ids, &levels, &inp, FollowUpHookRecord::default()),
+            FollowUpOutcome::JumpTable(2)
+        );
+    }
+
+    #[test]
+    fn the_tail_installs_the_record_with_a_fixed_hold() {
+        let (ids, levels) = lists(0x81, 5);
+        let rec = FollowUpHookRecord {
+            id: 0x2A,
+            routine: 0x801C_FA20,
+        };
+        assert_eq!(
+            follow_up_hook_install(0x81, &ids, &levels, &inputs(), rec),
+            FollowUpOutcome::Installed {
+                band: 1,
+                hook: FollowUpHook {
+                    routine: 0x801C_FA20,
+                    pending: 0x2A,
+                    hold: FOLLOW_UP_HOLD,
+                },
+            }
+        );
     }
 }
