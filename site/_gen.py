@@ -19,6 +19,7 @@ Run from the repo root:
     python3 site/_gen.py
 """
 from __future__ import annotations
+import html
 import json
 import re
 import sys
@@ -286,6 +287,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("tooling/randomizer.html",    "Randomizer / disc patcher",     "tooling/randomizer",         "tooling/randomizer.html"),
     ("tooling/translation.html",   "Translation / language packs",  "tooling/translation",        "tooling/translation.html"),
     ("tooling/port-catalog.html",  "Port catalog",                  "tooling/port-catalog",       "tooling/port-catalog.html"),
+    ("tooling/disc-coverage.html","Disc coverage",                 "tooling/disc-coverage",      "tooling/disc-coverage.html"),
     ("tooling/rom-patcher.html",   "ROM patcher (in browser)",      "tooling/rom-patcher",        "tooling/rom-patcher.html"),
     ("reference/index.html",       "Reference",                     "reference/index",            "reference/index.html"),
     ("reference/functions.html",   "Key functions",                 "reference/functions",        "reference/functions.html"),
@@ -873,6 +875,63 @@ def _esc(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def build_progress_meter() -> str:
+    """Render the landing page's per-track progress meter from
+    `scripts/ci/progress-metrics.json`.
+
+    The metrics are a COMMITTED build input, not something computed here: they
+    are derived from the Ghidra dump corpus and the extracted disc tree, both of
+    which are gitignored and absent wherever the site is deployed. A machine
+    with the disc refreshes them via `scripts/ci/update-progress-metrics.py`.
+
+    Each bar carries its own denominator, because the tracks are not comparable
+    with one another - two are measured against the game's own bytes and two
+    against the set of functions this project has identified. Presenting them as
+    one number would be the obvious way to mislead, so the markup keeps the
+    denominator attached to the bar rather than in a footnote.
+
+    Returns "" when the metrics file is missing, so the page degrades to its
+    static status pills rather than failing the build.
+    """
+    src = ROOT.parent / "scripts" / "ci" / "progress-metrics.json"
+    if not src.exists():
+        return ""
+    try:
+        tracks = json.loads(src.read_text()).get("tracks", [])
+    except (ValueError, OSError):
+        return ""
+    if not tracks:
+        return ""
+
+    rows = []
+    for t in tracks:
+        pct = max(0.0, min(100.0, float(t.get("pct", 0.0))))
+        label = html.escape(str(t.get("label", "")))
+        headline = html.escape(str(t.get("headline", "")))
+        detail = html.escape(str(t.get("detail", "")))
+        denom = html.escape(str(t.get("denominator", "")))
+        href = t.get("href")
+        title = f'<a href="{html.escape(href)}">{label}</a>' if href else label
+        rows.append(
+            f'  <div class="progress-track">\n'
+            f'    <div class="progress-head">\n'
+            f'      <span class="progress-label">{title}</span>\n'
+            f'      <span class="progress-pct">{pct:.1f}%</span>\n'
+            f'    </div>\n'
+            f'    <div class="progress-bar" role="img" '
+            f'aria-label="{label}: {pct:.1f} percent of {denom}">\n'
+            f'      <span class="progress-fill" style="width: {pct:.1f}%"></span>\n'
+            f'    </div>\n'
+            f'    <div class="progress-meta">\n'
+            f'      <span class="progress-headline">{headline}</span>\n'
+            f'      <span class="progress-denom">of {denom}</span>\n'
+            f'    </div>\n'
+            f'    <p class="progress-detail">{detail}</p>\n'
+            f'  </div>'
+        )
+    return '<div class="progress-meter">\n' + "\n".join(rows) + '\n</div>'
+
+
 def build_disc_patching_table() -> str:
     """Render the mod -> technique-tier master table for the disc-patching
     write-up index from `mods.toml`, grouped by tier in ladder order. Returns
@@ -1122,6 +1181,7 @@ def main() -> int:
     # The disc-patching master table is rendered once from mods.toml and spliced
     # into whichever page carries the placeholder.
     disc_patching_table = build_disc_patching_table()
+    progress_meter = build_progress_meter()
 
     for out_path, title, active, body_file in PAGES:
         depth = out_path.count("/")
@@ -1140,6 +1200,8 @@ def main() -> int:
         body = autolink_md_refs(body, md_paths, md_by_basename)
         if "<!--DISC_PATCHING_TABLE-->" in body:
             body = body.replace("<!--DISC_PATCHING_TABLE-->", disc_patching_table)
+        if "<!--PROGRESS_METER-->" in body:
+            body = body.replace("<!--PROGRESS_METER-->", progress_meter)
 
         html = html_template(title, depth, active, body, extra_head)
         out = ROOT / out_path

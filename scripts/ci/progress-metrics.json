@@ -1,0 +1,41 @@
+{
+  "_comment": "Committed build input for site/_gen.py. The site builds without disc data, so these cannot be computed at deploy time. Refresh locally with scripts/ci/update-progress-metrics.py and commit.",
+  "tracks": [
+    {
+      "key": "decompilation",
+      "label": "Decompilation",
+      "pct": 84.0,
+      "headline": "84.0% of SCUS_942.54's code",
+      "detail": "Share of the main executable's code bytes that sit inside a Ghidra-dumped function. Overlay images are excluded - they alias in address space, so address attribution alone cannot support a figure.",
+      "denominator": "disc bytes",
+      "href": "tooling/disc-coverage.html"
+    },
+    {
+      "key": "formats",
+      "label": "Asset formats",
+      "pct": 87.8,
+      "headline": "87.8% of PROT.DAT",
+      "detail": "Share of disc asset bytes whose container resolves to a documented format. This is format *recognition*, not a byte-for-byte parse, so read it as an upper bound. 2.8% remains unexplained.",
+      "denominator": "disc bytes",
+      "href": "formats/index.html"
+    },
+    {
+      "key": "port",
+      "label": "Engine port",
+      "pct": 94.3,
+      "headline": "744 functions ported",
+      "detail": "Of the retail functions identified as port sites, the share carrying a clean-room Rust implementation. 45 remain on the worklist. Measured against what the project has identified, not against the whole game.",
+      "denominator": "identified port sites",
+      "href": "subsystems/engine.html"
+    },
+    {
+      "key": "wiring",
+      "label": "Port wiring",
+      "pct": 67.5,
+      "headline": "502 of 744 ported functions reachable",
+      "detail": "A ported function still needs a host that calls it. This is the share reachable from a real entry point; the remaining 242 are implemented but not yet hosted, and each one says so in its source.",
+      "denominator": "ported functions",
+      "href": "subsystems/engine.html"
+    }
+  ]
+}
