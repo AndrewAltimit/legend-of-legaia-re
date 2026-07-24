@@ -31,6 +31,7 @@ pub use legaia_tim;
 pub mod battle_name_banner;
 mod ui_fishing;
 mod ui_menu;
+pub mod ui_menu_window_painters;
 mod ui_overlay;
 mod ui_title_save;
 
