@@ -9,7 +9,7 @@
 //! | Retail | Role | Port |
 //! |---|---|---|
 //! | `FUN_801E13B8` | write / format state machine over `DAT_801F329C` | [`CardWriteMachine`] |
-//! | `FUN_801E16E0` | fold one poll result into the card-health counters | [`CardHealth::fold`] |
+//! | `FUN_801E16E0` | fold one poll result into the card-health counters | [`CardHealth::fold_poll`] |
 //! | `FUN_801E1934` | compose the `0x2000`-byte save block from live RAM | [`SaveBlockSummary`] |
 //!
 //! ## What the ticker keeps
@@ -20,7 +20,7 @@
 //! "nothing happened" lands there too) and `DAT_801F3800` only when it is
 //! non-zero. So `0x801F3804` is *this frame's* poll and `0x801F3800` is the
 //! last meaningful one - [`CardWriteMachine::tick`] reads the former,
-//! [`CardHealth::fold`] the latter.
+//! [`CardHealth::fold_poll`] the latter.
 //!
 //! ## Naming the two counters
 //!
@@ -40,9 +40,11 @@
 //!
 //! Both saturate at `0x400`.
 //!
-//! PORT: FUN_801e13b8 - card write / format state machine
-//! PORT: FUN_801e16e0 - poll-result fold + card-health counters
-//! PORT: FUN_801e1934 - save-block composer
+//! Each of the three carries its `PORT:` tag on the Rust item that
+//! implements it rather than here: a module-level tag anchors on the module,
+//! which the liveness analysis then reports live as soon as *any* item in the
+//! file is reachable.
+//!
 //! REF: FUN_801e1114 - the per-frame ticker that drives all three
 //! REF: FUN_801e373c - card-subsystem init (seeds the fault counter to 1)
 //!
@@ -184,7 +186,7 @@ impl CardHealth {
     /// without touching a counter.
     ///
     /// PORT: FUN_801e16e0
-    pub fn fold(&mut self, result: CardPollResult, sm_busy: bool) {
+    pub fn fold_poll(&mut self, result: CardPollResult, sm_busy: bool) {
         // `_DAT_801F021C = 0` runs before the busy test and again inside it.
         self.phase = 0;
         if sm_busy {
@@ -388,7 +390,7 @@ impl CardWriteMachine {
         self.state = state;
     }
 
-    /// Whether [`CardHealth::fold`] should skip this frame
+    /// Whether [`CardHealth::fold_poll`] should skip this frame
     /// (`_DAT_801F329C > 2`).
     pub fn health_gated(&self) -> bool {
         self.state.code() > 2
@@ -678,7 +680,7 @@ mod tests {
     fn a_good_poll_clears_both_counters_and_raises_the_phase() {
         let mut h = CardHealth::at_init();
         h.change_count = 5;
-        h.fold(CardPollResult::Ready, false);
+        h.fold_poll(CardPollResult::Ready, false);
         assert_eq!(h.fault_count, 0);
         assert_eq!(h.change_count, 0);
         assert_eq!(h.phase, CARD_PHASE_READY);
@@ -688,7 +690,7 @@ mod tests {
     #[test]
     fn a_fresh_card_raises_the_unformatted_flag_and_still_reports_ready() {
         let mut h = CardHealth::default();
-        h.fold(CardPollResult::ReadyFresh, false);
+        h.fold_poll(CardPollResult::ReadyFresh, false);
         assert!(h.unformatted);
         assert_eq!(h.phase, CARD_PHASE_READY);
     }
@@ -696,7 +698,7 @@ mod tests {
     #[test]
     fn a_missing_card_faults_immediately_and_invalidates_the_cache() {
         let mut h = CardHealth::default();
-        h.fold(CardPollResult::NoCard, false);
+        h.fold_poll(CardPollResult::NoCard, false);
         assert_eq!(h.fault_count, 1);
         assert!(h.rescan_requested);
         assert!(!h.directory_cache_valid);
@@ -706,10 +708,10 @@ mod tests {
     #[test]
     fn one_changed_frame_is_not_enough_to_drop_the_directory() {
         let mut h = CardHealth::default();
-        h.fold(CardPollResult::Changed, false);
+        h.fold_poll(CardPollResult::Changed, false);
         assert_eq!(h.change_count, 1);
         assert!(!h.directory_stale);
-        h.fold(CardPollResult::Changed, false);
+        h.fold_poll(CardPollResult::Changed, false);
         assert_eq!(h.change_count, 2);
         assert!(h.directory_stale);
     }
@@ -717,7 +719,7 @@ mod tests {
     #[test]
     fn a_changed_frame_clears_the_fault_counter() {
         let mut h = CardHealth::at_init();
-        h.fold(CardPollResult::Changed, false);
+        h.fold_poll(CardPollResult::Changed, false);
         assert_eq!(h.fault_count, 0);
     }
 
@@ -727,14 +729,14 @@ mod tests {
             fault_count: CARD_COUNTER_CEILING,
             ..Default::default()
         };
-        h.fold(CardPollResult::NoCard, false);
+        h.fold_poll(CardPollResult::NoCard, false);
         assert_eq!(h.fault_count, CARD_COUNTER_CEILING);
 
         let mut h = CardHealth {
             change_count: CARD_COUNTER_CEILING,
             ..Default::default()
         };
-        h.fold(CardPollResult::Changed, false);
+        h.fold_poll(CardPollResult::Changed, false);
         assert_eq!(h.change_count, CARD_COUNTER_CEILING);
     }
 
@@ -744,7 +746,7 @@ mod tests {
             phase: CARD_PHASE_READY,
             ..Default::default()
         };
-        h.fold(CardPollResult::NoCard, true);
+        h.fold_poll(CardPollResult::NoCard, true);
         assert_eq!(h.phase, 0);
         assert_eq!(h.fault_count, 0);
     }
