@@ -147,14 +147,17 @@ accumulator - both entries with reasoning in
 
 What would close the thread now:
 
-- **audit the capture-class module HP stores** - the new prime suspect.
-  The capture campaign's party-wide double-kill casts credited live HP and
-  the accumulator through **none** of the armed census writers; the only
-  uncensused writer family is the capture-class per-spell modules
-  (PROT 944..966, Gaza 2's Neo Star Slash = module 960). Statically audit
-  each module's stores to `actor+0x14C`/`+0x172`/`+0x10` for the
-  accumulate-vs-assign pairing - an unpaired store there is a generator
-  sitting exactly where the "magic softlock" reports point;
+- ~~audit the capture-class module HP stores~~ - **done, negative**. The
+  campaign's party-wide double-kill casts credited live HP and the
+  accumulator through none of the armed census writers, which briefly made
+  the capture-class per-spell modules (PROT 944..966) the prime suspect. A
+  static store audit of the whole family
+  (`scripts/asset-investigation/audit_module_hp_stores.py`) finds every
+  actor-accumulator store to be the **paired** accumulate + live-HP shape -
+  module-local copies of the safe applier (e.g. 0944 `+0x808`/`+0x824`;
+  the remaining `+0x10` matches are handle-table and fade-struct false
+  positives) - so the "unarmed" seeding was a census blind spot, not an
+  unpaired writer, and the module family follows the safe convention;
 - the **drain-vs-tail race**: minimum last-credit-to-`0x51` gap on Gaza 2 is
   ~27 rendered frames vs a 23-frame drain from a ~1300 readout (30 from
   `9999`; +1 per doubling) - Gaza 2 misses by ~4 frames; a higher readout or

@@ -463,19 +463,20 @@ Three follow-on measurements interpret that exhibit:
   and the parked action is party-targeted (`+0x1DD == 8`, the all-slot
   scan) - which is what a boss's party-wide cast uses, matching the
   community's "magic softlock" phrasing.
-- **The party-wide cast damage bypasses every armed writer.** In the
-  capture campaign, the double-kill party-wide casts credited live HP and
-  the accumulator through **none** of the census sites (kernel, item
-  applier, enemy-cast safe applier, drain) - the seeding that the
-  post-kill drains then walked down arrived from stores outside the
-  `SCUS_942.54` + battle-overlay corpus. The remaining writer family is
-  the **capture-class per-spell modules** (PROT 944..966; Gaza 2's Neo
-  Star Slash is module 960 - see
-  [battle-formulas.md](battle-formulas.md)), whose module-resident HP
-  bookkeeping has never been audited for the accumulate-vs-assign
-  pairing. An unpaired store there is the strongest remaining generator
-  candidate, and it would sit precisely in the code the community's
-  "magic softlock" reports implicate.
+- **Party-wide cast damage flows through module-local appliers - paired.**
+  In the capture campaign, the double-kill party-wide casts credited live
+  HP and the accumulator through **none** of the census sites (kernel, item
+  applier, enemy-cast safe applier, drain): the writers are inside the
+  streamed **capture-class per-spell modules** (PROT 944..966; Gaza 2's
+  Neo Star Slash is module 960 - see
+  [battle-formulas.md](battle-formulas.md)), invisible to breakpoints
+  armed on the resident-overlay copies. A static store audit of the whole
+  family (`scripts/asset-investigation/audit_module_hp_stores.py`) finds
+  every actor-accumulator store to be the **paired** accumulate + live-HP
+  shape - module-local copies of the safe applier (e.g. 0944
+  `+0x808`/`+0x824`) - so the module family follows the safe convention
+  and cannot seed the desync by itself. Any future writer census must
+  include the streamed module addresses, not just the resident overlays.
 
 The same arm is what a **Phoenix** (class 4) reaches from the battle item
 menu, and the class 0 / class 1 heal arms reach the sibling assign at
