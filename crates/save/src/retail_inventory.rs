@@ -121,10 +121,12 @@
 //!
 //! See [`docs/reference/memory-map.md`](../../../docs/reference/memory-map.md).
 
-// PORT: FUN_800421D4 (ADD) / FUN_80042EE0 (find-slot) / FUN_80042F4C (find-count)
-// PORT: FUN_80042310 (consume) / FUN_800423E0 (normalize: merge + squeeze)
-// PORT: FUN_8004313C (active-window selector)
-// PORT: FUN_80043048 (consume-by-slot)
+// Every `// PORT:` tag in this file sits on the item that implements the
+// routine - `ItemWindow::select`, `RetailInventory::{find_slot, find_count,
+// consume, consume_slot, normalize, add}`. A file-scope duplicate of them was
+// removed: a tag with no item under it is resolved against the *module*, and a
+// module anchor counts as live as soon as any function in the file is reachable
+// by name, which reported this deliberately-inert model as wired.
 // REF: docs/reference/memory-map.md "Retail inventory accessors (SCUS_942.54)"
 
 /// Base address of the consumable-item window (`= SC+0x1818`).
@@ -251,6 +253,8 @@ impl ItemWindow {
     ///
     /// [`Unreachable`]: OobReachability::Unreachable
     /// [`GatedBySelectorState`]: OobReachability::GatedBySelectorState
+    ///
+    /// REF: FUN_8004313C (the selector whose two window widths this ranks)
     #[must_use]
     pub fn oob_reachability(self) -> OobReachability {
         if (self.len() as u16) > MAX_DISTINCT_ITEM_IDS {
@@ -267,6 +271,9 @@ impl ItemWindow {
     ///
     /// `None` is the `members == 0` early return: retail leaves whatever
     /// window was already installed.
+    ///
+    /// PORT: FUN_8004313C (active-window selector - the sole `SCUS_942.54`
+    /// writer of `gp[+0x2D2]` / `gp[+0x2D4]`)
     #[must_use]
     pub fn select(members: u8, full_window_flag: bool, high_half: bool) -> Option<Self> {
         match members {

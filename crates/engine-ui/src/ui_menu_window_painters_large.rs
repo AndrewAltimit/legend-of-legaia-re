@@ -92,7 +92,12 @@ pub struct EquipStatBlock {
 impl EquipStatBlock {
     /// Word `i` of the block (`0..=7`), matching the retail `0x801EF080 +
     /// i*4` addressing the painters index with. Out-of-range reads `0`.
-    pub fn word(&self, i: usize) -> i32 {
+    ///
+    /// Named `stat_word` rather than `word` on purpose: the port catalog
+    /// resolves calls by name with no receiver inference, and a method
+    /// called `word` collects an edge from every unrelated `word(...)` in
+    /// the workspace - which reported this whole module as wired.
+    pub fn stat_word(&self, i: usize) -> i32 {
         match i {
             0 => self.hp,
             1 => self.mp,
@@ -345,8 +350,8 @@ pub fn equip_compare_panel_fields(
                 });
                 push_delta(
                     &mut out,
-                    view.current.word(word),
-                    view.candidate.word(word),
+                    view.current.stat_word(word),
+                    view.candidate.stat_word(word),
                     (x + W25_PAIR_ARROW_X, x + W25_PAIR_DELTA_X, ry),
                     PAIR_DIGITS,
                     PAIR_CLAMP,
@@ -365,14 +370,14 @@ pub fn equip_compare_panel_fields(
                 out.push(ComparePanelField::Number {
                     x: x + W25_VALUE_X,
                     y: ry,
-                    value: view.current.word(word).min(STAT_CLAMP),
+                    value: view.current.stat_word(word).min(STAT_CLAMP),
                     digits: STAT_DIGITS,
                     ink: INK_DEFAULT,
                 });
                 push_delta(
                     &mut out,
-                    view.current.word(word),
-                    view.candidate.word(word),
+                    view.current.stat_word(word),
+                    view.candidate.stat_word(word),
                     (x + W25_ARROW_X, x + W25_DELTA_X, ry),
                     STAT_DIGITS,
                     STAT_CLAMP,
@@ -492,15 +497,15 @@ pub fn party_compare_panel_fields(
                     out.push(ComparePanelField::Number {
                         x: x + W41_VALUE_X,
                         y: ry,
-                        value: current.word(word).min(STAT_CLAMP),
+                        value: current.stat_word(word).min(STAT_CLAMP),
                         digits: STAT_DIGITS,
                         ink: INK_DEFAULT,
                     });
                     if let Some(cand) = candidate {
                         push_delta(
                             &mut out,
-                            current.word(word),
-                            cand.word(word),
+                            current.stat_word(word),
+                            cand.stat_word(word),
                             (x + W41_ARROW_X, x + W41_DELTA_X, ry),
                             STAT_DIGITS,
                             STAT_CLAMP,
