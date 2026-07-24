@@ -50,12 +50,12 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x0A` | Pre-action wait | Calls `func_0x8003F2B8(1)` (likely a "pause until previous animation cleared" gate). | `0x0C` when ready, else stays. |
 | `0x0B` | Action queued from menu | Holds while `ctx[+0x276] != 0` (menu still open). | `0x0A` once cleared. |
 | `0x0C` | **Action seed** - reads `actor[+0x1DE]` (action category) and dispatches into the appropriate band. Calls `FUN_801EED1C` (the arts queue-builder; slot < 3) or, for a monster slot with the `+0x16E & 0x380` bits, `FUN_801E7320` (random-retarget: the rolled action - including a Magic cast - is kept, only its target re-rolls to the opposite side; see the [`0x380` notes](#ai-delegated-0x380-party-members---what-is-and-isnt-pinned)). Reads RNG via `func_0x80056798()`. Calls `FUN_801EFE44` (camera bounds) and `FUN_801D5854(actor_id, 6)` (idle pose) unless `+0x1DE == 5` (run). The inner switch on `actor[+0x1DE]` is the "action category" dispatch - see [Inner dispatch](#inner-dispatch---actor-action-category). | `0x14`/`0x28`/`0x3C`/`0x46`/`0x50`/`0x64`/`0x68` per category. |
-| `0x14` | **Attack - face target** | `FUN_801D5854(actor, 6)` (ready pose); computes target bearing via `func_0x80019B28(s8 X/Z, actor X/Z)` and writes facing into `actor[+0x46]`; iterates the 8-actor table at `0x801C9370` writing AI-side facing offsets at `ctx[+0x6E6 + i*2]`; calls `FUN_8004E2F0(actor, target)` for [range/LOS](battle.md). If range = 0 → `0x1E` (skip approach). Party arm: stages approach anim `+0x1DA = 1` (the walk entry) → short-step. Monster arm: first-byte tag search over its action-record array (`FUN_80050E2C`, tag `0x20`, retry `1`) stages the returned entry index. | `0x15` (monster, tag-0x20 found); `0x19` (party); `0x1E` (out of range). |
+| `0x14` | **Attack - face target** | `FUN_801D5854(actor, 6)` (ready pose); computes target bearing via `func_0x80019B28(s8 X/Z, actor X/Z)` and writes facing into `actor[+0x46]`; iterates the 8-actor table at `0x801C9370` writing AI-side facing offsets at `ctx[+0x6E6 + i*2]`; calls `FUN_8004E2F0(actor, target)` for [range/LOS](battle.md). If range = 0 → `0x1E` (skip approach). Party arm: stages approach anim `+0x1DA = 1` (the walk entry) → short-step. Monster arm: first-byte tag search over its action-record array (`FUN_80050E2C`, tag `0x20`, retry `1`) stages the returned entry index. | `0x15` (monster, tag-0x20 found); `0x19` (party, **or** a monster whose action table has no tag-`0x20` walk - the fallback stages tag `1` and skips the walk chain entirely); `0x1E` (in range). |
 | `0x15` | Attack - windup | Same idle pose + facing update; advances anim cursor `actor[+0x1DA]` until it matches `actor[+0x1D9]`, then re-queries swing table. | `0x16`. |
 | `0x16` | Attack - advance | Same pose; rechecks range with `FUN_8004E2F0`. While out of range, advances `actor[+0x38/+0x34]` along bearing using sin/cos LUTs `_DAT_8007B7F8` / `_DAT_8007B81C` (steps both attacker and target s8 by `>> 9`); re-tests every iteration. When in range, queries the next entry from the per-character swing table. | `0x17`. |
 | `0x17` | Attack - close-range | Anim/facing update; matches `actor[+0x1DA]` against `actor[+0x1D9]`. | `0x18`. |
 | `0x18` | Attack - strike | Final anim match → falls into the swing apex frame. | `0x1E`. |
-| `0x19` | Attack - short-step (party slot < 3 only) | Idle pose + facing + range recheck. While range > 0 → stays. Range == 0 → bumps `actor[+0x1DC] |= 1` (windup-done flag) and `actor[+0x16] = 0`. | `0x1E`. |
+| `0x19` | Attack - short-step (party attackers, and walk-less monsters via the `0x14` fallback) | Idle pose + facing + range recheck. While range > 0 → stays (no movement code, no timeout - see the park section below). Range == 0 → bumps `actor[+0x1DC] |= 1` (windup-done flag) and `actor[+0x16] = 0`. | `0x1E`. |
 | `0x1E` | **Attack chain - strike loop** | Per-strike counters (`+0x15`/`+0x16`) advancing the attack-script byte stream at `actor[+0x1DF + +0x15]`, with counter-attack redirect and ability-flag impact-step physics. Full step body: [Attack chain - strike loop (`0x1E`)](#attack-chain---strike-loop-0x1e). | `0x1F` once the strike-script terminator is hit. |
 | `0x1F` | Attack - recovery wait | `FUN_801D5854(actor, 7 or 8)` (recover-pose; pose 8 if target's anim matched a counter trigger at `s8[+0x1F1]/+0x1F2`). Waits for `actor[+0x1DC] & 2 == 0`. | `0x20`. |
 | `0x20` | Attack - return | Decides if combat continues by inspecting target liveness (`s8[+0x14C] != 0` for monster-slot, plus `s8[+0x1D9]` == `0` or `8`, plus `actor[*0x22C][+0x74] & 0xFFFFFF`), and counter-attack trigger flags (`ctx[+0x287] != 0 && DAT_8007BD0D == 0 && ctx[+0x288] != 0`). If combat ended → `0x50`. Else loops `FUN_801D5854(actor, 7 or 8)` per liveness. | `0x50` (done) or stays. |
@@ -619,8 +619,8 @@ save, probe `scripts/pcsx-redux/autorun_gaza2_range_wedge.lua`):
   use a size-scaled reach (~416 for Gaza's `0x1A`). 556 > 416 - the check
   is honest, the boss genuinely needed to walk.
 - The state trace into the park runs `0x0C -> 0x14 -> 0x19` within ~3
-  vsyncs: **the walk phase never engaged**. Why `0x14`/`0x16` handed off
-  without walking is the open question of this thread.
+  vsyncs: **the walk phase never engaged** (root cause below - Gaza has no
+  walk animation, so `0x14`'s fallback path skips the walk chain).
 - The whole round queue is wedged in approach states simultaneously: Vahn
   polls his own queued attack against Gaza (metric ~458 > his 256 reach),
   and Noa and Gala sit with `+0x1DD == 8` - which `FUN_8004E2F0` rejects
@@ -631,6 +631,75 @@ save, probe `scripts/pcsx-redux/autorun_gaza2_range_wedge.lua`):
 
 The camera orbit is the same pure symptom as ever: `FUN_801D0748`'s idle
 azimuth sweep never consults the state machine.
+
+### Root cause: the walk-tag fallback in state `0x14`
+
+Why `0x16` never walked is answered by the `0x14` arm's out-of-range monster
+branch, read from the raw disassembly
+(`ghidra/scripts/funcs/overlay_battle_action_801e295c.txt`, `0x801E31F4..0x801E32DC`):
+
+```text
+801e31f4  jal 0x8004e2f0           ; range check (a0 = acting seat, a1 = target)
+801e3200  bne v0,zero,0x801e3230   ; out of range ->
+801e3230  ...sltiu v0,v0,0x3       ; party attacker?
+801e323c  bne v0,zero,0x801e32c0   ;   yes -> anim 1, state 0x19 (anim-driven approach)
+801e325c  lw  a0,0x0(v0)           ; monster: a0 = DAT_801C9348[seat-3] (record)
+801e3260  li  a1,0x20              ;   walk tag
+801e3264  lbu a2,0x4a(a0)          ;   action count at record+0x4A
+801e3268  jal 0x80050e2c           ;   tag scan over the table at record+0x4C
+801e327c  bne v0,0xff,0x801e32b4   ;   found  -> state 0x15 (walk start)
+801e329c  li  a1,0x1               ;   NOT found: fall back to the idle tag
+801e32a4  jal 0x80050e2c
+801e32ac  j   0x801e32c4           ;   -> state 0x19: the park
+801e32b0  _sb v0,0x1da(s3)         ;   (delay: stage the idle anim)
+```
+
+`FUN_80050E2C` is a linear scan of the record's action-pointer table
+(`record+0x4C`, `record+0x4A` entries) for an action whose **first byte**
+equals the tag; it returns the entry index, or `0xFF` when absent (see
+[monster-animation.md](../formats/monster-animation.md) for the tag space -
+`0x20`/`0x21` are the attack pre-approach / close-in pair). So a monster
+whose action table carries **no tag-`0x20` walk action** can never enter the
+walking states `0x15..0x18`: out of reach, it is dropped straight into the
+`0x19` poll with an idle animation and no way to close the gap.
+
+Confirmed against the parked save itself (RAM read via `legaia-pcsxr`,
+example `gaza2_walk_tag`): Gaza's seat-3 record holds 12 actions with tags
+`[00 01 02 03 04 05 0B 0E 13 0C 23 23]` - **no `0x20`**. Bosses generally
+never walk, which matches the community's clustering of orbit reports on
+late-game bosses: the softlock needs only (a) a walk-less monster, (b) a
+contact attack pick, and (c) a target that ordinary fight movement (knockback
+commits, strike lunges, party approach-home rewrites) has carried beyond the
+size-scaled reach.
+
+Two closing observations from the same replay:
+
+- `ctx[+0x6D4]` (the stall counter the park increments) and `ctx[+0x6D2]`
+  (the facing delta `0x14` computes) are **not a timeout**: their only reader
+  is the arms/interference resolver `FUN_801EC3E4`, which adds them into an
+  agility-style contested roll. Nothing bounds the park.
+- The queued `+0x1DD == 8` values on the idle party actors are stale
+  all-target sentinels on actors that never got their turn - the round is
+  stuck on the boss's action alone, not on a corrupted queue.
+
+**Fix (disc patch).** `legaia-patcher --approach-softlock-fix`
+(`legaia_patcher::approach_fix`) retargets the one word at `0x801E32AC` from
+`j 0x801E32C4` (park) to `j 0x801E3204` (the in-range continuation: state
+`0x1E`, the strike chain), so a walk-less monster out of reach strikes from
+where it stands. Walking monsters, party attacks and in-range attacks are
+byte-for-byte untouched. Runtime-verified on the parked save
+(`autorun_gaza2_approach_fix_verify.lua`: poke the same word into the resident
+overlay and mirror its landing on the already-staged action - the battle
+un-wedges through `0x1E -> 0x1F -> 0x20 -> 0x50 -> 0x51 -> 0x5A -> 0xFF`,
+damage lands, the round completes and control returns to the player); the
+byte-level edit is pinned by the `approach_fix_real` disc oracle.
+
+**Engine port note.** The clean-room port cannot reproduce this park: its
+`attack_face` routes out-of-range monsters to the windup/advance chain
+without the tag-`0x20` lookup, and the live host's `range_check` defaults to
+in-range (`engine-vm::battle_action::attack`). The routing difference from
+retail (walk-less monsters take `0x15/0x16` instead of `0x19`) is currently
+benign because the default range collapses both paths to an immediate strike.
 
 ## Cross-references with other battle helpers
 
@@ -1755,7 +1824,7 @@ the disassembly of PROT entry 0898 at base `0x801CE818`.
 - **Unlisted `ctx[7]` states are inert/reserved, not a crash (`FUN_801E295C`).** The state byte dispatches through a 256-entry `jr` jump table at `0x801CED44` with **no `default`** (`sltiu v0,ctx[7],0x100; jr v0`; see `ghidra/scripts/funcs/overlay_0898_801e295c.txt`). The handled states are `0x00`, `0x0A`–`0x0C`, `0x14`–`0x19`, `0x1E`–`0x20`, `0x28`–`0x2E`, `0x32`–`0x38`, `0x3C`–`0x40`, `0x46`–`0x48`, `0x50`–`0x52`, `0x5A`, `0x64`–`0x66`, `0x68`–`0x6B`, `0x6E`–`0x71`, `0xFD`, `0xFF`. Every other byte value in `0x00`–`0xFF` has no case body: its table slot falls straight to the shared post-switch epilogue (the knockback/shove settle at `0x801E6814`), a safe no-op advance, never an out-of-bounds jump.
 - The inert indices are the inter-band gaps (`0x07`, `0x21`–`0x27`, `0x39`–`0x3B`, `0x41`–`0x45`, `0x49`–`0x4F`, `0x53`–`0x59`, `0x5B`–`0x63`, `0x6C`–`0x6D`, `0x72`–`0xFC`) plus the low-band ones. No path in the dumped battle-overlay corpus writes any of them into `ctx[7]` (corpus-scoped: a value injected by an un-dumped overlay would still dispatch safely). **One exception:** state `0x67` **is** written (case `0x66` sets `ctx[7] = 0x67`) yet has no case body — a genuine written-but-inert state that also lands on the epilogue.
 - State `0x47` (spirit-arts sustain): the `actor[+0x1F9] != 0` "spirit shield" branch is **resolved**. `+0x1F9` is set by the damage-application primitive `FUN_800402F4` case 5 (spirit-shield spirit → `+0x1F9 = 1`, gated on a non-zero target roll) and cleared by case 4 (cleanse → `+0x1F9 = 0`). Which case runs is selected by `actor[+0x1E8]`, seeded at [state `0x3C`](#state-table) from the spell table's class byte (`DAT_800754C8 + spell_id*0xC + 0`): class `== 5` routes to the shield write, class `== 4` to the cleanse. So the specific spirit that raises the shield is disc-side spell-table data, not a runtime constant. See [`spell-table.md`](../formats/spell-table.md).
-- **The `0x51` HP-bar settle gate is decoded and its softlock is reproducible; its retail trigger is not.** Mechanism and measurements: [the section above](#the-0x51-exit-gate-and-the-hp-bar-settle-invariant). Both first-stated generators are measured out on the Gaza 2 fight (clamp asymmetry = amplifier; the revive race starved by phased crediting - twelve retail revives, every assign on a drained accumulator); the narrowed open questions live in [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#endless-orbit---what-remains-open). Every park captured so far needed an external HP write to set up.
+- **The `0x51` HP-bar settle gate is decoded and its softlock is reproducible; its retail trigger is not.** Mechanism and measurements: [the section above](#the-0x51-exit-gate-and-the-hp-bar-settle-invariant). Both first-stated generators are measured out on the Gaza 2 fight (clamp asymmetry = amplifier; the revive race starved by phased crediting - twelve retail revives, every assign on a drained accumulator); the residuals are recorded with the settled thread in [re-settled-threads.md](../reference/re-settled-threads.md#endless-camera-orbit---the-0x19-attack-approach-park). Every `0x51` park captured so far needed an external HP write to set up; the live-caught retail park is the `0x19` class (root cause + fix in the sections above).
 - `FUN_801E7250` (`0x51`) and `FUN_801E7824` (`0x68`) are decoded from their `overlay_battle_action_*` dumps: the former is the **HP-bar drain settle check** (the `0x51` arm freezes the `ctx[+0x6D8]` countdown while any relevant actor's live HP `+0x14C` differs from its bar display value `+0x172`), the latter the **captured-monster takedown** (queued anim from the monster record, HP pair + facing zeroed, retarget to `8`, run-UI banner opened). Both ported in `crates/engine-vm/src/battle_action.rs`; see [`reference/functions.md`](../reference/functions.md).
 
 ## See also

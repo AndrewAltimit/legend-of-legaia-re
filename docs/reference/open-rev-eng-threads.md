@@ -123,75 +123,12 @@ none reading the pool `word1` high half. So `attr` (real per-vertex data) is ign
 | Thread | Status | What would close it |
 |---|---|---|
 | Xain "Bloody Horns"/"Terio Punch" ignore elemental guards (community mystery) | resolved (grade `disassembly`+`capture`) | Not an element drop - a **resist-ladder bypass**. Capture-class casts (spell byte `+0` = `'c'`) run per-spell modules (PROT 944..966) whose damage calls pass the caster's seat but pick one of two wrappers: `FUN_801DD4B0` (finisher `param_5=0`, resist ladder runs) or `FUN_801DD6B4` (`param_5=1`, the whole party-defender jewel/guard block is skipped). BH (952) / TP (953) use the bypass wrapper for their main hits; enemy ESM (966) uses the respecting one (hence Cort reads as Dark). Element attribution law + live confirmation: [battle-formulas.md](../subsystems/battle-formulas.md); cast classes: [spell-table.md](../formats/spell-table.md#cast-classes-record-byte-0). |
-| Endless camera orbit after a battle action (community-reported on Gaza 2 magic) | mostly resolved (grade `disassembly`+`capture`); retail trigger open, candidates narrowed | The park is state `0x51`; the orbit is only the idle azimuth sweep. Both first-pass generators are measured out on the Gaza 2 fight itself ([re-do-not-re-walk.md](re-do-not-re-walk.md#battle--arts--level-up)). [details ↓](#endless-orbit---what-remains-open) |
+| Endless camera orbit after a battle action (community-reported on Gaza 2 magic) | resolved (grade `capture`+`disassembly`); fix shipped | Root-caused: the live-caught park is state `0x19` - a **walk-less** monster (no tag-`0x20` action; confirmed absent from Gaza's table in the parked save) whose contact attack targets someone beyond reach re-polls the range check forever, with no movement and no timeout. Fix: `legaia-patcher --approach-softlock-fix`. Full story + residuals: [re-settled-threads.md](re-settled-threads.md#endless-camera-orbit---the-0x19-attack-approach-park); anatomy: [battle-action.md](../subsystems/battle-action.md#root-cause-the-walk-tag-fallback-in-state-0x14). |
 | Super / Miracle Arts trigger logic | resolved (grade `disassembly`+`capture`) | The full chain is pinned (preseed `FUN_801DA34C`, queue-builder `FUN_801EED1C`, Super applier `FUN_801EF9E4`) and all 15 Supers are **live-executed**: an applier-entry injection probe (`autorun_super_art_queue_inject.lua`) drives the retail applier over each `find` string and reads the tail-replace at `actor[+0x1DF]` back byte-exact, 15/15; per-character library states re-checked by `crates/pcsxr/tests/super_art_queue_replace.rs`. Full chain + derived pins: [`re-settled-threads.md`](re-settled-threads.md#super--miracle-arts-trigger-chain) and [battle-action.md](../subsystems/battle-action.md#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4). |
 | First boss trigger -> Battle | resolved | The scripted-battle arm is the field-VM op `3E FF <formation_row>` ([battle.md](../subsystems/battle.md#scripted-battle-entry-3e-ff-row)): Zeto = garmel `P2[12]` row 9 (lone `0x4B`), Caruban = rikuroa stager `P1[3]` row 17 (lone `0x49`, `World::run_boss_stager_record`). `DAT_8007b7fc` closed: writer-less across `SCUS_942.54` + every static overlay (validated absolute + gp-relative + address-materialisation sweep); readers pin it as the debug forced-battle formation id - battle init `FUN_80055b6c` -> `FUN_8005567c` seeds the formation cells `DAT_8007BD0C+` from it, and `FUN_80046A20` routes a nonzero value to its mode-0 debug-menu exit. Retail never sets it. See [battle.md](../subsystems/battle.md). |
 | Enemy-ally charm battle softlock | resolved (both tracks fixed; grade `disassembly`) | The state-`0x5A` victory arm's party-slot assumption OOB-indexes the win-pose roster `DAT_8007BD10` (via `0x801E6770`) when a living charmed ally is the acting actor at monster-wipe victory - the `FUN_801E7320` reroll theory is falsified ([`re-do-not-re-walk.md`](re-do-not-re-walk.md#battle--arts--level-up)). Fixed on both tracks: engine `victory_pose_fixup`/`charm_widen`, and the disc-side `legaia_patcher::charm_fix` guard - a single-word detour at the `0x801E6690` keep-branch into a SCUS dead-space liveness guard. Full chain + port: [battle.md](../subsystems/battle.md#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock). |
 | Action-SM state `0xFF` treated as battle end by the port | open (retail half graded `disassembly`) | Retail `0xFF` is the **round boundary**: its only writer is the non-wipe arm of `0x5A`, and wipes signal through `DAT_8007BD71 = 0xFE` without writing a state byte ([battle-action.md](../subsystems/battle-action.md#0xff-is-the-round-boundary-not-the-battles-end)). The port maps it to `ActionState::BattleComplete` → `battle_end(MonsterWipe)` → `finish_battle`. Close it by settling whether a live battle reaches that path: it turns on how `action_queue_counter` accumulates, given `dispatch.rs` re-stamps it from `ctx.queued_action`. If it does, the symptom is a spurious victory after one round. Drive a battle past a full round with both sides alive. |
 | Battle-actor `+0x16E` bit `0x400` applier (guard-disabling status) | resolved - exhaustive negative (grade `disassembly`) | Bit `0x400` has **no retail setter**: a word-level decode of `SCUS_942.54` + every static-overlay image (all stores covering `+0x16C..+0x171`, pointer precomputes, `ori`/`sllv` bit-set shapes, the `+0x6F6` mirror, the `+0x21F` deferral) finds only clears - accessory cure `FUN_8004CE2C`, the per-round RNG waker `FUN_801F45A4`, item cures, the on-hit strip, battle-exit. The appliers (hit leg `FUN_801EC3E4`, cast leg `FUN_801E09F8`) map kinds 3/4/5/6 → `0x1`/`0x2`/random-`0x38`/`0x1000`, kinds 1-2 → the `0x380` deferral; none reaches `0x400`. Latent content. Writer inventory: [battle.md](../subsystems/battle.md#the-0x16e-status-halfword---retail-writer-inventory). |
-
-### Endless orbit - what remains open
-
-The orbit is only the unconditional idle azimuth sweep (`FUN_801D0748`
-stepping `_DAT_8007B792`); behind it sit **two distinct park classes**, and
-the one caught from ordinary play is not the one this thread started on:
-
-- **State `0x19` (attack approach) - caught live, no interventions.** A
-  human playing the Gaza 2 fight at dynarec speed under the poll-only
-  `autorun_gaza2_park_hunter.lua` hit it and savestated the frozen moment
-  (scenario `battle_gaza2_park_0x19`). The boss's physical attack reached
-  `0x19` still ~556 units from its target with the walk phase never having
-  engaged; `0x19` has no movement code and its not-in-range path only bumps
-  the stall counter `ctx[+0x6D4]`, so it re-polls `FUN_8004E2F0` forever.
-  Full anatomy:
-  [battle-action.md](../subsystems/battle-action.md#the-0x19-attack-approach-park---a-second-distinct-softlock-class).
-  Open: why `0x14`/`0x16` handed off without walking (the `0x0C -> 0x14 ->
-  0x19` transition took ~3 vsyncs), and what built the wedged round queue
-  (all four combatants simultaneously parked in approach states, two of
-  them holding target `8`, which the range check rejects by construction).
-- **State `0x51` (HP-readout settle)** - mechanism fully decoded and
-  reproducible by injection
-  ([battle-action.md](../subsystems/battle-action.md#the-0x51-exit-gate-and-the-hp-bar-settle-invariant)),
-  generators measured out on this fight; still unobserved from retail-only
-  play. The community live-park exhibit (JP screenshot) is now more likely
-  a `0x19`-class park - its healthy-looking readout needs no HP desync
-  under that reading.
-
-What fell: the clamp asymmetry only amplifies a pre-existing offset, and a
-three-capture Lost-Grail campaign (twelve retail revives, zero harness HP
-writes) found every `FUN_800402F4` assign landing on an already-drained
-accumulator - both entries with reasoning in
-[re-do-not-re-walk.md](re-do-not-re-walk.md#battle--arts--level-up).
-
-What would close the thread now:
-
-- ~~audit the capture-class module HP stores~~ - **done, negative**. The
-  campaign's party-wide double-kill casts credited live HP and the
-  accumulator through none of the armed census writers, which briefly made
-  the capture-class per-spell modules (PROT 944..966) the prime suspect. A
-  static store audit of the whole family
-  (`scripts/asset-investigation/audit_module_hp_stores.py`) finds every
-  actor-accumulator store to be the **paired** accumulate + live-HP shape -
-  module-local copies of the safe applier (e.g. 0944 `+0x808`/`+0x824`;
-  the remaining `+0x10` matches are handle-table and fade-struct false
-  positives) - so the "unarmed" seeding was a census blind spot, not an
-  unpaired writer, and the module family follows the safe convention;
-- the **drain-vs-tail race**: minimum last-credit-to-`0x51` gap on Gaza 2 is
-  ~27 rendered frames vs a 23-frame drain from a ~1300 readout (30 from
-  `9999`; +1 per doubling) - Gaza 2 misses by ~4 frames; a higher readout or
-  faster-tailed move crosses
-  ([battle-action.md](../subsystems/battle-action.md#where-the-desync-comes-from-two-seeding-conventions)
-  has the numbers). The community live-park exhibit (JP version, reported on
-  both regions) draws a healthy `1476/1476` target panel - measured: the HUD
-  draws `+0x172` raw (an injected overshoot renders `1439/1289` on screen),
-  so the desynced slot in the exhibit is off-panel and the parked action is
-  the all-target arm (`+0x1DD == 8`), i.e. a party-wide cast;
-- a retail path through the `FUN_801EC3E4` commit-skip guards
-  (`0x801EE988` / `0x801EE9AC` / `0x801EE9EC`) with a non-zero credit
-  already applied - credit-without-commit is the one shape that leaves a
-  settled desync;
-- or evidence that the community orbit reports trace to a different
-  absorbing state than this park.
 
 ## Field / locomotion
 

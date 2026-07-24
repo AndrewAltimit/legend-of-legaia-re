@@ -95,6 +95,7 @@ The per-prim dispatcher `FUN_80043390` owns four `NCCS`/`NCCT` **light** handler
 | Thread | Status | Evidence | Answer |
 |---|---|---|---|
 | Encounter MAN sub-section layout | resolved (header shape corrected) | `disassembly` | [details ↓](#encounter-man-sub-section-layout) |
+| Endless camera orbit (Gaza 2 softlock) - the `0x19` attack-approach park | resolved (caught live; root-caused; disc fix shipped) | `capture` + `disassembly` | [details ↓](#endless-camera-orbit---the-0x19-attack-approach-park) |
 | Super / Miracle Arts trigger chain | resolved (all 15 Supers live-executed) | `disassembly` + `capture` | [details ↓](#super--miracle-arts-trigger-chain) |
 | Effect-VM pass-1 "state token algebra" (`FUN_801E0088`) | resolved + ported | `capture` | [details ↓](#effect-vm-pass-1-state-token-algebra-fun_801e0088) |
 | Seru-magic summon visual (e.g. Tail Fire) | resolved (player visual; wired) | `capture` | [details ↓](#seru-magic-summon-visual-eg-tail-fire) |
@@ -131,6 +132,44 @@ The per-prim dispatcher `FUN_80043390` owns four `NCCS`/`NCCT` **light** handler
 | How an NPC's facing changes **after** spawn - snap vs ramp, and which writer wins | resolved (two laws; order-of-execution priority) | `disassembly` | [details ↓](#npc-dynamic-facing---two-laws-and-an-execution-order) |
 | dolk2/rikuroa MAN source (the "v12-embedded MAN" was an over-read) | resolved (streaming carrier) | `capture` | Their own `base+3` bundles are the MAN-less count=4 form `[1,2,6,0x14]`; the "embedded MAN at 0x1000" inside their SceneV12Table entries is an over-read onto the next scene's bundle (suimon's / geremi's; [scene-v12-table.md](../formats/scene-v12-table.md) § over-read). Retail sources their partition scripts from the block's standalone `data_field_streaming` entry's type-3 chunk (`dolk2` ext 70 `[29,73,17]`, `rikuroa` ext 157 `[13,29,64]`; live script-heap byte-match at the Caruban beat). Engine: `field_man_payload` streaming fallback (`streaming_man_payloads`) + retail-frame `Scene::load` windows; pins `v12_bundle_man_disc.rs`. |
 | kor-family op-0x49 flag window `[0x138..0x13F]` - what the 8 flags gate | resolved (Uru Mais warp-pad destination memory) | `disassembly` | [details ↓](#kor-family-op-0x49-flag-window-0x1380x13f---uru-mais-warp-pad-picker) |
+
+### Endless camera orbit - the `0x19` attack-approach park
+
+*Status:* resolved - the park was caught live from ordinary play, the walk-skip
+condition is named from the disassembly and confirmed against the parked save,
+and a one-word disc fix ships as `legaia-patcher --approach-softlock-fix`.
+
+*Evidence:* `capture` (the fingerprinted scenario `battle_gaza2_park_0x19`,
+caught by a human playing under the poll-only dynarec-speed hunter
+`autorun_gaza2_park_hunter.lua`; interpreter replay
+`autorun_gaza2_range_wedge.lua`; RAM-table read of the parked save) +
+`disassembly` (`overlay_battle_action_801e295c.txt`, `0x801E31F4..0x801E32DC`).
+
+The community-reported "endless camera orbit" (Gaza rematch; JP exhibit too) is
+the battle-action state machine parking while the idle camera azimuth sweep
+(`FUN_801D0748`) keeps orbiting - the orbit is pure symptom. The park: state
+`0x14` (attack approach setup), finding the target out of range, looks up the
+**walk animation** (action tag `0x20`) in the acting monster's action table via
+`FUN_80050E2C`; when the table has no such action - bosses generally never
+walk; Gaza's 12-action table reads tags `[00 01 02 03 04 05 0B 0E 13 0C 23 23]`
+in the parked save - the fallback path stages the idle tag and drops straight
+into state `0x19`, the range re-poll, **which has no movement code and no
+timeout** (its not-in-range edge only bumps `ctx[+0x6D4]`, whose sole reader is
+the arms-resolver roll, not a limit). The walking states `0x15..0x18` are
+unreachable without the tag, so the fight waits forever on an attack that can
+never connect. Full anatomy + fix + engine-port note:
+[battle-action.md](../subsystems/battle-action.md#the-0x19-attack-approach-park---a-second-distinct-softlock-class).
+
+Sub-answers settled along the way: the wedged-looking `+0x1DD == 8` targets on
+the idle party actors are stale all-target sentinels (the round is stuck on the
+boss's action alone); the sibling `0x51` HP-settle park class is a fully
+decoded mechanism that remains **injection-only** - a three-capture retail
+campaign (twelve Lost-Grail revives, no harness HP writes) measured out both of
+its candidate generators
+([re-do-not-re-walk.md](re-do-not-re-walk.md#battle--arts--level-up)), and the
+`0x19` class explains the community exhibits without any HP desync. Stated
+limit: whether any retail sequence can still produce a `0x51` park is unproven
+either way; nothing observed requires it.
 
 ### Super / Miracle Arts trigger chain
 

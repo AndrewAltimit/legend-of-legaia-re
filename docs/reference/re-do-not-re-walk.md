@@ -65,7 +65,7 @@ label-call idiom). Disassembler + executing VM corrected: `field_disasm::decode_
 
 *Status:* both first-pass "ordinary play" generators of the `0x51` HP-readout
 desync are falsified; what remains open is in
-[open-rev-eng-threads.md](open-rev-eng-threads.md#endless-orbit---what-remains-open).
+[re-settled-threads.md](re-settled-threads.md#endless-camera-orbit---the-0x19-attack-approach-park).
 
 **Clamp asymmetry as a standalone generator.** The two overkill clamps in
 `FUN_801EC3E4` (accumulator vs displayed bar at `0x801EDB70`, live HP vs

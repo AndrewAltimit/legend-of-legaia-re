@@ -68,6 +68,13 @@
         <td><a href="../formats/encounter.html#camera-region-table">encounter</a></td>
       </tr>
       <tr>
+        <td>Endless camera orbit (Gaza 2 softlock) - the <code>0x19</code> attack-approach park</td>
+        <td><span class="tag tag-done">resolved</span> (caught live; root-caused; disc fix shipped)</td>
+        <td><span class="tag tag-done">capture</span> + <span class="tag tag-done">disassembly</span></td>
+        <td>State <code>0x14</code> (attack approach setup) looks up the walk animation - action tag <code>0x20</code> - in the acting monster's action table (<code>FUN_80050E2C</code> over <code>record+0x4C</code>); when absent (bosses generally never walk; Gaza's parked-save table reads <code>[00 01 02 03 04 05 0B 0E 13 0C 23 23]</code>), the fallback drops straight into the state-<code>0x19</code> range re-poll, which has <strong>no movement code and no timeout</strong> - so a contact attack against a target beyond the size-scaled reach waits forever while the idle camera orbits. Caught live by the poll-only dynarec-speed hunter (scenario <code>battle_gaza2_park_0x19</code>); the stall counter <code>ctx[+0x6D4]</code> feeds only the arms-resolver roll. Fix: <code>legaia-patcher --approach-softlock-fix</code>, a one-word retarget to the in-range strike continuation. The sibling <code>0x51</code> HP-settle class stays injection-only (twelve-revive retail campaign; both candidate generators measured out).</td>
+        <td><a href="../subsystems/battle-action.html">battle-action</a></td>
+      </tr>
+      <tr>
         <td>Super / Miracle Arts trigger chain</td>
         <td><span class="tag tag-done">resolved</span> (all 15 Supers live-executed)</td>
         <td><span class="tag tag-done">disassembly</span> + <span class="tag tag-done">capture</span></td>
