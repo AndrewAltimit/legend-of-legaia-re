@@ -1357,6 +1357,32 @@ they are shared scripted-scene machinery rather than dialogue-only code.
 
 `see ghidra/scripts/funcs/overlay_cutscene_dialogue_<addr>.txt` for each.
 
+### What the tween and the emitter do beyond the one-line role
+
+Three details of these bodies are only visible in the disassembly, and the
+engine port (`legaia_engine_core::cutscene_script_elements`) carries all
+three.
+
+The tween's entry test is on the **linked** object, not on itself: `0x801D5C1C`
+loads `linked[+0x10]` and branches on bit `8`, and the taken branch lands on
+the store that sets the *element's own* bit `8`. So an element whose target has
+already finished retires itself without writing a position. Every position
+write is also accompanied by a facing/sort write - `linked[+0x8E] = -y` of the
+value just applied - and the sole exception is the camera object, compared by
+pointer identity against `_DAT_8007C364` (`0x801D5CA8` and `0x801D5D38`). Both
+the blend arm and the snap arm do it.
+
+The emitter picks between two parameter pairs on `_DAT_1F800394 & 1`
+(`0x801D60A0`): bit clear leaves `(2, 1)`, bit set replaces them with
+`(6, 0x0E)`. The first is added to the scene's Y span before it is halved, the
+second is subtracted from each particle's Y offset - so the bit widens the
+band and shifts it. Only the scene-wide burst arm reads them.
+
+Finally, the decompiled C of the burst count reads `if ((uVar1 & 3) !=
+0xffffffff)`, which is a decompiler artifact: the disassembly is `addiu
+s2,v0,0x1` then `beq s2,zero`, a zero test on a value that is always `1..=4`.
+Every burst that passes the one-in-sixteen gate spawns at least one particle.
+
 ## Open items
 
 - **XA channel map - resolved.** There is no channel selector in the STR overlay: FMVs play with the sector filter off (each movie carries one `(1, 0)` track), and the `XA*.XA` clip path selects `CdlSetfilter {file 1, chan}` per cue in SCUS (`FUN_8003D764`), with `clip_id -> XA<n>.XA` via the table at `0x801C6ED8`. See [XA channel selection](#xa-channel-selection). The earlier "`\DATA\MOV.STR` multi-channel container drives it" hypothesis is falsified (dev leftover, not on the disc).
