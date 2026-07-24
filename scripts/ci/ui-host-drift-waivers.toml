@@ -314,3 +314,19 @@ this window is never opened. The two rules it carries - the halved sell total
 and the four-step digit ladder - are unit-tested here and are what a host
 adopting the window would need.
 """
+
+[[waiver]]
+builder = "compare_panel_draws_for"
+kind = "orphan"
+reason = """
+The equip screen's two stat-compare window painters (menu-overlay window
+descriptors 25 / `FUN_801D1290` and 41 / `FUN_801D4C28`), rendered from a
+shared field list. Neither host opens those windows: the engine's equip flow
+is `engine-core::equip_session`, which previews one character through
+`compute_battle_stats` and draws its own screen, so nothing produces the
+retail eight-word stat block (`0x801EF080` / its trial mirror `0x801EF0A0`)
+these panels compare, and nothing produces a party-wide preview at all -
+`EquipSession` is single-character by construction. Wiring is a host job that
+first has to rebuild the equip screen on the retail window set; the layout
+half lands now so the geometry is pinned while the disassembly is fresh.
+"""
