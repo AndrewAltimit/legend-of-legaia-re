@@ -79,11 +79,24 @@ impl World {
     }
 
     /// Whether this frame is one of the ones retail's timed-flag scheduler
-    /// sits out. Retail short-circuits on three conditions before it touches
-    /// the counter (`0x801D2EBC..0x801D2F30`); the engine's stand-in is "the
-    /// field is not the thing being driven this frame" - a modal dialog is up,
-    /// or the world has left the field/cutscene modes for a menu, a battle or
-    /// a minigame.
+    /// sits out. Retail short-circuits on three conditions at
+    /// `0x801D2EBC..0x801D2F30`, and a busy frame refreshes the clock latch
+    /// without touching the counter:
+    ///
+    /// 1. `*(_DAT_8007C364 + 0x10) & 0x80000` - the **player actor's engaged
+    ///    bit**, the one `FUN_801D5B5C` sets on a touch/talk and the one that
+    ///    also suppresses locomotion input at the head of `FUN_801D01B0`. The
+    ///    engine's analogue is an open modal dialog.
+    /// 2. `_DAT_8007B6B4 != 0` - a **dialogue-pacing countdown**: the typing
+    ///    driver `FUN_801D1344` drains it by the frame step and clamps it at
+    ///    zero (`0x801D161C..0x801D1630`), so a non-zero value means a text
+    ///    beat is still running. Folded into the same modal-dialog test.
+    /// 3. `_DAT_8007B6B0 > 0` - the **reposition / warp timer** `FUN_801C36AC`
+    ///    counts down while it walks a warped actor to its destination tile.
+    ///    The engine warps instantly, so it has no in-flight window; the mode
+    ///    test below is the nearest stand-in, covering the frames where the
+    ///    field is not what is being driven at all (a menu, a battle, a
+    ///    minigame).
     fn escape_timer_busy(&self) -> bool {
         self.current_dialog.is_some()
             || !matches!(self.mode, SceneMode::Field | SceneMode::Cutscene)
