@@ -1,17 +1,17 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">write-ups</a> &middot; the spirit fish gate</div>
   <h1>The Spirit fish gate - fishing's rarest catch, decompiled</h1>
-  <p class="lede">Legend of Legaia's fishing community has chased the Spirit fish for decades. The accepted table says Normal Lure at Buma with a &ldquo;Good!&rdquo; bait gives a 1-in-32 shot - yet players report hundreds of catches, whole sessions, entire evenings with nothing, and a binomial argument that the drought is statistically impossible. The folklore blames Square-button presses, pond position, cast distance. The disassembly of the fishing overlay settles it: the community table has every species in the right cell, but the rare column is not a probability at all. It is a six-condition gate, evaluated in a single instant - and most of the conditions never made it into any guide.</p>
+  <p class="lede">The Spirit fish is Legend of Legaia's rarest catch, and the observed catch rate has never matched the published tables: the accepted model - Normal Lure at Buma with a &ldquo;Good!&rdquo; bait, 1 in 32 - predicts a Spirit well inside a long session, while players routinely report hundreds of catches without one. This page documents the species-selection mechanism from the disassembly of the fishing overlay: the spawn-table lookup, the band roll and its cutoffs, the reel-cadence recogniser behind the &ldquo;Good!&rdquo; splash, and the strike-time gate that is the only path to the rare column. The published table has every species in the right cell; the gap is in what the rare column's probability actually is.</p>
 </header>
 
 <div class="notice">
   <div class="notice-title">TL;DR</div>
-  The species you hook is a table lookup: lure row &times; &ldquo;band&rdquo; column. The band roll only ever outputs 0&ndash;3; band 4 - where Spirit lives - is written by one store, behind a gate: <strong>over 50 lifetime casts</strong> (a saved counter), the counter <strong>even</strong> at that moment, <strong>Normal Lure</strong>, the <strong>third rod</strong>, <strong>band 0</strong> active at the strike, and then a <strong>1-in-16</strong> roll. The &ldquo;Good!&rdquo; splash is real but treacherous: four button-rhythm templates all fire it, and the matched template's id <em>becomes</em> the band - only the one ending in a Square tap selects the rare band; the natural pump-Cross rhythm deterministically selects the most common one.
+  The hooked species is a table lookup: lure row &times; &ldquo;band&rdquo; column. The band roll only ever outputs 0&ndash;3; band 4 - the Spirit column - is written by a single store behind a strike-time gate: <strong>over 50 lifetime casts</strong> (a saved counter), the counter <strong>even</strong> at that instant, <strong>Normal Lure</strong>, the <strong>third rod</strong>, <strong>band 0</strong> active, and then a <strong>1-in-16</strong> roll. The &ldquo;Good!&rdquo; splash reports a match against any of four reel-cadence templates, and the matched template's id <em>becomes</em> the band - so only one cadence (the one ending in a Square tap) selects the rare band, while the most natural rhythm selects the most common one.
 </div>
 
 <section class="doc-section" id="lookup">
-  <h2>The table everyone knows - and the column the dice can't reach</h2>
-  <p>The hooked species is assigned in the pre-hook half of the hooked-fish handler <code>FUN_801d26cc</code>: <code>species = spawn_table[lure*8 + band]</code>. The equipped lure (<code>_DAT_80084450</code>) picks the row; the cast band (<code>DAT_801d90e8</code>, 0&ndash;4) picks the column. Decoded from the disc (rodata <code>0x801D8334</code>), the species land exactly where the community's ASCII table put them - the guide's fieldwork was excellent:</p>
+  <h2>The spawn tables</h2>
+  <p>The hooked species is assigned in the pre-hook half of the hooked-fish handler <code>FUN_801d26cc</code>: <code>species = spawn_table[lure*8 + band]</code>. The equipped lure (<code>_DAT_80084450</code>) picks the row; the cast band (<code>DAT_801d90e8</code>, 0&ndash;4) picks the column. Decoded from the disc (rodata <code>0x801D8334</code>), the species agree cell-for-cell with the published community tables:</p>
 
   <div class="table-wrap"><table>
     <thead><tr><th>Buma / lure</th><th>band 3 (~75.0%)</th><th>band 2 (~15.2%)</th><th>band 1 (~4.9%)</th><th>band 0 (~4.9%)</th><th>band 4 (gated)</th></tr></thead>
@@ -34,9 +34,74 @@
   <p>&dagger; Dead cells: each venue's band-4 gate hardwires the lure it fires on (Normal at Buma, Heavy at Vidna), so band 4 is only ever read on the row carrying the rare fish. The Spikefish entries in the other rows are unreachable in retail play - the only code path that could touch them is a developer shortcut (debug print flag + R1 held at the strike forces band 4 unconditionally), which retail can't enable.</p>
 </section>
 
+<section class="doc-section" id="pipeline">
+  <h2>The selection pipeline</h2>
+  <p>Band assignment happens in two phases. While the lure is in the water, the band is continuously re-derived - by cadence match when one lands, by random roll otherwise. At the instant a fish strikes, a venue-specific gate may upgrade band 0 to band 4; the species lookup then reads whatever band is current. Everything downstream of the strike is deterministic.</p>
+
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="pl-title">
+      <title id="pl-title">Band selection pipeline: cadence match or random roll sets band 0 to 3 while waiting; at the strike the gate may upgrade band 0 to band 4; the species lookup reads the result</title>
+      <style>
+        .pl-box  { fill: #19212d; stroke: #3a4552; stroke-width: 1.2; }
+        .pl-gold { fill: #221d12; stroke: #e3b341; stroke-width: 1.3; }
+        .pl-teal { fill: #19212d; stroke: #58c4b3; stroke-width: 1.2; }
+        .pl-t    { font: 11px 'JetBrains Mono', monospace; fill: #c9d1d9; text-anchor: middle; }
+        .pl-lab  { font: 11px 'Inter', sans-serif; fill: #8b949e; }
+        .pl-cap  { font: 10px 'Inter', sans-serif; fill: #7c8893; text-anchor: middle; }
+        .pl-edge { fill: none; stroke: #3a4552; stroke-width: 1.3; marker-end: url(#pl-ah); }
+        .pl-edgeg{ fill: none; stroke: #e3b341; stroke-width: 1.4; marker-end: url(#pl-ahg); }
+        .pl-goldt{ font: 600 10px 'Inter', sans-serif; fill: #e3b341; }
+      </style>
+      <defs>
+        <marker id="pl-ah" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+          <path d="M0,0 L7,3.5 L0,7 z" fill="#3a4552"/>
+        </marker>
+        <marker id="pl-ahg" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+          <path d="M0,0 L7,3.5 L0,7 z" fill="#e3b341"/>
+        </marker>
+      </defs>
+
+      <text x="20" y="28" class="pl-lab">while waiting (line record &gt; 500, nothing hooked)</text>
+
+      <rect x="20" y="44" width="230" height="48" class="pl-teal"/>
+      <text x="135" y="64" class="pl-t">cadence match FUN_801d3db4</text>
+      <text x="135" y="82" class="pl-cap">band = template id (0..3)</text>
+
+      <rect x="20" y="150" width="230" height="48" class="pl-box"/>
+      <text x="135" y="170" class="pl-t">roll rand &amp; 0xfff</text>
+      <text x="135" y="188" class="pl-cap">band 3/2/1/0 at 75 / 15 / 5 / 5 %</text>
+
+      <line x1="250" y1="68"  x2="320" y2="112" class="pl-edge"/>
+      <line x1="250" y1="174" x2="320" y2="130" class="pl-edge"/>
+
+      <rect x="322" y="96" width="130" height="48" class="pl-box"/>
+      <text x="387" y="116" class="pl-t">cast band</text>
+      <text x="387" y="134" class="pl-cap">DAT_801d90e8</text>
+
+      <line x1="452" y1="120" x2="520" y2="120" class="pl-edge"/>
+      <text x="456" y="112" class="pl-cap">strike</text>
+
+      <rect x="522" y="96" width="150" height="48" class="pl-gold"/>
+      <text x="597" y="116" class="pl-t">band-4 gate</text>
+      <text x="597" y="134" class="pl-cap">band 0 &rarr; 4 if all pass</text>
+
+      <line x1="672" y1="120" x2="730" y2="120" class="pl-edge"/>
+
+      <rect x="732" y="88" width="130" height="64" class="pl-teal"/>
+      <text x="797" y="112" class="pl-t">species =</text>
+      <text x="797" y="130" class="pl-t">row[lure]</text>
+      <text x="797" y="146" class="pl-t">col[band]</text>
+
+      <text x="522" y="176" class="pl-goldt">conditions (Buma): casts &gt; 50 and even &middot; Normal Lure &middot; third rod &middot; band 0 &middot; then 1/16</text>
+      <text x="522" y="194" class="pl-cap" text-anchor="start">no gate pass &rarr; the band is used as-is; no other write reaches band 4</text>
+    </svg>
+    <figcaption>The two phases of band assignment. The gate is evaluated once, inside the strike branch of <code>FUN_801d26cc</code>, immediately before the species lookup.</figcaption>
+  </figure>
+</section>
+
 <section class="doc-section" id="roll">
-  <h2>What the dice actually do</h2>
-  <p>While the lure sits deep enough (line record over 500 units) and no fish is hooked, a countdown re-rolls the band: <code>rand() &amp; 0xfff</code> against three fixed cutoffs. The guide's 184/48/16/8-out-of-256 estimate had the right shape; the real cutoffs are slightly harsher at the rare end. And no outcome maps to band 4 - there is no fifth cutoff.</p>
+  <h2>The band roll</h2>
+  <p>While the lure sits deep enough (line record over 500 units) and no fish is hooked, a countdown re-rolls the band: <code>rand() &amp; 0xfff</code> against three fixed cutoffs. The published 184/48/16/8-out-of-256 estimate has the right shape; the actual cutoffs sit slightly lower at the rare end. No outcome maps to band 4 - there is no fifth cutoff.</p>
 
   <figure class="overlay-strip">
     <svg viewBox="0 0 880 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="roll-title">
@@ -63,7 +128,7 @@
       <text x="814" y="56" class="rl-mono">4.9%</text>
 
       <!-- estimate -->
-      <text x="70" y="152" class="rl-lab">community estimate (out of 256)</text>
+      <text x="70" y="152" class="rl-lab">published community estimate (out of 256)</text>
       <g opacity="0.55">
         <rect x="70"  y="162" width="561" height="34" fill="#2e4152" class="rl-seg" stroke-dasharray="4 3"/>
         <rect x="633" y="162" width="146" height="34" fill="#3d6371" class="rl-seg" stroke-dasharray="4 3"/>
@@ -75,16 +140,16 @@
       <text x="781" y="215" class="rl-mono">6.3%</text>
       <text x="833" y="156" class="rl-mono">3.1%</text>
 
-      <text x="70" y="232" class="rl-gold">band 4 has no segment in either bar: no roll reaches it.</text>
-      <text x="410" y="232" class="rl-cap">band 0 (bright) is the rare, Spirit-eligible band - ~1 roll in 20.</text>
+      <text x="70" y="232" class="rl-gold">band 4 has no segment in either bar: no roll outcome maps to it.</text>
+      <text x="430" y="232" class="rl-cap">band 0 (bright) is the rare band the gate requires - ~1 roll in 20.</text>
     </svg>
     <figcaption>Whatever band is active at the instant the fish strikes is the one the species lookup uses.</figcaption>
   </figure>
 </section>
 
 <section class="doc-section" id="cadence">
-  <h2>&ldquo;Good!&rdquo; is real - and usually working against you</h2>
-  <p>The same countdown that re-rolls the band first consults a <strong>reel-cadence recogniser</strong> (<code>FUN_801d3db4</code>): a 16-slot ring buffer of <code>{button, held-frames}</code> reel history, walked backwards against four rodata templates (<code>0x801D87D4</code>), each hold matched with &plusmn;10 frames of tolerance. A match does two things: it fires the splash players read as &ldquo;Good!&rdquo;, and it <strong>stores the matched template's id as the band</strong>. That second half is the piece the folklore never had - and it cuts both ways:</p>
+  <h2>The reel-cadence recogniser</h2>
+  <p>The same countdown that re-rolls the band first consults a <strong>reel-cadence recogniser</strong> (<code>FUN_801d3db4</code>): a 16-slot ring buffer of <code>{button, held-frames}</code> reel history, walked backwards against four rodata templates (<code>0x801D87D4</code>), each hold matched with &plusmn;10 frames of tolerance. A match does two things: it fires the splash rendered on a successful bait (&ldquo;Good!&rdquo;), and it <strong>stores the matched template's id as the band</strong>. Band selection by cadence is therefore deterministic - the template matched decides which band is set:</p>
 
   <figure class="overlay-strip">
     <svg viewBox="0 0 880 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="cad-title">
@@ -109,7 +174,7 @@
       <rect x="412" y="44" width="100" height="24" class="cd-x" rx="3"/><text x="462" y="60" class="cd-bt">&#10005; 25f</text>
       <rect x="514" y="44" width="160" height="24" class="cd-idle" rx="3"/><text x="594" y="60" class="cd-it">rest 40f</text>
       <rect x="676" y="44" width="60" height="24" class="cd-sq" rx="3"/><text x="706" y="60" class="cd-bt">&#9633; 15f</text>
-      <text x="748" y="62" class="cd-goldt">the Spirit cadence</text>
+      <text x="748" y="62" class="cd-goldt">selects the rare band</text>
 
       <!-- template 1: square15 cross25 release -->
       <text x="30" y="132" class="cd-lab">template 1 &rarr; band 1</text>
@@ -128,18 +193,18 @@
       <rect x="250" y="254" width="100" height="24" class="cd-x" rx="3"/><text x="300" y="270" class="cd-bt">&#10005; 25f</text>
       <rect x="352" y="254" width="160" height="24" class="cd-idle" rx="3"/><text x="432" y="270" class="cd-it">rest 40f</text>
       <rect x="514" y="254" width="100" height="24" class="cd-x" rx="3"/><text x="564" y="270" class="cd-bt">&#10005; 25f</text>
-      <text x="628" y="272" class="cd-badt">the trap: the natural reel rhythm</text>
+      <text x="628" y="272" class="cd-badt">matches the natural reel rhythm</text>
 
       <text x="30" y="318" class="cd-cap">Durations in frame-steps (&asymp; frames at 60 Hz), each matched &plusmn;10. &#10005; = reel A (Cross, pad bit 0x40) &middot; &#9633; = reel B (Square, 0x80).</text>
-      <text x="30" y="334" class="cd-cap">All four templates fire the same &ldquo;Good!&rdquo; splash - the splash confirms a match, not a good outcome.</text>
+      <text x="30" y="334" class="cd-cap">All four templates fire the same &ldquo;Good!&rdquo; splash - the splash reports a match, not which band was set.</text>
     </svg>
-    <figcaption>Matching template 0 pins band 0 <em>by choice</em> instead of the ~4.9% roll. Pumping &#10005; rhythmically matches template 3 - the same encouraging splash, and the abundant band selected on purpose. The community's &ldquo;you have to press Square&rdquo; lore is correct: template 0 is the only cadence ending in a Square tap.</figcaption>
+    <figcaption>Matching template 0 sets band 0 deterministically, replacing the ~4.9% roll. Rhythmic &#10005; reeling matches template 3 and sets the most common band - with the same splash. Template 0 is the only cadence ending in a Square tap, which accounts for the reported association between Square presses and Spirit catches.</figcaption>
   </figure>
 </section>
 
 <section class="doc-section" id="gate">
-  <h2>Six conditions, one instant</h2>
-  <p>When a strike lands (reel held, per-frame strike roll passed, nothing hooked yet), one branch in <code>FUN_801d26cc</code> - executed immediately before the species lookup - decides whether an active band 0 upgrades to band 4. Everything must hold at once:</p>
+  <h2>The band-4 gate at the strike</h2>
+  <p>When a strike lands (reel held, per-frame strike roll passed, nothing hooked yet), one branch in <code>FUN_801d26cc</code> - executed immediately before the species lookup - decides whether an active band 0 upgrades to band 4. Every condition must hold simultaneously:</p>
 
   <pre><code>if (venue == Buma) {                          // DAT_801d90d0 == 0
     if (0x32 &lt; casts                          // &gt; 50 lifetime casts  (_DAT_80084460)
@@ -155,34 +220,36 @@
             band = 4;                         // -&gt; Baraba
 }</code></pre>
 
-  <p>Three of these were invisible to players. The <strong>cast counter</strong> (<code>_DAT_80084460</code>) lives in the save block: it increments once per cast at the moment the flown lure lands, persists across sessions, and is saved with the game - a fresh fisher literally cannot catch Spirit inside their first 51 casts. Its <strong>parity</strong> makes every other cast silently ineligible, whatever else you do right. And the <strong>rod requirement</strong> appears in no community table at all: with anything but the third rod, Spirit is not rare - it is unreachable. The counter's parity does leak in one place: it flips which way the lure drifts when it bumps a wall, the only player-visible trace of the even/odd gate.</p>
+  <p>Three of these conditions are not externally observable, which is why no published table carries them. The <strong>cast counter</strong> (<code>_DAT_80084460</code>) lives in the save block: it increments once per cast at the moment the flown lure lands, persists across sessions, and is saved with the game - band 4 at Buma is unreachable inside the first 51 lifetime casts. The counter's <strong>parity</strong> makes alternating casts ineligible regardless of play. The <strong>rod condition</strong> means that with either other rod equipped, the gate short-circuits and band 4 cannot occur. The parity has exactly one visible correlate: it selects the lure's drift direction on wall contact.</p>
 </section>
 
 <section class="doc-section" id="odds">
-  <h2>Three players, three realities</h2>
+  <h2>Effective probabilities</h2>
+  <p>With the gate's structure known, the per-catch Spirit probability at Buma follows directly. All rows assume the venue's other preconditions (deep cast, strike landed):</p>
   <div class="table-wrap"><table>
-    <thead><tr><th>Setup</th><th>Spirit chance</th><th>What a session feels like</th></tr></thead>
+    <thead><tr><th>Setup</th><th>Per-catch probability</th><th>Derivation</th></tr></thead>
     <tbody>
-      <tr><td><strong>Perfect play</strong> - third rod, Normal Lure, 50+ lifetime casts, the template-0 cadence every cast</td><td><strong>1/16</strong> on even casts &asymp; <strong>1 in 32</strong> average</td><td>Expect Spirit inside ~30 casts - the community's number, finally true</td></tr>
-      <tr><td><strong>Right gear, no cadence</strong> - band 0 must come from the roll</td><td>~4.9% &times; &frac12; &times; 1/16 &asymp; <strong>1 in ~660</strong></td><td>A 250-catch session comes up empty ~68% of the time - the reported droughts are the <em>expected</em> outcome</td></tr>
-      <tr><td><strong>Wrong rod, or under 51 lifetime casts</strong></td><td><strong>0</strong></td><td>No amount of &ldquo;Good!&rdquo; helps; the gate short-circuits before the dice</td></tr>
+      <tr><td>Third rod, Normal Lure, 50+ lifetime casts, template-0 cadence held at the strike</td><td><strong>&asymp; 1/32</strong></td><td>1/16 gate roll &times; &frac12; counter parity; band 0 is set deterministically by the cadence</td></tr>
+      <tr><td>Third rod, Normal Lure, 50+ lifetime casts, no cadence</td><td><strong>&asymp; 1/660</strong></td><td>199/4096 band-0 roll &times; &frac12; parity &times; 1/16 gate roll</td></tr>
+      <tr><td>Either other rod, or under 51 lifetime casts</td><td><strong>0</strong></td><td>The gate's conjunction fails before the random roll</td></tr>
     </tbody>
   </table></div>
-  <p>The community's binomial argument was sound arithmetic on the wrong model: under a flat 1/32, 250 Spiritless catches has probability ~0.04% - a genuine anomaly. Under the real gate it is the majority outcome. And the players who did land Spirit are the ones who, knowingly or not, walked the whole gate: right rod, deep cast, an even-numbered cast, and a reel rhythm that happened to end in a Square tap. Baraba, by contrast, is dramatically easier - no cast-count threshold and a 1-in-4 upgrade - which matches its reputation as merely uncommon rather than mythical.</p>
-  <p>One last twist for the optimal hunter: passing the gate only means a Spirit is <em>on the line</em>. Its species record carries the table's largest pull factor - the hardest tension fight in the minigame - so the gate can pass and the catch still snap off in the reel duel.</p>
+  <p>These figures reconcile the published model with the observed rates. Under a flat 1/32 per catch, 250 catches without a Spirit has probability ~0.04%; under the gated model without cadence input, the same drought has probability ~68% - long empty sessions are the expected outcome, not an anomaly. The catches that did occur correspond to sessions in which every condition held, including a reel rhythm ending in a Square tap. Baraba at Vidna carries no cast-count threshold and a 1-in-4 gate roll, consistent with its far higher observed rate.</p>
+  <p>Passing the gate selects the species; landing it is a separate problem. The Spirit record carries the species table's largest pull factor - the strongest tension fight in the minigame - so a gated strike can still be lost in the reel.</p>
 </section>
 
-<section class="doc-section" id="verdicts">
-  <h2>The superstitions, scored against the code</h2>
+<section class="doc-section" id="reports">
+  <h2>Player reports, mapped to mechanisms</h2>
+  <p>Long-standing player observations about Spirit fishing each correspond to a specific mechanism above:</p>
   <div class="table-wrap"><table>
-    <thead><tr><th>Community lore</th><th>Verdict</th><th>What the code says</th></tr></thead>
+    <thead><tr><th>Reported behaviour</th><th>Mechanism</th></tr></thead>
     <tbody>
-      <tr><td>&ldquo;You have to press Square specifically&rdquo;</td><td><strong>Real</strong></td><td>Template 0 - the only band-0 cadence - is the only one ending with a Square tap</td></tr>
-      <tr><td>&ldquo;It matters where in the pond you cast&rdquo;</td><td><strong>Real</strong></td><td>Bonus cells flagged in the floor grid (bit <code>0x4000</code>) raise the strike rate - more strikes, more gate rolls (species unchanged)</td></tr>
-      <tr><td>&ldquo;It has to be a certain distance&rdquo;</td><td><strong>Real</strong></td><td>Under 200 line units the fish cannot strike; under 500 the band never re-rolls and the cadence check never runs</td></tr>
-      <tr><td>&ldquo;Getting Good! shifts the rarity&rdquo;</td><td><strong>Half-real</strong></td><td>Four cadences fire the same splash; three of them park you in the wrong band on purpose</td></tr>
-      <tr><td>&ldquo;1/32 with a Good on Normal Lure&rdquo;</td><td><strong>Half-real</strong></td><td>The right average - but only with the third rod, 50+ lifetime casts, and the exact cadence</td></tr>
-      <tr><td>&ldquo;Hundreds of catches with no Spirit is a statistical anomaly&rdquo;</td><td><strong>Wrong</strong></td><td>Only under the flat-1/32 model; under the real gate the drought is the expected outcome</td></tr>
+      <tr><td>Square presses associated with Spirit catches</td><td>Template 0 - the only cadence that sets band 0 - is the only template ending in a Square tap</td></tr>
+      <tr><td>Pond position affects results</td><td>Cells flagged <code>0x4000</code> in the floor grid raise the strike rate, increasing how often the gate is evaluated (the species table is unaffected)</td></tr>
+      <tr><td>Cast distance matters</td><td>Below 200 line units no strike occurs; below 500 the band never re-rolls and the cadence check never runs</td></tr>
+      <tr><td>&ldquo;Good!&rdquo; improves the odds</td><td>Only when the matched template is 0; the other three templates set bands 1&ndash;3 and fire the same splash</td></tr>
+      <tr><td>1/32 with a &ldquo;Good!&rdquo; on Normal Lure</td><td>Matches the effective rate when the rod, cast-counter, and cadence conditions all hold; the additional conditions are not externally observable</td></tr>
+      <tr><td>Long droughts despite correct lure</td><td>Expected under the gated model - and certain with either other rod or under 51 lifetime casts</td></tr>
     </tbody>
   </table></div>
 </section>
