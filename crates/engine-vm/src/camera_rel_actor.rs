@@ -1,6 +1,9 @@
 //! Camera-relative effect-actor spawn: the parameter-block normalizer.
 //!
-//! PORT: FUN_80021248
+//! (The `PORT:` tag for `FUN_80021248` sits on
+//! [`normalize_camera_relative_params`], the item that implements it. A
+//! module-level tag would make the liveness analysis attribute every
+//! `pub` item in the file to that address.)
 //!
 //! `FUN_80021248(record)` is the SCUS spawner for the camera-anchored
 //! effect-actor family (spawn descriptor `DAT_8007071C`, allocated onto the
@@ -72,6 +75,17 @@ pub struct NormalizedParams {
 
 /// Normalize a camera-relative parameter record - the `0x80021304..`
 /// four-loop body of `FUN_80021248`.
+///
+/// PORT: FUN_80021248
+///
+/// NOT WIRED: the camera half is available
+/// (`legaia_engine_core::camera::RetailCamGlobals::camera_snapshot`), but
+/// nothing produces the 20-halfword spawn record. The engine's only
+/// effect-spawn path is the *other* family (PROT 0873 `efect.dat` via
+/// `World::try_spawn_effect`); this normalizer's family - spawn descriptor
+/// `DAT_8007071C`, actor list `_DAT_8007C34C` - has no engine counterpart,
+/// so porting its allocator `FUN_80020DE0` is the prerequisite. See the
+/// module docs.
 pub fn normalize_camera_relative_params(
     record: &[i16; 20],
     cam: &CameraSnapshot,

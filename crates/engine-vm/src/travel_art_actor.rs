@@ -99,6 +99,10 @@ impl TravelArt {
 /// 128-unit field tile.
 ///
 /// PORT: FUN_801ee094 (`0x801EE2B4..0x801EE2DC` destination store)
+///
+/// NOT WIRED: reached only from [`destination_for`] and the tests, both of
+/// which sit under [`TravelArtActor::tick`]'s own disclosure - the engine
+/// has no travel-art trigger, so nothing constructs an actor.
 pub fn tile_centre(tile: i32) -> i32 {
     (tile << 7) + 0x40
 }
@@ -125,6 +129,12 @@ pub struct TravelDestination {
 ///
 /// PORT: FUN_801ee094 (`0x801EE1F0..0x801EE264` scan)
 /// REF: FUN_801ee328 (the byte-identical scan in the Rula handler)
+///
+/// NOT WIRED: this is the kernel the caller passes to
+/// [`TravelArtActor::tick`] as its `resolve` closure, and nothing
+/// constructs a `TravelArtActor` - the engine has no travel-art trigger
+/// (see that method's disclosure). It also has no visited-map table to scan:
+/// `World` keeps no `0x10`-stride record list keyed by map name.
 pub fn find_visited_map(
     count: usize,
     current_map: u32,
@@ -136,6 +146,10 @@ pub fn find_visited_map(
 /// Build the destination for a matched record.
 ///
 /// PORT: FUN_801ee094 (`0x801EE268..0x801EE2E4`)
+///
+/// NOT WIRED: the other half of the `resolve` closure
+/// [`TravelArtActor::tick`] takes, and nothing constructs a
+/// `TravelArtActor` - see that method's disclosure.
 pub fn destination_for(record_index: usize, tile_x: i32, tile_z: i32) -> TravelDestination {
     TravelDestination {
         record_index,

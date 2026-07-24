@@ -13,6 +13,7 @@ below to jump within this page.
 
 **Overlay + key functions**
 - [Overlay structure](#overlay-structure)
+- [Panel window system](#the-panel-window-system---fun_801e9b3c--fun_801e9dc8--fun_801ea9b0) - the script interpreter, the shared list cursor, the dev-menu row dispatcher
 - [Key functions](#key-functions) - [controller `FUN_801E76D4`](#fun_801e76d4---world-map-controller-9320-bytes) · [debug-menu renderer `FUN_801EAD98`](#fun_801ead98---world-map-debug-menu-renderer-7280-bytes) · [entity tick `FUN_801DA51C`](#fun_801da51c---world-map-entity-tick-260-bytes)
 
 **Entity / encounter SM**
@@ -169,9 +170,16 @@ Cursor wrap is a **swap, not a clamp**: below `row_start` jumps to `row_end`
 and above `row_end` jumps back to `row_start`.
 
 The menu list is drawn by `FUN_801EAD98(ctx, x, y, row_start, row_end)`, gated
-on the phase / helper product being `1` or `3` - so phase 1 always draws, phase
-3 draws only while `FUN_801EA9B0` reports the unwind still running, and phases
-2 and 4 never draw. Input is suppressed entirely while `_DAT_8007BB80 != 0`.
+on the phase / helper product being `1` or `3` - so phase 1 draws while input
+is allowed, phase 3 always draws, and phases 2 and 4 never draw. Input is
+suppressed entirely while `_DAT_8007BB80 != 0`.
+
+The phase-3 leg's multiplicand is `FUN_801EA9B0`'s return, and that return is
+the constant `1`: `s1` is loaded with `1` in the delay slot of the bound check
+at `0x801EA9D0` and every arm - including the out-of-range one at
+`0x801EAD7C` - exits through `move v0,s1`. So the cancel-unwind phase is not
+conditionally drawn. ("Phase 3 draws only while the unwind is still running"
+was the earlier reading; it is falsified by the epilogue.)
 
 #### Engine port
 
@@ -204,6 +212,103 @@ Both offsets are load-base independent - read straight off the `param_1 + N`
 / `param_2 + N` immediates. The per-character portrait/separator icons
 (`FUN_8002C488`) remain a UI-icon-atlas sprite seam owned by the host, as with
 the status page's LV/HP/MP icons.
+
+### The panel window system - `FUN_801E9B3C` / `FUN_801E9DC8` / `FUN_801EA9B0`
+
+The dev menu and every other `ctx[+0x54]`-keyed panel actor in the world-map
+band (`FUN_801ED308`, `FUN_801ED590`, `FUN_801EDF00`, `FUN_801EE5D4`,
+`FUN_801EE90C`, `FUN_801EF014`, ...) do almost no window work themselves.
+Three shared leaves carry it, and all three live in the field overlay
+(PROT 0897, base `0x801CE818`).
+
+#### `FUN_801E9B3C` - panel command-script interpreter (652 bytes)
+
+Entry `(script_ptr)`. Walks a table of 8-byte records until one reads zero:
+
+| Field | Type | Role |
+|---|---|---|
+| `+0x00` | `u16` | Opcode. `0` terminates the script. |
+| `+0x02` | `i16` | Panel index into the descriptor array at `0x801F2B98`. |
+| `+0x04` | `u32` | Operand. Position arms read it as packed `(x = lo, y = hi)`. |
+
+The arm index is `(i16)(op - 1)` bounded by `sltiu ..,0xd`, dispatched through
+the 13-entry table at `0x801CF25C`. Both cursors advance by 8 on every path,
+including the default arm, so a record is always consumed exactly once.
+
+| `op` | Arm |
+|---|---|
+| 1 | Ensure the panel exists, place it at `desc[+0x08]` / `desc[+0x0A]`. |
+| 2 | Ensure the panel exists, place it at the operand position. |
+| 3 | Store the operand's low byte into the window object's `+0x1D`. |
+| 4 | Close this panel (`FUN_80035978`). |
+| 5 | Close every panel (`FUN_80035A4C`). |
+| 6 | Zero the window object's `+0x20` halfword. |
+| 8 | Retire the panel's actor (`FUN_800319A8`). |
+| 9 | Slide (`FUN_800358C0`) to the operand position, or to the descriptor position when the operand is zero. |
+| 10 | Retire and respawn, sliding back to the live object's own `+0x0A` / `+0x0C`. |
+| 12 | Resize the party panel, then recurse into the nested script at `0x801F3170`. |
+| 7, 11, 13, `> 13` | Shared default - the record is consumed and nothing happens. |
+
+"Ensure the panel exists" is the `FUN_80035334(idx)` lookup followed, on a
+miss, by `FUN_80032434(idx, &desc[idx])`.
+
+The `op 12` party arm is the one piece of arithmetic in the routine. From the
+live party count at `0x80084594` it writes descriptor 7's height
+(`+0x0E`) `= members * 56 - 7` and its `y` (`+0x0A`, mirrored at `+0x12`)
+`= 202 - height`, i.e. the panel is bottom-anchored at 202 - the same shape as
+the list picker's 208-pixel anchor above.
+
+The arm-to-opcode mapping is Ghidra's resolution of the jump table; the arm
+*bodies*, the bound, the record stride and the party arithmetic are read from
+the instruction stream.
+
+#### `FUN_801E9DC8` - shared vertical list cursor (412 bytes)
+
+Entry `(cursor_ptr, count, wrap)`, returns `0`/`1`/`2`/`3`. It is the picker
+kernel the band's actors call - `FUN_801EE90C` invokes it as
+`(0x8007BB88, 2, wrap = 1)`, `FUN_801EF014` drives its destination list
+through it.
+
+The two action buttons are tested first, against the **held** mask
+`_DAT_8007B874` and the two configurable button masks at `0x800846D0` /
+`0x800846D4`; either one returns immediately (SFX `0x36` -> `1`, SFX `0x37`
+-> `2`) without touching the cursor. Only then are Up (`0x1000`) and Down
+(`0x4000`) tested, against the **newly-pressed** mask `_DAT_8007BB84`, both
+without an `else`, so a frame carrying both edges runs both steps.
+
+The wrapping and clamping modes differ in more than the fold:
+
+| | `wrap == 0` | `wrap != 0` |
+|---|---|---|
+| Up | only when `cursor > 0` | always; `0` jumps to `count - 1` |
+| Down | only when `cursor + 1 < count` | always; `count` folds to `0` |
+| SFX `0x21` | only when the cursor actually moves | on every press |
+
+#### `FUN_801EA9B0` - dev-menu row-action dispatcher (1000 bytes)
+
+Entry `(ctx)`. Bounds `ctx[+0x9E]` against `0x18` and dispatches through the
+24-entry table at `0x801CF2E4`; the out-of-range arm parks `ctx[+0x54] = 1`.
+The arms are debug cheats - restore the party's HP/MP from their maxima,
+cycle the encounter rate at `_DAT_8007B5F8`, max every stat on the three
+`0x80084140 + n*0x414` records, grant the whole item table through
+`FUN_800421D4`, cycle the BGM index at `_DAT_801F2E90`, toggle
+`_DAT_8007B606`.
+
+The routine's return is the constant `1` on every path (see the draw-gate
+correction above). The 25-instruction listing some dumps carry at this VA is
+the same body with a hole: Ghidra stops at the `jr v0` and resumes at the
+epilogue, because the jump-table cases are not reachable by linear flow.
+
+#### Engine port
+
+`legaia_engine_vm::world_map_panel` carries all three: `PanelCommand` /
+`PanelEffect` / `decode_panel_command` / `run_panel_script` /
+`party_panel_geometry` for `FUN_801E9B3C`, `list_cursor_input` for
+`FUN_801E9DC8`, and `dev_menu_action` for `FUN_801EA9B0`'s bound / park-phase
+/ constant-return contract. The arms' global pokes are not modelled - they
+address debug state with no engine counterpart. Like the rest of the dev-menu
+cluster the module is unhosted: the engine has no panel-window list and no
+`ctx[+0x54]` panel actor to open one.
 
 ### Dev-menu sub-panel renderers and the value-adjust input SM
 
@@ -465,7 +570,7 @@ not factor into `engine-vm` cleanly:
 | Function | Dump | What it is |
 |---|---|---|
 | `FUN_801E5338` | `801e5338.txt` | Sparkle emitter: spawns up to 8 `SPRT` particles at `rand()` offsets (`FUN_80056798`) around `ctx[+0x14/+0x16]`, animates each through a 10-frame sprite anim, posts them via `AddPrim` (`FUN_8003D2C4`); phase `2` waits for all to retire, then sets bit `0x8` |
-| `FUN_801EA9B0` | `overlay_debug_menu_801ea9b0.txt` | 24-case SM dispatcher on `ctx[+0x9e]` (jump table `0x801CF2E4`); the out-of-range arm parks `ctx[+0x54] = 1` and returns. Sibling of the dev-menu renderer `FUN_801EAD98` |
+| `FUN_801EA9B0` | `overlay_cutscene_dialogue_801ea9b0.txt` | Dev-menu row-action dispatcher. Ported - see [the panel window system](#the-panel-window-system---fun_801e9b3c--fun_801e9dc8--fun_801ea9b0) |
 | `FUN_801EE094` | `801ee094.txt` | **Riremito** travel-art actor (string `"ON RIREMITO"`): scans the visited-map table (`_DAT_8007B806` count, records at `+0xC`, `0x10` stride) for the current map `_DAT_80084628`; a miss parks phase `99` and prints `"UNFIND MAP NUMBER %d"` |
 | `FUN_801EE328` | `801ee328.txt` | **Rula** travel-art actor (string `"ON RULA"`): same map-table search; phase 2 raises the halt bit on `_DAT_8007C364[+0x10]`, scrolls `_DAT_8007C364[+0x16]` and spawns a flash quad via `FUN_80024E80` |
 | `FUN_801EF014` | `801ef014.txt` | Destination list-picker actor over the tile descriptor `_DAT_8007B450`: counts selectable cells (`+1`), drives a cursor prompt (`FUN_801E9DC8`), commits the pick into `_DAT_8007BB88`, then exits via `ctx[+0x50] = 0x1A` |
