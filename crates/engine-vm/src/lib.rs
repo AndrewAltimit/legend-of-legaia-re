@@ -119,6 +119,7 @@ pub mod move_buffer;
 pub mod move_no_effect_guard;
 pub mod move_vm;
 pub mod move_vm_overlay_ext;
+pub mod panel_backread_loader;
 pub mod prim_dispatch;
 pub mod scus_battle_helpers;
 pub mod scus_core_helpers;
@@ -136,6 +137,7 @@ pub mod world_map_dim;
 pub mod world_map_horizon;
 pub mod world_map_overlay;
 pub mod world_map_panel;
+pub mod world_map_panel_actors;
 pub mod world_map_particle_burst;
 
 /// Width of one bytecode instruction in bytes.

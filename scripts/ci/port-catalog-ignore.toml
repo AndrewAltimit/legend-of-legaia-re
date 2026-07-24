@@ -864,11 +864,19 @@
 "801e3628" = "INTERIOR: VA lies inside the dumped body of 801e3578 in 0897"
 "801eccac" = "INTERIOR: no `addiu sp,sp,-N` prologue; body reads s0/s1/s2 and a caller stack slot it never writes - a tail fragment reaching the parent's epilogue"
 "801f02d0" = "INTERIOR: dump is a citation stub for 801eff30"
-# 801f71e0 is NOT ignored: the `INTERIOR in 0897` reading is the 0x801CE818
-# base's. At the co-resident overlay PROT 0967's own base 0x801F69D8 the dump
-# `overlay_effect_0967_801f71e0` is a self-entry 167-instruction body - the
-# sparring-tutorial message-pacing driver, and a hot hit in the S5 trace. The
-# row is VA-aliased; ignoring it deleted a real port site.
+# 801f71e0 was previously held out of this list on the grounds that
+# `overlay_effect_0967_801f71e0` is "a self-entry 167-instruction body" at PROT
+# 0967's own base. The dump's bytes are right and its base is right; its
+# *entry* is a Ghidra artifact, because `dump_effect_overlay_0967.py` creates a
+# function at each traced hit address. Read straight out of the extracted 0967
+# image at 0x801F69D8: the word AT 0x801F71E0 is `lw v1,-0x42dc(v0)` and the
+# word BEFORE it is `lui v0,0x8008` - the two halves of one LUI+LW pair - and
+# 0x801F71E0 is the target of `bne v1,v0,0x801f71e0` sixteen bytes earlier.
+# Between the only prologue below it (0x801F6B78 `addiu sp,sp,-0x38`) and it
+# there is no `jr ra`; the enclosing routine's sole `jr ra` is at 0x801F7474.
+# `locate-entry-image.py` agrees across all 31 based images: no frame, no
+# in-image jal. The message-pacing driver is real, but its entry is not here.
+"801f71e0" = "INTERIOR: a `bne` target and the second half of a LUI+LW pair inside the PROT 0967 routine whose prologue is 0x801F6B78 and whose only `jr ra` is 0x801F7474. Read from the extracted 0967 image at base 0x801F69D8: the word at the VA is `lw v1,-0x42dc(v0)` with v0 written by the `lui` one word earlier, so it owns no frame and cannot be called. The dump that reported it as an entry was taken by a script that creates a function at each traced hit address."
 "801e23ec" = "INTERIOR: VA lies inside the dumped body of 801de840 in 0897 - `801e23ec  lh v0,0x68(s5)` is an instruction of the field VM"
 "801e30e4" = "INTERIOR: dump resolves entry=801de840, not 801e30e4; `801e30e4  jal 0x8003ce9c` is an instruction of the field VM in 0897 too"
 "801f7628" = "INTERIOR: dump resolves entry=801f5748/801f71e0, not 801f7628"
