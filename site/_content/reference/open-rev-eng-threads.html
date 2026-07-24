@@ -77,6 +77,12 @@
         <td><a href="../subsystems/battle.html">battle</a></td>
       </tr>
       <tr>
+        <td>Endless battle-camera orbit (community-reported on Gaza 2)</td>
+        <td><span class="tag tag-partial">mostly resolved</span> (grade <span class="tag tag-done">disassembly</span>+<span class="tag tag-done">capture</span>)</td>
+        <td>The orbit is a pure symptom (the idle azimuth sweep in <code>FUN_801D0748</code> never consults the state machine); the real defect class is a park in done-state <code>0x51</code>, whose exit countdown is gated on the HP-readout settle check <code>FUN_801E7250</code> &mdash; a party slot whose live HP and displayed HP disagree while the pending-delta accumulator reads zero holds the gate forever. The two first-pass generator candidates are measured out on the Gaza 2 fight itself (see the do-not-re-walk rows): the overkill-clamp asymmetry only amplifies a pre-existing offset, and a Lost-Grail capture campaign drove twelve retail auto-revives with every restore landing on an already-drained accumulator. Open: an action shape that credits the readout late relative to its own end, a commit-skip path with a live credit, or a different absorbing state behind the community reports.</td>
+        <td><a href="../subsystems/battle-action.html">battle-action</a></td>
+      </tr>
+      <tr>
         <td>Battle-actor <code>+0x16E</code> bit <code>0x400</code> applier (guard-disabling status)</td>
         <td><span class="tag tag-done">resolved</span> (exhaustive negative)</td>
         <td>Bit <code>0x400</code> has <strong>no retail setter</strong>: a word-level decode of <code>SCUS_942.54</code> plus every static-overlay image (all stores covering <code>+0x16C..+0x171</code>, pointer precomputes, <code>ori</code>/<code>sllv</code> bit-set shapes, the <code>+0x6F6</code> mirror, the <code>+0x21F</code> deferral) finds only clears. The infliction appliers (hit leg <code>FUN_801EC3E4</code>, cast leg <code>FUN_801E09F8</code>) map kinds 3/4/5/6 to bits <code>0x1</code>/<code>0x2</code>/random-<code>0x38</code>/<code>0x1000</code> and kinds 1-2 to the <code>0x380</code> deferral; no kind reaches <code>0x400</code>. Latent content with a full consumer/cure lifecycle.</td>

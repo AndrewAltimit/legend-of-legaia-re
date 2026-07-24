@@ -322,6 +322,35 @@ single point while clearing its `+0x10` is enough, and the next party-targeted
 action hangs while monster-targeted actions in between still complete normally.
 Probe: `scripts/pcsx-redux/autorun_gaza2_hpbar_settle.lua`.
 
+### Phased crediting: the invariant breaks mid-action by design
+
+A multi-strike action does not apply its damage once. The unsafe kernel
+credits the bar accumulator **per strike** - each strike adds the same delta
+`a0 = s0 - s1` to the per-action damage total `actor[+0x00]` (`0x801EDB40`)
+and to the accumulator `+0x10` (`0x801EDB58`), paired stores off one register -
+while live HP is committed **once, at the end of the resolution**, from the
+accumulated total (`0x801EEA10`). Between the first credit and the commit the
+readout is draining toward damage that live HP does not yet show, so a
+watchpoint sees `+0x14C != +0x172` with `+0x10 == 0` - the absorbing shape -
+**transiently, inside the action, as normal behaviour**. At the commit the
+total that live HP absorbs equals the sum the bar was credited, and the pair
+reconciles; the state `0x51` settle wait then holds the action open until the
+tail of the drain lands. Measured end to end on the Gaza 2 save
+(`autorun_gaza2_acc_discard.lua`, `invariant.csv` / `acc_writes.csv`): a
+three-strike physical resolved as bar credits of 338 + 344 + 304 drained
+per-strike, one live-HP commit of 986 at the end, and a bar that landed
+exactly on live HP.
+
+Two prior observations are re-attributed by this. The "party slot holding
+live HP 266 with the bar drawing 0" capture that used to sit under the clamp
+asymmetry below is a phased mid-action state - the window closed with a death
+commit ~90 vsyncs later. And a mid-action watchpoint that samples between
+strike and commit will always find "absorbing" shapes on healthy fights;
+only a mismatch that **survives the action's own commit and settle wait** is
+a real desync. No such survivor has been captured from retail-only play -
+see [the instrumentation section](#consequences-for-instrumentation) for the
+measured campaign.
+
 ### Where the desync comes from: two seeding conventions
 
 Every writer of `+0x10` in the dumped battle corpus follows one of two
@@ -381,26 +410,36 @@ one of the three bare assigns. Each call is guarded by
 `lhu v0,0x14c(<actor>); bne v0,zero,<skip>`, so it fires only on a member whose
 live HP has just reached zero.
 
-That is the worst possible moment. The killing hit credited the readout
-accumulator with the whole remaining bar, so the readout is mid-drop when the
-revive lands; the assign discards whatever is left of it. With live HP `0`,
-readout `B` still falling, and accumulator `B`, a full revive to `M` leaves live
-HP `M`, sets the accumulator to `-M`, ramps the readout to `B + M`, and settles
-**`B` above live HP** with the accumulator at zero. And `0x50`'s only successor
-is `0x51` - the state that asks whether the readout has settled. The park can
-therefore land on the very action that triggered the revive.
+On paper that is the worst possible moment: if the readout is still mid-drop
+when the revive lands, the assign discards whatever is left of it, the bar
+settles above live HP, and `0x50`'s only successor is `0x51` - the state that
+asks whether the readout has settled. The park would land on the very action
+that triggered the revive.
 
-The same arm is what a **Phoenix** (class 4) reaches from the battle item menu,
-and the class 0 / class 1 heal arms reach the sibling assign at `0x800408FC`.
-So a downed-and-revived party member in a long boss fight is the shape that
-makes an otherwise rare race routine, and it explains why the reports cluster on
-late-game bosses rather than on ordinary encounters.
+Measured, the race is **starved on the Gaza 2 fight**. The probe
+`scripts/pcsx-redux/autorun_gaza2_acc_discard.lua` arms an Exec breakpoint on
+every `+0x10` writer in the corpus plus the two Final Heal call sites, and a
+capture campaign on the Gaza 2 save (Lost Grail armed on the party, no
+harness write touching any HP / readout / accumulator field) drove **twelve**
+auto-revives through `FUN_801E6968` across single-target and party-wide,
+cast-path and kernel-path kills. **Every assign landed on an accumulator
+already drained to zero**, margins 143-280 vsyncs. The starvation is
+structural on this move set: [phased crediting](#phased-crediting-the-invariant-breaks-mid-action-by-design)
+lands the bar credits per strike, *early* in the resolution, while `0x50`
+arrives only after the remaining targets resolve and the effects tear down -
+and a quarter-step drain empties any accumulator in at most ~35 rendered
+frames, faster than any observed credit-to-`0x50` gap. A kill whose final
+strike credits the bar *late* relative to its own `0x50` - a single-strike,
+fast-ending killing action - stays the theoretical opening; Gaza 2 has no
+such move, and no park has been captured from retail-only play.
 
-The store shapes are **Confirmed** from disassembly. Whether ordinary play
-actually lands a restore inside a drain window is a timing question, measured by
-`scripts/pcsx-redux/autorun_gaza2_acc_discard.lua`, which arms an Exec
-breakpoint on all nine `+0x10` writers and flags any assign that lands on a
-non-zero accumulator.
+The same arm is what a **Phoenix** (class 4) reaches from the battle item
+menu, and the class 0 / class 1 heal arms reach the sibling assign at
+`0x800408FC`. But note the shape of the gate itself: a party-targeted action
+holds its own `0x51` open until every party readout settles, so **the drain a
+menu restore could interrupt has always finished before the menu can act** -
+the inter-action race is closed by the very wait this page documents. The
+intra-action Final Heal is the one crack, and it is measured tight above.
 
 ### The clamp asymmetry: two overkill guards against different references
 
@@ -441,18 +480,28 @@ and is clamped against **live HP**:
 801eea74  sw   zero,0x0(v1)   ; damage total cleared
 ```
 
-The two clamps agree only while `+0x172 == +0x14C`. Once the bar is lagging for
-any reason, a hit whose total exceeds the **displayed** bar but not **live HP**
-trips the bar-side clamp alone: the bar drains to exactly `0` while live HP
-stays positive, and the accumulator lands at zero. That is the absorbing state
-at full depth, and it is reachable from ordinary damage. A plain capture on the
-Gaza 2 save shows exactly it - a party slot holding live HP `266` with the bar
-drawing `0` and a zero accumulator.
+The two clamps agree only while `+0x172 == +0x14C` **at the action's start** -
+and the `0x51` settle wait of the previous party-targeted action guarantees
+exactly that. From a synced start the arithmetic is forced to agree: the
+bar-side clamp trips only when the credited sum exceeds the starting bar,
+which from a synced start means it exceeds starting live HP too, so the HP
+commit floors at `0` on the same action and both readings land at zero
+together (a kill, consistent). The asymmetry is therefore an **amplifier of a
+pre-existing offset, not a standalone generator**: it needs `+0x172` already
+below `+0x14C` when the action begins, which is the very desync whose origin
+is in question. The earlier reading of this section - "reachable from
+ordinary damage, no restore and no timing race" - is withdrawn; its
+supporting capture (live HP `266`, bar `0`, zero accumulator on the Gaza 2
+save) is a [phased mid-action state](#phased-crediting-the-invariant-breaks-mid-action-by-design)
+that closed with a death commit, not a settled desync.
 
 Three further guards above the commit (`0x801EE988`, `0x801EE9AC`, `0x801EE9EC`)
 branch to `0x801EEB5C` / `0x801EEB60` and skip the live-HP write entirely. A
-skip that leaves the bar accumulator already credited moves the bar without
-moving live HP, which is the `bar < live` direction - also observed live.
+skip that fires with the bar accumulator already credited would move the bar
+without moving live HP - a real credit-without-commit generator if any retail
+path reaches it. No capture has caught one firing that way yet; which action
+classes route through those guards is the open question this thread reduces
+to.
 
 Probe: `scripts/pcsx-redux/autorun_gaza2_hpbar_writers.lua` puts Write
 watchpoints on each party actor's `+0x00` / `+0x10` / `+0x14C` / `+0x172` rather
@@ -470,6 +519,28 @@ downward, the ramp then stops at zero accumulator, and the bar is left short of
 a live HP that the clamp holds pinned at maximum. A "reproduction" captured
 under such a clamp is measuring the instrument. A clamp that also assigns
 `+0x172` and zeroes `+0x10` keeps the invariant intact.
+
+Two further instrumentation facts, measured on the Gaza 2 save:
+
+- **The stat aggregator does not tick during battle.** Poking an equipment id
+  into a character record mid-battle never reaches the ability bitfield -
+  `FUN_80042558` runs again only on isolated menu-side paths (observed twice
+  in ~48k captured vsyncs). To arm an equipment-derived battle behaviour (the
+  Lost Grail Final Heal bit `+0xF8 & 0x80`) from a save already inside the
+  battle, seed the bit once alongside the equipment id - that mirrors what
+  pre-battle aggregation of the same equipment would have left. The
+  aggregation-derived bit is also cleared when the revive consumes the grail
+  and any aggregator pass rebuilds the field, so re-arming between deaths is
+  part of the same mirroring.
+- **The watchpoint shape that matters is action-scoped, not frame-scoped.**
+  Because of [phased crediting](#phased-crediting-the-invariant-breaks-mid-action-by-design),
+  per-frame sampling flags absorbing shapes on healthy fights. The probe
+  `autorun_gaza2_acc_discard.lua` therefore keys its verdicts on the two
+  events that survive phasing: an assigning store landing on a non-zero
+  accumulator (`discards.csv`), and a `0x51` settle verdict streak with a
+  frozen `ctx[+0x6D8]` (`settle.csv`). A campaign of three such captures
+  (~84k vsyncs, twelve Final Heal revives, one menu heal, no harness write to
+  any HP / readout / accumulator field) produced zero of either.
 
 ## Cross-references with other battle helpers
 
@@ -1594,7 +1665,7 @@ the disassembly of PROT entry 0898 at base `0x801CE818`.
 - **Unlisted `ctx[7]` states are inert/reserved, not a crash (`FUN_801E295C`).** The state byte dispatches through a 256-entry `jr` jump table at `0x801CED44` with **no `default`** (`sltiu v0,ctx[7],0x100; jr v0`; see `ghidra/scripts/funcs/overlay_0898_801e295c.txt`). The handled states are `0x00`, `0x0A`–`0x0C`, `0x14`–`0x19`, `0x1E`–`0x20`, `0x28`–`0x2E`, `0x32`–`0x38`, `0x3C`–`0x40`, `0x46`–`0x48`, `0x50`–`0x52`, `0x5A`, `0x64`–`0x66`, `0x68`–`0x6B`, `0x6E`–`0x71`, `0xFD`, `0xFF`. Every other byte value in `0x00`–`0xFF` has no case body: its table slot falls straight to the shared post-switch epilogue (the knockback/shove settle at `0x801E6814`), a safe no-op advance, never an out-of-bounds jump.
 - The inert indices are the inter-band gaps (`0x07`, `0x21`–`0x27`, `0x39`–`0x3B`, `0x41`–`0x45`, `0x49`–`0x4F`, `0x53`–`0x59`, `0x5B`–`0x63`, `0x6C`–`0x6D`, `0x72`–`0xFC`) plus the low-band ones. No path in the dumped battle-overlay corpus writes any of them into `ctx[7]` (corpus-scoped: a value injected by an un-dumped overlay would still dispatch safely). **One exception:** state `0x67` **is** written (case `0x66` sets `ctx[7] = 0x67`) yet has no case body — a genuine written-but-inert state that also lands on the epilogue.
 - State `0x47` (spirit-arts sustain): the `actor[+0x1F9] != 0` "spirit shield" branch is **resolved**. `+0x1F9` is set by the damage-application primitive `FUN_800402F4` case 5 (spirit-shield spirit → `+0x1F9 = 1`, gated on a non-zero target roll) and cleared by case 4 (cleanse → `+0x1F9 = 0`). Which case runs is selected by `actor[+0x1E8]`, seeded at [state `0x3C`](#state-table) from the spell table's class byte (`DAT_800754C8 + spell_id*0xC + 0`): class `== 5` routes to the shield write, class `== 4` to the cleanse. So the specific spirit that raises the shield is disc-side spell-table data, not a runtime constant. See [`spell-table.md`](../formats/spell-table.md).
-- **The `0x51` HP-bar settle gate is decoded and its softlock is reproducible; its retail trigger is not.** The mechanism, the exact branch that skips the countdown, and the absorbing `+0x14C != +0x172` / `+0x10 == 0` state are all measured - see [the section above](#the-0x51-exit-gate-and-the-hp-bar-settle-invariant). What is still open is which unaided retail sequence puts a party slot into that state. The mixed assign-vs-accumulate seeding of `+0x10` is the leading candidate class and has not been driven to a repro; every park captured so far needed an external HP write to set up.
+- **The `0x51` HP-bar settle gate is decoded and its softlock is reproducible; its retail trigger is not.** Mechanism and measurements: [the section above](#the-0x51-exit-gate-and-the-hp-bar-settle-invariant). Both first-stated generators are measured out on the Gaza 2 fight (clamp asymmetry = amplifier; the revive race starved by phased crediting - twelve retail revives, every assign on a drained accumulator); the narrowed open questions live in [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#endless-orbit---what-remains-open). Every park captured so far needed an external HP write to set up.
 - `FUN_801E7250` (`0x51`) and `FUN_801E7824` (`0x68`) are decoded from their `overlay_battle_action_*` dumps: the former is the **HP-bar drain settle check** (the `0x51` arm freezes the `ctx[+0x6D8]` countdown while any relevant actor's live HP `+0x14C` differs from its bar display value `+0x172`), the latter the **captured-monster takedown** (queued anim from the monster record, HP pair + facing zeroed, retarget to `8`, run-UI banner opened). Both ported in `crates/engine-vm/src/battle_action.rs`; see [`reference/functions.md`](../reference/functions.md).
 
 ## See also

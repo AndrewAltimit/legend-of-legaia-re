@@ -34,6 +34,8 @@ below.
 | Op-`0x4E` sub-ops 4..8 "absolute jump" / "rand -> next PC" readings | falsified (all sub-ops 0..9 are the 7-byte compare-and-skip) | [details ↓](#op-0x4e-sub-op-family---every-sub-op-09-is-a-compare) |
 | `801d58f0` / `801d63b0` as single shared port blockers | falsified (VA-aliasing artifact) | The two addresses host different code in different overlays (byte-verified: 80/228/124/308/1 B and 208/1036 B across 0897/baka/cutscene/debug-menu/fishing/slot/dance) - the port-catalog's bare-VA keying aggregated their refs into phantom top blockers. Tracked per-overlay via `overlay_<label>_<addr>` identities; catalog ignore category `va_aliased_overlay_local`. |
 | Charm battle softlock = unbounded reroll in `FUN_801E7320` | falsified (cannot spin from any reachable state) | The reroll loops are unbounded in isolation, but every reachable caller state has an exit: the scheduler `FUN_801DABA4` never seeds a dead actor (predicate `+0x14C != 0 && !(+0x16E & 0x4)`), the acting `0x380` monster is itself an in-band self-pick exit (`0x801E73E8` clears `+0x1DE`), and a band with zero living members means the previous `0x5A` already fired the wipe. The real defect is downstream in the `0x5A` victory arm's roster indexing ([battle.md](../subsystems/battle.md#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock)). Lesson: an unbounded loop hangs only under a reachable all-invalid state - check the predicates feeding it first. |
+| Gaza 2 `0x51` park: clamp asymmetry as a standalone retail generator | falsified (amplifier only; its exhibit was a phased mid-action state) | [details ↓](#gaza-2-0x51-park---the-two-falsified-generators) |
+| Gaza 2 `0x51` park: the Final Heal revive lands "at the worst possible moment" (mid-drain) | falsified on the Gaza 2 move set (12/12 revives found the accumulator already drained) | [details ↓](#gaza-2-0x51-park---the-two-falsified-generators) |
 
 ### Op-0x4E sub-op family - every sub-op 0..9 is a compare
 
@@ -58,6 +60,39 @@ bare-`break` arms for 2..9 were the collapsed switch - each raw loader ends `j 0
 label-call idiom). Disassembler + executing VM corrected: `field_disasm::decode_subops` (single
 0..=9 compare arm), `engine-vm` `field/step/flow.rs` + `FieldHost::op4e_char_level` /
 `slot_table_read`. cave01's `P2[12]` spawn gate is the live sub-5 exemplar.
+
+### Gaza 2 0x51 park - the two falsified generators
+
+*Status:* both first-pass "ordinary play" generators of the `0x51` HP-readout
+desync are falsified; what remains open is in
+[open-rev-eng-threads.md](open-rev-eng-threads.md#endless-orbit---what-remains-open).
+
+**Clamp asymmetry as a standalone generator.** The two overkill clamps in
+`FUN_801EC3E4` (accumulator vs displayed bar at `0x801EDB70`, live HP vs
+itself at `0x801EEA10`) can only disagree when the bar already lags live HP
+**at action start** - and the previous party-targeted action's own `0x51`
+settle wait guarantees it does not. From a synced start the arithmetic is
+forced: credits exceeding the starting bar also exceed starting HP, so both
+sides floor together (a kill, consistent). The "live HP 266 / bar 0 / zero
+accumulator in plain capture" exhibit that anchored the generator reading is
+per-strike **phased crediting** - paired stores `0x801EDB40`/`0x801EDB58`
+credit the action total and the accumulator per strike while live HP commits
+once at `0x801EEA10` - a transient that closed with a death commit ~90 vsyncs
+later. Lesson: a per-frame watchpoint cannot distinguish an absorbing desync
+from the inside of a healthy multi-strike resolution; only survival past the
+action's commit and settle wait counts.
+
+**The Final Heal revive "at the worst possible moment".** The assigning seed
+(`0x800410BC`) is real and the discard arithmetic stands, but the timing
+premise - the killing hit credits the whole bar so the readout is mid-drop at
+state `0x50` - does not survive measurement. Credits land per strike *early*
+in the resolution; `0x50` arrives after remaining targets resolve and effects
+tear down; the quarter-step drain empties any accumulator within ~35 rendered
+frames. A three-capture campaign (`autorun_gaza2_acc_discard.lua`,
+Lost-Grail-armed party, no harness HP/readout/accumulator writes, ~84k
+vsyncs) drove twelve retail `FUN_801E6968` revives across cast-path,
+kernel-path, single-target and party-wide kills: every assign hit
+`+0x10 == 0`, margins 143-280 vsyncs.
 
 ## Audio / sound driver
 
