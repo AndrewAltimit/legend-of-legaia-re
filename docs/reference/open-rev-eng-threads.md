@@ -147,13 +147,18 @@ accumulator - both entries with reasoning in
 
 What would close the thread now:
 
-- the **high-HP prediction**: the measured minimum last-credit-to-`0x51` gap
-  on Gaza 2 is ~27 rendered frames while the quarter-step drain takes 23
-  frames from a LV23 readout but 30 from `9999` - so a late-game-sized
-  readout killed by a fast-tailed move should cross the line and park
+- the **drain-vs-tail race on other move sets**: the measured minimum
+  last-credit-to-`0x51` gap on Gaza 2 is ~27 rendered frames while the
+  quarter-step drain takes 23 frames from a ~1300 readout (30 from `9999`;
+  +1 per doubling), so Gaza 2 misses by ~4 frames and a higher readout or a
+  faster-tailed move crosses
   ([battle-action.md](../subsystems/battle-action.md#where-the-desync-comes-from-two-seeding-conventions)
-  has the numbers). One capture with a high-max-HP party at any boss with a
-  Lost Grail equipped would confirm or refute it;
+  has the numbers). A community capture of the live park (JP version,
+  reported on both regions) shows a target readout drawn `1476/1476` - at
+  max, on a mid-game pool - so some fight's tail crosses at ~1476.
+  Identifying that fight and measuring its tail with the existing probe
+  would close the leg; whether the battle HUD clamps the drawn readout at
+  max (the overshoot face) is the sub-verification in flight;
 - a retail path through the `FUN_801EC3E4` commit-skip guards
   (`0x801EE988` / `0x801EE9AC` / `0x801EE9EC`) with a non-zero credit
   already applied - credit-without-commit is the one shape that leaves a

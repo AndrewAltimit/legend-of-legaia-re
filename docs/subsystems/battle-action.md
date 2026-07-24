@@ -441,11 +441,21 @@ frame per doubling while the action tail does not, and a `9999`-HP readout
 (30 frames) crosses the fastest tail. **The prediction that falls out: the
 discard-and-park fires for high-max-HP (late-game) parties killed by
 fast-tailed moves, and cannot fire at low HP pools** - matching the
-community's clustering of orbit reports on late-game bosses. Untested: it
-needs a capture with a late-game-sized readout, and the frame-vs-vsync
-clocking of the specific tail states (timed states compensate by
-`DAT_1F800393`, animation waits do not) shifts the line by a few frames
-either way.
+community's clustering of orbit reports on late-game bosses. Two caveats
+bound the claim. The frame-vs-vsync clocking of the specific tail states
+(timed states compensate by `DAT_1F800393`, animation waits do not) shifts
+the line by a few frames either way. And a community capture of the live
+softlock (Japanese version; the community reports the same park on both
+regions) shows the parked fight's target panel drawing a **mid-game** pool -
+`1476/1476`, displayed exactly at max - so a high readout is not *necessary*:
+the parked fight's move set evidently has a tail short enough to cross at
+~1476, faster than any tail Gaza 2 showed under measurement. What the
+readout-at-max face fits is the **overshoot direction**: a discarded revive
+leaves the readout `leftover` *above* live HP, and the drain
+(`FUN_80047430`) has no max clamp - no `+0x14E` read anywhere in it - so
+the overshoot rides until something redraws it. Whether the panel's digit
+renderer clamps the drawn value at max (making `1476/1476` the exact face
+of an overshot readout) is the open verification.
 
 The same arm is what a **Phoenix** (class 4) reaches from the battle item
 menu, and the class 0 / class 1 heal arms reach the sibling assign at
