@@ -190,9 +190,11 @@ impl TimedSoundArm {
 /// loader left there, which is why the array is `Option`-free but the gap is
 /// called out here.
 ///
-/// The consumer is not identified from this dump. Every literal shares the
-/// low three nibbles `0x010`, and the values ascend to `0x6F010`, so they
-/// read as a set of offsets into one region rather than as pointers.
+/// The consumer is not identified from this dump. Every literal ends in the
+/// low byte `0x10` and the values ascend to `0x6F010`, so they read as a set
+/// of offsets into one region rather than as pointers. Six of the seven
+/// distinct values share the low *three* nibbles `0x010`; `0x6C810` does not,
+/// so that is a coincidence of the set, not a rule.
 pub const BOOT_OFFSET_TABLE: [u32; 12] = [
     0x0000_1010, // +0x00
     0x0001_0010, // +0x04
@@ -370,7 +372,7 @@ mod tests {
             BOOT_OFFSET_TABLE
                 .iter()
                 .enumerate()
-                .all(|(i, w)| i == BOOT_OFFSET_TABLE_UNWRITTEN || w & 0xFFF == 0x010)
+                .all(|(i, w)| i == BOOT_OFFSET_TABLE_UNWRITTEN || w & 0xFF == 0x10)
         );
     }
 }
