@@ -268,9 +268,16 @@ The whole ramp sits behind one guard at `0x800474E8`
 touched at all.**
 
 That makes `+0x14C != +0x172` with `+0x10 == 0` on a party slot an **absorbing
-state**. Nothing re-derives the bar from live HP, so the mismatch survives every
-later hit: a subsequent damage or heal adds its own delta to both sides and the
-constant offset rides along. From that point on, every action that targets the
+state** for as long as the actor takes ordinary hits: the drain is the only
+thing that moves the bar, and a subsequent damage or heal adds its own delta to
+both sides so the constant offset rides along. One path does re-derive the bar
+from live HP - the per-round status ticker
+[`FUN_801E752C`](#fun_801e752c---per-round-status-dot-ticker) force-assigns
+`+0x172 = +0x14C` right after its own HP write (`0x801E7600` and `0x801E7698`,
+one per status bit) - so a poison or regen tick on the affected actor clears the
+mismatch. That is the only re-sync in the dumped battle corpus, and it explains
+why the softlock is survivable rather than terminal for a statused party.
+Absent it, every action that targets the
 party side reaches `0x51`, is told "not settled", and never decrements its
 countdown. The battle camera's idle azimuth sweep (`FUN_801D0748` stepping
 `_DAT_8007B792`) runs unconditionally and never consults the state machine, so
