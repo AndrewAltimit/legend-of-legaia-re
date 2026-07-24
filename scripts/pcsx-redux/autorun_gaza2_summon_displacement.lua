@@ -13,9 +13,16 @@
 -- survives past the action's end.
 --
 -- Output (captures/gaza2_summon_displacement/<ts>/positions.csv):
---   vsync,ctx7,acting, then per seat 0..3: cx,cz,hx,hz
---   (seat 3 = the enemy on this fight; extend SEATS if the formation is
---   bigger). Rows are change-triggered on any tracked field + a heartbeat.
+--   vsync,ctx7,acting, per seat 0..3: cx,cz,hx,hz, then the enemy's anim
+--   bytes a3_1da (staged clip index) / a3_1d9 (playing clip index) - the
+--   pair that separates a working approach (Move clip engaged) from the
+--   parked drive-idle shape (0/0). Rows are change-triggered + heartbeat.
+--
+-- Directed experiment (the summon-staging-aftermath hypothesis): cast a
+-- summon, then STALL (defend / items, don't kill the boss) so his next
+-- action is a melee soon after the staging round-trip. Repeat. Healthy
+-- approaches show the anim pair leave 0/0 while he slides in state 0x19;
+-- a reproduction shows the pair stuck at 0/0 with the position frozen.
 --
 -- Launch (dynarec ON, YOUR config + savestates so slot hotkeys work):
 --   LEGAIA_NO_SSTATE=1 bash scripts/pcsx-redux/run_probe.sh \
@@ -45,6 +52,8 @@ for _, s in ipairs(SEATS) do
     header[#header + 1] = "hx" .. s
     header[#header + 1] = "hz" .. s
 end
+header[#header + 1] = "a3_1da"
+header[#header + 1] = "a3_1d9"
 local csv = probe.csv_open(probe.out_path("positions.csv"), table.concat(header, ","))
 
 local vsync = 0
@@ -68,6 +77,13 @@ local function on_vsync()
             row[#row + 1] = -1; row[#row + 1] = -1
             row[#row + 1] = -1; row[#row + 1] = -1
         end
+    end
+    local a3 = u32(ACTORS + 3 * 4)
+    if in_ram(a3) then
+        row[#row + 1] = u8(a3 + 0x1DA)
+        row[#row + 1] = u8(a3 + 0x1D9)
+    else
+        row[#row + 1] = -1; row[#row + 1] = -1
     end
 
     local sig = table.concat(row, ",", 2, #row)
