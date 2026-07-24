@@ -10,10 +10,10 @@
 //!
 //! ## What is ported here
 //!
-//! * `0x801D6ED8..0x801D7240` - the row cursor, the step scaling, and the
-//!   twelve-way row -> record-field jump table ([`edit_step`],
-//!   [`EditorRow`], [`DebugEditor::apply_edit`]).
-//! * `0x801D72F4..0x801D751C` - the clamp pass ([`clamp_record_stats`]).
+//! * `0x801D6EC0..0x801D7240` - the row cursor, the step scaling, and the
+//!   twelve-way row -> record-field jump table ([`step_row`], [`edit_step`],
+//!   [`editor_row`], [`DebugEditor::tick`]).
+//! * `0x801D72F4..0x801D7518` - the clamp pass ([`clamp_record_stats`]).
 //!
 //! Not ported: the bespoke debug **renderer** that fills the rest of the
 //! function (`0x801D7524` onward - roughly two thirds of its 890
@@ -46,8 +46,8 @@
 //! | `+0x12C` | INT | `999` |
 //! | `+0x130` | level | `99` |
 //!
-//! PORT: FUN_801d6e18 (`0x801D6ED8..0x801D7240` cursor + field edit,
-//! `0x801D72F4..0x801D751C` clamp pass; the renderer half is not ported)
+//! PORT: FUN_801d6e18 (`0x801D6EC0..0x801D7240` cursor + field edit,
+//! `0x801D72F4..0x801D7518` clamp pass; the renderer half is not ported)
 //!
 //! Source: `ghidra/scripts/funcs/overlay_save_ui_801d6e18.txt`.
 //!
@@ -336,10 +336,7 @@ const SANITY_FIELDS: [usize; 9] = [
 ];
 
 fn read_u16(record: &[u8], at: usize) -> Option<u16> {
-    Some(u16::from_le_bytes([
-        *record.get(at)?,
-        *record.get(at + 1)?,
-    ]))
+    Some(u16::from_le_bytes([*record.get(at)?, *record.get(at + 1)?]))
 }
 
 fn write_u16(record: &mut [u8], at: usize, v: u16) {
@@ -358,30 +355,30 @@ pub fn clamp_record_stats(record: &mut [u8]) {
     // Stage 1 - sanity. The level test is `(v - 1) & 0xFF` against
     // `0xC7`, so `0` (and anything above `0xC7`) resets rather than
     // saturating.
-    if let Some(level) = record.get_mut(offsets::LEVEL) {
-        if level.wrapping_sub(1) >= LEVEL_SANITY_MAX {
-            *level = STAT_SANITY_RESET as u8;
-        }
+    if let Some(level) = record.get_mut(offsets::LEVEL)
+        && level.wrapping_sub(1) >= LEVEL_SANITY_MAX
+    {
+        *level = STAT_SANITY_RESET as u8;
     }
     for at in SANITY_FIELDS {
-        if let Some(v) = read_u16(record, at) {
-            if v.wrapping_sub(1) >= STAT_SANITY_MAX {
-                write_u16(record, at, STAT_SANITY_RESET);
-            }
+        if let Some(v) = read_u16(record, at)
+            && v.wrapping_sub(1) >= STAT_SANITY_MAX
+        {
+            write_u16(record, at, STAT_SANITY_RESET);
         }
     }
 
     // Stage 2 - per-field ceilings.
-    if let Some(level) = record.get_mut(offsets::LEVEL) {
-        if *level > LEVEL_CEILING {
-            *level = LEVEL_CEILING;
-        }
+    if let Some(level) = record.get_mut(offsets::LEVEL)
+        && *level > LEVEL_CEILING
+    {
+        *level = LEVEL_CEILING;
     }
     for (at, ceiling) in STAT_CEILINGS {
-        if let Some(v) = read_u16(record, at) {
-            if v > ceiling {
-                write_u16(record, at, ceiling);
-            }
+        if let Some(v) = read_u16(record, at)
+            && v > ceiling
+        {
+            write_u16(record, at, ceiling);
         }
     }
 }

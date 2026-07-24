@@ -1130,10 +1130,19 @@ branches on `DAT_801E46AC`, and on the active phase runs the shared
 list-cursor navigator [`FUN_801D688C`](#fun_801d688c---shared-list-cursor-navigator)
 over the roster count, switching on its result to retune the packed
 sub-mode nibble `DAT_801E46C0` and advance `DAT_801E46AC`; the init phase
-kicks the actor VM (`FUN_801D6628`). Neither function is ported - the
+kicks the actor VM (`FUN_801D6628`). `FUN_801DA2A0` is not ported - the
 clean-room engine models character records through `legaia_save` rather
 than a live-RAM debug editor, and there is no engine consumer for the
 developer screen.
+
+`FUN_801D6E18`'s **input and clamp halves** are ported, as
+`engine-core::debug_char_editor`; its renderer half (`0x801D7524`
+onward, roughly two thirds of its 890 instructions) is not. What makes
+the clamp worth carrying is that its ceilings are the game's own stat
+caps, stated in code: max HP `9999`, max MP `999`, the `+0x120` cap
+constant `100`, the six battle stats `999`, level `99` - and the cap
+constant's ceiling independently confirms the "always 100 in captured
+saves" reading in `legaia_save`.
 
 ## See also
 
