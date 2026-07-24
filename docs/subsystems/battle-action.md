@@ -7,6 +7,7 @@ A two-level finite state machine that drives the per-actor execution of a chosen
 - [One-paragraph overview](#one-paragraph-overview)
 - [Outer dispatch - `ctx[7]` action-state cursor](#outer-dispatch---ctx7-action-state-cursor) · [state table](#state-table)
 - [Inner dispatch - actor action category](#inner-dispatch---actor-action-category) · [per-actor sub-state surface](#per-actor-sub-state-surface)
+- [The `0x51` exit gate and the HP-bar settle invariant](#the-0x51-exit-gate-and-the-hp-bar-settle-invariant) - the endless-camera-orbit softlock class
 - [Cross-references with other battle helpers](#cross-references-with-other-battle-helpers) - [range/LOS](#fun_8004e2f0---battle-range--line-of-sight) · [stat aggregator](#fun_80042558---per-frame-stat-aggregator) · [effect spawn API](#fun_801dfdf8---effect-bundle-public-spawn-api) · [summon-overlay dispatch](#seru-magic-summon-overlay-dispatch) · [pose driver](#fun_801d5854---per-actor-pose-driver) · [party/monster setup](#fun_801eed1c--fun_801e7320---party--monster-setup-hooks) · [camera bounds](#fun_801efe44---battle-camera-bounds) · [escape roll](#the-escape-roll-fun_801e791c) · [battle voice cues](#battle-voice-cues---the-xa30-grunt-vs-the-xa2xa4xa6-arts-shout) · [helper functions](#battle-helper-functions)
 - [Notes for the engine port](#notes-for-the-engine-port) · [decompile quirks](#decompile-quirks-worth-knowing) · [engine port](#engine-port)
 - [Action validator (`FUN_8003FB10`)](#action-validator-fun_8003fb10) · [action queue + Tactical Arts trigger ordering](#action-queue-and-tactical-arts-trigger-ordering) · [Miracle / Super in the live Arts submenu](#miracle--super-in-the-live-player-driven-arts-submenu)
@@ -177,9 +178,10 @@ Beyond `actor[+0x1DE]` (category), these per-actor bytes are read or written by 
 
 | Offset | Type | Use |
 |---|---|---|
-| `+0x14C` | u16 | Liveness flag (non-zero = alive). Read by every state's "is target valid" check. |
+| `+0x14C` | u16 | **Live HP** (`+0x14E` is max HP). Doubles as the liveness flag - every state's "is target valid" check is `+0x14C != 0`. Paired with the displayed-HP mirror `+0x172`; see [the `0x51` exit gate](#the-0x51-exit-gate-and-the-hp-bar-settle-invariant). |
 | `+0x16E` | u16 | Per-actor flag bank. Bit `0x4` = "non-targetable", bit `0x380` = "AI-controlled", bit `0x404` = "AI + non-targetable". Read at state-`0x0C` to decide between `FUN_801EED1C` and `FUN_801E7320`. |
-| `+0x172`/`+0x174` | u16 | HP / MP (or current / max - see [battle.md](battle.md)). |
+| `+0x10` | i32 | **Pending HP-bar delta** - how much `+0x172` still has to move. Ramped into the bar a quarter at a time by `FUN_80047430`, and only while it is non-zero. |
+| `+0x172`/`+0x174` | u16 | **Displayed** HP / MP - the values the HUD bars draw, lagging live HP `+0x14C` and live MP `+0x150`. `FUN_80047430` ramps `+0x172` by the `+0x10` accumulator and `+0x174` by `+0x178`, in the same quarter-step shape. |
 | `+0x178` | u16 | Last-action MP cost (used to display `-N MP` on screen). |
 | `+0x1A` | u8 | Party-action queue counter. Incremented by `0x0` (action-begin), `0x1E` (counter-attack swap), `0x64` (run advance), `0x5A` (next-actor). |
 | `+0x1D9` | u8 | **Current** anim ID (read-only here; written by the animation system). |
@@ -204,6 +206,85 @@ Beyond `actor[+0x1DE]` (category), these per-actor bytes are read or written by 
 | `+0x6E6 + i*2` (ctx) | u16 × 8 | Per-actor facing offsets (one per slot 0..7). Written by `0x14` for AI bookkeeping. |
 | `+0x890..+0x893` (ctx) | u8 × 4 | 4-byte fade-back sentinel `84 10 42 08`. Written by the summon `0x37` and capture `0x71` paths. |
 | `+0x102C`/`+0x1080`/`+0x1074` (ctx) | int* | Scratch pointers to live UI widgets (fade primitive, HP-bar, damage-popup). |
+
+## The `0x51` exit gate and the HP-bar settle invariant
+
+State `0x51` (done / fade-down) leaves the action band only when
+`ctx[+0x6D8] < 0 && ctx[+0x276] == 0`, and state `0x50` seeds that countdown
+with `0x3C`. The countdown is **not** decremented unconditionally - the arm
+gates it on a call:
+
+```
+801e6044  jal  0x801e7250          ; HP-bar settle check
+801e604c  bne  v0,zero,0x801e60b8  ; "not settled" -> branch PAST the decrement
+801e6054  lh   v0,0x2(s7)          ; s7+2 is ctx+0x6D8
+801e6068  lbu  v0,0x393(v0)        ; DAT_1F800393, the per-frame delta
+801e6070  subu a0,v1,v0
+801e6074  sh   a0,0x2(s7)          ; ctx+0x6D8 -= delta
+```
+
+The branch target `0x801E60B8` rejoins after the store, so a "not settled"
+answer skips the store and nothing else. A park at `0x51` with `ctx[+0x6D8]`
+holding exactly the `0x3C` that `0x50` seeded, `ctx[+0x276] == 0` and a healthy
+`DAT_1F800393` is therefore neither a stalled effect child, nor a zero frame
+delta, nor a pinned census - the arm is running every frame and `FUN_801E7250`
+is answering "not settled" every frame.
+
+### What `FUN_801E7250` measures
+
+52 instructions; see `ghidra/scripts/funcs/overlay_battle_action_801e7250.txt`.
+It reads the acting actor's active-target slot `actor[+0x1DD]` and branches on
+the target class:
+
+| `actor[+0x1DD]` | Result |
+|---|---|
+| `0`–`2` | 1 ("not settled") when that party actor's live HP `+0x14C` differs from its displayed HP `+0x172`; else 0. |
+| `3`–`7` | 0 immediately - a monster target can never hold the exit. |
+| `8` (all) | 1 when **any** slot below `ctx[+0x00]` has `+0x14C != +0x172`; else 0. |
+| `> 8` | 0. |
+
+Only party-side slots are ever inspected, in either arm. An action aimed at a
+monster clears the gate on the frame it is asked, whatever the enemy's bar is
+doing; an action aimed at the party - an enemy attack, a heal, any all-target
+cast - is the only kind that can be held.
+
+### The invariant the check assumes
+
+Live HP `+0x14C` and displayed HP `+0x172` converge through a third field,
+`actor[+0x10]`, a signed pending-delta accumulator. The per-actor tick
+`FUN_80047430` (SCUS band) moves a quarter of it into the bar every frame:
+`0x172 -= (acc + 3) / 4` with `acc -= (acc + 3) / 4`, so the total bar movement
+equals the seeded accumulator exactly and the sequence terminates at zero for
+either sign. The whole ramp sits behind one guard at `0x800474E8`
+(`lw a0,0x10(s2); beq a0,zero,<skip>`): **with a zero accumulator the bar is not
+touched at all.**
+
+That makes `+0x14C != +0x172` with `+0x10 == 0` on a party slot an **absorbing
+state**. Nothing re-derives the bar from live HP, so the mismatch survives every
+later hit: a subsequent damage or heal adds its own delta to both sides and the
+constant offset rides along. From that point on, every action that targets the
+party side reaches `0x51`, is told "not settled", and never decrements its
+countdown. The battle camera's idle azimuth sweep (`FUN_801D0748` stepping
+`_DAT_8007B792`) runs unconditionally and never consults the state machine, so
+the visible result is a battle that keeps orbiting the acting actor forever -
+an endless-camera-orbit softlock with no other symptom.
+
+The park is directly reproducible: offsetting one party slot's `+0x172` by a
+single point while clearing its `+0x10` is enough, and the next party-targeted
+action hangs while monster-targeted actions in between still complete normally.
+Probe: `scripts/pcsx-redux/autorun_gaza2_hpbar_settle.lua`.
+
+### Consequences for instrumentation
+
+Any intervention that force-writes `+0x14C` without re-seeding `+0x10` -
+a capture-harness HP clamp, a max-HP cheat code, an engine debug key -
+manufactures this park by construction. The failure shape is worth naming
+because it is easy to mistake for the retail bug: the clamp restores live HP on
+the frame damage lands, the in-flight accumulator keeps draining the bar
+downward, the ramp then stops at zero accumulator, and the bar is left short of
+a live HP that the clamp holds pinned at maximum. A "reproduction" captured
+under such a clamp is measuring the instrument. A clamp that also assigns
+`+0x172` and zeroes `+0x10` keeps the invariant intact.
 
 ## Cross-references with other battle helpers
 
