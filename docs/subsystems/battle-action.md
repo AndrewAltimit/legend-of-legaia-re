@@ -246,9 +246,32 @@ the target class:
 | `> 8` | 0. |
 
 Only party-side slots are ever inspected, in either arm. An action aimed at a
-monster clears the gate on the frame it is asked, whatever the enemy's bar is
+monster clears the gate on the frame it is asked, whatever the enemy's mirror is
 doing; an action aimed at the party - an enemy attack, a heal, any all-target
-cast - is the only kind that can be held.
+cast - is the only kind that can be held. `ctx[+0x00]` is the party member
+count, so the all-target arm is a party-side scan too.
+
+### Why only the party side has anything to wait for
+
+Retail draws **no HP readout for monsters**. The party HUD counts its HP down
+over several frames after a hit; an enemy's HP is never shown at all. That is
+what the whole asymmetry is for, and it explains three things that otherwise
+look arbitrary:
+
+- `+0x172` is maintained for monster slots but never drawn. `FUN_80047430`'s
+  non-party arm therefore does not animate: it applies the entire delta in one
+  frame and clears the accumulator (`0x80047578`). There is no readout to ramp.
+- The settle gate returns 0 for monster targets because there is no animation to
+  wait on - the wait exists purely to let the party's readout finish counting
+  before the action ends.
+- The same arm's `lhu` read of the signed accumulator, and the non-party MP
+  path's use of the HP fields (see below), are unobservable in retail precisely
+  because nothing renders the values they corrupt.
+
+So "HP bar" is shorthand throughout this page for the **displayed-HP mirror**
+`+0x172`, which is a drawn readout only on the party side. Readers of `+0x172`
+in the corpus are UI-side: `FUN_80046A20` (`0x80046AA8`) and the
+`FUN_801D8DE8` UI-element family (`0x801D9758`).
 
 ### The invariant the check assumes
 
@@ -266,6 +289,16 @@ monster target never holds the `0x51` exit.
 The whole ramp sits behind one guard at `0x800474E8`
 (`lw a0,0x10(s2); beq a0,zero,<skip>`): **with a zero accumulator the bar is not
 touched at all.**
+
+Two retail quirks live in the non-party arms and are unobservable because
+nothing draws a monster's readout. The HP arm reads the signed accumulator with
+`lhu` (`0x8004757C`), so a negative accumulator on a monster - a heal - wraps
+through the low halfword. And the non-party **MP** arm at `0x80047624` operates
+on `+0x172` / `+0x10`, the **HP** fields, rather than `+0x174` / `+0x178`: a
+copy-paste of the HP arm. The consequence is that a monster's MP accumulator
+`+0x178` is never cleared, so that branch re-runs every frame for the rest of
+the battle, subtracting an already-zeroed HP accumulator. Both are faithful
+behaviour for a port to reproduce, not defects to correct.
 
 That makes `+0x14C != +0x172` with `+0x10 == 0` on a party slot an **absorbing
 state** for as long as the actor takes ordinary hits: the drain is the only
