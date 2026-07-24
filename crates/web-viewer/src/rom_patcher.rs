@@ -125,11 +125,12 @@ pub fn resolve_seed(seed: &str) -> String {
 /// from the resist-ladder-bypassing wrapper to the guard-respecting one, so
 /// elemental jewels / guards / All Guard apply to Xain's Bloody Horns / Terio
 /// Punch, Cort's Guilty Cross, and the Delilas trio's signature moves (a fix,
-/// not a randomization - it is seedless). `approach_softlock_fix` retargets
-/// the battle-action walk-animation-missing jump so a walk-less monster
-/// (bosses generally) whose contact attack targets someone beyond its reach
-/// strikes in place instead of parking the battle in an infinite range poll -
-/// the "endless camera orbit" softlock (also seedless). `fishing_prices` is a
+/// not a randomization - it is seedless). `approach_softlock_fix` re-stages a
+/// monster's approach animation when it dies mid-approach (the summon-then-
+/// melee clip death that parks the battle in an infinite range poll - the
+/// "endless camera orbit" softlock), so the monster resumes walking instead
+/// of wedging the fight; healthy fights are byte-identical (also seedless).
+/// `fishing_prices` is a
 /// comma/space-separated list of `item=points` pairs that set the
 /// fishing-exchange point cost of prizes (e.g. `0x6F=500` for the Water Egg).
 /// `location_renames` is a newline-separated list of `index=name` lines that
@@ -419,14 +420,15 @@ pub fn patch_rom(
         summary.push_str("jewel-fix: untouched\n");
     }
 
-    // Attack-approach softlock fix: one word in the battle overlay so a
-    // walk-less monster attacking beyond its reach strikes in place instead of
-    // parking the battle in the state-0x19 range poll forever. Seedless.
+    // Attack-approach softlock fix: nine words in the battle overlay so a
+    // monster whose approach animation dies mid-approach is re-staged and
+    // resumes walking instead of parking the battle in the state-0x19 range
+    // poll forever. Seedless.
     if approach_softlock_fix {
         let rep = apply::apply_approach_fix(&mut patcher)
             .map_err(|e| err(format!("approach-softlock-fix: {e}")))?;
         summary.push_str(if rep.changed {
-            "approach-softlock-fix: battle overlay patched (out-of-reach walk-less monsters strike in place)\n"
+            "approach-softlock-fix: battle overlay patched (dead approach animations are re-staged)\n"
         } else {
             "approach-softlock-fix: already applied\n"
         });

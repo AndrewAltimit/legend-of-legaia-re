@@ -718,16 +718,20 @@ Two closing observations from the same replay:
   stuck on the boss's action alone, not on a corrupted queue.
 
 **Fix (disc patch).** `legaia-patcher --approach-softlock-fix`
-(`legaia_patcher::approach_fix`) retargets the one word at `0x801E32AC` from
-`j 0x801E32C4` (park) to `j 0x801E3204` (the in-range continuation: state
-`0x1E`, the strike chain), so a walk-less monster out of reach strikes from
-where it stands. Walking monsters, party attacks and in-range attacks are
-byte-for-byte untouched. Runtime-verified on the parked save
-(`autorun_gaza2_approach_fix_verify.lua`: poke the same word into the resident
-overlay and mirror its landing on the already-staged action - the battle
-un-wedges through `0x1E -> 0x1F -> 0x20 -> 0x50 -> 0x51 -> 0x5A -> 0xFF`,
-damage lands, the round completes and control returns to the player); the
-byte-level edit is pinned by the `approach_fix_real` disc oracle.
+(`legaia_patcher::approach_fix`) rewrites the `0x19` arm's redundant
+per-frame facing recompute (nine words at `0x801E3568` - the target never
+moves during an approach, and states `0x14` and `0x1E` re-derive facing
+themselves) into a guard: staged clip dead while the poll still fails ->
+bounce the state byte to `0x14`, whose retail arm re-runs the whole staging
+next frame, so the monster **resumes walking** - no invented behaviour, and
+the same bounce rescues a party attacker whose run clip dies. The
+no-Move-clip edge is vacuous: a roster sweep (`monster_move_tags`) finds all
+186 monsters carry tag `1`. Runtime-verified hands-off on **both** live
+park savestates (`autorun_gaza2_approach_fix_verify.lua`: poke the nine
+words, touch nothing else - the guard bounces once, retail re-stages
+`1/1`, the boss walks in at ~19 units/vsync, the strike lands, the round
+completes); the byte-level edit is pinned by the `approach_fix_real` disc
+oracle.
 
 **Engine port note.** The clean-room port cannot reproduce this park: its
 `attack_face` routes out-of-range monsters to the windup/advance chain

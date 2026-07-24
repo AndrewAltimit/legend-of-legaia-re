@@ -1,30 +1,27 @@
 -- autorun_gaza2_approach_fix_verify.lua
 --
--- Runtime verification of the --approach-softlock-fix patch word against the
--- LIVE parked state (scenario battle_gaza2_park_0x19).
+-- Runtime verification of --approach-softlock-fix (the re-stage guard)
+-- against the LIVE parked states (scenarios battle_gaza2_park_0x19 and
+-- battle_gaza2_park_0x19_summon_melee).
 --
 -- A savestate replay cannot test the disc patch directly: the battle overlay
 -- is already resident in the savestate's RAM, so a patched .bin never gets
--- re-read. Instead this pokes the exact word the patcher writes -
--- `j 0x801E3204` (0x08078C81) at VA 0x801E32AC - into the parked RAM and
--- watches the state machine: if the fix is right, the very next 0x14 pass...
--- no - the parked action sits in state 0x19, which is DOWNSTREAM of the
--- patched jump, so this state never re-runs 0x14. The poke therefore proves
--- un-wedging only for the FOLLOW-ON actions (Vahn's queued attack against
--- Gaza would re-enter 0x14). To break the *current* park the probe also
--- performs the fix's semantic effect once: it advances ctx+7 from 0x19 to
--- 0x1E by hand (exactly what the patched jump would have done at staging
--- time), then lets everything else run retail.
+-- re-read. Instead this pokes the EXACT nine words the patcher writes over
+-- the state-0x19 arm's facing recompute (VA 0x801E3568..0x801E3588) and then
+-- touches nothing else: the parked action's staged clip is dead (+0x1DA == 0),
+-- so the guard must fire on its own - bounce the state to 0x14, let retail
+-- re-stage the Move clip, and the monster must resume approaching, arrive,
+-- and strike.
 --
--- Verdict = the battle PROGRESSES: the state machine leaves the attack band,
--- later actions run (including at least one fresh 0x14 pass through the
--- patched word), HP moves, and no state parks past LEGAIA_PARK_N vsyncs for
--- the rest of the capture.
+-- Verdict = UNWEDGED: the state leaves 0x19 via 0x14 (the bounce is visible
+-- in the state trace), the acting monster's position moves again, the strike
+-- chain runs (0x1E..), the done chain completes, and no state dwells past
+-- LEGAIA_PARK_N vsyncs for the rest of the capture.
 --
 -- Run (interpreter - we are editing code):
---   bash scripts/pcsx-redux/run_probe.sh \
+--   bash scripts/pcsx-redux/run_probe.sh --isolate-config \
 --     --lua scripts/pcsx-redux/autorun_gaza2_approach_fix_verify.lua \
---     --sstate saves/library/pcsx-redux/814dce6b90da114a8d8d37386a90623c4f871f7e380e14c010889ab4414c9dd8.sstate \
+--     --sstate saves/library/pcsx-redux/<park fingerprint>.sstate \
 --     --frames 3600
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
@@ -36,24 +33,41 @@ local PARK_N = probe.getenv_num("LEGAIA_PARK_N", 1500)
 
 local CTX_PTR = 0x8007BD24
 local ACTORS = 0x801C9370
-local HOOK_VA = 0x801E32AC
-local FIX_LO, FIX_HI = 0x8C81, 0x0807 -- j 0x801E3204, little-endian halves
+local WINDOW_VA = 0x801E3568
+
+-- The nine replacement words (little-endian), byte-identical to
+-- legaia_patcher::approach_fix::assemble_window().
+local GUARD = {
+    0x926201DA, -- lbu v0,0x1da(s3)
+    0x3C038008, -- lui v1,0x8008
+    0x8C63BD24, -- lw  v1,-0x42dc(v1)
+    0x34040014, -- ori a0,zero,0x14
+    0x14400003, -- bne v0,zero,+3
+    0x00000000, -- nop
+    0xA0640007, -- sb  a0,0x7(v1)
+    0x00000000, -- nop
+    0x00000000, -- nop
+}
 
 local function u8(a) return probe.read_u8(a) or 0 end
 local function u16(a) return probe.read_u16(a) or 0 end
 local function u32(a) return probe.read_u32(a) or 0 end
+local function i16(a) local v = u16(a); return v >= 0x8000 and v - 0x10000 or v end
 local function in_ram(a) return a >= 0x80000000 and a < 0x80200000 end
 
 local vsync = 0
 local last_state = -1
 local transitions = {}
-local fresh_0x14 = 0
+local bounces = 0
 local park_state, park_since, max_dwell, max_dwell_state = nil, 0, 0, -1
+local pos_moves = 0
+local last_pos = nil
 local hp_moves = 0
 local last_hp = {}
 local poked = false
 
-local csv = probe.csv_open(probe.out_path("states.csv"), "vsync,ctx7,acting,hp0,hp2,hp3")
+local csv = probe.csv_open(probe.out_path("states.csv"),
+    "vsync,ctx7,acting,gx,gz,a3_1da,a3_1d9,hp0,hp1,hp2")
 
 local function on_vsync()
     vsync = vsync + 1
@@ -61,28 +75,21 @@ local function on_vsync()
     if not in_ram(c) then return end
 
     if not poked then
-        -- Poke the patch word, then perform its semantic effect on the
-        -- already-staged parked action: 0x19 -> 0x1E.
-        probe.write_u16(HOOK_VA, FIX_LO)
-        probe.write_u16(HOOK_VA + 2, FIX_HI)
-        if u8(c + 7) == 0x19 then
-            -- Mirror the fix's landing site exactly: state = 0x1E and the
-            -- ctx+0xD mask the in-range continuation applies (0x801E3204..2C).
-            probe.write_u8(c + 7, 0x1E)
-            probe.write_u8(c + 0xD, u8(c + 0xD) % 2)
-            PCSX.log("[fixverify] poked j 0x801E3204 at 0x801E32AC; advanced parked 0x19 -> 0x1E")
-        else
-            PCSX.log(string.format(
-                "[fixverify] poked patch word; ctx7=0x%02X was not the expected 0x19 park",
-                u8(c + 7)))
+        for i, w in ipairs(GUARD) do
+            local va = WINDOW_VA + (i - 1) * 4
+            probe.write_u16(va, w % 0x10000)
+            probe.write_u16(va + 2, math.floor(w / 0x10000))
         end
+        PCSX.log(string.format(
+            "[fixverify] guard poked over 0x801E3568..0x801E3588; ctx7=0x%02X - hands off from here",
+            u8(c + 7)))
         poked = true
     end
 
     local st = u8(c + 7)
     if st ~= last_state then
         transitions[#transitions + 1] = string.format("%d:0x%02X", vsync, st)
-        if st == 0x14 then fresh_0x14 = fresh_0x14 + 1 end
+        if st == 0x14 and last_state == 0x19 then bounces = bounces + 1 end
         last_state = st
     end
     if st == park_state and st ~= 0x00 and st ~= 0xFF then
@@ -94,20 +101,28 @@ local function on_vsync()
         park_state, park_since = st, 0
     end
 
-    for _, s in ipairs({ 0, 2, 3 }) do
-        local a = u32(ACTORS + s * 4)
-        if in_ram(a) then
-            local hp = u16(a + 0x14C)
-            if last_hp[s] ~= nil and last_hp[s] ~= hp then hp_moves = hp_moves + 1 end
-            last_hp[s] = hp
+    local acting = u8(c + 0x13)
+    local g = u32(ACTORS + 3 * 4)
+    local gx, gz, a1da, a1d9 = -1, -1, -1, -1
+    if in_ram(g) then
+        gx, gz = i16(g + 0x34), i16(g + 0x38)
+        a1da, a1d9 = u8(g + 0x1DA), u8(g + 0x1D9)
+        if last_pos and (last_pos[1] ~= gx or last_pos[2] ~= gz) then
+            pos_moves = pos_moves + 1
         end
+        last_pos = { gx, gz }
     end
-    if vsync % 32 == 0 or (st ~= 0x19 and vsync < 600) then
-        local a0, a2, a3 = u32(ACTORS), u32(ACTORS + 8), u32(ACTORS + 12)
-        csv:row("%d,0x%02X,%d,%d,%d,%d", vsync, st, u8(c + 0x13),
-            in_ram(a0) and u16(a0 + 0x14C) or -1,
-            in_ram(a2) and u16(a2 + 0x14C) or -1,
-            in_ram(a3) and u16(a3 + 0x14C) or -1)
+    local hps = {}
+    for s = 0, 2 do
+        local a = u32(ACTORS + s * 4)
+        local hp = in_ram(a) and u16(a + 0x14C) or -1
+        hps[#hps + 1] = hp
+        if last_hp[s] ~= nil and last_hp[s] ~= hp then hp_moves = hp_moves + 1 end
+        last_hp[s] = hp
+    end
+    if vsync % 16 == 0 or st ~= last_state or vsync < 200 then
+        csv:row("%d,0x%02X,%d,%d,%d,%d,%d,%d,%d,%d",
+            vsync, st, acting, gx, gz, a1da, a1d9, hps[1], hps[2], hps[3])
     end
 end
 
@@ -120,16 +135,17 @@ probe.run{
     end,
     on_capture = function() on_vsync() end,
     on_done = function()
-        local verdict = (max_dwell < PARK_N and #transitions > 3 and hp_moves > 0)
-            and "UNWEDGED" or "STILL PARKED / INCONCLUSIVE"
+        local verdict = (max_dwell < PARK_N and bounces > 0 and pos_moves > 0)
+            and "UNWEDGED (guard bounced, monster moved)" or "STILL PARKED / INCONCLUSIVE"
         local lines = {
-            string.format("=== approach-fix verify: %s over %d vsyncs ===", verdict, vsync),
+            string.format("=== approach-fix v2 verify: %s over %d vsyncs ===", verdict, vsync),
             string.format("state transitions (%d): %s", #transitions,
                 table.concat(transitions, " ", 1, math.min(#transitions, 60))),
-            string.format("fresh 0x14 passes through the patched word: %d", fresh_0x14),
+            string.format("0x19 -> 0x14 bounces (guard firings): %d", bounces),
+            string.format("acting-monster position updates: %d", pos_moves),
             string.format("max state dwell: %d vsyncs in 0x%02X (park threshold %d)",
                 max_dwell, max_dwell_state, PARK_N),
-            string.format("live-HP changes observed (seats 0/2/3): %d", hp_moves),
+            string.format("party live-HP changes observed: %d", hp_moves),
         }
         probe.write_snapshot(probe.out_path("summary.txt"), table.concat(lines, "\n"))
         for _, l in ipairs(lines) do PCSX.log("[fixverify] " .. l) end

@@ -220,16 +220,16 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("jewel_fix = false".to_string());
     }
 
-    // Attack-approach softlock fix: retarget the battle-action walk-tag-missing
-    // jump so a walk-less monster attacking beyond its reach strikes in place
-    // instead of parking the battle in the state-0x19 range poll (the "endless
-    // camera orbit"). Seedless - one word in the battle overlay.
+    // Attack-approach softlock fix: rewrite the state-0x19 poll's redundant
+    // facing recompute into a guard that re-stages a monster's dead approach
+    // animation (the summon-then-melee clip death behind the "endless camera
+    // orbit"). Seedless - nine words in the battle overlay.
     if args.approach_softlock_fix {
         let report = apply::apply_approach_fix(&mut patcher)?;
         println!(
             "approach-softlock-fix: {}",
             if report.changed {
-                "battle overlay patched (walk-less monsters out of reach now strike in place)"
+                "battle overlay patched (a dead approach animation is re-staged; the monster resumes walking)"
             } else {
                 "already applied (no change)"
             }

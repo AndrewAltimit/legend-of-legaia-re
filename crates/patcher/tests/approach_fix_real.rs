@@ -1,32 +1,31 @@
 //! Disc-gated tests for the **attack-approach softlock fix** (see
-//! `legaia_patcher::approach_fix`): retargeting the battle-action state
-//! machine's walk-tag-missing jump (`j 0x801E32C4`, the state-`0x19` park) to
-//! the in-range strike continuation (`j 0x801E3204`), so a monster with no
-//! walk animation whose contact attack targets someone beyond its reach
-//! strikes in place instead of parking the battle forever (the "endless
-//! camera orbit" softlock, caught live on the Gaza rematch).
+//! `legaia_patcher::approach_fix`): rewriting the battle-action state-`0x19`
+//! arm's redundant facing recompute into a guard that re-stages a monster's
+//! dead approach animation (the summon-then-melee clip death behind the
+//! "endless camera orbit" softlock) by bouncing the state byte back to
+//! `0x14`, where retail's own staging re-runs.
 //!
 //! These apply the fix to a scratch copy of the real disc and assert, off the
 //! patched image, that:
-//!   * the baseline hook holds the stock park jump and the two context words
-//!     match the documented disassembly (non-vacuous: the recognized US
-//!     build);
-//!   * after patching, exactly the one hook word changed in the whole overlay
-//!     entry;
+//!   * the baseline window holds the stock nine facing-recompute words and
+//!     the context words around it match the documented disassembly
+//!     (non-vacuous: the recognized US build);
+//!   * after patching, exactly the nine window words changed in the overlay
+//!     entry and nothing else anywhere in it;
 //!   * the patched image still parses and the edit is byte-deterministic;
-//!   * a second application is a clean no-op (the plan recognizes the fixed
-//!     word), never a double-patch.
+//!   * a second application is a clean no-op, never a double-patch.
 //!
 //! Gates on `LEGAIA_DISC_BIN`; skips+passes when unset. The patched image
-//! lives only in memory. NB the retail state machine is overlay code the
-//! clean-room engine does not execute; the engine port cannot park (its host
-//! range check defaults in-range), so runtime verification of the retail fix
-//! is an emulator playtest against the library park savestate.
+//! lives only in memory. Runtime verification of the guard's behaviour is the
+//! emulator replay `autorun_gaza2_approach_fix_verify.lua` against the
+//! library park savestates (the clean-room engine does not execute overlay
+//! code).
 
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
 use legaia_patcher::approach_fix::{
-    BATTLE_ACTION_OVERLAY_PROT_INDEX, HOOK_VA, OVERLAY_BASE_VA, park_word, plan, strike_word,
+    BATTLE_ACTION_OVERLAY_PROT_INDEX, OVERLAY_BASE_VA, STOCK_WINDOW, WINDOW_VA, assemble_window,
+    plan,
 };
 use legaia_patcher::disc::DiscPatcher;
 
@@ -40,7 +39,7 @@ fn entry_word(entry: &[u8], off: usize) -> u32 {
 }
 
 #[test]
-fn baseline_hook_holds_the_stock_park_jump() {
+fn baseline_window_holds_the_stock_facing_recompute() {
     let Some(disc) = load_disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -49,22 +48,24 @@ fn baseline_hook_holds_the_stock_park_jump() {
     let overlay = patcher
         .read_entry(BATTLE_ACTION_OVERLAY_PROT_INDEX)
         .expect("read battle-action overlay");
-    let hook_off = (HOOK_VA - OVERLAY_BASE_VA) as usize;
-    assert_eq!(
-        entry_word(&overlay, hook_off),
-        park_word(),
-        "hook word is the stock `j 0x801E32C4`"
-    );
-    // The plan against the pristine build succeeds and targets that offset.
+    let window_off = (WINDOW_VA - OVERLAY_BASE_VA) as usize;
+    for (i, want) in STOCK_WINDOW.iter().enumerate() {
+        assert_eq!(
+            entry_word(&overlay, window_off + i * 4),
+            *want,
+            "stock window word {i} matches the documented disassembly"
+        );
+    }
+    // The plan against the pristine build succeeds and targets the window.
     let fix = plan(&overlay)
         .expect("plan against retail build")
-        .expect("pristine build plans a write");
-    assert_eq!(fix.hook_off, hook_off);
-    assert_eq!(fix.word, strike_word());
+        .expect("pristine build plans the rewrite");
+    assert_eq!(fix.window_off, window_off);
+    assert_eq!(fix.bytes.len(), STOCK_WINDOW.len() * 4);
 }
 
 #[test]
-fn fix_changes_exactly_the_hook_word() {
+fn fix_changes_exactly_the_window_words() {
     let Some(disc) = load_disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -80,23 +81,24 @@ fn fix_changes_exactly_the_hook_word() {
     let after = patcher
         .read_entry(BATTLE_ACTION_OVERLAY_PROT_INDEX)
         .expect("read overlay after");
-    let hook_off = (HOOK_VA - OVERLAY_BASE_VA) as usize;
-    assert_eq!(entry_word(&after, hook_off), strike_word());
+    let window_off = (WINDOW_VA - OVERLAY_BASE_VA) as usize;
+    for (i, want) in assemble_window().iter().enumerate() {
+        assert_eq!(entry_word(&after, window_off + i * 4), *want);
+    }
 
-    // Surgical: the hook word is the only difference in the whole entry.
+    // Surgical: every changed byte lies inside the nine-word window.
     let changed: Vec<usize> = before
         .iter()
         .zip(after.iter())
         .enumerate()
         .filter(|(_, (a, b))| a != b)
-        .map(|(i, _)| i & !3)
+        .map(|(i, _)| i)
         .collect();
-    let mut changed_words = changed;
-    changed_words.dedup();
-    assert_eq!(
-        changed_words,
-        vec![hook_off],
-        "only the hook word changed in the overlay entry"
+    assert!(!changed.is_empty());
+    assert!(
+        changed.first().copied().unwrap() >= window_off
+            && changed.last().copied().unwrap() < window_off + STOCK_WINDOW.len() * 4,
+        "changes confined to the guard window"
     );
 
     // The patched image still parses: a named-file read walks the ISO
@@ -120,8 +122,7 @@ fn fix_is_byte_deterministic_and_idempotent() {
         b.image(),
         "the approach fix yields a byte-identical patched image"
     );
-    // A second application is a clean no-op: the plan recognizes the fixed
-    // word (unlike an unrecognized build, which errors).
+    // A second application is a clean no-op: the plan recognizes the guard.
     let again = apply::apply_approach_fix(&mut a).expect("re-apply is accepted");
     assert!(!again.changed, "second application reports no change");
     let mut c = DiscPatcher::open(a.image().to_vec()).expect("open patched");

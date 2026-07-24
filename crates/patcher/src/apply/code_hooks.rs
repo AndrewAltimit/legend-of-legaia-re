@@ -403,15 +403,16 @@ pub struct ApproachFixReport {
 }
 
 /// Apply the **attack-approach softlock fix** (see [`crate::approach_fix`]):
-/// retarget the battle-action state machine's walk-tag-missing jump so a
-/// monster with no walk animation whose contact attack targets someone beyond
-/// its reach strikes from where it stands instead of parking the battle in
-/// the state-`0x19` range poll forever (the "endless camera orbit" softlock).
+/// rewrite the state-`0x19` arm's redundant per-frame facing recompute into a
+/// guard that re-stages a monster's approach animation when it dies
+/// mid-approach (the actual defect behind the "endless camera orbit"
+/// softlock - the summon-then-melee clip death). Healthy approaches are
+/// untouched; the bounce re-runs retail's own state-`0x14` staging.
 ///
-/// One same-size one-word edit in the battle-action overlay (raw PROT entry
-/// 898). The stock word and its two documented neighbours are verified before
-/// writing; an unrecognized build is refused without touching the disc, and an
-/// already-fixed image is a no-op.
+/// One same-size nine-word window rewrite in the battle-action overlay (raw
+/// PROT entry 898). The stock window and the context words around it are
+/// verified before writing; an unrecognized build is refused without
+/// touching the disc, and an already-fixed image is a no-op.
 pub fn apply_approach_fix(patcher: &mut DiscPatcher) -> Result<ApproachFixReport> {
     let index = crate::approach_fix::BATTLE_ACTION_OVERLAY_PROT_INDEX;
     let overlay = patcher
@@ -421,11 +422,11 @@ pub fn apply_approach_fix(patcher: &mut DiscPatcher) -> Result<ApproachFixReport
         None => Ok(ApproachFixReport { changed: false }),
         Some(fix) => {
             patcher
-                .patch_prot_entry(index, fix.hook_off as u64, &fix.word.to_le_bytes())
+                .patch_prot_entry(index, fix.window_off as u64, &fix.bytes)
                 .with_context(|| {
                     format!(
-                        "write approach-fix word at PROT {index} +{:#x}",
-                        fix.hook_off
+                        "write approach-fix guard window at PROT {index} +{:#x}",
+                        fix.window_off
                     )
                 })?;
             Ok(ApproachFixReport { changed: true })
