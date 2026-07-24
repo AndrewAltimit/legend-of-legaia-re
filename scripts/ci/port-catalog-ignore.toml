@@ -1389,3 +1389,9 @@
 "801cfc18" = "MDEC reset thunk: masks through the libapi device trampoline 8005fd88 and calls the already-ignored MDEC reset 801cfee0. Fourteen instructions of register reset. see ghidra/scripts/funcs/overlay_str_fmv_0x801CFC18.txt"
 "801cfcdc" = "MDEC output-rect stager: fills the two double-buffered destination rects at &DAT_801D0D5C / &DAT_801D0D6C and pushes them twice through the already-ignored MDEC command + DMA-0 upload 801cffdc. The identical 39-instruction body appears in the PROT 0971 dump as well - one library routine linked in..."
 "801d0070" = "MDEC upload wrapper in the same family, dispatching into the already-ignore-listed 801d0198 MDEC leaf. The 6-instruction PROT 0971 dump at this VA is below the signable length and does not testify; static arbitration resolves the VA to the STR overlay (0970). see ghidra/scripts/funcs/overlay_str_..."
+# Added by the port-worklist closeout. Complete function bodies - real
+# prologue, real epilogue - whose every store lands in their own stack frame,
+# so they have no caller-visible effect. The retail compiler kept the frame
+# after the only consumer of the locals was optimised away.
+[worklist_noop_frame]
+"801d1cd4" = "Frame-local no-op, not a portable routine. Ten instructions in the field-to-battle transition overlay (PROT 0979): `addiu sp,sp,-0x10`, six `sh` stores into sp+0x0/0x2/0x4/0x8/0xa/0xc (a (0,0,0x7d0) vector and a zero vector), then `jr ra; addiu sp,sp,0x10`. The frame pointer is never taken, no argument register is read, nothing is returned - the whole body is dead on exit. Confirmed from the disassembly, not the C (the C renders it as a bare `return;`). see ghidra/scripts/funcs/overlay_field_battle_intro_801d1cd4.txt"
