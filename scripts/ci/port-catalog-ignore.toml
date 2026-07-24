@@ -944,6 +944,16 @@
 "801f87f4" = "INTERIOR: no `addiu sp,sp,-N` prologue; body reads s0/s1/s2 and a caller stack slot it never writes - a tail fragment reaching the parent's epilogue"
 "801f8e3c" = "INTERIOR: no `addiu sp,sp,-N` prologue; body reads s4 and a caller stack slot it never writes - a tail fragment reaching the parent's epilogue"
 "801fd4c0" = "INTERIOR: dump resolves entry=801fd150, not 801fd4c0"
+# Interior at a base that is CORRECT - the label, not the base, is the lie.
+# Each was verified by disassembling the named extracted image at its mapped
+# base and reading the enclosing prologue/`jr ra` pair; see the resolved-VA
+# table in docs/tooling/dump-corpus-integrity.md.
+"801e249c" = "INTERIOR: at the correct field(0897) base this VA is the single instruction `j 0x801e3628` inside the field VM FUN_801DE840 - the label-call idiom. The only dump at the VA is non-contiguous: its stream starts at 0x801daaac, a disjoint number-format region, so it attests nothing about 0x801e249c."
+"801e5520" = "INTERIOR: intra-function `j` label of field(0897) FUN_801E5338 (0x801e5338..0x801e5658), reached by `j 0x801e5520` from 0x801e537c / 0x801e538c / 0x801e54d0 / 0x801e54d8 within that same body. The sole dump at the VA decodes two words of data as code (`SPECIAL2`, bad instruction data) and testifies to nothing. The `FUN_801e5520()` calls in the neighbouring dump's C are the label-call artifact."
+"801f7e4c" = "INTERIOR of PROT 0900 FUN_801F7A9C, the sprite-widget per-frame handler (docs/subsystems/move-vm.md, screen-effect widget family). Byte-identical out of 0900_xxx_dat.BIN at base 0x801F69D8, file +0x1474; the enclosing body runs 0x801f7a9c..0x801f8000. The `overlay_muscle_dome_` prefix names the CAPTURE - PROT 0977 is slot A, and the dome capture's slot B holds PROT 0900."
+"801f8080" = "INTERIOR of PROT 0900 FUN_801F8004, the sprite-widget spawner (body 0x801f8004..0x801f8118). Opens in a delay slot (`_sh v0,0xaa(s1)`) and reads live s0/s1/s2. Same capture-label caveat as 801f7e4c: not Muscle Dome code."
+"801f8190" = "INTERIOR of PROT 0900 FUN_801F811C, the screen-mask (iris) widget handler already documented in docs/reference/functions.md (body 0x801f811c..0x801f8498). Opens `sll v1,v1,0x10` on a live v1. Same capture-label caveat as 801f7e4c."
+"801f92a4" = "INTERIOR of PROT 0900 FUN_801F91D8, the slot-B scene-draw setup routine (prologue `addiu sp,sp,-0x70` at 0x801f91d8). The VA is mid its scratchpad-seeding run (`lbu v0,0x384(v0)` off `lui v0,0x1f80`). Same capture-label caveat as 801f7e4c."
 [worklist_shared_tail]
 "801d3290" = "SHARED_TAIL: 5 instructions, no `jr ra`; reads s5 it never writes, ends `addiu s8,s8,0x6` + `j 0x801df8dc` - the field-VM label-call idiom (s8 = script PC), not a function. Ghidra renders it as two calls and a return."
 "801e00b8" = "SHARED_TAIL: common exit slice - no prologue, reads live s1, restores s0..s2/ra from a 0x60-byte frame it never built; entered by `j 0x801e00b8` from FUN_801D4908 (and siblings) in the 0897 field overlay"
@@ -1327,6 +1337,19 @@
 "80203a50" = "Phantom VA of the PROT 0897 import, not a routine: re-keys to battle_action(0898) 801EC3E4 at delta 0x167e8 (0x25000 footprint over-read minus the 0xE818 base error). Evidence: the re-keyed VA falls inside the dumped body of that entry; this row carries no body of its own. See docs/reference/over..."
 "802046b8" = "Phantom VA of the PROT 0897 import, not a routine: re-keys to battle_action(0898) 801EC3E4 at delta 0x167e8 (0x25000 footprint over-read minus the 0xE818 base error). Evidence: the re-keyed VA falls inside the dumped body of that entry; this row carries no body of its own. See docs/reference/over..."
 "802059f8" = "Phantom VA of the PROT 0897 import, not a routine: re-keys to battle_action(0898) 801EF014 at delta 0x167e8 (0x25000 footprint over-read minus the 0xE818 base error). Evidence: the re-keyed VA falls inside the dumped body of that entry; this row carries no body of its own. See docs/reference/over..."
+# Resolved by disassembling the extracted image at its mapped base and finding
+# the dump's exact opening word sequence there, rather than by delta arithmetic
+# alone. Each row names the VA the bytes occupy and the enclosing body. The
+# table is in docs/tooling/dump-corpus-integrity.md; do not re-raise these on a
+# `jr ra` / self-entry re-read, because the body IS real - just not here.
+"801dcaa0" = "Mis-based print, delta +0xE818: the dump's 14 instructions are field(0897) 0x801EB2B8, interior to the world-map debug-menu renderer FUN_801EAD98. Verified word-for-word against 0897_xxx_dat.BIN at base 0x801CE818. The `j 0x801dcaa0` in the neighbouring 801cd8a4/801ce844 dumps is a DIFFERENT thing: those dumps are +0xE818 too, so their jump really targets 0x801dcaa0 in the field image, an intra-function label of FUN_801DC0BC."
+"801df510" = "Mis-based print, delta +0xE818: the dump's 24 instructions are field(0897) 0x801EDD28 (file +0x1F510), interior to the battle-records screen FUN_801ED710 (body 0x801ed710..0x801edefc, documented in docs/subsystems/world-map.md). The dump opens in a delay slot and its back-branch leaves the window - interior twice over."
+"801dfef4" = "Mis-based print, delta +0xE818: the dump's 8 instructions are field(0897) 0x801EE70C, a frameless slice of FUN_801EE5D4 exiting `j 0x801ee8b8` into the same body. At the CORRECT base the VA is a single `j 0x801e212c` inside the field VM FUN_801DE840, which the base-correct cutscene_dialogue dump shows directly. Non-portable under either reading."
+"801e0be8" = "Mis-based print, delta +0x5818 (the overlay_0896_* family - PROT 0896's file carries field bytes from +0x9000, imported at 0x801C0000). The 139-instruction body is field(0897) FUN_801E6400, the world-map numeric-field draw already documented in docs/subsystems/world-map.md. Real function, wrong VA: port 801e6400, not this."
+"801e205c" = "Mis-based print, delta +0x5818: the dump's 374 instructions are field(0897) 0x801E7874, interior to the world-map controller FUN_801E76D4 (prologue 0x801e76dc). The dump opens `nop` with no prologue and reads a1/v1 live."
+"801e9d8c" = "Mis-based print, delta +0xE818: the dump's 15 instructions are battle-action(0898) 0x801D35A4, interior to FUN_801D344C (body 0x801d344c..0x801d3744). Verified against 0898_xxx_dat.BIN at base 0x801CE818."
+"801e9f48" = "Mis-based print, delta +0x5818: the dump's 35 instructions are field(0897) 0x801EF760, interior to the tile-board walk SM FUN_801EF2B0 (docs/subsystems/tile-board.md)."
+"801f04b0" = "Mis-based print, delta +0x5818, landing in 0897's over-read tail: field file +0x274B0 is 0898 file +0x24B0 = battle-action(0898) 0x801D0CC8, interior to the battle dispatcher FUN_801D0748 (body 0x801d0748..0x801d32b8). Corroborated by the fragment's own exit `j 0x801d3290`, that function's epilogue hop - an absolute jump target is a byte property, so it survives the mis-basing."
 
 # Added by the port-wiring wave.
 [render_pipeline_mdec]
