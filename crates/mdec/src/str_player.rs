@@ -14,6 +14,7 @@
 //! | `FUN_801CF8B0` decode-env init | [`DecodeEnv::init`] |
 //! | `FUN_801CF988` ring + stream setup | [`StrPlayer::open`] |
 //! | `FUN_801CFA14` frame pump | [`StrPlayer::next_frame`] |
+//! | `FUN_801CF740` frame poll | [`end_of_stream`] + [`DecodeEnv::apply_frame_dimensions`] |
 //! | `FUN_801CFD84` MDEC output control word | [`mdec_output_control`] |
 //! | `FUN_801CFEBC` slice-callback (un)install | [`DecodeEnv::set_slice_callback`] |
 //! | `FUN_801CF56C` MDEC-out slice callback | [`DecodeEnv::advance_slice`] |
@@ -187,6 +188,23 @@ pub fn seek_sector_offset(start_frame: u32) -> i32 {
     (start_frame as i32 - 1) * SECTORS_PER_FRAME
 }
 
+/// Whether a demuxed frame is the last of a segment - the end-of-stream latch
+/// `FUN_801CF740` raises at `801cf794`..`801cf7a8`.
+///
+/// Retail's test is `slot.end_frame <= frame.frame_number`, **unsigned and
+/// unguarded**: it compares the sector header's `+0x08` frame number against
+/// the dispatch slot's `+0x0C` and stores `1` into `DAT_801E09F8`, the word the
+/// play loop's exit test reads. There is no zero check, because every one of
+/// the nine retail slots carries a real end frame.
+///
+/// The `end_frame != 0` guard here is the port's own, and it exists for
+/// [`FmvSlot::whole_file`] - an engine-invented slot with no end frame, which
+/// under retail's bare comparison would latch on its very first frame.
+// PORT: FUN_801cf740
+pub fn end_of_stream(frame_number: u32, end_frame: u32) -> bool {
+    end_frame != 0 && frame_number >= end_frame
+}
+
 /// Apply `FUN_801CFD84` to an MDEC command word.
 ///
 /// Bit 0 of `flags` selects the output depth and bit 1 the signedness:
@@ -332,6 +350,49 @@ impl DecodeEnv {
             colour: slot.colour,
             slice_callback_armed: false,
         }
+    }
+
+    /// Re-size both frame rects from the dimensions the **sector header**
+    /// declares - the second half of `FUN_801CF740` (`801cf7ac`..`801cf894`).
+    ///
+    /// The frame poll caches the header's `+0x10` width and `+0x12` height in
+    /// `DAT_801D0D50` / `DAT_801D0D54` and, every frame, programs them into
+    /// five halfwords of the decode context:
+    ///
+    /// | context word | written |
+    /// |---|---|
+    /// | `+0x1C` / `+0x24` | width, put through the same `* 3 / 2` 24-bit scale as [`vram_units`] |
+    /// | `+0x1E` / `+0x26` | height, unscaled |
+    /// | `+0x32` | height, unscaled - the slice rect's height |
+    ///
+    /// The slice rect's **width** at `+0x30` is deliberately not touched: it is
+    /// the fixed macroblock-column stride [`SLICE_W_24BPP`] /
+    /// [`SLICE_W_16BPP`] that `FUN_801CF8B0` set.
+    ///
+    /// So the decode geometry follows the bitstream, not the dispatch table:
+    /// the slot's `+0x18` / `+0x1C` only seed [`DecodeEnv::init`], and any
+    /// disagreement between the table and the movie is resolved in the movie's
+    /// favour from the first frame onward.
+    ///
+    /// When the cached pair *changes*, retail additionally fills a stack `RECT`
+    /// of `(0, 0, vram_units(slot.width), slot.height * 2)`. Nothing in the
+    /// printed disassembly consumes it - there is no call between the stores
+    /// and the return - so it is not reproduced here.
+    // PORT: FUN_801cf740
+    // NOT WIRED: needs the per-frame sector-header dimensions, and
+    // `crate::st_ring::StFrame` does not carry them - `StRing` parses the
+    // header's `+0x10` / `+0x12` and drops them, keeping only the frame number
+    // and the bitstream length. `StrPlayer::next_frame` therefore has nothing
+    // to pass. Wiring it is one field pair on `StFrame` plus the `deliver_sector`
+    // capture; until then the rects keep `DecodeEnv::init`'s slot-derived size.
+    pub fn apply_frame_dimensions(&mut self, width: u16, height: u16) {
+        let w = vram_units(i32::from(width), self.colour) as i16;
+        let h = height as i16;
+        self.frame_buf[0].w = w;
+        self.frame_buf[0].h = h;
+        self.frame_buf[1].w = w;
+        self.frame_buf[1].h = h;
+        self.slice.h = h;
     }
 
     /// `FUN_801CFEBC` - `DecDCToutCallback(1, handler)`.
@@ -583,7 +644,7 @@ impl StrPlayer {
         let Some(frame) = self.ring.get_next() else {
             return Err(PumpIdle::NeedSectors);
         };
-        let is_last = self.slot.end_frame != 0 && frame.frame_number >= self.slot.end_frame;
+        let is_last = end_of_stream(frame.frame_number, self.slot.end_frame);
         if is_last {
             self.end_latch = true;
         }
@@ -622,6 +683,48 @@ pub fn skip_requested(fmv_id: i16, pad: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_end_latch_is_inclusive_and_only_zero_is_exempt() {
+        assert!(!end_of_stream(0xE0, 0xE1));
+        assert!(end_of_stream(0xE1, 0xE1), "the end frame is decoded");
+        assert!(
+            end_of_stream(0xE2, 0xE1),
+            "and anything past it latches too"
+        );
+        assert!(
+            !end_of_stream(1, 0),
+            "the port's own guard: a whole-file slot has no end frame"
+        );
+    }
+
+    #[test]
+    fn header_dimensions_resize_both_frame_rects_and_the_slice_height() {
+        let slot = retail_slot();
+        let mut env = DecodeEnv::init(&slot);
+        let slice_w = env.slice.w;
+        // A movie whose real frame is narrower than the dispatch record says.
+        env.apply_frame_dimensions(256, 224);
+        assert_eq!(env.frame_buf[0].w, vram_units(256, true) as i16);
+        assert_eq!(env.frame_buf[1].w, env.frame_buf[0].w);
+        assert_eq!((env.frame_buf[0].h, env.frame_buf[1].h), (224, 224));
+        assert_eq!(env.slice.h, 224);
+        assert_eq!(env.slice.w, slice_w, "+0x30 is never written");
+        // The rect origins are the slot's and stay put.
+        assert_eq!(env.frame_buf[0].y, 8);
+        assert_eq!(env.frame_buf[1].y, 8 + 240);
+    }
+
+    #[test]
+    fn header_dimensions_skip_the_scale_for_a_15_bit_slot() {
+        let slot = FmvSlot {
+            colour: false,
+            ..retail_slot()
+        };
+        let mut env = DecodeEnv::init(&slot);
+        env.apply_frame_dimensions(320, 240);
+        assert_eq!(env.frame_buf[0].w, 320);
+    }
 
     fn retail_slot() -> FmvSlot {
         // The shape every retail slot has: 320x240, 24-bit, decoding to

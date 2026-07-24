@@ -105,6 +105,12 @@ reads all eight words itself, and each one is traceable to the instruction that 
 which builds the two decode rects from them. So the record **is** playback-only, on disassembly
 rather than on inference.
 
+The `+0x18` / `+0x1C` pair is the one place the record can be **overruled**. It sizes the decode
+rects once, at `FUN_801CF8B0`; from the first demuxed frame onward `FUN_801CF740` overwrites those
+rects' width and height from the STR **sector header**'s own `+0x10` / `+0x12` (cached in
+`DAT_801D0D50` / `DAT_801D0D54`). A slot whose dimensions disagree with the movie loses. See
+[`cutscene.md`](../subsystems/cutscene.md#engine-port---legaia_mdecstr_player).
+
 This table is **static initialised data** in the cutscene overlay (PROT 0970), not a runtime-built structure, so it decodes straight from the disc: `legaia_asset::fmv_dispatch::FmvTable::from_str_overlay` reads it (per-`fmv_id` path + frame range + dimensions), pinned by the disc-gated `fmv_dispatch_real` test. The windowed-cutscene player uses the frame range to seek to the right segment (`cutscene_av::fmv_segment_window`).
 
 An earlier reading used a 64-byte stride (a `sll v0,v0,6` transcription error), pairing wrong slot halves - it concluded `MV2`/`MV5` were never referenced and slots 5..11 pointed at cut files. The disc bytes and the resident RAM capture both encode `sll v0,v0,0x5`; under the 32-byte stride every movie on the disc is dispatched. That reading is **superseded**. The engine resolver `legaia_engine_core::cutscene::fmv_index_to_str_filename` mirrors the corrected nine-slot map; the disc-parsed `FmvTable` remains the authoritative source.

@@ -29,7 +29,12 @@
 //!
 //! **A producer for this cue-id space.** Every cue the world raises today
 //! comes from the static SFX descriptor table (ids below [`XA_CUE_BASE`]) or
-//! from a move-power record, so no id ever reaches the voice arm.
+//! from a move-power record, so no id ever reaches the voice arm. The engine's
+//! one live XA-clip consumer, the arts shout, is **not** it: that path picks its
+//! channel out of a runtime candidate pool (`legaia_art::arts_voice`'s
+//! `ArtsVoiceTable`, driven by `AudioBgmDirector::play_art_shout`), not by the
+//! `(id - 0x100)` arithmetic below, and the two are separate retail paths - see
+//! the note on `legaia_art::arts_voice::StaticXaCue`.
 //! `legaia_engine_audio::classify_cue` ports the same dispatcher's *routing*
 //! decision and is on the frame path, but the hosts log its `Voice` result
 //! rather than playing it - see `window/event_handler/redraw.rs`. Wiring this

@@ -266,8 +266,9 @@ bitstream decoder - the retail play loop minus its CD, DMA and GPU register poke
 | `FUN_801CFD84` MDEC output control word | `mdec_output_control` |
 | `FUN_801CFEBC` slice-callback (un)install | `DecodeEnv::set_slice_callback` |
 | `FUN_801CF56C` MDEC-out slice callback | `DecodeEnv::advance_slice` |
+| `FUN_801CF740` frame poll | `end_of_stream` + `DecodeEnv::apply_frame_dimensions` |
 
-Three details the port pins that a reading of the loop's shape alone would miss:
+Four details the port pins that a reading of the loop's shape alone would miss:
 
 - **The end frame is inclusive.** The latch is set inside the `StGetNext` wrapper `FUN_801CF740`
   (`801cf788`) on the frame whose number *reaches* the slot's `+0x0C`, so that frame is decoded
@@ -278,6 +279,14 @@ Three details the port pins that a reading of the loop's shape alone would miss:
   colour slot and `2` otherwise; bit 1 - the `0x02000000` signed-output bit - is set either way,
   and only the `0x08000000` depth bit tracks the slot. That is the register-level counterpart of
   the `+128` luma offset in [`MdecDecoder`](#6-420-upsampling--bt601-colour-conversion).
+- **The decode geometry follows the bitstream, not the dispatch table.** `FUN_801CF740` reads the
+  frame's width and height out of the **sector header** (`+0x10` / `+0x12`), caches them in
+  `DAT_801D0D50` / `DAT_801D0D54`, and every frame writes them into five halfwords of the decode
+  context: both frame rects' width (`+0x1C` / `+0x24`, put through the same `* 3 / 2` 24-bit scale
+  as the rest of the loop) and height (`+0x1E` / `+0x26`), plus the slice rect's height (`+0x32`).
+  The slice rect's *width* at `+0x30` is left alone - it is the fixed macroblock-column stride.
+  So the slot's `+0x18` / `+0x1C` only seed `FUN_801CF8B0`, and a table that disagrees with the
+  movie loses from the first frame onward.
 
 Three ping-pongs run at different rates and are easy to conflate: the **MDEC code buffers**
 (`ctx+0x00`/`+0x04`) flip once per frame, the **frame rects** (`ctx+0x18`/`+0x20`) once per frame
@@ -360,8 +369,10 @@ upload `FUN_801D0070` (the `FUN_801CFFDC` family); `FUN_801CFC18` wraps the MDEC
 `&DAT_801D0D9C`. The frame-poll wrapper `FUN_801CF740` is the logic sibling that stays
 *inside* the port: it loops `StGetNext` (`FUN_8005EF40`, up to 2000 spins), sets the
 inclusive end-frame latch `DAT_801E09F8` when the demuxed frame number reaches the slot's
-`+0x0C`, and computes the 24bpp display width (`width * 3/2`) - already ported within
-[`str_player`](#engine-port---legaia_mdecstr_player) (the "end frame is inclusive" pin).
+`+0x0C`, and re-programs the decode rects from the sector header's own dimensions - both
+ported within [`str_player`](#engine-port---legaia_mdecstr_player). It also builds a stack
+`RECT` of `(0, 0, slot_width * 3/2, slot_height * 2)` whenever the cached dimensions change;
+nothing in the printed body consumes it, so the port does not reproduce it.
 `see ghidra/scripts/funcs/overlay_str_fmv_0x801CFAD4.txt` /
 `overlay_str_fmv_0x801CF740.txt`.
 
@@ -1316,36 +1327,61 @@ window*, not a short body - the decompiled C is complete (both switches, the fad
 Each style is a direct GTE/GPU packet emitter: it builds primitives straight into the
 ordering-table cursor `_DAT_1F8003A0`, transforms vertices through the GTE (`FUN_80026988`
 RotMatrix, `FUN_8005BAC8` RotTransPers-class, `FUN_8003D2C4` / `FUN_8003D344` /
-`FUN_8003D1A4` primitive helpers) and screen-clips before linking. They are the render half
-of this subsystem and are **documented-not-ported** at the clean-room boundary (GTE/GPU
-emitters carry no port site) - the port renders battle entry through the engine's own
-transition, not these packet builders.
+`FUN_8003D1A4` primitive helpers) and screen-clips before linking. The **packet assembly**
+stays at the clean-room boundary; the per-record simulation each style runs around it -
+seeding, gating and integration - is ported, inert, into `legaia-engine-vm`.
 
-| `DAT_801D2460` | Emitter | What it draws |
-|---:|---|---|
-| 0 | `FUN_801CFDA0` | 0x488-particle scatter; per-particle 0x2C-byte packet, `>>1` velocity nudge. See [actor-vm.md](actor-vm.md#tick-cadence-dat_1f800393). |
-| 1 | `FUN_801D0370` | Sibling particle field (0x2C stride, RotTransPers per particle). |
-| 2 | `FUN_801D0D24` | 0x100 rotated cells at `DAT_801D2468` (0x5C stride) via sub-emitter `FUN_801D0E54`. |
-| 3 | `FUN_801D11D0` | Two textured screen bands + a per-scanline warp, via quad helper `FUN_801CF1B0`. |
-| 4 | `FUN_801D1888` | `DAT_801D247C` table-driven quads, timed by `DAT_801D2470`. |
+Every style is a **(init, tick)** pair, and the allocation sizes are what pair them:
 
-Shared render helpers in the same band: `FUN_801CF1B0` (angle-keyed rotated-quad builder,
-lookup at `&DAT_801D1ED3`), `FUN_801D0E54` (style-2 per-record sub-emitter into
-`_DAT_8007B85C + 0x5DC00`), `FUN_801D1A20` (byte-colour-unpack quad helper). Several
-allocate-and-seed inits build the per-style working buffers up front: `FUN_801CFBB4`
-(a 0x28x0x20 grid of 0x2C-byte cells, seeded from height tables `_DAT_8007B7F8` /
-`_DAT_8007B81C`) and `FUN_801D081C` (two `FUN_80017888` buffer allocations, 0x908 +
-0x5C00). `FUN_801D0164` is a sibling grid builder - a 0x20x0x28 array of 0x2C-byte
-particle cells (one `FUN_80017888` 0xDC00 allocation, packet colour `0x808080`, each
-cell's position seeded polar via `func_0x80019B28` / `func_0x8005AF0C` / `func_0x80056798`
-against the same height tables). `FUN_801D1564` is the style-4 buffer init: it allocates
-the three tables `DAT_801D247C` / `DAT_801D2474` / `DAT_801D2478` (0x100 / 0x6300 / 0x18C0)
-that the `FUN_801D1888` emitter consumes and fills a 0x10x0x21 grid of GTE-space vertices
-plus UV / colour bytes, screen-clamped to `+-0xA00` (X) / `+-0x760` (Y). Any allocation
-failure in either bumps the error counter `_DAT_8007B828`. `FUN_801D1CD4` is an inert
-stub - it writes a 12-byte local (`0, 0, 0x7D0, 0, 0, 0`) that never escapes, then returns.
-All the emitters and builders are GTE/GPU render-track, not ported. `see
+| `DAT_801D2460` | Init | Tick | Sub-emitter | Working set |
+|---:|---|---|---|---|
+| 0 | `FUN_801CFBB4` | `FUN_801CFDA0` | - | one `0xDC00` block: 1280 records of `0x2C` |
+| 1 | `FUN_801D0164` | `FUN_801D0370` | `FUN_801D1CFC` | the same shape as style 0 |
+| 2 | `FUN_801D081C` | `FUN_801D0D24` | `FUN_801D0E54` | `0x908` corner grid + `0x5C00` tile records |
+| 3 | - | `FUN_801D11D0` | `FUN_801CF1B0`, `FUN_801D1D9C` | the static descriptor table at `0x801D1EC4` |
+| 4 | `FUN_801D1564` | `FUN_801D1888` | `FUN_801D1A20` | `0x100` + `0x6300` + `0x18C0` |
+
+Ports: `battle_intro_particles` (the two seeders), `battle_intro_styles` (styles 0, 1, 3),
+`battle_intro_tiles` (style 2), `battle_intro_swirl` (style 4). Any allocation failure bumps
+the error counter `_DAT_8007B828` by ten. `FUN_801D1CD4` is an inert stub - it writes a
+12-byte local (`0, 0, 0x7D0, 0, 0, 0`) that never escapes, then returns. `see
 ghidra/scripts/funcs/overlay_field_battle_intro_<addr>.txt` for each.
+
+#### What the styles actually draw
+
+**Styles 0 and 1** are particle fields. Both walk `0x488` of the seeder's 1280 records - the
+last 120 are seeded and never visited - and both read the record the same way: `+0x08..+0x0C`
+is a translation integrated by `+0x20..+0x24`, `+0x10..+0x14` a rotation integrated by
+`+0x18..+0x1C`, `+0x1E` a spawn delay measured against the entity clock, and `+0x04` a colour
+whose **top byte non-zero skips the particle entirely**. That fixes `+0x20..+0x24` as a
+velocity rather than as the sprite size and flag word an earlier reading of the seeders
+assigned. Style 1 additionally ramps each particle's spin by `1.375x` per frame and decays
+its colour by `-0x50505`.
+
+**Style 2** shatters the screen into a `16 x 16` grid of tiles cut from a jittered `17 x 17`
+corner lattice (only interior vertices are jittered, so the outline stays a clean rectangle).
+A tile record carries eight `SVECTOR` corners - a front face at z `-0x80` and a back face at
+z `+0x80` - and packs its angular and linear velocities into **five of those vectors' pad
+halfwords** (`+0x1A`, `+0x22`, `+0x2A`, `+0x3A`, `+0x42`). `FUN_801D0E54` doubles the x and y
+spin rates every frame, so a tumbling tile accelerates geometrically; since `FUN_801D081C`
+writes `sin >> 5` / `cos >> 5` into `+0x1A` / `+0x22` and then immediately zeroes both
+(`801d0bac` / `801d0bb0`), only the `DAT_801D2464 == 2` sub-style tumbles at all - the other
+two spin about z only.
+
+**Style 3** slices the screen twice. First `0xF0` horizontal strips, each drawn in two halves
+(`0xC0 + 0x80 == 0x140`) at `y = (row - 120) * (clock + 28) / 28 + 120` - a vertical stretch
+about the screen centre. Then `0x140` vertical strips, each warped the same way horizontally,
+culled when the warp pushes them off-screen, and stretched vertically by
+`(|col - 160| * clock) >> 5`. Both passes **patch the shared descriptor record in place**
+before every `FUN_801CF1B0` call rather than carrying per-strip records.
+
+**Style 4** is a radial fan. Each of 16 bands samples the trig tables at stride `0x80` - one
+entry every 64 units of a 4096-entry table, so `0x21` columns span exactly half a turn - and
+the other half is written as an x-negated mirror, which is why a band is `2 * 99` vertices
+rather than `65 * 3`. A band carries an inner radius `4 + b * 0x10` and an outer
+`0x14 + b * 0x10`; the products are clamped to `+-0xA00` (x) and `+-0x760` (y), so the outer
+bands stop being circular and become the screen rectangle. Alternating bands get opposite
+rotation rates, which is what makes the rings counter-rotate.
 
 ## Script-cutscene helpers (`overlay_cutscene_dialogue`)
 
@@ -1358,12 +1394,60 @@ they are shared scripted-scene machinery rather than dialogue-only code.
 
 | Address | Role |
 |---|---|
-| `FUN_801D27E0` | scripted camera-focus SM (6 states, actor `+0x54`): snaps the camera onto the party actor `DAT_80084597`, copies its `x/y/z/rot` into the camera table and ramps a fade counter (`+0x9e` vs `DAT_1F800393`); spawns a focus effect object (`_DAT_801F3490`) via `func_0x80024E80` and drives the camera through `FUN_801DE190` / `FUN_801DE3E0` / `FUN_801DB8EC` / `FUN_801DAA50` |
+| `FUN_801D27E0` | **party-leader swap** SM (6 states, actor `+0x54`). See below - it *changes* `DAT_80084597`, it does not merely focus on it. |
 | `FUN_801D5C08` | per-frame position tween step: accumulates `+0x9c += (+0x9e) * DAT_1F800393`, lerps between the start (`+0x14`) and end (`+0x24`) vectors by `t = +0x9c / 0x1000` via `FUN_801E45BC`, writes the result onto the linked object (`+0x90`), and snaps to the end + sets done bit `8` at `t >= 0x1000` |
 | `FUN_801D5D60` | scripted-element teardown: restores the camera (`FUN_801DB510` + `FUN_801DAA50`) when armed, and once the linked object's done bit `8` is set clears the enable flags (mask `~(+0x74)`) on the `+0x94` and camera objects |
 | `FUN_801D6058` | ambient particle emitter (gated on `_DAT_8007B854`, optional `fog_set` trace): with actor `+0x1a == 0` occasionally spawns one particle at the actor position + random jitter via `FUN_801D629C`; otherwise loops 0x18 times spawning random bursts across the scene bounds (`DAT_1F8003E8..EB`) |
 
 `see ghidra/scripts/funcs/overlay_cutscene_dialogue_<addr>.txt` for each.
+
+### `FUN_801D27E0` swaps the party leader
+
+The earlier reading of this state machine as a "scripted camera focus" is
+**falsified** by its own state `2`. It does snap the camera onto the party
+actor `DAT_80084597` - but only after writing a *new* index there.
+
+Story flags `0x10`, `0x11` and `0x12` are the leader encoding: `801d2b04`..
+`801d2b1c` clears all three (`func_0x8003CE34`) and sets `0x10 + new`
+(`func_0x8003CE08`), while `801d2aec`..`801d2b08` writes the same index to
+`_DAT_8007B8F8`, `DAT_80084597` and `DAT_80084598`. The new index is found by
+stepping forward from the current one, wrapping at three, until a presence flag
+`ctx[+0x50] + n` reads **clear**.
+
+Around that, the six states are: cache the three party actors' `x/y/z/facing`
+into the `0x800845E4` table and run the arm gate (`0`); hold `0x20` frames for
+the fade-out (`1`); perform the swap, re-anchor the camera and field grid on
+the incoming leader, and spawn the fade-in (`2`); release the fade object
+(`3`); hold `0x20` frames and clear the camera's busy bit `0x80000` (`4`);
+retire (`5`). The arm gate refuses when all three presence flags are set - a
+full party has nothing to swap to - and when only two are set it additionally
+requires the leader's own flag. Both fades are `crate::fade`-shaped templates:
+kind `2`, `0x20` frames, black-to-white then white-to-black, so the swap happens
+behind a white flash.
+
+Port: `legaia_engine_core::cutscene_script_elements::LeaderSwap`.
+
+### `FUN_801D5E20` rotates a mesh's own colour words
+
+`FUN_801D8280` walks the resident-object table `DAT_8007C018` and calls
+`FUN_801D5E20` on each object's primitive block. The routine is an HSV colour
+grade applied **destructively to the TMD's packed colour words**: for every
+primitive it converts each colour to HSV (`func_0x8001A78C`), adds the caller's
+`(dh, ds, dv)`, and converts back (`func_0x8001A6C8`).
+
+Two details matter to anyone reproducing it. The hue folds modulo **`0x167`**
+(359), not 360, so a full turn of the shift walks the palette one step. And how
+many colour words a primitive carries comes from a table at `0x801F26F0`
+indexed by `group.flags >> 1` - a *different* selector from the TMD renderer's
+own per-mode table at `DAT_8007326C`, which uses `((flags >> 1) - 8) >> 1`.
+
+The cursor advance is also worth pinning: the `ilen * 4` stride add runs once
+per primitive **and** once more after the group's loop (`801d5FF8` inside,
+`801d6010` after), and the `count == 0` arm jumps straight to the trailing add.
+Against the `count x ilen*4` body [`tmd.md`](../formats/tmd.md) documents, that
+over-runs by one primitive per group.
+
+Port: `legaia_engine_core::cutscene_script_elements::shift_primitive_colours`.
 
 ### What the tween and the emitter do beyond the one-line role
 
