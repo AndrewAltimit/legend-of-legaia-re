@@ -693,9 +693,17 @@ impl BakaFight {
     /// as `FUN_801d2a28` does: the combo row takes the running-maximum
     /// streak's table entry, the bonus row the winner's end-HP entry.
     ///
+    /// The score channel runs only when a host has supplied the two overlay
+    /// bonus tables. Without them the port has no score channel at all - the
+    /// rows stay empty and the tally carries the coin prize alone, which is
+    /// the behaviour every disc-free oracle measures. Retail always has the
+    /// tables, so supplying them is what turns the retail channel on.
+    ///
     /// REF: FUN_801d2a28
     fn accumulate_round_score(&mut self, winner: usize) {
-        let tables = self.score_tables.clone().unwrap_or_default();
+        let Some(tables) = self.score_tables.clone() else {
+            return;
+        };
         let gain = baka_round_score(
             self.max_combo,
             &tables.combo_bonus,
@@ -1988,17 +1996,32 @@ mod tests {
     }
 
     #[test]
-    fn without_tables_only_the_literal_perfect_bonus_lands() {
-        // Both table lookups miss, but the full-HP bonus is a literal in the
-        // retail kernel rather than a table read, so it still applies.
+    fn without_tables_there_is_no_score_channel_at_all() {
         let mut f = fight();
+        f.f[1].combo = 6;
+        f.tick(1);
+        f.end_round(0, false);
+        assert_eq!(f.score_rows(), [0, 0, 0]);
+        // ...and the tally therefore opens on the coin row alone.
+        let mut f = fight();
+        f.f[0].round_wins = ROUND_WIN_TARGET - 1;
+        f.end_round(0, false);
+        assert_eq!(f.tally().unwrap().counters()[..3], [0, 0, 0]);
+    }
+
+    #[test]
+    fn the_perfect_bonus_is_a_literal_not_a_table_read() {
+        // Supplying empty tables turns the channel on; the combo lookup then
+        // misses but the full-HP bonus still lands, because retail spells it
+        // as an immediate rather than a table cell.
+        let mut f = fight().with_score_tables(BakaScoreTables::default());
         f.f[1].combo = 6;
         f.tick(1);
         f.end_round(0, false);
         assert_eq!(f.score_rows(), [0, 0, BAKA_PERFECT_BONUS]);
 
-        // A winner below full HP falls back to the (absent) health table.
-        let mut f = fight();
+        // A winner below full HP falls back to the (empty) health table.
+        let mut f = fight().with_score_tables(BakaScoreTables::default());
         f.f[0].hp = HP_START - 1;
         f.end_round(0, false);
         assert_eq!(f.score_rows(), [0, 0, 0]);

@@ -776,10 +776,12 @@ taken counter - how long a streak the player is currently landing.
 
 The engine port accumulates both rows into the tally
 (`engine-core::baka_fighter`: `BakaFight::max_combo` feeds `baka_round_score`
-at every round end). The two bonus tables stay optional
-(`BakaScoreTables`): with none supplied every table lookup misses, so the
-combo row stays empty and the bonus row carries only the flat full-HP
-bonus, which is a literal in the kernel rather than a table read. See
+at every round end), but only once a host supplies the two tables
+(`BakaScoreTables`). With none supplied the port runs **no score channel at
+all** - the tally opens on the coin prize alone - which is the documented host
+model rather than a reading of retail; retail always has the tables resident.
+The full-HP bonus is worth separating out either way: it is an immediate in
+the kernel, not a table cell, so it lands whenever the channel is on. See
 `overlay_baka_fighter_801d2a28.txt`. **Confirmed.**
 
 ### Shared-overlay helpers (out of scope)
