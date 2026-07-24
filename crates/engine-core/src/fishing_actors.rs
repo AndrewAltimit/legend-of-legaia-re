@@ -461,7 +461,11 @@ pub struct CelebrationBurst {
 /// The four bursts, in the order retail evaluates them. Every tier whose
 /// threshold the score clears fires, so a big catch plays all four.
 ///
-/// PORT: FUN_801d4948 (celebration tiers)
+/// The address tag lives on [`celebration_bursts`], which reads this table -
+/// a tag on the `const` resolves to no code anchor and the audit widens it to
+/// the whole module.
+///
+/// REF: FUN_801d4948 (celebration tiers)
 pub const CELEBRATION_BURSTS: [CelebrationBurst; 4] = [
     CelebrationBurst {
         above: 200,

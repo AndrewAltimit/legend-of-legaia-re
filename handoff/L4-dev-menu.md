@@ -78,3 +78,16 @@ Both were recovered:
 5. Pre-existing failing test, untouched by this lane and reproduced on a clean
    tree: `legaia-engine-core --lib
    world::battle::casting::capture_bypass_tests::the_bypass_wrapper_weights_the_defence_terms_more_heavily`.
+
+6. `crates/engine-vm/src/world_map_overlay.rs` gained eight new
+   "tagged `NOT WIRED` but analysed live" rows as a side effect of this lane's
+   wiring, and only one of them is a genuine stale tag. `dev_equip_commit`'s
+   `commit_equip` is now reached from the dev-menu host, and it calls that
+   file's `resolve_equip_slot`, so **`801e5b4c` really is live now** and its
+   disclosure is stale. The other seven (`801ead98`, `801eca08` x2,
+   `801ed710` x3, plus the `801e5b4c` module row) are the module-anchor
+   over-report: the file's `//!` header carries five address tags at once, so
+   one live symbol marks all five live. Whoever owns that file should move
+   those five tags onto the functions and types that implement them, the way
+   `world_map_dev_menu.rs`, `dev_menu_list.rs` and `debug_char_editor.rs` were
+   changed here. Nothing in this lane edited `world_map_overlay.rs`.
