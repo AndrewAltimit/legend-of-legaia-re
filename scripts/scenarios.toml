@@ -2284,7 +2284,12 @@ pcsx_redux_sstate = "saves/library/pcsx-redux/814dce6b90da114a8d8d37386a90623c4f
 backup_fingerprint = "814dce6b90da114a8d8d37386a90623c4f871f7e380e14c010889ab4414c9dd8"
 topics = ["battle", "boss", "Gaza", "softlock", "state 0x19", "attack approach", "FUN_8004E2F0", "korb3", "endless orbit"]
 
-[[scenario]]
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios]]
+slot = 255
 label = "battle_gaza2_park_0x19_summon_melee"
 description = "Second live-caught 0x19 park, REPRODUCED on the first directed attempt of the summon-then-melee recipe, with the onset ON RECORD (capture gaza2_summon_displacement 2026-07-24T17-07-05Z): summon ends v26867 (Gaza staged to (0,-2048), damage-reaction clip 2/2 during staging), his melee starts directly next v26873 targeting seat 1 (Noa) at ~1022 units; the fallback Move clip ENGAGES (anim pair 1/1, ~19 units/vsync) and DIES ~12 vsyncs later (pair 0/0, frozen at ~786 from the target, beyond reach ~416). Party state at park: Vahn dead 0/1289, Noa 79/1199, Gala 378/1382, Gaza 5700/15000 targeting +0x1DD = 1. Healthy contrast in the same capture: summon -> other action -> melee ran the Move clip 64 vsyncs / 1260 units. Open: which anim-driver field the summon staging leaves stale."
 phase = "battle"
@@ -2293,6 +2298,21 @@ expected_active_scene = "korb3"
 pcsx_redux_sstate = "saves/library/pcsx-redux/98022a6d3a4db2a2753b5b29214fcf75de9279e8a8b1ee8a7d91bdf180acead1.sstate"
 backup_fingerprint = "98022a6d3a4db2a2753b5b29214fcf75de9279e8a8b1ee8a7d91bdf180acead1"
 topics = ["battle", "boss", "Gaza", "softlock", "state 0x19", "attack approach", "summon staging", "Move clip", "korb3", "endless orbit"]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios]]
+slot = 255
+label = "battle_gaza2_park_0x19_target_vahn"
+description = "Third live-caught 0x19 park, again from ordinary play in the Gaza 2 fight. Gaza (seat 3, 10386/15000 HP) wedged targeting seat 0 (Vahn) with the dead-clip signature (anim pair +0x1DA/+0x1D9 = 0/0); party seats 0-2 alive and full HP, all holding target 3. Confirms the park is target-independent (previous catches targeted Gala and Noa) - the discriminator is the dead Move clip, not distance or seat."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb3"
+pcsx_redux_sstate = "saves/library/pcsx-redux/a8ade5cd5c21fc6bebbb91d8f17c74ed4061c53dc097cd42b27f3331b39ab234.sstate"
+backup_fingerprint = "a8ade5cd5c21fc6bebbb91d8f17c74ed4061c53dc097cd42b27f3331b39ab234"
+topics = ["battle", "boss", "Gaza", "softlock", "state 0x19", "attack approach", "Move clip", "korb3", "endless orbit"]
 
 [scenarios.overlay_slice]
 start = 0x801C0000
