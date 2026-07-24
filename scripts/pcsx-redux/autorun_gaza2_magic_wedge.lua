@@ -155,8 +155,8 @@ local AUTOPILOT = probe.getenv_num("LEGAIA_AUTOPILOT", 0)
 local AUTOPILOT_SEQ = probe.getenv("LEGAIA_AUTOPILOT_SEQ",
     "CROSS,RIGHT,CROSS,DOWN,CROSS,CROSS,RIGHT,CROSS,DOWN,DOWN,CROSS,CROSS,CROSS,CROSS")
 
-if probe.getenv("LEGAIA_CORE", "") == "dynarec" then
-    PCSX.log("[gaza2] REFUSING --fast launch: Lua breakpoints never fire under the recompiler")
+if probe.getenv("LEGAIA_CORE", ""):match("^dynarec$") or probe.getenv("LEGAIA_CORE", ""):match("^interpreter%-nodebug$") then
+    PCSX.log("[gaza2] REFUSING --fast/--timing launch: Lua breakpoints need the debugger hook")
     PCSX.quit(3)
     return
 end

@@ -1,0 +1,243 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">write-ups</a> &middot; the endless orbit</div>
+  <h1>The endless camera orbit - anatomy of a retail softlock</h1>
+  <p class="lede">Since 1998, players have reported Legend of Legaia battles that simply stop: mid-fight, usually against the Gaza rematch, the action never comes and the camera circles the party forever. It happens on every regional release and survived every emulator. This is the story of catching it live, tracing it to a dead animation nobody re-stages, reproducing it on demand - and fixing it with nine instructions that make the game repair itself. The fix ships in the <a href="../tooling/rom-patcher.html">browser ROM patcher</a>.</p>
+</header>
+
+<div class="notice">
+  <div class="notice-title">TL;DR</div>
+  A monster approaching an out-of-reach target waits in a range-check poll with <strong>no movement code and no timeout</strong>; its staged &ldquo;Move&rdquo; animation is what actually carries it forward. A summon's staging round-trip immediately before the melee kills that animation ~12 vsyncs in, nothing re-stages it, and the fight waits forever. The patch rewrites nine redundant words inside the poll so a dead animation bounces the state machine back to its own staging state - the boss just resumes walking. Enable it with the <em>Approach-softlock fix</em> toggle in the <a href="../tooling/rom-patcher.html">ROM patcher</a>.
+</div>
+
+<section class="doc-section" id="symptom">
+  <h2>The symptom, and the red herring</h2>
+  <p>The freeze looks like a camera bug: the fight stops responding and the view keeps orbiting. But the idle azimuth sweep is unconditional - the battle round driver (<code>FUN_801D0748</code>) steps the camera yaw every frame without ever consulting the action state machine. The orbit is what a Legaia battle looks like whenever <em>anything</em> stalls; it says nothing about what stalled. The real question is why the per-action state machine, <code>FUN_801E295C</code> in the battle-action overlay (PROT entry 898, load base <code>0x801CE818</code>), stopped advancing.</p>
+  <p>Two live captures answered it. A poll-only probe - no breakpoints, so it runs at recompiler speed while a human plays and savestates - flagged any action state held for thousands of frames. Both catches parked in the same place: state <code>0x19</code>, the <strong>attack approach</strong>.</p>
+</section>
+
+<section class="doc-section" id="state-machine">
+  <h2>Four ways out of an attack</h2>
+  <p>Every physical attack enters approach setup, state <code>0x14</code>. Its first move is the range check <code>FUN_8004E2F0(attacker, target)</code> - <code>0</code> means &ldquo;within reach&rdquo; (a size-scaled radius, ~416 units for a boss-sized actor; party members use the static table <code>DAT_80078870</code> = {256, 384, 1024}). From there the arm routes four ways:</p>
+
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="sm-title">
+      <title id="sm-title">State routing out of attack setup 0x14: strike, party approach, walk chain, or the fallback poll that can park</title>
+      <style>
+        .sm-lab  { font: 11px 'Inter', sans-serif; fill: #8b949e; }
+        .sm-st   { fill: #19212d; stroke: #3a4552; stroke-width: 1.2; }
+        .sm-ok   { fill: #19212d; stroke: #58c4b3; stroke-width: 1.2; }
+        .sm-bad  { fill: #221a1d; stroke: #e0707a; stroke-width: 1.4; }
+        .sm-t    { font: 11px 'JetBrains Mono', monospace; fill: #c9d1d9; text-anchor: middle; }
+        .sm-cap  { font: 10px 'Inter', sans-serif; fill: #7c8893; }
+        .sm-edge { fill: none; stroke: #3a4552; stroke-width: 1.3; }
+        .sm-edgeb{ fill: none; stroke: #e0707a; stroke-width: 1.5; }
+        .sm-okt  { font: 600 10px 'Inter', sans-serif; fill: #58c4b3; }
+        .sm-badt { font: 600 10px 'Inter', sans-serif; fill: #e0707a; }
+      </style>
+
+      <rect x="20" y="106" width="90" height="34" class="sm-st"/>
+      <text x="65" y="127" class="sm-t">0x14 setup</text>
+
+      <!-- lane 1: in reach -->
+      <line x1="110" y1="112" x2="240" y2="46" class="sm-edge"/>
+      <text x="128" y="58" class="sm-lab">in reach</text>
+      <rect x="240" y="30" width="110" height="32" class="sm-ok"/>
+      <text x="295" y="50" class="sm-t">0x1E strike</text>
+      <text x="366" y="50" class="sm-okt">the usual case</text>
+
+      <!-- lane 2: party -->
+      <line x1="110" y1="118" x2="240" y2="96" class="sm-edge"/>
+      <text x="122" y="94" class="sm-lab">out of reach, party</text>
+      <rect x="240" y="82" width="110" height="32" class="sm-st"/>
+      <text x="295" y="102" class="sm-t">0x19 wait</text>
+      <line x1="350" y1="98" x2="470" y2="98" class="sm-edge"/>
+      <text x="356" y="92" class="sm-cap">run anim moves them</text>
+      <rect x="470" y="82" width="90" height="32" class="sm-ok"/>
+      <text x="515" y="102" class="sm-t">0x1E</text>
+
+      <!-- lane 3: walk chain -->
+      <line x1="110" y1="126" x2="240" y2="150" class="sm-edge"/>
+      <text x="118" y="160" class="sm-lab">monster with tag 0x20</text>
+      <rect x="240" y="136" width="70" height="32" class="sm-st"/>
+      <text x="275" y="156" class="sm-t">0x15</text>
+      <line x1="310" y1="152" x2="340" y2="152" class="sm-edge"/>
+      <rect x="340" y="136" width="130" height="32" class="sm-ok"/>
+      <text x="405" y="156" class="sm-t">0x16 step loop</text>
+      <line x1="470" y1="152" x2="500" y2="152" class="sm-edge"/>
+      <rect x="500" y="136" width="70" height="32" class="sm-st"/>
+      <text x="535" y="156" class="sm-t">0x17</text>
+      <line x1="570" y1="152" x2="600" y2="152" class="sm-edge"/>
+      <rect x="600" y="136" width="70" height="32" class="sm-ok"/>
+      <text x="635" y="156" class="sm-t">0x1E</text>
+      <text x="678" y="156" class="sm-okt">SM moves it - 6 of 186 monsters</text>
+
+      <!-- lane 4: fallback -->
+      <line x1="110" y1="134" x2="240" y2="212" class="sm-edgeb"/>
+      <text x="112" y="226" class="sm-badt">monster without tag 0x20 - 180 of 186</text>
+      <rect x="240" y="196" width="150" height="34" class="sm-bad"/>
+      <text x="315" y="217" class="sm-t">0x19 wait-in-range</text>
+      <line x1="390" y1="213" x2="470" y2="213" class="sm-edgeb"/>
+      <text x="396" y="207" class="sm-cap">Move clip carries him</text>
+      <rect x="470" y="196" width="90" height="34" class="sm-ok"/>
+      <text x="515" y="217" class="sm-t">0x1E</text>
+      <text x="576" y="211" class="sm-badt">...unless the clip dies:</text>
+      <text x="576" y="226" class="sm-badt">no movement, no timeout &rarr; forever</text>
+    </svg>
+    <figcaption>State routing out of attack setup. The bottom lane is where almost every monster melee lives - and where the softlock hides.</figcaption>
+  </figure>
+
+  <p>The decisive branch is the walk gate. Out of reach, a monster attacker needs its <strong>approach-transition clip</strong> - action tag <code>0x20</code> in the per-monster action table (<code>record+0x4C</code>, scanned by first byte via <code>FUN_80050E2C</code>):</p>
+  <pre><code>801e3260  li  a1,0x20              ; approach-transition tag
+801e3268  jal 0x80050e2c           ; scan the action table
+801e327c  bne v0,0xff,0x801e32b4   ; found  -> 0x15 (walk chain)
+801e329c  li  a1,0x1               ; NOT found: stage tag 1 (the Move loop)
+801e32a4  jal 0x80050e2c
+801e32ac  j   0x801e32c4           ; -> 0x19, the wait-in-range poll
+801e32b0  _sb v0,0x1da(s3)         ;    (delay: staged clip -> actor+0x1DA)</code></pre>
+  <p>A roster sweep over the monster archive (PROT 867) puts numbers on it: <strong>180 of the game's 186 monsters have no tag <code>0x20</code></strong> - bosses included - so the fallback lane is not an edge case, it is how nearly every monster melee approaches. (All 186 do carry the tag-<code>1</code> &ldquo;Move&rdquo; locomotion clip - the float or walk cycle the <a href="../monsters.html">enemy viewer</a> shows.)</p>
+</section>
+
+<section class="doc-section" id="approach">
+  <h2>An approach the state machine doesn't perform</h2>
+  <p>Here is the trap in the design. The walking states <code>0x15&ndash;0x18</code> contain the state machine's own stepping code - a monster in that chain is <em>moved by the engine</em>, guaranteed to arrive. The fallback state <code>0x19</code> contains none: it re-derives facing, re-polls the range check, and on failure bumps a stall counter (<code>ctx+0x6D4</code> - whose only reader turns out to be an interference-roll modifier, not a timeout). All actual movement comes from the <em>staged animation's playback</em>: the tag-<code>1</code> Move clip slides the actor along its facing at a measured ~19 units per vsync.</p>
+  <p>Normally that works fine. Position captures of ordinary play show every healthy boss melee starting out of reach (438&ndash;1,078 units against a ~416 reach - standard formation spacing <em>is</em> out of reach; the models are just so large it looks adjacent) and the Move clip walking the boss in over 28&ndash;67 vsyncs, every time. The design only fails if the animation stops and nothing notices. Nothing can notice: <code>0x19</code> stages the clip once, in <code>0x14</code>, and never again.</p>
+
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="tl-title">
+      <title id="tl-title">Distance to target versus time: a healthy approach walks under the reach line; the parked approach moves 12 vsyncs and freezes</title>
+      <style>
+        .tl-ax   { stroke: #3a4552; stroke-width: 1; }
+        .tl-lab  { font: 11px 'Inter', sans-serif; fill: #8b949e; }
+        .tl-cap  { font: 10px 'Inter', sans-serif; fill: #7c8893; }
+        .tl-ok   { fill: none; stroke: #58c4b3; stroke-width: 2; }
+        .tl-bad  { fill: none; stroke: #e0707a; stroke-width: 2; }
+        .tl-reach{ stroke: #8b949e; stroke-width: 1; stroke-dasharray: 5 4; }
+        .tl-okt  { font: 600 11px 'Inter', sans-serif; fill: #58c4b3; }
+        .tl-badt { font: 600 11px 'Inter', sans-serif; fill: #e0707a; }
+        .tl-mono { font: 10px 'JetBrains Mono', monospace; fill: #8b949e; }
+      </style>
+
+      <!-- axes: x = vsyncs 0..60 (14px per vsync from x=70), y = distance 0..1100 (bottom 250, top 30) -->
+      <line x1="70" y1="250" x2="850" y2="250" class="tl-ax"/>
+      <line x1="70" y1="30"  x2="70"  y2="250" class="tl-ax"/>
+      <text x="440" y="286" class="tl-lab" text-anchor="middle">vsyncs since the approach began</text>
+      <text x="24" y="140" class="tl-lab" transform="rotate(-90 24 140)" text-anchor="middle">distance to target</text>
+      <text x="62" y="254" class="tl-mono" text-anchor="end">0</text>
+      <text x="62" y="172" class="tl-mono" text-anchor="end">416</text>
+      <text x="62" y="56"  class="tl-mono" text-anchor="end">1022</text>
+
+      <!-- reach line at d=416 -> y = 250 - 416*0.2 = 166.8 -->
+      <line x1="70" y1="167" x2="850" y2="167" class="tl-reach"/>
+      <text x="846" y="161" class="tl-lab" text-anchor="end">reach (~416, size-scaled)</text>
+
+      <!-- healthy: 977 -> 377 over 28 vs, then strike. y(977)=54.6, y(377)=174.6 crossing reach ~ vs 26 -->
+      <polyline points="70,55 462,175" class="tl-ok"/>
+      <circle cx="462" cy="175" r="4" fill="#58c4b3"/>
+      <text x="470" y="192" class="tl-okt">in reach at vsync ~28 &rarr; 0x1E strike</text>
+      <text x="150" y="70" class="tl-okt">healthy melee: Move clip playing (anim 1/1), ~19 units/vsync</text>
+
+      <!-- parked: 1022 -> 786 over 12 vs then flat. y(1022)=45.6, y(786)=92.8; 12vs -> x=70+12*14=238 -->
+      <polyline points="70,46 238,93 850,93" class="tl-bad"/>
+      <circle cx="238" cy="93" r="4" fill="#e0707a"/>
+      <text x="250" y="86" class="tl-badt">clip dies at ~12 vsyncs (anim pair &rarr; 0/0)</text>
+      <text x="250" y="112" class="tl-badt">frozen at 786 &gt; reach - polls forever, battle over</text>
+    </svg>
+    <figcaption>Measured from the live captures: the same fallback path, ~19 units/vsync in both - until the staged clip dies. Nothing re-stages it, and state <code>0x19</code> has no timeout.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="trigger">
+  <h2>The trigger, reproduced: a summon, then the melee</h2>
+  <p>What kills the clip? The second live catch answered it, because by then the probe was logging the actor's animation pair - staged clip (<code>+0x1DA</code>) versus playing clip (<code>+0x1D9</code>) - every vsync. The frame-exact onset:</p>
+  <pre><code>v26536  summon cinematic: boss staged off-arena to (0,-2048),
+        his damage-reaction clip plays (pair 2/2), restored, pair -> 0/0
+v26867  summon action ends
+v26873  boss melee starts DIRECTLY next - 0x14, target ~1022 away -> fallback
+v26876  0x19, pair 1/1: Move clip ENGAGED, sliding ~19 units/vsync
+v26888  pair 0/0: clip DEAD after ~12 vsyncs / ~236 units
+        frozen at ~786 (&gt; 416 reach) -> polls forever  = the softlock</code></pre>
+  <p>Summons relocate every combatant for the cinematic - the boss is parked ~2,500 units off-arena and put back - and his hit-reaction clip plays while he's staged. When his <em>very next action</em> is the melee, the freshly staged Move clip terminates almost immediately: the staging round-trip leaves the animation driver holding something stale (a frame cursor or clip-length latch - the one detail still open), so the new clip hits its &ldquo;end&rdquo; in a dozen frames. Any other action in between resets whatever went stale: the same session shows a summon &rarr; <em>someone else's turn</em> &rarr; melee running the same clip 64 vsyncs and 1,260 units to a clean hit. The sequence was reproduced on the first directed attempt - cast a summon, stall so the boss's melee comes next, park.</p>
+  <p>It also explains the folklore. The bug clusters on late-game bosses (walk-less monsters with contact attacks and long fights full of summons), afflicts every region (nothing here is localization-touched), and looks random (it needs the summon &rarr; melee adjacency <em>and</em> an out-of-reach target - common, but not every round).</p>
+  <p>One more property worth stating: the trigger is <strong>CPU-core-independent in emulation</strong>. The same recipe parks under both of PCSX-Redux's CPU backends - the recompiler and the cycle-stricter interpreter - with the identical onset shape, so the race is not an artifact of loose dynarec timing. It <em>is</em> sensitive to when the summon's staging restore lands relative to the melee, which is downstream of CD-drive latency; an emulator that preloads the disc image or reads ahead asynchronously schedules that restore differently and may rarely or never land in the window. That spread - easy on one emulator, stubborn on another, occasional on hardware - is exactly what the trigger's shape predicts.</p>
+</section>
+
+<section class="doc-section" id="fix">
+  <h2>The fix: teach the poll to re-stage</h2>
+  <p>A first fix simply skipped the approach - one word retargeting the walk-gate fallback straight into the strike chain, &ldquo;hit from where you stand.&rdquo; It closed the softlock and verified cleanly, but the roster numbers above made it unacceptably blunt: out-of-reach is the <em>norm</em>, so it would have deleted every boss's approach walk, not just the broken one. The shipped fix is the faithful one: fix the actual defect - <strong>the dead clip that nothing re-stages</strong>.</p>
+  <p>There was no room for new code (every verified-dead byte run in the executable is already occupied by other patch features - and the one promising candidate turned out to be a runtime buffer that 55 savestates all showed live: &ldquo;zero is not dead&rdquo;). The answer was to find nine expendable words <em>inside the poll itself</em>. State <code>0x19</code> re-derives the actor's facing every frame - but the target never moves during an approach, the facing was just computed at staging, and the strike arm recomputes it again on entry. Nine words of dead weight, exactly where the guard needs to live:</p>
+
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="patch-title">
+      <title id="patch-title">The nine-word window at 0x801E3568: stock facing recompute on the left, the re-stage guard on the right</title>
+      <style>
+        .pt-lab  { font: 11px 'Inter', sans-serif; fill: #8b949e; }
+        .pt-head { font: 600 11px 'Inter', sans-serif; fill: #c9d1d9; }
+        .pt-box  { fill: #131922; stroke: #2a323e; stroke-width: 1.1; }
+        .pt-boxb { fill: #19212d; stroke: #58c4b3; stroke-width: 1.2; }
+        .pt-m    { font: 10.5px 'JetBrains Mono', monospace; fill: #8b949e; }
+        .pt-mb   { font: 10.5px 'JetBrains Mono', monospace; fill: #c9d1d9; }
+        .pt-com  { font: 10px 'Inter', sans-serif; fill: #7c8893; }
+        .pt-arrow{ fill: none; stroke: #58c4b3; stroke-width: 1.6; marker-end: url(#pt-ah); }
+        .pt-okt  { font: 600 10px 'Inter', sans-serif; fill: #58c4b3; }
+      </style>
+      <defs>
+        <marker id="pt-ah" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+          <path d="M0,0 L7,3.5 L0,7 z" fill="#58c4b3"/>
+        </marker>
+      </defs>
+
+      <text x="30" y="28" class="pt-head">stock: facing recompute (redundant during an approach)</text>
+      <rect x="30" y="40" width="360" height="248" class="pt-box"/>
+      <text x="44" y="62"  class="pt-m">801e3568  lh  a0,0x38(s8)</text>
+      <text x="44" y="86"  class="pt-m">801e356c  lh  a1,0x34(s8)</text>
+      <text x="44" y="110" class="pt-m">801e3570  lh  a2,0x38(s3)</text>
+      <text x="44" y="134" class="pt-m">801e3574  lh  a3,0x34(s3)</text>
+      <text x="44" y="158" class="pt-m">801e3578  jal 0x80019b28</text>
+      <text x="44" y="182" class="pt-m">801e357c  _nop</text>
+      <text x="44" y="206" class="pt-m">801e3580  addiu v0,v0,0x800</text>
+      <text x="44" y="230" class="pt-m">801e3584  andi  v0,v0,0xfff</text>
+      <text x="44" y="254" class="pt-m">801e3588  sh    v0,0x46(s3)</text>
+      <text x="44" y="278" class="pt-com">target is static; 0x14 and 0x1E both re-derive this</text>
+
+      <line x1="400" y1="164" x2="480" y2="164" class="pt-arrow"/>
+      <text x="412" y="154" class="pt-okt">same size</text>
+
+      <text x="490" y="28" class="pt-head">patched: the re-stage guard</text>
+      <rect x="490" y="40" width="360" height="248" class="pt-boxb"/>
+      <text x="504" y="62"  class="pt-mb">801e3568  lbu v0,0x1da(s3)</text>
+      <text x="700" y="62"  class="pt-com">staged clip?</text>
+      <text x="504" y="86"  class="pt-mb">801e356c  lui v1,0x8008</text>
+      <text x="504" y="110" class="pt-mb">801e3570  lw  v1,-0x42dc(v1)</text>
+      <text x="700" y="110" class="pt-com">battle ctx</text>
+      <text x="504" y="134" class="pt-mb">801e3574  ori a0,zero,0x14</text>
+      <text x="504" y="158" class="pt-mb">801e3578  bne v0,zero,+3</text>
+      <text x="700" y="158" class="pt-com">alive &rarr; skip</text>
+      <text x="504" y="182" class="pt-mb">801e357c  _nop</text>
+      <text x="504" y="206" class="pt-mb">801e3580  sb  a0,0x7(v1)</text>
+      <text x="700" y="206" class="pt-com">dead &rarr; state 0x14</text>
+      <text x="504" y="230" class="pt-mb">801e3584  nop</text>
+      <text x="504" y="254" class="pt-mb">801e3588  nop</text>
+      <text x="504" y="278" class="pt-com">falls into the unchanged range-check call</text>
+    </svg>
+    <figcaption>One same-size nine-word rewrite at overlay offset <code>+0x14D50</code>. No injected routine, no reclaimed dead space, no new behavior.</figcaption>
+  </figure>
+
+  <p>The guard reads the staged-clip byte each poll. Alive: nothing happens - healthy fights are byte-identical (a redundant re-stage can't even occur, because the write never happens). Dead while the poll still fails: set the state byte back to <code>0x14</code>. That's the whole fix, because <strong>retail already knows how to stage an approach</strong> - its own <code>0x14</code> arm re-runs next frame, recomputes the facing, re-checks the range, re-stages the Move clip, and the boss resumes walking. If the clip ever dies again, the guard bounces again: a stuttering but monotonic approach that always arrives. The same bounce protects a party attacker whose run clip dies, and the only unrescuable shape - a monster with no Move clip at all - is vacuous: the roster sweep found zero.</p>
+  <p>Verification is layered the way the project verifies everything. A disc-gated oracle proves the edit is surgical (exactly the nine words change, byte-deterministic, idempotent, refused on an unrecognized image). And the runtime proof is hands-off replays of <em>both</em> live-caught park savestates with only the nine words poked into RAM: in each, the guard bounces exactly once, retail re-stages (pair back to 1/1), the boss walks in at ~19 units/vsync, the strike lands, and the round completes.</p>
+</section>
+
+<section class="doc-section" id="try-it">
+  <h2>Run it on your disc</h2>
+  <p>The fix is the <strong>&ldquo;Approach-softlock fix&rdquo;</strong> toggle in the <a href="../tooling/rom-patcher.html">in-browser ROM patcher</a> - your disc image never leaves the tab - or <code>legaia-patcher randomize --input DISC.bin --approach-softlock-fix</code> from the <a href="../tooling/randomizer.html#approach-softlock-fix">command-line patcher</a>, which can also emit a PPF patch. It is seedless, composes with every other option, and the Balanced / Full Chaos presets enable it by default.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/battle-action.html">Battle action state machine</a>
+    <a href="../formats/monster-animation.html">Monster animation format</a>
+    <a href="../reference/re-settled-threads.html">Settled RE threads (the full evidence trail)</a>
+    <a href="disc-patching/index.html">Patching a sealed disc (the technique series)</a>
+  </div>
+</section>

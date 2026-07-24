@@ -231,12 +231,12 @@ impl DevMenuSession {
             .tick(u32::from(pad_edge), u32::from(pad_held), records);
         // Retail's confirm row zeroes the `+0x185` span and cues an SFX
         // rather than stepping a field.
-        if pad_edge & PACK_CROSS != 0 && self.chars.row == crate::debug_char_editor::CONFIRM_ROW {
-            if let Some(record) = records.get_mut(self.chars.character as usize)
-                && crate::debug_char_editor::apply_confirm_clear(record)
-            {
-                self.pending_sfx.push(crate::debug_char_editor::CONFIRM_SFX);
-            }
+        if pad_edge & PACK_CROSS != 0
+            && self.chars.row == crate::debug_char_editor::CONFIRM_ROW
+            && let Some(record) = records.get_mut(self.chars.character as usize)
+            && crate::debug_char_editor::apply_confirm_clear(record)
+        {
+            self.pending_sfx.push(crate::debug_char_editor::CONFIRM_SFX);
         }
     }
 

@@ -513,6 +513,18 @@ pub(crate) struct RandomizeArgs {
     /// untouched.
     #[arg(long, default_value_t = false)]
     pub(crate) jewel_fix: bool,
+    /// Fix the **attack-approach softlock** (the "endless camera orbit"): a
+    /// monster approaching an out-of-reach target waits in a range poll with
+    /// no timeout while its approach animation drives the movement - and
+    /// when that animation dies mid-approach (a summon immediately before
+    /// the melee; caught live and reproduced on the Gaza rematch) nothing
+    /// re-stages it and the battle waits forever. A nine-word rewrite of the
+    /// poll's redundant facing recompute re-stages the dead animation
+    /// through the game's own staging state, so the monster simply resumes
+    /// walking. Healthy approaches, party attacks, and in-range attacks
+    /// behave byte-for-byte like retail.
+    #[arg(long, default_value_t = false)]
+    pub(crate) approach_softlock_fix: bool,
     /// Set the **fishing-exchange price** of one or more prizes. Comma- or
     /// repeat-separated `ITEM=POINTS` entries (`--fishing-price 0x6F=500` sets
     /// the Water Egg to 500 fishing points; ids in decimal or `0xHH`). The

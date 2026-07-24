@@ -172,15 +172,14 @@ screen.
 
 [[waiver]]
 builder = "dev_menu_list_draws_for"
-kind = "orphan"
+kind = "web_missing"
 reason = """
 The world-map dev-menu list renderer (`FUN_801EAD98` row-loop geometry), the
-list sibling of `records_screen_draws_for` above and gated on the same host
-follow-up. The dev menu is a debug-flag surface retail only shows under
-`_DAT_8007B98C`, and neither host exposes a debug-menu route yet - the model
-half (`world_map_overlay` `DevMenuRow`/`cursor_step`/`list_body_draws`) is
-wired and unit-tested, so this builder waits for a host debug toggle rather
-than inventing one.
+list sibling of `records_screen_draws_for` above. The native window now
+routes it (`window/dev_menu.rs`, behind the debug toggle mirroring retail's
+`_DAT_8007B98C` gate); the browser play page exposes no debug-menu route -
+a debug surface is deliberately out of the web page's scope rather than a
+wiring gap.
 """
 
 

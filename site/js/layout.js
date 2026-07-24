@@ -50,6 +50,7 @@ const NAV = [
     label: 'write-ups',
     items: [
       { href: 'writeups/index.html',                              text: 'Technical write-ups',     key: 'writeups/index' },
+      { href: 'writeups/gaza-orbit-softlock.html',                text: 'The endless orbit',       key: 'writeups/gaza-orbit-softlock' },
       { href: 'writeups/disc-patching/index.html',                text: 'Patching a sealed disc',  key: 'writeups/disc-patching/index' },
       { href: 'writeups/disc-patching/a-static-tables.html',       text: 'Tier A - static tables',  key: 'writeups/disc-patching/a-static-tables', indent: true },
       { href: 'writeups/disc-patching/b-lzs-slots.html',           text: 'Tier B - editing inside LZS', key: 'writeups/disc-patching/b-lzs-slots', indent: true },

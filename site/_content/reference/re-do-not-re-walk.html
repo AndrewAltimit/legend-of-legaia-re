@@ -72,6 +72,18 @@
         <td>The reroll loops are unbounded in isolation, but every reachable caller state has an exit: the scheduler <code>FUN_801DABA4</code> never seeds a dead actor (predicate <code>+0x14C != 0 &amp;&amp; !(+0x16E &amp; 0x4)</code>), the acting <code>0x380</code> monster is itself an in-band self-pick exit (<code>0x801E73E8</code> clears <code>+0x1DE</code>), and a band with zero living members means the previous <code>0x5A</code> already fired the wipe. The real defect is downstream in the <code>0x5A</code> victory arm's roster indexing. Lesson: an unbounded loop hangs only under a reachable all-invalid state - check the predicates feeding it first.</td>
         <td><a href="../subsystems/battle.html">battle</a></td>
       </tr>
+      <tr>
+        <td>Gaza 2 <code>0x51</code> park: overkill-clamp asymmetry as a standalone retail generator</td>
+        <td><span class="tag tag-done">falsified</span> (amplifier only)</td>
+        <td>The damage kernel's two overkill clamps (accumulator vs displayed readout, live HP vs itself) can only disagree when the readout already lags live HP at action start - and the previous party-targeted action's own settle wait guarantees it doesn't. The capture that anchored the generator reading (live HP 266, readout 0, zero accumulator) turned out to be <em>phased crediting</em>: a multi-strike action credits the readout per strike while live HP commits once at the end, so mid-action watchpoints see the "absorbing" shape on perfectly healthy fights. Only a mismatch surviving the action's own commit and settle wait counts - none has been captured from retail-only play.</td>
+        <td><a href="../subsystems/battle-action.html">battle-action</a></td>
+      </tr>
+      <tr>
+        <td>Gaza 2 <code>0x51</code> park: the Lost Grail auto-revive lands mid-drain "at the worst possible moment"</td>
+        <td><span class="tag tag-done">falsified</span> (on the Gaza 2 move set; 12/12 revives clean)</td>
+        <td>The revive path's bare accumulator assign is real, but the timing premise fails: readout credits land per strike <em>early</em> in a resolution, the revive state arrives only after the remaining targets and effects wind down, and the quarter-step drain empties any accumulator faster than every observed gap. A three-capture campaign with a Lost-Grail-armed party (no harness writes to any HP, readout, or accumulator field) drove twelve retail auto-revives across cast-path, kernel-path, single-target and party-wide kills: every restore found the accumulator already at zero, margins 143&ndash;280 vsyncs. The surviving question is narrower and lives on the open-threads page.</td>
+        <td><a href="../subsystems/battle-action.html">battle-action</a></td>
+      </tr>
     </tbody>
   </table>
 </section>

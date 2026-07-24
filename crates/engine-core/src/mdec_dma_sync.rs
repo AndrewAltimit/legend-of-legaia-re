@@ -87,9 +87,8 @@ pub struct SyncResult {
 /// `status` yields the current status word on each read. The first read is
 /// unconditional; if the busy bit is already clear the routine returns
 /// immediately without touching the countdown. Otherwise it decrements from
-/// [`SPIN_BUDGET`] and re-reads, and gives up when the counter reaches `-1`
-/// - so the budget allows exactly `SPIN_BUDGET` retries after the first
-/// read.
+/// [`SPIN_BUDGET`] and re-reads, and gives up when the counter reaches `-1` -
+/// so the budget allows exactly `SPIN_BUDGET` retries after the first read.
 fn wait_until_idle<F: FnMut() -> u32>(
     mut status: F,
     mask: u32,

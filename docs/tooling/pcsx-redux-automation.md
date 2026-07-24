@@ -591,13 +591,25 @@ garbage: (1) `run_probe.sh` forces the core explicitly in both directions
 (`--fast` passes `-dynarec` because the persisted `pcsx.json` otherwise wins;
 the default passes `-interpreter -debugger`) and **exports `LEGAIA_CORE`**;
 (2) the breakpoint probes (`autorun_flag_reader_watch.lua`,
-`autorun_flag_firehose.lua`) **hard-refuse to arm** when `LEGAIA_CORE=dynarec`,
+`autorun_flag_firehose.lua`) **hard-refuse to arm** when `LEGAIA_CORE=dynarec`
+or `interpreter-nodebug`,
 and the poll tier logs an advisory when launched on the interpreter (works,
 just ~10x slow); (3) for hand launches with no `LEGAIA_CORE`, the provenance
 probe runs a **liveness canary** - with the unfiltered TEST bp armed,
 field-mode gate tests fire every frame, so a long post-arm silence triggers
 loud repeating "BPs are dead, relaunch without --fast" warnings. Every run's
 `manifest.txt` records the core it actually ran on.
+
+A third mode, **`--timing`**, runs the interpreter with the debugger hook
+OFF (`-interpreter -no-debugger` - the explicit `-no-debugger` matters, since
+omitting the flag falls back to the persisted `pcsx.json` value): the
+interpreter's guest-visible cycle accounting at much better host speed than
+the default core. Lua breakpoints do not fire, so it is for poll-only
+probes - specifically for testing whether a repro is **timing-sensitive
+across CPU cores** (a bug that reproduces under the loose dynarec cycle
+accounting but not under the interpreter, or vice versa, is racing an
+emulated-timing window). Exports `LEGAIA_CORE=interpreter-nodebug`; mutually
+exclusive with `--fast`.
 
 The flag window is capped at `0x200` bytes (idx `0..4095`) deliberately: the char-record slot-3 tail ends exactly at the flag base and the item inventory begins exactly `0x200` above it, so `0x200` is the largest window that is pure story-flag bytes with no overlap onto volatile record/inventory cells. Widening re-introduces inventory double-counting.
 

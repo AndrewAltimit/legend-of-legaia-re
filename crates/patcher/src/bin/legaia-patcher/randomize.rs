@@ -220,6 +220,25 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("jewel_fix = false".to_string());
     }
 
+    // Attack-approach softlock fix: rewrite the state-0x19 poll's redundant
+    // facing recompute into a guard that re-stages a monster's dead approach
+    // animation (the summon-then-melee clip death behind the "endless camera
+    // orbit"). Seedless - nine words in the battle overlay.
+    if args.approach_softlock_fix {
+        let report = apply::apply_approach_fix(&mut patcher)?;
+        println!(
+            "approach-softlock-fix: {}",
+            if report.changed {
+                "battle overlay patched (a dead approach animation is re-staged; the monster resumes walking)"
+            } else {
+                "already applied (no change)"
+            }
+        );
+        manifest.push("approach_softlock_fix = true".to_string());
+    } else {
+        manifest.push("approach_softlock_fix = false".to_string());
+    }
+
     // Fishing-exchange price edits: set the point cost of one or more prizes
     // (e.g. the Buma Water Egg). Seedless targeted edits in the raw PROT 972
     // overlay; the price also gates when the prize appears.

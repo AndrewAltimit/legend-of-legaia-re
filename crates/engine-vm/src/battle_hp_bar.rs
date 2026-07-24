@@ -56,10 +56,14 @@
 //!    committed separately at end-of-action out of the per-action total
 //!    `actor[+0x00]`, clamped against **live HP** (`0x801EEA10..0x801EEA3C`,
 //!    total cleared at `0x801EEA74`). The two clamps agree only while
-//!    `readout == live HP`. Once the readout lags, a hit that exceeds the
-//!    readout but not live HP trips the readout-side clamp *alone*: the
-//!    readout drains to zero, live HP stays positive, and the accumulator
-//!    lands at zero - the absorbing state above.
+//!    `readout == live HP` *at action start* - which the previous
+//!    party-targeted action's own `0x51` settle wait guarantees, so this
+//!    asymmetry **amplifies** a pre-existing offset rather than creating one
+//!    (capture-measured; see battle-action.md's clamp-asymmetry section).
+//!    Given a readout already lagging, a hit that exceeds the readout but
+//!    not live HP trips the readout-side clamp *alone*: the readout drains
+//!    to zero, live HP stays positive, and the accumulator lands at zero -
+//!    the absorbing state above.
 //! 3. **Assigning** - `FUN_800402F4` ([`assign_pending`]). Its three seeds are
 //!    bare stores that never read the old value, so a restore landing
 //!    mid-drain discards the remainder and leaves the readout short by exactly

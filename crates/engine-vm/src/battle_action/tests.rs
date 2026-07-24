@@ -1124,7 +1124,10 @@ fn monster_bar_settles_in_one_frame() {
 fn state_51_park_from_the_clamp_asymmetry() {
     // The softlock, reproduced end to end from the two appliers disagreeing
     // about what to clamp against (`FUN_801EC3E4`'s readout-side clamp at
-    // `0x801EDB70` vs the live-HP-side commit at `0x801EEA10`).
+    // `0x801EDB70` vs the live-HP-side commit at `0x801EEA10`). NB the
+    // asymmetry only amplifies: the pre-lagged readout seeded below is the
+    // precondition, and no retail-only capture has produced one that survives
+    // an action's own commit + settle wait (battle-action.md, clamp section).
     let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
     ctx.action_state = ActionState::DoneFadeDown.as_byte();
     ctx.frame_timer = 0;

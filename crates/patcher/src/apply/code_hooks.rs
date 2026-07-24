@@ -395,6 +395,45 @@ pub fn apply_jewel_fix(patcher: &mut DiscPatcher) -> Result<JewelFixReport> {
     })
 }
 
+/// Outcome of applying the attack-approach softlock fix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ApproachFixReport {
+    /// Whether the hook word was rewritten (`false` = already fixed).
+    pub changed: bool,
+}
+
+/// Apply the **attack-approach softlock fix** (see [`crate::approach_fix`]):
+/// rewrite the state-`0x19` arm's redundant per-frame facing recompute into a
+/// guard that re-stages a monster's approach animation when it dies
+/// mid-approach (the actual defect behind the "endless camera orbit"
+/// softlock - the summon-then-melee clip death). Healthy approaches are
+/// untouched; the bounce re-runs retail's own state-`0x14` staging.
+///
+/// One same-size nine-word window rewrite in the battle-action overlay (raw
+/// PROT entry 898). The stock window and the context words around it are
+/// verified before writing; an unrecognized build is refused without
+/// touching the disc, and an already-fixed image is a no-op.
+pub fn apply_approach_fix(patcher: &mut DiscPatcher) -> Result<ApproachFixReport> {
+    let index = crate::approach_fix::BATTLE_ACTION_OVERLAY_PROT_INDEX;
+    let overlay = patcher
+        .read_entry(index)
+        .with_context(|| format!("read battle-action overlay PROT {index} for approach fix"))?;
+    match crate::approach_fix::plan(&overlay)? {
+        None => Ok(ApproachFixReport { changed: false }),
+        Some(fix) => {
+            patcher
+                .patch_prot_entry(index, fix.window_off as u64, &fix.bytes)
+                .with_context(|| {
+                    format!(
+                        "write approach-fix guard window at PROT {index} +{:#x}",
+                        fix.window_off
+                    )
+                })?;
+            Ok(ApproachFixReport { changed: true })
+        }
+    }
+}
+
 /// Outcome of a landmark/location rename.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocationRenameReport {

@@ -36,8 +36,8 @@ local POKE_MAGIC_ID = probe.getenv_num("LEGAIA_POKE_MAGIC_ID", 0)
 -- Tap Cross every N vsyncs to drive parked battle menus (0 = off).
 local TAP_X = probe.getenv_num("LEGAIA_TAP_X", 0)
 
-if probe.getenv("LEGAIA_CORE", "") == "dynarec" then
-    PCSX.log("[wait-producers] REFUSING --fast launch: Lua breakpoints never fire under the recompiler")
+if probe.getenv("LEGAIA_CORE", ""):match("^dynarec$") or probe.getenv("LEGAIA_CORE", ""):match("^interpreter%-nodebug$") then
+    PCSX.log("[wait-producers] REFUSING --fast/--timing launch: Lua breakpoints need the debugger hook")
     PCSX.quit(3)
     return
 end

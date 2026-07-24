@@ -50,12 +50,12 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x0A` | Pre-action wait | Calls `func_0x8003F2B8(1)` (likely a "pause until previous animation cleared" gate). | `0x0C` when ready, else stays. |
 | `0x0B` | Action queued from menu | Holds while `ctx[+0x276] != 0` (menu still open). | `0x0A` once cleared. |
 | `0x0C` | **Action seed** - reads `actor[+0x1DE]` (action category) and dispatches into the appropriate band. Calls `FUN_801EED1C` (the arts queue-builder; slot < 3) or, for a monster slot with the `+0x16E & 0x380` bits, `FUN_801E7320` (random-retarget: the rolled action - including a Magic cast - is kept, only its target re-rolls to the opposite side; see the [`0x380` notes](#ai-delegated-0x380-party-members---what-is-and-isnt-pinned)). Reads RNG via `func_0x80056798()`. Calls `FUN_801EFE44` (camera bounds) and `FUN_801D5854(actor_id, 6)` (idle pose) unless `+0x1DE == 5` (run). The inner switch on `actor[+0x1DE]` is the "action category" dispatch - see [Inner dispatch](#inner-dispatch---actor-action-category). | `0x14`/`0x28`/`0x3C`/`0x46`/`0x50`/`0x64`/`0x68` per category. |
-| `0x14` | **Attack - face target** | `FUN_801D5854(actor, 6)` (ready pose); computes target bearing via `func_0x80019B28(s8 X/Z, actor X/Z)` and writes facing into `actor[+0x46]`; iterates the 8-actor table at `0x801C9370` writing AI-side facing offsets at `ctx[+0x6E6 + i*2]`; calls `FUN_8004E2F0(actor, target)` for [range/LOS](battle.md). If range = 0 → `0x1E` (skip approach). Party arm: stages approach anim `+0x1DA = 1` (the walk entry) → short-step. Monster arm: first-byte tag search over its action-record array (`FUN_80050E2C`, tag `0x20`, retry `1`) stages the returned entry index. | `0x15` (monster, tag-0x20 found); `0x19` (party); `0x1E` (out of range). |
+| `0x14` | **Attack - face target** | `FUN_801D5854(actor, 6)` (ready pose); computes target bearing via `func_0x80019B28(s8 X/Z, actor X/Z)` and writes facing into `actor[+0x46]`; iterates the 8-actor table at `0x801C9370` writing AI-side facing offsets at `ctx[+0x6E6 + i*2]`; calls `FUN_8004E2F0(actor, target)` for [range/LOS](battle.md). If range = 0 → `0x1E` (skip approach). Party arm: stages approach anim `+0x1DA = 1` (the walk entry) → short-step. Monster arm: first-byte tag search over its action-record array (`FUN_80050E2C`, tag `0x20`, retry `1`) stages the returned entry index. | `0x15` (monster, tag-0x20 found); `0x19` (party, **or** a monster whose action table has no tag-`0x20` walk - the fallback stages tag `1` and skips the walk chain entirely); `0x1E` (in range). |
 | `0x15` | Attack - windup | Same idle pose + facing update; advances anim cursor `actor[+0x1DA]` until it matches `actor[+0x1D9]`, then re-queries swing table. | `0x16`. |
 | `0x16` | Attack - advance | Same pose; rechecks range with `FUN_8004E2F0`. While out of range, advances `actor[+0x38/+0x34]` along bearing using sin/cos LUTs `_DAT_8007B7F8` / `_DAT_8007B81C` (steps both attacker and target s8 by `>> 9`); re-tests every iteration. When in range, queries the next entry from the per-character swing table. | `0x17`. |
 | `0x17` | Attack - close-range | Anim/facing update; matches `actor[+0x1DA]` against `actor[+0x1D9]`. | `0x18`. |
 | `0x18` | Attack - strike | Final anim match → falls into the swing apex frame. | `0x1E`. |
-| `0x19` | Attack - short-step (party slot < 3 only) | Idle pose + facing + range recheck. While range > 0 → stays. Range == 0 → bumps `actor[+0x1DC] |= 1` (windup-done flag) and `actor[+0x16] = 0`. | `0x1E`. |
+| `0x19` | Attack - short-step (party attackers, and walk-less monsters via the `0x14` fallback) | Idle pose + facing + range recheck. While range > 0 → stays (no movement code, no timeout - see the park section below). Range == 0 → bumps `actor[+0x1DC] |= 1` (windup-done flag) and `actor[+0x16] = 0`. | `0x1E`. |
 | `0x1E` | **Attack chain - strike loop** | Per-strike counters (`+0x15`/`+0x16`) advancing the attack-script byte stream at `actor[+0x1DF + +0x15]`, with counter-attack redirect and ability-flag impact-step physics. Full step body: [Attack chain - strike loop (`0x1E`)](#attack-chain---strike-loop-0x1e). | `0x1F` once the strike-script terminator is hit. |
 | `0x1F` | Attack - recovery wait | `FUN_801D5854(actor, 7 or 8)` (recover-pose; pose 8 if target's anim matched a counter trigger at `s8[+0x1F1]/+0x1F2`). Waits for `actor[+0x1DC] & 2 == 0`. | `0x20`. |
 | `0x20` | Attack - return | Decides if combat continues by inspecting target liveness (`s8[+0x14C] != 0` for monster-slot, plus `s8[+0x1D9]` == `0` or `8`, plus `actor[*0x22C][+0x74] & 0xFFFFFF`), and counter-attack trigger flags (`ctx[+0x287] != 0 && DAT_8007BD0D == 0 && ctx[+0x288] != 0`). If combat ended → `0x50`. Else loops `FUN_801D5854(actor, 7 or 8)` per liveness. | `0x50` (done) or stays. |
@@ -322,6 +322,35 @@ single point while clearing its `+0x10` is enough, and the next party-targeted
 action hangs while monster-targeted actions in between still complete normally.
 Probe: `scripts/pcsx-redux/autorun_gaza2_hpbar_settle.lua`.
 
+### Phased crediting: the invariant breaks mid-action by design
+
+A multi-strike action does not apply its damage once. The unsafe kernel
+credits the bar accumulator **per strike** - each strike adds the same delta
+`a0 = s0 - s1` to the per-action damage total `actor[+0x00]` (`0x801EDB40`)
+and to the accumulator `+0x10` (`0x801EDB58`), paired stores off one register -
+while live HP is committed **once, at the end of the resolution**, from the
+accumulated total (`0x801EEA10`). Between the first credit and the commit the
+readout is draining toward damage that live HP does not yet show, so a
+watchpoint sees `+0x14C != +0x172` with `+0x10 == 0` - the absorbing shape -
+**transiently, inside the action, as normal behaviour**. At the commit the
+total that live HP absorbs equals the sum the bar was credited, and the pair
+reconciles; the state `0x51` settle wait then holds the action open until the
+tail of the drain lands. Measured end to end on the Gaza 2 save
+(`autorun_gaza2_acc_discard.lua`, `invariant.csv` / `acc_writes.csv`): a
+three-strike physical resolved as bar credits of 338 + 344 + 304 drained
+per-strike, one live-HP commit of 986 at the end, and a bar that landed
+exactly on live HP.
+
+Two prior observations are re-attributed by this. The "party slot holding
+live HP 266 with the bar drawing 0" capture that used to sit under the clamp
+asymmetry below is a phased mid-action state - the window closed with a death
+commit ~90 vsyncs later. And a mid-action watchpoint that samples between
+strike and commit will always find "absorbing" shapes on healthy fights;
+only a mismatch that **survives the action's own commit and settle wait** is
+a real desync. No such survivor has been captured from retail-only play -
+see [the instrumentation section](#consequences-for-instrumentation) for the
+measured campaign.
+
 ### Where the desync comes from: two seeding conventions
 
 Every writer of `+0x10` in the dumped battle corpus follows one of two
@@ -381,26 +410,81 @@ one of the three bare assigns. Each call is guarded by
 `lhu v0,0x14c(<actor>); bne v0,zero,<skip>`, so it fires only on a member whose
 live HP has just reached zero.
 
-That is the worst possible moment. The killing hit credited the readout
-accumulator with the whole remaining bar, so the readout is mid-drop when the
-revive lands; the assign discards whatever is left of it. With live HP `0`,
-readout `B` still falling, and accumulator `B`, a full revive to `M` leaves live
-HP `M`, sets the accumulator to `-M`, ramps the readout to `B + M`, and settles
-**`B` above live HP** with the accumulator at zero. And `0x50`'s only successor
-is `0x51` - the state that asks whether the readout has settled. The park can
-therefore land on the very action that triggered the revive.
+On paper that is the worst possible moment: if the readout is still mid-drop
+when the revive lands, the assign discards whatever is left of it, the bar
+settles above live HP, and `0x50`'s only successor is `0x51` - the state that
+asks whether the readout has settled. The park would land on the very action
+that triggered the revive.
 
-The same arm is what a **Phoenix** (class 4) reaches from the battle item menu,
-and the class 0 / class 1 heal arms reach the sibling assign at `0x800408FC`.
-So a downed-and-revived party member in a long boss fight is the shape that
-makes an otherwise rare race routine, and it explains why the reports cluster on
-late-game bosses rather than on ordinary encounters.
+Measured, the race is **starved on the Gaza 2 fight**. The probe
+`scripts/pcsx-redux/autorun_gaza2_acc_discard.lua` arms an Exec breakpoint on
+every `+0x10` writer in the corpus plus the two Final Heal call sites, and a
+capture campaign on the Gaza 2 save (Lost Grail armed on the party, no
+harness write touching any HP / readout / accumulator field) drove **twelve**
+auto-revives through `FUN_801E6968` across single-target and party-wide,
+cast-path and kernel-path kills. **Every assign landed on an accumulator
+already drained to zero**, margins 143-280 vsyncs. The starvation is
+structural on this move set: [phased crediting](#phased-crediting-the-invariant-breaks-mid-action-by-design)
+lands the bar credits per strike, *early* in the resolution, while `0x50`
+arrives only after the remaining targets resolve and the effects tear down.
 
-The store shapes are **Confirmed** from disassembly. Whether ordinary play
-actually lands a restore inside a drain window is a timing question, measured by
-`scripts/pcsx-redux/autorun_gaza2_acc_discard.lua`, which arms an Exec
-breakpoint on all nine `+0x10` writers and flags any assign that lands on a
-non-zero accumulator.
+The margin is quantifiable from the same captures, and it is thin. Grouping
+every party-side credit into actions and measuring last-credit to first
+`0x51` settle check: minimum gap `90` vsyncs (~27 rendered frames at the
+light-load 3-4 vsync cadence), median ~110-220. Against that, the biased
+quarter-step (`acc -= (acc+3)>>2`) drains a full readout in a
+size-insensitive ~20-30 frames - `600 -> 20`, `1289 -> 23`, `3000 -> 26`,
+`9999 -> 30` (exact iteration of the retail step). A LV23 party (readouts
+1289-1382, 23 frames) misses the fastest observed Gaza 2 tail by ~4 frames -
+which is why twelve revives all came up clean - but the drain grows about one
+frame per doubling while the action tail does not, and a `9999`-HP readout
+(30 frames) crosses the fastest tail. **The prediction that falls out: the
+discard-and-park fires for high-max-HP (late-game) parties killed by
+fast-tailed moves, and cannot fire at low HP pools** - matching the
+community's clustering of orbit reports on late-game bosses. Two caveats
+bound the claim. The frame-vs-vsync clocking of the specific tail states
+(timed states compensate by `DAT_1F800393`, animation waits do not) shifts
+the line by a few frames either way. And a community capture of the live
+softlock (Japanese version; the community reports the same park on both
+regions) shows the parked fight's target panel drawing a **mid-game** pool -
+`1476/1476`, displayed exactly at max - so a high readout is not *necessary*:
+the parked fight's configuration crosses at ~1476.
+
+Three follow-on measurements interpret that exhibit:
+
+- **The HUD draws `+0x172` raw.** An injected overshoot (readout = live +
+  150) renders on screen as `1439/1289` - over max, human-verified - and
+  the drain (`FUN_80047430`) has no max clamp (no `+0x14E` read anywhere in
+  it), so an overshot readout rides and *shows*. An over-max readout is
+  therefore a distinctive on-screen witness of the discarded-restore
+  direction worth searching community footage for.
+- Because nothing clamps the drawn value, the exhibit's clean `1476/1476`
+  panel is a **healthy displayed member**: the desynced slot is off-panel,
+  and the parked action is party-targeted (`+0x1DD == 8`, the all-slot
+  scan) - which is what a boss's party-wide cast uses, matching the
+  community's "magic softlock" phrasing.
+- **Party-wide cast damage flows through module-local appliers - paired.**
+  In the capture campaign, the double-kill party-wide casts credited live
+  HP and the accumulator through **none** of the census sites (kernel, item
+  applier, enemy-cast safe applier, drain): the writers are inside the
+  streamed **capture-class per-spell modules** (PROT 944..966; Gaza 2's
+  Neo Star Slash is module 960 - see
+  [battle-formulas.md](battle-formulas.md)), invisible to breakpoints
+  armed on the resident-overlay copies. A static store audit of the whole
+  family (`scripts/asset-investigation/audit_module_hp_stores.py`) finds
+  every actor-accumulator store to be the **paired** accumulate + live-HP
+  shape - module-local copies of the safe applier (e.g. 0944
+  `+0x808`/`+0x824`) - so the module family follows the safe convention
+  and cannot seed the desync by itself. Any future writer census must
+  include the streamed module addresses, not just the resident overlays.
+
+The same arm is what a **Phoenix** (class 4) reaches from the battle item
+menu, and the class 0 / class 1 heal arms reach the sibling assign at
+`0x800408FC`. But note the shape of the gate itself: a party-targeted action
+holds its own `0x51` open until every party readout settles, so **the drain a
+menu restore could interrupt has always finished before the menu can act** -
+the inter-action race is closed by the very wait this page documents. The
+intra-action Final Heal is the one crack, and it is measured tight above.
 
 ### The clamp asymmetry: two overkill guards against different references
 
@@ -441,18 +525,28 @@ and is clamped against **live HP**:
 801eea74  sw   zero,0x0(v1)   ; damage total cleared
 ```
 
-The two clamps agree only while `+0x172 == +0x14C`. Once the bar is lagging for
-any reason, a hit whose total exceeds the **displayed** bar but not **live HP**
-trips the bar-side clamp alone: the bar drains to exactly `0` while live HP
-stays positive, and the accumulator lands at zero. That is the absorbing state
-at full depth, and it is reachable from ordinary damage. A plain capture on the
-Gaza 2 save shows exactly it - a party slot holding live HP `266` with the bar
-drawing `0` and a zero accumulator.
+The two clamps agree only while `+0x172 == +0x14C` **at the action's start** -
+and the `0x51` settle wait of the previous party-targeted action guarantees
+exactly that. From a synced start the arithmetic is forced to agree: the
+bar-side clamp trips only when the credited sum exceeds the starting bar,
+which from a synced start means it exceeds starting live HP too, so the HP
+commit floors at `0` on the same action and both readings land at zero
+together (a kill, consistent). The asymmetry is therefore an **amplifier of a
+pre-existing offset, not a standalone generator**: it needs `+0x172` already
+below `+0x14C` when the action begins, which is the very desync whose origin
+is in question. The earlier reading of this section - "reachable from
+ordinary damage, no restore and no timing race" - is withdrawn; its
+supporting capture (live HP `266`, bar `0`, zero accumulator on the Gaza 2
+save) is a [phased mid-action state](#phased-crediting-the-invariant-breaks-mid-action-by-design)
+that closed with a death commit, not a settled desync.
 
 Three further guards above the commit (`0x801EE988`, `0x801EE9AC`, `0x801EE9EC`)
 branch to `0x801EEB5C` / `0x801EEB60` and skip the live-HP write entirely. A
-skip that leaves the bar accumulator already credited moves the bar without
-moving live HP, which is the `bar < live` direction - also observed live.
+skip that fires with the bar accumulator already credited would move the bar
+without moving live HP - a real credit-without-commit generator if any retail
+path reaches it. No capture has caught one firing that way yet; which action
+classes route through those guards is the open question this thread reduces
+to.
 
 Probe: `scripts/pcsx-redux/autorun_gaza2_hpbar_writers.lua` puts Write
 watchpoints on each party actor's `+0x00` / `+0x10` / `+0x14C` / `+0x172` rather
@@ -470,6 +564,191 @@ downward, the ramp then stops at zero accumulator, and the bar is left short of
 a live HP that the clamp holds pinned at maximum. A "reproduction" captured
 under such a clamp is measuring the instrument. A clamp that also assigns
 `+0x172` and zeroes `+0x10` keeps the invariant intact.
+
+Two further instrumentation facts, measured on the Gaza 2 save:
+
+- **The stat aggregator does not tick during battle.** Poking an equipment id
+  into a character record mid-battle never reaches the ability bitfield -
+  `FUN_80042558` runs again only on isolated menu-side paths (observed twice
+  in ~48k captured vsyncs). To arm an equipment-derived battle behaviour (the
+  Lost Grail Final Heal bit `+0xF8 & 0x80`) from a save already inside the
+  battle, seed the bit once alongside the equipment id - that mirrors what
+  pre-battle aggregation of the same equipment would have left. The
+  aggregation-derived bit is also cleared when the revive consumes the grail
+  and any aggregator pass rebuilds the field, so re-arming between deaths is
+  part of the same mirroring.
+- **The watchpoint shape that matters is action-scoped, not frame-scoped.**
+  Because of [phased crediting](#phased-crediting-the-invariant-breaks-mid-action-by-design),
+  per-frame sampling flags absorbing shapes on healthy fights. The probe
+  `autorun_gaza2_acc_discard.lua` therefore keys its verdicts on the two
+  events that survive phasing: an assigning store landing on a non-zero
+  accumulator (`discards.csv`), and a `0x51` settle verdict streak with a
+  frozen `ctx[+0x6D8]` (`settle.csv`). A campaign of three such captures
+  (~84k vsyncs, twelve Final Heal revives, one menu heal, no harness write to
+  any HP / readout / accumulator field) produced zero of either.
+
+## The `0x19` attack-approach park - a second, distinct softlock class
+
+The endless-camera-orbit symptom has (at least) two parks behind it, and the
+first one caught **from ordinary play with no interventions at all** is not
+the `0x51` HP-settle gate above - it is state `0x19`, the attack-approach
+range poll. Caught live on the Gaza 2 fight by a human playing at
+recompiler speed under `scripts/pcsx-redux/autorun_gaza2_park_hunter.lua`
+(a poll-only probe - no breakpoints, so it runs under dynarec while a human
+plays and savestates); the frozen moment is the catalogued scenario
+`battle_gaza2_park_0x19` (`scripts/scenarios.toml`, identified by
+fingerprint).
+
+The arm's wait shape, from the `FUN_801E295C` dump (`case 0x19`): recompute
+facing from the target's current position, call the range check
+`FUN_8004E2F0(acting_seat, actor[+0x1DD])`, advance to `0x1E` only when it
+returns 0. The not-in-range path is the shared stall label `0x801E35D0`,
+which adds the frame delta to the stall counter `ctx[+0x6D4]` and breaks -
+**state `0x19` contains no movement code and no timeout**. The walking
+happens in the `0x16` advance loop, an earlier state. An action that
+reaches `0x19` still out of range therefore re-polls forever.
+
+Measured anatomy of the caught park (interpreter replay of the fingerprinted
+save, probe `scripts/pcsx-redux/autorun_gaza2_range_wedge.lua`):
+
+- The acting actor is the **boss** (seat 3, category 3 physical attack,
+  871/15000 HP) targeting Gala (seat 2) across a ~556-unit gap; the range
+  metric returns 554-557 every poll and the actor's position never changes.
+- The reach the metric is compared against: party attackers use the static
+  table `DAT_80078870[acting_seat]` = `{256, 384, 1024}`; monster attackers
+  use a size-scaled reach (~416 for Gaza's `0x1A`). 556 > 416 - the check
+  is honest, the boss genuinely needed to walk.
+- The state trace into the park runs `0x0C -> 0x14 -> 0x19` within ~3
+  vsyncs: **the walk phase never engaged** (root cause below - Gaza has no
+  walk animation, so `0x14`'s fallback path skips the walk chain).
+- The whole round queue is wedged in approach states simultaneously: Vahn
+  polls his own queued attack against Gaza (metric ~458 > his 256 reach),
+  and Noa and Gala sit with `+0x1DD == 8` - which `FUN_8004E2F0` rejects
+  **by construction** (its head returns 1 for any target `>= 8`, so an
+  all-target action can never satisfy a range poll).
+- Every party HP triple is synced (`+0x14C == +0x172`, `+0x10 == 0`): the
+  `0x51` HP-readout invariant plays no part in this park.
+
+The camera orbit is the same pure symptom as ever: `FUN_801D0748`'s idle
+azimuth sweep never consults the state machine.
+
+### Root cause: the walk-tag fallback in state `0x14`
+
+Why `0x16` never walked is answered by the `0x14` arm's out-of-range monster
+branch, read from the raw disassembly
+(`ghidra/scripts/funcs/overlay_battle_action_801e295c.txt`, `0x801E31F4..0x801E32DC`):
+
+```text
+801e31f4  jal 0x8004e2f0           ; range check (a0 = acting seat, a1 = target)
+801e3200  bne v0,zero,0x801e3230   ; out of range ->
+801e3230  ...sltiu v0,v0,0x3       ; party attacker?
+801e323c  bne v0,zero,0x801e32c0   ;   yes -> anim 1, state 0x19 (anim-driven approach)
+801e325c  lw  a0,0x0(v0)           ; monster: a0 = DAT_801C9348[seat-3] (record)
+801e3260  li  a1,0x20              ;   walk tag
+801e3264  lbu a2,0x4a(a0)          ;   action count at record+0x4A
+801e3268  jal 0x80050e2c           ;   tag scan over the table at record+0x4C
+801e327c  bne v0,0xff,0x801e32b4   ;   found  -> state 0x15 (walk start)
+801e329c  li  a1,0x1               ;   NOT found: fall back to tag 1 (the Move loop)
+801e32a4  jal 0x80050e2c
+801e32ac  j   0x801e32c4           ;   -> state 0x19: the park
+801e32b0  _sb v0,0x1da(s3)         ;   (delay: stage that clip)
+```
+
+`FUN_80050E2C` is a linear scan of the record's action-pointer table
+(`record+0x4C`, `record+0x4A` entries) for an action whose **first byte**
+equals the tag; it returns the entry index, or `0xFF` when absent (see
+[monster-animation.md](../formats/monster-animation.md) for the tag space -
+`0x20`/`0x21` are the attack pre-approach / close-in pair). A monster whose
+action table carries **no tag-`0x20` action** can never enter the walking
+states `0x15..0x18`; out of reach, it is dropped into the `0x19` poll with
+the tag-`1` "Move" clip staged.
+
+**The fallback normally still closes the gap - the park needs a third
+condition.** A position capture of the same fight from ordinary play
+(poll-only probe `autorun_gaza2_summon_displacement.lua`) shows Gaza's
+fallback melee attacks approaching **during state `0x19`** at a steady ~19
+units/vsync (e.g. 977 -> 377 over 28 vsyncs, then in-reach -> `0x1E`),
+across four separate attacks. The SM arm still contains no movement code -
+the displacement comes from the staged Move clip's playback on the
+animation/driver side. In the caught park, by contrast, Gaza's anim bytes sat
+at idle (`+0x1DA = +0x1D9 = 0`) and his position never changed from the
+first poll. So the full park condition is (a) out of reach, (b) no tag
+`0x20` - which removes the SM's own `0x16` stepping guarantee - and (c) the
+animation-side approach drive not running. Note (a) is the **norm**, not an
+anomaly: every healthy Gaza melee on record started out of reach (nearest
+target 438-1078 vs ~416 reach; all went `0x14 -> 0x19`), and the parked gaps
+(556 / 786 units) are ordinary formation spacing - the boss's model is
+simply so large that center-to-center distances beyond reach still look
+adjacent.
+
+**The trigger is reproduced: a summon immediately followed by the boss's
+melee.** The first directed attempt at that sequence parked, with the onset
+on record (`gaza2_summon_displacement` capture; scenario
+`battle_gaza2_park_0x19_summon_melee`): the summon stages Gaza to
+`(0, -2048)` and back (his damage-reaction clip plays during staging), his
+melee starts directly next, the fallback Move clip **engages** (anim pair
+`+0x1DA/+0x1D9 = 1/1`, ~19 units/vsync toward the target) - and **dies ~12
+vsyncs later** (pair drops to `0/0`, position frozen ~236 units in, still
+beyond reach). Healthy contrast in the same capture: when any other action
+sits between the summon and the melee, the same clip runs 28-67 vsyncs and
+arrives (e.g. 64 vsyncs / 1,260 units). So the drive engages and terminates
+early, and nothing re-stages it - the staging round-trip plausibly leaves an
+anim-driver field (a frame cursor / clip-length latch) stale so the fresh
+Move clip hits its "end" almost immediately. Which field is the remaining
+open sub-question ([open threads](../reference/open-rev-eng-threads.md)).
+
+The trigger is **CPU-core-independent in emulation**: the same recipe parks
+under both PCSX-Redux cores (recompiler and interpreter, via `run_probe.sh
+--timing`) with the identical onset shape - restore interleaved with the
+`0x14` melee setup, Move clip engaged at ~19 units/vsync, dead ~12-16
+vsyncs in, frozen thereafter. So the race is not an artifact of dynarec
+cycle accounting. Emulators whose CD latency model differs substantially
+(e.g. image preload / async readahead) may schedule the summon's streamed
+staging restore differently relative to the melee and rarely or never land
+in the window.
+
+Confirmed against the parked save itself (RAM read via `legaia-pcsxr`,
+example `gaza2_walk_tag`): Gaza's seat-3 record holds 12 actions with tags
+`[00 01 02 03 04 05 0B 0E 13 0C 23 23]` - **no `0x20`**. Bosses generally
+lack the tag, which matches the community's clustering of orbit reports on
+late-game bosses. Measured drift sources from the same capture: each summon
+stages Gaza ~2,500 units off-arena (`(0, -2048)`) and restores him with a
+**committed ~35-40-unit home drift per cast**; his own casts nudge his home
+16-26 units without moving him; his melee both approaches and commits the
+new position.
+
+Two closing observations from the same replay:
+
+- `ctx[+0x6D4]` (the stall counter the park increments) and `ctx[+0x6D2]`
+  (the facing delta `0x14` computes) are **not a timeout**: their only reader
+  is the arms/interference resolver `FUN_801EC3E4`, which adds them into an
+  agility-style contested roll. Nothing bounds the park.
+- The queued `+0x1DD == 8` values on the idle party actors are stale
+  all-target sentinels on actors that never got their turn - the round is
+  stuck on the boss's action alone, not on a corrupted queue.
+
+**Fix (disc patch).** `legaia-patcher --approach-softlock-fix`
+(`legaia_patcher::approach_fix`) rewrites the `0x19` arm's redundant
+per-frame facing recompute (nine words at `0x801E3568` - the target never
+moves during an approach, and states `0x14` and `0x1E` re-derive facing
+themselves) into a guard: staged clip dead while the poll still fails ->
+bounce the state byte to `0x14`, whose retail arm re-runs the whole staging
+next frame, so the monster **resumes walking** - no invented behaviour, and
+the same bounce rescues a party attacker whose run clip dies. The
+no-Move-clip edge is vacuous: a roster sweep (`monster_move_tags`) finds all
+186 monsters carry tag `1`. Runtime-verified hands-off on **both** live
+park savestates (`autorun_gaza2_approach_fix_verify.lua`: poke the nine
+words, touch nothing else - the guard bounces once, retail re-stages
+`1/1`, the boss walks in at ~19 units/vsync, the strike lands, the round
+completes); the byte-level edit is pinned by the `approach_fix_real` disc
+oracle.
+
+**Engine port note.** The clean-room port cannot reproduce this park: its
+`attack_face` routes out-of-range monsters to the windup/advance chain
+without the tag-`0x20` lookup, and the live host's `range_check` defaults to
+in-range (`engine-vm::battle_action::attack`). The routing difference from
+retail (walk-less monsters take `0x15/0x16` instead of `0x19`) is currently
+benign because the default range collapses both paths to an immediate strike.
 
 ## Cross-references with other battle helpers
 
@@ -1594,7 +1873,7 @@ the disassembly of PROT entry 0898 at base `0x801CE818`.
 - **Unlisted `ctx[7]` states are inert/reserved, not a crash (`FUN_801E295C`).** The state byte dispatches through a 256-entry `jr` jump table at `0x801CED44` with **no `default`** (`sltiu v0,ctx[7],0x100; jr v0`; see `ghidra/scripts/funcs/overlay_0898_801e295c.txt`). The handled states are `0x00`, `0x0A`–`0x0C`, `0x14`–`0x19`, `0x1E`–`0x20`, `0x28`–`0x2E`, `0x32`–`0x38`, `0x3C`–`0x40`, `0x46`–`0x48`, `0x50`–`0x52`, `0x5A`, `0x64`–`0x66`, `0x68`–`0x6B`, `0x6E`–`0x71`, `0xFD`, `0xFF`. Every other byte value in `0x00`–`0xFF` has no case body: its table slot falls straight to the shared post-switch epilogue (the knockback/shove settle at `0x801E6814`), a safe no-op advance, never an out-of-bounds jump.
 - The inert indices are the inter-band gaps (`0x07`, `0x21`–`0x27`, `0x39`–`0x3B`, `0x41`–`0x45`, `0x49`–`0x4F`, `0x53`–`0x59`, `0x5B`–`0x63`, `0x6C`–`0x6D`, `0x72`–`0xFC`) plus the low-band ones. No path in the dumped battle-overlay corpus writes any of them into `ctx[7]` (corpus-scoped: a value injected by an un-dumped overlay would still dispatch safely). **One exception:** state `0x67` **is** written (case `0x66` sets `ctx[7] = 0x67`) yet has no case body — a genuine written-but-inert state that also lands on the epilogue.
 - State `0x47` (spirit-arts sustain): the `actor[+0x1F9] != 0` "spirit shield" branch is **resolved**. `+0x1F9` is set by the damage-application primitive `FUN_800402F4` case 5 (spirit-shield spirit → `+0x1F9 = 1`, gated on a non-zero target roll) and cleared by case 4 (cleanse → `+0x1F9 = 0`). Which case runs is selected by `actor[+0x1E8]`, seeded at [state `0x3C`](#state-table) from the spell table's class byte (`DAT_800754C8 + spell_id*0xC + 0`): class `== 5` routes to the shield write, class `== 4` to the cleanse. So the specific spirit that raises the shield is disc-side spell-table data, not a runtime constant. See [`spell-table.md`](../formats/spell-table.md).
-- **The `0x51` HP-bar settle gate is decoded and its softlock is reproducible; its retail trigger is not.** The mechanism, the exact branch that skips the countdown, and the absorbing `+0x14C != +0x172` / `+0x10 == 0` state are all measured - see [the section above](#the-0x51-exit-gate-and-the-hp-bar-settle-invariant). What is still open is which unaided retail sequence puts a party slot into that state. The mixed assign-vs-accumulate seeding of `+0x10` is the leading candidate class and has not been driven to a repro; every park captured so far needed an external HP write to set up.
+- **The `0x51` HP-bar settle gate is decoded and its softlock is reproducible; its retail trigger is not.** Mechanism and measurements: [the section above](#the-0x51-exit-gate-and-the-hp-bar-settle-invariant). Both first-stated generators are measured out on the Gaza 2 fight (clamp asymmetry = amplifier; the revive race starved by phased crediting - twelve retail revives, every assign on a drained accumulator); the residuals are recorded with the settled thread in [re-settled-threads.md](../reference/re-settled-threads.md#endless-camera-orbit---the-0x19-attack-approach-park). Every `0x51` park captured so far needed an external HP write to set up; the live-caught retail park is the `0x19` class (root cause + fix in the sections above).
 - `FUN_801E7250` (`0x51`) and `FUN_801E7824` (`0x68`) are decoded from their `overlay_battle_action_*` dumps: the former is the **HP-bar drain settle check** (the `0x51` arm freezes the `ctx[+0x6D8]` countdown while any relevant actor's live HP `+0x14C` differs from its bar display value `+0x172`), the latter the **captured-monster takedown** (queued anim from the monster record, HP pair + facing zeroed, retarget to `8`, run-UI banner opened). Both ported in `crates/engine-vm/src/battle_action.rs`; see [`reference/functions.md`](../reference/functions.md).
 
 ## See also

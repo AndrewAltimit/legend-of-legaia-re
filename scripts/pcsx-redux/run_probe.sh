@@ -32,6 +32,15 @@
 #   --fast               drop -interpreter -debugger (recompiler ~10-50x
 #                        faster; Lua BPs do NOT fire in this mode - use
 #                        only for vsync-event-only probes)
+#   --timing             interpreter CPU with the debugger hook OFF: the
+#                        interpreter's guest-visible timing (cycle
+#                        accounting differs from the recompiler's) at much
+#                        better host speed than the default
+#                        interpreter+debugger core. Lua BPs do NOT fire
+#                        (the debug-process hook is what runs them) - use
+#                        only for poll-only probes, specifically ones
+#                        testing whether a repro is timing-sensitive
+#                        across CPU cores. Mutually exclusive with --fast.
 #   --isolate-config     run the emulator against a throwaway persistent dir
 #                        (a curated fast profile) instead of the user's real
 #                        ~/.config/pcsx-redux. ON BY DEFAULT under --fast so a
@@ -81,6 +90,7 @@ LEGAIA_SCENARIO="${LEGAIA_SCENARIO:-}"
 LEGAIA_PROBE_SPEC="${LEGAIA_PROBE_SPEC:-}"
 LOG_FILE=""
 FAST=0
+TIMING=0
 # Config isolation (see "Config isolation" block below). "" = auto (on under
 # --fast), 1 = force on, 0 = force off. Env LEGAIA_NO_ISOLATE=1 forces off.
 ISOLATE_CONFIG="${LEGAIA_ISOLATE_CONFIG:-}"
@@ -105,6 +115,7 @@ while [[ $# -gt 0 ]]; do
         --pcsx)      PCSX_REDUX="$2"; shift 2 ;;
         --log)       LOG_FILE="$2"; shift 2 ;;
         --fast)      FAST=1; shift ;;
+        --timing)    TIMING=1; shift ;;
         --isolate-config)    ISOLATE_CONFIG=1; shift ;;
         --no-isolate-config) ISOLATE_CONFIG=0; shift ;;
         -h|--help)
@@ -116,6 +127,11 @@ while [[ $# -gt 0 ]]; do
             exit 64 ;;
     esac
 done
+
+if [[ $FAST -eq 1 && $TIMING -eq 1 ]]; then
+    echo "ERROR: --fast and --timing are mutually exclusive (pick one CPU core)" >&2
+    exit 64
+fi
 
 # ---------- scenario resolution (LEGAIA_SCENARIO -> per-emulator path) ----------
 # Probes that don't need a save state set LEGAIA_NO_SSTATE=1 (e.g. cold-boot
@@ -256,11 +272,14 @@ if [[ "$ISOLATE_CONFIG" == "1" ]]; then
     else
         _hw_gpu=false
     fi
-    # CPU/Debug mirror the run mode so isolation composes with either core: fast
-    # -> recompiler + debugger off; slow (firehose) -> interpreter + debugger on
-    # (the -interpreter/-debugger CLI flags below re-assert this per-run too, but
-    # pinning it in the profile keeps the two in agreement).
-    if [[ $FAST -eq 1 ]]; then _dynarec=true; _debug=false; else _dynarec=false; _debug=true; fi
+    # CPU/Debug mirror the run mode so isolation composes with any core: fast
+    # -> recompiler + debugger off; timing -> interpreter + debugger off;
+    # slow (firehose) -> interpreter + debugger on (the CLI flags below
+    # re-assert this per-run too, but pinning it in the profile keeps the
+    # two in agreement).
+    if [[ $FAST -eq 1 ]]; then _dynarec=true; _debug=false
+    elif [[ $TIMING -eq 1 ]]; then _dynarec=false; _debug=false
+    else _dynarec=false; _debug=true; fi
     mkdir -p "$LEGAIA_PCSX_PROFILE_DIR" "$LEGAIA_PCSX_REAL_CONFIG"
     # Minimal, deterministic fast profile. Only the keys we care about are
     # pinned; every other setting falls back to the emulator's compile-time
@@ -303,8 +322,13 @@ fi
     echo "  frames     : $LEGAIA_FRAMES"
     [[ -n "$LEGAIA_OUT" ]]     && echo "  out        : $LEGAIA_OUT"
     [[ -n "$LEGAIA_OUT_DIR" ]] && echo "  out_dir    : $LEGAIA_OUT_DIR"
-    [[ $FAST -eq 1 ]] && echo "  mode       : fast (-dynarec forced; no Lua BPs; verify top bar = CPU: Dynarec)" \
-                      || echo "  mode       : interpreter+debugger (Lua BPs fire)"
+    if [[ $FAST -eq 1 ]]; then
+        echo "  mode       : fast (-dynarec forced; no Lua BPs; verify top bar = CPU: Dynarec)"
+    elif [[ $TIMING -eq 1 ]]; then
+        echo "  mode       : timing (interpreter, debugger OFF; no Lua BPs; verify top bar = CPU: Interpreted)"
+    else
+        echo "  mode       : interpreter+debugger (Lua BPs fire)"
+    fi
     [[ "$ISOLATE_CONFIG" == "1" ]] \
         && echo "  config     : ISOLATED profile ($LEGAIA_PCSX_PROFILE_DIR; renderer=$PROFILE_HW_GPU; cards=$LEGAIA_PCSX_REAL_CONFIG)" \
         || echo "  config     : real persistent dir ($LEGAIA_PCSX_REAL_CONFIG)"
@@ -320,7 +344,9 @@ export LEGAIA_SSTATE LEGAIA_FRAMES LEGAIA_OUT LEGAIA_OUT_DIR LEGAIA_SCENARIO LEG
 # the recompiler - hours of play, empty capture) and a poll probe can warn
 # it was launched on the slow core. Probes launched outside this runner
 # see no LEGAIA_CORE and fall back to their runtime canaries.
-if [[ $FAST -eq 1 ]]; then LEGAIA_CORE=dynarec; else LEGAIA_CORE=interpreter; fi
+if [[ $FAST -eq 1 ]]; then LEGAIA_CORE=dynarec
+elif [[ $TIMING -eq 1 ]]; then LEGAIA_CORE=interpreter-nodebug
+else LEGAIA_CORE=interpreter; fi
 export LEGAIA_CORE
 
 # ---------- run ----------
@@ -335,7 +361,15 @@ if [[ "$ISOLATE_CONFIG" == "1" ]]; then
     # value, so keep the path immediately after the flag.
     emu_flags=(-portable "$LEGAIA_PCSX_PROFILE_DIR" "${emu_flags[@]}")
 fi
-if [[ $FAST -eq 0 ]]; then
+if [[ $TIMING -eq 1 ]]; then
+    # Interpreter core WITHOUT the debug-process hook: guest timing matches
+    # the default slow core, host speed is much better. Lua BPs never fire
+    # here (the hook is what runs them) - poll-only probes only.
+    # -no-debugger is required, not just omitting -debugger: with no flag,
+    # main.cc falls back to the PERSISTED DebugSettings::Debug in pcsx.json
+    # (usually true on a debugging workstation), which re-enables the hook.
+    emu_flags=(-interpreter -no-debugger "${emu_flags[@]}")
+elif [[ $FAST -eq 0 ]]; then
     # Both flags are required: -interpreter selects the non-recompiling CPU,
     # and DebugSettings::Debug (= -debugger) gates the debug-process hook.
     emu_flags=(-interpreter -debugger "${emu_flags[@]}")
