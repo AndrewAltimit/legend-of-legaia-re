@@ -6,8 +6,21 @@
 -- The community symptom is an endless battle-camera orbit after a player
 -- magic cast. The orbit itself is the unconditional idle azimuth sweep
 -- (FUN_801D0748 stepping _DAT_8007B792), so it is a SYMPTOM: the real stall
--- is the battle-action SM (FUN_801E295C, cursor ctx+7) parking in the
--- summon band 0x32..0x38 and never reaching 0x50 (done).
+-- is somewhere in the battle-action SM (FUN_801E295C, cursor ctx+7). This
+-- probe was written around the hypothesis that the park is in a CAST band
+-- (0x28..0x2E / 0x32..0x38) pinned by one of the two effect censuses, and
+-- its instrumentation is still built around that reading.
+--
+-- SUPERSEDED, and worth knowing before reading anything below as a
+-- conclusion: the park this save actually produces is at ctx+7 = 0x51, in
+-- the done/cleanup band, and NEITHER census is involved - both read 0 at the
+-- wedge. The 0x51 arm skips its own ctx+0x6D8 countdown whenever the HP-bar
+-- settle check FUN_801E7250 reports a party slot whose live HP +0x14C
+-- disagrees with its displayed HP +0x172. See
+-- docs/subsystems/battle-action.md and the successor probe
+-- autorun_gaza2_hpbar_settle.lua, which instruments that check directly.
+-- The census notes below stay because they are measured and correct as far
+-- as they go; they are simply not the mechanism.
 --
 -- Per docs/subsystems/battle-action.md, the cast-effect census FUN_801E09F8
 -- RECOMPUTES both exit counters from scratch every frame:
@@ -121,6 +134,22 @@ local SHOT_EVERY = probe.getenv_num("LEGAIA_SHOT_EVERY", 0)
 -- under godmode as needing a plain-run confirmation: it suppresses death, and
 -- a downed actor is itself a plausible way to strand an animation. It does not
 -- touch the cast machinery, the censuses or the effect pool.
+--
+-- MEASURED, and the reason the plain-run confirmation is not optional: this
+-- godmode BY ITSELF manufactures a permanent ctx+7 = 0x51 park. Live HP
+-- +0x14C and displayed HP +0x172 converge only through the pending-delta
+-- accumulator +0x10, and state 0x51 refuses to decrement its exit countdown
+-- while they disagree on a party slot (FUN_801E7250; see
+-- docs/subsystems/battle-action.md). The clamp restores +0x14C on the frame
+-- damage lands, the in-flight accumulator keeps draining +0x172 downward, the
+-- drain then stops at a zero accumulator, and the `cur < max` guard above
+-- means +0x172 is never written again - a permanent desync, and every later
+-- party-targeted action parks at 0x51 with the camera still orbiting. The
+-- same replay WITHOUT godmode settles the identical damage event cleanly and
+-- passes through 0x51 in well under 100 vsyncs. Use
+-- autorun_gaza2_hpbar_settle.lua, which instruments the settle check itself
+-- and can inject the desync deliberately, rather than reading a godmode park
+-- as a retail reproduction.
 local GODMODE = probe.getenv_num("LEGAIA_GODMODE", 0)
 local AUTOPILOT = probe.getenv_num("LEGAIA_AUTOPILOT", 0)
 local AUTOPILOT_SEQ = probe.getenv("LEGAIA_AUTOPILOT_SEQ",
@@ -138,10 +167,13 @@ local CAM_YAW = 0x8007B792
 -- ctx+0x6D8 is the band timer several states count down before they may exit.
 -- State 0x50 seeds it (0x3C), and 0x51 exits only when it goes NEGATIVE and
 -- ctx+0x276 == 0. The states that decrement it do so by DAT_1F800393, the
--- per-frame delta in PSX scratchpad - so a zero delta freezes every
+-- per-frame delta in PSX scratchpad - so a zero delta would freeze every
 -- timer-gated state while the unconditional idle camera sweep keeps orbiting.
 -- Both are logged because a captured wedge parked at 0x51 with +0x6D8 pinned
 -- at exactly its seed value points straight at that decrement.
+-- MEASURED: the delta is NOT the cause. It reads a healthy 3 at the wedge.
+-- The 0x51 arm branches over its own decrement (`bne v0,zero,0x801E60B8` at
+-- 0x801E604C) whenever the HP-bar settle check FUN_801E7250 returns non-zero.
 local BAND_TIMER_OFF = 0x6D8
 local FRAME_DT = 0x1F800393
 
