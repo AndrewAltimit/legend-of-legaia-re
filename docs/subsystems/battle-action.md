@@ -658,27 +658,35 @@ branch, read from the raw disassembly
 (`record+0x4C`, `record+0x4A` entries) for an action whose **first byte**
 equals the tag; it returns the entry index, or `0xFF` when absent (see
 [monster-animation.md](../formats/monster-animation.md) for the tag space -
-`0x20`/`0x21` are the attack pre-approach / close-in pair). So a monster
-whose action table carries **no tag-`0x20` walk action** can never enter the
-walking states `0x15..0x18`: out of reach, it is dropped straight into the
-`0x19` poll with no way to close the gap. The approach needs **three**
-clips - tag `0x20` (stance-to-moving transition, played through `0x15`),
-tag `1` (the locomotion "Move" loop the asset viewer shows, played while
-`0x16`'s stepping code slides the position), tag `0x21` (close-in stop, state
-`0x17`) - and the gate checks only the first. A monster can therefore own a
-perfectly good Move loop (Gaza's float cycle) and still be unable to
-approach: the fallback stages that tag-`1` clip, so a parked boss visibly
-floats in place while the range poll spins - the movement was never the
-animation's job.
+`0x20`/`0x21` are the attack pre-approach / close-in pair). A monster whose
+action table carries **no tag-`0x20` action** can never enter the walking
+states `0x15..0x18`; out of reach, it is dropped into the `0x19` poll with
+the tag-`1` "Move" clip staged.
+
+**The fallback normally still closes the gap - the park needs a third
+condition.** A position capture of the same fight from ordinary play
+(poll-only probe `autorun_gaza2_summon_displacement.lua`) shows Gaza's
+fallback melee attacks approaching **during state `0x19`** at a steady ~19
+units/vsync (e.g. 977 -> 377 over 28 vsyncs, then in-reach -> `0x1E`),
+across four separate attacks. The SM arm still contains no movement code -
+the displacement comes from the staged Move clip's playback on the
+animation/driver side. In the caught park, by contrast, Gaza's anim bytes sat
+at idle (`+0x1DA = +0x1D9 = 0`) and his position never changed from the
+first poll: the staged approach drive **never engaged**. So the full park
+condition is (a) out of reach, (b) no tag `0x20` - which removes the SM's
+own `0x16` stepping guarantee - and (c) the animation-side approach drive
+idle; what idles it is the remaining open sub-question
+([open threads](../reference/open-rev-eng-threads.md)).
 
 Confirmed against the parked save itself (RAM read via `legaia-pcsxr`,
 example `gaza2_walk_tag`): Gaza's seat-3 record holds 12 actions with tags
 `[00 01 02 03 04 05 0B 0E 13 0C 23 23]` - **no `0x20`**. Bosses generally
-never walk, which matches the community's clustering of orbit reports on
-late-game bosses: the softlock needs only (a) a walk-less monster, (b) a
-contact attack pick, and (c) a target that ordinary fight movement (knockback
-commits, strike lunges, party approach-home rewrites) has carried beyond the
-size-scaled reach.
+lack the tag, which matches the community's clustering of orbit reports on
+late-game bosses. Measured drift sources from the same capture: each summon
+stages Gaza ~2,500 units off-arena (`(0, -2048)`) and restores him with a
+**committed ~35-40-unit home drift per cast**; his own casts nudge his home
+16-26 units without moving him; his melee both approaches and commits the
+new position.
 
 Two closing observations from the same replay:
 

@@ -154,11 +154,15 @@ the battle-action state machine parking while the idle camera azimuth sweep
 walk; Gaza's 12-action table reads tags `[00 01 02 03 04 05 0B 0E 13 0C 23 23]`
 in the parked save; the tag-`1` "Move" float loop exists but is only played
 inside the walk chain the `0x20` gate protects - the fallback stages it and drops straight
-into state `0x19`, the range re-poll, **which has no movement code and no
-timeout** (its not-in-range edge only bumps `ctx[+0x6D4]`, whose sole reader is
-the arms-resolver roll, not a limit). The walking states `0x15..0x18` are
-unreachable without the tag, so the fight waits forever on an attack that can
-never connect. Full anatomy + fix + engine-port note:
+into state `0x19`, the range re-poll, **whose SM arm has no movement code and
+no timeout** (its not-in-range edge only bumps `ctx[+0x6D4]`, whose sole
+reader is the arms-resolver roll, not a limit). Position captures of the same
+fight show the fallback normally still approaching *during* `0x19` (~19
+units/vsync, driven from the staged Move clip's playback, not the SM); in the
+caught park that drive never engaged (anim bytes idle `0/0`, position frozen
+from the first poll), so the fight waits forever on an attack that can never
+connect. What idles the approach drive is the remaining open sub-question
+(tracked in open-rev-eng-threads.md); the fix below is indifferent to it. Full anatomy + fix + engine-port note:
 [battle-action.md](../subsystems/battle-action.md#the-0x19-attack-approach-park---a-second-distinct-softlock-class).
 
 Sub-answers settled along the way: the wedged-looking `+0x1DD == 8` targets on
