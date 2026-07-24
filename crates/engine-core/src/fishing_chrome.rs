@@ -139,9 +139,12 @@ pub const PANEL_WIDGET_KIND: u8 = 0x44;
 /// Screen-y past which the panel is suppressed entirely.
 pub const PANEL_Y_CUTOFF: i16 = 0xF1;
 
-// NOT WIRED: the fishing sub-screens the panel frames are drawn by
-// `engine-ui::ui_fishing`, which lays its own frames out; nothing calls this
-// until a host runs the retail sub-screen geometry instead.
+// NOT WIRED: nothing in the port draws a fishing panel frame at all.
+// `engine-ui::ui_fishing` builds the HUD rows, the two gauge bars and the five
+// banners, and draws no box frames - the retail sub-screens this frames (the
+// rod / lure picker, the prize list) have no port UI. `engine-ui` also cannot
+// depend on `engine-core`, so wiring wants this kernel moved into
+// `ui_fishing` alongside a sub-screen builder that emits it.
 /// PORT: FUN_801D74B0 - the centred panel frame.
 ///
 /// `(cx, y, w, h)`: stages widget kind [`PANEL_WIDGET_KIND`] and emits the
@@ -276,20 +279,37 @@ pub struct FloatActorTick {
     pub flags: u32,
 }
 
-// NOT WIRED: the height solver it wraps (`FUN_801D6028`) is itself unported,
-// and the engine models the float as `fishing::FishingRun` state rather than
-// as an actor record.
+// NOT WIRED: the solver it wraps is ported ([`crate::minigame_floor`]), but
+// its input is not: the engine decodes no per-scene floor buffer, so nothing
+// can build the [`FloorGrid`] this needs. The engine also models the float as
+// `fishing::FishingRun` state rather than as an actor record, so there is no
+// `+0x16` to store into. The remaining blocker is entirely the floor buffer.
+//
+// [`FloorGrid`]: crate::minigame_floor::FloorGrid
 /// PORT: FUN_801D70EC - the fishing float's per-frame actor wrapper.
 ///
-/// Calls the float height solver `FUN_801D6028(actor)`, stores its return
-/// into the actor's `+0x16` screen y, clears [`ACTOR_FLAG_TICK`] and
-/// re-enters the shared actor dispatcher `FUN_800204F8`. The wrapper adds
-/// nothing else - it exists so the solver can be shared with the sibling
-/// caller that does not want the store.
-pub fn float_actor_tick(solved_y: i16, flags: u32) -> FloatActorTick {
+/// Calls the float height solver `FUN_801D6028(actor)`
+/// ([`crate::minigame_floor::ground_height`]), stores its return into the
+/// actor's `+0x16` screen y, clears [`ACTOR_FLAG_TICK`] and re-enters the
+/// shared actor dispatcher `FUN_800204F8`. The wrapper adds nothing else - it
+/// exists so the solver can be shared with the sibling caller that does not
+/// want the store.
+///
+/// Note the wrapper clears its own tick bit from the flag word the solver
+/// returned, so the solver's own `0x800000` maintenance survives into the
+/// stored word.
+pub fn float_actor_tick(
+    grid: crate::minigame_floor::FloorGrid<'_>,
+    world_x: i16,
+    world_z: i16,
+    flags: u32,
+    ramp: &[i16],
+) -> FloatActorTick {
+    let solved =
+        crate::minigame_floor::ground_height(grid, world_x, world_z, flags, ramp, |_, _| None);
     FloatActorTick {
-        y: solved_y,
-        flags: flags & !ACTOR_FLAG_TICK,
+        y: solved.height as i16,
+        flags: solved.flags & !ACTOR_FLAG_TICK,
     }
 }
 
@@ -412,9 +432,22 @@ mod tests {
 
     #[test]
     fn float_tick_clears_only_the_tick_bit() {
-        let t = float_actor_tick(-7, 0xFF);
-        assert_eq!(t.y, -7);
+        use crate::minigame_floor::{
+            ACTOR_FLAG_OFF_FLOOR, CELL_GRID_OFF, CELL_GRID_PITCH, CELL_ON_FLOOR, FloorGrid,
+            HEIGHT_GRID_OFF, HEIGHT_GRID_PITCH, height_ramp,
+        };
+        let mut buf = vec![0u8; CELL_GRID_OFF + 128 * CELL_GRID_PITCH];
+        // A flat cell at grid (0, 0) with the on-floor bit set.
+        buf[CELL_GRID_OFF..CELL_GRID_OFF + 2].copy_from_slice(&CELL_ON_FLOOR.to_le_bytes());
+        for (gx, gz) in [(0usize, 0usize), (1, 0), (0, 1), (1, 1)] {
+            buf[HEIGHT_GRID_OFF + gz * HEIGHT_GRID_PITCH + gx] = 2;
+        }
+        let ramp = height_ramp();
+        let t = float_actor_tick(FloorGrid::new(&buf), 0, 0, 0xFF, &ramp);
+        assert_eq!(t.y, 2 * 0x20);
+        // The tick bit is gone and the solver's off-floor bit stayed clear.
         assert_eq!(t.flags, 0xFD);
+        assert_eq!(t.flags & ACTOR_FLAG_OFF_FLOOR, 0);
     }
 
     #[test]
