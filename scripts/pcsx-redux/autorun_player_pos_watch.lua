@@ -22,7 +22,7 @@
 --   LEGAIA_LUA=scripts/pcsx-redux/autorun_player_pos_watch.lua \
 --       bash scripts/pcsx-redux/run_probe.sh
 --
--- Output: player_pos_watch.csv (tick, axis, write_addr, pc, ra, new_val)
+-- Output: player_pos_watch.csv (tick, axis, write_addr, pc, ra, prev_val)
 -- + player_pos_watch.detail.txt (call-context for the first writes).
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
@@ -35,7 +35,7 @@ local OFF_X = 0x14
 local OFF_Z = 0x18
 
 local csv = probe.csv_open(probe.out_path("player_pos_watch.csv"),
-    "tick,axis,write_addr,pc,ra,new_val")
+    "tick,axis,write_addr,pc,ra,prev_val")
 local detail_path = probe.out_path("player_pos_watch.detail.txt")
 
 local armed       = false

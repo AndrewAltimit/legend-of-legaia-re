@@ -20,10 +20,22 @@
 --   +0x14C  live HP
 --   +0x172  displayed HP
 --
--- and logs (vsync, field, slot, pc, ra, new value) for every hit, so the
+-- and logs (vsync, field, slot, pc, ra, prev_value) for every hit, so the
 -- writers name themselves. The pairing is what matters: a live-HP write with
 -- no accumulator write beside it, or an accumulator write that does not equal
 -- the resulting bar-versus-HP gap, is the defect.
+--
+-- NOTE the logged value is the value the store OVERWROTE, not the one it wrote:
+-- PCSX-Redux runs the debug hook before the instruction executes. See the
+-- header of probe/watch.lua. Read the resulting value from the next vsync's
+-- pairing row instead.
+--
+-- What the census found: party damage on this save arrives through
+-- 0x801E1948 / 0x801E1960 - the SAFE applier, which clamps the damage against
+-- live HP and then applies that one clamped value to both the accumulator and
+-- live HP - so the party drains are textbook and the invariant holds across
+-- them. The nine-site PC census missed it because that applier is in neither
+-- FUN_801EC3E4 nor FUN_800402F4.
 --
 -- The invariant being audited is the one the state-0x51 settle gate
 -- (FUN_801E7250) depends on:
@@ -39,7 +51,7 @@
 -- are re-armed whenever a party slot's actor address changes.
 --
 -- Outputs (under captures/gaza2_hpbar_writers/<ts>/):
---   writes.csv     every hit: vsync, field, slot, pc, ra, value
+--   writes.csv     every hit: vsync, field, slot, pc, ra, prev_value
 --   writes.detail.txt  call context for the first hits
 --   pairing.csv    per-vsync per-slot hp/bar/acc + invariant + which fields
 --                  were written this frame
@@ -134,7 +146,7 @@ local last_ctx7 = -1
 local commit_armed = false
 
 local writes_csv = probe.csv_open(probe.out_path("writes.csv"),
-    "tick,label,addr,pc,ra,value")
+    "tick,label,addr,pc,ra,prev_value")
 
 local pair_csv = probe.csv_open(probe.out_path("pairing.csv"),
     "vsync,ctx7,seat,hp,bar,acc,invariant,absorbing,wrote_hp_pc,wrote_bar_pc,wrote_acc_pc")
