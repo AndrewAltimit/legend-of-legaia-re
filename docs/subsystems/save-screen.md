@@ -401,7 +401,14 @@ filename - and then makes one BIOS call. Port:
 | `FUN_801E37CC` | `erase` | The only routine here that waits on no completion at all. |
 | `FUN_801E3E7C` | `format` | Device-only path; drains array B, then blocks in `FUN_801E3A00`. |
 | `FUN_801E3BEC` | `strcmp` walk | Searches the caller's count of `0x28`-stride name records at `0x801F32A8`. |
-| `FUN_801E0598` | - | Session reset; empties that 32-slot name cache only when its argument is zero. |
+| `FUN_801E0598` | - | Session reset; empties the name cache only when its argument is zero. |
+
+The clear loop is wider than the walk. `FUN_801E0598` steps `0x28` down
+from `0x801F32A8 + 0x4D8`, so it empties **32** records, where
+[`FUN_801E1208`](#save-block-directory-enumeration-fun_801e1208) walks
+the 15 a single card holds. Two ports' worth plus slack fits; the extra
+records are never filled by the enumerator, so a lookup that reaches them
+is matching against a name the reset already zeroed.
 
 #### Two event arrays, not one
 
