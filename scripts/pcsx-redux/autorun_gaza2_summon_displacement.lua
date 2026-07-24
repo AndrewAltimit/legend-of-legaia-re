@@ -28,6 +28,14 @@
 --   LEGAIA_NO_SSTATE=1 bash scripts/pcsx-redux/run_probe.sh \
 --     --fast --no-isolate-config \
 --     --lua scripts/pcsx-redux/autorun_gaza2_summon_displacement.lua
+--
+-- Timing-sensitivity variant (interpreter CPU, debugger off - tests
+-- whether the summon-then-melee clip death survives the interpreter's
+-- cycle accounting; the repro reproduces trivially under the recompiler
+-- but resists DuckStation, so the CPU core's timing is a suspect):
+--   LEGAIA_NO_SSTATE=1 bash scripts/pcsx-redux/run_probe.sh \
+--     --timing --no-isolate-config \
+--     --lua scripts/pcsx-redux/autorun_gaza2_summon_displacement.lua
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
@@ -97,5 +105,8 @@ end
 PROBE_LISTENER_ANCHORS = PROBE_LISTENER_ANCHORS or {}
 PROBE_LISTENER_ANCHORS[#PROBE_LISTENER_ANCHORS + 1] =
     PCSX.Events.createEventListener("GPU::Vsync", on_vsync)
-PCSX.log("[displace] position recorder armed (poll-only, dynarec-safe)")
+PCSX.log("[displace] position recorder armed (poll-only, any CPU core)")
+-- Stamp which core this capture ran on so offline analysis can tell the
+-- dynarec baseline apart from a --timing (interpreter) comparison run.
+PCSX.log("[displace] core = " .. probe.getenv("LEGAIA_CORE", "unknown (hand launch)"))
 PCSX.log("[displace] load your fight state, cast the summon, let the action end, then close the emulator")

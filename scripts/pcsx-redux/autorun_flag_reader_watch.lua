@@ -846,11 +846,12 @@ log(string.format(
     #WATCH_WRITES, tostring(TRACE_VRAM)))
 log("every flag tested/set/cleared this session is recorded with its ra (deduped)")
 log("this session never self-quits -- wrap the launch in timeout --kill-after")
-if CORE == "dynarec" then
+if CORE == "dynarec" or CORE == "interpreter-nodebug" then
     capture_disabled = true
-    log("FATAL: launched with --fast (LEGAIA_CORE=dynarec). This probe is")
-    log("  100% breakpoints and Lua BPs NEVER fire under the recompiler -")
-    log("  the capture would be silently empty. Relaunch WITHOUT --fast.")
+    log("FATAL: launched with --fast or --timing (LEGAIA_CORE=" .. CORE .. ").")
+    log("  This probe is 100% breakpoints and Lua BPs NEVER fire without the")
+    log("  debugger hook - the capture would be silently empty. Relaunch")
+    log("  WITHOUT --fast/--timing.")
 end
 
 PROBE_LISTENER_ANCHORS = PROBE_LISTENER_ANCHORS or {}
