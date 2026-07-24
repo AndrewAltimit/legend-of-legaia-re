@@ -621,6 +621,118 @@ class StaticArbiter:
                 return True
         return False
 
+    # Words read either side of a candidate entry by `entry_boundary`.
+    BOUNDARY_WINDOW = 8
+
+    def unmappable(self, addr_int):
+        """The band between the resident executable and the overlay slots.
+
+        `SCUS_942.54` ends well below `0x801CE818`, the base every extracted
+        overlay loads at, and nothing is linked in between - so a VA printed
+        there belongs to no runtime image and cannot be a function entry, which
+        is the structural half of the mis-based-print finding. Returned as the
+        floor address so a caller can quote it.
+        """
+        floor = min(
+            (base for label, base, _, _ in self.images if label != "SCUS"),
+            default=None,
+        )
+        top = max(
+            (base + len(data) - hdr for label, base, hdr, data in self.images
+             if label == "SCUS"),
+            default=None,
+        )
+        if floor is None or top is None:
+            return None
+        return floor if top <= addr_int < floor else None
+
+    def covers(self, addr_int):
+        """Images whose mapped range contains this VA, with room either side.
+
+        The boundary test can neither confirm nor refute a VA no image holds,
+        so callers must ask this first: "no image shows an entry here" is only
+        evidence when some image could have shown one.
+        """
+        out = []
+        need = 4 * self.BOUNDARY_WINDOW
+        for label, base, hdr, data in self.images:
+            off = hdr + (addr_int - base)
+            if addr_int >= base and off >= need and off + need <= len(data):
+                out.append(label)
+        return out
+
+    @staticmethod
+    def _ops(op_str):
+        return op_str.replace("$", "").replace(" ", "").lower()
+
+    def _decode_window(self, data, off, n, base_va):
+        """`n` decoded (mnemonic, normalised-operands) pairs, or None per word."""
+        out = []
+        for k in range(n):
+            w = data[off + 4 * k : off + 4 * k + 4]
+            if len(w) < 4:
+                out.append(None)
+                continue
+            tok = None
+            for ins in self._md.disasm(w, base_va + 4 * k):
+                tok = (ins.mnemonic.lower(), self._ops(ins.op_str))
+            out.append(tok)
+        return out
+
+    # A word that cannot open a function body: padding, or a transfer out.
+    NON_ENTRY_MNEMONICS = frozenset(("nop", "jr", "j", "b", "jalr"))
+
+    def entry_boundary(self, addr_int):
+        """Images whose bytes make this VA a function entry at their base.
+
+        The positive half of the arbiter. `owner_at` asks whether a *dump*
+        belongs at a VA; this asks whether the *image* starts a routine there,
+        with no dump involved at all - which is the only test that can refute
+        an ignore row whose merged reason was read off one mis-based dump.
+
+        Three signatures, any one of which is sufficient, all read from the
+        image at its mapped base:
+
+        * the word two back decodes `jr ra` - the classic boundary, the
+          predecessor's return with its delay slot between;
+        * the word at the VA decodes `addiu sp,sp,-N` - a non-leaf prologue,
+          which in this codebase occurs nowhere else;
+        * the words before the VA carry the `$zero`-absolute data signature and
+          the words at it do not - a code region opening after a header or
+          string blob, which is how an overlay's first routine looks.
+
+        A leaf has no prologue and may follow data rather than a return, which
+        is why all three are needed: requiring the prologue alone would call
+        every frameless routine a fragment.
+
+        Guarded on both sides. The word at the VA must decode and must not be
+        padding or a transfer out, so a second `jr ra` exit inside a body - the
+        shape that makes an interior VA look boundary-preceded - is rejected.
+
+        Returns `[(label, signature)]`.
+        """
+        n = self.BOUNDARY_WINDOW
+        hits = []
+        for label, base, hdr, data in self.images:
+            off = hdr + (addr_int - base)
+            if addr_int < base or off < 4 * n or off + 4 * n > len(data):
+                continue
+            before = self._decode_window(data, off - 4 * n, n, addr_int - 4 * n)
+            after = self._decode_window(data, off, n, addr_int)
+            head = after[0]
+            if head is None or head[0] in self.NON_ENTRY_MNEMONICS:
+                continue
+            if self._looks_like_data([t for t in after if t]):
+                continue
+            prev2 = before[-2]
+            if prev2 and prev2[0] == "jr" and prev2[1] in ("ra", "ra,"):
+                hits.append((label, "preceded by `jr ra`"))
+            elif head[0] in ("addiu", "addi") and head[1].startswith("sp,sp,-"):
+                hits.append((label, "opens `%s %s`" % head))
+            elif self._looks_like_data([t for t in before if t]) and all(after):
+                hits.append((label, "code opening after a data run"))
+        return hits
+
     UNSUPPORTED_ALIAS = (
         "UNCERTAIN",
         "no extracted image holds the dumped bytes at this VA - the owning "
@@ -1059,6 +1171,123 @@ def classify(addr, dumps, dup_groups, ported, owners=None, arb=None,
     )
 
 
+# --- `--audit-ignored` -----------------------------------------------------
+# A merged `worklist_misbased_print` (or `worklist_uncertain`) reason records
+# the VA the dump's bytes actually live at. Re-classifying the PRINTED address
+# therefore re-derives what the row already says: the body is real, and the row
+# never claimed otherwise. These patterns recover the named VA so the audit can
+# check the claim instead of restating it. Each matches one phrasing the merged
+# reasons use; a row that names no VA yields None and is audited on the address
+# alone.
+TRUE_VA_RE = (
+    re.compile(r"bytes\s+resolve\s+to\s+(?:0x)?([0-9a-fA-F]{8})", re.I),
+    re.compile(r"TRUE\s+VA\s+(?:0x)?([0-9a-fA-F]{8})", re.I),
+    re.compile(r"re-keys\s+to\s+\S+\s+(?:0x)?([0-9a-fA-F]{8})", re.I),
+    re.compile(r"FUN_([0-9a-fA-F]{8})\s+printed", re.I),
+    re.compile(r"real\s+routine\s+is\s+\S+\s+(?:0x)?([0-9a-fA-F]{8})", re.I),
+    re.compile(r"bytes\s+are\s+\S+\s+(?:0x)?([0-9a-fA-F]{8})\s+linked-in", re.I),
+    re.compile(r"match(?:es)?\s+by\s+VA\s+\+0x[0-9a-fA-F]+\s+against\s+\S*?"
+               r"([0-9a-fA-F]{8})", re.I),
+)
+
+
+def named_true_va(reason):
+    """The VA a merged reason says the dump's bytes really live at, or None."""
+    for pat in TRUE_VA_RE:
+        m = pat.search(reason or "")
+        if m:
+            return m.group(1).lower()
+    return None
+
+
+def audit_row(addr, reason, by_addr, dup_groups, ported, owners, arb):
+    """Audit one already-ignored row: `(re_raise_note or None, class, reason)`.
+
+    A re-raise has to mean "this ignore row is probably wrong", so the audit
+    asks a different question from the classifier. The classifier reads dump
+    metadata; a merged ignore row was written from the same dumps, so simply
+    re-running it re-derives the row's own evidence and calls the agreement a
+    disagreement whenever the verdict lands outside `NON_PORTABLE`.
+
+    The order below puts the one independent test first.
+
+    1. `NON_PORTABLE` - classifier and row agree outright.
+    2. The extracted images. `entry_boundary` is evidence no dump can
+       contradict: if some image starts a routine at this VA at its mapped
+       base, the row deletes a real port site whatever the dumps say, and if no
+       covering image does, the row stands whatever the classifier made of the
+       dump. A VA in the band between the executable and the overlay slots is
+       settled the same way - no image maps it, so no routine can begin there.
+    3. The named true VA, for rows whose merged reason records one. The
+       mis-based-print finding is a property of the DUMP, not of the address -
+       so confirming it (the bytes resolve where the reason says) settles the
+       dump but says nothing about the VA, which step 2 has already judged.
+       Only a *disagreement* re-raises, and it re-raises even for a VA step 2
+       settled: a reason that names the wrong true VA misdirects the reader
+       whether or not the ignore verdict itself survives.
+    4. `UNCERTAIN`. The class means the mechanical tests reached no verdict.
+       No verdict is not evidence that a human-reviewed row is wrong, and the
+       reasons that produce it here - "decodes data as code", "every dump at
+       this VA is mis-based", "no disassembly" - are usually the finding the
+       row was merged on. Left outside `NON_PORTABLE` for the normal mode,
+       where it correctly means "needs a human"; suppressed here.
+    """
+    dumps = by_addr.get(addr, [])
+    cls, why = classify(addr, dumps, dup_groups, ported, owners, arb, by_addr)
+    if cls in NON_PORTABLE:
+        return (None, cls, why)
+
+    va = int(addr, 16)
+    if arb is not None and arb.covers(va):
+        hits = arb.entry_boundary(va)
+        if hits:
+            label, sig = hits[0]
+            return (
+                "%s holds a function entry at this VA at its mapped base (%s)"
+                % (label, sig),
+                cls,
+                why,
+            )
+
+    true_va = named_true_va(reason)
+    resolved = []
+    if true_va and arb is not None:
+        funcs = [d for d in dumps if d["kind"] == "func"]
+        if funcs:
+            try:
+                resolved = arb.relocate(addr, funcs) or []
+            except Exception:  # index build failure must not decide a verdict
+                resolved = []
+        if resolved and true_va not in {"%08x" % v for _, v in resolved}:
+            where = ", ".join("%s 0x%08x" % (lbl, v) for lbl, v in resolved[:3])
+            return (
+                "merged reason names true VA %s, but the dumped bytes resolve "
+                "to %s" % (true_va, where),
+                cls,
+                why,
+            )
+
+    if arb is not None and (arb.covers(va) or arb.unmappable(va)):
+        return (None, cls, why)
+
+    if true_va:
+        tcls, twhy = classify(
+            true_va, by_addr.get(true_va, []), dup_groups, ported, owners, arb, by_addr
+        )
+        if resolved or tcls in ("REAL", "UNCERTAIN") or not by_addr.get(true_va):
+            return (None, cls, why)
+        return (
+            "merged reason names true VA %s, which itself classifies %s: %s"
+            % (true_va, tcls, twhy),
+            cls,
+            why,
+        )
+
+    if cls == "UNCERTAIN":
+        return (None, cls, why)
+    return ("no extracted image covers this VA to check", cls, why)
+
+
 IGNORE_CATEGORY = {
     "INTERIOR": "worklist_interior",
     "PHANTOM": "worklist_phantom",
@@ -1201,6 +1430,13 @@ def main():
         a = args.explain.lower()
         if arb is not None:
             va = int(a, 16)
+            bounds = arb.entry_boundary(va)
+            sys.stdout.write(
+                "  entry-boundary: %s\n"
+                % ("; ".join("%s (%s)" % t for t in bounds) if bounds else
+                   ("no covering image starts a routine here"
+                    if arb.covers(va) else "no extracted image covers this VA"))
+            )
             for d in by_addr.get(a, []):
                 if d["kind"] != "func":
                     continue
@@ -1236,19 +1472,22 @@ def main():
 
     if args.audit_ignored:
         by_cat = {r["addr"].lower(): r["ignore_category"] for r in rows}
+        by_reason = {r["addr"].lower(): r.get("ignore_reason", "") for r in rows}
         bad = 0
         for a in absorbed:
-            cls, why = classify(a, by_addr.get(a, []), dup_groups, ported, owners, arb, by_addr)
-            if cls in NON_PORTABLE:
+            note, cls, why = audit_row(
+                a, by_reason.get(a, ""), by_addr, dup_groups, ported, owners, arb
+            )
+            if note is None:
                 continue
             bad += 1
             sys.stdout.write(
-                "%s ignored as %s but now classifies %s: %s\n"
-                % (a, by_cat[a], cls, why)
+                "%s ignored as %s - %s (classifier: %s: %s)\n"
+                % (a, by_cat[a], note, cls, why)
             )
         sys.stdout.write(
-            "\n%d of %d absorbed rows no longer classify non-portable\n"
-            % (bad, len(absorbed))
+            "\n%d of %d absorbed rows are contradicted by evidence the merged "
+            "reason did not rest on\n" % (bad, len(absorbed))
         )
         return 1 if bad else 0
 
