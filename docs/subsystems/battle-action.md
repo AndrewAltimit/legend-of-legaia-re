@@ -254,10 +254,16 @@ cast - is the only kind that can be held.
 
 Live HP `+0x14C` and displayed HP `+0x172` converge through a third field,
 `actor[+0x10]`, a signed pending-delta accumulator. The per-actor tick
-`FUN_80047430` (SCUS band) moves a quarter of it into the bar every frame:
-`0x172 -= (acc + 3) / 4` with `acc -= (acc + 3) / 4`, so the total bar movement
-equals the seeded accumulator exactly and the sequence terminates at zero for
-either sign. The whole ramp sits behind one guard at `0x800474E8`
+`FUN_80047430` (SCUS band, `see ghidra/scripts/funcs/80047430.txt`) drains it
+into the bar. A **party** slot gets a quarter per game frame - `0x172 -= step`
+and `acc -= step`, with `step` a divide-by-four biased so it is never zero for a
+non-zero accumulator (`(acc+3)>>2` positive, `acc>>2` negative) - so the total
+bar movement equals the seeded accumulator exactly and the sequence terminates
+at zero for either sign. A **monster** slot instead takes the whole delta in one
+frame and clears the accumulator (`0x80047578`), which is a second reason a
+monster target never holds the `0x51` exit.
+
+The whole ramp sits behind one guard at `0x800474E8`
 (`lw a0,0x10(s2); beq a0,zero,<skip>`): **with a zero accumulator the bar is not
 touched at all.**
 
