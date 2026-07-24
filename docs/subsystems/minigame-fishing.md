@@ -16,7 +16,7 @@ The per-frame driver is `FUN_801cf3bc` (`overlay_fishing_801cf3bc.txt`). It is d
 | `1` | Scene / actor setup: spawns the fishing actors (`func_0x80020de0`), picks the location variant from `DAT_801d90d0`, initialises camera-tint bytes, then falls through to `0x32`. |
 | `0x32` | Sets state to `10` (the run-loop entry). |
 | `10` (`0xa`) | Run-loop init: zeroes the per-cast working set, including tension `DAT_801d9168`, depth/line `DAT_801d9298`, casting-power `DAT_801d9274` (seeded `0x40`) and its direction `DAT_801d9278`, then advances. |
-| `0xb` | Fade-in: ramps the screen-fade level `DAT_801d905c` down to 0, then advances (or jumps to the "no rod" state `0x96` if `FUN_801d712c` reports no rod owned). |
+| `0xb` | Fade-in: ramps the screen-fade level `DAT_801d905c` down to 0, then advances (or jumps to the "no lure" state `0x96` if `FUN_801d712c` reports no lure owned). |
 | `0xc` | Idle / "press to cast": a button edge starts the cast (sets a sound cue and advances) or opens the shop branch (`0x64`). |
 | `0xd` | Cast wind-up: advances a small counter, pans the camera, and after ~12 frames jumps to the casting-power state `0x14`. |
 | `0x14` | Casting-power oscillator: bounces `DAT_801d9274` between `0x20` and `0x1000` (direction `DAT_801d9278`); on a button edge it locks the power, spawns the lure / line actors, and computes the line-projection vector from the locked power. |
@@ -66,13 +66,108 @@ accumulates the frame-step `DAT_1f800393` into the current slot of a 16-entry
 `{button, held-frames}` ring buffer `DAT_801d91e4` (write index `DAT_801d91dc`,
 wrapped mod 16); on a change it advances the index and opens a fresh slot. It
 then walks a window of that history backwards against the rodata gesture
-templates at `DAT_801d87d4` - each template a sequence of `{button, duration}`
+templates at `DAT_801d87d4` - each template a sequence of `{duration, button}`
 pairs matched with a **±10-frame tolerance** - and on a full match resets the
-buffer through `FUN_801d746c` and reports the matched gesture. `FUN_801d746c`
+buffer through `FUN_801d746c` and reports the matched gesture. The consumer
+stores that gesture id **as the cast band** - the four templates are decoded
+in [Species selection and the band-4 gate](#species-selection-and-the-band-4-gate). `FUN_801d746c`
 (`overlay_fishing_801d746c.txt`) is that reset: it zeroes `DAT_801d91dc` and
 clears all sixteen 8-byte entries of `DAT_801d91e4`.
 
 (VA aliasing: `undoc` attributes `801d3db4`'s VA to `overlay_0971`; the *fishing* occupant of that VA is the recogniser here, pinned by its reads of the fishing globals `DAT_801d9064` / `DAT_801d91dc` / `DAT_801d91e4` and its calls to `FUN_801d7450` / `FUN_801d746c`. See [VA aliasing](#va-aliasing-in-this-band).)
+
+## Species selection and the band-4 gate
+
+Which species strikes is decided in the pre-hook half of `FUN_801d26cc`
+(`overlay_fishing_801d26cc.txt`): at the strike the handler assigns
+`DAT_801d91cc = spawn_table[lure*8 + band]`, where `lure` is the equipped-lure
+row `_DAT_80084450` and `band` is `DAT_801d90e8`. Everything below is about how
+`band` gets its value.
+
+**The band roll.** While no fish is hooked (`DAT_801d91b4 == 0`) and the line
+record `DAT_801d927c` exceeds `500`, the check body runs **every frame**: the
+countdown `DAT_801d90ec` is clamped to `0` on underflow, so in the steady state
+it re-enters each tick. Each entry first consults the cadence recogniser
+`FUN_801d3db4`. On a match the returned **template id is stored as the band
+directly**, the countdown is armed to `0x40` - for the next 64 frame-steps the
+body is skipped, so the matched band **holds** - and the strike-splash timer
+`DAT_801d90f0` is seeded (the splash players read as "Good!" fires for *any*
+matched template, including the ones that select the common bands). With no
+match the band is re-rolled from `rand & 0xfff` against three fixed cutoffs,
+so an unmatched band is only ever the current frame's roll:
+
+| Roll `r = rand & 0xfff` | Band | Share of rolls |
+|---|---|---|
+| `r <= 0xc00` | 3 | 3073/4096 (~75.0%) |
+| `0xc00 < r <= 0xe70` | 2 | 624/4096 (~15.2%) |
+| `0xe70 < r <= 0xf38` | 1 | 200/4096 (~4.9%) |
+| `0xf38 < r` | 0 | 199/4096 (~4.9%) |
+
+No roll outcome and no template maps to band 4 - the rare column is reachable
+only through the gate below.
+
+**The cadence templates.** The rodata at `DAT_801d87d4` holds four `0x40`-byte
+records: `u32 step_count`, `u32 history_window` (in frame-steps), then
+`step_count` pairs of `{u32 duration, u32 button}` which `FUN_801d3db4`
+matches backwards from the newest ring-buffer slot with a ±10 frame-step
+tolerance (button values are `FUN_801d7450`'s decode: `0` idle, `1` reel A =
+Cross, `2` reel B = Square). Chronologically:
+
+| Template → band | Cadence (durations in frame-steps) |
+|---|---|
+| `0` | idle 40, Cross 25, idle 40, **Square 15** |
+| `1` | Square 15, Cross 25, release |
+| `2` | Square 15, idle 40, Square 15 |
+| `3` | Cross 25, idle 40, Cross 25 |
+
+Template 3 is the natural "pump Cross rhythmically" motion, so unprompted
+reeling tends to *select the most common band* while still showing the splash.
+Template 0 is the only path that pins band 0 by choice rather than the ~4.9%
+roll.
+
+**The countdown doubles as the strike credit.** The per-frame strike roll is
+`rand % denom < credit` with `credit = DAT_801d90ec + 2`, plus one per fresh
+input edge (D-pad left/right, either reel button), plus the bonus-cell boosts
+below; the credit is zeroed while the length readout `DAT_801d9280` is under
+`100`, and a strike can only land on a frame where a reel button is **held**
+(`_DAT_8007b850 & 0xc0`). A cadence match therefore also arms the bite: the
+credit jumps from ~2 to `0x42` and decays with the countdown, so a strike is
+roughly twenty times more likely precisely while the matched band is held.
+Completing template 0 and keeping the final Square press held is the
+retail-optimal sequence - band 0 pinned, bite boosted, and the reel-held
+strike requirement satisfied by the same button.
+
+**The band-4 gate.** Inside the hook-success branch (reel held, strike roll
+passed, `DAT_801d91b4 == 0`), immediately before the species lookup:
+
+- **Buma** (`DAT_801d90d0 == 0`): if `0x32 < _DAT_80084460` (more than 50
+  lifetime casts) **and** `(_DAT_80084460 & 1) == 0` (counter even) **and**
+  `_DAT_80084450 == 1` (Normal Lure) **and** `_DAT_80084454 == 2` (third rod)
+  **and** `DAT_801d90e8 == 0`, then `rand & 0xf == 0` (1/16) sets the band
+  to 4 - the Normal-lure row's band-4 species (id 9, the rarest catch).
+- **Vidna** (`DAT_801d90d0 != 0`): same shape with no cast-count threshold,
+  `_DAT_80084450 == 2` (Heavy Lure), and `rand & 3 == 0` (1/4) - the
+  Heavy-lure row's band-4 species (id 8).
+
+`_DAT_80084460` is the **persistent cast counter** (save block): incremented
+once per cast when the flown lure's power countdown reaches zero in
+`FUN_801d26cc` (the same event that advances the mode SM to state `0x19`).
+Its parity is also read cosmetically - it picks the lure's drift direction on
+wall contact - which is the only player-visible trace of the even/odd gate.
+
+Because each venue's gate hardwires the lure row, band 4 is only ever read on
+the row that carries the venue's rare species; the band-4 cells of the other
+rows are dead data in retail. The one bypass is a debug shortcut in the same
+branch: with the debug print flag `_DAT_8007b9b0` set, holding R1
+(`_DAT_8007b850 & 8`) at the strike stores band 4 unconditionally.
+
+**Strike-rate context** (where the gate sits): `denom` is stepped by the
+length readout `DAT_801d9280` (~1000 for a deep cast; a readout under `200`
+cannot strike at all), and the per-cell bonus flags feed the credit - a cell
+whose grid word carries bit `0x4000` maps through `func_0x800180ec` to
+`_DAT_8007b8f4` flags `4`/`8`/`0x10` for graded credit boosts. Pond position
+and bait-twitching change how often the gate is rolled, never which species
+results.
 
 ## Fishing actors and scene render
 
@@ -361,9 +456,12 @@ Fishing-specific globals (overlay-resident unless noted; `_DAT_8008xxxx` live in
 | `0x801d9294` | `u32` | Fish-sprite spawn step latch (`FUN_801d2050`). |
 | `0x801d928c` | `u32` | Hooked-fish actor pointer, saved by `FUN_801d2050`, read by `FUN_801d4948`. |
 | `0x801d91c8` | `u32` | Reeling-line actor sub-state (`FUN_801d4948`, `0`/`1`/`2`). |
+| `0x801d90e8` | `u32` | **Cast band** (0..4): spawn-table column for the species lookup. See [Species selection](#species-selection-and-the-band-4-gate). |
+| `0x801d90ec` | `s32` | Band-check countdown: parks at `0` (roll + cadence check run per frame); armed `0x40` by a cadence match, during which the band holds and the strike credit (`timer + 2`) stays boosted. |
 | `0x8008444c` | `s32` | **Persistent fishing-point score** (save block), capped at `999999`. |
-| `0x80084450` | `u32` | Persistent selected-rod index (HUD label + SFX base). |
-| `0x80084454` | `s32` | Persistent rod / upgrade stat; scales the per-frame tension change. |
+| `0x80084450` | `u32` | Persistent selected-**lure** index (`0`..`2` = Light/Normal/Heavy, items `0x9d`..`0x9f`): spawn-table row, HUD label + SFX base. (Previously misdocumented here as the rod index.) |
+| `0x80084454` | `s32` | Persistent rod index (`0`..`2`, items `0xa0`..`0xa2`); scales the per-frame tension change and is a band-4 gate condition. |
+| `0x80084460` | `s32` | **Persistent cast counter** (save block): +1 per cast at lure landing. Its magnitude and parity gate band 4; parity also flips the lure's wall-contact drift. |
 | `0x80084458` | `s32` | Persistent best-catch point value. |
 | `0x8008445c` | `u32` | Persistent best-catch fish id. |
 
@@ -378,7 +476,7 @@ Fishing-specific globals (overlay-resident unless noted; `_DAT_8008xxxx` live in
 - `FUN_801d1580` (`overlay_fishing_801d1580.txt`) - catch HUD: draws tension, casting power, depth, and record values.
 - `FUN_801d13f0` (`overlay_fishing_801d13f0.txt`) - persistent HUD: draws the best-catch value, the fishing-point total (`_DAT_8008444c`, capped), the rod-type label, and the lures-remaining count (item `_DAT_80084450 + 0x9d`).
 - `FUN_801d78ec` / `FUN_801d75dc` / `FUN_801d71d4` (`overlay_fishing_801d78ec.txt` / `..75dc.txt` / `..71d4.txt`) - the three one-shot banner/splash animators (see [HUD and banner animations](#hud-and-banner-animations)).
-- `FUN_801d712c` (`overlay_fishing_801d712c.txt`) - rod-ownership gate; queries inventory item ids `0x9d`..`0x9f` (`func_0x80042f4c`) and re-points the persistent rod index `_DAT_80084450` onto an owned one.
+- `FUN_801d712c` (`overlay_fishing_801d712c.txt`) - lure-ownership gate; queries inventory item ids `0x9d`..`0x9f` (`func_0x80042f4c`) and re-points the persistent lure index `_DAT_80084450` onto an owned one.
 - `FUN_801d6f10` / `FUN_801d7528` - the miss-retry and auxiliary banner animators (see [HUD and banner animations](#hud-and-banner-animations)).
 - `FUN_801d1870` / `FUN_801d1a90` / `FUN_801d76e0` - the horizontal bar, vertical bar and digit-field primitives (see [The bar and digit primitives](#the-bar-and-digit-primitives)).
 - `FUN_801d7450` / `FUN_801d3db4` / `FUN_801d746c` - the reel-button decoder, the reel-cadence recogniser, and its buffer reset (see [Reel-button decode and cadence](#reel-button-decode-and-cadence)).
@@ -396,7 +494,7 @@ but is driven by the Sony gesture-template rodata `DAT_801d87d4`.
 
 The HUD / banner cluster is ported as a draw-list layer (`HudDraw`) in [`legaia_engine_ui::ui_fishing`](../../crates/engine-ui/src/ui_fishing.rs), beside the consumer that renders it: `persistent_hud_draws` (`FUN_801d13f0`), `catch_hud_draws` plus the `length_display` / `extent_display` / `cast_power_percent` kernels (`FUN_801d1580`), the five animators `banner_from_left_draw` / `banner_from_right_draw` / `strike_splash_draws` / `banner_miss_draw` / `banner_converge_draws` (`FUN_801d78ec` / `FUN_801d75dc` / `FUN_801d71d4` / `FUN_801d6f10` / `FUN_801d7528`), and `BannerTimer` (the tail's timer-service loop).
 
-The bar and digit primitives are ported as layout builders over that same draw list: `bar_frame` / `power_bar_frame` (`FUN_801d1870` / `FUN_801d1a90`) return the cap/body/cap glyph frame plus the fill extent and its brightness, and `number_digit_cells` (`FUN_801d76e0`) expands a value into its eight-slot digit field. `select_owned_rod` (`FUN_801d712c`) stays with the rules half in `legaia_engine_core::fishing`; note it is not read-only - it advances the persistent rod index onto an owned lure, which is why the HUD's rod label can change without the player touching the menu.
+The bar and digit primitives are ported as layout builders over that same draw list: `bar_frame` / `power_bar_frame` (`FUN_801d1870` / `FUN_801d1a90`) return the cap/body/cap glyph frame plus the fill extent and its brightness, and `number_digit_cells` (`FUN_801d76e0`) expands a value into its eight-slot digit field. `select_owned_rod` (`FUN_801d712c`) stays with the rules half in `legaia_engine_core::fishing`; note it is not read-only - it advances the persistent lure index onto an owned lure, which is why the HUD's lure label can change without the player touching the menu.
 
 `fishing_hud_draws_for` is the consumer for that draw list - the fishing sibling of `battle_hud_draws_for`. It renders `Number` and `Count` items through the ported digit field as font-atlas text, resolves `Caption` items against host-supplied strings (the retail captions are overlay rodata), resolves `Glyph` ids and gauge fills through a host-supplied atlas lookup, and routes `Bar` / `PowerBar` through `bar_frame` / `power_bar_frame` into cap/body/cap quads plus a fill quad on the frame's own axis. An id the host cannot place is dropped rather than guessed at.
 
@@ -426,7 +524,9 @@ The shop branch of the mode SM (states `0x64`..`0x7a`) is a **point exchange**: 
 
 **Venue pages.** Two consecutive 6-row tables live in the overlay rodata at VA `0x801D8088` / `0x801D80D0`; `FUN_801cf3bc` state `1` selects the page from the venue global `_DAT_8007BAC4` (`0x187` → page 0, the Buma pond; `0xF4` → page 1, the Vidna pond - the selector values equal the Karisto / Sebucus kingdom-bundle extraction indices). Both venues spend and latch against the same globals; venue 1's one-time bits occupy `8..`. Cross-validated row-for-row against the curated walkthrough prize lists ([`gamedata.md`](../reference/gamedata.md)) - including one entry the walkthroughs miss: **Vidna's row 0 is a 50,000-point one-time War God Icon**, invisible until the pool exceeds its price.
 
-The same state-1 page select also pages the venue's **species-spawn table** into `PTR_DAT_801d9114` (rodata `0x801D8334` / `0x801D8434`, directly after the species table): `8 × 8` u32 species ids read by the hooked-fish handler as `species = table[rod*8 + band]` (`FUN_801d26cc`), where `rod` is the equipped-rod index `_DAT_80084450` (rows 3..8 are zero padding - three rods exist) and `band` is the cast band `DAT_801d90e8` (0..4; band 4 is the venue's rare band, entered by a venue-specific roll - 1/16 at Buma with rod 1 + lure 2 after `0x32` even-count catches, 1/4 at Vidna with rod 2 + lure 2 - or directly on a deep cast).
+The same state-1 page select also pages the venue's **species-spawn table** into `PTR_DAT_801d9114` (rodata `0x801D8334` / `0x801D8434`, directly after the species table): `8 × 8` u32 species ids read by the hooked-fish handler as `species = table[lure*8 + band]` (`FUN_801d26cc`), where `lure` is the equipped-**lure** index `_DAT_80084450` (rows 3..8 are zero padding - three lures exist) and `band` is the cast band `DAT_801d90e8` (0..4).
+
+How the band is chosen - the roll, the reel-cadence override, and the band-4 gate that admits each venue's rarest fish - is [Species selection and the band-4 gate](#species-selection-and-the-band-4-gate). (An earlier revision of this page indexed the rows by *rod* and called band 4 "entered by a venue-specific roll ... or directly on a deep cast"; both halves were wrong - the row global is the lure, and band 4 is reachable only through the strike-time gate.)
 
 Parsers: [`legaia_asset::fishing_exchange`](../../crates/asset/src/fishing_exchange.rs) (exchange pages) and `fishing_species::parse_spawn_tables` (spawn pages); disc-gated `fishing_exchange_real` pins the structural invariants. Engine port: `legaia_engine_core::fishing::PrizeExchange` (list-floor / availability / quantity-cap / confirm kernels) with the grant committed by `World::fishing_exchange_buy` against the persistent `World::fishing_points` pool + `World::fishing_prizes_purchased` mask (the retail `_DAT_8008444C` / `_DAT_8008446C` pair); disc-free runtime oracle `fishing_exchange_runtime`.
 

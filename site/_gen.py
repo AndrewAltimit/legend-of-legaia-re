@@ -191,6 +191,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     # Technical write-ups (narrative deep-dives)
     ("writeups/index.html",        "Technical write-ups",           "writeups/index",             "writeups/index.html"),
     ("writeups/gaza-orbit-softlock.html", "The endless camera orbit - anatomy of a retail softlock", "writeups/gaza-orbit-softlock", "writeups/gaza-orbit-softlock.html"),
+    ("writeups/spirit-fish.html", "The Spirit fish gate - fishing's rarest catch, decompiled", "writeups/spirit-fish", "writeups/spirit-fish.html"),
     ("writeups/disc-patching/index.html","Patching a sealed disc",   "writeups/disc-patching/index","writeups/disc-patching/index.html"),
     ("writeups/disc-patching/a-static-tables.html","Tier A - static-table overwrites","writeups/disc-patching/a-static-tables","writeups/disc-patching/a-static-tables.html"),
     ("writeups/disc-patching/b-lzs-slots.html","Tier B - editing inside LZS","writeups/disc-patching/b-lzs-slots","writeups/disc-patching/b-lzs-slots.html"),
