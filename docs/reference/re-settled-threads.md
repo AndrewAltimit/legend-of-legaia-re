@@ -152,7 +152,8 @@ the battle-action state machine parking while the idle camera azimuth sweep
 **walk animation** (action tag `0x20`) in the acting monster's action table via
 `FUN_80050E2C`; when the table has no such action - bosses generally never
 walk; Gaza's 12-action table reads tags `[00 01 02 03 04 05 0B 0E 13 0C 23 23]`
-in the parked save - the fallback path stages the idle tag and drops straight
+in the parked save; the tag-`1` "Move" float loop exists but is only played
+inside the walk chain the `0x20` gate protects - the fallback stages it and drops straight
 into state `0x19`, the range re-poll, **which has no movement code and no
 timeout** (its not-in-range edge only bumps `ctx[+0x6D4]`, whose sole reader is
 the arms-resolver roll, not a limit). The walking states `0x15..0x18` are

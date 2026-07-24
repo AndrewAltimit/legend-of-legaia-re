@@ -648,10 +648,10 @@ branch, read from the raw disassembly
 801e3264  lbu a2,0x4a(a0)          ;   action count at record+0x4A
 801e3268  jal 0x80050e2c           ;   tag scan over the table at record+0x4C
 801e327c  bne v0,0xff,0x801e32b4   ;   found  -> state 0x15 (walk start)
-801e329c  li  a1,0x1               ;   NOT found: fall back to the idle tag
+801e329c  li  a1,0x1               ;   NOT found: fall back to tag 1 (the Move loop)
 801e32a4  jal 0x80050e2c
 801e32ac  j   0x801e32c4           ;   -> state 0x19: the park
-801e32b0  _sb v0,0x1da(s3)         ;   (delay: stage the idle anim)
+801e32b0  _sb v0,0x1da(s3)         ;   (delay: stage that clip)
 ```
 
 `FUN_80050E2C` is a linear scan of the record's action-pointer table
@@ -661,7 +661,15 @@ equals the tag; it returns the entry index, or `0xFF` when absent (see
 `0x20`/`0x21` are the attack pre-approach / close-in pair). So a monster
 whose action table carries **no tag-`0x20` walk action** can never enter the
 walking states `0x15..0x18`: out of reach, it is dropped straight into the
-`0x19` poll with an idle animation and no way to close the gap.
+`0x19` poll with no way to close the gap. The approach needs **three**
+clips - tag `0x20` (stance-to-moving transition, played through `0x15`),
+tag `1` (the locomotion "Move" loop the asset viewer shows, played while
+`0x16`'s stepping code slides the position), tag `0x21` (close-in stop, state
+`0x17`) - and the gate checks only the first. A monster can therefore own a
+perfectly good Move loop (Gaza's float cycle) and still be unable to
+approach: the fallback stages that tag-`1` clip, so a parked boss visibly
+floats in place while the range poll spins - the movement was never the
+animation's job.
 
 Confirmed against the parked save itself (RAM read via `legaia-pcsxr`,
 example `gaza2_walk_tag`): Gaza's seat-3 record holds 12 actions with tags

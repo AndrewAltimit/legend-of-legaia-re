@@ -13,13 +13,13 @@
 //! via the tag-scan `FUN_80050E2C`:
 //!
 //! ```text
-//! 801e3260  li  a1,0x20              ; walk tag
+//! 801e3260  li  a1,0x20              ; approach-transition tag
 //! 801e3268  jal 0x80050e2c           ; scan the action table
 //! 801e327c  bne v0,0xff,0x801e32b4   ; found -> state 0x15 (walk start)
-//! 801e329c  li  a1,0x1               ; NOT found: fall back to the idle tag
+//! 801e329c  li  a1,0x1               ; NOT found: fall back to tag 1 (the Move loop)
 //! 801e32a4  jal 0x80050e2c
 //! 801e32ac  j   0x801e32c4           ; <- the park: state 0x19
-//! 801e32b0  _sb v0,0x1da(s3)         ;    (delay: stage the idle anim)
+//! 801e32b0  _sb v0,0x1da(s3)         ;    (delay: stage that clip)
 //! ```
 //!
 //! State `0x19` re-polls the range check every frame and has **no movement
@@ -28,7 +28,11 @@
 //! limit). The walking states `0x15..0x18` are unreachable without the tag,
 //! so a monster whose action table lacks `0x20` (bosses generally - they
 //! never walk) parks the battle the moment it picks a contact attack against
-//! a target beyond its size-scaled reach. Full anatomy:
+//! a target beyond its size-scaled reach. NB the gate is on the
+//! stance-to-moving *transition* clip only: the tag-`1` locomotion ("Move")
+//! loop may well exist - it is only ever played inside the walk chain this
+//! gate protects, so the parked monster visibly idles/floats in place.
+//! Full anatomy:
 //! `docs/subsystems/battle-action.md` ("The 0x19 attack-approach park").
 //!
 //! ## The fix
@@ -37,7 +41,7 @@
 //! `j 0x801E32C4` (park in state `0x19`) becomes `j 0x801E3204` - the state
 //! `0x14` **in-range continuation**, which enters the strike chain (state
 //! `0x1E`) directly. The delay slot (`sb v0,0x1da(s3)`, staging the fallback
-//! idle anim exactly as vanilla does) is left in place and still executes.
+//! tag-`1` clip exactly as vanilla does) is left in place and still executes.
 //! The landing site rebuilds its registers from scratch (`lui a0,0x8008` -
 //! it is the in-range branch's own delay slot), so no register state carries
 //! over.
@@ -77,7 +81,7 @@ pub const PARK_TARGET_VA: u32 = 0x801E_32C4;
 /// (state `0x1E`, the strike chain).
 pub const STRIKE_TARGET_VA: u32 = 0x801E_3204;
 
-/// Build-fingerprint context: the fallback idle-tag scan `jal FUN_80050E2C`
+/// Build-fingerprint context: the fallback tag-1 scan `jal FUN_80050E2C`
 /// at `HOOK_VA - 8`.
 pub const CONTEXT_JAL_VA: u32 = 0x801E_32A4;
 /// Tag-scan routine the fingerprint `jal` must target.
