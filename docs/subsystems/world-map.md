@@ -181,10 +181,16 @@ The renderer-free half of the dev-menu leaves lives in
 `is_closed` (the 24-row model incl. the `MAP_CHANGE` / `CARD_OPTION` CLOSED
 gating), `format_fixed_decimal` (the zero-padded digit kernel `FUN_801EAD98`
 inlines per numeric readout), and `decode_camera_readout`. The module also
-ports the escape-timer scheduler (`EscapeTimer`, from `FUN_801D2EBC`), the
-battle-records data model (`records_screen`, from `FUN_801ED710`), and the
-equipment stat-comparison preview (`aggregate_slot_stats` /
+ports the battle-records data model (`records_screen`, from `FUN_801ED710`)
+and the equipment stat-comparison preview (`aggregate_slot_stats` /
 `resolve_equip_slot` / `stat_deltas`, from `FUN_801E5B4C`).
+
+The escape-timer scheduler (`FUN_801D2EBC`) is a fifth leaf of the same
+overlay but sits in its own module, `legaia_engine_vm::escape_timer`, because
+it has an engine caller: the field VM's `0x4C 0xD3` installer reaches
+`World::schedule_timed_flags` and `World::tick_escape_timer` drains the
+counter once per retail frame. See
+[`script-vm-menuctrl.md`](script-vm-menuctrl.md#0x4c-nibble-0xd00xdf---party-state--inverted-y-mirror-cluster).
 
 The **draw** half - the GPU-packet emitters (`FUN_8001AA68` / `FUN_80034B78` /
 `FUN_80034E4C` / `FUN_8003C1F8` / `FUN_8003CC98`) - lives in `engine-ui`:

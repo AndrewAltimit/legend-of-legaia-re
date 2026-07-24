@@ -4,7 +4,7 @@
 //! Field VM `0x4C 0xD3` (`SCHEDULE_TIMED_FLAGS`, `FUN_801DE840` case `0xD`
 //! sub `3`) arms the timer; `FUN_801D2EBC` drains it once per frame, firing a
 //! below-threshold flag on the way down and an expiry flag at zero. The two
-//! halves are ported in different modules (`field` and `world_map_overlay`),
+//! halves are ported in different modules (`field` and `escape_timer`),
 //! and `FieldHost::op4c_n_d_sub3_party_setup` is the seam between them.
 //!
 //! This test is the crate-local statement of that join, against a minimal
@@ -18,8 +18,8 @@
 //!
 //! Bytecode is hand-authored - no Sony bytes.
 
+use legaia_engine_vm::escape_timer::EscapeTimer;
 use legaia_engine_vm::field::{FieldCtx, FieldHost, StepResult, step};
-use legaia_engine_vm::world_map_overlay::EscapeTimer;
 
 /// Minimal host: records the one hook this chain needs.
 #[derive(Default)]

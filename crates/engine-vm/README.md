@@ -14,6 +14,7 @@ original executable.
 - [`effect_vm` - `FUN_801DE914` / `FUN_801DFDF8` / `FUN_801E0088`](#effect_vm---fun_801de914--fun_801dfdf8--fun_801e0088)
 - [`move_vm` - `FUN_80023070`](#move_vm---fun_80023070)
 - [`world_map` - `FUN_801DA51C`](#world_map---fun_801da51c)
+- [`escape_timer` - `FUN_801D2EBC`](#escape_timer---fun_801d2ebc)
 - [`actor_tick` - `FUN_80021DF4`](#actor_tick---fun_80021df4)
 - [`status_effects`](#status_effects)
 - [`scus_core_helpers`](#scus_core_helpers)
@@ -97,6 +98,23 @@ scene-transition states. `legaia_engine_core::World` drives one
 `SceneMode::WorldMap` tick, bridging `on_encounter` into a real
 Field-machinery battle (returning to the world map on resolution) and
 `on_interact` into a `FieldInteract` event.
+
+## `escape_timer` - `FUN_801D2EBC`
+
+The scripted countdown the field VM arms with `0x4C 0xD3`
+(`SCHEDULE_TIMED_FLAGS`) - retail's collapsing-dungeon escape clock. One
+retail function does three things per frame and all three live here:
+`EscapeTimer::tick` subtracts the play-clock delta from the counter and
+reports the below-threshold and expiry story flags the crossing fires (the
+expiry also disarms), `hud_fields` decomposes what is left into MM:SS.ff, and
+`timer_ink` picks the readout colour. A "busy" frame - retail's three
+short-circuit conditions - leaves the counter standing.
+
+`legaia_engine_core::World` joins the installer and the drain: the field VM's
+operand triple reaches `World::schedule_timed_flags` through
+`FieldHost::op4c_n_d_sub3_party_setup`, and `World::tick_escape_timer` runs
+the drain once per retail frame, raising each fired flag in the system-flag
+bank and publishing the readout.
 
 ## `actor_tick` - `FUN_80021DF4`
 

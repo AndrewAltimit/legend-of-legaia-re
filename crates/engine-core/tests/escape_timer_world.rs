@@ -9,13 +9,13 @@
 //! hook (`FieldHost::op4c_n_d_sub3_party_setup` ->
 //! `World::schedule_timed_flags`) and the per-frame drain
 //! (`World::tick_escape_timer`, driving
-//! `legaia_engine_vm::world_map_overlay::EscapeTimer`).
+//! `legaia_engine_vm::escape_timer::EscapeTimer`).
 //!
 //! Bytecode is hand-authored and the world is synthetic - no Sony bytes, no
 //! disc gate.
 
 use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_vm::world_map_overlay::TimerInk;
+use legaia_engine_vm::escape_timer::TimerInk;
 
 /// The retail-frame sub-clock only fires on ~60 % of sim ticks, so a test that
 /// wants `n` drained frames has to run more ticks than that. Run until the

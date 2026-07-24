@@ -90,6 +90,7 @@ pub mod camera_mover;
 pub mod camera_rel_actor;
 pub mod cutscene_trigger;
 pub mod effect_vm;
+pub mod escape_timer;
 pub mod field;
 /// The field-VM bytecode disassembler now lives in the Track-1 `asset` crate
 /// (it is a side-effect-free width/format decoder); re-exported here so the

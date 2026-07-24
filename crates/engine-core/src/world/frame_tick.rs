@@ -70,7 +70,7 @@ impl World {
     /// REF: FUN_801DE840 case 0xD sub 3 (the installer)
     pub fn schedule_timed_flags(&mut self, ab: u32, cd: u32, ef: u32) {
         self.escape_timer_flag_word = ab;
-        self.escape_timer = vm::world_map_overlay::EscapeTimer {
+        self.escape_timer = vm::escape_timer::EscapeTimer {
             remaining: cd as i32,
             warn_threshold: ef as i32,
             armed: cd != 0,
@@ -107,7 +107,7 @@ impl World {
     /// per display frame.
     ///
     /// REF: FUN_801D2EBC (scheduler + HUD decomposition; the ports are
-    /// `legaia_engine_vm::world_map_overlay::EscapeTimer` and `timer_ink`)
+    /// `legaia_engine_vm::escape_timer::EscapeTimer` and `timer_ink`)
     fn tick_escape_timer(&mut self) {
         if !self.escape_timer.armed {
             self.escape_timer_hud = None;
@@ -123,7 +123,7 @@ impl World {
             self.system_flag_set(flag);
         }
         let (minutes, seconds, hundredths) = self.escape_timer.hud_fields();
-        let ink = vm::world_map_overlay::timer_ink(self.escape_timer.remaining);
+        let ink = vm::escape_timer::timer_ink(self.escape_timer.remaining);
         self.escape_timer_hud = Some((minutes, seconds, hundredths, ink));
     }
 
