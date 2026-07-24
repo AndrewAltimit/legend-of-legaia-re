@@ -19,7 +19,7 @@
     <li><strong>Navigation</strong> - scene-transition doors/exits, intra-town (house / interior) doors, and <code>.MAP</code> intra-scene teleports.</li>
     <li><strong>The party</strong> - Tactical-Arts button combos, per-strike arts damage power and AP cost/grant, equipment stat bonuses, each character's favored weapon class, and the new game's starting items and level.</li>
     <li><strong>Additions retail has no table for</strong>, added as machine-code hooks: experience for running away, charming an enemy onto your side, shiny Seru, and Seru trading.</li>
-    <li><strong>Fixes</strong>, applied as code edits: the jewel fix, which makes the boss cinematic casts respect elemental guards like every ordinary attack.</li>
+    <li><strong>Fixes</strong>, applied as code edits: the jewel fix, which makes the boss cinematic casts respect elemental guards like every ordinary attack, and the <a href="#approach-softlock-fix">approach-softlock fix</a>, which closes retail's &ldquo;endless camera orbit&rdquo; battle freeze.</li>
   </ul>
 </section>
 
@@ -149,6 +149,7 @@ legaia-patcher verify    --input DISC.bin --patch run.ppf       # apply + sanity
       <tr><td><code>--shiny-seru</code></td><td>Toggle: code hooks making a capturable enemy spawn shiny at <code>--shiny-pct</code>% (default 2) per battle - +35% stats, captured Seru +35% damage forever. See <a href="#shiny-seru">Shiny Seru</a>.</td></tr>
       <tr><td><code>--seru-trade</code></td><td>Toggle: in-shop Seru-trading vendor (<code>--seru-trade-offers</code> caps offers per vendor, default 4). See <a href="#seru-trade">Seru trading</a>.</td></tr>
       <tr><td><code>--jewel-fix</code></td><td>Toggle (seedless): retarget the boss cinematic casts (Xain's Bloody Horns / Terio Punch, Cort's Guilty Cross, the Delilas trio's signature moves) so elemental Jewels / guards / All Guard apply to them, instead of the retail resist-ladder bypass.</td></tr>
+      <tr><td><code>--approach-softlock-fix</code></td><td>Toggle (seedless): fix the retail &ldquo;endless camera orbit&rdquo; softlock - a monster whose approach animation dies mid-walk is re-staged and resumes walking instead of parking the battle forever. See <a href="#approach-softlock-fix">below</a>.</td></tr>
       <tr><td><code>--fishing-price ITEM=POINTS</code></td><td>Set the fishing-exchange point cost of a prize (id decimal or <code>0xHH</code>), e.g. <code>0x6F=500</code> for the Buma Water Egg. The price also gates when the prize appears. Repeatable / comma-separated; <code>legaia-patcher fishing</code> lists the current prizes.</td></tr>
       <tr><td><code>--rename-location INDEX=NAME</code></td><td>Rename a world-map location name (save / load / pause + quick-travel menu). Repeatable <code>index=name</code>; e.g. <code>3=Ancient Fire Cave</code>. <code>legaia-patcher locations</code> lists the 16 slots.</td></tr>
       <tr><td><code>--earth-egg-price VALUE</code></td><td>Set the casino-coin threshold the Sol Tower Prize Counter needs before it offers the Earth Ra-Seru Egg (retail 100000) - a hidden scripted exchange, not a casino-table row. VALUE = coins required (1&ndash;8388608); the game debits exactly that many. <code>legaia-patcher earth-egg</code> shows the current value.</td></tr>
@@ -206,6 +207,17 @@ legaia-patcher verify    --input DISC.bin --patch run.ppf       # apply + sanity
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="../writeups/disc-patching/e-rodata-gap-code.html">Write-up: code in the rodata gap (tier E)</a>
+    <a href="../subsystems/battle-action.html">Battle action state machine</a>
+  </div>
+</section>
+
+<section class="doc-section" id="approach-softlock-fix">
+  <h2>Approach-softlock fix</h2>
+  <p><code>--approach-softlock-fix</code> closes the retail &ldquo;endless camera orbit&rdquo; softlock: a monster approaching an out-of-reach target waits in a range poll with <strong>no movement code and no timeout</strong> (battle-action state <code>0x19</code>) while its staged &ldquo;Move&rdquo; animation carries it forward - and when a summon's staging round-trip immediately precedes the melee, that animation dies ~12 vsyncs in with nothing to re-stage it, freezing the fight forever. 180 of the game's 186 monsters approach through this path.</p>
+  <p>The fix is a same-size <strong>nine-word rewrite</strong> of the poll's redundant per-frame facing recompute (<code>0x801E3568</code> in the battle overlay; the target never moves during an approach, and both the staging state and the strike arm re-derive facing themselves): when the staged clip reads dead while the poll still fails, the state byte bounces back to <code>0x14</code> and <strong>retail's own staging re-runs</strong> - the monster simply resumes walking. Healthy fights are byte-identical; runtime-verified hands-off on both live-caught park savestates. On by default in the web Balanced / Full Chaos presets. Full story: <a href="../writeups/gaza-orbit-softlock.html">the endless camera orbit write-up</a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../writeups/gaza-orbit-softlock.html">Write-up: the endless camera orbit</a>
     <a href="../subsystems/battle-action.html">Battle action state machine</a>
   </div>
 </section>
