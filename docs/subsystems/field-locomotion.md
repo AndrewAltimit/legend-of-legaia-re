@@ -173,7 +173,22 @@ scene uses.
 
 ## Collision - `FUN_801cfe4c`
 
-`FUN_801cfe4c(player, scene, dir)` returns `0` when the move is clear and `2` when a static wall blocks it (plus bits `1`/`4` contributed by the finer `FUN_801cfc40` actor/edge probe). It samples a **per-scene collision tile map** through the base pointer `_DAT_1f8003ec`. The walkability grid lives at `*(_DAT_1f8003ec) + 0x4000`: **one byte per `128×128` world tile**, `0x80`-byte rows (up to `0x80` rows), the **high nibble** holding 4 sub-cell wall bits (the tile split into four `64×64` quadrants). A set bit = wall.
+`FUN_801cfe4c(player, scene, dir)` returns `0` when the move is clear and `2` when a static wall blocks it (plus bits `1`/`4` contributed by the finer `FUN_801cfc40` actor/edge probe). It samples a **per-scene collision tile map** through the base pointer `_DAT_1f8003ec`. The grid lives at `*(_DAT_1f8003ec) + 0x4000`: **one byte per `128×128` world tile**, `0x80`-byte rows (up to `0x80` rows).
+
+**That byte is two fields, and `FUN_801cfe4c` reads only one of them.** The
+**high** nibble is the four sub-cell wall bits - the tile split into four
+`64×64` quadrants, a set bit meaning wall - and the collision probe isolates it
+with `byte >> 4`. The **low** nibble is the tile's floor-elevation / ramp tier,
+a 4-bit index into the 16-entry `s16` height LUT at scratchpad `0x1f80035c`.
+
+The floor sampler `FUN_80019278` reads the *same bytes* through the *same
+base*: it forms `s0 = *(0x1f8003ec) + (row>>1)*0x80 + 0x4000 + (col>>1)` at
+`0x80019354..0x8001938c`, then masks `andi v0, v0, 0xf` before the `sll 1` LUT
+index at `0x800193dc..0x800193f4`. So "the walkability grid" and "the height
+grid" are one array, and a sweep that reads the whole byte as a wall mask calls
+every raised tile a wall. The full layout, both height models, and the two
+different world-to-cell mappings the two nibbles are indexed under are under
+[Where the collision grid comes from](#where-the-collision-grid-comes-from).
 
 **Leading-edge footprint, not a centre point.** A direction is blocked if **any** of three probe points along the player's leading edge hits a wall sub-cell. The probe offsets are the per-direction table `DAT_801f2214` (16-byte stride; `dir` ∈ `{0=Z−, 1=X−, 2=Z+, 3=X+}`), three `(Δx, Δz)` pairs each, taken at the player's **pre-step** position. Disc-pinned (overlay `0897` @ `0x801CE818`, file offset `0x239FC`), the static-wall footprint is a row of three points **47–48 units ahead** of the player centre in the travel direction, **spread ±16 laterally** - 48 in the positive directions and 47 in the negative ones, the per-direction crossing distance under the biased cell mapping below. (Each on-disc row carries a fourth half-distance centre pair the wall probe never reads.)
 
