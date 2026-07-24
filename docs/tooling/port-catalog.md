@@ -442,3 +442,26 @@ The point of the table is to make the cross-cuts cheap to read:
 
 - [`docs/tooling/ghidra.md`](ghidra.md) - produces the `ghidra/scripts/funcs/` dumps that drive the "dumped" column.
 - [`docs/reference/functions.md`](../reference/functions.md) - the curated entry-point directory the "documented" signal draws from.
+
+- [`stale-not-wired-triage.md`](stale-not-wired-triage.md) - per-row verdicts
+  for the audit's *tagged `NOT WIRED` but analysed live* section, and the three
+  call-graph mechanisms that put rows there.
+
+## Where the reachability pass over-reports
+
+The graph resolves calls by name, never by receiver type, and every ambiguity
+resolves toward reachability - that is what makes `--not-live` a floor rather
+than a guess. The cost lands on the audit's first section, and it is worth
+knowing the three shapes before reading a row there as a wiring win:
+
+- an ambiguous `.name(` or `name(` linking to every in-tree definition of that
+  name, which makes any port whose entry point is called `new`, `tick`, `add`,
+  `len` or `default` read live regardless of wiring;
+- the bare-identifier edge, which links a function *value* to a free function of
+  that name and cannot tell it from a struct **field** of the same name;
+- a `//! PORT:` module anchor, whose scope is the whole file - so one reachable
+  routine reports every tagged address in that file live, including the ones the
+  module doc marks `NOT WIRED` by name.
+
+[`stale-not-wired-triage.md`](stale-not-wired-triage.md) carries the worked
+examples and the sharpenings each shape suggests.
