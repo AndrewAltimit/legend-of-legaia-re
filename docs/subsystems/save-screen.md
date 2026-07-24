@@ -16,6 +16,7 @@ both confirmed as the menu overlay by function-address identity; decompiled func
 - [Relationship to `legaia_save`](#relationship-to-legaia_save) · [story-flag persistence vs. scratchpad word](#story-flag-persistence-vs-scratchpad-word) · [retail SC block layout](#retail-sc-block-layout)
 - [Sprite asset sources (Continue → Load screen)](#sprite-asset-sources-continue--load-screen) - [9-slice tile rects](#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2) · [how the panel TIM was pinned](#how-the-panel-tim-was-pinned)
 - [Slide-in UI primitive (`FUN_801E1C1C`)](#slide-in-ui-primitive-fun_801e1c1c) · [messagebox panel geometry (`FUN_801E36C4`)](#messagebox-panel-geometry-fun_801e36c4) · [bottom info panel renderer (`FUN_801E08D8`)](#bottom-info-panel-renderer-fun_801e08d8)
+- [Sub-screen `0x15` - the per-character list screen (`FUN_801DA2A0`)](#sub-screen-0x15---the-per-character-list-screen-fun_801da2a0)
 
 ## Overlay structure
 
@@ -183,7 +184,7 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 | `0x12` | `FUN_801D98F0` | 2-state scrollable picker: state 0 sets `_DAT_8007BB94 = 4`, clears `DAT_801E48A8`, masks the cursor to its index bits (`DAT_801E46C4 &= 0xFFF`) and raises flag `0x4000` on `DAT_801E46C0`, then actor `&DAT_801E4D88`; state 1 picker `FUN_801D688C(&DAT_801E46C4, DAT_80084594, 1)` (count from save-block existence table). Confirm → sfx `0x20` + `0x13`, cancel → `0x01` |
 | `0x13` | `FUN_801D99F0` | Equip screen **slot browse** (8 rows: Best Equipment + 7 slots via `FUN_801D688C(&DAT_801E46C0, 8, 1)`; confirm row 0 auto-equips best - `FUN_801CF88C` candidates + `FUN_801CF760` applier, SFX `0x24`/buzz `0x23`; rows 1..7 → `0x14`; cancel → `0x12` character picker) - see [field-menu.md](field-menu.md#equip-screen) |
 | `0x14` | `FUN_801D9C14` | Equip screen **candidate list + commit** (see [field-menu.md](field-menu.md#equip-screen); the old "record serialisation" label is falsified - the `0x414`-stride reads are the live party record, the `DAT_801EF0C8` staging is the trial-equip save/restore) |
-| `0x15` | `FUN_801DA2A0` | multi-state 2D picker walking a per-character bitfield (`record` word array indexed `bit >> 5` / `bit & 0x1F`) with a left/right grid cursor - body identified, screen identity not yet pinned |
+| `0x15` | `FUN_801DA2A0` | per-character list screen - one body serving three lists (abilities / magic / a third), selected by the step counter; see [below](#sub-screen-0x15---the-per-character-list-screen-fun_801da2a0) |
 | `0x16` | `FUN_801DD310` | no-op tick: tail-calls `func_0x80031D00` (frame-end / actor-tick flush) with no other work |
 | `0x17` | `FUN_801DD330` | thin wrapper invoking the generic picker `FUN_801DA9F8(start=0, end=9, init=0x30, return_subscreen=1)` |
 | `0x18` | `FUN_801DAE24` | save-card driver entry. State 0 installs the card handle (`_DAT_8007B44C = DAT_801C6EA0`) and invokes actor `&DAT_801E4E28`; state 1 waits `_DAT_8007BB80 == 0`; state 2 calls `FUN_801DD35C(1, 2)` (saving-overlay main; drives `FUN_801E3294` libcd state machine via the per-frame ticker `FUN_801E1114`); state 3 returns to sub-screen `0x01` |
@@ -1102,14 +1103,20 @@ parked y. The shell driver
 panel-y-relative so future slides / layout shifts only need to touch
 the parked-y constant.
 
-## Debug character-parameter editor (`FUN_801D6E18` + `FUN_801DA2A0`)
+## Debug character-parameter editor (`FUN_801D6E18`)
 
 The save/menu overlay carries a developer character-editor sub-screen that
 reuses the same `DAT_801E46AC` phase word and `DAT_801E46C4` character
-cursor as the save UI (dumps `overlay_save_ui_801d6e18.txt` /
-`overlay_save_ui_801da2a0.txt`). It is not part of the retail save flow;
-its free per-field increment and unconditional stat-clamp mark it as a
-debug tool.
+cursor as the save UI (dump `overlay_save_ui_801d6e18.txt`). It is not part
+of the retail save flow; its free per-field increment and unconditional
+stat-clamp mark it as a debug tool.
+
+`FUN_801DA2A0` shares those two globals and was previously read as this
+editor's page-navigation half. That pairing is **falsified** - see
+[Sub-screen `0x15`](#sub-screen-0x15---the-per-character-list-screen-fun_801da2a0)
+below. Sharing `DAT_801E46AC` / `DAT_801E46C4` says nothing about kinship:
+every sub-screen in the `0x801E4F40` table uses the same phase word and the
+same cursor cell, because the table dispatches one screen at a time.
 
 **`FUN_801D6E18` - edit tick.** Phase-gated on `DAT_801E46AC` (0 → init,
 1 → active, 2 → suspend). A row cursor `_DAT_8007BB88` runs `0..0xB` over
@@ -1124,17 +1131,6 @@ row `10` (`_DAT_8007B874 & _DAT_800846D0`) zeroes a `0x10`-byte record span
 clamps all four party records (`0x80084140 + n*0x414`): the `+0x6F8` byte
 to `1..0xC7`, the `+0x6E4..+0x6F4` `u16` stats to `1..0x4E1F`.
 
-**`FUN_801DA2A0` - page-navigation SM.** The phase router that drives the
-editor: it reads the roster byte at `0x80084598 + (DAT_801E46C4 & 0xFFF)`,
-branches on `DAT_801E46AC`, and on the active phase runs the shared
-list-cursor navigator [`FUN_801D688C`](#fun_801d688c---shared-list-cursor-navigator)
-over the roster count, switching on its result to retune the packed
-sub-mode nibble `DAT_801E46C0` and advance `DAT_801E46AC`; the init phase
-kicks the actor VM (`FUN_801D6628`). `FUN_801DA2A0` is not ported - the
-clean-room engine models character records through `legaia_save` rather
-than a live-RAM debug editor, and there is no engine consumer for the
-developer screen.
-
 `FUN_801D6E18`'s **input and clamp halves** are ported, as
 `engine-core::debug_char_editor`; its renderer half (`0x801D7524`
 onward, roughly two thirds of its 890 instructions) is not. What makes
@@ -1143,6 +1139,58 @@ caps, stated in code: max HP `9999`, max MP `999`, the `+0x120` cap
 constant `100`, the six battle stats `999`, level `99` - and the cap
 constant's ceiling independently confirms the "always 100 in captured
 saves" reading in `legaia_save`.
+
+## Sub-screen `0x15` - the per-character list screen (`FUN_801DA2A0`)
+
+Sub-screen `0x15` is one body serving **three** per-character lists, and the
+step counter - not a separate table id - selects which. Two earlier readings
+of it are falsified by the disassembly
+(`ghidra/scripts/funcs/overlay_save_ui_801da2a0.txt`): it is not a
+"multi-state 2D picker … screen identity not yet pinned", and it is not the
+debug editor's page-navigation half. Every field it touches is live
+pause-menu data.
+
+The three list sources, at `0x801DA538..0x801DA64C`. Displacements in the
+disassembly are printed from `0x80084140`; record-relative offsets below are
+`0x5C8` lower, because the record array starts that far into the block.
+
+| Step | Row count | Record field |
+|---|---|---|
+| `2` / `5` | population count of a 64-bit field | `+0x0F4`, the accessory-passive ability bitfield |
+| `3` / `6` | learned-spell count, Ra-Seru gated | `+0x13C`, gated on `+0x196 + raseru_slot` |
+| `4` / `7` | one byte | `+0x185` |
+| anything else | `0` | - |
+
+The ability field at `+0xF4` is the same 64-slot bitfield the
+[accessory-passive table](../formats/accessory-passive-table.md) indexes, and
+the Ra-Seru gate is the one the Magic caster picker applies - retail reads
+`record[0x196 + *(i16*)(0x8007B424 + char*2)]` first and only reads the spell
+count when that byte is non-zero, so spells with no Seru equipped report an
+**empty** list rather than a populated one.
+
+Three details the arm chain at `0x801DA650..0x801DA6D0` makes explicit:
+
+- **Empty rejects before it settles.** The `len == 0` test runs ahead of the
+  step test, so an empty list buzzes `0x23` and drops back to the character
+  picker on the frame the screen opens, not one frame later.
+- **The settle step advances by three, not one.** `step < 5` adds `3`, which
+  is exactly what turns each list's settle step `2` / `3` / `4` into its
+  running twin `5` / `6` / `7`.
+- **The row picker clamps.** It calls
+  [`FUN_801D688C`](#fun_801d688c---shared-list-cursor-navigator) with mode
+  `0`, the only clamping call site in this overlay; every other save-UI
+  picker passes `1` and wraps.
+
+Confirming two rows **swaps** them across three parallel per-character
+arrays at once (`0x801DA768..0x801DA844`): the id byte at `+0x13D`, its
+companion byte at `+0x161`, and the word at `+0x008`. Permuting only the id
+list would decouple an entry from its companion byte, which is what makes
+the three-array shape the load-bearing part.
+
+Ported as `engine-core::save_subscreen::{sub15_list_source, sub15_list_len,
+sub15_frame, sub15_swap_rows}`. The screen's *identity* - which pause-menu
+row opens it - is still open: the root command picker sends its row `3`
+here, but nothing yet pins which of the three lists that row selects.
 
 ## See also
 

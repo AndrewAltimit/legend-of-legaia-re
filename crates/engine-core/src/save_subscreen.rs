@@ -698,6 +698,207 @@ impl SaveScreenMachine {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Sub-screen 0x15 - the per-character list screen (`FUN_801DA2A0`)
+// ---------------------------------------------------------------------------
+
+/// Character-record offsets sub-screen `0x15` addresses, expressed relative
+/// to the record base `0x80084708`.
+///
+/// The disassembly indexes from `0x80084140` instead, so every printed
+/// displacement here is `0x5C8` higher than the constant below - the record
+/// array starts `0x5C8` into that block
+/// (see [`save-record.md`](../../../docs/formats/save-record.md)).
+mod sub15_record {
+    /// `0x6BC` printed - the 64-slot accessory-passive ("Goods") ability
+    /// bitfield, the same field
+    /// [`crate::accessory_passives`](crate::accessory_passives) indexes.
+    pub const ABILITY_BITS: usize = 0x0F4;
+    /// `0x5D0` printed - a word array the row swap exchanges, 4-byte stride.
+    pub const ROW_WORDS: usize = 0x008;
+    /// `0x704` printed - the learned-spell count.
+    pub const SPELL_COUNT: usize = 0x13C;
+    /// `0x705` printed - the learned-spell id list, immediately after its
+    /// count.
+    pub const SPELL_LIST: usize = 0x13D;
+    /// `0x729` printed - the per-spell byte the swap keeps in step with
+    /// [`SPELL_LIST`].
+    pub const SPELL_AUX: usize = 0x161;
+    /// `0x74D` printed - the third list's count byte.
+    pub const THIRD_COUNT: usize = 0x185;
+    /// `0x75E` printed - the eight-byte equip array; the Ra-Seru slot index
+    /// comes from the `0x8007B424 + char*2` halfword table.
+    pub const EQUIP: usize = 0x196;
+}
+
+pub use sub15_record::{
+    ABILITY_BITS as SUB15_ABILITY_BITS, EQUIP as SUB15_EQUIP, ROW_WORDS as SUB15_ROW_WORDS,
+    SPELL_AUX as SUB15_SPELL_AUX, SPELL_COUNT as SUB15_SPELL_COUNT, SPELL_LIST as SUB15_SPELL_LIST,
+    THIRD_COUNT as SUB15_THIRD_COUNT,
+};
+
+/// Width of the ability bitfield sub-screen `0x15` counts over: `0x40`
+/// bits, walked one at a time as `word[bit >> 5] & (1 << (bit & 0x1F))`.
+pub const SUB15_ABILITY_BIT_COUNT: usize = 0x40;
+
+/// Which per-character list sub-screen `0x15` is showing.
+///
+/// The screen is one body serving three lists, and the *step counter*
+/// selects which - not a separate screen id. Steps `2`/`5`, `3`/`6` and
+/// `4`/`7` are the settle / running pair for each list, which is why the
+/// resolver below maps both members of a pair to the same source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sub15ListSource {
+    /// Steps `2` / `5`: the row count is the **population count** of the
+    /// 64-slot ability bitfield.
+    Abilities,
+    /// Steps `3` / `6`: the row count is the learned-spell count, and it
+    /// is gated on the character's Ra-Seru equip slot being filled - an
+    /// empty slot reports zero rows rather than an empty list.
+    Magic,
+    /// Steps `4` / `7`: the row count is the single byte at `+0x185`.
+    Third,
+    /// Any other step: no list.
+    None,
+}
+
+/// Step -> list source, the three-way branch at `0x801DA538..0x801DA64C`.
+///
+/// PORT: FUN_801DA2A0 (see `ghidra/scripts/funcs/overlay_save_ui_801da2a0.txt`)
+///
+/// NOT WIRED: nothing constructs a [`SaveScreenMachine`] - the module's own
+/// disclosure applies. Sub-screen `0x15` additionally has no engine screen
+/// of its own: the ability bitfield is surfaced through
+/// [`crate::accessory_passives`] and the spell list through
+/// [`crate::spell_menu`], each with its own typed row model, so there is no
+/// caller that wants a row *count* keyed by a retail step number.
+pub fn sub15_list_source(step: u8) -> Sub15ListSource {
+    match step {
+        2 | 5 => Sub15ListSource::Abilities,
+        3 | 6 => Sub15ListSource::Magic,
+        4 | 7 => Sub15ListSource::Third,
+        _ => Sub15ListSource::None,
+    }
+}
+
+/// Row count for one frame of sub-screen `0x15`.
+///
+/// `record` is the character's `0x414`-byte record and `raseru_slot` is the
+/// index the `0x8007B424 + char*2` halfword table supplies for that
+/// character. A short `record` yields `0` rather than panicking.
+///
+/// The Magic gate is the load-bearing part: retail reads
+/// `record[0x196 + raseru_slot]` **first** and only reads the spell count
+/// when that byte is non-zero, so a character with spells but no Ra-Seru
+/// equipped reports an empty list and takes the reject arm below - the same
+/// gate the Magic caster picker applies (`FUN_801D9110`).
+///
+/// PORT: FUN_801DA2A0 (`0x801DA550..0x801DA64C`)
+///
+/// NOT WIRED: see [`sub15_list_source`].
+pub fn sub15_list_len(step: u8, record: &[u8], raseru_slot: usize) -> u8 {
+    let byte = |off: usize| record.get(off).copied().unwrap_or(0);
+    match sub15_list_source(step) {
+        Sub15ListSource::Abilities => {
+            let mut n = 0u8;
+            for bit in 0..SUB15_ABILITY_BIT_COUNT {
+                let word_off = sub15_record::ABILITY_BITS + (bit >> 5) * 4;
+                let word = record
+                    .get(word_off..word_off + 4)
+                    .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]))
+                    .unwrap_or(0);
+                if word & (1 << (bit & 0x1F)) != 0 {
+                    n = n.saturating_add(1);
+                }
+            }
+            n
+        }
+        Sub15ListSource::Magic => {
+            if byte(sub15_record::EQUIP + raseru_slot) == 0 {
+                0
+            } else {
+                byte(sub15_record::SPELL_COUNT)
+            }
+        }
+        Sub15ListSource::Third => byte(sub15_record::THIRD_COUNT),
+        Sub15ListSource::None => 0,
+    }
+}
+
+/// What one frame of sub-screen `0x15`'s list half does once the row count
+/// is known.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sub15Frame {
+    /// `len == 0`: retail buzzes `0x23`, drops the step back to `1` (the
+    /// character picker) and masks both cursors back to their index bits.
+    Reject,
+    /// `step < 5`: the settle frame. Retail adds **three** to the step,
+    /// which is what turns steps `2`/`3`/`4` into their running twins
+    /// `5`/`6`/`7`, and runs nothing else this frame.
+    Settle { next_step: u8 },
+    /// `step >= 5`: run the row picker over `len` rows.
+    Browse { rows: u8 },
+}
+
+/// One frame of sub-screen `0x15` after the row count, the arm chain at
+/// `0x801DA650..0x801DA6D0`.
+///
+/// Two details the shape depends on. The reject test runs **before** the
+/// settle test, so an empty list is rejected on the settle frame rather
+/// than one frame later. And the row picker is driven with mode `0`
+/// (`FUN_801D688C(&_DAT_8007BB98, len, 0)`) - the only clamping picker in
+/// this overlay; every other call site in the save UI passes `1` and wraps.
+///
+/// PORT: FUN_801DA2A0 (`0x801DA650..0x801DA6D0`)
+///
+/// NOT WIRED: see [`sub15_list_source`].
+pub fn sub15_frame(step: u8, len: u8) -> Sub15Frame {
+    if len == 0 {
+        return Sub15Frame::Reject;
+    }
+    if step < 5 {
+        return Sub15Frame::Settle {
+            next_step: step + 3,
+        };
+    }
+    Sub15Frame::Browse { rows: len }
+}
+
+/// The row swap the screen commits: exchange rows `a` and `b` of the
+/// character's list across all three parallel arrays at once - the id byte
+/// at `+0x13D`, its companion byte at `+0x161`, and the word at `+0x08`.
+///
+/// Retail performs the three exchanges through a scratch byte each, in that
+/// order, and raises flag `0x1000` on the second cursor as it commits. A
+/// row index outside the record is skipped rather than clamped.
+///
+/// PORT: FUN_801DA2A0 (`0x801DA768..0x801DA844`)
+///
+/// NOT WIRED: see [`sub15_list_source`]. The engine's spell list is
+/// [`crate::spell_menu::SpellRowView`], built per frame from the catalog
+/// rather than stored as a reorderable per-character array, so there is no
+/// backing array for a swap to permute.
+pub fn sub15_swap_rows(record: &mut [u8], a: usize, b: usize) {
+    if a == b {
+        return;
+    }
+    for base in [sub15_record::SPELL_LIST, sub15_record::SPELL_AUX] {
+        let (ia, ib) = (base + a, base + b);
+        if ia < record.len() && ib < record.len() {
+            record.swap(ia, ib);
+        }
+    }
+    let (wa, wb) = (
+        sub15_record::ROW_WORDS + a * 4,
+        sub15_record::ROW_WORDS + b * 4,
+    );
+    if wa + 4 <= record.len() && wb + 4 <= record.len() {
+        for k in 0..4 {
+            record.swap(wa + k, wb + k);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1159,5 +1360,113 @@ mod tests {
             "not monotonic: {seen:?}"
         );
         assert_eq!(m.fade(), FADE_OPAQUE);
+    }
+}
+
+#[cfg(test)]
+mod sub15_tests {
+    use super::*;
+
+    fn record() -> Vec<u8> {
+        vec![0u8; 0x414]
+    }
+
+    /// Steps pair up: the settle step and its running twin read the same
+    /// list. Getting this wrong shows as a screen that changes what it
+    /// lists one frame after it opens.
+    #[test]
+    fn each_list_has_a_settle_step_and_a_running_twin() {
+        for (settle, running, want) in [
+            (2u8, 5u8, Sub15ListSource::Abilities),
+            (3, 6, Sub15ListSource::Magic),
+            (4, 7, Sub15ListSource::Third),
+        ] {
+            assert_eq!(sub15_list_source(settle), want);
+            assert_eq!(sub15_list_source(running), want);
+            assert_eq!(
+                sub15_frame(settle, 1),
+                Sub15Frame::Settle { next_step: running },
+                "settle step {settle} advances by three, not one",
+            );
+        }
+        for step in [0u8, 1, 8, 9, 0xFF] {
+            assert_eq!(sub15_list_source(step), Sub15ListSource::None);
+        }
+    }
+
+    /// The ability list counts *set bits*, over exactly `0x40` of them -
+    /// the accessory-passive index space. A bit past 64 is outside the
+    /// field the walk reads.
+    #[test]
+    fn ability_rows_are_the_popcount_of_the_64_slot_bitfield() {
+        let mut r = record();
+        // bits 0, 31, 32 and 63 - one at each word boundary.
+        r[SUB15_ABILITY_BITS] = 0x01;
+        r[SUB15_ABILITY_BITS + 3] = 0x80;
+        r[SUB15_ABILITY_BITS + 4] = 0x01;
+        r[SUB15_ABILITY_BITS + 7] = 0x80;
+        assert_eq!(sub15_list_len(5, &r, 0), 4);
+
+        // Bit 64 lives in the third word, past the walk's `< 0x40` bound.
+        r[SUB15_ABILITY_BITS + 8] = 0x01;
+        assert_eq!(sub15_list_len(5, &r, 0), 4);
+    }
+
+    /// The Ra-Seru gate is read before the count, so spells with no Seru
+    /// equipped is an *empty* list, not a populated one.
+    #[test]
+    fn magic_rows_are_gated_on_the_raseru_slot_not_on_the_spell_count() {
+        let mut r = record();
+        r[SUB15_SPELL_COUNT] = 7;
+        assert_eq!(sub15_list_len(6, &r, 2), 0, "no Ra-Seru -> no rows");
+        r[SUB15_EQUIP + 2] = 0x40;
+        assert_eq!(sub15_list_len(6, &r, 2), 7);
+        // A different slot index reads a different equip byte.
+        assert_eq!(sub15_list_len(6, &r, 3), 0);
+    }
+
+    #[test]
+    fn third_list_rows_come_from_one_byte() {
+        let mut r = record();
+        r[SUB15_THIRD_COUNT] = 0x0C;
+        assert_eq!(sub15_list_len(7, &r, 0), 0x0C);
+        assert_eq!(sub15_list_len(4, &r, 0), 0x0C);
+    }
+
+    /// The reject test runs ahead of the settle test, so an empty list is
+    /// refused on the frame the screen opens rather than the one after.
+    #[test]
+    fn an_empty_list_is_rejected_on_the_settle_frame() {
+        assert_eq!(sub15_frame(2, 0), Sub15Frame::Reject);
+        assert_eq!(sub15_frame(5, 0), Sub15Frame::Reject);
+        assert_eq!(sub15_frame(5, 3), Sub15Frame::Browse { rows: 3 });
+    }
+
+    /// The swap moves all three parallel arrays together; permuting only
+    /// the id list would decouple a spell from its companion byte.
+    #[test]
+    fn the_row_swap_moves_all_three_arrays() {
+        let mut r = record();
+        r[SUB15_SPELL_LIST] = 0x81;
+        r[SUB15_SPELL_LIST + 1] = 0x82;
+        r[SUB15_SPELL_AUX] = 0x11;
+        r[SUB15_SPELL_AUX + 1] = 0x22;
+        r[SUB15_ROW_WORDS..SUB15_ROW_WORDS + 4].copy_from_slice(&1u32.to_le_bytes());
+        r[SUB15_ROW_WORDS + 4..SUB15_ROW_WORDS + 8].copy_from_slice(&2u32.to_le_bytes());
+
+        sub15_swap_rows(&mut r, 0, 1);
+        assert_eq!((r[SUB15_SPELL_LIST], r[SUB15_SPELL_LIST + 1]), (0x82, 0x81));
+        assert_eq!((r[SUB15_SPELL_AUX], r[SUB15_SPELL_AUX + 1]), (0x22, 0x11));
+        assert_eq!(
+            u32::from_le_bytes(r[SUB15_ROW_WORDS..SUB15_ROW_WORDS + 4].try_into().unwrap()),
+            2
+        );
+
+        // Same row twice is a no-op, and an out-of-record row is skipped
+        // rather than panicking.
+        let before = r.clone();
+        sub15_swap_rows(&mut r, 1, 1);
+        sub15_swap_rows(&mut r, 0, 0x400);
+        assert_eq!(r, before);
     }
 }
