@@ -1209,9 +1209,194 @@ pub fn mirrored_sprite_pass(
     }
 }
 
+// ---------------------------------------------------------------------------
+// The developer action-table keyframe editor
+// ---------------------------------------------------------------------------
+
+/// First value of the match timer `DAT_801DBF44` that opens the editor band.
+pub const EDITOR_PHASE_BASE: i32 = 400;
+/// Width of that band - retail tests `DAT_801DBF44 - 400` **unsigned** against
+/// this, so the editor runs in `400..=499` and nowhere else. The live-round
+/// band is `DAT_801DBF44 == 100`, well below it.
+pub const EDITOR_PHASE_SPAN: u32 = 100;
+/// Number of entries in the per-character action table the editor cycles.
+pub const EDITOR_ACTION_COUNT: u16 = 0x11;
+/// Fixed-point shift the editor applies to a frame cursor before handing it to
+/// the keyframe lookup.
+pub const EDITOR_FRAME_SHIFT: u32 = 4;
+
+/// What the editor decided to do with the selected keyframe this frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorKeyEdit {
+    /// The frame cursor did not move; nothing is installed or removed.
+    None,
+    /// `FUN_801D57BC` - install (or rewrite) the slot for this key.
+    Install,
+    /// `FUN_801D58E0` - remove the slot for this key.
+    Remove,
+}
+
+/// One editor tick's decisions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EditorTick {
+    /// The band gate failed: the editor actor and the fighter actor both
+    /// take the retire bit and nothing else runs.
+    pub retired: bool,
+    /// The action cursor after wrapping.
+    pub action: u16,
+    /// The frame cursor after wrapping.
+    pub frame: i16,
+    /// The keyframe the current frame cursor lands on, if any.
+    pub keyframe: Option<usize>,
+    /// Whether the selected action changed this frame, which is what reloads
+    /// the record's speed / power into the edit fields.
+    pub action_changed: bool,
+    pub edit: EditorKeyEdit,
+}
+
+/// Whether the editor band is open for a given match-timer value.
+///
+/// REF: FUN_801d4fc8 (`0x801D5018..0x801D5028`)
+pub fn editor_band_open(match_timer: i32) -> bool {
+    (match_timer.wrapping_sub(EDITOR_PHASE_BASE) as u32) < EDITOR_PHASE_SPAN
+}
+
+// NOT WIRED: the editor is a leftover development screen. Its band
+// (`DAT_801DBF44` in `400..=499`) is not a phase any shipping path enters, and
+// driving it needs the whole edit-cursor global cluster (`DAT_801DBF04`
+// action, `DAT_801DBF12` frame, `DAT_801DBF10` mode, `DAT_801DBF0A..0E` TRS)
+// plus a writable action table. `BakaFight` holds parsed, read-only action
+// sets.
+/// PORT: FUN_801d4fc8 - the **developer action-table keyframe editor** tick.
+///
+/// It is not the fight's pose path. Outside the [`editor_band_open`] window it
+/// retires both actors and returns; inside it, it draws the action / frame
+/// cursors, reloads the record's speed (`+0x04`) and power (`+0x18`) into the
+/// edit fields whenever the selected action changes, looks the current frame
+/// cursor up through [`crate::baka_fighter::keyframe_in_range`], and - when
+/// the frame cursor has moved - installs the keyframe through
+/// [`anim_slot_install`] or removes it through its sibling `FUN_801D58E0`,
+/// picked by the edit-mode flag. It then writes the edited values back into
+/// the action record, wraps the action cursor at [`EDITOR_ACTION_COUNT`] and
+/// the frame cursor at `record[+2] - 1`, spawns a marker effect at the
+/// keyframe position and re-poses the fighter.
+///
+/// The frame cursor is handed to the lookup shifted left by
+/// [`EDITOR_FRAME_SHIFT`], which is the fixed point the lookup expects on its
+/// query rather than on the record.
+#[allow(clippy::too_many_arguments)]
+pub fn editor_tick(
+    match_timer: i32,
+    action: u16,
+    prev_action: u16,
+    frame: i16,
+    prev_frame: i16,
+    edit_mode: bool,
+    keyframe_count: i16,
+    frame_indices: &[i16],
+    slots: &mut Vec<i16>,
+) -> EditorTick {
+    if !editor_band_open(match_timer) {
+        return EditorTick {
+            retired: true,
+            action,
+            frame,
+            keyframe: None,
+            action_changed: false,
+            edit: EditorKeyEdit::None,
+        };
+    }
+    let query = (frame as i32) << EDITOR_FRAME_SHIFT;
+    let keyframe = crate::baka_fighter::keyframe_in_range(frame_indices, query, query);
+
+    let mut edit = EditorKeyEdit::None;
+    if frame != prev_frame {
+        if edit_mode {
+            anim_slot_install(slots, query);
+            edit = EditorKeyEdit::Install;
+        } else {
+            edit = EditorKeyEdit::Remove;
+        }
+    }
+
+    let action = if action >= EDITOR_ACTION_COUNT {
+        0
+    } else {
+        action
+    };
+    let frame = if frame > keyframe_count.saturating_sub(1) {
+        0
+    } else {
+        frame
+    };
+
+    EditorTick {
+        retired: false,
+        action,
+        frame,
+        keyframe,
+        action_changed: action != prev_action,
+        edit,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_editor_band_is_an_unsigned_window_above_the_round_band() {
+        assert!(!editor_band_open(100));
+        assert!(!editor_band_open(399));
+        assert!(editor_band_open(400));
+        assert!(editor_band_open(499));
+        assert!(!editor_band_open(500));
+        // The unsigned test also rejects everything below the base.
+        assert!(!editor_band_open(-1));
+    }
+
+    #[test]
+    fn outside_the_band_the_editor_retires_and_does_nothing() {
+        let mut slots = Vec::new();
+        let t = editor_tick(100, 5, 4, 2, 1, true, 8, &[0, 1, 2], &mut slots);
+        assert!(t.retired);
+        assert_eq!(t.edit, EditorKeyEdit::None);
+        assert!(slots.is_empty());
+    }
+
+    #[test]
+    fn a_moved_frame_cursor_installs_or_removes_by_the_edit_mode() {
+        let mut slots = Vec::new();
+        let t = editor_tick(400, 0, 0, 2, 1, true, 8, &[0, 1, 2, 3], &mut slots);
+        assert_eq!(t.edit, EditorKeyEdit::Install);
+        assert_eq!(slots, vec![2]);
+        assert_eq!(t.keyframe, Some(2));
+
+        let t = editor_tick(400, 0, 0, 2, 1, false, 8, &[0, 1, 2, 3], &mut slots);
+        assert_eq!(t.edit, EditorKeyEdit::Remove);
+
+        // A still cursor edits nothing.
+        let t = editor_tick(400, 0, 0, 2, 2, true, 8, &[0, 1, 2, 3], &mut slots);
+        assert_eq!(t.edit, EditorKeyEdit::None);
+    }
+
+    #[test]
+    fn the_editor_wraps_both_cursors() {
+        let mut slots = Vec::new();
+        let t = editor_tick(
+            400,
+            EDITOR_ACTION_COUNT,
+            0,
+            9,
+            9,
+            false,
+            4,
+            &[0, 1],
+            &mut slots,
+        );
+        assert_eq!(t.action, 0);
+        assert_eq!(t.frame, 0);
+    }
 
     #[test]
     fn impact_pair_mirrors_by_slot_and_lifts_by_the_special_latch() {

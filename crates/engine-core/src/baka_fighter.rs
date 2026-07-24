@@ -1563,6 +1563,82 @@ pub fn baka_round_score(
     }
 }
 
+// ------------------------------------------------------- per-fighter installer
+
+/// PROT TOC base the per-fighter mesh installer adds the folded roster index
+/// to. Entry `0x4b6` is extraction 1204, the battle-form party pack.
+pub const FIGHTER_PACK_TOC_BASE: u32 = 0x4B6;
+/// Roster ids at or above this fold down by the same amount - the three party
+/// fighters share the one party pack.
+pub const FIGHTER_PACK_FOLD: usize = 3;
+/// Scratch buffer the installer allocates for the pack before walking it.
+pub const FIGHTER_PACK_BUFFER: usize = 0x4_6000;
+/// Mask that separates a chunk header word's size from its type byte.
+pub const FIGHTER_CHUNK_SIZE_MASK: u32 = 0x00FF_FFFF;
+
+/// One chunk of a fighter pack, as the installer's walk sees it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FighterChunk {
+    /// Header byte `3` - the asset type the dispatcher switches on.
+    pub kind: u8,
+    /// Byte offset of the payload inside the pack.
+    pub offset: usize,
+    /// Payload length as the header declares it.
+    pub len: usize,
+}
+
+/// Which PROT TOC entry the installer loads for a roster index, and the folded
+/// index it uses.
+///
+/// REF: FUN_801d4c50 (`0x801D4D58..0x801D4D70`)
+pub fn fighter_pack_entry(roster: usize) -> (usize, u32) {
+    let folded = if roster >= FIGHTER_PACK_FOLD {
+        roster - FIGHTER_PACK_FOLD
+    } else {
+        roster
+    };
+    (folded, FIGHTER_PACK_TOC_BASE + folded as u32)
+}
+
+// NOT WIRED: the engine loads a fighter's art through
+// `legaia_asset::baka_opponents::parse_fighter_pack`, which takes the already
+// resolved PROT entry, so nothing calls the installer's own walk. Reaching it
+// needs the duel host to stage art at all - `BakaFight` is the rules layer and
+// holds no meshes.
+/// PORT: FUN_801d4c50 - the per-fighter **mesh installer**'s chunk walk.
+///
+/// The installer allocates [`FIGHTER_PACK_BUFFER`] bytes, fills it either from
+/// a named `data_field` path (the dev arm, taken only while the streaming flag
+/// `_DAT_8007b8c2` is `0`) or from raw PROT entry [`fighter_pack_entry`] (the
+/// retail arm), then walks the buffer as a chain of
+/// `[u32 (type << 24) | size][payload]` chunks, handing each to the asset
+/// dispatcher `FUN_8001F05C` with the "already decompressed" flag. The chain
+/// ends at the first header whose size field is zero, and the buffer is freed
+/// on the way out - the pack is transient, and whatever the dispatcher keeps
+/// it has already copied.
+///
+/// The stride is the retail one and it is **not** `4 + size`: the size is
+/// rounded down to a multiple of four first (`sra 2` then `sll 2`), so a chunk
+/// whose declared length is not word-aligned advances short of its own end.
+pub fn fighter_pack_chunks(pack: &[u8]) -> Vec<FighterChunk> {
+    let mut out = Vec::new();
+    let mut pos = 0usize;
+    while pos + 4 <= pack.len() {
+        let hdr = u32::from_le_bytes([pack[pos], pack[pos + 1], pack[pos + 2], pack[pos + 3]]);
+        let size = (hdr & FIGHTER_CHUNK_SIZE_MASK) as usize;
+        if size == 0 {
+            break;
+        }
+        out.push(FighterChunk {
+            kind: (hdr >> 24) as u8,
+            offset: pos + 4,
+            len: size,
+        });
+        pos += (size / 4) * 4 + 4;
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1815,6 +1891,71 @@ mod tests {
         f.tick(1);
         let second = f.last_exchange().unwrap().damage;
         assert_eq!(second, first + COMBO_DAMAGE_STEP);
+    }
+
+    #[test]
+    fn fighter_pack_entry_folds_the_party_slots() {
+        assert_eq!(fighter_pack_entry(0), (0, 0x4B6));
+        assert_eq!(fighter_pack_entry(2), (2, 0x4B8));
+        // Roster 3 is the first ladder fighter and folds back onto entry 0.
+        assert_eq!(fighter_pack_entry(3), (0, 0x4B6));
+        assert_eq!(fighter_pack_entry(16), (13, 0x4C3));
+    }
+
+    #[test]
+    fn fighter_pack_walk_stops_at_a_zero_header() {
+        let mut buf = Vec::new();
+        let mut chunk = |kind: u8, len: usize| {
+            let hdr = ((kind as u32) << 24) | len as u32;
+            buf.extend_from_slice(&hdr.to_le_bytes());
+            buf.extend(std::iter::repeat_n(0xAAu8, len));
+        };
+        chunk(0, 8);
+        chunk(9, 4);
+        buf.extend_from_slice(&[0u8; 4]);
+        let chunks = fighter_pack_chunks(&buf);
+        assert_eq!(
+            chunks,
+            vec![
+                FighterChunk {
+                    kind: 0,
+                    offset: 4,
+                    len: 8
+                },
+                FighterChunk {
+                    kind: 9,
+                    offset: 16,
+                    len: 4
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn the_walk_rounds_a_chunk_length_down_to_a_word() {
+        // A 5-byte chunk advances 4 + 4, not 4 + 5 - the retail stride
+        // truncates the size before adding the header. So the next header is
+        // read at offset 8, one byte inside the first chunk's own payload.
+        let mut buf = vec![0x05, 0x00, 0x00, 0x00];
+        buf.extend_from_slice(&[0xAA; 4]);
+        buf.extend_from_slice(&[0x09, 0x00, 0x00, 0x06]);
+        buf.extend_from_slice(&[0u8; 12]);
+        let chunks = fighter_pack_chunks(&buf);
+        assert_eq!(
+            chunks,
+            vec![
+                FighterChunk {
+                    kind: 0,
+                    offset: 4,
+                    len: 5
+                },
+                FighterChunk {
+                    kind: 6,
+                    offset: 12,
+                    len: 9
+                },
+            ]
+        );
     }
 
     #[test]
