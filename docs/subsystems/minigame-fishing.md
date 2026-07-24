@@ -84,14 +84,17 @@ Which species strikes is decided in the pre-hook half of `FUN_801d26cc`
 row `_DAT_80084450` and `band` is `DAT_801d90e8`. Everything below is about how
 `band` gets its value.
 
-**The band roll.** While no fish is hooked (`DAT_801d91b4 == 0`), the re-roll
-timer `DAT_801d90ec` has expired, and the line record `DAT_801d927c` exceeds
-`500`, the handler first consults the cadence recogniser `FUN_801d3db4`. On a
-match the returned **template id is stored as the band directly**, the timer is
-re-armed to `0x40`, and the strike-splash timer `DAT_801d90f0` is seeded (the
-splash players read as "Good!" fires for *any* matched template, including the
-ones that select the common bands). With no match the band is rolled from
-`rand & 0xfff` against three fixed cutoffs:
+**The band roll.** While no fish is hooked (`DAT_801d91b4 == 0`) and the line
+record `DAT_801d927c` exceeds `500`, the check body runs **every frame**: the
+countdown `DAT_801d90ec` is clamped to `0` on underflow, so in the steady state
+it re-enters each tick. Each entry first consults the cadence recogniser
+`FUN_801d3db4`. On a match the returned **template id is stored as the band
+directly**, the countdown is armed to `0x40` - for the next 64 frame-steps the
+body is skipped, so the matched band **holds** - and the strike-splash timer
+`DAT_801d90f0` is seeded (the splash players read as "Good!" fires for *any*
+matched template, including the ones that select the common bands). With no
+match the band is re-rolled from `rand & 0xfff` against three fixed cutoffs,
+so an unmatched band is only ever the current frame's roll:
 
 | Roll `r = rand & 0xfff` | Band | Share of rolls |
 |---|---|---|
@@ -122,6 +125,18 @@ reeling tends to *select the most common band* while still showing the splash.
 Template 0 is the only path that pins band 0 by choice rather than the ~4.9%
 roll.
 
+**The countdown doubles as the strike credit.** The per-frame strike roll is
+`rand % denom < credit` with `credit = DAT_801d90ec + 2`, plus one per fresh
+input edge (D-pad left/right, either reel button), plus the bonus-cell boosts
+below; the credit is zeroed while the length readout `DAT_801d9280` is under
+`100`, and a strike can only land on a frame where a reel button is **held**
+(`_DAT_8007b850 & 0xc0`). A cadence match therefore also arms the bite: the
+credit jumps from ~2 to `0x42` and decays with the countdown, so a strike is
+roughly twenty times more likely precisely while the matched band is held.
+Completing template 0 and keeping the final Square press held is the
+retail-optimal sequence - band 0 pinned, bite boosted, and the reel-held
+strike requirement satisfied by the same button.
+
 **The band-4 gate.** Inside the hook-success branch (reel held, strike roll
 passed, `DAT_801d91b4 == 0`), immediately before the species lookup:
 
@@ -146,14 +161,13 @@ rows are dead data in retail. The one bypass is a debug shortcut in the same
 branch: with the debug print flag `_DAT_8007b9b0` set, holding R1
 (`_DAT_8007b850 & 8`) at the strike stores band 4 unconditionally.
 
-**Strike-rate context** (where the gate sits): the strike roll is
-`rand % denom < credit`, with `denom` stepped by the length readout
-`DAT_801d9280` (a record under `200` cannot strike at all) and `credit` built
-from a base plus input edges (D-pad left/right, reel edges) plus the per-cell
-bonus flags - a cell whose grid word carries bit `0x4000` maps through
-`func_0x800180ec` to `_DAT_8007b8f4` flags `4`/`8`/`0x10` for graded credit
-boosts. Pond position and bait-twitching change how often the gate is rolled,
-never which species results.
+**Strike-rate context** (where the gate sits): `denom` is stepped by the
+length readout `DAT_801d9280` (~1000 for a deep cast; a readout under `200`
+cannot strike at all), and the per-cell bonus flags feed the credit - a cell
+whose grid word carries bit `0x4000` maps through `func_0x800180ec` to
+`_DAT_8007b8f4` flags `4`/`8`/`0x10` for graded credit boosts. Pond position
+and bait-twitching change how often the gate is rolled, never which species
+results.
 
 ## Fishing actors and scene render
 
@@ -443,7 +457,7 @@ Fishing-specific globals (overlay-resident unless noted; `_DAT_8008xxxx` live in
 | `0x801d928c` | `u32` | Hooked-fish actor pointer, saved by `FUN_801d2050`, read by `FUN_801d4948`. |
 | `0x801d91c8` | `u32` | Reeling-line actor sub-state (`FUN_801d4948`, `0`/`1`/`2`). |
 | `0x801d90e8` | `u32` | **Cast band** (0..4): spawn-table column for the species lookup. See [Species selection](#species-selection-and-the-band-4-gate). |
-| `0x801d90ec` | `s32` | Band re-roll / cadence-check countdown (re-armed `0x40` on a cadence match). |
+| `0x801d90ec` | `s32` | Band-check countdown: parks at `0` (roll + cadence check run per frame); armed `0x40` by a cadence match, during which the band holds and the strike credit (`timer + 2`) stays boosted. |
 | `0x8008444c` | `s32` | **Persistent fishing-point score** (save block), capped at `999999`. |
 | `0x80084450` | `u32` | Persistent selected-**lure** index (`0`..`2` = Light/Normal/Heavy, items `0x9d`..`0x9f`): spawn-table row, HUD label + SFX base. (Previously misdocumented here as the rod index.) |
 | `0x80084454` | `s32` | Persistent rod index (`0`..`2`, items `0xa0`..`0xa2`); scales the per-frame tension change and is a band-4 gate condition. |

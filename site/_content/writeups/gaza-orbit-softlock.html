@@ -227,8 +227,12 @@ v26888  pair 0/0: clip DEAD after ~12 vsyncs / ~236 units
 </section>
 
 <section class="doc-section" id="try-it">
-  <h2>Run it on your disc</h2>
-  <p>The fix is the <strong>&ldquo;Approach-softlock fix&rdquo;</strong> toggle in the <a href="../tooling/rom-patcher.html">in-browser ROM patcher</a> - your disc image never leaves the tab - or <code>legaia-patcher randomize --input DISC.bin --approach-softlock-fix</code> from the <a href="../tooling/randomizer.html#approach-softlock-fix">command-line patcher</a>, which can also emit a PPF patch. It is seedless, composes with every other option, and the Balanced / Full Chaos presets enable it by default.</p>
+  <h2>Apply the fix to your disc</h2>
+  <div class="notice">
+    <div class="notice-title">Get the fix</div>
+    Open the <a href="../tooling/rom-patcher.html#rom-approach-fix"><strong>in-browser ROM patcher</strong></a>, load your disc image (it is processed entirely in the browser tab and never uploaded), and enable the checkbox labelled <strong>&ldquo;Approach-softlock fix&rdquo;</strong> in the patch options, then download the patched image or a PPF patch. From the command line: <code>legaia-patcher randomize --input DISC.bin --approach-softlock-fix</code> (see the <a href="../tooling/randomizer.html#approach-softlock-fix">patcher reference</a>).
+  </div>
+  <p>The fix is seedless, composes with every other patch option, and the Balanced / Full Chaos presets enable it by default.</p>
 </section>
 
 <section class="doc-section" id="see-also">
