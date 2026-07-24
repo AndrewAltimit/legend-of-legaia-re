@@ -289,15 +289,60 @@ single point while clearing its `+0x10` is enough, and the next party-targeted
 action hangs while monster-targeted actions in between still complete normally.
 Probe: `scripts/pcsx-redux/autorun_gaza2_hpbar_settle.lua`.
 
-Two conventions for seeding `+0x10` coexist in the dumped battle corpus, which
-is where a retail trigger would have to come from. `FUN_801EC3E4` **accumulates**
-(`lw v0,0x10(v1)` / `addu` / `sw` at `0x801EDB58`, with an anti-overkill clamp
-`if (bar < acc) acc = bar` at `0x801EDB70`), while all three of `FUN_800402F4`'s
-seeds (`0x800408FC`, `0x80040D28`, `0x800410BC`) plainly **assign**
-`actor[+0x10] = -delta`. An assigning seed that lands while an accumulated drain
-is still in flight discards the remainder, and the bar stops short of live HP by
-exactly that much. Which retail sequence actually reaches that state is
-**Unknown** - no capture has produced the desync without an external HP write.
+### Where the desync comes from: two seeding conventions
+
+Every writer of `+0x10` in the dumped battle corpus follows one of two
+conventions, and they disagree about what to do when a new delta arrives while
+the bar is still moving.
+
+**The battle damage/heal kernel `FUN_801EC3E4` accumulates at every one of its
+sites** (`see ghidra/scripts/funcs/overlay_battle_action_801ec3e4.txt`):
+
+| store | shape | branch |
+|---|---|---|
+| `0x801EDAF0` | `acc -= (max - hp)` | overheal - live HP saturates at `+0x14E` first, so only the amount actually applied is credited |
+| `0x801EDB14` | `acc -= (s0 - s1)` | ordinary net delta, paired with the live-HP write at `0x801EDAFC` |
+| `0x801EDB58` | `acc += (s0 - s1)` | the second actor the same hit credits |
+| `0x801EDB7C` | `acc = bar` | anti-overkill clamp, guarded `if (bar < acc)` at `0x801EDB70` - caps the drain at the whole visible bar |
+
+Each is a read-modify-write, so overlapping hits compose and the invariant
+`(+0x172 - +0x14C) == +0x10` survives every path through the damage kernel.
+
+**The item / restore applier `FUN_800402F4` assigns.** Its head builds a pointer
+table over `&actor[+0x14C]`, `+0x14E`, `+0x150`, `+0x152` for slots `0..6`
+(battle mode `0x15`; a different source table otherwise), applies the restore
+with `hp = hp + amount` at `0x800408AC`, and then seeds the bar with a bare
+store:
+
+```
+800408f0  lw   v1,0x0(v1)      ; v1 = the actor
+800408f4  subu v0,zero,v0      ; v0 = -amount
+800408f8  jal  0x801e22c8
+800408fc  _sw  v0,0x10(v1)     ; actor[+0x10] = -amount   <- the old value is never read
+```
+
+All three of its seeds - `0x800408FC`, `0x80040D28`, `0x800410BC` - are that
+same shape. Because none of them reads the old accumulator, **a restore that
+lands while a damage drain is still in flight discards the remainder.** The rest
+is forced arithmetic: with live HP `L`, bar `D` and remainder `A = D - L`, a
+restore of `H` leaves live HP at `L + H` and ramps the bar from `D` to `D + H`,
+so the bar settles exactly `A` above live HP with the accumulator back at zero.
+That is the absorbing state above, reached through nothing but ordinary game
+actions.
+
+So the retail trigger is **healing a party member whose HP bar has not finished
+draining from a recent hit** - and the residual desync is exactly the amount of
+bar movement the heal cancelled. Every later action whose acting actor targets
+that slot (`+0x1DD` in `0..2`) or the whole party (`+0x1DD == 8`, which is what
+a party-wide spell uses) then parks at `0x51`. A long boss fight where the party
+heals immediately after taking heavy hits is the shape that makes an otherwise
+rare race routine.
+
+The store shapes are **Confirmed** from disassembly. Whether ordinary play
+actually lands a restore inside a drain window is a timing question, measured by
+`scripts/pcsx-redux/autorun_gaza2_acc_discard.lua`, which arms an Exec
+breakpoint on all nine `+0x10` writers and flags any assign that lands on a
+non-zero accumulator.
 
 ### Consequences for instrumentation
 
