@@ -1354,6 +1354,23 @@ Pitfalls when verifying:
 
 A standing audit pass - picking 5 random ported sub-ops and cross-checking against the dump - turned up **no further inversion bugs** as of round 15.
 
+#### The same labels seen through a mis-based print
+
+The label-promotion artifact above compounds with the base error catalogued in
+[`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md), and the
+combination is the single largest source of fake worklist rows in the
+`0x801C…` / `0x801D…` band. A dump of one of these labels, taken from a program
+imported at `0x801C0000`, prints a VA that exists in no runtime image and names
+no function under any base.
+
+Thirty-one such printed addresses re-key into `FUN_801DE840`'s body - the
+`+0xE818` prints `0x801D0170` … `0x801D4C30` and the `+0x5818` prints
+`0x801D9860` … `0x801DD0BC`. The per-address list, with the resolved VA for
+each, is in
+[`phantom-print-index.md`](../tooling/phantom-print-index.md#group-1---re-keys-into-the-fieldevent-vm-fun_801de840).
+None is a port site, and the check that settles any of them is the one already
+stated in pitfall 2 above - performed at the *correct* base.
+
 ## Disassembler tool: `field-disasm`
 
 `crates/engine-vm/src/bin/field_disasm.rs` is a CLI that walks a field-VM bytecode buffer and prints one mnemonic per encoded instruction. The decoder mirrors the *width* logic of `crate::field::step` without executing host calls or mutating ctx state, so it's safe to point at any byte buffer - it stays linear, recovers from unknown sub-ops one byte at a time, and never follows jumps.

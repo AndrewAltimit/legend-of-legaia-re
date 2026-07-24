@@ -70,6 +70,14 @@ Both are handled - `s8`/`s9`/`r30` fold to one name, and register tokens are
 stripped before immediates are read - and together they account for roughly a
 quarter of the corpus.
 
+A third folding gap survives in the *positive* direction and is worth naming
+because it produces a near-miss rather than a miss: the two disassemblers render
+`break`'s code field differently (Ghidra prints the 10-bit code, capstone the
+full 20-bit immediate, e.g. `break 6` against `break 0x1800`). A window whose
+only disagreement is a `break` operand is a match; anything that compares
+canonicalised tokens should treat a lone `break`-immediate mismatch as noise
+rather than evidence of different code.
+
 The generalisable point: **a resolver's negative class is where its own bugs
 accumulate**, because a false negative there looks like missing data rather
 than a broken comparison. Validate any change to `canon()` against a dump known
@@ -117,6 +125,13 @@ overwhelming majority, and both point at one mistake. Counts are given as
 | `+0xE818` | 208 / 221 | field overlay (PROT 0897) | Imported at base `0x801C0000` instead of `0x801CE818`. `0x801CE818 - 0x801C0000 = 0xE818`. |
 | `+0x5818` | 50 / 55 | `overlay_0896_*` | Same field-overlay bytes, reached at PROT 0896's over-read base. |
 | `+0xD018` | 8 / 8 | `overlay_0971` | The same mistake again, read through an over-read tail - see below. |
+| `+0x9818` | small | `overlay_0978_*` | Imported at `0x801C5000`; the bytes are **dance**-overlay (PROT 0980) routines. |
+
+The `+0xE818` mistake is not confined to the field overlay. `overlay_0899_xxx_dat_*`
+dumps take the same delta into the *menu* overlay, so the base error travels with
+the operator rather than with the program. The per-program deltas measured across
+the whole `0x801C…` / `0x801D…` printed band, and every affected address, are
+tabulated in [phantom-print-index.md](phantom-print-index.md).
 
 **`+0xE818` is a single mis-based batch run.** Every member resolves
 single-hit into `overlay_field_0897.bin`, with a median of 35 consecutive
@@ -359,6 +374,7 @@ cases where a base can be self-consistently wrong.
 
 ## See also
 
+- [`phantom-print-index.md`](phantom-print-index.md) - this page's findings applied address-by-address to the `0x801C…` / `0x801D…` printed band.
 - [`call-target-integrity.md`](call-target-integrity.md) - the sibling failure: what a decoded `jal` target does and does not prove.
 - [`static-overlay-pipeline.md`](static-overlay-pipeline.md) - how an overlay's base is recovered and what makes a recovery load-bearing.
 - [`ghidra.md`](ghidra.md) - the dump scripts, and the decompiler artifacts that have produced false claims.

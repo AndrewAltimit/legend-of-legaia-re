@@ -280,6 +280,12 @@ address came from a dump printed at the wrong base, so there is no function
 there to port - the routine is real, but it lives at the VA the reason names,
 where it is usually already a separate row.
 
+For the `0x801C…` / `0x801D…` printed band the resolution has been done in bulk
+and committed: [`phantom-print-index.md`](phantom-print-index.md) lists the
+per-program re-key deltas and, per printed address, the image and VA its bytes
+occupy plus whether that VA is an entry. Check a row against that page before
+re-deriving it.
+
 The `REAL` reason is deliberately narrow. "Every dump at this VA is of PROT
 0899" is not "no other overlay has code at this VA" - several do, since eight
 overlays share the slot-A base. It says only that nothing has dumped them, so
