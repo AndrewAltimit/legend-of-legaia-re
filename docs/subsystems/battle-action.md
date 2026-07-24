@@ -7,7 +7,7 @@ A two-level finite state machine that drives the per-actor execution of a chosen
 - [One-paragraph overview](#one-paragraph-overview)
 - [Outer dispatch - `ctx[7]` action-state cursor](#outer-dispatch---ctx7-action-state-cursor) · [state table](#state-table)
 - [Inner dispatch - actor action category](#inner-dispatch---actor-action-category) · [per-actor sub-state surface](#per-actor-sub-state-surface)
-- [The `0x51` exit gate and the HP-bar settle invariant](#the-0x51-exit-gate-and-the-hp-bar-settle-invariant) - the endless-camera-orbit softlock class
+- [The `0x51` exit gate and the HP-bar settle invariant](#the-0x51-exit-gate-and-the-hp-bar-settle-invariant) - the endless-camera-orbit softlock class · [`+0x10` sign convention](#the-0x10-sign-convention) · [engine port of the ramp](#engine-port-of-the-ramp)
 - [Cross-references with other battle helpers](#cross-references-with-other-battle-helpers) - [range/LOS](#fun_8004e2f0---battle-range--line-of-sight) · [stat aggregator](#fun_80042558---per-frame-stat-aggregator) · [effect spawn API](#fun_801dfdf8---effect-bundle-public-spawn-api) · [summon-overlay dispatch](#seru-magic-summon-overlay-dispatch) · [pose driver](#fun_801d5854---per-actor-pose-driver) · [party/monster setup](#fun_801eed1c--fun_801e7320---party--monster-setup-hooks) · [camera bounds](#fun_801efe44---battle-camera-bounds) · [escape roll](#the-escape-roll-fun_801e791c) · [battle voice cues](#battle-voice-cues---the-xa30-grunt-vs-the-xa2xa4xa6-arts-shout) · [helper functions](#battle-helper-functions)
 - [Notes for the engine port](#notes-for-the-engine-port) · [decompile quirks](#decompile-quirks-worth-knowing) · [engine port](#engine-port)
 - [Action validator (`FUN_8003FB10`)](#action-validator-fun_8003fb10) · [action queue + Tactical Arts trigger ordering](#action-queue-and-tactical-arts-trigger-ordering) · [Miracle / Super in the live Arts submenu](#miracle--super-in-the-live-player-driven-arts-submenu)
@@ -470,6 +470,42 @@ downward, the ramp then stops at zero accumulator, and the bar is left short of
 a live HP that the clamp holds pinned at maximum. A "reproduction" captured
 under such a clamp is measuring the instrument. A clamp that also assigns
 `+0x172` and zeroes `+0x10` keeps the invariant intact.
+
+### The `+0x10` sign convention
+
+Positive means "the bar still has to fall". Both seeding conventions agree on
+it, from opposite starting points:
+
+- `FUN_801EC3E4` computes `a0 = s0 - s1` (HP before minus HP after) and adds
+  that, so damage arrives positive (`0x801EDB54`);
+- `FUN_800402F4` negates the **signed stat change** it just folded into the
+  stat halfword a few instructions earlier (`0x800408A8`:
+  `lhu v0,0x0(v1); addu v0,v0,s4; sh v0,0x0(v1)`), so a heal's positive `s4`
+  becomes a negative accumulator and a hit's negative `s4` a positive one.
+
+`FUN_80047430` then subtracts its step from `+0x172`, which is why the same
+sign works for both directions.
+
+### Engine port of the ramp
+
+The three fields and the four routines that move them are mirrored in
+`legaia_engine_vm::battle_hp_bar` - the quarter-step divide, the party arm, the
+one-frame monster arm, both seeding conventions and the re-sync - with
+`BattleActor::hp` / `hp_display` / `hp_bar_pending` standing in for `+0x14C` /
+`+0x172` / `+0x10`. `battle_action::tick_hp_bars` runs one frame of ramp across
+the pool; `engine-core`'s `World::apply_battle_hp_delta` is the single damage
+entry point that seeds the accumulator, and `World::tick_battle_hp_bars` drives
+the ramp from the live battle tick.
+
+Retail's **caller** for `FUN_80047430` is not in the dumped corpus - no dump
+carries a `jal` to it - so the once-per-battle-frame cadence is the port's
+choice. The arithmetic and the `slot < 3` split are not: they are transcribed
+from `0x800474E8..0x80047638`.
+
+One deliberate divergence: the port's re-sync also clears the accumulator,
+where retail writes only `+0x172`. Retail gets away with leaving it because its
+ticker runs at a round boundary with no drain in flight; clearing it keeps the
+port from re-opening the mismatch the re-sync exists to close.
 
 ## Cross-references with other battle helpers
 

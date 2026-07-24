@@ -54,6 +54,7 @@ use spirit::*;
 
 mod done;
 use done::*;
+pub use done::{hp_bar_drain_pending, tick_hp_bars};
 
 mod run;
 use run::*;

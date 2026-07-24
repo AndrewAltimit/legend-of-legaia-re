@@ -365,17 +365,27 @@ pub struct BattleActor {
     /// REF: FUN_801ddb30 (the finisher's spirit stage; ported as
     /// [`crate::battle_formulas::spirit_gauge_fill`])
     pub spirit_gauge: u16,
-    /// `+0x172` / `+0x174` - HP / max-HP (or current / max).
+    /// `+0x14C` / `+0x14E` - live (authoritative) HP and max HP. Every
+    /// liveness test in the SM reads `+0x14C`; [`Self::liveness`] is the same
+    /// halfword under the name the flag-shaped reads use.
     pub hp: u16,
     pub max_hp: u16,
-    /// HP-bar **display** cursor. Retail keeps the authoritative current
-    /// HP at `+0x14C` and drains the on-screen bar value at `+0x172`
+    /// `+0x172` - HP-bar **display** cursor. Retail keeps the authoritative
+    /// current HP at `+0x14C` and drains the on-screen bar value at `+0x172`
     /// toward it over several frames; the fade-down settle check
-    /// (`FUN_801E7250`) compares the pair. The engine models the pair as
-    /// `hp` (authoritative) vs this display cursor: `Some(shown)` while a
-    /// drain animation runs, `None` when the host doesn't animate HP bars
-    /// (always settled).
+    /// (`FUN_801E7250`) compares the pair. `Some(shown)` while the host
+    /// animates HP bars, `None` when it does not (always settled).
     pub hp_display: Option<u16>,
+    /// `+0x10` - signed **pending HP-bar delta accumulator**: how much
+    /// [`Self::hp_display`] still owes. Positive means the bar has to fall.
+    ///
+    /// The bar and live HP converge only through this field
+    /// ([`crate::battle_hp_bar`]): `FUN_80047430` moves a quarter of it into
+    /// the bar per frame on a party slot, and does nothing at all while it is
+    /// zero (the guard at `0x800474E8`). A `hp != hp_display` pair with a zero
+    /// accumulator is therefore absorbing, and parks the action SM in state
+    /// `0x51` forever on any party-targeted action.
+    pub hp_bar_pending: i32,
     /// `+0x178` - last-action MP cost (used to display `-N MP` on screen).
     pub last_mp_cost: u16,
     /// `+0x1A` - party-action queue counter. Incremented by `Begin`,
@@ -475,6 +485,64 @@ impl BattleActor {
     pub fn read_param(&self, offset: usize) -> u8 {
         let idx = self.strike_index as usize + offset;
         self.params.get(idx).copied().unwrap_or(0xFF)
+    }
+
+    /// Seed the HP-bar accumulator the way a landed hit does
+    /// ([`crate::battle_hp_bar::accumulate_pending`], retail `FUN_801EC3E4`):
+    /// **add** `delta` to any remainder still in flight, then clamp it to the
+    /// value currently drawn on the bar so the ramp cannot overshoot zero.
+    ///
+    /// `delta` is positive for damage (the bar has to fall). No-op when the
+    /// host does not animate bars (`hp_display == None`), which keeps a
+    /// non-animating engine exactly where it was.
+    ///
+    /// REF: FUN_801EC3E4 (kernel + `// PORT:` tag in `battle_hp_bar`)
+    pub fn accumulate_hp_bar(&mut self, delta: i32) {
+        let Some(display) = self.hp_display else {
+            return;
+        };
+        self.hp_bar_pending =
+            crate::battle_hp_bar::accumulate_pending(self.hp_bar_pending, display, delta);
+    }
+
+    /// Begin animating this actor's HP bar from its current live HP, if the
+    /// host is not already animating it. Idempotent.
+    ///
+    /// Retail has no equivalent - `+0x172` is seeded at battle load and never
+    /// unset. The port's `Option` models "this host draws bars at all", so a
+    /// host opts in once and the pair behaves like retail from then on.
+    pub fn arm_hp_bar(&mut self) {
+        if self.hp_display.is_none() {
+            self.hp_display = Some(self.hp);
+            self.hp_bar_pending = 0;
+        }
+    }
+
+    /// One frame of HP-bar ramp for this actor in `slot`
+    /// ([`crate::battle_hp_bar::bar_step_for_slot`], retail `FUN_80047430`).
+    ///
+    /// REF: FUN_80047430 (kernel + `// PORT:` tags in `battle_hp_bar`)
+    pub fn tick_hp_bar(&mut self, slot: u8) {
+        let Some(display) = self.hp_display else {
+            return;
+        };
+        let st = crate::battle_hp_bar::bar_step_for_slot(slot, display, self.hp_bar_pending);
+        self.hp_display = Some(st.display);
+        self.hp_bar_pending = st.pending;
+    }
+
+    /// Force the displayed HP back onto live HP, dropping any outstanding
+    /// accumulator - the per-round status ticker's re-sync
+    /// ([`crate::battle_hp_bar::resync_display`], retail `FUN_801E752C`).
+    ///
+    /// REF: FUN_801E752C (kernel + `// PORT:` tag in `battle_hp_bar`)
+    pub fn resync_hp_bar(&mut self) {
+        if self.hp_display.is_none() {
+            return;
+        }
+        let st = crate::battle_hp_bar::resync_display(self.hp);
+        self.hp_display = Some(st.display);
+        self.hp_bar_pending = st.pending;
     }
 }
 

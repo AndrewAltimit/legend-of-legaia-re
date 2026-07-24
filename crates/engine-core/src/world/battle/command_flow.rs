@@ -422,13 +422,9 @@ impl World {
                     } else {
                         dmg
                     };
-                    let a = &mut self.actors[target].battle;
-                    a.hp = a.hp.saturating_sub(applied);
+                    self.apply_battle_hp_delta(target, i32::from(applied));
                     total = total.saturating_add(applied as u32);
                     landed = landed.saturating_add(1);
-                    if a.hp == 0 {
-                        a.liveness = 0;
-                    }
                 }
             }
         }

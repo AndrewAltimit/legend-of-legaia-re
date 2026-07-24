@@ -675,6 +675,24 @@ being 0 (Earth) and being read by the scale - while the enemy-side
 respects it, which is why Cort's ESM behaves as Dark. The engine finisher
 models the gate as `damage_finish::bypass_party_resist`.
 
+#### The bypass wrapper's heavy defence fold does not mitigate more
+
+`FUN_801DD6B4` folds the defender's two defence stats `+0x15C` / `+0x160` into
+its defender roll at `>> 1`, eight times as heavily as the shared kernel's
+`>> 4`. The plausible - and wrong - reading of that is "the bypass path is more
+sensitive to the defender's defence". It is *less* sensitive, and the reason is
+the bonus arm both wrappers share.
+
+The weight is heavy enough that on ordinary defence values the scaled attacker
+roll lands below `defender_roll + power`, which is exactly the `sltu` condition
+the bonus arm tests. The arm then rebuilds the attacker roll **out of the
+defender roll** as `defender_roll + power + rand % ((power >> 2) + 1)`, so the
+pre-finisher damage `attacker_roll - defender_roll` collapses to
+`power + rand` and the defence terms cancel. A bypass-wrapper hit therefore
+sits on that floor and is near-flat against the defender's defence, while a
+respecting hit - whose `>> 4` fold keeps it clear of the arm - drops as defence
+rises. Mirrored in `engine-vm::battle_damage_wrappers`.
+
 The full wrapper census over every capture-class module (byte-scan of the
 extracted entries for the `jal` words `0x0C0775AD` bypass / `0x0C07752C`
 respect, each module's own extent bounded by the next entry's head-overlap):

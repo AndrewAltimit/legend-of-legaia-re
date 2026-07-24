@@ -82,6 +82,7 @@ pub mod battle_formulas;
 pub mod battle_gauge;
 pub mod battle_gauge_rearm;
 pub mod battle_helpers;
+pub mod battle_hp_bar;
 pub mod battle_intro_particles;
 pub mod battle_intro_styles;
 pub mod battle_intro_swirl;

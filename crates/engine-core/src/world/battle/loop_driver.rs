@@ -6,6 +6,62 @@
 use super::*;
 
 impl World {
+    /// Apply a signed HP change to a battle slot **through the retail HP-bar
+    /// machinery**: live HP moves at once, the displayed bar is left owing the
+    /// difference, and the per-frame ramp
+    /// ([`vm::battle_action::tick_hp_bars`], retail `FUN_80047430`) walks it
+    /// down a quarter at a time.
+    ///
+    /// `delta` is positive for damage. The clamp against max HP on the heal
+    /// side and the `hp == 0 -> liveness = 0` edge are the engine's existing
+    /// per-site behaviour, folded here so every damage entry point seeds the
+    /// accumulator the same way. Returns the amount live HP actually moved by
+    /// (positive = HP lost), which is also what gets seeded - a hit that
+    /// saturates at zero owes the bar only the distance it really travelled.
+    ///
+    /// The bar is *armed* on the first change ([`BattleActor::arm_hp_bar`]).
+    /// Retail seeds `+0x172` at battle load instead; arming here is equivalent
+    /// because there is no desync to inherit before the first write, and it
+    /// keeps a host that never damages anyone in the "bars not animated" state
+    /// the port started from.
+    ///
+    /// REF: FUN_801EC3E4 (the accumulating seed this uses)
+    pub(in crate::world) fn apply_battle_hp_delta(&mut self, slot: usize, delta: i32) -> i32 {
+        let Some(a) = self.actors.get_mut(slot) else {
+            return 0;
+        };
+        a.battle.arm_hp_bar();
+        let before = a.battle.hp;
+        a.battle.hp = if delta >= 0 {
+            before.saturating_sub(delta.min(i32::from(u16::MAX)) as u16)
+        } else {
+            before
+                .saturating_add((-delta).min(i32::from(u16::MAX)) as u16)
+                .min(a.battle.max_hp)
+        };
+        let moved = i32::from(before) - i32::from(a.battle.hp);
+        a.battle.accumulate_hp_bar(moved);
+        if a.battle.hp == 0 {
+            a.battle.liveness = 0;
+        }
+        moved
+    }
+
+    /// One frame of HP-bar ramp across every battle slot.
+    ///
+    /// The retail split is by slot index, not by side: slots `0..=2` drain a
+    /// quarter of the outstanding delta per frame, everything else settles in
+    /// one frame (`FUN_80047430`'s `sltiu v0,s1,0x3` at `0x800474F4`). The
+    /// engine seats the party in the same low slots, so the same test holds.
+    ///
+    /// REF: FUN_80047430 (kernel + `// PORT:` tags in
+    /// `legaia_engine_vm::battle_hp_bar`)
+    pub(in crate::world) fn tick_battle_hp_bars(&mut self) {
+        for (slot, a) in self.actors.iter_mut().enumerate() {
+            a.battle.tick_hp_bar(slot as u8);
+        }
+    }
+
     /// Per-frame battle-side driver for the live gameplay loop. Gated by
     /// [`Self::live_gameplay_loop`] in [`Self::tick`].
     ///
@@ -168,6 +224,14 @@ impl World {
         // monster cast / DoT) is revived before this step's wipe scan, and
         // again after this tick's damage lands (below).
         self.apply_final_heal_revives();
+
+        // One frame of HP-bar ramp before the SM steps, so the `0x51` settle
+        // check (`FUN_801E7250`) sees this frame's bar movement. Retail's
+        // caller for `FUN_80047430` is not in the dumped corpus, so the
+        // cadence is the port's choice; the arithmetic is not
+        // (`legaia_engine_vm::battle_hp_bar`).
+        // REF: FUN_80047430
+        self.tick_battle_hp_bars();
 
         let outcome = self.step_battle();
 
@@ -456,11 +520,7 @@ impl World {
         } else {
             dmg
         };
-        let a = &mut self.actors[target];
-        a.battle.hp = a.battle.hp.saturating_sub(dmg);
-        if a.battle.hp == 0 {
-            a.battle.liveness = 0;
-        }
+        self.apply_battle_hp_delta(target, i32::from(dmg));
         // Surface the strike for HUD damage popups.
         self.battle_hit_fx.push(BattleHitFx {
             target_slot: target as u8,

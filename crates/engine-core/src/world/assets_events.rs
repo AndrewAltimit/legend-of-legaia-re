@@ -353,6 +353,15 @@ impl World {
                 if actor.battle.hp == 0 {
                     actor.battle.liveness = 0;
                 }
+                // Retail's ticker force-assigns the displayed bar from live HP
+                // right after each of its two HP writes (`FUN_801E752C`,
+                // `0x801E7600` / `0x801E7698`) rather than seeding the ramp
+                // accumulator. That re-sync is the only one in the dumped
+                // battle corpus, and it is what lets a desynced party actor
+                // recover instead of parking the action SM at state `0x51`
+                // forever.
+                // REF: FUN_801E752C
+                actor.battle.resync_hp_bar();
             }
         }
     }

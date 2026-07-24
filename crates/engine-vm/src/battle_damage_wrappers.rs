@@ -149,6 +149,15 @@ pub fn spell_attacker_roll(power: u32, a: &WrapperAttacker, rand: u16) -> u32 {
 /// carry the whole mitigation, and they carry it eight times as heavily as in
 /// the physical wrapper (`>> 1` instead of `>> 4`).
 ///
+/// **That weight does not translate into more mitigation.** It is heavy enough
+/// that on ordinary defence values the scaled attacker roll lands *below*
+/// `defender_roll + power`, which is the condition
+/// [`wrapper_bonus_roll`] fires on - and the arm then rebuilds the attacker
+/// roll from the defender roll, so `attacker_roll - defender_roll` collapses to
+/// `power + rand % ((power >> 2) + 1)` with the defence terms cancelled. The
+/// observable behaviour of a bypass-wrapper hit is therefore near-**flat**
+/// against the defender's defence, not steeper: it sits on the bonus floor.
+///
 /// PORT: FUN_801DD6B4 (defender-roll stage)
 pub fn spell_defender_roll(d: &WrapperDefender, rand: u16) -> u32 {
     let sum = d.stat_a as u32 + d.stat_b as u32;

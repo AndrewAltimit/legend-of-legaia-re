@@ -1035,6 +1035,92 @@ fn hp_bar_drain_freezes_done_fade_down() {
 }
 
 #[test]
+fn state_51_waits_for_the_bar_ramp_and_exits_on_settle() {
+    // End-to-end over the machinery the gate assumes: a hit lands on a party
+    // slot, seeding the `+0x10` accumulator (`FUN_801EC3E4` convention), the
+    // per-frame ramp (`FUN_80047430`) drains it a quarter at a time, and the
+    // action SM sits in state `0x51` until the bar catches up.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::DoneFadeDown.as_byte();
+    ctx.frame_timer = 0;
+    host.actors[1].active_target = 0;
+
+    // The host draws this actor's bar, and a 40-point hit lands.
+    host.actors[0].hp = 200;
+    host.actors[0].arm_hp_bar();
+    host.actors[0].hp -= 40;
+    host.actors[0].accumulate_hp_bar(40);
+    assert_eq!(host.actors[0].hp_display, Some(200));
+    assert_eq!(host.actors[0].hp_bar_pending, 40);
+
+    // Frames pass: the ramp runs, the SM holds.
+    let mut frames = 0;
+    let out = loop {
+        crate::battle_action::tick_hp_bars(&mut host);
+        let out = step(&mut host, &mut ctx);
+        frames += 1;
+        assert!(frames < 100, "state 0x51 never released");
+        if out != StepOutcome::Stay {
+            break out;
+        }
+        assert_eq!(ctx.frame_timer, 0, "timer frozen while the bar ramps");
+    };
+    assert!(frames > 1, "the gate has to hold for at least one frame");
+    assert!(matches!(
+        out,
+        StepOutcome::Transition { to, .. } if to == ActionState::EndOfAction.as_byte()
+    ));
+    // Settled exactly on live HP - the total bar travel equals the seed.
+    assert_eq!(host.actors[0].hp_display, Some(160));
+    assert_eq!(host.actors[0].hp_bar_pending, 0);
+}
+
+#[test]
+fn state_51_parks_forever_on_a_desynced_bar_with_a_zero_accumulator() {
+    // The softlock shape: `+0x14C != +0x172` with `+0x10 == 0` on a party
+    // slot. `FUN_80047430`'s guard at `0x800474E8` leaves the bar alone, so
+    // the mismatch is absorbing and the `0x51` gate never releases.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::DoneFadeDown.as_byte();
+    ctx.frame_timer = 0;
+    host.actors[1].active_target = 0;
+    host.actors[0].hp = 199;
+    host.actors[0].hp_display = Some(200);
+    host.actors[0].hp_bar_pending = 0;
+
+    for _ in 0..64 {
+        crate::battle_action::tick_hp_bars(&mut host);
+        assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    }
+    assert_eq!(host.actors[0].hp_display, Some(200), "bar never moved");
+
+    // The one re-sync in the dumped corpus (`FUN_801E752C`, the per-round
+    // status ticker) clears it, and the action completes.
+    host.actors[0].resync_hp_bar();
+    let out = step(&mut host, &mut ctx);
+    assert!(matches!(
+        out,
+        StepOutcome::Transition { to, .. } if to == ActionState::EndOfAction.as_byte()
+    ));
+}
+
+#[test]
+fn monster_bar_settles_in_one_frame() {
+    // `FUN_80047430`'s monster arm takes the whole delta at once, so a
+    // monster target can never hold the gate even when the host animates it.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::DoneFadeDown.as_byte();
+    host.actors[4].hp = 100;
+    host.actors[4].arm_hp_bar();
+    host.actors[4].hp -= 60;
+    host.actors[4].accumulate_hp_bar(60);
+    crate::battle_action::tick_hp_bars(&mut host);
+    assert_eq!(host.actors[4].hp_display, Some(40));
+    assert_eq!(host.actors[4].hp_bar_pending, 0);
+    let _ = &mut ctx;
+}
+
+#[test]
 fn hp_bar_drain_monster_target_never_pends() {
     // FUN_801E7250's `2 < bVar1` early-out: monster targets (3..=7)
     // return 0 (settled) without inspecting the HP pair.

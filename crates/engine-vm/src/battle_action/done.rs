@@ -110,11 +110,10 @@ fn rearm_action_gauge<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut Batt
 /// - target `> 8`: never pending.
 ///
 /// The engine models the retail `+0x14C`-vs-`+0x172` pair as
-/// [`BattleActor::hp`] vs [`BattleActor::hp_display`] (`None` = settled).
-pub(super) fn hp_bar_drain_pending<H: BattleActionHost + ?Sized>(
-    host: &H,
-    ctx: &BattleActionCtx,
-) -> bool {
+/// [`BattleActor::hp`] vs [`BattleActor::hp_display`] (`None` = settled), and
+/// the third field the pair converges through as
+/// [`BattleActor::hp_bar_pending`] - see [`tick_hp_bars`].
+pub fn hp_bar_drain_pending<H: BattleActionHost + ?Sized>(host: &H, ctx: &BattleActionCtx) -> bool {
     let pending = |slot: u8| -> bool {
         host.actor(slot)
             .map(|a| a.hp_display.is_some_and(|shown| shown != a.hp))
@@ -128,6 +127,25 @@ pub(super) fn hp_bar_drain_pending<H: BattleActionHost + ?Sized>(
         0..=2 => pending(target),
         8 => (0..host.slot_count()).any(pending),
         _ => false,
+    }
+}
+
+/// Run one frame of HP-bar ramp across every battle slot - the per-actor tick
+/// that makes [`hp_bar_drain_pending`] a *gate* rather than a constant.
+///
+/// Retail spreads this over per-actor calls to `FUN_80047430`; the caller that
+/// makes them is **not in the dumped corpus** (no dump references
+/// `0x80047430` as a `jal` target), so the cadence here is the port's own
+/// choice: once per battle frame, every slot, before the action SM steps. What
+/// *is* disassembly-grounded is the arithmetic and the slot split - see
+/// [`crate::battle_hp_bar`].
+///
+/// REF: FUN_80047430 (the HP-bar ramp arm; kernel in `battle_hp_bar`)
+pub fn tick_hp_bars<H: BattleActionHost + ?Sized>(host: &mut H) {
+    for slot in 0..host.slot_count() {
+        if let Some(actor) = host.actor_mut(slot) {
+            actor.tick_hp_bar(slot);
+        }
     }
 }
 

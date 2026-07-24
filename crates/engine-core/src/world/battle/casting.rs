@@ -764,12 +764,7 @@ impl World {
                 } else {
                     amount
                 };
-                if let Some(a) = self.actors.get_mut(target as usize) {
-                    a.battle.hp = a.battle.hp.saturating_sub(applied);
-                    if a.battle.hp == 0 {
-                        a.battle.liveness = 0;
-                    }
-                }
+                self.apply_battle_hp_delta(target as usize, i32::from(applied));
                 self.battle_hit_fx.push(BattleHitFx {
                     target_slot: target,
                     amount: applied,
@@ -786,9 +781,7 @@ impl World {
                 }
             }
             O::Heal { target, amount } => {
-                if let Some(a) = self.actors.get_mut(target as usize) {
-                    a.battle.hp = a.battle.hp.saturating_add(amount).min(a.battle.max_hp);
-                }
+                self.apply_battle_hp_delta(target as usize, -i32::from(amount));
                 if amount > 0 {
                     self.battle_hit_fx.push(BattleHitFx {
                         target_slot: target,
