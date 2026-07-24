@@ -1419,6 +1419,15 @@ impl LegaiaRuntime {
                 ui::scale_stage_text_draws(&mut d, origin, scale);
                 texts.extend(d);
                 if let Some((_, rects)) = assets.chrome.as_ref() {
+                    // Frame window 14 itself, not the generic near-fullscreen
+                    // overlay the stand-in used.
+                    let (_, _, w, h) = ui::TARGET_PANEL_RECT;
+                    sprites.extend(ui::menu_window_chrome_draws_for(
+                        rects,
+                        (pen.0 - 8, pen.1 - 8, w + 16, h + 16),
+                        origin,
+                        scale,
+                    ));
                     sprites.extend(ui::target_panel_sprites_for(
                         rects, &view, pen, origin, scale,
                     ));

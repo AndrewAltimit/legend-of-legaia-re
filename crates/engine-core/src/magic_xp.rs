@@ -110,12 +110,24 @@ pub fn add_spell_xp(record: &mut CharacterRecord, slot: usize, gain: u32) {
 /// PORT: FUN_801E92DC - learn a new Seru spell by **prepending** it to the
 /// character's spell list. Retail shifts the three parallel arrays up by one
 /// slot in a single descending loop (`id[i+1] = id[i]`, `level[i+1] =
-/// level[i]`, `xp[i+1] = xp[i]` for `i = count-1..=0`), then writes slot 0 as
-/// `id = spell_id - 0x80` (the list stores the low byte of the `0x8x` spell
-/// id), `level = 1`, `xp = 0`, and increments the count. The newest Seru
+/// level[i]`, `xp[i+1] = xp[i]` for `i = count-1..=0`), then writes slot 0's
+/// id, `level = 1`, `xp = 0`, and increments the count. The newest Seru
 /// therefore always lists first. (The randomizer's shiny-Seru feature
 /// patches exactly this routine's level write + shift - see
 /// `crates/patcher/src/shiny_seru/`.)
+///
+/// ## The stored id is the FULL spell id, not its low byte
+///
+/// Retail's parameter is the id **minus** `0x80` and the store re-adds it:
+/// `801e93a8 addiu v1,t3,0x80` / `801e93ac sb v1,0x705(v0)`, where `t3` is
+/// the incoming argument. So the `+0x13D` array holds the full `0x8x` id -
+/// which is also what the level-up check compares it against: `801e7124 lbu
+/// v1,0x1df(a0)` (the actor's action id) against `801e7128 lbu v0,0x705(v0)`
+/// (the array entry), and `801e7150 addiu v1,v0,-0x86` puts that action id in
+/// the `0x86..` band. This port therefore takes the id the array stores and
+/// writes it unchanged; the `- 0x80` an earlier reading applied stored
+/// retail's *argument* instead of its *result*, which would have broken the
+/// [`spell_slot`] lookup that scans the same array by full id.
 ///
 /// The shift is bounded to the record's array capacity
 /// ([`legaia_save::MAX_SPELLS`]); retail's unbounded `do`/`while` never
@@ -134,7 +146,7 @@ pub fn learn_spell_prepend(record: &mut CharacterRecord, spell_id: u8) {
         list.ids[i + 1] = list.ids[i];
         list.levels[i + 1] = list.levels[i];
     }
-    list.ids[0] = spell_id.wrapping_sub(0x80);
+    list.ids[0] = spell_id;
     list.levels[0] = 1;
     list.count = list.count.wrapping_add(1);
     record.set_spell_list(list);
@@ -248,8 +260,8 @@ mod tests {
         let mut rec = CharacterRecord::zeroed();
         let mut list = rec.spell_list();
         list.count = 2;
-        list.ids[0] = 0x03; // spell 0x83, level 4
-        list.ids[1] = 0x01; // spell 0x81, level 2
+        list.ids[0] = 0x83; // level 4
+        list.ids[1] = 0x81; // level 2
         list.levels[0] = 4;
         list.levels[1] = 2;
         rec.set_spell_list(list);
@@ -259,7 +271,10 @@ mod tests {
         learn_spell_prepend(&mut rec, 0x8B);
         let l = rec.spell_list();
         assert_eq!(l.count, 3);
-        assert_eq!(&l.ids[..3], &[0x0B, 0x03, 0x01]);
+        // The array holds the FULL id (retail stores `arg + 0x80`), which is
+        // the same id space `spell_slot` scans by.
+        assert_eq!(&l.ids[..3], &[0x8B, 0x83, 0x81]);
+        assert_eq!(spell_slot(&rec, 0x8B), Some(0));
         assert_eq!(&l.levels[..3], &[1, 4, 2]);
         assert_eq!(spell_xp(&rec, 0), 0, "new spell starts at zero XP");
         assert_eq!(spell_xp(&rec, 1), 77, "old slot-0 XP moved with it");

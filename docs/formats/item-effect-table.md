@@ -163,6 +163,12 @@ tier       = descriptor[+1]
 flags      = descriptor[+2]
 ```
 
+The item record's `+0` byte - its **kind** - is a sibling selector some callers
+gate on before they read the descriptor at all: the pause-menu target-panel
+preview derivation `FUN_801D6A54` requires `kind == 2` *and* `class == 6`
+before it maps the tier onto a preview mode. `ItemEffectTable::kind` exposes it
+alongside `subtype`, since the two are read as a pair.
+
 The `& 0x20` all-party test is read in `FUN_8003043c` itself (it selects the
 all-targets call to the action validator `FUN_8003fb10`). The `0x02` / `0x04`
 field-vs-battle usability bits are read by the field item-menu list builder

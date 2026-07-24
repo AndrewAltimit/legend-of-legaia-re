@@ -1070,8 +1070,10 @@ bit `0x2000` draws it on every row (all-party), else the low 12 bits
 pick the row; bit `0x1000` drops it to the static sprite variant.
 Drawn `FUN_8002B994(0, variant, WX, Yb)`. Engine port:
 `engine-ui::target_panel_draws_for` / `target_panel_sprites_for`, fed
-by `engine-core::pause_screens::target_panel_model`. See
-`overlay_menu_801d0520.txt`.
+by `engine-core::pause_screens::target_panel_view_model` - which
+resolves the preview word off the staged bag id's item-record kind byte
+plus its effect descriptor, then fills each row's base maxima and base
+stats from the live character record. See `overlay_menu_801d0520.txt`.
 
 **Door of Light route `FUN_801D8A58`** (submenu 0xB, effect class
 `0x80`): phase 0 zeroes the confirm cursor `DAT_801E46D0` (**Yes** is

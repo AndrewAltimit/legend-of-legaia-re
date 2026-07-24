@@ -289,6 +289,12 @@ impl PlayWindowApp {
             OPTIONS_SCREEN_WINDOWS, STATUS_SCREEN_WINDOWS, TOP_LEVEL_WINDOWS,
         };
         use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+        /// Windows framed while the Items screen's Use flow picks a
+        /// target: the screen tab plus descriptor 14, the party target
+        /// panel (`FUN_801D0520`). Descriptor 14 has no `window_ids`
+        /// alias - retail dispatches it by index from the Use submenus.
+        const TARGET_SELECT_WINDOWS: [usize; 2] =
+            [legaia_asset::menu_windows::window_ids::TAB_ITEMS, 14];
         let Some(assets) = self.save_menu.as_ref() else {
             return Vec::new();
         };
@@ -306,9 +312,12 @@ impl PlayWindowApp {
             Some(FieldMenuSubsession::Config(_)) => &OPTIONS_SCREEN_WINDOWS,
             Some(FieldMenuSubsession::Equip { .. }) => &EQUIP_SCREEN_WINDOWS,
             // Items / Magic: the capture-pinned four-window retail sets.
-            // While the use/cast flow is target-selecting the generic
-            // overlay draws instead (its retail window is unpinned).
+            // While the cast flow is target-selecting the generic overlay
+            // draws instead (its retail window is unpinned).
             Some(FieldMenuSubsession::Items(s)) if !s.target_select() => &ITEMS_SCREEN_WINDOWS,
+            // Item target-select swaps the list for window 14 (the party
+            // target panel); the screen tab stays.
+            Some(FieldMenuSubsession::Items(_)) => &TARGET_SELECT_WINDOWS,
             Some(FieldMenuSubsession::Spells(s))
                 if !matches!(
                     s.phase(),
