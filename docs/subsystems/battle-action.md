@@ -426,12 +426,26 @@ cast-path and kernel-path kills. **Every assign landed on an accumulator
 already drained to zero**, margins 143-280 vsyncs. The starvation is
 structural on this move set: [phased crediting](#phased-crediting-the-invariant-breaks-mid-action-by-design)
 lands the bar credits per strike, *early* in the resolution, while `0x50`
-arrives only after the remaining targets resolve and the effects tear down -
-and a quarter-step drain empties any accumulator in at most ~35 rendered
-frames, faster than any observed credit-to-`0x50` gap. A kill whose final
-strike credits the bar *late* relative to its own `0x50` - a single-strike,
-fast-ending killing action - stays the theoretical opening; Gaza 2 has no
-such move, and no park has been captured from retail-only play.
+arrives only after the remaining targets resolve and the effects tear down.
+
+The margin is quantifiable from the same captures, and it is thin. Grouping
+every party-side credit into actions and measuring last-credit to first
+`0x51` settle check: minimum gap `90` vsyncs (~27 rendered frames at the
+light-load 3-4 vsync cadence), median ~110-220. Against that, the biased
+quarter-step (`acc -= (acc+3)>>2`) drains a full readout in a
+size-insensitive ~20-30 frames - `600 -> 20`, `1289 -> 23`, `3000 -> 26`,
+`9999 -> 30` (exact iteration of the retail step). A LV23 party (readouts
+1289-1382, 23 frames) misses the fastest observed Gaza 2 tail by ~4 frames -
+which is why twelve revives all came up clean - but the drain grows about one
+frame per doubling while the action tail does not, and a `9999`-HP readout
+(30 frames) crosses the fastest tail. **The prediction that falls out: the
+discard-and-park fires for high-max-HP (late-game) parties killed by
+fast-tailed moves, and cannot fire at low HP pools** - matching the
+community's clustering of orbit reports on late-game bosses. Untested: it
+needs a capture with a late-game-sized readout, and the frame-vs-vsync
+clocking of the specific tail states (timed states compensate by
+`DAT_1F800393`, animation waits do not) shifts the line by a few frames
+either way.
 
 The same arm is what a **Phoenix** (class 4) reaches from the battle item
 menu, and the class 0 / class 1 heal arms reach the sibling assign at

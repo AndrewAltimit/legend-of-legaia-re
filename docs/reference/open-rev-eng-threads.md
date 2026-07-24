@@ -147,9 +147,13 @@ accumulator - both entries with reasoning in
 
 What would close the thread now:
 
-- a killing action whose final bar credit lands **late relative to its own
-  state `0x50`** - no Gaza 2 move has that shape; another boss's move set
-  might;
+- the **high-HP prediction**: the measured minimum last-credit-to-`0x51` gap
+  on Gaza 2 is ~27 rendered frames while the quarter-step drain takes 23
+  frames from a LV23 readout but 30 from `9999` - so a late-game-sized
+  readout killed by a fast-tailed move should cross the line and park
+  ([battle-action.md](../subsystems/battle-action.md#where-the-desync-comes-from-two-seeding-conventions)
+  has the numbers). One capture with a high-max-HP party at any boss with a
+  Lost Grail equipped would confirm or refute it;
 - a retail path through the `FUN_801EC3E4` commit-skip guards
   (`0x801EE988` / `0x801EE9AC` / `0x801EE9EC`) with a non-zero credit
   already applied - credit-without-commit is the one shape that leaves a
