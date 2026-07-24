@@ -363,13 +363,38 @@ so the bar settles exactly `A` above live HP with the accumulator back at zero.
 That is the absorbing state above, reached through nothing but ordinary game
 actions.
 
-So the retail trigger is **healing a party member whose HP bar has not finished
-draining from a recent hit** - and the residual desync is exactly the amount of
-bar movement the heal cancelled. Every later action whose acting actor targets
-that slot (`+0x1DD` in `0..2`) or the whole party (`+0x1DD == 8`, which is what
-a party-wide spell uses) then parks at `0x51`. A long boss fight where the party
-heals immediately after taking heavy hits is the shape that makes an otherwise
-rare race routine.
+So the retail trigger is **healing a party member whose HP readout has not
+finished counting down from a recent hit** - and the residual desync is exactly
+the amount of readout movement the heal cancelled. Every later action whose
+acting actor targets that slot (`+0x1DD` in `0..2`) or the whole party
+(`+0x1DD == 8`, which is what a party-wide spell uses) then parks at `0x51`.
+
+#### The auto-revive reaches the assigning seed by itself, one state early
+
+The chain does not need a player to time an item badly, because state `0x50`
+does it unprompted. `FUN_801E6968` - the Lost Grail **Final Heal** auto-revive
+that `0x50` runs - calls `FUN_800402F4` twice, at `0x801E6A24` and `0x801E6BD0`,
+both with `a0 = 4, a1 = 1`: **effect class 4** (revive) at tier 1 (full).
+Class 4 dispatches through the applier's jump table at `0x80014FA0` into the
+revive arm at `0x80040F14`, and that arm's accumulator seed - `0x800410BC` - is
+one of the three bare assigns. Each call is guarded by
+`lhu v0,0x14c(<actor>); bne v0,zero,<skip>`, so it fires only on a member whose
+live HP has just reached zero.
+
+That is the worst possible moment. The killing hit credited the readout
+accumulator with the whole remaining bar, so the readout is mid-drop when the
+revive lands; the assign discards whatever is left of it. With live HP `0`,
+readout `B` still falling, and accumulator `B`, a full revive to `M` leaves live
+HP `M`, sets the accumulator to `-M`, ramps the readout to `B + M`, and settles
+**`B` above live HP** with the accumulator at zero. And `0x50`'s only successor
+is `0x51` - the state that asks whether the readout has settled. The park can
+therefore land on the very action that triggered the revive.
+
+The same arm is what a **Phoenix** (class 4) reaches from the battle item menu,
+and the class 0 / class 1 heal arms reach the sibling assign at `0x800408FC`.
+So a downed-and-revived party member in a long boss fight is the shape that
+makes an otherwise rare race routine, and it explains why the reports cluster on
+late-game bosses rather than on ordinary encounters.
 
 The store shapes are **Confirmed** from disassembly. Whether ordinary play
 actually lands a restore inside a drain window is a timing question, measured by
