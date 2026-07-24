@@ -16,9 +16,15 @@
 //! | 31 | `FUN_801DCE20` | label, wide number field, trailing label |
 //! | 32 | `FUN_801DCF84` | pictogram + 8-digit counter |
 //! | 33 | `FUN_801DCF14` | title tab whose text comes from a record |
+//! | 34 | `FUN_801D4A80` | item name, owned count, description line |
+//! | 36 | `FUN_801D56FC` | equip-target list gated on the character mask |
+//! | 37 | `FUN_801D5944` | sell quantity + halved gold total |
 //! | 43 | `FUN_801DCFE4` | plain title tab |
 //! | 45 | `FUN_801DD028` | second pictogram + 8-digit counter |
 //! | 46 | `FUN_801D603C` | one-line prompt over a two-row choice |
+//!
+//! Plus `FUN_801E4140` ([`guarded_box_rect`]), the bottom-clipped box emit
+//! the block's fills go through.
 //!
 //! ## What the port keeps and what it drops
 //!
@@ -40,7 +46,9 @@
 //! `overlay_menu_801dcc20.txt`, `overlay_menu_801dce20.txt`,
 //! `overlay_menu_801dcf84.txt`, `overlay_menu_801dcf14.txt`,
 //! `overlay_menu_801dcfe4.txt`, `overlay_menu_801dd028.txt`,
-//! `overlay_menu_801d603c.txt` (PROT entry 0899, the menu overlay).
+//! `overlay_menu_801d603c.txt`, `overlay_menu_801d4a80.txt`,
+//! `overlay_menu_801d56fc.txt`, `overlay_menu_801d5944.txt`,
+//! `overlay_menu_801e4140.txt` (PROT entry 0899, the menu overlay).
 
 use crate::*;
 
@@ -133,6 +141,7 @@ fn digits_draws(
 /// overlay-literal string at `(WX, WY)`, return.
 ///
 /// PORT: FUN_801DCFE4
+/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn title_tab_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -155,6 +164,7 @@ pub fn title_tab_draws_for(
 /// label out proportionally, which is the engine-wide choice.
 ///
 /// PORT: FUN_801DCF14
+/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn record_title_tab_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -184,6 +194,7 @@ pub fn title_record_text_offset(skip_byte: u8) -> usize {
 ///
 /// PORT: FUN_801DCF84
 /// PORT: FUN_801DD028
+/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn counter_panel_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -226,6 +237,7 @@ pub fn counter_panel_draws_for(
 /// window extent: `(WX + 0xE6, WY + 0xD)`.
 ///
 /// PORT: FUN_801DCCB4
+/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn char_prompt_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -253,6 +265,7 @@ pub fn char_prompt_draws_for(
 /// this block where the two differ.
 ///
 /// PORT: FUN_801DCE20
+/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn amount_prompt_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -300,6 +313,7 @@ pub fn amount_prompt_draws_for(
 /// selection index, and lands at `WX + 0x80`.
 ///
 /// PORT: FUN_801DCC20
+/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn count_panel_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -335,8 +349,9 @@ pub struct ChoiceFlags(pub u32);
 impl ChoiceFlags {
     /// Marker variant for `row`, or `None` when that row draws no marker.
     ///
-    /// PORT: FUN_801D603C (the branch chain; `FUN_801D61B0` repeats it
-    /// verbatim for its own two rows)
+    /// REF: FUN_801D603C (the branch chain; `FUN_801D61B0` repeats it
+    /// verbatim for its own two rows - both are tagged on the painters
+    /// that own them)
     pub fn marker_variant(self, row: u32) -> Option<u8> {
         let f = self.0;
         if f & 0x4000 != 0 {
@@ -398,6 +413,7 @@ fn choice_marker_sprites(rows: &[ChoiceRow; 2], flags: ChoiceFlags) -> Vec<Paint
 /// `0x10` step below the heading.
 ///
 /// PORT: FUN_801D603C
+/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn choice_panel_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -429,6 +445,7 @@ pub fn choice_panel_draws_for(
 /// branch chain as window 46.
 ///
 /// PORT: FUN_801D61B0
+/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn two_line_choice_panel_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -466,6 +483,7 @@ pub fn two_line_choice_panel_draws_for(
 /// one whose cursor moves when a window is resized.
 ///
 /// PORT: FUN_801D6360
+/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn label_list_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -488,6 +506,335 @@ pub fn label_list_draws_for(
             y: rect.y + rect.h - PAINTER_ROW_PITCH,
         },
     )
+}
+
+// ---------------------------------------------------------------------
+// Shop / item windows - 34, 36, 37
+// ---------------------------------------------------------------------
+
+/// Where a window-34 description line comes from.
+///
+/// `FUN_801D4A80` branches on the item record's kind byte (`+0` of
+/// `0x80074368 + id*12`). Kind `2` - the accessory ("Goods") class - does
+/// **not** use the item's own description word. It reads the item-effect
+/// record `0x800752C0 + effect*4`, takes the passive index at `+3`, and
+/// only if that index is below `0x40` does it draw the passive's
+/// description from `0x8007625C + index*12 + 8`. An accessory whose
+/// passive index is `0x40` or above draws no description at all - the
+/// bound is checked twice, unsigned then signed, and both arms bail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DescriptionSource {
+    /// The item record's own description word (`+8`).
+    Item,
+    /// Accessory passive `index`, whose description lives in the
+    /// name/description table at `0x8007625C`.
+    AccessoryPassive(u8),
+    /// Kind `2` with an out-of-range passive index: nothing is drawn.
+    None,
+}
+
+/// Item kind byte that routes a description through the passive table.
+pub const ITEM_KIND_ACCESSORY: u8 = 2;
+/// Passive indices at or above this draw no description.
+pub const ACCESSORY_PASSIVE_LIMIT: u8 = 0x40;
+
+/// Resolve which description a window-34 draw would use.
+///
+/// REF: FUN_801D4A80 (the kind-2 branch and its double bound check)
+pub fn description_source(item_kind: u8, passive_index: u8) -> DescriptionSource {
+    if item_kind != ITEM_KIND_ACCESSORY {
+        return DescriptionSource::Item;
+    }
+    if passive_index >= ACCESSORY_PASSIVE_LIMIT {
+        return DescriptionSource::None;
+    }
+    DescriptionSource::AccessoryPassive(passive_index)
+}
+
+/// Window 34: item name, owned count, and the description line below.
+///
+/// `FUN_801D4A80` draws nothing at all when the selection index
+/// `DAT_801E46B0` is not positive. Otherwise the name goes at the content
+/// origin, the two-digit owned count at `WX + 0x94`, and the description
+/// one row pitch down at `WX + 8` - routed through
+/// [`description_source`]. The owned count comes back from
+/// `FUN_80042EE0`; the sentinel `0x100` means "not held" and draws `0`.
+///
+/// PORT: FUN_801D4A80
+/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
+pub fn item_description_draws_for(
+    font: &legaia_font::Font,
+    rect: PainterRect,
+    selected: bool,
+    name: &str,
+    owned: u8,
+    description: &str,
+) -> Vec<TextDraw> {
+    if !selected {
+        return Vec::new();
+    }
+    let mut out = text_draws_for(&font.layout_ascii(name), (rect.x, rect.y), MENU_TEXT_WHITE);
+    out.extend(digits_draws(
+        font,
+        owned as u64,
+        rect.x + 0x94,
+        rect.y,
+        2,
+        MENU_TEXT_WHITE,
+    ));
+    if !description.is_empty() {
+        out.extend(text_draws_for(
+            &font.layout_ascii(description),
+            (rect.x + 8, rect.y + PAINTER_ROW_PITCH),
+            MENU_TEXT_WHITE,
+        ));
+    }
+    out
+}
+
+/// Sentinel `FUN_80042EE0` returns when the selected item is not held.
+pub const OWNED_COUNT_ABSENT: i32 = 0x100;
+
+/// Owned count the window-34 draw uses for a lookup result.
+///
+/// REF: FUN_801D4A80 (`li v0,0x100; beq a0,v0 -> clear a0`)
+pub fn owned_count_or_zero(lookup: i32, count: u8) -> u8 {
+    if lookup == OWNED_COUNT_ABSENT {
+        0
+    } else {
+        count
+    }
+}
+
+/// One row of the window-36 equip-target list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EquipTargetRow {
+    /// Party-member class byte (`0x80084598 + i`).
+    pub member_class: u8,
+    /// `false` when the selected equipment's character mask excludes this
+    /// member. Retail still draws the row - it drops the draw-order word
+    /// to `0` instead of skipping, which sinks the glyphs behind the rest
+    /// of the frame rather than removing them.
+    pub equippable: bool,
+}
+
+/// Character-mask bit for a party-member class.
+///
+/// `FUN_801D56FC` does not compute `1 << class`; it indexes a four-byte
+/// overlay table at `0x801E43F0`. On the retail disc that table reads
+/// `01 02 04 00`, so it agrees with the shift for classes `0..=2` and
+/// gives class `3` a mask of **zero** - the fourth party member matches no
+/// equipment through this window.
+///
+/// REF: FUN_801D56FC
+pub fn equip_class_mask(member_class: u8) -> u8 {
+    match member_class {
+        0 => 1,
+        1 => 2,
+        2 => 4,
+        _ => 0,
+    }
+}
+
+/// Whether the equipment whose character mask is `equip_mask`
+/// (`legaia_asset::equip_stats::EquipBonus::equip_mask`) can be worn by a
+/// member of `member_class`.
+///
+/// REF: FUN_801D56FC (`and v0,s6,v0; bne v0,zero` - a zero result drops
+/// the draw order to 0 rather than skipping the row)
+pub fn equip_row_enabled(equip_mask: u8, member_class: u8) -> bool {
+    equip_mask & equip_class_mask(member_class) != 0
+}
+
+/// Window 36: a header row plus one row per party member, each carrying
+/// the shared choice marker.
+///
+/// `FUN_801D56FC` puts the header at `WX + 0x18` and its marker at
+/// `WX + 4`; every member row repeats that pair one row pitch further
+/// down, with row `i` taking marker index `i + 1`. The marker chain is the
+/// same [`ChoiceFlags`] branch the options windows use, driven here by
+/// `DAT_801E46C0` rather than `DAT_801E46D0`.
+///
+/// PORT: FUN_801D56FC
+/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
+pub fn equip_target_list_draws_for(
+    font: &legaia_font::Font,
+    rect: PainterRect,
+    header: &str,
+    rows: &[(EquipTargetRow, &str)],
+    flags: ChoiceFlags,
+) -> (Vec<TextDraw>, Vec<PainterSprite>) {
+    let label_x = rect.x + 0x18;
+    let marker_x = rect.x + 4;
+    let mut text = text_draws_for(
+        &font.layout_ascii(header),
+        (label_x, rect.y),
+        MENU_TEXT_WHITE,
+    );
+    let mut sprites = Vec::new();
+    if let Some(variant) = flags.marker_variant(0) {
+        sprites.push(PainterSprite {
+            sprite: 0,
+            variant,
+            x: marker_x,
+            y: rect.y,
+        });
+    }
+    for (i, (row, label)) in rows.iter().enumerate() {
+        let y = rect.y + (i as i32 + 1) * PAINTER_ROW_PITCH;
+        // A non-equippable row still emits its glyphs; only the draw
+        // order changes, which this crate leaves to the host.
+        let _ = row.equippable;
+        text.extend(text_draws_for(
+            &font.layout_ascii(label),
+            (label_x, y),
+            MENU_TEXT_WHITE,
+        ));
+        if let Some(variant) = flags.marker_variant(i as u32 + 1) {
+            sprites.push(PainterSprite {
+                sprite: 0,
+                variant,
+                x: marker_x,
+                y,
+            });
+        }
+    }
+    (text, sprites)
+}
+
+/// Digit-field width the sell panel sizes its total to.
+///
+/// `FUN_801D5944` starts at 4 and widens on three unsigned comparisons
+/// against the *unit* price: `>= 100` and `>= 1000` each add one, and
+/// `>= 10000` **assigns** 5 before those two add to it. So the ladder is
+/// 4 / 5 / 6 / 7 rather than a digit count - a four-digit price still
+/// reserves six cells.
+///
+/// REF: FUN_801D5944
+pub fn sell_total_digits(unit_price: u32) -> i32 {
+    let mut n = 4;
+    if unit_price >= 10_000 {
+        n = 5;
+    }
+    if unit_price >= 1_000 {
+        n += 1;
+    }
+    if unit_price >= 100 {
+        n += 1;
+    }
+    n
+}
+
+/// The gold total window 37 writes: quantity times the unit price,
+/// halved.
+///
+/// The arithmetic is `mult` then `sra ..,1` - an arithmetic shift, so an
+/// odd product truncates toward negative infinity. Products are
+/// non-negative here, which makes it plain integer halving: the retail
+/// sell price is half the list price.
+///
+/// REF: FUN_801D5944
+pub fn sell_total(quantity: u32, unit_price: u32) -> u32 {
+    quantity.saturating_mul(unit_price) / 2
+}
+
+/// Window 37: the sell quantity panel.
+///
+/// `FUN_801D5944` draws nothing when the selection index is not positive.
+/// Otherwise: a heading at the content origin, then one row `0x14` below
+/// carrying the quantity at `WX + 0x10`, a separator glyph at `WX + 0x20`
+/// and the held count at `WX + 0x28`. The gold pictogram and the total
+/// are then right-packed against `WX + 0x88` / `WX + 0x94` by the digit
+/// ladder ([`sell_total_digits`]), so a bigger total pushes both left.
+///
+/// PORT: FUN_801D5944
+/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
+pub fn sell_quantity_draws_for(
+    font: &legaia_font::Font,
+    rect: PainterRect,
+    selected: bool,
+    heading: &str,
+    quantity: u32,
+    held: u32,
+    unit_price: u32,
+) -> (
+    Vec<TextDraw>,
+    Option<PainterPictogram>,
+    Option<PainterSprite>,
+) {
+    if !selected {
+        return (Vec::new(), None, None);
+    }
+    let row = rect.y + 0x14;
+    let digits = sell_total_digits(unit_price);
+    let pack = rect.x - 8;
+    let mut out = text_draws_for(
+        &font.layout_ascii(heading),
+        (rect.x, rect.y),
+        MENU_TEXT_WHITE,
+    );
+    out.extend(digits_draws(
+        font,
+        quantity as u64,
+        rect.x + 0x10,
+        row,
+        2,
+        MENU_TEXT_WHITE,
+    ));
+    out.extend(digits_draws(
+        font,
+        held as u64,
+        rect.x + 0x28,
+        row,
+        2,
+        MENU_TEXT_WHITE,
+    ));
+    out.extend(digits_draws(
+        font,
+        sell_total(quantity, unit_price) as u64,
+        pack + 0x94 - digits * NUM_CELL_W,
+        row,
+        digits,
+        MENU_TEXT_WHITE,
+    ));
+    (
+        out,
+        Some(PainterPictogram {
+            id: COUNTER_PICTOGRAM_PRIMARY,
+            x: pack + 0x88 - digits * NUM_CELL_W,
+            y: row + 2,
+        }),
+        Some(PainterSprite {
+            sprite: 0,
+            variant: 1,
+            x: rect.x - 4,
+            y: row,
+        }),
+    )
+}
+
+// ---------------------------------------------------------------------
+// Shared box emit
+// ---------------------------------------------------------------------
+
+/// Bottom clip the guarded box emit applies (`slti v0,s0,0xf1`).
+///
+/// The 320x240 display's last line is 239, so a `y` of 240 already
+/// reserves nothing; retail's bound admits 240 and rejects 241.
+pub const BOX_EMIT_MAX_Y: i32 = 0xF0;
+
+/// The box a guarded fill would emit, or `None` when it is clipped away.
+///
+/// `FUN_801E4140` takes six arguments, forwards the first to the fill-mode
+/// setter and the last four to the box writer, and runs neither when the
+/// `y` argument exceeds `0xF0`. That single comparison is the whole
+/// routine - it is a bottom-of-screen guard on an otherwise unconditional
+/// pair of calls.
+///
+/// PORT: FUN_801E4140
+/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
+pub fn guarded_box_rect(x: i32, y: i32, w: i32, h: i32) -> Option<(i32, i32, i32, i32)> {
+    (y <= BOX_EMIT_MAX_Y).then_some((x, y, w, h))
 }
 
 #[cfg(test)]
@@ -608,6 +955,118 @@ mod tests {
     }
 
     // -- FUN_801DCCB4 / FUN_801DCE20 -----------------------------------
+
+    // -- FUN_801D4A80 --------------------------------------------------
+
+    #[test]
+    fn only_accessories_route_through_the_passive_table() {
+        assert_eq!(description_source(0, 0), DescriptionSource::Item);
+        assert_eq!(description_source(1, 0x7F), DescriptionSource::Item);
+        assert_eq!(
+            description_source(ITEM_KIND_ACCESSORY, 0x3F),
+            DescriptionSource::AccessoryPassive(0x3F)
+        );
+        // The bound is exclusive, and out-of-range draws nothing at all.
+        assert_eq!(
+            description_source(ITEM_KIND_ACCESSORY, 0x40),
+            DescriptionSource::None
+        );
+    }
+
+    #[test]
+    fn the_not_held_sentinel_reads_as_zero() {
+        assert_eq!(owned_count_or_zero(OWNED_COUNT_ABSENT, 9), 0);
+        assert_eq!(owned_count_or_zero(3, 9), 9);
+    }
+
+    #[test]
+    fn item_panel_is_empty_without_a_selection() {
+        let font = legaia_font::Font::placeholder();
+        let rect = PainterRect::new(138, 166, 168, 38);
+        assert!(item_description_draws_for(&font, rect, false, "n", 1, "d").is_empty());
+        assert!(!item_description_draws_for(&font, rect, true, "n", 1, "d").is_empty());
+    }
+
+    // -- FUN_801D56FC --------------------------------------------------
+
+    #[test]
+    fn the_fourth_party_class_matches_no_equipment() {
+        assert_eq!(equip_class_mask(0), 1);
+        assert_eq!(equip_class_mask(1), 2);
+        assert_eq!(equip_class_mask(2), 4);
+        assert_eq!(equip_class_mask(3), 0);
+        // Mask 7 = "any party member" still excludes class 3, because the
+        // table entry is zero rather than a fourth bit.
+        assert!(equip_row_enabled(7, 0));
+        assert!(!equip_row_enabled(7, 3));
+    }
+
+    #[test]
+    fn equip_list_rows_take_marker_index_one_and_up() {
+        let font = legaia_font::Font::placeholder();
+        let rect = PainterRect::new(138, 98, 168, 52);
+        let rows = [
+            (
+                EquipTargetRow {
+                    member_class: 0,
+                    equippable: true,
+                },
+                "a",
+            ),
+            (
+                EquipTargetRow {
+                    member_class: 1,
+                    equippable: false,
+                },
+                "b",
+            ),
+        ];
+        // Settled on index 2 -> only the second member row is marked.
+        let (_, sprites) = equip_target_list_draws_for(&font, rect, "h", &rows, ChoiceFlags(2));
+        assert_eq!(sprites.len(), 1);
+        assert_eq!(sprites[0].x, rect.x + 4);
+        assert_eq!(sprites[0].y, rect.y + 2 * PAINTER_ROW_PITCH);
+    }
+
+    // -- FUN_801D5944 --------------------------------------------------
+
+    #[test]
+    fn the_digit_ladder_is_not_a_digit_count() {
+        assert_eq!(sell_total_digits(0), 4);
+        assert_eq!(sell_total_digits(99), 4);
+        assert_eq!(sell_total_digits(100), 5);
+        assert_eq!(sell_total_digits(999), 5);
+        assert_eq!(sell_total_digits(1_000), 6);
+        assert_eq!(sell_total_digits(9_999), 6);
+        // The >= 10000 arm assigns 5 and then the two adds still apply.
+        assert_eq!(sell_total_digits(10_000), 7);
+    }
+
+    #[test]
+    fn the_sell_total_is_half_the_list_price() {
+        assert_eq!(sell_total(1, 100), 50);
+        assert_eq!(sell_total(3, 25), 37);
+        assert_eq!(sell_total(0, 9_999), 0);
+    }
+
+    #[test]
+    fn a_wider_total_pushes_the_pictogram_left() {
+        let font = legaia_font::Font::placeholder();
+        let rect = PainterRect::new(14, 46, 144, 33);
+        let (_, cheap, _) = sell_quantity_draws_for(&font, rect, true, "h", 1, 9, 10);
+        let (_, dear, _) = sell_quantity_draws_for(&font, rect, true, "h", 1, 9, 10_000);
+        assert!(dear.unwrap().x < cheap.unwrap().x);
+        let (draws, pic, cur) = sell_quantity_draws_for(&font, rect, false, "h", 1, 9, 10);
+        assert!(draws.is_empty() && pic.is_none() && cur.is_none());
+    }
+
+    // -- FUN_801E4140 --------------------------------------------------
+
+    #[test]
+    fn the_box_emit_clips_below_the_display() {
+        assert_eq!(guarded_box_rect(0, 0xF0, 8, 8), Some((0, 0xF0, 8, 8)));
+        assert_eq!(guarded_box_rect(0, 0xF1, 8, 8), None);
+    }
 
     #[test]
     fn both_prompt_windows_share_the_corner_cursor_inset() {

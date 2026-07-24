@@ -322,3 +322,38 @@ block anchored to the window *extent* rather than its origin. No host opens
 window 6; the pause command list they do draw is `field_menu_draws_for`,
 whose geometry comes from window 50. Same `renderer_va` gate.
 """
+
+[[waiver]]
+builder = "item_description_draws_for"
+kind = "orphan"
+reason = """
+Window id 34 (`FUN_801D4A80`): item name, owned count and the description
+line, with accessories routed through the passive table instead of the item's
+own description word. Both hosts draw their inventory description from
+`inventory_panel_draws_for`, which owns its own layout; adopting this window
+means the menu host dispatching on the disc table's `renderer_va` rather than
+hard-coding a screen. The description-routing rule itself
+(`description_source`) is unit-tested here and needs no host to be correct.
+"""
+
+[[waiver]]
+builder = "equip_target_list_draws_for"
+kind = "orphan"
+reason = """
+Window id 36 (`FUN_801D56FC`): the equip-target list, whose rows grey out via
+the character mask at `0x80074F68 + id*8 + 6`. The equip screen both hosts
+draw picks its target from the party panel rather than opening this window.
+Same `renderer_va` dispatch gate as the rest of `ui_menu_window_painters`;
+the mask rule (`equip_row_enabled`) is unit-tested independently.
+"""
+
+[[waiver]]
+builder = "sell_quantity_draws_for"
+kind = "orphan"
+reason = """
+Window id 37 (`FUN_801D5944`): the sell quantity panel and its right-packed
+gold total. The shop session both hosts run draws its own quantity line, so
+this window is never opened. The two rules it carries - the halved sell total
+and the four-step digit ladder - are unit-tested here and are what a host
+adopting the window would need.
+"""
