@@ -38,6 +38,38 @@
 //! the decoded block length is unchanged, so the slot stays its original
 //! `0x14000`-byte footprint and every other monster's slot offset is fixed - a
 //! same-size, in-place byte edit, exactly like the drop randomizer.
+//!
+//! ## Difficulty scale (the multiplier)
+//!
+//! [`plan_scale`] is the module's second, *seedless* pass: instead of moving
+//! values between monsters it multiplies every monster's stats by one global
+//! factor ([`ScalePermille`], `0.1x..=5x`), so the whole roster gets uniformly
+//! weaker or stronger while every monster keeps its own relative profile. It
+//! composes with the randomizer - run the shuffle first and the scale multiplies
+//! the *shuffled* values.
+//!
+//! Two things about the scale differ from the randomizer above, and both are
+//! deliberate:
+//!
+//! - **Bosses are scaled.** A difficulty knob that skipped the set-piece fights
+//!   would leave the hardest fights in the game untouched, which is the opposite
+//!   of what it is for. The shuffle's [`PROTECTED_MONSTER_IDS`] guard exists
+//!   because *reassigning* a boss's stats breaks a scripted fight; multiplying
+//!   them keeps every fight's shape and only moves its difficulty. The one
+//!   carve-out is [`SCALE_PINNED_MONSTER_IDS`].
+//! - **AGL is still untouched.** `+0x0E` is the action gauge, not a difficulty
+//!   stat: scaling it multiplies how many actions an enemy gets per round, which
+//!   turns a 5x run into a slideshow of enemy turns rather than a harder fight.
+//!   [`STAT_FIELDS`] already excludes it, so the scale inherits the exclusion.
+//!
+//! Rewards (EXP `+0x46` / gold `+0x44` / the drop slot) are outside
+//! [`STAT_FIELDS`] and never move, so a 5x run does not also pay out 5x.
+//!
+//! The scale lands on the **record**, and the battle loader applies its own
+//! fixed boost on top when it copies a record into a live actor (`FUN_80054cb0`
+//! multiplies ATK / DEF / INT - see [`legaia_asset::monster_archive`]). The two
+//! compose multiplicatively, so an `Nx` record really is an `Nx` fight, up to
+//! the loader's own integer rounding.
 
 use crate::monster::repack_slot;
 use crate::rng::SplitMix64;
@@ -187,6 +219,138 @@ pub fn plan_stats(current: &[StatAssignment], seed: u64, mode: StatMode) -> Vec<
         }
     }
     out
+}
+
+/// 1-based monster ids the **difficulty scale** must never touch.
+///
+/// Much shorter than [`PROTECTED_MONSTER_IDS`], because a uniform multiplier
+/// keeps every fight's shape (see the module docs) - story bosses are scaled on
+/// purpose. What a multiplier *can* break is a fight whose script depends on the
+/// player being unable to end it: the Rim Elm sparring partner is unwinnable by
+/// design and has no branch for the player winning, so scaling it *down* turns
+/// the tutorial into a soft-lock. Its stats are pinned in both directions rather
+/// than only below `1x`, so the fight is byte-identical at every setting.
+pub const SCALE_PINNED_MONSTER_IDS: &[u16] = &[
+    79, // Tetsu, the Rim Elm sparring partner (999/999, unwinnable by design).
+];
+
+/// A monster-stat difficulty multiplier, held as **permille** (thousandths) so
+/// the plan is exact integer arithmetic and a given setting always reproduces
+/// byte-identically - no float ever reaches the disc.
+///
+/// Range [`MIN`](Self::MIN)`..=`[`MAX`](Self::MAX) (`0.1x..=5x`);
+/// [`RETAIL`](Self::RETAIL) (`1x`) is the identity and applies no edit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ScalePermille(u32);
+
+impl ScalePermille {
+    /// Weakest setting: `0.1x`.
+    pub const MIN: u32 = 100;
+    /// Strongest setting: `5x`.
+    pub const MAX: u32 = 5000;
+    /// The identity multiplier - retail stats, no edit.
+    pub const RETAIL: u32 = 1000;
+
+    /// Build from a raw permille value, rejecting anything outside
+    /// [`MIN`](Self::MIN)`..=`[`MAX`](Self::MAX).
+    pub fn from_permille(permille: u32) -> Result<Self, String> {
+        if !(Self::MIN..=Self::MAX).contains(&permille) {
+            return Err(format!(
+                "enemy stat scale {} is out of range (want {}..={})",
+                Self(permille),
+                Self(Self::MIN),
+                Self(Self::MAX),
+            ));
+        }
+        Ok(Self(permille))
+    }
+
+    /// Parse a user-facing multiplier: `"2.5"`, `"2.5x"`, `"0.1"`, `"1"`.
+    /// Rounded to the nearest permille, then range-checked. The shared entry
+    /// point for the CLI flag and the browser slider, so both accept exactly the
+    /// same values and produce the same bytes.
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let t = text.trim().trim_end_matches(['x', 'X']).trim();
+        let value: f64 = t
+            .parse()
+            .map_err(|_| format!("{text:?} is not a number (want a multiplier like 2.5)"))?;
+        if !value.is_finite() || value < 0.0 {
+            return Err(format!("{text:?} is not a usable multiplier"));
+        }
+        Self::from_permille((value * 1000.0).round() as u32)
+    }
+
+    /// The multiplier in thousandths (`2500` = `2.5x`).
+    pub fn permille(self) -> u32 {
+        self.0
+    }
+
+    /// Whether this is the identity multiplier (retail stats).
+    pub fn is_retail(self) -> bool {
+        self.0 == Self::RETAIL
+    }
+}
+
+impl std::fmt::Display for ScalePermille {
+    /// `2500` -> `2.5x`, `1000` -> `1x` (trailing zeros trimmed).
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (whole, frac) = (self.0 / 1000, self.0 % 1000);
+        if frac == 0 {
+            write!(f, "{whole}x")
+        } else {
+            write!(f, "{whole}.{}x", format!("{frac:03}").trim_end_matches('0'))
+        }
+    }
+}
+
+/// Multiply one monster's stats by `scale`.
+///
+/// Each [`STAT_FIELDS`] halfword is scaled independently with
+/// round-half-up integer arithmetic, then held inside the record's own `u16`
+/// range. Two clamps matter:
+///
+/// - **A zero stays zero.** A monster with no MP has no MP at any multiplier;
+///   scaling would otherwise invent a resource it never had.
+/// - **A non-zero never reaches zero.** At `0.1x` a 5-HP enemy floors at `1`
+///   rather than becoming a zero-HP actor the battle code never expects.
+///
+/// The top end saturates at [`u16::MAX`], so a `5x` run on a boss already past
+/// `13107` HP simply pins that stat at the record's ceiling.
+pub fn scale_stats(stats: &[u16; FIELD_COUNT], scale: ScalePermille) -> [u16; FIELD_COUNT] {
+    let mut out = *stats;
+    for v in &mut out {
+        if *v == 0 {
+            continue;
+        }
+        // Round half up. `u16::MAX * 5000 + 500` stays well inside u32.
+        let scaled = (*v as u32 * scale.permille() + 500) / 1000;
+        *v = scaled.clamp(1, u16::MAX as u32) as u16;
+    }
+    out
+}
+
+/// Plan a uniform difficulty scale over the roster. `current` holds
+/// `(id, stats)` for every populated monster; the returned plan is the same
+/// monsters with each stat multiplied by `scale`.
+///
+/// Seedless and total: the result depends only on `(current, scale)`.
+/// Monsters in [`SCALE_PINNED_MONSTER_IDS`] pass through untouched; everything
+/// else - story bosses included - is scaled. A `1x` scale is the identity, so
+/// the caller writes nothing.
+pub fn plan_scale(current: &[StatAssignment], scale: ScalePermille) -> Vec<StatAssignment> {
+    current
+        .iter()
+        .map(|a| {
+            if SCALE_PINNED_MONSTER_IDS.contains(&a.monster_id) {
+                *a
+            } else {
+                StatAssignment {
+                    monster_id: a.monster_id,
+                    stats: scale_stats(&a.stats, scale),
+                }
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -343,6 +507,114 @@ mod tests {
                 .count();
             assert!(moved > 0, "{mode:?}: non-protected monsters should change");
         }
+    }
+
+    fn scale(text: &str) -> ScalePermille {
+        ScalePermille::parse(text).expect("valid scale")
+    }
+
+    /// The user-facing multiplier round-trips through permille and back to a
+    /// display string, and the accepted spellings agree.
+    #[test]
+    fn scale_parses_and_displays() {
+        assert_eq!(scale("1").permille(), 1000);
+        assert_eq!(scale("2.5").permille(), 2500);
+        assert_eq!(scale("2.5x").permille(), 2500);
+        assert_eq!(scale(" 0.1 ").permille(), 100);
+        assert_eq!(scale("5").permille(), 5000);
+        assert_eq!(scale("1").to_string(), "1x");
+        assert_eq!(scale("2.5").to_string(), "2.5x");
+        assert_eq!(scale("0.1").to_string(), "0.1x");
+        assert!(scale("1").is_retail());
+        assert!(!scale("1.1").is_retail());
+    }
+
+    /// Out-of-range and non-numeric settings are refused, not clamped - a typo
+    /// must not silently become a different difficulty.
+    #[test]
+    fn scale_rejects_out_of_range() {
+        for bad in ["0", "0.05", "5.1", "10", "-2", "abc", ""] {
+            assert!(
+                ScalePermille::parse(bad).is_err(),
+                "{bad:?} should be refused"
+            );
+        }
+    }
+
+    /// A multiplier scales every stat field, rounding half up.
+    #[test]
+    fn scale_multiplies_every_field() {
+        let stats = [100u16, 40, 25, 30, 35, 45, 55];
+        assert_eq!(scale_stats(&stats, scale("1")), stats, "1x is the identity");
+        assert_eq!(
+            scale_stats(&stats, scale("2")),
+            [200, 80, 50, 60, 70, 90, 110]
+        );
+        // 25 * 0.5 = 12.5 -> 13 (half up); 35 * 0.5 = 17.5 -> 18.
+        assert_eq!(
+            scale_stats(&stats, scale("0.5")),
+            [50, 20, 13, 15, 18, 23, 28]
+        );
+    }
+
+    /// The two clamps: a zero stat stays zero (no invented MP), a non-zero one
+    /// never rounds down to zero, and the top saturates inside `u16`.
+    #[test]
+    fn scale_clamps_at_both_ends() {
+        let sparse = [5u16, 0, 1, 0, 0, 2, 0];
+        let down = scale_stats(&sparse, scale("0.1"));
+        assert_eq!(
+            down,
+            [1, 0, 1, 0, 0, 1, 0],
+            "zeros stay zero, non-zeros floor at 1"
+        );
+
+        let huge = [60000u16, 60000, 60000, 60000, 60000, 60000, 60000];
+        assert_eq!(
+            scale_stats(&huge, scale("5")),
+            [u16::MAX; FIELD_COUNT],
+            "the record's own u16 ceiling holds"
+        );
+    }
+
+    /// The scale is seedless, total, and hits bosses - only the pinned tutorial
+    /// fight passes through untouched.
+    #[test]
+    fn plan_scale_covers_bosses_but_pins_the_tutorial() {
+        let mut current = sample(24);
+        // A story boss (protected against the *shuffle*) and the pinned
+        // tutorial partner, side by side.
+        let boss = 138; // Dohati
+        current[2].monster_id = boss;
+        current[7].monster_id = SCALE_PINNED_MONSTER_IDS[0];
+        let pinned_stats = current[7].stats;
+
+        let plan = plan_scale(&current, scale("2"));
+        assert_eq!(plan.len(), current.len());
+        assert!(
+            PROTECTED_MONSTER_IDS.contains(&boss),
+            "the chosen id must be shuffle-protected, to prove the scale differs"
+        );
+        let b = plan.iter().find(|a| a.monster_id == boss).unwrap();
+        let c = current.iter().find(|a| a.monster_id == boss).unwrap();
+        assert_eq!(
+            b.stats,
+            scale_stats(&c.stats, scale("2")),
+            "story bosses are scaled"
+        );
+        let p = plan
+            .iter()
+            .find(|a| a.monster_id == SCALE_PINNED_MONSTER_IDS[0])
+            .unwrap();
+        assert_eq!(p.stats, pinned_stats, "the tutorial fight is pinned");
+
+        // Identity at 1x, and deterministic without a seed.
+        assert_eq!(plan_scale(&current, scale("1")), current, "1x is a no-op");
+        assert_eq!(
+            plan_scale(&current, scale("0.4")),
+            plan_scale(&current, scale("0.4"))
+        );
+        assert!(plan_scale(&[], scale("3")).is_empty());
     }
 
     /// Shuffle still preserves each column's full multiset even with a protected

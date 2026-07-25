@@ -10,13 +10,19 @@
 //! - every monster slot stays exactly `0x14000` bytes (so no LBA moves);
 //! - a fixed seed reproduces the patched image byte-for-byte.
 //!
+//! The second test covers the sibling **difficulty scale** (`--enemy-stat-scale`):
+//! one global multiplier over the same halfwords, checked against the exact
+//! per-monster expectation rather than against a multiset.
+//!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
 use legaia_asset::monster_archive::{self, SLOT_STRIDE};
 use legaia_patcher::apply;
 use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use legaia_patcher::drops::DropMode;
-use legaia_patcher::monster_stats::FIELD_COUNT;
+use legaia_patcher::monster_stats::{
+    self, FIELD_COUNT, SCALE_PINNED_MONSTER_IDS, ScalePermille, scale_stats,
+};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -168,5 +174,167 @@ fn shuffle_monster_stats_round_trips_on_disc() {
     eprintln!(
         "monster-stats shuffle seed {seed:#x}: {} monsters, {} fields changed; all columns preserved",
         report.monsters_changed, report.fields_changed
+    );
+}
+
+/// The seven scaled halfwords, in `STAT_FIELDS` order.
+fn stat_vec(r: &monster_archive::MonsterRecord) -> [u16; FIELD_COUNT] {
+    [
+        r.hp,
+        r.mp,
+        r.attack(),
+        r.defense_high(),
+        r.defense_low(),
+        r.intelligence(),
+        r.speed(),
+    ]
+}
+
+/// The difficulty scale is exact, roster-wide, and reward-neutral: every
+/// populated monster's stats come back off the patched image as its own disc
+/// values times the multiplier, story bosses included, with only the scripted
+/// tutorial fight pinned and EXP / gold / drops / AGL untouched.
+#[test]
+fn enemy_stat_scale_round_trips_on_disc() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+
+    let base = DiscPatcher::open(original.clone()).expect("open");
+    let before = records(&base);
+    assert!(before.len() > 100, "expected a large monster roster");
+    let by_id = |recs: &[monster_archive::MonsterRecord]| {
+        recs.iter()
+            .map(|r| (r.id, r.clone()))
+            .collect::<std::collections::HashMap<_, _>>()
+    };
+    let before_by_id = by_id(&before);
+
+    // Both directions of the slider, so the floor / saturation clamps are
+    // exercised against real records rather than only synthetic ones.
+    for text in ["2", "0.5"] {
+        let scale = ScalePermille::parse(text).expect("valid scale");
+        let mut patcher = DiscPatcher::open(original.clone()).expect("open");
+        let report = apply::scale_monster_stats(&mut patcher, scale).expect("scale");
+        assert!(
+            report.monsters_changed > 100,
+            "{scale}: a roster-wide scale should change nearly every monster, changed {}",
+            report.monsters_changed
+        );
+
+        // Re-decode off the PATCHED image and check each monster individually.
+        let after = by_id(&records(&patcher));
+        let mut bosses_scaled = 0usize;
+        for b in &before {
+            // A slot too tight to re-pack keeps its original stats.
+            if report.skipped.contains(&b.id) {
+                continue;
+            }
+            let r = after.get(&b.id).expect("monster present after patch");
+            let expected = if SCALE_PINNED_MONSTER_IDS.contains(&b.id) {
+                stat_vec(b)
+            } else {
+                scale_stats(&stat_vec(b), scale)
+            };
+            assert_eq!(stat_vec(r), expected, "{scale}: id {} scaled wrong", b.id);
+
+            // Nothing outside the seven stat halfwords moves - a hard run is
+            // harder, not richer, and the AI's action economy is unchanged.
+            assert_eq!(r.stats[0], b.stats[0], "id {}: AGL gauge changed", b.id);
+            assert_eq!(r.exp, b.exp, "id {}: exp changed", b.id);
+            assert_eq!(r.gold, b.gold, "id {}: gold changed", b.id);
+            assert_eq!(r.drop_item, b.drop_item, "id {}: drop changed", b.id);
+            assert_eq!(
+                r.drop_chance_pct, b.drop_chance_pct,
+                "id {}: drop% changed",
+                b.id
+            );
+            assert_eq!(r.element, b.element, "id {}: element changed", b.id);
+            assert_eq!(r.name, b.name, "id {}: name changed", b.id);
+
+            // Unlike the shuffle, this pass deliberately reaches the bosses.
+            if monster_stats::PROTECTED_MONSTER_IDS.contains(&b.id)
+                && !SCALE_PINNED_MONSTER_IDS.contains(&b.id)
+                && stat_vec(r) != stat_vec(b)
+            {
+                bosses_scaled += 1;
+            }
+        }
+        assert!(
+            bosses_scaled > 5,
+            "{scale}: story bosses must be scaled too, only {bosses_scaled} moved"
+        );
+
+        // The pinned tutorial fight is byte-identical in both directions.
+        for &pid in SCALE_PINNED_MONSTER_IDS {
+            let (Some(b), Some(r)) = (before_by_id.get(&pid), after.get(&pid)) else {
+                continue; // id not populated on this disc
+            };
+            assert_eq!(
+                stat_vec(r),
+                stat_vec(b),
+                "{scale}: pinned monster {pid} must keep its disc stats"
+            );
+        }
+
+        // Every slot keeps its fixed footprint (no LBA moved).
+        let patched_entry = patcher.read_entry(MONSTER_ARCHIVE_ENTRY).expect("read 867");
+        assert_eq!(
+            patched_entry.len() % SLOT_STRIDE,
+            0,
+            "archive size must stay a whole multiple of the slot stride"
+        );
+
+        // Seedless determinism: the same multiplier reproduces the image.
+        let mut again = DiscPatcher::open(original.clone()).expect("open");
+        apply::scale_monster_stats(&mut again, scale).expect("scale");
+        assert!(
+            again.image() == patcher.image(),
+            "{scale}: the same multiplier must reproduce the patched image"
+        );
+
+        eprintln!(
+            "enemy-stat-scale {scale}: {} monsters, {} stats changed ({} bosses); {} slot(s) skipped",
+            report.monsters_changed,
+            report.fields_changed,
+            bosses_scaled,
+            report.skipped.len()
+        );
+    }
+
+    // 1x is the identity: nothing is written at all.
+    let mut retail = DiscPatcher::open(original.clone()).expect("open");
+    let report = apply::scale_monster_stats(&mut retail, ScalePermille::parse("1").unwrap())
+        .expect("scale 1x");
+    assert_eq!(report.monsters_changed, 0, "1x must write nothing");
+    assert!(
+        retail.image() == &original[..],
+        "1x must leave the disc alone"
+    );
+
+    // Composition: the scale multiplies whatever the stat randomizer dealt out,
+    // because both read the roster back off the disc.
+    let scale = ScalePermille::parse("2").unwrap();
+    let mut combo = DiscPatcher::open(original.clone()).expect("open");
+    apply::randomize_monster_stats(&mut combo, 0x5EA1_F00D_57A7_0002, DropMode::Shuffle)
+        .expect("shuffle");
+    let shuffled = by_id(&records(&combo));
+    let scale_report = apply::scale_monster_stats(&mut combo, scale).expect("scale");
+    let scaled = by_id(&records(&combo));
+    for (id, s) in &shuffled {
+        if scale_report.skipped.contains(id) || SCALE_PINNED_MONSTER_IDS.contains(id) {
+            continue;
+        }
+        let r = scaled.get(id).expect("monster present after both passes");
+        assert_eq!(
+            stat_vec(r),
+            scale_stats(&stat_vec(s), scale),
+            "id {id}: the scale must multiply the shuffled values"
+        );
+    }
+    eprintln!(
+        "enemy-stat-scale composes with a stat shuffle across {} monsters",
+        shuffled.len()
     );
 }

@@ -3578,8 +3578,12 @@ export function lift_official_pack(target_image: Uint8Array, source_image: Uint8
  * (retail 100; `0` = damage never feeds the gauge, negative = being hit
  * drains it) - the damage finisher's scale chain in the same overlay. A
  * negative value on either knob also neutralizes the AP-Boost accessory
- * arms, which read the accrual unsigned. These are all manual, seedless
- * edits.
+ * arms, which read the accrual unsigned. `enemy_stat_scale` (empty or `1` =
+ * untouched) multiplies every monster's combat stats by one difficulty factor
+ * (`0.1`..`5`), story bosses included; it moves nothing between monsters, so
+ * each keeps its own profile while the whole roster shifts together, and it is
+ * applied after `monster_stats` so the two compose. These are all manual,
+ * seedless edits.
  * `starting_level`
  * begins the new game at that character level instead of 1 (`0` or `1` =
  * vanilla; range 2..=14), seeding the lead character's XP and recomputing the
@@ -3595,7 +3599,7 @@ export function lift_official_pack(target_image: Uint8Array, source_image: Uint8
  * mismatch) are counted in the summary but never abort the patch. Returns
  * `{ data, summary, seed }`.
  */
-export function patch_rom(image: Uint8Array, seed: string, lang_pack: string, drops: string, encounters: string, encounter_scope: string, chests: string, shops: string, casino: string, steals: string, arts: string, doors: string, door_coupling: string, house_doors: string, starting_items: number, door_of_wind: number, incense: number, speed_chain: number, chicken_heart: number, good_luck_bell: number, all_warps: boolean, unused_enemies: boolean, unused_items: boolean, equipment_drops: boolean, monster_stats: string, move_power: string, element_affinity: string, spell_cost: string, equip_bonus: string, weapon_specialty: boolean, starting_level: number, solo_strong_encounters: boolean, flee_exp: boolean, seru_trade: boolean, enemy_ally: boolean, shiny_seru: boolean, jewel_fix: boolean, approach_softlock_fix: boolean, fishing_prices: string, location_renames: string, earth_egg_price: string, arts_powers: string, arts_ap_grants: string, spirit_ap: string, damage_ap: string): any;
+export function patch_rom(image: Uint8Array, seed: string, lang_pack: string, drops: string, encounters: string, encounter_scope: string, chests: string, shops: string, casino: string, steals: string, arts: string, doors: string, door_coupling: string, house_doors: string, starting_items: number, door_of_wind: number, incense: number, speed_chain: number, chicken_heart: number, good_luck_bell: number, all_warps: boolean, unused_enemies: boolean, unused_items: boolean, equipment_drops: boolean, monster_stats: string, move_power: string, element_affinity: string, spell_cost: string, equip_bonus: string, weapon_specialty: boolean, starting_level: number, solo_strong_encounters: boolean, flee_exp: boolean, seru_trade: boolean, enemy_ally: boolean, shiny_seru: boolean, jewel_fix: boolean, approach_softlock_fix: boolean, fishing_prices: string, location_renames: string, earth_egg_price: string, arts_powers: string, arts_ap_grants: string, spirit_ap: string, damage_ap: string, enemy_stat_scale: string): any;
 
 /**
  * Resolve a user seed string to the numeric seed, as a decimal string (so the
@@ -4118,7 +4122,7 @@ export interface InitOutput {
     readonly music01render_ok: (a: number) => number;
     readonly music01render_pcm: (a: number) => [number, number];
     readonly music01render_rate: (a: number) => number;
-    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number, l1: number, m1: number, n1: number, o1: number, p1: number, q1: number, r1: number, s1: number, t1: number, u1: number, v1: number, w1: number, x1: number, y1: number, z1: number, a2: number, b2: number, c2: number, d2: number, e2: number, f2: number, g2: number, h2: number, i2: number, j2: number, k2: number, l2: number, m2: number, n2: number, o2: number, p2: number, q2: number, r2: number, s2: number) => [number, number, number];
+    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number, l1: number, m1: number, n1: number, o1: number, p1: number, q1: number, r1: number, s1: number, t1: number, u1: number, v1: number, w1: number, x1: number, y1: number, z1: number, a2: number, b2: number, c2: number, d2: number, e2: number, f2: number, g2: number, h2: number, i2: number, j2: number, k2: number, l2: number, m2: number, n2: number, o2: number, p2: number, q2: number, r2: number, s2: number, t2: number, u2: number) => [number, number, number];
     readonly resolve_seed: (a: number, b: number) => [number, number];
     readonly save_summary_json: (a: number, b: number) => [number, number, number, number];
     readonly validate_lang_pack: (a: number, b: number, c: number, d: number) => [number, number, number];

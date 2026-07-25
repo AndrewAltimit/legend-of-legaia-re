@@ -596,6 +596,33 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("monster_stats = \"none\"".to_string());
     }
 
+    // Enemy difficulty scale: one global multiplier over every monster's combat
+    // stats. Seedless, and sequenced *after* the stat randomizer so it scales
+    // whatever that pass dealt out (both read the roster back off the disc).
+    if let Some(scale) = args.enemy_stat_scale {
+        let report = apply::scale_monster_stats(&mut patcher, scale)?;
+        println!(
+            "enemy stat scale: {scale} ({} monsters changed, {} fields)",
+            report.monsters_changed, report.fields_changed
+        );
+        if !report.skipped.is_empty() {
+            println!(
+                "  note: {} monster slot(s) too tight to re-pack, left unchanged: {:?}",
+                report.skipped.len(),
+                report.skipped
+            );
+            manifest.push(format!("enemy_stat_scale_skipped = {:?}", report.skipped));
+        }
+        manifest.push(format!("enemy_stat_scale = {:?}", scale.to_string()));
+        manifest.push(format!(
+            "enemy_stat_scale_monsters_changed = {}",
+            report.monsters_changed
+        ));
+    } else {
+        println!("enemy stat scale: 1x (retail)");
+        manifest.push("enemy_stat_scale = \"retail\"".to_string());
+    }
+
     if let Some(move_power_mode) = move_power_mode {
         let changed = apply::randomize_move_powers(&mut patcher, seed, move_power_mode)?;
         println!("move power: {changed} special-attack power(s) changed ({move_power_mode:?})");

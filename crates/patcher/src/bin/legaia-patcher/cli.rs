@@ -11,7 +11,7 @@ use legaia_patcher::drops::DropMode;
 
 use crate::util::{
     parse_arts_ap_grant, parse_arts_power, parse_item_spec, parse_location_rename,
-    parse_prize_price,
+    parse_prize_price, parse_stat_scale,
 };
 
 #[derive(Parser)]
@@ -660,6 +660,19 @@ pub(crate) struct RandomizeArgs {
     /// the current stats.
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     pub(crate) monster_stats: DropArg,
+    /// **Scale every enemy's combat stats** by one difficulty multiplier
+    /// (`0.1x..=5x`, retail `1`). `--enemy-stat-scale 2` doubles every
+    /// monster's HP / MP / ATK / UDF / LDF / INT / SPD; `0.5` halves them.
+    /// Unlike `--monster-stats` this moves nothing between monsters - each
+    /// keeps its own profile and the whole roster shifts together, **story
+    /// bosses included** (only the unwinnable-by-design Rim Elm sparring
+    /// partner is pinned, since a weakened one can soft-lock the tutorial).
+    /// AGL is left alone, as it gates the AI's action economy rather than
+    /// difficulty, and EXP / gold / drops never move - a 5x run is harder, not
+    /// richer. Seedless, and applied *after* `--monster-stats`, so the two
+    /// compose. `legaia-patcher monster-stats` lists the current stats.
+    #[arg(long, value_name = "MULT", value_parser = parse_stat_scale)]
+    pub(crate) enemy_stat_scale: Option<legaia_patcher::monster_stats::ScalePermille>,
     /// How special-attack power is reassigned (the battle-action move-power
     /// table - enemy specials + Seru-magic, NOT party Tactical Arts). `shuffle`
     /// permutes the 44 power values (multiset preserved); `random` draws each
