@@ -106,6 +106,11 @@ pub struct BattleSession {
     /// Pending command waiting for a target. When the picker confirms,
     /// the command is pushed via [`Self::push_command`].
     pending_target_command: Option<Command>,
+    /// Deduplicated label rows for the enemy target menu, rebuilt every time a
+    /// picker opens ([`crate::target_picker::enemy_menu_rows`], PORT:
+    /// FUN_801D9D3C). Read by engines drawing the name strip above the monster
+    /// row; empty when no picker has opened yet.
+    enemy_menu_rows: Vec<crate::target_picker::EnemyMenuRow>,
     /// Driver state for the [`BattlePhase::Resolve`] phase. `Some` once
     /// commit has installed the resolved per-slot queues and the session
     /// owns the action SM until every party slot's swing has finished.

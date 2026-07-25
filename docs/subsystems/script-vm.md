@@ -1132,7 +1132,7 @@ A survey of the high-reference `0x801F` VA band the field overlay shares with th
 
 | Address | Class | What it is | Dump |
 |---|---|---|---|
-| `0x801D9D3C` | INTERIOR | Tail-call fragment: `a0 -= 0xE10` then block-copy `func 0x8001AA68` with register-arg `a1=s3`/`a2=s5`; no prologue. | `overlay_0897_801d9d3c.txt` |
+| `0x801D9D3C` | INTERIOR **in 0897 only** | Tail-call fragment here: `a0 -= 0xE10` then block-copy `func 0x8001AA68` with register-arg `a1=s3`/`a2=s5`, no prologue. The **battle**-overlay occupant of the same VA is a different, portable function - see the note below. | `overlay_0897_801d9d3c.txt` |
 | `0x801D71B8` | SHARED_TAIL | Fixed-point tail `(v1*v0 + m[0]*base[_DAT_8007B7F8]) >> 12`; enters with `v0`/`v1` preset (2-term q12 accumulate). | `overlay_0897_801d71b8.txt` |
 | `0x801E2650` | INTERIOR | Branch-delay-slot entry; decimal splitter storing 8 digit bytes at `&DAT_801F35F0`, tail-jumps `FUN_801F1118`/`FUN_801F1278`. | `overlay_0897_801e2650.txt` |
 | `0x801E805C` | INTERIOR | Actor command commit: writes action id to actor `+0x1DF`, reads a per-command descriptor at `0x8007..52C0` (stride 4), branches on bits `0x40`/`0x20`. | `overlay_0897_801e805c.txt` |
@@ -1165,6 +1165,17 @@ A survey of the high-reference `0x801F` VA band the field overlay shares with th
 | `0x801E4470` | REAL, render-track | Attached-sprite projection tick - documented in [`actor-vm.md`](actor-vm.md). Ported: `legaia_engine_vm::field_actor_billboard`. | `overlay_cutscene_dialogue_801e4470.txt` |
 
 `FUN_801F2098` is a byte-for-byte VA-aliased duplicate of the living-slot scanner already documented as `FUN_801DB8B4` in [`battle-formulas.md`](battle-formulas.md) (Rust `battle_formulas::round::needs_retarget`): starting at `&DAT_801C937C` it returns the lowest actor slot `3..=6` whose HP field `+0x14C` is nonzero, else `7`. It is not re-ported.
+
+### `0x801D9D3C` is two functions, and the battle one is the real entry
+
+The `0x801D9D3C` row above is the field-overlay (0897) occupant, and it is a fragment. The **battle**-overlay (0898) occupant of the same VA is a 388-instruction function with its own prologue and `jr ra` - the **enemy target-selection-menu builder**, documented in [`functions/battle.md`](../reference/functions/battle.md#battle-command-block-persistence--target-menu-overlay-0898-trace-surfaced). Four dumps of it agree byte for byte (`overlay_battle_action_801d9d3c.txt`, `overlay_magic_capture_…`, `overlay_magic_level_up_…`, `overlay_muscle_dome_…`), which is what makes it a real entry rather than an alias artifact.
+
+Two structural facts about it are worth stating where the address is first met, because both invite a wrong reading:
+
+- **The dedup is positional, not a set operation.** It walks the four-byte formation-id table `_DAT_8007BD0C` and collapses *consecutive* identical ids into one row, resetting its run counter on any id change. So a formation `A A B A` produces **three** rows, not two.
+- **The row suffix overwrites, it does not append.** The second member of a run replaces the label's **final character** with a one-glyph dedup literal (the store at `0x801d9e54` zeroes that byte before the concat), and the third and later members increment that character in place. Labels therefore stay the same byte length as the plain name - there is no `" x2"`-style growth, and the row rect never has to widen.
+
+Its layout half - average the members' projected screen X, centre, then relax overlaps pairwise and clamp inside `[0x06, 0x13A - width]`, repeating until a pass clamps nothing - shares its inner loop with the `0x801F07AC` / `0x801F0ADC` de-overlap fragment two rows up in the table. Ported as `legaia_engine_core::target_picker::enemy_menu_rows` + `layout_enemy_menu_rows`.
 
 ### The op-`0x49` party-cursor submode (`FUN_801F1278` / `FUN_801F159C`)
 

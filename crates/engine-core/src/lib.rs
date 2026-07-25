@@ -137,6 +137,12 @@ pub mod world_map;
 
 pub mod float_tween;
 
+// --- lane 4 ---
+pub mod action_effect_script;
+pub mod effect_ribbon;
+pub mod mode_entry_init;
+// --- end lane 4 ---
+
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

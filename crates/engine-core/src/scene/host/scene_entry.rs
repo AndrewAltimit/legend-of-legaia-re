@@ -247,12 +247,14 @@ impl SceneHost {
         // (This also clears the collision grid; we repopulate it below.)
         // Mirrors the retail scene-entry player setup in `FUN_8003aeb0`.
         self.world.install_field_player(0);
-        // Cold field entry: seed the player at the retail cold-boot spawn.
-        // `FUN_801D6704` creates the player actor at the camera-window centre
-        // `(0xA40, 0, 0xA40)` on a non-warp entry; for the New Game opening
-        // (town01) this is Vahn's authored Rim Elm spawn, and it also seeds the
-        // follow camera onto the right region. Engines that arrive via a warp
-        // override X/Z from the saved transition coords before the first tick.
+        // Cold field entry: seed the player at the retail cold-boot spawn,
+        // resolved through the field initialiser's own placement kernel
+        // (`crate::mode_entry_init::field_spawn`, PORT: FUN_801D6704). A cold
+        // entry (`_DAT_8007B8B8 == 0`) puts the actor at the camera-window
+        // centre `(0xA40, 0, 0xA40)`; for the New Game opening (town01) this is
+        // Vahn's authored Rim Elm spawn, and it also seeds the follow camera
+        // onto the right region. Engines that arrive via a warp override X/Z
+        // from the saved transition coords before the first tick.
         // This is provisional: once the scene's collision grid + object cells
         // load (just below) the spawn is resolved to an in-bounds, standable
         // tile via `World::resolve_cold_field_spawn` - which keeps this exact
@@ -260,10 +262,21 @@ impl SceneHost {
         // and not a teleport-door tile) and relocates every other scene onto a
         // door-arrival anchor or the centroid of its largest connected walkable
         // region. See [`crate::world::FIELD_COLD_SPAWN_XZ`].
+        // PORT: FUN_801D6704 (the cold-entry seat)
+        let cold = crate::mode_entry_init::field_spawn(
+            crate::mode_entry_init::FieldEntryMode::Cold,
+            (0, 0),
+            (0, 0),
+            false,
+            (0, 0),
+        );
+        let (seat_x, seat_y, seat_z) = cold
+            .extra_actor
+            .unwrap_or(crate::mode_entry_init::FIELD_COLD_SPAWN);
         if let Some(player) = self.world.actors.get_mut(0) {
-            player.move_state.world_x = crate::world::FIELD_COLD_SPAWN_XZ;
-            player.move_state.world_y = 0;
-            player.move_state.world_z = crate::world::FIELD_COLD_SPAWN_XZ;
+            player.move_state.world_x = seat_x;
+            player.move_state.world_y = seat_y;
+            player.move_state.world_z = seat_z;
         }
         // Load the per-scene base collision/floor grid from the field map
         // file (retail `DATA\FIELD\<scene>.MAP`, the unique 0x12000-byte block

@@ -414,6 +414,220 @@ impl TargetPickerSession {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Enemy target-menu rows
+// ---------------------------------------------------------------------------
+
+/// The formation table the menu builder walks - four monster-id bytes.
+pub const FORMATION_SLOTS: usize = 4;
+
+/// Menu row stride in the retail context block (`row * 0x20 + 0x29` is the row's
+/// name field).
+pub const MENU_ROW_STRIDE: usize = 0x20;
+
+/// Screen-space centre the row X positions are built around.
+pub const MENU_CENTRE_X: i16 = 0xA0;
+
+/// Left clamp for a row's X (`0x801da144`: `slti v0,v0,0x6`).
+pub const MENU_MIN_X: i16 = 6;
+
+/// Right edge a row's `x + text_width` is clamped against
+/// (`0x801da12c`: `li s1,0x13a`).
+pub const MENU_MAX_RIGHT: i16 = 0x13A;
+
+/// Minimum gap the overlap relaxation opens between two rows, on top of the
+/// left row's own text width (`0x801da050`: `addiu v0,v0,0x14`).
+pub const MENU_ROW_GAP: i16 = 0x14;
+
+/// Y the rows are drawn at (`0x801da1fc`: the fifth argument `0x30`).
+pub const MENU_ROW_Y: i16 = 0x30;
+
+/// Dedup-glyph stand-in for callers with no font mapping to hand.
+///
+/// Retail's glyph is a one-character string literal in the battle overlay's
+/// rodata at `0x801CECA8`, in the game's own text encoding; it is disc data, so
+/// the port takes it as a parameter and only defaults to a Latin `'A'` (which
+/// increments the same way its successors do) when the caller has nothing
+/// better.
+pub const DEDUP_GLYPH_FALLBACK: u8 = b'A';
+
+/// Row height (`0x801da208`: the seventh argument `0xC`).
+pub const MENU_ROW_HEIGHT: i16 = 0xC;
+
+/// One row of the enemy target-selection menu.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnemyMenuRow {
+    /// The monster id the row was opened for.
+    pub monster_id: u8,
+    /// Formation slot the row's **first** member occupies - the slot the cursor
+    /// resolves to.
+    pub first_slot: u8,
+    /// Members collapsed into this row (consecutive identical ids).
+    pub members: u8,
+    /// The row's label. The first member contributes the plain name; each
+    /// further member replaces the label's last character with a **dedup
+    /// glyph** and then increments it, so a run of three reads
+    /// `name`, `nam<g>`, `nam<g+1>`.
+    pub label: String,
+    /// Screen X, once [`layout_enemy_menu_rows`] has run. Before that it is the
+    /// running sum of the members' projected positions.
+    pub x: i16,
+}
+
+/// Build the deduplicated row set for the enemy target menu.
+///
+/// PORT: FUN_801D9D3C (`0x801d9d84..0x801d9f0c`).
+///
+/// `formation` is the four-byte monster-id table `_DAT_8007BD0C`; a zero id is
+/// an empty slot and is skipped without ending the walk. `name_of` supplies the
+/// per-slot display name (retail copies it from the battle actor's `+0x1BC`),
+/// and `dedup_glyph` is the one-character suffix literal the overlay keeps in
+/// its rodata at `0x801CECA8`.
+///
+/// Consecutive identical ids collapse into one row. The **run counter resets on
+/// any id change**, so a formation `A A B A` produces three rows (`A`x2, `B`,
+/// `A`), not two - the dedup is positional, not a set operation.
+///
+/// The suffix arithmetic is the part worth stating precisely, because it is
+/// destructive: the second member of a run does not *append* a marker, it
+/// overwrites the label's final character with `dedup_glyph`
+/// (`0x801d9e54` stores a `0` over the last byte before the concat), and the
+/// third and later members **increment that character in place**
+/// (`0x801d9ea0`). So the labels stay the same byte length as the plain name.
+///
+/// `projected_x` is each slot's projected screen position (the battle actor's
+/// `+0x34` word); the builder accumulates it per row so
+/// [`layout_enemy_menu_rows`] can average it.
+pub fn enemy_menu_rows(
+    formation: [u8; FORMATION_SLOTS],
+    dedup_glyph: u8,
+    mut name_of: impl FnMut(u8) -> String,
+    mut projected_x: impl FnMut(u8) -> i16,
+) -> Vec<EnemyMenuRow> {
+    let mut rows: Vec<EnemyMenuRow> = Vec::new();
+    let mut run = 0u8;
+    for slot in 0..FORMATION_SLOTS {
+        let id = formation[slot];
+        if id == 0 {
+            continue;
+        }
+        let same_as_prev = slot > 0 && formation[slot - 1] == id;
+        run = if same_as_prev { run + 1 } else { 0 };
+        let px = projected_x(slot as u8);
+        if run == 0 {
+            rows.push(EnemyMenuRow {
+                monster_id: id,
+                first_slot: slot as u8,
+                members: 1,
+                label: name_of(slot as u8),
+                x: px,
+            });
+            continue;
+        }
+        let Some(row) = rows.last_mut() else {
+            continue; // retail would index row -1; a leading run cannot happen
+        };
+        if run == 1 {
+            // Overwrite the final character with the dedup glyph.
+            let mut bytes = row.label.clone().into_bytes();
+            if let Some(last) = bytes.last_mut() {
+                *last = dedup_glyph;
+            }
+            row.label = String::from_utf8_lossy(&bytes).into_owned();
+            // Retail bumps the run counter a second time here, which is what
+            // makes the *next* member take the increment arm.
+            run += 1;
+        } else {
+            let mut bytes = row.label.clone().into_bytes();
+            if let Some(last) = bytes.last_mut() {
+                *last = last.wrapping_add(1);
+            }
+            row.label = String::from_utf8_lossy(&bytes).into_owned();
+        }
+        row.members += 1;
+        row.x = row.x.wrapping_add(px);
+    }
+    rows
+}
+
+/// Place the enemy menu rows across the screen.
+///
+/// PORT: FUN_801D9D3C (`0x801d9f1c..0x801da1ac`).
+///
+/// Three passes, in order:
+///
+/// 1. **Average + centre.** Each row's accumulated projected X is divided by its
+///    member count, scaled down by `>> 3`, then converted to a left edge:
+///    `x = (avg >> 3) - text_width / 2 + 0xA0`.
+/// 2. **Overlap relaxation.** Every unordered pair is compared; when the left
+///    row's `x + text_width + 0x14` reaches into the right row's `x`, the
+///    overlap is **split evenly** - each row moves by half of it, in opposite
+///    directions. Which row counts as "left" is decided per pair by their
+///    current X, so the pass is order-independent.
+/// 3. **Clamp.** Rows are pushed inside `[0x06, 0x13A - text_width]`.
+///
+/// Passes 2 and 3 **repeat as a unit** until pass 3 changes nothing
+/// (`0x801da1ac`), so a clamp that re-introduces an overlap is re-relaxed. With
+/// fewer than two rows retail skips straight past both passes, so a single row
+/// keeps its raw centred position and is never clamped.
+///
+/// `text_width_of` measures a row's label in pixels (retail's `FUN_80035F04`).
+pub fn layout_enemy_menu_rows(
+    rows: &mut [EnemyMenuRow],
+    mut text_width_of: impl FnMut(&str) -> i16,
+) {
+    for row in rows.iter_mut() {
+        let avg = if row.members == 0 {
+            0
+        } else {
+            row.x / i16::from(row.members)
+        };
+        row.x = (avg >> 3) - text_width_of(&row.label) / 2 + MENU_CENTRE_X;
+    }
+    if rows.len() < 2 {
+        return;
+    }
+    // Retail's outer loop is unbounded; it terminates because each iteration
+    // either clamps (and so is followed by another) or does not (and stops).
+    // The bound here is a safety net, not a behavioural change.
+    for _ in 0..rows.len() * 8 + 8 {
+        for i in 0..rows.len() - 1 {
+            for j in i + 1..rows.len() {
+                let (left, right) = if rows[j].x < rows[i].x {
+                    (j, i)
+                } else {
+                    (i, j)
+                };
+                let reach = rows[left]
+                    .x
+                    .wrapping_add(text_width_of(&rows[left].label.clone()))
+                    .wrapping_add(MENU_ROW_GAP);
+                if reach < rows[right].x {
+                    continue;
+                }
+                let half = (reach - rows[right].x) >> 1;
+                rows[left].x = rows[left].x.wrapping_sub(half);
+                rows[right].x = rows[right].x.wrapping_add(half);
+            }
+        }
+        let mut clamped = false;
+        for row in rows.iter_mut() {
+            if row.x < MENU_MIN_X {
+                row.x = MENU_MIN_X;
+                clamped = true;
+            }
+            let right_limit = MENU_MAX_RIGHT - (text_width_of(&row.label) & 0xFF);
+            if right_limit < row.x {
+                row.x = right_limit;
+                clamped = true;
+            }
+        }
+        if !clamped {
+            return;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -657,5 +871,123 @@ mod tests {
         assert!(TargetKind::AllAllies.is_immediate());
         assert!(TargetKind::Self_.is_immediate());
         assert!(!TargetKind::SingleEnemy.is_immediate());
+    }
+
+    /// Fixed-pitch stand-in for the retail proportional measurer.
+    fn width(s: &str) -> i16 {
+        s.chars().count() as i16 * 8
+    }
+
+    fn rows_for(formation: [u8; 4], names: &[&str; 4], px: [i16; 4]) -> Vec<EnemyMenuRow> {
+        let names: Vec<String> = names.iter().map(|s| s.to_string()).collect();
+        enemy_menu_rows(
+            formation,
+            b'A',
+            |slot| names[slot as usize].clone(),
+            |slot| px[slot as usize],
+        )
+    }
+
+    #[test]
+    fn distinct_monsters_each_get_their_own_row() {
+        let r = rows_for(
+            [1, 2, 3, 4],
+            &["Bee", "Wasp", "Slug", "Bat"],
+            [100, 200, 300, 400],
+        );
+        assert_eq!(r.len(), 4);
+        assert_eq!(
+            r.iter().map(|x| x.label.as_str()).collect::<Vec<_>>(),
+            ["Bee", "Wasp", "Slug", "Bat"]
+        );
+        assert!(r.iter().all(|x| x.members == 1));
+        assert_eq!(
+            r.iter().map(|x| x.first_slot).collect::<Vec<_>>(),
+            [0, 1, 2, 3]
+        );
+    }
+
+    #[test]
+    fn a_run_collapses_and_the_suffix_overwrites_then_increments() {
+        let r = rows_for([7, 7, 7, 0], &["Bee", "Bee", "Bee", ""], [80, 96, 112, 0]);
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].members, 3);
+        // Member 2 replaces the final character; member 3 increments it. The
+        // label never grows.
+        assert_eq!(r[0].label, "BeB");
+        assert_eq!(r[0].label.len(), "Bee".len());
+        // The accumulator sums the members' projected positions.
+        assert_eq!(r[0].x, 80 + 96 + 112);
+        assert_eq!(r[0].first_slot, 0);
+    }
+
+    #[test]
+    fn the_dedup_is_positional_so_a_b_a_makes_three_rows() {
+        let r = rows_for([5, 5, 9, 5], &["Bee", "Bee", "Bat", "Bee"], [0; 4]);
+        assert_eq!(r.len(), 3);
+        assert_eq!(r[0].members, 2);
+        assert_eq!(r[1].members, 1);
+        assert_eq!(r[2].members, 1);
+        // The trailing repeat starts a fresh row with the plain name.
+        assert_eq!(r[2].label, "Bee");
+    }
+
+    #[test]
+    fn empty_formation_slots_are_skipped_without_ending_the_walk() {
+        let r = rows_for([1, 0, 2, 0], &["Bee", "", "Bat", ""], [0; 4]);
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[1].first_slot, 2);
+        assert!(rows_for([0; 4], &["", "", "", ""], [0; 4]).is_empty());
+    }
+
+    #[test]
+    fn layout_centres_a_single_row_and_never_clamps_it() {
+        let mut r = rows_for([1, 0, 0, 0], &["Bee", "", "", ""], [8 * 160, 0, 0, 0]);
+        layout_enemy_menu_rows(&mut r, width);
+        // (8*160 / 1) >> 3 == 160, minus half the 24px label, plus 0xA0.
+        assert_eq!(r[0].x, 160 - 12 + 0xA0);
+    }
+
+    #[test]
+    fn layout_averages_a_runs_members() {
+        let mut r = rows_for([1, 1, 0, 0], &["Bee", "Bee", "", ""], [800, 1600, 0, 0]);
+        layout_enemy_menu_rows(&mut r, width);
+        // avg 1200 >> 3 = 150, label "BeB" is 24px wide.
+        assert_eq!(r[0].x, 150 - 12 + 0xA0);
+    }
+
+    #[test]
+    fn layout_pushes_overlapping_rows_apart_symmetrically() {
+        // Two rows whose raw centres coincide.
+        let mut r = rows_for([1, 2, 0, 0], &["Bee", "Bat", "", ""], [800, 800, 0, 0]);
+        layout_enemy_menu_rows(&mut r, width);
+        let gap = (r[1].x - r[0].x).abs();
+        assert!(
+            gap >= width("Bee") + MENU_ROW_GAP - 1,
+            "rows still overlap: {:?}",
+            r.iter().map(|x| x.x).collect::<Vec<_>>()
+        );
+        // The split is even, so the pair stays centred on where it started.
+        let raw = 100 - 12 + 0xA0;
+        assert_eq!((r[0].x + r[1].x) / 2, raw);
+    }
+
+    #[test]
+    fn layout_clamps_rows_inside_the_screen() {
+        // Four rows all crowded to the far right; relaxation plus clamping has
+        // to fit them inside [6, 0x13A - width].
+        let mut r = rows_for(
+            [1, 2, 3, 4],
+            &["Aaaaaa", "Bbbbbb", "Cccccc", "Dddddd"],
+            [8 * 300; 4],
+        );
+        layout_enemy_menu_rows(&mut r, width);
+        for row in &r {
+            assert!(row.x >= MENU_MIN_X, "{row:?}");
+            assert!(
+                row.x + width(&row.label) <= MENU_MAX_RIGHT,
+                "{row:?} runs past the right edge"
+            );
+        }
     }
 }

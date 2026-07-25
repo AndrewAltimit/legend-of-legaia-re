@@ -103,6 +103,11 @@ The field VM reaches this packet through **opcode `0x3F`** (named scene-change),
 
 Walks the [asset descriptor format](../formats/asset-descriptor.md) and calls the asset-type dispatcher per descriptor. Its sole runtime caller in retail is the town overlay's `FUN_801D6704` (MAIN_INIT) at `0x801D6B0C` with `a0 = 0`. The result is stored at `0x80087AF8`. So the walker IS exercised by retail gameplay, just not from a static call site inside `SCUS_942.54`.
 
+`FUN_801D6704`'s own step order, the BGM-slot resolve it does on the way, and the player seat it ends with are ported as `legaia_engine_core::mode_entry_init` (`FIELD_INIT_STEPS` / `field_bgm_plan` / `field_spawn`); the spawn arms are detailed in [`field-locomotion.md`](field-locomotion.md#spawn-position-on-scene-entry). Two things about the function are easy to get wrong from the corpus:
+
+- **Cite the live-RAM captures, not `overlay_0897_801d6704.txt`.** The static-base dump is correctly based but has a gap - it jumps `0x801d71b4 -> 0x801d72d4` and carries no `jr ra`. The base-`0x801C0000` captures agree with each other across all 901 instructions.
+- **The BGM id is not the slot.** `_DAT_8007BAC8` below `0x7D0` (= 2000) is *relative*: the slot is `id + _DAT_80084540 + 6`. At or above 2000 the id passes straight through, which is the same `2000 + track` global space [`music-tracks.md`](../reference/music-tracks.md) describes. Id `0x814` is special-cased into a **two-stream** load (asset ids `0x428` then `0x422`), latched by `_DAT_8007B9B8` so a re-entry does not re-read them.
+
 The mapping a scene loads is **positional** - there is no separate slot→asset indirection table; the descriptor's `data_offset` field *is* the indirection. The full chain, traced from the field init at `FUN_801D6704`:
 
 1. **`per_stage_init` (`FUN_8001E1B4`)** allocates a single 0x62C00-byte asset buffer once at boot and stores its base at `_DAT_8007b85c` (`FUN_80017888(0, 0x62c00)`).

@@ -11,6 +11,69 @@ impl BattleSession {
         self.target_picker.as_ref()
     }
 
+    /// The deduplicated enemy target-menu rows for the most recently opened
+    /// picker. One row per distinct **run** of identical monsters, labelled the
+    /// way retail labels them (see
+    /// [`crate::target_picker::enemy_menu_rows`]).
+    ///
+    /// Engines that draw the name strip pass these through
+    /// [`crate::target_picker::layout_enemy_menu_rows`] with their own text
+    /// measurer to get screen X per row; the X carried here is still the raw
+    /// accumulator, because the projected monster positions live in the
+    /// renderer.
+    pub fn enemy_menu_rows(&self) -> &[crate::target_picker::EnemyMenuRow] {
+        &self.enemy_menu_rows
+    }
+
+    /// Rebuild [`Self::enemy_menu_rows`] from the live monster slots.
+    ///
+    /// PORT: FUN_801D9D3C (the formation walk + dedup + label pass).
+    ///
+    /// The engine's formation is the monster slot array rather than retail's
+    /// `_DAT_8007BD0C` id table, so occupancy stands in for the id: an empty or
+    /// dead slot contributes `0` (retail's "no monster here") and a live one
+    /// contributes a per-name id, which keeps the run-collapse behaviour
+    /// (identical adjacent names fold into one labelled row) without needing
+    /// the disc monster-id table at the UI layer.
+    ///
+    /// This covers the **first four** monster slots, which is not a truncation:
+    /// retail's formation table is four bytes and its stage-seat tables
+    /// ([`crate::battle_seats::MONSTER_SEATS`]) are four seats, so a retail
+    /// battle never fields a fifth monster. The session's fifth slot exists for
+    /// engine-side headroom and has no menu row.
+    ///
+    /// The projected X the layout pass averages is not available here -
+    /// `engine-core` is renderer-free - so the accumulator stays at `0` and the
+    /// caller supplies positions.
+    fn rebuild_enemy_menu_rows(&mut self, world: &World) {
+        let mut ids = [0u8; crate::target_picker::FORMATION_SLOTS];
+        let mut names: Vec<String> = Vec::new();
+        for (i, id) in ids.iter_mut().enumerate() {
+            let slot_idx = 3 + i;
+            let info = &self.slots[slot_idx];
+            let hp = world
+                .actors
+                .get(slot_idx)
+                .map(|a| a.battle.hp)
+                .unwrap_or_default();
+            if info.record.is_none() || info.name.is_empty() || hp == 0 {
+                names.push(String::new());
+                continue;
+            }
+            // Distinct names get distinct ids, so a run of the same monster
+            // collapses exactly as retail's identical-id run does.
+            let pos = names.iter().position(|n| n == &info.name);
+            *id = (pos.unwrap_or(names.len()) + 1) as u8;
+            names.push(info.name.clone());
+        }
+        self.enemy_menu_rows = crate::target_picker::enemy_menu_rows(
+            ids,
+            crate::target_picker::DEDUP_GLYPH_FALLBACK,
+            |slot| names[slot as usize].clone(),
+            |_| 0,
+        );
+    }
+
     /// Open a target picker for the supplied [`crate::target_picker::TargetKind`].
     /// Engines call this when the player picks an action that needs a
     /// target (e.g. a Tactical Art whose strike needs an enemy slot).
@@ -48,6 +111,7 @@ impl BattleSession {
         }
         self.target_picker = Some(TargetPickerSession::new(kind, actor_slot, party, monsters));
         self.pending_target_command = pending_command;
+        self.rebuild_enemy_menu_rows(world);
         out.push(SessionEvent::TargetPickerOpened { kind });
 
         // If the picker resolved immediately (sweep / no-candidates),
@@ -88,6 +152,7 @@ impl BattleSession {
         }
         self.target_picker = Some(TargetPickerSession::new(kind, actor_slot, party, monsters));
         self.pending_target_command = pending_command;
+        self.rebuild_enemy_menu_rows(world);
         out.push(SessionEvent::TargetPickerOpened { kind });
         self.maybe_close_picker_with_world(Some(world), out);
     }
