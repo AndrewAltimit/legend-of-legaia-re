@@ -249,7 +249,7 @@ impl LegaiaRuntime {
             self.sfx.prev_pos = None;
             0
         };
-        let tick = self.sfx.cadence.tick(mag, mag);
+        let tick = self.sfx.cadence.tick_cadence(mag, mag);
         if tick.step_fired {
             self.enqueue_sfx(CUE_FOOTSTEP, 0);
         }

@@ -141,9 +141,16 @@ Same failure, one step worse: the resolved VA is not an entry either, so there i
 nothing to port at either address. The right-hand column is the routine that owns
 the bytes.
 
+**"Not an entry" is a per-image fact, and the first row shows why the image has
+to be named.** `0x801D4A80` is interior to `FUN_801D4A60` in **field(897)** - and
+in the **menu** overlay the same VA is a real, already-ported function, the
+window-34 content renderer. Both statements are true; they are different images
+at one aliased address. A row here that omits the image reads as a contradiction
+against any page that ports the other occupant.
+
 | Printed | Real | Interior of |
 |---|---|---|
-| `0x801C6268` | `0x801D4A80` | `FUN_801D4A60` |
+| `0x801C6268` | `0x801D4A80` (in field(897)) | `FUN_801D4A60` |
 | `0x801C9C04` | `0x801CF41C` | the field overlay's leading data segment - not code |
 | `0x801CAC44` | `0x801D045C` | `FUN_801D01B0` |
 | `0x801CAE64` | `0x801D067C` | `FUN_801D01B0` |

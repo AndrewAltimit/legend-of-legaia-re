@@ -5,13 +5,23 @@
 //! every field-mode frame, owning three counters plus the two per-voice
 //! trigger bytes the SPU side reads (`0x800915DA` / `0x800915DB`).
 //!
-//! **NOT WIRED.** This port is not on the engine's frame path - nothing
-//! calls [`FootstepCadence::tick_cadence`] outside this module's unit tests. A
-//! wired caller would be the field-mode per-frame audio update in `engine-shell`,
-//! feeding it the player's movement magnitude and turning a returned
-//! [`CadenceTick`] into voice starts on the `engine-audio` mixer. Until that
-//! exists the type is a pinned model of the retail cadence, not a running
-//! part of the engine.
+//! **Wired on the browser play page only.** `legaia-web-viewer`'s
+//! `play_sfx` calls [`FootstepCadence::tick_cadence`] from its per-frame
+//! field update, turning a returned [`CadenceTick`] into voice starts on the
+//! live `WebAudioOut` SPU. The native window does not yet route it: its
+//! field-mode per-frame audio update is the caller that would.
+//!
+//! **The speed input is a port-side convention, not a retail quantity.** The
+//! cadence gates on `interval < 0xB`, and `interval = 0xF - (min(speed +
+//! 0x20, 0xFA) >> 4)` only clears that gate at `speed >= 0x30`. Retail's
+//! speed word is a different quantity at a different scale, and the port has
+//! no analogue - feeding it raw world-unit displacement (the engine steps 2
+//! units/tick) pins the interval at `0xD` forever and fires *nothing*, with
+//! every unit test in this module still passing, because they feed
+//! retail-scale speeds directly. The web host therefore passes a fixed
+//! `WALK_SPEED_UNITS = 0x30`, placing a single-speed walker at the
+//! conservative end of retail's moving band. Any second host must make the
+//! same choice deliberately.
 //!
 //! The entry point is `tick_cadence`, not `tick`, and the extra word is
 //! load-bearing: the reachability audit resolves a `.name(` call against every

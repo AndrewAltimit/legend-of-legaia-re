@@ -1594,10 +1594,14 @@ Recorded so the same entries aren't re-flagged:
   **not** a mode dispatcher.
 - **Still open from the same inventory:** the general-game band (never
   per-address catalogued), headed by `0x8002A9F8` (2.2 KB table-driven logic,
-  no static caller), `0x80056208` (libgpu-band SCUS→overlay bridge into
-  `0x801F69xx`), `0x8004DC68`, `0x8002149C`, `0x80036D80`, `0x80059E10`,
-  `0x80025DA4`. Next step: behavior-read each against its `0x8007xxxx`/`gp`
-  globals the way this thread's entries were closed. The PsyQ sound-driver
+  no static caller), `0x8004DC68`, `0x80036D80`, `0x80025DA4`. Next step:
+  behavior-read each against its `0x8007xxxx`/`gp` globals the way this
+  thread's entries were closed. Three former members are now closed:
+  `0x80056208` is **not** a libgpu-band bridge - it is a battle side-band tick
+  (three submodes off `DAT_8007B64A`) that merely sits at a PsyQ-adjacent
+  address, ported to `engine-render`; and `0x8002149C` / `0x80059E10` both now
+  carry full disassembly, so their grade is `disassembly` rather than the
+  weaker evidence this line assumed. The PsyQ sound-driver
   cluster is tracked separately under Audio.
 
 ### Full-window item-add OOB reachability

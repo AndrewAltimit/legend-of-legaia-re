@@ -199,8 +199,10 @@ reading held that a Seru gaining a level applied a per-Seru `+0x74` "HP grant"
 to the battle actor. That is wrong, and this finding confirms it from the other
 side: growth comes from the `DAT_800769CC` / `DAT_80076918` static tables, not a
 Seru `+0x74` dereference. (The only `+0x74` reads in the captured overlays
-surface a 32-bit battle-state flag the SCUS handler `FUN_800480D8` stamps with
-`0x80808080`.) Battle actor base for reference: `DAT_801C9370[slot]`, 8 slots -
+surface a colour word the SCUS handler `FUN_800480D8` stamps with
+`0x00808080` - `lui 0x80` + `ori 0x8080` masked under `0x00FFFFFF`, the
+defeated-monster grey, not a 32-bit flag.) Battle actor base for reference:
+`DAT_801C9370[slot]`, 8 slots -
 party 0..2, monsters 3..7; current HP at `+0x14C`.
 
 ### Battle-actor stat struct (`DAT_801C9370` pool)
@@ -500,7 +502,7 @@ A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednaf
   parameter block selecting curve rows), read and applied by `FUN_801E9504` (see
   *Stat gains* above). The earlier negative results came from searching the wrong
   code: the `magic_level_up` overlay is the display path, not the writer; the
-  `+0x74` reads are a `0x80808080` battle-state flag (`FUN_800480D8`), not a
+  `+0x74` reads are a `0x00808080` grey colour word (`FUN_800480D8`), not a
   grant; and the PROT.DAT `0x033E9000` cluster is animation-curve data. The
   **engine port is done**: the two tables are parsed by
   `legaia_asset::level_up_tables::growth_tables_from_scus`,

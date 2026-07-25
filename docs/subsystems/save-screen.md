@@ -33,6 +33,12 @@ shared overlay.
 Entry: `()`. Returns `true` when the save flow has terminated (outer state
 `> 5`). Drives a 9-case state machine on `_DAT_8007B43C`:
 
+**Reached from `FUN_80024190`**, the in-field save/load screen driver - an
+11-state machine in `SCUS_942.54` that owns the mode transition and calls this
+dispatcher once the overlay is resident (see
+[`functions/game-modes.md`](../reference/functions/game-modes.md)). This page
+describes the overlay half only; the mode entry is the SCUS half.
+
 | State | Behaviour |
 |---|---|
 | 0 | Init: copies party pointers `_DAT_800846D0/D4` → `DAT_801EF0F0/F4`; decodes `_DAT_8007B450` (entry-context pointer) into `DAT_801E46A4` (sub-screen selector, see below); sets `_DAT_8007B440 = 0xF2` (full fade); advances to state 1. |
