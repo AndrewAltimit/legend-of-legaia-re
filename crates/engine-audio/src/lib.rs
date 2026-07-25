@@ -22,6 +22,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context, Result, anyhow};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
+pub mod anim_cue;
 pub mod footstep;
 pub mod note_trace;
 pub mod seq_slots;
@@ -34,6 +35,9 @@ pub mod vab_bind;
 #[cfg(all(target_arch = "wasm32", feature = "audio-webaudio"))]
 mod webaudio;
 
+pub use anim_cue::{
+    AnimCueActor, AnimCueEmit, AnimCueSlot, AnimCueState, AnimCueWalk, walk_anim_cues,
+};
 pub use footstep::{AMBIENT_PERIOD_FRAMES, CadenceTick, FootstepCadence};
 pub use seq_slots::{SeqResourceSlot, SeqResourceTable};
 pub use sequencer::Sequencer;

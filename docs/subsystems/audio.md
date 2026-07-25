@@ -199,9 +199,50 @@ Legaia statically links Sony's PsyQ **libsnd / SsAPI** sequencer for `.SEQ`-driv
 | `FUN_8006206C(...)` | `_SsSetSlideVolume` - ramp from→to over N ticks. Touches `+0x48/0x4A/0x9C/0xA0/0x4C`, signed-divide per-tick delta. Gated by flags `4 & 0x100` in `+0x98`. |
 | `FUN_8006171C(vab, prog, ev)` | Per-program SEQ controller/meta dispatch - post-increments the program's stream cursor (`_DAT_801CD2C0[vab] + prog*0xB0`, deref `+0`), switches on the event byte `ev`, routes through the installed handler vector `_DAT_801CD238..248`, and falls to the varint decoder `FUN_80061C68` for value events, storing the result at `+0x90`. |
 
-**Per-frame tick call graph.** The concrete chain behind the prose "hand the payload to `FUN_80062340` for playback": `FUN_80062F98` (per-slot fan-out) → `FUN_8006320C` / `FUN_8006352C` (the per-channel note/expression handlers over `_DAT_801CD2C0[slot]`) → `FUN_80066308` (note-trigger dispatch; `×0x81` velocity scale, per-slot status `_DAT_801CE34x`) → `FUN_80066B00` (voice-allocation scan) → `FUN_80065978` (`_SsVoKeyOnDirect`), with `FUN_80065BAC` / `FUN_800675C8` (the voice flush / release sweep below) carrying the result to the SPU. The SEQ-stream cursor advances through `FUN_80063CEC` (calls the varint decoder `FUN_80061C68`, steps `_DAT_801CD220..230`) with track-end / vab-release in `FUN_80063AA8`. This is `sequencer.rs`'s integer-accumulator event loop in retail form.
+**Per-frame tick call graph.** The concrete chain behind the prose "hand the
+payload to `FUN_80062340` for playback": `FUN_80062F98` (per-slot fan-out) →
+`FUN_8006320C` / `FUN_8006352C` (the **volume-slide ticks** over
+`_DAT_801CD2C0[slot]` - see below) → `FUN_80067E9C` (`_SsSeqNoteOn`) →
+`FUN_80066308` (note-trigger dispatch; `×0x81` velocity scale, per-slot status
+`_DAT_801CE34x`) → `FUN_80066B00` (voice-allocation scan) → `FUN_80065978`
+(`_SsVoKeyOnDirect`), with `FUN_80065BAC` / `FUN_800675C8` (the voice flush /
+release sweep below) carrying the result to the SPU. The SEQ-stream cursor
+advances through `FUN_80063CEC` (calls the varint decoder `FUN_80061C68`, steps
+`_DAT_801CD220..230`). The per-`+0x98`-flag-bit map of everything `FUN_80062F98`
+fans out to is tabulated once, in
+[`reference/functions/audio.md`](../reference/functions/audio.md); this page
+carries only the handlers whose labels had been wrong.
 
-**Correction** (label ≠ role): `FUN_8006352C` / `FUN_8006320C` were tagged elsewhere as "fixed-point div" pitch kernels - they carry **no division** and are per-channel note/expression handlers. The fixed-point note→pitch math is confined to `FUN_80066E50` (`_SsPitchFromKey`) and `FUN_8006C6E4` (`_SsKey2Pitch`); no additional pitch kernel exists in this cluster.
+**The volume-slide pair.** `FUN_8006320C` and `FUN_8006352C` are the
+**ascending** and **descending** halves of one slide, not note or expression
+handlers. Three things identify them together. They read exactly the field set
+their installer `FUN_8006206C` (`_SsSetSlideVolume`) writes - `+0x48` / `+0x4A` /
+`+0x4C` / `+0x9C` / `+0xA0`. They fetch `(vol_l, vol_r)` through `FUN_800683D8`,
+the same helper `SsSeqSetVol` uses. And their arithmetic mirrors: `FUN_8006320C`
+adds the step and bumps both sides (`addu` at `0x8006331C`, `addiu …,1` at
+`0x8006332C` / `0x80063340`), `FUN_8006352C` subtracts it and lowers both
+(`subu` at `0x8006363C`, `addiu …,-1` at `0x8006368C` / `0x80063698`).
+
+**Correction** (label ≠ role): `FUN_8006352C` / `FUN_8006320C` were tagged
+elsewhere as "fixed-point div" pitch kernels. Neither is a pitch kernel - but the
+earlier stated reason, that they carry no division, is itself wrong. Each carries
+exactly one `div`, and it is a **modulo of the slide tick counter, not a
+fixed-point pitch divide**: `FUN_8006320C` at `0x8006329C..0x800632C4` and
+`FUN_8006352C` at `0x800635BC..0x800635E4`, both dividing the just-decremented
+remaining-tick counter `+0xA0` by the signed per-tick step `+0x4C` and reading
+the **remainder** back with `mfhi`. A non-zero remainder skips the update, so the
+pair is a sub-tick divider - one volume unit every `N` ticks rather than `N`
+units every tick. The divisor is positive on that path: a `blez` diverts a
+non-positive step to its own arm first. The fixed-point note→pitch math is
+confined to `FUN_80066E50` (`_SsPitchFromKey`) and `FUN_8006C6E4`
+(`_SsKey2Pitch`); no additional pitch kernel exists in this cluster.
+
+**Track end is a loop-repeat chain, not a vab release.** `FUN_80063AA8` handles
+the last repeat of a track by **chaining to another `(slot, channel)`** named by
+its own `+0x22` / `+0x23` bytes: `beq +0x22, 0xFF` at `0x80063C84` skips the
+chain, otherwise `FUN_80064090(+0x22, +0x23)` starts the successor and `+0x14` is
+zeroed. Both arms then kill the finished track's notes through `FUN_800684CC`.
+Nothing in the body releases a VAB.
 
 ### Voice / mixer (audible-output critical path)
 
@@ -640,6 +681,47 @@ The engine wires this end-to-end:
 
 Two timing behaviours model the retail CD/XA sequencing contract (the recomp cross-reference established that the shout **trails** the art animation - the XA response arrives after the animation begins, never before): a fixed response-presentation delay (`SHOUT_CD_RESPONSE_DELAY`, ~150 ms of 44.1 kHz samples - the modeled seek/first-sector latency) gates the clip silent after the animation-start request; and a back-to-back request while a shout is still sounding queues behind it rather than cutting it (only the most recent pending clip is kept), so consecutive arts don't drop the later voice line.
 `OfflineMixer` exposes the same mixing core device-free; the disc-gated oracle `engine-shell/tests/arts_shout_battle.rs` drives an art through the live battle session and asserts the shout PCM lands in the mix only after the delay window, with `engine-core/tests/battle_shout_cue.rs` as the disc-free cue-emission check.
+
+### The second shout trigger - the animation cue track (`FUN_800508DC`)
+
+`FUN_8004C140` above is not the only route to a shout. A playing battle action
+entry also carries its own **cue track** at `entry + 0x54` - eight `(u16 frame,
+u16 cue)` pairs, terminated by `cue == 0` - which `FUN_800508DC` walks once per
+animation frame, resuming from a persistent cursor in the battle actor at
+`+0x1F6`. Each call fires every cue whose trigger frame the clip has reached and
+parks on the first it has not. Everything it fires goes out through the cue router
+`FUN_8004FE5C`. Port: `legaia_engine_audio::anim_cue` (`walk_anim_cues`,
+`AnimCueState`).
+
+On a **party** seat (battle slot `< 3`) the cue-id band `0xC8..=0xFF`, minus the
+single hole at `0xFA`, is the arts voice: the id is re-based by `+0x38`, which is
+exactly what lifts `0xC8` to `0x100` and so puts the whole band in the `>= 0x100`
+namespace `FUN_8004FE5C` routes to `FUN_8003D53C` instead of the SPU ring. Three
+ids inside it are the per-character shout, and they map onto the same clip slots
+the `FUN_8004C140` path uses:
+
+| cue id | re-based | clip slot | character | XA file |
+|---|---|---|---|---|
+| `0xD7` | `0x10F` | `26` | Vahn | `XA2.XA` |
+| `0xE7` | `0x11F` | `27` | Noa | `XA4.XA` |
+| `0xF7` | `0x12F` | `28` | Gala | `XA6.XA` |
+
+Those three, and only those three, get a **two-take coin flip**: one BIOS `rand()`
+draw and `id + 0x38 - (r % 2)`, so the shout alternates between channels `7` and
+`6` of the character's bank. They also bump a per-character tally at the live
+`0x414`-stride record's `+0x98`, before any gate, and they honour a mute bit at
+record `+0xF8 & 0x2000` that suppresses the shout outright.
+
+The coin flip is further conditional on the CD being **free**. While a load is in
+flight (`_DAT_8007BC20 != 0`) no XA stream can start, so the shout degrades to a
+fixed SPU ring cue through `FUN_8004FCC8` - and the roster mapping there is not
+monotonic: Vahn `0x56`, Noa `0x62`, Gala `0x5C`.
+
+Cue ids below the band (and `0xFA`, and every id on a monster seat) route
+unchanged except for a `+1` nudge when the entry's staged anim id is exactly
+`0x12`; on a party seat whose record carries the `0x2000` bit that nudge becomes a
+**suppression** for ids `>= 0x4D`. Source: `ghidra/scripts/funcs/800508dc.txt`
+(disassembly).
 
 ### CD-XA voice-clip dispatchers and static cue census
 

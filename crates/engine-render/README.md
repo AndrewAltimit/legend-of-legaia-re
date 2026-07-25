@@ -341,6 +341,34 @@ populated town. `LEGAIA_POSE_CACHE_VERIFY=1` re-checks the memo against the
 live pose on every cache hit and logs any mismatch, which is what pins the
 `(slot, frame)` key as non-aliasing.
 
+## Retail draw-decision kernels (no host yet)
+
+Four modules port SCUS passes that *decide* what the draw path does rather
+than emit geometry. Each is pure, unit-tested and carries a `NOT WIRED`
+disclosure naming the host it is missing - the state they act on
+(actor pool, battle context, mode dispatcher) lives in `engine-core`.
+
+- [`actor_bind`](src/actor_bind.rs) (`FUN_80020f88`) - resolves an actor's
+  mesh-pool index off its `.MAP` placement record (`rec[+0x10] + prefix`,
+  the rule [`renderer.md`](../../docs/subsystems/renderer.md) records as
+  replacing the falsified positional one) and reports whether a `0x9C`-byte
+  render node must be allocated.
+- [`battle_actor_tick`](src/battle_actor_tick.rs) (`FUN_800480d8`) - the
+  ordered tint / signature-effect / after-image / draw schedule for one
+  battle actor, plus the defeated-monster grey stamp (`0x00808080`, a
+  24-bit RGB colour word - not a `0x80808080` flag).
+- [`attach_swap`](src/attach_swap.rs) (`FUN_8004ccd4`) - picks default vs
+  variant equipment mesh per attach-bone channel from the playing entry's
+  `+0xA4` frame windows, with the part-count-mismatch escape. Layout in
+  [`battle-data-pack.md`](../../docs/formats/battle-data-pack.md).
+- [`battle_sideband`](src/battle_sideband.rs) (`FUN_80056208`) - the battle
+  intro / in-battle / outro sideband state machine and its cadence-invariant
+  camera pull-back ramp.
+- [`mode_transition`](src/mode_transition.rs) (`FUN_80016230`) - the
+  mode-entry prologue: frame-pacing reset, the RAM-cached-overlay word-sum
+  verdict, and the field snapshot a battle / cutscene / minigame mode is
+  entered behind.
+
 ## Current limitations
 
 Draws are not batched, and the TSB / CBA per-mode descriptor overrides

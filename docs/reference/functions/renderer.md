@@ -35,6 +35,8 @@ Part of the [key function directory](../functions.md) - the conventions for read
 | `8001C204` | **World-map object-effect GTE transform builder.** `(actor)`. Composes the scratchpad working transform at `0x1F800314` for object-effect kind `*(actor+0x42) - 1`: a per-type param table at `0x80083FF8` (stride `0x14`; rotation angles at `+0/+2/+4`, extra u16s copied to `0x1F800380/382` from `+0x10/+0x12`) is rotated (`FUN_800461A4/629C/638C` = per-axis RotMatrix) and composed with the actor's own `+0x24` Euler and `+0x14` position through the GTE matrix ops `FUN_8003D20C/D1A4/D344`; the resulting translation lands at `0x1F800328/32C/330`. Reached from the world-map object dispatch (see [`world-map.md`](../../subsystems/world-map.md)). Render-track (GTE); unported (engine transforms via wgpu). `see ghidra/scripts/funcs/8001c204.txt`. |
 | `8001C394` | **Object drop-shadow / floor-decal emitter.** `(actor)`. Emits a 2x2 grid of gouraud quads (packet tag `0x09000000`, base colour `0x2E808080`) projected through the GTE from the actor position (`FUN_800460AC(actor+0x14)`), depth-sorted into the scratchpad OT `_DAT_1F8003F4` by `((sum_z + 0xA0) >> 4) >> (DAT_1F8003A4 & 0x1F)` - and into the *behind* bucket (`-0x28`) when `*(actor+0x10) & 0x800000`. Adds a per-vertex depth-cue offset from the fog LUT `_DAT_8007BB04` when `_DAT_1F800394 & 1`. The "general graphics-library" object-decal drawer (see [`playthrough-coverage.md`](../../tooling/playthrough-coverage.md)). Render-track (GPU packet); unported (engine rasterises via wgpu). `see ghidra/scripts/funcs/8001c394.txt`. |
 | `80024E08` | **Set-model primitive** for script-driven (non-`.MAP`-grid) actors. `(actor, model_idx)`. Writes `actor+0x64 = model_idx` (the index `FUN_80021B04` later resolves through `DAT_8007C018`), clears `actor+0x5C`, clears draw-flag bit `0x1000` at `actor+0x10`, mirrors the model to `actor+0x60` when game mode `_DAT_8007B83C == 0xF`, then re-stages the actor via `FUN_80020F88`. See [`subsystems/world-map.md`](../../subsystems/world-map.md). `see ghidra/scripts/funcs/80024e08.txt`. |
+| `80020F88` | Actor **render binding + render-node allocation** - resolves the mesh-pool index off the `.MAP` placement record and allocates the `0x9C`-byte node the draw path walks - [details ↓](#80020f88) |
+| `800480D8` | Per-actor **battle draw tick** - sequences tint / trail / draw, and stamps the defeated-monster grey - [details ↓](#800480d8) |
 | `80031D00` | Per-frame text-actor tick. Walks the actor list at `gp[+0x148]` and dispatches on `actor[+0x1C]`: cases 0/1/D/11 render text via `FUN_80036888`/`FUN_8003CC98`; cases 4/6/C/21 hand off to sub-routines. The per-frame driver behind dialog/labels. |
 | `8001EBEC` | Equipment-conditional per-character TMD group-descriptor patch (the OBJECT 10/11 pose swap) - [details ↓](#8001ebec) |
 | `8001E890` | "DATA_FIELD player loader" - loads `data\field\player.lzs` via the disc index `0x36C` r... - [details ↓](#8001e890) |
@@ -138,6 +140,65 @@ Per-frame substeps of `FUN_801D1344` (the actor frame handler in the dialog over
 ## Function details
 
 Full write-ups for the rows above whose detail outgrew a table cell. Linked from each section table by **[details ↓]**.
+
+### `80020F88`
+
+**Actor render binding + render-node allocation.** `(actor) -> 0 / -1`. Two
+refresh arms off the flag word `actor+0x10`, both reading the `0x20`-byte `.MAP`
+placement record table at `_DAT_1F8003EC`:
+
+- bit `0x8000` reads the record at `(actor+0x60)*0x20` and writes
+  `actor+0x58 = rec[+0x1E]`, `actor+0x64 = rec[+0x10] + DAT_8007B6F8`,
+  `actor+0x52 = rec[+0x12] & 0x3E8`;
+- bit `0x100000` picks the kind from `rec[+0x12] & 3` (`0 / 6 / 7 / 8`) - indexing
+  the table by `actor+0x64` rather than by `+0x60` - and then re-derives all three
+  fields from `+0x60` again, this time masking with `0x380`.
+
+Bit `0x40000` clear also clears bit `0x2`. Kinds `1..=5`, `7` and `8` - **not**
+`6`, which is exactly what `rec[+0x12] & 3 == 1` selects - then allocate a
+`0x9C`-byte node into `actor+0x44` via `FUN_80017888` (idempotent under bit
+`0x800`; on failure the kind resets to `0`, `_DAT_8007B828 |= 0x4000` and the
+function returns `-1`), zero `actor+0x7C`, seed `node+0x94/+0x96/+0x98 = 0` and
+`node+0x9A = -1`, and - unless bit `0x40000` is set - run `FUN_80024D78`, falling
+through to `FUN_800204A4` only on a zero result.
+
+A debug bound check (`_DAT_8007BB38 + 1` against the sign-extended `actor+0x64`,
+compared unsigned, so a negative index fails too) prints rather than aborts. The
+mesh-index rule this establishes - **`rec[+0x10] + prefix`, not the object's
+position in the pack** - is the one recorded in
+[`subsystems/renderer.md`](../../subsystems/renderer.md). Ported as
+`legaia_engine_render::actor_bind`, `NOT WIRED` (that crate holds no actor pool).
+`see ghidra/scripts/funcs/80020f88.txt`.
+
+### `800480D8`
+
+**Per-actor battle draw tick.** `(actor)`. Returns immediately on
+`actor+0x10 & 8`.
+
+A set `ctx+0x272` first runs the scene-teardown preamble, itself guarded on the
+effect-VM ready flag `DAT_8007BD71 == 0xFF`: four battle-overlay shutdowns
+(`FUN_801E0080`, `FUN_801E09F8`, `FUN_801DF6B8`, `FUN_801E2524`), then a sweep
+voiding every `DAT_801C90F0[0..0x80]` entry whose target carries flag bit `0x8`,
+plus `FUN_801F7B88` when `_DAT_8007BDC0 != 0`. The byte is cleared whether or not
+the ready flag let the body run.
+
+Then `FUN_8004A908` (the tint / fade pass) unconditionally, and a split on
+`actor+0x74 & 0x00FFFFFF`:
+
+- **zero** - the actor is drawn **only** if a four-way gate passes: seat
+  `actor+0x5A` in `3..=6` (the monster seats), `ctx+0x287` set, `gp+0x9F5` clear,
+  and `*(DAT_801C9370 + seat*4) + 0x21C == 2`. Failing it means no draw at all
+  this frame.
+- **non-zero** - `FUN_8005112C`, trail flag `actor+0x6A = 1`, `FUN_80049348`,
+  `FUN_8004A908`, then the flag back to `0` unless the seat is exactly `7`; the
+  same four-way gate follows, but failing it still draws, untinted.
+
+Passing the gate stamps `actor+0x74 = 0x00808080` and draws. That constant is
+**24-bit mid-grey RGB** - `lui v0,0x80 ; ori v0,v0,0x8080` - the same `0x808080`
+the after-image ghost and the move-FX streak use, and the mask beside it is
+`0x00FFFFFF`. It is not a `0x80808080` flag word. Ported as
+`legaia_engine_render::battle_actor_tick`, `NOT WIRED` (none of the five passes it
+sequences live in that crate). `see ghidra/scripts/funcs/800480d8.txt`.
 
 ### `80059BD4`
 

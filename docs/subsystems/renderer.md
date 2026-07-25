@@ -571,6 +571,12 @@ The positional rule `pack = obj_idx - 5` is wrong: it maps obj 114 to the
 untextured pack 109, when the record resolves it to the textured pack 84 -
 which is what the live battle-scene actor list shows, and why obj 114 draws.
 
+The full retail binding pass - both refresh arms, the kind table, the `0x9C`-byte
+render-node allocation and the mesh-chain follow-through - is written up under
+[`FUN_80020F88`](../reference/functions/renderer.md#80020f88) and ported as
+`legaia_engine_render::actor_bind`, which carries the index rule as a unit test
+against the obj-114 case above.
+
 #### CLUT-trace + VRAM-oracle diagnostics
 
 Two `legaia-engine` subcommands surface where the engine's loader still has gaps against a captured runtime VRAM:
