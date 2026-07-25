@@ -16,7 +16,8 @@ The popular description is "an off-class weapon **doubles** the arm command." Th
 - [Who writes the cost](#who-writes-the-cost)
 - [Disc location](#disc-location)
 - [Confidence and open threads](#confidence-and-open-threads)
-- [Arts AP-grant hook](#arts-ap-grant-hook)
+- [What an art costs in AP](#what-an-art-costs-in-ap)
+- [Arts AP override hook](#arts-ap-override-hook)
 - [See also](#see-also)
 
 ## Where the cost lives
@@ -192,44 +193,116 @@ Cross-checked against live RAM: Gala + Nail Glove reads `0x2A`, Gala + Ra-Seru C
 
 The weapon-specialty mechanic is therefore a fully editable data table: rewrite a character's favored-class arm costs up / another class's down to reassign their specialty. The [randomizer](../tooling/randomizer.md)'s `--weapon-specialty` does exactly this - it permutes the three favored families among the characters by rewriting these bytes (decompressing / re-compressing each touched section in place).
 
-## Arts AP-grant hook
+## What an art costs in AP
 
-The gauge cost above is spent inside the **party arts queue-builder**
+This is a **different AP** from the command-gauge cost above: the arm/command
+width `+0x74` is spent out of the per-turn input budget, while an *art* is paid
+for out of the caster's Spirit gauge `actor[+0x170]` - the same gauge the Spirit
+command charges (see [`randomizer.md` § spirit AP](../tooling/randomizer.md)).
+Conflating the two is the standing trap in this area.
+
+**Retail stores no per-art AP cost.** The party arts queue-builder
 `FUN_801EED1C` (PROT 0898, base `0x801CE818`, file `+0x20504`;
-`see ghidra/scripts/funcs/overlay_battle_action_801eed1c.txt`), which runs only
-for a party slot (`< 3`; monster AI uses `FUN_801E7320`). When a committed
-directional run fully matches one of the character's art records, the builder
-gates it on the caster's Spirit/AP (`actor[+0x170]`), debits the cost, and
-accrues it into the spent accumulator (`actor[+0x224]`) that the same function
-refunds at end of turn. The randomizer's **arts AP-grant** hook
-(`--arts-ap-grant`) detours three sites of that flow so a configured art is
-admitted at any AP level and *adds* AP instead of paying.
+`see ghidra/scripts/funcs/overlay_battle_action_801eed1c.txt`) computes it. It
+picks a multiplier into `t4` from three code immediates, keyed on how many art
+rows it has already visited for this character (`[sp+0x40]`, zeroed at
+`0x801EF300` and bumped once per row at `0x801EF844`):
+
+| rows visited | multiplier | site |
+|---|---|---|
+| `0` | `0xB` (11) | `li t4,0xb` at `0x801EF328` |
+| `1..3` | `0xA` (10) | `li t4,0xa` at `0x801EF32C` |
+| `>= 4` | `6` | `li t4,0x6` at `0x801EF33C` |
+
+halved by `srl t4,t4,0x1` at `0x801EF378` when the actor's `0x800` flag is set.
+The cost is then `t4 x command_count`, twice: `mult t4,s1` / `mflo t7`
+(`0x801EF40C`) produces the number the affordability gate compares against
+Spirit, and `mult t4,v0` / `mflo a2` (`0x801EF474`) produces the number charged.
+
+### Where the charge actually lands
+
+The site-C debit (`subu v0,v0,a2` at `0x801EF498`) is **not** the spend. It is
+undone by the builder's own tail (`Spirit += actor[+0x224]` at `0x801EF988`);
+its purpose is to make a *chained* art's affordability gate account for what the
+earlier arts in the same run already committed. The real spend is the
+accumulator `actor[+0x224]`, subtracted once in the battle-action cleanup arm:
+
+```text
+801e5d60  lbu  a0,0x224(s3)     ; accumulated art cost
+801e5d6c  sb   v1,0x224(s3)     ; +0x224 = 8 (the per-action accrual)
+801e5d74  subu v0,v0,a0         ; gauge -= accumulated art cost   <- the spend
+801e5d78  sh   v0,0x170(s3)
+```
+
+Anything that changes an art's cost therefore has to move the accumulator, not
+just the in-builder debit.
+
+### The menu number is a separate source
+
+The AP the pause menu's arts list shows is the `+2` byte of the static
+[arts-name table](../formats/art-data.md#arts-name-table-dat_80075ec4)
+(`DAT_80075EC4 + n*0x14`), and **exactly one site in the whole image reads it**:
+`lbu a0,0x2(s2)` at `0x801D4524` in the menu overlay's status-panel renderer
+`FUN_801D33D8` (PROT 0899), which applies the same `0x800`-flag halving
+(`sra a0,a0,0x1`) and hands the value to the 3-cell decimal drawer
+`FUN_80034B78`. Retail keeps that byte consistent with the formula by hand: for
+all 45 arts it equals `t4(rows visited) x command_count` exactly - including
+Noa's, whose display indices skip `2` and `3` while her *visit* order does not,
+which is why her index-4 Vulture Blade carries `10 x 5` and not `6 x 5`. So the
+battle path and the menu have two independent sources that agree only by
+authoring, and a mod that changes one must change the other.
+
+## Arts AP override hook
+
+The randomizer's **arts AP override** (`--arts-ap-grant` / `--arts-ap-cost`)
+detours three sites of that flow so a configured art either is admitted at any
+AP level and *adds* AP instead of paying, or is gated on and charged a flat cost
+of the modder's choosing.
 
 The art identity is register `s3` (the art-row cursor, `li s3,0xb` at
 `0x801ef2ec`); the 0-based row is `s3 - 0x0B` (site B below,
 `addiu a1,s3,-0xb`), which equals the art's arts-table display index (`0` =
-Miracle Art). A 26-entry `i8` config table indexed by that row (art rows
-`0x0B..=0x24`) drives the grant: `0` = retail, `> 0` = grant that many AP,
-admit + no cost. The row is a **shared** index across the three characters (the
-table is indexed by the row cursor, not by character), so a grant applies to
-every character's art at that row.
+Miracle Art). That row alone is shared across the three characters, so the
+character comes from a second register the builder already holds:
+`t6 = &DAT_8007BD10[slot]` (built by `addu t6,t9,t7` at `0x801EF30C` and read by
+retail itself as `lbu v0,0x0(t6)` at `0x801EF340`), where
+[`DAT_8007BD10[slot]`](battle.md) is the 1-based party-record id. The injected
+routines replay that load, so the config index is
+`(id - 1) * 32 + (s3 - 0x0B)` over a `4 x 32` `i8` table: `0` = retail,
+`> 0` = grant that many AP (admit + no cost), `< 0` = charge `-value` AP. One
+art per cell - **an override never moves another character's art**.
 
 | Site | VA | Stock word | Role |
 |---|---|---|---|
-| A affordability guard | `0x801EF410` | `0x94A20170` (`lhu v0,0x170(a1)`) | bypassed for a grant art so `slt v0,v0,t7` reads "affordable" (admit at 0 AP) |
-| B per-art index | `0x801EF438` | `0x2665FFF5` (`addiu a1,s3,-0xb`) | pins the config index `= s3 - 0x0B` (read-only build fingerprint, not detoured) |
-| C AP debit + accrual | `0x801EF490` | `0x94620170` (`lhu v0,0x170(v1)`) | a grant art *adds* AP (clamped at 100), stores, and returns past the `+0x224` accrual (`0x801EF4A0..0x801EF4B4`) so the refund never double-counts it; a native art falls through to the stock `subu v0,v0,a2` at `0x801EF498` |
+| A affordability guard | `0x801EF410` | `0x94A20170` (`lhu v0,0x170(a1)`) | a grant forces `v0 = 0x7FFF` so `slt v0,v0,t7` reads "affordable" (admit at 0 AP); a cost replaces `t7` with the configured value so the stock compare gates on it |
+| B per-art index | `0x801EF438` | `0x2665FFF5` (`addiu a1,s3,-0xb`) | pins the config row `= s3 - 0x0B` (read-only build fingerprint, not detoured) |
+| C AP debit + accrual | `0x801EF490` | `0x94620170` (`lhu v0,0x170(v1)`) | a grant *adds* AP (clamped at 100) and returns past the `+0x224` accrual (`0x801EF4A0..0x801EF4B4`) so the refund never double-counts it; a cost debits the gauge and accrues the same override into `+0x224` (the value the cleanup arm charges) and returns past both stock steps; a native art falls through to `subu v0,v0,a2` at `0x801EF498` |
 | D end-of-turn refund | `0x801EF988` | `0x94620170` (`lhu v0,0x170(v1)`) | replays `Spirit += +0x224` and clamps it at 100 (retail leaves this unclamped, deferring to the `FUN_801E295C` state-`0x50` cap) |
+
+A configured cost is **flat** - it replaces the product outright, so it does not
+follow retail's `srl t4,t4,0x1` halving under the actor's `0x800` flag. The menu
+renderer still halves what it *draws* in that state (its own `sra a0,a0,0x1`),
+so an odd configured cost reads one lower there.
+
+Alongside the code hook, each targeted art's menu `+2` byte is rewritten to
+match: a cost writes the cost, a grant writes `0`. `FUN_80034B78` emits digit
+sprites only (`u = digit*8`, `v = 0xD0`) and has no sign path, so `0` - a value
+no retail art carries (the retail minimum is 18) and the smallest configurable
+cost (`1`) cannot collide with - is the in-game marker for "this art pays you".
+A literal `+`/`-` would need an extra sprite draw injected into 0899.
 
 Placement: the battle overlay is packed (no dead space - the move-power window
 `0x801F4E63..0x801F69D8` is the only large zero run and is runtime-indexed), so
-the three detour routines + the config table are injected into a verified-dead
-SCUS arena (`shiny_seru::ARENA1_VA = 0x8007AE00..0x8007AF00`), reached from the
-0898 detours by `j`. Those bytes are the same ones the [shiny-Seru](../tooling/randomizer.md#shiny-seru)
-feature reuses, so **arts AP-grant and `--shiny-seru` are mutually exclusive** -
-enforced in the CLI and the web patcher. All four site words are byte-verified
-against the extracted 0898 image; an unrecognized build is refused, not
-corrupted. Port: [`legaia_patcher::arts_ap_grant`](../../crates/patcher/src/arts_ap_grant.rs).
+the detour routines go into the verified-dead SCUS arenas
+`shiny_seru::ARENA1_VA` (guard + debit) and `ARENA2_VA` (refund), with the
+config table in the rodata gap `SCUS_GAP_VA`, all reached from the 0898 detours
+by `j`. Those are the same bytes the
+[shiny-Seru](../tooling/randomizer.md#shiny-seru) feature reuses, so **the arts
+AP override and `--shiny-seru` are mutually exclusive** - enforced in the CLI and
+the web patcher. All four site words plus the `t6` character read are
+byte-verified against the extracted 0898 image; an unrecognized build is
+refused, not corrupted.
+Port: [`legaia_patcher::arts_ap_grant`](../../crates/patcher/src/arts_ap_grant.rs).
 
 ## See also
 

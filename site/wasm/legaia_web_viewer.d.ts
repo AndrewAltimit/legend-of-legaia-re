@@ -3690,10 +3690,14 @@ export function lift_official_pack(target_image: Uint8Array, source_image: Uint8
  * 100000); the game debits exactly that many coins on purchase. `arts_powers`
  * is a comma/space-separated list of `combo=value` pairs that rebalance a
  * Tactical Art's damage-power bytes (e.g. `RDLDL=0x16`; `value` a power byte
- * `0x0C..=0x1F` or `0`). `arts_ap_grants` is a comma/space-separated list of
- * `combo=amount` pairs (e.g. `RDLDL=10`; `amount` 1..=100 AP) that make an art
- * grant AP instead of costing it; mutually exclusive with `shiny_seru` (same
- * SCUS arena). `spirit_ap` (empty = untouched) sets how much AP the Spirit
+ * `0x0C..=0x1F` or `0`). `arts_ap_grants` and `arts_ap_costs` are
+ * comma/space-separated lists of `[character:]combo=amount` pairs (e.g.
+ * `Vahn:RDLDL=10`; `amount` 1..=100 AP): a grant makes the art castable at any
+ * AP level and *add* that much, a cost charges exactly that much instead of
+ * retail's computed value, and both rewrite the art's menu AP number (a grant
+ * shows `0`). Each entry keys on `(character, arts row)`, so one character's
+ * art never moves another's. Mutually exclusive with `shiny_seru` (same SCUS
+ * regions). `spirit_ap` (empty = untouched) sets how much AP the Spirit
  * command charges into the battle gauge (retail 32; `0` = defence boost
  * only, `100` = one press fills the gauge, negative = Spirit drains the
  * gauge) - four immediate words in the battle overlay (the accrual plus the
@@ -3723,7 +3727,7 @@ export function lift_official_pack(target_image: Uint8Array, source_image: Uint8
  * mismatch) are counted in the summary but never abort the patch. Returns
  * `{ data, summary, seed }`.
  */
-export function patch_rom(image: Uint8Array, seed: string, lang_pack: string, drops: string, encounters: string, encounter_scope: string, chests: string, shops: string, casino: string, steals: string, arts: string, doors: string, door_coupling: string, house_doors: string, starting_items: number, door_of_wind: number, incense: number, speed_chain: number, chicken_heart: number, good_luck_bell: number, all_warps: boolean, unused_enemies: boolean, unused_items: boolean, equipment_drops: boolean, monster_stats: string, move_power: string, element_affinity: string, spell_cost: string, equip_bonus: string, weapon_specialty: boolean, starting_level: number, solo_strong_encounters: boolean, flee_exp: boolean, seru_trade: boolean, enemy_ally: boolean, shiny_seru: boolean, jewel_fix: boolean, approach_softlock_fix: boolean, fishing_prices: string, location_renames: string, earth_egg_price: string, arts_powers: string, arts_ap_grants: string, spirit_ap: string, damage_ap: string, enemy_stat_scale: string): any;
+export function patch_rom(image: Uint8Array, seed: string, lang_pack: string, drops: string, encounters: string, encounter_scope: string, chests: string, shops: string, casino: string, steals: string, arts: string, doors: string, door_coupling: string, house_doors: string, starting_items: number, door_of_wind: number, incense: number, speed_chain: number, chicken_heart: number, good_luck_bell: number, all_warps: boolean, unused_enemies: boolean, unused_items: boolean, equipment_drops: boolean, monster_stats: string, move_power: string, element_affinity: string, spell_cost: string, equip_bonus: string, weapon_specialty: boolean, starting_level: number, solo_strong_encounters: boolean, flee_exp: boolean, seru_trade: boolean, enemy_ally: boolean, shiny_seru: boolean, jewel_fix: boolean, approach_softlock_fix: boolean, fishing_prices: string, location_renames: string, earth_egg_price: string, arts_powers: string, arts_ap_grants: string, arts_ap_costs: string, spirit_ap: string, damage_ap: string, enemy_stat_scale: string): any;
 
 /**
  * Resolve a user seed string to the numeric seed, as a decimal string (so the
@@ -4259,7 +4263,7 @@ export interface InitOutput {
     readonly music01render_ok: (a: number) => number;
     readonly music01render_pcm: (a: number) => [number, number];
     readonly music01render_rate: (a: number) => number;
-    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number, l1: number, m1: number, n1: number, o1: number, p1: number, q1: number, r1: number, s1: number, t1: number, u1: number, v1: number, w1: number, x1: number, y1: number, z1: number, a2: number, b2: number, c2: number, d2: number, e2: number, f2: number, g2: number, h2: number, i2: number, j2: number, k2: number, l2: number, m2: number, n2: number, o2: number, p2: number, q2: number, r2: number, s2: number, t2: number, u2: number) => [number, number, number];
+    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number, l1: number, m1: number, n1: number, o1: number, p1: number, q1: number, r1: number, s1: number, t1: number, u1: number, v1: number, w1: number, x1: number, y1: number, z1: number, a2: number, b2: number, c2: number, d2: number, e2: number, f2: number, g2: number, h2: number, i2: number, j2: number, k2: number, l2: number, m2: number, n2: number, o2: number, p2: number, q2: number, r2: number, s2: number, t2: number, u2: number, v2: number, w2: number) => [number, number, number];
     readonly resolve_seed: (a: number, b: number) => [number, number];
     readonly save_summary_json: (a: number, b: number) => [number, number, number, number];
     readonly validate_lang_pack: (a: number, b: number, c: number, d: number) => [number, number, number];

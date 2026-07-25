@@ -28,10 +28,10 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     };
     // Arts AP-grant and shiny-Seru reuse the same verified-dead SCUS arena bytes,
     // so they are mutually exclusive - refuse before touching anything.
-    if !args.arts_ap_grant.is_empty() && args.shiny_seru {
+    if (!args.arts_ap_grant.is_empty() || !args.arts_ap_cost.is_empty()) && args.shiny_seru {
         bail!(
-            "--arts-ap-grant and --shiny-seru both inject into the same verified-dead SCUS \
-             arena and are mutually exclusive; enable only one"
+            "--arts-ap-grant / --arts-ap-cost and --shiny-seru both inject into the same \
+             verified-dead SCUS regions and are mutually exclusive; enable only one"
         );
     }
 
@@ -351,32 +351,45 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         }
     }
 
-    // Arts AP-grant: three same-size detours into the party arts queue-builder
-    // (PROT 0898) + routines and a 26-entry config table in a verified-dead SCUS
-    // arena, so a targeted art grants AP (clamped at 100) instead of costing it.
-    // The config row is the arts-table index, shared across all three characters.
-    if !args.arts_ap_grant.is_empty() {
-        let report = apply::inject_arts_ap_grant(&mut patcher, &args.arts_ap_grant)?;
+    // Arts AP override: three same-size detours into the party arts queue-builder
+    // (PROT 0898) + routines and a per-(character, row) config table in
+    // verified-dead SCUS regions, so a targeted art either grants AP (clamped at
+    // 100) or charges a flat cost instead of retail's computed one. Each entry
+    // lands in its own cell, so one character's art never moves another's. The
+    // art's menu AP number (a separate byte in the SCUS arts-name table, the
+    // pause menu's only source) is rewritten to match.
+    if !args.arts_ap_grant.is_empty() || !args.arts_ap_cost.is_empty() {
+        let specs: Vec<_> = args
+            .arts_ap_grant
+            .iter()
+            .chain(args.arts_ap_cost.iter())
+            .cloned()
+            .collect();
+        let report = apply::inject_arts_ap_grant(&mut patcher, &specs)?;
         for g in &report.resolved {
-            let targeted = legaia_patcher::arts_ap_grant::combo_str(&g.targeted_combo);
-            let shared: Vec<String> = g
-                .shared
-                .iter()
-                .map(|(ch, name, combo)| {
-                    let c = legaia_patcher::arts_ap_grant::combo_str(combo);
-                    format!("{ch:?} {c} {name:?}")
-                })
-                .collect();
+            let combo = legaia_patcher::arts_ap_grant::combo_str(&g.combo);
+            let what = if g.mode.is_grant() {
+                format!("grants {} AP", g.mode.amount())
+            } else {
+                format!("costs {} AP", g.mode.amount())
+            };
             println!(
-                "arts-ap-grant: {targeted} -> row {} grants {} AP (shared row affects: {})",
-                g.row,
-                g.amount,
-                shared.join("; ")
+                "arts-ap: {:?} {combo} {:?} (row {}) {what} - menu list now shows {} (was {})",
+                g.character, g.name, g.row, g.display_ap, g.previous_display_ap
             );
         }
-        for (combo, amount) in &args.arts_ap_grant {
-            let combo_s = legaia_patcher::arts_ap_grant::combo_str(combo);
-            manifest.push(format!("arts_ap_grant {combo_s} = {amount}"));
+        for spec in &specs {
+            let combo_s = legaia_patcher::arts_ap_grant::combo_str(&spec.combo);
+            let who = match spec.character {
+                Some(c) => format!("{c:?}:"),
+                None => String::new(),
+            };
+            let key = if spec.mode.is_grant() {
+                "arts_ap_grant"
+            } else {
+                "arts_ap_cost"
+            };
+            manifest.push(format!("{key} {who}{combo_s} = {}", spec.mode.amount()));
         }
     }
 

@@ -11,7 +11,7 @@
  * solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru,
  * jewel_fix, approach_softlock_fix, fishing_prices, location_renames,
  * earth_egg_price, arts_powers,
- * arts_ap_grants, spirit_ap, damage_ap, enemy_stat_scale)
+ * arts_ap_grants, arts_ap_costs, spirit_ap, damage_ap, enemy_stat_scale)
  * -> { data, summary, seed, lang }`, `resolve_seed(str)`,
  * `validate_lang_pack(image, yaml) -> { ok, language, applied, skipped, message, report }`,
  * `export_lang_pack(image, language) -> yaml_string`, and
@@ -142,15 +142,21 @@ function cueFor(binName) {
 }
 
 // --- Tactical-Art override builder ------------------------------------------
-// A friendly per-art picker over the same two WASM params the raw text inputs
-// feed (`arts_powers` = combo=powerbyte, `arts_ap_grants` = combo=amount).
-// The table mirrors the disc's SCUS arts table (what `legaia-patcher arts`
-// lists): per character, the arts-table display index `i` (the AP-grant config
-// row, shared across characters), the button combo `k` (the matcher key), the
-// menu AP cost, and the current per-hit damage multipliers `h` for context.
-// Names / combos / AP costs are the same curated walkthrough data the site's
-// arts page ships. Miracle Arts are left out: their table rows are not
-// combo-addressable, so neither feature can target them.
+// A friendly per-art picker over the WASM params the raw text inputs feed
+// (`arts_powers` = combo=powerbyte, `arts_ap_grants` / `arts_ap_costs` =
+// [character:]combo=amount). The table mirrors the disc's SCUS arts table (what
+// `legaia-patcher arts` lists): per character, the arts-table display index `i`
+// (the AP config row *within that character's block* - the table is keyed by
+// (character, row), so an AP change never spills onto another character's art),
+// the button combo `k` (the matcher key), the menu AP cost, and the current
+// per-hit damage multipliers `h` for context. Names / combos / AP costs are the
+// same curated walkthrough data the site's arts page ships. Miracle Arts are
+// left out: their table rows are not combo-addressable, so neither feature can
+// target them.
+//
+// Damage overrides are still keyed by combo alone (they rewrite the shared art
+// record's power bytes), so those DO carry over to another character with the
+// same combo - which is why only the damage note mentions collateral.
 const ART_TABLE = [
   { c: 'Vahn', i: 1, n: 'Burning Flare', k: 'RDLDL', ap: 50, h: '20/22/28/28' },
   { c: 'Vahn', i: 2, n: 'Fire Blow', k: 'RRDL', ap: 40, h: '22/28/28' },
@@ -219,14 +225,6 @@ function artByCombo(combo) {
   return ART_TABLE.filter((a) => a.k === combo);
 }
 
-// Every art an AP-grant on `combo` really touches: the grant config row is the
-// arts-table index shared across the three characters, so it is the union of
-// all arts sitting at any index this combo occupies.
-function grantAffected(combo) {
-  const rows = new Set(artByCombo(combo).map((a) => a.i));
-  return ART_TABLE.filter((a) => rows.has(a.i));
-}
-
 // Build one override row's DOM. `onChange` re-renders the row's effect note.
 function makeArtRow(onRemove) {
   const row = document.createElement('div');
@@ -265,13 +263,18 @@ function makeArtRow(onRemove) {
 
   const apMode = document.createElement('select');
   apMode.className = 'art-ap';
-  for (const [v, t] of [['cost', 'Costs AP (normal)'], ['grant', 'Gives AP back']]) {
+  for (const [v, t] of [['keep', 'Keep original'], ['cost', 'Costs AP'], ['grant', 'Gives AP back']]) {
     const o = document.createElement('option');
     o.value = v;
     o.textContent = t;
     apMode.appendChild(o);
   }
 
+  // One amount box for both modes. The encoded range is the same either way:
+  // the injected config table stores a signed byte per (character, art row) and
+  // `0` is its "leave at retail" value, so 1..100 is the whole usable span -
+  // 100 is the AP gauge's own cap (an art can never cost or grant past a full
+  // gauge) and 0 is unavailable rather than "free".
   const amt = document.createElement('input');
   amt.type = 'number';
   amt.className = 'art-amt';
@@ -279,11 +282,15 @@ function makeArtRow(onRemove) {
   amt.max = '100';
   amt.value = '10';
   amt.inputMode = 'numeric';
+  const amtSign = document.createElement('span');
+  amtSign.className = 'art-amt-sign';
+  const amtUnit = document.createElement('span');
+  amtUnit.className = 'art-amt-unit';
   const amtWrap = document.createElement('span');
   amtWrap.className = 'art-amt-wrap';
-  amtWrap.append('+');
+  amtWrap.appendChild(amtSign);
   amtWrap.appendChild(amt);
-  amtWrap.append('AP each use');
+  amtWrap.appendChild(amtUnit);
 
   const dmg = document.createElement('select');
   dmg.className = 'art-dmg';
@@ -315,32 +322,35 @@ function makeArtRow(onRemove) {
   const refresh = () => {
     const sel = pick.value ? pick.value.split(':') : null;
     const art = sel ? ART_TABLE.find((a) => a.c === sel[0] && a.k === sel[1]) : null;
-    amtWrap.parentElement.hidden = apMode.value !== 'grant';
+    const grant = apMode.value === 'grant';
+    amtWrap.parentElement.hidden = apMode.value === 'keep';
+    amtSign.textContent = grant ? '+' : '';
+    amtUnit.textContent = 'AP each use';
     if (!art) {
       note.textContent = 'Pick an art to change what it does.';
       return;
     }
     const parts = [];
-    if (apMode.value === 'grant') {
-      const n = Math.min(100, Math.max(1, parseInt(amt.value, 10) || 10));
-      parts.push(`${art.c}'s ${art.n} gives +${n} AP every use instead of costing ${art.ap} AP (usable at 0 AP, capped at 100).`);
-      const others = grantAffected(art.k).filter((a) => !(a.c === art.c && a.k === art.k));
-      if (others.length) {
-        parts.push('Shared menu slot, so it also applies to: ' +
-          others.map((a) => `${a.c}'s ${a.n}`).join(', ') + '.');
-      }
+    const n = Math.min(100, Math.max(1, parseInt(amt.value, 10) || 10));
+    if (grant) {
+      parts.push(`${art.c}'s ${art.n} gives +${n} AP every use instead of costing ${art.ap} AP (usable at 0 AP, capped at 100). The pause-menu arts list will show it as 0 AP - that is the in-game marker for an art that pays you.`);
+    } else if (apMode.value === 'cost') {
+      parts.push(`${art.c}'s ${art.n} costs ${n} AP every use instead of ${art.ap}, and the pause-menu arts list is updated to match.`);
+    }
+    if (apMode.value !== 'keep') {
+      parts.push("This is per character - no other character's art changes.");
     }
     if (dmg.value !== '') {
       const tier = DMG_TIERS.find((t) => t.v === dmg.value);
       parts.push(`Damage: ${tier.label.toLowerCase()} (was ×${art.h}).`);
       const twins = artByCombo(art.k).filter((a) => a.c !== art.c);
       if (twins.length) {
-        parts.push('Same combo, so it also changes: ' +
+        parts.push('Damage is keyed by the button combo, not by character, so it also changes: ' +
           twins.map((a) => `${a.c}'s ${a.n}`).join(', ') + '.');
       }
     }
     if (!parts.length) {
-      parts.push('No change yet - flip AP to "Gives AP back" or pick a damage tier.');
+      parts.push('No change yet - set AP to "Costs AP" / "Gives AP back", or pick a damage tier.');
     }
     note.textContent = parts.join(' ');
   };
@@ -353,10 +363,14 @@ function makeArtRow(onRemove) {
 }
 
 // Wire the "Tactical-Art overrides" builder. Returns { clear, collect }:
-// collect() serializes the rows into the same comma-separated `combo=value`
-// strings the raw inputs use ({ power, grant, error }).
+// collect() serializes the rows into the same comma-separated strings the raw
+// inputs use ({ power, grant, cost, error }). AP entries carry a `Character:`
+// prefix because the AP config table is keyed by (character, art row); damage
+// entries stay combo-only because that feature edits the shared art record.
 function setupArtBuilder(container, addBtn, onEdit) {
-  if (!container || !addBtn) return { clear() {}, collect() { return { power: '', grant: '', error: '' }; } };
+  if (!container || !addBtn) {
+    return { clear() {}, collect() { return { power: '', grant: '', cost: '', error: '' }; } };
+  }
 
   const addRow = () => {
     const row = makeArtRow(() => {
@@ -378,30 +392,40 @@ function setupArtBuilder(container, addBtn, onEdit) {
     collect() {
       const power = [];
       const grant = [];
+      const cost = [];
       const seenPower = new Set();
-      const seenGrant = new Set();
+      const seenAp = new Set();
+      const fail = (error) => ({ power: '', grant: '', cost: '', error });
       for (const row of container.querySelectorAll('.art-row')) {
         const { pick, apMode, amt, dmg } = row.artControls;
         if (!pick.value) continue;
         const [chName, combo] = pick.value.split(':');
         const art = ART_TABLE.find((a) => a.c === chName && a.k === combo);
-        if (apMode.value === 'grant') {
-          if (seenGrant.has(combo)) {
-            return { power: '', grant: '', error: `${art.n} is set to give AP twice - remove the duplicate row.` };
+        if (apMode.value !== 'keep') {
+          // Keyed per (character, combo): the same combo on two characters is
+          // two independent entries, so only an exact repeat is a duplicate.
+          const key = `${chName}:${combo}`;
+          if (seenAp.has(key)) {
+            return fail(`${chName}'s ${art.n} has two AP rows - remove the duplicate.`);
           }
-          seenGrant.add(combo);
+          seenAp.add(key);
           const n = Math.min(100, Math.max(1, parseInt(amt.value, 10) || 10));
-          grant.push(`${combo}=${n}`);
+          (apMode.value === 'grant' ? grant : cost).push(`${chName}:${combo}=${n}`);
         }
         if (dmg.value !== '') {
           if (seenPower.has(combo)) {
-            return { power: '', grant: '', error: `${art.n} has two damage rows - remove the duplicate.` };
+            return fail(`${art.n} has two damage rows - remove the duplicate.`);
           }
           seenPower.add(combo);
           power.push(`${combo}=${dmg.value}`);
         }
       }
-      return { power: power.join(', '), grant: grant.join(', '), error: '' };
+      return {
+        power: power.join(', '),
+        grant: grant.join(', '),
+        cost: cost.join(', '),
+        error: '',
+      };
     },
   };
 }
@@ -813,6 +837,7 @@ function init() {
       .filter(Boolean).join(', ');
     const artsApGrant = [artOv.grant, (artsApGrantInput.value || '').trim()]
       .filter(Boolean).join(', ');
+    const artsApCost = artOv.cost;
     const chests = segVal('chests', 'none');
     const shops = segVal('shops', 'none');
     const casino = segVal('casino', 'none');
@@ -858,14 +883,14 @@ function init() {
       monsterStats === 'none' && movePower === 'none' && elementAffinity === 'none' &&
       spellCost === 'none' && equipBonus === 'none' && !weaponSpecialty &&
       startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru && !jewelFix && !approachFix &&
-      !fishingPrice && !renameLocation && !earthEggPrice && !artsPower && !artsApGrant &&
+      !fishingPrice && !renameLocation && !earthEggPrice && !artsPower && !artsApGrant && !artsApCost &&
       !spiritAp && !damageAp && !enemyStatScale
     ) {
       setStatus('Enable at least one option (pick a preset, a language, or flip a toggle).', 'err');
       return;
     }
-    if (shinySeru && artsApGrant) {
-      setStatus('Shiny Seru and AP-giving arts cannot be combined (they use the same injected-code arena) - turn one of them off.', 'err');
+    if (shinySeru && (artsApGrant || artsApCost)) {
+      setStatus('Shiny Seru and per-art AP overrides cannot be combined (they use the same injected-code arena) - turn one of them off.', 'err');
       return;
     }
     const seed = (seedInput.value || '').trim() || String(Date.now());
@@ -884,7 +909,7 @@ function init() {
       setStatus('Patching (this can take a moment for a full disc) ...');
       // Yield so the status paints before the synchronous WASM call.
       await new Promise((r) => setTimeout(r, 30));
-      const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, spiritAp, damageAp, enemyStatScale);
+      const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale);
       const data = result.data;
       const usedSeed = result.seed;
       const name = patchedName(file.name, usedSeed);

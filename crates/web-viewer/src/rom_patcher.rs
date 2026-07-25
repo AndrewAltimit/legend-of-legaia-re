@@ -43,6 +43,47 @@ fn err(msg: impl AsRef<str>) -> JsValue {
     JsValue::from_str(msg.as_ref())
 }
 
+/// Parse one arts-AP token: `[CHARACTER:]COMBO=AMOUNT` (`Vahn:RDLDL=10`,
+/// `RDLDL=10`). `grant` picks the mode. Returns `None` on any malformed token
+/// (the caller reports it in the summary and carries on).
+fn parse_art_ap_token(tok: &str, grant: bool) -> Option<legaia_patcher::arts_ap_grant::ArtApSpec> {
+    use legaia_art::queue::Character;
+    use legaia_patcher::arts_ap_grant::{AP_CAP, ApMode, ArtApSpec};
+    let (lhs, val_str) = tok.trim().split_once('=')?;
+    let (character, combo_str) = match lhs.split_once(':') {
+        Some((c, rest)) => {
+            let ch = match c.trim().to_ascii_lowercase().as_str() {
+                "vahn" => Character::Vahn,
+                "noa" => Character::Noa,
+                "gala" => Character::Gala,
+                _ => return None,
+            };
+            (Some(ch), rest)
+        }
+        None => (None, lhs),
+    };
+    let combo = legaia_patcher::arts_power::parse_combo(combo_str.trim())?;
+    let vs = val_str.trim();
+    let amount = vs
+        .strip_prefix("0x")
+        .or_else(|| vs.strip_prefix("0X"))
+        .map(|h| u8::from_str_radix(h, 16))
+        .unwrap_or_else(|| vs.parse::<u8>())
+        .ok()?;
+    if amount < 1 || u16::from(amount) > AP_CAP {
+        return None;
+    }
+    Some(ArtApSpec {
+        character,
+        combo,
+        mode: if grant {
+            ApMode::Grant(amount)
+        } else {
+            ApMode::Cost(amount)
+        },
+    })
+}
+
 /// Parse an `item=value` pair where `item` is a u8 id (decimal or `0xHH`) and
 /// `value` is a u32. Returns `None` on any malformed token.
 fn parse_id_eq_u32(tok: &str) -> Option<(u8, u32)> {
@@ -140,10 +181,14 @@ pub fn resolve_seed(seed: &str) -> String {
 /// 100000); the game debits exactly that many coins on purchase. `arts_powers`
 /// is a comma/space-separated list of `combo=value` pairs that rebalance a
 /// Tactical Art's damage-power bytes (e.g. `RDLDL=0x16`; `value` a power byte
-/// `0x0C..=0x1F` or `0`). `arts_ap_grants` is a comma/space-separated list of
-/// `combo=amount` pairs (e.g. `RDLDL=10`; `amount` 1..=100 AP) that make an art
-/// grant AP instead of costing it; mutually exclusive with `shiny_seru` (same
-/// SCUS arena). `spirit_ap` (empty = untouched) sets how much AP the Spirit
+/// `0x0C..=0x1F` or `0`). `arts_ap_grants` and `arts_ap_costs` are
+/// comma/space-separated lists of `[character:]combo=amount` pairs (e.g.
+/// `Vahn:RDLDL=10`; `amount` 1..=100 AP): a grant makes the art castable at any
+/// AP level and *add* that much, a cost charges exactly that much instead of
+/// retail's computed value, and both rewrite the art's menu AP number (a grant
+/// shows `0`). Each entry keys on `(character, arts row)`, so one character's
+/// art never moves another's. Mutually exclusive with `shiny_seru` (same SCUS
+/// regions). `spirit_ap` (empty = untouched) sets how much AP the Spirit
 /// command charges into the battle gauge (retail 32; `0` = defence boost
 /// only, `100` = one press fills the gauge, negative = Spirit drains the
 /// gauge) - four immediate words in the battle overlay (the accrual plus the
@@ -218,6 +263,7 @@ pub fn patch_rom(
     earth_egg_price: &str,
     arts_powers: &str,
     arts_ap_grants: &str,
+    arts_ap_costs: &str,
     spirit_ap: &str,
     damage_ap: &str,
     enemy_stat_scale: &str,
@@ -243,10 +289,10 @@ pub fn patch_rom(
 
     // Arts AP-grant and shiny-Seru reuse the same verified-dead SCUS arena bytes,
     // so they are mutually exclusive - refuse the combination before patching.
-    if shiny_seru && !arts_ap_grants.trim().is_empty() {
+    if shiny_seru && !(arts_ap_grants.trim().is_empty() && arts_ap_costs.trim().is_empty()) {
         return Err(err(
-            "arts-ap-grant and shiny-seru both inject into the same verified-dead SCUS arena \
-             and are mutually exclusive; enable only one",
+            "the arts AP override and shiny-seru both inject into the same verified-dead SCUS \
+             regions and are mutually exclusive; enable only one",
         ));
     }
 
@@ -653,60 +699,51 @@ pub fn patch_rom(
         }
     }
 
-    // Arts AP-grant: comma/space/newline-separated `COMBO=AMOUNT` tokens
-    // (`RDLDL=10`). `AMOUNT` (1..=100) is the AP granted per use; the art becomes
-    // castable at any AP level and adds that much (clamped at 100) instead of
-    // costing it. The config row is the arts-table index, shared across all three
-    // characters. Mutually exclusive with shiny-seru (guarded above).
+    // Arts AP override: comma/space/newline-separated `[CHARACTER:]COMBO=AMOUNT`
+    // tokens (`Vahn:RDLDL=10`). In `arts_ap_grants` the amount is AP granted per
+    // use (the art becomes castable at any AP level and adds that much, clamped
+    // at 100); in `arts_ap_costs` it is the flat AP the art charges, replacing
+    // retail's computed `multiplier x command count`. Each entry lands in its own
+    // per-(character, row) config cell, so one character's art never moves
+    // another's. Mutually exclusive with shiny-seru (guarded above).
     let arts_ap_grants = arts_ap_grants.trim();
-    if arts_ap_grants.is_empty() {
-        summary.push_str("arts-ap-grant: untouched\n");
+    let arts_ap_costs = arts_ap_costs.trim();
+    if arts_ap_grants.is_empty() && arts_ap_costs.is_empty() {
+        summary.push_str("arts-ap: untouched\n");
     } else {
-        let mut grants = Vec::new();
-        for tok in arts_ap_grants
-            .split([',', ';', '\n', ' '])
-            .filter(|t| !t.trim().is_empty())
-        {
-            let parsed = tok.split_once('=').and_then(|(c, v)| {
-                let combo = legaia_patcher::arts_power::parse_combo(c.trim())?;
-                let vs = v.trim();
-                let amount = vs
-                    .strip_prefix("0x")
-                    .or_else(|| vs.strip_prefix("0X"))
-                    .map(|h| u8::from_str_radix(h, 16))
-                    .unwrap_or_else(|| vs.parse::<u8>())
-                    .ok()?;
-                (amount >= 1 && u16::from(amount) <= legaia_patcher::arts_ap_grant::AP_CAP)
-                    .then_some((combo, amount))
-            });
-            match parsed {
-                Some(g) => grants.push(g),
-                None => {
-                    summary.push_str(&format!("arts-ap-grant: skipped malformed entry {tok:?}\n"))
+        let mut specs: Vec<legaia_patcher::arts_ap_grant::ArtApSpec> = Vec::new();
+        for (src, grant) in [(arts_ap_grants, true), (arts_ap_costs, false)] {
+            for tok in src
+                .split([',', ';', '\n', ' '])
+                .filter(|t| !t.trim().is_empty())
+            {
+                match parse_art_ap_token(tok, grant) {
+                    Some(s) => specs.push(s),
+                    None => {
+                        summary.push_str(&format!("arts-ap: skipped malformed entry {tok:?}\n"))
+                    }
                 }
             }
         }
-        if grants.is_empty() {
-            summary.push_str("arts-ap-grant: no valid entries\n");
+        if specs.is_empty() {
+            summary.push_str("arts-ap: no valid entries\n");
         } else {
-            match apply::inject_arts_ap_grant(&mut patcher, &grants) {
+            match apply::inject_arts_ap_grant(&mut patcher, &specs) {
                 Ok(rep) => {
                     for g in &rep.resolved {
-                        let targeted = legaia_patcher::arts_ap_grant::combo_str(&g.targeted_combo);
-                        let shared: Vec<String> = g
-                            .shared
-                            .iter()
-                            .map(|(ch, name, _)| format!("{ch:?} {name:?}"))
-                            .collect();
+                        let combo = legaia_patcher::arts_ap_grant::combo_str(&g.combo);
+                        let what = if g.mode.is_grant() {
+                            format!("grants {} AP", g.mode.amount())
+                        } else {
+                            format!("costs {} AP", g.mode.amount())
+                        };
                         summary.push_str(&format!(
-                            "arts-ap-grant: {targeted} -> row {} grants {} AP (shared: {})\n",
-                            g.row,
-                            g.amount,
-                            shared.join("; ")
+                            "arts-ap: {:?} {combo} {:?} {what} (menu list now reads {}, was {})\n",
+                            g.character, g.name, g.display_ap, g.previous_display_ap
                         ));
                     }
                 }
-                Err(e) => summary.push_str(&format!("arts-ap-grant: {e}\n")),
+                Err(e) => summary.push_str(&format!("arts-ap: {e}\n")),
             }
         }
     }

@@ -95,15 +95,37 @@ pub(crate) fn parse_arts_power(s: &str) -> Result<(Vec<legaia_art::queue::Comman
     Ok((combo, value))
 }
 
-/// Parse an `--arts-ap-grant` entry: `COMBO=AMOUNT` (`RDLDL=10`). The combo is a
-/// run of `L/R/D/U` glyphs (case-insensitive); `AMOUNT` is the AP granted per
-/// use, `1..=100`, in decimal or `0xHH`. Errors on a malformed pair, an unknown
-/// glyph, or an out-of-range amount.
-pub(crate) fn parse_arts_ap_grant(s: &str) -> Result<(Vec<legaia_art::queue::Command>, u8)> {
+/// Parse an arts-AP entry: `[CHARACTER:]COMBO=AMOUNT` (`RDLDL=10`,
+/// `Vahn:RDLDL=10`). The optional character prefix (`Vahn`/`Noa`/`Gala`,
+/// case-insensitive) narrows the override to that character's art; without it
+/// every character holding the combo is targeted (each gets its own config
+/// cell - nothing is shared). The combo is a run of `L/R/D/U` glyphs; `AMOUNT`
+/// is `1..=100`, decimal or `0xHH`.
+fn parse_arts_ap_entry(
+    s: &str,
+    what: &str,
+) -> Result<(
+    Option<legaia_art::queue::Character>,
+    Vec<legaia_art::queue::Command>,
+    u8,
+)> {
+    use legaia_art::queue::Character;
     let s = s.trim();
     let (combo_str, val_str) = s.split_once('=').with_context(|| {
-        format!("invalid arts AP-grant {s:?} (expected COMBO=AMOUNT, e.g. RDLDL=10)")
+        format!("invalid arts {what} {s:?} (expected [CHARACTER:]COMBO=AMOUNT, e.g. RDLDL=10)")
     })?;
+    let (character, combo_str) = match combo_str.split_once(':') {
+        Some((c, rest)) => {
+            let ch = match c.trim().to_ascii_lowercase().as_str() {
+                "vahn" => Character::Vahn,
+                "noa" => Character::Noa,
+                "gala" => Character::Gala,
+                other => anyhow::bail!("unknown character {other:?} (use Vahn, Noa or Gala)"),
+            };
+            (Some(ch), rest)
+        }
+        None => (None, combo_str),
+    };
     let combo = legaia_patcher::arts_power::parse_combo(combo_str.trim())
         .with_context(|| format!("invalid combo {combo_str:?} (use L/R/D/U glyphs, e.g. RDLDL)"))?;
     let vs = val_str.trim();
@@ -114,9 +136,29 @@ pub(crate) fn parse_arts_ap_grant(s: &str) -> Result<(Vec<legaia_art::queue::Com
     }
     .with_context(|| format!("invalid AP amount in {s:?} (expected 1..=100)"))?;
     if amount < 1 || u16::from(amount) > legaia_patcher::arts_ap_grant::AP_CAP {
-        anyhow::bail!("AP-grant amount {amount} out of range (use 1..=100)");
+        anyhow::bail!("arts {what} amount {amount} out of range (use 1..=100)");
     }
-    Ok((combo, amount))
+    Ok((character, combo, amount))
+}
+
+/// Parse an `--arts-ap-grant` entry into a [`legaia_patcher::arts_ap_grant::ArtApSpec`].
+pub(crate) fn parse_arts_ap_grant(s: &str) -> Result<legaia_patcher::arts_ap_grant::ArtApSpec> {
+    let (character, combo, amount) = parse_arts_ap_entry(s, "AP-grant")?;
+    Ok(legaia_patcher::arts_ap_grant::ArtApSpec {
+        character,
+        combo,
+        mode: legaia_patcher::arts_ap_grant::ApMode::Grant(amount),
+    })
+}
+
+/// Parse an `--arts-ap-cost` entry into a [`legaia_patcher::arts_ap_grant::ArtApSpec`].
+pub(crate) fn parse_arts_ap_cost(s: &str) -> Result<legaia_patcher::arts_ap_grant::ArtApSpec> {
+    let (character, combo, amount) = parse_arts_ap_entry(s, "AP-cost")?;
+    Ok(legaia_patcher::arts_ap_grant::ArtApSpec {
+        character,
+        combo,
+        mode: legaia_patcher::arts_ap_grant::ApMode::Cost(amount),
+    })
 }
 
 /// Parse a `--rename-location` entry: `INDEX=NAME` (`3=Ancient Fire Cave`).

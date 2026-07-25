@@ -377,7 +377,7 @@ character, matching `(record[+0], record[+1])` against the key, and returns the
 |---|---|---|
 | `+0` | u8 | character: `0` Vahn, `1` Noa, `2` Gala |
 | `+1` | u8 | art display index within the character |
-| `+2` | u8 | **AP cost** |
+| `+2` | u8 | **AP cost - display only**; see [below](#the-ap-byte-is-a-display-mirror) |
 | `+3` | u8 | padding |
 | `+4` | u16 | round value (≈ power/score; exact meaning unconfirmed) |
 | `+6` | u16 | zero |
@@ -393,6 +393,20 @@ A `(99, 99)` record named `"End"` terminates the table. Each character's index
 The AP costs are byte-exact against the curated [`gamedata`](../reference/gamedata.md)
 arts table (every matched art agrees), which makes this the on-disc provenance
 for that table's `ap` column + the canonical art display order.
+
+### The AP byte is a display mirror
+
+The `+2` byte is **not** the value the battle engine spends. It has exactly one
+reader in the whole image - `lbu a0,0x2(s2)` at `0x801D4524`, inside the menu
+overlay's status-panel renderer `FUN_801D33D8` (PROT 0899), which halves it
+under the actor's `0x800` flag and draws it as a 3-cell decimal. The battle path
+never touches it: the party arts queue-builder *computes* the cost as
+`multiplier x command_count`, with the multiplier taken from three code
+immediates keyed on the art's position in its character's list. Retail keeps the
+two consistent by authoring - for all 45 arts the byte equals that product
+exactly, Noa's index gap included. Full derivation, both call sites and the
+patcher that has to move both:
+[`arts-command-gauge.md` § What an art costs in AP](../subsystems/arts-command-gauge.md#what-an-art-costs-in-ap).
 
 ### Command-glyph string (`+8`)
 

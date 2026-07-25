@@ -215,25 +215,29 @@ pub fn inject_shiny_seru(patcher: &mut DiscPatcher, pct: u8) -> Result<ShinySeru
     Ok(ShinySeruReport { pct: plan.pct })
 }
 
-/// Report of an arts-AP-grant injection.
+/// Report of an arts-AP-override injection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtsApGrantReport {
-    /// Every resolved grant (config row, amount, and the arts sharing that row).
-    pub resolved: Vec<crate::arts_ap_grant::ResolvedGrant>,
+    /// Every resolved override: the exact `(character, row)` art it landed on,
+    /// its mode + amount, and the menu display byte that was rewritten with it.
+    pub resolved: Vec<crate::arts_ap_grant::ResolvedArtAp>,
 }
 
-/// Inject the **arts AP-grant** feature (see [`crate::arts_ap_grant`]): make each
-/// targeted Tactical Art *grant* `amount` AP (Spirit, `actor[+0x170]`, clamped at
-/// 100) instead of costing it, admitting it at any Spirit level. Three same-size
-/// detours into the party arts queue-builder (PROT 0898) plus the routines +
-/// 26-entry config table in a verified-dead SCUS arena.
+/// Inject the **arts AP override** feature (see [`crate::arts_ap_grant`]): make
+/// each targeted Tactical Art either *grant* `amount` AP (Spirit,
+/// `actor[+0x170]`, clamped at 100) and be castable at any AP level, or cost a
+/// flat `amount` instead of retail's computed `multiplier x command_count`.
+/// Three same-size detours into the party arts queue-builder (PROT 0898), the
+/// routines + a per-(character, row) config table in verified-dead SCUS
+/// regions, and a same-size rewrite of each targeted art's menu AP byte in the
+/// static arts-name table.
 ///
 /// **Mutually exclusive with `--shiny-seru`** - both reuse the same arena bytes.
 /// Fails (without touching the disc) if the build isn't the recognized US layout,
-/// a combo is unknown, or the arena isn't dead space.
+/// a combo is unknown, or a hosted region isn't dead space.
 pub fn inject_arts_ap_grant(
     patcher: &mut DiscPatcher,
-    grants: &[(Vec<legaia_art::queue::Command>, u8)],
+    specs: &[crate::arts_ap_grant::ArtApSpec],
 ) -> Result<ArtsApGrantReport> {
     let scus = patcher
         .read_named_file(SCUS_NAME)
@@ -241,7 +245,7 @@ pub fn inject_arts_ap_grant(
     let ov0898 = patcher
         .read_entry(crate::arts_ap_grant::OVERLAY_PROT_INDEX)
         .context("read battle-action overlay (0898) for arts-ap-grant injection")?;
-    let (config, resolved) = crate::arts_ap_grant::resolve(&scus, grants)?;
+    let (config, resolved) = crate::arts_ap_grant::resolve(&scus, specs)?;
     let plan = crate::arts_ap_grant::ArtsApGrantInjection::plan(&scus, &ov0898, config, resolved)?;
 
     for edit in &plan.edits {
