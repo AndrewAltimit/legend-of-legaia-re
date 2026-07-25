@@ -74,7 +74,9 @@ The dispatcher `categorize` runs every detector below and tags each entry's
 | `categorize` | Dispatcher - runs every detector and tags the entry's `Class`. |
 | `mips_overlay` | RAM overlays loaded into the `0x801C0000+` window. |
 | `overlay_ptr_table` | Sister format: pointer tables that index into overlays. |
-| `effect_bundle` | `efect.dat` and friends - magic `0x02018B0C`. |
+| `effect_bundle` | The on-disc effect bundle - magic `0x02018B0C`. |
+| `efect_pack` | The *runtime* `efect.dat` 2-pack (`[u32 pack0_off][u32 pack1_off][sprite atlas][pack0][pack1]`), recognised on the pack tables' own self-consistency. Distinct from `effect_bundle`; see [`docs/formats/effect.md`](../../docs/formats/effect.md). |
+| `field_map` | Per-scene `DATA\FIELD\<scene>.MAP` - the fixed `0x12000`-byte slot 0 of every scene block. Region map + trigger-block header; detected on the trigger block's sub-table chain. See [`docs/formats/field-map.md`](../../docs/formats/field-map.md). |
 | `field_pack` | Field bundles - magic `0x01059B84`. |
 | `battle_data_pack` | Player battle files (`PLAYER1..4`, extraction 863..866 = retail `battle_data` block): header + 12-byte descriptor table + per-slot LZS streams of `[header + TMD + texture pool]`. |
 | `stage_geom` | Stage geometry: 12-byte prefix + 8-byte u16 quad records. |
@@ -363,7 +365,7 @@ See [`character-mesh.md`](../../docs/formats/character-mesh.md) and
 
 | Module | What it parses |
 |---|---|
-| `init_pak` | The four publisher-logo TIMs from PROT 0895 (CDNAME says `bat_back_dat`; actually init.pak). |
+| `init_pak` | The four publisher-logo TIMs from PROT 0895 (CDNAME says `bat_back_dat`; actually init.pak). `parse` doubles as the `categorize` detector for `Class::InitPak`. |
 | `title_pak` | The "Legend of Legaia" title-screen TIM + the system-UI sheet (load-screen panel / slot pills). |
 | `menu_glyph_atlas` | The small-caps menu font atlas (title menu rows + shared menu UI). |
 | `menu_windows` | The menu overlay's 52-entry **window descriptor table** (PROT 0899 file `0x15F20`, VA `0x801E4738`): per-window content id / park edge / class + content rect + content-renderer VA - the caller-supplied rects behind every pause-menu screen (status main panel = id 28 -> `FUN_801D33D8`), plus the per-screen window-id sets pinned from the menu-open captures. See [`docs/subsystems/field-menu.md`](../../docs/subsystems/field-menu.md#window-descriptor-table). |
@@ -443,6 +445,15 @@ TMD + texture pool) and the player art-animation `"ME"` stream archives
 classifies every slot; `stream_target(action_id)` mirrors the retail
 id → (file, slot) formula (`FUN_801E295C` case `0x32`). See
 [`summon-readef.md`](../../docs/formats/summon-readef.md).
+
+`detect` is the `categorize` entry point (`Class::SummonReadef`): footprint
+divisible by `0x10800`, at least 16 slots, and at least three quarters of them
+classifying as something other than `SlotKind::Payload`. It **must** run before
+the `monster_sound_bank` detector - `summon.dat` opens with `[u32 mode = 2]`
+followed by a 256-entry CLUT whose every colour carries the STP bit, which is
+byte-for-byte the `[u32 format = 2][u16 spu_addrs[256] all >= 0x8000]` shape that
+detector matches. With `summon_readef` ahead of it, `monster_sound_bank` matches
+no PROT entry at all.
 
 `summon_creatures` - the player-summon → namesake `battle_data` creature map.
 A base or evolved-Seru summon renders an ordinary `monster_archive` creature

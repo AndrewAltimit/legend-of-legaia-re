@@ -319,9 +319,79 @@ pub fn parse(bytes: &[u8]) -> Result<SidebandFile> {
     Ok(SidebandFile { slots })
 }
 
+/// Minimum slot count a side-band file must have to be recognised from bytes.
+/// Retail's two carriers hold 103 and 78; the largest *other* entry on the
+/// disc whose footprint divides by [`SLOT_BYTES`] holds 9.
+pub const DETECT_MIN_SLOTS: usize = 16;
+
+/// Share of slots that must classify as something other than
+/// [`SlotKind::Payload`] for [`detect`] to accept. Retail's two carriers sit at
+/// 93 % and 100 %; every other slot-divisible entry on the disc sits at or
+/// below 11 %.
+pub const DETECT_MIN_NAMED_NUMER: usize = 3;
+/// Denominator of [`DETECT_MIN_NAMED_NUMER`].
+pub const DETECT_MIN_NAMED_DENOM: usize = 4;
+
+/// Recognise a battle side-band streaming file (`summon.dat` / `readef.DAT`)
+/// from bytes alone.
+///
+/// The footprint dividing exactly by [`SLOT_BYTES`] is necessary but far from
+/// sufficient - a fifth of the corpus happens to divide. The discriminator is
+/// that a real side-band file's slots each open with a shape the runtime
+/// appliers consume (a texture-slot mode word, an actor record whose TMD offset
+/// lands on the TMD magic, or an `"ME"` archive), which filler and unrelated
+/// containers do not.
+pub fn detect(bytes: &[u8]) -> Option<SidebandFile> {
+    if bytes.is_empty() || !bytes.len().is_multiple_of(SLOT_BYTES) {
+        return None;
+    }
+    let slots = bytes.len() / SLOT_BYTES;
+    if slots < DETECT_MIN_SLOTS {
+        return None;
+    }
+    let parsed = parse(bytes).ok()?;
+    let named = parsed
+        .slots
+        .iter()
+        .filter(|s| !matches!(s.kind, SlotKind::Payload))
+        .count();
+    (named * DETECT_MIN_NAMED_DENOM >= slots * DETECT_MIN_NAMED_NUMER).then_some(parsed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detect_rejects_short_and_undivisible_buffers() {
+        assert!(detect(&[]).is_none());
+        assert!(detect(&vec![0u8; SLOT_BYTES + 1]).is_none());
+        // Divisible, but far too few slots and all of them filler.
+        assert!(detect(&vec![0xAAu8; SLOT_BYTES * 4]).is_none());
+    }
+
+    #[test]
+    fn detect_accepts_a_synthetic_texture_slot_file() {
+        // Every slot a mode-1 texture slot: the applier's own header shape.
+        let mut buf = vec![0u8; SLOT_BYTES * DETECT_MIN_SLOTS];
+        for i in 0..DETECT_MIN_SLOTS {
+            buf[i * SLOT_BYTES..i * SLOT_BYTES + 4].copy_from_slice(&1u32.to_le_bytes());
+        }
+        let f = detect(&buf).expect("synthetic side-band file");
+        assert_eq!(f.slots.len(), DETECT_MIN_SLOTS);
+    }
+
+    #[test]
+    fn detect_rejects_a_mostly_filler_file() {
+        let mut buf = vec![0u8; SLOT_BYTES * DETECT_MIN_SLOTS];
+        // Only two slots carry a mode word; the rest are unrecognisable.
+        for i in 0..DETECT_MIN_SLOTS {
+            let base = i * SLOT_BYTES;
+            let word: u32 = if i < 2 { 1 } else { 0xDEAD_BEEF };
+            buf[base..base + 4].copy_from_slice(&word.to_le_bytes());
+        }
+        assert!(detect(&buf).is_none());
+    }
 
     #[test]
     fn action_id_to_slot_mapping() {

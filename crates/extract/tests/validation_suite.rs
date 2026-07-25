@@ -56,12 +56,30 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // `battle_data_pack` once the realigned table frame accepted its
     // all-default descriptor table.
     ("lzs_container", 34),
+    // `efect_pack` - the runtime `efect.dat` 2-pack (extraction 0873). One entry.
+    ("efect_pack", 1),
+    // `field_map` - the per-scene `DATA\FIELD\<scene>.MAP`, slot 0 of every
+    // scene block at a fixed `0x12000` bytes. These were scattered across
+    // `mostly_zeros` / `unknown_low_entropy` / `unknown_other` by nothing but
+    // how crowded each scene is; the class is pinned on the trigger block's
+    // sub-table chain (`docs/formats/field-map.md`).
+    ("field_map", 101),
+    // `init_pak` - the boot logo/overlay pack (extraction 0895). One entry.
+    ("init_pak", 1),
     ("mips_overlay", 22),
-    ("monster_sound_bank", 1),
-    // `mostly_zeros` dropped (101 → 70) because many zero-padded entries
-    // gained non-zero trailing-overlay content that shifts them out of the
-    // dominant-zero bucket.
-    ("mostly_zeros", 70),
+    // `monster_sound_bank` matches **nothing**: its only historical match was
+    // `summon.dat` (extraction 893), whose leading `[u32 mode = 2][256-entry
+    // CLUT, every colour STP-set]` satisfies the `[u32 format = 2][256 SPU
+    // addresses >= 0x8000]` test byte-for-byte. The real `h:\mpack\monster.snd`
+    // is extraction 891 (`FUN_8003E104`'s `li v0,0x37d`) and lands in
+    // `vab_multi_bank`. Kept pinned at 0 so a detector-order regression that
+    // re-steals summon.dat fails here.
+    ("monster_sound_bank", 0),
+    // `mostly_zeros` 70 → 1: 69 of them were per-scene field maps. The single
+    // survivor is extraction 0970 - not a placeholder either, but the STR/FMV +
+    // MDEC overlay's data image (FMV path strings, return-scene names, a
+    // `0x801Cxxxx` pointer run, PsyQ MDEC debug strings) at 91.6 % zeros.
+    ("mostly_zeros", 1),
     // `overlay_data_blob` 27 → 26: the phantom zeroed-TOC-row entry
     // (offset 0 = the archive header bytes, mixed-text shape) is dropped
     // by the archive's zero-row guard.
@@ -85,19 +103,20 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     ("scene_v12_table", 97),
     ("scene_scripted_asset_table", 79),
     ("scene_event_scripts", 21),
+    // `summon_readef` - `summon.dat` / `readef.DAT` (extraction 893 / 894).
+    ("summon_readef", 2),
     ("tim_pack", 7),
-    // `vab_multi_bank` matches the level_up multi-bank archive. One PROT entry.
+    // `vab_multi_bank` matches one PROT entry: extraction 891, the content the
+    // CDNAME `monster_se` define points at (`h:\mpack\monster.snd`). The
+    // `level_up` in its extraction filename is the +2 label shift.
     ("vab_multi_bank", 1),
     // `zero_sector_high_entropy` covers files with leading zeros + high-
     // entropy body. Four PROT entries.
     ("zero_sector_high_entropy", 4),
-    // Residual buckets. Trailing-overlay MIPS code doesn't fit any PROT-
-    // format detector, so some entries land here (~8.4 MiB total
-    // unclassified by extended coverage, vs 1.9 MiB by indexed coverage -
-    // see categorize_coverage.rs for the split).
+    // Residual bucket: one entry (extraction 1195). Dense 8-byte records over a
+    // sound-driver-output shape whose loader is not yet pinned; its sibling
+    // (extraction 0888) shares the head layout and sits in `overlay_data_blob`.
     ("unknown_high_entropy", 1),
-    ("unknown_low_entropy", 29),
-    ("unknown_other", 6),
 ];
 
 /// Number of PROT entries that pass the strict streaming-format filter

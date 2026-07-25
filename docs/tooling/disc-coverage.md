@@ -35,6 +35,37 @@ reports consumed-versus-unconsumed bytes. Closing that gap - having each parser
 return its consumed extent - is what would put the data half on the same footing
 as the code half.
 
+### A statistical class is not a verdict
+
+`asset categorize` ends in a statistical fallback: entries no structural
+detector claimed are bucketed by zero fraction and entropy into `mostly_zeros`,
+`unknown_low_entropy`, `unknown_high_entropy`, `unknown_other`. Those names
+describe **byte statistics**, and the report then reads a *judgement* into one of
+them: `mostly_zeros` is counted under "documented placeholder / padding", on the
+theory that a `>= 75 %`-zero entry is a reserved-but-unpopulated PROT slot.
+
+That inference has already been wrong at scale. Every scene's
+[field map](../formats/field-map.md) - the file carrying its collision grid,
+floor heights, object placements and door triggers - is a sparse `0x12000`-byte
+blob whose two `128 x 128` grids leave most of the entry at zero on a small map.
+Before the `field_map` class existed those entries scattered across
+`mostly_zeros`, `unknown_low_entropy` and `unknown_other` by nothing but how
+crowded each scene happens to be, and the largest single block of them sat inside
+the "explained placeholder" column.
+
+So when reading the per-class table:
+
+- A **statistical** class name is the absence of a finding, never a finding.
+  `mostly_zeros` means "sparse and unclaimed", not "empty".
+- The **placeholder** column is only as trustworthy as the detectors that ran
+  before the fallback. A format with no detector is invisible to it in exactly
+  the way an uncited subsystem is invisible to `port-catalog.py`.
+- Entries of an **identical, exact size** are the cheapest lead in the table: a
+  size that repeats across a hundred entries is a fixed-layout format, whatever
+  its byte statistics look like. Grouping the unclaimed entries by size, and by
+  their slot position within the CDNAME block, finds those clusters faster than
+  reading any one of them.
+
 ## How code coverage is computed
 
 Every Ghidra dump header carries an entry address and a byte length:

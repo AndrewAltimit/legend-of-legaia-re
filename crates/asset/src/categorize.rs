@@ -119,6 +119,27 @@ pub enum Class {
     /// of a `addiu sp, sp, -X` prologue. 42 PROT entries match - all in the
     /// `0900..=0968` `xxx_dat` cluster. See [`crate::overlay_ptr_table`].
     OverlayPtrTable,
+    /// Per-scene field map (`DATA\FIELD\<scene>.MAP`) - the fixed `0x12000`-byte
+    /// entry at slot 0 of every scene's CDNAME block. Four regions whose sizes
+    /// sum to exactly the footprint: object descriptors, the collision + floor
+    /// grid, the per-tile object-index map, and the per-tile trigger block.
+    /// Detected on the trigger block's self-consistent sub-table chain.
+    /// See [`crate::field_map`] and [`docs/formats/field-map.md`].
+    FieldMap,
+    /// Runtime `efect.dat` 2-pack - `[u32 pack0_off][u32 pack1_off][sprite
+    /// atlas][pack0][pack1]`, the form battle code consumes (distinct from the
+    /// magic-prefixed [`Class::EffectBundle`]). See [`crate::efect_pack`] and
+    /// [`docs/formats/effect.md`].
+    EfectPack,
+    /// Battle side-band streaming file (`summon.dat` / `readef.DAT`) - a flat
+    /// array of `0x10800`-byte slots, each a texture slot, a summon-creature
+    /// actor record, or an `"ME"` art-animation archive. See
+    /// [`crate::summon_readef`] and [`docs/formats/summon-readef.md`].
+    SummonReadef,
+    /// Boot `init.pak` - the publisher / warning logo TIMs at fixed offsets
+    /// plus the boot overlay's code and debug-string pool. See
+    /// [`crate::init_pak`] and `docs/subsystems/boot.md`.
+    InitPak,
     /// "pochi"-fill placeholder: the first 1926 bytes are the ASCII pattern
     /// `pochipochipochi...\r\n` (Japanese dev fill, "ポチ" = generic dog name)
     /// with `0x1A` (DOS EOF) at offset `0x786`. Marks an unused / reserved PROT
@@ -127,8 +148,13 @@ pub enum Class {
     /// dev-fill. Distinct from data: post-prefix bytes are scratch / leftover.
     PochiFiller,
     /// Multi-bank VAB archive - `[u32 reserved=0][u32 count][u32 sector_nums[count]]`
-    /// with VABp magic at `sector_nums[0] * 0x800 + 4`. Covers the level_up
-    /// cluster's multi-bank sound archive (206 VABp entries).
+    /// with VABp magic at `sector_nums[0] * 0x800 + 4`. One PROT entry:
+    /// extraction 891, the content the CDNAME `monster_se` define points at.
+    /// That entry is `h:\mpack\monster.snd`: the battle-start loader
+    /// `FUN_8003E104` fetches raw TOC index `0x37D` (`li v0,0x37d` at
+    /// `0x8003E174`) = extraction 891, next to the dev path string.
+    /// The extraction *filename* reads `level_up` - that is the +2 label shift
+    /// (see `docs/formats/cdname.md`), not the block it belongs to.
     /// See [`crate::vab_multi_bank`].
     VabMultiBank,
     /// Player battle file (`data\battle\PLAYER1..4`) - head words + LZS
@@ -139,9 +165,16 @@ pub enum Class {
     /// extraction entries 0863..0866 (the `0863/0864_edstati3` filename
     /// labels are the +2 shift). See [`crate::battle_data_pack`].
     BattleDataPack,
-    /// Monster / actor SPU sound bank - `[u32 format=2][u16 spu_addrs[256]][ADPCM...]`.
-    /// All 256 u16 address-table entries have bit 15 set (>= 0x8000 = active slot).
-    /// Sourced from `h:\mpack\monster.snd` loaded by `FUN_8003E104` at battle start.
+    /// Shape test for `[u32 format=2][u16 spu_addrs[256]][ADPCM...]` where all
+    /// 256 `u16`s have bit 15 set (>= `0x8000` = active SPU slot).
+    ///
+    /// **Matches no retail PROT entry.** It was introduced for
+    /// `h:\mpack\monster.snd` and landed on extraction 893 instead, which is
+    /// `summon.dat` - that file opens `[u32 mode = 2][256-entry CLUT]` and every
+    /// colour carries the STP bit, so all 256 `u16`s read as `>= 0x8000`. The
+    /// real `monster.snd` is extraction 891 and is a [`Class::VabMultiBank`]
+    /// archive. Kept as a distinct class so the shape stays named and cannot be
+    /// re-derived by accident; [`Class::SummonReadef`] runs first.
     MonsterSoundBank,
     /// File with >= 2 sectors (512 bytes) of leading zeros followed by a
     /// high-entropy body (>= 7.0 bits/byte). Characteristic of cutscene / XA
@@ -186,6 +219,10 @@ impl Class {
             Class::SceneEventScripts => "scene_event_scripts",
             Class::MipsOverlay => "mips_overlay",
             Class::OverlayPtrTable => "overlay_ptr_table",
+            Class::FieldMap => "field_map",
+            Class::EfectPack => "efect_pack",
+            Class::SummonReadef => "summon_readef",
+            Class::InitPak => "init_pak",
             Class::PochiFiller => "pochi_filler",
             Class::VabMultiBank => "vab_multi_bank",
             Class::BattleDataPack => "battle_data_pack",
@@ -341,6 +378,37 @@ pub fn classify(buf: &[u8]) -> FileReport {
     if is_pochi_filler(buf) {
         return mk(
             Class::PochiFiller,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Per-scene field map - a hard size gate (`0x12000`) plus the trigger
+    // block's self-consistent sub-table chain. Runs early: the four regions
+    // are sparse by nature, so without a name of its own most of this class
+    // lands in `mostly_zeros` (a placeholder verdict) or `unknown_low_entropy`.
+    if crate::field_map::detect(buf).is_some() {
+        return mk(
+            Class::FieldMap,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Boot `init.pak` - four publisher-logo TIMs at fixed offsets, each header
+    // validated. Cheap and specific; the rest of the entry is boot overlay code
+    // that no other detector models.
+    if crate::init_pak::parse(buf).is_ok() {
+        return mk(
+            Class::InitPak,
             size,
             head,
             first_u32,
@@ -594,6 +662,40 @@ pub fn classify(buf: &[u8]) -> FileReport {
     if crate::vab_multi_bank::detect(buf).is_some() {
         return mk(
             Class::VabMultiBank,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Battle side-band streaming files (`summon.dat` / `readef.DAT`): a flat
+    // array of `0x10800`-byte slots. **Must run before `monster_sound_bank`** -
+    // `summon.dat` opens with `[u32 mode=2]` followed by a 256-entry CLUT whose
+    // every colour has the STP bit set, which is byte-for-byte the shape that
+    // detector reads as "256 SPU addresses, all >= 0x8000".
+    if let Some(sb) = crate::summon_readef::detect(buf) {
+        let mut report = mk(
+            Class::SummonReadef,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+        report.stream_chunks = Some(sb.slots.len());
+        return report;
+    }
+
+    // Runtime `efect.dat` 2-pack. Runs after every magic-prefixed container so
+    // the specific schemas claim their entries first - the two leading words
+    // are plain offsets, so the shape alone is weaker than a magic word.
+    if crate::efect_pack::detect(buf).is_some() {
+        return mk(
+            Class::EfectPack,
             size,
             head,
             first_u32,
