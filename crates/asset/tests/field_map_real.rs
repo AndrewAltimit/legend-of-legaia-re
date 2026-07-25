@@ -196,6 +196,13 @@ fn sibling_classes_claim_their_entries() {
             Class::InitPak => seen.push((idx, "init_pak")),
             // Must be empty: summon.dat was this detector's only match.
             Class::MonsterSoundBank => seen.push((idx, "monster_sound_bank")),
+            // `bse.dat` (extraction 888) and its uncalled sibling (1195).
+            Class::BseBank => seen.push((idx, "bse_bank")),
+            // Every statistical residual bucket must stay empty.
+            Class::MostlyZeros => seen.push((idx, "residual")),
+            Class::UnknownOther => seen.push((idx, "residual")),
+            Class::UnknownLowEntropy => seen.push((idx, "residual")),
+            Class::UnknownHighEntropy => seen.push((idx, "residual")),
             _ => {}
         }
     }
@@ -208,6 +215,13 @@ fn sibling_classes_claim_their_entries() {
     assert_eq!(of("summon_readef"), vec![893, 894]);
     assert_eq!(of("efect_pack"), vec![873]);
     assert_eq!(of("init_pak"), vec![895]);
+    assert_eq!(of("bse_bank"), vec![888, 1195]);
+    assert!(
+        of("residual").is_empty(),
+        "entries fell through to a class named after their byte histogram \
+         rather than their format: {:?}",
+        of("residual")
+    );
     assert!(
         of("monster_sound_bank").is_empty(),
         "monster_sound_bank matched {:?}; its only historical match was \

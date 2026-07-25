@@ -108,6 +108,7 @@ World-map slot 4 is likewise not what it was first read as. Each 8-byte record i
 | Page | Confidence | What it covers |
 |---|---|---|
 | [Sound-driver path-string cluster](sound-driver.md) | Confirmed | The string-builder cluster at `0x8007B38C` and the eight file extensions the runtime resolves through it (`.spk`, `.LZS`, `.dpk`, `.MAP`, `.PCH`, `.pac`, `STR`, `bse.dat`) |
+| [`bse.dat` master sound bank](bse-dat.md) | Confirmed | The bank `FUN_8001FA88` loads once at sound-init: `[u16 tag][u16 body_offset][8-byte records]`. Extraction 888 (the loader's `0x37A`) plus an uncalled sibling at 1195. Record columns are shape, not semantics. |
 
 The dispatch chain *into* these formats is fully traced. The byte-level layout of the individual `.spk` / `.dpk` / `.MAP` / `.PCH` files is still open.
 

@@ -30,6 +30,43 @@ size_bytes            = size_sectors * 0x800
 
 **The TOC LBAs are `PROT.DAT`-relative, not absolute disc LBAs.** `byte_offset = start_lba * 0x800` is an offset *into* `PROT.DAT`, and the in-RAM TOC is raw `PROT.DAT` bytes, so the values are position-independent w.r.t. where `PROT.DAT` sits on the disc. Verified by diffing USA against the PAL discs: entry-0's TOC start LBA is identical on every disc despite `PROT.DAT` living at a different disc LBA per region. This is what makes a whole-sector entry-growth **relayout** tractable - growing an interior entry needs only an internal-TOC shift of the later entries' start-LBA words (at `PROT.DAT` byte `8 + (j+2)*4`), not a disc-wide cascade. See [disc.md § Full-ISO relayout](disc.md#full-iso-relayout).
 
+### The footprint is the entry size; `indexed_size_sectors` is not
+
+`footprint_sectors = toc[p+3] - toc[p+2]` is **the** entry size. The `+4`
+formula above is retained because the extractor still computes it, but it does
+not measure entry `p`: `toc[p+3]` is entry `p+1`'s start LBA and `toc[p+5]` is
+entry `p+3`'s, so their difference spans entries `p+1` and `p+2` - an unrelated
+quantity that merely happens to exceed the footprint for most entries.
+
+Four independent lines of evidence:
+
+1. **The footprints tile the archive exactly.** The start LBAs are monotonic,
+   entry 0 begins at LBA 121, entry 1233's end marker is the archive's last
+   sector, and the footprints sum to precisely the contiguous span between
+   them - no gaps, no overlaps. A partition with that property *is* the entry
+   layout. The `max(indexed, footprint)` totals instead sum to ~2.5x the
+   archive, which no partition of it can.
+2. **The runtime uses it.** `FUN_8003E8A8` returns `TABLE[idx+3] -
+   TABLE[idx+2]`, and `byindex_sync_loader` (`FUN_8003EB98`) passes that
+   straight to the sector read. See [In-RAM TOC](#in-ram-toc) below.
+3. **Known-length files agree with the footprint and not with the other
+   formula.** `readef.DAT`'s footprint is exactly 78 x `0x10800` and
+   `summon.dat`'s exactly 103 x `0x10800`
+   ([summon-readef.md](summon-readef.md)); every [field map](field-map.md)'s is
+   exactly `0x12000`, the sum of its four regions; `bse.dat`'s is 2 sectors,
+   which is what makes it fit the `0x1800`-byte buffer its loader allocates.
+   The `+4` formula gives a non-multiple, a truncation that stops inside the
+   object table, and a 43x buffer overrun respectively.
+4. **The one documented counter-example isn't one.** PROT 899's "trailing
+   overlay" finding (below) is the footprint being right and the `+4` formula
+   being short.
+
+**The extractor has not been changed.** `size_sectors = max(indexed, footprint)`
+still governs `extracted/PROT/*.BIN`, so for the entries where the `+4` formula
+is larger the extracted file runs past the entry into its neighbours' sectors.
+Consumers that need the true extent should take the footprint
+(`Entry::size_sectors` is the footprint only when it is the larger of the two).
+
 ### Trailing-overlay sectors (`indexed_size` vs `size`)
 
 For ~24% of entries the on-disc contiguous range to the next entry's start LBA is **larger** than the indexed payload - the trailing sectors carry overlay content the SCUS boot loader reads via a multi-sector `ReadN` past the TOC-claimed end. PROT entry 899 is the canonical example: indexed payload is 14 sectors (28 KiB, the options menu), but the on-disc footprint is 74 sectors - the trailing 60 sectors are the title-screen overlay code (see [`subsystems/boot.md`](../subsystems/boot.md#title-overlay-source-on-disc)).

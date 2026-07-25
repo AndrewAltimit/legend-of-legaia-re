@@ -78,6 +78,7 @@ The dispatcher `categorize` runs every detector below and tags each entry's
 | `efect_pack` | The *runtime* `efect.dat` 2-pack (`[u32 pack0_off][u32 pack1_off][sprite atlas][pack0][pack1]`), recognised on the pack tables' own self-consistency. Distinct from `effect_bundle`; see [`docs/formats/effect.md`](../../docs/formats/effect.md). |
 | `field_map` | Per-scene `DATA\FIELD\<scene>.MAP` - the fixed `0x12000`-byte slot 0 of every scene block. Region map + trigger-block header; detected on the trigger block's sub-table chain. See [`docs/formats/field-map.md`](../../docs/formats/field-map.md). |
 | `field_pack` | Field bundles - magic `0x01059B84`. |
+| `bse_bank` | The `bse.dat` master sound bank `FUN_8001FA88` loads at sound-init - `[u16 tag][u16 body_offset = 4][8-byte records]`. Two entries: extraction 888 (the loader's raw TOC `0x37A`) and an uncalled sibling at 1195. See [`docs/formats/bse-dat.md`](../../docs/formats/bse-dat.md). |
 | `battle_data_pack` | Player battle files (`PLAYER1..4`, extraction 863..866 = retail `battle_data` block): header + 12-byte descriptor table + per-slot LZS streams of `[header + TMD + texture pool]`. |
 | `stage_geom` | Stage geometry: 12-byte prefix + 8-byte u16 quad records. |
 | `scene_tmd_stream` | `[u32 chunk0][bare TMD][streaming chunks]`. `sub_streams` enumerates the concatenated, `0x800`-aligned `[TMD][TIM chunks][terminator]` blocks (the entry holds N, not one continuation list). |

@@ -136,6 +136,12 @@ pub enum Class {
     /// actor record, or an `"ME"` art-animation archive. See
     /// [`crate::summon_readef`] and [`docs/formats/summon-readef.md`].
     SummonReadef,
+    /// `bse.dat` - the master sound bank `FUN_8001FA88` loads once at
+    /// sound-init (`[u16 tag][u16 body_offset = 4][8-byte records]`). Two
+    /// entries: extraction 888 (the one the loader reaches through raw TOC
+    /// `0x37A`) and extraction 1195 (same format, no traced caller).
+    /// See [`crate::bse_bank`].
+    BseBank,
     /// Boot `init.pak` - the publisher / warning logo TIMs at fixed offsets
     /// plus the boot overlay's code and debug-string pool. See
     /// [`crate::init_pak`] and `docs/subsystems/boot.md`.
@@ -222,6 +228,7 @@ impl Class {
             Class::FieldMap => "field_map",
             Class::EfectPack => "efect_pack",
             Class::SummonReadef => "summon_readef",
+            Class::BseBank => "bse_bank",
             Class::InitPak => "init_pak",
             Class::PochiFiller => "pochi_filler",
             Class::VabMultiBank => "vab_multi_bank",
@@ -790,6 +797,46 @@ pub fn classify(buf: &[u8]) -> FileReport {
         }
     }
 
+    // `bse.dat` master sound bank - `[u16 tag][u16 body_offset = 4][8-byte
+    // records]`. Runs before the statistical buckets: both carriers are sparse
+    // or dense enough to land in one of them otherwise (`overlay_data_blob`
+    // and `unknown_high_entropy` respectively).
+    if let Some(bank) = crate::bse_bank::detect(buf) {
+        let mut report = mk(
+            Class::BseBank,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+        report.stream_chunks = Some(bank.records);
+        return report;
+    }
+
+    // Overlay *data* image - a NUL-terminated ASCII pool (file paths, scene
+    // names) followed by a run of overlay-window pointers. Structural sibling
+    // of `mips_overlay` / `overlay_ptr_table`, which both require their
+    // signature at offset 0 and so miss an image whose string pool comes first.
+    //
+    // This must run **before** the `mostly_zeros` gate. An overlay data
+    // segment is mostly bss, so the zero-fraction test would otherwise file
+    // real content under a placeholder verdict, and the printable-ASCII test
+    // below cannot rescue it because the zeros dilute the ratio under its
+    // threshold.
+    if is_overlay_data_image(buf) {
+        return mk(
+            Class::OverlayDataBlob,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
     // Mostly-zeros placeholder. Run after structural detectors so a sparse
     // stage-geometry / streaming entry isn't shadowed. The 0.75 threshold
     // catches near-empty PROT slots without sweeping in real (sparse) tables.
@@ -858,6 +905,41 @@ pub fn classify(buf: &[u8]) -> FileReport {
 /// bytes for `"pochi"` plus the magic at 0x786 is enough to be specific
 /// (no real format starts with 5 ASCII letters and then has 0x1A at exactly
 /// that offset).
+/// Minimum overlay-window pointer words a run must have to count as a table.
+const OVERLAY_PTR_RUN_MIN: usize = 8;
+
+/// Recognises an overlay **data** image: a leading NUL-terminated ASCII pool
+/// (the overlay's file-path / scene-name literals) followed, within the first
+/// sector, by a run of at least [`OVERLAY_PTR_RUN_MIN`] consecutive words in
+/// the `0x801C0000..=0x801FFFFF` overlay load window.
+///
+/// The sibling detectors [`crate::mips_overlay`] and
+/// [`crate::overlay_ptr_table`] both anchor their signature at offset 0, so
+/// neither reaches an image that opens with its string pool. Requiring both
+/// halves - printable first byte *and* a genuine pointer run - keeps this from
+/// firing on ordinary sparse tables.
+fn is_overlay_data_image(buf: &[u8]) -> bool {
+    if buf.len() < 0x200 || !(0x20..=0x7E).contains(&buf[0]) {
+        return false;
+    }
+    let word = |at: usize| u32::from_le_bytes(buf[at..at + 4].try_into().unwrap());
+    let scan_end = buf.len().min(0x800);
+    let mut at = 0usize;
+    while at + 4 * OVERLAY_PTR_RUN_MIN <= scan_end {
+        let run = (0..)
+            .take_while(|k| {
+                let p = at + k * 4;
+                p + 4 <= buf.len() && (0x801C_0000..=0x801F_FFFF).contains(&word(p))
+            })
+            .count();
+        if run >= OVERLAY_PTR_RUN_MIN {
+            return true;
+        }
+        at += 4;
+    }
+    false
+}
+
 fn is_pochi_filler(buf: &[u8]) -> bool {
     buf.len() > 0x786 && buf.starts_with(b"pochi") && buf[0x786] == 0x1A
 }

@@ -35,6 +35,33 @@ reports consumed-versus-unconsumed bytes. Closing that gap - having each parser
 return its consumed extent - is what would put the data half on the same footing
 as the code half.
 
+### The data denominator counts some disc bytes more than once
+
+The data half weights each entry by the size of its extracted `.BIN`, and that
+size is `max(indexed_size_sectors, footprint_sectors)`. Only the second of those
+is an entry's real extent: the footprints tile `PROT.DAT` exactly, and the
+runtime's own resolver uses them, while `indexed_size_sectors` measures a span
+of *neighbouring* entries. See
+[`prot.md`](../formats/prot.md#the-footprint-is-the-entry-size-indexed_size_sectors-is-not)
+for the proof.
+
+The consequence is that for the entries where the wrong formula is larger, the
+extracted file runs past the entry into the following ones, and the same disc
+bytes are weighed again under each entry that overlaps them. The archive is
+roughly 121 MB; the totals this page reports are roughly 2.5x that.
+
+**This does not distort the percentages nearly as much as it distorts the
+totals** - a duplicated run is counted under whichever class claimed the
+over-long buffer, and the buffer usually still opens with the entry's real
+header, so it usually lands in the right class. The figure to distrust is the
+byte *count*; the figure to distrust *slightly* is the share.
+
+Two habits follow. Quote the shares, not the totals, unless you have checked
+which view the total came from. And when a single entry's byte weight is what
+makes some residue look significant, check its footprint first - a large
+"unexplained" entry is quite often a small entry with a long tail of somebody
+else's data.
+
 ### A statistical class is not a verdict
 
 `asset categorize` ends in a statistical fallback: entries no structural
@@ -65,6 +92,12 @@ So when reading the per-class table:
   its byte statistics look like. Grouping the unclaimed entries by size, and by
   their slot position within the CDNAME block, finds those clusters faster than
   reading any one of them.
+- A statistical class can also swallow content by **dilution**. The
+  printable-ASCII test that recognises an overlay's string table is a ratio over
+  the whole buffer, so an overlay *data* image - mostly bss, with its literals
+  in the first sector - falls under the threshold and lands in `mostly_zeros`
+  instead. Structure at a known offset beats a whole-buffer ratio whenever one
+  is available.
 
 ## How code coverage is computed
 

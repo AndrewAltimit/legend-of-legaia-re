@@ -56,6 +56,9 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // `battle_data_pack` once the realigned table frame accepted its
     // all-default descriptor table.
     ("lzs_container", 34),
+    // `bse_bank` - the `bse.dat` master sound bank (extraction 888, the loader's
+    // raw TOC `0x37A`) plus its uncalled sibling at 1195.
+    ("bse_bank", 2),
     // `efect_pack` - the runtime `efect.dat` 2-pack (extraction 0873). One entry.
     ("efect_pack", 1),
     // `field_map` - the per-scene `DATA\FIELD\<scene>.MAP`, slot 0 of every
@@ -75,11 +78,13 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // `vab_multi_bank`. Kept pinned at 0 so a detector-order regression that
     // re-steals summon.dat fails here.
     ("monster_sound_bank", 0),
-    // `mostly_zeros` 70 → 1: 69 of them were per-scene field maps. The single
-    // survivor is extraction 0970 - not a placeholder either, but the STR/FMV +
-    // MDEC overlay's data image (FMV path strings, return-scene names, a
-    // `0x801Cxxxx` pointer run, PsyQ MDEC debug strings) at 91.6 % zeros.
-    ("mostly_zeros", 1),
+    // `mostly_zeros` 70 → 0. 69 were per-scene field maps; the last was
+    // extraction 0970, the STR/FMV + MDEC overlay's *data* image (FMV path
+    // strings, return-scene names, a `0x801Cxxxx` pointer run, PsyQ MDEC debug
+    // strings) at 91.6 % zeros - claimed by the overlay-data-image structural
+    // test that now runs ahead of this bucket. Pinned at 0 so a regression that
+    // re-buries real content under a placeholder verdict fails here.
+    ("mostly_zeros", 0),
     // `overlay_data_blob` 27 → 26: the phantom zeroed-TOC-row entry
     // (offset 0 = the archive header bytes, mixed-text shape) is dropped
     // by the archive's zero-row guard.
@@ -113,10 +118,15 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // `zero_sector_high_entropy` covers files with leading zeros + high-
     // entropy body. Four PROT entries.
     ("zero_sector_high_entropy", 4),
-    // Residual bucket: one entry (extraction 1195). Dense 8-byte records over a
-    // sound-driver-output shape whose loader is not yet pinned; its sibling
-    // (extraction 0888) shares the head layout and sits in `overlay_data_blob`.
-    ("unknown_high_entropy", 1),
+    // Every statistical residual bucket is now empty: no PROT entry falls
+    // through to a class named after its byte histogram rather than its format.
+    // These four are pinned at 0 deliberately - a new entry landing in any of
+    // them is a detector regression, and the whole point of the census is to
+    // notice.
+    ("unknown_high_entropy", 0),
+    ("unknown_low_entropy", 0),
+    ("unknown_other", 0),
+    ("constant_byte", 0),
 ];
 
 /// Number of PROT entries that pass the strict streaming-format filter
