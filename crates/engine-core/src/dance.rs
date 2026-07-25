@@ -472,11 +472,29 @@ impl DanceGame {
         self.mode
     }
 
+    // NOT WIRED: the missing input is a **screen-space dance HUD surface**, and
+    // neither host has one. Both hosts that own a `DanceGame` (the play window's
+    // `window/hud.rs`, the browser page's `minigames.rs`) draw a *single-dancer*
+    // readout through the proportional font atlas at their own pens - the play
+    // window's are `(8, 62)` / `(8, 80)` / `(8, 98)` with its own
+    // `TRACK_BASE_X = 60`. They read `score()` / `gauge()` / `lane()` and never
+    // touch `dancer_score(1..2)` or `dancer_gauge(1..2)` at all, so there is no
+    // second or third dancer on screen for the box permutation to permute and
+    // no row for the rival gate to gate. `_DAT_8007B6D0` likewise has no engine
+    // counterpart - nothing sets or reads a rival-HUD flag. Wiring this needs a
+    // host that lays the dance HUD out in retail framebuffer coordinates
+    // (`DanceHudDraw` carries 320x240 positions, not pen offsets) and a
+    // rival-HUD toggle to stand in for that flag.
+    //
     /// PORT: FUN_801d231c - one frame of the HUD driver, laid out off this
     /// run's own live state.
     ///
     /// `rival_hud` is the `_DAT_8007B6D0` gate: with it clear the two rival
     /// gauges and beat tracks are not drawn at all, even in the versus modes.
+    ///
+    /// The output is pinned non-vacuous against a real overlay by
+    /// `engine-core/tests/dance_minigame_real.rs` - the kernel is inert for want
+    /// of a consumer, not because it produces nothing.
     pub fn hud_draws(&self, rival_hud: bool) -> Vec<DanceHudDraw> {
         dance_hud_draws(
             self.mode.value(),
@@ -1457,9 +1475,19 @@ fn mips_scale(value: i32, factor: i32, shift: u32) -> i32 {
     p >> shift
 }
 
-/// Wired: [`dance_hud_draws`] builds every HUD element through this, and the
-/// HUD driver runs off [`DanceGame`]'s own per-frame state.
-///
+// NOT WIRED: the missing input is the dance overlay's **HUD sprite page in
+// VRAM**, and nothing uploads it. The widget records name the 4bpp page at
+// `(512, 0)` with its CLUT strip on row 500, but the dance overlay itself
+// issues no texture load at all (its art is staged by the entry path, PROT
+// 1230), and no host resident-VRAM path uploads that page. Without it a quad is
+// a rect sampling nothing, so both hosts draw the dance HUD as font text
+// instead and there is no textured-quad sink to emit into - the same blocker
+// already disclosed on [`score_thousands_glyph_u`] / [`dance_score_digit_u`].
+// Wiring this needs that page resident plus a quad sink in the sprite pass.
+//
+// A second, narrower gap is already closed here: the record's `+0x13` ABR byte
+// is not decoded by `legaia_asset::dance_art::parse_widgets`, so
+// [`dance_widgets_with_abr`] lifts it and the caller passes it in.
 /// PORT: FUN_801d2f38 - the dance overlay's textured-quad emitter, the
 /// sibling of Baka Fighter's `FUN_801d5ed0`.
 ///
@@ -1532,6 +1560,11 @@ pub fn dance_hud_widget_quad(
 
 /// Which score slot each of the three on-screen score boxes shows, for a mode.
 ///
+// NOT WIRED: same missing input as [`DanceGame::hud_draws`], and this is the
+// sharpest statement of it - the permutation only means anything on a screen
+// with three score boxes, and neither host draws more than the human's own
+// score. Nothing in the engine reads `dancer_score(1)` or `dancer_score(2)` for
+// display at all.
 /// PORT: FUN_801d231c (`0x801D2320`..`0x801D23AC`) - the HUD driver's slot
 /// permutation. The screen's three boxes are fixed; which dancer's score each
 /// carries is chosen per mode so the **human** dancer always lands in the
@@ -1594,9 +1627,10 @@ pub enum DanceHudDraw {
     BeatTrack { slot: usize, x: i16, y: i16 },
 }
 
-/// Wired: [`DanceGame::hud_draws`] calls this every tick, so the play window's
-/// dance HUD is laid out by the retail driver rather than by the host.
-///
+// NOT WIRED: the free-function half of [`DanceGame::hud_draws`], and inert for
+// the same missing input - no host lays the dance HUD out in retail
+// framebuffer coordinates, and `_DAT_8007B6D0` (the `rival_hud` gate) has no
+// engine counterpart to drive it from.
 /// PORT: FUN_801d231c - the dance HUD render driver.
 ///
 /// Per frame it draws the three score readouts and their box frames, then the

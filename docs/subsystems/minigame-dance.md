@@ -352,9 +352,18 @@ Two of the HUD routines are ported whole rather than as parameterisation,
 because their whole content *is* disc-derived: the widget-quad emitter
 (`dance_hud_widget_quad`, `FUN_801d2f38`) and the render driver
 (`dance_hud_draws` / `dance_score_box_slots`, `FUN_801d231c`). `DanceGame` owns
-its mode and the parsed widget table, so `DanceGame::hud_draws` lays the frame
-out off the run's own live scores and gauges and `DanceGame::hud_quads` resolves
-the score-box frames through the emitter.
+its mode and the parsed widget table, so `DanceGame::hud_draws` lays a frame out
+off the run's own live scores and gauges and `DanceGame::hud_quads` resolves the
+score-box frames through the emitter.
+
+Both are **inert**: no host calls either. The engine's dance HUD is a
+*single-dancer* font-text readout drawn at the host's own pens, so there is no
+three-box screen layout for the permutation to drive, no second or third
+dancer's score on screen, and no rival-HUD flag standing in for
+`_DAT_8007B6D0`; and the emitter additionally wants the overlay's `(512, 0)`
+HUD sprite page resident in VRAM, which nothing uploads. The output itself is
+sound - a disc-gated oracle pins both against the real widget table - so what
+is missing is the consumer, not the kernel.
 
 ## Assets: the overlay loads none - the entry path stages PROT 1230
 
@@ -509,11 +518,14 @@ on and uses the mode value *itself* as the ABR rate. Mode `2` additionally
 replaces the record's CLUT with the fixed `0x7D0F` - palette 15 of the row-500
 strip. The ABR rate folds into the texpage attribute as `tpage + abr * 0x20`
 (the same fold the Baka Fighter emitter uses), so `abr = 1` is the additive
-`B + F` blend. Cell rects are **half-open** here: the emitter writes `u + w`
+`B + F` blend - and **all 34 rows carry `abr = 1`**, so the whole HUD draws
+additively. That makes the byte load-bearing rather than incidental:
+`legaia_asset::dance_art::parse_widgets` does not decode `+0x13`, so a consumer
+built on the parsed record alone gets the wrong blend on every element. Cell rects are **half-open** here: the emitter writes `u + w`
 and `x + hw` straight out, where the Baka emitter's are inclusive
-(`u + w - 1`). Port: `engine-core::dance::dance_hud_widget_quad`.
-`legaia_asset::dance_art::parse_widgets` does not decode `+0x13` yet, so the
-port takes the byte alongside the record. **Confirmed.**
+(`u + w - 1`). Port: `engine-core::dance::dance_hud_widget_quad`, which takes
+the ABR byte alongside the record (lifted by `dance_widgets_with_abr` until the
+parser carries it). **Confirmed.**
 
 Traced layout (retail 320x240): score boxes (widget 8) centred at
 `(64, 20)`/`(160, 20)`/`(256, 20)` with the **human dancer in the centre box**

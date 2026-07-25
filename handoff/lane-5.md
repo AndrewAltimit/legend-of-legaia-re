@@ -13,6 +13,11 @@ and it is read from `table[+0x13]` whenever the widget id's mode field is `0`.
 `+0x12`. The Baka sibling (`baka_opponents::BakaHudWidget`) does carry it, as
 `abr`.
 
+This is not a cosmetic omission: **all 34 rows of the retail table carry
+`abr = 1`**, so the entire dance HUD draws with the additive `B + F` blend. A
+consumer built on the parsed record alone would get `tpage_attr = 0x08` instead
+of `0x28` on every element - the wrong blend mode HUD-wide, and silently.
+
 Stopgap in place: `engine_core::dance::dance_widgets_with_abr` lifts the byte off
 the same committed offsets (`WIDGET_TABLE_VA`, `DANCE_OVERLAY_BASE_VA`,
 `WIDGET_STRIDE`) that `parse_widgets` uses, and `dance_hud_widget_quad` takes it
@@ -75,6 +80,16 @@ file is outside this lane's scope. It belongs next to `baka_fighter` /
 
 ## Left open
 
+- `FUN_801D2F38` / `FUN_801D231C` (the dance HUD emitter + render driver) are
+  ported but disclosed `NOT WIRED`. Both hosts that own a `DanceGame` - the play
+  window's `window/hud.rs` and the browser page's `minigames.rs`, **both outside
+  this lane's prefixes** - draw a single-dancer font-text readout at their own
+  pens and never read `dancer_score(1..2)`. Wiring needs a host dance HUD in
+  retail framebuffer coordinates plus a rival-HUD toggle for `_DAT_8007B6D0`;
+  the emitter additionally needs the overlay's `(512, 0)` HUD sprite page
+  resident in VRAM. A disc-gated oracle
+  (`dance_minigame_real::the_hud_driver_and_emitter_produce_real_draws_off_the_disc`)
+  pins the output non-vacuous, so only the consumer is missing.
 - `FUN_801D7BB8` is ported but disclosed `NOT WIRED`
   (`engine_core::minigame_floor::polar_offset`): it indexes two quadrature
   tables through **runtime** pointers (`_DAT_8007B81C` / `_DAT_8007B7F8`) and
