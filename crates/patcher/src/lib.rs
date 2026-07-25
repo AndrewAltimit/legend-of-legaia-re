@@ -92,6 +92,7 @@ pub mod seru_trade;
 pub mod shiny_seru;
 pub mod shop;
 pub mod spell_cost;
+pub mod spirit_ap;
 pub mod starting_bag;
 pub mod starting_items;
 pub mod starting_level;

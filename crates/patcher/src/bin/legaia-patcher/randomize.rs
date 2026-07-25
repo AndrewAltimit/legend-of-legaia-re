@@ -239,6 +239,25 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("approach_softlock_fix = false".to_string());
     }
 
+    // Spirit AP tuning: set the AP the Spirit command charges into the battle
+    // gauge (retail 32; 0 = defence-only, 100 = full gauge). Seedless - four
+    // immediate words in the battle overlay (the accrual + the widget ramp
+    // targets that mirror it).
+    if let Some(ap) = args.spirit_ap {
+        let report = apply::apply_spirit_ap(&mut patcher, ap)?;
+        println!(
+            "spirit-ap: {}",
+            if report.changed {
+                format!("{} -> {ap} AP per Spirit (retail 32)", report.previous)
+            } else {
+                format!("already {ap} AP per Spirit (no change)")
+            }
+        );
+        manifest.push(format!("spirit_ap = {ap}"));
+    } else {
+        manifest.push("spirit_ap = \"retail\"".to_string());
+    }
+
     // Fishing-exchange price edits: set the point cost of one or more prizes
     // (e.g. the Buma Water Egg). Seedless targeted edits in the raw PROT 972
     // overlay; the price also gates when the prize appears.

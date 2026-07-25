@@ -373,3 +373,43 @@ pub fn randomize_equip_masks(
         .context("write equipment equip-mask table")?;
     Ok(changed)
 }
+
+/// Outcome of a Spirit AP edit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpiritApReport {
+    /// Whether any site word changed (`false` = image already held the value).
+    pub changed: bool,
+    /// The Spirit accrual the image held before the edit (retail 32).
+    pub previous: u8,
+}
+
+/// Set how much AP the **Spirit** command charges into the battle AP gauge
+/// (see [`crate::spirit_ap`]): retail 32, configurable 0 (defence boost only)
+/// to 100 (one press fills the gauge). Rewrites four `addiu` immediates in
+/// the raw battle-action overlay (PROT 898) - the state-`0x50` accrual plus
+/// the three state-`0x46` gauge-widget ramp targets that mirror it. The
+/// build is fingerprint-verified before writing; an unrecognized image is
+/// refused, a re-application with a new value re-targets cleanly.
+pub fn apply_spirit_ap(patcher: &mut DiscPatcher, ap: u8) -> Result<SpiritApReport> {
+    let index = crate::spirit_ap::BATTLE_ACTION_OVERLAY_PROT_INDEX;
+    let overlay = patcher
+        .read_entry(index)
+        .with_context(|| format!("read battle-action overlay PROT {index} for spirit AP"))?;
+    match crate::spirit_ap::plan(&overlay, ap)? {
+        None => Ok(SpiritApReport {
+            changed: false,
+            previous: ap,
+        }),
+        Some(edit) => {
+            for &(off, word) in &edit.writes {
+                patcher
+                    .patch_prot_entry(index, off as u64, &word.to_le_bytes())
+                    .with_context(|| format!("write spirit-AP word at PROT {index} +{off:#x}"))?;
+            }
+            Ok(SpiritApReport {
+                changed: true,
+                previous: edit.previous,
+            })
+        }
+    }
+}
