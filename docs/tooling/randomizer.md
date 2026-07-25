@@ -1275,7 +1275,11 @@ no menu display). A combo shared across characters (e.g. `UDU`) edits the
 matching art in each file. `legaia-patcher arts` lists every art's combo, AP, and
 current power tiers. Seedless targeted edit; no Sony bytes. Module
 [`legaia_patcher::arts_power`](../../crates/patcher/src/arts_power.rs); disc oracle
-`crates/patcher/tests/arts_power_real.rs`.
+`crates/patcher/tests/arts_power_real.rs`. The web patcher exposes this (and the
+AP-grant below) as a per-art picker - "Tactical-Art overrides": choose the art
+by name, pick a per-hit damage tier or "no damage", and a note under the row
+spells out any combo-sharing art the edit also reaches; the raw
+`combo=value` syntax stays available on the same page as an advanced input.
 
 ### Arts AP-grant
 
