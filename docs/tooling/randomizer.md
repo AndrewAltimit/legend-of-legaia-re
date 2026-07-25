@@ -77,6 +77,8 @@ disc-gated, so CI runs without a disc. There is also a
   - [Arts damage power](#arts-damage-power)
   - [Arts AP-grant](#arts-ap-grant)
   - [Spirit AP](#spirit-ap)
+  - [Enemy-damage AP](#enemy-damage-ap)
+  - [The signed accrual tail](#the-signed-accrual-tail)
   - [Doors (scene transitions)](#doors-scene-transitions)
   - [House doors (intra-town)](#house-doors-intra-town)
   - [Map doors (`.MAP` kind-0 intra-scene teleports)](#map-doors-map-kind-0-intra-scene-teleports)
@@ -271,7 +273,8 @@ unless asked for:
 | `--earth-egg-price VALUE` | set the casino-coin threshold to obtain the Earth Egg (Sol Tower Prize Counter; retail 100000), gate + debit together | single value | [Earth Egg coin threshold](#earth-egg-coin-threshold) |
 | `--arts-power COMBO=VALUE` | rebalance a Tactical Art's per-strike damage-power bytes, targeted by input combo (`RDLDL=0x16`); `VALUE` is a power tier `0x0C..=0x1F` or `0` to disable | repeatable / comma-separated | [Arts damage power](#arts-damage-power) |
 | `--arts-ap-grant COMBO=AMOUNT` | make a Tactical Art **grant** `AMOUNT` AP (Spirit, clamped at 100) instead of costing it, admitting it at any AP level; a code hook into the party arts queue-builder. Config row = arts-table index, **shared across all three characters**. Mutually exclusive with `--shiny-seru` | repeatable / comma-separated | [Arts AP-grant](#arts-ap-grant) |
-| `--spirit-ap AP` | set how much AP the Spirit command charges into the battle gauge (retail 32): `0` = defence boost only, `100` = one press fills the gauge | single value 0..=100 | [Spirit AP](#spirit-ap) |
+| `--spirit-ap AP` | set how much AP the Spirit command charges into the battle gauge (retail 32): `0` = defence boost only, `100` = one press fills the gauge, negative = Spirit drains the gauge | single value -100..=100 | [Spirit AP](#spirit-ap) |
+| `--damage-ap AP` | set how much AP taking damage charges into the battle gauge, per 100% of max HP lost (retail 100): `0` = damage never feeds the gauge, negative = being hit drains it | single value -200..=200 | [Enemy-damage AP](#enemy-damage-ap) |
 
 **Tuning the encounter and door passes:**
 
@@ -1331,21 +1334,139 @@ plus the AP Boost equipment bonuses, `n + n/4` and `n + n/10`), so the
 on-screen gauge animation always agrees with the real grant. Four same-size
 immediate edits in the raw overlay entry; opcodes and registers untouched.
 
-Negative values (Spirit *costs* AP) are **not supported**: the accrual is an
-unsigned byte in retail code (`sb`/`lbu`) and the add/clamp window has no
-floor-at-zero, so a negative byte would read back as +200-odd and pin the
-gauge at 100. A signed variant needs injected code (an arena detour like the
-[Arts AP-grant](#arts-ap-grant) hook), not an immediate edit.
+**Negative values** make Spirit *cost* AP. Retail reads the staged accrual
+back with `lbu` and adds it under a ceiling clamp only, so a two's-complement
+byte alone would read as +200-odd and pin the gauge at 100 - the sign has to
+be honoured by the consumer as well. A negative setting therefore also
+rewrites the add/clamp tail into a signed add with a **floor at zero**; see
+[the signed accrual tail](#the-signed-accrual-tail) below for how it fits in
+place.
 
 Seedless single-value edit; re-applying a different value re-targets cleanly
-and `32` restores the stock bytes. The build is fingerprint-verified (the
-adjacent category-test / store / boost-branch words) before writing; an
-unrecognized image is refused. Module
+(including across the sign) and `32` restores the stock bytes. The build is
+fingerprint-verified (the adjacent category-test / store / boost-branch
+words) before writing; an unrecognized image is refused. Module
 [`legaia_patcher::spirit_ap`](../../crates/patcher/src/spirit_ap.rs); disc
 oracle `crates/patcher/tests/spirit_ap_real.rs` (stock-immediate baseline,
 four-word surgical diff, determinism, idempotence, retarget + restore round
-trip). In the browser patcher the same edit is the **Spirit AP slider** in
-the Gameplay group.
+trip, and a stock-word check for every word the negative form rewrites). In
+the browser patcher the same edit is the **Spirit AP slider** in the Gameplay
+group.
+
+### Enemy-damage AP
+
+`--damage-ap AP` sets how much AP an actor's battle gauge gains when it is
+**damaged**, expressed as AP per **100% of max HP lost**. Retail is 100: a
+hit that would empty the HP bar fills the whole 100-point gauge, a hit for a
+quarter of max HP grants 25, and every damaging hit grants at least 1. `0`
+stops damage feeding the gauge entirely (the min-1 floor goes with it), `200`
+fills twice as fast, and a **negative** value makes being hit *drain* the
+gauge instead, floored at zero.
+
+The retail scale lives in the spirit-gauge fill: `pct = max(1, damage * 100 /
+max_hp)` added into `actor[+0x170]` and clamped at 100 (kernel mirror:
+`legaia_engine_vm::battle_formulas::spirit_gauge_fill`). Overlay 0898 carries
+**two inlined copies** of that kernel and a hit reaches one or the other -
+`FUN_801DDB30`, the closed-form finisher, for magic / summon / special-attack
+hits, and `FUN_801EC3E4`, the arms execution resolver, for ordinary physical
+hits. The patch always writes **both**; editing only the finisher leaves the
+common case (a regular enemy swing) running stock, which reads as a slider
+that does nothing, and an image whose two copies disagree is refused as
+partially patched. See
+[battle-formulas.md](../subsystems/battle-formulas.md#the-spirit-gauge-fill-is-duplicated)
+for the structural sweep that pins the count at two.
+
+In each copy the `100` is synthesized as a shift/add chain rather than an
+immediate:
+
+```text
+801de1c8  sll  v0,v1,0x1     ; d*2
+801de1cc  addu v0,v0,v1      ; d*3
+801de1d0  sll  v0,v0,0x3     ; d*24
+801de1d4  addu v0,v0,v1      ; d*25
+801de1d8  lhu  v1,0x14e(s1)  ; max HP
+801de1dc  sll  v0,v0,0x2     ; d*100
+801de1e0  divu v0,v1
+```
+
+so a general factor needs the chain restated as an explicit multiply
+(`ori v0,zero,N` / `multu` / `mflo v0`, the two spare words nopped; copy B's
+chain begins in a branch delay slot, so its scale factor loads there and the
+multiply lands on the join). The retail factor keeps retail's own chain,
+which is what makes `--damage-ap 100` a genuine no-op. `--damage-ap 0`
+additionally rewrites each copy's min-1 floor (`sltiu rX,v0,0x1`) to a
+`move`, without which "no AP from damage" would still grant 1 per hit.
+
+A negative value reuses that scale for the magnitude and turns the accrual
+into a subtract with a floor at zero, in place:
+
+```text
+801de2c0  subu v0,v0,a1        ; gauge -= pct (may go negative)
+801de2c4  bgez v0,0x801de2d0
+801de2c8  nop
+801de2cc  move v0,zero         ; floor at 0
+801de2d0  sh   v0,0x170(s1)
+```
+
+Retail's clamp-at-100 occupied those words and is not needed on a draining
+site - the gauge cannot grow here, and its other growth sites (the per-action
+accrual in `FUN_801E295C`, [above](#spirit-ap)) keep their own clamps.
+
+Seedless single-value edit; re-applying a different value re-targets cleanly
+(including across the sign) and `100` restores the stock bytes. The build is
+fingerprint-verified (the damage subtract, the max-HP load, the `divu`, the
+party-only gate and both ability-bit tests) before writing; an unrecognized
+image is refused. Module
+[`legaia_patcher::damage_ap`](../../crates/patcher/src/damage_ap.rs); disc
+oracle `crates/patcher/tests/damage_ap_real.rs` (stock-word baseline over all
+31 sites across both copies, surgical diff, the `0` floor removal, the
+negative tail, determinism, idempotence, retarget across the sign + restore
+round trip). In the browser patcher the same edit is the **AP from taking
+damage** slider in the Gameplay group.
+
+### The signed accrual tail
+
+Both AP sliders share one constraint at negative settings: the gauge is a
+`u16` at `actor[+0x170]` and every retail site that grows it clamps only
+against the 100 ceiling, never against zero. A drain therefore needs a floor
+inserted where retail has none.
+
+On the [enemy-damage](#enemy-damage-ap) site that is free - retail's ceiling
+words are dead once the site only subtracts, so the floor fits in them. The
+[Spirit](#spirit-ap) site is tighter: its add/clamp tail is **shared** with
+the `+8` every non-Spirit action grants, so the ceiling must survive
+alongside the new floor, and the two together do not fit in the tail's own
+words. They fit because a negative setting makes the **AP-Boost-1 arm dead**:
+both boost arms read `+0x224` with `lbu` and would misread a negative byte as
+a large positive, so a drain makes their guard branches unconditional. The
+head of the dead arm then hosts the relocated over-100 clamp:
+
+```text
+801e5e78  bgez v1,0x801e5e84
+801e5e7c  _slti v0,v1,0x65         ; delay slot: ceiling test
+801e5e80  move v1,zero             ; floor at 0
+801e5e84  beq  v0,zero,0x801e5e40  ; over 100 -> the relocated clamp
+801e5e88  _sh  v1,0x170(s3)        ; delay slot: the store
+; in the dead AP-Boost-1 arm:
+801e5e40  li   v1,0x64
+801e5e44  sh   v1,0x170(s3)
+801e5e48  j    0x801e5e90
+```
+
+The consequence to know about: **while either slider is negative, its
+AP-Boost ("spirit gain up") accessory arm is inert** - the accessory neither
+deepens nor softens the drain. The state-`0x46` gauge-widget ramp targets
+follow the same rule (all three collapse to `-N`) and their ceiling clamp is
+swapped for a floor, so the on-screen animation still agrees with the real
+value. No injected code and no dead-space arena is involved: every word is a
+same-size rewrite inside PROT 0898, and restoring the retail value restores
+the stock bytes exactly.
+
+Both negative modes are **statically verified only** - the disc oracles prove
+which words land where and that the hand-assembled branches resolve to the
+instructions claimed above. A live battle playtest (gauge drains by the
+configured amount, stops at empty, non-Spirit actions still grant their `+8`
+and still cap at 100) has not been run.
 
 ### Doors (scene transitions)
 

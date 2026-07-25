@@ -32,7 +32,10 @@ Three patching families share that machinery:
   grant AP instead of costing it (a battle-overlay code hook -
   [`arts_ap_grant`](src/arts_ap_grant.rs), mutually exclusive with `--shiny-seru`);
   `--spirit-ap AP` sets how much AP the Spirit command charges (retail 32; four
-  battle-overlay immediates - [`spirit_ap`](src/spirit_ap.rs)).
+  battle-overlay immediates - [`spirit_ap`](src/spirit_ap.rs)); `--damage-ap AP`
+  sets how much AP taking damage charges, per 100% of max HP lost (retail 100 -
+  [`damage_ap`](src/damage_ap.rs)). Both accept negative values, which invert
+  the knob into an AP *drain*.
 
 It is Track-1-adjacent tooling - it does **not** touch the clean-room engine -
 and it ships only code: no game bytes are embedded or committed, and every
@@ -69,6 +72,7 @@ full design.
   - [Arts damage power](#arts-damage-power-arts_power-module)
   - [Arts AP-grant](#arts-ap-grant-arts_ap_grant-module)
   - [Spirit AP](#spirit-ap-spirit_ap-module)
+  - [Enemy-damage AP](#enemy-damage-ap-damage_ap-module)
   - [Doors](#doors)
   - [House doors](#house-doors)
   - [Map doors](#map-doors)
@@ -697,11 +701,42 @@ everything. Four `addiu` immediates in the raw battle-action overlay (PROT
 actually adds) plus the three state-`0x46` gauge-widget ramp targets that
 mirror it (`0x801E5320`/`0x801E536C`/`0x801E5378`; the boosted pair tracks the
 AP Boost equipment math, `n + n/4` and `n + n/10`), so the on-screen animation
-agrees with the real grant. `0` makes Spirit a pure defensive stance; negative
-("Spirit costs AP") is out of scope for an immediate edit - the accrual is an
-unsigned byte with no floor-at-zero downstream. Build fingerprint-verified
-before writing; re-applying re-targets, and `32` restores stock bytes. Disc
-oracle `tests/spirit_ap_real.rs`.
+agrees with the real grant. `0` makes Spirit a pure defensive stance.
+
+A **negative** value ("Spirit costs AP") also rewrites the shared add/clamp
+tail into a signed add floored at zero, relocating retail's over-100 arm into
+the AP-Boost-1 block the same edit makes dead - still no injected code and no
+arena. Build fingerprint-verified before writing; re-applying re-targets
+(including across the sign), and `32` restores stock bytes. Disc oracle
+`tests/spirit_ap_real.rs`. The mechanism is written up under
+[Enemy-damage AP](#enemy-damage-ap-damage_ap-module) and in
+[`docs/tooling/randomizer.md`](../../docs/tooling/randomizer.md#the-signed-accrual-tail).
+
+## Enemy-damage AP (`damage_ap` module)
+
+`--damage-ap AP` (-200..=200) sets how much AP a battle actor's gauge gains
+when it is **damaged**, as AP per 100% of max HP lost. Retail is 100 (a hit
+that would empty the HP bar fills the gauge; every hit grants at least 1).
+
+Overlay 0898 inlines that gauge fill **twice** - `FUN_801DDB30` (the
+closed-form finisher: magic / summon / special hits) and `FUN_801EC3E4` (the
+arms execution resolver: ordinary physical hits) - so the patch writes both,
+and refuses an image whose copies disagree. Editing only the finisher leaves
+regular enemy swings stock, which is indistinguishable from the slider doing
+nothing.
+
+In each copy the scale is a shift/add chain, so the patch restates it as an
+explicit multiply (`ori`/`multu`/`mflo`) - the retail factor keeps retail's
+own chain, which is what makes `--damage-ap 100` a real no-op. `0` also drops
+the `max(pct, 1)` floor; a negative value turns the accrual into a subtract
+floored at zero and neutralizes both "spirit gain up" bonus arms (they read
+the staged accrual unsigned), so an AP-Boost accessory is inert while the
+setting is negative. Pure same-size word edits in PROT 0898,
+fingerprint-verified. Disc oracle `tests/damage_ap_real.rs`.
+
+Both AP knobs are **statically verified only** at negative settings - the
+oracles prove placement and that the hand-assembled branches resolve, not
+in-game behaviour.
 
 ## Doors
 

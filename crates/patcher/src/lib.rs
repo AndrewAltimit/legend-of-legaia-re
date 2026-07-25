@@ -61,6 +61,7 @@ pub mod bonus_drop;
 pub mod casino;
 pub mod charm_fix;
 pub mod chest;
+pub mod damage_ap;
 pub mod disc;
 pub mod door;
 pub mod drops;

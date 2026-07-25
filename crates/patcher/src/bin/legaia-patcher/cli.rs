@@ -527,15 +527,28 @@ pub(crate) struct RandomizeArgs {
     pub(crate) approach_softlock_fix: bool,
     /// Set how much **AP the Spirit command charges** into the battle AP
     /// gauge (retail 32). `0` makes Spirit a pure defensive stance (guard
-    /// boost, no AP); `100` fills the whole gauge in one press. Rewrites the
-    /// battle engine's per-action AP accrual for the Spirit category plus
-    /// the three gauge-widget ramp targets that mirror it - four same-size
-    /// word edits in the battle overlay (PROT 898). Negative values (Spirit
-    /// *costs* AP) are not supported: the accrual is an unsigned byte in
-    /// retail code with no floor-at-zero, so a signed variant needs injected
-    /// code, not a table edit.
-    #[arg(long, value_name = "AP", value_parser = clap::value_parser!(u8).range(0..=100))]
-    pub(crate) spirit_ap: Option<u8>,
+    /// boost, no AP); `100` fills the whole gauge in one press; a **negative**
+    /// value makes Spirit *drain* the gauge instead, floored at zero.
+    /// Rewrites the battle engine's per-action AP accrual for the Spirit
+    /// category plus the three gauge-widget ramp targets that mirror it -
+    /// four same-size word edits in the battle overlay (PROT 898). A negative
+    /// value additionally makes the accrual read signed and neutralizes the
+    /// AP-Boost accessory arms (they read the accrual unsigned), so an
+    /// AP-Boost accessory is inert while the setting is negative.
+    #[arg(long, value_name = "AP", allow_negative_numbers = true,
+          value_parser = clap::value_parser!(i16).range(-100..=100))]
+    pub(crate) spirit_ap: Option<i16>,
+    /// Set how much **AP taking damage grants**, as AP per 100% of max HP
+    /// lost (retail 100: a hit that takes your whole HP bar fills the
+    /// 100-point gauge). `0` means damage never feeds the gauge; `200`
+    /// doubles the fill rate; a **negative** value makes being hit *drain*
+    /// the gauge instead, floored at zero. Rewrites the battle damage
+    /// finisher's scale in the battle overlay (PROT 898); as with
+    /// `--spirit-ap`, a negative value neutralizes the AP-Boost accessory
+    /// arms.
+    #[arg(long, value_name = "AP", allow_negative_numbers = true,
+          value_parser = clap::value_parser!(i16).range(-200..=200))]
+    pub(crate) damage_ap: Option<i16>,
     /// Set the **fishing-exchange price** of one or more prizes. Comma- or
     /// repeat-separated `ITEM=POINTS` entries (`--fishing-price 0x6F=500` sets
     /// the Water Egg to 500 fishing points; ids in decimal or `0xHH`). The

@@ -7541,9 +7541,15 @@ export function lift_official_pack(target_image, source_image, fold_accents) {
  * grant AP instead of costing it; mutually exclusive with `shiny_seru` (same
  * SCUS arena). `spirit_ap` (empty = untouched) sets how much AP the Spirit
  * command charges into the battle gauge (retail 32; `0` = defence boost
- * only, `100` = one press fills the gauge) - four immediate words in the
- * battle overlay (the accrual plus the gauge-widget ramp targets that
- * mirror it). These are all manual, seedless edits.
+ * only, `100` = one press fills the gauge, negative = Spirit drains the
+ * gauge) - four immediate words in the battle overlay (the accrual plus the
+ * gauge-widget ramp targets that mirror it). `damage_ap` (empty = untouched)
+ * sets how much AP taking damage grants, as AP per 100% of max HP lost
+ * (retail 100; `0` = damage never feeds the gauge, negative = being hit
+ * drains it) - the damage finisher's scale chain in the same overlay. A
+ * negative value on either knob also neutralizes the AP-Boost accessory
+ * arms, which read the accrual unsigned. These are all manual, seedless
+ * edits.
  * `starting_level`
  * begins the new game at that character level instead of 1 (`0` or `1` =
  * vanilla; range 2..=14), seeding the lead character's XP and recomputing the
@@ -7602,9 +7608,10 @@ export function lift_official_pack(target_image, source_image, fold_accents) {
  * @param {string} arts_powers
  * @param {string} arts_ap_grants
  * @param {string} spirit_ap
+ * @param {string} damage_ap
  * @returns {any}
  */
-export function patch_rom(image, seed, lang_pack, drops, encounters, encounter_scope, chests, shops, casino, steals, arts, doors, door_coupling, house_doors, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, monster_stats, move_power, element_affinity, spell_cost, equip_bonus, weapon_specialty, starting_level, solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru, jewel_fix, approach_softlock_fix, fishing_prices, location_renames, earth_egg_price, arts_powers, arts_ap_grants, spirit_ap) {
+export function patch_rom(image, seed, lang_pack, drops, encounters, encounter_scope, chests, shops, casino, steals, arts, doors, door_coupling, house_doors, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, monster_stats, move_power, element_affinity, spell_cost, equip_bonus, weapon_specialty, starting_level, solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru, jewel_fix, approach_softlock_fix, fishing_prices, location_renames, earth_egg_price, arts_powers, arts_ap_grants, spirit_ap, damage_ap) {
     const ptr0 = passArray8ToWasm0(image, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(seed, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -7655,7 +7662,9 @@ export function patch_rom(image, seed, lang_pack, drops, encounters, encounter_s
     const len23 = WASM_VECTOR_LEN;
     const ptr24 = passStringToWasm0(spirit_ap, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len24 = WASM_VECTOR_LEN;
-    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, ptr12, len12, ptr13, len13, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, ptr14, len14, ptr15, len15, ptr16, len16, ptr17, len17, ptr18, len18, weapon_specialty, starting_level, solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru, jewel_fix, approach_softlock_fix, ptr19, len19, ptr20, len20, ptr21, len21, ptr22, len22, ptr23, len23, ptr24, len24);
+    const ptr25 = passStringToWasm0(damage_ap, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len25 = WASM_VECTOR_LEN;
+    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, ptr12, len12, ptr13, len13, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, ptr14, len14, ptr15, len15, ptr16, len16, ptr17, len17, ptr18, len18, weapon_specialty, starting_level, solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru, jewel_fix, approach_softlock_fix, ptr19, len19, ptr20, len20, ptr21, len21, ptr22, len22, ptr23, len23, ptr24, len24, ptr25, len25);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }

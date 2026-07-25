@@ -477,7 +477,35 @@ summons their own element at 100% and their opposed element weakest - Vahn
 fire 100 / water 40, Noa wind 100 / earth 40, Gala thunder 100 / dark 60, the
 rest 70–95 (`asset element-affinity` prints the rows); (6) the **9999 cap**. The defender's spirit gauge then fills by `pct = max(1,
 over*100/maxHP)` plus the two "spirit gain up" equipment bits (`+0xF8 & 0x200`
-→ `pct>>2`, `& 0x100` → `pct/10`), clamped to 100.
+→ `pct>>2`, `& 0x100` → `pct/10`), clamped to 100. The `100` scale is
+synthesized as a shift/add chain, not an immediate, which is why the
+patcher's [`--damage-ap`](../tooling/randomizer.md#enemy-damage-ap) restates
+it as an explicit multiply to retune it.
+
+### The spirit-gauge fill is duplicated
+
+That gauge fill exists **twice** in overlay 0898, as two independent inlined
+copies of one kernel, and which one runs depends on how the hit was resolved:
+
+| Copy | Host | Registers (damage / defender / pct) | Reached by |
+|---|---|---|---|
+| A | `FUN_801DDB30`, the closed-form finisher | `v1` / `s1` / `a1` | magic, summon and special-attack hits |
+| B | `FUN_801EC3E4`, the arms execution resolver | `a0` / `a1` / `a2` | ordinary physical hits |
+
+Both compute the same `pct = max(1, damage*100/maxHP)`, apply the same two
+ability-gated bonus arms, and clamp at 100; copy B's shift/add chain merely
+starts in a branch delay slot (the `beq` at `0x801EDB74` joins at
+`0x801EDB80`) and interleaves its own max-HP load. A structural sweep of the
+entry pins the count at exactly two: the kernel's `andi v0,v0,0x200` /
+`andi v0,v0,0x100` tests and its `sltiu rX,v0,0x1` min-one floor co-occur at
+`0x801DE1F8` and `0x801EDBB0` and nowhere else.
+
+The duplication matters to anything that edits the fill rather than reads it:
+touching only copy A leaves the *common* case - a regular enemy swing -
+running stock, which is easy to misread as an edit that did nothing. The
+port's single `spirit_gauge_fill` kernel is the correct shape for the engine
+(one function, two call sites); it is only the retail image that inlines it
+twice.
 
 Recovery summons skip the roll entirely and heal `(magic_power_byte << 5) + 0xE0`,
 clamped to `maxHP - curHP`.
