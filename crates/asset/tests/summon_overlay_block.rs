@@ -93,8 +93,14 @@ fn player_summon_block_parses_into_move_vm_scene_graphs() {
             );
         }
 
-        // Trim the over-read window down to the entry's own content.
+        // Cross-check the entry's end against the independent TOC-gap trim;
+        // the reader already stops there, so this removes nothing.
         let unique = unique_content_len(bytes.len(), entry.start_lba, next.start_lba);
+        assert_eq!(
+            unique,
+            bytes.len(),
+            "PROT {entry_idx}: read_entry is the entry"
+        );
         bytes.truncate(unique);
 
         let overlay = summon_overlay::parse(&bytes, SUMMON_OVERLAY_LINK_BASE);

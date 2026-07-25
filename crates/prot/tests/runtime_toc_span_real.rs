@@ -1,10 +1,9 @@
 //! Disc-gated oracle for `FUN_8003E68C` (`legaia_prot::runtime_toc`).
 //!
-//! The routine returns `TABLE[i+3] - TABLE[i+2]` over the in-RAM PROT
-//! TOC, which is the entry's on-disc sector footprint. `Archive` computes the same
-//! quantity inline as `next_start_lba - start_lba` before deciding whether
-//! to extend an entry over a trailing gap, so the real TOC is a direct
-//! oracle for the port.
+//! The routine returns `TABLE[i+3] - TABLE[i+2]` over the in-RAM PROT TOC,
+//! which is the entry's size in sectors. `Archive` sizes every entry from
+//! this same routine, so the real TOC is a direct oracle for the port - and
+//! for the parser having exactly one implementation of the arithmetic.
 //!
 //! Skips silently when `LEGAIA_DISC_BIN` is unset or `extracted/PROT.DAT`
 //! is missing.
@@ -39,7 +38,7 @@ fn span_matches_next_start_minus_start_for_every_real_entry() {
     );
 
     let mut checked = 0usize;
-    let mut extended = 0usize;
+    let mut disagreed_with_declared = 0usize;
     for e in &arch.entries {
         let p = e.index as usize;
         let span = entry_sector_span_from_archive_toc(&arch.toc, p)
@@ -58,24 +57,26 @@ fn span_matches_next_start_minus_start_for_every_real_entry() {
             "entry {p}: span is next_start - start"
         );
 
-        // Where Archive chose the trailing-gap footprint over the
-        // indexed size, that footprint *is* this routine's result.
-        if e.size_sectors > e.indexed_size_sectors {
-            assert_eq!(
-                span, e.size_sectors,
-                "entry {p}: the extended footprint is the FUN_8003E68C span"
-            );
-            extended += 1;
+        // The entry's size IS this routine's result - always, not just
+        // where some other formula happens to fall short.
+        assert_eq!(
+            span, e.size_sectors,
+            "entry {p}: the entry size is the FUN_8003E68C span"
+        );
+        if e.declared_span_sectors != e.size_sectors {
+            disagreed_with_declared += 1;
         }
         checked += 1;
     }
 
-    // Non-vacuity: the interesting branch (entries the boot loader reads
-    // past their indexed end) must actually be exercised.
+    // Non-vacuity: if the historical `toc[p+5] - toc[p+3] + 4` expression
+    // agreed with the span everywhere, the assertion above would be
+    // measuring nothing.
     assert!(checked > 1000, "checked {checked} entries");
     assert!(
-        extended > 0,
-        "no trailing-gap entry exercised - the oracle would be vacuous"
+        disagreed_with_declared > 100,
+        "only {disagreed_with_declared} entries where the declared span differs \
+         from the real size - the oracle would be near-vacuous"
     );
 }
 

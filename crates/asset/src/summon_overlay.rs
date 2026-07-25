@@ -45,20 +45,23 @@
 //! stagers ([`ENEMY_BOSS_STAGER_PROT`]) are mostly pooled. [`parse`] scans both
 //! call forms; the record format is identical.
 //!
-//! ## Trim to the TOC-gap footprint before parsing
+//! ## A stager ends at its TOC gap
 //!
-//! Stager PROT entries **overlap on disc**: each entry's TOC-indexed size
-//! over-reads into the following entries, so an extraction `.BIN` is really
-//! `[this stager][the next stagers' head bytes...]`. Only the first
-//! `(next_start_lba - start_lba) * 0x800` bytes are the entry's own content
-//! (compute with [`unique_content_len`]). Spawn sites in the over-read tail
-//! belong to *neighbouring* stagers: their record pointers are valid only for
-//! that neighbour's own load at the shared link base, so resolved against the
-//! wrong file window they dereference unrelated bytes and yield garbage
-//! first-words. The six Cort mid-cast save states pin the boundary: each
-//! slot-B resident image matches its stager file byte-for-byte exactly up to
-//! the TOC-gap footprint and diverges after it (stale bytes of the previous
-//! occupant), e.g. `0x2000` for PROT 0961, `0x4000` for PROT 0966.
+//! A stager entry is exactly `(next_start_lba - start_lba) * 0x800` bytes -
+//! which is every PROT entry's size, and what
+//! [`legaia_prot::archive::Archive::read_entry`] returns. The six Cort
+//! mid-cast save states pin that boundary independently: each slot-B resident
+//! image matches its stager file byte-for-byte up to the TOC gap and diverges
+//! after it (stale bytes of the previous occupant), e.g. `0x2000` for PROT
+//! 0961, `0x4000` for PROT 0966.
+//!
+//! [`unique_content_len`] computes the same bound from a start/next LBA pair.
+//! It is retained as the cross-check the disc-gated tests run against
+//! `read_entry`, and for callers holding a stale extraction `.BIN` - one
+//! written before the entry size was corrected is really
+//! `[this stager][the next stagers' head bytes...]`, and spawn sites in that
+//! tail belong to *neighbouring* stagers, whose record pointers are valid only
+//! for the neighbour's own load at the shared link base.
 //!
 //! ## Record first words: nodes, meshes, and the `0x4000` render-mode sentinel
 //!
@@ -210,13 +213,16 @@ pub const RENDER_NODE_MODE_A: i16 = 0x4000;
 pub const RENDER_NODE_MODE_B: i16 = 0x4001;
 
 /// Unique-content length of a stager PROT entry: the byte distance to the next
-/// TOC entry's start LBA, capped at the extraction footprint. Stager entries'
-/// indexed sizes over-read into their neighbours (the extraction `.BIN`s
-/// overlap on disc), so [`parse`] input must be trimmed to this length - the
-/// over-read tail is the *next* stagers' content, whose spawn-site record
-/// pointers are only valid for their own load at the shared link base.
-/// Capture-pinned: each Cort mid-cast save's slot-B resident image matches the
-/// stager file exactly up to this boundary and diverges after it.
+/// TOC entry's start LBA, capped at `file_len`. This is the entry's size, so
+/// bytes read through [`legaia_prot::archive::Archive::read_entry`] are
+/// already exactly this long and the call is a no-op cross-check.
+///
+/// It still trims a **stale** buffer - an extraction `.BIN` written before the
+/// entry size was corrected runs on into the next stagers, and that tail's
+/// spawn-site record pointers are only valid for the neighbour's own load at
+/// the shared link base. Capture-pinned: each Cort mid-cast save's slot-B
+/// resident image matches the stager file exactly up to this boundary and
+/// diverges after it.
 pub fn unique_content_len(file_len: usize, start_lba: u32, next_start_lba: u32) -> usize {
     let gap_bytes = (next_start_lba.saturating_sub(start_lba) as usize) * 0x800;
     if gap_bytes == 0 {
@@ -365,10 +371,11 @@ fn resolve_a2(b: &[u8], site: usize, window_insns: usize) -> Option<u32> {
 
 /// Parse the summon part records out of a per-summon stager overlay's raw bytes
 /// (e.g. PROT 0905), using `link_base` to map absolute record pointers to file
-/// offsets. **Trim the input to its TOC-gap footprint first**
-/// ([`unique_content_len`]) - the extraction `.BIN`s over-read into the
-/// following stagers, and the over-read tail's spawn sites resolve record
-/// pointers that are only valid for the neighbour's own load.
+/// offsets. **The input must be one entry's bytes and no more** - what
+/// [`legaia_prot::archive::Archive::read_entry`] returns. A stale window that
+/// runs into the following stagers resolves spawn-site record pointers that
+/// are only valid for the neighbour's own load; [`unique_content_len`] trims
+/// one back.
 ///
 /// Scans every `jal FUN_80021B04` and `jal FUN_80050ED4` (pool-wrapper) call
 /// site, recovers the record pointer each passes, keeps the ones that resolve

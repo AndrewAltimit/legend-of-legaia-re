@@ -31,10 +31,11 @@ enum Cmd {
     },
     /// Find which entry owns a PROT.DAT byte offset (reverse lookup).
     ///
-    /// Several entries declare a TOC window larger than their real on-disc
-    /// footprint, so `prot-extract` writes `.BIN` files whose tails hold a
-    /// neighbour's bytes (an "over-read"). This resolves an offset to its TRUE
-    /// owner and flags when the offset lands in an over-read tail.
+    /// Entry extents partition the archive, so every offset has exactly one
+    /// owner. Use `--in-entry` to hand it an offset your hex editor showed
+    /// inside one extracted `.BIN`; it reports the owner and says plainly when
+    /// the offset runs past that entry's end (which a `.BIN` written before
+    /// the entry size was corrected can do).
     Locate {
         /// PROT.DAT (or DMY.DAT) archive.
         prot: PathBuf,
@@ -62,12 +63,9 @@ enum Cmd {
         /// name each entry file after its block, e.g. `0004_town01.BIN`.
         #[arg(long)]
         cdname: Option<PathBuf>,
-        /// Trim each `.BIN` to its true on-disc footprint (the sector span to
-        /// the next entry) instead of the TOC-declared window, so over-reading
-        /// entries don't carry a neighbour's bytes in their tail. Trailing
-        /// overlays past the TOC-indexed end are kept - they sit inside the
-        /// footprint. Default off: the full declared window matches what the
-        /// TOC says and what `locate` expects for `--in-entry` offsets.
+        /// Deprecated no-op. Every `.BIN` is already the entry's own sectors
+        /// (the span to the next entry) - there is no larger window to trim
+        /// to. Accepted so existing invocations keep working.
         #[arg(long)]
         clamp_footprint: bool,
     },
@@ -174,8 +172,10 @@ fn locate_cmd(
         }
     }
 
-    // If the offset was queried against a specific entry, say plainly whether
-    // that entry actually owns it or the reader is in its over-read tail.
+    // If the offset was queried against a specific entry, say plainly when it
+    // runs past that entry - a `.BIN` written before the entry size was
+    // corrected carries a neighbour's bytes in its tail, and an offset read
+    // out of one lands here.
     let queried_entry = in_entry.and_then(|n| {
         let e = archive.entries.iter().find(|e| e.index == n)?;
         Some((n, e))
@@ -192,16 +192,17 @@ fn locate_cmd(
                 .unwrap_or_else(|| "another entry".to_string());
             println!();
             println!(
-                "NOTE: 0x{raw:X} is PAST entry {n}'s footprint (0x{footprint:X}) - you are in \
-                 its OVER-READ tail. Those bytes belong to {owner_note}, not entry {n}."
+                "NOTE: 0x{raw:X} is PAST entry {n}'s end (0x{footprint:X}) - a stale extraction \
+                 window. Those bytes belong to {owner_note}, not entry {n}."
             );
         }
     }
 
-    // The full set of extracted files that physically contain these bytes.
+    // Windows this crate produces don't overlap, so this only fires for a
+    // caller-supplied entry set (or a stale one).
     if loc.covering.len() > 1 {
         println!();
-        println!("also present in these extracted files (declared windows overlap here):");
+        println!("also covered by these entries' windows:");
         for &i in &loc.covering {
             let e = &archive.entries[i];
             let tag = if Some(i) == loc.owner {
@@ -238,20 +239,24 @@ fn list(prot: &Path, cdname_path: Option<&Path>) -> Result<()> {
     println!();
     println!(
         "{:>5}  {:>10}  {:>10}  {:>10}  {:>10}  {:>3}  block",
-        "idx", "byte_off", "decl_size", "footprint", "lba", "ovr"
+        "idx", "byte_off", "size", "decl_span", "lba", "ovr"
     );
     for e in &archive.entries {
         let block = names
             .as_ref()
             .and_then(|m| cdname::block_for(m, e.index))
             .unwrap_or("");
-        let footprint = legaia_prot::locate::footprint_bytes(&archive.toc, e);
-        // `ovr` = the extracted `.BIN` window over-reads its true footprint, so
-        // its tail carries the next entry's bytes (see `prot-extract locate`).
-        let ovr = if e.size_bytes > footprint { "OVR" } else { "" };
+        // `ovr` marks the entries where the historical `toc[p+5] - toc[p+3] +
+        // 4` window (`decl_span`) reaches past the entry - those are the ones
+        // whose pre-correction `.BIN` carried a neighbour's bytes in its tail.
+        let ovr = if e.declared_span_bytes > e.size_bytes {
+            "OVR"
+        } else {
+            ""
+        };
         println!(
             "{:>5}  0x{:08X}  {:>10}  {:>10}  {:>10}  {:>3}  {}",
-            e.index, e.byte_offset, e.size_bytes, footprint, e.start_lba, ovr, block
+            e.index, e.byte_offset, e.size_bytes, e.declared_span_bytes, e.start_lba, ovr, block
         );
     }
     Ok(())
@@ -282,16 +287,8 @@ fn extract(
     let mut manifest_entries = Vec::with_capacity(archive.entries.len());
 
     let entries = archive.entries.clone();
-    let mut trimmed = 0usize;
     for entry in &entries {
         archive.read_entry(entry, &mut buf)?;
-        if clamp_footprint {
-            let footprint = legaia_prot::locate::footprint_bytes(&archive.toc, entry) as usize;
-            if buf.len() > footprint {
-                buf.truncate(footprint);
-                trimmed += 1;
-            }
-        }
 
         let block = names
             .as_ref()
@@ -337,7 +334,6 @@ fn extract(
         source: prot.display().to_string(),
         header: archive.header.clone(),
         toc_len: archive.toc.len(),
-        clamp_footprint,
         entries: manifest_entries,
     };
     let json = serde_json::to_string_pretty(&manifest)?;
@@ -350,7 +346,7 @@ fn extract(
         out.display()
     );
     if clamp_footprint {
-        println!("clamped {trimmed} over-reading entries to their true footprint");
+        println!("note: --clamp-footprint is a no-op; every .BIN is the entry's own sectors");
     }
     Ok(())
 }
@@ -367,9 +363,6 @@ struct Manifest {
     source: String,
     header: Header,
     toc_len: usize,
-    /// True when `--clamp-footprint` trimmed over-reading entries, so each
-    /// `size` below is the written length, not the TOC-declared window.
-    clamp_footprint: bool,
     entries: Vec<ManifestEntry>,
 }
 

@@ -1,25 +1,32 @@
 //! Reverse lookup: map a PROT.DAT byte offset back to the entry that owns it.
 //!
-//! PROT.DAT's TOC declares each entry a size (the `toc[p+5] - toc[p+3] + 4`
-//! formula) that, for several entries, far exceeds the entry's real on-disc
-//! footprint - the sector gap to the *next* entry's start LBA. `prot-extract`
-//! writes the full declared window, so those extracted `.BIN` files carry a
-//! neighbour's bytes in their tail: the monster archive (entry 867), whose own
-//! declared size equals its footprint, is re-covered by the oversized windows of
-//! the two player-battle files that precede it (865 / 866). Retail never trips on
-//! this because its loader reads a bounded prologue, not the full declared size.
+//! Entry extents partition the archive ([`crate::tiling`]), so an offset has
+//! exactly one owner and [`locate`] is a lookup rather than a judgement call.
+//! What the module is still *for* is the `--in-entry` translation: an offset
+//! read out of a hex editor is relative to some extracted `.BIN`, and this
+//! turns it into an absolute PROT.DAT offset (and back into an owner).
 //!
-//! This module answers "which entry really owns byte X", and flags when X lands
-//! in an over-read tail (a neighbour's bytes) rather than the entry's own data.
-//! The footprint span is taken from [`runtime_toc`](crate::runtime_toc) so there
-//! is exactly one implementation of the `next_start - start` arithmetic.
+//! It also keeps the over-read machinery, because an over-read is a property
+//! of a **window**, not of the archive: any `.BIN` produced before the entry
+//! size was corrected - and any hand-built [`Entry`] - can still carry a
+//! neighbour's bytes in its tail. `PROT.DAT`'s TOC once had each entry sized
+//! by `toc[p+5] - toc[p+3] + 4`, which is that entry's two *successors*'
+//! footprints plus 4; extraction 865 / 866 spilling into the monster archive
+//! at 867 was the visible symptom. Against an [`Archive`](crate::archive::Archive)
+//! parsed by this crate, [`is_over_read`] is now false for every entry.
+//!
+//! The footprint span is taken from [`runtime_toc`](crate::runtime_toc) so
+//! there is exactly one implementation of the `next_start - start` arithmetic.
 
 use crate::archive::{Entry, SECTOR};
 use crate::runtime_toc;
 
-/// True on-disc footprint of an entry in bytes: the sector span to the next
-/// entry's start LBA. Falls back to the entry's surfaced size when the TOC span
-/// is unavailable (a short table, or an unsorted / tail row that would wrap).
+/// On-disc footprint of an entry in bytes: the sector span to the next entry's
+/// start LBA. Falls back to the entry's own size when the TOC span is
+/// unavailable (a short table, or an unsorted / tail row that would wrap).
+///
+/// For an [`Entry`] this crate parsed, this equals `entry.size_bytes` - the
+/// two are only distinguishable for a caller-built entry or a stale window.
 pub fn footprint_bytes(toc: &[u32], entry: &Entry) -> u64 {
     match runtime_toc::entry_sector_span_from_archive_toc(toc, entry.index as usize) {
         Some(sectors) if sectors > 0 => (sectors as u64) * (SECTOR as u64),
@@ -27,8 +34,10 @@ pub fn footprint_bytes(toc: &[u32], entry: &Entry) -> u64 {
     }
 }
 
-/// An entry over-reads when the window `prot-extract` writes (`size_bytes`)
-/// extends past its true footprint - i.e. its `.BIN` tail is a neighbour's data.
+/// A window over-reads when its `size_bytes` extends past the entry's
+/// footprint - i.e. its tail is a neighbour's data. False for every entry
+/// [`Archive::from_reader`](crate::archive::Archive) produces; a stale or
+/// hand-built entry can still trip it.
 pub fn is_over_read(toc: &[u32], entry: &Entry) -> bool {
     entry.size_bytes > footprint_bytes(toc, entry)
 }
@@ -85,9 +94,9 @@ pub fn abs_from_entry_offset(entries: &[Entry], entry_index: u32, local: u64) ->
 mod tests {
     use super::*;
 
-    /// Build an `Entry` at a given TOC index / start LBA with a declared
-    /// (extracted-window) size in sectors. `byte_offset` / `size_bytes` mirror
-    /// what `Archive::parse` computes.
+    /// Build an `Entry` at a given TOC index / start LBA with an explicit
+    /// window size in sectors - the shape of a stale extraction window, so the
+    /// over-read machinery has something to detect.
     fn entry(index: u32, start_lba: u32, declared_sectors: u32) -> Entry {
         Entry {
             index,
@@ -95,8 +104,8 @@ mod tests {
             size_sectors: declared_sectors,
             byte_offset: (start_lba as u64) * (SECTOR as u64),
             size_bytes: (declared_sectors as u64) * (SECTOR as u64),
-            indexed_size_sectors: declared_sectors,
-            indexed_size_bytes: (declared_sectors as u64) * (SECTOR as u64),
+            declared_span_sectors: declared_sectors,
+            declared_span_bytes: (declared_sectors as u64) * (SECTOR as u64),
         }
     }
 

@@ -17,12 +17,13 @@
 //! (`resolver idx = extraction + 2`). `see ghidra/scripts/funcs/8001fa88.txt`.
 //!
 //! The size corroborates it. `byindex_sync_loader` resolves through
-//! `FUN_8003E8A8`, whose returned sector count is `TABLE[idx+3] - TABLE[idx+2]`,
-//! the entry **footprint**. Entry 888's footprint is 2 sectors (4096 bytes),
-//! which fits the `0x1800`-byte destination. Its `indexed_size_sectors` is 88
-//! sectors; loading that many would overrun the buffer 43x over. See
-//! [`docs/formats/prot.md`](../../../../docs/formats/prot.md) on which of the
-//! two size formulas is an entry's real extent.
+//! `FUN_8003E8A8`, whose returned sector count `TABLE[idx+3] - TABLE[idx+2]`
+//! is the entry's size. Entry 888 is 2 sectors (4096 bytes), which fits the
+//! `0x1800`-byte destination. The historical `toc[p+5] - toc[p+3] + 4`
+//! expression gives 88 sectors there; loading that many would overrun the
+//! buffer 43x over. See
+//! [`docs/formats/prot.md`](../../../../docs/formats/prot.md) for why that
+//! expression is not an entry's extent.
 //!
 //! ### Layout
 //!

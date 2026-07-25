@@ -82,9 +82,16 @@ pub fn parse(bytes: &[u8]) -> Result<InitPak<'_>> {
     // validate each header before treating the file as init.pak.
     const TIM_OFFSETS: [usize; PUBLISHER_LOGO_COUNT] = [0x021C4, 0x0D3E4, 0x18E04, 0x1CE44];
 
-    if bytes.len() < 0x30000 {
+    // The format is its four logo TIMs at four fixed offsets, each validated
+    // below (magic, mode, CLUT flag, and every field bounds-checked against
+    // this buffer) - so the only length the parser needs is enough to reach
+    // the last one. There used to be a `>= 0x30000` floor here, which was the
+    // entry's size under the old over-read reading of the PROT TOC; PROT 0895
+    // is 75 sectors (0x25800), and the floor rejected the real file.
+    let reach = TIM_OFFSETS[PUBLISHER_LOGO_COUNT - 1] + 0x14;
+    if bytes.len() < reach {
         anyhow::bail!(
-            "init.pak too small ({} bytes), expected at least 0x30000",
+            "init.pak too small ({} bytes), the last logo TIM header ends at 0x{reach:x}",
             bytes.len()
         );
     }

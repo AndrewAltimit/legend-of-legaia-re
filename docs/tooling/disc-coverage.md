@@ -42,7 +42,7 @@ size is `max(indexed_size_sectors, footprint_sectors)`. Only the second of those
 is an entry's real extent: the footprints tile `PROT.DAT` exactly, and the
 runtime's own resolver uses them, while `indexed_size_sectors` measures a span
 of *neighbouring* entries. See
-[`prot.md`](../formats/prot.md#the-footprint-is-the-entry-size-indexed_size_sectors-is-not)
+[`prot.md`](../formats/prot.md#tocp5---tocp3--4-is-not-an-entrys-size)
 for the proof.
 
 The consequence is that for the entries where the wrong formula is larger, the

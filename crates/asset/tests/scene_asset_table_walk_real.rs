@@ -2,22 +2,33 @@
 //!
 //! Pins [`scene_asset_table::resolve`] + [`SceneAssetTable::slots`] /
 //! [`SceneAssetTable::payload_range`] against every PROT entry the
-//! categorizer classes `scene_asset_table` or `scene_scripted_asset_table`
-//! (the ~5 % of the corpus the two detectors fire on).
+//! categorizer classes `scene_asset_table` or `scene_scripted_asset_table`.
 //!
 //! The runtime walk it mirrors is `descriptor_pair_walker` (`FUN_80020224`):
 //! `count = *base`, then for slot `i` dispatch
 //! `asset_type_dispatch(base + descriptor[i].data_offset, type_size, ...)`,
 //! descriptors at `base + 8 + i*8`. This test asserts the static resolver
-//! reproduces that walk for both the bare (table at offset 0) and the
-//! prescript-prefixed (table at a 0x800-aligned offset) variants:
+//! reproduces that walk:
 //!
 //!  - `resolve` succeeds on every classified entry.
 //!  - The first slot's payload anchors exactly at `table_base + header_end`
 //!    (0x40 for count 7, 0x38 for count 6) - the runtime's `piVar1 +
 //!    data_offset` invariant for descriptor 0.
 //!  - Every slot's type byte is a legal dispatcher type (`< 0x15`).
-//!  - Both variants are present (non-vacuous): >= 1 bare and >= 1 scripted.
+//!  - Every table sits at offset **0** of its entry, and every descriptor
+//!    payload fits inside that entry.
+//!
+//! ## The prescript-prefixed variant does not exist
+//!
+//! `scene_scripted_asset_table` - a table at a 0x800-aligned offset past an
+//! event prescript - was an artifact of the old entry size, which ran past the
+//! entry into its neighbours. Every such hit sat at a **sector boundary that
+//! is the next entry's start LBA**: the "table at +0x800 of entry `p`" is
+//! entry `p+1`'s table at offset 0, and "+0x1000" is entry `p+2`'s. Reading
+//! each entry's own sectors leaves the same 88 bare tables and no scripted
+//! ones, so the assertion below pins the count at zero rather than deleting
+//! the class - a detector or reader regression that resurrects the phantom
+//! fails here. See `docs/formats/prot.md`.
 //!
 //! Skips silently when `extracted/PROT.DAT` or `LEGAIA_DISC_BIN` is missing.
 
@@ -62,8 +73,7 @@ fn scene_asset_table_walk_reproduces_runtime_dispatch() {
     let mut total_slots = 0usize;
 
     for entry in &entries {
-        // Classify the full footprint - the scripted variant's table can sit
-        // in trailing-overlay sectors past the indexed end.
+        // The entry's own sectors, and nothing a neighbour owns.
         archive.read_entry(entry, &mut buf).expect("read entry");
         let class = classify(&buf).class;
         let is_table = matches!(
@@ -80,16 +90,13 @@ fn scene_asset_table_walk_reproduces_runtime_dispatch() {
         let table = &resolved.table;
         let base = resolved.table_base;
 
-        // The bare variant resolves at offset 0; the scripted variant at a
-        // 0x800-aligned offset past the event prescript.
+        // Every real table is at offset 0 of its own entry.
         match class {
             Class::SceneAssetTable => {
                 assert_eq!(base, 0, "bare table base must be 0");
                 bare += 1;
             }
             Class::SceneScriptedAssetTable => {
-                assert_ne!(base, 0, "scripted table base must be past offset 0");
-                assert_eq!(base % 0x800, 0, "scripted table base is sector-aligned");
                 scripted += 1;
             }
             _ => unreachable!(),
@@ -123,6 +130,16 @@ fn scene_asset_table_walk_reproduces_runtime_dispatch() {
             let r = table.payload_range(s.slot, base).expect("slot range");
             assert_eq!(r.start, base + s.data_offset as usize);
             assert_eq!(r.end - r.start, s.size as usize);
+            // Every descriptor's payload starts inside the entry that carries
+            // the table - the property the old reading broke.
+            assert!(
+                r.start < buf.len(),
+                "PROT {}: slot {} payload starts at {} past the {}-byte entry",
+                entry.index,
+                s.slot,
+                r.start,
+                buf.len()
+            );
             total_slots += 1;
         }
     }
@@ -132,10 +149,13 @@ fn scene_asset_table_walk_reproduces_runtime_dispatch() {
         bare, scripted, total_slots
     );
 
-    // Non-vacuous: both variants must appear in the retail corpus.
+    // Non-vacuous on the bare side...
     assert!(bare > 0, "expected >= 1 bare scene_asset_table entry");
-    assert!(
-        scripted > 0,
-        "expected >= 1 scripted scene_asset_table entry"
+    // ...and pinned at zero on the other: the prescript-prefixed variant was
+    // an over-read phantom (module docs above). A reader or detector change
+    // that brings it back lands here.
+    assert_eq!(
+        scripted, 0,
+        "scene_scripted_asset_table matched {scripted} entries - the phantom is back"
     );
 }

@@ -23,9 +23,10 @@ the retail TOC index name the same asset: raw TOC `0x37A` = **extraction entry
 `see ghidra/scripts/funcs/8001fa88.txt`.
 
 The size agrees. `byindex_sync_loader` resolves through `FUN_8003E8A8`, whose
-sector count is the entry **footprint** - 2 sectors for entry 888, which fits
-the `0x1800`-byte destination. (`indexed_size_sectors` claims 88 sectors there;
-see [`prot.md`](prot.md#the-footprint-is-the-entry-size-indexed_size_sectors-is-not).)
+sector count is the entry's size - 2 sectors for entry 888, which fits the
+`0x1800`-byte destination. (The historical `toc[p+5] - toc[p+3] + 4` expression
+claims 88 sectors there; see
+[`prot.md`](prot.md#tocp5---tocp3--4-is-not-an-entrys-size).)
 
 ## Layout
 

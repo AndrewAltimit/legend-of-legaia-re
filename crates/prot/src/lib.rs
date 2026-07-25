@@ -3,6 +3,7 @@ pub mod cdname;
 pub mod locate;
 pub mod region;
 pub mod runtime_toc;
+pub mod tiling;
 pub mod timpack;
 
 pub use region::Region;

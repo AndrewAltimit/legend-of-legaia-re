@@ -323,10 +323,10 @@ Footprint-bounded extraction of the four-entry window the CDNAME symbol
 `befect_data` resolves to in define-number space (extraction PROT 872..875 -
 retail-semantically `vdf.dat` / `efect.dat` / the `player_data` file
 `player.lzs` / a `sound_data2` VAB stream; the retail befect block proper is
-extraction 870..873, see `docs/formats/cdname.md`). The naive per-entry
-extractor over-reads these entries (they overlap on disc), so
-`extract(archive, cdname)` footprint-bounds each one, expands the
-LZS-container entry into its sections, and classifies each part (the
+extraction 870..873, see `docs/formats/cdname.md`).
+`extract(archive, cdname)` footprint-bounds each entry (a no-op now that
+`Archive::read_entry` returns the entry, kept as the explicit contract),
+expands the LZS-container entry into its sections, and classifies each part (the
 `efect.dat` 2-pack / the field-character TMD pack / the field-character
 texture TIMs / packs).
 
@@ -429,9 +429,10 @@ overlay's play loop selects from, decoded straight from the overlay bytes.
 - `parse(bytes, link_base)` scans those call sites and recovers the records
   (`[i16 model_sel][u16 flags][move-VM bytecode]`, `model_sel == -1` =
   transform/pivot node, `0x4000`/`0x4001` = render-mode nodes). Records live
-  in-file under link base `0x801F69D8`. Trim the entry to its TOC-gap
-  unique-content footprint first (`unique_content_len`) - stager extraction
-  files over-read into the following entries.
+  in-file under link base `0x801F69D8`. The input must be one entry's bytes
+  and no more; `unique_content_len` recomputes that bound from a start/next
+  LBA pair, and trims a stale `.BIN` written before the entry size was
+  corrected (those run on into the following stagers).
 
 CLI `asset summon-overlay <stager .BIN> [--trim 0xNNNN]`. See
 [`open-rev-eng-threads.md`](../../docs/reference/open-rev-eng-threads.md) (Seru-magic
