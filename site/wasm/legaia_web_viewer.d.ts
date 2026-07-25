@@ -909,36 +909,141 @@ export class LegaiaMinigames {
      */
     muscle_end_selection(): void;
     /**
+     * Every decodable action animation of the monster, in action-table
+     * order: `[{"action_id":0,"rate":1,"part_count":P,"frame_count":F},…]`.
+     * `action_id` is the semantic tag (`0` idle, `2`/`3` hit reactions,
+     * `4` knockdown, `0x20`/`0x21` the attack family - see
+     * `docs/formats/monster-animation.md`); the array index is the handle
+     * for [`Self::muscle_monster_pose_frames`].
+     */
+    muscle_monster_anims_json(monster_id: number): string;
+    /**
+     * Per-vertex `[cba, tsb]` (battle-slot relocated), parallel to the
+     * positions.
+     */
+    muscle_monster_cba_tsb(monster_id: number): Uint32Array;
+    /**
+     * Per-vertex `[r, g, b, textured_flag]` - monsters draw fully textured,
+     * so every vertex samples VRAM (kept for parity with the fighter API).
+     */
+    muscle_monster_flat_rgba(monster_id: number): Uint8Array;
+    /**
+     * Triangle indices of the monster's battle mesh.
+     */
+    muscle_monster_indices(monster_id: number): Uint32Array;
+    /**
+     * Per-vertex TMD object index (the rigid part a vertex hangs from).
+     */
+    muscle_monster_object_ids(monster_id: number): Uint32Array;
+    /**
+     * TMD object count (pose rig width) of the monster's mesh.
+     */
+    muscle_monster_part_count(monster_id: number): number;
+    /**
+     * Monster action animation `index` decoded to absolute per-(frame, part)
+     * `[tx, ty, tz, rx, ry, rz]` (PSX 4096-unit angles), padded to
+     * `target_part_count` parts - the same pose-stream shape every other
+     * site animator consumes (`baka_anim_pose_frames` and siblings).
+     */
+    muscle_monster_pose_frames(monster_id: number, index: number, target_part_count: number): Int32Array;
+    /**
+     * Per-vertex positions of monster `monster_id`'s battle mesh.
+     */
+    muscle_monster_positions(monster_id: number): Float32Array;
+    /**
+     * Per-vertex `[u, v]` texel coords, parallel to the positions.
+     */
+    muscle_monster_uvs(monster_id: number): Int32Array;
+    /**
      * Start the next round after a non-terminal resolution: reseed budgets,
      * clear queues. No-op unless the contest is at a round break.
      */
     muscle_next_round(): void;
     /**
-     * Play the round out through the card-damage stand-in. No-op unless the
-     * round is in the resolve phase (i.e. after [`Self::muscle_end_selection`]).
+     * Play the round out through the ported battle formulas. Each queued
+     * card resolves exactly as a retail battle action: move-power record via
+     * the id map, the arts/physical predamage roll (`FUN_801dd0ac`), the
+     * element-affinity scale (`FUN_801dd864`) and the damage finisher
+     * (`FUN_801ddb30`), drawing from the contest's PsyQ `rand()` stream in
+     * retail call order (3 draws, +2 when the bonus arm fires, +1 when
+     * mitigation floors the hit). The defender's spirit gauge accrues from
+     * each hit (`spirit_gauge_fill`). No-op unless the round is in the
+     * resolve phase.
      */
     muscle_resolve(): void;
     /**
-     * Start a Muscle Dome contest on the disc's dealt hand, beginning in the
-     * selection phase. Returns `false` when the hand table didn't decode.
+     * The monster archive roster, for the page's opponent picker:
+     *
+     * ```json
+     * [ { "id": 1, "name": "Gimard", "hp": 43, "agl": 60, "atk": 15,
+     *     "udf": 14, "ldf": 14, "int": 8, "spd": 12, "element": 2 }, ... ]
+     * ```
+     *
+     * Stats are the boosted battle profile (`battle_stats()`), i.e. the
+     * numbers the contest actually fights with. Only records with a
+     * decodable mesh + idle animation are listed (the dome renders its
+     * opponent in 3D). Names are the archive's own.
+     */
+    muscle_roster_json(): string;
+    /**
+     * The last resolved round's play-by-play, for the page's 3D playback:
+     *
+     * ```json
+     * [ { "attacker": 0, "cmd": 12, "power": 10, "damage": 55,
+     *     "hp": [500, 345] }, ... ]
+     * ```
+     */
+    muscle_round_log_json(): string;
+    /**
+     * Whether the dome's 3D scene decodes for `monster_id`: the battle-form
+     * party pack plus the monster's mesh + idle animation.
+     */
+    muscle_scene_ready(monster_id: number): boolean;
+    /**
+     * Name of spell id `id` from the SCUS spell-name table (the table the
+     * dome's victory banner reads at `DAT_800754d0`). Empty when no
+     * executable was loaded (raw `PROT.DAT` input).
+     */
+    muscle_spell_name(id: number): string;
+    /**
+     * Start a contest with defaults (Vahn at level 30 vs the archive's first
+     * decodable monster) - the compatibility entry the page's reset path and
+     * the older verification hooks call. Returns `false` when the tables
+     * didn't decode.
      */
     muscle_start(): boolean;
     /**
-     * Live contest state.
+     * Start a Muscle Dome contest: party character `char_slot` (0 = Vahn,
+     * 1 = Noa, 2 = Gala) at `level` versus monster `monster_id` (a PROT 867
+     * archive id), on PsyQ RNG seed `seed`.
      *
-     * ```json
-     * { "live": true, "phase": "select"|"resolve"|"round_over"|"won"|"lost",
-     *   "round": 0, "hp": [500, 400], "hp_max": [500, 400],
-     *   "budget": [90, 70], "spent": [0, 0], "score": [108, 108],
-     *   "queue": [[12], []], "last_damage": [0, 0],
-     *   "hand": [ { "cmd": 12, "cost": 30 }, ... ], "reward_spell": 129 }
-     * ```
-     *
-     * `score` is the retail `hp * 0x6c / max_hp` readout; `hand` is the
-     * player's four dealt cards; `reward_spell` is the spell id awarded on a
-     * win (an id into the shared spell-name table's player Seru-magic block).
+     * The player fighter's stats are the disc's own progression: the
+     * new-game template record leveled through the growth curves (the
+     * deterministic core gain per level - retail adds a `rand()` jitter of
+     * mean 0 on top, so the core is the expected retail stat line), then
+     * battle-load initialised (`FUN_80053CB8`). The opponent's stats are its
+     * monster record's boosted battle profile (`FUN_80054CB0`). Both round
+     * budgets seed from the fighters' AGL - the `+0x154` pool the dome's
+     * budget `ctx+0x6dc` reads. Returns `false` when the tables or the
+     * monster record don't resolve.
+     */
+    muscle_start_vs(char_slot: number, level: number, monster_id: number, seed: number): boolean;
+    /**
+     * Live contest state (superset of the older shape - `live`, `phase`,
+     * `round`, `hp`, `hp_max`, `budget`, `spent`, `score`, `queue`,
+     * `last_damage`, `hand`, `reward_spell` keep their meaning). New keys:
+     * `names`, `spirit` (the `+0x170` gauges the dome HUD bars display),
+     * `stats` (per-fighter INT/UDF/LDF/element the formulas used), `source`
+     * (`"disc"` / `"fallback"` player record), `char`, `level`, `monster`.
      */
     muscle_state_json(): string;
+    /**
+     * The dome duel's 1 MB PSX VRAM: the battle-form party atlases (PROT
+     * 1204, their bundled CLUT strips) plus monster `monster_id`'s texture
+     * pool injected at battle slot 0's coordinates (CLUT row 484, 4bpp page
+     * at `(320, 256)`) - the same layout the retail battle loader builds.
+     */
+    muscle_vram(monster_id: number): Uint8Array;
     /**
      * Render a global-pool BGM id (`2000 + sound-test slot`) to a **seamless
      * loop** render: PCM plus the loop region the browser drives
@@ -3469,10 +3574,25 @@ export interface InitOutput {
     readonly legaiaminigames_minigame_bgm_ready_json: (a: number, b: number, c: number) => [number, number];
     readonly legaiaminigames_muscle_commit: (a: number, b: number) => number;
     readonly legaiaminigames_muscle_end_selection: (a: number) => void;
+    readonly legaiaminigames_muscle_monster_anims_json: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_muscle_monster_cba_tsb: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_muscle_monster_flat_rgba: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_muscle_monster_indices: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_muscle_monster_object_ids: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_muscle_monster_part_count: (a: number, b: number) => number;
+    readonly legaiaminigames_muscle_monster_pose_frames: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly legaiaminigames_muscle_monster_positions: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_muscle_monster_uvs: (a: number, b: number) => [number, number];
     readonly legaiaminigames_muscle_next_round: (a: number) => void;
     readonly legaiaminigames_muscle_resolve: (a: number) => void;
+    readonly legaiaminigames_muscle_roster_json: (a: number) => [number, number];
+    readonly legaiaminigames_muscle_round_log_json: (a: number) => [number, number];
+    readonly legaiaminigames_muscle_scene_ready: (a: number, b: number) => number;
+    readonly legaiaminigames_muscle_spell_name: (a: number, b: number) => [number, number];
     readonly legaiaminigames_muscle_start: (a: number) => number;
+    readonly legaiaminigames_muscle_start_vs: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly legaiaminigames_muscle_state_json: (a: number) => [number, number];
+    readonly legaiaminigames_muscle_vram: (a: number, b: number) => [number, number];
     readonly legaiaminigames_music01_bgm_render: (a: number, b: number, c: number) => number;
     readonly legaiaminigames_new: () => number;
     readonly legaiaminigames_save_portrait_rgba: (a: number, b: number) => [number, number];
