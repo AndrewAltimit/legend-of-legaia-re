@@ -15,13 +15,13 @@ Two coordinated tracks under one repo (`-re` = reverse-engineering, in both sens
 
 Clean-room from format docs + decompiled-C reference (ScummVM / OpenRCT2 model), not a static recompilation of `SCUS_942.54`. See [`docs/subsystems/engine.md`](docs/subsystems/engine.md) for the clean-room boundaries.
 
-**"Port" does not mean 1:1.** Retail behaviour is the baseline and the default for game logic and simulation - that is what the parity oracles measure, and it is why the enhancement toggles default off.
+**"Port" does not mean 1:1.** Retail behaviour is the measured ground truth - the decompilation and parity oracles pin it exactly, and a retail-faithful mode stays available and testable - but the port is not bound by it. New features, mechanics, rendering and audio are in scope; enhancements ship enabled by default where they are clearly the better experience, with retail one toggle away.
 
-On top of that baseline the engine ships a deliberate, opt-in enhancement layer: dynamic lighting (`--dynamic-lighting`, default off and pixel-identical when off), precise free-angle movement (`options::precise_movement`, default off), the debug orbit camera, and VR.
+The enhancement layer today: dynamic lighting (`--dynamic-lighting`, pixel-identical when off), precise free-angle movement (`options::precise_movement`), the debug orbit camera, and VR - all toggles that leave the faithful mode bit-identical when off. Per-knob current defaults live in [`docs/subsystems/engine.md`](docs/subsystems/engine.md#fidelity-and-enhancements); a knob still defaulting to retail marks an enhanced side that is maturing, not a policy of restraint.
 
 The render path splits in two, and the halves point opposite ways. **Shading defaults to retail**: the game's textured / colour mesh paths draw the TMD's baked colour word through the GTE depth cue and apply no light source at all (the synthetic Lambert lives only in `MESH_SHADER_SRC`, the asset-viewer's bare-geometry preview - a viewer aid, not a claim about retail). **Rasterisation defaults to clean**: `Renderer::set_psx_mode` is opt-in and gates vertex jitter + 15-bit dither only. Affine UVs are not gated - they are unconditional, and they are the faithful behaviour.
 
-Modding (`crates/patcher`) and translation are designed, shipped tracks, not side-effects. What the project still is *not*: a rebalance of the game's design, and not a static recompile.
+Modding (`crates/patcher`) and translation are designed, shipped tracks, not side-effects - and what the patcher proves out against retail (randomizer logic, softlock fixes, tuning sliders) is expected to graduate into engine toggles. What the project still is *not*: a static recompile, and never a build that silently loses the retail-faithful mode.
 
 **Sony IP (executable, ROM contents, asset bytes) is NEVER committed.** `extracted/` is gitignored, disc-dependent tests skip when `LEGAIA_DISC_BIN` is unset, no decompressed Sony bytes (text strings, sample data, decompiled-C dumps with literal data) get checked in. CI runs without disc data.
 
