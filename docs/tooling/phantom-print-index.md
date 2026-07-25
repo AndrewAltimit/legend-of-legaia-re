@@ -30,11 +30,14 @@ image. Adding a dump does not change any row here; only a change to
 [`static-overlays.toml`](../../crates/asset/data/static-overlays.toml) can, and
 that is exactly when the sweep is supposed to be re-run anyway.
 
-Every address on this page is already carried by
+Every address in the tables below is already carried by
 [`port-catalog-ignore.toml`](port-catalog.md) under a `worklist_*` category, so
 none of them is open port work. What the ignore list does not carry is *where the
 bytes are*, and a merged reason that names the wrong true VA sends the next
 reader to the wrong routine. This page is the resolution those reasons point at.
+The exception is the closing section, [printed VAs that are entries after
+all](#printed-vas-that-are-entries-after-all-in-a-different-overlay), whose rows
+are open port work precisely because the phantom print is not the whole story.
 
 ## Re-key deltas measured in this band
 
@@ -119,6 +122,7 @@ tracked there.
 | `0x801D5C58` | `0x801E4470` | field | attached-sprite projection tick, [`actor-vm.md`](../subsystems/actor-vm.md) |
 | `0x801D886C` | `0x801DE084` | field | camera-param commit, [`cutscene.md`](../subsystems/cutscene.md) |
 | `0x801D8B24` | `0x801E733C` | field | two-field value panel, [`functions.md`](../reference/functions.md) |
+| `0x801DFB10` | `0x801EE328` | field | `ON RULA` travel-art actor, [`world-map.md`](../subsystems/world-map.md) |
 | `0x801C3594` | `0x801D1DAC` | menu | pause-menu panel renderer, [`field-menu.md`](../subsystems/field-menu.md) |
 | `0x801C6CF8` | `0x801D5510` | menu | shop quantity selector, [`shop.md`](../subsystems/shop.md) |
 | `0x801C0F18` | `0x801CF730` | debug_menu | mode-6 TMD-TEST init, [`boot.md`](../subsystems/boot.md) |
@@ -287,6 +291,34 @@ the clamped counter before reading the actor's `+0x90` back-pointer. Its `jr ra`
 predecessor pair makes it a genuine entry despite having no stack frame - the
 [leaf case](worklist-classification.md#jr-ra-does-not-prove-a-function) that a
 prologue-only entry test misses.
+
+`0x801DFB10` is the same routine as `0x801E8B10` two batches over: `+0xE818` from
+the `overlay_0897_xxx_dat` program and `+0x5818` from the `overlay_0896` one both
+land on `0x801EE328`, which is the check that pins the pair. Its `FUN_801dfb10`
+form is nonetheless cited as a scripted player-turn state machine keyed on `+0x54`
+- the description belongs to `FUN_801EE328`, which reads `+0x54` in its first
+instructions, and the address does not exist.
+
+## Printed VAs that are entries after all, in a different overlay
+
+The headline above holds for the tables: almost no address in this band begins a
+routine where its dump prints it. A handful do, and they are the sharpest form of
+the trap, because both readings are correct at once. The dump is mis-based and its
+bytes belong somewhere else entirely - *and* the printed VA is a real function
+entry, in an overlay that never dumped it. Re-keying the dump and stopping there
+deletes that routine.
+
+| Printed | The dump's bytes | The printed VA itself |
+|---|---|---|
+| `0x801D0290` | field 0897 `0x801DEAA8`, a `FUN_801DE840` label-call slice (`addiu s8,s8,2`) | battle 0898's 12-instruction overlay-local PRNG over `0x801F6950`, a leaf preceded by `jr ra` |
+
+The distinguishing question is the one the
+[entry-boundary test](worklist-classification.md#the-entry-boundary-test) asks:
+does any image *begin* a routine at the printed VA. Where the answer is no, the
+row is a phantom and belongs in the tables above; where it is yes, the row is port
+work at the printed address and the re-key is a fact about one dump only.
+`docs/reference/functions/battle.md` records the `0x801D0290` reading, with the
+warning that the `overlay_0897` dump holds a different body at the VA.
 
 ## See also
 

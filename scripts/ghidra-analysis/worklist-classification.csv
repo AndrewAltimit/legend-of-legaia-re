@@ -1,282 +1,53 @@
 addr,class,reason
 80016230,REAL,self-entry body of 133 instructions returning `jr ra`
-80016444,REAL,self-entry body of 338 instructions returning `jr ra`
-8001698c,REAL,self-entry body of 120 instructions returning `jr ra`
-80016b6c,REAL,self-entry body of 469 instructions returning `jr ra`
-80017714,REAL,self-entry body of 93 instructions returning `jr ra`
-800179c0,REAL,self-entry body of 59 instructions returning `jr ra`
-80017bec,REAL,"Ghidra dump has no instruction stream, but the static recomp attests the body: func_80017BEC, 428 bytes / 18 blocks ending jr ra; ported (engine-core::field_regions::refresh_object_grid_marks)"
-8001822c,REAL,self-entry body of 423 instructions returning `jr ra`
-800188c8,REAL,self-entry body of 314 instructions returning `jr ra`
-800196a4,REAL,self-entry body of 57 instructions returning `jr ra`
-80019898,REAL,self-entry body of 18 instructions returning `jr ra`
-80019d50,REAL,self-entry body of 198 instructions returning `jr ra`
-8001b73c,REAL,self-entry body of 138 instructions returning `jr ra`
-8001c204,REAL,self-entry body of 100 instructions returning `jr ra`
-8001c394,REAL,self-entry body of 156 instructions returning `jr ra`
-8001c604,REAL,self-entry body of 103 instructions returning `jr ra`
-8001cf50,REAL,self-entry body of 66 instructions returning `jr ra`
-8001d058,REAL,self-entry body of 12 instructions returning `jr ra`
-8001d088,REAL,self-entry body of 46 instructions returning `jr ra`
-8001d140,REAL,self-entry body of 17 instructions returning `jr ra`
-8001d424,REAL,self-entry body of 245 instructions returning `jr ra`
-8001e1b4,REAL,self-entry body of 129 instructions returning `jr ra`
-8001e890,REAL,self-entry body of 215 instructions returning `jr ra`
-8001fa34,UNCERTAIN,dump carries a decompiled body but no disassembly (Ghidra reports 1 bytes) - function bounds never established
-8001fa88,REAL,self-entry body of 81 instructions returning `jr ra`
-8001ffa4,REAL,self-entry body of 37 instructions returning `jr ra`
-80020038,REAL,"self-entry 6-instruction body returning `jr ra`. Subject corrected: a0 is the DISPENV/DRAWENV pair at 0x8007BF30 (caller FUN_8001DAF8 passes base and base+0x74), not an actor struct - the three stores land on DRAWENV tpage/dtd/isbg"
-80020050,REAL,self-entry body of 50 instructions returning `jr ra`
-80020118,REAL,self-entry body of 67 instructions returning `jr ra`
-80020224,REAL,self-entry body of 57 instructions returning `jr ra`
 80020f88,REAL,self-entry body of 176 instructions returning `jr ra`
-80021248,REAL,self-entry body of 149 instructions returning `jr ra`
-80021940,REAL,self-entry body of 25 instructions returning `jr ra`
-8002519c,REAL,self-entry body of 82 instructions returning `jr ra`
-80025980,REAL,self-entry body of 100 instructions returning `jr ra`
-80025b30,REAL,self-entry body of 13 instructions returning `jr ra`
-80025b64,REAL,self-entry body of 15 instructions returning `jr ra`
-80025c68,REAL,self-entry body of 19 instructions returning `jr ra`
-80025cb4,REAL,self-entry body of 59 instructions returning `jr ra`
-80025da0,REAL,self-entry body of 50 instructions returning `jr ra`
-80025e68,REAL,self-entry body of 33 instructions returning `jr ra`
-80025eec,REAL,self-entry body of 16 instructions returning `jr ra`
-80025f2c,REAL,self-entry body of 18 instructions returning `jr ra`
-80025f74,REAL,self-entry body of 16 instructions returning `jr ra`
-80025fb4,REAL,self-entry body of 25 instructions returning `jr ra`
-800267fc,REAL,self-entry body of 40 instructions returning `jr ra`
-80026ce4,REAL,self-entry body of 155 instructions returning `jr ra`
-80026f50,REAL,self-entry body of 150 instructions returning `jr ra`
-80028158,REAL,self-entry body of 1395 instructions returning `jr ra`
-80029888,REAL,self-entry body of 340 instructions returning `jr ra`
-8002a5a4,REAL,self-entry body of 183 instructions returning `jr ra`
-8002b92c,PHANTOM,only dump body is a 2-instruction stub
-8002bdc4,REAL,self-entry body of 187 instructions returning `jr ra`
-8002c2e4,REAL,self-entry body of 105 instructions returning `jr ra`
-8002ff8c,REAL,self-entry body of 94 instructions returning `jr ra`
-80030104,REAL,self-entry body of 120 instructions returning `jr ra`
-80030628,REAL,self-entry body of 1248 instructions returning `jr ra`
-80031ae4,REAL,self-entry body of 135 instructions returning `jr ra`
-80032434,REAL,self-entry body of 158 instructions returning `jr ra`
-80034250,REAL,self-entry body of 66 instructions returning `jr ra`
-800353e0,REAL,self-entry body of 11 instructions returning `jr ra`
-8003a024,REAL,self-entry body of 59 instructions returning `jr ra`
-8003bc08,REAL,self-entry body of 118 instructions returning `jr ra`
-8003c764,REAL,self-entry body of 34 instructions returning `jr ra`
-8003c7ec,REAL,self-entry body of 20 instructions returning `jr ra`
-8003d26c,REAL,self-entry body of 22 instructions returning `jr ra`
-8003d3c4,REAL,self-entry body of 94 instructions returning `jr ra`
-8003d764,REAL,self-entry body of 209 instructions returning `jr ra`
-8003e104,REAL,self-entry body of 151 instructions returning `jr ra`
-8003ee00,REAL,self-entry body of 31 instructions returning `jr ra`
-8003ef14,REAL,self-entry body of 53 instructions returning `jr ra`
-8003efe8,REAL,self-entry body of 15 instructions returning `jr ra`
-8003f024,REAL,self-entry body of 24 instructions returning `jr ra`
-8003f084,PHANTOM,only dump body is a 2-instruction stub
-8003f08c,REAL,self-entry body of 35 instructions returning `jr ra`
-8003f348,REAL,self-entry body of 45 instructions returning `jr ra`
-8003f3fc,REAL,self-entry body of 271 instructions returning `jr ra`
-8003f838,REAL,self-entry body of 13 instructions returning `jr ra`
-8003f86c,REAL,self-entry body of 148 instructions returning `jr ra`
-800430ac,REAL,self-entry body of 36 instructions returning `jr ra`
-80046978,REAL,self-entry body of 42 instructions returning `jr ra`
-80046a20,REAL,self-entry body of 644 instructions returning `jr ra`
+8002149c,REAL,self-entry body of 172 instructions returning `jr ra`
+8002174c,REAL,self-entry body of 122 instructions returning `jr ra`
 800480d8,REAL,self-entry body of 142 instructions returning `jr ra`
-80048310,REAL,self-entry body of 171 instructions returning `jr ra`
-800485bc,REAL,self-entry body of 275 instructions returning `jr ra`
-800495c8,REAL,self-entry body of 164 instructions returning `jr ra`
-80049858,REAL,self-entry body of 77 instructions returning `jr ra`
-8004a908,REAL,self-entry body of 286 instructions returning `jr ra`
-8004c650,REAL,self-entry body of 89 instructions returning `jr ra`
 8004ccd4,REAL,self-entry body of 86 instructions returning `jr ra`
-8004ce2c,REAL,self-entry body of 757 instructions returning `jr ra`
-8004dc68,REAL,self-entry body of 309 instructions returning `jr ra`
-8004fe5c,REAL,self-entry body of 177 instructions returning `jr ra`
 800508dc,REAL,self-entry body of 183 instructions returning `jr ra`
-80050e00,REAL,self-entry body of 11 instructions returning `jr ra`
-8005112c,REAL,self-entry body of 80 instructions returning `jr ra`
-800542c8,REAL,self-entry body of 489 instructions returning `jr ra`
-80055854,REAL,self-entry body of 42 instructions returning `jr ra`
-80055b20,REAL,self-entry body of 11 instructions returning `jr ra`
-80055b6c,REAL,self-entry body of 338 instructions returning `jr ra`
 80056208,REAL,self-entry body of 244 instructions returning `jr ra`
-80057edc,REAL,self-entry body of 25 instructions returning `jr ra`
-8005ea84,REAL,self-entry body of 51 instructions returning `jr ra`
-8005eb68,REAL,self-entry body of 37 instructions returning `jr ra`
-80062310,DUPLICATE,12-instruction stream identical modulo relocation to 8006ef18
-800644c0,REAL,self-entry body of 118 instructions returning `jr ra`
-80065bac,REAL,self-entry body of 271 instructions returning `jr ra`
-80065fe8,REAL,self-entry body of 200 instructions returning `jr ra`
-80066308,REAL,self-entry body of 353 instructions returning `jr ra`
-8006c9a8,REAL,self-entry body of 7 instructions returning `jr ra`
-801c6c78,REAL,self-entry body of 441 instructions returning `jr ra`
-801ce844,UNCERTAIN,no extracted image holds the dumped bytes at this VA - the owning overlay is either un-extracted or the dumps are mis-based; alias cannot be confirmed or refuted
-801cee80,REAL,"self-entry in PROT 0974 (dev module OTHER3), the mode-24 door-warp sub-id 2 slot-A occupant. Disc bytes at file +0x668 are 27bdffe8 (`addiu sp,sp,-0x18`) then `jal 0x8001daf8` / `jal 0x8001dcf8`. Every other slot-A image decodes this VA as mid-function or data, so the entry is 0974's alone; 0974 is now in static-overlays.toml"
+80059e10,REAL,self-entry body of 161 instructions returning `jr ra`
+80062f98,REAL,self-entry body of 157 instructions returning `jr ra`
+8006320c,REAL,self-entry body of 200 instructions returning `jr ra`
+8006352c,REAL,self-entry body of 235 instructions returning `jr ra`
+80063aa8,REAL,self-entry body of 145 instructions returning `jr ra`
+80063cec,REAL,self-entry body of 233 instructions returning `jr ra`
+801ce844,REAL,every dump at this VA is of gameover(902) (captures: 0902_xxx_dat.BIN); no second dumped body here
 801cf00c,REAL,self-entry body of 223 instructions returning `jr ra`
 801cf388,REAL,self-entry body of 2973 instructions returning `jr ra`
-801cf5bc,UNCERTAIN,no `jr ra` and no trailing unconditional jump - body may be truncated
-801cf5d0,INTERIOR,"tail slice, not an entry: first instruction stores through live t0 and the body reads unaffected t2/t3/t4 before restoring a frame it never built (lw ra,0x10(sp) / sp+0x18) - a mid-function window of the enclosing 0897 routine"
-801cf730,REAL,"identified: debug-menu(971) overlay screen init - mode init FUN_8001DCF8, geometry/global seeding; dev-tool overlay, outside the retail menu port surface"
-801cf740,REAL,self-entry body of 92 instructions returning `jr ra`
-801cf88c,REAL,self-entry body of 311 instructions returning `jr ra`
+801cf5d0,REAL,self-entry body of 32 instructions returning `jr ra`
 801cfa48,REAL,self-entry body of 530 instructions returning `jr ra`
-801cfb94,REAL,every dump at this VA is of cutscene_str(970) (captures: str_fmv); no second dumped body here
-801cfbb4,REAL,self-entry body of 123 instructions returning `jr ra`
-801cfda0,REAL,self-entry body of 241 instructions returning `jr ra`
-801cfee0,REAL,"identified: MDEC reset in the STR overlay (0970) - control-register writes 0x80000000 / 0x60000000, DMA-0/1 pointer clear, two 0x20-word table uploads via 801cffdc; MDEC_rest:bad option on an out-of-range option. Hardware reset with no clean-room port site (retired to [render_pipeline])"
-801cffdc,REAL,"identified: MDEC command + DMA-0 upload in the STR overlay (0970). The debug-menu (0971) copy is byte-identical for its first 14 instructions and then runs off that overlay's own content boundary at base+0x1800 = 0x801D0018 into the residual fishing image - a truncation artifact, not a second body. Retired to [render_pipeline]"
-801d0100,VA_ALIASED,"2 overlays hold distinct code at this VA (cutscene_str(970), fishing(972)) - confirmed against the extracted images, not the dump image tags. The STR resident is identified: the MDEC_in_sync status spin (retired to [va_aliased_overlay_local]); the fishing resident is undumped work"
-801d0198,VA_ALIASED,"2 overlays hold distinct code at this VA (cutscene_str(970), fishing(972)) - confirmed against the extracted images, not the dump image tags. The STR resident is identified: the MDEC_out_sync DMA-busy spin (retired to [va_aliased_overlay_local]); the fishing copy at this VA is mid-function"
-801d0248,REAL,"identified: the MDEC sync-timeout diagnostic in the STR overlay (0970) - two printf dumps of the MDEC status word plus the DMA-0/1 channel and FIFO bits, reached only from the 801d0100 / 801d0198 spin waiters. Dev instrumentation over registers the engine has none of (retired to [render_pipeline])"
+801d0290,REAL,"dump is bounded short (5 instructions, no `jr ra`), but battle_action(898) starts a routine at this VA at its mapped base (preceded by `jr ra`)"
 801d02c0,REAL,every dump at this VA is of battle_action(898) (captures: battle_action); no second dumped body here
-801d0370,REAL,"duplicate claim withdrawn: peer 801c2b58 is a printed address from a mis-based dump, not a body at that VA"
-801d03c4,REAL,every dump at this VA is of dance(980) (captures: dance); no second dumped body here
-801d0474,REAL,self-entry body of 149 instructions returning `jr ra`
-801d0750,REAL,self-entry body of 770 instructions returning `jr ra`
-801d081c,REAL,"duplicate claim withdrawn: peer 801c3004 is a printed address from a mis-based dump, not a body at that VA"
-801d08e4,REAL,self-entry body of 334 instructions returning `jr ra`
-801d0e1c,REAL,self-entry body of 99 instructions returning `jr ra`
-801d0f1c,REAL,"duplicate claim withdrawn: peer 801c2704 is a printed address from a mis-based dump, not a body at that VA"
-801d11d0,REAL,"duplicate claim withdrawn: peer 801c39b8 is a printed address from a mis-based dump, not a body at that VA"
-801d1344,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview/dialog_mc4/dialog_mc4 == overlay_world_map_walk/dialog_typing/world_map/world_map_top/world_map_walk); no second dumped body here
-801d1dac,REAL,"duplicate claim withdrawn: peer 801c3594 is a printed address from a mis-based dump, not a body at that VA"
-801d1f10,REAL,self-entry body of 97 instructions returning `jr ra`
-801d21fc,REAL,self-entry body of 104 instructions returning `jr ra`
 801d231c,REAL,every dump at this VA is of dance(980) (captures: dance); no second dumped body here
-801d2404,INTERIOR,"field-VM opcode slice, not an entry: 8 instructions with no prologue, reads live v0/v1/s6, exits `j 0x801e3624` (the FUN_801DE840 op-advance epilogue - the label-call idiom)"
-801d2524,REAL,every dump at this VA is of dance(980) (captures: dance); no second dumped body here
-801d26cc,REAL,"identified: debug-menu(971) overlay widget SM (1466 instr, states on struct +0x22); dev-tool overlay, outside the retail menu port surface"
-801d2914,REAL,self-entry body of 100 instructions returning `jr ra`
-801d2a10,REAL,self-entry body of 226 instructions returning `jr ra`
-801d2aa4,REAL,self-entry body of 135 instructions returning `jr ra`
 801d2afc,REAL,self-entry body of 549 instructions returning `jr ra`
-801d2cc0,REAL,self-entry body of 259 instructions returning `jr ra`
-801d2cfc,PHANTOM,"mis-based print, corroborated by its own decoded exit: the 7-instruction slice resolves at field(897) 0x801e1514 (delta +0xe818) and at this VA in no image, has no prologue, and exits `j 0x801e205c` - 0xb48 past its own 28-byte window, the label-call idiom inside the routine that owns 0x801e1514. Nothing to port at this address"
-801d2d1c,INTERIOR,"register-restore epilogue, not an entry. Verified from disc bytes across all 31 based overlay images (scripts/ghidra-analysis/locate-entry-image.py): none carries a stack-frame prologue at this VA. In PROT 0897 the body is `lw s4,0x40(sp); lw s3,0x3c(sp); lw s2; lw s1; lw s0,0x30(sp); jr ra` - callee-saved restores from a frame it never built. Supersedes the UNCERTAIN gapped-dump reading"
-801d2d2c,INTERIOR,"inside the same PROT 0897 epilogue as 801d2d1c - the VA is its `lw s0,0x30(sp)` instruction, one word before `jr ra`. No based image carries a prologue here. NB a naive prologue scan reports a false hit: the `addiu sp` three words on belongs to the NEXT function, past the `jr ra` - locate-entry-image.py stops at `jr ra` for exactly this case"
-801d2d98,REAL,self-entry body of 104 instructions returning `jr ra`
-801d2e74,REAL,self-entry body of 140 instructions returning `jr ra`
 801d2f38,REAL,self-entry body of 240 instructions returning `jr ra`
-801d32f8,REAL,self-entry body of 132 instructions returning `jr ra`
-801d3380,REAL,self-entry body of 63 instructions returning `jr ra`
-801d33d8,REAL,every dump at this VA is of menu(899) (captures: menu/save_ui_saving/save_ui_select/shop_save); no second dumped body here
-801d3444,REAL,self-entry body of 193 instructions returning `jr ra`
-801d3a2c,REAL,self-entry body of 211 instructions returning `jr ra`
-801d3d78,REAL,every dump at this VA is of dance(980) (captures: dance); no second dumped body here
-801d3e28,REAL,every dump at this VA is of dance(980) (captures: dance); no second dumped body here
-801d3fd0,REAL,every dump at this VA is of dance(980) (captures: dance); no second dumped body here
-801d4098,REAL,self-entry body of 17 instructions returning `jr ra`
-801d40dc,REAL,self-entry body of 28 instructions returning `jr ra`
-801d4868,REAL,"identified: menu window content renderer - string at (WX+0x14, WY) ink 7 + hand off cursor word DAT_801E46BC + values from the bag-scan range globals 0x8007B5EA/B5EC; not yet ported"
-801d49e8,REAL,self-entry body of 154 instructions returning `jr ra`
-801d4c50,REAL,self-entry body of 106 instructions returning `jr ra`
-801d4df8,REAL,self-entry body of 116 instructions returning `jr ra`
-801d5510,REAL,"identified: shop quantity-window info renderer - Have-count row via bag scan FUN_80042EE0 (bag count 2-digit at WX+0x20), quantity DAT_801E46B4 at the lower row; not yet ported"
+801d4a60,REAL,self-entry body of 756 instructions returning `jr ra`
 801d553c,REAL,self-entry body of 160 instructions returning `jr ra`
-801d56c4,REAL,"leaf helper in PROT 0897 - no stack frame by design, which is why the dump never established bounds. Body is a signed round-toward-zero divide by 64: `move a2,a0; bgez a1,+8; move v0,a1; addiu v0,a1,0x3f; sra v0,v0,6`, and the same shape for the second argument. Supersedes the UNCERTAIN no-disassembly reading"
-801d57bc,REAL,self-entry body of 73 instructions returning `jr ra`
-801d5a68,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview); no second dumped body here
-801d5ae8,REAL,self-entry body of 190 instructions returning `jr ra`
-801d5de0,REAL,self-entry body of 151 instructions returning `jr ra`
-801d5e20,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview); no second dumped body here
-801d5ed0,REAL,self-entry body of 268 instructions returning `jr ra`
+801d56e4,REAL,"dump is bounded short (131 instructions, no `jr ra`), but fishing(972) starts a routine at this VA at its mapped base (preceded by `jr ra`)"
 801d6704,REAL,self-entry body of 901 instructions returning `jr ra`
-801d67f0,REAL,every dump at this VA is of baka_fighter(976) (captures: baka_fighter); no second dumped body here
-801d69e4,REAL,self-entry body of 13 instructions returning `jr ra`
-801d6a18,REAL,self-entry body of 104 instructions returning `jr ra`
-801d6b20,REAL,every dump at this VA is of menu(899) (captures: menu/save_ui_select/shop_save); no second dumped body here
-801d6e04,REAL,self-entry body of 22 instructions returning `jr ra`
-801d6e18,REAL,every dump at this VA is of menu(899) (captures: menu/save_ui_saving/save_ui_select/shop_save); no second dumped body here
-801d6e5c,REAL,self-entry body of 47 instructions returning `jr ra`
-801d6f44,REAL,self-entry body of 96 instructions returning `jr ra`
+801d7030,REAL,every dump at this VA is of fishing(972) (captures: debug_menu/fishing); no second dumped body here
 801d71b8,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
-801d71f0,REAL,"duplicate claim withdrawn: peer 801e01f0 is a printed address from a mis-based dump, not a body at that VA"
-801d72a0,REAL,self-entry body of 70 instructions returning `jr ra`
-801d7a5c,VA_ALIASED,"cited from overlay 0971 (801c7930) but the only dumped body at this VA is the fishing(972) occupant - a GPU prim shrink/blend helper (minigame overlay family); the 0971 occupant is undumped, needs a Ghidra-lane dump before any port"
+801d7518,REAL,"duplicate claim withdrawn: peer 801c8d00 is a printed address from a mis-based dump, not a body at that VA"
+801d765c,REAL,every dump at this VA is of fishing(972) (captures: debug_menu/fishing); no second dumped body here
 801d7b50,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview); no second dumped body here
-801d7ff8,REAL,self-entry body of 196 instructions returning `jr ra`
-801d8308,REAL,self-entry body of 267 instructions returning `jr ra`
-801d8450,INTERIOR,"non-ABI dispatcher-private subroutine: entry has no prologue, reads live saved regs s2/s5/s6/s7/s8 from the enclosing field-overlay dispatcher's frame (dump starts mid-loop at `lh a0,0xc(s7)`); not a portable entry"
-801d8f10,REAL,self-entry body of 128 instructions returning `jr ra`
-801d9110,REAL,self-entry body of 92 instructions returning `jr ra`
-801d9280,REAL,self-entry body of 197 instructions returning `jr ra`
-801d9594,REAL,self-entry body of 215 instructions returning `jr ra`
-801d99f0,REAL,self-entry body of 137 instructions returning `jr ra`
-801d9ae8,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
-801d9bbc,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
-801d9c14,REAL,self-entry body of 419 instructions returning `jr ra`
+801d7bb8,REAL,self-entry body of 30 instructions returning `jr ra`
+801d84b4,VA_ALIASED,"3 overlays hold distinct code at this VA (baka_fighter(976), cutscene_str(970), fishing(972)) - confirmed against the extracted images, not the dump image tags"
+801d84c0,REAL,self-entry body of 259 instructions returning `jr ra`
+801d9c3c,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview/dance/debug_menu/fishing/slot_machine); no second dumped body here
 801d9d3c,REAL,self-entry body of 388 instructions returning `jr ra`
-801da2a0,REAL,"identified in part: sub-screen 0x15 - multi-state 2D picker walking a per-character record bitfield (bit>>5 word / bit&0x1F) with left/right grid cursor; screen identity unpinned, not yet ported"
-801da59c,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
-801da6b4,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
-801da7f0,REAL,self-entry body of 80 instructions returning `jr ra`
-801db21c,REAL,self-entry body of 89 instructions returning `jr ra`
-801db380,REAL,self-entry body of 285 instructions returning `jr ra`
-801db7f4,REAL,self-entry body of 282 instructions returning `jr ra`
-801dbd94,REAL,self-entry body of 270 instructions returning `jr ra`
-801dbddc,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
-801dbe9c,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview/dance/debug_menu/fishing/slot_machine); no second dumped body here
-801dc1cc,REAL,self-entry body of 314 instructions returning `jr ra`
-801dcb60,REAL,self-entry body of 48 instructions returning `jr ra`
-801dcd58,REAL,"identified: menu window content renderer - formatted counter string (markup tokens 0xC1/0xC5 off 0x8007BB70/78) in ink 7 + hand-cursor kind 1 at (WX+0xE6, WY+0xD); quantity-window chrome, not yet ported"
-801dcef0,REAL,self-entry body of 9 instructions returning `jr ra`
-801dd330,REAL,self-entry body of 11 instructions returning `jr ra`
+801da390,REAL,self-entry body of 99 instructions returning `jr ra`
+801dbb8c,REAL,self-entry body of 41 instructions returning `jr ra`
+801dbc30,REAL,self-entry body of 53 instructions returning `jr ra`
+801ddc20,REAL,self-entry body of 133 instructions returning `jr ra`
+801de478,REAL,every dump at this VA is of field(897) (captures: baka_fighter/cutscene_dialogue/cutscene_mapview/dance/debug_menu/fishing/slot_machine); no second dumped body here
 801dea50,REAL,self-entry body of 712 instructions returning `jr ra`
-801df098,INTERIOR,"tail fragment, read off the disassembly: across all 146 instructions there is no `addiu sp,sp,-N` prologue and no `jr ra`, and s2/s3/s4 appear only as base registers and branch operands - never a destination - so the body reads a frame and callee-saved registers it never establishes. The decompiled C's `unaff_s2/s3/s4` locals are the known artifact and are not the evidence"
-801df6b8,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
-801df8dc,INTERIOR,"interior slice, not an entry: dump begins in a delay slot (`_li v0,0x63`), branches on live v1, and the debug-print tail restores s0..s5/ra from a 0x50-byte frame it never built"
+801df570,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
 801e0080,REAL,every dump at this VA is of battle_action(898) (captures: battle_action); no second dumped body here
-801e00b8,SHARED_TAIL,"shared epilogue slice: no prologue, reads live s1, restores s0..s2/ra from a 0x60-byte frame it never built; entered by `j 0x801e00b8` from FUN_801D4908 (and siblings) as a common exit"
-801e01f0,PHANTOM,"mis-based print: the 81-instruction body resolves at field(897) 0x801e5a08 (delta +0x5818) and at this VA in no image. Its own `j 0x801e5aec` / `j 0x801e5ae8` land inside 0x801e5a08..0x801e5b4c and nowhere near the printed window - jump targets come from the bytes, not the load base. The withdrawn 801d71f0 duplicate claim already named this a mis-based print"
-801e02a4,REAL,self-entry body of 93 instructions returning `jr ra`
-801e0418,REAL,self-entry body of 96 instructions returning `jr ra`
-801e0598,REAL,"identified: save-UI card-session init - zeroes ~20 session globals, raises the directory-rebuild request _DAT_801F0224, stages the SC base 0x80084140 into 0x801F32A0; not yet ported"
-801e06c0,REAL,self-entry body of 134 instructions returning `jr ra`
-801e09f8,REAL,"duplicate claim withdrawn: peer 801f71e0 is a printed address from a mis-based dump, not a body at that VA"
-801e1114,REAL,self-entry body of 61 instructions returning `jr ra`
-801e13b8,REAL,"per-frame sibling call of the card ticker FUN_801E1114 (display-list side); not yet read in depth, not yet ported"
-801e1d98,REAL,"self-entry in PROT 0898 ONLY (332 instructions, `addiu sp,sp,-0x78`, scratchpad 0x1F800314 + a 0x2E808080 GP0 word). The 0897 dump's 3-instruction body at this VA is the field-VM label-call idiom (`addiu fp,fp,6`, fp = script PC) and 0899 holds different code again - port from the 0898 body. Both 0897 and 0898 contain 3 `jal` sites to the VA, so call-site counts alone do NOT disambiguate here; the stack frame does"
-801e2524,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
-801e2650,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
-801e3294,REAL,self-entry body of 259 instructions returning `jr ra`
-801e39a8,REAL,self-entry body of 22 instructions returning `jr ra`
-801e3ff0,REAL,self-entry body of 82 instructions returning `jr ra`
-801e4404,DATA,"not code: the only dump is 5 instructions Ghidra itself flags as bad instruction data (`syscall`, `lb s8,0x6400(zero)`, `tge at,t0`) and truncates control flow on. Sits just below the menu window-descriptor table at 0x801e4738, whose own row 801e473c is DATA"
-801e4d8c,REAL,self-entry body of 242 instructions returning `jr ra`
-801e5154,DATA,"pointer table, not code: 239 of 243 decoded instructions in overlay_0897_xxx_dat are `$zero`-absolute loads, and their operands read as a run of 0x801e5xxx words - the save-UI record band that begins with the 12-byte sprite-record table at 0x801e5048"
-801e5338,REAL,self-entry body of 201 instructions returning `jr ra`
+801e6984,REAL,self-entry body of 108 instructions returning `jr ra`
 801e805c,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
-801e92dc,REAL,self-entry body of 59 instructions returning `jr ra`
-801ea9b0,REAL,every dump at this VA is of field(897) (captures: cutscene_dialogue/cutscene_mapview); no second dumped body here
 801ec0dc,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here
-801ec3e4,REAL,self-entry body of 2502 instructions returning `jr ra`
-801ecc00,INTERIOR,"equipped-weapon sub-read inside FUN_801EC3E4 (Arms execution resolver, PROT 0898). Verified from 0898 image bytes: nearest preceding `addiu sp,sp,-0x50` is 0x801EC3EC, no intervening `jr ra`; 0x801ECC00 is `lbu v1,0x760(v0)` with v0/s6 live. The earlier PHANTOM `0-instruction stub` reading came from the VA-aliased overlay_0896_bat_back_dat dump, where the VA is data"
-801ee094,REAL,self-entry body of 165 instructions returning `jr ra`
-801ee328,REAL,self-entry body of 171 instructions returning `jr ra`
-801ee90c,REAL,self-entry body of 275 instructions returning `jr ra`
-801ef014,REAL,self-entry body of 167 instructions returning `jr ra`
-801ef9b4,INTERIOR,dump is a citation stub for 801ef6e0
 801f0450,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/muscle_dome); no second dumped body here
-801f0adc,REAL,every dump at this VA is of field(897) (captures: baka_fighter/dance/debug_menu/fishing/slot_machine); no second dumped body here
 801f1278,REAL,self-entry body of 201 instructions returning `jr ra`
-801f138c,PHANTOM,"mis-based print: the 352-instruction body resolves at battle_action(898) 0x801daba4 (delta -0x167e8) and at this VA in no image; corroborated by `j 0x801db0f8` / `j 0x801db0f0` (inside 0x801daba4 + 0x580) and `jal 0x801db124` (the entry one past its end). 801daba4 already carries a // PORT: tag - 801fa38c is the same routine's third printed address"
-801f159c,REAL,self-entry body of 73 instructions returning `jr ra`
-801f16a0,PHANTOM,"printed address of a mis-based import: program 0905_xxx_dat.BIN loads the x83 stager at 0x801F0000 but its true base is 0x801F69D8 (static-overlays row summon_stager_x83). The dumped body is real stager code whose true entry is 0x801F8078 (file +0x16A0, addiu-sp prologue); no image holds an entry at 801f16a0 itself (0898's bytes there are mid-function)"
-801f17f8,REAL,self-entry body of 125 instructions returning `jr ra`
-801f1ed4,REAL,every dump at this VA is of battle_action(898) (captures: muscle_dome); no second dumped body here
-801f20b0,REAL,every dump at this VA is of field(897) (captures: baka_fighter/dance/debug_menu/fishing/slot_machine); no second dumped body here
-801f2160,REAL,every dump at this VA is of battle_action(898) (captures: muscle_dome); no second dumped body here
-801f2d68,PHANTOM,"printed address of a mis-based import (0905_xxx_dat.BIN at 0x801F0000; true base 0x801F69D8): true entry 0x801F9740 (file +0x2D68) inside the x83 stager; no image holds an entry at 801f2d68 itself"
-801f36a0,PHANTOM,"printed address of a mis-based import (0905_xxx_dat.BIN at 0x801F0000; true base 0x801F69D8): true entry 0x801FA078 (file +0x36A0) inside the x83 stager; no image holds an entry at 801f36a0 itself"
-801f452c,REAL,"real entry only in battle_action(898): the 30-instruction magic-level-increased banner composer (overlay_0898_static_801f452c, ported engine-core magic_xp). The other two dumped bodies at this printed VA are wrong-base prints of 0x801C0000-band imports whose files carry 0898's image shifted: overlay_0896 print = 0898 file +0x652C = interior of FUN_801D388C at true VA 801d4d44; overlay_0897 print = 0898 file +0xF52C = interior of FUN_801DDB30 at true VA 801ddd44. The historical 'real entry <= 801f4498, unfound' note was those fragments' backward branches read in print coordinates; re-based, the entries are 801d388c and 801ddb30 (both already documented)"
-801f45a4,REAL,"every dump at this VA is of battle_action(898) (captures: baka_fighter/dance/debug_menu/fishing/muscle_dome/slot_machine); no second dumped body here. This 152-byte entry is the per-round RNG waker for status bit 0x400 (loops 7 actor slots, rng&7==0 clears +0x16E via andi 0xfbff at 801f4610) - the clear battle.md historically attributed to FUN_801F452C. Ported engine-vm battle_formulas::status_0x400_wakes"
-801f4dd0,PHANTOM,"printed address of a mis-based import (0905_xxx_dat.BIN at 0x801F0000; true base 0x801F69D8): true entry 0x801FB7A8 (file +0x4DD0) inside the x83 stager; no image holds an entry at 801f4dd0 itself"
-801f5748,REAL,self-entry body of 2777 instructions returning `jr ra`
-801f69d8,REAL,self-entry body of 643 instructions returning `jr ra`
-801f6b24,REAL,self-entry body of 82 instructions returning `jr ra`
-801f6d48,REAL,"self-entry body of 208 instructions returning `jr ra`. Owner pinned by bytes: the minigame-capture dumps at this VA match PROT 0900 (field render library, file +0x370 at slot-B base 0x801F69D8) not the battle-action image (0898 file +0x28530 differs) - it is 0900's per-cell ground/tile GT3 emitter (see the summon_render row notes in static-overlays.toml), resident under the minigame as field-mode slot-B strata"
-801f7088,REAL,every dump at this VA is of summon_render(900) (captures: baka_fighter/dance/debug_menu/fishing/muscle_dome/slot_machine); no second dumped body here
-801f71e0,REAL,every dump at this VA is of battle_tutorial(967) (captures: PROT 0967 @ base 0x801F69D8); no second dumped body here
-8020e748,PHANTOM,"mis-based print: the 75-instruction body resolves at menu(899) 0x801cf760 (delta -0x3efe8) and at this VA in no image; corroborated by `j 0x801cf7d0`, an intra-body label jump inside 0x801cf760..0x801cf88c - and 0x801cf88c is the next documented entry, so the body ends exactly where its neighbour begins. 0x801cf760 is the equip applier"
-8003cc90,PHANTOM,"2-instruction stub (`jr ra; _clear v0`) - returns 0 and touches nothing. Retail-stripped hook in the 8003cxxx dialog-text family; sibling of 8002b92c/8003f084"
-80020038,REAL,"self-entry 6-instruction body returning `jr ra`. Subject corrected: a0 is the DISPENV/DRAWENV pair at 0x8007BF30 (caller FUN_8001DAF8 passes base and base+0x74), not an actor struct - the three stores land on DRAWENV tpage/dtd/isbg"
+801f30c4,REAL,self-entry body of 563 instructions returning `jr ra`

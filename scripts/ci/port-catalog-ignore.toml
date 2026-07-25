@@ -12,6 +12,16 @@
 # Categories are organisational only - the tool treats all entries the same.
 # Provenance for each entry lives in `docs/reference/functions.md` and the
 # audio / save-screen subsystem docs.
+#
+# One naming rule does carry meaning, for a second tool. A `worklist_*` section
+# holds ADDRESS claims - "no routine begins at this VA" - proposed by
+# `scripts/ghidra-analysis/classify-worklist.py`, and those are exactly the rows
+# its `--audit-ignored` mode re-examines against the extracted images. Every
+# other section holds a SCOPE claim: the routine is real and the reason says so,
+# and the row asserts only that the clean-room port covers it another way. An
+# image-boundary test cannot refute a scope claim, so scope sections stay
+# unprefixed however they were arrived at. See
+# `docs/tooling/worklist-classification.md`.
 
 
 # PSX BIOS table dispatchers + syscall thunks. Statically linked PsyQ kernel
@@ -152,6 +162,7 @@
 "8005bc28" = "CdInit-equivalent: 5x-retry FUN_8005bd80(1), registers 3 callbacks; string 'CdInit: Init failed'"
 "8005bd80" = "CD reset/open dispatch: branches on mode to FUN_8005d5f8/d648/d504"
 "8005c2e4" = "thin CD-command wrapper: tail-call FUN_8005fde8(3,param)"
+"801cfe98" = "Overlay-resident twin of 8005c2e4, selector 0: the whole 9-instruction body is `a1 = a0; FUN_8005FDE8(0, a1)`, forwarding into the already-ignored libapi device-vtable trampoline 8005fde8 (slot +0x4). Resolves to cutscene_str(970) against the extracted images. see ghidra/scripts/funcs/overlay_debug_menu_801cfe98.txt"
 "8005d424" = "CD hardware register reset: writes CD ctrl ports DAT_80079670..7c, magic 0x1325"
 "8005d504" = "CD hardware init: writes mixer/attenuation regs DAT_80079684+0x180.. then CD cmd seq"
 "8005d5f8" = "CD init helper: zeros driver globals DAT_800793ac.., registers callback FUN_8005fdb8(2,..)"
@@ -677,6 +688,7 @@
 
 # Added by the port-wiring wave.
 "80050e00" = "11-instruction scan with no observable effect: walks a0[1], a0[2], a0[3] stopping at the first zero byte, incrementing a counter in v1 - and v1 is neither stored anywhere nor left as the return value (the epilogue is a bare `jr ra` with v0 holding the last loaded byte). Ghidra renders it `void`. ..."
+"801d13c4" = "9-instruction body with no observable effect: `v1 = 0; a0 = 0x801D3CC0; while (v1 < 3) v1 += 1; jr ra`. The address it materialises is never used and the loop has no body. Sits immediately above the documented slot-machine payout evaluator 801d13e8 in PROT 0975. see ghidra/scripts/funcs/overlay_slot_machine_801d13c4.txt"
 
 
 # Game-side actor-sound orchestration over libsnd / libspu. Unlike the [libsnd]
@@ -776,6 +788,36 @@
 "801d0100" = "VA-aliased across overlays, not one function: the STR overlay (0970, base 0x801CE818) resident is the `MDEC_in_sync` spin - poll *(0x801D0E94) for status bit 0x20000000 on a 0x100000-iteration budget, diagnose through 801d0248 on overrun, return -1 - which the engine's software MDEC (crates/mdec) has no analogue for; the fishing overlay (0972) holds an unrelated body at the same VA (its own first instruction is `lui a0,0x801d; jal 0x801d73b8`, not a prologue-sharing copy). The debug-menu captures at this VA are the residual fishing image: PROT 0971's own content stops at base+0x1800 = 0x801D0018."
 "801d0198" = "VA-aliased across overlays, not one function: the STR overlay (0970) resident is the `MDEC_out_sync` spin - poll *(0x801D0E74) for DMA-busy bit 0x01000000, same 0x100000 budget and same 801d0248 diagnostic - and the fishing overlay (0972) copy at this VA is mid-function (`jal 0x80024ee4` in the first slot, no `addiu sp,sp,-N`). Sibling of the already-listed 801d0100; the engine decodes MDEC frames in software with no status register to wait on."
 "801f6d48" = "VA-aliased across two slot-B residents, not one function. Matched against the based images: PROT 0900 (base 0x801F69D8) holds the body the minigame captures dump - a leaf that opens `lui t6, 0x1f80` with no stack frame, part of the field render library - while PROT 0967, the Tetsu sparring-tutorial overlay at the same base, holds a 46-instruction step-text emitter (`overlay_effect_0967_801f6d48.txt`). docs/reference/functions.md already records the collision in its 801F6C70 / 801F6D48 row. Both are real code; the bare VA has no single port site."
+"801d0230" = "VA-aliased, and the interior reading is only PROT 0972's. In the fishing overlay the VA is inside FUN_801D0100 - a 172-instruction body spanning 0x801D0100..0x801D03B0 read straight off the disc bytes at base 0x801CE818 - and the dump printed here opens `lw a0,-0x6f10(s0)` on a live s0 with no prologue, closing by restoring s0..s7/ra from a 0x48-byte frame it never builds. But the STR overlay (0970) at the same base begins a routine at this VA: `jr ra; nop` at 0x801d0228/0x801d022c, then a 5-instruction leaf `lui v0,0x801d; lw v0,0xe94(v0); lw v0,(v0); jr ra` returning `*(*(0x801D0E94))` - the MDEC status word its already-listed neighbours 801d0100 / 801d0198 spin on. The engine decodes MDEC in software (crates/mdec) and has no status register to read, so neither resident is a port site; both are real code, so the bare VA is not one either. Moved out of the dissolved worklist_minigame_structural section, whose reason named only the 0972 reading."
+# Slot-B summon cluster (PROT 0900..0969, link base 0x801F69D8). Each of these
+# overlays opens with its own pointer table and starts its first routine
+# immediately after it, so the table length decides where that routine lands and
+# adjacent overlays put an entry a few words apart. The five VAs below are the
+# ones some extracted summon image begins a routine at while the rest of the
+# cluster still has table bytes there - which is why the sibling addresses in
+# the same band stay under [worklist_data]. The bare VA names ~20 unrelated
+# bodies, one per summon, so it is not a port site; the cluster is tracked as
+# one question in docs/reference/open-rev-eng-threads.md, not per VA.
+"801f69fc" = "Slot-B summon-cluster alias at base+0x24: pointer-table bytes in most of the cluster, and the first routine of summon_render(900) - code opening after the table run. Formerly a worklist_data row whose DATA reason described only the muscle_dome capture's blob head."
+"801f6a08" = "Slot-B summon-cluster alias at base+0x30: pointer-table bytes in most of the cluster, and the first routine of summon_mule(929). Formerly a worklist_data row."
+"801f6a34" = "Slot-B summon-cluster alias at base+0x5c: pointer-table bytes in most of the cluster, and the first routine of summon_meta(932), which opens `addiu sp,sp,-0x60` right after the last table word. Formerly a worklist_data row."
+"801f6a40" = "Slot-B summon-cluster alias at base+0x68: pointer-table bytes in most of the cluster, and code opening after the table run in summon_meta(932). Formerly a worklist_data row."
+"801f6a58" = "Slot-B summon-cluster alias at base+0x80: pointer-table bytes in most of the cluster, and the first routine of summon_jedo(931), which opens `addiu sp,sp,-0x60`. Formerly a worklist_data row."
+"801f9ba8" = "VA-ALIASED, and neither reading is a port site at this address. The only dump is `overlay_muscle_dome_801f9ba8.txt`, whose slot-B occupant is PROT 0900 - 17 consecutive nop of inter-function alignment padding there, hence the row. PROT 0957 (summon_effect_table), mapped at the same slot-B base 0x801F69D8, does hold a `jr ra`-preceded `addiu sp,sp,-0x18` entry at this VA (file +0x31d0); 0957's base_source is `cross_ref` and its role is open, so that body is unattributed rather than unported, and the boundary rests on a base recovered from cross-references rather than from the overlay's own call graph. Re-open with 0957, not with the dome dump. Filed as an alias rather than a phantom because that is what the first sentence says: as a worklist_phantom row it re-raised on 0957's boundary at every `--audit-ignored` run, which is not a defect the phantom claim could ever answer."
+# 801d84b4 is NOT ignored, and was removed from the list rather than moved here.
+# Its `PADDING, not a routine` reason is true of the minigame images - 17 `nop`
+# in fishing/dance/debug_menu/slot_machine, 32 in baka_fighter - and false of
+# the field overlay, which is the image the ignore was costing. Read out of
+# overlay_field_0897.bin at base 0x801CE818: `jr ra; addiu sp,sp,0x20` closes
+# the predecessor at 0x801d84ac/0x801d84b0, then a 6-instruction leaf stores
+# master game mode `_DAT_8007B83C = 0x16` (22, CARD INIT) and raises the
+# entry-context word `_DAT_8007BB00 = 1` before `jr ra`. That is the
+# overlay-local twin of the SCUS scripted game-over trigger FUN_8003C7EC, which
+# the engine already ports, and the field image carries exactly one
+# `jal 0x801d84b4`. Two base-tagged dumps hold that same 7-instruction body -
+# overlay_cutscene_dialogue_801d84b4 and overlay_cutscene_mapview_801d84b4, both
+# field-overlay captures - so the padding reason was not even the only dump
+# evidence. An `--audit-ignored` re-read is what turned it up.
 
 # Worklist addresses that are interior to another function, not entries of their
 # own. Produced by `scripts/ghidra-analysis/classify-worklist.py`; each reason
@@ -1127,7 +1169,6 @@
 "8020e504" = "DUPLICATE: 818-instruction stream identical modulo relocation to the already-ported 801eed1c"
 [worklist_phantom]
 "801e5fb0" = "2-insn body of non-R3000 opcodes (misdecoded data), degenerate stub"
-"801f9ba8" = "VA-ALIASED, and neither reading is a port site at this address. The only dump is `overlay_muscle_dome_801f9ba8.txt`, whose slot-B occupant is PROT 0900 - 17 consecutive nop of inter-function alignment padding there, hence the row. PROT 0957 (summon_effect_table), mapped at the same slot-B base 0x801F69D8, does hold a `jr ra`-preceded `addiu sp,sp,-0x18` entry at this VA (file +0x31d0), so an `--audit-ignored` re-read will keep flagging it; 0957's base_source is `cross_ref` and its role is open, so that body is unattributed rather than unported. Re-open with 0957, not with the dome dump."
 "80021934" = "PHANTOM: only dump body is a 3-instruction stub"
 "80035c10" = "PHANTOM: only dump body is a 4-instruction stub"
 "80055b4c" = "PHANTOM: only dump body is a 0-instruction stub"
@@ -1218,16 +1259,11 @@
 "801f69f0" = "DATA: offset +0x18 into the slot-B overlay buffer whose link base is 0x801F69D8 (see docs/reference/open-rev-eng-threads.md, slot-B cluster 0900..0969). overlay_muscle_dome is the battle-action overlay plus whatever held slot B at capture time, so these VAs disassemble that blob's head as code: 1..."
 "801f69f4" = "DATA: offset +0x1c into the slot-B overlay buffer whose link base is 0x801F69D8 (see docs/reference/open-rev-eng-threads.md, slot-B cluster 0900..0969). overlay_muscle_dome is the battle-action overlay plus whatever held slot B at capture time, so these VAs disassemble that blob's head as code: 1..."
 "801f69f8" = "DATA: offset +0x20 into the slot-B overlay buffer whose link base is 0x801F69D8 (see docs/reference/open-rev-eng-threads.md, slot-B cluster 0900..0969). overlay_muscle_dome is the battle-action overlay plus whatever held slot B at capture time, so these VAs disassemble that blob's head as code: 1..."
-"801f69fc" = "DATA: offset +0x24 into the slot-B overlay buffer whose link base is 0x801F69D8 (see docs/reference/open-rev-eng-threads.md, slot-B cluster 0900..0969). overlay_muscle_dome is the battle-action overlay plus whatever held slot B at capture time, so these VAs disassemble that blob's head as code: 1..."
 "801f6a00" = "DATA: offset +0x28 into the slot-B overlay buffer whose link base is 0x801F69D8 (see docs/reference/open-rev-eng-threads.md, slot-B cluster 0900..0969). overlay_muscle_dome is the battle-action overlay plus whatever held slot B at capture time, so these VAs disassemble that blob's head as code: 1..."
-"801f6a08" = "DATA: offset +0x30 into the slot-B overlay buffer whose link base is 0x801F69D8 (see docs/reference/open-rev-eng-threads.md, slot-B cluster 0900..0969). overlay_muscle_dome is the battle-action overlay plus whatever held slot B at capture time, so these VAs disassemble that blob's head as code: 1..."
 "801f6a10" = "DATA: offset +0x38 into the slot-B overlay buffer whose link base is 0x801F69D8 (see docs/reference/open-rev-eng-threads.md, slot-B cluster 0900..0969). overlay_muscle_dome is the battle-action overlay plus whatever held slot B at capture time, so these VAs disassemble that blob's head as code: 1..."
 "801f6a18" = "DATA: offset +0x40 into the slot-B overlay buffer whose link base is 0x801F69D8 (see docs/reference/open-rev-eng-threads.md, slot-B cluster 0900..0969). overlay_muscle_dome is the battle-action overlay plus whatever held slot B at capture time, so these VAs disassemble that blob's head as code: 1..."
 "801f6a30" = "DATA: offset +0x58 into the slot-B overlay buffer whose link base is 0x801F69D8 (see docs/reference/open-rev-eng-threads.md, slot-B cluster 0900..0969). overlay_muscle_dome is the battle-action overlay plus whatever held slot B at capture time, so these VAs disassemble that blob's head as code: 1..."
-"801f6a34" = "DATA: offset +0x5c into the slot-B overlay buffer whose link base is 0x801F69D8 (see docs/reference/open-rev-eng-threads.md, slot-B cluster 0900..0969). overlay_muscle_dome is the battle-action overlay plus whatever held slot B at capture time, so these VAs disassemble that blob's head as code: 1..."
 "801f6a3c" = "DATA: offset +0x64 into the slot-B overlay buffer whose link base is 0x801F69D8 (see docs/reference/open-rev-eng-threads.md, slot-B cluster 0900..0969). overlay_muscle_dome is the battle-action overlay plus whatever held slot B at capture time, so these VAs disassemble that blob's head as code: 1..."
-"801f6a40" = "DATA: offset +0x68 into the slot-B overlay buffer whose link base is 0x801F69D8 (see docs/reference/open-rev-eng-threads.md, slot-B cluster 0900..0969). overlay_muscle_dome is the battle-action overlay plus whatever held slot B at capture time, so these VAs disassemble that blob's head as code: 1..."
-"801f6a58" = "DATA: offset +0x80 into the slot-B overlay buffer whose link base is 0x801F69D8 (see docs/reference/open-rev-eng-threads.md, slot-B cluster 0900..0969). overlay_muscle_dome is the battle-action overlay plus whatever held slot B at capture time, so these VAs disassemble that blob's head as code: 1..."
 "801f6a74" = "DATA: offset +0x9c into the slot-B overlay buffer whose link base is 0x801F69D8 (see docs/reference/open-rev-eng-threads.md, slot-B cluster 0900..0969). overlay_muscle_dome is the battle-action overlay plus whatever held slot B at capture time, so these VAs disassemble that blob's head as code: 1..."
 "801fa000" = "DATA: the dump covering this VA is a data-region listing"
 
@@ -1309,7 +1345,7 @@
 "801c5f40" = "PROT 0896 mis-based print below the 0x801CE818 floor; 300 instructions, no delta recoverable (docs/subsystems/field-menu.md)."
 "801c614c" = "VA is below 0x801CE818, the base of every slot-A overlay (slot B is 0x801F69D8), so no overlay image can contain it - this is a printed address from an import based at 0x801C0000, not a function entry."
 "801c6248" = "VA is below 0x801CE818, the base of every slot-A overlay (slot B is 0x801F69D8), so no overlay image can contain it - this is a printed address from an import based at 0x801C0000, not a function entry. The dump's bytes resolve to 801d4a60 +0xe818 field_0897."
-"801c6268" = "VA is below 0x801CE818, the base of every slot-A overlay (slot B is 0x801F69D8), so no overlay image can contain it - this is a printed address from an import based at 0x801C0000, not a function entry. The dump's bytes resolve to 801d4a60 +0xe818 field_0897."
+"801c6268" = "VA is below 0x801CE818, the base of every slot-A overlay (slot B is 0x801F69D8), so no overlay image can contain it - this is a printed address from an import based at 0x801C0000, not a function entry. The dump's bytes resolve at +0xe818 to 801d4a80, which is INTERIOR to FUN_801D4A60 (docs/tooling/phantom-print-index.md group 3) - so neither the printed VA nor the resolved one is port work. The entry to port is 801d4a60, 0x20 lower, and it is already its own worklist row. An earlier form of this reason named 801d4a60 as the resolved VA; `--audit-ignored` caught the 0x20 discrepancy against the images."
 "801c6534" = "VA is below 0x801CE818, the base of every slot-A overlay (slot B is 0x801F69D8), so no overlay image can contain it - this is a printed address from an import based at 0x801C0000, not a function entry. The dump's bytes resolve to 801cfd68 +0x9834 menu_0899."
 "801c6804" = "VA is below 0x801CE818, the base of every slot-A overlay (slot B is 0x801F69D8), so no overlay image can contain it - this is a printed address from an import based at 0x801C0000, not a function entry."
 "801c6a34" = "PROT 0896 mis-based print below the 0x801CE818 floor; 145 instructions, no delta recoverable (docs/subsystems/field-menu.md)."
@@ -1432,6 +1468,7 @@
 # the 0x801C0000-based PROT 0897 import; applying that one to an 0896 dump
 # lands 0x9000 short.
 "801e8b10" = "Phantom VA of the 0x801C0000-based PROT 0896 import: file +0x28B10, inside the 0897 over-read, so it re-keys to field(0897) 0x801EE328 - a real entry whose `addiu sp,sp,-0x50 / sw s3,0x3c(sp) / move s3,a0 / sw ra,0x48(sp)` opening matches the dump instruction for instruction. The bare VA 0x801E8B10 is interior in every image that covers it (897 `move a2,s5`, 898 `addiu v0,zero,0x4f`) and has no `jal` encoding on the disc. Port 801ee328."
+"801dfb10" = "The SAME routine's other phantom, printed by the `overlay_0897_xxx_dat` batch at its +0xE818 delta instead of 0896's +0x5818: 0x801DFB10 + 0xE818 = field(0897) 0x801EE328, where the image opens `addiu sp,sp,-0x50 / sw s3,0x3c(sp) / move s3,a0` after the predecessor's `jr ra; addiu sp,sp,0x50` - the dump's 133 instructions word for word. The bare VA is interior in every image that covers it: in 898 it is the fall-through of `bnez v0,0x801dfb28`, in 897 a branch label, in 899 the delay slot of `jal 0x8003ce64`. FUN_801EE328 is the world-map `ON RULA` travel-art actor and is already ported (engine-vm travel_art_actor). Port nothing here."
 "801eff30" = "Phantom VA of the 0x801C0000-based PROT 0896 import: file +0x2FF30, past 0x2E000, so it re-keys to battle_action(0898) 0x801D0748 - the battle/minigame dispatcher, whose `lui v0,0x8008 / lw v0,-0x42dc(v0) / addiu sp,sp,-0x48` opening matches the dump. The bare VA is interior in both 897 and 898 and has no `jal` encoding on the disc."
 "801f69a0" = "Phantom VA of the 0x801C0000-based PROT 0896 import: file +0x369A0, so it re-keys to battle_action(0898) 0x801D71B8, whose `addiu sp,sp,-0x30 / lui v0,0x8008 / lw a0,-0x42dc(v0) / lui v1,0x801d` opening matches the dump. Independently: 0x801F69A0 is below 0x801F69D8, the base of every slot-B overlay, so no slot-B image can contain it either."
 "801f5748" = "Phantom VA of the PROT 0897 extraction's own 0x25000 footprint over-read: file +0x26F30 is 0x1F30 past the boundary, and the bytes there are byte-identical to battle_action(0898) 0x801D0748 (verified by disassembling both). The long-cited 'field inventory hub FUN_801F5748' is this over-read - see the 0897 row of crates/asset/data/static-overlays.toml. No image holds an entry at the bare VA and no `jal 0x801F5748` encoding exists on the disc."
@@ -1458,11 +1495,12 @@
 "801cfc18" = "MDEC reset thunk: masks through the libapi device trampoline 8005fd88 and calls the already-ignored MDEC reset 801cfee0. Fourteen instructions of register reset. see ghidra/scripts/funcs/overlay_str_fmv_0x801CFC18.txt"
 "801cfcdc" = "MDEC output-rect stager: fills the two double-buffered destination rects at &DAT_801D0D5C / &DAT_801D0D6C and pushes them twice through the already-ignored MDEC command + DMA-0 upload 801cffdc. The identical 39-instruction body appears in the PROT 0971 dump as well - one library routine linked in..."
 "801d0070" = "MDEC upload wrapper in the same family, dispatching into the already-ignore-listed 801d0198 MDEC leaf. The 6-instruction PROT 0971 dump at this VA is below the signable length and does not testify; static arbitration resolves the VA to the STR overlay (0970). see ghidra/scripts/funcs/overlay_str_..."
-# Added by the port-worklist closeout. Complete function bodies - real
-# prologue, real epilogue - whose every store lands in their own stack frame,
-# so they have no caller-visible effect. The retail compiler kept the frame
-# after the only consumer of the locals was optimised away.
-[worklist_noop_frame]
+# Complete function bodies - real prologue, real epilogue - whose every store
+# lands in their own stack frame, so they have no caller-visible effect. The
+# retail compiler kept the frame after the only consumer of the locals was
+# optimised away. A SCOPE claim: the body is real and named, so the image
+# boundary test has nothing to refute.
+[noop_frame]
 "801d1cd4" = "Frame-local no-op, not a portable routine. Ten instructions in the field-to-battle transition overlay (PROT 0979): `addiu sp,sp,-0x10`, six `sh` stores into sp+0x0/0x2/0x4/0x8/0xa/0xc (a (0,0,0x7d0) vector and a zero vector), then `jr ra; addiu sp,sp,0x10`. The frame pointer is never taken, no argument register is read, nothing is returned - the whole body is dead on exit. Confirmed from the disassembly, not the C (the C renders it as a bare `return;`). see ghidra/scripts/funcs/overlay_field_battle_intro_801d1cd4.txt"
 # Slot-A minigame overlays (PROT 0971..0980, link base 0x801CE818): the 2D
 # primitive builders. Each row's body assembles one GP0 packet family into the
@@ -1472,8 +1510,9 @@
 # from. The engine draws these screens from its own draw-list builders
 # (engine-ui) against the same descriptor tables (`legaia_asset::baka_opponents`
 # for the duel HUD, `legaia_asset::minigame_slot_scene` for the cabinet), so
-# the packet layer has no port site of its own.
-[worklist_prim_builder]
+# the packet layer has no port site of its own. Every row here is a SCOPE claim
+# over a body the reason describes instruction by instruction.
+[prim_builder]
 "801d079c" = "Slot-machine bet-lamp strip: three 5-word 0x14-byte rects at y=0x84 stepping x by 0x10 from 0x230, cell 0x10 square, clut 0x7A8D, shaded 0x80 when *(0x801D3C9C) bit 0 is set and 0x90 otherwise, lit only while the lamp index is below the bet count *(0x801D3CB0); then one libgpu fill through 80059010. Every store lands in the prim arena and is linked with 8003d2c4. see ghidra/scripts/funcs/overlay_slot_machine_801d079c.txt"
 "801d0e1c" = "Slot-machine cabinet frame: builds 0x14-byte flat rect packets (tag 0x04000000) from stack SVECTORs projected through 8003d368 and links each with 8003d2c4; the only non-packet stores are the loop's own stack scratch. see ghidra/scripts/funcs/overlay_slot_machine_801d0e1c.txt"
 "801d08e4" = "Slot-machine cabinet panel emitter: 334 instructions that walk the quad table at 0x801D3D00 emitting 0x28-byte POLY_GT4 packets (tag 0x09000000, tpage 0x2C808080) over the 0x230 x 0x120 cabinet rect, each linked with 8003d2c4. No reel or payout state is read - the packet corners come from the table and the stack SVECTORs. see ghidra/scripts/funcs/overlay_slot_machine_801d08e4.txt"
@@ -1488,6 +1527,7 @@
 "801d6cbc" = "Baka Fighter help-screen chrome: text kind 0x80073F20 = 0xC, eleven string pointers from 0x801D7134 through the sprite emitter 80036888 at a 0xD line pitch, then the 0xF0 x 0x8F window frame through the shared box dispatcher 8002C69C. The port draws help text through engine-ui. see ghidra/scripts/funcs/overlay_baka_fighter_801d6cbc.txt"
 "801d7c84" = "Fishing sub-screen icon row: reads up to four ids from the word array *(0x801D9114) at index `row*8 + i`, stops on -1, and emits each through the sprite emitter 80036888 out of the 0x28-stride descriptor array at 0x801D81A4, x stepping 0x10 per icon. see ghidra/scripts/funcs/overlay_fishing_801d7c84.txt"
 "801d24ec" = "Fishing venue backdrop: stamps the two GTE camera records at 0x8007BF44/0x8007BFB8, pushes the rotation trio through 800172c0 / 8003d1ec / 8003d368, then emits the gradient quad strip. Camera-and-packet only; the port's camera is `engine-core::camera`. see ghidra/scripts/funcs/overlay_fishing_801d24ec.txt"
+"801d7964" = "Fishing fill-primitive builder: unpacks two 24-bit RGB arguments into six halfwords of a 0x20-byte stack record, appends four caller words, and posts it with the fill-primitive poster 0x80024E80. No state read or written outside that record. Filed here rather than as a structural row - the reason describes a real body, so the claim is scope. see ghidra/scripts/funcs/overlay_fishing_801d7964.txt"
 # Slot-B world-map render overlay (PROT 0901, link base 0x801F69D8): same
 # packet-only shape as the slot-A rows above.
 "801f73e4" = "World-map top-view band strip: zeroes the camera roll global 0x8007B792 (saving it into s5) and restores it on exit, pushes the camera through 800172c0 / 8003d1ec / 8003d368, then loops five times emitting a 0x14-byte flat rect (tag 0x04000000) per band into the scratchpad prim arena at *(0x1F8003A0) - each screen-clipped against the 0x140-wide, 0x80-high draw area with the extent shrunk rather than the packet dropped - and links each with 8003d2c4, closing with one 0x98 SetDrawMode fill through 80059010 and a final link. No band count, colour or geometry is read from game state: the tint endpoints come from literals (0x00808080 / 0x00404040 + 0x64000000) selected by 8003ce64, and the row pitch is `i << 7`. The engine draws the world-map sky/band layer from engine-render's own draw list. Body resolves to world_map_render(901) at its mapped base. see ghidra/scripts/funcs/overlay_world_map_top_ext_wm_ext_dispatcher_caller_helper_801f73e4.txt"
@@ -1497,16 +1537,17 @@
 # 8003D368, submits with the shared mesh renderer 0x80043390. The two Baka Fighter rows also push and
 # pop a matrix with 8005B268 / 8005B308. The port renders minigame geometry through `engine-render`'s own
 # TMD path, so these wrappers model nothing the engine does not already own.
-[worklist_mesh_submit]
+# SCOPE claims, like the section above.
+[mesh_submit]
 "801d6bb8" = "Baka Fighter stage-prop draw: matrix push, RotTrans of the caller's transform, a texture-window record built on the stack (0x00808080 or 0x0080A0C0 tint by the flag argument, 0x0707 mask, 0x100 or 0x400 selector) staged through 80028158, then two mesh submits at *(0x8007B85C)+0x62400 / +0x6240C. see ghidra/scripts/funcs/overlay_baka_fighter_801d6bb8.txt"
 "801d6d60" = "Baka Fighter billboard draw: matrix push (8005B268), RotTrans (8003D344), an `SZ < 0x2711` depth reject, texture bind through 8004629C from the actor's `+0x02` id, then one mesh submit at the scene-mesh table 0x8007C018 indexed by *(0x8007B6F8), offset +0xC. see ghidra/scripts/funcs/overlay_baka_fighter_801d6d60.txt"
 "801d1c5c" = "Fishing scene-object draw: matrix load/pop through 8003D1A4 / 8003D254, RotTrans (8003D344) plus the 8003D368 project, CLUT / tpage / texture binds through 800461A4 / 8004629C / 8004638C, then one submit into the shared mesh renderer 0x80043390. see ghidra/scripts/funcs/overlay_fishing_801d1c5c.txt"
 "801d67bc" = "Fishing actor draw callback: gates on the actor's `+0x72` size word, biases the OT head by -0x14 when the actor's `+0x10` carries bit 0x80800000, loads the matrix at 0x8007BF10 (8003D1A4), binds texture / CLUT / tpage from the actor's `+0x24/+0x26/+0x28` (8004629C / 800461A4 / 8004638C), then transforms and submits through 8003D20C / 8003D368 / 0x80043390. Transform-and-submit only. see ghidra/scripts/funcs/overlay_fishing_801d67bc.txt"
 
-# Structural rows from the same band.
-[worklist_minigame_structural]
-"801d84b4" = "PADDING, not a routine: the body is inter-function alignment `nop` - 17 of them in the fishing/dance/debug-menu/slot-machine images (PROT 0972's own content ends at 0x801D9818, just past this VA) and 32 with one stray `sllv zero,zero,zero` in the baka-fighter image. No prologue, no `jr ra`. The one dump that resolves an entry here (the field overlay's) headers `entry=801d8308`, i.e. interior. see ghidra/scripts/funcs/overlay_fishing_801d84b4.txt"
-"801d13c4" = "NO-OP: the whole 9-instruction body is `v1 = 0; a0 = 0x801D3CC0; while (v1 < 3) v1 += 1; jr ra`. The address it materialises is never used and the loop has no body, so the routine has no observable effect. It sits immediately above the documented payout evaluator 801d13e8. see ghidra/scripts/funcs/overlay_slot_machine_801d13c4.txt"
-"801d0230" = "INTERIOR of FUN_801D0100, verified against the disc bytes rather than the dump: disassembling PROT 0972 at 0x801CE818 gives a 172-instruction body at 0x801D0100 spanning 688 bytes, i.e. 0x801D0100..0x801D03B0, which contains this VA - and the dump at 801d0230 opens `lw a0,-0x6f10(s0)` reading a live s0 with no prologue and closes by restoring s0..s7/ra from a 0x48-byte frame it never builds. The debug-menu image the dump is labelled with does not own these bytes either: PROT 0971's own content stops at file +0x1800 (VA 0x801D0018). docs/reference/functions.md lists it as an entry; port FUN_801D0100 instead."
-"801d7964" = "PRIM BUILDER: unpacks two 24-bit RGB arguments into six halfwords of a 0x20-byte stack record, appends four caller words, and posts it with the fill-primitive poster 0x80024E80. No state read or written outside that record. see ghidra/scripts/funcs/overlay_fishing_801d7964.txt"
-"801cfe98" = "THIN TRAMPOLINE WRAPPER: the whole 9-instruction body is `a1 = a0; FUN_8005FDE8(0, a1)`, forwarding into the already-ignored libapi device-vtable trampoline 8005fde8 (slot +0x4). Direct sibling of the already-listed 8005c2e4, which is the same shape with selector 3. see ghidra/scripts/funcs/overlay_debug_menu_801cfe98.txt"
+# The `worklist_minigame_structural` section is gone. It mixed the two claim
+# kinds under one name, so `--audit-ignored` re-raised all five of its rows and
+# only two of those re-raises meant anything. Each row is now filed by what it
+# claims: 801d7964 (a described body) above, 801d13c4 under [noop_stubs],
+# 801cfe98 under [libcd] beside the sibling shape it forwards into, 801d0230
+# under [va_aliased_overlay_local], and 801d84b4 removed from the list - see
+# that section for the field-overlay body the PADDING reading was deleting.

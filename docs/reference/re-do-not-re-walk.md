@@ -174,6 +174,53 @@ dump header is the cheap first filter - a 47-instruction "function" that restore
 four callee-saved registers is not a function. The corpus-wide picture is in
 [`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md).
 
+### `0x801D84B4` is inter-function padding
+
+**Falsified:** that the VA is alignment `nop` in every overlay that maps it, and
+therefore no routine at all.
+
+The reading is right about four images and wrong about the one that mattered.
+`0x801D84B4` really is padding in the fishing, dance, debug-menu and slot-machine
+extractions - 17 consecutive `nop`, and 32 with one stray `sllv zero,zero,zero`
+in the baka-fighter image - and the only dump that resolves an entry here is the
+field overlay's, whose header reads `entry=801d8308`, i.e. interior. Both facts
+are true and neither is about the field overlay's bytes.
+
+Read `overlay_field_0897.bin` at base `0x801CE818` instead: `jr ra` at
+`0x801D84AC` with `addiu sp,sp,0x20` in its delay slot closes the predecessor,
+and a six-instruction leaf follows - store master game mode `_DAT_8007B83C = 0x16`
+(22, CARD INIT), raise the entry-context word `_DAT_8007BB00 = 1`, `jr ra`. That
+is the overlay-local twin of the SCUS scripted game-over trigger `FUN_8003C7EC`,
+and the field image carries exactly one `jal 0x801D84B4`. Two base-tagged dumps
+hold that seven-word body as well, both of them field-overlay captures, so the
+padding reading was not even the only dump evidence available.
+
+**Generalises to:** a padding verdict is per image, like every other containment
+fact. Counting how many extractions agree does not make the disagreeing one
+wrong - slot A holds a different overlay per game mode, so `nop` in four of them
+says nothing about the fifth.
+
+### `FUN_801dfb10` is a scripted player-turn state machine
+
+**Falsified:** that a routine exists at `0x801DFB10` at all.
+
+The address is a phantom of the `overlay_0897_xxx_dat` import's `+0xE818` base
+error, and its bytes are field (0897) `0x801EE328` - the world-map `ON RULA`
+travel-art actor, which is documented and ported under that VA. The printed VA is
+interior in every image that covers it: the fall-through of
+`bnez v0,0x801dfb28` in the battle overlay, a branch label in the field overlay,
+and the delay slot of `jal 0x8003ce64` in the menu overlay.
+
+What makes this one durable is that the *behaviour* attributed to the phantom is
+accurate - the player-input lock, the per-frame `+0x16` angle rotation, the
+story-flag `0xb` gate - because it was read off a correctly-decoded body. Only the
+address is fiction, so nothing in the description looks wrong.
+
+**Generalises to:** a plausible write-up is not evidence of a base. The same
+routine is also printed at `0x801E8B10` by the `overlay_0896` batch at its
+`+0x5818` delta, and two independent phantoms landing on one VA is the check that
+pins it - see [`phantom-print-index.md`](../tooling/phantom-print-index.md).
+
 ## No overlay function lives below `0x801CE818`
 
 **Falsified:** "an undocumented address in the `0x801C0164`..`0x801CE000`
