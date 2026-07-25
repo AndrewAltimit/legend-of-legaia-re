@@ -97,6 +97,31 @@ Part of the [key function directory](../functions.md) - the conventions for read
 | `8006EFD0` | SPU voice-state install - BIOS B0-vector 0x56, then copies a 5-dword template (`0x8006EF78`) into the returned block `+0x28` and `FlushCache`; sibling of the `FUN_8006EF18` init trio. `see ghidra/scripts/funcs/8006efd0.txt`. |
 | `_DAT_801CE564` / `_DAT_801CE574` (data) | Legaia-installed seq-context vfn pointers - `_564` resolves the active script-VM seq context, `_574` is a worker-availability check. Used by `FUN_8006CA7C / CB3C / CDB0 / CE30 / DDC8`. |
 
+## SsAPI per-frame calc tier
+
+`FUN_80062F98` is the sequencer's per-frame top - `SsSeqCalc` in PsyQ terms - and
+everything below it is reached by one bit of the per-channel flag word. The
+channel record is `_DAT_801CD2C0[slot] + channel * 0xB0`; the slot count is the
+`i16` at `0x801CDB40`, the channel count the `i16` at `0x801CDB42`. Rows here are
+read from the instruction stream, so the field offsets and the bit → handler map
+are checkable against the dumps rather than against a C rendering.
+
+| Address | Role |
+|---|---|
+| `80062F98` | **Per-frame sequencer top.** Re-entrancy-latched on `0x801CD2B4` (set on entry, cleared on the way out, early return when already set); calls the voice flush `FUN_80065BAC` once, then walks every `(slot, channel)` whose slot bit is set in the bitmap `0x801CD2B8` and dispatches on the channel's flag word `+0x98`. Bit `0x4` additionally **zeroes the whole flag word** after its handler runs. `see ghidra/scripts/funcs/80062f98.txt`. |
+| `+0x98` bit map (data) | `0x1` → `FUN_80063974`; `0x10` → `FUN_8006320C`; `0x20` → `FUN_8006352C`; `0x40` **and** `0x80` → `FUN_800649B0`; `0x2` → `FUN_800638D8`; `0x8` → `FUN_8006418C`; `0x4` → `FUN_800641EC` (`SsSeqRewind`) + flag-word clear. The `0x10`/`0x20`/`0x40`/`0x80` tests are **nested inside** the bit-`0x1` arm, so a stopped channel runs no slide. |
+| `80063974` | `short`-argument shim: sign-extends both arguments and tail-calls `FUN_800639A0`. The bit-`0x1` entry. `see ghidra/scripts/funcs/80063974.txt`. |
+| `800639A0` | **Delta-time pump.** While the pending wait `+0x90` fits inside this frame's tick budget `+0x54`, executes the next event via `FUN_80063CEC` and accumulates; the leftover is written back to `+0x90`. When the wait does not fit, the sign of `+0x52` picks the clocking mode - see [details ↓](#800639a0). `see ghidra/scripts/funcs/800639a0.txt`. |
+| `80063CEC` | **SEQ event decoder.** Post-increments the stream cursor `+0x0`, latches the running-status byte at `+0x16` and its low nibble at `+0x17`, and dispatches the high nibble through five installed handler pointers - see [details ↓](#80063cec). `see ghidra/scripts/funcs/80063cec.txt`. |
+| `80063AA8` | **Track-end / loop-repeat handler.** Bumps the repeat counter `+0x21` against the target `+0x20` (`0` = loop forever) and rewinds the cursor to `+0xC` or `+0x4` (selected by flag `0x400`), zeroing `+0x88` / `+0x1C` / `+0x90`. On the last repeat it clears flags `0x1`/`0x2`/`0x8`, sets `0x200` + `0x4`, clears `+0x14`, kills the channel's notes via `FUN_800684CC(slot \| channel << 8)`, reloads `+0x90 = +0x54`, and - when `+0x22 != 0xFF` - starts the chained `(slot, channel)` at `+0x22` / `+0x23` through `FUN_80064090`. Its third argument is dead: the prologue overwrites `a2` with the channel byte offset. `see ghidra/scripts/funcs/80063aa8.txt`. |
+| `80064090` | **Channel restart from the top.** `(slot, channel)`. Sets `+0x20 = 1` / `+0x21 = 0`, clears flags `0x100`/`0x8`/`0x2`/`0x4`/`0x200`, rewinds the cursor `+0x0 = +0x4`, sets `+0x14 = 1` and raises the play bit `0x1`. The chain target of `FUN_80063AA8`. `see ghidra/scripts/funcs/80064090.txt`. |
+| `8006418C` | Sets the channel's `+0x14` byte to `1` and clears flag `0x8`. Four-word leaf, no callees. `see ghidra/scripts/funcs/8006418c.txt`. |
+| `800638D8` | Kills the channel's sounding notes (`FUN_800684CC(slot \| channel << 8)`), clears `+0x14` and flag `0x2`. The inverse of `8006418C`. `see ghidra/scripts/funcs/800638d8.txt`. |
+| `8006320C` / `8006352C` | **The two volume-slide ticks** - ascending (flag `0x10`, saturates at `0x7F,0x7F`) and descending (flag `0x20`, saturates at `0,0`). Same field set and same structure; see [details ↓](#8006320c--8006352c). `see ghidra/scripts/funcs/8006320c.txt`, `8006352c.txt`. |
+| `800649B0` | **Tempo-slide tick** (flags `0x40` + `0x80`, both dispatched here). Steps the tempo `+0x94` toward the target `+0xAC` by `+0x4E` while the countdown `+0xA8` lasts, then recomputes the per-frame tick step - see [details ↓](#800649b0). `see ghidra/scripts/funcs/800649b0.txt`. |
+| `800648F0` | **Per-channel volume set.** `(slot, channel, vol_l, vol_r)`. Commits straight through `FUN_80067E9C(packed, l, r, 1)` when the flag word is exactly `1`; otherwise only stages `+0x58` / `+0x5A`, which the note-on mixer folds in later. `see ghidra/scripts/funcs/800648f0.txt`. |
+| `8006497C` | Packing shim over the channel-volume getter `FUN_800683D8` - builds `slot \| channel << 8` and forwards the two out-pointers unchanged. `see ghidra/scripts/funcs/8006497c.txt`. |
+
 ## Function details
 
 Full write-ups for the rows above whose detail outgrew a table cell. Linked from each section table by **[details ↓]**.
@@ -112,3 +137,94 @@ The install counterpart of the SEQ-slot release `FUN_8001FF58`; reused by the fl
 **CD-XA streaming-clip start.** `(clip_id, mode, duration_sectors)`. Starts a streamed XA-ADPCM clip (voice / streamed SFX). `clip_id` indexes the 8-byte XA-clip table at `0x801C6ED8` (`+0x0` = 6-byte BCD-MSF start address, `+0x4` = length/valid word; a zero `+0x4` is an empty slot → debug-log + abort via `FUN_8003EE00`). Stops any in-flight clip (`FUN_8003ED04` / `FUN_8003DE7C`), copies the MSF into the active-clip scratch at `0x8007BBF0`, resolves the start LBA via `msf_to_lba` (`FUN_8005C42C`), clamps `duration_sectors` to `0x2A30` and derives the end LBA at `gp+0x974` (`start + (dur*0x96 + 0x95)/0x3c`), records `mode` at `gp+0x954` and the playing state at `gp+0x908 = 2`, then arms the CD read via `FUN_8005BE8C` / `FUN_8005BECC` / `FUN_8005C034`.
 
 `clip_id == 0x13 && mode == 2` takes a `+0x10`-LBA variant. `see ghidra/scripts/funcs/8003d53c.txt`.
+
+### `800639A0`
+
+**Delta-time pump.** `(slot, channel)`. `+0x54` is the tick budget for one frame
+and `+0x90` the ticks still owed before the next event.
+
+When `+0x90 - +0x54 <= 0` the frame can reach the next event: the function calls
+`FUN_80063CEC` in a loop, re-reading `+0x90` after each call, and keeps going
+while the running total stays below `+0x54` - so a run of zero-delta events all
+fire in the same frame. The final `+0x90` is the accumulated total minus `+0x54`,
+i.e. the debt carried into the next frame.
+
+When the wait does not fit, the sign of `+0x52` selects between two clocking
+modes. Negative: `+0x90 -= +0x54`, the ordinary "advance by this frame's budget"
+step. Non-negative: `+0x52` is a countdown - positive values only decrement it,
+and on reaching zero it reloads to `+0x54` and `+0x90` drops by **1**. That is a
+divider for the case where a whole tick should take several frames rather than a
+whole frame taking several ticks.
+
+### `80063CEC`
+
+**SEQ event decoder.** `(slot, channel) -> status`. Reads one byte through the
+post-incrementing cursor at `+0x0`. With flags `0x401` both set it first tests
+the cursor against the loop-end pointer `+0x10`; a hit calls `FUN_80063AA8` and
+returns `-1`.
+
+A byte with bit `0x80` set is a status byte: its low nibble is stored at `+0x17`,
+the high nibble at `+0x16`, and the high nibble picks the arm. A byte without
+bit `0x80` re-enters the same arms through the retained `+0x16`, so the format
+keeps MIDI running status.
+
+| High nibble | Data bytes consumed | Handler pointer |
+|---|---|---|
+| `0x90` | note + velocity, then a varint delay via `FUN_80061C68` into `+0x90` | `*0x801CD220` |
+| `0xB0` | one | `*0x801CD230` |
+| `0xC0` | one | `*0x801CD224` |
+| `0xE0` | one, and the value is **not** passed in a register | `*0x801CD228` |
+| `0xF0` / `0xFF` | one; the value `0x2F` instead ends the track via `FUN_80063AA8` | `*0x801CD22C` |
+
+The return value is `1` only on the `0x2F` track-end path, `0` otherwise, and the
+loop-end path returns `-1`; `FUN_800639A0` ignores it and keys off `+0x90`.
+
+### `8006320C` / `8006352C`
+
+**The two volume-slide ticks.** Both read the same channel fields - `+0xA0`
+remaining ticks, `+0x9C` total ticks, `+0x4C` signed per-tick step, `+0x4A`
+remaining level steps, `+0x48` the requested span - and both close by caching the
+channel's live L/R volume into `+0x5C` / `+0x5E` through the getter
+`FUN_800683D8`. `+0xA0` going negative clears the handler's own flag bit and ends
+the slide.
+
+They differ only in direction and endpoint. `8006320C` (flag `0x10`) walks the
+volume **up** and, when a step would overshoot, commits `(0x7F, 0x7F)` through
+`FUN_80067E9C` and clears flag `0x10`. `8006352C` (flag `0x20`) walks it **down**
+and saturates at `(0, 0)`, clearing flag `0x20`.
+
+Within each, the sign of `+0x4C` picks a granularity. Positive is the fine arm:
+`+0xA0 % +0x4C` gates the step so the level moves one unit every `+0x4C` ticks -
+this is the one `div` / `mfhi` pair in either function. Negative is the coarse
+arm: the level moves `|+0x4C|` units every tick, guarded by
+`(+0x9C - +0xA0) * |+0x4C| < +0x48` so the accumulated change cannot run past the
+requested span.
+
+The installer is `FUN_8006206C` (`_SsSetSlideVolume`), which writes exactly this
+field set; `FUN_80061EDC` (`SsSeqSetVol`) is what arms it.
+
+### `800649B0`
+
+**Tempo-slide tick.** `(slot, channel)`. Flags `0x40` and `0x80` both dispatch
+here and both are cleared when the ramp finishes, which is why the caller has two
+bits pointing at one handler.
+
+`+0xA8` is the remaining tick count (decremented per call; going negative clears
+both flags immediately), `+0x4E` the signed per-tick step, `+0x94` the current
+tempo and `+0xAC` the target. As in the volume slides, a positive `+0x4E` gates
+on `+0xA8 % +0x4E` and moves the tempo by one, while a negative one moves it by
+`|+0x4E|` per tick; both directions clamp at the target, and the comparisons are
+**unsigned** (`sltu`), so the tempo field is a `u32`.
+
+Every call then re-derives the pump's frame budget:
+
+```
++0x54 = (+0x50 * +0x94 * 10) / (*(i32 *)0x801CD2BC * 60)      // floored, clamped to >= 1
+```
+
+`+0x50` is the resolution the SEQ header parser `FUN_80062410` installs and
+`0x801CD2BC` is the sequencer tick rate (`50` / `60` / `120` / `240`) that
+`FUN_80064698` selects. So this is the single place where retail's wall-clock
+tempo becomes the integer tick step `FUN_800639A0` spends each frame - the retail
+counterpart of `engine-audio`'s integer-sample sequencer clock. The ramp ends
+when `+0xA8` reaches zero or `+0x94` equals `+0xAC`.
