@@ -738,6 +738,27 @@
     /* Held-key state, for the on-screen control legend. */
     heldKeys() { return Array.from(this.held); }
 
+    /* ---------- sound effects ---------- */
+
+    /* Fire the cue mapped to a named event. The event -> cue-id map and each
+     * id's provenance (`disc` = traced to a retail ring write, `site` = the
+     * port's pick) live in the engine (`play_sfx_events_json`), so the page
+     * names behaviour and never a cue number. Silent no-op until the disc's
+     * descriptor table and program bank have staged, and against a cached WASM
+     * that predates the channel. */
+    sfxEvent(name) {
+      if (typeof this.rt.play_sfx_event !== 'function') return false;
+      try { return !!this.rt.play_sfx_event(name); } catch (e) { return false; }
+    }
+
+    /* The SFX channel's state (`{descriptors, bank_prot, vab_staged, fired,
+     * last_cue, idle_voices, pending}`), or `null`. */
+    sfxState() {
+      if (typeof this.rt.play_sfx_state_json !== 'function') return null;
+      try { return JSON.parse(this.rt.play_sfx_state_json()); }
+      catch (e) { return null; }
+    }
+
     /* ---------- fishing minigame ---------- */
 
     /* Is a fishing session live on the engine's world this frame? */
@@ -793,6 +814,7 @@
       if (!open) {
         if (startEdge && this._canOpenFieldMenu()) {
           try { rt.play_menu_open(); } catch (e) { return false; }
+          this.sfxEvent('menu_confirm');
           this._ensureMenuBlitters();
           /* Start the menu clock now: whatever wall-clock gap preceded the
            * open is not menu time. */
@@ -806,9 +828,20 @@
       /* Menu up: Start toggles it shut; every other edge is the engine's. */
       if (startEdge) {
         try { rt.play_menu_close(); } catch (e) {}
+        this.sfxEvent('menu_cancel');
       } else {
         let edge = 0;
         for (const k of p) edge |= (PAD[k] || 0);
+        /* Cue the engine's own blips off this frame's edges: a direction is a
+         * cursor move, Cross a confirm, Circle a cancel. The cue ids and their
+         * provenance come from the engine (`play_sfx_events_json`) - the page
+         * never hard-codes one. */
+        if (edge) {
+          const DIRS = 0x0010 | 0x0020 | 0x0040 | 0x0080;
+          if (edge & 0x4000) this.sfxEvent('menu_confirm');
+          else if (edge & 0x2000) this.sfxEvent('menu_cancel');
+          else if (edge & DIRS) this.sfxEvent('menu_cursor');
+        }
         /* Tick EVERY frame, edge or not, and tick at 60 Hz.
          *
          * The menu is not purely input-driven: the save screen's "Now

@@ -243,6 +243,55 @@ this host also emits their resolved frames (the ported cap/body/cap geometry) as
 a `bars` channel the page fills as rects. Disc-gated oracle:
 `tests/play_fishing_host.rs`.
 
+## Sound effects (`play_sfx`)
+
+The play page ran with music and no sound effects at all: the native window
+stages a descriptor bank from the disc executable plus a resident program bank
+into its own SPU region, and this host staged neither. `play_sfx` is that
+channel, assembled from what already existed rather than as a second audio path.
+
+The chain is the retail one. `SCUS_942.54`'s static descriptor table
+(`DAT_8006F198 + id*8`) is parsed at `load_disc` into a
+`legaia_engine_audio::SfxBank` - pure data, so it lands whether or not the
+visitor has enabled sound. The resident class-2 program bank (PROT 0869, with
+the documented 0875 alternate as a fallback) uploads into a dedicated region at
+the **top** of SPU RAM the first time a cue fires, and cues key through
+`SfxBank::play_one_shot` into the **live** `WebAudioOut` SPU - the same mixer the
+BGM sequencer feeds, so a cue and the music share one voice pool as they do on
+hardware.
+
+That last part forced a fix worth knowing about: the page's BGM allocator
+previously claimed all of SPU RAM above `0x1000`, so a scene-BGM upload could
+have overwritten the SFX region. Both BGM upload sites are now capped below it,
+matching the native boot's split, and a unit test asserts the two regions stay
+disjoint.
+
+### Cue provenance is reported, not assumed
+
+Retail fires a cue by writing an id into the ring at `_DAT_8007B6D8`, and only a
+handful of those writes are traced. So this host carries the same `disc` / `site`
+split [`sfx_view`](src/sfx_view.rs) established, and `play_sfx_events_json`
+reports it per event with a note explaining the choice - the page names
+behaviour (`menu_confirm`) and never a cue number, and can label which sounds
+are the game's.
+
+The footstep row is the instructive one. Its *cadence* is the ported retail
+kernel `FUN_80018db0` (interval derived from movement magnitude, the `0xB`
+stationary gate, the `0x4B0` ambient period) getting its first host caller - but
+**two** of its inputs are port picks, and the second is worth knowing before
+touching this code. Retail's "movement magnitude" is a controller speed word,
+not a world-space delta: the kernel's own arithmetic requires `speed >= 0x30`
+before a step can fire, and the port's controller moves 2 units per tick, so
+feeding the raw displacement in leaves the interval permanently below the gate
+and no footstep ever sounds. `WALK_SPEED_UNITS` places a single-speed walker at
+the conservative end of retail's moving band instead. Pinning the real speed
+word is what would retire the pick.
+
+`play_sfx_probe_peak` is the measurement that keeps this honest: it renders a cue
+through a throwaway SPU and reports its peak sample, so "wired but every cue is
+inaudible" fails a test instead of shipping. Disc-gated oracle:
+`tests/play_sfx_channel.rs`.
+
 ## Keeping the two hosts in step
 
 The browser play page and `legaia-engine play-window` are two framebuffers over

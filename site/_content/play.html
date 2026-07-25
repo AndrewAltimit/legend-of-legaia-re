@@ -290,6 +290,7 @@
           <span><b>FPS</b> <span id="hud-fps">0</span></span>
           <span><b>Pos</b> <span id="hud-pos">-</span></span>
           <span><b>NPCs</b> <span id="hud-npcs">0</span></span>
+          <span><b>SFX</b> <span id="hud-sfx">-</span></span>
         </div>
         <div class="play-btn-row">
           <button id="play-pause" type="button">Pause</button>
@@ -436,7 +437,7 @@
 <script src="js/webgl-math.js?v=play-1"></script>
 <script src="js/webgl-tmd.js?v=play-1"></script>
 <script src="js/field-scene-view.js?v=play-1"></script>
-<script src="js/play-app.js?v=play-4"></script>
+<script src="js/play-app.js?v=play-5"></script>
 <script>
 (function () {
   'use strict';
@@ -460,6 +461,7 @@
     fps:   document.getElementById('hud-fps'),
     pos:   document.getElementById('hud-pos'),
     npcs:  document.getElementById('hud-npcs'),
+    sfx:   document.getElementById('hud-sfx'),
   };
 
   let wasm = null, runtime = null, view = null;
@@ -773,6 +775,16 @@
     hud.npcs.textContent  = st.npcs;
     hud.pos.textContent = st.player
       ? `${st.player.x}, ${st.player.z}` + (st.player.walking ? ' (walking)' : '')
+      : '-';
+
+    /* Sound-effect channel: how many descriptors decoded off the disc, whether
+       the class-2 program bank is resident in the SPU, and how many cues have
+       keyed a voice. A cue that never keys is a silent channel, so the fired
+       count is the honest readout. */
+    const sfx = view && view.sfxState ? view.sfxState() : null;
+    hud.sfx.textContent = sfx
+      ? `${sfx.descriptors} cues` + (sfx.vab_staged ? '' : ' (bank not staged)')
+        + `, fired ${sfx.fired}`
       : '-';
 
     /* The retail dialog reading box is engine-drawn on the overlay canvas

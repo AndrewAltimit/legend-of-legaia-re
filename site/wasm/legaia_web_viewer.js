@@ -4564,6 +4564,113 @@ export class LegaiaRuntime {
         }
     }
     /**
+     * Fire one sound cue by descriptor id, this frame. Returns `true` when the
+     * cue keyed an SPU voice - i.e. the id is in the disc's descriptor table
+     * *and* its program / tone resolved in the resident bank *and* a voice was
+     * free. A `false` means the cue was silently dropped, matching retail's
+     * "no program / no voice -> skip".
+     *
+     * This is the page's cue surface and the measurable one: a returned voice
+     * index is proof the live SPU accepted the note, not just that a queue
+     * accepted an id.
+     * @param {number} id
+     * @returns {boolean}
+     */
+    play_sfx(id) {
+        const ret = wasm.legaiaruntime_play_sfx(this.__wbg_ptr, id);
+        return ret !== 0;
+    }
+    /**
+     * Fire the cue mapped to a named event (see
+     * [`Self::play_sfx_events_json`]). Returns `false` for an unknown event or
+     * a cue that did not sound.
+     * @param {string} event
+     * @returns {boolean}
+     */
+    play_sfx_event(event) {
+        const ptr0 = passStringToWasm0(event, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.legaiaruntime_play_sfx_event(this.__wbg_ptr, ptr0, len0);
+        return ret !== 0;
+    }
+    /**
+     * The event -> cue map with per-event provenance, so the page never
+     * hard-codes a cue id and can label which sounds are retail's:
+     *
+     * ```json
+     * [ { "event": "menu_confirm", "cue": 32, "source": "site",
+     *     "why": "..." } ]
+     * ```
+     * @returns {string}
+     */
+    play_sfx_events_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_play_sfx_events_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * **Diagnostic**: render one cue through a *throwaway* SPU + a fresh
+     * upload of the program bank and return its peak absolute sample. `0`
+     * means the cue would be inaudible on this disc (missing descriptor,
+     * program or sample).
+     *
+     * Deliberately does not touch the live SPU: rendering consumes SPU ticks,
+     * and stealing them from the audio callback would glitch the music. So
+     * this answers "does this descriptor produce sound?" while
+     * [`Self::play_sfx`] answers "did the live mixer take it?" - the two
+     * together are what makes the channel measurable without a microphone.
+     * @param {number} id
+     * @param {number} max_samples
+     * @returns {number}
+     */
+    play_sfx_probe_peak(id, max_samples) {
+        const ret = wasm.legaiaruntime_play_sfx_probe_peak(this.__wbg_ptr, id, max_samples);
+        return ret >>> 0;
+    }
+    /**
+     * Is the SFX channel able to make a sound right now? True once the
+     * descriptor table decoded, the program bank staged into the live SPU, and
+     * audio is up.
+     * @returns {boolean}
+     */
+    play_sfx_ready() {
+        const ret = wasm.legaiaruntime_play_sfx_ready(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * The channel's state for the page's readout:
+     *
+     * ```json
+     * { "descriptors": 100, "bank_prot": 869, "vab_staged": true,
+     *   "queued": 14, "fired": 12, "last_cue": 33, "last_voice": 4,
+     *   "idle_voices": 20 }
+     * ```
+     *
+     * `queued` counts what the cue *sources* produced and `fired` what the
+     * SPU took; the two differing is the readout that separates "no source
+     * fired" from "fired but inaudible".
+     * @returns {string}
+     */
+    play_sfx_state_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_play_sfx_state_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * Drive the open shop one frame from an edge-triggered PSX pad word
      * (same bit layout as [`Self::set_pad`]).
      *
@@ -8082,7 +8189,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 135, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 315, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__hc20c1a455dcd1273);
             return ret;
         },

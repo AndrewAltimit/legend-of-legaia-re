@@ -75,7 +75,25 @@ and caption rows from the dialog font and skip its glyphs. The captions are
 engine-side English placeholders at the retail pen positions, so a long
 placeholder can overlap the count beside it.
 
-## 5. Saves and config live next to you
+## 5. What you hear
+
+Both hosts decode their audio from the disc you supply - no samples ship with
+the engine or the site. Music is a SEQ played through the clean-room SPU against
+the scene's own sound bank; sound effects come from the executable's descriptor
+table plus the resident program bank, and both hosts key them into the **same**
+SPU the music uses, so a cue shares the voice pool exactly as it does on
+hardware.
+
+Cue *provenance* is worth knowing before you judge a sound. Retail fires an
+effect by writing an id into a ring, and only a handful of those writes have
+been traced, so a cue is either `disc` (the id is retail's, at the place retail
+writes it) or `site` (retail's id there is unpinned and the port reuses the
+closest one). The browser page reports the split per event rather than presenting
+a guess as the game's sound. The footstep is the clearest example: its *timing*
+is the retail cadence - a faster walk steps more often, standing still is silent
+- while the cue id it fires is the port's pick.
+
+## 6. Saves and config live next to you
 
 The engine resolves its files against the **current directory**: key bindings
 in `legaia-input.toml`, options (camera preset, movement mode) in
@@ -94,7 +112,7 @@ Rebind keys with `config`:
 `KEY=BUTTON` uses friendly key names (`Z`, `Up`, `Enter`, `RShift`) and PSX
 pad button names (`Cross`, `Circle`, `Start`, `L1`).
 
-## 6. Record and replay a session
+## 7. Record and replay a session
 
 ```bash
 ./legaia-engine record --disc "/path/to/disc.bin" --out session.toml
@@ -112,7 +130,7 @@ at all. Details: [determinism-replay.md](../tooling/determinism-replay.md).
 footer separates the player-facing ones above from the development
 diagnostics (parity oracles, synthetic state drivers) you can ignore.
 
-## 7. Browse assets interactively
+## 8. Browse assets interactively
 
 `asset-viewer` reads the `extracted/` tree (there is no `--disc` here - run
 `legaia-extract` first). The `field` and `dialog` demos additionally need the
@@ -134,7 +152,7 @@ same keys. The `tim` subcommand also takes `extracted/PROT.DAT` itself with
 `--offset`/`--clut` for the system-UI textures that live outside any TOC
 entry.
 
-## 8. Read the game's scripts
+## 9. Read the game's scripts
 
 The field/event VM ([script-vm.md](../subsystems/script-vm.md)) drives every
 scene. Its disassembler is a release binary too:

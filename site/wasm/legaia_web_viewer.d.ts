@@ -2158,6 +2158,67 @@ export class LegaiaRuntime {
      */
     play_overlay_draws_json(surface_w: number, surface_h: number): string;
     /**
+     * Fire one sound cue by descriptor id, this frame. Returns `true` when the
+     * cue keyed an SPU voice - i.e. the id is in the disc's descriptor table
+     * *and* its program / tone resolved in the resident bank *and* a voice was
+     * free. A `false` means the cue was silently dropped, matching retail's
+     * "no program / no voice -> skip".
+     *
+     * This is the page's cue surface and the measurable one: a returned voice
+     * index is proof the live SPU accepted the note, not just that a queue
+     * accepted an id.
+     */
+    play_sfx(id: number): boolean;
+    /**
+     * Fire the cue mapped to a named event (see
+     * [`Self::play_sfx_events_json`]). Returns `false` for an unknown event or
+     * a cue that did not sound.
+     */
+    play_sfx_event(event: string): boolean;
+    /**
+     * The event -> cue map with per-event provenance, so the page never
+     * hard-codes a cue id and can label which sounds are retail's:
+     *
+     * ```json
+     * [ { "event": "menu_confirm", "cue": 32, "source": "site",
+     *     "why": "..." } ]
+     * ```
+     */
+    play_sfx_events_json(): string;
+    /**
+     * **Diagnostic**: render one cue through a *throwaway* SPU + a fresh
+     * upload of the program bank and return its peak absolute sample. `0`
+     * means the cue would be inaudible on this disc (missing descriptor,
+     * program or sample).
+     *
+     * Deliberately does not touch the live SPU: rendering consumes SPU ticks,
+     * and stealing them from the audio callback would glitch the music. So
+     * this answers "does this descriptor produce sound?" while
+     * [`Self::play_sfx`] answers "did the live mixer take it?" - the two
+     * together are what makes the channel measurable without a microphone.
+     */
+    play_sfx_probe_peak(id: number, max_samples: number): number;
+    /**
+     * Is the SFX channel able to make a sound right now? True once the
+     * descriptor table decoded, the program bank staged into the live SPU, and
+     * audio is up.
+     */
+    play_sfx_ready(): boolean;
+    /**
+     * The channel's state for the page's readout:
+     *
+     * ```json
+     * { "descriptors": 100, "bank_prot": 869, "vab_staged": true,
+     *   "queued": 14, "fired": 12, "last_cue": 33, "last_voice": 4,
+     *   "idle_voices": 20 }
+     * ```
+     *
+     * `queued` counts what the cue *sources* produced and `fired` what the
+     * SPU took; the two differing is the readout that separates "no source
+     * fired" from "fired but inaudible".
+     */
+    play_sfx_state_json(): string;
+    /**
      * Drive the open shop one frame from an edge-triggered PSX pad word
      * (same bit layout as [`Self::set_pad`]).
      *
@@ -4008,6 +4069,12 @@ export interface InitOutput {
     readonly legaiaruntime_play_npc_pose_frames: (a: number, b: number) => [number, number];
     readonly legaiaruntime_play_npc_transforms: (a: number) => [number, number];
     readonly legaiaruntime_play_overlay_draws_json: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaruntime_play_sfx: (a: number, b: number) => number;
+    readonly legaiaruntime_play_sfx_event: (a: number, b: number, c: number) => number;
+    readonly legaiaruntime_play_sfx_events_json: (a: number) => [number, number];
+    readonly legaiaruntime_play_sfx_probe_peak: (a: number, b: number, c: number) => number;
+    readonly legaiaruntime_play_sfx_ready: (a: number) => number;
+    readonly legaiaruntime_play_sfx_state_json: (a: number) => [number, number];
     readonly legaiaruntime_play_shop_input: (a: number, b: number) => void;
     readonly legaiaruntime_play_shop_is_open: (a: number) => number;
     readonly legaiaruntime_play_take_prologue_handoff: (a: number, b: number) => [number, number];

@@ -26,25 +26,40 @@ gap was purely on the web host side, i.e. inside lane 9's own scope. **No
 `engine-core`, `engine-ui`, `engine-shell`, `engine-vm` or `engine-render` file
 was touched.**
 
-## 3. A measurement lesson for the waiver file
+## 3. Rule for waiver authors: scope every reason to the CHECKER's units
 
-The deleted waiver said the browser had "no fishing host: no session, no
-cast/reel input path and no point record". That was true of the **play page**
-and false of the **crate**: `crates/web-viewer/src/minigames_fishing.rs` (the
-site's standalone minigames page) already had a full `FishingSession`, a
-cast/reel input path, a point record *and* a HUD draw list - it just serialized
-the draw list itself instead of routing it through `fishing_hud_draws_for`.
+**The rule.** `check-ui-host-drift.py` measures exactly one thing: whether a
+builder's name appears in a non-test file under a *host source root*
+(`crates/engine-shell/src` + `crates/engine-render/src` = native,
+`crates/web-viewer/src` = web). A `reason` is only checkable against that, so
+every reason must be written in the checker's own units - **name the source
+root, and phrase the claim as a reference fact about it**. A reason scoped to
+anything finer or coarser than a root can be completely true and still describe
+a gap the gate is not measuring.
 
-That matters because the checker's `web` root is the whole crate, not the play
-page. So a waiver phrased about one page can describe a gap the checker is not
-measuring, and the work it implies can be far smaller than the wording suggests.
-When writing a `web_missing` reason, say which *source root* lacks the thing,
-not which page - the checker only ever sees the root.
+Two failure shapes, both already in this file's history:
 
-Sibling trap already recorded in the file's own history: the `ap_gauge_sprites`
-reason asserted two things that were both false because `engine-ui` ->
-`engine-ui` composition is invisible to the checker. Same class of error, other
-direction.
+- **Scoped too fine (a page, a screen, a binary).** The deleted
+  `fishing_hud_draws_for` reason said the browser had "no fishing host: no
+  session, no cast/reel input path and no point record". True of the **play
+  page**; false of the **root**. `crates/web-viewer/src/minigames_fishing.rs` -
+  the site's standalone minigames page, same root - already had a full
+  `FishingSession`, a cast/reel input path, a point record *and* a HUD draw
+  list; it just serialized that list itself instead of routing it through the
+  shared consumer. The waiver read as a greenfield blocker; the real gap was one
+  call.
+- **Scoped too coarse (a whole crate, when composition is what matters).** The
+  old `ap_gauge_sprites` reason claimed no host drew the gauge and named the
+  wrong intended caller. Both halves were false: two `native,web` builders
+  already fold it in one call deep, and `engine-ui` -> `engine-ui` composition
+  is invisible to a root-reference scan, so "unused" never means "unreached".
+
+**Checks before writing a reason.** Say which root lacks the reference. Grep
+that *whole root*, not the file you have in mind, and quote the symbols that
+came back empty. If the builder composes into another `engine-ui` builder, say
+so and treat the `orphan` bucket as a measurement artifact rather than a gap.
+And never describe the *work* as larger than the reference fact supports - the
+next lane sizes its effort off your wording.
 
 ## 4. The three waivers left standing - all re-verified true
 
@@ -72,12 +87,10 @@ deliverable.
 
 ### Native-only, no draw builder involved
 
-1. **SFX are entirely absent from the browser play page.** `engine-shell/boot.rs`
-   reads the SCUS sound-effect descriptor table into a `legaia_engine_audio::SfxBank`
-   and stages its VAB into the director (`read_sfx_bank` / `set_sfx_bank` /
-   `stage_sfx_vab`). `crates/web-viewer/src/audio.rs` and `audio_api.rs` contain
-   no `sfx` symbol at all - the page has BGM and nothing else. This is a whole
-   audio channel missing with zero signal in any gate.
+1. ~~**SFX are entirely absent from the browser play page.**~~ **CLOSED** - see
+   section 6. Left in the list because it is the worked example of how far a
+   gate-invisible gap can run: a whole audio channel, missing with zero signal
+   in any check.
 2. **FMV / STR playback.** Native has `window/str_player.rs` and the `play-str`
    subcommand. The play page *auto-skips*: `tick_frame` calls
    `finish_cutscene()` the moment the field VM triggers an FMV, because the page
@@ -130,7 +143,117 @@ deliverable.
   `(8, 40)` capture), and the fishing status rows here use the native `(8, 62)` /
   `(8, 80)`.
 
-## 6. Known cosmetic defect, present on BOTH hosts
+## 6. The SFX channel (the follow-up the coordinator authorised)
+
+`crates/web-viewer/src/play_sfx.rs`. The chain is the retail one and every link
+comes from something that already existed - `legaia_asset::sfx_table` for the
+descriptors, `legaia_engine_audio`'s `SfxBank` / `SfxScheduler` /
+`FootstepCadence`, and the live `WebAudioOut` SPU. **No `engine-audio` or
+`engine-core` file was touched**, and no API turned out to be missing.
+
+Descriptors parse at `load_disc` off `SCUS_942.54` (`DAT_8006F198`, so a
+`PROT.DAT`-only load leaves the bank empty and every cue is a silent no-op
+rather than an error). The class-2 program bank (PROT 0869, documented 0875
+alternate as fallback) uploads lazily on the first cue into a dedicated region
+at the top of SPU RAM. Cues key through `SfxBank::play_one_shot` into the
+**live** SPU, so they share the voice pool with the music.
+
+### The bug this surfaced
+
+The page's BGM allocator claimed `SpuAllocator::new(0x1000, SPU_RAM - 0x1000)`
+at **both** upload sites - i.e. all of SPU RAM above the reserved floor,
+including the region the SFX bank needs. Native does not do this: its
+`stage_scene_vab` caps the BGM span at
+`SPU_RAM - SPU_RESERVED - SFX_BANK_SPU_BYTES` precisely so a scene change cannot
+stomp the resident SFX samples. Both web sites are now capped the same way, and
+a unit test asserts the two regions stay disjoint. Worth knowing: this was
+latent-harmless while the page had no SFX, and would have become an
+intermittent "some cues go silent after a door" the moment it did.
+
+### Provenance discipline, and where the honest boundary is
+
+`sfx_view.rs` already had a `disc` / `site` convention for exactly this problem;
+this host reuses it rather than inventing a second one.
+`play_sfx_events_json` reports per event, and `play-app.js` names events, never
+cue numbers.
+
+All four advertised events are currently `site`, and that is the honest
+boundary of this lane:
+
+- **menu cursor / confirm / cancel** use cue ids `0x21` / `0x20` / `0x37`, which
+  *are* traced ring writes - but traced from the **Baka Fighter menu SM**
+  (`FUN_801CF388` family), not from retail's pause-menu SM. Real blips at a
+  place retail may use different ones. Pinning the pause menu's own ring writes
+  would upgrade these to `disc`; that is an RE task, not a wiring one.
+- **footstep** has **two** unpinned inputs, not one, and the second only showed
+  up because the headless run measured it. See below.
+
+### Finding: the footstep cadence's speed input is not a world-unit delta
+
+The first wiring fed `FootstepCadence::tick` the player's per-tick XZ
+displacement, which is the obvious reading of "movement magnitude". Headless,
+the player walked 274 world units and **zero** footsteps fired. The kernel's own
+constants say why: `interval = 0xF - (min(speed + 0x20, 0xFA) >> 4)` with the
+`interval < 0xB` gate needs `speed >= 0x30` (48). The port's controller steps
+**2 units per tick**, so the raw delta pins `interval` at `0xD` - permanently
+below the gate. Retail's speed word is therefore a different quantity at a
+different scale, not a world-space delta.
+
+The port has no analogue: `World` carries a walking *flag* and a fixed step, so
+a single-speed walker has to be placed somewhere in retail's moving band.
+`WALK_SPEED_UNITS = 0x30` is the deliberately conservative end - the slowest
+speed retail treats as moving, so the cadence cannot overstate the step rate.
+Both the cue id and this scale are declared `site` in the event table.
+
+**Pinning retail's actual speed word (the one `FUN_80018db0` reads) is the
+single highest-value follow-up for this channel**, and it would upgrade the
+cadence from "right shape, port-chosen input" to fully retail. `FUN_801d01b0`
+in the field overlay computes the per-frame speed
+(`docs/subsystems/field-locomotion.md`) and is the place to look.
+
+This is also a general warning for wiring any ported kernel: **a kernel that
+runs and produces nothing looks identical to one that is not wired.** Only
+driving it with real input and measuring the output separates them - the unit
+tests for `FootstepCadence` all passed the whole time, because they feed it
+retail-scale speeds directly.
+
+### `engine-audio/src/footstep.rs` now has a host caller - its doc says otherwise
+
+That module's header says **"NOT WIRED. This port is not on the engine's frame
+path - nothing calls `FootstepCadence::tick` outside this module's unit
+tests"**, and names "the field-mode per-frame audio update in `engine-shell`" as
+the caller that would fix it. `crates/web-viewer/src/play_sfx.rs::tick_sfx` is
+now that caller, from the other host. **The doc comment needs updating by
+whoever owns `crates/engine-audio`** - out of lane 9's scope. This is the
+`stale-not-wired-triage` shape (tagged NOT WIRED, analysed live); it is
+warn-level and not in `main-ci.yml`, so nothing goes red in the meantime.
+
+### Observation: cues drop under voice contention (shared with native)
+
+Headless, with music playing, `idle_voices` hit **0** and three of four
+back-to-back cues returned no voice. That is `play_one_shot`'s documented retail
+behaviour ("no free voice -> skip") and it is **not** web-specific - the native
+director calls the same function with the same idle-search. The reason both
+hosts search rather than reserve: `SfxBank::from_descriptors` takes
+`(id, program, tone, note, voices)` and never sets `voice_pref`, so every
+descriptor installed from the SCUS table competes for the pool, even though the
+table has a mixer-channel field (`sfx-table.md`) that presumably pins one.
+Threading that field through would be an `engine-audio` change and is a real
+follow-up for both hosts. In normal play it self-corrects - the walk fired 3
+cues across its 4 seconds - but a burst is lossy.
+
+### What is NOT in this channel
+
+No battle strike cues (the page has no battle host), no fishing / minigame cues
+(their rules engines emit no cue events - adding those is an `engine-core`
+change, i.e. lane 4/5), no dialog-advance blip (retail's id there is unpinned
+and I would rather ship three honest events than four with one invented). No
+`FieldEvent::Sfx` exists in `engine-core` at all, so there is no field-VM cue
+stream to drain on either host - native's cues come only from battle strikes and
+the dev menu. That is the ceiling on how much of this channel any host wiring
+can reach today.
+
+## 7. Known cosmetic defect, present on BOTH hosts
 
 The fishing HUD's caption row renders as `Lu0000  left`: `FishingCaptions::placeholder()`
 supplies engine-side English strings ("Lures", "left") at the retail pen
@@ -142,12 +265,16 @@ translation-pack-supplied `FishingCaptions`. Recorded in
 `docs/guides/playing-and-viewing.md` so it does not get re-reported as a
 rendering bug.
 
-## 7. Files touched
+## 8. Files touched
 
-- `crates/web-viewer/src/play_fishing.rs` (new), `runtime.rs` (4 fields +
-  `tick_fishing_banners()` in `tick_frame`), `lib.rs` (module), `README.md`
-- `crates/web-viewer/tests/play_fishing_host.rs` (new, disc-gated, 4 tests)
+- `crates/web-viewer/src/play_fishing.rs` + `play_sfx.rs` (new), `runtime.rs`
+  (fields, the two per-tick hooks, the SCUS SFX parse at `load_disc`, and the
+  capped BGM SPU allocators), `lib.rs` (modules), `README.md`
+- `crates/web-viewer/tests/play_fishing_host.rs` (4 tests) +
+  `play_sfx_channel.rs` (5 tests), both new and disc-gated
 - `site/js/play-app.js`, `site/_content/play.html`
 - `scripts/ci/ui-host-drift-waivers.toml` (one `[[waiver]]` block deleted, whole
   block, nothing else reflowed - safe to merge alongside lane 8)
 - `docs/guides/playing-and-viewing.md`
+- `site/wasm/*` rebuilt once at the end; per the coordinator, resolve any
+  conflict there by rebuilding rather than by hand.
