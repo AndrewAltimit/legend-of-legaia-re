@@ -79,6 +79,9 @@ from ghidra.util.task import ConsoleTaskMonitor
 #
 # Suffix with `?` to AUDIT only: classify the address and write a verdict, but
 # never write a dump and never touch the database.
+#
+# Prefix with `+` to RESTORE a function entry a previous rebuild deleted -
+# the undo for a walk that ran too long.
 TARGETS = [
     "801d56e4!",
 ]
@@ -93,6 +96,13 @@ TARGETS_FILE = "/scripts/redump_targets.txt"
 VERDICTS_FILE = "/scripts/redump_verdicts.tsv"
 
 MAX_INSNS = 8192
+
+# How many `jr ra` the walk may pass before it stops believing they are all
+# early exits of one routine. Every crossed return that is NOT followed by a
+# prologue is either a frameless leaf's end or a genuine early exit, and the
+# two are indistinguishable locally - so this is a budget, not a test, and it
+# is set where a refusal is cheaper than a merged body.
+MAX_CROSSED_RETURNS = 4
 
 OUT_DIR = "/scripts/funcs"
 try:
@@ -171,15 +181,46 @@ def forward_target(raw, cur_pc):
 JR_RA = 0x03E00008
 
 
+def opens_a_frame(addr):
+    """True when the word at `addr` is `addiu sp,sp,-N` - a prologue.
+
+    The frontier rule below needs an upper bound, and this is the one piece of
+    positive evidence for a function boundary that does not depend on Ghidra's
+    own (possibly wrong) function list. Immediately after a `jr ra` and its
+    delay slot, a new stack frame can only belong to the NEXT routine: a
+    function cannot push a frame twice without popping.
+    """
+    raw = word_at(addr)
+    if raw is None:
+        return False
+    # addiu rt, rs, imm  |  op=0x09, rs=sp(29), rt=sp(29), imm negative
+    if ((raw >> 26) & 0x3F) != 0x09:
+        return False
+    if ((raw >> 21) & 0x1F) != 29 or ((raw >> 16) & 0x1F) != 29:
+        return False
+    return (raw & 0x8000) != 0
+
+
 def walk_body(entry):
     """Walk from `entry` to the real end of the routine.
 
     Returns `(stop_addr_exclusive, n_instructions, status)`. `status` is
     `"complete"` or a string naming why the walk is a LOWER BOUND. A caller
     must never dump a non-complete walk silently.
+
+    The frontier rule alone is unbounded, and unbounded it fails in the
+    opposite direction from the rules it replaces: one forward branch whose
+    target lies beyond the routine drags the frontier past every `jr ra` in
+    between, and the walk swallows a whole run of functions into one body.
+    Measured, that turned a 68-byte routine into a 20060-byte one - loud in
+    size, silent in correctness, and worse than the truncation it fixed
+    because every address inside the fiction then reads as an interior of it.
+    So a `jr ra` also ends the body when the instruction after its delay slot
+    opens a stack frame, whatever the frontier says.
     """
     start = entry.getOffset()
     frontier = start
+    crossed = 0
     for i in range(MAX_INSNS):
         cur = entry.add(4 * i)
         raw = word_at(cur)
@@ -192,12 +233,27 @@ def walk_body(entry):
                 frontier = tgt
 
         past_frontier = cur.getOffset() >= frontier
-        if raw == JR_RA and past_frontier:
-            return cur.add(8), i + 2, "complete"
+        if raw == JR_RA:
+            if past_frontier:
+                return cur.add(8), i + 2, "complete, %d return(s) crossed" % crossed
+            if opens_a_frame(cur.add(8)):
+                return (cur.add(8), i + 2,
+                        "complete at the next routine's prologue, "
+                        "%d return(s) crossed" % crossed)
+            crossed += 1
+            if crossed > MAX_CROSSED_RETURNS:
+                # A body whose every return but the last is an "early exit" is
+                # far more likely to be several routines the frontier dragged
+                # together. Refusing here is the bound that keeps the frontier
+                # rule from failing in the direction opposite the two rules it
+                # replaces.
+                return (None, i,
+                        "crossed %d returns without reaching the frontier - "
+                        "the walk is spanning several routines" % crossed)
         if ((raw >> 26) & 0x3F) == 0x02 and past_frontier:
             target = ((cur.getOffset() + 4) & 0xF0000000) | ((raw & 0x03FFFFFF) << 2)
             if target < start or target > cur.getOffset():
-                return cur.add(8), i + 2, "complete"
+                return cur.add(8), i + 2, "complete, %d return(s) crossed" % crossed
     return None, MAX_INSNS, "no exit within {} instructions".format(MAX_INSNS)
 
 
@@ -264,14 +320,27 @@ def repair(addr_str, force_rebuild, audit_only):
         print("  enclosing body written as {} ({} instrs)".format(path, n))
         return
 
+    extent_note = "jr-ra/j walk with frontier rule, body rebuilt"
     if at is None and containing is None:
         stop, n, status = walk_body(entry)
-        if status != "complete":
+        if not status.startswith("complete"):
             verdict(addr_str, "NOFUNC_UNWALKABLE",
                     "no function, and the walk did not reach an exit: %s" % status)
             return
+        # Reaching a terminator proves the walk found an END. It proves
+        # NOTHING about the start: an address in the middle of an unanalyzed
+        # region walks to the same exit its enclosing routine does. Ghidra had
+        # no function here, so nothing in this project says the address is an
+        # entry, and the dump must say so rather than read like a discovery.
         verdict(addr_str, "NOFUNC_WALKABLE",
-                "no function; walk reaches an exit after %d instrs" % n)
+                "no function; walk reaches an exit after %d instrs - "
+                "ENTRY STATUS UNVERIFIED%s"
+                % (n, ", body under 12 instrs (label-call shape)"
+                   if n < 12 else ""))
+        extent_note = ("walk from an address with NO analyzed function - "
+                       "the END is measured, the START is UNVERIFIED; do not "
+                       "cite this as a function entry without independent "
+                       "evidence")
         if audit_only:
             return
     else:
@@ -285,7 +354,7 @@ def repair(addr_str, force_rebuild, audit_only):
             print("  wrote {} ({} instrs)".format(path, n))
             return
         stop, n, status = walk_body(entry)
-        if status != "complete":
+        if not status.startswith("complete"):
             # Loud, and no dump. A body walked to a lower bound reads exactly
             # like a whole one once it is written to a file.
             verdict(addr_str, "WALK_INCOMPLETE",
@@ -330,9 +399,37 @@ def repair(addr_str, force_rebuild, audit_only):
         verdict(addr_str, "REBUILD_FAILED", "CreateFunctionCmd produced no function")
         return
     got_bytes = func.getBody().getNumAddresses()
-    path, got, n = dump(func, "jr-ra/j walk with frontier rule, body rebuilt",
-                        requested)
+    path, got, n = dump(func, extent_note, requested)
     print("  rebuilt {} B, wrote {} ({} instrs)".format(got_bytes, path, n))
+
+
+def restore(addr_str):
+    """Re-create a function entry a previous rebuild deleted.
+
+    A rebuild drops the function entries strictly inside its walked span,
+    because those are what cut the body. When the walk itself was too long,
+    that deletion is damage: real entries vanish, and every address inside the
+    over-long body then reports INTERIOR of a routine that does not exist.
+    `+addr` in the targets file undoes it - Ghidra recomputes the body, so the
+    project returns to the state the rebuild found.
+    """
+    entry = af.getAddress(addr_str)
+    if entry is None or not in_program(entry):
+        return
+    if fm.getFunctionAt(entry) is not None:
+        verdict(addr_str, "RESTORE_NOOP", "function entry already present")
+        return
+    owner = fm.getFunctionContaining(entry)
+    if owner is not None:
+        # Split the over-long body: drop it, then re-create both halves and
+        # let Ghidra compute their extents.
+        owner_entry = owner.getEntryPoint()
+        fm.removeFunction(owner_entry)
+        CreateFunctionCmd(owner_entry).applyTo(prog, monitor)
+    CreateFunctionCmd(entry).applyTo(prog, monitor)
+    got = fm.getFunctionAt(entry)
+    verdict(addr_str, "RESTORED" if got else "RESTORE_FAILED",
+            "%d B" % got.getBody().getNumAddresses() if got else "no function")
 
 
 targets = TARGETS
@@ -350,6 +447,9 @@ if os.path.exists(TARGETS_FILE):
 
 for t in targets:
     t = t.strip()
+    if t.startswith("+"):
+        restore(t[1:].strip())
+        continue
     force = t.endswith("!")
     audit = t.endswith("?")
     repair(t.rstrip("!?").strip(), force, audit)

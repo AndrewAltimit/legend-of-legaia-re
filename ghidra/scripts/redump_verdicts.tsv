@@ -1,4 +1,0 @@
-overlay_0897.bin	801cf754	ENTRY	ghidra body 344 B; re-dumped unchanged
-overlay_0897.bin	801cfc40	ENTRY	ghidra body 440 B; re-dumped unchanged
-overlay_0897.bin	801cfe4c	TRUNCATED	ghidra body 148 B, walked 868 B (217 instrs) - rebuilding
-overlay_0897.bin	801d0290	INTERIOR	inside FUN_801d01b0 at 801d01b0 (delta -224); not an entry point

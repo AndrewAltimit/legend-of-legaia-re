@@ -134,17 +134,13 @@ deleting a helper is a decision about the sprite path, not about drift.
 
 [[waiver]]
 builder = "records_screen_draws_for"
-kind = "orphan"
+kind = "web_missing"
 reason = """
-The retail world-map Records screen renderer (`FUN_801ED710`), ported as a
-render seam in the world-map dev-menu lane together with its list sibling
-`dev_menu_list_draws_for` (waived below for the same reason). Neither host
-opens the Records screen yet - routing it in is a host-side change (native
-`window/menu_draws.rs`, web `play_menu.rs`) that also needs the host to feed
-the per-character record base `0x80084140 + n*0x414` fields into the screen
-model. The model half (`world_map_overlay::records_screen`) is wired and
-unit-tested; this builder lands with the host follow-up that surfaces the
-screen.
+The retail world-map Records screen renderer (`FUN_801ED710`). The native
+window draws it from the developer-menu host (`window/dev_menu.rs`, behind the
+same `LEGAIA_DEV_MENU` opt-in as its list sibling `dev_menu_list_draws_for`
+below); the browser play page exposes no debug-menu route - a debug surface is
+deliberately out of the web page's scope rather than a wiring gap.
 """
 
 [[waiver]]
