@@ -1250,13 +1250,35 @@ that takes the window rect `a0` and hangs its content off
 | **Coin box `FUN_801DD028`** | casino-coin pictogram ICO `0x66` at `(WX, WY+2)` + the 8-digit coin bank `_DAT_800845A4` at `(WX+0x28, WY)` CLUT 7. `overlay_menu_801dd028.txt` |
 | **Points box `FUN_801DCE20`** | a points-label STR (`0x801CEA40`) at `(WX, WY)`; the 8-digit point-card bank `_DAT_800845B4` at `(WX, WY+0xE)` CLUT 6; the "point(s)" STR (`0x801CEA50`) at `(WX+0x40, WY+0xE)`; advance hand `FUN_8002B994(1,1, WX+0xE6, WY+0xD)`. `overlay_menu_801dce20.txt` |
 | **Item-info `FUN_801DCC20`** | when a prize id is staged (`DAT_801E46B0 > 0`): the shared item-info panel `FUN_801D0F1C` (name/desc), then CLUT 6 + the 2-digit bag count (`FUN_80042F4C(id)`) at `(WX+0x80, WY)`; always a `0x90 x 0x28` shade box `FUN_8002C69C(WX, WY+0x38)` under it - the Items id-17 `FUN_801DCB60` shape. `overlay_menu_801dcc20.txt` |
-| **Prompt line `FUN_801DCF14`** | the current dialog-context text (`_DAT_8007B450`, skipping its `+2` glyph-count header, from `+3`) at `(WX, WY)` CLUT 7, forcing the monospace-advance override (`DAT_80073F20 = 0x10`) for the draw and restoring it after. `overlay_menu_801dcf14.txt` |
+| **Prompt line `FUN_801DCF14`** | the armed record's trailing string (`_DAT_8007B450 + record[2] + 3`, where `record[2]` is a skip count the record owns - see [below](#these-window-ids-are-shared-not-exchange-only)) at `(WX, WY)` CLUT 7, forcing the monospace-advance override (`DAT_80073F20 = 0x10`) for the draw and restoring it after. `overlay_menu_801dcf14.txt` |
 | **Message box `FUN_801DCCB4`** | refills operand byte `0x801E46E5` in place from the staged character record byte (`record + 0x705`, record `_DAT_8007BB78 + _DAT_8007BB70*0x414`), draws the template STR `0x801E46E4` at `(WX, WY)` CLUT 7, then the advance hand at `(WX+0xE6, WY+0xD)` - the notify shape of the Items `FUN_801DCD58`. `overlay_menu_801dccb4.txt` |
 
 The exchange **session drivers** are `FUN_801DB380` / `FUN_801DB510` /
 `FUN_801DB7F4` (menu overlay; each runs the descriptor-window scripts and
 polls the list kernel like the Items sub-screens -
 `ghidra/scripts/funcs/overlay_menu_801db380.txt` and siblings).
+
+### These window ids are shared, not exchange-only
+
+The descriptor table is one pool and each screen's open script picks ids out
+of it, exactly as the five title tabs are reused per pause screen. The town
+shop's open script `DAT_801E4E38` slides in `0x20` (32, the gold box above),
+`0x21` (33, the prompt line), `0x22` (34), `0x28` (40) and `0x2A` (42) - see
+[shop.md](shop.md#mode-select-panel-buy--sell--quit), where those descriptor
+words are byte-verified. So the gold box and the record-sourced tab are the
+same windows the exchange screen opens, with a different record armed.
+
+That is what `FUN_801DCF14`'s `+2` byte really is: a **skip count owned by
+the armed record**, not a glyph-count header of its own. `_DAT_8007B450`
+points at the armed op-`0x49` opcode's *sub-op* byte (opcode `+1` - pinned in
+[boot.md](boot.md) and
+[tile-board.md](tile-board.md#where-the-board-comes-from)), so the
+string starts at `opcode + 4 + record[2]`. For a shop record, whose payload
+is `[count][count x item_id][ASCII name]`, `record[2]` is `count` and the
+string therefore lands one past the last item id - the vendor name
+[`legaia_asset::shop_stock`](../../crates/asset/src/shop_stock.rs) decodes.
+Window 33 is the vendor plate on that screen and a prompt line on this one
+because the renderer only ever prints "the armed record's trailing string".
 
 Its sub-screen tick handlers follow the same phase protocol as the Items
 routes - phase word `DAT_801E46AC`, submenu word `DAT_801E46A4`, window
@@ -1374,6 +1396,48 @@ arithmetic and the state-word rules and drops the two globals every one
 of them touches - the draw-order word `DAT_8007B454` and the
 glyph-advance byte `DAT_80073F20` - because a host that composites in
 call order and lays glyphs out proportionally has no use for either.
+
+One exception is worth keeping: the **accent pen** (`DAT_8007B454 = 6`) is
+kept as a colour, because three painters stage it for exactly one field and
+restore `7` afterwards - window 34's item name *and* owned count (staged once
+before the name, restored only after the count), window 24's count, and
+window 31's number. It resolves to the same colour as a rising stat in the
+compare panels (`PAINTER_INK_ACCENT`).
+
+### Which painter draws a descriptor (`renderer_va` dispatch)
+
+Retail resolves the renderer per window, not per screen: the create call
+`FUN_800326AC` copies the descriptor's `+0xC` into the live window's `+0x28`,
+and the per-frame walker calls it indirectly -
+`lw v0,0x28(s4); beq v0,zero,..; jalr v0; move a0,s4` at
+`0x80031E30..0x80031E44` in `FUN_80031D00`, with `a0` the window struct the
+painter reads its rect out of. A `0` there is the renderer-less list window
+whose content the SCUS content-builder makes from `content_id`.
+
+The port mirrors that step in
+[`engine-ui::ui_menu_window_dispatch`](../../crates/engine-ui/src/ui_menu_window_dispatch.rs):
+`painter_for_renderer_va` maps a renderer VA to the painter that draws it,
+`painter_at` resolves one id through a parsed table and **refuses** a
+descriptor whose renderer is not the painter the caller expected, and
+`menu_window_painters` walks a whole table and reports every window the crate
+can paint. Two consequences fall out of keying on the renderer:
+
+- The six plain title tabs are one painter. `FUN_801DCA0C` / `CA50` / `CA94` /
+  `CAD8` / `CB1C` (pause tabs 0..=4) and `FUN_801DCFE4` (window 43) are the
+  same 17 instructions with a different string pointer, so all six resolve to
+  `title_tab_draws_for`.
+- The two counter windows differ only in dispatch data. Window 32 reads party
+  gold `_DAT_8008459C` with pictogram `0x62`, window 45 the casino coin bank
+  `_DAT_800845A4` with `0x66`; the painter is one routine and `CounterSource`
+  tells a host which live total to feed it.
+
+The native window (`window/menu_draws.rs`, `window/shop_windows.rs`) draws
+its pause-screen tabs and the shop's vendor plate / purse / item-info /
+sell-quantity windows through this dispatch, at their disc-parsed rects. The
+painters for windows that no host **opens** yet - 5, 6, 7, 24, 25, 31, 36, 41,
+46 - stay unreached by a screen rather than by a mechanism; each one's
+remaining blocker is recorded per builder in
+`scripts/ci/ui-host-drift-waivers.toml`.
 
 Three rules the block encodes are worth naming on their own:
 

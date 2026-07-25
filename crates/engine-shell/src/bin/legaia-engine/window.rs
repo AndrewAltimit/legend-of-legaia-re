@@ -799,6 +799,8 @@ mod record;
 mod run;
 #[path = "window/save_select_helpers.rs"]
 mod save_select_helpers;
+#[path = "window/shop_windows.rs"]
+mod shop_windows;
 #[path = "window/str_player.rs"]
 mod str_player;
 #[path = "window/title_save_draws.rs"]

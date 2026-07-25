@@ -57,13 +57,18 @@
 //!
 //! # NOT WIRED
 //!
-//! Neither host opens these windows. The engine's equip flow
-//! (`legaia_engine_core::equip_session`) previews a candidate through
-//! `compute_battle_stats` and renders it with the engine's own equipment
-//! screen; it has neither the retail eight-word block nor the window-25 /
-//! window-41 containers to draw into, and `EquipSession` exposes no
-//! party-wide preview at all (it is single-character by construction).
-//! Wiring needs the equip screen rebuilt on the retail window set first.
+//! `crate::ui_menu_window_dispatch` resolves both descriptors to these
+//! painters, so the dispatch half is no longer what is missing. What is
+//! missing is a host screen that **opens** windows 25 / 41. The engine's
+//! equip flow (`legaia_engine_core::equip_session`) draws the capture-pinned
+//! pause equip window set (ids 2 / 21 / 22 / 23), which does not include
+//! either of these - window 25's rect `(14, 40, 144, 52)` overlaps the party
+//! window 21 it would have to replace - and `EquipSession` exposes no
+//! party-wide preview at all (it is single-character by construction), which
+//! is what window 41 prints. Both renderers sit in the shop-family band and
+//! read the same staged-id word `DAT_801E46B0` the shop panels use, so the
+//! screen that opens them is most likely the equipment-purchase path; that
+//! flow is not ported.
 
 use crate::{TextDraw, text_draws_for};
 

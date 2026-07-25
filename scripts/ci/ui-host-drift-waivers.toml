@@ -185,68 +185,103 @@ wiring gap.
 
 [[waiver]]
 builder = "title_tab_draws_for"
-kind = "orphan"
+kind = "web_missing"
 reason = """
-Menu-overlay window-descriptor content painter (window id 43,
-`FUN_801DCFE4`), one of ten in `ui_menu_window_painters`. The descriptor
-table names a content renderer per window and both hosts currently draw only
-the screens whose windows they already model (field / status / spell /
-equipment / inventory). Routing these in means the host walking the disc
-window table and dispatching on `renderer_va` instead of hard-coding a screen
-- a menu-host change, not a draw-call one. The geometry half is unit-tested
-against the disc rects for its window id.
+Native draws it. The `renderer_va` dispatch
+(`engine-ui::ui_menu_window_dispatch`) resolves all six plain-title-tab
+renderers - the five pause tabs `FUN_801DCA0C` / `CA50` / `CA94` / `CAD8` /
+`CB1C` and window 43's `FUN_801DCFE4`, which are the same 17 instructions
+with a different string pointer - to this one painter, and
+`window/menu_draws.rs::menu_tab_title_draws` asks the descriptor which
+renderer it names instead of trusting the id. So every pause-screen tab the
+native window draws now goes through this painter at its disc-parsed rect.
+
+The browser play page draws its tabs through `tab_label_draws`, the pen-only
+alias that delegates here, and has no window-table walk to dispatch from:
+`crates/web-viewer/src` never parses `menu_windows`. Closing this is the web
+half of the same dispatch - the page needs the parsed table plus the
+descriptor lookup, not new geometry.
 """
 
 [[waiver]]
 builder = "record_title_tab_draws_for"
-kind = "orphan"
+kind = "web_missing"
 reason = """
-Window id 33 (`FUN_801DCF14`): the same one-line tab, but its text lives
-behind a variable-length prefix in the live `DAT_8007B450` record. Gated on
-the same `renderer_va` dispatch as `title_tab_draws_for`, plus a host that
-surfaces that record - `title_record_text_offset` is the offset arithmetic it
-would need.
+Native draws it as the shop's **vendor-name plate** (window 33,
+`FUN_801DCF14`), dispatched on `renderer_va` in `window/shop_windows.rs`.
+The text resolves exactly as retail's does: `_DAT_8007B450` points at the
+armed op-`0x49` opcode's sub-op byte, the renderer starts the string at
+`record + record[2] + 3`, and for a shop record (`[count][count x id][name]`)
+that lands one past the last item id - the trailing ASCII name
+`legaia_asset::shop_stock` decodes. The host recovers it by matching the live
+session's stock against `World::scene_shops`.
+
+The browser play page has no shop host: nothing in `crates/web-viewer/src`
+opens a `ShopSession` or drains `take_pending_field_shop`, so there is no
+vendor for a plate to name.
 """
 
 [[waiver]]
 builder = "counter_panel_draws_for"
-kind = "orphan"
+kind = "web_missing"
 reason = """
-Windows 32 and 45 (`FUN_801DCF84` / `FUN_801DD028`): pictogram plus an
-eight-digit right-aligned counter. Both hosts draw their own money readout
-inside the field-menu corner box rather than opening these standalone counter
-windows, so nothing dispatches to them yet. Same `renderer_va` gate as the
-rest of the block.
+Native draws it as the shop's **purse** (window 32, `FUN_801DCF84`), at the
+disc-parsed rect, in `window/shop_windows.rs`. Both the pictogram id and
+which live total the digits print come out of the dispatch
+(`CounterSource`), because retail's two counter renderers are one routine
+with two literals changed: window 32 reads party gold `_DAT_8008459C`
+(engine `World::money`), window 45 the casino coin bank `_DAT_800845A4`
+(engine `World::casino_coins`). The engine shop panel drops its own gold
+footer whenever this window paints, so the readout is not doubled.
+
+Window 45 stays unopened on both hosts - its content is pinned but the screen
+that opens it is not.
+
+The browser play page has no shop host to hang the purse off (see
+`record_title_tab_draws_for`).
 """
 
 [[waiver]]
 builder = "char_prompt_draws_for"
 kind = "orphan"
 reason = """
-Window id 7 (`FUN_801DCCB4`): a one-line confirm prompt with one character
-substituted out of the live `0x80084140` record block. Neither host opens the
-confirm window that owns it - the save/load confirm they do draw comes from
-`ui_title_save`, which is a different window family. Gated on the same
-`renderer_va` dispatch.
+Window id 7 (`FUN_801DCCB4`). The `renderer_va` dispatch resolves it, so that
+is no longer the blocker; the blocker is content plus a screen. The prompt is
+a scratch string at `0x801E46E4` whose byte `+1` retail overwrites with
+`record[0x13D + DAT_8007BB78]` - the disassembly scales `DAT_8007BB70` by the
+`0x414` character-record stride and adds `DAT_8007BB78` as a plain byte
+offset off the `0x80084708` record base. No host knows what that field holds
+(it is not the name, whose field is `+0x2A7`), and which flow opens window 7
+is unknown: the save/load confirm both hosts draw is `ui_title_save`, a
+different window family.
 """
 
 [[waiver]]
 builder = "amount_prompt_draws_for"
 kind = "orphan"
 reason = """
-Window id 31 (`FUN_801DCE20`): heading, wide number field, trailing unit
-label, corner cursor. The shop and inn flows both hosts run draw their own
-amount lines, so this window is never opened. Same `renderer_va` gate.
+Window id 31 (`FUN_801DCE20`): heading, wide number field in the accent pen,
+trailing unit label, corner cursor. Dispatch-resolved; what is missing is the
+number. The renderer prints `_DAT_800845B4`, the **Point Card** counter the
+retail buy handler credits before the gold debit (see
+`docs/subsystems/shop.md`), and the engine models no Point Card at all -
+`World` has `money` and `casino_coins` and nothing else this window could be
+printing. Wiring it first means adding that counter to the shop session, an
+`engine-core` change.
 """
 
 [[waiver]]
 builder = "count_panel_draws_for"
 kind = "orphan"
 reason = """
-Window id 24 (`FUN_801DCC20`): a two-digit count over a reserved sub-rect,
-guarded on a live selection index. The inventory panels both hosts draw carry
-their own count column, so this window is not opened. Same `renderer_va`
-gate.
+Window id 24 (`FUN_801DCC20`): a two-digit count in the accent pen over a
+reserved sub-rect, guarded on the staged item id. Dispatch-resolved. Two
+things still block it. The painter is only the **delta**: the renderer's
+gated body opens with `jal 0x801D0F1C`, the shared item-info panel window
+17's `FUN_801DCB60` also calls, so a host adopting window 24 draws the info
+panel into the same rect first. And window 24's rect `(14, 108, 144, 40)` is
+byte-identical to window 17's, so the two are the same box in different
+screens - which screen opens 24 rather than 17 is unknown.
 """
 
 [[waiver]]
@@ -254,10 +289,11 @@ builder = "choice_panel_draws_for"
 kind = "orphan"
 reason = """
 Window id 46 (`FUN_801D603C`): one heading over a two-row choice group whose
-markers come from the `DAT_801E46D0` branch chain. The options screen both
-hosts draw is `options_screen_draws_for`, an engine-styled list, not this
-window pair; adopting these would replace that screen's layout, which is a
-menu-host decision. The branch chain itself is unit-tested here.
+markers come from the `DAT_801E46D0` branch chain. Dispatch-resolved, so what
+remains is a host decision rather than a mechanism: the options screen both
+hosts draw is `options_screen_draws_for`, an engine-styled list, and adopting
+this window pair replaces that screen's layout wholesale. The branch chain
+itself is unit-tested here.
 """
 
 [[waiver]]
@@ -266,7 +302,7 @@ kind = "orphan"
 reason = """
 Window id 5 (`FUN_801D61B0`): the two-heading sibling of
 `choice_panel_draws_for`, sharing its marker branch chain and differing only
-in the marker column and first-row offset. Gated on the same host decision.
+in the marker column and first-row offset. Same host decision.
 """
 
 [[waiver]]
@@ -274,22 +310,28 @@ builder = "label_list_draws_for"
 kind = "orphan"
 reason = """
 Window id 6 (`FUN_801D6360`): six stacked labels with the only cursor in this
-block anchored to the window *extent* rather than its origin. No host opens
-window 6; the pause command list they do draw is `field_menu_draws_for`,
-whose geometry comes from window 50. Same `renderer_va` gate.
+block anchored to the window *extent* rather than its origin.
+Dispatch-resolved; no host opens window 6 and which flow does is unknown. The
+pause command list both hosts draw is `field_menu_draws_for`, whose geometry
+comes from window 50, so this is not that list under another id.
 """
 
 [[waiver]]
 builder = "item_description_draws_for"
-kind = "orphan"
+kind = "web_missing"
 reason = """
-Window id 34 (`FUN_801D4A80`): item name, owned count and the description
-line, with accessories routed through the passive table instead of the item's
-own description word. Both hosts draw their inventory description from
-`inventory_panel_draws_for`, which owns its own layout; adopting this window
-means the menu host dispatching on the disc table's `renderer_va` rather than
-hard-coding a screen. The description-routing rule itself
-(`description_source`) is unit-tested here and needs no host to be correct.
+Native draws it as the shop's **item-info panel** (window 34,
+`FUN_801D4A80`), dispatched on `renderer_va` in `window/shop_windows.rs`:
+the hovered buy / sell row's name and owned count in the accent pen, the
+description below it, and nothing at all when no row is staged - retail's
+`DAT_801E46B0 > 0` gate. Accessories route through the passive table
+(`description_source`; the host resolves the same chain via
+`MenuTextTables::item_passive_lines`, which applies the `>= 0x40` sentinel
+bound).
+
+The browser play page has no shop host (see `record_title_tab_draws_for`),
+and its own inventory description comes from `inventory_panel_draws_for` at
+that screen's own layout.
 """
 
 [[waiver]]
@@ -297,35 +339,46 @@ builder = "equip_target_list_draws_for"
 kind = "orphan"
 reason = """
 Window id 36 (`FUN_801D56FC`): the equip-target list, whose rows grey out via
-the character mask at `0x80074F68 + id*8 + 6`. The equip screen both hosts
-draw picks its target from the party panel rather than opening this window.
-Same `renderer_va` dispatch gate as the rest of `ui_menu_window_painters`;
-the mask rule (`equip_row_enabled`) is unit-tested independently.
+the character mask at `0x80074F68 + id*8 + 6`. Dispatch-resolved. The screen
+is the blocker: `docs/reference/functions/menus.md` puts window 36 under the
+party-target panel driver `FUN_801D8308`, and neither host ports that panel -
+the equip screen they do draw picks its target from the party window. Wiring
+it into the shop's buy flow instead would invent a screen; retail's shop
+open script does not list window 36. The mask rule (`equip_row_enabled`) is
+unit-tested independently.
 """
 
 [[waiver]]
 builder = "sell_quantity_draws_for"
-kind = "orphan"
+kind = "web_missing"
 reason = """
-Window id 37 (`FUN_801D5944`): the sell quantity panel and its right-packed
-gold total. The shop session both hosts run draws its own quantity line, so
-this window is never opened. The two rules it carries - the halved sell total
-and the four-step digit ladder - are unit-tested here and are what a host
-adopting the window would need.
+Native draws it as the shop's **sell quantity panel** (window 37,
+`FUN_801D5944`), dispatched on `renderer_va` in `window/shop_windows.rs`
+whenever the session is sizing a stack to sell. Quantity, held count and the
+halved gold total come from the live `ShopSession`; the unit price comes from
+`World::item_shop_data`, which is the item record's own `+2` word - what
+retail reads - rather than the merchant's stock entry, so a bag item the shop
+does not sell still prices correctly. The digit ladder still sizes the field
+off the unit price.
+
+The browser play page has no shop host (see `record_title_tab_draws_for`).
 """
 
 [[waiver]]
 builder = "compare_panel_draws_for"
 kind = "orphan"
 reason = """
-The equip screen's two stat-compare window painters (menu-overlay window
-descriptors 25 / `FUN_801D1290` and 41 / `FUN_801D4C28`), rendered from a
-shared field list. Neither host opens those windows: the engine's equip flow
-is `engine-core::equip_session`, which previews one character through
-`compute_battle_stats` and draws its own screen, so nothing produces the
-retail eight-word stat block (`0x801EF080` / its trial mirror `0x801EF0A0`)
-these panels compare, and nothing produces a party-wide preview at all -
-`EquipSession` is single-character by construction. Wiring is a host job that
-first has to rebuild the equip screen on the retail window set; the layout
-half lands now so the geometry is pinned while the disassembly is fresh.
+The two stat-compare window painters (menu-overlay window descriptors 25 /
+`FUN_801D1290` and 41 / `FUN_801D4C28`), rendered from a shared field list.
+The `renderer_va` dispatch resolves both, so the mechanism is no longer the
+gap - the gap is a host screen that opens those windows. The engine's equip
+flow (`engine-core::equip_session`) draws the capture-pinned pause equip
+window set (ids 2 / 21 / 22 / 23), which contains neither: window 25's rect
+`(14, 40, 144, 52)` overlaps the party window 21 it would have to displace,
+and `EquipSession` produces no party-wide preview at all (single-character by
+construction), which is exactly what window 41 prints. Both renderers sit in
+the shop-family VA band and read the same staged-id word `DAT_801E46B0` the
+shop panels use, so the screen that opens them is most likely the
+equipment-purchase path - which is not ported. Wiring needs that flow plus a
+party-wide preview in `engine-core`, not a draw call.
 """

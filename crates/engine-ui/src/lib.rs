@@ -15,8 +15,13 @@
 //!   the consumer that renders it.
 //! * [`ui_menu`] - pause-menu field/status/spell/inventory/equipment panels,
 //!   options + key-rebind, name entry, game-over, tactical-arts editor.
-//! * `ui_menu_window_painters_large` - the equip screen's two stat-compare
-//!   window painters (descriptor ids 25 and 41).
+//! * [`ui_menu_window_painters`] - content painters for the menu-overlay
+//!   window-descriptor table's prompt / counter / tab / shop-panel block, and
+//!   `ui_menu_window_painters_large` for the equip screen's two stat-compare
+//!   painters (descriptor ids 25 and 41).
+//! * [`ui_menu_window_dispatch`] - which painter draws a given descriptor,
+//!   keyed on its `renderer_va` the way the retail window walker keys on the
+//!   live window's `+0x28`.
 //! * [`ui_title_save`] - title menu, 9-slice window chrome, save-select,
 //!   save-slot grid + info panel, "Now checking" dialog.
 //!
@@ -34,6 +39,7 @@ pub mod battle_name_banner;
 pub mod other_game_hud;
 mod ui_fishing;
 mod ui_menu;
+pub mod ui_menu_window_dispatch;
 pub mod ui_menu_window_painters;
 mod ui_menu_window_painters_large;
 mod ui_overlay;
@@ -41,6 +47,7 @@ mod ui_title_save;
 
 pub use ui_fishing::*;
 pub use ui_menu::*;
+pub use ui_menu_window_dispatch::*;
 pub use ui_menu_window_painters_large::*;
 pub use ui_overlay::*;
 pub use ui_title_save::*;

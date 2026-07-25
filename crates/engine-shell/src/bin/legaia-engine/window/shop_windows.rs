@@ -1,0 +1,300 @@
+//! The shop's **retail descriptor windows**, painted through the
+//! `renderer_va` dispatch instead of a hard-coded screen.
+//!
+//! Retail's shop is not one panel: the open script the window-script runner
+//! `FUN_801D6628` interprets slides in five separate windows, and each one's
+//! content comes from the routine its descriptor names (see
+//! `docs/subsystems/shop.md` - the script's descriptor words are byte-verified
+//! by the patcher's seru-trading vendor, which edits exactly those seams).
+//! Three of the five have painters in `engine-ui`, plus the sell flow's own
+//! quantity panel:
+//!
+//! | Id | Renderer | Content this host feeds it |
+//! |---|---|---|
+//! | 33 (`0x21`) | `FUN_801DCF14` | the vendor plate - the scene MAN shop record's trailing name |
+//! | 32 (`0x20`) | `FUN_801DCF84` | the purse - `World::money` (retail `_DAT_8008459C`) |
+//! | 34 (`0x22`) | `FUN_801D4A80` | the hovered item's name / owned count / description |
+//! | 37 (`0x25`) | `FUN_801D5944` | the sell quantity, held count and halved gold total |
+//!
+//! The remaining two are the Buy / Sell / Quit picker (id 42, `FUN_801D4868`,
+//! whose rows + ink are `engine-core::shop::shop_root_command_rows`) and the
+//! renderer-less list container (id 40), whose content is the host's list.
+//!
+//! Each window resolves through
+//! [`legaia_engine_render::painter_at`], so an id whose descriptor names a
+//! different renderer is skipped rather than mis-drawn: the id is the lookup
+//! key and the renderer is the authority.
+//!
+//! ## What is a stand-in
+//!
+//! The painters also return pictogram + cursor **sprite** requests (retail
+//! `FUN_8002C488` / `FUN_8002B994` UI-icon-atlas draws). The atlas page
+//! holding the currency pictograms is not uploaded yet, so this pass renders
+//! them as the ASCII stand-ins the rest of the menu UI uses while an atlas
+//! page is missing, and drops nothing silently.
+
+use super::*;
+
+use legaia_engine_core::shop::ShopSession;
+use legaia_engine_render::MenuWindowPainter;
+use legaia_engine_render::ui_menu_window_painters::{
+    counter_panel_draws_for, item_description_draws_for, record_title_tab_draws_for,
+    sell_quantity_draws_for,
+};
+
+/// Vendor-name plate (`0x21`): the record-sourced title tab.
+const WIN_VENDOR_PLATE: usize = 33;
+/// Purse (`0x20`): the party-gold counter.
+const WIN_PURSE: usize = 32;
+/// Item info (`0x22`): name + owned count + description.
+const WIN_ITEM_INFO: usize = 34;
+/// Sell quantity (`0x25`): quantity, held count, halved total.
+const WIN_SELL_QUANTITY: usize = 37;
+
+impl PlayWindowApp {
+    /// The live shop's vendor name.
+    ///
+    /// Retail's window 33 reads it out of the armed op-`0x49` record:
+    /// `_DAT_8007B450` points at the opcode's **sub-op byte** (opcode `+1`,
+    /// pinned in `docs/subsystems/boot.md` and `tile-board.md`), and
+    /// `FUN_801DCF14` starts the string at `record + record[2] + 3`. With the
+    /// shop record's payload `[count][count x id][name\0]`, `record[2]` is
+    /// `count`, so the string lands exactly one past the last item id - the
+    /// trailing ASCII name `legaia_asset::shop_stock` decodes.
+    ///
+    /// The engine's `ShopSession` keeps the priced stock but not that name, so
+    /// the host recovers it by matching the session's stock against the
+    /// scene's decoded shops (`World::scene_shops`); a scene with one merchant
+    /// resolves on the first entry.
+    ///
+    /// REF: FUN_801DCF14
+    fn shop_vendor_name(&self, shop: &ShopSession) -> Option<&str> {
+        let shops = &self.session.host.world.scene_shops;
+        shops
+            .iter()
+            .find(|s| {
+                s.inventory.items.len() == shop.inventory.items.len()
+                    && s.inventory
+                        .items
+                        .iter()
+                        .zip(shop.inventory.items.iter())
+                        .all(|(a, b)| a.item_id == b.item_id)
+            })
+            .or_else(|| shops.first().filter(|_| shops.len() == 1))
+            .map(|s| s.name.as_str())
+            .filter(|n| !n.is_empty())
+    }
+
+    /// The item the shop's staged-id word would hold: the hovered row while a
+    /// list has focus, the pending item once a quantity / confirm phase owns
+    /// the flow.
+    ///
+    /// Retail's `DAT_801E46B0` is a *positive* item id, and every painter in
+    /// this family draws nothing when it is not - which is why this returns
+    /// `Option` rather than defaulting to id 0.
+    fn shop_staged_item(
+        &self,
+        shop: &ShopSession,
+        state: Option<MenuState>,
+        cursor: usize,
+        bag: &[(u8, u8)],
+    ) -> Option<u8> {
+        match state {
+            Some(MenuState::ShopBuy) => shop.inventory.items.get(cursor).map(|i| i.item_id),
+            Some(MenuState::ShopSell) => bag.get(cursor).map(|(id, _)| *id),
+            Some(MenuState::ShopQuantity) | Some(MenuState::ShopConfirm) => shop.pending_item_id,
+            _ => None,
+        }
+        .filter(|id| *id != 0)
+    }
+
+    /// Paint the shop's retail descriptor windows for the current phase.
+    ///
+    /// Empty when the menu overlay's window table did not parse (no disc):
+    /// these windows exist only at their disc-parsed rects, and the engine's
+    /// own shop panel already carries the interactive list.
+    pub(super) fn shop_window_draws(
+        &self,
+        shop: &ShopSession,
+        state: Option<MenuState>,
+        cursor: usize,
+    ) -> Vec<TextDraw> {
+        let Some(table) = self.menu_window_table.as_ref() else {
+            return Vec::new();
+        };
+        let world = &self.session.host.world;
+        let bag = MenuRuntime::inventory_items(world);
+        let mut out = Vec::new();
+
+        // Window 33 - the vendor plate.
+        if let (Some(name), Some((d, _))) = (
+            self.shop_vendor_name(shop),
+            legaia_engine_render::painter_at(
+                table,
+                WIN_VENDOR_PLATE,
+                MenuWindowPainter::RecordTitleTab,
+            ),
+        ) {
+            out.extend(record_title_tab_draws_for(
+                &self.font,
+                legaia_engine_render::painter_rect(d),
+                name,
+            ));
+        }
+
+        // Window 32 - the purse. The pictogram id + which total the digits
+        // print both come out of the dispatch, because retail's two counter
+        // renderers differ in exactly those two literals.
+        let purse = table.window(WIN_PURSE);
+        if let (Some(d), Some(MenuWindowPainter::Counter { pictogram, source })) =
+            (purse, purse.and_then(legaia_engine_render::painter_for))
+        {
+            let value = match source {
+                legaia_engine_render::CounterSource::PartyGold => world.money.max(0) as u64,
+                legaia_engine_render::CounterSource::CasinoCoins => world.casino_coins as u64,
+            };
+            let rect = legaia_engine_render::painter_rect(d);
+            let (digits, pic) = counter_panel_draws_for(&self.font, rect, pictogram, value);
+            out.extend(digits);
+            out.extend(self.painter_pictogram_stand_in(pic));
+        }
+
+        // Window 34 - the hovered item's info panel.
+        let staged = self.shop_staged_item(shop, state, cursor, &bag);
+        if let Some((d, _)) = legaia_engine_render::painter_at(
+            table,
+            WIN_ITEM_INFO,
+            MenuWindowPainter::ItemDescription,
+        ) {
+            let id = staged.unwrap_or(0);
+            let name = self.shop_item_name(id);
+            let owned = bag
+                .iter()
+                .find(|(i, _)| *i == id)
+                .map(|(_, q)| *q)
+                .unwrap_or(0);
+            out.extend(item_description_draws_for(
+                &self.font,
+                legaia_engine_render::painter_rect(d),
+                staged.is_some(),
+                &name,
+                owned,
+                &self.shop_item_description(id),
+            ));
+        }
+
+        // Window 37 - the sell quantity panel, while the sell flow is sizing
+        // a stack.
+        let selling = matches!(state, Some(MenuState::ShopQuantity)) && !shop.pending_is_buying;
+        if let Some((d, _)) = legaia_engine_render::painter_at(
+            table,
+            WIN_SELL_QUANTITY,
+            MenuWindowPainter::SellQuantity,
+        ) {
+            let id = staged.unwrap_or(0);
+            let held = bag
+                .iter()
+                .find(|(i, _)| *i == id)
+                .map(|(_, q)| u32::from(*q))
+                .unwrap_or(0);
+            // Retail reads the item record's own `+2` buy price and halves
+            // the product; the shop's stock list is not consulted, so a bag
+            // item the merchant does not stock still prices correctly.
+            let unit_price = world
+                .item_shop_data
+                .as_ref()
+                .map(|d| u32::from(d.price(id)))
+                .unwrap_or(0);
+            let rect = legaia_engine_render::painter_rect(d);
+            let (text, pic, cur) = sell_quantity_draws_for(
+                &self.font,
+                rect,
+                selling && staged.is_some(),
+                SELL_QUANTITY_HEADING,
+                u32::from(shop.pending_quantity),
+                held,
+                unit_price,
+            );
+            out.extend(text);
+            if let Some(pic) = pic {
+                out.extend(self.painter_pictogram_stand_in(pic));
+            }
+            if let Some(cur) = cur {
+                out.extend(self.painter_cursor_stand_in(cur));
+            }
+        }
+        out
+    }
+
+    /// Item display name, falling back to the id when the disc text tables
+    /// are unavailable.
+    fn shop_item_name(&self, id: u8) -> String {
+        self.session
+            .host
+            .world
+            .menu_text
+            .as_ref()
+            .and_then(|t| t.item_name(id))
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("item {id:02}"))
+    }
+
+    /// The description line window 34 draws.
+    ///
+    /// `FUN_801D4A80` routes an **accessory** (item record kind byte `2`)
+    /// through the passive table instead of the item's own description word,
+    /// and draws nothing at all when that passive index is the `>= 0x40`
+    /// sentinel. `MenuTextTables::item_passive_lines` resolves the same chain
+    /// (`legaia_asset::accessory_passive`, which applies the sentinel bound),
+    /// so a `Some` there is the accessory arm and a `None` is the item arm.
+    fn shop_item_description(&self, id: u8) -> String {
+        let Some(text) = self.session.host.world.menu_text.as_ref() else {
+            return String::new();
+        };
+        if let Some((_, desc)) = text.item_passive_lines(id) {
+            return desc;
+        }
+        text.item_desc(id).unwrap_or_default().to_string()
+    }
+
+    /// ASCII stand-in for a painter's pictogram request until the UI-icon
+    /// atlas page carrying the currency glyphs is uploaded.
+    fn painter_pictogram_stand_in(
+        &self,
+        pic: legaia_engine_render::ui_menu_window_painters::PainterPictogram,
+    ) -> Vec<TextDraw> {
+        let glyph = match pic.id {
+            legaia_engine_render::COUNTER_PICTOGRAM_GOLD => "G",
+            legaia_engine_render::COUNTER_PICTOGRAM_COINS => "C",
+            _ => "*",
+        };
+        legaia_engine_render::text_draws_for(
+            &self.font.layout_ascii(glyph),
+            (pic.x, pic.y),
+            legaia_engine_render::MENU_TEXT_GOLD,
+        )
+    }
+
+    /// ASCII stand-in for a painter's cursor / marker sprite request.
+    fn painter_cursor_stand_in(
+        &self,
+        sprite: legaia_engine_render::ui_menu_window_painters::PainterSprite,
+    ) -> Vec<TextDraw> {
+        if self.save_menu.is_some() {
+            // The sprite pass owns the hand cursor whenever the atlas is
+            // resident; drawing both would double it.
+            return Vec::new();
+        }
+        legaia_engine_render::text_draws_for(
+            &self.font.layout_ascii(">"),
+            (sprite.x, sprite.y),
+            legaia_engine_render::MENU_TEXT_GOLD,
+        )
+    }
+}
+
+/// Heading window 37 draws above its quantity row. Retail's own string is a
+/// menu-overlay rodata literal (`0x801CEC38`); the port stages an
+/// engine-authored line in the same slot so the translation layer owns the
+/// text.
+const SELL_QUANTITY_HEADING: &str = "How many?";
