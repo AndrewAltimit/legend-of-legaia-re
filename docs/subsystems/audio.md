@@ -223,6 +223,63 @@ adds the step and bumps both sides (`addu` at `0x8006331C`, `addiu …,1` at
 `0x8006332C` / `0x80063340`), `FUN_8006352C` subtracts it and lowers both
 (`subu` at `0x8006363C`, `addiu …,-1` at `0x8006368C` / `0x80063698`).
 
+### The calc tier's two shared conventions
+
+Everything `SsSeqCalc` fans out to is ported as `legaia_engine_audio::seq_calc`
+(`NOT WIRED` - [`Sequencer`](#engine-audio-model---sequencer-port) is the engine's
+replacement for the tier, and these kernels are the reference it has to agree
+with). Two conventions recur across the whole family and are worth stating once.
+
+**The flag word is re-read from memory before every test.** `FUN_80062F98` does
+not snapshot `+0x98`; it reloads it ahead of each `andi`. So a handler that
+clears its own bit is observed immediately by the next test, and the dispatch is
+a sequence of decisions rather than one decoded mask. Two consequences fall out
+of that directly. The bit-`0x4` arm runs `SsSeqRewind` and then **zeroes the
+whole word**, so the `0x200` "finished" flag `FUN_80063AA8` sets on a track's
+last repeat - alongside `0x4` - never survives into the next frame. And because
+`0x40` and `0x80` both dispatch to the tempo slide, a tempo tick that does *not*
+settle leaves both bits standing and is therefore called **twice** in one frame,
+while one that settles clears both and is called once.
+
+**The sign of a step field selects the rate mode, not the direction.** Both the
+volume slide (`+0x4C`) and the tempo slide (`+0x4E`) read a signed step and
+branch on `blez`. A **positive** step means "move one unit every `step` ticks" -
+the tick is gated on `remaining % step == 0` and skips entirely otherwise. A
+**non-positive** step means "move `|step|` units every tick", clamped at the
+target. Direction is carried by the function (`FUN_8006320C` up toward
+`(0x7F, 0x7F)`, `FUN_8006352C` down toward `(0, 0)`) or by the target
+(`+0xAC` for tempo), never by the step's sign. A `step` of exactly `0` lands in
+the second arm and moves nothing.
+
+### Where wall-clock tempo becomes an integer tick step
+
+`FUN_800649B0`'s tail is the single place the sequence's tempo turns into the
+per-frame budget the delta-time pump spends:
+
+```text
++0x54 = (+0x50 * +0x94 * 10) / (*0x801CD2BC * 60)      ; unsigned divide
+if ((s16) +0x54 <= 0) +0x54 = 1
+```
+
+`+0x50` is the sequence resolution (ticks per quarter), `+0x94` the current
+tempo, and `0x801CD2BC` a runtime divisor. The floor at `1` is what keeps a very
+slow tempo from stalling the pump outright. The multiply is signed on `+0x50` but
+the divide is `divu`, so a negative tempo yields a huge quotient rather than a
+negative one, and the `i16` truncation is what the floor then catches.
+
+The recompute is skipped entirely on the sub-step early-out (a positive `+0x4E`
+off its boundary returns before reaching the tail), so the budget only moves on
+frames the tempo itself moved.
+
+The shape `(ticks/quarter × beats/minute × 10) / (divisor × 60)` reads as tenths
+of a tick per frame with `divisor` the frame rate, which would make `+0x54` a
+fixed-point ×10 quantity. That reading is an **inference from the arithmetic
+alone** - `0x801CD2BC` has not been read from a live capture - so the port takes
+the divisor as a parameter and bakes no `60` in. This matters because the engine
+`Sequencer` clocks in exact integer SPU samples: a wrong constant here is a
+tempo error, and a tempo error is audible while remaining perfectly
+self-consistent under any test written against the same wrong constant.
+
 **Correction** (label ≠ role): `FUN_8006352C` / `FUN_8006320C` were tagged
 elsewhere as "fixed-point div" pitch kernels. Neither is a pitch kernel - but the
 earlier stated reason, that they carry no division, is itself wrong. Each carries

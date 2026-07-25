@@ -1,4 +1,9 @@
-# Lane 6 handoff - the six SCUS-band worklist rows
+# Lane 6 handoff
+
+Two tasks: the six SCUS-band worklist rows, then the SsAPI sequencer cluster.
+The sequencer half is at the bottom.
+
+## Part 1 - the six SCUS-band worklist rows
 
 All six are **game logic**, not PsyQ / BIOS / libgte vendor infrastructure. None
 belongs in `scripts/ci/port-catalog-ignore.toml`. `0x80056208` is the one worth
@@ -162,3 +167,98 @@ C at face value would have produced a port that copies a length it never read.
 This is the dropped-register-argument artifact from
 `docs/tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims`,
 caught only by reading the disassembly.
+
+## Part 2 - the SsAPI per-frame sequencer cluster
+
+### Which five rows these are
+
+The wave brief said "five are the SsAPI per-frame sequencer cluster" without
+naming them. They are the members of Lane 1's new calc-tier section that were
+**already documented before** Lane 1's dump pass - i.e. the ones cited in
+`docs/subsystems/audio.md`'s per-frame call-graph paragraph at the wave base:
+
+`80062F98`, `8006320C`, `8006352C`, `80063CEC`, `80063AA8`.
+
+The other eight addresses Lane 1 dumped in the same pass (`800639A0`, `80063974`,
+`80064090`, `8006418C`, `800638D8`, `800649B0`, `800648F0`, `8006497C`) were
+newly documented by Lane 1 itself, so they are not worklist rows - though
+`800649B0` is ported here anyway, because it is the tempo kernel and it matters
+more than any of the five.
+
+### Port-vs-scope verdict: port, do not ignore
+
+**None of this cluster should go to the ignore file.** The reasoning, since the
+address band is genuinely PsyQ libsnd and the reflex answer would be "vendor":
+
+The catalogue already ignores the tier *below* this one - `80066308`'s ignore
+entry reads "Sits entirely below the SsAPI surface ... engine-audio's
+sequencer.rs is the clean-room replacement." That is the right line, and it is
+drawn at the **SsAPI surface**. `FUN_80062F98` *is* the surface (`SsSeqCalc`).
+Everything at this tier changes what a player hears:
+
+- `800649B0` is the only place wall-clock tempo becomes an integer tick step;
+- `8006320C` / `8006352C` are audible volume envelopes;
+- `80063AA8` decides whether and where BGM loops;
+- `80062F98`'s dispatch order and its re-read semantics decide which of those
+  run, and how many times.
+
+An engine that gets any of them wrong is audibly wrong while staying internally
+consistent - the failure mode the `music_01` base-990 correction is a standing
+warning about. So they are ported as pure reference kernels rather than ignored,
+even though `sequencer.rs` remains the thing that actually drives playback.
+
+### Ported
+
+`crates/engine-audio/src/seq_calc.rs`, `NOT WIRED` (disclosed): `dispatch_channel`
+/ `seq_calc` (`80062F98`), `tempo_slide_tick` + `tick_budget` (`800649B0`),
+`volume_slide_tick` (`8006320C` / `8006352C`), `track_end` (`80063AA8`).
+31 unit tests.
+
+The `NOT WIRED` reason is specific: `Sequencer` is the engine's replacement for
+this tier and clocks on integer SPU samples, so wiring would mean `Sequencer`
+adopting the retail `0xB0`-byte channel record wholesale - a larger change than
+one lane. The kernels are pure functions over a `SeqChannel` precisely so a
+future retail-vs-engine divergence can be localised to one of them.
+
+### Where this stops
+
+**`FUN_80063CEC` (the SEQ event decoder) is not ported.** It dispatches the
+event's high nibble through five *installed* handler pointers, so a faithful port
+needs that handler table decoded first - a bigger surface than the four kernels
+here, and `sequencer.rs` already decodes the SEQ event stream independently. It
+is the obvious next pick-up in this cluster, and it is the only one of the five
+worklist rows left open.
+
+### Findings worth carrying
+
+1. **The flag word is re-read before every test.** `FUN_80062F98` reloads `+0x98`
+   from memory ahead of each `andi` rather than snapshotting it (`lw v0,0x0(s2)`
+   / `addu` / `lw v0,0x98(v0)` repeats before every single bit test). The Ghidra C
+   renders this as a plain sequence of `if`s on the same expression, which reads
+   as a decoded mask and hides the ordering dependency.
+2. **`FUN_800649B0` can run twice in one frame.** Bits `0x40` and `0x80` both
+   dispatch to it, and it clears *both* on its settling paths. So a tempo tick
+   that settles runs once; one that does not leaves both bits standing and runs a
+   second time in the same frame, burning `+0xA8` twice. Whether both bits are
+   ever set together is not determined here - it needs a capture.
+3. **The `0x200` "finished" flag cannot outlive its own frame.** `FUN_80063AA8`
+   sets `0x200` and `0x4` together on a track's last repeat; `FUN_80062F98`'s
+   bit-`0x4` arm runs later in that same frame and zeroes the whole flag word.
+   Anything reading `0x200` on a later frame is reading a bit that was already
+   wiped.
+4. **The step fields' sign selects rate mode, not direction.** `+0x4C` (volume)
+   and `+0x4E` (tempo) both branch on `blez`: positive = one unit every `step`
+   ticks (gated on `remaining % step == 0`), non-positive = `|step|` units per
+   tick with a clamp at the target. `0` lands in the second arm and moves
+   nothing. Direction comes from the function or the target, never the sign.
+5. **`FUN_80063AA8` clears bits `0x1`, `0x8`, `0x2`** - the literals are
+   `li a0,-0x2` (`~0x1`), `li a0,-0x9` (`~0x8`), `li a0,-0x3` (`~0x2`). `-0x2` is
+   `~0x1`, not `~0x2`; easy to misread as clearing `0x2` twice.
+
+### For Lane 2 (ignore file owner)
+
+The `80066308` ignore entry's rationale text says its "only non-libsnd input is
+the sequencer event already decoded by `8006320c`/`8006352c`". Those two are the
+**volume slides**, not event decoders - the stale label this lane's first task
+corrected in `audio.md`. The ignore *verdict* is unaffected; only the sentence is
+wrong. The event decoder it means is `FUN_80063CEC`.

@@ -25,6 +25,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 pub mod anim_cue;
 pub mod footstep;
 pub mod note_trace;
+pub mod seq_calc;
 pub mod seq_slots;
 pub mod sequencer;
 pub mod sfx;
@@ -39,6 +40,10 @@ pub use anim_cue::{
     AnimCueActor, AnimCueEmit, AnimCueSlot, AnimCueState, AnimCueWalk, walk_anim_cues,
 };
 pub use footstep::{AMBIENT_PERIOD_FRAMES, CadenceTick, FootstepCadence};
+pub use seq_calc::{
+    SeqCalcState, SeqCall, SeqChannel, SlideDir, SlideTick, TempoTick, TrackEnd, dispatch_channel,
+    seq_calc, tempo_slide_tick, tick_budget, track_end, volume_slide_tick,
+};
 pub use seq_slots::{SeqResourceSlot, SeqResourceTable};
 pub use sequencer::Sequencer;
 pub use sfx::{
