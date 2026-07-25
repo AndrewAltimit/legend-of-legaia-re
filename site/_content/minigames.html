@@ -180,6 +180,21 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 .dance-duel .dance-hud-canvas {
   pointer-events: none; image-rendering: pixelated; image-rendering: crisp-edges;
 }
+
+/* muscle 3D */
+/* Muscle Dome arena: WebGL battle scene below (player battle-form mesh vs a
+ * PROT 867 monster), 2D HUD/text overlay canvas on top - the same layering
+ * as the dance and Baka panels. */
+.muscle-duel {
+  position: relative; width: 100%; max-width: 640px; margin: 0.9rem auto;
+  aspect-ratio: 4 / 3; background: #0b0b10;
+  border: 1px solid var(--border); border-radius: 4px; overflow: hidden;
+}
+.muscle-duel canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.muscle-duel .muscle-hud-canvas { pointer-events: none; }
+.mg-card-glyph { font-size: 1.05rem; margin-right: 0.3rem; }
+/* end muscle 3D */
+
 .mg-psbtn { width: 1.05em; height: 1.05em; vertical-align: -0.22em; margin-right: 0.3em; }
 </style>
 <script src="js/rom-cache.js"></script>
@@ -193,6 +208,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 <script src="js/minigame-bgm.js"></script>
 <script src="js/minigame-baka.js"></script>
 <script src="js/minigame-dance.js"></script>
+<script src="js/minigame-muscle.js"></script>
 <script src="js/legaia-sfx.js"></script>
 -->
 
@@ -507,58 +523,81 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 
       <!-- ---------------- muscle dome ---------------- -->
       <section class="mg-panel" data-game="muscle">
-        <h3>Muscle Dome &mdash; card battle</h3>
+        <h3>Muscle Dome &mdash; the arena card battle</h3>
         <p class="mg-blurb">
-          A four-card hand under a <b>point budget</b>: commit the cards you can afford into your
-          fighter's action queue, confirm, and watch the round play out. Each committed card debits
-          your budget; the opponent fills its own queue greedily. The deal, the budget gate, the
-          <code>hp&nbsp;&times;&nbsp;0x6c&nbsp;/&nbsp;max</code> score readout and the win/lose
-          bookkeeping are the arena's own logic (<code>FUN_801d0748</code> /
-          <code>FUN_801d388c</code>) resident in the battle overlay (PROT&nbsp;0898) on your disc.
+          A real 3D turn fight: your battle-form fighter against one of the game's monsters, both
+          drawn and animated from your disc. Each round you commit a <b>four-card hand</b> of swing
+          commands under a <b>point budget seeded from your fighter's AGL</b>; confirm, and the
+          queued cards play out through the game's <em>actual battle engine</em> &mdash; the
+          per-move power table, the arts damage roll, the element-affinity matrix and the damage
+          finisher, all read off your image. The round banner, the between-round interval tally
+          and the spirit gauges track the fight exactly as the arena's own bookkeeping does.
         </p>
-        <div class="mg-verdict" id="muscle-verdict"></div>
-        <div class="mg-fighters">
-          <div class="mg-fighter">
-            <div class="mg-fname">You</div>
-            <div class="mg-bar"><span id="muscle-p0-hp" style="width:100%"></span></div>
-            <div id="muscle-p0-meta">&mdash;</div>
-          </div>
-          <div class="mg-fighter">
-            <div class="mg-fname">Opponent</div>
-            <div class="mg-bar mg-bar-foe"><span id="muscle-p1-hp" style="width:100%"></span></div>
-            <div id="muscle-p1-meta">&mdash;</div>
-          </div>
+        <div class="mg-row">
+          <label for="muscle-char"><strong>Fight as:</strong></label>
+          <select id="muscle-char" class="mg-select" style="min-width: 7rem;">
+            <option value="0" selected>Vahn</option>
+            <option value="1">Noa</option>
+            <option value="2">Gala</option>
+          </select>
+          <label for="muscle-level"><strong>at level</strong></label>
+          <input type="number" id="muscle-level" class="mg-select" style="min-width: 4.5rem;"
+                 min="1" max="99" value="30">
+          <label for="muscle-foe"><strong>vs</strong></label>
+          <select id="muscle-foe" class="mg-select"></select>
+          <button class="mg-btn mg-primary" type="button" id="muscle-restart">New contest</button>
         </div>
+        <div class="muscle-duel" id="muscle-duel">
+          <canvas id="muscle-gl" width="640" height="480"></canvas>
+          <canvas id="muscle-hud" class="muscle-hud-canvas" width="640" height="480"></canvas>
+        </div>
+        <div class="mg-verdict" id="muscle-verdict"></div>
         <p class="mg-controls">
-          <b>Commit cards, then Confirm.</b> Click a card (or press <kbd>1</kbd>&ndash;<kbd>4</kbd>)
-          to queue it while your budget covers its cost; <kbd>Space</kbd> confirms and resolves the
-          round; between rounds <kbd>Space</kbd> starts the next.
+          <b>Commit cards, then fight.</b> Click a card (or press <kbd>1</kbd>&ndash;<kbd>4</kbd>)
+          to queue it while your budget covers its cost; <kbd>Space</kbd> closes the selection and
+          the round <b>plays out in 3D</b> (Space again skips ahead). Between rounds the
+          <b>interval tally</b> shows the score readout and the spirit recovered &mdash;
+          <kbd>Space</kbd> starts the next round. Drag the arena to orbit, wheel to zoom.
         </p>
         <div class="mg-row" id="muscle-cards"></div>
         <div class="mg-row">
-          <button class="mg-btn mg-primary" type="button" id="muscle-confirm">Confirm / Next<span class="mg-key">SPACE</span></button>
-          <button class="mg-btn" type="button" id="muscle-restart">New contest</button>
+          <button class="mg-btn mg-primary" type="button" id="muscle-confirm">Fight / Next<span class="mg-key">SPACE</span></button>
         </div>
         <div class="mg-hud">
           <span>Round <b id="muscle-round">1</b></span>
           <span>Your budget <b id="muscle-budget">0</b></span>
           <span>Queued <b id="muscle-queue">0</b></span>
-          <span>Score <b id="muscle-score">0%</b> / <b id="muscle-score-foe">0%</b></span>
-          <span>Reward Seru spell <b id="muscle-reward">&mdash;</b></span>
+          <span>Score <b id="muscle-score">0</b> / <b id="muscle-score-foe">0</b> (of 108)</span>
+          <span>Reward <b id="muscle-reward">&mdash;</b></span>
         </div>
-        <div class="mg-note">
+        <div class="mg-note" id="muscle-note">
           <p>
-            <b>The dealt hand is your disc's.</b> The four command ids come from the deck table in
-            the battle overlay's rodata (PROT&nbsp;0898); each maps to a swing action.
+            <b>The fight is your disc's.</b> The four-card deal, the budget gate and the action
+            queue are the arena's own rules; each card resolves through the ported battle engine
+            &mdash; its power from the battle overlay's move-power table, the damage roll and
+            finisher from the shared battle formulas, the elemental nudge from the 8&times;8
+            affinity matrix. Your fighter's stats are the new-game template leveled through the
+            game's own growth curves (pick the level above), the card costs are your character's
+            own swing records, and the opponent fights with its monster record's boosted battle
+            stats &mdash; every number decoded from the image you loaded, in your browser.
           </p>
           <p>
-            <b>Fitted rather than traced:</b> the flat per-card cost (the browser has no player
-            battle file to read the per-command <code>+0x74</code> swing bytes from, so it uses the
-            native launcher's favored-cost fallback), the budget pools and HP, and the per-card
-            damage &mdash; a battle-path stand-in, the same <code>(atk&nbsp;-&nbsp;def)</code> the
-            native <code>play-window</code> uses, since the full battle-action playback is a host
-            concern. See <code>docs/subsystems/minigame-muscle-dome.md</code>.
+            <b>Fitted rather than traced:</b> the camera, fighter spacing and facing; the
+            plain-tile arena floor (the dome's battle-scene backdrop entry is not pinned, so no
+            backdrop art is invented); the HUD text layout and the interval-panel framing; the
+            card&rarr;swing-animation pairing (the true swing clips live in a side archive this
+            page doesn't decode); the opponent's greedy card AI (retail has no dome-specific AI
+            table); the jitter-free level growth (retail adds a zero-mean random spread); and the
+            awarded Seru. When the 3D bodies don't decode, the fight falls back to the text HUD
+            and says so.
           </p>
+        </div>
+        <div class="see-also">
+          <span class="see-also-label">Reference</span>
+          <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-muscle-dome.md">Muscle Dome internals</a>
+          <a href="subsystems/battle-formulas.html">Battle formulas</a>
+          <a href="formats/monster-animation.html">Monster animation</a>
+          <a href="formats/move-power.html">Move-power table</a>
         </div>
       </section>
     </div>
@@ -684,9 +723,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     <code>play-window</code> (dance <code>K</code>, fishing <code>L</code>, slot machine
     <code>O</code>, Baka Fighter <code>B</code>, Muscle Dome <code>M</code>), and
     <a href="#play">all five</a> also run right here in the browser, compiled to WebAssembly. The
-    browser fishing session starts from default rod state rather than a save file, and the Muscle
-    Dome resolves each card through a battle-path damage stand-in rather than the full turn-based
-    battle engine &mdash; the deals, budgets, tension and scoring are the game's own tables.
+    browser fishing session starts from default rod state rather than a save file; the browser
+    Muscle Dome resolves each card through the ported battle formulas against disc-record fighter
+    stats &mdash; the deals, budgets, tension and scoring are the game's own tables.
   </p>
 </section>
 
@@ -2746,103 +2785,137 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 
   /* ================= muscle dome ================= */
 
-  /* The rules are legaia-engine-core's muscle_dome session (4-slot hand deal +
-   * point-budget commit + hp-ratio score + win/lose); this block ticks it and
-   * draws HP bars, the queue, and the four dealt cards. The hand command ids
-   * are your disc's PROT 0898 rodata. */
-  const MUSCLE_CMD_LABEL = { 12: 'Low', 13: 'Down', 14: 'Up', 15: 'High' };
+  /* The rules + damage live in Rust: legaia-engine-core's muscle_dome session
+   * resolved through the ported battle formulas against disc-record fighter
+   * stats (see crates/web-viewer/src/minigames_muscle.rs). This block is DOM
+   * glue - the selectors, the card buttons and the HUD spans - and delegates
+   * the 3D arena, HUD canvas and round playback to js/minigame-muscle.js
+   * (window.MgMuscle). */
+  let muscleR = null;
   let muscleLastPhase = null;
 
+  const muscleEsc = (s) => String(s).replace(/[&<>"]/g,
+    (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+
+  /* Decode the roster + build the arena once per disc (called from loadDisc).
+   * The opponent picker groups the curated Muscle Dome course line-ups
+   * (minigames.json, walkthrough ground-truth) first - matched by name onto
+   * the disc's own PROT 867 records - then the full archive. */
+  function muscleLoad() {
+    muscleR = MgMuscle.create(api, $('muscle-hud'), $('muscle-gl'));
+    const roster = muscleR.loadRoster();
+    const byName = new Map(roster.map(r => [String(r.name).toLowerCase(), r]));
+    const opt = (r) => `<option value="${r.id}">${muscleEsc(r.name)} — HP ${r.hp}</option>`;
+    const fill = (courses) => {
+      let html = '';
+      const seen = new Set();
+      for (const c of (courses || [])) {
+        const rows = [];
+        for (const round of (c.roster || [])) {
+          const boss = c._bosses && c._bosses[round.boss_key];
+          const rec = boss && byName.get(String(boss.name || '').toLowerCase());
+          if (rec && !seen.has(rec.id)) { seen.add(rec.id); rows.push(opt(rec)); }
+        }
+        if (rows.length) {
+          html += `<optgroup label="${muscleEsc(c.name)} course">${rows.join('')}</optgroup>`;
+        }
+      }
+      html += `<optgroup label="Full archive">${roster.map(opt).join('')}</optgroup>`;
+      $('muscle-foe').innerHTML = html;
+      muscleReset();
+    };
+    fetch('minigames.json').then(r => r.json()).then(p => {
+      const courses = (p.muscle_dome || []).map(c => Object.assign({ _bosses: p.bosses }, c));
+      fill(courses);
+    }).catch(() => fill(null));
+  }
+
+  function muscleOpts() {
+    return {
+      char: parseInt($('muscle-char').value, 10) || 0,
+      level: Math.max(1, Math.min(99, parseInt($('muscle-level').value, 10) || 30)),
+      monster: parseInt($('muscle-foe').value, 10) || 0,
+    };
+  }
+
   function muscleReset() {
+    if (!api || !muscleR) return;
     muscleLastPhase = null;
-    if (api) api.muscle_start();
     verdict($('muscle-verdict'), '', '');
+    if (!muscleR.start(muscleOpts())) {
+      verdict($('muscle-verdict'),
+        'This opponent did not decode from the image — pick another.', 'bad');
+      return;
+    }
     muscleBuildCards();
-    muscleDraw(api ? JSON.parse(api.muscle_state_json()) : { live: false });
+    muscleSync();
   }
 
   function muscleBuildCards() {
-    if (!api) return;
-    const st = JSON.parse(api.muscle_state_json());
+    const st = muscleR.state();
     const hand = (st.hand || []);
-    $('muscle-cards').innerHTML = hand.map((c, i) =>
-      `<button class="mg-btn mg-throw" type="button" data-card="${i}">` +
-      `${MUSCLE_CMD_LABEL[c.cmd] || ('Card ' + (i + 1))}` +
-      `<span class="mg-key">${c.cost} pt</span></button>`).join('');
+    $('muscle-cards').innerHTML = hand.map((c, i) => {
+      const d = MgMuscle.CMD[c.cmd] || { name: 'Card ' + (i + 1), glyph: '' };
+      return `<button class="mg-btn mg-throw" type="button" data-card="${i}">` +
+        `<span class="mg-card-glyph">${d.glyph}</span>${d.name}` +
+        `<span class="mg-key">${c.cost} AP · key ${i + 1}</span></button>`;
+    }).join('');
     $('muscle-cards').querySelectorAll('[data-card]').forEach(b =>
       b.addEventListener('click', () => muscleCommit(parseInt(b.dataset.card, 10))));
   }
 
   function muscleCommit(slot) {
-    if (!api) return;
-    const st = JSON.parse(api.muscle_state_json());
-    if (!st.live || st.phase !== 'select') return;
-    api.muscle_commit(slot);
-    muscleDraw(JSON.parse(api.muscle_state_json()));
+    if (!api || !muscleR) return;
+    muscleR.commit(slot);
+    muscleSync();
   }
 
-  /* Space / Confirm: end selection + resolve, or start the next round. */
+  /* Space / Confirm: fight, skip the playback, advance the interval, rematch. */
   function muscleConfirm() {
-    if (!api) return;
+    if (!api || !muscleR) return;
     MgBgm.start('muscle');    /* first confirm is the user gesture that lets audio play */
-    const st = JSON.parse(api.muscle_state_json());
-    if (!st.live) { muscleReset(); return; }
-    if (st.phase === 'select') {
-      api.muscle_end_selection();
-      api.muscle_resolve();
-    } else if (st.phase === 'round_over') {
-      api.muscle_next_round();
-    } else if (st.phase === 'won' || st.phase === 'lost') {
-      muscleReset();
-    }
-    muscleDraw(JSON.parse(api.muscle_state_json()));
+    muscleR.confirm();
+    muscleSync();
   }
 
   function muscleFrame() {
-    if (!api) return;
-    const st = JSON.parse(api.muscle_state_json());
-    if (!st.live) return;
-    /* A queue-built resolve phase settles on the next frame (retail resolves
-     * the round the frame after selection closes). */
-    if (st.phase === 'resolve') { api.muscle_resolve(); }
-    muscleDraw(JSON.parse(api.muscle_state_json()));
+    if (!api || !muscleR) return;
+    muscleR.frame();
+    muscleSync();
   }
 
-  function muscleDraw(st) {
+  function muscleSync() {
+    const st = muscleR.state();
     if (!st.live) return;
-    const pct = (hp, max) => Math.max(0, Math.round(hp * 100 / max)) + '%';
-    $('muscle-p0-hp').style.width = pct(st.hp[0], st.hp_max[0]);
-    $('muscle-p1-hp').style.width = pct(st.hp[1], st.hp_max[1]);
-    $('muscle-p0-meta').textContent = `HP ${st.hp[0]} / ${st.hp_max[0]}` +
-      (st.last_damage[0] ? ` (-${st.last_damage[0]})` : '');
-    $('muscle-p1-meta').textContent = `HP ${st.hp[1]} / ${st.hp_max[1]}` +
-      (st.last_damage[1] ? ` (-${st.last_damage[1]})` : '');
     $('muscle-round').textContent = st.round + 1;
     $('muscle-budget').textContent = st.budget[0];
     $('muscle-queue').textContent = st.queue[0].length;
-    $('muscle-score').textContent = st.score[0] + '%';
-    $('muscle-score-foe').textContent = st.score[1] + '%';
-    $('muscle-reward').textContent = '0x' + st.reward_spell.toString(16).toUpperCase();
+    $('muscle-score').textContent = st.score[0];
+    $('muscle-score-foe').textContent = st.score[1];
+    const rn = api.muscle_spell_name ? api.muscle_spell_name(st.reward_spell) : '';
+    $('muscle-reward').textContent =
+      rn || ('spell 0x' + st.reward_spell.toString(16).toUpperCase());
 
-    /* Grey out cards the budget can no longer afford, off the phase. */
-    const cards = $('muscle-cards').querySelectorAll('[data-card]');
-    cards.forEach((b, i) => {
+    /* Cards commit only during selection, and only while affordable. */
+    const inSelect = muscleR.mode() === 'select' && st.phase === 'select';
+    $('muscle-cards').querySelectorAll('[data-card]').forEach((b, i) => {
       const c = st.hand[i];
-      b.disabled = !(st.phase === 'select' && c && c.cost <= st.budget[0]);
+      b.disabled = !(inSelect && c && c.cost <= st.budget[0]);
     });
 
-    /* Verdict + confirm-button label per phase, announced once per transition. */
+    /* Verdict per phase transition (the canvas carries the banners; this is
+     * the accessible text mirror). */
     if (st.phase !== muscleLastPhase) {
       if (st.phase === 'select') verdict($('muscle-verdict'),
-        'Commit cards you can afford, then Confirm.', '');
+        'Commit cards you can afford, then Space to fight.', '');
       else if (st.phase === 'round_over') verdict($('muscle-verdict'),
-        `Round settled — you took ${st.last_damage[0]}, opponent took ${st.last_damage[1]}. ` +
-        'Space for the next round.', '');
+        `Round settled — you took ${st.last_damage[0]}, ` +
+        `${st.names ? st.names[1] : 'the opponent'} took ${st.last_damage[1]}.`, '');
       else if (st.phase === 'won') verdict($('muscle-verdict'),
-        `You win! Reward Seru spell 0x${st.reward_spell.toString(16).toUpperCase()}. ` +
-        'Space for a new contest.', 'good');
+        `You win!${rn ? ' The power of ' + rn + ' is yours.' : ''} ` +
+        'Space for a rematch.', 'good');
       else if (st.phase === 'lost') verdict($('muscle-verdict'),
-        'You lost. Space for a new contest.', 'bad');
+        'You lost. Space for a rematch.', 'bad');
       muscleLastPhase = st.phase;
     }
   }
@@ -2852,6 +2925,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     if (confirm) confirm.addEventListener('click', () => { if (api) muscleConfirm(); });
     const restart = $('muscle-restart');
     if (restart) restart.addEventListener('click', () => { if (api) muscleReset(); });
+    /* Re-rolling the matchup restarts the contest with the new picks. */
+    for (const id of ['muscle-char', 'muscle-level', 'muscle-foe']) {
+      const el = $(id);
+      if (el) el.addEventListener('change', () => { if (api && muscleR) muscleReset(); });
+    }
   })();
 
   /* ---------------- disc load ---------------- */
@@ -2891,7 +2969,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       if (ok.baka) bakaFillRoster();
       if (ok.slot) { slotLoadArt(); slotLoadSfx(); slotReset(); }
       if (ok.fishing) fishingLoad();
-      if (ok.muscle) muscleReset();
+      if (ok.muscle) muscleLoad();
       /* Pre-mix the on-screen game's BGM now so the first spin / first
        * fight starts its track without a render hitch. */
       MgBgm.prerender(active);
@@ -2906,7 +2984,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         ok.baka  ? `Baka Fighter (${status.baka.fighters} fighters)` : null,
         ok.slot  ? 'slot machine (10-symbol paytable)' : null,
         ok.fishing ? `fishing (${status.fishing.species} species)` : null,
-        ok.muscle ? 'Muscle Dome (4-card hand)' : null,
+        ok.muscle ? 'Muscle Dome (battle-engine arena)' : null,
       ].filter(Boolean);
       prog.done(`Ready - ${games.join(', ')}.`);
       /* The progress bar fades out; leave the standing status behind it. */
@@ -2956,10 +3034,16 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
                          species: () => api && JSON.parse(api.fishing_species_json()) };
   window.__mgMuscle  = { reset: muscleReset, commit: muscleCommit, confirm: muscleConfirm,
                          start: () => api && api.muscle_start(),
+                         startVs: (c, l, m, s) => api && api.muscle_start_vs(c, l, m, s),
                          endSelection: () => api && api.muscle_end_selection(),
                          resolve: () => api && api.muscle_resolve(),
                          nextRound: () => api && api.muscle_next_round(),
-                         state: () => api && JSON.parse(api.muscle_state_json()) };
+                         state: () => api && JSON.parse(api.muscle_state_json()),
+                         log: () => api && JSON.parse(api.muscle_round_log_json()),
+                         roster: () => api && JSON.parse(api.muscle_roster_json()),
+                         renderer: () => muscleR,
+                         mode: () => muscleR && muscleR.mode(),
+                         sceneOk: () => !!(muscleR && muscleR.sceneOk()) };
 
   RomCache.attach(fileInput, { onLoad: loadDisc });
 })();
