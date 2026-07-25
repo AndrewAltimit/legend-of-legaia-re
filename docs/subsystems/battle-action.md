@@ -947,6 +947,30 @@ commands" mechanic the party's arm width drives ([arts-command-gauge.md
 
 So the dataflow is `FUN_801E295C` → `FUN_801D8DE8` / `FUN_801DBF9C` / `FUN_801DC0A0` → effect VM (`FUN_801DE914` / `FUN_801E0088`) → `FUN_801DFDF8`. The state machine never names an effect ID directly; it names *UI element* IDs which the effect VM resolves. Note this path drives the **2D UI/sprite** layer (`FUN_801DFDF8` emits `POLY_FT4` billboard quads into the effect pool); the 3D summon model is a separate mechanism (next).
 
+### `FUN_801F30C4` - the move VM's battle escape (op `0x17`)
+
+A third spawn indirection, and the only one the action SM never touches: the
+battle overlay's half of the move-VM extension pair. `FUN_80023070` case `0x17`
+calls `FUN_801F30C4(actor, op[1])` exactly as case `0x2F` calls the field
+overlay's `FUN_801D362C` - so `0x17` is battle-resident-only in the same sense
+`0x2F` is field-resident-only.
+
+Its `mode` operand takes `0` or `1` and nothing else. Either arm seats **twelve
+child actors** through `FUN_80050ED4` → `FUN_80021B04`: four iterations round the
+compass, three spawn blocks each, every child on one of two static move-VM stager
+records in `0898`'s tail and carrying a per-child heading, a `+0x3E` value and a
+`+0x98` value the burst computes from the trig LUTs plus bounded RNG jitter. The
+two arms are the same loop written twice, differing in nine constants that
+collapse to two exact relations. Byte-level decode, the two records, and the
+18-byte trigger programs that fire each arm:
+[`functions/battle.md`](../reference/functions/battle.md#801f30c4). Port:
+`engine-vm::battle_burst`.
+
+This path is disjoint from the `FUN_801D8DE8` / `FUN_801DBF9C` family above -
+those spawn 2D billboard quads out of the effect pool, this seats full move-VM
+actors - and from the summon-overlay dispatch below, which pages in code rather
+than running bytecode.
+
 ### Seru-magic summon-overlay dispatch
 
 The 3D visual of a player Seru-magic cast (the summoned Seru and its attack mesh - e.g. Gimard's *Burning Attack* flame) is **not** spawned by an opcode and does **not** live in `befect_data`. It is a **per-summon code overlay** paged in on demand. In outer state **case `0x29`**, when the queued action's spell id `actor[+0x1df]` is in the player Seru-magic block `0x81..0x8b`:

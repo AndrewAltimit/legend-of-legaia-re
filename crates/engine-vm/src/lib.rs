@@ -121,6 +121,7 @@ pub mod field_ledge_hop_arc;
 pub mod field_party_cursor;
 pub mod field_passive_hud;
 pub mod field_state_pick;
+pub mod gameover_banner;
 pub mod menu;
 pub mod menu_actor_seed;
 pub mod motion_pause;

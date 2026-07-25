@@ -41,7 +41,7 @@ Part of the [key function directory](../functions.md) - the conventions for read
 | `801E9504` | Level-up applier - [details ↓](#801e9504) |
 | `80025358` | **Gated sub-overlay load sequencer** (`(void) -> u32`). Runs only while `_DAT_8007BC20 == 0`. Advances a 3-state counter `DAT_8007B6C8`: state 0 waits on the loader-ready poll `FUN_8003DE7C(1)`, then issues `overlay_loader_b(0x53, 0)` (`FUN_8003EC70`, extraction PROT 978 - the `"FIELD BACK READ"` / `"efect init"` slot-B blob) and bumps the counter; state 1 waits again and bumps; state 2 calls the loaded overlay's tick `func_0x801F6B24`. Returns `1` while still loading. Invoked from the battle-end reward routine `FUN_8004E568` to stage and then tick a sub-overlay. |
 | `801F6B24` | **Slot-B "FIELD BACK READ" staged-loader tick** (PROT 0978 at the slot-B link base `0x801F69D8`, entry = file `+0x14C`; called by `FUN_80025358` state 2). A `DAT_8007B6C8`-indexed multi-phase streamer: phase 2 stages a `0xA000`-byte texture read into `_DAT_8007B728 + 0x28000` - dev path `h:\prot\field\other6\tim_int.tim` / `tim_int2.tim` (retail branch resolves PROT index `0x4C7 + sel` via `FUN_8003E8A8`), with the variant selected by a party-state compare (`u16 0x8008480E < u16 0x80084824 >> 1`); odd phases poll `FUN_8003DE7C(1)`. `see ghidra/scripts/funcs/overlay_0978_other_game_801f6b24.txt`. |
-| `801CE844` | **Game-over overlay init** (PROT 0902 at slot-A base `0x801CE818`, entry = file `+0x2C`; called by mode-18 `GAME OVER INIT` `FUN_80025B30` after `FUN_8003EBE4(7)` - retail-unreachable, dev harness only). Resets render + heap (`FUN_80017888(0, 0x32000)`), sets game mode `_DAT_8007B83C = 0x13` (GAMEOVER MODE), seeds `_DAT_800840C0 = 3000`, and streams `gameover.pak` (dev-host path branch on `_DAT_8007B8C2`, retail via `FUN_8003EB98(1, buf, 1)`). Base pinned by the SCUS `jal`, the `+0x2C` prologue and in-file string anchors (see the static-overlay map's 0902 row; its old slot-B row was a `pointer_resolution` false positive - `docs/tooling/static-overlay-pipeline.md`). `see ghidra/scripts/funcs/overlay_0902_xxx_dat_801ce844.txt`. |
+| `801CE844` | **Game-over overlay init** - [details ↓](#801ce844) |
 | `80026018` | **Mode-24 minigame exit / return-warp handler** (`(void)`; called on exit by the slot-A minigame overlays; no battle-path caller in the dump corpus). **Restores the scene the `0x3E` warp left**: `memcpy(0x80084548, 0x8007BAE8, 8)` + `_DAT_80084540` from `0x8007BAC4`; commits session winnings into the casino-coin bank (`_DAT_800845A4 += _DAT_80084440`, cap `9999999`); latches `_DAT_8007B8B8 = 2`, `DAT_8007BD60 \|= 0x80`; sets mode 2 (field MAIN INIT reloads the restored scene; `0` when `_DAT_8007B8B8 == 0`). The old "victory/reward XP-bank commit beneath `FUN_8004E568`" reading is wrong (gold lands in `_DAT_8008459C` in `FUN_8004E568` itself). See [`subsystems/script-vm.md`](../../subsystems/script-vm.md#0x3e-warp-mode-24-minigame-door-warp); `funcs/80026018.txt`. |
 | `8020E748` | **Per-slot item swap-back sync** (overlay 0897; alias `801C0F48` in overlay 0899 - byte-identical, relocated). `(char_idx) -> n_changed`. For each of 4 slots, compares the desired id `(&DAT_801E43E8)[i]` with the id stored at `record + char_idx*0x414 + 0x75E`; on mismatch it refunds the displaced old id to the bag via the add-item trio (`FUN_80042EE0` capacity -> `FUN_80043048` reserve -> `FUN_800421D4(old_id, 1)`) then writes the new id. Reclaims a replaced equip/consumable slot into inventory - not a fresh give. `see ghidra/scripts/funcs/overlay_0897_xxx_dat_8020e748.txt`. |
 | `801E01F0` | **Typed equip-with-swap-back** (menu overlay 0899; the dump file keeps its historical `0896` capture label). `(item_id, char_idx, slot)`. Capacity-checks (`FUN_80042EE0`) and reserves (`FUN_80043048`), classifies the item by its record type bits `(type & 0x60) >> 5` to resolve the destination slot, writes the new id into `record + char_idx*0x414 + 0x75E`, refunds the displaced old id via `FUN_800421D4(old_id, 1)`, and plays the equip SFX `FUN_80035BD0(0x24)`. The single-slot parameterized form of the 4-slot swap-back sync `8020E748`. `see ghidra/scripts/funcs/overlay_0896_bat_back_dat_801e01f0.txt`. |
@@ -61,7 +61,7 @@ Part of the [key function directory](../functions.md) - the conventions for read
 | `80055B6C` | Battle-init (SCUS). Zeroes the per-battle scratch (`DAT_801C8FA0[0..0x10]`, `_DAT_8007bd08/34/38/44/48/4c`), then resolves the formation: when `DAT_8007b7fc != 0` it calls `FUN_80055B20` + `FUN_8005567C` (battle-id path); when `0` it only refreshes the cell from `FUN_8005567C` if the cell is empty (preserving an `actor[+0x94]`-installed formation). Calls `FUN_8005567C`. |
 | `80046A20` | Post-battle **mode gate** (SCUS). Reads the transient battle-id `DAT_8007b7fc`: when `0` it selects the return game-mode `_DAT_8007b83c` (`0x18` field / `2` / `0`); a nonzero id routes the boss/scripted-battle continuation instead. The third and last **reader** of `DAT_8007b7fc` (with `FUN_8005567C` + `FUN_80055B6C`); a 47-program Ghidra sweep finds **no writer**, and a live write-watch (firehose from `chapter2_garmel_pre_zeto`, width 1 **and** 4) stayed **silent** across three Zeto fights - so it reads `0` in captured retail and may be **vestigial** (Zeto's formation comes from the `FUN_801DA51C` `actor[+0x94]` record path instead). See [`formats/encounter.md`](../../formats/encounter.md#scripted-battle-id-path-fun_8005567c). `see ghidra/scripts/funcs/80046a20.txt`. |
 | `80055468` | Monster battle texture / CLUT pool loader: `(pool_ptr, tmd_ptr, wide_flag, slot)`. Builds a `StoreImage` RECT keyed on the battle slot - page at `(slot*0x40 + 0x140, 0x100)` (`= (slot*64 + 320, 256)`), width `0x20`/`0x40` fb-units per the wide flag - and calls `FUN_800583C8` twice to upload the 4bpp page and the CLUT region. The `_DAT_8007BD24+0x13` read selects the active battle slot for placement. Decoded into `legaia_asset::monster_archive`; see [battle](../../subsystems/battle.md#monster-mesh-record-0x04). |
-| `80055B4C` | Side-band stream request arm. Writes `_DAT_8007BD24+0x26B = slot + 1`, `+0x26C = 0` - queues one `0x10800`-byte slot of `summon.dat` / `readef.DAT` for the transfer SM in `FUN_801F17F8` (bit 7 of `slot` selects the file). See [`formats/summon-readef.md`](../../formats/summon-readef.md). |
+| `80055B4C` | Side-band stream request arm. Writes `_DAT_8007BD24+0x26B = slot + 1`, `+0x26C = 0` - queues one `0x10800`-byte slot of `summon.dat` / `readef.DAT` for the transfer SM in `FUN_801F17F8` (bit 7 of `slot` selects the file). Both stores are `sb`, so slot `0xFF` wraps the request byte to the idle value and **disarms**; retail has no guard, and no caller reaches it. Ported as `engine-vm::battle_stream_slot::StreamSlotSm::arm`, the exact inverse of that module's `decode_request`. See [`formats/summon-readef.md`](../../formats/summon-readef.md). |
 | `800557B8` | Action-record copy (the swing-record splice helper). Copies `0x2B` words (`0xAC` bytes) of action-entry header + `(parts * frames * 9 + 5) >> 2` words of the packed keyframe stream at `+0xAC` into the persistent buffer - the shape pin for the equipment swing records `FUN_80052FA0` installs at runtime slots `0xC..0xF`. Sibling `80055854` copies the equipment attach-object records linked into entry `+0x04`/`+0x08`. Ported as `legaia_asset::battle_char_assembly::swing_battle_animations`. `800557b8.txt`. |
 | `8002B28C` | `"ME"` stream-archive reader: `(archive, dest, n)`. Magic `'M' 'E'`, `u8 count`, `u16 entry_sizes[count]` (bit 15 = compressed → `FUN_8002A9CC`, clear → raw copy). Called by `FUN_8004AD80` with `_DAT_8007BD74` (the side-band streaming buffer) to load an art record's keyframe stream - the archives live in `readef.DAT` slots `3*char+1`/`3*char+2`. Ported as `legaia_asset::me_archive`. `8002b28c.txt`. |
 | `8002A9CC` | Channel-delta keyframe codec (the `"ME"` bit-15 decompressor). Header `(b0 & 0xC0) == 0x40` + u16 offsets to nibble / byte streams; selector bits pick 12-bit literal / previous-part-delta ± nibble / literal-nibble per channel; frame 0 accumulates spatially down the parts, later frames temporally; emits the packed `[parts][frames][9-byte TRS]` stream via scratchpad tables. Ported as `legaia_asset::me_archive::decode_channel_delta`. `8002a9cc.txt`. |
@@ -434,56 +434,150 @@ Ported as `engine-vm::battle_party_panel`. Read the mapped image: the
 battle-action image's 259, and the one at `801DBB8C` is a four-instruction
 label-call slice leaving via `j 0x801EA7AC` rather than a function at all.
 
+### `801CE844`
+
+**Game-over overlay init.** PROT 0902 at slot-A base `0x801CE818`, entry = file
+`+0x2C`; called by mode-18 `GAME OVER INIT` `FUN_80025B30` after
+`FUN_8003EBE4(7)`. Retail-unreachable - nothing statically writes mode 18 - so
+this is a dev harness, and worth having as the smallest complete example of the
+overlay-init shape. Base pinned by the SCUS `jal`, the `+0x2C` prologue and
+in-file string anchors (see the static-overlay map's 0902 row; its old slot-B row
+was a `pointer_resolution` false positive -
+[`static-overlay-pipeline.md`](../../tooling/static-overlay-pipeline.md)).
+
+**Read it out of the `0902` image, not `0898`.** The VA falls inside the
+battle-action image's footprint too, and the dump taken there reports `NOFUNC`
+with a garbage decode window. The `0902` copy has the clean `addiu sp, sp, -0x58`
+prologue: 193 instructions, `see
+ghidra/scripts/funcs/overlay_0902_xxx_dat_801ce844.txt`.
+
+Three phases, and only the third is renderer-free:
+
+1. **Reset + stream.** GPU/heap resets (`FUN_8001DAF8`, `FUN_8001DCF8`,
+   `FUN_80058068`, `FUN_8001E3B8`, a `0x32000`-byte `FUN_80017888`), game mode
+   `_DAT_8007B83C = 0x13` (GAMEOVER MODE), counter seed `_DAT_800840C0 = 3000`,
+   and a `gameover.pak` load forking on `_DAT_8007B8C2` between the dev-host path
+   (`FUN_8003E6BC`) and the retail CD path (`FUN_8003EB98(1, buf, 1)`).
+2. **Pak walk.** A `[u32 tag][…]` chunk loop over the loaded pak, dispatching
+   kind `1` to `FUN_800198E0` (per entry, plus a nested `[count][offsets]` table)
+   and kind `2` to `FUN_80026B4C`. Host-side asset installation.
+3. **The banner stager.** Nine fixed slots on a line, one child actor per
+   non-blank slot, each seated through `FUN_80021B04` on a **shared** move record
+   whose `model_sel` the loop rewrites per letter (`sh v0, 0x0(s5)` in the `jal`'s
+   delay slot). `model_sel = glyph_byte - 0x3F`; scale `0x1000`; the child's
+   `+0x60` takes the letter ordinal and `+0x54` the move-VM wait timer. The loop
+   retires with `_DAT_8007B6F4 = 0x140`.
+
+Two details of phase 3 come from delay slots and are lost in the C rendering. The
+pen advance `addiu $s3, $s3, 0x1c2` sits in the blank test's delay slot, so it
+runs on **every** slot including the skipped one - which is what keeps the two
+words of the label evenly spaced rather than butted together. The stagger
+accumulator `addiu $s1, $s1, 0xf0` sits inside the spawn arm, so the wait timers
+count **letters**, not slots. The pen is symmetric about zero by construction:
+nine slots at `0x1C2` from `-0x708` give `-1800..+1800`, centre slot on the
+origin.
+
+Phases 1 and 2 are a deliberate non-port - host emission (GPU state, heap, CD
+reads, asset install) with no arithmetic of its own. Phase 3 is ported as
+`engine-vm::gameover_banner`, which takes the label bytes as an argument rather
+than carrying them.
+
 ### `801F30C4`
 
-**Two-mode effect burst.** `(record, mode)`. The span is
-`0x801F30C4..0x801F398C` - 563 instructions, ending exactly where the cast
-audio-cue dispatcher `func_0x801F3990` begins (`0x801F3988` is the `jr ra`,
-`0x801F3990` a clean `addiu sp, sp, -0x20`). **`disasm-overlay-fn.py` cannot
-read it**: that tool stops at the first unconditional `j` and reports 18
-instructions here, so use raw capstone over the mapped `0898` image at base
+**Move-VM opcode `0x17` - the battle-side escape.** `(actor, mode)`. The first
+argument is an actor: the caller is `FUN_80023070` case `0x17` and `mode` is that
+instruction's single operand, making this the exact sibling of the field escape
+`0x2F` ([`move-vm-overlay-ext.md`](../../subsystems/move-vm-overlay-ext.md)).
+It seats **twelve child actors** - four iterations round the compass, three spawn
+blocks each - on one of two static move-VM stager records in `0898`'s tail.
+
+The span is `0x801F30C4..0x801F398C` - 563 instructions, ending exactly where the
+cast audio-cue dispatcher `func_0x801F3990` begins (`0x801F3988` is the `jr ra`,
+`0x801F3990` a clean `addiu sp, sp, -0x20`). **`disasm-overlay-fn.py` historically
+could not read it**: that tool stopped at the first unconditional `j` and reported
+18 instructions here, so use raw capstone over the mapped `0898` image at base
 `0x801CE818`.
 
 **The entry is one loop written twice.** A three-way fork on `mode` (`0`, `1`,
-and a fall-through that returns immediately) reaches two loop bodies of 258
-instructions each. Diffed instruction by instruction they are identical except
-for ten constants, three of which are only branch targets shifted by the arm
-offset. Both loops run four iterations (`slti $s2, 4`), call `FUN_80050ED4`
-three times and the RNG nine times per iteration. The real differences:
+and a fall-through that returns immediately) reaches two loop bodies of 260
+instructions each. Diffed instruction by instruction, twelve differ, and three of
+those are only the loop-latch shape (arm `0` exits on `beqz` and jumps back, arm
+`1` falls through on `bnez`). The nine real differences are three constants
+repeated once per spawn block:
 
 | | arm `0` | arm `1` |
 |---|---|---|
-| spawn table | `0x801F5DA4` | `0x801F5D0C` |
+| stager record | `0x801F5DA4` | `0x801F5D0C` |
 | cosine divisors | `/48`, `/72`, `/96` | `/96`, `/144`, `/192` |
 | tail offsets | `+0x70`, `+0xA8`, `+0x38` | `+0x30`, `+0x48`, `+0x18` |
-| loop latch | `beqz` out then `j` back | `bnez` back |
 
 Two exact relations follow: every arm-`1` cosine divisor is **twice** its arm-`0`
-counterpart (one extra `sra`), and every arm-`1` tail offset is exactly **3/7**
-of its counterpart. So `mode` selects the same burst at a smaller radius, not a
-different effect.
+counterpart (the same magic multiply with one extra `sra`), and every arm-`1`
+tail offset is exactly **3/7** of its counterpart. So `mode` selects the same
+burst at a smaller radius, not a different effect.
 
-Per spawn block: copy eight bytes from `record[+0x24]` to a stack scratch, fold
-`sin[angle] / 2^n` plus a bounded jitter into the scratch's second halfword, call
-`FUN_80050ED4(record + 0x14, scratch, table, record[+0x72] >> 1)`, then write
-`cos[angle] / d + jitter` to the returned record's `+0x3E` and a second jitter to
-its `+0x80 + 0x18`. Block `0` indexes the LUTs on the four cardinals
-(`iteration * 1024`); blocks `1` and `2` share the diagonals
-(`(iteration * 1024 + 512) & 0xFFF`), block `2` reusing block `1`'s index
-register.
+Per spawn block: copy eight bytes from `actor[+0x24]` - the rotation triple - to
+a stack scratch, fold `sin[angle] / 2^n` plus a bounded jitter into the scratch's
+second halfword, call `FUN_80050ED4(actor + 0x14, scratch, record, scale)`, then
+write `cos[angle] / d + jitter` to the child's `+0x3E` and a second jitter to its
+`+0x98` (`sh v0, 0x18(s0)` after `addiu s0, s0, 0x80`). Block `0` indexes the LUTs
+on the four cardinals (`sll $s1, $s2, 0xb`, unmasked); blocks `1` and `2` share
+the diagonals (`(iteration * 1024 + 512) & 0xFFF` - only this arm masks), block
+`2` reusing block `1`'s index register.
 
-**Reciprocal divides: eleven per arm, all verified against plain division.** Two
-readings taken from the constants alone were wrong before that check and are
-recorded corrected: `0x2AAAAAAB >> 3` is `/48` (not `/6` - that is the constant
-read without its shift) and `0x2E8BA2E9 >> 1` is `/11`. `0x88888889` is the
-signed magic-with-add form (`mfhi`, `addu` the original, `sra 3`) and needs
-signed arithmetic to reproduce; it is `/15`. All are used as `x - (x / d) * d`
-except the three cosine divides.
+The jittered scratch halfword is `param_2[1]`, which `FUN_80021B04` masks to 12
+bits into the child's `+0x96` - the rotation-LUT index move-VM op `0x03` reads.
+The value **is** the child's heading, modulo the 4096-step circle.
 
-Ported as `engine-vm::battle_burst`, with two boundaries stated rather than
-guessed: `FUN_80050ED4` is undecoded (it is a host-trait method), and the two
-spawn tables are disc data in `0898`'s tail with no parser - their addresses are
-the parameter, their bytes are not reproduced.
+**The scale argument is per block, not per arm.** Blocks `0` and `1` load
+`actor[+0x72]` with `lhu` and pass `>> 1`; block `2` loads it with `lh` and passes
+it unshifted (its `jal` delay slot carries `move $a1, $s5` instead of the `srl`).
+Both arms agree, so blocks `0`/`1` spawn at half the parent's scale and block `2`
+at full.
+
+**Reciprocal divides: fourteen distinct (magic, shift, divisor) triples, all
+verified against plain truncating division.** The shift is the part that gets
+dropped: `0x2AAAAAAB` is `/6` read bare, `/48` with its `>> 3`, `/96` with `>> 4`
+and `/192` with `>> 5` - all four appear in this one function. `0x88888889` is the
+signed magic-with-add form (`mfhi`, `addu` the original, `sra 3`) and needs signed
+arithmetic to reproduce; it is `/15`. All are used as `x - (x / d) * d` except the
+three cosine divides.
+
+#### The two records, and how the burst is reached
+
+`0x801F5DA4` and `0x801F5D0C` are **move-VM stager records**, not tables:
+`[i16 model_sel][u16 flags][move-VM bytecode]`, the format
+[`move-vm.md`](../../subsystems/move-vm.md#move-buffer-record-sources) documents
+for every move-buffer source. Both are transform-node records terminating at op
+`0x08` HALT, both run the same instruction sequence - a render-mode-2 child spawn
+(op `0x23`) followed by a strictly alternating `WAIT_SET` / sprite-add strip - and
+the two differ in **exactly one halfword**, operand 8 of that `0x23`, which lands
+in the child's `+0xB2`. What `+0xB2` means under render mode `2` is open; the
+ported actor tick names `+0xB0`/`+0xB2` for the mode-`5` SFX-emitter arm, which is
+a different mode.
+
+Each record is preceded in the tail by an 18-byte trigger of the shape
+`WAIT_SET 0 / 0x17 <mode> / WAIT_SET 0 / HALT`, whose operand matches the arm
+whose record follows one alignment word later (`0x801F5D90` → mode `0`,
+`0x801F5CF8` → mode `1`). Those two addresses are cited on
+[`level-up.md`](../../subsystems/level-up.md) as "binary animation tables passed
+to particle spawner `FUN_80050ED4`" - they are neither tables nor direct callers
+of the spawner. They are move programs, and it is the `0x17` inside them that
+reaches it.
+
+`FUN_80050ED4` is **not** a boundary either: it is decoded (`see
+ghidra/scripts/funcs/80050ed4.txt`) - a 23-instruction scan of the 0x60-slot
+pointer pool at `DAT_801C90F0` that forwards the same four arguments to
+`FUN_80021B04`, sign-extending the low halfword of the fourth, stores the returned
+actor pointer in the first null slot and returns it, or returns `0` when all 96
+slots are taken. The port catalog carries it as subsumed glue.
+
+Ported as `engine-vm::battle_burst`, including a record parser
+(`BurstRecord::parse`) that slices an arm's record out of a supplied `0898` image
+and walks its extent with the ported move-VM dispatcher rather than restating the
+opcode sizes. The records are disc data; none of their bytes are reproduced, and
+the structural claims above are asserted by the image-gated
+`battle_burst_real_records` test.
 
 ### `80048A08`
 
