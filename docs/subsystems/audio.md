@@ -398,9 +398,7 @@ Provenance: `see ghidra/scripts/funcs/80060a1c.txt`, `80060a94.txt`,
 | `FUN_80068C70` | `SsSetStereo` - zeroes the mono-fold flag `_DAT_801CE330`. (Its `SsSetMono` twin `FUN_80068C5C` sets it to `1`.) |
 | `FUN_800693B8` | One-argument shim - tail-calls `FUN_800693D8(0)`, the SPU key/reset routine. |
 | `FUN_8006B684` | Two-constant shim - calls `FUN_8006A7C8(a0, a1, 0xCC, 0xCD)`; the constants select the SPU register pair the callee programs. |
-| `FUN_8006C9E4` / `FUN_8006CA04` | Argument-free shims onto `FUN_8006D1E0` / `FUN_8006D2AC` (the transfer-mode setters in the [DMA engine](#spu-dma-transfer-engine)). |
-| `FUN_8006D2F0` | DMA-completion path: clears `_DAT_8007B2B8`, latches the block count `_DAT_8007B2C4` into `_DAT_8007B2B4`, advances the SPU address by `count * 0xF0`, calls `FUN_8006D358`, and on failure invokes the installed callback at `_DAT_801CE560` with `0xFFFF`. |
-| `FUN_8006E600` | Per-voice release/steal sweep over one driver record: reads the voice-count byte `+0x34` (clamped to `6`), scans the `+0x57`/`+0x5D` parallel byte arrays for a free slot, and accumulates the global voice budget `_DAT_8007B2BC` against the `0x3D` ceiling. |
+| `FUN_8006C9E4` / `FUN_8006CA04` / `FUN_8006D2F0` / `FUN_8006E600` | **Not libspu** - argument-free shims and helpers of the libpad driver; see [the `0x801CE628` cluster](#not-ssapi-the-0x801ce628-cluster-is-libpad). |
 | `FUN_8005EBFC` | Single-hop shim onto `FUN_8005F024`. |
 
 Provenance: `see ghidra/scripts/funcs/80064bd0.txt`, `80065b98.txt`,
@@ -435,7 +433,7 @@ Sits underneath the SsAPI sequencer and drives the SPU hardware directly. PsyQ `
 | `_DAT_801CD2C0[i]` | Per-VAB program-attr table. Stride `0xB0` per program (`prog * 0xB0 + 0x58/0x5A`). |
 | `_DAT_801CE344` | Open-seq-slot count. |
 | `_DAT_801CE368` | Per-slot status byte (`0` = free, `1` = open, `2` = playing). |
-| `_DAT_801CE564 / _DAT_801CE574` | **Function-pointer hooks installed by Legaia.** `_564` resolves the active script-VM seq context; `_574` is a worker-availability check. Distinct from the standard PsyQ in-line slot lookup, so the actor / field VM is wiring callbacks here. |
+| `_DAT_801CE564 / _DAT_801CE574` | **Not SPU globals** - the libpad driver's socket → port-context resolver and its port-busy check, installed by `PadInitDirect` / `FUN_8006E8D4`. See [the `0x801CE628` cluster](#not-ssapi-the-0x801ce628-cluster-is-libpad). |
 
 ### libspu primitives
 
@@ -543,26 +541,70 @@ history that survives ADPCM block boundaries. The pitch step clamps at
 | `FUN_80069170(slot)` | `SsSeqPlayResolved` - final play-start stage; calls `8006BB08(0)` (xfer-mode), `8006BAB0` (commit), `8006BA50` (data feed). |
 | `FUN_80069230(...)` | Streaming SEP feeder - partial-buffer continuation via `_DAT_8007AAC4/AAC8`. |
 | `FUN_80069390(...)` | `SsIsEos` - tail-call to `FUN_8006BBC8`. |
-| `FUN_8006CA7C` | `SsSeqGetStatus` - resolves ctx via `_DAT_801CE564`, returns ctx `+0x49` with state-code normalization (`3↔1, 2→1, 6→4`). |
-| `FUN_8006CB3C(attr_id)` | `SsSeqGetAttr` - switches on `attr_id`: `1` byte@`+0xE8`, `2` u16@`+0xE6`, `3` byte@`+0xE4`, `4` u16@`+0+idx*2`/count@`+0xE3`, `100` u32@`+0x4C`. |
-| `FUN_8006CDB0` | `SsSeqSetCallback` - resolves ctx via `_DAT_801CE564`, tail-calls `FUN_8006DDC8`. |
-| `FUN_8006CE30` | `SsSeqSetUserData` - resolves ctx via `_DAT_801CE564`, tail-calls `FUN_8006D7B4`. |
-| `FUN_8006D7B4` | `_SsSeqSetUserDataInner` - `ctx[+0x28] = p2; ctx[+0x34] = p3`. |
-| `FUN_8006DDC8` | `SsSeqSetMarkCallback` - installs trampolines at ctx `+0x14/+0x18`, sets active-flag at `+0x46`. |
-
-**Seq-worker callback table.** Above the per-slot record chain the layer installs a dispatch vtable at `_DAT_801CE540..580` and walks a stride-`0xF0` worker-record table at `0x801CE628` (cursor `_DAT_8007B2B4`) - the mechanism behind the `_DAT_801CE564` / `_DAT_801CE574` hooks flagged in [SPU globals](#spu-globals).
-
-| Function | Role |
-|---|---|
-| `FUN_8006E2B4(cb1, cb2)` | Worker-table init - clears the `0x1E0`-byte record table at `0x801CE628`, installs the hook vector (`_DAT_801CE560 = FUN_8006E46C` advance, plus the `_DAT_801CE564` / `_56C` / `_558` / `_578` / `_580` resolvers), stores the two user callbacks, and fills each record's control bytes with the `0xFF` idle sentinel. |
-| `FUN_8006E46C(rec)` | Per-slot advance - steps the worker cursor `_DAT_8007B2B4` by one `0xF0` record and services it via `FUN_8006E9C0` / `FUN_8006EC24`, looping while the cursor is `<= _DAT_8007B2C8`. |
-| `FUN_8006DAAC(rec)` | Per-record state dispatch - branches on the record's state byte `+0x47` into `FUN_8006E0A0` / `_E0C0` / `_E0E0` / `_E100`. |
-| `FUN_8006CF9C()` | Hook installer - `_DAT_801CE544 = FUN_8006D030`, `_DAT_801CE548 = FUN_8006CFC8`. |
-| `FUN_8006D1E0()` | Callback install under a BIOS critical section (`FUN_80056678` / `FUN_80056688`) touching the `_DAT_801CE540` vector. |
-
-Provenance: `see ghidra/scripts/funcs/8006e2b4.txt`, `8006e46c.txt`, `8006daac.txt`, `8006cf9c.txt`, `8006d1e0.txt`.
 
 The runtime sequencer chain is now nearly fully mapped: slot bitmap @ `_DAT_801CD2B8` → ptr table @ `0x801CD2C0` → per-slot record (stride `0x36`) at `0x801CDB60` → VAB program-attr (stride `0xB0`) at `0x801CD2C0[i] + prog*0xB0`.
+
+### Not SsAPI: the `0x801CE628` cluster is libpad
+
+`0x801CE628` is **not** a sequencer worker table. It is libpad's two-port
+driver-context array - stride `0xF0`, `0x1E0` bytes total, one context per
+controller socket - and every entry that resolves a context through the
+`_DAT_801CE564` hook is a libpad API call. Nothing in the cluster touches an
+SPU register, a VAB, or a voice key. The correction is recorded on this page
+because this is where the corpus filed the cluster.
+
+The chain anchors on the game's controller + memory-card init `FUN_8001D230`,
+which `bzero`s `0x44` = 2 x `0x22` bytes at `0x800840F8` and hands the two
+halves to `FUN_8006E2B4` (`addiu a1,a0,0x22`). Those two 34-byte buffers are
+what the pad pump `FUN_8001822C` decodes as `[status][type nibble][buttons:
+inverted u16]`, port 1 at `+0x22`/`+0x23`.
+
+| Function | PsyQ entry | What the instructions show |
+|---|---|---|
+| `FUN_8006E2B4(buf0, buf1)` | `PadInitDirect` | Clears `0x1E0` = 2 x `0xF0` at `0x801CE628`, stores `buf0`/`buf1` at each context `+0x30`, seeds each report buffer `[0] = 0xFF` / `[1] = 0`, and fills the six bytes at context `+0x5D` with `0xFF` - the actuator-alignment table's unassigned default. |
+| `FUN_8006CE30(socket, table, len)` | `PadSetAct` | **Three** arguments: `a0` passes through untouched into the context resolver, `a1`/`a2` are forwarded to `FUN_8006D7B4`. Ghidra's C drops `param_1`. |
+| `FUN_8006D7B4(ctx, table, len)` | `PadSetAct` inner | `ctx[+0x28] = table`, `ctx[+0x34] = (u8)len` - the per-port actuator buffer pointer and its length. |
+| `FUN_8006CDB0(socket, align)` | `PadSetActAlign` | Two arguments, tail-calling `FUN_8006DDC8`: stores `align` at `ctx+0x20`, installs trampolines at `ctx+0x14`/`+0x18`, sets the port state byte `ctx+0x46 = 1`. |
+| `FUN_8006CA7C(socket)` | `PadGetState` | Tests the report buffer's status byte through `ctx+0x30`, then normalises the port state byte `ctx+0x49` (`3 → 1`, `2 → 1`, `6 → 4`). |
+| `FUN_8006CB3C(socket, term, offs)` | `PadInfoMode` | `term = 4` returns the id-table length `ctx+0xE3` when `offs < 0`, else `((u16 *)ctx[0])[offs]` bounds-checked against it - `InfoModeIdTable`'s contract verbatim. `1` → byte `+0xE8`, `2` → u16 `+0xE6`, `3` → byte `+0xE4`, `0x64` → u32 `+0x4C`. |
+| `FUN_8006D1E0` / `FUN_8006D2AC` | `PadStartCom` / `PadStopCom` | Mirrored pair inside a BIOS critical section: `ChangeClearRCnt(3, 0)` against `(3, 1)`, hooking / unhooking the `_DAT_801CE540` vector. `FUN_8006C9E4` / `FUN_8006CA04` are their argument-free shims. |
+| `FUN_8006E600(ctx)` | actuator payload build | Clears the 6-byte staging area `ctx+0x57`, bails when the extended-mode offset `ctx+0xE6` or the act-table pointer `ctx+0x28` is zero, clamps the act length `ctx+0x34` to `6`, and maps the caller's actuator values through the align table at `ctx+0x5D` into the outgoing poll packet. |
+| `FUN_8006E46C(ack)` | per-port service step | Advances the port cursor `_DAT_8007B2B4` by one `0xF0` context from the base `_DAT_8007B2A8` and services it via `FUN_8006E9C0` / `FUN_8006EC24`. |
+| `FUN_8006DAAC(ctx)` | per-port state dispatch | Branches on the port state byte `ctx+0x46` into `FUN_8006E0A0` / `_E0C0` / `_E0E0` / `_E100`, passing `ctx+0x47`. |
+| `FUN_8006D2F0` | per-port transfer kick | Latches `_DAT_8007B2C4` into the cursor, calls `FUN_8006D358` on `base + idx*0xF0`, and on failure invokes the installed callback `_DAT_801CE560` with `0xFFFF`. |
+| `FUN_8006CF9C` | hook installer | `_DAT_801CE544 = FUN_8006D030`, `_DAT_801CE548 = FUN_8006CFC8`; called at the tail of `PadInitDirect`. |
+
+The BIOS thunks around it agree. `FUN_8005FD68` = `ChangeClearPAD` (B0 `0x5B`)
+is called by `FUN_8006EE8C` / `FUN_8006EEE0` to hand the pad off from the BIOS
+handler to the direct driver; `FUN_8005FD78` = `ChangeClearRCnt` (C0 `0x0A`);
+`FUN_8006EF48` / `FUN_8006EF58` / `FUN_8006EF68` = `InitCARD` / `StartCARD` /
+`StopCARD` (B0 `0x4A` / `0x4B` / `0x4C`); `FUN_80056618` = `_bu_init` (A0
+`0x70`). `FUN_8001D230`'s eight `OpenEvent` / `EnableEvent` pairs on classes
+`0xF4000001` / `0xF0000011` (specs `0x0004` / `0x8000` / `0x0100` / `0x2000`,
+mode `0x2000`, no handler) are the **memory-card** event set, not SPU or DMA
+interrupts.
+
+**What put the SsAPI label there.** Three things, each individually
+reasonable: the `0x8006C000..0x8006F000` band does hold genuine libspu /
+libsnd code; a vtable of installed hooks over a stride-`0xF0` record array
+with an `0xFF` idle fill and a per-record state byte reads exactly like the
+sequence-worker table; and with `param_1` dropped, `FUN_8006CE30` renders as a
+two-argument "set user data on a resolved context". It fails on the buffers
+(`ctx+0x30` is provably the button report `FUN_8001822C` decodes), on
+`FUN_8006CB3C`'s `term = 4` branch (an id-table query with no sequencer
+analogue), and on the record count, which is 2 - the number of controller
+sockets, not a sequencer's slot count.
+
+**Consequence.** `DAT_800915DA` / `DAT_800915DB` are port 0's two actuator
+bytes, so the per-frame kernel `FUN_80018DB0` that writes them is a **rumble**
+cadence, not an audio one - see the
+[`80018DB0` row](../reference/functions/audio.md) and
+[`re-settled-threads.md`](../reference/re-settled-threads.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one).
+
+Provenance: `see ghidra/scripts/funcs/8006e2b4.txt`, `8006ce30.txt`,
+`8006d7b4.txt`, `8006cdb0.txt`, `8006ca7c.txt`, `8006cb3c.txt`, `8006d1e0.txt`,
+`8006d2ac.txt`, `8006e600.txt`, `8006e46c.txt`, `8006daac.txt`, `8001d230.txt`,
+`8001822c.txt`.
 
 ## File-API leaf cluster
 

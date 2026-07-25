@@ -1,9 +1,42 @@
-//! Field footstep + ambient cue cadence.
+//! Field movement cadence - **retail's is a rumble cadence, not an audio one**.
 //!
-//! The per-frame ticker that decides **when** the field player's footstep
-//! cue fires and when the periodic ambient cue retriggers. In retail it runs
-//! every field-mode frame, owning three counters plus the two per-voice
-//! trigger bytes the SPU side reads (`0x800915DA` / `0x800915DB`).
+//! # This module is mislabelled, deliberately left in place
+//!
+//! The arithmetic here is a faithful port of `FUN_80018DB0`, but every name
+//! in it - "footstep", "ambient cue", "per-voice trigger byte" - reflects an
+//! identification that has since been falsified from the disassembly. What
+//! retail's kernel actually drives is **controller vibration**:
+//!
+//! - `0x800915DA` / `0x800915DB` are not voice triggers. They are port 0's
+//!   two libpad **actuator** bytes: `FUN_8001D230` registers that 2-byte
+//!   table with `PadSetAct(0, 0x800915DA, 2)`, and `FUN_8006E2B4` - filed in
+//!   the corpus as an SsAPI worker-table init - is `PadInitDirect`. One
+//!   payload byte is the per-step on/off pulse, the other an intensity level.
+//! - `DAT_8007B79C` is not a "footstep-active" flag. It records that the pad
+//!   reports no extended-mode data, and selects between two actuator payload
+//!   layouts.
+//! - The `0x4B0`-frame countdown is not an ambient audio cue. It issues
+//!   `CdControl(CdlPause)` - a CD-drive pause.
+//! - `gp+0x614` / `gp+0x618` are therefore not a locomotion speed: `+0x618`
+//!   is written verbatim into an actuator level byte, so both read as
+//!   vibration-intensity requests. Their writers are unpinned, which is
+//!   consistent with the capture finding the gate never opens while walking.
+//!
+//! Retail plays **no** footstep sound; a capture established that
+//! independently, and there is no cue id to key because there is no audio
+//! cadence. The port is left wired and the names unchanged on purpose - a
+//! rename would churn the reachability audit and the web host for no
+//! behavioural gain. Treat everything below as "the retail cadence", and see
+//! `docs/reference/re-settled-threads.md` §
+//! "`FUN_80018DB0` is a rumble cadence, not an audio one" before building on
+//! any of these labels.
+//!
+//! # The cadence itself
+//!
+//! The per-frame ticker that decides **when** the pulse fires and when the
+//! periodic countdown retriggers. In retail it runs every field-mode frame,
+//! owning three counters plus the two output bytes (`0x800915DA` /
+//! `0x800915DB`).
 //!
 //! **Wired on the browser play page only.** `legaia-web-viewer`'s
 //! `play_sfx` calls [`FootstepCadence::tick_cadence`] from its per-frame
@@ -53,8 +86,9 @@
 //! paraphrasing - see [`FootstepCadence::tick_cadence`].
 //!
 //! Clean-room from the decompiled control flow; no Sony bytes. Retail
-//! reference `docs/subsystems/audio.md` and the `80018DB0` row of
-//! `docs/reference/functions.md`.
+//! reference `docs/subsystems/audio.md` § "Not SsAPI: the `0x801CE628`
+//! cluster is libpad" and the `80018DB0` row of
+//! `docs/reference/functions/audio.md`.
 
 /// Frames between periodic ambient-cue retriggers (retail `0x4B0`).
 pub const AMBIENT_PERIOD_FRAMES: i32 = 0x4B0;
@@ -77,10 +111,12 @@ pub const STALL_RELOAD: i32 = 2;
 /// What a single [`FootstepCadence::tick_cadence`] fired.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CadenceTick {
-    /// The periodic ambient cue retriggered this frame (retail calls the
-    /// voice stop/rewind helper `FUN_8005C034(9, 0)`).
+    /// The periodic countdown retriggered this frame. Retail's action here
+    /// is `FUN_8005C034(9, 0)` = `CdControl(CdlPause)`, a CD-drive pause -
+    /// **not** a voice stop/rewind, and not an audio cue at all.
     pub ambient_fired: bool,
-    /// A footstep landed this frame.
+    /// A cadence pulse landed this frame. In retail this arms an actuator
+    /// byte (rumble), not a voice.
     pub step_fired: bool,
 }
 
@@ -100,12 +136,13 @@ pub struct FootstepCadence {
     /// `_DAT_8007B8AC` - free-running frame counter, incremented every tick
     /// and never reset here.
     pub uptime: i32,
-    /// `DAT_8007B79C` - footstep-active flag, selecting which of the two
-    /// branches below runs.
+    /// `DAT_8007B79C` - selects which of the two branches below runs. Retail
+    /// sets it when the pad reports no extended-mode data, so it picks an
+    /// actuator payload layout; "footstep active" is the falsified reading.
     pub footstep_active: bool,
-    /// `DAT_800915DA` - first per-voice trigger byte.
+    /// `DAT_800915DA` - first byte of port 0's libpad actuator table.
     pub trigger_a: u8,
-    /// `DAT_800915DB` - second per-voice trigger byte.
+    /// `DAT_800915DB` - second byte of port 0's libpad actuator table.
     pub trigger_b: u8,
 }
 
@@ -147,8 +184,9 @@ impl FootstepCadence {
     /// Those two addresses are **not pinned**: Ghidra could not resolve `$gp`
     /// for this function, so the dump renders them as `unaff_gp + 0x614` /
     /// `+ 0x618` and their absolute addresses are unknown. "Movement
-    /// magnitude" is an inference from how they are consumed - they feed the
-    /// speed -> interval curve and nothing else - not a resolved identity.
+    /// magnitude" is not a resolved identity and is probably wrong: retail
+    /// writes the low byte of `+0x618` straight into an actuator level, so
+    /// both cells read as vibration-intensity requests rather than a speed.
     /// Every other global this port names (`_DAT_8007BC70`, `_DAT_8007B8A4`,
     /// `_DAT_8007B8AC`, `DAT_8007B79C`, `DAT_800915DA/DB`) *is* absolute in
     /// the disassembly.
@@ -168,13 +206,14 @@ impl FootstepCadence {
     /// the countdown has reached the `-1` sentinel; firing reloads the
     /// countdown with the interval. Above the gate the countdown is parked
     /// at [`STALL_RELOAD`], so resuming a walk costs at most two frames.
-    // PORT: FUN_80018db0 - field footstep / ambient cadence tick. Ambient
-    // countdown reload (0x4B0) + voice retrigger, the step countdown floored
-    // at the -1 sentinel, the free-running uptime counter, and the two
-    // branches over DAT_8007B79C that derive the step interval from the
-    // movement magnitude and arm the trigger bytes DAT_800915DA / DB.
-    // The libspu voice retrigger itself (FUN_8005C034) is reported through
-    // CadenceTick rather than called: engine-audio owns its own voice pool.
+    // PORT: FUN_80018db0 - retail's per-frame rumble cadence tick (see the
+    // module header: the "footstep / ambient" naming here is falsified).
+    // Countdown reload (0x4B0) + its CdControl(CdlPause) action, the pulse
+    // countdown floored at the -1 sentinel, the free-running uptime counter,
+    // and the two branches over DAT_8007B79C that derive the pulse interval
+    // and arm port 0's libpad actuator bytes DAT_800915DA / DB.
+    // FUN_8005C034 is reported through CadenceTick rather than called: it is
+    // a CD-drive command, outside this crate.
     pub fn tick_cadence(&mut self, speed_primary: i32, speed_secondary: i32) -> CadenceTick {
         let mut out = CadenceTick::default();
 

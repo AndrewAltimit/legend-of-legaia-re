@@ -300,62 +300,9 @@ menu.md#use-list-row-build-content-id-3-fun_80030628). |
 | Thread | Status | What would close it |
 |---|---|---|
 | `_DAT_8007B910` carries two incompatible roles | open | The corpus calls it "live brightness" (seeded `0xD7` beside the brightness reference `_DAT_8008457C` by `FUN_8001FFA4`; ramped as a screen fade by the battle-action SM states `0x35`/`0x51`/`0x6F`) **and** feeds it as an audio scalar: `FUN_80026478` passes `_DAT_8007B910 >> 1` to the pan primitive `FUN_8002657C`, and `FUN_800267A8` passes the same halved value to the libsnd wrapper `FUN_80062004`. Both readings are already committed, in different pages. Closing it needs a live watch on the cell across a summon cast (brightness ramp) with the audio mix observed, or the identification of `FUN_80062004`'s libsnd entry - if its second argument is a volume, one of the two labels is wrong. |
-| Is `FUN_80018DB0` a rumble cadence rather than an audio one? | open | `audio.md` files `FUN_8006E2B4` / `FUN_8006CE30` as SsAPI; they read as libpad. If so `DAT_800915DA/DB` are the DualShock actuators and this kernel drives vibration, not sound. [details ↓](#is-fun_80018db0-a-rumble-cadence-rather-than-an-audio-one) |
-| Retail's footstep SFX cue id | open | The cadence is ported and wired; no cue id is pinned, so the port keys no voice. A guessed id is arbitrary, not approximate. [details ↓](#retails-footstep-sfx-cue-id) |
+| Is `FUN_80018DB0` a rumble cadence rather than an audio one? | resolved (moved to re-settled) | Yes - grade `disassembly`. `FUN_8006E2B4` is `PadInitDirect` and `FUN_8006CE30` is a three-argument `PadSetAct`; `DAT_800915DA/DB` are port 0's actuator bytes, so the kernel drives vibration and plays nothing. See [`re-settled-threads.md`](re-settled-threads.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one). |
+| Retail's footstep SFX cue id | resolved-negative (moved to re-settled) | There is no cue to pin: the only "cadence" is the rumble one above, and the capture already showed retail plays nothing on a step. See [`re-settled-threads.md`](re-settled-threads.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one). |
 | XA clip-table writer + `(clip_id, chan)` cue census | resolved | Writer pinned statically: `FUN_801CFA78` in PROT 0895 `init.pak` (base `0x801CE818`, recovered from four in-blob string refs) sprintf-generates `\XA\XA%d.XA;1` per slot and fills `[BCD-MSF][size]` via ISO9660 lookup `FUN_8005DBB4`; called once from the init boot tick `0x801CF500`. Full deduped one-shot + streamed cue census in [`audio.md`](../subsystems/audio.md); grade `disassembly` (byte-level, base self-consistent). Census note: PROT-entry over-read aliases callsites into neighbouring overlays - dedupe by true entry extent (gameover 0902 / world-map 0901 have zero genuine XA calls). [details ↓](#xa-clip-table-writer--clip_id-chan-cue-census) |
-
-### Is `FUN_80018DB0` a rumble cadence rather than an audio one?
-
-*Status:* open - raised by the footstep capture, not yet re-audited.
-
-The footstep capture found this kernel's step gate never opens during field or
-overworld walking: `_DAT_8007B8A4` stays pinned at `2` (the `0xF - (speed >> 4)
->= 0xB` else-branch) across four runs and both `DAT_8007B79C` branches. A port
-only reaches its step branch by feeding a synthetic speed. That is odd for an
-audio cadence and prompted a second look at what its output drives.
-
-Three call shapes suggest the surrounding cluster is **libpad**, not SsAPI:
-
-- `FUN_8001D230` calls `FUN_8006E2B4(0x800840F8, 0x8008411A)` - two *data*
-  buffers `0x22` apart, and `0x800840F8` is the libpad report buffer the pad
-  pump `FUN_8001822C` already decodes. That is the `PadInitDirect` shape, not
-  the "two callbacks" the corpus records.
-- Then `FUN_8006CE30(0, 0x800915DA, 2)` and `(1, 0x8009161A, 2)` - one 2-byte
-  table per port, `0x40` apart: the `PadSetAct` shape. Ghidra's C drops
-  `param_1` here, which is one of the catalogued rendering artifacts.
-- Then eight `OpenEvent` / `EnableEvent` pairs on classes `0xF4000001` /
-  `0xF0000011` - the textbook `InitCARD` sequence.
-
-If that holds, `DAT_800915DA/DB` are the DualShock actuator pair and this
-kernel's per-step output is **vibration**, which would fit the game's
-Vibration options for battles, events and encounters. Closing it needs the two
-libpad entries identified against their PsyQ signatures and a live watch on
-`DAT_800915DA/DB` with a controller attached.
-
-### Retail's footstep SFX cue id
-
-*Status:* open - the cadence is pinned, the cue id is not.
-
-The field hosts run the ported cadence kernel `FUN_80018db0` every field frame,
-and it discriminates correctly between a walking and a stationary player. What
-retail *plays* on each step is unknown, so the port fires nothing.
-
-**A guessed id is arbitrary rather than approximate.** An id resolves through
-the descriptor table `DAT_8006F198 + id*8` to a **program index**, and that
-program selects a different sample in whichever VAB bank is resident. Firing
-the Baka-Fighter-menu cursor id `0x21` - program `1` - in a field scene played
-that bank's program 1, an impact sample, so walking punched.
-
-Closing it needs a runtime capture contrasting a stationary and a walking run
-from one field save state, watching two paths: the cue ring `DAT_8007B6D8`
-(producers `FUN_80035B50` / `FUN_8004FCC8`, aged by `FUN_8001698C`, drained by
-`FUN_80016B6C` once a slot's timer reads zero) and the per-actor trigger
-`FUN_800250D4` called from the actor tick `FUN_80021DF4`. The footstep is the
-id that appears only in the walking run, at a cadence; an id in both is
-ambient.
-
-An evidenced negative closes this equally: retail may play no footstep in the
-field at all.
 
 ### XA clip-table writer + `(clip_id, chan)` cue census
 
