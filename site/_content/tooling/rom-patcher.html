@@ -289,6 +289,15 @@
         <label class="rom-opt-label" for="rom-damage-ap">&#8627; AP per 100% max-HP damage: <output id="rom-damage-ap-val">100</output></label>
         <input type="range" id="rom-damage-ap" min="-200" max="200" step="5" value="100">
       </div>
+
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-enemy-scale-on">
+        <span>Enemy difficulty scale - multiply <strong>every enemy's combat stats</strong> (HP, MP, attack, both defenses, INT and speed) by one factor, from <code>0.1x</code> to <code>5x</code>. Nothing moves between monsters, so each keeps its own profile and the whole roster shifts together - <strong>story bosses included</strong>. EXP, gold and drops are untouched, so a hard run is harder, not richer <span class="rom-opt-note">(a manual tuning, unaffected by the seed; the enemy action gauge is left alone, and the unwinnable Rim Elm sparring match stays as shipped)</span></span>
+      </label>
+      <div class="rom-opt rom-sub" id="rom-enemy-scale-row">
+        <label class="rom-opt-label" for="rom-enemy-scale">&#8627; Enemy stat multiplier: <output id="rom-enemy-scale-val">1.0x</output></label>
+        <input type="range" id="rom-enemy-scale" min="0.1" max="5" step="0.1" value="1">
+      </div>
     </details>
 
     <!-- ---- Exploration ---- -->
@@ -533,7 +542,7 @@
   .rom-opt-note { font-weight: 400; color: var(--text-dim); font-size: 0.85em; }
   .rom-sub { padding-left: 1.6rem; background: var(--bg-raised); }
   .rom-form input[type=range] { width: 100%; max-width: 24rem; accent-color: var(--accent); }
-  #rom-spirit-ap-val, #rom-damage-ap-val { font-weight: 700; color: var(--accent-hi); }
+  #rom-spirit-ap-val, #rom-damage-ap-val, #rom-enemy-scale-val { font-weight: 700; color: var(--accent-hi); }
   .rom-sub.is-disabled { opacity: 0.4; pointer-events: none; }
 
   /* Segmented control (radio group styled as connected buttons) */

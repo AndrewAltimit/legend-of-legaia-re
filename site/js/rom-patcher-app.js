@@ -11,7 +11,7 @@
  * solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru,
  * jewel_fix, approach_softlock_fix, fishing_prices, location_renames,
  * earth_egg_price, arts_powers,
- * arts_ap_grants, spirit_ap, damage_ap)
+ * arts_ap_grants, spirit_ap, damage_ap, enemy_stat_scale)
  * -> { data, summary, seed, lang }`, `resolve_seed(str)`,
  * `validate_lang_pack(image, yaml) -> { ok, language, applied, skipped, message, report }`,
  * `export_lang_pack(image, language) -> yaml_string`, and
@@ -427,7 +427,7 @@ const PRESET_BASE = {
   drops: 'none', encounters: 'none', encounter_scope: 'scene', soloStrong: false, fleeExp: false, chests: 'none',
   shops: 'none', casino: 'none', steals: 'none', arts: 'none', doors: 'none',
   door_coupling: 'coupled', houseDoors: false, equipmentDrops: false, seruTrade: false,
-  enemyAlly: false, shinySeru: false, jewelFix: false, approachFix: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', artsApGrant: '', spiritAp: '', damageAp: '',
+  enemyAlly: false, shinySeru: false, jewelFix: false, approachFix: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '',
   startingItems: 0, doorOfWind: false, incense: false,
   speedChain: false, chickenHeart: false, goodLuckBell: false,
   allWarps: false,
@@ -509,10 +509,22 @@ function init() {
   const damageApChk = $('rom-damage-ap-on');
   const damageApSlider = $('rom-damage-ap');
   const damageApVal = $('rom-damage-ap-val');
+  const enemyScaleChk = $('rom-enemy-scale-on');
+  const enemyScaleSlider = $('rom-enemy-scale');
+  const enemyScaleVal = $('rom-enemy-scale-val');
   // Live read-out next to each AP slider. `input` fires while dragging;
   // `change` (which drives markCustom/syncDependents) only fires on release.
   for (const [slider, out] of [[spiritApSlider, spiritApVal], [damageApSlider, damageApVal]]) {
     if (slider && out) slider.addEventListener('input', () => { out.textContent = slider.value; });
+  }
+  // The difficulty scale is a multiplier, so it reads out as "2.5x". Its step
+  // is 0.1, and float steps can land on 2.5000000000000004 - fix the display
+  // (and everything derived from it) to one decimal.
+  const fmtScale = (v) => Number(v).toFixed(1) + 'x';
+  if (enemyScaleSlider && enemyScaleVal) {
+    enemyScaleSlider.addEventListener('input', () => {
+      enemyScaleVal.textContent = fmtScale(enemyScaleSlider.value);
+    });
   }
   const artsPowerInput = $('rom-arts-power');
   const artsApGrantInput = $('rom-arts-ap-grant');
@@ -685,6 +697,9 @@ function init() {
     damageApChk.checked = cfg.damageAp !== '' && cfg.damageAp != null;
     damageApSlider.value = String(damageApChk.checked ? cfg.damageAp : 100);
     damageApVal.textContent = damageApSlider.value;
+    enemyScaleChk.checked = cfg.enemyStatScale !== '' && cfg.enemyStatScale != null;
+    enemyScaleSlider.value = String(enemyScaleChk.checked ? cfg.enemyStatScale : 1);
+    enemyScaleVal.textContent = fmtScale(enemyScaleSlider.value);
     artsPowerInput.value = cfg.artsPower || '';
     artsApGrantInput.value = cfg.artsApGrant || '';
     artBuilder.clear();
@@ -729,6 +744,8 @@ function init() {
     if (spiritRow) spiritRow.classList.toggle('is-disabled', !(spiritApChk && spiritApChk.checked));
     const damageRow = $('rom-damage-ap-row');
     if (damageRow) damageRow.classList.toggle('is-disabled', !(damageApChk && damageApChk.checked));
+    const enemyScaleRow = $('rom-enemy-scale-row');
+    if (enemyScaleRow) enemyScaleRow.classList.toggle('is-disabled', !(enemyScaleChk && enemyScaleChk.checked));
     // Equipment drops are additive (an extra reward-routine grant), so the
     // Monster drops control stays fully live alongside them - nothing to grey.
   }
@@ -778,6 +795,13 @@ function init() {
     // Both ranges include 0 and negatives, so read the value as-is.
     const spiritAp = spiritApChk.checked ? String(spiritApSlider.value) : '';
     const damageAp = damageApChk.checked ? String(damageApSlider.value) : '';
+    // Difficulty scale: sent as a plain multiplier ('' = retail). Fixed to one
+    // decimal, because a 0.1 float step can land on 2.5000000000000004 and the
+    // parser rounds to thousandths. Left at 1.0 it is the identity, and the
+    // summary reports it as retail.
+    const enemyStatScale = enemyScaleChk.checked
+      ? Number(enemyScaleSlider.value).toFixed(1)
+      : '';
     // Art overrides = the per-art rows serialized to `combo=value` pairs,
     // merged with anything typed into the raw (advanced) inputs.
     const artOv = artBuilder.collect();
@@ -835,7 +859,7 @@ function init() {
       spellCost === 'none' && equipBonus === 'none' && !weaponSpecialty &&
       startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru && !jewelFix && !approachFix &&
       !fishingPrice && !renameLocation && !earthEggPrice && !artsPower && !artsApGrant &&
-      !spiritAp && !damageAp
+      !spiritAp && !damageAp && !enemyStatScale
     ) {
       setStatus('Enable at least one option (pick a preset, a language, or flip a toggle).', 'err');
       return;
@@ -860,7 +884,7 @@ function init() {
       setStatus('Patching (this can take a moment for a full disc) ...');
       // Yield so the status paints before the synchronous WASM call.
       await new Promise((r) => setTimeout(r, 30));
-      const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, spiritAp, damageAp);
+      const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, spiritAp, damageAp, enemyStatScale);
       const data = result.data;
       const usedSeed = result.seed;
       const name = patchedName(file.name, usedSeed);

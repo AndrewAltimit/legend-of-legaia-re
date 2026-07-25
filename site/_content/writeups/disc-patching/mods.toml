@@ -220,6 +220,17 @@ status = "shipped"
 test = "monster_stats_real.rs"
 
 [[mod]]
+key = "enemy_stat_scale"
+name = "Enemy difficulty scale"
+flag = "--enemy-stat-scale"
+tier = "B"
+target = "Monster archive (PROT 867) slot, the same HP/MP/ATK/DEF/INT/SPD halfwords at +0x0C.., multiplied"
+edit = "in-place"
+gap = false
+status = "shipped"
+test = "monster_stats_real.rs"
+
+[[mod]]
 key = "weapon_specialty"
 name = "Weapon specialty"
 flag = "--weapon-specialty"

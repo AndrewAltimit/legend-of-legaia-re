@@ -62,6 +62,7 @@ full design.
   - [Chests](#chests)
   - [Steals](#steals)
   - [Monster stats](#monster-stats)
+  - [Enemy difficulty scale](#enemy-difficulty-scale)
   - [Move power](#move-power)
   - [Element affinity](#element-affinity)
   - [Spell cost](#spell-cost)
@@ -528,6 +529,26 @@ Monster combat-stat randomizer (`monster_stats` module).
 - `set_stats` re-packs a monster slot through [`monster::repack_slot`]; the
   decoded length is unchanged, so each slot keeps its `0x14000` footprint (a slot
   too tight to re-pack is skipped, like drops).
+
+## Enemy difficulty scale
+
+Global enemy-stat multiplier (`monster_stats::plan_scale`) - the same seven
+halfwords, edited a different way.
+
+- `--enemy-stat-scale MULT` multiplies every monster's stats by one factor
+  (`ScalePermille`, `0.1x..=5x`, retail `1`) instead of moving values between
+  monsters, so each keeps its own profile while the whole roster shifts together.
+  Seedless, and applied after `--monster-stats`, so the two compose.
+- **Story bosses are scaled** - a multiplier keeps a scripted fight's shape, so
+  the randomizer's `PROTECTED_MONSTER_IDS` guard does not apply here. The one
+  carve-out (`SCALE_PINNED_MONSTER_IDS`) is the unwinnable-by-design Rim Elm
+  sparring partner, pinned in both directions.
+- AGL stays untouched (it gates the AI's action economy, not difficulty), and
+  EXP / gold / drops are outside the scaled set, so a hard run is harder, not
+  richer.
+- Integer permille arithmetic - `(value * permille + 500) / 1000`, round half up
+  - so no float reaches the disc. A `0` stays `0`, a non-zero floors at `1`, and
+  the top saturates at the record's `u16` ceiling.
 
 ## Move power
 
@@ -1165,6 +1186,9 @@ legaia-patcher verify --input DISC.bin --patch run.ppf
   also take `shuffle` / `random` / `none`. `--equip-bonus` and `--equip-mask` edit
   disjoint bytes of the equipment table (stat tuple vs. equip mask), so they
   compose.
+- `--enemy-stat-scale MULT` scales every enemy's combat stats by one difficulty
+  multiplier (`0.1`..`5`, retail `1`). Seedless, and applied after
+  `--monster-stats`, so a shuffle-then-scale run scales the shuffled values.
 - `--equipment-drops` injects a low-chance bonus equipment drop into the
   battle-end reward routine - granted on top of `--drops`, never disturbing it.
   `--equipment-drop-chance N` sets the per-battle percent (default 5).

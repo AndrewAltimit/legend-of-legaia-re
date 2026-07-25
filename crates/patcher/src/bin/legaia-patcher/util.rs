@@ -59,6 +59,15 @@ pub(crate) fn parse_prize_price(s: &str) -> Result<(u8, u32)> {
     Ok((parse_item_id(id_str)?, price))
 }
 
+/// Parse an `--enemy-stat-scale` value: a multiplier like `2.5` (a trailing
+/// `x` is accepted, so `2.5x` works too), rounded to the nearest thousandth and
+/// range-checked to `0.1x..=5x`. Delegates to
+/// [`legaia_patcher::monster_stats::ScalePermille::parse`], the same parser the
+/// browser slider uses, so both front-ends accept exactly the same values.
+pub(crate) fn parse_stat_scale(s: &str) -> Result<legaia_patcher::monster_stats::ScalePermille> {
+    legaia_patcher::monster_stats::ScalePermille::parse(s).map_err(|e| anyhow::anyhow!(e))
+}
+
 /// Parse an `--arts-power` entry: `COMBO=VALUE` (`RDLDL=0x16`). The combo is a
 /// run of `L/R/D/U` glyphs (case-insensitive); `VALUE` is a power-encoding byte
 /// (`0` to disable, or `0x0C..=0x1F` for a real damage tier), given in decimal
