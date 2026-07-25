@@ -939,6 +939,32 @@ The executing port (`legaia-engine-vm`, field `menu_ctrl` nibble 7) already
 returned the correct `Advance` with the correct 6/7 split; it was the prose
 and the port's own explanatory comment that carried the false mechanism.
 
+### The two actor-list leaves the VM keys on `+0x0C`
+
+Several opcodes reach the actor list not by index but by **per-frame handler
+address** - the function pointer at `actor[+0x0C]` that `FUN_80020DE0` stamps
+from a spawn descriptor's `+8` word. Two 15-instruction SCUS leaves are the
+whole vocabulary, and they differ only in their tail:
+
+| Leaf | Body | What it is |
+|---|---|---|
+| `FUN_8003CF04` | walk `+0x00`; skip `+0x0C != handler`; skip `+0x10 & 8`; return the first survivor, `0` on exhaustion | **finder**. The kill-bit skip is what stops a find-or-spawn API adopting an actor retired earlier the same frame. |
+| `FUN_8003CF40` | walk `+0x00`; `+0x10 \|= 8` on every `+0x0C == handler`; no return value | **retire sweep**. Not a registration of any kind - it writes nothing but the flag word. |
+
+That matters for the ops long labelled "register callback" - `4C 9F` and
+`4C 87`, both `func_0x8003CF40(_DAT_8007C34C, LAB_801DA930)`. `LAB_801DA930`
+is the handler on spawn descriptor `0x801F27EC`, the one the fade spawner
+`FUN_801DDE34` allocates from, so those ops **cancel a running fade**. Nothing
+is registered and nothing waits: with no fade live the sweep is entirely
+inert, which is exactly what a live opening-chain probe measured (zero hits on
+the "callback"). The scene MAN loader `FUN_8003AEB0` inlines the same sweep
+twice at `0x8003B3C8` and `0x8003B414`, against `LAB_801DA930` and
+`FUN_80037018`, immediately before it opens the submode - so a driver actor
+either sweep marked is invisible to the open's find.
+
+Ports: `engine-core::World::{find_actor_by_handler, retire_actors_by_handler}`,
+over the handler identity `engine-core::actor_handler::ActorHandler`.
+
 **ASCII dialogue aliases survive the `clean` tag.** The US build's dialogue is plain ASCII, and the wide
 flag ops land exactly on the letter ranges: `Set` leads `0x53..0x57` = `S..W`, `Clear` leads `0x61..0x67` =
 `a..g`, `Test` leads `0x71..0x77` = `q..w`, each followed by one operand byte. So common English bigrams

@@ -143,6 +143,7 @@ pub mod baka_cabinet;
 pub mod camera_ease;
 pub mod effect_ribbon;
 pub mod field_actor_kernels;
+pub mod field_actor_program;
 pub mod field_submode;
 pub mod mode_entry_init;
 

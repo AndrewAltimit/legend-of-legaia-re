@@ -379,6 +379,12 @@ pub struct Actor {
     /// [`ActorHandler::None`]: crate::actor_handler::ActorHandler::None
     pub handler: crate::actor_handler::ActorHandler,
 
+    /// `+0x50` - the per-handler **parameter word**. What it selects is the
+    /// handler's business: the scripted-scene actor reads it as a program id
+    /// ([`crate::field_actor_program`]), the submode driver has it cleared at
+    /// spawn. Zero for handlers that never look at it.
+    pub state_50: u16,
+
     /// `+0x54` - the **actor state word** every overlay-resident handler
     /// state-machines on (`FUN_801D4A60`'s 38-state jump table,
     /// `FUN_801EE328`'s five states, the submode driver's `0`). Retail unions

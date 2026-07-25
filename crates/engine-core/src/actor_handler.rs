@@ -43,6 +43,7 @@
 //! | `0x801F27EC` | `0x023FD4` | `0x801DA930` | `FUN_801DDE34` (fade family) |
 //! | `0x801F2810` | `0x023FF8` | `0x801DBE9C` | `FUN_801DE478` (scene actor) |
 //! | `0x801F2888` | `0x024070` | `0x801DDC20` | `FUN_801DE2B0` (colour tween) |
+//! | `0x801F26D8` | `0x023EC0` | `0x801D4A60` | `FUN_801D5A24` (scripted scene) |
 //! | `0x801F28A0` | `0x024088` | `0x80037174` | the `CC F8 80 N` narration op |
 //!
 //! `FUN_80021DF4` comes from a live capture instead - a
@@ -92,6 +93,10 @@ pub const VA_SUBMODE_DRIVER: u32 = crate::field_submode::SUBMODE_DRIVER_HANDLER;
 /// `0x8003B3C8..0x8003B3F0`) is the same cancel on scene load.
 pub const VA_FADE_FAMILY: u32 = 0x801D_A930;
 
+/// `FUN_801D4A60` - the four-program **scripted-scene** actor. Spawn
+/// descriptor `0x801F26D8` (field `0x023EC0`), allocated by `FUN_801D5A24`.
+pub const VA_SCRIPTED_SCENE: u32 = 0x801D_4A60;
+
 /// `FUN_801DBE9C` - the handler on the fixed scene-actor template
 /// `0x801F2810` that `FUN_801DE478` spawns from (field `0x023FF8`, word `+8`).
 pub const VA_SCENE_ACTOR: u32 = 0x801D_BE9C;
@@ -140,6 +145,8 @@ pub enum ActorHandler {
     FadeFamily,
     /// [`VA_SCENE_ACTOR`].
     SceneActor,
+    /// [`VA_SCRIPTED_SCENE`].
+    ScriptedScene,
     /// [`VA_SCREEN_SPRITE`].
     ScreenSprite,
     /// [`VA_SCREEN_MASK`].
@@ -180,6 +187,9 @@ pub enum HandlerKernel {
     CameraMover,
     /// One of the four [`crate::screen_fx`] widget handlers.
     ScreenWidget,
+    /// [`crate::field_actor_program::step`] - ported, but not yet run by the
+    /// actor loop; see that function's disclosure.
+    ScriptedScene,
     /// No ported body. The handler still participates in every identity
     /// test; it just has nothing to run.
     Unported,
@@ -209,6 +219,7 @@ impl ActorHandler {
             VA_SUBMODE_DRIVER => ActorHandler::SubmodeDriver,
             VA_FADE_FAMILY => ActorHandler::FadeFamily,
             VA_SCENE_ACTOR => ActorHandler::SceneActor,
+            VA_SCRIPTED_SCENE => ActorHandler::ScriptedScene,
             VA_SCREEN_SPRITE => ActorHandler::ScreenSprite,
             VA_SCREEN_MASK => ActorHandler::ScreenMask,
             VA_SCREEN_PANEL => ActorHandler::ScreenPanel,
@@ -234,6 +245,7 @@ impl ActorHandler {
             ActorHandler::SubmodeDriver => VA_SUBMODE_DRIVER,
             ActorHandler::FadeFamily => VA_FADE_FAMILY,
             ActorHandler::SceneActor => VA_SCENE_ACTOR,
+            ActorHandler::ScriptedScene => VA_SCRIPTED_SCENE,
             ActorHandler::ScreenSprite => VA_SCREEN_SPRITE,
             ActorHandler::ScreenMask => VA_SCREEN_MASK,
             ActorHandler::ScreenPanel => VA_SCREEN_PANEL,
@@ -250,6 +262,7 @@ impl ActorHandler {
             ActorHandler::NarrationRoller => HandlerKernel::NarrationRoller,
             ActorHandler::TextBalloon => HandlerKernel::TextBalloon,
             ActorHandler::CameraMover => HandlerKernel::CameraMover,
+            ActorHandler::ScriptedScene => HandlerKernel::ScriptedScene,
             ActorHandler::ScreenSprite
             | ActorHandler::ScreenMask
             | ActorHandler::ScreenPanel
@@ -307,6 +320,7 @@ mod tests {
             ActorHandler::SubmodeDriver,
             ActorHandler::FadeFamily,
             ActorHandler::SceneActor,
+            ActorHandler::ScriptedScene,
             ActorHandler::ScreenSprite,
             ActorHandler::ScreenMask,
             ActorHandler::ScreenPanel,
@@ -350,7 +364,10 @@ mod tests {
         // The cross-link between the two ports in `field_actor_kernels`,
         // restated on the identity type: the sweep names the tween's entry.
         assert!(ActorHandler::ColourTween.retired_by_scene_transition());
-        assert_eq!(ActorHandler::ColourTween.kernel(), HandlerKernel::ColourTween);
+        assert_eq!(
+            ActorHandler::ColourTween.kernel(),
+            HandlerKernel::ColourTween
+        );
     }
 
     #[test]

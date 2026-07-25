@@ -1077,11 +1077,7 @@ The field offsets they touch are the same ones tabulated in [Player actor fields
 | `FUN_801d701c` | Spawn a positioned sub-actor (template `0x801f2978`): inits `+0x54 = 0`, `+0x50`, `+0x14`, `+0x16`, `+0x9c` from operands. |
 | `FUN_801cff3c` | Spawn a sub-actor (template `0x801f2858`): inits `+0x54`/`+0x9e = 0` and writes operands into `+0xb8`/`+0xba`/`+0xbc`. |
 
-`FUN_801d4a60` is the largest of the group, and it is **not a single controller**: it is a **38-state jump-table dispatcher** on the actor's `+0x54` state word. The bound is `sltiu v1,0x26` and the table sits at `0x801CE960` (`0x801D0000 - 0x16A0`), one word per state, reached by `jr v0` - so an out-of-range state falls straight to the epilogue.
-
-Its prologue snapshots the player transform once per frame (`_DAT_8007c364 + 0x14/0x18` into the stack vector, `+0x24/0x28` into a second one) and biases the snapshot's Y by `-0x40`. The early states then set story flag `0x17` and clear `0x18` (`func_0x8003ce08` / `func_0x8003ce34`), swap the BGM slot to `0x7F3`, fire SFX `0x200` (`func_0x80035b50`), and stage move-VM parts from the record at `0x801F2658` through `FUN_80021B04` - once per `_DAT_1f800393` tick - while accumulating progress in `+0x9e`. So the "walk an actor to a scripted spot" reading describes *one* of its states, not the function.
-
-That earlier reading came from `overlay_0897_801d4a60.txt`, which is **short**: it stops at 690 instructions where five independent field captures agree on 756. Read the captures (`overlay_cutscene_dialogue_801d4a60.txt` and siblings) before porting any arm.
+`FUN_801d4a60` is the largest of the group, and it is not a locomotion handler at all - it is the **scripted-scene actor**, four voice-over cutscene programs sharing one 38-state jump table. It has [its own section below](#the-scripted-scene-actor---fun_801d4a60).
 
 The rise-up actor that locks player input and scrolls the player's `+0x16` is **`FUN_801EE328`**, and it is not a locomotion handler at all - it is the dev-menu **"ON RULA," MAP CHANGE warp applier** already documented in [`world-map.md`](world-map.md#field-overlay-actor-state-machines-sparkle--travel-magic--dev) and [`functions/world-map.md`](../reference/functions/world-map.md). A 5-state actor SM on `+0x54`:
 
@@ -1096,6 +1092,58 @@ The rise-up actor that locks player input and scrolls the player's `+0x16` is **
 So the input lock and the `+0x16` scroll are the *rise-up animation of a debug warp*, not a scripted player-turn cutscene, and the threshold crossing spawns a flash quad rather than starting a fade.
 
 **`FUN_801dfb10` is a phantom print, not an entry point.** No extracted overlay image has a function boundary there. The bytes printed at `0x801dfb10` are field (0897) at `0x801EE328` - the `+0xE818` re-key, which is also exactly the `+0x1FB10` file offset [`functions/world-map.md`](../reference/functions/world-map.md) already records for `FUN_801EE328`. Byte-checked: the two dumps' prologues (`addiu sp,sp,-0x50` / `sw s3,0x3c(sp)` / `move s3,a0` / … / `lh a2,0x54(s3)`) are identical instruction for instruction under the shift, and the mis-based slice stops at 133 instructions where the based dump runs 171 to its `jr ra`. `0x801E8B10` is a second independent phantom landing on the same routine. See [`phantom-print-index.md`](../tooling/phantom-print-index.md).
+
+## The scripted-scene actor - `FUN_801d4a60`
+
+A 38-state jump-table dispatcher on the actor's `+0x54`: bound `sltiu v1,0x26`, table at `0x801CE960` (`0x801D0000 - 0x16A0`), one word per state, `jr v0`, out-of-range falls to the epilogue. Port: [`engine-core::field_actor_program`](../../crates/engine-core/src/field_actor_program.rs).
+
+### `+0x50` is a program selector, and that is what makes the table readable
+
+The entry state computes its own successor:
+
+```text
+actor[+0x54] = (actor[+0x54] + 1) + actor[+0x50] * 10
+```
+
+(`sll v1,a0,2; addu v1,v1,a0; sll v1,v1,1`). So the state space is **four programs on a stride of ten**, entered at `1` / `11` / `21` / `31` - exactly where the table's live entries sit. The fifteen slots that point at the epilogue (`6..=10`, `16..=20`, `27..=30`) are the unused tails of each ten-wide block, not fifteen independent dead states. Read without the `×10` the table looks like a sparse mess; with it, it is four short programs of 5, 5, 6 and 7 states.
+
+The spawner is **`FUN_801D5A24(program)`** (17 instructions): allocate from spawn descriptor `0x801F26D8` - whose `+8` handler word is `FUN_801D4A60` itself - then `+0x54 = 0`, `+0x50 = program`.
+
+### Openers and closers
+
+The scene MAN loader `FUN_8003AEB0` spawns two of the programs, each gated on a bit of the shared flag bank `DAT_80085758` (MSB-first, so `0x8008575A & 0x01` is flag `0x17` and `0x80085759 & 0x08` is flag `0x0C`):
+
+| loader site | gate | spawns |
+|---|---|---|
+| `0x8003BB10` | flag `0x17` set | program `2` |
+| `0x8003BB38` | flag `0x0C` set | program `3` |
+
+Those are the flags programs 0 and 1 **set** and programs 2 and 3 **clear**. So the loader is not starting cutscenes - it is finishing ones a scene change interrupted. Programs 0 and 1 are openers, 2 and 3 their closers, and the flag is the handshake that survives the scene boundary.
+
+| program | states | what it does |
+|---|---|---|
+| 0 | `1..=5` | Set flag `0x17`, clear `0x18`; request BGM `0x7F3` and wait for the acknowledge; SFX `0x200`; stage the `0x801F2658` ambient record until `+0x9E >= 0x28`, then the `0x801F2498`/`0x801F250C` pair and clear flag `0x0B`; then idle, staging the ambient record forever. |
+| 1 | `11..=15` | Set flag `0x0C`, clear `0x18`, SFX `0x1B`; two staged part-pair beats at `0x14` and `0x32`; a third at `0x14` that clears flag `0x0B`, zeroes the player's `+0x72` and raises `player[+0x10] \|= 0x200000`; retire at `0x64`. |
+| 2 | `21..=26` | Engage the player, park its speed on the actor's `+0x72`; wait for the BGM acknowledge then stream **XA17** (`FUN_80019794(0x10)`); at `0x28` set scratchpad story bit `0x01000000`, seed the lift, stage the `0x801F2580`/`0x801F25EC` pair and fire the chunked cue `FUN_8003D53C(0x10, 7, 0x135)`; wind the lift down; wait out the clip; clear flag `0x17` and the story bit, release, retire. |
+| 3 | `31..=37` | Engage as program 2 does; SFX `0x1B` at `0x28`; the same two part-pair beats as program 1; restore the parked speed and drop `0x200000`; a `0x40` beat; clear flag `0x0C`, release, retire. |
+
+### Three shapes that make the 23 live arms short
+
+- **snapshot** (prologue, and again inside state `0x18`): copy the player's `+0x14..+0x1B` and `+0x24..+0x2B` into two stack vectors through unaligned `lwl`/`lwr` pairs, then bias the position's Y by `-0x40`. Those two vectors are the `(pos, rot)` arguments of every `FUN_80021B04(pos, rot, record, 0x1000)` part stage.
+- **stage-per-vsync**: `for _ in 0..DAT_1F800393 { stage }` - one stage per vsync the game tick spans, so the emission rate is cadence-invariant.
+- **accumulate**: `+0x9E += DAT_1F800393`, compare `(i16)+0x9E` against a per-state threshold; below it the arm returns, at or above it it does its one-shot work and advances through the shared tail `0x801D5594` (`+0x9E = 0`, `+0x54 += 1`).
+
+Several arms **fall through** into the next state inside the same call - `1→2→3→4`, `11→12`, `21→22`, `23→24`, `31→32→33` - because they bump `+0x54` without a jump and the arms are laid out in state order. A one-arm-per-frame reading delays each program's first part stage by three frames and its voice cue by two.
+
+The lift leg (state `0x18`) winds `player[+0x8E]` down by `((lift + actor[+0x16] + 0x1F) >> 5)` per vsync, clamped at `0x10` (the disassembly spells the clamp `slti v0,v1,0x11`), mirrors `-lift` into `player[+0x16]`, and ends when that angle returns to the value latched at `+0x16`. It is the same `+0x8E` / `+0x16` idiom as the dev warp applier `FUN_801EE328`'s rise-up arm.
+
+Both closers end at `0x801D55E0`: test flag `0x18` (`func_0x8003ce64`), clear `player[+0x10] & 0x80000` only if it is **clear**, then set the actor's own retire bit `+0x10 |= 8`. The guard gates the release, not the retire - a close-out under a set guard still removes the actor while leaving the player engaged.
+
+### Provenance, and why the old reading was wrong
+
+The static `overlay_0897_801d4a60.txt` dump stops at **690** instructions. Five independent live-RAM field captures agree on **756**, and so does capstone over `extracted/overlays/overlay_field_0897.bin` at the committed base `0x801CE818` (file `0x006248`), which decodes 756 instructions ending on the `jr ra` epilogue at `0x801D5628`. The 66 dropped instructions are states `0x22`..`0x25` and the shared tail - most of program 3 - which is how a four-program state machine came to be documented as a single "scripted actor-approach controller".
+
+The audio side reached this function independently: [`audio.md`](audio.md#streamed-cue-census-fun_8003eae4--fun_80019794) already lists field 0897 `0x801D4FCC` as clip `0x10` (XA17), "scripted-scene voice stream". That call site is program 2's state `0x16`.
 
 `FUN_801d567c` advances a per-actor **motion keyframe**: when the actor's frame timer expires it reads the next motion bytes from `actor[+0x94] + actor[+0x9e]` through the flag/stream reader `func_0x8003ce9c`; otherwise, when `+0x9c == 0`, it latches the current motion transform (copying `+0x3c` -> `+0x40`, `+0x16` -> `+0x6a`, and packing `+0x74`/`+0x88` into `+0x80..+0x85`) and runs `FUN_801e4404`.
 

@@ -58,9 +58,7 @@ impl World {
     /// [`Self::retire_actors_by_handler`]'s sibling tests.
     pub fn find_actor_by_handler(&self, handler: ActorHandler) -> Option<usize> {
         self.actors.iter().position(|a| {
-            a.active
-                && a.handler == handler
-                && a.physics.status_flags & ACTOR_FLAG_YIELD == 0
+            a.active && a.handler == handler && a.physics.status_flags & ACTOR_FLAG_YIELD == 0
         })
     }
 
@@ -306,7 +304,47 @@ impl World {
             self.actors[slot].state_54 =
                 scene_actor_initial_state(SCENE_ACTOR_REQUESTED_STATE, self.field_mode_flags);
         }
+        self.man_load_resume_programs();
         outcome
+    }
+
+    /// Re-spawn any scripted-scene program a scene change interrupted.
+    ///
+    /// PORT: FUN_8003AEB0 (`0x8003BAF0..0x8003BB3C`), driving
+    /// [`crate::field_actor_program::spawn_program`] (`FUN_801D5A24`)
+    ///
+    /// The loader tests two bits of the shared flag bank and spawns the
+    /// matching program for each. The pairs are in
+    /// [`crate::field_actor_program::MAN_LOAD_RESUME`], and what they mean is
+    /// on that const: each flag is set by an *opener* program and cleared by
+    /// its *closer*, so a flag still set at scene load says the opener ran and
+    /// its closer did not - the loader starts the closer. Returns the programs
+    /// it spawned.
+    ///
+    /// Nothing ticks the spawned actor yet; the gap is disclosed on
+    /// [`crate::field_actor_program::step`].
+    ///
+    /// Carries the same deliberate divergence as the scene-actor spawn above:
+    /// a previous load's program actor is retired first, standing in for the
+    /// per-scene list teardown the engine does not have. Without it a flag
+    /// that stays set across several scene changes seats one actor per change.
+    pub fn man_load_resume_programs(&mut self) -> Vec<u16> {
+        self.retire_actors_by_handler(ActorHandler::ScriptedScene);
+        self.retire_yielded_actors();
+        let mut spawned = Vec::new();
+        for (flag, program) in crate::field_actor_program::MAN_LOAD_RESUME {
+            if !self.system_flag_test(u16::from(flag)) {
+                continue;
+            }
+            let Some(slot) = self.spawn_handler_actor(ActorHandler::ScriptedScene) else {
+                break;
+            };
+            let a = crate::field_actor_program::spawn_program(program);
+            self.actors[slot].state_50 = a.program;
+            self.actors[slot].state_54 = a.state;
+            spawned.push(program);
+        }
+        spawned
     }
 
     /// Install a colour tween on `slot`, seating the handler the sweep and the
@@ -359,7 +397,10 @@ mod tests {
         // the LATER one rather than the first address match.
         let mut w = world_with(&[ActorHandler::SubmodeDriver, ActorHandler::SubmodeDriver]);
         w.actors[0].physics.status_flags |= ACTOR_FLAG_YIELD;
-        assert_eq!(w.find_actor_by_handler(ActorHandler::SubmodeDriver), Some(1));
+        assert_eq!(
+            w.find_actor_by_handler(ActorHandler::SubmodeDriver),
+            Some(1)
+        );
         // Kill the survivor too and the search reports a miss, which is what
         // makes a find-or-spawn API spawn instead of adopting a corpse.
         w.actors[1].physics.status_flags |= ACTOR_FLAG_YIELD;
@@ -447,10 +488,14 @@ mod tests {
         // the open's find. Retiring it by hand reproduces the same shape.
         let mut w = World::default();
         w.man_load_actor_reset();
-        let first = w.find_actor_by_handler(ActorHandler::SubmodeDriver).unwrap();
+        let first = w
+            .find_actor_by_handler(ActorHandler::SubmodeDriver)
+            .unwrap();
         w.retire_actors_by_handler(ActorHandler::SubmodeDriver);
         assert_eq!(w.man_load_actor_reset(), SubmodeOpen::Spawned);
-        let second = w.find_actor_by_handler(ActorHandler::SubmodeDriver).unwrap();
+        let second = w
+            .find_actor_by_handler(ActorHandler::SubmodeDriver)
+            .unwrap();
         assert_ne!(first, second);
     }
 
@@ -464,8 +509,10 @@ mod tests {
                 .iter()
                 .any(|a| a.active && a.state_54 == SCENE_ACTOR_REQUESTED_STATE)
         );
-        let mut w = World::default();
-        w.field_mode_flags = 1;
+        let mut w = World {
+            field_mode_flags: 1,
+            ..Default::default()
+        };
         w.man_load_actor_reset();
         assert!(w.actors.iter().any(|a| a.active && a.state_54 == 1));
         assert!(
@@ -529,6 +576,45 @@ mod tests {
         w.scene_transition_actor_sweep();
         w.tick_handler_actors(1);
         assert!(!w.actors[slot].active);
+    }
+
+    #[test]
+    fn the_man_load_resumes_only_the_programs_whose_flag_survived() {
+        use crate::field_actor_program::{FLAG_PROGRAM_1, FLAG_SCENE_ACTIVE};
+        // No flag set: no program actor at all. This is the ordinary case, so
+        // if the gate were inverted every scene load would spawn two.
+        let mut w = World::default();
+        assert!(w.man_load_resume_programs().is_empty());
+        assert_eq!(w.find_actor_by_handler(ActorHandler::ScriptedScene), None);
+
+        // Opener 0's flag survived a scene change -> its closer (program 2).
+        let mut w = World::default();
+        w.system_flag_set(u16::from(FLAG_SCENE_ACTIVE));
+        assert_eq!(w.man_load_resume_programs(), vec![2]);
+        let slot = w
+            .find_actor_by_handler(ActorHandler::ScriptedScene)
+            .expect("the closer was spawned");
+        assert_eq!(w.actors[slot].state_50, 2);
+        assert_eq!(w.actors[slot].state_54, 0, "it enters at the entry state");
+
+        // Both flags -> both closers, in the loader's order.
+        let mut w = World::default();
+        w.system_flag_set(u16::from(FLAG_SCENE_ACTIVE));
+        w.system_flag_set(u16::from(FLAG_PROGRAM_1));
+        assert_eq!(w.man_load_resume_programs(), vec![2, 3]);
+    }
+
+    #[test]
+    fn a_scene_load_resumes_an_interrupted_program() {
+        // The whole chain in one: the flag an opener left behind survives into
+        // `man_load_actor_reset`, which is what `SceneHost::load_scene` calls.
+        let mut w = World::default();
+        w.system_flag_set(u16::from(crate::field_actor_program::FLAG_PROGRAM_1));
+        w.man_load_actor_reset();
+        let slot = w
+            .find_actor_by_handler(ActorHandler::ScriptedScene)
+            .expect("the MAN-load reset resumed the program");
+        assert_eq!(w.actors[slot].state_50, 3);
     }
 
     #[test]
