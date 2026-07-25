@@ -11,6 +11,7 @@ Part of the [key function directory](../functions.md) - the conventions for read
 | `801DF570` | **Attack-approach distance clamp** (0898): `(slot, requested) -> i16`. Projects the attacker/target separation along the reverse bearing and clamps the requested step into `[3d/4, d]` - [details ↓](#801df570). Ported as `engine-vm::battle_approach`. |
 | `801DBB8C` / `801D84C0` | **Battle party-name panel open / teardown** (0898). A matched pair over the label-actor block at `0x801F4E08`: the former registers a text actor through `FUN_8003541C` and stashes the handle, the latter builds the four panel buffers and clears that block - [details ↓](#801d84c0). Ported as `engine-vm::battle_party_panel`. |
 | `801DBC30` | **Battle label-strip blit** (0898): `(x, y)`. A 1:1 `0x40 x 0x10` textured quad from atlas `(0, 0x60)`, CLUT `0x7704` / tpage `7`, gated on `ctx[+0x6CE] == 0`. Ported as `engine-vm::battle_party_panel::label_strip`. |
+| `801F30C4` | **Two-mode effect burst** (0898, 563 instructions spanning `0x801F30C4..0x801F398C`): `(record, mode)`. Four iterations around the compass, three spawns each, placed by a trig term plus bounded random jitter. The entry is **one loop written twice** - [details ↓](#801f30c4). Ported as `engine-vm::battle_burst`. |
 | `801D5778` | **Pose-slot re-mapped copy** (battle-action overlay 0898). `(dst_slot, src_slot)` - both **indices**, scaled `*0x18` into the pose-slot array at `0x80076C10`. Copies `dst[+2] = src[+0xA]`, `dst[+4] = src[+0xC]`, `dst[+6] = src[+6]`, `dst[+0xA] = src[+0xA] - 0x140`, `dst[+0xC] = src[+0xC]`, `dst[+0x14] = src[+0x14]`. `overlay_battle_action_801d5778.txt`. |
 | `801D57E8` | **Pose-slot straight copy** (battle-action overlay 0898). `(dst_slot, src_slot)` over the same `0x80076C10` array and stride; clones `+0x02`, `+0x04`, `+0x06`, `+0x0A`, `+0x0C` (u16) and `+0x14` (u32), and deliberately leaves `+0x00`, `+0x08`, `+0x10`, `+0x12` alone. The un-remapped sibling of `801D5778`. `overlay_battle_action_801d57e8.txt`. |
 | `80052FA0` / `800536BC` / `80053898` / `80053a28` | Party battle-mesh assembler (equipment-section splice) + CLUT decode + TSB/CBA relocation - [details ↓](#80052fa0) |
@@ -432,6 +433,57 @@ Ported as `engine-vm::battle_party_panel`. Read the mapped image: the
 `overlay_0897` dump at `801D84C0` holds 212 instructions against the
 battle-action image's 259, and the one at `801DBB8C` is a four-instruction
 label-call slice leaving via `j 0x801EA7AC` rather than a function at all.
+
+### `801F30C4`
+
+**Two-mode effect burst.** `(record, mode)`. The span is
+`0x801F30C4..0x801F398C` - 563 instructions, ending exactly where the cast
+audio-cue dispatcher `func_0x801F3990` begins (`0x801F3988` is the `jr ra`,
+`0x801F3990` a clean `addiu sp, sp, -0x20`). **`disasm-overlay-fn.py` cannot
+read it**: that tool stops at the first unconditional `j` and reports 18
+instructions here, so use raw capstone over the mapped `0898` image at base
+`0x801CE818`.
+
+**The entry is one loop written twice.** A three-way fork on `mode` (`0`, `1`,
+and a fall-through that returns immediately) reaches two loop bodies of 258
+instructions each. Diffed instruction by instruction they are identical except
+for ten constants, three of which are only branch targets shifted by the arm
+offset. Both loops run four iterations (`slti $s2, 4`), call `FUN_80050ED4`
+three times and the RNG nine times per iteration. The real differences:
+
+| | arm `0` | arm `1` |
+|---|---|---|
+| spawn table | `0x801F5DA4` | `0x801F5D0C` |
+| cosine divisors | `/48`, `/72`, `/96` | `/96`, `/144`, `/192` |
+| tail offsets | `+0x70`, `+0xA8`, `+0x38` | `+0x30`, `+0x48`, `+0x18` |
+| loop latch | `beqz` out then `j` back | `bnez` back |
+
+Two exact relations follow: every arm-`1` cosine divisor is **twice** its arm-`0`
+counterpart (one extra `sra`), and every arm-`1` tail offset is exactly **3/7**
+of its counterpart. So `mode` selects the same burst at a smaller radius, not a
+different effect.
+
+Per spawn block: copy eight bytes from `record[+0x24]` to a stack scratch, fold
+`sin[angle] / 2^n` plus a bounded jitter into the scratch's second halfword, call
+`FUN_80050ED4(record + 0x14, scratch, table, record[+0x72] >> 1)`, then write
+`cos[angle] / d + jitter` to the returned record's `+0x3E` and a second jitter to
+its `+0x80 + 0x18`. Block `0` indexes the LUTs on the four cardinals
+(`iteration * 1024`); blocks `1` and `2` share the diagonals
+(`(iteration * 1024 + 512) & 0xFFF`), block `2` reusing block `1`'s index
+register.
+
+**Reciprocal divides: eleven per arm, all verified against plain division.** Two
+readings taken from the constants alone were wrong before that check and are
+recorded corrected: `0x2AAAAAAB >> 3` is `/48` (not `/6` - that is the constant
+read without its shift) and `0x2E8BA2E9 >> 1` is `/11`. `0x88888889` is the
+signed magic-with-add form (`mfhi`, `addu` the original, `sra 3`) and needs
+signed arithmetic to reproduce; it is `/15`. All are used as `x - (x / d) * d`
+except the three cosine divides.
+
+Ported as `engine-vm::battle_burst`, with two boundaries stated rather than
+guessed: `FUN_80050ED4` is undecoded (it is a host-trait method), and the two
+spawn tables are disc data in `0898`'s tail with no parser - their addresses are
+the parameter, their bytes are not reproduced.
 
 ### `80048A08`
 

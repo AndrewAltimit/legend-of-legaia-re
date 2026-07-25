@@ -222,6 +222,7 @@ Five more `0898` bodies whose kernels are ported here, each with its own
 | `battle_value_readout` | `FUN_801E805C` | The multi-cast readout's decimal split (both reciprocal divides), the `(id, id-4)` teardown pairing, the slot-to-widget indirection and the label quad. |
 | `battle_approach` | `FUN_801DF570` | The attack-approach distance clamp: the projected attacker/target separation and the `[3d/4, d]` band a requested step is clamped into. |
 | `battle_party_panel` | `FUN_801DBB8C`, `FUN_801DBC30`, `FUN_801D84C0` | The battle party-name panels - the label-actor open/teardown pair over `0x801F4E08`, the per-party-size anchors, the all-slots actor reset, and the label-strip blit. |
+| `battle_burst` | `FUN_801F30C4` | The two-mode radial effect burst: four compass iterations x three spawn blocks, the per-block placement / spread / tail arithmetic, and both parameter sets. |
 
 The last two are ported from a disassembly of the mapped `0898` image rather
 than from the dump corpus, because four of those five VAs carry an

@@ -76,6 +76,7 @@ pub mod battle_action;
 pub mod battle_approach;
 pub mod battle_arts_auto_combo;
 pub mod battle_attack_camera;
+pub mod battle_burst;
 pub mod battle_camera;
 pub mod battle_cast_census;
 pub mod battle_cast_cue;

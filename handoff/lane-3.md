@@ -106,7 +106,7 @@ cell, two members in the outer cells) - see `seed_member_cells`.
 
 ## Second assignment - the five reassigned rows
 
-Four ported, one left with an honest boundary. All five were disassembled from
+All five ported. Every one was disassembled from
 `extracted/overlays/overlay_battle_action_0898.bin` at base `0x801CE818` rather
 than read from a dump, because four of the five carry an `overlay_0897` dump
 that contradicts the mapped image.
@@ -131,26 +131,42 @@ the anchors, the portrait cells and the all-slots actor reset; `engine-ui`
 currently builds battle labels as `TextDraw` entries with no equivalent of the
 four `ctx+0xA9 / +0x129 / +0x159 / +0x189` buffers.
 
-### `FUN_801F30C4` - NOT ported, and here is exactly where I stopped
+### `FUN_801F30C4` -> `engine-vm::battle_burst`
 
-563 instructions spanning `0x801F30C4..0x801F3990` (it ends where the already-
-documented cast audio-cue dispatcher `func_0x801F3990` begins). `(a0, a1)` with a
-three-way fork on `a1` (`0`, `1`, and a fall-through exit), so it is two
-substantial bodies under one entry.
+Finished on a later pass, after doing the three things the earlier boundary note
+named as prerequisites. What each turned up:
 
-What the head of arm `0` shows: an RNG-driven per-element spawn loop
-(`func_0x80056798` twice per iteration) reading both trig LUT pointers
-(`_DAT_8007B81C` / `_DAT_8007B7F8`) at `s2 << 11` strides, unaligned `lwl`/`lwr`
-copies of a 8-byte block out of `a0+0x24` onto the stack, three distinct
-reciprocal divides (`0x7F807F81`, `0x2AAAAAAB` = /6, `0x30C30C31` = /21), and a
-call to `FUN_80050ED4` with a data pointer at `0x801F5DA4` and `a0[+0x72] >> 1`.
-It is an effect/particle spawn scatter of real substance, not a leaf.
+**The span.** `0x801F30C4..0x801F398C`, 563 instructions, ending exactly where
+`func_0x801F3990` begins. Confirmed by disassembling both ends: `0x801F3988` is
+the `jr ra` and `0x801F3990` a clean `addiu sp, sp, -0x20` prologue.
+`disasm-overlay-fn.py` **cannot** read this entry - it halts at the first
+unconditional `j` and reports 18 instructions - so the span needs raw capstone.
 
-I stopped here rather than produce a thin port: arm `1` is entirely unread, the
-`0x801F5DA4` table is disc data with no parser, and the three reciprocals need
-checking against plain division before any of them can be asserted. The next
-sitting should start by dumping the whole span at the base above and splitting
-the two arms before writing any Rust.
+**The fork.** Two loop bodies of 258 instructions, and an instruction-by-
+instruction diff shows they are the *same loop* differing in ten constants (three
+of which are only shifted branch targets). Both run four iterations, three
+`FUN_80050ED4` calls and nine RNG draws each. Arm `1` is arm `0` with every
+cosine divisor doubled and every tail offset scaled by exactly 3/7 - the same
+burst at a smaller radius. `battle_burst::arm_invariants_hold` checks both
+relations at runtime rather than asserting them in prose.
+
+**The reciprocals - and a correction to this page.** All eleven per arm were
+checked against plain division before anything was written down, and the check
+earned its keep: the earlier note on this page said `0x2AAAAAAB` was `/6`. It is
+**`/48`** - `/6` is the constant read without its `>> 3`. Two more were wrong on
+first hand-reading and are now correct: `0x2E8BA2E9 >> 1` is `/11` (not `/44`),
+and block 2's cosine divisor pair is `/96 -> /192` (not `/49 -> /98`, which
+confused it with block 1's `rand % 49`). `0x88888889` is the signed
+magic-with-add form and needs signed arithmetic; it is `/15`.
+
+**What stayed a boundary, and is stated rather than guessed.** `FUN_80050ED4` is
+undecoded - it takes `(record + 0x14, scratch, table, record[+0x72] >> 1)` and
+returns a record pointer, so it is a `BurstHost` method. The two spawn tables
+(`0x801F5DA4`, `0x801F5D0C`) are disc data in `0898`'s tail with no parser; their
+*addresses* are the arm parameter and are carried, none of their bytes are.
+
+Wiring needs the same two things plus a caller: nothing in the engine spawns
+battle effects through this path yet.
 
 ## Doc claims corrected in this lane
 
@@ -179,6 +195,15 @@ opposite.
    fix that sentence there and drop the "two distinct variants, each duplicated
    across the row" gloss, which is a claim about the texture content and not
    about this routine.
+
+## Instrument defect found
+
+`scripts/ghidra-analysis/disasm-overlay-fn.py` **stops at the first unconditional
+`j`**, not at the function's `jr ra`. It reported 85 instructions for
+`FUN_801D84C0` (really 259) and 18 for `FUN_801F30C4` (really 563). Any function
+with an early `j` to a shared tail is under-reported, silently, with a plausible
+instruction count - so a size taken from that tool is not evidence about a body's
+extent. Raw capstone over the mapped image is. The file is Lane 2's.
 
 ## Notes for the coordinator
 
