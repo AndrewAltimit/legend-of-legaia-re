@@ -1397,6 +1397,18 @@ of them touches - the draw-order word `DAT_8007B454` and the
 glyph-advance byte `DAT_80073F20` - because a host that composites in
 call order and lays glyphs out proportionally has no use for either.
 
+`FUN_801E4140` is the one entry there that is not a painter, and it is worth
+being precise about what it draws. Past the `y < 0xF1` guard it calls the
+fill-state setter `FUN_80034B6C` and then the box writer
+`FUN_8002C69C(x, y, w, h)`; the decompiled C shows the setter taking no
+arguments, but `a0` / `a1` are untouched from the prologue to that `jal`, so
+it receives the caller's first two - a mode selector and a packed RGB word
+(`0x44`, `0x02202020` at the menu-overlay call site). The pair is therefore a
+**shaded colour fill**, not the gold 9-slice border, and `FUN_8002C69C`
+inflates its own rect by 8px on every side, so the guard tests the *content*
+y rather than the frame y. A host cannot reuse it to clip the atlas window
+chrome: that is a different primitive drawn at the already-inflated rect.
+
 One exception is worth keeping: the **accent pen** (`DAT_8007B454 = 6`) is
 kept as a colour, because three painters stage it for exactly one field and
 restore `7` afterwards - window 34's item name *and* owned count (staged once

@@ -30,18 +30,34 @@
 //!
 //! Source: `ghidra/scripts/funcs/overlay_world_map_801ed710.txt`.
 //!
-//! # NOT WIRED
+//! # Where the numbers come from
 //!
-//! The records page is a row of the world-map **developer** menu, and the
-//! engine has no dev-menu host screen to open it from (same prerequisite as
-//! [`crate::dev_menu_row_y`]'s list body). It also has no source for most of
-//! what it prints: the engine tracks no lifetime battle / escape / knockout
-//! counters, no max-hit or max-damage high-water marks and no treasure-chest
-//! census, so `RecordsScreenView` has nothing to be built from even once a
-//! host exists. The sibling data model
-//! `legaia_engine_vm::world_map_overlay::records_screen` is unreached for the
-//! same reason. Wiring needs those persistent counters on the world first,
-//! then the dev-menu host; this module is the layout waiting on both.
+//! Retail reads every field off the **save block** base `0x80084140`, and
+//! the four-character record array starts `0x5C8` into that block
+//! (`0x80084708`). So each per-character displacement in the disassembly is
+//! a record offset plus `0x5C8` - [`SAVE_BLOCK_TO_RECORD`] - which is what
+//! turns the screen's reads into something a host holding a
+//! `0x414`-byte record can serve. [`RecordCounters`] is that rebase; the
+//! same arithmetic reconciles `battle-action.md`'s `+0x6BC` / `+0x6C0` with
+//! the record's `+0xF4` / `+0xF8` ability bitfield.
+//!
+//! Three values on the page are **not** per-character and live in the block
+//! itself: `No. of Battles` (`0x800846A4`), `No. of Escapes`
+//! (`0x800846A8`) and the 1/60 s play-time counter (`0x800845DC`). The
+//! treasure line's found/total pair is a world-map overlay global
+//! (`DAT_801C6460` / `DAT_801C6462`), not a save-block field at all, and
+//! retail hides the whole line when the total is zero.
+//!
+//! # Wiring status
+//!
+//! The native window draws this page from its developer-menu host
+//! (`window/dev_menu.rs`, the `LEGAIA_DEV_MENU` opt-in - the engine's stand-in
+//! for the retail world-map dev menu the records page is a row of), feeding
+//! the six per-character counters through [`RecordCounters`] and the play
+//! clock from `World::play_time_seconds`. The lifetime battle and escape
+//! counters and the treasure census are state the engine does not keep yet,
+//! so those two fields read zero and the treasure line stays hidden - which
+//! is also what retail draws on a save that has never incremented them.
 
 use crate::{TextDraw, text_draws_for};
 
@@ -49,6 +65,75 @@ use crate::{TextDraw, text_draws_for};
 pub const HYPER_ARTS_MAX: i64 = 0xF;
 /// Max learnable magics (`FUN_801ED710` draws `NN / 22`).
 pub const MAGIC_MAX: i64 = 0x16;
+
+/// Distance from the save-block base `0x80084140` retail addresses this
+/// screen's fields off to the character-record base `0x80084708`.
+///
+/// Every per-character displacement in `FUN_801ED710` is a record offset
+/// plus this constant, and the stride (`0x414`) is the same on both sides,
+/// so subtracting it once rebases the whole loop onto a bare record.
+pub const SAVE_BLOCK_TO_RECORD: usize = 0x5C8;
+
+/// Record-relative offsets of the six per-character counters the records
+/// page prints, each the retail displacement less [`SAVE_BLOCK_TO_RECORD`].
+///
+/// The two byte fields are list **lengths**, not scalars: `+0x185` counts
+/// the learned-Arts id list that runs from `+0x186` (the Arts-panel
+/// renderer reads the same pair), and `+0x13C` counts the learned-magic id
+/// list from `+0x13D` - the byte window 7's prompt substitutes a glyph out
+/// of (`crate::ui_menu_window_painters::char_prompt_draws_for`).
+pub mod record_offset {
+    /// `lw` at save-block `+0x6B4` - max hits.
+    pub const MAX_HITS: usize = 0xEC;
+    /// `lw` at save-block `+0x6B0` - max damage.
+    pub const MAX_DAMAGE: usize = 0xE8;
+    /// `lw` at save-block `+0x660` - knockouts.
+    pub const KNOCKOUTS: usize = 0x98;
+    /// `lw` at save-block `+0x664` - monsters defeated.
+    pub const MONSTERS_DEFEATED: usize = 0x9C;
+    /// `lbu` at save-block `+0x74D` - learned-Arts list length.
+    pub const HYPER_ARTS: usize = 0x185;
+    /// `lbu` at save-block `+0x704` - learned-magic list length.
+    pub const MAGIC: usize = 0x13C;
+}
+
+/// The six per-character counters `FUN_801ED710` reads out of one
+/// `0x414`-byte character record, unclamped.
+///
+/// The display caps live in the model
+/// (`legaia_engine_vm::world_map_overlay::records_screen`); this is only the
+/// read.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RecordCounters {
+    pub max_hits: u32,
+    pub max_damage: u32,
+    pub knockouts: u32,
+    pub monsters_defeated: u32,
+    pub hyper_arts: u8,
+    pub magic: u8,
+}
+
+/// Read one character record's records-page counters.
+///
+/// The four wide fields are full `lw` words and the two counts are `lbu`
+/// bytes, matching the widths retail loads them at. `None` when the slice is
+/// too short to hold the highest field.
+///
+/// PORT: FUN_801ED710 (per-character record reads)
+pub fn record_counters(record: &[u8]) -> Option<RecordCounters> {
+    let word = |off: usize| -> Option<u32> {
+        let b = record.get(off..off + 4)?;
+        Some(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+    };
+    Some(RecordCounters {
+        max_hits: word(record_offset::MAX_HITS)?,
+        max_damage: word(record_offset::MAX_DAMAGE)?,
+        knockouts: word(record_offset::KNOCKOUTS)?,
+        monsters_defeated: word(record_offset::MONSTERS_DEFEATED)?,
+        hyper_arts: *record.get(record_offset::HYPER_ARTS)?,
+        magic: *record.get(record_offset::MAGIC)?,
+    })
+}
 
 /// The English heading labels the records screen prints. Supplied by the
 /// caller so the strings stay out of this crate (the retail pointers are
@@ -738,6 +823,50 @@ mod tests {
         // Shifting the origin shifts every quad by the same delta.
         assert_eq!(a[0].dst.0 + 40, b[0].dst.0);
         assert_eq!(a[0].dst.1 + 20, b[0].dst.1);
+    }
+
+    /// Every record offset must be the retail save-block displacement less
+    /// `0x5C8`. Written the other way round on purpose: the disassembly's
+    /// numbers are the literals, and the rebase is what the port asserts.
+    #[test]
+    fn record_offsets_rebase_the_save_block_displacements() {
+        let rebased = |save_block: usize| save_block - SAVE_BLOCK_TO_RECORD;
+        assert_eq!(record_offset::MAX_HITS, rebased(0x6B4));
+        assert_eq!(record_offset::MAX_DAMAGE, rebased(0x6B0));
+        assert_eq!(record_offset::KNOCKOUTS, rebased(0x660));
+        assert_eq!(record_offset::MONSTERS_DEFEATED, rebased(0x664));
+        assert_eq!(record_offset::HYPER_ARTS, rebased(0x74D));
+        assert_eq!(record_offset::MAGIC, rebased(0x704));
+        // The same rebase has to reproduce the ability bitfield's known
+        // pair (`+0x6BC`/`+0x6C0` off the block = record `+0xF4`/`+0xF8`),
+        // which is the independent check that 0x5C8 is the right delta.
+        assert_eq!(rebased(0x6BC), 0xF4);
+        assert_eq!(rebased(0x6C0), 0xF8);
+    }
+
+    #[test]
+    fn record_counters_read_words_and_bytes_at_their_widths() {
+        let mut rec = vec![0u8; 0x414];
+        rec[record_offset::MAX_HITS..record_offset::MAX_HITS + 4]
+            .copy_from_slice(&1234u32.to_le_bytes());
+        rec[record_offset::MAX_DAMAGE..record_offset::MAX_DAMAGE + 4]
+            .copy_from_slice(&0x00BC_614Eu32.to_le_bytes());
+        rec[record_offset::KNOCKOUTS..record_offset::KNOCKOUTS + 4]
+            .copy_from_slice(&7u32.to_le_bytes());
+        rec[record_offset::MONSTERS_DEFEATED..record_offset::MONSTERS_DEFEATED + 4]
+            .copy_from_slice(&4242u32.to_le_bytes());
+        rec[record_offset::HYPER_ARTS] = 9;
+        rec[record_offset::MAGIC] = 11;
+        let c = record_counters(&rec).expect("full-size record reads");
+        assert_eq!(c.max_hits, 1234);
+        assert_eq!(c.max_damage, 0x00BC_614E);
+        assert_eq!(c.knockouts, 7);
+        assert_eq!(c.monsters_defeated, 4242);
+        assert_eq!(c.hyper_arts, 9);
+        assert_eq!(c.magic, 11);
+        // A record truncated before the highest field reads as absent
+        // rather than as zeros.
+        assert_eq!(record_counters(&rec[..record_offset::HYPER_ARTS]), None);
     }
 
     #[test]

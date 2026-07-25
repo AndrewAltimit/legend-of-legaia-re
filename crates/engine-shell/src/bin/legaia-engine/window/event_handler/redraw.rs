@@ -193,6 +193,15 @@ impl PlayWindowApp {
             // retail scene script installs one, so this is the visual
             // trigger for the per-cell tile-actor draw pass.
             self.maybe_install_demo_tile_board();
+            // Advance the world's play clock off the window's wall clock.
+            // `World::advance_play_time` is written to be driven "from the
+            // frame loop's wall-clock delta" and no host was driving it, so
+            // every consumer of `play_time_seconds` - the save screen's
+            // play-time column, the seru-trade gate, the dev Records page -
+            // read a value that only ever changed when a save was loaded.
+            // Whole seconds only, and by delta rather than absolutely, so a
+            // loaded save keeps its accumulated total.
+            self.tick_play_clock();
             // Opt-in developer menu (`LEGAIA_DEV_MENU=1`): retail reaches its
             // dev tools from debug branches a player cannot; this is the
             // engine's equivalent entry point.

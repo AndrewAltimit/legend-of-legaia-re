@@ -11,6 +11,42 @@ The "records" page (battles fought, escapes, play time, per-character maximums) 
 | `FUN_801ED710` (field overlay) | Records-screen renderer. Draws **nine** label-heading rows via `FUN_8003CC98` (single-line text) with `FUN_80034B78` (number formatter): two global counters "No. of Battles" (`_DAT_800846A4`, cap 99999) and "No. of Escapes" (`_DAT_800846A8`, cap 99999); play time (`_DAT_800845DC` divided twice by `0x3C` for `H:MM:SS`, cap 99h59m59s); then **six** per-character stat categories, each a 3-iteration loop (`s2 < 3`) over the record at `0x80084140 + n*0x414` reading `+0x6B4` / `+0x6B0` (u32) then `+0x660` / `+0x664` (u32) then `+0x74D` / `+0x704` (u8); and a final averages row dividing the `0x801C6460` counters. Per-draw depth 3..9 written to `_DAT_8007B454`. See `ghidra/scripts/funcs/overlay_field_0897_801ed710.txt`. |
 | `FUN_801DC6B4` (menu overlay) | Save-screen per-frame state machine. Sub-state in `_DAT_8007B43C` (0 = init, 1 = fade-in, …). Init (state 0): sets panel origin `DAT_801E4A4E = 0xB4` (x=180), `DAT_801E4A52 = 0x18` (y=24), adjusted +/-0xE when `func_0x8003CE64(8)` (flag-8 test) is non-zero; sets up screen-fade via `_DAT_8007B440 = 0xF2`, `DAT_801E46A0 = -0xF2`. Entry-context pointer `_DAT_8007B450` routes to sub-state: `NULL`/0→0x1A (normal save), `\x01`→0x19, `\x07`→0x20, `\r`→4. Reads pad from `_DAT_1F8003A0`. Captured as `overlay_shop_save_801dc6b4.txt`; see also [`subsystems/save-screen.md`](../../subsystems/save-screen.md). |
 
+### Reading the records fields off a character record
+
+Every displacement in the table row above is taken off the **save-block**
+base `0x80084140`, not off a character record. The four-record character
+array starts `0x5C8` into that block (`0x80084708`) and both sides use the
+same `0x414` stride, so subtracting `0x5C8` once rebases the whole per-character
+loop onto a bare record:
+
+| Records field | Save-block `+` | Record `+` | Width |
+|---|---|---|---|
+| Maximum Hits | `0x6B4` | `0xEC` | u32 |
+| Maximum Damage | `0x6B0` | `0xE8` | u32 |
+| Knockouts | `0x660` | `0x98` | u32 |
+| Monsters | `0x664` | `0x9C` | u32 |
+| Hyper Arts | `0x74D` | `0x185` | u8 |
+| Magic | `0x704` | `0x13C` | u8 |
+
+The same `-0x5C8` reproduces the ability bitfield's independently pinned pair
+(save-block `+0x6BC`/`+0x6C0` = record `+0xF4`/`+0xF8`, see
+[`battle-action.md`](../../subsystems/battle-action.md)), which is what makes
+the delta a measurement rather than an assumption.
+
+The two byte fields are list **lengths**, not scalars. `+0x185` counts the
+learned-Arts id list running from `+0x186` - the pair the Arts-list panel
+renderer reads - and `+0x13C` counts the learned-magic id list from `+0x13D`,
+which is the byte window 7's prompt (`FUN_801DCCB4`) substitutes a glyph out
+of. So the records page's "Hyper Arts" and "Magic" columns and those two
+list readers are three views of the same two fields.
+
+Ports: the layout + the record reader are `engine-ui::ui_menu::records_screen`
+(`record_counters`, `records_screen_draws_for`); the clamps and the H:MM:SS
+split are `engine-vm::world_map_overlay::records_screen`. The three block-level
+values (battles, escapes, the 1/60 s play clock) and the treasure census
+(`DAT_801C6460` / `DAT_801C6462`, a world-map overlay global rather than save
+data) have no engine-side counter yet.
+
 ## Field-overlay status / equip panels (overlay 0897)
 
 A cluster of status/equipment-panel draw helpers resident in the field/town overlay (`overlay_0897`), keyed on the active menu screen-id `_DAT_8007BB9C`, the cursor row `_DAT_8007BB88`, and the panel-enable flag `_DAT_8007BBA0`. They anchor their draws at a screen X/Y taken from the passed record (`+0xA`/`+0xC`) and set the ink/depth staging global `_DAT_8007B454` before each string draw. Menu-side layout detail lives in [`subsystems/field-menu.md`](../../subsystems/field-menu.md).

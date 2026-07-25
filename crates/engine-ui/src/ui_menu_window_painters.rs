@@ -326,6 +326,15 @@ pub fn counter_panel_draws_for(
 /// `record[0x13D + DAT_8007BB78]` off the `0x80084708` record base - not a
 /// name byte, whose field is `+0x2A7`.
 ///
+/// `+0x13D` is not an arbitrary field. It is the first entry of the
+/// character's **learned-magic id list**, whose length byte sits one earlier
+/// at `+0x13C` - the same byte the records page prints under "Magic"
+/// (`crate::ui_menu::records_screen`, whose own rebase table pins the pair).
+/// So `DAT_8007BB78` is a list index and the substituted byte is a spell id:
+/// window 7 is a prompt about one of the selected character's spells, which
+/// narrows "which flow opens it" to the magic-side flows even though the
+/// exact one is still unpinned.
+///
 /// PORT: FUN_801DCCB4
 /// NOT WIRED: which flow opens window 7 is unknown, and no host produces the
 /// NOT WIRED: `record[0x13D + sel]` glyph it substitutes; waived in scripts/ci/ui-host-drift-waivers.toml
@@ -944,15 +953,33 @@ pub const BOX_EMIT_MAX_Y: i32 = 0xF0;
 
 /// The box a guarded fill would emit, or `None` when it is clipped away.
 ///
-/// `FUN_801E4140` takes six arguments, forwards the first to the fill-mode
-/// setter and the last four to the box writer, and runs neither when the
-/// `y` argument exceeds `0xF0`. That single comparison is the whole
-/// routine - it is a bottom-of-screen guard on an otherwise unconditional
-/// pair of calls.
+/// `FUN_801E4140` takes six arguments, runs nothing when the `y` argument
+/// exceeds `0xF0`, and otherwise calls the fill-state setter `FUN_80034B6C`
+/// and then the box writer `FUN_8002C69C(x, y, w, h)`. That single
+/// comparison is the whole routine - it is a bottom-of-screen guard on an
+/// otherwise unconditional pair of calls.
+///
+/// The decompiled C renders the first call as `func_0x80034b6c()` with no
+/// arguments; the disassembly shows `a0` / `a1` untouched between the
+/// prologue and the `jal`, so it in fact receives the caller's first two
+/// arguments - the dropped-register-argument artifact, not a niladic call.
+/// A live menu caller passes `(0x44, 0x02202020, …)`, i.e. a mode selector
+/// and a packed RGB word, so this pair is a **shaded colour fill**, not the
+/// gold 9-slice window border.
 ///
 /// PORT: FUN_801E4140
-/// NOT WIRED: no host emits the block's box fills - the frame + shade boxes
-/// NOT WIRED: are still caller-drawn chrome the hosts approximate
+/// REF: FUN_80034b6c - the fill-state setter this guard gates, which takes
+/// the caller's mode selector and packed RGB word. Not ported.
+/// REF: FUN_8002c69c - the box writer, which inflates its own rect by 8px on
+/// every side. Not ported; the hosts draw their window chrome from the UI
+/// atlas instead.
+/// NOT WIRED: no host emits the block's box fills. What the hosts do draw is
+/// NOT WIRED: the UI-atlas 9-slice window chrome, a different primitive from
+/// NOT WIRED: this colour-fill pair, and they draw it at the already-inflated
+/// NOT WIRED: frame rect - whereas `FUN_8002C69C` inflates its own argument
+/// NOT WIRED: by 8px on every side, so this guard tests the *content* y.
+/// NOT WIRED: Gating that chrome on this rect would clip on the wrong
+/// NOT WIRED: coordinate and claim a guard over a draw it does not own.
 pub fn guarded_box_rect(x: i32, y: i32, w: i32, h: i32) -> Option<(i32, i32, i32, i32)> {
     (y <= BOX_EMIT_MAX_Y).then_some((x, y, w, h))
 }
