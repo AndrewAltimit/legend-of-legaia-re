@@ -1,9 +1,201 @@
-# Lane 1 handoff - disc-denominated SCUS dump worklist
+# Lane 1 handoff
+
+Two tasks: the disc-denominated SCUS dump worklist, then a corpus-integrity
+sweep over the dumps. The sweep section is first because its findings change how
+much of the rest of this repo's evidence base can be trusted.
+
+---
+
+# Part A - corpus-integrity sweep
+
+`scripts/ghidra-analysis/check-dump-base-integrity.py` gained a second axis,
+`--shape`, alongside its existing base check. The base axis asks *are these
+addresses real*; the shape axis asks *is this file the whole routine*. Shape
+reads only dump text, so it needs no `extracted/` tree and runs anywhere.
+
+## A1. Six defect classes, not three
+
+The brief named three. The sweep found three more, and two of them are worse
+than anything on the original list because they are **internally consistent** -
+the file's header agrees with its own stream, every printed address is right,
+every instruction is real, and it is still wrong.
+
+| Class | What it is | Visible to |
+|---|---|---|
+| `HEADERLESS_C_ONLY` | No header, no disassembly - only a C rendering, which this repo's own rules say is not evidence. | disc-coverage (excludes it) |
+| `HEADERLESS_WITH_DISASM` | Complete disassembly, header absent. **Sound evidence the counters discard.** | nothing |
+| `SHIFTED` (base axis) | Right bytes, wrong load base. | the base check |
+| `NO_RETURN` | Header agrees with the stream, but the stream stops mid-body: Ghidra computed a short function body. | **nothing** |
+| `INTERIOR_SLICE` | The dump's entry lies inside another dump's body - a slice of a larger function, not an entry point. | **nothing** |
+| name mismatch | The filename's address is not where the content starts. | **nothing** |
+
+The last three are new. `NO_RETURN` is what blocked Lane 2 on `801d56e4`.
+
+## A2. The name-mismatch class is the big one - 142 cited dumps
+
+**Every dumper in `ghidra/scripts/` resolves a target with
+`getFunctionContaining(addr)` but names the output file after the *requested*
+address.** Ask for an interior address and you get a file named
+`<interior>.txt` holding the *enclosing* function. Every citation of that
+filename then asserts a function entry that does not exist.
+
+142 dumps in the cited set are name-mismatched, and **every single delta is
+negative** - content always starts at or before the filename address, which is
+exactly the signature of that resolution rule. Examples:
+
+```
+8001b47c.txt   named 8001b47c   starts 8001ada4   (-1752)
+8002cdd0.txt   named 8002cdd0   starts 8002c69c   (-1844)
+8004f0e8.txt   named 8004f0e8   starts 8004e568   (-2944)
+80056b18.txt   named 80056b18   starts 800567b8   (-864)
+```
+
+The docs already caught a handful of these by hand - `functions/runtime-libs.md`
+carries rows saying `0x8003F000` and `0x8003F0F4` are interiors and "the bare
+address is a citation stub, not a second function". That was the right call, made
+one address at a time. There are 142.
+
+**This is not a re-dump job.** The bytes are fine. What is wrong is the filename
+and any citation that treats it as an entry point. Two fixes worth considering,
+both outside Lane 1's scope:
+
+1. Change the dumpers to name output after `func.getEntryPoint()`, not the
+   requested address, and emit a `requested=` line when they differ. One-line
+   change in each dumper; `dump_scus_gaps.py` and `repair_truncated_dumps.py`
+   already name by entry point.
+2. Run the sweep's mismatch list against the citation graph and re-point each
+   citation at the real entry.
+
+## A3. What was repaired
+
+**`801d56e4` (fishing, PROT 972) - Lane 2's blocker, fixed.** Ghidra's body was
+524 B / 131 instructions and stopped mid-load at `0x801D58EC`. Two interior
+`FUN_` entries - `801d58f0` and `801d5a24` - were cutting it. Dropping both and
+rebuilding over the `jr ra` walk gives **1352 B / 338 instructions**, ending
+properly at `801d5c24 jr ra`. Lane 2 is unblocked.
+
+Two consequences for Lane 2:
+
+- `overlay_fishing_801d58f0.txt` and `overlay_fishing_801d5a24.txt` are now
+  provably **interior slices** of `801d56e4`. Retire both dumps and any citation
+  of them; do **not** re-dump those addresses.
+- `overlay_debug_menu_801d56e4.txt` holds the same 524 B. Per
+  `static-overlays.toml`, PROT 0971's own content is only `0x1800` bytes and
+  everything past that is over-read of 0972 - and `0x801D56E4` is `0x6ECC` into
+  the overlay. So that file is fishing-overlay bytes wearing a debug-menu label.
+
+**Bulk SCUS pass - 58 targets.** Every defective dump in the cited set with an
+unambiguous SCUS base was re-dumped worst-first: 38 `HEADERLESS_C_ONLY`, 8
+`HEADERLESS_WITH_DISASM`, 8 `TAIL_J`, 4 `NO_RETURN` (forced rebuild). Three were
+structural repairs, not just re-dumps:
+
+- `8003d388` - body was **4 bytes**; rebuilt to 60. `functions/runtime-libs.md`
+  already said "Ghidra's auto-analysis splits this entry as `8003d388`/`8003d38c`;
+  the body is one function at `0x8003D388`". That is now true in the project DB.
+- `8003d178` - interior entry `8003d190` dropped, rebuilt to 44 B.
+- `80021940` - body was **0 bytes**; rebuilt to 452 B.
+
+`800480d8` (Lane 6's request) re-dumped: 568 B / 142 instructions, complete.
+Lane 6's calibration point holds - it was `HEADERLESS_WITH_DISASM`, sound
+evidence the header-driven counter could not see, not a thin dump.
+
+## A4. The headerless number the brief asked for
+
+**46 headerless files converted into real disassembly** in this pass (38
+C-only + 8 with-disasm), all SCUS.
+
+The more useful number is what the class is made of. Corpus-wide the sweep sees
+**324 headerless dumps**, and only **32 of them carried a complete disassembly**
+- roughly 19,900 instructions (~78 KB) of perfectly good evidence that every
+header-driven counter was silently discarding. So the coordinator's hypothesis is
+**half right**: the headerless population is mostly genuinely empty (291 C-only),
+but the ~10% that is complete does mean the SCUS figure was understated. That is
+part of why re-dumping moved it from 94.4% to 95.4% - some of what looked like
+un-dumped gap was dumped all along.
+
+## A5. Cited-set scoreboard
+
+Restricted to dumps the committed docs cite as evidence (3363 files):
+
+| Class | Before | After |
+|---|---:|---:|
+| `SOUND` | 2868 | 2911 |
+| `HEADERLESS_C_ONLY` | 232 | 194 |
+| `NO_RETURN` | 141 | 135 |
+| `TAIL_J` | 92 | 86 |
+| `HEADERLESS_WITH_DISASM` | 29 | 21 |
+| `INTERIOR_SLICE` | (undetected) | 15 |
+| name-mismatched (orthogonal) | (undetected) | 142 |
+
+**Defect rate in the cited set: 14.7% -> 13.4%.** That is the honest measure of
+how much of this repo's evidence base is not checkable as it stands.
+
+## A6. Residue - what Lane 1 did NOT reach
+
+**452 defective cited dumps remain, and all but 14 are overlay dumps.** They were
+left deliberately, not for lack of time: an overlay re-dump has to be run against
+the *right* program, and the sweep does not yet establish which program each
+overlay dump belongs to. Re-dumping them against a guessed program is precisely
+the failure `dump-corpus-integrity.md` exists to warn about, so doing it blind
+would manufacture the defect it is meant to remove.
+
+```
+overlay_0897            161      overlay_muscle_dome      15
+overlay_magic_capture    77      SCUS-bare                14
+overlay_battle_action    64      overlay_baka_fighter      9
+overlay_0897_xxx_dat     20      overlay_debug_menu        9
+overlay_0896             16      overlay_dance             7
+```
+
+`overlay_magic_capture` (77) is RAM-capture-derived and has no static image to
+re-dump from at all. The prerequisite for the rest is byte-level program
+attribution - the same thing the base axis's `NOT_FOUND` class needs.
+
+The 14 remaining SCUS-bare rows are the ones the bulk pass could not resolve; the
+sweep names them with `--shape --cited-only --list-defects`.
+
+## A7. For Lane 2 - `docs/tooling/dump-corpus-integrity.md`
+
+Lane 2 owns that page. It currently documents the base axis only. The shape axis
+belongs on it: the six-class table in A1, the `NO_RETURN` mechanism (interior
+`FUN_` entries cutting a body), the `INTERIOR_SLICE` and name-mismatch classes,
+and the repair tool. Suggested framing for the page's thesis, which currently
+reads "a dump's printed addresses are a property of its load base":
+
+> A dump has two independent ways to lie. Its **addresses** are a property of
+> the load base it was imported at. Its **extent** is a property of the function
+> body Ghidra computed - and a body that stops short produces a dump that is
+> internally consistent, correctly addressed, and still not the routine. The
+> first is caught by resolving bytes to an image; the second only by asking
+> whether the stream reaches a return.
+
+Commands:
+
+```
+scripts/ghidra-analysis/check-dump-base-integrity.py --shape
+scripts/ghidra-analysis/check-dump-base-integrity.py --shape --cited-only --list-defects
+scripts/ghidra-analysis/check-dump-base-integrity.py --shape --emit-csv out.csv
+```
+
+## A8. Scope note
+
+The brief scoped Lane 1 to `ghidra/scripts/**`, the five `functions/*.md` pages,
+`handoff/lane-1.md` and `docs/tooling/ghidra.md`. The sweep itself lives in
+`scripts/ghidra-analysis/check-dump-base-integrity.py`, which is outside that
+list - taken on the coordinator's explicit instruction to *extend the existing
+tool rather than write a second one*. Flagging it in case a sibling also holds
+that file.
+
+---
+
+# Part B - disc-denominated SCUS dump worklist
 
 Lane 1 closed the `SCUS_942.54` code-gap worklist that
 `scripts/ci/disc-coverage.py` emits. Coverage moved **84.0% → 94.4%**
-(303518 → 341010 of 361126 code bytes). All eight runs the report opened with
-are closed, plus the eight it promoted afterwards.
+(303518 → 341010 of 361126 code bytes), and the Part A repairs took it to
+**95.4%** (346708/363608 - the denominator moves too, because newly-dumped
+regions reclassify neighbouring gaps from data to code). All eight runs the
+report opened with are closed, plus the eight it promoted afterwards.
 
 Everything below is a finding that belongs in a file Lane 1 does not own.
 
@@ -137,4 +329,15 @@ is not in the catalogue yet. Suggested row for the **Per-function dumps** table:
 
 `scripts/ci/disc-coverage-baseline.json` is **not** touched by this lane, per
 the wave brief. It needs re-ratcheting at integration; the current measured
-value is `SCUS_942.54` code `94.4%` (341010/361126).
+value is `SCUS_942.54` code **95.4%** (346708/363608), after the Part A
+corpus repairs.
+
+## 8. Lane 6's `audio.md` correction - checked, no change needed
+
+Lane 6 reports that `FUN_8006320C` does **not** call `FUN_80066308`, and asked
+whether `docs/reference/functions/audio.md` restates that edge. It does not -
+the string `80066308` does not appear anywhere on that page. The bad edge is in
+`docs/subsystems/audio.md`'s per-frame call graph, which Lane 6 owns and has
+already re-routed. Lane 1's section states only the edges it read: `FUN_80062F98`
+calls `FUN_80065BAC` and the flag-bit handlers, and `8006320C` / `8006352C`
+call `FUN_80067E9C` and `FUN_800683D8`. That agrees with Lane 6.

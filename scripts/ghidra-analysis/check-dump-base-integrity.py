@@ -31,10 +31,43 @@ Classes reported:
 See docs/tooling/dump-corpus-integrity.md for the standing results and what
 each class is usable for.
 
+--- The second axis: SHAPE ---
+
+Base correctness is not the only way a dump can be defective, and the other
+ways are not visible to the check above. A dump can print the right addresses
+for the right bytes and still be unusable, because the bytes it carries are
+not the whole routine. `--shape` classifies that axis:
+
+  SOUND        header agrees with the stream and the body ends in a `jr`.
+  NO_RETURN    header agrees with its own stream, every printed address is
+               right, every instruction is real - and the stream still stops
+               mid-body, because Ghidra computed a short function body
+               (usually a second `FUN_` entry minted inside the routine cut
+               it). INTERNALLY CONSISTENT, so neither the base check nor
+               disc-coverage.py can see it. Repair with
+               ghidra/scripts/repair_truncated_dumps.py.
+  TAIL_J       ends in `j <target>` rather than `jr`. Ambiguous: either a
+               real tail call or a label-call slice of a larger function.
+               Bodies under SHORT_BODY_INSNS instructions are almost always
+               the latter. Needs eyes.
+  SIZE_MISMATCH  the `size=` header and the instruction count disagree.
+  HEADERLESS_WITH_DISASM  no parseable `size=` header, but a complete
+               disassembly is present. The dump is usable evidence that
+               every header-driven counter silently discards - it makes
+               coverage look worse than it is, not the corpus thinner.
+  HEADERLESS_C_ONLY  no header and no disassembly. Only a C rendering, which
+               this repo's own rules say is not evidence. Needs a re-dump.
+
+The shape axis reads only the dump text, so unlike the base axis it needs no
+`extracted/` tree: `--shape` runs anywhere.
+
 Usage:
   scripts/ghidra-analysis/check-dump-base-integrity.py
   scripts/ghidra-analysis/check-dump-base-integrity.py --min-insns 10
   scripts/ghidra-analysis/check-dump-base-integrity.py --list-shifted
+  scripts/ghidra-analysis/check-dump-base-integrity.py --shape
+  scripts/ghidra-analysis/check-dump-base-integrity.py --shape --cited-only
+  scripts/ghidra-analysis/check-dump-base-integrity.py --shape --emit-csv out.csv
 """
 
 import argparse
@@ -163,6 +196,305 @@ def parse_dump(path, n):
     return hdr, rows
 
 
+# A body this short that exits through `j` is a label-call slice rather than
+# a tail call - the standing example is the 4-instruction "function" whose
+# only exit is `j 0x801ea7ac`.
+SHORT_BODY_INSNS = 8
+
+HDR_SIZE_RE = re.compile(r"^size=(\d+) bytes,\s*(\d+) instructions")
+DIS_ROW_RE = re.compile(r"^([0-9a-fA-F]{8})\s+(\S+)\s*(.*)$")
+
+SHAPES = ("SOUND", "TAIL_J", "NO_RETURN", "SIZE_MISMATCH",
+          "HEADERLESS_WITH_DISASM", "HEADERLESS_C_ONLY", "EMPTY",
+          "INTERIOR_SLICE")
+
+# `funcs/` also holds the output of the non-dumping analysis scripts
+# (`addprim_emitters_*`, `refs_to_*`, `inventory_*`). Those are not evidence
+# about a function and must stay out of the denominator, or the defect rate
+# is diluted by files that were never dumps. A dump is recognised by its
+# name - `<addr>.txt` or `<label>_<addr>.txt` - or by carrying the standard
+# `== name addr (entry=...) ==` header.
+DUMP_NAME_RE = re.compile(r"^(?:.*_)?[0-9a-fA-F]{8}\.txt$")
+DUMP_HDR_RE = re.compile(r"^==\s+\S+\s+[0-9a-fA-F]{8}\s+\(entry=")
+
+# Worst first: what a re-dump pass should work through in order.
+SHAPE_SEVERITY = {
+    "INTERIOR_SLICE": 0,
+    "HEADERLESS_C_ONLY": 1,
+    "NO_RETURN": 2,
+    "SIZE_MISMATCH": 3,
+    "TAIL_J": 4,
+    "HEADERLESS_WITH_DISASM": 5,
+    "EMPTY": 6,
+    "SOUND": 9,
+}
+
+
+def mark_interior_slices(infos):
+    """Re-grade dumps whose entry lies inside another dump's function body.
+
+    Ghidra mints a `FUN_` at intra-function labels - a jump-table arm, or a
+    branch target it could not tie back - and a dump taken at one of those is
+    not a short function, it is a SLICE of a larger one. It reads as
+    authoritative (right bytes, right addresses) and cites an entry point
+    that does not exist, so the fix is to retire the dump and the citation,
+    NOT to re-dump the address.
+
+    Detected structurally: an entry strictly inside a same-program sibling's
+    [entry, entry + size) interval. Grouping is by the dump's filename prefix,
+    which is the program label, so two overlays that alias in VA space are
+    never compared against each other.
+    """
+    by_prog = defaultdict(list)
+    for i in infos:
+        if i["first_va"] is None:
+            continue
+        m = re.match(r"^(.*)_[0-9a-fA-F]{8}\.txt$", i["file"])
+        by_prog[m.group(1) if m else ""].append(i)
+
+    marked = 0
+    for _prog, group in by_prog.items():
+        spans = [(i["first_va"], i["first_va"] + i["declared_size"], i)
+                 for i in group
+                 if i["declared_size"] and i["shape"] in ("SOUND", "TAIL_J")]
+        for i in group:
+            va = i["first_va"]
+            for lo, hi, owner in spans:
+                if owner is i:
+                    continue
+                if lo < va < hi:
+                    i["shape"] = "INTERIOR_SLICE"
+                    i["owner"] = owner["file"]
+                    marked += 1
+                    break
+    return marked
+
+
+def scan_shape(path):
+    """Classify one dump on the shape axis. Reads only the dump text."""
+    declared_size = declared_insns = None
+    rows = 0
+    first_va = last_va = None
+    last_mnems = []
+    saw_c = False
+    saw_dump_hdr = False
+    body_chars = 0
+    section = None
+
+    with open(path, "r", errors="replace") as f:
+        for line in f:
+            if section is None:
+                if DUMP_HDR_RE.match(line):
+                    saw_dump_hdr = True
+                m = HDR_SIZE_RE.match(line)
+                if m:
+                    declared_size = int(m.group(1))
+                    declared_insns = int(m.group(2))
+            if "--- DISASSEMBLY ---" in line:
+                section = "dis"
+                continue
+            if "--- DECOMPILED ---" in line:
+                section = "c"
+                continue
+            if section == "c":
+                if line.strip():
+                    saw_c = True
+                continue
+            if section != "dis":
+                # Some dumps are bare decompiler output with no section
+                # markers at all. Track that there is *content* so they are
+                # graded C-only rather than empty.
+                if line.strip():
+                    body_chars += len(line)
+                continue
+            m = DIS_ROW_RE.match(line.rstrip("\n").strip())
+            if not m:
+                continue
+            rows += 1
+            if first_va is None:
+                first_va = int(m.group(1), 16)
+            last_va = int(m.group(1), 16)
+            last_mnems.append(m.group(2).lower().lstrip("_"))
+            if len(last_mnems) > 2:
+                last_mnems.pop(0)
+
+    base = os.path.basename(path)
+    if not (saw_dump_hdr or DUMP_NAME_RE.match(base)):
+        return None
+
+    info = {
+        "file": base,
+        "declared_size": declared_size,
+        "declared_insns": declared_insns,
+        "rows": rows,
+        "first_va": first_va,
+        "last_va": last_va,
+        "last_mnem": last_mnems[-1] if last_mnems else "",
+        "has_c": saw_c,
+    }
+
+    # A `size=1 bytes, 0 instructions` header is Ghidra reporting that it
+    # decoded nothing - the same defect as no header at all, so it is graded
+    # by what the file actually carries, not by the header being parseable.
+    headerless = declared_size is None or rows == 0
+    if headerless:
+        if rows > 0:
+            info["shape"] = "HEADERLESS_WITH_DISASM"
+        elif saw_c or body_chars:
+            info["shape"] = "HEADERLESS_C_ONLY"
+        else:
+            info["shape"] = "EMPTY"
+        return info
+
+    if declared_size != rows * 4 or (declared_insns is not None
+                                     and declared_insns != rows):
+        info["shape"] = "SIZE_MISMATCH"
+        return info
+
+    # `jr` anywhere in the closing pair means the routine returns (the delay
+    # slot legitimately prints last).
+    if any(m == "jr" for m in last_mnems):
+        info["shape"] = "SOUND"
+    elif any(m in ("j", "b") for m in last_mnems):
+        info["shape"] = "TAIL_J"
+    else:
+        info["shape"] = "NO_RETURN"
+    return info
+
+
+def cited_dump_names(docs_dir):
+    """Dump basenames the committed docs currently cite as evidence.
+
+    Two citation forms are in use: an explicit `funcs/<name>.txt` path, and a
+    bare `FUN_<addr>` / backticked address that resolves to `<addr>.txt`. Both
+    are collected, because a claim resting on either is a claim resting on
+    that dump file.
+    """
+    names = set()
+    path_re = re.compile(r"funcs/([A-Za-z0-9_.]+)\.txt")
+    addr_re = re.compile(r"(?:FUN_|`)([0-9a-fA-F]{8})(?:`|\b)")
+    for root, _dirs, files in os.walk(docs_dir):
+        for fn in files:
+            if not fn.endswith(".md"):
+                continue
+            with open(os.path.join(root, fn), "r", errors="replace") as f:
+                text = f.read()
+            for m in path_re.finditer(text):
+                names.add(m.group(1) + ".txt")
+            for m in addr_re.finditer(text):
+                names.add(m.group(1).lower() + ".txt")
+    return names
+
+
+def run_shape(args):
+    files = sorted(glob.glob(os.path.join(args.funcs_dir, "*.txt")))
+    cited = None
+    if args.cited_only:
+        cited = cited_dump_names(os.path.join(ROOT, "docs"))
+        print("[dump-shape] docs cite %d distinct dump name(s)" % len(cited))
+
+    infos, skipped, not_a_dump = [], 0, 0
+    for path in files:
+        base = os.path.basename(path)
+        if cited is not None:
+            # An overlay dump is cited by its bare address too, so match on
+            # the trailing `<addr>.txt` as well as the whole filename.
+            tail = base.split("_")[-1]
+            if base not in cited and tail not in cited:
+                skipped += 1
+                continue
+        try:
+            info = scan_shape(path)
+        except Exception as e:
+            print("  [parse-err] %s: %s" % (base, e))
+            continue
+        if info is None:
+            not_a_dump += 1
+            continue
+        infos.append(info)
+
+    # Orthogonal to shape: does the FILENAME's address agree with the address
+    # the content actually starts at? The dumpers resolve a target with
+    # `getFunctionContaining(addr)` but name the file after the *requested*
+    # address, so asking for an interior address silently yields a file named
+    # `<interior>.txt` holding the enclosing function. Every citation of that
+    # filename then asserts a function entry that does not exist.
+    name_addr_re = re.compile(r"(?:^|_)([0-9a-fA-F]{8})\.txt$")
+    mismatched = []
+    for i in infos:
+        m = name_addr_re.search(i["file"])
+        if not m or i["first_va"] is None:
+            continue
+        want = int(m.group(1), 16)
+        if want != i["first_va"]:
+            i["name_va"] = want
+            mismatched.append(i)
+
+    n_interior = mark_interior_slices(infos)
+
+    cat = Counter(i["shape"] for i in infos)
+    scope = "cited" if cited is not None else "all"
+    print("\n=== shape classification (%d %s dump(s)%s) ===" % (
+        len(infos), scope, ", %d skipped" % skipped if skipped else ""))
+    for k in SHAPES:
+        if cat[k]:
+            print("  %-24s %5d" % (k, cat[k]))
+    if not_a_dump:
+        print("  (%d non-dump file(s) in funcs/ excluded from the denominator)"
+              % not_a_dump)
+
+    if n_interior:
+        print("\n%d dump(s) are a SLICE of a larger sibling function, not an "
+              "entry point. Retire the dump and the citation - do not "
+              "re-dump the address." % n_interior)
+
+    if mismatched:
+        print("\n%d dump(s) are NAME-MISMATCHED: the filename's address is not "
+              "where the content starts, so the file asserts a function entry "
+              "that does not exist." % len(mismatched))
+        for i in sorted(mismatched, key=lambda i: i["file"])[:args.limit]:
+            print("  %-48s named %08x  starts %08x  (%+d)" % (
+                i["file"], i["name_va"], i["first_va"],
+                i["first_va"] - i["name_va"]))
+
+    recoverable = [i for i in infos if i["shape"] == "HEADERLESS_WITH_DISASM"]
+    if recoverable:
+        insns = sum(i["rows"] for i in recoverable)
+        print("\n%d headerless dump(s) carry a complete disassembly "
+              "(%d instructions, ~%d bytes) that every header-driven counter "
+              "discards." % (len(recoverable), insns, insns * 4))
+
+    worst = sorted(
+        (i for i in infos if i["shape"] != "SOUND"),
+        key=lambda i: (SHAPE_SEVERITY.get(i["shape"], 9), -i["rows"], i["file"]))
+    if args.list_defects:
+        print("\n=== defective dumps, worst first ===")
+        for i in worst[:args.limit]:
+            flag = ""
+            if i["shape"] == "TAIL_J" and i["rows"] < SHORT_BODY_INSNS:
+                flag = "  (short body - likely label-call slice)"
+            elif i["shape"] == "INTERIOR_SLICE":
+                flag = "  inside %s" % i.get("owner", "?")
+            print("  %-24s %-44s rows=%-5d last=%-6s%s" % (
+                i["shape"], i["file"], i["rows"], i["last_mnem"], flag))
+
+    if args.emit_csv:
+        with open(args.emit_csv, "w") as f:
+            f.write("shape,file,declared_size,rows,first_va,last_va,last_mnem\n")
+            for i in sorted(infos, key=lambda i: (
+                    SHAPE_SEVERITY.get(i["shape"], 9), i["file"])):
+                f.write("%s,%s,%s,%d,%s,%s,%s\n" % (
+                    i["shape"], i["file"],
+                    "" if i["declared_size"] is None else i["declared_size"],
+                    i["rows"],
+                    "" if i["first_va"] is None else "%08x" % i["first_va"],
+                    "" if i["last_va"] is None else "%08x" % i["last_va"],
+                    i["last_mnem"]))
+        print("\nwrote %s (verdicts only - no dump text)" % args.emit_csv)
+
+    return 0
+
+
 def load_images():
     """{name: (bytes, base_va, header_len)} for every extracted image."""
     images = {}
@@ -189,7 +521,21 @@ def main():
     ap.add_argument("--list-shifted", action="store_true",
                     help="print every SHIFTED dump, not just the delta histogram")
     ap.add_argument("--funcs-dir", default=FUNCS)
+    ap.add_argument("--shape", action="store_true",
+                    help="run the SHAPE axis (truncation / headerless) instead "
+                         "of the base axis; needs no extracted/ tree")
+    ap.add_argument("--cited-only", action="store_true",
+                    help="shape axis: restrict to dumps the docs cite as evidence")
+    ap.add_argument("--list-defects", action="store_true",
+                    help="shape axis: list every non-SOUND dump, worst first")
+    ap.add_argument("--limit", type=int, default=60,
+                    help="shape axis: cap --list-defects output (default 60)")
+    ap.add_argument("--emit-csv", metavar="PATH",
+                    help="shape axis: write per-dump verdicts to CSV")
     args = ap.parse_args()
+
+    if args.shape:
+        return run_shape(args)
 
     images = load_images()
     if not images:
