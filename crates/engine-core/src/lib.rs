@@ -137,14 +137,13 @@ pub mod world_map;
 
 pub mod float_tween;
 
-// --- lane 4 ---
 pub mod action_effect_script;
+pub mod baka_cabinet;
 pub mod camera_ease;
 pub mod effect_ribbon;
 pub mod field_actor_kernels;
 pub mod field_submode;
 pub mod mode_entry_init;
-// --- end lane 4 ---
 
 use anyhow::{Context, Result};
 use std::collections::HashMap;

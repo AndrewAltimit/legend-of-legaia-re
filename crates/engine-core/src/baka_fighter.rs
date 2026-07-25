@@ -311,6 +311,17 @@ pub struct BakaFight {
     chrome: crate::baka_fighter_chrome::BakaChrome,
     /// The chrome frame the last tick produced.
     chrome_frame: crate::baka_fighter_chrome::ChromeFrame,
+    /// The cabinet shell state machine (`FUN_801CF388`), stepped once per
+    /// tick. Retail has the nesting the other way up - the cabinet SM owns the
+    /// frame and the fight resolution runs under it - but the port's host
+    /// enters through the duel, so the duel owns the frame and the cabinet
+    /// runs as its shell. The state the cabinet occupies while a duel is live
+    /// is the same one retail uses ([`crate::baka_cabinet::ST_DUEL`]), so the
+    /// bracket it drives (round count, stage advance, the win / lose exits,
+    /// the pot) is retail's.
+    cabinet: crate::baka_cabinet::BakaCabinet,
+    /// The cabinet frame the last tick produced.
+    cabinet_frame: crate::baka_cabinet::CabinetFrame,
 }
 
 /// The two per-round score-bonus tables the overlay carries as rodata: the
@@ -355,6 +366,12 @@ impl BakaFight {
             score_rows: [0; 3],
             chrome: crate::baka_fighter_chrome::BakaChrome::default(),
             chrome_frame: crate::baka_fighter_chrome::ChromeFrame::default(),
+            cabinet: {
+                let mut c = crate::baka_cabinet::BakaCabinet::new();
+                c.enter_duel();
+                c
+            },
+            cabinet_frame: crate::baka_cabinet::CabinetFrame::default(),
         }
     }
 
@@ -381,6 +398,68 @@ impl BakaFight {
     /// The chrome runner itself, for a host that wants its sprite pool.
     pub fn chrome(&self) -> &crate::baka_fighter_chrome::BakaChrome {
         &self.chrome
+    }
+
+    /// The cabinet frame the last tick produced - the shell state, the
+    /// arena / HUD draw flags and the HUD layout
+    /// ([`crate::baka_cabinet::BakaCabinet`], the `FUN_801CF388` port).
+    pub fn cabinet_frame(&self) -> &crate::baka_cabinet::CabinetFrame {
+        &self.cabinet_frame
+    }
+
+    /// The cabinet shell itself, for a host that wants its stage counter, its
+    /// secret-opponent override or its prize pot.
+    pub fn cabinet(&self) -> &crate::baka_cabinet::BakaCabinet {
+        &self.cabinet
+    }
+
+    /// Mutable access to the cabinet shell, for a host driving the ladder
+    /// (installing the running high score, seeding the stage, banking a prize).
+    pub fn cabinet_mut(&mut self) -> &mut crate::baka_cabinet::BakaCabinet {
+        &mut self.cabinet
+    }
+
+    /// Install the parsed action tables into the cabinet so its developer
+    /// editor state has something to dump (`FUN_801D553C`).
+    pub fn with_action_tables(
+        mut self,
+        tables: Vec<legaia_asset::baka_opponents::BakaActionSet>,
+    ) -> Self {
+        self.cabinet = std::mem::take(&mut self.cabinet).with_action_tables(tables);
+        self.cabinet.enter_duel();
+        self
+    }
+
+    /// Step the cabinet shell one frame off the duel's own live state.
+    ///
+    /// REF: FUN_801cf388 - retail's dispatcher reads exactly these globals
+    /// each frame (`DAT_801DBFF0` / `DAT_801DC098` round wins,
+    /// `DAT_801DBED0` the target, the per-slot HP and hits-taken counters for
+    /// the HUD pass), so the port feeds them across rather than duplicating
+    /// them inside the cabinet.
+    fn tick_cabinet(&mut self, frame_step: i32) {
+        let input = crate::baka_cabinet::CabinetInput {
+            frame_step,
+            // The duel band's only pad read is the pause-menu edge `0x110`,
+            // and the port's host does not surface a raw pad word here. The
+            // tally's face-button flag is *not* a substitute: `0xF0` and
+            // `0x110` overlap on Triangle, so feeding it across would open the
+            // pause menu whenever the player fast-forwards the tally. Left at
+            // zero until the world hands the real edge over - see
+            // `handoff/lane-5.md`.
+            pad_edge: 0,
+            pad_edge_alt: 0,
+            pad_held: 0,
+            dev_menu_enabled: false,
+            player_round_wins: self.f[0].round_wins,
+            opponent_round_wins: self.f[1].round_wins,
+            win_target: ROUND_WIN_TARGET,
+            rung_prize: 0,
+            hp: [self.f[0].hp, self.f[1].hp],
+            combo_taken: [self.f[0].combo, self.f[1].combo],
+        };
+        self.cabinet_frame = self.cabinet.tick(&input);
+        self.cues.append(&mut self.cabinet_frame.cues);
     }
 
     /// The running maximum player hit streak (`DAT_801dbec8`).
@@ -412,7 +491,9 @@ impl BakaFight {
             actions[player_roster].keyframes[legaia_asset::baka_opponents::ACTION_SPECIAL],
             actions[opponent_roster].keyframes[legaia_asset::baka_opponents::ACTION_SPECIAL],
         ];
-        Some(Self::new(p, o, kf, seed))
+        // The cabinet's developer editor dumps these same tables, so a duel
+        // built from the disc hands them straight over.
+        Some(Self::new(p, o, kf, seed).with_action_tables(actions.to_vec()))
     }
 
     /// Current match phase.
@@ -741,6 +822,7 @@ impl BakaFight {
             focus: (0, 1),
         };
         self.chrome_frame = self.chrome.step(&chrome_tick, (&[], &[]));
+        self.tick_cabinet(frame_step);
         match self.phase {
             MatchPhase::MatchOver(_) => {
                 // The match is decided: the tally screen runs (FUN_801d239c).
@@ -1981,6 +2063,42 @@ mod tests {
             Some(0x1F),
             "the round-announce line fires on the banner's first frame"
         );
+    }
+
+    #[test]
+    fn the_duel_ticks_the_cabinet_shell_and_its_hud() {
+        let mut f = fight();
+        // The duel sits in the cabinet's own duel state, match phase active.
+        assert_eq!(f.cabinet().state(), crate::baka_cabinet::ST_DUEL);
+        assert_eq!(f.cabinet().match_phase(), 2);
+        f.f[1].combo = 5;
+        f.tick(1);
+        let frame = f.cabinet_frame();
+        assert!(frame.draw_arena && frame.draw_hud);
+        let hud = frame.hud.as_ref().expect("the duel band draws the HUD");
+        // Both fighters open at full HP, so both bars are full width.
+        assert_eq!(hud.bars[0].x1 - hud.bars[0].x0, 0x64);
+        assert_eq!(hud.bars[1].x1 - hud.bars[1].x0, 0x64);
+        // The crossed combo sides put slot 1's streak on the player's counter.
+        assert_eq!(
+            hud.combo_level[0],
+            crate::baka_cabinet::combo_counter_level(5)
+        );
+        // The pip rows are sized by the best-of-3 target.
+        assert_eq!(hud.pips[0].len(), ROUND_WIN_TARGET as usize);
+    }
+
+    #[test]
+    fn the_cabinet_shell_banks_the_rung_prize_and_advances_the_stage() {
+        let mut f = fight();
+        let stage_before = f.cabinet().stage();
+        f.f[0].round_wins = ROUND_WIN_TARGET;
+        // The cabinet's round bracket has to run out before it reads the win.
+        for _ in 0..0xB6 {
+            f.tick(1);
+        }
+        assert_eq!(f.cabinet().stage(), stage_before + 1);
+        assert!(f.cabinet().all_clear() || f.cabinet().stage() > 0);
     }
 
     #[test]

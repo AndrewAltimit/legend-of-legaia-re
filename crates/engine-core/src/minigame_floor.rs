@@ -486,6 +486,59 @@ pub fn marker_template(marker: u16) -> Option<MarkerTemplate> {
     }
 }
 
+// ------------------------------------------------------- polar offset helper
+
+/// Entries in each of the two quadrature tables the polar helper indexes - the
+/// angle is masked to 12 bits, so a full turn is 4096 steps.
+pub const POLAR_TABLE_LEN: usize = 0x1000;
+/// Angle mask the helper applies (`a0 & 0xFFF`).
+pub const POLAR_ANGLE_MASK: u32 = 0x0FFF;
+/// Fixed-point shift the helper folds the product down by.
+pub const POLAR_SHIFT: u32 = 12;
+
+// NOT WIRED: the two quadrature tables are reached through **runtime**
+// pointers (`_DAT_8007B81C` / `_DAT_8007B7F8`), installed by whichever overlay
+// owns them, and nothing in the engine decodes either table - so there is no
+// table pair to index and no caller can supply one. Its retail callers are the
+// hub overlays' own circular-motion paths (the slot machine's reel cylinders,
+// the fishing float's drift), none of which the engine drives from a table
+// lookup. Wiring it needs those tables located and parsed first.
+/// PORT: FUN_801d7bb8 - the hub overlays' **polar offset** helper.
+///
+/// One of the small shared routines in the band above `0x801D0018`: the dumps
+/// at this address under the fishing, slot-machine and debug-menu overlay
+/// images are byte-identical (only the `[overlay_*.bin]` header line differs),
+/// so it is library code, not any one minigame's. The fourth dump at this VA,
+/// under the field overlay (PROT 0897), reports `0 instructions` and carries
+/// only decompiler output - it is the empty-dump artifact, not a fourth copy.
+///
+/// `FUN_801D7BB8(angle, radius, &out_a, &out_b, scale)` reads the same
+/// 12-bit-masked angle out of **two** quadrature tables - whose pointers live
+/// at `_DAT_8007B81C` and `_DAT_8007B7F8` - and writes
+/// `table[angle] * radius * scale >> 12` through each pointer. Which of the
+/// pair is sine and which cosine is a property of the table data, not of this
+/// code, so the port keeps them positional (`table_a` -> the first output).
+///
+/// Both products are computed in full 32-bit width before the single shift,
+/// and the shift is a plain arithmetic `sra` - it rounds toward **minus
+/// infinity**, unlike the `bgez`-biased shifts elsewhere in these overlays.
+/// A caller feeding a 12.12 `scale` gets a 12.12 result back.
+///
+/// Returns `None` when either table is too short to hold the masked angle.
+pub fn polar_offset(
+    angle: u32,
+    radius: i32,
+    scale: i32,
+    table_a: &[i16],
+    table_b: &[i16],
+) -> Option<(i32, i32)> {
+    let i = (angle & POLAR_ANGLE_MASK) as usize;
+    let a = *table_a.get(i)? as i32;
+    let b = *table_b.get(i)? as i32;
+    let fold = |t: i32| (t.wrapping_mul(radius).wrapping_mul(scale)) >> POLAR_SHIFT;
+    Some((fold(a), fold(b)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -643,5 +696,47 @@ mod tests {
             Some(MarkerTemplate::Marker { sub_index: 3 })
         );
         assert_eq!(marker_template(10), Some(MarkerTemplate::Plain));
+    }
+
+    #[test]
+    fn polar_offset_masks_the_angle_to_one_turn() {
+        let mut a = vec![0i16; POLAR_TABLE_LEN];
+        let mut b = vec![0i16; POLAR_TABLE_LEN];
+        a[1] = 0x0100;
+        b[1] = -0x0100;
+        // 0x1000 is a full turn, so 0x1001 and 1 index the same slot.
+        assert_eq!(
+            polar_offset(1, 0x40, 0x1000, &a, &b),
+            polar_offset(0x1001, 0x40, 0x1000, &a, &b)
+        );
+        // (0x100 * 0x40 * 0x1000) >> 12 = 0x4000, and the sibling table's
+        // negative entry mirrors it.
+        assert_eq!(
+            polar_offset(1, 0x40, 0x1000, &a, &b),
+            Some((0x4000, -0x4000))
+        );
+        // Zero entries stay zero whatever the radius.
+        assert_eq!(polar_offset(2, 0x7FF, 0x1000, &a, &b), Some((0, 0)));
+    }
+
+    #[test]
+    fn polar_offset_shift_rounds_toward_minus_infinity() {
+        let mut a = vec![0i16; POLAR_TABLE_LEN];
+        let b = vec![0i16; POLAR_TABLE_LEN];
+        a[0] = -1;
+        // -1 * 1 * 1 = -1; a plain arithmetic `sra` by 12 gives -1, not 0.
+        // (a `bgez`-biased shift, which this routine does *not* use, would
+        // give 0).
+        assert_eq!(polar_offset(0, 1, 1, &a, &b).map(|p| p.0), Some(-1));
+        a[0] = 1;
+        assert_eq!(polar_offset(0, 1, 1, &a, &b).map(|p| p.0), Some(0));
+    }
+
+    #[test]
+    fn polar_offset_refuses_a_short_table() {
+        let a = vec![0i16; 4];
+        let b = vec![0i16; POLAR_TABLE_LEN];
+        assert!(polar_offset(2, 1, 1, &a, &b).is_some());
+        assert!(polar_offset(4, 1, 1, &a, &b).is_none());
     }
 }

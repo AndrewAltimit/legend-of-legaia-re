@@ -274,7 +274,7 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
 | `FUN_801d03c4` | Dancer face-pose switch driven by hit results (the eye/mouth MoveImage stamp). `overlay_dance_801d03c4.txt` |
 | `FUN_801d0190` | Dancer spawner: per-mode spawn table + kind descriptor table → actor list (see [Dancer bodies](#dancer-bodies-the-retail-cast--choreography-tables)). `overlay_dance_801d0190.txt` |
 | `FUN_801d1358` | Per-dancer actor handler: binds idle / the dance loop, applies the judge-returned move clip + translucency bit, then hands to the shared clip driver `FUN_800204F8`. `overlay_dance_801d1358.txt` |
-| `FUN_801d2f38` | Textured-quad sprite emitter (HUD digits / banners / gauge); shared presentation helper. `overlay_dance_801d2f38.txt` |
+| `FUN_801d2f38` | Textured-quad sprite emitter (HUD digits / banners / gauge); the id's upper bits carry a per-draw blend mode. See [HUD widget table](#hud-widget-table-dat_801d46cc--emitter-geometry). `overlay_dance_801d2f38.txt` |
 | `FUN_801d73b8` | **Centred text/number draw** (render-track): measures the string (`func_0x80056768`), shifts x left by half its pixel width (13-unit/glyph pitch), draws via `func_0x80036888` at `(x, y + 7)`; skipped when `y >= 0xf1` (off-screen guard); returns a half-length metric. `overlay_dance_801d73b8.txt` |
 | `FUN_801d7dd8` | **Single small-digit glyph emit** (render-track): sets the glyph source column `DAT_801d8610 = digit*8 + 0x28`, then draws one sprite (tile id `6`) via the shared quad emitter `FUN_801d63b0` at `(x, y)`. Called per digit by the number renderer `FUN_801d76e0` when its style arg is 0. `overlay_dance_801d7dd8.txt` |
 | `FUN_801d7d44` | **Single large-digit glyph emit** (render-track): sets `DAT_801d8778 = (digit & 0x3ff) << 4`, then draws two overlaid layers (tile ids `0x418` + `0x818`) via `FUN_801d63b0` at `(x, y)`. Called per digit by `FUN_801d76e0` when its style arg is non-zero. `overlay_dance_801d7d44.txt` |
@@ -283,7 +283,7 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
 | `FUN_801d3ec0` | Two-layer step-marker lookup wrapper (scene-data `+0x10000` / `+0x12000`). `overlay_dance_801d3ec0.txt` |
 | `FUN_801d3f54` | Per-cell step-marker lookup (per-row sub-list, match `(x, y)`). `overlay_dance_801d3f54.txt` |
 | `FUN_801d0750` | The **setumei (how-to) tutorial script** - the Disco King actor's per-frame state machine. See [The setumei tutorial script](#the-setumei-how-to-tutorial-script-fun_801d0750). `overlay_dance_801d0750.txt` |
-| `FUN_801d231c` | Score / gauge HUD render driver: per-mode score-box → dancer-slot layout, then draws each box (`FUN_801d32f8`), the gauge level (`FUN_801d3e28`) and the beat track (`FUN_801d2524`). `overlay_dance_801d231c.txt` |
+| `FUN_801d231c` | Score / gauge HUD render driver: per-mode score-box → dancer-slot layout, then draws each box (`FUN_801d32f8`), the gauge level (`FUN_801d3e28`) and the beat track (`FUN_801d2524`). See [HUD render driver](#hud-render-driver-fun_801d231c). `overlay_dance_801d231c.txt` |
 | `FUN_801d32f8` | Multi-digit number renderer: 8-place decimal split (leading-zero suppressed) → per-digit widget-U patch + emit. `overlay_dance_801d32f8.txt` |
 | `FUN_801d2524` | Beat-track HUD: combo-window CLUT flash, the scrolling-note screen-x, the caps / body / stock-marker draws. `overlay_dance_801d2524.txt` |
 | `FUN_801d2d98` | Count-in banner animator (`1 2 3 READY... GO!`): slide-in / hold / fade envelope + fires the intro cue `0x200` on frame `0x1e`. Envelope ported as [`dance_countin_banner_envelope`]. `overlay_dance_801d2d98.txt` |
@@ -347,6 +347,14 @@ slide/hold/fade envelope (`dance_countin_banner_envelope`, `FUN_801d2d98`), and
 the per-dancer clip-driver gate (`dance_clip_driver_gate`, `FUN_801d4098` - drive
 the shared clip when the dancer's spin counter is positive or its flag word
 carries bit `0x1000`).
+
+Two of the HUD routines are ported whole rather than as parameterisation,
+because their whole content *is* disc-derived: the widget-quad emitter
+(`dance_hud_widget_quad`, `FUN_801d2f38`) and the render driver
+(`dance_hud_draws` / `dance_score_box_slots`, `FUN_801d231c`). `DanceGame` owns
+its mode and the parsed widget table, so `DanceGame::hud_draws` lays the frame
+out off the run's own live scores and gauges and `DanceGame::hud_quads` resolves
+the score-box frames through the emitter.
 
 ## Assets: the overlay loads none - the entry path stages PROT 1230
 
@@ -493,6 +501,20 @@ track (`FUN_801d2524`) swaps CLUTs - `0x7D08` idle / `0x7D0D` on the
 every-4th-beat combo window (`phase < 0x46`) for the caps + body (widgets
 16/17/30), `0x7D0E` for the scrolling notes. **Confirmed.**
 
+The emitter's `id` argument is **two fields**. `id & 0x3FF` is the widget
+index; `id >> 10` (rounded toward zero) is a per-draw **blend mode** that
+overrides the record. Mode `0` takes the record's own semi-transparency bit
+(`+0x0F`) and its ABR rate (`+0x13`); any other mode forces semi-transparency
+on and uses the mode value *itself* as the ABR rate. Mode `2` additionally
+replaces the record's CLUT with the fixed `0x7D0F` - palette 15 of the row-500
+strip. The ABR rate folds into the texpage attribute as `tpage + abr * 0x20`
+(the same fold the Baka Fighter emitter uses), so `abr = 1` is the additive
+`B + F` blend. Cell rects are **half-open** here: the emitter writes `u + w`
+and `x + hw` straight out, where the Baka emitter's are inclusive
+(`u + w - 1`). Port: `engine-core::dance::dance_hud_widget_quad`.
+`legaia_asset::dance_art::parse_widgets` does not decode `+0x13` yet, so the
+port takes the byte alongside the record. **Confirmed.**
+
 Traced layout (retail 320x240): score boxes (widget 8) centred at
 `(64, 20)`/`(160, 20)`/`(256, 20)` with the **human dancer in the centre box**
 (digit bases `-0x20`/`0x40`/`0xA0`, 8 slots stepping 16); gauge `Lv.` at
@@ -503,6 +525,37 @@ Traced layout (retail 320x240): score boxes (widget 8) centred at
 stores `x << 3`) at centre `(160, 120)` for the count-in / `READY...` / `GO!`
 / `FINISH!`, `(160, 128)` for `Miss!`, `(160, 144)` for the rating banners
 with star sparkles flanking at `±0x38` / `±0x50`. **Confirmed.**
+
+### HUD render driver (`FUN_801d231c`)
+
+`FUN_801d231c` is the per-frame driver over the pieces above, called from the
+main play state. Per frame it draws the three score readouts and their box
+frames, then the human's groove gauge (`FUN_801d3e28`) and beat track
+(`FUN_801d2524`), then - **only while `_DAT_8007B6D0` is set** - the two rivals'
+gauges and tracks at `(0xDC, 0x40)` / `(0xDC, 0xD4)` and `(0x50, 0x40)` /
+`(0x18, 0xD4)`. With that flag clear the rival rows are not drawn at all, even
+in the versus modes.
+
+Which score slot each screen box carries is a per-mode permutation, chosen so
+the human always lands in the centre box:
+
+| Mode | centre `(0x40)` | left `(-0x20)` | right `(0xA0)` |
+|---|---|---|---|
+| `0` yosenn | `0` | `1` | `2` |
+| `1` hosenn | `1` | `2` | `0` |
+| `2` setumei / `3` asobi | `0` | `2` | `1` |
+
+Mode `3` (free play) skips both side boxes and both side digit runs - it draws
+the centre box only. The digit runs go through `FUN_801d32f8(style, x, y, value,
+brightness, size)`; style `0` uses widget `1` at a 16-px step, any other style
+widget `0x21` at 8 px.
+
+The default arm - any mode value outside `0..=3` - reads its third slot index
+out of a **register it never writes**. That is visible in the disassembly (and
+rendered `unaff_s1` by Ghidra); the mode global is always `0..=3` so the arm is
+unreachable, and the port returns `None` for it rather than inventing a slot.
+Port: `engine-core::dance::{dance_hud_draws, dance_score_box_slots}`, driven by
+`DanceGame::hud_draws`. **Confirmed.**
 
 ### Rating banners per tier (`FUN_801d1af4` body)
 
