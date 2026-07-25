@@ -63,8 +63,21 @@ const CUE_CURSOR: u8 = crate::sfx_view::CUE_CURSOR;
 const CUE_CONFIRM: u8 = crate::sfx_view::CUE_CONFIRM;
 /// Cue id fired for a pause-menu cancel.
 const CUE_CANCEL: u8 = crate::sfx_view::CUE_CANCEL;
-/// Cue id fired for a footstep. **Site pick** - see the module note.
-const CUE_FOOTSTEP: u8 = crate::sfx_view::CUE_CURSOR;
+/// Cue id fired for a footstep, once one is pinned. `None` means the cadence
+/// runs but keys no voice.
+///
+/// **A guessed cue id here is not a near-miss, it is an arbitrary sample.** An
+/// id resolves through the descriptor table (`DAT_8006F198 + id*8`) to a
+/// *program index* - `0x21` names program `1` - and that program selects a
+/// different sample in every resident bank. The four ids this host knows were
+/// traced from the Baka Fighter menu SM, so firing `0x21` in a field scene
+/// played the *field* bank's program 1, an impact sample: walking punched.
+///
+/// Pinning it needs a runtime capture of the SFX ring while walking in a field
+/// scene, not a closer-sounding guess. The cadence stays wired meanwhile, so
+/// [`FUN_80018db0`]'s timing keeps running and stays observable in the HUD
+/// counters; only the voice key is withheld.
+const CUE_FOOTSTEP: Option<u8> = None;
 
 /// One event this host can fire, with how its cue id was chosen. `"disc"`
 /// means the id is traced to a retail ring write; `"site"` means retail plays
@@ -90,16 +103,12 @@ const PLAY_EVENTS: &[(&str, u8, &str, &str)] = &[
         "site",
         "cue id is the traced menu-SM cancel blip, remapped to this menu",
     ),
-    (
-        "footstep",
-        CUE_FOOTSTEP,
-        "site",
-        "the step/stall CADENCE is the ported FUN_80018db0 kernel, but two \
-         inputs to it are port picks: retail's footstep cue id is not pinned, \
-         and neither is the speed word the interval curve reads (see \
-         WALK_SPEED_UNITS)",
-    ),
 ];
+
+/// The footstep is deliberately absent from [`PLAY_EVENTS`]: its cadence runs
+/// every field frame but keys no voice, because retail's cue id is unpinned
+/// and a guessed one plays an unrelated sample. See [`CUE_FOOTSTEP`].
+const _: Option<u8> = CUE_FOOTSTEP;
 
 /// World-unit displacement per tick below which the player counts as still.
 /// The controller steps 2 units at a time, so anything under one unit is
@@ -251,7 +260,10 @@ impl LegaiaRuntime {
         };
         let tick = self.sfx.cadence.tick_cadence(mag, mag);
         if tick.step_fired {
-            self.enqueue_sfx(CUE_FOOTSTEP, 0);
+            // Silent until retail's footstep cue id is pinned - see CUE_FOOTSTEP.
+            if let Some(cue) = CUE_FOOTSTEP {
+                self.enqueue_sfx(cue, 0);
+            }
         }
         self.fire_matured_sfx();
     }
