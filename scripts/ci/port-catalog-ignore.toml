@@ -768,7 +768,7 @@
 # captured under different scenario labels) does not qualify.
 [va_aliased_overlay_local]
 "801d6310" = "2 overlays hold distinct bodies at this VA: baka_fighter(976) 92insn vs dance(980) 40insn"
-"801d58f0" = "VA-aliased across overlays, not one function: overlay_0897 copy is an 80-byte mid-function division fragment (not an entry), baka_fighter 228 B, cutscene_dialogue 124 B, debug_menu/fishing/slot_machine 308 B, dance 1 B. The 41-ref count sums unrelated per-overlay callees; no single port site exists for the bare VA."
+"801d58f0" = "VA-aliased across overlays, not one function: overlay_0897 copy is an 80-byte mid-function division fragment (not an entry), baka_fighter 228 B, cutscene_dialogue 124 B, debug_menu/fishing/slot_machine 308 B, dance 1 B. The 41-ref count sums unrelated per-overlay callees; no single port site exists for the bare VA. The debug_menu/fishing/slot_machine side now has a named host: the fishing overlay's 2-D segment clipper FUN_801D56E4 is 1352 bytes (0x801D56E4..0x801D5C2C) once walked to its real `jr ra` rather than to Ghidra's short bound, so this VA is interior to it. Do not re-dump the address."
 "801d63b0" = "VA-aliased across overlays, not one function: overlay_dance copy is 208 B vs debug_menu/fishing/slot_machine 1036 B - different code at the same VA. The 43-ref count sums unrelated per-overlay callees; no single port site exists for the bare VA."
 "801dd310" = "VA-aliased across overlays, not one function: menu/save_ui/shop_save copy is a 32 B no-op passthrough (save-screen substate 0x16 -> frame-end flush 80031d00, see docs/subsystems/save-screen.md); baka/dance/fishing/slot/cutscene family 436 B and 0897 204 B are different functions. The 23-ref count sums unrelated per-overlay callees."
 "801d81e0" = "VA-aliased across overlays, not one function: cutscene copy is a 44 B two-call wrapper (800204a4 + 80020454); the 0897 dump is a 96 B mid-function fragment with no clean prologue (unaff_s registers - re-dump before use); script-vm.md cites the field-VM overlay's copy as the op-0x23 MOVE_TO movement init, matching neither dump. No single port site for the bare VA."
@@ -778,7 +778,7 @@
 "801c0f48" = "VA-aliased across overlays, not one function: only the 0899 dump resolves 801c0f48 as its own entry (300 B); 0896 resolves to entry 801c0d1c (848 B), 0971 to 801c0f18 (204 B) and 0977 to 801c085c (2044 B). The bare-VA ref count sums unrelated per-overlay callees; no single port site exists."
 "801c2748" = "Retired wrong-base alias: 801c2748 was the minigame completion reward's printed address in the mis-based 0x801C0000 import of PROT 0977; the true entry is 801d0f60 (0977 at slot-A base 0x801CE818, file +0x2748; string anchors into the monster-name table pin the base). Ported as engine-core muscle_dome::settle_contest (PORT: FUN_801d0f60). The other overlays' 801c2748-band bytes are unrelated (0896 entry 801c2720, 0897 801c2520, 0899 801c2704)."
 "801c36b0" = "VA-aliased across overlays, not one function: only the 0971 dump resolves 801c36b0 as its own entry (612 B); 0897 resolves to entry 801c36ac (980 B) and 0899 to 801c3594 (356 B). The bare-VA ref count sums unrelated per-overlay callees; no single port site exists."
-"801d5a24" = "VA-aliased across overlays, not one function: the 0897 copy is a 124 B mid-function fragment (no prologue, unaff_s0/s1/s2 - it packs an RGB word into s2[+0x74]), baka_fighter is 600 B, the cutscene pair 68 B, the dance/debug_menu/fishing/slot_machine family 520 B, and the dance dump degenerate at 1 B. docs/subsystems/audio.md cites the VA only as an arts-voice call site. The ref count sums unrelated per-overlay callees; no single port site exists for the bare VA."
+"801d5a24" = "VA-aliased across overlays, not one function: the 0897 copy is a 124 B mid-function fragment (no prologue, unaff_s0/s1/s2 - it packs an RGB word into s2[+0x74]), baka_fighter is 600 B, the cutscene pair 68 B, the dance/debug_menu/fishing/slot_machine family 520 B, and the dance dump degenerate at 1 B. docs/subsystems/audio.md cites the VA only as an arts-voice call site. The ref count sums unrelated per-overlay callees; no single port site exists for the bare VA. Sibling of 801d58f0: the dance/debug_menu/fishing/slot_machine side is interior to the fishing overlay's FUN_801D56E4, whose true span is 0x801D56E4..0x801D5C2C. Do not re-dump the address."
 "801d3748" = "VA-aliased across overlays, not one function: the 0897 copy is a 100 B move-VM overlay-extension sub-handler (s8 script PC, `addiu s8,s8,3`, exits `j 0x801e3628` - see docs/subsystems/move-vm-overlay-ext.md) and the 0898 copy a 324 B pad-confirm-gated step counter with eight `jal` callers including the dispatcher FUN_801D0748. The ref count sums unrelated per-overlay callees."
 "801d629c" = "VA-aliased across overlays, not one function: the 0896 copy is 284 B and the cutscene copy 828 B, each a clean prologue-bearing entry with its own independent `jal` caller (overlay_0896_801d08e4 vs overlay_cutscene_*_801d6058). Divergent bodies at one VA; no single port site exists."
 "801db7b0" = "VA-aliased across overlays, not one function: the 0897 copy is a 28 B jump-table trampoline (`sll v1,v1,2; lw v0,0x0(v1); jr v0`) and the 0898 copy a 108 B battle-widget record writer at ctx+0x11B4 + id*0xC. Already recorded as an alias in the 801DB7B0 section of docs/reference/functions.md; the ref count sums unrelated per-overlay callees."
@@ -1169,9 +1169,23 @@
 "8020e504" = "DUPLICATE: 818-instruction stream identical modulo relocation to the already-ported 801eed1c"
 [worklist_phantom]
 "801e5fb0" = "2-insn body of non-R3000 opcodes (misdecoded data), degenerate stub"
-"80021934" = "PHANTOM: only dump body is a 3-instruction stub"
+# 80021934 removed after an `--audit-ignored` re-read. The PHANTOM reading rested
+# on a 3-instruction dump, and those three instructions are real: read out of
+# extracted/SCUS_942.54 at file +0x12134 the VA opens `lui v0,0x1f80 / lbu
+# v0,0x393(v0) / lw v1,0x710(gp)` and only THEN `addiu sp,sp,-0x120` - a
+# 116-instruction body preceded by the predecessor's `jr ra` at 0x80021930. The
+# dump captured the pre-prologue setup and stopped. Worse, the list contradicted
+# itself: the 80021940 row in [worklist_interior] says "Port 80021934 instead",
+# so between the two rows the scene-transition streaming actor SM was ignored at
+# both of its addresses. It is documented in docs/reference/functions/game-modes.md
+# and docs/formats/scene-v12-table.md. Port it.
 "80035c10" = "PHANTOM: only dump body is a 4-instruction stub"
-"80055b4c" = "PHANTOM: only dump body is a 0-instruction stub"
+# 80055b4c removed after the same re-read. The 0-instruction dump was a bounds
+# failure, not a stub: SCUS at file +0x4634C holds an 8-instruction leaf
+# preceded by `jr ra` - `*(_DAT_8007BD24)[0x26B] = a0 + 1` then
+# `*(_DAT_8007BD24)[0x26C] = 0`, the one-slot side-band stream request that
+# docs/formats/battle-data-pack.md and docs/reference/functions/renderer.md both
+# already describe by name. Port it.
 "801d58e0" = "PHANTOM: only dump body is a 4-instruction stub"
 "801f5d90" = "PHANTOM: only dump body is a 0-instruction stub"
 "801f16a0" = "PHANTOM: printed address of a mis-based import. The dump program 0905_xxx_dat.BIN was loaded at 0x801F0000, but the slot-B link base is 0x801F69D8, so every printed address is 0x69D8 low. The body is real stager code whose true entry is 0x801F8078 (0905 file +0x16A0 = 27bdffd0, addiu sp,sp,-0x30). No image holds an entry at 801f16a0 itself: PROT 0898's word there (file +0x22E88) is sltiu, mid-function."

@@ -3,9 +3,11 @@ addr,class,reason
 80020f88,REAL,self-entry body of 176 instructions returning `jr ra`
 8002149c,REAL,self-entry body of 172 instructions returning `jr ra`
 8002174c,REAL,self-entry body of 122 instructions returning `jr ra`
+80021934,REAL,self-entry body of 116 instructions returning `jr ra`
 800480d8,REAL,self-entry body of 142 instructions returning `jr ra`
 8004ccd4,REAL,self-entry body of 86 instructions returning `jr ra`
 800508dc,REAL,self-entry body of 183 instructions returning `jr ra`
+80055b4c,REAL,self-entry body of 8 instructions returning `jr ra`
 80056208,REAL,self-entry body of 244 instructions returning `jr ra`
 80059e10,REAL,self-entry body of 161 instructions returning `jr ra`
 80062f98,REAL,self-entry body of 157 instructions returning `jr ra`
@@ -25,7 +27,7 @@ addr,class,reason
 801d2f38,REAL,self-entry body of 240 instructions returning `jr ra`
 801d4a60,REAL,self-entry body of 756 instructions returning `jr ra`
 801d553c,REAL,self-entry body of 160 instructions returning `jr ra`
-801d56e4,REAL,"dump is bounded short (131 instructions, no `jr ra`), but fishing(972) starts a routine at this VA at its mapped base (preceded by `jr ra`)"
+801d56e4,REAL,every dump at this VA is of fishing(972) (captures: debug_menu/fishing); no second dumped body here
 801d6704,REAL,self-entry body of 901 instructions returning `jr ra`
 801d7030,REAL,every dump at this VA is of fishing(972) (captures: debug_menu/fishing); no second dumped body here
 801d71b8,REAL,every dump at this VA is of battle_action(898) (captures: battle_action/magic_level_up/muscle_dome); no second dumped body here

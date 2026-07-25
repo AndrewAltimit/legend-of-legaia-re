@@ -434,6 +434,88 @@ disassembling the image directly.
 
 So a tag proves the *base*. It does not prove *completeness*.
 
+## Attributing an extent to an image
+
+Several overlays load at one base, so a dump extent can fall inside more than
+one image's mapped span. Address arithmetic cannot separate those cases and it
+is not a close call: the two spans
+[`disc-coverage.py`](disc-coverage.md) measures are **nested**, one wholly
+inside the other, so every extent in the overlap belongs to both by
+construction and the inner image is 100% ambiguous however good the corpus is.
+
+[`attribute-dump-extents.py`](../../scripts/ghidra-analysis/attribute-dump-extents.py)
+asks the bytes instead: it canonicalises each dump's opening window and reports
+which image's **own content** reproduces it at that VA. The committed result is
+[`dump-extent-attribution.csv`](../../scripts/ghidra-analysis/dump-extent-attribution.csv),
+keyed by `(entry, bytes)` - the extent, not the dump filename, so adding a dump
+does not invalidate a row and the artifact does not rot the way a per-dump table
+would.
+
+| Class | Meaning | What a consumer should do |
+|---|---|---|
+| `unique` | One image's own content reproduces the window here. | Credit that image only. |
+| `identical` | Several images hold byte-identical code here. | Credit each; the dump documents all of them. |
+| `divergent` | Dumps at this extent resolve to different images. | Genuinely several routines; leave ambiguous. |
+| `misbased` | No image holds these bytes here; they live elsewhere. | Credit no image - the extent is fiction. |
+| `unresolved` | The bytes are in no extracted image at any VA. | Leave ambiguous. |
+| `short` / `data` / `gapped` / `no_disassembly` | The window cannot sign. | Leave ambiguous; `data` and `gapped` credit nobody. |
+
+### Own content, not the extracted file
+
+The cut matters more than the comparison. An extraction is the entry's
+`read_entry` footprint and runs into its neighbours' sectors, so a raw file
+answers for VAs its overlay never loads - with a neighbour's code. Two cuts are
+available and they are not equally good: a cited `clean_copy_bytes` length, and
+the sector-aligned offset at which another image's head appears. Where both
+exist they agree, which is what licenses the second where the first is absent -
+and most rows have only the second, so the artifact records which one each image
+used.
+
+### The residue is the finding
+
+Roughly three fifths of ambiguous extents attribute to exactly one image, and a
+further fifth attribute to *no* image because the print is mis-based. What is
+left does not yield to more effort of the same kind, and the largest share of it
+is not a corpus gap but a **dump** gap: windows too short to sign, dumps that
+carry decompiled C and no instruction stream at all, and gapped streams. Those
+are repaired by re-dumping, not by extracting another overlay.
+
+Lowering the signature floor does not help, and that is measured rather than
+assumed: going from eight instructions to five moves a handful of extents and
+changes the per-image ambiguity by well under a point, while making every
+verdict rest on less evidence. The floor is not the binding constraint.
+
+One image's row can therefore become meaningful while the other's does not, and
+that is a legitimate result rather than a half-finished one. The inner of two
+nested spans starts at total ambiguity and keeps a larger share of the residue,
+because most of what it loses is loss to *other* images rather than to itself.
+
+## Every instrument in this chain has had a defect that made a number look better
+
+Worth stating as a standing caution rather than a grievance, because the pattern
+repeats and it has one shape. The measurement layer over this corpus has
+produced more defects than the code it measures, and none of them announced
+itself: each returned a plausible number, in a plausible format, with no error.
+
+The catalogued ones span every stage. A dumper names its output after the
+address *requested* while Ghidra resolves the one *containing* it, so a file
+asserts an entry point that does not exist - the signature is that the resolved
+entry is always **below** the requested address, which nothing else produces.
+A function walker stops at the first unconditional `j` and reports a 259-
+instruction body as 85. A canonicaliser leaves one operand spelling unfolded and
+the mismatch lands in the class that reads as missing data. An audit applies a
+test that can only refute one kind of claim to a list containing two kinds, and
+re-raises every row of the other kind forever. An entry test reads a prologue as
+a boundary when a routine can begin a few instructions before its frame.
+
+The common factor is not carelessness, it is that **a measurement instrument has
+no oracle**. Code that is wrong eventually crashes or renders the wrong pixel;
+a counter that is wrong just prints. So the defences are structural: cross-check
+one instrument against another built on different evidence, prefer the class an
+error would land in being *loud* over it being small, and treat any negative or
+"unverifiable" class as the place to look first, because that is where a broken
+comparison and a genuine absence are indistinguishable from the outside.
+
 ## The remedy
 
 Disassemble from the extracted image, not from the dump:
@@ -451,6 +533,16 @@ file offset `0x800 + va - 0x80010000`.
 [`disasm-overlay-fn.py`](../../scripts/ghidra-analysis/disasm-overlay-fn.py)
 does this directly. Validate any new base by disassembling one known anchor and
 comparing against a `MATCH` dump before trusting the rest.
+
+Its walk ends the body at a `jr ra` or an outbound `j` only once nothing already
+walked branches **past** it. Neither half of that rule is safe alone, and each
+fails silently in the opposite direction: stopping at the first `j` truncates
+any routine that jumps forward to a shared epilogue, and stopping at the first
+`jr ra` truncates any routine with an early-exit arm. A walk that ends any other
+way - the instruction cap, the end of the input, an explicit `--max-size` -
+prints an `INCOMPLETE BODY` marker, because an instruction count that is really
+a lower bound is indistinguishable from a whole body once it is quoted
+somewhere else.
 
 ## Re-running the sweep
 

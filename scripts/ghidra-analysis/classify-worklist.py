@@ -511,6 +511,23 @@ class StaticArbiter:
     def available(self):
         return bool(self.images)
 
+    @staticmethod
+    def _fold(tok):
+        """Fold the one operand spelling the two disassemblers disagree on.
+
+        Ghidra prints `break`'s whole code field (`break 0x1c00`), capstone a
+        sub-field (`break 7`). Same instruction, so the immediate is dropped on
+        both sides rather than compared - which
+        [`dump-corpus-integrity.md`](../../docs/tooling/dump-corpus-integrity.md)
+        already prescribes. It matters out of proportion to its size because
+        `div; bne; break 0x1c00` is the signed-division overflow check emitted at
+        every integer divide, so an unfolded `break` makes any window containing
+        a division fail to match the image it came from - and the failure lands
+        in the class that reads as "no image holds these bytes", i.e. as a fact
+        about the corpus rather than about the comparison.
+        """
+        return "BREAK||" if tok.startswith("BREAK|") else tok
+
     def _img_tokens(self, data, off, n):
         out = []
         for k in range(n):
@@ -522,11 +539,12 @@ class StaticArbiter:
             # the first word capstone rejects, silently truncating the compare.
             for ins in self._md.disasm(w, 0x80000000):
                 tok = self._cdbi.canon(ins.mnemonic, ins.op_str)
-            out.append(tok or "BAD||")
+            out.append(self._fold(tok) if tok else "BAD||")
         return out
 
     def _dump_tokens(self, d, n):
-        return [self._cdbi.canon(mn, ops) for _, mn, ops in d["insns"][:n]]
+        return [self._fold(self._cdbi.canon(mn, ops))
+                for _, mn, ops in d["insns"][:n]]
 
     @staticmethod
     def _looks_like_data(insns):
