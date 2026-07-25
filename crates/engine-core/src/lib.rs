@@ -7,6 +7,7 @@
 
 pub mod accessory_passives;
 pub mod actor_alloc_host;
+pub mod actor_handler;
 pub mod ap_gauge;
 pub mod art_strike;
 pub mod baka_fighter;

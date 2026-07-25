@@ -24,22 +24,23 @@
 //! resolving the *containing* function), and `overlay_0897_801ddc20` reports
 //! zero instructions outright.
 //!
-//! NOT WIRED (whole module, all four addresses). One missing input accounts for
-//! three of them: **engine actors carry no `+0x0C` per-frame handler address**.
-//! [`open_submode`] decides whether to spawn by searching the scene actor list
-//! for one already running handler `0x801D84D0`, and [`scene_actor_initial_state`]
-//! belongs to a template-addressed spawn (`0x801F2810`) - both are identities
-//! the engine's typed actor kinds do not have. [`submode_panel_rows`] is missing
-//! a different thing: it is the layout half of a render-track routine whose
-//! draw leaves are GPU-primitive builders with no `engine-core` counterpart.
-//! [`request_card_mode`] is missing a third: nothing here requests a master-mode
-//! transition by writing the retail mode word.
+//! [`open_submode`] and [`scene_actor_initial_state`] are **live**, on the same
+//! chain retail puts them on: the MAN loader `FUN_8003AEB0` calls
+//! `FUN_801D9C3C()` at `0x8003B444` and `FUN_801DE478(0xF)` at `0x8003B9B0`, so
+//! the engine runs both from `SceneHost::load_scene` →
+//! [`World::man_load_actor_reset`]. What unblocked them is the actor `+0x0C`
+//! handler ([`crate::actor_handler::ActorHandler`]): the open searches the pool
+//! for a live [`SUBMODE_DRIVER_HANDLER`] through the port of `FUN_8003CF04`,
+//! and the spawn installs a handler on the slot it takes.
 //!
-//! The engine's field sub-screens ([`crate::field_menu_dispatch`],
-//! [`crate::pause_screens`]) are typed sessions entered directly, so none of
-//! this module is on a host path today.
+//! [`World::man_load_actor_reset`]: crate::world::World::man_load_actor_reset
+//!
+//! The other two stay disclosed and their notes say why - [`submode_panel_rows`]
+//! wants a GPU-primitive channel, [`request_card_mode`] wants a retail
+//! master-mode word.
 //!
 //! REF: FUN_80020DE0 (actor spawn), FUN_8003CF04 (actor-by-handler search),
+//! FUN_8003AEB0 (the MAN loader that calls the first two),
 //! FUN_8002B994 / FUN_8002C488 / FUN_80036888 / FUN_8002C69C (the draw leaves)
 
 /// Submode context words the open routine seeds, as `(offset_from_0x801F2734,
@@ -106,12 +107,16 @@ pub enum SubmodeOpen {
 ///
 /// Returns the seeds the caller should apply plus what to do about the actor.
 ///
-/// NOT WIRED: `engine-core` has no op-`0x49` submode context block and no
-/// scene-actor list keyed by per-frame handler address - the engine's field
-/// sub-screens are typed sessions (`field_menu_dispatch`, `pause_screens`)
-/// reached directly, not actors carrying a `0x801Dxxxx` function pointer.
-/// Wiring this needs the actor list to carry a handler identity the search can
-/// match on.
+/// Live: `SceneHost::load_scene` → [`World::man_load_actor_reset`] calls this
+/// on every MAN load, exactly where `FUN_8003AEB0` calls `FUN_801D9C3C()`
+/// (`0x8003B444`). `handler_present` comes from
+/// [`World::find_actor_by_handler`] (the port of `FUN_8003CF04`), and a
+/// [`SubmodeOpen::Spawned`] result takes a pool slot with the driver handler
+/// installed. Host roots: `SceneHost::enter_field_scene` → `BootSession` /
+/// `legaia-engine run` / `play-window`.
+///
+/// [`World::man_load_actor_reset`]: crate::world::World::man_load_actor_reset
+/// [`World::find_actor_by_handler`]: crate::world::World::find_actor_by_handler
 pub fn open_submode(handler_present: bool) -> (&'static [(u16, u32); 10], SubmodeOpen) {
     (
         &SUBMODE_CONTEXT_SEEDS,
@@ -126,6 +131,13 @@ pub fn open_submode(handler_present: bool) -> (&'static [(u16, u32); 10], Submod
 /// Template the scene-actor spawner uses.
 pub const SCENE_ACTOR_TEMPLATE: u32 = 0x801F_2810;
 
+/// The state word the MAN loader asks for (`FUN_8003AEB0` at `0x8003B9B0`
+/// passes `a0 = 0xF`). Every retail call site of `FUN_801DE478` found so far
+/// is this one, so the "requested" argument has exactly one live value - the
+/// interesting half is the `field_mode_flags` override in
+/// [`scene_actor_initial_state`].
+pub const SCENE_ACTOR_REQUESTED_STATE: u16 = 0x0F;
+
 /// Spawn one scene actor and pick its initial state byte.
 ///
 /// PORT: FUN_801DE478 (`0x801de478..0x801de4c4`).
@@ -138,9 +150,13 @@ pub const SCENE_ACTOR_TEMPLATE: u32 = 0x801F_2810;
 /// initialiser branches the primitive-buffer size on, so a non-zero value means
 /// "not an ordinary field frame" - and this actor then starts one state along.
 ///
-/// NOT WIRED: same missing input as [`open_submode`] - the engine has no
-/// template-addressed scene-actor spawn. The state-byte rule is the portable
-/// part and is what a future spawn host needs.
+/// Live: same chain as [`open_submode`], one call later - `FUN_8003AEB0`
+/// issues `FUN_801DE478(0xF)` at `0x8003B9B0`, and
+/// [`World::man_load_actor_reset`] mirrors it with
+/// [`SCENE_ACTOR_REQUESTED_STATE`], seating the state word this returns on the
+/// spawned slot.
+///
+/// [`World::man_load_actor_reset`]: crate::world::World::man_load_actor_reset
 pub fn scene_actor_initial_state(requested: u16, field_mode_flags: u32) -> u16 {
     if field_mode_flags != 0 { 1 } else { requested }
 }

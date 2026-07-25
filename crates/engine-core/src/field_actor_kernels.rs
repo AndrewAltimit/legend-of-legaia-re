@@ -2,7 +2,7 @@
 //! **scene-transition teardown sweep** and the **actor colour tween** whose
 //! actors the sweep retires.
 //!
-//! PORT: FUN_801D7518, FUN_801DDC20
+//! PORT: FUN_801D7518, FUN_801DDC20, FUN_801DE2B0
 //!
 //! The link is direct and is what corroborates both readings: the sweep's
 //! second retire test compares the actor's per-frame handler against
@@ -15,15 +15,18 @@
 //! (identical sizes). The `overlay_0897_801ddc20.txt` dump is a corpus gap - it
 //! reports **zero instructions** - so it cannot be used here.
 //!
-//! NOT WIRED (whole module, both addresses). The sweep retires actors by
-//! comparing their `+0x0C` per-frame handler against three addresses, and the
-//! tween is one of those three - but **engine actors carry no handler address**,
-//! so the identity the sweep keys on does not exist here. The engine's scene
-//! transition also drops actors wholesale rather than walking per-list heads and
-//! marking them, so there is no per-list pass to host the sweep even if the
-//! identity existed. The tween needs a second thing on top: an actor-hosted
-//! effect channel owning a packed-RGB output, where the engine's fades
-//! ([`crate::screen_fx`], [`crate::fade`]) are host-driven state instead.
+//! [`Actor::handler`] now carries the `+0x0C` identity both routines key on
+//! ([`crate::actor_handler::ActorHandler`]), which splits the two:
+//!
+//! - [`sweep_actor`] is **live** - `SceneHost::load_scene` runs
+//!   `World::scene_transition_actor_sweep` over the pool on every
+//!   scene-to-scene change;
+//! - [`step_colour_tween`] is **dispatched but not produced** - the frame loop
+//!   calls it for every [`crate::actor_handler::ActorHandler::ColourTween`]
+//!   actor, and nothing spawns one yet. Its own note says exactly what is
+//!   missing.
+//!
+//! [`Actor::handler`]: crate::world::Actor::handler
 //!
 //! REF: FUN_801D6704 (calls the sweep once per actor list on a warp entry),
 //! FUN_80017888 (buffer alloc), FUN_80024D78, FUN_80024EE4 (the tween's draw)
@@ -59,11 +62,11 @@ pub const CLUT_WALK_ACC_SEED: u16 = 0x64;
 /// setting [`ACTOR_FLAG_YIELD`]. The second is the colour tween in this same
 /// module ([`step_colour_tween`]).
 ///
-/// NOT WIRED: these are raw retail code addresses, and the engine has no actor
-/// field holding one. Wiring the sweep means giving actors a handler identity
-/// the comparison can be re-expressed against - a typed kind enum, not the
-/// addresses themselves, which are kept here only as the provenance of *which*
-/// three kinds retire.
+/// These are raw retail code addresses; the engine compares against them
+/// through [`crate::actor_handler::ActorHandler::retired_by_scene_transition`],
+/// which reads this array. They stay VAs rather than becoming enum variants
+/// because a VA is what the disassembly compares - the enum is a view over
+/// this list, not a replacement for it.
 pub const RETIRED_HANDLERS: [u32; 3] = [0x8002_5000, 0x801D_DC20, 0x8002_174C];
 
 /// The move-VM actor handler, whose actors take the sweep's long arm instead of
@@ -122,12 +125,14 @@ pub struct SweepDecision {
 /// modelled: both are raw buffer plumbing against actor-local scratch the
 /// engine does not allocate.
 ///
-/// NOT WIRED: the engine's scene transition drops actors wholesale rather than
-/// walking per-list heads and marking them, and its actors carry no `+0x0C`
-/// handler address to test - `RETIRED_HANDLERS` is an identity the engine's
-/// typed actor kinds do not have. Wiring this needs the actor list to carry a
-/// handler identity, the same missing input as
-/// [`crate::field_submode::open_submode`].
+/// Live: `SceneHost::load_scene` calls
+/// [`World::scene_transition_actor_sweep`] whenever a scene is already loaded
+/// (the engine's form of retail's `_DAT_8007B8B8 == 2` warp gate), which runs
+/// this once per pool slot. Host roots that reach `load_scene`:
+/// `SceneHost::enter_field_scene` (→ `BootSession`, `legaia-engine` `run` /
+/// `play-window`) and the door-warp path in `SceneHost::tick`.
+///
+/// [`World::scene_transition_actor_sweep`]: crate::world::World::scene_transition_actor_sweep
 pub fn sweep_actor(actor: SweepActor) -> SweepDecision {
     let retired = RETIRED_HANDLERS.contains(&actor.handler);
     let mut flags = actor.flags;
@@ -166,6 +171,30 @@ pub struct ColourTween {
     pub clock: u16,
     /// `+0x10` - actor flag word.
     pub flags: u32,
+    /// `+0xD6` - the draw's first argument (`FUN_80024EE4`'s `a0`), a
+    /// screen-effect **kind** selector.
+    pub push_kind: i16,
+    /// `+0xD2` - the draw's second argument (`a1`), the blend mode.
+    pub push_blend: i16,
+}
+
+/// One `FUN_80024EE4(kind, blend, packed_rgb)` full-screen colour push - the
+/// exact three-argument triple the tween's draw call carries.
+///
+/// PORT: FUN_801DDC20 (`0x801dde14..0x801dde1c`, the argument set-up)
+///
+/// The engine keeps the triple rather than resolving it to a tint factor:
+/// `kind` and `blend` select which of retail's screen-effect quads is pushed,
+/// and that mapping belongs to whoever draws it. Hosts read the frame's pushes
+/// off the actor pool via [`crate::world::World::screen_tint_pushes`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScreenTintPush {
+    /// `a0` - screen-effect kind (actor `+0xD6`).
+    pub kind: i16,
+    /// `a1` - blend mode (actor `+0xD2`).
+    pub blend: i16,
+    /// `a2` - the packed colour from [`pack_colour`].
+    pub packed: u32,
 }
 
 /// Sentinel in [`ColourTween::hold`] meaning "hold indefinitely" - the tween
@@ -185,6 +214,56 @@ pub struct ColourTweenStep {
     /// `false` once the yield bit is set: retail skips the draw entirely on
     /// that frame and every frame after.
     pub draws: bool,
+    /// The frame's `FUN_80024EE4` push - `Some` exactly when [`Self::draws`].
+    pub push: Option<ScreenTintPush>,
+}
+
+/// Build a colour tween from the 13-`i16` fade template.
+///
+/// PORT: FUN_801DE2B0 (`0x801de2b0..0x801de378`)
+///
+/// The spawner: allocate from descriptor `0x801F2888` (whose `+0x8` handler
+/// word is `0x801DDC20`, i.e. [`step_colour_tween`] - field `0x024078` of the
+/// extracted `overlay_field_0897.bin` at base `0x801CE818`), clear the clock,
+/// then copy ten halfwords out of the caller's block.
+///
+/// **The block is [`crate::fade::FadeTemplate`]**, not a private layout, and
+/// that is the useful finding: the field VM builds one block on its stack and
+/// hands it to *either* `FUN_80024E80` (the fade-actor spawn, taken when
+/// `_DAT_1F800394 & 0x800000` is set) or this function (the default arm). Both
+/// readings of the same 13 halfwords agree field for field - kind `[0]`,
+/// duration `[1]`, start RGB `[3..=5]`, end RGB `[7..=9]` - which is two
+/// independent decodes corroborating one layout. It also names two words
+/// `fade.rs` records as unpinned: template `[10]` is the tween's **delay** and
+/// `[11]` its **hold**. `[12]` is the one word this arm does not read.
+///
+/// `kind` is the spawner's second argument (`a1`, `_DAT_8007BCCC` at both call
+/// sites), landing at `+0xD6` as the draw's screen-effect selector - it is
+/// *not* template `[0]`, which lands at `+0xD2` as the blend.
+///
+/// NOT WIRED: the two retail call sites are inside the field VM's
+/// screen-effect fade arm (`FUN_801DE840` at `0x801DFD68` and `0x801DFEE8`),
+/// and `engine-core` has no host hook for that sub-op - the `FieldHost` trait
+/// that would carry one lives in `engine-vm`. Every other input this needs is
+/// present: the descriptor's handler is [`ActorHandler::ColourTween`], the
+/// pool slot comes from `World::spawn_colour_tween`, and the template type is
+/// already ported.
+///
+/// [`ActorHandler::ColourTween`]: crate::actor_handler::ActorHandler::ColourTween
+pub fn tween_from_fade_template(t: &crate::fade::FadeTemplate, kind: i16) -> ColourTween {
+    let c = |v: [i16; 3]| (v[0] as u16, v[1] as u16, v[2] as u16);
+    ColourTween {
+        from: c(t.start_rgb),
+        to: c(t.end_rgb),
+        delay: t.mode[0],
+        duration: t.duration,
+        hold: t.mode[1],
+        // Retail's `sh zero,0xc8(v1)` - a fresh tween always starts at 0.
+        clock: 0,
+        flags: 0,
+        push_kind: kind,
+        push_blend: t.kind,
+    }
 }
 
 /// Advance a colour tween by one frame.
@@ -209,10 +288,24 @@ pub struct ColourTweenStep {
 /// The draw is skipped whenever the yield bit is already set, so the frame that
 /// retires the tween is also the first frame it does not draw.
 ///
-/// NOT WIRED: the draw leaf `FUN_80024EE4` is a GPU-primitive builder, and the
-/// engine's screen fades ([`crate::screen_fx`], [`crate::fade`]) are host-driven
-/// state rather than actors carrying a `+0xB8` colour block. Wiring this needs
-/// an actor-hosted effect channel that owns a packed-RGB output.
+/// NOT WIRED - **reached, but never entered**, and the distinction is the
+/// point. `World::tick` → [`World::tick_handler_actors`] dispatches this once
+/// per game tick for every pool actor carrying
+/// [`crate::actor_handler::ActorHandler::ColourTween`], with the same
+/// `frame_delta` (retail `DAT_1F800393`) the rest of the pool advances on; the
+/// frame's [`ScreenTintPush`] is stored back on the actor for
+/// [`World::screen_tint_pushes`], and an expired hold takes the yield bit and
+/// is dropped by the same retire pass the transition sweep's victims go
+/// through. What is missing is a **producer**: nothing installs that handler
+/// on a live path, because the only retail spawner is the field VM's
+/// screen-effect fade arm (`FUN_801DE840` at `0x801DFD68`/`0x801DFEE8` →
+/// `FUN_801DE2B0`, ported here as [`tween_from_fade_template`]) and the
+/// `FieldHost` trait carries no hook for that sub-op. A kernel dispatched over
+/// zero actors is indistinguishable from an unwired one, so it is disclosed as
+/// one. `World::spawn_colour_tween` is the seam the hook plugs into.
+///
+/// [`World::tick_handler_actors`]: crate::world::World::tick_handler_actors
+/// [`World::screen_tint_pushes`]: crate::world::World::screen_tint_pushes
 pub fn step_colour_tween(t: ColourTween, delta: u8) -> ColourTweenStep {
     let clock = i32::from(t.clock as i16);
     let delay = i32::from(t.delay);
@@ -265,11 +358,17 @@ pub fn step_colour_tween(t: ColourTween, delta: u8) -> ColourTweenStep {
     if !draws {
         flags |= ACTOR_FLAG_YIELD;
     }
+    let packed = pack_colour(colour);
     ColourTweenStep {
         clock: clock_out,
-        packed: pack_colour(colour),
+        packed,
         flags,
         draws,
+        push: draws.then_some(ScreenTintPush {
+            kind: t.push_kind,
+            blend: t.push_blend,
+            packed,
+        }),
     }
 }
 
@@ -289,11 +388,9 @@ pub fn step_colour_tween(t: ColourTween, delta: u8) -> ColourTweenStep {
 /// into blue** rather than being masked off. Keeping the add reproduces that;
 /// masking would quietly diverge exactly where the tween is most extreme.
 ///
-/// NOT WIRED: reached only from [`step_colour_tween`], which has no caller -
-/// same missing actor-hosted effect channel as the module note. The packed word
-/// is what retail hands `FUN_80024EE4`, a GPU-primitive builder with no
-/// `engine-core` counterpart.
-fn pack_colour((r, g, b): (u16, u16, u16)) -> u32 {
+/// Live through [`step_colour_tween`]'s own chain: the packed word becomes the
+/// frame's [`ScreenTintPush::packed`].
+pub fn pack_colour((r, g, b): (u16, u16, u16)) -> u32 {
     i32::from(r as i16)
         .wrapping_add(i32::from(g as i16) << 8)
         .wrapping_add((u32::from(b) << 16) as i32) as u32
@@ -368,7 +465,33 @@ mod tests {
             hold: 30,
             clock: 0,
             flags: 0,
+            push_kind: 1,
+            push_blend: 2,
         }
+    }
+
+    #[test]
+    fn the_frames_push_carries_the_actors_own_kind_and_blend() {
+        let mut t = tween();
+        t.push_kind = 3;
+        t.push_blend = 1;
+        // Inside the hold window (ramp ends at 110, hold expires at 140), so
+        // the frame still draws. Past 140 it would retire and push nothing -
+        // which is the second half of this test.
+        t.clock = 120;
+        let s = step_colour_tween(t, 1);
+        assert_eq!(
+            s.push,
+            Some(ScreenTintPush {
+                kind: 3,
+                blend: 1,
+                packed: s.packed,
+            })
+        );
+        // A retiring frame does not draw, so it pushes nothing.
+        let mut t = tween();
+        t.clock = 139;
+        assert_eq!(step_colour_tween(t, 4).push, None);
     }
 
     #[test]
