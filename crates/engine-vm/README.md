@@ -220,6 +220,15 @@ Five more `0898` bodies whose kernels are ported here, each with its own
 | `battle_arts_auto_combo` | `FUN_801F0450` | The AI-side Arts assembler's two arms - the learned-arts auto-fill and the weighted candidate pool with its AP-gauge spend loop. |
 | `battle_attack_camera` | `FUN_801D71B8` | The per-art attack camera's gate, pose seed, character / art dispatch and animation-frame push; the seventeen per-art arms need the `0x801F4E10` table parsed first. |
 | `battle_value_readout` | `FUN_801E805C` | The multi-cast readout's decimal split (both reciprocal divides), the `(id, id-4)` teardown pairing, the slot-to-widget indirection and the label quad. |
+| `battle_approach` | `FUN_801DF570` | The attack-approach distance clamp: the projected attacker/target separation and the `[3d/4, d]` band a requested step is clamped into. |
+| `battle_party_panel` | `FUN_801DBB8C`, `FUN_801DBC30`, `FUN_801D84C0` | The battle party-name panels - the label-actor open/teardown pair over `0x801F4E08`, the per-party-size anchors, the all-slots actor reset, and the label-strip blit. |
+
+The last two are ported from a disassembly of the mapped `0898` image rather
+than from the dump corpus, because four of those five VAs carry an
+`overlay_0897` dump that disagrees with the battle-action image about the body's
+own length (or, for `FUN_801DBB8C`, is a four-instruction label slice and not a
+function). Reproduce with `scripts/ghidra-analysis/disasm-overlay-fn.py` at base
+`0x801CE818`.
 
 ## `field_party_cursor` - `FUN_801F1278`
 

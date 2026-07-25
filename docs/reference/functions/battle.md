@@ -8,6 +8,9 @@ Part of the [key function directory](../functions.md) - the conventions for read
 |---|---|
 | `801D0290` | **Overlay-local PRNG** (battle-action overlay 0898). Twelve instructions, no frame; the whole state is the word at `0x801F6950`. `v = s*12 + 2` (built as `s<<2` + `s<<3`), then `s = (v << 16) + (v >> 16)`, which **is** exactly `rotate_left(16)` - see [the PRNG section](../../subsystems/battle-action.md#overlay-local-prng-fun_801d0290) for why the `addu` cannot carry. Distinct from the SCUS BIOS `rand` thunk `FUN_80056798`, so its draws do not perturb that stream. `overlay_0897` dumps a *different* body at this VA; read the 0898 image. Ported as `engine-vm::battle_action::OverlayRng`. |
 | `801EC0DC` | **Monster escape roll** (battle overlay 0898): `(slot) -> bool`, "does this monster break off and flee?" The enemy-side mirror of the party roll `FUN_801E791C` - [details ↓](#801ec0dc). Ported as `engine-vm::battle_formulas::monster_escape_roll`. |
+| `801DF570` | **Attack-approach distance clamp** (0898): `(slot, requested) -> i16`. Projects the attacker/target separation along the reverse bearing and clamps the requested step into `[3d/4, d]` - [details ↓](#801df570). Ported as `engine-vm::battle_approach`. |
+| `801DBB8C` / `801D84C0` | **Battle party-name panel open / teardown** (0898). A matched pair over the label-actor block at `0x801F4E08`: the former registers a text actor through `FUN_8003541C` and stashes the handle, the latter builds the four panel buffers and clears that block - [details ↓](#801d84c0). Ported as `engine-vm::battle_party_panel`. |
+| `801DBC30` | **Battle label-strip blit** (0898): `(x, y)`. A 1:1 `0x40 x 0x10` textured quad from atlas `(0, 0x60)`, CLUT `0x7704` / tpage `7`, gated on `ctx[+0x6CE] == 0`. Ported as `engine-vm::battle_party_panel::label_strip`. |
 | `801D5778` | **Pose-slot re-mapped copy** (battle-action overlay 0898). `(dst_slot, src_slot)` - both **indices**, scaled `*0x18` into the pose-slot array at `0x80076C10`. Copies `dst[+2] = src[+0xA]`, `dst[+4] = src[+0xC]`, `dst[+6] = src[+6]`, `dst[+0xA] = src[+0xA] - 0x140`, `dst[+0xC] = src[+0xC]`, `dst[+0x14] = src[+0x14]`. `overlay_battle_action_801d5778.txt`. |
 | `801D57E8` | **Pose-slot straight copy** (battle-action overlay 0898). `(dst_slot, src_slot)` over the same `0x80076C10` array and stride; clones `+0x02`, `+0x04`, `+0x06`, `+0x0A`, `+0x0C` (u16) and `+0x14` (u32), and deliberately leaves `+0x00`, `+0x08`, `+0x10`, `+0x12` alone. The un-remapped sibling of `801D5778`. `overlay_battle_action_801d57e8.txt`. |
 | `80052FA0` / `800536BC` / `80053898` / `80053a28` | Party battle-mesh assembler (equipment-section splice) + CLUT decode + TSB/CBA relocation - [details ↓](#80052fa0) |
@@ -361,6 +364,74 @@ the scores allow it. Stats are the actor block's ATK `+0x158` and INT `+0x168`
 
 Ported as `engine-vm::battle_formulas::monster_escape_roll`;
 `see ghidra/scripts/funcs/overlay_battle_action_801ec0dc.txt`.
+
+### `801DF570`
+
+**Attack-approach distance clamp.** `(slot, requested) -> i16`. Resolves the
+acting actor and its target (`+0x1DD`), takes the bearing between them through
+`FUN_80019B28`, adds a half turn (`+0x800`, masked to 12 bits), and projects the
+separation:
+
+```text
+d = |(|actor.x - target.x| * sin[a]) >> 12| + |(|actor.z - target.z| * cos[a]) >> 12|
+r = requested
+if d  <u r      { r = d }        // cap at the separation
+if r  <u 3d/4   { r = 3d/4 }     // floor at three quarters of it
+```
+
+Each of the four magnitudes is its own `bgez`/`negu` pair - the coordinate
+deltas are absolutised *before* the multiply and the two products *again* after
+the shift, so one axis can never cancel the other. Both clamp compares are
+**`sltu`**, and `requested` arrives sign-extended from a halfword, so a negative
+request compares as a huge unsigned value and takes the cap arm rather than the
+floor arm.
+
+A clamp whose output is confined to `[3d/4, d]` cannot close the last quarter of
+an approach on its own, which is worth noting alongside the `0x19`
+[approach-park](../../subsystems/battle-action.md#state-table) thread.
+
+Ported as `engine-vm::battle_approach`. Read the mapped image, not a dump: the
+`overlay_0897` slice at this VA reports 94 instructions against the
+battle-action image's 82.
+
+### `801D84C0`
+
+**Battle party-name panel build + teardown**, with `FUN_801DBB8C` as its opening
+half. The pair is fixed by shared state: `FUN_801DBB8C` writes the label-actor
+block at `0x801F4E08` (`+0x01 = 0x80`, `+0x00`/`+0x02` cleared), publishes the
+active participant id minus one at `0x8007BB8C`, registers a text actor via
+`FUN_8003541C(0, 0xC, 0, -0x92, 0x24, 0x8A, 0x90, 3)` and stores the handle at
+`+0x04`; `FUN_801D84C0` ends by clearing `+0x01`, `+0x02` and that handle - and
+notably **not** `+0x00`.
+
+`FUN_801D84C0` forks on the *second* party slot's participant id
+(`DAT_8007BD11`). Zero takes a solo arm sourcing every buffer from the first
+slot's name; non-zero takes a roster arm that sources three of four from fixed
+strings and measures each with `FUN_8003CBF8(buf, 0xC1, 1)`, storing
+`participant_id - 1` at the returned offset. Either way it then publishes the
+four label buffers (`ctx+0xA9 / +0x129 / +0x159 / +0x189`) into the pose-slot
+table `0x80076C10`, resets **all three** party actors to `+0x1DD = 3` (target the
+first monster) and `+0x1DE = 0` (Martial Arts), writes each portrait cell as
+`participant_id + 0x32`, and anchors the panels by party size:
+
+| Party size | Primary X | Secondary X |
+|---|---|---|
+| 1 | `0x72` | (not written) |
+| 2 | `0x3F` | `0xA5` |
+| 3 | `0x0C` | `0x72` |
+
+A solo member sits centred and a pair splits outward - the same centring rule
+the field VM's member picker `FUN_801F1278` uses, arrived at independently.
+
+**The name pointer confirms the save record.** Both arms resolve a member's name
+as `0x8008459B + id * 0x414`, which is exactly
+`0x80084708 + (id - 1) * 0x414 + 0x2A7` - the live character record's display
+name at the offset [`save-record.md`](../../formats/save-record.md) documents.
+
+Ported as `engine-vm::battle_party_panel`. Read the mapped image: the
+`overlay_0897` dump at `801D84C0` holds 212 instructions against the
+battle-action image's 259, and the one at `801DBB8C` is a four-instruction
+label-call slice leaving via `j 0x801EA7AC` rather than a function at all.
 
 ### `80048A08`
 

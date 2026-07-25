@@ -104,6 +104,54 @@ three portrait cells would need to reach `engine-ui`. Worth flagging for whoever
 does: the picker is **centre-weighted**, not left-packed (one member in the middle
 cell, two members in the outer cells) - see `seed_member_cells`.
 
+## Second assignment - the five reassigned rows
+
+Four ported, one left with an honest boundary. All five were disassembled from
+`extracted/overlays/overlay_battle_action_0898.bin` at base `0x801CE818` rather
+than read from a dump, because four of the five carry an `overlay_0897` dump
+that contradicts the mapped image.
+
+### `FUN_801DF570` -> `engine-vm::battle_approach`
+
+The attack-approach distance clamp. Wiring is the most interesting of the set:
+the Attack band's approach states (`0x16`, `0x19`) are already ported in
+`battle_action`, but they step the actor by the band's own sin/cos drift and
+never ask for a distance, so nothing holds a `requested` value. Giving those
+states a step request would wire this - **and** it bears directly on the `0x19`
+approach-park thread, because a clamp confined to `[3d/4, d]` cannot close the
+final quarter of an approach on its own. Worth a look from whoever owns that
+investigation.
+
+### `FUN_801DBB8C` + `FUN_801DBC30` + `FUN_801D84C0` -> `engine-vm::battle_party_panel`
+
+The battle party-name panels. The three turned out to be one subsystem: the open
+and the teardown write the same eight-byte label-actor block at `0x801F4E08`.
+Wiring needs `engine-core` to own the label-actor handle and `engine-ui` to adopt
+the anchors, the portrait cells and the all-slots actor reset; `engine-ui`
+currently builds battle labels as `TextDraw` entries with no equivalent of the
+four `ctx+0xA9 / +0x129 / +0x159 / +0x189` buffers.
+
+### `FUN_801F30C4` - NOT ported, and here is exactly where I stopped
+
+563 instructions spanning `0x801F30C4..0x801F3990` (it ends where the already-
+documented cast audio-cue dispatcher `func_0x801F3990` begins). `(a0, a1)` with a
+three-way fork on `a1` (`0`, `1`, and a fall-through exit), so it is two
+substantial bodies under one entry.
+
+What the head of arm `0` shows: an RNG-driven per-element spawn loop
+(`func_0x80056798` twice per iteration) reading both trig LUT pointers
+(`_DAT_8007B81C` / `_DAT_8007B7F8`) at `s2 << 11` strides, unaligned `lwl`/`lwr`
+copies of a 8-byte block out of `a0+0x24` onto the stack, three distinct
+reciprocal divides (`0x7F807F81`, `0x2AAAAAAB` = /6, `0x30C30C31` = /21), and a
+call to `FUN_80050ED4` with a data pointer at `0x801F5DA4` and `a0[+0x72] >> 1`.
+It is an effect/particle spawn scatter of real substance, not a leaf.
+
+I stopped here rather than produce a thin port: arm `1` is entirely unread, the
+`0x801F5DA4` table is disc data with no parser, and the three reciprocals need
+checking against plain division before any of them can be asserted. The next
+sitting should start by dumping the whole span at the base above and splitting
+the two arms before writing any Rust.
+
 ## Doc claims corrected in this lane
 
 Both are disassembly-grounded, and both had a committed doc asserting the
@@ -140,9 +188,10 @@ opposite.
   that VA (a five-instruction field-VM label slice). The reproduction command is
   now recorded in `battle-action.md`'s PRNG section so the next reader does not
   have to rediscover it.
-- `801F30C4` and `801D84C0` were mentioned as Lane 3 rows in coordination
-  traffic; they are **not** in Lane 3's brief and are not ported here. They
-  belong to another lane's assignment.
+- `801F30C4` and `801D84C0` were first mentioned as Lane 3 rows in coordination
+  traffic that contradicted the brief, and were left alone on that pass. The
+  coordinator then confirmed the error and reassigned five genuinely unowned
+  battle-band rows, which are the second assignment above.
 - `801F1278`'s primary reference is `docs/subsystems/script-vm.md`, which is
   outside Lane 3's file scope. That page's row for the address is accurate; it
   just does not yet say the routine is ported.
