@@ -1752,8 +1752,10 @@ impl PondSession {
                 };
                 let reel = ReelInput::from_pad_mask(input.reel_mask);
                 let frame = self.fish.tick(&sp, self.depth, &mut self.rng, fs);
-                // Accumulated pull feeds the score (`DAT_801d91b8`).
-                self.strength = self.strength.saturating_add(frame.pull >> 4);
+                // The per-frame pull accumulates into the fight strength
+                // (`DAT_801d91b8`, "the accumulated pull / strength for the
+                // fight") - the value the landed score is computed over.
+                self.strength = self.strength.saturating_add(frame.pull);
                 self.lateral = (self.lateral + frame.lateral).clamp(-0x400, 0x400);
                 // Tension: the confirmed tug-of-war.
                 self.gauge.apply_reel(reel, frame.pull, fs);

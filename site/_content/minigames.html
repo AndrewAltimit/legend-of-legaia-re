@@ -196,6 +196,31 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 /* end muscle 3D */
 
 .mg-psbtn { width: 1.05em; height: 1.05em; vertical-align: -0.22em; margin-right: 0.3em; }
+
+/* fishing 3D */
+/* The fishing pond: the venue's field scene on a WebGL canvas below, the
+ * retail HUD (drawn from the ported draw list) on a 2D canvas on top -
+ * the same layering as the dance stage and the Baka duel. */
+.fishing-stage {
+  position: relative; width: 100%; max-width: 640px; margin: 0.9rem auto;
+  aspect-ratio: 4 / 3; background: #0b0b10;
+  border: 1px solid var(--border); border-radius: 4px; overflow: hidden;
+}
+.fishing-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.fishing-stage .fishing-hud-canvas { pointer-events: none; }
+/* The point-exchange counter rows (retail: 6 rows/venue, row 0 hidden
+ * until strictly affordable, greyed rows unavailable). */
+.fish-exchange { display: flex; flex-direction: column; gap: 0.3rem; max-width: 640px; }
+.fish-ex-row {
+  display: flex; gap: 0.8rem; align-items: center;
+  font-family: var(--font-mono); font-size: 0.8rem; color: var(--text);
+  padding: 0.3rem 0.5rem; background: var(--bg-code);
+  border: 1px solid var(--border); border-radius: 3px;
+}
+.fish-ex-row.is-off { opacity: 0.45; }
+.fish-ex-row b { min-width: 10rem; }
+.fish-ex-once { color: var(--accent); font-size: 0.7rem; }
+.fish-ex-row .mg-btn { margin-left: auto; padding: 0.15rem 0.6rem; }
 </style>
 <script src="js/rom-cache.js"></script>
 <script src="js/load-progress.js"></script>
@@ -209,6 +234,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 <script src="js/minigame-baka.js"></script>
 <script src="js/minigame-dance.js"></script>
 <script src="js/minigame-muscle.js"></script>
+<script src="js/minigame-fishing.js"></script>
 <script src="js/legaia-sfx.js"></script>
 -->
 
@@ -470,55 +496,110 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 
       <!-- ---------------- fishing ---------------- -->
       <section class="mg-panel" data-game="fishing">
-        <h3>Fishing &mdash; the reel tug-of-war</h3>
+        <h3>Fishing &mdash; Buma &amp; Vidna ponds</h3>
         <p class="mg-blurb">
-          Lock the <b>cast meter</b> to hook a fish &mdash; the harder you cast, the rarer the
-          species &mdash; then <b>reel it in</b>. Reeling raises the <b>tension</b> gauge; let the
-          line rest and it bleeds off. Pin the tension at the top and the <b>line snaps</b>; work
-          the fish long enough and you <b>land it</b> for points. The catch scoring, the tension
-          divisors and the point cap are the game's own confirmed kernels
-          (<code>FUN_801d4004</code> / <code>FUN_801d5298</code>); every fish's value is read off
-          your disc's PROT&nbsp;0972 species table.
+          The real pond loop. <b>Cast</b>, keep working the lure, and when the strike lands the
+          species is picked by the game's hidden <b>band</b> &mdash; reeling in one of the four
+          recognised <b>rhythms</b> flashes &ldquo;Good!&rdquo; and pins the band that rhythm
+          names, and a six-condition gate guards each pond's rarest catch. Once hooked it's the
+          tension tug-of-war: <b>reel</b> to bring the fish in, ease off before the line snaps,
+          and the landed catch scores into the same persistent point pool the prize counter
+          spends. Your reel record, lures, rod and lifetime cast counter can come straight from
+          a loaded save.
         </p>
-        <canvas id="fishing-canvas" class="mg-cabinet" width="640" height="240"
-                tabindex="0" role="button"
-                aria-label="Fishing - space casts and locks, hold J to reel in"></canvas>
+        <div class="fishing-stage" id="fishing-stage">
+          <canvas id="fishing-gl" width="640" height="480"></canvas>
+          <canvas id="fishing-canvas" class="fishing-hud-canvas" width="640" height="480"></canvas>
+        </div>
         <div class="mg-verdict" id="fishing-verdict"></div>
-        <p class="mg-controls">
-          <b><kbd>Space</kbd> casts and locks; hold <kbd>J</kbd> (or the Reel button) to reel.</b>
-          Press Space while the meter sweeps to hook a fish, then hold Reel to bring it in without
-          snapping the line. After it lands or snaps, Space casts again.
-        </p>
+        <div class="mg-row">
+          <label for="fishing-venue"><strong>Pond:</strong></label>
+          <select id="fishing-venue" class="mg-select" style="min-width: 7rem;">
+            <option value="0" selected>Buma</option>
+            <option value="1">Vidna</option>
+          </select>
+          <label for="fishing-lure"><strong>Lure:</strong></label>
+          <select id="fishing-lure" class="mg-select" style="min-width: 9rem;">
+            <option value="0" selected>Light Lure</option>
+            <option value="1">Normal Lure</option>
+            <option value="2">Heavy Lure</option>
+          </select>
+          <label for="fishing-rod"><strong>Rod:</strong></label>
+          <select id="fishing-rod" class="mg-select" style="min-width: 9rem;">
+            <option value="0" selected>Old Rod</option>
+            <option value="1">Deluxe Rod</option>
+            <option value="2">Legendary Rod</option>
+          </select>
+          <button class="mg-btn mg-primary" type="button" id="fishing-start">Restart</button>
+        </div>
         <div class="mg-row">
           <button class="mg-btn mg-primary" type="button" id="fishing-cast">Cast / Lock<span class="mg-key">SPACE</span></button>
-          <button class="mg-btn mg-throw" type="button" id="fishing-reel-a">Reel in<span class="mg-key">J</span></button>
-          <button class="mg-btn mg-throw" type="button" id="fishing-reel-b">Reel (soft)<span class="mg-key">K</span></button>
+          <button class="mg-btn mg-throw" type="button" id="fishing-reel-a"><svg class="mg-psbtn"><use href="#btn-cross"/></svg>Reel<span class="mg-key">J (hold)</span></button>
+          <button class="mg-btn mg-throw" type="button" id="fishing-reel-b"><svg class="mg-psbtn"><use href="#btn-square"/></svg>Reel soft<span class="mg-key">K (hold)</span></button>
         </div>
+        <p class="mg-controls">
+          <b><kbd>Space</kbd> casts and locks the power meter; hold <kbd>J</kbd> (Cross) or
+          <kbd>K</kbd> (Square) to reel.</b> While the lure is out, every fresh press feeds the
+          bite, and a strike can only land while a reel button is held &mdash; try the rhythm
+          <em>Cross&nbsp;&middot; pause&nbsp;&middot; Cross</em>, or the Square-tap cadence the
+          <a href="writeups/spirit-fish.html">Spirit-fish write-up</a> decodes. After a catch or
+          a snapped line, <kbd>Space</kbd> casts again. Drag the pond to orbit, wheel to zoom,
+          double-click to re-frame.
+        </p>
         <div class="mg-hud">
           <span>Phase <b id="fishing-phase">&mdash;</b></span>
           <span>Hooked <b id="fishing-fish">&mdash;</b></span>
           <span>Points <b class="mg-big" id="fishing-points">0</b></span>
           <span>Best <b id="fishing-best">0</b></span>
+          <span>Casts <b id="fishing-casts">0</b></span>
         </div>
-        <div class="mg-note">
+        <div class="mg-row" id="fishing-save-row" hidden>
+          <span class="mg-status" id="fishing-save-note"></span>
+          <button class="mg-btn" type="button" id="fishing-save-export" hidden>Write record to save</button>
+        </div>
+        <h4 style="margin: 1rem 0 0.3rem;">Point exchange</h4>
+        <p class="mg-blurb" style="margin-bottom: 0.5rem;">
+          The pond's own prize counter: six rows, prices and one-time latches read off your
+          disc, spending the same point pool the catches feed &mdash; and, exactly as in the
+          game, a venue's top prize stays hidden until you can afford it. (Trades here are one
+          unit at a time; the persistent one-time latches ride along in a save export.)
+        </p>
+        <div class="fish-exchange" id="fishing-exchange"></div>
+        <div class="mg-status" id="fishing-prizes" style="margin-top: 0.4rem;"></div>
+        <div class="mg-note" id="fishing-note">
           <p>
-            <b>The species table is your disc's.</b> Each of the ten fish carries a score value, a
-            pull factor and a strike gate in the fishing overlay's rodata (PROT&nbsp;0972), decoded
-            here and listed below; the locked cast power picks which one bites.
+            <b>The rules are the retail loop, read off your image:</b> the ten-species table
+            (score value, pull factor, strike gate), the per-pond spawn tables the hook resolves
+            through (lure row &times; band column), the four reel-cadence gesture templates the
+            &ldquo;Good!&rdquo; recogniser matches, the band-roll odds, the strike credit, the
+            gate behind each pond's band-4 rarity, the tension divisors of all three rods, the
+            catch-score formula with its 999,999 cap, and the prize counter &mdash; all decoded
+            from the fishing overlay on your disc at load. Reference:
+            <code>minigame-fishing.md</code>.
           </p>
           <p>
-            <b>Fitted rather than traced:</b> the two-bar pond drawing, the cast-meter sweep rate,
-            and the land / snap thresholds; the tension arithmetic and catch award themselves are
-            the overlay's confirmed formulas (reference: <code>minigame-fishing.md</code>).
+            <b>The pond is the real place:</b> the venue's own field-scene bundle assembled in
+            WebGL &mdash; and the angler on the shore is the lead's actual field model, standing
+            in his own idle animation.
           </p>
           <p>
-            <b>How the real game picks the species</b> &mdash; the band roll, the four
-            &ldquo;Good!&rdquo; reel cadences, and the six-condition gate behind the elusive
-            Spirit fish &mdash; is decoded in the write-up
-            <a href="writeups/spirit-fish.html">The Spirit fish gate</a>.
+            <b>Fitted rather than traced:</b> the camera framing and the shore anchor (the retail
+            camera lives in runtime globals), the line / bobber / ripple overlay, the exact
+            strike-denominator ladder, the fight's reel-in rates, and the fish-behaviour branch
+            order (its pull / dart / sink formulas are per-species disc data). The HUD glyph
+            atlas is the one undecoded fishing asset, so its icons draw as labelled text. The
+            venue bundle carries two pond areas &mdash; the fenced fishing deck and the
+            rocky-shore pool &mdash; and which pond each venue plays at is a fitted assignment;
+            the line-snap loss is an engine-side reading. No stand-in mechanics beyond what is
+            listed here.
           </p>
         </div>
         <div class="mg-paytable" id="fishing-species"></div>
+        <div class="see-also">
+          <span class="see-also-label">Reference</span>
+          <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-fishing.md">Fishing runtime write-up</a>
+          <a href="writeups/spirit-fish.html">The Spirit fish gate</a>
+        </div>
       </section>
 
       <!-- ---------------- muscle dome ---------------- -->
@@ -723,9 +804,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     <code>play-window</code> (dance <code>K</code>, fishing <code>L</code>, slot machine
     <code>O</code>, Baka Fighter <code>B</code>, Muscle Dome <code>M</code>), and
     <a href="#play">all five</a> also run right here in the browser, compiled to WebAssembly. The
-    browser fishing session starts from default rod state rather than a save file; the browser
-    Muscle Dome resolves each card through the ported battle formulas against disc-record fighter
-    stats &mdash; the deals, budgets, tension and scoring are the game's own tables.
+    browser fishing session reads its rod, lures, point record and lifetime cast counter from a
+    loaded save (with pickers as the fallback), and the Muscle Dome resolves each card through
+    the ported battle formulas against disc-record fighter stats &mdash; the deals, budgets,
+    tension and scoring are the game's own tables.
   </p>
 </section>
 
@@ -2643,9 +2725,15 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     } else if (active === 'slot') {
       if (k === ' ' && slotOnScreen()) { e.preventDefault(); slotPress(); }
     } else if (active === 'fishing') {
-      if (k === ' ') { e.preventDefault(); fishingCast(); }
-      else if (k === 'j') { e.preventDefault(); fishingReel = 1; }
-      else if (k === 'k') { e.preventDefault(); fishingReel = 2; }
+      /* Retail pad map: Circle casts, Cross (0x40) = reel A, Square (0x80)
+       * = reel B; every FRESH press also feeds the strike credit. */
+      if (k === ' ') { e.preventDefault(); fishingCastPress(); }
+      else if (k === 'j') { e.preventDefault(); if (!e.repeat) { fishHold |= 0x40; fishEdges++; } }
+      else if (k === 'k') { e.preventDefault(); if (!e.repeat) { fishHold |= 0x80; fishEdges++; } }
+      else if (k === 'arrowleft' || k === 'arrowright') {
+        e.preventDefault();
+        if (!e.repeat) fishEdges++;   /* bait twitch: a fresh D-pad edge */
+      }
     } else if (active === 'muscle') {
       const c = { 1: 0, 2: 1, 3: 2, 4: 3 }[k];
       if (c !== undefined) { e.preventDefault(); muscleCommit(c); }
@@ -2656,131 +2744,297 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   document.addEventListener('keyup', (e) => {
     if (active !== 'fishing') return;
     const k = e.key.toLowerCase();
-    if ((k === 'j' && fishingReel === 1) || (k === 'k' && fishingReel === 2)) fishingReel = 0;
+    if (k === 'j') fishHold &= ~0x40;
+    else if (k === 'k') fishHold &= ~0x80;
   });
 
   /* ================= fishing ================= */
 
-  /* The rules are legaia-engine-core's fishing session (cast-power oscillator +
-   * tension tug-of-war + catch scoring); this block ticks it and draws a
-   * two-bar "pond" HUD. The species table is your disc's PROT 0972 rodata. */
-  const FISH_CAST_STEP = 0x80;     /* native tick_fishing per-frame meter step */
-  let fishingReel = 0;             /* 0 idle, 1 reel A (Cross/J), 2 reel B (Square/K) */
-  let fishingLastPhase = null;
+  /* The rules are the ported retail pond loop (engine-core::fishing's
+   * PondSession: cast -> band roll / cadence -> strike -> tension fight ->
+   * score) over the venue tables decoded from the visitor's disc; the 3D
+   * pond + retail HUD render through js/minigame-fishing.js (window.
+   * MgFishing). This block is glue: it ticks the session, routes input,
+   * runs the prize counter, and bridges the save bar's fishing record. */
+  let fishR = null;          /* MgFishing renderer (null = flat fallback) */
+  let fishHold = 0;          /* held reel mask: 0x40 Cross (J), 0x80 Square (K) */
+  let fishEdges = 0;         /* fresh input edges since the last frame */
+  let fishCastEdge = false;  /* one-shot cast / confirm press */
+  let fishSave = null;       /* fishing record read from the loaded save */
+  let fishLive = false;
 
   function fishingLoad() {
-    /* Fill the species panel off the disc, then hook a first cast so the pond
-     * is live the moment the tab opens. */
     const list = JSON.parse(api.fishing_species_json());
     $('fishing-species').innerHTML = list.map(f =>
       `<div class="mg-pay"><b>${f.name || 'Fish #' + f.index}</b>` +
       `<span>${f.score.toLocaleString()} pts</span></div>`).join('');
-    fishingLastPhase = null;
-    api.fishing_start();
+    fishR = null;
+    if (window.MgFishing) {
+      const r = MgFishing.create(api, $('fishing-canvas'), $('fishing-gl'));
+      if (r.loadAssets()) fishR = r;
+      else fishR = r;   /* rules may be up while the 3D stage is not */
+    }
+    const note = $('fishing-note');
+    if (fishR && !fishR.sceneOk() && note && !note.dataset.flagged) {
+      note.dataset.flagged = '1';
+      const p = document.createElement('p');
+      p.innerHTML = 'This disc’s <b>venue scene did not assemble</b> in this browser, ' +
+        'so the pond below is a flat backdrop rather than the 3D map.';
+      note.prepend(p);
+    }
+    /* A save already loaded into the coin session also carries the fishing
+     * record; otherwise the pickers' defaults play. */
+    fishingReadSave().then(fishingStart);
   }
 
-  /* Space / Cast button: lock the meter (casting) or recast (done). */
-  function fishingCast() {
-    if (!api) return;
-    const st = JSON.parse(api.fishing_state_json());
-    if (!st.live) { api.fishing_start(); return; }
-    if (st.phase === 'casting') api.fishing_lock_cast();
-    else if (st.phase === 'done') { api.fishing_recast(); verdict($('fishing-verdict'), '', ''); }
+  /* Pull the persistent fishing block out of the save the coin session
+   * loaded (points / best / lure / rod / casts / one-time prize latches).
+   * Resolves with null when no card save is loaded. */
+  function fishingReadSave() {
+    fishSave = null;
+    if (!window.LegaiaSaves || !LegaiaSaves.coinSession) return Promise.resolve(null);
+    const cs = LegaiaSaves.coinSession();
+    const stored = cs && LegaiaSaves.getSession(cs.saveId);
+    if (!stored || !stored.meta || stored.meta.kind !== 'card') {
+      fishingSaveRow();
+      return Promise.resolve(null);
+    }
+    const url = new URL('wasm/legaia_web_viewer.js', document.baseURI).href;
+    return import(url).then(m => m.default().then(() => m)).then((mod) => {
+      const j = JSON.parse(mod.card_fishing_json(stored.bytes, stored.meta.block));
+      fishSave = Object.assign(j, { id: cs.saveId, block: stored.meta.block,
+                                    name: stored.meta.name || cs.saveId });
+      /* The save's own tackle becomes the pickers' selection. */
+      $('fishing-lure').value = String(Math.min(2, j.lure >>> 0));
+      $('fishing-rod').value = String(Math.max(0, Math.min(2, j.rod | 0)));
+      fishingSaveRow();
+      return fishSave;
+    }).catch(() => { fishingSaveRow(); return null; });
   }
 
-  function fishingFrame() {
-    if (!api) return;
-    let st = JSON.parse(api.fishing_state_json());
+  function fishingSaveRow() {
+    const row = $('fishing-save-row'), note = $('fishing-save-note'),
+          btn = $('fishing-save-export');
+    if (!row) return;
+    if (fishSave) {
+      row.hidden = false;
+      btn.hidden = false;
+      note.textContent = `Record from "${fishSave.name}": ` +
+        `${(fishSave.points | 0).toLocaleString()} pts, ${fishSave.casts | 0} lifetime casts.`;
+    } else {
+      row.hidden = false;
+      btn.hidden = true;
+      note.textContent = 'No save loaded - starting from a fresh record. ' +
+        'Load one in the save bar above to fish with its rod, lures and points.';
+    }
+  }
+
+  /* Write the session's fishing record back into the loaded save's bytes
+   * (points / best / casts / tackle / one-time latches - seven dwords, in
+   * place, same shape as the coin export). */
+  function fishingExportSave() {
+    if (!api || !fishSave) return;
+    const st = JSON.parse(api.fishing_pond_state_json());
     if (!st.live) return;
-    if (st.phase === 'casting') api.fishing_advance_cast(FISH_CAST_STEP);
-    else if (st.phase === 'fighting') api.fishing_reel(fishingReel, 1);
-    st = JSON.parse(api.fishing_state_json());
-    /* Announce the result once, on the transition into 'done'. */
-    if (st.phase === 'done' && fishingLastPhase !== 'done') {
-      if (st.outcome === 'landed') {
-        const nm = (st.fish && st.fish.name) || 'the fish';
-        verdict($('fishing-verdict'),
-          `Landed ${nm} for ${st.outcome_points.toLocaleString()} points! Space to cast again.`,
-          'good');
-      } else if (st.outcome === 'snapped') {
-        verdict($('fishing-verdict'), 'The line snapped. Space to cast again.', 'bad');
+    const stored = LegaiaSaves.getSession(fishSave.id);
+    if (!stored) return;
+    const url = new URL('wasm/legaia_web_viewer.js', document.baseURI).href;
+    import(url).then(m => m.default().then(() => m)).then((mod) => {
+      const patched = mod.card_patch_fishing(
+        stored.bytes, fishSave.block,
+        st.points, st.lure, st.rod, st.best, st.best_fish, st.casts,
+        fishingPurchasedMask());
+      LegaiaSaves.putSession(Object.assign({}, stored.meta), patched);
+      verdict($('fishing-verdict'),
+        `Wrote ${st.points.toLocaleString()} points (+ tackle, casts, prize latches) into "${fishSave.name}" - download it from the save bar.`, 'good');
+      fishingReadSave();
+    }).catch((err) => {
+      verdict($('fishing-verdict'), 'Export failed: ' + (err && err.message || err), 'bad');
+    });
+  }
+
+  /* The session's one-time prize mask (returned inside the exchange JSON's
+   * latched flags; reconstructed here for the save write-back). */
+  function fishingPurchasedMask() {
+    let mask = 0;
+    for (const venue of [0, 1]) {
+      const ex = api.fishing_exchange_json(venue);
+      if (ex === 'null') continue;
+      for (const r of JSON.parse(ex).rows) {
+        if (r.latched) mask |= 1 << ((r.row + venue * 8) & 0x1f);
       }
     }
-    fishingLastPhase = st.phase;
-    fishingDraw(st);
+    return mask >>> 0;
   }
 
-  function fishingDraw(st) {
-    const c = $('fishing-canvas');
-    if (!c) return;
-    const g = c.getContext('2d');
-    const W = c.width, H = c.height;
-    /* Water. */
-    const grad = g.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0, '#123a55');
-    grad.addColorStop(1, '#0a2033');
-    g.fillStyle = grad; g.fillRect(0, 0, W, H);
-    g.fillStyle = 'rgba(255,255,255,0.06)';
-    for (let y = 40; y < H; y += 28) g.fillRect(0, y, W, 2);
-
-    const bar = (x, y, w, h, frac, col) => {
-      g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x, y, w, h);
-      g.fillStyle = col; g.fillRect(x, y, Math.max(0, Math.min(1, frac)) * w, h);
-      g.strokeStyle = 'rgba(255,255,255,0.4)'; g.strokeRect(x + 0.5, y + 0.5, w, h);
-    };
-    g.font = '14px system-ui, sans-serif';
-    g.fillStyle = '#dfe8f0';
-
-    if (st.phase === 'casting') {
-      g.fillText('Casting — press Space to lock the cast', 24, 32);
-      const frac = (st.cast_power - st.cast_min) / (st.cast_max - st.cast_min);
-      bar(24, 150, W - 48, 40, frac, '#39b0e5');
-      g.fillText('A stronger cast reaches a rarer fish', 24, 214);
-    } else if (st.phase === 'fighting') {
-      const nm = (st.fish && st.fish.name) || 'a fish';
-      g.fillText(`Fighting ${nm} — hold Reel (J) to land it, ease off before the line snaps`, 24, 32);
-      /* Tension: green safe, red near the ceiling. */
-      const tf = st.tension / st.tension_max;
-      const col = tf > 0.82 ? '#e05a5a' : tf > 0.6 ? '#e0a94a' : '#4ac07a';
-      g.fillText('Line tension', 24, 76);
-      bar(24, 84, W - 48, 34, tf, col);
-      /* Strength worked in (proxy for landing progress). */
-      g.fillText('Fish worked in', 24, 150);
-      const sf = st.land_target > 0 ? Math.min(1, st.strength / (st.land_target * 3)) : 0;
-      bar(24, 158, W - 48, 34, sf, '#8a7de0');
-    } else {
-      g.fillStyle = st.outcome === 'landed' ? '#7dd17d' : '#e08a8a';
-      g.font = 'bold 22px system-ui, sans-serif';
-      g.fillText(st.outcome === 'landed' ? 'Fish landed!' : 'Line snapped', 24, 120);
-      g.font = '14px system-ui, sans-serif';
-      g.fillStyle = '#dfe8f0';
-      g.fillText('Press Space to cast again', 24, 152);
+  /* Start (or restart) the pond with the pickers + the loaded record. */
+  function fishingStart() {
+    if (!api || !api.fishing_pond_ready || !api.fishing_pond_ready()) {
+      verdict($('fishing-verdict'),
+        'The venue tables did not decode from this disc.', 'bad');
+      return;
     }
+    const venue = +$('fishing-venue').value;
+    const lure = +$('fishing-lure').value;
+    const rod = +$('fishing-rod').value;
+    const s = fishSave || { points: 0, best: 0, best_fish: 0, casts: 0, purchased: 0 };
+    const seed = (Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0;
+    api.fishing_pond_start(venue, lure, rod, s.casts | 0, s.points | 0,
+                           s.best | 0, s.best_fish >>> 0, s.purchased >>> 0, seed);
+    fishLive = true;
+    fishHold = 0; fishEdges = 0; fishCastEdge = false;
+    fishingExchangeRender();
+    fishingPrizesRender();
+    verdict($('fishing-verdict'),
+      (venue ? 'Vidna' : 'Buma') + ' pond - Space to cast.', '');
+  }
+
+  /* Space / Cast button: a one-shot press consumed by the next tick. */
+  function fishingCastPress() {
+    if (!api || !fishLive) return;
+    fishCastEdge = true;
+    fishEdges++;
+  }
+
+  function fishingAnnounce(events, st) {
+    for (const e of events) {
+      if (e.e === 'splash') {
+        verdict($('fishing-verdict'), 'Good! The rhythm took - keep the reel held.', 'good');
+      } else if (e.e === 'hooked') {
+        verdict($('fishing-verdict'),
+          `Hooked ${e.name || 'a fish'}! Reel it in - ease off before the line snaps.`, 'good');
+      } else if (e.e === 'landed') {
+        verdict($('fishing-verdict'),
+          `Landed ${(st.fish && st.fish.name) || 'the fish'} for ` +
+          `${e.points.toLocaleString()} points! Space to cast again.`, 'good');
+        fishingExchangeRender();
+        if (window.LegaiaSaves) {
+          const d = LegaiaSaves.getMinigames().fishing || {};
+          LegaiaSaves.putMinigame('fishing', {
+            lastCatch: e.points,
+            bestCatch: Math.max(d.bestCatch || 0, e.points),
+            plays: (d.plays || 0) + 1,
+          });
+        }
+      } else if (e.e === 'snapped') {
+        verdict($('fishing-verdict'), 'The line snapped! Space to cast again.', 'bad');
+      }
+    }
+  }
+
+  let fishClock = 0;
+  function fishingFrame() {
+    if (!api || !fishLive) return;
+    /* Step the retail 60 Hz simulation by wall-clock, so a throttled rAF
+     * (background tab, slow machine, headless) still plays at game speed.
+     * The one-shot cast edge and input-edge bonus ride the first step. */
+    const now = performance.now();
+    const frames = fishClock ? Math.min(4, Math.max(1, Math.round((now - fishClock) / 16.6))) : 1;
+    fishClock = now;
+    let events = [];
+    for (let i = 0; i < frames; i++) {
+      const ev = JSON.parse(api.fishing_pond_tick(
+        fishHold, i === 0 && fishCastEdge, i === 0 ? fishEdges : 0));
+      if (ev.length) events = events.concat(ev);
+    }
+    fishCastEdge = false;
+    fishEdges = 0;
+    const st = JSON.parse(api.fishing_pond_state_json());
+    if (!st.live) return;
+    if (events.length) {
+      if (fishR) fishR.onEvents(events, st);
+      fishingAnnounce(events, st);
+    }
+    const hud = JSON.parse(api.fishing_pond_hud_json());
+    if (fishR) fishR.draw(st, hud);
     /* HUD spans. */
-    $('fishing-phase').textContent = st.phase;
+    const PHASE_LABEL = {
+      idle: 'at the shore', windup: 'winding up', power: 'power meter',
+      flight: 'lure flying', waiting: 'lure in the water', hooked: 'FIGHTING',
+      landed: 'landed', snapped: 'line snapped',
+    };
+    $('fishing-phase').textContent = PHASE_LABEL[st.phase] || st.phase;
     $('fishing-fish').textContent = (st.fish && st.fish.name) || '—';
     $('fishing-points').textContent = st.points.toLocaleString();
-    $('fishing-best').textContent = st.best_points.toLocaleString();
+    $('fishing-best').textContent = st.best.toLocaleString();
+    $('fishing-casts').textContent = st.casts.toLocaleString();
+  }
+
+  /* ---- the point exchange (retail states 0x64..0x7a) ---- */
+
+  function fishingExchangeRender() {
+    const el = $('fishing-exchange');
+    if (!el || !api) return;
+    const venue = +$('fishing-venue').value;
+    const raw = api.fishing_exchange_json(venue);
+    if (raw === 'null') { el.innerHTML = ''; return; }
+    const v = JSON.parse(raw);
+    el.innerHTML = v.rows.map((r) => {
+      /* Retail hides the top prize until strictly affordable. */
+      if (r.row < v.first_visible) return '';
+      const name = r.name || ('Item 0x' + r.item_id.toString(16).toUpperCase());
+      const tail = r.latched
+        ? '<span class="fish-ex-once">claimed</span>'
+        : `<button class="mg-btn" type="button" data-exrow="${r.row}"` +
+          `${r.available ? '' : ' disabled'}>Trade</button>`;
+      return `<div class="fish-ex-row${r.available || r.latched ? '' : ' is-off'}">` +
+        `<b>${name}</b><span>${r.price.toLocaleString()} pts</span>` +
+        (r.one_time ? '<span class="fish-ex-once">one-time</span>' : '') +
+        tail + '</div>';
+    }).join('');
+    el.querySelectorAll('[data-exrow]').forEach(b =>
+      b.addEventListener('click', () => fishingBuy(+b.dataset.exrow)));
+  }
+
+  function fishingBuy(row) {
+    if (!api) return;
+    const venue = +$('fishing-venue').value;
+    const res = api.fishing_exchange_buy(venue, row, 1);
+    if (res === 'null') return;
+    const p = JSON.parse(res);
+    verdict($('fishing-verdict'),
+      `Traded ${p.cost.toLocaleString()} points for ${p.name || 'the prize'}.`, 'good');
+    fishingExchangeRender();
+    fishingPrizesRender();
+  }
+
+  function fishingPrizesRender() {
+    const el = $('fishing-prizes');
+    if (!el || !api) return;
+    const rows = JSON.parse(api.fishing_prizes_json());
+    el.textContent = rows.length
+      ? 'Prizes this session: ' + rows.map(r =>
+          `${r.name || ('item 0x' + r.item_id.toString(16))} ×${r.qty}`).join(', ')
+      : '';
   }
 
   /* Controls (bound once; the buttons exist in the static panel). */
   (function bindFishing() {
-    const cast = $('fishing-cast');
-    if (cast) cast.addEventListener('click', () => { if (api) fishingCast(); });
-    const canvas = $('fishing-canvas');
-    if (canvas) canvas.addEventListener('click', () => { if (api) fishingCast(); });
-    const hold = (id, val) => {
+    const on = (id, fn) => { const b = $(id); if (b) b.addEventListener('click', fn); };
+    on('fishing-cast', () => { if (api) fishingCastPress(); });
+    on('fishing-start', () => { if (api) fishingStart(); });
+    on('fishing-save-export', () => { if (api) fishingExportSave(); });
+    ['fishing-venue', 'fishing-lure', 'fishing-rod'].forEach(id => {
+      const sel = $(id);
+      if (sel) sel.addEventListener('change', () => { if (api && fishLive) fishingStart(); });
+    });
+    /* Hold-to-reel buttons: the held mask + a fresh edge on press. */
+    const hold = (id, bit) => {
       const b = $(id);
       if (!b) return;
-      const down = (e) => { e.preventDefault(); fishingReel = val; };
-      const up = () => { if (fishingReel === val) fishingReel = 0; };
+      const down = (e) => { e.preventDefault(); fishHold |= bit; fishEdges++; };
+      const up = () => { fishHold &= ~bit; };
       b.addEventListener('pointerdown', down);
       b.addEventListener('pointerup', up);
       b.addEventListener('pointerleave', up);
       b.addEventListener('pointercancel', up);
     };
-    hold('fishing-reel-a', 1);
-    hold('fishing-reel-b', 2);
+    hold('fishing-reel-a', 0x40);
+    hold('fishing-reel-b', 0x80);
+    /* A freshly-loaded save re-seeds the record mid-session. */
+    window.addEventListener('legaia-coin-session-change', () => {
+      if (api && fishLive) fishingReadSave().then(() => fishingStart());
+    });
   })();
 
   /* ================= muscle dome ================= */
@@ -3023,14 +3277,17 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   window.__mgSlot    = { reset: slotReset,
                          press: slotPress,
                          state: () => api && JSON.parse(api.slot_state_json()) };
-  window.__mgFishing = { load: fishingLoad, cast: fishingCast,
-                         reel: (v) => { fishingReel = v; },
-                         start: () => api && api.fishing_start(),
-                         advanceCast: (s) => api && api.fishing_advance_cast(s),
-                         lock: () => api && api.fishing_lock_cast(),
-                         reelStep: (i, f) => api && api.fishing_reel(i, f),
-                         recast: () => api && api.fishing_recast(),
-                         state: () => api && JSON.parse(api.fishing_state_json()),
+  window.__mgFishing = { load: fishingLoad, start: fishingStart,
+                         cast: fishingCastPress,
+                         hold: (m) => { fishHold = m; },
+                         edge: (n) => { fishEdges += (n || 1); },
+                         buy: fishingBuy,
+                         renderer: () => fishR,
+                         state: () => api && JSON.parse(api.fishing_pond_state_json()),
+                         hud: () => api && JSON.parse(api.fishing_pond_hud_json()),
+                         spawn: (v) => api && JSON.parse(api.fishing_spawn_json(v)),
+                         exchange: (v) => api && JSON.parse(api.fishing_exchange_json(v)),
+                         sceneInfo: () => api && JSON.parse(api.fishing_scene_info_json()),
                          species: () => api && JSON.parse(api.fishing_species_json()) };
   window.__mgMuscle  = { reset: muscleReset, commit: muscleCommit, confirm: muscleConfirm,
                          start: () => api && api.muscle_start(),

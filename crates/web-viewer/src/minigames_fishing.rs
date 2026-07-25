@@ -284,14 +284,31 @@ fn hud_draw_json(d: &HudDraw, out: &mut Vec<String>) {
         }
         HudDraw::Count {
             value,
-            digits: _,
+            digits,
             x,
             y,
         } => {
-            for c in ui_fishing::number_digit_cells(0, x, y, value) {
+            // The count rides the shared fixed-width number primitive
+            // (`0x80034b78`), not the fishing digit blitter: `digits` slots
+            // at the narrow pitch, value right-aligned.
+            let digits = digits.max(1) as i32;
+            let v = value.max(0);
+            let mut shown = Vec::new();
+            let mut q = v;
+            loop {
+                shown.push(q % 10);
+                q /= 10;
+                if q == 0 || shown.len() as i32 >= digits {
+                    break;
+                }
+            }
+            for (i, d) in shown.iter().rev().enumerate() {
+                let slot = digits - shown.len() as i32 + i as i32;
                 out.push(format!(
                     r#"{{"t":"digit","x":{},"y":{},"d":{},"b":128}}"#,
-                    c.x, c.y, c.digit
+                    x + slot * ui_fishing::DIGIT_PITCH_NARROW,
+                    y,
+                    d
                 ));
             }
         }

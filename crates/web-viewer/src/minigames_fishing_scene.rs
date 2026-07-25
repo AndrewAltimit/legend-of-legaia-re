@@ -437,6 +437,41 @@ impl LegaiaMinigames {
             .unwrap_or_default()
     }
 
+    /// Walk-ground geometry summary for the page's shore-anchor fit:
+    /// `{"aabb":[[lo],[hi]],"centroid":[x,y,z],"verts":N}` over the
+    /// heightfield's own vertices (the walkable shore band - a much tighter
+    /// frame than the whole map's AABB). `null` when the scene has no
+    /// resolvable floor grid.
+    pub fn fishing_scene_ground_json(&self) -> String {
+        let Some(hf) = self.fishing_scene.as_ref().and_then(|s| s.ground.as_ref()) else {
+            return "null".to_string();
+        };
+        let mut lo = [f32::INFINITY; 3];
+        let mut hi = [f32::NEG_INFINITY; 3];
+        let mut sum = [0f64; 3];
+        for p in &hf.positions {
+            for k in 0..3 {
+                lo[k] = lo[k].min(p[k]);
+                hi[k] = hi[k].max(p[k]);
+                sum[k] += p[k] as f64;
+            }
+        }
+        let n = hf.positions.len().max(1) as f64;
+        format!(
+            r#"{{"aabb":[[{},{},{}],[{},{},{}]],"centroid":[{},{},{}],"verts":{}}}"#,
+            lo[0],
+            lo[1],
+            lo[2],
+            hi[0],
+            hi[1],
+            hi[2],
+            sum[0] / n,
+            sum[1] / n,
+            sum[2] / n,
+            hf.positions.len(),
+        )
+    }
+
     /// Walk-ground height (world Y, retail Y-down) under world `(x, z)`:
     /// the nearest heightfield vertex's Y. `NaN`-free: returns `0` with no
     /// ground. Used by the page to anchor the angler on the shore.
