@@ -1,6 +1,10 @@
 //! SCUS-side GPU primitive helpers the title overlay calls directly.
 //!
-//! PORT: FUN_80058298, FUN_80058490, FUN_800198E0
+//! Each of the three helpers is tagged on the function that ports it -
+//! [`exec_clear_image`], [`exec_move_image`], [`exec_sprite_descriptor`] -
+//! rather than on this module. A module-level `PORT:` tag makes the whole file
+//! the anchor, and the file is read as live whenever *any* function in it is
+//! reachable, which cannot distinguish these three from `Rect12`'s accessors.
 //!
 //! The title-overlay per-frame tick `FUN_801DD35C` (modelled in
 //! [`crate::title_overlay`]) reaches into three SCUS-side helpers to
@@ -335,6 +339,8 @@ pub trait PrimHost {
 /// Port of `FUN_80058298` (`ClearImage` rect-fill queue).
 ///
 /// Always queues - there is no early-out in the original.
+///
+/// PORT: FUN_80058298
 pub fn exec_clear_image<H: PrimHost>(host: &mut H, rect: Rect12, r: u8, g: u8, b: u8) {
     host.queue_clear_rect(rect, r, g, b);
 }
@@ -344,6 +350,8 @@ pub fn exec_clear_image<H: PrimHost>(host: &mut H, rect: Rect12, r: u8, g: u8, b
 /// Returns [`MoveImageOutcome::SkippedZeroExtent`] when either
 /// dimension is zero, matching the original's `li v0, -0x1` early-out
 /// path (`*(short *)(rect + 4) == 0 || *(short *)(rect + 6) == 0`).
+///
+/// PORT: FUN_80058490
 pub fn exec_move_image<H: PrimHost>(
     host: &mut H,
     src: Rect12,
@@ -362,6 +370,8 @@ pub fn exec_move_image<H: PrimHost>(
 /// Routes between the simple (tag `0x11`) and complex variants;
 /// performs the alpha-OR pre-pass when `flags & 8` is set AND the
 /// host's [`PrimHost::alpha_or_gate_set`] returns `true`.
+///
+/// PORT: FUN_800198E0
 pub fn exec_sprite_descriptor<H: PrimHost>(host: &mut H, desc: &SpriteDescriptor) {
     if desc.tag == 0x11 {
         // Simple variant: one sprite emit with `Raw` width.

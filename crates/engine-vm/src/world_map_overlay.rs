@@ -13,14 +13,18 @@
 //! formatting, cursor/phase logic and equipment-stat aggregation. The engine
 //! host wires the resulting model to a renderer.
 //!
-//! PORT: FUN_801EAD98 - world-map dev-menu renderer (row model + formatter)
-//! PORT: FUN_801ECA08 - dev-menu panel sizer + list-picker cursor SM
-//! PORT: FUN_801ED710 - battle-records screen data model
-//! PORT: FUN_801E5B4C - equipment stat-comparison preview
+//! The four addresses are `FUN_801EAD98` (dev-menu renderer: row model +
+//! formatter), `FUN_801ECA08` (panel sizer + list-picker cursor SM),
+//! `FUN_801ED710` (battle-records screen data model) and `FUN_801E5B4C`
+//! (equipment stat-comparison preview). Each is tagged on the individual items
+//! that port it, not on this module: a module-level `PORT:` tag makes the whole
+//! file the anchor, and a file is read as live as soon as *any* function in it
+//! is reachable - which here would report all four addresses wired on the
+//! strength of the one item that is.
 //!
 //! A fifth leaf of the same overlay, the `0x4C 0xD3` countdown scheduler
 //! `FUN_801D2EBC`, lives in [`crate::escape_timer`] - it has an engine caller
-//! and so does not belong under this module's blanket disclosure.
+//! and so does not belong under this module's wiring status at all.
 //!
 //! ## Source
 //!
@@ -29,33 +33,35 @@
 //! - `ghidra/scripts/funcs/overlay_world_map_801ed710.txt`
 //! - `ghidra/scripts/funcs/overlay_world_map_801e5b4c.txt`
 //!
-//! ## NOT WIRED
+//! ## Wiring status
 //!
-//! No engine host calls anything in this module, and the reason differs per
-//! address. Each entry names what has to exist first - none of them is more
-//! plumbing here.
+//! One item is on a host path: [`resolve_equip_slot`], through
+//! [`crate::dev_equip_commit::commit_equip`] and the dev-menu screen above it.
+//! Everything else here carries its own `NOT WIRED:` note, because the reason
+//! differs per address and a blanket module disclosure would also cover the one
+//! item that does have a caller. The per-address reasons, once:
 //!
 //! - **`FUN_801EAD98` / `FUN_801ECA08`** (row model, formatter, panel sizer,
-//!   list-picker cursor + draw gate). The engine has no world-map developer
-//!   menu. Retail's is an actor whose handler owns a phase byte (`ctx[+0x54]`)
-//!   and a cursor row (`ctx[+0x9E]`), reached from the world-map controller
-//!   behind a debug gate; the engine's world-map mode carries neither field
-//!   and opens no menu on it. The render half is equally unconsumed -
-//!   `legaia_engine_ui::dev_menu_list_draws_for` has no caller either - so
-//!   wiring means standing up the debug screen, not connecting two halves.
+//!   list-picker cursor + draw gate). Retail's dev menu is an actor whose
+//!   handler owns a phase byte (`ctx[+0x54]`) and a cursor row (`ctx[+0x9E]`),
+//!   reached from the world-map controller behind a debug gate. The engine's
+//!   dev-menu screen (`legaia_engine_core::dev_menu_host`) is a different
+//!   shape: it carries the row subset whose backing state the engine owns and
+//!   steps them through [`crate::world_map_dev_menu`], so retail's 24-row list
+//!   model and its panel/cursor state machine have no consumer.
 //! - **`FUN_801ED710`** (battle-records data model). The engine keeps none of
 //!   the lifetime counters this screen reads: battles fought, escapes, and the
 //!   per-character max-hits / max-damage / knockouts / monsters-defeated /
 //!   Hyper-Arts / magic tallies. `World` carries a play-time clock and nothing
 //!   else on the list, and the pause menu has no records page to host the
 //!   result. Wiring needs those counters on the persistent record first.
-//! - **`FUN_801E5B4C`** (equipment stat-comparison preview). The engine's
-//!   equip screen is the menu-overlay flow (`legaia_engine_core::EquipSession`,
-//!   ported from `FUN_801D9C14` / `FUN_801D99F0`), which previews by
-//!   trial-equipping into its own 8-slot array and re-running its stat
-//!   aggregator. Nothing produces the 5-slot `char[+0x75E..]` equip window or
-//!   the per-character weapon-slot table (`0x8007B42C`) that this shared
-//!   comparison panel indexes, so the aggregation has no input.
+//! - **`FUN_801E5B4C`** (equipment stat-comparison preview) is split. The slot
+//!   resolution is live, as above. The comparison panel is not: the engine's
+//!   equip screen is the menu-overlay flow
+//!   (`legaia_engine_core::EquipSession`, ported from `FUN_801D9C14` /
+//!   `FUN_801D99F0`), which previews by trial-equipping into its own 8-slot
+//!   array and re-running its stat aggregator, so nothing produces the 5-slot
+//!   `char[+0x75E..]` equip window the shared panel aggregates over.
 
 // ---------------------------------------------------------------------------
 // FUN_801EAD98 - fixed-width decimal formatter
@@ -64,6 +70,7 @@
 /// Zero-padded fixed-width decimal, ported from the digit kernel that
 /// `FUN_801EAD98` inlines ~15 times (one copy per numeric menu readout).
 ///
+/// NOT WIRED: no caller - the engine's dev menu formats its own rows.
 /// PORT: FUN_801EAD98 (digit kernel)
 ///
 /// The retail routine seeds a scratch buffer, sets `_DAT_801F2B80 = width`,
@@ -106,6 +113,8 @@ pub fn format_fixed_decimal(value: i32, width: usize) -> String {
 /// `0..=0x17` in `FUN_801EAD98`). Rows the retail code labels only through a
 /// data pointer whose text is not decoded here carry a neutral name.
 ///
+/// NOT WIRED: retail's 24-row list has no consumer; see the module's
+/// wiring status.
 /// PORT: FUN_801EAD98 (row dispatch)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DevMenuRow {
@@ -139,6 +148,7 @@ impl DevMenuRow {
     /// Map a list index to its row kind. Indices `>= 0x18` are out of the
     /// retail bounds check (`0x17 < local_40` short-circuits the switch).
     ///
+    /// NOT WIRED: same missing consumer as [`DevMenuRow`].
     /// PORT: FUN_801EAD98 (`switch(local_40)` + the default 0xC/0xD/0xE arm)
     pub fn from_index(index: u32) -> Option<DevMenuRow> {
         use DevMenuRow::*;
@@ -176,6 +186,7 @@ impl DevMenuRow {
     /// Whether this row renders as "CLOSED" instead of its label. Only the
     /// `MAP_CHANGE` and `CARD_OPTION` rows are gated, by `_DAT_8007B868 != 0`.
     ///
+    /// NOT WIRED: same missing consumer as [`DevMenuRow`].
     /// PORT: FUN_801EAD98 (cases 0 and 1)
     pub fn is_closed(self, gate_b868: u32) -> bool {
         matches!(self, DevMenuRow::MapChange | DevMenuRow::CardOption) && gate_b868 != 0
@@ -190,6 +201,7 @@ impl DevMenuRow {
 /// `pitch = ((w & 0xFF) + ((w >> 16) & 0xFF)) / 2`,
 /// `yaw   = (((w >> 8) & 0xFF) + ((w >> 24) & 0xFF)) / 2`.
 ///
+/// NOT WIRED: nothing in the engine publishes retail's packed camera word.
 /// PORT: FUN_801EAD98 (case 3)
 pub fn decode_camera_readout(cam_word: u32) -> Option<(i32, i32)> {
     if cam_word == 0x7F7F_0000 {
@@ -207,7 +219,8 @@ pub fn decode_camera_readout(cam_word: u32) -> Option<(i32, i32)> {
 /// Sizing for the developer-menu panel descriptor at
 /// `0x801F2B98 + col_idx*0x1C`.
 ///
-/// PORT: FUN_801ECA08 (panel-sizing prologue)
+/// REF: FUN_801ECA08 (panel-sizing prologue) - the computation is tagged on
+/// [`panel_geometry`]; this is only its return type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PanelGeometry {
     /// Panel top Y (`desc[+0x0A]`), bottom-anchored to the 208px viewport.
@@ -219,6 +232,7 @@ pub struct PanelGeometry {
 /// Compute panel geometry from the inclusive row range `row_start..=row_end`.
 /// `rows = row_end - row_start + 1`; `height = rows*8`; `y = 0xD0 - rows*8`.
 ///
+/// NOT WIRED: no host opens a dev-menu panel to size.
 /// PORT: FUN_801ECA08
 pub fn panel_geometry(row_start: i32, row_end: i32) -> PanelGeometry {
     let rows = row_end - row_start + 1;
@@ -240,6 +254,7 @@ pub const SFX_CANCEL: u32 = 0x36;
 ///
 /// `up`/`down` are the D-pad edges (`_DAT_8007BB84 & 0x1000` / `& 0x4000`).
 ///
+/// NOT WIRED: the engine's dev-menu list runs its own cursor.
 /// PORT: FUN_801ECA08 (phase-1 cursor block)
 pub fn cursor_step(cursor: i32, row_start: i32, row_end: i32, up: bool, down: bool) -> (i32, bool) {
     let mut c = cursor;
@@ -264,6 +279,7 @@ pub fn cursor_step(cursor: i32, row_start: i32, row_end: i32, up: bool, down: bo
 
 /// The list-picker phase (`ctx[+0x54]`), 5-way.
 ///
+/// NOT WIRED: no host owns retail's `ctx[+0x54]` list-picker phase byte.
 /// PORT: FUN_801ECA08 (`switch(ctx[+0x54])`)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListPickerPhase {
@@ -309,6 +325,7 @@ impl ListPickerPhase {
 /// stays because the phase-1 leg's gate is the caller's own input-allowed
 /// flag, which does vary.
 ///
+/// NOT WIRED: gates a draw no host issues - see [`ListPickerPhase`].
 /// PORT: FUN_801ECA08 (`mult s2,s3` draw gate)
 pub fn list_body_draws(phase: i16, gate: i32) -> bool {
     let product = phase as i32 * gate;
@@ -322,7 +339,8 @@ pub fn list_body_draws(phase: i16, gate: i32) -> bool {
 /// Per-character stat block read from the records stats record at
 /// `0x80088140 + n*0x414`.
 ///
-/// PORT: FUN_801ED710 (per-character loops)
+/// REF: FUN_801ED710 (per-character loops) - the clamping is tagged on
+/// [`records_screen`]; this is its per-character input.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CharRecordStats {
     /// `+0x6B4`, clamped to 999 for display.
@@ -342,7 +360,8 @@ pub struct CharRecordStats {
 /// The decoded, display-ready records screen. All caps + the play-time
 /// decomposition are reproduced from `FUN_801ED710`.
 ///
-/// PORT: FUN_801ED710
+/// REF: FUN_801ED710 - the model builder is tagged on [`records_screen`];
+/// this is its return type.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RecordsScreen {
     /// No. of Battles (`_DAT_800846A4`), capped 99999.
@@ -376,6 +395,7 @@ pub struct RecordsScreen {
 /// Decompose a `1/60 s` play-time frame counter (`_DAT_800845DC`) into
 /// H:MM:SS with the retail 99h clamp.
 ///
+/// NOT WIRED: reached only from [`records_screen`], which has no host.
 /// PORT: FUN_801ED710 (play-time block)
 pub fn decompose_play_time(frames: u32) -> (i32, i32, i32) {
     let secs = (frames / 60) as i32;
@@ -393,6 +413,8 @@ pub fn decompose_play_time(frames: u32) -> (i32, i32, i32) {
 
 /// Build the records-screen model from the raw runtime globals.
 ///
+/// NOT WIRED: the engine keeps none of the lifetime counters this reads and
+/// has no records page - see the module's wiring status.
 /// PORT: FUN_801ED710
 pub fn records_screen(
     battles: u32,
@@ -440,7 +462,8 @@ pub type EquipStatBonus = [u8; 5];
 /// Direction arrow the preview shows for one stat when a candidate item is
 /// pending: candidate vs current.
 ///
-/// PORT: FUN_801E5B4C (arrow-glyph selection)
+/// REF: FUN_801E5B4C (arrow-glyph selection) - the comparison is tagged on
+/// [`stat_deltas`]; this is its result.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatDelta {
     /// Candidate raises the stat (retail glyph 5, ink 1).
@@ -460,6 +483,8 @@ pub enum StatDelta {
 /// nothing but is still looked up in retail; callers pass a resolver that
 /// returns zeroes for id `0`.
 ///
+/// NOT WIRED: nothing produces the 5-slot `char[+0x75E..]` equip window this
+/// aggregates over - see the module's wiring status.
 /// PORT: FUN_801E5B4C (aggregation loops)
 pub fn aggregate_slot_stats(
     slots: &[u8; 5],
@@ -482,6 +507,8 @@ pub fn aggregate_slot_stats(
 /// `mask & (1 << char_idx)`; for any other character none of the guard arms
 /// match, so the item is treated as equippable.
 ///
+/// NOT WIRED: the engine's equip screen gates with
+/// `legaia_engine_core::equipment`'s own mask check.
 /// PORT: FUN_801E5B4C (equippability guard)
 pub fn can_equip(mask: u8, char_idx: u32) -> bool {
     if char_idx < 3 {
@@ -495,6 +522,11 @@ pub fn can_equip(mask: u8, char_idx: u32) -> bool {
 /// record byte `+7` is `slot_bits`. `(slot_bits & 0x60) >> 5` selects:
 /// `0 -> slot 0`, `1 -> slot 1`, `2 -> per-character weapon slot`
 /// (`weapon_slot_table[char_idx]`, from `0x8007B42C`), `3 -> slot 4`.
+///
+/// Wired: [`crate::dev_equip_commit::commit_equip`] resolves the destination
+/// slot through here, and its own caller chain is
+/// `legaia_engine_core::dev_menu_host::DevMenuSession::commit_equip_row` ->
+/// `PlayWindowApp::tick_dev_menu` -> `handle_redraw`.
 ///
 /// PORT: FUN_801E5B4C (slot resolution)
 pub fn resolve_equip_slot(slot_bits: u8, char_idx: usize, weapon_slot_table: &[i16]) -> usize {
@@ -510,6 +542,8 @@ pub fn resolve_equip_slot(slot_bits: u8, char_idx: usize, weapon_slot_table: &[i
 /// the current totals. Retail shows the arrow next to a stat when the
 /// candidate total differs (`candidate > current -> Up`, `< -> Down`).
 ///
+/// NOT WIRED: no host builds a candidate loadout to compare - see
+/// [`aggregate_slot_stats`].
 /// PORT: FUN_801E5B4C (LAB_801E5FB0 comparison block)
 pub fn stat_deltas(current: &[i32; 5], candidate: &[i32; 5]) -> [StatDelta; 5] {
     let mut out = [StatDelta::Same; 5];

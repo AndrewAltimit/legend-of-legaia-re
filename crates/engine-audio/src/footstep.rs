@@ -6,12 +6,19 @@
 //! trigger bytes the SPU side reads (`0x800915DA` / `0x800915DB`).
 //!
 //! **NOT WIRED.** This port is not on the engine's frame path - nothing
-//! calls [`FootstepCadence::tick`] outside this module's unit tests. A wired
-//! caller would be the field-mode per-frame audio update in `engine-shell`,
+//! calls [`FootstepCadence::tick_cadence`] outside this module's unit tests. A
+//! wired caller would be the field-mode per-frame audio update in `engine-shell`,
 //! feeding it the player's movement magnitude and turning a returned
 //! [`CadenceTick`] into voice starts on the `engine-audio` mixer. Until that
 //! exists the type is a pinned model of the retail cadence, not a running
 //! part of the engine.
+//!
+//! The entry point is `tick_cadence`, not `tick`, and the extra word is
+//! load-bearing: the reachability audit resolves a `.name(` call against every
+//! in-tree method of that name without inferring the receiver, so while this
+//! was `FootstepCadence::tick` the `spu.tick()` in this crate's own `lib.rs`
+//! linked to it and the disclosure above read as stale. Renaming it back
+//! re-manufactures that false edge.
 //!
 //! The interesting part is the step interval, which is derived from the
 //! player's movement magnitude rather than from a fixed timer: a faster
@@ -33,7 +40,7 @@
 //! set, the cadence uses `max(primary, secondary)` of the two movement
 //! magnitudes; when clear it uses `primary` alone. The two branches also
 //! write **different** trigger bytes, which is the part worth not
-//! paraphrasing - see [`FootstepCadence::tick`].
+//! paraphrasing - see [`FootstepCadence::tick_cadence`].
 //!
 //! Clean-room from the decompiled control flow; no Sony bytes. Retail
 //! reference `docs/subsystems/audio.md` and the `80018DB0` row of
@@ -57,7 +64,7 @@ pub const INTERVAL_GATE: i32 = 0xB;
 /// Countdown parked here while the player is below the step gate.
 pub const STALL_RELOAD: i32 = 2;
 
-/// What a single [`FootstepCadence::tick`] fired.
+/// What a single [`FootstepCadence::tick_cadence`] fired.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CadenceTick {
     /// The periodic ambient cue retriggered this frame (retail calls the
@@ -109,7 +116,7 @@ impl Default for FootstepCadence {
 
 /// The speed -> interval curve shared by both branches.
 ///
-/// Separate from [`FootstepCadence::tick`] so the curve can be tested on
+/// Separate from [`FootstepCadence::tick_cadence`] so the curve can be tested on
 /// its own: it is the only arithmetic in the function, and the `< 0` guard
 /// on the *biased* value (not the raw speed) is easy to get subtly wrong.
 fn step_interval(speed: i32) -> i32 {
@@ -158,7 +165,7 @@ impl FootstepCadence {
     // movement magnitude and arm the trigger bytes DAT_800915DA / DB.
     // The libspu voice retrigger itself (FUN_8005C034) is reported through
     // CadenceTick rather than called: engine-audio owns its own voice pool.
-    pub fn tick(&mut self, speed_primary: i32, speed_secondary: i32) -> CadenceTick {
+    pub fn tick_cadence(&mut self, speed_primary: i32, speed_secondary: i32) -> CadenceTick {
         let mut out = CadenceTick::default();
 
         // Periodic ambient retrigger. Retail decrements only a non-zero
@@ -262,13 +269,13 @@ mod tests {
     fn inactive_branch_fires_on_the_interval_cadence() {
         let mut c = FootstepCadence::default();
         let speed = SPEED_CAP; // interval 0 -> fires every frame
-        let t = c.tick(speed, 0);
+        let t = c.tick_cadence(speed, 0);
         assert!(t.step_fired);
         assert_eq!(c.trigger_a, 1, "inactive branch pulses trigger_a");
 
         // interval 0 reloads the countdown to 0, which the next tick's
         // decrement takes to -1, so the following frame fires again.
-        let t = c.tick(speed, 0);
+        let t = c.tick_cadence(speed, 0);
         assert!(t.step_fired);
     }
 
@@ -277,7 +284,9 @@ mod tests {
     fn slower_speed_spaces_steps_further_apart() {
         fn steps_in(frames: usize, speed: i32) -> usize {
             let mut c = FootstepCadence::default();
-            (0..frames).filter(|_| c.tick(speed, 0).step_fired).count()
+            (0..frames)
+                .filter(|_| c.tick_cadence(speed, 0).step_fired)
+                .count()
         }
         let fast = steps_in(120, SPEED_CAP);
         let slow = steps_in(120, 0x60); // (0x60+0x20)>>4 = 8 -> interval 7
@@ -293,7 +302,7 @@ mod tests {
     fn above_the_gate_parks_the_countdown_and_stays_silent() {
         let mut c = FootstepCadence::default();
         for _ in 0..30 {
-            let t = c.tick(0, 0);
+            let t = c.tick_cadence(0, 0);
             assert!(!t.step_fired);
         }
         assert_eq!(c.step_countdown, STALL_RELOAD);
@@ -308,7 +317,7 @@ mod tests {
             footstep_active: true,
             ..Default::default()
         };
-        let t = c.tick(SPEED_CAP, 0);
+        let t = c.tick_cadence(SPEED_CAP, 0);
         assert!(t.step_fired);
         assert_eq!(c.trigger_a, 0x40);
         assert_eq!(c.trigger_b, 1, "active branch pulses trigger_b");
@@ -318,7 +327,7 @@ mod tests {
             footstep_active: true,
             ..Default::default()
         };
-        c.tick(0, 0);
+        c.tick_cadence(0, 0);
         assert_eq!(c.trigger_a, 0x40);
         assert_eq!(c.trigger_b, 0);
     }
@@ -332,7 +341,7 @@ mod tests {
             ..Default::default()
         };
         assert!(
-            c.tick(0, SPEED_CAP).step_fired,
+            c.tick_cadence(0, SPEED_CAP).step_fired,
             "secondary speed alone must be able to drive a step"
         );
     }
@@ -343,7 +352,7 @@ mod tests {
     fn inactive_branch_always_stamps_trigger_b() {
         let mut c = FootstepCadence::default();
         // Stationary: no step, but trigger_b still takes the low byte.
-        c.tick(0, 0x1234);
+        c.tick_cadence(0, 0x1234);
         assert_eq!(c.trigger_b, 0x34);
     }
 
@@ -353,7 +362,7 @@ mod tests {
         let mut c = FootstepCadence::default();
         let mut fired_at = Vec::new();
         for frame in 0..(AMBIENT_PERIOD_FRAMES * 2 + 5) {
-            if c.tick(0, 0).ambient_fired {
+            if c.tick_cadence(0, 0).ambient_fired {
                 fired_at.push(frame);
             }
         }
@@ -372,7 +381,7 @@ mod tests {
             ..Default::default()
         };
         for _ in 0..(AMBIENT_PERIOD_FRAMES + 10) {
-            assert!(!c.tick(0, 0).ambient_fired);
+            assert!(!c.tick_cadence(0, 0).ambient_fired);
         }
         assert_eq!(c.ambient_countdown, 0);
     }
@@ -382,7 +391,7 @@ mod tests {
     fn uptime_counts_every_frame() {
         let mut c = FootstepCadence::default();
         for _ in 0..50 {
-            c.tick(0, 0);
+            c.tick_cadence(0, 0);
         }
         assert_eq!(c.uptime, 50);
     }
