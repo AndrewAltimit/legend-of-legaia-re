@@ -391,6 +391,16 @@ presentation left to the host:
   target-menu row dedup / labelling and the overlap-relaxation layout
   (`FUN_801D9D3C`). `BattleSession::enemy_menu_rows` rebuilds the rows every
   time a picker opens.
+- `field_submode` - the field overlay's op-`0x49` **sub-screen** entry family:
+  context reset + driver-actor spawn (`FUN_801D9C3C`), the smaller
+  fixed-template spawn (`FUN_801DE478`), the list-panel row layout
+  (`FUN_801E6984`), and the CARD mode-request leaf (`FUN_801D84B4`).
+- `field_actor_kernels` - the scene-transition **teardown sweep**
+  (`FUN_801D7518`, which the field initialiser runs once per actor list on a
+  warp entry) and the per-actor **colour tween** (`FUN_801DDC20`) whose actors
+  the sweep retires by handler address.
+- `camera_ease` - the field camera's smoothed-yaw step (`FUN_801DA390`):
+  settled creeps by 1, unsettled takes a gap-proportional step capped at 12.
 - `world_map::WorldMapController` - drives `SceneMode::WorldMap`.
 - `EffectCatalog`, `input::Mapping`, `DefaultMapIdResolver` - effect
   lookup, host-agnostic input binding, and scene-name → map-id

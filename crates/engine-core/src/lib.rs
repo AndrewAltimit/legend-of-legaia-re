@@ -139,7 +139,10 @@ pub mod float_tween;
 
 // --- lane 4 ---
 pub mod action_effect_script;
+pub mod camera_ease;
 pub mod effect_ribbon;
+pub mod field_actor_kernels;
+pub mod field_submode;
 pub mod mode_entry_init;
 // --- end lane 4 ---
 

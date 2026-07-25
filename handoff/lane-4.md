@@ -113,3 +113,90 @@ Each is a one-caller change outside this file scope.
   `0x801C6268 -> 0x801D4A80` row.
 - `lib.rs` gained exactly one contiguous block under `// --- lane 4 ---`:
   `action_effect_script`, `effect_ribbon`, `mode_entry_init`.
+
+---
+
+# Second pass - the eight unowned field-band rows
+
+**Seven of eight ported. `801d4a60` is not, and is handed back mapped.**
+
+## Dump selection came first, and it mattered
+
+All eight resolve cleanly only in the **live-RAM field captures**
+(`overlay_cutscene_dialogue_*`, cross-checked against
+`overlay_cutscene_mapview_*` / `overlay_world_map_*` / `overlay_dialog_*` -
+five independent captures, identical sizes). The `overlay_0897_*` static-base
+dumps are unusable for **four** of the eight, in three distinct ways:
+
+| Addr | `overlay_0897` dump says | Reality |
+|---|---|---|
+| `801d9c3c` | `entry=801d9c0c`, 73 insn | name-mismatch, `-0x30` |
+| `801de478` | `entry=801de468`, 35 insn | name-mismatch, `-0x10` |
+| `801d84b4` | `entry=801d8308`, 267 insn | name-mismatch, `-0x1AC` |
+| `801ddc20` | **0 instructions, 1 byte** | corpus gap |
+
+Both name-mismatch deltas are negative, matching Lane 1's finding that all 142
+are. So the warning was not theoretical for this set - it decided the dump of
+record for half of it.
+
+## Ported (7)
+
+| Addr | What it is | Module |
+|---|---|---|
+| `801d7518` | Scene-transition **teardown sweep** - retires actors by handler address, stamps the transition bit, reallocates side buffers, reseeds CLUT-walk accumulators | `field_actor_kernels` |
+| `801ddc20` | Per-actor **colour tween** - delay / ramp / hold on a packed RGB triple | `field_actor_kernels` |
+| `801e6984` | op-`0x49` submode **list-panel** row layout + ink selection | `field_submode` |
+| `801da390` | Field camera **yaw easing** | `camera_ease` |
+| `801d9c3c` | Submode **open**: context reset + driver-actor spawn | `field_submode` |
+| `801de478` | Fixed-template **scene-actor spawn** + state-byte seed | `field_submode` |
+| `801d84b4` | **CARD mode request** leaf | `field_submode` |
+
+All seven disclosed `NOT WIRED`; the missing input is the same for most of
+them and is worth stating once: **the engine's actors carry no `+0x0C`
+per-frame handler address.** `801d7518` retires by handler identity and
+`801d9c3c` searches by it, so neither can run against typed actor kinds.
+That is one plumbing change, and it would unblock both.
+
+### Two cross-checks that came out of the bytes
+
+- `801d7518`'s second retire test compares the handler against `0x801DDC20` -
+  the entry of the colour tween in the same commit. Decoding either predicted
+  a field of the other; neither reading was fitted to the other.
+- `801d84b4` writes master game mode `0x16`, which is exactly the mode the
+  field initialiser's BGM wait barrier bails out on
+  (`mode_entry_init::FIELD_BGM_WAIT_ABORT_MODE`, ported in the first pass).
+  The two are the same gate seen from each end, and there is a unit test
+  asserting they agree.
+
+### On `801d84b4` and the ignore list
+
+It is a **7**-instruction leaf, not 6, and it has **no `jal`** - two stores and
+`jr ra` with the second store in the delay slot. The port comment records why
+the old "PADDING" ignore reason was wrong for field(897) even though it holds
+for the minigame images at the same VA.
+
+## Not ported: `801d4a60` - and why
+
+It is **not** the "scripted actor-approach state machine" the docs describe. It
+is a **38-state jump-table dispatcher** on the actor's `+0x54`:
+
+- bound `sltiu v1,0x26`, table at `0x801CE960` (`0x801D0000 - 0x16A0`), one
+  word per state, dispatched by `jr v0` - an out-of-range state falls to the
+  epilogue;
+- prologue snapshots the player transform (`+0x14`/`+0x18` and `+0x24`/`+0x28`)
+  into two stack vectors and biases the snapshot Y by `-0x40`;
+- early states set story flag `0x17` / clear `0x18`, swap the BGM slot to
+  `0x7F3`, fire SFX `0x200`, and stage move-VM parts from `0x801F2658` via
+  `FUN_80021B04` once per `_DAT_1F800393` tick, accumulating in `+0x9E`.
+
+The existing description covers roughly one state. I corrected
+`field-locomotion.md` to say what the function actually is and to warn that
+`overlay_0897_801d4a60.txt` is **short** - 690 instructions where five field
+captures agree on 756.
+
+I stopped rather than port it because 38 arms is more than remained in this
+sitting, and a partially-understood state machine ported as a skeleton would be
+a paraphrase - the thing this wave is auditing for. A token
+`STATE_COUNT = 38` constant would have moved a number without porting a
+function. The state space is now mapped, so the next lane starts from the
+table rather than from the address.

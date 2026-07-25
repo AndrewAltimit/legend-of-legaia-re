@@ -1077,7 +1077,11 @@ The field offsets they touch are the same ones tabulated in [Player actor fields
 | `FUN_801d701c` | Spawn a positioned sub-actor (template `0x801f2978`): inits `+0x54 = 0`, `+0x50`, `+0x14`, `+0x16`, `+0x9c` from operands. |
 | `FUN_801cff3c` | Spawn a sub-actor (template `0x801f2858`): inits `+0x54`/`+0x9e = 0` and writes operands into `+0xb8`/`+0xba`/`+0xbc`. |
 
-`FUN_801d4a60` is the largest of the group: a scripted actor-approach state machine keyed on the actor's `+0x54` state byte. It snapshots the player transform (`_DAT_8007c364 + 0x14/0x18/0x24/0x28`), then in its running state steps toward the target vector `DAT_801f2658` once per frame scaled by the per-frame delta `DAT_1f800393`, accumulating progress in `+0x9e` until it reaches its arrival threshold - a camera-relative "walk the actor to a scripted spot" controller.
+`FUN_801d4a60` is the largest of the group, and it is **not a single controller**: it is a **38-state jump-table dispatcher** on the actor's `+0x54` state word. The bound is `sltiu v1,0x26` and the table sits at `0x801CE960` (`0x801D0000 - 0x16A0`), one word per state, reached by `jr v0` - so an out-of-range state falls straight to the epilogue.
+
+Its prologue snapshots the player transform once per frame (`_DAT_8007c364 + 0x14/0x18` into the stack vector, `+0x24/0x28` into a second one) and biases the snapshot's Y by `-0x40`. The early states then set story flag `0x17` and clear `0x18` (`func_0x8003ce08` / `func_0x8003ce34`), swap the BGM slot to `0x7F3`, fire SFX `0x200` (`func_0x80035b50`), and stage move-VM parts from the record at `0x801F2658` through `FUN_80021B04` - once per `_DAT_1f800393` tick - while accumulating progress in `+0x9e`. So the "walk an actor to a scripted spot" reading describes *one* of its states, not the function.
+
+That earlier reading came from `overlay_0897_801d4a60.txt`, which is **short**: it stops at 690 instructions where five independent field captures agree on 756. Read the captures (`overlay_cutscene_dialogue_801d4a60.txt` and siblings) before porting any arm.
 
 The rise-up actor that locks player input and scrolls the player's `+0x16` is **`FUN_801EE328`**, and it is not a locomotion handler at all - it is the dev-menu **"ON RULA," MAP CHANGE warp applier** already documented in [`world-map.md`](world-map.md#field-overlay-actor-state-machines-sparkle--travel-magic--dev) and [`functions/world-map.md`](../reference/functions/world-map.md). A 5-state actor SM on `+0x54`:
 
