@@ -12,7 +12,7 @@ All four lead with the same 4-byte chunk0 header, in the form `(type << 24) | si
 - [scene_vab_stream - VAB-prefix](#scene_vab_stream---vab-prefix)
 - [scene_v12_table - scene header + event-script bundle](#scene_v12_table---scene-header--event-script-bundle)
 - [scene_asset_table - count-prefixed asset bundle](#scene_asset_table---count-prefixed-asset-bundle)
-- [scene_scripted_asset_table - scripted prefix + canonical bundle](#scene_scripted_asset_table---scripted-prefix--canonical-bundle)
+- [scene_scripted_asset_table - a shape retail does not have](#scene_scripted_asset_table---a-shape-retail-does-not-have)
 - [tmd_size_prefix - truncated TMD-prefix](#tmd_size_prefix---truncated-tmd-prefix)
 - [scene_event_scripts - prescript-only](#scene_event_scripts---prescript-only)
 - [See also](#see-also)
@@ -177,27 +177,27 @@ The table is **`count`-prefixed**, not fixed-7: the runtime walker `FUN_80020224
 
 Each descriptor is `(type_size, data_offset)`:
 - `type_size` packs `(type_byte << 24) | (size & 0x00FF_FFFF)` - the same packing the [asset-type dispatcher](asset-type.md) accepts directly.
-- `data_offset` is a file-relative byte position of that descriptor's own independent LZS stream, addressed against the bundle entry's **extended on-disc footprint** (`Archive::read_entry`), *not* the TOC-indexed sub-region (`Archive::read_entry_indexed`).
+- `data_offset` is a file-relative byte position of that descriptor's own independent LZS stream inside the bundle entry - the whole entry, `Archive::read_entry` ([`prot.md`](prot.md)).
   - Descriptor 0's offset is always the header end `8 + count*8`.
-  - Later descriptors frequently fall past the indexed end and into the trailing-overlay sectors that the per-PROT TOC crops off - e.g. `0588_juui1.BIN`'s indexed view is 67584 B but `desc[4].data_offset` is 177413, valid against the 186368 B extended footprint.
+  - **A bundle is one entry, not a span of them.** Across the corpus, 90 CDNAME blocks each carry exactly one MAN-bearing table, always at offset 0 of its entry, and no table's descriptor payload reaches past that entry's end. Offsets do run past what the historical `toc[p+5] - toc[p+3] + 4` expression claimed - `0588_juui1`'s `desc[4].data_offset` is 177413 against that expression's 67584 - but they are inside the 186368-byte entry.
   - `size` is the **decompressed** byte count passed to [`legaia_lzs::decompress`].
 
 The **`Tmd` descriptor (type 2)** carries the scene's **environment geometry** - an `asset::pack` of Legaia TMDs (terrain, buildings, props) inside that descriptor's LZS stream (`town01` = 121 meshes, ≈8041 verts).
 
 - Because the meshes are LZS-packed, a raw-only TMD scan misses them; the engine's `SceneResources` walks each entry's LZS-decompressed sections (`tmd_scan::scan_entry`) to load them, then renders the field with every TIM uploaded (`upload_all_tims`, matching the retail field loader).
-- `Scene::load` fetches `SceneAssetTable` **and `lzs_container`** entries at their **extended footprint**
-  (`ProtIndex::entry_bytes_extended`) so the sweep reaches the streams past the TOC-indexed end - the
-  `opdeene` prologue's entire vignette geometry pack (72 TMDs + 51 TIMs, entry 0749) sits there,
-  invisible to the indexed view. The `lzs_container` case is the dungeon shape: a v12-family dungeon
-  ships its environment pack as a standalone LZS container (`rikuroa` = extraction 156, 77 TMDs) whose
-  streams *start* inside the TOC window but *run into* the trailing sectors - truncated at the indexed
-  end, every stream fails to decode and the scene resolves zero environment meshes. That 51-TIM set is not only mesh textures: one is the baked **112×32 caption strip *"It was the Seru."*** (LZS offset `0x01EC30`, two CLUT palettes for the fade), the pre-rendered image the scene renderer draws between the two narration crawls - the opening's dramatic reveal is a scene texture, not a font string (see [`cutscene.md`](../subsystems/cutscene.md#narration-playback---the-crawl-roller-fun_80037174)).
+- `Scene::load` fetches every entry as **the entry** (`ProtIndex::entry_bytes`), and detection and
+  extraction must share that one buffer. Detecting on the wider `toc[p+5] - toc[p+3] + 4` window made
+  one-sector prescript entries resolve a "bundle" that was really the *next* entry's table, and
+  extraction against the entry then failed with a descriptor offset past its end. The streams the
+  narrower window used to cut off are inside the entry: the `opdeene` prologue's whole vignette
+  geometry pack (72 TMDs + 51 TIMs, entry 0749), and a v12-family dungeon's standalone LZS
+  environment container (`rikuroa` = extraction 156, 77 TMDs) whose sections run past the same point.
+  That 51-TIM set is not only mesh textures: one is the baked **112×32 caption strip *"It was the Seru."*** (LZS offset `0x01EC30`, two CLUT palettes for the fade), the pre-rendered image the scene renderer draws between the two narration crawls - the opening's dramatic reveal is a scene texture, not a font string (see [`cutscene.md`](../subsystems/cutscene.md#narration-playback---the-crawl-roller-fun_80037174)).
 - The per-mesh world placement + mesh selection for this static geometry come from the field map file's object table (`FUN_8003a55c`; parser `legaia_asset::field_objects`, which resolves each object's `pack_index` into this pack) - see [`field-locomotion.md`](../subsystems/field-locomotion.md#object-record-format-0x0000-0x20-byte-stride); `legaia-engine play-window` renders the town from it.
-- **The environment pack is not always in the bundle entry `find_bundle` returns.** A single-entry town keeps its MAN and its geometry in one `SceneAssetTable` entry (`town01` = entry 4). But a scripted **cutscene** scene splits them: `opdeene` keeps its MAN + event scripts in a `SceneScriptedAssetTable` (entry 748, which `find_bundle` returns) and its 72-TMD vignette geometry in a *separate* `SceneAssetTable` sibling (entry 749). A world-map kingdom bundle does the reverse (geometry in the `SceneScriptedAssetTable` that `find_bundle` returns, an unrelated sub-area in the sibling `SceneAssetTable`).
+- **The environment pack is not always in the bundle entry `find_bundle` returns.** A single-entry town keeps its MAN and its geometry in one `SceneAssetTable` entry (`town01` = entry 4). A scripted **cutscene** scene splits them: `opdeene` keeps its event-script prescript in entry 748 and its MAN + 72-TMD vignette geometry in the `SceneAssetTable` at entry 749.
 - So neither "the bundle entry" nor "the first `SceneAssetTable`" is universally the geometry pack. The placement `pack_index` indexes the scene-owned PROT entry that actually produced the most environment TMDs (`opdeene` 749, `town01` 4, `map01` 85); the renderer selects the env pool by that criterion. Keying it on the bundle entry left `opdeene` with zero environment meshes - the whole prologue rendered blank.
-- **Some dungeon scenes carry the whole asset table *inside* their `scene_v12_table` entry**, at file offset `0x1000` - not as a first-class `SceneAssetTable` / `SceneScriptedAssetTable` sibling.
-  The v12 runtime-fixup header wins the classifier at offset 0, so the standalone detector never probes `0x1000`. `find_bundle` adds a v12 fallback that scans a `SceneV12Table` entry's 0x800-aligned offsets for the first `scene_asset_table` carrying a type-3 (MAN) descriptor and returns it as `BundleSource::V12Embedded { table_offset: 0x1000 }`; extraction resolves `0x1000 + data_offset` against the extended footprint exactly as for the scripted variant.
-  the v12-family dungeons (`rikuroa`, `dolk2`) have **no** MAN-bearing bundle at all: their base+3 table is the MAN-less `count=4` form, and the scene MAN is the type-3 chunk of the block's standalone `data_field_streaming` entry (`rikuroa` extraction 157, partitions `[13, 29, 64]`; `dolk2` extraction 70, `[29, 73, 17]`) - resolved by the engine's `field_man_payload` streaming fallback. (The historical "v12 entry 164 / 76 embeds the MAN at `0x1000`" reading decoded the NEXT block's bundle through the CDNAME-shifted scene window plus the extended-footprint over-read; see [`scene-v12-table.md`](scene-v12-table.md#the-embedded-man-at-0x1000-is-an-extended-footprint-over-read).) Disc-gated coverage: `crates/engine-core/tests/v12_bundle_man_disc.rs`.
+- **No dungeon scene embeds an asset table inside its `scene_v12_table` entry.** A "table at `0x1000`" of a v12 entry is that entry's *second* successor's table at offset 0: a v12 header is one sector, so `+0x800` is the next entry and `+0x1000` the one after. The engine keeps a `BundleSource::V12Embedded` arm for a genuinely embedded table, and on retail it never fires. See [`scene-v12-table.md`](scene-v12-table.md#the-embedded-man-at-0x1000-is-an-extended-footprint-over-read), which caught two instances before the entry size was corrected.
+- The v12-family dungeons (`rikuroa`, `dolk2`) have **no** MAN-bearing bundle at all: their base+3 table is the MAN-less `count=4` form, and the scene MAN is the type-3 chunk of the block's standalone `data_field_streaming` entry (`rikuroa` extraction 157, partitions `[13, 29, 64]`; `dolk2` extraction 70, `[29, 73, 17]`) - resolved by the engine's `field_man_payload` streaming fallback. Disc-gated coverage: `crates/engine-core/tests/v12_bundle_man_disc.rs`.
 
 Type-sequence variants (count=7 unless noted):
 
@@ -248,11 +248,13 @@ if let Some(r) = scene_asset_table::resolve(buf) {
 }
 ```
 
-A disc-gated corpus test (`scene_asset_table_walk_real`) verifies this walk against every classified entry (88 bare + 79 scripted): the first slot anchors at `base + header_end` and every slot's type is a legal dispatcher type. The relocation of the loaded file into the asset buffer (`_DAT_8007b85c`) and the exact base the walker receives for the scripted variant are runtime values (capture-blocked); the static `resolve` reconstructs the base structurally.
+A disc-gated corpus test (`scene_asset_table_walk_real`) verifies this walk against every classified entry: the table sits at offset 0, the first slot anchors at `header_end`, every slot's type is a legal dispatcher type, and every payload starts inside the entry. The relocation of the loaded file into the asset buffer (`_DAT_8007b85c`) is a runtime value (capture-blocked); the static `resolve` reconstructs the base structurally.
 
-## scene_scripted_asset_table - scripted prefix + canonical bundle
+## scene_scripted_asset_table - a shape retail does not have
 
-A composite shape that pairs a `[u16 count][u16 offsets[count]]` script prescript at offset 0 with a canonical 7-asset scene table at the next 0x800 sector boundary. Implementation: `crates/asset/src/scene_scripted_asset_table.rs`. ~6% of all PROT entries match.
+A composite that pairs a `[u16 count][u16 offsets[count]]` script prescript at offset 0 with a canonical 7-asset scene table at the next 0x800 sector boundary. Implementation: `crates/asset/src/scene_scripted_asset_table.rs`.
+
+**It matches no retail entry.** Every historical match was an over-read: the "table at the next 0x800 boundary" sat at a sector that is the *next PROT entry's start LBA*, so it was that neighbour's ordinary offset-0 table read through a window that ran past the entry ([`prot.md`](prot.md#the-prescript-prefixed-asset-table-was-an-over-read)). The real layout is a scene block seating the prescript and the bundle as **separate entries**: `[.MAP][v12 header][prescript][bundle]`. The detector and the class stay, pinned at zero by `crates/extract/tests/validation_suite.rs`, so a reader regression that resurrects the phantom fails a test rather than silently re-appearing. The prescript carriers classify as [scene_event_scripts](#scene_event_scripts---prescript-only).
 
 ```text
 +0x00              u16  count             ; 1..=4096 - number of script records
@@ -301,7 +303,9 @@ The 34 hits are all 12 KB files (6 sectors). The runtime consumer hasn't been lo
 
 ## scene_event_scripts - prescript-only
 
-Sister of `scene_scripted_asset_table` for the case where the same `[u16 count][u16 offsets]` prescript exists at offset 0, but the post-prescript payload is **not** a canonical 7-asset table. Implementation: `crates/asset/src/scene_event_scripts.rs`. ~20 PROT entries match.
+The prescript entry a scene block seats between its v12 header and its bundle: a `[u16 count][u16 offsets]` prescript at offset 0. Implementation: `crates/asset/src/scene_event_scripts.rs`.
+
+The detector's frame-opener rate gate is what makes it zero-false-positive on a buffer with no context, and it rejects the small prescripts - `geremi`'s is three records, none opening with the `-1` transform-node sentinel. Inside a scene the position supplies what the bytes cannot: `Scene::find_event_scripts` falls back to the structural prescript read on the entry that sits immediately after a `scene_v12_table` and immediately before the bundle.
 
 ```text
 +0x00              u16  count             ; 3..=4096

@@ -122,16 +122,23 @@ fn first_class_bundles_still_load_no_regression() {
     };
     let index = ProtIndex::open_extracted(&root).expect("prot index");
 
-    // dolk / keikoku have a first-class scripted+bare table pair; the v12
-    // fallback must NOT take over and they keep their scripted bundle.
-    for (name, want_off) in [("dolk", 0x800usize), ("keikoku", 0x800)] {
+    // dolk / keikoku resolve a plain bundle at offset 0 of its own entry.
+    //
+    // They used to resolve a `Scripted` bundle at 0x800 of the *preceding*
+    // entry - which is the same table: a scene block seats its prescript and
+    // its bundle as consecutive one-sector-then-N-sector entries, so "0x800
+    // into the prescript entry" and "offset 0 of the bundle entry" are the
+    // same disc sector, reached through a window that ran past the prescript
+    // entry's end. Reading each entry's own sectors names the right one.
+    // See docs/formats/prot.md.
+    for name in ["dolk", "keikoku"] {
         let scene = Scene::load(&index, name).expect("load");
         let bundle = find_bundle(&scene).unwrap_or_else(|| panic!("{name}: no bundle"));
         assert!(
-            matches!(bundle, BundleSource::Scripted { .. }),
-            "{name} keeps its scripted bundle, not the v12 fallback"
+            matches!(bundle, BundleSource::Plain { .. }),
+            "{name}: the bundle is a plain table in its own entry"
         );
-        assert_eq!(bundle.table_offset(), want_off, "{name} table offset");
+        assert_eq!(bundle.table_offset(), 0, "{name} table offset");
         let (mf, _man) = scene_man(&index, name);
         assert!(
             mf.header.total_records() > 0,

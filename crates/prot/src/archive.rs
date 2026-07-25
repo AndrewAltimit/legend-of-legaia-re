@@ -216,13 +216,6 @@ impl Archive {
         Ok(())
     }
 
-    /// Compatibility alias kept so out-of-crate callers that still ask for
-    /// the "indexed sub-region" keep compiling. There is no such sub-region -
-    /// see [`Self::read_entry_declared_span`], which this forwards to.
-    pub fn read_entry_indexed(&mut self, entry: &Entry, out: &mut Vec<u8>) -> Result<()> {
-        self.read_entry_declared_span(entry, out)
-    }
-
     /// Read arbitrary raw bytes from PROT.DAT at `byte_offset`. Used to
     /// reach unindexed gap regions that don't belong to any TOC entry
     /// (e.g. the 240 KB system-UI gap between the TOC and `init_data`

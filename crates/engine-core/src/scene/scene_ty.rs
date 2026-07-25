@@ -105,29 +105,21 @@ impl Scene {
             if (idx as usize) >= index.entry_count() {
                 break;
             }
-            let mut bytes = index.entry_bytes(idx)?;
-            let class = index.class_of(idx)?;
-            // `scene_asset_table` descriptor offsets are FILE-relative
-            // against the entry's **extended** on-disc footprint (indexed
-            // payload + trailing-overlay sectors) - the retail loader
-            // streams by LBA, so a bundle's LZS mesh/texture streams
-            // routinely start past the TOC-indexed end (e.g. the opdeene
-            // prologue's whole vignette geometry pack; see
-            // docs/formats/scene-bundles.md). Load those entries at their
-            // full footprint so the resource sweep can reach every stream.
+            // The entry's own sectors - the window the retail loader streams
+            // and the one every scene-asset descriptor offset resolves
+            // against. A `scene_asset_table`'s LZS mesh/texture streams all
+            // start inside it (checked across the corpus: 90 CDNAME blocks
+            // each carry exactly one MAN-bearing table at offset 0, and no
+            // table's payload reaches past its own entry), as do a standalone
+            // `lzs_container`'s sections.
             //
-            // The same applies to plain `lzs_container` entries: dungeon
-            // scenes carry their environment mesh pack as a standalone LZS
-            // container (rikuroa = entry 156, 77 TMDs) whose streams start
-            // inside the TOC window but run into the trailing sectors -
-            // truncated at the TOC end every stream fails to decode and the
-            // scene resolves zero environment meshes.
-            if matches!(class, Class::SceneAssetTable | Class::LzsContainer)
-                && let Ok(ext) = index.entry_bytes_extended(idx)
-                && ext.len() > bytes.len()
-            {
-                bytes = Arc::new(ext);
-            }
+            // Detection has to run on this same buffer or the two halves
+            // disagree: reading the wider `toc[p+5] - toc[p+3] + 4` window
+            // here made one-sector prescript entries resolve a "bundle" that
+            // was really the *next* entry's table, and extraction against the
+            // entry then failed with a descriptor offset past its end.
+            let bytes = index.entry_bytes(idx)?;
+            let class = index.class_of(idx)?;
             entries.push(SceneEntry { idx, class, bytes });
         }
         Ok(Self {
@@ -198,6 +190,50 @@ impl Scene {
                 _ => None,
             };
             if let Some(ranges) = ranges
+                && !ranges.is_empty()
+            {
+                return Some(EventScripts {
+                    entry_idx: entry.idx,
+                    bytes: &entry.bytes,
+                    record_ranges: ranges,
+                });
+            }
+        }
+        self.v12_sibling_event_scripts()
+    }
+
+    /// Fallback: the prescript entry a scene block seats between its v12
+    /// header and its bundle.
+    ///
+    /// A scene block is laid out `[.MAP][v12 header][prescript][bundle]…`, and
+    /// the v12 header's documented prescript at `+0x800` is that header's
+    /// **next entry** at offset 0 (a v12 header is one sector). So the
+    /// prescript is a first-class entry, identified positionally: it sits
+    /// immediately after a [`Class::SceneV12Table`] and immediately before the
+    /// [`Class::SceneAssetTable`] bundle.
+    ///
+    /// Most such entries also classify as [`Class::SceneEventScripts`] and the
+    /// class-driven loop above finds them. The standalone detector's
+    /// frame-opener rate gate - a zero-false-positive test for a buffer with
+    /// no context - rejects the small ones: `geremi`'s prescript is three
+    /// records, none opening with the `-1` transform-node sentinel. Here
+    /// there *is* context, which is what lets this take the structural
+    /// prescript read instead. It is also what the phantom
+    /// `SceneScriptedAssetTable` class used to supply: it claimed these same
+    /// entries because a table appeared to follow at `+0x800`, which was the
+    /// entry *after* them seen through an over-read of the PROT TOC (see
+    /// [`docs/formats/prot.md`](../../../docs/formats/prot.md)).
+    fn v12_sibling_event_scripts(&self) -> Option<EventScripts<'_>> {
+        for (i, entry) in self.entries.iter().enumerate() {
+            let after_v12 = i > 0 && self.entries[i - 1].class == Class::SceneV12Table;
+            let before_bundle = self
+                .entries
+                .get(i + 1)
+                .is_some_and(|n| n.class == Class::SceneAssetTable);
+            if !(after_v12 || before_bundle) {
+                continue;
+            }
+            if let Some(ranges) = legaia_asset::scene_event_scripts::record_ranges(&entry.bytes)
                 && !ranges.is_empty()
             {
                 return Some(EventScripts {

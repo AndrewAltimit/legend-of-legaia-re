@@ -722,9 +722,9 @@ mod tests {
     }
 
     /// Disc-gated: extract the save-menu UI sprite atlas from PROT 0899.
-    /// Requires the EXTENDED footprint (trailing-overlay sectors) so
-    /// the extracted file must come from `Archive::read_entry`, not
-    /// `read_entry_indexed`.
+    /// The atlas sits past the `toc[p+5] - toc[p+3] + 4` window's end (14
+    /// sectors against the entry's 74), so the extracted file must come from
+    /// `Archive::read_entry`.
     #[test]
     fn extracts_overlay_save_menu_tim_when_disc_extracted() {
         let path = "../../extracted/PROT/0899_xxx_dat.BIN";

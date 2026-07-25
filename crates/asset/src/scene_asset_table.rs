@@ -22,18 +22,23 @@
 //!                                     ; exactly `size` bytes
 //! ```
 //!
-//! ### Descriptor offsets are file-relative against the EXTENDED footprint
+//! ### Descriptor offsets are file-relative, and the file is one PROT entry
 //!
 //! Each descriptor `(type, size, data_offset)` is its own LZS stream where
 //! `size` is the **decompressed** byte count. `data_offset` is the
-//! file-relative byte position of that stream inside the bundle entry's
-//! **full on-disc footprint** ([`legaia_prot::archive::Archive::read_entry`]),
-//! **not** the TOC-indexed sub-region (`Archive::read_entry_indexed`).
-//! Several entries (e.g. `0588_juui1`) carry descriptor offsets that fall
-//! past the indexed end and into the trailing-overlay sectors that the
-//! per-PROT TOC crops off; those offsets are valid against the extended
-//! footprint. See `legaia-engine-core::scene_bundle::extract_move_payload`
-//! for the canonical reader.
+//! file-relative byte position of that stream inside the bundle entry, read
+//! with [`legaia_prot::archive::Archive::read_entry`].
+//!
+//! **A bundle is one entry, not a span of them.** Across the retail corpus,
+//! 90 CDNAME blocks each carry exactly one MAN-bearing table, always at
+//! offset 0 of its entry, and no table's descriptor payload reaches past that
+//! entry's end - so "resolve the offsets against the entry" is the whole rule.
+//! Detection and extraction must use the same buffer: detecting against the
+//! wider `toc[p+5] - toc[p+3] + 4` window resolves a one-sector prescript
+//! entry's "table" that is really its neighbour's table at offset 0. See
+//! `legaia-engine-core::scene_bundle::extract_move_payload` for the canonical
+//! reader and [`docs/formats/prot.md`](../../../docs/formats/prot.md) for the
+//! entry-size evidence.
 //!
 //! ### Type-sequence variants (empirically observed)
 //!
