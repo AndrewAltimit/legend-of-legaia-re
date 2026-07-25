@@ -6,15 +6,25 @@
 
 | | before | after |
 |---|---:|---:|
-| parsed to a named format | 265208299 (87.8%) | 278366700 (92.1%) |
-| documented placeholder / padding | 28555264 (9.4%) | 23468032 (7.8%) |
-| **unexplained** | **8419328 (2.79%)** | **348160 (0.115%)** |
+| parsed to a named format | 265208299 (87.8%) | 278038528 (92.3%) |
+| documented placeholder / padding | 28555264 (9.4%) | 23318528 (7.7%) |
+| **unexplained** | **8419328 (2.79%)** | **0 (0.000%)** |
 
-`unknown_other` and `unknown_low_entropy` are now **empty**. `mostly_zeros` went
-70 entries -> 1. One unexplained entry remains (extraction 1195), triaged below.
+**Every statistical residual bucket is now empty** - `unknown_other`,
+`unknown_low_entropy`, `unknown_high_entropy`, `mostly_zeros`, `constant_byte`.
+No PROT entry falls through to a class named after its byte histogram rather
+than its format. All five are pinned at 0 in `validation_suite` so a detector
+regression fails loudly instead of quietly re-filing content under a histogram.
 
-Nothing else moved: a per-file diff of the old vs new `categorize.json` shows
-exactly 105 reclassifications and zero collateral.
+Nothing else moved: a per-file diff of the baseline vs final `categorize.json`
+shows exactly 108 reclassifications and zero collateral.
+
+**Read the totals with the caveat below.** The denominator counts some disc
+bytes more than once. Under the correct (footprint) extents the same class map
+reads **parsed 99.5% / placeholder 0.5% / unexplained 0.0%** of a 121 MB
+archive; the table above is the same map against the gate's current 302 MB
+denominator. Both are honest; they answer different questions. See
+[The denominator defect](#the-denominator-defect-largest-finding-of-this-lane).
 
 ## Per-entry verdicts - all 6 `unknown_other`
 
@@ -112,95 +122,212 @@ With `summon_readef` ordered ahead of it, `monster_sound_bank` matches **no**
 PROT entry. The class is kept (so the shape stays named and cannot be
 re-derived by accident) and pinned at 0 in `validation_suite.rs`.
 
-## CLAUDE.md row to add (coordinator owns that file)
+## CLAUDE.md rows to add (coordinator owns that file)
 
-In the **Formats** table, under **Streaming + scene containers** neighbours -
-place directly after the `scene-v12-table.md` row:
+Two new format pages. In the **Formats** table, directly after the
+`scene-v12-table.md` row:
 
 ```
 | [`field-map.md`](docs/formats/field-map.md) | Per-scene `DATA\FIELD\<scene>.MAP` - the fixed `0x12000`-byte slot 0 of every scene block (101 entries). Four regions whose sizes sum to the footprint exactly: object descriptors, the collision + floor grid, the per-tile object-index map, the trigger block. Detected on the trigger block's sub-table chain; per-field semantics live in [`field-locomotion.md`](docs/subsystems/field-locomotion.md). |
 ```
 
-## Out-of-scope edit I had to make
+and in the **Auxiliary** group, next to `sound-driver.md`:
+
+```
+| [`bse-dat.md`](docs/formats/bse-dat.md) | `bse.dat` master sound bank - the file `FUN_8001FA88` loads once at sound-init into `_DAT_8007B8D0`. `[u16 tag][u16 body_offset][8-byte records]`; the `+2` word is a byte offset, not a count. Extraction 888 (the loader's raw TOC `0x37A`) plus an uncalled sibling at 1195. Record columns are shape, not semantics. |
+```
+
+Also, the existing `prot.md` row quotes the size formula that this lane
+falsified. Suggested replacement text for that cell:
+
+```
+| [`prot.md`](docs/formats/prot.md) | PROT.DAT TOC (`start_lba = toc[p+2]`; entry size is the **footprint** `toc[p+3] - toc[p+2]` - the page carries why the older `toc[p+5] - toc[p+3] + 4` formula is not entry `p`'s size). |
+```
+
+## Out-of-scope edits I had to make
 
 `crates/extract/tests/validation_suite.rs` pins the per-class census
-(`EXPECTED_CLASS_COUNTS`), so adding four classes turns it red. I updated that
-one constant (plus its comments) and re-ran it green. **No logic touched.** If
-another lane is editing that file, this is the merge point.
+(`EXPECTED_CLASS_COUNTS`), so adding classes turns it red. I updated that one
+constant (plus its comments) across both rounds and re-ran it green. **No logic
+touched.** If another lane is editing that file, this is the merge point.
+
+`docs/guides/extracting-assets.md`, `docs/subsystems/shop.md` and
+`site/_content/*` were granted explicitly for the `shop-stock` request.
+
+## Extraction 1195 - resolved. It is `bse.dat`-shaped, and it is 2048 bytes
+
+Following `FUN_8001FA88`'s arithmetic closed this row and found the denominator
+defect below on the way.
+
+**Extraction 888 is `bse.dat`, the master sound bank** - loader-grounded, not
+shape-guessed. `FUN_8001FA88` allocates one `0x1800`-byte buffer into
+`_DAT_8007B8D0` and fills it down either the dev branch (path opener on the
+`"bse.dat"` string at `0x8007B3AC`) or the retail branch
+(`byindex_sync_loader(0x37A, …)`, `li a0,0x37a` at `0x8001FAD0`). Both branches
+write the **same destination**, so the dev file name and the retail TOC index
+name one asset: raw `0x37A` = extraction 888. The function's tail computes
+`gp[0x678] = base + ((s16)u16@+2 / 2) * 2`, so the `+2` header word is a byte
+offset to a table of 8-byte records. `see ghidra/scripts/funcs/8001fa88.txt`.
+
+**Extraction 1195 is the same format, 7 records, and nothing calls it.** Its raw
+TOC index `0x4AD` appears as a load literal in no dumped function, while its
+block neighbours `0x4B0` / `0x4B1` do (slot-machine assets) - so the absence is
+not merely that nothing in that block has been dumped. The dump corpus is
+incomplete, so this is evidence of an unused sibling, not proof.
+
+Record column semantics are **explicitly not claimed**. The
+`(program, tone, unity key)` reading is labelled a hypothesis in both the module
+and [`bse-dat.md`](../docs/formats/bse-dat.md), because no consumer of
+`gp[0x678]` has been traced. What is pinned is the loader, the destination, the
+header word's use as a byte offset, and the stride.
+
+**Extraction 0970 also settled - and it is not a singleton.** It is the STR/FMV
++ MDEC overlay's *data* image. Scanning for its structure (leading
+NUL-terminated ASCII pool + a `>= 8`-word run in the overlay load window) finds
+**12** entries; 11 were already `overlay_data_blob` / `overlay_ptr_table`, so
+0970 is an ordinary member of a family, not a new format. It landed in
+`mostly_zeros` only because the printable-ASCII test that recognises its
+siblings is a whole-buffer ratio and 91.6% zeros dilutes it under threshold.
+The structural test now runs ahead of the zero-fraction gate; exactly one entry
+moves. No new class was invented for it.
+
+## The denominator defect (largest finding of this lane)
+
+**`indexed_size_sectors` is not an entry's size, and the data half's totals are
+~2.5x the archive because of it.** `toc[p+3]` is entry `p+1`'s start LBA and
+`toc[p+5]` is entry `p+3`'s, so `toc[p+5] - toc[p+3] + 4` measures a span of
+*neighbouring* entries. The extractor takes `max(indexed, footprint)`, so for
+the 931 entries where the wrong number is larger the extracted `.BIN` runs past
+the entry into its neighbours, and those bytes are weighed again under every
+entry that overlaps them.
+
+Proof, four independent parts:
+
+1. **The footprints tile `PROT.DAT` exactly** - monotonic starts, entry 0 at LBA
+   121, entry 1233's end marker at the archive's last sector, and the sum equal
+   to the contiguous span with no gaps and no overlaps. A partition with that
+   property *is* the entry layout. The `max()` totals sum to 2.49x the 121 MB
+   archive, which no partition of it can. (The "entry `p`'s tail equals entry
+   `p+1`'s head" check is a **tautology** - footprint is defined as the gap to
+   the next entry - so it is not evidence and is not cited as such.)
+2. **The runtime uses the footprint**: `FUN_8003E8A8` returns
+   `TABLE[idx+3] - TABLE[idx+2]`, and `FUN_8003EB98` passes it straight to the
+   sector read.
+3. **Known-length files agree with it and not with the other formula**:
+   `readef.DAT` = exactly 78 x `0x10800`, `summon.dat` = exactly 103 x
+   `0x10800`, every field map = exactly `0x12000` (its four regions' sum),
+   `bse.dat` = 2 sectors, which is what lets it fit the `0x1800` buffer its
+   loader allocates. The `+4` formula gives a non-multiple, a truncation that
+   stops inside the object table, and a 43x buffer overrun respectively.
+4. **PROT 899's documented "trailing overlay" case is the footprint being
+   right** and the `+4` formula being short - never a counter-example.
+
+`prot.md` now carries the correction with the proof, and `disc-coverage.md` has
+the consequence for reading its own table. **The extractor is deliberately not
+changed**: switching `size_sectors` would rewrite every extracted file and every
+pinned census in the repo, which is not a parallel-wave edit.
+
+Recommended, in this order: (a) fix `crates/prot`'s `size_sectors` to the
+footprint on a quiet branch and re-pin the censuses; (b) once that lands, the
+data half's totals become meaningful and the 99.5% figure is the one to quote.
 
 ## Proposals (did not do)
 
-1. **`disc-coverage.py`** (measurement instrument, not mine to edit): move
-   `mostly_zeros` out of `PLACEHOLDER_CLASSES` and into `UNEXPLAINED_CLASSES`.
-   It is a statistics bucket, not a documented placeholder - `pochi_filler` and
-   `zero_sector_high_entropy` have format pages, `mostly_zeros` does not.
-   Counting it as explained is what hid 5 MB of field maps. This *raises* the
-   unexplained figure by 149504 bytes today, which is the honest number.
-2. **`docs/formats/overlay-ptr-table.md`** (existing page, outside my scope):
-   note that the pointer-table run is at offset 0 only for overlay *code*
-   images; an overlay's *data* image can put a NUL-terminated string pool ahead
-   of it (extraction 0970). A detector allowing a leading ASCII pool would claim
-   0970 and empty `mostly_zeros` entirely - worth doing if a second example
-   turns up, not worth a bespoke rule for one.
-3. **`engine-core::field_regions`** already carries duplicate copies of the
+1. **`disc-coverage.py`**: moving `mostly_zeros` from `PLACEHOLDER_CLASSES` to
+   `UNEXPLAINED_CLASSES` is still the right policy - a statistics bucket with no
+   format page should not count as explained - but it is now a **no-op on this
+   disc**, because the bucket is empty. Take it for the invariant, not for a
+   number change.
+2. **`engine-core::field_regions`** carries duplicate copies of the field-map
    region offsets (`MAP_REGION_BLOCK_OFFSET`, `MAP_OBJECT_INDEX_OFFSET`,
    `MAP_OBJECT_DESCRIPTOR_STRIDE`, `MAP_TRIGGER_FALLBACK_OFFSET`). They agree
    with `legaia_asset::field_map`'s constants; engine-core depends on asset, so
    they could be re-exports instead of a second source of truth.
+3. **`docs/formats/overlay-ptr-table.md`**: worth a line that the pointer-table
+   run is at offset 0 only for overlay *code* images - a data image puts its
+   string pool first. The detector for that now lives in `categorize.rs`.
 
 ## Left open
 
-**Extraction 1195** (348160 B, `unknown_high_entropy`) - the last unexplained
-entry, 0.115% of the disc. Narrowed, not solved:
+- **What `bse.dat`'s record columns mean.** Needs a consumer of `gp[0x678]`.
+  The shape is pinned; the semantics are a labelled hypothesis.
+- **Whether extraction 1195 is truly unreferenced.** Requires either a complete
+  overlay dump corpus or a runtime probe; "no dumped caller" is not "no caller",
+  and this repo has a standing rule about exactly that inference.
+- **No parser reports consumed-vs-unconsumed bytes**, so 92.3% (or 99.5%) is
+  still format *recognition*, not byte accounting. `field_map` is the cheapest
+  place to start closing that - its four regions are fixed-size, so a
+  consumed-extent report for it is exact rather than estimated.
 
-- Exactly **two** PROT entries share its head, `01 00 04 00 00 00 3C 01`: 1195
-  and extraction **0888** (180224 B, currently `overlay_data_blob`). A
-  two-member format family, not a one-off.
-- Head shape is 8-byte records. The 7th byte walks `3C 3D 3E 3F 40 41 40` in
-  1195 and pins at `3C`/`3D` in 0888 while byte 4 counts up - `0x3C` = 60 is
-  the MIDI/SPU unity key, so "program / bank / centre-note" is the obvious
-  reading. **Not asserted**: no loader is pinned, and
-  [`sound-driver.md`](../docs/formats/sound-driver.md) explicitly leaves the
-  `.spk` / `.MAP` / `.PCH` byte layouts TBD. This is that territory.
-- Ruled out by measurement: **not** SPU-ADPCM (only 4.3% / 6.3% of 16-byte
-  blocks have legal shift-filter + flag bytes), **not** the type-2-terminated
-  streaming container (`FUN_8001FE70` shape - first chunk's declared size
-  overruns), **not** `bse.dat` (which loads into a `0x1800`-byte buffer).
-- Next step: find the loader. `FUN_8001FA88`'s retail branch loads raw TOC
-  `0x37A` plus `param_1 + 5` for per-scene variants; walking that arithmetic to
-  see whether it can reach extraction 888 / 1195 is the cheapest lead, and the
-  `sound_data2` block's slot layout is the other.
+## `asset shop-stock` (separate user request, delivered)
 
-Also open, deliberately: **no parser reports consumed-vs-unconsumed bytes**, so
-92.1% is still format *recognition*, not byte accounting. `field_map` is the
-cheapest place to start closing that - its four regions are fixed-size, so a
-consumed-extent report for it is exact rather than estimated.
+`asset shop-stock --prot PROT.DAT --scus SCUS_942.54 [--cdname CDNAME.TXT]
+[--scene NAME | --entry N] [--json]` - wiring over the existing
+`shop_stock` + `item_names` libraries; the scanner is untouched.
+
+Verified against the disc: **34 shops**. "Market" decodes 10 / sells 7 (the
+module docstring's worked example), and Biron Monastery's **Corey** is found -
+the confirm-picker vendor a linear opcode walk misses, so its presence is the
+standing evidence that the site scan has not been "improved" into a walk.
+
+Two design points worth keeping if anyone refactors it:
+
+- The scan is gated on a **name** mask and sellability is computed separately
+  with a **price** predicate. A price-gated scan would reject or silently trim
+  the unsellable tail, which is the very thing the output exists to expose.
+- Records carry their MAN offset, because a scene can hold the same shop more
+  than once (one record per script path that opens it).
+
+Docs: a full section in `docs/guides/extracting-assets.md`, a "read it off your
+own disc" section on `site/_content/shops.html` (prose only - JSON pipeline and
+browser markup untouched), and a three-trap recipe table in
+`docs/subsystems/shop.md`.
+
+**Trap for whoever edits the guides next:** `site/_content/guides/*.html` is a
+**hand-authored parallel copy** of `docs/guides/*.md`, not a conversion of it.
+A section added to the markdown does not appear on the site until it is added
+there too - `_gen.py`'s "mirrored from docs/guides/" comment reads as if it
+converts, and it does not. `check-site-links.py` is what catches the omission,
+and only if something links to the new anchor.
 
 ## Files touched
 
 New: `crates/asset/src/field_map.rs`, `crates/asset/src/efect_pack.rs`,
-`crates/asset/tests/field_map_real.rs`, `docs/formats/field-map.md`,
-`handoff/lane-10.md`.
+`crates/asset/src/bse_bank.rs`, `crates/asset/src/bin/asset/shops.rs`,
+`crates/asset/tests/field_map_real.rs`,
+`crates/asset/tests/shop_stock_cli_real.rs`, `docs/formats/field-map.md`,
+`docs/formats/bse-dat.md`, `handoff/lane-10.md`.
 
-Modified: `crates/asset/src/categorize.rs` (4 classes + detector order + two
-corrected docstrings), `crates/asset/src/lib.rs`,
-`crates/asset/src/summon_readef.rs` (`detect`), `crates/asset/README.md`,
-`docs/formats/overview.md`, `docs/tooling/disc-coverage.md`,
+Modified: `crates/asset/src/categorize.rs` (5 classes, detector order, the
+overlay-data-image test, three corrected docstrings), `crates/asset/src/lib.rs`,
+`crates/asset/src/summon_readef.rs` (`detect`),
+`crates/asset/src/bin/asset.rs` (the `shop-stock` subcommand),
+`crates/asset/README.md`, `docs/formats/overview.md`, `docs/formats/prot.md`,
+`docs/tooling/disc-coverage.md`, `docs/guides/extracting-assets.md`,
+`docs/subsystems/shop.md`, `site/_content/shops.html`,
+`site/_content/guides/extracting-assets.html`,
 `crates/extract/tests/validation_suite.rs` (census pin - see above).
 
 ## Verification
 
-- `cargo fmt -p legaia-asset` / `-p legaia-extract`;
-  `cargo clippy -p legaia-asset --all-targets -- -D warnings` clean.
-- `cargo test -p legaia-asset --release` - all pass, including 17 new unit tests.
-- `cargo test -p legaia-extract --release --test validation_suite` - pass.
-- `check-doc-density.py` and `check-md-links.py` both OK.
-- Disc gating proven by **contrast**, not pass count:
-  `cargo test -p legaia-asset --release --test field_map_real -- --nocapture`
-  prints 3 x `[skip]` in 0.04s with `LEGAIA_DISC_BIN` unset, and 0 skips in
-  6.32s with it set.
+- `cargo fmt` + `cargo clippy -p legaia-asset --all-targets -- -D warnings`
+  clean; `cargo test -p legaia-asset --release` all pass;
+  `cargo test -p legaia-extract --release --test validation_suite` pass.
+- `check-doc-density.py`, `check-md-links.py`, and (after `site/_gen.py`)
+  `check-site-links.py` all clean - 126 pages, 2586 internal links, 0
+  violations.
+- Disc gating proven by **contrast**, not pass count. `field_map_real`: 3 x
+  `[skip]` in 0.04s unset vs 0 skips in 6.32s set. `shop_stock_cli_real`: 3 x
+  `[skip]` in 0.00s unset vs 0 skips in 0.27s set.
 - `disc-coverage.py` was run against a scratch `extracted/` tree so the shared
   `extracted/PROT/categorize.json` in the main checkout was **not** overwritten
-  mid-wave. Regenerate it with
-  `asset categorize extracted/PROT` after merge; the coverage numbers above come
-  from the regenerated file.
+  mid-wave. Regenerate it with `asset categorize extracted/PROT` after merge;
+  the coverage numbers above come from the regenerated file.
+
+## Commits
+
+| SHA | What |
+|---|---|
+| `d6371eaa` | `field_map` + `efect_pack` / `summon_readef` / `init_pak`; unexplained 2.79% -> 0.115% |
+| `09b622b1` | `bse_bank` + overlay data images; every residual bucket empty; the denominator defect |
+| `8489c244` | `asset shop-stock` + guide / site / subsystem docs |
