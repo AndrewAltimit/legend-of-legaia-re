@@ -143,7 +143,11 @@ pub fn resolve_seed(seed: &str) -> String {
 /// `0x0C..=0x1F` or `0`). `arts_ap_grants` is a comma/space-separated list of
 /// `combo=amount` pairs (e.g. `RDLDL=10`; `amount` 1..=100 AP) that make an art
 /// grant AP instead of costing it; mutually exclusive with `shiny_seru` (same
-/// SCUS arena). These are all manual, seedless edits.
+/// SCUS arena). `spirit_ap` (empty = untouched) sets how much AP the Spirit
+/// command charges into the battle gauge (retail 32; `0` = defence boost
+/// only, `100` = one press fills the gauge) - four immediate words in the
+/// battle overlay (the accrual plus the gauge-widget ramp targets that
+/// mirror it). These are all manual, seedless edits.
 /// `starting_level`
 /// begins the new game at that character level instead of 1 (`0` or `1` =
 /// vanilla; range 2..=14), seeding the lead character's XP and recomputing the
@@ -204,6 +208,7 @@ pub fn patch_rom(
     earth_egg_price: &str,
     arts_powers: &str,
     arts_ap_grants: &str,
+    spirit_ap: &str,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -493,6 +498,30 @@ pub fn patch_rom(
             },
             Err(_) => summary.push_str(&format!(
                 "earth-egg-price: skipped non-numeric value {earth_egg_price:?}\n"
+            )),
+        }
+    }
+
+    // Spirit AP: the AP the Spirit command charges into the battle gauge
+    // (retail 32; 0 = defence-only, 100 = full gauge). A single value (empty
+    // = untouched); four immediate words in the battle overlay.
+    let spirit_ap = spirit_ap.trim();
+    if spirit_ap.is_empty() {
+        summary.push_str("spirit-ap: untouched\n");
+    } else {
+        match spirit_ap.parse::<u8>() {
+            Ok(ap) if ap <= 100 => match apply::apply_spirit_ap(&mut patcher, ap) {
+                Ok(rep) if !rep.changed => {
+                    summary.push_str(&format!("spirit-ap: already {ap} AP per Spirit\n"))
+                }
+                Ok(rep) => summary.push_str(&format!(
+                    "spirit-ap: {} -> {ap} AP per Spirit (retail 32)\n",
+                    rep.previous
+                )),
+                Err(e) => summary.push_str(&format!("spirit-ap: {e}\n")),
+            },
+            _ => summary.push_str(&format!(
+                "spirit-ap: skipped out-of-range value {spirit_ap:?} (want 0..=100)\n"
             )),
         }
     }

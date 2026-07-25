@@ -76,6 +76,7 @@ disc-gated, so CI runs without a disc. There is also a
   - [Arts button combos](#arts-button-combos)
   - [Arts damage power](#arts-damage-power)
   - [Arts AP-grant](#arts-ap-grant)
+  - [Spirit AP](#spirit-ap)
   - [Doors (scene transitions)](#doors-scene-transitions)
   - [House doors (intra-town)](#house-doors-intra-town)
   - [Map doors (`.MAP` kind-0 intra-scene teleports)](#map-doors-map-kind-0-intra-scene-teleports)
@@ -270,6 +271,7 @@ unless asked for:
 | `--earth-egg-price VALUE` | set the casino-coin threshold to obtain the Earth Egg (Sol Tower Prize Counter; retail 100000), gate + debit together | single value | [Earth Egg coin threshold](#earth-egg-coin-threshold) |
 | `--arts-power COMBO=VALUE` | rebalance a Tactical Art's per-strike damage-power bytes, targeted by input combo (`RDLDL=0x16`); `VALUE` is a power tier `0x0C..=0x1F` or `0` to disable | repeatable / comma-separated | [Arts damage power](#arts-damage-power) |
 | `--arts-ap-grant COMBO=AMOUNT` | make a Tactical Art **grant** `AMOUNT` AP (Spirit, clamped at 100) instead of costing it, admitting it at any AP level; a code hook into the party arts queue-builder. Config row = arts-table index, **shared across all three characters**. Mutually exclusive with `--shiny-seru` | repeatable / comma-separated | [Arts AP-grant](#arts-ap-grant) |
+| `--spirit-ap AP` | set how much AP the Spirit command charges into the battle gauge (retail 32): `0` = defence boost only, `100` = one press fills the gauge | single value 0..=100 | [Spirit AP](#spirit-ap) |
 
 **Tuning the encounter and door passes:**
 
@@ -1308,6 +1310,42 @@ oracle `crates/patcher/tests/arts_ap_grant_real.rs`. **A disc oracle proves only
 where the bytes land, not in-game behaviour** - a live battle playtest (a
 configured art grants AP, admits at 0 AP, clamps at 100, and the refund is not
 double-counted) is required before treating it as runtime-verified.
+
+### Spirit AP
+
+`--spirit-ap AP` sets how much AP the **Spirit** command charges into the
+battle AP gauge (`actor[+0x170]`, the 0..100 gauge Super and Miracle Arts
+spend). Retail charges 32; `0` turns Spirit into a pure defensive stance (the
+guard boost is untouched - only the AP gain goes), and `100` fills the whole
+gauge in one press.
+
+The retail value is the per-action AP accrual the battle-action state machine
+`FUN_801E295C` (PROT 0898, base `0x801CE818`) applies in its state-`0x50`
+cleanup arm: `actor[+0x224]` is set to `8` for every action, overwritten with
+`0x20` when the action category (`actor[+0x1DE]`) is `4` = Spirit, then added
+into the gauge and clamped at 100. The patch rewrites that immediate
+(`addiu v0,zero,0x20` at `0x801E5D84`) **plus the three state-`0x46`
+gauge-widget ramp targets that mirror it** (`+0x20`/`+0x28`/`+0x23` at
+`0x801E5320`/`0x801E536C`/`0x801E5378` - the boosted values are the accrual
+plus the AP Boost equipment bonuses, `n + n/4` and `n + n/10`), so the
+on-screen gauge animation always agrees with the real grant. Four same-size
+immediate edits in the raw overlay entry; opcodes and registers untouched.
+
+Negative values (Spirit *costs* AP) are **not supported**: the accrual is an
+unsigned byte in retail code (`sb`/`lbu`) and the add/clamp window has no
+floor-at-zero, so a negative byte would read back as +200-odd and pin the
+gauge at 100. A signed variant needs injected code (an arena detour like the
+[Arts AP-grant](#arts-ap-grant) hook), not an immediate edit.
+
+Seedless single-value edit; re-applying a different value re-targets cleanly
+and `32` restores the stock bytes. The build is fingerprint-verified (the
+adjacent category-test / store / boost-branch words) before writing; an
+unrecognized image is refused. Module
+[`legaia_patcher::spirit_ap`](../../crates/patcher/src/spirit_ap.rs); disc
+oracle `crates/patcher/tests/spirit_ap_real.rs` (stock-immediate baseline,
+four-word surgical diff, determinism, idempotence, retarget + restore round
+trip). In the browser patcher the same edit is the **Spirit AP slider** in
+the Gameplay group.
 
 ### Doors (scene transitions)
 

@@ -30,7 +30,9 @@ Three patching families share that machinery:
   per-strike damage-power bytes (`record0 +0x24`, targeted by input combo -
   [`arts_power`](src/arts_power.rs)); `--arts-ap-grant COMBO=AMOUNT` makes an art
   grant AP instead of costing it (a battle-overlay code hook -
-  [`arts_ap_grant`](src/arts_ap_grant.rs), mutually exclusive with `--shiny-seru`).
+  [`arts_ap_grant`](src/arts_ap_grant.rs), mutually exclusive with `--shiny-seru`);
+  `--spirit-ap AP` sets how much AP the Spirit command charges (retail 32; four
+  battle-overlay immediates - [`spirit_ap`](src/spirit_ap.rs)).
 
 It is Track-1-adjacent tooling - it does **not** touch the clean-room engine -
 and it ships only code: no game bytes are embedded or committed, and every
@@ -66,6 +68,7 @@ full design.
   - [Arts](#arts)
   - [Arts damage power](#arts-damage-power-arts_power-module)
   - [Arts AP-grant](#arts-ap-grant-arts_ap_grant-module)
+  - [Spirit AP](#spirit-ap-spirit_ap-module)
   - [Doors](#doors)
   - [House doors](#house-doors)
   - [Map doors](#map-doors)
@@ -683,6 +686,22 @@ grant applies to every character's art at that same index. Site details + AP mat
 [`docs/subsystems/arts-command-gauge.md`](../../docs/subsystems/arts-command-gauge.md#arts-ap-grant-hook).
 Disc oracle `tests/arts_ap_grant_real.rs` proves *where* the bytes land; a live
 battle playtest is still required to certify in-game behaviour.
+
+## Spirit AP (`spirit_ap` module)
+
+`--spirit-ap AP` (0..=100) sets how much AP the **Spirit** command charges into
+the battle AP gauge (`actor[+0x170]`; retail 32). Unlike the AP-grant hook this
+is a pure immediate edit - no injected code, no arena, composes with
+everything. Four `addiu` immediates in the raw battle-action overlay (PROT
+0898): the state-`0x50` Spirit accrual (`0x801E5D84`, the value the engine
+actually adds) plus the three state-`0x46` gauge-widget ramp targets that
+mirror it (`0x801E5320`/`0x801E536C`/`0x801E5378`; the boosted pair tracks the
+AP Boost equipment math, `n + n/4` and `n + n/10`), so the on-screen animation
+agrees with the real grant. `0` makes Spirit a pure defensive stance; negative
+("Spirit costs AP") is out of scope for an immediate edit - the accrual is an
+unsigned byte with no floor-at-zero downstream. Build fingerprint-verified
+before writing; re-applying re-targets, and `32` restores stock bytes. Disc
+oracle `tests/spirit_ap_real.rs`.
 
 ## Doors
 

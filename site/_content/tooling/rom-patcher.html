@@ -271,6 +271,15 @@
         <input type="checkbox" id="rom-approach-fix">
         <span>Approach-softlock fix - stop the "endless camera orbit": when a boss's approach animation dies mid-walk (a summon right before its attack), the battle waits forever while the camera circles the party. With the fix the animation is re-staged and the boss simply resumes walking - healthy fights are untouched <span class="rom-opt-note">(a bug fix, not a randomization - unaffected by the seed; <a href="../writeups/gaza-orbit-softlock.html">full write-up</a>)</span></span>
       </label>
+
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-spirit-ap-on">
+        <span>Spirit AP - change how much AP the Spirit command charges into the battle gauge (retail <code>32</code>). At <code>0</code> Spirit becomes a pure defensive stance - the guard boost stays but no AP is gained; at <code>100</code> one press fills the whole gauge <span class="rom-opt-note">(a manual tuning, unaffected by the seed; the on-screen gauge animation is kept in sync)</span></span>
+      </label>
+      <div class="rom-opt rom-sub" id="rom-spirit-ap-row">
+        <label class="rom-opt-label" for="rom-spirit-ap">&#8627; AP per Spirit: <output id="rom-spirit-ap-val">32</output></label>
+        <input type="range" id="rom-spirit-ap" min="0" max="100" step="1" value="32">
+      </div>
     </details>
 
     <!-- ---- Exploration ---- -->
@@ -514,6 +523,8 @@
   .rom-opt-label { font-weight: 500; }
   .rom-opt-note { font-weight: 400; color: var(--text-dim); font-size: 0.85em; }
   .rom-sub { padding-left: 1.6rem; background: var(--bg-raised); }
+  .rom-form input[type=range] { width: 100%; max-width: 24rem; accent-color: var(--accent); }
+  #rom-spirit-ap-val { font-weight: 700; color: var(--accent-hi); }
   .rom-sub.is-disabled { opacity: 0.4; pointer-events: none; }
 
   /* Segmented control (radio group styled as connected buttons) */
