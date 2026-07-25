@@ -240,9 +240,10 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     }
 
     // Spirit AP tuning: set the AP the Spirit command charges into the battle
-    // gauge (retail 32; 0 = defence-only, 100 = full gauge). Seedless - four
-    // immediate words in the battle overlay (the accrual + the widget ramp
-    // targets that mirror it).
+    // gauge (retail 32; 0 = defence-only, 100 = full gauge, negative = Spirit
+    // drains the gauge). Seedless - four immediate words in the battle overlay
+    // (the accrual + the widget ramp targets that mirror it), plus the signed
+    // accrual tail when the value is negative.
     if let Some(ap) = args.spirit_ap {
         let report = apply::apply_spirit_ap(&mut patcher, ap)?;
         println!(
@@ -256,6 +257,27 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push(format!("spirit_ap = {ap}"));
     } else {
         manifest.push("spirit_ap = \"retail\"".to_string());
+    }
+
+    // Enemy-damage AP tuning: AP granted per 100% of max HP lost (retail 100;
+    // 0 = damage never feeds the gauge, negative = being hit drains it).
+    // Seedless - the damage finisher's scale chain in the battle overlay.
+    if let Some(value) = args.damage_ap {
+        let report = apply::apply_damage_ap(&mut patcher, value)?;
+        println!(
+            "damage-ap: {}",
+            if report.changed {
+                format!(
+                    "{} -> {value} AP per 100% max-HP damage (retail 100)",
+                    report.previous
+                )
+            } else {
+                format!("already {value} AP per 100% max-HP damage (no change)")
+            }
+        );
+        manifest.push(format!("damage_ap = {value}"));
+    } else {
+        manifest.push("damage_ap = \"retail\"".to_string());
     }
 
     // Fishing-exchange price edits: set the point cost of one or more prizes

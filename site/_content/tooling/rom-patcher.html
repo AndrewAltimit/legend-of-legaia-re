@@ -274,11 +274,20 @@
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-spirit-ap-on">
-        <span>Spirit AP - change how much AP the Spirit command charges into the battle gauge (retail <code>32</code>). At <code>0</code> Spirit becomes a pure defensive stance - the guard boost stays but no AP is gained; at <code>100</code> one press fills the whole gauge <span class="rom-opt-note">(a manual tuning, unaffected by the seed; the on-screen gauge animation is kept in sync)</span></span>
+        <span>Spirit AP - change how much AP the Spirit command charges into the battle gauge (retail <code>32</code>). At <code>0</code> Spirit becomes a pure defensive stance - the guard boost stays but no AP is gained; at <code>100</code> one press fills the whole gauge. <strong>Negative values invert it</strong>: Spirit then <em>spends</em> AP, floored at an empty gauge <span class="rom-opt-note">(a manual tuning, unaffected by the seed; the on-screen gauge animation is kept in sync, and a negative setting makes AP-Boost accessories inert)</span></span>
       </label>
       <div class="rom-opt rom-sub" id="rom-spirit-ap-row">
         <label class="rom-opt-label" for="rom-spirit-ap">&#8627; AP per Spirit: <output id="rom-spirit-ap-val">32</output></label>
-        <input type="range" id="rom-spirit-ap" min="0" max="100" step="1" value="32">
+        <input type="range" id="rom-spirit-ap" min="-100" max="100" step="1" value="32">
+      </div>
+
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-damage-ap-on">
+        <span>AP from taking damage - change how much AP a hit charges into the battle gauge, measured per <strong>100% of max HP lost</strong> (retail <code>100</code>: a hit that would empty your HP bar fills the whole gauge, and every hit grants at least 1). At <code>0</code> being hit never feeds the gauge; at <code>200</code> it fills twice as fast. <strong>Negative values invert it</strong>: taking damage then <em>drains</em> AP, floored at an empty gauge <span class="rom-opt-note">(a manual tuning, unaffected by the seed; a negative setting makes AP-Boost accessories inert)</span></span>
+      </label>
+      <div class="rom-opt rom-sub" id="rom-damage-ap-row">
+        <label class="rom-opt-label" for="rom-damage-ap">&#8627; AP per 100% max-HP damage: <output id="rom-damage-ap-val">100</output></label>
+        <input type="range" id="rom-damage-ap" min="-200" max="200" step="5" value="100">
       </div>
     </details>
 
@@ -524,7 +533,7 @@
   .rom-opt-note { font-weight: 400; color: var(--text-dim); font-size: 0.85em; }
   .rom-sub { padding-left: 1.6rem; background: var(--bg-raised); }
   .rom-form input[type=range] { width: 100%; max-width: 24rem; accent-color: var(--accent); }
-  #rom-spirit-ap-val { font-weight: 700; color: var(--accent-hi); }
+  #rom-spirit-ap-val, #rom-damage-ap-val { font-weight: 700; color: var(--accent-hi); }
   .rom-sub.is-disabled { opacity: 0.4; pointer-events: none; }
 
   /* Segmented control (radio group styled as connected buttons) */

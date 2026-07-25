@@ -11,7 +11,7 @@
  * solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru,
  * jewel_fix, approach_softlock_fix, fishing_prices, location_renames,
  * earth_egg_price, arts_powers,
- * arts_ap_grants, spirit_ap)
+ * arts_ap_grants, spirit_ap, damage_ap)
  * -> { data, summary, seed, lang }`, `resolve_seed(str)`,
  * `validate_lang_pack(image, yaml) -> { ok, language, applied, skipped, message, report }`,
  * `export_lang_pack(image, language) -> yaml_string`, and
@@ -427,7 +427,7 @@ const PRESET_BASE = {
   drops: 'none', encounters: 'none', encounter_scope: 'scene', soloStrong: false, fleeExp: false, chests: 'none',
   shops: 'none', casino: 'none', steals: 'none', arts: 'none', doors: 'none',
   door_coupling: 'coupled', houseDoors: false, equipmentDrops: false, seruTrade: false,
-  enemyAlly: false, shinySeru: false, jewelFix: false, approachFix: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', artsApGrant: '', spiritAp: '',
+  enemyAlly: false, shinySeru: false, jewelFix: false, approachFix: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', artsApGrant: '', spiritAp: '', damageAp: '',
   startingItems: 0, doorOfWind: false, incense: false,
   speedChain: false, chickenHeart: false, goodLuckBell: false,
   allWarps: false,
@@ -506,10 +506,13 @@ function init() {
   const spiritApChk = $('rom-spirit-ap-on');
   const spiritApSlider = $('rom-spirit-ap');
   const spiritApVal = $('rom-spirit-ap-val');
-  if (spiritApSlider && spiritApVal) {
-    spiritApSlider.addEventListener('input', () => {
-      spiritApVal.textContent = spiritApSlider.value;
-    });
+  const damageApChk = $('rom-damage-ap-on');
+  const damageApSlider = $('rom-damage-ap');
+  const damageApVal = $('rom-damage-ap-val');
+  // Live read-out next to each AP slider. `input` fires while dragging;
+  // `change` (which drives markCustom/syncDependents) only fires on release.
+  for (const [slider, out] of [[spiritApSlider, spiritApVal], [damageApSlider, damageApVal]]) {
+    if (slider && out) slider.addEventListener('input', () => { out.textContent = slider.value; });
   }
   const artsPowerInput = $('rom-arts-power');
   const artsApGrantInput = $('rom-arts-ap-grant');
@@ -679,6 +682,9 @@ function init() {
     spiritApChk.checked = cfg.spiritAp !== '' && cfg.spiritAp != null;
     spiritApSlider.value = String(spiritApChk.checked ? cfg.spiritAp : 32);
     spiritApVal.textContent = spiritApSlider.value;
+    damageApChk.checked = cfg.damageAp !== '' && cfg.damageAp != null;
+    damageApSlider.value = String(damageApChk.checked ? cfg.damageAp : 100);
+    damageApVal.textContent = damageApSlider.value;
     artsPowerInput.value = cfg.artsPower || '';
     artsApGrantInput.value = cfg.artsApGrant || '';
     artBuilder.clear();
@@ -718,9 +724,11 @@ function init() {
     if (couplingRow) couplingRow.classList.toggle('is-disabled', !doorsOn);
     // Solo-strong only does anything while encounters are being randomized.
     if (soloRow) soloRow.classList.toggle('is-disabled', !encOn);
-    // The Spirit AP slider only applies while its override checkbox is on.
+    // Each AP slider only applies while its own override checkbox is on.
     const spiritRow = $('rom-spirit-ap-row');
     if (spiritRow) spiritRow.classList.toggle('is-disabled', !(spiritApChk && spiritApChk.checked));
+    const damageRow = $('rom-damage-ap-row');
+    if (damageRow) damageRow.classList.toggle('is-disabled', !(damageApChk && damageApChk.checked));
     // Equipment drops are additive (an extra reward-routine grant), so the
     // Monster drops control stays fully live alongside them - nothing to grey.
   }
@@ -766,8 +774,10 @@ function init() {
     const fishingPrice = (fishingPriceInput.value || '').trim();
     const renameLocation = (renameLocationInput.value || '').trim();
     const earthEggPrice = (earthEggPriceInput.value || '').trim();
-    // Spirit AP: only sent when the override checkbox is on ('' = retail).
-    const spiritAp = spiritApChk.checked ? String(spiritApSlider.value || 32) : '';
+    // AP sliders: only sent when their override checkbox is on ('' = retail).
+    // Both ranges include 0 and negatives, so read the value as-is.
+    const spiritAp = spiritApChk.checked ? String(spiritApSlider.value) : '';
+    const damageAp = damageApChk.checked ? String(damageApSlider.value) : '';
     // Art overrides = the per-art rows serialized to `combo=value` pairs,
     // merged with anything typed into the raw (advanced) inputs.
     const artOv = artBuilder.collect();
@@ -825,7 +835,7 @@ function init() {
       spellCost === 'none' && equipBonus === 'none' && !weaponSpecialty &&
       startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru && !jewelFix && !approachFix &&
       !fishingPrice && !renameLocation && !earthEggPrice && !artsPower && !artsApGrant &&
-      !spiritAp
+      !spiritAp && !damageAp
     ) {
       setStatus('Enable at least one option (pick a preset, a language, or flip a toggle).', 'err');
       return;
@@ -850,7 +860,7 @@ function init() {
       setStatus('Patching (this can take a moment for a full disc) ...');
       // Yield so the status paints before the synchronous WASM call.
       await new Promise((r) => setTimeout(r, 30));
-      const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, spiritAp);
+      const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, spiritAp, damageAp);
       const data = result.data;
       const usedSeed = result.seed;
       const name = patchedName(file.name, usedSeed);

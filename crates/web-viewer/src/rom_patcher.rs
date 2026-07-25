@@ -145,9 +145,15 @@ pub fn resolve_seed(seed: &str) -> String {
 /// grant AP instead of costing it; mutually exclusive with `shiny_seru` (same
 /// SCUS arena). `spirit_ap` (empty = untouched) sets how much AP the Spirit
 /// command charges into the battle gauge (retail 32; `0` = defence boost
-/// only, `100` = one press fills the gauge) - four immediate words in the
-/// battle overlay (the accrual plus the gauge-widget ramp targets that
-/// mirror it). These are all manual, seedless edits.
+/// only, `100` = one press fills the gauge, negative = Spirit drains the
+/// gauge) - four immediate words in the battle overlay (the accrual plus the
+/// gauge-widget ramp targets that mirror it). `damage_ap` (empty = untouched)
+/// sets how much AP taking damage grants, as AP per 100% of max HP lost
+/// (retail 100; `0` = damage never feeds the gauge, negative = being hit
+/// drains it) - the damage finisher's scale chain in the same overlay. A
+/// negative value on either knob also neutralizes the AP-Boost accessory
+/// arms, which read the accrual unsigned. These are all manual, seedless
+/// edits.
 /// `starting_level`
 /// begins the new game at that character level instead of 1 (`0` or `1` =
 /// vanilla; range 2..=14), seeding the lead character's XP and recomputing the
@@ -209,6 +215,7 @@ pub fn patch_rom(
     arts_powers: &str,
     arts_ap_grants: &str,
     spirit_ap: &str,
+    damage_ap: &str,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -503,25 +510,53 @@ pub fn patch_rom(
     }
 
     // Spirit AP: the AP the Spirit command charges into the battle gauge
-    // (retail 32; 0 = defence-only, 100 = full gauge). A single value (empty
-    // = untouched); four immediate words in the battle overlay.
+    // (retail 32; 0 = defence-only, 100 = full gauge, negative = Spirit drains
+    // the gauge). A single value (empty = untouched); four immediate words in
+    // the battle overlay, plus the signed accrual tail when negative.
     let spirit_ap = spirit_ap.trim();
     if spirit_ap.is_empty() {
         summary.push_str("spirit-ap: untouched\n");
     } else {
-        match spirit_ap.parse::<u8>() {
-            Ok(ap) if ap <= 100 => match apply::apply_spirit_ap(&mut patcher, ap) {
-                Ok(rep) if !rep.changed => {
-                    summary.push_str(&format!("spirit-ap: already {ap} AP per Spirit\n"))
+        match spirit_ap.parse::<i16>() {
+            Ok(ap) if (-100..=100).contains(&ap) => {
+                match apply::apply_spirit_ap(&mut patcher, ap) {
+                    Ok(rep) if !rep.changed => {
+                        summary.push_str(&format!("spirit-ap: already {ap} AP per Spirit\n"))
+                    }
+                    Ok(rep) => summary.push_str(&format!(
+                        "spirit-ap: {} -> {ap} AP per Spirit (retail 32)\n",
+                        rep.previous
+                    )),
+                    Err(e) => summary.push_str(&format!("spirit-ap: {e}\n")),
                 }
+            }
+            _ => summary.push_str(&format!(
+                "spirit-ap: skipped out-of-range value {spirit_ap:?} (want -100..=100)\n"
+            )),
+        }
+    }
+
+    // Enemy-damage AP: AP granted per 100% of max HP lost (retail 100; 0 =
+    // damage never feeds the gauge, negative = being hit drains it). A single
+    // value (empty = untouched); the damage finisher's scale chain in the
+    // battle overlay, plus its accrual tail when negative.
+    let damage_ap = damage_ap.trim();
+    if damage_ap.is_empty() {
+        summary.push_str("damage-ap: untouched\n");
+    } else {
+        match damage_ap.parse::<i16>() {
+            Ok(v) if (-200..=200).contains(&v) => match apply::apply_damage_ap(&mut patcher, v) {
+                Ok(rep) if !rep.changed => summary.push_str(&format!(
+                    "damage-ap: already {v} AP per 100% max-HP damage\n"
+                )),
                 Ok(rep) => summary.push_str(&format!(
-                    "spirit-ap: {} -> {ap} AP per Spirit (retail 32)\n",
+                    "damage-ap: {} -> {v} AP per 100% max-HP damage (retail 100)\n",
                     rep.previous
                 )),
-                Err(e) => summary.push_str(&format!("spirit-ap: {e}\n")),
+                Err(e) => summary.push_str(&format!("damage-ap: {e}\n")),
             },
             _ => summary.push_str(&format!(
-                "spirit-ap: skipped out-of-range value {spirit_ap:?} (want 0..=100)\n"
+                "damage-ap: skipped out-of-range value {damage_ap:?} (want -200..=200)\n"
             )),
         }
     }

@@ -380,17 +380,19 @@ pub struct SpiritApReport {
     /// Whether any site word changed (`false` = image already held the value).
     pub changed: bool,
     /// The Spirit accrual the image held before the edit (retail 32).
-    pub previous: u8,
+    pub previous: i16,
 }
 
 /// Set how much AP the **Spirit** command charges into the battle AP gauge
 /// (see [`crate::spirit_ap`]): retail 32, configurable 0 (defence boost only)
-/// to 100 (one press fills the gauge). Rewrites four `addiu` immediates in
-/// the raw battle-action overlay (PROT 898) - the state-`0x50` accrual plus
-/// the three state-`0x46` gauge-widget ramp targets that mirror it. The
-/// build is fingerprint-verified before writing; an unrecognized image is
-/// refused, a re-application with a new value re-targets cleanly.
-pub fn apply_spirit_ap(patcher: &mut DiscPatcher, ap: u8) -> Result<SpiritApReport> {
+/// to 100 (one press fills the gauge), or negative for a Spirit that *drains*
+/// the gauge. Rewrites four `addiu` immediates in the raw battle-action
+/// overlay (PROT 898) - the state-`0x50` accrual plus the three state-`0x46`
+/// gauge-widget ramp targets that mirror it - and, for a negative setting,
+/// the signed accrual tail and the AP-Boost guards as well. The build is
+/// fingerprint-verified before writing; an unrecognized image is refused, a
+/// re-application with a new value re-targets cleanly in either direction.
+pub fn apply_spirit_ap(patcher: &mut DiscPatcher, ap: i16) -> Result<SpiritApReport> {
     let index = crate::spirit_ap::BATTLE_ACTION_OVERLAY_PROT_INDEX;
     let overlay = patcher
         .read_entry(index)
@@ -407,6 +409,48 @@ pub fn apply_spirit_ap(patcher: &mut DiscPatcher, ap: u8) -> Result<SpiritApRepo
                     .with_context(|| format!("write spirit-AP word at PROT {index} +{off:#x}"))?;
             }
             Ok(SpiritApReport {
+                changed: true,
+                previous: edit.previous,
+            })
+        }
+    }
+}
+
+/// Outcome of an enemy-damage AP edit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DamageApReport {
+    /// Whether any site word changed (`false` = image already held the value).
+    pub changed: bool,
+    /// The scale the image held before the edit (retail 100).
+    pub previous: i16,
+}
+
+/// Set how much AP a battle actor's gauge gains when it is damaged (see
+/// [`crate::damage_ap`]). The value is AP per 100% of max HP lost: retail
+/// 100 (a hit that takes all your HP fills the gauge), `0` for no AP from
+/// damage at all, or negative for damage that *drains* the gauge. Rewrites
+/// the damage finisher's scale chain in the raw battle-action overlay
+/// (PROT 898) and, for a negative setting, its accrual tail and the two
+/// "spirit gain up" bonus arms. The build is fingerprint-verified before
+/// writing; an unrecognized image is refused, a re-application with a new
+/// value re-targets cleanly in either direction.
+pub fn apply_damage_ap(patcher: &mut DiscPatcher, value: i16) -> Result<DamageApReport> {
+    let index = crate::damage_ap::BATTLE_ACTION_OVERLAY_PROT_INDEX;
+    let overlay = patcher
+        .read_entry(index)
+        .with_context(|| format!("read battle-action overlay PROT {index} for damage AP"))?;
+    match crate::damage_ap::plan(&overlay, value)? {
+        None => Ok(DamageApReport {
+            changed: false,
+            previous: value,
+        }),
+        Some(edit) => {
+            for &(off, word) in &edit.writes {
+                patcher
+                    .patch_prot_entry(index, off as u64, &word.to_le_bytes())
+                    .with_context(|| format!("write damage-AP word at PROT {index} +{off:#x}"))?;
+            }
+            Ok(DamageApReport {
                 changed: true,
                 previous: edit.previous,
             })

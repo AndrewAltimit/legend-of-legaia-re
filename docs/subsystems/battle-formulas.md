@@ -477,7 +477,10 @@ summons their own element at 100% and their opposed element weakest - Vahn
 fire 100 / water 40, Noa wind 100 / earth 40, Gala thunder 100 / dark 60, the
 rest 70–95 (`asset element-affinity` prints the rows); (6) the **9999 cap**. The defender's spirit gauge then fills by `pct = max(1,
 over*100/maxHP)` plus the two "spirit gain up" equipment bits (`+0xF8 & 0x200`
-→ `pct>>2`, `& 0x100` → `pct/10`), clamped to 100.
+→ `pct>>2`, `& 0x100` → `pct/10`), clamped to 100. The `100` scale is
+synthesized as a shift/add chain, not an immediate, which is why the
+patcher's [`--damage-ap`](../tooling/randomizer.md#enemy-damage-ap) restates
+it as an explicit multiply to retune it.
 
 Recovery summons skip the roll entirely and heal `(magic_power_byte << 5) + 0xE0`,
 clamped to `maxHP - curHP`.
