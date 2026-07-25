@@ -126,7 +126,7 @@ The boot path doesn't call the dispatcher itself; it just makes sure the buffer 
 
 ## Game-mode state machine
 
-The mode-dispatch table at `0x8007078C` is **28 entries × 24 bytes = 672 bytes** (already documented in [`reference/functions.md` § Game-mode state machine](../reference/functions.md#game-mode-state-machine)). Each entry layout:
+The mode-dispatch table at `0x8007078C` is **28 entries × 24 bytes = 672 bytes** (already documented in [`reference/functions.md` § Game-mode state machine](../reference/functions/game-modes.md#game-mode-state-machine)). Each entry layout:
 
 | Offset | Width | Field |
 |---|---|---|

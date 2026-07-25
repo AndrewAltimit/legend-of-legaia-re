@@ -6,23 +6,23 @@ The clean-room Rust port of the Legend of Legaia engine. End-user model: the eng
 
 A playable port of Legend of Legaia (NA SCUS-94254) on modern systems via Rust + wgpu, with an optional WASM/web target. JP/EU regions land after NA is solid.
 
-"Playable port" is a claim about the *simulation*, not about the pixels. What the game does - damage arithmetic, RNG, script pacing, save-record layout - reproduces retail. How it is presented is a separate question, answered in [Fidelity and enhancements](#fidelity-and-enhancements).
+"Playable port" is grounded in retail, not bound by it. The decompilation, the format docs and the parity oracles pin down exactly what the original does - damage arithmetic, RNG, script pacing, save-record layout - and the engine reproduces it, provably, in its retail-faithful mode. That ground truth is a measuring stick, not a ceiling: the port is free to add features, mechanics, rendering and audio the original never had, exposed as toggles so a retail-faithful mode stays one flip away wherever a faithful mode makes sense. The split is described in [Fidelity and enhancements](#fidelity-and-enhancements).
 
 ## Non-goals
 
 - **Static recompilation of `SCUS_942.54`.** The engine is **clean-room from documented specs and decompile-then-rewrite logic** - not auto-translated MIPS. This is the boundary the whole [legal posture](#legal-posture) rests on.
-- **Redesigning the game.** Retail's balance, damage rounding, encounter rates and script timing are reproduced, not tuned. A quirk is behaviour to replicate, not a bug to fix.
+- **Losing retail.** The port departs from retail freely - new features, mechanics, rendering, audio - but never silently: departures live behind toggles, and the oracles keep "faithful" a testable claim about the retail mode. A quirk is behaviour to preserve in the faithful mode, and fair game to improve outside it.
 - **Re-authoring the game's assets.** Every texture, mesh, sample and sequence comes off the user's own disc at runtime. Nothing is upscaled, redrawn, or bundled.
 
-Modding and translation are conspicuously *not* on that list. The [randomizer](../tooling/randomizer.md) and [language packs](../tooling/translation.md) are shipped, deliberately-designed parts of this repo, described below rather than disclaimed. Both are disc-patching tools that operate on a user-supplied `.bin` rather than engine features - the randomizer does not touch the clean-room engine at all.
+Modding and translation are conspicuously *not* on that list. The [randomizer](../tooling/randomizer.md) and [language packs](../tooling/translation.md) are shipped, deliberately-designed parts of this repo, described below rather than disclaimed. Both are disc-patching tools that operate on a user-supplied `.bin` rather than engine features - the randomizer does not touch the clean-room engine at all. The separation is not a wall, though: what the patcher proves out against retail - randomizer logic, softlock fixes, tuning sliders - is expected to graduate into engine features and toggles. A mod that works on the disc has no reason not to become a mode of the port.
 
 ## Fidelity and enhancements
 
-The port draws a hard line between the two, so that "faithful" stays a testable claim rather than a mood.
+The port draws a hard line between the retail-faithful mode and everything layered on top, so that "faithful" stays a testable claim rather than a mood.
 
-**Simulation is faithful, with no opt-out.** There is no toggle that changes damage, drop rolls, AP costs, encounter rates or story-flag behaviour, because the parity oracles depend on there not being one: [engine scenarios](#engine-integration-scenarios) hash the resulting save bytes against a blessed baseline, the [VRAM diff harness](#vram-diff-harness) diffs engine uploads against runtime blobs captured from save states, and the [record / replay](../tooling/determinism-replay.md) format requires the same input file to produce bit-identical state traces twice.
+**The retail simulation is the measured ground truth.** In the faithful mode no toggle changes damage, drop rolls, AP costs, encounter rates or story-flag behaviour, and the parity oracles hold it there: [engine scenarios](#engine-integration-scenarios) hash the resulting save bytes against a blessed baseline, the [VRAM diff harness](#vram-diff-harness) diffs engine uploads against runtime blobs captured from save states, and the [record / replay](../tooling/determinism-replay.md) format requires the same input file to produce bit-identical state traces twice. Every parity measurement runs against that mode.
 
-**Presentation is where the knobs live.** Every enhancement is renderer or host state with no path into the world, so flipping one leaves replays and every oracle above untouched. The ones that depart from retail default off; the two that do not are called out in the table:
+**The port is not bound to that mode.** Enhancements - presentation today, mechanics and audio as they mature - land as explicit toggles that leave the faithful mode bit-identical when off, which is why flipping one never touches replays or the oracles above. Defaults follow the better experience, not the museum: where an enhancement is clearly better it ships enabled by default; a knob that currently defaults to retail marks an enhanced side still maturing, not a policy of restraint. Current knobs and defaults:
 
 | Knob | Default | Effect |
 |---|---|---|
@@ -143,7 +143,7 @@ graph LR
 - **Mockable I/O for tests.** The disc read path is abstracted via `crates/iso::RawDisc`; the same pattern extends to file-system extraction so tests can run without a disc.
 - **Deterministic gameplay.** RNG seeded from a known value; physics tick on a fixed timestep. Required for any future TAS / verification work.
 - **Fixed-timestep game tick, uncapped render.** The windowed engine uses `wgpu::PresentMode::AutoVsync`; the render rate is driven by the display refresh. A `f64` accumulator in the event-loop handler converts wall-clock delta-time into an integer number of 1/60 s game ticks (capped at 4 per render frame to absorb minor VSync jitter without a runaway spiral). This separation means the game logic advances at a stable 60 Hz independent of the display refresh rate, and render frames can interpolate ahead-of-tick state in the future without changing the tick interface.
-- **No "fix the bug" temptation.** If the original game has quirky damage rounding or oddly-timed cutscenes, replicate them. Simulation fidelity is the baseline; the enhancements above ride on top of it as opt-in presentation state and never edit it.
+- **Quirks are preserved in the faithful mode, fixable outside it.** Quirky damage rounding and oddly-timed cutscenes are replicated exactly where the oracles measure - that is what keeps ground truth honest. Changing them is legitimate engine work, but it lands as a toggle over the faithful path, never a silent edit to it.
 - **Behaviour tests against runtime traces.** Inputs, RNG and frame outputs captured from the original game replay through the engine and diff against it - the [VRAM diff harness](#vram-diff-harness) and the [mode / audio parity oracles](../tooling/determinism-replay.md) are where that lands.
 
 ## The ported VMs

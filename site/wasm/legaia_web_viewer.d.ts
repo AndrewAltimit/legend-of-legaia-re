@@ -816,10 +816,120 @@ export class LegaiaMinigames {
      */
     fishing_advance_cast(step: number): void;
     /**
+     * Buy `qty` of `row` at the venue's exchange, spending the pond
+     * session's point pool and latching one-time rows in the purchased mask
+     * (`FUN_801d06c8`'s Yes arm through the ported kernels). Returns the
+     * purchase (`{"item_id":..,"qty":..,"cost":..,"name":..}`) or `null`.
+     */
+    fishing_exchange_buy(venue: number, row: number, qty: number): string;
+    /**
+     * The venue's point-exchange page, evaluated against the live session's
+     * points + purchased mask through the ported prize kernels:
+     *
+     * ```json
+     * { "venue": 0, "points": 1200, "first_visible": 1, "rows": [
+     *   { "row": 0, "limit": 1, "price": 50000, "item_id": 12,
+     *     "name": "War God Icon"|null, "owned": 0, "available": false,
+     *     "max_qty": 0, "one_time": true, "latched": false }, ... ] }
+     * ```
+     */
+    fishing_exchange_json(venue: number): string;
+    /**
      * Lock the cast and hook a fish, entering the fight (no-op outside
      * casting). The locked power selects the species.
      */
     fishing_lock_cast(): void;
+    /**
+     * Per-vertex `[cba, tsb]` for the angler body.
+     */
+    fishing_player_cba_tsb(): Uint32Array;
+    /**
+     * Per-vertex `[r, g, b, textured_flag]` for the angler's hybrid render.
+     */
+    fishing_player_flat_rgba(): Uint8Array;
+    /**
+     * `[bone_count, frame_count]` of the angler's standing-idle clip.
+     */
+    fishing_player_idle_dims(): Uint32Array;
+    /**
+     * The angler's standing-idle clip as absolute per-(frame, bone)
+     * `[tx, ty, tz, rx, ry, rz]` - the shared pose-stream shape
+     * (`dance_body_pose_frames` / `baka_anim_pose_frames`).
+     */
+    fishing_player_idle_frames(): Int32Array;
+    /**
+     * Triangle indices for the angler body.
+     */
+    fishing_player_indices(): Uint32Array;
+    /**
+     * Per-vertex TMD object index (pose bone), parallel to the positions.
+     */
+    fishing_player_object_ids(): Uint32Array;
+    /**
+     * TMD object count (pose rig width) of the angler body.
+     */
+    fishing_player_part_count(): number;
+    /**
+     * Angler body vertex positions (object-local; the idle pose assembles
+     * them). Empty when the character pack didn't decode.
+     */
+    fishing_player_positions(): Float32Array;
+    /**
+     * Per-vertex `[u, v]` for the angler body.
+     */
+    fishing_player_uvs(): Int32Array;
+    /**
+     * The retail HUD draw list for this frame: the persistent rows
+     * (`FUN_801d13f0`), the catch HUD (`FUN_801d1580`, gauges once hooked)
+     * and the live banner animations, each resolved through the ported
+     * engine-ui builders. Coordinates are retail 320x240 screen space.
+     * Also services the banner timers, so call it exactly once per frame.
+     */
+    fishing_pond_hud_json(): string;
+    /**
+     * Whether the venue-faithful pond can start (species + spawn + cadence
+     * tables all decoded).
+     */
+    fishing_pond_ready(): boolean;
+    /**
+     * Start a pond session at `venue` (0 = Buma, 1 = Vidna) with the
+     * persistent save-block state: equipped `lure` (0..=2), `rod` stat
+     * (0..=2), lifetime `casts`, the point record triple, and the one-time
+     * prize `purchased_mask`. `seed` feeds the deterministic BIOS-rand
+     * stream. Returns `false` when the tables didn't decode.
+     */
+    fishing_pond_start(venue: number, lure: number, rod: number, casts: number, points: number, best_points: number, best_fish: number, purchased_mask: number, seed: number): boolean;
+    /**
+     * Live pond state:
+     *
+     * ```json
+     * { "live": true, "phase": "idle"|"windup"|"power"|"flight"|"waiting"|
+     *   "hooked"|"landed"|"snapped",
+     *   "cast_power": 64, "cast_max": 4096, "tension": 0, "tension_max": 4096,
+     *   "record": 0, "readout": 0, "depth": 0, "lateral": 0,
+     *   "fish": {"index":3,"name":...,"score":8000}|null, "move": "run"|...,
+     *   "points": 0, "best": 0, "best_fish": 0, "casts": 51,
+     *   "last_award": 0, "venue": 0, "lure": 1, "rod": 2 }
+     * ```
+     */
+    fishing_pond_state_json(): string;
+    /**
+     * Advance the pond one frame. `reel_mask` carries the held pad bits
+     * (`0x40` Cross / reel A, `0x80` Square / reel B), `cast_edge` the cast /
+     * confirm press, `edge_bonus` the count of fresh input edges this frame
+     * (each feeds the strike credit). Returns the events raised this frame:
+     *
+     * ```json
+     * [ {"e":"splash"}, {"e":"hooked","id":3,"name":"..."},
+     *   {"e":"landed","points":1234}, {"e":"snapped"} ]
+     * ```
+     */
+    fishing_pond_tick(reel_mask: number, cast_edge: boolean, edge_bonus: number): string;
+    /**
+     * Prizes collected through the exchange this session:
+     * `[{"item_id":..,"qty":..,"name":..}, ...]`.
+     */
+    fishing_prizes_json(): string;
     /**
      * Recast after a resolved fight: reset the meter and clear the fight
      * (no-op unless the fight is done).
@@ -831,6 +941,64 @@ export class LegaiaMinigames {
      * `2` = reel B (Square, `rod*6 + 0x19`). No-op outside the fighting phase.
      */
     fishing_reel(input: number, frames: number): void;
+    /**
+     * Per-vertex `[cba, tsb]` for the baked map.
+     */
+    fishing_scene_cba_tsb(): Uint32Array;
+    /**
+     * Per-vertex `[r, g, b, textured_flag]` for the baked map's hybrid
+     * textured / vertex-colour render.
+     */
+    fishing_scene_flat_rgba(): Uint8Array;
+    /**
+     * Walk-ground geometry summary for the page's shore-anchor fit:
+     * `{"aabb":[[lo],[hi]],"centroid":[x,y,z],"verts":N}` over the
+     * heightfield's own vertices (the walkable shore band - a much tighter
+     * frame than the whole map's AABB). `null` when the scene has no
+     * resolvable floor grid.
+     */
+    fishing_scene_ground_json(): string;
+    /**
+     * Walk-ground height (world Y, retail Y-down) under world `(x, z)`:
+     * the nearest heightfield vertex's Y. `NaN`-free: returns `0` with no
+     * ground. Used by the page to anchor the angler on the shore.
+     */
+    fishing_scene_height_at(x: number, z: number): number;
+    /**
+     * Triangle indices for the baked map.
+     */
+    fishing_scene_indices(): Uint32Array;
+    /**
+     * Scene status for the page + the fitted framing:
+     * `{"aabb":[[lo],[hi]],"player":true,"idle_frames":N,"ground":true}`.
+     */
+    fishing_scene_info_json(): string;
+    /**
+     * Baked venue-map vertex positions (`[x, y, z, ...]`, retail world
+     * space, Y down). Empty when the scene didn't decode.
+     */
+    fishing_scene_positions(): Float32Array;
+    /**
+     * Whether the fishing venue scene decoded off this disc.
+     */
+    fishing_scene_ready(): boolean;
+    /**
+     * Per-vertex `[u, v]` texel coords for the baked map.
+     */
+    fishing_scene_uvs(): Int32Array;
+    /**
+     * The 1 MB PSX VRAM the venue + angler sample.
+     */
+    fishing_scene_vram(): Uint8Array;
+    /**
+     * The venue's species-spawn table, named:
+     *
+     * ```json
+     * { "venue": 0, "rows": [ { "lure": 0, "bands": [
+     *     {"id": 3, "name": "..."}, ... 5 ] }, ... 3 ] }
+     * ```
+     */
+    fishing_spawn_json(venue: number): string;
     /**
      * The whole decoded species table, for the "what's biting" panel:
      *
@@ -909,36 +1077,141 @@ export class LegaiaMinigames {
      */
     muscle_end_selection(): void;
     /**
+     * Every decodable action animation of the monster, in action-table
+     * order: `[{"action_id":0,"rate":1,"part_count":P,"frame_count":F},…]`.
+     * `action_id` is the semantic tag (`0` idle, `2`/`3` hit reactions,
+     * `4` knockdown, `0x20`/`0x21` the attack family - see
+     * `docs/formats/monster-animation.md`); the array index is the handle
+     * for [`Self::muscle_monster_pose_frames`].
+     */
+    muscle_monster_anims_json(monster_id: number): string;
+    /**
+     * Per-vertex `[cba, tsb]` (battle-slot relocated), parallel to the
+     * positions.
+     */
+    muscle_monster_cba_tsb(monster_id: number): Uint32Array;
+    /**
+     * Per-vertex `[r, g, b, textured_flag]` - monsters draw fully textured,
+     * so every vertex samples VRAM (kept for parity with the fighter API).
+     */
+    muscle_monster_flat_rgba(monster_id: number): Uint8Array;
+    /**
+     * Triangle indices of the monster's battle mesh.
+     */
+    muscle_monster_indices(monster_id: number): Uint32Array;
+    /**
+     * Per-vertex TMD object index (the rigid part a vertex hangs from).
+     */
+    muscle_monster_object_ids(monster_id: number): Uint32Array;
+    /**
+     * TMD object count (pose rig width) of the monster's mesh.
+     */
+    muscle_monster_part_count(monster_id: number): number;
+    /**
+     * Monster action animation `index` decoded to absolute per-(frame, part)
+     * `[tx, ty, tz, rx, ry, rz]` (PSX 4096-unit angles), padded to
+     * `target_part_count` parts - the same pose-stream shape every other
+     * site animator consumes (`baka_anim_pose_frames` and siblings).
+     */
+    muscle_monster_pose_frames(monster_id: number, index: number, target_part_count: number): Int32Array;
+    /**
+     * Per-vertex positions of monster `monster_id`'s battle mesh.
+     */
+    muscle_monster_positions(monster_id: number): Float32Array;
+    /**
+     * Per-vertex `[u, v]` texel coords, parallel to the positions.
+     */
+    muscle_monster_uvs(monster_id: number): Int32Array;
+    /**
      * Start the next round after a non-terminal resolution: reseed budgets,
      * clear queues. No-op unless the contest is at a round break.
      */
     muscle_next_round(): void;
     /**
-     * Play the round out through the card-damage stand-in. No-op unless the
-     * round is in the resolve phase (i.e. after [`Self::muscle_end_selection`]).
+     * Play the round out through the ported battle formulas. Each queued
+     * card resolves exactly as a retail battle action: move-power record via
+     * the id map, the arts/physical predamage roll (`FUN_801dd0ac`), the
+     * element-affinity scale (`FUN_801dd864`) and the damage finisher
+     * (`FUN_801ddb30`), drawing from the contest's PsyQ `rand()` stream in
+     * retail call order (3 draws, +2 when the bonus arm fires, +1 when
+     * mitigation floors the hit). The defender's spirit gauge accrues from
+     * each hit (`spirit_gauge_fill`). No-op unless the round is in the
+     * resolve phase.
      */
     muscle_resolve(): void;
     /**
-     * Start a Muscle Dome contest on the disc's dealt hand, beginning in the
-     * selection phase. Returns `false` when the hand table didn't decode.
+     * The monster archive roster, for the page's opponent picker:
+     *
+     * ```json
+     * [ { "id": 1, "name": "Gimard", "hp": 43, "agl": 60, "atk": 15,
+     *     "udf": 14, "ldf": 14, "int": 8, "spd": 12, "element": 2 }, ... ]
+     * ```
+     *
+     * Stats are the boosted battle profile (`battle_stats()`), i.e. the
+     * numbers the contest actually fights with. Only records with a
+     * decodable mesh + idle animation are listed (the dome renders its
+     * opponent in 3D). Names are the archive's own.
+     */
+    muscle_roster_json(): string;
+    /**
+     * The last resolved round's play-by-play, for the page's 3D playback:
+     *
+     * ```json
+     * [ { "attacker": 0, "cmd": 12, "power": 10, "damage": 55,
+     *     "hp": [500, 345] }, ... ]
+     * ```
+     */
+    muscle_round_log_json(): string;
+    /**
+     * Whether the dome's 3D scene decodes for `monster_id`: the battle-form
+     * party pack plus the monster's mesh + idle animation.
+     */
+    muscle_scene_ready(monster_id: number): boolean;
+    /**
+     * Name of spell id `id` from the SCUS spell-name table (the table the
+     * dome's victory banner reads at `DAT_800754d0`). Empty when no
+     * executable was loaded (raw `PROT.DAT` input).
+     */
+    muscle_spell_name(id: number): string;
+    /**
+     * Start a contest with defaults (Vahn at level 30 vs the archive's first
+     * decodable monster) - the compatibility entry the page's reset path and
+     * the older verification hooks call. Returns `false` when the tables
+     * didn't decode.
      */
     muscle_start(): boolean;
     /**
-     * Live contest state.
+     * Start a Muscle Dome contest: party character `char_slot` (0 = Vahn,
+     * 1 = Noa, 2 = Gala) at `level` versus monster `monster_id` (a PROT 867
+     * archive id), on PsyQ RNG seed `seed`.
      *
-     * ```json
-     * { "live": true, "phase": "select"|"resolve"|"round_over"|"won"|"lost",
-     *   "round": 0, "hp": [500, 400], "hp_max": [500, 400],
-     *   "budget": [90, 70], "spent": [0, 0], "score": [108, 108],
-     *   "queue": [[12], []], "last_damage": [0, 0],
-     *   "hand": [ { "cmd": 12, "cost": 30 }, ... ], "reward_spell": 129 }
-     * ```
-     *
-     * `score` is the retail `hp * 0x6c / max_hp` readout; `hand` is the
-     * player's four dealt cards; `reward_spell` is the spell id awarded on a
-     * win (an id into the shared spell-name table's player Seru-magic block).
+     * The player fighter's stats are the disc's own progression: the
+     * new-game template record leveled through the growth curves (the
+     * deterministic core gain per level - retail adds a `rand()` jitter of
+     * mean 0 on top, so the core is the expected retail stat line), then
+     * battle-load initialised (`FUN_80053CB8`). The opponent's stats are its
+     * monster record's boosted battle profile (`FUN_80054CB0`). Both round
+     * budgets seed from the fighters' AGL - the `+0x154` pool the dome's
+     * budget `ctx+0x6dc` reads. Returns `false` when the tables or the
+     * monster record don't resolve.
+     */
+    muscle_start_vs(char_slot: number, level: number, monster_id: number, seed: number): boolean;
+    /**
+     * Live contest state (superset of the older shape - `live`, `phase`,
+     * `round`, `hp`, `hp_max`, `budget`, `spent`, `score`, `queue`,
+     * `last_damage`, `hand`, `reward_spell` keep their meaning). New keys:
+     * `names`, `spirit` (the `+0x170` gauges the dome HUD bars display),
+     * `stats` (per-fighter INT/UDF/LDF/element the formulas used), `source`
+     * (`"disc"` / `"fallback"` player record), `char`, `level`, `monster`.
      */
     muscle_state_json(): string;
+    /**
+     * The dome duel's 1 MB PSX VRAM: the battle-form party atlases (PROT
+     * 1204, their bundled CLUT strips) plus monster `monster_id`'s texture
+     * pool injected at battle slot 0's coordinates (CLUT row 484, 4bpp page
+     * at `(320, 256)`) - the same layout the retail battle loader builds.
+     */
+    muscle_vram(monster_id: number): Uint8Array;
     /**
      * Render a global-pool BGM id (`2000 + sound-test slot`) to a **seamless
      * loop** render: PCM plus the loop region the browser drives
@@ -3117,6 +3390,13 @@ export class Music01Render {
 }
 
 /**
+ * Read the persistent fishing block out of save block `block` of an
+ * emulator card container: point total, equipped lure + rod, best catch,
+ * the lifetime cast counter and the one-time prize bitmask.
+ */
+export function card_fishing_json(bytes: Uint8Array, block: number): string;
+
+/**
  * The 16x16 memory-card icon baked into save block `block` of a card
  * container, as 1024 RGBA8 bytes. For Legaia saves this is the lead
  * character's portrait - the retail save writer copies the load-screen
@@ -3132,6 +3412,13 @@ export function card_icon_rgba(bytes: Uint8Array, block: number): Uint8Array;
  * carries no checksum; the card's directory-frame checksums are untouched).
  */
 export function card_patch_coins(bytes: Uint8Array, block: number, coins: number): Uint8Array;
+
+/**
+ * Write the fishing block back into save block `block`, returning the whole
+ * container with only those seven dwords changed - the same in-place edit
+ * shape as `card_patch_coins`, so the card still loads in an emulator.
+ */
+export function card_patch_fishing(bytes: Uint8Array, block: number, points: number, lure: number, rod: number, best: number, best_fish: number, casts: number, purchased: number): Uint8Array;
 
 /**
  * Read the casino coin bank from save block `block` of a card container.
@@ -3339,8 +3626,10 @@ export interface InitOutput {
     readonly __wbg_legaiasfx_free: (a: number, b: number) => void;
     readonly __wbg_legaiaviewer_free: (a: number, b: number) => void;
     readonly __wbg_music01render_free: (a: number, b: number) => void;
+    readonly card_fishing_json: (a: number, b: number, c: number) => [number, number, number, number];
     readonly card_icon_rgba: (a: number, b: number, c: number) => [number, number, number, number];
     readonly card_patch_coins: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly card_patch_fishing: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
     readonly card_read_coins: (a: number, b: number, c: number) => [number, number, number];
     readonly card_saves_json: (a: number, b: number) => [number, number, number, number];
     readonly disc_portrait_rgba: (a: number, b: number, c: number) => [number, number];
@@ -3458,9 +3747,37 @@ export interface InitOutput {
     readonly legaiaminigames_dance_tick: (a: number, b: number) => void;
     readonly legaiaminigames_dance_widgets_json: (a: number) => [number, number];
     readonly legaiaminigames_fishing_advance_cast: (a: number, b: number) => void;
+    readonly legaiaminigames_fishing_exchange_buy: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly legaiaminigames_fishing_exchange_json: (a: number, b: number) => [number, number];
     readonly legaiaminigames_fishing_lock_cast: (a: number) => void;
+    readonly legaiaminigames_fishing_player_cba_tsb: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_player_flat_rgba: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_player_idle_dims: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_player_idle_frames: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_player_indices: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_player_object_ids: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_player_part_count: (a: number) => number;
+    readonly legaiaminigames_fishing_player_positions: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_player_uvs: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_pond_hud_json: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_pond_ready: (a: number) => number;
+    readonly legaiaminigames_fishing_pond_start: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => number;
+    readonly legaiaminigames_fishing_pond_state_json: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_pond_tick: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly legaiaminigames_fishing_prizes_json: (a: number) => [number, number];
     readonly legaiaminigames_fishing_recast: (a: number) => void;
     readonly legaiaminigames_fishing_reel: (a: number, b: number, c: number) => void;
+    readonly legaiaminigames_fishing_scene_cba_tsb: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_scene_flat_rgba: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_scene_ground_json: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_scene_height_at: (a: number, b: number, c: number) => number;
+    readonly legaiaminigames_fishing_scene_indices: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_scene_info_json: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_scene_positions: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_scene_ready: (a: number) => number;
+    readonly legaiaminigames_fishing_scene_uvs: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_scene_vram: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_spawn_json: (a: number, b: number) => [number, number];
     readonly legaiaminigames_fishing_species_json: (a: number) => [number, number];
     readonly legaiaminigames_fishing_start: (a: number) => number;
     readonly legaiaminigames_fishing_state_json: (a: number) => [number, number];
@@ -3469,10 +3786,25 @@ export interface InitOutput {
     readonly legaiaminigames_minigame_bgm_ready_json: (a: number, b: number, c: number) => [number, number];
     readonly legaiaminigames_muscle_commit: (a: number, b: number) => number;
     readonly legaiaminigames_muscle_end_selection: (a: number) => void;
+    readonly legaiaminigames_muscle_monster_anims_json: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_muscle_monster_cba_tsb: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_muscle_monster_flat_rgba: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_muscle_monster_indices: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_muscle_monster_object_ids: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_muscle_monster_part_count: (a: number, b: number) => number;
+    readonly legaiaminigames_muscle_monster_pose_frames: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly legaiaminigames_muscle_monster_positions: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_muscle_monster_uvs: (a: number, b: number) => [number, number];
     readonly legaiaminigames_muscle_next_round: (a: number) => void;
     readonly legaiaminigames_muscle_resolve: (a: number) => void;
+    readonly legaiaminigames_muscle_roster_json: (a: number) => [number, number];
+    readonly legaiaminigames_muscle_round_log_json: (a: number) => [number, number];
+    readonly legaiaminigames_muscle_scene_ready: (a: number, b: number) => number;
+    readonly legaiaminigames_muscle_spell_name: (a: number, b: number) => [number, number];
     readonly legaiaminigames_muscle_start: (a: number) => number;
+    readonly legaiaminigames_muscle_start_vs: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly legaiaminigames_muscle_state_json: (a: number) => [number, number];
+    readonly legaiaminigames_muscle_vram: (a: number, b: number) => [number, number];
     readonly legaiaminigames_music01_bgm_render: (a: number, b: number, c: number) => number;
     readonly legaiaminigames_new: () => number;
     readonly legaiaminigames_save_portrait_rgba: (a: number, b: number) => [number, number];

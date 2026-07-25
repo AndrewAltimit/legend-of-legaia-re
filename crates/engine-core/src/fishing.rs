@@ -1047,6 +1047,759 @@ impl RodLureSelect {
     }
 }
 
+// --- Retail species selection: cadence, band, strike, band-4 gate -----------
+//
+// The retail pond does NOT pick the hooked species from the cast power: the
+// pre-hook half of `FUN_801d26cc` assigns
+// `species = spawn_table[lure*8 + band]`, where `lure` is the equipped-lure
+// row (`_DAT_80084450`) and `band` (`DAT_801d90e8`) comes from a per-frame
+// roll that a matched reel-cadence template overrides. See
+// `docs/subsystems/minigame-fishing.md` "Species selection and the band-4
+// gate". The kernels below port that path; [`PondSession`] composes them
+// with the confirmed cast/tension/score kernels above into the full
+// venue-faithful loop (the browser minigame's engine).
+
+use legaia_asset::fishing_species::{CADENCE_TOLERANCE, CadenceTemplate};
+
+use crate::levelup::BiosRand;
+
+/// Band-roll cutoffs (`FUN_801d26cc`): `r = rand & 0xfff`; `r <= 0xc00` band 3
+/// (~75.0%), `<= 0xe70` band 2 (~15.2%), `<= 0xf38` band 1 (~4.9%), else
+/// band 0 (~4.9%). No roll outcome maps to band 4.
+pub const BAND_ROLL_CUTOFF_3: i32 = 0xc00;
+/// See [`BAND_ROLL_CUTOFF_3`].
+pub const BAND_ROLL_CUTOFF_2: i32 = 0xe70;
+/// See [`BAND_ROLL_CUTOFF_3`].
+pub const BAND_ROLL_CUTOFF_1: i32 = 0xf38;
+
+/// Frames a cadence-matched band holds (the `DAT_801d90ec` countdown arm).
+pub const BAND_HOLD_FRAMES: i32 = 0x40;
+
+/// Strike-credit base: `credit = countdown + 2` (+1 per fresh input edge).
+pub const STRIKE_CREDIT_BASE: i32 = 2;
+
+/// A length readout (`DAT_801d9280`) under this cannot strike at all.
+pub const STRIKE_MIN_READOUT: i32 = 200;
+
+/// The credit is zeroed while the length readout is under this.
+pub const STRIKE_CREDIT_ZERO_READOUT: i32 = 100;
+
+/// The band-roll body only runs while the line record exceeds this.
+pub const BAND_CHECK_MIN_RECORD: i32 = 500;
+
+/// Reel-in-complete threshold: the hooked fight lands once the line record
+/// (`DAT_801d927c`) drops below this (`FUN_801d26cc` seeds the reel-in
+/// banner on `record < 0x136` while hooked).
+pub const LAND_RECORD: i32 = 0x136;
+
+/// Roll a cast band from `r = rand & 0xfff` against the three fixed cutoffs.
+// PORT: FUN_801d26cc (band roll: 0xc00 / 0xe70 / 0xf38 cutoffs)
+pub fn band_roll(r: i32) -> u32 {
+    let r = r & 0xfff;
+    if r <= BAND_ROLL_CUTOFF_3 {
+        3
+    } else if r <= BAND_ROLL_CUTOFF_2 {
+        2
+    } else if r <= BAND_ROLL_CUTOFF_1 {
+        1
+    } else {
+        0
+    }
+}
+
+/// The strike-time band-4 gate: whether an active band 0 upgrades to the
+/// venue's rare band. Every condition is venue-hardwired: the third rod
+/// (`rod == 2`), the cast counter even, the venue's own lure row (Normal at
+/// venue 0 / Buma, Heavy at venue 1 / Vidna), band 0 active, and then a
+/// `rand` mask (`1/16` at Buma - which additionally needs more than 50
+/// lifetime casts - `1/4` at Vidna). `rng` is only advanced when the
+/// preconditions hold, matching the retail short-circuit.
+// PORT: FUN_801d26cc (band-4 gate: cast-counter / lure / rod / band-0 arm)
+pub fn band4_gate(
+    venue: usize,
+    lure: u32,
+    rod: i32,
+    band: u32,
+    casts: i32,
+    rng: &mut BiosRand,
+) -> bool {
+    if band != 0 || rod != 2 || (casts & 1) != 0 {
+        return false;
+    }
+    match venue {
+        0 => lure == 1 && casts > 0x32 && (rng.next_u15() & 0xf) == 0,
+        _ => lure == 2 && (rng.next_u15() & 3) == 0,
+    }
+}
+
+/// The species-spawn lookup: `spawn_table[lure * 8 + band]`, where the table
+/// is a venue page of `8 x 8` u32 species ids
+/// ([`legaia_asset::fishing_species::parse_spawn_tables`]). Returns `None`
+/// for an out-of-range row/band or a species id past the 10-record table.
+// PORT: FUN_801d26cc (species lookup: spawn_table[lure*8 + band])
+pub fn spawn_species(table: &[[u32; 8]], lure: u32, band: u32) -> Option<usize> {
+    let id = *table.get(lure as usize)?.get(band as usize)? as usize;
+    (id < legaia_asset::fishing_species::SPECIES_COUNT).then_some(id)
+}
+
+/// The reel-cadence recogniser: a 16-slot `{button, held-frames}` ring buffer
+/// (`DAT_801d91e4`, write index `DAT_801d91dc`) fed the decoded reel button
+/// each frame and walked backwards against the overlay's four gesture
+/// templates with a +-10 frame-step tolerance. On a full match the buffer is
+/// reset (`FUN_801d746c`) and the matched template id is reported - the
+/// consumer stores it **as the cast band**.
+///
+/// The `history_window` word of each template bounds the total duration the
+/// backwards walk may span; reading it as an inclusive bound (+ tolerance) is
+/// this port's interpretation - the per-step button/duration match and the
+/// reset are the pinned parts.
+// PORT: FUN_801d3db4 (reel-cadence recogniser: ring accumulate + template walk)
+// PORT: FUN_801d746c (ring reset: index + all 16 slots cleared)
+#[derive(Debug, Clone)]
+pub struct ReelCadence {
+    templates: Vec<CadenceTemplate>,
+    ring: [(u8, i32); 16],
+    idx: usize,
+    /// Last decoded button (`DAT_801d9064`) - not cleared by the reset.
+    last: u8,
+}
+
+impl ReelCadence {
+    /// A recogniser over the disc's parsed gesture templates.
+    pub fn new(templates: Vec<CadenceTemplate>) -> Self {
+        Self {
+            templates,
+            ring: [(0, 0); 16],
+            idx: 0,
+            last: 0,
+        }
+    }
+
+    /// Reset the ring (index + every slot zeroed; the last-button latch is
+    /// retail's `DAT_801d9064`, which the reset does not touch).
+    pub fn reset(&mut self) {
+        self.ring = [(0, 0); 16];
+        self.idx = 0;
+    }
+
+    /// Feed this frame's decoded reel button (`0` idle / `1` reel A / `2`
+    /// reel B) and frame step; returns the matched template id (= the band)
+    /// if a gesture completed this frame, resetting the ring.
+    pub fn feed(&mut self, button: u8, frame_step: i32) -> Option<usize> {
+        if button != self.last {
+            self.last = button;
+            self.idx = (self.idx + 1) % self.ring.len();
+            self.ring[self.idx] = (button, 0);
+        }
+        self.ring[self.idx].1 += frame_step.max(1);
+
+        'template: for (t, tpl) in self.templates.iter().enumerate() {
+            let n = tpl.steps.len();
+            if n == 0 || n > self.ring.len() {
+                continue;
+            }
+            let mut span = 0i32;
+            for k in 0..n {
+                let slot = self.ring[(self.idx + self.ring.len() - k) % self.ring.len()];
+                let step = tpl.steps[n - 1 - k];
+                if slot.0 != step.button || (slot.1 - step.duration).abs() > CADENCE_TOLERANCE {
+                    continue 'template;
+                }
+                span += slot.1;
+            }
+            if span > tpl.history_window + CADENCE_TOLERANCE {
+                continue;
+            }
+            self.reset();
+            return Some(t);
+        }
+        None
+    }
+}
+
+/// The pre-hook band + strike check (`FUN_801d26cc`, run per frame while no
+/// fish is hooked and the lure is in the water).
+#[derive(Debug, Clone, Copy)]
+pub struct BandCheck {
+    /// The live cast band (`DAT_801d90e8`).
+    pub band: u32,
+    /// Band-hold countdown (`DAT_801d90ec`); doubles as the strike credit.
+    pub countdown: i32,
+    /// A cadence matched this frame - the "Good!" splash seed
+    /// (`DAT_801d90f0`), fired for *any* matched template.
+    pub splash: bool,
+}
+
+impl Default for BandCheck {
+    fn default() -> Self {
+        Self {
+            band: 3,
+            countdown: 0,
+            splash: false,
+        }
+    }
+}
+
+impl BandCheck {
+    /// Run one waiting-phase frame.
+    ///
+    /// `record` is the line record (`DAT_801d927c`), `readout` the HUD length
+    /// term (`DAT_801d9280` = `max(record - 300, 0)`), `cadence` the
+    /// recogniser's match this frame, `edge_bonus` the count of fresh input
+    /// edges (D-pad left/right, either reel button), and `reel_held` whether
+    /// a reel button is held (`_DAT_8007b850 & 0xc0`). Returns `true` when a
+    /// strike lands this frame.
+    ///
+    /// Pinned: the every-frame re-entry (countdown clamped at 0), the
+    /// cadence-match band store + `0x40` hold + splash, the roll cutoffs, the
+    /// `credit = countdown + 2 (+ edges)` strike credit, its zeroing under a
+    /// `100` readout, the no-strike floor under a `200` readout, and the
+    /// reel-held requirement. Approximated: the exact `denom` ladder the
+    /// readout steps (`~1000` for a deep cast) - this port uses the readout
+    /// itself as the denominator.
+    // PORT: FUN_801d26cc (pre-hook band check + strike roll)
+    #[allow(clippy::too_many_arguments)] // the retail check reads exactly these globals
+    pub fn tick(
+        &mut self,
+        rng: &mut BiosRand,
+        cadence: Option<usize>,
+        record: i32,
+        readout: i32,
+        edge_bonus: i32,
+        reel_held: bool,
+        frame_step: i32,
+    ) -> bool {
+        self.splash = false;
+        if self.countdown > 0 {
+            // Matched band holds for the countdown; clamped to 0 on underflow
+            // so the steady state re-enters every tick.
+            self.countdown = (self.countdown - frame_step.max(1)).max(0);
+        } else if record > BAND_CHECK_MIN_RECORD {
+            match cadence {
+                Some(t) => {
+                    self.band = t as u32;
+                    self.countdown = BAND_HOLD_FRAMES;
+                    self.splash = true;
+                }
+                None => {
+                    self.band = band_roll(rng.next_u15() as i32);
+                }
+            }
+        }
+
+        if !reel_held || readout < STRIKE_MIN_READOUT {
+            return false;
+        }
+        let mut credit = self.countdown + STRIKE_CREDIT_BASE + edge_bonus.max(0);
+        if readout < STRIKE_CREDIT_ZERO_READOUT {
+            credit = 0;
+        }
+        let denom = readout.max(1);
+        (rng.next_u15() as i32 % denom) < credit
+    }
+}
+
+/// The hooked fish's behaviour sub-state (`DAT_801d910c`): run / dart left /
+/// dart right / dive, re-rolled when its countdown (`DAT_801d9110`) expires.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FishMove {
+    /// Steady run: full pull, line sinks by the species sink factor.
+    Run,
+    /// Lateral dart (left).
+    DartLeft,
+    /// Lateral dart (right).
+    DartRight,
+    /// Dive: picked when the species depth gate is under the line depth.
+    Dive,
+}
+
+/// One frame of fish output from [`FishAi::tick`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FishFrame {
+    /// This frame's pull (`((rand & 0xff) + bias) * pull_factor / 150`).
+    pub pull: i32,
+    /// Lateral dart push (signed; `((step >> 2) + 0x20) * dart_factor / 100`).
+    pub lateral: i32,
+    /// Line-depth sink this frame (`pull * sink_factor / 150` in the run
+    /// state).
+    pub sink: i32,
+}
+
+/// The fish-AI half of `FUN_801d4004`: the behaviour sub-state machine and
+/// the per-frame pull / dart / sink terms, driven by the hooked species'
+/// per-record factors.
+///
+/// The per-field formulas (pull, dart push, sink, the `rand & 0xfff`
+/// cutoff comparisons, the depth-gate dive pick) are the documented ones;
+/// the *composition* - which cutoff feeds which state and the re-roll
+/// interval - is an engine-side reading of the same function (the doc's
+/// per-field table stops short of the branch order).
+// PORT: FUN_801d4004 (fish behaviour sub-state + pull/dart/sink terms)
+#[derive(Debug, Clone, Copy)]
+pub struct FishAi {
+    /// Current behaviour (`DAT_801d910c`).
+    pub state: FishMove,
+    /// Frames until the next behaviour re-roll (`DAT_801d9110`).
+    timer: i32,
+}
+
+impl Default for FishAi {
+    fn default() -> Self {
+        Self {
+            state: FishMove::Run,
+            timer: 0,
+        }
+    }
+}
+
+impl FishAi {
+    /// Per-frame pull bias. The doc pins the `((rand & 0xff) + bias) *
+    /// factor / 150` shape but not the bias literal; `0x40` keeps the pull
+    /// centred near `factor` (rand averages `0x80`).
+    pub const PULL_BIAS: i32 = 0x40;
+
+    fn reroll(&mut self, sp: &FishingSpecies, depth: i32, rng: &mut BiosRand) {
+        // Dive is the depth-gated pick (`+0x14`: behaviour pick when
+        // `f < line-depth`); otherwise roll the cutoffs.
+        if sp.depth_gate < depth {
+            self.state = FishMove::Dive;
+        } else {
+            let r = (rng.next_u15() & 0xfff) as i32;
+            self.state = if sp.roll_cutoff_a <= r {
+                FishMove::Run
+            } else if r < sp.roll_cutoff_c {
+                if rng.next_u15() & 1 == 0 {
+                    FishMove::DartLeft
+                } else {
+                    FishMove::DartRight
+                }
+            } else if r < sp.roll_cutoff_b {
+                FishMove::Run
+            } else if rng.next_u15() & 1 == 0 {
+                FishMove::DartLeft
+            } else {
+                FishMove::DartRight
+            };
+        }
+        // Re-roll interval: not byte-pinned; a fraction of a second keeps the
+        // fight lively without thrashing.
+        self.timer = 0x18 + (rng.next_u15() & 0x1f) as i32;
+    }
+
+    /// Advance one frame: countdown, re-roll on expiry, and produce this
+    /// frame's pull / lateral / sink terms from the species factors.
+    pub fn tick(
+        &mut self,
+        sp: &FishingSpecies,
+        depth: i32,
+        rng: &mut BiosRand,
+        frame_step: i32,
+    ) -> FishFrame {
+        let fs = frame_step.max(1);
+        self.timer -= fs;
+        if self.timer <= 0 {
+            self.reroll(sp, depth, rng);
+        }
+        let pull = (((rng.next_u15() & 0xff) as i32 + Self::PULL_BIAS) * sp.pull_factor) / 150;
+        let mut out = FishFrame {
+            pull,
+            lateral: 0,
+            sink: 0,
+        };
+        match self.state {
+            FishMove::Run => out.sink = (pull * sp.sink_factor) / 150,
+            FishMove::Dive => out.sink = (pull * sp.sink_factor) / 75,
+            FishMove::DartLeft | FishMove::DartRight => {
+                let push = (((fs) >> 2) + 0x20) * sp.dart_factor / 100;
+                out.lateral = if self.state == FishMove::DartLeft {
+                    -push
+                } else {
+                    push
+                };
+            }
+        }
+        out
+    }
+}
+
+/// Which phase of a [`PondSession`] is live, mirroring the retail mode-SM
+/// states (`FUN_801cf3bc`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PondPhase {
+    /// State `0xc`: idle at the shore, waiting for the cast press.
+    Idle,
+    /// State `0xd`: cast wind-up (~12 frames of camera pan).
+    WindUp,
+    /// State `0x14`: the casting-power oscillator, until the lock press.
+    Power,
+    /// States `0x1e`..`0x22`: the lure flies out and settles (the landing is
+    /// the cast-counter increment).
+    Flight,
+    /// The pre-hook loop: band roll / cadence / strike checks per frame.
+    Waiting,
+    /// A fish is hooked: the reel tug-of-war.
+    Hooked,
+    /// The fight resolved with a landed catch.
+    Landed,
+    /// The fight resolved with a snapped line.
+    Snapped,
+}
+
+/// One frame of player input to [`PondSession::tick`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PondInput {
+    /// Held pad mask bits `0x40` (Cross / reel A) and `0x80` (Square /
+    /// reel B) - the `_DAT_8007b850` bits the reel decoder reads.
+    pub reel_mask: u32,
+    /// The cast / confirm edge (Circle `0x20` in retail; Space on the page).
+    pub cast_edge: bool,
+    /// Count of fresh input edges this frame (D-pad left/right, either reel
+    /// button) - each adds one to the strike credit.
+    pub edge_bonus: i32,
+}
+
+/// A per-frame event the presentation layer reacts to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PondEvent {
+    /// A reel cadence matched: the "Good!" strike splash.
+    Splash,
+    /// A fish struck and hooked; the payload is the species id.
+    Hooked(usize),
+    /// The fight landed the fish for this many points.
+    Landed(i32),
+    /// The line snapped.
+    Snapped,
+}
+
+/// The venue-faithful fishing session: the retail cast -> wait -> strike ->
+/// fight -> score loop over the disc's species / spawn / cadence tables and
+/// the save block's persistent lure, rod, cast-counter and point record.
+///
+/// Composes the pinned kernels ([`CastPower`], [`ReelCadence`], [`BandCheck`],
+/// [`band4_gate`], [`spawn_species`], [`TensionGauge`] via the fight,
+/// [`FishingRecord`]) with the reconstruction glue each doc-comment marks
+/// (flight timing, the record reel-down rate, the snap-at-max-tension loss).
+#[derive(Debug, Clone)]
+pub struct PondSession {
+    /// The 10-record species table (disc rodata).
+    pub species: Vec<FishingSpecies>,
+    /// This venue's `8 x 8` spawn page (disc rodata).
+    pub spawn: Vec<[u32; 8]>,
+    /// Venue: `0` Buma pond, `1` Vidna pond (`DAT_801d90d0`).
+    pub venue: usize,
+    /// Persistent equipped-lure row (`_DAT_80084450`, 0..=2).
+    pub lure: u32,
+    /// Persistent rod stat (`_DAT_80084454`, 0..=2).
+    pub rod: i32,
+    /// Persistent lifetime cast counter (`_DAT_80084460`).
+    pub casts: i32,
+    /// Persistent point record (`_DAT_8008444C` / `58` / `5C`).
+    pub record: FishingRecord,
+    /// Persistent one-time prize bitmask (`_DAT_8008446C`).
+    pub purchased_mask: u32,
+
+    phase: PondPhase,
+    cast: CastPower,
+    cadence: ReelCadence,
+    band: BandCheck,
+    rng: BiosRand,
+    /// Phase-local frame counter (wind-up / flight).
+    timer: i32,
+    /// Line record (`DAT_801d927c`); seeded from the locked cast power.
+    line_record: i32,
+    /// Line depth (`DAT_801d9298`).
+    depth: i32,
+    /// Fish lateral offset during the fight (dart push accumulator).
+    lateral: i32,
+    fight_species: Option<usize>,
+    fish: FishAi,
+    gauge: TensionGauge,
+    /// Accumulated fight strength (`DAT_801d91b8`).
+    strength: i32,
+    /// Points awarded by the last landed catch.
+    last_award: i32,
+    events: Vec<PondEvent>,
+}
+
+/// Wind-up frames before the power meter opens (state `0xd`: ~12 frames).
+pub const WINDUP_FRAMES: i32 = 12;
+
+/// Flight frames before the lure settles (state `0x1e` waits for the line
+/// animation counter to reach `0x14`).
+pub const FLIGHT_FRAMES: i32 = 0x14;
+
+impl PondSession {
+    /// Open a session at `venue` over the disc tables, with the persistent
+    /// save-block state (`lure` / `rod` / `casts` / `record` /
+    /// `purchased_mask`) supplied by the host.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        species: Vec<FishingSpecies>,
+        spawn: Vec<[u32; 8]>,
+        cadence_templates: Vec<CadenceTemplate>,
+        venue: usize,
+        lure: u32,
+        rod: i32,
+        casts: i32,
+        record: FishingRecord,
+        purchased_mask: u32,
+        seed: u32,
+    ) -> Self {
+        Self {
+            species,
+            spawn,
+            venue,
+            lure: lure.min(2),
+            rod: rod.clamp(0, 2),
+            casts,
+            record,
+            purchased_mask,
+            phase: PondPhase::Idle,
+            cast: CastPower::new(),
+            cadence: ReelCadence::new(cadence_templates),
+            band: BandCheck::default(),
+            rng: BiosRand::new(seed),
+            timer: 0,
+            line_record: 0,
+            depth: 0,
+            lateral: 0,
+            fight_species: None,
+            fish: FishAi::default(),
+            gauge: TensionGauge::new(0),
+            strength: 0,
+            last_award: 0,
+            events: Vec::new(),
+        }
+    }
+
+    /// The live phase.
+    pub fn phase(&self) -> PondPhase {
+        self.phase
+    }
+
+    /// The live cast-power meter value.
+    pub fn cast_power(&self) -> i32 {
+        self.cast.value()
+    }
+
+    /// Line record (`DAT_801d927c`); `0` before a cast.
+    pub fn line_record(&self) -> i32 {
+        self.line_record
+    }
+
+    /// The HUD length readout term (`DAT_801d9280`).
+    pub fn readout(&self) -> i32 {
+        (self.line_record - RECORD_STRIKE_BASE).max(0)
+    }
+
+    /// Line depth (`DAT_801d9298`).
+    pub fn depth(&self) -> i32 {
+        self.depth
+    }
+
+    /// Fish lateral offset (dart accumulator), for the presentation layer.
+    pub fn lateral(&self) -> i32 {
+        self.lateral
+    }
+
+    /// Live tension, `0..=0x1000`.
+    pub fn tension(&self) -> i32 {
+        self.gauge.tension()
+    }
+
+    /// Accumulated fight strength (`DAT_801d91b8`).
+    pub fn strength(&self) -> i32 {
+        self.strength
+    }
+
+    /// The hooked species record, while fighting (and through the resolved
+    /// phases, for the result banner).
+    pub fn hooked(&self) -> Option<&FishingSpecies> {
+        self.fight_species.and_then(|i| self.species.get(i))
+    }
+
+    /// The fish's current behaviour state, while hooked.
+    pub fn fish_move(&self) -> Option<FishMove> {
+        (self.phase == PondPhase::Hooked).then_some(self.fish.state)
+    }
+
+    /// Points awarded by the last landed catch.
+    pub fn last_award(&self) -> i32 {
+        self.last_award
+    }
+
+    /// The current band (hidden state; surfaced for tests + debug overlays).
+    pub fn band(&self) -> u32 {
+        self.band.band
+    }
+
+    /// Drain the events raised since the last call.
+    pub fn take_events(&mut self) -> Vec<PondEvent> {
+        std::mem::take(&mut self.events)
+    }
+
+    /// Line-record seed for a locked cast power: the deep-cast readout is
+    /// ~1000 (`denom` context in the doc), so full power maps to
+    /// `300 + 1000` and the floor stays above the `500` band-check gate.
+    /// (Approximation - the retail line-projection vector math is unpinned.)
+    fn record_for_power(power: i32) -> i32 {
+        RECORD_STRIKE_BASE + 260 + power * 1000 / CAST_POWER_MAX
+    }
+
+    /// Advance one frame. `frame_step` is the retail `DAT_1f800393` (1 at
+    /// 60 fps); `cast_step` is the casting-power meter step per frame (the
+    /// native driver uses `0x80`).
+    pub fn tick(&mut self, input: PondInput, frame_step: i32, cast_step: i32) {
+        let fs = frame_step.max(1);
+        match self.phase {
+            PondPhase::Idle => {
+                if input.cast_edge {
+                    self.phase = PondPhase::WindUp;
+                    self.timer = 0;
+                }
+            }
+            PondPhase::WindUp => {
+                self.timer += fs;
+                if self.timer >= WINDUP_FRAMES {
+                    self.cast = CastPower::new();
+                    self.phase = PondPhase::Power;
+                }
+            }
+            PondPhase::Power => {
+                self.cast.advance(cast_step * fs);
+                if input.cast_edge {
+                    let power = self.cast.lock();
+                    self.line_record = Self::record_for_power(power);
+                    self.depth = 0;
+                    self.timer = 0;
+                    self.phase = PondPhase::Flight;
+                }
+            }
+            PondPhase::Flight => {
+                self.timer += fs;
+                if self.timer >= FLIGHT_FRAMES {
+                    // The lure lands: the persistent cast counter increments
+                    // here (the same event that advances the retail SM to
+                    // state 0x19).
+                    self.casts += 1;
+                    self.band = BandCheck::default();
+                    self.cadence.reset();
+                    self.phase = PondPhase::Waiting;
+                }
+            }
+            PondPhase::Waiting => {
+                let button = match ReelInput::from_pad_mask(input.reel_mask) {
+                    ReelInput::ReelA => 1,
+                    ReelInput::ReelB => 2,
+                    ReelInput::Idle => 0,
+                };
+                let matched = self.cadence.feed(button, fs);
+                if matched.is_some() {
+                    self.events.push(PondEvent::Splash);
+                }
+                let reel_held = input.reel_mask & 0xc0 != 0;
+                let readout = self.readout();
+                let struck = self.band.tick(
+                    &mut self.rng,
+                    matched,
+                    self.line_record,
+                    readout,
+                    input.edge_bonus,
+                    reel_held,
+                    fs,
+                );
+                if struck {
+                    let mut band = self.band.band;
+                    if band4_gate(
+                        self.venue,
+                        self.lure,
+                        self.rod,
+                        band,
+                        self.casts,
+                        &mut self.rng,
+                    ) {
+                        band = 4;
+                    }
+                    if let Some(id) = spawn_species(&self.spawn, self.lure, band) {
+                        self.fight_species = Some(id);
+                        self.fish = FishAi::default();
+                        self.gauge = TensionGauge::new(self.rod);
+                        self.strength = 0;
+                        self.lateral = 0;
+                        self.events.push(PondEvent::Hooked(id));
+                        self.phase = PondPhase::Hooked;
+                    }
+                }
+                // Reeling the empty line back in shortens it; fully reeled in
+                // returns to the idle shore (an engine convenience - retail
+                // parks in the cast loop until the leave confirm).
+                if reel_held {
+                    self.line_record -= 4 * fs;
+                    if self.line_record <= RECORD_STRIKE_BASE {
+                        self.line_record = 0;
+                        self.phase = PondPhase::Idle;
+                    }
+                }
+            }
+            PondPhase::Hooked => {
+                let Some(sp) = self
+                    .fight_species
+                    .and_then(|i| self.species.get(i))
+                    .copied()
+                else {
+                    self.phase = PondPhase::Idle;
+                    return;
+                };
+                let reel = ReelInput::from_pad_mask(input.reel_mask);
+                let frame = self.fish.tick(&sp, self.depth, &mut self.rng, fs);
+                // The per-frame pull accumulates into the fight strength
+                // (`DAT_801d91b8`, "the accumulated pull / strength for the
+                // fight") - the value the landed score is computed over.
+                self.strength = self.strength.saturating_add(frame.pull);
+                self.lateral = (self.lateral + frame.lateral).clamp(-0x400, 0x400);
+                // Tension: the confirmed tug-of-war.
+                self.gauge.apply_reel(reel, frame.pull, fs);
+                // Line record: reeling brings the fish in, the fish's run
+                // pays line back out (rates are engine-side glue - the doc's
+                // Open list).
+                match reel {
+                    ReelInput::ReelA => {
+                        self.line_record -= 3 * fs;
+                        self.depth -= 2 * fs;
+                    }
+                    ReelInput::ReelB => {
+                        self.line_record -= 2 * fs;
+                        self.depth -= fs;
+                    }
+                    ReelInput::Idle => self.line_record += frame.pull >> 6,
+                }
+                self.depth = (self.depth + frame.sink).clamp(0, 0x1000);
+                if self.gauge.at_max() {
+                    // Reconstruction: tension pinned at the ceiling snaps the
+                    // line (doc Open list).
+                    self.events.push(PondEvent::Snapped);
+                    self.phase = PondPhase::Snapped;
+                } else if self.line_record < LAND_RECORD {
+                    // Reel-in complete (`record < 0x136`): score the catch.
+                    let award = sp.score_for(self.strength);
+                    self.record.credit(sp.index, award);
+                    self.last_award = award;
+                    self.events.push(PondEvent::Landed(award));
+                    self.phase = PondPhase::Landed;
+                }
+            }
+            PondPhase::Landed | PondPhase::Snapped => {
+                if input.cast_edge {
+                    self.fight_species = None;
+                    self.line_record = 0;
+                    self.depth = 0;
+                    self.phase = PondPhase::Idle;
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1497,5 +2250,383 @@ mod tests {
         assert_eq!(t.sfx, None);
         assert!(!t.leave);
         assert_eq!(s.cursor, 0);
+    }
+
+    // --- retail species selection ------------------------------------------
+
+    use legaia_asset::fishing_species::{CadenceStep, CadenceTemplate};
+
+    #[test]
+    fn band_roll_matches_the_cutoff_table() {
+        assert_eq!(band_roll(0), 3);
+        assert_eq!(band_roll(0xc00), 3);
+        assert_eq!(band_roll(0xc01), 2);
+        assert_eq!(band_roll(0xe70), 2);
+        assert_eq!(band_roll(0xe71), 1);
+        assert_eq!(band_roll(0xf38), 1);
+        assert_eq!(band_roll(0xf39), 0);
+        assert_eq!(band_roll(0xfff), 0);
+    }
+
+    #[test]
+    fn band4_gate_conditions() {
+        // Buma: > 50 casts, even, Normal Lure, third rod, band 0, then 1/16.
+        let mut hits = 0;
+        for seed in 0..64u32 {
+            let mut rng = BiosRand::new(seed);
+            if band4_gate(0, 1, 2, 0, 52, &mut rng) {
+                hits += 1;
+            }
+        }
+        assert!(hits > 0, "1/16 roll never fired over 64 seeds");
+        // Any failed precondition short-circuits without advancing the rng.
+        let mut rng = BiosRand::new(7);
+        let before = rng;
+        assert!(!band4_gate(0, 1, 2, 0, 51, &mut rng)); // odd counter
+        assert!(!band4_gate(0, 1, 2, 0, 40, &mut rng)); // even but under the 0x32 threshold
+        assert!(!band4_gate(0, 0, 2, 0, 52, &mut rng)); // wrong lure
+        assert!(!band4_gate(0, 1, 1, 0, 52, &mut rng)); // wrong rod
+        assert!(!band4_gate(0, 1, 2, 1, 52, &mut rng)); // wrong band
+        assert_eq!(rng, before, "short-circuit must not advance the rng");
+        // Vidna: Heavy Lure, no cast-count threshold, 1/4.
+        let mut hits = 0;
+        for seed in 0..16u32 {
+            let mut rng = BiosRand::new(seed);
+            if band4_gate(1, 2, 2, 0, 0, &mut rng) {
+                hits += 1;
+            }
+        }
+        assert!(hits > 0, "1/4 roll never fired over 16 seeds");
+    }
+
+    fn templates() -> Vec<CadenceTemplate> {
+        // The disc's four shapes (doc table; durations as on the USA disc).
+        let t = |steps: &[(i32, u8)], window: i32| CadenceTemplate {
+            history_window: window,
+            steps: steps
+                .iter()
+                .map(|&(duration, button)| CadenceStep { duration, button })
+                .collect(),
+        };
+        vec![
+            t(&[(40, 0), (25, 1), (40, 0), (15, 2)], 0x8c),
+            t(&[(15, 2), (25, 1), (0, 0)], 0x8c),
+            t(&[(15, 2), (40, 0), (15, 2)], 0x82),
+            t(&[(25, 1), (40, 0), (25, 1)], 0x96),
+        ]
+    }
+
+    /// Drive the recogniser through `seq` = [(button, frames)] and return the
+    /// first match.
+    fn drive(c: &mut ReelCadence, seq: &[(u8, i32)]) -> Option<usize> {
+        for &(b, frames) in seq {
+            for _ in 0..frames {
+                if let Some(t) = c.feed(b, 1) {
+                    return Some(t);
+                }
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn cadence_recogniser_matches_template_3() {
+        // Cross 25, idle 40, Cross 25 - the natural pump rhythm.
+        let mut c = ReelCadence::new(templates());
+        let got = drive(&mut c, &[(0, 30), (1, 25), (0, 40), (1, 25)]);
+        assert_eq!(got, Some(3));
+    }
+
+    #[test]
+    fn cadence_recogniser_matches_template_0_with_tolerance() {
+        // idle 40, Cross 25, idle 40, Square 15 - +-10 slop on each step.
+        let mut c = ReelCadence::new(templates());
+        let got = drive(&mut c, &[(0, 45), (1, 20), (0, 35), (2, 18)]);
+        assert_eq!(got, Some(0));
+    }
+
+    #[test]
+    fn cadence_recogniser_rejects_out_of_tolerance_holds() {
+        let mut c = ReelCadence::new(templates());
+        // Cross held far too long between the idles: no template fits.
+        let got = drive(&mut c, &[(0, 40), (1, 60), (0, 40)]);
+        assert_eq!(got, None);
+    }
+
+    #[test]
+    fn cadence_match_resets_the_ring() {
+        let mut c = ReelCadence::new(templates());
+        assert_eq!(
+            drive(&mut c, &[(0, 30), (1, 25), (0, 40), (1, 25)]),
+            Some(3)
+        );
+        // Immediately after the reset the same tail can't re-match.
+        assert_eq!(c.feed(1, 1), None);
+    }
+
+    #[test]
+    fn band_check_holds_a_matched_band_and_boosts_credit() {
+        let mut b = BandCheck::default();
+        let mut rng = BiosRand::new(1);
+        // A cadence match stores the template id as the band and arms the
+        // countdown + splash.
+        b.tick(&mut rng, Some(0), 1000, 700, 0, false, 1);
+        assert_eq!(b.band, 0);
+        assert!(b.splash);
+        assert_eq!(b.countdown, BAND_HOLD_FRAMES);
+        // While held, unmatched frames keep the band (countdown decays).
+        b.tick(&mut rng, None, 1000, 700, 0, false, 1);
+        assert_eq!(b.band, 0);
+        assert!(!b.splash);
+        assert_eq!(b.countdown, BAND_HOLD_FRAMES - 1);
+    }
+
+    #[test]
+    fn band_check_strike_requires_reel_and_readout() {
+        let mut rng = BiosRand::new(2);
+        let mut b = BandCheck::default();
+        // Readout below the floor: no strike regardless of credit.
+        for _ in 0..200 {
+            assert!(!b.tick(&mut rng, Some(0), 1000, 150, 5, true, 1));
+        }
+        // Reel not held: no strike.
+        let mut b = BandCheck::default();
+        for _ in 0..200 {
+            assert!(!b.tick(&mut rng, Some(0), 1000, 700, 5, false, 1));
+        }
+    }
+
+    #[test]
+    fn spawn_lookup_uses_lure_row_and_band_column() {
+        let mut table = vec![[0u32; 8]; 8];
+        table[1] = [5, 5, 3, 5, 9, 0, 0, 0];
+        assert_eq!(spawn_species(&table, 1, 0), Some(5));
+        assert_eq!(spawn_species(&table, 1, 4), Some(9));
+        assert_eq!(spawn_species(&table, 9, 0), None);
+        table[2][0] = 99; // out-of-table species id
+        assert_eq!(spawn_species(&table, 2, 0), None);
+    }
+
+    fn pond() -> PondSession {
+        let species: Vec<FishingSpecies> = (0..10)
+            .map(|i| species(i, 1000 * (i as i32 + 1), 400))
+            .collect();
+        let mut spawn = vec![[0u32; 8]; 8];
+        spawn[0] = [3, 3, 5, 5, 0, 0, 0, 0];
+        spawn[1] = [5, 5, 3, 5, 9, 0, 0, 0];
+        spawn[2] = [7, 1, 4, 2, 0, 0, 0, 0];
+        PondSession::new(
+            species,
+            spawn,
+            templates(),
+            0,
+            1,
+            2,
+            60,
+            FishingRecord::default(),
+            0,
+            0xC0FFEE,
+        )
+    }
+
+    #[test]
+    fn pond_session_full_loop_hooks_fights_and_lands() {
+        let mut p = pond();
+        assert_eq!(p.phase(), PondPhase::Idle);
+        // Cast press -> wind-up -> power.
+        p.tick(
+            PondInput {
+                cast_edge: true,
+                ..Default::default()
+            },
+            1,
+            0x80,
+        );
+        for _ in 0..WINDUP_FRAMES {
+            p.tick(PondInput::default(), 1, 0x80);
+        }
+        assert_eq!(p.phase(), PondPhase::Power);
+        // Sweep to a deep cast, then lock.
+        for _ in 0..24 {
+            p.tick(PondInput::default(), 1, 0x80);
+        }
+        p.tick(
+            PondInput {
+                cast_edge: true,
+                ..Default::default()
+            },
+            1,
+            0x80,
+        );
+        assert_eq!(p.phase(), PondPhase::Flight);
+        let casts_before = p.casts;
+        for _ in 0..FLIGHT_FRAMES {
+            p.tick(PondInput::default(), 1, 0x80);
+        }
+        assert_eq!(p.phase(), PondPhase::Waiting);
+        assert_eq!(p.casts, casts_before + 1, "landing increments the counter");
+        assert!(p.line_record() > BAND_CHECK_MIN_RECORD);
+
+        // Hold reel A until a strike hooks a fish (bounded).
+        let mut hooked = false;
+        for _ in 0..2000 {
+            p.tick(
+                PondInput {
+                    reel_mask: 0x40,
+                    ..Default::default()
+                },
+                1,
+                0x80,
+            );
+            if p.phase() == PondPhase::Hooked {
+                hooked = true;
+                break;
+            }
+            if p.phase() == PondPhase::Idle {
+                // Fully reeled in without a strike: cast again.
+                p.tick(
+                    PondInput {
+                        cast_edge: true,
+                        ..Default::default()
+                    },
+                    1,
+                    0x80,
+                );
+                for _ in 0..WINDUP_FRAMES + 40 {
+                    p.tick(PondInput::default(), 1, 0x80);
+                }
+                p.tick(
+                    PondInput {
+                        cast_edge: true,
+                        ..Default::default()
+                    },
+                    1,
+                    0x80,
+                );
+                for _ in 0..FLIGHT_FRAMES {
+                    p.tick(PondInput::default(), 1, 0x80);
+                }
+            }
+        }
+        assert!(hooked, "no strike over 2000 held-reel frames");
+        let events = p.take_events();
+        assert!(
+            events.iter().any(|e| matches!(e, PondEvent::Hooked(_))),
+            "{events:?}"
+        );
+        let id = p.hooked().expect("species").index;
+        // The hooked species came from the lure row of the spawn table.
+        assert!([5usize, 3, 9].contains(&id), "id {id} not in lure-1 row");
+
+        // Fight: alternate reeling and resting so tension never pins, until
+        // the fish lands.
+        let mut landed = false;
+        for i in 0..20000 {
+            let reel = if p.tension() < 0x800 { 0x40 } else { 0 };
+            p.tick(
+                PondInput {
+                    reel_mask: reel,
+                    ..Default::default()
+                },
+                1,
+                0x80,
+            );
+            match p.phase() {
+                PondPhase::Landed => {
+                    landed = true;
+                    break;
+                }
+                PondPhase::Snapped => panic!("line snapped under the safe reel policy at {i}"),
+                _ => {}
+            }
+        }
+        assert!(landed, "fight never resolved");
+        assert!(p.record.points > 0);
+        assert!(p.last_award() > 0);
+        let events = p.take_events();
+        assert!(events.iter().any(|e| matches!(e, PondEvent::Landed(_))));
+        // Recast returns to the shore.
+        p.tick(
+            PondInput {
+                cast_edge: true,
+                ..Default::default()
+            },
+            1,
+            0x80,
+        );
+        assert_eq!(p.phase(), PondPhase::Idle);
+    }
+
+    #[test]
+    fn pond_session_is_deterministic_for_a_seed() {
+        let run = || {
+            let mut p = pond();
+            let mut log = Vec::new();
+            for i in 0..4000u32 {
+                let input = PondInput {
+                    reel_mask: if i % 90 < 45 { 0x40 } else { 0 },
+                    cast_edge: i % 200 == 0,
+                    ..Default::default()
+                };
+                p.tick(input, 1, 0x80);
+                log.push((p.phase() as u8 as u32, p.tension(), p.line_record()));
+            }
+            (log, p.record.points, p.casts)
+        };
+        assert_eq!(run(), run());
+    }
+
+    #[test]
+    fn pond_snaps_when_tension_pins() {
+        let mut p = pond();
+        // Cast deep.
+        p.tick(
+            PondInput {
+                cast_edge: true,
+                ..Default::default()
+            },
+            1,
+            0x80,
+        );
+        for _ in 0..WINDUP_FRAMES + 30 {
+            p.tick(PondInput::default(), 1, 0x80);
+        }
+        p.tick(
+            PondInput {
+                cast_edge: true,
+                ..Default::default()
+            },
+            1,
+            0x80,
+        );
+        for _ in 0..FLIGHT_FRAMES {
+            p.tick(PondInput::default(), 1, 0x80);
+        }
+        // Hold reel forever: the session must terminate (a weak fish lands
+        // before tension pins; a strong pull snaps the line; an empty reel-in
+        // returns to Idle) - it must never wedge in the fight.
+        let mut resolved = None;
+        for _ in 0..30000 {
+            p.tick(
+                PondInput {
+                    reel_mask: 0x40,
+                    ..Default::default()
+                },
+                1,
+                0x80,
+            );
+            if let ph @ (PondPhase::Snapped | PondPhase::Landed | PondPhase::Idle) = p.phase() {
+                resolved = Some(ph);
+                break;
+            }
+        }
+        assert!(resolved.is_some(), "held-reel session never resolved");
+        // And the snap edge itself is exercised directly by the gauge: a
+        // strong pull with the reel held pins the ceiling.
+        let mut g = TensionGauge::new(2);
+        for _ in 0..0x1000 {
+            g.apply_reel(ReelInput::ReelA, 4000, 1);
+        }
+        assert!(g.at_max());
     }
 }

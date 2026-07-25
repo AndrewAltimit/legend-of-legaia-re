@@ -488,9 +488,20 @@ Parser: [`legaia_asset::fishing_species`](../../crates/asset/src/fishing_species
 Engine port: [`legaia_engine_core::fishing`](../../crates/engine-core/src/fishing.rs) is the clean-room rules engine over that table. The **Confirmed** numeric kernels are ported directly: the casting-power oscillator (`CastPower`, bounds `0x20..=0x1000`, seed `0x40`; `FUN_801cf3bc` state `0x14`), the tension-gauge tug-of-war (`TensionGauge`, reel divisors `rod*9+0x23` / `rod*6+0x19`, release `(rod*0x40+0x4a)*frame_step`, clamp `[0, 0x1000]`; `FUN_801d4004`), and the catch award + persistent-record credit (`FishingRecord`,
 `value*(strength+0x9c0)/0x32000`, `999999` cap, best-catch; `FUN_801d5298`),
 and the reel-button decoder (`ReelInput::from_pad_mask`, `0x40 -> ReelA` /
-`0x80 -> ReelB` / else `Idle`; `FUN_801d7450`). The reel-cadence recogniser
-(`FUN_801d3db4`) stays documented-not-ported: its match is pure integer logic
-but is driven by the Sony gesture-template rodata `DAT_801d87d4`.
+`0x80 -> ReelB` / else `Idle`; `FUN_801d7450`). The reel-cadence recogniser is
+ported too (`ReelCadence`; `FUN_801d3db4` + the `FUN_801d746c` reset): its
+gesture templates are **not** baked in - `legaia_asset::fishing_species::
+parse_cadence_templates` decodes the `DAT_801d87d4` rodata (4 × `0x40`-byte
+records; template 1's final step is a genuine zero-duration "release") from
+the user's disc at load, and the matcher walks the 16-slot ring against them
+with the ±10 tolerance. The species-selection path around it is ported as
+well: `band_roll` (the three cutoffs), `BandCheck` (the countdown/credit
+strike check; the exact denominator ladder is approximated by the readout
+itself, marked at the site), `band4_gate` (the venue-hardwired arm) and
+`spawn_species` (`lure*8 + band`), composed with the confirmed kernels into
+`PondSession` - the venue-faithful cast → wait → strike → fight → score loop
+the site's minigames page drives through `crates/web-viewer`
+(`minigames_fishing.rs`).
 
 The HUD / banner cluster is ported as a draw-list layer (`HudDraw`) in [`legaia_engine_ui::ui_fishing`](../../crates/engine-ui/src/ui_fishing.rs), beside the consumer that renders it: `persistent_hud_draws` (`FUN_801d13f0`), `catch_hud_draws` plus the `length_display` / `extent_display` / `cast_power_percent` kernels (`FUN_801d1580`), the five animators `banner_from_left_draw` / `banner_from_right_draw` / `strike_splash_draws` / `banner_miss_draw` / `banner_converge_draws` (`FUN_801d78ec` / `FUN_801d75dc` / `FUN_801d71d4` / `FUN_801d6f10` / `FUN_801d7528`), and `BannerTimer` (the tail's timer-service loop).
 
@@ -503,6 +514,18 @@ What the consumer does **not** supply is the fishing sprite page itself. `FUN_80
 The `FishingSession` composes those kernels into a cast → fight → score loop. The win/lose glue (line-snaps-at-max-tension, reel-progress land, the locked-cast species pick, and the steady per-frame fish pull) is an **engine-side reconstruction** of the [Open](#open) items below and is marked as such at each call site - no Sony bytes are baked in.
 
 **Retail entry.** A fishing-pond door hands off through the ordinary **game mode 24** (`OTHER INIT`, `sub_id = 0`) path - the same scene-backup → overlay-load → return-to-field sequence any mode-24 minigame takes, with PROT 0972 as the loaded overlay. There is no bespoke fishing entry: the pond door is a normal door whose target mode is 24, which is why the minigame inherits the host scene's BGM (above) and returns to the exact field state it suspended. The engine's `GameMode::OtherInit`/`OtherMode` pair (`crates/engine-core/src/mode.rs`) is that mode.
+
+**Venue scene.** The pond itself is the `other1` scene bundle (raw CDNAME
+`#define other1 1195`, extraction entries 1193..1197 - the block whose overlay
+slot is PROT 0972, dev name `data\OTHER1`; the sibling dance overlay's scene
+stager writes the same `other1` name on entry/teardown). Assembled through the
+ordinary field-scene path, the bundle's one map carries **two pond areas**: a
+fenced wooden fishing deck on a grassy pond (mountain backdrop) in the map's
+high-Z half, and a rocky-shore blue pool with two rock islets in the low-Z
+half - the two `DAT_801d90d0` location variants. Which variant id maps to
+which area (and the retail camera / spawn placement inside each) is not
+statically pinned - the overlay positions its actors through runtime globals -
+so the browser page's per-venue anchors are fitted and marked as such.
 
 Runtime wiring: installed as a suspending scene mode (`SceneMode::Fishing`; `World::enter_fishing` / `tick_fishing` / `exit_fishing`). The `play-window` viewer starts it from the `L` key (loads the fishing overlay PROT 0972, `fishing_species::parse`); Cross locks the cast and reels (reel A), Square is reel B (retail: `0x80`), and the HUD shows the cast-power / tension / catch-result line plus the running point total. `P` opens the [point exchange](#point-exchange-prize-shop) (Up/Down move, Left/Right switch venue, Enter trades).
 

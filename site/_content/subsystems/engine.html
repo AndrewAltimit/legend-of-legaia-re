@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; engine reimplementation</div>
   <h1>Engine reimplementation</h1>
-  <p class="lede">A clean-room Rust port of Legend of Legaia - the same model as ScummVM or OpenRCT2, not a recompile. We trace the original PS1 code with a disassembler, document what each function does, then write fresh Rust that does the same thing. You supply your own disc image; the engine extracts the assets at first run and plays the game. The simulation reproduces retail exactly; the enhancements (dynamic lighting, free-angle movement, VR) are opt-in and default off.</p>
+  <p class="lede">A clean-room Rust port of Legend of Legaia - the same model as ScummVM or OpenRCT2, not a recompile. We trace the original PS1 code with a disassembler, document what each function does, then write fresh Rust that does the same thing. You supply your own disc image; the engine extracts the assets at first run and plays the game. The engine can reproduce retail exactly - and prove it against parity oracles - but it isn't bound to it: enhancements (dynamic lighting, free-angle movement, VR, and more to come) ride on top as toggles, with a retail-faithful mode always one flip away.</p>
 </header>
 
 <section class="doc-section" id="how-it-works">
@@ -13,23 +13,23 @@
 <section class="doc-section" id="goal-non-goals">
   <h2>Goal &amp; non-goals</h2>
   <p><strong>Goal:</strong> a playable port of Legend of Legaia (NA SCUS-94254) on modern systems via Rust + wgpu, with an optional WASM/web target. JP/EU regions land after NA is solid.</p>
-  <p>"Playable port" is a claim about the <em>simulation</em>, not about the pixels. What the game does - damage arithmetic, RNG, script pacing, save-record layout - reproduces retail. How it is presented is a separate question, and the answer has a deliberate split: <strong>shading defaults to retail</strong> (the game's own baked colours, no synthetic light), <strong>rasterisation defaults to clean</strong> (no vertex jitter or dither unless you opt in), and every enhancement that departs from retail defaults off. Details under <a href="#fidelity">fidelity &amp; enhancements</a>.</p>
+  <p>"Playable port" is grounded in retail, not bound by it. The decompilation, the format docs and the parity oracles pin down exactly what the original does - damage arithmetic, RNG, script pacing, save-record layout - and the engine reproduces it, provably, in its retail-faithful mode. That ground truth is a measuring stick, not a ceiling: the port is free to add features, mechanics, rendering and audio the original never had, exposed as toggles so a retail-faithful mode stays one flip away wherever a faithful mode makes sense. Details under <a href="#fidelity">fidelity &amp; enhancements</a>.</p>
   <p><strong>Non-goals:</strong></p>
   <ul class="bullets">
     <li><strong>Static recompilation of <code>SCUS_942.54</code>.</strong> The engine is clean-room from documented specs and decompile-then-rewrite logic - <em>not</em> auto-translated MIPS. This is the boundary the whole legal posture rests on.</li>
-    <li><strong>Redesigning the game.</strong> Retail's balance, damage rounding, encounter rates and script timing are reproduced, not tuned. A quirk is behaviour to replicate, not a bug to fix.</li>
+    <li><strong>Losing retail.</strong> The port departs from retail freely - new features, mechanics, rendering, audio - but never silently: departures live behind toggles, and the oracles keep "faithful" a testable claim about the retail mode. A quirk is behaviour to preserve in the faithful mode, and fair game to improve outside it.</li>
     <li><strong>Re-authoring the game's assets.</strong> Every texture, mesh, sample and sequence comes off your own disc at runtime. Nothing is upscaled, redrawn, or bundled.</li>
   </ul>
-  <p>Modding and translation are <em>not</em> on that list: the <a href="../tooling/randomizer.html">randomizer</a> (playable in-browser via the <a href="../tooling/rom-patcher.html">ROM patcher</a>) and the <code>legaia-patcher translate</code> language packs are shipped, deliberately-designed parts of this project. Both are disc patchers that operate on a user-supplied <code>.bin</code> rather than engine features - the randomizer does not touch the clean-room engine at all.</p>
+  <p>Modding and translation are <em>not</em> on that list: the <a href="../tooling/randomizer.html">randomizer</a> (playable in-browser via the <a href="../tooling/rom-patcher.html">ROM patcher</a>) and the <code>legaia-patcher translate</code> language packs are shipped, deliberately-designed parts of this project. Both are disc patchers that operate on a user-supplied <code>.bin</code> rather than engine features - the randomizer does not touch the clean-room engine at all. The separation is not a wall, though: what the patcher proves out against retail - randomizer logic, softlock fixes, tuning sliders - is expected to graduate into engine features and toggles. A mod that works on the disc has no reason not to become a mode of the port.</p>
 </section>
 
 <section class="doc-section" id="fidelity">
   <h2>Fidelity &amp; enhancements</h2>
-  <p class="lede">The port draws a hard line between the simulation and the presentation, so that "faithful" stays a testable claim rather than a mood.</p>
+  <p class="lede">The port draws a hard line between the retail-faithful mode and everything layered on top, so that "faithful" stays a testable claim rather than a mood.</p>
 
-  <p><strong>Simulation is faithful, with no opt-out.</strong> No toggle changes damage, drop rolls, AP costs, encounter rates or story-flag behaviour - because the parity oracles depend on there not being one. The engine scenarios hash the resulting save bytes against a blessed baseline, the <a href="#vram-diff">VRAM diff harness</a> diffs the engine's video-memory uploads against runtime blobs captured from save states (VRAM is the PS1's single 1024&times;512 video memory, where every texture and palette lives), and record / replay requires the same input file to produce bit-identical state traces twice.</p>
+  <p><strong>The retail simulation is the measured ground truth.</strong> In the faithful mode no toggle changes damage, drop rolls, AP costs, encounter rates or story-flag behaviour, and the parity oracles hold it there. The engine scenarios hash the resulting save bytes against a blessed baseline, the <a href="#vram-diff">VRAM diff harness</a> diffs the engine's video-memory uploads against runtime blobs captured from save states (VRAM is the PS1's single 1024&times;512 video memory, where every texture and palette lives), and record / replay requires the same input file to produce bit-identical state traces twice. Every parity measurement runs against that mode.</p>
 
-  <p><strong>Presentation is where the knobs live.</strong> Every enhancement is renderer or host state with no path into the world, so flipping one leaves replays and every oracle above untouched. The ones that depart from retail default off; the two that do not are called out below.</p>
+  <p><strong>The port is not bound to that mode.</strong> Enhancements - presentation today, mechanics and audio as they mature - land as explicit toggles that leave the faithful mode bit-identical when off, which is why flipping one never touches replays or the oracles above. Defaults follow the better experience, not the museum: where an enhancement is clearly better it ships enabled by default; a knob that currently defaults to retail marks an enhanced side still maturing, not a policy of restraint. Current knobs and defaults:</p>
 
   <table>
     <thead><tr><th>Knob</th><th>Default</th><th>Effect</th></tr></thead>
@@ -56,7 +56,7 @@
     <li><strong>Asset crates stay engine-agnostic.</strong> <code>crates/tim</code>, <code>crates/tmd</code>, etc. don't depend on wgpu / SDL3 / cpal. They produce typed in-memory representations; the engine layer turns those into GPU resources / audio buffers.</li>
     <li><strong>Mockable I/O for tests.</strong> The disc read path is abstracted via <code>crates/iso::RawDisc</code>; the same pattern extends to file-system extraction so tests can run without a disc.</li>
     <li><strong>Deterministic gameplay.</strong> RNG seeded from a known value; physics tick on a fixed timestep. Required for any future TAS / verification work.</li>
-    <li><strong>No "fix the bug" temptation.</strong> If the original game has quirky damage rounding or oddly-timed cutscenes, replicate them. Simulation fidelity is the baseline; the <a href="#fidelity">enhancements</a> ride on top of it as opt-in presentation state and never edit it.</li>
+    <li><strong>Quirks are preserved in the faithful mode, fixable outside it.</strong> Quirky damage rounding and oddly-timed cutscenes are replicated exactly where the oracles measure - that keeps ground truth honest. Changing them is legitimate engine work, but it lands as an <a href="#fidelity">enhancement toggle</a> over the faithful path, never a silent edit to it.</li>
     <li><strong>Behaviour tests against runtime traces.</strong> Inputs, RNG and frame outputs captured from the original game replay through the engine and diff against it - the <a href="#vram-diff">VRAM diff harness</a> and the <a href="../tooling/determinism-replay.html">record / replay</a> oracles are where that lands.</li>
   </ul>
 </section>

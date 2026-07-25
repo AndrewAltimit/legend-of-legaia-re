@@ -61,8 +61,9 @@
     { delay: 8, alpha: 0.22 },
     { delay: 12, alpha: 0.11 },
   ];
-  /* User toggle for the after-image trail. Default ON (retail-faithful);
-   * persisted like the shared sound gate (audio-toggle.js). */
+  /* User toggle for the after-image trail. Default OFF (clean model view;
+   * tick it for the retail-faithful echoes); persisted like the shared
+   * sound gate (audio-toggle.js). */
   const TRAIL_KEY = 'legaia-arts-trail';
 
   const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -134,9 +135,9 @@
       this._trailCfg = null;  /* the playing art's trail config (tint+echoes),
                                * kept even while the toggle is off so flipping
                                * it back on mid-art restores the echoes. */
-      this.trailEnabled = true;
+      this.trailEnabled = false;
       try {
-        this.trailEnabled = window.localStorage.getItem(TRAIL_KEY) !== '0';
+        this.trailEnabled = window.localStorage.getItem(TRAIL_KEY) === '1';
       } catch (e) { /* private mode */ }
     }
 

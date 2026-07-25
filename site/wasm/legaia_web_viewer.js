@@ -1718,11 +1718,269 @@ export class LegaiaMinigames {
         wasm.legaiaminigames_fishing_advance_cast(this.__wbg_ptr, step);
     }
     /**
+     * Buy `qty` of `row` at the venue's exchange, spending the pond
+     * session's point pool and latching one-time rows in the purchased mask
+     * (`FUN_801d06c8`'s Yes arm through the ported kernels). Returns the
+     * purchase (`{"item_id":..,"qty":..,"cost":..,"name":..}`) or `null`.
+     * @param {number} venue
+     * @param {number} row
+     * @param {number} qty
+     * @returns {string}
+     */
+    fishing_exchange_buy(venue, row, qty) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_fishing_exchange_buy(this.__wbg_ptr, venue, row, qty);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * The venue's point-exchange page, evaluated against the live session's
+     * points + purchased mask through the ported prize kernels:
+     *
+     * ```json
+     * { "venue": 0, "points": 1200, "first_visible": 1, "rows": [
+     *   { "row": 0, "limit": 1, "price": 50000, "item_id": 12,
+     *     "name": "War God Icon"|null, "owned": 0, "available": false,
+     *     "max_qty": 0, "one_time": true, "latched": false }, ... ] }
+     * ```
+     * @param {number} venue
+     * @returns {string}
+     */
+    fishing_exchange_json(venue) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_fishing_exchange_json(this.__wbg_ptr, venue);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * Lock the cast and hook a fish, entering the fight (no-op outside
      * casting). The locked power selects the species.
      */
     fishing_lock_cast() {
         wasm.legaiaminigames_fishing_lock_cast(this.__wbg_ptr);
+    }
+    /**
+     * Per-vertex `[cba, tsb]` for the angler body.
+     * @returns {Uint32Array}
+     */
+    fishing_player_cba_tsb() {
+        const ret = wasm.legaiaminigames_fishing_player_cba_tsb(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex `[r, g, b, textured_flag]` for the angler's hybrid render.
+     * @returns {Uint8Array}
+     */
+    fishing_player_flat_rgba() {
+        const ret = wasm.legaiaminigames_fishing_player_flat_rgba(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * `[bone_count, frame_count]` of the angler's standing-idle clip.
+     * @returns {Uint32Array}
+     */
+    fishing_player_idle_dims() {
+        const ret = wasm.legaiaminigames_fishing_player_idle_dims(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * The angler's standing-idle clip as absolute per-(frame, bone)
+     * `[tx, ty, tz, rx, ry, rz]` - the shared pose-stream shape
+     * (`dance_body_pose_frames` / `baka_anim_pose_frames`).
+     * @returns {Int32Array}
+     */
+    fishing_player_idle_frames() {
+        const ret = wasm.legaiaminigames_fishing_player_idle_frames(this.__wbg_ptr);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Triangle indices for the angler body.
+     * @returns {Uint32Array}
+     */
+    fishing_player_indices() {
+        const ret = wasm.legaiaminigames_fishing_player_indices(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex TMD object index (pose bone), parallel to the positions.
+     * @returns {Uint32Array}
+     */
+    fishing_player_object_ids() {
+        const ret = wasm.legaiaminigames_fishing_player_object_ids(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * TMD object count (pose rig width) of the angler body.
+     * @returns {number}
+     */
+    fishing_player_part_count() {
+        const ret = wasm.legaiaminigames_fishing_player_part_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Angler body vertex positions (object-local; the idle pose assembles
+     * them). Empty when the character pack didn't decode.
+     * @returns {Float32Array}
+     */
+    fishing_player_positions() {
+        const ret = wasm.legaiaminigames_fishing_player_positions(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex `[u, v]` for the angler body.
+     * @returns {Int32Array}
+     */
+    fishing_player_uvs() {
+        const ret = wasm.legaiaminigames_fishing_player_uvs(this.__wbg_ptr);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * The retail HUD draw list for this frame: the persistent rows
+     * (`FUN_801d13f0`), the catch HUD (`FUN_801d1580`, gauges once hooked)
+     * and the live banner animations, each resolved through the ported
+     * engine-ui builders. Coordinates are retail 320x240 screen space.
+     * Also services the banner timers, so call it exactly once per frame.
+     * @returns {string}
+     */
+    fishing_pond_hud_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_fishing_pond_hud_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Whether the venue-faithful pond can start (species + spawn + cadence
+     * tables all decoded).
+     * @returns {boolean}
+     */
+    fishing_pond_ready() {
+        const ret = wasm.legaiaminigames_fishing_pond_ready(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Start a pond session at `venue` (0 = Buma, 1 = Vidna) with the
+     * persistent save-block state: equipped `lure` (0..=2), `rod` stat
+     * (0..=2), lifetime `casts`, the point record triple, and the one-time
+     * prize `purchased_mask`. `seed` feeds the deterministic BIOS-rand
+     * stream. Returns `false` when the tables didn't decode.
+     * @param {number} venue
+     * @param {number} lure
+     * @param {number} rod
+     * @param {number} casts
+     * @param {number} points
+     * @param {number} best_points
+     * @param {number} best_fish
+     * @param {number} purchased_mask
+     * @param {number} seed
+     * @returns {boolean}
+     */
+    fishing_pond_start(venue, lure, rod, casts, points, best_points, best_fish, purchased_mask, seed) {
+        const ret = wasm.legaiaminigames_fishing_pond_start(this.__wbg_ptr, venue, lure, rod, casts, points, best_points, best_fish, purchased_mask, seed);
+        return ret !== 0;
+    }
+    /**
+     * Live pond state:
+     *
+     * ```json
+     * { "live": true, "phase": "idle"|"windup"|"power"|"flight"|"waiting"|
+     *   "hooked"|"landed"|"snapped",
+     *   "cast_power": 64, "cast_max": 4096, "tension": 0, "tension_max": 4096,
+     *   "record": 0, "readout": 0, "depth": 0, "lateral": 0,
+     *   "fish": {"index":3,"name":...,"score":8000}|null, "move": "run"|...,
+     *   "points": 0, "best": 0, "best_fish": 0, "casts": 51,
+     *   "last_award": 0, "venue": 0, "lure": 1, "rod": 2 }
+     * ```
+     * @returns {string}
+     */
+    fishing_pond_state_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_fishing_pond_state_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Advance the pond one frame. `reel_mask` carries the held pad bits
+     * (`0x40` Cross / reel A, `0x80` Square / reel B), `cast_edge` the cast /
+     * confirm press, `edge_bonus` the count of fresh input edges this frame
+     * (each feeds the strike credit). Returns the events raised this frame:
+     *
+     * ```json
+     * [ {"e":"splash"}, {"e":"hooked","id":3,"name":"..."},
+     *   {"e":"landed","points":1234}, {"e":"snapped"} ]
+     * ```
+     * @param {number} reel_mask
+     * @param {boolean} cast_edge
+     * @param {number} edge_bonus
+     * @returns {string}
+     */
+    fishing_pond_tick(reel_mask, cast_edge, edge_bonus) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_fishing_pond_tick(this.__wbg_ptr, reel_mask, cast_edge, edge_bonus);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Prizes collected through the exchange this session:
+     * `[{"item_id":..,"qty":..,"name":..}, ...]`.
+     * @returns {string}
+     */
+    fishing_prizes_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_fishing_prizes_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
     }
     /**
      * Recast after a resolved fight: reset the meter and clear the fight
@@ -1740,6 +1998,147 @@ export class LegaiaMinigames {
      */
     fishing_reel(input, frames) {
         wasm.legaiaminigames_fishing_reel(this.__wbg_ptr, input, frames);
+    }
+    /**
+     * Per-vertex `[cba, tsb]` for the baked map.
+     * @returns {Uint32Array}
+     */
+    fishing_scene_cba_tsb() {
+        const ret = wasm.legaiaminigames_fishing_scene_cba_tsb(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex `[r, g, b, textured_flag]` for the baked map's hybrid
+     * textured / vertex-colour render.
+     * @returns {Uint8Array}
+     */
+    fishing_scene_flat_rgba() {
+        const ret = wasm.legaiaminigames_fishing_scene_flat_rgba(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Walk-ground geometry summary for the page's shore-anchor fit:
+     * `{"aabb":[[lo],[hi]],"centroid":[x,y,z],"verts":N}` over the
+     * heightfield's own vertices (the walkable shore band - a much tighter
+     * frame than the whole map's AABB). `null` when the scene has no
+     * resolvable floor grid.
+     * @returns {string}
+     */
+    fishing_scene_ground_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_fishing_scene_ground_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Walk-ground height (world Y, retail Y-down) under world `(x, z)`:
+     * the nearest heightfield vertex's Y. `NaN`-free: returns `0` with no
+     * ground. Used by the page to anchor the angler on the shore.
+     * @param {number} x
+     * @param {number} z
+     * @returns {number}
+     */
+    fishing_scene_height_at(x, z) {
+        const ret = wasm.legaiaminigames_fishing_scene_height_at(this.__wbg_ptr, x, z);
+        return ret;
+    }
+    /**
+     * Triangle indices for the baked map.
+     * @returns {Uint32Array}
+     */
+    fishing_scene_indices() {
+        const ret = wasm.legaiaminigames_fishing_scene_indices(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Scene status for the page + the fitted framing:
+     * `{"aabb":[[lo],[hi]],"player":true,"idle_frames":N,"ground":true}`.
+     * @returns {string}
+     */
+    fishing_scene_info_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_fishing_scene_info_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Baked venue-map vertex positions (`[x, y, z, ...]`, retail world
+     * space, Y down). Empty when the scene didn't decode.
+     * @returns {Float32Array}
+     */
+    fishing_scene_positions() {
+        const ret = wasm.legaiaminigames_fishing_scene_positions(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Whether the fishing venue scene decoded off this disc.
+     * @returns {boolean}
+     */
+    fishing_scene_ready() {
+        const ret = wasm.legaiaminigames_fishing_scene_ready(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Per-vertex `[u, v]` texel coords for the baked map.
+     * @returns {Int32Array}
+     */
+    fishing_scene_uvs() {
+        const ret = wasm.legaiaminigames_fishing_scene_uvs(this.__wbg_ptr);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * The 1 MB PSX VRAM the venue + angler sample.
+     * @returns {Uint8Array}
+     */
+    fishing_scene_vram() {
+        const ret = wasm.legaiaminigames_fishing_scene_vram(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * The venue's species-spawn table, named:
+     *
+     * ```json
+     * { "venue": 0, "rows": [ { "lure": 0, "bands": [
+     *     {"id": 3, "name": "..."}, ... 5 ] }, ... 3 ] }
+     * ```
+     * @param {number} venue
+     * @returns {string}
+     */
+    fishing_spawn_json(venue) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_fishing_spawn_json(this.__wbg_ptr, venue);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
     }
     /**
      * The whole decoded species table, for the "what's biting" panel:
@@ -1904,6 +2303,121 @@ export class LegaiaMinigames {
         wasm.legaiaminigames_muscle_end_selection(this.__wbg_ptr);
     }
     /**
+     * Every decodable action animation of the monster, in action-table
+     * order: `[{"action_id":0,"rate":1,"part_count":P,"frame_count":F},…]`.
+     * `action_id` is the semantic tag (`0` idle, `2`/`3` hit reactions,
+     * `4` knockdown, `0x20`/`0x21` the attack family - see
+     * `docs/formats/monster-animation.md`); the array index is the handle
+     * for [`Self::muscle_monster_pose_frames`].
+     * @param {number} monster_id
+     * @returns {string}
+     */
+    muscle_monster_anims_json(monster_id) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_muscle_monster_anims_json(this.__wbg_ptr, monster_id);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Per-vertex `[cba, tsb]` (battle-slot relocated), parallel to the
+     * positions.
+     * @param {number} monster_id
+     * @returns {Uint32Array}
+     */
+    muscle_monster_cba_tsb(monster_id) {
+        const ret = wasm.legaiaminigames_muscle_monster_cba_tsb(this.__wbg_ptr, monster_id);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex `[r, g, b, textured_flag]` - monsters draw fully textured,
+     * so every vertex samples VRAM (kept for parity with the fighter API).
+     * @param {number} monster_id
+     * @returns {Uint8Array}
+     */
+    muscle_monster_flat_rgba(monster_id) {
+        const ret = wasm.legaiaminigames_muscle_monster_flat_rgba(this.__wbg_ptr, monster_id);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Triangle indices of the monster's battle mesh.
+     * @param {number} monster_id
+     * @returns {Uint32Array}
+     */
+    muscle_monster_indices(monster_id) {
+        const ret = wasm.legaiaminigames_muscle_monster_indices(this.__wbg_ptr, monster_id);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex TMD object index (the rigid part a vertex hangs from).
+     * @param {number} monster_id
+     * @returns {Uint32Array}
+     */
+    muscle_monster_object_ids(monster_id) {
+        const ret = wasm.legaiaminigames_muscle_monster_object_ids(this.__wbg_ptr, monster_id);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * TMD object count (pose rig width) of the monster's mesh.
+     * @param {number} monster_id
+     * @returns {number}
+     */
+    muscle_monster_part_count(monster_id) {
+        const ret = wasm.legaiaminigames_muscle_monster_part_count(this.__wbg_ptr, monster_id);
+        return ret >>> 0;
+    }
+    /**
+     * Monster action animation `index` decoded to absolute per-(frame, part)
+     * `[tx, ty, tz, rx, ry, rz]` (PSX 4096-unit angles), padded to
+     * `target_part_count` parts - the same pose-stream shape every other
+     * site animator consumes (`baka_anim_pose_frames` and siblings).
+     * @param {number} monster_id
+     * @param {number} index
+     * @param {number} target_part_count
+     * @returns {Int32Array}
+     */
+    muscle_monster_pose_frames(monster_id, index, target_part_count) {
+        const ret = wasm.legaiaminigames_muscle_monster_pose_frames(this.__wbg_ptr, monster_id, index, target_part_count);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex positions of monster `monster_id`'s battle mesh.
+     * @param {number} monster_id
+     * @returns {Float32Array}
+     */
+    muscle_monster_positions(monster_id) {
+        const ret = wasm.legaiaminigames_muscle_monster_positions(this.__wbg_ptr, monster_id);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex `[u, v]` texel coords, parallel to the positions.
+     * @param {number} monster_id
+     * @returns {Int32Array}
+     */
+    muscle_monster_uvs(monster_id) {
+        const ret = wasm.legaiaminigames_muscle_monster_uvs(this.__wbg_ptr, monster_id);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
      * Start the next round after a non-terminal resolution: reseed budgets,
      * clear queues. No-op unless the contest is at a round break.
      */
@@ -1911,15 +2425,100 @@ export class LegaiaMinigames {
         wasm.legaiaminigames_muscle_next_round(this.__wbg_ptr);
     }
     /**
-     * Play the round out through the card-damage stand-in. No-op unless the
-     * round is in the resolve phase (i.e. after [`Self::muscle_end_selection`]).
+     * Play the round out through the ported battle formulas. Each queued
+     * card resolves exactly as a retail battle action: move-power record via
+     * the id map, the arts/physical predamage roll (`FUN_801dd0ac`), the
+     * element-affinity scale (`FUN_801dd864`) and the damage finisher
+     * (`FUN_801ddb30`), drawing from the contest's PsyQ `rand()` stream in
+     * retail call order (3 draws, +2 when the bonus arm fires, +1 when
+     * mitigation floors the hit). The defender's spirit gauge accrues from
+     * each hit (`spirit_gauge_fill`). No-op unless the round is in the
+     * resolve phase.
      */
     muscle_resolve() {
         wasm.legaiaminigames_muscle_resolve(this.__wbg_ptr);
     }
     /**
-     * Start a Muscle Dome contest on the disc's dealt hand, beginning in the
-     * selection phase. Returns `false` when the hand table didn't decode.
+     * The monster archive roster, for the page's opponent picker:
+     *
+     * ```json
+     * [ { "id": 1, "name": "Gimard", "hp": 43, "agl": 60, "atk": 15,
+     *     "udf": 14, "ldf": 14, "int": 8, "spd": 12, "element": 2 }, ... ]
+     * ```
+     *
+     * Stats are the boosted battle profile (`battle_stats()`), i.e. the
+     * numbers the contest actually fights with. Only records with a
+     * decodable mesh + idle animation are listed (the dome renders its
+     * opponent in 3D). Names are the archive's own.
+     * @returns {string}
+     */
+    muscle_roster_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_muscle_roster_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * The last resolved round's play-by-play, for the page's 3D playback:
+     *
+     * ```json
+     * [ { "attacker": 0, "cmd": 12, "power": 10, "damage": 55,
+     *     "hp": [500, 345] }, ... ]
+     * ```
+     * @returns {string}
+     */
+    muscle_round_log_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_muscle_round_log_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Whether the dome's 3D scene decodes for `monster_id`: the battle-form
+     * party pack plus the monster's mesh + idle animation.
+     * @param {number} monster_id
+     * @returns {boolean}
+     */
+    muscle_scene_ready(monster_id) {
+        const ret = wasm.legaiaminigames_muscle_scene_ready(this.__wbg_ptr, monster_id);
+        return ret !== 0;
+    }
+    /**
+     * Name of spell id `id` from the SCUS spell-name table (the table the
+     * dome's victory banner reads at `DAT_800754d0`). Empty when no
+     * executable was loaded (raw `PROT.DAT` input).
+     * @param {number} id
+     * @returns {string}
+     */
+    muscle_spell_name(id) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_muscle_spell_name(this.__wbg_ptr, id);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Start a contest with defaults (Vahn at level 30 vs the archive's first
+     * decodable monster) - the compatibility entry the page's reset path and
+     * the older verification hooks call. Returns `false` when the tables
+     * didn't decode.
      * @returns {boolean}
      */
     muscle_start() {
@@ -1927,19 +2526,36 @@ export class LegaiaMinigames {
         return ret !== 0;
     }
     /**
-     * Live contest state.
+     * Start a Muscle Dome contest: party character `char_slot` (0 = Vahn,
+     * 1 = Noa, 2 = Gala) at `level` versus monster `monster_id` (a PROT 867
+     * archive id), on PsyQ RNG seed `seed`.
      *
-     * ```json
-     * { "live": true, "phase": "select"|"resolve"|"round_over"|"won"|"lost",
-     *   "round": 0, "hp": [500, 400], "hp_max": [500, 400],
-     *   "budget": [90, 70], "spent": [0, 0], "score": [108, 108],
-     *   "queue": [[12], []], "last_damage": [0, 0],
-     *   "hand": [ { "cmd": 12, "cost": 30 }, ... ], "reward_spell": 129 }
-     * ```
-     *
-     * `score` is the retail `hp * 0x6c / max_hp` readout; `hand` is the
-     * player's four dealt cards; `reward_spell` is the spell id awarded on a
-     * win (an id into the shared spell-name table's player Seru-magic block).
+     * The player fighter's stats are the disc's own progression: the
+     * new-game template record leveled through the growth curves (the
+     * deterministic core gain per level - retail adds a `rand()` jitter of
+     * mean 0 on top, so the core is the expected retail stat line), then
+     * battle-load initialised (`FUN_80053CB8`). The opponent's stats are its
+     * monster record's boosted battle profile (`FUN_80054CB0`). Both round
+     * budgets seed from the fighters' AGL - the `+0x154` pool the dome's
+     * budget `ctx+0x6dc` reads. Returns `false` when the tables or the
+     * monster record don't resolve.
+     * @param {number} char_slot
+     * @param {number} level
+     * @param {number} monster_id
+     * @param {number} seed
+     * @returns {boolean}
+     */
+    muscle_start_vs(char_slot, level, monster_id, seed) {
+        const ret = wasm.legaiaminigames_muscle_start_vs(this.__wbg_ptr, char_slot, level, monster_id, seed);
+        return ret !== 0;
+    }
+    /**
+     * Live contest state (superset of the older shape - `live`, `phase`,
+     * `round`, `hp`, `hp_max`, `budget`, `spent`, `score`, `queue`,
+     * `last_damage`, `hand`, `reward_spell` keep their meaning). New keys:
+     * `names`, `spirit` (the `+0x170` gauges the dome HUD bars display),
+     * `stats` (per-fighter INT/UDF/LDF/element the formulas used), `source`
+     * (`"disc"` / `"fallback"` player record), `char`, `level`, `monster`.
      * @returns {string}
      */
     muscle_state_json() {
@@ -1953,6 +2569,20 @@ export class LegaiaMinigames {
         } finally {
             wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
         }
+    }
+    /**
+     * The dome duel's 1 MB PSX VRAM: the battle-form party atlases (PROT
+     * 1204, their bundled CLUT strips) plus monster `monster_id`'s texture
+     * pool injected at battle slot 0's coordinates (CLUT row 484, 4bpp page
+     * at `(320, 256)`) - the same layout the retail battle loader builds.
+     * @param {number} monster_id
+     * @returns {Uint8Array}
+     */
+    muscle_vram(monster_id) {
+        const ret = wasm.legaiaminigames_muscle_vram(this.__wbg_ptr, monster_id);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
     }
     /**
      * Render a global-pool BGM id (`2000 + sound-test slot`) to a **seamless
@@ -6581,6 +7211,35 @@ export class Music01Render {
 if (Symbol.dispose) Music01Render.prototype[Symbol.dispose] = Music01Render.prototype.free;
 
 /**
+ * Read the persistent fishing block out of save block `block` of an
+ * emulator card container: point total, equipped lure + rod, best catch,
+ * the lifetime cast counter and the one-time prize bitmask.
+ * @param {Uint8Array} bytes
+ * @param {number} block
+ * @returns {string}
+ */
+export function card_fishing_json(bytes, block) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.card_fishing_json(ptr0, len0, block);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
  * The 16x16 memory-card icon baked into save block `block` of a card
  * container, as 1024 RGBA8 bytes. For Legaia saves this is the lead
  * character's portrait - the retail save writer copies the load-screen
@@ -6616,6 +7275,33 @@ export function card_patch_coins(bytes, block, coins) {
     const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.card_patch_coins(ptr0, len0, block, coins);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v2;
+}
+
+/**
+ * Write the fishing block back into save block `block`, returning the whole
+ * container with only those seven dwords changed - the same in-place edit
+ * shape as `card_patch_coins`, so the card still loads in an emulator.
+ * @param {Uint8Array} bytes
+ * @param {number} block
+ * @param {number} points
+ * @param {number} lure
+ * @param {number} rod
+ * @param {number} best
+ * @param {number} best_fish
+ * @param {number} casts
+ * @param {number} purchased
+ * @returns {Uint8Array}
+ */
+export function card_patch_fishing(bytes, block, points, lure, rod, best, best_fish, casts, purchased) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.card_patch_fishing(ptr0, len0, block, points, lure, rod, best, best_fish, casts, purchased);
     if (ret[3]) {
         throw takeFromExternrefTable0(ret[2]);
     }
@@ -7260,7 +7946,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 131, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 132, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__hc20c1a455dcd1273);
             return ret;
         },

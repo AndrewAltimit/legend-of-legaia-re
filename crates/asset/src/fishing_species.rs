@@ -176,13 +176,16 @@ pub fn parse_at(overlay: &[u8], off: usize, count: usize) -> Option<Vec<FishingS
 // into `PTR_DAT_801d9114` by the same venue select that pages the exchange
 // tables (`FUN_801cf3bc` case 1; see [`crate::fishing_exchange`]). The
 // hooked-fish handler picks the hooked species as
-// `species = table[(rod * 8 + band) * 4]` (`FUN_801d26cc`,
-// `overlay_fishing_801d26cc.txt` line ~1856) where `rod` = the equipped-rod
-// index `_DAT_80084450` (0..3: Old / Deluxe / Legendary) and `band` = the
-// cast band `DAT_801d90e8` (0..4; band 4 is the rare band, entered by a
-// venue-specific roll - 1/16 at venue 0 with rod 1 + lure 2 after 0x32
-// even-count catches, 1/4 at venue 1 with rod 2 + lure 2 - or directly when
-// the deep-cast pad bit is held with the deep-water flag set).
+// `species = table[(lure * 8 + band) * 4]` (`FUN_801d26cc`,
+// `overlay_fishing_801d26cc.txt` line ~1856) where `lure` = the equipped
+// **lure** index `_DAT_80084450` (0..2: Light / Normal / Heavy - rows 3..8
+// are zero padding) and `band` = the cast band `DAT_801d90e8` (0..4). Band 4
+// is reachable only through the strike-time band-4 gate (venue-hardwired
+// lure + third rod + band 0 + a `rand` mask; Buma additionally needs > 50
+// lifetime casts with the counter even) - see
+// `docs/subsystems/minigame-fishing.md` "Species selection and the band-4
+// gate". (An earlier revision of this comment indexed the rows by rod and
+// described a deep-cast band-4 path; both halves were wrong.)
 
 /// Runtime VA of the venue-0 spawn table (`&DAT_801d8334`).
 pub const SPAWN_TABLE_VA_PAGE0: u32 = 0x801D_8334;
@@ -227,9 +230,138 @@ pub fn parse_spawn_tables(overlay: &[u8]) -> Option<[Vec<[u32; SPAWN_BANDS]>; 2]
     ])
 }
 
+// --- Reel-cadence gesture templates ----------------------------------------
+//
+// The rodata the reel-cadence recogniser (`FUN_801d3db4`) walks its 16-slot
+// `{button, held-frames}` ring buffer against: four `0x40`-byte records at
+// `DAT_801d87d4`, each `u32 step_count`, `u32 history_window` (frame-steps),
+// then `step_count` pairs of `{u32 duration, u32 button}` matched backwards
+// from the newest ring slot with a +-10 frame-step tolerance. The matched
+// template's id is stored **as the cast band** by the pre-hook check in
+// `FUN_801d26cc`. Button values are the `FUN_801d7450` decode: `0` idle,
+// `1` reel A (Cross), `2` reel B (Square). See
+// `docs/subsystems/minigame-fishing.md` "Reel-button decode and cadence".
+
+/// Runtime VA of the gesture-template rodata (`DAT_801d87d4`).
+pub const CADENCE_TEMPLATE_VA: u32 = 0x801D_87D4;
+
+/// Number of gesture templates (template id = cast band 0..=3).
+pub const CADENCE_TEMPLATE_COUNT: usize = 4;
+
+/// Byte stride of one template record.
+pub const CADENCE_TEMPLATE_STRIDE: usize = 0x40;
+
+/// Matching tolerance on each step's held duration, in frame-steps.
+pub const CADENCE_TOLERANCE: i32 = 10;
+
+/// One reel-cadence step: hold `button` (`0` idle / `1` Cross / `2` Square)
+/// for `duration` frame-steps (+- [`CADENCE_TOLERANCE`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CadenceStep {
+    /// Held duration in frame-steps.
+    pub duration: i32,
+    /// Decoded reel button (`FUN_801d7450` value space).
+    pub button: u8,
+}
+
+/// One decoded gesture template (`DAT_801d87d4` record; id = cast band).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CadenceTemplate {
+    /// History window the match may span, in frame-steps.
+    pub history_window: i32,
+    /// The steps, in chronological order (matched backwards from the newest
+    /// ring slot).
+    pub steps: Vec<CadenceStep>,
+}
+
+/// Parse the four gesture templates out of the as-loaded fishing overlay
+/// image. Rejects records whose step count doesn't fit the `0x40`-byte
+/// record (`2 + 2*steps` words), so a wrong base or a truncated image
+/// returns `None` instead of garbage cadences.
+pub fn parse_cadence_templates(overlay: &[u8]) -> Option<Vec<CadenceTemplate>> {
+    let base = CADENCE_TEMPLATE_VA.checked_sub(FISHING_OVERLAY_BASE_VA)? as usize;
+    let need = base + CADENCE_TEMPLATE_COUNT * CADENCE_TEMPLATE_STRIDE;
+    if overlay.len() < need {
+        return None;
+    }
+    let word = |p: usize| -> u32 {
+        u32::from_le_bytes([overlay[p], overlay[p + 1], overlay[p + 2], overlay[p + 3]])
+    };
+    let mut out = Vec::with_capacity(CADENCE_TEMPLATE_COUNT);
+    for t in 0..CADENCE_TEMPLATE_COUNT {
+        let rec = base + t * CADENCE_TEMPLATE_STRIDE;
+        let step_count = word(rec) as usize;
+        let history_window = word(rec + 4) as i32;
+        // A 0x40-byte record holds at most (0x40/4 - 2) / 2 = 7 steps.
+        if step_count == 0 || step_count > (CADENCE_TEMPLATE_STRIDE / 4 - 2) / 2 {
+            return None;
+        }
+        let mut steps = Vec::with_capacity(step_count);
+        for s in 0..step_count {
+            let p = rec + 8 + s * 8;
+            let duration = word(p) as i32;
+            let button = word(p + 4);
+            // A zero duration is real: template 1 ends in a "release" step
+            // ({0, idle}) matched inside the +-10 tolerance.
+            if button > 2 || !(0..=0x1000).contains(&duration) {
+                return None;
+            }
+            steps.push(CadenceStep {
+                duration,
+                button: button as u8,
+            });
+        }
+        out.push(CadenceTemplate {
+            history_window,
+            steps,
+        });
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cadence_templates_parse_and_reject_garbage() {
+        let base = (CADENCE_TEMPLATE_VA - FISHING_OVERLAY_BASE_VA) as usize;
+        let mut ov = vec![0u8; base + CADENCE_TEMPLATE_COUNT * CADENCE_TEMPLATE_STRIDE];
+        // Template shapes from the doc's table (durations are placeholders -
+        // the real values come off the visitor's disc).
+        let shapes: [&[(u32, u32)]; 4] = [
+            &[(40, 0), (25, 1), (40, 0), (15, 2)],
+            &[(15, 2), (25, 1), (10, 0)],
+            &[(15, 2), (40, 0), (15, 2)],
+            &[(25, 1), (40, 0), (25, 1)],
+        ];
+        for (t, steps) in shapes.iter().enumerate() {
+            let rec = base + t * CADENCE_TEMPLATE_STRIDE;
+            ov[rec..rec + 4].copy_from_slice(&(steps.len() as u32).to_le_bytes());
+            ov[rec + 4..rec + 8].copy_from_slice(&200u32.to_le_bytes());
+            for (s, &(d, b)) in steps.iter().enumerate() {
+                let p = rec + 8 + s * 8;
+                ov[p..p + 4].copy_from_slice(&d.to_le_bytes());
+                ov[p + 4..p + 8].copy_from_slice(&b.to_le_bytes());
+            }
+        }
+        let parsed = parse_cadence_templates(&ov).expect("parses");
+        assert_eq!(parsed.len(), 4);
+        assert_eq!(parsed[0].steps.len(), 4);
+        assert_eq!(
+            parsed[0].steps[3],
+            CadenceStep {
+                duration: 15,
+                button: 2
+            }
+        );
+        assert_eq!(parsed[3].steps[0].button, 1);
+        // A garbage step count rejects the whole parse.
+        ov[base..base + 4].copy_from_slice(&99u32.to_le_bytes());
+        assert!(parse_cadence_templates(&ov).is_none());
+        // Too-short image rejects.
+        assert!(parse_cadence_templates(&ov[..base]).is_none());
+    }
 
     #[test]
     fn file_offset_math() {

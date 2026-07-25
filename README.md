@@ -4,7 +4,7 @@ Reverse engineering and reimplementation of the PSX game **Legend of Legaia** (1
 
 The repo name `-re` is in both senses: **r**everse-**e**ngineering and **r**e-implementation. Same legal model as [ScummVM](https://www.scummvm.org/), [OpenRCT2](https://github.com/openrct2/OpenRCT2), [OpenMW](https://github.com/OpenMW/openmw), [OpenLara](https://github.com/XProger/OpenLara): this repo is code and documentation only - you bring your own disc image, and nothing Sony owns is ever committed or distributed.
 
-Retail behaviour is the baseline: the simulation reproduces the original's arithmetic and quirks, and the parity oracles enforce it. But the port is not a museum piece - enhancements the original never had, like dynamic lighting, free-angle movement and [VR](docs/subsystems/vr-mode.md), ride on top as opt-in toggles that default off and never touch the simulation. See [`docs/subsystems/engine.md`](docs/subsystems/engine.md#fidelity-and-enhancements).
+Retail behaviour is the measured ground truth: the decompilation and parity oracles reproduce the original's arithmetic and quirks exactly, and a retail-faithful mode keeps that testable. The port itself is not bound by it - enhancements the original never had, like dynamic lighting, free-angle movement and [VR](docs/subsystems/vr-mode.md), plus features first proven out through the [disc patcher](docs/tooling/randomizer.md), land as engine toggles, enabled by default where they are clearly better, with retail always one flip away. See [`docs/subsystems/engine.md`](docs/subsystems/engine.md#fidelity-and-enhancements).
 
 **Project site:** [andrewaltimit.github.io/legend-of-legaia-re](https://andrewaltimit.github.io/legend-of-legaia-re/)
 
