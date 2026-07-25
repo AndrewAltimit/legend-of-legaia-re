@@ -140,33 +140,44 @@ fn every_event_declares_disc_or_site_provenance() {
             "event {ev} must carry a provenance note"
         );
     }
-    // The footstep row is the one whose cadence is retail and whose cue id is
-    // not; it must say so rather than pass itself off as traced.
-    let foot = events
-        .iter()
-        .find(|e| e["event"] == "footstep")
-        .expect("footstep event");
-    assert_eq!(foot["source"], "site", "the footstep cue id is a port pick");
+    // The footstep must NOT appear here. Its cadence is the retail kernel but
+    // its cue id is unpinned, and an id resolves through the descriptor table
+    // to a *program index* whose sample differs per resident bank - so a
+    // guessed id is arbitrary, not approximate. It played an impact sample in
+    // the field. This row's absence is the fix; advertising an id the host no
+    // longer fires would be worse than either firing it or omitting it.
+    assert!(
+        events.iter().all(|e| e["event"] != "footstep"),
+        "the footstep must stay out of the advertised cue list while its id is \
+         unpinned - see CUE_FOOTSTEP"
+    );
 }
 
 /// The footstep cadence has to be *reachable from the host tick* and has to
-/// discriminate: walking produces cues, standing still produces none.
+/// discriminate: walking steps the cadence, standing still does not.
 ///
-/// Assert on `queued`, not `fired`. Off wasm there is no SPU to key a voice
-/// into, so `fired` is unconditionally zero here - a "standing still fires
-/// nothing" test written against `fired` passes without exercising anything,
-/// which is exactly the vacuous shape this file exists to avoid. `queued`
-/// counts what the *source* produced and is live on both targets.
+/// Assert on `cadence_steps`, not `queued` or `fired`. `CUE_FOOTSTEP` is
+/// `None` while retail's cue id is unpinned, so no cue is enqueued and no
+/// voice is keyed - but the ported kernel still runs, and this is the only
+/// counter that can tell a wired-but-silent cadence from an unwired one. That
+/// distinction is not academic: this cadence once ran every frame and fired
+/// zero steps over 274 units of walking, because it was fed the wrong speed
+/// quantity, while every unit test in the kernel passed.
+///
+/// `fired` would be worse still: off wasm there is no SPU to key a voice into,
+/// so it is unconditionally zero here, and a "standing still fires nothing"
+/// assertion written against it passes without exercising anything - exactly
+/// the vacuous shape this file exists to avoid.
 #[test]
-fn walking_queues_footsteps_and_standing_still_does_not() {
+fn walking_steps_the_cadence_and_standing_still_does_not() {
     let Some(mut rt) = loaded_in_town() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    let queued = |rt: &LegaiaRuntime| -> u64 {
+    let steps = |rt: &LegaiaRuntime| -> u64 {
         let v: serde_json::Value =
             serde_json::from_str(&rt.play_sfx_state_json()).expect("sfx state json");
-        v["queued"].as_u64().unwrap_or(0)
+        v["cadence_steps"].as_u64().unwrap_or(0)
     };
 
     // Idle: the retail gate parks the countdown above `0xB`, so a stationary
@@ -175,8 +186,8 @@ fn walking_queues_footsteps_and_standing_still_does_not() {
     for _ in 0..240 {
         rt.tick_frame().expect("tick");
     }
-    let idle = queued(&rt);
-    assert_eq!(idle, 0, "a stationary player must queue no footstep cue");
+    let idle = steps(&rt);
+    assert_eq!(idle, 0, "a stationary player must not step the cadence");
 
     // Walk: hold Up. Four seconds of sim is far more than the cadence's
     // interval, so several steps must mature.
@@ -185,10 +196,10 @@ fn walking_queues_footsteps_and_standing_still_does_not() {
     for _ in 0..240 {
         rt.tick_frame().expect("tick");
     }
-    let walked = queued(&rt);
+    let walked = steps(&rt);
     assert!(
         walked > 0,
-        "walking must queue footstep cues - the cadence gate has to open for a \
+        "walking must step the cadence - the retail gate has to open for a \
          moving player, or the whole source is inert"
     );
 
@@ -199,8 +210,8 @@ fn walking_queues_footsteps_and_standing_still_does_not() {
         rt.tick_frame().expect("tick");
     }
     assert_eq!(
-        queued(&rt),
+        steps(&rt),
         walked,
-        "standing still again must queue nothing further"
+        "standing still again must step the cadence no further"
     );
 }

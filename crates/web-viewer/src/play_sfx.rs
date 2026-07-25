@@ -149,6 +149,13 @@ pub struct PlaySfx {
     pub cadence: legaia_engine_audio::footstep::FootstepCadence,
     /// Last tick's player XZ, for the movement magnitude the cadence reads.
     pub prev_pos: Option<(i32, i32)>,
+    /// Cadence steps the ported `FUN_80018db0` kernel has fired since the page
+    /// loaded, counted **before** the cue lookup and so independent of whether
+    /// a cue id is pinned. This is what keeps the cadence falsifiable while
+    /// [`CUE_FOOTSTEP`] is `None`: a wired kernel that produces nothing is
+    /// indistinguishable from an unwired one, and `queued` alone cannot tell
+    /// them apart once the voice key is withheld.
+    pub cadence_steps: u32,
     /// Cues *enqueued* since the page loaded, whether or not a voice took
     /// them. This is what a cue **source** produces, so it is the signal that
     /// tells a wired-but-silent source apart from one that never fires - and
@@ -260,6 +267,7 @@ impl LegaiaRuntime {
         };
         let tick = self.sfx.cadence.tick_cadence(mag, mag);
         if tick.step_fired {
+            self.sfx.cadence_steps += 1;
             // Silent until retail's footstep cue id is pinned - see CUE_FOOTSTEP.
             if let Some(cue) = CUE_FOOTSTEP {
                 self.enqueue_sfx(cue, 0);
@@ -400,6 +408,7 @@ impl LegaiaRuntime {
             "descriptors": self.sfx.bank.len(),
             "bank_prot": self.sfx.bank_index,
             "vab_staged": self.sfx.vab_staged,
+            "cadence_steps": self.sfx.cadence_steps,
             "queued": self.sfx.queued,
             "fired": self.sfx.fired,
             "last_cue": self.sfx.last_fired.map(|(id, _)| id),
